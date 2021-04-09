@@ -8,6 +8,8 @@
 *.obj
 
 # Precompiled Headers
+libs/VkCodecUtils/HelpersDispatchTable.cpp
+libs/VkCodecUtils/HelpersDispatchTable.h
 *.gch
 *.pch
 
@@ -29,4 +31,7 @@
 # Executables
 *.exe
 *.out
-*.app
+.cproject
+.project
+build
+build32

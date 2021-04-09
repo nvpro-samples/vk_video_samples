@@ -1,0 +1,1 @@
+https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2020-11-18-12-33/ffmpeg-N-99931-ge3081d6f4f-win64-gpl-shared-vulkan.zip
