@@ -1,4 +1,6 @@
 # VK_VULKAN_VIDEO
+![vk_video_decode](vk_video_decoder/doc/VideoDecode.png)
+
 
 This project is a Vulkan Video Sample Application demonstrating an end-to-end, all-Vulkan, processing of h.264/5 compressed video content. The application decodes the  h.264/5 compressed content using an HW accelerated decoder, the decoded YCbCr frames are processed with Vulkan Graphics and then presented via the Vulkan WSI.
 
