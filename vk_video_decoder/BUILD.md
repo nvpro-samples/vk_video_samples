@@ -97,10 +97,7 @@ It should be straightforward to adapt this repository to other Linux distributio
 
 **Required Package List:**
 
-    sudo apt-get install git cmake build-essential libx11-xcb-dev libxkbcommon-dev libmirclient-dev libwayland-dev libxrandr-dev libavcodec-dev libavformat-dev libavutil-dev
-
-1. Copy the built libnvidia-vkvideo-parser.so.1 sym-link and libnvidia-vkvideo-parser.so shared library to the system directory
-        sudo cp out_build/Linux_amd64_debug/drivers/multimedia/codecs/vulkan/vkvideo-parser/libnvidia-vkvideo-parser.so* /usr/lib/x86_64-linux-gnu/
+1. sudo apt-get install git cmake build-essential libx11-xcb-dev libxkbcommon-dev libmirclient-dev libwayland-dev libxrandr-dev libavcodec-dev libavformat-dev libavutil-dev
 
 ### Linux Vulkan Video Demo Build
 

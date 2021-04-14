@@ -134,11 +134,8 @@ include_directories(
 
 ######################################################################################
 
-if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
-    if(INSTALL_LVL_FILES)
-        install(TARGETS DESTINATION ${CMAKE_INSTALL_BINDIR})
-    endif()
-endif()
+
+install(TARGETS DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 ######################################################################################
 # vk-video-dec
