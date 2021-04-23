@@ -281,7 +281,9 @@ int32_t VulkanVideoProcessor::GetNextFrames(DecodedFrame* pFrame, bool* endOfStr
         }
 
         framesInQueue = m_pVideoFrameBuffer->DequeueDecodedPicture(pFrame);
-        std::cout << "Number of frames : " << framesInQueue << std::endl;
+        if (false) {
+            std::cout << "Number of frames : " << framesInQueue << std::endl;
+        }
     }
 
     if (framesInQueue) {

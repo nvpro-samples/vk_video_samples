@@ -606,7 +606,7 @@ public:
 };
 
 bool VulkanVideoParser::m_dumpParserData = false;
-bool VulkanVideoParser::m_dumpDpbData = true;
+bool VulkanVideoParser::m_dumpDpbData = false;
 
 bool VulkanVideoParser::DecodePicture(VkParserPictureData* pd)
 {
@@ -1785,8 +1785,9 @@ bool VulkanVideoParser::DecodePicture(
                 cupp, pDecodePictureInfo)
         >= 0);
 
-    std::cout << "\t <== VulkanVideoParser::DecodePicture " << PicIdx
-              << std::endl;
+    if (m_dumpParserData) {
+        std::cout << "\t <== VulkanVideoParser::DecodePicture " << PicIdx << std::endl;
+    }
     m_nCurrentPictureID++;
     return bRet;
 }

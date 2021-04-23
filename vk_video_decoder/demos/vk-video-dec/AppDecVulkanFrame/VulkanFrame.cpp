@@ -356,6 +356,7 @@ static uint64_t getNsTime(bool resetTime = false)
 
 void VulkanFrame::on_frame(bool trainFrame)
 {
+    const bool dumpDebug = false;
     frame_count++;
 
     FrameData& data = frame_data_[frame_data_index_];
@@ -389,7 +390,7 @@ void VulkanFrame::on_frame(bool trainFrame)
     }
 
     // wait for the last submission since we reuse frame data
-    if (false) {
+    if (dumpDebug) {
         std::cout << "<= Wait on picIdx: " << pLastDecodedFrame->pictureIndex
                   << "\t\tdisplayOrder: " << pLastDecodedFrame->displayOrder
                   << "\tdecodeOrder: " << pLastDecodedFrame->decodeOrder
@@ -468,7 +469,7 @@ void VulkanFrame::on_frame(bool trainFrame)
         pPerDrawContext->bufferDescriptorSet.getPipelineLayout(), pPerDrawContext->bufferDescriptorSet.getDescriptorSet(),
         &pVideoRenderer->vertexBuffer_);
 
-    if (false) {
+    if (dumpDebug) {
         LOG(INFO) << "Drawing Frame " << frame_count << " FB: " << back.GetImageIndex() << std::endl;
     }
 
@@ -478,10 +479,12 @@ void VulkanFrame::on_frame(bool trainFrame)
     lastRealTimeNsecs = curRealTimeNsecs;
     float fps = fpsDividend / deltaRealTimeNsecs;
 
-    std::cout << "<= Present picIdx: " << imageIndex
-              << "\t\tdisplayOrder: " << displayOrder << "\tdecodeOrder: " << decodeOrder
-              << "\ttimestamp " << timestamp << "\tFPS: " << fps << "\tdstImageView "
-              << pRtImage->view << std::endl;
+    if (dumpDebug) {
+        std::cout << "<= Present picIdx: " << imageIndex
+                  << "\t\tdisplayOrder: " << displayOrder << "\tdecodeOrder: " << decodeOrder
+                  << "\ttimestamp " << timestamp << "\tFPS: " << fps << "\tdstImageView "
+                  << pRtImage->view << std::endl;
+    }
 
     VkResult result = VK_SUCCESS;
     if (!pVideoRenderer->useTestImage_) {
@@ -526,12 +529,14 @@ void VulkanFrame::on_frame(bool trainFrame)
         assert(result == VK_SUCCESS);
         assert(decodeStatus.decodeStatus == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
 
-        std::cout << "\t +++++++++++++++++++++++++++< " << imageIndex << " >++++++++++++++++++++++++++++++" << std::endl;
-        std::cout << "\t => Decode Status for CurrPicIdx: " << imageIndex << std::endl
-                  << "\t\tdecodeStatus: " << decodeStatus.decodeStatus << "\t\thwCyclesCount " << decodeStatus.hwCyclesCount
-                  << "\t\thwStatus " << decodeStatus.hwStatus << "\t\tmbsCorrectlyDecoded " << decodeStatus.mbsCorrectlyDecoded
-                  << "\t\tmbsInError " << decodeStatus.mbsInError
-                  << "\t\tinstanceId " << decodeStatus.instanceId << std::endl;
+        if (dumpDebug) {
+            std::cout << "\t +++++++++++++++++++++++++++< " << imageIndex << " >++++++++++++++++++++++++++++++" << std::endl;
+            std::cout << "\t => Decode Status for CurrPicIdx: " << imageIndex << std::endl
+                      << "\t\tdecodeStatus: " << decodeStatus.decodeStatus << "\t\thwCyclesCount " << decodeStatus.hwCyclesCount
+                      << "\t\thwStatus " << decodeStatus.hwStatus << "\t\tmbsCorrectlyDecoded " << decodeStatus.mbsCorrectlyDecoded
+                      << "\t\tmbsInError " << decodeStatus.mbsInError
+                      << "\t\tinstanceId " << decodeStatus.instanceId << std::endl;
+        }
     }
 
     uint32_t waitSemaphoreCount = 0;

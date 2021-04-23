@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <limits.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 #define TPRINTF(X) ((void)0)

@@ -251,10 +251,11 @@ public:
 
         m_displayFrames.push((uint8_t)picId);
 
-        std::cout << "==> Queue Display Picture picIdx: " << (uint32_t)picId
-                  << "\t\tdisplayOrder: " << m_perFrameDecodeImageSet[picId].m_displayOrder << "\tdecodeOrder: " << m_perFrameDecodeImageSet[picId].m_decodeOrder
-                  << "\ttimestamp " << m_perFrameDecodeImageSet[picId].m_timestamp << std::endl;
-
+        if (m_debug) {
+            std::cout << "==> Queue Display Picture picIdx: " << (uint32_t)picId
+                      << "\t\tdisplayOrder: " << m_perFrameDecodeImageSet[picId].m_displayOrder << "\tdecodeOrder: " << m_perFrameDecodeImageSet[picId].m_decodeOrder
+                      << "\ttimestamp " << m_perFrameDecodeImageSet[picId].m_timestamp << std::endl;
+        }
         return picId;
     }
 
@@ -266,9 +267,12 @@ public:
         m_perFrameDecodeImageSet[picId].m_picDispInfo = *pDecodePictureInfo;
         m_perFrameDecodeImageSet[picId].m_decodeOrder = m_frameNumInDecodeOrder++;
         m_perFrameDecodeImageSet[picId].m_inDecodeQueue = true;
-        std::cout << "==> Queue Decode Picture picIdx: " << (uint32_t)picId
-                  << "\t\tdisplayOrder: " << m_perFrameDecodeImageSet[picId].m_displayOrder << "\tdecodeOrder: " << m_perFrameDecodeImageSet[picId].m_decodeOrder
-                  << "\ttimestamp " << getNsTime() << "\tFrameType " << m_perFrameDecodeImageSet[picId].m_picDispInfo.videoFrameType << std::endl;
+
+        if (m_debug) {
+            std::cout << "==> Queue Decode Picture picIdx: " << (uint32_t)picId
+                      << "\t\tdisplayOrder: " << m_perFrameDecodeImageSet[picId].m_displayOrder << "\tdecodeOrder: " << m_perFrameDecodeImageSet[picId].m_decodeOrder
+                      << "\ttimestamp " << getNsTime() << "\tFrameType " << m_perFrameDecodeImageSet[picId].m_picDispInfo.videoFrameType << std::endl;
+        }
 
         if (pFrameSynchronizationInfo->hasFrameCompleteSignalFence) {
             pFrameSynchronizationInfo->frameCompleteFence = m_perFrameDecodeImageSet[picId].m_frameCompleteFence;
