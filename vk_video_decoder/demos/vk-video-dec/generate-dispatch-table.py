@@ -347,15 +347,14 @@ vk_khr_video_queue = Extension(name='VK_KHR_video_queue', version=1, guard='VK_U
     Command(name='GetPhysicalDeviceVideoCapabilitiesKHR', dispatch='VkPhysicalDevice'),
     Command(name='CreateVideoSessionKHR', dispatch='VkDevice'),
     Command(name='DestroyVideoSessionKHR', dispatch='VkDevice'),
+    Command(name='CreateVideoSessionParametersKHR', dispatch='VkDevice'),
+    Command(name='UpdateVideoSessionParametersKHR', dispatch='VkDevice'),
+    Command(name='DestroyVideoSessionParametersKHR', dispatch='VkDevice'),
     Command(name='GetVideoSessionMemoryRequirementsKHR', dispatch='VkDevice'),
     Command(name='BindVideoSessionMemoryKHR', dispatch='VkDevice'),
     Command(name='CmdBeginVideoCodingKHR',   dispatch='VkCommandBuffer'),
     Command(name='CmdEndVideoCodingKHR',   dispatch='VkCommandBuffer'),
     Command(name='CmdControlVideoCodingKHR',   dispatch='VkCommandBuffer'),
-])
-
-vk_nv_video_queue = Extension(name='VK_NV_video_queue', version=1, guard='VK_USE_VIDEO_QUEUE', commands=[
-    Command(name='GetPhysicalDeviceVideoCodecProfilesNV', dispatch='VkPhysicalDevice'),
 ])
 
 vk_khr_video_decode_queue = Extension(name='VK_KHR_video_decode_queue', version=1, guard='VK_USE_VIDEO_DECODE_QUEUE', commands=[
@@ -390,7 +389,6 @@ extensions = [
     vk_mvk_ios_surface,
     vk_mvk_macos_surface,
     vk_khr_video_queue,
-    vk_nv_video_queue,
     vk_khr_video_decode_queue,
     vk_khr_synchronization2,
 ]

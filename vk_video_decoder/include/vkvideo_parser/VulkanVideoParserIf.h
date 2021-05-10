@@ -21,6 +21,10 @@
 #include "VkParserVideoRefCountBase.h"
 #include "vulkan_interfaces.h"
 
+#define NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9 VK_MAKE_VIDEO_STD_VERSION(0, 9, 0)
+
+#define NV_VULKAN_VIDEO_PARSER_API_VERSION   NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9
+
 typedef uint32_t FrameRate; // Packed 18-bit numerator & 14-bit denominator
 
 // Definitions for video_format
@@ -118,12 +122,11 @@ typedef struct VkParserH264DpbEntry {
 
 typedef struct VkParserH264PictureData {
     // SPS
-    StdVideoH264SequenceParameterSet    stdSps;
-    StdVideoH264SequenceParameterSetVui stdVui;
-    StdVideoH264ScalingLists            spsStdScalingLists;
+    const StdVideoH264SequenceParameterSet* pStdSps;
+    VkParserVideoRefCountBase*              pSpsClientObject;
     // PPS
-    StdVideoH264PictureParameterSet     stdPps;
-    StdVideoH264ScalingLists            ppsStdScalingLists;
+    const StdVideoH264PictureParameterSet*    pStdPps;
+    VkParserVideoRefCountBase*              pPpsClientObject;
     int32_t num_ref_idx_l0_active_minus1;
     int32_t num_ref_idx_l1_active_minus1;
     int32_t weighted_pred_flag;
@@ -150,8 +153,6 @@ typedef struct VkParserH264PictureData {
     VkParserH264DpbEntry dpb[16 + 1]; // List of reference frames within the DPB
 
     // Quantization Matrices (raster-order)
-    uint8_t WeightScale4x4[6][16];
-    uint8_t WeightScale8x8[2][64];
     union {
         // MVC extension
         struct {
@@ -217,12 +218,11 @@ typedef struct VkParserHevcPictureData {
     // sps
 
     // SPS
-    StdVideoH265SequenceParameterSet    stdSps;
-    StdVideoH265SequenceParameterSetVui stdVui;
-    StdVideoH265ScalingLists            spsStdScalingLists;
+    const StdVideoH265SequenceParameterSet* pStdSps;
+    VkParserVideoRefCountBase*              pSpsClientObject;
 
-    StdVideoH265PictureParameterSet     stdPps;
-    StdVideoH265ScalingLists            ppsStdScalingLists;
+    const StdVideoH265PictureParameterSet*  pStdPps;
+    VkParserVideoRefCountBase*              pPpsClientObject;
 
     uint8_t IrapPicFlag;
     uint8_t IdrPicFlag;
@@ -676,11 +676,11 @@ enum VkParserPictureParametersUpdateType {
 typedef struct VkPictureParameters {
     VkParserPictureParametersUpdateType   updateType;
     union {
-        StdVideoH264SequenceParameterSet* pH264Sps;
-        StdVideoH264PictureParameterSet*  pH264Pps;
-        StdVideoH265VideoParameterSet*    pH265Vps;
-        StdVideoH265SequenceParameterSet* pH265Sps;
-        StdVideoH265PictureParameterSet*  pH265Pps;
+        const StdVideoH264SequenceParameterSet* pH264Sps;
+        const StdVideoH264PictureParameterSet*  pH264Pps;
+        const StdVideoH265VideoParameterSet*    pH265Vps;
+        const StdVideoH265SequenceParameterSet* pH265Sps;
+        const StdVideoH265PictureParameterSet*  pH265Pps;
     };
     uint32_t updateSequenceCount;
 } VkPictureParameters;
@@ -699,8 +699,10 @@ public:
         VkParserPictureData* pParserPictureData)
         = 0; // Called when a picture is
         // ready to be decoded
-    virtual VkParserVideoRefCountBase* UpdatePictureParameters(
-        VkPictureParameters* pPictureParameters)
+    virtual bool UpdatePictureParameters(
+        VkPictureParameters* pPictureParameters,
+        VkSharedBaseObj<VkParserVideoRefCountBase>& pictureParametersObject,
+        uint64_t updateSequenceCount)
         = 0; // Called when a picture is
         // ready to be decoded
     virtual bool DisplayPicture(
@@ -722,6 +724,7 @@ protected:
 
 // Initialization parameters for decoder class
 typedef struct VkParserInitDecodeParameters {
+    uint32_t                   interfaceVersion;
     VkParserVideoDecodeClient* pClient; // should always be present if using parsing functionality
     uint64_t lReferenceClockRate; // ticks per second of PTS clock
         // (0=default=10000000=10Mhz)
@@ -738,7 +741,7 @@ typedef struct VkParserInitDecodeParameters {
 // functionality are decoupled from each other)
 class VulkanVideoDecodeParser : public virtual VkParserVideoRefCountBase {
 public:
-    virtual bool Initialize(VkParserInitDecodeParameters* pParserPictureData) = 0;
+    virtual VkResult Initialize(VkParserInitDecodeParameters* pParserPictureData) = 0;
     virtual bool Deinitialize() = 0;
     virtual bool DecodePicture(VkParserPictureData* pParserPictureData) = 0;
     virtual bool ParseByteStream(const VkParserBitstreamPacket* pck,

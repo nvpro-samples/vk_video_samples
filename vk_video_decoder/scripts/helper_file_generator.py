@@ -166,9 +166,9 @@ class HelperFileOutputGenerator(OutputGenerator):
         nameElem = interface[0][1]
         name_define = nameElem.get('name')
         if 'EXTENSION_NAME' not in name_define:
-            print("Error in vk.xml file -- extension name is not available")
+            print("Error in vk.xml file -- extension name != available")
         requires = interface.get('requires')
-        if requires is not None:
+        if requires != None:
             required_extensions = requires.split(',')
         else:
             required_extensions = list()
@@ -237,7 +237,7 @@ class HelperFileOutputGenerator(OutputGenerator):
     def paramIsPointer(self, param):
         ispointer = False
         for elem in param:
-            if ((elem.tag is not 'type') and (elem.tail is not None)) and '*' in elem.tail:
+            if ((elem.tag != 'type') and (elem.tail != None)) and '*' in elem.tail:
                 ispointer = True
         return ispointer
     #
@@ -245,7 +245,7 @@ class HelperFileOutputGenerator(OutputGenerator):
     def paramIsStaticArray(self, param):
         isstaticarray = 0
         paramname = param.find('name')
-        if (paramname.tail is not None) and ('[' in paramname.tail):
+        if (paramname.tail != None) and ('[' in paramname.tail):
             isstaticarray = paramname.tail.count('[')
         return isstaticarray
     #
@@ -313,15 +313,15 @@ class HelperFileOutputGenerator(OutputGenerator):
         else:
             type_key = 'VK_DEFINE_NON_DISPATCHABLE_HANDLE'
         handle = self.registry.tree.find("types/type/[name='" + handle_type + "'][@category='handle']")
-        if handle is not None and handle.find('type').text == type_key:
+        if handle != None and handle.find('type').text == type_key:
             return True
         # if handle_type is a struct, search its members
         if handle_type in self.structNames:
             member_index = next((i for i, v in enumerate(self.structMembers) if v[0] == handle_type), None)
-            if member_index is not None:
+            if member_index != None:
                 for item in self.structMembers[member_index].members:
                     handle = self.registry.tree.find("types/type/[name='" + item.type + "'][@category='handle']")
-                    if handle is not None and handle.find('type').text == type_key:
+                    if handle != None and handle.find('type').text == type_key:
                         return True
         return False
     #
@@ -443,13 +443,13 @@ class HelperFileOutputGenerator(OutputGenerator):
                 for member in item.members:
                     if member.type in self.structNames:
                         member_index = next((i for i, v in enumerate(self.structMembers) if v[0] == member.type), None)
-                        if member_index is not None and self.NeedSafeStruct(self.structMembers[member_index]) == True:
+                        if member_index != None and self.NeedSafeStruct(self.structMembers[member_index]) == True:
                             if member.ispointer:
                                 safe_struct_header += '    safe_%s* %s;\n' % (member.type, member.name)
                             else:
                                 safe_struct_header += '    safe_%s %s;\n' % (member.type, member.name)
                             continue
-                    if member.len is not None and (self.TypeContainsObjectHandle(member.type, True) or self.TypeContainsObjectHandle(member.type, False)):
+                    if member.len != None and (self.TypeContainsObjectHandle(member.type, True) or self.TypeContainsObjectHandle(member.type, False)):
                             safe_struct_header += '    %s* %s;\n' % (member.type, member.name)
                     else:
                         safe_struct_header += '%s;\n' % member.cdecl
@@ -511,7 +511,7 @@ class HelperFileOutputGenerator(OutputGenerator):
             '']
 
         def guarded(ifdef, value):
-            if ifdef is not None:
+            if ifdef != None:
                 return '\n'.join([ '#ifdef %s' % ifdef, value, '#endif' ])
             else:
                 return value
@@ -1018,7 +1018,7 @@ class HelperFileOutputGenerator(OutputGenerator):
                 m_type = member.type
                 if member.type in self.structNames:
                     member_index = next((i for i, v in enumerate(self.structMembers) if v[0] == member.type), None)
-                    if member_index is not None and self.NeedSafeStruct(self.structMembers[member_index]) == True:
+                    if member_index != None and self.NeedSafeStruct(self.structMembers[member_index]) == True:
                         m_type = 'safe_%s' % member.type
                 if member.ispointer and 'safe_' not in m_type and self.TypeContainsObjectHandle(member.type, False) == False:
                     # Ptr types w/o a safe_struct, for non-null case need to allocate new ptr and copy data in
@@ -1044,7 +1044,7 @@ class HelperFileOutputGenerator(OutputGenerator):
                                 construct_txt += '    }\n'
                                 destruct_txt += '    if (%s)\n' % member.name
                                 destruct_txt += '        delete[] %s;\n' % member.name
-                elif member.isstaticarray or member.len is not None:
+                elif member.isstaticarray or member.len != None:
                     if member.len is None:
                         # Extract length of static array by grabbing val between []
                         static_array_size = re.match(r"[^[]*\[([^]]*)\]", member.cdecl)
@@ -1059,7 +1059,7 @@ class HelperFileOutputGenerator(OutputGenerator):
                         array_element = 'in_struct->%s[i]' % member.name
                         if member.type in self.structNames:
                             member_index = next((i for i, v in enumerate(self.structMembers) if v[0] == member.type), None)
-                            if member_index is not None and self.NeedSafeStruct(self.structMembers[member_index]) == True:
+                            if member_index != None and self.NeedSafeStruct(self.structMembers[member_index]) == True:
                                 array_element = '%s(&in_struct->safe_%s[i])' % (member.type, member.name)
                         construct_txt += '    if (%s && in_struct->%s) {\n' % (member.len, member.name)
                         construct_txt += '        %s = new %s[%s];\n' % (member.name, m_type, member.len)

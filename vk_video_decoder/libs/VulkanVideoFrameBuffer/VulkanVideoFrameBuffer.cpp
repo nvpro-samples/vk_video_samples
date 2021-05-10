@@ -24,7 +24,6 @@
 #include <string.h>
 #include <string>
 #include <vector>
-#include <map>
 
 #include "PictureBufferBase.h"
 #include "VkCodecUtils/HelpersDispatchTable.h"
@@ -81,6 +80,7 @@ public:
     uint32_t m_inDecodeQueue : 1;
     uint32_t m_inDisplayQueue : 1;
     uint32_t m_ownedByDisplay : 1;
+    VkSharedBaseObj<VkParserVideoRefCountBase> currentVkPictureParameters;
 };
 
 class NvPerFrameDecodeImageSet {
@@ -259,7 +259,9 @@ public:
         return picId;
     }
 
-    virtual int32_t QueuePictureForDecode(int8_t picId, VkParserDecodePictureInfo* pDecodePictureInfo, FrameSynchronizationInfo* pFrameSynchronizationInfo)
+    virtual int32_t QueuePictureForDecode(int8_t picId, VkParserDecodePictureInfo* pDecodePictureInfo,
+                                          VkParserVideoRefCountBase* pCurrentVkPictureParameters,
+                                          FrameSynchronizationInfo* pFrameSynchronizationInfo)
     {
         assert((uint32_t)picId < m_perFrameDecodeImageSet.size());
 
@@ -267,6 +269,7 @@ public:
         m_perFrameDecodeImageSet[picId].m_picDispInfo = *pDecodePictureInfo;
         m_perFrameDecodeImageSet[picId].m_decodeOrder = m_frameNumInDecodeOrder++;
         m_perFrameDecodeImageSet[picId].m_inDecodeQueue = true;
+        m_perFrameDecodeImageSet[picId].currentVkPictureParameters = pCurrentVkPictureParameters;
 
         if (m_debug) {
             std::cout << "==> Queue Decode Picture picIdx: " << (uint32_t)picId
@@ -365,19 +368,21 @@ public:
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         for (uint32_t i = 0; i < numFramesToRelease; i++) {
             const DecodedFrameRelease* pDecodedFrameRelease = pDecodedFramesRelease[i];
-            int pictureIndex = pDecodedFrameRelease->pictureIndex;
-            assert((pictureIndex >= 0) && ((uint32_t)pictureIndex < m_perFrameDecodeImageSet.size()));
+            int picId = pDecodedFrameRelease->pictureIndex;
+            assert((picId >= 0) && ((uint32_t)picId < m_perFrameDecodeImageSet.size()));
 
-            assert(m_perFrameDecodeImageSet[pictureIndex].m_decodeOrder == pDecodedFrameRelease->decodeOrder);
-            assert(m_perFrameDecodeImageSet[pictureIndex].m_displayOrder == pDecodedFrameRelease->displayOrder);
+            assert(m_perFrameDecodeImageSet[picId].m_decodeOrder == pDecodedFrameRelease->decodeOrder);
+            assert(m_perFrameDecodeImageSet[picId].m_displayOrder == pDecodedFrameRelease->displayOrder);
 
-            assert(m_ownedByDisplayMask & (1 << pictureIndex));
-            m_ownedByDisplayMask &= ~(1 << pictureIndex);
-            m_perFrameDecodeImageSet[pictureIndex].m_ownedByDisplay = false;
-            m_perFrameDecodeImageSet[pictureIndex].Release();
+            assert(m_ownedByDisplayMask & (1 << picId));
+            m_ownedByDisplayMask &= ~(1 << picId);
+            m_perFrameDecodeImageSet[picId].m_inDecodeQueue = false;
+            m_perFrameDecodeImageSet[picId].currentVkPictureParameters = nullptr;
+            m_perFrameDecodeImageSet[picId].m_ownedByDisplay = false;
+            m_perFrameDecodeImageSet[picId].Release();
 
-            m_perFrameDecodeImageSet[pictureIndex].m_hasConsummerSignalFence = pDecodedFrameRelease->hasConsummerSignalFence;
-            m_perFrameDecodeImageSet[pictureIndex].m_hasConsummerSignalSemaphore = pDecodedFrameRelease->hasConsummerSignalSemaphore;
+            m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence = pDecodedFrameRelease->hasConsummerSignalFence;
+            m_perFrameDecodeImageSet[picId].m_hasConsummerSignalSemaphore = pDecodedFrameRelease->hasConsummerSignalSemaphore;
         }
         return 0;
     }
@@ -493,14 +498,6 @@ public:
         }
     }
 
-    struct PpsEntry {
-
-    };
-
-    struct SpsEntry {
-        std::map<uint8_t, PpsEntry> ppsMap;
-    };
-
 private:
     vulkanVideoUtils::VulkanDeviceInfo* m_pVideoRendererDeviceInfo;
     std::atomic<int32_t> m_refCount;
@@ -513,7 +510,6 @@ private:
     int32_t m_frameNumInDisplayOrder;
     VkExtent2D m_extent;
     uint32_t m_debug : 1;
-    std::map<uint8_t, SpsEntry> spsMap;
 };
 
 VulkanVideoFrameBuffer* VulkanVideoFrameBuffer::CreateInstance(vulkanVideoUtils::VulkanDeviceInfo* pVideoRendererDeviceInfo)
@@ -552,6 +548,8 @@ void NvPerFrameDecodeImage::Deinit()
     if (m_frameImage.m_device == VkDevice()) {
         return;
     }
+
+    currentVkPictureParameters = nullptr;
 
     if (m_frameCompleteFence != VkFence()) {
         vk::DestroyFence(m_frameImage.m_device, m_frameCompleteFence, nullptr);

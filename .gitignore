@@ -8,8 +8,10 @@
 *.obj
 
 # Precompiled Headers
-libs/VkCodecUtils/HelpersDispatchTable.cpp
-libs/VkCodecUtils/HelpersDispatchTable.h
+**/HelpersDispatchTable.cpp
+**/HelpersDispatchTable.h
+**/external
+
 *.gch
 *.pch
 

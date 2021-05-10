@@ -19,6 +19,9 @@ Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file in this repository for mo
 
 ## Repository Set-Up
 
+  Please make sure you have installed the latest NVIDIA BETA drivers from https://developer.nvidia.com/vulkan-driver.
+  The minimum supported BETA driver version by this application is 455.50.18 with Vulkan version 1.2.179.
+
 ### Download the Repository
 
    Vulkan Video Test application Gerrit repository:
@@ -51,8 +54,10 @@ Windows 10 with the following software packages:
 - [Vulkan SDK](https://vulkan.lunarg.com)
   - install current Vulkan SDK (i.e. VulkanSDK-1.2.154.1-Installer.exe) from https://vulkan.lunarg.com/
 - [FFMPEG libraries for Windows]
-    Download the following archive:
-    https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2021-04-12-12-38/ffmpeg-N-101934-g7e241a1b73-win64-lgpl-shared.zip
+    Download the latest version of the FFMPEG shared libraries archive from https://github.com/BtbN/FFmpeg-Builds/releases.
+    The archive must have the following pattern in the name ffmpeg-*-win64-lgpl-shared.zip
+    For example:
+    https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2021-05-07-13-49/ffmpeg-N-102431-gf140239777-win64-lgpl-shared.zip
     Then extract the archive to <APP_INSTALLED_LOC>\bin\libs\ffmpeg and add the path of the <APP_INSTALLED_LOC>\bin\libs\ffmpeg\win64\ of
     the application. Please make sure that <APP_INSTALLED_LOC>\bin\libs\ffmpeg\win64\bin location contains
     avformat-58.dll, avutil-56.dll and avcodec-58.dll shared libraries and <APP_INSTALLED_LOC>\bin\libs\ffmpeg\win64\lib contains the

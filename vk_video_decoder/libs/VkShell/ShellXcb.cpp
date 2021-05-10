@@ -303,7 +303,7 @@ void ShellXcb::run() {
     resize_swapchain(settings_.initial_width, settings_.initial_height);
 
     quit_ = false;
-    if (settings_.animate)
+    if (true)
         loop_poll();
     else
         loop_wait();

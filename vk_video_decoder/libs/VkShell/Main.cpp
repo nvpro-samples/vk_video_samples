@@ -58,7 +58,8 @@ int main(int argc, char **argv) {
     if (!scan_args(argc, argv, a)) return -1;
 
     FrameProcessor *frameProcessor = create_frameProcessor(argc, argv);
-    {
+    if (frameProcessor) {
+
         if (a.direct_mode) {
             ShellDirect shell(*frameProcessor, a.device_id);
             shell.run();
@@ -81,7 +82,8 @@ int main(int argc, char** argv) {
     if (!scan_args(argc, argv, a)) return -1;
 
     FrameProcessor* frameProcessor = create_frameProcessor(argc, argv);
-    {
+    if (frameProcessor) {
+
         ShellWayland shell(*frameProcessor, a.device_id);
         shell.run();
     }
@@ -98,11 +100,13 @@ int main(int argc, char** argv) {
 void android_main(android_app *app) {
     FrameProcessor *frameProcessor = create_frameProcessor(ShellAndroid::get_args(*app));
 
-    try {
-        ShellAndroid shell(*app, *frameProcessor);
-        shell.run();
-    } catch (const std::runtime_error &e) {
-        __android_log_print(ANDROID_LOG_ERROR, frameProcessor->settings().name.c_str(), "%s", e.what());
+    if (frameProcessor) {
+        try {
+            ShellAndroid shell(*app, *frameProcessor);
+            shell.run();
+        } catch (const std::runtime_error &e) {
+            __android_log_print(ANDROID_LOG_ERROR, frameProcessor->settings().name.c_str(), "%s", e.what());
+        }
     }
 
     delete frameProcessor;
@@ -117,7 +121,7 @@ int main(int argc, char** argv) {
     if (!scan_args(argc, argv, a)) return -1;
 
     FrameProcessor* frameProcessor = create_frameProcessor(argc, argv);
-    {
+    if (frameProcessor) {
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
         ShellWin32 shell(*frameProcessor, a.device_id);
 #else

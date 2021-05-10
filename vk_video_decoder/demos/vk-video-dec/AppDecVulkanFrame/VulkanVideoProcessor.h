@@ -47,7 +47,7 @@ public:
 
     ~VulkanVideoProcessor() { Deinit(); }
 
-    static void DumpVideFormat(const VkParserDetectedVideoFormat* videoFormat, bool dumpData);
+    static void DumpVideoFormat(const VkParserDetectedVideoFormat* videoFormat, bool dumpData);
 
     int32_t GetNextFrames(DecodedFrame* pFrame, bool* endOfStream);
 

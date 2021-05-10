@@ -30,6 +30,7 @@
 #include "NvVideoParser/nvVulkanVideoUtils.h"
 #include "PictureBufferBase.h"
 #include "VkCodecUtils/nvVideoProfile.h"
+#include "StdVideoPictureParametersSet.h"
 
 #undef min
 #undef max
@@ -541,8 +542,10 @@ protected:
 
     virtual ~VulkanVideoParser() { Deinitialize(); }
 
-    VkParserVideoRefCountBase* UpdatePictureParameters(
-        VkPictureParameters* pPictureParameters);
+    bool UpdatePictureParameters(
+        VkPictureParameters* pPictureParameters,
+        VkSharedBaseObj<VkParserVideoRefCountBase>& pictureParametersObject,
+        uint64_t updateSequenceCount);
 
     bool DecodePicture(VkParserPictureData* pParserPictureData,
         vkPicBuffBase* pVkPicBuff,
@@ -598,6 +601,7 @@ protected:
     uint32_t m_dpbSlotsMask;
     uint32_t m_fieldPicFlagMask;
     DpbSlots m_dpb;
+    uint32_t m_outOfBandPictureParameters;
     int8_t m_pictureToDpbSlotMap[MAX_FRM_CNT];
 
 public:
@@ -750,7 +754,7 @@ IVulkanVideoParser* IVulkanVideoParser::CreateInstance(
     if (!pParser) {
         return NULL;
     }
-    const bool outOfBandPictureParameters = false;
+    const bool outOfBandPictureParameters = true;
     VkResult err = pParser->Initialize(pDecoderHandler, pVideoFrameBuffer,
                                        outOfBandPictureParameters, errorThreshold);
     if (err != VK_SUCCESS) {
@@ -791,6 +795,7 @@ VulkanVideoParser::VulkanVideoParser(VkVideoCodecOperationFlagBitsKHR codecType,
     , m_dpbSlotsMask(0)
     , m_fieldPicFlagMask(0)
     , m_dpb(3)
+    , m_outOfBandPictureParameters(false)
 {
     memset(&m_nvsi, 0, sizeof(m_nvsi));
     for (uint32_t picId = 0; picId < MAX_FRM_CNT; picId++) {
@@ -806,6 +811,7 @@ VkResult VulkanVideoParser::Initialize(
 {
     Deinitialize();
 
+    m_outOfBandPictureParameters = outOfBandPictureParameters;
     m_pDecoderHandler = pDecoderHandler;
     m_pDecoderHandler->AddRef();
     m_pVideoFrameBuffer = pVideoFrameBuffer;
@@ -816,17 +822,17 @@ VkResult VulkanVideoParser::Initialize(
     VkParserInitDecodeParameters nvdp;
 
     memset(&nvdp, 0, sizeof(nvdp));
+    nvdp.interfaceVersion = NV_VULKAN_VIDEO_PARSER_API_VERSION;
     nvdp.pClient = reinterpret_cast<VkParserVideoDecodeClient*>(this);
     nvdp.lReferenceClockRate = m_clockRate;
     nvdp.lErrorThreshold = errorThreshold;
     nvdp.bOutOfBandPictureParameters = outOfBandPictureParameters;
 
     m_pParser = NULL;
-    if (!CreateVulkanVideoDecodeParser(&m_pParser, m_codecType))
+    if (!CreateVulkanVideoDecodeParser(&m_pParser, m_codecType)) {
         return VK_ERROR_OUT_OF_HOST_MEMORY;
-    if (!m_pParser->Initialize(&nvdp))
-        return VK_ERROR_INITIALIZATION_FAILED;
-    return VK_SUCCESS;
+    }
+    return m_pParser->Initialize(&nvdp);
 }
 
 void VulkanVideoParser::Deinitialize()
@@ -1063,7 +1069,7 @@ uint32_t VulkanVideoParser::FillDpbH264State(
     // #### Update m_dpb based on dpb parameters ####
     // Create unordered DPB and generate a bitmask of all render targets present
     // in DPB
-    uint32_t num_ref_frames = pd->CodecSpecific.h264.stdSps.max_num_ref_frames;
+    uint32_t num_ref_frames = pd->CodecSpecific.h264.pStdSps->max_num_ref_frames;
     assert(num_ref_frames <= m_maxNumDpbSurfaces);
     dpbH264Entry
         refOnlyDpbIn[VulkanVideoParser::AVC_MAX_DPB_SLOTS]; // max number of Dpb
@@ -1524,12 +1530,50 @@ int8_t VulkanVideoParser::AllocateDpbSlotForCurrentH265(vkPicBuffBase* pPic,
     return dpbSlot;
 }
 
-VkParserVideoRefCountBase* VulkanVideoParser::UpdatePictureParameters(
-    VkPictureParameters* pPictureParameters)
+static const char* PictureParametersTypeToName(VkParserPictureParametersUpdateType updateType)
 {
-    VkParserVideoRefCountBase* pPictureParametersIf = NULL;
+    switch (updateType)
+    {
+    case VK_PICTURE_PARAMETERS_UPDATE_H264_SPS:
+        return "H264_SPS";
+    case VK_PICTURE_PARAMETERS_UPDATE_H264_PPS:
+        return "H264_PPS";
+    case VK_PICTURE_PARAMETERS_UPDATE_H265_VPS:
+        return "H265_VPS";
+    case VK_PICTURE_PARAMETERS_UPDATE_H265_SPS:
+        return "H265_SPS";
+    case VK_PICTURE_PARAMETERS_UPDATE_H265_PPS:
+        return "H265_PPS";
+    }
+    return "unknown";
+}
 
-    return pPictureParametersIf;
+bool VulkanVideoParser::UpdatePictureParameters(
+    VkPictureParameters* pPictureParameters,
+    VkSharedBaseObj<VkParserVideoRefCountBase>& pictureParametersObject,
+    uint64_t updateSequenceCount)
+{
+    if (false) {
+        std::cout << "################################################# " << std::endl;
+        std::cout << "Update Picture parameters "
+                << PictureParametersTypeToName(pPictureParameters->updateType) << ": "
+                << pPictureParameters << ", pUpdateParameters: "
+                << pictureParametersObject.Get()
+                << ", count: " << (uint32_t)updateSequenceCount
+                << std::endl;
+        std::cout << "################################################# " << std::endl;
+    }
+
+    if (m_pDecoderHandler == NULL) {
+        assert(!"m_pDecoderHandler is NULL");
+        return NULL;
+    }
+
+    if (pPictureParameters != NULL) {
+        return m_pDecoderHandler->UpdatePictureParameters(pPictureParameters, pictureParametersObject, updateSequenceCount);
+    }
+
+    return NULL;
 }
 
 bool VulkanVideoParser::DecodePicture(
@@ -1558,16 +1602,14 @@ bool VulkanVideoParser::DecodePicture(
         return false;
     }
 
-    const uint32_t maxRefPictures = VkParserPerFrameDecodeParameters::
-        MAX_DPB_REF_SLOTS; // max 16 reference pictures plus 1 for the current
-        // picture.
+    const uint32_t maxRefPictures = VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS; // max 16 reference pictures plus 1 for the current picture.
     VkParserPerFrameDecodeParameters pictureParams;
     memset(&pictureParams, 0, sizeof(pictureParams));
 
-    VkParserPerFrameDecodeParameters* cupp = &pictureParams;
-    cupp->currPicIdx = PicIdx;
-    cupp->bitstreamDataLen = pd->nBitstreamDataLen;
-    cupp->pBitstreamData = pd->pBitstreamData;
+    VkParserPerFrameDecodeParameters* pPerFrameDecodeParameters = &pictureParams;
+    pPerFrameDecodeParameters->currPicIdx = PicIdx;
+    pPerFrameDecodeParameters->bitstreamDataLen = pd->nBitstreamDataLen;
+    pPerFrameDecodeParameters->pBitstreamData = pd->pBitstreamData;
 
     VkVideoReferenceSlotKHR
         referenceSlots[VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS];
@@ -1577,11 +1619,11 @@ bool VulkanVideoParser::DecodePicture(
         NULL // pPictureResource
     };
     // TODO: not exactly true.
-    cupp->decodeFrameInfo.codedExtent.width = pd->PicWidthInMbs << 4;
-    cupp->decodeFrameInfo.codedExtent.height = pd->FrameHeightInMbs << 4;
+    pPerFrameDecodeParameters->decodeFrameInfo.codedExtent.width = pd->PicWidthInMbs << 4;
+    pPerFrameDecodeParameters->decodeFrameInfo.codedExtent.height = pd->FrameHeightInMbs << 4;
 
-    cupp->decodeFrameInfo.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_INFO_KHR;
-    cupp->decodeFrameInfo.dstPictureResource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_KHR;
+    pPerFrameDecodeParameters->decodeFrameInfo.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_INFO_KHR;
+    pPerFrameDecodeParameters->decodeFrameInfo.dstPictureResource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_KHR;
 
     if (m_codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT) {
         const VkParserH264PictureData* const pin = &pd->CodecSpecific.h264;
@@ -1593,12 +1635,13 @@ bool VulkanVideoParser::DecodePicture(
         nvVideoDecodeH264DpbSlotInfo* pDpbRefList = h264.dpbRefList;
         StdVideoDecodeH264PictureInfo* pStdPictureInfo = &h264.stdPictureInfo;
 
-        h264.pictureParameters.pSpsStd = &pin->stdSps;
-        h264.pictureParameters.pPpsStd = &pin->stdPps;
-
-        // FIXME: remove h264 Picture Parameters should be provided via a Picture
-        // Parameters Object.
-        h264.pictureParameters.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_ADD_INFO_EXT;
+        pPerFrameDecodeParameters->pCurrentPictureParameters = StdVideoPictureParametersSet::StdVideoPictureParametersSetFromBase(pin->pPpsClientObject);
+        if (false) {
+            std::cout << "\n\tCurrent h.264 Picture SPS update : "
+                    << StdVideoPictureParametersSet::StdVideoPictureParametersSetFromBase(pin->pSpsClientObject)->m_updateSequenceCount << std::endl;
+            std::cout << "\tCurrent h.264 Picture PPS update : "
+                    << StdVideoPictureParametersSet::StdVideoPictureParametersSetFromBase(pin->pPpsClientObject)->m_updateSequenceCount << std::endl;
+        }
 
         pDecodePictureInfo->videoFrameType = 0; // pd->CodecSpecific.h264.slice_type;
         // FIXME: If mvcext is enabled.
@@ -1607,8 +1650,18 @@ bool VulkanVideoParser::DecodePicture(
         pPictureInfo->pStdPictureInfo = &h264.stdPictureInfo;
 
         pPictureInfo->sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PICTURE_INFO_EXT;
-        pPictureInfo->pNext = &h264.pictureParameters; // FIXME: remove this parameter.
-        cupp->decodeFrameInfo.pNext = &h264.pictureInfo;
+
+        if (!m_outOfBandPictureParameters) {
+            // In-band h264 Picture Parameters for testing
+            h264.pictureParameters.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_ADD_INFO_EXT;
+            h264.pictureParameters.pSpsStd = pin->pStdSps;
+            h264.pictureParameters.pPpsStd = pin->pStdPps;
+            pPictureInfo->pNext = &h264.pictureParameters;
+        } else {
+            pPictureInfo->pNext = nullptr;
+        }
+
+        pPerFrameDecodeParameters->decodeFrameInfo.pNext = &h264.pictureInfo;
 
         pStdPictureInfo->frame_num = (uint16_t)pin->frame_num;
         pPictureInfo->slicesCount = pd->nNumSlices;
@@ -1643,34 +1696,34 @@ bool VulkanVideoParser::DecodePicture(
         }
 
         const uint32_t maxDpbInputSlots = sizeof(pin->dpb) / sizeof(pin->dpb[0]);
-        cupp->numGopReferenceSlots = FillDpbH264State(
+        pPerFrameDecodeParameters->numGopReferenceSlots = FillDpbH264State(
             pd, pin->dpb, maxDpbInputSlots, pDpbRefList, maxRefPictures,
-            referenceSlots, cupp->pGopReferenceImagesIndexes,
+            referenceSlots, pPerFrameDecodeParameters->pGopReferenceImagesIndexes,
             h264.stdPictureInfo.flags, &setupReferenceSlot.slotIndex);
         // TODO: Remove it is for debugging only.
-        pout->stdPictureInfo.reserved = cupp->numGopReferenceSlots;
+        pout->stdPictureInfo.reserved = pPerFrameDecodeParameters->numGopReferenceSlots;
         // slotLayer requires NVIDIA specific extension VK_KHR_video_layers, not
         // enabled, just yet. setupReferenceSlot.slotLayerIndex = 0;
         assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
         if (setupReferenceSlot.slotIndex >= 0) {
-            setupReferenceSlot.pPictureResource = &cupp->decodeFrameInfo.dstPictureResource;
-            cupp->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
+            setupReferenceSlot.pPictureResource = &pPerFrameDecodeParameters->decodeFrameInfo.dstPictureResource;
+            pPerFrameDecodeParameters->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
         }
-        if (cupp->numGopReferenceSlots) {
-            for (uint32_t dpbEntryIdx = 0; dpbEntryIdx < (uint32_t)cupp->numGopReferenceSlots;
+        if (pPerFrameDecodeParameters->numGopReferenceSlots) {
+            for (uint32_t dpbEntryIdx = 0; dpbEntryIdx < (uint32_t)pPerFrameDecodeParameters->numGopReferenceSlots;
                  dpbEntryIdx++) {
-                cupp->pictureResources[dpbEntryIdx].sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_KHR;
-                referenceSlots[dpbEntryIdx].pPictureResource = &cupp->pictureResources[dpbEntryIdx];
+                pPerFrameDecodeParameters->pictureResources[dpbEntryIdx].sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_KHR;
+                referenceSlots[dpbEntryIdx].pPictureResource = &pPerFrameDecodeParameters->pictureResources[dpbEntryIdx];
                 assert(pDpbRefList[dpbEntryIdx].IsReference());
                 // referenceSlots[dpbEntryIdx].pNext =
                 // &pDpbRefList[dpbEntryIdx].dpbSlotInfo;
             }
 
-            cupp->decodeFrameInfo.pReferenceSlots = referenceSlots;
-            cupp->decodeFrameInfo.referenceSlotCount = cupp->numGopReferenceSlots;
+            pPerFrameDecodeParameters->decodeFrameInfo.pReferenceSlots = referenceSlots;
+            pPerFrameDecodeParameters->decodeFrameInfo.referenceSlotCount = pPerFrameDecodeParameters->numGopReferenceSlots;
         } else {
-            cupp->decodeFrameInfo.pReferenceSlots = NULL;
-            cupp->decodeFrameInfo.referenceSlotCount = 0;
+            pPerFrameDecodeParameters->decodeFrameInfo.pReferenceSlots = NULL;
+            pPerFrameDecodeParameters->decodeFrameInfo.referenceSlotCount = 0;
         }
 
     } else if (m_codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT) {
@@ -1680,16 +1733,29 @@ bool VulkanVideoParser::DecodePicture(
         StdVideoDecodeH265PictureInfo* pStdPictureInfo = &hevc.stdPictureInfo;
         nvVideoDecodeH265DpbSlotInfo* pDpbRefList = hevc.dpbRefList;
 
-        hevc.pictureParameters.pSpsStd = &pin->stdSps;
-        hevc.pictureParameters.pPpsStd = &pin->stdPps;
-        // FIXME: remove h265 Picture Parameters should be provided via a Picture
-        // Parameters Object.
-        hevc.pictureParameters.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_ADD_INFO_EXT;
-        // FIXME: remove h265 Picture Parameters
-        pPictureInfo->pNext = &hevc.pictureParameters;
+        pPerFrameDecodeParameters->pCurrentPictureParameters = StdVideoPictureParametersSet::StdVideoPictureParametersSetFromBase(pin->pPpsClientObject);
+        if (false) {
+            std::cout << "\n\tCurrent h.265 Picture SPS update : "
+                    << StdVideoPictureParametersSet::StdVideoPictureParametersSetFromBase(pin->pSpsClientObject)->m_updateSequenceCount << std::endl;
+            std::cout << "\tCurrent h.265 Picture PPS update : "
+                    << StdVideoPictureParametersSet::StdVideoPictureParametersSetFromBase(pin->pPpsClientObject)->m_updateSequenceCount << std::endl;
+        }
+
+
         pPictureInfo->sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PICTURE_INFO_EXT;
+
+        if (!m_outOfBandPictureParameters) {
+            // In-band h264 Picture Parameters for testing
+            hevc.pictureParameters.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_ADD_INFO_EXT;
+            hevc.pictureParameters.pSpsStd = pin->pStdSps;
+            hevc.pictureParameters.pPpsStd = pin->pStdPps;
+            pPictureInfo->pNext = &hevc.pictureParameters;
+        } else {
+            pPictureInfo->pNext = nullptr;
+        }
+
         pPictureInfo->pStdPictureInfo = &hevc.stdPictureInfo;
-        cupp->decodeFrameInfo.pNext = &hevc.pictureInfo;
+        pPerFrameDecodeParameters->decodeFrameInfo.pNext = &hevc.pictureInfo;
 
         pDecodePictureInfo->videoFrameType = 0; // pd->CodecSpecific.hevc.SliceType;
         if (pd->CodecSpecific.hevc.mv_hevc_enable) {
@@ -1732,28 +1798,28 @@ bool VulkanVideoParser::DecodePicture(
                       << " numPocStCurrAfter: " << (int32_t)pin->NumPocStCurrAfter
                       << " numPocLtCurr: " << (int32_t)pin->NumPocLtCurr << std::endl;
 
-        cupp->numGopReferenceSlots = FillDpbH265State(pd, pin, pDpbRefList, pStdPictureInfo, maxRefPictures,
-            referenceSlots, cupp->pGopReferenceImagesIndexes);
+        pPerFrameDecodeParameters->numGopReferenceSlots = FillDpbH265State(pd, pin, pDpbRefList, pStdPictureInfo, maxRefPictures,
+            referenceSlots, pPerFrameDecodeParameters->pGopReferenceImagesIndexes);
 
         assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
         if (setupReferenceSlot.slotIndex >= 0) {
-            setupReferenceSlot.pPictureResource = &cupp->decodeFrameInfo.dstPictureResource;
-            cupp->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
+            setupReferenceSlot.pPictureResource = &pPerFrameDecodeParameters->decodeFrameInfo.dstPictureResource;
+            pPerFrameDecodeParameters->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
         }
 
-        if (cupp->numGopReferenceSlots) {
-            for (uint32_t dpbEntryIdx = 0; dpbEntryIdx < (uint32_t)cupp->numGopReferenceSlots;
+        if (pPerFrameDecodeParameters->numGopReferenceSlots) {
+            for (uint32_t dpbEntryIdx = 0; dpbEntryIdx < (uint32_t)pPerFrameDecodeParameters->numGopReferenceSlots;
                  dpbEntryIdx++) {
-                cupp->pictureResources[dpbEntryIdx].sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_KHR;
-                referenceSlots[dpbEntryIdx].pPictureResource = &cupp->pictureResources[dpbEntryIdx];
+                pPerFrameDecodeParameters->pictureResources[dpbEntryIdx].sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_KHR;
+                referenceSlots[dpbEntryIdx].pPictureResource = &pPerFrameDecodeParameters->pictureResources[dpbEntryIdx];
                 assert(pDpbRefList[dpbEntryIdx].IsReference());
             }
 
-            cupp->decodeFrameInfo.pReferenceSlots = referenceSlots;
-            cupp->decodeFrameInfo.referenceSlotCount = cupp->numGopReferenceSlots;
+            pPerFrameDecodeParameters->decodeFrameInfo.pReferenceSlots = referenceSlots;
+            pPerFrameDecodeParameters->decodeFrameInfo.referenceSlotCount = pPerFrameDecodeParameters->numGopReferenceSlots;
         } else {
-            cupp->decodeFrameInfo.pReferenceSlots = NULL;
-            cupp->decodeFrameInfo.referenceSlotCount = 0;
+            pPerFrameDecodeParameters->decodeFrameInfo.pReferenceSlots = NULL;
+            pPerFrameDecodeParameters->decodeFrameInfo.referenceSlotCount = 0;
         }
 
         if (m_dumpParserData) {
@@ -1781,9 +1847,7 @@ bool VulkanVideoParser::DecodePicture(
 
     }
 
-    bRet = (m_pDecoderHandler->DecodePictureWithParameters(
-                cupp, pDecodePictureInfo)
-        >= 0);
+    bRet = (m_pDecoderHandler->DecodePictureWithParameters(pPerFrameDecodeParameters, pDecodePictureInfo) >= 0);
 
     if (m_dumpParserData) {
         std::cout << "\t <== VulkanVideoParser::DecodePicture " << PicIdx << std::endl;

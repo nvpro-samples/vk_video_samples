@@ -337,7 +337,7 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
     #
     # Check if the parameter passed in is a pointer to an array
     def paramIsArray(self, param):
-        return param.attrib.get('len') is not None
+        return param.attrib.get('len') != None
 
     #
     # Generate the object tracker undestroyed object validation function
@@ -497,7 +497,7 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
     def paramIsPointer(self, param):
         ispointer = False
         for elem in param:
-            if ((elem.tag is not 'type') and (elem.tail is not None)) and '*' in elem.tail:
+            if ((elem.tag != 'type') and (elem.tail != None)) and '*' in elem.tail:
                 ispointer = True
         return ispointer
     #
@@ -505,13 +505,13 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
     def getTypeCategory(self, typename):
         types = self.registry.tree.findall("types/type")
         for elem in types:
-            if (elem.find("name") is not None and elem.find('name').text == typename) or elem.attrib.get('name') == typename:
+            if (elem.find("name") != None and elem.find('name').text == typename) or elem.attrib.get('name') == typename:
                 return elem.attrib.get('category')
     #
     # Check if a parent object is dispatchable or not
     def isHandleTypeObject(self, handletype):
         handle = self.registry.tree.find("types/type/[name='" + handletype + "'][@category='handle']")
-        if handle is not None:
+        if handle != None:
             return True
         else:
             return False
@@ -519,7 +519,7 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
     # Check if a parent object is dispatchable or not
     def isHandleTypeNonDispatchable(self, handletype):
         handle = self.registry.tree.find("types/type/[name='" + handletype + "'][@category='handle']")
-        if handle is not None and handle.find('type').text == 'VK_DEFINE_NON_DISPATCHABLE_HANDLE':
+        if handle != None and handle.find('type').text == 'VK_DEFINE_NON_DISPATCHABLE_HANDLE':
             return True
         else:
             return False
@@ -655,7 +655,7 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
     # tag WITH an extension struct containing handles.
     def GenerateCommandWrapExtensionList(self):
         for struct in self.structMembers:
-            if (len(struct.members) > 1) and struct.members[1].extstructs is not None:
+            if (len(struct.members) > 1) and struct.members[1].extstructs != None:
                 found = False;
                 for item in struct.members[1].extstructs.split(','):
                     if item != '' and self.struct_contains_object(item) == True:
@@ -669,7 +669,7 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
     def StructWithExtensions(self, struct_type):
         if struct_type in self.struct_member_dict:
             param_info = self.struct_member_dict[struct_type]
-            if (len(param_info) > 1) and param_info[1].extstructs is not None:
+            if (len(param_info) > 1) and param_info[1].extstructs != None:
                 for item in param_info[1].extstructs.split(','):
                     if item in self.extension_structs:
                         return True
@@ -690,7 +690,7 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
         if self.isHandleTypeObject(handle_type.text):
             # Check for special case where multiple handles are returned
             object_array = False
-            if cmd_info[-1].len is not None:
+            if cmd_info[-1].len != None:
                 object_array = True;
             handle_name = params[-1].find('name')
             create_obj_code += '%sif (VK_SUCCESS == result) {\n' % (indent)
@@ -715,7 +715,7 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
         object_array = False
         if True in [destroy_txt in proto.text for destroy_txt in ['Destroy', 'Free']]:
             # Check for special case where multiple handles are returned
-            if cmd_info[-1].len is not None:
+            if cmd_info[-1].len != None:
                 object_array = True;
                 param = -1
             else:
@@ -750,7 +750,7 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
         if parent_vuid == 'VALIDATION_ERROR_UNDEFINED':
             commonparent_vuid_string = 'VUID-%s-commonparent' % parent_name
             parent_vuid = self.GetVuid(commonparent_vuid_string)
-        if obj_count is not None:
+        if obj_count != None:
             pre_call_code += '%s    for (uint32_t %s = 0; %s < %s; ++%s) {\n' % (indent, index, index, obj_count, index)
             indent = self.incIndent(indent)
             pre_call_code += '%s    skip |= ValidateObject(%s, %s%s[%s], %s, %s, %s, %s);\n' % (indent, disp_name, prefix, obj_name, index, self.GetVulkanObjType(obj_type), null_allowed, param_vuid, parent_vuid)
@@ -777,7 +777,7 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
                 continue
             if self.isHandleTypeObject(member.type) == True:
                 count_name = member.len
-                if (count_name is not None):
+                if (count_name != None):
                     count_name = '%s%s' % (prefix, member.len)
                 null_allowed = member.isoptional
                 (tmp_decl, tmp_pre, tmp_post) = self.outputObjects(member.type, member.name, count_name, prefix, index, indent, destroy_func, destroy_array, disp_name, parent_name, str(null_allowed).lower(), first_level_param)
@@ -790,7 +790,7 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
                 if self.struct_contains_object(member.type) == True:
                     struct_info = self.struct_member_dict[member.type]
                     # Struct Array
-                    if member.len is not None:
+                    if member.len != None:
                         # Update struct prefix
                         new_prefix = '%s%s' % (prefix, member.name)
                         pre_code += '%s    if (%s%s) {\n' % (indent, prefix, member.name)
@@ -828,7 +828,7 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
         indent = '    '
         proto = cmd.find('proto/name')
         params = cmd.findall('param')
-        if proto.text is not None:
+        if proto.text != None:
             cmd_member_dict = dict(self.cmdMembers)
             cmd_info = cmd_member_dict[proto.text]
             disp_name = cmd_info[0].name
@@ -890,7 +890,7 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
             # Mark param as local if it is an array of objects
             islocal = False;
             if self.isHandleTypeObject(type) == True:
-                if (len is not None) and (isconst == True):
+                if (len != None) and (isconst == True):
                     islocal = True
             # Or if it's a struct that contains an object
             elif type in struct_member_dict:

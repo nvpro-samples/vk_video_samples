@@ -962,20 +962,20 @@ class MockICDOutputGenerator(OutputGenerator):
 
     # Check if the parameter passed in is a pointer to an array
     def paramIsArray(self, param):
-        return param.attrib.get('len') is not None
+        return param.attrib.get('len') != None
 
     # Check if the parameter passed in is a pointer
     def paramIsPointer(self, param):
         ispointer = False
         for elem in param:
-            if ((elem.tag is not 'type') and (elem.tail is not None)) and '*' in elem.tail:
+            if ((elem.tag != 'type') and (elem.tail != None)) and '*' in elem.tail:
                 ispointer = True
         return ispointer
 
     # Check if an object is a non-dispatchable handle
     def isHandleTypeNonDispatchable(self, handletype):
         handle = self.registry.tree.find("types/type/[name='" + handletype + "'][@category='handle']")
-        if handle is not None and handle.find('type').text == 'VK_DEFINE_NON_DISPATCHABLE_HANDLE':
+        if handle != None and handle.find('type').text == 'VK_DEFINE_NON_DISPATCHABLE_HANDLE':
             return True
         else:
             return False
@@ -983,7 +983,7 @@ class MockICDOutputGenerator(OutputGenerator):
     # Check if an object is a dispatchable handle
     def isHandleTypeDispatchable(self, handletype):
         handle = self.registry.tree.find("types/type/[name='" + handletype + "'][@category='handle']")
-        if handle is not None and handle.find('type').text == 'VK_DEFINE_HANDLE':
+        if handle != None and handle.find('type').text == 'VK_DEFINE_HANDLE':
             return True
         else:
             return False

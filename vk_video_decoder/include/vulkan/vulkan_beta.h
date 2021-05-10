@@ -695,27 +695,6 @@ typedef struct VkVideoDecodeH265DpbSlotInfoEXT {
     const StdVideoDecodeH265ReferenceInfo*    pStdReferenceInfo;
 } VkVideoDecodeH265DpbSlotInfoEXT;
 
-
-
-#define VK_NV_video_queue 1
-#define VK_NV_VIDEO_QUEUE_SPEC_VERSION    1
-#define VK_NV_VIDEO_QUEUE_EXTENSION_NAME  "VK_NV_video_queue"
-typedef struct VkVideoEncodeH264DynamicSliceInfoNV {
-    VkStructureType    sType;
-    const void*        pNext;
-    uint32_t           maxSliceSizeBytes;
-} VkVideoEncodeH264DynamicSliceInfoNV;
-
-typedef VkResult (VKAPI_PTR *PFN_vkGetPhysicalDeviceVideoCodecProfilesNV)(VkPhysicalDevice physicalDevice, const VkVideoProfileKHR* pVideoProfileRequest, uint32_t* pVideoProfileCount, VkVideoProfileKHR* pVideoProfiles);
-
-#ifndef VK_NO_PROTOTYPES
-VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceVideoCodecProfilesNV(
-    VkPhysicalDevice                            physicalDevice,
-    const VkVideoProfileKHR*                    pVideoProfileRequest,
-    uint32_t*                                   pVideoProfileCount,
-    VkVideoProfileKHR*                          pVideoProfiles);
-#endif
-
 #ifdef __cplusplus
 }
 #endif

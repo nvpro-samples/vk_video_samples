@@ -186,8 +186,6 @@ void ShellWin32::run() {
     while (true) {
         bool quit = false;
 
-        assert(settings_.animate);
-
         // process all messages
         MSG msg;
         while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {

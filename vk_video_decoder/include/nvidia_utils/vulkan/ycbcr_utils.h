@@ -542,9 +542,9 @@ public:
     int32_t GetRgbToYcbcrMatrix(float *transformMatrix, uint32_t matrixSize) const
     {
         const float RGB_TO_Ycbcr[] = {
-             (const float)m_Kr,           (const float)m_Kg,           (const float)m_Kb,
-             (const float)(-m_Kr*m_KCb),  (const float)(-m_Kg*m_KCb),  (const float)m_CbMax,
-             (const float)m_CrMax,        (const float)(-m_Kg*m_KCr), (const float)(-m_Kb*m_KCr),
+             (float)m_Kr,           (float)m_Kg,           (float)m_Kb,
+             (float)(-m_Kr*m_KCb),  (float)(-m_Kg*m_KCb),  (float)m_CbMax,
+             (float)m_CrMax,        (float)(-m_Kg*m_KCr),  (float)(-m_Kb*m_KCr),
         };
 
         return copyMatrix(transformMatrix, RGB_TO_Ycbcr, matrixSize);
@@ -553,9 +553,9 @@ public:
     int32_t GetYcbcrToRgbMatrix(float *transformMatrix, uint32_t matrixSize) const
     {
         const float Ycbcr_TO_RGB[] = {
-             1.0f,           0.0f,                     (const float)(1.0/m_KCr),
-             1.0f,          (const float)-m_GCbK,      (const float)-m_GCrK,
-             1.0f,          (const float)(1.0/m_KCb),  0.0f,
+             1.0f,           0.0f,               (float)(1.0/m_KCr),
+             1.0f,          (float)-m_GCbK,      (float)-m_GCrK,
+             1.0f,          (float)(1.0/m_KCb),  0.0f,
         };
 
         return copyMatrix(transformMatrix, Ycbcr_TO_RGB, matrixSize);

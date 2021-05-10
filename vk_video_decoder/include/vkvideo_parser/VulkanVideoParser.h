@@ -20,9 +20,16 @@
 #include "VkParserVideoRefCountBase.h"
 #include "VulkanVideoParserParams.h"
 
+struct VkPictureParameters;
+
 class IVulkanVideoDecoderHandler : public VkParserVideoRefCountBase {
 public:
     virtual int32_t StartVideoSequence(VkParserDetectedVideoFormat* pVideoFormat) = 0;
+
+    virtual bool UpdatePictureParameters(VkPictureParameters* pPictureParameters,
+                                         VkSharedBaseObj<VkParserVideoRefCountBase>& pictureParametersObject,
+                                         uint64_t updateSequenceCount) = 0;
+
     virtual int32_t DecodePictureWithParameters(VkParserPerFrameDecodeParameters* pPicParams, VkParserDecodePictureInfo* pDecodePictureInfo) = 0;
 
     virtual ~IVulkanVideoDecoderHandler() { }

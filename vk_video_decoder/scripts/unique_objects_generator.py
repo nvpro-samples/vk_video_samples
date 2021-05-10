@@ -211,7 +211,7 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
     #
     # Check if the parameter passed in is a pointer to an array
     def paramIsArray(self, param):
-        return param.attrib.get('len') is not None
+        return param.attrib.get('len') != None
     #
     def beginFile(self, genOpts):
         OutputGenerator.beginFile(self, genOpts)
@@ -300,7 +300,7 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
     def paramIsPointer(self, param):
         ispointer = False
         for elem in param:
-            if ((elem.tag is not 'type') and (elem.tail is not None)) and '*' in elem.tail:
+            if ((elem.tag != 'type') and (elem.tail != None)) and '*' in elem.tail:
                 ispointer = True
         return ispointer
     #
@@ -308,13 +308,13 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
     def getTypeCategory(self, typename):
         types = self.registry.tree.findall("types/type")
         for elem in types:
-            if (elem.find("name") is not None and elem.find('name').text == typename) or elem.attrib.get('name') == typename:
+            if (elem.find("name") != None and elem.find('name').text == typename) or elem.attrib.get('name') == typename:
                 return elem.attrib.get('category')
     #
     # Check if a parent object is dispatchable or not
     def isHandleTypeNonDispatchable(self, handletype):
         handle = self.registry.tree.find("types/type/[name='" + handletype + "'][@category='handle']")
-        if handle is not None and handle.find('type').text == 'VK_DEFINE_NON_DISPATCHABLE_HANDLE':
+        if handle != None and handle.find('type').text == 'VK_DEFINE_NON_DISPATCHABLE_HANDLE':
             return True
         else:
             return False
@@ -452,7 +452,7 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
     # TODO: make this recursive -- structs buried three or more levels deep are not searched for extensions
     def GenerateCommandWrapExtensionList(self):
         for struct in self.structMembers:
-            if (len(struct.members) > 1) and struct.members[1].extstructs is not None:
+            if (len(struct.members) > 1) and struct.members[1].extstructs != None:
                 found = False;
                 for item in struct.members[1].extstructs:
                     if item != '' and self.struct_contains_ndo(item) == True:
@@ -466,7 +466,7 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
     def StructWithExtensions(self, struct_type):
         if struct_type in self.struct_member_dict:
             param_info = self.struct_member_dict[struct_type]
-            if (len(param_info) > 1) and param_info[1].extstructs is not None:
+            if (len(param_info) > 1) and param_info[1].extstructs != None:
                 for item in param_info[1].extstructs:
                     if item in self.extension_structs:
                         return True
@@ -486,7 +486,7 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
         pnext_proc += '        switch (header->sType) {\n'
         for item in self.extension_structs:
             struct_info = self.struct_member_dict[item]
-            if struct_info[0].feature_protect is not None:
+            if struct_info[0].feature_protect != None:
                 pnext_proc += '#ifdef %s \n' % struct_info[0].feature_protect
             pnext_proc += '            case %s: {\n' % self.structTypes[item].value
             pnext_proc += '                    safe_%s *safe_struct = new safe_%s;\n' % (item, item)
@@ -497,7 +497,7 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
             pnext_proc += tmp_pre
             pnext_proc += '                    cur_ext_struct = reinterpret_cast<void *>(safe_struct);\n'
             pnext_proc += '                } break;\n'
-            if struct_info[0].feature_protect is not None:
+            if struct_info[0].feature_protect != None:
                 pnext_proc += '#endif // %s \n' % struct_info[0].feature_protect
             pnext_proc += '\n'
         pnext_proc += '            default:\n'
@@ -524,12 +524,12 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
         pnext_proc += '        switch (header->sType) {\n';
         for item in self.extension_structs:
             struct_info = self.struct_member_dict[item]
-            if struct_info[0].feature_protect is not None:
+            if struct_info[0].feature_protect != None:
                 pnext_proc += '#ifdef %s \n' % struct_info[0].feature_protect
             pnext_proc += '            case %s:\n' % self.structTypes[item].value
             pnext_proc += '                delete reinterpret_cast<safe_%s *>(header);\n' % item
             pnext_proc += '                break;\n'
-            if struct_info[0].feature_protect is not None:
+            if struct_info[0].feature_protect != None:
                 pnext_proc += '#endif // %s \n' % struct_info[0].feature_protect
             pnext_proc += '\n'
         pnext_proc += '            default:\n'
@@ -547,7 +547,7 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
         if self.isHandleTypeNonDispatchable(handle_type.text):
             # Check for special case where multiple handles are returned
             ndo_array = False
-            if cmd_info[-1].len is not None:
+            if cmd_info[-1].len != None:
                 ndo_array = True;
             handle_name = params[-1].find('name')
             create_ndo_code += '%sif (VK_SUCCESS == result) {\n' % (indent)
@@ -572,7 +572,7 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
         ndo_array = False
         if True in [destroy_txt in proto.text for destroy_txt in ['Destroy', 'Free']]:
             # Check for special case where multiple handles are returned
-            if cmd_info[-1].len is not None:
+            if cmd_info[-1].len != None:
                 ndo_array = True;
                 param = -1
             else:
@@ -605,7 +605,7 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
     # Clean up local declarations
     def cleanUpLocalDeclarations(self, indent, prefix, name, len, index, process_pnext):
         cleanup = '%sif (local_%s%s) {\n' % (indent, prefix, name)
-        if len is not None:
+        if len != None:
             if process_pnext:
                 cleanup += '%s    for (uint32_t %s = 0; %s < %s%s; ++%s) {\n' % (indent, index, index, prefix, len, index)
                 cleanup += '%s        FreeUnwrappedExtensionStructs(const_cast<void *>(local_%s%s[%s].pNext));\n' % (indent, prefix, name, index)
@@ -623,7 +623,7 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
         decl_code = ''
         pre_call_code = ''
         post_call_code = ''
-        if ndo_count is not None:
+        if ndo_count != None:
             if top_level == True:
                 decl_code += '%s%s *local_%s%s = NULL;\n' % (indent, ndo_type, prefix, ndo_name)
             pre_call_code += '%s    if (%s%s) {\n' % (indent, prefix, ndo_name)
@@ -676,7 +676,7 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
             # Handle NDOs
             if self.isHandleTypeNonDispatchable(member.type) == True:
                 count_name = member.len
-                if (count_name is not None):
+                if (count_name != None):
                     if first_level_param == False:
                         count_name = '%s%s' % (prefix, member.len)
 
@@ -691,7 +691,7 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
                 if self.struct_contains_ndo(member.type) == True or process_pnext:
                     struct_info = self.struct_member_dict[member.type]
                     # Struct Array
-                    if member.len is not None:
+                    if member.len != None:
                         # Update struct prefix
                         if first_level_param == True:
                             new_prefix = 'local_%s' % member.name
@@ -753,7 +753,7 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
         proto = cmd.find('proto/name')
         params = cmd.findall('param')
 
-        if proto.text is not None:
+        if proto.text != None:
             cmd_member_dict = dict(self.cmdMembers)
             cmd_info = cmd_member_dict[proto.text]
             # Handle ndo create/allocate operations
@@ -814,7 +814,7 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
             # Mark param as local if it is an array of NDOs
             islocal = False;
             if self.isHandleTypeNonDispatchable(type) == True:
-                if (len is not None) and (isconst == True):
+                if (len != None) and (isconst == True):
                     islocal = True
             # Or if it's a struct that contains an NDO
             elif type in struct_member_dict:

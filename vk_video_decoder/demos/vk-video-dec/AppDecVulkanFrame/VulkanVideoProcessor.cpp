@@ -144,7 +144,7 @@ void VulkanVideoProcessor::Deinit()
     }
 }
 
-void VulkanVideoProcessor::DumpVideFormat(const VkParserDetectedVideoFormat* videoFormat, bool dumpData)
+void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* videoFormat, bool dumpData)
 {
     if (dumpData) {
         std::cout << "Display Area : " << std::endl
@@ -175,6 +175,7 @@ void VulkanVideoProcessor::DumpVideFormat(const VkParserDetectedVideoFormat* vid
         "422",
         "444",
     };
+    assert(videoFormat->chromaSubsampling < sizeof(nvVideoChromaFormat)/sizeof(nvVideoChromaFormat[0]));
     const char* pVideoChromaFormat = nvVideoChromaFormat[videoFormat->chromaSubsampling];
     if (dumpData) {
         std::cout << "VideoChromaFormat : " << pVideoChromaFormat << std::endl;
@@ -192,6 +193,7 @@ void VulkanVideoProcessor::DumpVideFormat(const VkParserDetectedVideoFormat* vid
         "Reserved6",
         "Reserved7",
     };
+    assert(videoFormat->video_signal_description.video_format < sizeof(VideoFormat)/sizeof(VideoFormat[0]));
     const char* pVideoFormat = VideoFormat[videoFormat->video_signal_description.video_format];
     if (dumpData) {
         std::cout << "VideoFormat : " << pVideoFormat << std::endl;
@@ -211,6 +213,7 @@ void VulkanVideoProcessor::DumpVideFormat(const VkParserDetectedVideoFormat* vid
         "GenericFilm",
         "BT2020",
     };
+    assert(videoFormat->video_signal_description.color_primaries < sizeof(ColorPrimaries)/sizeof(ColorPrimaries[0]));
     const char* pColorPrimaries = ColorPrimaries[videoFormat->video_signal_description.color_primaries];
     if (dumpData) {
         std::cout << "ColorPrimaries : " << pColorPrimaries << std::endl;
@@ -236,6 +239,7 @@ void VulkanVideoProcessor::DumpVideFormat(const VkParserDetectedVideoFormat* vid
         "ST2084",
         "ST428_1",
     };
+    assert(videoFormat->video_signal_description.transfer_characteristics < sizeof(TransferCharacteristics)/sizeof(TransferCharacteristics[0]));
     const char* pTransferCharacteristics = TransferCharacteristics[videoFormat->video_signal_description.transfer_characteristics];
     if (dumpData) {
         std::cout << "TransferCharacteristics : " << pTransferCharacteristics << std::endl;
@@ -254,6 +258,7 @@ void VulkanVideoProcessor::DumpVideFormat(const VkParserDetectedVideoFormat* vid
         "BT2020_NCL",
         "BT2020_CL",
     };
+    assert(videoFormat->video_signal_description.matrix_coefficients < sizeof(MatrixCoefficients)/sizeof(MatrixCoefficients[0]));
     const char* pMatrixCoefficients = MatrixCoefficients[videoFormat->video_signal_description.matrix_coefficients];
     if (dumpData) {
         std::cout << "MatrixCoefficients : " << pMatrixCoefficients << std::endl;
@@ -290,7 +295,7 @@ int32_t VulkanVideoProcessor::GetNextFrames(DecodedFrame* pFrame, bool* endOfStr
         m_videoFrameNum++;
 
         if (m_videoFrameNum == 1) {
-            DumpVideFormat(m_pDecoder->GetVideoFormatInfo(), true);
+            DumpVideoFormat(m_pDecoder->GetVideoFormatInfo(), true);
         }
     }
 

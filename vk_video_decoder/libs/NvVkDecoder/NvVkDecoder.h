@@ -32,6 +32,9 @@
 #include "VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.h"
 #include "VulkanVideoParser.h"
 #include "vulkan_interfaces.h"
+#include "VulkanVideoParserIf.h"
+#include "VkParserVideoPictureParameters.h"
+#include "StdVideoPictureParametersSet.h"
 
 struct Rect {
     int32_t l;
@@ -75,7 +78,7 @@ public:
     NvVkDecoder(const VulkanDecodeContext* pVulkanDecodeContext, VulkanVideoFrameBuffer* pVideoFrameBuffer)
         : m_pVulkanDecodeContext(*pVulkanDecodeContext)
         , m_refCount(1)
-        , m_vkVideoDecoder()
+        , m_vkVideoDecodeSession()
         , m_codecType(VK_VIDEO_CODEC_OPERATION_INVALID_BIT_KHR)
         , m_rtFormat()
         , m_numDecodeSurfaces()
@@ -96,6 +99,7 @@ public:
         , m_endDecodeDone(false)
         , m_videoFormat {}
         , m_cropRect {}
+        , m_lastSpsIdInQueue(-1)
         , m_dumpDecodeData(false)
     {
 
@@ -124,12 +128,25 @@ public:
     */
     virtual int32_t StartVideoSequence(VkParserDetectedVideoFormat* pVideoFormat);
 
+    virtual bool UpdatePictureParameters(VkPictureParameters* pPictureParameters,
+                                         VkSharedBaseObj<VkParserVideoRefCountBase>& pictureParametersObject,
+                                         uint64_t updateSequenceCount);
+
     /**
      *   @brief  This callback function gets called when a picture is ready to be decoded.
      */
     virtual int32_t DecodePictureWithParameters(VkParserPerFrameDecodeParameters* pPicParams, VkParserDecodePictureInfo* pDecodePictureInfo);
 
 private:
+
+    VkParserVideoPictureParameters*  AddPictureParameters(VkSharedBaseObj<StdVideoPictureParametersSet>& spsStdPictureParametersSet,
+                                                          VkSharedBaseObj<StdVideoPictureParametersSet>& ppsStdPictureParametersSet);
+
+    bool CheckStdObjectBeforeUpdate(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet);
+    VkParserVideoPictureParameters* CheckStdObjectAfterUpdate(VkSharedBaseObj<StdVideoPictureParametersSet>& stdPictureParametersSet, VkParserVideoPictureParameters* pNewPictureParametersObject);
+    uint32_t AddPictureParametersToQueue(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet, bool& hasSpsPpsPair);
+    uint32_t FlushPictureParametersQueue();
+
     NvVkDecodeFrameData* GetCurrentFrameData(uint32_t currentSlotId)
     {
         assert(currentSlotId < m_maxDecodeFramesCount);
@@ -139,7 +156,7 @@ private:
 private:
     const VulkanDecodeContext m_pVulkanDecodeContext;
     std::atomic<int32_t> m_refCount;
-    VkVideoSessionKHR m_vkVideoDecoder;
+    VkVideoSessionKHR    m_vkVideoDecodeSession;
     VkVideoCodecOperationFlagBitsKHR m_codecType;
     uint32_t m_rtFormat;
     uint32_t m_numDecodeSurfaces;
@@ -163,5 +180,10 @@ private:
     bool m_endDecodeDone;
     VkParserDetectedVideoFormat m_videoFormat;
     Rect m_cropRect;
+    int32_t                                                    m_lastSpsIdInQueue;
+    std::queue<VkSharedBaseObj<StdVideoPictureParametersSet>>  m_pictureParametersQueue;
+    VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastSpsPictureParametersQueue;
+    VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastPpsPictureParametersQueue;
+    VkSharedBaseObj<VkParserVideoPictureParameters>            currentPictureParameters;
     uint32_t m_dumpDecodeData : 1;
 };

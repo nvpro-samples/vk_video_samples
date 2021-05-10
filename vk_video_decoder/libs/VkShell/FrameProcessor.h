@@ -41,17 +41,12 @@ class FrameProcessor {
         int back_buffer_count;
         int ticks_per_second;
         bool vsync;
-        bool animate;
 
         bool validate;
         bool validate_verbose;
 
         bool no_tick;
-        bool no_render;
         bool no_present;
-
-        // Whether or not to use VkFlushMappedMemoryRanges
-        bool flush_buffers;
 
         int max_frame_count;
 
@@ -104,18 +99,15 @@ class FrameProcessor {
         settings_.back_buffer_count = 3;
         settings_.ticks_per_second = 30;
         settings_.vsync = true;
-        settings_.animate = true;
 
         settings_.validate = false;
         settings_.validate_verbose = false;
 
         settings_.no_tick = false;
-        settings_.no_render = false;
         settings_.no_present = false;
 
-        settings_.flush_buffers = false;
-
         settings_.max_frame_count = -1;
+        settings_.videoFileName = "";
 
         parse_args(args);
 
@@ -149,12 +141,8 @@ class FrameProcessor {
                 settings_.validate_verbose = true;
             } else if (*it == "--nt") {
                 settings_.no_tick = true;
-            } else if (*it == "--nr") {
-                settings_.no_render = true;
             } else if (*it == "--np") {
                 settings_.no_present = true;
-            } else if (*it == "--flush") {
-                settings_.flush_buffers = true;
             } else if (*it == "-i") {
                 it++;
                 settings_.videoFileName = *it;

@@ -18,18 +18,22 @@
 #define __NV_VULKANVIDEOPARSERPARAMS_H__
 
 #include "vulkan_interfaces.h"
+#include <bitset>
+#include <assert.h>
+#include <atomic>
 
 typedef int64_t VkVideotimestamp;
 
 struct VkParserSourceDataPacket;
-
 struct VkParserDetectedVideoFormat;
+class StdVideoPictureParametersSet;
 
 struct VkParserPerFrameDecodeParameters {
     enum {
         MAX_DPB_REF_SLOTS = (16 + 1), // max 16 reference pictures plus 1 for the current picture.
     };
     int currPicIdx; /** Output index of the current picture                       */
+    StdVideoPictureParametersSet* pCurrentPictureParameters;
     // Bitstream data
     unsigned int bitstreamDataLen; /** Number of bytes in bitstream data buffer                  */
     const unsigned char* pBitstreamData; /** ptr to bitstream data for this picture (slice-layer)      */

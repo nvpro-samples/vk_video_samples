@@ -46,7 +46,6 @@ Shell::Shell(FrameProcessor &frameProcessor)
         device_extensions_.push_back(VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME);
         device_extensions_.push_back(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
         device_extensions_.push_back(VK_KHR_VIDEO_QUEUE_EXTENSION_NAME);
-        device_extensions_.push_back(VK_NV_VIDEO_QUEUE_EXTENSION_NAME);
         device_extensions_.push_back(VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME);
     }
 
@@ -258,7 +257,7 @@ void Shell::init_instance() {
     app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     app_info.pApplicationName = settings_.name.c_str();
     app_info.applicationVersion = 0;
-    app_info.apiVersion = VK_API_VERSION_1_0;
+    app_info.apiVersion = VK_HEADER_VERSION_COMPLETE;
 
     VkInstanceCreateInfo instance_info = {};
     instance_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -649,7 +648,7 @@ void Shell::present_back_buffer(bool trainFrame) {
     assert(back.isInPrepareState());
 
     // float timeTick = frameProcessor_time_ / frameProcessor_tick_;
-    if (!settings_.no_render) frameProcessor_.on_frame(trainFrame);
+    frameProcessor_.on_frame(trainFrame);
 
     if (settings_.no_present) {
         fake_present();
@@ -660,7 +659,7 @@ void Shell::present_back_buffer(bool trainFrame) {
     VkPresentInfoKHR present_info = {};
     present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = (settings_.no_render) ? &back.GetAcquireSemaphore() : &back.GetRenderSemaphore();
+    present_info.pWaitSemaphores = &back.GetRenderSemaphore();
     present_info.swapchainCount = 1;
     present_info.pSwapchains = &ctx_.swapchain;
     present_info.pImageIndices = &imageIndex;
@@ -682,18 +681,13 @@ void Shell::fake_present() {
     assert(settings_.no_present);
 
     // wait render semaphore and signal acquire semaphore
-    if (!settings_.no_render) {
-        VkPipelineStageFlags stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-        VkSubmitInfo submit_info = {};
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit_info.waitSemaphoreCount = 1;
-        submit_info.pWaitSemaphores = &back.GetRenderSemaphore();
-        submit_info.pWaitDstStageMask = &stage;
-        submit_info.signalSemaphoreCount = 1;
-        submit_info.pSignalSemaphores = &back.GetAcquireSemaphore();
-        vk::assert_success(vk::QueueSubmit(ctx_.frameProcessor_queue, 1, &submit_info, VK_NULL_HANDLE));
-    }
-
-    // push the buffer back just once for Shell::cleanup_vk
-    // if (buf.acquireBuffer_->semaphore_ != ctx_.back_buffers.back().acquire_semaphore) ctx_.back_buffers.push(buf);
+    VkPipelineStageFlags stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    VkSubmitInfo submit_info = {};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.waitSemaphoreCount = 1;
+    submit_info.pWaitSemaphores = &back.GetRenderSemaphore();
+    submit_info.pWaitDstStageMask = &stage;
+    submit_info.signalSemaphoreCount = 1;
+    submit_info.pSignalSemaphores = &back.GetAcquireSemaphore();
+    vk::assert_success(vk::QueueSubmit(ctx_.frameProcessor_queue, 1, &submit_info, VK_NULL_HANDLE));
 }

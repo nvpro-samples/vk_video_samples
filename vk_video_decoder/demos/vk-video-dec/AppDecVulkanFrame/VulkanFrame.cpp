@@ -49,7 +49,7 @@ extern int clock_gettime(int dummy, struct timespec* ct);
 simplelogger::Logger* logger = simplelogger::LoggerFactory::CreateConsoleLogger();
 
 VulkanFrame::VulkanFrame(const std::vector<std::string>& args)
-    : FrameProcessor("VulkanFrame", args)
+    : FrameProcessor("VulkanVideoDecodeDemo", args)
     , frameImageFormat(VK_FORMAT_G8_B8R8_2PLANE_420_UNORM)
     , samplerYcbcrModelConversion(VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709)
     , samplerYcbcrRange(VK_SAMPLER_YCBCR_RANGE_ITU_NARROW)
@@ -95,6 +95,19 @@ int VulkanFrame::attach_shell(Shell& sh)
     queue_family_ = ctx.frameProcessor_queue_family;
 
     vk::GetPhysicalDeviceProperties(ctx.physical_dev, &physical_dev_props_);
+
+    const uint32_t apiMajorVersion = VK_API_VERSION_MAJOR(physical_dev_props_.apiVersion);
+    const uint32_t apiMinorVersion = VK_API_VERSION_MINOR(physical_dev_props_.apiVersion);
+    const uint32_t apiPatchVersion = VK_API_VERSION_PATCH(physical_dev_props_.apiVersion);
+
+    if (physical_dev_props_.apiVersion < VK_MAKE_API_VERSION(0, 1, 2, 178)) {
+        std::cerr << std::endl << "Incompatible Vulkan API version: " << apiMajorVersion << "." << apiMinorVersion << "." << apiPatchVersion << std::endl;
+        std::cerr << "Info: Driver version is: " << physical_dev_props_.driverVersion << std::endl;;
+        std::cerr << "Please upgrade your driver. Minimal supported version is: 1.2.179 aka " << std::hex << VK_MAKE_API_VERSION(0, 1, 2, 178) << std::endl;
+        assert(!"Incompatible API version - please upgrade your driver.");
+        return -1;
+    }
+
     VkPhysicalDeviceMemoryProperties mem_props;
     vk::GetPhysicalDeviceMemoryProperties(ctx.physical_dev, &mem_props);
 
@@ -603,7 +616,7 @@ void VulkanFrame::on_frame(bool trainFrame)
         assert(result == VK_SUCCESS);
     }
 
-#if 0 // NV_RMAPI_TEGRA
+#if 0 // for testing NV_RMAPI_TEGRA
     // TODO: Add Tegra fence_fd semaphore
     int fd = -1; // VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT
     const VkFenceGetFdInfoKHR getFdInfo =  { VK_STRUCTURE_TYPE_FENCE_GET_FD_INFO_KHR, NULL, data.lastDecodedFrame.frameConsumerDoneFence, VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT};
@@ -621,5 +634,19 @@ void VulkanFrame::on_frame(bool trainFrame)
 FrameProcessor* create_frameProcessor(int argc, char** argv)
 {
     std::vector<std::string> args(argv, argv + argc);
-    return new VulkanFrame(args);
+    FrameProcessor* pFrameProcessor =  new VulkanFrame(args);
+
+    if (pFrameProcessor) {
+        std::ifstream validVideoFileStream(pFrameProcessor->settings().videoFileName, std::ifstream::in);
+        if (!validVideoFileStream) {
+            std::cerr << "Invalid input video file: " << pFrameProcessor->settings().videoFileName << std::endl;
+            std::cerr << "Please provide a valid name for the input video file to be decoded with the \"-i\" command line option." << std::endl;
+            std::cerr << "   vk-video-dec-test -i <absolute file path location>" << std::endl;
+
+            delete pFrameProcessor;
+            return nullptr;
+        }
+    }
+
+    return pFrameProcessor;
 }

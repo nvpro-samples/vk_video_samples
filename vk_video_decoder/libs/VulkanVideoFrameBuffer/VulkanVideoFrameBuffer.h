@@ -57,6 +57,8 @@ struct DecodedFrameRelease {
     int32_t displayOrder;
 };
 
+class VkParserVideoPictureParameters;
+
 class VulkanVideoFrameBuffer : public IVulkanVideoFrameBufferParserCb {
 public:
     // Synchronization
@@ -78,7 +80,9 @@ public:
     };
 
     virtual int32_t InitImagePool(uint32_t numImages, const VkImageCreateInfo* pImageCreateInfo, const VkVideoProfileKHR* pDecodeProfile = NULL) = 0;
-    virtual int32_t QueuePictureForDecode(int8_t picId, VkParserDecodePictureInfo* pDecodePictureInfo, FrameSynchronizationInfo* pFrameSynchronizationInfo) = 0;
+    virtual int32_t QueuePictureForDecode(int8_t picId, VkParserDecodePictureInfo* pDecodePictureInfo,
+                                          VkParserVideoRefCountBase* pCurrentVkPictureParameters,
+                                          FrameSynchronizationInfo* pFrameSynchronizationInfo) = 0;
     virtual int32_t DequeueDecodedPicture(DecodedFrame* pDecodedFrame) = 0;
     virtual int32_t ReleaseDisplayedPicture(DecodedFrameRelease** pDecodedFramesRelease, uint32_t numFramesToRelease) = 0;
     virtual int32_t GetImageResourcesByIndex(uint32_t numResources, const int8_t* referenceSlotIndexes,
