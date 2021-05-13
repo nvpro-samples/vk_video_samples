@@ -103,7 +103,7 @@ int VulkanFrame::attach_shell(Shell& sh)
     if (physical_dev_props_.apiVersion < VK_MAKE_API_VERSION(0, 1, 2, 178)) {
         std::cerr << std::endl << "Incompatible Vulkan API version: " << apiMajorVersion << "." << apiMinorVersion << "." << apiPatchVersion << std::endl;
         std::cerr << "Info: Driver version is: " << physical_dev_props_.driverVersion << std::endl;;
-        std::cerr << "Please upgrade your driver. Minimal supported version is: 1.2.179 aka " << std::hex << VK_MAKE_API_VERSION(0, 1, 2, 178) << std::endl;
+        std::cerr << "Please upgrade your driver. The minimal supported version is: 1.2.178 aka " << std::hex << VK_MAKE_API_VERSION(0, 1, 2, 178) << std::endl;
         assert(!"Incompatible API version - please upgrade your driver.");
         return -1;
     }
