@@ -658,6 +658,16 @@ int32_t NvVkDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoForma
         vk::GetPhysicalDeviceVideoCapabilitiesKHR(m_pVulkanDecodeContext.physicalDev,
             videoProfile.GetProfile(),
             &videoDecodeCapabilities);
+
+	if (m_width < videoDecodeCapabilities.minExtent.width)
+            m_width = videoDecodeCapabilities.minExtent.width;
+	if (m_height < videoDecodeCapabilities.minExtent.height)
+            m_height = videoDecodeCapabilities.minExtent.height;
+
+        unsigned w_align = videoDecodeCapabilities.videoPictureExtentGranularity.width - 1;
+        m_width = ((m_width + w_align) & ~w_align);
+        unsigned h_align = videoDecodeCapabilities.videoPictureExtentGranularity.height - 1;
+        m_height = ((m_height + h_align) & ~h_align);
     }
 
     static const VkExtensionProperties h264StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_SPEC_VERSION };
