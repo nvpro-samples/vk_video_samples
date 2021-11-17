@@ -474,14 +474,14 @@ public:
         canBeExported(false)
     { }
 
-    VkResult AllocMemory(VulkanDeviceInfo* deviceInfo, VkMemoryRequirements* pMemoryRequirements, VkMemoryPropertyFlags requiredMemProps);
+    VkResult AllocMemory(VkDevice device, VkMemoryRequirements* pMemoryRequirements, VkMemoryPropertyFlags requiredMemProps);
 
     ~DeviceMemoryObject()
     {
-        DestroyImage();
+        DestroyDeviceMemory();
     }
 
-    void DestroyImage()
+    void DestroyDeviceMemory()
     {
         canBeExported = false;
 

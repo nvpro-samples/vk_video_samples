@@ -1,12 +1,12 @@
-# The name of our project is "VULKAN". CMakeLists files in this project can
-# refer to the root source directory of the project as ${VULKAN_SOURCE_DIR} and
+# The name of our project is "VULKAN_VIDEO_TESTS". CMakeLists files in this project can
+# refer to the root source directory of the project as ${VULKAN_VIDEO_TESTS_SOURCE_DIR} and
 # to the root binary directory of the project as ${VULKAN_BINARY_DIR}.
 cmake_minimum_required(VERSION 2.8.11)
 
 # This must come before the project command.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.12" CACHE STRING "Minimum OS X deployment version")
 
-project (VULKAN)
+project (VULKAN_VIDEO_TESTS)
 # set (CMAKE_VERBOSE_MAKEFILE 1)
 
 # The API_NAME allows renaming builds to avoid conflicts with installed SDKs
@@ -47,6 +47,7 @@ endif()
 
 ############ WINDOWS LIBRARY includes ######################################
 if(WIN32)
+    add_definitions(-DNOMINMAX="1")
     if ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
         message(STATUS "Selected Windows build type: Debug")
         if(NOT DEFINED ENV{LIB_ARCH_DIR})
@@ -81,7 +82,7 @@ endif()
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libs/NvVideoParser")
     set(LIBNVPARSER_BINARY_ROOT "${CMAKE_BINARY_DIR}/libs/NvVideoParser" CACHE STRING "User defined path to the the parser library binaries for this project")
 else()
-   set(LIBNVPARSER_BINARY_ROOT "${VULKAN_SOURCE_DIR}/bin/libs/nv_vkvideo_parser/${LIB_ARCH_DIR}" CACHE STRING "User defined path to the the parser library binaries for this project")
+   set(LIBNVPARSER_BINARY_ROOT "${VULKAN_VIDEO_TESTS_SOURCE_DIR}/bin/libs/nv_vkvideo_parser/${LIB_ARCH_DIR}" CACHE STRING "User defined path to the the parser library binaries for this project")
 endif()
 message(STATUS "LIBNVPARSER_BINARY_ROOT is at ${LIBNVPARSER_BINARY_ROOT}" )
 
@@ -96,8 +97,8 @@ endif()
 if (EXISTS "${VULKAN_VIDEO_PARSER_INCLUDE}")
     MESSAGE(STATUS "VULKAN_VIDEO_PARSER_INCLUDE is set and valid ${VULKAN_VIDEO_PARSER_INCLUDE}")
 else()
-    MESSAGE(STATUS "VULKAN_VIDEO_PARSER_INCLUDE path is not set. Setting the default path location to ${VULKAN_SOURCE_DIR}/include/nv_vkvideo_parser")
-    set(VULKAN_VIDEO_PARSER_INCLUDE  "${VULKAN_SOURCE_DIR}/include/vkvideo_parser" CACHE PATH "Path to Vulkan Video Parser include directory" FORCE)
+    MESSAGE(STATUS "VULKAN_VIDEO_PARSER_INCLUDE path is not set. Setting the default path location to ${VULKAN_VIDEO_TESTS_SOURCE_DIR}/include/nv_vkvideo_parser")
+    set(VULKAN_VIDEO_PARSER_INCLUDE  "${VULKAN_VIDEO_TESTS_SOURCE_DIR}/include/vkvideo_parser" CACHE PATH "Path to Vulkan Video Parser include directory" FORCE)
 endif()
 ############ VULKAN_VIDEO_PARSER_INCLUDE ######################################
 
@@ -134,9 +135,9 @@ if (EXISTS "${VULKAN_FFMPEG_LIB_PATH}")
     MESSAGE(STATUS "VULKAN_FFMPEG_LIB_PATH is set and valid ${VULKAN_FFMPEG_LIB_PATH}")
 else()
     if(WIN32)
-        set(VULKAN_FFMPEG_LIB_PATH "${VULKAN_SOURCE_DIR}/bin/libs/ffmpeg/win64/lib" CACHE PATH "Path to FFMPEG libs directory" FORCE)
+        set(VULKAN_FFMPEG_LIB_PATH "${VULKAN_VIDEO_TESTS_SOURCE_DIR}/bin/libs/ffmpeg/win64/lib" CACHE PATH "Path to FFMPEG libs directory" FORCE)
         message(STATUS "FFMPEG lib location ${VULKAN_FFMPEG_LIB_PATH}")
-        set(FFMPEG_INCLUDE_DIR "${VULKAN_SOURCE_DIR}/bin/libs/ffmpeg/win64/include" CACHE PATH "Path to FFMPEG include directory" FORCE)
+        set(FFMPEG_INCLUDE_DIR "${VULKAN_VIDEO_TESTS_SOURCE_DIR}/bin/libs/ffmpeg/win64/include" CACHE PATH "Path to FFMPEG include directory" FORCE)
         message(STATUS "FFMPEG include location ${FFMPEG_INCLUDE_DIR}")
     else()
         message( STATUS "The location of the FFMPEG Lib: ${VULKAN_FFMPEG_LIB_PATH} expected the library to be installed to the regular system libs location" )
@@ -155,6 +156,7 @@ endif()
 
 if (EXISTS "${ENCODER_DRIVER_ROOT}")
     MESSAGE(STATUS "ENCODER_DRIVER_ROOT is set and valid ${ENCODER_DRIVER_ROOT}")
+    add_definitions(-D"VK_API_USE_DRIVER_REPO=1")
 else()
     message( STATUS "The location of the Vulkan Video driver source: ${ENCODER_DRIVER_ROOT} - encoder test app will not be built" )
 endif()

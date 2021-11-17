@@ -429,12 +429,12 @@ VkResult VulkanVideoBistreamBuffer::CopyVideoBistreamToBuffer(const unsigned cha
     return VK_SUCCESS;
 }
 
-VkResult DeviceMemoryObject::AllocMemory(VulkanDeviceInfo* deviceInfo, VkMemoryRequirements* pMemoryRequirements, VkMemoryPropertyFlags requiredMemProps)
+VkResult DeviceMemoryObject::AllocMemory(VkDevice device, VkMemoryRequirements* pMemoryRequirements, VkMemoryPropertyFlags requiredMemProps)
 {
     if (pMemoryRequirements->memoryTypeBits == 0) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
-    m_device = deviceInfo->getDevice();
+    m_device = device;
     // Find an available memory type that satisfies the requested properties.
     uint32_t memoryTypeIndex;
     uint32_t memoryTypeBits = pMemoryRequirements->memoryTypeBits;

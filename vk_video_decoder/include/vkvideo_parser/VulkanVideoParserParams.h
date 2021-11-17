@@ -79,7 +79,10 @@ struct VulkanVideoDisplayPictureInfo {
 };
 
 struct VkParserDetectedVideoFormat {
-    VkVideoCodecOperationFlagBitsKHR codec; // Compression format
+    VkVideoCodecOperationFlagBitsKHR    codec; // Compression format
+    VkVideoComponentBitDepthFlagsKHR    lumaBitDepth;
+    VkVideoComponentBitDepthFlagsKHR    chromaBitDepth;
+    VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling;
     /**
      * OUT: frame rate = numerator / denominator (for example: 30000/1001)
      */
@@ -107,7 +110,6 @@ struct VkParserDetectedVideoFormat {
         int32_t right; /** right position of display rect   */
         int32_t bottom; /** bottom position of display rect  */
     } display_area;
-    VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling; /**  Chroma format                   */
     uint32_t bitrate; /** video bitrate (bps, 0=unknown)   */
     /**
      * OUT: Display Aspect Ratio = x:y (4:3, 16:9, etc)

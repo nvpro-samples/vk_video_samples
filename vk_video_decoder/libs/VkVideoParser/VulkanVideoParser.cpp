@@ -35,11 +35,9 @@
 #undef min
 #undef max
 
-static const uint32_t topFieldPos = 0;
 static const uint32_t topFieldShift = 0;
 static const uint32_t topFieldMask = (1 << topFieldShift);
 static const uint32_t bottomFieldShift = 1;
-static const uint32_t bottomFieldPos = 1;
 static const uint32_t bottomFieldMask = (1 << bottomFieldShift);
 static const uint32_t fieldIsReferenceMask = (topFieldMask | bottomFieldMask);
 
@@ -1003,6 +1001,34 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
             assert(!"Invalid chroma sub-sampling format");
         }
 
+        switch (pnvsi->uBitDepthLumaMinus8) {
+        case 0:
+            detectedFormat.lumaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
+            break;
+        case 2:
+            detectedFormat.lumaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_10_BIT_KHR;
+            break;
+        case 4:
+            detectedFormat.lumaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_12_BIT_KHR;
+            break;
+        default:
+            assert(false);
+        }
+
+        switch (pnvsi->uBitDepthChromaMinus8) {
+        case 0:
+            detectedFormat.chromaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
+            break;
+        case 2:
+            detectedFormat.chromaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_10_BIT_KHR;
+            break;
+        case 4:
+            detectedFormat.chromaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_12_BIT_KHR;
+            break;
+        default:
+            assert(false);
+        }
+
         detectedFormat.bit_depth_luma_minus8 = pnvsi->uBitDepthLumaMinus8;
         detectedFormat.bit_depth_chroma_minus8 = pnvsi->uBitDepthChromaMinus8;
         detectedFormat.bitrate = pnvsi->lBitrate;
@@ -1071,8 +1097,7 @@ uint32_t VulkanVideoParser::FillDpbH264State(
     // in DPB
     uint32_t num_ref_frames = pd->CodecSpecific.h264.pStdSps->max_num_ref_frames;
     assert(num_ref_frames <= m_maxNumDpbSurfaces);
-    dpbH264Entry
-        refOnlyDpbIn[VulkanVideoParser::AVC_MAX_DPB_SLOTS]; // max number of Dpb
+    dpbH264Entry refOnlyDpbIn[VulkanVideoParser::AVC_MAX_DPB_SLOTS]; // max number of Dpb
         // surfaces
     memset(&refOnlyDpbIn, 0, m_maxNumDpbSurfaces * sizeof(refOnlyDpbIn[0]));
     uint32_t refDpbUsedAndValidMask = 0;
@@ -1663,6 +1688,9 @@ bool VulkanVideoParser::DecodePicture(
 
         pPerFrameDecodeParameters->decodeFrameInfo.pNext = &h264.pictureInfo;
 
+        pStdPictureInfo->pic_parameter_set_id = pin->pic_parameter_set_id; // PPS ID
+        pStdPictureInfo->seq_parameter_set_id = pin->seq_parameter_set_id; // SPS ID;
+
         pStdPictureInfo->frame_num = (uint16_t)pin->frame_num;
         pPictureInfo->slicesCount = pd->nNumSlices;
         pPictureInfo->pSlicesDataOffsets = pd->pSliceDataOffsets;
@@ -1766,6 +1794,10 @@ bool VulkanVideoParser::DecodePicture(
 
         pPictureInfo->slicesCount = pd->nNumSlices;
         pPictureInfo->pSlicesDataOffsets = pd->pSliceDataOffsets;
+
+        pStdPictureInfo->pps_pic_parameter_set_id   = pin->pic_parameter_set_id;       // PPS ID
+        pStdPictureInfo->sps_seq_parameter_set_id   = pin->seq_parameter_set_id;       // SPS ID
+        pStdPictureInfo->vps_video_parameter_set_id = pin->vps_video_parameter_set_id; // VPS ID
 
         // hevc->irapPicFlag = m_slh.nal_unit_type >= NUT_BLA_W_LP &&
         // m_slh.nal_unit_type <= NUT_CRA_NUT;

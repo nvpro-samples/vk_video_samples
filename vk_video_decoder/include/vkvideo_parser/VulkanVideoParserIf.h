@@ -127,6 +127,8 @@ typedef struct VkParserH264PictureData {
     // PPS
     const StdVideoH264PictureParameterSet*    pStdPps;
     VkParserVideoRefCountBase*              pPpsClientObject;
+    uint8_t  pic_parameter_set_id;          // PPS ID
+    uint8_t  seq_parameter_set_id;          // SPS ID
     int32_t num_ref_idx_l0_active_minus1;
     int32_t num_ref_idx_l1_active_minus1;
     int32_t weighted_pred_flag;
@@ -223,6 +225,10 @@ typedef struct VkParserHevcPictureData {
 
     const StdVideoH265PictureParameterSet*  pStdPps;
     VkParserVideoRefCountBase*              pPpsClientObject;
+
+    uint8_t pic_parameter_set_id;       // PPS ID
+    uint8_t seq_parameter_set_id;       // SPS ID
+    uint8_t vps_video_parameter_set_id; // VPS ID
 
     uint8_t IrapPicFlag;
     uint8_t IdrPicFlag;

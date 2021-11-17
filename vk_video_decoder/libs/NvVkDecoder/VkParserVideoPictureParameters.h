@@ -42,7 +42,7 @@ public:
         return nullptr;
     }
 
-    static VkParserVideoPictureParameters* Create(VkDevice device, VkVideoSessionKHR videoSession,
+    static VkParserVideoPictureParameters* Create(VkDevice device, VkSharedBaseObj<NvVideoSession>& videoSession,
                                                   const StdVideoPictureParametersSet* pSpsStdPictureParametersSet,
                                                   const StdVideoPictureParametersSet* pPpsStdPictureParametersSet,
                                                   VkParserVideoPictureParameters* pTemplate);
@@ -80,19 +80,21 @@ protected:
         : m_Id(-1),
           m_refCount(0),
           m_device(device),
+          m_videoSession(),
           m_sessionParameters() { }
 
     virtual ~VkParserVideoPictureParameters();
 
 private:
-    static const uint32_t       m_classId;
-    static int32_t              m_currentId;
-    int32_t                     m_Id;
-    std::atomic<int32_t>        m_refCount;
-    VkDevice                    m_device;
-    VkVideoSessionParametersKHR m_sessionParameters;
-    std::bitset<MAX_SPS_IDS>    m_spsIdsUsed;
-    std::bitset<MAX_PPS_IDS>    m_ppsIdsUsed;
+    static const uint32_t           m_classId;
+    static int32_t                  m_currentId;
+    int32_t                         m_Id;
+    std::atomic<int32_t>            m_refCount;
+    VkDevice                        m_device;
+    VkSharedBaseObj<NvVideoSession> m_videoSession;
+    VkVideoSessionParametersKHR     m_sessionParameters;
+    std::bitset<MAX_SPS_IDS>        m_spsIdsUsed;
+    std::bitset<MAX_PPS_IDS>        m_ppsIdsUsed;
 };
 
 #endif /* _NVVKDECODER_VKPARSERVIDEOPICTUREPARAMETERS_H_ */

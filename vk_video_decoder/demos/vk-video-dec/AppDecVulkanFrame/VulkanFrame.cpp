@@ -100,10 +100,10 @@ int VulkanFrame::attach_shell(Shell& sh)
     const uint32_t apiMinorVersion = VK_API_VERSION_MINOR(physical_dev_props_.apiVersion);
     const uint32_t apiPatchVersion = VK_API_VERSION_PATCH(physical_dev_props_.apiVersion);
 
-    if (physical_dev_props_.apiVersion < VK_MAKE_API_VERSION(0, 1, 2, 178)) {
+    if (physical_dev_props_.apiVersion < VK_MAKE_API_VERSION(0, 1, 2, 199)) {
         std::cerr << std::endl << "Incompatible Vulkan API version: " << apiMajorVersion << "." << apiMinorVersion << "." << apiPatchVersion << std::endl;
         std::cerr << "Info: Driver version is: " << physical_dev_props_.driverVersion << std::endl;;
-        std::cerr << "Please upgrade your driver. The minimal supported version is: 1.2.178 aka " << std::hex << VK_MAKE_API_VERSION(0, 1, 2, 178) << std::endl;
+        std::cerr << "Please upgrade your driver. The version supported is: 1.2.199 or later aka " << std::hex << VK_MAKE_API_VERSION(0, 1, 2, 199) << std::endl;
         assert(!"Incompatible API version - please upgrade your driver.");
         return -1;
     }
@@ -154,7 +154,7 @@ int VulkanFrame::attach_shell(Shell& sh)
 
     if (ctx.video_queue != VkQueue()) {
         const VulkanDecodeContext vulkanDecodeContext = { ctx.instance, ctx.physical_dev, ctx.dev, ctx.video_decode_queue_family,
-            ctx.video_queue };
+            ctx.video_queue, ctx.video_encode_queue_family };
 
         const char* filePath = settings_.videoFileName.c_str();
         m_videoProcessor.Init(&vulkanDecodeContext, &pVideoRenderer->device_, filePath);
