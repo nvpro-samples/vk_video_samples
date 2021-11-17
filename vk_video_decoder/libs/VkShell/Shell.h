@@ -114,6 +114,7 @@ class Shell {
         uint32_t frameProcessor_queue_family;
         uint32_t present_queue_family;
         uint32_t video_decode_queue_family;
+        uint32_t video_encode_queue_family;
 
         VkDevice dev;
         VkQueue frameProcessor_queue;

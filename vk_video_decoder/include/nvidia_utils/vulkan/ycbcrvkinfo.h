@@ -21,7 +21,7 @@
 #include <cassert>
 #include <math.h>
 #include "ycbcr_utils.h"
-#include "vulkan.h"
+#include "vulkan_interfaces.h"
 
 #ifndef VK_MAX_NUM_IMAGE_PLANES_EXT
 #define VK_MAX_NUM_IMAGE_PLANES_EXT 4

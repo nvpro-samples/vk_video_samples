@@ -111,7 +111,7 @@ inline VkVideoCodecOperationFlagsKHR GetSupportedCodecs(VkPhysicalDevice vkPhysi
         VkQueueFlags queueFlagsRequired = ( VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR),
         VkVideoCodecOperationFlagsKHR videoCodeOperations =
                                           ( VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT | VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT |
-                                            VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT))
+                                            VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT | VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_EXT))
 {
     std::vector<VkQueueFamilyProperties2> queues;
     std::vector<VkVideoQueueFamilyProperties2KHR> videoQueues;

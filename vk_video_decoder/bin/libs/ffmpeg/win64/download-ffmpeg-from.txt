@@ -1,1 +1,1 @@
- https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2021-04-12-12-38/ffmpeg-N-101934-g7e241a1b73-win64-lgpl-shared.zip
+ https://github.com/BtbN/FFmpeg-Builds/releases/download

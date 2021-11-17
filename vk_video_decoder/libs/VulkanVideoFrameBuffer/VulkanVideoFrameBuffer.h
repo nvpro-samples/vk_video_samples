@@ -79,7 +79,14 @@ public:
         VkImageLayout currentImageLayout;
     };
 
-    virtual int32_t InitImagePool(uint32_t numImages, const VkImageCreateInfo* pImageCreateInfo, const VkVideoProfileKHR* pDecodeProfile = NULL) = 0;
+    virtual int32_t InitImagePool(const VkVideoProfileKHR* pDecodeProfile,
+                                  uint32_t                 numImages,
+                                  VkFormat                 imageFormat,
+                                  uint32_t                 maxImageWidth,
+                                  uint32_t                 maxImageHeight,
+                                  VkImageTiling            tiling,
+                                  VkImageUsageFlags        usage,
+                                  uint32_t                 queueFamilyIndex) = 0;
     virtual int32_t QueuePictureForDecode(int8_t picId, VkParserDecodePictureInfo* pDecodePictureInfo,
                                           VkParserVideoRefCountBase* pCurrentVkPictureParameters,
                                           FrameSynchronizationInfo* pFrameSynchronizationInfo) = 0;

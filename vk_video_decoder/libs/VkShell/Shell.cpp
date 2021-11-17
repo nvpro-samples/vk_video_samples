@@ -47,6 +47,7 @@ Shell::Shell(FrameProcessor &frameProcessor)
         device_extensions_.push_back(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
         device_extensions_.push_back(VK_KHR_VIDEO_QUEUE_EXTENSION_NAME);
         device_extensions_.push_back(VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME);
+        device_extensions_.push_back(VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME);
     }
 
     if (settings_.validate) {
@@ -315,7 +316,7 @@ void Shell::init_physical_dev(uint32_t deviceID) {
         std::vector<VkVideoQueueFamilyProperties2KHR> videoQueues;
         vk::get(phy, queues, videoQueues);
 
-        int frameProcessor_queue_family = -1, present_queue_family = -1, video_decode_queue_family = -1;
+        int frameProcessor_queue_family = -1, present_queue_family = -1, video_decode_queue_family = -1, video_encode_queue_family = -1;
         for (uint32_t i = 0; i < queues.size(); i++) {
             const VkQueueFamilyProperties2 &q = queues[i];
             const VkVideoQueueFamilyProperties2KHR &videoQueue = videoQueues[i];
@@ -337,6 +338,17 @@ void Shell::init_physical_dev(uint32_t deviceID) {
                         (videoQueue.videoCodecOperations & suported_video_decode_queue_operations)) {
                     video_decode_queue_family = i;
                 }
+
+                const VkFlags video_encode_queue_flags = VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
+                const VkVideoCodecOperationFlagsKHR suported_video_encode_queue_operations =
+                        VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT /* | VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_EXT */;
+
+                if ((video_encode_queue_family < 0) &&
+                        (q.queueFamilyProperties.queueFlags & video_encode_queue_flags) &&
+                        (videoQueue.videoCodecOperations & suported_video_encode_queue_operations)) {
+                    video_encode_queue_family = i;
+                }
+
             }
 
             // present queue must support the surface
@@ -344,7 +356,7 @@ void Shell::init_physical_dev(uint32_t deviceID) {
                 present_queue_family = i;
             }
 
-            if ((frameProcessor_queue_family >= 0) && (present_queue_family >= 0) && (video_decode_queue_family >= 0)) {
+            if ((frameProcessor_queue_family >= 0) && (present_queue_family >= 0) && (video_decode_queue_family >= 0) && (video_encode_queue_family >= 0)) {
                 break;
             }
         }
@@ -354,6 +366,7 @@ void Shell::init_physical_dev(uint32_t deviceID) {
             ctx_.frameProcessor_queue_family = frameProcessor_queue_family;
             ctx_.present_queue_family = present_queue_family;
             ctx_.video_decode_queue_family = video_decode_queue_family;
+            ctx_.video_encode_queue_family = video_encode_queue_family;
             break;
         }
     }

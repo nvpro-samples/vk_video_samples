@@ -20,7 +20,8 @@ Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file in this repository for mo
 ## Repository Set-Up
 
   Please make sure you have installed the latest NVIDIA BETA drivers from https://developer.nvidia.com/vulkan-driver.
-  The minimum supported BETA driver versions by this application are 458.36 (Windows), 455.50.19 (Linux) with Vulkan version 1.2.178.
+  The minimum supported BETA driver versions by this application are 472.69 (Windows) / 470.62.12 (Linux) that
+  must support Vulkan API version 1.2.199 or later.
 
 ### Download the Repository
 
@@ -52,15 +53,15 @@ Windows 10 with the following software packages:
   - Install both the 32-bit and 64-bit versions, as the 64-bit installer does not install the
     32-bit libraries and tools.
 - [Vulkan SDK](https://vulkan.lunarg.com)
-  - install current Vulkan SDK (i.e. VulkanSDK-1.2.154.1-Installer.exe) from https://vulkan.lunarg.com/
+  - install current Vulkan SDK (i.e. VulkanSDK-1.2.189.2-Installer.exe) from https://vulkan.lunarg.com/
 - [FFMPEG libraries for Windows]
     Download the latest version of the FFMPEG shared libraries archive from https://github.com/BtbN/FFmpeg-Builds/releases.
     The archive must have the following pattern in the name ffmpeg-*-win64-lgpl-shared.zip
     For example:
-    https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2021-05-07-13-49/ffmpeg-N-102431-gf140239777-win64-lgpl-shared.zip
+    https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2021-11-16-12-23/ffmpeg-N-104569-g08b4716a9e-win64-lgpl-shared.zip
     Then extract the archive to <APP_INSTALLED_LOC>\bin\libs\ffmpeg and add the path of the <APP_INSTALLED_LOC>\bin\libs\ffmpeg\win64\ of
     the application. Please make sure that <APP_INSTALLED_LOC>\bin\libs\ffmpeg\win64\bin location contains
-    avformat-58.dll, avutil-56.dll and avcodec-58.dll shared libraries and <APP_INSTALLED_LOC>\bin\libs\ffmpeg\win64\lib contains the
+    avformat-59.dll, avutil-59.dll and avcodec-59.dll shared libraries and <APP_INSTALLED_LOC>\bin\libs\ffmpeg\win64\lib contains the
     corresponding lib files.
 - Notes for using [Windows Subsystem for Linux](https://docs.microsoft.com/en-us/windows/wsl/install-win10)
   - Vulkan Video currently does not support [Windows Subsystem for Linux].
@@ -96,8 +97,10 @@ Make sure the library is either installed in the C:\Windows\System folder, or th
 
 ### Linux Build Requirements
 
-This repository has been built and tested on the two most recent Ubuntu LTS versions.
-Currently, the oldest supported version is Ubuntu 18.04.5 LTS, meaning that the minimum supported compiler versions are GCC 7.5.0 and Clang 6.0.0, although earlier versions may work.
+This repository has been built and tested on the two most recent Ubuntu LTS versions with
+Vulkan SDK vulkansdk-linux-x86_64-1.2.189.0.tar.gz from https://vulkan.lunarg.com/sdk/home#linux.
+Currently, the oldest supported version is Ubuntu 18.04.5 LTS, meaning that the minimum supported
+compiler versions are GCC 7.5.0 and Clang 6.0.0, although earlier versions may work.
 It should be straightforward to adapt this repository to other Linux distributions.
 
 **Required Package List:**

@@ -20,7 +20,9 @@
 struct SpsVideoH264PictureParametersSet
 {
     StdVideoH264SequenceParameterSet    stdSps;
+    int32_t                             offset_for_ref_frame[255];
     StdVideoH264SequenceParameterSetVui stdVui;
+    StdVideoH264HrdParameters           stdHrdParameters;
     StdVideoH264ScalingLists            spsStdScalingLists;
 };
 
@@ -57,6 +59,16 @@ public:
 
                 if (pPictureParameters->updateType == VK_PICTURE_PARAMETERS_UPDATE_H264_SPS) {
                     m_data.h264Sps.stdSps = *pPictureParameters->pH264Sps;
+                    if (pPictureParameters->pH264Sps->pOffsetForRefFrame &&
+                               pPictureParameters->pH264Sps->num_ref_frames_in_pic_order_cnt_cycle) {
+                        memcpy(m_data.h264Sps.offset_for_ref_frame,
+                                pPictureParameters->pH264Sps->pOffsetForRefFrame,
+                                     sizeof(m_data.h264Sps.offset_for_ref_frame) *
+                                            pPictureParameters->pH264Sps->num_ref_frames_in_pic_order_cnt_cycle);
+                        m_data.h264Sps.stdSps.pOffsetForRefFrame = m_data.h264Sps.offset_for_ref_frame;
+                    } else {
+                        m_data.h264Sps.stdSps.pOffsetForRefFrame = nullptr;
+                    }
                     if (pPictureParameters->pH264Sps->pScalingLists) {
                         m_data.h264Sps.spsStdScalingLists = *pPictureParameters->pH264Sps->pScalingLists;
                         m_data.h264Sps.stdSps.pScalingLists = &m_data.h264Sps.spsStdScalingLists;
@@ -64,6 +76,12 @@ public:
                     if (pPictureParameters->pH264Sps->pSequenceParameterSetVui) {
                         m_data.h264Sps.stdVui = *pPictureParameters->pH264Sps->pSequenceParameterSetVui;
                         m_data.h264Sps.stdSps.pSequenceParameterSetVui = &m_data.h264Sps.stdVui;
+                        if (pPictureParameters->pH264Sps->pSequenceParameterSetVui->pHrdParameters) {
+                            m_data.h264Sps.stdHrdParameters = *pPictureParameters->pH264Sps->pSequenceParameterSetVui->pHrdParameters;
+                            m_data.h264Sps.stdSps.pSequenceParameterSetVui->pHrdParameters = &m_data.h264Sps.stdHrdParameters;
+                        } else {
+                            m_data.h264Sps.stdSps.pSequenceParameterSetVui->pHrdParameters = nullptr;
+                        }
                     }
                 } else if (pPictureParameters->updateType ==  VK_PICTURE_PARAMETERS_UPDATE_H264_PPS ) {
                     m_data.h264Pps.stdPps = *pPictureParameters->pH264Pps;
@@ -198,7 +216,7 @@ public:
     } m_data;
     uint32_t                                         m_updateSequenceCount;
     VkSharedBaseObj<VkParserVideoRefCountBase>       m_vkObjectOwner; // VkParserVideoPictureParameters
-    VkVideoSessionKHR                                m_vkVideoDecodeSession;
+    VkSharedBaseObj<VkParserVideoRefCountBase>       m_videoSession;  // NvVideoSession
 private:
 
     StdVideoPictureParametersSet(VkParserPictureParametersUpdateType updateType)
@@ -206,14 +224,14 @@ private:
       m_updateType(updateType),
       m_data(),
       m_updateSequenceCount(0),
-      m_vkVideoDecodeSession()
+      m_videoSession(nullptr)
     {
     }
 
     ~StdVideoPictureParametersSet()
     {
         m_vkObjectOwner = nullptr;
-        m_vkVideoDecodeSession = VkVideoSessionKHR();
+        m_videoSession = nullptr;
     }
 
 };
