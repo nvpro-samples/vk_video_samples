@@ -15,6 +15,7 @@
 */
 
 #include <stdint.h>
+#include "vulkan_interfaces.h"
 #include "ycbcrvkinfo.h"
 #include "ycbcrinfotbl.h"
 

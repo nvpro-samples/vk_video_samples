@@ -46,6 +46,8 @@ set(sources
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.h
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/NvVideoSession.cpp
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/NvVideoSession.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/nvVkFormats.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/pattern.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/pattern.h

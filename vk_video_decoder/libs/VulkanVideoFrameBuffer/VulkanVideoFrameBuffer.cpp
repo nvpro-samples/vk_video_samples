@@ -28,6 +28,7 @@
 #include "PictureBufferBase.h"
 #include "VkCodecUtils/HelpersDispatchTable.h"
 #include "VkCodecUtils/VulkanVideoUtils.h"
+#include "VkCodecUtils/nvVideoProfile.h"
 #include "VulkanVideoFrameBuffer.h"
 #include "vk_enum_string_helper.h"
 #include "vulkan_interfaces.h"
@@ -158,6 +159,9 @@ public:
         : m_pVideoRendererDeviceInfo(pVideoRendererDeviceInfo)
         , m_refCount(1)
         , m_displayQueueMutex()
+        , m_queueFamilyIndex((uint32_t)-1)
+        , m_videoProfile()
+        , m_imageCreateInfo()
         , m_perFrameDecodeImageSet()
         , m_displayFrames()
         , m_queryPool()
@@ -194,7 +198,14 @@ public:
         return vk::CreateQueryPool(deviceInfo->device_, &queryPoolCreateInfo, NULL, &m_queryPool);
     }
 
-    virtual int32_t InitImagePool(uint32_t numImages, const VkImageCreateInfo* pImageCreateInfo, const VkVideoProfileKHR* pDecodeProfile = NULL)
+    virtual int32_t InitImagePool(const VkVideoProfileKHR* pDecodeProfile,
+                                  uint32_t                 numImages,
+                                  VkFormat                 imageFormat,
+                                  uint32_t                 maxImageWidth,
+                                  uint32_t                 maxImageHeight,
+                                  VkImageTiling            tiling,
+                                  VkImageUsageFlags        usage,
+                                  uint32_t                 queueFamilyIndex)
     {
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
 
@@ -215,6 +226,8 @@ public:
         m_frameNumInDecodeOrder = 0;
         m_frameNumInDisplayOrder = 0;
 
+        m_videoProfile.InitFromProfile(pDecodeProfile);
+
         if (numImages && pDecodeProfile) {
             VkResult result = CreateVideoQueries(numImages, m_pVideoRendererDeviceInfo, pDecodeProfile);
             if (result != VK_SUCCESS) {
@@ -222,12 +235,30 @@ public:
             }
         }
 
-        if (numImages && pImageCreateInfo) {
+        m_queueFamilyIndex = queueFamilyIndex;
+        m_imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        m_imageCreateInfo.pNext = m_videoProfile.GetProfile();
+        m_imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+        m_imageCreateInfo.format = imageFormat;
+        m_imageCreateInfo.extent = { maxImageWidth, maxImageHeight, 1 };
+        m_imageCreateInfo.mipLevels = 1;
+        m_imageCreateInfo.arrayLayers = 1;
+        m_imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        m_imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        m_imageCreateInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_SRC_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
+        m_imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        m_imageCreateInfo.queueFamilyIndexCount = 1;
+        m_imageCreateInfo.pQueueFamilyIndices = &m_queueFamilyIndex;
+        m_imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        m_imageCreateInfo.flags = 0;
 
-            m_extent.width = pImageCreateInfo->extent.width;
-            m_extent.height = pImageCreateInfo->extent.height;
+        if (numImages) {
 
-            return m_perFrameDecodeImageSet.init(numImages, m_pVideoRendererDeviceInfo, pImageCreateInfo,
+            // m_extent is for the codedExtent, not the max image resolution
+            m_extent.width = maxImageWidth;
+            m_extent.height = maxImageHeight;
+
+            return m_perFrameDecodeImageSet.init(numImages, m_pVideoRendererDeviceInfo, &m_imageCreateInfo,
                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                 0 /* No ColorPatternColorBars */,
                 VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT);
@@ -501,14 +532,17 @@ public:
 private:
     vulkanVideoUtils::VulkanDeviceInfo* m_pVideoRendererDeviceInfo;
     std::atomic<int32_t> m_refCount;
-    std::mutex m_displayQueueMutex;
+    std::mutex           m_displayQueueMutex;
+    uint32_t                 m_queueFamilyIndex;
+    nvVideoProfile           m_videoProfile;
+    VkImageCreateInfo        m_imageCreateInfo;
     NvPerFrameDecodeImageSet m_perFrameDecodeImageSet;
     std::queue<uint8_t> m_displayFrames;
     VkQueryPool m_queryPool;
     uint32_t m_ownedByDisplayMask;
     int32_t m_frameNumInDecodeOrder;
     int32_t m_frameNumInDisplayOrder;
-    VkExtent2D m_extent;
+    VkExtent2D m_extent;               // for the codedExtent, not the max image resolution
     uint32_t m_debug : 1;
 };
 

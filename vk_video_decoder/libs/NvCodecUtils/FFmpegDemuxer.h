@@ -20,6 +20,9 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavformat/avio.h>
 #include <libavcodec/avcodec.h>
+#ifndef FF_API_OLD_BSF
+#include <libavcodec/bsf.h>
+#endif
 }
 
 #include "NvCodecUtils/Logger.h"

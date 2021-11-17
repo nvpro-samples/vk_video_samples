@@ -362,6 +362,11 @@ vk_khr_video_decode_queue = Extension(name='VK_KHR_video_decode_queue', version=
 
 ])
 
+vk_khr_video_encode_queue = Extension(name='VK_KHR_video_encode_queue', version=1, guard='VK_USE_VIDEO_ENCODE_QUEUE', commands=[
+    Command(name='CmdEncodeVideoKHR', dispatch='VkCommandBuffer'),
+
+])
+
 vk_khr_synchronization2 = Extension(name='VK_KHR_synchronization2', version=1, guard='VK_USE_VIDEO_DECODE_QUEUE', commands=[
     Command(name='CmdSetEvent2KHR',        dispatch='VkCommandBuffer'),
     Command(name='CmdResetEvent2KHR',      dispatch='VkCommandBuffer'),

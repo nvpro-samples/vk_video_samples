@@ -162,7 +162,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
                   << "\tDisplayed Height : " << videoFormat->display_area.bottom - videoFormat->display_area.top << std::endl;
     }
 
-    const char* pCodec = NvVkDecoder::CodecToName(videoFormat->codec);
+    const char* pCodec = nvVideoProfile::CodecToName(videoFormat->codec);
     if (dumpData) {
         std::cout << "Codec : " << pCodec << std::endl;
     }
