@@ -57,10 +57,102 @@ typedef struct VulkanDecodeContext {
     uint32_t videoEncodeQueueFamily;
 } VulkanDecodeContext;
 
+struct NvVkDecodeFrameDataSlot {
+    uint32_t                                            slot;
+    VkCommandBuffer                                     commandBuffer;
+    const vulkanVideoUtils::VulkanVideoBitstreamBuffer* bitstreamBuffer;
+};
+
 class NvVkDecodeFrameData {
+
 public:
-    vulkanVideoUtils::VulkanVideoBistreamBuffer bistreamBuffer;
-    VkCommandBuffer commandBuffer;
+    NvVkDecodeFrameData(const VulkanDecodeContext* pVulkanDecodeContext)
+       : m_pVulkanDecodeContext(*pVulkanDecodeContext),
+         m_maxCodedWidth(),
+         m_videoCommandPool() {}
+
+    void deinit() {
+
+        if (m_videoCommandPool) {
+            vk::FreeCommandBuffers(m_pVulkanDecodeContext.dev, m_videoCommandPool, (uint32_t)m_commandBuffers.size(), &m_commandBuffers[0]);
+            vk::DestroyCommandPool(m_pVulkanDecodeContext.dev, m_videoCommandPool, NULL);
+            m_videoCommandPool = VkCommandPool();
+        }
+
+        for (size_t decodeFrameId = 0; decodeFrameId < m_bitstreamBuffers.size(); decodeFrameId++) {
+            m_bitstreamBuffers[decodeFrameId].DestroyVideoBitstreamBuffer();
+        }
+    }
+
+    ~NvVkDecodeFrameData() {
+        deinit();
+    }
+
+    size_t resize(size_t newSize, uint32_t maxCodedWidth,
+                    VkDeviceSize minBitstreamBufferOffsetAlignment,
+                    VkDeviceSize minBitstreamBufferSizeAlignment) {
+
+        const size_t oldBitstreamBuffersSize = m_bitstreamBuffers.size();
+        if (oldBitstreamBuffersSize >= newSize) {
+            assert(m_maxCodedWidth >= maxCodedWidth);
+            return oldBitstreamBuffersSize;
+        }
+
+        m_bitstreamBuffers.resize(newSize);
+
+        const VkDeviceSize bufferSize = ((maxCodedWidth > 3840) ? 8 : 4) * 1024 * 1024 /* 4MB or 8MB each for 8k use case */;
+        for (size_t decodeFrameId = oldBitstreamBuffersSize; decodeFrameId < m_bitstreamBuffers.size(); decodeFrameId++) {
+            VkResult result = m_bitstreamBuffers[decodeFrameId].CreateVideoBitstreamBuffer(
+                m_pVulkanDecodeContext.physicalDev, m_pVulkanDecodeContext.dev, m_pVulkanDecodeContext.videoDecodeQueueFamily,
+                bufferSize, minBitstreamBufferOffsetAlignment, minBitstreamBufferSizeAlignment);
+            assert(result == VK_SUCCESS);
+        }
+
+        if (!m_videoCommandPool) {
+            VkCommandPoolCreateInfo cmdPoolInfo = {};
+            cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+            cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+            cmdPoolInfo.queueFamilyIndex = m_pVulkanDecodeContext.videoDecodeQueueFamily;
+            VkResult result = vk::CreateCommandPool(m_pVulkanDecodeContext.dev, &cmdPoolInfo, nullptr, &m_videoCommandPool);
+            assert(result == VK_SUCCESS);
+        }
+
+        const size_t oldCommandBuffersSize = m_commandBuffers.size();
+        VkCommandBufferAllocateInfo cmdInfo = {};
+        cmdInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        cmdInfo.commandBufferCount = (uint32_t)(newSize - oldCommandBuffersSize);
+        cmdInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cmdInfo.commandPool = m_videoCommandPool;
+
+        m_commandBuffers.resize(newSize);
+        VkResult result = vk::AllocateCommandBuffers(m_pVulkanDecodeContext.dev, &cmdInfo, &m_commandBuffers[oldCommandBuffersSize]);
+        assert(result == VK_SUCCESS);
+
+        m_maxCodedWidth = maxCodedWidth;
+
+        return oldCommandBuffersSize;
+    }
+
+    const vulkanVideoUtils::VulkanVideoBitstreamBuffer* GetBitstreamBuffer(uint32_t slot) {
+        assert(slot < m_bitstreamBuffers.size());
+        return &m_bitstreamBuffers[slot];
+    }
+
+    VkCommandBuffer GetCommandBuffer(uint32_t slot) {
+        assert(slot < m_commandBuffers.size());
+        return m_commandBuffers[slot];
+    }
+
+    size_t size() {
+        return m_commandBuffers.size();
+    }
+
+private:
+    const VulkanDecodeContext                                 m_pVulkanDecodeContext;
+    uint32_t                                                  m_maxCodedWidth;
+    VkCommandPool                                             m_videoCommandPool;
+    std::vector<VkCommandBuffer>                              m_commandBuffers;
+    std::vector<vulkanVideoUtils::VulkanVideoBitstreamBuffer> m_bitstreamBuffers;
 };
 
 /**
@@ -162,9 +254,8 @@ public:
         , m_numDecodeSurfaces()
         , m_maxDecodeFramesCount(0)
         , m_videoSession(nullptr)
-        , m_videoCommandPool()
         , m_pVideoFrameBuffer(pVideoFrameBuffer)
-        , m_decodeFramesData(NULL)
+        , m_decodeFramesData(pVulkanDecodeContext)
         , m_decodePicCount(0)
         , m_lastSpsIdInQueue(-1)
         , m_dumpDecodeData(false)
@@ -214,10 +305,15 @@ private:
     uint32_t AddPictureParametersToQueue(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet, bool& hasSpsPpsPair);
     uint32_t FlushPictureParametersQueue();
 
-    NvVkDecodeFrameData* GetCurrentFrameData(uint32_t currentSlotId)
+    int32_t GetCurrentFrameData(uint32_t slotId, NvVkDecodeFrameDataSlot& frameDataSlot)
     {
-        assert(currentSlotId < m_maxDecodeFramesCount);
-        return &m_decodeFramesData[currentSlotId];
+        if (slotId < m_decodeFramesData.size()) {
+            frameDataSlot.bitstreamBuffer = m_decodeFramesData.GetBitstreamBuffer(slotId);
+            frameDataSlot.commandBuffer   = m_decodeFramesData.GetCommandBuffer(slotId);
+            frameDataSlot.slot = slotId;
+            return slotId;
+        }
+        return -1;
     }
 
 private:
@@ -229,15 +325,16 @@ private:
     uint32_t                    m_maxDecodeFramesCount;
 
     VkSharedBaseObj<NvVideoSession>      m_videoSession;
-    VkCommandPool                        m_videoCommandPool;
     VulkanVideoFrameBuffer*              m_pVideoFrameBuffer;
-    NvVkDecodeFrameData*                 m_decodeFramesData;
+
+    NvVkDecodeFrameData                  m_decodeFramesData;
 
     int32_t                                                    m_decodePicCount;
     int32_t                                                    m_lastSpsIdInQueue;
     std::queue<VkSharedBaseObj<StdVideoPictureParametersSet>>  m_pictureParametersQueue;
+    VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastVpsPictureParametersQueue;
     VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastSpsPictureParametersQueue;
     VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastPpsPictureParametersQueue;
-    VkSharedBaseObj<VkParserVideoPictureParameters>            currentPictureParameters;
+    VkSharedBaseObj<VkParserVideoPictureParameters>            m_currentPictureParameters;
     uint32_t m_dumpDecodeData : 1;
 };

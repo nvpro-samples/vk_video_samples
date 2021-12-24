@@ -91,19 +91,19 @@ uint32_t NvVkDecoder::GetNumDecodeSurfaces(VkVideoCodecOperationFlagBitsKHR code
     if (codec == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT) {
         // ref HEVC spec: A.4.1 General tier and level limits
         // currently assuming level 6.2, 8Kx4K
-        int MaxLumaPS = 35651584;
-        int MaxDpbPicBuf = 6;
-        int PicSizeInSamplesY = (int)(width * height);
-        int MaxDpbSize;
-        if (PicSizeInSamplesY <= (MaxLumaPS >> 2))
-            MaxDpbSize = MaxDpbPicBuf * 4;
-        else if (PicSizeInSamplesY <= (MaxLumaPS >> 1))
-            MaxDpbSize = MaxDpbPicBuf * 2;
-        else if (PicSizeInSamplesY <= ((3 * MaxLumaPS) >> 2))
-            MaxDpbSize = (MaxDpbPicBuf * 4) / 3;
+        int maxLumaPS = 35651584;
+        int maxDpbPicBuf = 6;
+        int picSizeInSamplesY = (int)(width * height);
+        int maxDpbSize;
+        if (picSizeInSamplesY <= (maxLumaPS >> 2))
+            maxDpbSize = maxDpbPicBuf * 4;
+        else if (picSizeInSamplesY <= (maxLumaPS >> 1))
+            maxDpbSize = maxDpbPicBuf * 2;
+        else if (picSizeInSamplesY <= ((3 * maxLumaPS) >> 2))
+            maxDpbSize = (maxDpbPicBuf * 4) / 3;
         else
-            MaxDpbSize = MaxDpbPicBuf;
-        return (std::min)(MaxDpbSize, 16) + 4;
+            maxDpbSize = maxDpbPicBuf;
+        return (std::min)(maxDpbSize, 16) + 4;
     }
 
     return 8;
@@ -222,21 +222,34 @@ VkResult NvVkDecoder::GetVideoCapabilities(nvVideoProfile* pVideoProfile, VkVide
  */
 int32_t NvVkDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFormat)
 {
-    uint32_t codedWidth  = pVideoFormat->coded_width;
-    uint32_t codedHeight = pVideoFormat->coded_height;
+    const bool testUseLargestSurfaceExtent = false;
+    // Assume 4k content for testing surfaces
+    const uint32_t surfaceMinWidthExtent  = 3840;
+    const uint32_t surfaceMinHeightExtent = 2160;
+
+    VkExtent2D codedExtent = { pVideoFormat->coded_width, pVideoFormat->coded_height };
+
+    // Width and height of the mapped surface
+    const VkExtent2D maxImageExtent = { std::max(surfaceMinWidthExtent,  (uint32_t)(pVideoFormat->display_area.right - pVideoFormat->display_area.left)),
+                                        std::max(surfaceMinHeightExtent, (uint32_t)(pVideoFormat->display_area.bottom - pVideoFormat->display_area.top)) };
+
+    const VkExtent2D imageExtent = testUseLargestSurfaceExtent ?
+                             maxImageExtent :
+                             VkExtent2D { (uint32_t)(pVideoFormat->display_area.right - pVideoFormat->display_area.left),
+                                          (uint32_t)(pVideoFormat->display_area.bottom - pVideoFormat->display_area.top) };
 
     std::cout << "Video Input Information" << std::endl
               << "\tCodec        : " << GetVideoCodecString(pVideoFormat->codec) << std::endl
               << "\tFrame rate   : " << pVideoFormat->frame_rate.numerator << "/" << pVideoFormat->frame_rate.denominator << " = "
               << 1.0 * pVideoFormat->frame_rate.numerator / pVideoFormat->frame_rate.denominator << " fps" << std::endl
               << "\tSequence     : " << (pVideoFormat->progressive_sequence ? "Progressive" : "Interlaced") << std::endl
-              << "\tCoded size   : [" << codedWidth << ", " << codedHeight << "]" << std::endl
+              << "\tCoded size   : [" << codedExtent.width << ", " << codedExtent.height << "]" << std::endl
               << "\tDisplay area : [" << pVideoFormat->display_area.left << ", " << pVideoFormat->display_area.top << ", "
               << pVideoFormat->display_area.right << ", " << pVideoFormat->display_area.bottom << "]" << std::endl
               << "\tChroma       : " << GetVideoChromaFormatString(pVideoFormat->chromaSubsampling) << std::endl
               << "\tBit depth    : " << pVideoFormat->bit_depth_luma_minus8 + 8 << std::endl;
 
-    m_numDecodeSurfaces = GetNumDecodeSurfaces(pVideoFormat->codec, pVideoFormat->minNumDecodeSurfaces, codedWidth, codedHeight);
+    m_numDecodeSurfaces = std::max(m_numDecodeSurfaces, GetNumDecodeSurfaces(pVideoFormat->codec, pVideoFormat->minNumDecodeSurfaces, codedExtent.width, codedExtent.height));
 
     VkResult result = VK_SUCCESS;
 
@@ -274,17 +287,16 @@ int32_t NvVkDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoForma
         }
     }
 
-    // Width and height of the mapped surface
-    uint32_t surfaceWidth  = pVideoFormat->display_area.right - pVideoFormat->display_area.left;
-    uint32_t surfaceHeight = pVideoFormat->display_area.bottom - pVideoFormat->display_area.top;
-
     std::cout << "Video Decoding Params:" << std::endl
               << "\tNum Surfaces : " << m_numDecodeSurfaces << std::endl
-              << "\tResize       : " << codedWidth << " x " << codedHeight << std::endl;
+              << "\tResize       : " << codedExtent.width << " x " << codedExtent.height << std::endl;
 
     uint32_t maxDpbSlotCount = pVideoFormat->maxNumDpbSlots; // This is currently configured by the parser to maxNumDpbSlots from the stream plus 1 for the current slot on the fly
 
-    assert(VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR == pVideoFormat->chromaSubsampling || VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR == pVideoFormat->chromaSubsampling || VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR == pVideoFormat->chromaSubsampling || VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR == pVideoFormat->chromaSubsampling);
+    assert(VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR == pVideoFormat->chromaSubsampling ||
+           VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR == pVideoFormat->chromaSubsampling ||
+           VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR == pVideoFormat->chromaSubsampling ||
+           VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR == pVideoFormat->chromaSubsampling);
 
 
     VkFormat supportedDpbAndOutFormats[8];
@@ -319,28 +331,40 @@ int32_t NvVkDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoForma
     VkFormat pictureFormat = referencePicturesFormat;
     assert(supportedDpbAndOutFormats[0] == pictureFormat);
 
-    VkExtent2D maxCodedExtent = { codedWidth, codedHeight };
-    result = NvVideoSession::Create( m_pVulkanDecodeContext.dev,
-                                     m_pVulkanDecodeContext.videoDecodeQueueFamily,
-                                     &videoProfile,
-                                     pictureFormat,
-                                     &maxCodedExtent,
-                                     referencePicturesFormat,
-                                     maxDpbSlotCount,
-                                     maxDpbSlotCount,
-                                     m_videoSession);
+    if (!m_videoSession ||
+            !m_videoSession->IsCompatible( m_pVulkanDecodeContext.dev,
+                                           m_pVulkanDecodeContext.videoDecodeQueueFamily,
+                                           &videoProfile,
+                                           pictureFormat,
+                                           imageExtent,
+                                           referencePicturesFormat,
+                                           maxDpbSlotCount,
+                                           maxDpbSlotCount) )
 
-    assert(result == VK_SUCCESS);
+    {
+        result = NvVideoSession::Create( m_pVulkanDecodeContext.dev,
+                                         m_pVulkanDecodeContext.videoDecodeQueueFamily,
+                                         &videoProfile,
+                                         pictureFormat,
+                                         imageExtent,
+                                         referencePicturesFormat,
+                                         maxDpbSlotCount,
+                                         maxDpbSlotCount,
+                                         m_videoSession);
+
+        assert(result == VK_SUCCESS);
+    }
 
     int32_t ret =
     m_pVideoFrameBuffer->InitImagePool(videoProfile.GetProfile(),
                                        m_numDecodeSurfaces,
                                        referencePicturesFormat,
-                                       surfaceWidth, surfaceHeight,
+                                       codedExtent,
+                                       imageExtent,
                                        VK_IMAGE_TILING_OPTIMAL,
                                        VK_IMAGE_USAGE_SAMPLED_BIT |
+                                       VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                                             VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
-                                            VK_IMAGE_USAGE_VIDEO_DECODE_SRC_BIT_KHR |
                                             VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR,
                                        m_pVulkanDecodeContext.videoDecodeQueueFamily);
 
@@ -348,42 +372,14 @@ int32_t NvVkDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoForma
 
     std::cout << "Allocating Video Device Memory" << std::endl
               << "Allocating " << m_numDecodeSurfaces << " Num Decode Surfaces and " << maxDpbSlotCount << " Video Device Memory Images for DPB " << std::endl
-              << surfaceWidth << " x " << surfaceHeight << std::endl;
+              << imageExtent.width << " x " << imageExtent.height << std::endl;
 
     m_maxDecodeFramesCount = m_numDecodeSurfaces;
-    m_decodeFramesData = new NvVkDecodeFrameData[m_maxDecodeFramesCount];
 
-    const VkDeviceSize bufferSize = ((codedWidth > 3840) ? 8 : 4) * 1024 * 1024 /* 4MB or 8MB each for 8k use case */;
-    const VkDeviceSize bufferOffsetAlignment = videoDecodeCapabilities.minBitstreamBufferOffsetAlignment;
-    const VkDeviceSize bufferSizeAlignment = videoDecodeCapabilities.minBitstreamBufferSizeAlignment;
-    for (uint32_t decodeFrameId = 0; decodeFrameId < m_maxDecodeFramesCount; decodeFrameId++) {
-        result = m_decodeFramesData[decodeFrameId].bistreamBuffer.CreateVideoBistreamBuffer(
-            m_pVulkanDecodeContext.physicalDev, m_pVulkanDecodeContext.dev, m_pVulkanDecodeContext.videoDecodeQueueFamily,
-            bufferSize, bufferOffsetAlignment, bufferSizeAlignment);
-        assert(result == VK_SUCCESS);
-    }
+    m_decodeFramesData.resize(m_maxDecodeFramesCount, maxImageExtent.width,
+                              videoDecodeCapabilities.minBitstreamBufferOffsetAlignment,
+                              videoDecodeCapabilities.minBitstreamBufferSizeAlignment);
 
-    VkCommandPoolCreateInfo cmdPoolInfo = {};
-    cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    cmdPoolInfo.queueFamilyIndex = m_pVulkanDecodeContext.videoDecodeQueueFamily;
-    result = vk::CreateCommandPool(m_pVulkanDecodeContext.dev, &cmdPoolInfo, nullptr, &m_videoCommandPool);
-    assert(result == VK_SUCCESS);
-
-    VkCommandBufferAllocateInfo cmdInfo = {};
-    cmdInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdInfo.commandBufferCount = m_maxDecodeFramesCount;
-    cmdInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmdInfo.commandPool = m_videoCommandPool;
-    VkCommandBuffer* commandBuffers = new VkCommandBuffer[m_maxDecodeFramesCount];
-    memset(commandBuffers, 0, m_maxDecodeFramesCount * sizeof(VkCommandBuffer));
-    result = vk::AllocateCommandBuffers(m_pVulkanDecodeContext.dev, &cmdInfo, commandBuffers);
-    assert(result == VK_SUCCESS);
-
-    for (uint32_t decodeFrameId = 0; decodeFrameId < cmdInfo.commandBufferCount; decodeFrameId++) {
-        m_decodeFramesData[decodeFrameId].commandBuffer = commandBuffers[decodeFrameId];
-    }
-    delete[] commandBuffers;
 
     // Save the original config
     m_videoFormat = *pVideoFormat;
@@ -527,7 +523,7 @@ bool NvVkDecoder::CheckStdObjectBeforeUpdate(VkSharedBaseObj<StdVideoPicturePara
 
     bool stdObjectUpdate = (stdPictureParametersSet->m_updateSequenceCount > 0);
 
-    if (!currentPictureParameters || stdObjectUpdate) {
+    if (!m_currentPictureParameters || stdObjectUpdate) {
 
         assert(m_videoSession);
         assert(stdObjectUpdate || (!stdPictureParametersSet->m_videoSession));
@@ -537,7 +533,7 @@ bool NvVkDecoder::CheckStdObjectBeforeUpdate(VkSharedBaseObj<StdVideoPicturePara
     } else { // new std object
         assert(!stdPictureParametersSet->m_vkObjectOwner);
         assert(!stdPictureParametersSet->m_videoSession);
-        assert(currentPictureParameters);
+        assert(m_currentPictureParameters);
         // Update the existing Vulkan Picture Parameters object
     }
 
@@ -566,10 +562,10 @@ VkParserVideoPictureParameters* NvVkDecoder::CheckStdObjectAfterUpdate(VkSharedB
 
     } else { // new std object
         stdPictureParametersSet->m_videoSession = m_videoSession;
-        stdPictureParametersSet->m_vkObjectOwner = currentPictureParameters;
+        stdPictureParametersSet->m_vkObjectOwner = m_currentPictureParameters;
     }
 
-    return currentPictureParameters;
+    return m_currentPictureParameters;
 }
 
 VkParserVideoPictureParameters*  NvVkDecoder::AddPictureParameters(VkSharedBaseObj<StdVideoPictureParametersSet>& spsStdPictureParametersSet,
@@ -581,10 +577,14 @@ VkParserVideoPictureParameters*  NvVkDecoder::AddPictureParameters(VkSharedBaseO
     createNewObject |= CheckStdObjectBeforeUpdate(ppsStdPictureParametersSet);
 
     if (createNewObject) {
-        pPictureParametersObject = VkParserVideoPictureParameters::Create(m_pVulkanDecodeContext.dev, m_videoSession, spsStdPictureParametersSet, ppsStdPictureParametersSet, currentPictureParameters);
-        currentPictureParameters = pPictureParametersObject;
+        pPictureParametersObject = VkParserVideoPictureParameters::Create(m_pVulkanDecodeContext.dev,
+                                                                          m_videoSession,
+                                                                          spsStdPictureParametersSet,
+                                                                          ppsStdPictureParametersSet,
+                                                                          m_currentPictureParameters);
+        m_currentPictureParameters = pPictureParametersObject;
     } else {
-        currentPictureParameters->Update(spsStdPictureParametersSet, ppsStdPictureParametersSet);
+        m_currentPictureParameters->Update(spsStdPictureParametersSet, ppsStdPictureParametersSet);
     }
 
     CheckStdObjectAfterUpdate(spsStdPictureParametersSet, pPictureParametersObject);
@@ -610,14 +610,16 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
     int32_t picNumInDecodeOrder = m_decodePicCount++;
     m_pVideoFrameBuffer->SetPicNumInDecodeOrder(currPicIdx, picNumInDecodeOrder);
 
-    NvVkDecodeFrameData* pFrameData = GetCurrentFrameData((uint32_t)currPicIdx);
+    NvVkDecodeFrameDataSlot frameDataSlot;
+    int32_t retPicIdx = GetCurrentFrameData((uint32_t)currPicIdx, frameDataSlot);
+    assert(retPicIdx == currPicIdx);
 
-    assert(pFrameData->bistreamBuffer.GetBufferSize() >= pPicParams->bitstreamDataLen);
+    assert(frameDataSlot.bitstreamBuffer->GetBufferSize() >= pPicParams->bitstreamDataLen);
 
     VkDeviceSize dstBufferOffset = 0;
-    pFrameData->bistreamBuffer.CopyVideoBistreamToBuffer(pPicParams->pBitstreamData, pPicParams->bitstreamDataLen, dstBufferOffset);
+    frameDataSlot.bitstreamBuffer->CopyVideoBitstreamToBuffer(pPicParams->pBitstreamData, pPicParams->bitstreamDataLen, dstBufferOffset);
 
-    pPicParams->decodeFrameInfo.srcBuffer = pFrameData->bistreamBuffer.get();
+    pPicParams->decodeFrameInfo.srcBuffer = frameDataSlot.bitstreamBuffer->get();
     pPicParams->decodeFrameInfo.srcBufferOffset = 0;
     pPicParams->decodeFrameInfo.srcBufferRange = GPU_ALIGN(pPicParams->bitstreamDataLen);
     // pPicParams->decodeFrameInfo.dstImageView = VkImageView();
@@ -628,7 +630,7 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     beginInfo.pInheritanceInfo = NULL;
 
-    vk::BeginCommandBuffer(pFrameData->commandBuffer, &beginInfo);
+    vk::BeginCommandBuffer(frameDataSlot.commandBuffer, &beginInfo);
     VkVideoBeginCodingInfoKHR decodeBeginInfo = { VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR };
     // CmdResetQueryPool are NOT Supported yet.
 
@@ -735,7 +737,7 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
     const VkParserVideoPictureParameters* pOwnerPictureParameters =
             VkParserVideoPictureParameters::VideoPictureParametersFromBase(pPicParams->pCurrentPictureParameters->m_vkObjectOwner);
     assert(pOwnerPictureParameters);
-    assert(pOwnerPictureParameters->GetId() <= currentPictureParameters->GetId());
+    assert(pOwnerPictureParameters->GetId() <= m_currentPictureParameters->GetId());
 
     bool isSps = false;
     int32_t spsId = pPicParams->pCurrentPictureParameters->GetSpsId(isSps);
@@ -766,8 +768,8 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
 
     // vk::ResetQueryPool(m_vkDev, queryFrameInfo.queryPool, queryFrameInfo.query, 1);
 
-    vk::CmdResetQueryPool(pFrameData->commandBuffer, frameSynchronizationInfo.queryPool, frameSynchronizationInfo.startQueryId, frameSynchronizationInfo.numQueries);
-    vk::CmdBeginVideoCodingKHR(pFrameData->commandBuffer, &decodeBeginInfo);
+    vk::CmdResetQueryPool(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool, frameSynchronizationInfo.startQueryId, frameSynchronizationInfo.numQueries);
+    vk::CmdBeginVideoCodingKHR(frameDataSlot.commandBuffer, &decodeBeginInfo);
 
     const VkDependencyInfoKHR dependencyInfo = {
         VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR,
@@ -780,17 +782,17 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
         numDpbBarriers,
         imageBarriers,
     };
-    vk::CmdPipelineBarrier2KHR(pFrameData->commandBuffer, &dependencyInfo);
+    vk::CmdPipelineBarrier2KHR(frameDataSlot.commandBuffer, &dependencyInfo);
 
-    vk::CmdBeginQuery(pFrameData->commandBuffer, frameSynchronizationInfo.queryPool, frameSynchronizationInfo.startQueryId, VkQueryControlFlags());
+    vk::CmdBeginQuery(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool, frameSynchronizationInfo.startQueryId, VkQueryControlFlags());
 
-    vk::CmdDecodeVideoKHR(pFrameData->commandBuffer, &pPicParams->decodeFrameInfo);
+    vk::CmdDecodeVideoKHR(frameDataSlot.commandBuffer, &pPicParams->decodeFrameInfo);
 
-    vk::CmdEndQuery(pFrameData->commandBuffer, frameSynchronizationInfo.queryPool, frameSynchronizationInfo.startQueryId);
+    vk::CmdEndQuery(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool, frameSynchronizationInfo.startQueryId);
 
     VkVideoEndCodingInfoKHR decodeEndInfo = { VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR };
-    vk::CmdEndVideoCodingKHR(pFrameData->commandBuffer, &decodeEndInfo);
-    vk::EndCommandBuffer(pFrameData->commandBuffer);
+    vk::CmdEndVideoCodingKHR(frameDataSlot.commandBuffer, &decodeEndInfo);
+    vk::EndCommandBuffer(frameDataSlot.commandBuffer);
 
     VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO, NULL };
     submitInfo.waitSemaphoreCount = (frameConsumerDoneSemaphore == VkSemaphore()) ? 0 : 1;
@@ -798,7 +800,7 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
     VkPipelineStageFlags videoDecodeSubmitWaitStages = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
     submitInfo.pWaitDstStageMask = &videoDecodeSubmitWaitStages;
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &pFrameData->commandBuffer;
+    submitInfo.pCommandBuffers = &frameDataSlot.commandBuffer;
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &frameCompleteSemaphore;
 
@@ -910,30 +912,8 @@ void NvVkDecoder::Deinitialize()
         m_pVideoFrameBuffer->Release();
     }
 
-    if (m_decodeFramesData && m_videoCommandPool) {
-        VkCommandBuffer* commandBuffers = new VkCommandBuffer[m_maxDecodeFramesCount];
-        memset(commandBuffers, 0, m_maxDecodeFramesCount * sizeof(VkCommandBuffer));
-        for (size_t decodeFrameId = 0; decodeFrameId < m_maxDecodeFramesCount; decodeFrameId++) {
-            commandBuffers[decodeFrameId] = m_decodeFramesData[decodeFrameId].commandBuffer;
-            assert(commandBuffers[decodeFrameId]);
-            m_decodeFramesData[decodeFrameId].commandBuffer = VkCommandBuffer();
-        }
 
-        vk::FreeCommandBuffers(m_pVulkanDecodeContext.dev, m_videoCommandPool, m_maxDecodeFramesCount, commandBuffers);
-        vk::DestroyCommandPool(m_pVulkanDecodeContext.dev, m_videoCommandPool, NULL);
-        m_videoCommandPool = NULL;
-
-        delete[] commandBuffers;
-    }
-
-    if (m_decodeFramesData) {
-        for (size_t decodeFrameId = 0; decodeFrameId < m_maxDecodeFramesCount; decodeFrameId++) {
-            m_decodeFramesData[decodeFrameId].bistreamBuffer.DestroyVideoBistreamBuffer();
-        }
-
-        delete[] m_decodeFramesData;
-        m_decodeFramesData = NULL;
-    }
+    m_decodeFramesData.deinit();
 
     m_videoSession = nullptr;
 }

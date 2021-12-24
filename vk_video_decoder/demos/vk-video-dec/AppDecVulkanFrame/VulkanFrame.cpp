@@ -53,7 +53,6 @@ VulkanFrame::VulkanFrame(const std::vector<std::string>& args)
     , frameImageFormat(VK_FORMAT_G8_B8R8_2PLANE_420_UNORM)
     , samplerYcbcrModelConversion(VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709)
     , samplerYcbcrRange(VK_SAMPLER_YCBCR_RANGE_ITU_NARROW)
-    , lastVideoFormatUpdate(0)
     , pVideoRenderer(nullptr)
     , lastRealTimeNsecs(0)
     , multithread_(false)
@@ -130,22 +129,12 @@ int VulkanFrame::attach_shell(Shell& sh)
 
     // Create Vulkan's Vertex buffer
     // position/texture coordinate pair per vertex.
-    static const vulkanVideoUtils::Vertex vertices[4] = { {
-                                                              { 1.0f, 1.0f },
-                                                              { 1.0f, 1.0f },
-                                                          },
-        {
-            { -1.0f, 1.0f },
-            { 0.0f, 1.0f },
-        },
-        {
-            { -1.0f, -1.0f },
-            { 0.0f, 0.0f },
-        },
-        {
-            { 1.0f, -1.0f },
-            { 1.0f, 0.0f },
-        }
+    static const vulkanVideoUtils::Vertex vertices[4] = {
+       //    Vertex         Texture coordinate
+        { {  1.0f,  1.0f }, { 1.0f, 1.0f }, },
+        { { -1.0f,  1.0f }, { 0.0f, 1.0f }, },
+        { { -1.0f, -1.0f }, { 0.0f, 0.0f }, },
+        { {  1.0f, -1.0f }, { 1.0f, 0.0f }, },
 
     };
 
@@ -243,7 +232,7 @@ int VulkanFrame::attach_swapchain()
     // Create per a frame draw context num == mSwapchainNumBufs.
 
     // TODO: Fix the parameters below based on the bitstream parameters.
-    const static VkSamplerYcbcrConversionCreateInfo& defaultSamplerYcbcrConversionCreateInfo = {
+    const static VkSamplerYcbcrConversionCreateInfo defaultSamplerYcbcrConversionCreateInfo = {
         VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO,
         NULL,
         frameImageFormat,
@@ -405,6 +394,8 @@ void VulkanFrame::on_frame(bool trainFrame)
     // wait for the last submission since we reuse frame data
     if (dumpDebug) {
         std::cout << "<= Wait on picIdx: " << pLastDecodedFrame->pictureIndex
+                  << "\t\tdisplayWidth: " << pLastDecodedFrame->displayWidth
+                  << "\t\tdisplayHeight: " << pLastDecodedFrame->displayHeight
                   << "\t\tdisplayOrder: " << pLastDecodedFrame->displayOrder
                   << "\tdecodeOrder: " << pLastDecodedFrame->decodeOrder
                   << "\ttimestamp " << pLastDecodedFrame->timestamp
@@ -433,10 +424,17 @@ void VulkanFrame::on_frame(bool trainFrame)
     int decodeOrder = 0;
     int displayOrder = 0;
     uint64_t timestamp = 0;
+    int32_t displayWidth = 0;
+    int32_t displayHeight = 0;
+    VkFormat imageFormat = VK_FORMAT_UNDEFINED;
     if (doTestPatternFrame) {
         pRtImage = &pVideoRenderer->testFrameImage_;
+        imageFormat   = pRtImage->imageFormat;
+        displayWidth = pRtImage->imageWidth;
+        displayHeight = pRtImage->imageHeight;
     } else {
-        pRtImage = pLastDecodedFrame->pDecodedImage;
+        pRtImage    = pLastDecodedFrame->pDecodedImage;
+        imageFormat = pRtImage->imageFormat;
         frameCompleteFence = pLastDecodedFrame->frameCompleteFence;
         frameCompleteSemaphore = pLastDecodedFrame->frameCompleteSemaphore;
         frameConsumerDoneSemaphore = pLastDecodedFrame->frameConsumerDoneSemaphore;
@@ -448,36 +446,52 @@ void VulkanFrame::on_frame(bool trainFrame)
         decodeOrder = pLastDecodedFrame->decodeOrder;
         displayOrder = pLastDecodedFrame->displayOrder;
         timestamp = pLastDecodedFrame->timestamp;
+        displayWidth = pLastDecodedFrame->displayWidth;
+        displayHeight = pLastDecodedFrame->displayHeight;
     }
 
-#ifdef NV_RMAPI_TEGRA
-    if (pPerDrawContext->IsFormatOutOfDate(lastVideoFormatUpdate)) {
-        const VkSamplerYcbcrConversionCreateInfo newSamplerYcbcrConversionCreateInfo = {
+    if (frameImageFormat != imageFormat) {
+
+        const static VkSamplerYcbcrConversionCreateInfo newSamplerYcbcrConversionCreateInfo = {
             VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO,
             NULL,
-            frameImageFormat,
+            imageFormat,
             samplerYcbcrModelConversion,
             samplerYcbcrRange,
-            { VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_IDENTITY },
+#ifndef NV_RMAPI_TEGRA
+            { VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY },
+#else
+            { VK_COMPONENT_SWIZZLE_B,
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_R,
+                VK_COMPONENT_SWIZZLE_IDENTITY },
+#endif
             VK_CHROMA_LOCATION_MIDPOINT,
             VK_CHROMA_LOCATION_MIDPOINT,
             VK_FILTER_NEAREST,
             false
         };
 
+
         if (pPerDrawContext->samplerYcbcrConversion.SamplerRequiresUpdate(nullptr, &newSamplerYcbcrConversionCreateInfo)) {
             pVideoRenderer->render_.UpdatePerDrawContexts(pPerDrawContext, &viewport_, &scissor_,
                 pVideoRenderer->renderPass_.getRenderPass(), &defaultSamplerInfo,
                 &newSamplerYcbcrConversionCreateInfo);
         } else {
+
         }
+
+        frameImageFormat = imageFormat;
     }
-#endif // NV_RMAPI_TEGRA
 
     pPerDrawContext->bufferDescriptorSet.WriteDescriptorSet(VkSampler(0), pRtImage->view);
 
     pPerDrawContext->commandBuffer.CreateCommandBuffer(
-        pVideoRenderer->renderPass_.getRenderPass(), pRtImage, pPerDrawContext->frameBuffer.GetFbImage(),
+        pVideoRenderer->renderPass_.getRenderPass(), pRtImage, displayWidth, displayHeight,
+        pPerDrawContext->frameBuffer.GetFbImage(),
         pPerDrawContext->frameBuffer.GetFrameBuffer(), &scissor_, pPerDrawContext->gfxPipeline.getPipeline(),
         pPerDrawContext->bufferDescriptorSet.getPipelineLayout(), pPerDrawContext->bufferDescriptorSet.getDescriptorSet(),
         &pVideoRenderer->vertexBuffer_);

@@ -101,7 +101,7 @@ vk_core = Extension(name='VK_core', version=0, guard=None, commands=[
     Command(name='GetPhysicalDeviceProperties', dispatch='VkPhysicalDevice'),
     Command(name='GetPhysicalDeviceQueueFamilyProperties', dispatch='VkPhysicalDevice'),
     Command(name='GetPhysicalDeviceMemoryProperties', dispatch='VkPhysicalDevice'),
-    Command(name='GetInstanceProcAddr', dispatch='VkInstance'),
+    Command(name='GetInstanceProcAddr', dispatch=None),
     Command(name='GetDeviceProcAddr', dispatch='VkDevice'),
     Command(name='CreateDevice', dispatch='VkPhysicalDevice'),
     Command(name='DestroyDevice', dispatch='VkDevice'),
@@ -487,8 +487,6 @@ def generate_source(header):
 
     lines.append("void init_dispatch_table_middle(VkInstance instance, bool include_bottom)")
     lines.append("{")
-    lines.append(get_proc_addr("instance", get_instance_proc_addr))
-    lines.append("")
     for cmd, guard in commands_by_types[Command.INSTANCE]:
         if cmd == get_instance_proc_addr:
             continue

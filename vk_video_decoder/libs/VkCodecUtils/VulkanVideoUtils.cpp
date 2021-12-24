@@ -344,11 +344,11 @@ AHardwareBufferHandle ImageObject::ExportHandle()
 }
 #endif // VK_USE_PLATFORM_ANDROID_KHR
 
-VkResult VulkanVideoBistreamBuffer::CreateVideoBistreamBuffer(VkPhysicalDevice gpuDevice, VkDevice device, uint32_t queueFamilyIndex,
+VkResult VulkanVideoBitstreamBuffer::CreateVideoBitstreamBuffer(VkPhysicalDevice gpuDevice, VkDevice device, uint32_t queueFamilyIndex,
          VkDeviceSize bufferSize, VkDeviceSize bufferOffsetAlignment,  VkDeviceSize bufferSizeAlignment,
          const unsigned char* pBitstreamData, VkDeviceSize bitstreamDataSize, VkDeviceSize dstBufferOffset)
 {
-    DestroyVideoBistreamBuffer();
+    DestroyVideoBitstreamBuffer();
 
     m_device = device;
     m_bufferSizeAlignment = bufferSizeAlignment;
@@ -386,7 +386,7 @@ VkResult VulkanVideoBistreamBuffer::CreateVideoBistreamBuffer(VkPhysicalDevice g
     CALL_VK(vk::AllocateMemory(m_device, &allocInfo, nullptr,
                              &m_deviceMemory));
 
-    CALL_VK(CopyVideoBistreamToBuffer(pBitstreamData,
+    CALL_VK(CopyVideoBitstreamToBuffer(pBitstreamData,
                       bitstreamDataSize, dstBufferOffset = 0));
 
     CALL_VK(vk::BindBufferMemory(m_device,
@@ -395,8 +395,8 @@ VkResult VulkanVideoBistreamBuffer::CreateVideoBistreamBuffer(VkPhysicalDevice g
     return VK_SUCCESS;
 }
 
-VkResult VulkanVideoBistreamBuffer::CopyVideoBistreamToBuffer(const unsigned char* pBitstreamData,
-        VkDeviceSize bitstreamDataSize, VkDeviceSize &dstBufferOffset)
+VkResult VulkanVideoBitstreamBuffer::CopyVideoBitstreamToBuffer(const unsigned char* pBitstreamData,
+        VkDeviceSize bitstreamDataSize, VkDeviceSize &dstBufferOffset) const
 {
     if (pBitstreamData && bitstreamDataSize) {
         void *ptr = NULL;
@@ -1353,6 +1353,18 @@ VkResult VulkanDescriptorSet::CreateDescriptorSet(VkDevice device,
     pipelineLayoutCreateInfo.pSetLayouts = &dscLayout;
     pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
     pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
+
+    //setup push constants
+    VkPushConstantRange push_constant;
+    //this push constant range starts at the beginning
+    push_constant.offset = 0;
+    //this push constant range takes up the size of a MeshPushConstants struct
+    push_constant.size = sizeof(TransformPushConstants);
+    //this push constant range is accessible only in the vertex shader
+    push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pipelineLayoutCreateInfo.pPushConstantRanges = &push_constant;
+    pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+
     CALL_VK(vk::CreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout));
 
     if (descPool == VkDescriptorPool(0)) {
@@ -1405,14 +1417,22 @@ VkResult VulkanGraphicsPipeline::CreateGraphicsPipeline(VkDevice device, VkViewp
     dynamicStateInfo.dynamicStateCount = 0;
     dynamicStateInfo.pDynamicStates = nullptr;
 
+    // See https://vkguide.dev/docs/chapter-3/push_constants/
     static char const vss[] =
         "#version 450 core\n"
         "layout(location = 0) in vec2 aVertex;\n"
         "layout(location = 1) in vec2 aTexCoord;\n"
         "layout(location = 0) out vec2 vTexCoord;\n"
+        "\n"
+        "layout( push_constant ) uniform constants\n"
+        "{\n"
+        "    mat4 posMatrix;\n"
+        "    mat2 texMatrix;\n"
+        "} transformPushConstants;\n"
+        "\n"
         "void main()\n"
         "{\n"
-        "    vTexCoord = aTexCoord;\n"
+        "    vTexCoord = transformPushConstants.texMatrix * aTexCoord;\n"
         "    gl_Position = vec4(aVertex, 0, 1);\n"
         "}\n"
         ;
@@ -1583,6 +1603,7 @@ VkResult VulkanGraphicsPipeline::CreateGraphicsPipeline(VkDevice device, VkViewp
 }
 
 VkResult VulkanCommandBuffer::CreateCommandBuffer(VkRenderPass renderPass, const ImageObject* inputImageToDrawFrom,
+        int32_t displayWidth, int32_t displayHeight,
         VkImage displayImage, VkFramebuffer framebuffer, VkRect2D* pRenderArea,
         VkPipeline pipeline, VkPipelineLayout pipelineLayout, const VkDescriptorSet* pDescriptorSet,
         VulkanVertexBuffer* pVertexBuffer)
@@ -1655,6 +1676,21 @@ VkResult VulkanCommandBuffer::CreateCommandBuffer(VkRenderPass renderPass, const
                             pDescriptorSet, 0, nullptr);
     VkDeviceSize offset = 0;
     vk::CmdBindVertexBuffers(cmdBuffer, 0, 1, &pVertexBuffer->get(), &offset);
+
+    bool scaleInput = true;
+    TransformPushConstants constants;
+    if (scaleInput) {
+        if (displayWidth && (displayWidth != inputImageToDrawFrom->imageWidth)) {
+            constants.texMatrix[0] = glm::vec2((float)displayWidth / inputImageToDrawFrom->imageWidth, 0.0f);
+        }
+
+        if (displayHeight && (displayHeight != inputImageToDrawFrom->imageHeight)) {
+            constants.texMatrix[1] = glm::vec2(.0f, (float)displayHeight /inputImageToDrawFrom->imageHeight);
+        }
+    }
+
+    //upload the matrix to the GPU via push constants
+    vk::CmdPushConstants(cmdBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(TransformPushConstants), &constants);
 
     // Draw the quad
     vk::CmdDraw(cmdBuffer, pVertexBuffer->GetNumVertices(), 1, 0, 0);
@@ -2114,6 +2150,7 @@ NativeHandle::NativeHandle (const NativeHandle& other) :
 #endif //defined(VK_ANDROID_external_memory_android_hardware_buffer)
 #endif // defined(VK_USE_PLATFORM_ANDROID_KHR) || defined(VK_PLATFORM_IS_UNIX)
 }
+
 #if defined(VK_USE_PLATFORM_ANDROID_KHR) || defined(VK_PLATFORM_IS_UNIX)
 NativeHandle::NativeHandle (int fd) :
     m_fd                      (fd),

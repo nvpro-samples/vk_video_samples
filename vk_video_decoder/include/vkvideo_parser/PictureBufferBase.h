@@ -61,7 +61,6 @@ public:
         }
     }
 
-public:
     vkPicBuffBase()
         : m_refCount(0)
         , m_picIdx(-1)

@@ -64,7 +64,6 @@ public:
     VkFormat frameImageFormat;
     VkSamplerYcbcrModelConversion samplerYcbcrModelConversion;
     VkSamplerYcbcrRange samplerYcbcrRange;
-    uint32_t lastVideoFormatUpdate;
     vulkanVideoUtils::VkVideoAppCtx* pVideoRenderer;
     uint64_t lastRealTimeNsecs;
 

@@ -66,12 +66,14 @@ union VkParserFieldFlags {
 };
 
 struct VkParserDecodePictureInfo {
+    int32_t displayWidth;
+    int32_t displayHeight;
     int32_t pictureIndex; // Index of the current picture
     VkParserFieldFlags flags;
     VkVideotimestamp timestamp; // decode time
     VkParserFrameSyncinfo frameSyncinfo;
     uint16_t videoFrameType; // VideoFrameType - use Vulkan codec specific type pd->CodecSpecific.h264.slice_type.
-    uint16_t viewId; // from pictureInfoH264->ext.mvcext.view_id
+    uint16_t viewId; // HEVC nuh_layer_id & from pictureInfoH264->ext.mvcext.view_id
 };
 
 struct VulkanVideoDisplayPictureInfo {
@@ -92,7 +94,10 @@ struct VkParserDetectedVideoFormat {
         /** frame rate denominator (0 = unspecified or variable frame rate) */
         uint32_t denominator;
     } frame_rate;
-    uint8_t progressive_sequence; /** 0=interlaced, 1=progressive                                      */
+    uint8_t sequenceUpdate:1;                 /** if true, this is a sequence update and not the first time StartVideoSequence is being called. **/
+    uint8_t sequenceReconfigireFormat:1;      /** if true, this is a sequence update for the video format. **/
+    uint8_t sequenceReconfigireCodedExtent:1; /** if true, this is a sequence update for the video coded extent. **/
+    uint8_t progressive_sequence:1; /** false = interlaced, true = progressive  */
     uint8_t bit_depth_luma_minus8; /** high bit depth luma. E.g, 2 for 10-bitdepth, 4 for 12-bitdepth   */
     uint8_t bit_depth_chroma_minus8; /** high bit depth chroma. E.g, 2 for 10-bitdepth, 4 for 12-bitdepth */
     uint8_t reserved1; /**< Reserved for future use                                               */

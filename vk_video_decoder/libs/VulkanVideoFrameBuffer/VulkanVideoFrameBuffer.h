@@ -31,6 +31,8 @@ namespace vulkanVideoUtils {
 
 struct DecodedFrame {
     int32_t pictureIndex;
+    int32_t displayWidth;
+    int32_t displayHeight;
     const vulkanVideoUtils::ImageObject* pDecodedImage;
     VkFence frameCompleteFence;
     VkFence frameConsumerDoneFence;
@@ -82,8 +84,8 @@ public:
     virtual int32_t InitImagePool(const VkVideoProfileKHR* pDecodeProfile,
                                   uint32_t                 numImages,
                                   VkFormat                 imageFormat,
-                                  uint32_t                 maxImageWidth,
-                                  uint32_t                 maxImageHeight,
+                                  const VkExtent2D&        codedExtent,
+                                  const VkExtent2D&        maxImageExtent,
                                   VkImageTiling            tiling,
                                   VkImageUsageFlags        usage,
                                   uint32_t                 queueFamilyIndex) = 0;

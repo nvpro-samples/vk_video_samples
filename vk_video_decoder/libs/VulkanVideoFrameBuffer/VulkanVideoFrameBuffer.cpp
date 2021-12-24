@@ -19,11 +19,11 @@
 #include <chrono>
 #include <iostream>
 #include <mutex>
+#include <vector>
 #include <queue>
 #include <sstream>
 #include <string.h>
 #include <string>
-#include <vector>
 
 #include "PictureBufferBase.h"
 #include "VkCodecUtils/HelpersDispatchTable.h"
@@ -32,8 +32,6 @@
 #include "VulkanVideoFrameBuffer.h"
 #include "vk_enum_string_helper.h"
 #include "vulkan_interfaces.h"
-
-#define MAX_FRAMEBUFFER_IMAGES 32
 
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
 #define CLOCK_MONOTONIC 0
@@ -44,8 +42,6 @@ class NvPerFrameDecodeImage : public vkPicBuffBase {
 public:
     NvPerFrameDecodeImage()
         : m_picDispInfo()
-        , m_frameImage()
-        , m_currentImageLayout(VK_IMAGE_LAYOUT_UNDEFINED)
         , m_frameCompleteFence()
         , m_frameCompleteSemaphore()
         , m_frameConsumerDoneFence()
@@ -57,19 +53,77 @@ public:
         , m_inDecodeQueue(false)
         , m_inDisplayQueue(false)
         , m_ownedByDisplay(false)
+        , m_recreateImage(false)
+        , m_frameImage()
+        , m_currentImageLayout(VK_IMAGE_LAYOUT_UNDEFINED)
     {
     }
 
+    VkResult CreateImage( vulkanVideoUtils::VulkanDeviceInfo* deviceInfo,
+                          const VkImageCreateInfo* pImageCreateInfo,
+                          VkMemoryPropertyFlags requiredMemProps);
+
+    VkResult init( vulkanVideoUtils::VulkanDeviceInfo* deviceInfo);
+
     void Deinit();
+
+    NvPerFrameDecodeImage (const NvPerFrameDecodeImage &srcObj) = delete;
+    NvPerFrameDecodeImage (NvPerFrameDecodeImage &&srcObj) = delete;
 
     ~NvPerFrameDecodeImage()
     {
         Deinit();
     }
 
+    const vulkanVideoUtils::ImageObject* GetImageObject() {
+        if (ImageExist()) {
+            return &m_frameImage;
+        } else {
+            return nullptr;
+        }
+    }
+
+    bool ImageExist() {
+
+        return !!m_frameImage;
+    }
+
+    bool GetImageSetNewLayout(VkImageLayout newImageLayout,
+                              VkImage* pImage,
+                              VkImageView* pImageView,
+                              VkImageLayout* pOldImageLayout = nullptr) {
+
+
+        if (m_recreateImage || !ImageExist()) {
+            return false;
+        }
+
+        if (pImage) {
+            *pImage = m_frameImage.image;
+        }
+
+        if (pImageView) {
+            *pImageView = m_frameImage.view;
+        }
+
+        if (pOldImageLayout) {
+            *pOldImageLayout = m_currentImageLayout;
+        }
+
+        if (VK_IMAGE_LAYOUT_MAX_ENUM != newImageLayout) {
+            m_currentImageLayout = newImageLayout;
+        }
+
+        return true;
+    }
+
+    VkImageLayout ResetImageLayout(VkImageLayout newImageLayout = VK_IMAGE_LAYOUT_UNDEFINED) {
+        VkImageLayout oldImageLayout = m_currentImageLayout;
+        m_currentImageLayout =  newImageLayout;
+        return oldImageLayout;
+    }
+
     VkParserDecodePictureInfo m_picDispInfo;
-    vulkanVideoUtils::ImageObject m_frameImage;
-    VkImageLayout m_currentImageLayout;
     VkFence m_frameCompleteFence;
     VkSemaphore m_frameCompleteSemaphore;
     VkFence m_frameConsumerDoneFence;
@@ -81,46 +135,104 @@ public:
     uint32_t m_inDecodeQueue : 1;
     uint32_t m_inDisplayQueue : 1;
     uint32_t m_ownedByDisplay : 1;
+    uint32_t m_recreateImage : 1;
     VkSharedBaseObj<VkParserVideoRefCountBase> currentVkPictureParameters;
+
+private:
+    vulkanVideoUtils::ImageObject m_frameImage;
+    VkImageLayout                 m_currentImageLayout;
 };
 
 class NvPerFrameDecodeImageSet {
 public:
+    enum {
+        MAX_IMAGES = 32
+    };
+
     NvPerFrameDecodeImageSet()
-        : m_size(0)
-        , m_frameDecodeImages()
+        : m_queueFamilyIndex((uint32_t)-1),
+          m_imageCreateInfo(),
+          m_requiredMemProps(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+          m_numImages(0),
+          m_frameDecodeImages(MAX_IMAGES)
     {
     }
 
-    int32_t init(uint32_t numImages,
-        vulkanVideoUtils::VulkanDeviceInfo* deviceInfo,
-        const VkImageCreateInfo* pImageCreateInfo,
-        VkMemoryPropertyFlags requiredMemProps = 0,
+    int32_t init(vulkanVideoUtils::VulkanDeviceInfo* deviceInfo,
+        const VkVideoProfileKHR* pDecodeProfile,
+        uint32_t              numImages,
+        VkFormat              imageFormat,
+        const VkExtent2D&     maxImageExtent,
+        VkImageTiling         tiling,
+        VkImageUsageFlags     usage,
+        uint32_t              queueFamilyIndex,
+        VkMemoryPropertyFlags requiredMemProps = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         int initWithPattern = -1,
         VkExternalMemoryHandleTypeFlagBitsKHR exportMemHandleTypes = VkExternalMemoryHandleTypeFlagBitsKHR(),
         vulkanVideoUtils::NativeHandle& importHandle = vulkanVideoUtils::NativeHandle::InvalidNativeHandle);
 
-    void Deinit();
+    void Deinit(int32_t startIndex, int32_t numItems);
 
     ~NvPerFrameDecodeImageSet()
     {
-        Deinit();
+        Deinit(0, m_numImages);
     }
 
     NvPerFrameDecodeImage& operator[](unsigned int index)
     {
-        assert(index < m_size);
+        assert(index < m_frameDecodeImages.size());
         return m_frameDecodeImages[index];
     }
 
     size_t size()
     {
-        return m_size;
+        return m_numImages;
+    }
+
+
+    VkResult GetImageSetNewLayout(vulkanVideoUtils::VulkanDeviceInfo* pVideoRendererDeviceInfo,
+                                  uint32_t imageIndex,
+                                  VkImageLayout newImageLayout,
+                                  VkImage* pImage,
+                                  VkImageView* pImageView,
+                                  VkImageLayout* pOldImageLayout = nullptr) {
+
+        VkResult result = VK_SUCCESS;
+        bool validImage = m_frameDecodeImages[imageIndex].GetImageSetNewLayout(
+                               newImageLayout,
+                               pImage,
+                               pImageView,
+                               pOldImageLayout);
+
+        if (!validImage) {
+            result = m_frameDecodeImages[imageIndex].CreateImage(
+                               pVideoRendererDeviceInfo,
+                               &m_imageCreateInfo,
+                               m_requiredMemProps);
+
+            assert(result == VK_SUCCESS);
+
+            if (result == VK_SUCCESS) {
+                validImage = m_frameDecodeImages[imageIndex].GetImageSetNewLayout(
+                                               newImageLayout,
+                                               pImage,
+                                               pImageView,
+                                               pOldImageLayout);
+
+                assert(validImage);
+            }
+        }
+
+        return result;
     }
 
 private:
-    size_t m_size;
-    NvPerFrameDecodeImage m_frameDecodeImages[MAX_FRAMEBUFFER_IMAGES];
+    uint32_t                            m_queueFamilyIndex;
+    nvVideoProfile                      m_videoProfile;
+    VkImageCreateInfo                   m_imageCreateInfo;
+    VkMemoryPropertyFlags               m_requiredMemProps;
+    uint32_t                            m_numImages;
+    std::vector<NvPerFrameDecodeImage>  m_frameDecodeImages;
 };
 
 static uint64_t getNsTime(bool resetTime = false)
@@ -155,20 +267,23 @@ static uint64_t getNsTime(bool resetTime = false)
 
 class NvVulkanVideoFrameBuffer : public VulkanVideoFrameBuffer {
 public:
+
+    enum {
+        MAX_FRAMEBUFFER_IMAGES = 32
+    };
+
     NvVulkanVideoFrameBuffer(vulkanVideoUtils::VulkanDeviceInfo* pVideoRendererDeviceInfo)
         : m_pVideoRendererDeviceInfo(pVideoRendererDeviceInfo)
         , m_refCount(1)
         , m_displayQueueMutex()
-        , m_queueFamilyIndex((uint32_t)-1)
-        , m_videoProfile()
-        , m_imageCreateInfo()
         , m_perFrameDecodeImageSet()
         , m_displayFrames()
         , m_queryPool()
         , m_ownedByDisplayMask(0)
         , m_frameNumInDecodeOrder(0)
         , m_frameNumInDisplayOrder(0)
-        , m_extent { 0, 0 }
+        , m_codedExtent { 0, 0 }
+        , m_numberParameterUpdates(0)
         , m_debug()
     {
     }
@@ -178,97 +293,96 @@ public:
 
     VkResult CreateVideoQueries(uint32_t numSlots, vulkanVideoUtils::VulkanDeviceInfo* deviceInfo, const VkVideoProfileKHR* pDecodeProfile)
     {
-        VkPhysicalDeviceFeatures2 coreFeatures;
-        VkPhysicalDeviceSamplerYcbcrConversionFeatures ycbcrFeatures;
+        assert (numSlots <= MAX_FRAMEBUFFER_IMAGES);
 
-        memset(&coreFeatures, 0, sizeof(coreFeatures));
-        memset(&ycbcrFeatures, 0, sizeof(ycbcrFeatures));
+        if (m_queryPool == VkQueryPool()) {
+            // It would be difficult to resize a query pool, so allocate the maximum possible slot.
+            numSlots = MAX_FRAMEBUFFER_IMAGES;
+            VkQueryPoolCreateInfo queryPoolCreateInfo = { VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
+            queryPoolCreateInfo.pNext = pDecodeProfile;
+            queryPoolCreateInfo.queryType = VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR;
+            queryPoolCreateInfo.queryCount = numSlots; // m_numDecodeSurfaces frames worth
 
-        coreFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        coreFeatures.pNext = &ycbcrFeatures;
-        ycbcrFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES;
+            return vk::CreateQueryPool(deviceInfo->device_, &queryPoolCreateInfo, NULL, &m_queryPool);
+        }
 
-        vk::GetPhysicalDeviceFeatures2(deviceInfo->physDevice_, &coreFeatures);
-
-        VkQueryPoolCreateInfo queryPoolCreateInfo = { VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
-        queryPoolCreateInfo.pNext = pDecodeProfile;
-        queryPoolCreateInfo.queryType = VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR;
-        queryPoolCreateInfo.queryCount = numSlots; // m_numDecodeSurfaces frames worth
-
-        return vk::CreateQueryPool(deviceInfo->device_, &queryPoolCreateInfo, NULL, &m_queryPool);
+        return VK_SUCCESS;
     }
 
-    virtual int32_t InitImagePool(const VkVideoProfileKHR* pDecodeProfile,
-                                  uint32_t                 numImages,
-                                  VkFormat                 imageFormat,
-                                  uint32_t                 maxImageWidth,
-                                  uint32_t                 maxImageHeight,
-                                  VkImageTiling            tiling,
-                                  VkImageUsageFlags        usage,
-                                  uint32_t                 queueFamilyIndex)
+    void DestroyVideoQueries() {
+        if (m_queryPool != VkQueryPool()) {
+            vk::DestroyQueryPool(m_pVideoRendererDeviceInfo->device_, m_queryPool, NULL);
+            m_queryPool = VkQueryPool();
+        }
+    }
+
+    uint32_t  FlushDisplayQueue()
     {
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
 
+        uint32_t flushedImages = 0;
         while (!m_displayFrames.empty()) {
             int8_t pictureIndex = m_displayFrames.front();
             assert((pictureIndex >= 0) && ((uint32_t)pictureIndex < m_perFrameDecodeImageSet.size()));
             m_displayFrames.pop();
             assert(m_perFrameDecodeImageSet[(uint32_t)pictureIndex].IsAvailable());
             m_perFrameDecodeImageSet[(uint32_t)pictureIndex].Release();
+            flushedImages++;
         }
 
-        if (m_queryPool != VkQueryPool()) {
-            vk::DestroyQueryPool(m_pVideoRendererDeviceInfo->device_, m_queryPool, NULL);
-            m_queryPool = VkQueryPool();
+        return flushedImages;
+    }
+
+    virtual int32_t InitImagePool(const VkVideoProfileKHR* pDecodeProfile,
+                                  uint32_t                 numImages,
+                                  VkFormat                 imageFormat,
+                                  const VkExtent2D&        codedExtent,
+                                  const VkExtent2D&        maxImageExtent,
+                                  VkImageTiling            tiling,
+                                  VkImageUsageFlags        usage,
+                                  uint32_t                 queueFamilyIndex)
+    {
+        std::lock_guard<std::mutex> lock(m_displayQueueMutex);
+
+        assert(numImages && (numImages <= MAX_FRAMEBUFFER_IMAGES) && pDecodeProfile);
+
+        VkResult result = CreateVideoQueries(numImages, m_pVideoRendererDeviceInfo, pDecodeProfile);
+        if (result != VK_SUCCESS) {
+            return 0;
         }
+
+        // m_extent is for the codedExtent, not the max image resolution
+        m_codedExtent = codedExtent;
+
+        int32_t imageSetCreateResult =
+                m_perFrameDecodeImageSet.init(m_pVideoRendererDeviceInfo,
+                                              pDecodeProfile,
+                                              numImages,
+                                              imageFormat,
+                                              maxImageExtent,
+                                              tiling,
+                                              usage,
+                                              queueFamilyIndex,
+                                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                              0 /* No ColorPatternColorBars */,
+                                              VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT);
+        m_numberParameterUpdates++;
+
+        return imageSetCreateResult;
+    }
+
+    void Deinitialize() {
+
+        FlushDisplayQueue();
+
+        DestroyVideoQueries();
 
         m_ownedByDisplayMask = 0;
         m_frameNumInDecodeOrder = 0;
         m_frameNumInDisplayOrder = 0;
 
-        m_videoProfile.InitFromProfile(pDecodeProfile);
-
-        if (numImages && pDecodeProfile) {
-            VkResult result = CreateVideoQueries(numImages, m_pVideoRendererDeviceInfo, pDecodeProfile);
-            if (result != VK_SUCCESS) {
-                return 0;
-            }
-        }
-
-        m_queueFamilyIndex = queueFamilyIndex;
-        m_imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        m_imageCreateInfo.pNext = m_videoProfile.GetProfile();
-        m_imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
-        m_imageCreateInfo.format = imageFormat;
-        m_imageCreateInfo.extent = { maxImageWidth, maxImageHeight, 1 };
-        m_imageCreateInfo.mipLevels = 1;
-        m_imageCreateInfo.arrayLayers = 1;
-        m_imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-        m_imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        m_imageCreateInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_SRC_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
-        m_imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        m_imageCreateInfo.queueFamilyIndexCount = 1;
-        m_imageCreateInfo.pQueueFamilyIndices = &m_queueFamilyIndex;
-        m_imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        m_imageCreateInfo.flags = 0;
-
-        if (numImages) {
-
-            // m_extent is for the codedExtent, not the max image resolution
-            m_extent.width = maxImageWidth;
-            m_extent.height = maxImageHeight;
-
-            return m_perFrameDecodeImageSet.init(numImages, m_pVideoRendererDeviceInfo, &m_imageCreateInfo,
-                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                0 /* No ColorPatternColorBars */,
-                VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT);
-
-        } else {
-            m_perFrameDecodeImageSet.Deinit();
-        }
-
-        return 0;
-    }
+        m_perFrameDecodeImageSet.Deinit(0, (int32_t)m_perFrameDecodeImageSet.size());
+    };
 
     virtual int32_t QueueDecodedPictureForDisplay(int8_t picId, VulkanVideoDisplayPictureInfo* pDispInfo)
     {
@@ -359,7 +473,10 @@ public:
         if ((uint32_t)pictureIndex < m_perFrameDecodeImageSet.size()) {
             pDecodedFrame->pictureIndex = pictureIndex;
 
-            pDecodedFrame->pDecodedImage = &m_perFrameDecodeImageSet[pictureIndex].m_frameImage;
+            pDecodedFrame->pDecodedImage = m_perFrameDecodeImageSet[pictureIndex].GetImageObject();
+
+            pDecodedFrame->displayWidth  = m_perFrameDecodeImageSet[pictureIndex].m_picDispInfo.displayWidth;
+            pDecodedFrame->displayHeight = m_perFrameDecodeImageSet[pictureIndex].m_picDispInfo.displayHeight;
 
             if (m_perFrameDecodeImageSet[pictureIndex].m_hasFrameCompleteSignalFence) {
                 pDecodedFrame->frameCompleteFence = m_perFrameDecodeImageSet[pictureIndex].m_frameCompleteFence;
@@ -426,20 +543,23 @@ public:
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         for (unsigned int resId = 0; resId < numResources; resId++) {
             if ((uint32_t)referenceSlotIndexes[resId] < m_perFrameDecodeImageSet.size()) {
-                pictureResources[resId].imageViewBinding = m_perFrameDecodeImageSet[referenceSlotIndexes[resId]].m_frameImage.view;
+
+                VkResult result = m_perFrameDecodeImageSet.GetImageSetNewLayout(m_pVideoRendererDeviceInfo,
+                                     referenceSlotIndexes[resId],
+                                     newImageLayout,
+                                     pictureResourcesInfo ? &pictureResourcesInfo[resId].image : nullptr,
+                                     &pictureResources[resId].imageViewBinding,
+                                     pictureResourcesInfo ?  &pictureResourcesInfo[resId].currentImageLayout : nullptr);
+
+                assert(result == VK_SUCCESS);
+                if (result != VK_SUCCESS) {
+                    return -1;
+                }
+
                 assert(pictureResources[resId].sType == VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_KHR);
                 pictureResources[resId].codedOffset = { 0, 0 }; // FIXME: This parameter must to be adjusted based on the interlaced mode.
-                pictureResources[resId].codedExtent = m_extent;
+                pictureResources[resId].codedExtent = m_codedExtent;
                 pictureResources[resId].baseArrayLayer = 0;
-                if (pictureResourcesInfo) {
-                    pictureResourcesInfo[resId].currentImageLayout = m_perFrameDecodeImageSet[referenceSlotIndexes[resId]].m_currentImageLayout;
-                }
-                if (VK_IMAGE_LAYOUT_MAX_ENUM != newImageLayout) {
-                    m_perFrameDecodeImageSet[referenceSlotIndexes[resId]].m_currentImageLayout = newImageLayout;
-                    if (pictureResourcesInfo) {
-                        pictureResourcesInfo[resId].image = m_perFrameDecodeImageSet[referenceSlotIndexes[resId]].m_frameImage.image;
-                    }
-                }
             }
         }
         return numResources;
@@ -484,7 +604,7 @@ public:
     {
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         if ((uint32_t)picId < m_perFrameDecodeImageSet.size()) {
-            return &m_perFrameDecodeImageSet[picId].m_frameImage;
+            return m_perFrameDecodeImageSet[picId].GetImageObject();
         }
         assert(false);
         return NULL;
@@ -519,7 +639,6 @@ public:
     }
 
     VkResult Initialize() { return VK_SUCCESS; }
-    void Deinitialize() {};
 
     virtual ~NvVulkanVideoFrameBuffer()
     {
@@ -531,19 +650,17 @@ public:
 
 private:
     vulkanVideoUtils::VulkanDeviceInfo* m_pVideoRendererDeviceInfo;
-    std::atomic<int32_t> m_refCount;
-    std::mutex           m_displayQueueMutex;
-    uint32_t                 m_queueFamilyIndex;
-    nvVideoProfile           m_videoProfile;
-    VkImageCreateInfo        m_imageCreateInfo;
+    std::atomic<int32_t>     m_refCount;
+    std::mutex               m_displayQueueMutex;
     NvPerFrameDecodeImageSet m_perFrameDecodeImageSet;
-    std::queue<uint8_t> m_displayFrames;
-    VkQueryPool m_queryPool;
-    uint32_t m_ownedByDisplayMask;
-    int32_t m_frameNumInDecodeOrder;
-    int32_t m_frameNumInDisplayOrder;
-    VkExtent2D m_extent;               // for the codedExtent, not the max image resolution
-    uint32_t m_debug : 1;
+    std::queue<uint8_t>      m_displayFrames;
+    VkQueryPool              m_queryPool;
+    uint32_t                 m_ownedByDisplayMask;
+    int32_t                  m_frameNumInDecodeOrder;
+    int32_t                  m_frameNumInDisplayOrder;
+    VkExtent2D               m_codedExtent;               // for the codedExtent, not the max image resolution
+    uint32_t                 m_numberParameterUpdates;
+    uint32_t                 m_debug : 1;
 };
 
 VulkanVideoFrameBuffer* VulkanVideoFrameBuffer::CreateInstance(vulkanVideoUtils::VulkanDeviceInfo* pVideoRendererDeviceInfo)
@@ -577,12 +694,52 @@ int32_t NvVulkanVideoFrameBuffer::Release()
     return ret;
 }
 
-void NvPerFrameDecodeImage::Deinit()
+VkResult NvPerFrameDecodeImage::CreateImage( vulkanVideoUtils::VulkanDeviceInfo* deviceInfo,
+                                             const VkImageCreateInfo* pImageCreateInfo,
+                                             VkMemoryPropertyFlags requiredMemProps)
 {
-    if (m_frameImage.m_device == VkDevice()) {
-        return;
+    VkResult result = VK_SUCCESS;
+
+    if (!m_frameImage || m_recreateImage) {
+
+        result = m_frameImage.CreateImage(deviceInfo, pImageCreateInfo,
+                                          requiredMemProps);
+        assert(result == VK_SUCCESS);
+
+        m_currentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        m_recreateImage = false;
     }
 
+    return result;
+}
+
+VkResult NvPerFrameDecodeImage::init( vulkanVideoUtils::VulkanDeviceInfo* deviceInfo)
+{
+
+    // The fence waited on for the first frame should be signaled.
+    const VkFenceCreateInfo fenceFrameCompleteInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr,
+                                                       VK_FENCE_CREATE_SIGNALED_BIT };
+    VkResult result = vk::CreateFence(deviceInfo->device_, &fenceFrameCompleteInfo, nullptr, &m_frameCompleteFence);
+
+    const VkFenceCreateInfo fenceInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr };
+    result = vk::CreateFence(deviceInfo->device_, &fenceInfo, nullptr, &m_frameConsumerDoneFence);
+    assert(result == VK_SUCCESS);
+    assert(result == VK_SUCCESS);
+
+    const VkSemaphoreCreateInfo semInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr };
+    result = vk::CreateSemaphore(deviceInfo->device_, &semInfo, nullptr, &m_frameCompleteSemaphore);
+    assert(result == VK_SUCCESS);
+    result = vk::CreateSemaphore(deviceInfo->device_, &semInfo, nullptr, &m_frameConsumerDoneSemaphore);
+    assert(result == VK_SUCCESS);
+
+    Reset();
+
+    return result;
+}
+
+void NvPerFrameDecodeImage::Deinit()
+{
     currentVkPictureParameters = nullptr;
 
     if (m_frameCompleteFence != VkFence()) {
@@ -605,51 +762,89 @@ void NvPerFrameDecodeImage::Deinit()
         m_frameConsumerDoneSemaphore = VkSemaphore();
     }
 
-    m_frameImage.DestroyImage();
+    if (m_frameImage) {
+        m_frameImage.DestroyImage();
+    }
     Reset();
 }
 
-int32_t NvPerFrameDecodeImageSet::init(uint32_t numImages,
-    vulkanVideoUtils::VulkanDeviceInfo* deviceInfo,
-    const VkImageCreateInfo* pImageCreateInfo,
-    VkMemoryPropertyFlags requiredMemProps,
-    int initWithPattern,
-    VkExternalMemoryHandleTypeFlagBitsKHR exportMemHandleTypes,
-    vulkanVideoUtils::NativeHandle& importHandle)
+int32_t NvPerFrameDecodeImageSet::init(vulkanVideoUtils::VulkanDeviceInfo* deviceInfo,
+                                       const VkVideoProfileKHR* pDecodeProfile,
+                                       uint32_t              numImages,
+                                       VkFormat              imageFormat,
+                                       const VkExtent2D&     maxImageExtent,
+                                       VkImageTiling         tiling,
+                                       VkImageUsageFlags     usage,
+                                       uint32_t              queueFamilyIndex,
+                                       VkMemoryPropertyFlags requiredMemProps,
+                                       int initWithPattern,
+                                       VkExternalMemoryHandleTypeFlagBitsKHR exportMemHandleTypes,
+                                       vulkanVideoUtils::NativeHandle& importHandle)
 {
-    Deinit();
+    assert(numImages <= m_frameDecodeImages.size());
 
-    m_size = numImages;
+    const bool reconfigureImages = (m_numImages &&
+        (m_imageCreateInfo.sType == VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO)) &&
+              ((m_imageCreateInfo.format != imageFormat) ||
+               (m_imageCreateInfo.extent.width < maxImageExtent.width) ||
+               (m_imageCreateInfo.extent.height < maxImageExtent.height));
 
-    VkFenceCreateInfo fenceInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
-    VkFenceCreateInfo fenceFrameCompleteInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
-    // The fence waited on for the first frame should be signaled.
-    fenceFrameCompleteInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    VkSemaphoreCreateInfo semInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+    m_videoProfile.InitFromProfile(pDecodeProfile);
 
-    for (unsigned imageIndex = 0; imageIndex < numImages; imageIndex++) {
-        VkResult result = m_frameDecodeImages[imageIndex].m_frameImage.CreateImage(deviceInfo, pImageCreateInfo,
-            requiredMemProps,
-            initWithPattern,
-            exportMemHandleTypes, importHandle);
+    m_queueFamilyIndex = queueFamilyIndex;
+    m_requiredMemProps = requiredMemProps;
+    m_imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    m_imageCreateInfo.pNext = m_videoProfile.GetProfile();
+    m_imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+    m_imageCreateInfo.format = imageFormat;
+    m_imageCreateInfo.extent = { maxImageExtent.width, maxImageExtent.height, 1 };
+    m_imageCreateInfo.mipLevels = 1;
+    m_imageCreateInfo.arrayLayers = 1;
+    m_imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    m_imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    m_imageCreateInfo.usage = usage;
+    m_imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    m_imageCreateInfo.queueFamilyIndexCount = 1;
+    m_imageCreateInfo.pQueueFamilyIndices = &m_queueFamilyIndex;
+    m_imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    m_imageCreateInfo.flags = 0;
+
+    for (uint32_t imageIndex = m_numImages; imageIndex < numImages; imageIndex++) {
+        VkResult result = m_frameDecodeImages[imageIndex].init(deviceInfo);
         assert(result == VK_SUCCESS);
-        result = vk::CreateFence(deviceInfo->device_, &fenceFrameCompleteInfo, nullptr, &m_frameDecodeImages[imageIndex].m_frameCompleteFence);
-        result = vk::CreateFence(deviceInfo->device_, &fenceInfo, nullptr, &m_frameDecodeImages[imageIndex].m_frameConsumerDoneFence);
-        assert(result == VK_SUCCESS);
-        assert(result == VK_SUCCESS);
-        result = vk::CreateSemaphore(deviceInfo->device_, &semInfo, nullptr, &m_frameDecodeImages[imageIndex].m_frameCompleteSemaphore);
-        assert(result == VK_SUCCESS);
-        result = vk::CreateSemaphore(deviceInfo->device_, &semInfo, nullptr, &m_frameDecodeImages[imageIndex].m_frameConsumerDoneSemaphore);
-        assert(result == VK_SUCCESS);
+        if (result != VK_SUCCESS) {
+            return -1;
+        }
     }
 
-    return (int32_t)m_size;
+    uint32_t firstIndex = reconfigureImages ? 0 : m_numImages;
+    uint32_t maxNumImages = std::max(m_numImages, numImages);
+    for (uint32_t imageIndex = firstIndex; imageIndex < maxNumImages; imageIndex++) {
+
+        if (m_frameDecodeImages[imageIndex].ImageExist() && reconfigureImages) {
+
+            m_frameDecodeImages[imageIndex].m_recreateImage = true;
+
+        } else if (!m_frameDecodeImages[imageIndex].ImageExist()) {
+
+            VkResult result = m_frameDecodeImages[imageIndex].CreateImage(deviceInfo,
+                                                                          &m_imageCreateInfo,
+                                                                          m_requiredMemProps);
+
+            assert(result == VK_SUCCESS);
+            if (result != VK_SUCCESS) {
+                return -1;
+            }
+        }
+    }
+
+    m_numImages = numImages;
+    return (int32_t)numImages;
 }
 
-void NvPerFrameDecodeImageSet::Deinit()
+void NvPerFrameDecodeImageSet::Deinit(int32_t startIndex, int32_t numItems)
 {
-    for (uint32_t ndx = 0; ndx < m_size; ndx++) {
+    for (int32_t ndx = startIndex; ndx < (startIndex + numItems); ndx++) {
         m_frameDecodeImages[ndx].Deinit();
     }
-    m_size = 0;
 }

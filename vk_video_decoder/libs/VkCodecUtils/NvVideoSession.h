@@ -22,15 +22,64 @@
 class NvVideoSession : public VkParserVideoRefCountBase
 {
 public:
-    static VkResult Create(VkDevice         dev,
-                           uint32_t         videoQueueFamily,
-                           nvVideoProfile*  pVideoProfile,
-                           VkFormat         pictureFormat,
-                           VkExtent2D*      pMaxCodedExtent,
-                           VkFormat         referencePicturesFormat,
-                           uint32_t         maxReferencePicturesSlotsCount,
-                           uint32_t         maxReferencePicturesActiveCount,
+    static VkResult Create(VkDevice          dev,
+                           uint32_t          videoQueueFamily,
+                           nvVideoProfile*   pVideoProfile,
+                           VkFormat          pictureFormat,
+                           const VkExtent2D& maxCodedExtent,
+                           VkFormat          referencePicturesFormat,
+                           uint32_t          maxReferencePicturesSlotsCount,
+                           uint32_t          maxReferencePicturesActiveCount,
                            VkSharedBaseObj<NvVideoSession>& videoSession);
+
+    bool IsCompatible ( VkDevice          dev,
+                        uint32_t          videoQueueFamily,
+                        nvVideoProfile*   pVideoProfile,
+                        VkFormat          pictureFormat,
+                        const VkExtent2D& maxCodedExtent,
+                        VkFormat          referencePicturesFormat,
+                        uint32_t          maxReferencePicturesSlotsCount,
+                        uint32_t          maxReferencePicturesActiveCount)
+    {
+        if (*pVideoProfile != m_profile) {
+            return false;
+        }
+
+        if (maxCodedExtent.width > m_createInfo.maxCodedExtent.width) {
+            return false;
+        }
+
+        if (maxCodedExtent.height > m_createInfo.maxCodedExtent.height) {
+            return false;
+        }
+
+        if (maxReferencePicturesSlotsCount > m_createInfo.maxReferencePicturesSlotsCount) {
+            return false;
+        }
+
+        if (maxReferencePicturesActiveCount > m_createInfo.maxReferencePicturesActiveCount) {
+            return false;
+        }
+
+        if (m_createInfo.referencePicturesFormat != referencePicturesFormat) {
+            return false;
+        }
+
+        if (m_createInfo.pictureFormat != pictureFormat) {
+            return false;
+        }
+
+        if (m_dev != dev) {
+            return false;
+        }
+
+        if (m_createInfo.queueFamilyIndex != videoQueueFamily) {
+            return false;
+        }
+
+        return true;
+    }
+
 
     virtual int32_t AddRef()
     {
@@ -53,11 +102,13 @@ private:
     std::atomic<int32_t>                 m_refCount;
     nvVideoProfile                       m_profile;
     VkDevice                             m_dev;
+    VkVideoSessionCreateInfoKHR          m_createInfo;
     VkVideoSessionKHR                    m_videoSession;
     vulkanVideoUtils::DeviceMemoryObject m_memoryBound[8];
 
     NvVideoSession(nvVideoProfile* pVideoProfile)
        : m_refCount(0), m_profile(*pVideoProfile), m_dev(VkDevice()),
+         m_createInfo{ VK_STRUCTURE_TYPE_VIDEO_SESSION_CREATE_INFO_KHR, NULL },
          m_videoSession(VkVideoSessionKHR()), m_memoryBound{}
     {
 

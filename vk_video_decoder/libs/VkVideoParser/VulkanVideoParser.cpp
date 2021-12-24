@@ -194,29 +194,36 @@ private:
 class DpbSlots {
 public:
     DpbSlots(uint32_t dpbMaxSize)
-        : m_dpbMaxSize(dpbMaxSize)
+        : m_dpbMaxSize(0)
         , m_slotInUseMask(0)
         , m_dpb(m_dpbMaxSize)
         , m_dpbSlotsAvailable()
     {
-        Init(dpbMaxSize);
+        Init(dpbMaxSize, false);
     }
 
-    int32_t Init(uint32_t newDpbMaxSize)
+    int32_t Init(uint32_t newDpbMaxSize, bool reconfigure)
     {
         assert(newDpbMaxSize <= MAX_DPB_SLOTS_PLUS_1);
 
-        Deinit();
+        if (!reconfigure) {
+            Deinit();
+        }
 
+        if (reconfigure && (newDpbMaxSize < m_dpbMaxSize)) {
+            return m_dpbMaxSize;
+        }
+
+        uint32_t oldDpbMaxSize = reconfigure ? m_dpbMaxSize : 0;
         m_dpbMaxSize = newDpbMaxSize;
 
         m_dpb.resize(m_dpbMaxSize);
 
-        for (uint32_t ndx = 0; ndx < m_dpbMaxSize; ndx++) {
+        for (uint32_t ndx = oldDpbMaxSize; ndx < m_dpbMaxSize; ndx++) {
             m_dpb[ndx].Invalidate();
         }
 
-        for (uint8_t dpbIndx = 0; dpbIndx < m_dpbMaxSize; dpbIndx++) {
+        for (uint8_t dpbIndx = oldDpbMaxSize; dpbIndx < m_dpbMaxSize; dpbIndx++) {
             m_dpbSlotsAvailable.push(dpbIndx);
         }
 
@@ -511,6 +518,7 @@ public:
 
     virtual uint32_t GetDecodeCaps()
     {
+        // FIXME: Add MVC / SVC support
         uint32_t decode_caps = 0; // NVD_CAPS_MVC | NVD_CAPS_SVC; // !!!
         return decode_caps;
     };
@@ -589,11 +597,6 @@ protected:
     uint32_t m_maxNumDecodeSurfaces;
     uint32_t m_maxNumDpbSurfaces;
     uint64_t m_clockRate;
-    // 90% of the required Dpb mapping code is already in H264Parser.cpp. However
-    // we do not want to modify the parser at this point.
-    // Essentially, the parser must preallocate a Dpb entry for the current frame,
-    // if it is about to become a reference, instead of using the max_dpb for the
-    // index.
     VkParserSequenceInfo m_nvsi;
     int32_t m_nCurrentPictureID;
     uint32_t m_dpbSlotsMask;
@@ -968,20 +971,46 @@ uint32_t VulkanVideoParser::ResetPicDpbSlots(uint32_t picIndexSlotValidMask)
 
 int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
 {
-    // FIXME: reevaluate the below calculations on Tegra.
+    bool sequenceUpdate = ((m_nvsi.nMaxWidth != 0) && (m_nvsi.nMaxHeight != 0)) ? true : false;
+
     const int32_t maxDbpSlots = MAX_DPB_SLOTS_PLUS_1 - ((pnvsi->eCodec == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT) ? 0 : EXTRA_DPB_SLOTS);
-    int32_t configDpbSlots = maxDbpSlots;
+    int32_t configDpbSlots = (pnvsi->nMinNumDecodeSurfaces > 0) ? (pnvsi->nMinNumDecodeSurfaces - (pnvsi->isSVC ? 3 : 1)) : 0;
+    if (configDpbSlots > maxDbpSlots) {
+        configDpbSlots = maxDbpSlots;
+    }
     int32_t configDpbSlotsPlus1 = std::min((uint32_t)(configDpbSlots + 1), MAX_DPB_SLOTS_PLUS_1);
 
-    if ((pnvsi->eCodec != m_nvsi.eCodec) || (pnvsi->nCodedWidth != m_nvsi.nCodedWidth) || (pnvsi->nCodedHeight != m_nvsi.nCodedHeight) || (pnvsi->nChromaFormat != m_nvsi.nChromaFormat) || (pnvsi->bProgSeq != m_nvsi.bProgSeq)) {
+    bool sequenceReconfigireFormat = false;
+    bool sequenceReconfigireCodedExtent = false;
+    if (sequenceUpdate) {
+        if ((pnvsi->eCodec != m_nvsi.eCodec) ||
+         (pnvsi->nChromaFormat != m_nvsi.nChromaFormat) || (pnvsi->uBitDepthLumaMinus8 != m_nvsi.uBitDepthLumaMinus8) ||
+                                                           (pnvsi->uBitDepthChromaMinus8 != m_nvsi.uBitDepthChromaMinus8) ||
+        (pnvsi->bProgSeq != m_nvsi.bProgSeq)) {
+            sequenceReconfigireFormat = true;
+        }
+
+        if ((pnvsi->nCodedWidth != m_nvsi.nCodedWidth) || (pnvsi->nCodedHeight != m_nvsi.nCodedHeight)) {
+            sequenceReconfigireCodedExtent = true;
+        }
+
     }
+
     m_nvsi = *pnvsi;
+    m_nvsi.nMaxWidth = pnvsi->nCodedWidth;
+    m_nvsi.nMaxHeight = pnvsi->nCodedHeight;
+
     if (m_pDecoderHandler) {
         VkParserDetectedVideoFormat detectedFormat;
         uint8_t raw_seqhdr_data[1024]; /* Output the sequence header data, currently
                                       not used */
 
         memset(&detectedFormat, 0, sizeof(detectedFormat));
+
+        detectedFormat.sequenceUpdate = sequenceUpdate;
+        detectedFormat.sequenceReconfigireFormat = sequenceReconfigireFormat;
+        detectedFormat.sequenceReconfigireCodedExtent = sequenceReconfigireCodedExtent;
+
         detectedFormat.codec = pnvsi->eCodec;
         detectedFormat.frame_rate.numerator = NV_FRAME_RATE_NUM(pnvsi->frameRate);
         detectedFormat.frame_rate.denominator = NV_FRAME_RATE_DEN(pnvsi->frameRate);
@@ -1041,15 +1070,6 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
         detectedFormat.video_signal_description.matrix_coefficients = pnvsi->lMatrixCoefficients;
         detectedFormat.seqhdr_data_length = (uint32_t)std::min((size_t)pnvsi->cbSequenceHeader, sizeof(raw_seqhdr_data));
         detectedFormat.minNumDecodeSurfaces = pnvsi->nMinNumDecodeSurfaces;
-
-        configDpbSlots = (pnvsi->nMinNumDecodeSurfaces > 0)
-            ? (pnvsi->nMinNumDecodeSurfaces - (pnvsi->isSVC ? 3 : 1))
-            : 0;
-        if (configDpbSlots > maxDbpSlots) {
-            configDpbSlots = maxDbpSlots;
-        }
-
-        configDpbSlotsPlus1 = std::min((uint32_t)(configDpbSlots + 1), MAX_DPB_SLOTS_PLUS_1);
         detectedFormat.maxNumDpbSlots = configDpbSlotsPlus1;
 
         if (detectedFormat.seqhdr_data_length > 0) {
@@ -1076,10 +1096,8 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
     // The number of minNumDecodeSurfaces can be overwritten.
     // Add one for the current Dpb setup slot.
     m_maxNumDpbSurfaces = configDpbSlotsPlus1;
-    m_dpb.Init(m_maxNumDpbSurfaces);
+    m_dpb.Init(m_maxNumDpbSurfaces, sequenceUpdate /* reconfigure DPB */);
 
-    // NOTE: Important Tegra parser requires the maxDpbSlotsPlus1 and not
-    // dpbSlots.
     return configDpbSlotsPlus1;
 }
 
@@ -1878,6 +1896,9 @@ bool VulkanVideoParser::DecodePicture(
         }
 
     }
+
+    pDecodePictureInfo->displayWidth  = m_nvsi.nDisplayWidth;
+    pDecodePictureInfo->displayHeight = m_nvsi.nDisplayHeight;
 
     bRet = (m_pDecoderHandler->DecodePictureWithParameters(pPerFrameDecodeParameters, pDecodePictureInfo) >= 0);
 

@@ -626,19 +626,19 @@ typedef struct VkParserOperatingPointInfo {
 typedef struct VkParserSequenceInfo {
     VkVideoCodecOperationFlagBitsKHR eCodec; // Compression Standard
     bool isSVC; // h.264 SVC
-    FrameRate frameRate; // Frame Rate stored in the bitstream
-    int32_t bProgSeq; // Progressive Sequence
-    int32_t nDisplayWidth; // Displayed Horizontal Size
-    int32_t nDisplayHeight; // Displayed Vertical Size
-    int32_t nCodedWidth; // Coded Picture Width
-    int32_t nCodedHeight; // Coded Picture Height
-    int32_t nMaxWidth; // Max width within sequence
-    int32_t nMaxHeight; // Max height within sequence
-    uint8_t nChromaFormat; // Chroma Format (0=4:0:0, 1=4:2:0, 2=4:2:2, 3=4:4:4)
-    uint8_t uBitDepthLumaMinus8; // Luma bit depth (0=8bit)
+    FrameRate frameRate;     // Frame Rate stored in the bitstream
+    int32_t bProgSeq;        // Progressive Sequence
+    int32_t nDisplayWidth;   // Displayed Horizontal Size
+    int32_t nDisplayHeight;  // Displayed Vertical Size
+    int32_t nCodedWidth;     // Coded Picture Width
+    int32_t nCodedHeight;    // Coded Picture Height
+    int32_t nMaxWidth;       // Max width within sequence
+    int32_t nMaxHeight;      // Max height within sequence
+    uint8_t nChromaFormat;         // Chroma Format (0=4:0:0, 1=4:2:0, 2=4:2:2, 3=4:4:4)
+    uint8_t uBitDepthLumaMinus8;   // Luma bit depth (0=8bit)
     uint8_t uBitDepthChromaMinus8; // Chroma bit depth (0=8bit)
-    uint8_t uVideoFullRange; // 0=16-235, 1=0-255
-    int32_t lBitrate; // Video bitrate (bps)
+    uint8_t uVideoFullRange;       // 0=16-235, 1=0-255
+    int32_t lBitrate;              // Video bitrate (bps)
     int32_t lDARWidth,
         lDARHeight; // Display Aspect Ratio = lDARWidth : lDARHeight
     int32_t lVideoFormat; // Video Format (VideoFormatXXX)

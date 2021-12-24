@@ -280,6 +280,33 @@ public:
         return *this;
     }
 
+
+    bool operator ==(const nvVideoProfile &other) const
+    {
+        if (m_profile.videoCodecOperation != other.m_profile.videoCodecOperation) {
+            return false;
+        }
+
+        if (m_profile.chromaSubsampling != other.m_profile.chromaSubsampling) {
+            return false;
+        }
+
+        if (m_profile.lumaBitDepth != other.m_profile.lumaBitDepth) {
+            return false;
+        }
+
+        if (m_profile.chromaBitDepth != other.m_profile.chromaBitDepth) {
+            return false;
+        }
+
+        return true;
+    }
+
+    bool operator !=(const nvVideoProfile &other) const
+    {
+        return !(*this == other);
+    }
+
     VkVideoChromaSubsamplingFlagsKHR GetColorSubsampling() const
     {
         return m_profile.chromaSubsampling;

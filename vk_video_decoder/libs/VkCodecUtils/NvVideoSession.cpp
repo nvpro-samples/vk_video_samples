@@ -21,14 +21,14 @@
 #include "VkCodecUtils/nvVideoProfile.h"
 #include "VkCodecUtils/NvVideoSession.h"
 
-VkResult NvVideoSession::Create(VkDevice         dev,
-                                uint32_t         videoQueueFamily,
-                                nvVideoProfile*  pVideoProfile,
-                                VkFormat         pictureFormat,
-                                VkExtent2D*      pMaxCodedExtent,
-                                VkFormat         referencePicturesFormat,
-                                uint32_t         maxReferencePicturesSlotsCount,
-                                uint32_t         maxReferencePicturesActiveCount,
+VkResult NvVideoSession::Create(VkDevice          dev,
+                                uint32_t          videoQueueFamily,
+                                nvVideoProfile*   pVideoProfile,
+                                VkFormat          pictureFormat,
+                                const VkExtent2D& maxCodedExtent,
+                                VkFormat          referencePicturesFormat,
+                                uint32_t          maxReferencePicturesSlotsCount,
+                                uint32_t          maxReferencePicturesActiveCount,
                                 VkSharedBaseObj<NvVideoSession>& videoSession)
 {
     NvVideoSession* pNewVideoSession = new NvVideoSession(pVideoProfile);
@@ -52,13 +52,12 @@ VkResult NvVideoSession::Create(VkDevice         dev,
     encodeSessionCreateInfoH265.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_CREATE_INFO_EXT;
     encodeSessionCreateInfoH265.pStdExtensionVersion = &h265StdExtensionVersion;
 
-    VkVideoSessionCreateInfoKHR createInfo = VkVideoSessionCreateInfoKHR();
-    createInfo.sType = VK_STRUCTURE_TYPE_VIDEO_SESSION_CREATE_INFO_KHR;
+    VkVideoSessionCreateInfoKHR& createInfo = pNewVideoSession->m_createInfo;
     createInfo.flags = 0;
     createInfo.pVideoProfile = pVideoProfile->GetProfile();
     createInfo.queueFamilyIndex = videoQueueFamily;
     createInfo.pictureFormat = pictureFormat;
-    createInfo.maxCodedExtent = *pMaxCodedExtent;
+    createInfo.maxCodedExtent = maxCodedExtent;
     createInfo.maxReferencePicturesSlotsCount = maxReferencePicturesSlotsCount;
     createInfo.maxReferencePicturesActiveCount = maxReferencePicturesActiveCount;
     createInfo.referencePicturesFormat = referencePicturesFormat;
@@ -127,6 +126,9 @@ VkResult NvVideoSession::Create(VkDevice         dev,
     assert(result == VK_SUCCESS);
 
     videoSession = pNewVideoSession;
+
+    // Make sure we do not use dangling (on the stack) pointers
+    createInfo.pNext = nullptr;
 
     return result;
 }

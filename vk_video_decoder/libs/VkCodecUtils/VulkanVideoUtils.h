@@ -27,6 +27,8 @@
 #include <sstream>      // std::stringstream
 #include <algorithm>    // std::find_if
 
+#include <glm/glm.hpp>
+
 #ifndef __VULKANVIDEOUTILS__
 #define __VULKANVIDEOUTILS__
 
@@ -37,6 +39,11 @@ namespace vulkanVideoUtils {
 struct Vertex {
     float position[2];
     float texCoord[2];
+};
+
+struct TransformPushConstants {
+    glm::mat4 posMatrix;
+    glm::mat2 texMatrix;
 };
 
 #if defined(VK_USE_PLATFORM_XCB_KHR) || defined (VK_USE_PLATFORM_XLIB_KHR) || defined(VK_USE_PLATFORM_WAYLAND_KHR)
@@ -91,7 +98,8 @@ private:
     VkExternalMemoryHandleTypeFlagBits  m_externalMemoryHandleType;
 
     // Disabled
-    NativeHandle& operator= (const NativeHandle&);
+    // NativeHandle& operator= (const NativeHandle&);
+    NativeHandle& operator= (const NativeHandle&) = delete;
 };
 
 // Global Variables ...
@@ -405,26 +413,26 @@ public:
     VulkanDisplayTiming mDisplayTiming;
 };
 
-class VulkanVideoBistreamBuffer {
+class VulkanVideoBitstreamBuffer {
 
 public:
-    VulkanVideoBistreamBuffer()
+    VulkanVideoBitstreamBuffer()
         : m_device(0), m_buffer(0), m_deviceMemory(0), m_bufferSize(0),
           m_bufferOffsetAlignment(0),
           m_bufferSizeAlignment(0) { }
 
-    const VkBuffer& get() {
+    const VkBuffer& get() const {
         return m_buffer;
     }
 
-    VkResult CreateVideoBistreamBuffer(VkPhysicalDevice gpuDevice, VkDevice device, uint32_t queueFamilyIndex,
+    VkResult CreateVideoBitstreamBuffer(VkPhysicalDevice gpuDevice, VkDevice device, uint32_t queueFamilyIndex,
              VkDeviceSize bufferSize, VkDeviceSize bufferOffsetAlignment,  VkDeviceSize bufferSizeAlignment,
              const unsigned char* pBitstreamData = NULL, VkDeviceSize bitstreamDataSize = 0, VkDeviceSize dstBufferOffset = 0);
 
-    VkResult CopyVideoBistreamToBuffer(const unsigned char* pBitstreamData,
-            VkDeviceSize bitstreamDataSize, VkDeviceSize &dstBufferOffset);
+    VkResult CopyVideoBitstreamToBuffer(const unsigned char* pBitstreamData,
+            VkDeviceSize bitstreamDataSize, VkDeviceSize &dstBufferOffset) const;
 
-    void DestroyVideoBistreamBuffer()
+    void DestroyVideoBitstreamBuffer()
     {
         if (m_deviceMemory) {
             vk::FreeMemory(m_device, m_deviceMemory, nullptr);
@@ -443,16 +451,16 @@ public:
         m_bufferSizeAlignment = 0;
     }
 
-    ~VulkanVideoBistreamBuffer()
+    ~VulkanVideoBitstreamBuffer()
     {
-        DestroyVideoBistreamBuffer();
+        DestroyVideoBitstreamBuffer();
     }
 
-    VkDeviceSize GetBufferSize() {
+    VkDeviceSize GetBufferSize() const {
         return m_bufferSize;
     }
 
-    VkDeviceSize GetBufferOffsetAlignment() {
+    VkDeviceSize GetBufferOffsetAlignment() const {
         return m_bufferOffsetAlignment;
     }
 
@@ -536,6 +544,13 @@ public:
 
     VkResult GetMemoryFd(int* pFd) const;
     int32_t GetImageSubresourceAndLayout(VkSubresourceLayout layouts[3]) const;
+
+    ImageObject& operator= (const ImageObject&) = delete;
+    ImageObject& operator= (ImageObject&&) = delete;
+
+    operator bool() {
+        return (image != VkImage());
+    }
 
     ~ImageObject()
     {
@@ -988,6 +1003,7 @@ public:
     VkResult CreateCommandBufferPool(VulkanDeviceInfo* deviceInfo);
 
     VkResult CreateCommandBuffer(VkRenderPass renderPass, const ImageObject* inputImageToDrawFrom,
+            int32_t displayWidth, int32_t displayHeight,
             VkImage displayImage, VkFramebuffer framebuffer, VkRect2D* pRenderArea,
             VkPipeline pipeline, VkPipelineLayout pipelineLayout, const VkDescriptorSet* pDescriptorSet,
             VulkanVertexBuffer* pVertexBuffer);
