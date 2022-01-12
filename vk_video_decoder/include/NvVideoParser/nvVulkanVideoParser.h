@@ -36,8 +36,11 @@
 #define NVPARSER_EXPORT
 #endif
 
+typedef void (*nvParserLogFuncType)(const char* format, ...);
+
 class VulkanVideoDecodeParser;
 NVPARSER_EXPORT
-bool CreateVulkanVideoDecodeParser(VulkanVideoDecodeParser** ppobj, VkVideoCodecOperationFlagBitsKHR eCompression, bool bAnnexB = false);
+bool CreateVulkanVideoDecodeParser(VulkanVideoDecodeParser** ppobj, VkVideoCodecOperationFlagBitsKHR eCompression,
+                                   nvParserLogFuncType pParserLogFunc, int logLevel);
 
 #endif /* _NVVULKANVIDEOPARSER_H_ */

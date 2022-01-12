@@ -20,10 +20,11 @@
 #include "PictureBufferBase.h"
 #include "VkParserVideoRefCountBase.h"
 #include "vulkan_interfaces.h"
+#include "vk_video/vulkan_video_codecs_common.h"
 
-#define NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9 VK_MAKE_VIDEO_STD_VERSION(0, 9, 0)
+#define NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_1 VK_MAKE_VIDEO_STD_VERSION(0, 9, 1)
 
-#define NV_VULKAN_VIDEO_PARSER_API_VERSION   NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9
+#define NV_VULKAN_VIDEO_PARSER_API_VERSION   NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_1
 
 typedef uint32_t FrameRate; // Packed 18-bit numerator & 14-bit denominator
 

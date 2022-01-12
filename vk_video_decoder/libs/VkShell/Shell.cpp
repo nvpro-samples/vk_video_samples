@@ -271,7 +271,8 @@ void Shell::init_instance() {
     vk::assert_success(vk::CreateInstance(&instance_info, nullptr, &ctx_.instance));
 
 #if !defined(VK_USE_PLATFORM_WIN32_KHR)
-    DumpSoLibs();
+    // For debugging which .so libraries are loaded and in use
+    // DumpSoLibs();
 #endif
 }
 

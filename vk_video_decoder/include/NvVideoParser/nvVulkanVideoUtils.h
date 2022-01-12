@@ -19,9 +19,6 @@
 
 #include <algorithm>
 #include <limits.h>
-#include <stdlib.h>
-
-#define TPRINTF(X) ((void)0)
 
 #define ALIGN16(p) ((unsigned char*)((((size_t)(p)) + 15) & ~15))
 #define ALIGN32(p) ((unsigned char*)((((size_t)(p)) + 31) & ~31))

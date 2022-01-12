@@ -19,6 +19,8 @@
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
+#include <stdarg.h>
 
 #include <algorithm>
 #include <atomic>
@@ -804,6 +806,14 @@ VulkanVideoParser::VulkanVideoParser(VkVideoCodecOperationFlagBitsKHR codecType,
     }
 }
 
+static void nvParserLog(const char* format, ...)
+{
+    va_list argptr;
+    va_start(argptr, format);
+    printf(format, argptr);
+    va_end(argptr);
+}
+
 VkResult VulkanVideoParser::Initialize(
     IVulkanVideoDecoderHandler* pDecoderHandler,
     IVulkanVideoFrameBufferParserCb* pVideoFrameBuffer,
@@ -830,7 +840,7 @@ VkResult VulkanVideoParser::Initialize(
     nvdp.bOutOfBandPictureParameters = outOfBandPictureParameters;
 
     m_pParser = NULL;
-    if (!CreateVulkanVideoDecodeParser(&m_pParser, m_codecType)) {
+    if (!CreateVulkanVideoDecodeParser(&m_pParser, m_codecType, &nvParserLog, 1)) {
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
     return m_pParser->Initialize(&nvdp);

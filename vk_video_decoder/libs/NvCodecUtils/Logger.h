@@ -88,14 +88,14 @@ private:
 class LoggerFactory {
 public:
     static Logger* CreateFileLogger(std::string strFilePath,
-            LogLevel level = INFO, bool bPrintTimeStamp = true) {
+            LogLevel level = ERROR, bool bPrintTimeStamp = true) {
         return new FileLogger(strFilePath, level, bPrintTimeStamp);
     }
-    static Logger* CreateConsoleLogger(LogLevel level = INFO,
+    static Logger* CreateConsoleLogger(LogLevel level = ERROR,
             bool bPrintTimeStamp = true) {
         return new ConsoleLogger(level, bPrintTimeStamp);
     }
-    static Logger* CreateUdpLogger(char *szHost, unsigned uPort, LogLevel level = INFO,
+    static Logger* CreateUdpLogger(char *szHost, unsigned uPort, LogLevel level = ERROR,
             bool bPrintTimeStamp = true) {
         return new UdpLogger(szHost, uPort, level, bPrintTimeStamp);
     }

@@ -222,7 +222,7 @@ void ShellXcb::handle_event(const xcb_generic_event_t *ev) {
                      break;
                 default:
                     key = FrameProcessor::KEY_UNKNOWN;
-                    printf("Key %d unknown\n", press->detail);
+                    printf("KB key %d is unknown\n", press->detail);
                     break;
             }
 
