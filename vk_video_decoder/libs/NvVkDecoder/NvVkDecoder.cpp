@@ -229,14 +229,16 @@ int32_t NvVkDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoForma
 
     VkExtent2D codedExtent = { pVideoFormat->coded_width, pVideoFormat->coded_height };
 
-    // Width and height of the mapped surface
-    const VkExtent2D maxImageExtent = { std::max(surfaceMinWidthExtent,  (uint32_t)(pVideoFormat->display_area.right - pVideoFormat->display_area.left)),
-                                        std::max(surfaceMinHeightExtent, (uint32_t)(pVideoFormat->display_area.bottom - pVideoFormat->display_area.top)) };
-
-    const VkExtent2D imageExtent = testUseLargestSurfaceExtent ?
-                             maxImageExtent :
-                             VkExtent2D { (uint32_t)(pVideoFormat->display_area.right - pVideoFormat->display_area.left),
+    // Width and height of the image surface
+    VkExtent2D imageExtent = VkExtent2D { (uint32_t)(pVideoFormat->display_area.right - pVideoFormat->display_area.left),
                                           (uint32_t)(pVideoFormat->display_area.bottom - pVideoFormat->display_area.top) };
+
+    // If we are testing content with different sizes against max sized surface vs. images dynamic resize
+    // then set the imageExtent to the max surface size selected.
+    if (testUseLargestSurfaceExtent) {
+        imageExtent = { std::max(surfaceMinWidthExtent,  imageExtent.width),
+                        std::max(surfaceMinHeightExtent, imageExtent.height) };
+    }
 
     std::cout << "Video Input Information" << std::endl
               << "\tCodec        : " << GetVideoCodecString(pVideoFormat->codec) << std::endl
@@ -331,6 +333,14 @@ int32_t NvVkDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoForma
     VkFormat pictureFormat = referencePicturesFormat;
     assert(supportedDpbAndOutFormats[0] == pictureFormat);
 
+    imageExtent.width  = std::max(imageExtent.width, videoDecodeCapabilities.minExtent.width);
+    imageExtent.height = std::max(imageExtent.height, videoDecodeCapabilities.minExtent.height);
+
+    uint32_t alignWidth = videoDecodeCapabilities.videoPictureExtentGranularity.width - 1;
+    imageExtent.width = ((imageExtent.width + alignWidth) & ~alignWidth);
+    uint32_t alignHeight = videoDecodeCapabilities.videoPictureExtentGranularity.height - 1;
+    imageExtent.height = ((imageExtent.height + alignHeight) & ~alignHeight);
+
     if (!m_videoSession ||
             !m_videoSession->IsCompatible( m_pVulkanDecodeContext.dev,
                                            m_pVulkanDecodeContext.videoDecodeQueueFamily,
@@ -376,7 +386,7 @@ int32_t NvVkDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoForma
 
     m_maxDecodeFramesCount = m_numDecodeSurfaces;
 
-    m_decodeFramesData.resize(m_maxDecodeFramesCount, maxImageExtent.width,
+    m_decodeFramesData.resize(m_maxDecodeFramesCount, std::max(surfaceMinWidthExtent, imageExtent.width),
                               videoDecodeCapabilities.minBitstreamBufferOffsetAlignment,
                               videoDecodeCapabilities.minBitstreamBufferSizeAlignment);
 
