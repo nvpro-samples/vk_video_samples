@@ -990,18 +990,18 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
     }
     int32_t configDpbSlotsPlus1 = std::min((uint32_t)(configDpbSlots + 1), MAX_DPB_SLOTS_PLUS_1);
 
-    bool sequenceReconfigireFormat = false;
-    bool sequenceReconfigireCodedExtent = false;
+    bool sequenceReconfigureFormat = false;
+    bool sequenceReconfigureCodedExtent = false;
     if (sequenceUpdate) {
         if ((pnvsi->eCodec != m_nvsi.eCodec) ||
          (pnvsi->nChromaFormat != m_nvsi.nChromaFormat) || (pnvsi->uBitDepthLumaMinus8 != m_nvsi.uBitDepthLumaMinus8) ||
                                                            (pnvsi->uBitDepthChromaMinus8 != m_nvsi.uBitDepthChromaMinus8) ||
         (pnvsi->bProgSeq != m_nvsi.bProgSeq)) {
-            sequenceReconfigireFormat = true;
+            sequenceReconfigureFormat = true;
         }
 
         if ((pnvsi->nCodedWidth != m_nvsi.nCodedWidth) || (pnvsi->nCodedHeight != m_nvsi.nCodedHeight)) {
-            sequenceReconfigireCodedExtent = true;
+            sequenceReconfigureCodedExtent = true;
         }
 
     }
@@ -1018,8 +1018,8 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
         memset(&detectedFormat, 0, sizeof(detectedFormat));
 
         detectedFormat.sequenceUpdate = sequenceUpdate;
-        detectedFormat.sequenceReconfigireFormat = sequenceReconfigireFormat;
-        detectedFormat.sequenceReconfigireCodedExtent = sequenceReconfigireCodedExtent;
+        detectedFormat.sequenceReconfigureFormat = sequenceReconfigureFormat;
+        detectedFormat.sequenceReconfigureCodedExtent = sequenceReconfigureCodedExtent;
 
         detectedFormat.codec = pnvsi->eCodec;
         detectedFormat.frame_rate.numerator = NV_FRAME_RATE_NUM(pnvsi->frameRate);
@@ -1106,7 +1106,7 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
     // The number of minNumDecodeSurfaces can be overwritten.
     // Add one for the current Dpb setup slot.
     m_maxNumDpbSurfaces = configDpbSlotsPlus1;
-    m_dpb.Init(m_maxNumDpbSurfaces, sequenceUpdate /* reconfigure DPB */);
+    m_dpb.Init(m_maxNumDpbSurfaces, sequenceUpdate /* reconfigure the DPB size if true */);
 
     return configDpbSlotsPlus1;
 }

@@ -95,8 +95,8 @@ struct VkParserDetectedVideoFormat {
         uint32_t denominator;
     } frame_rate;
     uint8_t sequenceUpdate:1;                 /** if true, this is a sequence update and not the first time StartVideoSequence is being called. **/
-    uint8_t sequenceReconfigireFormat:1;      /** if true, this is a sequence update for the video format. **/
-    uint8_t sequenceReconfigireCodedExtent:1; /** if true, this is a sequence update for the video coded extent. **/
+    uint8_t sequenceReconfigureFormat:1;      /** if true, this is a sequence update for the video format. **/
+    uint8_t sequenceReconfigureCodedExtent:1; /** if true, this is a sequence update for the video coded extent. **/
     uint8_t progressive_sequence:1; /** false = interlaced, true = progressive  */
     uint8_t bit_depth_luma_minus8; /** high bit depth luma. E.g, 2 for 10-bitdepth, 4 for 12-bitdepth   */
     uint8_t bit_depth_chroma_minus8; /** high bit depth chroma. E.g, 2 for 10-bitdepth, 4 for 12-bitdepth */

@@ -98,7 +98,6 @@ private:
     VkExternalMemoryHandleTypeFlagBits  m_externalMemoryHandleType;
 
     // Disabled
-    // NativeHandle& operator= (const NativeHandle&);
     NativeHandle& operator= (const NativeHandle&) = delete;
 };
 

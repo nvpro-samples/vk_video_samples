@@ -145,16 +145,15 @@ private:
 
 class NvPerFrameDecodeImageSet {
 public:
-    enum {
-        MAX_IMAGES = 32
-    };
+
+    static constexpr size_t maxImages = 32;
 
     NvPerFrameDecodeImageSet()
         : m_queueFamilyIndex((uint32_t)-1),
           m_imageCreateInfo(),
           m_requiredMemProps(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
           m_numImages(0),
-          m_frameDecodeImages(MAX_IMAGES)
+          m_frameDecodeImages(maxImages)
     {
     }
 
@@ -171,11 +170,11 @@ public:
         VkExternalMemoryHandleTypeFlagBitsKHR exportMemHandleTypes = VkExternalMemoryHandleTypeFlagBitsKHR(),
         vulkanVideoUtils::NativeHandle& importHandle = vulkanVideoUtils::NativeHandle::InvalidNativeHandle);
 
-    void Deinit(int32_t startIndex, int32_t numItems);
+    void Deinit();
 
     ~NvPerFrameDecodeImageSet()
     {
-        Deinit(0, m_numImages);
+        Deinit();
     }
 
     NvPerFrameDecodeImage& operator[](unsigned int index)
@@ -209,8 +208,6 @@ public:
                                pVideoRendererDeviceInfo,
                                &m_imageCreateInfo,
                                m_requiredMemProps);
-
-            assert(result == VK_SUCCESS);
 
             if (result == VK_SUCCESS) {
                 validImage = m_frameDecodeImages[imageIndex].GetImageSetNewLayout(
@@ -268,9 +265,7 @@ static uint64_t getNsTime(bool resetTime = false)
 class NvVulkanVideoFrameBuffer : public VulkanVideoFrameBuffer {
 public:
 
-    enum {
-        MAX_FRAMEBUFFER_IMAGES = 32
-    };
+    static constexpr size_t maxFramebufferImages = 32;
 
     NvVulkanVideoFrameBuffer(vulkanVideoUtils::VulkanDeviceInfo* pVideoRendererDeviceInfo)
         : m_pVideoRendererDeviceInfo(pVideoRendererDeviceInfo)
@@ -293,11 +288,11 @@ public:
 
     VkResult CreateVideoQueries(uint32_t numSlots, vulkanVideoUtils::VulkanDeviceInfo* deviceInfo, const VkVideoProfileKHR* pDecodeProfile)
     {
-        assert (numSlots <= MAX_FRAMEBUFFER_IMAGES);
+        assert (numSlots <= maxFramebufferImages);
 
         if (m_queryPool == VkQueryPool()) {
             // It would be difficult to resize a query pool, so allocate the maximum possible slot.
-            numSlots = MAX_FRAMEBUFFER_IMAGES;
+            numSlots = maxFramebufferImages;
             VkQueryPoolCreateInfo queryPoolCreateInfo = { VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
             queryPoolCreateInfo.pNext = pDecodeProfile;
             queryPoolCreateInfo.queryType = VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR;
@@ -344,7 +339,7 @@ public:
     {
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
 
-        assert(numImages && (numImages <= MAX_FRAMEBUFFER_IMAGES) && pDecodeProfile);
+        assert(numImages && (numImages <= maxFramebufferImages) && pDecodeProfile);
 
         VkResult result = CreateVideoQueries(numImages, m_pVideoRendererDeviceInfo, pDecodeProfile);
         if (result != VK_SUCCESS) {
@@ -381,7 +376,7 @@ public:
         m_frameNumInDecodeOrder = 0;
         m_frameNumInDisplayOrder = 0;
 
-        m_perFrameDecodeImageSet.Deinit(0, (int32_t)m_perFrameDecodeImageSet.size());
+        m_perFrameDecodeImageSet.Deinit();
     };
 
     virtual int32_t QueueDecodedPictureForDisplay(int8_t picId, VulkanVideoDisplayPictureInfo* pDispInfo)
@@ -704,11 +699,11 @@ VkResult NvPerFrameDecodeImage::CreateImage( vulkanVideoUtils::VulkanDeviceInfo*
 
         result = m_frameImage.CreateImage(deviceInfo, pImageCreateInfo,
                                           requiredMemProps);
-        assert(result == VK_SUCCESS);
 
-        m_currentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-        m_recreateImage = false;
+        if (result == VK_SUCCESS) {
+            m_currentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            m_recreateImage = false;
+        }
     }
 
     return result;
@@ -724,7 +719,6 @@ VkResult NvPerFrameDecodeImage::init( vulkanVideoUtils::VulkanDeviceInfo* device
 
     const VkFenceCreateInfo fenceInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr };
     result = vk::CreateFence(deviceInfo->device_, &fenceInfo, nullptr, &m_frameConsumerDoneFence);
-    assert(result == VK_SUCCESS);
     assert(result == VK_SUCCESS);
 
     const VkSemaphoreCreateInfo semInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr };
@@ -781,7 +775,10 @@ int32_t NvPerFrameDecodeImageSet::init(vulkanVideoUtils::VulkanDeviceInfo* devic
                                        VkExternalMemoryHandleTypeFlagBitsKHR exportMemHandleTypes,
                                        vulkanVideoUtils::NativeHandle& importHandle)
 {
-    assert(numImages <= m_frameDecodeImages.size());
+    if (numImages > m_frameDecodeImages.size()) {
+        assert(!"Number of requested images exceeds the max size of the image array");
+        return -1;
+    }
 
     const bool reconfigureImages = (m_numImages &&
         (m_imageCreateInfo.sType == VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO)) &&
@@ -842,9 +839,9 @@ int32_t NvPerFrameDecodeImageSet::init(vulkanVideoUtils::VulkanDeviceInfo* devic
     return (int32_t)numImages;
 }
 
-void NvPerFrameDecodeImageSet::Deinit(int32_t startIndex, int32_t numItems)
+void NvPerFrameDecodeImageSet::Deinit()
 {
-    for (int32_t ndx = startIndex; ndx < (startIndex + numItems); ndx++) {
+    for (size_t ndx = 0; ndx < m_frameDecodeImages.size(); ndx++) {
         m_frameDecodeImages[ndx].Deinit();
     }
 }
