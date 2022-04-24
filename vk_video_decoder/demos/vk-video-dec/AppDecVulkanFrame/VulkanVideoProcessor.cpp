@@ -71,6 +71,9 @@ int32_t VulkanVideoProcessor::Init(const VulkanDecodeContext* vulkanDecodeContex
 
     VkResult result = CreateParser(m_pFFmpegDemuxer, filePath, FFmpeg2NvCodecId(m_pFFmpegDemuxer->GetVideoCodec()));
     assert(result == VK_SUCCESS);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "\nERROR: CreateParser() result: 0x%x\n", result);
+    }
 
     return 0;
 }
@@ -333,8 +336,8 @@ VkResult VulkanVideoProcessor::CreateParser(FFmpegDemuxer* pFFmpegDemuxer,
     const char* filename,
     VkVideoCodecOperationFlagBitsKHR vkCodecType)
 {
-    static const VkExtensionProperties h264StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_SPEC_VERSION };
-    static const VkExtensionProperties h265StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_SPEC_VERSION };
+    static const VkExtensionProperties h264StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION };
+    static const VkExtensionProperties h265StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION };
 
     const VkExtensionProperties* pStdExtensionVersion = NULL;
     if (vkCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT) {

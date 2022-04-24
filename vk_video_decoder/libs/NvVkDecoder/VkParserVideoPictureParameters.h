@@ -34,8 +34,7 @@ public:
             return NULL;
         }
         VkParserVideoPictureParameters* pPictureParameters = static_cast<VkParserVideoPictureParameters*>(pBase);
-        const uint32_t* pClassId = &pPictureParameters->m_classId;
-        if (&m_classId == pClassId) {
+        if (m_refClassId == pPictureParameters->m_classId) {
             return pPictureParameters;
         }
         assert(!"Invalid VkParserVideoPictureParameters from base");
@@ -77,7 +76,8 @@ public:
 
 protected:
     VkParserVideoPictureParameters(VkDevice device)
-        : m_Id(-1),
+        : m_classId(m_refClassId),
+          m_Id(-1),
           m_refCount(0),
           m_device(device),
           m_videoSession(),
@@ -86,8 +86,9 @@ protected:
     virtual ~VkParserVideoPictureParameters();
 
 private:
-    static const uint32_t           m_classId;
+    static const char*              m_refClassId;
     static int32_t                  m_currentId;
+    const char*                     m_classId;
     int32_t                         m_Id;
     std::atomic<int32_t>            m_refCount;
     VkDevice                        m_device;

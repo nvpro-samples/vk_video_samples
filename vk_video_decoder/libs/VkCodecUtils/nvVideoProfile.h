@@ -43,7 +43,7 @@ public:
         return  (videoCodecOperations & (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT |
                                          VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT |
                                          VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT |
-                                         VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT));
+                                         VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_EXT));
     }
 
     bool PopulateProfileExt(VkBaseInStructure* pVideoProfileExt)

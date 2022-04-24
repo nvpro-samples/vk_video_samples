@@ -34,24 +34,10 @@ VkResult NvVideoSession::Create(VkDevice          dev,
 {
     NvVideoSession* pNewVideoSession = new NvVideoSession(pVideoProfile);
 
-    static const VkExtensionProperties h264StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_SPEC_VERSION };
-    static const VkExtensionProperties h265StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_SPEC_VERSION };
-
-    VkVideoDecodeH264SessionCreateInfoEXT decodeSessionCreateInfoH264 = VkVideoDecodeH264SessionCreateInfoEXT();
-    decodeSessionCreateInfoH264.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_CREATE_INFO_EXT;
-    decodeSessionCreateInfoH264.pStdExtensionVersion = &h264StdExtensionVersion;
-
-    VkVideoDecodeH265SessionCreateInfoEXT decodeSessionCreateInfoH265 = VkVideoDecodeH265SessionCreateInfoEXT();
-    decodeSessionCreateInfoH265.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_CREATE_INFO_EXT;
-    decodeSessionCreateInfoH265.pStdExtensionVersion = &h265StdExtensionVersion;
-
-    VkVideoEncodeH264SessionCreateInfoEXT encodeSessionCreateInfoH264 = VkVideoEncodeH264SessionCreateInfoEXT();
-    encodeSessionCreateInfoH264.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_CREATE_INFO_EXT;
-    encodeSessionCreateInfoH264.pStdExtensionVersion = &h264StdExtensionVersion;
-
-    VkVideoEncodeH265SessionCreateInfoEXT encodeSessionCreateInfoH265 = VkVideoEncodeH265SessionCreateInfoEXT();
-    encodeSessionCreateInfoH265.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_CREATE_INFO_EXT;
-    encodeSessionCreateInfoH265.pStdExtensionVersion = &h265StdExtensionVersion;
+    static const VkExtensionProperties h264DecodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION };
+    static const VkExtensionProperties h265DecodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION };
+    static const VkExtensionProperties h264EncodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_ENCODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_ENCODE_SPEC_VERSION };
+    static const VkExtensionProperties h265EncodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_ENCODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_ENCODE_SPEC_VERSION };
 
     VkVideoSessionCreateInfoKHR& createInfo = pNewVideoSession->m_createInfo;
     createInfo.flags = 0;
@@ -65,16 +51,16 @@ VkResult NvVideoSession::Create(VkDevice          dev,
 
     switch ((int32_t)pVideoProfile->GetCodecType()) {
     case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT:
-        createInfo.pNext = &decodeSessionCreateInfoH264;
+        createInfo.pStdHeaderVersion = &h264DecodeStdExtensionVersion;
         break;
     case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT:
-        createInfo.pNext = &decodeSessionCreateInfoH265;
+        createInfo.pStdHeaderVersion = &h265DecodeStdExtensionVersion;
         break;
     case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT:
-        createInfo.pNext = &encodeSessionCreateInfoH264;
+        createInfo.pStdHeaderVersion = &h264EncodeStdExtensionVersion;
         break;
     case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_EXT:
-        createInfo.pNext = &encodeSessionCreateInfoH265;
+        createInfo.pStdHeaderVersion = &h265EncodeStdExtensionVersion;
         break;
     default:
         assert(0);

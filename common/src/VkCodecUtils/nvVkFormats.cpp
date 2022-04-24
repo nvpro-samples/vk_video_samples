@@ -16,8 +16,8 @@
 
 #include <stdint.h>
 #include "vulkan_interfaces.h"
-#include "ycbcrvkinfo.h"
-#include "ycbcrinfotbl.h"
+#include "nvidia_utils/vulkan/ycbcrvkinfo.h"
+#include "nvidia_utils/vulkan/ycbcrinfotbl.h"
 
 const VkMpFormatInfo* YcbcrVkFormatInfo(const VkFormat format)
 {

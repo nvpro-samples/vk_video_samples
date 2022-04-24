@@ -20,6 +20,7 @@
 #include <vector>
 #include <sstream>
 #include <stdexcept>
+#include <assert.h>
 #include "HelpersDispatchTable.h"
 
 namespace vk {
@@ -66,16 +67,21 @@ inline VkResult enumerate(std::vector<VkLayerProperties> &layer_props) {
     return vk::EnumerateInstanceLayerProperties(&count, layer_props.data());
 }
 
-inline VkResult get(VkPhysicalDevice phy, std::vector<VkQueueFamilyProperties2> &queues, std::vector<VkVideoQueueFamilyProperties2KHR> &videoQueues) {
+inline VkResult get(VkPhysicalDevice phy, std::vector<VkQueueFamilyProperties2> &queues,
+                                          std::vector<VkVideoQueueFamilyProperties2KHR> &videoQueues,
+                                          std::vector<VkQueueFamilyQueryResultStatusProperties2KHR> &queryResultStatus) {
     uint32_t count = 0;
     vk::GetPhysicalDeviceQueueFamilyProperties2(phy, &count, nullptr);
 
     queues.resize(count);
     videoQueues.resize(count);
+    queryResultStatus.resize(count);
     for (uint32_t i = 0; i < queues.size(); i++) {
         queues[i].sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2;
         videoQueues[i].sType = VK_STRUCTURE_TYPE_VIDEO_QUEUE_FAMILY_PROPERTIES_2_KHR;
         queues[i].pNext = &videoQueues[i];
+        queryResultStatus[i].sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_QUERY_RESULT_STATUS_PROPERTIES_2_KHR;
+        videoQueues[i].pNext = &queryResultStatus[i];
     }
 
     vk::GetPhysicalDeviceQueueFamilyProperties2(phy, &count, queues.data());
@@ -115,7 +121,8 @@ inline VkVideoCodecOperationFlagsKHR GetSupportedCodecs(VkPhysicalDevice vkPhysi
 {
     std::vector<VkQueueFamilyProperties2> queues;
     std::vector<VkVideoQueueFamilyProperties2KHR> videoQueues;
-    vk::get(vkPhysicalDev, queues, videoQueues);
+    std::vector<VkQueueFamilyQueryResultStatusProperties2KHR> queryResultStatus;
+    vk::get(vkPhysicalDev, queues, videoQueues, queryResultStatus);
 
     for (uint32_t queueIndx = 0; queueIndx < queues.size(); queueIndx++) {
         const VkQueueFamilyProperties2 &q = queues[queueIndx];
@@ -130,6 +137,8 @@ inline VkVideoCodecOperationFlagsKHR GetSupportedCodecs(VkPhysicalDevice vkPhysi
             if (pVideoQueueFamily && (*pVideoQueueFamily < 0)) {
                 *pVideoQueueFamily = (int32_t)queueIndx;
             }
+            // The video queues must support queryResultStatus
+            assert(queryResultStatus[queueIndx].supported);
             return videoQueue.videoCodecOperations;
         }
     }

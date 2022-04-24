@@ -403,7 +403,7 @@ public:
             if (is_long_term) {
                 if (m_dumpParserData)
                     std::cout << "IS_LONG_TERM ";
-                picFlags.is_long_term = true;
+                picFlags.used_for_long_term_reference = true;
             }
             if (is_non_existing) {
                 if (m_dumpParserData)
@@ -474,7 +474,7 @@ public:
 
             StdVideoDecodeH265ReferenceInfo* pRefPicInfo = &pDpbSlotInfo[dpbEntryIdx].stdReferenceInfo;
             pRefPicInfo->PicOrderCntVal = PicOrderCnt;
-            pRefPicInfo->flags.is_long_term = is_long_term;
+            pRefPicInfo->flags.used_for_long_term_reference = is_long_term;
             pRefPicInfo->flags.is_non_existing = is_non_existing;
 
             if (m_dumpParserData) {
@@ -483,7 +483,7 @@ public:
 
                 std::cout << "\t\t Flags: ";
                 std::cout << "FRAME IS REFERENCE ";
-                if (pRefPicInfo->flags.is_long_term) {
+                if (pRefPicInfo->flags.used_for_long_term_reference) {
                     std::cout << "IS LONG TERM ";
                 }
                 if (pRefPicInfo->flags.is_non_existing) {
@@ -1394,6 +1394,9 @@ uint32_t VulkanVideoParser::FillDpbH265State(
         refDpbUsedAndValidMask |= (1 << currPicIdx);
     }
     assert(currPicDpbSlot >= 0);
+    if (currPicDpbSlot < 0) {
+        fprintf(stderr, "\nERROR: FillDpbH265State() currPicDpbSlot(%d) must not have negative value\n", currPicDpbSlot);
+    }
 
     // Map all frames not present in DPB as non-reference, and generate a mask of
     // all used DPB entries
@@ -1478,6 +1481,9 @@ uint32_t VulkanVideoParser::FillDpbH265State(
     int32_t numPocStCurrBefore = 0;
     const size_t maxNumPocStCurrBefore = sizeof(pStdPictureInfo->RefPicSetStCurrBefore) / sizeof(pStdPictureInfo->RefPicSetStCurrBefore[0]);
     assert((size_t)pin->NumPocStCurrBefore < maxNumPocStCurrBefore);
+    if ((size_t)pin->NumPocStCurrBefore >= maxNumPocStCurrBefore) {
+        fprintf(stderr, "\nERROR: FillDpbH265State() pin->NumPocStCurrBefore(%d) must be smaller than maxNumPocStCurrBefore(%zd)\n", pin->NumPocStCurrBefore, maxNumPocStCurrBefore);
+    }
     for (int32_t i = 0; i < pin->NumPocStCurrBefore; i++) {
         uint8_t idx = (uint8_t)pin->RefPicSetStCurrBefore[i];
         if (idx < HEVC_MAX_DPB_SLOTS) {
@@ -1495,6 +1501,9 @@ uint32_t VulkanVideoParser::FillDpbH265State(
     int32_t numPocStCurrAfter = 0;
     const size_t maxNumPocStCurrAfter = sizeof(pStdPictureInfo->RefPicSetStCurrAfter) / sizeof(pStdPictureInfo->RefPicSetStCurrAfter[0]);
     assert((size_t)pin->NumPocStCurrAfter < maxNumPocStCurrAfter);
+    if ((size_t)pin->NumPocStCurrAfter >= maxNumPocStCurrAfter) {
+        fprintf(stderr, "\nERROR: FillDpbH265State() pin->NumPocStCurrAfter(%d) must be smaller than maxNumPocStCurrAfter(%zd)\n", pin->NumPocStCurrAfter, maxNumPocStCurrAfter);
+    }
     for (int32_t i = 0; i < pin->NumPocStCurrAfter; i++) {
         uint8_t idx = (uint8_t)pin->RefPicSetStCurrAfter[i];
         if (idx < HEVC_MAX_DPB_SLOTS) {
@@ -1512,6 +1521,9 @@ uint32_t VulkanVideoParser::FillDpbH265State(
     int32_t numPocLtCurr = 0;
     const size_t maxNumPocLtCurr = sizeof(pStdPictureInfo->RefPicSetLtCurr) / sizeof(pStdPictureInfo->RefPicSetLtCurr[0]);
     assert((size_t)pin->NumPocLtCurr < maxNumPocLtCurr);
+    if ((size_t)pin->NumPocLtCurr >= maxNumPocLtCurr) {
+        fprintf(stderr, "\nERROR: FillDpbH265State() pin->NumPocLtCurr(%d) must be smaller than maxNumPocLtCurr(%zd)\n", pin->NumPocLtCurr, maxNumPocLtCurr);
+    }
     for (int32_t i = 0; i < pin->NumPocLtCurr; i++) {
         uint8_t idx = (uint8_t)pin->RefPicSetLtCurr[i];
         if (idx < HEVC_MAX_DPB_SLOTS) {
@@ -1671,9 +1683,6 @@ bool VulkanVideoParser::DecodePicture(
         -1, // slotIndex
         NULL // pPictureResource
     };
-    // TODO: not exactly true.
-    pPerFrameDecodeParameters->decodeFrameInfo.codedExtent.width = pd->PicWidthInMbs << 4;
-    pPerFrameDecodeParameters->decodeFrameInfo.codedExtent.height = pd->FrameHeightInMbs << 4;
 
     pPerFrameDecodeParameters->decodeFrameInfo.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_INFO_KHR;
     pPerFrameDecodeParameters->decodeFrameInfo.dstPictureResource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_KHR;
@@ -1727,6 +1736,7 @@ bool VulkanVideoParser::DecodePicture(
         h264.mvcInfo.pNext = NULL; // No more extension structures.
 
         StdVideoDecodeH264PictureInfoFlags currPicFlags = StdVideoDecodeH264PictureInfoFlags();
+        currPicFlags.is_intra = (pd->intra_pic_flag != 0);
         // 0 = frame picture, 1 = field picture
         if (pd->field_pic_flag) {
             // 0 = top field, 1 = bottom field (ignored if field_pic_flag = 0)
@@ -1824,8 +1834,8 @@ bool VulkanVideoParser::DecodePicture(
         pPictureInfo->pSlicesDataOffsets = pd->pSliceDataOffsets;
 
         pStdPictureInfo->pps_pic_parameter_set_id   = pin->pic_parameter_set_id;       // PPS ID
-        pStdPictureInfo->sps_seq_parameter_set_id   = pin->seq_parameter_set_id;       // SPS ID
-        pStdPictureInfo->vps_video_parameter_set_id = pin->vps_video_parameter_set_id; // VPS ID
+        pStdPictureInfo->pps_seq_parameter_set_id   = pin->seq_parameter_set_id;       // SPS ID
+        pStdPictureInfo->sps_video_parameter_set_id = pin->vps_video_parameter_set_id; // VPS ID
 
         // hevc->irapPicFlag = m_slh.nal_unit_type >= NUT_BLA_W_LP &&
         // m_slh.nal_unit_type <= NUT_CRA_NUT;
@@ -1894,7 +1904,7 @@ bool VulkanVideoParser::DecodePicture(
 
                     std::cout << "\t\t Flags: ";
                     if (pDpbRefList[i]
-                            .dpbSlotInfo.pStdReferenceInfo->flags.is_long_term) {
+                            .dpbSlotInfo.pStdReferenceInfo->flags.used_for_long_term_reference) {
                         std::cout << "IS LONG TERM ";
                     }
 
@@ -1928,12 +1938,12 @@ vulkanCreateVideoParser(IVulkanVideoDecoderHandler* pDecoderHandler,
     uint32_t maxNumDpbSurfaces, uint64_t clockRate)
 {
     if (codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT) {
-        if (!pStdExtensionVersion || strcmp(pStdExtensionVersion->extensionName, VK_STD_VULKAN_VIDEO_CODEC_H264_EXTENSION_NAME) || (pStdExtensionVersion->specVersion != VK_STD_VULKAN_VIDEO_CODEC_H264_SPEC_VERSION)) {
+        if (!pStdExtensionVersion || strcmp(pStdExtensionVersion->extensionName, VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME) || (pStdExtensionVersion->specVersion != VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION)) {
             assert(!"Decoder h264 Codec version is NOT supported");
             return NULL;
         }
     } else if (codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT) {
-        if (!pStdExtensionVersion || strcmp(pStdExtensionVersion->extensionName, VK_STD_VULKAN_VIDEO_CODEC_H265_EXTENSION_NAME) || (pStdExtensionVersion->specVersion != VK_STD_VULKAN_VIDEO_CODEC_H265_SPEC_VERSION)) {
+        if (!pStdExtensionVersion || strcmp(pStdExtensionVersion->extensionName, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME) || (pStdExtensionVersion->specVersion != VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION)) {
             assert(!"Decoder h265 Codec version is NOT supported");
             return NULL;
         }

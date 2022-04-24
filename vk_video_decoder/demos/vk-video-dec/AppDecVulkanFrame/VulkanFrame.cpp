@@ -521,12 +521,21 @@ void VulkanFrame::on_frame(bool trainFrame)
                 if (ctx.video_queue != VkQueue()) {
                     result = vk::QueueWaitIdle(ctx.video_queue);
                     assert(result == VK_SUCCESS);
+                    if (result != VK_SUCCESS) {
+                        fprintf(stderr, "\nERROR: QueueWaitIdle() result: 0x%x\n", result);
+                    }
                 }
             } else {
                 result = vk::WaitForFences(pVideoRenderer->device_, 1, &frameCompleteFence, true, 100 * 1000 * 1000 /* 100 mSec */);
                 assert(result == VK_SUCCESS);
+                if (result != VK_SUCCESS) {
+                    fprintf(stderr, "\nERROR: WaitForFences() result: 0x%x\n", result);
+                }
                 result = vk::GetFenceStatus(pVideoRenderer->device_, frameCompleteFence);
                 assert(result == VK_SUCCESS);
+                if (result != VK_SUCCESS) {
+                    fprintf(stderr, "\nERROR: GetFenceStatus() result: 0x%x\n", result);
+                }
             }
         }
     }
@@ -538,8 +547,14 @@ void VulkanFrame::on_frame(bool trainFrame)
         if (frameCompleteFence != VkFence()) {
             result = vk::WaitForFences(pVideoRenderer->device_, 1, &frameCompleteFence, true, 100 * 1000 * 1000 /* 100 mSec */);
             assert(result == VK_SUCCESS);
+            if (result != VK_SUCCESS) {
+                fprintf(stderr, "\nERROR: WaitForFences() result: 0x%x\n", result);
+            }
             result = vk::GetFenceStatus(pVideoRenderer->device_, frameCompleteFence);
             assert(result == VK_SUCCESS);
+            if (result != VK_SUCCESS) {
+                fprintf(stderr, "\nERROR: GetFenceStatus() result: 0x%x\n", result);
+            }
         }
 
         struct nvVideoGetDecodeStatus {
@@ -554,6 +569,9 @@ void VulkanFrame::on_frame(bool trainFrame)
         result = vk::GetQueryPoolResults(pVideoRenderer->device_, queryPool, startQueryId, 1, sizeof(decodeStatus), &decodeStatus,
             512, VK_QUERY_RESULT_WAIT_BIT);
         assert(result == VK_SUCCESS);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nERROR: GetQueryPoolResults() result: 0x%x\n", result);
+        }
         assert(decodeStatus.decodeStatus == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
 
         if (dumpDebug) {
@@ -616,8 +634,14 @@ void VulkanFrame::on_frame(bool trainFrame)
     if (false && frameCompleteFence) {
         result = vk::WaitForFences(pVideoRenderer->device_, 1, &frameCompleteFence, true, 100 * 1000 * 1000);
         assert(result == VK_SUCCESS);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nERROR: WaitForFences() result: 0x%x\n", result);
+        }
         result = vk::GetFenceStatus(pVideoRenderer->device_, frameCompleteFence);
         assert(result == VK_SUCCESS);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nERROR: GetFenceStatus() result: 0x%x\n", result);
+        }
     }
 
     VkResult res = vk::QueueSubmit(queue_, 1, &primary_cmd_submit_info, frameConsumerDoneFence);
@@ -626,8 +650,14 @@ void VulkanFrame::on_frame(bool trainFrame)
         const uint64_t fenceTimeout = 100 * 1000 * 1000 /* 100 mSec */;
         result = vk::WaitForFences(pVideoRenderer->device_, 1, &frameConsumerDoneFence, true, fenceTimeout);
         assert(result == VK_SUCCESS);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nERROR: WaitForFences() result: 0x%x\n", result);
+        }
         result = vk::GetFenceStatus(pVideoRenderer->device_, frameConsumerDoneFence);
         assert(result == VK_SUCCESS);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nERROR: GetFenceStatus() result: 0x%x\n", result);
+        }
     }
 
 #if 0 // for testing NV_RMAPI_TEGRA

@@ -218,12 +218,15 @@ typedef struct VkParserH264PictureData {
 } VkParserH264PictureData;
 
 typedef struct VkParserHevcPictureData {
-    // sps
+    // VPS
+    const StdVideoH265VideoParameterSet*    pStdVps;
+    VkParserVideoRefCountBase*              pVpsClientObject;
 
     // SPS
     const StdVideoH265SequenceParameterSet* pStdSps;
     VkParserVideoRefCountBase*              pSpsClientObject;
 
+    // PPS
     const StdVideoH265PictureParameterSet*  pStdPps;
     VkParserVideoRefCountBase*              pPpsClientObject;
 

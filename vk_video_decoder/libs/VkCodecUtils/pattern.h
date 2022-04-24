@@ -40,7 +40,7 @@ void generateColorPatternRgba16161616(
     bool incOnSkip = false);
 
 
-#include "ycbcrvkinfo.h"
+#include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 
 typedef struct VkFormatDesc {
     VkFormat    format;

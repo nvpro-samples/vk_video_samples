@@ -22,7 +22,7 @@
 #include <shaderc/shaderc.hpp>
 
 #include "VulkanVideoUtils.h"
-#include <ycbcrvkinfo.h>
+#include <nvidia_utils/vulkan/ycbcrvkinfo.h>
 
 #include <time.h>
 

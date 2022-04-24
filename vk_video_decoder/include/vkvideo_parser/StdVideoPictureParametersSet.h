@@ -32,6 +32,12 @@ struct PpsVideoH264PictureParametersSet
     StdVideoH264ScalingLists            ppsStdScalingLists;
 };
 
+struct SpsVideoH265VideoParametersSet
+{
+    StdVideoH265VideoParameterSet       stdVps;
+    StdVideoH265DecPicBufMgr            stdDecPicBufMgr;
+};
+
 struct SpsVideoH265PictureParametersSet
 {
     StdVideoH265SequenceParameterSet    stdSps;
@@ -78,9 +84,9 @@ public:
                         m_data.h264Sps.stdSps.pSequenceParameterSetVui = &m_data.h264Sps.stdVui;
                         if (pPictureParameters->pH264Sps->pSequenceParameterSetVui->pHrdParameters) {
                             m_data.h264Sps.stdHrdParameters = *pPictureParameters->pH264Sps->pSequenceParameterSetVui->pHrdParameters;
-                            m_data.h264Sps.stdSps.pSequenceParameterSetVui->pHrdParameters = &m_data.h264Sps.stdHrdParameters;
+                            m_data.h264Sps.stdVui.pHrdParameters = &m_data.h264Sps.stdHrdParameters;
                         } else {
-                            m_data.h264Sps.stdSps.pSequenceParameterSetVui->pHrdParameters = nullptr;
+                            m_data.h264Sps.stdVui.pHrdParameters = nullptr;
                         }
                     }
                 } else if (pPictureParameters->updateType ==  VK_PICTURE_PARAMETERS_UPDATE_H264_PPS ) {
@@ -93,15 +99,21 @@ public:
             }
             break;
             case VK_PICTURE_PARAMETERS_UPDATE_H265_VPS:
-            {
-                // Vulkan Video Decode APIs do not support VPS parameters
-            }
-            break;
             case VK_PICTURE_PARAMETERS_UPDATE_H265_SPS:
             case VK_PICTURE_PARAMETERS_UPDATE_H265_PPS:
             {
+                if (pPictureParameters->updateType == VK_PICTURE_PARAMETERS_UPDATE_H265_VPS) {
+                    m_data.h265Vps.stdVps = *pPictureParameters->pH265Vps;
 
-                if (pPictureParameters->updateType == VK_PICTURE_PARAMETERS_UPDATE_H265_SPS) {
+                    if (pPictureParameters->pH265Vps->pDecPicBufMgr) {
+                        m_data.h265Vps.stdDecPicBufMgr = *pPictureParameters->pH265Vps->pDecPicBufMgr;
+                        m_data.h265Vps.stdVps.pDecPicBufMgr = &m_data.h265Vps.stdDecPicBufMgr;
+                    }
+
+                    // StdVideoH265HrdParameters is currently unsupported
+                    m_data.h265Vps.stdVps.pHrdParameters = nullptr;
+
+                } else if (pPictureParameters->updateType == VK_PICTURE_PARAMETERS_UPDATE_H265_SPS) {
                     m_data.h265Sps.stdSps = *pPictureParameters->pH265Sps;
                     if (pPictureParameters->pH265Sps->pScalingLists) {
                         m_data.h265Sps.spsStdScalingLists = *pPictureParameters->pH265Sps->pScalingLists;
@@ -180,8 +192,7 @@ public:
             return NULL;
         }
         StdVideoPictureParametersSet* pPictureParameters = static_cast<StdVideoPictureParametersSet*>(pBase);
-        const uint32_t* pClassId = &pPictureParameters->m_classId;
-        if (&m_classId == pClassId) {
+        if (m_refClassId == pPictureParameters->m_classId) {
             return pPictureParameters;
         }
         assert(!"Invalid StdVideoPictureParametersSet from base");
@@ -204,13 +215,15 @@ public:
     }
 
 private:
-    static const uint32_t                m_classId;
+    static const char*                   m_refClassId;
+    const char*                          m_classId;
     std::atomic<int32_t>                 m_refCount;
 public:
     VkParserPictureParametersUpdateType  m_updateType;
     union {
         SpsVideoH264PictureParametersSet h264Sps;
         PpsVideoH264PictureParametersSet h264Pps;
+        SpsVideoH265VideoParametersSet   h265Vps;
         SpsVideoH265PictureParametersSet h265Sps;
         PpsVideoH265PictureParametersSet h265Pps;
     } m_data;
@@ -220,7 +233,8 @@ public:
 private:
 
     StdVideoPictureParametersSet(VkParserPictureParametersUpdateType updateType)
-    : m_refCount(0),
+    : m_classId(m_refClassId),
+      m_refCount(0),
       m_updateType(updateType),
       m_data(),
       m_updateSequenceCount(0),

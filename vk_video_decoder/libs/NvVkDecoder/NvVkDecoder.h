@@ -106,6 +106,9 @@ public:
                 m_pVulkanDecodeContext.physicalDev, m_pVulkanDecodeContext.dev, m_pVulkanDecodeContext.videoDecodeQueueFamily,
                 bufferSize, minBitstreamBufferOffsetAlignment, minBitstreamBufferSizeAlignment);
             assert(result == VK_SUCCESS);
+            if (result != VK_SUCCESS) {
+                fprintf(stderr, "\nERROR: CreateVideoBitstreamBuffer() result: 0x%x\n", result);
+            }
         }
 
         if (!m_videoCommandPool) {
@@ -115,6 +118,9 @@ public:
             cmdPoolInfo.queueFamilyIndex = m_pVulkanDecodeContext.videoDecodeQueueFamily;
             VkResult result = vk::CreateCommandPool(m_pVulkanDecodeContext.dev, &cmdPoolInfo, nullptr, &m_videoCommandPool);
             assert(result == VK_SUCCESS);
+            if (result != VK_SUCCESS) {
+                fprintf(stderr, "\nERROR: CreateCommandPool() result: 0x%x\n", result);
+            }
         }
 
         const size_t oldCommandBuffersSize = m_commandBuffers.size();
@@ -127,6 +133,9 @@ public:
         m_commandBuffers.resize(newSize);
         VkResult result = vk::AllocateCommandBuffers(m_pVulkanDecodeContext.dev, &cmdInfo, &m_commandBuffers[oldCommandBuffersSize]);
         assert(result == VK_SUCCESS);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nERROR: AllocateCommandBuffers() result: 0x%x\n", result);
+        }
 
         m_maxCodedWidth = maxCodedWidth;
 
@@ -253,11 +262,13 @@ public:
         , m_videoFormat {}
         , m_numDecodeSurfaces()
         , m_maxDecodeFramesCount(0)
+        , m_capabilityFlags()
         , m_videoSession(nullptr)
         , m_pVideoFrameBuffer(pVideoFrameBuffer)
         , m_decodeFramesData(pVulkanDecodeContext)
         , m_decodePicCount(0)
         , m_lastSpsIdInQueue(-1)
+        , m_resetDecoder(true)
         , m_dumpDecodeData(false)
     {
 
@@ -324,6 +335,7 @@ private:
     uint32_t                    m_numDecodeSurfaces;
     uint32_t                    m_maxDecodeFramesCount;
 
+    VkVideoDecodeCapabilityFlagBitsKHR   m_capabilityFlags;
     VkSharedBaseObj<NvVideoSession>      m_videoSession;
     VulkanVideoFrameBuffer*              m_pVideoFrameBuffer;
 
@@ -336,5 +348,6 @@ private:
     VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastSpsPictureParametersQueue;
     VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastPpsPictureParametersQueue;
     VkSharedBaseObj<VkParserVideoPictureParameters>            m_currentPictureParameters;
+    uint32_t m_resetDecoder : 1;
     uint32_t m_dumpDecodeData : 1;
 };

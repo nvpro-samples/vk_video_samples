@@ -103,8 +103,11 @@ VkResult VulkanShaderCompiler::BuildShaderFromFile(const char *filePath, VkShade
     size_t glslShaderLen = size;
     char* glslShader = new char[glslShaderLen];
 
-    fread(static_cast<void *>(glslShader), glslShaderLen, 1, fp);
+    size_t retLen = fread(static_cast<void *>(glslShader), glslShaderLen, 1, fp);
     fclose(fp);
+    if (retLen != glslShaderLen) {
+        fprintf(stderr, "\nERROR: fread() retLen(%zd) != glslShaderLen(%zd)\n", retLen, glslShaderLen);
+    }
 
     VkResult result = VK_NOT_READY;
     BuildGlslShader(glslShader, glslShaderLen, type, vkDevice, shaderOut);

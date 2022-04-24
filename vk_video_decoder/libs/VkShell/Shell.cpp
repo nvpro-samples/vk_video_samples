@@ -315,7 +315,8 @@ void Shell::init_physical_dev(uint32_t deviceID) {
         // get queue properties
         std::vector<VkQueueFamilyProperties2> queues;
         std::vector<VkVideoQueueFamilyProperties2KHR> videoQueues;
-        vk::get(phy, queues, videoQueues);
+        std::vector<VkQueueFamilyQueryResultStatusProperties2KHR> queryResultStatus;
+        vk::get(phy, queues, videoQueues, queryResultStatus);
 
         int frameProcessor_queue_family = -1, present_queue_family = -1, video_decode_queue_family = -1, video_encode_queue_family = -1;
         for (uint32_t i = 0; i < queues.size(); i++) {
@@ -338,6 +339,8 @@ void Shell::init_physical_dev(uint32_t deviceID) {
                         (q.queueFamilyProperties.queueFlags & video_decode_queue_flags) &&
                         (videoQueue.videoCodecOperations & suported_video_decode_queue_operations)) {
                     video_decode_queue_family = i;
+                    // The video queues must support queryResultStatus
+                    assert(queryResultStatus[i].supported);
                 }
 
                 const VkFlags video_encode_queue_flags = VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
@@ -348,6 +351,8 @@ void Shell::init_physical_dev(uint32_t deviceID) {
                         (q.queueFamilyProperties.queueFlags & video_encode_queue_flags) &&
                         (videoQueue.videoCodecOperations & suported_video_encode_queue_operations)) {
                     video_encode_queue_family = i;
+                    // The video queues must support queryResultStatus
+                    assert(queryResultStatus[i].supported);
                 }
 
             }
