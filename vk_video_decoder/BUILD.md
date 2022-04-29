@@ -20,8 +20,8 @@ Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file in this repository for mo
 ## Repository Set-Up
 
   Please make sure you have installed the latest NVIDIA BETA drivers from https://developer.nvidia.com/vulkan-driver.
-  The minimum supported BETA driver versions by this application are 472.69 (Windows) / 470.62.12 (Linux) that
-  must support Vulkan API version 1.3.212 or later.
+  The minimum supported BETA driver versions by this application are 473.50 (Windows) / 470.62.28 (Linux) that
+  must support Vulkan API version 1.3.212.
 
 ### Download the Repository
 
