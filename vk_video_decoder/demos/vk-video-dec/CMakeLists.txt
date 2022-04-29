@@ -48,12 +48,12 @@ set(sources
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/NvVideoSession.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/NvVideoSession.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/nvVkFormats.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/pattern.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/pattern.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoUtils.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoUtils.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoParser/VulkanVideoParser.cpp
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/../../common/src/VkCodecUtils/nvVkFormats.cpp
     )
 
 set(definitions
