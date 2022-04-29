@@ -1,4 +1,9 @@
 # VK_VULKAN_VIDEO
+
+This project conatins two Vulkan Video sample applications which demonstrate video decoding and encoding, respectively. These samples can be independently compiled. Instructions on how to build either the encoder or decoder sample are present within each respective folder.
+
+## VK_VIDEO_DECODE
+
 ![vk_video_decode](vk_video_decoder/doc/VideoDecode.png)
 
 
@@ -21,6 +26,34 @@ Features
 
 
 For instructions on how to build the sample decode application, please see [the build instructions.](https://github.com/nvpro-samples/vk_video_samples/blob/main/vk_video_decoder/BUILD.md)
+
+Please download and install [Beta NVIDIA Driver with Vulkan Video Enabled](https://developer.nvidia.com/vulkan-driver).
+
+For Vulkan Video Specification please refer to [Vulkan Spec with Video Extensions](https://www.khronos.org/registry/vulkan/specs/1.2-extensions/html/vkspec.html).
+
+For deep-dive information on Vulkan Video please refer to the [Deep Dive Slide Deck](https://www.khronos.org/assets/uploads/apis/Vulkan-Video-Deep-Dive-Apr21.pdf).
+
+## VK_VIDEO_ENCODE
+
+This project is a Nvpro-based Vulkan Video sample application demonstrating video encoding. By using the Vulkan video encoding extensions to drive the HW-accelerated video encoder, this application encodes YCbCr content and writes the h.264 compressed video to a file.
+
+The sample is currently limited to YCbCr 4:2:0 8bpp files and all-Intra GOP structure.
+
+Currently, the sample application supports Linux and Windows10 operating systems.
+
+Features
+========
+
+- [x] Compatibility with the remaining nvpro-samples.
+- [x] Video encoding using h.264 standard.
+- [x] Support for all-Intra GOP structure.
+- [ ] Support for P frames.
+- [ ] Support for B frames.
+- [ ] Encoding frames from graphical application.
+- [ ] Different YCbCr chroma subsampling and bit depth options.
+- [ ] Support for h.265 standard.
+
+For instructions on how to build the sample decode application, please see [the build instructions.](https://github.com/nvpro-samples/vk_video_samples/blob/main/vk_video_encoder/BUILD.md)
 
 Please download and install [Beta NVIDIA Driver with Vulkan Video Enabled](https://developer.nvidia.com/vulkan-driver).
 
