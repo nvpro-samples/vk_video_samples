@@ -230,15 +230,8 @@ int main(int argc, char** argv)
         if (logBatchEnc) fprintf(stdout, "####################################################################################\n");
         if (logBatchEnc) fprintf(stdout, "Process framesToProcess %d, numAsmBuffers %d\n", framesToProcess, numAsmBuffers);
 
-        // 1. Assemble the frame data from the previous batch processing (if any) of the submitted to the HW encoded frames.
-        if (logBatchEnc) fprintf(stdout, "### Assemble firstAsmBufferIdx %d, numAsmBuffers %d ###\n", firstAsmBufferIdx, numAsmBuffers);
-        for(uint32_t asmBufferIdx = firstAsmBufferIdx; asmBufferIdx < firstAsmBufferIdx + numAsmBuffers; asmBufferIdx++) {
-            if (logBatchEnc) fprintf(stdout, "\tAssemble asmFrameIndex %d, asmBatchIdx %d\n", asmFrameIndex, asmBufferIdx);
-            encodeApp.assembleBitstreamData(&encodeConfig, (asmFrameIndex == 0), asmBufferIdx);
-            asmFrameIndex++;
-        }
-
-        // 2. Process the first/next batch of encode frames
+        // 1. Process the first/next batch of encode frames
+        // #################################################################################################################
         uint32_t numFramesLoadRecordCmd = std::min((uint32_t)batchSize, framesToProcess);
         assert(numFramesLoadRecordCmd <= batchSize);
         uint32_t firstLoadRecordCmdIndx = batchId * batchSize;
@@ -253,12 +246,25 @@ int main(int argc, char** argv)
             // encode frame for the current frame index
             encodeApp.encodeFrame(&encodeConfig, curFrameIndex, (curFrameIndex == 0), cpuFrameBufferIdx);
             curFrameIndex++;
-
         }
-        // 3. Submit the current batch to the encoder's queue
+        // #################################################################################################################
+
+        // 2. Submit the current batch to the encoder's queue
+        // #################################################################################################################
         if (logBatchEnc) fprintf(stdout, "### Submit to the HW encoder batchId %d, numFramesLoadRecordCmd %d, firstLoadRecordCmdIndx %d ###\n", batchId, numFramesLoadRecordCmd, firstLoadRecordCmdIndx);
         // submit the current batch
         encodeApp.batchSubmit(firstLoadRecordCmdIndx, numFramesLoadRecordCmd);
+        // #################################################################################################################
+
+        // 3. Assemble the frame data from the previous batch processing (if any) of the submitted to the HW encoded frames.
+        // #################################################################################################################
+        if (logBatchEnc) fprintf(stdout, "### Assemble firstAsmBufferIdx %d, numAsmBuffers %d ###\n", firstAsmBufferIdx, numAsmBuffers);
+        for(uint32_t asmBufferIdx = firstAsmBufferIdx; asmBufferIdx < firstAsmBufferIdx + numAsmBuffers; asmBufferIdx++) {
+            if (logBatchEnc) fprintf(stdout, "\tAssemble asmFrameIndex %d, asmBatchIdx %d\n", asmFrameIndex, asmBufferIdx);
+            encodeApp.assembleBitstreamData(&encodeConfig, (asmFrameIndex == 0), asmBufferIdx);
+            asmFrameIndex++;
+        }
+        // #################################################################################################################
 
         // Assemble frames with submitted firstSubmitFrameId and batchSize.
         firstAsmBufferIdx = firstLoadRecordCmdIndx;
