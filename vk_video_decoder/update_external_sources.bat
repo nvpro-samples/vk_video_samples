@@ -17,6 +17,7 @@ set BASE_DIR="%BUILD_DIR%external"
 set REVISION_DIR="%BUILD_DIR%external_revisions"
 set GLSLANG_DIR=%BASE_DIR%\glslang
 set SHADERC_DIR=%BASE_DIR%\shaderc
+set GSTVKVIDEOPARSER_DIR=%BASE_DIR%\GstVkVideoParser
 set do_32=0
 set do_64=0
 set do_debug=0
@@ -159,8 +160,11 @@ REM // ======== Parameter parsing ======== //
    set sync-glslang=0
    set build-glslang=0
    set check-glslang-build-dependencies=0
+   set check-gstvkvideoparser-build-dependencies=0
    set sync-shaderc=1
    set build-shaderc=1
+   set sync-gstvkvideoparser=1
+   set build-gstvkvideoparser=0
 
    if %arg-do-glslang% equ 1 (
       if %arg-no-sync% equ 0 (
@@ -169,6 +173,8 @@ REM // ======== Parameter parsing ======== //
       if %arg-no-build% equ 0 (
          set check-glslang-build-dependencies=1
          set build-glslang=1
+         set check-gstvkvideoparser-build-dependencies=1
+         set build-gstvkvideoparser=1
       )
    )
 
@@ -232,6 +238,16 @@ REM // ======== Dependency checking ======== //
       )
    )
 
+  if %check-gstvkvideoparser-build-dependencies% equ 1 (
+      for %%X in (meson) do (set FOUND=%%~$PATH:X)
+      if not defined FOUND (
+         echo Dependency check failed:
+         echo   meson not found
+         echo   Get Meson for Windows here:  https://mesonbuild.com/Getting-meson.html
+         set errorCode=1
+      )
+   )
+
 
    REM goto:main
 
@@ -271,6 +287,20 @@ if not exist %REVISION_DIR%\shaderc_revision (
    goto:error
 )
 
+if not exist %REVISION_DIR%\gstvkvideoparser_giturl (
+   echo.
+   echo Missing gstvkvideoparser_giturl file!  Place it in %REVISION_DIR% with git repo URL in it.
+   set errorCode=1
+   goto:error
+)
+
+if not exist %REVISION_DIR%\gstvkvideoparser_revision (
+   echo.
+   echo Missing gstvkvideoparser_revision file!  Place it in %REVISION_DIR% with target version in it.
+   set errorCode=1
+   goto:error
+)
+
 set /p GLSLANG_GITURL= < %REVISION_DIR%\glslang_giturl
 set /p GLSLANG_REVISION= < %REVISION_DIR%\glslang_revision
 
@@ -282,6 +312,12 @@ set /p SHADERC_REVISION= < %REVISION_DIR%\shaderc_revision
 
 echo SHADERC_GITURL=%SHADERC_GITURL%
 echo SHADERC_REVISION=%SHADERC_REVISION%
+
+set /p GSTVKVIDEOPARSER_GITURL= < %REVISION_DIR%\gstvkvideoparser_giturl
+set /p GSTVKVIDEOPARSER_REVISION= < %REVISION_DIR%\gstvkvideoparser_revision
+
+echo GSTVKVIDEOPARSER_GITURL=%GSTVKVIDEOPARSER_GITURL%
+echo GSTVKVIDEOPARSER_REVISION=%GSTVKVIDEOPARSER_REVISION%
 
 echo Creating and/or updating glslang in %BASE_DIR%
 
@@ -312,6 +348,22 @@ if %sync-shaderc% equ 1 (
 
 if %build-shaderc% equ 1 (
    call:build_shaderc
+   if %errorCode% neq 0 (goto:error)
+)
+
+echo Creating and/or updating GstVkVideoParser in %BASE_DIR%
+
+if %sync-gstvkvideoparser% equ 1 (
+   if not exist %GSTVKVIDEOPARSER_DIR% (
+      call:create_gstvkvideoparser
+   )
+   if %errorCode% neq 0 (goto:error)
+   call:update_gstvkvideoparser
+   if %errorCode% neq 0 (goto:error)
+)
+
+if %build-gstvkvideoparser% equ 1 (
+   call:build_gstvkvideoparser
    if %errorCode% neq 0 (goto:error)
 )
 
@@ -371,6 +423,23 @@ goto:eof
    git fetch --all
    git checkout %SHADERC_REVISION%
    python.exe .\utils\git-sync-deps
+goto:eof
+
+:create_gstvkvideoparser
+   echo.
+   echo Creating local gstvkvideoparser repository %GSTVKVIDEOPARSER_DIR%)
+   mkdir %GSTVKVIDEOPARSER_DIR%
+   cd %GSTVKVIDEOPARSER_DIR%
+   git clone %GSTVKVIDEOPARSER_GITURL% .
+   git checkout %GSTVKVIDEOPARSER_REVISION%
+goto:eof
+
+:update_gstvkvideoparser
+   echo.
+   echo Updating %GSTVKVIDEOPARSER_DIR%
+   cd %GSTVKVIDEOPARSER_DIR%
+   git fetch --all
+   git checkout %GSTVKVIDEOPARSER_REVISION%
 goto:eof
 
 :build_glslang
@@ -440,5 +509,16 @@ goto:eof
    cmake -DCMAKE_BUILD_TYPE=%SHADERC_BUILD_TYPE% -DCMAKE_GENERATOR_PLATFORM=x64 -DSHADERC_SKIP_TESTS=ON -DSHADERC_SPIRV_TOOLS_DIR=%GLSLANG_DIR%\External\spirv-tools -DSHADERC_SPIRV_HEADERS_DIR=%GLSLANG_DIR%\External\spirv-tools\external\spirv-headers -DSHADERC_GLSLANG_DIR=%GLSLANG_DIR% -DCMAKE_INSTALL_PREFIX=install ..
    echo Building 64-bit shaderc %SHADERC_BUILD_TYPE% type
    cmake --build  . --parallel 16 --config %SHADERC_BUILD_TYPE% --target install
+
+goto:eof
+
+:build_gstvkvideoparser
+   echo.
+   echo Building %GSTVKVIDEOPARSER_DIR%
+   cd  %GSTVKVIDEOPARSER_DIR%
+
+   meson build --prefix "${GSTVKVIDEOPARSER_DIR}"/build/install
+   ninja -C build -j $CORE_COUNT
+   ninja -C build install
 
 goto:eof

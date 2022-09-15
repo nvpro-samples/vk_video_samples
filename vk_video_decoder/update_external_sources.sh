@@ -31,6 +31,7 @@ echo "SHADERC_REVISION=${SHADERC_REVISION}"
 
 BUILDDIR=${CURRENT_DIR}
 BASEDIR="$BUILDDIR/external"
+GSTVKVIDEOPARSER_BASEDIR="${BASEDIR}/GstVkVideoParser"
 
 function create_glslang () {
    rm -rf "${BASEDIR}"/glslang
@@ -114,9 +115,33 @@ function build_moltenvk () {
     -scheme "MoltenVK (Release)" build
 }
 
+function create_gstvkvideoparser () {
+   rm -rf "${GSTVKVIDEOPARSER_BASEDIR}"
+   echo "Creating local videoparser repository (${GSTVKVIDEOPARSER_BASEDIR})."
+   mkdir -p "${GSTVKVIDEOPARSER_BASEDIR}"
+   cd "${GSTVKVIDEOPARSER_BASEDIR}"
+   git clone --recurse-submodules https://github.com/igalia/GstVkVideoParser.git "${GSTVKVIDEOPARSER_BASEDIR}"
+}
+
+function update_gstvkvideoparser () {
+   echo "Updating ${GSTVKVIDEOPARSER_BASEDIR}"
+   cd "${GSTVKVIDEOPARSER_BASEDIR}"
+   git pull
+}
+
+function build_gstvkvideoparser () {
+   echo "Building ${GSTVKVIDEOPARSER_BASEDIR}"
+   cd "${GSTVKVIDEOPARSER_BASEDIR}"
+   meson build --prefix "${GSTVKVIDEOPARSER_BASEDIR}"/build/install
+   ninja -C build -j $CORE_COUNT
+   ninja -C build install
+}
+
+
 INCLUDE_GLSLANG=false
 INCLUDE_SHADERC=false
 INCLUDE_MOLTENVK=false
+INCLUDE_GSTVKVIDEOPARSER=false
 NO_SYNC=false
 NO_BUILD=false
 USE_IMPLICIT_COMPONENT_LIST=true
@@ -190,6 +215,7 @@ if [ ${USE_IMPLICIT_COMPONENT_LIST} == "true" ]; then
     echo "Building MoltenVK"
     INCLUDE_MOLTENVK=true
   fi
+  INCLUDE_GSTVKVIDEOPARSER=true
 fi
 
 if [ ${INCLUDE_GLSLANG} == "true" ]; then
@@ -226,5 +252,18 @@ if [ ${INCLUDE_MOLTENVK} == "true" ]; then
   if [ ${NO_BUILD} == "false" ]; then
     echo "Building moltenvk"
     build_moltenvk
+  fi
+fi
+
+if [ ${INCLUDE_GSTVKVIDEOPARSER} == "true" ]; then
+  if [ ${NO_SYNC} == "false" ]; then
+    if [ ! -d "${GSTVKVIDEOPARSER_BASEDIR}" -o ! -d "${GSTVKVIDEOPARSER_BASEDIR}/.git" ]; then
+      create_gstvkvideoparser
+    fi
+    update_gstvkvideoparser
+  fi
+  if [ ${NO_BUILD} == "false" ]; then
+    echo "Building GstVkVideoParser"
+    build_gstvkvideoparser
   fi
 fi
