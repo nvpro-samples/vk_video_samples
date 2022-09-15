@@ -83,6 +83,13 @@ else()
     list(APPEND libraries PRIVATE -lX11)
     list(APPEND libraries PRIVATE -lavcodec -lavutil -lavformat)
     list(APPEND libraries PRIVATE -L${SHADERC_SEARCH_PATH} -lshaderc_shared)
+
+endif()
+
+if (DEFINED PKG_GST_VK_VIDEO_PARSER_FOUND)
+    list(APPEND libraries PRIVATE ${PKG_GST_VK_VIDEO_PARSER_LDFLAGS})
+    link_directories(${PKG_GST_VK_VIDEO_PARSER_LIBDIR})
+else ()
     list(APPEND libraries PRIVATE -L${CMAKE_INSTALL_LIBDIR} -l${VULKAN_VIDEO_PARSER_LIB})
     list(APPEND libraries PRIVATE -L${LIBNVPARSER_BINARY_ROOT} -l${VULKAN_VIDEO_PARSER_LIB})
 endif()

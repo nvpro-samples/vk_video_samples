@@ -325,6 +325,30 @@ set(EXTERNAL_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/external" CACHE STRING "Ro
 set(EXTERNAL_LIBS_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs" CACHE STRING "Root path to external libs sources such as glm")
 set(EXTERNAL_LIBS_INCLUDE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/include" CACHE STRING "Root path to external libs includes like vulkan headers")
 
+
+############ GST VK VIDEO PARSER ############################################
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND BUILD_GST_VK_VIDEO_PARSER)
+    # Detect the platform used by Meson
+    string (TOLOWER ${CMAKE_SYSTEM_NAME} SYSTEM_NAME_LOWER)
+    if (CMAKE_COMPILER_IS_GNUCC)
+        set(TOOLCHAIN_SUFFIX "-gnu")
+    endif()
+    # Check the library presence using pkgconfig
+    set (GST_VK_VIDEO_PARSER_PKG_CONFIG_FOLDER "${EXTERNAL_SOURCE_ROOT}/GstVkVideoParser/${BUILDTGT_DIR}/install/lib/${CMAKE_SYSTEM_PROCESSOR}-${SYSTEM_NAME_LOWER}${TOOLCHAIN_SUFFIX}/pkgconfig")
+    message( STATUS "PkgConfig folder for GST Vulkan Video Parser: ${GST_VK_VIDEO_PARSER_PKG_CONFIG_FOLDER}" )
+    set(ENV{PKG_CONFIG_PATH} "$ENV{PKG_CONFIG_PATH}:${GST_VK_VIDEO_PARSER_PKG_CONFIG_FOLDER}")
+    find_package(PkgConfig REQUIRED)
+    # this looks for gst-vkvideo-parser.pc file and creates a new target
+    # IMPORTED_TARGET requires CMake >= 3.6.3
+    pkg_search_module(PKG_GST_VK_VIDEO_PARSER REQUIRED gstvkvideoparser)
+
+    if (DEFINED PKG_GST_VK_VIDEO_PARSER_FOUND)
+        message(STATUS "Found the GST Vulkan Video Parser library here: ${PKG_GST_VK_VIDEO_PARSER_LIBDIR}" )
+        set(VULKAN_VIDEO_PARSER_LIB_PATH  "${PKG_GST_VK_VIDEO_PARSER_INCLUDE_DIRS}" CACHE PATH "Path to GST Vulkan Video Parser library directory")
+    endif()
+endif()
+############ GST VK VIDEO PARSER ############################################
+
 if(DEFINED ENV{TEGRA_TOP})
 	MESSAGE(STATUS "TEGRA_TOP is SET: $ENV{TEGRA_TOP}")
 	set(VULKAN_TEGRA_LIBS_PATH "/usr/lib/aarch64-linux-gnu/tegra" CACHE STRING "Path to tegra so libraries")
