@@ -154,10 +154,8 @@ VkResult EncodeApp::getVideoFormats(VkPhysicalDevice physicalDevice, NvVideoProf
         formats[i] = VK_FORMAT_UNDEFINED;
     }
 
-    const VkVideoProfilesKHR videoProfiles = { VK_STRUCTURE_TYPE_VIDEO_PROFILES_KHR, NULL, 1, pVideoProfile->GetProfile() };
-    const VkPhysicalDeviceVideoFormatInfoKHR videoFormatInfo = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR, NULL,
-                                                                 imageUsage, &videoProfiles
-                                                               };
+    VkVideoProfilesKHR videoProfiles = { VK_STRUCTURE_TYPE_VIDEO_PROFILES_KHR, NULL, 1, pVideoProfile->GetProfile() };
+    const VkPhysicalDeviceVideoFormatInfoKHR videoFormatInfo = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR, &videoProfiles, imageUsage };
 
     uint32_t supportedFormatCount = 0;
     VkResult result = vkGetPhysicalDeviceVideoFormatPropertiesKHR(physicalDevice, &videoFormatInfo, &supportedFormatCount, nullptr);
