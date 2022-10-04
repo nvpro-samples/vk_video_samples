@@ -314,14 +314,14 @@ void Shell::init_physical_dev(uint32_t deviceID) {
 
         // get queue properties
         std::vector<VkQueueFamilyProperties2> queues;
-        std::vector<VkVideoQueueFamilyProperties2KHR> videoQueues;
-        std::vector<VkQueueFamilyQueryResultStatusProperties2KHR> queryResultStatus;
+        std::vector<VkQueueFamilyVideoPropertiesKHR> videoQueues;
+        std::vector<VkQueueFamilyQueryResultStatusPropertiesKHR> queryResultStatus;
         vk::get(phy, queues, videoQueues, queryResultStatus);
 
         int frameProcessor_queue_family = -1, present_queue_family = -1, video_decode_queue_family = -1, video_encode_queue_family = -1;
         for (uint32_t i = 0; i < queues.size(); i++) {
             const VkQueueFamilyProperties2 &q = queues[i];
-            const VkVideoQueueFamilyProperties2KHR &videoQueue = videoQueues[i];
+            const VkQueueFamilyVideoPropertiesKHR &videoQueue = videoQueues[i];
 
             // requires only GRAPHICS for frameProcessor queues
             const VkFlags frameProcessor_queue_flags = VK_QUEUE_GRAPHICS_BIT;
@@ -340,7 +340,7 @@ void Shell::init_physical_dev(uint32_t deviceID) {
                         (videoQueue.videoCodecOperations & suported_video_decode_queue_operations)) {
                     video_decode_queue_family = i;
                     // The video queues must support queryResultStatus
-                    assert(queryResultStatus[i].supported);
+                    assert(queryResultStatus[i].queryResultStatusSupport);
                 }
 
                 const VkFlags video_encode_queue_flags = VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
@@ -352,7 +352,7 @@ void Shell::init_physical_dev(uint32_t deviceID) {
                         (videoQueue.videoCodecOperations & suported_video_encode_queue_operations)) {
                     video_encode_queue_family = i;
                     // The video queues must support queryResultStatus
-                    assert(queryResultStatus[i].supported);
+                    assert(queryResultStatus[i].queryResultStatusSupport);
                 }
 
             }

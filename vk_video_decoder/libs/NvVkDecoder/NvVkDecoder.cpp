@@ -28,13 +28,15 @@
 
 #define GPU_ALIGN(x) (((x) + 0xff) & ~0xff)
 
+const uint64_t gFenceTimeout = 100 * 1000 * 1000 /* 100 mSec */;
+
 const char* NvVkDecoder::GetVideoCodecString(VkVideoCodecOperationFlagBitsKHR codec)
 {
     static struct {
         VkVideoCodecOperationFlagBitsKHR eCodec;
         const char* name;
     } aCodecName[] = {
-        { VK_VIDEO_CODEC_OPERATION_INVALID_BIT_KHR, "Invalid" },
+        { VK_VIDEO_CODEC_OPERATION_NONE_KHR, "None" },
         { VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT, "AVC/H.264" },
         { VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT, "H.265/HEVC" },
 #ifdef VK_EXT_video_decode_vp9
@@ -116,9 +118,9 @@ VkResult NvVkDecoder::GetVideoFormats(nvVideoProfile* pVideoProfile, VkImageUsag
         formats[i] = VK_FORMAT_UNDEFINED;
     }
 
-    const VkVideoProfilesKHR videoProfiles = { VK_STRUCTURE_TYPE_VIDEO_PROFILES_KHR, NULL, 1, pVideoProfile->GetProfile() };
-    const VkPhysicalDeviceVideoFormatInfoKHR videoFormatInfo = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR, NULL,
-                                                                 imageUsage, &videoProfiles };
+    const VkVideoProfileListInfoKHR videoProfiles = { VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR, nullptr, 1, pVideoProfile->GetProfile() };
+    const VkPhysicalDeviceVideoFormatInfoKHR videoFormatInfo = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR, const_cast<VkVideoProfileListInfoKHR *>(&videoProfiles),
+                                                                 imageUsage };
 
     uint32_t supportedFormatCount = 0;
     VkResult result = vk::GetPhysicalDeviceVideoFormatPropertiesKHR(m_pVulkanDecodeContext.physicalDev, &videoFormatInfo, &supportedFormatCount, nullptr);
@@ -178,20 +180,20 @@ VkResult NvVkDecoder::GetVideoCapabilities(nvVideoProfile* pVideoProfile, VkVide
     if (m_dumpDecodeData) {
         std::cout << "\t\t\t" << ((pVideoProfile->GetCodecType() == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT) ? "h264" : "h264") << "decode capabilities: " << std::endl;
 
-        if (pVideoCapabilities->capabilityFlags & VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR) {
+        if (pVideoCapabilities->flags & VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR) {
             std::cout << "\t\t\t" << "Use separate reference images" << std::endl;
         }
 
         std::cout << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << pVideoCapabilities->minBitstreamBufferOffsetAlignment << std::endl;
         std::cout << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << pVideoCapabilities->minBitstreamBufferSizeAlignment << std::endl;
-        std::cout << "\t\t\t" << "videoPictureExtentGranularity: " << pVideoCapabilities->videoPictureExtentGranularity.width << " x " << pVideoCapabilities->videoPictureExtentGranularity.height << std::endl;
-        std::cout << "\t\t\t" << "minExtent: " << pVideoCapabilities->minExtent.width << " x " << pVideoCapabilities->minExtent.height << std::endl;
-        std::cout << "\t\t\t" << "maxExtent: " << pVideoCapabilities->maxExtent.width  << " x " << pVideoCapabilities->maxExtent.height << std::endl;
-        std::cout << "\t\t\t" << "maxReferencePicturesSlotsCount: " << pVideoCapabilities->maxReferencePicturesSlotsCount << std::endl;
-        std::cout << "\t\t\t" << "maxReferencePicturesActiveCount: " << pVideoCapabilities->maxReferencePicturesActiveCount << std::endl;
+        std::cout << "\t\t\t" << "pictureAccessGranularity: " << pVideoCapabilities->pictureAccessGranularity.width << " x " << pVideoCapabilities->pictureAccessGranularity.height << std::endl;
+        std::cout << "\t\t\t" << "minCodedExtent: " << pVideoCapabilities->minCodedExtent.width << " x " << pVideoCapabilities->minCodedExtent.height << std::endl;
+        std::cout << "\t\t\t" << "maxCodedExtent: " << pVideoCapabilities->maxCodedExtent.width  << " x " << pVideoCapabilities->maxCodedExtent.height << std::endl;
+        std::cout << "\t\t\t" << "maxDpbSlots: " << pVideoCapabilities->maxDpbSlots << std::endl;
+        std::cout << "\t\t\t" << "maxActiveReferencePictures: " << pVideoCapabilities->maxActiveReferencePictures << std::endl;
 
         if (pVideoProfile->GetCodecType() == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT) {
-            std::cout << "\t\t\t" << "maxLevel: " << pH264Capabilities->maxLevel << std::endl;
+            std::cout << "\t\t\t" << "maxLevelIdc: " << pH264Capabilities->maxLevelIdc << std::endl;
             std::cout << "\t\t\t" << "fieldOffsetGranularity: " << pH264Capabilities->fieldOffsetGranularity.x << " x " << pH264Capabilities->fieldOffsetGranularity.y << std::endl;;
 
             if (strncmp(pVideoCapabilities->stdHeaderVersion.extensionName,
@@ -202,7 +204,7 @@ VkResult NvVkDecoder::GetVideoCapabilities(nvVideoProfile* pVideoProfile, VkVide
                 return VK_ERROR_INCOMPATIBLE_DRIVER;
             }
         } else if (pVideoProfile->GetCodecType() == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT) {
-            std::cout << "\t\t\t" << "maxLevel: " << pH265Capabilities->maxLevel << std::endl;
+            std::cout << "\t\t\t" << "maxLevelIdc: " << pH265Capabilities->maxLevelIdc << std::endl;
             if (strncmp(pVideoCapabilities->stdHeaderVersion.extensionName,
                     VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME,
                         sizeof (pVideoCapabilities->stdHeaderVersion.extensionName) - 1U) ||
@@ -227,14 +229,14 @@ int32_t NvVkDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoForma
 {
     const bool testUseLargestSurfaceExtent = false;
     // Assume 4k content for testing surfaces
-    const uint32_t surfaceMinWidthExtent  = 3840;
-    const uint32_t surfaceMinHeightExtent = 2160;
+    const uint32_t surfaceMinWidthExtent  = 4096;
+    const uint32_t surfaceMinHeightExtent = 4096;
 
     VkExtent2D codedExtent = { pVideoFormat->coded_width, pVideoFormat->coded_height };
 
     // Width and height of the image surface
-    VkExtent2D imageExtent = VkExtent2D { (uint32_t)(pVideoFormat->display_area.right - pVideoFormat->display_area.left),
-                                          (uint32_t)(pVideoFormat->display_area.bottom - pVideoFormat->display_area.top) };
+    VkExtent2D imageExtent = VkExtent2D { std::max((uint32_t)(pVideoFormat->display_area.right  - pVideoFormat->display_area.left), pVideoFormat->coded_width),
+                                          std::max((uint32_t)(pVideoFormat->display_area.bottom - pVideoFormat->display_area.top),  pVideoFormat->coded_height) };
 
     // If we are testing content with different sizes against max sized surface vs. images dynamic resize
     // then set the imageExtent to the max surface size selected.
@@ -262,7 +264,7 @@ int32_t NvVkDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoForma
         (int32_t*)&m_pVulkanDecodeContext.videoDecodeQueueFamily,
         VK_QUEUE_VIDEO_DECODE_BIT_KHR,
         VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT | VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT);
-    assert(videoCodecs != VK_VIDEO_CODEC_OPERATION_INVALID_BIT_KHR);
+    assert(videoCodecs != VK_VIDEO_CODEC_OPERATION_NONE_KHR);
 
     if (m_dumpDecodeData) {
         std::cout << "\t" << std::hex << videoCodecs << " HW codec types are available: " << std::dec << std::endl;
@@ -296,29 +298,17 @@ int32_t NvVkDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoForma
               << "\tNum Surfaces : " << m_numDecodeSurfaces << std::endl
               << "\tResize       : " << codedExtent.width << " x " << codedExtent.height << std::endl;
 
-    uint32_t maxDpbSlotCount = pVideoFormat->maxNumDpbSlots; // This is currently configured by the parser to maxNumDpbSlots from the stream plus 1 for the current slot on the fly
+    uint32_t maxDpbSlotCount   = pVideoFormat->maxNumDpbSlots;
 
     assert(VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR == pVideoFormat->chromaSubsampling ||
            VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR == pVideoFormat->chromaSubsampling ||
            VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR == pVideoFormat->chromaSubsampling ||
            VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR == pVideoFormat->chromaSubsampling);
 
-
-    VkFormat supportedDpbAndOutFormats[8];
-    uint32_t formatCount = sizeof(supportedDpbAndOutFormats) / sizeof(supportedDpbAndOutFormats[0]);
-    result = GetVideoFormats(&videoProfile,
-                             (VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR),
-                              formatCount, supportedDpbAndOutFormats);
-
-    assert(result == VK_SUCCESS);
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nERROR: GetVideoFormats() result: 0x%x\n", result);
-    }
-
-    VkVideoDecodeCapabilitiesKHR videoDecodeCapabilities = { VK_STRUCTURE_TYPE_VIDEO_DECODE_CAPABILITIES_KHR, NULL };
+    VkVideoDecodeCapabilitiesKHR videoDecodeCapabilities = { VK_STRUCTURE_TYPE_VIDEO_DECODE_CAPABILITIES_KHR, nullptr };
     VkVideoCapabilitiesKHR videoCapabilities             = { VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR, &videoDecodeCapabilities };
-    VkVideoDecodeH264CapabilitiesEXT h264Capabilities    = { VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_EXT, NULL };
-    VkVideoDecodeH265CapabilitiesEXT h265Capabilities    = { VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_EXT, NULL };
+    VkVideoDecodeH264CapabilitiesEXT h264Capabilities    = { VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_EXT, nullptr };
+    VkVideoDecodeH265CapabilitiesEXT h265Capabilities    = { VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_EXT, nullptr };
     if (videoCodec == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT) {
         videoDecodeCapabilities.pNext = &h264Capabilities;
     } else if (videoCodec == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT) {
@@ -333,22 +323,56 @@ int32_t NvVkDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoForma
         fprintf(stderr, "\nERROR: GetVideoCapabilities() result: 0x%x\n", result);
     }
 
-    const VkVideoProfileKHR* pVideoProfile = videoProfile.GetProfile();
-    VkFormat referencePicturesFormat = videoProfile.CodecGetVkFormat(
-                 (VkVideoChromaSubsamplingFlagBitsKHR)pVideoProfile->chromaSubsampling,
-                 (VkVideoComponentBitDepthFlagBitsKHR)pVideoProfile->lumaBitDepth,
-                 pVideoProfile->chromaSubsampling != VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR /* isSemiPlanar */);
-
-    VkFormat pictureFormat = referencePicturesFormat;
-    assert(supportedDpbAndOutFormats[0] == pictureFormat);
-
+    VkFormat referencePicturesFormat = VK_FORMAT_MAX_ENUM;
+    VkFormat pictureFormat = VK_FORMAT_MAX_ENUM;
     m_capabilityFlags  = (VkVideoDecodeCapabilityFlagBitsKHR)videoDecodeCapabilities.flags;
-    imageExtent.width  = std::max(imageExtent.width, videoCapabilities.minExtent.width);
-    imageExtent.height = std::max(imageExtent.height, videoCapabilities.minExtent.height);
+    if ((m_capabilityFlags & VK_VIDEO_DECODE_CAPABILITY_DPB_AND_OUTPUT_COINCIDE_BIT_KHR) != 0) {
+        // NV, Intel
+        VkFormat supportedDpbFormats[8];
+        uint32_t formatCount = sizeof(supportedDpbFormats) / sizeof(supportedDpbFormats[0]);
+        result = GetVideoFormats(&videoProfile,
+                                (VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR),
+                                formatCount, supportedDpbFormats);
 
-    uint32_t alignWidth = videoCapabilities.videoPictureExtentGranularity.width - 1;
+        referencePicturesFormat = supportedDpbFormats[0];
+        pictureFormat = supportedDpbFormats[0];
+
+    } else if ((m_capabilityFlags & VK_VIDEO_DECODE_CAPABILITY_DPB_AND_OUTPUT_DISTINCT_BIT_KHR) != 0) {
+        // AMD
+        VkFormat supportedDpbFormats[8];
+        VkFormat supportedOutFormats[8];
+        uint32_t formatCount = sizeof(supportedDpbFormats) / sizeof(supportedDpbFormats[0]);
+        result = GetVideoFormats(&videoProfile,
+                                VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR,
+                                formatCount, supportedDpbFormats);
+
+        assert(result == VK_SUCCESS);
+
+        result = GetVideoFormats(&videoProfile,
+                                VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR,
+                                formatCount, supportedOutFormats);
+
+        referencePicturesFormat = supportedDpbFormats[0];
+        pictureFormat = supportedOutFormats[0];
+
+    } else {
+        fprintf(stderr, "\nERROR: Unsupported decode capability flags.");
+        return -1;
+    }
+
+    assert(result == VK_SUCCESS);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "\nERROR: GetVideoFormats() result: 0x%x\n", result);
+    }
+
+    assert((referencePicturesFormat != VK_FORMAT_MAX_ENUM) && (pictureFormat != VK_FORMAT_MAX_ENUM));
+    assert(referencePicturesFormat == pictureFormat);
+    imageExtent.width  = std::max(imageExtent.width, videoCapabilities.minCodedExtent.width);
+    imageExtent.height = std::max(imageExtent.height, videoCapabilities.minCodedExtent.height);
+
+    uint32_t alignWidth = videoCapabilities.pictureAccessGranularity.width - 1;
     imageExtent.width = ((imageExtent.width + alignWidth) & ~alignWidth);
-    uint32_t alignHeight = videoCapabilities.videoPictureExtentGranularity.height - 1;
+    uint32_t alignHeight = videoCapabilities.pictureAccessGranularity.height - 1;
     imageExtent.height = ((imageExtent.height + alignHeight) & ~alignHeight);
 
     if (!m_videoSession ||
@@ -359,7 +383,7 @@ int32_t NvVkDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoForma
                                            imageExtent,
                                            referencePicturesFormat,
                                            maxDpbSlotCount,
-                                           maxDpbSlotCount) ) {
+                                           std::max<uint32_t>(maxDpbSlotCount, VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS)) ) {
         result = NvVideoSession::Create( m_pVulkanDecodeContext.dev,
                                          m_pVulkanDecodeContext.videoDecodeQueueFamily,
                                          &videoProfile,
@@ -367,7 +391,7 @@ int32_t NvVkDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoForma
                                          imageExtent,
                                          referencePicturesFormat,
                                          maxDpbSlotCount,
-                                         maxDpbSlotCount,
+                                         std::max<uint32_t>(maxDpbSlotCount, VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS),
                                          m_videoSession);
 
         // after creating a new video session, we need codec reset.
@@ -406,7 +430,6 @@ int32_t NvVkDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoForma
 
     // Save the original config
     m_videoFormat = *pVideoFormat;
-
     return m_numDecodeSurfaces;
 }
 
@@ -421,10 +444,73 @@ bool NvVkDecoder::UpdatePictureParameters(VkPictureParameters* pPictureParameter
         return false;
     }
 
-    bool hasSpsPpsPair = false;
-    uint32_t numEntires = AddPictureParametersToQueue(pictureParametersSet, hasSpsPpsPair);
+    int32_t nodeId = -1;
+    bool isNodeId = false;
+    StdVideoPictureParametersSet::ItemType nodeParent = StdVideoPictureParametersSet::INVALID_TYPE;
+    StdVideoPictureParametersSet::ItemType nodeChild = StdVideoPictureParametersSet::INVALID_TYPE;
+    switch (pictureParametersSet->m_itemType) {
+    case StdVideoPictureParametersSet::PPS_TYPE:
+        nodeParent = StdVideoPictureParametersSet::SPS_TYPE;
+        nodeId = pictureParametersSet->GetPpsId(isNodeId);
+        assert(isNodeId);
+        if (m_lastPictParamsQueue[nodeParent]) {
+            const int32_t spsParentId = pictureParametersSet->GetSpsId(isNodeId);
+            assert(!isNodeId);
+            if (spsParentId == m_lastIdInQueue[nodeParent]) {
+                pictureParametersSet->m_parent = m_lastPictParamsQueue[nodeParent];
+                assert(spsParentId == m_lastPictParamsQueue[nodeParent]->GetSpsId(isNodeId));
+                assert(isNodeId);
+            }
+        }
+        break;
+    case StdVideoPictureParametersSet::SPS_TYPE:
+        nodeParent = StdVideoPictureParametersSet::VPS_TYPE;
+        nodeChild = StdVideoPictureParametersSet::PPS_TYPE;
+        nodeId = pictureParametersSet->GetSpsId(isNodeId);
+        if (!((uint32_t)nodeId < VkParserVideoPictureParameters::MAX_SPS_IDS)) {
+            assert(!"SPS ID is out of bounds");
+        }
+        assert(isNodeId);
+        if (m_lastPictParamsQueue[nodeChild]) {
+            const int32_t spsChildId = m_lastPictParamsQueue[nodeChild]->GetSpsId(isNodeId);
+            assert(!isNodeId);
+            if (spsChildId == nodeId) {
+                m_lastPictParamsQueue[nodeChild]->m_parent = pictureParametersSet;
+            }
+        }
+        if (m_lastPictParamsQueue[nodeParent]) {
+            const int32_t vpsParentId = pictureParametersSet->GetVpsId(isNodeId);
+            assert(!isNodeId);
+            if (vpsParentId == m_lastIdInQueue[nodeParent]) {
+                pictureParametersSet->m_parent = m_lastPictParamsQueue[nodeParent];
+                assert(vpsParentId == m_lastPictParamsQueue[nodeParent]->GetVpsId(isNodeId));
+                assert(isNodeId);
+            }
+        }
+        break;
+    case StdVideoPictureParametersSet::VPS_TYPE:
+        nodeChild = StdVideoPictureParametersSet::SPS_TYPE;
+        nodeId = pictureParametersSet->GetVpsId(isNodeId);
+        if (!((uint32_t)nodeId < VkParserVideoPictureParameters::MAX_VPS_IDS)) {
+            assert(!"VPS ID is out of bounds");
+        }
+        assert(isNodeId);
+        if (m_lastPictParamsQueue[nodeChild]) {
+            const int32_t vpsParentId = m_lastPictParamsQueue[nodeChild]->GetVpsId(isNodeId);
+            assert(!isNodeId);
+            if (vpsParentId == nodeId) {
+                m_lastPictParamsQueue[nodeChild]->m_parent = pictureParametersSet;
+            }
+        }
+        break;
+    default:
+        assert("!Invalid STD type");
+        return 0;
+    }
 
-    if (m_videoSession && hasSpsPpsPair && numEntires) {
+    uint32_t nodesTypeMask = AddPictureParametersToQueue(pictureParametersSet);
+
+    if (m_videoSession && nodesTypeMask) {
         FlushPictureParametersQueue();
     }
 
@@ -432,64 +518,10 @@ bool NvVkDecoder::UpdatePictureParameters(VkPictureParameters* pPictureParameter
     return true;
 }
 
-uint32_t NvVkDecoder::AddPictureParametersToQueue(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet, bool& hasSpsPpsPair)
+uint32_t NvVkDecoder::AddPictureParametersToQueue(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet)
 {
-
-    hasSpsPpsPair = false;
-
-    if (!m_pictureParametersQueue.empty()) {
-        m_pictureParametersQueue.push(pictureParametersSet);
-        return (uint32_t)m_pictureParametersQueue.size();
-    }
-
-    bool isSps = false;
-    int32_t spsId = pictureParametersSet->GetSpsId(isSps);
-
-    // Attempt to combine the pair of SPS/PPS to avid creatingPicture Parameter Objects
-    if ((!!m_lastSpsPictureParametersQueue && !!m_lastPpsPictureParametersQueue) || // the last slots are already occupied
-            (isSps && !!m_lastSpsPictureParametersQueue) ||  // the current one is SPS but SPS slot is already occupied
-            (!isSps && !!m_lastPpsPictureParametersQueue) || // the current one is PPS but PPS slot is already occupied
-            ((m_lastSpsIdInQueue != -1) && (m_lastSpsIdInQueue != spsId) )) { // This has a different spsId
-
-        if (m_lastSpsPictureParametersQueue) {
-            m_pictureParametersQueue.push(m_lastSpsPictureParametersQueue);
-            m_lastSpsPictureParametersQueue = NULL;
-        }
-
-        if (m_lastPpsPictureParametersQueue) {
-            m_pictureParametersQueue.push(m_lastPpsPictureParametersQueue);
-            m_lastPpsPictureParametersQueue = NULL;
-        }
-
-        m_pictureParametersQueue.push(pictureParametersSet);
-
-        m_lastSpsIdInQueue = -1;
-        return (uint32_t)m_pictureParametersQueue.size();
-    }
-
-    if (m_lastSpsIdInQueue == -1) {
-        m_lastSpsIdInQueue = spsId;
-    }
-
-    assert(m_lastSpsIdInQueue != -1);
-    if (isSps) {
-        m_lastSpsPictureParametersQueue = pictureParametersSet;
-    } else {
-        m_lastPpsPictureParametersQueue = pictureParametersSet;
-    }
-
-    uint32_t count = 0;
-    if (m_lastSpsPictureParametersQueue) {
-        count++;
-    }
-
-    if (m_lastPpsPictureParametersQueue) {
-        count++;
-    }
-
-    hasSpsPpsPair = (count == 2);
-
-    return count;
+    m_pictureParametersQueue.push(pictureParametersSet);
+    return (1 << pictureParametersSet->m_itemType);
 }
 
 uint32_t NvVkDecoder::FlushPictureParametersQueue()
@@ -498,42 +530,28 @@ uint32_t NvVkDecoder::FlushPictureParametersQueue()
     while (!m_pictureParametersQueue.empty()) {
         VkSharedBaseObj<StdVideoPictureParametersSet>& ppItem = m_pictureParametersQueue.front();
 
-        bool isSps = false;
-        ppItem->GetSpsId(isSps);
-
         VkSharedBaseObj<StdVideoPictureParametersSet> emptyStdPictureParametersSet;
 
-        AddPictureParameters(isSps ? ppItem : emptyStdPictureParametersSet,
-                             isSps ?  emptyStdPictureParametersSet : ppItem);
+        switch (ppItem->m_itemType) {
+        case StdVideoPictureParametersSet::PPS_TYPE:
+            AddPictureParameters(emptyStdPictureParametersSet,
+                                 emptyStdPictureParametersSet, ppItem);
+            break;
+        case StdVideoPictureParametersSet::SPS_TYPE:
+            AddPictureParameters(emptyStdPictureParametersSet,
+                                 ppItem, emptyStdPictureParametersSet);
+            break;
+        case StdVideoPictureParametersSet::VPS_TYPE:
+            AddPictureParameters(ppItem, emptyStdPictureParametersSet,
+                                 emptyStdPictureParametersSet);
+            break;
+        default:
+            assert("!Invalid STD type");
+        }
 
         m_pictureParametersQueue.pop();
         numQueueItems++;
     }
-
-    if (numQueueItems) {
-        return numQueueItems;
-    }
-
-    if (!(m_lastSpsPictureParametersQueue || m_lastPpsPictureParametersQueue)) {
-        return 0;
-    }
-
-    AddPictureParameters(m_lastSpsPictureParametersQueue,
-                         m_lastPpsPictureParametersQueue);
-
-    if (m_lastSpsPictureParametersQueue) {
-        numQueueItems++;
-        m_lastSpsPictureParametersQueue = NULL;
-    }
-
-    if (m_lastPpsPictureParametersQueue) {
-        numQueueItems++;
-        m_lastPpsPictureParametersQueue = NULL;
-    }
-
-    m_lastSpsIdInQueue = -1;
-
-    assert(numQueueItems);
 
     return numQueueItems;
 }
@@ -566,7 +584,7 @@ bool NvVkDecoder::CheckStdObjectBeforeUpdate(VkSharedBaseObj<StdVideoPicturePara
 VkParserVideoPictureParameters* NvVkDecoder::CheckStdObjectAfterUpdate(VkSharedBaseObj<StdVideoPictureParametersSet>& stdPictureParametersSet, VkParserVideoPictureParameters* pNewPictureParametersObject)
 {
     if (!stdPictureParametersSet) {
-        return NULL;
+        return nullptr;
     }
 
     if (pNewPictureParametersObject) {
@@ -591,25 +609,37 @@ VkParserVideoPictureParameters* NvVkDecoder::CheckStdObjectAfterUpdate(VkSharedB
     return m_currentPictureParameters;
 }
 
-VkParserVideoPictureParameters*  NvVkDecoder::AddPictureParameters(VkSharedBaseObj<StdVideoPictureParametersSet>& spsStdPictureParametersSet,
+VkParserVideoPictureParameters*  NvVkDecoder::AddPictureParameters(VkSharedBaseObj<StdVideoPictureParametersSet>& vpsStdPictureParametersSet,
+                                                                   VkSharedBaseObj<StdVideoPictureParametersSet>& spsStdPictureParametersSet,
                                                                    VkSharedBaseObj<StdVideoPictureParametersSet>& ppsStdPictureParametersSet)
 {
 
-    VkParserVideoPictureParameters* pPictureParametersObject = NULL;
-    bool createNewObject = CheckStdObjectBeforeUpdate(spsStdPictureParametersSet);
-    createNewObject |= CheckStdObjectBeforeUpdate(ppsStdPictureParametersSet);
+    if ((!ppsStdPictureParametersSet &&
+         !spsStdPictureParametersSet &&
+         !vpsStdPictureParametersSet)) {
+        return nullptr;
+    }
+
+    VkParserVideoPictureParameters* pPictureParametersObject = nullptr;
+    bool createNewObject = CheckStdObjectBeforeUpdate(ppsStdPictureParametersSet);
+    createNewObject = createNewObject || CheckStdObjectBeforeUpdate(spsStdPictureParametersSet);
+    createNewObject = createNewObject || CheckStdObjectBeforeUpdate(vpsStdPictureParametersSet);
 
     if (createNewObject) {
         pPictureParametersObject = VkParserVideoPictureParameters::Create(m_pVulkanDecodeContext.dev,
                                                                           m_videoSession,
+                                                                          vpsStdPictureParametersSet,
                                                                           spsStdPictureParametersSet,
                                                                           ppsStdPictureParametersSet,
                                                                           m_currentPictureParameters);
         m_currentPictureParameters = pPictureParametersObject;
     } else {
-        m_currentPictureParameters->Update(spsStdPictureParametersSet, ppsStdPictureParametersSet);
+        m_currentPictureParameters->Update(vpsStdPictureParametersSet,
+                                           spsStdPictureParametersSet,
+                                           ppsStdPictureParametersSet);
     }
 
+    CheckStdObjectAfterUpdate(vpsStdPictureParametersSet, pPictureParametersObject);
     CheckStdObjectAfterUpdate(spsStdPictureParametersSet, pPictureParametersObject);
     CheckStdObjectAfterUpdate(ppsStdPictureParametersSet, pPictureParametersObject);
 
@@ -654,13 +684,12 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
     VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    beginInfo.pInheritanceInfo = NULL;
+    beginInfo.pInheritanceInfo = nullptr;
 
     vk::BeginCommandBuffer(frameDataSlot.commandBuffer, &beginInfo);
     VkVideoBeginCodingInfoKHR decodeBeginInfo = { VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR };
     // CmdResetQueryPool are NOT Supported yet.
 
-    decodeBeginInfo.codecQualityPreset = VK_VIDEO_CODING_QUALITY_PRESET_NORMAL_BIT_KHR;
     decodeBeginInfo.videoSession = m_videoSession->GetVideoSession();
 
     VulkanVideoFrameBuffer::PictureResourceInfo currentPictureResource = VulkanVideoFrameBuffer::PictureResourceInfo();
@@ -672,7 +701,7 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
     assert(pPicParams->decodeFrameInfo.srcBuffer);
     const VkBufferMemoryBarrier2KHR bitstreamBufferMemoryBarrier = {
         VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR,
-        NULL,
+        nullptr,
         VK_PIPELINE_STAGE_2_NONE_KHR,
         VK_ACCESS_2_HOST_WRITE_BIT_KHR,
         VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR,
@@ -688,7 +717,7 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
         { // VkImageMemoryBarrier
 
             VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR, // VkStructureType sType
-            NULL, // const void*     pNext
+            nullptr, // const void*     pNext
             VK_PIPELINE_STAGE_2_NONE_KHR, // VkPipelineStageFlags2KHR srcStageMask
             0, // VkAccessFlags2KHR        srcAccessMask
             VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR, // VkPipelineStageFlags2KHR dstStageMask;
@@ -708,7 +737,7 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
             } },
     };
 
-    VkImageMemoryBarrier2KHR imageBarriers[VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS];
+    VkImageMemoryBarrier2KHR imageBarriers[VkParserPerFrameDecodeParameters::MAX_DPB_REF_AND_SETUP_SLOTS];
     uint32_t numDpbBarriers = 0;
 
     if (currentPictureResource.currentImageLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
@@ -721,7 +750,7 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
         numDpbBarriers++;
     }
 
-    VulkanVideoFrameBuffer::PictureResourceInfo pictureResourcesInfo[VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS];
+    VulkanVideoFrameBuffer::PictureResourceInfo pictureResourcesInfo[VkParserPerFrameDecodeParameters::MAX_DPB_REF_AND_SETUP_SLOTS];
     memset(&pictureResourcesInfo[0], 0, sizeof(pictureResourcesInfo));
     const int8_t* pGopReferenceImagesIndexes = pPicParams->pGopReferenceImagesIndexes;
     if (pPicParams->numGopReferenceSlots) {
@@ -731,7 +760,7 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
         for (int32_t resId = 0; resId < pPicParams->numGopReferenceSlots; resId++) {
             // slotLayer requires NVIDIA specific extension VK_KHR_video_layers, not enabled, just yet.
             // pGopReferenceSlots[resId].slotLayerIndex = 0;
-            // pictureResourcesInfo[resId].image can be a NULL handle if the picture is not-existent.
+            // pictureResourcesInfo[resId].image can be a nullptr handle if the picture is not-existent.
             if (pictureResourcesInfo[resId].image && (pictureResourcesInfo[resId].currentImageLayout != VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) && (pictureResourcesInfo[resId].currentImageLayout != VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR)) {
                 imageBarriers[numDpbBarriers] = dpbBarrierTemplates[0];
                 imageBarriers[numDpbBarriers].oldLayout = pictureResourcesInfo[resId].currentImageLayout;
@@ -797,7 +826,7 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
     vk::CmdResetQueryPool(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool, frameSynchronizationInfo.startQueryId, frameSynchronizationInfo.numQueries);
     vk::CmdBeginVideoCodingKHR(frameDataSlot.commandBuffer, &decodeBeginInfo);
 
-    if (m_resetDecoder) {
+    if (m_resetDecoder != false) {
         VkVideoCodingControlInfoKHR codingControlInfo = { VK_STRUCTURE_TYPE_VIDEO_CODING_CONTROL_INFO_KHR,
                                                           nullptr,
                                                           VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR };
@@ -831,7 +860,7 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
     vk::CmdEndVideoCodingKHR(frameDataSlot.commandBuffer, &decodeEndInfo);
     vk::EndCommandBuffer(frameDataSlot.commandBuffer);
 
-    VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO, NULL };
+    VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr };
     submitInfo.waitSemaphoreCount = (frameConsumerDoneSemaphore == VkSemaphore()) ? 0 : 1;
     submitInfo.pWaitSemaphores = &frameConsumerDoneSemaphore;
     VkPipelineStageFlags videoDecodeSubmitWaitStages = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
@@ -842,11 +871,8 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
     submitInfo.pSignalSemaphores = &frameCompleteSemaphore;
 
     VkResult result = VK_SUCCESS;
-
-    const uint64_t fenceTimeout = 100 * 1000 * 1000 /* 100 mSec */;
-
     if ((frameConsumerDoneSemaphore == VkSemaphore()) && (frameConsumerDoneFence != VkFence())) {
-        result = vk::WaitForFences(m_pVulkanDecodeContext.dev, 1, &frameConsumerDoneFence, true, fenceTimeout);
+        result = vk::WaitForFences(m_pVulkanDecodeContext.dev, 1, &frameConsumerDoneFence, true, gFenceTimeout);
         assert(result == VK_SUCCESS);
         result = vk::GetFenceStatus(m_pVulkanDecodeContext.dev, frameConsumerDoneFence);
         assert(result == VK_SUCCESS);
@@ -860,7 +886,7 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
 
     const bool checkDecodeFences = false; // For decoder fences debugging
     if (checkDecodeFences) { // For fence/sync debugging
-        result = vk::WaitForFences(m_pVulkanDecodeContext.dev, 1, &frameCompleteFence, true, fenceTimeout);
+        result = vk::WaitForFences(m_pVulkanDecodeContext.dev, 1, &frameCompleteFence, true, gFenceTimeout);
         assert(result == VK_SUCCESS);
 
         result = vk::GetFenceStatus(m_pVulkanDecodeContext.dev, frameCompleteFence);
@@ -892,7 +918,7 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
             assert(result == VK_SUCCESS);
         } else {
             if (frameCompleteSemaphore == VkSemaphore()) {
-                result = vk::WaitForFences(m_pVulkanDecodeContext.dev, 1, &frameCompleteFence, true, fenceTimeout);
+                result = vk::WaitForFences(m_pVulkanDecodeContext.dev, 1, &frameCompleteFence, true, gFenceTimeout);
                 assert(result == VK_SUCCESS);
                 result = vk::GetFenceStatus(m_pVulkanDecodeContext.dev, frameCompleteFence);
                 assert(result == VK_SUCCESS);
@@ -902,7 +928,7 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
 
     // For fence/sync debugging
     if (pDecodePictureInfo->flags.fieldPic) {
-        result = vk::WaitForFences(m_pVulkanDecodeContext.dev, 1, &frameCompleteFence, true, fenceTimeout);
+        result = vk::WaitForFences(m_pVulkanDecodeContext.dev, 1, &frameCompleteFence, true, gFenceTimeout);
         assert(result == VK_SUCCESS);
         result = vk::GetFenceStatus(m_pVulkanDecodeContext.dev, frameCompleteFence);
         assert(result == VK_SUCCESS);
@@ -910,7 +936,6 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
 
     const bool checkDecodeStatus = false; // Check the queries
     if (checkDecodeStatus) {
-
         VkQueryResultStatusKHR decodeStatus;
         result = vk::GetQueryPoolResults(m_pVulkanDecodeContext.dev,
                                          frameSynchronizationInfo.queryPool,
@@ -936,19 +961,17 @@ int NvVkDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters* p
 
 void NvVkDecoder::Deinitialize()
 {
-
-    if (m_pVulkanDecodeContext.videoQueue) {
+    if (m_pVulkanDecodeContext.videoQueue != nullptr) {
         vk::QueueWaitIdle(m_pVulkanDecodeContext.videoQueue);
     }
 
-    if (m_pVulkanDecodeContext.dev) {
+    if (m_pVulkanDecodeContext.dev != nullptr) {
         vk::DeviceWaitIdle(m_pVulkanDecodeContext.dev);
     }
 
-    if (m_pVideoFrameBuffer) {
+    if (m_pVideoFrameBuffer != nullptr) {
         m_pVideoFrameBuffer->Release();
     }
-
 
     m_decodeFramesData.deinit();
 
@@ -984,7 +1007,7 @@ int32_t VkParserVideoPictureParameters::PopulateH264UpdateFields(const StdVideoP
                                                                  VkVideoDecodeH264SessionParametersAddInfoEXT& h264SessionParametersAddInfo)
 {
     int32_t currentId = -1;
-    if (pStdPictureParametersSet == NULL) {
+    if (pStdPictureParametersSet == nullptr) {
         return currentId;
     }
 
@@ -994,12 +1017,12 @@ int32_t VkParserVideoPictureParameters::PopulateH264UpdateFields(const StdVideoP
     assert(h264SessionParametersAddInfo.sType == VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_ADD_INFO_EXT);
 
     if (pStdPictureParametersSet->m_updateType == VK_PICTURE_PARAMETERS_UPDATE_H264_SPS) {
-        h264SessionParametersAddInfo.spsStdCount = 1;
-        h264SessionParametersAddInfo.pSpsStd = &pStdPictureParametersSet->m_data.h264Sps.stdSps;
+        h264SessionParametersAddInfo.stdSPSCount = 1;
+        h264SessionParametersAddInfo.pStdSPSs = &pStdPictureParametersSet->m_data.h264Sps.stdSps;
         currentId = pStdPictureParametersSet->m_data.h264Sps.stdSps.seq_parameter_set_id;
     } else if (pStdPictureParametersSet->m_updateType ==  VK_PICTURE_PARAMETERS_UPDATE_H264_PPS ) {
-        h264SessionParametersAddInfo.ppsStdCount = 1;
-        h264SessionParametersAddInfo.pPpsStd = &pStdPictureParametersSet->m_data.h264Pps.stdPps;
+        h264SessionParametersAddInfo.stdPPSCount = 1;
+        h264SessionParametersAddInfo.pStdPPSs = &pStdPictureParametersSet->m_data.h264Pps.stdPps;
         currentId = pStdPictureParametersSet->m_data.h264Pps.stdPps.pic_parameter_set_id;
     } else {
         assert(!"Incorrect h.264 type");
@@ -1012,23 +1035,28 @@ int32_t VkParserVideoPictureParameters::PopulateH265UpdateFields(const StdVideoP
                                                                  VkVideoDecodeH265SessionParametersAddInfoEXT& h265SessionParametersAddInfo)
 {
     int32_t currentId = -1;
-    if (pStdPictureParametersSet == NULL) {
+    if (pStdPictureParametersSet == nullptr) {
         return currentId;
     }
 
-    assert( (pStdPictureParametersSet->m_updateType == VK_PICTURE_PARAMETERS_UPDATE_H265_SPS) ||
+    assert( (pStdPictureParametersSet->m_updateType == VK_PICTURE_PARAMETERS_UPDATE_H265_VPS) ||
+            (pStdPictureParametersSet->m_updateType == VK_PICTURE_PARAMETERS_UPDATE_H265_SPS) ||
             (pStdPictureParametersSet->m_updateType == VK_PICTURE_PARAMETERS_UPDATE_H265_PPS));
 
     assert(h265SessionParametersAddInfo.sType == VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_ADD_INFO_EXT);
 
-    if (pStdPictureParametersSet->m_updateType == VK_PICTURE_PARAMETERS_UPDATE_H265_SPS) {
-        h265SessionParametersAddInfo.spsStdCount = 1;
-        h265SessionParametersAddInfo.pSpsStd = &pStdPictureParametersSet->m_data.h265Sps.stdSps;
+    if (pStdPictureParametersSet->m_updateType == VK_PICTURE_PARAMETERS_UPDATE_H265_VPS) {
+        h265SessionParametersAddInfo.stdVPSCount = 1;
+        h265SessionParametersAddInfo.pStdVPSs = &pStdPictureParametersSet->m_data.h265Vps.stdVps;
+        currentId = pStdPictureParametersSet->m_data.h265Vps.stdVps.vps_video_parameter_set_id;
+    } else if (pStdPictureParametersSet->m_updateType == VK_PICTURE_PARAMETERS_UPDATE_H265_SPS) {
+        h265SessionParametersAddInfo.stdSPSCount = 1;
+        h265SessionParametersAddInfo.pStdSPSs = &pStdPictureParametersSet->m_data.h265Sps.stdSps;
         currentId = pStdPictureParametersSet->m_data.h265Sps.stdSps.sps_seq_parameter_set_id;
     } else if (pStdPictureParametersSet->m_updateType == VK_PICTURE_PARAMETERS_UPDATE_H265_PPS) {
-        h265SessionParametersAddInfo.ppsStdCount = 1;
-        h265SessionParametersAddInfo.pPpsStd = &pStdPictureParametersSet->m_data.h265Pps.stdPps;
-        currentId = pStdPictureParametersSet->m_data.h265Pps.stdPps.pps_seq_parameter_set_id;
+        h265SessionParametersAddInfo.stdPPSCount = 1;
+        h265SessionParametersAddInfo.pStdPPSs = &pStdPictureParametersSet->m_data.h265Pps.stdPps;
+        currentId = pStdPictureParametersSet->m_data.h265Pps.stdPps.pps_pic_parameter_set_id;
     } else {
         assert(!"Incorrect h.265 type");
     }
@@ -1038,19 +1066,19 @@ int32_t VkParserVideoPictureParameters::PopulateH265UpdateFields(const StdVideoP
 
 VkParserVideoPictureParameters*
 VkParserVideoPictureParameters::Create(VkDevice device, VkSharedBaseObj<NvVideoSession>& videoSession,
+                                       const StdVideoPictureParametersSet* pVpsStdPictureParametersSet,
                                        const StdVideoPictureParametersSet* pSpsStdPictureParametersSet,
                                        const StdVideoPictureParametersSet* pPpsStdPictureParametersSet,
-                                       VkParserVideoPictureParameters* pTemplate)
+                                       VkParserVideoPictureParameters* pTemplatePictureParameters)
 {
     VkParserVideoPictureParameters* pPictureParameters = new VkParserVideoPictureParameters(device);
     if (!pPictureParameters) {
         return pPictureParameters;
     }
 
+    int32_t currentVpsId = -1;
     int32_t currentSpsId = -1;
     int32_t currentPpsId = -1;
-    const VkParserVideoPictureParameters* pTemplatePictureParameters = pTemplate;
-            // VkParserVideoPictureParameters::VideoPictureParametersFromBase(pStdPictureParametersSet->m_vkObjectOwner);
 
     VkVideoSessionParametersCreateInfoKHR createInfo = { VK_STRUCTURE_TYPE_VIDEO_SESSION_PARAMETERS_CREATE_INFO_KHR };
 
@@ -1060,7 +1088,8 @@ VkParserVideoPictureParameters::Create(VkDevice device, VkSharedBaseObj<NvVideoS
     VkVideoDecodeH265SessionParametersCreateInfoEXT h265SessionParametersCreateInfo = { VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_CREATE_INFO_EXT };
     VkVideoDecodeH265SessionParametersAddInfoEXT h265SessionParametersAddInfo = { VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_ADD_INFO_EXT};
 
-    VkParserPictureParametersUpdateType updateType = pSpsStdPictureParametersSet ? pSpsStdPictureParametersSet->m_updateType : pPpsStdPictureParametersSet->m_updateType;
+    VkParserPictureParametersUpdateType updateType = pVpsStdPictureParametersSet ? pVpsStdPictureParametersSet->m_updateType :
+            (pSpsStdPictureParametersSet ? pSpsStdPictureParametersSet->m_updateType : pPpsStdPictureParametersSet->m_updateType);
     switch (updateType)
     {
         case VK_PICTURE_PARAMETERS_UPDATE_H264_SPS:
@@ -1069,8 +1098,8 @@ VkParserVideoPictureParameters::Create(VkDevice device, VkSharedBaseObj<NvVideoS
 
             createInfo.pNext =  &h264SessionParametersCreateInfo;
 
-            h264SessionParametersCreateInfo.maxSpsStdCount = MAX_SPS_IDS;
-            h264SessionParametersCreateInfo.maxPpsStdCount = MAX_PPS_IDS;
+            h264SessionParametersCreateInfo.maxStdSPSCount = MAX_SPS_IDS;
+            h264SessionParametersCreateInfo.maxStdPPSCount = MAX_PPS_IDS;
             h264SessionParametersCreateInfo.pParametersAddInfo = &h264SessionParametersAddInfo;
 
             currentSpsId = PopulateH264UpdateFields(pSpsStdPictureParametersSet, h264SessionParametersAddInfo);
@@ -1079,21 +1108,18 @@ VkParserVideoPictureParameters::Create(VkDevice device, VkSharedBaseObj<NvVideoS
         }
         break;
         case VK_PICTURE_PARAMETERS_UPDATE_H265_VPS:
-        {
-            // Vulkan Video Decode APIs do not support VPS parameters
-            return nullptr;
-        }
-        break;
         case VK_PICTURE_PARAMETERS_UPDATE_H265_SPS:
         case VK_PICTURE_PARAMETERS_UPDATE_H265_PPS:
         {
 
             createInfo.pNext =  &h265SessionParametersCreateInfo;
 
-            h265SessionParametersCreateInfo.maxSpsStdCount = MAX_SPS_IDS;
-            h265SessionParametersCreateInfo.maxPpsStdCount = MAX_PPS_IDS;
+            h265SessionParametersCreateInfo.maxStdVPSCount = MAX_VPS_IDS;
+            h265SessionParametersCreateInfo.maxStdSPSCount = MAX_SPS_IDS;
+            h265SessionParametersCreateInfo.maxStdPPSCount = MAX_PPS_IDS;
             h265SessionParametersCreateInfo.pParametersAddInfo = &h265SessionParametersAddInfo;
 
+            currentVpsId = PopulateH265UpdateFields(pVpsStdPictureParametersSet, h265SessionParametersAddInfo);
             currentSpsId = PopulateH265UpdateFields(pSpsStdPictureParametersSet, h265SessionParametersAddInfo);
             currentPpsId = PopulateH265UpdateFields(pPpsStdPictureParametersSet, h265SessionParametersAddInfo);
 
@@ -1101,30 +1127,37 @@ VkParserVideoPictureParameters::Create(VkDevice device, VkSharedBaseObj<NvVideoS
         break;
         default:
             assert(!"Invalid Parser format");
-            return NULL;
+            return nullptr;
     }
 
-    createInfo.videoSessionParametersTemplate = pTemplatePictureParameters ? *pTemplatePictureParameters : VkVideoSessionParametersKHR();
-    createInfo.videoSession = videoSession->GetVideoSession();;
+    createInfo.videoSessionParametersTemplate = pTemplatePictureParameters ? VkVideoSessionParametersKHR(*pTemplatePictureParameters) : VkVideoSessionParametersKHR();
+    createInfo.videoSession = videoSession->GetVideoSession();
     VkResult result = vk::CreateVideoSessionParametersKHR(device,
                                                           &createInfo,
                                                           nullptr,
                                                           &pPictureParameters->m_sessionParameters);
 
     if (result != VK_SUCCESS) {
+
         assert(!"Could not create Session Parameters Object");
         delete pPictureParameters;
         pPictureParameters = nullptr;
+
     } else {
 
         pPictureParameters->m_videoSession = videoSession;
 
         if (pTemplatePictureParameters) {
+            pPictureParameters->m_vpsIdsUsed = pTemplatePictureParameters->m_vpsIdsUsed;
             pPictureParameters->m_spsIdsUsed = pTemplatePictureParameters->m_spsIdsUsed;
             pPictureParameters->m_ppsIdsUsed = pTemplatePictureParameters->m_ppsIdsUsed;
         }
 
-        assert ((currentSpsId >= 0) || (currentPpsId >= 0));
+        assert ((currentVpsId >= 0) || (currentSpsId >= 0) || (currentPpsId >= 0));
+        if (currentVpsId >= 0) {
+            pPictureParameters->m_vpsIdsUsed.set(currentVpsId, true);
+        }
+
         if (currentSpsId >= 0) {
             pPictureParameters->m_spsIdsUsed.set(currentSpsId, true);
         }
@@ -1139,9 +1172,11 @@ VkParserVideoPictureParameters::Create(VkDevice device, VkSharedBaseObj<NvVideoS
     return pPictureParameters;
 }
 
-VkResult VkParserVideoPictureParameters::Update(const StdVideoPictureParametersSet* pSpsStdPictureParametersSet,
+VkResult VkParserVideoPictureParameters::Update(const StdVideoPictureParametersSet* pVpsStdPictureParametersSet,
+                                                const StdVideoPictureParametersSet* pSpsStdPictureParametersSet,
                                                 const StdVideoPictureParametersSet* pPpsStdPictureParametersSet)
 {
+    int32_t currentVpsId = -1;
     int32_t currentSpsId = -1;
     int32_t currentPpsId = -1;
 
@@ -1164,17 +1199,13 @@ VkResult VkParserVideoPictureParameters::Update(const StdVideoPictureParametersS
         }
         break;
         case VK_PICTURE_PARAMETERS_UPDATE_H265_VPS:
-        {
-            // Vulkan Video Decode APIs do not support VPS parameters
-            return VK_ERROR_INITIALIZATION_FAILED;
-        }
-        break;
         case VK_PICTURE_PARAMETERS_UPDATE_H265_SPS:
         case VK_PICTURE_PARAMETERS_UPDATE_H265_PPS:
         {
 
             updateInfo.pNext = &h265SessionParametersAddInfo;
 
+            currentVpsId = PopulateH265UpdateFields(pVpsStdPictureParametersSet, h265SessionParametersAddInfo);
             currentSpsId = PopulateH265UpdateFields(pSpsStdPictureParametersSet, h265SessionParametersAddInfo);
             currentPpsId = PopulateH265UpdateFields(pPpsStdPictureParametersSet, h265SessionParametersAddInfo);
 
@@ -1183,6 +1214,10 @@ VkResult VkParserVideoPictureParameters::Update(const StdVideoPictureParametersS
         default:
             assert(!"Invalid Parser format");
             return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (pVpsStdPictureParametersSet) {
+        updateInfo.updateSequenceCount = std::max(pVpsStdPictureParametersSet->m_updateSequenceCount, updateInfo.updateSequenceCount);
     }
 
     if (pSpsStdPictureParametersSet) {
@@ -1200,6 +1235,10 @@ VkResult VkParserVideoPictureParameters::Update(const StdVideoPictureParametersS
     if (result == VK_SUCCESS) {
 
         assert ((currentSpsId >= 0) || (currentPpsId >= 0));
+
+        if (currentVpsId >= 0) {
+            m_vpsIdsUsed.set(currentVpsId, true);
+        }
         if (currentSpsId >= 0) {
             m_spsIdsUsed.set(currentSpsId, true);
         }
@@ -1218,7 +1257,7 @@ VkParserVideoPictureParameters::~VkParserVideoPictureParameters()
 {
     if (m_sessionParameters) {
         vk::DestroyVideoSessionParametersKHR(m_device, m_sessionParameters, nullptr);
-        m_sessionParameters = NULL;
+        m_sessionParameters = VkVideoSessionParametersKHR();
     }
     m_videoSession = nullptr;
 }

@@ -837,7 +837,7 @@ public:
        dscLayout(),
        pipelineLayout(),
        descPool(),
-       descSet(NULL)
+       descSet(VkDescriptorSet())
     { }
 
     ~VulkanDescriptorSet()
@@ -1235,6 +1235,8 @@ void setImageLayout(VkCommandBuffer cmdBuffer, VkImage image,
                     VkImageLayout oldImageLayout, VkImageLayout newImageLayout,
                     VkPipelineStageFlags srcStages,
                     VkPipelineStageFlags destStages, VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT);
+
+uint64_t getNsTime(bool resetTime = false);
 
 } // End of namespace vulkanVideoUtils
 

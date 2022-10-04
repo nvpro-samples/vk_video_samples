@@ -15,7 +15,7 @@
 */
 
 #include "VulkanShaderCompiler.h"
-#include <shaderc/shaderc.hpp>
+#include <shaderc/shaderc.h>
 #include <NvCodecUtils/Logger.h>
 #include "Helpers.h"
 

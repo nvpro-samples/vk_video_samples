@@ -32,7 +32,6 @@
 #include "VulkanVideoProcessor.h"
 
 class Meshes;
-class FFmpegDemuxer;
 struct DecodedFrame;
 class NvVkDecoder;
 
@@ -56,9 +55,11 @@ public:
 
     int GetVideoWidth();
     int GetVideoHeight();
+    int init_internals(const VulkanDecodeContext vulkanDecodeContext);
 
 private:
     enum { MAX_NUM_BUFFER_SLOTS = 16 };
+    vulkanVideoUtils::VulkanDeviceInfo m_deviceInfo;
 
 public:
     VkFormat frameImageFormat;

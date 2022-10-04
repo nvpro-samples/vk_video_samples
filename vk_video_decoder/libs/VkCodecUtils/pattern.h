@@ -19,6 +19,8 @@
 
 #include <stdint.h>
 
+namespace Pattern {
+
 typedef enum ColorPattern {
     ColorPatternClear,
     ColorPatternColorBars,
@@ -39,8 +41,21 @@ void generateColorPatternRgba16161616(
     const uint16_t clearColor[4] = nullptr, uint32_t skipChannelsMask = 0,
     bool incOnSkip = false);
 
+}
 
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
+
+
+typedef struct ImageData {
+    VkFormat     imageFormat;
+    uint32_t     width;
+    uint32_t     height;
+    Pattern::ColorPattern patttern;
+    uint8_t      clearColor[4];
+    void const * data;
+} ImageData;
+
+namespace Pattern {
 
 typedef struct VkFormatDesc {
     VkFormat    format;
@@ -48,15 +63,6 @@ typedef struct VkFormatDesc {
     uint8_t     numberOfBytes;
     const char* name;
 } VkFormatDesc;
-
-typedef struct ImageData {
-    VkFormat     imageFormat;
-    uint32_t     width;
-    uint32_t     height;
-    ColorPattern patttern;
-    uint8_t      clearColor[4];
-    void const * data;
-} ImageData;
 
 class VkFillYuv {
 public:
@@ -85,5 +91,7 @@ public:
 private:
 
 };
+
+}
 
 #endif /* CMDS_VK_VIDEO_PLAYER_PATTERN_H_ */

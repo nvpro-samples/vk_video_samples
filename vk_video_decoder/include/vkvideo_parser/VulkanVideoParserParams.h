@@ -30,7 +30,8 @@ class StdVideoPictureParametersSet;
 
 struct VkParserPerFrameDecodeParameters {
     enum {
-        MAX_DPB_REF_SLOTS = (16 + 1), // max 16 reference pictures plus 1 for the current picture.
+        MAX_DPB_REF_SLOTS = 16, // max 16 reference pictures.
+        MAX_DPB_REF_AND_SETUP_SLOTS = MAX_DPB_REF_SLOTS + 1, // plus 1 for the current picture (h.264 only)
     };
     int currPicIdx; /** Output index of the current picture                       */
     StdVideoPictureParametersSet* pCurrentPictureParameters;
@@ -39,8 +40,8 @@ struct VkParserPerFrameDecodeParameters {
     const unsigned char* pBitstreamData; /** ptr to bitstream data for this picture (slice-layer)      */
     VkVideoDecodeInfoKHR decodeFrameInfo;
     int32_t numGopReferenceSlots;
-    int8_t pGopReferenceImagesIndexes[MAX_DPB_REF_SLOTS];
-    VkVideoPictureResourceKHR pictureResources[MAX_DPB_REF_SLOTS];
+    int8_t pGopReferenceImagesIndexes[MAX_DPB_REF_AND_SETUP_SLOTS];
+    VkVideoPictureResourceInfoKHR pictureResources[MAX_DPB_REF_AND_SETUP_SLOTS];
 };
 
 struct VkParserFrameSyncinfo {

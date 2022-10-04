@@ -52,7 +52,6 @@ int32_t VulkanVideoProcessor::Init(const VulkanDecodeContext* vulkanDecodeContex
         }
 
         m_pFFmpegDemuxer->DumpStreamParameters();
-
     } catch (const std::exception& ex) {
         std::cout << ex.what();
         exit(1);
@@ -173,12 +172,18 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
     /* These below token numbers are based on "chroma_format_idc" from the spec. */
     /* Also, mind the separate_colour_plane_flag, as well. */
     static const char* nvVideoChromaFormat[] = {
+        nullptr,
         "Monochrome",
         "420",
+        nullptr,
         "422",
+        nullptr,
+        nullptr,
+        nullptr,
         "444",
     };
     assert(videoFormat->chromaSubsampling < sizeof(nvVideoChromaFormat)/sizeof(nvVideoChromaFormat[0]));
+    assert(nvVideoChromaFormat[videoFormat->chromaSubsampling] != nullptr);
     const char* pVideoChromaFormat = nvVideoChromaFormat[videoFormat->chromaSubsampling];
     if (dumpData) {
         std::cout << "VideoChromaFormat : " << pVideoChromaFormat << std::endl;
@@ -272,17 +277,17 @@ int32_t VulkanVideoProcessor::GetNextFrames(DecodedFrame* pFrame, bool* endOfStr
 {
     int32_t nVideoBytes = 0, framesInQueue = 0;
 
+    // The below call to DequeueDecodedPicture allows returning the next frame without parsing of the stream.
+    // Parsing is only done when there are no more frames in the queue.
     framesInQueue = m_pVideoFrameBuffer->DequeueDecodedPicture(pFrame);
+
+    // Loop until a frame (or more) is parsed and added to the queue.
     while ((framesInQueue == 0) && !m_videoStreamHasEnded) {
-
         if (!m_videoStreamHasEnded) {
-            bool demuxerSuccess = m_pFFmpegDemuxer->Demux(&m_pBitStreamVideo, &nVideoBytes);
+            m_pFFmpegDemuxer->Demux(&m_pBitStreamVideo, &nVideoBytes);
             VkResult parserStatus = VK_ERROR_DEVICE_LOST;
-            if (demuxerSuccess) {
-                parserStatus = ParseVideoStreamData(m_pBitStreamVideo, nVideoBytes);
-            }
-
-            if (parserStatus != VK_SUCCESS) {
+            parserStatus = ParseVideoStreamData(m_pBitStreamVideo, nVideoBytes, &nVideoBytes);
+            if (parserStatus != VK_SUCCESS || nVideoBytes == 0) {
                 m_videoStreamHasEnded = true;
                 std::cout << "End of Video Stream with pending " << framesInQueue << " frames in display queue." << std::endl;
             }
@@ -357,8 +362,7 @@ VkResult VulkanVideoProcessor::CreateParser(FFmpegDemuxer* pFFmpegDemuxer,
     }
 }
 
-VkResult VulkanVideoProcessor::ParseVideoStreamData(const uint8_t* pData, int size, uint32_t flags, int64_t timestamp)
-{
+VkResult VulkanVideoProcessor::ParseVideoStreamData(const uint8_t* pData, int size, int32_t *pnVideoBytes, uint32_t flags, int64_t timestamp) {
     if (!m_pParser) {
         assert(!"Parser not initialized!");
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -376,5 +380,5 @@ VkResult VulkanVideoProcessor::ParseVideoStreamData(const uint8_t* pData, int si
         packet.flags |= VK_PARSER_PKT_ENDOFSTREAM;
     }
 
-    return m_pParser->ParseVideoData(&packet);
+    return m_pParser->ParseVideoData(&packet, pnVideoBytes);
 }

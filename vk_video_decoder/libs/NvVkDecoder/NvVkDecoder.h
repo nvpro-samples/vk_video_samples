@@ -169,6 +169,7 @@ private:
  */
 class NvVkDecoder : public IVulkanVideoDecoderHandler {
 public:
+    VkPhysicalDevice GetPhysDevice() { return m_pVulkanDecodeContext.physicalDev; }
     enum { MAX_RENDER_TARGETS = 32 }; // Must be 32 or less (used as uint32_t bitmask of active render targets)
 
     static const char* GetVideoCodecString(VkVideoCodecOperationFlagBitsKHR codec);
@@ -185,7 +186,7 @@ public:
                 (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT |
                         VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT));
 
-        assert(videoCodecs != VK_VIDEO_CODEC_OPERATION_INVALID_BIT_KHR);
+        assert(videoCodecs != VK_VIDEO_CODEC_OPERATION_NONE_KHR);
 
         return videoCodecs;
     }
@@ -203,7 +204,7 @@ public:
     }
 
     VkResult GetDecodeH264Capabilities(VkPhysicalDevice vkPhysicalDev, uint32_t vkVideoDecodeQueueFamily,
-                                       const VkVideoProfileKHR* pVideoProfile,
+                                       const VkVideoProfileInfoKHR* pVideoProfile,
                                        VkVideoCapabilitiesKHR &videoDecodeCapabilities) const
     {
         videoDecodeCapabilities.sType = VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR;
@@ -213,7 +214,7 @@ public:
     }
 
     VkResult GetDecodeH265Capabilities(VkPhysicalDevice vkPhysicalDev, uint32_t vkVideoDecodeQueueFamily,
-                                       const VkVideoProfileKHR* pVideoProfile,
+                                       const VkVideoProfileInfoKHR* pVideoProfile,
                                        VkVideoCapabilitiesKHR &videoDecodeCapabilities) const
     {
         videoDecodeCapabilities.sType = VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR;
@@ -223,7 +224,7 @@ public:
     }
 
     VkResult GetEncodeH264Capabilities(VkPhysicalDevice vkPhysicalDev, uint32_t vkVideoDecodeQueueFamily,
-                                       const VkVideoProfileKHR* pVideoProfile,
+                                       const VkVideoProfileInfoKHR* pVideoProfile,
                                        VkVideoCapabilitiesKHR &videoEncodeCapabilities,
                                        VkVideoEncodeH264CapabilitiesEXT &encode264Capabilities) const
     {
@@ -267,7 +268,7 @@ public:
         , m_pVideoFrameBuffer(pVideoFrameBuffer)
         , m_decodeFramesData(pVulkanDecodeContext)
         , m_decodePicCount(0)
-        , m_lastSpsIdInQueue(-1)
+        , m_lastIdInQueue{-1, -1, -1}
         , m_resetDecoder(true)
         , m_dumpDecodeData(false)
     {
@@ -308,12 +309,13 @@ public:
 
 private:
 
-    VkParserVideoPictureParameters*  AddPictureParameters(VkSharedBaseObj<StdVideoPictureParametersSet>& spsStdPictureParametersSet,
+    VkParserVideoPictureParameters*  AddPictureParameters(VkSharedBaseObj<StdVideoPictureParametersSet>& vpsStdPictureParametersSet,
+                                                          VkSharedBaseObj<StdVideoPictureParametersSet>& spsStdPictureParametersSet,
                                                           VkSharedBaseObj<StdVideoPictureParametersSet>& ppsStdPictureParametersSet);
 
     bool CheckStdObjectBeforeUpdate(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet);
     VkParserVideoPictureParameters* CheckStdObjectAfterUpdate(VkSharedBaseObj<StdVideoPictureParametersSet>& stdPictureParametersSet, VkParserVideoPictureParameters* pNewPictureParametersObject);
-    uint32_t AddPictureParametersToQueue(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet, bool& hasSpsPpsPair);
+    uint32_t AddPictureParametersToQueue(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet);
     uint32_t FlushPictureParametersQueue();
 
     int32_t GetCurrentFrameData(uint32_t slotId, NvVkDecodeFrameDataSlot& frameDataSlot)
@@ -342,11 +344,9 @@ private:
     NvVkDecodeFrameData                  m_decodeFramesData;
 
     int32_t                                                    m_decodePicCount;
-    int32_t                                                    m_lastSpsIdInQueue;
+    int32_t                                                    m_lastIdInQueue[StdVideoPictureParametersSet::NUM_OF_TYPES];
     std::queue<VkSharedBaseObj<StdVideoPictureParametersSet>>  m_pictureParametersQueue;
-    VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastVpsPictureParametersQueue;
-    VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastSpsPictureParametersQueue;
-    VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastPpsPictureParametersQueue;
+    VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastPictParamsQueue[StdVideoPictureParametersSet::NUM_OF_TYPES];
     VkSharedBaseObj<VkParserVideoPictureParameters>            m_currentPictureParameters;
     uint32_t m_resetDecoder : 1;
     uint32_t m_dumpDecodeData : 1;

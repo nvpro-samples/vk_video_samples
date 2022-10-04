@@ -84,12 +84,13 @@ class FrameProcessor {
 
     void print_stats();
     void quit();
+    inline bool finished() { return m_finished; }
 
    protected:
     int frame_count;
     std::chrono::time_point<std::chrono::steady_clock> start_time;
 
-    FrameProcessor(const std::string &name, const std::vector<std::string> &args) : settings_(), shell_(nullptr) {
+    FrameProcessor(const std::string &name, const std::vector<std::string> &args) : settings_(), shell_(nullptr), m_finished(false) {
         settings_.name = name;
         settings_.initial_width = 1920;
         settings_.initial_height = 1080;
@@ -122,6 +123,7 @@ class FrameProcessor {
     Shell *shell_;
 
    private:
+    bool m_finished;
     void parse_args(const std::vector<std::string> &args) {
         for (auto it = args.begin(); it != args.end(); ++it) {
             if (*it == "--b") {

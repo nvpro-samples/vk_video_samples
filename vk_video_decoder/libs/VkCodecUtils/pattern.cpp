@@ -18,6 +18,8 @@
 #include "pattern.h"
 #include "Helpers.h"
 
+namespace Pattern {
+
 template <class colorType>
 void generateColorPatternRgba(ColorPattern pattern, colorType *dataPtr,
                               uint32_t width, uint32_t height,
@@ -142,7 +144,6 @@ void generateColorPatternRgba16161616(
                              channelsPerColor, maxC, minC, alphaMax, clearColor,
                              skipChannelsMask, incOnSkip);
 }
-
 
 #include <stdio.h>
 #define ABORT_IF_TRUE(cond) \
@@ -695,3 +696,5 @@ void VkFillYuv::fillVkImage(VkDevice device, VkImage vkImage, const ImageData *p
 
     vk::UnmapMemory(device, mem);
 }
+
+} // namespace Pattern

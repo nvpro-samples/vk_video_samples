@@ -87143,7 +87143,7 @@ auto operator<=>( WaylandSurfaceCreateInfoKHR const & ) const = default;
         throw LogicError( VULKAN_HPP_NAMESPACE_STRING"::Win32KeyedMutexAcquireReleaseInfoKHR::Win32KeyedMutexAcquireReleaseInfoKHR: acquireKeys_.size() != acquireTimeouts_.size()" );
       }
 #endif /*VULKAN_HPP_NO_EXCEPTIONS*/
-
+    
 #ifdef VULKAN_HPP_NO_EXCEPTIONS
       VULKAN_HPP_ASSERT( releaseSyncs_.size() == releaseKeys_.size() );
 #else
@@ -87373,7 +87373,7 @@ auto operator<=>( Win32KeyedMutexAcquireReleaseInfoKHR const & ) const = default
         throw LogicError( VULKAN_HPP_NAMESPACE_STRING"::Win32KeyedMutexAcquireReleaseInfoNV::Win32KeyedMutexAcquireReleaseInfoNV: acquireKeys_.size() != acquireTimeoutMilliseconds_.size()" );
       }
 #endif /*VULKAN_HPP_NO_EXCEPTIONS*/
-
+    
 #ifdef VULKAN_HPP_NO_EXCEPTIONS
       VULKAN_HPP_ASSERT( releaseSyncs_.size() == releaseKeys_.size() );
 #else

@@ -28,8 +28,8 @@ public:
                            VkFormat          pictureFormat,
                            const VkExtent2D& maxCodedExtent,
                            VkFormat          referencePicturesFormat,
-                           uint32_t          maxReferencePicturesSlotsCount,
-                           uint32_t          maxReferencePicturesActiveCount,
+                           uint32_t          maxDpbSlots,
+                           uint32_t          maxActiveReferencePictures,
                            VkSharedBaseObj<NvVideoSession>& videoSession);
 
     bool IsCompatible ( VkDevice          dev,
@@ -38,8 +38,8 @@ public:
                         VkFormat          pictureFormat,
                         const VkExtent2D& maxCodedExtent,
                         VkFormat          referencePicturesFormat,
-                        uint32_t          maxReferencePicturesSlotsCount,
-                        uint32_t          maxReferencePicturesActiveCount)
+                        uint32_t          maxDpbSlots,
+                        uint32_t          maxActiveReferencePictures)
     {
         if (*pVideoProfile != m_profile) {
             return false;
@@ -53,15 +53,15 @@ public:
             return false;
         }
 
-        if (maxReferencePicturesSlotsCount > m_createInfo.maxReferencePicturesSlotsCount) {
+        if (maxDpbSlots > m_createInfo.maxDpbSlots) {
             return false;
         }
 
-        if (maxReferencePicturesActiveCount > m_createInfo.maxReferencePicturesActiveCount) {
+        if (maxActiveReferencePictures > m_createInfo.maxActiveReferencePictures) {
             return false;
         }
 
-        if (m_createInfo.referencePicturesFormat != referencePicturesFormat) {
+        if (m_createInfo.referencePictureFormat != referencePicturesFormat) {
             return false;
         }
 

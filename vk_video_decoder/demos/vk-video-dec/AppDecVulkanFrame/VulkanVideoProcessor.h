@@ -58,7 +58,7 @@ private:
         const char* filename,
         VkVideoCodecOperationFlagBitsKHR vkCodecType);
 
-    VkResult ParseVideoStreamData(const uint8_t* pData, int size, uint32_t flags = 0, int64_t timestamp = 0);
+    VkResult ParseVideoStreamData(const uint8_t* pData, int size, int32_t* pnVideoBytes = nullptr, uint32_t flags = 0, int64_t timestamp = 0);
 
 private:
     FFmpegDemuxer* m_pFFmpegDemuxer;

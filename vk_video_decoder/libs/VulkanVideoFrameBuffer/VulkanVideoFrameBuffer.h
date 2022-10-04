@@ -81,7 +81,7 @@ public:
         VkImageLayout currentImageLayout;
     };
 
-    virtual int32_t InitImagePool(const VkVideoProfileKHR* pDecodeProfile,
+    virtual int32_t InitImagePool(const VkVideoProfileInfoKHR* pDecodeProfile,
                                   uint32_t                 numImages,
                                   VkFormat                 imageFormat,
                                   const VkExtent2D&        codedExtent,
@@ -95,7 +95,7 @@ public:
     virtual int32_t DequeueDecodedPicture(DecodedFrame* pDecodedFrame) = 0;
     virtual int32_t ReleaseDisplayedPicture(DecodedFrameRelease** pDecodedFramesRelease, uint32_t numFramesToRelease) = 0;
     virtual int32_t GetImageResourcesByIndex(uint32_t numResources, const int8_t* referenceSlotIndexes,
-        VkVideoPictureResourceKHR* pictureResources,
+        VkVideoPictureResourceInfoKHR* pictureResources,
         PictureResourceInfo* pictureResourcesInfo,
         VkImageLayout newImageLayout = VK_IMAGE_LAYOUT_MAX_ENUM)
         = 0;

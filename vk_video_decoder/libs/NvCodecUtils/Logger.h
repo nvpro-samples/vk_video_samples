@@ -23,20 +23,14 @@
 #include <mutex>
 #include <time.h>
 
-#ifdef _WIN32
-#include <winsock.h>
-#include <windows.h>
-
-#pragma comment(lib, "ws2_32.lib")
-#undef ERROR
-#else
+#ifndef _WIN32
 #include <unistd.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#define SOCKET int
-#define INVALID_SOCKET -1
+#elif defined(ERROR)
+#undef ERROR // Windows NT has defined ERROR
 #endif
+
+
+namespace simplelogger{
 
 enum LogLevel {
     TRACE,
@@ -46,7 +40,6 @@ enum LogLevel {
     FATAL
 };
 
-namespace simplelogger{
 class Logger {
 public:
     Logger(LogLevel level, bool bPrintTimeStamp) : level(level), bPrintTimeStamp(bPrintTimeStamp) {}
@@ -95,10 +88,7 @@ public:
             bool bPrintTimeStamp = true) {
         return new ConsoleLogger(level, bPrintTimeStamp);
     }
-    static Logger* CreateUdpLogger(char *szHost, unsigned uPort, LogLevel level = ERROR,
-            bool bPrintTimeStamp = true) {
-        return new UdpLogger(szHost, uPort, level, bPrintTimeStamp);
-    }
+
 private:
     LoggerFactory() {}
 
@@ -128,72 +118,6 @@ private:
         }
     };
 
-    class UdpLogger : public Logger {
-    private:
-        class UdpOstream : public std::ostream {
-        public:
-            UdpOstream(char *szHost, unsigned short uPort) : std::ostream(&sb), socket(INVALID_SOCKET){
-#ifdef _WIN32
-                WSADATA w;
-                if (WSAStartup(0x0101, &w) != 0) {
-                    fprintf(stderr, "WSAStartup() failed.\n");
-                    return;
-                }
-#endif
-                socket = ::socket(AF_INET, SOCK_DGRAM, 0);
-                if (socket == INVALID_SOCKET) {
-#ifdef _WIN32
-                    WSACleanup();
-#endif
-                    fprintf(stderr, "socket() failed.\n");
-                    return;
-                }
-#ifdef _WIN32
-                unsigned int b1, b2, b3, b4;
-                sscanf(szHost, "%u.%u.%u.%u", &b1, &b2, &b3, &b4);
-                struct in_addr addr = {(unsigned char)b1, (unsigned char)b2, (unsigned char)b3, (unsigned char)b4};
-#else
-                struct in_addr addr = {inet_addr(szHost)};
-#endif
-                struct sockaddr_in s = {AF_INET, htons(uPort), addr};
-                server = s;
-            }
-            ~UdpOstream() throw() {
-                if (socket == INVALID_SOCKET) {
-                    return;
-                }
-#ifdef _WIN32
-                closesocket(socket);
-                WSACleanup();
-#else
-                close(socket);
-#endif
-            }
-            void Flush() {
-                if (sendto(socket, sb.str().c_str(), (int)sb.str().length() + 1,
-                        0, (struct sockaddr *)&server, (int)sizeof(sockaddr_in)) == -1) {
-                    fprintf(stderr, "sendto() failed.\n");
-                }
-                sb.str("");
-            }
-
-        private:
-            std::stringbuf sb;
-            SOCKET socket;
-            struct sockaddr_in server;
-        };
-    public:
-        UdpLogger(char *szHost, unsigned uPort, LogLevel level, bool bPrintTimeStamp)
-        : Logger(level, bPrintTimeStamp), udpOut(szHost, (unsigned short)uPort) {}
-        UdpOstream& GetStream() {
-            return udpOut;
-        }
-        virtual void FlushStream() {
-            udpOut.Flush();
-        }
-    private:
-        UdpOstream udpOut;
-    };
 };
 
 class LogTransaction {
@@ -242,4 +166,4 @@ private:
 }
 
 extern simplelogger::Logger *logger;
-#define LOG(level) simplelogger::LogTransaction(logger, level, __FILE__, __LINE__, __FUNCTION__).GetStream()
+#define LOG(level) simplelogger::LogTransaction(logger, simplelogger::level, __FILE__, __LINE__, __FUNCTION__).GetStream()

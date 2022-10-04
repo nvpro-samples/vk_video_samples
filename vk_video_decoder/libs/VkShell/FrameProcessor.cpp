@@ -33,4 +33,6 @@ void FrameProcessor::print_stats() {
 void FrameProcessor::quit() {
     print_stats();
     shell_->quit();
+
+    m_finished = true;
 }

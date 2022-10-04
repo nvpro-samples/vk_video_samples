@@ -22,9 +22,9 @@
 #include "vulkan_interfaces.h"
 #include "vk_video/vulkan_video_codecs_common.h"
 
-#define NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_1 VK_MAKE_VIDEO_STD_VERSION(0, 9, 1)
+#define NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_5 VK_MAKE_VIDEO_STD_VERSION(0, 9, 5)
 
-#define NV_VULKAN_VIDEO_PARSER_API_VERSION   NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_1
+#define NV_VULKAN_VIDEO_PARSER_API_VERSION   NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_5
 
 typedef uint32_t FrameRate; // Packed 18-bit numerator & 14-bit denominator
 
@@ -650,8 +650,8 @@ typedef struct VkParserSequenceInfo {
     int32_t lTransferCharacteristics; // Transfer Characteristics
     int32_t lMatrixCoefficients; // Matrix Coefficients
     int32_t cbSequenceHeader; // Number of bytes in SequenceHeaderData
-    int32_t nMinNumDecodeSurfaces; // Minimum number of decode surfaces for
-        // correct decoding
+    int32_t nMinNumDpbSlots;       // Minimum number of DPB slots for correct decoding
+    int32_t nMinNumDecodeSurfaces; // Minimum number of decode surfaces for correct decoding
     uint8_t SequenceHeaderData[VK_MAX_SEQ_HDR_LEN]; // Raw sequence header data
         // (codec-specific)
     uint8_t* pbSideData; // Auxiliary encryption information

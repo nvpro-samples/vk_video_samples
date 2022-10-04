@@ -19,7 +19,8 @@
 
 class VkParserVideoPictureParameters : public VkParserVideoRefCountBase {
 public:
-    static const uint32_t MAX_SPS_IDS = 32;
+    static const uint32_t MAX_VPS_IDS =  16;
+    static const uint32_t MAX_SPS_IDS =  32;
     static const uint32_t MAX_PPS_IDS = 256;
 
     //! Increment the reference count by 1.
@@ -42,6 +43,7 @@ public:
     }
 
     static VkParserVideoPictureParameters* Create(VkDevice device, VkSharedBaseObj<NvVideoSession>& videoSession,
+                                                  const StdVideoPictureParametersSet* pVpsStdPictureParametersSet,
                                                   const StdVideoPictureParametersSet* pSpsStdPictureParametersSet,
                                                   const StdVideoPictureParametersSet* pPpsStdPictureParametersSet,
                                                   VkParserVideoPictureParameters* pTemplate);
@@ -52,7 +54,8 @@ public:
     static int32_t PopulateH265UpdateFields(const StdVideoPictureParametersSet* pStdPictureParametersSet,
                                      VkVideoDecodeH265SessionParametersAddInfoEXT& h265SessionParametersAddInfo);
 
-    VkResult Update(const StdVideoPictureParametersSet* pSpsStdPictureParametersSet,
+    VkResult Update(const StdVideoPictureParametersSet* pVpsStdPictureParametersSet,
+                    const StdVideoPictureParametersSet* pSpsStdPictureParametersSet,
                     const StdVideoPictureParametersSet* pPpsStdPictureParametersSet);
 
     operator VkVideoSessionParametersKHR() const {
@@ -64,6 +67,10 @@ public:
     }
 
     int32_t GetId() const { return m_Id; }
+
+    bool HasVpsId(uint32_t vpsId) const {
+        return m_vpsIdsUsed[vpsId];
+    }
 
     bool HasSpsId(uint32_t spsId) const {
         return m_spsIdsUsed[spsId];
@@ -94,6 +101,7 @@ private:
     VkDevice                        m_device;
     VkSharedBaseObj<NvVideoSession> m_videoSession;
     VkVideoSessionParametersKHR     m_sessionParameters;
+    std::bitset<MAX_VPS_IDS>        m_vpsIdsUsed;
     std::bitset<MAX_SPS_IDS>        m_spsIdsUsed;
     std::bitset<MAX_PPS_IDS>        m_ppsIdsUsed;
 };

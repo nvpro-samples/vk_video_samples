@@ -36,6 +36,7 @@ struct SpsVideoH265VideoParametersSet
 {
     StdVideoH265VideoParameterSet       stdVps;
     StdVideoH265DecPicBufMgr            stdDecPicBufMgr;
+    StdVideoH265ProfileTierLevel        stdProfileTierLevel;
 };
 
 struct SpsVideoH265PictureParametersSet
@@ -54,6 +55,14 @@ struct PpsVideoH265PictureParametersSet
 class StdVideoPictureParametersSet : public VkParserVideoRefCountBase
 {
 public:
+
+    enum ItemType {
+        PPS_TYPE = 0,
+        SPS_TYPE,
+        VPS_TYPE,
+        NUM_OF_TYPES,
+        INVALID_TYPE,
+    };
 
     void Update(VkPictureParameters* pPictureParameters, uint32_t updateSequenceCount)
     {
@@ -105,12 +114,17 @@ public:
                 if (pPictureParameters->updateType == VK_PICTURE_PARAMETERS_UPDATE_H265_VPS) {
                     m_data.h265Vps.stdVps = *pPictureParameters->pH265Vps;
 
-                    if (pPictureParameters->pH265Vps->pDecPicBufMgr) {
+                    if (pPictureParameters->pH265Vps->pDecPicBufMgr != 0) {
                         m_data.h265Vps.stdDecPicBufMgr = *pPictureParameters->pH265Vps->pDecPicBufMgr;
                         m_data.h265Vps.stdVps.pDecPicBufMgr = &m_data.h265Vps.stdDecPicBufMgr;
                     }
 
-                    // StdVideoH265HrdParameters is currently unsupported
+                    if (pPictureParameters->pH265Vps->pProfileTierLevel != 0) {
+                        m_data.h265Vps.stdProfileTierLevel = *pPictureParameters->pH265Vps->pProfileTierLevel;
+                        m_data.h265Vps.stdVps.pProfileTierLevel = &m_data.h265Vps.stdProfileTierLevel;
+                    }
+
+                    // FIXME: StdVideoH265HrdParameters is currently unsupported
                     m_data.h265Vps.stdVps.pHrdParameters = nullptr;
 
                 } else if (pPictureParameters->updateType == VK_PICTURE_PARAMETERS_UPDATE_H265_SPS) {
@@ -140,6 +154,25 @@ public:
         m_updateSequenceCount = updateSequenceCount;
     }
 
+    int32_t GetVpsId(bool& isVps) const {
+        isVps = false;
+        switch (m_updateType) {
+        case VK_PICTURE_PARAMETERS_UPDATE_H264_SPS:
+        case VK_PICTURE_PARAMETERS_UPDATE_H264_PPS:
+            break; // h.264 does not support VPS
+        case VK_PICTURE_PARAMETERS_UPDATE_H265_VPS:
+            isVps = true;
+            return m_data.h265Vps.stdVps.vps_video_parameter_set_id;
+        case VK_PICTURE_PARAMETERS_UPDATE_H265_SPS:
+            return m_data.h265Sps.stdSps.sps_video_parameter_set_id;
+        case VK_PICTURE_PARAMETERS_UPDATE_H265_PPS:
+            return m_data.h265Pps.stdPps.sps_video_parameter_set_id;
+        default:
+            assert("!Invalid STD type");
+        }
+        return -1;
+    }
+
     int32_t GetSpsId(bool& isSps) const {
         isSps = false;
         switch (m_updateType) {
@@ -148,6 +181,8 @@ public:
             return m_data.h264Sps.stdSps.seq_parameter_set_id;
         case VK_PICTURE_PARAMETERS_UPDATE_H264_PPS:
             return m_data.h264Pps.stdPps.seq_parameter_set_id;
+        case VK_PICTURE_PARAMETERS_UPDATE_H265_VPS:
+            break;
         case VK_PICTURE_PARAMETERS_UPDATE_H265_SPS:
             isSps = true;
             return m_data.h265Sps.stdSps.sps_seq_parameter_set_id;
@@ -220,6 +255,7 @@ private:
     std::atomic<int32_t>                 m_refCount;
 public:
     VkParserPictureParametersUpdateType  m_updateType;
+    ItemType                             m_itemType;
     union {
         SpsVideoH264PictureParametersSet h264Sps;
         PpsVideoH264PictureParametersSet h264Pps;
@@ -228,6 +264,7 @@ public:
         PpsVideoH265PictureParametersSet h265Pps;
     } m_data;
     uint32_t                                         m_updateSequenceCount;
+    VkSharedBaseObj<StdVideoPictureParametersSet>    m_parent;        // SPS or PPS parent
     VkSharedBaseObj<VkParserVideoRefCountBase>       m_vkObjectOwner; // VkParserVideoPictureParameters
     VkSharedBaseObj<VkParserVideoRefCountBase>       m_videoSession;  // NvVideoSession
 private:
@@ -238,8 +275,26 @@ private:
       m_updateType(updateType),
       m_data(),
       m_updateSequenceCount(0),
+      m_parent(),
+      m_vkObjectOwner(),
       m_videoSession(nullptr)
     {
+        switch (m_updateType) {
+        case VK_PICTURE_PARAMETERS_UPDATE_H264_PPS:
+        case VK_PICTURE_PARAMETERS_UPDATE_H265_PPS:
+            m_itemType = PPS_TYPE;
+            break;
+        case VK_PICTURE_PARAMETERS_UPDATE_H264_SPS:
+        case VK_PICTURE_PARAMETERS_UPDATE_H265_SPS:
+            m_itemType = SPS_TYPE;
+            break;
+        case VK_PICTURE_PARAMETERS_UPDATE_H265_VPS:
+            m_itemType = VPS_TYPE;
+            break;
+        default:
+            m_itemType = INVALID_TYPE;
+            assert("!Invalid STD type");
+        }
     }
 
     ~StdVideoPictureParametersSet()

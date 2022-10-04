@@ -52,6 +52,7 @@ set(sources
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/pattern.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoUtils.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoUtils.h
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/vulkan_video_codecs_test_offsets.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoParser/VulkanVideoParser.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/../../common/src/VkCodecUtils/nvVkFormats.cpp
     )

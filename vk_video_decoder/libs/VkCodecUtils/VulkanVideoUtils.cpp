@@ -64,6 +64,8 @@ int clock_gettime(int dummy, struct timespec* ct)
     }
     return 0;
 }
+#else
+#include <time.h>
 #endif
 
 // Vulkan call wrapper
@@ -81,6 +83,8 @@ int clock_gettime(int dummy, struct timespec* ct)
 #define VK_LITERAL_TO_STRING(x) VK_LITERAL_TO_STRING_INTERNAL(x)
 
 namespace vulkanVideoUtils {
+
+using namespace Pattern;
 
 // Create vulkan device
 void VulkanDeviceInfo::CreateVulkanDevice(VkApplicationInfo *appInfo)
@@ -411,14 +415,14 @@ VkResult VulkanVideoBitstreamBuffer::CopyVideoBitstreamToBuffer(const unsigned c
             memset(ptr, 0, 16);
         }
 
-        memcpy(ptr, pBitstreamData, bitstreamDataSize);
+        memcpy(ptr, pBitstreamData, (size_t)bitstreamDataSize);
 
         const VkMappedMemoryRange   range           = {
             VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,  // sType
             NULL,                                   // pNext
             m_deviceMemory,                         // memory
             dstBufferOffset,                        // offset
-            bitstreamDataSize,                      // size
+            (size_t)bitstreamDataSize,              // size
         };
 
         CALL_VK(vk::FlushMappedMemoryRanges(m_device, 1u, &range));
@@ -703,7 +707,6 @@ VkResult ImageObject::FillImageWithPattern(int pattern)
         {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY},
         VK_CHROMA_LOCATION_MIDPOINT, VK_CHROMA_LOCATION_MIDPOINT, VK_FILTER_NEAREST, false
                                                                               };
-
         VkFillYuv vkFillYuv;
         vkFillYuv.fillVkImage(m_device, image, &imageData, mem, &ycbcrConversionInfo);
     } else {
@@ -787,9 +790,9 @@ VkResult ImageObject::CopyYuvToVkImage(uint32_t numPlanes, const uint8_t* yuvPla
         uint8_t* pDst = ptr + layouts[plane].offset;
         const uint8_t* pSrc = yuvPlaneData[plane] + yuvPlaneLayouts[plane].offset;
         for (int height = 0; height < copyHeight; height++) {
-            memcpy(pDst, pSrc, layouts[plane].rowPitch);
-            pDst += layouts[plane].rowPitch;
-            pSrc += yuvPlaneLayouts[plane].rowPitch;
+            memcpy(pDst, pSrc, (size_t)layouts[plane].rowPitch);
+            pDst += (size_t)layouts[plane].rowPitch;
+            pSrc += (size_t)yuvPlaneLayouts[plane].rowPitch;
         }
     }
 
@@ -1208,7 +1211,7 @@ VkResult VulkanVertexBuffer::CreateVertexBuffer(VulkanDeviceInfo* deviceInfo,  c
     void *data;
     CALL_VK(vk::MapMemory(m_device, deviceMemory, 0,
             vertexDataSize, 0, &data));
-    memcpy(data, pVertexData, vertexDataSize);
+    memcpy(data, pVertexData, (size_t)vertexDataSize);
     vk::UnmapMemory(m_device, deviceMemory);
 
     CALL_VK(vk::BindBufferMemory(m_device,
@@ -1861,7 +1864,7 @@ int32_t VulkanRenderInfo::GetNextSwapchainBuffer(
 }
 
 
-uint64_t getNsTime(bool resetTime = false)
+uint64_t getNsTime(bool resetTime)
 {
     static bool initStart = false;
     static struct timespec start_;
@@ -1870,7 +1873,7 @@ uint64_t getNsTime(bool resetTime = false)
         initStart = true;
     }
 
-    struct timespec now;
+    struct timespec now = {0};
     clock_gettime(CLOCK_MONOTONIC, &now);
 
     constexpr long one_sec_in_ns = 1000 * 1000 * 1000;
@@ -1880,8 +1883,11 @@ uint64_t getNsTime(bool resetTime = false)
     if (now.tv_nsec > start_.tv_nsec) {
         nsec = now.tv_nsec - start_.tv_nsec;
     } else {
-        assert(secs > 0);
-        secs--;
+        if (secs > 1) {
+            secs--;
+        } else if (secs < 0) {
+            secs = 0;
+        }
         nsec = one_sec_in_ns - (start_.tv_nsec - now.tv_nsec);
     }
 

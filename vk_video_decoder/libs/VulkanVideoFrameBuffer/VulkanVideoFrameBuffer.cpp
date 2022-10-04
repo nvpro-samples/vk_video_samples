@@ -36,6 +36,8 @@
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
 #define CLOCK_MONOTONIC 0
 extern int clock_gettime(int dummy, struct timespec* ct);
+#else
+#include <time.h>
 #endif
 
 class NvPerFrameDecodeImage : public vkPicBuffBase {
@@ -158,7 +160,7 @@ public:
     }
 
     int32_t init(vulkanVideoUtils::VulkanDeviceInfo* deviceInfo,
-        const VkVideoProfileKHR* pDecodeProfile,
+        const VkVideoProfileInfoKHR* pDecodeProfile,
         uint32_t              numImages,
         VkFormat              imageFormat,
         const VkExtent2D&     maxImageExtent,
@@ -232,36 +234,6 @@ private:
     std::vector<NvPerFrameDecodeImage>  m_frameDecodeImages;
 };
 
-static uint64_t getNsTime(bool resetTime = false)
-{
-    static bool initStart = false;
-    static struct timespec start_;
-    if (!initStart || resetTime) {
-        clock_gettime(CLOCK_MONOTONIC, &start_);
-        initStart = true;
-    }
-
-    struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-
-    constexpr long one_sec_in_ns = 1000 * 1000 * 1000;
-
-    time_t secs = now.tv_sec - start_.tv_sec;
-    uint64_t nsec;
-    if (now.tv_nsec > start_.tv_nsec) {
-        nsec = now.tv_nsec - start_.tv_nsec;
-    } else {
-        if(secs > 1) {
-            secs--;
-        } else if (secs < 0) {
-            secs = 0;
-        }
-        nsec = one_sec_in_ns - (start_.tv_nsec - now.tv_nsec);
-    }
-
-    return (secs * one_sec_in_ns) + nsec;
-}
-
 class NvVulkanVideoFrameBuffer : public VulkanVideoFrameBuffer {
 public:
 
@@ -286,7 +258,7 @@ public:
     virtual int32_t AddRef();
     virtual int32_t Release();
 
-    VkResult CreateVideoQueries(uint32_t numSlots, vulkanVideoUtils::VulkanDeviceInfo* deviceInfo, const VkVideoProfileKHR* pDecodeProfile)
+    VkResult CreateVideoQueries(uint32_t numSlots, vulkanVideoUtils::VulkanDeviceInfo* deviceInfo, const VkVideoProfileInfoKHR* pDecodeProfile)
     {
         assert (numSlots <= maxFramebufferImages);
 
@@ -328,7 +300,7 @@ public:
         return flushedImages;
     }
 
-    virtual int32_t InitImagePool(const VkVideoProfileKHR* pDecodeProfile,
+    virtual int32_t InitImagePool(const VkVideoProfileInfoKHR* pDecodeProfile,
                                   uint32_t                 numImages,
                                   VkFormat                 imageFormat,
                                   const VkExtent2D&        codedExtent,
@@ -360,7 +332,8 @@ public:
                                               queueFamilyIndex,
                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                               0 /* No ColorPatternColorBars */,
-                                              VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT);
+                                              VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT,
+                                              vulkanVideoUtils::NativeHandle::InvalidNativeHandle);
         m_numberParameterUpdates++;
 
         return imageSetCreateResult;
@@ -414,7 +387,7 @@ public:
         if (m_debug) {
             std::cout << "==> Queue Decode Picture picIdx: " << (uint32_t)picId
                       << "\t\tdisplayOrder: " << m_perFrameDecodeImageSet[picId].m_displayOrder << "\tdecodeOrder: " << m_perFrameDecodeImageSet[picId].m_decodeOrder
-                      << "\ttimestamp " << getNsTime() << "\tFrameType " << m_perFrameDecodeImageSet[picId].m_picDispInfo.videoFrameType << std::endl;
+                      << "\ttimestamp " << vulkanVideoUtils::getNsTime() << "\tFrameType " << m_perFrameDecodeImageSet[picId].m_picDispInfo.videoFrameType << std::endl;
         }
 
         if (pFrameSynchronizationInfo->hasFrameCompleteSignalFence) {
@@ -531,7 +504,7 @@ public:
     }
 
     virtual int32_t GetImageResourcesByIndex(uint32_t numResources, const int8_t* referenceSlotIndexes,
-        VkVideoPictureResourceKHR* pictureResources,
+        VkVideoPictureResourceInfoKHR* pictureResources,
         PictureResourceInfo* pictureResourcesInfo,
         VkImageLayout newImageLayout = VK_IMAGE_LAYOUT_MAX_ENUM)
     {
@@ -551,7 +524,7 @@ public:
                     return -1;
                 }
 
-                assert(pictureResources[resId].sType == VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_KHR);
+                assert(pictureResources[resId].sType == VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR);
                 pictureResources[resId].codedOffset = { 0, 0 }; // FIXME: This parameter must to be adjusted based on the interlaced mode.
                 pictureResources[resId].codedExtent = m_codedExtent;
                 pictureResources[resId].baseArrayLayer = 0;
@@ -763,7 +736,7 @@ void NvPerFrameDecodeImage::Deinit()
 }
 
 int32_t NvPerFrameDecodeImageSet::init(vulkanVideoUtils::VulkanDeviceInfo* deviceInfo,
-                                       const VkVideoProfileKHR* pDecodeProfile,
+                                       const VkVideoProfileInfoKHR* pDecodeProfile,
                                        uint32_t              numImages,
                                        VkFormat              imageFormat,
                                        const VkExtent2D&     maxImageExtent,

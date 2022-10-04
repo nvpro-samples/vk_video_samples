@@ -44,6 +44,8 @@
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
 #define CLOCK_MONOTONIC 0
 extern int clock_gettime(int dummy, struct timespec* ct);
+#else
+#include <time.h>
 #endif
 
 simplelogger::Logger* logger = simplelogger::LoggerFactory::CreateConsoleLogger();
@@ -84,6 +86,17 @@ void VulkanFrame::init_workers() { }
 int VulkanFrame::GetVideoWidth() { return m_videoProcessor ? m_videoProcessor.GetWidth() : scissor_.extent.width; }
 
 int VulkanFrame::GetVideoHeight() { return m_videoProcessor ? m_videoProcessor.GetHeight() : scissor_.extent.height; }
+
+int VulkanFrame::init_internals(const VulkanDecodeContext vulkanDecodeContext)
+{
+    // Construct a device context to avoid using a videoRenderer instance.
+    m_deviceInfo = vulkanVideoUtils::VulkanDeviceInfo(vulkanDecodeContext.instance, vulkanDecodeContext.physicalDev, vulkanDecodeContext.dev, vulkanDecodeContext.videoDecodeQueueFamily, vulkanDecodeContext.videoQueue);
+    const char* filePath = settings_.videoFileName.c_str();
+    m_videoProcessor.Init(&vulkanDecodeContext, &m_deviceInfo, filePath);
+    frameImageFormat = m_videoProcessor.GetFrameImageFormat(&settings_.video_width, &settings_.video_height);
+
+    return 0;
+}
 
 int VulkanFrame::attach_shell(Shell& sh)
 {
@@ -326,36 +339,6 @@ void VulkanFrame::on_tick()
         return;
 }
 
-static uint64_t getNsTime(bool resetTime = false)
-{
-    static bool initStart = false;
-    static struct timespec start_;
-    if (!initStart || resetTime) {
-        clock_gettime(CLOCK_MONOTONIC, &start_);
-        initStart = true;
-    }
-
-    struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-
-    constexpr long one_sec_in_ns = 1000 * 1000 * 1000;
-
-    time_t secs = now.tv_sec - start_.tv_sec;
-    uint64_t nsec;
-    if (now.tv_nsec > start_.tv_nsec) {
-        nsec = now.tv_nsec - start_.tv_nsec;
-    } else {
-        if(secs > 1) {
-            secs--;
-        } else if (secs < 0) {
-            secs = 0;
-        }
-        nsec = one_sec_in_ns - (start_.tv_nsec - now.tv_nsec);
-    }
-
-    return (secs * one_sec_in_ns) + nsec;
-}
-
 void VulkanFrame::on_frame(bool trainFrame)
 {
     const bool dumpDebug = false;
@@ -379,10 +362,6 @@ void VulkanFrame::on_frame(bool trainFrame)
         if (endOfStream && (numVideoFrames < 0)) {
             quit();
         }
-    }
-
-    if (frame_count > 200) {
-        // quit();
     }
 
     // Limit number of frames if argument was specified (with --c maxFrames)
@@ -411,7 +390,9 @@ void VulkanFrame::on_frame(bool trainFrame)
     vulkanVideoUtils::VulkanPerDrawContext* pPerDrawContext = pVideoRenderer->render_.GetDrawContext(back.GetImageIndex());
 
     unsigned imageIndex = frame_data_index_;
-
+    if (pVideoRenderer == nullptr) {
+        return;
+    }
     bool doTestPatternFrame = ((pLastDecodedFrame == NULL) || (pLastDecodedFrame->pDecodedImage == NULL) || pVideoRenderer->useTestImage_);
     const vulkanVideoUtils::ImageObject* pRtImage = NULL;
     VkFence frameCompleteFence = VkFence();
@@ -500,7 +481,7 @@ void VulkanFrame::on_frame(bool trainFrame)
         LOG(INFO) << "Drawing Frame " << frame_count << " FB: " << back.GetImageIndex() << std::endl;
     }
 
-    uint64_t curRealTimeNsecs = getNsTime();
+    uint64_t curRealTimeNsecs = vulkanVideoUtils::getNsTime();
     const float fpsDividend = 1000000000LL /* nSec in a Sec */;
     uint64_t deltaRealTimeNsecs = curRealTimeNsecs - lastRealTimeNsecs;
     lastRealTimeNsecs = curRealTimeNsecs;
@@ -678,7 +659,8 @@ void VulkanFrame::on_frame(bool trainFrame)
 FrameProcessor* create_frameProcessor(int argc, char** argv)
 {
     std::vector<std::string> args(argv, argv + argc);
-    FrameProcessor* pFrameProcessor =  new VulkanFrame(args);
+    VulkanFrame* pVulkanFrame = new VulkanFrame(args);
+    FrameProcessor* pFrameProcessor = pVulkanFrame;
 
     if (pFrameProcessor) {
         std::ifstream validVideoFileStream(pFrameProcessor->settings().videoFileName, std::ifstream::in);

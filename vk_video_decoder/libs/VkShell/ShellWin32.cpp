@@ -198,7 +198,9 @@ void ShellWin32::run() {
             DispatchMessage(&msg);
         }
 
-        if (quit) break;
+        if (quit) {
+            break;
+        }
 
         acquire_back_buffer();
 
