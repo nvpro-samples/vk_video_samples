@@ -43,7 +43,7 @@ public:
         return  (videoCodecOperations & (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT |
                                          VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT |
                                          VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT |
-                                         VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT));
+                                         VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_EXT));
     }
 
     bool PopulateProfileExt(VkBaseInStructure const * pVideoProfileExt)
@@ -138,7 +138,8 @@ public:
                           VkVideoComponentBitDepthFlagsKHR chromaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR,
                           uint32_t videoH26xProfileIdc = 0)
         : m_profile({VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR, NULL,
-                     videoCodecOperation, chromaSubsampling, lumaBitDepth, chromaBitDepth})
+                     videoCodecOperation, chromaSubsampling, lumaBitDepth, chromaBitDepth}),
+          m_profileList({VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR, NULL, 1, &m_profile})
     {
         if (!isValidCodec(videoCodecOperation)) {
             return;
@@ -218,6 +219,14 @@ public:
         }
     }
 
+    const VkVideoProfileListInfoKHR* GetProfileListInfo() const
+    {
+        if (m_profileList.sType == VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR) {
+            return &m_profileList;
+        } else {
+            return NULL;
+        }
+    }
 
     const VkVideoDecodeH264ProfileInfoEXT* GetDecodeH264Profile() const
     {
@@ -262,7 +271,12 @@ public:
         }
 
         m_profile = src.m_profile;
-        m_profile.pNext = NULL;
+        m_profile.pNext = nullptr;
+
+        m_profileList = src.m_profileList;
+        m_profileList.pNext = nullptr;
+
+        m_profileList.pProfiles = &m_profile;
 
         PopulateProfileExt((VkBaseInStructure const *)src.m_profile.pNext);
 
@@ -581,7 +595,8 @@ public:
     }
 
 private:
-    VkVideoProfileInfoKHR m_profile;
+    VkVideoProfileInfoKHR     m_profile;
+    VkVideoProfileListInfoKHR m_profileList;
     union
     {
         VkVideoDecodeH264ProfileInfoEXT m_h264DecodeProfile;

@@ -20,8 +20,8 @@ Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file in this repository for mo
 ## Repository Set-Up
 
   Please make sure you have installed the latest NVIDIA BETA drivers from https://developer.nvidia.com/vulkan-driver.
-  The minimum supported BETA driver versions by this application are 517.57 (Windows) / 515.49.19 (Linux) that
-  must support Vulkan version 1.3.230 or later API.
+  The minimum supported BETA driver versions by this application are 517.69 (Windows) / 515.49.23 (Linux) that
+  must support Vulkan API version 1.3.230 or later.
   The Windows and Linux BETA drivers are available for download at https://developer.nvidia.com/vulkan-beta-51757-windows
   and https://developer.nvidia.com/vulkan-beta-5154919-linux, respectively.
 
@@ -60,7 +60,7 @@ Windows 10 or Windows 11 with the following software packages:
     Download the latest version of the FFMPEG shared libraries archive from https://github.com/BtbN/FFmpeg-Builds/releases.
     The archive must have the following pattern in the name ffmpeg-*-win64-lgpl-shared.zip
     For example:
-    https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n5.0-latest-win64-lgpl-shared-5.0.zip
+    https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip
     Then extract the archive to <APP_INSTALLED_LOC>\bin\libs\ffmpeg and add the path of the <APP_INSTALLED_LOC>\bin\libs\ffmpeg\win64\ of
     the application. Please make sure that <APP_INSTALLED_LOC>\bin\libs\ffmpeg\win64\bin location contains
     avformat-59.dll, avutil-59.dll and avcodec-59.dll shared libraries and <APP_INSTALLED_LOC>\bin\libs\ffmpeg\win64\lib contains the

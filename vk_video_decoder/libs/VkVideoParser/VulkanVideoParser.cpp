@@ -819,7 +819,7 @@ VkResult VulkanVideoParser::Initialize(
     } else if (m_codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT) {
         pStdExtensionVersion = &h265StdExtensionVersion;
     } else {
-        assert(!"Unsupported Codec Type");
+        assert(!"Unsupported codec type");
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
 
@@ -1065,6 +1065,7 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
         detectedFormat.seqhdr_data_length = (uint32_t)std::min((size_t)pnvsi->cbSequenceHeader, sizeof(raw_seqhdr_data));
         detectedFormat.minNumDecodeSurfaces = pnvsi->nMinNumDecodeSurfaces;
         detectedFormat.maxNumDpbSlots = configDpbSlots;
+        detectedFormat.codecProfile = pnvsi->codecProfile;
 
         if (detectedFormat.seqhdr_data_length > 0) {
             memcpy(raw_seqhdr_data, pnvsi->SequenceHeaderData,

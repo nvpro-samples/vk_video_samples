@@ -22,9 +22,9 @@
 #include "vulkan_interfaces.h"
 #include "vk_video/vulkan_video_codecs_common.h"
 
-#define NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_5 VK_MAKE_VIDEO_STD_VERSION(0, 9, 5)
+#define NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_6 VK_MAKE_VIDEO_STD_VERSION(0, 9, 6)
 
-#define NV_VULKAN_VIDEO_PARSER_API_VERSION   NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_5
+#define NV_VULKAN_VIDEO_PARSER_API_VERSION   NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_6
 
 typedef uint32_t FrameRate; // Packed 18-bit numerator & 14-bit denominator
 
@@ -656,6 +656,7 @@ typedef struct VkParserSequenceInfo {
         // (codec-specific)
     uint8_t* pbSideData; // Auxiliary encryption information
     uint32_t cbSideData; // Auxiliary encryption information length
+    uint32_t codecProfile;
 } VkParserSequenceInfo;
 
 struct VkParserSliceInfo;

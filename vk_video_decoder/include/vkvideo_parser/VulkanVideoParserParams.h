@@ -141,6 +141,7 @@ struct VkParserDetectedVideoFormat {
         uint8_t matrix_coefficients; /** used in deriving luma and chroma signals from RGB primaries   */
     } video_signal_description;
     uint32_t seqhdr_data_length; /** Additional bytes following (NVVIDEOFORMATEX)                  */
+    uint32_t codecProfile;
 };
 
 typedef enum {

@@ -146,23 +146,6 @@ else()
 endif()
 ############ VULKAN_FFMPEG_LIB_PATH ######################################
 
-
-############ ENCODER_DRIVER_ROOT ######################################
-if (DEFINED ENV{ENCODER_DRIVER_ROOT_PATH})
-    MESSAGE(STATUS "ENCODER_DRIVER_ROOT_PATH ENV VAR is set to $ENV{ENCODER_DRIVER_ROOT_PATH}")
-    set(ENCODER_DRIVER_ROOT  "$ENV{ENCODER_DRIVER_ROOT_PATH}" CACHE PATH "Path to Vulkan Video driver source directory" FORCE)
-else()
-    set(ENCODER_DRIVER_ROOT  "${ENCODER_DRIVER_ROOT}" CACHE PATH "Path to Vulkan Video driver source directory")
-endif()
-
-if (EXISTS "${ENCODER_DRIVER_ROOT}")
-    MESSAGE(STATUS "ENCODER_DRIVER_ROOT is set and valid ${ENCODER_DRIVER_ROOT}")
-    add_definitions(-D"VK_API_USE_DRIVER_REPO=1")
-else()
-    message( STATUS "The location of the Vulkan Video driver source: ${ENCODER_DRIVER_ROOT} - encoder test app will not be built" )
-endif()
-############ ENCODER_DRIVER_ROOT_PATH ######################################
-
 # Enable cmake folders
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(LVL_TARGET_FOLDER lvl_cmake_targets)

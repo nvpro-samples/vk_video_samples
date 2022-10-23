@@ -764,7 +764,8 @@ int32_t NvPerFrameDecodeImageSet::init(vulkanVideoUtils::VulkanDeviceInfo* devic
     m_queueFamilyIndex = queueFamilyIndex;
     m_requiredMemProps = requiredMemProps;
     m_imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    m_imageCreateInfo.pNext = m_videoProfile.GetProfile();
+    // m_imageCreateInfo.pNext = m_videoProfile.GetProfile();
+    m_imageCreateInfo.pNext = m_videoProfile.GetProfileListInfo();
     m_imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
     m_imageCreateInfo.format = imageFormat;
     m_imageCreateInfo.extent = { maxImageExtent.width, maxImageExtent.height, 1 };
