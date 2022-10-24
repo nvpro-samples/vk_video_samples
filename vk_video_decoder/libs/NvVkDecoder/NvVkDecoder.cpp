@@ -208,7 +208,7 @@ VkResult NvVkDecoder::GetVideoCapabilities(nvVideoProfile* pVideoProfile, VkVide
             if (strncmp(pVideoCapabilities->stdHeaderVersion.extensionName,
                     VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME,
                         sizeof (pVideoCapabilities->stdHeaderVersion.extensionName) - 1U) ||
-                (pVideoCapabilities->stdHeaderVersion.specVersion != VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION)) {
+                (pVideoCapabilities->stdHeaderVersion.specVersion != VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION)) {
                 assert(!"Unsupported h.265 STD version");
                 return VK_ERROR_INCOMPATIBLE_DRIVER;
             }
