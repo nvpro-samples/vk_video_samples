@@ -44,7 +44,7 @@ static const uint32_t bottomFieldMask = (1 << bottomFieldShift);
 static const uint32_t fieldIsReferenceMask = (topFieldMask | bottomFieldMask);
 
 static const uint32_t MAX_DPB_REF_SLOTS = 16;
-static const uint32_t MAX_DPB_REF_AND_SETUP_SLOTS = MAX_DPB_REF_SLOTS + 1; // plus 1 for the current picture (h.264 only)
+static const uint32_t MAX_DPB_REF_AND_SETUP_SLOTS = MAX_DPB_REF_SLOTS; // plus 1 for the current picture (h.264 only)
 
 #define COPYFIELD(pout, pin, name) pout->name = pin->name
 
