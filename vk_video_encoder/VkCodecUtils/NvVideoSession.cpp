@@ -37,14 +37,13 @@ VkResult NvVideoSession::create(nvvk::MemAllocator* devAlloc,
     VkDevice dev = vkctx->m_device;
 
     VkVideoSessionCreateInfoKHR createInfo = { VK_STRUCTURE_TYPE_VIDEO_SESSION_CREATE_INFO_KHR };
-    createInfo.flags = VK_VIDEO_SESSION_CREATE_DEFAULT_KHR;
     createInfo.pVideoProfile = pVideoProfile->GetProfile();
     createInfo.queueFamilyIndex = videoQueueFamily;
     createInfo.pictureFormat = pictureFormat;
     createInfo.maxCodedExtent = maxCodedExtent;
-    createInfo.maxReferencePicturesSlotsCount = maxReferencePicturesSlotsCount;
-    createInfo.maxReferencePicturesActiveCount = maxReferencePicturesActiveCount;
-    createInfo.referencePicturesFormat = referencePicturesFormat;
+    createInfo.maxDpbSlots = maxReferencePicturesSlotsCount;
+    createInfo.maxActiveReferencePictures = maxReferencePicturesActiveCount;
+    createInfo.referencePictureFormat = referencePicturesFormat;
     createInfo.pStdHeaderVersion = &h264StdExtensionVersion;
 
     VkResult result = vkCreateVideoSessionKHR(dev, &createInfo, NULL, &pNewVideoSession->m_videoSession);
@@ -53,8 +52,7 @@ VkResult NvVideoSession::create(nvvk::MemAllocator* devAlloc,
 
     const uint32_t maxMemReq = 8;
     uint32_t videoSessionMemoryRequirementsCount = 0;
-    VkMemoryRequirements2 memoryRequirements[maxMemReq];
-    VkVideoGetMemoryPropertiesKHR encodeSessionMemoryRequirements[maxMemReq];
+    VkVideoSessionMemoryRequirementsKHR encodeSessionMemoryRequirements[maxMemReq];
     // Get the count first
     result = vkGetVideoSessionMemoryRequirementsKHR(dev, pNewVideoSession->m_videoSession,
              &videoSessionMemoryRequirementsCount, NULL);
@@ -62,11 +60,8 @@ VkResult NvVideoSession::create(nvvk::MemAllocator* devAlloc,
     assert(videoSessionMemoryRequirementsCount <= maxMemReq);
 
     memset(encodeSessionMemoryRequirements, 0x00, sizeof(encodeSessionMemoryRequirements));
-    memset(memoryRequirements, 0x00, sizeof(memoryRequirements));
     for (uint32_t i = 0; i < videoSessionMemoryRequirementsCount; i++) {
-        encodeSessionMemoryRequirements[i].sType = VK_STRUCTURE_TYPE_VIDEO_GET_MEMORY_PROPERTIES_KHR;
-        encodeSessionMemoryRequirements[i].pMemoryRequirements = &memoryRequirements[i];
-        memoryRequirements[i].sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
+        encodeSessionMemoryRequirements[i].sType = VK_STRUCTURE_TYPE_VIDEO_SESSION_MEMORY_REQUIREMENTS_KHR;
     }
 
     result = vkGetVideoSessionMemoryRequirementsKHR(dev, pNewVideoSession->m_videoSession,
@@ -75,12 +70,12 @@ VkResult NvVideoSession::create(nvvk::MemAllocator* devAlloc,
     assert(result == VK_SUCCESS);
 
     uint32_t encodeSessionBindMemoryCount = videoSessionMemoryRequirementsCount;
-    VkVideoBindMemoryKHR encodeSessionBindMemory[8];
+    VkBindVideoSessionMemoryInfoKHR encodeSessionBindMemory[8];
 
     pNewVideoSession->m_devAlloc = devAlloc;
 
     for (uint32_t memIdx = 0; memIdx < encodeSessionBindMemoryCount; memIdx++) {
-        nvvk::MemAllocateInfo memAllocInfo(memoryRequirements[memIdx].memoryRequirements, 0);
+        nvvk::MemAllocateInfo memAllocInfo(encodeSessionMemoryRequirements[memIdx].memoryRequirements, 0);
         nvvk::MemHandle handle = devAlloc->allocMemory(memAllocInfo);
         if(!handle) {
             assert(0 && "could not allocate buffer\n");
@@ -90,8 +85,8 @@ VkResult NvVideoSession::create(nvvk::MemAllocator* devAlloc,
 
         nvvk::MemAllocator::MemInfo memInfo = devAlloc->getMemoryInfo(handle);
 
+        encodeSessionBindMemory[memIdx].sType = VK_STRUCTURE_TYPE_BIND_VIDEO_SESSION_MEMORY_INFO_KHR;
         encodeSessionBindMemory[memIdx].pNext = NULL;
-        encodeSessionBindMemory[memIdx].sType = VK_STRUCTURE_TYPE_VIDEO_BIND_MEMORY_KHR;
         encodeSessionBindMemory[memIdx].memory = memInfo.memory;
 
         encodeSessionBindMemory[memIdx].memoryBindIndex = encodeSessionMemoryRequirements[memIdx].memoryBindIndex;

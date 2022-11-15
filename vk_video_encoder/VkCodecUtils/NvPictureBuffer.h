@@ -133,10 +133,10 @@ public:
         , m_imageFormat()
     {
     }
-    VkResult createVideoQueries(uint32_t numSlots, nvvk::Context* deviceInfo, const VkVideoProfileKHR* pEncodeProfile);
+    VkResult createVideoQueries(uint32_t numSlots, nvvk::Context* deviceInfo, const VkVideoProfileInfoKHR* pEncodeProfile);
 
     int32_t initFramePool( nvvk::Context* ctx,
-                           const VkVideoProfileKHR* pEncodeProfile,
+                           const VkVideoProfileInfoKHR* pEncodeProfile,
                            uint32_t                 numImages,
                            VkFormat                 imageFormat,
                            uint32_t                 maxImageWidth,
@@ -155,9 +155,9 @@ public:
     void prepareReferenceImages(VkCommandBuffer cmdBuf);
 
     void getFrameResourcesByIndex( int8_t referenceSlotIndexes,
-                                   VkVideoPictureResourceKHR* pictureResources);
+                                   VkVideoPictureResourceInfoKHR* pictureResources);
     void getReferenceFrameResourcesByIndex( int8_t dpbSlotIdx,
-                                            VkVideoPictureResourceKHR* pictureResources);
+                                            VkVideoPictureResourceInfoKHR* pictureResources);
     uint32_t initFrame( uint32_t numImages,
                         VkDevice dev,
                         const VkImageCreateInfo* pImageCreateInfo,

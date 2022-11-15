@@ -74,7 +74,7 @@ public:
 private:
     StdVideoEncodeH264SliceHeaderFlags m_sliceHeaderFlags = {};
     StdVideoEncodeH264SliceHeader m_sliceHeader = {};
-    VkVideoEncodeH264NaluSliceEXT m_sliceInfo = {};
+    VkVideoEncodeH264NaluSliceInfoEXT m_sliceInfo = {};
     StdVideoEncodeH264PictureInfoFlags m_pictureInfoFlags = {};
     StdVideoEncodeH264PictureInfo m_stdPictureInfo = {};
     VkVideoEncodeH264VclFrameInfoEXT m_encodeH264FrameInfo = {};
@@ -109,7 +109,7 @@ public:
     EncodeInfoNonVcl(StdVideoH264SequenceParameterSet* sps, StdVideoH264PictureParameterSet* pps, VkBuffer* dstBitstreamBuffer)
         : m_emitParameters{}
     {
-        m_emitParameters.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_EMIT_PICTURE_PARAMETERS_EXT;
+        m_emitParameters.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_EMIT_PICTURE_PARAMETERS_INFO_EXT;
         m_emitParameters.pNext = NULL;
         m_emitParameters.spsId = sps->seq_parameter_set_id;
         m_emitParameters.emitSpsEnable = VK_TRUE;
@@ -122,16 +122,16 @@ public:
         m_encodeInfo.dstBitstreamBuffer = *dstBitstreamBuffer;
     }
 private:
-    VkVideoEncodeH264EmitPictureParametersEXT m_emitParameters;
+    VkVideoEncodeH264EmitPictureParametersInfoEXT m_emitParameters;
 };
 
 class EncodeInfoVcl : public EncodeInfo {
 public:
     EncodeInfoVcl(VkBuffer* dstBitstreamBuffer, VkDeviceSize dstBitstreamBufferOffset, VkVideoEncodeH264VclFrameInfoEXT* encodeH264FrameInfo,
-                  VkVideoPictureResourceKHR* inputPicResource, VkVideoPictureResourceKHR* dpbPicResource)
+                  VkVideoPictureResourceInfoKHR* inputPicResource, VkVideoPictureResourceInfoKHR* dpbPicResource)
         : m_referenceSlot{}
     {
-        m_referenceSlot.sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_KHR;
+        m_referenceSlot.sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
         m_referenceSlot.pNext = NULL;
         m_referenceSlot.slotIndex = 0;
         m_referenceSlot.pPictureResource = dpbPicResource;
@@ -146,7 +146,7 @@ public:
         m_encodeInfo.pSetupReferenceSlot = &m_referenceSlot;
     }
 private:
-    VkVideoReferenceSlotKHR m_referenceSlot;
+    VkVideoReferenceSlotInfoKHR m_referenceSlot;
 };
 
 class NvVideoSessionParameters {

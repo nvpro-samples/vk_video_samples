@@ -142,7 +142,7 @@ VkVideoChromaSubsamplingFlagBitsKHR EncodeApp::getChromaSubsamplingFlagBits(uint
         chromaSubsamplingFlag = VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
         break;
     default:
-        chromaSubsamplingFlag = VK_VIDEO_CHROMA_SUBSAMPLING_INVALID_BIT_KHR;
+        chromaSubsamplingFlag = VK_VIDEO_CHROMA_SUBSAMPLING_INVALID_KHR;
         break;
     }
     return chromaSubsamplingFlag;
@@ -154,7 +154,7 @@ VkResult EncodeApp::getVideoFormats(VkPhysicalDevice physicalDevice, NvVideoProf
         formats[i] = VK_FORMAT_UNDEFINED;
     }
 
-    VkVideoProfilesKHR videoProfiles = { VK_STRUCTURE_TYPE_VIDEO_PROFILES_KHR, NULL, 1, pVideoProfile->GetProfile() };
+    const VkVideoProfileListInfoKHR videoProfiles = { VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR, NULL, 1, pVideoProfile->GetProfile() };
     const VkPhysicalDeviceVideoFormatInfoKHR videoFormatInfo = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR, &videoProfiles, imageUsage };
 
     uint32_t supportedFormatCount = 0;
@@ -186,10 +186,16 @@ VkResult EncodeApp::getVideoFormats(VkPhysicalDevice physicalDevice, NvVideoProf
     return result;
 }
 
-VkResult EncodeApp::getVideoCapabilities(VkPhysicalDevice physicalDevice, NvVideoProfile* pVideoProfile, VkVideoCapabilitiesKHR* pVideoEncodeCapabilities)
+VkResult EncodeApp::getVideoCapabilities(VkPhysicalDevice physicalDevice, NvVideoProfile* pVideoProfile, VkVideoCapabilitiesKHR* pVideoCapabilities)
 {
+    VkVideoEncodeCapabilitiesKHR* pVideoEncodeCapabilities = nullptr;
     VkVideoEncodeH264CapabilitiesEXT* pH264Capabilities = nullptr;
-    assert(pVideoEncodeCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR);
+
+    assert(pVideoCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR);
+    assert(pVideoCapabilities->pNext);
+
+    pVideoEncodeCapabilities = (VkVideoEncodeCapabilitiesKHR*)pVideoCapabilities->pNext;
+
     if (pVideoProfile->GetCodecType() == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT) {
         assert(pVideoEncodeCapabilities->pNext);
         pH264Capabilities = (VkVideoEncodeH264CapabilitiesEXT*)pVideoEncodeCapabilities->pNext;
@@ -199,23 +205,24 @@ VkResult EncodeApp::getVideoCapabilities(VkPhysicalDevice physicalDevice, NvVide
         assert(!"Unsupported codec");
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
-    VkResult result = vkGetPhysicalDeviceVideoCapabilitiesKHR(physicalDevice, pVideoProfile->GetProfile(), pVideoEncodeCapabilities);
+
+    VkResult result = vkGetPhysicalDeviceVideoCapabilitiesKHR(physicalDevice, pVideoProfile->GetProfile(), pVideoCapabilities);
     assert(result == VK_SUCCESS);
 
     std::cout << "\t\t\t" << ("h264") << "encode capabilities: " << std::endl;
-    std::cout << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << pVideoEncodeCapabilities->minBitstreamBufferOffsetAlignment << std::endl;
-    std::cout << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << pVideoEncodeCapabilities->minBitstreamBufferSizeAlignment << std::endl;
-    std::cout << "\t\t\t" << "videoPictureExtentGranularity: " << pVideoEncodeCapabilities->videoPictureExtentGranularity.width << " x " << pVideoEncodeCapabilities->videoPictureExtentGranularity.height << std::endl;
-    std::cout << "\t\t\t" << "minExtent: " << pVideoEncodeCapabilities->minExtent.width << " x " << pVideoEncodeCapabilities->minExtent.height << std::endl;
-    std::cout << "\t\t\t" << "maxExtent: " << pVideoEncodeCapabilities->maxExtent.width  << " x " << pVideoEncodeCapabilities->maxExtent.height << std::endl;
-    std::cout << "\t\t\t" << "maxReferencePicturesSlotsCount: " << pVideoEncodeCapabilities->maxReferencePicturesSlotsCount << std::endl;
-    std::cout << "\t\t\t" << "maxReferencePicturesActiveCount: " << pVideoEncodeCapabilities->maxReferencePicturesActiveCount << std::endl;
+    std::cout << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << pVideoCapabilities->minBitstreamBufferOffsetAlignment << std::endl;
+    std::cout << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << pVideoCapabilities->minBitstreamBufferSizeAlignment << std::endl;
+    std::cout << "\t\t\t" << "pictureAccessGranularity: " << pVideoCapabilities->pictureAccessGranularity.width << " x " << pVideoCapabilities->pictureAccessGranularity.height << std::endl;
+    std::cout << "\t\t\t" << "minExtent: " << pVideoCapabilities->minCodedExtent.width << " x " << pVideoCapabilities->minCodedExtent.height << std::endl;
+    std::cout << "\t\t\t" << "maxExtent: " << pVideoCapabilities->maxCodedExtent.width  << " x " << pVideoCapabilities->maxCodedExtent.height << std::endl;
+    std::cout << "\t\t\t" << "maxDpbSlots: " << pVideoCapabilities->maxDpbSlots << std::endl;
+    std::cout << "\t\t\t" << "maxActiveReferencePictures: " << pVideoCapabilities->maxActiveReferencePictures << std::endl;
 
     if (pVideoProfile->GetCodecType() == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT) {
-        if (strncmp(pVideoEncodeCapabilities->stdHeaderVersion.extensionName,
+        if (strncmp(pVideoCapabilities->stdHeaderVersion.extensionName,
                     VK_STD_VULKAN_VIDEO_CODEC_H264_ENCODE_EXTENSION_NAME,
-                    sizeof (pVideoEncodeCapabilities->stdHeaderVersion.extensionName) - 1U) ||
-                (pVideoEncodeCapabilities->stdHeaderVersion.specVersion != VK_STD_VULKAN_VIDEO_CODEC_H264_ENCODE_SPEC_VERSION)) {
+                    sizeof (pVideoCapabilities->stdHeaderVersion.extensionName) - 1U) ||
+                (pVideoCapabilities->stdHeaderVersion.specVersion != VK_STD_VULKAN_VIDEO_CODEC_H264_ENCODE_SPEC_VERSION)) {
             assert(!"Unsupported h.264 STD version");
             return VK_ERROR_INCOMPATIBLE_DRIVER;
         }
@@ -240,7 +247,7 @@ StdVideoH264SequenceParameterSet EncodeApp::getStdVideoH264SequenceParameterSet(
 
     StdVideoH264SequenceParameterSet sps = {};
     sps.profile_idc = STD_VIDEO_H264_PROFILE_IDC_HIGH;
-    sps.level_idc = STD_VIDEO_H264_LEVEL_4_1;
+    sps.level_idc = STD_VIDEO_H264_LEVEL_IDC_4_1;
     sps.seq_parameter_set_id = 0u;
     sps.chroma_format_idc = STD_VIDEO_H264_CHROMA_FORMAT_IDC_420;
     sps.bit_depth_luma_minus8 = 0u;
@@ -312,7 +319,7 @@ IntraFrameInfo::IntraFrameInfo(uint32_t frameCount, uint32_t width, uint32_t hei
     uint32_t picHeightInMbs = sps.pic_height_in_map_units_minus1 + 1;
     uint32_t iPicSizeInMbs = picWidthInMbs * picHeightInMbs;
 
-    m_sliceInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_EXT;
+    m_sliceInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_INFO_EXT;
     m_sliceInfo.pNext = NULL;
     m_sliceInfo.pSliceHeaderStd = &m_sliceHeader;
     m_sliceInfo.mbCount = iPicSizeInMbs;
@@ -348,15 +355,15 @@ VideoSessionParametersInfo::VideoSessionParametersInfo(VkVideoSessionKHR videoSe
 
     m_encodeH264SessionParametersAddInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_ADD_INFO_EXT;
     m_encodeH264SessionParametersAddInfo.pNext = NULL;
-    m_encodeH264SessionParametersAddInfo.spsStdCount = 1;
-    m_encodeH264SessionParametersAddInfo.pSpsStd = sps;
-    m_encodeH264SessionParametersAddInfo.ppsStdCount = 1;
-    m_encodeH264SessionParametersAddInfo.pPpsStd = pps;
+    m_encodeH264SessionParametersAddInfo.stdSPSCount = 1;
+    m_encodeH264SessionParametersAddInfo.pStdSPSs = sps;
+    m_encodeH264SessionParametersAddInfo.stdPPSCount = 1;
+    m_encodeH264SessionParametersAddInfo.pStdPPSs = pps;
 
     m_encodeH264SessionParametersCreateInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_CREATE_INFO_EXT;
     m_encodeH264SessionParametersCreateInfo.pNext = NULL;
-    m_encodeH264SessionParametersCreateInfo.maxSpsStdCount = 1;
-    m_encodeH264SessionParametersCreateInfo.maxPpsStdCount = 1;
+    m_encodeH264SessionParametersCreateInfo.maxStdSPSCount = 1;
+    m_encodeH264SessionParametersCreateInfo.maxStdPPSCount = 1;
     m_encodeH264SessionParametersCreateInfo.pParametersAddInfo = &m_encodeH264SessionParametersAddInfo;
 
     m_encodeSessionParametersCreateInfo.sType = VK_STRUCTURE_TYPE_VIDEO_SESSION_PARAMETERS_CREATE_INFO_KHR;
@@ -452,7 +459,8 @@ int32_t EncodeApp::initEncoder(EncodeConfig* encodeConfig)
     VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling = getChromaSubsamplingFlagBits(encodeConfig->chromaFormatIDC); // VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR
     VkVideoComponentBitDepthFlagBitsKHR lumaBitDepth = getComponentBitDepthFlagBits(encodeConfig->bpp); // VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
     VkVideoComponentBitDepthFlagBitsKHR chromaBitDepth = getComponentBitDepthFlagBits(encodeConfig->bpp); // VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
-    m_videoProfile.initVideoProfile(videoCodec, chromaSubsampling, lumaBitDepth, chromaBitDepth);
+    m_videoProfile.initVideoProfile(videoCodec, chromaSubsampling, lumaBitDepth, chromaBitDepth,
+                                    STD_VIDEO_H264_PROFILE_IDC_HIGH);
 
     // get supported input formats for encoder & recon images format (dpb)
     VkFormat supportedReconstructedPicturesFormats[4];
@@ -473,11 +481,13 @@ int32_t EncodeApp::initEncoder(EncodeConfig* encodeConfig)
     }
 
     // find capabilities of encoder - generic capabilities / h264
-    VkVideoCapabilitiesKHR videoEncodeCapabilities    = { VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR, NULL };
+    VkVideoCapabilitiesKHR videoCapabilities = { VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR, NULL };
+    VkVideoEncodeCapabilitiesKHR videoEncodeCapabilities = { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CAPABILITIES_KHR, NULL };
     VkVideoEncodeH264CapabilitiesEXT h264Capabilities = { VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_EXT, NULL };
+    videoCapabilities.pNext = &videoEncodeCapabilities;
     videoEncodeCapabilities.pNext = &h264Capabilities;
 
-    result = getVideoCapabilities(m_ctx.m_physicalDevice, &m_videoProfile, &videoEncodeCapabilities);
+    result = getVideoCapabilities(m_ctx.m_physicalDevice, &m_videoProfile, &videoCapabilities);
     if(result != VK_SUCCESS) {
         fprintf(stderr, "\nInitEncoder Error: Failed to get desired video capabilities.\n");
         return -1;
@@ -693,8 +703,8 @@ int32_t EncodeApp::encodeFrame(EncodeConfig* encodeConfig, uint32_t frameCount, 
                                   frameCount == 0);
     VkVideoEncodeH264VclFrameInfoEXT* encodeH264FrameInfo = intraFrameInfo.getEncodeH264FrameInfo();
 
-    VkVideoPictureResourceKHR inputPicResource = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_KHR};
-    VkVideoPictureResourceKHR dpbPicResource = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_KHR};
+    VkVideoPictureResourceInfoKHR inputPicResource = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR};
+    VkVideoPictureResourceInfoKHR dpbPicResource = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR};
     m_pictureBuffer.getFrameResourcesByIndex(currentFrameBufferIdx, &inputPicResource);
     m_pictureBuffer.getReferenceFrameResourcesByIndex(currentFrameBufferIdx, &dpbPicResource);
 

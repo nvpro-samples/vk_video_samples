@@ -17,7 +17,7 @@
 #include "NvPictureBuffer.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 
-VkResult NvPictureBuffer::createVideoQueries(uint32_t numSlots, nvvk::Context* deviceInfo, const VkVideoProfileKHR* pEncodeProfile)
+VkResult NvPictureBuffer::createVideoQueries(uint32_t numSlots, nvvk::Context* deviceInfo, const VkVideoProfileInfoKHR* pEncodeProfile)
 {
     VkQueryPoolCreateInfo queryPoolCreateInfo = {VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
     queryPoolCreateInfo.queryType = VK_QUERY_TYPE_VIDEO_ENCODE_BITSTREAM_BUFFER_RANGE_KHR;
@@ -86,7 +86,7 @@ void NvPictureBuffer::prepareReferenceImages(VkCommandBuffer cmdBuf)
 }
 
 void NvPictureBuffer::getReferenceFrameResourcesByIndex(int8_t dpbSlotIdx,
-        VkVideoPictureResourceKHR* pictureResources)
+        VkVideoPictureResourceInfoKHR* pictureResources)
 {
     Picture* refPic = &m_dpb[dpbSlotIdx];
 
@@ -97,7 +97,7 @@ void NvPictureBuffer::getReferenceFrameResourcesByIndex(int8_t dpbSlotIdx,
 }
 
 int32_t NvPictureBuffer::initFramePool( nvvk::Context* ctx,
-                                        const VkVideoProfileKHR* pEncodeProfile,
+                                        const VkVideoProfileInfoKHR* pEncodeProfile,
                                         uint32_t                 numImages,
                                         VkFormat                 imageFormat,
                                         uint32_t                 maxImageWidth,
@@ -176,10 +176,10 @@ void NvPictureBuffer::prepareInputImages(VkCommandBuffer cmdBuf)
 }
 
 void NvPictureBuffer::getFrameResourcesByIndex( int8_t encodeFrameSlotIdx,
-        VkVideoPictureResourceKHR* pictureResources)
+        VkVideoPictureResourceInfoKHR* pictureResources)
 {
     pictureResources->imageViewBinding = m_encodeFrameData[encodeFrameSlotIdx].m_picture.m_imageView.descriptor.imageView;
-    assert(pictureResources->sType == VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_KHR);
+    assert(pictureResources->sType == VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR);
     pictureResources->codedOffset = { 0, 0 };
     pictureResources->codedExtent = m_extent;
     pictureResources->baseArrayLayer = 0;
