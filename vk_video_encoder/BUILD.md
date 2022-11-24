@@ -5,13 +5,15 @@ Instructions for building this repository on Linux.
 ## Repository Requirements 
 
   Please make sure you have installed the latest NVIDIA BETA drivers from https://developer.nvidia.com/vulkan-driver.
-  The minimum supported BETA driver versions by this application are 473.50 (Windows) / 470.62.28 (Linux) that
-  must support Vulkan API version 1.3.212.
+  The minimum supported BETA driver versions by this application are 517.69 (Windows) / 515.49.24 (Linux) that
+  must support Vulkan API version 1.3.230 or later.
+  The Windows and Linux BETA drivers are available for download at https://developer.nvidia.com/vulkan-beta-51769-windows
+  and https://developer.nvidia.com/vulkan-beta-5154924-linux, respectively.
 
 Set the path to Vulkan SDK via the VK_SDK_PATH environment variable. For ex:
 
 On Windows:
-  set VK_SDK_PATH=C:\VulkanSDK\1.3.211.0
+  set VK_SDK_PATH=C:\VulkanSDK\1.3.231.0
 
 On Linux
   export VK_SDK_PATH=/usr/share/vulkan
@@ -37,13 +39,20 @@ On Linux
     .\clone_all.bat
   ```
 
-  3. Clone the vulkan video samples (encoder and decoder)
+  3. Regenerate the Vulkan entry point trampoline with support for API calls
+     from beta extensions
   ```
-    cd ..
+    cd ../nvpro_core/nvvk
+    python3 extensions_vk.py --beta
+    cd ../../
+  ```
+
+  4. Clone the vulkan video samples (encoder and decoder)
+  ```
     git clone https://github.com/nvpro-samples/vk_video_samples.git
   ```
 
-  4. Compile vulkan video encoder sample
+  5. Compile vulkan video encoder sample
   ```
     cd vk_video_samples/vk_video_encoder
     mkdir build
