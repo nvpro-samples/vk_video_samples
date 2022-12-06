@@ -327,7 +327,7 @@ set(EXTERNAL_LIBS_INCLUDE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/include" CACHE STRIN
 
 
 ############ GST VK VIDEO PARSER ############################################
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND BUILD_GST_VK_VIDEO_PARSER)
+if (BUILD_GST_VK_VIDEO_PARSER OR BUILD_GST_PARSER_ES)
     # Detect the platform used by Meson
     string (TOLOWER ${CMAKE_SYSTEM_NAME} SYSTEM_NAME_LOWER)
     if (CMAKE_COMPILER_IS_GNUCC)
@@ -340,11 +340,18 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND BUILD_GST_VK_VIDEO_PARSER)
     find_package(PkgConfig REQUIRED)
     # this looks for gst-vkvideo-parser.pc file and creates a new target
     # IMPORTED_TARGET requires CMake >= 3.6.3
-    pkg_search_module(PKG_GST_VK_VIDEO_PARSER REQUIRED gstvkvideoparser)
-
+    if (BUILD_GST_VK_VIDEO_PARSER)
+        pkg_search_module(PKG_GST_VK_VIDEO_PARSER REQUIRED gstvkvideoparser)
+    endif()
     if (DEFINED PKG_GST_VK_VIDEO_PARSER_FOUND)
         message(STATUS "Found the GST Vulkan Video Parser library here: ${PKG_GST_VK_VIDEO_PARSER_LIBDIR}" )
-        set(VULKAN_VIDEO_PARSER_LIB_PATH  "${PKG_GST_VK_VIDEO_PARSER_INCLUDE_DIRS}" CACHE PATH "Path to GST Vulkan Video Parser library directory")
+        set(VULKAN_VIDEO_PARSER_LIB_PATH  "${PKG_GST_VK_VIDEO_PARSER_LIBDIR}" CACHE PATH "Path to GST Vulkan Video Parser library directory")
+    endif()
+    if (BUILD_GST_PARSER_ES)
+        pkg_search_module(PKG_GST_DEMXUXER_ES REQUIRED gstdemuxeres)
+    endif()
+    if (DEFINED PKG_GST_DEMXUXER_ES_FOUND)
+        message(STATUS "Found the GST Demuxer ES library here: ${PKG_GST_DEMXUXER_ES_LIBDIR}" )
     endif()
 endif()
 ############ GST VK VIDEO PARSER ############################################

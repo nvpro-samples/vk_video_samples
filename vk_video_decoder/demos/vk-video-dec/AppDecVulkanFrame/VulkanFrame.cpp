@@ -30,7 +30,11 @@
 
 #include <NvCodecUtils/Logger.h>
 
-#include "NvCodecUtils/FFmpegDemuxer.h"
+#ifdef USE_GST_PARSERES
+#   include "NvCodecUtils/GstDemuxer.h"
+#else
+#   include "NvCodecUtils/FFmpegDemuxer.h"
+#endif
 #include "NvVkDecoder/NvVkDecoder.h"
 
 // Vulkan call wrapper

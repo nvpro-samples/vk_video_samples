@@ -52,12 +52,12 @@ int32_t VulkanVideoProcessor::Init(const VulkanDecodeContext* vulkanDecodeContex
     try {
         CheckInputFile(filePath);
 
-        m_pFFmpegDemuxer = new FFmpegDemuxer(filePath);
-        if (m_pFFmpegDemuxer == NULL) {
+        m_pVulkanVideoDemuxer = new VULKAN_VIDEO_DEMUXER(filePath);
+        if (m_pVulkanVideoDemuxer == NULL) {
             return -VK_ERROR_OUT_OF_HOST_MEMORY;
         }
 
-        m_pFFmpegDemuxer->DumpStreamParameters();
+        m_pVulkanVideoDemuxer->DumpStreamParameters();
     } catch (const std::exception& ex) {
         std::cout << ex.what();
         exit(1);
@@ -79,7 +79,7 @@ int32_t VulkanVideoProcessor::Init(const VulkanDecodeContext* vulkanDecodeContex
         return -VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 
-    VkResult result = CreateParser(m_pFFmpegDemuxer, filePath, FFmpeg2NvCodecId(m_pFFmpegDemuxer->GetVideoCodec()));
+    VkResult result = CreateParser(m_pVulkanVideoDemuxer, filePath, VULKAN_VIDEO_CODEC_CONVERTER(m_pVulkanVideoDemuxer->GetVideoCodec()));
     assert(result == VK_SUCCESS);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "\nERROR: CreateParser() result: 0x%x\n", result);
@@ -91,27 +91,27 @@ int32_t VulkanVideoProcessor::Init(const VulkanDecodeContext* vulkanDecodeContex
 VkFormat VulkanVideoProcessor::GetFrameImageFormat(int32_t* pWidth, int32_t* pHeight, int32_t* pBitDepth)
 {
     VkFormat frameImageFormat = VK_FORMAT_UNDEFINED;
-    if (m_pFFmpegDemuxer) {
-        if (m_pFFmpegDemuxer->GetBitDepth() == 8) {
+    if (m_pVulkanVideoDemuxer) {
+        if (m_pVulkanVideoDemuxer->GetBitDepth() == 8) {
             frameImageFormat = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
-        } else if (m_pFFmpegDemuxer->GetBitDepth() == 10) {
+        } else if (m_pVulkanVideoDemuxer->GetBitDepth() == 10) {
             frameImageFormat = VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16;
-        } else if (m_pFFmpegDemuxer->GetBitDepth() == 12) {
+        } else if (m_pVulkanVideoDemuxer->GetBitDepth() == 12) {
             frameImageFormat = VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16;
         } else {
             assert(0);
         }
 
         if (pWidth) {
-            *pWidth = m_pFFmpegDemuxer->GetWidth();
+            *pWidth = m_pVulkanVideoDemuxer->GetWidth();
         }
 
         if (pHeight) {
-            *pHeight = m_pFFmpegDemuxer->GetHeight();
+            *pHeight = m_pVulkanVideoDemuxer->GetHeight();
         }
 
         if (pBitDepth) {
-            *pBitDepth = m_pFFmpegDemuxer->GetBitDepth();
+            *pBitDepth = m_pVulkanVideoDemuxer->GetBitDepth();
         }
     }
 
@@ -120,17 +120,17 @@ VkFormat VulkanVideoProcessor::GetFrameImageFormat(int32_t* pWidth, int32_t* pHe
 
 int32_t VulkanVideoProcessor::GetWidth()
 {
-    return m_pFFmpegDemuxer->GetWidth();
+    return m_pVulkanVideoDemuxer->GetWidth();
 }
 
 int32_t VulkanVideoProcessor::GetHeight()
 {
-    return m_pFFmpegDemuxer->GetHeight();
+    return m_pVulkanVideoDemuxer->GetHeight();
 }
 
 int32_t VulkanVideoProcessor::GetBitDepth()
 {
-    return m_pFFmpegDemuxer->GetBitDepth();
+    return m_pVulkanVideoDemuxer->GetBitDepth();
 }
 
 void VulkanVideoProcessor::Deinit()
@@ -151,9 +151,9 @@ void VulkanVideoProcessor::Deinit()
         m_pVideoFrameBuffer = NULL;
     }
 
-    if (m_pFFmpegDemuxer) {
-        delete m_pFFmpegDemuxer;
-        m_pFFmpegDemuxer = NULL;
+    if (m_pVulkanVideoDemuxer) {
+        delete m_pVulkanVideoDemuxer;
+        m_pVulkanVideoDemuxer = NULL;
     }
 }
 
@@ -487,7 +487,7 @@ size_t VulkanVideoProcessor::OutputFrameToFile(DecodedFrame* pFrame)
 
 void VulkanVideoProcessor::Restart(void)
 {
-    m_pFFmpegDemuxer->Rewind();
+    m_pVulkanVideoDemuxer->Rewind();
     m_videoStreamHasEnded = false;
 }
 
@@ -504,7 +504,7 @@ int32_t VulkanVideoProcessor::GetNextFrames(DecodedFrame* pFrame, bool* endOfStr
     // Loop until a frame (or more) is parsed and added to the queue.
     while ((framesInQueue == 0) && !m_videoStreamHasEnded) {
         if (!m_videoStreamHasEnded) {
-            m_pFFmpegDemuxer->Demux(&m_pBitStreamVideo, &nVideoBytes);
+            m_pVulkanVideoDemuxer->Demux(&m_pBitStreamVideo, &nVideoBytes);
             VkResult parserStatus = VK_ERROR_DEVICE_LOST;
             parserStatus = ParseVideoStreamData(m_pBitStreamVideo, nVideoBytes, &nVideoBytes, doPartialParsing);
             if (parserStatus != VK_SUCCESS || nVideoBytes == 0) {
@@ -561,7 +561,7 @@ int32_t VulkanVideoProcessor::ReleaseDisplayedFrame(DecodedFrame* pDisplayedFram
     return -1;
 }
 
-VkResult VulkanVideoProcessor::CreateParser(FFmpegDemuxer* pFFmpegDemuxer,
+VkResult VulkanVideoProcessor::CreateParser(VULKAN_VIDEO_DEMUXER* pVulkanVideoDemuxer,
     const char* filename,
     VkVideoCodecOperationFlagBitsKHR vkCodecType)
 {

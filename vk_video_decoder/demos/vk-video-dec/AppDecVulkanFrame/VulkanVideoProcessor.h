@@ -17,7 +17,16 @@
 #ifndef _VULKANVIDEOPROCESSOR_H_
 #define _VULKANVIDEOPROCESSOR_H_
 
-#include "NvCodecUtils/FFmpegDemuxer.h"
+#ifdef USE_GST_PARSERES
+#   include "NvCodecUtils/GstDemuxer.h"
+#define VULKAN_VIDEO_DEMUXER GstDemuxer
+#define VULKAN_VIDEO_CODEC_CONVERTER GStreamer2NvCodecId
+#else
+#   include "NvCodecUtils/FFmpegDemuxer.h"
+#define VULKAN_VIDEO_DEMUXER FFmpegDemuxer
+#define VULKAN_VIDEO_CODEC_CONVERTER FFmpeg2NvCodecId
+#endif
+
 #include "NvVkDecoder/NvVkDecoder.h"
 
 class VkFrameVideoToFile {
@@ -147,7 +156,7 @@ public:
     void Deinit();
 
     VulkanVideoProcessor()
-        : m_pFFmpegDemuxer()
+        : m_pVulkanVideoDemuxer()
         , m_pVideoFrameBuffer()
         , m_pDecoder()
         , m_pParser()
@@ -172,7 +181,7 @@ public:
     void Restart(void);
 
 private:
-    VkResult CreateParser(FFmpegDemuxer* pFFmpegDemuxer,
+    VkResult CreateParser(VULKAN_VIDEO_DEMUXER* pVulkanVideoDemuxer,
         const char* filename,
         VkVideoCodecOperationFlagBitsKHR vkCodecType);
 
@@ -185,7 +194,7 @@ private:
                               uint8_t* pOutputBuffer, size_t bufferSize);
 
 private:
-    FFmpegDemuxer* m_pFFmpegDemuxer;
+    VULKAN_VIDEO_DEMUXER* m_pVulkanVideoDemuxer;
     VulkanVideoFrameBuffer* m_pVideoFrameBuffer;
     NvVkDecoder* m_pDecoder;
     IVulkanVideoParser* m_pParser;

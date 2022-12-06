@@ -78,21 +78,38 @@ link_directories(
     )
 
 if(WIN32)
-    list(APPEND libraries PRIVATE ${AVCODEC_LIB} ${AVFORMAT_LIB} ${AVUTIL_LIB} ${VULKAN_VIDEO_PARSER_LIB} ${GLSLANG_LIBRARIES})
+    list(APPEND libraries PRIVATE ${VULKAN_VIDEO_PARSER_LIB} ${GLSLANG_LIBRARIES})
 else()
     list(APPEND libraries PRIVATE -lX11)
-    list(APPEND libraries PRIVATE -lavcodec -lavutil -lavformat)
     list(APPEND libraries PRIVATE -L${SHADERC_SEARCH_PATH} -lshaderc_shared)
-
 endif()
+
+if (DEFINED PKG_GST_DEMXUXER_ES_FOUND)
+    list(APPEND libraries PRIVATE ${PKG_GST_DEMXUXER_ES_LDFLAGS})
+    link_directories(${PKG_GST_DEMXUXER_ES_LIBDIR})
+    list(APPEND includes PRIVATE ${PKG_GST_DEMXUXER_ES_INCLUDE_DIRS})
+    list(APPEND definitions -DUSE_GST_PARSERES)
+else()
+    if(WIN32)
+        list(APPEND libraries PRIVATE ${AVCODEC_LIB} ${AVFORMAT_LIB} ${AVUTIL_LIB} ${VULKAN_VIDEO_PARSER_LIB} ${GLSLANG_LIBRARIES})
+    else()
+        list(APPEND libraries PRIVATE -lavcodec -lavutil -lavformat)
+    endif()
+endif ()
 
 if (DEFINED PKG_GST_VK_VIDEO_PARSER_FOUND)
     list(APPEND libraries PRIVATE ${PKG_GST_VK_VIDEO_PARSER_LDFLAGS})
     link_directories(${PKG_GST_VK_VIDEO_PARSER_LIBDIR})
+    list(APPEND includes PRIVATE ${PKG_GST_VK_VIDEO_PARSER_INCLUDE_DIRS})
 else ()
-    list(APPEND libraries PRIVATE -L${CMAKE_INSTALL_LIBDIR} -l${VULKAN_VIDEO_PARSER_LIB})
-    list(APPEND libraries PRIVATE -L${LIBNVPARSER_BINARY_ROOT} -l${VULKAN_VIDEO_PARSER_LIB})
+    if(WIN32)
+        list(APPEND libraries PRIVATE ${VULKAN_VIDEO_PARSER_LIB})
+    else()
+        list(APPEND libraries PRIVATE -L${CMAKE_INSTALL_LIBDIR} -l${VULKAN_VIDEO_PARSER_LIB})
+        list(APPEND libraries PRIVATE -L${LIBNVPARSER_BINARY_ROOT} -l${VULKAN_VIDEO_PARSER_LIB})
+    endif()
 endif()
+
 
 if(DEFINED ENV{TEGRA_TOP})
     # For the Tegra parser: NvRmChipGetCapabilityU32
