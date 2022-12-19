@@ -117,19 +117,19 @@ void VulkanDeviceInfo::CreateVulkanDevice(VkApplicationInfo *appInfo)
     instanceCreateInfo.ppEnabledExtensionNames = instance_extensions.data();
     instanceCreateInfo.enabledLayerCount = 0;
     instanceCreateInfo.ppEnabledLayerNames = nullptr;
-    CALL_VK(vk::CreateInstance(&instanceCreateInfo, nullptr, &instance_));
+    CALL_VK(vk::CreateInstance(&instanceCreateInfo, nullptr, &m_instance));
 
     // Find one GPU to use:
     // On Android, every GPU device is equal -- supporting
     // graphics/compute/present
     // for this sample, we use the very first GPU device found on the system
     uint32_t gpuCount = 0;
-    CALL_VK(vk::EnumeratePhysicalDevices(instance_,
+    CALL_VK(vk::EnumeratePhysicalDevices(m_instance,
                                        &gpuCount, nullptr));
     VkPhysicalDevice* tmpGpus = new VkPhysicalDevice[gpuCount];
-    CALL_VK(vk::EnumeratePhysicalDevices(instance_,
+    CALL_VK(vk::EnumeratePhysicalDevices(m_instance,
                                        &gpuCount, tmpGpus));
-    physDevice_ = tmpGpus[0];  // Pick up the first GPU Device
+    m_physDevice = tmpGpus[0];  // Pick up the first GPU Device
     delete [] tmpGpus;
 
     PopulateDeviceExtensions();
@@ -156,16 +156,16 @@ void VulkanDeviceInfo::CreateVulkanDevice(VkApplicationInfo *appInfo)
     }
 #endif // VK_GOOGLE_display_timing
     vk::GetPhysicalDeviceMemoryProperties(
-        physDevice_,
-        &gpuMemoryProperties_);
+        m_physDevice,
+        &m_gpuMemoryProperties);
 
     // Find a GFX queue family
     uint32_t queueFamilyCount;
-    vk::GetPhysicalDeviceQueueFamilyProperties(physDevice_,
+    vk::GetPhysicalDeviceQueueFamilyProperties(m_physDevice,
             &queueFamilyCount, nullptr);
     assert(queueFamilyCount);
     std::vector<VkQueueFamilyProperties> queueFamilyProperties(queueFamilyCount);
-    vk::GetPhysicalDeviceQueueFamilyProperties(physDevice_,
+    vk::GetPhysicalDeviceQueueFamilyProperties(m_physDevice,
             &queueFamilyCount,
             queueFamilyProperties.data());
 
@@ -178,7 +178,7 @@ void VulkanDeviceInfo::CreateVulkanDevice(VkApplicationInfo *appInfo)
         }
     }
     assert(queueFamilyIdx < queueFamilyCount);
-    queueFamilyIndex_ = queueFamilyIdx;
+    m_queueFamilyIndex = queueFamilyIdx;
     // Create a logical device (vulkan device)
     float priorities[] = { 1.0f, };
     VkDeviceQueueCreateInfo queueCreateInfo = VkDeviceQueueCreateInfo();
@@ -186,7 +186,7 @@ void VulkanDeviceInfo::CreateVulkanDevice(VkApplicationInfo *appInfo)
     queueCreateInfo.pNext = nullptr;
     queueCreateInfo.flags = 0;
     queueCreateInfo.queueCount = 1;
-    queueCreateInfo.queueFamilyIndex = queueFamilyIndex_;
+    queueCreateInfo.queueFamilyIndex = m_queueFamilyIndex;
     queueCreateInfo.pQueuePriorities = priorities;
 
     VkDeviceCreateInfo deviceCreateInfo = VkDeviceCreateInfo();
@@ -199,33 +199,34 @@ void VulkanDeviceInfo::CreateVulkanDevice(VkApplicationInfo *appInfo)
     deviceCreateInfo.enabledExtensionCount = static_cast<uint32_t>(device_extensions.size());
     deviceCreateInfo.ppEnabledExtensionNames = device_extensions.data();
     deviceCreateInfo.pEnabledFeatures = nullptr;
-    CALL_VK(vk::CreateDevice(physDevice_, &deviceCreateInfo, nullptr, &device_));
-    vk::GetDeviceQueue(device_, 0, 0, &queue_);
+    CALL_VK(vk::CreateDevice(m_physDevice, &deviceCreateInfo, nullptr, &m_device));
+    vk::GetDeviceQueue(m_device, 0, 0, &m_queue);
 
 #ifdef VK_ANDROID_external_memory_android_hardware_buffer
     vk::GetAndroidHardwareBufferPropertiesANDROID =
             reinterpret_cast<PFN_vkGetAndroidHardwareBufferPropertiesANDROID>(
-                    vk::GetInstanceProcAddr(instance_, "vkGetAndroidHardwareBufferPropertiesANDROID"));
+                    vk::GetInstanceProcAddr(m_instance, "vkGetAndroidHardwareBufferPropertiesANDROID"));
     vkGetMemoryAndroidHardwareBufferANDROID =
             reinterpret_cast<PFN_vkGetMemoryAndroidHardwareBufferANDROID>(
-                    vk::GetInstanceProcAddr(instance_, "vkGetMemoryAndroidHardwareBufferANDROID"));
+                    vk::GetInstanceProcAddr(m_instance, "vkGetMemoryAndroidHardwareBufferANDROID"));
 #endif // VK_ANDROID_external_memory_android_hardware_buffer
 }
 
-void VulkanDeviceInfo::AttachVulkanDevice(VkInstance instance,
-                                            VkPhysicalDevice physDevice,
-                                            VkDevice device,
-                                            uint32_t queueFamilyIndex,
-                                            VkQueue queue,
-                                            VkPhysicalDeviceMemoryProperties* pMemoryProperties)
+void VulkanDeviceInfo::AttachExternallyManagedDevice(VkInstance instance,
+                                                     VkPhysicalDevice physDevice,
+                                                     VkDevice device,
+                                                     uint32_t queueFamilyIndex,
+                                                     VkQueue queue)
 {
-    instance_ = instance;
-    physDevice_ = physDevice;
-    device_ = device;
-    queueFamilyIndex_ = queueFamilyIndex;
-    queue_ = queue;
-    gpuMemoryProperties_ = pMemoryProperties ? *pMemoryProperties : VkPhysicalDeviceMemoryProperties();
-    attached_ = true;
+    m_instance = instance;
+    m_physDevice = physDevice;
+    m_device = device;
+    m_queueFamilyIndex = queueFamilyIndex;
+    m_queue = queue;
+    m_isExternallyManagedDevice = true;
+    if (m_physDevice) {
+        vk::GetPhysicalDeviceMemoryProperties(m_physDevice, &m_gpuMemoryProperties);
+    }
 }
 
 
@@ -253,16 +254,16 @@ void VulkanSwapchainInfo::CreateSwapChain(VulkanDeviceInfo* deviceInfo, VkSwapch
     //   - It's necessary to query the supported surface format (R8G8B8A8 for
     //   instance ...)
     VkSurfaceCapabilitiesKHR surfaceCapabilities;
-    vk::GetPhysicalDeviceSurfaceCapabilitiesKHR(deviceInfo->physDevice_,
+    vk::GetPhysicalDeviceSurfaceCapabilitiesKHR(deviceInfo->m_physDevice,
             mSurface,
             &surfaceCapabilities);
     // Query the list of supported surface format and choose one we like
     uint32_t formatCount = 0;
-    vk::GetPhysicalDeviceSurfaceFormatsKHR(deviceInfo->physDevice_,
+    vk::GetPhysicalDeviceSurfaceFormatsKHR(deviceInfo->m_physDevice,
                                          mSurface,
                                          &formatCount, nullptr);
     VkSurfaceFormatKHR *formats = new VkSurfaceFormatKHR[formatCount];
-    vk::GetPhysicalDeviceSurfaceFormatsKHR(deviceInfo->physDevice_,
+    vk::GetPhysicalDeviceSurfaceFormatsKHR(deviceInfo->m_physDevice,
                                          mSurface,
                                          &formatCount, formats);
     LOG(INFO) << "VkVideoUtils: " << "VulkanSwapchainInfo - got " << formatCount << "surface formats";
@@ -293,7 +294,7 @@ void VulkanSwapchainInfo::CreateSwapChain(VulkanDeviceInfo* deviceInfo, VkSwapch
     swapchainCreateInfo.imageArrayLayers = 1;
     swapchainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     swapchainCreateInfo.queueFamilyIndexCount = 1;
-    swapchainCreateInfo.pQueueFamilyIndices = &deviceInfo->queueFamilyIndex_;
+    swapchainCreateInfo.pQueueFamilyIndices = &deviceInfo->m_queueFamilyIndex;
     swapchainCreateInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
     swapchainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
     swapchainCreateInfo.clipped = VK_FALSE;
@@ -485,7 +486,7 @@ VkResult ImageObject::CreateImage(VulkanDeviceInfo* deviceInfo,
     // Check for linear support.
     VkFormatProperties props;
     bool needBlit = true;
-    vk::GetPhysicalDeviceFormatProperties(deviceInfo->physDevice_, imageFormat, &props);
+    vk::GetPhysicalDeviceFormatProperties(deviceInfo->m_physDevice, imageFormat, &props);
     assert((props.linearTilingFeatures | props.optimalTilingFeatures) & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
     if (props.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) {
         // linear format supporting the required texture
@@ -558,7 +559,7 @@ VkResult ImageObject::AllocMemoryAndBind(VulkanDeviceInfo* deviceInfo, VkImage v
 
     // Find an available memory type that satisfies the requested properties.
     uint32_t memoryTypeIndex;
-    if (!MapMemoryTypeToIndex(deviceInfo->physDevice_, memReqs.memoryTypeBits, requiredMemProps, &memoryTypeIndex)) {
+    if (!MapMemoryTypeToIndex(deviceInfo->m_physDevice, memReqs.memoryTypeBits, requiredMemProps, &memoryTypeIndex)) {
         return VK_ERROR_VALIDATION_FAILED_EXT;
     }
 
@@ -822,7 +823,7 @@ VkResult ImageObject::StageImage(VulkanDeviceInfo* deviceInfo, VkImageUsageFlags
     cmdPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     cmdPoolCreateInfo.pNext = nullptr;
     cmdPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    cmdPoolCreateInfo.queueFamilyIndex = deviceInfo->queueFamilyIndex_;
+    cmdPoolCreateInfo.queueFamilyIndex = deviceInfo->m_queueFamilyIndex;
 
     VkCommandPool cmdPool;
     CALL_VK(vk::CreateCommandPool(m_device,
@@ -876,7 +877,7 @@ VkResult ImageObject::StageImage(VulkanDeviceInfo* deviceInfo, VkImageUsageFlags
         imageCreateInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
         imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         imageCreateInfo.queueFamilyIndexCount = 1;
-        imageCreateInfo.pQueueFamilyIndices = &deviceInfo->queueFamilyIndex_;
+        imageCreateInfo.pQueueFamilyIndices = &deviceInfo->m_queueFamilyIndex;
         imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         imageCreateInfo.flags = 0;
         CALL_VK(vk::CreateImage(m_device, &imageCreateInfo,
@@ -955,7 +956,7 @@ VkResult ImageObject::StageImage(VulkanDeviceInfo* deviceInfo, VkImageUsageFlags
     submitInfo.pCommandBuffers = &gfxCmd;
     submitInfo.signalSemaphoreCount = 0;
     submitInfo.pSignalSemaphores = nullptr;
-    CALL_VK(vk::QueueSubmit(deviceInfo->queue_, 1, &submitInfo, fence) !=
+    CALL_VK(vk::QueueSubmit(deviceInfo->m_queue, 1, &submitInfo, fence) !=
             VK_SUCCESS);
     CALL_VK(vk::WaitForFences(m_device, 1, &fence, VK_TRUE,
                             100000000) != VK_SUCCESS);
@@ -1173,8 +1174,8 @@ VkResult VulkanVertexBuffer::CreateVertexBuffer(VulkanDeviceInfo* deviceInfo,  c
     DestroyVertexBuffer();
 
     m_device = deviceInfo->getDevice();
-    uint32_t queueFamilyIndex = deviceInfo->queueFamilyIndex_;
-    VkPhysicalDevice gpuDevice = deviceInfo->physDevice_;
+    uint32_t queueFamilyIndex = deviceInfo->m_queueFamilyIndex;
+    VkPhysicalDevice gpuDevice = deviceInfo->m_physDevice;
 
     // Create a vertex buffer
     VkBufferCreateInfo createBufferInfo = VkBufferCreateInfo();
@@ -1222,7 +1223,9 @@ VkResult VulkanVertexBuffer::CreateVertexBuffer(VulkanDeviceInfo* deviceInfo,  c
     return VK_SUCCESS;
 }
 
-VkResult VulkanDescriptorSet::WriteDescriptorSet(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout)
+VkResult VulkanDescriptorSet::WriteDescriptorSet(VkSampler sampler,
+                                                 VkImageView imageView, uint32_t dstArrayElement,
+                                                 VkImageLayout imageLayout)
 {
     VkDescriptorImageInfo imageDsts;
     imageDsts.sampler = sampler;
@@ -1234,7 +1237,7 @@ VkResult VulkanDescriptorSet::WriteDescriptorSet(VkSampler sampler, VkImageView 
     writeDst.pNext = nullptr;
     writeDst.dstSet = descSet;
     writeDst.dstBinding = 0;
-    writeDst.dstArrayElement = 0;
+    writeDst.dstArrayElement = dstArrayElement;
     writeDst.descriptorCount = 1;
     writeDst.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writeDst.pImageInfo = &imageDsts;
@@ -1605,7 +1608,7 @@ VkResult VulkanGraphicsPipeline::CreateGraphicsPipeline(VkDevice device, VkViewp
     return pipelineResult;
 }
 
-VkResult VulkanCommandBuffer::CreateCommandBuffer(VkRenderPass renderPass, const ImageObject* inputImageToDrawFrom,
+VkResult VulkanCommandBuffer::CreateCommandBuffer(VkRenderPass renderPass, const ImageResourceInfo* inputImageToDrawFrom,
         int32_t displayWidth, int32_t displayHeight,
         VkImage displayImage, VkFramebuffer framebuffer, VkRect2D* pRenderArea,
         VkPipeline pipeline, VkPipelineLayout pipelineLayout, const VkDescriptorSet* pDescriptorSet,
@@ -1735,14 +1738,14 @@ VkResult VulkanCommandBuffer::CreateCommandBufferPool(VulkanDeviceInfo* deviceIn
     DestroyCommandBuffer();
     DestroyCommandBufferPool();
 
-    m_device = deviceInfo->device_;
+    m_device = deviceInfo->m_device;
      // -----------------------------------------------
      // Create a pool of command buffers to allocate command buffer from
      VkCommandPoolCreateInfo cmdPoolCreateInfo = VkCommandPoolCreateInfo();
      cmdPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
      cmdPoolCreateInfo.pNext = nullptr;
      cmdPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-     cmdPoolCreateInfo.queueFamilyIndex = deviceInfo->queueFamilyIndex_;
+     cmdPoolCreateInfo.queueFamilyIndex = deviceInfo->m_queueFamilyIndex;
      CALL_VK(vk::CreateCommandPool(m_device, &cmdPoolCreateInfo, nullptr, &cmdPool));
 
      return VK_SUCCESS;
@@ -1914,7 +1917,7 @@ VkResult VulkanRenderInfo::DrawFrame(VulkanDeviceInfo* deviceInfo,
     submit_info.pCommandBuffers = pPerDrawContext->commandBuffer.getCommandBuffer();
     submit_info.signalSemaphoreCount = 1;
     submit_info.pSignalSemaphores = &pPerDrawContext->syncPrimitives.mRenderCompleteSemaphore;
-    CALL_VK(vk::QueueSubmit(deviceInfo->queue_, 1, &submit_info, pPerDrawContext->syncPrimitives.mFence));
+    CALL_VK(vk::QueueSubmit(deviceInfo->m_queue, 1, &submit_info, pPerDrawContext->syncPrimitives.mFence));
 
     const uint32_t fpsAccumulateFrames = 10;
     const float fpsDividend =
@@ -1966,7 +1969,7 @@ VkResult VulkanRenderInfo::DrawFrame(VulkanDeviceInfo* deviceInfo,
         presentInfo.pNext = &presentTimesInfo;
     }
 #endif // VK_GOOGLE_display_timing
-    vk::QueuePresentKHR(deviceInfo->queue_, &presentInfo);
+    vk::QueuePresentKHR(deviceInfo->m_queue, &presentInfo);
 
     frameId++;
 
@@ -1982,7 +1985,7 @@ VkResult AllocateMemoryTypeFromProperties(VulkanDeviceInfo* deviceInfo,
     for (uint32_t i = 0; i < 32; i++) {
         if ((typeBits & 1) == 1) {
             // Type is available, does it match user properties?
-            if ((deviceInfo->gpuMemoryProperties_.memoryTypes[i].propertyFlags &
+            if ((deviceInfo->m_gpuMemoryProperties.memoryTypes[i].propertyFlags &
                     requirements_mask) == requirements_mask) {
                 *typeIndex = i;
                 return VK_SUCCESS;

@@ -23,11 +23,13 @@
 #include <string.h>
 #include <string>
 #include <vector>
+#include <fstream>
 
 #include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanVideoUtils.h"
 #include "VulkanVideoProcessor.h"
 #include "vulkan_interfaces.h"
+#include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 
 inline void CheckInputFile(const char* szInFilePath)
 {
@@ -39,7 +41,11 @@ inline void CheckInputFile(const char* szInFilePath)
     }
 }
 
-int32_t VulkanVideoProcessor::Init(const VulkanDecodeContext* vulkanDecodeContext, vulkanVideoUtils::VulkanDeviceInfo* pVideoRendererDeviceInfo, const char* filePath)
+int32_t VulkanVideoProcessor::Init(const VulkanDecodeContext* vulkanDecodeContext,
+                                   vulkanVideoUtils::VulkanDeviceInfo* pVideoRendererDeviceInfo,
+                                   const char* filePath,
+                                   const char* outputFileName,
+                                   int forceParserType)
 {
     Deinit();
 
@@ -63,7 +69,12 @@ int32_t VulkanVideoProcessor::Init(const VulkanDecodeContext* vulkanDecodeContex
         return -VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 
-    m_pDecoder = new NvVkDecoder(vulkanDecodeContext, m_pVideoFrameBuffer);
+    FILE* outFile = m_frameToFile.AttachFile(outputFileName);
+    if ((outputFileName != nullptr) && (outFile == nullptr)) {
+        fprintf( stderr, "Error opening the output file %s", outputFileName);
+        return -1;
+    }
+    m_pDecoder = new NvVkDecoder(vulkanDecodeContext, m_pVideoFrameBuffer, (outFile != nullptr));
     if (m_pDecoder == NULL) {
         return -VK_ERROR_OUT_OF_HOST_MEMORY;
     }
@@ -273,8 +284,217 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
     }
 }
 
+const VkMpFormatInfo* YcbcrVkFormatInfo(const VkFormat format);
+
+size_t VulkanVideoProcessor::ConvertFrameToNv12(DecodedFrame* pFrame,
+                                                VkDevice device, VkImage outputImage,
+                                                VkDeviceMemory imageDeviceMemory, VkFormat format,
+                                                uint8_t* pOutBuffer, size_t bufferSize)
+{
+    size_t outputBufferSize = 0;
+    VkResult result = VK_SUCCESS;
+
+    // Bind memory for the image.
+    VkMemoryRequirements memReqs = {};
+    vk::GetImageMemoryRequirements(device, outputImage, &memReqs);
+    if (bufferSize < memReqs.size) {
+        return 0;
+    }
+
+    const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(format);
+    assert(pFrame->frameCompleteFence != VK_NULL_HANDLE);
+    const uint64_t fenceTimeout = 100 * 1000 * 1000 /* 100 mSec */;
+    int32_t retryCount = 5;
+    do {
+        result = vk::WaitForFences(device, 1, &pFrame->frameCompleteFence, VK_TRUE, fenceTimeout);
+        if (result != VK_SUCCESS) {
+            std::cout << "WaitForFences timeout " << fenceTimeout
+                    << " result " << result << " retry " << retryCount << std::endl << std::flush;
+        }
+        retryCount--;
+    } while ((result == VK_TIMEOUT) && (retryCount > 0));
+
+    // Map the image and read the image data.
+    uint8_t* ptr = NULL;
+    size_t size = (size_t)memReqs.size;
+    VkResult memMapResult = vk::MapMemory(device, imageDeviceMemory, 0, size, 0, (void**)&ptr);
+    if (memMapResult != VK_SUCCESS) {
+        return 0;
+    }
+
+    assert(ptr != nullptr);
+
+    const VkMappedMemoryRange range = {
+        VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,  // sType
+        NULL,                                   // pNext
+        imageDeviceMemory,                      // memory
+        0,                                      // offset
+        size,                                   // size
+    };
+
+    if (((memReqs.memoryTypeBits & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) != 0) &&
+        ((memReqs.memoryTypeBits & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)) {
+
+        result = vk::FlushMappedMemoryRanges(device, 1u, &range);
+    }
+
+    {
+        VkImageSubresource subResource = {};
+        VkSubresourceLayout layouts[3];
+
+        memset(layouts, 0x00, sizeof(layouts));
+        int secondaryPlaneHeight = pFrame->displayHeight;
+        int imageHeight = pFrame->displayHeight;
+        bool isUnnormalizedRgba = false;
+        if (mpInfo && (mpInfo->planesLayout.layout == YCBCR_SINGLE_PLANE_UNNORMALIZED) && !(mpInfo->planesLayout.disjoint)) {
+            isUnnormalizedRgba = true;
+        }
+
+        if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledY) {
+            secondaryPlaneHeight /= 2;
+        }
+
+        if (mpInfo && !isUnnormalizedRgba) {
+            switch (mpInfo->planesLayout.layout) {
+                case YCBCR_SINGLE_PLANE_UNNORMALIZED:
+                case YCBCR_SINGLE_PLANE_INTERLEAVED:
+                    subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
+                    vk::GetImageSubresourceLayout(device, outputImage, &subResource, &layouts[0]);
+                    break;
+                case YCBCR_SEMI_PLANAR_CBCR_INTERLEAVED:
+                    subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
+                    vk::GetImageSubresourceLayout(device, outputImage, &subResource, &layouts[0]);
+                    subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
+                    vk::GetImageSubresourceLayout(device, outputImage, &subResource, &layouts[1]);
+                    break;
+                case YCBCR_PLANAR_CBCR_STRIDE_INTERLEAVED:
+                case YCBCR_PLANAR_CBCR_BLOCK_JOINED:
+                case YCBCR_PLANAR_STRIDE_PADDED:
+                    subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
+                    vk::GetImageSubresourceLayout(device, outputImage, &subResource, &layouts[0]);
+                    subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
+                    vk::GetImageSubresourceLayout(device, outputImage, &subResource, &layouts[1]);
+                    subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_2_BIT;
+                    vk::GetImageSubresourceLayout(device, outputImage, &subResource, &layouts[2]);
+                    break;
+                default:
+                    assert(0);
+            }
+
+        } else {
+            vk::GetImageSubresourceLayout(device, outputImage, &subResource, &layouts[0]);
+        }
+
+        // Treat all non 8bpp formats as 16bpp for output to prevent any loss.
+        uint32_t bytesPerPixel = 1;
+        if (mpInfo->planesLayout.bpp != YCBCRA_8BPP) {
+            bytesPerPixel = 2;
+        }
+
+        uint32_t numPlanes = 3;
+        VkSubresourceLayout yuvPlaneLayouts[3] = {};
+        yuvPlaneLayouts[0].offset = 0;
+        yuvPlaneLayouts[0].rowPitch = pFrame->displayWidth * bytesPerPixel;
+        yuvPlaneLayouts[1].offset = yuvPlaneLayouts[0].rowPitch * pFrame->displayHeight;
+        yuvPlaneLayouts[1].rowPitch = pFrame->displayWidth * bytesPerPixel;
+        if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledX) {
+            yuvPlaneLayouts[1].rowPitch /= 2;
+        }
+        yuvPlaneLayouts[2].offset = yuvPlaneLayouts[1].offset + (yuvPlaneLayouts[1].rowPitch * secondaryPlaneHeight);
+        yuvPlaneLayouts[2].rowPitch = pFrame->displayWidth * bytesPerPixel;
+        if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledX) {
+            yuvPlaneLayouts[2].rowPitch /= 2;
+        }
+
+        // Copy the luma plane, always assume the 422 or 444 formats and src CbCr always is interleaved (shares the same plane).
+        uint32_t numCompatiblePlanes = 1;
+        for (uint32_t plane = 0; plane < numCompatiblePlanes; plane++) {
+            const uint8_t* pSrc = ptr + layouts[plane].offset;
+            uint8_t* pDst = pOutBuffer + yuvPlaneLayouts[plane].offset;
+            for (int height = 0; height < imageHeight; height++) {
+                memcpy(pDst, pSrc, (size_t)yuvPlaneLayouts[plane].rowPitch);
+                pDst += (size_t)yuvPlaneLayouts[plane].rowPitch;
+                pSrc += (size_t)layouts[plane].rowPitch;
+            }
+        }
+
+        // Copy the chroma plane(s)
+        for (uint32_t plane = numCompatiblePlanes; plane < numPlanes; plane++) {
+            uint32_t srcPlane = std::min(plane, mpInfo->planesLayout.numberOfExtraPlanes);
+            uint8_t* pDst = pOutBuffer + yuvPlaneLayouts[plane].offset;
+            for (int height = 0; height < secondaryPlaneHeight; height++) {
+                const uint8_t* pSrc;
+                if (srcPlane != plane) {
+                    pSrc = ptr + layouts[srcPlane].offset + ((plane - 1) * bytesPerPixel) + (layouts[srcPlane].rowPitch * height);
+
+                } else {
+                    pSrc = ptr + layouts[srcPlane].offset + (layouts[srcPlane].rowPitch * height);
+                }
+
+                for (VkDeviceSize width = 0; width < (yuvPlaneLayouts[plane].rowPitch / bytesPerPixel); width++) {
+                    memcpy(pDst, pSrc, bytesPerPixel);
+                    pDst += bytesPerPixel;
+                    pSrc += 2 * bytesPerPixel;
+                }
+            }
+        }
+
+        outputBufferSize += ((size_t)yuvPlaneLayouts[0].rowPitch * imageHeight);
+        if (mpInfo->planesLayout.numberOfExtraPlanes >= 1) {
+            outputBufferSize += ((size_t)yuvPlaneLayouts[1].rowPitch * secondaryPlaneHeight);
+            outputBufferSize += ((size_t)yuvPlaneLayouts[2].rowPitch * secondaryPlaneHeight);
+        }
+    }
+
+    vk::UnmapMemory(device, imageDeviceMemory);
+    return outputBufferSize;
+}
+
+size_t VulkanVideoProcessor::OutputFrameToFile(DecodedFrame* pFrame)
+{
+    if (!m_frameToFile) {
+        return (size_t)-1;
+    }
+
+    assert(pFrame != nullptr);
+    assert(!!pFrame->outputImageView);
+    assert(pFrame->pictureIndex != -1);
+
+    VkSharedBaseObj<VkImageResource> imageResource = pFrame->outputImageView->GetImageResource();
+    VkDevice device = pFrame->outputImageView->GetDevice();
+    VkImage outputImage = imageResource->GetImage();
+    VkDeviceMemory imageDeviceMemory = imageResource->GetMemory();
+    VkFormat format = pFrame->outputImageView->GetImageResource()->GetImageCreateInfo().format;
+
+    uint8_t* pLinearMemory = m_frameToFile.EnsureAllocation(device, outputImage, format,
+                                                            pFrame->displayWidth,
+                                                            pFrame->displayHeight);
+    assert(pLinearMemory != nullptr);
+
+    // Needed allocation size can shrink, but may never grow. Frames will be allocated for maximum resolution upfront.
+    assert((pFrame->displayWidth >= 0) && (pFrame->displayHeight >= 0) &&
+        (pFrame->displayWidth <= m_frameToFile.GetMaxWidth()) &&
+        (pFrame->displayHeight <= m_frameToFile.GetMaxHeight()));
+
+    // Convert frame to linear image format.
+    size_t usedBufferSize = ConvertFrameToNv12(pFrame, device,
+                                               outputImage, imageDeviceMemory, format,
+                                               pLinearMemory, m_frameToFile.GetMaxFrameSize());
+
+    // Write image to file.
+    return m_frameToFile.WriteDataToFile(0, usedBufferSize);
+}
+
+void VulkanVideoProcessor::Restart(void)
+{
+    m_pFFmpegDemuxer->Rewind();
+    m_videoStreamHasEnded = false;
+}
+
 int32_t VulkanVideoProcessor::GetNextFrames(DecodedFrame* pFrame, bool* endOfStream)
 {
+    const bool doPartialParsing = false;
+
     int32_t nVideoBytes = 0, framesInQueue = 0;
 
     // The below call to DequeueDecodedPicture allows returning the next frame without parsing of the stream.
@@ -286,7 +506,7 @@ int32_t VulkanVideoProcessor::GetNextFrames(DecodedFrame* pFrame, bool* endOfStr
         if (!m_videoStreamHasEnded) {
             m_pFFmpegDemuxer->Demux(&m_pBitStreamVideo, &nVideoBytes);
             VkResult parserStatus = VK_ERROR_DEVICE_LOST;
-            parserStatus = ParseVideoStreamData(m_pBitStreamVideo, nVideoBytes, &nVideoBytes);
+            parserStatus = ParseVideoStreamData(m_pBitStreamVideo, nVideoBytes, &nVideoBytes, doPartialParsing);
             if (parserStatus != VK_SUCCESS || nVideoBytes == 0) {
                 m_videoStreamHasEnded = true;
                 std::cout << "End of Video Stream with pending " << framesInQueue << " frames in display queue." << std::endl;
@@ -304,6 +524,10 @@ int32_t VulkanVideoProcessor::GetNextFrames(DecodedFrame* pFrame, bool* endOfStr
 
         if (m_videoFrameNum == 1) {
             DumpVideoFormat(m_pDecoder->GetVideoFormatInfo(), true);
+        }
+
+        if (m_frameToFile) {
+            OutputFrameToFile(pFrame);
         }
     }
 
@@ -345,9 +569,9 @@ VkResult VulkanVideoProcessor::CreateParser(FFmpegDemuxer* pFFmpegDemuxer,
     static const VkExtensionProperties h265StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION };
 
     const VkExtensionProperties* pStdExtensionVersion = NULL;
-    if (vkCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT) {
+    if (vkCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
         pStdExtensionVersion = &h264StdExtensionVersion;
-    } else if (vkCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT) {
+    } else if (vkCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) {
         pStdExtensionVersion = &h265StdExtensionVersion;
     } else {
         assert(!"Unsupported Codec Type");
@@ -362,7 +586,9 @@ VkResult VulkanVideoProcessor::CreateParser(FFmpegDemuxer* pFFmpegDemuxer,
     }
 }
 
-VkResult VulkanVideoProcessor::ParseVideoStreamData(const uint8_t* pData, int size, int32_t *pnVideoBytes, uint32_t flags, int64_t timestamp) {
+VkResult VulkanVideoProcessor::ParseVideoStreamData(const uint8_t* pData, int size,
+                                                    int32_t *pnVideoBytes, bool doPartialParsing,
+                                                    uint32_t flags, int64_t timestamp) {
     if (!m_pParser) {
         assert(!"Parser not initialized!");
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -380,5 +606,5 @@ VkResult VulkanVideoProcessor::ParseVideoStreamData(const uint8_t* pData, int si
         packet.flags |= VK_PARSER_PKT_ENDOFSTREAM;
     }
 
-    return m_pParser->ParseVideoData(&packet, pnVideoBytes);
+    return m_pParser->ParseVideoData(&packet, pnVideoBytes, doPartialParsing);
 }

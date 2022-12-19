@@ -58,7 +58,10 @@ public:
         uint64_t clockRate,
         uint32_t errorThreshold = 0);
 
-    virtual VkResult ParseVideoData(VkParserSourceDataPacket* pPacket, int32_t* pParsedBytes) = 0;
+    // doPartialParsing 0: parse entire packet, 1: parse until next decode/display event
+    virtual VkResult ParseVideoData(VkParserSourceDataPacket* pPacket,
+                                    int32_t* pParsedBytes,
+                                    bool doPartialParsing = false) = 0;
 
 protected:
     virtual ~IVulkanVideoParser() { }

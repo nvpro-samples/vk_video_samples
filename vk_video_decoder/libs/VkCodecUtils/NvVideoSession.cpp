@@ -50,10 +50,10 @@ VkResult NvVideoSession::Create(VkDevice          dev,
     createInfo.referencePictureFormat = referencePicturesFormat;
 
     switch ((int32_t)pVideoProfile->GetCodecType()) {
-    case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT:
+    case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR:
         createInfo.pStdHeaderVersion = &h264DecodeStdExtensionVersion;
         break;
-    case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT:
+    case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR:
         createInfo.pStdHeaderVersion = &h265DecodeStdExtensionVersion;
         break;
     case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT:

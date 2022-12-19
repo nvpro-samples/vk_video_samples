@@ -49,10 +49,10 @@ public:
                                                   VkParserVideoPictureParameters* pTemplate);
 
     static int32_t PopulateH264UpdateFields(const StdVideoPictureParametersSet* pStdPictureParametersSet,
-                                     VkVideoDecodeH264SessionParametersAddInfoEXT& h264SessionParametersAddInfo);
+                                     VkVideoDecodeH264SessionParametersAddInfoKHR& h264SessionParametersAddInfo);
 
     static int32_t PopulateH265UpdateFields(const StdVideoPictureParametersSet* pStdPictureParametersSet,
-                                     VkVideoDecodeH265SessionParametersAddInfoEXT& h265SessionParametersAddInfo);
+                                     VkVideoDecodeH265SessionParametersAddInfoKHR& h265SessionParametersAddInfo);
 
     VkResult Update(const StdVideoPictureParametersSet* pVpsStdPictureParametersSet,
                     const StdVideoPictureParametersSet* pSpsStdPictureParametersSet,

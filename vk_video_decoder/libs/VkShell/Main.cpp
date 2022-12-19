@@ -57,17 +57,20 @@ int main(int argc, char **argv) {
     Args a;
     if (!scan_args(argc, argv, a)) return -1;
 
-    FrameProcessor *frameProcessor = create_frameProcessor(argc, argv);
-    if (frameProcessor) {
+    FrameProcessor *frameProcessor = create_frameProcessor(argc, (const char **)argv);
 
-        if (a.direct_mode) {
-            ShellDirect shell(*frameProcessor, a.device_id);
-            shell.run();
-        } else {
-            ShellXcb shell(*frameProcessor, a.device_id);
-            shell.run();
-        }
+    if (frameProcessor == nullptr) {
+        return 1;
     }
+
+    if (a.direct_mode) {
+        ShellDirect shell(*frameProcessor, a.device_id);
+        shell.run();
+    } else {
+        ShellXcb shell(*frameProcessor, a.device_id);
+        shell.run();
+    }
+
     delete frameProcessor;
 
     return 0;
@@ -81,12 +84,15 @@ int main(int argc, char** argv) {
     Args a;
     if (!scan_args(argc, argv, a)) return -1;
 
-    FrameProcessor* frameProcessor = create_frameProcessor(argc, argv);
-    if (frameProcessor) {
+    FrameProcessor* frameProcessor = create_frameProcessor(argc, (const char **)argv);
 
-        ShellWayland shell(*frameProcessor, a.device_id);
-        shell.run();
+    if (frameProcessor == nullptr) {
+        return 1;
     }
+
+    ShellWayland shell(*frameProcessor, a.device_id);
+    shell.run();
+
     delete frameProcessor;
 
     return 0;
@@ -120,15 +126,19 @@ int main(int argc, char** argv) {
     Args a;
     if (!scan_args(argc, argv, a)) return -1;
 
-    FrameProcessor* frameProcessor = create_frameProcessor(argc, argv);
-    if (frameProcessor) {
-#if defined(VK_USE_PLATFORM_WIN32_KHR)
-        ShellWin32 shell(*frameProcessor, a.device_id);
-#else
-        ShellXcb shell(*frameProcessor);
-#endif
-        shell.run();
+    FrameProcessor* frameProcessor = create_frameProcessor(argc, (const char **)argv);
+
+    if (frameProcessor == nullptr) {
+        return 1;
     }
+
+#if defined(VK_USE_PLATFORM_WIN32_KHR)
+    ShellWin32 shell(*frameProcessor, a.device_id);
+#else
+    ShellXcb shell(*frameProcessor);
+#endif
+    shell.run();
+
     delete frameProcessor;
 
     return 0;

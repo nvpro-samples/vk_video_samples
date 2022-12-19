@@ -41,6 +41,10 @@
         assert(false);                                            \
     }
 
+#ifndef ARRAYSIZE
+#define ARRAYSIZE(a) ((sizeof(a) / sizeof(a[0])))
+#endif
+
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
 #define CLOCK_MONOTONIC 0
 extern int clock_gettime(int dummy, struct timespec* ct);
@@ -48,10 +52,13 @@ extern int clock_gettime(int dummy, struct timespec* ct);
 #include <time.h>
 #endif
 
+#include <atomic>
+
 simplelogger::Logger* logger = simplelogger::LoggerFactory::CreateConsoleLogger();
 
 VulkanFrame::VulkanFrame(const std::vector<std::string>& args)
     : FrameProcessor("VulkanVideoDecodeDemo", args)
+    , m_loopCount(1)
     , frameImageFormat(VK_FORMAT_G8_B8R8_2PLANE_420_UNORM)
     , samplerYcbcrModelConversion(VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709)
     , samplerYcbcrRange(VK_SAMPLER_YCBCR_RANGE_ITU_NARROW)
@@ -64,18 +71,30 @@ VulkanFrame::VulkanFrame(const std::vector<std::string>& args)
     , frame_data_()
     , render_pass_clear_value_({ { { 0.0f, 0.1f, 0.2f, 1.0f } } })
     , m_videoProcessor()
+    , m_forceParserType(DETECT_PARSER)
 {
     for (auto it = args.begin(); it != args.end(); ++it) {
-        if (*it == "-s")
+        if (*it == "-s") {
             multithread_ = false;
-        else if (*it == "-p")
+
+        } else if (*it == "-p") {
             use_push_constants_ = true;
+
+        } else if (*it == "-codec") {
+            it++;
+            if (*it == "5") {
+                m_forceParserType = H265_PARSER;
+            } else if (*it == "4") {
+                m_forceParserType = H264_PARSER;
+            }
+        }
     }
 
     for (auto it = 0; it < MAX_NUM_BUFFER_SLOTS; it++) {
         // frameImages_[MAX_NUM_BUFFER_SLOTS]
     }
 
+    m_loopCount = settings_.loop_count;
     init_workers();
 }
 
@@ -83,16 +102,30 @@ VulkanFrame::~VulkanFrame() { }
 
 void VulkanFrame::init_workers() { }
 
-int VulkanFrame::GetVideoWidth() { return m_videoProcessor ? m_videoProcessor.GetWidth() : scissor_.extent.width; }
+int VulkanFrame::GetVideoWidth() { return m_videoProcessor.IsValid() ? m_videoProcessor.GetWidth() : scissor_.extent.width; }
 
-int VulkanFrame::GetVideoHeight() { return m_videoProcessor ? m_videoProcessor.GetHeight() : scissor_.extent.height; }
+int VulkanFrame::GetVideoHeight() { return m_videoProcessor.IsValid() ? m_videoProcessor.GetHeight() : scissor_.extent.height; }
 
 int VulkanFrame::init_internals(const VulkanDecodeContext vulkanDecodeContext)
 {
+    int videoCodecType = 0;
+    switch(m_forceParserType) {
+        case H264_PARSER:
+            videoCodecType = VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR;
+            break;
+        case H265_PARSER:
+            videoCodecType = VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR;
+            break;
+        case DETECT_PARSER:
+        default:
+            // Elementary stream does not support detecting the parser.
+            assert(false);
+            break;
+    };
     // Construct a device context to avoid using a videoRenderer instance.
     m_deviceInfo = vulkanVideoUtils::VulkanDeviceInfo(vulkanDecodeContext.instance, vulkanDecodeContext.physicalDev, vulkanDecodeContext.dev, vulkanDecodeContext.videoDecodeQueueFamily, vulkanDecodeContext.videoQueue);
     const char* filePath = settings_.videoFileName.c_str();
-    m_videoProcessor.Init(&vulkanDecodeContext, &m_deviceInfo, filePath);
+    m_videoProcessor.Init(&vulkanDecodeContext, &m_deviceInfo, filePath, settings_.outputFileName.c_str(), videoCodecType);
     frameImageFormat = m_videoProcessor.GetFrameImageFormat(&settings_.video_width, &settings_.video_height);
 
     return 0;
@@ -123,14 +156,15 @@ int VulkanFrame::attach_shell(Shell& sh)
     VkPhysicalDeviceMemoryProperties mem_props;
     vk::GetPhysicalDeviceMemoryProperties(ctx.physical_dev, &mem_props);
 
-    const bool useTestImage = (ctx.video_queue == VkQueue());
+    const bool useTestImage = (ctx.video_queue[0] == VkQueue());
     pVideoRenderer = new vulkanVideoUtils::VkVideoAppCtx(useTestImage);
     if (pVideoRenderer == nullptr) {
         return -1;
     }
 
-    pVideoRenderer->device_.AttachVulkanDevice(ctx.instance, ctx.physical_dev, ctx.dev, ctx.frameProcessor_queue_family,
-        ctx.frameProcessor_queue, &mem_props);
+    pVideoRenderer->device_.AttachExternallyManagedDevice(ctx.instance, ctx.physical_dev,
+                                                          ctx.dev, ctx.frameProcessor_queue_family,
+                                                          ctx.frameProcessor_queue);
 
     format_ = ctx.format.format;
 
@@ -154,12 +188,12 @@ int VulkanFrame::attach_shell(Shell& sh)
     CALL_VK(pVideoRenderer->vertexBuffer_.CreateVertexBuffer(&pVideoRenderer->device_, (float*)vertices, sizeof(vertices),
         sizeof(vertices) / sizeof(vertices[0])));
 
-    if (ctx.video_queue != VkQueue()) {
+    if (ctx.video_queue[0] != VkQueue()) {
         const VulkanDecodeContext vulkanDecodeContext = { ctx.instance, ctx.physical_dev, ctx.dev, ctx.video_decode_queue_family,
-            ctx.video_queue, ctx.video_encode_queue_family };
+                                                          ctx.video_queue[0], ctx.video_encode_queue_family };
 
         const char* filePath = settings_.videoFileName.c_str();
-        m_videoProcessor.Init(&vulkanDecodeContext, &pVideoRenderer->device_, filePath);
+        m_videoProcessor.Init(&vulkanDecodeContext, &pVideoRenderer->device_, filePath, (settings_.outputFileName.size() == 0) ? nullptr : settings_.outputFileName.c_str() );
 
         frameImageFormat = m_videoProcessor.GetFrameImageFormat(&settings_.video_width, &settings_.video_height);
     }
@@ -186,8 +220,7 @@ void VulkanFrame::create_frame_data(int count)
     frame_data_index_ = 0;
 
     for (auto& data : frame_data_) {
-        memset(&data.lastDecodedFrame, 0x00, sizeof(data.lastDecodedFrame));
-        data.lastDecodedFrame.pictureIndex = -1;
+        data.lastDecodedFrame.Reset();
     }
 }
 
@@ -236,7 +269,7 @@ int VulkanFrame::attach_swapchain()
     imageCreateInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
     imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imageCreateInfo.queueFamilyIndexCount = 1;
-    imageCreateInfo.pQueueFamilyIndices = &pVideoRenderer->device_.queueFamilyIndex_;
+    imageCreateInfo.pQueueFamilyIndices = &pVideoRenderer->device_.m_queueFamilyIndex;
     imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
     imageCreateInfo.flags = 0;
     pVideoRenderer->testFrameImage_.CreateImage(&pVideoRenderer->device_, &imageCreateInfo, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
@@ -347,25 +380,34 @@ void VulkanFrame::on_frame(bool trainFrame)
     FrameData& data = frame_data_[frame_data_index_];
     DecodedFrame* pLastDecodedFrame = NULL;
 
-    if (m_videoProcessor && !trainFrame) {
+    if ((m_videoProcessor.IsValid() != false) && !trainFrame) {
         pLastDecodedFrame = &data.lastDecodedFrame;
 
         m_videoProcessor.ReleaseDisplayedFrame(pLastDecodedFrame);
 
-        memset(pLastDecodedFrame, 0x00, sizeof(*pLastDecodedFrame));
-        pLastDecodedFrame->pictureIndex = -1;
+        pLastDecodedFrame->Reset();
 
         bool endOfStream = false;
         int32_t numVideoFrames = 0;
 
         numVideoFrames = m_videoProcessor.GetNextFrames(pLastDecodedFrame, &endOfStream);
         if (endOfStream && (numVideoFrames < 0)) {
-            quit();
+            if (m_loopCount == 1) {
+                quit();
+
+            } else if (m_loopCount != 0) {
+                m_loopCount -= 1;
+            }
+
+            // Reload the file stream
+            m_videoProcessor.Restart();
         }
     }
 
     // Limit number of frames if argument was specified (with --c maxFrames)
-    if (settings_.max_frame_count != -1 && frame_count == settings_.max_frame_count) {
+    if (((settings_.max_frame_count != -1) && (frame_count == settings_.max_frame_count) &&
+        (m_loopCount == 1)) || (m_videoProcessor.IsValid() == false)) {
+
         // Tell the FrameProcessor we're done after this frame is drawn.
         FrameProcessor::quit();
     }
@@ -378,7 +420,8 @@ void VulkanFrame::on_frame(bool trainFrame)
                   << "\t\tdisplayOrder: " << pLastDecodedFrame->displayOrder
                   << "\tdecodeOrder: " << pLastDecodedFrame->decodeOrder
                   << "\ttimestamp " << pLastDecodedFrame->timestamp
-                  << "\tdstImageView " << pLastDecodedFrame->pDecodedImage
+                  << "\tdstImageView " << (pLastDecodedFrame->outputImageView ?
+                          pLastDecodedFrame->outputImageView->GetImageResource()->GetImage() : VkImage())
                   << std::endl;
     }
     // vk::assert_success(vk::WaitForFences(pVideoRenderer->device_, 1, &data.lastDecodedFrame.frameConsumerDoneFence, true, 100 * 1000 * 1000 /* 100 mSec */));
@@ -393,8 +436,13 @@ void VulkanFrame::on_frame(bool trainFrame)
     if (pVideoRenderer == nullptr) {
         return;
     }
-    bool doTestPatternFrame = ((pLastDecodedFrame == NULL) || (pLastDecodedFrame->pDecodedImage == NULL) || pVideoRenderer->useTestImage_);
-    const vulkanVideoUtils::ImageObject* pRtImage = NULL;
+    bool doTestPatternFrame = ((pLastDecodedFrame == NULL) ||
+                               (!pLastDecodedFrame->outputImageView ||
+                                       (pLastDecodedFrame->outputImageView->GetImageView() == VK_NULL_HANDLE)) ||
+                               pVideoRenderer->useTestImage_);
+
+    vulkanVideoUtils::ImageResourceInfo rtImage;
+    const vulkanVideoUtils::ImageResourceInfo* pRtImage = NULL;
     VkFence frameCompleteFence = VkFence();
     VkFence frameConsumerDoneFence = VkFence();
     VkSemaphore frameCompleteSemaphore = VkSemaphore();
@@ -414,8 +462,16 @@ void VulkanFrame::on_frame(bool trainFrame)
         displayWidth = pRtImage->imageWidth;
         displayHeight = pRtImage->imageHeight;
     } else {
-        pRtImage    = pLastDecodedFrame->pDecodedImage;
-        imageFormat = pRtImage->imageFormat;
+        VkImageResourceView* pView = pLastDecodedFrame->outputImageView;
+        VkImageResource* pImage = pView->GetImageResource();
+        imageFormat = rtImage.imageFormat = pImage->GetImageCreateInfo().format;
+        rtImage.imageWidth = pImage->GetImageCreateInfo().extent.width;
+        rtImage.imageHeight = pImage->GetImageCreateInfo().extent.height;
+        rtImage.arrayLayer = pView->GetImageSubresourceRange().baseArrayLayer;
+        rtImage.imageLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR;
+        rtImage.image = pImage->GetImage();
+        rtImage.view = pView->GetImageView();
+        pRtImage    = &rtImage;
         frameCompleteFence = pLastDecodedFrame->frameCompleteFence;
         frameCompleteSemaphore = pLastDecodedFrame->frameCompleteSemaphore;
         frameConsumerDoneSemaphore = pLastDecodedFrame->frameConsumerDoneSemaphore;
@@ -499,8 +555,8 @@ void VulkanFrame::on_frame(bool trainFrame)
         if (frameCompleteSemaphore == VkSemaphore()) {
             if (frameCompleteFence == VkFence()) {
                 const Shell::Context& ctx = shell_->context();
-                if (ctx.video_queue != VkQueue()) {
-                    result = vk::QueueWaitIdle(ctx.video_queue);
+                if (ctx.video_queue[0] != VkQueue()) {
+                    result = vk::QueueWaitIdle(ctx.video_queue[0]);
                     assert(result == VK_SUCCESS);
                     if (result != VK_SUCCESS) {
                         fprintf(stderr, "\nERROR: QueueWaitIdle() result: 0x%x\n", result);
@@ -625,7 +681,12 @@ void VulkanFrame::on_frame(bool trainFrame)
         }
     }
 
-    VkResult res = vk::QueueSubmit(queue_, 1, &primary_cmd_submit_info, frameConsumerDoneFence);
+    result = vk::QueueSubmit(queue_, 1, &primary_cmd_submit_info, frameConsumerDoneFence);
+    if (result != VK_SUCCESS) {
+        assert(result == VK_SUCCESS);
+        fprintf(stderr, "\nERROR: QueueSubmit() result: 0x%x\n", result);
+        return;
+    }
 
     if (false && frameConsumerDoneFence) { // For fence/sync debugging
         const uint64_t fenceTimeout = 100 * 1000 * 1000 /* 100 mSec */;
@@ -650,13 +711,11 @@ void VulkanFrame::on_frame(bool trainFrame)
 #endif
 
     frame_data_index_ = (frame_data_index_ + 1) % frame_data_.size();
-
-    (void)res;
 }
 
 #include "VulkanFrame.h"
 
-FrameProcessor* create_frameProcessor(int argc, char** argv)
+FrameProcessor* create_frameProcessor(int argc, const char** argv)
 {
     std::vector<std::string> args(argv, argv + argc);
     VulkanFrame* pVulkanFrame = new VulkanFrame(args);

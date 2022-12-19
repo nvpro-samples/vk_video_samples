@@ -23,30 +23,54 @@
 #include "VkParserVideoRefCountBase.h"
 #include "VulkanVideoParser.h"
 #include "vulkan_interfaces.h"
+#include "VkCodecUtils/VkImageResource.h"
 
 namespace vulkanVideoUtils {
-    class ImageObject;
-    class VulkanDeviceInfo;
+    class  VulkanDeviceInfo;
 }
 
 struct DecodedFrame {
     int32_t pictureIndex;
     int32_t displayWidth;
     int32_t displayHeight;
-    const vulkanVideoUtils::ImageObject* pDecodedImage;
-    VkFence frameCompleteFence;
-    VkFence frameConsumerDoneFence;
-    VkSemaphore frameCompleteSemaphore;
-    VkSemaphore frameConsumerDoneSemaphore;
-    VkQueryPool queryPool;
-    int32_t startQueryId;
-    uint32_t numQueries;
+    VkSharedBaseObj<VkImageResourceView> decodedImageView;
+    VkSharedBaseObj<VkImageResourceView> outputImageView;
+    VkFence frameCompleteFence; // If valid, the fence is signaled when the decoder is done decoding the frame.
+    VkFence frameConsumerDoneFence; // If valid, the fence is signaled when the consumer (graphics, compute or display) is done using the frame.
+    VkSemaphore frameCompleteSemaphore; // If valid, the semaphore is signaled when the decoder is done decoding the frame.
+    VkSemaphore frameConsumerDoneSemaphore; // If valid, the semaphore is signaled when the consumer (graphics, compute or display) is done using the frame.
+    VkQueryPool queryPool; // queryPool handle used for the video queries.
+    int32_t startQueryId;  // query Id used for the this frame.
+    uint32_t numQueries;   // usually one query per frame
     uint64_t timestamp;
     uint32_t hasConsummerSignalFence : 1;
     uint32_t hasConsummerSignalSemaphore : 1;
     // For debugging
     int32_t decodeOrder;
     int32_t displayOrder;
+
+    void Reset()
+    {
+        pictureIndex = -1;
+        displayWidth = 0;
+        displayHeight = 0;
+        decodedImageView  = nullptr;
+        outputImageView = nullptr;
+        frameCompleteFence = VkFence();
+        frameConsumerDoneFence = VkFence();
+        frameCompleteSemaphore = VkSemaphore();
+        frameConsumerDoneSemaphore = VkSemaphore();
+        queryPool = VkQueryPool();
+        startQueryId = 0;
+        numQueries = 0;
+        timestamp = 0;
+        hasConsummerSignalFence = false;
+        hasConsummerSignalSemaphore = false;
+        // For debugging
+        decodeOrder = 0;
+        displayOrder = 0;
+    }
+
 };
 
 struct DecodedFrameRelease {
@@ -77,7 +101,8 @@ public:
     };
 
     struct PictureResourceInfo {
-        VkImage image;
+        VkImage  image;
+        VkFormat imageFormat;
         VkImageLayout currentImageLayout;
     };
 
@@ -88,17 +113,28 @@ public:
                                   const VkExtent2D&        maxImageExtent,
                                   VkImageTiling            tiling,
                                   VkImageUsageFlags        usage,
-                                  uint32_t                 queueFamilyIndex) = 0;
+                                  uint32_t                 queueFamilyIndex,
+                                  bool                     useImageArray = false,
+                                  bool                     useImageViewArray = false,
+                                  bool                     useSeparateOutputImage = false,
+                                  bool                     useLinearOutput = false) = 0;
+
     virtual int32_t QueuePictureForDecode(int8_t picId, VkParserDecodePictureInfo* pDecodePictureInfo,
                                           VkParserVideoRefCountBase* pCurrentVkPictureParameters,
                                           FrameSynchronizationInfo* pFrameSynchronizationInfo) = 0;
     virtual int32_t DequeueDecodedPicture(DecodedFrame* pDecodedFrame) = 0;
     virtual int32_t ReleaseDisplayedPicture(DecodedFrameRelease** pDecodedFramesRelease, uint32_t numFramesToRelease) = 0;
-    virtual int32_t GetImageResourcesByIndex(uint32_t numResources, const int8_t* referenceSlotIndexes,
-        VkVideoPictureResourceInfoKHR* pictureResources,
-        PictureResourceInfo* pictureResourcesInfo,
-        VkImageLayout newImageLayout = VK_IMAGE_LAYOUT_MAX_ENUM)
-        = 0;
+    virtual int32_t GetDpbImageResourcesByIndex(uint32_t numResources, const int8_t* referenceSlotIndexes,
+                                                VkVideoPictureResourceInfoKHR* pictureResources,
+                                                PictureResourceInfo* pictureResourcesInfo,
+                                                VkImageLayout newDpbImageLayerLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) = 0;
+    virtual int32_t GetCurrentImageResourceByIndex(int8_t referenceSlotIndex,
+                                                   VkVideoPictureResourceInfoKHR* dpbPictureResource,
+                                                   PictureResourceInfo* dpbPictureResourceInfo,
+                                                   VkImageLayout newDpbImageLayerLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR,
+                                                   VkVideoPictureResourceInfoKHR* outputPictureResource = nullptr,
+                                                   PictureResourceInfo* outputPictureResourceInfo = nullptr,
+                                                   VkImageLayout newOutputImageLayerLayout = VK_IMAGE_LAYOUT_MAX_ENUM) = 0;
     virtual int32_t ReleaseImageResources(uint32_t numResources, const uint32_t* indexes) = 0;
     virtual int32_t SetPicNumInDecodeOrder(int32_t picId, int32_t picNumInDecodeOrder) = 0;
     virtual int32_t SetPicNumInDisplayOrder(int32_t picId, int32_t picNumInDisplayOrder) = 0;

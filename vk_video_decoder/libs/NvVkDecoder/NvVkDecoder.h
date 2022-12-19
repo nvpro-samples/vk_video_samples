@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "VkCodecUtils/VulkanVideoUtils.h"
+#include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/nvVideoProfile.h"
 #include "VkCodecUtils/NvVideoSession.h"
 #include "VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.h"
@@ -88,20 +89,28 @@ public:
         deinit();
     }
 
-    size_t resize(size_t newSize, uint32_t maxCodedWidth,
-                    VkDeviceSize minBitstreamBufferOffsetAlignment,
-                    VkDeviceSize minBitstreamBufferSizeAlignment) {
+    size_t resize(size_t maxDecodeFramesCount,
+                  uint32_t maxCodedWidth,uint32_t maxCodedHeight,
+                  VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling,
+                  VkDeviceSize minBitstreamBufferOffsetAlignment,
+                  VkDeviceSize minBitstreamBufferSizeAlignment) {
 
-        const size_t oldBitstreamBuffersSize = m_bitstreamBuffers.size();
-        if (oldBitstreamBuffersSize >= newSize) {
+        const size_t oldMaxDecodeBuffersFrameCount = m_bitstreamBuffers.size();
+        if (oldMaxDecodeBuffersFrameCount >= maxDecodeFramesCount) {
             assert(m_maxCodedWidth >= maxCodedWidth);
-            return oldBitstreamBuffersSize;
+            return oldMaxDecodeBuffersFrameCount;
         }
 
-        m_bitstreamBuffers.resize(newSize);
+        m_bitstreamBuffers.resize(maxDecodeFramesCount);
 
-        const VkDeviceSize bufferSize = ((maxCodedWidth > 3840) ? 8 : 4) * 1024 * 1024 /* 4MB or 8MB each for 8k use case */;
-        for (size_t decodeFrameId = oldBitstreamBuffersSize; decodeFrameId < m_bitstreamBuffers.size(); decodeFrameId++) {
+        unsigned int maxMbWidth  = (maxCodedWidth + 15) >> 4;
+        unsigned int maxMbHeight = (maxCodedHeight + 15) >> 4;
+        unsigned int maxMbCount  =  maxMbWidth * ((maxMbHeight + 1) & ~1);
+        const VkDeviceSize bufferSize = chromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR ?
+                                        std::max((maxMbCount << 8) * 3, (unsigned int)2048) :  // At least 3MB
+                                        std::max((maxMbCount << 8) * 2, (unsigned int)2048);   // At least 2MB
+
+        for (size_t decodeFrameId = oldMaxDecodeBuffersFrameCount; decodeFrameId < m_bitstreamBuffers.size(); decodeFrameId++) {
             VkResult result = m_bitstreamBuffers[decodeFrameId].CreateVideoBitstreamBuffer(
                 m_pVulkanDecodeContext.physicalDev, m_pVulkanDecodeContext.dev, m_pVulkanDecodeContext.videoDecodeQueueFamily,
                 bufferSize, minBitstreamBufferOffsetAlignment, minBitstreamBufferSizeAlignment);
@@ -123,15 +132,15 @@ public:
             }
         }
 
-        const size_t oldCommandBuffersSize = m_commandBuffers.size();
+        const size_t oldCommandBuffersCount = m_commandBuffers.size();
         VkCommandBufferAllocateInfo cmdInfo = {};
         cmdInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        cmdInfo.commandBufferCount = (uint32_t)(newSize - oldCommandBuffersSize);
+        cmdInfo.commandBufferCount = (uint32_t)(maxDecodeFramesCount - oldCommandBuffersCount);
         cmdInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         cmdInfo.commandPool = m_videoCommandPool;
 
-        m_commandBuffers.resize(newSize);
-        VkResult result = vk::AllocateCommandBuffers(m_pVulkanDecodeContext.dev, &cmdInfo, &m_commandBuffers[oldCommandBuffersSize]);
+        m_commandBuffers.resize(maxDecodeFramesCount);
+        VkResult result = vk::AllocateCommandBuffers(m_pVulkanDecodeContext.dev, &cmdInfo, &m_commandBuffers[oldCommandBuffersCount]);
         assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "\nERROR: AllocateCommandBuffers() result: 0x%x\n", result);
@@ -139,7 +148,7 @@ public:
 
         m_maxCodedWidth = maxCodedWidth;
 
-        return oldCommandBuffersSize;
+        return oldCommandBuffersCount;
     }
 
     const vulkanVideoUtils::VulkanVideoBitstreamBuffer* GetBitstreamBuffer(uint32_t slot) {
@@ -183,8 +192,8 @@ public:
         VkVideoCodecOperationFlagsKHR videoCodecs = vk::GetSupportedCodecs(vkPhysicalDev,
                 &videoDecodeQueueFamily,
                 VK_QUEUE_VIDEO_DECODE_BIT_KHR,
-                (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT |
-                        VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT));
+                (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
+                        VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR));
 
         assert(videoCodecs != VK_VIDEO_CODEC_OPERATION_NONE_KHR);
 
@@ -257,7 +266,7 @@ public:
     VkResult GetVideoCapabilities(nvVideoProfile* pVideoProfile,
                                   VkVideoCapabilitiesKHR* pVideoDecodeCapabilities);
 
-    NvVkDecoder(const VulkanDecodeContext* pVulkanDecodeContext, VulkanVideoFrameBuffer* pVideoFrameBuffer)
+    NvVkDecoder(const VulkanDecodeContext* pVulkanDecodeContext, VulkanVideoFrameBuffer* pVideoFrameBuffer, bool useLinearOutput = false)
         : m_pVulkanDecodeContext(*pVulkanDecodeContext)
         , m_refCount(1)
         , m_videoFormat {}
@@ -269,6 +278,10 @@ public:
         , m_decodeFramesData(pVulkanDecodeContext)
         , m_decodePicCount(0)
         , m_lastIdInQueue{-1, -1, -1}
+        , m_useImageArray(false)
+        , m_useImageViewArray(false)
+        , m_useSeparateOutputImages(useLinearOutput)
+        , m_useLinearOutput(useLinearOutput)
         , m_resetDecoder(true)
         , m_dumpDecodeData(false)
     {
@@ -318,6 +331,13 @@ private:
     uint32_t AddPictureParametersToQueue(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet);
     uint32_t FlushPictureParametersQueue();
 
+    int CopyOptimalToLinearImage(VkCommandBuffer& commandBuffer,
+                                 VkVideoPictureResourceInfoKHR& srcPictureResource,
+                                 VulkanVideoFrameBuffer::PictureResourceInfo& srcPictureResourceInfo,
+                                 VkVideoPictureResourceInfoKHR& dstPictureResource,
+                                 VulkanVideoFrameBuffer::PictureResourceInfo& dstPictureResourceInfo,
+                                 VulkanVideoFrameBuffer::FrameSynchronizationInfo *pFrameSynchronizationInfo);
+
     int32_t GetCurrentFrameData(uint32_t slotId, NvVkDecodeFrameDataSlot& frameDataSlot)
     {
         if (slotId < m_decodeFramesData.size()) {
@@ -348,6 +368,10 @@ private:
     std::queue<VkSharedBaseObj<StdVideoPictureParametersSet>>  m_pictureParametersQueue;
     VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastPictParamsQueue[StdVideoPictureParametersSet::NUM_OF_TYPES];
     VkSharedBaseObj<VkParserVideoPictureParameters>            m_currentPictureParameters;
+    uint32_t m_useImageArray : 1;
+    uint32_t m_useImageViewArray : 1;
+    uint32_t m_useSeparateOutputImages : 1;
+    uint32_t m_useLinearOutput : 1;
     uint32_t m_resetDecoder : 1;
     uint32_t m_dumpDecodeData : 1;
 };

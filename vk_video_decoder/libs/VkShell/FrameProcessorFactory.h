@@ -22,6 +22,7 @@
 
 class FrameProcessor;
 
-FrameProcessor *create_frameProcessor(int argc, char **argv);
+FrameProcessor *create_frameProcessor(int argc, const char **argv);
+void destroy_frameProcessor();
 
 #endif /* LIBS_VKCODECUTILS_FRAMEPROCESSORFACTORY_H_ */

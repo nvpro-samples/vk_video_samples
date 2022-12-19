@@ -35,6 +35,12 @@ class Meshes;
 struct DecodedFrame;
 class NvVkDecoder;
 
+enum VIDEO_DECODER_PARSER_TYPE {
+    DETECT_PARSER,
+    H264_PARSER,
+    H265_PARSER,
+};
+
 class VulkanFrame : public FrameProcessor {
 public:
     VulkanFrame(const std::vector<std::string>& args);
@@ -60,6 +66,7 @@ public:
 private:
     enum { MAX_NUM_BUFFER_SLOTS = 16 };
     vulkanVideoUtils::VulkanDeviceInfo m_deviceInfo;
+    uint32_t m_loopCount;
 
 public:
     VkFormat frameImageFormat;
@@ -120,6 +127,7 @@ public:
 private:
     // Decoder specific members
     VulkanVideoProcessor m_videoProcessor;
+    VIDEO_DECODER_PARSER_TYPE m_forceParserType;
 };
 
 #endif // HOLOGRAM_H

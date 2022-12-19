@@ -52,7 +52,7 @@ namespace NvVulkanDecoder
 {
 
 struct nvVideoDecodeH264DpbSlotInfo {
-    VkVideoDecodeH264DpbSlotInfoEXT dpbSlotInfo;
+    VkVideoDecodeH264DpbSlotInfoKHR dpbSlotInfo;
     StdVideoDecodeH264ReferenceInfo stdReferenceInfo;
 
     nvVideoDecodeH264DpbSlotInfo()
@@ -61,10 +61,10 @@ struct nvVideoDecodeH264DpbSlotInfo {
     {
     }
 
-    const VkVideoDecodeH264DpbSlotInfoEXT* Init(int8_t slotIndex)
+    const VkVideoDecodeH264DpbSlotInfoKHR* Init(int8_t slotIndex)
     {
-        assert((slotIndex >= 0) && (slotIndex < 17));
-        dpbSlotInfo.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_EXT;
+        assert((slotIndex >= 0) && (slotIndex < (int8_t)MAX_DPB_REF_AND_SETUP_SLOTS));
+        dpbSlotInfo.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_KHR;
         dpbSlotInfo.pNext = NULL;
         dpbSlotInfo.pStdReferenceInfo = &stdReferenceInfo;
         return &dpbSlotInfo;
@@ -80,7 +80,7 @@ struct nvVideoDecodeH264DpbSlotInfo {
 };
 
 struct nvVideoDecodeH265DpbSlotInfo {
-    VkVideoDecodeH265DpbSlotInfoEXT dpbSlotInfo;
+    VkVideoDecodeH265DpbSlotInfoKHR dpbSlotInfo;
     StdVideoDecodeH265ReferenceInfo stdReferenceInfo;
 
     nvVideoDecodeH265DpbSlotInfo()
@@ -89,10 +89,10 @@ struct nvVideoDecodeH265DpbSlotInfo {
     {
     }
 
-    const VkVideoDecodeH265DpbSlotInfoEXT* Init(int8_t slotIndex)
+    const VkVideoDecodeH265DpbSlotInfoKHR* Init(int8_t slotIndex)
     {
-        assert((slotIndex >= 0) && (slotIndex < 16));
-        dpbSlotInfo.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_DPB_SLOT_INFO_EXT;
+        assert((slotIndex >= 0) && (slotIndex < (int8_t)MAX_DPB_REF_SLOTS));
+        dpbSlotInfo.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_DPB_SLOT_INFO_KHR;
         dpbSlotInfo.pNext = NULL;
         dpbSlotInfo.pStdReferenceInfo = &stdReferenceInfo;
         return &dpbSlotInfo;
@@ -115,8 +115,8 @@ struct nvVideoH264PicParameters {
     enum { MAX_REF_PICTURES_LIST_ENTRIES = 16 };
 
     StdVideoDecodeH264PictureInfo stdPictureInfo;
-    VkVideoDecodeH264PictureInfoEXT pictureInfo;
-    VkVideoDecodeH264SessionParametersAddInfoEXT pictureParameters;
+    VkVideoDecodeH264PictureInfoKHR pictureInfo;
+    VkVideoDecodeH264SessionParametersAddInfoKHR pictureParameters;
     nvVideoDecodeH264DpbSlotInfo currentDpbSlotInfo;
     nvVideoDecodeH264DpbSlotInfo dpbRefList[MAX_REF_PICTURES_LIST_ENTRIES];
 };
@@ -129,8 +129,8 @@ struct nvVideoH265PicParameters {
     enum { MAX_REF_PICTURES_LIST_ENTRIES = 16 };
 
     StdVideoDecodeH265PictureInfo stdPictureInfo;
-    VkVideoDecodeH265PictureInfoEXT pictureInfo;
-    VkVideoDecodeH265SessionParametersAddInfoEXT pictureParameters;
+    VkVideoDecodeH265PictureInfoKHR pictureInfo;
+    VkVideoDecodeH265SessionParametersAddInfoKHR pictureParameters;
     nvVideoDecodeH265DpbSlotInfo dpbRefList[MAX_REF_PICTURES_LIST_ENTRIES];
 };
 
@@ -253,7 +253,7 @@ public:
     int8_t AllocateSlot()
     {
         if (m_dpbSlotsAvailable.empty()) {
-            assert(!"No more h.264 slots are available");
+            assert(!"No more h.264/5 DPB slots are available");
             return -1;
         }
         int8_t slot = (int8_t)m_dpbSlotsAvailable.front();
@@ -497,9 +497,11 @@ public:
     virtual int32_t Release();
 
     // INvVideoDecoderClient
-    virtual VkResult ParseVideoData(VkParserSourceDataPacket* pPacket, int32_t* pParsedBytes);
+    virtual VkResult ParseVideoData(VkParserSourceDataPacket* pPacket,
+                                    int32_t* pParsedBytes,
+                                    bool doPartialParsing = false);
 
-    // Interface to allow decoder to communicate with the client implementaitng
+    // Interface to allow decoder to communicate with the client implementing
     // INvVideoDecoderClient
 
     virtual int32_t BeginSequence(
@@ -582,11 +584,14 @@ protected:
         StdVideoDecodeH265PictureInfo* pStdPictureInfo,
         uint32_t maxRefPictures,
         VkVideoReferenceSlotInfoKHR* pReferenceSlots,
-        int8_t* pGopReferenceImagesIndexes);
+        int8_t* pGopReferenceImagesIndexes,
+        int32_t* pCurrAllocatedSlotIndex);
 
     int8_t AllocateDpbSlotForCurrentH264(
-        vkPicBuffBase* pPic, StdVideoDecodeH264PictureInfoFlags currPicFlags);
-    int8_t AllocateDpbSlotForCurrentH265(vkPicBuffBase* pPic, bool isReference);
+        vkPicBuffBase* pPic, StdVideoDecodeH264PictureInfoFlags currPicFlags,
+        int8_t presetDpbSlot);
+    int8_t AllocateDpbSlotForCurrentH265(vkPicBuffBase* pPic, bool isReference,
+                                         int8_t presetDpbSlot);
 
 protected:
     VulkanVideoDecodeParser* m_pParser;
@@ -814,9 +819,9 @@ VkResult VulkanVideoParser::Initialize(
     static const VkExtensionProperties h265StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION };
 
     const VkExtensionProperties* pStdExtensionVersion = NULL;
-    if (m_codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT) {
+    if (m_codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
         pStdExtensionVersion = &h264StdExtensionVersion;
-    } else if (m_codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT) {
+    } else if (m_codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) {
         pStdExtensionVersion = &h265StdExtensionVersion;
     } else {
         assert(!"Unsupported codec type");
@@ -849,7 +854,9 @@ void VulkanVideoParser::Deinitialize()
     }
 }
 
-VkResult VulkanVideoParser::ParseVideoData(VkParserSourceDataPacket* pPacket, int32_t *pParsedBytes)
+VkResult VulkanVideoParser::ParseVideoData(VkParserSourceDataPacket* pPacket,
+                                           int32_t *pParsedBytes,
+                                           bool doPartialParsing)
 {
     VkParserBitstreamPacket pkt;
     VkResult result;
@@ -867,10 +874,13 @@ VkResult VulkanVideoParser::ParseVideoData(VkParserSourceDataPacket* pPacket, in
     pkt.bEOP = !!(pPacket->flags & VK_PARSER_PKT_ENDOFPICTURE);
     pkt.bPTSValid = !!(pPacket->flags & VK_PARSER_PKT_TIMESTAMP);
     pkt.llPTS = pPacket->timestamp;
-    if (m_pParser->ParseByteStream(&pkt, pParsedBytes))
+    pkt.bPartialParsing = doPartialParsing;
+    if (m_pParser->ParseByteStream(&pkt, pParsedBytes)) {
         result = VK_SUCCESS;
-    else
+    } else {
         result = VK_ERROR_INITIALIZATION_FAILED;
+    }
+
     if (pkt.bEOS) {
         // Flush any pending frames after EOS
     }
@@ -967,7 +977,7 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
 {
     bool sequenceUpdate = ((m_nvsi.nMaxWidth != 0) && (m_nvsi.nMaxHeight != 0)) ? true : false;
 
-    const uint32_t maxDpbSlots =  (pnvsi->eCodec == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT) ?
+    const uint32_t maxDpbSlots =  (pnvsi->eCodec == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) ?
                                   MAX_DPB_REF_AND_SETUP_SLOTS : MAX_DPB_REF_SLOTS;
     uint32_t configDpbSlots = (pnvsi->nMinNumDpbSlots > 0) ? pnvsi->nMinNumDpbSlots : maxDpbSlots;
     configDpbSlots = std::min<uint32_t>(configDpbSlots, maxDpbSlots);
@@ -1072,10 +1082,10 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
                 detectedFormat.seqhdr_data_length);
         }
         int32_t maxDecodeRTs = m_pDecoderHandler->StartVideoSequence(&detectedFormat);
-        // nDecodeRTs = 0 means SequenceCallback failed
-        // nDecodeRTs = 1 means SequenceCallback succeeded
-        // nDecodeRTs > 1 means we need to overwrite the MaxNumDecodeSurfaces
-        if (!maxDecodeRTs) {
+        // nDecodeRTs <= 0 means SequenceCallback failed
+        // nDecodeRTs  = 1 means SequenceCallback succeeded
+        // nDecodeRTs  > 1 means we need to overwrite the MaxNumDecodeSurfaces
+        if (maxDecodeRTs <= 0) {
             return 0;
         }
         // MaxNumDecodeSurface may not be correctly calculated by the client while
@@ -1107,9 +1117,9 @@ uint32_t VulkanVideoParser::FillDpbH264State(
     // Create unordered DPB and generate a bitmask of all render targets present
     // in DPB
     uint32_t num_ref_frames = pd->CodecSpecific.h264.pStdSps->max_num_ref_frames;
-    assert(num_ref_frames <= 16);
+    assert(num_ref_frames <= HEVC_MAX_DPB_SLOTS);
     assert(num_ref_frames <= m_maxNumDpbSlots);
-    dpbH264Entry refOnlyDpbIn[VulkanVideoParser::AVC_MAX_DPB_SLOTS]; // max number of Dpb
+    dpbH264Entry refOnlyDpbIn[AVC_MAX_DPB_SLOTS]; // max number of Dpb
         // surfaces
     memset(&refOnlyDpbIn, 0, m_maxNumDpbSlots * sizeof(refOnlyDpbIn[0]));
     uint32_t refDpbUsedAndValidMask = 0;
@@ -1146,8 +1156,7 @@ uint32_t VulkanVideoParser::FillDpbH264State(
         pGopReferenceImagesIndexes[inIdx] = -1;
     }
 
-    assert(numUsedRef <= 16);
-
+    assert(numUsedRef <= HEVC_MAX_DPB_SLOTS);
     assert(numUsedRef <= m_maxNumDpbSlots);
     assert(numUsedRef <= num_ref_frames);
 
@@ -1242,7 +1251,8 @@ uint32_t VulkanVideoParser::FillDpbH264State(
     // In Vulkan, we always allocate a Dbp slot for the current picture,
     // regardless if it is going to become a reference or not. Non-reference slots
     // get freed right after usage. if (pd->ref_pic_flag) {
-    int8_t currPicDpbSlot = AllocateDpbSlotForCurrentH264(GetPic(pd->pCurrPic), currPicFlags);
+    int8_t currPicDpbSlot = AllocateDpbSlotForCurrentH264(GetPic(pd->pCurrPic),
+            currPicFlags, pd->current_dpb_id);
     assert(currPicDpbSlot >= 0);
     *pCurrAllocatedSlotIndex = currPicDpbSlot;
 
@@ -1334,12 +1344,14 @@ uint32_t VulkanVideoParser::FillDpbH265State(
     nvVideoDecodeH265DpbSlotInfo* pDpbSlotInfo,
     StdVideoDecodeH265PictureInfo* pStdPictureInfo, uint32_t maxRefPictures,
     VkVideoReferenceSlotInfoKHR* pReferenceSlots,
-    int8_t* pGopReferenceImagesIndexes)
+    int8_t* pGopReferenceImagesIndexes,
+    int32_t* pCurrAllocatedSlotIndex)
 {
     // #### Update m_dpb based on dpb parameters ####
     // Create unordered DPB and generate a bitmask of all render targets present
     // in DPB
-    dpbH264Entry refOnlyDpbIn[VulkanVideoParser::AVC_MAX_DPB_SLOTS];
+    dpbH264Entry refOnlyDpbIn[HEVC_MAX_DPB_SLOTS];
+    assert(m_maxNumDpbSlots <= HEVC_MAX_DPB_SLOTS);
     memset(&refOnlyDpbIn, 0, m_maxNumDpbSlots * sizeof(refOnlyDpbIn[0]));
     uint32_t refDpbUsedAndValidMask = 0;
     uint32_t numUsedRef = 0;
@@ -1350,6 +1362,7 @@ uint32_t VulkanVideoParser::FillDpbH265State(
         // both_fields
         int8_t picIdx = GetPicIdx(pin->RefPics[inIdx]);
         if (picIdx >= 0) {
+            assert(numUsedRef < HEVC_MAX_DPB_SLOTS);
             refOnlyDpbIn[numUsedRef].setReference((pin->IsLongTerm[inIdx] == 1),
                 pin->PicOrderCntVal[inIdx],
                 GetPic(pin->RefPics[inIdx]));
@@ -1368,18 +1381,13 @@ uint32_t VulkanVideoParser::FillDpbH265State(
         std::cout << "Total Ref frames: " << numUsedRef << std::endl;
 
     assert(numUsedRef <= m_maxNumDpbSlots);
+    assert(numUsedRef <= HEVC_MAX_DPB_SLOTS);
 
     // Take into account the reference picture now.
     int8_t currPicIdx = GetPicIdx(pd->pCurrPic);
-    int8_t currPicDpbSlot = -1;
     assert(currPicIdx >= 0);
     if (currPicIdx >= 0) {
-        currPicDpbSlot = GetPicDpbSlot(currPicIdx);
         refDpbUsedAndValidMask |= (1 << currPicIdx);
-    }
-    assert(currPicDpbSlot >= 0);
-    if (currPicDpbSlot < 0) {
-        fprintf(stderr, "\nERROR: FillDpbH265State() currPicDpbSlot(%d) must not have negative value\n", currPicDpbSlot);
     }
 
     // Map all frames not present in DPB as non-reference, and generate a mask of
@@ -1464,8 +1472,8 @@ uint32_t VulkanVideoParser::FillDpbH265State(
     int32_t numPocTotalCurr = 0;
     int32_t numPocStCurrBefore = 0;
     const size_t maxNumPocStCurrBefore = sizeof(pStdPictureInfo->RefPicSetStCurrBefore) / sizeof(pStdPictureInfo->RefPicSetStCurrBefore[0]);
-    assert((size_t)pin->NumPocStCurrBefore < maxNumPocStCurrBefore);
-    if ((size_t)pin->NumPocStCurrBefore >= maxNumPocStCurrBefore) {
+    assert((size_t)pin->NumPocStCurrBefore <= maxNumPocStCurrBefore);
+    if ((size_t)pin->NumPocStCurrBefore > maxNumPocStCurrBefore) {
         fprintf(stderr, "\nERROR: FillDpbH265State() pin->NumPocStCurrBefore(%d) must be smaller than maxNumPocStCurrBefore(%zd)\n", pin->NumPocStCurrBefore, maxNumPocStCurrBefore);
     }
     for (int32_t i = 0; i < pin->NumPocStCurrBefore; i++) {
@@ -1484,8 +1492,8 @@ uint32_t VulkanVideoParser::FillDpbH265State(
 
     int32_t numPocStCurrAfter = 0;
     const size_t maxNumPocStCurrAfter = sizeof(pStdPictureInfo->RefPicSetStCurrAfter) / sizeof(pStdPictureInfo->RefPicSetStCurrAfter[0]);
-    assert((size_t)pin->NumPocStCurrAfter < maxNumPocStCurrAfter);
-    if ((size_t)pin->NumPocStCurrAfter >= maxNumPocStCurrAfter) {
+    assert((size_t)pin->NumPocStCurrAfter <= maxNumPocStCurrAfter);
+    if ((size_t)pin->NumPocStCurrAfter > maxNumPocStCurrAfter) {
         fprintf(stderr, "\nERROR: FillDpbH265State() pin->NumPocStCurrAfter(%d) must be smaller than maxNumPocStCurrAfter(%zd)\n", pin->NumPocStCurrAfter, maxNumPocStCurrAfter);
     }
     for (int32_t i = 0; i < pin->NumPocStCurrAfter; i++) {
@@ -1504,8 +1512,8 @@ uint32_t VulkanVideoParser::FillDpbH265State(
 
     int32_t numPocLtCurr = 0;
     const size_t maxNumPocLtCurr = sizeof(pStdPictureInfo->RefPicSetLtCurr) / sizeof(pStdPictureInfo->RefPicSetLtCurr[0]);
-    assert((size_t)pin->NumPocLtCurr < maxNumPocLtCurr);
-    if ((size_t)pin->NumPocLtCurr >= maxNumPocLtCurr) {
+    assert((size_t)pin->NumPocLtCurr <= maxNumPocLtCurr);
+    if ((size_t)pin->NumPocLtCurr > maxNumPocLtCurr) {
         fprintf(stderr, "\nERROR: FillDpbH265State() pin->NumPocLtCurr(%d) must be smaller than maxNumPocLtCurr(%zd)\n", pin->NumPocLtCurr, maxNumPocLtCurr);
     }
     for (int32_t i = 0; i < pin->NumPocLtCurr; i++) {
@@ -1533,11 +1541,20 @@ uint32_t VulkanVideoParser::FillDpbH265State(
                       << (int32_t)pStdPictureInfo->RefPicSetLtCurr[i] << std::endl;
     }
 
+    int8_t dpbSlot = AllocateDpbSlotForCurrentH265(GetPic(pd->pCurrPic),
+        true /* isReference */, pd->current_dpb_id);
+    *pCurrAllocatedSlotIndex = dpbSlot;
+    assert(!(dpbSlot < 0));
+    if (dpbSlot >= 0) {
+        assert(pd->ref_pic_flag);
+    }
+
     return numUsedRef;
 }
 
 int8_t VulkanVideoParser::AllocateDpbSlotForCurrentH264(
-    vkPicBuffBase* pPic, StdVideoDecodeH264PictureInfoFlags currPicFlags)
+    vkPicBuffBase* pPic, StdVideoDecodeH264PictureInfoFlags currPicFlags,
+    int8_t presetDpbSlot)
 {
     // Now, map the current render target
     int8_t dpbSlot = -1;
@@ -1559,7 +1576,7 @@ int8_t VulkanVideoParser::AllocateDpbSlotForCurrentH264(
 }
 
 int8_t VulkanVideoParser::AllocateDpbSlotForCurrentH265(vkPicBuffBase* pPic,
-    bool isReference)
+    bool isReference, int8_t presetDpbSlot)
 {
     // Now, map the current render target
     int8_t dpbSlot = -1;
@@ -1609,7 +1626,7 @@ bool VulkanVideoParser::UpdatePictureParameters(
                 << pPictureParameters << ", pUpdateParameters: "
                 << pictureParametersObject.Get()
                 << ", count: " << (uint32_t)updateSequenceCount
-                << std::endl;
+                << std::endl << std::flush;
         std::cout << "################################################# " << std::endl;
     }
 
@@ -1670,13 +1687,13 @@ bool VulkanVideoParser::DecodePicture(
     pPerFrameDecodeParameters->decodeFrameInfo.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_INFO_KHR;
     pPerFrameDecodeParameters->decodeFrameInfo.dstPictureResource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
 
-    if (m_codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT) {
+    if (m_codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
         const VkParserH264PictureData* const pin = &pd->CodecSpecific.h264;
 
         h264 = nvVideoH264PicParameters();
 
         nvVideoH264PicParameters* const pout = &h264;
-        VkVideoDecodeH264PictureInfoEXT* pPictureInfo = &h264.pictureInfo;
+        VkVideoDecodeH264PictureInfoKHR* pPictureInfo = &h264.pictureInfo;
         nvVideoDecodeH264DpbSlotInfo* pDpbRefList = h264.dpbRefList;
         StdVideoDecodeH264PictureInfo* pStdPictureInfo = &h264.stdPictureInfo;
 
@@ -1694,11 +1711,11 @@ bool VulkanVideoParser::DecodePicture(
 
         pPictureInfo->pStdPictureInfo = &h264.stdPictureInfo;
 
-        pPictureInfo->sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PICTURE_INFO_EXT;
+        pPictureInfo->sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PICTURE_INFO_KHR;
 
         if (!m_outOfBandPictureParameters) {
             // In-band h264 Picture Parameters for testing
-            h264.pictureParameters.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_ADD_INFO_EXT;
+            h264.pictureParameters.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_ADD_INFO_KHR;
             h264.pictureParameters.pStdSPSs = pin->pStdSps;
             h264.pictureParameters.pStdPPSs = pin->pStdPps;
             pPictureInfo->pNext = &h264.pictureParameters;
@@ -1744,13 +1761,11 @@ bool VulkanVideoParser::DecodePicture(
         const uint32_t maxDpbInputSlots = sizeof(pin->dpb) / sizeof(pin->dpb[0]);
         pPerFrameDecodeParameters->numGopReferenceSlots = FillDpbH264State(
             pd, pin->dpb, maxDpbInputSlots, pDpbRefList,
-            VkParserPerFrameDecodeParameters::MAX_DPB_REF_AND_SETUP_SLOTS, // 16 reference pictures plus 1 for the current picture
+            VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS, // 16 reference pictures
             referenceSlots, pPerFrameDecodeParameters->pGopReferenceImagesIndexes,
             h264.stdPictureInfo.flags, &setupReferenceSlot.slotIndex);
-        // TODO: Remove it is for debugging only. Reserved fileds must be set to "0".
+        // TODO: Remove it is for debugging only. Reserved fields must be set to "0".
         pout->stdPictureInfo.reserved1 = pPerFrameDecodeParameters->numGopReferenceSlots;
-        // slotLayer requires NVIDIA specific extension VK_KHR_video_layers, not
-        // enabled, just yet. setupReferenceSlot.slotLayerIndex = 0;
         assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
         if (setupReferenceSlot.slotIndex >= 0) {
             setupReferenceSlot.pPictureResource = &pPerFrameDecodeParameters->decodeFrameInfo.dstPictureResource;
@@ -1772,10 +1787,10 @@ bool VulkanVideoParser::DecodePicture(
             pPerFrameDecodeParameters->decodeFrameInfo.referenceSlotCount = 0;
         }
 
-    } else if (m_codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT) {
+    } else if (m_codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) {
         const VkParserHevcPictureData* const pin = &pd->CodecSpecific.hevc;
         hevc = nvVideoH265PicParameters();
-        VkVideoDecodeH265PictureInfoEXT* pPictureInfo = &hevc.pictureInfo;
+        VkVideoDecodeH265PictureInfoKHR* pPictureInfo = &hevc.pictureInfo;
         StdVideoDecodeH265PictureInfo* pStdPictureInfo = &hevc.stdPictureInfo;
         nvVideoDecodeH265DpbSlotInfo* pDpbRefList = hevc.dpbRefList;
 
@@ -1788,11 +1803,11 @@ bool VulkanVideoParser::DecodePicture(
         }
 
 
-        pPictureInfo->sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PICTURE_INFO_EXT;
+        pPictureInfo->sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PICTURE_INFO_KHR;
 
         if (!m_outOfBandPictureParameters) {
             // In-band h264 Picture Parameters for testing
-            hevc.pictureParameters.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_ADD_INFO_EXT;
+            hevc.pictureParameters.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_ADD_INFO_KHR;
             hevc.pictureParameters.pStdSPSs = pin->pStdSps;
             hevc.pictureParameters.pStdPPSs = pin->pStdPps;
             pPictureInfo->pNext = &hevc.pictureParameters;
@@ -1810,8 +1825,8 @@ bool VulkanVideoParser::DecodePicture(
             pDecodePictureInfo->viewId = 0;
         }
 
-        pPictureInfo->sliceCount = pd->nNumSlices;
-        pPictureInfo->pSliceOffsets = pd->pSliceDataOffsets;
+        pPictureInfo->sliceSegmentCount = pd->nNumSlices;
+        pPictureInfo->pSliceSegmentOffsets = pd->pSliceDataOffsets;
 
         pStdPictureInfo->pps_pic_parameter_set_id   = pin->pic_parameter_set_id;       // PPS ID
         pStdPictureInfo->pps_seq_parameter_set_id   = pin->seq_parameter_set_id;       // SPS ID
@@ -1833,16 +1848,6 @@ bool VulkanVideoParser::DecodePicture(
         pStdPictureInfo->NumDeltaPocsOfRefRpsIdx = pin->NumDeltaPocsOfRefRpsIdx;
         pStdPictureInfo->PicOrderCntVal = pin->CurrPicOrderCntVal;
 
-        int8_t dpbSlot = AllocateDpbSlotForCurrentH265(GetPic(pd->pCurrPic),
-            true /* isReference */);
-        setupReferenceSlot.slotIndex = dpbSlot;
-        // slotLayer requires NVIDIA specific extension VK_KHR_video_layers, not
-        // enabled, just yet. setupReferenceSlot.slotLayerIndex = 0;
-        assert(!(dpbSlot < 0));
-        if (dpbSlot >= 0) {
-            assert(pd->ref_pic_flag);
-        }
-
         if (m_dumpParserData)
             std::cout << "\tnumPocStCurrBefore: " << (int32_t)pin->NumPocStCurrBefore
                       << " numPocStCurrAfter: " << (int32_t)pin->NumPocStCurrAfter
@@ -1850,7 +1855,8 @@ bool VulkanVideoParser::DecodePicture(
 
         pPerFrameDecodeParameters->numGopReferenceSlots = FillDpbH265State(pd, pin, pDpbRefList, pStdPictureInfo,
                 VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS, // max 16 reference pictures
-            referenceSlots, pPerFrameDecodeParameters->pGopReferenceImagesIndexes);
+            referenceSlots, pPerFrameDecodeParameters->pGopReferenceImagesIndexes,
+            &setupReferenceSlot.slotIndex);
 
         assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
         if (setupReferenceSlot.slotIndex >= 0) {
@@ -1949,12 +1955,12 @@ vulkanCreateVideoParser(IVulkanVideoDecoderHandler* pDecoderHandler,
     uint32_t maxNumDecodeSurfaces,
     uint32_t maxNumDpbSurfaces, uint64_t clockRate)
 {
-    if (codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT) {
+    if (codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
         if (!pStdExtensionVersion || strcmp(pStdExtensionVersion->extensionName, VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME) || (pStdExtensionVersion->specVersion != VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION)) {
             assert(!"Decoder h264 Codec version is NOT supported");
             return NULL;
         }
-    } else if (codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT) {
+    } else if (codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) {
         if (!pStdExtensionVersion || strcmp(pStdExtensionVersion->extensionName, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME) || (pStdExtensionVersion->specVersion != VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION)) {
             assert(!"Decoder h265 Codec version is NOT supported");
             return NULL;

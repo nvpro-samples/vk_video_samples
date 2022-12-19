@@ -87,7 +87,8 @@ public:
     };
 
 private:
-    FFmpegDemuxer(AVFormatContext *fmtc) : fmtc(fmtc) {
+    FFmpegDemuxer(AVFormatContext *fmtc, int defaultWidth = 1920,
+                  int defaultHeight = 1080, int defaultBitDepth = 12) : fmtc(fmtc) {
         if (!fmtc) {
             LOG(ERROR) << "No AVFormatContext provided.";
             return;
@@ -169,6 +170,16 @@ private:
             ck(av_bsf_alloc(bsf, &bsfc));
             bsfc->par_in = fmtc->streams[iVideoStream]->codecpar;
             ck(av_bsf_init(bsfc));
+        }
+
+        if (fmtc->streams[iVideoStream]->codecpar->width == 0) {
+            nWidth = defaultWidth;
+        }
+        if (fmtc->streams[iVideoStream]->codecpar->height == 0) {
+            nHeight = defaultHeight;
+        }
+        if (fmtc->streams[iVideoStream]->codecpar->format == -1) {
+            nBitDepth = defaultBitDepth;
         }
     }
 
@@ -278,7 +289,7 @@ public:
         return ((DataProvider *)opaque)->GetData(pBuf, nBuf);
     }
 
-
+    void Rewind(void) { } // TODO: Implement rewind with FFMpeg to support loop_count, currently only supported with DECODER_LIB for elementary streams.
     void DumpStreamParameters() {
 
         std::cout << "Width: "    << nWidth << std::endl;
@@ -391,8 +402,8 @@ inline VkVideoCodecOperationFlagBitsKHR FFmpeg2NvCodecId(AVCodecID id) {
     case AV_CODEC_ID_MPEG2VIDEO : assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
     case AV_CODEC_ID_MPEG4      : assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
     case AV_CODEC_ID_VC1        : assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
-    case AV_CODEC_ID_H264       : return VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT;
-    case AV_CODEC_ID_HEVC       : return VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT;
+    case AV_CODEC_ID_H264       : return VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR;
+    case AV_CODEC_ID_HEVC       : return VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR;
     case AV_CODEC_ID_VP8        : assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
 #ifdef VK_EXT_video_decode_vp9
     case AV_CODEC_ID_VP9        : return VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR;

@@ -32,6 +32,7 @@
 #ifndef __VULKANVIDEOUTILS__
 #define __VULKANVIDEOUTILS__
 
+#include <VkCodecUtils/HelpersDispatchTable.h>
 #include <vulkan_interfaces.h>
 
 namespace vulkanVideoUtils {
@@ -101,6 +102,25 @@ private:
     NativeHandle& operator= (const NativeHandle&) = delete;
 };
 
+struct ImageResourceInfo {
+    VkFormat       imageFormat;
+    int32_t        imageWidth;
+    int32_t        imageHeight;
+    uint32_t       arrayLayer;
+    VkImageLayout  imageLayout;
+    VkImage        image;
+    VkImageView    view;
+
+    ImageResourceInfo() : imageFormat(VK_FORMAT_UNDEFINED),
+                          imageWidth(0),
+                          imageHeight(0),
+                          arrayLayer(0),
+                          imageLayout(VK_IMAGE_LAYOUT_UNDEFINED),
+                          image(),
+                          view()
+    {}
+};
+
 // Global Variables ...
 class VulkanDeviceInfo {
 
@@ -111,59 +131,61 @@ public:
             VkDevice device = VkDevice(),
             uint32_t queueFamilyIndex = -1,
             VkQueue queue = VkQueue())
-    :   instance_(instance),
-        physDevice_(physDevice),
-        device_(device),
-        queueFamilyIndex_(queueFamilyIndex),
-        queue_(queue),
-        attached_(device != VkDevice()),
-        gpuMemoryProperties_()
+    :   m_instance(instance),
+        m_physDevice(physDevice),
+        m_device(device),
+        m_queueFamilyIndex(queueFamilyIndex),
+        m_queue(queue),
+        m_isExternallyManagedDevice(device != VkDevice()),
+        m_gpuMemoryProperties()
     {
-
+        if (m_physDevice) {
+            vk::GetPhysicalDeviceMemoryProperties(m_physDevice, &m_gpuMemoryProperties);
+        }
     }
 
     // Create vulkan device
     void CreateVulkanDevice(VkApplicationInfo *appInfo);
-    void AttachVulkanDevice(VkInstance instance,
-                            VkPhysicalDevice physDevice,
-                            VkDevice device,
-                            uint32_t queueFamilyIndex = -1,
-                            VkQueue queue = VkQueue(),
-                            VkPhysicalDeviceMemoryProperties* pMemoryProperties = NULL);
+    // Attach externally managed device
+    void AttachExternallyManagedDevice(VkInstance instance,
+                                       VkPhysicalDevice physDevice,
+                                       VkDevice device,
+                                       uint32_t queueFamilyIndex = -1,
+                                       VkQueue queue = VkQueue());
 
     VkInstance getInstance() {
-        return instance_;
+        return m_instance;
     }
 
     VkDevice getDevice() {
-        return device_;
+        return m_device;
     }
 
-    operator VkDevice() const { return device_; }
+    operator VkDevice() const { return m_device; }
 
     void DeviceWaitIdle()
     {
-        vk::DeviceWaitIdle(device_);
+        vk::DeviceWaitIdle(m_device);
     }
 
     ~VulkanDeviceInfo() {
 
-        if (device_) {
-            if (!attached_) {
-                vk::DestroyDevice(device_, nullptr);
+        if (m_device) {
+            if (!m_isExternallyManagedDevice) {
+                vk::DestroyDevice(m_device, nullptr);
             }
-            device_ = VkDevice();
+            m_device = VkDevice();
         }
 
-        if (instance_) {
-            if (!attached_) {
-                vk::DestroyInstance(instance_, nullptr);
+        if (m_instance) {
+            if (!m_isExternallyManagedDevice) {
+                vk::DestroyInstance(m_instance, nullptr);
             }
-            instance_ = VkInstance();
+            m_instance = VkInstance();
         }
 
-        queue_ = VkQueue();
-        attached_ = false;
+        m_queue = VkQueue();
+        m_isExternallyManagedDevice = false;
     }
 
     const VkExtensionProperties* FindExtension(
@@ -177,15 +199,15 @@ public:
     }
 
     const VkExtensionProperties* FindInstanceExtension(const char* name) {
-        return FindExtension(instanceExtensions_, name);
+        return FindExtension(m_instanceExtensions, name);
     }
 
     const VkExtensionProperties* FindDeviceExtension(const char* name) {
-        return FindExtension(deviceExtensions_, name);
+        return FindExtension(m_deviceExtensions, name);
     }
 
     void PrintExtensions(bool deviceExt = false) {
-        const std::vector<VkExtensionProperties>& extensions = deviceExt ? deviceExtensions_ : instanceExtensions_;
+        const std::vector<VkExtensionProperties>& extensions = deviceExt ? m_deviceExtensions : m_instanceExtensions;
         for (const auto& e : extensions)
             printf("\t%s (v%u)\n", e.extensionName, e.specVersion);
     }
@@ -203,8 +225,8 @@ private:
         return false;
       }
 
-      instanceExtensions_.resize( extensions_count );
-      result = vk::EnumerateInstanceExtensionProperties( nullptr, &extensions_count, instanceExtensions_.data() );
+      m_instanceExtensions.resize( extensions_count );
+      result = vk::EnumerateInstanceExtensionProperties( nullptr, &extensions_count, m_instanceExtensions.data() );
       if( (result != VK_SUCCESS) ||
           (extensions_count == 0) ) {
         std::cout << "Could not enumerate instance extensions." << std::endl;
@@ -218,15 +240,15 @@ private:
       uint32_t extensions_count = 0;
       VkResult result = VK_SUCCESS;
 
-      result = vk::EnumerateDeviceExtensionProperties( physDevice_, nullptr, &extensions_count, nullptr );
+      result = vk::EnumerateDeviceExtensionProperties( m_physDevice, nullptr, &extensions_count, nullptr );
       if( (result != VK_SUCCESS) ||
           (extensions_count == 0) ) {
         std::cout << "Could not get the number of device extensions." << std::endl;
         return false;
       }
 
-      deviceExtensions_.resize( extensions_count );
-      result = vk::EnumerateDeviceExtensionProperties( physDevice_, nullptr, &extensions_count, deviceExtensions_.data() );
+      m_deviceExtensions.resize( extensions_count );
+      result = vk::EnumerateDeviceExtensionProperties( m_physDevice, nullptr, &extensions_count, m_deviceExtensions.data() );
       if( (result != VK_SUCCESS) ||
           (extensions_count == 0) ) {
         std::cout << "Could not enumerate device extensions." << std::endl;
@@ -237,15 +259,15 @@ private:
     }
 
 public:
-    VkInstance instance_;
-    VkPhysicalDevice physDevice_;
-    VkDevice device_;
-    uint32_t queueFamilyIndex_;
-    VkQueue queue_;
-    bool attached_;
-    std::vector<VkExtensionProperties> instanceExtensions_;
-    std::vector<VkExtensionProperties> deviceExtensions_;
-    VkPhysicalDeviceMemoryProperties gpuMemoryProperties_;
+    VkInstance m_instance;
+    VkPhysicalDevice m_physDevice;
+    VkDevice m_device;
+    uint32_t m_queueFamilyIndex;
+    VkQueue m_queue;
+    bool m_isExternallyManagedDevice;
+    std::vector<VkExtensionProperties> m_instanceExtensions;
+    std::vector<VkExtensionProperties> m_deviceExtensions;
+    VkPhysicalDeviceMemoryProperties   m_gpuMemoryProperties;
 };
 
 class VulkanDisplayTiming  {
@@ -510,21 +532,16 @@ public:
     bool canBeExported;
 };
 
-class ImageObject {
+class ImageObject : public ImageResourceInfo {
 public:
     ImageObject ()
-    :   m_device(),
-        imageFormat(VK_FORMAT_UNDEFINED),
-        imageWidth(0),
-        imageHeight(0),
-        image(),
+    :   ImageResourceInfo(),
+        m_device(),
         mem(),
-        view(),
         m_exportMemHandleTypes(VK_EXTERNAL_MEMORY_HANDLE_TYPE_FLAG_BITS_MAX_ENUM),
         nativeHandle(),
         canBeExported(false),
-        inUseBySwapchain(false),
-        imageLayout(VK_IMAGE_LAYOUT_UNDEFINED)
+        inUseBySwapchain(false)
     { }
 
     VkResult CreateImage(VulkanDeviceInfo* deviceInfo,
@@ -585,17 +602,11 @@ public:
 #endif // defined(VK_USE_PLATFORM_ANDROID_KHR)
 
     VkDevice m_device;
-    VkFormat imageFormat;
-    int32_t imageWidth;
-    int32_t imageHeight;
-    VkImage image;
     VkDeviceMemory mem;
-    VkImageView view;
     VkExternalMemoryHandleTypeFlagBitsKHR m_exportMemHandleTypes;
     NativeHandle nativeHandle; // as a reference to know if this is the same imported buffer.
     bool canBeExported;
     bool inUseBySwapchain;
-    VkImageLayout imageLayout;
 };
 
 class VulkanSamplerYcbcrConversion {
@@ -887,7 +898,8 @@ public:
     // initialize descriptor set
     VkResult CreateDescriptorSet(VulkanDeviceInfo* deviceInfo, VkDescriptorPool allocPool, VkDescriptorSetLayout* dscLayouts, uint32_t descriptorSetCount = 1);
 
-    VkResult WriteDescriptorSet(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout = VK_IMAGE_LAYOUT_GENERAL);
+    VkResult WriteDescriptorSet(VkSampler sampler, VkImageView imageView, uint32_t dstArrayElement = 0,
+                                VkImageLayout imageLayout = VK_IMAGE_LAYOUT_GENERAL);
 
     VkResult CreateFragmentShaderOutput(VkDescriptorType outMode, uint32_t outSet, uint32_t outBinding, uint32_t outArrayIndex, std::stringstream& imageFss);
 
@@ -1001,7 +1013,7 @@ public:
 
     VkResult CreateCommandBufferPool(VulkanDeviceInfo* deviceInfo);
 
-    VkResult CreateCommandBuffer(VkRenderPass renderPass, const ImageObject* inputImageToDrawFrom,
+    VkResult CreateCommandBuffer(VkRenderPass renderPass, const ImageResourceInfo* inputImageToDrawFrom,
             int32_t displayWidth, int32_t displayHeight,
             VkImage displayImage, VkFramebuffer framebuffer, VkRect2D* pRenderArea,
             VkPipeline pipeline, VkPipelineLayout pipelineLayout, const VkDescriptorSet* pDescriptorSet,

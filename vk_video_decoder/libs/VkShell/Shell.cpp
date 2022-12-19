@@ -318,7 +318,8 @@ void Shell::init_physical_dev(uint32_t deviceID) {
         std::vector<VkQueueFamilyQueryResultStatusPropertiesKHR> queryResultStatus;
         vk::get(phy, queues, videoQueues, queryResultStatus);
 
-        int frameProcessor_queue_family = -1, present_queue_family = -1, video_decode_queue_family = -1, video_encode_queue_family = -1;
+        int frameProcessor_queue_family = -1, present_queue_family = -1,
+            video_decode_queue_family = -1, video_encode_queue_family = -1;
         for (uint32_t i = 0; i < queues.size(); i++) {
             const VkQueueFamilyProperties2 &q = queues[i];
             const VkQueueFamilyVideoPropertiesKHR &videoQueue = videoQueues[i];
@@ -333,8 +334,8 @@ void Shell::init_physical_dev(uint32_t deviceID) {
             if (frameProcessor_.requires_vulkan_video()) {
                 const VkFlags video_decode_queue_flags = VK_QUEUE_VIDEO_DECODE_BIT_KHR;
                 const VkVideoCodecOperationFlagsKHR suported_video_decode_queue_operations =
-                        VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_EXT |
-                        VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_EXT;
+                        VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
+                        VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR;
                 if ((video_decode_queue_family < 0) &&
                         (q.queueFamilyProperties.queueFlags & video_decode_queue_flags) &&
                         (videoQueue.videoCodecOperations & suported_video_decode_queue_operations)) {
@@ -390,7 +391,12 @@ void Shell::create_context() {
     vk::GetDeviceQueue(ctx_.dev, ctx_.frameProcessor_queue_family, 0, &ctx_.frameProcessor_queue);
     vk::GetDeviceQueue(ctx_.dev, ctx_.present_queue_family, 0, &ctx_.present_queue);
     if (ctx_.video_decode_queue_family != (uint32_t)-1) {
-        vk::GetDeviceQueue(ctx_.dev, ctx_.video_decode_queue_family, 0, &ctx_.video_queue);
+
+        if (ctx_.video_queue.empty()) {
+            ctx_.video_queue.resize(1);
+        }
+
+        vk::GetDeviceQueue(ctx_.dev, ctx_.video_decode_queue_family, 0, &ctx_.video_queue[0]);
     }
     create_back_buffers();
 
@@ -413,7 +419,9 @@ void Shell::destroy_context() {
 
     ctx_.frameProcessor_queue = VK_NULL_HANDLE;
     ctx_.present_queue = VK_NULL_HANDLE;
-    ctx_.video_queue  = VK_NULL_HANDLE;
+    for (size_t i = 0; i < ctx_.video_queue.size(); i++) {
+        ctx_.video_queue[i]  = VK_NULL_HANDLE;
+    }
 
     vk::DestroyDevice(ctx_.dev, nullptr);
     ctx_.dev = VK_NULL_HANDLE;

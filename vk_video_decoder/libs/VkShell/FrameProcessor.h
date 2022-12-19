@@ -51,7 +51,10 @@ class FrameProcessor {
         int max_frame_count;
 
         std::string videoFileName;
+        std::string outputFileName;
         int gpuIndex;
+        int loop_count;
+        int queue_id;
     };
     const Settings &settings() const { return settings_; }
 
@@ -109,7 +112,8 @@ class FrameProcessor {
 
         settings_.max_frame_count = -1;
         settings_.videoFileName = "";
-
+        settings_.loop_count = 1;
+        settings_.queue_id = 0;
         parse_args(args);
 
         frame_count = 0;
@@ -145,6 +149,9 @@ class FrameProcessor {
                 settings_.no_tick = true;
             } else if (*it == "--np") {
                 settings_.no_present = true;
+            } else if (*it == "-o") {
+                it++;
+                settings_.outputFileName = *it;
             } else if (*it == "-i") {
                 it++;
                 settings_.videoFileName = *it;
@@ -154,6 +161,12 @@ class FrameProcessor {
             } else if (*it == "--c") {
                 ++it;
                 settings_.max_frame_count = std::stoi(*it);
+            } else if (*it == "--loop") {
+                ++it;
+                settings_.loop_count = std::stoi(*it);
+            } else if (*it == "--queueid") {
+                ++it;
+                settings_.queue_id = std::stoi(*it);
             }
         }
     }
