@@ -19,12 +19,12 @@
 #include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/HelpersDispatchTable.h"
 #include "VkCodecUtils/VulkanVideoUtils.h"
-#include "VkCodecUtils/nvVideoProfile.h"
+#include "VkCodecUtils/NvVideoProfile.h"
 #include "VkCodecUtils/NvVideoSession.h"
 
 VkResult NvVideoSession::Create(VkDevice          dev,
                                 uint32_t          videoQueueFamily,
-                                nvVideoProfile*   pVideoProfile,
+                                NvVideoProfile*   pVideoProfile,
                                 VkFormat          pictureFormat,
                                 const VkExtent2D& maxCodedExtent,
                                 VkFormat          referencePicturesFormat,

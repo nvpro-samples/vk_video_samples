@@ -459,8 +459,7 @@ int32_t EncodeApp::initEncoder(EncodeConfig* encodeConfig)
     VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling = getChromaSubsamplingFlagBits(encodeConfig->chromaFormatIDC); // VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR
     VkVideoComponentBitDepthFlagBitsKHR lumaBitDepth = getComponentBitDepthFlagBits(encodeConfig->bpp); // VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
     VkVideoComponentBitDepthFlagBitsKHR chromaBitDepth = getComponentBitDepthFlagBits(encodeConfig->bpp); // VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
-    m_videoProfile.initVideoProfile(videoCodec, chromaSubsampling, lumaBitDepth, chromaBitDepth,
-                                    STD_VIDEO_H264_PROFILE_IDC_HIGH);
+    m_videoProfile = NvVideoProfile(videoCodec, chromaSubsampling, lumaBitDepth, chromaBitDepth, STD_VIDEO_H264_PROFILE_IDC_HIGH);
 
     // get supported input formats for encoder & recon images format (dpb)
     VkFormat supportedReconstructedPicturesFormats[4];

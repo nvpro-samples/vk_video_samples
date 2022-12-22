@@ -33,7 +33,7 @@ static_assert((uint32_t)chroma_format_idc_422        == (uint32_t)STD_VIDEO_H265
 static_assert((uint32_t)chroma_format_idc_444        == (uint32_t)STD_VIDEO_H265_CHROMA_FORMAT_IDC_444);
 #endif
 
-class nvVideoProfile
+class NvVideoProfile
 {
 
 public:
@@ -125,14 +125,14 @@ public:
         return PopulateProfileExt((VkBaseInStructure const *)pVideoProfile->pNext);
     }
 
-    nvVideoProfile(const VkVideoProfileInfoKHR* pVideoProfile)
+    NvVideoProfile(const VkVideoProfileInfoKHR* pVideoProfile)
         : m_profile(*pVideoProfile)
     {
 
         PopulateProfileExt((VkBaseInStructure const *)pVideoProfile->pNext);
     }
 
-    nvVideoProfile( VkVideoCodecOperationFlagBitsKHR videoCodecOperation = VK_VIDEO_CODEC_OPERATION_NONE_KHR,
+    NvVideoProfile( VkVideoCodecOperationFlagBitsKHR videoCodecOperation = VK_VIDEO_CODEC_OPERATION_NONE_KHR,
                           VkVideoChromaSubsamplingFlagsKHR chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_INVALID_KHR,
                           VkVideoComponentBitDepthFlagsKHR lumaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR,
                           VkVideoComponentBitDepthFlagsKHR chromaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR,
@@ -264,7 +264,7 @@ public:
         }
     }
 
-    bool copyProfile(const nvVideoProfile& src)
+    bool copyProfile(const NvVideoProfile& src)
     {
         if (!src) {
             return false;
@@ -283,19 +283,19 @@ public:
         return true;
     }
 
-    nvVideoProfile(const nvVideoProfile& other)
+    NvVideoProfile(const NvVideoProfile& other)
     {
         copyProfile(other);
     }
 
-    nvVideoProfile& operator= (const nvVideoProfile& other)
+    NvVideoProfile& operator= (const NvVideoProfile& other)
     {
         copyProfile(other);
         return *this;
     }
 
 
-    bool operator ==(const nvVideoProfile &other) const
+    bool operator ==(const NvVideoProfile &other) const
     {
         if (m_profile.videoCodecOperation != other.m_profile.videoCodecOperation) {
             return false;
@@ -316,7 +316,7 @@ public:
         return true;
     }
 
-    bool operator !=(const nvVideoProfile &other) const
+    bool operator !=(const NvVideoProfile &other) const
     {
         return !(*this == other);
     }

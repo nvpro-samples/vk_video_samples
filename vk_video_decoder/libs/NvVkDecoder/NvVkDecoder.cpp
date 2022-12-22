@@ -112,7 +112,7 @@ uint32_t NvVkDecoder::GetNumDecodeSurfaces(VkVideoCodecOperationFlagBitsKHR code
     return 8;
 }
 
-VkResult NvVkDecoder::GetVideoFormats(nvVideoProfile* pVideoProfile, VkImageUsageFlags imageUsage,
+VkResult NvVkDecoder::GetVideoFormats(NvVideoProfile* pVideoProfile, VkImageUsageFlags imageUsage,
                                       uint32_t& formatCount, VkFormat* formats)
 {
     for (uint32_t i = 0; i < formatCount; i++) {
@@ -154,7 +154,7 @@ VkResult NvVkDecoder::GetVideoFormats(nvVideoProfile* pVideoProfile, VkImageUsag
     return result;
 }
 
-VkResult NvVkDecoder::GetVideoCapabilities(nvVideoProfile* pVideoProfile, VkVideoCapabilitiesKHR* pVideoCapabilities)
+VkResult NvVkDecoder::GetVideoCapabilities(NvVideoProfile* pVideoProfile, VkVideoCapabilitiesKHR* pVideoCapabilities)
 {
     assert(pVideoCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR);
     VkVideoDecodeCapabilitiesKHR* pVideoDecodeCapabilities = (VkVideoDecodeCapabilitiesKHR*)pVideoCapabilities->pNext;
@@ -277,13 +277,13 @@ int32_t NvVkDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoForma
     VkVideoCodecOperationFlagBitsKHR videoCodec = pVideoFormat->codec;
 
     if (m_dumpDecodeData) {
-        std::cout << "\tcodec " << nvVideoProfile::CodecToName(videoCodec) << std::endl;
+        std::cout << "\tcodec " << NvVideoProfile::CodecToName(videoCodec) << std::endl;
     }
 
-    nvVideoProfile videoProfile(videoCodec, pVideoFormat->chromaSubsampling, pVideoFormat->lumaBitDepth, pVideoFormat->chromaBitDepth,
+    NvVideoProfile videoProfile(videoCodec, pVideoFormat->chromaSubsampling, pVideoFormat->lumaBitDepth, pVideoFormat->chromaBitDepth,
                                 pVideoFormat->codecProfile);
     if (!IsCodecTypeSupported(m_pVulkanDecodeContext.physicalDev, m_pVulkanDecodeContext.videoDecodeQueueFamily, videoCodec)) {
-        std::cout << "*** The video codec " << nvVideoProfile::CodecToName(videoCodec) << " is not supported! ***" << std::endl;
+        std::cout << "*** The video codec " << NvVideoProfile::CodecToName(videoCodec) << " is not supported! ***" << std::endl;
         assert("The video codec is not supported");
         return -1;
     }

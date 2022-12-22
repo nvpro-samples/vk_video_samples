@@ -24,7 +24,7 @@ class NvVideoSession : public VkParserVideoRefCountBase
 public:
     static VkResult Create(VkDevice          dev,
                            uint32_t          videoQueueFamily,
-                           nvVideoProfile*   pVideoProfile,
+                           NvVideoProfile*   pVideoProfile,
                            VkFormat          pictureFormat,
                            const VkExtent2D& maxCodedExtent,
                            VkFormat          referencePicturesFormat,
@@ -34,7 +34,7 @@ public:
 
     bool IsCompatible ( VkDevice          dev,
                         uint32_t          videoQueueFamily,
-                        nvVideoProfile*   pVideoProfile,
+                        NvVideoProfile*   pVideoProfile,
                         VkFormat          pictureFormat,
                         const VkExtent2D& maxCodedExtent,
                         VkFormat          referencePicturesFormat,
@@ -100,13 +100,13 @@ public:
 
 private:
     std::atomic<int32_t>                 m_refCount;
-    nvVideoProfile                       m_profile;
+    NvVideoProfile                       m_profile;
     VkDevice                             m_dev;
     VkVideoSessionCreateInfoKHR          m_createInfo;
     VkVideoSessionKHR                    m_videoSession;
     vulkanVideoUtils::DeviceMemoryObject m_memoryBound[8];
 
-    NvVideoSession(nvVideoProfile* pVideoProfile)
+    NvVideoSession(NvVideoProfile* pVideoProfile)
        : m_refCount(0), m_profile(*pVideoProfile), m_dev(VkDevice()),
          m_createInfo{ VK_STRUCTURE_TYPE_VIDEO_SESSION_CREATE_INFO_KHR, NULL },
          m_videoSession(VkVideoSessionKHR()), m_memoryBound{}
