@@ -28,7 +28,7 @@
 #include "PictureBufferBase.h"
 #include "VkCodecUtils/HelpersDispatchTable.h"
 #include "VkCodecUtils/VulkanVideoUtils.h"
-#include "VkCodecUtils/NvVideoProfile.h"
+#include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VulkanVideoFrameBuffer.h"
 #include "vk_enum_string_helper.h"
 #include "vulkan_interfaces.h"
@@ -291,7 +291,7 @@ public:
 
 private:
     uint32_t                             m_queueFamilyIndex;
-    NvVideoProfile                       m_videoProfile;
+    VkVideoCoreProfile                   m_videoProfile;
     VkImageCreateInfo                    m_imageCreateInfo;
     VkMemoryPropertyFlags                m_requiredMemProps;
     uint32_t                             m_numImages;

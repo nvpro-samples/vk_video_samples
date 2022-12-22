@@ -15,13 +15,13 @@
  */
 
 #include <assert.h>
-#include "NvVideoProfile.h"
+#include "VkVideoCore/VkVideoCoreProfile.h"
 #include "NvVideoSession.h"
 
 VkResult NvVideoSession::create(nvvk::MemAllocator* devAlloc,
                                 nvvk::Context*      vkctx,
                                 uint32_t            videoQueueFamily,
-                                NvVideoProfile*     pVideoProfile,
+                                VkVideoCoreProfile* pVideoProfile,
                                 VkFormat            pictureFormat,
                                 const VkExtent2D&   maxCodedExtent,
                                 VkFormat            referencePicturesFormat,

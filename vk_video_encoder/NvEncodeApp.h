@@ -20,7 +20,7 @@
 
 #include "vulkan/vulkan.hpp"
 
-#include "VkCodecUtils/NvVideoProfile.h"
+#include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkCodecUtils/NvVideoSession.h"
 #include "VkCodecUtils/NvPictureBuffer.h"
 
@@ -182,8 +182,8 @@ public:
 
     int32_t initRateControl(VkCommandBuffer cmdBuf, uint32_t qp);
     int32_t selectNvidiaGPU(std::vector<uint32_t> compatibleDevices, nvvk::ContextCreateInfo ctxInfo, uint32_t deviceID);
-    VkResult getVideoFormats(VkPhysicalDevice physicalDevice, NvVideoProfile* pVideoProfile, VkImageUsageFlags imageUsage, uint32_t& formatCount, VkFormat* formats);
-    VkResult getVideoCapabilities(VkPhysicalDevice physicalDevice, NvVideoProfile* pVideoProfile, VkVideoCapabilitiesKHR* pVideoEncodeCapabilities);
+    VkResult getVideoFormats(VkPhysicalDevice physicalDevice, VkVideoCoreProfile* pVideoProfile, VkImageUsageFlags imageUsage, uint32_t& formatCount, VkFormat* formats);
+    VkResult getVideoCapabilities(VkPhysicalDevice physicalDevice, VkVideoCoreProfile* pVideoProfile, VkVideoCapabilitiesKHR* pVideoEncodeCapabilities);
     VkVideoComponentBitDepthFlagBitsKHR getComponentBitDepthFlagBits(uint32_t bpp);
     VkVideoChromaSubsamplingFlagBitsKHR getChromaSubsamplingFlagBits(uint32_t chromaFormatIDC);
     StdVideoH264SequenceParameterSet getStdVideoH264SequenceParameterSet (uint32_t width, uint32_t height, StdVideoH264SequenceParameterSetVui*	stdVideoH264SequenceParameterSetVui);
@@ -200,7 +200,7 @@ public:
 private:
     nvvk::Context m_ctx;
     nvvk::CommandPool m_cmdPoolVideoEncode;
-    NvVideoProfile m_videoProfile;
+    VkVideoCoreProfile m_videoProfile;
     NvVideoSession* m_pVideoSession;
     NvVideoSessionParameters m_videoSessionParameters;
     VkFormat m_imageFormat;

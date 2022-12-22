@@ -61,10 +61,10 @@ else()
 endif()
 
 set(COMMON_VIDEO_SOURCE_FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/include/VkVideoCore/VkVideoCoreProfile.h
         ${CMAKE_CURRENT_SOURCE_DIR}/../common/src/VkCodecUtils/nvVkFormats.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/VkCodecUtils/NvPictureBuffer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/VkCodecUtils/NvPictureBuffer.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/VkCodecUtils/NvVideoProfile.h
         ${CMAKE_CURRENT_SOURCE_DIR}/VkCodecUtils/NvVideoSession.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/VkCodecUtils/NvVideoSession.h
    ) 

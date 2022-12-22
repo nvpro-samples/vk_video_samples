@@ -29,7 +29,7 @@
 #include <string>
 #include <vector>
 
-#include "NvVideoProfile.h"
+#include "VkVideoCore/VkVideoCoreProfile.h"
 #include "nvvk/resourceallocator_vk.hpp"
 #include "nvvk/context_vk.hpp"
 #include "nvvk/images_vk.hpp"
@@ -107,7 +107,7 @@ public:
     VkFence m_frameConsumerDoneFence;
     VkSemaphore m_frameProducerDoneSemaphore;
     uint32_t m_queueFamilyIndex;
-    NvVideoProfile m_videoProfile;
+    VkVideoCoreProfile m_videoProfile;
     VkExtent2D m_extent;
     nvvk::Buffer m_outBitstreamBuffer;
     nvvk::Buffer m_inputStagingBuffer;
@@ -190,7 +190,7 @@ private:
 private:
     nvvk::Context*                      m_pCtx;
     uint32_t                            m_queueFamilyIndex;
-    NvVideoProfile                      m_videoProfile;
+    VkVideoCoreProfile                  m_videoProfile;
     VkImageCreateInfo                   m_imageCreateInfo;
     size_t                              m_frameBufferSize;
     size_t                              m_dpbSize;

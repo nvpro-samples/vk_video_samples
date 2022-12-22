@@ -29,7 +29,7 @@
 #include "NvVideoParser/nvVulkanVideoParser.h"
 #include "NvVideoParser/nvVulkanVideoUtils.h"
 #include "PictureBufferBase.h"
-#include "VkCodecUtils/NvVideoProfile.h"
+#include "VkVideoCore/VkVideoCoreProfile.h"
 #include "StdVideoPictureParametersSet.h"
 
 #include "VulkanVideoParser.h"

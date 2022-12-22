@@ -148,7 +148,7 @@ VkVideoChromaSubsamplingFlagBitsKHR EncodeApp::getChromaSubsamplingFlagBits(uint
     return chromaSubsamplingFlag;
 };
 
-VkResult EncodeApp::getVideoFormats(VkPhysicalDevice physicalDevice, NvVideoProfile* pVideoProfile, VkImageUsageFlags imageUsage, uint32_t& formatCount, VkFormat* formats)
+VkResult EncodeApp::getVideoFormats(VkPhysicalDevice physicalDevice, VkVideoCoreProfile* pVideoProfile, VkImageUsageFlags imageUsage, uint32_t& formatCount, VkFormat* formats)
 {
     for (uint32_t i = 0; i < formatCount; i++) {
         formats[i] = VK_FORMAT_UNDEFINED;
@@ -186,7 +186,7 @@ VkResult EncodeApp::getVideoFormats(VkPhysicalDevice physicalDevice, NvVideoProf
     return result;
 }
 
-VkResult EncodeApp::getVideoCapabilities(VkPhysicalDevice physicalDevice, NvVideoProfile* pVideoProfile, VkVideoCapabilitiesKHR* pVideoCapabilities)
+VkResult EncodeApp::getVideoCapabilities(VkPhysicalDevice physicalDevice, VkVideoCoreProfile* pVideoProfile, VkVideoCapabilitiesKHR* pVideoCapabilities)
 {
     VkVideoEncodeCapabilitiesKHR* pVideoEncodeCapabilities = nullptr;
     VkVideoEncodeH264CapabilitiesEXT* pH264Capabilities = nullptr;
@@ -459,7 +459,7 @@ int32_t EncodeApp::initEncoder(EncodeConfig* encodeConfig)
     VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling = getChromaSubsamplingFlagBits(encodeConfig->chromaFormatIDC); // VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR
     VkVideoComponentBitDepthFlagBitsKHR lumaBitDepth = getComponentBitDepthFlagBits(encodeConfig->bpp); // VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
     VkVideoComponentBitDepthFlagBitsKHR chromaBitDepth = getComponentBitDepthFlagBits(encodeConfig->bpp); // VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
-    m_videoProfile = NvVideoProfile(videoCodec, chromaSubsampling, lumaBitDepth, chromaBitDepth, STD_VIDEO_H264_PROFILE_IDC_HIGH);
+    m_videoProfile = VkVideoCoreProfile(videoCodec, chromaSubsampling, lumaBitDepth, chromaBitDepth, STD_VIDEO_H264_PROFILE_IDC_HIGH);
 
     // get supported input formats for encoder & recon images format (dpb)
     VkFormat supportedReconstructedPicturesFormats[4];

@@ -28,7 +28,7 @@ public:
     static VkResult create(nvvk::MemAllocator*  devAlloc,
                            nvvk::Context*       vkctx,
                            uint32_t             videoQueueFamily,
-                           NvVideoProfile*      pVideoProfile,
+                           VkVideoCoreProfile*  pVideoProfile,
                            VkFormat             pictureFormat,
                            const VkExtent2D&    maxCodedExtent,
                            VkFormat             referencePicturesFormat,
@@ -44,17 +44,17 @@ public:
     ~NvVideoSession();
 
 private:
-    NvVideoProfile                       m_profile;
+    VkVideoCoreProfile                   m_profile;
     VkDevice                             m_dev;
     VkVideoSessionKHR                    m_videoSession;
     nvvk::MemAllocator*                  m_devAlloc;
     nvvk::MemHandle                      m_boundMemory[8];
     uint32_t                             m_boundMemoryCount;
 
-    NvVideoSession(NvVideoProfile* pVideoProfile)
+    NvVideoSession(VkVideoCoreProfile* pVideoProfile)
         : m_profile(*pVideoProfile), m_dev(VkDevice()),
-          m_videoSession(VkVideoSessionKHR()), m_boundMemory{},
-          m_boundMemoryCount(0)
+          m_videoSession(VkVideoSessionKHR()),
+          m_devAlloc(), m_boundMemory{}, m_boundMemoryCount(0)
     {
 
     }

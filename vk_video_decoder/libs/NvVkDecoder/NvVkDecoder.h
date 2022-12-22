@@ -29,7 +29,7 @@
 
 #include "VkCodecUtils/VulkanVideoUtils.h"
 #include "VkCodecUtils/Helpers.h"
-#include "VkCodecUtils/NvVideoProfile.h"
+#include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkCodecUtils/NvVideoSession.h"
 #include "VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.h"
 #include "VulkanVideoParser.h"
@@ -247,7 +247,7 @@ public:
     }
 
     VkResult GetEncodeH264Capabilities(VkPhysicalDevice vkPhysicalDev, uint32_t vkVideoDecodeQueueFamily,
-                          const NvVideoProfile* pProfile) const
+                                       const VkVideoCoreProfile* pProfile) const
     {
         const bool isEncode = pProfile->IsEncodeCodecType();
 
@@ -260,10 +260,10 @@ public:
                                                                     &videoDecodeCapabilities);
     }
 
-    VkResult GetVideoFormats(NvVideoProfile* pVideoProfile, VkImageUsageFlags imageUsage,
+    VkResult GetVideoFormats(VkVideoCoreProfile* pVideoProfile, VkImageUsageFlags imageUsage,
                              uint32_t& formatCount, VkFormat* formats);
 
-    VkResult GetVideoCapabilities(NvVideoProfile* pVideoProfile,
+    VkResult GetVideoCapabilities(VkVideoCoreProfile* pVideoProfile,
                                   VkVideoCapabilitiesKHR* pVideoDecodeCapabilities);
 
     NvVkDecoder(const VulkanDecodeContext* pVulkanDecodeContext, VulkanVideoFrameBuffer* pVideoFrameBuffer, bool useLinearOutput = false)

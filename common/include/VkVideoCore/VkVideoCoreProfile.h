@@ -1,13 +1,18 @@
-/***************************************************************************\
-|*                                                                           *|
-|*      Copyright 2018-2020 NVIDIA Corporation.  All rights reserved.        *|
-|*                                                                           *|
-|*   THE SOFTWARE AND INFORMATION CONTAINED HEREIN IS PROPRIETARY AND        *|
-|*   CONFIDENTIAL TO NVIDIA CORPORATION. THIS SOFTWARE IS FOR INTERNAL USE   *|
-|*   ONLY AND ANY REPRODUCTION OR DISCLOSURE TO ANY PARTY OUTSIDE OF NVIDIA  *|
-|*   IS STRICTLY PROHIBITED.                                                 *|
-|*                                                                           *|
-\***************************************************************************/
+/*
+ * Copyright 2018-2022 NVIDIA Corporation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 #ifndef _NVVIDEOPROFILE_H_
 #define _NVVIDEOPROFILE_H_
@@ -16,8 +21,11 @@
 #include <assert.h>
 #endif
 #include <iostream>
+#include "vk_video/vulkan_video_codecs_common.h"
 #include "vk_video/vulkan_video_codec_h264std.h"
 #include "vk_video/vulkan_video_codec_h265std.h"
+#define VK_ENABLE_BETA_EXTENSIONS 1
+#include "vulkan/vulkan.h"
 
 typedef enum StdChromaFormatIdc {
     chroma_format_idc_monochrome  = STD_VIDEO_H264_CHROMA_FORMAT_IDC_MONOCHROME,
@@ -33,7 +41,7 @@ static_assert((uint32_t)chroma_format_idc_422        == (uint32_t)STD_VIDEO_H265
 static_assert((uint32_t)chroma_format_idc_444        == (uint32_t)STD_VIDEO_H265_CHROMA_FORMAT_IDC_444);
 #endif
 
-class NvVideoProfile
+class VkVideoCoreProfile
 {
 
 public:
@@ -125,14 +133,14 @@ public:
         return PopulateProfileExt((VkBaseInStructure const *)pVideoProfile->pNext);
     }
 
-    NvVideoProfile(const VkVideoProfileInfoKHR* pVideoProfile)
+    VkVideoCoreProfile(const VkVideoProfileInfoKHR* pVideoProfile)
         : m_profile(*pVideoProfile)
     {
 
         PopulateProfileExt((VkBaseInStructure const *)pVideoProfile->pNext);
     }
 
-    NvVideoProfile( VkVideoCodecOperationFlagBitsKHR videoCodecOperation = VK_VIDEO_CODEC_OPERATION_NONE_KHR,
+    VkVideoCoreProfile( VkVideoCodecOperationFlagBitsKHR videoCodecOperation = VK_VIDEO_CODEC_OPERATION_NONE_KHR,
                           VkVideoChromaSubsamplingFlagsKHR chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_INVALID_KHR,
                           VkVideoComponentBitDepthFlagsKHR lumaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR,
                           VkVideoComponentBitDepthFlagsKHR chromaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR,
@@ -264,7 +272,7 @@ public:
         }
     }
 
-    bool copyProfile(const NvVideoProfile& src)
+    bool copyProfile(const VkVideoCoreProfile& src)
     {
         if (!src) {
             return false;
@@ -283,19 +291,19 @@ public:
         return true;
     }
 
-    NvVideoProfile(const NvVideoProfile& other)
+    VkVideoCoreProfile(const VkVideoCoreProfile& other)
     {
         copyProfile(other);
     }
 
-    NvVideoProfile& operator= (const NvVideoProfile& other)
+    VkVideoCoreProfile& operator= (const VkVideoCoreProfile& other)
     {
         copyProfile(other);
         return *this;
     }
 
 
-    bool operator ==(const NvVideoProfile &other) const
+    bool operator ==(const VkVideoCoreProfile &other) const
     {
         if (m_profile.videoCodecOperation != other.m_profile.videoCodecOperation) {
             return false;
@@ -316,7 +324,7 @@ public:
         return true;
     }
 
-    bool operator !=(const NvVideoProfile &other) const
+    bool operator !=(const VkVideoCoreProfile &other) const
     {
         return !(*this == other);
     }

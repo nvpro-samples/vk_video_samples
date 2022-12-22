@@ -19,17 +19,17 @@
 #include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/HelpersDispatchTable.h"
 #include "VkCodecUtils/VulkanVideoUtils.h"
-#include "VkCodecUtils/NvVideoProfile.h"
+#include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkCodecUtils/NvVideoSession.h"
 
-VkResult NvVideoSession::Create(VkDevice          dev,
-                                uint32_t          videoQueueFamily,
-                                NvVideoProfile*   pVideoProfile,
-                                VkFormat          pictureFormat,
-                                const VkExtent2D& maxCodedExtent,
-                                VkFormat          referencePicturesFormat,
-                                uint32_t          maxDpbSlots,
-                                uint32_t          maxActiveReferencePictures,
+VkResult NvVideoSession::Create(VkDevice            dev,
+                                uint32_t            videoQueueFamily,
+                                VkVideoCoreProfile* pVideoProfile,
+                                VkFormat            pictureFormat,
+                                const VkExtent2D&   maxCodedExtent,
+                                VkFormat            referencePicturesFormat,
+                                uint32_t            maxDpbSlots,
+                                uint32_t            maxActiveReferencePictures,
                                 VkSharedBaseObj<NvVideoSession>& videoSession)
 {
     NvVideoSession* pNewVideoSession = new NvVideoSession(pVideoProfile);
