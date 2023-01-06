@@ -190,7 +190,9 @@ int VulkanFrame::attach_shell(Shell& sh)
 
     if (ctx.video_queue[0] != VkQueue()) {
         const VulkanDecodeContext vulkanDecodeContext = { ctx.instance, ctx.physical_dev, ctx.dev, ctx.video_decode_queue_family,
-                                                          ctx.video_queue[0], ctx.video_encode_queue_family };
+                                                          ctx.video_queue[0],
+                                                          ctx.video_encode_queue_family,
+                                                          ctx.queryResultStatusSupport};
 
         const char* filePath = settings_.videoFileName.c_str();
         m_videoProcessor.Init(&vulkanDecodeContext, &pVideoRenderer->device_, filePath, (settings_.outputFileName.size() == 0) ? nullptr : settings_.outputFileName.c_str() );

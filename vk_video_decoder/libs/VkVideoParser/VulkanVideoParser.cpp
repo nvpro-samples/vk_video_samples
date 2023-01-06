@@ -1768,7 +1768,14 @@ bool VulkanVideoParser::DecodePicture(
         pout->stdPictureInfo.reserved1 = pPerFrameDecodeParameters->numGopReferenceSlots;
         assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
         if (setupReferenceSlot.slotIndex >= 0) {
-            setupReferenceSlot.pPictureResource = &pPerFrameDecodeParameters->decodeFrameInfo.dstPictureResource;
+            bool distinctDstDpbImages = m_pDecoderHandler->IsDstDpbDistinctImages();
+            if (distinctDstDpbImages) {
+                const int32_t setupSlotNdx = pPerFrameDecodeParameters->numGopReferenceSlots;
+                pPerFrameDecodeParameters->pictureResources[setupSlotNdx].sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
+                setupReferenceSlot.pPictureResource = &pPerFrameDecodeParameters->pictureResources[setupSlotNdx];
+            } else {
+                setupReferenceSlot.pPictureResource = &pPerFrameDecodeParameters->decodeFrameInfo.dstPictureResource;
+            }
             pPerFrameDecodeParameters->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
         }
         if (pPerFrameDecodeParameters->numGopReferenceSlots) {
@@ -1860,7 +1867,15 @@ bool VulkanVideoParser::DecodePicture(
 
         assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
         if (setupReferenceSlot.slotIndex >= 0) {
-            setupReferenceSlot.pPictureResource = &pPerFrameDecodeParameters->decodeFrameInfo.dstPictureResource;
+
+            bool distinctDstDpbImages = m_pDecoderHandler->IsDstDpbDistinctImages();
+            if (distinctDstDpbImages) {
+                const int32_t setupSlotNdx = pPerFrameDecodeParameters->numGopReferenceSlots;
+                pPerFrameDecodeParameters->pictureResources[setupSlotNdx].sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
+                setupReferenceSlot.pPictureResource = &pPerFrameDecodeParameters->pictureResources[setupSlotNdx];
+            } else {
+                setupReferenceSlot.pPictureResource = &pPerFrameDecodeParameters->decodeFrameInfo.dstPictureResource;
+            }
             pPerFrameDecodeParameters->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
         }
 

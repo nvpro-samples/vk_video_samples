@@ -116,6 +116,7 @@ class Shell {
         uint32_t video_decode_queue_family;
         uint32_t video_decode_queue_count;
         uint32_t video_encode_queue_family;
+        bool     queryResultStatusSupport;
 
         VkDevice dev;
         VkQueue frameProcessor_queue;
@@ -193,7 +194,7 @@ class Shell {
     void assert_all_instance_extensions() const;
 
     bool has_all_device_layers(VkPhysicalDevice phy) const;
-    bool has_all_device_extensions(VkPhysicalDevice phy) const;
+    bool has_all_device_extensions(VkPhysicalDevice phy);
 
     // called by init_vk
     virtual PFN_vkGetInstanceProcAddr load_vk() = 0;

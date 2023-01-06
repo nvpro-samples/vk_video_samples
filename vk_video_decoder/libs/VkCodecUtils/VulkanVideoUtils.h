@@ -893,7 +893,9 @@ public:
 
     // initialize descriptor set
     VkResult CreateDescriptorSet(VkDevice device,
-            uint32_t descriptorCount = 1, const VkSampler* pImmutableSamplers = nullptr);
+                                 uint32_t combinedImageSamplerDescriptorCount,
+                                 uint32_t descriptorCount = 1,
+                                 const VkSampler* pImmutableSamplers = nullptr);
 
     // initialize descriptor set
     VkResult CreateDescriptorSet(VulkanDeviceInfo* deviceInfo, VkDescriptorPool allocPool, VkDescriptorSetLayout* dscLayouts, uint32_t descriptorSetCount = 1);
@@ -1065,7 +1067,8 @@ public:
       gfxPipeline(),
       pCurrentImage(NULL),
       lastVideoFormatUpdate((uint32_t)-1),
-      currentInputBuffer(NULL)
+      currentInputBuffer(NULL),
+      m_combinedImageSamplerDescriptorCount(0)
     {
     }
 
@@ -1092,6 +1095,7 @@ public:
     uint32_t lastVideoFormatUpdate;
     // android::sp<PinnedBufferItem> currentInputBuffer;
     void* currentInputBuffer;
+    uint32_t m_combinedImageSamplerDescriptorCount;
 };
 
 class VulkanRenderInfo {
@@ -1179,7 +1183,6 @@ private:
     VkDevice m_device;
     int32_t mNumCtxs;
     VulkanPerDrawContext* perDrawCtx;
-
 };
 
 class VkVideoAppCtx {

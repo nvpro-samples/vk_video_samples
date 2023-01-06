@@ -43,10 +43,12 @@ Shell::Shell(FrameProcessor &frameProcessor)
     device_extensions_.push_back(VK_EXT_DISPLAY_CONTROL_EXTENSION_NAME);
 #endif
     if (frameProcessor.requires_vulkan_video()) {
+        // AMD doesnt support VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME
         device_extensions_.push_back(VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME);
         device_extensions_.push_back(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
         device_extensions_.push_back(VK_KHR_VIDEO_QUEUE_EXTENSION_NAME);
         device_extensions_.push_back(VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME);
+        // AMD doesnt support VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME
         device_extensions_.push_back(VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME);
     }
 
@@ -210,7 +212,7 @@ void Shell::assert_all_instance_extensions() const {
     }
 }
 
-bool Shell::has_all_device_extensions(VkPhysicalDevice phy) const {
+bool Shell::has_all_device_extensions(VkPhysicalDevice phy) {
     // enumerate device extensions
     std::vector<VkExtensionProperties> exts;
     vk::enumerate(phy, nullptr, exts);
@@ -219,8 +221,15 @@ bool Shell::has_all_device_extensions(VkPhysicalDevice phy) const {
     for (const auto &ext : exts) ext_names.insert(ext.extensionName);
 
     // all listed device extensions are required
-    for (const auto &name : device_extensions_) {
-        if (ext_names.find(name) == ext_names.end()) return false;
+
+    auto nameIterator = device_extensions_.begin();
+    while (nameIterator != device_extensions_.end()) {
+        if (ext_names.find(*nameIterator) == ext_names.end()) {
+            std::cout << " Extension " << *nameIterator << " is not supported" << std::endl;
+            nameIterator = device_extensions_.erase(nameIterator);
+            } else {
+            nameIterator++;
+       }
     }
 
     return true;
@@ -317,7 +326,7 @@ void Shell::init_physical_dev(uint32_t deviceID) {
         std::vector<VkQueueFamilyVideoPropertiesKHR> videoQueues;
         std::vector<VkQueueFamilyQueryResultStatusPropertiesKHR> queryResultStatus;
         vk::get(phy, queues, videoQueues, queryResultStatus);
-
+        bool videodecodequeryResultStatus = false;
         int frameProcessor_queue_family = -1, present_queue_family = -1,
             video_decode_queue_family = -1, video_encode_queue_family = -1;
         for (uint32_t i = 0; i < queues.size(); i++) {
@@ -341,7 +350,8 @@ void Shell::init_physical_dev(uint32_t deviceID) {
                         (videoQueue.videoCodecOperations & suported_video_decode_queue_operations)) {
                     video_decode_queue_family = i;
                     // The video queues must support queryResultStatus
-                    assert(queryResultStatus[i].queryResultStatusSupport);
+                    //assert(queryResultStatus[i].queryResultStatusSupport);
+                    videodecodequeryResultStatus = queryResultStatus[i].queryResultStatusSupport;
                 }
 
                 const VkFlags video_encode_queue_flags = VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
@@ -374,6 +384,7 @@ void Shell::init_physical_dev(uint32_t deviceID) {
             ctx_.present_queue_family = present_queue_family;
             ctx_.video_decode_queue_family = video_decode_queue_family;
             ctx_.video_encode_queue_family = video_encode_queue_family;
+            ctx_.queryResultStatusSupport = videodecodequeryResultStatus;
             break;
         }
     }

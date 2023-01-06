@@ -31,6 +31,7 @@ public:
                                          uint64_t updateSequenceCount) = 0;
 
     virtual int32_t DecodePictureWithParameters(VkParserPerFrameDecodeParameters* pPicParams, VkParserDecodePictureInfo* pDecodePictureInfo) = 0;
+    virtual bool IsDstDpbDistinctImages() = 0;
 
     virtual ~IVulkanVideoDecoderHandler() { }
 };

@@ -56,6 +56,7 @@ typedef struct VulkanDecodeContext {
     uint32_t videoDecodeQueueFamily;
     VkQueue videoQueue;
     uint32_t videoEncodeQueueFamily;
+    bool queryResultStatusSupport;
 } VulkanDecodeContext;
 
 struct NvVkDecodeFrameDataSlot {
@@ -284,6 +285,7 @@ public:
         , m_useLinearOutput(useLinearOutput)
         , m_resetDecoder(true)
         , m_dumpDecodeData(false)
+        , m_queryResultStatusSupport(pVulkanDecodeContext->queryResultStatusSupport)
     {
 
         if (m_pVideoFrameBuffer) {
@@ -319,8 +321,12 @@ public:
      *   @brief  This callback function gets called when a picture is ready to be decoded.
      */
     virtual int32_t DecodePictureWithParameters(VkParserPerFrameDecodeParameters* pPicParams, VkParserDecodePictureInfo* pDecodePictureInfo);
+    virtual bool IsDstDpbDistinctImages(void);
 
-private:
+   private:
+    VkExtent3D makeExtent3D(uint32_t width, uint32_t height, uint32_t depth);
+    VkImageCreateInfo NvVkDecoder::makeImageCreateInfo(VkFormat format, const VkExtent2D& extent, const uint32_t* queueFamilyIndex,
+                                                       const VkImageUsageFlags usage, void* pNext, const uint32_t arrayLayers =1);
 
     VkParserVideoPictureParameters*  AddPictureParameters(VkSharedBaseObj<StdVideoPictureParametersSet>& vpsStdPictureParametersSet,
                                                           VkSharedBaseObj<StdVideoPictureParametersSet>& spsStdPictureParametersSet,
@@ -374,4 +380,6 @@ private:
     uint32_t m_useLinearOutput : 1;
     uint32_t m_resetDecoder : 1;
     uint32_t m_dumpDecodeData : 1;
+    bool m_distinctDstDpbImages;
+    bool m_queryResultStatusSupport;
 };

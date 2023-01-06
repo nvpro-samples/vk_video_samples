@@ -138,7 +138,7 @@ inline VkVideoCodecOperationFlagsKHR GetSupportedCodecs(VkPhysicalDevice vkPhysi
                 *pVideoQueueFamily = (int32_t)queueIndx;
             }
             // The video queues must support queryResultStatus
-            assert(queryResultStatus[queueIndx].queryResultStatusSupport);
+           // assert(queryResultStatus[queueIndx].queryResultStatusSupport);
             return videoQueue.videoCodecOperations;
         }
     }

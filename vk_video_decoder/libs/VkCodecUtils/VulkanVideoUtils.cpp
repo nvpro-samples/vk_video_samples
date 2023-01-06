@@ -1330,8 +1330,9 @@ VkResult VulkanDescriptorSet::CreateFragmentShaderLayouts(const uint32_t* setIds
 
 // initialize descriptor set
 VkResult VulkanDescriptorSet::CreateDescriptorSet(VkDevice device,
-        uint32_t descriptorCount, const VkSampler* pImmutableSamplers)
-{
+                                                  uint32_t combinedImageSamplerDescriptorCount,
+                                                  uint32_t descriptorCount,
+                                                  const VkSampler* pImmutableSamplers) {
     m_device = device;
 
     DestroyDescriptorSets();
@@ -1374,10 +1375,9 @@ VkResult VulkanDescriptorSet::CreateDescriptorSet(VkDevice device,
     CALL_VK(vk::CreatePipelineLayout(m_device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout));
 
     if (descPool == VkDescriptorPool(0)) {
-
         VkDescriptorPoolSize type_count = VkDescriptorPoolSize();
         type_count.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        type_count.descriptorCount = descriptorCount;
+        type_count.descriptorCount = descriptorCount * combinedImageSamplerDescriptorCount;  // AMD needs a descriptor per plane just for YUV
 
         VkDescriptorPoolCreateInfo descriptor_pool = VkDescriptorPoolCreateInfo();
         descriptor_pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1763,7 +1763,10 @@ VkResult VulkanRenderInfo::UpdatePerDrawContexts(VulkanPerDrawContext* pPerDrawC
 
     LOG(INFO) << "VkVideoUtils: " << "CreateDescriptorSet " << pPerDrawContext->contextIndex;
     VkSampler immutableSamplers = pPerDrawContext->samplerYcbcrConversion.GetSampler();
-    pPerDrawContext->bufferDescriptorSet.CreateDescriptorSet(m_device, 1, &immutableSamplers);
+    pPerDrawContext->bufferDescriptorSet.CreateDescriptorSet(m_device,
+                                         pPerDrawContext->m_combinedImageSamplerDescriptorCount,
+                                         1,
+                                         & immutableSamplers);
 
     LOG(INFO) << "VkVideoUtils: " << "CreateGraphicsPipeline " << pPerDrawContext->contextIndex;
     // Create graphics pipeline
@@ -1803,10 +1806,32 @@ VkResult VulkanRenderInfo::CreatePerDrawContexts(VulkanDeviceInfo* deviceInfo,
     mNumCtxs = numFbImages;
     m_device = deviceInfo->getDevice();
 
+    const VkPhysicalDeviceImageFormatInfo2 imageFormatInfo = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,         // sType;
+        nullptr,                                                       // pNext;
+        VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,                            // format;
+        VK_IMAGE_TYPE_2D,                                              // type;
+        VK_IMAGE_TILING_OPTIMAL,                                       // tiling;
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,  // usage;
+        0                                                              // flags;
+    };
+
+    VkSamplerYcbcrConversionImageFormatProperties samplerYcbcrConversionImage = {};
+    samplerYcbcrConversionImage.sType = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_IMAGE_FORMAT_PROPERTIES;
+    samplerYcbcrConversionImage.pNext = nullptr;
+
+    VkImageFormatProperties2 imageFormatProperties = {};
+    imageFormatProperties.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2;
+    imageFormatProperties.pNext = &samplerYcbcrConversionImage;
+
+    CALL_VK(vk::GetPhysicalDeviceImageFormatProperties2(deviceInfo->m_physDevice, &imageFormatInfo, &imageFormatProperties));
+
+
     for (int32_t ctxsIndx = 0; ctxsIndx < mNumCtxs; ctxsIndx++) {
 
         VulkanPerDrawContext* pPerDrawContext = GetDrawContext(ctxsIndx);
         pPerDrawContext->contextIndex = ctxsIndx;
+        pPerDrawContext->m_combinedImageSamplerDescriptorCount = samplerYcbcrConversionImage.combinedImageSamplerDescriptorCount;
         LOG(INFO) << "VkVideoUtils: " << "Init pPerDrawContext " << ctxsIndx;
 
         LOG(INFO) << "VkVideoUtils: " << "CreateCommandBufferPool " << pPerDrawContext->contextIndex;
