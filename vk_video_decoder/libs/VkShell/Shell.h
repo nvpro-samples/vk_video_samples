@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2016 Google, Inc.
- * Copyright 2020 NVIDIA Corporation.
+ * Copyright 2022 NVIDIA Corporation.
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -20,19 +20,44 @@
 #include <queue>
 #include <vector>
 #include <stdexcept>
+#include <atomic>
 #include <vulkan_interfaces.h>
 
-#include "FrameProcessor.h"
+#include "VkVideoCore/VkVideoRefCountBase.h"
+#include "VkCodecUtils/FrameProcessor.h"
+#include "VkCodecUtils/ProgramConfig.h"
+#include "VkCodecUtils/VulkanDeviceContext.h"
+#include "VkShell/VkWsiDisplay.h"
 
 static VkSemaphore vkNullSemaphore = VkSemaphore(0);
 
 class FrameProcessor;
 
-class Shell {
-   public:
+class Shell : public VkWsiDisplay, public VkVideoRefCountBase {
+public:
     Shell(const Shell &sh) = delete;
     Shell &operator=(const Shell &sh) = delete;
-    virtual ~Shell() {}
+
+    static const std::vector<VkExtensionProperties>& GetRequiredInstanceExtensions(bool directToDisplayMode);
+    static VkResult Create(const VulkanDeviceContext* vkDevCtx,
+                           VkSharedBaseObj<FrameProcessor>& frameProcessor,
+                           bool directToDisplayMode,
+                           VkSharedBaseObj<Shell>& displayShell);
+
+    virtual int32_t AddRef()
+    {
+        return ++m_refCount;
+    }
+
+    virtual int32_t Release()
+    {
+        uint32_t ret = --m_refCount;
+        // Destroy the device if ref-count reaches zero
+        if (ret == 0) {
+            delete this;
+        }
+        return ret;
+    }
 
     typedef enum BACK_BUFFER_STATE { BACK_BUFFER_INIT, BACK_BUFFER_PREPARE, BACK_BUFFER_IN_SWAPCHAIN, BACK_BUFFER_CANCELED } BACK_BUFFER_STATE;
 
@@ -40,12 +65,11 @@ class Shell {
 
         AcquireBuffer();
         ~AcquireBuffer();
-        VkResult Create(VkDevice dev);
+        VkResult Create(const VulkanDeviceContext* vkDevCtx);
 
-        VkSemaphore semaphore_;
-        VkFence fence_;
-
-        VkDevice dev_;
+        const VulkanDeviceContext* m_vkDevCtx;
+        VkSemaphore                m_semaphore;
+        VkFence                    m_fence;
     };
 
     class BackBuffer {
@@ -53,82 +77,58 @@ class Shell {
     public:
         BackBuffer();
         ~BackBuffer();
-        VkResult Create(VkDevice dev);
+        VkResult Create(const VulkanDeviceContext* vkDevCtx);
 
 
         AcquireBuffer* SetAcquireBuffer(uint32_t imageIndex, AcquireBuffer* acquireBuffer) {
-            AcquireBuffer* oldAcquireBuffer = acquireBuffer_;
-            imageIndex_ = imageIndex;
-            acquireBuffer_ = acquireBuffer;
-            state_ = BACK_BUFFER_PREPARE;
+            AcquireBuffer* oldAcquireBuffer = m_acquireBuffer;
+            m_imageIndex = imageIndex;
+            m_acquireBuffer = acquireBuffer;
             return oldAcquireBuffer;
         }
 
         const VkSemaphore& GetAcquireSemaphore() const {
-            if (acquireBuffer_){
-                return acquireBuffer_->semaphore_;
+            if (m_acquireBuffer){
+                return m_acquireBuffer->m_semaphore;
             } else {
                 return vkNullSemaphore;
             }
         }
 
         const VkSemaphore& GetRenderSemaphore() const {
-            return renderSemaphore_;
+            return m_renderSemaphore;
         }
 
         uint32_t GetImageIndex() const {
-            return imageIndex_;
-        }
-
-        bool isInPrepareState() const {
-            return ((state_ == BACK_BUFFER_PREPARE) && acquireBuffer_ != nullptr );
-        }
-
-        bool setBufferInSwapchain() {
-            state_ = BACK_BUFFER_IN_SWAPCHAIN;
-            return true;
-        }
-
-        bool setBufferCanceled() {
-            state_ = BACK_BUFFER_CANCELED;
-            return true;
+            return m_imageIndex;
         }
 
     private:
-        uint32_t imageIndex_;
+        const VulkanDeviceContext* m_vkDevCtx;
+        uint32_t                   m_imageIndex;
 
-        AcquireBuffer* acquireBuffer_;
-        VkSemaphore renderSemaphore_;
-
-        BACK_BUFFER_STATE state_;
-        VkDevice dev_;
-
+        AcquireBuffer*             m_acquireBuffer;
+        VkSemaphore                m_renderSemaphore;
     };
 
     struct Context {
 
-        VkInstance instance;
-        VkDebugReportCallbackEXT debug_report;
+        Context(const VulkanDeviceContext* vkDevCtx)
+        : devCtx(vkDevCtx)
+        , acquireBuffers()
+        , backBuffers()
+        , currentBackBuffer()
+        , surface()
+        , format()
+        , swapchain()
+        , extent()
+        , acquiredFrameId() {}
 
-        VkPhysicalDevice physical_dev;
-        uint32_t frameProcessor_queue_family;
-        uint32_t present_queue_family;
-        uint32_t video_decode_queue_family;
-        uint32_t video_decode_queue_count;
-        uint32_t video_encode_queue_family;
+        const VulkanDeviceContext* devCtx;
 
-        VkDevice dev;
-        VkQueue frameProcessor_queue;
-        VkQueue present_queue;
-        std::vector<VkQueue> video_queue;
-
-        std::queue<AcquireBuffer*> acquireBuffers_;
-        std::vector<BackBuffer> backBuffers_;
-        uint32_t  currentBackBuffer_;
-
-        VkDisplayKHR display_;
-        uint32_t display_res_width_;
-        uint32_t display_res_height_;
+        std::queue<AcquireBuffer*> acquireBuffers;
+        std::vector<BackBuffer>    backBuffers;
+        uint32_t                   currentBackBuffer;
 
         VkSurfaceKHR surface;
         VkSurfaceFormatKHR format;
@@ -138,10 +138,10 @@ class Shell {
 
         uint64_t acquiredFrameId;
     };
-    const Context &context() const { return ctx_; }
+    const Context &GetContext() const { return m_ctx; }
 
-    BackBuffer& GetCurrentBackBuffer() {
-        return ctx_.backBuffers_[ctx_.currentBackBuffer_];
+    const BackBuffer& GetCurrentBackBuffer() const {
+        return m_ctx.backBuffers[m_ctx.currentBackBuffer];
     }
 
     enum LogPriority {
@@ -150,72 +150,44 @@ class Shell {
         LOG_WARN,
         LOG_ERR,
     };
-    virtual void log(LogPriority priority, const char *msg);
 
-    virtual void run() = 0;
-    virtual void quit() = 0;
+    virtual void Log(LogPriority priority, const char *msg);
 
-   protected:
-    Shell(FrameProcessor &frameProcessor);
+    virtual void RunLoop() = 0;
+    virtual void QuitLoop() = 0;
 
-    void init_vk(uint32_t deviceID);
-    void cleanup_vk();
+private:
+    std::atomic<int32_t>       m_refCount;
+protected:
+    Shell(const VulkanDeviceContext* devCtx, VkSharedBaseObj<FrameProcessor>& frameProcessor);
+    virtual ~Shell() {}
 
-    void create_context();
-    void destroy_context();
+    void CreateContext();
+    void DestroyContext();
 
-    void resize_swapchain(uint32_t width_hint, uint32_t height_hint);
+    void ResizeSwapchain(uint32_t width_hint, uint32_t height_hint);
 
-    void add_frameProcessor_time(float time);
+    void AcquireBackBuffer(bool trainFrame = false);
+    void PresentBackBuffer(bool trainFrame = false);
 
-    void acquire_back_buffer(bool trainFrame = false);
-    void present_back_buffer(bool trainFrame = false);
+    VkSharedBaseObj<FrameProcessor> m_frameProcessor;
+    const ProgramConfig &m_settings;
 
-    FrameProcessor &frameProcessor_;
-    const FrameProcessor::Settings &settings_;
-
-    std::vector<const char *> instance_layers_;
-    std::vector<const char *> instance_extensions_;
-
-    std::vector<const char *> device_extensions_;
-
-   private:
-    bool debug_report_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT obj_type, uint64_t object, size_t location,
-                               int32_t msg_code, const char *layer_prefix, const char *msg);
-    static VKAPI_ATTR VkBool32 VKAPI_CALL debug_report_callback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT obj_type,
-                                                                uint64_t object, size_t location, int32_t msg_code,
-                                                                const char *layer_prefix, const char *msg, void *user_data) {
-        Shell *shell = reinterpret_cast<Shell *>(user_data);
-        return shell->debug_report_callback(flags, obj_type, object, location, msg_code, layer_prefix, msg);
-    }
-
-    void assert_all_instance_layers() const;
-    void assert_all_instance_extensions() const;
-
-    bool has_all_device_layers(VkPhysicalDevice phy) const;
-    bool has_all_device_extensions(VkPhysicalDevice phy) const;
-
-    // called by init_vk
-    virtual PFN_vkGetInstanceProcAddr load_vk() = 0;
-    virtual bool can_present(VkPhysicalDevice phy, uint32_t queue_family) = 0;
-    void init_instance();
-    void init_debug_report();
-    void init_physical_dev(uint32_t deviceID);
+private:
 
     // called by create_context
-    void create_dev();
-    void create_back_buffers();
-    void destroy_back_buffers();
-    virtual VkSurfaceKHR create_surface(VkInstance instance) = 0;
-    void create_swapchain();
-    void destroy_swapchain();
+    void CreateBackBuffers();
+    void DestroyBackBuffers();
+    virtual VkSurfaceKHR CreateSurface(VkInstance instance) = 0;
+    void CreateSwapchain();
+    void DestroySwapchain();
 
-   protected:
-    void fake_present();
-    Context ctx_;
-  private:
-    const float frameProcessor_tick_;
-    float frameProcessor_time_;
+protected:
+    void FakePresent();
+    Context m_ctx;
+private:
+    const float m_tick;
+    float       m_time;
 };
 
 #endif  // SHELL_H

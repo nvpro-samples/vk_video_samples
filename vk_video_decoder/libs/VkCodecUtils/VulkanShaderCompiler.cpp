@@ -18,6 +18,7 @@
 #include <shaderc/shaderc.h>
 #include <NvCodecUtils/Logger.h>
 #include "Helpers.h"
+#include "VkCodecUtils/VulkanDeviceContext.h"
 
 namespace vulkanVideoUtils {
 
@@ -43,8 +44,9 @@ static shaderc_shader_kind getShadercShaderType(VkShaderStageFlagBits type)
     return static_cast<shaderc_shader_kind>(-1);
 }
 
-VulkanShaderCompiler::VulkanShaderCompiler() {
-
+VulkanShaderCompiler::VulkanShaderCompiler()
+    : compilerHandle(0)
+{
     shaderc_compiler_t compiler = shaderc_compiler_initialize();
     compilerHandle = compiler;
 }
@@ -59,7 +61,7 @@ VulkanShaderCompiler::~VulkanShaderCompiler() {
 }
 
 VkResult VulkanShaderCompiler::BuildGlslShader(const char *shaderCode, size_t shaderSize, VkShaderStageFlagBits type,
-                             VkDevice vkDevice, VkShaderModule *shaderOut)
+                                               const VulkanDeviceContext* vkDevCtx, VkShaderModule *shaderOut)
 {
     VkResult result = VK_NOT_READY;
     if (compilerHandle) {
@@ -80,7 +82,7 @@ VkResult VulkanShaderCompiler::BuildGlslShader(const char *shaderCode, size_t sh
         shaderModuleCreateInfo.codeSize = shaderc_result_get_length(spvShader);
         shaderModuleCreateInfo.pCode = (const uint32_t *)shaderc_result_get_bytes(spvShader);
         shaderModuleCreateInfo.flags = 0;
-        result = vk::CreateShaderModule(vkDevice, &shaderModuleCreateInfo, nullptr, shaderOut);
+        result = vkDevCtx->CreateShaderModule(*vkDevCtx, &shaderModuleCreateInfo, nullptr, shaderOut);
 
         shaderc_result_release(spvShader);
     }
@@ -89,7 +91,8 @@ VkResult VulkanShaderCompiler::BuildGlslShader(const char *shaderCode, size_t sh
 
 // Create VK shader module from given glsl shader file
 VkResult VulkanShaderCompiler::BuildShaderFromFile(const char *filePath, VkShaderStageFlagBits type,
-                             VkDevice vkDevice, VkShaderModule *shaderOut)
+                                                   const VulkanDeviceContext* vkDevCtx,
+                                                   VkShaderModule *shaderOut)
 {
     // read file from the path
     FILE *fp = fopen(filePath, "rb");
@@ -110,7 +113,7 @@ VkResult VulkanShaderCompiler::BuildShaderFromFile(const char *filePath, VkShade
     }
 
     VkResult result = VK_NOT_READY;
-    BuildGlslShader(glslShader, glslShaderLen, type, vkDevice, shaderOut);
+    BuildGlslShader(glslShader, glslShaderLen, type, vkDevCtx, shaderOut);
 
     delete [] glslShader;
     glslShader = nullptr;

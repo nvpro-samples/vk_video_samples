@@ -18,13 +18,14 @@
 #define _VULKANVIDEOPARSER_IF_H_
 
 #include "PictureBufferBase.h"
-#include "VkParserVideoRefCountBase.h"
+#include "VkVideoCore/VkVideoRefCountBase.h"
+#include "VulkanBitstreamBuffer.h"
 #include "vulkan_interfaces.h"
 #include "vk_video/vulkan_video_codecs_common.h"
 
-#define NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_7 VK_MAKE_VIDEO_STD_VERSION(0, 9, 7)
+#define NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_8 VK_MAKE_VIDEO_STD_VERSION(0, 9, 8)
 
-#define NV_VULKAN_VIDEO_PARSER_API_VERSION   NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_7
+#define NV_VULKAN_VIDEO_PARSER_API_VERSION   NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_8
 
 typedef uint32_t FrameRate; // Packed 18-bit numerator & 14-bit denominator
 
@@ -124,10 +125,10 @@ typedef struct VkParserH264DpbEntry {
 typedef struct VkParserH264PictureData {
     // SPS
     const StdVideoH264SequenceParameterSet* pStdSps;
-    VkParserVideoRefCountBase*              pSpsClientObject;
+    VkVideoRefCountBase*                    pSpsClientObject;
     // PPS
     const StdVideoH264PictureParameterSet*    pStdPps;
-    VkParserVideoRefCountBase*              pPpsClientObject;
+    VkVideoRefCountBase*                    pPpsClientObject;
     uint8_t  pic_parameter_set_id;          // PPS ID
     uint8_t  seq_parameter_set_id;          // SPS ID
     int32_t num_ref_idx_l0_active_minus1;
@@ -220,15 +221,15 @@ typedef struct VkParserH264PictureData {
 typedef struct VkParserHevcPictureData {
     // VPS
     const StdVideoH265VideoParameterSet*    pStdVps;
-    VkParserVideoRefCountBase*              pVpsClientObject;
+    VkVideoRefCountBase*                    pVpsClientObject;
 
     // SPS
     const StdVideoH265SequenceParameterSet* pStdSps;
-    VkParserVideoRefCountBase*              pSpsClientObject;
+    VkVideoRefCountBase*                    pSpsClientObject;
 
     // PPS
     const StdVideoH265PictureParameterSet*  pStdPps;
-    VkParserVideoRefCountBase*              pPpsClientObject;
+    VkVideoRefCountBase*                    pPpsClientObject;
 
     uint8_t pic_parameter_set_id;       // PPS ID
     uint8_t seq_parameter_set_id;       // SPS ID
@@ -576,15 +577,8 @@ typedef struct VkParserPictureData {
         // dependencies)
     int32_t chroma_format; // Chroma Format (should match sequence info)
     int32_t picture_order_count; // picture order count (if known)
-    uint8_t* pbSideData; // Encryption Info
-    uint32_t nSideDataLen; // Encryption Info length
-
-    // Bitstream data
-    uint32_t nBitstreamDataLen; // Number of bytes in bitstream data buffer
-    uint8_t* pBitstreamData; // Ptr to bitstream data for this picture (slice-layer)
-    uint32_t nNumSlices; // Number of slices(tiles in case of AV1) in this picture
-    const uint32_t* pSliceDataOffsets; // nNumSlices entries, contains offset of each slice
-        // within the bitstream data buffer
+    uint8_t* pSideData; // Encryption Info
+    uint32_t sideDataLen; // Encryption Info length
 
     // Codec-specific data
     union {
@@ -596,24 +590,26 @@ typedef struct VkParserPictureData {
     } CodecSpecific;
     // Dpb Id for the setup (current picture to be reference) slot
     int8_t current_dpb_id;
+    // Bitstream data
+    uint32_t firstSliceIndex;
+    uint32_t numSlices;
+    size_t   bitstreamDataOffset; // bitstream data offset in bitstreamData buffer
+    size_t   bitstreamDataLen;    // Number of bytes in bitstream data buffer
+    VkSharedBaseObj<VulkanBitstreamBuffer> bitstreamData; // bitstream data for this picture (slice-layer)
 } VkParserPictureData;
 
 // Packet input for parsing
 typedef struct VkParserBitstreamPacket {
-    const uint8_t* pByteStream; // Ptr to byte stream data
-    int32_t nDataLength; // Data length for this packet
-    int32_t bEOS; // true if this is an End-Of-Stream packet (flush everything)
-    int32_t bPTSValid; // true if llPTS is valid (also used to detect frame
-        // boundaries for VC1 SP/MP)
-    int32_t bDiscontinuity; // true if DecMFT is signalling a discontinuity
-    int32_t bPartialParsing; // 0: parse entire packet, 1: parse until next
-        // decode/display event
-    int64_t llPTS; // Presentation Time Stamp for this packet (clock rate
-        // specified at initialization)
-    bool bDisablePP; // optional flag for VC1
-    bool bEOP; // true if the packet in pByteStream is exactly one frame
-    uint8_t* pbSideData; // Auxiliary encryption information
-    int32_t nSideDataLength; // Auxiliary encrypton information length
+    const uint8_t* pByteStream; // Ptr to byte stream data decode/display event
+    size_t         nDataLength; // Data length for this packet
+    int64_t llPTS; // Presentation Time Stamp for this packet (clock rate specified at initialization)
+    uint32_t bEOS:1;            // true if this is an End-Of-Stream packet (flush everything)
+    uint32_t bPTSValid:1;       // true if llPTS is valid (also used to detect frame boundaries for VC1 SP/MP)
+    uint32_t bDiscontinuity:1;  // true if DecMFT is signalling a discontinuity
+    uint32_t bPartialParsing:1; // 0: parse entire packet, 1: parse until next
+    uint32_t bEOP:1;            // true if the packet in pByteStream is exactly one frame
+    uint8_t* pbSideData;        // Auxiliary encryption information
+    int32_t nSideDataLength;    // Auxiliary encrypton information length
 } VkParserBitstreamPacket;
 
 typedef struct VkParserOperatingPointInfo {
@@ -714,7 +710,7 @@ public:
         // ready to be decoded
     virtual bool UpdatePictureParameters(
         VkPictureParameters* pPictureParameters,
-        VkSharedBaseObj<VkParserVideoRefCountBase>& pictureParametersObject,
+        VkSharedBaseObj<VkVideoRefCountBase>& pictureParametersObject,
         uint64_t updateSequenceCount)
         = 0; // Called when a picture is
         // ready to be decoded
@@ -723,14 +719,16 @@ public:
         int64_t llPTS)
         = 0; // Called when a picture is ready to be displayed
     virtual void UnhandledNALU(
-        const uint8_t* pbData,
-        int32_t cbData)
+        const uint8_t* pbData, size_t cbData)
         = 0; // Called for custom NAL parsing (not required)
     virtual uint32_t GetDecodeCaps() { return 0; } // NVD_CAPS_XXX
     virtual int32_t GetOperatingPoint(VkParserOperatingPointInfo* pOPInfo)
     {
         return 0;
     } // called from sequence header of av1 scalable video streams
+    virtual size_t GetBitstreamBuffer(size_t size,
+                                      const uint8_t* pInitializeBufferMemory, size_t initializeBufferMemorySize,
+                                      VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer) = 0;
 protected:
     virtual ~VkParserVideoDecodeClient() { }
 };
@@ -739,31 +737,31 @@ protected:
 typedef struct VkParserInitDecodeParameters {
     uint32_t                   interfaceVersion;
     VkParserVideoDecodeClient* pClient; // should always be present if using parsing functionality
-    uint64_t lReferenceClockRate; // ticks per second of PTS clock
-        // (0=default=10000000=10Mhz)
-    int32_t  lErrorThreshold; // threshold for deciding to bypass of picture (0=do
-        // not decode, 100=always decode)
+    uint32_t defaultMinBufferSize;
+    uint32_t bufferOffsetAlignment;
+    uint32_t bufferSizeAlignment;
+    uint64_t referenceClockRate; // ticks per second of PTS clock
+        // (0 = default = 10000000 = 10Mhz)
+    int32_t  errorThreshold;     // threshold for deciding to bypass of picture
+                                 // (0 = do not decode, 100 = always decode)
     VkParserSequenceInfo* pExternalSeqInfo; // optional external sequence header
         // data from system layer
 
     // If set, Picture Parameters are going to be provided via UpdatePictureParameters callback
-    bool     bOutOfBandPictureParameters;
+    bool     outOfBandPictureParameters;
 } VkParserInitDecodeParameters;
 
 // High-level interface to video decoder (Note that parsing and decoding
 // functionality are decoupled from each other)
-class VulkanVideoDecodeParser : public virtual VkParserVideoRefCountBase {
+class VulkanVideoDecodeParser : public virtual VkVideoRefCountBase {
 public:
-    virtual VkResult Initialize(VkParserInitDecodeParameters* pParserPictureData) = 0;
-    virtual bool Deinitialize() = 0;
+    virtual VkResult Initialize(const VkParserInitDecodeParameters* pParserPictureData) = 0;
     virtual bool DecodePicture(VkParserPictureData* pParserPictureData) = 0;
     virtual bool ParseByteStream(const VkParserBitstreamPacket* pck,
-        int32_t* pParsedBytes = NULL)
-        = 0;
+                                 size_t* pParsedBytes = NULL) = 0;
     virtual bool DecodeSliceInfo(VkParserSliceInfo* psli,
-        const VkParserPictureData* pParserPictureData,
-        int32_t iSlice)
-        = 0;
+                                 const VkParserPictureData* pParserPictureData,
+                                 int32_t iSlice) = 0;
     virtual bool GetDisplayMasteringInfo(VkParserDisplayMasteringInfo* pdisp) = 0;
 };
 

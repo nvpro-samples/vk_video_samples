@@ -19,56 +19,23 @@
 #include <sstream>
 #include <time.h>
 
-#include "VkCodecUtils/Helpers.h"
+#include "wayland-client-protocol.h"
 #include "ShellWayland.h"
+
+#include "VkCodecUtils/Helpers.h"
+
 #include <stdio.h>
 #include <string.h>
 #include <linux/input.h>
-#include "FrameProcessor.h"
+#include "VkCodecUtils/FrameProcessor.h"
 
-/* Unused attribute / variable MACRO.
-   Some methods of classes' heirs do not need all fuction parameters.
-   This triggers warning on GCC platfoms. This macro will silence them.
-*/
-#if defined(__GNUC__)
-#define UNUSED __attribute__((unused))
-#else
-#define UNUSED
-#endif
+const std::vector<VkExtensionProperties> waylandSurfaceExtensions {
+    VkExtensionProperties{ VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME, VK_KHR_WAYLAND_SURFACE_SPEC_VERSION } };
 
-namespace {
-
-class PosixTimer {
-   public:
-    PosixTimer() { reset(); }
-
-    void reset() { clock_gettime(CLOCK_MONOTONIC, &start_); }
-
-    double get() const {
-        struct timespec now;
-        clock_gettime(CLOCK_MONOTONIC, &now);
-
-        constexpr long one_s_in_ns = 1000 * 1000 * 1000;
-        constexpr double one_s_in_ns_d = static_cast<double>(one_s_in_ns);
-
-        time_t s = now.tv_sec - start_.tv_sec;
-        long ns;
-        if (now.tv_nsec > start_.tv_nsec) {
-            ns = now.tv_nsec - start_.tv_nsec;
-        } else {
-            assert(s > 0);
-            s--;
-            ns = one_s_in_ns - (start_.tv_nsec - now.tv_nsec);
-        }
-
-        return static_cast<double>(s) + static_cast<double>(ns) / one_s_in_ns_d;
-    }
-
-   private:
-    struct timespec start_;
-};
-
-}  // namespace
+const std::vector<VkExtensionProperties>& ShellWayland::GetRequiredInstanceExtensions()
+{
+    return waylandSurfaceExtensions;
+}
 
 void ShellWayland::handle_ping(void *data, wl_shell_surface *shell_surface, uint32_t serial) {
     wl_shell_surface_pong(shell_surface, serial);
@@ -91,7 +58,7 @@ void ShellWayland::pointer_handle_button(void *data, struct wl_pointer *wl_point
                                          uint32_t state) {
     if (button == BTN_LEFT && state == WL_POINTER_BUTTON_STATE_PRESSED) {
         ShellWayland *shell = (ShellWayland *)data;
-        wl_shell_surface_move(shell->shell_surface_, shell->seat_, serial);
+        wl_shell_surface_move(shell->shell_surface_, shell->m_seat, serial);
     }
 }
 
@@ -135,7 +102,9 @@ void ShellWayland::keyboard_handle_key(void *data, struct wl_keyboard *keyboard,
             frameProcessor_key = FrameProcessor::KEY_UNKNOWN;
             break;
     }
-    shell->frameProcessor_.on_key(frameProcessor_key);
+    if (!shell->m_frameProcessor->OnKey(frameProcessor_key)) {
+        shell->QuitLoop();
+    }
 }
 
 void ShellWayland::keyboard_handle_modifiers(void *data, wl_keyboard *keyboard, uint32_t serial, uint32_t mods_depressed,
@@ -148,20 +117,20 @@ const wl_keyboard_listener ShellWayland::keyboard_listener = {
 void ShellWayland::seat_handle_capabilities(void *data, wl_seat *seat, uint32_t caps) {
     // Subscribe to pointer events
     ShellWayland *shell = (ShellWayland *)data;
-    if ((caps & WL_SEAT_CAPABILITY_POINTER) && !shell->pointer_) {
-        shell->pointer_ = wl_seat_get_pointer(seat);
-        wl_pointer_add_listener(shell->pointer_, &pointer_listener, shell);
-    } else if (!(caps & WL_SEAT_CAPABILITY_POINTER) && shell->pointer_) {
-        wl_pointer_destroy(shell->pointer_);
-        shell->pointer_ = NULL;
+    if ((caps & WL_SEAT_CAPABILITY_POINTER) && !shell->m_pointer) {
+        shell->m_pointer = wl_seat_get_pointer(seat);
+        wl_pointer_add_listener(shell->m_pointer, &pointer_listener, shell);
+    } else if (!(caps & WL_SEAT_CAPABILITY_POINTER) && shell->m_pointer) {
+        wl_pointer_destroy(shell->m_pointer);
+        shell->m_pointer = NULL;
     }
     // Subscribe to keyboard events
     if (caps & WL_SEAT_CAPABILITY_KEYBOARD) {
-        shell->keyboard_ = wl_seat_get_keyboard(seat);
-        wl_keyboard_add_listener(shell->keyboard_, &keyboard_listener, shell);
+        shell->m_keyboard = wl_seat_get_keyboard(seat);
+        wl_keyboard_add_listener(shell->m_keyboard, &keyboard_listener, shell);
     } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD)) {
-        wl_keyboard_destroy(shell->keyboard_);
-        shell->keyboard_ = NULL;
+        wl_keyboard_destroy(shell->m_keyboard);
+        shell->m_keyboard = NULL;
     }
 }
 
@@ -173,12 +142,12 @@ void ShellWayland::registry_handle_global(void *data, wl_registry *registry, uin
     // pickup wayland objects when they appear
     ShellWayland *shell = (ShellWayland *)data;
     if (strcmp(interface, "wl_compositor") == 0) {
-        shell->compositor_ = (wl_compositor *)wl_registry_bind(registry, id, &wl_compositor_interface, 1);
+        shell->m_compositor = (wl_compositor *)wl_registry_bind(registry, id, &wl_compositor_interface, 1);
     } else if (strcmp(interface, "wl_shell") == 0) {
-        shell->shell_ = (wl_shell *)wl_registry_bind(registry, id, &wl_shell_interface, 1);
+        shell->m_shell = (wl_shell *)wl_registry_bind(registry, id, &wl_shell_interface, 1);
     } else if (strcmp(interface, "wl_seat") == 0) {
-        shell->seat_ = (wl_seat *)wl_registry_bind(registry, id, &wl_seat_interface, 1);
-        wl_seat_add_listener(shell->seat_, &seat_listener, shell);
+        shell->m_seat = (wl_seat *)wl_registry_bind(registry, id, &wl_seat_interface, 1);
+        wl_seat_add_listener(shell->m_seat, &seat_listener, shell);
     }
 }
 
@@ -186,161 +155,117 @@ void ShellWayland::registry_handle_global_remove(void *data, wl_registry *regist
 
 const wl_registry_listener ShellWayland::registry_listener = {registry_handle_global, registry_handle_global_remove};
 
-ShellWayland::ShellWayland(FrameProcessor &frameProcessor, uint32_t deviceID) : Shell(frameProcessor) {
-    if (frameProcessor.settings().validate) instance_layers_.push_back("VK_LAYER_LUNARG_standard_validation");
-    instance_extensions_.push_back(VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
+ShellWayland::ShellWayland(const VulkanDeviceContext* vkDevCtx, VkSharedBaseObj<FrameProcessor>& frameProcessor)
+    : Shell(vkDevCtx, frameProcessor) {
 
-    init_connection();
-    init_vk(deviceID);
+    InitConnection();
 }
 
 ShellWayland::~ShellWayland() {
-    cleanup_vk();
-    dlclose(lib_handle_);
 
-    if (keyboard_) wl_keyboard_destroy(keyboard_);
-    if (pointer_) wl_pointer_destroy(pointer_);
-    if (seat_) wl_seat_destroy(seat_);
+    if (m_keyboard) wl_keyboard_destroy(m_keyboard);
+    if (m_pointer) wl_pointer_destroy(m_pointer);
+    if (m_seat) wl_seat_destroy(m_seat);
     if (shell_surface_) wl_shell_surface_destroy(shell_surface_);
-    if (surface_) wl_surface_destroy(surface_);
-    if (shell_) wl_shell_destroy(shell_);
-    if (compositor_) wl_compositor_destroy(compositor_);
-    if (registry_) wl_registry_destroy(registry_);
-    if (display_) wl_display_disconnect(display_);
+    if (m_surface) wl_surface_destroy(m_surface);
+    if (m_shell) wl_shell_destroy(m_shell);
+    if (m_compositor) wl_compositor_destroy(m_compositor);
+    if (m_registry) wl_registry_destroy(m_registry);
+    if (m_display) wl_display_disconnect(m_display);
 }
 
-void ShellWayland::init_connection() {
+const char* ShellWayland::GetRequiredInstanceExtension()
+{
+    return VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME;
+}
+
+void ShellWayland::InitConnection() {
     try {
-        display_ = wl_display_connect(NULL);
-        if (!display_) throw std::runtime_error("failed to connect to the display server");
+        m_display = wl_display_connect(NULL);
+        if (!m_display) throw std::runtime_error("failed to connect to the display server");
 
-        registry_ = wl_display_get_registry(display_);
-        if (!registry_) throw std::runtime_error("failed to get registry");
+        m_registry = wl_display_get_registry(m_display);
+        if (!m_registry) throw std::runtime_error("failed to get registry");
 
-        wl_registry_add_listener(registry_, &ShellWayland::registry_listener, this);
-        wl_display_roundtrip(display_);
+        wl_registry_add_listener(m_registry, &ShellWayland::registry_listener, this);
+        wl_display_roundtrip(m_display);
 
-        if (!compositor_) throw std::runtime_error("failed to bind compositor");
+        if (!m_compositor) throw std::runtime_error("failed to bind compositor");
 
-        if (!shell_) throw std::runtime_error("failed to bind shell");
+        if (!m_shell) throw std::runtime_error("failed to bind shell");
     } catch (const std::exception &e) {
         std::cerr << "Could not initialize Wayland: " << e.what() << std::endl;
         exit(-1);
     }
 }
 
-void ShellWayland::create_window() {
-    surface_ = wl_compositor_create_surface(compositor_);
-    if (!surface_) throw std::runtime_error("failed to create surface");
+void ShellWayland::CreateWindow() {
+    m_surface = wl_compositor_create_surface(m_compositor);
+    if (!m_surface) throw std::runtime_error("failed to create surface");
 
-    shell_surface_ = wl_shell_get_shell_surface(shell_, surface_);
+    shell_surface_ = wl_shell_get_shell_surface(m_shell, m_surface);
     if (!shell_surface_) throw std::runtime_error("failed to shell_surface");
 
     wl_shell_surface_add_listener(shell_surface_, &ShellWayland::shell_surface_listener, this);
     // set title
-    wl_shell_surface_set_title(shell_surface_, settings_.name.c_str());
+    wl_shell_surface_set_title(shell_surface_, m_settings.name.c_str());
     wl_shell_surface_set_toplevel(shell_surface_);
 }
 
-PFN_vkGetInstanceProcAddr ShellWayland::load_vk() {
-    const char filename[] = "libvulkan.so.1";
-    void *handle, *symbol;
-
-#ifdef UNINSTALLED_LOADER
-    handle = dlopen(UNINSTALLED_LOADER, RTLD_LAZY);
-    if (!handle) handle = dlopen(filename, RTLD_LAZY);
-#else
-    handle = dlopen(filename, RTLD_LAZY);
-#endif
-
-    if (handle) symbol = dlsym(handle, "vkGetInstanceProcAddr");
-
-    if (!handle || !symbol) {
-        std::stringstream ss;
-        ss << "failed to load " << dlerror();
-
-        if (handle) dlclose(handle);
-
-        throw std::runtime_error(ss.str());
-    }
-
-    lib_handle_ = handle;
-
-    return reinterpret_cast<PFN_vkGetInstanceProcAddr>(symbol);
+bool ShellWayland::PhysDeviceCanPresent(VkPhysicalDevice physicalDevice, uint32_t presentQueueFamily) const {
+    return m_ctx.devCtx->GetPhysicalDeviceWaylandPresentationSupportKHR(physicalDevice, presentQueueFamily, m_display);
 }
 
-bool ShellWayland::can_present(VkPhysicalDevice phy, uint32_t queue_family) {
-    return vk::GetPhysicalDeviceWaylandPresentationSupportKHR(phy, queue_family, display_);
-}
-
-VkSurfaceKHR ShellWayland::create_surface(VkInstance instance) {
+VkSurfaceKHR ShellWayland::CreateSurface(VkInstance instance) {
     VkWaylandSurfaceCreateInfoKHR surface_info = {};
     surface_info.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
-    surface_info.display = display_;
-    surface_info.surface = surface_;
+    surface_info.display = m_display;
+    surface_info.surface = m_surface;
 
     VkSurfaceKHR surface;
-    vk::assert_success(vk::CreateWaylandSurfaceKHR(instance, &surface_info, nullptr, &surface));
+    vk::assert_success(m_ctx.devCtx->CreateWaylandSurfaceKHR(instance, &surface_info, nullptr, &surface));
 
     return surface;
 }
 
-void ShellWayland::loop_wait() {
+void ShellWayland::LoopWait() {
     while (true) {
-        if (quit_) break;
+        if (m_quit_loop) break;
 
-        wl_display_dispatch_pending(display_);
+        wl_display_dispatch_pending(m_display);
 
-        acquire_back_buffer();
-        present_back_buffer();
+        AcquireBackBuffer();
+        PresentBackBuffer();
     }
 }
 
-void ShellWayland::loop_poll() {
-    PosixTimer timer;
-
-    double current_time = timer.get();
-    double profile_start_time = current_time;
-    int profile_present_count = 0;
+void ShellWayland::LoopPoll() {
 
     while (true) {
-        if (quit_) break;
+        if (m_quit_loop) break;
 
-        wl_display_dispatch_pending(display_);
+        wl_display_dispatch_pending(m_display);
 
-        acquire_back_buffer();
+        AcquireBackBuffer();
 
-        double t = timer.get();
-        add_frameProcessor_time(static_cast<float>(t - current_time));
+        PresentBackBuffer();
 
-        present_back_buffer();
-
-        current_time = t;
-
-        profile_present_count++;
-        if (current_time - profile_start_time >= 5.0) {
-            const double fps = profile_present_count / (current_time - profile_start_time);
-            std::stringstream ss;
-            ss << profile_present_count << " presents in " << current_time - profile_start_time << " seconds "
-               << "(FPS: " << fps << ")";
-            log(LOG_INFO, ss.str().c_str());
-
-            profile_start_time = current_time;
-            profile_present_count = 0;
-        }
     }
 }
 
-void ShellWayland::run() {
-    create_window();
-    create_context();
-    resize_swapchain(settings_.initial_width, settings_.initial_height);
+void ShellWayland::RunLoop() {
 
-    quit_ = false;
-    if (true)
-        loop_poll();
-    else
-        loop_wait();
+    CreateWindow();
+    CreateContext();
+    ResizeSwapchain(m_settings.initialWidth, m_settings.initialHeight);
 
-    destroy_context();
+    m_quit_loop = false;
+    if (true) {
+        LoopPoll();
+    } else {
+        LoopWait();
+    }
+
+    DestroyContext();
+    DestroyWindow();
 }

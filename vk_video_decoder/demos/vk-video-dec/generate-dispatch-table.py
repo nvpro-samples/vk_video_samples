@@ -408,6 +408,8 @@ def generate_header(guard):
     lines.append("")
     lines.append("namespace vk {")
     lines.append("")
+    lines.append("struct VkInterfaceFunctions {")
+    lines.append("")
 
     for ext in extensions:
         if ext.guard:
@@ -415,15 +417,17 @@ def generate_header(guard):
 
         lines.append("// %s" % ext.name)
         for cmd in ext.commands:
-            lines.append("extern PFN_vk%s %s;" % (cmd.name, cmd.name))
+            lines.append("    PFN_vk%s %s;" % (cmd.name, cmd.name))
 
         if ext.guard:
             lines.append("#endif")
         lines.append("")
 
-    lines.append("void init_dispatch_table_top(PFN_vkGetInstanceProcAddr get_instance_proc_addr);")
-    lines.append("void init_dispatch_table_middle(VkInstance instance, bool include_bottom);")
-    lines.append("void init_dispatch_table_bottom(VkInstance instance, VkDevice dev);")
+    lines.append("}; // struct VkInterfaceFunctions")
+    lines.append("")
+    lines.append("void InitDispatchTableTop(PFN_vkGetInstanceProcAddr GetInstanceProcAddrFunc, VkInterfaceFunctions* pVkFunctions);")
+    lines.append("void InitDispatchTableMiddle(VkInstance instance, bool include_bottom, VkInterfaceFunctions* pVkFunctions);")
+    lines.append("void InitDispatchTableBottom(VkInstance instance, VkDevice dev, VkInterfaceFunctions* pVkFunctions);")
     lines.append("")
     lines.append("} // namespace vk")
     lines.append("")
@@ -433,11 +437,11 @@ def generate_header(guard):
 
 def get_proc_addr(dispatchable, cmd, guard=None):
     if dispatchable == "dev":
-        func = "GetDeviceProcAddr"
+        func = "getDeviceProcAddrFunc"
     else:
-        func = "GetInstanceProcAddr"
+        func = "getInstanceProcAddrFunc"
 
-    c = "    %s = reinterpret_cast<PFN_vk%s>(%s(%s, \"vk%s\"));" % \
+    c = "    pVkFunctions->%s = reinterpret_cast<PFN_vk%s>(%s(%s, \"vk%s\"));" % \
             (cmd.name, cmd.name, func, dispatchable, cmd.name)
 
     if guard:
@@ -457,11 +461,7 @@ def generate_source(header):
     get_instance_proc_addr = None
     get_device_proc_addr = None
     for ext in extensions:
-        if ext.guard:
-            lines.append("#ifdef %s" % ext.guard)
-
         for cmd in ext.commands:
-            lines.append("PFN_vk%s %s;" % (cmd.name, cmd.name))
 
             if cmd.ty not in commands_by_types:
                 commands_by_types[cmd.ty] = []
@@ -472,21 +472,19 @@ def generate_source(header):
             elif cmd.name == "GetDeviceProcAddr":
                 get_device_proc_addr = cmd
 
-        if ext.guard:
-            lines.append("#endif")
     lines.append("")
 
-    lines.append("void init_dispatch_table_top(PFN_vkGetInstanceProcAddr get_instance_proc_addr)")
+    lines.append("void InitDispatchTableTop(PFN_vkGetInstanceProcAddr getInstanceProcAddrFunc, VkInterfaceFunctions* pVkFunctions)")
     lines.append("{")
-    lines.append("    GetInstanceProcAddr = get_instance_proc_addr;")
-    lines.append("")
+    lines.append("    pVkFunctions->GetInstanceProcAddr = getInstanceProcAddrFunc;")
     for cmd, guard in commands_by_types[Command.LOADER]:
         lines.append(get_proc_addr("VK_NULL_HANDLE", cmd, guard))
     lines.append("}")
     lines.append("")
 
-    lines.append("void init_dispatch_table_middle(VkInstance instance, bool include_bottom)")
+    lines.append("void InitDispatchTableMiddle(VkInstance instance, bool include_bottom, VkInterfaceFunctions* pVkFunctions)")
     lines.append("{")
+    lines.append("    PFN_vkGetInstanceProcAddr getInstanceProcAddrFunc = pVkFunctions->GetInstanceProcAddr;")
     for cmd, guard in commands_by_types[Command.INSTANCE]:
         if cmd == get_instance_proc_addr:
             continue
@@ -500,10 +498,13 @@ def generate_source(header):
     lines.append("}")
     lines.append("")
 
-    lines.append("void init_dispatch_table_bottom(VkInstance instance, VkDevice dev)")
+    lines.append("void InitDispatchTableBottom(VkInstance instance, VkDevice dev, VkInterfaceFunctions* pVkFunctions)")
     lines.append("{")
+    lines.append("    PFN_vkGetInstanceProcAddr getInstanceProcAddrFunc = pVkFunctions->GetInstanceProcAddr;")
     lines.append(get_proc_addr("instance", get_device_proc_addr))
+    lines.append("    PFN_vkGetDeviceProcAddr getDeviceProcAddrFunc = pVkFunctions->GetDeviceProcAddr;")
     lines.append(get_proc_addr("dev", get_device_proc_addr))
+    lines.append("    getDeviceProcAddrFunc = pVkFunctions->GetDeviceProcAddr;")
     lines.append("")
     for cmd, guard in commands_by_types[Command.DEVICE]:
         if cmd == get_device_proc_addr:

@@ -17,10 +17,10 @@
 #if !defined(__NV_VULKANVIDEOPARSERPARAMS_H__)
 #define __NV_VULKANVIDEOPARSERPARAMS_H__
 
-#include "vulkan_interfaces.h"
-#include <bitset>
 #include <assert.h>
 #include <atomic>
+#include "vulkan_interfaces.h"
+#include "vkvideo_parser/VulkanBitstreamBuffer.h"
 
 typedef int64_t VkVideotimestamp;
 
@@ -36,8 +36,11 @@ struct VkParserPerFrameDecodeParameters {
     int currPicIdx; /** Output index of the current picture                       */
     StdVideoPictureParametersSet* pCurrentPictureParameters;
     // Bitstream data
-    unsigned int bitstreamDataLen; /** Number of bytes in bitstream data buffer                  */
-    const unsigned char* pBitstreamData; /** ptr to bitstream data for this picture (slice-layer)      */
+    uint32_t firstSliceIndex;
+    uint32_t numSlices;
+    size_t bitstreamDataOffset; // bitstream data offset in bitstreamData buffer
+    size_t bitstreamDataLen;   /** Number of bytes in bitstream data buffer                  */
+    VkSharedBaseObj<VulkanBitstreamBuffer> bitstreamData; /** bitstream data for this picture (slice-layer) */
     VkVideoDecodeInfoKHR decodeFrameInfo;
     int32_t numGopReferenceSlots;
     int8_t pGopReferenceImagesIndexes[MAX_DPB_REF_AND_SETUP_SLOTS];
@@ -153,7 +156,7 @@ typedef enum {
 
 struct VkParserSourceDataPacket {
     uint32_t flags; /** Combination of VK_PARSER_PKT_XXX flags                              */
-    uint32_t payload_size; /** number of bytes in the payload (may be zero if EOS flag is set) */
+    size_t payload_size; /** number of bytes in the payload (may be zero if EOS flag is set) */
     const uint8_t* payload; /** Pointer to packet payload data (may be NULL if EOS flag is set) */
     VkVideotimestamp timestamp; /** Presentation time stamp (10MHz clock), only valid if
                                              VK_PARSER_PKT_TIMESTAMP flag is set                                 */

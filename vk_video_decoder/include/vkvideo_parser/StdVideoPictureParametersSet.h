@@ -14,8 +14,8 @@
 * limitations under the License.
 */
 
-#ifndef _NVVKDECODER_STDVIDEOPICTUREPARAMETERSSET_H_
-#define _NVVKDECODER_STDVIDEOPICTUREPARAMETERSSET_H_
+#ifndef _VKVIDEODECODER_STDVIDEOPICTUREPARAMETERSSET_H_
+#define _VKVIDEODECODER_STDVIDEOPICTUREPARAMETERSSET_H_
 
 struct SpsVideoH264PictureParametersSet
 {
@@ -52,7 +52,7 @@ struct PpsVideoH265PictureParametersSet
     StdVideoH265ScalingLists            ppsStdScalingLists;
 };
 
-class StdVideoPictureParametersSet : public VkParserVideoRefCountBase
+class StdVideoPictureParametersSet : public VkVideoRefCountBase
 {
 public:
 
@@ -222,7 +222,7 @@ public:
         return pNewSet;
     }
 
-    static StdVideoPictureParametersSet* StdVideoPictureParametersSetFromBase(VkParserVideoRefCountBase* pBase ) {
+    static StdVideoPictureParametersSet* StdVideoPictureParametersSetFromBase(VkVideoRefCountBase* pBase ) {
         if (!pBase) {
             return NULL;
         }
@@ -265,8 +265,8 @@ public:
     } m_data;
     uint32_t                                         m_updateSequenceCount;
     VkSharedBaseObj<StdVideoPictureParametersSet>    m_parent;        // SPS or PPS parent
-    VkSharedBaseObj<VkParserVideoRefCountBase>       m_vkObjectOwner; // VkParserVideoPictureParameters
-    VkSharedBaseObj<VkParserVideoRefCountBase>       m_videoSession;  // NvVideoSession
+    VkSharedBaseObj<VkVideoRefCountBase>             m_vkObjectOwner; // VkParserVideoPictureParameters
+    VkSharedBaseObj<VkVideoRefCountBase>             m_videoSession;  // NvVideoSession
 private:
 
     StdVideoPictureParametersSet(VkParserPictureParametersUpdateType updateType)
@@ -305,4 +305,4 @@ private:
 
 };
 
-#endif /* _NVVKDECODER_STDVIDEOPICTUREPARAMETERSSET_H_ */
+#endif /* _VKVIDEODECODER_STDVIDEOPICTUREPARAMETERSSET_H_ */

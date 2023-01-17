@@ -20,37 +20,40 @@
 #include "Shell.h"
 
 class ShellWayland : public Shell {
-   public:
-    ShellWayland(FrameProcessor &frameProcessor, uint32_t deviceID);
-    ~ShellWayland();
 
-    void run();
-    void quit() { quit_ = true; }
+public:
+    ShellWayland(const VulkanDeviceContext* vkDevCtx, VkSharedBaseObj<FrameProcessor>& frameProcessor);
+    virtual ~ShellWayland();
 
-   private:
-    void init_connection();
+    static const char* GetRequiredInstanceExtension();
+    static const std::vector<VkExtensionProperties>& GetRequiredInstanceExtensions();
+    virtual bool PhysDeviceCanPresent(VkPhysicalDevice physicalDevice, uint32_t presentQueueFamily)  const;
+    virtual void RunLoop();
+    virtual void QuitLoop() { m_quit_loop = true; }
 
-    PFN_vkGetInstanceProcAddr load_vk();
-    bool can_present(VkPhysicalDevice phy, uint32_t queue_family);
+private:
+    void InitConnection();
 
-    void create_window();
-    VkSurfaceKHR create_surface(VkInstance instance);
+    void CreateWindow();
+    void DestroyWindow()
+    {
+        // FIXME: implement - destroy the Wayland surface created by CreateWindow()
+    };
+    virtual VkSurfaceKHR CreateSurface(VkInstance instance);
 
-    void loop_wait();
-    void loop_poll();
+    void LoopWait();
+    void LoopPoll();
 
-    void *lib_handle_;
-    bool quit_;
-
-    wl_display *display_;
-    wl_registry *registry_;
-    wl_compositor *compositor_;
-    wl_shell *shell_;
-    wl_surface *surface_;
+    bool              m_quit_loop;
+    wl_display       *m_display;
+    wl_registry      *m_registry;
+    wl_compositor    *m_compositor;
+    wl_shell         *m_shell;
+    wl_surface       *m_surface;
     wl_shell_surface *shell_surface_;
-    wl_seat *seat_;
-    wl_pointer *pointer_;
-    wl_keyboard *keyboard_;
+    wl_seat          *m_seat;
+    wl_pointer       *m_pointer;
+    wl_keyboard      *m_keyboard;
 
     static void handle_ping(void *data, wl_shell_surface *shell_surface, uint32_t serial);
     static void handle_configure(void *data, wl_shell_surface *shell_surface, uint32_t edges, int32_t width, int32_t height);

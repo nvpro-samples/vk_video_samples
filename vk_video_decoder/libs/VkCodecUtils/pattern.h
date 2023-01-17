@@ -18,6 +18,7 @@
 #define CMDS_VK_VIDEO_PLAYER_PATTERN_H_
 
 #include <stdint.h>
+#include "VkCodecUtils/VulkanDeviceContext.h"
 
 namespace Pattern {
 
@@ -76,7 +77,7 @@ public:
 
     }
 
-    void fillVkImage(VkDevice device, VkImage vkImage, const ImageData *pImageData, VkDeviceMemory mem, const VkSamplerYcbcrConversionCreateInfo* pSamplerYcbcrConversionCreateInfo,
+    void fillVkImage(const VulkanDeviceContext* vkDevCtx, VkImage vkImage, const ImageData *pImageData, VkDeviceMemory mem, const VkSamplerYcbcrConversionCreateInfo* pSamplerYcbcrConversionCreateInfo,
                      VkImageAspectFlags aspectMask = 0, VkFormat aspectMainFormat = VK_FORMAT_UNDEFINED);
 
     void fillVkCommon(const ImageData *pImageData, VkSubresourceLayout layouts[3], const VkSamplerYcbcrConversionCreateInfo* pSamplerYcbcrConversionCreateInfo,

@@ -54,16 +54,6 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         )
         link_libraries(${WAYLAND_CLIENT_LIBRARIES})
         add_definitions(-DVK_USE_PLATFORM_WAYLAND_KHR)
-    elseif(DEMOS_WSI_SELECTION STREQUAL "MIR")
-        if (NOT BUILD_WSI_MIR_SUPPORT)
-            message( FATAL_ERROR "Selected MIR for demos build but not building Mir support" )
-        endif()
-        add_definitions(-DVK_USE_PLATFORM_MIR_KHR)
-        set(DEMO_INCLUDE_DIRS
-            ${MIR_INCLUDE_DIR}
-            ${DEMO_INCLUDE_DIRS}
-        )
-        # TODO - Add Mir support
     elseif(DEMOS_WSI_SELECTION STREQUAL "DISPLAY")
         add_definitions(-DVK_USE_PLATFORM_DISPLAY_KHR)
     else()

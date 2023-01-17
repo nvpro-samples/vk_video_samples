@@ -22,40 +22,10 @@
 #include <time.h>
 
 #include "VkCodecUtils/Helpers.h"
+#include "VkCodecUtils/FrameProcessor.h"
 #include "ShellXcb.h"
-#include "FrameProcessor.h"
 
 namespace {
-
-class PosixTimer {
-   public:
-    PosixTimer() { reset(); }
-
-    void reset() { clock_gettime(CLOCK_MONOTONIC, &start_); }
-
-    double get() const {
-        struct timespec now;
-        clock_gettime(CLOCK_MONOTONIC, &now);
-
-        constexpr long one_s_in_ns = 1000 * 1000 * 1000;
-        constexpr double one_s_in_ns_d = static_cast<double>(one_s_in_ns);
-
-        time_t s = now.tv_sec - start_.tv_sec;
-        long ns;
-        if (now.tv_nsec > start_.tv_nsec) {
-            ns = now.tv_nsec - start_.tv_nsec;
-        } else {
-            assert(s > 0);
-            s--;
-            ns = one_s_in_ns - (start_.tv_nsec - now.tv_nsec);
-        }
-
-        return static_cast<double>(s) + static_cast<double>(ns) / one_s_in_ns_d;
-    }
-
-   private:
-    struct timespec start_;
-};
 
 xcb_intern_atom_cookie_t intern_atom_cookie(xcb_connection_t *c, const std::string &s) {
     return xcb_intern_atom(c, false, s.size(), s.c_str());
@@ -74,121 +44,128 @@ xcb_atom_t intern_atom(xcb_connection_t *c, xcb_intern_atom_cookie_t cookie) {
 
 }  // namespace
 
-ShellXcb::ShellXcb(FrameProcessor &frameProcessor, uint32_t deviceID) : Shell(frameProcessor) {
-    if (frameProcessor.settings().validate) instance_layers_.push_back("VK_LAYER_LUNARG_standard_validation");
-    instance_extensions_.push_back(VK_KHR_XCB_SURFACE_EXTENSION_NAME);
+static const std::vector<VkExtensionProperties> xcbSurfaceExtensions {
+    VkExtensionProperties{ VK_KHR_XCB_SURFACE_EXTENSION_NAME, VK_KHR_XCB_SURFACE_SPEC_VERSION } };
 
-    init_connection();
-    init_vk(deviceID);
+const std::vector<VkExtensionProperties>& ShellXcb::GetRequiredInstanceExtensions()
+{
+    return xcbSurfaceExtensions;
+}
+
+ShellXcb::ShellXcb(const VulkanDeviceContext* vkDevCtx, VkSharedBaseObj<FrameProcessor>& frameProcessor)
+    : Shell(vkDevCtx, frameProcessor)
+    , m_connection()
+    , m_screen()
+    , m_window()
+    , m_winWidth()
+    , m_winHeight()
+    , m_wm_protocols()
+    , m_wm_delete_window()
+    , m_quit_loop() {
+
+    InitConnection();
 }
 
 ShellXcb::~ShellXcb() {
-    cleanup_vk();
-    dlclose(lib_handle_);
 
-    xcb_disconnect(c_);
+    xcb_disconnect(m_connection);
 }
 
-void ShellXcb::init_connection() {
-    int scr;
+const char* ShellXcb::GetRequiredInstanceExtension()
+{
+    return VK_KHR_XCB_SURFACE_EXTENSION_NAME;
+}
 
-    c_ = xcb_connect(nullptr, &scr);
-    if (!c_ || xcb_connection_has_error(c_)) {
-        xcb_disconnect(c_);
+void ShellXcb::InitConnection()
+{
+
+    int scr;
+    m_connection = xcb_connect(nullptr, &scr);
+    if (!m_connection || xcb_connection_has_error(m_connection)) {
+        xcb_disconnect(m_connection);
         throw std::runtime_error("failed to connect to the display server");
     }
 
-    const xcb_setup_t *setup = xcb_get_setup(c_);
+    const xcb_setup_t *setup = xcb_get_setup(m_connection);
     xcb_screen_iterator_t iter = xcb_setup_roots_iterator(setup);
-    while (scr-- > 0) xcb_screen_next(&iter);
+    while (scr-- > 0) {
+        xcb_screen_next(&iter);
+    }
 
-    scr_ = iter.data;
+    m_screen = iter.data;
 }
 
-void ShellXcb::create_window() {
-    win_ = xcb_generate_id(c_);
+void ShellXcb::CreateWindow() {
+    m_window = xcb_generate_id(m_connection);
 
     uint32_t value_mask, value_list[32];
     value_mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK;
-    value_list[0] = scr_->black_pixel;
+    value_list[0] = m_screen->black_pixel;
     value_list[1] = XCB_EVENT_MASK_KEY_PRESS | XCB_EVENT_MASK_STRUCTURE_NOTIFY;
 
-    uint16_t winWidth  = (uint16_t)scr_->width_in_pixels;
-    uint16_t winHeight  = (uint16_t)scr_->height_in_pixels;
+    m_winWidth  = (uint16_t)m_screen->width_in_pixels;
+    m_winHeight  = (uint16_t)m_screen->height_in_pixels;
 
-    xcb_create_window(c_, XCB_COPY_FROM_PARENT, win_, scr_->root, 0, 0, winWidth, winHeight, 0,
-                      XCB_WINDOW_CLASS_INPUT_OUTPUT, scr_->root_visual, value_mask, value_list);
+    xcb_create_window(m_connection, XCB_COPY_FROM_PARENT, m_window, m_screen->root, 0, 0, m_winWidth, m_winHeight, 0,
+                      XCB_WINDOW_CLASS_INPUT_OUTPUT, m_screen->root_visual, value_mask, value_list);
 
-    xcb_intern_atom_cookie_t utf8_string_cookie = intern_atom_cookie(c_, "UTF8_STRING");
-    xcb_intern_atom_cookie_t _net_wm_name_cookie = intern_atom_cookie(c_, "_NET_WM_NAME");
-    xcb_intern_atom_cookie_t wm_protocols_cookie = intern_atom_cookie(c_, "WM_PROTOCOLS");
-    xcb_intern_atom_cookie_t wm_delete_window_cookie = intern_atom_cookie(c_, "WM_DELETE_WINDOW");
+    xcb_intern_atom_cookie_t utf8_string_cookie = intern_atom_cookie(m_connection, "UTF8_STRING");
+    xcb_intern_atom_cookie_t _net_wm_name_cookie = intern_atom_cookie(m_connection, "_NET_WM_NAME");
+    xcb_intern_atom_cookie_t wm_protocols_cookie = intern_atom_cookie(m_connection, "WM_PROTOCOLS");
+    xcb_intern_atom_cookie_t wm_delete_window_cookie = intern_atom_cookie(m_connection, "WM_DELETE_WINDOW");
 
     // set title
-    xcb_atom_t utf8_string = intern_atom(c_, utf8_string_cookie);
-    xcb_atom_t _net_wm_name = intern_atom(c_, _net_wm_name_cookie);
-    xcb_change_property(c_, XCB_PROP_MODE_REPLACE, win_, _net_wm_name, utf8_string, 8, settings_.name.size(),
-                        settings_.name.c_str());
+    xcb_atom_t utf8_string = intern_atom(m_connection, utf8_string_cookie);
+    xcb_atom_t _net_wm_name = intern_atom(m_connection, _net_wm_name_cookie);
+    xcb_change_property(m_connection, XCB_PROP_MODE_REPLACE, m_window, _net_wm_name, utf8_string, 8, m_settings.name.size(),
+                        m_settings.name.c_str());
 
     // advertise WM_DELETE_WINDOW
-    wm_protocols_ = intern_atom(c_, wm_protocols_cookie);
-    wm_delete_window_ = intern_atom(c_, wm_delete_window_cookie);
-    xcb_change_property(c_, XCB_PROP_MODE_REPLACE, win_, wm_protocols_, XCB_ATOM_ATOM, 32, 1, &wm_delete_window_);
+    m_wm_protocols = intern_atom(m_connection, wm_protocols_cookie);
+    m_wm_delete_window = intern_atom(m_connection, wm_delete_window_cookie);
+    xcb_change_property(m_connection, XCB_PROP_MODE_REPLACE, m_window, m_wm_protocols, XCB_ATOM_ATOM, 32, 1, &m_wm_delete_window);
+
+    xcb_map_window(m_connection, m_window);
+    xcb_flush(m_connection);
 }
 
-PFN_vkGetInstanceProcAddr ShellXcb::load_vk() {
-    const char filename[] = "libvulkan.so.1";
-    void *handle = NULL, *custom_handle = NULL, *symbol = NULL;
-
-#ifdef UNINSTALLED_LOADER
-    custom_handle = dlopen(UNINSTALLED_LOADER, RTLD_LAZY);
-    if (!custom_handle) handle = dlopen(filename, RTLD_LAZY);
-#else
-    handle = dlopen(filename, RTLD_LAZY);
-#endif
-
-    if (custom_handle) {
-        symbol = dlsym(custom_handle, "vk_icdGetInstanceProcAddr");
-    } else if (handle) {
-        symbol = dlsym(handle, "vkGetInstanceProcAddr");
-    }
-
-    if ((!handle && !custom_handle) || !symbol) {
-        std::stringstream ss;
-        ss << "failed to load " << dlerror();
-
-        if (handle) dlclose(handle);
-
-        throw std::runtime_error(ss.str());
-    }
-
-    lib_handle_ = handle;
-
-    return reinterpret_cast<PFN_vkGetInstanceProcAddr>(symbol);
+void ShellXcb::DestroyWindow()
+{
+    xcb_destroy_window(m_connection, m_window);
+    xcb_flush(m_connection);
 }
 
-bool ShellXcb::can_present(VkPhysicalDevice phy, uint32_t queue_family) {
-    return vk::GetPhysicalDeviceXcbPresentationSupportKHR(phy, queue_family, c_, scr_->root_visual);
+bool ShellXcb::PhysDeviceCanPresent(VkPhysicalDevice physicalDevice, uint32_t presentQueueFamily) const {
+    return m_ctx.devCtx->GetPhysicalDeviceXcbPresentationSupportKHR(physicalDevice,
+                                                                    presentQueueFamily,
+                                                                    m_connection, m_screen->root_visual);
 }
 
-VkSurfaceKHR ShellXcb::create_surface(VkInstance instance) {
+VkSurfaceKHR ShellXcb::CreateSurface(VkInstance instance) {
     VkXcbSurfaceCreateInfoKHR surface_info = {};
     surface_info.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
-    surface_info.connection = c_;
-    surface_info.window = win_;
+    surface_info.connection = m_connection;
+    surface_info.window = m_window;
 
     VkSurfaceKHR surface;
-    vk::assert_success(vk::CreateXcbSurfaceKHR(instance, &surface_info, nullptr, &surface));
+    vk::assert_success(m_ctx.devCtx->CreateXcbSurfaceKHR(m_ctx.devCtx->getInstance(),
+                                                            &surface_info, nullptr, &surface));
 
     return surface;
 }
 
-void ShellXcb::handle_event(const xcb_generic_event_t *ev) {
+void ShellXcb::HandleEvent(const xcb_generic_event_t *ev) {
     switch (ev->response_type & 0x7f) {
         case XCB_CONFIGURE_NOTIFY: {
             const xcb_configure_notify_event_t *notify = reinterpret_cast<const xcb_configure_notify_event_t *>(ev);
-            std::cout << "Notify resize " << notify->width << " x " << notify->height << '\n';
-            resize_swapchain(notify->width, notify->height);
+            if (m_settings.verbose) {
+                std::cout << "Notify display resize " << notify->width << " x " << notify->height << '\n';
+            }
+
+            m_winWidth  = notify->width;
+            m_winHeight = notify->height;
+
+            ResizeSwapchain(notify->width, notify->height);
         } break;
         case XCB_KEY_PRESS: {
             const xcb_key_press_event_t *press = reinterpret_cast<const xcb_key_press_event_t *>(ev);
@@ -226,90 +203,74 @@ void ShellXcb::handle_event(const xcb_generic_event_t *ev) {
                     break;
             }
 
-            frameProcessor_.on_key(key);
+            if (!m_frameProcessor->OnKey(key)) {
+                QuitLoop();
+            }
         } break;
         case XCB_CLIENT_MESSAGE: {
             const xcb_client_message_event_t *msg = reinterpret_cast<const xcb_client_message_event_t *>(ev);
-            if (msg->type == wm_protocols_ && msg->data.data32[0] == wm_delete_window_) frameProcessor_.on_key(FrameProcessor::KEY_SHUTDOWN);
+            if (msg->type == m_wm_protocols && msg->data.data32[0] == m_wm_delete_window) {
+                if (!m_frameProcessor->OnKey(FrameProcessor::KEY_SHUTDOWN)) {
+                    QuitLoop();
+                }
+            }
         } break;
         default:
             break;
     }
 }
 
-void ShellXcb::loop_wait() {
+void ShellXcb::LoopWait() {
     while (true) {
-        xcb_generic_event_t *ev = xcb_wait_for_event(c_);
+        xcb_generic_event_t *ev = xcb_wait_for_event(m_connection);
         if (!ev) continue;
 
-        handle_event(ev);
+        HandleEvent(ev);
         free(ev);
 
-        if (quit_) break;
+        if (m_quit_loop) {
+            break;
+        }
 
-        acquire_back_buffer();
-        present_back_buffer();
+        AcquireBackBuffer();
+        PresentBackBuffer();
     }
 }
 
-void ShellXcb::loop_poll() {
-    PosixTimer timer;
-
-    double current_time = timer.get();
-    double profile_start_time = current_time;
-    int profile_present_count = 0;
+void ShellXcb::LoopPoll() {
 
     while (true) {
         // handle pending events
         while (true) {
-            xcb_generic_event_t *ev = xcb_poll_for_event(c_);
+            xcb_generic_event_t *ev = xcb_poll_for_event(m_connection);
             if (!ev) break;
 
-            handle_event(ev);
+            HandleEvent(ev);
             free(ev);
         }
 
-        if (quit_) break;
+        if (m_quit_loop) break;
 
-        acquire_back_buffer();
+        AcquireBackBuffer();
 
-        double t = timer.get();
-        add_frameProcessor_time(static_cast<float>(t - current_time));
+        PresentBackBuffer();
 
-        present_back_buffer();
-
-        current_time = t;
-
-        profile_present_count++;
-        if (current_time - profile_start_time >= 5.0) {
-            const double fps = profile_present_count / (current_time - profile_start_time);
-            std::stringstream ss;
-            ss << profile_present_count << " presents in " << current_time - profile_start_time << " seconds "
-               << "(FPS: " << fps << ")";
-            log(LOG_INFO, ss.str().c_str());
-
-            profile_start_time = current_time;
-            profile_present_count = 0;
-        }
     }
 }
 
-void ShellXcb::run() {
-    create_window();
-    xcb_map_window(c_, win_);
-    xcb_flush(c_);
+void ShellXcb::RunLoop() {
 
-    create_context();
-    resize_swapchain(settings_.initial_width, settings_.initial_height);
+    CreateWindow();
+    CreateContext();
+    ResizeSwapchain(m_winWidth, m_winHeight);
 
-    quit_ = false;
-    if (true)
-        loop_poll();
-    else
-        loop_wait();
+    m_quit_loop = false;
+    if (true) {
+        LoopPoll();
+    } else {
+        LoopWait();
+    }
 
-    destroy_context();
-
-    xcb_destroy_window(c_, win_);
-    xcb_flush(c_);
+    DestroyContext();
+    DestroyWindow();
 }

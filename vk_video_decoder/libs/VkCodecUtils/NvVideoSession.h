@@ -17,12 +17,15 @@
 #pragma once
 
 #include <atomic>
-#include "VkParserVideoRefCountBase.h"
+#include "VkVideoCore/VkVideoRefCountBase.h"
+#include "VkCodecUtils/VulkanDeviceContext.h"
+#include "VkCodecUtils/VulkanVideoUtils.h" // for DeviceMemoryObject
 
-class NvVideoSession : public VkParserVideoRefCountBase
+class NvVideoSession : public VkVideoRefCountBase
 {
+    enum { MAX_BOUND_MEMORY = 8 };
 public:
-    static VkResult Create(VkDevice            dev,
+    static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            uint32_t            videoQueueFamily,
                            VkVideoCoreProfile* pVideoProfile,
                            VkFormat            pictureFormat,
@@ -32,7 +35,7 @@ public:
                            uint32_t            maxActiveReferencePictures,
                            VkSharedBaseObj<NvVideoSession>& videoSession);
 
-    bool IsCompatible ( VkDevice            dev,
+    bool IsCompatible ( const VulkanDeviceContext* vkDevCtx,
                         uint32_t            videoQueueFamily,
                         VkVideoCoreProfile* pVideoProfile,
                         VkFormat            pictureFormat,
@@ -69,7 +72,7 @@ public:
             return false;
         }
 
-        if (m_dev != dev) {
+        if (m_vkDevCtx->getDevice() != vkDevCtx->getDevice()) {
             return false;
         }
 
@@ -99,15 +102,10 @@ public:
     VkVideoSessionKHR GetVideoSession() const { return m_videoSession; }
 
 private:
-    std::atomic<int32_t>                 m_refCount;
-    VkVideoCoreProfile                   m_profile;
-    VkDevice                             m_dev;
-    VkVideoSessionCreateInfoKHR          m_createInfo;
-    VkVideoSessionKHR                    m_videoSession;
-    vulkanVideoUtils::DeviceMemoryObject m_memoryBound[8];
 
-    NvVideoSession(VkVideoCoreProfile* pVideoProfile)
-       : m_refCount(0), m_profile(*pVideoProfile), m_dev(VkDevice()),
+    NvVideoSession(const VulkanDeviceContext* vkDevCtx,
+                   VkVideoCoreProfile* pVideoProfile)
+       : m_refCount(0), m_profile(*pVideoProfile), m_vkDevCtx(vkDevCtx),
          m_createInfo{ VK_STRUCTURE_TYPE_VIDEO_SESSION_CREATE_INFO_KHR, NULL },
          m_videoSession(VkVideoSessionKHR()), m_memoryBound{}
     {
@@ -117,10 +115,25 @@ private:
     ~NvVideoSession()
     {
         if (m_videoSession) {
-            assert(m_dev != VkDevice());
-            vk::DestroyVideoSessionKHR(m_dev, m_videoSession, NULL);
+            assert(m_vkDevCtx != nullptr);
+            m_vkDevCtx->DestroyVideoSessionKHR(*m_vkDevCtx, m_videoSession, NULL);
             m_videoSession = VkVideoSessionKHR();
-            m_dev = VkDevice();
         }
+
+        for (uint32_t memIdx = 0; memIdx < MAX_BOUND_MEMORY; memIdx++) {
+            if (m_memoryBound[memIdx] != VK_NULL_HANDLE) {
+                m_vkDevCtx->FreeMemory(*m_vkDevCtx, m_memoryBound[memIdx], 0);
+                m_memoryBound[memIdx] = VK_NULL_HANDLE;
+            }
+        }
+        m_vkDevCtx = nullptr;
     }
+
+private:
+    std::atomic<int32_t>                   m_refCount;
+    VkVideoCoreProfile                     m_profile;
+    const VulkanDeviceContext*             m_vkDevCtx;
+    VkVideoSessionCreateInfoKHR            m_createInfo;
+    VkVideoSessionKHR                      m_videoSession;
+    VkDeviceMemory                         m_memoryBound[MAX_BOUND_MEMORY];
 };

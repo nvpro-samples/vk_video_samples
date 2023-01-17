@@ -22,19 +22,22 @@
 #include "Shell.h"
 
 class ShellWin32 : public Shell {
-   public:
-    ShellWin32(FrameProcessor &frameProcessor, uint32_t deviceID);
-    ~ShellWin32();
 
-    void run();
-    void quit();
+public:
+    ShellWin32(const VulkanDeviceContext* vkDevCtx, VkSharedBaseObj<FrameProcessor>& frameProcessor);
+    virtual ~ShellWin32();
 
-   private:
-    PFN_vkGetInstanceProcAddr load_vk();
-    bool can_present(VkPhysicalDevice phy, uint32_t queue_family);
+    static const char* GetRequiredInstanceExtension();
+    static const std::vector<VkExtensionProperties>& GetRequiredInstanceExtensions();
+    virtual bool PhysDeviceCanPresent(VkPhysicalDevice physicalDevice, uint32_t presentQueueFamily) const;
+    virtual void RunLoop();
+    virtual void QuitLoop();
 
-    void create_window();
-    VkSurfaceKHR create_surface(VkInstance instance);
+private:
+
+    void VkCreateWindow();
+    void VkDestroyWindow();
+    virtual VkSurfaceKHR CreateSurface(VkInstance instance);
 
     static LRESULT CALLBACK window_proc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         ShellWin32 *shell = reinterpret_cast<ShellWin32 *>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
@@ -42,14 +45,12 @@ class ShellWin32 : public Shell {
         // called from constructor, CreateWindowEx specifically.  But why?
         if (!shell) return DefWindowProc(hwnd, uMsg, wParam, lParam);
 
-        return shell->handle_message(uMsg, wParam, lParam);
+        return shell->HandleMessage(uMsg, wParam, lParam);
     }
-    LRESULT handle_message(UINT msg, WPARAM wparam, LPARAM lparam);
+    LRESULT HandleMessage(UINT msg, WPARAM wparam, LPARAM lparam);
 
-    HINSTANCE hinstance_;
-    HWND hwnd_;
-
-    HMODULE hmodule_;
+    HINSTANCE m_hinstance;
+    HWND m_hwnd;
 };
 
 #endif  // SHELL_WIN32_H

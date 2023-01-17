@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #if defined(__unix__)
 #include <unistd.h>
@@ -25,15 +26,13 @@
 #include <vector>
 #include <iostream>     // std::cout
 #include <sstream>      // std::stringstream
-#include <algorithm>    // std::find_if
-
-#include <glm/glm.hpp>
 
 #ifndef __VULKANVIDEOUTILS__
 #define __VULKANVIDEOUTILS__
 
-#include <VkCodecUtils/HelpersDispatchTable.h>
 #include <vulkan_interfaces.h>
+#include "VkCodecUtils/VulkanDeviceContext.h"
+#include "VkCodecUtils/VulkanShaderCompiler.h"
 
 namespace vulkanVideoUtils {
 
@@ -42,9 +41,30 @@ struct Vertex {
     float texCoord[2];
 };
 
+struct Vec2 {
+    Vec2(float val0, float val1)
+        : val{val0, val1} {}
+    float val[2];
+};
+
+struct Vec4 {
+    Vec4(float val0, float val1, float val2, float val3)
+        : val{val0, val1, val2, val3} {}
+    float val[4];
+};
+
 struct TransformPushConstants {
-    glm::mat4 posMatrix;
-    glm::mat2 texMatrix;
+    TransformPushConstants()
+        : posMatrix {{1.0f, 0.0f, 0.0f, 0.0f},
+                     {0.0f, 1.0f, 0.0f, 0.0f},
+                     {0.0f, 0.0f, 1.0f, 0.0f},
+                     {0.0f, 0.0f, 0.0f, 1.0f}}
+          , texMatrix {{1.0f, 0.0f},
+                       {0.0f, 1.0f}}
+    {
+    }
+    Vec4 posMatrix[4];
+    Vec2 texMatrix[2];
 };
 
 #if defined(VK_USE_PLATFORM_XCB_KHR) || defined (VK_USE_PLATFORM_XLIB_KHR) || defined(VK_USE_PLATFORM_WAYLAND_KHR)
@@ -121,168 +141,19 @@ struct ImageResourceInfo {
     {}
 };
 
-// Global Variables ...
-class VulkanDeviceInfo {
-
-public:
-
-    VulkanDeviceInfo(VkInstance instance = VkInstance(),
-            VkPhysicalDevice physDevice = VkPhysicalDevice(),
-            VkDevice device = VkDevice(),
-            uint32_t queueFamilyIndex = -1,
-            VkQueue queue = VkQueue())
-    :   m_instance(instance),
-        m_physDevice(physDevice),
-        m_device(device),
-        m_queueFamilyIndex(queueFamilyIndex),
-        m_queue(queue),
-        m_isExternallyManagedDevice(device != VkDevice()),
-        m_gpuMemoryProperties()
-    {
-        if (m_physDevice) {
-            vk::GetPhysicalDeviceMemoryProperties(m_physDevice, &m_gpuMemoryProperties);
-        }
-    }
-
-    // Create vulkan device
-    void CreateVulkanDevice(VkApplicationInfo *appInfo);
-    // Attach externally managed device
-    void AttachExternallyManagedDevice(VkInstance instance,
-                                       VkPhysicalDevice physDevice,
-                                       VkDevice device,
-                                       uint32_t queueFamilyIndex = -1,
-                                       VkQueue queue = VkQueue());
-
-    VkInstance getInstance() {
-        return m_instance;
-    }
-
-    VkDevice getDevice() {
-        return m_device;
-    }
-
-    operator VkDevice() const { return m_device; }
-
-    void DeviceWaitIdle()
-    {
-        vk::DeviceWaitIdle(m_device);
-    }
-
-    ~VulkanDeviceInfo() {
-
-        if (m_device) {
-            if (!m_isExternallyManagedDevice) {
-                vk::DestroyDevice(m_device, nullptr);
-            }
-            m_device = VkDevice();
-        }
-
-        if (m_instance) {
-            if (!m_isExternallyManagedDevice) {
-                vk::DestroyInstance(m_instance, nullptr);
-            }
-            m_instance = VkInstance();
-        }
-
-        m_queue = VkQueue();
-        m_isExternallyManagedDevice = false;
-    }
-
-    const VkExtensionProperties* FindExtension(
-        const std::vector<VkExtensionProperties>& extensions,
-        const char* name) {
-        auto it = std::find_if(extensions.cbegin(), extensions.cend(),
-                               [=](const VkExtensionProperties& ext) {
-                                   return (strcmp(ext.extensionName, name) == 0);
-                               });
-        return (it != extensions.cend()) ? &*it : nullptr;
-    }
-
-    const VkExtensionProperties* FindInstanceExtension(const char* name) {
-        return FindExtension(m_instanceExtensions, name);
-    }
-
-    const VkExtensionProperties* FindDeviceExtension(const char* name) {
-        return FindExtension(m_deviceExtensions, name);
-    }
-
-    void PrintExtensions(bool deviceExt = false) {
-        const std::vector<VkExtensionProperties>& extensions = deviceExt ? m_deviceExtensions : m_instanceExtensions;
-        for (const auto& e : extensions)
-            printf("\t%s (v%u)\n", e.extensionName, e.specVersion);
-    }
-
-private:
-
-    bool PopulateInstanceExtensions() {
-      uint32_t extensions_count = 0;
-      VkResult result = VK_SUCCESS;
-
-      result = vk::EnumerateInstanceExtensionProperties( nullptr, &extensions_count, nullptr );
-      if( (result != VK_SUCCESS) ||
-          (extensions_count == 0) ) {
-        std::cout << "Could not get the number of instance extensions." << std::endl;
-        return false;
-      }
-
-      m_instanceExtensions.resize( extensions_count );
-      result = vk::EnumerateInstanceExtensionProperties( nullptr, &extensions_count, m_instanceExtensions.data() );
-      if( (result != VK_SUCCESS) ||
-          (extensions_count == 0) ) {
-        std::cout << "Could not enumerate instance extensions." << std::endl;
-        return false;
-      }
-
-      return true;
-    }
-
-    bool PopulateDeviceExtensions() {
-      uint32_t extensions_count = 0;
-      VkResult result = VK_SUCCESS;
-
-      result = vk::EnumerateDeviceExtensionProperties( m_physDevice, nullptr, &extensions_count, nullptr );
-      if( (result != VK_SUCCESS) ||
-          (extensions_count == 0) ) {
-        std::cout << "Could not get the number of device extensions." << std::endl;
-        return false;
-      }
-
-      m_deviceExtensions.resize( extensions_count );
-      result = vk::EnumerateDeviceExtensionProperties( m_physDevice, nullptr, &extensions_count, m_deviceExtensions.data() );
-      if( (result != VK_SUCCESS) ||
-          (extensions_count == 0) ) {
-        std::cout << "Could not enumerate device extensions." << std::endl;
-        return false;
-      }
-
-      return true;
-    }
-
-public:
-    VkInstance m_instance;
-    VkPhysicalDevice m_physDevice;
-    VkDevice m_device;
-    uint32_t m_queueFamilyIndex;
-    VkQueue m_queue;
-    bool m_isExternallyManagedDevice;
-    std::vector<VkExtensionProperties> m_instanceExtensions;
-    std::vector<VkExtensionProperties> m_deviceExtensions;
-    VkPhysicalDeviceMemoryProperties   m_gpuMemoryProperties;
-};
-
 class VulkanDisplayTiming  {
 public:
-    VulkanDisplayTiming(VkDevice device)
+    VulkanDisplayTiming(const VulkanDeviceContext* vkDevCtx)
     : vkGetRefreshCycleDurationGOOGLE(nullptr),
       vkGetPastPresentationTimingGOOGLE(nullptr)
     {
 #ifdef VK_GOOGLE_display_timing
     vkGetRefreshCycleDurationGOOGLE =
             reinterpret_cast<PFN_vkGetRefreshCycleDurationGOOGLE>(
-                    vk::GetDeviceProcAddr(device, "vkGetRefreshCycleDurationGOOGLE"));
+                    vkDevCtx->GetDeviceProcAddr(vkDevCtx->getDevice(), "vkGetRefreshCycleDurationGOOGLE"));
     vkGetPastPresentationTimingGOOGLE =
             reinterpret_cast<PFN_vkGetPastPresentationTimingGOOGLE>(
-                    vk::GetDeviceProcAddr(device, "vkGetPastPresentationTimingGOOGLE"));
+                    vkDevCtx->GetDeviceProcAddr(vkDevCtx->getDevice(), "vkGetPastPresentationTimingGOOGLE"));
 
 #endif // VK_GOOGLE_display_timing
     }
@@ -320,7 +191,7 @@ class VulkanSwapchainInfo {
 public:
     VulkanSwapchainInfo()
       : mInstance(),
-        m_device(),
+        m_vkDevCtx(),
         mSurface(),
         mSwapchain(),
         mSwapchainNumBufs(),
@@ -330,10 +201,10 @@ public:
         mPresentCompleteSemaphoresMem(nullptr),
         mPresentCompleteSemaphoreInFly(nullptr),
         mPresentCompleteSemaphores(),
-        mDisplayTiming(m_device)
+        mDisplayTiming(m_vkDevCtx)
     { }
 
-    void CreateSwapChain(VulkanDeviceInfo* deviceInfo, VkSwapchainKHR swapchain);
+    void CreateSwapChain(const VulkanDeviceContext* vkDevCtx, VkSwapchainKHR swapchain);
 
     ~VulkanSwapchainInfo()
     {
@@ -341,12 +212,12 @@ public:
         mDisplayImages = nullptr;
 
         if (mSwapchain) {
-            vk::DestroySwapchainKHR(m_device,
+            m_vkDevCtx->DestroySwapchainKHR(*m_vkDevCtx,
                               mSwapchain, nullptr);
         }
 
         if (mSurface) {
-            vk::DestroySurfaceKHR(mInstance, mSurface, nullptr);
+            m_vkDevCtx->DestroySurfaceKHR(mInstance, mSurface, nullptr);
             mSurface = VkSurfaceKHR();
         }
 
@@ -355,7 +226,7 @@ public:
             mPresentCompleteSemaphoreInFly = nullptr;
 
             for (uint32_t i = 0; i < mSwapchainNumBufs + 1; i++) {
-                vk::DestroySemaphore(m_device, mPresentCompleteSemaphoresMem[i], nullptr);
+                m_vkDevCtx->DestroySemaphore(*m_vkDevCtx, mPresentCompleteSemaphoresMem[i], nullptr);
             }
 
             delete[] mPresentCompleteSemaphoresMem;
@@ -363,7 +234,7 @@ public:
         }
 
         mInstance = VkInstance();
-        m_device = VkDevice();
+        m_vkDevCtx = nullptr;
         mSwapchain = VkSwapchainKHR();
         mSwapchainNumBufs = 0;
         mSurface = VkSurfaceKHR();
@@ -412,11 +283,11 @@ public:
     }
 
     VkResult GetDisplayRefreshCycle(uint64_t* pRefreshDuration) {
-        return mDisplayTiming.GetRefreshCycle(m_device, mSwapchain, pRefreshDuration);
+        return mDisplayTiming.GetRefreshCycle(*m_vkDevCtx, mSwapchain, pRefreshDuration);
     }
 
     VkInstance mInstance;
-    VkDevice m_device;
+    const VulkanDeviceContext* m_vkDevCtx;
     VkSurfaceKHR mSurface;
     VkSwapchainKHR mSwapchain;
     uint32_t mSwapchainNumBufs;
@@ -438,7 +309,7 @@ class VulkanVideoBitstreamBuffer {
 
 public:
     VulkanVideoBitstreamBuffer()
-        : m_device(0), m_buffer(0), m_deviceMemory(0), m_bufferSize(0),
+        : m_vkDevCtx(nullptr), m_buffer(0), m_deviceMemory(0), m_bufferSize(0),
           m_bufferOffsetAlignment(0),
           m_bufferSizeAlignment(0) { }
 
@@ -446,7 +317,7 @@ public:
         return m_buffer;
     }
 
-    VkResult CreateVideoBitstreamBuffer(VkPhysicalDevice gpuDevice, VkDevice device, uint32_t queueFamilyIndex,
+    VkResult CreateVideoBitstreamBuffer(const VulkanDeviceContext* vkDevCtx, uint32_t queueFamilyIndex,
              VkDeviceSize bufferSize, VkDeviceSize bufferOffsetAlignment,  VkDeviceSize bufferSizeAlignment,
              const unsigned char* pBitstreamData = NULL, VkDeviceSize bitstreamDataSize = 0, VkDeviceSize dstBufferOffset = 0);
 
@@ -456,16 +327,16 @@ public:
     void DestroyVideoBitstreamBuffer()
     {
         if (m_deviceMemory) {
-            vk::FreeMemory(m_device, m_deviceMemory, nullptr);
+            m_vkDevCtx->FreeMemory(*m_vkDevCtx, m_deviceMemory, nullptr);
             m_deviceMemory = VkDeviceMemory(0);
         }
 
         if (m_buffer) {
-            vk::DestroyBuffer(m_device, m_buffer, nullptr);
+            m_vkDevCtx->DestroyBuffer(*m_vkDevCtx, m_buffer, nullptr);
             m_buffer = VkBuffer(0);
         }
 
-        m_device = VkDevice(0);
+        m_vkDevCtx = nullptr;
 
         m_bufferSize = 0;
         m_bufferOffsetAlignment = 0;
@@ -486,7 +357,7 @@ public:
     }
 
 private:
-    VkDevice        m_device;
+    const VulkanDeviceContext* m_vkDevCtx;
     VkBuffer        m_buffer;
     VkDeviceMemory  m_deviceMemory;
     VkDeviceSize    m_bufferSize;
@@ -497,13 +368,13 @@ private:
 class DeviceMemoryObject {
 public:
     DeviceMemoryObject ()
-    :   m_device(),
+    :   m_vkDevCtx(),
         memory(),
         nativeHandle(),
         canBeExported(false)
     { }
 
-    VkResult AllocMemory(VkDevice device, VkMemoryRequirements* pMemoryRequirements, VkMemoryPropertyFlags requiredMemProps);
+    VkResult AllocMemory(const VulkanDeviceContext* vkDevCtx, VkMemoryRequirements* pMemoryRequirements);
 
     ~DeviceMemoryObject()
     {
@@ -515,7 +386,7 @@ public:
         canBeExported = false;
 
         if (memory) {
-            vk::FreeMemory(m_device,
+            m_vkDevCtx->FreeMemory(*m_vkDevCtx,
                     memory, 0);
         }
 
@@ -526,7 +397,7 @@ public:
     AHardwareBufferHandle ExportHandle();
 #endif // defined(VK_USE_PLATFORM_ANDROID_KHR)
 
-    VkDevice m_device;
+    const VulkanDeviceContext* m_vkDevCtx;
     VkDeviceMemory memory;
     NativeHandle nativeHandle; // as a reference to know if this is the same imported buffer.
     bool canBeExported;
@@ -536,7 +407,7 @@ class ImageObject : public ImageResourceInfo {
 public:
     ImageObject ()
     :   ImageResourceInfo(),
-        m_device(),
+        m_vkDevCtx(),
         mem(),
         m_exportMemHandleTypes(VK_EXTERNAL_MEMORY_HANDLE_TYPE_FLAG_BITS_MAX_ENUM),
         nativeHandle(),
@@ -544,19 +415,19 @@ public:
         inUseBySwapchain(false)
     { }
 
-    VkResult CreateImage(VulkanDeviceInfo* deviceInfo,
+    VkResult CreateImage(const VulkanDeviceContext* vkDevCtx,
             const VkImageCreateInfo* pImageCreateInfo,
             VkMemoryPropertyFlags requiredMemProps = 0,
             int initWithPattern = -1,
             VkExternalMemoryHandleTypeFlagBitsKHR exportMemHandleTypes = VkExternalMemoryHandleTypeFlagBitsKHR(),
             NativeHandle& importHandle = NativeHandle::InvalidNativeHandle);
 
-    VkResult AllocMemoryAndBind(VulkanDeviceInfo* deviceInfo, VkImage vkImage, VkDeviceMemory& imageDeviceMemory, VkMemoryPropertyFlags requiredMemProps,
+    VkResult AllocMemoryAndBind(const VulkanDeviceContext* vkDevCtx, VkImage vkImage, VkDeviceMemory& imageDeviceMemory, VkMemoryPropertyFlags requiredMemProps,
             bool dedicated, VkExternalMemoryHandleTypeFlags exportMemHandleTypes, NativeHandle& importHandle = NativeHandle::InvalidNativeHandle);
 
     VkResult FillImageWithPattern(int pattern);
     VkResult CopyYuvToVkImage(uint32_t numPlanes, const uint8_t* yuvPlaneData[3], const VkSubresourceLayout yuvPlaneLayouts[3]);
-    VkResult StageImage(VulkanDeviceInfo* deviceInfo, VkImageUsageFlags usage, VkMemoryPropertyFlags requiredMemProps, bool needBlit);
+    VkResult StageImage(const VulkanDeviceContext* vkDevCtx, VkImageUsageFlags usage, VkMemoryPropertyFlags requiredMemProps, bool needBlit);
 
     VkResult GetMemoryFd(int* pFd) const;
     int32_t GetImageSubresourceAndLayout(VkSubresourceLayout layouts[3]) const;
@@ -578,17 +449,17 @@ public:
         canBeExported = false;
 
         if (view) {
-            vk::DestroyImageView(m_device,
+            m_vkDevCtx->DestroyImageView(*m_vkDevCtx,
                                view, nullptr);
         }
 
         if (mem) {
-            vk::FreeMemory(m_device,
+            m_vkDevCtx->FreeMemory(*m_vkDevCtx,
                          mem, 0);
         }
 
         if (image) {
-            vk::DestroyImage(m_device,
+            m_vkDevCtx->DestroyImage(*m_vkDevCtx,
                            image, nullptr);
         }
 
@@ -601,7 +472,7 @@ public:
     AHardwareBufferHandle ExportHandle();
 #endif // defined(VK_USE_PLATFORM_ANDROID_KHR)
 
-    VkDevice m_device;
+    const VulkanDeviceContext* m_vkDevCtx;
     VkDeviceMemory mem;
     VkExternalMemoryHandleTypeFlagBitsKHR m_exportMemHandleTypes;
     NativeHandle nativeHandle; // as a reference to know if this is the same imported buffer.
@@ -614,7 +485,7 @@ class VulkanSamplerYcbcrConversion {
 public:
 
     VulkanSamplerYcbcrConversion ()
-        : m_device(),
+        : m_vkDevCtx(),
           mSamplerInfo(),
           mSamplerYcbcrConversionCreateInfo(),
           mSamplerYcbcrConversion(),
@@ -629,18 +500,18 @@ public:
 
     void DestroyVulkanSampler() {
         if (sampler) {
-            vk::DestroySampler(m_device, sampler, nullptr);
+            m_vkDevCtx->DestroySampler(*m_vkDevCtx, sampler, nullptr);
         }
         sampler = VkSampler();
 
         if(mSamplerYcbcrConversion) {
-            vk::DestroySamplerYcbcrConversion(m_device, mSamplerYcbcrConversion, NULL);
+            m_vkDevCtx->DestroySamplerYcbcrConversion(*m_vkDevCtx, mSamplerYcbcrConversion, NULL);
         }
 
         mSamplerYcbcrConversion = VkSamplerYcbcrConversion(0);
     }
 
-    VkResult CreateVulkanSampler(VkDevice device,
+    VkResult CreateVulkanSampler(const VulkanDeviceContext* vkDevCtx,
             const VkSamplerCreateInfo* pSamplerCreateInfo,
             const VkSamplerYcbcrConversionCreateInfo* pSamplerYcbcrConversionCreateInfo);
 
@@ -648,49 +519,36 @@ public:
       return sampler;
     }
 
+    const VkSamplerYcbcrConversionCreateInfo& GetSamplerYcbcrConversionCreateInfo() const
+    {
+        return mSamplerYcbcrConversionCreateInfo;
+    }
+
     // sampler requires update if the function were to return true.
     bool SamplerRequiresUpdate(const VkSamplerCreateInfo* pSamplerCreateInfo,
             const VkSamplerYcbcrConversionCreateInfo* pSamplerYcbcrConversionCreateInfo);
 
 private:
-    VkDevice m_device;
+    const VulkanDeviceContext* m_vkDevCtx;
     VkSamplerCreateInfo mSamplerInfo;
     VkSamplerYcbcrConversionCreateInfo mSamplerYcbcrConversionCreateInfo;
     VkSamplerYcbcrConversion mSamplerYcbcrConversion;
     VkSampler sampler;
 };
 
-class VulkanShaderCompiler {
-
-public:
-
-    VulkanShaderCompiler();
-    ~VulkanShaderCompiler();
-
-    VkResult BuildGlslShader(const char *shaderCode, size_t shaderSize, VkShaderStageFlagBits type,
-                                 VkDevice vkDevice, VkShaderModule *shaderOut);
-
-    // Create VK shader module from given glsl shader file
-    VkResult BuildShaderFromFile(const char *filePath, VkShaderStageFlagBits type,
-                                 VkDevice vkDevice, VkShaderModule *shaderOut);
-
-private:
-    void* compilerHandle;
-};
-
 class VulkanRenderPass {
 
 public:
     VulkanRenderPass()
-        : m_device(),
+        : m_vkDevCtx(),
           renderPass()
     {}
 
-    VkResult CreateRenderPass(VulkanDeviceInfo* deviceInfo, VkFormat displayImageFormat);
+    VkResult CreateRenderPass(const VulkanDeviceContext* vkDevCtx, VkFormat displayImageFormat);
 
     void DestroyRenderPass() {
         if (renderPass) {
-            vk::DestroyRenderPass(m_device,
+            m_vkDevCtx->DestroyRenderPass(*m_vkDevCtx,
                             renderPass, nullptr);
 
             renderPass = VkRenderPass(0);
@@ -706,7 +564,7 @@ public:
     }
 
 private:
-    VkDevice m_device;
+    const VulkanDeviceContext* m_vkDevCtx;
     VkRenderPass renderPass;
 };
 
@@ -714,29 +572,29 @@ class VulkanVertexBuffer {
 
 public:
     VulkanVertexBuffer()
-        : vertexBuffer(0), m_device(0), deviceMemory(0), numVertices(0) { }
+        : vertexBuffer(0), m_vkDevCtx(nullptr), deviceMemory(0), numVertices(0) { }
 
     const VkBuffer& get() {
         return vertexBuffer;
     }
 
-    VkResult CreateVertexBuffer(VulkanDeviceInfo* deviceInfo,  const float* pVertexData,
+    VkResult CreateVertexBuffer(const VulkanDeviceContext* vkDevCtx,  const float* pVertexData,
             VkDeviceSize vertexDataSize, uint32_t numVertices);
 
 
     void DestroyVertexBuffer()
     {
         if (deviceMemory) {
-            vk::FreeMemory(m_device, deviceMemory, nullptr);
+            m_vkDevCtx->FreeMemory(*m_vkDevCtx, deviceMemory, nullptr);
             deviceMemory = VkDeviceMemory(0);
         }
 
         if (vertexBuffer) {
-            vk::DestroyBuffer(m_device, vertexBuffer, nullptr);
+            m_vkDevCtx->DestroyBuffer(*m_vkDevCtx, vertexBuffer, nullptr);
             vertexBuffer = VkBuffer(0);
         }
 
-        m_device     = VkDevice(0);
+        m_vkDevCtx   = nullptr;
         numVertices  = 0;
     }
 
@@ -751,7 +609,7 @@ public:
 
 private:
     VkBuffer vertexBuffer;
-    VkDevice m_device;
+    const VulkanDeviceContext* m_vkDevCtx;
     VkDeviceMemory deviceMemory;
     uint32_t numVertices;
 };
@@ -760,7 +618,8 @@ class VulkanFrameBuffer {
 
 public:
     VulkanFrameBuffer()
-       : m_device(),
+       : m_vkDevCtx(),
+         mFbImage(),
          mImageView(),
          mFramebuffer() {}
 
@@ -772,12 +631,12 @@ public:
     void DestroyFrameBuffer()
     {
         if (mFramebuffer) {
-            vk::DestroyFramebuffer(m_device, mFramebuffer, nullptr);
+            m_vkDevCtx->DestroyFramebuffer(*m_vkDevCtx, mFramebuffer, nullptr);
             mFramebuffer = VkFramebuffer(0);
         }
 
         if (mImageView) {
-            vk::DestroyImageView(m_device, mImageView, nullptr);
+            m_vkDevCtx->DestroyImageView(*m_vkDevCtx, mImageView, nullptr);
             mImageView = VkImageView(0);
         }
 
@@ -794,11 +653,11 @@ public:
         return mFbImage;
     }
 
-    VkResult CreateFrameBuffer(VkDevice device, VkSwapchainKHR swapchain,
+    VkResult CreateFrameBuffer(const VulkanDeviceContext* vkDevCtx, VkSwapchainKHR swapchain,
             const VkExtent2D* pExtent2D, const VkSurfaceFormatKHR* pSurfaceFormat, VkImage fbImage,
             VkRenderPass renderPass, VkImageView depthView = VK_NULL_HANDLE);
 
-    VkDevice      m_device;
+    const VulkanDeviceContext* m_vkDevCtx;
     VkImage       mFbImage;
     VkImageView   mImageView;
     VkFramebuffer mFramebuffer;
@@ -809,7 +668,7 @@ class VulkanSyncPrimitives {
 
 public:
     VulkanSyncPrimitives()
-       : m_device(),
+       : m_vkDevCtx(),
          mRenderCompleteSemaphore(),
          mFence() {}
 
@@ -821,19 +680,19 @@ public:
     void DestroySyncPrimitives()
     {
         if (mFence) {
-            vk::DestroyFence(m_device, mFence, nullptr);
+            m_vkDevCtx->DestroyFence(*m_vkDevCtx, mFence, nullptr);
             mFence = VkFence();
         }
 
         if (mRenderCompleteSemaphore) {
-            vk::DestroySemaphore(m_device, mRenderCompleteSemaphore, nullptr);
+            m_vkDevCtx->DestroySemaphore(*m_vkDevCtx, mRenderCompleteSemaphore, nullptr);
             mRenderCompleteSemaphore = VkSemaphore();
         }
     }
 
-    VkResult CreateSyncPrimitives(VkDevice device);
+    VkResult CreateSyncPrimitives(const VulkanDeviceContext* vkDevCtx);
 
-    VkDevice      m_device;
+    const VulkanDeviceContext* m_vkDevCtx;
     VkSemaphore   mRenderCompleteSemaphore;
     VkFence       mFence;
 };
@@ -842,7 +701,7 @@ class VulkanDescriptorSet {
 
 public:
     VulkanDescriptorSet()
-     : m_device(),
+     : m_vkDevCtx(),
        descriptorSetLayoutBinding(),
        descriptorSetLayoutCreateInfo(),
        dscLayout(),
@@ -862,7 +721,7 @@ public:
     void DestroyDescriptorSets()
     {
         if (descSet) {
-            vk::FreeDescriptorSets(m_device, descPool, 1, &descSet);
+            m_vkDevCtx->FreeDescriptorSets(*m_vkDevCtx, descPool, 1, &descSet);
             descSet = VkDescriptorSet(0);
         }
     }
@@ -870,7 +729,7 @@ public:
     void DestroyDescriptorPool()
     {
         if (descPool) {
-            vk::DestroyDescriptorPool(m_device, descPool, nullptr);
+            m_vkDevCtx->DestroyDescriptorPool(*m_vkDevCtx, descPool, nullptr);
             descPool = VkDescriptorPool(0);
         }
     }
@@ -878,7 +737,7 @@ public:
     void DestroyPipelineLayout()
     {
         if (pipelineLayout) {
-            vk::DestroyPipelineLayout(m_device, pipelineLayout, nullptr);
+            m_vkDevCtx->DestroyPipelineLayout(*m_vkDevCtx, pipelineLayout, nullptr);
             pipelineLayout = VkPipelineLayout(0);
         }
     }
@@ -886,17 +745,17 @@ public:
     void DestroyDescriptorSetLayout()
     {
         if (dscLayout) {
-            vk::DestroyDescriptorSetLayout(m_device, dscLayout, nullptr);
+            m_vkDevCtx->DestroyDescriptorSetLayout(*m_vkDevCtx, dscLayout, nullptr);
             dscLayout = VkDescriptorSetLayout(0);
         }
     }
 
     // initialize descriptor set
-    VkResult CreateDescriptorSet(VkDevice device,
+    VkResult CreateDescriptorSet(const VulkanDeviceContext* vkDevCtx,
             uint32_t descriptorCount = 1, const VkSampler* pImmutableSamplers = nullptr);
 
     // initialize descriptor set
-    VkResult CreateDescriptorSet(VulkanDeviceInfo* deviceInfo, VkDescriptorPool allocPool, VkDescriptorSetLayout* dscLayouts, uint32_t descriptorSetCount = 1);
+    VkResult CreateDescriptorSet(const VulkanDeviceContext* vkDevCtx, VkDescriptorPool allocPool, VkDescriptorSetLayout* dscLayouts, uint32_t descriptorSetCount = 1);
 
     VkResult WriteDescriptorSet(VkSampler sampler, VkImageView imageView, uint32_t dstArrayElement = 0,
                                 VkImageLayout imageLayout = VK_IMAGE_LAYOUT_GENERAL);
@@ -919,7 +778,7 @@ public:
     }
 
 private:
-    VkDevice m_device;
+    const VulkanDeviceContext* m_vkDevCtx;
     VkDescriptorSetLayoutBinding descriptorSetLayoutBinding;
     VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo;
     VkDescriptorSetLayout dscLayout;
@@ -932,7 +791,7 @@ class VulkanGraphicsPipeline {
 
 public:
     VulkanGraphicsPipeline()
-     : m_device(),
+     : m_vkDevCtx(),
        cache(),
        pipeline(),
        mVulkanShaderCompiler(),
@@ -953,7 +812,7 @@ public:
     void DestroyPipeline()
     {
         if (pipeline) {
-            vk::DestroyPipeline(m_device, pipeline, nullptr);
+            m_vkDevCtx->DestroyPipeline(*m_vkDevCtx, pipeline, nullptr);
             pipeline = VkPipeline(0);
         }
     }
@@ -961,7 +820,7 @@ public:
     void DestroyPipelineCache()
     {
         if (cache) {
-            vk::DestroyPipelineCache(m_device, cache, nullptr);
+            m_vkDevCtx->DestroyPipelineCache(*m_vkDevCtx, cache, nullptr);
             cache = VkPipelineCache(0);
         }
     }
@@ -969,7 +828,7 @@ public:
     void DestroyVertexShaderModule()
     {
         if (mVertexShaderCache) {
-            vk::DestroyShaderModule(m_device, mVertexShaderCache, nullptr);
+            m_vkDevCtx->DestroyShaderModule(*m_vkDevCtx, mVertexShaderCache, nullptr);
             mVertexShaderCache = VkShaderModule();
         }
     }
@@ -977,13 +836,13 @@ public:
     void DestroyFragmentShaderModule()
     {
         if (mFragmentShaderCache) {
-            vk::DestroyShaderModule(m_device, mFragmentShaderCache, nullptr);
+            m_vkDevCtx->DestroyShaderModule(*m_vkDevCtx, mFragmentShaderCache, nullptr);
             mFragmentShaderCache = VkShaderModule();
         }
     }
 
     // Create Graphics Pipeline
-    VkResult CreateGraphicsPipeline(VkDevice device, VkViewport* pViewport, VkRect2D* pScissor,
+    VkResult CreateGraphicsPipeline(const VulkanDeviceContext* vkDevCtx, VkViewport* pViewport, VkRect2D* pScissor,
             VkRenderPass renderPass, VulkanDescriptorSet* pBufferDescriptorSets);
 
     VkPipeline getPipeline() {
@@ -991,7 +850,7 @@ public:
     }
 
 private:
-    VkDevice m_device;
+    const VulkanDeviceContext* m_vkDevCtx;
     VkPipelineCache cache;
     VkPipeline pipeline;
     VulkanShaderCompiler mVulkanShaderCompiler;
@@ -1006,12 +865,12 @@ class VulkanCommandBuffer {
 public:
 
     VulkanCommandBuffer()
-        :m_device(),
+        :m_vkDevCtx(),
         cmdPool(),
         cmdBuffer()
         {}
 
-    VkResult CreateCommandBufferPool(VulkanDeviceInfo* deviceInfo);
+    VkResult CreateCommandBufferPool(const VulkanDeviceContext* vkDevCtx);
 
     VkResult CreateCommandBuffer(VkRenderPass renderPass, const ImageResourceInfo* inputImageToDrawFrom,
             int32_t displayWidth, int32_t displayHeight,
@@ -1026,14 +885,14 @@ public:
 
     void DestroyCommandBuffer() {
         if (cmdBuffer) {
-            vk::FreeCommandBuffers(m_device, cmdPool, 1, &cmdBuffer);
+            m_vkDevCtx->FreeCommandBuffers(*m_vkDevCtx, cmdPool, 1, &cmdBuffer);
             cmdBuffer = VkCommandBuffer(0);
         }
     }
 
     void DestroyCommandBufferPool() {
         if (cmdPool) {
-           vk::DestroyCommandPool(m_device, cmdPool, nullptr);
+           m_vkDevCtx->DestroyCommandPool(*m_vkDevCtx, cmdPool, nullptr);
            cmdPool = VkCommandPool(0);
         }
     }
@@ -1047,7 +906,7 @@ public:
     }
 
 private:
-    VkDevice m_device;
+    const VulkanDeviceContext* m_vkDevCtx;
     VkCommandPool cmdPool;
     VkCommandBuffer cmdBuffer;
 };
@@ -1064,13 +923,11 @@ public:
       commandBuffer(),
       gfxPipeline(),
       pCurrentImage(NULL),
-      lastVideoFormatUpdate((uint32_t)-1),
-      currentInputBuffer(NULL)
+      lastVideoFormatUpdate((uint32_t)-1)
     {
     }
 
     ~VulkanPerDrawContext() {
-        currentInputBuffer = NULL;
     }
 
     bool IsFormatOutOfDate(uint32_t formatUpdateCounter) {
@@ -1090,8 +947,6 @@ public:
     VulkanGraphicsPipeline gfxPipeline;
     ImageObject* pCurrentImage;
     uint32_t lastVideoFormatUpdate;
-    // android::sp<PinnedBufferItem> currentInputBuffer;
-    void* currentInputBuffer;
 };
 
 class VulkanRenderInfo {
@@ -1106,14 +961,14 @@ public:
         totalFrames(0),
         skippedFrames(0),
         frameId(0),
-        m_device(),
+        m_vkDevCtx(),
         mNumCtxs(0),
         perDrawCtx(nullptr)
         {}
 
 
     // Create per draw contexts.
-    VkResult CreatePerDrawContexts(VulkanDeviceInfo* deviceInfo,
+    VkResult CreatePerDrawContexts(const VulkanDeviceContext* vkDevCtx,
             VkSwapchainKHR swapchain, const VkExtent2D* pFbExtent2D,
             VkViewport* pViewport, VkRect2D* pScissor, const VkSurfaceFormatKHR* pSurfaceFormat,
             VkRenderPass renderPass, const VkSamplerCreateInfo* pSamplerCreateInfo = nullptr,
@@ -1139,7 +994,7 @@ public:
             VulkanSwapchainInfo* pSwapchainInfo, VulkanPerDrawContext* pPerDrawContext, uint64_t timeoutNsec = 100000000);
 
     // Draw one frame
-    VkResult DrawFrame(VulkanDeviceInfo* deviceInfo,
+    VkResult DrawFrame(const VulkanDeviceContext* vkDevCtx,
             VulkanSwapchainInfo* pSwapchainInfo, int64_t presentTimestamp,
             VulkanPerDrawContext* pPerDrawContext,
             uint32_t commandBufferCount = 1);
@@ -1176,7 +1031,7 @@ private:
     uint64_t totalFrames;
     uint32_t skippedFrames;
     uint32_t frameId;
-    VkDevice m_device;
+    const VulkanDeviceContext* m_vkDevCtx;
     int32_t mNumCtxs;
     VulkanPerDrawContext* perDrawCtx;
 
@@ -1184,37 +1039,34 @@ private:
 
 class VkVideoAppCtx {
 
-    enum {MAX_NUM_BUFFER_SLOTS = 32};
 public:
-    bool initialized_;
+    bool                       m_initialized;
     // WindowInfo window;
-    VulkanDeviceInfo device_;
-    bool useTestImage_;
-    ImageObject testFrameImage_; // one per max queue slots
-    ImageObject frameImages_[MAX_NUM_BUFFER_SLOTS];
-    // VulkanSwapchainInfo swapchain_;
-    VulkanRenderPass renderPass_;
-    VulkanVertexBuffer vertexBuffer_;
-    VulkanRenderInfo render_;
+    const VulkanDeviceContext* m_vkDevCtx;
+    bool                       m_useTestImage;
+    ImageObject                m_testFrameImage;
+    VulkanRenderPass           m_renderPass;
+    VulkanVertexBuffer         m_vertexBuffer;
+    VulkanRenderInfo           m_renderInfo;
 
     ~VkVideoAppCtx()
     {
-        if (!initialized_) {
+        if (!m_initialized) {
             return;
         }
 
-        initialized_ = false;
+        m_initialized = false;
     }
 
     VkVideoAppCtx(bool testVk)
-        : initialized_(false),
+        : m_initialized(false),
           // window(),
-          device_(),
-          useTestImage_(testVk),
+          m_vkDevCtx(),
+          m_useTestImage(testVk),
           // swapchain_(),
-          renderPass_(),
-          vertexBuffer_(),
-          render_()
+          m_renderPass(),
+          m_vertexBuffer(),
+          m_renderInfo()
     {
         CreateSamplerYcbcrConversions();
     }
@@ -1222,11 +1074,11 @@ public:
     VkResult CreateSamplerYcbcrConversions();
 
     void ContextIsReady() {
-        initialized_ = true;
+        m_initialized = true;
     }
 
     bool IsContextReady() const {
-        return initialized_;
+        return m_initialized;
     }
 
 };
@@ -1235,20 +1087,16 @@ public:
 // A helper function to map required memory property into a VK memory type
 // memory type is an index into the array of 32 entries; or the bit index
 // for the memory type ( each BIT of an 32 bit integer is a type ).
-VkResult AllocateMemoryTypeFromProperties(VulkanDeviceInfo* deviceInfo,
+VkResult AllocateMemoryTypeFromProperties(const VulkanDeviceContext* vkDevCtx,
         uint32_t typeBits,
         VkFlags requirements_mask,
         uint32_t *typeIndex);
 
-bool MapMemoryTypeToIndex(VkPhysicalDevice gpuDevice, uint32_t typeBits,
-                          VkFlags requirements_mask, uint32_t *typeIndex);
-
-void setImageLayout(VkCommandBuffer cmdBuffer, VkImage image,
+void setImageLayout(const VulkanDeviceContext* vkDevCtx,
+                    VkCommandBuffer cmdBuffer, VkImage image,
                     VkImageLayout oldImageLayout, VkImageLayout newImageLayout,
                     VkPipelineStageFlags srcStages,
                     VkPipelineStageFlags destStages, VkImageAspectFlags aspectMask = VK_IMAGE_ASPECT_COLOR_BIT);
-
-uint64_t getNsTime(bool resetTime = false);
 
 } // End of namespace vulkanVideoUtils
 

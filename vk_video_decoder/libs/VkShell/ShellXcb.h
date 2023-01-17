@@ -22,36 +22,37 @@
 #include "Shell.h"
 
 class ShellXcb : public Shell {
-   public:
-    ShellXcb(FrameProcessor &frameProcessor, uint32_t deviceID);
-    ~ShellXcb();
 
-    void run();
-    void quit() { quit_ = true; }
+public:
+    ShellXcb(const VulkanDeviceContext* vkDevCtx, VkSharedBaseObj<FrameProcessor>& frameProcessor);
+    virtual ~ShellXcb();
 
-   private:
-    void init_connection();
+    static const char* GetRequiredInstanceExtension();
+    static const std::vector<VkExtensionProperties>& GetRequiredInstanceExtensions();
+    virtual bool PhysDeviceCanPresent(VkPhysicalDevice physicalDevice, uint32_t presentQueueFamily) const;
+    virtual void RunLoop();
+    virtual void QuitLoop() { m_quit_loop = true; }
 
-    PFN_vkGetInstanceProcAddr load_vk();
-    bool can_present(VkPhysicalDevice phy, uint32_t queue_family);
+private:
+    void InitConnection();
+    void CreateWindow();
+    void DestroyWindow();
+    virtual VkSurfaceKHR CreateSurface(VkInstance instance);
 
-    void create_window();
-    VkSurfaceKHR create_surface(VkInstance instance);
+    void HandleEvent(const xcb_generic_event_t *ev);
+    void LoopWait();
+    void LoopPoll();
 
-    void handle_event(const xcb_generic_event_t *ev);
-    void loop_wait();
-    void loop_poll();
+    xcb_connection_t *m_connection;
+    xcb_screen_t     *m_screen;
+    xcb_window_t      m_window;
+    uint16_t          m_winWidth;
+    uint16_t          m_winHeight;
 
-    xcb_connection_t *c_;
-    xcb_screen_t *scr_;
-    xcb_window_t win_;
+    xcb_atom_t m_wm_protocols;
+    xcb_atom_t m_wm_delete_window;
 
-    xcb_atom_t wm_protocols_;
-    xcb_atom_t wm_delete_window_;
-
-    void *lib_handle_;
-
-    bool quit_;
+    bool m_quit_loop;
 };
 
 #endif  // SHELL_XCB_H

@@ -35,43 +35,44 @@ inline VkResult assert_success(VkResult res) {
     return res;
 }
 
-inline VkResult enumerate(const char *layer, std::vector<VkExtensionProperties> &exts) {
+inline VkResult enumerate(const VkInterfaceFunctions* vkIf, const char *layer, std::vector<VkExtensionProperties> &exts) {
     uint32_t count = 0;
-    vk::EnumerateInstanceExtensionProperties(layer, &count, nullptr);
+    vkIf->EnumerateInstanceExtensionProperties(layer, &count, nullptr);
 
     exts.resize(count);
-    return vk::EnumerateInstanceExtensionProperties(layer, &count, exts.data());
+    return vkIf->EnumerateInstanceExtensionProperties(layer, &count, exts.data());
 }
 
-inline VkResult enumerate(VkPhysicalDevice phy, const char *layer, std::vector<VkExtensionProperties> &exts) {
+inline VkResult enumerate(const VkInterfaceFunctions* vkIf, VkPhysicalDevice phy, const char *layer, std::vector<VkExtensionProperties> &exts) {
     uint32_t count = 0;
-    vk::EnumerateDeviceExtensionProperties(phy, layer, &count, nullptr);
+    vkIf->EnumerateDeviceExtensionProperties(phy, layer, &count, nullptr);
 
     exts.resize(count);
-    return vk::EnumerateDeviceExtensionProperties(phy, layer, &count, exts.data());
+    return vkIf->EnumerateDeviceExtensionProperties(phy, layer, &count, exts.data());
 }
 
-inline VkResult enumerate(VkInstance instance, std::vector<VkPhysicalDevice> &phys) {
+inline VkResult enumerate(const VkInterfaceFunctions* vkIf, VkInstance instance, std::vector<VkPhysicalDevice> &phys) {
     uint32_t count = 0;
-    vk::EnumeratePhysicalDevices(instance, &count, nullptr);
+    vkIf->EnumeratePhysicalDevices(instance, &count, nullptr);
 
     phys.resize(count);
-    return vk::EnumeratePhysicalDevices(instance, &count, phys.data());
+    return vkIf->EnumeratePhysicalDevices(instance, &count, phys.data());
 }
 
-inline VkResult enumerate(std::vector<VkLayerProperties> &layer_props) {
+inline VkResult enumerate(const VkInterfaceFunctions* vkIf, std::vector<VkLayerProperties> &layer_props) {
     uint32_t count = 0;
-    vk::EnumerateInstanceLayerProperties(&count, nullptr);
+    vkIf->EnumerateInstanceLayerProperties(&count, nullptr);
 
     layer_props.resize(count);
-    return vk::EnumerateInstanceLayerProperties(&count, layer_props.data());
+    return vkIf->EnumerateInstanceLayerProperties(&count, layer_props.data());
 }
 
-inline VkResult get(VkPhysicalDevice phy, std::vector<VkQueueFamilyProperties2> &queues,
-                                          std::vector<VkQueueFamilyVideoPropertiesKHR> &videoQueues,
-                                          std::vector<VkQueueFamilyQueryResultStatusPropertiesKHR> &queryResultStatus) {
+inline VkResult get(const VkInterfaceFunctions* vkIf,
+                    VkPhysicalDevice phy, std::vector<VkQueueFamilyProperties2> &queues,
+                    std::vector<VkQueueFamilyVideoPropertiesKHR> &videoQueues,
+                    std::vector<VkQueueFamilyQueryResultStatusPropertiesKHR> &queryResultStatus) {
     uint32_t count = 0;
-    vk::GetPhysicalDeviceQueueFamilyProperties2(phy, &count, nullptr);
+    vkIf->GetPhysicalDeviceQueueFamilyProperties2(phy, &count, nullptr);
 
     queues.resize(count);
     videoQueues.resize(count);
@@ -84,66 +85,58 @@ inline VkResult get(VkPhysicalDevice phy, std::vector<VkQueueFamilyProperties2> 
         videoQueues[i].pNext = &queryResultStatus[i];
     }
 
-    vk::GetPhysicalDeviceQueueFamilyProperties2(phy, &count, queues.data());
+    vkIf->GetPhysicalDeviceQueueFamilyProperties2(phy, &count, queues.data());
 
     return VK_SUCCESS;
 }
 
-inline VkResult get(VkPhysicalDevice phy, VkSurfaceKHR surface, std::vector<VkSurfaceFormatKHR> &formats) {
+inline VkResult get(const VkInterfaceFunctions* vkIf,
+                    VkPhysicalDevice phy, VkSurfaceKHR surface, std::vector<VkSurfaceFormatKHR> &formats) {
     uint32_t count = 0;
-    vk::GetPhysicalDeviceSurfaceFormatsKHR(phy, surface, &count, nullptr);
+    vkIf->GetPhysicalDeviceSurfaceFormatsKHR(phy, surface, &count, nullptr);
 
     formats.resize(count);
-    return vk::GetPhysicalDeviceSurfaceFormatsKHR(phy, surface, &count, formats.data());
+    return vkIf->GetPhysicalDeviceSurfaceFormatsKHR(phy, surface, &count, formats.data());
 }
 
-inline VkResult get(VkPhysicalDevice phy, VkSurfaceKHR surface, std::vector<VkPresentModeKHR> &modes) {
+inline VkResult get(const VkInterfaceFunctions* vkIf,
+                    VkPhysicalDevice phy, VkSurfaceKHR surface, std::vector<VkPresentModeKHR> &modes) {
     uint32_t count = 0;
-    vk::GetPhysicalDeviceSurfacePresentModesKHR(phy, surface, &count, nullptr);
+    vkIf->GetPhysicalDeviceSurfacePresentModesKHR(phy, surface, &count, nullptr);
 
     modes.resize(count);
-    return vk::GetPhysicalDeviceSurfacePresentModesKHR(phy, surface, &count, modes.data());
+    return vkIf->GetPhysicalDeviceSurfacePresentModesKHR(phy, surface, &count, modes.data());
 }
 
-inline VkResult get(VkDevice dev, VkSwapchainKHR swapchain, std::vector<VkImage> &images) {
+inline VkResult get(const VkInterfaceFunctions* vkIf,
+                    VkDevice dev, VkSwapchainKHR swapchain, std::vector<VkImage> &images) {
     uint32_t count = 0;
-    vk::GetSwapchainImagesKHR(dev, swapchain, &count, nullptr);
+    vkIf->GetSwapchainImagesKHR(dev, swapchain, &count, nullptr);
 
     images.resize(count);
-    return vk::GetSwapchainImagesKHR(dev, swapchain, &count, images.data());
+    return vkIf->GetSwapchainImagesKHR(dev, swapchain, &count, images.data());
 }
 
-inline VkVideoCodecOperationFlagsKHR GetSupportedCodecs(VkPhysicalDevice vkPhysicalDev, int32_t* pVideoQueueFamily,
-        VkQueueFlags queueFlagsRequired = ( VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR),
-        VkVideoCodecOperationFlagsKHR videoCodeOperations =
-                                          ( VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR | VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR |
-                                            VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT | VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_EXT))
+inline VkResult MapMemoryTypeToIndex(const VkInterfaceFunctions* vkIf,
+                                     VkPhysicalDevice vkPhysicalDev,
+                                     uint32_t typeBits,
+                                     VkFlags requirements_mask, uint32_t *typeIndex)
 {
-    std::vector<VkQueueFamilyProperties2> queues;
-    std::vector<VkQueueFamilyVideoPropertiesKHR> videoQueues;
-    std::vector<VkQueueFamilyQueryResultStatusPropertiesKHR> queryResultStatus;
-    vk::get(vkPhysicalDev, queues, videoQueues, queryResultStatus);
-
-    for (uint32_t queueIndx = 0; queueIndx < queues.size(); queueIndx++) {
-        const VkQueueFamilyProperties2 &q = queues[queueIndx];
-        const VkQueueFamilyVideoPropertiesKHR &videoQueue = videoQueues[queueIndx];
-
-        if (pVideoQueueFamily && (*pVideoQueueFamily >= 0) && (*pVideoQueueFamily != (int32_t)queueIndx)) {
-            continue;
-        }
-
-        if ((q.queueFamilyProperties.queueFlags & queueFlagsRequired) &&
-            (videoQueue.videoCodecOperations & videoCodeOperations)) {
-            if (pVideoQueueFamily && (*pVideoQueueFamily < 0)) {
-                *pVideoQueueFamily = (int32_t)queueIndx;
+    VkPhysicalDeviceMemoryProperties memoryProperties;
+    vkIf->GetPhysicalDeviceMemoryProperties(vkPhysicalDev, &memoryProperties);
+    // Search memtypes to find first index with those properties
+    for (uint32_t i = 0; i < 32; i++) {
+        if ((typeBits & 1) == 1) {
+            // Type is available, does it match user properties?
+            if ((memoryProperties.memoryTypes[i].propertyFlags & requirements_mask) ==
+                    requirements_mask) {
+                *typeIndex = i;
+                return VK_SUCCESS;
             }
-            // The video queues must support queryResultStatus
-            assert(queryResultStatus[queueIndx].queryResultStatusSupport);
-            return videoQueue.videoCodecOperations;
         }
+        typeBits >>= 1;
     }
-
-    return VK_VIDEO_CODEC_OPERATION_NONE_KHR;
+    return VK_ERROR_VALIDATION_FAILED_EXT;
 }
 
 }  // namespace vk

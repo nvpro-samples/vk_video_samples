@@ -27,35 +27,45 @@ generate_dispatch_table(${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatc
 generate_dispatch_table(${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.cpp)
 
 set(sources
-    AppDecVulkanFrame/VulkanFrame.cpp
-    AppDecVulkanFrame/VulkanFrame.h
-    AppDecVulkanFrame/VulkanVideoProcessor.cpp
-    AppDecVulkanFrame/VulkanVideoProcessor.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/Main.cpp
+    Main.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/Shell.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/ShellDirect.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/Shell.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/FrameProcessor.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/FrameProcessor.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/NvVkDecoder/NvVkDecoder.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/NvVkDecoder/NvVkDecoder.h
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoDecoder/VkVideoDecoder.cpp
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoDecoder/VkVideoDecoder.h
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoDecoder/VulkanBistreamBufferImpl.h
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoDecoder/VulkanBistreamBufferImpl.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/Helpers.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.h
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceContext.cpp
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceContext.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.cpp
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceMemoryImpl.h
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceMemoryImpl.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VkImageResource.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VkImageResource.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/NvVideoSession.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/NvVideoSession.h
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/FrameProcessor.h
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoProcessor.cpp
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoProcessor.h
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanFrame.cpp
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanFrame.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/pattern.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/pattern.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoUtils.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoUtils.h
+    ${EXTERNAL_LIBS_SOURCE_ROOT}//NvCodecUtils/FFmpegDemuxer.cpp
+	${EXTERNAL_LIBS_SOURCE_ROOT}/NvCodecUtils/VideoStreamDemuxer.cpp
+	${EXTERNAL_LIBS_SOURCE_ROOT}/NvCodecUtils/VideoStreamDemuxer.h
+	${EXTERNAL_LIBS_SOURCE_ROOT}/NvCodecUtils/ElementaryStream.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoParser/VulkanVideoParser.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/../../common/src/VkCodecUtils/nvVkFormats.cpp
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/../../common/include/VkVideoCore/VkVideoRefCountBase.h
     )
 
 set(definitions

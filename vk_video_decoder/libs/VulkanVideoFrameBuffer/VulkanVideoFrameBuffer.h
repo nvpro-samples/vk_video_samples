@@ -20,14 +20,10 @@
 #include <assert.h>
 #include <stdint.h>
 
-#include "VkParserVideoRefCountBase.h"
+#include "VkVideoCore/VkVideoRefCountBase.h"
 #include "VulkanVideoParser.h"
 #include "vulkan_interfaces.h"
 #include "VkCodecUtils/VkImageResource.h"
-
-namespace vulkanVideoUtils {
-    class  VulkanDeviceInfo;
-}
 
 struct DecodedFrame {
     int32_t pictureIndex;
@@ -42,6 +38,9 @@ struct DecodedFrame {
     VkQueryPool queryPool; // queryPool handle used for the video queries.
     int32_t startQueryId;  // query Id used for the this frame.
     uint32_t numQueries;   // usually one query per frame
+    // If multiple queues are available, submittedVideoQueueIndex is the queue index that the video frame was submitted to.
+    // if only one queue is available, submittedVideoQueueIndex will always have a value of "0".
+    int32_t  submittedVideoQueueIndex;
     uint64_t timestamp;
     uint32_t hasConsummerSignalFence : 1;
     uint32_t hasConsummerSignalSemaphore : 1;
@@ -63,6 +62,7 @@ struct DecodedFrame {
         queryPool = VkQueryPool();
         startQueryId = 0;
         numQueries = 0;
+        submittedVideoQueueIndex = 0;
         timestamp = 0;
         hasConsummerSignalFence = false;
         hasConsummerSignalSemaphore = false;
@@ -120,7 +120,8 @@ public:
                                   bool                     useLinearOutput = false) = 0;
 
     virtual int32_t QueuePictureForDecode(int8_t picId, VkParserDecodePictureInfo* pDecodePictureInfo,
-                                          VkParserVideoRefCountBase* pCurrentVkPictureParameters,
+                                          VkSharedBaseObj<VkVideoRefCountBase>& bitstreamBuffer,
+                                          VkSharedBaseObj<VkVideoRefCountBase>& currentVkPictureParameters,
                                           FrameSynchronizationInfo* pFrameSynchronizationInfo) = 0;
     virtual int32_t DequeueDecodedPicture(DecodedFrame* pDecodedFrame) = 0;
     virtual int32_t ReleaseDisplayedPicture(DecodedFrameRelease** pDecodedFramesRelease, uint32_t numFramesToRelease) = 0;
@@ -142,7 +143,8 @@ public:
 
     virtual ~VulkanVideoFrameBuffer() { }
 
-    static VulkanVideoFrameBuffer* CreateInstance(vulkanVideoUtils::VulkanDeviceInfo* pVideoRendererDeviceInfo);
+    static VkResult Create(const VulkanDeviceContext* vkDevCtx,
+                           VkSharedBaseObj<VulkanVideoFrameBuffer>& vkVideoFrameBuffer);
 };
 
 #endif /* _VULKANVIDEOFRAMEBUFFER_H_ */

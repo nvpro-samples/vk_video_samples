@@ -17,7 +17,7 @@
 #ifndef LIBS_VKCODECUTILS_VULKANSHADERCOMPILER_H_
 #define LIBS_VKCODECUTILS_VULKANSHADERCOMPILER_H_
 
-#include <vulkan_interfaces.h>
+#include "VkCodecUtils/VulkanDeviceContext.h"
 
 namespace vulkanVideoUtils {
 
@@ -29,11 +29,12 @@ public:
     ~VulkanShaderCompiler();
 
     VkResult BuildGlslShader(const char *shaderCode, size_t shaderSize, VkShaderStageFlagBits type,
-                                 VkDevice vkDevice, VkShaderModule *shaderOut);
+                             const VulkanDeviceContext* vkDevCtx, VkShaderModule *shaderOut);
 
     // Create VK shader module from given glsl shader file
     VkResult BuildShaderFromFile(const char *filePath, VkShaderStageFlagBits type,
-                                 VkDevice vkDevice, VkShaderModule *shaderOut);
+                                 const VulkanDeviceContext* vkDevCtx,
+                                 VkShaderModule *shaderOut);
 
 private:
     void* compilerHandle;

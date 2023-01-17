@@ -18,14 +18,15 @@
 
 #include <atomic>
 #include <vulkan_interfaces.h>
-#include "VkParserVideoRefCountBase.h"
+#include "VkVideoCore/VkVideoRefCountBase.h"
+#include "VkCodecUtils/VulkanDeviceMemoryImpl.h"
 
-class VkImageResource : public VkParserVideoRefCountBase
+class VkImageResource : public VkVideoRefCountBase
 {
 public:
-    static VkResult Create(VkPhysicalDevice physicalDevice, VkDevice dev,
+    static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            const VkImageCreateInfo* pImageCreateInfo,
-                           VkMemoryPropertyFlags requiredMemoryProperty,
+                           VkMemoryPropertyFlags memoryPropertyFlags,
                            VkSharedBaseObj<VkImageResource>& imageResource);
 
     bool IsCompatible ( VkDevice dev,
@@ -77,35 +78,42 @@ public:
 
     operator VkImage() const { return m_image; }
     VkImage GetImage() const { return m_image; }
-    VkDevice GetDevice() const { return m_device; }
-    VkDeviceMemory GetMemory() const { return m_memory; }
+    VkDevice GetDevice() const { return *m_vkDevCtx; }
+    VkDeviceMemory GetDeviceMemory() const { return *m_vulkanDeviceMemory; }
+
+    VkSharedBaseObj<VulkanDeviceMemoryImpl>& GetMemory() { return m_vulkanDeviceMemory; }
+
+    VkDeviceSize GetImageDeviceMemorySize() const { return m_imageSize; }
+    VkDeviceSize GetImageDeviceMemoryOffset() const { return m_imageOffset; }
 
     const VkImageCreateInfo& GetImageCreateInfo() const { return m_imageCreateInfo; }
 
 private:
     std::atomic<int32_t>    m_refCount;
     const VkImageCreateInfo m_imageCreateInfo;
-    VkDevice                m_device;
+    const VulkanDeviceContext* m_vkDevCtx;
     VkImage                 m_image;
-    VkDeviceMemory          m_memory;
-    uint32_t                m_memoryTypeIndex;
+    VkDeviceSize            m_imageOffset;
+    VkDeviceSize            m_imageSize;
+    VkSharedBaseObj<VulkanDeviceMemoryImpl> m_vulkanDeviceMemory;
 
-
-    VkImageResource(VkDevice device, const VkImageCreateInfo* pImageCreateInfo,
-                    VkImage image, VkDeviceMemory memory, uint32_t memoryTypeIndex)
-       : m_refCount(0), m_imageCreateInfo(*pImageCreateInfo), m_device(device),
-         m_image(image), m_memory(memory), m_memoryTypeIndex(memoryTypeIndex)
-    {}
+    VkImageResource(const VulkanDeviceContext* vkDevCtx,
+                    const VkImageCreateInfo* pImageCreateInfo,
+                    VkImage image, VkDeviceSize imageOffset, VkDeviceSize imageSize,
+                    VkSharedBaseObj<VulkanDeviceMemoryImpl>& vulkanDeviceMemory)
+       : m_refCount(0), m_imageCreateInfo(*pImageCreateInfo), m_vkDevCtx(vkDevCtx),
+         m_image(image), m_imageOffset(imageOffset), m_imageSize(imageSize),
+         m_vulkanDeviceMemory(vulkanDeviceMemory) { }
 
     void Destroy();
 
-    ~VkImageResource() { Destroy(); }
+    virtual ~VkImageResource() { Destroy(); }
 };
 
-class VkImageResourceView : public VkParserVideoRefCountBase
+class VkImageResourceView : public VkVideoRefCountBase
 {
 public:
-    static VkResult Create(VkDevice dev,
+    static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            VkSharedBaseObj<VkImageResource>& imageResource,
                            VkImageSubresourceRange &imageSubresourceRange,
                            VkSharedBaseObj<VkImageResourceView>& imageResourceView);
@@ -128,7 +136,7 @@ public:
 
     operator VkImageView() const { return m_imageView; }
     VkImageView GetImageView() const { return m_imageView; }
-    VkDevice GetDevice() const { return m_device; }
+    VkDevice GetDevice() const { return *m_vkDevCtx; }
 
     const VkImageSubresourceRange& GetImageSubresourceRange() const
     { return m_imageSubresourceRange; }
@@ -140,18 +148,18 @@ public:
 
 private:
     std::atomic<int32_t>             m_refCount;
-    VkDevice                         m_device;
+    const VulkanDeviceContext*       m_vkDevCtx;
     VkSharedBaseObj<VkImageResource> m_imageResource;
     VkImageView                      m_imageView;
     VkImageSubresourceRange          m_imageSubresourceRange;
 
 
-    VkImageResourceView(VkDevice device,
+    VkImageResourceView(const VulkanDeviceContext* vkDevCtx,
                         VkSharedBaseObj<VkImageResource>& imageResource,
                         VkImageView imageView, VkImageSubresourceRange &imageSubresourceRange)
-       : m_refCount(0), m_device(device), m_imageResource(imageResource),
+       : m_refCount(0), m_vkDevCtx(vkDevCtx), m_imageResource(imageResource),
          m_imageView(imageView), m_imageSubresourceRange(imageSubresourceRange)
     {}
 
-    ~VkImageResourceView();
+    virtual ~VkImageResourceView();
 };

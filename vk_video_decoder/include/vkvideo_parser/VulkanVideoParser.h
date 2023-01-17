@@ -17,20 +17,23 @@
 #ifndef _VULKANVIDEOPARSER_H_
 #define _VULKANVIDEOPARSER_H_
 
-#include "VkParserVideoRefCountBase.h"
+#include "VkVideoCore/VkVideoRefCountBase.h"
 #include "VulkanVideoParserParams.h"
 
 struct VkPictureParameters;
 
-class IVulkanVideoDecoderHandler : public VkParserVideoRefCountBase {
+class IVulkanVideoDecoderHandler : public VkVideoRefCountBase {
 public:
     virtual int32_t StartVideoSequence(VkParserDetectedVideoFormat* pVideoFormat) = 0;
 
     virtual bool UpdatePictureParameters(VkPictureParameters* pPictureParameters,
-                                         VkSharedBaseObj<VkParserVideoRefCountBase>& pictureParametersObject,
+                                         VkSharedBaseObj<VkVideoRefCountBase>& pictureParametersObject,
                                          uint64_t updateSequenceCount) = 0;
 
     virtual int32_t DecodePictureWithParameters(VkParserPerFrameDecodeParameters* pPicParams, VkParserDecodePictureInfo* pDecodePictureInfo) = 0;
+
+    virtual size_t GetBitstreamBuffer(size_t size, const uint8_t* pInitializeBufferMemory, size_t initializeBufferMemorySize,
+                                      VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer) = 0;
 
     virtual ~IVulkanVideoDecoderHandler() { }
 };
@@ -38,7 +41,7 @@ public:
 struct VulkanVideoDisplayPictureInfo;
 class vkPicBuffBase;
 
-class IVulkanVideoFrameBufferParserCb : public VkParserVideoRefCountBase {
+class IVulkanVideoFrameBufferParserCb : public VkVideoRefCountBase {
 public:
     virtual int32_t QueueDecodedPictureForDisplay(int8_t picId, VulkanVideoDisplayPictureInfo* pDispInfo) = 0;
 
@@ -48,19 +51,24 @@ public:
 };
 
 struct VkParserSourceDataPacket;
-class IVulkanVideoParser : public VkParserVideoRefCountBase {
+class IVulkanVideoParser : public VkVideoRefCountBase {
 public:
-    static IVulkanVideoParser* CreateInstance(IVulkanVideoDecoderHandler* pDecoderHandler,
-        IVulkanVideoFrameBufferParserCb* pVideoFrameBuffer,
+    static VkResult Create(
+        VkSharedBaseObj<IVulkanVideoDecoderHandler>& decoderHandler,
+        VkSharedBaseObj<IVulkanVideoFrameBufferParserCb>& videoFrameBufferCb,
         VkVideoCodecOperationFlagBitsKHR codecType,
         uint32_t maxNumDecodeSurfaces,
         uint32_t maxNumDpbSurfaces,
+        uint32_t defaultMinBufferSize,
+        uint32_t bufferOffsetAlignment,
+        uint32_t bufferSizeAlignment,
         uint64_t clockRate,
-        uint32_t errorThreshold = 0);
+        uint32_t errorThreshold,
+        VkSharedBaseObj<IVulkanVideoParser>& vulkanVideoParser);
 
     // doPartialParsing 0: parse entire packet, 1: parse until next decode/display event
     virtual VkResult ParseVideoData(VkParserSourceDataPacket* pPacket,
-                                    int32_t* pParsedBytes,
+                                    size_t* pParsedBytes,
                                     bool doPartialParsing = false) = 0;
 
 protected:
@@ -71,12 +79,17 @@ class IVulkanVideoParser;
 class IVulkanVideoDecoderHandler;
 class IVulkanVideoFrameBufferParserCb;
 
-extern "C" IVulkanVideoParser* VKAPI_CALL vulkanCreateVideoParser(IVulkanVideoDecoderHandler* pDecoderHandler,
-    IVulkanVideoFrameBufferParserCb* pVideoFrameBuffer,
-    VkVideoCodecOperationFlagBitsKHR codecType,
+VkResult vulkanCreateVideoParser(
+    VkSharedBaseObj<IVulkanVideoDecoderHandler>& decoderHandler,
+    VkSharedBaseObj<IVulkanVideoFrameBufferParserCb>& videoFrameBufferCb,
+    VkVideoCodecOperationFlagBitsKHR videoCodecOperation,
     const VkExtensionProperties* pStdExtensionVersion,
     uint32_t maxNumDecodeSurfaces,
     uint32_t maxNumDpbSurfaces,
-    uint64_t clockRate);
+    uint32_t defaultMinBufferSize,
+    uint32_t bufferOffsetAlignment,
+    uint32_t bufferSizeAlignment,
+    uint64_t clockRate,
+    VkSharedBaseObj<IVulkanVideoParser>& vulkanVideoParser);
 
 #endif /* _VULKANVIDEOPARSER_H_ */

@@ -21,22 +21,26 @@
 
 // direct to display without Window server using  VK_KHR_display and VK_EXT_direct_mode_display
 class ShellDirect : public Shell {
-  public:
-    ShellDirect(FrameProcessor& frameProcessor, uint32_t deviceID);
-   ~ShellDirect();
 
-    virtual void run() override;
-    virtual void quit() override;
+public:
+    ShellDirect(const VulkanDeviceContext* vkDevCtx, VkSharedBaseObj<FrameProcessor>& frameProcessor);
+    virtual ~ShellDirect();
+
+    static const char* GetRequiredInstanceExtension();
+    static const std::vector<VkExtensionProperties>& GetRequiredInstanceExtensions();
+    virtual bool PhysDeviceCanPresent(VkPhysicalDevice physicalDevice, uint32_t presentQueueFamily) const;
+    virtual void RunLoop() override;
+    virtual void QuitLoop() override;
 
 private:
-    virtual PFN_vkGetInstanceProcAddr load_vk() override;
-    virtual VkSurfaceKHR create_surface(VkInstance instance) override;
-    virtual bool can_present(VkPhysicalDevice phy, uint32_t queue_family) override;
+    virtual VkSurfaceKHR CreateSurface(VkInstance instance) override;
 private:
-    void init_display();
+    void InitDisplay();
 
-    void* lib_handle_;
-    bool quit_;
+    VkDisplayKHR m_vkDisplay;
+    uint32_t     m_displayWidth;
+    uint32_t     m_displayHeight;
+    bool         m_quitLoop;
 };
 
 #endif // SHELL_DIRECT_H

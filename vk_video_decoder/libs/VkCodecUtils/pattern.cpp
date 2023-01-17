@@ -15,8 +15,9 @@
 */
 
 #include <vulkan_interfaces.h>
-#include "pattern.h"
 #include "Helpers.h"
+#include "VkCodecUtils/VulkanDeviceContext.h"
+#include "pattern.h"
 
 namespace Pattern {
 
@@ -622,7 +623,10 @@ void VkFillYuv::fillVkCommon(const ImageData *pImageData, VkSubresourceLayout la
 
 // Initialize the texture data, either directly into the texture itself
 // or into buffer memory.
-void VkFillYuv::fillVkImage(VkDevice device, VkImage vkImage, const ImageData *pImageData, VkDeviceMemory mem, const VkSamplerYcbcrConversionCreateInfo* pSamplerYcbcrConversionCreateInfo,
+void VkFillYuv::fillVkImage(const VulkanDeviceContext* vkDevCtx,
+                            VkImage vkImage, const ImageData *pImageData,
+                            VkDeviceMemory mem,
+                            const VkSamplerYcbcrConversionCreateInfo* pSamplerYcbcrConversionCreateInfo,
                             VkImageAspectFlags aspectMask, VkFormat aspectMainFormat)
 {
     uint8_t *ptr = NULL;
@@ -644,30 +648,30 @@ void VkFillYuv::fillVkImage(VkDevice device, VkImage vkImage, const ImageData *p
 
     if (mpInfo && !isUnnormalizedRgba) {
         VkMemoryRequirements memReqs = { };
-        vk::GetImageMemoryRequirements(device, vkImage, &memReqs);
+        vkDevCtx->GetImageMemoryRequirements(*vkDevCtx, vkImage, &memReqs);
         size      = memReqs.size;
         // alignment = memReqs.alignment;
         switch (mpInfo->planesLayout.layout) {
         case YCBCR_SINGLE_PLANE_UNNORMALIZED:
         case YCBCR_SINGLE_PLANE_INTERLEAVED:
             subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-            vk::GetImageSubresourceLayout(device, vkImage, &subResource, &layouts[0]);
+            vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, vkImage, &subResource, &layouts[0]);
             break;
         case YCBCR_SEMI_PLANAR_CBCR_INTERLEAVED:
             subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-            vk::GetImageSubresourceLayout(device, vkImage, &subResource, &layouts[0]);
+            vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, vkImage, &subResource, &layouts[0]);
             subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
-            vk::GetImageSubresourceLayout(device, vkImage, &subResource, &layouts[1]);
+            vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, vkImage, &subResource, &layouts[1]);
             break;
         case YCBCR_PLANAR_CBCR_STRIDE_INTERLEAVED:
         case YCBCR_PLANAR_CBCR_BLOCK_JOINED:
         case YCBCR_PLANAR_STRIDE_PADDED:
             subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-            vk::GetImageSubresourceLayout(device, vkImage, &subResource, &layouts[0]);
+            vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, vkImage, &subResource, &layouts[0]);
             subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
-            vk::GetImageSubresourceLayout(device, vkImage, &subResource, &layouts[1]);
+            vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, vkImage, &subResource, &layouts[1]);
             subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_2_BIT;
-            vk::GetImageSubresourceLayout(device, vkImage, &subResource, &layouts[2]);
+            vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, vkImage, &subResource, &layouts[2]);
             break;
         default:
             assert(0);
@@ -675,11 +679,11 @@ void VkFillYuv::fillVkImage(VkDevice device, VkImage vkImage, const ImageData *p
 
     } else {
 
-        vk::GetImageSubresourceLayout(device, vkImage, &subResource, &layouts[0]);
+        vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, vkImage, &subResource, &layouts[0]);
         size = layouts[0].size;
     }
 
-    vk::MapMemory(device, mem, 0, size, 0, (void **)&ptr);
+    vkDevCtx->MapMemory(*vkDevCtx, mem, 0, size, 0, (void **)&ptr);
 
     fillVkCommon(pImageData, layouts, pSamplerYcbcrConversionCreateInfo, mpInfo, ptr, size, aspectMask, aspectMainFormat);
 
@@ -691,10 +695,10 @@ void VkFillYuv::fillVkImage(VkDevice device, VkImage vkImage, const ImageData *p
         size,                                   // size
     };
 
-    result = vk::FlushMappedMemoryRanges(device, 1u, &range);
+    result = vkDevCtx->FlushMappedMemoryRanges(*vkDevCtx, 1u, &range);
     ABORT_IF_TRUE(result != VK_SUCCESS);
 
-    vk::UnmapMemory(device, mem);
+    vkDevCtx->UnmapMemory(*vkDevCtx, mem);
 }
 
 } // namespace Pattern

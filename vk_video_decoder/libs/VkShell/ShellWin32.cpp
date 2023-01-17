@@ -20,120 +20,83 @@
 #include <sstream>
 
 #include "VkCodecUtils/Helpers.h"
+#include "VkCodecUtils/FrameProcessor.h"
 #include "ShellWin32.h"
-#include "FrameProcessor.h"
 
-namespace {
+static const std::vector<VkExtensionProperties> win32SurfaceExtensions {
+    VkExtensionProperties{ VK_KHR_WIN32_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_SPEC_VERSION } };
 
-class Win32Timer {
-   public:
-    Win32Timer() {
-        LARGE_INTEGER freq;
-        QueryPerformanceFrequency(&freq);
-        freq_ = static_cast<double>(freq.QuadPart);
+const std::vector<VkExtensionProperties>& ShellWin32::GetRequiredInstanceExtensions()
+{
+    return win32SurfaceExtensions;
+}
 
-        reset();
-    }
-
-    void reset() { QueryPerformanceCounter(&start_); }
-
-    double get() const {
-        LARGE_INTEGER now;
-        QueryPerformanceCounter(&now);
-
-        return static_cast<double>(now.QuadPart - start_.QuadPart) / freq_;
-    }
-
-   private:
-    double freq_;
-    LARGE_INTEGER start_;
-};
-
-}  // namespace
-
-ShellWin32::ShellWin32(FrameProcessor &frameProcessor, uint32_t deviceID) : Shell(frameProcessor), hwnd_(nullptr) {
-    if (frameProcessor.settings().validate) instance_layers_.push_back("VK_LAYER_LUNARG_standard_validation");
-    instance_extensions_.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
-    init_vk(deviceID);
+ShellWin32::ShellWin32(const VulkanDeviceContext* vkDevCtx, VkSharedBaseObj<FrameProcessor>& frameProcessor)
+    : Shell(vkDevCtx, frameProcessor) {
 }
 
 ShellWin32::~ShellWin32() {
-    cleanup_vk();
-    FreeLibrary(hmodule_);
 }
 
-void ShellWin32::create_window() {
-    const std::string class_name(settings_.name + "WindowClass");
+const char* ShellWin32::GetRequiredInstanceExtension()
+{
+    return VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
+}
 
-    hinstance_ = GetModuleHandle(nullptr);
+void ShellWin32::VkCreateWindow() {
+    const std::string class_name(m_settings.name + "WindowClass");
+
+    m_hinstance = GetModuleHandle(nullptr);
 
     WNDCLASSEX win_class = {};
     win_class.cbSize = sizeof(WNDCLASSEX);
     win_class.style = CS_HREDRAW | CS_VREDRAW;
     win_class.lpfnWndProc = window_proc;
-    win_class.hInstance = hinstance_;
+    win_class.hInstance = m_hinstance;
     win_class.hCursor = LoadCursor(nullptr, IDC_ARROW);
     win_class.lpszClassName = class_name.c_str();
     RegisterClassEx(&win_class);
 
     const DWORD win_style = WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_VISIBLE | WS_OVERLAPPEDWINDOW;
 
-    RECT win_rect = {0, 0, settings_.initial_width, settings_.initial_height};
+    RECT win_rect = {0, 0, m_settings.initialWidth, m_settings.initialHeight};
     AdjustWindowRect(&win_rect, win_style, false);
 
-    hwnd_ = CreateWindowEx(WS_EX_APPWINDOW, class_name.c_str(), settings_.name.c_str(), win_style, 0, 0,
-                           win_rect.right - win_rect.left, win_rect.bottom - win_rect.top, nullptr, nullptr, hinstance_, nullptr);
+    m_hwnd = CreateWindowEx(WS_EX_APPWINDOW, class_name.c_str(), m_settings.name.c_str(), win_style, 0, 0,
+                            win_rect.right - win_rect.left, win_rect.bottom - win_rect.top,
+                            nullptr, nullptr, m_hinstance, nullptr);
 
-    SetForegroundWindow(hwnd_);
-    SetWindowLongPtr(hwnd_, GWLP_USERDATA, (LONG_PTR)this);
+    SetForegroundWindow(m_hwnd);
+    SetWindowLongPtr(m_hwnd, GWLP_USERDATA, (LONG_PTR)this);
 }
 
-PFN_vkGetInstanceProcAddr ShellWin32::load_vk() {
-    const char filename[] = "vulkan-1.dll";
-    HMODULE mod;
-    PFN_vkGetInstanceProcAddr get_proc = NULL;
-
-    mod = LoadLibrary(filename);
-    if (mod) {
-        get_proc = reinterpret_cast<PFN_vkGetInstanceProcAddr>(GetProcAddress(mod, "vkGetInstanceProcAddr"));
-    }
-
-    if (!mod || !get_proc) {
-        std::stringstream ss;
-        ss << "failed to load " << filename;
-
-        if (mod) FreeLibrary(mod);
-
-        throw std::runtime_error(ss.str());
-    }
-
-    hmodule_ = mod;
-
-    return get_proc;
+void ShellWin32::VkDestroyWindow()
+{
+    ::DestroyWindow(m_hwnd);
 }
 
-bool ShellWin32::can_present(VkPhysicalDevice phy, uint32_t queue_family) {
-    return vk::GetPhysicalDeviceWin32PresentationSupportKHR(phy, queue_family) == VK_TRUE;
+bool ShellWin32::PhysDeviceCanPresent(VkPhysicalDevice physicalDevice, uint32_t presentQueueFamily) const {
+    return m_ctx.devCtx->GetPhysicalDeviceWin32PresentationSupportKHR(physicalDevice, presentQueueFamily) == VK_TRUE;
 }
 
-VkSurfaceKHR ShellWin32::create_surface(VkInstance instance) {
+VkSurfaceKHR ShellWin32::CreateSurface(VkInstance instance) {
     VkWin32SurfaceCreateInfoKHR surface_info = {};
     surface_info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-    surface_info.hinstance = hinstance_;
-    surface_info.hwnd = hwnd_;
+    surface_info.hinstance = m_hinstance;
+    surface_info.hwnd = m_hwnd;
 
     VkSurfaceKHR surface;
-    vk::assert_success(vk::CreateWin32SurfaceKHR(instance, &surface_info, nullptr, &surface));
+    vk::assert_success(m_ctx.devCtx->CreateWin32SurfaceKHR(instance, &surface_info, nullptr, &surface));
 
     return surface;
 }
 
-LRESULT ShellWin32::handle_message(UINT msg, WPARAM wparam, LPARAM lparam) {
+LRESULT ShellWin32::HandleMessage(UINT msg, WPARAM wparam, LPARAM lparam) {
     switch (msg) {
         case WM_SIZE: {
             UINT w = LOWORD(lparam);
             UINT h = HIWORD(lparam);
-            resize_swapchain(w, h);
+            ResizeSwapchain(w, h);
         } break;
         case WM_KEYDOWN: {
             FrameProcessor::Key key;
@@ -156,32 +119,34 @@ LRESULT ShellWin32::handle_message(UINT msg, WPARAM wparam, LPARAM lparam) {
                     break;
             }
 
-            frameProcessor_.on_key(key);
+            if (!m_frameProcessor->OnKey(key)) {
+                QuitLoop();
+            }
+
         } break;
         case WM_CLOSE:
-            frameProcessor_.on_key(FrameProcessor::KEY_SHUTDOWN);
+            if (!m_frameProcessor->OnKey(FrameProcessor::KEY_SHUTDOWN)) {
+                QuitLoop();
+            }
             break;
         case WM_DESTROY:
-            quit();
+            QuitLoop();
             break;
         default:
-            return DefWindowProc(hwnd_, msg, wparam, lparam);
+            return DefWindowProc(m_hwnd, msg, wparam, lparam);
             break;
     }
 
     return 0;
 }
 
-void ShellWin32::quit() { PostQuitMessage(0); }
+void ShellWin32::QuitLoop() { PostQuitMessage(0); }
 
-void ShellWin32::run() {
-    create_window();
+void ShellWin32::RunLoop() {
 
-    create_context();
-    resize_swapchain(settings_.initial_width, settings_.initial_height);
-
-    Win32Timer timer;
-    double current_time = timer.get();
+    VkCreateWindow();
+    CreateContext();
+    ResizeSwapchain(m_settings.initialWidth, m_settings.initialHeight);
 
     while (true) {
         bool quit = false;
@@ -202,17 +167,10 @@ void ShellWin32::run() {
             break;
         }
 
-        acquire_back_buffer();
-
-        double t = timer.get();
-        add_frameProcessor_time(static_cast<float>(t - current_time));
-
-        present_back_buffer();
-
-        current_time = t;
+        AcquireBackBuffer();
+        PresentBackBuffer();
     }
 
-    destroy_context();
-
-    DestroyWindow(hwnd_);
+    DestroyContext();
+    VkDestroyWindow();
 }

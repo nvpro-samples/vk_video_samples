@@ -18,11 +18,11 @@
 #include "vk_video/vulkan_video_codecs_common.h"
 #include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/HelpersDispatchTable.h"
-#include "VkCodecUtils/VulkanVideoUtils.h"
+#include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkCodecUtils/NvVideoSession.h"
 
-VkResult NvVideoSession::Create(VkDevice            dev,
+VkResult NvVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
                                 uint32_t            videoQueueFamily,
                                 VkVideoCoreProfile* pVideoProfile,
                                 VkFormat            pictureFormat,
@@ -32,7 +32,7 @@ VkResult NvVideoSession::Create(VkDevice            dev,
                                 uint32_t            maxActiveReferencePictures,
                                 VkSharedBaseObj<NvVideoSession>& videoSession)
 {
-    NvVideoSession* pNewVideoSession = new NvVideoSession(pVideoProfile);
+    NvVideoSession* pNewVideoSession = new NvVideoSession(vkDevCtx, pVideoProfile);
 
     static const VkExtensionProperties h264DecodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION };
     static const VkExtensionProperties h265DecodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION };
@@ -65,47 +65,72 @@ VkResult NvVideoSession::Create(VkDevice            dev,
     default:
         assert(0);
     }
-    VkResult result = vk::CreateVideoSessionKHR(dev, &createInfo, NULL, &pNewVideoSession->m_videoSession);
-    assert(result == VK_SUCCESS);
-    pNewVideoSession->m_dev = dev;
+    VkResult result = vkDevCtx->CreateVideoSessionKHR(*vkDevCtx, &createInfo, NULL, &pNewVideoSession->m_videoSession);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
 
-    const uint32_t maxMemReq = 8;
     uint32_t videoSessionMemoryRequirementsCount = 0;
-    VkVideoSessionMemoryRequirementsKHR decodeSessionMemoryRequirements[maxMemReq];
+    VkVideoSessionMemoryRequirementsKHR decodeSessionMemoryRequirements[MAX_BOUND_MEMORY];
     // Get the count first
-    result = vk::GetVideoSessionMemoryRequirementsKHR(dev, pNewVideoSession->m_videoSession,
+    result = vkDevCtx->GetVideoSessionMemoryRequirementsKHR(*vkDevCtx, pNewVideoSession->m_videoSession,
         &videoSessionMemoryRequirementsCount, NULL);
     assert(result == VK_SUCCESS);
-    assert(videoSessionMemoryRequirementsCount <= maxMemReq);
+    assert(videoSessionMemoryRequirementsCount <= MAX_BOUND_MEMORY);
 
     memset(decodeSessionMemoryRequirements, 0x00, sizeof(decodeSessionMemoryRequirements));
     for (uint32_t i = 0; i < videoSessionMemoryRequirementsCount; i++) {
         decodeSessionMemoryRequirements[i].sType = VK_STRUCTURE_TYPE_VIDEO_SESSION_MEMORY_REQUIREMENTS_KHR;
     }
 
-    result = vk::GetVideoSessionMemoryRequirementsKHR(dev, pNewVideoSession->m_videoSession,
-                                                      &videoSessionMemoryRequirementsCount,
-                                                      decodeSessionMemoryRequirements);
-    assert(result == VK_SUCCESS);
+    result = vkDevCtx->GetVideoSessionMemoryRequirementsKHR(*vkDevCtx, pNewVideoSession->m_videoSession,
+                                                            &videoSessionMemoryRequirementsCount,
+                                                            decodeSessionMemoryRequirements);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
 
     uint32_t decodeSessionBindMemoryCount = videoSessionMemoryRequirementsCount;
-    VkBindVideoSessionMemoryInfoKHR decodeSessionBindMemory[8];
+    VkBindVideoSessionMemoryInfoKHR decodeSessionBindMemory[MAX_BOUND_MEMORY];
 
     for (uint32_t memIdx = 0; memIdx < decodeSessionBindMemoryCount; memIdx++) {
-        result = pNewVideoSession->m_memoryBound[memIdx].AllocMemory(dev, &decodeSessionMemoryRequirements[memIdx].memoryRequirements,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        uint32_t memoryTypeIndex = 0;
+        uint32_t memoryTypeBits = decodeSessionMemoryRequirements[memIdx].memoryRequirements.memoryTypeBits;
+        if (memoryTypeBits == 0) {
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+
+        // Find an available memory type that satisfies the requested properties.
+        for (; !(memoryTypeBits & 1); memoryTypeIndex++  ) {
+            memoryTypeBits >>= 1;
+        }
+
+        VkMemoryAllocateInfo memInfo = {
+            VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,                          // sType
+            NULL,                                                            // pNext
+            decodeSessionMemoryRequirements[memIdx].memoryRequirements.size, // allocationSize
+            memoryTypeIndex,                                                 // memoryTypeIndex
+        };
+
+        result = vkDevCtx->AllocateMemory(*vkDevCtx, &memInfo, 0,
+                                                   &pNewVideoSession->m_memoryBound[memIdx]);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+
         assert(result == VK_SUCCESS);
         decodeSessionBindMemory[memIdx].pNext = NULL;
         decodeSessionBindMemory[memIdx].sType = VK_STRUCTURE_TYPE_BIND_VIDEO_SESSION_MEMORY_INFO_KHR;
-        decodeSessionBindMemory[memIdx].memory = pNewVideoSession->m_memoryBound[memIdx].memory;
+        decodeSessionBindMemory[memIdx].memory = pNewVideoSession->m_memoryBound[memIdx];
 
         decodeSessionBindMemory[memIdx].memoryBindIndex = decodeSessionMemoryRequirements[memIdx].memoryBindIndex;
         decodeSessionBindMemory[memIdx].memoryOffset = 0;
         decodeSessionBindMemory[memIdx].memorySize = decodeSessionMemoryRequirements[memIdx].memoryRequirements.size;
     }
 
-    result = vk::BindVideoSessionMemoryKHR(dev, pNewVideoSession->m_videoSession, decodeSessionBindMemoryCount,
-        decodeSessionBindMemory);
+    result = vkDevCtx->BindVideoSessionMemoryKHR(*vkDevCtx, pNewVideoSession->m_videoSession, decodeSessionBindMemoryCount,
+                                                 decodeSessionBindMemory);
     assert(result == VK_SUCCESS);
 
     videoSession = pNewVideoSession;
