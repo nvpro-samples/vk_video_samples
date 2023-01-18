@@ -17,46 +17,21 @@
 #ifndef _VKVIDEODECODER_STDVIDEOPICTUREPARAMETERSSET_H_
 #define _VKVIDEODECODER_STDVIDEOPICTUREPARAMETERSSET_H_
 
-struct SpsVideoH264PictureParametersSet
-{
-    StdVideoH264SequenceParameterSet    stdSps;
-    int32_t                             offset_for_ref_frame[255];
-    StdVideoH264SequenceParameterSetVui stdVui;
-    StdVideoH264HrdParameters           stdHrdParameters;
-    StdVideoH264ScalingLists            spsStdScalingLists;
-};
-
-struct PpsVideoH264PictureParametersSet
-{
-    StdVideoH264PictureParameterSet     stdPps;
-    StdVideoH264ScalingLists            ppsStdScalingLists;
-};
-
-struct SpsVideoH265VideoParametersSet
-{
-    StdVideoH265VideoParameterSet       stdVps;
-    StdVideoH265DecPicBufMgr            stdDecPicBufMgr;
-    StdVideoH265ProfileTierLevel        stdProfileTierLevel;
-};
-
-struct SpsVideoH265PictureParametersSet
-{
-    StdVideoH265SequenceParameterSet    stdSps;
-    StdVideoH265SequenceParameterSetVui stdVui;
-    StdVideoH265ScalingLists            spsStdScalingLists;
-};
-
-struct PpsVideoH265PictureParametersSet
-{
-    StdVideoH265PictureParameterSet     stdPps;
-    StdVideoH265ScalingLists            ppsStdScalingLists;
-};
+#include "vulkan_interfaces.h"
 
 class StdVideoPictureParametersSet : public VkVideoRefCountBase
 {
 public:
 
-    enum ItemType {
+    enum StdType {
+        TYPE_H264_SPS = 0,
+        TYPE_H264_PPS,
+        TYPE_H265_VPS,
+        TYPE_H265_SPS,
+        TYPE_H265_PPS
+    };
+
+    enum ParameterType {
         PPS_TYPE = 0,
         SPS_TYPE,
         VPS_TYPE,
@@ -64,170 +39,24 @@ public:
         INVALID_TYPE,
     };
 
-    void Update(VkPictureParameters* pPictureParameters, uint32_t updateSequenceCount)
-    {
-        switch (pPictureParameters->updateType)
-        {
-            case VK_PICTURE_PARAMETERS_UPDATE_H264_SPS:
-            case VK_PICTURE_PARAMETERS_UPDATE_H264_PPS:
-            {
+    virtual int32_t GetVpsId(bool& isVps) const = 0;
+    virtual int32_t GetSpsId(bool& isSps) const = 0;
+    virtual int32_t GetPpsId(bool& isPps) const = 0;
 
-                if (pPictureParameters->updateType == VK_PICTURE_PARAMETERS_UPDATE_H264_SPS) {
-                    m_data.h264Sps.stdSps = *pPictureParameters->pH264Sps;
-                    if (pPictureParameters->pH264Sps->pOffsetForRefFrame &&
-                               pPictureParameters->pH264Sps->num_ref_frames_in_pic_order_cnt_cycle) {
-                        memcpy(m_data.h264Sps.offset_for_ref_frame,
-                                pPictureParameters->pH264Sps->pOffsetForRefFrame,
-                                     sizeof(m_data.h264Sps.offset_for_ref_frame) *
-                                            pPictureParameters->pH264Sps->num_ref_frames_in_pic_order_cnt_cycle);
-                        m_data.h264Sps.stdSps.pOffsetForRefFrame = m_data.h264Sps.offset_for_ref_frame;
-                    } else {
-                        m_data.h264Sps.stdSps.pOffsetForRefFrame = nullptr;
-                    }
-                    if (pPictureParameters->pH264Sps->pScalingLists) {
-                        m_data.h264Sps.spsStdScalingLists = *pPictureParameters->pH264Sps->pScalingLists;
-                        m_data.h264Sps.stdSps.pScalingLists = &m_data.h264Sps.spsStdScalingLists;
-                    }
-                    if (pPictureParameters->pH264Sps->pSequenceParameterSetVui) {
-                        m_data.h264Sps.stdVui = *pPictureParameters->pH264Sps->pSequenceParameterSetVui;
-                        m_data.h264Sps.stdSps.pSequenceParameterSetVui = &m_data.h264Sps.stdVui;
-                        if (pPictureParameters->pH264Sps->pSequenceParameterSetVui->pHrdParameters) {
-                            m_data.h264Sps.stdHrdParameters = *pPictureParameters->pH264Sps->pSequenceParameterSetVui->pHrdParameters;
-                            m_data.h264Sps.stdVui.pHrdParameters = &m_data.h264Sps.stdHrdParameters;
-                        } else {
-                            m_data.h264Sps.stdVui.pHrdParameters = nullptr;
-                        }
-                    }
-                } else if (pPictureParameters->updateType ==  VK_PICTURE_PARAMETERS_UPDATE_H264_PPS ) {
-                    m_data.h264Pps.stdPps = *pPictureParameters->pH264Pps;
-                    if (pPictureParameters->pH264Pps->pScalingLists) {
-                        m_data.h264Pps.ppsStdScalingLists = *pPictureParameters->pH264Pps->pScalingLists;
-                        m_data.h264Pps.stdPps.pScalingLists = &m_data.h264Pps.ppsStdScalingLists;
-                    }
-                }
-            }
-            break;
-            case VK_PICTURE_PARAMETERS_UPDATE_H265_VPS:
-            case VK_PICTURE_PARAMETERS_UPDATE_H265_SPS:
-            case VK_PICTURE_PARAMETERS_UPDATE_H265_PPS:
-            {
-                if (pPictureParameters->updateType == VK_PICTURE_PARAMETERS_UPDATE_H265_VPS) {
-                    m_data.h265Vps.stdVps = *pPictureParameters->pH265Vps;
+    virtual const StdVideoH264SequenceParameterSet* GetStdH264Sps() const { return nullptr; }
+    virtual const StdVideoH264PictureParameterSet*  GetStdH264Pps() const { return nullptr; }
+    virtual const StdVideoH265VideoParameterSet*    GetStdH265Vps() const { return nullptr; }
+    virtual const StdVideoH265SequenceParameterSet* GetStdH265Sps() const { return nullptr; }
+    virtual const StdVideoH265PictureParameterSet*  GetStdH265Pps() const { return nullptr; }
 
-                    if (pPictureParameters->pH265Vps->pDecPicBufMgr != 0) {
-                        m_data.h265Vps.stdDecPicBufMgr = *pPictureParameters->pH265Vps->pDecPicBufMgr;
-                        m_data.h265Vps.stdVps.pDecPicBufMgr = &m_data.h265Vps.stdDecPicBufMgr;
-                    }
+    virtual const char* GetRefClassId() const = 0;
 
-                    if (pPictureParameters->pH265Vps->pProfileTierLevel != 0) {
-                        m_data.h265Vps.stdProfileTierLevel = *pPictureParameters->pH265Vps->pProfileTierLevel;
-                        m_data.h265Vps.stdVps.pProfileTierLevel = &m_data.h265Vps.stdProfileTierLevel;
-                    }
-
-                    // FIXME: StdVideoH265HrdParameters is currently unsupported
-                    m_data.h265Vps.stdVps.pHrdParameters = nullptr;
-
-                } else if (pPictureParameters->updateType == VK_PICTURE_PARAMETERS_UPDATE_H265_SPS) {
-                    m_data.h265Sps.stdSps = *pPictureParameters->pH265Sps;
-                    if (pPictureParameters->pH265Sps->pScalingLists) {
-                        m_data.h265Sps.spsStdScalingLists = *pPictureParameters->pH265Sps->pScalingLists;
-                        m_data.h265Sps.stdSps.pScalingLists = &m_data.h265Sps.spsStdScalingLists;
-                    }
-                    if (pPictureParameters->pH265Sps->pSequenceParameterSetVui) {
-                        m_data.h265Sps.stdVui = *pPictureParameters->pH265Sps->pSequenceParameterSetVui;
-                        m_data.h265Sps.stdSps.pSequenceParameterSetVui = &m_data.h265Sps.stdVui;
-                    }
-
-                } else if (pPictureParameters->updateType == VK_PICTURE_PARAMETERS_UPDATE_H265_PPS) {
-                    m_data.h265Pps.stdPps = *pPictureParameters->pH265Pps;
-                    if (pPictureParameters->pH265Pps->pScalingLists) {
-                        m_data.h265Pps.ppsStdScalingLists = *pPictureParameters->pH265Pps->pScalingLists;
-                        m_data.h265Pps.stdPps.pScalingLists = &m_data.h265Pps.ppsStdScalingLists;
-                    }
-                }
-            }
-            break;
-            default:
-                assert(!"Invalid Parser format");
-        }
-
-        m_updateSequenceCount = updateSequenceCount;
-    }
-
-    int32_t GetVpsId(bool& isVps) const {
-        isVps = false;
-        switch (m_updateType) {
-        case VK_PICTURE_PARAMETERS_UPDATE_H264_SPS:
-        case VK_PICTURE_PARAMETERS_UPDATE_H264_PPS:
-            break; // h.264 does not support VPS
-        case VK_PICTURE_PARAMETERS_UPDATE_H265_VPS:
-            isVps = true;
-            return m_data.h265Vps.stdVps.vps_video_parameter_set_id;
-        case VK_PICTURE_PARAMETERS_UPDATE_H265_SPS:
-            return m_data.h265Sps.stdSps.sps_video_parameter_set_id;
-        case VK_PICTURE_PARAMETERS_UPDATE_H265_PPS:
-            return m_data.h265Pps.stdPps.sps_video_parameter_set_id;
-        default:
-            assert("!Invalid STD type");
-        }
-        return -1;
-    }
-
-    int32_t GetSpsId(bool& isSps) const {
-        isSps = false;
-        switch (m_updateType) {
-        case VK_PICTURE_PARAMETERS_UPDATE_H264_SPS:
-            isSps = true;
-            return m_data.h264Sps.stdSps.seq_parameter_set_id;
-        case VK_PICTURE_PARAMETERS_UPDATE_H264_PPS:
-            return m_data.h264Pps.stdPps.seq_parameter_set_id;
-        case VK_PICTURE_PARAMETERS_UPDATE_H265_VPS:
-            break;
-        case VK_PICTURE_PARAMETERS_UPDATE_H265_SPS:
-            isSps = true;
-            return m_data.h265Sps.stdSps.sps_seq_parameter_set_id;
-        case VK_PICTURE_PARAMETERS_UPDATE_H265_PPS:
-            return m_data.h265Pps.stdPps.pps_seq_parameter_set_id;
-        default:
-            assert("!Invalid STD type");
-        }
-        return -1;
-    }
-
-    int32_t GetPpsId(bool& isPps) const {
-        isPps = false;
-        switch (m_updateType) {
-        case VK_PICTURE_PARAMETERS_UPDATE_H264_SPS:
-            break;
-        case VK_PICTURE_PARAMETERS_UPDATE_H264_PPS:
-            isPps = true;
-            return m_data.h264Pps.stdPps.pic_parameter_set_id;
-        case VK_PICTURE_PARAMETERS_UPDATE_H265_SPS:
-            break;
-        case VK_PICTURE_PARAMETERS_UPDATE_H265_PPS:
-            isPps = true;
-            return m_data.h265Pps.stdPps.pps_pic_parameter_set_id;
-        default:
-            assert("!Invalid STD type");
-        }
-        return -1;
-    }
-
-    static StdVideoPictureParametersSet* Create(VkPictureParameters* pPictureParameters, uint64_t updateSequenceCount)
-    {
-        StdVideoPictureParametersSet* pNewSet = new StdVideoPictureParametersSet(pPictureParameters->updateType);
-
-        pNewSet->Update(pPictureParameters, (uint32_t)updateSequenceCount);
-
-        return pNewSet;
-    }
-
-    static StdVideoPictureParametersSet* StdVideoPictureParametersSetFromBase(VkVideoRefCountBase* pBase ) {
+    static const StdVideoPictureParametersSet* StdVideoPictureParametersSetFromBase(const VkVideoRefCountBase* pBase ) {
         if (!pBase) {
             return NULL;
         }
-        StdVideoPictureParametersSet* pPictureParameters = static_cast<StdVideoPictureParametersSet*>(pBase);
-        if (m_refClassId == pPictureParameters->m_classId) {
+        const StdVideoPictureParametersSet* pPictureParameters = static_cast<const StdVideoPictureParametersSet*>(pBase);
+        if (pPictureParameters->IsMyClassId(pPictureParameters->GetRefClassId())) {
             return pPictureParameters;
         }
         assert(!"Invalid StdVideoPictureParametersSet from base");
@@ -249,59 +78,45 @@ public:
         return ret;
     }
 
-private:
-    static const char*                   m_refClassId;
-    const char*                          m_classId;
-    std::atomic<int32_t>                 m_refCount;
-public:
-    VkParserPictureParametersUpdateType  m_updateType;
-    ItemType                             m_itemType;
-    union {
-        SpsVideoH264PictureParametersSet h264Sps;
-        PpsVideoH264PictureParametersSet h264Pps;
-        SpsVideoH265VideoParametersSet   h265Vps;
-        SpsVideoH265PictureParametersSet h265Sps;
-        PpsVideoH265PictureParametersSet h265Pps;
-    } m_data;
-    uint32_t                                         m_updateSequenceCount;
-    VkSharedBaseObj<StdVideoPictureParametersSet>    m_parent;        // SPS or PPS parent
-    VkSharedBaseObj<VkVideoRefCountBase>             m_vkObjectOwner; // VkParserVideoPictureParameters
-    VkSharedBaseObj<VkVideoRefCountBase>             m_videoSession;  // NvVideoSession
-private:
-
-    StdVideoPictureParametersSet(VkParserPictureParametersUpdateType updateType)
-    : m_classId(m_refClassId),
-      m_refCount(0),
-      m_updateType(updateType),
-      m_data(),
-      m_updateSequenceCount(0),
-      m_parent(),
-      m_vkObjectOwner(),
-      m_videoSession(nullptr)
-    {
-        switch (m_updateType) {
-        case VK_PICTURE_PARAMETERS_UPDATE_H264_PPS:
-        case VK_PICTURE_PARAMETERS_UPDATE_H265_PPS:
-            m_itemType = PPS_TYPE;
-            break;
-        case VK_PICTURE_PARAMETERS_UPDATE_H264_SPS:
-        case VK_PICTURE_PARAMETERS_UPDATE_H265_SPS:
-            m_itemType = SPS_TYPE;
-            break;
-        case VK_PICTURE_PARAMETERS_UPDATE_H265_VPS:
-            m_itemType = VPS_TYPE;
-            break;
-        default:
-            m_itemType = INVALID_TYPE;
-            assert("!Invalid STD type");
+    bool IsMyClassId(const char* refClassId) const {
+        if (m_classId == refClassId) {
+            return true;
         }
+        return false;
     }
 
-    ~StdVideoPictureParametersSet()
+    StdType GetStdType() const { return m_stdType; }
+    ParameterType GetParameterType() const { return m_parameterType; }
+    uint32_t GetUpdateSequenceCount() const { return m_updateSequenceCount; }
+
+    // VkParserVideoPictureParameters
+    virtual bool GetClientObject(VkSharedBaseObj<VkVideoRefCountBase>& clientObject) const = 0;
+
+protected:
+    StdVideoPictureParametersSet(StdType updateType,
+                                 ParameterType itemType, const char* refClassId,
+                                 uint64_t updateSequenceCount)
+        : m_classId(refClassId)
+        , m_refCount(0)
+        , m_stdType(updateType)
+        , m_parameterType(itemType)
+        , m_updateSequenceCount((uint32_t)updateSequenceCount)
+        , m_parent() { }
+
+    virtual ~StdVideoPictureParametersSet()
     {
-        m_vkObjectOwner = nullptr;
-        m_videoSession = nullptr;
+        m_parent = nullptr;
     }
+
+private:
+    const char*                                      m_classId;
+    std::atomic<int32_t>                             m_refCount;
+    StdType                                          m_stdType;
+    ParameterType                                    m_parameterType;
+protected:
+    uint32_t                                         m_updateSequenceCount;
+public:
+    VkSharedBaseObj<StdVideoPictureParametersSet>    m_parent;        // SPS or PPS parent
 
 };
 

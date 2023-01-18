@@ -20,19 +20,19 @@
 #include "VkCodecUtils/HelpersDispatchTable.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
-#include "VkCodecUtils/NvVideoSession.h"
+#include "VkCodecUtils/VulkanVideoSession.h"
 
-VkResult NvVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
-                                uint32_t            videoQueueFamily,
-                                VkVideoCoreProfile* pVideoProfile,
-                                VkFormat            pictureFormat,
-                                const VkExtent2D&   maxCodedExtent,
-                                VkFormat            referencePicturesFormat,
-                                uint32_t            maxDpbSlots,
-                                uint32_t            maxActiveReferencePictures,
-                                VkSharedBaseObj<NvVideoSession>& videoSession)
+VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
+                                    uint32_t            videoQueueFamily,
+                                    VkVideoCoreProfile* pVideoProfile,
+                                    VkFormat            pictureFormat,
+                                    const VkExtent2D&   maxCodedExtent,
+                                    VkFormat            referencePicturesFormat,
+                                    uint32_t            maxDpbSlots,
+                                    uint32_t            maxActiveReferencePictures,
+                                    VkSharedBaseObj<VulkanVideoSession>& videoSession)
 {
-    NvVideoSession* pNewVideoSession = new NvVideoSession(vkDevCtx, pVideoProfile);
+    VulkanVideoSession* pNewVideoSession = new VulkanVideoSession(vkDevCtx, pVideoProfile);
 
     static const VkExtensionProperties h264DecodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION };
     static const VkExtensionProperties h265DecodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION };

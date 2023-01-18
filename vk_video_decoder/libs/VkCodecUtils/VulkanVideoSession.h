@@ -21,7 +21,7 @@
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/VulkanVideoUtils.h" // for DeviceMemoryObject
 
-class NvVideoSession : public VkVideoRefCountBase
+class VulkanVideoSession : public VkVideoRefCountBase
 {
     enum { MAX_BOUND_MEMORY = 8 };
 public:
@@ -33,7 +33,7 @@ public:
                            VkFormat            referencePicturesFormat,
                            uint32_t            maxDpbSlots,
                            uint32_t            maxActiveReferencePictures,
-                           VkSharedBaseObj<NvVideoSession>& videoSession);
+                           VkSharedBaseObj<VulkanVideoSession>& videoSession);
 
     bool IsCompatible ( const VulkanDeviceContext* vkDevCtx,
                         uint32_t            videoQueueFamily,
@@ -103,7 +103,7 @@ public:
 
 private:
 
-    NvVideoSession(const VulkanDeviceContext* vkDevCtx,
+    VulkanVideoSession(const VulkanDeviceContext* vkDevCtx,
                    VkVideoCoreProfile* pVideoProfile)
        : m_refCount(0), m_profile(*pVideoProfile), m_vkDevCtx(vkDevCtx),
          m_createInfo{ VK_STRUCTURE_TYPE_VIDEO_SESSION_CREATE_INFO_KHR, NULL },
@@ -112,7 +112,7 @@ private:
 
     }
 
-    ~NvVideoSession()
+    ~VulkanVideoSession()
     {
         if (m_videoSession) {
             assert(m_vkDevCtx != nullptr);

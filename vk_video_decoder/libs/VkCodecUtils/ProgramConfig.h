@@ -35,6 +35,9 @@ struct ProgramConfig {
         videoWidth = 0;
         videoHeight = 0;
         queueCount = 1;
+        numDecodeImagesInFlight = 8;
+        numDecodeImagesToPreallocate = -1; // pre-allocate the maximum num of images
+        numBitstreamBuffersToPreallocate = 8;
         backBufferCount = 3;
         ticksPerSecond = 30;
         vsync = true;
@@ -125,6 +128,9 @@ struct ProgramConfig {
     int videoWidth;
     int videoHeight;
     int queueCount;
+    int32_t numDecodeImagesInFlight;
+    int32_t numDecodeImagesToPreallocate;
+    int32_t numBitstreamBuffersToPreallocate;
     int backBufferCount;
     int ticksPerSecond;
     int maxFrameCount;

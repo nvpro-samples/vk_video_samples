@@ -19,13 +19,13 @@
 
 #include "PictureBufferBase.h"
 #include "VkVideoCore/VkVideoRefCountBase.h"
+#include "vkvideo_parser/StdVideoPictureParametersSet.h"
 #include "VulkanBitstreamBuffer.h"
-#include "vulkan_interfaces.h"
 #include "vk_video/vulkan_video_codecs_common.h"
 
-#define NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_8 VK_MAKE_VIDEO_STD_VERSION(0, 9, 8)
+#define NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_9 VK_MAKE_VIDEO_STD_VERSION(0, 9, 9)
 
-#define NV_VULKAN_VIDEO_PARSER_API_VERSION   NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_8
+#define NV_VULKAN_VIDEO_PARSER_API_VERSION   NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_9
 
 typedef uint32_t FrameRate; // Packed 18-bit numerator & 14-bit denominator
 
@@ -124,11 +124,9 @@ typedef struct VkParserH264DpbEntry {
 
 typedef struct VkParserH264PictureData {
     // SPS
-    const StdVideoH264SequenceParameterSet* pStdSps;
-    VkVideoRefCountBase*                    pSpsClientObject;
+    const StdVideoPictureParametersSet*     pStdSps;
     // PPS
-    const StdVideoH264PictureParameterSet*    pStdPps;
-    VkVideoRefCountBase*                    pPpsClientObject;
+    const StdVideoPictureParametersSet*     pStdPps;
     uint8_t  pic_parameter_set_id;          // PPS ID
     uint8_t  seq_parameter_set_id;          // SPS ID
     int32_t num_ref_idx_l0_active_minus1;
@@ -220,16 +218,11 @@ typedef struct VkParserH264PictureData {
 
 typedef struct VkParserHevcPictureData {
     // VPS
-    const StdVideoH265VideoParameterSet*    pStdVps;
-    VkVideoRefCountBase*                    pVpsClientObject;
-
+    const StdVideoPictureParametersSet*     pStdVps;
     // SPS
-    const StdVideoH265SequenceParameterSet* pStdSps;
-    VkVideoRefCountBase*                    pSpsClientObject;
-
+    const StdVideoPictureParametersSet*     pStdSps;
     // PPS
-    const StdVideoH265PictureParameterSet*  pStdPps;
-    VkVideoRefCountBase*                    pPpsClientObject;
+    const StdVideoPictureParametersSet*     pStdPps;
 
     uint8_t pic_parameter_set_id;       // PPS ID
     uint8_t seq_parameter_set_id;       // SPS ID
@@ -674,26 +667,6 @@ typedef struct VkParserDisplayMasteringInfo {
     uint32_t min_display_mastering_luminance;
 } VkParserDisplayMasteringInfo;
 
-enum VkParserPictureParametersUpdateType {
-    VK_PICTURE_PARAMETERS_UPDATE_H264_SPS = 0,
-    VK_PICTURE_PARAMETERS_UPDATE_H264_PPS,
-    VK_PICTURE_PARAMETERS_UPDATE_H265_VPS,
-    VK_PICTURE_PARAMETERS_UPDATE_H265_SPS,
-    VK_PICTURE_PARAMETERS_UPDATE_H265_PPS,
-};
-
-typedef struct VkPictureParameters {
-    VkParserPictureParametersUpdateType   updateType;
-    union {
-        const StdVideoH264SequenceParameterSet* pH264Sps;
-        const StdVideoH264PictureParameterSet*  pH264Pps;
-        const StdVideoH265VideoParameterSet*    pH265Vps;
-        const StdVideoH265SequenceParameterSet* pH265Sps;
-        const StdVideoH265PictureParameterSet*  pH265Pps;
-    };
-    uint32_t updateSequenceCount;
-} VkPictureParameters;
-
 // Interface to allow decoder to communicate with the client
 class VkParserVideoDecodeClient {
 public:
@@ -709,9 +682,8 @@ public:
         = 0; // Called when a picture is
         // ready to be decoded
     virtual bool UpdatePictureParameters(
-        VkPictureParameters* pPictureParameters,
-        VkSharedBaseObj<VkVideoRefCountBase>& pictureParametersObject,
-        uint64_t updateSequenceCount)
+        VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersObject, // IN
+        VkSharedBaseObj<VkVideoRefCountBase>& client) // OUT
         = 0; // Called when a picture is
         // ready to be decoded
     virtual bool DisplayPicture(
@@ -727,7 +699,10 @@ public:
         return 0;
     } // called from sequence header of av1 scalable video streams
     virtual size_t GetBitstreamBuffer(size_t size,
-                                      const uint8_t* pInitializeBufferMemory, size_t initializeBufferMemorySize,
+                                      size_t minBitstreamBufferOffsetAlignment,
+                                      size_t minBitstreamBufferSizeAlignment,
+                                      const uint8_t* pInitializeBufferMemory,
+                                      size_t initializeBufferMemorySize,
                                       VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer) = 0;
 protected:
     virtual ~VkParserVideoDecodeClient() { }

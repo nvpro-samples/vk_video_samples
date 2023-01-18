@@ -116,14 +116,11 @@ int main(int argc, char **argv) {
 
         vkDevCtxt.CreateVulkanDevice();
 
-        vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig.videoFileName.c_str(), programConfig.queueId,
-                              (programConfig.outputFileName.size() == 0) ? nullptr : programConfig.outputFileName.c_str(),
-                              programConfig.forceParserType, (programConfig.enableStreamDemuxing == 1),
-                              programConfig.initialWidth, programConfig.initialHeight, programConfig.initialBitdepth,
-                              programConfig.loopCount, 0, programConfig.maxFrameCount);
+        vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig);
 
 
         displayShell->RunLoop();
+
     } else {
 
         result = vkDevCtxt.InitPhysicalDevice((VK_QUEUE_GRAPHICS_BIT |
@@ -137,11 +134,7 @@ int main(int argc, char **argv) {
 
         vkDevCtxt.CreateVulkanDevice();
 
-        vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig.videoFileName.c_str(), programConfig.queueId,
-                              (programConfig.outputFileName.size() == 0) ? nullptr : programConfig.outputFileName.c_str(),
-                              programConfig.forceParserType, (programConfig.enableStreamDemuxing == 1),
-                              programConfig.initialWidth, programConfig.initialHeight, programConfig.initialBitdepth,
-                              programConfig.loopCount, 0, programConfig.maxFrameCount);
+        vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig);
 
         const int numberOfFrames = 6;
         int ret = frameProcessor->CreateFrameData(numberOfFrames);

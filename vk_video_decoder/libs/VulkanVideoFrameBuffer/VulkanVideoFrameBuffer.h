@@ -100,6 +100,27 @@ public:
         uint32_t hasFrameCompleteSignalSemaphore : 1;
     };
 
+    struct ReferencedObjectsInfo {
+
+        // The bitstream Buffer
+        const VkVideoRefCountBase*     pBitstreamData;
+        // PPS
+        const VkVideoRefCountBase*     pStdPps;
+        // SPS
+        const VkVideoRefCountBase*     pStdSps;
+        // VPS
+        const VkVideoRefCountBase*     pStdVps;
+
+        ReferencedObjectsInfo(const VkVideoRefCountBase* pBitstreamDataRef,
+                              const VkVideoRefCountBase* pStdPpsRef,
+                              const VkVideoRefCountBase* pStdSpsRef,
+                              const VkVideoRefCountBase* pStdVpsRef = nullptr)
+        : pBitstreamData(pBitstreamDataRef)
+        , pStdPps(pStdPpsRef)
+        , pStdSps(pStdSpsRef)
+        , pStdVps(pStdVpsRef) {}
+    };
+
     struct PictureResourceInfo {
         VkImage  image;
         VkFormat imageFormat;
@@ -114,14 +135,14 @@ public:
                                   VkImageTiling            tiling,
                                   VkImageUsageFlags        usage,
                                   uint32_t                 queueFamilyIndex,
+                                  int32_t                  numImagesToPreallocate,
                                   bool                     useImageArray = false,
                                   bool                     useImageViewArray = false,
                                   bool                     useSeparateOutputImage = false,
                                   bool                     useLinearOutput = false) = 0;
 
     virtual int32_t QueuePictureForDecode(int8_t picId, VkParserDecodePictureInfo* pDecodePictureInfo,
-                                          VkSharedBaseObj<VkVideoRefCountBase>& bitstreamBuffer,
-                                          VkSharedBaseObj<VkVideoRefCountBase>& currentVkPictureParameters,
+                                          ReferencedObjectsInfo* pReferencedObjectsInfo,
                                           FrameSynchronizationInfo* pFrameSynchronizationInfo) = 0;
     virtual int32_t DequeueDecodedPicture(DecodedFrame* pDecodedFrame) = 0;
     virtual int32_t ReleaseDisplayedPicture(DecodedFrameRelease** pDecodedFramesRelease, uint32_t numFramesToRelease) = 0;

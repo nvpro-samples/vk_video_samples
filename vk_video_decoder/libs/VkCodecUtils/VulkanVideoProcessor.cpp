@@ -43,18 +43,25 @@ inline void CheckInputFile(const char* szInFilePath)
 }
 
 int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
-                                         const char* filePath,
-                                         int32_t videoQueueIndx,
-                                         const char* outputFileName,
-                                         VkVideoCodecOperationFlagBitsKHR forceCodecType,
-                                         bool enableStreamDemuxing,
-                                         int32_t defaultWidth,
-                                         int32_t defaultHeight,
-                                         int32_t defaultBitDepth,
-                                         uint32_t loopCount,
-                                         uint32_t startFrame,
-                                         int32_t  maxFrameCount)
+                                         ProgramConfig& programConfig)
 {
+
+    const char* filePath = programConfig.videoFileName.c_str();
+    int32_t videoQueueIndx =  programConfig.queueId;
+    const char* outputFileName = (programConfig.outputFileName.size() == 0) ?
+            nullptr : programConfig.outputFileName.c_str();
+    const VkVideoCodecOperationFlagBitsKHR forceCodecType = programConfig.forceParserType;
+    const bool enableStreamDemuxing = (programConfig.enableStreamDemuxing == 1);
+    const int32_t defaultWidth = programConfig.initialWidth;
+    const int32_t defaultHeight = programConfig.initialHeight;
+    const int32_t defaultBitDepth = programConfig.initialBitdepth;
+    const uint32_t loopCount = programConfig.loopCount;
+    const uint32_t startFrame = 0;
+    const int32_t  maxFrameCount = programConfig.maxFrameCount;
+    const int32_t numDecodeImagesInFlight = std::max(programConfig.numDecodeImagesInFlight, 4);
+    const int32_t numDecodeImagesToPreallocate = programConfig.numDecodeImagesToPreallocate;
+    const int32_t numBitstreamBuffersToPreallocate = std::max(programConfig.numBitstreamBuffersToPreallocate, 4);
+
     const bool verbose = false;
 
     if (vkDevCtx->GetVideoDecodeQueue(videoQueueIndx) == VkQueue()) {
@@ -101,6 +108,9 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
 
     result = VkVideoDecoder::Create(vkDevCtx, m_vkVideoFrameBuffer,
                                     videoQueueIndx, (outFile != nullptr),
+                                    numDecodeImagesInFlight,
+                                    numDecodeImagesToPreallocate,
+                                    numBitstreamBuffersToPreallocate,
                                     m_vkVideoDecoder);
     assert(result == VK_SUCCESS);
     if (result != VK_SUCCESS) {

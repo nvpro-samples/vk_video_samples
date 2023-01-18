@@ -368,6 +368,10 @@ public:
         case AV_PIX_FMT_YUV422P16BE: ///< planar YUV 4:2:2, 32bpp, (1 Cr & Cb sample per 2x1 Y samples), big-endian
             return VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR;
         case AV_PIX_FMT_YUV444P:     ///< planar YUV 4:4:4, 24bpp, (1 Cr & Cb sample per 1x1 Y samples)
+        case AV_PIX_FMT_YUV444P10BE: ///< planar YUV 4:4:4, 30bpp, (1 Cr & Cb sample per 1x1 Y samples), big-endian
+        case AV_PIX_FMT_YUV444P10LE: ///< planar YUV 4:4:4, 30bpp, (1 Cr & Cb sample per 1x1 Y samples), little-endian
+        case AV_PIX_FMT_YUV444P12BE: ///< planar YUV 4:4:4,36bpp, (1 Cr & Cb sample per 1x1 Y samples), big-endian
+        case AV_PIX_FMT_YUV444P12LE: ///< planar YUV 4:4:4,36bpp, (1 Cr & Cb sample per 1x1 Y samples), little-endian
         case AV_PIX_FMT_YUV444P16LE: ///< planar YUV 4:4:4, 48bpp, (1 Cr & Cb sample per 1x1 Y samples), little-endian
         case AV_PIX_FMT_YUV444P16BE: ///< planar YUV 4:4:4, 48bpp, (1 Cr & Cb sample per 1x1 Y samples), big-endian
             return VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;

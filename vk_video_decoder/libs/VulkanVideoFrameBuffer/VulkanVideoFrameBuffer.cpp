@@ -159,8 +159,14 @@ public:
     uint32_t m_inDisplayQueue : 1;
     uint32_t m_ownedByDisplay : 1;
     uint32_t m_recreateImage : 1;
-    VkSharedBaseObj<VkVideoRefCountBase> currentVkBitstreamBuffer;
-    VkSharedBaseObj<VkVideoRefCountBase> currentVkPictureParameters;
+    // VPS
+    VkSharedBaseObj<VkVideoRefCountBase>  stdVps;
+    // SPS
+    VkSharedBaseObj<VkVideoRefCountBase>  stdSps;
+    // PPS
+    VkSharedBaseObj<VkVideoRefCountBase>  stdPps;
+    // The bitstream Buffer
+    VkSharedBaseObj<VkVideoRefCountBase>  bitstreamData;
 
 private:
     VkImageLayout                        m_currentDpbImageLayerLayout;
@@ -375,6 +381,7 @@ public:
                                   VkImageTiling            tiling,
                                   VkImageUsageFlags        usage,
                                   uint32_t                 queueFamilyIndex,
+                                  int32_t                  numImagesToPreallocate,
                                   bool                     useImageArray = false,
                                   bool                     useImageViewArray = false,
                                   bool                     useSeparateOutputImage = false,
@@ -448,8 +455,7 @@ public:
     }
 
     virtual int32_t QueuePictureForDecode(int8_t picId, VkParserDecodePictureInfo* pDecodePictureInfo,
-                                          VkSharedBaseObj<VkVideoRefCountBase>& bitstreamBuffer,
-                                          VkSharedBaseObj<VkVideoRefCountBase>& currentVkPictureParameters,
+                                          ReferencedObjectsInfo* pReferencedObjectsInfo,
                                           FrameSynchronizationInfo* pFrameSynchronizationInfo)
     {
         assert((uint32_t)picId < m_perFrameDecodeImageSet.size());
@@ -458,8 +464,10 @@ public:
         m_perFrameDecodeImageSet[picId].m_picDispInfo = *pDecodePictureInfo;
         m_perFrameDecodeImageSet[picId].m_decodeOrder = m_frameNumInDecodeOrder++;
         m_perFrameDecodeImageSet[picId].m_inDecodeQueue = true;
-        m_perFrameDecodeImageSet[picId].currentVkBitstreamBuffer = bitstreamBuffer;
-        m_perFrameDecodeImageSet[picId].currentVkPictureParameters = currentVkPictureParameters;
+        m_perFrameDecodeImageSet[picId].stdPps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdPps);
+        m_perFrameDecodeImageSet[picId].stdSps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdSps);
+        m_perFrameDecodeImageSet[picId].stdVps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdVps);
+        m_perFrameDecodeImageSet[picId].bitstreamData = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pBitstreamData);
 
         if (m_debug) {
             std::cout << "==> Queue Decode Picture picIdx: " << (uint32_t)picId
@@ -571,8 +579,10 @@ public:
             assert(m_ownedByDisplayMask & (1 << picId));
             m_ownedByDisplayMask &= ~(1 << picId);
             m_perFrameDecodeImageSet[picId].m_inDecodeQueue = false;
-            m_perFrameDecodeImageSet[picId].currentVkBitstreamBuffer = nullptr;
-            m_perFrameDecodeImageSet[picId].currentVkPictureParameters = nullptr;
+            m_perFrameDecodeImageSet[picId].bitstreamData = nullptr;
+            m_perFrameDecodeImageSet[picId].stdPps = nullptr;
+            m_perFrameDecodeImageSet[picId].stdSps = nullptr;
+            m_perFrameDecodeImageSet[picId].stdVps = nullptr;
             m_perFrameDecodeImageSet[picId].m_ownedByDisplay = false;
             m_perFrameDecodeImageSet[picId].Release();
 
@@ -903,8 +913,10 @@ VkResult NvPerFrameDecodeResources::init(const VulkanDeviceContext* vkDevCtx)
 
 void NvPerFrameDecodeResources::Deinit()
 {
-    currentVkPictureParameters = nullptr;
-    currentVkBitstreamBuffer = nullptr;
+    bitstreamData = nullptr;
+    stdPps = nullptr;
+    stdSps = nullptr;
+    stdVps = nullptr;
 
     if (m_vkDevCtx == nullptr) {
         assert ((m_frameCompleteFence == VK_NULL_HANDLE) &&

@@ -34,7 +34,12 @@ struct VkParserPerFrameDecodeParameters {
         MAX_DPB_REF_AND_SETUP_SLOTS = MAX_DPB_REF_SLOTS + 1, // plus 1 for the current picture (h.264 only)
     };
     int currPicIdx; /** Output index of the current picture                       */
-    StdVideoPictureParametersSet* pCurrentPictureParameters;
+    // VPS
+    const StdVideoPictureParametersSet*     pStdVps;
+    // SPS
+    const StdVideoPictureParametersSet*     pStdSps;
+    // PPS
+    const StdVideoPictureParametersSet*     pStdPps;
     // Bitstream data
     uint32_t firstSliceIndex;
     uint32_t numSlices;

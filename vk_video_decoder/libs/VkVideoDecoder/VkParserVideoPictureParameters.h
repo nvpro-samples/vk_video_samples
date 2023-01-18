@@ -1,5 +1,5 @@
 /*
-* Copyright 2021 NVIDIA Corporation.
+* Copyright 2021 - 2023 NVIDIA Corporation.
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -18,6 +18,15 @@
 #define _VKVIDEODECODER_VKPARSERVIDEOPICTUREPARAMETERS_H_
 
 #include <bitset>
+#include <assert.h>
+#include <atomic>
+#include <queue>
+#include <unordered_map>
+#include "VkVideoCore/VkVideoRefCountBase.h"
+#include "VkCodecUtils/VulkanDeviceContext.h"
+#include "vkvideo_parser/StdVideoPictureParametersSet.h"
+#include "VkVideoCore/VkVideoCoreProfile.h"
+#include "VkCodecUtils/VulkanVideoSession.h"
 
 class VkParserVideoPictureParameters : public VkVideoRefCountBase {
 public:
@@ -44,28 +53,41 @@ public:
         return nullptr;
     }
 
-    static VkParserVideoPictureParameters* Create(const VulkanDeviceContext* vkDevCtx,
-                                                  VkSharedBaseObj<NvVideoSession>& videoSession,
-                                                  const StdVideoPictureParametersSet* pVpsStdPictureParametersSet,
-                                                  const StdVideoPictureParametersSet* pSpsStdPictureParametersSet,
-                                                  const StdVideoPictureParametersSet* pPpsStdPictureParametersSet,
-                                                  VkParserVideoPictureParameters* pTemplate);
+    static VkResult AddPictureParameters(const VulkanDeviceContext* vkDevCtx,
+                                         VkSharedBaseObj<VulkanVideoSession>& videoSession,
+                                         VkSharedBaseObj<StdVideoPictureParametersSet>& stdPictureParametersSet,
+                                         VkSharedBaseObj<VkParserVideoPictureParameters>& currentVideoPictureParameters);
+
+    static bool CheckStdObjectBeforeUpdate(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet,
+                                           VkSharedBaseObj<VkParserVideoPictureParameters>& currentVideoPictureParameters);
+
+    static VkResult Create(const VulkanDeviceContext* vkDevCtx,
+                           VkSharedBaseObj<VkParserVideoPictureParameters>& templatePictureParameters,
+                           VkSharedBaseObj<VkParserVideoPictureParameters>& videoPictureParameters);
 
     static int32_t PopulateH264UpdateFields(const StdVideoPictureParametersSet* pStdPictureParametersSet,
-                                     VkVideoDecodeH264SessionParametersAddInfoKHR& h264SessionParametersAddInfo);
+                                            VkVideoDecodeH264SessionParametersAddInfoKHR& h264SessionParametersAddInfo);
 
     static int32_t PopulateH265UpdateFields(const StdVideoPictureParametersSet* pStdPictureParametersSet,
-                                     VkVideoDecodeH265SessionParametersAddInfoKHR& h265SessionParametersAddInfo);
+                                            VkVideoDecodeH265SessionParametersAddInfoKHR& h265SessionParametersAddInfo);
 
-    VkResult Update(const StdVideoPictureParametersSet* pVpsStdPictureParametersSet,
-                    const StdVideoPictureParametersSet* pSpsStdPictureParametersSet,
-                    const StdVideoPictureParametersSet* pPpsStdPictureParametersSet);
+    VkResult CreateParametersObject(const VulkanDeviceContext* vkDevCtx,
+                                    VkSharedBaseObj<VulkanVideoSession>& videoSession,
+                                    const StdVideoPictureParametersSet* pStdVideoPictureParametersSet,
+                                    VkParserVideoPictureParameters* pTemplatePictureParameters);
+
+    VkResult UpdateParametersObject(const StdVideoPictureParametersSet* pStdVideoPictureParametersSet);
+
+    VkResult HandleNewPictureParametersSet(VkSharedBaseObj<VulkanVideoSession>& videoSession,
+                                           const StdVideoPictureParametersSet* pStdVideoPictureParametersSet);
 
     operator VkVideoSessionParametersKHR() const {
+        assert(m_sessionParameters != VK_NULL_HANDLE);
         return m_sessionParameters;
     }
 
     VkVideoSessionParametersKHR GetVideoSessionParametersKHR() const {
+        assert(m_sessionParameters != VK_NULL_HANDLE);
         return m_sessionParameters;
     }
 
@@ -84,14 +106,21 @@ public:
     }
 
 
+    bool UpdatePictureParametersHierarchy(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersObject);
+
+    VkResult AddPictureParametersToQueue(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet);
+    int32_t FlushPictureParametersQueue(VkSharedBaseObj<VulkanVideoSession>& videoSession);
+
 protected:
-    VkParserVideoPictureParameters(const VulkanDeviceContext* vkDevCtx)
+    VkParserVideoPictureParameters(const VulkanDeviceContext* vkDevCtx,
+                                   VkSharedBaseObj<VkParserVideoPictureParameters>& templatePictureParameters)
         : m_classId(m_refClassId),
           m_Id(-1),
           m_refCount(0),
           m_vkDevCtx(vkDevCtx),
           m_videoSession(),
-          m_sessionParameters() { }
+          m_sessionParameters(),
+          m_templatePictureParameters(templatePictureParameters) { }
 
     virtual ~VkParserVideoPictureParameters();
 
@@ -101,12 +130,16 @@ private:
     const char*                     m_classId;
     int32_t                         m_Id;
     std::atomic<int32_t>            m_refCount;
-    const VulkanDeviceContext* m_vkDevCtx;
-    VkSharedBaseObj<NvVideoSession> m_videoSession;
+    const VulkanDeviceContext*      m_vkDevCtx;
+    VkSharedBaseObj<VulkanVideoSession> m_videoSession;
     VkVideoSessionParametersKHR     m_sessionParameters;
     std::bitset<MAX_VPS_IDS>        m_vpsIdsUsed;
     std::bitset<MAX_SPS_IDS>        m_spsIdsUsed;
     std::bitset<MAX_PPS_IDS>        m_ppsIdsUsed;
+    VkSharedBaseObj<VkParserVideoPictureParameters> m_templatePictureParameters; // needed only for the create
+
+    std::queue<VkSharedBaseObj<StdVideoPictureParametersSet>>  m_pictureParametersQueue;
+    VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastPictParamsQueue[StdVideoPictureParametersSet::NUM_OF_TYPES];
 };
 
 #endif /* _VKVIDEODECODER_VKPARSERVIDEOPICTUREPARAMETERS_H_ */

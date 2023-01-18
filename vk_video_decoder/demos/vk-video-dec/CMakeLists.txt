@@ -33,6 +33,8 @@ set(sources
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/Shell.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoDecoder/VkVideoDecoder.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoDecoder/VkVideoDecoder.h
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoDecoder/VkParserVideoPictureParameters.h
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoDecoder/VkParserVideoPictureParameters.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoDecoder/VulkanBistreamBufferImpl.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoDecoder/VulkanBistreamBufferImpl.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.h
@@ -48,8 +50,8 @@ set(sources
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VkImageResource.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VkImageResource.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/NvVideoSession.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/NvVideoSession.h
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoSession.cpp
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoSession.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/FrameProcessor.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoProcessor.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoProcessor.h

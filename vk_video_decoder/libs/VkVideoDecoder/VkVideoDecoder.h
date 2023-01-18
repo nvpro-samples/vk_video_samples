@@ -32,7 +32,7 @@
 #include "VkCodecUtils/Helpers.h"
 #include "VkVideoDecoder/VulkanBistreamBufferImpl.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
-#include "VkCodecUtils/NvVideoSession.h"
+#include "VkCodecUtils/VulkanVideoSession.h"
 #include "VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.h"
 #include "VulkanVideoParser.h"
 #include "VulkanVideoParserIf.h"
@@ -152,12 +152,13 @@ public:
                            VkSharedBaseObj<VulkanVideoFrameBuffer>& videoFrameBuffer,
                            int32_t videoQueueIndx = 0,
                            bool useLinearOutput = false,
+                           int32_t numDecodeImagesInFlight = 8,
+                           int32_t numDecodeImagesToPreallocate = -1, // preallocate the maximum required
+                           int32_t numBitstreamBuffersToPreallocate = 8,
                            VkSharedBaseObj<VkVideoDecoder>& vkVideoDecoder = invalidVkDecoder);
 
     static const char* GetVideoCodecString(VkVideoCodecOperationFlagBitsKHR codec);
     static const char* GetVideoChromaFormatString(VkVideoChromaSubsamplingFlagBitsKHR chromaFormat);
-    static uint32_t GetNumDecodeSurfaces(VkVideoCodecOperationFlagBitsKHR codec, uint32_t minNumDecodeSurfaces, uint32_t width,
-        uint32_t height);
 
     virtual int32_t AddRef();
     virtual int32_t Release();
@@ -176,26 +177,35 @@ public:
     */
     virtual int32_t StartVideoSequence(VkParserDetectedVideoFormat* pVideoFormat);
 
-    virtual bool UpdatePictureParameters(VkPictureParameters* pPictureParameters,
-                                         VkSharedBaseObj<VkVideoRefCountBase>& pictureParametersObject,
-                                         uint64_t updateSequenceCount);
+    virtual bool UpdatePictureParameters(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersObject,
+                                         VkSharedBaseObj<VkVideoRefCountBase>& client);
 
     /**
      *   @brief  This callback function gets called when a picture is ready to be decoded.
      */
     virtual int32_t DecodePictureWithParameters(VkParserPerFrameDecodeParameters* pPicParams, VkParserDecodePictureInfo* pDecodePictureInfo);
 
-    virtual size_t GetBitstreamBuffer(size_t size, const uint8_t* pInitializeBufferMemory, size_t initializeBufferMemorySize,
+    virtual size_t GetBitstreamBuffer(size_t size,
+                                      size_t minBitstreamBufferOffsetAlignment,
+                                      size_t minBitstreamBufferSizeAlignment,
+                                      const uint8_t* pInitializeBufferMemory,
+                                      size_t initializeBufferMemorySize,
                                       VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer);
 private:
 
     VkVideoDecoder(const VulkanDeviceContext* vkDevCtx,
                    VkSharedBaseObj<VulkanVideoFrameBuffer>& videoFrameBuffer,
-                   int32_t videoQueueIndx = 0, bool useLinearOutput = false)
+                   int32_t videoQueueIndx = 0,
+                   bool useLinearOutput = false,
+                   int32_t numDecodeImagesInFlight = 8,
+                   int32_t numDecodeImagesToPreallocate = -1, // preallocate the maximum required
+                   int32_t numBitstreamBuffersToPreallocate = 8)
         : m_vkDevCtx(vkDevCtx)
         , m_defaultVideoQueueIndx(videoQueueIndx)
         , m_refCount(0)
         , m_videoFormat {}
+        , m_numDecodeImagesInFlight(numDecodeImagesInFlight)
+        , m_numDecodeImagesToPreallocate(numDecodeImagesToPreallocate)
         , m_numDecodeSurfaces()
         , m_maxDecodeFramesCount(0)
         , m_capabilityFlags()
@@ -203,13 +213,13 @@ private:
         , m_videoFrameBuffer(videoFrameBuffer)
         , m_decodeFramesData(vkDevCtx)
         , m_decodePicCount(0)
-        , m_lastIdInQueue{-1, -1, -1}
         , m_useImageArray(false)
         , m_useImageViewArray(false)
         , m_useSeparateOutputImages(useLinearOutput)
         , m_useLinearOutput(useLinearOutput)
         , m_resetDecoder(true)
         , m_dumpDecodeData(false)
+        , m_numBitstreamBuffersToPreallocate(numBitstreamBuffersToPreallocate)
         , m_maxStreamBufferSize()
     {
 
@@ -230,15 +240,6 @@ private:
 
     virtual ~VkVideoDecoder();
     void Deinitialize();
-
-    VkParserVideoPictureParameters*  AddPictureParameters(VkSharedBaseObj<StdVideoPictureParametersSet>& vpsStdPictureParametersSet,
-                                                          VkSharedBaseObj<StdVideoPictureParametersSet>& spsStdPictureParametersSet,
-                                                          VkSharedBaseObj<StdVideoPictureParametersSet>& ppsStdPictureParametersSet);
-
-    bool CheckStdObjectBeforeUpdate(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet);
-    VkParserVideoPictureParameters* CheckStdObjectAfterUpdate(VkSharedBaseObj<StdVideoPictureParametersSet>& stdPictureParametersSet, VkParserVideoPictureParameters* pNewPictureParametersObject);
-    uint32_t AddPictureParametersToQueue(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet);
-    uint32_t FlushPictureParametersQueue();
 
     int CopyOptimalToLinearImage(VkCommandBuffer& commandBuffer,
                                  VkVideoPictureResourceInfoKHR& srcPictureResource,
@@ -263,24 +264,24 @@ private:
     std::atomic<int32_t>        m_refCount;
     // dimension of the output
     VkParserDetectedVideoFormat m_videoFormat;
+    int32_t                     m_numDecodeImagesInFlight; // driven by how deep is the decoder queue
+    int32_t                     m_numDecodeImagesToPreallocate; // -1 means pre-allocate all required images on setup
     uint32_t                    m_numDecodeSurfaces;
     uint32_t                    m_maxDecodeFramesCount;
 
     VkVideoDecodeCapabilityFlagBitsKHR      m_capabilityFlags;
-    VkSharedBaseObj<NvVideoSession>         m_videoSession;
+    VkSharedBaseObj<VulkanVideoSession>     m_videoSession;
     VkSharedBaseObj<VulkanVideoFrameBuffer> m_videoFrameBuffer;
     NvVkDecodeFrameData                     m_decodeFramesData;
 
-    int32_t                                                    m_decodePicCount;
-    int32_t                                                    m_lastIdInQueue[StdVideoPictureParametersSet::NUM_OF_TYPES];
-    std::queue<VkSharedBaseObj<StdVideoPictureParametersSet>>  m_pictureParametersQueue;
-    VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastPictParamsQueue[StdVideoPictureParametersSet::NUM_OF_TYPES];
-    VkSharedBaseObj<VkParserVideoPictureParameters>            m_currentPictureParameters;
+    int32_t                                          m_decodePicCount;
+    VkSharedBaseObj<VkParserVideoPictureParameters>  m_currentPictureParameters;
     uint32_t m_useImageArray : 1;
     uint32_t m_useImageViewArray : 1;
     uint32_t m_useSeparateOutputImages : 1;
     uint32_t m_useLinearOutput : 1;
     uint32_t m_resetDecoder : 1;
     uint32_t m_dumpDecodeData : 1;
+    int32_t  m_numBitstreamBuffersToPreallocate;
     size_t   m_maxStreamBufferSize;
 };

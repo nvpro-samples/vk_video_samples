@@ -19,6 +19,7 @@
 
 #include "NvCodecUtils/VideoStreamDemuxer.h"
 #include "VkVideoDecoder/VkVideoDecoder.h"
+#include "VkCodecUtils/ProgramConfig.h"
 
 class VkFrameVideoToFile {
 
@@ -123,17 +124,7 @@ public:
                            VkSharedBaseObj<VulkanVideoProcessor>& vulkanVideoProcessor = invalidVulkanVideoProcessor);
 
     int32_t Initialize(const VulkanDeviceContext* vkDevCtx,
-                       const char* filePath,
-                       int32_t videoQueueIndx = 0,
-                       const char* outputFileName = nullptr,
-                       VkVideoCodecOperationFlagBitsKHR forceCodecType = VK_VIDEO_CODEC_OPERATION_NONE_KHR,
-                       bool enableStreamDemuxing = true,
-                       int32_t defaultWidth = 1920,
-                       int32_t defaultHeight = 1080,
-                       int32_t defaultBitDepth = 12,
-                       uint32_t loopCount = 1,
-                       uint32_t startFrame = 0,
-                       int32_t  maxFrameCount = -1);
+                       ProgramConfig& programConfig);
 
     VkFormat GetFrameImageFormat(int32_t* pWidth = NULL, int32_t* pHeight = NULL, int32_t* pBitDepth = NULL);
 
