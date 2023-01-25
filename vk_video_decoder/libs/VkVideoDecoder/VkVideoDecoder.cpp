@@ -248,12 +248,8 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     }
     m_maxDecodeFramesCount = m_numDecodeSurfaces;
 
-    m_decodeFramesData.resize(m_maxDecodeFramesCount,
-                              codedExtent.width,
-                              codedExtent.height,
-                              pVideoFormat->chromaSubsampling,
-                              videoCapabilities.minBitstreamBufferOffsetAlignment,
-                              videoCapabilities.minBitstreamBufferSizeAlignment);
+    // There will be no more than 32 frames in the queue.
+    m_decodeFramesData.resize(std::max<uint32_t>(m_maxDecodeFramesCount, 32));
 
 
     int32_t availableBuffers = (int32_t)m_decodeFramesData.GetBitstreamBuffersQueue().

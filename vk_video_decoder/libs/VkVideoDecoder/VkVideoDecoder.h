@@ -62,7 +62,6 @@ class NvVkDecodeFrameData {
 public:
     NvVkDecodeFrameData(const VulkanDeviceContext* vkDevCtx)
        : m_vkDevCtx(vkDevCtx),
-         m_maxCodedWidth(),
          m_videoCommandPool(),
          m_bitstreamBuffersQueue() {}
 
@@ -80,14 +79,11 @@ public:
         deinit();
     }
 
-    size_t resize(size_t maxDecodeFramesCount,
-                  uint32_t maxCodedWidth,uint32_t maxCodedHeight,
-                  VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling,
-                  VkDeviceSize minBitstreamBufferOffsetAlignment,
-                  VkDeviceSize minBitstreamBufferSizeAlignment) {
+    size_t resize(size_t maxDecodeFramesCount) {
 
         assert(m_vkDevCtx);
 
+        size_t allocatedCommandBuffers = 0;
         if (!m_videoCommandPool) {
             VkCommandPoolCreateInfo cmdPoolInfo = {};
             cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -98,25 +94,27 @@ public:
             if (result != VK_SUCCESS) {
                 fprintf(stderr, "\nERROR: CreateCommandPool() result: 0x%x\n", result);
             }
+
+            VkCommandBufferAllocateInfo cmdInfo = {};
+            cmdInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            cmdInfo.commandBufferCount = (uint32_t)maxDecodeFramesCount;
+            cmdInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            cmdInfo.commandPool = m_videoCommandPool;
+
+            m_commandBuffers.resize(maxDecodeFramesCount);
+            result = m_vkDevCtx->AllocateCommandBuffers(*m_vkDevCtx, &cmdInfo, &m_commandBuffers[0]);
+            assert(result == VK_SUCCESS);
+            if (result != VK_SUCCESS) {
+                fprintf(stderr, "\nERROR: AllocateCommandBuffers() result: 0x%x\n", result);
+            } else {
+                allocatedCommandBuffers = maxDecodeFramesCount;
+            }
+        } else {
+            allocatedCommandBuffers = m_commandBuffers.size();
+            assert(maxDecodeFramesCount <= allocatedCommandBuffers);
         }
 
-        const size_t oldCommandBuffersCount = m_commandBuffers.size();
-        VkCommandBufferAllocateInfo cmdInfo = {};
-        cmdInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        cmdInfo.commandBufferCount = (uint32_t)(maxDecodeFramesCount - oldCommandBuffersCount);
-        cmdInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        cmdInfo.commandPool = m_videoCommandPool;
-
-        m_commandBuffers.resize(maxDecodeFramesCount);
-        VkResult result = m_vkDevCtx->AllocateCommandBuffers(*m_vkDevCtx, &cmdInfo, &m_commandBuffers[oldCommandBuffersCount]);
-        assert(result == VK_SUCCESS);
-        if (result != VK_SUCCESS) {
-            fprintf(stderr, "\nERROR: AllocateCommandBuffers() result: 0x%x\n", result);
-        }
-
-        m_maxCodedWidth = maxCodedWidth;
-
-        return oldCommandBuffersCount;
+        return allocatedCommandBuffers;
     }
 
     VkCommandBuffer GetCommandBuffer(uint32_t slot) {
@@ -132,7 +130,6 @@ public:
 
 private:
     const VulkanDeviceContext*                                m_vkDevCtx;
-    uint32_t                                                  m_maxCodedWidth;
     VkCommandPool                                             m_videoCommandPool;
     std::vector<VkCommandBuffer>                              m_commandBuffers;
     VulkanBitstreamBufferPool                                 m_bitstreamBuffersQueue;
