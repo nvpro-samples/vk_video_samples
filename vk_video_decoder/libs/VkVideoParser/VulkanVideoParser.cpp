@@ -1111,8 +1111,7 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
         assert(!"m_pDecoderHandler is NULL");
     }
 
-    m_maxNumDpbSlots = configDpbSlots;
-    m_dpb.Init(configDpbSlots, sequenceUpdate /* reconfigure the DPB size if true */);
+    m_maxNumDpbSlots = m_dpb.Init(configDpbSlots, sequenceUpdate /* reconfigure the DPB size if true */);
 
     return m_maxNumDecodeSurfaces;
 }
