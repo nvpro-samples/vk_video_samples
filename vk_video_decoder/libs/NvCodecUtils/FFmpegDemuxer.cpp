@@ -357,6 +357,7 @@ public:
     virtual VkVideoChromaSubsamplingFlagsKHR GetChromaSubsampling() const
     {
         switch (format) {
+        case AV_PIX_FMT_YUVJ420P:
         case AV_PIX_FMT_YUV420P:     ///< planar YUV 4:2:0, 12bpp, (1 Cr & Cb sample per 2x2 Y samples)
         case AV_PIX_FMT_YUV420P10LE: ///< planar YUV 4:2:0, 15bpp, (1 Cr & Cb sample per 2x2 Y samples), little-endian
         case AV_PIX_FMT_YUV420P16LE: ///< planar YUV 4:2:0, 24bpp, (1 Cr & Cb sample per 2x2 Y samples), little-endian
