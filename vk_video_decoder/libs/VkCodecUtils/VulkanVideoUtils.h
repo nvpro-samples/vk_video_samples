@@ -752,7 +752,9 @@ public:
 
     // initialize descriptor set
     VkResult CreateDescriptorSet(const VulkanDeviceContext* vkDevCtx,
-            uint32_t descriptorCount = 1, const VkSampler* pImmutableSamplers = nullptr);
+                                 uint32_t descriptorCount = 1,
+                                 uint32_t maxCombinedImageSamplerDescriptorCount = 4,
+                                 const VkSampler* pImmutableSamplers = nullptr);
 
     // initialize descriptor set
     VkResult CreateDescriptorSet(const VulkanDeviceContext* vkDevCtx, VkDescriptorPool allocPool, VkDescriptorSetLayout* dscLayouts, uint32_t descriptorSetCount = 1);

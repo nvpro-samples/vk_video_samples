@@ -1145,7 +1145,9 @@ VkResult VulkanDescriptorSet::CreateFragmentShaderLayouts(const uint32_t* setIds
 
 // initialize descriptor set
 VkResult VulkanDescriptorSet::CreateDescriptorSet(const VulkanDeviceContext* vkDevCtx,
-        uint32_t descriptorCount, const VkSampler* pImmutableSamplers)
+                                                  uint32_t descriptorCount,
+                                                  uint32_t maxCombinedImageSamplerDescriptorCount,
+                                                  const VkSampler* pImmutableSamplers)
 {
     m_vkDevCtx = vkDevCtx;
 
@@ -1155,13 +1157,15 @@ VkResult VulkanDescriptorSet::CreateDescriptorSet(const VulkanDeviceContext* vkD
 
     descriptorSetLayoutBinding.binding = 0;
     descriptorSetLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorSetLayoutBinding.descriptorCount = descriptorCount; // Only one image at the time.
+    descriptorSetLayoutBinding.descriptorCount = descriptorCount;
     descriptorSetLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    descriptorSetLayoutBinding.pImmutableSamplers = pImmutableSamplers; // we must use ImmutableSamplers here because of a potential of using ycbcr.
+    // the pImmutableSamplers array must be of descriptorCount size.
+    // we must use ImmutableSamplers here because of a potential of using ycbcr.
+    descriptorSetLayoutBinding.pImmutableSamplers = pImmutableSamplers;
 
     descriptorSetLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     descriptorSetLayoutCreateInfo.pNext = nullptr;
-    descriptorSetLayoutCreateInfo.bindingCount = descriptorCount;
+    descriptorSetLayoutCreateInfo.bindingCount = 1;
     descriptorSetLayoutCreateInfo.pBindings = &descriptorSetLayoutBinding;
     CALL_VK(m_vkDevCtx->CreateDescriptorSetLayout(*m_vkDevCtx,
                                         &descriptorSetLayoutCreateInfo, nullptr,
@@ -1185,20 +1189,19 @@ VkResult VulkanDescriptorSet::CreateDescriptorSet(const VulkanDeviceContext* vkD
     push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pipelineLayoutCreateInfo.pPushConstantRanges = &push_constant;
     pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
-
     CALL_VK(m_vkDevCtx->CreatePipelineLayout(*m_vkDevCtx, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout));
 
     if (descPool == VkDescriptorPool(0)) {
 
         VkDescriptorPoolSize type_count = VkDescriptorPoolSize();
         type_count.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        type_count.descriptorCount = descriptorCount;
+        type_count.descriptorCount = descriptorCount * maxCombinedImageSamplerDescriptorCount;
 
         VkDescriptorPoolCreateInfo descriptor_pool = VkDescriptorPoolCreateInfo();
         descriptor_pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         descriptor_pool.pNext = nullptr;
         descriptor_pool.maxSets = 1;
-        descriptor_pool.poolSizeCount = descriptorCount;
+        descriptor_pool.poolSizeCount = 1;
         descriptor_pool.pPoolSizes = &type_count;
         CALL_VK(m_vkDevCtx->CreateDescriptorPool(*m_vkDevCtx, &descriptor_pool, nullptr, &descPool));
     }
@@ -1207,7 +1210,7 @@ VkResult VulkanDescriptorSet::CreateDescriptorSet(const VulkanDeviceContext* vkD
     alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     alloc_info.pNext = nullptr;
     alloc_info.descriptorPool = descPool;
-    alloc_info.descriptorSetCount = descriptorCount;
+    alloc_info.descriptorSetCount = 1;
     alloc_info.pSetLayouts = &dscLayout;
     CALL_VK(m_vkDevCtx->AllocateDescriptorSets(*m_vkDevCtx, &alloc_info, &descSet));
 
@@ -1580,8 +1583,31 @@ VkResult VulkanRenderInfo::UpdatePerDrawContexts(VulkanPerDrawContext* pPerDrawC
             pSamplerYcbcrConversionCreateInfo);
 
     LOG(INFO) << "VkVideoUtils: " << "CreateDescriptorSet " << pPerDrawContext->contextIndex;
-    VkSampler immutableSamplers = pPerDrawContext->samplerYcbcrConversion.GetSampler();
-    pPerDrawContext->bufferDescriptorSet.CreateDescriptorSet(m_vkDevCtx, 1, &immutableSamplers);
+
+    VkSamplerYcbcrConversionImageFormatProperties samplerYcbcrConversionImageFormatProperties =
+                                                { VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_IMAGE_FORMAT_PROPERTIES };
+
+    VkImageFormatProperties2 imageFormatProperties = { VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2,
+                                                       &samplerYcbcrConversionImageFormatProperties };
+
+    const VkPhysicalDeviceImageFormatInfo2 imageFormatInfo =
+            VkPhysicalDeviceImageFormatInfo2 { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2, nullptr,
+                                               pSamplerYcbcrConversionCreateInfo->format,
+                                               VK_IMAGE_TYPE_2D,
+                                               VK_IMAGE_TILING_OPTIMAL,
+                                               VK_IMAGE_USAGE_SAMPLED_BIT,
+                                               0 };
+
+    m_vkDevCtx->GetPhysicalDeviceImageFormatProperties2(m_vkDevCtx->getPhysicalDevice(),
+                                                        &imageFormatInfo, &imageFormatProperties);
+
+    uint32_t combinedImageSamplerDescriptorCount = samplerYcbcrConversionImageFormatProperties.combinedImageSamplerDescriptorCount;
+    VkSampler immutableSampler = pPerDrawContext->samplerYcbcrConversion.GetSampler();
+
+    pPerDrawContext->bufferDescriptorSet.CreateDescriptorSet(m_vkDevCtx,
+                                                             1, // descriptorCount: only one image at the time.
+                                                             combinedImageSamplerDescriptorCount,
+                                                             &immutableSampler);
 
     LOG(INFO) << "VkVideoUtils: " << "CreateGraphicsPipeline " << pPerDrawContext->contextIndex;
     // Create graphics pipeline
