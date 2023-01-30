@@ -414,6 +414,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     m_vkDevCtx->BeginCommandBuffer(frameDataSlot.commandBuffer, &beginInfo);
     VkVideoBeginCodingInfoKHR decodeBeginInfo = { VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR };
     // CmdResetQueryPool are NOT Supported yet.
+    decodeBeginInfo.pNext = pPicParams->beginCodingInfoPictureParametersExt;
 
     decodeBeginInfo.videoSession = m_videoSession->GetVideoSession();
 
@@ -524,36 +525,41 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     frameSynchronizationInfo.hasFrameCompleteSignalFence = true;
     frameSynchronizationInfo.hasFrameCompleteSignalSemaphore = true;
 
-    VkSharedBaseObj<VkVideoRefCountBase> currentVkPictureParameters;
-    bool valid = pPicParams->pStdPps->GetClientObject(currentVkPictureParameters);
-    assert(currentVkPictureParameters && valid);
-    if (!(currentVkPictureParameters && valid)) {
-        return -1;
-    }
-    VkParserVideoPictureParameters* pOwnerPictureParameters =
-            VkParserVideoPictureParameters::VideoPictureParametersFromBase(currentVkPictureParameters);
-    assert(pOwnerPictureParameters);
-    assert(pOwnerPictureParameters->GetId() <= m_currentPictureParameters->GetId());
-    int32_t ret = pOwnerPictureParameters->FlushPictureParametersQueue(m_videoSession);
-    assert(ret >= 0);
-    if (!(ret >= 0)) {
-        return -1;
-    }
-    bool isSps = false;
-    int32_t spsId = pPicParams->pStdPps->GetSpsId(isSps);
-    assert(!isSps);
-    assert(spsId >= 0);
-    assert(pOwnerPictureParameters->HasSpsId(spsId));
-    bool isPps = false;
-    int32_t ppsId =  pPicParams->pStdPps->GetPpsId(isPps);
-    assert(isPps);
-    assert(ppsId >= 0);
-    assert(pOwnerPictureParameters->HasPpsId(ppsId));
+    if (pPicParams->useInlinedPictureParameters == false) {
+        // out of band parameters
+        VkSharedBaseObj<VkVideoRefCountBase> currentVkPictureParameters;
+        bool valid = pPicParams->pStdPps->GetClientObject(currentVkPictureParameters);
+        assert(currentVkPictureParameters && valid);
+        if (!(currentVkPictureParameters && valid)) {
+            return -1;
+        }
+        VkParserVideoPictureParameters* pOwnerPictureParameters =
+                VkParserVideoPictureParameters::VideoPictureParametersFromBase(currentVkPictureParameters);
+        assert(pOwnerPictureParameters);
+        assert(pOwnerPictureParameters->GetId() <= m_currentPictureParameters->GetId());
+        int32_t ret = pOwnerPictureParameters->FlushPictureParametersQueue(m_videoSession);
+        assert(ret >= 0);
+        if (!(ret >= 0)) {
+            return -1;
+        }
+        bool isSps = false;
+        int32_t spsId = pPicParams->pStdPps->GetSpsId(isSps);
+        assert(!isSps);
+        assert(spsId >= 0);
+        assert(pOwnerPictureParameters->HasSpsId(spsId));
+        bool isPps = false;
+        int32_t ppsId =  pPicParams->pStdPps->GetPpsId(isPps);
+        assert(isPps);
+        assert(ppsId >= 0);
+        assert(pOwnerPictureParameters->HasPpsId(ppsId));
 
-    decodeBeginInfo.videoSessionParameters = *pOwnerPictureParameters;
+        decodeBeginInfo.videoSessionParameters = *pOwnerPictureParameters;
 
-    if (m_dumpDecodeData) {
-        std::cout << "Using object " << decodeBeginInfo.videoSessionParameters << " with ID: (" << pOwnerPictureParameters->GetId() << ")" << " for SPS: " <<  spsId << ", PPS: " << ppsId << std::endl;
+        if (m_dumpDecodeData) {
+            std::cout << "Using object " << decodeBeginInfo.videoSessionParameters << " with ID: (" << pOwnerPictureParameters->GetId() << ")" << " for SPS: " <<  spsId << ", PPS: " << ppsId << std::endl;
+        }
+    } else {
+        decodeBeginInfo.videoSessionParameters = VK_NULL_HANDLE;
     }
 
     VulkanVideoFrameBuffer::ReferencedObjectsInfo referencedObjectsInfo(pPicParams->bitstreamData,

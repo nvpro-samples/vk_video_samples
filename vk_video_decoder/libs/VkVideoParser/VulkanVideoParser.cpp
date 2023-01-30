@@ -615,7 +615,8 @@ protected:
     uint32_t m_dpbSlotsMask;
     uint32_t m_fieldPicFlagMask;
     DpbSlots m_dpb;
-    uint32_t m_outOfBandPictureParameters;
+    uint32_t m_outOfBandPictureParameters : 1;
+    uint32_t m_inlinedPictureParametersUseBeginCoding : 1;
     int8_t m_pictureToDpbSlotMap[MAX_FRM_CNT];
 
 public:
@@ -797,7 +798,8 @@ VulkanVideoParser::VulkanVideoParser(VkVideoCodecOperationFlagBitsKHR codecType,
     , m_dpbSlotsMask(0)
     , m_fieldPicFlagMask(0)
     , m_dpb(3)
-    , m_outOfBandPictureParameters(false)
+    , m_outOfBandPictureParameters(true)
+    , m_inlinedPictureParametersUseBeginCoding(false)
 {
     memset(&m_nvsi, 0, sizeof(m_nvsi));
     for (uint32_t picId = 0; picId < MAX_FRM_CNT; picId++) {
@@ -1733,7 +1735,13 @@ bool VulkanVideoParser::DecodePicture(
             h264.pictureParameters.pStdSPSs = pin->pStdSps->GetStdH264Sps();
             h264.pictureParameters.stdPPSCount = 1;
             h264.pictureParameters.pStdPPSs = pin->pStdPps->GetStdH264Pps();
-            pPictureInfo->pNext = &h264.pictureParameters;
+            if (m_inlinedPictureParametersUseBeginCoding) {
+                pCurrFrameDecParams->beginCodingInfoPictureParametersExt = &h264.pictureParameters;
+                pPictureInfo->pNext = nullptr;
+            } else {
+                pPictureInfo->pNext = &h264.pictureParameters;
+            }
+            pCurrFrameDecParams->useInlinedPictureParameters = true;
         } else {
             pPictureInfo->pNext = nullptr;
         }
@@ -1827,7 +1835,7 @@ bool VulkanVideoParser::DecodePicture(
         pPictureInfo->sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PICTURE_INFO_KHR;
 
         if (!m_outOfBandPictureParameters) {
-            // In-band h264 Picture Parameters for testing
+            // In-band h265 Picture Parameters for testing
             hevc.pictureParameters.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_ADD_INFO_KHR;
             hevc.pictureParameters.stdVPSCount = 1;
             hevc.pictureParameters.pStdVPSs = pin->pStdVps->GetStdH265Vps();
@@ -1835,7 +1843,13 @@ bool VulkanVideoParser::DecodePicture(
             hevc.pictureParameters.pStdSPSs = pin->pStdSps->GetStdH265Sps();
             hevc.pictureParameters.stdPPSCount = 1;
             hevc.pictureParameters.pStdPPSs = pin->pStdPps->GetStdH265Pps();
-            pPictureInfo->pNext = &hevc.pictureParameters;
+            if (m_inlinedPictureParametersUseBeginCoding) {
+                pCurrFrameDecParams->beginCodingInfoPictureParametersExt = &hevc.pictureParameters;
+                pPictureInfo->pNext = nullptr;
+            } else {
+                pPictureInfo->pNext = &hevc.pictureParameters;
+            }
+            pCurrFrameDecParams->useInlinedPictureParameters = true;
         } else {
             pPictureInfo->pNext = nullptr;
         }

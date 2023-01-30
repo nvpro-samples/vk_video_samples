@@ -40,6 +40,10 @@ struct VkParserPerFrameDecodeParameters {
     const StdVideoPictureParametersSet*     pStdSps;
     // PPS
     const StdVideoPictureParametersSet*     pStdPps;
+
+    // inlined picture parameters that should be inserted to VkVideoBeginCodingInfo
+    const void* beginCodingInfoPictureParametersExt;
+    uint32_t useInlinedPictureParameters : 1;
     // Bitstream data
     uint32_t firstSliceIndex;
     uint32_t numSlices;
