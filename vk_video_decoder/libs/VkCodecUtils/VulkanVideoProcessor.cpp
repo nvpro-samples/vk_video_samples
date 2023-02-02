@@ -569,7 +569,7 @@ int32_t VulkanVideoProcessor::ParserProcessNextDataChunk()
                                                      requiresPartialParsing);
         if (parserStatus != VK_SUCCESS) {
             m_videoStreamsCompleted = true;
-            std::cerr << "End of Video Stream with status  " << parserStatus << std::endl;
+            std::cerr << "Parser: end of Video Stream with status  " << parserStatus << std::endl;
             retValue = -1;
         } else {
             retValue = (int32_t)bitstreamBytesConsumed;
@@ -577,6 +577,8 @@ int32_t VulkanVideoProcessor::ParserProcessNextDataChunk()
         assert(bitstreamBytesConsumed <= (size_t)std::numeric_limits<int32_t>::max());
         m_currentBitstreamOffset += bitstreamBytesConsumed;
     } else {
+        // Call the parser one last time with zero buffer to flush the display queue.
+        ParseVideoStreamData(nullptr, 0, &bitstreamBytesConsumed, requiresPartialParsing);
         m_videoStreamsCompleted = StreamCompleted();
         retValue = 0;
     }
@@ -599,15 +601,16 @@ int32_t VulkanVideoProcessor::GetNextFrame(DecodedFrame* pFrame, bool* endOfStre
     }
 
     if (framesInQueue) {
-        m_videoFrameNum++;
 
-        if (m_videoFrameNum == 1) {
+        if (m_videoFrameNum == 0) {
             DumpVideoFormat(m_vkVideoDecoder->GetVideoFormatInfo(), false);
         }
 
         if (m_frameToFile) {
             OutputFrameToFile(pFrame);
         }
+
+        m_videoFrameNum++;
     }
 
     if ((m_maxFrameCount != -1) && (m_videoFrameNum >= (uint32_t)m_maxFrameCount)) {
