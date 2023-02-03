@@ -379,7 +379,7 @@ public:
         default:
             break;
         }
-        assert(!"Unknown CHROMA_SUBSAMPLING!");
+        // assert(!"Unknown CHROMA_SUBSAMPLING!");
         return VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
     }
 
