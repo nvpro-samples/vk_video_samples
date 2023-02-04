@@ -224,9 +224,6 @@ VkResult VulkanVideoBitstreamBuffer::CopyVideoBitstreamToBuffer(const unsigned c
 
         //Copy Bitstream
         // nvdec hw  requires min bitstream size to be 16 (see bug 1599347). memset padding to 0 if bitstream size less than 16
-        if (bitstreamDataSize < 16) {
-            memset(ptr, 0, 16);
-        }
 
         memcpy(ptr, pBitstreamData, (size_t)bitstreamDataSize);
 

@@ -189,10 +189,6 @@ VkResult VulkanDeviceMemoryImpl::CopyDataToMemory(const uint8_t* pData,
         return result;
     }
 
-    if (size < 16) {
-        memset(pDst + size, 0x00, 16 - size);
-    }
-
     memcpy(pDst, pData, (size_t)size);
 
     result = FlushInvalidateMappedMemoryRange(memoryOffset, size);
