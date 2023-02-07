@@ -107,7 +107,7 @@ It should be straightforward to adapt this repository to other Linux distributio
 
 **Required Package List:**
 
-1. sudo apt-get install git cmake build-essential libx11-xcb-dev libxkbcommon-dev libmirclient-dev libwayland-dev libxrandr-dev libavcodec-dev libavformat-dev libavutil-dev
+1. sudo apt-get install git cmake build-essential libx11-xcb-dev libxkbcommon-dev libmirclient-dev libwayland-dev libxrandr-dev libavcodec-dev libavformat-dev libavutil-dev ninja-build
 
 ### Linux Vulkan Video Demo Build
 
