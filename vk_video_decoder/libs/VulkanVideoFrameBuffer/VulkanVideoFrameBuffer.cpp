@@ -25,14 +25,13 @@
 #include <string.h>
 #include <string>
 
+#include "vulkan_interfaces.h"
 #include "PictureBufferBase.h"
 #include "VkCodecUtils/HelpersDispatchTable.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/VulkanVideoUtils.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VulkanVideoFrameBuffer.h"
-#include "vk_enum_string_helper.h"
-#include "vulkan_interfaces.h"
 #include "VkCodecUtils/VkImageResource.h"
 
 static VkSharedBaseObj<VkImageResourceView> emptyImageView;
