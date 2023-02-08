@@ -154,7 +154,7 @@ VkResult VulkanDeviceContext::CheckAllInstanceExtensions(bool verbose) const {
     return VK_SUCCESS;
 }
 
-bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice) const
+bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice, bool printMissingExt) const
 {
     assert(physDevice != VK_NULL_HANDLE);
     // enumerate device extensions
@@ -169,8 +169,10 @@ bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice) co
     // all listed device extensions are required
     for (const auto &name : m_reqDeviceExtensions) {
         if (ext_names.find(name) == ext_names.end()) {
-            std::cerr << "HasAllDeviceExtensions() ERROR: requested device extension "
+            if (printMissingExt) {
+                std::cerr << "HasAllDeviceExtensions() ERROR: requested device extension "
                     << name << " is missing!" << std::endl << std::flush;
+            }
             return false;
         }
     }

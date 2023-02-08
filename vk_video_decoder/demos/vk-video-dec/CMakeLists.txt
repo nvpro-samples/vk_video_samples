@@ -151,9 +151,10 @@ list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE}/vulkan)
 list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE}/nvidia_utils/vulkan)
 list(APPEND includes PRIVATE ${SHADERC_ROOT_PATH}/install/include)
 
-add_executable(vk-video-dec-test ${sources} ${vk-video-dec-test_RESOURCES})
+add_executable(vk-video-dec-test ${generate_helper_files} ${sources})
 target_compile_definitions(vk-video-dec-test ${definitions})
 target_include_directories(vk-video-dec-test ${includes})
 target_link_libraries(vk-video-dec-test ${libraries})
+add_dependencies(vk-video-dec-test generate_helper_files)
 
 install(TARGETS vk-video-dec-test RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
