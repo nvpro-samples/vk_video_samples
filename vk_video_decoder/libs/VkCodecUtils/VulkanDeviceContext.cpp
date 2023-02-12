@@ -154,7 +154,7 @@ VkResult VulkanDeviceContext::CheckAllInstanceExtensions(bool verbose) const {
     return VK_SUCCESS;
 }
 
-bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice, bool printMissingExt) const
+bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice, bool printMissingExt)
 {
     assert(physDevice != VK_NULL_HANDLE);
     // enumerate device extensions
@@ -167,17 +167,18 @@ bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice, bo
     }
 
     // all listed device extensions are required
-    for (const auto &name : m_reqDeviceExtensions) {
-        if (ext_names.find(name) == ext_names.end()) {
-            if (printMissingExt) {
-                std::cerr << "HasAllDeviceExtensions() ERROR: requested device extension "
-                    << name << " is missing!" << std::endl << std::flush;
-            }
-            return false;
+    auto nameIterator = m_reqDeviceExtensions.begin();
+    while (nameIterator != m_reqDeviceExtensions.end()) {
+        if (ext_names.find(*nameIterator) == ext_names.end()) {
+            std::cout << " Extension " << *nameIterator << " is not supported" << std::endl;
+            nameIterator = m_reqDeviceExtensions.erase(nameIterator);
+
+        } else {
+            nameIterator++;
         }
     }
+        return true;
 
-    return true;
 }
 
 #if !defined(VK_USE_PLATFORM_WIN32_KHR)
@@ -326,7 +327,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
         std::vector<VkQueueFamilyVideoPropertiesKHR> videoQueues;
         std::vector<VkQueueFamilyQueryResultStatusPropertiesKHR> queryResultStatus;
         vk::get(this, physicalDevice, queues, videoQueues, queryResultStatus);
-
+        bool videodecodequeryResultStatus = false;
         VkQueueFlags foundQueueTypes = 0;
         int gfxQueueFamily = -1,
             presentQueueFamily = -1,
@@ -358,7 +359,8 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                 videoDecodeQueueCount = queue.queueFamilyProperties.queueCount;
                 foundQueueTypes |= VK_QUEUE_VIDEO_DECODE_BIT_KHR;
                 // The video queues must support queryResultStatus
-                assert(queryResultStatus[i].queryResultStatusSupport);
+                //assert(queryResultStatus[i].queryResultStatusSupport);
+                videodecodequeryResultStatus = queryResultStatus[i].queryResultStatusSupport;
             }
 
             if ((requestQueueTypes & VK_QUEUE_VIDEO_ENCODE_BIT_KHR) && (videoEncodeQueueFamily < 0) &&
@@ -368,7 +370,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                 videoEncodeQueueCount = queue.queueFamilyProperties.queueCount;
                 foundQueueTypes |= VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
                 // The video queues must support queryResultStatus
-                assert(queryResultStatus[i].queryResultStatusSupport);
+                //assert(queryResultStatus[i].queryResultStatusSupport);
             }
 
             // present queue must support the surface
@@ -388,7 +390,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                 m_videoDecodeNumQueues = videoDecodeQueueCount;
                 m_videoEncodeQueueFamily = videoEncodeQueueFamily;
                 m_videoEncodeNumQueues = videoEncodeQueueCount;
-
+                m_queryResultStatusSupport = videodecodequeryResultStatus;
                 assert(m_physDevice != VK_NULL_HANDLE);
                 PopulateDeviceExtensions();
                 if (false) {
@@ -530,6 +532,7 @@ VulkanDeviceContext::VulkanDeviceContext(uint32_t deviceId)
     , m_videoDecodeNumQueues(0)
     , m_videoEncodeQueueFamily(-1)
     , m_videoEncodeNumQueues(0)
+    , m_queryResultStatusSupport()
     , m_device()
     , m_gfxQueue()
     , m_presentQueue()
@@ -576,7 +579,7 @@ VulkanDeviceContext::~VulkanDeviceContext() {
     }
 
     m_isExternallyManagedDevice = false;
-
+    m_queryResultStatusSupport  = false;
 #if !defined(VK_USE_PLATFORM_WIN32_KHR)
     dlclose(m_libHandle);
 #else // defined(VK_USE_PLATFORM_WIN32_KHR)

@@ -1794,7 +1794,14 @@ bool VulkanVideoParser::DecodePicture(
         pout->stdPictureInfo.reserved1 = pCurrFrameDecParams->numGopReferenceSlots;
         assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
         if (setupReferenceSlot.slotIndex >= 0) {
-            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource;
+            bool distinctDstDpbImages = m_decoderHandler->IsDstDpbDistinctImages();
+            if (distinctDstDpbImages) {
+                const int32_t setupSlotNdx = pCurrFrameDecParams->numGopReferenceSlots;
+                pCurrFrameDecParams->pictureResources[setupSlotNdx].sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
+                setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->pictureResources[setupSlotNdx];
+            } else {
+                setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource;
+            }
             pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
         }
         if (pCurrFrameDecParams->numGopReferenceSlots) {
@@ -1902,7 +1909,14 @@ bool VulkanVideoParser::DecodePicture(
 
         assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
         if (setupReferenceSlot.slotIndex >= 0) {
-            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource;
+            bool distinctDstDpbImages = m_decoderHandler->IsDstDpbDistinctImages();
+            if (distinctDstDpbImages) {
+                const int32_t setupSlotNdx = pCurrFrameDecParams->numGopReferenceSlots;
+                pCurrFrameDecParams->pictureResources[setupSlotNdx].sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
+                setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->pictureResources[setupSlotNdx];
+            } else {
+                setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource;
+            }
             pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
         }
 

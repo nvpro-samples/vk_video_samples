@@ -57,7 +57,9 @@ public:
                                              const VkVideoCoreProfile& videoProfile,
                                              VkVideoDecodeCapabilityFlagsKHR capabilityFlags,
                                              VkFormat& pictureFormat,
-                                             VkFormat& referencePicturesFormat)
+                                             VkFormat& referencePicturesFormat,
+                                             VkImageUsageFlags& dpbPictureUsage,
+                                             VkImageUsageFlags& outPictureUsage)
     {
         VkResult result = VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR;
         if ((capabilityFlags & VK_VIDEO_DECODE_CAPABILITY_DPB_AND_OUTPUT_COINCIDE_BIT_KHR) != 0) {
@@ -70,6 +72,8 @@ public:
 
             referencePicturesFormat = supportedDpbFormats[0];
             pictureFormat = supportedDpbFormats[0];
+            outPictureUsage = (VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR |
+                VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
 
         } else if ((capabilityFlags & VK_VIDEO_DECODE_CAPABILITY_DPB_AND_OUTPUT_DISTINCT_BIT_KHR) != 0) {
             // AMD
@@ -88,6 +92,9 @@ public:
 
             referencePicturesFormat = supportedDpbFormats[0];
             pictureFormat = supportedOutFormats[0];
+            outPictureUsage = (VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                               VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+            dpbPictureUsage = (VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR);
 
         } else {
             fprintf(stderr, "\nERROR: Unsupported decode capability flags.");
@@ -250,7 +257,7 @@ public:
                     *pVideoQueueFamily = (int32_t)queueIndx;
                 }
                 // The video queues must support queryResultStatus
-                assert(queryResultStatus[queueIndx].queryResultStatusSupport);
+                //assert(queryResultStatus[queueIndx].queryResultStatusSupport);
                 return videoQueue.videoCodecOperations;
             }
         }

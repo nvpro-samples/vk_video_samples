@@ -35,7 +35,7 @@ public:
                                       const uint8_t* pInitializeBufferMemory,
                                       size_t initializeBufferMemorySize,
                                       VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer) = 0;
-
+    virtual bool IsDstDpbDistinctImages() = 0;
     virtual ~IVulkanVideoDecoderHandler() { }
 };
 

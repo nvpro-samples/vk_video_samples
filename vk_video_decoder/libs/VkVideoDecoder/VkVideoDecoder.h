@@ -181,7 +181,7 @@ public:
      *   @brief  This callback function gets called when a picture is ready to be decoded.
      */
     virtual int32_t DecodePictureWithParameters(VkParserPerFrameDecodeParameters* pPicParams, VkParserDecodePictureInfo* pDecodePictureInfo);
-
+    virtual bool IsDstDpbDistinctImages(void);
     virtual size_t GetBitstreamBuffer(size_t size,
                                       size_t minBitstreamBufferOffsetAlignment,
                                       size_t minBitstreamBufferSizeAlignment,
@@ -189,6 +189,9 @@ public:
                                       size_t initializeBufferMemorySize,
                                       VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer);
 private:
+    VkExtent3D makeExtent3D(uint32_t width, uint32_t height, uint32_t depth);
+    VkImageCreateInfo makeImageCreateInfo(VkFormat format, const VkExtent2D& extent, const int32_t* queueFamilyIndex,
+                                          const VkImageUsageFlags usage, void* pNext, const uint32_t arrayLayers = 1);
 
     VkVideoDecoder(const VulkanDeviceContext* vkDevCtx,
                    VkSharedBaseObj<VulkanVideoFrameBuffer>& videoFrameBuffer,
@@ -266,7 +269,7 @@ private:
     uint32_t                    m_numDecodeSurfaces;
     uint32_t                    m_maxDecodeFramesCount;
 
-    VkVideoDecodeCapabilityFlagBitsKHR      m_capabilityFlags;
+    VkVideoDecodeCapabilityFlagsKHR         m_capabilityFlags;
     VkSharedBaseObj<VulkanVideoSession>     m_videoSession;
     VkSharedBaseObj<VulkanVideoFrameBuffer> m_videoFrameBuffer;
     NvVkDecodeFrameData                     m_decodeFramesData;

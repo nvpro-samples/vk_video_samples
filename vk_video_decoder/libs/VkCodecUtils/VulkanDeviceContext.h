@@ -64,6 +64,7 @@ public:
     VkQueue GetGfxQueue() const { return m_gfxQueue; }
     int32_t GetPresentQueueFamilyIdx() const { return m_presentQueueFamily; }
     VkQueue GetPresentQueue() const { return m_presentQueue; }
+    const int32_t* const GetVideoDecodeQueueFamilyIdxAddress() const { return &m_videoDecodeQueueFamily; }
     int32_t GetVideoDecodeQueueFamilyIdx() const { return m_videoDecodeQueueFamily; }
     int32_t GetVideoDecodeDefaultQueueIndex() const { return m_videoDecodeDefaultQueueIndex; }
     int32_t GetVideoDecodeNumQueues() const { return m_videoDecodeNumQueues; }
@@ -71,7 +72,7 @@ public:
     int32_t GetVideoEncodeQueueFamilyIdx() const { return m_videoEncodeQueueFamily; }
     int32_t GetVideoEncodeNumQueues() const { return m_videoEncodeNumQueues; }
     VkQueue GetVideoEncodeQueue(int32_t index = 0) const { return m_videoEncodeQueues[index]; }
-
+    bool    GetVideoQueryResultStatusSupport() const { return m_queryResultStatusSupport; }
     class MtQueueMutex {
 
     public:
@@ -181,7 +182,7 @@ public:
 
     VkResult CheckAllInstanceLayers(bool verbose = false) const;
     VkResult CheckAllInstanceExtensions(bool verbose = false) const;
-    bool HasAllDeviceExtensions(VkPhysicalDevice physDevice, bool printMissingExt = false) const;
+    bool HasAllDeviceExtensions(VkPhysicalDevice physDevice, bool printMissingExt = false);
 
     bool DebugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT obj_type,
                              uint64_t object, size_t location,
@@ -226,6 +227,7 @@ private:
     int32_t m_videoDecodeNumQueues;
     int32_t m_videoEncodeQueueFamily;
     int32_t m_videoEncodeNumQueues;
+    bool    m_queryResultStatusSupport;
     VkDevice                m_device;
     VkQueue                 m_gfxQueue;
     VkQueue                 m_presentQueue;

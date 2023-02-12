@@ -379,14 +379,14 @@ public:
         default:
             break;
         }
-        // assert(!"Unknown CHROMA_SUBSAMPLING!");
+        assert(!"Unknown CHROMA_SUBSAMPLING!");
         return VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
     }
 
     virtual uint32_t GetProfileIdc() const
     {
-        // return (uint32_t)profile;
-        return STD_VIDEO_H264_PROFILE_IDC_MAIN;
+         return (uint32_t)profile;
+        //return STD_VIDEO_H264_PROFILE_IDC_MAIN;
     }
 
     virtual int GetWidth()  const {
