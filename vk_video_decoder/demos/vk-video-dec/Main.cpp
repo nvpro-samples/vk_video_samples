@@ -132,7 +132,12 @@ int main(int argc, char **argv) {
             return -1;
         }
 
-        vkDevCtxt.CreateVulkanDevice();
+        result = vkDevCtxt.CreateVulkanDevice();
+        if (result != VK_SUCCESS) {
+
+            assert(!"Failed to create Vulkan device!");
+            return -1;
+        }
 
         vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig);
 
