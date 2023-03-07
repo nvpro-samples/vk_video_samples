@@ -208,7 +208,14 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     }
 
     m_capabilityFlags = videoDecodeCapabilities.flags;
+    if (IsDstDpbDistinctImages()) {
+        m_useSeparateOutputImages = true;
+    }
 
+    if(!(videoCapabilities.flags & VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR)) {
+        m_useImageArray = true;
+        m_useImageViewArray = true;
+    }
     VkFormat referencePicturesFormat = VK_FORMAT_UNDEFINED;
     VkFormat pictureFormat = VK_FORMAT_UNDEFINED;
     VkImageUsageFlags dpbPictureUsage = VK_IMAGE_USAGE_FLAG_BITS_MAX_ENUM;
@@ -521,25 +528,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
                                                            &currentOutputPictureResource, &currentOutputPictureResourceInfo,
                                                            VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR)) {
         assert(!"GetImageResourcesByIndex has failed");
-
-        if (currentOutputPictureResourceInfo.currentImageLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
-            imageBarriers[numDpbBarriers] = dpbBarrierTemplates[0];
-            imageBarriers[numDpbBarriers].oldLayout = currentOutputPictureResourceInfo.currentImageLayout;
-            imageBarriers[numDpbBarriers].newLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR;
-            imageBarriers[numDpbBarriers].image = currentOutputPictureResourceInfo.image;
-            imageBarriers[numDpbBarriers].dstAccessMask = VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR;
-            assert(imageBarriers[numDpbBarriers].image);
-            numDpbBarriers++;
-        }
-    }
-
-    if ((m_capabilityFlags & VK_VIDEO_DECODE_CAPABILITY_DPB_AND_OUTPUT_DISTINCT_BIT_KHR)) {
-        int8_t setupReferencePictureIndex = (int8_t)pPicParams->currPicIdx;
-        if (1 != m_videoFrameBuffer->GetDpbImageResourcesByIndex(
-                     1, &setupReferencePictureIndex, &pPicParams->pictureResources[pPicParams->numGopReferenceSlots],
-                     &currentDpbPictureResourceInfo, VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR)) {
-            assert(!"GetImageResourcesByIndex has failed");
-        }
         if (currentDpbPictureResourceInfo.currentImageLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
             imageBarriers[numDpbBarriers] = dpbBarrierTemplates[0];
             imageBarriers[numDpbBarriers].oldLayout = currentDpbPictureResourceInfo.currentImageLayout;
@@ -549,6 +537,11 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             assert(imageBarriers[numDpbBarriers].image);
             numDpbBarriers++;
         }
+        }
+    if ((m_capabilityFlags & VK_VIDEO_DECODE_CAPABILITY_DPB_AND_OUTPUT_DISTINCT_BIT_KHR)) {
+        pPicParams->pictureResources[pPicParams->numGopReferenceSlots] = pPicParams->decodeFrameInfo.dstPictureResource;
+        pPicParams->decodeFrameInfo.dstPictureResource = currentOutputPictureResource;
+
     }
 
     VulkanVideoFrameBuffer::PictureResourceInfo pictureResourcesInfo[VkParserPerFrameDecodeParameters::MAX_DPB_REF_AND_SETUP_SLOTS];
@@ -693,7 +686,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     VkVideoEndCodingInfoKHR decodeEndInfo = { VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR };
     m_vkDevCtx->CmdEndVideoCodingKHR(frameDataSlot.commandBuffer, &decodeEndInfo);
 
-    if (m_useSeparateOutputImages || m_useLinearOutput) {
+    if ((!m_useSeparateOutputImages) && m_useLinearOutput) {
         CopyOptimalToLinearImage(frameDataSlot.commandBuffer,
                                  pPicParams->decodeFrameInfo.dstPictureResource,
                                  currentDpbPictureResourceInfo,

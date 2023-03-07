@@ -167,16 +167,14 @@ bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice, bo
     }
 
     // all listed device extensions are required
-    auto nameIterator = m_reqDeviceExtensions.begin();
-    while (nameIterator != m_reqDeviceExtensions.end()) {
-        if (ext_names.find(*nameIterator) == ext_names.end()) {
-            std::cout << " Extension " << *nameIterator << " is not supported" << std::endl;
-            nameIterator = m_reqDeviceExtensions.erase(nameIterator);
-
-        } else {
-            nameIterator++;
+    for (const auto &name : m_reqDeviceExtensions) {
+        if (ext_names.find(name) == ext_names.end()) {
+            std::cerr << "HasAllDeviceExtensions() ERROR: requested device extension "
+                    << name << " is missing!" << std::endl << std::flush;
+            return false;
         }
     }
+
         return true;
 
 }

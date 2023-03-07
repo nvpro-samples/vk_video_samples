@@ -215,7 +215,7 @@ private:
         , m_decodePicCount(0)
         , m_useImageArray(false)
         , m_useImageViewArray(false)
-        , m_useSeparateOutputImages(useLinearOutput)
+        , m_useSeparateOutputImages(false)
         , m_useLinearOutput(useLinearOutput)
         , m_resetDecoder(true)
         , m_dumpDecodeData(false)
