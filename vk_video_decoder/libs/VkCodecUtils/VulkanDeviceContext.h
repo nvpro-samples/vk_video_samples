@@ -182,7 +182,7 @@ public:
 
     VkResult CheckAllInstanceLayers(bool verbose = false) const;
     VkResult CheckAllInstanceExtensions(bool verbose = false) const;
-    bool HasAllDeviceExtensions(VkPhysicalDevice physDevice, bool printMissingExt = false);
+    bool HasAllDeviceExtensions(VkPhysicalDevice physDevice, bool printMissingExt = false) const;
 
     bool DebugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT obj_type,
                              uint64_t object, size_t location,
