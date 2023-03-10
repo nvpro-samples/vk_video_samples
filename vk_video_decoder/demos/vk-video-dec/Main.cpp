@@ -62,7 +62,8 @@ int main(int argc, char **argv) {
     vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME);
 #endif
     { // Vulkan Video required extensions
-        vkDevCtxt.AddRequiredDeviceExtension(VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME);
+        // VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME - for NV only
+        // vkDevCtxt.AddRequiredDeviceExtension(VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME);
         vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
         vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_VIDEO_QUEUE_EXTENSION_NAME);
         vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME);
