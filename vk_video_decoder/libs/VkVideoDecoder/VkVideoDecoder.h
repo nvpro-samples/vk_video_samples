@@ -210,6 +210,7 @@ private:
         , m_videoFrameBuffer(videoFrameBuffer)
         , m_decodeFramesData(vkDevCtx)
         , m_decodePicCount(0)
+        , m_dpbAndOutputCoincide(true)
         , m_useImageArray(false)
         , m_useImageViewArray(false)
         , m_useSeparateOutputImages(useLinearOutput)
@@ -266,13 +267,14 @@ private:
     uint32_t                    m_numDecodeSurfaces;
     uint32_t                    m_maxDecodeFramesCount;
 
-    VkVideoDecodeCapabilityFlagBitsKHR      m_capabilityFlags;
+    VkVideoDecodeCapabilityFlagsKHR         m_capabilityFlags;
     VkSharedBaseObj<VulkanVideoSession>     m_videoSession;
     VkSharedBaseObj<VulkanVideoFrameBuffer> m_videoFrameBuffer;
     NvVkDecodeFrameData                     m_decodeFramesData;
 
     int32_t                                          m_decodePicCount;
     VkSharedBaseObj<VkParserVideoPictureParameters>  m_currentPictureParameters;
+    uint32_t m_dpbAndOutputCoincide : 1;
     uint32_t m_useImageArray : 1;
     uint32_t m_useImageViewArray : 1;
     uint32_t m_useSeparateOutputImages : 1;

@@ -155,7 +155,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
               << "\tNum Surfaces : " << m_numDecodeSurfaces << std::endl
               << "\tResize       : " << codedExtent.width << " x " << codedExtent.height << std::endl;
 
-    uint32_t maxDpbSlotCount   = pVideoFormat->maxNumDpbSlots;
+    uint32_t maxDpbSlotCount = pVideoFormat->maxNumDpbSlots;
 
     assert(VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR == pVideoFormat->chromaSubsampling ||
            VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR == pVideoFormat->chromaSubsampling ||
@@ -173,13 +173,14 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         assert(!"Could not get Video Capabilities!");
         return -1;
     }
-
-    VkFormat referencePicturesFormat = VK_FORMAT_UNDEFINED;
-    VkFormat pictureFormat = VK_FORMAT_UNDEFINED;
+    m_capabilityFlags = videoDecodeCapabilities.flags;
+    m_dpbAndOutputCoincide = (m_capabilityFlags & VK_VIDEO_DECODE_CAPABILITY_DPB_AND_OUTPUT_COINCIDE_BIT_KHR);
+    VkFormat dpbImageFormat = VK_FORMAT_UNDEFINED;
+    VkFormat outImageFormat = VK_FORMAT_UNDEFINED;
     result = VulkanVideoCapabilities::GetSupportedVideoFormats(m_vkDevCtx, videoProfile,
-                                                               videoDecodeCapabilities.flags,
-                                                               pictureFormat,
-                                                               referencePicturesFormat);
+                                                               m_capabilityFlags,
+                                                               outImageFormat,
+                                                               dpbImageFormat);
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get supported video formats :" << result << " ***" << std::endl;
         assert(!"Could not get supported video formats!");
@@ -198,18 +199,18 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
             !m_videoSession->IsCompatible( m_vkDevCtx,
                                            m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                            &videoProfile,
-                                           pictureFormat,
+                                           outImageFormat,
                                            imageExtent,
-                                           referencePicturesFormat,
+                                           dpbImageFormat,
                                            maxDpbSlotCount,
                                            std::max<uint32_t>(maxDpbSlotCount, VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS)) ) {
 
         result = VulkanVideoSession::Create( m_vkDevCtx,
                                              m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                              &videoProfile,
-                                             pictureFormat,
+                                             outImageFormat,
                                              imageExtent,
-                                             referencePicturesFormat,
+                                             dpbImageFormat,
                                              maxDpbSlotCount,
                                              std::max<uint32_t>(maxDpbSlotCount, VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS),
                                              m_videoSession);
@@ -219,21 +220,38 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         assert(result == VK_SUCCESS);
     }
 
-    int32_t ret =
-    m_videoFrameBuffer->InitImagePool(videoProfile.GetProfile(),
-                                       m_numDecodeSurfaces,
-                                       referencePicturesFormat,
-                                       codedExtent,
-                                       imageExtent,
-                                       VK_IMAGE_TILING_OPTIMAL,
-                                       VK_IMAGE_USAGE_SAMPLED_BIT |
-                                       VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                                            VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
-                                            VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR,
-                                       m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
-                                       m_numDecodeImagesToPreallocate,
-                                       m_useImageArray, m_useImageViewArray,
-                                       m_useSeparateOutputImages, m_useLinearOutput);
+    VkImageUsageFlags outImageUsage = (VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
+                                       VK_IMAGE_USAGE_SAMPLED_BIT      |
+                                       VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                       VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+    VkImageUsageFlags dpbImageUsage = VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
+
+    if (m_dpbAndOutputCoincide) {
+        dpbImageUsage = outImageUsage | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
+        outImageUsage &= ~VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
+    } else {
+        // The implementation does not support dpbAndOutputCoincide
+        m_useSeparateOutputImages = true;
+    }
+
+    if(!(videoCapabilities.flags & VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR)) {
+        // The implementation does not support individual images for DPB and so must use arrays
+        m_useImageArray = true;
+        m_useImageViewArray = true;
+    }
+
+    int32_t ret = m_videoFrameBuffer->InitImagePool(videoProfile.GetProfile(),
+                                                    m_numDecodeSurfaces,
+                                                    dpbImageFormat,
+                                                    outImageFormat,
+                                                    codedExtent,
+                                                    imageExtent,
+                                                    dpbImageUsage,
+                                                    outImageUsage,
+                                                    m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
+                                                    m_numDecodeImagesToPreallocate,
+                                                    m_useImageArray, m_useImageViewArray,
+                                                    m_useSeparateOutputImages, m_useLinearOutput);
 
     assert((uint32_t)ret == m_numDecodeSurfaces);
     if ((uint32_t)ret != m_numDecodeSurfaces) {
@@ -418,19 +436,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
     decodeBeginInfo.videoSession = m_videoSession->GetVideoSession();
 
-    VulkanVideoFrameBuffer::PictureResourceInfo currentDpbPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
-    VulkanVideoFrameBuffer::PictureResourceInfo currentOutputPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
-    VkVideoPictureResourceInfoKHR currentOutputPictureResource = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR, nullptr};
-    if (pPicParams->currPicIdx != m_videoFrameBuffer->GetCurrentImageResourceByIndex(pPicParams->currPicIdx,
-                                                                 &pPicParams->decodeFrameInfo.dstPictureResource,
-                                                                 &currentDpbPictureResourceInfo,
-                                                                 VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR,
-                                                                 &currentOutputPictureResource,
-                                                                 &currentOutputPictureResourceInfo,
-                                                                 VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR)) {
-        assert(!"GetImageResourcesByIndex has failed");
-    }
-
     assert(pPicParams->decodeFrameInfo.srcBuffer);
     const VkBufferMemoryBarrier2KHR bitstreamBufferMemoryBarrier = {
         VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR,
@@ -473,15 +478,35 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
     VkImageMemoryBarrier2KHR imageBarriers[VkParserPerFrameDecodeParameters::MAX_DPB_REF_AND_SETUP_SLOTS];
     uint32_t numDpbBarriers = 0;
+    VulkanVideoFrameBuffer::PictureResourceInfo currentDpbPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
+    VulkanVideoFrameBuffer::PictureResourceInfo currentOutputPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
+    VkVideoPictureResourceInfoKHR currentOutputPictureResource = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR, nullptr};
+    if (pPicParams->currPicIdx !=
+            m_videoFrameBuffer->GetCurrentImageResourceByIndex(pPicParams->currPicIdx,
+                                                               &pPicParams->decodeFrameInfo.dstPictureResource,
+                                                               &currentDpbPictureResourceInfo,
+                                                               VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR,
+                                                               &currentOutputPictureResource,
+                                                               &currentOutputPictureResourceInfo,
+                                                               VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR)) {
+
+        assert(!"GetImageResourcesByIndex has failed");
+    }
 
     if (currentDpbPictureResourceInfo.currentImageLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
         imageBarriers[numDpbBarriers] = dpbBarrierTemplates[0];
         imageBarriers[numDpbBarriers].oldLayout = currentDpbPictureResourceInfo.currentImageLayout;
-        imageBarriers[numDpbBarriers].newLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR;
+        imageBarriers[numDpbBarriers].newLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR;
         imageBarriers[numDpbBarriers].image = currentDpbPictureResourceInfo.image;
         imageBarriers[numDpbBarriers].dstAccessMask = VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR;
         assert(imageBarriers[numDpbBarriers].image);
         numDpbBarriers++;
+    }
+
+    if (!m_dpbAndOutputCoincide) {
+        pPicParams->pictureResources[pPicParams->numGopReferenceSlots] = pPicParams->decodeFrameInfo.dstPictureResource;
+        pPicParams->decodeFrameInfo.dstPictureResource = currentOutputPictureResource;
+
     }
 
     VulkanVideoFrameBuffer::PictureResourceInfo pictureResourcesInfo[VkParserPerFrameDecodeParameters::MAX_DPB_REF_AND_SETUP_SLOTS];
@@ -580,7 +605,11 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
     // m_vkDevCtx->ResetQueryPool(m_vkDev, queryFrameInfo.queryPool, queryFrameInfo.query, 1);
 
-    m_vkDevCtx->CmdResetQueryPool(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool, frameSynchronizationInfo.startQueryId, frameSynchronizationInfo.numQueries);
+    if (m_vkDevCtx->GetVideoQueryResultStatusSupport()) {
+        m_vkDevCtx->CmdResetQueryPool(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool,
+                                      frameSynchronizationInfo.startQueryId, frameSynchronizationInfo.numQueries);
+    }
+
     m_vkDevCtx->CmdBeginVideoCodingKHR(frameDataSlot.commandBuffer, &decodeBeginInfo);
 
     if (m_resetDecoder != false) {
@@ -607,16 +636,22 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     };
     m_vkDevCtx->CmdPipelineBarrier2KHR(frameDataSlot.commandBuffer, &dependencyInfo);
 
-    m_vkDevCtx->CmdBeginQuery(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool, frameSynchronizationInfo.startQueryId, VkQueryControlFlags());
+    if (m_vkDevCtx->GetVideoQueryResultStatusSupport()) {
+        m_vkDevCtx->CmdBeginQuery(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool,
+                                  frameSynchronizationInfo.startQueryId, VkQueryControlFlags());
+    }
 
     m_vkDevCtx->CmdDecodeVideoKHR(frameDataSlot.commandBuffer, &pPicParams->decodeFrameInfo);
 
-    m_vkDevCtx->CmdEndQuery(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool, frameSynchronizationInfo.startQueryId);
+    if (m_vkDevCtx->GetVideoQueryResultStatusSupport()) {
+        m_vkDevCtx->CmdEndQuery(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool,
+                                frameSynchronizationInfo.startQueryId);
+    }
 
     VkVideoEndCodingInfoKHR decodeEndInfo = { VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR };
     m_vkDevCtx->CmdEndVideoCodingKHR(frameDataSlot.commandBuffer, &decodeEndInfo);
 
-    if (m_useSeparateOutputImages || m_useLinearOutput) {
+    if (m_dpbAndOutputCoincide && (m_useSeparateOutputImages || m_useLinearOutput)) {
         CopyOptimalToLinearImage(frameDataSlot.commandBuffer,
                                  pPicParams->decodeFrameInfo.dstPictureResource,
                                  currentDpbPictureResourceInfo,
