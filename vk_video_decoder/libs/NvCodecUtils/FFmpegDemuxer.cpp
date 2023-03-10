@@ -380,13 +380,44 @@ public:
             break;
         }
         // assert(!"Unknown CHROMA_SUBSAMPLING!");
+        std::cerr << "\nUnknown CHROMA_SUBSAMPLING from format: " << format << std::endl;
         return VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
     }
 
     virtual uint32_t GetProfileIdc() const
     {
-        // return (uint32_t)profile;
-        return STD_VIDEO_H264_PROFILE_IDC_MAIN;
+        switch (FFmpegToVkCodecOperation(videoCodec)) {
+            case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR:
+            {
+                switch(profile) {
+                    case STD_VIDEO_H264_PROFILE_IDC_BASELINE:
+                    case STD_VIDEO_H264_PROFILE_IDC_MAIN:
+                    case STD_VIDEO_H264_PROFILE_IDC_HIGH:
+                    case STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE:
+                        break;
+                    default:
+                        std::cerr << "\nInvalid h.264 profile: " << profile << std::endl;
+                }
+            }
+            break;
+            case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR:
+            {
+                switch(profile) {
+                    case STD_VIDEO_H265_PROFILE_IDC_MAIN:
+                    case STD_VIDEO_H265_PROFILE_IDC_MAIN_10:
+                    case STD_VIDEO_H265_PROFILE_IDC_MAIN_STILL_PICTURE:
+                    case STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS:
+                    case STD_VIDEO_H265_PROFILE_IDC_SCC_EXTENSIONS:
+                        break;
+                    default:
+                        std::cerr << "\nInvalid h.265 profile: " << profile << std::endl;
+                }
+            }
+            break;
+            default:
+                std::cerr << "\nInvalid codec type: " << FFmpegToVkCodecOperation(videoCodec) << std::endl;
+        }
+        return (uint32_t)profile;
     }
 
     virtual int GetWidth()  const {
