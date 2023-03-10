@@ -249,8 +249,8 @@ public:
                 if (pVideoQueueFamily && (*pVideoQueueFamily < 0)) {
                     *pVideoQueueFamily = (int32_t)queueIndx;
                 }
-                // The video queues must support queryResultStatus
-                assert(queryResultStatus[queueIndx].queryResultStatusSupport);
+                // The video queues may or may not support queryResultStatus
+                // assert(queryResultStatus[queueIndx].queryResultStatusSupport);
                 return videoQueue.videoCodecOperations;
             }
         }

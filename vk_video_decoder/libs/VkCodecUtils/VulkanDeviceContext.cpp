@@ -326,7 +326,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
         std::vector<VkQueueFamilyVideoPropertiesKHR> videoQueues;
         std::vector<VkQueueFamilyQueryResultStatusPropertiesKHR> queryResultStatus;
         vk::get(this, physicalDevice, queues, videoQueues, queryResultStatus);
-
+        bool videodecodequeryResultStatus = false;
         VkQueueFlags foundQueueTypes = 0;
         int gfxQueueFamily = -1,
             presentQueueFamily = -1,
@@ -358,7 +358,8 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                 videoDecodeQueueCount = queue.queueFamilyProperties.queueCount;
                 foundQueueTypes |= VK_QUEUE_VIDEO_DECODE_BIT_KHR;
                 // The video queues must support queryResultStatus
-                assert(queryResultStatus[i].queryResultStatusSupport);
+                // assert(queryResultStatus[i].queryResultStatusSupport);
+                videodecodequeryResultStatus = queryResultStatus[i].queryResultStatusSupport;
             }
 
             if ((requestQueueTypes & VK_QUEUE_VIDEO_ENCODE_BIT_KHR) && (videoEncodeQueueFamily < 0) &&
@@ -368,7 +369,8 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                 videoEncodeQueueCount = queue.queueFamilyProperties.queueCount;
                 foundQueueTypes |= VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
                 // The video queues must support queryResultStatus
-                assert(queryResultStatus[i].queryResultStatusSupport);
+                // assert(queryResultStatus[i].queryResultStatusSupport);
+                videodecodequeryResultStatus = queryResultStatus[i].queryResultStatusSupport;
             }
 
             // present queue must support the surface
@@ -388,6 +390,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                 m_videoDecodeNumQueues = videoDecodeQueueCount;
                 m_videoEncodeQueueFamily = videoEncodeQueueFamily;
                 m_videoEncodeNumQueues = videoEncodeQueueCount;
+                m_queryResultStatusSupport = videodecodequeryResultStatus;
 
                 assert(m_physDevice != VK_NULL_HANDLE);
                 PopulateDeviceExtensions();
@@ -530,6 +533,7 @@ VulkanDeviceContext::VulkanDeviceContext(uint32_t deviceId)
     , m_videoDecodeNumQueues(0)
     , m_videoEncodeQueueFamily(-1)
     , m_videoEncodeNumQueues(0)
+    , m_queryResultStatusSupport()
     , m_device()
     , m_gfxQueue()
     , m_presentQueue()

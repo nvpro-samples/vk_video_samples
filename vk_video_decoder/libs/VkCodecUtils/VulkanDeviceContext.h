@@ -71,7 +71,7 @@ public:
     int32_t GetVideoEncodeQueueFamilyIdx() const { return m_videoEncodeQueueFamily; }
     int32_t GetVideoEncodeNumQueues() const { return m_videoEncodeNumQueues; }
     VkQueue GetVideoEncodeQueue(int32_t index = 0) const { return m_videoEncodeQueues[index]; }
-
+    bool    GetVideoQueryResultStatusSupport() const { return m_queryResultStatusSupport; }
     class MtQueueMutex {
 
     public:
@@ -226,6 +226,7 @@ private:
     int32_t m_videoDecodeNumQueues;
     int32_t m_videoEncodeQueueFamily;
     int32_t m_videoEncodeNumQueues;
+    bool   m_queryResultStatusSupport;
     VkDevice                m_device;
     VkQueue                 m_gfxQueue;
     VkQueue                 m_presentQueue;
