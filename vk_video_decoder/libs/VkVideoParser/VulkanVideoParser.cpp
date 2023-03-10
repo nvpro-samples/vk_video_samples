@@ -1699,6 +1699,7 @@ bool VulkanVideoParser::DecodePicture(
 
     pCurrFrameDecParams->decodeFrameInfo.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_INFO_KHR;
     pCurrFrameDecParams->decodeFrameInfo.dstPictureResource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
+    pCurrFrameDecParams->dpbSetupPictureResource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
 
     if (m_codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
         const VkParserH264PictureData* const pin = &pd->CodecSpecific.h264;
@@ -1794,7 +1795,7 @@ bool VulkanVideoParser::DecodePicture(
         pout->stdPictureInfo.reserved1 = pCurrFrameDecParams->numGopReferenceSlots;
         assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
         if (setupReferenceSlot.slotIndex >= 0) {
-            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource;
+            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
             pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
         }
         if (pCurrFrameDecParams->numGopReferenceSlots) {
@@ -1902,7 +1903,7 @@ bool VulkanVideoParser::DecodePicture(
 
         assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
         if (setupReferenceSlot.slotIndex >= 0) {
-            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource;
+            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
             pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
         }
 
