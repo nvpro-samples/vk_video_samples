@@ -481,16 +481,57 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     VulkanVideoFrameBuffer::PictureResourceInfo currentDpbPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
     VulkanVideoFrameBuffer::PictureResourceInfo currentOutputPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
     VkVideoPictureResourceInfoKHR currentOutputPictureResource = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR, nullptr};
+
+    VkVideoPictureResourceInfoKHR* pOutputPictureResource = nullptr;
+    VulkanVideoFrameBuffer::PictureResourceInfo* pOutputPictureResourceInfo = nullptr;
+    if (!m_dpbAndOutputCoincide) {
+
+        // Output Distinct will use the decodeFrameInfo.dstPictureResource directly.
+        pOutputPictureResource = &pPicParams->decodeFrameInfo.dstPictureResource;
+
+    } else if (m_useLinearOutput) {
+
+        // Output Coincide needs the output only if we are processing linear images that we need to copy to below.
+        pOutputPictureResource = &currentOutputPictureResource;
+
+    }
+
+    if (pOutputPictureResource) {
+
+        // if the pOutputPictureResource is set then we also need the pOutputPictureResourceInfo.
+        pOutputPictureResourceInfo = &currentOutputPictureResourceInfo;
+
+    }
+
     if (pPicParams->currPicIdx !=
             m_videoFrameBuffer->GetCurrentImageResourceByIndex(pPicParams->currPicIdx,
-                                                               &pPicParams->decodeFrameInfo.dstPictureResource,
+                                                               &pPicParams->dpbSetupPictureResource,
                                                                &currentDpbPictureResourceInfo,
                                                                VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR,
-                                                               &currentOutputPictureResource,
-                                                               &currentOutputPictureResourceInfo,
+                                                               pOutputPictureResource,
+                                                               pOutputPictureResourceInfo,
                                                                VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR)) {
 
         assert(!"GetImageResourcesByIndex has failed");
+    }
+
+    if (m_dpbAndOutputCoincide) {
+
+        // For the Output Coincide, the DPB and destination output resources are the same.
+        pPicParams->decodeFrameInfo.dstPictureResource = pPicParams->dpbSetupPictureResource;
+
+    } else if (pOutputPictureResourceInfo) {
+
+        // For Output Distinct transition the image to DECODE_DST
+        if (pOutputPictureResourceInfo->currentImageLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
+            imageBarriers[numDpbBarriers] = dpbBarrierTemplates[0];
+            imageBarriers[numDpbBarriers].oldLayout = pOutputPictureResourceInfo->currentImageLayout;
+            imageBarriers[numDpbBarriers].newLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR;
+            imageBarriers[numDpbBarriers].image = pOutputPictureResourceInfo->image;
+            imageBarriers[numDpbBarriers].dstAccessMask = VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR;
+            assert(imageBarriers[numDpbBarriers].image);
+            numDpbBarriers++;
+        }
     }
 
     if (currentDpbPictureResourceInfo.currentImageLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
@@ -501,12 +542,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         imageBarriers[numDpbBarriers].dstAccessMask = VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR;
         assert(imageBarriers[numDpbBarriers].image);
         numDpbBarriers++;
-    }
-
-    if (!m_dpbAndOutputCoincide) {
-        pPicParams->pictureResources[pPicParams->numGopReferenceSlots] = pPicParams->decodeFrameInfo.dstPictureResource;
-        pPicParams->decodeFrameInfo.dstPictureResource = currentOutputPictureResource;
-
     }
 
     VulkanVideoFrameBuffer::PictureResourceInfo pictureResourcesInfo[VkParserPerFrameDecodeParameters::MAX_DPB_REF_AND_SETUP_SLOTS];
@@ -655,8 +690,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         CopyOptimalToLinearImage(frameDataSlot.commandBuffer,
                                  pPicParams->decodeFrameInfo.dstPictureResource,
                                  currentDpbPictureResourceInfo,
-                                 currentOutputPictureResource,
-                                 currentOutputPictureResourceInfo,
+                                 *pOutputPictureResource,
+                                 *pOutputPictureResourceInfo,
                                  &frameSynchronizationInfo);
     }
 
