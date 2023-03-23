@@ -1035,9 +1035,10 @@ VkResult VulkanVertexBuffer::CreateVertexBuffer(const VulkanDeviceContext* vkDev
     return VK_SUCCESS;
 }
 
-VkResult VulkanDescriptorSet::WriteDescriptorSet(VkSampler sampler,
-                                                 VkImageView imageView, uint32_t dstArrayElement,
-                                                 VkImageLayout imageLayout)
+VkResult VulkanDescriptorSetLayoutBinding::WriteDescriptorSet(VkSampler sampler,
+                                                              VkImageView imageView,
+                                                              uint32_t dstArrayElement,
+                                                              VkImageLayout imageLayout)
 {
     VkDescriptorImageInfo imageDsts;
     imageDsts.sampler = sampler;
@@ -1047,7 +1048,7 @@ VkResult VulkanDescriptorSet::WriteDescriptorSet(VkSampler sampler,
     VkWriteDescriptorSet writeDst = VkWriteDescriptorSet();
     writeDst.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writeDst.pNext = nullptr;
-    writeDst.dstSet = descSet;
+    writeDst.dstSet = *getDescriptorSet();
     writeDst.dstBinding = 0;
     writeDst.dstArrayElement = dstArrayElement;
     writeDst.descriptorCount = 1;
@@ -1060,7 +1061,7 @@ VkResult VulkanDescriptorSet::WriteDescriptorSet(VkSampler sampler,
     return VK_SUCCESS;
 }
 
-VkResult VulkanDescriptorSet::CreateFragmentShaderOutput(VkDescriptorType outMode, uint32_t outSet, uint32_t outBinding, uint32_t outArrayIndex, std::stringstream& imageFss)
+VkResult VulkanDescriptorSetLayoutBinding::CreateFragmentShaderOutput(VkDescriptorType outMode, uint32_t outSet, uint32_t outBinding, uint32_t outArrayIndex, std::stringstream& imageFss)
 {
     switch (outMode) {
     case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
@@ -1094,7 +1095,7 @@ VkResult VulkanDescriptorSet::CreateFragmentShaderOutput(VkDescriptorType outMod
     return VK_SUCCESS;
 }
 
-VkResult VulkanDescriptorSet::CreateFragmentShaderLayouts(const uint32_t* setIds, uint32_t numSets, std::stringstream& imageFss)
+VkResult VulkanDescriptorSetLayoutBinding::CreateFragmentShaderLayouts(const uint32_t* setIds, uint32_t numSets, std::stringstream& imageFss)
 {
     const VkDescriptorSetLayoutCreateInfo * pDescriptorSetEntries = &descriptorSetLayoutCreateInfo;
 
@@ -1141,14 +1142,13 @@ VkResult VulkanDescriptorSet::CreateFragmentShaderLayouts(const uint32_t* setIds
 }
 
 // initialize descriptor set
-VkResult VulkanDescriptorSet::CreateDescriptorSet(const VulkanDeviceContext* vkDevCtx,
-                                                  uint32_t descriptorCount,
-                                                  uint32_t maxCombinedImageSamplerDescriptorCount,
-                                                  const VkSampler* pImmutableSamplers)
+VkResult VulkanDescriptorSetLayoutBinding::CreateDescriptorSet(const VulkanDeviceContext* vkDevCtx,
+                                                               uint32_t descriptorCount,
+                                                               uint32_t maxCombinedImageSamplerDescriptorCount,
+                                                               const VkSampler* pImmutableSamplers)
 {
     m_vkDevCtx = vkDevCtx;
 
-    DestroyDescriptorSets();
     DestroyPipelineLayout();
     DestroyDescriptorSetLayout();
 
@@ -1188,35 +1188,22 @@ VkResult VulkanDescriptorSet::CreateDescriptorSet(const VulkanDeviceContext* vkD
     pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
     CALL_VK(m_vkDevCtx->CreatePipelineLayout(*m_vkDevCtx, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout));
 
-    if (descPool == VkDescriptorPool(0)) {
 
-        VkDescriptorPoolSize type_count = VkDescriptorPoolSize();
-        type_count.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        type_count.descriptorCount = descriptorCount * maxCombinedImageSamplerDescriptorCount;
+    VulkanDescriptorSet* pDescriptorSet = GetNextDescriptorSet();
+    VkResult result = pDescriptorSet->CreateDescriptorPool(vkDevCtx,
+                                                           descriptorCount * maxCombinedImageSamplerDescriptorCount,
+                                                           VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
-        VkDescriptorPoolCreateInfo descriptor_pool = VkDescriptorPoolCreateInfo();
-        descriptor_pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        descriptor_pool.pNext = nullptr;
-        descriptor_pool.maxSets = 1;
-        descriptor_pool.poolSizeCount = 1;
-        descriptor_pool.pPoolSizes = &type_count;
-        CALL_VK(m_vkDevCtx->CreateDescriptorPool(*m_vkDevCtx, &descriptor_pool, nullptr, &descPool));
+    if (result != VK_SUCCESS) {
+        return result;
     }
 
-    VkDescriptorSetAllocateInfo alloc_info = VkDescriptorSetAllocateInfo();
-    alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    alloc_info.pNext = nullptr;
-    alloc_info.descriptorPool = descPool;
-    alloc_info.descriptorSetCount = 1;
-    alloc_info.pSetLayouts = &dscLayout;
-    CALL_VK(m_vkDevCtx->AllocateDescriptorSets(*m_vkDevCtx, &alloc_info, &descSet));
-
-    return VK_SUCCESS;
+    return pDescriptorSet->AllocateDescriptorSets(descriptorCount, &dscLayout);
 }
 
 // Create Graphics Pipeline
 VkResult VulkanGraphicsPipeline::CreateGraphicsPipeline(const VulkanDeviceContext* vkDevCtx, VkViewport* pViewport, VkRect2D* pScissor,
-        VkRenderPass renderPass, VulkanDescriptorSet* pBufferDescriptorSets)
+        VkRenderPass renderPass, VulkanDescriptorSetLayoutBinding* pBufferDescriptorSets)
 {
     m_vkDevCtx = vkDevCtx;
 
@@ -1496,8 +1483,9 @@ VkResult VulkanCommandBuffer::CreateCommandBuffer(VkRenderPass renderPass, const
     // Bind what is necessary to the command buffer
     m_vkDevCtx->CmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     m_vkDevCtx->CmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            pipelineLayout, 0, 1,
-                            pDescriptorSet, 0, nullptr);
+                            pipelineLayout,
+                            0, 1, pDescriptorSet,
+                            0, nullptr);
     VkDeviceSize offset = 0;
     m_vkDevCtx->CmdBindVertexBuffers(cmdBuffer, 0, 1, &pVertexBuffer->get(), &offset);
 
@@ -1601,16 +1589,16 @@ VkResult VulkanRenderInfo::UpdatePerDrawContexts(VulkanPerDrawContext* pPerDrawC
     uint32_t combinedImageSamplerDescriptorCount = samplerYcbcrConversionImageFormatProperties.combinedImageSamplerDescriptorCount;
     VkSampler immutableSampler = pPerDrawContext->samplerYcbcrConversion.GetSampler();
 
-    pPerDrawContext->bufferDescriptorSet.CreateDescriptorSet(m_vkDevCtx,
-                                                             1, // descriptorCount: only one image at the time.
-                                                             combinedImageSamplerDescriptorCount,
-                                                             &immutableSampler);
+    pPerDrawContext->descriptorSetLayoutBinding.CreateDescriptorSet(m_vkDevCtx,
+                                                                    1, // descriptorCount: only one image at the time.
+                                                                    combinedImageSamplerDescriptorCount,
+                                                                    &immutableSampler);
 
     LOG(INFO) << "VkVideoUtils: " << "CreateGraphicsPipeline " << pPerDrawContext->contextIndex;
     // Create graphics pipeline
     pPerDrawContext->gfxPipeline.CreateGraphicsPipeline(m_vkDevCtx,
             pViewport, pScissor, renderPass,
-            &pPerDrawContext->bufferDescriptorSet);
+            &pPerDrawContext->descriptorSetLayoutBinding);
 
     return VK_SUCCESS;
 }

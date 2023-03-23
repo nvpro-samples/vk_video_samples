@@ -700,38 +700,98 @@ public:
 class VulkanDescriptorSet {
 
 public:
-    VulkanDescriptorSet()
-     : m_vkDevCtx(),
-       descriptorSetLayoutBinding(),
-       descriptorSetLayoutCreateInfo(),
-       dscLayout(),
-       pipelineLayout(),
-       descPool(),
-       descSet(VkDescriptorSet())
-    { }
+
+    VulkanDescriptorSet(const VulkanDeviceContext* vkDevCtx = nullptr)
+        : m_vkDevCtx(vkDevCtx), m_descPool(), m_descSet() {}
 
     ~VulkanDescriptorSet()
     {
         DestroyDescriptorSets();
         DestroyDescriptorPool();
-        DestroyPipelineLayout();
-        DestroyDescriptorSetLayout();
     }
 
     void DestroyDescriptorSets()
     {
-        if (descSet) {
-            m_vkDevCtx->FreeDescriptorSets(*m_vkDevCtx, descPool, 1, &descSet);
-            descSet = VkDescriptorSet(0);
+        if (m_descSet) {
+            m_vkDevCtx->FreeDescriptorSets(*m_vkDevCtx, m_descPool, 1, &m_descSet);
+            m_descSet = VkDescriptorSet(0);
         }
     }
 
     void DestroyDescriptorPool()
     {
-        if (descPool) {
-            m_vkDevCtx->DestroyDescriptorPool(*m_vkDevCtx, descPool, nullptr);
-            descPool = VkDescriptorPool(0);
+        if (m_descPool) {
+            m_vkDevCtx->DestroyDescriptorPool(*m_vkDevCtx, m_descPool, nullptr);
+            m_descPool = VkDescriptorPool(0);
         }
+    }
+
+    VkResult CreateDescriptorPool(const VulkanDeviceContext* vkDevCtx,
+                                  uint32_t descriptorCount,
+                                  VkDescriptorType descriptorType)
+    {
+
+        DestroyDescriptorPool();
+
+        m_vkDevCtx = vkDevCtx;
+
+        VkDescriptorPoolSize descriptorPoolSize = VkDescriptorPoolSize();
+        descriptorPoolSize.type = descriptorType;
+        descriptorPoolSize.descriptorCount = descriptorCount;
+
+        VkDescriptorPoolCreateInfo descriptor_pool = VkDescriptorPoolCreateInfo();
+        descriptor_pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        descriptor_pool.pNext = nullptr;
+        descriptor_pool.maxSets = 1;
+        descriptor_pool.poolSizeCount = 1;
+        descriptor_pool.pPoolSizes = &descriptorPoolSize;
+        return m_vkDevCtx->CreateDescriptorPool(*m_vkDevCtx, &descriptor_pool, nullptr, &m_descPool);
+    }
+
+    VkResult AllocateDescriptorSets(uint32_t descriptorCount,
+                                    VkDescriptorSetLayout* dscLayout)
+    {
+        assert(m_vkDevCtx);
+        DestroyDescriptorSets();
+
+        VkDescriptorSetAllocateInfo alloc_info = VkDescriptorSetAllocateInfo();
+        alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        alloc_info.pNext = nullptr;
+        alloc_info.descriptorPool = m_descPool;
+        alloc_info.descriptorSetCount = descriptorCount;
+        alloc_info.pSetLayouts = dscLayout;
+        return m_vkDevCtx->AllocateDescriptorSets(*m_vkDevCtx, &alloc_info, &m_descSet);
+    }
+
+    const VkDescriptorSet* getDescriptorSet() {
+        return &m_descSet;
+    }
+
+private:
+    const VulkanDeviceContext* m_vkDevCtx;
+    VkDescriptorPool m_descPool;
+    VkDescriptorSet  m_descSet;
+};
+
+class VulkanDescriptorSetLayoutBinding {
+
+    enum { MAX_DESCRIPTOR_SET_POOLS = 4 };
+
+public:
+    VulkanDescriptorSetLayoutBinding()
+     : m_vkDevCtx(),
+       descriptorSetLayoutBinding(),
+       descriptorSetLayoutCreateInfo(),
+       dscLayout(),
+       pipelineLayout(),
+       currentDescriptorSetPools(-1),
+       descSets{}
+    { }
+
+    ~VulkanDescriptorSetLayoutBinding()
+    {
+        DestroyPipelineLayout();
+        DestroyDescriptorSetLayout();
     }
 
     void DestroyPipelineLayout()
@@ -768,7 +828,17 @@ public:
 
 
     const VkDescriptorSet* getDescriptorSet() {
-        return &descSet;
+        if (currentDescriptorSetPools < 0) {
+            return nullptr;
+        }
+        return descSets[currentDescriptorSetPools].getDescriptorSet();
+    }
+
+    VulkanDescriptorSet* GetNextDescriptorSet() {
+        currentDescriptorSetPools++;
+        currentDescriptorSetPools = currentDescriptorSetPools % MAX_DESCRIPTOR_SET_POOLS;
+        assert((currentDescriptorSetPools >= 0) && (currentDescriptorSetPools < MAX_DESCRIPTOR_SET_POOLS));
+        return &descSets[currentDescriptorSetPools];
     }
 
     const VkDescriptorSetLayout* getDescriptorSetLayout() {
@@ -785,8 +855,8 @@ private:
     VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo;
     VkDescriptorSetLayout dscLayout;
     VkPipelineLayout pipelineLayout;
-    VkDescriptorPool descPool;
-    VkDescriptorSet  descSet;
+    int32_t currentDescriptorSetPools;
+    VulkanDescriptorSet descSets[MAX_DESCRIPTOR_SET_POOLS];
 };
 
 class VulkanGraphicsPipeline {
@@ -845,7 +915,7 @@ public:
 
     // Create Graphics Pipeline
     VkResult CreateGraphicsPipeline(const VulkanDeviceContext* vkDevCtx, VkViewport* pViewport, VkRect2D* pScissor,
-            VkRenderPass renderPass, VulkanDescriptorSet* pBufferDescriptorSets);
+            VkRenderPass renderPass, VulkanDescriptorSetLayoutBinding* pBufferDescriptorSets);
 
     VkPipeline getPipeline() {
         return pipeline;
@@ -921,7 +991,7 @@ public:
       frameBuffer(),
       syncPrimitives(),
       samplerYcbcrConversion(),
-      bufferDescriptorSet(),
+      descriptorSetLayoutBinding(),
       commandBuffer(),
       gfxPipeline(),
       pCurrentImage(NULL),
@@ -944,7 +1014,7 @@ public:
     VulkanFrameBuffer frameBuffer;
     VulkanSyncPrimitives syncPrimitives;
     VulkanSamplerYcbcrConversion samplerYcbcrConversion;
-    VulkanDescriptorSet bufferDescriptorSet;
+    VulkanDescriptorSetLayoutBinding descriptorSetLayoutBinding;
     VulkanCommandBuffer commandBuffer;
     VulkanGraphicsPipeline gfxPipeline;
     ImageObject* pCurrentImage;

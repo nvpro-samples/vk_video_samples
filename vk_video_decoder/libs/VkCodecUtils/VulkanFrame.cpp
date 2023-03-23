@@ -447,13 +447,13 @@ VkResult VulkanFrame::DrawFrame( int32_t           renderIndex,
         }
     }
 
-    pPerDrawContext->bufferDescriptorSet.WriteDescriptorSet(VkSampler(0), pRtImage->view);
+    pPerDrawContext->descriptorSetLayoutBinding.WriteDescriptorSet(VkSampler(0), pRtImage->view);
 
     pPerDrawContext->commandBuffer.CreateCommandBuffer(
         m_videoRenderer->m_renderPass.getRenderPass(), pRtImage, displayWidth, displayHeight,
         pPerDrawContext->frameBuffer.GetFbImage(),
         pPerDrawContext->frameBuffer.GetFrameBuffer(), &m_scissor, pPerDrawContext->gfxPipeline.getPipeline(),
-        pPerDrawContext->bufferDescriptorSet.getPipelineLayout(), pPerDrawContext->bufferDescriptorSet.getDescriptorSet(),
+        pPerDrawContext->descriptorSetLayoutBinding.getPipelineLayout(), pPerDrawContext->descriptorSetLayoutBinding.getDescriptorSet(),
         &m_videoRenderer->m_vertexBuffer);
 
     if (dumpDebug) {
