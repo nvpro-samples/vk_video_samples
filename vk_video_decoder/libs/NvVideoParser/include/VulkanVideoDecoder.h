@@ -1,0 +1,194 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2021 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: MIT
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ * DEALINGS IN THE SOFTWARE.
+ */
+
+#ifndef _VULKANVIDEODECODER_H_
+#define _VULKANVIDEODECODER_H_
+
+#include <atomic>
+#include <limits>
+#include "VulkanBitstreamBuffer.h"
+
+#define UNUSED_LOCAL_VAR(expr) do { (void)(expr); } while (0)
+
+typedef struct NvVkNalUnit
+{
+    int64_t start_offset;     // Start offset in byte stream buffer
+    int64_t end_offset;       // End offset in byte
+    int64_t get_offset;       // Current read ptr in this NALU
+    int32_t get_zerocnt;     // Zero byte count
+    uint32_t get_bfr;        // Bit buffer for reading
+    uint32_t get_bfroffs;    // Offset in bit buffer
+    uint32_t get_emulcnt;    // Emulation prevention byte count
+} NvVkNalUnit;
+
+// Presentation information stored with every decoded frame
+typedef struct NvVkPresentationInfo
+{
+    VkPicIf *pPicBuf;   // NOTE: May not be valid -> only used to uniquely identify a frame
+    int32_t lNumFields;     // Number of displayed fields (to compute frame duration)
+    int32_t bSkipped;       // true if frame was not decoded (skip display)
+    int32_t bPTSValid;      // Frame has an associated PTS
+    int32_t lPOC;           // Picture Order Count (for initial PTS interpolation)
+    int64_t llPTS;          // Frame presentation time
+    int32_t bDiscontinuity; // Discontinuity before this PTS, do not check for out of order
+} NvVkPresentationInfo;
+
+
+//
+// VulkanVideoDecoder is the base class for all decoders
+//
+class VulkanVideoDecoder:  public VulkanVideoDecodeParser
+{
+public:
+    enum { MAX_SLICES = 8192 };             // Up to 8K slices per picture
+    enum { MAX_DELAY = 32 };                // Maximum frame delay between decode & display
+    enum { MAX_QUEUED_PTS = 16};            // Size of PTS queue
+    enum {
+        NALU_DISCARD=0, // Discard this nal unit
+        NALU_SLICE,     // This NALU contains picture data (keep)
+        NALU_UNKNOWN,   // This NALU type is not supported (callback client)
+    };
+    typedef enum {
+        NV_NO_ERROR=0,           // No error detected
+        NV_NON_COMPLIANT_STREAM  // Stream is not compliant with codec standards
+    } NVCodecErrors;
+
+    NVCodecErrors m_eError;
+protected:
+    std::atomic<int32_t>             m_refCount;
+    VkVideoCodecOperationFlagBitsKHR m_standard;        // Encoding standard
+    uint32_t                         m_264SvcEnabled:1;    // enabled NVCS_H264_SVC
+    uint32_t                         m_outOfBandPictureParameters:1; // Enable out of band parameters cb
+    uint32_t                         m_initSequenceIsCalled:1;
+    VkParserVideoDecodeClient *m_pClient;  // Interface to decoder client
+    uint32_t m_defaultMinBufferSize;       // Minimum default buffer size that the parser is going to allocate
+    uint32_t m_bufferOffsetAlignment;      // Minimum buffer offset alignment of the bitstream data for each frame
+    uint32_t m_bufferSizeAlignment;        // Minimum buffer size alignment of the bitstream data for each frame
+    VulkanBitstreamBufferStream m_bitstreamData;// bitstream for the current picture
+    size_t                      m_bitstreamDataLen; // bitstream buffer size
+    uint32_t m_BitBfr;                          // Bit Buffer for start code parsing
+    int32_t m_bEmulBytesPresent;                // Startcode emulation prevention bytes are present in the byte stream
+    int32_t m_bNoStartCodes;                    // No startcode parsing (only rely on the presence of PTS to detect frame boundaries)
+    int32_t m_bFilterTimestamps;                // Filter input timestamps in case the decoder is sending the DTS instead of the PTS
+    int32_t m_MaxFrameBuffers;                  // Max frame buffers to keep as reference
+    NvVkNalUnit m_nalu;                         // Current NAL unit being filled
+    size_t m_lMinBytesForBoundaryDetection;     // Min number of bytes needed to detect picture boundaries
+    int64_t m_lClockRate;                       // System Reference Clock Rate
+    int64_t m_lFrameDuration;                   // Approximate frame duration in units of (1/m_lClockRate) seconds
+    int64_t m_llExpectedPTS;                    // Expected PTS of the next frame to be displayed
+    int64_t m_llParsedBytes;                    // Total bytes parsed by the parser
+    int64_t m_llNaluStartLocation;              // Byte count at the first byte of the current nal unit
+    int64_t m_llFrameStartLocation;             // Byte count at the first byte of the picture bitstream data buffer
+    int32_t m_lErrorThreshold;                  // Error threshold (0=strict, 100=ignore errors)
+    int32_t m_bFirstPTS;                        // Number of frames displayed
+    int32_t m_lPTSPos;                          // Current write position in PTS queue
+    uint32_t m_nCallbackEventCount;              // Decode/Display callback count in current packet
+    VkParserSequenceInfo m_PrevSeqInfo;          // Current sequence info
+    VkParserSequenceInfo m_ExtSeqInfo;           // External sequence info from system layer
+    NvVkPresentationInfo m_DispInfo[MAX_DELAY]; // Keeps track of display attributes
+    struct {
+        int32_t bPTSValid;                      // Entry is valid
+        int64_t llPTS;                          // PTS value
+        int64_t llPTSPos;                       // PTS position in byte stream
+        int32_t bDiscontinuity;                 // Discontinuity before this PTS, do not check for out of order
+    } m_PTSQueue[MAX_QUEUED_PTS];
+    int32_t m_bDiscontinuityReported;           // Dicontinuity reported
+    VkParserPictureData *m_pVkPictureData;
+    int32_t m_iTargetLayer;                     // Specific to SVC only
+    int32_t m_bDecoderInitFailed;               // Set when m_pClient->BeginSequence fails to create the decoder
+    int32_t m_lCheckPTS;                        // Run the m_bFilterTimestamps for the first few framew to look for out of order PTS
+public:
+    VulkanVideoDecoder(VkVideoCodecOperationFlagBitsKHR std);
+    virtual ~VulkanVideoDecoder();
+
+public:
+    // INvRefCount
+    int32_t AddRef()
+    {
+        return ++m_refCount;
+    }
+
+    int32_t Release()
+    {
+        uint32_t ret;
+        ret = --m_refCount;
+        // Destroy the device if refcount reaches zero
+        if (ret == 0) {
+            Deinitialize();
+            delete this;
+        }
+        return ret;
+    }
+
+    // VulkanVideoDecodeParser
+    virtual VkResult Initialize(const VkParserInitDecodeParameters *pNvVkp);
+    virtual bool Deinitialize();
+    virtual bool ParseByteStream(const VkParserBitstreamPacket *pck, size_t *pParsedBytes);
+    virtual bool GetDisplayMasteringInfo(VkParserDisplayMasteringInfo *) { return false; }
+
+protected:
+    virtual void CreatePrivateContext() = 0;                   // Implemented by derived classes
+    virtual void InitParser() = 0;                             // Initialize codec-specific parser state
+    virtual bool IsPictureBoundary(int32_t rbsp_size) = 0;     // Returns true if the current NAL unit belongs to a new picture
+    virtual int32_t  ParseNalUnit() = 0;                       // Must return NALU_DISCARD or NALU_SLICE
+    virtual bool BeginPicture(VkParserPictureData *pnvpd) = 0; // Fills in picture data. Return true if picture should be sent to client
+    virtual void EndPicture() {}                               // Called after a picture has been decoded
+    virtual void EndOfStream() {}                              // Called to reset parser
+    virtual void FreeContext() = 0;
+
+protected:
+    // Byte stream parsing
+    size_t next_start_code(const uint8_t *pdatain, size_t datasize, bool& found_start_code);
+    void nal_unit();
+    void init_dbits();
+    int32_t available_bits() { assert((m_nalu.end_offset - m_nalu.get_offset) < std::numeric_limits<int32_t>::max());
+                               return (int32_t)(m_nalu.end_offset - m_nalu.get_offset) * 8 + (32 - m_nalu.get_bfroffs); }
+    int32_t consumed_bits() { assert((m_nalu.get_offset - m_nalu.start_offset - m_nalu.get_emulcnt) < std::numeric_limits<int32_t>::max());
+                          return (int32_t)(m_nalu.get_offset - m_nalu.start_offset - m_nalu.get_emulcnt) * 8 - (32 - m_nalu.get_bfroffs); }
+    uint32_t next_bits(uint32_t n) { return (m_nalu.get_bfr << m_nalu.get_bfroffs) >> (32 - n); } // NOTE: n must be in the [1..25] range
+    void skip_bits(uint32_t n);  // advance bitstream position
+    uint32_t u(uint32_t n);   // return next n bits, advance bitstream position
+    uint32_t u16_le()    { uint32_t tmp = u(8); tmp |= u(8) << 8; return tmp; }
+    uint32_t u24_le()    { uint32_t tmp = u16_le(); tmp |= u(8) << 16; return tmp; }
+    uint32_t u32_le()    { uint32_t tmp = u16_le(); tmp |= u16_le() << 16; return tmp; }
+    uint32_t ue();
+    int32_t se();
+    uint32_t f(uint32_t n, uint32_t) { return u(n); }
+    bool byte_aligned() const { return ((m_nalu.get_bfroffs & 7) == 0); }
+    void end_of_picture();
+    void end_of_stream();
+    bool IsSequenceChange(VkParserSequenceInfo *pnvsi);
+    int32_t init_sequence(VkParserSequenceInfo *pnvsi);  // Must be called by derived classes to initialize the sequence
+    void display_picture(VkPicIf *pPicBuf, bool bEvict = true);
+    void rbsp_trailing_bits();
+    bool end() { return m_nalu.get_offset >= m_nalu.end_offset; }
+    bool more_rbsp_data();
+    bool resizeBitstreamBuffer(size_t nExtrabytes);
+    size_t swapBitstreamBuffer(size_t copyCurrBuffOffset, size_t copyCurrBuffSize);
+};
+
+void nvParserLog(const char* format, ...);
+void nvParserVerboseLog(const char* format, ...);
+void nvParserErrorLog(const char* format, ...);
+
+#endif // _VULKANVIDEODECODER_H_

@@ -150,7 +150,6 @@ typedef struct VkParserH264PictureData {
     uint8_t slice_group_map_type;
     int8_t pic_init_qs_minus26;
     uint32_t slice_group_change_rate_minus1;
-    const uint8_t* pMb2SliceGroupMap;
     // DPB
     VkParserH264DpbEntry dpb[16 + 1]; // List of reference frames within the DPB
 
@@ -269,51 +268,6 @@ typedef struct VkParserHevcPictureData {
     int8_t RefPicSetInterLayer1[8];
 
 } VkParserHevcPictureData;
-
-typedef struct VkParserVp8PictureData {
-    // ivf
-    uint32_t frameSize;
-    long timeStamp;
-
-    // Frame tag
-    int32_t frame_type;
-    int32_t version;
-    int32_t show_frame;
-    uint32_t first_partition_size;
-
-    VkPicIf* pLastRef;
-    VkPicIf* pGoldenRef;
-    VkPicIf* pAltRef;
-
-    int32_t width;
-    int32_t height;
-    int32_t horizontal_scale;
-    int32_t vertical_scale;
-
-    // Frame header
-    union Vp8FrameHeaderPartial {
-        uint32_t headerData;
-        struct {
-            uint32_t color_space : 1;
-            uint32_t clamping_type : 1;
-            uint32_t segmentation_enabled : 1;
-            uint32_t update_mb_segmentation_data : 1;
-            uint32_t Segment_feature_mode : 1;
-            uint32_t filter_type : 1;
-            uint32_t loop_filter_level : 6;
-            uint32_t sharpness_level : 3;
-            uint32_t log2_nbr_of_dct_partitions : 2;
-            uint32_t refresh_golden_frame : 1;
-            uint32_t refresh_alternate_frame : 1;
-            uint32_t copy_buffer_to_golden : 2;
-            uint32_t copy_buffer_to_alternate : 2;
-            uint32_t sign_bias_golden : 1;
-            uint32_t sign_bias_alternate : 1;
-            uint32_t refresh_entropy_probs : 1;
-            uint32_t refresh_last : 1;
-        } header;
-    } frameHeader_partial;
-} VkParserVp8PictureData;
 
 typedef struct VkParserVp9PictureData {
     uint32_t width;
@@ -577,7 +531,6 @@ typedef struct VkParserPictureData {
     union {
         VkParserH264PictureData h264;
         VkParserHevcPictureData hevc;
-        VkParserVp8PictureData vp8;
         VkParserVp9PictureData vp9;
         VkParserAv1PictureData av1;
     } CodecSpecific;
@@ -649,8 +602,6 @@ typedef struct VkParserSequenceInfo {
     uint32_t cbSideData; // Auxiliary encryption information length
     uint32_t codecProfile;
 } VkParserSequenceInfo;
-
-struct VkParserSliceInfo;
 
 enum {
     VK_PARSER_CAPS_MVC = 0x01,
@@ -731,12 +682,8 @@ typedef struct VkParserInitDecodeParameters {
 class VulkanVideoDecodeParser : public virtual VkVideoRefCountBase {
 public:
     virtual VkResult Initialize(const VkParserInitDecodeParameters* pParserPictureData) = 0;
-    virtual bool DecodePicture(VkParserPictureData* pParserPictureData) = 0;
     virtual bool ParseByteStream(const VkParserBitstreamPacket* pck,
                                  size_t* pParsedBytes = NULL) = 0;
-    virtual bool DecodeSliceInfo(VkParserSliceInfo* psli,
-                                 const VkParserPictureData* pParserPictureData,
-                                 int32_t iSlice) = 0;
     virtual bool GetDisplayMasteringInfo(VkParserDisplayMasteringInfo* pdisp) = 0;
 };
 
