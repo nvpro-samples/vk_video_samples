@@ -75,26 +75,28 @@ public:
     class MtQueueMutex {
 
     public:
-        MtQueueMutex(const VulkanDeviceContext& devCtx, const QueueFamilySubmitType submitType, const int32_t queueIndex)
+        MtQueueMutex(const VulkanDeviceContext* devCtx, const QueueFamilySubmitType submitType, const int32_t queueIndex)
         {
             if (submitType == DECODE) {
-                assert((queueIndex >= 0) && (queueIndex < devCtx.m_videoDecodeNumQueues));
-                m_queue = &devCtx.m_videoDecodeQueues[queueIndex];
-                m_mutex = &devCtx.m_videoDecodeQueueMutexes[queueIndex];
+                assert((queueIndex >= 0) && (queueIndex < devCtx->m_videoDecodeNumQueues));
+                m_queue = &devCtx->m_videoDecodeQueues[queueIndex];
+                m_mutex = &devCtx->m_videoDecodeQueueMutexes[queueIndex];
             } else if (submitType == ENCODE) {
-                assert((queueIndex >= 0) && (queueIndex < devCtx.m_videoEncodeNumQueues));
-                m_queue = &devCtx.m_videoEncodeQueues[queueIndex];
-                m_mutex = &devCtx.m_videoEncodeQueueMutexes[queueIndex];
+                assert((queueIndex >= 0) && (queueIndex < devCtx->m_videoEncodeNumQueues));
+                m_queue = &devCtx->m_videoEncodeQueues[queueIndex];
+                m_mutex = &devCtx->m_videoEncodeQueueMutexes[queueIndex];
             } else {
                 m_queue = nullptr;
-                m_mutex = &devCtx.m_gfxQueueMutexes;
+                m_mutex = nullptr;
             }
-            ((std::mutex*)m_mutex)->lock();
+            if (m_mutex) {
+                m_mutex->lock();
+            }
         }
 
         ~MtQueueMutex() {
             if (m_mutex) {
-                ((std::mutex*)m_mutex)->unlock();
+                m_mutex->unlock();
                 m_mutex = nullptr;
             }
         }
@@ -109,13 +111,13 @@ public:
 
     private:
         const VkQueue*    m_queue;
-        const std::mutex* m_mutex;
+        mutable std::mutex* m_mutex;
     };
 
     VkResult MultiThreadedQueueSubmit(const QueueFamilySubmitType submitType, const int32_t queueIndex,
                                       uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence) const
     {
-        MtQueueMutex queue(*this, submitType, queueIndex);
+        MtQueueMutex queue(this, submitType, queueIndex);
         if (queue) {
             return QueueSubmit(queue, submitCount, pSubmits, fence);
         } else {
@@ -125,7 +127,7 @@ public:
 
     VkResult MultiThreadedQueueWaitIdle(const QueueFamilySubmitType submitType, const int32_t queueIndex) const
     {
-        MtQueueMutex queue(*this, submitType, queueIndex);
+        MtQueueMutex queue(this, submitType, queueIndex);
         if (queue) {
             return QueueWaitIdle(queue);
         } else {
@@ -232,9 +234,9 @@ private:
     VkQueue                 m_presentQueue;
     std::vector<VkQueue>    m_videoDecodeQueues;
     std::vector<VkQueue>    m_videoEncodeQueues;
-    std::mutex                                  m_gfxQueueMutexes;
-    std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoDecodeQueueMutexes;
-    std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoEncodeQueueMutexes;
+    mutable std::mutex                                  m_gfxQueueMutexes;
+    mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoDecodeQueueMutexes;
+    mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoEncodeQueueMutexes;
     bool m_isExternallyManagedDevice;
     VkDebugReportCallbackEXT           m_debugReport;
     std::vector<const char *>          m_reqInstanceLayers;

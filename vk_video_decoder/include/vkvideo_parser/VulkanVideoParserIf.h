@@ -649,11 +649,11 @@ public:
     {
         return 0;
     } // called from sequence header of av1 scalable video streams
-    virtual size_t GetBitstreamBuffer(size_t size,
-                                      size_t minBitstreamBufferOffsetAlignment,
-                                      size_t minBitstreamBufferSizeAlignment,
+    virtual VkDeviceSize GetBitstreamBuffer(VkDeviceSize size,
+                                      VkDeviceSize minBitstreamBufferOffsetAlignment,
+                                      VkDeviceSize minBitstreamBufferSizeAlignment,
                                       const uint8_t* pInitializeBufferMemory,
-                                      size_t initializeBufferMemorySize,
+                                      VkDeviceSize initializeBufferMemorySize,
                                       VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer) = 0;
 protected:
     virtual ~VkParserVideoDecodeClient() { }

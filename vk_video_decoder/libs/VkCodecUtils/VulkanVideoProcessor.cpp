@@ -156,7 +156,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
 
     m_loopCount = loopCount;
     m_startFrame = startFrame;
-    m_maxFrameCount =  maxFrameCount;
+    m_maxFrameCount = maxFrameCount;
 
     return 0;
 }
@@ -377,14 +377,33 @@ size_t VulkanVideoProcessor::ConvertFrameToNv12(DecodedFrame* pFrame,
         if (result != VK_SUCCESS) {
             std::cout << "WaitForFences timeout " << fenceTimeout
                     << " result " << result << " retry " << retryCount << std::endl << std::flush;
+
+            VkQueryResultStatusKHR decodeStatus;
+            result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx,
+                                                     pFrame->queryPool,
+                                                     pFrame->startQueryId,
+                                                     1,
+                                                     sizeof(decodeStatus),
+                                                     &decodeStatus,
+                                                     sizeof(decodeStatus),
+                                                     VK_QUERY_RESULT_WITH_STATUS_BIT_KHR);
+
+            if (result != VK_SUCCESS) {
+                printf("\nERROR: GetQueryPoolResults() result: 0x%x\n", result);
+            }
+
+            std::cout << "\t +++++++++++++++++++++++++++< " << (pFrame ? pFrame->pictureIndex : -1)
+                    << " >++++++++++++++++++++++++++++++" << std::endl;
+            std::cout << "\t => Decode Status for CurrPicIdx: " << (pFrame ? pFrame->pictureIndex : -1) << std::endl
+                    << "\t\tdecodeStatus: " << decodeStatus << std::endl;
         }
         retryCount--;
     } while ((result == VK_TIMEOUT) && (retryCount > 0));
 
     // Map the image and read the image data.
-    size_t maxSize = 0;
-    const uint8_t* readImagePtr = srcImageDeviceMemory->GetReadOnlyDataPtr(imageResource->GetImageDeviceMemoryOffset(),
-                                                               maxSize);
+    VkDeviceSize imageOffset = imageResource->GetImageDeviceMemoryOffset();
+    VkDeviceSize maxSize = 0;
+    const uint8_t* readImagePtr = srcImageDeviceMemory->GetReadOnlyDataPtr(imageOffset, maxSize);
     assert(readImagePtr != nullptr);
 
     int secondaryPlaneHeight = pFrame->displayHeight;
@@ -564,7 +583,8 @@ int32_t VulkanVideoProcessor::ParserProcessNextDataChunk()
     }
     const bool bitstreamHasMoreData = ((bitstreamChunkSize > 0) && (pBitstreamData != nullptr));
     if (bitstreamHasMoreData) {
-        VkResult parserStatus = ParseVideoStreamData(pBitstreamData, bitstreamChunkSize,
+        assert((uint64_t)bitstreamChunkSize < (uint64_t)std::numeric_limits<size_t>::max());
+        VkResult parserStatus = ParseVideoStreamData(pBitstreamData, (size_t)bitstreamChunkSize,
                                                      &bitstreamBytesConsumed,
                                                      requiresPartialParsing);
         if (parserStatus != VK_SUCCESS) {
@@ -618,6 +638,8 @@ int32_t VulkanVideoProcessor::GetNextFrame(DecodedFrame* pFrame, bool* endOfStre
         std::cout << "Number of video frames " << m_videoFrameNum
                   << " of max frame number " << m_maxFrameCount << std::endl;
         m_videoStreamsCompleted = StreamCompleted();
+        *endOfStream = m_videoStreamsCompleted;
+        return -1;
     }
 
     *endOfStream = m_videoStreamsCompleted;

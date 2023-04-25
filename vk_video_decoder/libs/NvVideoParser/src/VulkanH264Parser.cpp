@@ -469,7 +469,7 @@ bool VulkanH264Decoder::BeginPicture_SVC(VkParserPictureData *pnvpd)
 {
     {
         // Reset m_dependency_data array
-        for (auto i = 0; i < sizeof(m_dependency_data) / sizeof(m_dependency_data[0]); i++) {
+        for (size_t i = 0; i < sizeof(m_dependency_data) / sizeof(m_dependency_data[0]); i++) {
             m_dependency_data[i] = dependency_data_s();
         }
     }
@@ -786,7 +786,7 @@ void VulkanH264Decoder::EndPicture_SVC()
     }
     // clear SVC layer data
     {
-        for (auto i = 0; i < sizeof(m_layer_data) / sizeof(m_layer_data[0]); i++) {
+        for (size_t i = 0; i < sizeof(m_layer_data) / sizeof(m_layer_data[0]); i++) {
             m_layer_data[i] = layer_data_s();
         }
     }

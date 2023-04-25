@@ -85,7 +85,7 @@ protected:
     uint32_t m_bufferOffsetAlignment;      // Minimum buffer offset alignment of the bitstream data for each frame
     uint32_t m_bufferSizeAlignment;        // Minimum buffer size alignment of the bitstream data for each frame
     VulkanBitstreamBufferStream m_bitstreamData;// bitstream for the current picture
-    size_t                      m_bitstreamDataLen; // bitstream buffer size
+    VkDeviceSize                m_bitstreamDataLen; // bitstream buffer size
     uint32_t m_BitBfr;                          // Bit Buffer for start code parsing
     int32_t m_bEmulBytesPresent;                // Startcode emulation prevention bytes are present in the byte stream
     int32_t m_bNoStartCodes;                    // No startcode parsing (only rely on the presence of PTS to detect frame boundaries)
@@ -183,8 +183,8 @@ protected:
     void rbsp_trailing_bits();
     bool end() { return m_nalu.get_offset >= m_nalu.end_offset; }
     bool more_rbsp_data();
-    bool resizeBitstreamBuffer(size_t nExtrabytes);
-    size_t swapBitstreamBuffer(size_t copyCurrBuffOffset, size_t copyCurrBuffSize);
+    bool resizeBitstreamBuffer(VkDeviceSize nExtrabytes);
+    VkDeviceSize swapBitstreamBuffer(VkDeviceSize copyCurrBuffOffset, VkDeviceSize copyCurrBuffSize);
 };
 
 void nvParserLog(const char* format, ...);

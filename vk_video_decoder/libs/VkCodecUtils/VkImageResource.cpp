@@ -47,7 +47,7 @@ VkResult VkImageResource::Create(const VulkanDeviceContext* vkDevCtx,
                                                 memoryRequirements,
                                                 memoryPropertyFlags,
                                                 nullptr, // pInitializeMemory
-                                                0,       // initializeMemorySize
+                                                0ULL,     // initializeMemorySize
                                                 false,   // clearMemory
                                                 vkDeviceMemory);
         if (result != VK_SUCCESS) {

@@ -335,8 +335,7 @@ public:
         uint32_t used_for_reference : 2;
         uint32_t is_long_term : 1; // 0 = short-term, 1 = long-term
         uint32_t is_non_existing : 1; // 1 = marked as non-existing
-        uint32_t
-            is_field_ref : 1; // set if unpaired field or complementary field pair
+        uint32_t is_field_ref : 1; // set if unpaired field or complementary field pair
         union {
             int16_t FieldOrderCnt[2]; // h.264 : 2*32 [top/bottom].
             int32_t PicOrderCnt; // HEVC PicOrderCnt
@@ -348,7 +347,7 @@ public:
         };
         vkPicBuffBase* m_picBuff; // internal picture reference
 
-        void setReferenceAndTopBoottomField(
+        void setReferenceAndTopBottomField(
             bool isReference, bool nonExisting, bool isLongTerm, bool isFieldRef,
             bool topFieldIsReference, bool bottomFieldIsReference, int16_t frameIdx,
             const int16_t fieldOrderCntList[2], vkPicBuffBase* picBuff)
@@ -390,7 +389,7 @@ public:
 
         bool isRef() { return (used_for_reference != 0); }
 
-        StdVideoDecodeH264ReferenceInfoFlags getPictureFlag()
+        StdVideoDecodeH264ReferenceInfoFlags getPictureFlag(bool currentPictureIsProgressive)
         {
             StdVideoDecodeH264ReferenceInfoFlags picFlags = StdVideoDecodeH264ReferenceInfoFlags();
             if (m_dumpParserData)
@@ -419,12 +418,12 @@ public:
                 // picFlags.field_pic_flag = true;
             }
 
-            if (used_for_reference & topFieldMask) {
+            if (!currentPictureIsProgressive && (used_for_reference & topFieldMask)) {
                 if (m_dumpParserData)
                     std::cout << "TOP_FIELD_IS_REF ";
                 picFlags.top_field_flag = true;
             }
-            if (used_for_reference & bottomFieldMask) {
+            if (!currentPictureIsProgressive && (used_for_reference & bottomFieldMask)) {
                 if (m_dumpParserData)
                     std::cout << "BOTTOM_FIELD_IS_REF ";
                 picFlags.bottom_field_flag = true;
@@ -435,7 +434,8 @@ public:
 
         void setH264PictureData(nvVideoDecodeH264DpbSlotInfo* pDpbRefList,
             VkVideoReferenceSlotInfoKHR* pReferenceSlots,
-            uint32_t dpbEntryIdx, uint32_t dpbSlotIndex)
+            uint32_t dpbEntryIdx, uint32_t dpbSlotIndex,
+            bool currentPictureIsProgressive)
         {
             assert(dpbEntryIdx < AVC_MAX_DPB_SLOTS);
             assert(dpbSlotIndex < AVC_MAX_DPB_SLOTS);
@@ -452,7 +452,7 @@ public:
                           << "dpbSlotIndex: " << dpbSlotIndex
                           << " FrameIdx: " << (int32_t)FrameIdx;
             }
-            pRefPicInfo->flags = getPictureFlag();
+            pRefPicInfo->flags = getPictureFlag(currentPictureIsProgressive);
             pRefPicInfo->PicOrderCnt[0] = FieldOrderCnt[0];
             pRefPicInfo->PicOrderCnt[1] = FieldOrderCnt[1];
             if (m_dumpParserData)
@@ -524,11 +524,11 @@ public:
         return decode_caps;
     };
 
-    virtual size_t GetBitstreamBuffer(size_t size,
-                                      size_t minBitstreamBufferOffsetAlignment,
-                                      size_t minBitstreamBufferSizeAlignment,
+    virtual VkDeviceSize GetBitstreamBuffer(VkDeviceSize size,
+                                      VkDeviceSize minBitstreamBufferOffsetAlignment,
+                                      VkDeviceSize minBitstreamBufferSizeAlignment,
                                       const uint8_t* pInitializeBufferMemory,
-                                      size_t initializeBufferMemorySize,
+                                      VkDeviceSize initializeBufferMemorySize,
                                       VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer);
 
     const IVulkanVideoDecoderHandler* GetDecoderHandler()
@@ -753,11 +753,11 @@ bool VulkanVideoParser::AllocPictureBuffer(VkPicIf** ppPicBuff)
     return result;
 }
 
-size_t VulkanVideoParser::GetBitstreamBuffer(size_t size,
-                                             size_t minBitstreamBufferOffsetAlignment,
-                                             size_t minBitstreamBufferSizeAlignment,
+VkDeviceSize VulkanVideoParser::GetBitstreamBuffer(VkDeviceSize size,
+                                             VkDeviceSize minBitstreamBufferOffsetAlignment,
+                                             VkDeviceSize minBitstreamBufferSizeAlignment,
                                              const uint8_t* pInitializeBufferMemory,
-                                             size_t initializeBufferMemorySize,
+                                             VkDeviceSize initializeBufferMemorySize,
                                              VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer)
 {
     // Forward the request to the Vulkan decoder handler
@@ -1152,7 +1152,7 @@ uint32_t VulkanVideoParser::FillDpbH264State(
                 (int16_t)dpbIn[inIdx].FieldOrderCnt[0],
                 (int16_t)dpbIn[inIdx].FieldOrderCnt[1]
             };
-            refOnlyDpbIn[numUsedRef].setReferenceAndTopBoottomField(
+            refOnlyDpbIn[numUsedRef].setReferenceAndTopBottomField(
                 !!used_for_reference,
                 (picIdx < 0), /* not_existing is frame inferred by the decoding
                            process for gaps in frame_num */
@@ -1305,7 +1305,7 @@ uint32_t VulkanVideoParser::FillDpbH264State(
             }
             assert((dpbSlot >= 0) && ((uint32_t)dpbSlot < m_maxNumDpbSlots));
             refOnlyDpbIn[dpbIdx].setH264PictureData(pDpbRefList, pReferenceSlots,
-                dpbIdx, dpbSlot);
+                dpbIdx, dpbSlot, pd->progressive_frame);
             pGopReferenceImagesIndexes[dpbIdx] = picIdx;
         }
     }

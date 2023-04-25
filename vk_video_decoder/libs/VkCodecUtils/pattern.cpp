@@ -196,7 +196,7 @@ const VkFormatDesc vkFormatInfo[] = {
     { VK_FORMAT_A2B10G10R10_UINT_PACK32,        4,   4,        "rgb10_a2ui",        },
 };
 
-const VkFormatDesc* vkFormatLookUp(VkFormat format)
+static const VkFormatDesc* vkFormatLookUp(VkFormat format)
 {
     const VkFormatDesc* pVkFormatDesc = NULL;
     for (unsigned int i = 0; i < sizeof(vkFormatInfo)/sizeof(vkFormatInfo[0]); i++) {

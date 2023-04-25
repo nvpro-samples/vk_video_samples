@@ -119,7 +119,7 @@ int VulkanFrame::AttachShell(const Shell& sh)
     };
 
     CALL_VK(m_videoRenderer->m_vertexBuffer.CreateVertexBuffer(m_videoRenderer->m_vkDevCtx,
-                                                               (float*)vertices, sizeof(vertices),
+                                                               (const float*)vertices, sizeof(vertices),
                                                                sizeof(vertices) / sizeof(vertices[0])));
 
     return 0;

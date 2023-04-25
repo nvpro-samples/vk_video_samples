@@ -28,7 +28,7 @@ public:
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            const VkMemoryRequirements& memoryRequirements,
                            VkMemoryPropertyFlags& memoryPropertyFlags,
-                           const void* pInitializeMemory, size_t initializeMemorySize, bool clearMemory,
+                           const void* pInitializeMemory, VkDeviceSize initializeMemorySize, bool clearMemory,
                            VkSharedBaseObj<VulkanDeviceMemoryImpl>& vulkanDeviceMemory);
 
     virtual int32_t AddRef()
@@ -46,24 +46,24 @@ public:
         return ret;
     }
 
-    virtual size_t GetMaxSize() const;
-    virtual size_t GetSizeAlignment() const;
-    virtual size_t Resize(size_t newSize, size_t copySize = 0, size_t copyOffset = 0);
+    virtual VkDeviceSize GetMaxSize() const;
+    virtual VkDeviceSize GetSizeAlignment() const;
+    virtual VkDeviceSize Resize(VkDeviceSize newSize, VkDeviceSize copySize = 0, VkDeviceSize copyOffset = 0);
 
-    virtual int64_t  MemsetData(uint32_t value, size_t offset, size_t size);
-    virtual int64_t  CopyDataToBuffer(uint8_t *dstBuffer, size_t dstOffset,
-                                      size_t srcOffset, size_t size) const;
-    virtual int64_t  CopyDataToBuffer(VkSharedBaseObj<VulkanDeviceMemoryImpl>& dstBuffer, size_t dstOffset,
-                                      size_t srcOffset, size_t size) const;
-    virtual int64_t  CopyDataFromBuffer(const uint8_t *sourceBuffer, size_t srcOffset,
-                                        size_t dstOffset, size_t size);
-    virtual int64_t  CopyDataFromBuffer(const VkSharedBaseObj<VulkanDeviceMemoryImpl>& sourceMemory, size_t srcOffset,
-                                        size_t dstOffset, size_t size);
-    virtual uint8_t* GetDataPtr(size_t offset, size_t &maxSize);
-    virtual const uint8_t* GetReadOnlyDataPtr(size_t offset, size_t &maxSize) const;
+    virtual int64_t  MemsetData(uint32_t value, VkDeviceSize offset, VkDeviceSize size);
+    virtual int64_t  CopyDataToBuffer(uint8_t *dstBuffer, VkDeviceSize dstOffset,
+                                      VkDeviceSize srcOffset, VkDeviceSize size);
+    virtual int64_t  CopyDataToBuffer(VkSharedBaseObj<VulkanDeviceMemoryImpl>& dstBuffer, VkDeviceSize dstOffset,
+                                      VkDeviceSize srcOffset, VkDeviceSize size);
+    virtual int64_t  CopyDataFromBuffer(const uint8_t *sourceBuffer, VkDeviceSize srcOffset,
+                                        VkDeviceSize dstOffset, VkDeviceSize size);
+    virtual int64_t  CopyDataFromBuffer(const VkSharedBaseObj<VulkanDeviceMemoryImpl>& sourceMemory, VkDeviceSize srcOffset,
+                                        VkDeviceSize dstOffset, VkDeviceSize size);
+    virtual uint8_t* GetDataPtr(VkDeviceSize offset, VkDeviceSize &maxSize);
+    virtual const uint8_t* GetReadOnlyDataPtr(VkDeviceSize offset, VkDeviceSize &maxSize);
 
-    virtual void FlushRange(size_t offset, size_t size) const;
-    virtual void InvalidateRange(size_t offset, size_t size) const;
+    virtual void FlushRange(VkDeviceSize offset, VkDeviceSize size) const;
+    virtual void InvalidateRange(VkDeviceSize offset, VkDeviceSize size) const;
 
     virtual VkDeviceMemory GetDeviceMemory() const { return m_deviceMemory; }
     operator VkDeviceMemory() { return m_deviceMemory; }
@@ -76,7 +76,7 @@ public:
     VkResult CopyDataToMemory(const uint8_t* pData, VkDeviceSize size,
                               VkDeviceSize memoryOffset) const;
 
-    uint8_t* CheckAccess(size_t offset, size_t size) const;
+    uint8_t* CheckAccess(VkDeviceSize offset, VkDeviceSize size);
 
 private:
 
@@ -90,7 +90,7 @@ private:
     VkResult Initialize(const VkMemoryRequirements& memoryRequirements,
                         VkMemoryPropertyFlags& memoryPropertyFlags,
                         const void* pInitializeMemory,
-                        size_t initializeMemorySize,
+                        VkDeviceSize initializeMemorySize,
                         bool clearMemory);
 
     VulkanDeviceMemoryImpl(const VulkanDeviceContext* vkDevCtx)

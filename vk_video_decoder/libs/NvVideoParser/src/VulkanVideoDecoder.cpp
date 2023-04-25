@@ -159,7 +159,7 @@ void VulkanVideoDecoder::skip_bits(uint32_t n)
         m_nalu.get_bfr <<= 8;
         if (m_nalu.get_offset < m_nalu.end_offset)
         {
-            uint32_t c = m_bitstreamData[m_nalu.get_offset++];
+            VkDeviceSize c = m_bitstreamData[m_nalu.get_offset++];
             if (m_bEmulBytesPresent)
             {
                 // detect / discard emulation_prevention_three_byte
@@ -279,12 +279,12 @@ size_t VulkanVideoDecoder::next_start_code(const uint8_t *pdatain, size_t datasi
     return i;
 }
 
-bool VulkanVideoDecoder::resizeBitstreamBuffer(size_t extraBytes)
+bool VulkanVideoDecoder::resizeBitstreamBuffer(VkDeviceSize extraBytes)
 {
     // increasing min 2MB size per resizeBitstreamBuffer()
-    size_t newBitstreamDataLen = m_bitstreamDataLen + std::max<size_t>(extraBytes, (2 * 1024 * 1024));
+    VkDeviceSize newBitstreamDataLen = m_bitstreamDataLen + std::max<VkDeviceSize>(extraBytes, (2 * 1024 * 1024));
 
-    size_t retSize = m_bitstreamData.ResizeBitstreamBuffer(newBitstreamDataLen, m_bitstreamDataLen, 0);
+    VkDeviceSize retSize = m_bitstreamData.ResizeBitstreamBuffer(newBitstreamDataLen, m_bitstreamDataLen, 0);
     if (retSize < newBitstreamDataLen)
     {
         assert(!"bitstream buffer resize failed");
@@ -292,18 +292,18 @@ bool VulkanVideoDecoder::resizeBitstreamBuffer(size_t extraBytes)
         return false;
     }
 
-    m_bitstreamDataLen = retSize;
+    m_bitstreamDataLen = (VkDeviceSize)retSize;
     return true;
 }
 
-size_t VulkanVideoDecoder::swapBitstreamBuffer(size_t copyCurrBuffOffset, size_t copyCurrBuffSize)
+VkDeviceSize VulkanVideoDecoder::swapBitstreamBuffer(VkDeviceSize copyCurrBuffOffset, VkDeviceSize copyCurrBuffSize)
 {
     VkSharedBaseObj<VulkanBitstreamBuffer> currentBitstreamBuffer(m_bitstreamData.GetBitstreamBuffer());
     VkSharedBaseObj<VulkanBitstreamBuffer> newBitstreamBuffer;
-    size_t newBufferSize = currentBitstreamBuffer->GetMaxSize();
+    VkDeviceSize newBufferSize = currentBitstreamBuffer->GetMaxSize();
     const uint8_t* pCopyData = nullptr;
     if (copyCurrBuffSize) {
-        size_t maxSize = 0;
+        VkDeviceSize maxSize = 0;
         pCopyData = currentBitstreamBuffer->GetReadOnlyDataPtr(copyCurrBuffOffset, maxSize);
     }
     m_pClient->GetBitstreamBuffer(newBufferSize,
@@ -320,7 +320,7 @@ size_t VulkanVideoDecoder::swapBitstreamBuffer(size_t copyCurrBuffOffset, size_t
 
 bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_t *pParsedBytes)
 {
-    size_t curr_data_size = pck->nDataLength;
+    VkDeviceSize curr_data_size = pck->nDataLength;
     unsigned int framesinpkt = 0;
     const uint8_t *pdatain = (curr_data_size > 0) ? pck->pByteStream : NULL;
 
@@ -341,7 +341,7 @@ bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, siz
 
             // Pad the data after the NAL unit with start_code_prefix
             // make the room for 3 bytes 
-            if (((size_t)(m_nalu.end_offset + 3) > m_bitstreamDataLen) &&
+            if (((VkDeviceSize)(m_nalu.end_offset + 3) > m_bitstreamDataLen) &&
                     !resizeBitstreamBuffer(m_nalu.end_offset + 3 - m_bitstreamDataLen)) {
                 return false;
             }
@@ -419,7 +419,7 @@ bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, siz
     // Parse start codes
     while (curr_data_size > 0) {
 
-        size_t buflen = curr_data_size;
+        VkDeviceSize buflen = curr_data_size;
 
         // If bPartialParsing is set, we return immediately once we decoded or displayed a frame
         if ((pck->bPartialParsing) && (m_nCallbackEventCount != 0))
@@ -428,18 +428,18 @@ bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, siz
         }
         if ((m_nalu.start_offset > 0) && ((m_nalu.end_offset - m_nalu.start_offset) < (int64_t)m_lMinBytesForBoundaryDetection))
         {
-            buflen = std::min<size_t>(buflen, (m_lMinBytesForBoundaryDetection - (m_nalu.end_offset - m_nalu.start_offset)));
+            buflen = std::min<VkDeviceSize>(buflen, (m_lMinBytesForBoundaryDetection - (m_nalu.end_offset - m_nalu.start_offset)));
         }
         bool found_start_code = false;
-        size_t start_offset = next_start_code(pdatain, buflen, found_start_code);
-        size_t data_used = found_start_code ? start_offset : buflen;
+        VkDeviceSize start_offset = next_start_code(pdatain, (size_t)buflen, found_start_code);
+        VkDeviceSize data_used = found_start_code ? start_offset : buflen;
         if (data_used > 0)
         {
             if (data_used > (m_bitstreamDataLen - m_nalu.end_offset))
             {
                 resizeBitstreamBuffer(data_used - (m_bitstreamDataLen - m_nalu.end_offset));
             }
-            size_t bytes = std::min<size_t>(data_used, m_bitstreamDataLen - m_nalu.end_offset);
+            VkDeviceSize bytes = std::min<VkDeviceSize>(data_used, m_bitstreamDataLen - m_nalu.end_offset);
             if (bytes > 0) {
                 VkSharedBaseObj<VulkanBitstreamBuffer> bitstreamBuffer(m_bitstreamData.GetBitstreamBuffer());
                 bitstreamBuffer->CopyDataFromBuffer(pdatain, 0, m_nalu.end_offset, bytes);
@@ -488,7 +488,8 @@ bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, siz
     }
     if (pParsedBytes)
     {
-        *pParsedBytes = pck->nDataLength - curr_data_size;
+        assert(curr_data_size < std::numeric_limits<size_t>::max());
+        *pParsedBytes = pck->nDataLength - (size_t)curr_data_size;
     }
     if (pck->bEOP || pck->bEOS)
     {
@@ -504,7 +505,7 @@ bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, siz
         nal_unit();
 
         // Pad the data after the NAL unit with start_code_prefix
-        if (((size_t)(m_nalu.end_offset + 3) > m_bitstreamDataLen) &&
+        if (((VkDeviceSize)(m_nalu.end_offset + 3) > m_bitstreamDataLen) &&
                 !resizeBitstreamBuffer(m_nalu.end_offset + 3 - m_bitstreamDataLen)) {
             return false;
         }
@@ -574,7 +575,9 @@ void VulkanVideoDecoder::nal_unit()
             {
                 // Called client for handling unsupported NALUs (or user data)
                 const uint8_t* bitstreamDataPtr = m_bitstreamData.GetBitstreamPtr();
-                m_pClient->UnhandledNALU(bitstreamDataPtr + m_nalu.start_offset + 3, m_nalu.end_offset - m_nalu.start_offset - 3);
+                int64_t cbData = (m_nalu.end_offset - m_nalu.start_offset - 3);
+                assert((uint64_t)cbData < (uint64_t)std::numeric_limits<size_t>::max());
+                m_pClient->UnhandledNALU(bitstreamDataPtr + m_nalu.start_offset + 3, (size_t)cbData);
             }
             m_nalu.end_offset = m_nalu.start_offset;
         }
@@ -642,7 +645,8 @@ void VulkanVideoDecoder::end_of_picture()
         m_pVkPictureData->bitstreamDataOffset = 0;
         m_pVkPictureData->firstSliceIndex = 0;
         m_pVkPictureData->bitstreamData = m_bitstreamData.GetBitstreamBuffer();
-        m_pVkPictureData->bitstreamDataLen = m_nalu.start_offset;
+        assert((uint64_t)m_nalu.start_offset < (uint64_t)std::numeric_limits<size_t>::max());
+        m_pVkPictureData->bitstreamDataLen = (size_t)m_nalu.start_offset;
         m_pVkPictureData->numSlices = m_bitstreamData.GetStreamMarkersCount();
         if(BeginPicture(m_pVkPictureData))
         {

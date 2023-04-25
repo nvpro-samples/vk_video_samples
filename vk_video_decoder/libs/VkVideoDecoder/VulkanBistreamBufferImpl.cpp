@@ -21,7 +21,7 @@
 VkResult
 VulkanBitstreamBufferImpl::Create(const VulkanDeviceContext* vkDevCtx, uint32_t queueFamilyIndex,
         VkDeviceSize bufferSize, VkDeviceSize bufferOffsetAlignment, VkDeviceSize bufferSizeAlignment,
-        const void* pInitializeBufferMemory, size_t initializeBufferMemorySize,
+        const void* pInitializeBufferMemory, VkDeviceSize initializeBufferMemorySize,
         VkSharedBaseObj<VulkanBitstreamBufferImpl>& vulkanBitstreamBuffer)
 {
     VkSharedBaseObj<VulkanBitstreamBufferImpl> vkBitstreamBuffer(new VulkanBitstreamBufferImpl(vkDevCtx,
@@ -53,7 +53,7 @@ VkResult VulkanBitstreamBufferImpl::CreateBuffer(const VulkanDeviceContext* vkDe
                                                  VkDeviceSize& bufferOffset,
                                                  VkMemoryPropertyFlags& memoryPropertyFlags,
                                                  const void* pInitializeBufferMemory,
-                                                 size_t initializeBufferMemorySize,
+                                                 VkDeviceSize initializeBufferMemorySize,
                                                  VkSharedBaseObj<VulkanDeviceMemoryImpl>& vulkanDeviceMemory)
 {
     bufferSize = ((bufferSize + (bufferSizeAlignment - 1)) & ~(bufferSizeAlignment - 1));
@@ -107,7 +107,7 @@ VkResult VulkanBitstreamBufferImpl::CreateBuffer(const VulkanDeviceContext* vkDe
 
 VkResult VulkanBitstreamBufferImpl::Initialize(VkDeviceSize bufferSize,
                                                const void* pInitializeBufferMemory,
-                                               size_t initializeBufferMemorySize)
+                                               VkDeviceSize initializeBufferMemorySize)
 {
     if (m_bufferSize >= bufferSize) {
         VkDeviceSize ret = MemsetData(0x00, 0, m_bufferSize);
@@ -169,10 +169,10 @@ VkResult VulkanBitstreamBufferImpl::CopyDataToBuffer(const uint8_t* pData,
     dstBufferOffset = ((dstBufferOffset + (m_bufferOffsetAlignment - 1)) & ~(m_bufferOffsetAlignment - 1));
     assert((dstBufferOffset + size) <= m_bufferSize);
 
-    const size_t shortBufferDataSize = 16;
+    const VkDeviceSize shortBufferDataSize = 16;
     uint8_t shortBufferData[shortBufferDataSize];
     if (size < shortBufferDataSize) {
-        memset(shortBufferData + size, 0x00, shortBufferDataSize - size);
+        memset(shortBufferData + size, 0x00, (size_t)(shortBufferDataSize - size));
         memcpy(shortBufferData, pData, (size_t)size);
         pData = shortBufferData;
     }
@@ -180,22 +180,22 @@ VkResult VulkanBitstreamBufferImpl::CopyDataToBuffer(const uint8_t* pData,
     return m_vulkanDeviceMemory->CopyDataToMemory(pData, size,  m_bufferOffset + dstBufferOffset);
 }
 
-size_t VulkanBitstreamBufferImpl::GetMaxSize() const
+VkDeviceSize VulkanBitstreamBufferImpl::GetMaxSize() const
 {
     return m_bufferSize;
 }
 
-size_t VulkanBitstreamBufferImpl::GetOffsetAlignment() const
+VkDeviceSize VulkanBitstreamBufferImpl::GetOffsetAlignment() const
 {
     return m_bufferOffsetAlignment;
 }
 
-size_t VulkanBitstreamBufferImpl::GetSizeAlignment() const
+VkDeviceSize VulkanBitstreamBufferImpl::GetSizeAlignment() const
 {
     return m_vulkanDeviceMemory->GetMemoryRequirements().alignment;
 }
 
-size_t VulkanBitstreamBufferImpl::Resize(size_t newSize, size_t copySize, size_t copyOffset)
+VkDeviceSize VulkanBitstreamBufferImpl::Resize(VkDeviceSize newSize, VkDeviceSize copySize, VkDeviceSize copyOffset)
 {
     if (m_bufferSize >= newSize) {
         return m_bufferSize;
@@ -212,7 +212,7 @@ size_t VulkanBitstreamBufferImpl::Resize(size_t newSize, size_t copySize, size_t
 
     const uint8_t* pInitializeBufferMemory = nullptr;
     if (copySize) {
-        size_t maxSize = 0;
+        VkDeviceSize maxSize = 0;
         pInitializeBufferMemory = m_vulkanDeviceMemory->GetReadOnlyDataPtr(copyOffset, maxSize);
         assert(pInitializeBufferMemory);
         assert(copySize <= maxSize);
@@ -244,7 +244,7 @@ size_t VulkanBitstreamBufferImpl::Resize(size_t newSize, size_t copySize, size_t
     return newSize;
 }
 
-uint8_t* VulkanBitstreamBufferImpl::CheckAccess(size_t offset, size_t size) const
+uint8_t* VulkanBitstreamBufferImpl::CheckAccess(VkDeviceSize offset, VkDeviceSize size) const
 {
     if (offset + size <= m_bufferSize) {
 
@@ -261,7 +261,7 @@ uint8_t* VulkanBitstreamBufferImpl::CheckAccess(size_t offset, size_t size) cons
     return nullptr;
 }
 
-int64_t VulkanBitstreamBufferImpl::MemsetData(uint32_t value, size_t offset, size_t size)
+int64_t VulkanBitstreamBufferImpl::MemsetData(uint32_t value, VkDeviceSize offset, VkDeviceSize size)
 {
     if (size == 0) {
         return 0;
@@ -269,8 +269,8 @@ int64_t VulkanBitstreamBufferImpl::MemsetData(uint32_t value, size_t offset, siz
     return m_vulkanDeviceMemory->MemsetData(value, m_bufferOffset + offset, size);
 }
 
-int64_t VulkanBitstreamBufferImpl::CopyDataToBuffer(uint8_t *dstBuffer, size_t dstOffset,
-                                                    size_t srcOffset, size_t size) const
+int64_t VulkanBitstreamBufferImpl::CopyDataToBuffer(uint8_t *dstBuffer, VkDeviceSize dstOffset,
+                                                    VkDeviceSize srcOffset, VkDeviceSize size) const
 {
     if (size == 0) {
         return 0;
@@ -278,8 +278,8 @@ int64_t VulkanBitstreamBufferImpl::CopyDataToBuffer(uint8_t *dstBuffer, size_t d
     return m_vulkanDeviceMemory->CopyDataToBuffer(dstBuffer, dstOffset, m_bufferOffset + srcOffset, size);
 }
 
-int64_t VulkanBitstreamBufferImpl::CopyDataToBuffer(VkSharedBaseObj<VulkanBitstreamBuffer>& dstBuffer, size_t dstOffset,
-                                                    size_t srcOffset, size_t size) const
+int64_t VulkanBitstreamBufferImpl::CopyDataToBuffer(VkSharedBaseObj<VulkanBitstreamBuffer>& dstBuffer, VkDeviceSize dstOffset,
+                                                    VkDeviceSize srcOffset, VkDeviceSize size) const
 {
     if (size == 0) {
         return 0;
@@ -292,8 +292,8 @@ int64_t VulkanBitstreamBufferImpl::CopyDataToBuffer(VkSharedBaseObj<VulkanBitstr
     return dstBuffer->CopyDataFromBuffer(readData, 0, m_bufferOffset + dstOffset, size);
 }
 
-int64_t  VulkanBitstreamBufferImpl::CopyDataFromBuffer(const uint8_t *sourceBuffer, size_t srcOffset,
-                                                       size_t dstOffset, size_t size)
+int64_t  VulkanBitstreamBufferImpl::CopyDataFromBuffer(const uint8_t *sourceBuffer, VkDeviceSize srcOffset,
+                                                       VkDeviceSize dstOffset, VkDeviceSize size)
 {
     if (size == 0) {
         return 0;
@@ -302,7 +302,7 @@ int64_t  VulkanBitstreamBufferImpl::CopyDataFromBuffer(const uint8_t *sourceBuff
 }
 
 int64_t VulkanBitstreamBufferImpl::CopyDataFromBuffer(const VkSharedBaseObj<VulkanBitstreamBuffer>& sourceBuffer,
-                                                       size_t srcOffset, size_t dstOffset, size_t size)
+                                                       VkDeviceSize srcOffset, VkDeviceSize dstOffset, VkDeviceSize size)
 {
     if (size == 0) {
         return 0;
@@ -316,7 +316,7 @@ int64_t VulkanBitstreamBufferImpl::CopyDataFromBuffer(const VkSharedBaseObj<Vulk
     return m_vulkanDeviceMemory->CopyDataFromBuffer(readData, 0, m_bufferOffset + dstOffset, size);
 }
 
-uint8_t* VulkanBitstreamBufferImpl::GetDataPtr(size_t offset, size_t &maxSize)
+uint8_t* VulkanBitstreamBufferImpl::GetDataPtr(VkDeviceSize offset, VkDeviceSize &maxSize)
 {
     uint8_t* readData = CheckAccess(offset, 1);
     if (readData == nullptr) {
@@ -327,7 +327,7 @@ uint8_t* VulkanBitstreamBufferImpl::GetDataPtr(size_t offset, size_t &maxSize)
     return (uint8_t*)readData;
 }
 
-const uint8_t* VulkanBitstreamBufferImpl::GetReadOnlyDataPtr(size_t offset, size_t &maxSize) const
+const uint8_t* VulkanBitstreamBufferImpl::GetReadOnlyDataPtr(VkDeviceSize offset, VkDeviceSize &maxSize) const
 {
     uint8_t* readData = CheckAccess(offset, 1);
     if (readData == nullptr) {
@@ -338,7 +338,7 @@ const uint8_t* VulkanBitstreamBufferImpl::GetReadOnlyDataPtr(size_t offset, size
     return readData;
 }
 
-void VulkanBitstreamBufferImpl::FlushRange(size_t offset, size_t size) const
+void VulkanBitstreamBufferImpl::FlushRange(VkDeviceSize offset, VkDeviceSize size) const
 {
     if (size == 0) {
         return;
@@ -346,7 +346,7 @@ void VulkanBitstreamBufferImpl::FlushRange(size_t offset, size_t size) const
     m_vulkanDeviceMemory->FlushRange(offset, size);
 }
 
-void VulkanBitstreamBufferImpl::InvalidateRange(size_t offset, size_t size) const
+void VulkanBitstreamBufferImpl::InvalidateRange(VkDeviceSize offset, VkDeviceSize size) const
 {
     if (size == 0) {
         return;

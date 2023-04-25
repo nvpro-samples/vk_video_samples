@@ -40,12 +40,9 @@ public:
         std::error_code error;
         m_inputVideoStreamMmap.map(pFilePath, 0, mio::map_entire_file, error);
         if (error) {
-            const auto& errmsg = error.message();
-            printf("error mapping file: %s, exiting...\n", errmsg.c_str());
             assert(!"Can't map the input stream file!");
         }
 
-        printf("Input file size is: %zd\n", m_inputVideoStreamMmap.length());
         m_bitstreamDataSize = m_inputVideoStreamMmap.mapped_length();
 
         m_pBitstreamData = m_inputVideoStreamMmap.data();
@@ -165,8 +162,8 @@ private:
     VkVideoCodecOperationFlagBitsKHR m_videoCodecType;
     mio::basic_mmap<mio::access_mode::read, uint8_t> m_inputVideoStreamMmap;
     const uint8_t* m_pBitstreamData;
-    size_t   m_bitstreamDataSize;
-    size_t   m_bytesRead;
+    VkDeviceSize   m_bitstreamDataSize;
+    VkDeviceSize   m_bytesRead;
 };
 
 VkResult ElementaryStreamCreate(const char *pFilePath,

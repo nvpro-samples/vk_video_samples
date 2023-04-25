@@ -29,11 +29,11 @@ public:
 
     virtual int32_t DecodePictureWithParameters(VkParserPerFrameDecodeParameters* pPicParams, VkParserDecodePictureInfo* pDecodePictureInfo) = 0;
 
-    virtual size_t GetBitstreamBuffer(size_t size,
-                                      size_t minBitstreamBufferOffsetAlignment,
-                                      size_t minBitstreamBufferSizeAlignment,
+    virtual VkDeviceSize GetBitstreamBuffer(VkDeviceSize size,
+                                      VkDeviceSize minBitstreamBufferOffsetAlignment,
+                                      VkDeviceSize minBitstreamBufferSizeAlignment,
                                       const uint8_t* pInitializeBufferMemory,
-                                      size_t initializeBufferMemorySize,
+                                      VkDeviceSize initializeBufferMemorySize,
                                       VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer) = 0;
 
     virtual ~IVulkanVideoDecoderHandler() { }

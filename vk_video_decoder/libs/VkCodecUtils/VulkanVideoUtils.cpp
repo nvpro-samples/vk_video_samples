@@ -222,8 +222,6 @@ VkResult VulkanVideoBitstreamBuffer::CopyVideoBitstreamToBuffer(const unsigned c
         CALL_VK(m_vkDevCtx->MapMemory(*m_vkDevCtx, m_deviceMemory, dstBufferOffset,
                 bitstreamDataSize, 0, &ptr));
 
-        //Copy Bitstream
-        // nvdec hw  requires min bitstream size to be 16 (see bug 1599347). memset padding to 0 if bitstream size less than 16
 
         memcpy(ptr, pBitstreamData, (size_t)bitstreamDataSize);
 
@@ -1483,9 +1481,7 @@ VkResult VulkanCommandBuffer::CreateCommandBuffer(VkRenderPass renderPass, const
     // Bind what is necessary to the command buffer
     m_vkDevCtx->CmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     m_vkDevCtx->CmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            pipelineLayout,
-                            0, 1, pDescriptorSet,
-                            0, nullptr);
+                                      pipelineLayout, 0, 1, pDescriptorSet, 0, nullptr);
     VkDeviceSize offset = 0;
     m_vkDevCtx->CmdBindVertexBuffers(cmdBuffer, 0, 1, &pVertexBuffer->get(), &offset);
 

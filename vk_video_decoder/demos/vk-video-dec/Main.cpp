@@ -26,7 +26,7 @@
 #include "VkCodecUtils/VulkanVideoProcessor.h"
 #include "VkShell/Shell.h"
 
-int main(int argc, char **argv) {
+int main(int argc, const char **argv) {
 
     ProgramConfig programConfig(argv[0]);
     programConfig.ParseArgs(argc, argv);
@@ -115,8 +115,8 @@ int main(int argc, char **argv) {
         assert(displayShell->PhysDeviceCanPresent(vkDevCtxt.getPhysicalDevice(),
                                                    vkDevCtxt.GetPresentQueueFamilyIdx()));
 
-        vkDevCtxt.CreateVulkanDevice();
-
+        const int32_t numDecodeQueues = (programConfig.queueId != 0) ? -1 : 1;
+        vkDevCtxt.CreateVulkanDevice(numDecodeQueues);
         vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig);
 
 
@@ -133,7 +133,8 @@ int main(int argc, char **argv) {
             return -1;
         }
 
-        result = vkDevCtxt.CreateVulkanDevice();
+        const int32_t numDecodeQueues = (programConfig.queueId != 0) ? -1 : 1;
+        result = vkDevCtxt.CreateVulkanDevice(numDecodeQueues);
         if (result != VK_SUCCESS) {
 
             assert(!"Failed to create Vulkan device!");

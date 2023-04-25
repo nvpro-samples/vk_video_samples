@@ -284,7 +284,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         for (uint32_t i = 0; i < allocateNumBuffers; i++) {
 
             VkSharedBaseObj<VulkanBitstreamBufferImpl> bitstreamBuffer;
-            size_t allocSize = std::max<size_t>(m_maxStreamBufferSize, 2 * 1024 * 1024);
+            VkDeviceSize allocSize = std::max<VkDeviceSize>(m_maxStreamBufferSize, 2 * 1024 * 1024);
 
             result = VulkanBitstreamBufferImpl::Create(m_vkDevCtx,
                     m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
@@ -797,16 +797,16 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     return currPicIdx;
 }
 
-size_t VkVideoDecoder::GetBitstreamBuffer(size_t size,
-                                          size_t minBitstreamBufferOffsetAlignment,
-                                          size_t minBitstreamBufferSizeAlignment,
+VkDeviceSize VkVideoDecoder::GetBitstreamBuffer(VkDeviceSize size,
+                                          VkDeviceSize minBitstreamBufferOffsetAlignment,
+                                          VkDeviceSize minBitstreamBufferSizeAlignment,
                                           const uint8_t* pInitializeBufferMemory,
-                                          size_t initializeBufferMemorySize,
+                                          VkDeviceSize initializeBufferMemorySize,
                                           VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer)
 {
     assert(initializeBufferMemorySize <= size);
     // size_t newSize = 4 * 1024 * 1024;
-    size_t newSize = size;
+    VkDeviceSize newSize = size;
     assert(m_vkDevCtx);
 
     VkSharedBaseObj<VulkanBitstreamBufferImpl> newBitstreamBuffer;
@@ -845,7 +845,7 @@ size_t VkVideoDecoder::GetBitstreamBuffer(size_t size,
         newSize = newBitstreamBuffer->GetMaxSize();
         assert(initializeBufferMemorySize <= newSize);
 
-        size_t copySize = std::min(initializeBufferMemorySize, newSize);
+        VkDeviceSize copySize = std::min<VkDeviceSize>(initializeBufferMemorySize, newSize);
         newBitstreamBuffer->CopyDataFromBuffer((const uint8_t*)pInitializeBufferMemory,
                                                0, // srcOffset
                                                0, // dstOffset

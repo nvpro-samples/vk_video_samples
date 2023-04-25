@@ -29,7 +29,7 @@ public:
 
     static VkResult Create(const VulkanDeviceContext* vkDevCtx, uint32_t queueFamilyIndex,
              VkDeviceSize bufferSize, VkDeviceSize bufferOffsetAlignment, VkDeviceSize bufferSizeAlignment,
-             const void* pInitializeBufferMemory, size_t initializeBufferMemorySize,
+             const void* pInitializeBufferMemory, VkDeviceSize initializeBufferMemorySize,
              VkSharedBaseObj<VulkanBitstreamBufferImpl>& vulkanBitstreamBuffer);
 
     virtual int32_t AddRef()
@@ -54,25 +54,25 @@ public:
         return m_refCount;
     }
 
-    virtual size_t GetMaxSize() const;
-    virtual size_t GetOffsetAlignment() const;
-    virtual size_t GetSizeAlignment() const;
-    virtual size_t Resize(size_t newSize, size_t copySize = 0, size_t copyOffset = 0);
+    virtual VkDeviceSize GetMaxSize() const;
+    virtual VkDeviceSize GetOffsetAlignment() const;
+    virtual VkDeviceSize GetSizeAlignment() const;
+    virtual VkDeviceSize Resize(VkDeviceSize newSize, VkDeviceSize copySize = 0, VkDeviceSize copyOffset = 0);
 
-    virtual int64_t  MemsetData(uint32_t value, size_t offset, size_t size);
-    virtual int64_t  CopyDataToBuffer(uint8_t *dstBuffer, size_t dstOffset,
-                                      size_t srcOffset, size_t size) const;
-    virtual int64_t  CopyDataToBuffer(VkSharedBaseObj<VulkanBitstreamBuffer>& dstBuffer, size_t dstOffset,
-                                      size_t srcOffset, size_t size) const;
-    virtual int64_t  CopyDataFromBuffer(const uint8_t *sourceBuffer, size_t srcOffset,
-                                        size_t dstOffset, size_t size);
-    virtual int64_t  CopyDataFromBuffer(const VkSharedBaseObj<VulkanBitstreamBuffer>& sourceBuffer, size_t srcOffset,
-                                        size_t dstOffset, size_t size);
-    virtual uint8_t* GetDataPtr(size_t offset, size_t &maxSize);
-    virtual const uint8_t* GetReadOnlyDataPtr(size_t offset, size_t &maxSize) const;
+    virtual int64_t  MemsetData(uint32_t value, VkDeviceSize offset, VkDeviceSize size);
+    virtual int64_t  CopyDataToBuffer(uint8_t *dstBuffer, VkDeviceSize dstOffset,
+                                      VkDeviceSize srcOffset, VkDeviceSize size) const;
+    virtual int64_t  CopyDataToBuffer(VkSharedBaseObj<VulkanBitstreamBuffer>& dstBuffer, VkDeviceSize dstOffset,
+                                      VkDeviceSize srcOffset, VkDeviceSize size) const;
+    virtual int64_t  CopyDataFromBuffer(const uint8_t *sourceBuffer, VkDeviceSize srcOffset,
+                                        VkDeviceSize dstOffset, VkDeviceSize size);
+    virtual int64_t  CopyDataFromBuffer(const VkSharedBaseObj<VulkanBitstreamBuffer>& sourceBuffer, VkDeviceSize srcOffset,
+                                        VkDeviceSize dstOffset, VkDeviceSize size);
+    virtual uint8_t* GetDataPtr(VkDeviceSize offset, VkDeviceSize &maxSize);
+    virtual const uint8_t* GetReadOnlyDataPtr(VkDeviceSize offset, VkDeviceSize &maxSize) const;
 
-    virtual void FlushRange(size_t offset, size_t size) const;
-    virtual void InvalidateRange(size_t offset, size_t size) const;
+    virtual void FlushRange(VkDeviceSize offset, VkDeviceSize size) const;
+    virtual void InvalidateRange(VkDeviceSize offset, VkDeviceSize size) const;
 
     virtual VkBuffer GetBuffer() const { return m_buffer; }
     virtual VkDeviceMemory GetDeviceMemory() const { return *m_vulkanDeviceMemory; }
@@ -99,12 +99,12 @@ private:
                                  VkDeviceSize& bufferOffset,
                                  VkMemoryPropertyFlags& memoryPropertyFlags,
                                  const void* pInitializeBufferMemory,
-                                 size_t initializeBufferMemorySize,
+                                 VkDeviceSize initializeBufferMemorySize,
                                  VkSharedBaseObj<VulkanDeviceMemoryImpl>& vulkanDeviceMemory);
 
-    uint8_t* CheckAccess(size_t offset, size_t size) const;
+    uint8_t* CheckAccess(VkDeviceSize offset, VkDeviceSize size) const;
 
-    VkResult Initialize(VkDeviceSize bufferSize, const void* pInitializeBufferMemory, size_t initializeBufferMemorySize);
+    VkResult Initialize(VkDeviceSize bufferSize, const void* pInitializeBufferMemory, VkDeviceSize initializeBufferMemorySize);
 
     VulkanBitstreamBufferImpl(const VulkanDeviceContext* vkDevCtx,
                               uint32_t m_queueFamilyIndex,

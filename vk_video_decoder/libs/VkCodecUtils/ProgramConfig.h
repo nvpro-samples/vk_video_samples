@@ -60,7 +60,7 @@ struct ProgramConfig {
         directMode = false;
     }
 
-    void ParseArgs(int argc, char* argv[]) {
+    void ParseArgs(int argc, const char* argv[]) {
         for (int i = 1; i < argc; i++) {
             if (nullptr != strstr(argv[i], "--enableStrDemux")) {
                 enableStreamDemuxing = true;

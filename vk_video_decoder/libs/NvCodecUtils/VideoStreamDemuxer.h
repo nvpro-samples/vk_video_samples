@@ -77,3 +77,10 @@ protected:
 
     std::atomic<int32_t>    m_refCount;
 };
+
+VkResult ElementaryStreamCreate(const char *pFilePath,
+                                VkVideoCodecOperationFlagBitsKHR codecType,
+                                int32_t defaultWidth,
+                                int32_t defaultHeight,
+                                int32_t defaultBitDepth,
+                                VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer);

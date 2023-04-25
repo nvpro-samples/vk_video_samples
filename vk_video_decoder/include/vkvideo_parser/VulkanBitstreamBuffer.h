@@ -27,25 +27,25 @@ class VulkanBitstreamBuffer : public VkVideoRefCountBase
 {
 
 public:
-    virtual size_t GetMaxSize() const = 0;
-    virtual size_t GetOffsetAlignment() const = 0;
-    virtual size_t GetSizeAlignment() const = 0;
-    virtual size_t Resize(size_t newSize, size_t copySize = 0, size_t copyOffset = 0) = 0;
+    virtual VkDeviceSize GetMaxSize() const = 0;
+    virtual VkDeviceSize GetOffsetAlignment() const = 0;
+    virtual VkDeviceSize GetSizeAlignment() const = 0;
+    virtual VkDeviceSize Resize(VkDeviceSize newSize, VkDeviceSize copySize = 0, VkDeviceSize copyOffset = 0) = 0;
 
-    virtual int64_t  MemsetData(uint32_t value, size_t offset, size_t size) = 0;
-    virtual int64_t  CopyDataToBuffer(uint8_t *dstBuffer, size_t dstOffset,
-                                      size_t srcOffset, size_t size) const = 0;
-    virtual int64_t  CopyDataToBuffer(VkSharedBaseObj<VulkanBitstreamBuffer>& dstBuffer, size_t dstOffset,
-                                      size_t srcOffset, size_t size) const = 0;
-    virtual int64_t  CopyDataFromBuffer(const uint8_t *sourceBuffer, size_t srcOffset,
-                                        size_t dstOffset, size_t size) = 0;
-    virtual int64_t  CopyDataFromBuffer(const VkSharedBaseObj<VulkanBitstreamBuffer>& sourceBuffer, size_t srcOffset,
-                                        size_t dstOffset, size_t size) = 0;
-    virtual uint8_t* GetDataPtr(size_t offset, size_t &maxSize) = 0;
-    virtual const uint8_t* GetReadOnlyDataPtr(size_t offset, size_t &maxSize) const = 0;
+    virtual int64_t  MemsetData(uint32_t value, VkDeviceSize offset, VkDeviceSize size) = 0;
+    virtual int64_t  CopyDataToBuffer(uint8_t *dstBuffer, VkDeviceSize dstOffset,
+                                      VkDeviceSize srcOffset, VkDeviceSize size) const = 0;
+    virtual int64_t  CopyDataToBuffer(VkSharedBaseObj<VulkanBitstreamBuffer>& dstBuffer, VkDeviceSize dstOffset,
+                                      VkDeviceSize srcOffset, VkDeviceSize size) const = 0;
+    virtual int64_t  CopyDataFromBuffer(const uint8_t *sourceBuffer, VkDeviceSize srcOffset,
+                                        VkDeviceSize dstOffset, VkDeviceSize size) = 0;
+    virtual int64_t  CopyDataFromBuffer(const VkSharedBaseObj<VulkanBitstreamBuffer>& sourceBuffer, VkDeviceSize srcOffset,
+                                        VkDeviceSize dstOffset, VkDeviceSize size) = 0;
+    virtual uint8_t* GetDataPtr(VkDeviceSize offset, VkDeviceSize &maxSize) = 0;
+    virtual const uint8_t* GetReadOnlyDataPtr(VkDeviceSize offset, VkDeviceSize &maxSize) const = 0;
 
-    virtual void FlushRange(size_t offset, size_t size)  const = 0;
-    virtual void InvalidateRange(size_t offset, size_t size) const = 0;
+    virtual void FlushRange(VkDeviceSize offset, VkDeviceSize size)  const = 0;
+    virtual void InvalidateRange(VkDeviceSize offset, VkDeviceSize size) const = 0;
     virtual VkBuffer GetBuffer() const = 0;
     virtual VkDeviceMemory GetDeviceMemory() const = 0;
 
@@ -79,9 +79,9 @@ public:
         m_bitstreamBuffer = nullptr;
     }
 
-    size_t CommitBuffer(size_t size = 0)
+    VkDeviceSize CommitBuffer(VkDeviceSize size = 0)
     {
-        size_t commitSize = (size != 0) ? size : m_maxAccessLocation;
+        VkDeviceSize commitSize = (size != 0) ? size : m_maxAccessLocation;
         if (commitSize && m_bitstreamBuffer) {
             m_bitstreamBuffer->FlushRange(0, commitSize);
             m_maxAccessLocation = 0;
@@ -89,7 +89,7 @@ public:
         return commitSize;
     }
 
-    size_t SetBitstreamBuffer (VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer, bool resetStreamMarkers = true)
+    VkDeviceSize SetBitstreamBuffer (VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer, bool resetStreamMarkers = true)
     {
         CommitBuffer();
 
@@ -118,13 +118,13 @@ public:
         m_pData = nullptr;
     }
 
-    size_t ResizeBitstreamBuffer(size_t newSize, size_t copySize = 0, size_t copyOffset = 0)
+    VkDeviceSize ResizeBitstreamBuffer(VkDeviceSize newSize, VkDeviceSize copySize = 0, VkDeviceSize copyOffset = 0)
     {
         CommitBuffer();
 
         m_maxAccessLocation = 0;
 
-        size_t retSize = m_bitstreamBuffer->Resize(newSize, copySize, copyOffset);
+        VkDeviceSize retSize = m_bitstreamBuffer->Resize(newSize, copySize, copyOffset);
         if (!(retSize >= newSize)) {
             assert(!"Could not resize the bitstream buffer!");
             return retSize;
@@ -139,14 +139,14 @@ public:
         return m_maxSize;
     }
 
-    uint8_t& operator [](size_t indx) {     // write
+    uint8_t& operator [](VkDeviceSize indx) {     // write
         assert(m_pData);
         assert(indx < m_maxSize);
-        m_maxAccessLocation = std::max(m_maxAccessLocation, indx);
+        m_maxAccessLocation = std::max<VkDeviceSize>(m_maxAccessLocation, indx);
         return m_pData[indx];
     }
 
-    uint8_t operator [](size_t indx) const {  //read
+    uint8_t operator [](VkDeviceSize indx) const {  //read
         assert(m_pData);
         assert(indx < m_maxSize);
         // m_maxAccess = std::max(m_maxAccess, indx);
@@ -164,7 +164,7 @@ public:
     }
 
     // startcode found at given slice offset
-    bool HasSliceStartCodeAtOffset(size_t indx) const {
+    bool HasSliceStartCodeAtOffset(VkDeviceSize indx) const {
         assert(m_pData);
         assert(indx < m_maxSize);
 
@@ -173,7 +173,7 @@ public:
                 (m_pData[indx + 2] == 0x01));
     }
 
-    size_t SetSliceStartCodeAtOffset(size_t indx) {
+    VkDeviceSize SetSliceStartCodeAtOffset(VkDeviceSize indx) {
         assert(m_pData);
         assert(indx < m_maxSize);
         m_pData[indx + 0] = 0x00;
@@ -187,7 +187,7 @@ public:
         return m_pData;
     }
 
-    size_t GetMaxSize() {
+    VkDeviceSize GetMaxSize() {
         return m_maxSize;
     }
 
@@ -212,8 +212,8 @@ public:
 private:
     VkSharedBaseObj<VulkanBitstreamBuffer>  m_bitstreamBuffer;
     uint8_t*                                m_pData;
-    size_t                                  m_maxSize;
-    size_t                                  m_maxAccessLocation;
+    VkDeviceSize                            m_maxSize;
+    VkDeviceSize                            m_maxAccessLocation;
     uint32_t                                m_numSlices;
 };
 

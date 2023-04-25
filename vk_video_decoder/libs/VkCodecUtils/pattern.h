@@ -93,6 +93,10 @@ private:
 
 };
 
+int ConvertRgbToYcbcr(const VkSamplerYcbcrConversionCreateInfo * pYcbcrConversionInfo, YcbcrLevelsRange levelRange,
+                      const void * colRgbaPtr, uint32_t width, uint32_t height, uint32_t rgbStrideBytes, uint32_t rgbChannelsPerColor, uint32_t rgbBpp,
+                      void *yuv, VkSubresourceLayout layouts[3], uint32_t skipChannelsMask);
+
 }
 
 #endif /* CMDS_VK_VIDEO_PLAYER_PATTERN_H_ */
