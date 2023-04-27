@@ -424,12 +424,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     pPicParams->decodeFrameInfo.srcBufferRange = pPicParams->bitstreamDataLen;
     // pPicParams->decodeFrameInfo.dstImageView = VkImageView();
 
-    VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    beginInfo.pInheritanceInfo = nullptr;
-
-    m_vkDevCtx->BeginCommandBuffer(frameDataSlot.commandBuffer, &beginInfo);
     VkVideoBeginCodingInfoKHR decodeBeginInfo = { VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR };
     // CmdResetQueryPool are NOT Supported yet.
     decodeBeginInfo.pNext = pPicParams->beginCodingInfoPictureParametersExt;
@@ -638,6 +632,30 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     VkSemaphore frameCompleteSemaphore = frameSynchronizationInfo.frameCompleteSemaphore;
     VkSemaphore frameConsumerDoneSemaphore = frameSynchronizationInfo.frameConsumerDoneSemaphore;
 
+    // Check here that the frame for this entry (for this command buffer) has already completed decoding.
+    // Otherwise we may step over a hot command buffer by starting a new recording.
+    // This fence wait should be NOP in 99.9% of the cases, because the decode queue is deep enough to
+    // ensure the frame has already been completed.
+    VkResult result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameCompleteFence, true, gFenceTimeout);
+    if (result != VK_SUCCESS) {
+        std::cout << "\t *************** WARNING: frameCompleteFence is not done *************< " << currPicIdx << " >**********************" << std::endl;
+        assert(!"frameCompleteFence is not signaled yet after 100 mSec wait");
+    }
+
+    result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameCompleteFence);
+    if (result == VK_NOT_READY) {
+        std::cout << "\t *************** WARNING: frameCompleteFence is not done *************< " << currPicIdx << " >**********************" << std::endl;
+        assert(!"frameCompleteFence is not signaled yet");
+    }
+
+
+    VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    beginInfo.pInheritanceInfo = nullptr;
+
+    m_vkDevCtx->BeginCommandBuffer(frameDataSlot.commandBuffer, &beginInfo);
+
     // m_vkDevCtx->ResetQueryPool(m_vkDev, queryFrameInfo.queryPool, queryFrameInfo.query, 1);
 
     if (m_vkDevCtx->GetVideoQueryResultStatusSupport()) {
@@ -707,29 +725,11 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &frameCompleteSemaphore;
 
-    VkResult result = VK_SUCCESS;
+    result = VK_SUCCESS;
     if ((frameConsumerDoneSemaphore == VkSemaphore()) && (frameConsumerDoneFence != VkFence())) {
         result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameConsumerDoneFence, true, gFenceTimeout);
         assert(result == VK_SUCCESS);
         result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameConsumerDoneFence);
-        assert(result == VK_SUCCESS);
-    }
-
-    result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameCompleteFence);
-    if (result == VK_NOT_READY) {
-        std::cout << "\t *************** WARNING: frameCompleteFence is not done *************< " << currPicIdx << " >**********************" << std::endl;
-        assert(!"frameCompleteFence is not signaled yet");
-    }
-
-    const bool checkDecodeFences = false; // For decoder fences debugging
-    if (checkDecodeFences) { // For fence/sync debugging
-        result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameCompleteFence, true, gFenceTimeout);
-        assert(result == VK_SUCCESS);
-
-        result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameCompleteFence);
-        if (result == VK_NOT_READY) {
-            std::cout << "\t *********** WARNING: frameCompleteFence is still not done *************< " << currPicIdx << " >**********************" << std::endl;
-        }
         assert(result == VK_SUCCESS);
     }
 
