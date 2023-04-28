@@ -357,8 +357,6 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                 videoDecodeQueueFamily = i;
                 videoDecodeQueueCount = queue.queueFamilyProperties.queueCount;
                 foundQueueTypes |= VK_QUEUE_VIDEO_DECODE_BIT_KHR;
-                // The video queues must support queryResultStatus
-                // assert(queryResultStatus[i].queryResultStatusSupport);
                 videodecodequeryResultStatus = queryResultStatus[i].queryResultStatusSupport;
             }
 
@@ -368,8 +366,6 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                 videoEncodeQueueFamily = i;
                 videoEncodeQueueCount = queue.queueFamilyProperties.queueCount;
                 foundQueueTypes |= VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
-                // The video queues must support queryResultStatus
-                // assert(queryResultStatus[i].queryResultStatusSupport);
                 videodecodequeryResultStatus = queryResultStatus[i].queryResultStatusSupport;
             }
 

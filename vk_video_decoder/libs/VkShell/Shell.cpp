@@ -148,7 +148,7 @@ void Shell::CreateBackBuffers() {
         vk::assert_success(backBuffers.Create(m_ctx.devCtx));
     }
 
-    for (int i = 0; i < (count + 1); i++) {
+    for (size_t i = 0; i < m_ctx.backBuffers.size(); i++) {
         AcquireBuffer* pAcquireBuffer = new AcquireBuffer();
         vk::assert_success(pAcquireBuffer->Create(m_ctx.devCtx));
         m_ctx.acquireBuffers.push(pAcquireBuffer);
