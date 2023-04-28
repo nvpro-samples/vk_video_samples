@@ -55,6 +55,7 @@ struct ProgramConfig {
         queueId = 0;
         gpuIndex = -1;
         forceParserType = VK_VIDEO_CODEC_OPERATION_NONE_KHR;
+        decoderQueueSize = 10;
         enableStreamDemuxing = true;
         deviceId = (uint32_t)-1;
         directMode = false;
@@ -108,6 +109,9 @@ struct ProgramConfig {
             } else if (nullptr != strstr(argv[i], "--gpu")) {
                 i++;
                 gpuIndex = std::atoi(argv[i]);
+            } else if (nullptr != strstr(argv[i], "--queueSize")) {
+                i++;
+                decoderQueueSize = std::atoi(argv[i]);
             } else if (nullptr != strstr(argv[i], "-c")) {
                 i++;
                 if (argv[i])
@@ -150,6 +154,7 @@ struct ProgramConfig {
     int queueId;
     VkVideoCodecOperationFlagBitsKHR forceParserType;
     uint32_t deviceId;
+    uint32_t decoderQueueSize;
     uint32_t enableStreamDemuxing:1;
     uint32_t directMode:1;
     uint32_t vsync:1;

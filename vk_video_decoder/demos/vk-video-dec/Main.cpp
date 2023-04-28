@@ -143,7 +143,7 @@ int main(int argc, const char **argv) {
 
         vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig);
 
-        const int numberOfFrames = 6;
+        const int numberOfFrames = programConfig.decoderQueueSize;
         int ret = frameProcessor->CreateFrameData(numberOfFrames);
         assert(ret == numberOfFrames);
         if (ret != numberOfFrames) {
