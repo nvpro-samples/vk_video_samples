@@ -62,7 +62,10 @@ struct ProgramConfig {
 
     void ParseArgs(int argc, char* argv[]) {
         for (int i = 1; i < argc; i++) {
-            if (nullptr != strstr(argv[i], "--enableStrDemux")) {
+            if (nullptr != strstr(argv[i], "--help")) {
+                i++;
+                break;
+            } else if (nullptr != strstr(argv[i], "--enableStrDemux")) {
                 enableStreamDemuxing = true;
             } else if (nullptr != strstr(argv[i], "--disableStrDemux")) {
                 enableStreamDemuxing = false;
@@ -77,10 +80,12 @@ struct ProgramConfig {
                 vsync = false;
             } else if (nullptr != strstr(argv[i], "-w")) {
                 i++;
-                initialWidth = std::atoi(argv[i]);
+                if (argv[i])
+                    initialWidth = std::atoi(argv[i]);
             } else if (nullptr != strstr(argv[i], "-h")) {
                 i++;
-                initialHeight = std::atoi(argv[i]);
+                if (argv[i])
+                    initialHeight = std::atoi(argv[i]);
             } else if (nullptr != strstr(argv[i], "-v")) {
                 validate = true;
             } else if (nullptr != strstr(argv[i], "--validate")) {
@@ -105,13 +110,16 @@ struct ProgramConfig {
                 gpuIndex = std::atoi(argv[i]);
             } else if (nullptr != strstr(argv[i], "-c")) {
                 i++;
-                maxFrameCount = std::atoi(argv[i]);
+                if (argv[i])
+                    maxFrameCount = std::atoi(argv[i]);
             } else if (nullptr != strstr(argv[i], "--loop")) {
                 i++;
-                loopCount = std::atoi(argv[i]);
+                if (argv[i])
+                    loopCount = std::atoi(argv[i]);
             } else if (nullptr != strstr(argv[i], "--queueid")) {
                 i++;
-                queueId = std::atoi(argv[i]);
+                 if (argv[i])
+                    queueId = std::atoi(argv[i]);
             } else  if (!strcmp(argv[i], "-deviceID")) {
                 ++i;
                 sscanf(argv[i], "%x", &deviceId);
