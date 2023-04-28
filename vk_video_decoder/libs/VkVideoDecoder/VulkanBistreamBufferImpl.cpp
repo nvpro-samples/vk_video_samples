@@ -85,7 +85,11 @@ VkResult VulkanBitstreamBufferImpl::CreateBuffer(const VulkanDeviceContext* vkDe
                                             memoryPropertyFlags,
                                             pInitializeBufferMemory,
                                             initializeBufferMemorySize,
+#ifdef CLEAR_BITSTREAM_BUFFERS_ON_CREATE
                                             true, // clearMemory
+#else
+                                            false, // clearMemory
+#endif
                                             vkDeviceMemory);
     if (result != VK_SUCCESS) {
         vkDevCtx->DestroyBuffer(*vkDevCtx, buffer, nullptr);
@@ -110,11 +114,13 @@ VkResult VulkanBitstreamBufferImpl::Initialize(VkDeviceSize bufferSize,
                                                VkDeviceSize initializeBufferMemorySize)
 {
     if (m_bufferSize >= bufferSize) {
+#ifdef CLEAR_BITSTREAM_BUFFERS_ON_CREATE
         VkDeviceSize ret = MemsetData(0x00, 0, m_bufferSize);
         if (ret != m_bufferSize) {
             assert(!"Could't MemsetData()!");
             return VK_ERROR_INITIALIZATION_FAILED;
         }
+#endif
         return VK_SUCCESS;
     }
 
@@ -168,14 +174,6 @@ VkResult VulkanBitstreamBufferImpl::CopyDataToBuffer(const uint8_t* pData,
 
     dstBufferOffset = ((dstBufferOffset + (m_bufferOffsetAlignment - 1)) & ~(m_bufferOffsetAlignment - 1));
     assert((dstBufferOffset + size) <= m_bufferSize);
-
-    const VkDeviceSize shortBufferDataSize = 16;
-    uint8_t shortBufferData[shortBufferDataSize];
-    if (size < shortBufferDataSize) {
-        memset(shortBufferData + size, 0x00, (size_t)(shortBufferDataSize - size));
-        memcpy(shortBufferData, pData, (size_t)size);
-        pData = shortBufferData;
-    }
 
     return m_vulkanDeviceMemory->CopyDataToMemory(pData, size,  m_bufferOffset + dstBufferOffset);
 }

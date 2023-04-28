@@ -851,8 +851,9 @@ VkDeviceSize VkVideoDecoder::GetBitstreamBuffer(VkDeviceSize size,
                                                0, // dstOffset
                                                copySize);
 
+#ifdef CLEAR_BITSTREAM_BUFFERS_ON_CREATE
         newBitstreamBuffer->MemsetData(0x0, copySize, newSize - copySize);
-
+#endif
         if (debugBitstreamBufferDumpAlloc) {
             std::cout << "\t\tFrom bitstream buffer pool with size " << newSize << " B, " <<
                              newSize/1024 << " KB, " << newSize/1024/1024 << " MB" << std::endl;

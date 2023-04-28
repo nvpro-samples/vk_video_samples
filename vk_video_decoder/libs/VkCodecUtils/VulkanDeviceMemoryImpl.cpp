@@ -80,10 +80,12 @@ VkResult VulkanDeviceMemoryImpl::Initialize(const VkMemoryRequirements& memoryRe
                                             bool clearMemory)
 {
     if (m_memoryRequirements.size >= memoryRequirements.size) {
-        VkDeviceSize ret = MemsetData(0x00, 0, m_memoryRequirements.size);
-        if (ret != m_memoryRequirements.size) {
-            assert(!"Couldn't allocate device memory!");
-            return VK_ERROR_INITIALIZATION_FAILED;
+        if (clearMemory) {
+            VkDeviceSize ret = MemsetData(0x00, 0, m_memoryRequirements.size);
+            if (ret != m_memoryRequirements.size) {
+                assert(!"Couldn't allocate device memory!");
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
         }
         return VK_SUCCESS;
     }
@@ -246,8 +248,9 @@ VkDeviceSize VulkanDeviceMemoryImpl::Resize(VkDeviceSize newSize, VkDeviceSize c
         }
 
         copySize = std::min(copyOffset + copySize, m_memoryRequirements.size);
+#ifdef CLEAR_DEVICE_MEMORY_ON_CREATE
         memset(newBufferDataPtr + copySize, 0x00, (size_t)(newSize - copySize));
-
+#endif
         // Copy the old data.
         uint8_t* readData = CheckAccess(copyOffset, copySize);
         memcpy(newBufferDataPtr, readData, (size_t)copySize);
@@ -262,7 +265,9 @@ VkDeviceSize VulkanDeviceMemoryImpl::Resize(VkDeviceSize newSize, VkDeviceSize c
     m_deviceMemoryDataPtr = newBufferDataPtr;
 
     if (copySize == 0) {
+#ifdef CLEAR_DEVICE_MEMORY_ON_CREATE
         MemsetData(0x0, 0, newSize);
+#endif
     }
 
     return newSize;
