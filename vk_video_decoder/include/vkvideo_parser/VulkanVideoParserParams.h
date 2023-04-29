@@ -84,6 +84,7 @@ struct VkParserDecodePictureInfo {
     int32_t displayHeight;
     int32_t pictureIndex; // Index of the current picture
     VkParserFieldFlags flags;
+    uint64_t decodePicCount;
     VkVideotimestamp timestamp; // decode time
     VkParserFrameSyncinfo frameSyncinfo;
     uint16_t videoFrameType; // VideoFrameType - use Vulkan codec specific type pd->CodecSpecific.h264.slice_type.

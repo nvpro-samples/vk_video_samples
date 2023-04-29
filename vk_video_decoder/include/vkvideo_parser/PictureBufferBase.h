@@ -42,7 +42,7 @@ private:
 public:
     int32_t m_picIdx;
     int32_t m_displayOrder;
-    int32_t m_decodeOrder;
+    uint64_t m_decodeOrder;
     uint64_t m_timestamp;
     uint64_t m_presentTime;
 
@@ -65,7 +65,7 @@ public:
         : m_refCount(0)
         , m_picIdx(-1)
         , m_displayOrder(-1)
-        , m_decodeOrder(-1)
+        , m_decodeOrder(0)
         , m_timestamp(0)
         , m_presentTime(0)
     {
@@ -82,7 +82,7 @@ public:
         int32_t ref = m_refCount;
         m_picIdx = -1;
         m_displayOrder = -1;
-        m_decodeOrder = -1;
+        m_decodeOrder = 0;
         m_timestamp = 0;
         m_presentTime = 0;
         m_refCount = 0;

@@ -59,6 +59,7 @@ struct ProgramConfig {
         enableStreamDemuxing = true;
         deviceId = (uint32_t)-1;
         directMode = false;
+        enableHwLoadBalancing = false;
     }
 
     void ParseArgs(int argc, const char* argv[]) {
@@ -100,6 +101,8 @@ struct ProgramConfig {
                 noTick = true;
             } else if (nullptr != strstr(argv[i], "--noPresent")) {
                 noPresent = true;
+            } else if (nullptr != strstr(argv[i], "--enableHwLoadBalancing")) {
+                enableHwLoadBalancing = true;
             } else if (nullptr != strstr(argv[i], "-o")) {
                 i++;
                 outputFileName = argv[i];
@@ -163,6 +166,7 @@ struct ProgramConfig {
     uint32_t verbose:1;
     uint32_t noTick:1;
     uint32_t noPresent:1;
+    uint32_t enableHwLoadBalancing:1;
 };
 
 #endif /* _PROGRAMSETTINGS_H_ */

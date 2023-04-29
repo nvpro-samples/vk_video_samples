@@ -327,7 +327,6 @@ public:
         , m_displayFrames()
         , m_queryPool()
         , m_ownedByDisplayMask(0)
-        , m_frameNumInDecodeOrder(0)
         , m_frameNumInDisplayOrder(0)
         , m_codedExtent { 0, 0 }
         , m_numberParameterUpdates(0)
@@ -438,7 +437,6 @@ public:
         DestroyVideoQueries();
 
         m_ownedByDisplayMask = 0;
-        m_frameNumInDecodeOrder = 0;
         m_frameNumInDisplayOrder = 0;
 
         m_perFrameDecodeImageSet.Deinit();
@@ -477,7 +475,6 @@ public:
 
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         m_perFrameDecodeImageSet[picId].m_picDispInfo = *pDecodePictureInfo;
-        m_perFrameDecodeImageSet[picId].m_decodeOrder = m_frameNumInDecodeOrder++;
         m_perFrameDecodeImageSet[picId].m_inDecodeQueue = true;
         m_perFrameDecodeImageSet[picId].stdPps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdPps);
         m_perFrameDecodeImageSet[picId].stdSps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdSps);
@@ -686,16 +683,16 @@ public:
         return (int32_t)m_perFrameDecodeImageSet.size();
     }
 
-    virtual int32_t SetPicNumInDecodeOrder(int32_t picId, int32_t picNumInDecodeOrder)
+    virtual uint64_t SetPicNumInDecodeOrder(int32_t picId, uint64_t picNumInDecodeOrder)
     {
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         if ((uint32_t)picId < m_perFrameDecodeImageSet.size()) {
-            int32_t oldPicNumInDecodeOrder = m_perFrameDecodeImageSet[picId].m_decodeOrder;
+            uint64_t oldPicNumInDecodeOrder = m_perFrameDecodeImageSet[picId].m_decodeOrder;
             m_perFrameDecodeImageSet[picId].m_decodeOrder = picNumInDecodeOrder;
             return oldPicNumInDecodeOrder;
         }
         assert(false);
-        return -1;
+        return (uint64_t)-1;
     }
 
     virtual int32_t SetPicNumInDisplayOrder(int32_t picId, int32_t picNumInDisplayOrder)
@@ -727,7 +724,7 @@ public:
         for (uint32_t picId = 0; picId < m_perFrameDecodeImageSet.size(); picId++) {
             if (m_perFrameDecodeImageSet[picId].IsAvailable()) {
                 foundPicId = picId;
-                break;
+		break;
             }
         }
 
@@ -761,7 +758,6 @@ private:
     std::queue<uint8_t>      m_displayFrames;
     VkQueryPool              m_queryPool;
     uint32_t                 m_ownedByDisplayMask;
-    int32_t                  m_frameNumInDecodeOrder;
     int32_t                  m_frameNumInDisplayOrder;
     VkExtent2D               m_codedExtent;               // for the codedExtent, not the max image resolution
     uint32_t                 m_numberParameterUpdates;

@@ -28,6 +28,7 @@
 #define GPU_ALIGN(x) (((x) + 0xff) & ~0xff)
 
 const uint64_t gFenceTimeout = 100 * 1000 * 1000 /* 100 mSec */;
+const uint64_t gLongTimeout  = 1000 * 1000 * 1000 /* 1000 mSec */;
 
 const char* VkVideoDecoder::GetVideoCodecString(VkVideoCodecOperationFlagBitsKHR codec)
 {
@@ -144,7 +145,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
 
     if (m_videoFormat.coded_width && m_videoFormat.coded_height) {
         // CreateDecoder() has been called before, and now there's possible config change
-        m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::DECODE, m_defaultVideoQueueIndx);
+        m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::DECODE, m_currentVideoQueueIndx);
 
         if (*m_vkDevCtx) {
             m_vkDevCtx->DeviceWaitIdle();
@@ -404,7 +405,10 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     int32_t currPicIdx = pPicParams->currPicIdx;
     assert((uint32_t)currPicIdx < m_numDecodeSurfaces);
 
-    int32_t picNumInDecodeOrder = m_decodePicCount++;
+    int32_t picNumInDecodeOrder = (int32_t)(uint32_t)m_decodePicCount;
+    if (m_dumpDecodeData) {
+        std::cout << "currPicIdx: " << currPicIdx << ", currentVideoQueueIndx: " << m_currentVideoQueueIndx << ", decodePicCount: " << m_decodePicCount << std::endl;
+    }
     m_videoFrameBuffer->SetPicNumInDecodeOrder(currPicIdx, picNumInDecodeOrder);
 
     NvVkDecodeFrameDataSlot frameDataSlot;
@@ -610,7 +614,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         decodeBeginInfo.videoSessionParameters = *pOwnerPictureParameters;
 
         if (m_dumpDecodeData) {
-            std::cout << "Using object " << decodeBeginInfo.videoSessionParameters << " with ID: (" << pOwnerPictureParameters->GetId() << ")" << " for SPS: " <<  spsId << ", PPS: " << ppsId << std::endl;
+            std::cout << "Using object " << decodeBeginInfo.videoSessionParameters <<
+		         " with ID: (" << pOwnerPictureParameters->GetId() << ")" <<
+			 " for SPS: " <<  spsId << ", PPS: " << ppsId << std::endl;
         }
     } else {
         decodeBeginInfo.videoSessionParameters = VK_NULL_HANDLE;
@@ -638,13 +644,13 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     // ensure the frame has already been completed.
     VkResult result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameCompleteFence, true, gFenceTimeout);
     if (result != VK_SUCCESS) {
-        std::cout << "\t *************** WARNING: frameCompleteFence is not done *************< " << currPicIdx << " >**********************" << std::endl;
-        assert(!"frameCompleteFence is not signaled yet after 100 mSec wait");
+        std::cerr << "\t *************** WARNING: frameCompleteFence is not done *************< " << currPicIdx << " >**********************" << std::endl;
+        assert(!"frameCompleteFence is not signaled yet after more than 100 mSec wait");
     }
 
     result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameCompleteFence);
     if (result == VK_NOT_READY) {
-        std::cout << "\t *************** WARNING: frameCompleteFence is not done *************< " << currPicIdx << " >**********************" << std::endl;
+        std::cerr << "\t *************** WARNING: frameCompleteFence is not done *************< " << currPicIdx << " >**********************" << std::endl;
         assert(!"frameCompleteFence is not signaled yet");
     }
 
@@ -715,17 +721,91 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
     m_vkDevCtx->EndCommandBuffer(frameDataSlot.commandBuffer);
 
+    const uint32_t waitSemaphoreMaxCount = 3;
+    VkSemaphore waitSemaphores[waitSemaphoreMaxCount] = { VK_NULL_HANDLE };
+
+    const uint32_t signalSemaphoreMaxCount = 3;
+    VkSemaphore signalSemaphores[signalSemaphoreMaxCount] = { VK_NULL_HANDLE };
+
+    uint32_t waitSemaphoreCount = 0;
+    if (frameConsumerDoneSemaphore != VK_NULL_HANDLE) {
+        waitSemaphores[waitSemaphoreCount] = frameConsumerDoneSemaphore;
+        waitSemaphoreCount++;
+    }
+
+    uint32_t signalSemaphoreCount = 0;
+    if (frameCompleteSemaphore != VK_NULL_HANDLE) {
+        signalSemaphores[signalSemaphoreCount] = frameCompleteSemaphore;
+        signalSemaphoreCount++;
+    }
+
+    uint64_t waitTlSemaphoresValues[waitSemaphoreMaxCount] = { 0 /* ignored for binary semaphores */ };
+    uint64_t signalTlSemaphoresValues[signalSemaphoreMaxCount] = { 0 /* ignored for binary semaphores */ };
+    VkTimelineSemaphoreSubmitInfo timelineSemaphoreInfos = {};
+    if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
+
+        if (m_dumpDecodeData) {
+            uint64_t  currSemValue = 0;
+            VkResult semResult = m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, m_hwLoadBalancingTimelineSemaphore, &currSemValue);
+            std::cout << "\t TL semaphore value: " << currSemValue << ", status: " << semResult << std::endl;
+	}
+
+        waitSemaphores[waitSemaphoreCount] = m_hwLoadBalancingTimelineSemaphore;
+        waitTlSemaphoresValues[waitSemaphoreCount] = m_decodePicCount - 1; // wait for the previous value to be signaled
+        waitSemaphoreCount++;
+
+        signalSemaphores[signalSemaphoreCount] = m_hwLoadBalancingTimelineSemaphore;
+        signalTlSemaphoresValues[signalSemaphoreCount] = m_decodePicCount; // signal the current m_decodePicCount value
+        signalSemaphoreCount++;
+
+        timelineSemaphoreInfos.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+        timelineSemaphoreInfos.pNext = NULL;
+        timelineSemaphoreInfos.waitSemaphoreValueCount = waitSemaphoreCount;
+        timelineSemaphoreInfos.pWaitSemaphoreValues = waitTlSemaphoresValues;
+        timelineSemaphoreInfos.signalSemaphoreValueCount = signalSemaphoreCount;
+        timelineSemaphoreInfos.pSignalSemaphoreValues = signalTlSemaphoresValues;
+        if (m_dumpDecodeData) {
+	    std::cout << "\t Wait for: " << (waitSemaphoreCount ? waitTlSemaphoresValues[waitSemaphoreCount - 1] : 0) <<
+                         ", signal at " << signalTlSemaphoresValues[signalSemaphoreCount - 1] << std::endl;
+	}
+    }
+
+    assert(waitSemaphoreCount <= waitSemaphoreMaxCount);
+    assert(signalSemaphoreCount <= signalSemaphoreMaxCount);
+
+    VkPipelineStageFlags videoDecodeSubmitWaitStages = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
     VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr };
-    submitInfo.waitSemaphoreCount = (frameConsumerDoneSemaphore == VkSemaphore()) ? 0 : 1;
-    submitInfo.pWaitSemaphores = &frameConsumerDoneSemaphore;
-    VkPipelineStageFlags videoDecodeSubmitWaitStages = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
+    submitInfo.pNext = (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) ? &timelineSemaphoreInfos : nullptr;
+    submitInfo.waitSemaphoreCount = waitSemaphoreCount;
+    submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = &videoDecodeSubmitWaitStages;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &frameDataSlot.commandBuffer;
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = &frameCompleteSemaphore;
+    submitInfo.signalSemaphoreCount = signalSemaphoreCount;
+    submitInfo.pSignalSemaphores = signalSemaphores;
 
-    result = VK_SUCCESS;
+    if (m_dumpDecodeData) {
+        if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
+            std::cout << "\t\t waitSemaphoreValueCount: " << timelineSemaphoreInfos.waitSemaphoreValueCount << std::endl;
+            std::cout << "\t pWaitSemaphoreValues: " << timelineSemaphoreInfos.pWaitSemaphoreValues[0] << ", " <<
+		                                        timelineSemaphoreInfos.pWaitSemaphoreValues[1] << ", " <<
+						        timelineSemaphoreInfos.pWaitSemaphoreValues[2] << std::endl;
+            std::cout << "\t\t signalSemaphoreValueCount: " << timelineSemaphoreInfos.signalSemaphoreValueCount << std::endl;
+            std::cout << "\t pSignalSemaphoreValues: " << timelineSemaphoreInfos.pSignalSemaphoreValues[0] << ", " <<
+		                                        timelineSemaphoreInfos.pSignalSemaphoreValues[1] << ", " <<
+						        timelineSemaphoreInfos.pSignalSemaphoreValues[2] << std::endl;
+        }
+
+        std::cout << "\t waitSemaphoreCount: " << submitInfo.waitSemaphoreCount << std::endl;
+        std::cout << "\t\t pWaitSemaphores: " << submitInfo.pWaitSemaphores[0] << ", " <<
+	                                         submitInfo.pWaitSemaphores[1] << ", " <<
+	                                         submitInfo.pWaitSemaphores[2] << std::endl;
+        std::cout << "\t signalSemaphoreCount: " << submitInfo.signalSemaphoreCount << std::endl;
+        std::cout << "\t\t pSignalSemaphores: " << submitInfo.pSignalSemaphores[0] << ", " <<
+	                                         submitInfo.pSignalSemaphores[1] << ", " <<
+					         submitInfo.pSignalSemaphores[2] << std::endl << std::endl;
+    }
+
     if ((frameConsumerDoneSemaphore == VkSemaphore()) && (frameConsumerDoneFence != VkFence())) {
         result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameConsumerDoneFence, true, gFenceTimeout);
         assert(result == VK_SUCCESS);
@@ -738,8 +818,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameCompleteFence);
     assert(result == VK_NOT_READY);
 
-    m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::DECODE, m_defaultVideoQueueIndx,
-                                         1, &submitInfo, frameCompleteFence);
+    result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::DECODE, m_currentVideoQueueIndx,
+                                                  1, &submitInfo, frameCompleteFence);
+    assert(result == VK_SUCCESS);
 
     if (m_dumpDecodeData) {
         std::cout << "\t +++++++++++++++++++++++++++< " << currPicIdx << " >++++++++++++++++++++++++++++++" << std::endl;
@@ -752,7 +833,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     const bool checkDecodeIdleSync = false; // For fence/sync/idle debugging
     if (checkDecodeIdleSync) { // For fence/sync debugging
         if (frameCompleteFence == VkFence()) {
-            result = m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::DECODE, m_defaultVideoQueueIndx);
+            result = m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::DECODE, m_currentVideoQueueIndx);
             assert(result == VK_SUCCESS);
         } else {
             if (frameCompleteSemaphore == VkSemaphore()) {
@@ -762,6 +843,24 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
                 assert(result == VK_SUCCESS);
             }
         }
+    }
+
+    if (m_dumpDecodeData && (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE)) { // For TL semaphore debug
+       uint64_t  currSemValue = 0;
+       VkResult semResult = m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, m_hwLoadBalancingTimelineSemaphore, &currSemValue);
+       std::cout << "\t TL semaphore value ater submit: " << currSemValue << ", status: " << semResult << std::endl;
+
+       const bool waitOnTlSemaphore = false;
+       if (waitOnTlSemaphore) {
+           uint64_t value = m_decodePicCount;
+           VkSemaphoreWaitInfo waitInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO, nullptr, VK_SEMAPHORE_WAIT_ANY_BIT, 1,
+	                                    &m_hwLoadBalancingTimelineSemaphore, &value };
+           std::cout << "\t TL semaphore wait for value: " << value << std::endl;
+           semResult = m_vkDevCtx->WaitSemaphores(*m_vkDevCtx, &waitInfo, gLongTimeout);
+
+           semResult = m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, m_hwLoadBalancingTimelineSemaphore, &currSemValue);
+           std::cout << "\t TL semaphore value: " << currSemValue << ", status: " << semResult << std::endl;
+       }
     }
 
     // For fence/sync debugging
@@ -794,6 +893,11 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         }
     }
 
+    if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
+        m_currentVideoQueueIndx++;
+        m_currentVideoQueueIndx %= m_vkDevCtx->GetVideoDecodeNumQueues();
+    }
+    m_decodePicCount++;
     return currPicIdx;
 }
 
@@ -875,7 +979,9 @@ VkDeviceSize VkVideoDecoder::GetBitstreamBuffer(VkDeviceSize size,
 
 VkResult VkVideoDecoder::Create(const VulkanDeviceContext* vkDevCtx,
                                 VkSharedBaseObj<VulkanVideoFrameBuffer>& videoFrameBuffer,
-                                int32_t videoQueueIndx, bool useLinearOutput,
+                                int32_t videoQueueIndx,
+                                bool useLinearOutput,
+                                bool enableHwLoadBalancing,
                                 int32_t numDecodeImagesInFlight,
                                 int32_t numDecodeImagesToPreallocate,
                                 int32_t numBitstreamBuffersToPreallocate,
@@ -885,6 +991,7 @@ VkResult VkVideoDecoder::Create(const VulkanDeviceContext* vkDevCtx,
                                                                  videoFrameBuffer,
                                                                  videoQueueIndx,
                                                                  useLinearOutput,
+                                                                 enableHwLoadBalancing,
                                                                  numDecodeImagesInFlight,
                                                                  numBitstreamBuffersToPreallocate));
     if (vkDecoder) {
@@ -906,8 +1013,14 @@ void VkVideoDecoder::Deinitialize()
             m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::DECODE, queueId);
         }
     } else {
-        m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::DECODE, m_defaultVideoQueueIndx);
+        m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::DECODE, m_currentVideoQueueIndx);
     }
+
+    if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
+        m_vkDevCtx->DestroySemaphore(*m_vkDevCtx, m_hwLoadBalancingTimelineSemaphore, NULL);
+        m_hwLoadBalancingTimelineSemaphore = VK_NULL_HANDLE;
+    }
+
     // m_vkDevCtx->DeviceWaitIdle();
 
     m_videoFrameBuffer = nullptr;

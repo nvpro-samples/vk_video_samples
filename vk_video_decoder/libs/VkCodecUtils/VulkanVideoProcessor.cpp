@@ -61,10 +61,12 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     const int32_t numDecodeImagesInFlight = std::max(programConfig.numDecodeImagesInFlight, 4);
     const int32_t numDecodeImagesToPreallocate = programConfig.numDecodeImagesToPreallocate;
     const int32_t numBitstreamBuffersToPreallocate = std::max(programConfig.numBitstreamBuffersToPreallocate, 4);
-
+    const bool enableHwLoadBalancing = programConfig.enableHwLoadBalancing;
     const bool verbose = false;
 
     if (vkDevCtx->GetVideoDecodeQueue(videoQueueIndx) == VkQueue()) {
+        std::cerr << "videoQueueIndx is out of bounds: " << videoQueueIndx <<
+                     " Max decode queues: " << vkDevCtx->GetVideoDecodeNumQueues() << std::endl;
         assert(!"Invalid Video Queue");
         return -1;
     }
@@ -108,6 +110,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
 
     result = VkVideoDecoder::Create(vkDevCtx, m_vkVideoFrameBuffer,
                                     videoQueueIndx, (outFile != nullptr),
+                                    enableHwLoadBalancing,
                                     numDecodeImagesInFlight,
                                     numDecodeImagesToPreallocate,
                                     numBitstreamBuffersToPreallocate,

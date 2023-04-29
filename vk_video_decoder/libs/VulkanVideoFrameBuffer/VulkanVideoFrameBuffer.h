@@ -42,10 +42,10 @@ struct DecodedFrame {
     // if only one queue is available, submittedVideoQueueIndex will always have a value of "0".
     int32_t  submittedVideoQueueIndex;
     uint64_t timestamp;
+    uint64_t decodeOrder;
     uint32_t hasConsummerSignalFence : 1;
     uint32_t hasConsummerSignalSemaphore : 1;
     // For debugging
-    int32_t decodeOrder;
     int32_t displayOrder;
 
     void Reset()
@@ -79,8 +79,8 @@ struct DecodedFrameRelease {
     uint32_t hasConsummerSignalFence : 1;
     uint32_t hasConsummerSignalSemaphore : 1;
     // For debugging
-    int32_t decodeOrder;
     int32_t displayOrder;
+    uint64_t decodeOrder;
 };
 
 class VkParserVideoPictureParameters;
@@ -159,7 +159,7 @@ public:
                                                    PictureResourceInfo* outputPictureResourceInfo = nullptr,
                                                    VkImageLayout newOutputImageLayerLayout = VK_IMAGE_LAYOUT_MAX_ENUM) = 0;
     virtual int32_t ReleaseImageResources(uint32_t numResources, const uint32_t* indexes) = 0;
-    virtual int32_t SetPicNumInDecodeOrder(int32_t picId, int32_t picNumInDecodeOrder) = 0;
+    virtual uint64_t SetPicNumInDecodeOrder(int32_t picId, uint64_t picNumInDecodeOrder) = 0;
     virtual int32_t SetPicNumInDisplayOrder(int32_t picId, int32_t picNumInDisplayOrder) = 0;
     virtual size_t GetSize() = 0;
 

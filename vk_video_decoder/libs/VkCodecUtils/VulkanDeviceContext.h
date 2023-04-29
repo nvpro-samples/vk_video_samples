@@ -67,10 +67,20 @@ public:
     int32_t GetVideoDecodeQueueFamilyIdx() const { return m_videoDecodeQueueFamily; }
     int32_t GetVideoDecodeDefaultQueueIndex() const { return m_videoDecodeDefaultQueueIndex; }
     int32_t GetVideoDecodeNumQueues() const { return m_videoDecodeNumQueues; }
-    VkQueue GetVideoDecodeQueue(int32_t index = 0) const { return m_videoDecodeQueues[index]; }
+    VkQueue GetVideoDecodeQueue(int32_t index = 0) const {
+        if ((size_t)index >= m_videoDecodeQueues.size()) {
+            return VK_NULL_HANDLE;
+        }
+        return m_videoDecodeQueues[index];
+    }
     int32_t GetVideoEncodeQueueFamilyIdx() const { return m_videoEncodeQueueFamily; }
     int32_t GetVideoEncodeNumQueues() const { return m_videoEncodeNumQueues; }
-    VkQueue GetVideoEncodeQueue(int32_t index = 0) const { return m_videoEncodeQueues[index]; }
+    VkQueue GetVideoEncodeQueue(int32_t index = 0) const {
+        if ((size_t)index >= m_videoEncodeQueues.size()) {
+            return VK_NULL_HANDLE;
+        }
+        return m_videoEncodeQueues[index];
+    }
     bool    GetVideoQueryResultStatusSupport() const { return m_queryResultStatusSupport; }
     class MtQueueMutex {
 
@@ -202,7 +212,11 @@ public:
                                                                   (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT |
                                                                    VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_EXT));
 
-    VkResult CreateVulkanDevice(int32_t numDecodeQueues = 1, int32_t numEncodeQueues = 1);
+    VkResult CreateVulkanDevice(int32_t numDecodeQueues = 1,
+                                int32_t numEncodeQueues = 0,
+                                bool createGraphicsQueue = false,
+                                bool createPresentQueue = false,
+                                bool createComputeQueue = false);
     VkResult InitDebugReport(bool validate = false, bool validateVerbose = false);
 private:
 

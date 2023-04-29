@@ -95,6 +95,10 @@ int main(int argc, const char **argv) {
     }
 
     const bool supportsDisplay = true;
+    const int32_t numDecodeQueues = ((programConfig.queueId != 0) ||
+                                     (programConfig.enableHwLoadBalancing != 0)) ?
+					 -1 : // all available HW decoders
+					  1;  // only one HW decoder instance
     if (supportsDisplay && !programConfig.noPresent) {
 
         VkSharedBaseObj<Shell> displayShell;
@@ -115,8 +119,12 @@ int main(int argc, const char **argv) {
         assert(displayShell->PhysDeviceCanPresent(vkDevCtxt.getPhysicalDevice(),
                                                    vkDevCtxt.GetPresentQueueFamilyIdx()));
 
-        const int32_t numDecodeQueues = (programConfig.queueId != 0) ? -1 : 1;
-        vkDevCtxt.CreateVulkanDevice(numDecodeQueues);
+        vkDevCtxt.CreateVulkanDevice(numDecodeQueues,
+                                     0,    // num encode queues
+                                     true, // createGraphicsQueue
+                                     true, // createDisplayQueue
+                                     false // createComputeQueue
+                                     );
         vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig);
 
 
@@ -133,8 +141,12 @@ int main(int argc, const char **argv) {
             return -1;
         }
 
-        const int32_t numDecodeQueues = (programConfig.queueId != 0) ? -1 : 1;
-        result = vkDevCtxt.CreateVulkanDevice(numDecodeQueues);
+        result = vkDevCtxt.CreateVulkanDevice(numDecodeQueues,
+                                              0,     // num encode queues
+                                              false, // createGraphicsQueue
+                                              false, // createDisplayQueue
+                                              false  // createComputeQueue
+                                              );
         if (result != VK_SUCCESS) {
 
             assert(!"Failed to create Vulkan device!");

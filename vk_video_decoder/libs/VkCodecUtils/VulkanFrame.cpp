@@ -24,7 +24,7 @@
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkShell/Shell.h"
 #include "VulkanFrame.h"
-
+#include "vk_enum_string_helper.h"
 #include <NvCodecUtils/Logger.h>
 #include "NvCodecUtils/VideoStreamDemuxer.h"
 
@@ -300,7 +300,7 @@ bool VulkanFrame::OnFrame( int32_t           renderIndex,
 
         pLastDecodedFrame = &data.lastDecodedFrame;
 
-        if ((gfxRendererIsEnabled == false) && (pLastDecodedFrame != nullptr)) {
+        if (false && (gfxRendererIsEnabled == false) && (pLastDecodedFrame != nullptr)) {
 
             // Graphics and present stages are not enabled.
             // Make sure the frame complete fence signaled (video frame is processed) before returning the frame.
@@ -506,7 +506,7 @@ VkResult VulkanFrame::DrawFrame( int32_t           renderIndex,
             result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &inFrame->frameCompleteFence, true, 100 * 1000 * 1000 /* 100 mSec */);
             assert(result == VK_SUCCESS);
             if (result != VK_SUCCESS) {
-                fprintf(stderr, "\nERROR: WaitForFences() result: 0x%x\n", result);
+                fprintf(stderr, "\nERROR: WaitForFences() result: 0x%x (%s)\n", result, string_VkResult(result));
             }
             result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, inFrame->frameCompleteFence);
             assert(result == VK_SUCCESS);

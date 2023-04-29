@@ -419,7 +419,11 @@ VkResult VulkanDeviceContext::InitVulkanDevice(const char * pAppName, bool verbo
     return result;
 }
 
-VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues, int32_t numEncodeQueues)
+VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
+                                                 int32_t numEncodeQueues,
+                                                 bool createGraphicsQueue,
+                                                 bool createPresentQueue,
+                                                 bool createComputeQueue)
 {
     VkDeviceCreateInfo devInfo = {};
     devInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -442,12 +446,14 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues, int32_
     assert(maxQueueInstances <= MAX_QUEUE_INSTANCES);
     const std::vector<float> queuePriorities(maxQueueInstances, 0.0f);
     std::array<VkDeviceQueueCreateInfo, MAX_QUEUE_FAMILIES> queueInfo = {};
-    queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_gfxQueueFamily;
-    queueInfo[devInfo.queueCreateInfoCount].queueCount = 1;
-    queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
-    devInfo.queueCreateInfoCount++;
-    if (m_gfxQueueFamily != m_presentQueueFamily) {
+    if (createGraphicsQueue) {
+        queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_gfxQueueFamily;
+        queueInfo[devInfo.queueCreateInfoCount].queueCount = 1;
+        queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
+        devInfo.queueCreateInfoCount++;
+    }
+    if (createPresentQueue && !(m_presentQueueFamily < 0) && (m_gfxQueueFamily != m_presentQueueFamily)) {
 
         queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_presentQueueFamily;
@@ -470,6 +476,10 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues, int32_
         queueInfo[devInfo.queueCreateInfoCount].queueCount = numEncodeQueues;
         queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
         devInfo.queueCreateInfoCount++;
+    }
+
+    if (createComputeQueue) {
+        // TODO: create compute queue
     }
 
     assert(devInfo.queueCreateInfoCount <= MAX_QUEUE_FAMILIES);
