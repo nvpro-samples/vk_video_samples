@@ -447,14 +447,20 @@ VkResult VulkanFrame::DrawFrame( int32_t           renderIndex,
         }
     }
 
-    pPerDrawContext->descriptorSetLayoutBinding.WriteDescriptorSet(VkSampler(0), pRtImage->view);
+    if (!pPerDrawContext->descriptorSetLayoutBinding.UsesDescriptorBuffer()) {
+        pPerDrawContext->descriptorSetLayoutBinding.WriteDescriptorSet(VkSampler(0), pRtImage->view);
+    }
 
     pPerDrawContext->commandBuffer.CreateCommandBuffer(
-        m_videoRenderer->m_renderPass.getRenderPass(), pRtImage, displayWidth, displayHeight,
+        m_videoRenderer->m_renderPass.getRenderPass(),
+        pRtImage,
+        displayWidth, displayHeight,
         pPerDrawContext->frameBuffer.GetFbImage(),
-        pPerDrawContext->frameBuffer.GetFrameBuffer(), &m_scissor, pPerDrawContext->gfxPipeline.getPipeline(),
-        pPerDrawContext->descriptorSetLayoutBinding.getPipelineLayout(), pPerDrawContext->descriptorSetLayoutBinding.getDescriptorSet(),
-        &m_videoRenderer->m_vertexBuffer);
+        pPerDrawContext->frameBuffer.GetFrameBuffer(), &m_scissor,
+        pPerDrawContext->gfxPipeline.getPipeline(),
+        pPerDrawContext->descriptorSetLayoutBinding,
+        pPerDrawContext->samplerYcbcrConversion,
+        m_videoRenderer->m_vertexBuffer);
 
     if (dumpDebug) {
         LOG(INFO) << "Drawing Frame " << m_frameCount << " FB: " << renderIndex << std::endl;

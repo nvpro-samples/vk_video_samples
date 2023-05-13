@@ -172,6 +172,11 @@ public:
         return (int32_t)m_reqDeviceExtensions.size();
     }
 
+    int32_t AddOptinalDeviceExtension(const char* deviceExtensionName) {
+        m_optDeviceExtensions.push_back(deviceExtensionName);
+        return (int32_t)m_optDeviceExtensions.size();
+    }
+
     const VkExtensionProperties* FindExtension(
         const std::vector<VkExtensionProperties>& extensions,
         const char* name) const;
@@ -193,7 +198,7 @@ public:
 
     VkResult CheckAllInstanceLayers(bool verbose = false) const;
     VkResult CheckAllInstanceExtensions(bool verbose = false) const;
-    bool HasAllDeviceExtensions(VkPhysicalDevice physDevice, bool printMissingExt = false) const;
+    bool HasAllDeviceExtensions(VkPhysicalDevice physDevice, bool printMissingExt = false);
 
     bool DebugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT obj_type,
                              uint64_t object, size_t location,
@@ -256,6 +261,7 @@ private:
     std::vector<const char *>          m_reqInstanceLayers;
     std::vector<const char *>          m_reqInstanceExtensions;
     std::vector<const char *>          m_reqDeviceExtensions;
+    std::vector<const char *>          m_optDeviceExtensions;
     std::vector<VkExtensionProperties> m_instanceExtensions;
     std::vector<VkExtensionProperties> m_deviceExtensions;
 };

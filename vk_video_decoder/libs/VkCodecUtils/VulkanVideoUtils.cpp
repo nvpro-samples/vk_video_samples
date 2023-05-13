@@ -161,33 +161,33 @@ AHardwareBufferHandle ImageObject::ExportHandle()
 }
 #endif // VK_USE_PLATFORM_ANDROID_KHR
 
-VkResult VulkanVideoBitstreamBuffer::CreateVideoBitstreamBuffer(const VulkanDeviceContext* vkDevCtx, uint32_t queueFamilyIndex,
-         VkDeviceSize bufferSize, VkDeviceSize bufferOffsetAlignment,  VkDeviceSize bufferSizeAlignment,
-         const unsigned char* pBitstreamData, VkDeviceSize bitstreamDataSize, VkDeviceSize dstBufferOffset)
+VkResult VulkanBuffer::Create(const VulkanDeviceContext* vkDevCtx,
+         VkBufferUsageFlags usage, VkMemoryPropertyFlags memoryPropertyFlags,
+         VkDeviceSize bufferSize, VkDeviceSize bufferSizeAlignment, VkDeviceSize bufferOffsetAlignment,
+         const unsigned char* pBufferData, VkDeviceSize bufferDataSize, VkDeviceSize dstBufferOffset)
 {
-    DestroyVideoBitstreamBuffer();
+    Destroy();
 
     m_vkDevCtx = vkDevCtx;
     m_bufferSizeAlignment = bufferSizeAlignment;
     m_bufferSize = ((bufferSize + (m_bufferSizeAlignment - 1)) & ~(m_bufferSizeAlignment - 1));
     m_bufferOffsetAlignment = bufferOffsetAlignment;
 
-    // Create a vertex buffer
-    VkBufferCreateInfo createBufferInfo = VkBufferCreateInfo();
-    createBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    createBufferInfo.size = m_bufferSize;
-    createBufferInfo.usage = VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR;
-    createBufferInfo.flags = 0;
-    createBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    createBufferInfo.queueFamilyIndexCount = 1;
-    createBufferInfo.pQueueFamilyIndices = &queueFamilyIndex;
+    // Create a buffer
+    VkBufferCreateInfo bufferCreateInfo {};
+    bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferCreateInfo.size = m_bufferSize;
+    bufferCreateInfo.usage = usage;
+    bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    CALL_VK(m_vkDevCtx->CreateBuffer(*m_vkDevCtx, &createBufferInfo,
-                           nullptr, &m_buffer));
+    VkResult result = m_vkDevCtx->CreateBuffer(*m_vkDevCtx, &bufferCreateInfo, nullptr,
+                     &m_buffer);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
 
     VkMemoryRequirements memReq;
-    m_vkDevCtx->GetBufferMemoryRequirements(*m_vkDevCtx,
-            m_buffer, &memReq);
+    m_vkDevCtx->GetBufferMemoryRequirements(*m_vkDevCtx, m_buffer, &memReq);
 
     VkMemoryAllocateInfo allocInfo = VkMemoryAllocateInfo();
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -196,46 +196,50 @@ VkResult VulkanVideoBitstreamBuffer::CreateVideoBitstreamBuffer(const VulkanDevi
     // Assign the proper memory type for that buffer
     m_bufferSize = allocInfo.allocationSize = memReq.size;
     MapMemoryTypeToIndex(m_vkDevCtx, m_vkDevCtx->getPhysicalDevice(), memReq.memoryTypeBits,
-                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                         memoryPropertyFlags,
                          &allocInfo.memoryTypeIndex);
 
     // Allocate memory for the buffer
-    CALL_VK(m_vkDevCtx->AllocateMemory(*m_vkDevCtx, &allocInfo, nullptr,
-                             &m_deviceMemory));
+    result = m_vkDevCtx->AllocateMemory(*m_vkDevCtx, &allocInfo, nullptr,
+                                        &m_deviceMemory);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
 
-    CALL_VK(CopyVideoBitstreamToBuffer(pBitstreamData,
-                      bitstreamDataSize, dstBufferOffset = 0));
+    result = CopyDataToBuffer(pBufferData, bufferDataSize, dstBufferOffset = 0);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
 
-    CALL_VK(m_vkDevCtx->BindBufferMemory(*m_vkDevCtx,
-                      m_buffer, m_deviceMemory, 0));
-
-    return VK_SUCCESS;
+    return m_vkDevCtx->BindBufferMemory(*m_vkDevCtx, m_buffer, m_deviceMemory, 0);
 }
 
-VkResult VulkanVideoBitstreamBuffer::CopyVideoBitstreamToBuffer(const unsigned char* pBitstreamData,
-        VkDeviceSize bitstreamDataSize, VkDeviceSize &dstBufferOffset) const
+VkResult VulkanBuffer::CopyDataToBuffer(const unsigned char* pData,
+        VkDeviceSize dataSize, VkDeviceSize &dstBufferOffset) const
 {
-    if (pBitstreamData && bitstreamDataSize) {
-        void *ptr = NULL;
+    if ((pData != nullptr) && (dataSize != 0)) {
+        VkResult result;
         dstBufferOffset = ((dstBufferOffset + (m_bufferOffsetAlignment - 1)) & ~(m_bufferOffsetAlignment - 1));
-        assert((dstBufferOffset + bitstreamDataSize) <= m_bufferSize);
-        CALL_VK(m_vkDevCtx->MapMemory(*m_vkDevCtx, m_deviceMemory, dstBufferOffset,
-                bitstreamDataSize, 0, &ptr));
+        assert((dstBufferOffset + dataSize) <= m_bufferSize);
+        if (m_bufferMemoryHostPtr == nullptr) {
+            result = m_vkDevCtx->MapMemory(*m_vkDevCtx, m_deviceMemory, dstBufferOffset,
+                                           dataSize, 0, &m_bufferMemoryHostPtr);
+            if (result != VK_SUCCESS) {
+                return result;
+            }
+        }
 
-
-        memcpy(ptr, pBitstreamData, (size_t)bitstreamDataSize);
+        memcpy(m_bufferMemoryHostPtr, pData, (size_t)dataSize);
 
         const VkMappedMemoryRange   range           = {
             VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,  // sType
             NULL,                                   // pNext
             m_deviceMemory,                         // memory
             dstBufferOffset,                        // offset
-            (size_t)bitstreamDataSize,              // size
+            (size_t)dataSize,                       // size
         };
 
-        CALL_VK(m_vkDevCtx->FlushMappedMemoryRanges(*m_vkDevCtx, 1u, &range));
-
-        m_vkDevCtx->UnmapMemory(*m_vkDevCtx, m_deviceMemory);
+        return m_vkDevCtx->FlushMappedMemoryRanges(*m_vkDevCtx, 1u, &range);
     }
 
     return VK_SUCCESS;
@@ -1046,7 +1050,7 @@ VkResult VulkanDescriptorSetLayoutBinding::WriteDescriptorSet(VkSampler sampler,
     VkWriteDescriptorSet writeDst = VkWriteDescriptorSet();
     writeDst.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writeDst.pNext = nullptr;
-    writeDst.dstSet = *getDescriptorSet();
+    writeDst.dstSet = *GetDescriptorSet();
     writeDst.dstBinding = 0;
     writeDst.dstArrayElement = dstArrayElement;
     writeDst.descriptorCount = 1;
@@ -1162,9 +1166,36 @@ VkResult VulkanDescriptorSetLayoutBinding::CreateDescriptorSet(const VulkanDevic
     descriptorSetLayoutCreateInfo.pNext = nullptr;
     descriptorSetLayoutCreateInfo.bindingCount = 1;
     descriptorSetLayoutCreateInfo.pBindings = &descriptorSetLayoutBinding;
+    bool const useDescriptorBuffer = m_vkDevCtx->FindDeviceExtension("VK_EXT_descriptor_buffer");
+    descriptorSetLayoutCreateInfo.flags = useDescriptorBuffer ?
+                                          VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT :
+                                          0;
     CALL_VK(m_vkDevCtx->CreateDescriptorSetLayout(*m_vkDevCtx,
                                         &descriptorSetLayoutCreateInfo, nullptr,
                                         &dscLayout));
+
+    if (useDescriptorBuffer) {
+        VkDeviceSize descriptorLayoutSize = 0;
+        m_vkDevCtx->GetDescriptorSetLayoutSizeEXT(*m_vkDevCtx, dscLayout, &descriptorLayoutSize);
+
+        m_resourceDescriptorBuffer.Create(m_vkDevCtx,
+                VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
+                VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT |
+                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                descriptorLayoutSize);
+
+        VkPhysicalDeviceProperties2KHR deviceProps2{};
+        VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptorBufferProperties{};
+        descriptorBufferProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT;
+        deviceProps2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR;
+        deviceProps2.pNext = &descriptorBufferProperties;
+        m_vkDevCtx->GetPhysicalDeviceProperties2(m_vkDevCtx->getPhysicalDevice(), &deviceProps2);
+        m_descriptorSize[0]   = descriptorBufferProperties.combinedImageSamplerDescriptorSize;
+        m_descriptorOffset[0] = alignedSize(descriptorBufferProperties.combinedImageSamplerDescriptorSize,
+                                         descriptorBufferProperties.descriptorBufferOffsetAlignment);
+    }
 
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = VkPipelineLayoutCreateInfo();
     pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -1396,7 +1427,7 @@ VkResult VulkanGraphicsPipeline::CreateGraphicsPipeline(const VulkanDeviceContex
     pipelineCreateInfo.pDepthStencilState = nullptr;
     pipelineCreateInfo.pColorBlendState = &colorBlendInfo;
     pipelineCreateInfo.pDynamicState = &dynamicStateInfo;
-    pipelineCreateInfo.layout = pBufferDescriptorSets->getPipelineLayout();
+    pipelineCreateInfo.layout = pBufferDescriptorSets->GetPipelineLayout();
     pipelineCreateInfo.renderPass = renderPass;
     pipelineCreateInfo.subpass = 0;
     pipelineCreateInfo.basePipelineHandle = VK_NULL_HANDLE;
@@ -1411,11 +1442,14 @@ VkResult VulkanGraphicsPipeline::CreateGraphicsPipeline(const VulkanDeviceContex
     return pipelineResult;
 }
 
-VkResult VulkanCommandBuffer::CreateCommandBuffer(VkRenderPass renderPass, const ImageResourceInfo* inputImageToDrawFrom,
+VkResult VulkanCommandBuffer::CreateCommandBuffer(VkRenderPass renderPass,
+        const ImageResourceInfo* inputImageToDrawFrom,
         int32_t displayWidth, int32_t displayHeight,
         VkImage displayImage, VkFramebuffer framebuffer, VkRect2D* pRenderArea,
-        VkPipeline pipeline, VkPipelineLayout pipelineLayout, const VkDescriptorSet* pDescriptorSet,
-        VulkanVertexBuffer* pVertexBuffer)
+        VkPipeline pipeline,
+        const VulkanDescriptorSetLayoutBinding& descriptorSetLayoutBinding,
+        const VulkanSamplerYcbcrConversion& samplerYcbcrConversion,
+        const VulkanVertexBuffer& vertexBuffer)
 {
     // 1 command buffer draw in 1 framebuffer
     if (cmdBuffer == VkCommandBuffer(0)) {
@@ -1480,10 +1514,43 @@ VkResult VulkanCommandBuffer::CreateCommandBuffer(VkRenderPass renderPass, const
     m_vkDevCtx->CmdBeginRenderPass(cmdBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
     // Bind what is necessary to the command buffer
     m_vkDevCtx->CmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-    m_vkDevCtx->CmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                      pipelineLayout, 0, 1, pDescriptorSet, 0, nullptr);
+
+    if (descriptorSetLayoutBinding.UsesDescriptorBuffer()) {
+
+        const VkDescriptorImageInfo combinedImageSampler{ samplerYcbcrConversion.GetSampler(),
+                                                          inputImageToDrawFrom->view,
+                                                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+
+        VkDeviceOrHostAddressConstKHR imageDescriptorBufferDeviceAddress =
+                descriptorSetLayoutBinding.UpdateDescriptorBuffer(0, &combinedImageSampler);
+
+
+        // Descriptor buffer bindings
+        // Set 0 = Image
+        VkDescriptorBufferBindingInfoEXT bindingInfo{};
+        bindingInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
+        bindingInfo.pNext = nullptr;
+        bindingInfo.address = imageDescriptorBufferDeviceAddress.deviceAddress;
+        bindingInfo.usage = VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT |
+                            VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
+        m_vkDevCtx->CmdBindDescriptorBuffersEXT(cmdBuffer, 1, &bindingInfo);
+
+        // Image (set 0)
+        uint32_t bufferIndexImage = 0;
+        VkDeviceSize bufferOffset = 0;
+        m_vkDevCtx->CmdSetDescriptorBufferOffsetsEXT(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                     descriptorSetLayoutBinding.GetPipelineLayout(),
+                                                     0, 1, &bufferIndexImage, &bufferOffset);
+
+    } else {
+
+        m_vkDevCtx->CmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                          descriptorSetLayoutBinding.GetPipelineLayout(),
+                                          0, 1, descriptorSetLayoutBinding.GetDescriptorSet(),
+                                          0, nullptr);
+    }
     VkDeviceSize offset = 0;
-    m_vkDevCtx->CmdBindVertexBuffers(cmdBuffer, 0, 1, &pVertexBuffer->get(), &offset);
+    m_vkDevCtx->CmdBindVertexBuffers(cmdBuffer, 0, 1, &vertexBuffer.get(), &offset);
 
     bool scaleInput = true;
     TransformPushConstants constants;
@@ -1498,10 +1565,11 @@ VkResult VulkanCommandBuffer::CreateCommandBuffer(VkRenderPass renderPass, const
     }
 
     //upload the matrix to the GPU via push constants
-    m_vkDevCtx->CmdPushConstants(cmdBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(TransformPushConstants), &constants);
+    m_vkDevCtx->CmdPushConstants(cmdBuffer, descriptorSetLayoutBinding.GetPipelineLayout(),
+                                 VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(TransformPushConstants), &constants);
 
     // Draw the quad
-    m_vkDevCtx->CmdDraw(cmdBuffer, pVertexBuffer->GetNumVertices(), 1, 0, 0);
+    m_vkDevCtx->CmdDraw(cmdBuffer, vertexBuffer.GetNumVertices(), 1, 0, 0);
 
     m_vkDevCtx->CmdEndRenderPass(cmdBuffer);
 
@@ -1602,7 +1670,8 @@ VkResult VulkanRenderInfo::UpdatePerDrawContexts(VulkanPerDrawContext* pPerDrawC
 
 // Create per draw contexts.
 VkResult VulkanRenderInfo::CreatePerDrawContexts(const VulkanDeviceContext* vkDevCtx,
-        VkSwapchainKHR swapchain, const VkExtent2D* pFbExtent2D, VkViewport* pViewport, VkRect2D* pScissor, const VkSurfaceFormatKHR* pSurfaceFormat,
+        VkSwapchainKHR swapchain, const VkExtent2D* pFbExtent2D, VkViewport* pViewport,
+        VkRect2D* pScissor, const VkSurfaceFormatKHR* pSurfaceFormat,
         VkRenderPass renderPass, const VkSamplerCreateInfo* pSamplerCreateInfo,
         const VkSamplerYcbcrConversionCreateInfo* pSamplerYcbcrConversionCreateInfo)
 {

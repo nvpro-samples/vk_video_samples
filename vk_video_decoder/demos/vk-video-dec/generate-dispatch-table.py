@@ -261,6 +261,16 @@ vk_core = Extension(name='VK_core', version=0, guard=None, commands=[
     Command(name='GetDescriptorSetLayoutSupport', dispatch='VkDevice'),
 ])
 
+vk_ext_descriptor_buffer = Extension(name='VK_EXT_descriptor_buffer', version=1, guard=None, commands=[
+    Command(name='GetDescriptorSetLayoutSizeEXT', dispatch='VkDevice'),
+    Command(name='GetDescriptorEXT', dispatch='VkDevice'),
+    Command(name='CmdBindDescriptorBuffersEXT', dispatch='VkCommandBuffer'),
+    Command(name='CmdSetDescriptorBufferOffsetsEXT', dispatch='VkCommandBuffer'),
+])
+
+vk_khr_buffer_device_address = Extension(name='VK_KHR_buffer_device_address', version=1, guard=None, commands=[
+    Command(name='GetBufferDeviceAddressKHR', dispatch='VkDevice'),
+])
 
 vk_khr_external_memory_fd = Extension(name='VK_KHR_external_memory_fd', version=1, guard=None, commands=[
     Command(name='GetMemoryFdKHR', dispatch='VkDevice'),
@@ -381,6 +391,8 @@ vk_khr_synchronization2 = Extension(name='VK_KHR_synchronization2', version=1, g
 
 extensions = [
     vk_core,
+    vk_ext_descriptor_buffer,
+    vk_khr_buffer_device_address,
     vk_khr_external_memory_fd,
     vk_khr_external_fence_fd,
     vk_khr_surface,
