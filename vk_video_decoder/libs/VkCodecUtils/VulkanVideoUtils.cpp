@@ -503,9 +503,6 @@ VkResult ImageObject::FillImageWithPattern(int pattern)
 
     m_vkDevCtx->GetImageSubresourceLayout(*m_vkDevCtx, image, &subres, &layout);
 
-    CALL_VK(m_vkDevCtx->MapMemory(*m_vkDevCtx, mem, 0, allocationSize, 0, &data));
-
-
     const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(imageFormat);
     if (mpInfo) {
         ImageData imageData =
@@ -520,12 +517,13 @@ VkResult ImageObject::FillImageWithPattern(int pattern)
         VkFillYuv vkFillYuv;
         vkFillYuv.fillVkImage(m_vkDevCtx, image, &imageData, mem, &ycbcrConversionInfo);
     } else {
+        CALL_VK(m_vkDevCtx->MapMemory(*m_vkDevCtx, mem, 0, allocationSize, 0, &data));
         generateColorPatternRgba8888((ColorPattern)pattern, (uint8_t *)data,
                                  imageWidth, imageHeight,
                                  (uint32_t)layout.rowPitch);
+        m_vkDevCtx->UnmapMemory(*m_vkDevCtx, mem);
     }
 
-    m_vkDevCtx->UnmapMemory(*m_vkDevCtx, mem);
 
     return VK_SUCCESS;
 }

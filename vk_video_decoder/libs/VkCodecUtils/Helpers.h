@@ -26,7 +26,7 @@
 namespace vk {
 
 inline VkResult assert_success(VkResult res) {
-    if (res != VK_SUCCESS) {
+    if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR) {
         std::stringstream ss;
         ss << "VkResult " << res << " returned";
         throw std::runtime_error(ss.str());

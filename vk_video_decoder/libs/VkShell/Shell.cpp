@@ -304,9 +304,9 @@ void Shell::AcquireBackBuffer(bool trainFrame) {
     // acquire just once when not presenting
     if (m_settings.noPresent && GetCurrentBackBuffer().GetAcquireSemaphore() != VK_NULL_HANDLE) return;
 
-    AcquireBuffer* acquireBuf = m_ctx.acquireBuffers.front();
+    assert(!m_ctx.acquireBuffers.empty());
 
-    assert(acquireBuf != nullptr);
+    AcquireBuffer* acquireBuf = m_ctx.acquireBuffers.front();
 
     uint32_t imageIndex = 0;
     vk::assert_success(
