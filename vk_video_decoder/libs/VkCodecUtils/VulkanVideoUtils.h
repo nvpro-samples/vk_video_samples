@@ -885,6 +885,11 @@ public:
         return m_resourceDescriptorBuffer.IsValid();
     }
 
+    VkDescriptorSetLayoutCreateFlags GetDescriptorLayoutMode() const {
+        // VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR or
+        // VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT
+        return descriptorSetLayoutCreateInfo.flags;
+    }
     VkDeviceOrHostAddressConstKHR UpdateDescriptorBuffer(uint32_t descriptorId,
                                                          const VkDescriptorImageInfo* pCombinedImageSampler) const {
 

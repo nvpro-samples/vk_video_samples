@@ -1042,6 +1042,8 @@ VkResult VulkanDescriptorSetLayoutBinding::WriteDescriptorSet(VkSampler sampler,
                                                               uint32_t dstArrayElement,
                                                               VkImageLayout imageLayout)
 {
+    assert(GetDescriptorLayoutMode() == 0);
+
     VkDescriptorImageInfo imageDsts;
     imageDsts.sampler = sampler;
     imageDsts.imageView = imageView;
@@ -1166,15 +1168,30 @@ VkResult VulkanDescriptorSetLayoutBinding::CreateDescriptorSet(const VulkanDevic
     descriptorSetLayoutCreateInfo.pNext = nullptr;
     descriptorSetLayoutCreateInfo.bindingCount = 1;
     descriptorSetLayoutCreateInfo.pBindings = &descriptorSetLayoutBinding;
-    bool const useDescriptorBuffer = m_vkDevCtx->FindDeviceExtension("VK_EXT_descriptor_buffer");
-    descriptorSetLayoutCreateInfo.flags = useDescriptorBuffer ?
-                                          VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT :
-                                          0;
-    CALL_VK(m_vkDevCtx->CreateDescriptorSetLayout(*m_vkDevCtx,
-                                        &descriptorSetLayoutCreateInfo, nullptr,
-                                        &dscLayout));
+    if (m_vkDevCtx->FindDeviceExtension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)) {
+        descriptorSetLayoutCreateInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
+    } else if (m_vkDevCtx->FindDeviceExtension(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME)){
+        descriptorSetLayoutCreateInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+    } else {
+        descriptorSetLayoutCreateInfo.flags = 0;
+    }
 
-    if (useDescriptorBuffer) {
+    VkResult result = m_vkDevCtx->CreateDescriptorSetLayout(*m_vkDevCtx,
+                                        &descriptorSetLayoutCreateInfo, nullptr,
+                                        &dscLayout);
+
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+
+    if (descriptorSetLayoutCreateInfo.flags == VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR) {
+        VkPhysicalDevicePushDescriptorPropertiesKHR pushDescriptorProps{};
+        VkPhysicalDeviceProperties2KHR deviceProps2{};
+        pushDescriptorProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PUSH_DESCRIPTOR_PROPERTIES_KHR;
+        deviceProps2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR;
+        deviceProps2.pNext = &pushDescriptorProps;
+        m_vkDevCtx->GetPhysicalDeviceProperties2(m_vkDevCtx->getPhysicalDevice(), &deviceProps2);
+    } else if (descriptorSetLayoutCreateInfo.flags == VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) {
         VkDeviceSize descriptorLayoutSize = 0;
         m_vkDevCtx->GetDescriptorSetLayoutSizeEXT(*m_vkDevCtx, dscLayout, &descriptorLayoutSize);
 
@@ -1205,7 +1222,7 @@ VkResult VulkanDescriptorSetLayoutBinding::CreateDescriptorSet(const VulkanDevic
     pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
     pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
 
-    //setup push constants
+    // setup push constants
     VkPushConstantRange push_constant;
     //this push constant range starts at the beginning
     push_constant.offset = 0;
@@ -1215,13 +1232,20 @@ VkResult VulkanDescriptorSetLayoutBinding::CreateDescriptorSet(const VulkanDevic
     push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pipelineLayoutCreateInfo.pPushConstantRanges = &push_constant;
     pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
-    CALL_VK(m_vkDevCtx->CreatePipelineLayout(*m_vkDevCtx, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout));
+    result = m_vkDevCtx->CreatePipelineLayout(*m_vkDevCtx, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
 
+    if (descriptorSetLayoutCreateInfo.flags) {
+        // Don't need the descriptor pool and static descriptor sets
+        return result;
+    }
 
     VulkanDescriptorSet* pDescriptorSet = GetNextDescriptorSet();
-    VkResult result = pDescriptorSet->CreateDescriptorPool(vkDevCtx,
-                                                           descriptorCount * maxCombinedImageSamplerDescriptorCount,
-                                                           VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+    result = pDescriptorSet->CreateDescriptorPool(vkDevCtx,
+                                                  descriptorCount * maxCombinedImageSamplerDescriptorCount,
+                                                  VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
     if (result != VK_SUCCESS) {
         return result;
@@ -1515,40 +1539,66 @@ VkResult VulkanCommandBuffer::CreateCommandBuffer(VkRenderPass renderPass,
     // Bind what is necessary to the command buffer
     m_vkDevCtx->CmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
-    if (descriptorSetLayoutBinding.UsesDescriptorBuffer()) {
+    VkDescriptorSetLayoutCreateFlags layoutMode = descriptorSetLayoutBinding.GetDescriptorLayoutMode();
 
-        const VkDescriptorImageInfo combinedImageSampler{ samplerYcbcrConversion.GetSampler(),
-                                                          inputImageToDrawFrom->view,
-                                                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    switch (layoutMode) {
+        case VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR:
+        {
+            std::array<VkWriteDescriptorSet, 1> writeDescriptorSets{};
 
-        VkDeviceOrHostAddressConstKHR imageDescriptorBufferDeviceAddress =
-                descriptorSetLayoutBinding.UpdateDescriptorBuffer(0, &combinedImageSampler);
+            const VkDescriptorImageInfo combinedImageSampler{ samplerYcbcrConversion.GetSampler(),
+                                                              inputImageToDrawFrom->view,
+                                                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+
+            // Image
+            writeDescriptorSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writeDescriptorSets[0].dstSet = 0;
+            writeDescriptorSets[0].dstBinding = 0;
+            writeDescriptorSets[0].descriptorCount = 1;
+            writeDescriptorSets[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writeDescriptorSets[0].pImageInfo = &combinedImageSampler;
+
+            m_vkDevCtx->CmdPushDescriptorSetKHR(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                descriptorSetLayoutBinding.GetPipelineLayout(), 0, 1,
+                                                writeDescriptorSets.data());
+        }
+        break;
+        case VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT:
+        {
+            const VkDescriptorImageInfo combinedImageSampler{ samplerYcbcrConversion.GetSampler(),
+                                                                      inputImageToDrawFrom->view,
+                                                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+
+            VkDeviceOrHostAddressConstKHR imageDescriptorBufferDeviceAddress =
+                    descriptorSetLayoutBinding.UpdateDescriptorBuffer(0, &combinedImageSampler);
 
 
-        // Descriptor buffer bindings
-        // Set 0 = Image
-        VkDescriptorBufferBindingInfoEXT bindingInfo{};
-        bindingInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
-        bindingInfo.pNext = nullptr;
-        bindingInfo.address = imageDescriptorBufferDeviceAddress.deviceAddress;
-        bindingInfo.usage = VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT |
-                            VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
-        m_vkDevCtx->CmdBindDescriptorBuffersEXT(cmdBuffer, 1, &bindingInfo);
+            // Descriptor buffer bindings
+            // Set 0 = Image
+            VkDescriptorBufferBindingInfoEXT bindingInfo{};
+            bindingInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
+            bindingInfo.pNext = nullptr;
+            bindingInfo.address = imageDescriptorBufferDeviceAddress.deviceAddress;
+            bindingInfo.usage = VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT |
+                                VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
+            m_vkDevCtx->CmdBindDescriptorBuffersEXT(cmdBuffer, 1, &bindingInfo);
 
-        // Image (set 0)
-        uint32_t bufferIndexImage = 0;
-        VkDeviceSize bufferOffset = 0;
-        m_vkDevCtx->CmdSetDescriptorBufferOffsetsEXT(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                                     descriptorSetLayoutBinding.GetPipelineLayout(),
-                                                     0, 1, &bufferIndexImage, &bufferOffset);
+            // Image (set 0)
+            uint32_t bufferIndexImage = 0;
+            VkDeviceSize bufferOffset = 0;
+            m_vkDevCtx->CmdSetDescriptorBufferOffsetsEXT(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                         descriptorSetLayoutBinding.GetPipelineLayout(),
+                                                         0, 1, &bufferIndexImage, &bufferOffset);
+        }
+        break;
 
-    } else {
-
-        m_vkDevCtx->CmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                          descriptorSetLayoutBinding.GetPipelineLayout(),
-                                          0, 1, descriptorSetLayoutBinding.GetDescriptorSet(),
-                                          0, nullptr);
+        default:
+            m_vkDevCtx->CmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                              descriptorSetLayoutBinding.GetPipelineLayout(),
+                                              0, 1, descriptorSetLayoutBinding.GetDescriptorSet(),
+                                              0, nullptr);
     }
+
     VkDeviceSize offset = 0;
     m_vkDevCtx->CmdBindVertexBuffers(cmdBuffer, 0, 1, &vertexBuffer.get(), &offset);
 

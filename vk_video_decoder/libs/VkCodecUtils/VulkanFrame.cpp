@@ -447,7 +447,7 @@ VkResult VulkanFrame::DrawFrame( int32_t           renderIndex,
         }
     }
 
-    if (!pPerDrawContext->descriptorSetLayoutBinding.UsesDescriptorBuffer()) {
+    if (pPerDrawContext->descriptorSetLayoutBinding.GetDescriptorLayoutMode() == 0) {
         pPerDrawContext->descriptorSetLayoutBinding.WriteDescriptorSet(VkSampler(0), pRtImage->view);
     }
 
