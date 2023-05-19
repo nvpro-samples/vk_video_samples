@@ -499,16 +499,10 @@ VkResult ImageObject::FillImageWithPattern(int pattern)
     const VkImageSubresource subres = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0 };
 
     VkSubresourceLayout layout;
-    void *data;
-
-    VkMemoryRequirements mem_reqs;
-    m_vkDevCtx->GetImageMemoryRequirements(*m_vkDevCtx, image, &mem_reqs);
-    VkDeviceSize allocationSize = mem_reqs.size;
 
     m_vkDevCtx->GetImageSubresourceLayout(*m_vkDevCtx, image, &subres, &layout);
 
-    CALL_VK(m_vkDevCtx->MapMemory(*m_vkDevCtx, mem, 0, allocationSize, 0, &data));
-
+    void *data = MapHostPtr();
 
     const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(imageFormat);
     if (mpInfo) {
@@ -529,8 +523,6 @@ VkResult ImageObject::FillImageWithPattern(int pattern)
                                  (uint32_t)layout.rowPitch);
     }
 
-    m_vkDevCtx->UnmapMemory(*m_vkDevCtx, mem);
-
     return VK_SUCCESS;
 }
 
@@ -538,7 +530,6 @@ VkResult ImageObject::FillImageWithPattern(int pattern)
 // or into buffer memory.
 VkResult ImageObject::CopyYuvToVkImage(uint32_t numPlanes, const uint8_t* yuvPlaneData[3], const VkSubresourceLayout yuvPlaneLayouts[3])
 {
-    uint8_t *ptr = NULL;
     VkResult result;
 
     VkImageSubresource subResource = {};
@@ -597,7 +588,7 @@ VkResult ImageObject::CopyYuvToVkImage(uint32_t numPlanes, const uint8_t* yuvPla
         size = layouts[0].size;
     }
 
-    m_vkDevCtx->MapMemory(*m_vkDevCtx, mem, 0, size, 0, (void **)&ptr);
+    uint8_t *ptr = MapHostPtr();
 
     for (uint32_t plane = 0; plane < numPlanes; plane++) {
         int copyHeight = plane ? cbimageHeight : imageHeight;
@@ -619,8 +610,6 @@ VkResult ImageObject::CopyYuvToVkImage(uint32_t numPlanes, const uint8_t* yuvPla
     };
 
     result = m_vkDevCtx->FlushMappedMemoryRanges(*m_vkDevCtx, 1u, &range);
-
-    m_vkDevCtx->UnmapMemory(*m_vkDevCtx, mem);
 
     return result;
 }

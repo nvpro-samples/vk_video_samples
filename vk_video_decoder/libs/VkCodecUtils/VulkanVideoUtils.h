@@ -446,6 +446,7 @@ public:
     :   ImageResourceInfo(),
         m_vkDevCtx(),
         mem(),
+        mappedPtr(),
         m_exportMemHandleTypes(VK_EXTERNAL_MEMORY_HANDLE_TYPE_FLAG_BITS_MAX_ENUM),
         nativeHandle(),
         canBeExported(false),
@@ -472,6 +473,16 @@ public:
     ImageObject& operator= (const ImageObject&) = delete;
     ImageObject& operator= (ImageObject&&) = delete;
 
+    uint8_t* MapHostPtr() {
+        if (mappedPtr == nullptr) {
+            VkMemoryRequirements mem_reqs;
+            m_vkDevCtx->GetImageMemoryRequirements(*m_vkDevCtx, image, &mem_reqs);
+            VkDeviceSize allocationSize = mem_reqs.size;
+            m_vkDevCtx->MapMemory(*m_vkDevCtx, mem, 0, allocationSize, 0, (void **)&mappedPtr);
+        }
+        return mappedPtr;
+    }
+
     operator bool() {
         return (image != VkImage());
     }
@@ -485,24 +496,25 @@ public:
     {
         canBeExported = false;
 
+        if (mappedPtr) {
+            m_vkDevCtx->UnmapMemory(*m_vkDevCtx, mem);
+            mappedPtr = nullptr;
+        }
+
         if (view) {
-            m_vkDevCtx->DestroyImageView(*m_vkDevCtx,
-                               view, nullptr);
+            m_vkDevCtx->DestroyImageView(*m_vkDevCtx, view, nullptr);
+            view = VK_NULL_HANDLE;
         }
 
         if (mem) {
-            m_vkDevCtx->FreeMemory(*m_vkDevCtx,
-                         mem, 0);
+            m_vkDevCtx->FreeMemory(*m_vkDevCtx, mem, 0);
+            mem = VK_NULL_HANDLE;
         }
 
         if (image) {
-            m_vkDevCtx->DestroyImage(*m_vkDevCtx,
-                           image, nullptr);
+            m_vkDevCtx->DestroyImage(*m_vkDevCtx, image, nullptr);
+            image = VK_NULL_HANDLE;
         }
-
-        image = VkImage ();
-        mem = VkDeviceMemory();
-        view = VkImageView();
     }
 
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
@@ -511,6 +523,7 @@ public:
 
     const VulkanDeviceContext* m_vkDevCtx;
     VkDeviceMemory mem;
+    uint8_t *mappedPtr;
     VkExternalMemoryHandleTypeFlagBitsKHR m_exportMemHandleTypes;
     NativeHandle nativeHandle; // as a reference to know if this is the same imported buffer.
     bool canBeExported;
