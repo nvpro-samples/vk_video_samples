@@ -58,6 +58,7 @@ if(WIN32 AND NOT GLUT_FOUND)
   add_definitions(/wd4305) #remove double to float truncation warning
 else()
   add_definitions(-fpermissive)
+  add_definitions(-DVULKAN_HPP_NO_TO_STRING=1)
 endif()
 
 set(COMMON_VIDEO_SOURCE_FILES
