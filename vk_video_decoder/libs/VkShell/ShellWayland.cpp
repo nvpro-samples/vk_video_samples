@@ -223,7 +223,7 @@ VkSurfaceKHR ShellWayland::CreateSurface(VkInstance instance) {
     surface_info.surface = m_surface;
 
     VkSurfaceKHR surface;
-    vk::assert_success(m_ctx.devCtx->CreateWaylandSurfaceKHR(instance, &surface_info, nullptr, &surface));
+    Shell::AssertSuccess(m_ctx.devCtx->CreateWaylandSurfaceKHR(instance, &surface_info, nullptr, &surface));
 
     return surface;
 }

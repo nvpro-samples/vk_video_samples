@@ -35,6 +35,17 @@ class FrameProcessor;
 
 class Shell : public VkWsiDisplay, public VkVideoRefCountBase {
 public:
+
+    inline static VkResult AssertSuccess(VkResult res) {
+        if ((res != VK_SUCCESS) && (res != VK_SUBOPTIMAL_KHR)) {
+            std::stringstream ss;
+            ss << "VkResult " << res << " returned";
+            throw std::runtime_error(ss.str());
+        }
+
+        return res;
+    }
+
     Shell(const Shell &sh) = delete;
     Shell &operator=(const Shell &sh) = delete;
 

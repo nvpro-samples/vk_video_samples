@@ -92,10 +92,10 @@ void ShellDirect::QuitLoop()
 void ShellDirect::InitDisplay()
 {
     uint32_t displayCount = 0;
-    vk::assert_success(m_ctx.devCtx->GetPhysicalDeviceDisplayPropertiesKHR(m_ctx.devCtx->getPhysicalDevice(), &displayCount, NULL));
+    AssertSuccess(m_ctx.devCtx->GetPhysicalDeviceDisplayPropertiesKHR(m_ctx.devCtx->getPhysicalDevice(), &displayCount, NULL));
 
     VkDisplayPropertiesKHR displayProps[4];
-    vk::assert_success(m_ctx.devCtx->GetPhysicalDeviceDisplayPropertiesKHR(m_ctx.devCtx->getPhysicalDevice(), &displayCount, displayProps));
+    AssertSuccess(m_ctx.devCtx->GetPhysicalDeviceDisplayPropertiesKHR(m_ctx.devCtx->getPhysicalDevice(), &displayCount, displayProps));
 
     const uint32_t displayIndex = 0;
     m_vkDisplay = displayProps[displayIndex].display;
@@ -103,7 +103,7 @@ void ShellDirect::InitDisplay()
 
     // Display dpy = NULL;
     // Provided by VK_EXT_acquire_xlib_display
-    // vk::assert_success(vk::AcquireXlibDisplayEXT(ctx_.physical_dev, &dpy, display_));
+    // AssertSuccess(vk::AcquireXlibDisplayEXT(ctx_.physical_dev, &dpy, display_));
 }
 
 bool ShellDirect::PhysDeviceCanPresent(VkPhysicalDevice physicalDevice, uint32_t presentQueueFamily) const
@@ -121,9 +121,9 @@ VkSurfaceKHR ShellDirect::CreateSurface(VkInstance instance)
 
     // get the list of supported display modes
     uint32_t modeCount = 0;
-    vk::assert_success(m_ctx.devCtx->GetDisplayModePropertiesKHR(m_ctx.devCtx->getPhysicalDevice(), m_vkDisplay, &modeCount, nullptr));
+    AssertSuccess(m_ctx.devCtx->GetDisplayModePropertiesKHR(m_ctx.devCtx->getPhysicalDevice(), m_vkDisplay, &modeCount, nullptr));
     modeProperties.resize(modeCount);
-    vk::assert_success(m_ctx.devCtx->GetDisplayModePropertiesKHR(m_ctx.devCtx->getPhysicalDevice(), m_vkDisplay, &modeCount, &modeProperties[0]));
+    AssertSuccess(m_ctx.devCtx->GetDisplayModePropertiesKHR(m_ctx.devCtx->getPhysicalDevice(), m_vkDisplay, &modeCount, &modeProperties[0]));
 
     // choose the first display mode
     assert(!modeProperties.empty());
@@ -131,11 +131,11 @@ VkSurfaceKHR ShellDirect::CreateSurface(VkInstance instance)
 
     // Get the list of planes
     uint32_t planeCount = 0;
-    vk::assert_success(m_ctx.devCtx->GetPhysicalDeviceDisplayPlanePropertiesKHR(m_ctx.devCtx->getPhysicalDevice(), &planeCount, nullptr));
+    AssertSuccess(m_ctx.devCtx->GetPhysicalDeviceDisplayPlanePropertiesKHR(m_ctx.devCtx->getPhysicalDevice(), &planeCount, nullptr));
 
     std::vector<VkDisplayPlanePropertiesKHR> planeProperties;
     planeProperties.resize(planeCount);
-    vk::assert_success(m_ctx.devCtx->GetPhysicalDeviceDisplayPlanePropertiesKHR(m_ctx.devCtx->getPhysicalDevice(), &planeCount, &planeProperties[0]));
+    AssertSuccess(m_ctx.devCtx->GetPhysicalDeviceDisplayPlanePropertiesKHR(m_ctx.devCtx->getPhysicalDevice(), &planeCount, &planeProperties[0]));
 
     // find a plane compatible with the display
     uint32_t foundPlaneIndex = 0;
@@ -149,10 +149,10 @@ VkSurfaceKHR ShellDirect::CreateSurface(VkInstance instance)
         }
 
         uint32_t supported_count = 0;
-        vk::assert_success(m_ctx.devCtx->GetDisplayPlaneSupportedDisplaysKHR(m_ctx.devCtx->getPhysicalDevice(), foundPlaneIndex, &supported_count, nullptr));
+        AssertSuccess(m_ctx.devCtx->GetDisplayPlaneSupportedDisplaysKHR(m_ctx.devCtx->getPhysicalDevice(), foundPlaneIndex, &supported_count, nullptr));
         std::vector<VkDisplayKHR> supported_displays;
         supported_displays.resize(supported_count);
-        vk::assert_success(m_ctx.devCtx->GetDisplayPlaneSupportedDisplaysKHR(m_ctx.devCtx->getPhysicalDevice(), foundPlaneIndex, &supported_count,
+        AssertSuccess(m_ctx.devCtx->GetDisplayPlaneSupportedDisplaysKHR(m_ctx.devCtx->getPhysicalDevice(), foundPlaneIndex, &supported_count,
             &supported_displays[0]));
 
         // if the plane supports our current display we choose it
@@ -183,7 +183,7 @@ VkSurfaceKHR ShellDirect::CreateSurface(VkInstance instance)
     surfaceCreateInfo.imageExtent = surfaceExtent;
 
     VkSurfaceKHR surface = VK_NULL_HANDLE;
-    vk::assert_success(m_ctx.devCtx->CreateDisplayPlaneSurfaceKHR(m_ctx.devCtx->getInstance(), &surfaceCreateInfo, nullptr, &surface));
+    AssertSuccess(m_ctx.devCtx->CreateDisplayPlaneSurfaceKHR(m_ctx.devCtx->getInstance(), &surfaceCreateInfo, nullptr, &surface));
 
     printf("Created display surface.\n"
            "display res: %ux%u\n", surfaceExtent.width, surfaceExtent.height);
@@ -192,7 +192,7 @@ VkSurfaceKHR ShellDirect::CreateSurface(VkInstance instance)
 
     if (false && surface) {
         const VkDisplayPowerInfoEXT displayPowerInfo = {VK_STRUCTURE_TYPE_DISPLAY_POWER_INFO_EXT, NULL, VK_DISPLAY_POWER_STATE_ON_EXT};
-        vk::assert_success(m_ctx.devCtx->DisplayPowerControlEXT(*m_ctx.devCtx, m_vkDisplay,  &displayPowerInfo));
+        AssertSuccess(m_ctx.devCtx->DisplayPowerControlEXT(*m_ctx.devCtx, m_vkDisplay,  &displayPowerInfo));
     }
 
     // Destroy with vkDestroySurfaceKHR

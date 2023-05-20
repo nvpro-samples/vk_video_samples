@@ -60,8 +60,8 @@ VkResult Shell::AcquireBuffer::Create(const VulkanDeviceContext* vkDevCtx)
     // Fence for vkAcquireNextImageKHR must be unsignaled
 
     m_vkDevCtx = vkDevCtx;
-    vk::assert_success(m_vkDevCtx->CreateSemaphore(*m_vkDevCtx, &sem_info, nullptr, &m_semaphore));
-    vk::assert_success(m_vkDevCtx->CreateFence(*m_vkDevCtx, &fence_info, nullptr, &m_fence));
+    AssertSuccess(m_vkDevCtx->CreateSemaphore(*m_vkDevCtx, &sem_info, nullptr, &m_semaphore));
+    AssertSuccess(m_vkDevCtx->CreateFence(*m_vkDevCtx, &fence_info, nullptr, &m_fence));
 
     return VK_SUCCESS;
 }
@@ -79,7 +79,7 @@ VkResult Shell::BackBuffer::Create(const VulkanDeviceContext* vkDevCtx)
     VkSemaphoreCreateInfo sem_info = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
 
     m_vkDevCtx = vkDevCtx;
-    vk::assert_success(m_vkDevCtx->CreateSemaphore(*m_vkDevCtx, &sem_info, nullptr, &m_renderSemaphore));
+    AssertSuccess(m_vkDevCtx->CreateSemaphore(*m_vkDevCtx, &sem_info, nullptr, &m_renderSemaphore));
     return VK_SUCCESS;
 }
 
@@ -145,12 +145,12 @@ void Shell::CreateBackBuffers() {
     const int count = m_settings.backBufferCount + 1;
     m_ctx.backBuffers.resize(count);
     for (auto &backBuffers : m_ctx.backBuffers) {
-        vk::assert_success(backBuffers.Create(m_ctx.devCtx));
+        AssertSuccess(backBuffers.Create(m_ctx.devCtx));
     }
 
     for (size_t i = 0; i < m_ctx.backBuffers.size(); i++) {
         AcquireBuffer* pAcquireBuffer = new AcquireBuffer();
-        vk::assert_success(pAcquireBuffer->Create(m_ctx.devCtx));
+        AssertSuccess(pAcquireBuffer->Create(m_ctx.devCtx));
         m_ctx.acquireBuffers.push(pAcquireBuffer);
     }
 
@@ -175,7 +175,7 @@ void Shell::CreateSwapchain() {
     assert(m_ctx.surface);
 
     VkBool32 supported;
-    vk::assert_success(
+    AssertSuccess(
         m_ctx.devCtx->GetPhysicalDeviceSurfaceSupportKHR(m_ctx.devCtx->getPhysicalDevice(),
                                                              m_ctx.devCtx->GetPresentQueueFamilyIdx(),
                                                              m_ctx.surface, &supported));
@@ -211,7 +211,7 @@ void Shell::DestroySwapchain() {
 
 void Shell::ResizeSwapchain(uint32_t width_hint, uint32_t height_hint) {
     VkSurfaceCapabilitiesKHR caps;
-    vk::assert_success(m_ctx.devCtx->GetPhysicalDeviceSurfaceCapabilitiesKHR(m_ctx.devCtx->getPhysicalDevice(), m_ctx.surface, &caps));
+    AssertSuccess(m_ctx.devCtx->GetPhysicalDeviceSurfaceCapabilitiesKHR(m_ctx.devCtx->getPhysicalDevice(), m_ctx.surface, &caps));
 
     VkExtent2D extent = caps.currentExtent;
     // use the hints
@@ -284,7 +284,7 @@ void Shell::ResizeSwapchain(uint32_t width_hint, uint32_t height_hint) {
     swapchain_info.clipped = true;
     swapchain_info.oldSwapchain = m_ctx.swapchain;
 
-    vk::assert_success(m_ctx.devCtx->CreateSwapchainKHR(*m_ctx.devCtx,
+    AssertSuccess(m_ctx.devCtx->CreateSwapchainKHR(*m_ctx.devCtx,
                                                          &swapchain_info, nullptr,
                                                          &m_ctx.swapchain));
     m_ctx.extent = extent;
@@ -309,16 +309,16 @@ void Shell::AcquireBackBuffer(bool trainFrame) {
     assert(acquireBuf != nullptr);
 
     uint32_t imageIndex = 0;
-    vk::assert_success(
+    AssertSuccess(
         m_ctx.devCtx->AcquireNextImageKHR(*m_ctx.devCtx, m_ctx.swapchain, UINT64_MAX, acquireBuf->m_semaphore, acquireBuf->m_fence, &imageIndex));
 
     assert(imageIndex < m_ctx.backBuffers.size());
     BackBuffer& back = m_ctx.backBuffers[imageIndex];
 
     // wait until acquire and render semaphores are waited/unsignaled
-    vk::assert_success(m_ctx.devCtx->WaitForFences(*m_ctx.devCtx, 1, &acquireBuf->m_fence, true, UINT64_MAX));
+    AssertSuccess(m_ctx.devCtx->WaitForFences(*m_ctx.devCtx, 1, &acquireBuf->m_fence, true, UINT64_MAX));
     // reset the fence
-    vk::assert_success(m_ctx.devCtx->ResetFences(*m_ctx.devCtx, 1, &acquireBuf->m_fence));
+    AssertSuccess(m_ctx.devCtx->ResetFences(*m_ctx.devCtx, 1, &acquireBuf->m_fence));
 
     m_ctx.currentBackBuffer = imageIndex;
     AcquireBuffer* oldAcquireBuffer = back.SetAcquireBuffer(imageIndex, acquireBuf);
@@ -377,7 +377,7 @@ void Shell::FakePresent() {
     submitInfo.pWaitDstStageMask = &stage;
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &backBuffer.GetAcquireSemaphore();
-    vk::assert_success(m_ctx.devCtx->QueueSubmit(m_ctx.devCtx->GetGfxQueue(), 1, &submitInfo, VK_NULL_HANDLE));
+    AssertSuccess(m_ctx.devCtx->QueueSubmit(m_ctx.devCtx->GetGfxQueue(), 1, &submitInfo, VK_NULL_HANDLE));
 }
 
 #include "ShellDirect.h"

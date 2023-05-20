@@ -86,7 +86,7 @@ VkSurfaceKHR ShellWin32::CreateSurface(VkInstance instance) {
     surface_info.hwnd = m_hwnd;
 
     VkSurfaceKHR surface;
-    vk::assert_success(m_ctx.devCtx->CreateWin32SurfaceKHR(instance, &surface_info, nullptr, &surface));
+    Shell::AssertSuccess(m_ctx.devCtx->CreateWin32SurfaceKHR(instance, &surface_info, nullptr, &surface));
 
     return surface;
 }

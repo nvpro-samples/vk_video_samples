@@ -148,7 +148,7 @@ VkSurfaceKHR ShellXcb::CreateSurface(VkInstance instance) {
     surface_info.window = m_window;
 
     VkSurfaceKHR surface;
-    vk::assert_success(m_ctx.devCtx->CreateXcbSurfaceKHR(m_ctx.devCtx->getInstance(),
+    Shell::AssertSuccess(m_ctx.devCtx->CreateXcbSurfaceKHR(m_ctx.devCtx->getInstance(),
                                                             &surface_info, nullptr, &surface));
 
     return surface;

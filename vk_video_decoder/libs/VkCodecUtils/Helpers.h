@@ -25,16 +25,6 @@
 
 namespace vk {
 
-inline VkResult assert_success(VkResult res) {
-    if (res != VK_SUCCESS) {
-        std::stringstream ss;
-        ss << "VkResult " << res << " returned";
-        throw std::runtime_error(ss.str());
-    }
-
-    return res;
-}
-
 inline VkResult enumerate(const VkInterfaceFunctions* vkIf, const char *layer, std::vector<VkExtensionProperties> &exts) {
     uint32_t count = 0;
     vkIf->EnumerateInstanceExtensionProperties(layer, &count, nullptr);
