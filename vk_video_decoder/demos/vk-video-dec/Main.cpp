@@ -166,13 +166,7 @@ int main(int argc, const char **argv) {
         }
         bool continueLoop = true;
         do {
-            const DecodedFrame* pOutFrame = nullptr;
-            continueLoop = frameProcessor->OnFrame(0,
-                                                   0, // waitSemaphoreCount
-                                                   nullptr,
-                                                   0, // signalSemaphoreCount
-                                                   nullptr,
-                                                   &pOutFrame);
+            continueLoop = frameProcessor->OnFrame(0);
         } while (continueLoop);
         frameProcessor->DestroyFrameData();
     }

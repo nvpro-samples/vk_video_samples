@@ -139,7 +139,7 @@ public:
 
         std::queue<AcquireBuffer*> acquireBuffers;
         std::vector<BackBuffer>    backBuffers;
-        uint32_t                   currentBackBuffer;
+        int32_t                    currentBackBuffer;
 
         VkSurfaceKHR surface;
         VkSurfaceFormatKHR format;
@@ -151,8 +151,11 @@ public:
     };
     const Context &GetContext() const { return m_ctx; }
 
-    const BackBuffer& GetCurrentBackBuffer() const {
-        return m_ctx.backBuffers[m_ctx.currentBackBuffer];
+    const BackBuffer* GetCurrentBackBuffer() const {
+        if (m_ctx.currentBackBuffer >= 0) {
+            return &m_ctx.backBuffers[m_ctx.currentBackBuffer];
+        }
+        return nullptr;
     }
 
     enum LogPriority {
@@ -194,7 +197,6 @@ private:
     void DestroySwapchain();
 
 protected:
-    void FakePresent();
     Context m_ctx;
 private:
     const float m_tick;

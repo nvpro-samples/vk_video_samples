@@ -37,7 +37,7 @@
 namespace vulkanVideoUtils {
 
 template <class valueType, class alignmentType>
-uint32_t alignedSize(valueType value, alignmentType alignment)
+valueType alignedSize(valueType value, alignmentType alignment)
 {
     return (value + alignment - 1) & ~(alignment - 1);
 }

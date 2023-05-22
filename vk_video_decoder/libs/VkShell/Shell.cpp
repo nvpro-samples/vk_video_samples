@@ -301,57 +301,74 @@ void Shell::ResizeSwapchain(uint32_t width_hint, uint32_t height_hint) {
 }
 
 void Shell::AcquireBackBuffer(bool trainFrame) {
-    // acquire just once when not presenting
-    if (m_settings.noPresent && GetCurrentBackBuffer().GetAcquireSemaphore() != VK_NULL_HANDLE) return;
 
-    AcquireBuffer* acquireBuf = m_ctx.acquireBuffers.front();
+    if(!m_ctx.acquireBuffers.empty()) {
 
-    assert(acquireBuf != nullptr);
+        AcquireBuffer* acquireBuf = m_ctx.acquireBuffers.front();
 
-    uint32_t imageIndex = 0;
-    AssertSuccess(
-        m_ctx.devCtx->AcquireNextImageKHR(*m_ctx.devCtx, m_ctx.swapchain, UINT64_MAX, acquireBuf->m_semaphore, acquireBuf->m_fence, &imageIndex));
+        assert(acquireBuf != nullptr);
 
-    assert(imageIndex < m_ctx.backBuffers.size());
-    BackBuffer& back = m_ctx.backBuffers[imageIndex];
+        uint32_t imageIndex = 0;
+        AssertSuccess(
+            m_ctx.devCtx->AcquireNextImageKHR(*m_ctx.devCtx, m_ctx.swapchain,
+                                              UINT64_MAX,
+                                              acquireBuf->m_semaphore, acquireBuf->m_fence,
+                                              &imageIndex));
 
-    // wait until acquire and render semaphores are waited/unsignaled
-    AssertSuccess(m_ctx.devCtx->WaitForFences(*m_ctx.devCtx, 1, &acquireBuf->m_fence, true, UINT64_MAX));
-    // reset the fence
-    AssertSuccess(m_ctx.devCtx->ResetFences(*m_ctx.devCtx, 1, &acquireBuf->m_fence));
+        assert(imageIndex < m_ctx.backBuffers.size());
+        BackBuffer& backBuffer = m_ctx.backBuffers[imageIndex];
 
-    m_ctx.currentBackBuffer = imageIndex;
-    AcquireBuffer* oldAcquireBuffer = back.SetAcquireBuffer(imageIndex, acquireBuf);
-    m_ctx.acquireBuffers.pop();
-    if (oldAcquireBuffer) {
-        m_ctx.acquireBuffers.push(oldAcquireBuffer);
+        // wait until acquire and render semaphores are waited/unsignaled
+        AssertSuccess(m_ctx.devCtx->WaitForFences(*m_ctx.devCtx, 1, &acquireBuf->m_fence, true, UINT64_MAX));
+        // reset the fence
+        AssertSuccess(m_ctx.devCtx->ResetFences(*m_ctx.devCtx, 1, &acquireBuf->m_fence));
+
+        m_ctx.currentBackBuffer = imageIndex;
+        m_ctx.acquireBuffers.pop();
+        // Now return to the queue the old frame.
+        AcquireBuffer* oldAcquireBuffer = backBuffer.SetAcquireBuffer(imageIndex, acquireBuf);
+        if (oldAcquireBuffer) {
+            m_ctx.acquireBuffers.push(oldAcquireBuffer);
+        }
+        m_ctx.acquiredFrameId++;
+
+    } else {
+        // If the queue is empty - the is nothing that can be done here.
+        assert(!"Swapchain queue is empty!");
+        m_ctx.currentBackBuffer = -1;
     }
-    m_ctx.acquiredFrameId++;
 }
 
 void Shell::PresentBackBuffer(bool trainFrame) {
 
-    const BackBuffer& backBuffer = GetCurrentBackBuffer();
+    const BackBuffer* backBuffer = GetCurrentBackBuffer();
 
-    if (!m_frameProcessor->OnFrame(trainFrame ? -(int32_t)backBuffer.GetImageIndex() :
-                                                backBuffer.GetImageIndex(),
-                                  1, // waitSemaphoreCount
-                                  &backBuffer.GetAcquireSemaphore(),
-                                  1, // signalSemaphoreCount
-                                  &backBuffer.GetRenderSemaphore())) {
+    bool contintueLoop = false;
+    if (backBuffer != nullptr) {
+        contintueLoop = m_frameProcessor->OnFrame(trainFrame ?
+                                                      -(int32_t)backBuffer->GetImageIndex() :
+                                                      backBuffer->GetImageIndex(),
+                                                  1, // waitSemaphoreCount
+                                                  &backBuffer->GetAcquireSemaphore(),
+                                                  1, // signalSemaphoreCount
+                                                  &backBuffer->GetRenderSemaphore());
+    } else {
+        contintueLoop = m_frameProcessor->OnFrame(-1);
+    }
+
+    if (!contintueLoop) {
         QuitLoop();
     }
 
-    if (m_settings.noPresent) {
-        FakePresent();
+    if (backBuffer == nullptr) {
         return;
     }
 
-    uint32_t imageIndex = backBuffer.GetImageIndex();
+    uint32_t imageIndex = backBuffer->GetImageIndex();
     VkPresentInfoKHR presentInfo = {};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &backBuffer.GetRenderSemaphore();
+    presentInfo.pWaitSemaphores = &backBuffer->GetRenderSemaphore();
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = &m_ctx.swapchain;
     presentInfo.pImageIndices = &imageIndex;
@@ -361,23 +378,6 @@ void Shell::PresentBackBuffer(bool trainFrame) {
         std::cout << "Out of date Present Surface" << res << std::endl;
         return;
     }
-}
-
-void Shell::FakePresent() {
-    const BackBuffer& backBuffer = GetCurrentBackBuffer();
-
-    assert(m_settings.noPresent);
-
-    // wait render semaphore and signal acquire semaphore
-    VkPipelineStageFlags stage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    VkSubmitInfo submitInfo = {};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = &backBuffer.GetRenderSemaphore();
-    submitInfo.pWaitDstStageMask = &stage;
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = &backBuffer.GetAcquireSemaphore();
-    AssertSuccess(m_ctx.devCtx->QueueSubmit(m_ctx.devCtx->GetGfxQueue(), 1, &submitInfo, VK_NULL_HANDLE));
 }
 
 #include "ShellDirect.h"

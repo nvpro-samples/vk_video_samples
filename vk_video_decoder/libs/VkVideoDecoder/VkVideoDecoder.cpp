@@ -642,6 +642,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     // Otherwise we may step over a hot command buffer by starting a new recording.
     // This fence wait should be NOP in 99.9% of the cases, because the decode queue is deep enough to
     // ensure the frame has already been completed.
+    assert(frameCompleteFence != VK_NULL_HANDLE);
     VkResult result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameCompleteFence, true, gFenceTimeout);
     if (result != VK_SUCCESS) {
         std::cerr << "\t *************** WARNING: frameCompleteFence is not done *************< " << currPicIdx << " >**********************" << std::endl;
