@@ -302,7 +302,7 @@ bool VulkanFrame::OnFrame( int32_t           renderIndex,
 
         if ((gfxRendererIsEnabled == false) && (pLastDecodedFrame != nullptr)) {
 
-            if (true) {
+            if (pLastDecodedFrame->queryPool) {
                 auto startTime = std::chrono::steady_clock::now();
                 VkQueryResultStatusKHR decodeStatus;
                 VkResult result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx,
