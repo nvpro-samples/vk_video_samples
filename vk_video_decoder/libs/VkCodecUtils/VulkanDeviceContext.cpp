@@ -606,9 +606,9 @@ VulkanDeviceContext::~VulkanDeviceContext() {
 #endif // defined(VK_USE_PLATFORM_WIN32_KHR)
 }
 
-const VkExtensionProperties* VulkanDeviceContext::FindExtension(
-    const std::vector<VkExtensionProperties>& extensions,
-    const char* name) const {
+const VkExtensionProperties* VulkanDeviceContext::FindExtension(const std::vector<VkExtensionProperties>& extensions,
+                                                                const char* name) const
+{
     auto it = std::find_if(extensions.cbegin(), extensions.cend(),
                            [=](const VkExtensionProperties& ext) {
                                return (strcmp(ext.extensionName, name) == 0);
@@ -623,6 +623,15 @@ const VkExtensionProperties* VulkanDeviceContext::FindInstanceExtension(const ch
 const VkExtensionProperties* VulkanDeviceContext::FindDeviceExtension(const char* name) const {
     return FindExtension(m_deviceExtensions, name);
 }
+
+const char * VulkanDeviceContext::FindRequiredDeviceExtension(const char* name) const {
+    auto it = std::find_if(m_reqDeviceExtensions.cbegin(), m_reqDeviceExtensions.cend(),
+                           [=](const char * extName) {
+                               return (strcmp(extName, name) == 0);
+                           });
+    return (it != m_reqDeviceExtensions.cend()) ? *it : nullptr;
+}
+
 
 void VulkanDeviceContext::PrintExtensions(bool deviceExt) const {
     const std::vector<VkExtensionProperties>& extensions = deviceExt ? m_deviceExtensions : m_instanceExtensions;

@@ -782,9 +782,9 @@ VkResult VulkanDescriptorSetLayoutBinding::CreateDescriptorSet(const VulkanDevic
     descriptorSetLayoutCreateInfo.pNext = nullptr;
     descriptorSetLayoutCreateInfo.bindingCount = 1;
     descriptorSetLayoutCreateInfo.pBindings = &descriptorSetLayoutBinding;
-    if (m_vkDevCtx->FindDeviceExtension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)) {
+    if (m_vkDevCtx->FindRequiredDeviceExtension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)) {
         descriptorSetLayoutCreateInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-    } else if (m_vkDevCtx->FindDeviceExtension(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME)){
+    } else if (m_vkDevCtx->FindRequiredDeviceExtension(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME)){
         descriptorSetLayoutCreateInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
     } else {
         descriptorSetLayoutCreateInfo.flags = 0;

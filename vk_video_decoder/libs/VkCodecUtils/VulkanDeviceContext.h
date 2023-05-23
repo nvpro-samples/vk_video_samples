@@ -184,6 +184,7 @@ public:
     const VkExtensionProperties* FindInstanceExtension(const char* name) const;
 
     const VkExtensionProperties* FindDeviceExtension(const char* name) const;
+    const char * FindRequiredDeviceExtension(const char* name) const;
 
     void PrintExtensions(bool deviceExt = false) const;
 
