@@ -58,6 +58,8 @@ public:
     virtual VkDeviceSize GetOffsetAlignment() const;
     virtual VkDeviceSize GetSizeAlignment() const;
     virtual VkDeviceSize Resize(VkDeviceSize newSize, VkDeviceSize copySize = 0, VkDeviceSize copyOffset = 0);
+    virtual VkDeviceSize Clone(VkDeviceSize newSize, VkDeviceSize copySize, VkDeviceSize copyOffset,
+                               VkSharedBaseObj<VulkanBitstreamBuffer>& vulkanBitstreamBuffer);
 
     virtual int64_t  MemsetData(uint32_t value, VkDeviceSize offset, VkDeviceSize size);
     virtual int64_t  CopyDataToBuffer(uint8_t *dstBuffer, VkDeviceSize dstOffset,

@@ -31,6 +31,8 @@ public:
     virtual VkDeviceSize GetOffsetAlignment() const = 0;
     virtual VkDeviceSize GetSizeAlignment() const = 0;
     virtual VkDeviceSize Resize(VkDeviceSize newSize, VkDeviceSize copySize = 0, VkDeviceSize copyOffset = 0) = 0;
+    virtual VkDeviceSize Clone(VkDeviceSize newSize, VkDeviceSize copySize, VkDeviceSize copyOffset,
+                               VkSharedBaseObj<VulkanBitstreamBuffer>& vulkanBitstreamBuffer) = 0;
 
     virtual int64_t  MemsetData(uint32_t value, VkDeviceSize offset, VkDeviceSize size) = 0;
     virtual int64_t  CopyDataToBuffer(uint8_t *dstBuffer, VkDeviceSize dstOffset,
@@ -124,11 +126,13 @@ public:
 
         m_maxAccessLocation = 0;
 
-        VkDeviceSize retSize = m_bitstreamBuffer->Resize(newSize, copySize, copyOffset);
+        VkSharedBaseObj<VulkanBitstreamBuffer> newVulkanBitstreamBuffer;
+        VkDeviceSize retSize = m_bitstreamBuffer->Clone(newSize, copySize, copyOffset, newVulkanBitstreamBuffer);
         if (!(retSize >= newSize)) {
             assert(!"Could not resize the bitstream buffer!");
             return retSize;
         }
+        m_bitstreamBuffer = newVulkanBitstreamBuffer;
 
         m_pData = m_bitstreamBuffer->GetDataPtr(0, m_maxSize);
         assert(m_pData);

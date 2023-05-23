@@ -45,6 +45,33 @@ VulkanBitstreamBufferImpl::Create(const VulkanDeviceContext* vkDevCtx, uint32_t 
     return result;
 }
 
+VkDeviceSize VulkanBitstreamBufferImpl::Clone(VkDeviceSize newSize, VkDeviceSize copySize, VkDeviceSize copyOffset,
+                                                      VkSharedBaseObj<VulkanBitstreamBuffer>& vulkanBitstreamBuffer)
+{
+    VkSharedBaseObj<VulkanBitstreamBufferImpl> vkBitstreamBuffer(new VulkanBitstreamBufferImpl(m_vkDevCtx,
+                                                                      m_queueFamilyIndex,
+                                                                      m_bufferOffsetAlignment,
+                                                                      m_bufferSizeAlignment));
+    if (!vkBitstreamBuffer) {
+        assert(!"Out of host memory!");
+        return 0;
+    }
+
+    uint8_t* oldBufPtr = nullptr;
+    if (copySize) {
+        VkDeviceSize maxSize = copyOffset;
+        oldBufPtr = GetDataPtr(copyOffset, maxSize);
+    }
+    VkResult result = vkBitstreamBuffer->Initialize(newSize, oldBufPtr, copySize);
+    if (result == VK_SUCCESS) {
+        vulkanBitstreamBuffer = vkBitstreamBuffer;
+    } else {
+        assert(!"Initialize failed!");
+    }
+
+    return newSize;
+}
+
 VkResult VulkanBitstreamBufferImpl::CreateBuffer(const VulkanDeviceContext* vkDevCtx,
                                                  uint32_t queueFamilyIndex,
                                                  VkDeviceSize& bufferSize,
