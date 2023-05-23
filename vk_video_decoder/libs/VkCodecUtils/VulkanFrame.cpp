@@ -300,7 +300,30 @@ bool VulkanFrame::OnFrame( int32_t           renderIndex,
 
         pLastDecodedFrame = &data.lastDecodedFrame;
 
-        if (false && (gfxRendererIsEnabled == false) && (pLastDecodedFrame != nullptr)) {
+        if ((gfxRendererIsEnabled == false) && (pLastDecodedFrame != nullptr)) {
+
+            if (true) {
+                auto startTime = std::chrono::steady_clock::now();
+                VkQueryResultStatusKHR decodeStatus;
+                VkResult result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx,
+                                                 pLastDecodedFrame->queryPool,
+                                                 pLastDecodedFrame->startQueryId,
+                                                 1,
+                                                 sizeof(decodeStatus),
+                                                 &decodeStatus,
+                                                 sizeof(decodeStatus),
+                                                 VK_QUERY_RESULT_WITH_STATUS_BIT_KHR | VK_QUERY_RESULT_WAIT_BIT);
+
+                assert(result == VK_SUCCESS);
+                assert(decodeStatus == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
+                auto deltaTime = std::chrono::steady_clock::now() - startTime;
+                auto diffMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(deltaTime);
+                auto diffMicroseconds = std::chrono::duration_cast<std::chrono::microseconds>(deltaTime);
+                if (dumpDebug) {
+                    std::cout << pLastDecodedFrame->pictureIndex << ": frameWaitTime: " <<
+                                 diffMilliseconds.count() << "." << diffMicroseconds.count() << " mSec" << std::endl;
+                }
+            }
 
             // Graphics and present stages are not enabled.
             // Make sure the frame complete fence signaled (video frame is processed) before returning the frame.
@@ -522,10 +545,14 @@ VkResult VulkanFrame::DrawFrame( int32_t           renderIndex,
         }
 
         VkQueryResultStatusKHR decodeStatus;
-        result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx, inFrame->queryPool,
+        result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx,
+                                                 inFrame->queryPool,
                                                  inFrame->startQueryId,
-                                                 1, sizeof(decodeStatus), &decodeStatus,
-                                                 512, VK_QUERY_RESULT_WAIT_BIT);
+                                                 1,
+                                                 sizeof(decodeStatus),
+                                                 &decodeStatus,
+                                                 sizeof(decodeStatus),
+                                                 VK_QUERY_RESULT_WITH_STATUS_BIT_KHR | VK_QUERY_RESULT_WAIT_BIT);
         assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "\nERROR: GetQueryPoolResults() result: 0x%x\n", result);
