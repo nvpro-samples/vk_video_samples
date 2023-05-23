@@ -23,6 +23,7 @@
 #include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkShell/Shell.h"
+#include "VkCodecUtils/VulkanVideoUtils.h"
 #include "VulkanFrame.h"
 #include "vk_enum_string_helper.h"
 #include <NvCodecUtils/Logger.h>

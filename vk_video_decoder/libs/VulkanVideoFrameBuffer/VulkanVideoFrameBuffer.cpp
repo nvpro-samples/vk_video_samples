@@ -29,7 +29,6 @@
 #include "PictureBufferBase.h"
 #include "VkCodecUtils/HelpersDispatchTable.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
-#include "VkCodecUtils/VulkanVideoUtils.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VulkanVideoFrameBuffer.h"
 #include "VkCodecUtils/VkImageResource.h"
