@@ -48,6 +48,8 @@ set(sources
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceMemoryImpl.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceMemoryImpl.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.h
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VkBufferResource.cpp
+    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VkBufferResource.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VkImageResource.cpp
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VkImageResource.h
     ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoSession.cpp

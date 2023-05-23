@@ -161,90 +161,6 @@ AHardwareBufferHandle ImageObject::ExportHandle()
 }
 #endif // VK_USE_PLATFORM_ANDROID_KHR
 
-VkResult VulkanBuffer::Create(const VulkanDeviceContext* vkDevCtx,
-         VkBufferUsageFlags usage, VkMemoryPropertyFlags memoryPropertyFlags,
-         VkDeviceSize bufferSize, VkDeviceSize bufferSizeAlignment, VkDeviceSize bufferOffsetAlignment,
-         const unsigned char* pBufferData, VkDeviceSize bufferDataSize, VkDeviceSize dstBufferOffset)
-{
-    Destroy();
-
-    m_vkDevCtx = vkDevCtx;
-    m_bufferSizeAlignment = bufferSizeAlignment;
-    m_bufferSize = ((bufferSize + (m_bufferSizeAlignment - 1)) & ~(m_bufferSizeAlignment - 1));
-    m_bufferOffsetAlignment = bufferOffsetAlignment;
-
-    // Create a buffer
-    VkBufferCreateInfo bufferCreateInfo {};
-    bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferCreateInfo.size = m_bufferSize;
-    bufferCreateInfo.usage = usage;
-    bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VkResult result = m_vkDevCtx->CreateBuffer(*m_vkDevCtx, &bufferCreateInfo, nullptr,
-                     &m_buffer);
-    if (result != VK_SUCCESS) {
-        return result;
-    }
-
-    VkMemoryRequirements memReq;
-    m_vkDevCtx->GetBufferMemoryRequirements(*m_vkDevCtx, m_buffer, &memReq);
-
-    VkMemoryAllocateInfo allocInfo = VkMemoryAllocateInfo();
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.memoryTypeIndex = 0;  // Memory type assigned in the next step
-
-    // Assign the proper memory type for that buffer
-    m_bufferSize = allocInfo.allocationSize = memReq.size;
-    MapMemoryTypeToIndex(m_vkDevCtx, m_vkDevCtx->getPhysicalDevice(), memReq.memoryTypeBits,
-                         memoryPropertyFlags,
-                         &allocInfo.memoryTypeIndex);
-
-    // Allocate memory for the buffer
-    result = m_vkDevCtx->AllocateMemory(*m_vkDevCtx, &allocInfo, nullptr,
-                                        &m_deviceMemory);
-    if (result != VK_SUCCESS) {
-        return result;
-    }
-
-    result = CopyDataToBuffer(pBufferData, bufferDataSize, dstBufferOffset = 0);
-    if (result != VK_SUCCESS) {
-        return result;
-    }
-
-    return m_vkDevCtx->BindBufferMemory(*m_vkDevCtx, m_buffer, m_deviceMemory, 0);
-}
-
-VkResult VulkanBuffer::CopyDataToBuffer(const unsigned char* pData,
-        VkDeviceSize dataSize, VkDeviceSize &dstBufferOffset) const
-{
-    if ((pData != nullptr) && (dataSize != 0)) {
-        VkResult result;
-        dstBufferOffset = ((dstBufferOffset + (m_bufferOffsetAlignment - 1)) & ~(m_bufferOffsetAlignment - 1));
-        assert((dstBufferOffset + dataSize) <= m_bufferSize);
-        if (m_bufferMemoryHostPtr == nullptr) {
-            result = m_vkDevCtx->MapMemory(*m_vkDevCtx, m_deviceMemory, dstBufferOffset,
-                                           dataSize, 0, &m_bufferMemoryHostPtr);
-            if (result != VK_SUCCESS) {
-                return result;
-            }
-        }
-
-        memcpy(m_bufferMemoryHostPtr, pData, (size_t)dataSize);
-
-        const VkMappedMemoryRange   range           = {
-            VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,  // sType
-            NULL,                                   // pNext
-            m_deviceMemory,                         // memory
-            dstBufferOffset,                        // offset
-            (size_t)dataSize,                       // size
-        };
-
-        return m_vkDevCtx->FlushMappedMemoryRanges(*m_vkDevCtx, 1u, &range);
-    }
-
-    return VK_SUCCESS;
-}
-
 int32_t ImageObject::GetImageSubresourceAndLayout(VkSubresourceLayout layouts[3]) const
 {
     int numPlanes = 0;
@@ -597,60 +513,6 @@ VkResult VulkanRenderPass::CreateRenderPass(const VulkanDeviceContext* vkDevCtx,
 
 }
 
-VkResult VulkanVertexBuffer::CreateVertexBuffer(const VulkanDeviceContext* vkDevCtx,  const float* pVertexData, VkDeviceSize vertexDataSize, uint32_t _numVertices)
-{
-    DestroyVertexBuffer();
-
-    m_vkDevCtx = vkDevCtx;
-    uint32_t queueFamilyIndex = vkDevCtx->GetGfxQueueFamilyIdx();
-
-    // Create a vertex buffer
-    VkBufferCreateInfo createBufferInfo = VkBufferCreateInfo();
-    createBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    createBufferInfo.size = vertexDataSize;
-    createBufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    createBufferInfo.flags = 0;
-    createBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    createBufferInfo.queueFamilyIndexCount = 1;
-    createBufferInfo.pQueueFamilyIndices = &queueFamilyIndex;
-
-    CALL_VK(m_vkDevCtx->CreateBuffer(*m_vkDevCtx, &createBufferInfo,
-                           nullptr, &vertexBuffer));
-
-    VkMemoryRequirements memReq;
-    m_vkDevCtx->GetBufferMemoryRequirements(*m_vkDevCtx,
-                                  vertexBuffer, &memReq);
-
-    VkMemoryAllocateInfo allocInfo = VkMemoryAllocateInfo();
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = vertexDataSize;
-    allocInfo.memoryTypeIndex = 0;  // Memory type assigned in the next step
-
-    // Assign the proper memory type for that buffer
-    allocInfo.allocationSize = memReq.size;
-    MapMemoryTypeToIndex(m_vkDevCtx, m_vkDevCtx->getPhysicalDevice(),
-                         memReq.memoryTypeBits,
-                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-                         &allocInfo.memoryTypeIndex);
-
-    // Allocate memory for the buffer
-    CALL_VK(m_vkDevCtx->AllocateMemory(*m_vkDevCtx, &allocInfo, nullptr,
-                             &deviceMemory));
-
-    void *data;
-    CALL_VK(m_vkDevCtx->MapMemory(*m_vkDevCtx, deviceMemory, 0,
-            vertexDataSize, 0, &data));
-    memcpy(data, pVertexData, (size_t)vertexDataSize);
-    m_vkDevCtx->UnmapMemory(*m_vkDevCtx, deviceMemory);
-
-    CALL_VK(m_vkDevCtx->BindBufferMemory(*m_vkDevCtx,
-                               vertexBuffer, deviceMemory,
-                               0));
-
-    numVertices = _numVertices;
-    return VK_SUCCESS;
-}
-
 VkResult VulkanDescriptorSetLayoutBinding::WriteDescriptorSet(VkSampler sampler,
                                                               VkImageView imageView,
                                                               uint32_t dstArrayElement,
@@ -806,16 +668,6 @@ VkResult VulkanDescriptorSetLayoutBinding::CreateDescriptorSet(const VulkanDevic
         deviceProps2.pNext = &pushDescriptorProps;
         m_vkDevCtx->GetPhysicalDeviceProperties2(m_vkDevCtx->getPhysicalDevice(), &deviceProps2);
     } else if (descriptorSetLayoutCreateInfo.flags == VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) {
-        VkDeviceSize descriptorLayoutSize = 0;
-        m_vkDevCtx->GetDescriptorSetLayoutSizeEXT(*m_vkDevCtx, dscLayout, &descriptorLayoutSize);
-
-        m_resourceDescriptorBuffer.Create(m_vkDevCtx,
-                VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
-                VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT |
-                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                descriptorLayoutSize);
 
         VkPhysicalDeviceProperties2KHR deviceProps2{};
         VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptorBufferProperties{};
@@ -825,7 +677,24 @@ VkResult VulkanDescriptorSetLayoutBinding::CreateDescriptorSet(const VulkanDevic
         m_vkDevCtx->GetPhysicalDeviceProperties2(m_vkDevCtx->getPhysicalDevice(), &deviceProps2);
         m_descriptorSize[0]   = descriptorBufferProperties.combinedImageSamplerDescriptorSize;
         m_descriptorOffset[0] = alignedSize(descriptorBufferProperties.combinedImageSamplerDescriptorSize,
-                                         descriptorBufferProperties.descriptorBufferOffsetAlignment);
+                                            descriptorBufferProperties.descriptorBufferOffsetAlignment);
+
+        VkDeviceSize descriptorLayoutSize = 0;
+        m_vkDevCtx->GetDescriptorSetLayoutSizeEXT(*m_vkDevCtx, dscLayout, &descriptorLayoutSize);
+
+        result = VkBufferResource::Create(m_vkDevCtx,
+                                          VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
+                                             VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT |
+                                             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                          descriptorLayoutSize,
+                                          m_resourceDescriptorBuffer, 1,
+                                          descriptorBufferProperties.descriptorBufferOffsetAlignment);
+
+        if (result != VK_SUCCESS) {
+            return result;
+        }
     }
 
     VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = VkPipelineLayoutCreateInfo();
@@ -1214,7 +1083,8 @@ VkResult VulkanCommandBuffer::CreateCommandBuffer(VkRenderPass renderPass,
     }
 
     VkDeviceSize offset = 0;
-    m_vkDevCtx->CmdBindVertexBuffers(cmdBuffer, 0, 1, &vertexBuffer.get(), &offset);
+    VkBuffer vertexBuff = vertexBuffer.GetBuffer();
+    m_vkDevCtx->CmdBindVertexBuffers(cmdBuffer, 0, 1, &vertexBuff, &offset);
 
     bool scaleInput = true;
     TransformPushConstants constants;

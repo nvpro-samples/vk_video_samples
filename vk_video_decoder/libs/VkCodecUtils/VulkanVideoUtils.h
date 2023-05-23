@@ -31,6 +31,7 @@
 #define __VULKANVIDEOUTILS__
 
 #include <vulkan_interfaces.h>
+#include "VkCodecUtils/VkBufferResource.h"
 #include "VkCodecUtils/VkImageResource.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/VulkanShaderCompiler.h"
@@ -333,97 +334,6 @@ public:
     VulkanDisplayTiming mDisplayTiming;
 };
 
-class VulkanBuffer {
-
-public:
-    VulkanBuffer()
-        : m_vkDevCtx(nullptr), m_buffer(0), m_deviceMemory(0), m_bufferSize(0),
-          m_bufferOffsetAlignment(0),
-          m_bufferSizeAlignment(0),
-          m_bufferMemoryHostPtr(nullptr) { }
-
-    const VkBuffer& Get() const {
-        return m_buffer;
-    }
-
-    bool IsValid() const {
-        return m_buffer != VK_NULL_HANDLE;
-    }
-
-    VkResult Create(const VulkanDeviceContext* vkDevCtx,
-             VkBufferUsageFlags usage, VkMemoryPropertyFlags memoryPropertyFlags,
-             VkDeviceSize bufferSize, VkDeviceSize bufferSizeAlignment = 1, VkDeviceSize bufferOffsetAlignment = 1,
-             const unsigned char* pBufferData = nullptr, VkDeviceSize bufferDataSize = 0, VkDeviceSize dstBufferOffset = 0);
-
-    VkResult CopyDataToBuffer(const unsigned char* pData,
-            VkDeviceSize dataSize, VkDeviceSize &dstBufferOffset) const;
-
-    const void* Map(VkDeviceSize &dstBufferOffset, VkDeviceSize dataSize = VK_WHOLE_SIZE) const
-    {
-        if (m_bufferMemoryHostPtr == nullptr) {
-
-            if (dataSize == VK_WHOLE_SIZE) {
-                dataSize = m_bufferSize;
-            }
-
-            dstBufferOffset = ((dstBufferOffset + (m_bufferOffsetAlignment - 1)) & ~(m_bufferOffsetAlignment - 1));
-            assert((dstBufferOffset + dataSize) <= m_bufferSize);
-            VkResult result = m_vkDevCtx->MapMemory(*m_vkDevCtx, m_deviceMemory, dstBufferOffset,
-                                                    dataSize, 0, &m_bufferMemoryHostPtr);
-            if (result != VK_SUCCESS) {
-                return nullptr;
-            }
-        }
-        return m_bufferMemoryHostPtr;
-    }
-
-    void Destroy()
-    {
-        if (m_bufferMemoryHostPtr) {
-            m_vkDevCtx->UnmapMemory(*m_vkDevCtx, m_deviceMemory);
-            m_bufferMemoryHostPtr = nullptr;
-        }
-
-        if (m_deviceMemory) {
-            m_vkDevCtx->FreeMemory(*m_vkDevCtx, m_deviceMemory, nullptr);
-            m_deviceMemory = VkDeviceMemory(0);
-        }
-
-        if (m_buffer) {
-            m_vkDevCtx->DestroyBuffer(*m_vkDevCtx, m_buffer, nullptr);
-            m_buffer = VkBuffer(0);
-        }
-
-        m_vkDevCtx = nullptr;
-
-        m_bufferSize = 0;
-        m_bufferOffsetAlignment = 0;
-        m_bufferSizeAlignment = 0;
-    }
-
-    ~VulkanBuffer()
-    {
-        Destroy();
-    }
-
-    VkDeviceSize GetBufferSize() const {
-        return m_bufferSize;
-    }
-
-    VkDeviceSize GetBufferOffsetAlignment() const {
-        return m_bufferOffsetAlignment;
-    }
-
-private:
-    const VulkanDeviceContext* m_vkDevCtx;
-    VkBuffer        m_buffer;
-    VkDeviceMemory  m_deviceMemory;
-    VkDeviceSize    m_bufferSize;
-    VkDeviceSize    m_bufferOffsetAlignment;
-    VkDeviceSize    m_bufferSizeAlignment;
-    mutable void*   m_bufferMemoryHostPtr;
-};
-
 class ImageObject : public ImageResourceInfo {
 public:
     ImageObject ()
@@ -601,30 +511,31 @@ class VulkanVertexBuffer {
 
 public:
     VulkanVertexBuffer()
-        : vertexBuffer(0), m_vkDevCtx(nullptr), deviceMemory(0), numVertices(0) { }
+        : m_vertexBuffer(nullptr) { }
 
-    const VkBuffer& get() const {
-        return vertexBuffer;
+    VkBuffer GetBuffer() const {
+        return m_vertexBuffer->GetBuffer();
     }
 
     VkResult CreateVertexBuffer(const VulkanDeviceContext* vkDevCtx,  const float* pVertexData,
-            VkDeviceSize vertexDataSize, uint32_t numVertices);
+                                VkDeviceSize vertexDataSize, uint32_t numVertices)
+    {
+        DestroyVertexBuffer();
+
+        uint32_t queueFamilyIndex = vkDevCtx->GetGfxQueueFamilyIdx();
+        return VkBufferResource::Create(vkDevCtx,
+                                        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                        vertexDataSize,
+                                        m_vertexBuffer, 1, 1,
+                                        vertexDataSize, pVertexData,
+                                        1, &queueFamilyIndex);
+    }
 
 
     void DestroyVertexBuffer()
     {
-        if (deviceMemory) {
-            m_vkDevCtx->FreeMemory(*m_vkDevCtx, deviceMemory, nullptr);
-            deviceMemory = VkDeviceMemory(0);
-        }
-
-        if (vertexBuffer) {
-            m_vkDevCtx->DestroyBuffer(*m_vkDevCtx, vertexBuffer, nullptr);
-            vertexBuffer = VkBuffer(0);
-        }
-
-        m_vkDevCtx   = nullptr;
-        numVertices  = 0;
+        m_vertexBuffer   = nullptr;
     }
 
     ~VulkanVertexBuffer()
@@ -637,10 +548,7 @@ public:
     }
 
 private:
-    VkBuffer vertexBuffer;
-    const VulkanDeviceContext* m_vkDevCtx;
-    VkDeviceMemory deviceMemory;
-    uint32_t numVertices;
+    VkSharedBaseObj<VkBufferResource>  m_vertexBuffer;
 };
 
 class VulkanFrameBuffer {
@@ -837,7 +745,7 @@ public:
 
     void DestroyDescriptorSetLayout()
     {
-        m_resourceDescriptorBuffer.Destroy();
+        m_resourceDescriptorBuffer = nullptr;
 
         if (dscLayout) {
             m_vkDevCtx->DestroyDescriptorSetLayout(*m_vkDevCtx, dscLayout, nullptr);
@@ -869,12 +777,9 @@ public:
         return descSets[currentDescriptorSetPools].GetDescriptorSet();
     }
 
-    const VulkanBuffer& GetDescriptorSetBuffer() const {
-        return m_resourceDescriptorBuffer;
-    }
 
     bool UsesDescriptorBuffer() const {
-        return m_resourceDescriptorBuffer.IsValid();
+        return m_resourceDescriptorBuffer;
     }
 
     VkDescriptorSetLayoutCreateFlags GetDescriptorLayoutMode() const {
@@ -889,7 +794,8 @@ public:
 
         // Set descriptors for image
         VkDeviceSize dstBufferOffset = 0;
-        char* imageDescriptorBufPtr = const_cast<char*>((const char*)m_resourceDescriptorBuffer.Map(dstBufferOffset));
+        VkDeviceSize maxSize = 0;
+        uint8_t* imageDescriptorBufPtr = const_cast<uint8_t*>((const uint8_t*)m_resourceDescriptorBuffer->GetDataPtr(dstBufferOffset, maxSize));
         assert(imageDescriptorBufPtr);
 
         VkDescriptorGetInfoEXT descriptorInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT };
@@ -898,7 +804,7 @@ public:
         m_vkDevCtx->GetDescriptorEXT(*m_vkDevCtx, &descriptorInfo, m_descriptorSize[descriptorId],
                                      imageDescriptorBufPtr + 0 /* index */ * m_descriptorOffset[descriptorId]);
 
-        VkBuffer imageDescriptorBuffer = m_resourceDescriptorBuffer.Get();
+        VkBuffer imageDescriptorBuffer = m_resourceDescriptorBuffer->GetBuffer();
         assert(imageDescriptorBuffer);
         VkDeviceOrHostAddressConstKHR imageDescriptorBufferDeviceAddress;
         VkBufferDeviceAddressInfoKHR bufferDeviceAddressInfo{};
@@ -933,7 +839,7 @@ private:
     VkPipelineLayout pipelineLayout;
     int32_t currentDescriptorSetPools;
     VulkanDescriptorSet descSets[MAX_DESCRIPTOR_SET_POOLS];
-    VulkanBuffer  m_resourceDescriptorBuffer; // If VK_EXT_descriptor_buffer is supported
+    VkSharedBaseObj<VkBufferResource>  m_resourceDescriptorBuffer; // If VK_EXT_descriptor_buffer is supported
     VkDeviceSize  m_descriptorOffset[1]; // Only one for now, since there is only one image descriptor
     size_t        m_descriptorSize[1];   // Only one for now, since there is only one image descriptor
 };
