@@ -502,7 +502,7 @@ VkResult ImageObject::FillImageWithPattern(int pattern)
 
     m_vkDevCtx->GetImageSubresourceLayout(*m_vkDevCtx, image, &subres, &layout);
 
-    void *data = MapHostPtr();
+    uint8_t* mappedHostPtr = MapHostPtr();
 
     const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(imageFormat);
     if (mpInfo) {
@@ -516,9 +516,9 @@ VkResult ImageObject::FillImageWithPattern(int pattern)
         VK_CHROMA_LOCATION_MIDPOINT, VK_CHROMA_LOCATION_MIDPOINT, VK_FILTER_NEAREST, false
                                                                               };
         VkFillYuv vkFillYuv;
-        vkFillYuv.fillVkImage(m_vkDevCtx, image, &imageData, mem, &ycbcrConversionInfo);
+        vkFillYuv.fillVkImage(m_vkDevCtx, image, &imageData, mem, mappedHostPtr, &ycbcrConversionInfo);
     } else {
-        generateColorPatternRgba8888((ColorPattern)pattern, (uint8_t *)data,
+        generateColorPatternRgba8888((ColorPattern)pattern, (uint8_t *)mappedHostPtr,
                                  imageWidth, imageHeight,
                                  (uint32_t)layout.rowPitch);
     }

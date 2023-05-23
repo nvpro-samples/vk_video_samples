@@ -77,7 +77,8 @@ public:
 
     }
 
-    void fillVkImage(const VulkanDeviceContext* vkDevCtx, VkImage vkImage, const ImageData *pImageData, VkDeviceMemory mem, const VkSamplerYcbcrConversionCreateInfo* pSamplerYcbcrConversionCreateInfo,
+    void fillVkImage(const VulkanDeviceContext* vkDevCtx, VkImage vkImage, const ImageData *pImageData,
+                     VkDeviceMemory mem, uint8_t *mappedHostPtr, const VkSamplerYcbcrConversionCreateInfo* pSamplerYcbcrConversionCreateInfo,
                      VkImageAspectFlags aspectMask = 0, VkFormat aspectMainFormat = VK_FORMAT_UNDEFINED);
 
     void fillVkCommon(const ImageData *pImageData, VkSubresourceLayout layouts[3], const VkSamplerYcbcrConversionCreateInfo* pSamplerYcbcrConversionCreateInfo,

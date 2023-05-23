@@ -625,11 +625,10 @@ void VkFillYuv::fillVkCommon(const ImageData *pImageData, VkSubresourceLayout la
 // or into buffer memory.
 void VkFillYuv::fillVkImage(const VulkanDeviceContext* vkDevCtx,
                             VkImage vkImage, const ImageData *pImageData,
-                            VkDeviceMemory mem,
+                            VkDeviceMemory mem, uint8_t *mappedHostPtr,
                             const VkSamplerYcbcrConversionCreateInfo* pSamplerYcbcrConversionCreateInfo,
                             VkImageAspectFlags aspectMask, VkFormat aspectMainFormat)
 {
-    uint8_t *ptr = NULL;
     VkResult result;
 
     VkImageSubresource subResource = {};
@@ -683,9 +682,7 @@ void VkFillYuv::fillVkImage(const VulkanDeviceContext* vkDevCtx,
         size = layouts[0].size;
     }
 
-    vkDevCtx->MapMemory(*vkDevCtx, mem, 0, size, 0, (void **)&ptr);
-
-    fillVkCommon(pImageData, layouts, pSamplerYcbcrConversionCreateInfo, mpInfo, ptr, size, aspectMask, aspectMainFormat);
+    fillVkCommon(pImageData, layouts, pSamplerYcbcrConversionCreateInfo, mpInfo, mappedHostPtr, size, aspectMask, aspectMainFormat);
 
     const VkMappedMemoryRange   range           = {
         VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,  // sType
