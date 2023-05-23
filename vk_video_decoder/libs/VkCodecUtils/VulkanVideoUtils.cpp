@@ -245,203 +245,6 @@ VkResult VulkanBuffer::CopyDataToBuffer(const unsigned char* pData,
     return VK_SUCCESS;
 }
 
-VkResult DeviceMemoryObject::AllocMemory(const VulkanDeviceContext* vkDevCtx, VkMemoryRequirements* pMemoryRequirements)
-{
-    if (pMemoryRequirements->memoryTypeBits == 0) {
-        return VK_ERROR_INITIALIZATION_FAILED;
-    }
-    m_vkDevCtx = vkDevCtx;
-    // Find an available memory type that satisfies the requested properties.
-    uint32_t memoryTypeIndex;
-    uint32_t memoryTypeBits = pMemoryRequirements->memoryTypeBits;
-    for (memoryTypeIndex = 0; !(memoryTypeBits & 1); memoryTypeIndex++  ) {
-        memoryTypeBits >>= 1;
-    }
-
-    VkMemoryAllocateInfo memInfo = {
-        VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,          // sType
-        NULL,                                            // pNext
-        pMemoryRequirements->size,                       // allocationSize
-        memoryTypeIndex,                                 // memoryTypeIndex
-    };
-
-    VkResult result = m_vkDevCtx->AllocateMemory(*m_vkDevCtx, &memInfo, 0, &memory);
-    if (result != VK_SUCCESS) {
-        return result;
-    }
-
-    return VK_SUCCESS;
-}
-
-VkResult ImageObject::CreateImage(const VulkanDeviceContext* vkDevCtx,
-        const VkImageCreateInfo* pImageCreateInfo,
-        VkMemoryPropertyFlags requiredMemProps,
-        int initWithPattern,
-        VkExternalMemoryHandleTypeFlagBitsKHR exportMemHandleTypes,
-        NativeHandle& importHandle)
-{
-    DestroyImage();
-
-    m_vkDevCtx = vkDevCtx;
-
-    imageFormat = pImageCreateInfo->format;
-    imageWidth =  pImageCreateInfo->extent.width;
-    imageHeight = pImageCreateInfo->extent.height;
-    imageLayout = pImageCreateInfo->initialLayout;
-
-    const bool importMem = importHandle;
-    const bool exportMem = (!importMem && (exportMemHandleTypes != 0));
-    const bool external  = (importMem || exportMem);
-    const bool dedicated = external;
-
-    // Check for linear support.
-    VkFormatProperties props;
-    bool needBlit = true;
-    m_vkDevCtx->GetPhysicalDeviceFormatProperties(vkDevCtx->getPhysicalDevice(), imageFormat, &props);
-    assert((props.linearTilingFeatures | props.optimalTilingFeatures) & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
-    if (props.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) {
-        // linear format supporting the required texture
-        needBlit = false;
-    }
-
-    const VkExternalMemoryImageCreateInfo  externalCreateInfo  = {
-        VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
-        pImageCreateInfo->pNext,
-        (VkExternalMemoryHandleTypeFlags)exportMemHandleTypes
-    };
-
-    // Allocate the linear texture so texture could be copied over
-    VkImageCreateInfo imageCreateInfo = VkImageCreateInfo();
-    memcpy(&imageCreateInfo, pImageCreateInfo, sizeof(imageCreateInfo));
-    imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageCreateInfo.pNext = external ? &externalCreateInfo : pImageCreateInfo->pNext;
-    imageCreateInfo.usage = needBlit ? (VkImageUsageFlags)VK_IMAGE_USAGE_TRANSFER_SRC_BIT : imageCreateInfo.usage;
-    CALL_VK(m_vkDevCtx->CreateImage(*m_vkDevCtx, &imageCreateInfo, nullptr, &image));
-
-    CALL_VK(AllocMemoryAndBind(vkDevCtx, image, mem, requiredMemProps,
-                             dedicated, exportMemHandleTypes, importHandle));
-
-    if (importMem) {
-#if defined(VK_USE_PLATFORM_ANDROID_KHR)
-        bufferHandle = AHardwareBuffer_getNativeHandle(importHandle);
-#endif // defined(VK_USE_PLATFORM_ANDROID_KHR)
-    } else if (exportMem) {
-        canBeExported = true;
-        m_exportMemHandleTypes = exportMemHandleTypes;
-    }
-
-    if (!importMem && (requiredMemProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
-        if (initWithPattern) {
-            FillImageWithPattern(initWithPattern);
-        }
-    }
-
-    if (!importMem && needBlit) {
-        VkResult status = StageImage(vkDevCtx, imageCreateInfo.usage, requiredMemProps, needBlit);
-
-        if (VK_SUCCESS != status) {
-            return status;
-        }
-    }
-
-    VkImageViewCreateInfo viewInfo = VkImageViewCreateInfo();
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.pNext = nullptr;
-    viewInfo.image = VK_NULL_HANDLE;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = imageFormat;
-    viewInfo.components = { VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
-                        VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY};
-    viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    viewInfo.flags = 0;
-    viewInfo.image = image;
-    CALL_VK(m_vkDevCtx->CreateImageView(*m_vkDevCtx, &viewInfo, nullptr, &view));
-
-    return VK_SUCCESS;
-}
-
-VkResult ImageObject::AllocMemoryAndBind(const VulkanDeviceContext* vkDevCtx, VkImage vkImage, VkDeviceMemory& imageDeviceMemory, VkMemoryPropertyFlags requiredMemProps,
-        bool dedicated, VkExternalMemoryHandleTypeFlags exportMemHandleTypes, NativeHandle& importHandle)
-{
-    VkResult result;
-
-    VkMemoryRequirements memReqs = { };
-    m_vkDevCtx->GetImageMemoryRequirements(*vkDevCtx, vkImage, &memReqs);
-
-    // Find an available memory type that satisfies the requested properties.
-    uint32_t memoryTypeIndex;
-    if (VK_SUCCESS != MapMemoryTypeToIndex(vkDevCtx,
-                                           vkDevCtx->getPhysicalDevice(),
-                                           memReqs.memoryTypeBits, requiredMemProps, &memoryTypeIndex)) {
-        return VK_ERROR_VALIDATION_FAILED_EXT;
-    }
-
-    VkMemoryDedicatedAllocateInfo dedicatedAllocInfo = {
-        VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,    // sType
-        NULL,                                                              // pNext
-        dedicated ? vkImage : VK_NULL_HANDLE,                            // image
-        VK_NULL_HANDLE,                                                    // buffer
-    };
-
-    VkMemoryAllocateInfo memInfo = {
-        VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,          // sType
-        NULL,                                            // pNext
-        memReqs.size,                                    // allocationSize
-        memoryTypeIndex,                                 // memoryTypeIndex
-    };
-
-    if (dedicated) {
-        memInfo.pNext = &dedicatedAllocInfo;
-    }
-
-#if defined(VK_USE_PLATFORM_ANDROID_KHR)
-    VkExportMemoryAllocateInfo exportInfo  = {
-        VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO,
-        NULL,
-        exportMemHandleTypes
-    };
-
-    if (newAndroidHardwareBuffer) {
-        VkAndroidHardwareBufferPropertiesANDROID androidHardwareBufferProperties = VkAndroidHardwareBufferPropertiesANDROID();
-        androidHardwareBufferProperties.sType = VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID;
-        result = m_vkDevCtx->GetAndroidHardwareBufferPropertiesANDROID(*vkDevCtx, newAndroidHardwareBuffer, &androidHardwareBufferProperties);
-        if (result != VK_SUCCESS) {
-            return result;
-        }
-        memInfo.allocationSize = androidHardwareBufferProperties.allocationSize;
-    }
-
-    VkImportAndroidHardwareBufferInfoANDROID importInfo = {
-        VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID,
-        NULL,
-        newAndroidHardwareBuffer
-    };
-
-    if (newAndroidHardwareBuffer) {
-        importInfo.pNext = memInfo.pNext;
-        memInfo.pNext = &importInfo;
-    } else if (exportMemHandleTypes) {
-        exportInfo.pNext = memInfo.pNext;
-        memInfo.pNext = &exportInfo;
-    }
-#endif // defined(VK_USE_PLATFORM_ANDROID_KHR)
-
-    result = m_vkDevCtx->AllocateMemory(*vkDevCtx, &memInfo, 0, &imageDeviceMemory);
-    if (result != VK_SUCCESS) {
-        return result;
-    }
-
-    result = m_vkDevCtx->BindImageMemory(*vkDevCtx, vkImage, imageDeviceMemory, 0);
-    if (result != VK_SUCCESS) {
-        m_vkDevCtx->FreeMemory(*vkDevCtx, imageDeviceMemory, 0);
-        imageDeviceMemory = 0;
-        return result;
-    }
-
-    return VK_SUCCESS;
-}
-
-
 int32_t ImageObject::GetImageSubresourceAndLayout(VkSubresourceLayout layouts[3]) const
 {
     int numPlanes = 0;
@@ -485,15 +288,6 @@ int32_t ImageObject::GetImageSubresourceAndLayout(VkSubresourceLayout layouts[3]
     return numPlanes;
 }
 
-VkResult ImageObject::GetMemoryFd(int* pFd) const
-{
-    const VkMemoryGetFdInfoKHR getFdInfo = { VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
-                                             NULL,
-                                             mem, m_exportMemHandleTypes };
-
-    return m_vkDevCtx->GetMemoryFdKHR(*m_vkDevCtx, &getFdInfo, pFd);
-}
-
 VkResult ImageObject::FillImageWithPattern(int pattern)
 {
     const VkImageSubresource subres = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0 };
@@ -503,6 +297,7 @@ VkResult ImageObject::FillImageWithPattern(int pattern)
     m_vkDevCtx->GetImageSubresourceLayout(*m_vkDevCtx, image, &subres, &layout);
 
     uint8_t* mappedHostPtr = MapHostPtr();
+    VkDeviceMemory devMemory = m_imageResource->GetDeviceMemory();
 
     const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(imageFormat);
     if (mpInfo) {
@@ -516,7 +311,7 @@ VkResult ImageObject::FillImageWithPattern(int pattern)
         VK_CHROMA_LOCATION_MIDPOINT, VK_CHROMA_LOCATION_MIDPOINT, VK_FILTER_NEAREST, false
                                                                               };
         VkFillYuv vkFillYuv;
-        vkFillYuv.fillVkImage(m_vkDevCtx, image, &imageData, mem, mappedHostPtr, &ycbcrConversionInfo);
+        vkFillYuv.fillVkImage(m_vkDevCtx, image, &imageData, devMemory, mappedHostPtr, &ycbcrConversionInfo);
     } else {
         generateColorPatternRgba8888((ColorPattern)pattern, (uint8_t *)mappedHostPtr,
                                  imageWidth, imageHeight,
@@ -530,8 +325,6 @@ VkResult ImageObject::FillImageWithPattern(int pattern)
 // or into buffer memory.
 VkResult ImageObject::CopyYuvToVkImage(uint32_t numPlanes, const uint8_t* yuvPlaneData[3], const VkSubresourceLayout yuvPlaneLayouts[3])
 {
-    VkResult result;
-
     VkImageSubresource subResource = {};
     VkSubresourceLayout layouts[3];
     VkDeviceSize size   = 0;
@@ -601,176 +394,8 @@ VkResult ImageObject::CopyYuvToVkImage(uint32_t numPlanes, const uint8_t* yuvPla
         }
     }
 
-    const VkMappedMemoryRange   range           = {
-        VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,  // sType
-        NULL,                                   // pNext
-        mem,                                    // memory
-        0,                                      // offset
-        size,                                   // size
-    };
+    m_imageResource->GetMemory()->FlushRange(0, size);
 
-    result = m_vkDevCtx->FlushMappedMemoryRanges(*m_vkDevCtx, 1u, &range);
-
-    return result;
-}
-
-VkResult ImageObject::StageImage(const VulkanDeviceContext* vkDevCtx, VkImageUsageFlags usage, VkMemoryPropertyFlags requiredMemProps, bool needBlit)
-{
-    if (!(usage | requiredMemProps)) {
-        LOG(ERROR) << "VkVideoUtils: " << "image No usage and required_pros" << "File:" << __FILE__ << "line " <<  __LINE__;
-        return VK_ERROR_FORMAT_NOT_SUPPORTED;
-    }
-
-    VkCommandPoolCreateInfo cmdPoolCreateInfo = VkCommandPoolCreateInfo();
-    cmdPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    cmdPoolCreateInfo.pNext = nullptr;
-    cmdPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    cmdPoolCreateInfo.queueFamilyIndex = vkDevCtx->GetGfxQueueFamilyIdx();
-
-    VkCommandPool cmdPool;
-    CALL_VK(m_vkDevCtx->CreateCommandPool(*vkDevCtx,
-                                &cmdPoolCreateInfo, nullptr, &cmdPool));
-
-    VkCommandBuffer gfxCmd;
-    VkCommandBufferAllocateInfo cmd = VkCommandBufferAllocateInfo();
-    cmd.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmd.pNext = nullptr;
-    cmd.commandPool = cmdPool;
-    cmd.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    cmd.commandBufferCount = 1;
-
-    CALL_VK(m_vkDevCtx->AllocateCommandBuffers(*vkDevCtx, &cmd, &gfxCmd));
-
-    VkCommandBufferBeginInfo cmd_buf_info = VkCommandBufferBeginInfo();
-    cmd_buf_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    cmd_buf_info.pNext = nullptr;
-    cmd_buf_info.flags = 0;
-    cmd_buf_info.pInheritanceInfo = nullptr;
-    CALL_VK(m_vkDevCtx->BeginCommandBuffer(gfxCmd, &cmd_buf_info));
-
-    // If linear is supported, we are done
-    VkImage stageImage = VK_NULL_HANDLE;
-    VkDeviceMemory stageMem = VK_NULL_HANDLE;
-    if (!needBlit) {
-        setImageLayout(m_vkDevCtx, gfxCmd, image, VK_IMAGE_LAYOUT_PREINITIALIZED,
-                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                       VK_PIPELINE_STAGE_HOST_BIT,
-                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-    } else {
-        // save current image and mem as staging image and memory
-        stageImage = image;
-        stageMem = mem;
-        image = VK_NULL_HANDLE;
-        mem = VK_NULL_HANDLE;
-
-        // Create a tile texture to blit into
-        VkImageCreateInfo imageCreateInfo = VkImageCreateInfo();
-        imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageCreateInfo.pNext = nullptr;
-        imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
-        imageCreateInfo.format = imageFormat;
-        imageCreateInfo.extent = {
-                static_cast<uint32_t>(imageWidth),
-                static_cast<uint32_t>(imageHeight), 1};
-        imageCreateInfo.mipLevels = 1;
-        imageCreateInfo.arrayLayers = 1;
-        imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-        imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        imageCreateInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        imageCreateInfo.queueFamilyIndexCount = 1;
-        const uint32_t queueFamilyIndices = vkDevCtx->GetGfxQueueFamilyIdx();
-        imageCreateInfo.pQueueFamilyIndices = &queueFamilyIndices;
-        imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        imageCreateInfo.flags = 0;
-        CALL_VK(m_vkDevCtx->CreateImage(*vkDevCtx, &imageCreateInfo,
-                              nullptr, &image));
-
-        VkMemoryRequirements mem_reqs;
-        m_vkDevCtx->GetImageMemoryRequirements(*vkDevCtx, image,
-                                     &mem_reqs);
-
-        VkMemoryAllocateInfo mem_alloc = VkMemoryAllocateInfo();
-        mem_alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        mem_alloc.pNext = nullptr;
-        mem_alloc.memoryTypeIndex = 0;
-        mem_alloc.allocationSize = mem_reqs.size;
-        VK_CHECK(AllocateMemoryTypeFromProperties(
-                vkDevCtx, mem_reqs.memoryTypeBits,
-                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &mem_alloc.memoryTypeIndex));
-        CALL_VK(m_vkDevCtx->AllocateMemory(*vkDevCtx, &mem_alloc,
-                                 nullptr, &mem));
-        CALL_VK(m_vkDevCtx->BindImageMemory(*vkDevCtx, image,
-                                  mem, 0));
-
-        // transitions image out of UNDEFINED type
-        setImageLayout(m_vkDevCtx, gfxCmd, stageImage, VK_IMAGE_LAYOUT_PREINITIALIZED,
-                       VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                       VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
-        setImageLayout(m_vkDevCtx, gfxCmd, image, VK_IMAGE_LAYOUT_UNDEFINED,
-                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
-
-        VkImageCopy bltInfo = VkImageCopy();
-        bltInfo.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        bltInfo.srcSubresource.mipLevel = 0;
-        bltInfo.srcSubresource.baseArrayLayer = 0;
-        bltInfo.srcSubresource.layerCount = 1;
-        bltInfo.srcOffset.x = 0;
-        bltInfo.srcOffset.y = 0;
-        bltInfo.srcOffset.z = 0;
-        bltInfo.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        bltInfo.dstSubresource.mipLevel = 0;
-        bltInfo.dstSubresource.baseArrayLayer = 0;
-        bltInfo.dstSubresource.layerCount = 1;
-        bltInfo.dstOffset.x = 0;
-        bltInfo.dstOffset.y = 0;
-        bltInfo.dstOffset.z = 0;
-        bltInfo.extent.width = (uint32_t)imageWidth;
-        bltInfo.extent.height = (uint32_t)imageHeight;
-        bltInfo.extent.depth = 1;
-        m_vkDevCtx->CmdCopyImage(gfxCmd, stageImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                       image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
-                       &bltInfo);
-
-        setImageLayout(m_vkDevCtx, gfxCmd, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                       VK_PIPELINE_STAGE_TRANSFER_BIT,
-                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-    }
-
-    CALL_VK(m_vkDevCtx->EndCommandBuffer(gfxCmd));
-    VkFenceCreateInfo fenceInfo = {
-        VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        nullptr,
-        0
-    };
-    VkFence fence;
-    CALL_VK(m_vkDevCtx->CreateFence(*vkDevCtx, &fenceInfo, nullptr,
-                          &fence));
-
-    VkSubmitInfo submitInfo = VkSubmitInfo();
-    submitInfo.pNext = nullptr;
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.waitSemaphoreCount = 0;
-    submitInfo.pWaitSemaphores = nullptr;
-    submitInfo.pWaitDstStageMask = nullptr;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &gfxCmd;
-    submitInfo.signalSemaphoreCount = 0;
-    submitInfo.pSignalSemaphores = nullptr;
-    CALL_VK(m_vkDevCtx->QueueSubmit(vkDevCtx->GetGfxQueue(), 1, &submitInfo, fence) !=
-            VK_SUCCESS);
-    CALL_VK(m_vkDevCtx->WaitForFences(*vkDevCtx, 1, &fence, VK_TRUE,
-                            100000000) != VK_SUCCESS);
-    m_vkDevCtx->DestroyFence(*vkDevCtx, fence, nullptr);
-
-    m_vkDevCtx->FreeCommandBuffers(*vkDevCtx, cmdPool, 1, &gfxCmd);
-    m_vkDevCtx->DestroyCommandPool(*vkDevCtx, cmdPool, nullptr);
-    if (stageImage != VK_NULL_HANDLE) {
-        m_vkDevCtx->DestroyImage(*vkDevCtx, stageImage, nullptr);
-        m_vkDevCtx->FreeMemory(*vkDevCtx, stageMem, nullptr);
-    }
     return VK_SUCCESS;
 }
 

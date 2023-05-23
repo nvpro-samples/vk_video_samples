@@ -195,8 +195,9 @@ int VulkanFrame::AttachSwapchain(const Shell& sh)
     imageCreateInfo.pQueueFamilyIndices = &queueFamilyIndices;
     imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
     imageCreateInfo.flags = 0;
-    m_videoRenderer->m_testFrameImage.CreateImage(m_videoRenderer->m_vkDevCtx, &imageCreateInfo, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-        1 /* ColorPatternColorBars */, VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT);
+    m_videoRenderer->m_testFrameImage.CreateImage(m_videoRenderer->m_vkDevCtx, &imageCreateInfo,
+                                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                                                  1 /* ColorPatternColorBars */);
 
     // Create per a frame draw context num == mSwapchainNumBufs.
 
@@ -414,30 +415,15 @@ VkResult VulkanFrame::DrawFrame( int32_t           renderIndex,
 
     bool doTestPatternFrame = ((inFrame == NULL) ||
                                (!inFrame->outputImageView ||
-                                       (inFrame->outputImageView->GetImageView() == VK_NULL_HANDLE)) ||
+                                (inFrame->outputImageView->GetImageView() == VK_NULL_HANDLE)) ||
                                m_videoRenderer->m_useTestImage);
 
-    vulkanVideoUtils::ImageResourceInfo rtImage;
-    const vulkanVideoUtils::ImageResourceInfo* pRtImage = &m_videoRenderer->m_testFrameImage;
-    VkFence frameConsumerDoneFence = VkFence();
-    int32_t displayWidth = pRtImage->imageWidth;
-    int32_t displayHeight = pRtImage->imageHeight;
-    VkFormat imageFormat = pRtImage->imageFormat;
-    if (!doTestPatternFrame) {
-        VkImageResourceView* pView = inFrame->outputImageView;
-        VkImageResource* pImage = pView->GetImageResource();
-        imageFormat = rtImage.imageFormat = pImage->GetImageCreateInfo().format;
-        rtImage.imageWidth = pImage->GetImageCreateInfo().extent.width;
-        rtImage.imageHeight = pImage->GetImageCreateInfo().extent.height;
-        rtImage.arrayLayer = pView->GetImageSubresourceRange().baseArrayLayer;
-        rtImage.imageLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR;
-        rtImage.image = pImage->GetImage();
-        rtImage.view = pView->GetImageView();
-        pRtImage    = &rtImage;
-        frameConsumerDoneFence = inFrame->frameConsumerDoneFence;
-        displayWidth = inFrame->displayWidth;
-        displayHeight = inFrame->displayHeight;
-    }
+    vulkanVideoUtils::ImageResourceInfo rtImage(inFrame->outputImageView, VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR);
+    const vulkanVideoUtils::ImageResourceInfo* pRtImage = doTestPatternFrame ? &m_videoRenderer->m_testFrameImage : &rtImage;
+    VkFence frameConsumerDoneFence = doTestPatternFrame ? VkFence() : inFrame->frameConsumerDoneFence;
+    int32_t displayWidth  = doTestPatternFrame ? pRtImage->imageWidth  : inFrame->displayWidth;
+    int32_t displayHeight = doTestPatternFrame ? pRtImage->imageHeight : inFrame->displayHeight;
+    VkFormat imageFormat  = doTestPatternFrame ? pRtImage->imageFormat : rtImage.imageFormat;
 
     if (pPerDrawContext->samplerYcbcrConversion.GetSamplerYcbcrConversionCreateInfo().format != imageFormat) {
 

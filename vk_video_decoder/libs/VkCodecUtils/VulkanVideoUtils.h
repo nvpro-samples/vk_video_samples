@@ -31,6 +31,7 @@
 #define __VULKANVIDEOUTILS__
 
 #include <vulkan_interfaces.h>
+#include "VkCodecUtils/VkImageResource.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/VulkanShaderCompiler.h"
 
@@ -145,6 +146,27 @@ struct ImageResourceInfo {
                           image(),
                           view()
     {}
+
+    ImageResourceInfo(VkImageResourceView* pView, VkImageLayout layout) {
+        if (pView) {
+            VkImageResource* pImage = pView->GetImageResource();
+            imageFormat = pImage->GetImageCreateInfo().format;
+            imageWidth = pImage->GetImageCreateInfo().extent.width;
+            imageHeight = pImage->GetImageCreateInfo().extent.height;
+            arrayLayer = pView->GetImageSubresourceRange().baseArrayLayer;
+            imageLayout = layout;
+            image = pImage->GetImage();
+            view = pView->GetImageView();
+        } else {
+            imageFormat = VK_FORMAT_UNDEFINED;
+            imageWidth = 0;
+            imageHeight = 0;
+            arrayLayer = 0;
+            imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            image = VK_NULL_HANDLE;
+            view = VK_NULL_HANDLE;
+        }
+    }
 };
 
 class VulkanDisplayTiming  {
@@ -402,63 +424,52 @@ private:
     mutable void*   m_bufferMemoryHostPtr;
 };
 
-class DeviceMemoryObject {
-public:
-    DeviceMemoryObject ()
-    :   m_vkDevCtx(),
-        memory(),
-        nativeHandle(),
-        canBeExported(false)
-    { }
-
-    VkResult AllocMemory(const VulkanDeviceContext* vkDevCtx, VkMemoryRequirements* pMemoryRequirements);
-
-    ~DeviceMemoryObject()
-    {
-        DestroyDeviceMemory();
-    }
-
-    void DestroyDeviceMemory()
-    {
-        canBeExported = false;
-
-        if (memory) {
-            m_vkDevCtx->FreeMemory(*m_vkDevCtx,
-                    memory, 0);
-        }
-
-        memory = VkDeviceMemory();
-    }
-
-#if defined(VK_USE_PLATFORM_ANDROID_KHR)
-    AHardwareBufferHandle ExportHandle();
-#endif // defined(VK_USE_PLATFORM_ANDROID_KHR)
-
-    const VulkanDeviceContext* m_vkDevCtx;
-    VkDeviceMemory memory;
-    NativeHandle nativeHandle; // as a reference to know if this is the same imported buffer.
-    bool canBeExported;
-};
-
 class ImageObject : public ImageResourceInfo {
 public:
     ImageObject ()
     :   ImageResourceInfo(),
-        m_vkDevCtx(),
-        mem(),
-        mappedPtr(),
-        m_exportMemHandleTypes(VK_EXTERNAL_MEMORY_HANDLE_TYPE_FLAG_BITS_MAX_ENUM),
-        nativeHandle(),
-        canBeExported(false),
-        inUseBySwapchain(false)
+        m_vkDevCtx()
     { }
 
     VkResult CreateImage(const VulkanDeviceContext* vkDevCtx,
             const VkImageCreateInfo* pImageCreateInfo,
             VkMemoryPropertyFlags requiredMemProps = 0,
-            int initWithPattern = -1,
-            VkExternalMemoryHandleTypeFlagBitsKHR exportMemHandleTypes = VkExternalMemoryHandleTypeFlagBitsKHR(),
-            NativeHandle& importHandle = NativeHandle::InvalidNativeHandle);
+            int initWithPattern = -1) {
+
+        DestroyImage();
+
+        VkResult result = VkImageResource::Create(vkDevCtx,
+                                                  pImageCreateInfo,
+                                                  requiredMemProps,
+                                                  m_imageResource);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+
+        VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        result = VkImageResourceView::Create(vkDevCtx, m_imageResource,
+                                             subresourceRange,
+                                             m_imageView);
+
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+
+        m_vkDevCtx = vkDevCtx;
+
+        image       = m_imageResource->GetImage();
+        view        = m_imageView->GetImageView();
+        imageFormat = pImageCreateInfo->format;
+        imageWidth =  pImageCreateInfo->extent.width;
+        imageHeight = pImageCreateInfo->extent.height;
+        imageLayout = pImageCreateInfo->initialLayout;
+
+        if (initWithPattern && (requiredMemProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+            FillImageWithPattern(initWithPattern);
+        }
+
+        return result;
+    }
 
     VkResult AllocMemoryAndBind(const VulkanDeviceContext* vkDevCtx, VkImage vkImage, VkDeviceMemory& imageDeviceMemory, VkMemoryPropertyFlags requiredMemProps,
             bool dedicated, VkExternalMemoryHandleTypeFlags exportMemHandleTypes, NativeHandle& importHandle = NativeHandle::InvalidNativeHandle);
@@ -474,17 +485,12 @@ public:
     ImageObject& operator= (ImageObject&&) = delete;
 
     uint8_t* MapHostPtr() {
-        if (mappedPtr == nullptr) {
-            VkMemoryRequirements mem_reqs;
-            m_vkDevCtx->GetImageMemoryRequirements(*m_vkDevCtx, image, &mem_reqs);
-            VkDeviceSize allocationSize = mem_reqs.size;
-            m_vkDevCtx->MapMemory(*m_vkDevCtx, mem, 0, allocationSize, 0, (void **)&mappedPtr);
-        }
-        return mappedPtr;
+        VkDeviceSize maxSize = VK_WHOLE_SIZE;
+        return m_imageResource->GetMemory()->GetDataPtr(0, maxSize);
     }
 
     operator bool() {
-        return (image != VkImage());
+        return (m_imageResource && (m_imageResource->GetImage() != VK_NULL_HANDLE));
     }
 
     ~ImageObject()
@@ -494,40 +500,13 @@ public:
 
     void DestroyImage()
     {
-        canBeExported = false;
-
-        if (mappedPtr) {
-            m_vkDevCtx->UnmapMemory(*m_vkDevCtx, mem);
-            mappedPtr = nullptr;
-        }
-
-        if (view) {
-            m_vkDevCtx->DestroyImageView(*m_vkDevCtx, view, nullptr);
-            view = VK_NULL_HANDLE;
-        }
-
-        if (mem) {
-            m_vkDevCtx->FreeMemory(*m_vkDevCtx, mem, 0);
-            mem = VK_NULL_HANDLE;
-        }
-
-        if (image) {
-            m_vkDevCtx->DestroyImage(*m_vkDevCtx, image, nullptr);
-            image = VK_NULL_HANDLE;
-        }
+        m_imageView     = nullptr;
+        m_imageResource = nullptr;
     }
 
-#if defined(VK_USE_PLATFORM_ANDROID_KHR)
-    AHardwareBufferHandle ExportHandle();
-#endif // defined(VK_USE_PLATFORM_ANDROID_KHR)
-
     const VulkanDeviceContext* m_vkDevCtx;
-    VkDeviceMemory mem;
-    uint8_t *mappedPtr;
-    VkExternalMemoryHandleTypeFlagBitsKHR m_exportMemHandleTypes;
-    NativeHandle nativeHandle; // as a reference to know if this is the same imported buffer.
-    bool canBeExported;
-    bool inUseBySwapchain;
+    VkSharedBaseObj<VkImageResource>     m_imageResource;
+    VkSharedBaseObj<VkImageResourceView> m_imageView;
 };
 
 class VulkanSamplerYcbcrConversion {
