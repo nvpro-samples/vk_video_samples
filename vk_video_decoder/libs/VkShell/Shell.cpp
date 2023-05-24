@@ -233,10 +233,12 @@ void Shell::ResizeSwapchain(uint32_t width_hint, uint32_t height_hint) {
     if (m_ctx.extent.width == extent.width && m_ctx.extent.height == extent.height) return;
 
     uint32_t image_count = m_settings.backBufferCount;
-    if (image_count < caps.minImageCount)
+    if (image_count < caps.minImageCount) {
         image_count = caps.minImageCount;
-    else if (image_count > caps.maxImageCount)
+    }
+    if ((caps.maxImageCount > 0) && (image_count > caps.maxImageCount)) {
         image_count = caps.maxImageCount;
+    }
 
     assert(caps.supportedUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
     assert(caps.supportedTransforms & caps.currentTransform);
