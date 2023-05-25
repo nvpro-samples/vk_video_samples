@@ -377,7 +377,7 @@ size_t VulkanVideoProcessor::ConvertFrameToNv12(DecodedFrame* pFrame,
     int32_t retryCount = 5;
     do {
         result = m_vkDevCtx->WaitForFences(device, 1, &pFrame->frameCompleteFence, VK_TRUE, fenceTimeout);
-        if (result != VK_SUCCESS) {
+        if ((result != VK_SUCCESS) && (pFrame->queryPool != VK_NULL_HANDLE)) {
             std::cout << "WaitForFences timeout " << fenceTimeout
                     << " result " << result << " retry " << retryCount << std::endl << std::flush;
 

@@ -340,7 +340,7 @@ public:
     {
         assert (numSlots <= maxFramebufferImages);
 
-        if (m_queryPool == VkQueryPool()) {
+        if ((m_queryPool == VK_NULL_HANDLE) && m_vkDevCtx->GetVideoQueryResultStatusSupport()) {
             // It would be difficult to resize a query pool, so allocate the maximum possible slot.
             numSlots = maxFramebufferImages;
             VkQueryPoolCreateInfo queryPoolCreateInfo = { VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };

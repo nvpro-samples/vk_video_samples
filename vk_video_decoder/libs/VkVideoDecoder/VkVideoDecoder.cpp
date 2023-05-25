@@ -665,7 +665,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
     // m_vkDevCtx->ResetQueryPool(m_vkDev, queryFrameInfo.queryPool, queryFrameInfo.query, 1);
 
-    if (m_vkDevCtx->GetVideoQueryResultStatusSupport()) {
+    if (frameSynchronizationInfo.queryPool) {
         m_vkDevCtx->CmdResetQueryPool(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool,
                                       frameSynchronizationInfo.startQueryId, frameSynchronizationInfo.numQueries);
     }
@@ -696,14 +696,14 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     };
     m_vkDevCtx->CmdPipelineBarrier2KHR(frameDataSlot.commandBuffer, &dependencyInfo);
 
-    if (m_vkDevCtx->GetVideoQueryResultStatusSupport()) {
+    if (frameSynchronizationInfo.queryPool != VK_NULL_HANDLE) {
         m_vkDevCtx->CmdBeginQuery(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool,
                                   frameSynchronizationInfo.startQueryId, VkQueryControlFlags());
     }
 
     m_vkDevCtx->CmdDecodeVideoKHR(frameDataSlot.commandBuffer, &pPicParams->decodeFrameInfo);
 
-    if (m_vkDevCtx->GetVideoQueryResultStatusSupport()) {
+    if (frameSynchronizationInfo.queryPool != VK_NULL_HANDLE) {
         m_vkDevCtx->CmdEndQuery(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool,
                                 frameSynchronizationInfo.startQueryId);
     }
@@ -873,7 +873,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     }
 
     const bool checkDecodeStatus = false; // Check the queries
-    if (checkDecodeStatus) {
+    if (checkDecodeStatus && (frameSynchronizationInfo.queryPool != VK_NULL_HANDLE)) {
         VkQueryResultStatusKHR decodeStatus;
         result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx,
                                          frameSynchronizationInfo.queryPool,

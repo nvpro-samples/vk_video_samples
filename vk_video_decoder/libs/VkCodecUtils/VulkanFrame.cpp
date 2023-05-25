@@ -302,9 +302,11 @@ bool VulkanFrame::OnFrame( int32_t           renderIndex,
 
         pLastDecodedFrame = &data.lastDecodedFrame;
 
+        // Graphics and present stages are not enabled.
+        // Make sure the frame complete query or fence are signaled (video frame is processed) before returning the frame.
         if ((gfxRendererIsEnabled == false) && (pLastDecodedFrame != nullptr)) {
 
-            if (pLastDecodedFrame->queryPool) {
+            if (pLastDecodedFrame->queryPool != VK_NULL_HANDLE) {
                 auto startTime = std::chrono::steady_clock::now();
                 VkQueryResultStatusKHR decodeStatus;
                 VkResult result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx,
@@ -325,11 +327,7 @@ bool VulkanFrame::OnFrame( int32_t           renderIndex,
                     std::cout << pLastDecodedFrame->pictureIndex << ": frameWaitTime: " <<
                                  diffMilliseconds.count() << "." << diffMicroseconds.count() << " mSec" << std::endl;
                 }
-            }
-
-            // Graphics and present stages are not enabled.
-            // Make sure the frame complete fence signaled (video frame is processed) before returning the frame.
-            if (pLastDecodedFrame->frameCompleteFence != VkFence()) {
+            } else if (pLastDecodedFrame->frameCompleteFence != VkFence()) {
                 VkResult result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &pLastDecodedFrame->frameCompleteFence, true, 100 * 1000 * 1000 /* 100 mSec */);
                 assert(result == VK_SUCCESS);
                 if (result != VK_SUCCESS) {
@@ -513,8 +511,8 @@ VkResult VulkanFrame::DrawFrame( int32_t           renderIndex,
 
     //For queryPool debugging
     bool getDecodeStatusBeforePresent = false;
-    if (getDecodeStatusBeforePresent && inFrame &&
-            (inFrame->queryPool != VkQueryPool()) &&
+    if (getDecodeStatusBeforePresent && (inFrame != nullptr) &&
+            (inFrame->queryPool != VK_NULL_HANDLE) &&
             (inFrame->startQueryId >= 0) &&
             (inFrame->numQueries > 0)) {
 
