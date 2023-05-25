@@ -16,11 +16,18 @@
 
 #ifdef VK_API_USE_DRIVER_REPO
 // If using the local driver repo with Vulkan APIs
-#include "vulkan/vulkannv.h"
+#  include "vulkan/vulkannv.h"
+#elif defined(DE_BUILD_VIDEO)
+#  include "vkDefs.hpp"
+   using namespace vk;
 #else
 // Using the Vulkan APIs from Vulkan SDK
-#ifndef VK_ENABLE_BETA_EXTENSIONS
-#define VK_ENABLE_BETA_EXTENSIONS 1
-#endif
-#include "vulkan/vulkan.h"
-#endif
+#  ifndef VK_ENABLE_BETA_EXTENSIONS
+#    define VK_ENABLE_BETA_EXTENSIONS 1
+#  endif
+#  include "vulkan/vulkan.h"
+#  include "vk_video/vulkan_video_codec_av1std.h"
+#  include "vk_video/vulkan_video_codec_av1std_decode.h"
+
+#define VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR                 ((VkVideoCodecOperationFlagBitsKHR)0x00000005)
+#endif // VK_API_USE_DRIVER_REPO

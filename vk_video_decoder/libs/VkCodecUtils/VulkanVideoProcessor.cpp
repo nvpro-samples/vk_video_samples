@@ -126,6 +126,17 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                                     m_videoStreamDemuxer->GetChromaBitDepth(),
                                     m_videoStreamDemuxer->GetProfileIdc());
 
+
+#if HEADLESS_AV1
+    if (VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR != m_videoStreamDemuxer->GetVideoCodec()) {
+        assert(!"The video codec is not supported");
+        return -1;
+    }
+
+    VkVideoCapabilitiesKHR videoCapabilities;
+    videoCapabilities.minBitstreamBufferOffsetAlignment = 256;
+    videoCapabilities.minBitstreamBufferSizeAlignment = 256;
+#else
     if (!VulkanVideoCapabilities::IsCodecTypeSupported(vkDevCtx,
                                                        vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                                        m_videoStreamDemuxer->GetVideoCodec())) {
@@ -145,6 +156,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
         assert(!"Could not get Video Capabilities!");
         return -result;
     }
+#endif
 
     const uint32_t defaultMinBufferSize = 2 * 1024 * 1024; // 2MB
     result = CreateParser(filePath,
@@ -489,22 +501,68 @@ size_t VulkanVideoProcessor::ConvertFrameToNv12(DecodedFrame* pFrame,
     }
 
     // Copy the chroma plane(s)
-    for (uint32_t plane = numCompatiblePlanes; plane < numPlanes; plane++) {
-        uint32_t srcPlane = std::min(plane, mpInfo->planesLayout.numberOfExtraPlanes);
-        uint8_t* pDst = pOutBuffer + yuvPlaneLayouts[plane].offset;
-        for (int height = 0; height < secondaryPlaneHeight; height++) {
-            const uint8_t* pSrc;
-            if (srcPlane != plane) {
-                pSrc = readImagePtr + layouts[srcPlane].offset + ((plane - 1) * bytesPerPixel) + (layouts[srcPlane].rowPitch * height);
+    if (mpInfo->planesLayout.bpp == YCBCRA_10BPP) {
+        assert(format == VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16);
 
-            } else {
-                pSrc = readImagePtr + layouts[srcPlane].offset + (layouts[srcPlane].rowPitch * height);
+        // In order to compare results in Fluster, convert VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16 to YUV420P10. The first step is to deinterleave the planes.
+        // Rotation of the 16-bit words happens at the end of this function.
+        const uint8_t* pSrc = readImagePtr + layouts[1].offset;
+        const uint16_t *pSrc16 = (uint16_t *)pSrc;
+        uint16_t *pCbDst16 = (uint16_t *)(pOutBuffer + yuvPlaneLayouts[1].offset);
+        uint16_t *pCrDst16 = (uint16_t *)(pOutBuffer + yuvPlaneLayouts[2].offset);
+
+        // assert(((layouts[1].rowPitch / 2) * secondaryPlaneHeight) < std::numeric_limits<uint16_t>::max());
+        for (int height = 0; height < secondaryPlaneHeight; height++)
+        {
+            VkDeviceSize samplesInRow = yuvPlaneLayouts[1].rowPitch;
+            VkDeviceSize interleavedSamplesInRow = samplesInRow / 2;
+            for (VkDeviceSize interleavedSampleIdx = 0; interleavedSampleIdx < interleavedSamplesInRow; interleavedSampleIdx++)
+            {
+                *pCbDst16++ = pSrc16[2 * interleavedSampleIdx];
+                *pCrDst16++ = pSrc16[2 * interleavedSampleIdx + 1];
+            }
+            pSrc16 += layouts[1].rowPitch / 2;
+        }
+
+
+        if (false)
+        {
+            // Sometimes the driver reports .size = 0 (but a correct rowPictch), so this simplisitic approach doesn't work always..
+            VkDeviceSize numWords = layouts[1].size / (2 * sizeof(uint16_t));
+
+            for (size_t i = 0; i < numWords; i++) {
+                *pCbDst16++ = *pSrc16;
+                pSrc16 += 2;
             }
 
-            for (VkDeviceSize width = 0; width < (yuvPlaneLayouts[plane].rowPitch / bytesPerPixel); width++) {
-                memcpy(pDst, pSrc, bytesPerPixel);
-                pDst += bytesPerPixel;
-                pSrc += 2 * bytesPerPixel;
+            pSrc16 = (uint16_t *)pSrc;
+            pSrc16++;
+            for (size_t i = 0; i < numWords; i++) {
+                *pCrDst16++ = *pSrc16;
+                pSrc16 += 2;
+            }
+        }
+        //memcpy(pDst, pSrc, layouts[1].size);
+    } else {
+        assert(mpInfo->planesLayout.bpp == YCBCRA_8BPP);
+        assert(format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM);
+        for (uint32_t plane = numCompatiblePlanes; plane < numPlanes; plane++) {
+            uint32_t srcPlane = std::min(plane, mpInfo->planesLayout.numberOfExtraPlanes);
+            uint8_t* pDst = pOutBuffer + yuvPlaneLayouts[plane].offset;
+            for (int height = 0; height < secondaryPlaneHeight; height++) {
+                const uint8_t* pSrc;
+                if (srcPlane != plane) {
+                    pSrc = readImagePtr + layouts[srcPlane].offset + ((plane - 1) * bytesPerPixel) + (layouts[srcPlane].rowPitch * height);
+
+                } else {
+                    pSrc = readImagePtr + layouts[srcPlane].offset + (layouts[srcPlane].rowPitch * height);
+                }
+
+                for (VkDeviceSize width = 0; width < (yuvPlaneLayouts[plane].rowPitch / bytesPerPixel); width++) {
+                    memcpy(pDst, pSrc, bytesPerPixel);
+                    pDst += bytesPerPixel;
+                    pSrc += 2 * bytesPerPixel;
+                }
             }
         }
     }
@@ -513,6 +571,19 @@ size_t VulkanVideoProcessor::ConvertFrameToNv12(DecodedFrame* pFrame,
     if (mpInfo->planesLayout.numberOfExtraPlanes >= 1) {
         outputBufferSize += ((size_t)yuvPlaneLayouts[1].rowPitch * secondaryPlaneHeight);
         outputBufferSize += ((size_t)yuvPlaneLayouts[2].rowPitch * secondaryPlaneHeight);
+    }
+
+    if (mpInfo->planesLayout.bpp == YCBCRA_10BPP) {
+        // Change from p010 packing format to raw YUV format, this is for fluster validation.
+        assert(format == VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16);
+        uint16_t *converter = (uint16_t *)(pOutBuffer + yuvPlaneLayouts[0].offset);
+        size_t wordsToConvert = outputBufferSize / sizeof(uint16_t);
+        while (wordsToConvert--)
+        {
+            uint16_t sample = *converter;
+            *converter = ((0x3F & sample) << 10) | ((0xFFC0 & sample) >> 6); // ror 6
+            converter++;
+        }
     }
 
     return outputBufferSize;
@@ -683,12 +754,19 @@ VkResult VulkanVideoProcessor::CreateParser(const char* filename,
 {
     static const VkExtensionProperties h264StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION };
     static const VkExtensionProperties h265StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION };
+#ifdef ENABLE_AV1_DECODER
+    static const VkExtensionProperties av1StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_SPEC_VERSION };
+#endif
 
     const VkExtensionProperties* pStdExtensionVersion = NULL;
     if (vkCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
         pStdExtensionVersion = &h264StdExtensionVersion;
     } else if (vkCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) {
         pStdExtensionVersion = &h265StdExtensionVersion;
+#ifdef ENABLE_AV1_DECODER
+    } else if (vkCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
+        pStdExtensionVersion = &av1StdExtensionVersion;
+#endif
     } else {
         assert(!"Unsupported Codec Type");
         return VK_ERROR_FORMAT_NOT_SUPPORTED;

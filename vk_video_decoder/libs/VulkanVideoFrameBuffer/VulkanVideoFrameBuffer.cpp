@@ -165,6 +165,8 @@ public:
     VkSharedBaseObj<VkVideoRefCountBase>  stdSps;
     // PPS
     VkSharedBaseObj<VkVideoRefCountBase>  stdPps;
+    // AV1 SPS
+    VkSharedBaseObj<VkVideoRefCountBase>  stdAv1Sps;
     // The bitstream Buffer
     VkSharedBaseObj<VkVideoRefCountBase>  bitstreamData;
 
@@ -478,6 +480,7 @@ public:
         m_perFrameDecodeImageSet[picId].stdPps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdPps);
         m_perFrameDecodeImageSet[picId].stdSps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdSps);
         m_perFrameDecodeImageSet[picId].stdVps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdVps);
+        m_perFrameDecodeImageSet[picId].stdAv1Sps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdAv1Sps);
         m_perFrameDecodeImageSet[picId].bitstreamData = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pBitstreamData);
 
         if (m_debug) {
@@ -594,6 +597,7 @@ public:
             m_perFrameDecodeImageSet[picId].stdPps = nullptr;
             m_perFrameDecodeImageSet[picId].stdSps = nullptr;
             m_perFrameDecodeImageSet[picId].stdVps = nullptr;
+            m_perFrameDecodeImageSet[picId].stdAv1Sps = nullptr;
             m_perFrameDecodeImageSet[picId].m_ownedByDisplay = false;
             m_perFrameDecodeImageSet[picId].Release();
 
@@ -914,6 +918,7 @@ void NvPerFrameDecodeResources::Deinit()
     stdPps = nullptr;
     stdSps = nullptr;
     stdVps = nullptr;
+    stdAv1Sps = nullptr;
 
     if (m_vkDevCtx == nullptr) {
         assert ((m_frameCompleteFence == VK_NULL_HANDLE) &&

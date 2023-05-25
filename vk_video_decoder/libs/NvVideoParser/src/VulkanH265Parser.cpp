@@ -1752,7 +1752,6 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
         int RIdx = idx - (delta_idx_minus1 + 1);
         assert(RIdx >= 0);
         const short_term_ref_pic_set_s *rstrps = &strpss[RIdx];
-        int useCount = 0;
         for (int j = 0; j <= (rstrps->NumNegativePics + rstrps->NumPositivePics); j++)
         {
             assert(j < MAX_NUM_STRPS_ENTRIES + 1);
@@ -1764,7 +1763,6 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
             if (use_delta_flag[j]) {
                 stdShortTermRefPicSet->use_delta_flag |= 1 << j;
             }
-            useCount += use_delta_flag[j];
         }
 
         {

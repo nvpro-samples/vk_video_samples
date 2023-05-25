@@ -23,6 +23,8 @@ set(LIBNVPARSER
   include/VulkanH264Decoder.h
   include/VulkanH265Decoder.h
   include/VulkanH26xDecoder.h
+  include/VulkanAV1Decoder.h
+  include/VulkanVP9Decoder.h
   include/VulkanVideoDecoder.h
   ../../../common/include/VkVideoCore/VkVideoRefCountBase.h
   ${VULKAN_VIDEO_PARSER_INCLUDE}/../NvVideoParser/nvVulkanVideoUtils.h
@@ -32,6 +34,9 @@ set(LIBNVPARSER
   ${VULKAN_VIDEO_PARSER_INCLUDE}/VulkanVideoParserIf.h
   src/VulkanH264Parser.cpp
   src/VulkanH265Parser.cpp
+  src/VulkanAV1Decoder.cpp
+  src/VulkanVP9Decoder.cpp
+  src/VulkanAV1GlobalMotionDec.cpp
   src/VulkanVideoDecoder.cpp
   src/nvVulkanh264ScalingList.cpp
 )

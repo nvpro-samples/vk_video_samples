@@ -17,6 +17,7 @@
 #include <array>
 #include <string>
 #include <vector>
+#include <atomic>
 
 #include "VkCodecUtils/FrameProcessorFactory.h"
 
@@ -38,12 +39,6 @@
                    << "File " << __FILE__ << "line " << __LINE__; \
         assert(false);                                            \
     }
-
-#ifndef ARRAYSIZE
-#define ARRAYSIZE(a) ((sizeof(a) / sizeof(a[0])))
-#endif
-
-#include <atomic>
 
 simplelogger::Logger* logger = simplelogger::LoggerFactory::CreateConsoleLogger();
 

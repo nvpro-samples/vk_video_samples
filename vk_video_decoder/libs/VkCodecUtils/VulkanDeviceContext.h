@@ -212,8 +212,12 @@ public:
                                                                    VK_QUEUE_VIDEO_ENCODE_BIT_KHR ),
                                 const VkWsiDisplay* pWsiDisplay = nullptr,
                                 const VkVideoCodecOperationFlagsKHR requestVideoDecodeQueueOperations =
-                                                                  (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
-                                                                   VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR),
+                                                                  (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR
+                                                                   | VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR
+#ifdef ENABLE_AV1_DECODER
+                                                                   | VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR
+#endif
+                                                                   ),
                                 const VkVideoCodecOperationFlagsKHR requestVideoEncodeQueueOperations =
                                                                   (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT |
                                                                    VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_EXT));

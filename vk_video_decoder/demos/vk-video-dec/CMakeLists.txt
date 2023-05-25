@@ -127,15 +127,11 @@ elseif(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
     list(APPEND libraries PRIVATE -ldl -lrt -lpthread)
 
     if(BUILD_WSI_XCB_SUPPORT AND DEMOS_WSI_SELECTION STREQUAL "XCB")
-        find_package(XCB REQUIRED)
-
         list(APPEND sources ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/ShellXcb.cpp ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/ShellXcb.h)
         list(APPEND definitions PRIVATE -DVK_USE_PLATFORM_XCB_KHR)
         list(APPEND includes PRIVATE ${XCB_INCLUDES})
         list(APPEND libraries PRIVATE ${XCB_LIBRARIES})
     elseif(BUILD_WSI_WAYLAND_SUPPORT AND DEMOS_WSI_SELECTION STREQUAL "WAYLAND")
-        find_package(Wayland REQUIRED)
-
         list(APPEND sources ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/ShellWayland.cpp ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/ShellWayland.h)
         list(APPEND definitions PRIVATE -DVK_USE_PLATFORM_WAYLAND_KHR)
         list(APPEND includes PRIVATE ${WAYLAND_CLIENT_INCLUDE_DIR})
@@ -160,3 +156,6 @@ target_link_libraries(vk-video-dec-test ${libraries})
 add_dependencies(vk-video-dec-test generate_helper_files)
 
 install(TARGETS vk-video-dec-test RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+include(CTest)
+add_test(NAME vk-video-dec-test COMMAND vk-video-dec-test)

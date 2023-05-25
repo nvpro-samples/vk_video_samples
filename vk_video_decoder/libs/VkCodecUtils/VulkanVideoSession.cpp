@@ -23,6 +23,8 @@
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkCodecUtils/VulkanVideoSession.h"
 
+static constexpr bool DEBUGGING = true;
+
 VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
                                     uint32_t            videoQueueFamily,
                                     VkVideoCoreProfile* pVideoProfile,
@@ -39,6 +41,9 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
     static const VkExtensionProperties h265DecodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION };
     static const VkExtensionProperties h264EncodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_ENCODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_ENCODE_SPEC_VERSION };
     static const VkExtensionProperties h265EncodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_ENCODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_ENCODE_SPEC_VERSION };
+#ifdef ENABLE_AV1_DECODER
+    static const VkExtensionProperties av1StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_SPEC_VERSION };
+#endif
 
     VkVideoSessionCreateInfoKHR& createInfo = pNewVideoSession->m_createInfo;
     createInfo.flags = 0;
@@ -46,7 +51,7 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
     createInfo.queueFamilyIndex = videoQueueFamily;
     createInfo.pictureFormat = pictureFormat;
     createInfo.maxCodedExtent = maxCodedExtent;
-    createInfo.maxDpbSlots = maxDpbSlots;
+    createInfo.maxDpbSlots =  maxDpbSlots;
     createInfo.maxActiveReferencePictures = maxActiveReferencePictures;
     createInfo.referencePictureFormat = referencePicturesFormat;
 
@@ -57,6 +62,11 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
     case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR:
         createInfo.pStdHeaderVersion = &h265DecodeStdExtensionVersion;
         break;
+#ifdef ENABLE_AV1_DECODER
+    case VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR:
+        createInfo.pStdHeaderVersion = &av1StdExtensionVersion;
+        break;
+#endif
     case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT:
         createInfo.pStdHeaderVersion = &h264EncodeStdExtensionVersion;
         break;
@@ -94,6 +104,8 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
     uint32_t decodeSessionBindMemoryCount = videoSessionMemoryRequirementsCount;
     VkBindVideoSessionMemoryInfoKHR decodeSessionBindMemory[MAX_BOUND_MEMORY];
 
+    uint64_t totalMemorySize = 0;
+
     for (uint32_t memIdx = 0; memIdx < decodeSessionBindMemoryCount; memIdx++) {
 
         uint32_t memoryTypeIndex = 0;
@@ -128,6 +140,7 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
         decodeSessionBindMemory[memIdx].memoryBindIndex = decodeSessionMemoryRequirements[memIdx].memoryBindIndex;
         decodeSessionBindMemory[memIdx].memoryOffset = 0;
         decodeSessionBindMemory[memIdx].memorySize = decodeSessionMemoryRequirements[memIdx].memoryRequirements.size;
+	totalMemorySize += decodeSessionMemoryRequirements[memIdx].memoryRequirements.size;
     }
 
     result = vkDevCtx->BindVideoSessionMemoryKHR(*vkDevCtx, pNewVideoSession->m_videoSession, decodeSessionBindMemoryCount,
@@ -135,13 +148,13 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
     assert(result == VK_SUCCESS);
 
     videoSession = pNewVideoSession;
+    if (DEBUGGING) {
+	printf(";;; app | video session: maxDpbSlots=%d maxActiveReferences=%d memorySizeMB=%.2f dqueueFamily=%d\n",
+	    maxDpbSlots, maxActiveReferencePictures, ((double)totalMemorySize / (1024.0f * 1024.0f)), videoQueueFamily);
+    }
 
     // Make sure we do not use dangling (on the stack) pointers
     createInfo.pNext = nullptr;
 
     return result;
 }
-
-
-
-

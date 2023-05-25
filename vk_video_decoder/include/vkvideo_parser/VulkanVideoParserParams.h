@@ -34,12 +34,15 @@ struct VkParserPerFrameDecodeParameters {
         MAX_DPB_REF_AND_SETUP_SLOTS = MAX_DPB_REF_SLOTS + 1, // plus 1 for the current picture (h.264 only)
     };
     int currPicIdx; /** Output index of the current picture                       */
+
     // VPS
     const StdVideoPictureParametersSet*     pStdVps;
     // SPS
     const StdVideoPictureParametersSet*     pStdSps;
     // PPS
     const StdVideoPictureParametersSet*     pStdPps;
+    // AV1 sequence parameter set
+    const StdVideoPictureParametersSet*     pStdAv1Sps;
 
     // inlined picture parameters that should be inserted to VkVideoBeginCodingInfo
     const void* beginCodingInfoPictureParametersExt;
@@ -48,13 +51,16 @@ struct VkParserPerFrameDecodeParameters {
     uint32_t firstSliceIndex;
     uint32_t numSlices;
     size_t bitstreamDataOffset; // bitstream data offset in bitstreamData buffer
-    size_t bitstreamDataLen;   /** Number of bytes in bitstream data buffer                  */
-    VkSharedBaseObj<VulkanBitstreamBuffer> bitstreamData; /** bitstream data for this picture (slice-layer) */
+    size_t bitstreamDataLen;   // Number of bytes in bitstream data buffer
+    VkSharedBaseObj<VulkanBitstreamBuffer> bitstreamData; // bitstream data for this picture (slice-layer)
     VkVideoDecodeInfoKHR decodeFrameInfo;
     VkVideoPictureResourceInfoKHR dpbSetupPictureResource;
     int32_t numGopReferenceSlots;
     int8_t pGopReferenceImagesIndexes[MAX_DPB_REF_AND_SETUP_SLOTS];
     VkVideoPictureResourceInfoKHR pictureResources[MAX_DPB_REF_AND_SETUP_SLOTS];
+
+	bool filmGrainEnabled;
+    bool isAV1;
 };
 
 struct VkParserFrameSyncinfo {
@@ -90,6 +96,7 @@ struct VkParserDecodePictureInfo {
     VkParserFrameSyncinfo frameSyncinfo;
     uint16_t videoFrameType; // VideoFrameType - use Vulkan codec specific type pd->CodecSpecific.h264.slice_type.
     uint16_t viewId; // HEVC nuh_layer_id & from pictureInfoH264->ext.mvcext.view_id
+    bool filmGrainEnabled;
 };
 
 struct VulkanVideoDisplayPictureInfo {
@@ -157,6 +164,7 @@ struct VkParserDetectedVideoFormat {
     } video_signal_description;
     uint32_t seqhdr_data_length; /** Additional bytes following (NVVIDEOFORMATEX)                  */
     uint32_t codecProfile;
+    bool filmGrainEnabled;
 };
 
 typedef enum {

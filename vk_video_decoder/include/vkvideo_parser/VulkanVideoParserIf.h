@@ -21,7 +21,10 @@
 #include "VkVideoCore/VkVideoRefCountBase.h"
 #include "vkvideo_parser/StdVideoPictureParametersSet.h"
 #include "VulkanBitstreamBuffer.h"
-#include "vk_video/vulkan_video_codecs_common.h"
+
+#ifndef DE_BUILD_VIDEO
+    #include "vk_video/vulkan_video_codecs_common.h"
+#endif
 
 #define NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_9 VK_MAKE_VIDEO_STD_VERSION(0, 9, 9)
 
@@ -363,8 +366,125 @@ typedef struct VkParserAv1GlobalMotionParameters {
     int8_t reserved[3];
 } VkParserAv1GlobalMotionParameters;
 
+typedef struct ExtraAV1Parameters {
+    uint32_t                primary_ref_frame; // if not 0 -- may not alloc a slot. Re-resolve this per frame per dpb index.
+    uint32_t                base_q_index;
+    bool                    disable_frame_end_update_cdf;
+    bool                    segmentation_enabled;
+    uint32_t                frame_type;
+    uint8_t                 order_hint;
+    uint8_t                 ref_order_hint[8];
+    int8_t                  RefFrameSignBias[8];
+} ExtraAV1Parameters;
+
+/*
+#define GM_GLOBAL_MODELS_PER_FRAME  7
+
+// global motion
+typedef enum _AV1_TRANSFORMATION_TYPE
+{
+    IDENTITY          = 0,        // identity transformation, 0-parameter
+    TRANSLATION       = 1,        // translational motion 2-parameter
+    ROTZOOM           = 2,        // simplified affine with rotation + zoom only, 4-parameter
+    AFFINE            = 3,        // affine, 6-parameter
+    TRANS_TYPES,
+} AV1_TRANSFORMATION_TYPE;
+
+struct AV1WarpedMotionParams 
+{
+  AV1_TRANSFORMATION_TYPE wmtype;
+  int32_t wmmat[6];
+  int8_t invalid;
+};
+
+typedef struct _av1_film_grain_s {
+    uint16_t        apply_grain              : 1;
+    uint16_t        update_grain             : 1;
+    uint16_t        scaling_shift_minus8     : 2;
+    uint16_t        chroma_scaling_from_luma : 1;
+    uint16_t        overlap_flag             : 1;
+    uint16_t        ar_coeff_shift_minus6    : 2;
+    uint16_t        ar_coeff_lag             : 2;
+    uint16_t        grain_scale_shift        : 2;
+    uint16_t        clip_to_restricted_range : 1;
+    uint16_t        reserved                 : 3;
+
+    uint16_t        grain_seed;
+
+    uint8_t         num_y_points;
+    uint8_t         scaling_points_y[14][2];
+    uint8_t         num_cb_points;
+    uint8_t         scaling_points_cb[10][2];
+    uint8_t         num_cr_points;
+    uint8_t         scaling_points_cr[10][2];
+
+    int16_t         ar_coeffs_y[24];
+    int16_t         ar_coeffs_cb[25];
+    int16_t         ar_coeffs_cr[25];
+    uint8_t         cb_mult;       // 8 bits
+    uint8_t         cb_luma_mult;  // 8 bits
+    int16_t         cb_offset;    // 9 bits
+    uint8_t         cr_mult;       // 8 bits
+    uint8_t         cr_luma_mult;  // 8 bits
+    int16_t         cr_offset;    // 9 bits
+} av1_film_grain_s;
+
+typedef struct _GlobalMotionParams {
+    uint32_t        wmtype;
+    int32_t         wmmat[6];
+    int8_t          invalid;
+    int8_t          reserved[3];
+} GlobalMotionParams;
+
+typedef struct _av1_ref_frames_s
+{
+    VkPicIf*                buffer;
+    VkPicIf*                fgs_buffer;
+    StdVideoAV1FrameType    frame_type;
+    av1_film_grain_s        film_grain_params;
+    AV1WarpedMotionParams   global_models[GM_GLOBAL_MODELS_PER_FRAME];
+    int8_t                  lf_ref_delta[NUM_REF_FRAMES];
+    int8_t                  lf_mode_delta[2];
+    bool                    showable_frame;
+    struct
+    {
+        int16_t             feature_enable[8][8];
+        int16_t             feature_data[8][8];
+        int32_t             last_active_id;
+        uint8_t             preskip_id;
+        uint8_t             reserved[3];
+    } seg;
+
+    // Temporary variables.
+    uint32_t                primary_ref_frame; // if not 0 -- may not alloc a slot. Re-resolve this per frame per dpb index.
+    uint32_t                base_q_index;
+    bool                    disable_frame_end_update_cdf;
+    bool                    segmentation_enabled;
+
+    // 
+    //int32_t                 ref_frame_map;
+    //int32_t                 ref_frame_id;
+    //int32_t                 RefValid;
+    //int32_t                 ref_frame_idx;
+    //int32_t                 active_ref_idx;
+    //
+    //int32_t                 RefOrderHint;
+} av1_ref_frames_s;*/
+
 typedef struct VkParserAv1PictureData {
-    VkPicIf* pDecodePic;
+    const StdVideoPictureParametersSet*     pStdSps;
+
+
+    //VkPicIf* RefPics[8]; // Read directly from ref_frame_map
+    int32_t PicOrderCntVal[8]; // Populated in the loop in FillDpbAV1State.
+
+    int32_t NumPocStCurrBefore; // Data is: ARRAYSIZE(pStdPictureInfo->pFrameHeader->ref_frame_idx);
+    int32_t RefPicSetStCurrBefore[8]; // Unpopulated, why is this needed?
+    int32_t NumPocStCurrAfter; // Data is: ARRAYSIZE(pStdPictureInfo->pFrameHeader->ref_frame_idx);
+    int32_t RefPicSetStCurrAfter[8]; // Unpopulated, why is this needed?
+    int32_t NumPocLtCurr; // Data is: ARRAYSIZE(pStdPictureInfo->pFrameHeader->ref_frame_idx); 
+    int32_t RefPicSetLtCurr[8]; // Unpopulated, why is this needed?
+
     uint32_t width;
     uint32_t superres_width;
     uint32_t height;
@@ -378,25 +498,12 @@ typedef struct VkParserAv1PictureData {
         subsampling_y : 1; // (subsampling_x, _y) 1,1 = 420, 1,0 = 422, 0,0 = 444
     uint32_t mono_chrome : 1;
     uint32_t bit_depth_minus8 : 4;
-    uint32_t enable_filter_intra : 1; // tool enable in seq level, 0 : disable 1:
-        // frame header control
-    uint32_t enable_intra_edge_filter : 1;
-    uint32_t enable_interintra_compound : 1;
-    uint32_t enable_masked_compound : 1;
-    uint32_t enable_dual_filter : 1; // enable or disable vertical and horiz
-        // filter selection
-    uint32_t enable_order_hint : 1; // 0 - disable order hint, and related tools
-    uint32_t order_hint_bits_minus1 : 3; // is used to compute OrderHintBits
-    uint32_t enable_jnt_comp : 1; // 0 - disable joint compound modes
-    uint32_t enable_superres : 1;
-    uint32_t enable_cdef : 1;
-    uint32_t enable_restoration : 1;
     uint32_t enable_fgs : 1;
-    uint32_t reserved0 : 7;
+    uint32_t reserved0 : 4;
 
     // frame header
     uint32_t frame_type : 2; // Key frame, Inter frame, intra only, s-frame
-    uint32_t show_frame : 1; // Key frame, Inter frame, intra only, s-frame
+    uint32_t show_frame : 1; // Whether to show or use as a forward keyframe
     uint32_t error_resilient_mode : 1;
     uint32_t disable_cdf_update : 1; // disable CDF update during symbol decoding
     uint32_t allow_screen_content_tools : 1; // screen content tool enable
@@ -404,6 +511,7 @@ typedef struct VkParserAv1PictureData {
     uint32_t coded_denom : 3; // The denominator minus9  of the superres scale
     uint32_t allow_intrabc : 1; // IBC enable
     uint32_t allow_high_precision_mv : 1; // 1/8 precision mv enable
+    uint32_t is_filter_switchable : 1;
     uint32_t interp_filter : 3; // interpolation filter : EIGHTTAP_REGULAR,....
     uint32_t switchable_motion_mode : 1; // 0 : simple motion mode, 1 : SIMPLE,
         // OBMC, LOCAL  WARP
@@ -427,13 +535,16 @@ typedef struct VkParserAv1PictureData {
         coded_lossless : 1; // 1 means all segments use lossless coding.Framem is
         // fully lossless, CDEF/DBF will disable
     uint32_t use_superres : 1; // frame level frame for using_superres
-    uint32_t reserved1 : 4;
+    uint32_t reserved1 : 3;
 
     uint32_t num_tile_cols : 8; // horizontal tile numbers in frame, max is 64
     uint32_t num_tile_rows : 8; // vertical tile numbers in frame, max is 64
     uint32_t context_update_tile_id : 16; // which tile cdf will be seleted as
+    uint32_t tile_size_bytes_minus_1 : 2;
         // the backward update CDF,
         // MAXTILEROW=64, MAXTILECOL=64, 12bits
+    uint16_t tile_width_in_sbs_minus_1[65]; // valid for 0 <= i <= tile_cols
+    uint16_t tile_height_in_sbs_minus_1[65]; // valid for 0 <= i <= tile_cols
     uint16_t tile_row_start_sb[65]; // valid for 0 <= i <= tile_rows
     uint16_t tile_col_start_sb[65]; // valid for 0 <= i <= tile_cols
     uint32_t cdef_damping_minus_3 : 2; // controls the amount of damping in the
@@ -449,7 +560,10 @@ typedef struct VkParserAv1PictureData {
     uint32_t reduced_tx_set : 1; // whether the frame is  restricted to oa reduced
         // subset of the full set of transform types
     uint32_t loop_filter_delta_enabled : 1;
-    uint32_t reserved2 : 13; // reserved bits
+    uint32_t loop_filter_delta_update : 1;
+    uint32_t uniform_tile_spacing_flag : 1;
+    uint32_t enable_order_hint : 1;
+    uint32_t reserved2 : 11; // reserved bits
 
     // Quantization
     uint8_t base_qindex; // the maximum qp is 255
@@ -489,8 +603,11 @@ typedef struct VkParserAv1PictureData {
     int8_t loop_filter_mode_deltas[2];
 
     // loop restoration
-    uint8_t lr_type[3]; // 0: NONE, 1: WIENER, 2: SGR, 3: SWITCHABLE
+    uint8_t lr_type[3];
+    uint8_t FrameRestorationType[3]; // 0: NONE, 1: WIENER, 2: SGR, 3: SWITCHABLE
     uint8_t lr_unit_size[3]; // 0: 32,   1: 64,     2: 128, 3: 256
+    uint8_t lr_unit_shift;
+    uint8_t lr_uv_shift;
 
     uint8_t temporal_layer_id : 4; // temporal layer id
     uint8_t spatial_layer_id : 4; // spatial layer id
@@ -501,10 +618,18 @@ typedef struct VkParserAv1PictureData {
     // order: Last frame,Last2 frame,Last3 frame,Golden frame,BWDREF frame,ALTREF2
     // frame,ALTREF frame
     uint8_t primary_ref_frame;
-    uint8_t ref_frame[7];
-    VkPicIf* ref_frame_map[8];
+    uint8_t ref_frame_idx[7];
+    VkPicIf* ref_frame_picture[8]; // The "VBI" in the AV1 spec, with the indices mapped to picture resources.
+    uint8_t ref_order_hint[8];
+
+    //av1_ref_frames_s* refFrameParams;
+    ExtraAV1Parameters refFrameParams[8];
+
+    uint8_t refresh_frame_flags;
 
     VkParserAv1GlobalMotionParameters ref_global_motion[7];
+    
+    int slice_offsets_and_size[256]; // Max AV1 tiles (128) * 2
 } VkParserAv1PictureData;
 
 typedef struct VkParserPictureData {
@@ -601,6 +726,7 @@ typedef struct VkParserSequenceInfo {
     uint8_t* pbSideData; // Auxiliary encryption information
     uint32_t cbSideData; // Auxiliary encryption information length
     uint32_t codecProfile;
+    bool filmGrainEnabled;
 } VkParserSequenceInfo;
 
 enum {
@@ -645,7 +771,7 @@ public:
         const uint8_t* pbData, size_t cbData)
         = 0; // Called for custom NAL parsing (not required)
     virtual uint32_t GetDecodeCaps() { return 0; } // NVD_CAPS_XXX
-    virtual int32_t GetOperatingPoint(VkParserOperatingPointInfo* pOPInfo)
+    virtual int32_t GetOperatingPoint(VkParserOperatingPointInfo*)
     {
         return 0;
     } // called from sequence header of av1 scalable video streams

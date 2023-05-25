@@ -308,6 +308,9 @@ public:
     #ifdef VK_EXT_video_decode_vp9
         case AV_CODEC_ID_VP9        : return VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR;
     #endif // VK_EXT_video_decode_vp9
+    #ifdef vulkan_video_codec_av1std_decode
+		case AV_CODEC_ID_AV1        : return VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR;
+    #endif
         case AV_CODEC_ID_MJPEG      : assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
         default                     : assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
         }
@@ -411,6 +414,18 @@ public:
                         break;
                     default:
                         std::cerr << "\nInvalid h.265 profile: " << profile << std::endl;
+                }
+            }
+            break;
+            case VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR:
+            {
+                switch(profile) {
+                    case STD_VIDEO_AV1_PROFILE_MAIN:
+                    case STD_VIDEO_AV1_PROFILE_HIGH:
+                    case STD_VIDEO_AV1_PROFILE_PROFESSIONAL:
+                        break;
+                    default:
+                        std::cerr << "\nInvalid AV1 profile: " << profile << std::endl;
                 }
             }
             break;

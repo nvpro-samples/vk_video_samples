@@ -213,6 +213,11 @@ struct hevc_seq_param_s : public StdVideoPictureParametersSet, public StdVideoH2
         return -1;
     }
 
+    virtual int32_t GetAv1SpsId(bool& isSps) const {
+        isSps = false;
+        return -1;
+    }
+
     virtual const StdVideoH265SequenceParameterSet* GetStdH265Sps() const { return this; }
 
     operator StdVideoH265SequenceParameterSet*() { return this; }
@@ -265,7 +270,7 @@ struct hevc_seq_param_s : public StdVideoPictureParametersSet, public StdVideoH2
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 
-    static bool UpdateStdVui(const hevc_seq_param_s* pSps, StdVideoH265SequenceParameterSetVui* pStdVui)
+    static bool UpdateStdVui(const hevc_seq_param_s* pSps, StdVideoH265SequenceParameterSetVui* /*pStdVui*/)
     {
         if (pSps->flags.vui_parameters_present_flag) {
 
@@ -383,6 +388,11 @@ struct hevc_pic_param_s : public StdVideoPictureParametersSet, public StdVideoH2
     virtual int32_t GetPpsId(bool& isPps) const {
         isPps = true;
         return pps_pic_parameter_set_id;
+    }
+
+    virtual int32_t GetAv1SpsId(bool& isSps) const {
+        isSps = false;
+        return -1;
     }
 
     virtual const StdVideoH265PictureParameterSet* GetStdH265Pps() const { return this; }
@@ -515,6 +525,11 @@ struct hevc_video_param_s : public StdVideoPictureParametersSet, public StdVideo
 
     virtual int32_t GetPpsId(bool& isPps) const {
         isPps = false;
+        return -1;
+    }
+
+    virtual int32_t GetAv1SpsId(bool& isSps) const {
+        isSps = false;
         return -1;
     }
 

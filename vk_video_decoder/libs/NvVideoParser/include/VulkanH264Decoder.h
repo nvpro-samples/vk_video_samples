@@ -153,6 +153,10 @@ struct seq_parameter_set_s : public StdVideoPictureParametersSet, public StdVide
         isPps = false;
         return -1;
     }
+    virtual int32_t GetAv1SpsId(bool& isSps) const {
+        isSps = false;
+        return -1;
+    }
 
     virtual const char* GetRefClassId() const { return m_refClassId; }
 
@@ -430,6 +434,11 @@ struct pic_parameter_set_s : public StdVideoPictureParametersSet, public StdVide
     virtual int32_t GetPpsId(bool& isPps) const {
         isPps = true;
         return pic_parameter_set_id;
+    }
+
+    virtual int32_t GetAv1SpsId(bool& isSps) const {
+        isSps = false;
+        return 0;
     }
 
     virtual const StdVideoH264PictureParameterSet* GetStdH264Pps() const { return this; }

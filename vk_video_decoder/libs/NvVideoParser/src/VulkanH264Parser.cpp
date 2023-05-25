@@ -331,7 +331,6 @@ bool VulkanH264Decoder::BeginPicture(VkParserPictureData *pnvpd)
             }
         }
         memset(&h264->dpb, 0, sizeof(h264->dpb));
-        int32_t not_existing_refs = 0;
         for (int32_t i = 0; i < MAX_DPB_SIZE; i++) {
             // Check dpb consistency
             assert((dpb[i].state & 1) || (dpb[i].top_field_marking == 0));
@@ -349,7 +348,6 @@ bool VulkanH264Decoder::BeginPicture(VkParserPictureData *pnvpd)
                 h264->dpb[i].FrameIdx = h264->dpb[i].is_long_term ? dpb[i].LongTermFrameIdx : dpb[i].FrameNum;
                 h264->dpb[i].FieldOrderCnt[0] = dpb[i].TopFieldOrderCnt;
                 h264->dpb[i].FieldOrderCnt[1] = dpb[i].BottomFieldOrderCnt;
-                not_existing_refs += dpb[i].not_existing;
             }
         }
         m_idr_found_flag |= (slh->nal_unit_type == 5) || (slh->nal_unit_type == 20 && !(slh->nhe.mvc.non_idr_flag));
@@ -1828,8 +1826,8 @@ bool VulkanH264Decoder::seq_parameter_set_mvc_extension_rbsp(int32_t sps_id)
     bTmp = u(1); // mvc_vui_parameters_present_flag, should always be 0;
     bTmp = u(1); // additional_extension2_flag
 
-    // silent warnings about unused bTmp.
-    bTmp = bTmp;
+    // silence warnings about unused bTmp.
+    (void)bTmp;
 
     m_pParserData->spsmes[m_last_sps_id].release();
     m_pParserData->spsmes[m_last_sps_id] = spstmp;
