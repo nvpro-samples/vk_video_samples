@@ -98,7 +98,6 @@ public:
     VkSamplerYcbcrModelConversion         m_samplerYcbcrModelConversion;
     VkSamplerYcbcrRange                   m_samplerYcbcrRange;
     vulkanVideoUtils::VkVideoAppCtx*      m_videoRenderer;
-    uint64_t                              m_lastRealTimeNsecs;
     bool                                  m_codecPaused;
     VkQueue                               m_gfxQueue;
     VkFormat                              m_vkFormat;

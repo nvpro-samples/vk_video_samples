@@ -1644,14 +1644,14 @@ bool VulkanVideoParser::UpdatePictureParameters(
 
     if (m_decoderHandler == NULL) {
         assert(!"m_pDecoderHandler is NULL");
-        return NULL;
+        return false;
     }
 
     if (pictureParametersObject) {
         return m_decoderHandler->UpdatePictureParameters(pictureParametersObject, client);
     }
 
-    return NULL;
+    return false;
 }
 
 bool VulkanVideoParser::DecodePicture(

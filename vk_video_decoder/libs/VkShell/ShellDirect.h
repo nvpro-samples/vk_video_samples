@@ -28,7 +28,7 @@ public:
 
     static const char* GetRequiredInstanceExtension();
     static const std::vector<VkExtensionProperties>& GetRequiredInstanceExtensions();
-    virtual bool PhysDeviceCanPresent(VkPhysicalDevice physicalDevice, uint32_t presentQueueFamily) const;
+    virtual bool PhysDeviceCanPresent(VkPhysicalDevice physicalDevice, uint32_t presentQueueFamily) const override;
     virtual void RunLoop() override;
     virtual void QuitLoop() override;
 

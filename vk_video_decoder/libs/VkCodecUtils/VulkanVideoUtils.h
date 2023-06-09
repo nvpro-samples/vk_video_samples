@@ -1013,8 +1013,6 @@ public:
     VulkanRenderInfo()
       : currentBuffer(0),
         lastBuffer(0xFFFFFFFF),
-        lastRealTimeNsecs(0),
-        frameTimeNsecs(0),
         totalFrames(0),
         skippedFrames(0),
         frameId(0),
@@ -1083,8 +1081,6 @@ public:
 private:
     uint32_t currentBuffer;
     uint32_t lastBuffer;
-    uint64_t lastRealTimeNsecs;
-    uint64_t frameTimeNsecs;
     uint64_t totalFrames;
     uint32_t skippedFrames;
     uint32_t frameId;

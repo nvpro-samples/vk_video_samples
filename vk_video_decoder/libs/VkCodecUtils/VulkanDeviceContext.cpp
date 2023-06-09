@@ -341,6 +341,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
         bool videodecodequeryResultStatus = false;
         VkQueueFlags foundQueueTypes = 0;
         int gfxQueueFamily = -1,
+            computeQueueFamily = -1,
             presentQueueFamily = -1,
             videoDecodeQueueFamily = -1,
             videoDecodeQueueCount  = 0,
@@ -359,6 +360,13 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                     (queue.queueFamilyProperties.queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
                 gfxQueueFamily = i;
                 foundQueueTypes |= VK_QUEUE_GRAPHICS_BIT;
+            }
+
+            // requires only COMPUTE for frameProcessor queues
+            if ((requestQueueTypes & VK_QUEUE_COMPUTE_BIT) && (computeQueueFamily < 0) &&
+                    (queue.queueFamilyProperties.queueFlags & VK_QUEUE_COMPUTE_BIT)) {
+                computeQueueFamily = i;
+                foundQueueTypes |= VK_QUEUE_COMPUTE_BIT;
             }
 
             const VkQueueFamilyVideoPropertiesKHR &videoQueue = videoQueues[i];
@@ -393,6 +401,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                 // Selected a physical device
                 m_physDevice = physicalDevice;
                 m_gfxQueueFamily = gfxQueueFamily;
+                m_computeQueueFamily = computeQueueFamily;
                 m_presentQueueFamily = presentQueueFamily;
                 m_videoDecodeQueueFamily = videoDecodeQueueFamily;
                 m_videoDecodeNumQueues = videoDecodeQueueCount;

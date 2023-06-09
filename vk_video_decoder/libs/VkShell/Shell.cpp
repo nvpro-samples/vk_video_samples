@@ -28,8 +28,7 @@ Shell::Shell(const VulkanDeviceContext* devCtx, VkSharedBaseObj<FrameProcessor>&
     : m_refCount(0)
     , m_frameProcessor(frameProcessor)
     , m_settings(frameProcessor->GetSettings())
-    , m_ctx(devCtx), m_tick(1.0f / m_settings.ticksPerSecond)
-    , m_time(m_tick) { }
+    , m_ctx(devCtx) { }
 
 Shell::AcquireBuffer::AcquireBuffer()
     : m_vkDevCtx(nullptr)

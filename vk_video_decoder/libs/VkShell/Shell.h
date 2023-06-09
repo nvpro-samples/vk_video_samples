@@ -198,9 +198,6 @@ private:
 
 protected:
     Context m_ctx;
-private:
-    const float m_tick;
-    float       m_time;
 };
 
 #endif  // SHELL_H

@@ -3,6 +3,8 @@
 # to the root binary directory of the project as ${VULKAN_BINARY_DIR}.
 cmake_minimum_required(VERSION 2.8.11)
 
+include(CheckCXXCompilerFlag)
+
 # This must come before the project command.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.12" CACHE STRING "Minimum OS X deployment version")
 
@@ -237,10 +239,12 @@ if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     set(COMMON_COMPILE_FLAGS "-Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers")
     set(COMMON_COMPILE_FLAGS "${COMMON_COMPILE_FLAGS} -fno-strict-aliasing -fno-builtin-memcmp")
 
-    # For GCC version 7.1 or greater, we need to disable the implicit fallthrough warning since
-    # there's no consistent way to satisfy all compilers until they all accept the C++17 standard
-    if (CMAKE_COMPILER_IS_GNUCC AND NOT (CMAKE_CXX_COMPILER_VERSION LESS 7.1))
-        set(COMMON_COMPILE_FLAGS "${COMMON_COMPILE_FLAGS} -Wimplicit-fallthrough=0")
+    # These flags are not supported on Windows and some older version of GCC
+    # that our bots use.
+    # Warning about implicit fallthrough in switch blocks
+    check_cxx_compiler_flag(-Wimplicit-fallthrough COMPILER_SUPPORTS_FALLTHROUGH_WARNING)
+    if (COMPILER_SUPPORTS_FALLTHROUGH_WARNING)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wimplicit-fallthrough")
     endif()
 
     if (APPLE)

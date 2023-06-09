@@ -57,7 +57,6 @@ VulkanFrame::VulkanFrame(const ProgramConfig& programConfig,
     , m_samplerYcbcrModelConversion(VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709)
     , m_samplerYcbcrRange(VK_SAMPLER_YCBCR_RANGE_ITU_NARROW)
     , m_videoRenderer(nullptr)
-    , m_lastRealTimeNsecs(0)
     , m_codecPaused(false)
     , m_gfxQueue()
     , m_vkFormat()
