@@ -20,8 +20,8 @@
 #include <assert.h>
 #include <stdint.h>
 
-#include "VkVideoCore/VkVideoRefCountBase.h"
-#include "VulkanVideoParser.h"
+#include "VkCodecUtils/VkVideoRefCountBase.h"
+#include "vkvideo_parser/VulkanVideoParser.h"
 #include "vulkan_interfaces.h"
 #include "VkCodecUtils/VkImageResource.h"
 
@@ -158,6 +158,9 @@ public:
                                                    VkVideoPictureResourceInfoKHR* outputPictureResource = nullptr,
                                                    PictureResourceInfo* outputPictureResourceInfo = nullptr,
                                                    VkImageLayout newOutputImageLayerLayout = VK_IMAGE_LAYOUT_MAX_ENUM) = 0;
+    virtual int32_t GetCurrentImageResourceByIndex(int8_t referenceSlotIndex,
+                                                   VkSharedBaseObj<VkImageResourceView>& decodedImageView,
+                                                   VkSharedBaseObj<VkImageResourceView>& outputImageView) = 0;
     virtual int32_t ReleaseImageResources(uint32_t numResources, const uint32_t* indexes) = 0;
     virtual uint64_t SetPicNumInDecodeOrder(int32_t picId, uint64_t picNumInDecodeOrder) = 0;
     virtual int32_t SetPicNumInDisplayOrder(int32_t picId, int32_t picNumInDisplayOrder) = 0;

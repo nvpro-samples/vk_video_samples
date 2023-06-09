@@ -1,5 +1,5 @@
 /*
-* Copyright 2020 NVIDIA Corporation.
+* Copyright 2023 NVIDIA Corporation.
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -16,6 +16,11 @@
 
 #ifndef YCBCR_UTILS_H_
 #define YCBCR_UTILS_H_
+
+#include <string.h>
+#include <cassert>
+#include <math.h>
+#include <sstream>
 
 typedef enum YCBCR_PLANES_LAYOUT {
     YCBCR_SINGLE_PLANE_UNNORMALIZED       = 0, // Single unnormalized plane;
@@ -364,7 +369,7 @@ public:
             m_deNormalizeShift[cY] = yBitAdjOffset;
 
             m_normalizeScale[cY]   = ((double)renormalizeScaleValue)/narrowYdiv;
-            m_normalizeShift[cY]   = -(((double)yBitAdjOffset)/narrowYdiv);
+            m_normalizeShift[cY]   = -(((double)yBitAdjOffset)/renormalizeScaleValue);
 
             // CbCr parameters.
 
@@ -383,7 +388,7 @@ public:
             // m_deNormalizeShift[cCb] = m_deNormalizeShift[cCb] = cbCrBitAdjOffset;
 
             m_normalizeScale[cCr] = m_normalizeScale[cCb] = ((double)renormalizeScaleValue)/narrowCbCrdiv;
-            m_normalizeShift[cCr] = m_normalizeShift[cCb] = -(((double)cbCrBitAdjOffset)/narrowCbCrdiv);
+            m_normalizeShift[cCr] = m_normalizeShift[cCb] = -(((double)(cbCrMin))/renormalizeScaleValue);
         }
         break;
         default:
@@ -447,6 +452,21 @@ public:
         if (clamp) {
             clampNormalizedValues(normColor, normColor);
         }
+    }
+
+    void NormalizeYCbCrString(std::stringstream& outStr, const char* prependLine = "    ") const
+    {
+        // TODO:  No gamma correction yet.
+        outStr << prependLine << "const vec3 normalizeShiftYCbCr  = vec3(" <<
+                                                                  (float)m_normalizeShift[cY]  << ", " <<
+                                                                  (float)m_normalizeShift[cCb] << ", " <<
+                                                                  (float)m_normalizeShift[cCr] << ");\n";
+        outStr << prependLine << "const vec3 m_normalizeScaleYCbCr  = vec3(" <<
+                                                                  (float)m_normalizeScale[cY]  << ", " <<
+                                                                  (float)m_normalizeScale[cCb] << ", " <<
+                                                                  (float)m_normalizeScale[cCr] << ");\n";
+
+        outStr << prependLine << "yuvNorm = ((yuv + normalizeShiftYCbCr) * m_normalizeScaleYCbCr);\n";
     }
 
 private:
@@ -585,6 +605,38 @@ public:
         return 0;
     }
 
+    std::stringstream&  ConvertRgbToYCbCrString(std::stringstream& outStr, const char* prependLine = "    ",
+                                                YcbcrColorMap* yuvMap = NULL,
+                                                RgbColorMap* rgbMap = NULL) const
+    {
+        // TODO:  No gamma correction yet.
+        if (yuvMap && rgbMap) {
+            outStr << prependLine << "yuv[" << yuvMap->mcY << "]  = " << (float)m_Kr  << " * rgb[" << rgbMap->mcR << "] + " <<
+                                                          (float)m_Kg  << " * rgb[" << rgbMap->mcG << "] + " <<
+                                                          (float)m_Kb  << " * rgb[" << rgbMap->mcB << ";\n";
+            outStr << prependLine << "yuv[" << yuvMap->mcCb << "] = " << (float)m_KCb << " * (rgb[" << rgbMap->mcB << "] - yuv[" << yuvMap->mcY << "]);\n";
+            outStr << prependLine << "yuv[" << yuvMap->mcCr << "] = " << (float)m_KCr << " * (rgb[" << rgbMap->mcR << "] - yuv[" << yuvMap->mcY << "]);\n";
+        } else {
+            outStr << prependLine << "yuv[" << cY << "]  = " << (float)m_Kr << " * rgb[" << cR << "] + " <<
+                                                 (float)m_Kg << " * rgb[" << cG << "] + " <<
+                                                 (float)m_Kb << " * rgb[" << cB << "];\n";
+            outStr << prependLine << "yuv[" << cCb << "] = " << (float)m_KCb << " * (rgb[" << cB << "] - yuv[" << cY << "]);\n";
+            outStr << prependLine << "yuv[" << cCr << "] = " << (float)m_KCr << " * (rgb[" << cR << "] - yuv[" << cY << "]);\n";
+        }
+        return outStr;
+    }
+
+    std::stringstream&  ConvertRgbToYCbCrDiscreteChString(std::stringstream& outStr, const char* prependLine = "    ") const
+    {
+        // TODO:  No gamma correction yet.
+        outStr << prependLine << "y  = " << (float)m_Kr << " * r + " <<
+                             (float)m_Kg << " * g + " <<
+                             (float)m_Kb << " * b;\n";
+        outStr << prependLine << "cb = " << (float)m_KCb << " * (b - y);\n";
+        outStr << prependLine << "cr = " << (float)m_KCr << " * (r - y);\n";
+        return outStr;
+    }
+
     int32_t ConvertRgbToYcbcr2(float yuv[3], const float rgb[3]) const
     {
 
@@ -615,6 +667,36 @@ public:
         }
 
         return 0;
+    }
+
+    void ConvertYCbCrToRgbString(std::stringstream& outStr, const char* prependLine = "    ",
+                                               YcbcrColorMap* yuvMap = NULL,
+                                               RgbColorMap* rgbMap = NULL) const
+    {
+        if (yuvMap && rgbMap) {
+            outStr << prependLine << "rgb[" << rgbMap->mcR << "] = yuv[" << yuvMap->mcY << "] + yuv[" << yuvMap->mcCr << "] * " << (float)m_RCrK << ";\n";
+            outStr << prependLine << "rgb[" << rgbMap->mcG << "] = yuv[" << yuvMap->mcY << "] - yuv[" << yuvMap->mcCb << "] * " << (float)m_GCbK <<
+                                                                             " - yuv[" << yuvMap->mcCr << "] * " << (float)m_GCrK << ";\n";
+            outStr << prependLine << "rgb[" << rgbMap->mcB << "] = yuv[" << yuvMap->mcY << "] + yuv[" << yuvMap->mcCb << "] * " << (float)m_BCbK << ";\n";
+        } else {
+            outStr << prependLine << "rgb[" << cR << "] = yuv[" << cY << "] + yuv[" << cCr << "] * " << (float)m_RCrK << ";\n";
+            outStr << prependLine << "rgb[" << cG << "] = yuv[" << cY << "] - yuv[" << cCb << "] * " << (float)m_GCbK <<
+                                                           " - yuv[" << cCr << "] * " << (float)m_GCrK << ";\n";
+            outStr << prependLine << "rgb[" << cB << "] = yuv[" << cY << "] + yuv[" << cCb << "] * " << (float)m_BCbK << ";\n";
+        }
+
+        // TODO:  No gamma correction yet.
+    }
+
+    std::stringstream&  ConvertYCbCrToRgbDiscreteChString(std::stringstream& outStr, const char* prependLine = "    ") const
+    {
+        outStr << prependLine << "r = y + cr * " << (float)m_RCrK << ";\n";
+        outStr << prependLine << "g = y - cb * " << (float)m_GCbK <<
+                       " - cr * " << (float)m_GCrK << ";\n";
+        outStr << prependLine << "b = y + cb * " << (float)m_BCbK << ";\n";
+
+        // TODO:  No gamma correction yet.
+        return outStr;
     }
 
 #ifdef ENABLE_YCBCR_DUMPS

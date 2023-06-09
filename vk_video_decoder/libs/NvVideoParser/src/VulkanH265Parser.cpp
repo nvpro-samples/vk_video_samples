@@ -21,7 +21,7 @@
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include <limits>
-#include "VulkanVideoParserIf.h"
+#include "vkvideo_parser/VulkanVideoParserIf.h"
 #include "nvVulkanh265ScalingList.h"
 #include "VulkanH265Decoder.h"
 #include "nvVulkanVideoUtils.h"
@@ -991,7 +991,7 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
     if (vps->flags.vps_timing_info_present_flag != 0)
     {
         vps->vps_num_units_in_tick = u(16);
-        vps->vps_num_units_in_tick <<= 16;;
+        vps->vps_num_units_in_tick <<= 16;
         vps->vps_num_units_in_tick += u(16);
         vps->vps_time_scale = u(16);
         vps->vps_time_scale <<= 16;

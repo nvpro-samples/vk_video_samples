@@ -21,7 +21,7 @@
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include <stdio.h>
-#include "VulkanVideoParserIf.h"
+#include "vkvideo_parser/VulkanVideoParserIf.h"
 #include "VulkanH264Decoder.h"
 #include "nvVulkanVideoUtils.h"
 #include "nvVulkanh264ScalingList.h"

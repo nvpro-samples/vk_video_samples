@@ -25,14 +25,14 @@
 #include <iostream>
 #include <queue> // std::queue
 
-#include "VulkanVideoParserIf.h"
+#include "vkvideo_parser/VulkanVideoParserIf.h"
 #include "NvVideoParser/nvVulkanVideoParser.h"
 #include "NvVideoParser/nvVulkanVideoUtils.h"
-#include "PictureBufferBase.h"
+#include "vkvideo_parser/PictureBufferBase.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
-#include "StdVideoPictureParametersSet.h"
+#include "vkvideo_parser/StdVideoPictureParametersSet.h"
 
-#include "VulkanVideoParser.h"
+#include "vkvideo_parser/VulkanVideoParser.h"
 
 #undef min
 #undef max

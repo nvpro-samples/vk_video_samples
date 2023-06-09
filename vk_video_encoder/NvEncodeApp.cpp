@@ -574,7 +574,7 @@ int32_t EncodeApp::initEncoder(EncodeConfig* encodeConfig)
 int32_t EncodeApp::initRateControl(VkCommandBuffer cmdBuf, uint32_t qp)
 {
     VkVideoBeginCodingInfoKHR encodeBeginInfo = {VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR};
-    encodeBeginInfo.videoSession = m_pVideoSession->getVideoSession();;
+    encodeBeginInfo.videoSession = m_pVideoSession->getVideoSession();
     encodeBeginInfo.videoSessionParameters = m_videoSessionParameters.m_encodeSessionParameters;
 
     VkVideoEncodeH264FrameSizeEXT encodeH264FrameSize;
@@ -674,7 +674,7 @@ int32_t EncodeApp::encodeFrame(EncodeConfig* encodeConfig, uint32_t frameCount, 
 
     VkVideoBeginCodingInfoKHR encodeBeginInfo = {VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR};
     encodeBeginInfo.sType = VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR;
-    encodeBeginInfo.videoSession = m_pVideoSession->getVideoSession();;
+    encodeBeginInfo.videoSession = m_pVideoSession->getVideoSession();
     encodeBeginInfo.videoSessionParameters = m_videoSessionParameters.m_encodeSessionParameters;
     encodeBeginInfo.referenceSlotCount = 0;
     encodeBeginInfo.pReferenceSlots = NULL;

@@ -26,7 +26,7 @@
 #include <string>
 
 #include "vulkan_interfaces.h"
-#include "PictureBufferBase.h"
+#include "vkvideo_parser/PictureBufferBase.h"
 #include "VkCodecUtils/HelpersDispatchTable.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
@@ -171,7 +171,7 @@ public:
 private:
     VkImageLayout                        m_currentDpbImageLayerLayout;
     VkImageLayout                        m_currentOutputImageLayout;
-    const VulkanDeviceContext* m_vkDevCtx;
+    const VulkanDeviceContext*           m_vkDevCtx;
     VkSharedBaseObj<VkImageResourceView> m_frameDpbImageView;
     VkSharedBaseObj<VkImageResourceView> m_outImageView;
 };
@@ -340,7 +340,7 @@ public:
     {
         assert (numSlots <= maxFramebufferImages);
 
-        if ((m_queryPool == VK_NULL_HANDLE) && m_vkDevCtx->GetVideoQueryResultStatusSupport()) {
+        if ((m_queryPool == VK_NULL_HANDLE) && m_vkDevCtx->GetVideoDecodeQueryResultStatusSupport()) {
             // It would be difficult to resize a query pool, so allocate the maximum possible slot.
             numSlots = maxFramebufferImages;
             VkQueryPoolCreateInfo queryPoolCreateInfo = { VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
@@ -669,6 +669,19 @@ public:
 
         }
         return referenceSlotIndex;
+    }
+
+    virtual int32_t GetCurrentImageResourceByIndex(int8_t referenceSlotIndex,
+                                                   VkSharedBaseObj<VkImageResourceView>& decodedImageView,
+                                                   VkSharedBaseObj<VkImageResourceView>& outputImageView)
+    {
+        std::lock_guard<std::mutex> lock(m_displayQueueMutex);
+        if ((uint32_t)referenceSlotIndex < m_perFrameDecodeImageSet.size()) {
+            decodedImageView = m_perFrameDecodeImageSet[referenceSlotIndex].GetFrameImageView();
+            outputImageView  = m_perFrameDecodeImageSet[referenceSlotIndex].GetDisplayImageView();
+            return referenceSlotIndex;
+        }
+        return -1;
     }
 
     virtual int32_t ReleaseImageResources(uint32_t numResources, const uint32_t* indexes)
