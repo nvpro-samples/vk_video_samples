@@ -512,8 +512,10 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
 
     vk::InitDispatchTableBottom(m_instance,m_device, this);
 
-    GetDeviceQueue(m_device, GetGfxQueueFamilyIdx(), 0, &m_gfxQueue);
-    GetDeviceQueue(m_device, GetPresentQueueFamilyIdx(), 0, &m_presentQueue);
+    if (createGraphicsQueue)
+        GetDeviceQueue(m_device, GetGfxQueueFamilyIdx(), 0, &m_gfxQueue);
+    if (createPresentQueue)
+        GetDeviceQueue(m_device, GetPresentQueueFamilyIdx(), 0, &m_presentQueue);
 
     if (numDecodeQueues) {
         assert(GetVideoDecodeQueueFamilyIdx() != -1);
