@@ -222,9 +222,14 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     }
 
     VkImageUsageFlags outImageUsage = (VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
-                                       VK_IMAGE_USAGE_SAMPLED_BIT      |
                                        VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                                        VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+
+    if (!m_useLinearOutput)
+    {
+        outImageUsage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    }
+
     VkImageUsageFlags dpbImageUsage = VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
 
     if (m_dpbAndOutputCoincide) {
