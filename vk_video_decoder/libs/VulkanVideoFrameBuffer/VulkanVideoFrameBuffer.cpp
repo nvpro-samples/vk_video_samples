@@ -994,6 +994,24 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
 
     m_videoProfile.InitFromProfile(pDecodeProfile);
 
+    VkPhysicalDeviceVideoFormatInfoKHR videoFormatInfo = {};
+    videoFormatInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR;
+    videoFormatInfo.pNext = m_videoProfile.GetProfileListInfo();
+    videoFormatInfo.imageUsage = dpbImageUsage;
+
+    std::vector<VkVideoFormatPropertiesKHR> formatProperties;
+    uint32_t numFormats = 0;
+    vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(vkDevCtx->getPhysicalDevice(), &videoFormatInfo, &numFormats, nullptr);
+    formatProperties.resize(numFormats);
+    for (auto& fp : formatProperties)
+        fp.sType = VK_STRUCTURE_TYPE_VIDEO_FORMAT_PROPERTIES_KHR;
+    vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(vkDevCtx->getPhysicalDevice(), &videoFormatInfo, &numFormats, formatProperties.data());
+    bool haveLinearOutput = false;
+    for (auto& fp : formatProperties)
+        if (fp.imageTiling == VK_IMAGE_TILING_LINEAR)
+            haveLinearOutput = true;
+    useLinearOutput = haveLinearOutput;
+
     m_queueFamilyIndex = queueFamilyIndex;
     m_dpbRequiredMemProps = dpbRequiredMemProps;
     m_outRequiredMemProps = outRequiredMemProps;
