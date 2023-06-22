@@ -231,8 +231,11 @@ VkResult VkParserVideoPictureParameters::UpdateParametersObject(const StdVideoPi
             return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    updateInfo.updateSequenceCount = std::max(pStdVideoPictureParametersSet->GetUpdateSequenceCount(), updateInfo.updateSequenceCount);
-
+    // The parser doesn't seem to be setting this correctly on the parameter objects. It keeps a per object count rather than a global
+    // one as the spec requires. Hack this for now, but check with NVIDIA what the best thing to do here is
+    static int updateCounter = 1;
+    // updateInfo.updateSequenceCount = std::max(pStdVideoPictureParametersSet->GetUpdateSequenceCount(), updateInfo.updateSequenceCount);
+    updateInfo.updateSequenceCount = updateCounter++;
 
     VkResult result = m_vkDevCtx->UpdateVideoSessionParametersKHR(*m_vkDevCtx,
                                                                   m_sessionParameters,
