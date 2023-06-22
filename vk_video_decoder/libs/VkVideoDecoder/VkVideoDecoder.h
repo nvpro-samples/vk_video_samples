@@ -211,6 +211,8 @@ private:
         , m_videoSession(nullptr)
         , m_videoFrameBuffer(videoFrameBuffer)
         , m_decodeFramesData(vkDevCtx)
+        , m_minBitstreamBufferSizeAlignment(0)
+        , m_minBitstreamBufferOffsetAlignment(0)
         , m_decodePicCount(0)
         , m_hwLoadBalancingTimelineSemaphore()
         , m_dpbAndOutputCoincide(true)
@@ -299,6 +301,8 @@ private:
     VkSharedBaseObj<VulkanVideoSession>     m_videoSession;
     VkSharedBaseObj<VulkanVideoFrameBuffer> m_videoFrameBuffer;
     NvVkDecodeFrameData                     m_decodeFramesData;
+    uint32_t m_minBitstreamBufferSizeAlignment;
+    uint32_t m_minBitstreamBufferOffsetAlignment;
 
     uint64_t                                         m_decodePicCount; // Also used for the HW load balancing timeline semaphore
     VkSharedBaseObj<VkParserVideoPictureParameters>  m_currentPictureParameters;

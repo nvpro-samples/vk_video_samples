@@ -26,6 +26,7 @@
 #undef min
 
 #define GPU_ALIGN(x) (((x) + 0xff) & ~0xff)
+#define ALIGN(addr, width)  ((addr + (width - 1)) & ~(width - 1))
 
 const uint64_t gFenceTimeout = 100 * 1000 * 1000 /* 100 mSec */;
 const uint64_t gLongTimeout  = 1000 * 1000 * 1000 /* 1000 mSec */;
@@ -174,6 +175,10 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         assert(!"Could not get Video Capabilities!");
         return -1;
     }
+
+    m_minBitstreamBufferOffsetAlignment = videoCapabilities.minBitstreamBufferOffsetAlignment;
+    m_minBitstreamBufferSizeAlignment = videoCapabilities.minBitstreamBufferSizeAlignment;
+
     m_capabilityFlags = videoDecodeCapabilities.flags;
     m_dpbAndOutputCoincide = (m_capabilityFlags & VK_VIDEO_DECODE_CAPABILITY_DPB_AND_OUTPUT_COINCIDE_BIT_KHR);
     VkFormat dpbImageFormat = VK_FORMAT_UNDEFINED;
@@ -191,10 +196,8 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     imageExtent.width  = std::max(imageExtent.width, videoCapabilities.minCodedExtent.width);
     imageExtent.height = std::max(imageExtent.height, videoCapabilities.minCodedExtent.height);
 
-    uint32_t alignWidth = videoCapabilities.pictureAccessGranularity.width - 1;
-    imageExtent.width = ((imageExtent.width + alignWidth) & ~alignWidth);
-    uint32_t alignHeight = videoCapabilities.pictureAccessGranularity.height - 1;
-    imageExtent.height = ((imageExtent.height + alignHeight) & ~alignHeight);
+    imageExtent.width = ALIGN(imageExtent.width, videoCapabilities.pictureAccessGranularity.width);
+    imageExtent.height = ALIGN(imageExtent.height, videoCapabilities.pictureAccessGranularity.height);
 
     if (!m_videoSession ||
             !m_videoSession->IsCompatible( m_vkDevCtx,
@@ -429,8 +432,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     pPicParams->decodeFrameInfo.srcBuffer = pPicParams->bitstreamData->GetBuffer();
     assert(pPicParams->bitstreamDataOffset == 0);
     assert(pPicParams->firstSliceIndex == 0);
-    pPicParams->decodeFrameInfo.srcBufferOffset = pPicParams->bitstreamDataOffset;
-    pPicParams->decodeFrameInfo.srcBufferRange = pPicParams->bitstreamDataLen;
+    pPicParams->decodeFrameInfo.srcBufferOffset = ALIGN(pPicParams->bitstreamDataOffset, m_minBitstreamBufferOffsetAlignment);
+    pPicParams->decodeFrameInfo.srcBufferRange = ALIGN(pPicParams->bitstreamDataLen, m_minBitstreamBufferSizeAlignment);
     // pPicParams->decodeFrameInfo.dstImageView = VkImageView();
 
     VkVideoBeginCodingInfoKHR decodeBeginInfo = { VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR };
