@@ -577,8 +577,24 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         }
     }
 
+    std::vector<VkVideoReferenceSlotInfoKHR> allReferenceSlots;
+
     decodeBeginInfo.referenceSlotCount = pPicParams->decodeFrameInfo.referenceSlotCount;
     decodeBeginInfo.pReferenceSlots = pPicParams->decodeFrameInfo.pReferenceSlots;
+
+    if (pPicParams->decodeFrameInfo.pSetupReferenceSlot != nullptr)
+    {
+        for (int i = 0; i < decodeBeginInfo.referenceSlotCount; i++)
+            allReferenceSlots.push_back(decodeBeginInfo.pReferenceSlots[i]);
+
+        VkVideoReferenceSlotInfoKHR setupActivationSlot = {};
+        setupActivationSlot.sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+	setupActivationSlot.slotIndex = -1;
+	setupActivationSlot.pPictureResource = &pPicParams->dpbSetupPictureResource;
+	allReferenceSlots.push_back(setupActivationSlot);
+	decodeBeginInfo.referenceSlotCount++;
+	decodeBeginInfo.pReferenceSlots = allReferenceSlots.data();
+    }
 
     if (pDecodePictureInfo->flags.unpairedField) {
         // assert(pFrameSyncinfo->frameCompleteSemaphore == VkSemaphore());

@@ -1794,8 +1794,19 @@ bool VulkanVideoParser::DecodePicture(
         // TODO: Remove it is for debugging only. Reserved fields must be set to "0".
         pout->stdPictureInfo.reserved1 = pCurrFrameDecParams->numGopReferenceSlots;
         assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
+
+        // HACK: The DPB map doesn't take account of the setup slot for some reason, we we can't use the existing logic to setup
+        // the picture flags and frame number from the dpbEntry. REVIEW. Silences a validation warning.
+        VkVideoDecodeH264DpbSlotInfoKHR h264SlotInfo = {};
+	StdVideoDecodeH264ReferenceInfo h264RefInfo = {};
+
+        h264SlotInfo.sType =VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_KHR;
+        h264SlotInfo.pNext = nullptr;
+        h264SlotInfo.pStdReferenceInfo = &h264RefInfo;
+
         if (setupReferenceSlot.slotIndex >= 0) {
             setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
+            setupReferenceSlot.pNext = &h264SlotInfo;
             pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
         }
         if (pCurrFrameDecParams->numGopReferenceSlots) {
