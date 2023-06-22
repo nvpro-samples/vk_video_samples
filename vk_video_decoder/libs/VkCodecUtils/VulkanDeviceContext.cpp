@@ -271,11 +271,27 @@ bool VulkanDeviceContext::DebugReportCallback(VkDebugReportFlagsEXT flags, VkDeb
     else if (flags & VK_DEBUG_REPORT_DEBUG_BIT_EXT)
         prio = LOG_DEBUG;
 
+    std::vector<std::string> ignoredVUIDs = {
+        "VUID-VkBufferCreateInfo-usage-04813", // buffer profiles (they will be optional soon)
+        "VUID-vkCmdDecodeVideoKHR-pDecodeInfo-07135", // ditto
+    };
     std::stringstream ss;
-    ss << layer_prefix << ": " << msg;
 
-    std::ostream &st = (prio >= LOG_ERR) ? std::cerr : std::cout;
-    st << msg << "\n";
+    if (prio >= LOG_ERR) {
+        bool ignored = false;
+        for (const auto& ignoredVUID : ignoredVUIDs) {
+            if (strstr(msg, ignoredVUID.c_str()) != nullptr) {
+                ignored = true;
+                break;
+            }
+        }
+        if (ignored)
+            return false;
+        ss << layer_prefix << ": " << msg;
+
+        std::ostream &st = (prio >= LOG_ERR) ? std::cerr : std::cout;
+        st << msg << "\n";
+    }
 
     return false;
 }
