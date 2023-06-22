@@ -517,9 +517,47 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
     devInfo.enabledExtensionCount = static_cast<uint32_t>(m_reqDeviceExtensions.size());
     devInfo.ppEnabledExtensionNames = m_reqDeviceExtensions.data();
 
-    // disable all features
-    VkPhysicalDeviceFeatures features = {};
-    devInfo.pEnabledFeatures = &features;
+    VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptorBufferFeature = {};
+    descriptorBufferFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT;
+
+    VkPhysicalDeviceVulkan13Features features_13 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+        .pNext = &descriptorBufferFeature,
+    };
+    VkPhysicalDeviceVulkan12Features features_12 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+        .pNext = &features_13,
+    };
+    VkPhysicalDeviceVulkan11Features features_11 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+        .pNext = &features_12,
+    };
+    VkPhysicalDeviceFeatures2 devFeatures = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &features_11,
+    };
+
+    GetPhysicalDeviceFeatures2(m_physDevice, &devFeatures);
+
+    VkPhysicalDeviceVulkan13Features chosen13 = {};
+    chosen13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    VkPhysicalDeviceVulkan12Features chosen12 = {};
+    chosen12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    chosen12.pNext = &chosen13;
+    VkPhysicalDeviceVulkan11Features chosen11 = {};
+    chosen11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+    chosen11.pNext = &chosen12;
+
+    // TODO: Review all the usages of features and ensure they are checked here. Descriptor buffers, samplers, lots of things probably...
+    // if presenting: assert sampler conversion...
+    chosen11.samplerYcbcrConversion = features_11.samplerYcbcrConversion;
+    assert(features_13.synchronization2);
+    chosen13.synchronization2 = features_13.synchronization2;
+
+    // Use all the supported core features, probably we should trim this down a bit.
+    devFeatures.pNext = &chosen11;
+    devInfo.pEnabledFeatures = nullptr; // use features2
+    devInfo.pNext = &devFeatures;
 
     VkResult result = CreateDevice(m_physDevice, &devInfo, nullptr, &m_device);
     if (result != VK_SUCCESS) {
