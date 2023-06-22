@@ -36,6 +36,7 @@ int main(int argc, const char **argv) {
     if (programConfig.validate) {
         // REVIEW: Should we make an effort to check for the old LUNARG validation layer name?
         vkDevCtxt.AddRequiredInstanceLayer("VK_LAYER_KHRONOS_validation");
+        //vkDevCtxt.AddRequiredInstanceLayer("VK_LAYER_LUNARG_standard_validation");
         vkDevCtxt.AddRequiredInstanceExtension(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
     }
 
