@@ -403,6 +403,8 @@ size_t VulkanVideoProcessor::ConvertFrameToNv12(DecodedFrame* pFrame,
         retryCount--;
     } while ((result == VK_TIMEOUT) && (retryCount > 0));
 
+    // Transition the resource to the queue that has
+
     // Map the image and read the image data.
     VkDeviceSize imageOffset = imageResource->GetImageDeviceMemoryOffset();
     VkDeviceSize maxSize = 0;

@@ -1010,7 +1010,11 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
     for (auto& fp : formatProperties)
         if (fp.imageTiling == VK_IMAGE_TILING_LINEAR)
             haveLinearOutput = true;
+
+    m_usesLinearOutput = haveLinearOutput;
+    m_usesSeparateOutputImage = haveLinearOutput;
     useLinearOutput = haveLinearOutput;
+    useSeparateOutputImage = haveLinearOutput;
 
     m_queueFamilyIndex = queueFamilyIndex;
     m_dpbRequiredMemProps = dpbRequiredMemProps;

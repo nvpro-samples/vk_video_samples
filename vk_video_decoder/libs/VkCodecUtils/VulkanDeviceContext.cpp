@@ -345,7 +345,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
             continue;
         }
 
-        if (!HasAllDeviceExtensions(physicalDevice)) {
+        if (!HasAllDeviceExtensions(physicalDevice, true)) {
             continue;
         }
 
