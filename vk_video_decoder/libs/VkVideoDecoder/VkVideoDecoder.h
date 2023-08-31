@@ -149,6 +149,7 @@ public:
                            VkSharedBaseObj<VulkanVideoFrameBuffer>& videoFrameBuffer,
                            int32_t videoQueueIndx = 0,
                            bool useLinearOutput = false,
+                           bool enablePresentation = true,
                            bool enableHwLoadBalancing = false,
                            int32_t numDecodeImagesInFlight = 8,
                            int32_t numDecodeImagesToPreallocate = -1, // preallocate the maximum required
@@ -195,6 +196,7 @@ private:
                    VkSharedBaseObj<VulkanVideoFrameBuffer>& videoFrameBuffer,
                    int32_t videoQueueIndx = 0,
                    bool useLinearOutput = false,
+                   bool enablePresentation = true,
                    bool enableHwLoadBalancing = false,
                    int32_t numDecodeImagesInFlight = 8,
                    int32_t numDecodeImagesToPreallocate = -1, // preallocate the maximum required
@@ -218,6 +220,7 @@ private:
         , m_useImageViewArray(false)
         , m_useSeparateOutputImages(useLinearOutput)
         , m_useLinearOutput(useLinearOutput)
+        , m_enablePresentation(enablePresentation)
         , m_resetDecoder(true)
         , m_dumpDecodeData(false)
         , m_numBitstreamBuffersToPreallocate(numBitstreamBuffersToPreallocate)
@@ -308,6 +311,7 @@ private:
     uint32_t m_useImageViewArray : 1;
     uint32_t m_useSeparateOutputImages : 1;
     uint32_t m_useLinearOutput : 1;
+    uint32_t m_enablePresentation : 1;
     uint32_t m_resetDecoder : 1;
     uint32_t m_dumpDecodeData : 1;
     int32_t  m_numBitstreamBuffersToPreallocate;

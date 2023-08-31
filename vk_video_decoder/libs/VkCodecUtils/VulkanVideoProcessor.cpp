@@ -110,6 +110,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
 
     result = VkVideoDecoder::Create(vkDevCtx, m_vkVideoFrameBuffer,
                                     videoQueueIndx, (outFile != nullptr),
+                                    !programConfig.noPresent,
                                     enableHwLoadBalancing,
                                     numDecodeImagesInFlight,
                                     numDecodeImagesToPreallocate,
