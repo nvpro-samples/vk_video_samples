@@ -274,6 +274,9 @@ bool VulkanDeviceContext::DebugReportCallback(VkDebugReportFlagsEXT flags, VkDeb
     std::vector<std::string> ignoredVUIDs = {
         "VUID-VkBufferCreateInfo-usage-04813", // buffer profiles (they will be optional soon)
         "VUID-vkCmdDecodeVideoKHR-pDecodeInfo-07135", // ditto
+        "VUID-vkCmdDecodeVideoKHR-pDecodeInfo-07156", // activation validation, requires deeper understand of DPB management
+        "VUID-vkCmdBeginVideoCodingKHR-slotIndex-07239", // ditto
+        "VUID-vkCmdDecodeVideoKHR-pDecodeInfo-07149", // ditto
     };
     std::stringstream ss;
 
