@@ -255,6 +255,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                                     dpbImageUsage,
                                                     outImageUsage,
                                                     m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
+                                                    m_vkDevCtx->GetTransferQueueFamilyIdx(),
                                                     m_numDecodeImagesToPreallocate,
                                                     m_useImageArray, m_useImageViewArray,
                                                     m_useSeparateOutputImages, m_useLinearOutput);
@@ -449,7 +450,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR,
         VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR,
         VK_QUEUE_FAMILY_IGNORED,
-        (uint32_t)m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
+        VK_QUEUE_FAMILY_IGNORED,
         pPicParams->decodeFrameInfo.srcBuffer,
         pPicParams->decodeFrameInfo.srcBufferOffset,
         pPicParams->decodeFrameInfo.srcBufferRange
@@ -467,8 +468,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR, // VkAccessFlags   dstAccessMask
             VK_IMAGE_LAYOUT_UNDEFINED, // VkImageLayout   oldLayout
             VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR, // VkImageLayout   newLayout
-            VK_QUEUE_FAMILY_IGNORED, // uint32_t        srcQueueFamilyIndex
-            (uint32_t)m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(), // uint32_t   dstQueueFamilyIndex
+            VK_QUEUE_FAMILY_IGNORED, // uint32_t   srcQueueFamilyIndex
+            VK_QUEUE_FAMILY_IGNORED, // uint32_t   dstQueueFamilyIndex
             VkImage(), // VkImage         image;
             {
                 // VkImageSubresourceRange   subresourceRange

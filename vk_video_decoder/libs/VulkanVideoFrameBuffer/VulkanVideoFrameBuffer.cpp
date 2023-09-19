@@ -182,7 +182,7 @@ public:
     static constexpr size_t maxImages = 32;
 
     NvPerFrameDecodeImageSet()
-        : m_queueFamilyIndex((uint32_t)-1)
+        : m_decodeQueueFamilyIndex((uint32_t)-1)
         , m_dpbImageCreateInfo()
         , m_outImageCreateInfo()
         , m_dpbRequiredMemProps(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
@@ -206,7 +206,8 @@ public:
         const VkExtent2D&     maxImageExtent,
         VkImageUsageFlags     dpbImageUsage,
         VkImageUsageFlags     outImageUsage,
-        uint32_t              queueFamilyIndex,
+        uint32_t              decodeQueueFamilyIndex,
+        uint32_t              transferQueueFamilyIndex,
         VkMemoryPropertyFlags dpbRequiredMemProps = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         VkMemoryPropertyFlags outRequiredMemProps = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         bool useImageArray = false,
@@ -297,7 +298,8 @@ public:
     }
 
 private:
-    uint32_t                             m_queueFamilyIndex;
+    uint32_t                             m_decodeQueueFamilyIndex;
+    uint32_t                             m_transferQueueFamilyIndex;
     VkVideoCoreProfile                   m_videoProfile;
     VkImageCreateInfo                    m_dpbImageCreateInfo;
     VkImageCreateInfo                    m_outImageCreateInfo;
@@ -388,7 +390,8 @@ public:
                                   const VkExtent2D&        maxImageExtent,
                                   VkImageUsageFlags        dpbImageUsage,
                                   VkImageUsageFlags        outImageUsage,
-                                  uint32_t                 queueFamilyIndex,
+                                  uint32_t                 decodeQueueFamilyIndex,
+                                  uint32_t                 transferQueueFamilyIndex,
                                   int32_t                  numImagesToPreallocate,
                                   bool                     useImageArray = false,
                                   bool                     useImageViewArray = false,
@@ -416,7 +419,8 @@ public:
                                               maxImageExtent,
                                               dpbImageUsage,
                                               outImageUsage,
-                                              queueFamilyIndex,
+                                              decodeQueueFamilyIndex,
+                                              transferQueueFamilyIndex,
                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                               useLinearOutput ? ( VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT  |
                                                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
@@ -961,7 +965,8 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
                                        const VkExtent2D&        maxImageExtent,
                                        VkImageUsageFlags        dpbImageUsage,
                                        VkImageUsageFlags        outImageUsage,
-                                       uint32_t                 queueFamilyIndex,
+                                       uint32_t                 decodeQueueFamilyIndex,
+                                       uint32_t                 transferQueueFamilyIndex,
                                        VkMemoryPropertyFlags    dpbRequiredMemProps,
                                        VkMemoryPropertyFlags    outRequiredMemProps,
                                        bool                     useImageArray,
@@ -993,8 +998,8 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
     }
 
     m_videoProfile.InitFromProfile(pDecodeProfile);
-
-    m_queueFamilyIndex = queueFamilyIndex;
+    m_transferQueueFamilyIndex = transferQueueFamilyIndex;
+    m_decodeQueueFamilyIndex = decodeQueueFamilyIndex;
     m_dpbRequiredMemProps = dpbRequiredMemProps;
     m_outRequiredMemProps = outRequiredMemProps;
 
@@ -1010,9 +1015,10 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
     m_dpbImageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     m_dpbImageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     m_dpbImageCreateInfo.usage = dpbImageUsage;
-    m_dpbImageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    m_dpbImageCreateInfo.queueFamilyIndexCount = 1;
-    m_dpbImageCreateInfo.pQueueFamilyIndices = &m_queueFamilyIndex;
+    m_dpbImageCreateInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
+    m_dpbImageCreateInfo.queueFamilyIndexCount = 2;
+    const uint32_t queueIndices[] = { m_decodeQueueFamilyIndex, m_transferQueueFamilyIndex };
+    m_dpbImageCreateInfo.pQueueFamilyIndices = queueIndices;
     m_dpbImageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     m_dpbImageCreateInfo.flags = 0;
 

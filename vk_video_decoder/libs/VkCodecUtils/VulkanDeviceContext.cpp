@@ -361,10 +361,13 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
         VkQueueFlags foundQueueTypes = 0;
         int gfxQueueFamily = -1,
             presentQueueFamily = -1,
+            transferQueueFamily = -1,
             videoDecodeQueueFamily = -1,
             videoDecodeQueueCount  = 0,
             videoEncodeQueueFamily = -1,
             videoEncodeQueueCount  = 0;
+
+        size_t transferQueueCount = 0;
 
         for (uint32_t i = 0; i < queues.size(); i++) {
             const VkQueueFamilyProperties2 &queue = queues[i];
@@ -378,6 +381,12 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                     (queue.queueFamilyProperties.queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
                 gfxQueueFamily = i;
                 foundQueueTypes |= VK_QUEUE_GRAPHICS_BIT;
+            }
+            if ((requestQueueTypes & VK_QUEUE_TRANSFER_BIT) &&
+                    (queue.queueFamilyProperties.queueCount > transferQueueCount) &&
+                    (queue.queueFamilyProperties.queueFlags & VK_QUEUE_TRANSFER_BIT)) {
+                transferQueueFamily = i;
+                foundQueueTypes |= VK_QUEUE_TRANSFER_BIT;
             }
 
             const VkQueueFamilyVideoPropertiesKHR &videoQueue = videoQueues[i];
@@ -413,6 +422,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                 m_physDevice = physicalDevice;
                 m_gfxQueueFamily = gfxQueueFamily;
                 m_presentQueueFamily = presentQueueFamily;
+                m_transferQueueFamily = transferQueueFamily;
                 m_videoDecodeQueueFamily = videoDecodeQueueFamily;
                 m_videoDecodeNumQueues = videoDecodeQueueCount;
                 m_videoEncodeQueueFamily = videoEncodeQueueFamily;
@@ -488,6 +498,17 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
 
         queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_presentQueueFamily;
+        queueInfo[devInfo.queueCreateInfoCount].queueCount = 1;
+        queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
+        devInfo.queueCreateInfoCount++;
+    }
+
+    if (m_transferQueueFamily != -1 &&
+        (m_transferQueueFamily != m_videoDecodeQueueFamily) &&
+        (!createGraphicsQueue || (m_transferQueueFamily != m_gfxQueueFamily)) &&
+        (!createPresentQueue  || (m_transferQueueFamily != m_presentQueueFamily))) {
+        queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_transferQueueFamily;
         queueInfo[devInfo.queueCreateInfoCount].queueCount = 1;
         queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
         devInfo.queueCreateInfoCount++;
@@ -582,6 +603,9 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         for (uint32_t queueIdx = 0; queueIdx < (uint32_t)numDecodeQueues; queueIdx++) {
             GetDeviceQueue(m_device, GetVideoDecodeQueueFamilyIdx(), queueIdx, &m_videoDecodeQueues[queueIdx]);
         }
+
+        // TODO: Use more transfer queues when available.
+        GetDeviceQueue(m_device, GetTransferQueueFamilyIdx(), 0, &m_transferQueue);
     }
 
     if (numEncodeQueues) {
@@ -605,6 +629,7 @@ VulkanDeviceContext::VulkanDeviceContext(uint32_t deviceId)
     , m_gfxQueueFamily(-1)
     , m_computeQueueFamily(-1)
     , m_presentQueueFamily(-1)
+    , m_transferQueueFamily(-1)
     , m_videoDecodeQueueFamily(-1)
     , m_videoDecodeDefaultQueueIndex(0)
     , m_videoDecodeNumQueues(0)

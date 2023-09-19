@@ -135,8 +135,8 @@ int main(int argc, const char **argv) {
         displayShell->RunLoop();
 
     } else {
-
         result = vkDevCtxt.InitPhysicalDevice((VK_QUEUE_GRAPHICS_BIT |
+                                               VK_QUEUE_TRANSFER_BIT |
                                                VK_QUEUE_VIDEO_DECODE_BIT_KHR),
                                                nullptr);
         if (result != VK_SUCCESS) {
