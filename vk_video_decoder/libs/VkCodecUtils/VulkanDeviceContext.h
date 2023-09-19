@@ -174,7 +174,7 @@ public:
         return (int32_t)m_reqDeviceExtensions.size();
     }
 
-    int32_t AddOptinalDeviceExtension(const char* deviceExtensionName) {
+    int32_t AddOptionalDeviceExtension(const char* deviceExtensionName) {
         m_optDeviceExtensions.push_back(deviceExtensionName);
         return (int32_t)m_optDeviceExtensions.size();
     }

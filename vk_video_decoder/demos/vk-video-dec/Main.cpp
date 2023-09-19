@@ -64,10 +64,10 @@ int main(int argc, const char **argv) {
 #endif
     { // Vulkan Video required extensions
         // VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME - for NV only
-        vkDevCtxt.AddOptinalDeviceExtension(VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME);
-        vkDevCtxt.AddOptinalDeviceExtension(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME);
-        vkDevCtxt.AddOptinalDeviceExtension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
-        vkDevCtxt.AddOptinalDeviceExtension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+        vkDevCtxt.AddOptionalDeviceExtension(VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME);
+        vkDevCtxt.AddOptionalDeviceExtension(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME);
+        vkDevCtxt.AddOptionalDeviceExtension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+        vkDevCtxt.AddOptionalDeviceExtension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
         vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
         vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_VIDEO_QUEUE_EXTENSION_NAME);
         vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME);
