@@ -222,11 +222,20 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         assert(result == VK_SUCCESS);
     }
 
-    VkImageUsageFlags outImageUsage = (VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
-                                       VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                       VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-    if (m_enablePresentation)
+    VkFormatProperties outProps;
+    m_vkDevCtx->GetPhysicalDeviceFormatProperties(m_vkDevCtx->getPhysicalDevice(), outImageFormat, &outProps);
+
+    VkImageUsageFlags outImageUsage = 0;
+    // NOTE(charlie): The drivers are not saying this usage is supported, but it's required if we wish to use linear tiling.
+    if (true || outProps.linearTilingFeatures & VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR)
+        outImageUsage |= VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
+    if (outProps.linearTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT)
+        outImageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    if (outProps.linearTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT)
+        outImageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if (m_enablePresentation && (outProps.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT))
         outImageUsage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+
     VkImageUsageFlags dpbImageUsage = VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
 
     if (m_dpbAndOutputCoincide) {
