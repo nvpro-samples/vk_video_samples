@@ -356,7 +356,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
         std::vector<VkQueueFamilyProperties2> queues;
         std::vector<VkQueueFamilyVideoPropertiesKHR> videoQueues;
         std::vector<VkQueueFamilyQueryResultStatusPropertiesKHR> queryResultStatus;
-        vk::get(this, physicalDevice, queues, videoQueues, queryResultStatus);
+        vk::getVideoRelatedQueuesProperties(this, physicalDevice, queues, videoQueues, queryResultStatus);
         bool videodecodequeryResultStatus = false;
         VkQueueFlags foundQueueTypes = 0;
         int gfxQueueFamily = -1,

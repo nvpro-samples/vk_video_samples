@@ -57,7 +57,7 @@ inline VkResult enumerate(const VkInterfaceFunctions* vkIf, std::vector<VkLayerP
     return vkIf->EnumerateInstanceLayerProperties(&count, layer_props.data());
 }
 
-inline VkResult get(const VkInterfaceFunctions* vkIf,
+inline VkResult getVideoRelatedQueuesProperties(const VkInterfaceFunctions* vkIf,
                     VkPhysicalDevice phy, std::vector<VkQueueFamilyProperties2> &queues,
                     std::vector<VkQueueFamilyVideoPropertiesKHR> &videoQueues,
                     std::vector<VkQueueFamilyQueryResultStatusPropertiesKHR> &queryResultStatus) {

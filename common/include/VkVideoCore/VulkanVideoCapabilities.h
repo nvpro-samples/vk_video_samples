@@ -234,7 +234,7 @@ public:
         std::vector<VkQueueFamilyProperties2> queues;
         std::vector<VkQueueFamilyVideoPropertiesKHR> videoQueues;
         std::vector<VkQueueFamilyQueryResultStatusPropertiesKHR> queryResultStatus;
-        get(vkDevCtx, vkPhysicalDev, queues, videoQueues, queryResultStatus);
+        getVideoRelatedQueuesProperties(vkDevCtx, vkPhysicalDev, queues, videoQueues, queryResultStatus);
 
         for (uint32_t queueIndx = 0; queueIndx < queues.size(); queueIndx++) {
             const VkQueueFamilyProperties2 &q = queues[queueIndx];
