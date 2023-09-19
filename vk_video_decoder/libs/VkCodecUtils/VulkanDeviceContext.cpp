@@ -417,7 +417,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
 
             if (((foundQueueTypes & requestQueueTypes) == requestQueueTypes) &&
                     ((pWsiDisplay == nullptr) || (presentQueueFamily >= 0))) {
-
+                printf("Selected device: %s (driver version: %d.%d.%d.%d)\n", props.deviceName, VK_VERSION_MAJOR(props.driverVersion),  VK_API_VERSION_MINOR(props.driverVersion),  VK_API_VERSION_PATCH(props.driverVersion), VK_API_VERSION_VARIANT(props.driverVersion));
                 // Selected a physical device
                 m_physDevice = physicalDevice;
                 m_gfxQueueFamily = gfxQueueFamily;
