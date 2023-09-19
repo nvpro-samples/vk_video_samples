@@ -222,10 +222,13 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         assert(result == VK_SUCCESS);
     }
 
-    VkFormatProperties outProps;
+    VkFormatProperties outProps{ };
+    VkFormatProperties dpbProps{ };
+    m_vkDevCtx->GetPhysicalDeviceFormatProperties(m_vkDevCtx->getPhysicalDevice(), dpbImageFormat, &dpbProps);
     m_vkDevCtx->GetPhysicalDeviceFormatProperties(m_vkDevCtx->getPhysicalDevice(), outImageFormat, &outProps);
 
     VkImageUsageFlags outImageUsage = 0;
+    VkImageUsageFlags dpbImageUsage = 0;
     // NOTE(charlie): The drivers are not saying this usage is supported, but it's required if we wish to use linear tiling.
     if (true || outProps.linearTilingFeatures & VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR)
         outImageUsage |= VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
@@ -236,10 +239,22 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     if (m_enablePresentation && (outProps.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT))
         outImageUsage |= VK_IMAGE_USAGE_SAMPLED_BIT;
 
-    VkImageUsageFlags dpbImageUsage = VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
+
+    // assert (dpbProps.optimalTilingFeatures & VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR); // nvidia false
+    dpbImageUsage |= VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
 
     if (m_dpbAndOutputCoincide) {
-        dpbImageUsage = outImageUsage | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
+        // dpb usage = output usage
+        //assert(dpbProps.optimalTilingFeatures & VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR); // nvidia: false
+        dpbImageUsage |= VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
+        assert (dpbProps.optimalTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT);
+        dpbImageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        assert (dpbProps.optimalTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT);
+        dpbImageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        if (m_enablePresentation) {
+            assert (dpbProps.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
+            dpbImageUsage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+        }
         // This would make sense, but I get a Validation Error: [ VUID-VkImageViewCreateInfo-image-04441 ] pCreateInfo.image was created with
         // VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT but requires VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT|VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT|VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR|VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT|VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR|VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR|VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR|VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR|VK_IMAGE_USAGE_SAMPLE_WEIGHT_BIT_QCOM|VK_IMAGE_USAGE_SAMPLE_BLOCK_MATCH_BIT_QCOM. The Vulkan spec states: image must have been created with a usage value containing at least one of the usages defined in the valid image usage list for image views (https://www.khronos.org/registry/vulkan/specs/1.3-extensions/html/vkspec.html#VUID-VkImageViewCreateInfo-image-04441)
         // Are we doing something more fundamentally wrong? I don't know. We should probably be copying to a buffer.
@@ -248,6 +263,52 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         // The implementation does not support dpbAndOutputCoincide
         m_useSeparateOutputImages = true;
     }
+
+    // Find supported formats info for the output image
+    VkPhysicalDeviceVideoFormatInfoKHR formatInfo{};
+    formatInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR;
+    formatInfo.pNext = videoProfile.GetProfileListInfo();
+    formatInfo.imageUsage = outImageUsage;
+    uint32_t formatPropertyCount = 0;
+    VkResult res = m_vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(m_vkDevCtx->getPhysicalDevice(),
+                &formatInfo,
+                &formatPropertyCount,
+                nullptr);
+    assert(res == VK_SUCCESS);
+    std::vector< VkVideoFormatPropertiesKHR> outputFormatProperties(formatPropertyCount);
+    for (auto& formatProperty : outputFormatProperties)
+        formatProperty.sType = VK_STRUCTURE_TYPE_VIDEO_FORMAT_PROPERTIES_KHR;
+    res = m_vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(m_vkDevCtx->getPhysicalDevice(),
+                &formatInfo,
+                &formatPropertyCount,
+                outputFormatProperties.data());
+    assert(res == VK_SUCCESS);
+
+    bool outputImageSupportsLinearTiling = false;
+    for (const auto& prop : outputFormatProperties) {
+        if (prop.imageTiling == VK_IMAGE_TILING_LINEAR)
+            outputImageSupportsLinearTiling = true;
+    }
+    // NOTE(charlie): This is what drivers report, hence, we must not use linear tiling. Is this is a reporting bug for drivers?
+    assert(!outputImageSupportsLinearTiling);
+
+    // Find supported formats info for the dpb image
+    formatInfo.imageUsage = dpbImageUsage;
+    formatPropertyCount = 0;
+    res = m_vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(m_vkDevCtx->getPhysicalDevice(),
+                &formatInfo,
+                &formatPropertyCount,
+                nullptr);
+    assert(res == VK_SUCCESS);
+    std::vector< VkVideoFormatPropertiesKHR> dpbFormatProperties(formatPropertyCount);
+    for (auto& formatProperty : dpbFormatProperties)
+        formatProperty.sType = VK_STRUCTURE_TYPE_VIDEO_FORMAT_PROPERTIES_KHR;
+    res = m_vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(m_vkDevCtx->getPhysicalDevice(),
+                &formatInfo,
+                &formatPropertyCount,
+                dpbFormatProperties.data());
+    assert(res == VK_SUCCESS);
+
 
     if(!(videoCapabilities.flags & VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR)) {
         // The implementation does not support individual images for DPB and so must use arrays
