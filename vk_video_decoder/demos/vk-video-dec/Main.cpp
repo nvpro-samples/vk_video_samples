@@ -97,12 +97,11 @@ int main(int argc, const char **argv) {
         return -1;
     }
 
-    const bool supportsDisplay = true;
     const int32_t numDecodeQueues = ((programConfig.queueId != 0) ||
                                      (programConfig.enableHwLoadBalancing != 0)) ?
 					 -1 : // all available HW decoders
 					  1;  // only one HW decoder instance
-    if (supportsDisplay && !programConfig.noPresent) {
+    if (!programConfig.noPresent) {
 
         VkSharedBaseObj<Shell> displayShell;
         result = Shell::Create(&vkDevCtxt, frameProcessor, programConfig.directMode, displayShell);
