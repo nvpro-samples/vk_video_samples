@@ -83,6 +83,13 @@ public:
         }
         return m_videoEncodeQueues[index];
     }
+    std::vector<uint32_t> GetQueueFamiliesForResource() const {
+        assert(m_videoDecodeQueueFamily >= 0);
+        std::vector<uint32_t> familyIndices{ (uint32_t)m_videoDecodeQueueFamily };
+        if (m_transferQueueFamily >= 0 && m_transferQueueFamily != m_videoDecodeQueueFamily)
+            familyIndices.push_back((uint32_t)m_transferQueueFamily);
+        return familyIndices;
+    }
     bool    GetVideoQueryResultStatusSupport() const { return m_queryResultStatusSupport; }
     class MtQueueMutex {
 

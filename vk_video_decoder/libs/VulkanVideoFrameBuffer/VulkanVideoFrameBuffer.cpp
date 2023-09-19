@@ -1015,10 +1015,10 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
     m_dpbImageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     m_dpbImageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     m_dpbImageCreateInfo.usage = dpbImageUsage;
-    m_dpbImageCreateInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
-    m_dpbImageCreateInfo.queueFamilyIndexCount = 2;
-    const uint32_t queueIndices[] = { m_decodeQueueFamilyIndex, m_transferQueueFamilyIndex };
-    m_dpbImageCreateInfo.pQueueFamilyIndices = queueIndices;
+    const auto resourceIndices = vkDevCtx->GetQueueFamiliesForResource();
+    m_dpbImageCreateInfo.sharingMode = resourceIndices.size() == 1 ? VK_SHARING_MODE_EXCLUSIVE : VK_SHARING_MODE_CONCURRENT;
+    m_dpbImageCreateInfo.queueFamilyIndexCount = resourceIndices.size();
+    m_dpbImageCreateInfo.pQueueFamilyIndices = resourceIndices.data();
     m_dpbImageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     m_dpbImageCreateInfo.flags = 0;
 
