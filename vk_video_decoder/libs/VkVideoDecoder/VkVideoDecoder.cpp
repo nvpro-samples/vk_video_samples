@@ -20,6 +20,7 @@
 
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 #include "VkVideoDecoder/VkVideoDecoder.h"
+#include "NvVideoParser/nvVulkanVideoUtils.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 
 #undef max
@@ -242,6 +243,9 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         m_useImageViewArray = true;
     }
 
+    m_minBitstreamBufferSizeAlignment = videoCapabilities.minBitstreamBufferSizeAlignment;
+    m_minBitstreamBufferOffsetAlignment = videoCapabilities.minBitstreamBufferOffsetAlignment;
+
     int32_t ret = m_videoFrameBuffer->InitImagePool(videoProfile.GetProfile(),
                                                     m_numDecodeSurfaces,
                                                     dpbImageFormat,
@@ -425,8 +429,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     pPicParams->decodeFrameInfo.srcBuffer = pPicParams->bitstreamData->GetBuffer();
     assert(pPicParams->bitstreamDataOffset == 0);
     assert(pPicParams->firstSliceIndex == 0);
-    pPicParams->decodeFrameInfo.srcBufferOffset = pPicParams->bitstreamDataOffset;
-    pPicParams->decodeFrameInfo.srcBufferRange = pPicParams->bitstreamDataLen;
+
+    pPicParams->decodeFrameInfo.srcBufferOffset = ALIGN_UP(pPicParams->bitstreamDataOffset, m_minBitstreamBufferOffsetAlignment);
+    pPicParams->decodeFrameInfo.srcBufferRange = ALIGN_UP(pPicParams->bitstreamDataLen, m_minBitstreamBufferSizeAlignment);
     // pPicParams->decodeFrameInfo.dstImageView = VkImageView();
 
     VkVideoBeginCodingInfoKHR decodeBeginInfo = { VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR };

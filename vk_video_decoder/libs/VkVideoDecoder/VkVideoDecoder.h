@@ -316,4 +316,6 @@ private:
     uint32_t m_dumpDecodeData : 1;
     int32_t  m_numBitstreamBuffersToPreallocate;
     VkDeviceSize   m_maxStreamBufferSize;
+    uint32_t m_minBitstreamBufferSizeAlignment;
+    uint32_t m_minBitstreamBufferOffsetAlignment;
 };

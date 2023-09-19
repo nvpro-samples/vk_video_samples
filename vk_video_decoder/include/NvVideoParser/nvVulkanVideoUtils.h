@@ -24,6 +24,7 @@
 #define ALIGN32(p) ((unsigned char*)((((size_t)(p)) + 31) & ~31))
 #define ALIGN64(p) ((unsigned char*)((((size_t)(p)) + 63) & ~63))
 #define ALIGN128(p) ((unsigned char*)((((size_t)(p)) + 127) & ~127))
+#define ALIGN_UP(x, align) (((x) + (align) - 1) & ~((align) - 1))
 
 #define MAKEFRAMERATE(num, den) (((num) << 14) | (den))
 #define NV_FRAME_RATE_NUM(rate) ((rate) >> 14)
