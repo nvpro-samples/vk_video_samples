@@ -577,6 +577,8 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
     chosen11.samplerYcbcrConversion = features_11.samplerYcbcrConversion;
     assert(features_13.synchronization2);
     chosen13.synchronization2 = features_13.synchronization2;
+    assert(features_12.timelineSemaphore);
+    chosen12.timelineSemaphore = features_12.timelineSemaphore;
 
     // Use all the supported core features, probably we should trim this down a bit.
     devFeatures.pNext = &chosen11;
