@@ -259,9 +259,6 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         // VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT but requires VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT|VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT|VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR|VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT|VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR|VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR|VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR|VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR|VK_IMAGE_USAGE_SAMPLE_WEIGHT_BIT_QCOM|VK_IMAGE_USAGE_SAMPLE_BLOCK_MATCH_BIT_QCOM. The Vulkan spec states: image must have been created with a usage value containing at least one of the usages defined in the valid image usage list for image views (https://www.khronos.org/registry/vulkan/specs/1.3-extensions/html/vkspec.html#VUID-VkImageViewCreateInfo-image-04441)
         // Are we doing something more fundamentally wrong? I don't know. We should probably be copying to a buffer.
         // outImageUsage &= ~VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
-    } else {
-        // The implementation does not support dpbAndOutputCoincide
-        m_useSeparateOutputImages = true;
     }
 
     // Find supported formats info for the output image
@@ -331,7 +328,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                                     m_vkDevCtx->GetTransferQueueFamilyIdx(),
                                                     m_numDecodeImagesToPreallocate,
                                                     m_useImageArray, m_useImageViewArray,
-                                                    m_useSeparateOutputImages, m_useLinearOutput);
+                                                    !m_dpbAndOutputCoincide);
 
     assert((uint32_t)ret == m_numDecodeSurfaces);
     if ((uint32_t)ret != m_numDecodeSurfaces) {
@@ -558,7 +555,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     uint32_t numDpbBarriers = 0;
     VulkanVideoFrameBuffer::PictureResourceInfo currentDpbPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
     VulkanVideoFrameBuffer::PictureResourceInfo currentOutputPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
-    VkVideoPictureResourceInfoKHR currentOutputPictureResource = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR, nullptr};
 
     VkVideoPictureResourceInfoKHR* pOutputPictureResource = nullptr;
     VulkanVideoFrameBuffer::PictureResourceInfo* pOutputPictureResourceInfo = nullptr;
@@ -566,11 +562,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         // Output Distinct will use the decodeFrameInfo.dstPictureResource directly.
         pOutputPictureResource = &pPicParams->decodeFrameInfo.dstPictureResource;
-
-    } else if (m_useLinearOutput) {
-
-        // Output Coincide needs the output only if we are processing linear images that we need to copy to below.
-        pOutputPictureResource = &currentOutputPictureResource;
 
     }
 
@@ -790,15 +781,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
     VkVideoEndCodingInfoKHR decodeEndInfo = { VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR };
     m_vkDevCtx->CmdEndVideoCodingKHR(frameDataSlot.commandBuffer, &decodeEndInfo);
-
-    if (m_dpbAndOutputCoincide && (m_useSeparateOutputImages || m_useLinearOutput)) {
-        CopyOptimalToLinearImage(frameDataSlot.commandBuffer,
-                                 pPicParams->decodeFrameInfo.dstPictureResource,
-                                 currentDpbPictureResourceInfo,
-                                 *pOutputPictureResource,
-                                 *pOutputPictureResourceInfo,
-                                 &frameSynchronizationInfo);
-    }
 
     m_vkDevCtx->EndCommandBuffer(frameDataSlot.commandBuffer);
 
@@ -1061,7 +1043,6 @@ VkDeviceSize VkVideoDecoder::GetBitstreamBuffer(VkDeviceSize size,
 VkResult VkVideoDecoder::Create(const VulkanDeviceContext* vkDevCtx,
                                 VkSharedBaseObj<VulkanVideoFrameBuffer>& videoFrameBuffer,
                                 int32_t videoQueueIndx,
-                                bool useLinearOutput,
                                 bool enablePresentation,
                                 bool enableHwLoadBalancing,
                                 int32_t numDecodeImagesInFlight,
@@ -1072,8 +1053,7 @@ VkResult VkVideoDecoder::Create(const VulkanDeviceContext* vkDevCtx,
     VkSharedBaseObj<VkVideoDecoder> vkDecoder(new VkVideoDecoder(vkDevCtx,
                                                                  videoFrameBuffer,
                                                                  videoQueueIndx,
-                                                                 useLinearOutput,
-								 enablePresentation,
+								                                 enablePresentation,
                                                                  enableHwLoadBalancing,
                                                                  numDecodeImagesInFlight,
                                                                  numBitstreamBuffersToPreallocate));

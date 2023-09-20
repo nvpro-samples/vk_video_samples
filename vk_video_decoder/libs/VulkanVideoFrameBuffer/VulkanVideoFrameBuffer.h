@@ -140,8 +140,7 @@ public:
                                   int32_t                  numImagesToPreallocate,
                                   bool                     useImageArray = false,
                                   bool                     useImageViewArray = false,
-                                  bool                     useSeparateOutputImage = false,
-                                  bool                     useLinearOutput = false) = 0;
+                                  bool                     useSeparateOutputImage = false) = 0;
 
     virtual int32_t QueuePictureForDecode(int8_t picId, VkParserDecodePictureInfo* pDecodePictureInfo,
                                           ReferencedObjectsInfo* pReferencedObjectsInfo,

@@ -148,7 +148,6 @@ public:
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            VkSharedBaseObj<VulkanVideoFrameBuffer>& videoFrameBuffer,
                            int32_t videoQueueIndx = 0,
-                           bool useLinearOutput = false,
                            bool enablePresentation = true,
                            bool enableHwLoadBalancing = false,
                            int32_t numDecodeImagesInFlight = 8,
@@ -195,7 +194,6 @@ private:
     VkVideoDecoder(const VulkanDeviceContext* vkDevCtx,
                    VkSharedBaseObj<VulkanVideoFrameBuffer>& videoFrameBuffer,
                    int32_t videoQueueIndx = 0,
-                   bool useLinearOutput = false,
                    bool enablePresentation = true,
                    bool enableHwLoadBalancing = false,
                    int32_t numDecodeImagesInFlight = 8,
@@ -218,8 +216,6 @@ private:
         , m_dpbAndOutputCoincide(true)
         , m_useImageArray(false)
         , m_useImageViewArray(false)
-        , m_useSeparateOutputImages(useLinearOutput)
-        , m_useLinearOutput(useLinearOutput)
         , m_enablePresentation(enablePresentation)
         , m_resetDecoder(true)
         , m_dumpDecodeData(false)
