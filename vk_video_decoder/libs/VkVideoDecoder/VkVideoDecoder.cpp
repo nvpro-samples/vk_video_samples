@@ -445,7 +445,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     const VkBufferMemoryBarrier2KHR bitstreamBufferMemoryBarrier = {
         VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR,
         nullptr,
-        VK_PIPELINE_STAGE_2_NONE_KHR,
+        VK_PIPELINE_STAGE_2_HOST_BIT,
         VK_ACCESS_2_HOST_WRITE_BIT_KHR,
         VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR,
         VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR,
