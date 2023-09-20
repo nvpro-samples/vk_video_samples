@@ -404,63 +404,26 @@ size_t VulkanVideoProcessor::ConvertFrameToNv12(DecodedFrame* pFrame,
         retryCount--;
     } while ((result == VK_TIMEOUT) && (retryCount > 0));
 
-    // Map the image and read the image data.
-    VkDeviceSize imageOffset = imageResource->GetImageDeviceMemoryOffset();
-    VkDeviceSize maxSize = 0;
-    const uint8_t* readImagePtr = srcImageDeviceMemory->GetReadOnlyDataPtr(imageOffset, maxSize);
-    assert(readImagePtr != nullptr);
+    uint32_t imageWidth = pFrame->displayWidth;
+    uint32_t imageHeight = pFrame->displayHeight;
+    uint32_t secondaryPlaneHeight = imageHeight;
 
-    int secondaryPlaneHeight = pFrame->displayHeight;
-    int imageHeight = pFrame->displayHeight;
-    bool isUnnormalizedRgba = false;
-    if (mpInfo && (mpInfo->planesLayout.layout == YCBCR_SINGLE_PLANE_UNNORMALIZED) && !(mpInfo->planesLayout.disjoint)) {
-        isUnnormalizedRgba = true;
+    uint32_t bytesPerPixel = 1;
+    if (mpInfo->planesLayout.bpp >= YCBCRA_10BPP && mpInfo->planesLayout.bpp <= YCBCRA_16BPP) {
+        bytesPerPixel = 2;
     }
+
+    uint32_t lumaRowPitch = pFrame->displayWidth * bytesPerPixel;
+    uint32_t chromaRowPitch = lumaRowPitch;
 
     if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledY) {
         secondaryPlaneHeight /= 2;
+        chromaRowPitch /= 2;
     }
 
-    VkImageSubresource subResource = {};
-    VkSubresourceLayout layouts[3];
-    memset(layouts, 0x00, sizeof(layouts));
+    uint32_t cbOffset = lumaRowPitch * imageHeight;
+    uint32_t crOffset = cbOffset + chromaRowPitch * secondaryPlaneHeight;
 
-    if (mpInfo && !isUnnormalizedRgba) {
-        switch (mpInfo->planesLayout.layout) {
-            case YCBCR_SINGLE_PLANE_UNNORMALIZED:
-            case YCBCR_SINGLE_PLANE_INTERLEAVED:
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
-                break;
-            case YCBCR_SEMI_PLANAR_CBCR_INTERLEAVED:
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[1]);
-                break;
-            case YCBCR_PLANAR_CBCR_STRIDE_INTERLEAVED:
-            case YCBCR_PLANAR_CBCR_BLOCK_JOINED:
-            case YCBCR_PLANAR_STRIDE_PADDED:
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[1]);
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_2_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[2]);
-                break;
-            default:
-                assert(0);
-        }
-
-    } else {
-        m_vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
-    }
-
-    // Treat all non 8bpp formats as 16bpp for output to prevent any loss.
-    uint32_t bytesPerPixel = 1;
-    if (mpInfo->planesLayout.bpp != YCBCRA_8BPP) {
-        bytesPerPixel = 2;
-    }
 
     uint32_t numPlanes = 3;
     VkSubresourceLayout yuvPlaneLayouts[3] = {};
@@ -478,37 +441,244 @@ size_t VulkanVideoProcessor::ConvertFrameToNv12(DecodedFrame* pFrame,
     }
 
     // Copy the luma plane, always assume the 422 or 444 formats and src CbCr always is interleaved (shares the same plane).
-    uint32_t numCompatiblePlanes = 1;
-    for (uint32_t plane = 0; plane < numCompatiblePlanes; plane++) {
-        const uint8_t* pSrc = readImagePtr + layouts[plane].offset;
-        uint8_t* pDst = pOutBuffer + yuvPlaneLayouts[plane].offset;
-        for (int height = 0; height < imageHeight; height++) {
-            memcpy(pDst, pSrc, (size_t)yuvPlaneLayouts[plane].rowPitch);
-            pDst += (size_t)yuvPlaneLayouts[plane].rowPitch;
-            pSrc += (size_t)layouts[plane].rowPitch;
-        }
-    }
+    // uint32_t numCompatiblePlanes = 1;
+    // for (uint32_t plane = 0; plane < numCompatiblePlanes; plane++) {
+    //     const uint8_t* pSrc = readImagePtr + layouts[plane].offset;
+    //     uint8_t* pDst = pOutBuffer + yuvPlaneLayouts[plane].offset;
+    //     for (int height = 0; height < imageHeight; height++) {
+    //         memcpy(pDst, pSrc, (size_t)yuvPlaneLayouts[plane].rowPitch);
+    //         pDst += (size_t)yuvPlaneLayouts[plane].rowPitch;
+    //         pSrc += (size_t)layouts[plane].rowPitch;
+    //     }
+    // }
 
     // Copy the chroma plane(s)
-    for (uint32_t plane = numCompatiblePlanes; plane < numPlanes; plane++) {
-        uint32_t srcPlane = std::min(plane, mpInfo->planesLayout.numberOfExtraPlanes);
-        uint8_t* pDst = pOutBuffer + yuvPlaneLayouts[plane].offset;
-        for (int height = 0; height < secondaryPlaneHeight; height++) {
-            const uint8_t* pSrc;
-            if (srcPlane != plane) {
-                pSrc = readImagePtr + layouts[srcPlane].offset + ((plane - 1) * bytesPerPixel) + (layouts[srcPlane].rowPitch * height);
+    // for (uint32_t plane = numCompatiblePlanes; plane < numPlanes; plane++) {
+    //     uint32_t srcPlane = std::min(plane, mpInfo->planesLayout.numberOfExtraPlanes);
+    //     uint8_t* pDst = pOutBuffer + yuvPlaneLayouts[plane].offset;
+    //     for (int height = 0; height < secondaryPlaneHeight; height++) {
+    //         const uint8_t* pSrc;
+    //         if (srcPlane != plane) {
+    //             pSrc = readImagePtr + layouts[srcPlane].offset + ((plane - 1) * bytesPerPixel) + (layouts[srcPlane].rowPitch * height);
 
-            } else {
-                pSrc = readImagePtr + layouts[srcPlane].offset + (layouts[srcPlane].rowPitch * height);
-            }
+    //         } else {
+    //             pSrc = readImagePtr + layouts[srcPlane].offset + (layouts[srcPlane].rowPitch * height);
+    //         }
 
-            for (VkDeviceSize width = 0; width < (yuvPlaneLayouts[plane].rowPitch / bytesPerPixel); width++) {
-                memcpy(pDst, pSrc, bytesPerPixel);
-                pDst += bytesPerPixel;
-                pSrc += 2 * bytesPerPixel;
-            }
+    //         for (VkDeviceSize width = 0; width < (yuvPlaneLayouts[plane].rowPitch / bytesPerPixel); width++) {
+    //             memcpy(pDst, pSrc, bytesPerPixel);
+    //             pDst += bytesPerPixel;
+    //             pSrc += 2 * bytesPerPixel;
+    //         }
+    //     }
+    // }
+
+    // Create a command pool + buffer for the xfer queue family
+    // - should not open code
+    // - should check if its different to the decode family
+    VkCommandPool cmdPool;
+    VkCommandPoolCreateInfo cmdPoolCreateInfo = VkCommandPoolCreateInfo();
+    cmdPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    cmdPoolCreateInfo.pNext = nullptr;
+    cmdPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    cmdPoolCreateInfo.queueFamilyIndex = m_vkDevCtx->GetTransferQueueFamilyIdx();
+    result = m_vkDevCtx->CreateCommandPool(*m_vkDevCtx, &cmdPoolCreateInfo, nullptr, &cmdPool);
+    assert(result == VK_SUCCESS);
+    VkCommandBuffer xferCommands;
+    VkCommandBufferAllocateInfo cmdBufferCreateInfo = VkCommandBufferAllocateInfo();
+    cmdBufferCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cmdBufferCreateInfo.pNext = nullptr;
+    cmdBufferCreateInfo.commandPool = cmdPool;
+    cmdBufferCreateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdBufferCreateInfo.commandBufferCount = 1;
+    result = m_vkDevCtx->AllocateCommandBuffers(*m_vkDevCtx,
+        &cmdBufferCreateInfo, &xferCommands);
+    assert(result == VK_SUCCESS);
+    VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    beginInfo.pInheritanceInfo = nullptr;
+
+    // Create the staging buffers.
+    int32_t decodeQueueFamily = m_vkDevCtx->GetVideoDecodeQueueFamilyIdx();
+    assert(decodeQueueFamily != -1);
+    int32_t transferQueueFamily = m_vkDevCtx->GetTransferQueueFamilyIdx();
+    assert(transferQueueFamily != -1);
+    uint32_t queueFamilies[] = { (uint32_t)decodeQueueFamily, (uint32_t)transferQueueFamily };
+    VkSharedBaseObj<VkBufferResource> lumaBuffer;
+    VkSharedBaseObj<VkBufferResource> chromaBuffer;
+    uint32_t lumaBufferSize = NextPowerOf2U32(imageWidth*imageHeight*bytesPerPixel);
+    uint32_t chromaBufferSize = NextPowerOf2U32(imageWidth*secondaryPlaneHeight*bytesPerPixel);
+    result =
+        VkBufferResource::Create(m_vkDevCtx,
+                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                 lumaBufferSize,
+                                 lumaBuffer,
+                                 1, 256, // TODO pass alignment
+                                 0, nullptr,
+                                 2, queueFamilies);
+    assert(result == VK_SUCCESS);
+    result =
+        VkBufferResource::Create(m_vkDevCtx,
+                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                 chromaBufferSize,
+                                 chromaBuffer,
+                                 1, 256, // TODO
+                                 0, nullptr,
+                                 2, queueFamilies);
+    assert(result == VK_SUCCESS);
+
+    bool coincident = pFrame->outputImageView.Get() == pFrame->decodedImageView.Get();
+    
+    m_vkDevCtx->BeginCommandBuffer(xferCommands, &beginInfo);
+    {
+        // Transition the output image to TRANSFER_SRC
+        VkImageMemoryBarrier2KHR imageDecodeToTransferBarrier{};
+        imageDecodeToTransferBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        imageDecodeToTransferBarrier.pNext = NULL;
+        imageDecodeToTransferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imageDecodeToTransferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; // concurrent usage is enabled
+        imageDecodeToTransferBarrier.image = srcImage;
+        imageDecodeToTransferBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imageDecodeToTransferBarrier.subresourceRange.baseMipLevel = 0;
+        imageDecodeToTransferBarrier.subresourceRange.levelCount = 1;
+        imageDecodeToTransferBarrier.subresourceRange.baseArrayLayer = 0;
+        imageDecodeToTransferBarrier.subresourceRange.layerCount = 1;
+        imageDecodeToTransferBarrier.srcStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+        imageDecodeToTransferBarrier.srcAccessMask = VK_ACCESS_2_NONE_KHR;
+        imageDecodeToTransferBarrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+        imageDecodeToTransferBarrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT_KHR;
+        imageDecodeToTransferBarrier.oldLayout = coincident ? VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR : VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR;
+        imageDecodeToTransferBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        VkDependencyInfoKHR imageDecodeToTransferDependency{};
+        imageDecodeToTransferDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR;
+        imageDecodeToTransferDependency.pNext = NULL;
+        imageDecodeToTransferDependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+        imageDecodeToTransferDependency.memoryBarrierCount = 0;
+        imageDecodeToTransferDependency.pMemoryBarriers = NULL;
+        imageDecodeToTransferDependency.bufferMemoryBarrierCount = 0;
+        imageDecodeToTransferDependency.pBufferMemoryBarriers = nullptr;
+        imageDecodeToTransferDependency.imageMemoryBarrierCount = 1;
+        imageDecodeToTransferDependency.pImageMemoryBarriers = &imageDecodeToTransferBarrier;
+        m_vkDevCtx->CmdPipelineBarrier2KHR(xferCommands, &imageDecodeToTransferDependency);
+    }
+    {
+        VkBufferImageCopy copy_region{};
+        copy_region.bufferOffset = 0;
+        copy_region.bufferRowLength = lumaRowPitch;
+        copy_region.bufferImageHeight = imageHeight;
+        copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
+        copy_region.imageSubresource.mipLevel = 0;
+        copy_region.imageSubresource.baseArrayLayer = 0;
+        copy_region.imageSubresource.layerCount = 1;
+        copy_region.imageOffset.x = 0;
+        copy_region.imageOffset.y = 0;
+        copy_region.imageOffset.z = 0;
+        copy_region.imageExtent.width = lumaRowPitch;
+        copy_region.imageExtent.height = imageHeight;
+        copy_region.imageExtent.depth = 1;
+        m_vkDevCtx->CmdCopyImageToBuffer(xferCommands, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            lumaBuffer->GetBuffer(), 1, &copy_region);
+    }
+    {
+        VkBufferImageCopy copy_region{};
+        copy_region.bufferOffset = 0;
+        copy_region.bufferRowLength = chromaRowPitch;
+        copy_region.bufferImageHeight = secondaryPlaneHeight;
+        copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
+        copy_region.imageSubresource.mipLevel = 0;
+        copy_region.imageSubresource.baseArrayLayer = 0;
+        copy_region.imageSubresource.layerCount = 1;
+        copy_region.imageOffset.x = 0;
+        copy_region.imageOffset.y = 0;
+        copy_region.imageOffset.z = 0;
+        copy_region.imageExtent.width = chromaRowPitch;
+        copy_region.imageExtent.height = secondaryPlaneHeight;
+        copy_region.imageExtent.depth = 1;
+        m_vkDevCtx->CmdCopyImageToBuffer(xferCommands, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            chromaBuffer->GetBuffer(), 1, &copy_region);
+    }
+    {
+        VkImageMemoryBarrier2KHR imageTransferToDecodeBarrier{};
+        imageTransferToDecodeBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        imageTransferToDecodeBarrier.pNext = NULL;
+        imageTransferToDecodeBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imageTransferToDecodeBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; // concurrent usage is enabled
+        imageTransferToDecodeBarrier.image = srcImage;
+        imageTransferToDecodeBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imageTransferToDecodeBarrier.subresourceRange.baseMipLevel = 0;
+        imageTransferToDecodeBarrier.subresourceRange.levelCount = 1;
+        imageTransferToDecodeBarrier.subresourceRange.baseArrayLayer = 0;
+        imageTransferToDecodeBarrier.subresourceRange.layerCount = 1;
+        imageTransferToDecodeBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+        imageTransferToDecodeBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT_KHR;
+        imageTransferToDecodeBarrier.dstStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT_KHR;
+        imageTransferToDecodeBarrier.dstAccessMask = VK_ACCESS_2_NONE_KHR;
+        imageTransferToDecodeBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        imageTransferToDecodeBarrier.newLayout =  coincident ? VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR : VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR;
+        VkDependencyInfoKHR imageTransferToDecodeDependency{};
+        imageTransferToDecodeDependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR;
+        imageTransferToDecodeDependency.pNext = NULL;
+        imageTransferToDecodeDependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+        imageTransferToDecodeDependency.memoryBarrierCount = 0;
+        imageTransferToDecodeDependency.pMemoryBarriers = NULL;
+        imageTransferToDecodeDependency.bufferMemoryBarrierCount = 0;
+        imageTransferToDecodeDependency.pBufferMemoryBarriers = nullptr;
+        imageTransferToDecodeDependency.imageMemoryBarrierCount = 1;
+        imageTransferToDecodeDependency.pImageMemoryBarriers = &imageTransferToDecodeBarrier;
+        m_vkDevCtx->CmdPipelineBarrier2KHR(xferCommands, &imageTransferToDecodeDependency);
+    }
+    m_vkDevCtx->EndCommandBuffer(xferCommands);
+    VkFenceCreateInfo fence_info = {};
+    fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fence_info.pNext = nullptr;
+    fence_info.flags = 0;
+    VkFence fence;
+    m_vkDevCtx->CreateFence(m_vkDevCtx->getDevice(), &fence_info, nullptr, &fence);
+    VkSubmitInfo submit_info = {};
+    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit_info.pNext = nullptr;
+    submit_info.waitSemaphoreCount = 0;
+    submit_info.pWaitSemaphores = nullptr;
+    submit_info.pWaitDstStageMask = 0;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &xferCommands;
+    submit_info.signalSemaphoreCount = 0;
+    submit_info.pSignalSemaphores = nullptr;
+    result = m_vkDevCtx->QueueSubmit(m_vkDevCtx->GetTransferQueue(), 1, &submit_info, fence);
+    assert(result == VK_SUCCESS);
+    result = m_vkDevCtx->WaitForFences(m_vkDevCtx->getDevice(), 1, &fence, VK_TRUE, UINT64_MAX);
+    assert(result == VK_SUCCESS);
+    assert(mpInfo->planesLayout.bpp >= YCBCRA_8BPP && mpInfo->planesLayout.bpp <= YCBCRA_16BPP);
+
+    uint8_t* pDst = pOutBuffer;
+    VkDeviceSize maxSize;
+    const uint8_t* lumaPtr = lumaBuffer->GetReadOnlyDataPtr(0, maxSize);
+    for (uint32_t height = 0; height < imageHeight; height++) {
+        uint32_t offset = lumaRowPitch * height;
+        memcpy(pDst, lumaPtr + offset, lumaRowPitch);
+        pDst += lumaRowPitch;
+    }
+    assert(pDst == pOutBuffer + cbOffset);
+    uint8_t* pCbDstPtr = pDst;
+    uint8_t* pCrDstPtr = pOutBuffer + crOffset;
+    const uint8_t* chromaPtr = chromaBuffer->GetReadOnlyDataPtr(0, maxSize);
+    chromaRowPitch *= 2; // interleaved samples
+    for (uint32_t height = 0; height < secondaryPlaneHeight; height++) {
+        uint32_t offset = chromaRowPitch * height;
+        for (size_t j = 0; j < chromaRowPitch / 2; j++) {
+            memcpy(pCbDstPtr, chromaPtr + offset + j*2, bytesPerPixel);
+            memcpy(pCrDstPtr, chromaPtr + offset + j*2 + 1, bytesPerPixel);
+            pCbDstPtr += bytesPerPixel;
+            pCrDstPtr += bytesPerPixel;
         }
     }
+
+    m_vkDevCtx->DestroyFence(m_vkDevCtx->getDevice(), fence, nullptr);
+    m_vkDevCtx->FreeCommandBuffers(m_vkDevCtx->getDevice(), cmdPool, 1, &xferCommands);
+    m_vkDevCtx->DestroyCommandPool(m_vkDevCtx->getDevice(), cmdPool, nullptr);
 
     outputBufferSize += ((size_t)yuvPlaneLayouts[0].rowPitch * imageHeight);
     if (mpInfo->planesLayout.numberOfExtraPlanes >= 1) {

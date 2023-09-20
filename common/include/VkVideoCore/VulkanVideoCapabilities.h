@@ -20,6 +20,7 @@
 #include "string.h"
 #include "vulkan_interfaces.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
+#include "VkCodecUtils/VkBufferResource.h"
 #include "VkCodecUtils/Helpers.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
 
