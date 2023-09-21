@@ -14,13 +14,17 @@
  * limitations under the License.
  */
 
-#include "NvEncodeApp.h"
+#include "VkVideoEncoder/VkVideoEncoder.h"
+
+#define INPUT_FRAME_BUFFER_SIZE 16
 
 int8_t parseArguments(EncodeConfig *encodeConfig, int argc, char *argv[])
 {
     bool providedInputFileName = false;
     bool providedOutputFileName = false;
     bool providedQP = false;
+
+    encodeConfig->name = argv[0];
 
     for (int32_t i = 1; i < argc; i++) {
         if ((strcmp(argv[i], "--width") == 0)) {
@@ -113,7 +117,6 @@ int8_t parseArguments(EncodeConfig *encodeConfig, int argc, char *argv[])
     encodeConfig->lumaPlaneSize = encodeConfig->alignedWidth * encodeConfig->alignedHeight;
     encodeConfig->chromaPlaneSize = ((encodeConfig->alignedWidth + 1) / 2) * ((encodeConfig->alignedHeight + 1) / 2);
     encodeConfig->fullImageSize = encodeConfig->lumaPlaneSize + encodeConfig->chromaPlaneSize*2;
-    encodeConfig->bytepp = 1; // 8bpp
     encodeConfig->bpp = 8;
 
     return 0;
@@ -191,34 +194,99 @@ int8_t closeFiles(EncodeConfig *encodeConfig)
 //
 int main(int argc, char** argv)
 {
-    EncodeConfig encodeConfig;
+    EncodeConfig programConfig{};
 
     if (argc == 1) {
         printHelp();
         return -1;
     }
 
-    memset(&encodeConfig, 0, sizeof(EncodeConfig));
-
-    if(parseArguments(&encodeConfig, argc, argv))
+    if(parseArguments(&programConfig, argc, argv))
         return -1;
 
-    if(openFiles(&encodeConfig))
+    if(openFiles(&programConfig))
         return -1;
 
-    EncodeApp encodeApp;
-    encodeApp.initEncoder(&encodeConfig);
+
+    static const char* const requiredInstanceLayerExtensions[] = {
+        "VK_LAYER_LUNARG_standard_validation",
+        VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
+        nullptr
+    };
+
+    static const char* const requiredDeviceExtension[] = {
+#if defined(__linux) || defined(__linux__) || defined(linux)
+        VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME,
+#endif
+        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
+        VK_KHR_VIDEO_QUEUE_EXTENSION_NAME,
+        VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME,
+        nullptr
+    };
+
+    static const char* const optinalDeviceExtension[] = {
+        VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME,
+        VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
+        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+        VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+        nullptr
+    };
+
+    VulkanDeviceContext vkDevCtxt(programConfig.deviceId,
+            programConfig.validate ? requiredInstanceLayerExtensions : nullptr,
+            nullptr, // no instance extensions are required
+            requiredDeviceExtension,
+            optinalDeviceExtension);
+
+
+    VkResult result = vkDevCtxt.InitVulkanDevice(programConfig.name.c_str(),
+                                                 programConfig.verbose);
+    if (result != VK_SUCCESS) {
+        printf("Could not initialize the Vulkan device!\n");
+        return -1;
+    }
+
+    result = vkDevCtxt.InitDebugReport(programConfig.validate,
+                                       programConfig.validateVerbose);
+    if (result != VK_SUCCESS) {
+        return -1;
+    }
+
+    result = vkDevCtxt.InitPhysicalDevice((VK_QUEUE_TRANSFER_BIT |
+                                           VK_QUEUE_VIDEO_ENCODE_BIT_KHR),
+                                           nullptr);
+    if (result != VK_SUCCESS) {
+
+        assert(!"Can't initialize the Vulkan physical device!");
+        return -1;
+    }
+
+    result = vkDevCtxt.CreateVulkanDevice(0,     // num decode queues
+                                          1,     // num encode queues
+                                          false, // createGraphicsQueue
+                                          false, // createDisplayQueue
+                                          false  // createComputeQueue
+                                          );
+    if (result != VK_SUCCESS) {
+
+        assert(!"Failed to create Vulkan device!");
+        return -1;
+    }
+
+    EncodeApp encodeApp(&vkDevCtxt);
+    encodeApp.InitEncoder(&programConfig);
 
     // Encoding loop
-    const bool logBatchEnc = encodeConfig.logBatchEncoding;
+    const bool logBatchEnc = programConfig.logBatchEncoding;
     const uint32_t batchSize = 8;
     const uint32_t numBatches = 2;
     assert((batchSize > 0) && !(batchSize & (batchSize - 1)));
     const uint32_t maxFramesInFlight = INPUT_FRAME_BUFFER_SIZE;
     assert(batchSize * numBatches <= maxFramesInFlight);
     uint32_t batchId = 0;
-    uint32_t framesToProcess = encodeConfig.numFrames;
-    if (logBatchEnc) fprintf(stdout, "encodeConfig.startFrame %d, totalFrames  %d, encodeConfig.endFrame  %d\n", encodeConfig.startFrame, framesToProcess, encodeConfig.numFrames);
+    uint32_t framesToProcess = programConfig.numFrames;
+    if (logBatchEnc) fprintf(stdout, "programConfig.startFrame %d, totalFrames  %d, programConfig.endFrame  %d\n", programConfig.startFrame, framesToProcess, programConfig.numFrames);
     uint32_t firstAsmBufferIdx = 0;
     uint32_t numAsmBuffers = 0;
     uint32_t curFrameIndex = 0;
@@ -241,10 +309,10 @@ int main(int argc, char** argv)
             const uint32_t cpuFrameBufferIdx = firstLoadRecordCmdIndx + cpuBatchIdx;
             if (logBatchEnc) fprintf(stdout, "\tloadFrame curFrameIndex %d, cpuBatchIdx %d, cpuFrameBufferIdx %d\n", curFrameIndex, cpuBatchIdx, cpuFrameBufferIdx);
             // load frame data for the current frame index
-            encodeApp.loadFrame(&encodeConfig, curFrameIndex, cpuFrameBufferIdx);
+            encodeApp.LoadFrame(&programConfig, curFrameIndex, cpuFrameBufferIdx);
             if (logBatchEnc) fprintf(stdout, "\tRecord frame curFrameIndex %d, cpuBatchIdx %d, cpuFrameBufferIdx %d\n", curFrameIndex, cpuBatchIdx, cpuFrameBufferIdx);
             // encode frame for the current frame index
-            encodeApp.encodeFrame(&encodeConfig, curFrameIndex, (curFrameIndex == 0), cpuFrameBufferIdx);
+            encodeApp.EncodeFrame(&programConfig, curFrameIndex, (curFrameIndex == 0), cpuFrameBufferIdx);
             curFrameIndex++;
         }
         // #################################################################################################################
@@ -253,7 +321,7 @@ int main(int argc, char** argv)
         // #################################################################################################################
         if (logBatchEnc) fprintf(stdout, "### Submit to the HW encoder batchId %d, numFramesLoadRecordCmd %d, firstLoadRecordCmdIndx %d ###\n", batchId, numFramesLoadRecordCmd, firstLoadRecordCmdIndx);
         // submit the current batch
-        encodeApp.batchSubmit(firstLoadRecordCmdIndx, numFramesLoadRecordCmd);
+        encodeApp.BatchSubmit(firstLoadRecordCmdIndx, numFramesLoadRecordCmd);
         // #################################################################################################################
 
         // 3. Assemble the frame data from the previous batch processing (if any) of the submitted to the HW encoded frames.
@@ -261,7 +329,7 @@ int main(int argc, char** argv)
         if (logBatchEnc) fprintf(stdout, "### Assemble firstAsmBufferIdx %d, numAsmBuffers %d ###\n", firstAsmBufferIdx, numAsmBuffers);
         for(uint32_t asmBufferIdx = firstAsmBufferIdx; asmBufferIdx < firstAsmBufferIdx + numAsmBuffers; asmBufferIdx++) {
             if (logBatchEnc) fprintf(stdout, "\tAssemble asmFrameIndex %d, asmBatchIdx %d\n", asmFrameIndex, asmBufferIdx);
-            encodeApp.assembleBitstreamData(&encodeConfig, (asmFrameIndex == 0), asmBufferIdx);
+            encodeApp.AssembleBitstreamData(&programConfig, (asmFrameIndex == 0), asmBufferIdx);
             asmFrameIndex++;
         }
         // #################################################################################################################
@@ -272,7 +340,7 @@ int main(int argc, char** argv)
 
         framesToProcess -= numFramesLoadRecordCmd;
 
-        assert(framesToProcess < encodeConfig.numFrames);
+        assert(framesToProcess < programConfig.numFrames);
 
         // increment the current batchID
         batchId++;
@@ -280,9 +348,7 @@ int main(int argc, char** argv)
         if (logBatchEnc) fprintf(stdout, "####################################################################################\n\n");
     }
 
-    encodeApp.deinitEncoder();
-
-    if(closeFiles(&encodeConfig))
+    if(closeFiles(&programConfig))
         return -1;
 
     return 0;
