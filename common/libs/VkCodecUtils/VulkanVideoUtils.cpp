@@ -732,55 +732,56 @@ VkResult VulkanPerDrawContext::RecordCommandBuffer(VkCommandBuffer cmdBuffer,
     VkDescriptorSetLayoutCreateFlags layoutMode = descriptorSetLayoutBinding.GetDescriptorSetLayoutInfo().GetDescriptorLayoutMode();
     switch (layoutMode) {
         case VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR:
+        case VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT:
         {
-            std::array<VkWriteDescriptorSet, 1> writeDescriptorSets{};
+            const VkDescriptorImageInfo combinedImageSampler { samplerYcbcrConversion.GetSampler(),
+                                                               inputImageToDrawFrom->view,
+                                                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 
-            const VkDescriptorImageInfo combinedImageSampler{ samplerYcbcrConversion.GetSampler(),
-                                                              inputImageToDrawFrom->view,
-                                                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            const uint32_t numDescriptors = 1;
+            std::array<VkWriteDescriptorSet, numDescriptors> writeDescriptorSets{};
+
+            uint32_t set = 0;
 
             // Image
             writeDescriptorSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writeDescriptorSets[0].dstSet = 0;
+            writeDescriptorSets[0].dstSet = VK_NULL_HANDLE;
             writeDescriptorSets[0].dstBinding = 0;
             writeDescriptorSets[0].descriptorCount = 1;
             writeDescriptorSets[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             writeDescriptorSets[0].pImageInfo = &combinedImageSampler;
 
-            m_vkDevCtx->CmdPushDescriptorSetKHR(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                                descriptorSetLayoutBinding.GetPipelineLayout(), 0, 1,
-                                                writeDescriptorSets.data());
+            if (layoutMode == VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR) {
+                m_vkDevCtx->CmdPushDescriptorSetKHR(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                    descriptorSetLayoutBinding.GetPipelineLayout(),
+                                                    set, numDescriptors,
+                                                    writeDescriptorSets.data());
+            } else {
+
+                VkDeviceOrHostAddressConstKHR imageDescriptorBufferDeviceAddress =
+                        descriptorSetLayoutBinding.UpdateDescriptorBuffer(0, // always index 0
+                                                                          set, numDescriptors,
+                                                                          writeDescriptorSets.data());
+
+                // Descriptor buffer bindings
+                // Set 0 = Image
+                VkDescriptorBufferBindingInfoEXT bindingInfo{};
+                bindingInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
+                bindingInfo.pNext = nullptr;
+                bindingInfo.address = imageDescriptorBufferDeviceAddress.deviceAddress;
+                bindingInfo.usage = VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT |
+                                    VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
+                m_vkDevCtx->CmdBindDescriptorBuffersEXT(cmdBuffer, 1, &bindingInfo);
+
+                // Image (set 0)
+                uint32_t bufferIndexImage = 0;
+                VkDeviceSize bufferOffset = 0;
+                m_vkDevCtx->CmdSetDescriptorBufferOffsetsEXT(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                             descriptorSetLayoutBinding.GetPipelineLayout(),
+                                                             set, 1, &bufferIndexImage, &bufferOffset);
+            }
         }
         break;
-        case VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT:
-        {
-            const VkDescriptorImageInfo combinedImageSampler{ samplerYcbcrConversion.GetSampler(),
-                                                                      inputImageToDrawFrom->view,
-                                                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-
-            VkDeviceOrHostAddressConstKHR imageDescriptorBufferDeviceAddress =
-                    descriptorSetLayoutBinding.UpdateDescriptorBuffer(0, &combinedImageSampler);
-
-
-            // Descriptor buffer bindings
-            // Set 0 = Image
-            VkDescriptorBufferBindingInfoEXT bindingInfo{};
-            bindingInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT;
-            bindingInfo.pNext = nullptr;
-            bindingInfo.address = imageDescriptorBufferDeviceAddress.deviceAddress;
-            bindingInfo.usage = VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT |
-                                VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
-            m_vkDevCtx->CmdBindDescriptorBuffersEXT(cmdBuffer, 1, &bindingInfo);
-
-            // Image (set 0)
-            uint32_t bufferIndexImage = 0;
-            VkDeviceSize bufferOffset = 0;
-            m_vkDevCtx->CmdSetDescriptorBufferOffsetsEXT(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                                         descriptorSetLayoutBinding.GetPipelineLayout(),
-                                                         0, 1, &bufferIndexImage, &bufferOffset);
-        }
-        break;
-
         default:
             m_vkDevCtx->CmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                               descriptorSetLayoutBinding.GetPipelineLayout(),

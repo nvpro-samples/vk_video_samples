@@ -70,7 +70,7 @@ VkResult VulkanFilterYuvCompute::Init(const VkSamplerYcbcrConversionCreateInfo* 
 
     assert(m_queue != VK_NULL_HANDLE);
 
-    result = InitDescriptorSetLayout();
+    result = InitDescriptorSetLayout(m_maxNumFrames);
     if (result != VK_SUCCESS) {
         assert(!"ERROR: InitDescriptorSetLayout!");
         return result;
@@ -123,7 +123,7 @@ VkResult VulkanFilterYuvCompute::Init(const VkSamplerYcbcrConversionCreateInfo* 
     return VK_ERROR_LAYER_NOT_PRESENT;
 }
 
-VkResult VulkanFilterYuvCompute::InitDescriptorSetLayout()
+VkResult VulkanFilterYuvCompute::InitDescriptorSetLayout(uint32_t maxNumFrames)
 {
 
     VkSampler ccSampler = m_samplerYcbcrConversion.GetSampler();
@@ -160,6 +160,7 @@ VkResult VulkanFilterYuvCompute::InitDescriptorSetLayout()
                                                      VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR,
                                                      0, nullptr,
                                                      &m_samplerYcbcrConversion,
+                                                     maxNumFrames,
                                                      false);
 }
 

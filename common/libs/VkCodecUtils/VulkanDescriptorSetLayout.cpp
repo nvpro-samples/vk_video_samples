@@ -70,12 +70,15 @@ VkResult VulkanDescriptorSetLayout::CreateDescriptorSet(const VulkanDeviceContex
                                                         uint32_t                   pushConstantRangeCount,
                                                         const VkPushConstantRange* pPushConstantRanges,
                                                         const VulkanSamplerYcbcrConversion* pSamplerYcbcrConversion,
+                                                        uint32_t maxNumFrames,
                                                         bool autoSelectdescriptorSetLayoutCreateFlags)
 {
     m_vkDevCtx = vkDevCtx;
 
     DestroyPipelineLayout();
     DestroyDescriptorSetLayout();
+
+    m_maxNumFrames = maxNumFrames;
 
     if (autoSelectdescriptorSetLayoutCreateFlags) {
         if (m_vkDevCtx->FindRequiredDeviceExtension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)) {
@@ -98,26 +101,29 @@ VkResult VulkanDescriptorSetLayout::CreateDescriptorSet(const VulkanDeviceContex
     }
 
     if (m_descriptorSetLayoutInfo.GetDescriptorLayoutMode() == VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR) {
+
         VkPhysicalDevicePushDescriptorPropertiesKHR pushDescriptorProps{};
         VkPhysicalDeviceProperties2KHR deviceProps2{};
         pushDescriptorProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PUSH_DESCRIPTOR_PROPERTIES_KHR;
         deviceProps2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR;
         deviceProps2.pNext = &pushDescriptorProps;
         m_vkDevCtx->GetPhysicalDeviceProperties2(m_vkDevCtx->getPhysicalDevice(), &deviceProps2);
+
     } else if (m_descriptorSetLayoutInfo.GetDescriptorLayoutMode() == VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) {
 
         VkPhysicalDeviceProperties2KHR deviceProps2{};
-        VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptorBufferProperties{};
-        descriptorBufferProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT;
+        m_descriptorBufferProperties = VkPhysicalDeviceDescriptorBufferPropertiesEXT();
+        m_descriptorBufferProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT;
         deviceProps2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR;
-        deviceProps2.pNext = &descriptorBufferProperties;
+        deviceProps2.pNext = &m_descriptorBufferProperties;
         m_vkDevCtx->GetPhysicalDeviceProperties2(m_vkDevCtx->getPhysicalDevice(), &deviceProps2);
-        m_descriptorSize[0]   = descriptorBufferProperties.combinedImageSamplerDescriptorSize;
-        m_descriptorOffset[0] = vk::alignedSize(descriptorBufferProperties.combinedImageSamplerDescriptorSize,
-                                            descriptorBufferProperties.descriptorBufferOffsetAlignment);
 
-        VkDeviceSize descriptorLayoutSize = 0;
-        m_vkDevCtx->GetDescriptorSetLayoutSizeEXT(*m_vkDevCtx, m_dscLayout, &descriptorLayoutSize);
+        m_vkDevCtx->GetDescriptorSetLayoutSizeEXT(*m_vkDevCtx, m_dscLayout, &m_descriptorLayoutSize);
+
+        m_descriptorLayoutSize = vk::alignedSize(m_descriptorLayoutSize,
+                                                 m_descriptorBufferProperties.descriptorBufferOffsetAlignment);
+
+        m_descriptorBufferSize = m_descriptorLayoutSize * m_maxNumFrames;
 
         result = VkBufferResource::Create(m_vkDevCtx,
                                           VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
@@ -125,9 +131,9 @@ VkResult VulkanDescriptorSetLayout::CreateDescriptorSet(const VulkanDeviceContex
                                              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                                          descriptorLayoutSize,
+                                          m_descriptorBufferSize,
                                           m_resourceDescriptorBuffer, 1,
-                                          descriptorBufferProperties.descriptorBufferOffsetAlignment);
+                                          m_descriptorBufferProperties.descriptorBufferOffsetAlignment);
 
         if (result != VK_SUCCESS) {
             return result;

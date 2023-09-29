@@ -267,6 +267,7 @@ vk_khr_push_descriptor = Extension(name='VK_KHR_push_descriptor', version=1, gua
 
 vk_ext_descriptor_buffer = Extension(name='VK_EXT_descriptor_buffer', version=1, guard=None, commands=[
     Command(name='GetDescriptorSetLayoutSizeEXT', dispatch='VkDevice'),
+    Command(name='GetDescriptorSetLayoutBindingOffsetEXT', dispatch='VkDevice'),
     Command(name='GetDescriptorEXT', dispatch='VkDevice'),
     Command(name='CmdBindDescriptorBuffersEXT', dispatch='VkCommandBuffer'),
     Command(name='CmdSetDescriptorBufferOffsetsEXT', dispatch='VkCommandBuffer'),

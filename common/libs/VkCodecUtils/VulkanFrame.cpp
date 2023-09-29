@@ -476,7 +476,7 @@ VkResult VulkanFrame::DrawFrame( int32_t           renderIndex,
         VkWriteDescriptorSet writeDescriptorSet{};
 
         writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writeDescriptorSet.dstSet = 0;
+        writeDescriptorSet.dstSet = VK_NULL_HANDLE;
         writeDescriptorSet.dstBinding = 0;
         writeDescriptorSet.descriptorCount = 1;
         writeDescriptorSet.descriptorType = (pPerDrawContext->samplerYcbcrConversion.GetSampler() != VK_NULL_HANDLE) ?

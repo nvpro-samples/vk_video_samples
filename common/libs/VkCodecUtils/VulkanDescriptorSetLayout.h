@@ -19,6 +19,7 @@
 
 #include <sstream>
 #include <vulkan_interfaces.h>
+#include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/VkBufferResource.h"
 #include "VkCodecUtils/VulkanSamplerYcbcrConversion.h"
@@ -170,14 +171,16 @@ class VulkanDescriptorSetLayout {
 
 public:
     VulkanDescriptorSetLayout()
-     : m_vkDevCtx(),
-       m_descriptorSetLayoutInfo(),
-       m_dscLayout(),
-       m_pipelineLayout(),
-       m_currentDescriptorSetPools(-1),
-       m_descSets{},
-       m_descriptorOffset{},
-       m_descriptorSize{}
+     : m_vkDevCtx()
+     , m_descriptorSetLayoutInfo()
+     , m_dscLayout()
+     , m_pipelineLayout()
+     , m_currentDescriptorSetPools(-1)
+     , m_descSets{}
+     , m_maxNumFrames(0)
+     , m_descriptorLayoutSize(0)
+     , m_descriptorBufferSize(0)
+     , m_descriptorBufferProperties()
     { }
 
     ~VulkanDescriptorSetLayout()
@@ -211,6 +214,7 @@ public:
                                  uint32_t                   pushConstantRangeCount = 0,
                                  const VkPushConstantRange* pPushConstantRanges = nullptr,
                                  const VulkanSamplerYcbcrConversion* pSamplerYcbcrConversion = nullptr,
+                                 uint32_t maxNumFrames = 1,
                                  bool autoSelectdescriptorSetLayoutCreateFlags = true);
 
     // initialize descriptor set
@@ -236,23 +240,60 @@ public:
         return m_resourceDescriptorBuffer;
     }
 
-    VkDeviceOrHostAddressConstKHR UpdateDescriptorBuffer(uint32_t descriptorId,
-                                                         const VkDescriptorImageInfo* pCombinedImageSampler) const {
+    VkDeviceOrHostAddressConstKHR UpdateDescriptorBuffer(uint32_t bufferIdx, uint32_t set,
+                                                         uint32_t descriptorWriteCount,
+                                                         const VkWriteDescriptorSet* pDescriptorWrites) const {
 
-        assert(descriptorId == 0); // Only one resource is currently supported
+        if (!(bufferIdx < m_maxNumFrames)) {
+            assert(!"bufferIdx is out of range!");
+            return VkDeviceOrHostAddressConstKHR();
+        }
+
+        const VkDeviceSize bufferIdxOffset = (bufferIdx * m_descriptorLayoutSize);
+        assert(bufferIdxOffset < m_descriptorBufferSize);
 
         // Set descriptors for image
         VkDeviceSize dstBufferOffset = 0;
         VkDeviceSize maxSize = 0;
         uint8_t* imageDescriptorBufPtr = const_cast<uint8_t*>((const uint8_t*)m_resourceDescriptorBuffer->GetDataPtr(dstBufferOffset, maxSize));
         assert(imageDescriptorBufPtr);
+        imageDescriptorBufPtr += bufferIdxOffset;
 
-        VkDescriptorGetInfoEXT descriptorInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT };
-        descriptorInfo.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorInfo.data.pCombinedImageSampler = pCombinedImageSampler;
-        m_vkDevCtx->GetDescriptorEXT(*m_vkDevCtx, &descriptorInfo, m_descriptorSize[descriptorId],
-                                     imageDescriptorBufPtr + 0 /* index */ * m_descriptorOffset[descriptorId]);
+        for (uint32_t i = 0; i < descriptorWriteCount; i++) {
+            const VkWriteDescriptorSet* pDescriptorWrite = &pDescriptorWrites[i];
 
+            VkDeviceSize dstBindingOffset = 0;
+            m_vkDevCtx->GetDescriptorSetLayoutBindingOffsetEXT(*m_vkDevCtx, m_dscLayout,
+                                                               pDescriptorWrite->dstBinding,
+                                                               &dstBindingOffset);
+
+            size_t descriptorSize = m_descriptorBufferProperties.storageImageDescriptorSize;
+            switch (pDescriptorWrite->descriptorType) {
+            case VK_DESCRIPTOR_TYPE_SAMPLER:
+                descriptorSize = m_descriptorBufferProperties.samplerDescriptorSize;
+                // fall through
+            case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+                descriptorSize = m_descriptorBufferProperties.combinedImageSamplerDescriptorSize;
+                // fall through
+            case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+                descriptorSize = m_descriptorBufferProperties.sampledImageDescriptorSize;
+                // fall through
+            case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+            {
+                assert((dstBindingOffset + descriptorSize) < m_descriptorLayoutSize);
+
+                VkDescriptorGetInfoEXT descriptorInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT };
+                descriptorInfo.type = pDescriptorWrite->descriptorType;
+                descriptorInfo.data.pCombinedImageSampler = pDescriptorWrite->pImageInfo;
+
+                m_vkDevCtx->GetDescriptorEXT(*m_vkDevCtx, &descriptorInfo, descriptorSize,
+                                             imageDescriptorBufPtr + dstBindingOffset);
+            }
+            break;
+            default:
+                assert(!"Unknown descriptor type");
+            }
+        }
         VkBuffer imageDescriptorBuffer = m_resourceDescriptorBuffer->GetBuffer();
         assert(imageDescriptorBuffer);
         VkDeviceOrHostAddressConstKHR imageDescriptorBufferDeviceAddress;
@@ -260,6 +301,7 @@ public:
         bufferDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
         bufferDeviceAddressInfo.buffer = imageDescriptorBuffer;
         imageDescriptorBufferDeviceAddress.deviceAddress = m_vkDevCtx->GetBufferDeviceAddressKHR(*m_vkDevCtx, &bufferDeviceAddressInfo);
+        imageDescriptorBufferDeviceAddress.deviceAddress += bufferIdxOffset;
 
         return imageDescriptorBufferDeviceAddress;
     }
@@ -291,9 +333,13 @@ private:
     VkPipelineLayout                   m_pipelineLayout;
     int32_t                            m_currentDescriptorSetPools;
     VulkanDescriptorSet                m_descSets[MAX_DESCRIPTOR_SET_POOLS];
-    VkSharedBaseObj<VkBufferResource>  m_resourceDescriptorBuffer; // If VK_EXT_descriptor_buffer is supported
-    VkDeviceSize                       m_descriptorOffset[1]; // Only one for now, since there is only one image descriptor
-    size_t                             m_descriptorSize[1];   // Only one for now, since there is only one image descriptor
+    // If VK_EXT_descriptor_buffer is supported:
+    uint32_t                           m_maxNumFrames;
+    VkDeviceSize                       m_descriptorLayoutSize;
+    VkDeviceSize                       m_descriptorBufferSize;
+    VkPhysicalDeviceDescriptorBufferPropertiesEXT
+                                       m_descriptorBufferProperties;
+    VkSharedBaseObj<VkBufferResource>  m_resourceDescriptorBuffer;
 };
 
 #endif /* _VULKANDESCRIPTORSETLAYOUT_H_ */
