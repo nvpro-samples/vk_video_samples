@@ -22,10 +22,19 @@ RUN --mount=type=cache,target=/var/cache/apt \
     python-is-python3 \
     ninja-build
 
-COPY vk_video_decoder vk_video_decoder
+COPY vk_video_decoder/external_revisions/ vk_video_decoder/external_revisions/
+COPY vk_video_decoder/update_external_sources.sh vk_video_decoder/update_external_sources.sh
+RUN cd vk_video_decoder/ && bash ./update_external_sources.sh
+COPY vk_video_decoder/cmake vk_video_decoder/cmake
+COPY vk_video_decoder/demos vk_video_decoder/demos
+COPY vk_video_decoder/include vk_video_decoder/include
+COPY vk_video_decoder/layers vk_video_decoder/layers
+COPY vk_video_decoder/libs vk_video_decoder/libs
+COPY vk_video_decoder/libs vk_video_decoder/libs
+COPY vk_video_decoder/CMakeLists.txt vk_video_decoder/CMakeLists.txt
+COPY vk_video_decoder/scripts vk_video_decoder/scripts
 COPY common common
 
-RUN cd vk_video_decoder/ && bash ./update_external_sources.sh
 RUN cmake -B build \
 	-S vk_video_decoder \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
