@@ -1,11 +1,13 @@
-from ubuntu:22.04 as builder
+from ubuntu:22.04 as vkbase
 RUN apt-get update && \
     apt-get install -y --no-install-recommends wget ca-certificates && rm -rf /var/lib/apt/lists/
 
 RUN wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | tee /etc/apt/trusted.gpg.d/lunarg.asc
 RUN wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.3.261-jammy.list https://packages.lunarg.com/vulkan/1.3.261/lunarg-vulkan-1.3.261-jammy.list
+
+from vkbase as builder
 RUN \
-    apt-get install -y --no-install-recommends \
+    apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     git \
@@ -42,11 +44,7 @@ RUN cmake -B build \
         .
 RUN cmake --build build --parallel && cmake --install build
 
-from ubuntu:22.04 as runner
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends wget ca-certificates && rm -rf /var/lib/apt/lists/*
-RUN wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | tee /etc/apt/trusted.gpg.d/lunarg.asc
-RUN wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.3.261-jammy.list https://packages.lunarg.com/vulkan/1.3.261/lunarg-vulkan-1.3.261-jammy.list
+from vkbase as runner
 RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
     apt-get install -y --no-install-recommends \
     libavcodec58 \
