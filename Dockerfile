@@ -1,10 +1,10 @@
 from ubuntu:22.04 as builder
-RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
-    apt-get install -y --no-install-recommends wget ca-certificates 
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends wget ca-certificates && rm -rf /var/lib/apt/lists/
 
 RUN wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | tee /etc/apt/trusted.gpg.d/lunarg.asc
 RUN wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.3.261-jammy.list https://packages.lunarg.com/vulkan/1.3.261/lunarg-vulkan-1.3.261-jammy.list
-RUN --mount=type=cache,target=/var/cache/apt \
+RUN \
     apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -20,7 +20,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     python3 \
     python3-distutils \
     python-is-python3 \
-    ninja-build
+    ninja-build && rm -rf /var/lib/apt/lists/*
 
 COPY vk_video_decoder/external_revisions/ vk_video_decoder/external_revisions/
 COPY vk_video_decoder/update_external_sources.sh vk_video_decoder/update_external_sources.sh
@@ -43,8 +43,8 @@ RUN cmake -B build \
 RUN cmake --build build --parallel && cmake --install build
 
 from ubuntu:22.04 as runner
-RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
-    apt-get install -y --no-install-recommends wget ca-certificates
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends wget ca-certificates && rm -rf /var/lib/apt/lists/*
 RUN wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | tee /etc/apt/trusted.gpg.d/lunarg.asc
 RUN wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.3.261-jammy.list https://packages.lunarg.com/vulkan/1.3.261/lunarg-vulkan-1.3.261-jammy.list
 RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
@@ -59,7 +59,7 @@ RUN --mount=type=cache,target=/var/cache/apt apt-get update && \
     libglx0 \
     libegl1  \
     libgles2  \
-    libxcb1-dev
+    libxcb1-dev && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /build/demos/
 COPY --from=builder /build /build
