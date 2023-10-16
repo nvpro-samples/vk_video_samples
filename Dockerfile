@@ -17,12 +17,15 @@ RUN --mount=type=cache,target=/var/cache/apt \
     libx11-dev \
     pkg-config \
     libvulkan-dev \
+    python3 \
+    python3-distutils \
+    python-is-python3 \
     ninja-build
 
 COPY vk_video_decoder vk_video_decoder
 COPY common common
 
-RUN cd vk_video_decoder/ # && bash ./update_external_sources.sh
+RUN cd vk_video_decoder/ && bash ./update_external_sources.sh
 RUN cmake -B build \
 	-S vk_video_decoder \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
