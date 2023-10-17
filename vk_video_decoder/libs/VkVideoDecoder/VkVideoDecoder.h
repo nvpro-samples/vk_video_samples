@@ -220,6 +220,7 @@ private:
         , m_decodePicCount(0)
         , m_hwLoadBalancingTimelineSemaphore()
         , m_dpbAndOutputCoincide(true)
+        , m_videoMaintenance1FeaturesSupported(false)
         , m_enableDecodeFilter((enableDecoderFeatures & ENABLE_POST_PROCESS_FILTER) != 0)
         , m_useImageArray(false)
         , m_useImageViewArray(false)
@@ -312,6 +313,7 @@ private:
     VkSharedBaseObj<VkParserVideoPictureParameters>  m_currentPictureParameters;
     VkSemaphore m_hwLoadBalancingTimelineSemaphore;
     uint32_t m_dpbAndOutputCoincide : 1;
+    uint32_t m_videoMaintenance1FeaturesSupported : 1;
     uint32_t m_enableDecodeFilter : 1;
     uint32_t m_useImageArray : 1;
     uint32_t m_useImageViewArray : 1;

@@ -94,7 +94,7 @@ public:
         VkFence frameConsumerDoneFence;
         VkSemaphore frameConsumerDoneSemaphore;
         VkQueryPool queryPool;
-        int32_t startQueryId;
+        uint32_t startQueryId;
         uint32_t numQueries;
         uint32_t hasFrameCompleteSignalFence : 1;
         uint32_t hasFrameCompleteSignalSemaphore : 1;

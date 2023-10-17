@@ -113,8 +113,6 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
 
     m_numDecodeSurfaces = std::max(m_numDecodeSurfaces, (pVideoFormat->minNumDecodeSurfaces + m_numDecodeImagesInFlight));
 
-    VkResult result = VK_SUCCESS;
-
     int32_t videoQueueFamily = m_vkDevCtx->GetVideoDecodeQueueFamilyIdx();
     VkVideoCodecOperationFlagsKHR videoCodecs = VulkanVideoCapabilities::GetSupportedCodecs(m_vkDevCtx,
             m_vkDevCtx->getPhysicalDevice(),
@@ -166,9 +164,9 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
 
     VkVideoCapabilitiesKHR videoCapabilities;
     VkVideoDecodeCapabilitiesKHR videoDecodeCapabilities;
-    result = VulkanVideoCapabilities::GetVideoDecodeCapabilities(m_vkDevCtx, videoProfile,
-                                                                 videoCapabilities,
-                                                                 videoDecodeCapabilities);
+    VkResult result = VulkanVideoCapabilities::GetVideoDecodeCapabilities(m_vkDevCtx, videoProfile,
+                                                                          videoCapabilities,
+                                                                          videoDecodeCapabilities);
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
         assert(!"Could not get Video Capabilities!");
@@ -196,8 +194,17 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     uint32_t alignHeight = videoCapabilities.pictureAccessGranularity.height - 1;
     imageExtent.height = ((imageExtent.height + alignHeight) & ~alignHeight);
 
+    VkVideoSessionCreateFlagsKHR sessionCreateFlags{};
+
+#ifdef VK_KHR_video_maintenance1
+    m_videoMaintenance1FeaturesSupported = VulkanVideoCapabilities::GetVideoMaintenance1FeatureSupported(m_vkDevCtx);
+    if (m_videoMaintenance1FeaturesSupported) {
+        sessionCreateFlags |= VK_VIDEO_SESSION_CREATE_INLINE_QUERIES_BIT_KHR;
+    }
+#endif // VK_KHR_video_maintenance1
     if (!m_videoSession ||
             !m_videoSession->IsCompatible( m_vkDevCtx,
+                                           sessionCreateFlags,
                                            m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                            &videoProfile,
                                            outImageFormat,
@@ -207,6 +214,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                            std::max<uint32_t>(maxDpbSlotCount, VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS)) ) {
 
         result = VulkanVideoSession::Create( m_vkDevCtx,
+                                             sessionCreateFlags,
                                              m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                              &videoProfile,
                                              outImageFormat,
@@ -483,7 +491,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     // pPicParams->decodeFrameInfo.dstImageView = VkImageView();
 
     VkVideoBeginCodingInfoKHR decodeBeginInfo = { VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR };
-    // CmdResetQueryPool are NOT Supported yet.
     decodeBeginInfo.pNext = pPicParams->beginCodingInfoPictureParametersExt;
 
     decodeBeginInfo.videoSession = m_videoSession->GetVideoSession();
@@ -754,14 +761,31 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     };
     m_vkDevCtx->CmdPipelineBarrier2KHR(frameDataSlot.commandBuffer, &dependencyInfo);
 
+#ifdef VK_KHR_video_maintenance1
+    VkVideoInlineQueryInfoKHR inlineQueryInfo { VK_STRUCTURE_TYPE_VIDEO_INLINE_QUERY_INFO_KHR,
+                                                nullptr,
+                                                frameSynchronizationInfo.queryPool,
+                                                frameSynchronizationInfo.startQueryId,
+                                                frameSynchronizationInfo.numQueries };
+#endif // VK_KHR_video_maintenance1
+
     if (frameSynchronizationInfo.queryPool != VK_NULL_HANDLE) {
-        m_vkDevCtx->CmdBeginQuery(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool,
-                                  frameSynchronizationInfo.startQueryId, VkQueryControlFlags());
+
+#ifdef VK_KHR_video_maintenance1
+        if (m_videoMaintenance1FeaturesSupported == 1) {
+            inlineQueryInfo.pNext = pPicParams->decodeFrameInfo.pNext;
+            pPicParams->decodeFrameInfo.pNext = &inlineQueryInfo;
+        } else
+#endif // VK_KHR_video_maintenance1
+        {
+            m_vkDevCtx->CmdBeginQuery(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool,
+                                      frameSynchronizationInfo.startQueryId, VkQueryControlFlags());
+        }
     }
 
     m_vkDevCtx->CmdDecodeVideoKHR(frameDataSlot.commandBuffer, &pPicParams->decodeFrameInfo);
 
-    if (frameSynchronizationInfo.queryPool != VK_NULL_HANDLE) {
+    if ((frameSynchronizationInfo.queryPool != VK_NULL_HANDLE) && (m_videoMaintenance1FeaturesSupported == 0)) {
         m_vkDevCtx->CmdEndQuery(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool,
                                 frameSynchronizationInfo.startQueryId);
     }

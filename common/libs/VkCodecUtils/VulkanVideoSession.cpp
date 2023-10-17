@@ -24,6 +24,7 @@
 #include "VkCodecUtils/VulkanVideoSession.h"
 
 VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
+                                    VkVideoSessionCreateFlagsKHR sessionCreateFlags,
                                     uint32_t            videoQueueFamily,
                                     VkVideoCoreProfile* pVideoProfile,
                                     VkFormat            pictureFormat,
@@ -41,7 +42,7 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
     static const VkExtensionProperties h265EncodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_ENCODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_ENCODE_SPEC_VERSION };
 
     VkVideoSessionCreateInfoKHR& createInfo = pNewVideoSession->m_createInfo;
-    createInfo.flags = 0;
+    createInfo.flags = sessionCreateFlags;
     createInfo.pVideoProfile = pVideoProfile->GetProfile();
     createInfo.queueFamilyIndex = videoQueueFamily;
     createInfo.pictureFormat = pictureFormat;

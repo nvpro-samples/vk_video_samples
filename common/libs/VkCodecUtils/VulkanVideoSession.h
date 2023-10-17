@@ -25,6 +25,7 @@ class VulkanVideoSession : public VkVideoRefCountBase
     enum { MAX_BOUND_MEMORY = 8 };
 public:
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
+                           VkVideoSessionCreateFlagsKHR sessionCreateFlags,
                            uint32_t            videoQueueFamily,
                            VkVideoCoreProfile* pVideoProfile,
                            VkFormat            pictureFormat,
@@ -35,6 +36,7 @@ public:
                            VkSharedBaseObj<VulkanVideoSession>& videoSession);
 
     bool IsCompatible ( const VulkanDeviceContext* vkDevCtx,
+                        VkVideoSessionCreateFlagsKHR sessionCreateFlags,
                         uint32_t            videoQueueFamily,
                         VkVideoCoreProfile* pVideoProfile,
                         VkFormat            pictureFormat,
@@ -44,6 +46,10 @@ public:
                         uint32_t            maxActiveReferencePictures)
     {
         if (*pVideoProfile != m_profile) {
+            return false;
+        }
+
+        if (sessionCreateFlags != m_flags) {
             return false;
         }
 
@@ -104,7 +110,7 @@ private:
 
     VulkanVideoSession(const VulkanDeviceContext* vkDevCtx,
                    VkVideoCoreProfile* pVideoProfile)
-       : m_refCount(0), m_profile(*pVideoProfile), m_vkDevCtx(vkDevCtx),
+       : m_refCount(0), m_flags(), m_profile(*pVideoProfile), m_vkDevCtx(vkDevCtx),
          m_createInfo{ VK_STRUCTURE_TYPE_VIDEO_SESSION_CREATE_INFO_KHR, NULL },
          m_videoSession(VkVideoSessionKHR()), m_memoryBound{}
     {
@@ -130,6 +136,7 @@ private:
 
 private:
     std::atomic<int32_t>                   m_refCount;
+    VkVideoSessionCreateFlagsKHR           m_flags;
     VkVideoCoreProfile                     m_profile;
     const VulkanDeviceContext*             m_vkDevCtx;
     VkVideoSessionCreateInfoKHR            m_createInfo;

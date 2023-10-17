@@ -375,6 +375,7 @@ public:
 
     static bool GetVideoMaintenance1FeatureSupported(const VulkanDeviceContext* vkDevCtx)
     {
+#ifdef VK_KHR_video_maintenance1
         VkPhysicalDeviceVideoMaintenance1FeaturesKHR videoMaintenance1Features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR,
                                                                                nullptr,
                                                                                false};
@@ -382,6 +383,9 @@ public:
         vkDevCtx->GetPhysicalDeviceFeatures2(vkDevCtx->getPhysicalDevice(),
                                              &deviceFeatures);
         return (videoMaintenance1Features.videoMaintenance1 == VK_TRUE);
+#else  // VK_KHR_video_maintenance1
+        return false;
+#endif // VK_KHR_video_maintenance1
     }
 
 };
