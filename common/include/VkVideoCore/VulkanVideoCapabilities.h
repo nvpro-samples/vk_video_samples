@@ -373,6 +373,17 @@ public:
                                                                &videoDecodeCapabilities);
     }
 
+    static bool GetVideoMaintenance1FeatureSupported(const VulkanDeviceContext* vkDevCtx)
+    {
+        VkPhysicalDeviceVideoMaintenance1FeaturesKHR videoMaintenance1Features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR,
+                                                                               nullptr,
+                                                                               false};
+        VkPhysicalDeviceFeatures2 deviceFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &videoMaintenance1Features};
+        vkDevCtx->GetPhysicalDeviceFeatures2(vkDevCtx->getPhysicalDevice(),
+                                             &deviceFeatures);
+        return (videoMaintenance1Features.videoMaintenance1 == VK_TRUE);
+    }
+
 };
 
 #endif /* _VULKANVIDEOCAPABILITIES_H_ */
