@@ -83,6 +83,7 @@ struct VkParserDecodePictureInfo {
     int32_t displayWidth;
     int32_t displayHeight;
     int32_t pictureIndex; // Index of the current picture
+    uint32_t imageLayerIndex; // The layer of a multi-layered images. Always "0" for single layered images
     VkParserFieldFlags flags;
     uint64_t decodePicCount;
     VkVideotimestamp timestamp; // decode time
