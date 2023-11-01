@@ -89,7 +89,9 @@ public:
 
     virtual VkResult RecordCommandBuffer(uint32_t frameIdx,
                                          const VkImageResourceView* inputImageView,
-                                         const VkImageResourceView* outputImageView)
+                                         const VkVideoPictureResourceInfoKHR * inputImageResourceInfo,
+                                         const VkImageResourceView* outputImageView,
+                                         const VkVideoPictureResourceInfoKHR * outputImageResourceInfo)
     {
 
         static const uint64_t fenceWaitTimeout = 100 * 1000 * 1000 /* 100 mSec */;
@@ -114,6 +116,7 @@ public:
         m_vkDevCtx->CmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline.getPipeline());
 
         VkDescriptorSetLayoutCreateFlags layoutMode = m_descriptorSetLayout.GetDescriptorSetLayoutInfo().GetDescriptorLayoutMode();
+
         switch (layoutMode) {
             case VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR:
             case VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT:
@@ -303,6 +306,23 @@ public:
                                               m_descriptorSetLayout.GetPipelineLayout(),
                                               0, 1, m_descriptorSetLayout.GetDescriptorSet(), 0, 0);
         }
+
+        struct PushConstants {
+            uint32_t srcLayer;
+            uint32_t dstLayer;
+        };
+
+        PushConstants pushConstants = {
+                inputImageResourceInfo  ? inputImageResourceInfo->baseArrayLayer : 0, // Set the source layer index
+                outputImageResourceInfo ? outputImageResourceInfo->baseArrayLayer : 0 // Set the destination layer index
+        };
+
+        m_vkDevCtx->CmdPushConstants(cmdBuf,
+                                     m_descriptorSetLayout.GetPipelineLayout(),
+                                     VK_SHADER_STAGE_COMPUTE_BIT,
+                                     0, // offset
+                                     sizeof(PushConstants),
+                                     &pushConstants);
 
         const VkImageCreateInfo& imageCreateInfo = outputImageView->GetImageResource()->GetImageCreateInfo();
         uint32_t  width  = imageCreateInfo.extent.width  + (m_workgroupSizeX - 1);

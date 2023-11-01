@@ -155,10 +155,15 @@ VkResult VulkanFilterYuvCompute::InitDescriptorSetLayout(uint32_t maxNumFrames)
         VkDescriptorSetLayoutBinding{ 8, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
     };
 
+    VkPushConstantRange pushConstantRange = {};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT; // Stage the push constant is for
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = 2 * sizeof(uint32_t); // Size of the push constant - source and destination image layers
+
     return m_descriptorSetLayout.CreateDescriptorSet(m_vkDevCtx,
                                                      setLayoutBindings,
                                                      VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR,
-                                                     0, nullptr,
+                                                     1, &pushConstantRange,
                                                      &m_samplerYcbcrConversion,
                                                      maxNumFrames,
                                                      false);
@@ -194,14 +199,19 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
     // Create compute pipeline
     std::stringstream shaderStr;
     shaderStr << "#version 450\n"
+                        "layout(push_constant) uniform PushConstants {\n"
+                        "    uint srcImageLayer;\n"
+                        "    uint dstImageLayer;\n"
+                        "} pushConstants;\n"
+                        "\n"
                         "layout (local_size_x = 16, local_size_y = 16) in;\n"
                         " // TODO: use set and binding from the layout\n"
                         " // TODO: use r16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 1, r8) uniform readonly image2D inputImageY;\n"
+                        "layout (set = 0, binding = 1, r8) uniform readonly image2DArray inputImageY;\n"
                         " // TODO: use rg16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 2, rg8) uniform readonly image2D inputImageCbCr;\n"
+                        "layout (set = 0, binding = 2, rg8) uniform readonly image2DArray inputImageCbCr;\n"
                         " // TODO: use rgba16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 4, rgba8) uniform writeonly image2D outImage;\n"
+                        "layout (set = 0, binding = 4, rgba8) uniform writeonly image2DArray outImage;\n"
                         "\n"
                         " // TODO: normalize only narrow\n"
                         "float normalizeY(float Y) {\n"
@@ -267,14 +277,14 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
         "    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);\n"
         "\n"
         "    // Fetch from the texture.\n"
-        "    float Y = imageLoad(inputImageY, pos).r;\n"
+        "    float Y = imageLoad(inputImageY, ivec3(pos, pushConstants.srcImageLayer)).r;\n"
         "    // TODO: it is /2 only for sub-sampled formats\n"
-        "    vec2 CbCr = imageLoad(inputImageCbCr, pos/2).rg;\n"
+        "    vec2 CbCr = imageLoad(inputImageCbCr, ivec3(pos/2, pushConstants.srcImageLayer)).rg;\n"
         "\n"
         "    vec3 ycbcr = shiftCbCr(normalizeYCbCr(vec3(Y, CbCr)));\n"
         "    vec4 rgba = vec4(convertYCbCrToRgb(ycbcr),1.0);\n"
         "    // Store it back.\n"
-        "    imageStore(outImage, pos, rgba);\n"
+        "    imageStore(outImage, ivec3(pos, pushConstants.dstImageLayer), rgba);\n"
         "}\n";
 
     computeShader = shaderStr.str();
@@ -299,16 +309,21 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
     std::stringstream shaderStr;
     // Create compute pipeline
     shaderStr << "#version 450\n"
+                        "layout(push_constant) uniform PushConstants {\n"
+                        "    uint srcImageLayer;\n"
+                        "    uint dstImageLayer;\n"
+                        "} pushConstants;\n"
+                        "\n"
                         "layout (local_size_x = 16, local_size_y = 16) in;\n"
                         " // TODO: use set and binding from the layout\n"
                         " // TODO: use r16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 1, r8) uniform readonly image2D inputImageY;\n"
+                        "layout (set = 0, binding = 1, r8) uniform  readonly  image2DArray inputImageY;\n"
                         " // TODO: use rg16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 2, rg8) uniform readonly image2D inputImageCbCr;\n"
+                        "layout (set = 0, binding = 2, rg8) uniform readonly  image2DArray inputImageCbCr;\n"
                         " // TODO: use rgba16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 5, r8) uniform writeonly image2D outImageY;\n"
+                        "layout (set = 0, binding = 5, r8) uniform  writeonly image2DArray outImageY;\n"
                         " // TODO: use rg16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 6, rg8) uniform writeonly image2D outImageCbCr;\n"
+                        "layout (set = 0, binding = 6, rg8) uniform writeonly image2DArray outImageCbCr;\n"
                         "\n"
                         "\n";
 
@@ -318,14 +333,14 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
         "    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);\n"
         "\n"
         "    // Read Y value from source Y plane and write it to destination Y plane\n"
-        "    float Y = imageLoad(inputImageY, pos).r;\n"
-        "    imageStore(outImageY, pos, vec4(Y, 0, 0, 1));\n"
+        "    float Y = imageLoad(inputImageY, ivec3(pos, pushConstants.srcImageLayer)).r;\n"
+        "    imageStore(outImageY, ivec3(pos, pushConstants.dstImageLayer), vec4(Y, 0, 0, 1));\n"
         "\n"
         "    // Do the same for the CbCr plane, but remember about the 4:2:0 subsampling\n"
         "    if (pos % 2 == ivec2(0, 0)) {\n"
         "        pos /= 2;\n"
-        "        vec2 CbCr = imageLoad(inputImageCbCr, pos).rg;\n"
-        "        imageStore(outImageCbCr, pos, vec4(CbCr, 0, 1));\n"
+        "        vec2 CbCr = imageLoad(inputImageCbCr, ivec3(pos, pushConstants.srcImageLayer)).rg;\n"
+        "        imageStore(outImageCbCr, ivec3(pos, pushConstants.dstImageLayer), vec4(CbCr, 0, 1));\n"
         "    }\n"
         "}\n";
 
@@ -348,11 +363,16 @@ size_t VulkanFilterYuvCompute::InitYCBCRCLEAR(std::string& computeShader)
     // Create compute pipeline
     std::stringstream shaderStr;
     shaderStr << "#version 450\n"
+                        "layout(push_constant) uniform PushConstants {\n"
+                        "    uint srcImageLayer;\n"
+                        "    uint dstImageLayer;\n"
+                        "} pushConstants;\n"
+                        "\n"
                         "layout (local_size_x = 16, local_size_y = 16) in;\n"
                         " // TODO: use rgba16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 5, r8) uniform writeonly image2D outImageY;\n"
+                        "layout (set = 0, binding = 5, r8) uniform writeonly image2DArray outImageY;\n"
                         " // TODO: use rg16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 6, rg8) uniform writeonly image2D outImageCbCr;\n"
+                        "layout (set = 0, binding = 6, rg8) uniform writeonly image2DArray outImageCbCr;\n"
                         "\n"
                         "\n";
 
@@ -361,12 +381,12 @@ size_t VulkanFilterYuvCompute::InitYCBCRCLEAR(std::string& computeShader)
         "{\n"
         "    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);\n"
         "\n"
-        "    imageStore(outImageY, pos, vec4(0.5, 0, 0, 1));\n"
+        "    imageStore(outImageY, ivec3(pos, pushConstants.dstImageLayer), vec4(0.5, 0, 0, 1));\n"
         "\n"
         "    // Do the same for the CbCr plane, but remember about the 4:2:0 subsampling\n"
         "    if (pos % 2 == ivec2(0, 0)) {\n"
         "        pos /= 2;\n"
-        "        imageStore(outImageCbCr, pos, vec4(0.5, 0.5, 0.0, 1.0));\n"
+        "        imageStore(outImageCbCr, ivec3(pos, pushConstants.dstImageLayer), vec4(0.5, 0.5, 0.0, 1.0));\n"
         "    }\n"
         "}\n";
 

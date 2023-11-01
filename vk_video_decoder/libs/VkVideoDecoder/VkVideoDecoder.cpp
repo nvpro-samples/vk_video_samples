@@ -579,6 +579,10 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         // For the Output Coincide, the DPB and destination output resources are the same.
         pPicParams->decodeFrameInfo.dstPictureResource = pPicParams->dpbSetupPictureResource;
 
+        // Also, when we are copying the output we need to know which layer is used for the current frame.
+        // This is if a multi-layered image is used for the DPB and the output (since they coincide).
+        pDecodePictureInfo->imageLayerIndex = pPicParams->dpbSetupPictureResource.baseArrayLayer;
+
     } else if (pOutputPictureResourceInfo) {
 
         // For Output Distinct transition the image to DECODE_DST
@@ -1006,7 +1010,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         assert(pPicParams->decodeFrameInfo.dstPictureResource.imageViewBinding == inputImageView->GetImageView());
         assert(pOutputPictureResource->imageViewBinding == outputImageView->GetImageView());
 
-        result = m_yuvFilter->RecordCommandBuffer(currPicIdx, inputImageView, outputImageView);
+        result = m_yuvFilter->RecordCommandBuffer(currPicIdx,
+                                                  inputImageView, &pPicParams->decodeFrameInfo.dstPictureResource,
+                                                  outputImageView, nullptr);
         assert(result == VK_SUCCESS);
 
         if (false) std::cout << currPicIdx << " : OUT view: " << outputImageView->GetImageView() << ", signalSem: " <<  frameCompleteSemaphore << std::endl << std::flush;

@@ -84,7 +84,9 @@ public:
 
     virtual VkResult RecordCommandBuffer(uint32_t frameIdx,
                                          const VkImageResourceView* inputImageView,
-                                         const VkImageResourceView* outputImageView) = 0;
+                                         const VkVideoPictureResourceInfoKHR * inputImageResourceInfo,
+                                         const VkImageResourceView* outputImageView,
+                                         const VkVideoPictureResourceInfoKHR * outputImageResourceInfo) = 0;
 
     virtual uint32_t GetSubmitCommandBuffers(uint32_t frameIdx, const VkCommandBuffer** ppCommandBuffers) const = 0;
 

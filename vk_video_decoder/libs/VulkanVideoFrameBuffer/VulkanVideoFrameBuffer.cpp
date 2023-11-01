@@ -537,6 +537,8 @@ public:
         if ((uint32_t)pictureIndex < m_perFrameDecodeImageSet.size()) {
             pDecodedFrame->pictureIndex = pictureIndex;
 
+            pDecodedFrame->imageLayerIndex = m_perFrameDecodeImageSet[pictureIndex].m_picDispInfo.imageLayerIndex;
+
             pDecodedFrame->decodedImageView = m_perFrameDecodeImageSet[pictureIndex].GetFrameImageView();
             pDecodedFrame->outputImageView = m_perFrameDecodeImageSet[pictureIndex].GetDisplayImageView();
 

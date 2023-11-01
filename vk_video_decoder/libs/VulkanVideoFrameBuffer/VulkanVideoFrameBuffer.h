@@ -27,6 +27,7 @@
 
 struct DecodedFrame {
     int32_t pictureIndex;
+    uint32_t imageLayerIndex; // The layer of a multi-layered images. Always "0" for single layered images
     int32_t displayWidth;
     int32_t displayHeight;
     VkSharedBaseObj<VkImageResourceView> decodedImageView;
@@ -51,6 +52,7 @@ struct DecodedFrame {
     void Reset()
     {
         pictureIndex = -1;
+        imageLayerIndex = 0;
         displayWidth = 0;
         displayHeight = 0;
         decodedImageView  = nullptr;
