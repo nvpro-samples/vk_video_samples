@@ -179,15 +179,24 @@ int main(int argc, const char **argv) {
             return -1;
         }
 
-        result = vkDevCtxt.InitPhysicalDevice((VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT | VK_QUEUE_COMPUTE_BIT |
-                                               VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR),
-                                               displayShell,
-                                               requestVideoDecodeQueueMask,
-                                               (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
-                                                VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR),
-                                               requestVideoEncodeQueueMask,
-                                               (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT |
-                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_EXT));
+        VkQueueFlags requestedQueueFlags = \
+            VK_QUEUE_GRAPHICS_BIT
+          | VK_QUEUE_TRANSFER_BIT
+          | VK_QUEUE_COMPUTE_BIT
+          | VK_QUEUE_VIDEO_DECODE_BIT_KHR
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+          | VK_QUEUE_VIDEO_ENCODE_BIT_KHR
+#endif
+          | 0;
+
+        result = vkDevCtxt.InitPhysicalDevice(requestedQueueFlags,
+                                              displayShell,
+                                              requestVideoDecodeQueueMask,
+                                              (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
+                                               VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR),
+                                              requestVideoEncodeQueueMask,
+                                              (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT |
+                                               VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_EXT));
         if (result != VK_SUCCESS) {
 
             assert(!"Can't initialize the Vulkan physical device!");
