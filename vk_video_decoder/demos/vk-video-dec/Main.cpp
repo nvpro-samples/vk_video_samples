@@ -32,8 +32,7 @@ int main(int argc, const char **argv) {
     programConfig.ParseArgs(argc, argv);
 
     static const char* const requiredInstanceLayerExtensions[] = {
-        "VK_LAYER_LUNARG_standard_validation",
-        VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
+        "VK_LAYER_KHRONOS_validation",
         nullptr
     };
 
@@ -73,6 +72,9 @@ int main(int argc, const char **argv) {
 
     std::vector<const char *> reqInstanceExtensions;
     std::vector<const char *> reqDeviceExtensions;
+
+    if (programConfig.validate)
+        reqInstanceExtensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
 
     /********** Start WSI instance extensions support *******************************************/
     if (!programConfig.noPresent) {
