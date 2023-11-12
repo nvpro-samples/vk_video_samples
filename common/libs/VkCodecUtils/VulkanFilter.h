@@ -17,6 +17,8 @@
 #ifndef _VKCODECUTILS_VULKANFILTER_H_
 
 #include <atomic>
+#include <string>
+
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/VulkanShaderCompiler.h"
