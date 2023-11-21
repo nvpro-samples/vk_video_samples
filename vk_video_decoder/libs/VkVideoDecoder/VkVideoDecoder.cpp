@@ -854,8 +854,10 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         timelineSemaphoreInfos.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
         timelineSemaphoreInfos.pNext = NULL;
+        assert(waitSemaphoreCount < waitSemaphoreMaxCount);
         timelineSemaphoreInfos.waitSemaphoreValueCount = waitSemaphoreCount;
         timelineSemaphoreInfos.pWaitSemaphoreValues = waitTlSemaphoresValues;
+        assert(signalSemaphoreCount < signalSemaphoreMaxCount);
         timelineSemaphoreInfos.signalSemaphoreValueCount = signalSemaphoreCount;
         timelineSemaphoreInfos.pSignalSemaphoreValues = signalTlSemaphoresValues;
         if (m_dumpDecodeData) {
