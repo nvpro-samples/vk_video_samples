@@ -1015,7 +1015,9 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
 
         hevc_video_hrd_param_s* pHrdParameters = nullptr;
         if (vps->vps_num_hrd_parameters) {
-            vps->stdHrdParameters.reset(new hevc_video_hrd_param_s[vps->vps_num_hrd_parameters]);
+            // vps->stdHrdParameters.reset(new hevc_video_hrd_param_s[vps->vps_num_hrd_parameters]());
+            auto deleter = [](hevc_video_hrd_param_s* p) { delete[] p; };
+            vps->stdHrdParameters.reset(new hevc_video_hrd_param_s[vps->vps_num_hrd_parameters], deleter);
             if (vps->stdHrdParameters) {
                 pHrdParameters = vps->stdHrdParameters.get();
                 vps->pHrdParameters = pHrdParameters;
