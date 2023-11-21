@@ -309,8 +309,17 @@ int32_t EncodeApp::InitEncoder(EncodeConfig* encodeConfig)
     m_maxCodedExtent = { encodeConfig->width, encodeConfig->height }; // codedSize
     m_maxReferencePicturesSlotsCount = DECODED_PICTURE_BUFFER_SIZE;
 
+    VkVideoSessionCreateFlagsKHR sessionCreateFlags{};
+#ifdef VK_KHR_video_maintenance1
+    m_videoMaintenance1FeaturesSupported = VulkanVideoCapabilities::GetVideoMaintenance1FeatureSupported(m_vkDevCtx);
+    if (m_videoMaintenance1FeaturesSupported) {
+        sessionCreateFlags |= VK_VIDEO_SESSION_CREATE_INLINE_QUERIES_BIT_KHR;
+    }
+#endif // VK_KHR_video_maintenance1
+
     if (!m_videoSession ||
             !m_videoSession->IsCompatible( m_vkDevCtx,
+                                           sessionCreateFlags,
                                            m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
                                            &m_videoProfile,
                                            m_imageInFormat,
@@ -321,6 +330,7 @@ int32_t EncodeApp::InitEncoder(EncodeConfig* encodeConfig)
                                                               DECODED_PICTURE_BUFFER_SIZE)) ) {
 
         result = VulkanVideoSession::Create( m_vkDevCtx,
+                                             sessionCreateFlags,
                                              m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
                                              &m_videoProfile,
                                              m_imageInFormat,
@@ -512,9 +522,9 @@ void EncodeApp::POCBasedRefPicManagement(StdVideoEncodeH264RefPicMarkingEntry* m
     currPicNum = m_dpb264.GetCurrentDpbEntry()->frame_num % maxPicNum;
 
     if (currPicNum > 0 && (picNumX >= 0)) {
-        m_mmco[m_refPicMarkingOpCount].operation = STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_UNMARK_SHORT_TERM;
+        m_mmco[m_refPicMarkingOpCount].memory_management_control_operation = STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_UNMARK_SHORT_TERM;
         m_mmco[m_refPicMarkingOpCount++].difference_of_pic_nums_minus1 = currPicNum - picNumX - 1;
-        m_mmco[m_refPicMarkingOpCount++].operation = STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_END;
+        m_mmco[m_refPicMarkingOpCount++].memory_management_control_operation = STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_END;
     }
 }
 
@@ -531,9 +541,9 @@ void EncodeApp::FrameNumBasedRefPicManagement(StdVideoEncodeH264RefPicMarkingEnt
     currPicNum = m_dpb264.GetCurrentDpbEntry()->frame_num % maxPicNum;
 
     if (currPicNum > 0 && (picNumX >= 0)) {
-        m_mmco[m_refPicMarkingOpCount].operation = STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_UNMARK_SHORT_TERM;
+        m_mmco[m_refPicMarkingOpCount].memory_management_control_operation = STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_UNMARK_SHORT_TERM;
         m_mmco[m_refPicMarkingOpCount++].difference_of_pic_nums_minus1 = currPicNum - picNumX - 1;
-        m_mmco[m_refPicMarkingOpCount++].operation = STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_END;
+        m_mmco[m_refPicMarkingOpCount++].memory_management_control_operation = STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_END;
     }
 }
 

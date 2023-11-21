@@ -727,8 +727,8 @@ void VkEncDpbH264::AdaptiveMemoryManagement(const StdVideoEncodeH264ReferenceLis
 
     CurrPicNum = (!m_pCurPicInfo->field_pic_flag) ? m_pCurPicInfo->frameNum : 2 * m_pCurPicInfo->frameNum + 1;
 
-    for (k = 0; ((k < MAX_MMCOS) && (mmco[k].operation != STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_END)); k++) {
-        switch (mmco[k].operation) {
+    for (k = 0; ((k < MAX_MMCOS) && (mmco[k].memory_management_control_operation != STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_END)); k++) {
+        switch (mmco[k].memory_management_control_operation) {
         case STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_UNMARK_SHORT_TERM:
             // 8.2.5.4.1 Marking process of a short-term picture as "unused for reference"
             VK_DPB_DBG_PRINT(("%d ", mmco[k].difference_of_pic_nums_minus1));

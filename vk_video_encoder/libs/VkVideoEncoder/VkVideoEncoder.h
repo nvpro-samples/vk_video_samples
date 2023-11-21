@@ -329,6 +329,7 @@ public:
         , m_h264()
         , m_frameNumSyntax(0)
         , m_IDRPicId(0)
+        , m_videoMaintenance1FeaturesSupported(false)
         , m_sendControlCmd(true)
         , m_sendResetControlCmd(true)
         , m_rateControlTestMode(true)
@@ -408,6 +409,7 @@ private:
     EncoderH264State       m_h264;
     uint32_t m_frameNumSyntax;
     uint32_t m_IDRPicId;
+    uint32_t m_videoMaintenance1FeaturesSupported : 1;
     uint32_t m_sendControlCmd : 1;
     uint32_t m_sendResetControlCmd : 1;
     uint32_t m_rateControlTestMode : 1;
