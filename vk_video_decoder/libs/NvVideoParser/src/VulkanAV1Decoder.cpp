@@ -1056,6 +1056,7 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
                 memcpy(fgp, &(m_pBuffers[buf_idx].film_grain_params), sizeof(av1_film_grain_s));
             }
             fgp->grain_seed = random_seed;
+            fgp->film_grain_params_ref_idx = buf_idx;
             return 1;
         }
 

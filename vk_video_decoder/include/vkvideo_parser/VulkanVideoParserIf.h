@@ -357,6 +357,7 @@ typedef struct VkParserAv1FilmGrain {
     uint8_t cr_mult; // 8 bits
     uint8_t cr_luma_mult; // 8 bits
     int16_t cr_offset; // 9 bits
+    uint8_t film_grain_params_ref_idx; // 3 bits
 } VkParserAv1FilmGrain;
 
 typedef struct VkParserAv1GlobalMotionParameters {
