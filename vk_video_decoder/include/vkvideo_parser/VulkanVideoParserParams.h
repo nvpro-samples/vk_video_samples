@@ -94,7 +94,6 @@ struct VkParserDecodePictureInfo {
     uint64_t decodePicCount;
     VkVideotimestamp timestamp; // decode time
     VkParserFrameSyncinfo frameSyncinfo;
-    uint16_t videoFrameType; // VideoFrameType - use Vulkan codec specific type pd->CodecSpecific.h264.slice_type.
     uint16_t viewId; // HEVC nuh_layer_id & from pictureInfoH264->ext.mvcext.view_id
     bool filmGrainEnabled;
 };
