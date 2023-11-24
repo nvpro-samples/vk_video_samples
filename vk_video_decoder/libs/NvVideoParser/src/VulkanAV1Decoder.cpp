@@ -272,12 +272,12 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
     av1->height = m_dwHeight;
     av1->frame_offset = frame_offset;
     // sps
-    av1->profile                        = sps->profile;
-    av1->use_128x128_superblock         = sps->flags.use_128x128_superblock;  // 0:64x64, 1: 128x128
-    av1->mono_chrome                    = sps->color_config.flags.mono_chrome;
-    av1->subsampling_x                  = sps->color_config.subsampling_x;
-    av1->subsampling_y                  = sps->color_config.subsampling_y;
-    av1->bit_depth_minus8               = sps->color_config.BitDepth - 8;
+    av1->profile                              = sps->profile;
+    av1->use_128x128_superblock               = sps->flags.use_128x128_superblock;  // 0:64x64, 1: 128x128
+
+    // color_config
+    memcpy(&av1->color_config, &sps->color_config, sizeof(StdVideoAV1ColorConfig));
+
     av1->enable_fgs                     = sps->flags.film_grain_params_present;
     av1->primary_ref_frame              = primary_ref_frame;
     av1->temporal_layer_id              = temporal_id;
@@ -286,7 +286,7 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
 
     VkParserSequenceInfo nvsi = m_ExtSeqInfo;
     nvsi.eCodec         = (VkVideoCodecOperationFlagBitsKHR)VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR;
-    nvsi.nChromaFormat  = av1->mono_chrome ? 0 : (av1->subsampling_x && av1->subsampling_y) ? 1 : (!av1->subsampling_x && !av1->subsampling_y) ? 3 : 2;
+    nvsi.nChromaFormat  = av1->color_config.flags.mono_chrome ? 0 : (av1->color_config.subsampling_x && av1->color_config.subsampling_y) ? 1 : (!av1->color_config.subsampling_x && !av1->color_config.subsampling_y) ? 3 : 2;
     nvsi.nMaxWidth      = (sps->max_frame_width_minus_1 + 2) & ~1;
     nvsi.nMaxHeight     = (sps->max_frame_height_minus_1 + 2) & ~1;
     nvsi.nCodedWidth    = av1->superres_width;   // nvdec does on the fly scaling so nvdec output has final width as superres_width
@@ -295,7 +295,7 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
     nvsi.nDisplayHeight = nvsi.nCodedHeight;
     nvsi.bProgSeq = true; // AV1 doesnt have explicit interlaced coding.
 
-    nvsi.uBitDepthLumaMinus8 = av1->bit_depth_minus8;
+    nvsi.uBitDepthLumaMinus8 = av1->color_config.BitDepth - 8;
     nvsi.uBitDepthChromaMinus8 = nvsi.uBitDepthLumaMinus8;
 
     nvsi.lDARWidth = nvsi.nDisplayWidth;
@@ -305,9 +305,9 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
     nvsi.nMinNumDecodeSurfaces = 9;
 
     nvsi.lVideoFormat = VideoFormatUnspecified;
-    nvsi.lColorPrimaries = sps->color_primaries;
-    nvsi.lTransferCharacteristics = sps->transfer_characteristics;
-    nvsi.lMatrixCoefficients = sps->matrix_coefficients;
+    nvsi.lColorPrimaries = sps->color_config.color_primaries;
+    nvsi.lTransferCharacteristics = sps->color_config.transfer_characteristics;
+    nvsi.lMatrixCoefficients = sps->color_config.matrix_coefficients;
 
     nvsi.pbSideData = pnvpd->pSideData;
     nvsi.cbSideData = pnvpd->sideDataLen;
@@ -663,6 +663,9 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
         return false;
 
     auto* sps = m_sps.Get();
+
+    sps->pColorConfig = &sps->color_config;
+    sps->pTimingInfo = &sps->timing_info;
     sps->profile = (AV1_PROFILE)u(3);
     if (sps->profile > AV1_PROFILE_2) {
         // Unsupported profile
@@ -854,15 +857,15 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
     sps->color_config.subsampling_y = sps->color_config.subsampling_y;
 
     sps->color_config.flags.mono_chrome = sps->profile != AV1_PROFILE_1 ? u(1) : 0;
-    // color_description_present_flag
-    if (u(1)) {
-        sps->color_primaries = u(8);
-        sps->transfer_characteristics = u(8);
-        sps->matrix_coefficients = u(8);
+    sps->color_config.flags.color_description_present_flag = u(1);
+    if (sps->color_config.flags.color_description_present_flag) {
+        sps->color_config.color_primaries = (StdVideoAV1ColorPrimaries)u(8);
+        sps->color_config.transfer_characteristics = (StdVideoAV1TransferCharacteristics)u(8);
+        sps->color_config.matrix_coefficients = (StdVideoAV1MatrixCoefficients)u(8);
     } else {
-        sps->color_primaries = CP_UNSPECIFIED;
-        sps->transfer_characteristics = TC_UNSPECIFIED;
-        sps->matrix_coefficients = MC_UNSPECIFIED;
+        sps->color_config.color_primaries = STD_VIDEO_AV1_COLOR_PRIMARIES_BT_UNSPECIFIED;
+        sps->color_config.transfer_characteristics = STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_UNSPECIFIED;
+        sps->color_config.matrix_coefficients = STD_VIDEO_AV1_MATRIX_COEFFICIENTS_UNSPECIFIED;
     }
 
     if (sps->color_config.flags.mono_chrome) {
@@ -870,9 +873,9 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
         sps->color_config.subsampling_x = sps->color_config.subsampling_y = 1;
         sps->color_config.flags.separate_uv_delta_q = 0;
     } else {
-        if (sps->color_primaries == CP_BT_709 &&
-            sps->transfer_characteristics == TC_SRGB &&
-            sps->matrix_coefficients == MC_IDENTITY) {
+        if (sps->color_config.color_primaries == STD_VIDEO_AV1_COLOR_PRIMARIES_BT_709 &&
+            sps->color_config.transfer_characteristics == STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_SRGB &&
+            sps->color_config.matrix_coefficients == STD_VIDEO_AV1_MATRIX_COEFFICIENTS_IDENTITY) {
             sps->color_config.subsampling_y = sps->color_config.subsampling_x = 0;
             sps->color_config.flags.color_range = 1;  // assume full color-range
         } else {
@@ -895,7 +898,7 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
                 }
             }
             if (sps->color_config.subsampling_x&&sps->color_config.subsampling_y) { // subsampling equals 1 1
-                sps->chroma_sample_position = u(2);
+	        sps->color_config.chroma_sample_position = (StdVideoAV1ChromaSamplePosition)u(2);
             }
         }
         sps->color_config.flags.separate_uv_delta_q = u(1);

@@ -494,11 +494,8 @@ typedef struct VkParserAv1PictureData {
     // sequence header
     uint32_t profile : 3; // 0 = profile0, 1 = profile1, 2 = profile2
     uint32_t use_128x128_superblock : 1; // superblock 0:64x64, 1: 128x128
-    uint32_t subsampling_x : 1; // 0:400,1:420,others:reserved for future
-    uint32_t
-        subsampling_y : 1; // (subsampling_x, _y) 1,1 = 420, 1,0 = 422, 0,0 = 444
-    uint32_t mono_chrome : 1;
-    uint32_t bit_depth_minus8 : 4;
+
+    StdVideoAV1ColorConfig color_config;
     uint32_t enable_fgs : 1;
     uint32_t reserved0 : 4;
 

@@ -179,70 +179,6 @@ typedef enum _AV1_OBU_TYPE
     AV1_OBU_PADDING                 = 15,
 } AV1_OBU_TYPE;
 
-enum COLOR_PRIMARIES
-{
-    CP_BT_709 = 1,
-    CP_UNSPECIFIED = 2,
-    CP_BT_470_M = 4,
-    CP_BT_470_B_G = 5,
-    CP_BT_601 = 6,
-    CP_SMPTE_240 = 7,
-    CP_GENERIC_FILM = 8,
-    CP_BT_2020 = 9,
-    CP_XYZ = 10,
-    CP_SMPTE_431 = 11,
-    CP_SMPTE_432 = 12,
-    CP_EBU_3213 = 22
-};
-
-enum CHROMA_SAMPLE_POSITION
-{
-    CSP_UNKNOWN = 0,
-    CSP_VERTICAL,
-    CSP_COLOCATED,
-    CSP_RESERVED
-};
-
-enum TRANSFER_CHARACTERISTICS {
-    TC_RESERVED_0 = 0,
-    TC_BT_709,
-    TC_UNSPECIFIED,
-    TC_RESERVED_3,
-    TC_BT_470_M,
-    TC_BT_470_B_G,
-    TC_BT_601,
-    TC_SMPTE_240,
-    TC_LINEAR,
-    TC_LOG_100,
-    TC_LOG_100_SQRT10,
-    TC_IEC_61966,
-    TC_BT_1361,
-    TC_SRGB,
-    TC_BT_2020_10_BIT,
-    TC_BT_2020_12_BIT,
-    TC_SMPTE_2084,
-    TC_SMPTE_428,
-    TC_HLG
-};
-
-enum MATRIX_COEFFICIENTS {
-    MC_IDENTITY = 0,
-    MC_BT_709,
-    MC_UNSPECIFIED,
-    MC_RESERVED_3,
-    MC_FCC,
-    MC_BT_470_B_G,
-    MC_BT_601,
-    MC_SMPTE_240,
-    MC_SMPTE_YCGCO,
-    MC_BT_2020_NCL,
-    MC_BT_2020_CL,
-    MC_SMPTE_2085,
-    MC_CHROMAT_NCL,
-    MC_CHROMAT_CL,
-    MC_ICTCP
-};
-
 typedef enum _AV1_BLOCK_SIZE
 {
     AV1_BLOCK_4X4,
@@ -358,10 +294,8 @@ struct av1_seq_param_s : public StdVideoPictureParametersSet, public StdVideoAV1
     AV1_LEVEL       level[MAX_NUM_OPERATING_POINTS]{};                // resolution, bitrate etc
     uint8_t         tier[MAX_NUM_OPERATING_POINTS]{};
 
-    uint32_t        color_primaries{};
-    uint32_t        transfer_characteristics{};
-    uint32_t        matrix_coefficients{};
-    uint32_t        chroma_sample_position{};
+    StdVideoAV1ColorConfig color_config;
+    StdVideoAV1TimingInfo timing_info;
 
     VkSharedBaseObj<VkVideoRefCountBase> client;
 
