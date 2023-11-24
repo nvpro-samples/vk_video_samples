@@ -601,11 +601,9 @@ typedef struct VkParserAv1PictureData {
     int8_t loop_filter_mode_deltas[2];
 
     // loop restoration
-    uint8_t lr_type[3];
+    uint8_t UsesLr : 1;
     uint8_t FrameRestorationType[3]; // 0: NONE, 1: WIENER, 2: SGR, 3: SWITCHABLE
-    uint8_t lr_unit_size[3]; // 0: 32,   1: 64,     2: 128, 3: 256
-    uint8_t lr_unit_shift;
-    uint8_t lr_uv_shift;
+    uint8_t LoopRestorationSize[3];
 
     uint8_t temporal_layer_id : 4; // temporal layer id
     uint8_t spatial_layer_id : 4; // spatial layer id
