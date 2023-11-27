@@ -647,6 +647,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     VulkanVideoFrameBuffer::FrameSynchronizationInfo frameSynchronizationInfo = VulkanVideoFrameBuffer::FrameSynchronizationInfo();
     frameSynchronizationInfo.hasFrameCompleteSignalFence = true;
     frameSynchronizationInfo.hasFrameCompleteSignalSemaphore = true;
+    frameSynchronizationInfo.syncOnFrameCompleteFence = true;
+    frameSynchronizationInfo.syncOnFrameConsumerDoneFence = true;
 
     if (pPicParams->useInlinedPictureParameters == false) {
         // out of band parameters
@@ -699,7 +701,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     }
 
     VkFence frameCompleteFence = frameSynchronizationInfo.frameCompleteFence;
-    VkFence frameConsumerDoneFence = frameSynchronizationInfo.frameConsumerDoneFence;
     VkSemaphore frameCompleteSemaphore = frameSynchronizationInfo.frameCompleteSemaphore;
     VkSemaphore frameConsumerDoneSemaphore = frameSynchronizationInfo.frameConsumerDoneSemaphore;
     // By default, the frameCompleteSemaphore is the videoDecodeCompleteSemaphore.
@@ -707,25 +708,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     // the filter will provide its own semaphore for the video decoder to signal, instead.
     // Then the frameCompleteSemaphore will be signaled by the filter of its completion.
     VkSemaphore videoDecodeCompleteSemaphore = frameCompleteSemaphore;
-
-    VkResult result = VK_SUCCESS;
-    // Check here that the frame for this entry (for this command buffer) has already completed decoding.
-    // Otherwise we may step over a hot command buffer by starting a new recording.
-    // This fence wait should be NOP in 99.9% of the cases, because the decode queue is deep enough to
-    // ensure the frame has already been completed.
-    assert(frameCompleteFence != VK_NULL_HANDLE);
-    result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameCompleteFence, true, gFenceTimeout);
-    if (result != VK_SUCCESS) {
-        std::cerr << "\t *************** WARNING: frameCompleteFence is not done *************< " << currPicIdx << " >**********************" << std::endl;
-        assert(!"frameCompleteFence is not signaled yet after more than 100 mSec wait");
-    }
-
-    result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameCompleteFence);
-    if (result == VK_NOT_READY) {
-        std::cerr << "\t *************** WARNING: frameCompleteFence is not done *************< " << currPicIdx << " >**********************" << std::endl;
-        assert(!"frameCompleteFence is not signaled yet");
-    }
-
 
     VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -902,19 +884,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 					         submitInfo.pSignalSemaphores[2] << std::endl << std::endl;
     }
 
-    if ((frameConsumerDoneSemaphore == VkSemaphore()) && (frameConsumerDoneFence != VkFence())) {
-        result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameConsumerDoneFence, true, gFenceTimeout);
-        assert(result == VK_SUCCESS);
-        result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameConsumerDoneFence);
-        assert(result == VK_SUCCESS);
-    }
-
-    result = m_vkDevCtx->ResetFences(*m_vkDevCtx, 1, &frameCompleteFence);
-    assert(result == VK_SUCCESS);
-    result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameCompleteFence);
-    assert(result == VK_NOT_READY);
-
-    result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::DECODE, m_currentVideoQueueIndx,
+    VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::DECODE, m_currentVideoQueueIndx,
                                                   1, &submitInfo, frameCompleteFence);
     assert(result == VK_SUCCESS);
 

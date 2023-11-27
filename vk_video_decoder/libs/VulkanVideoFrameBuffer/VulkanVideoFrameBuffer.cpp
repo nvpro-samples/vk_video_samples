@@ -472,6 +472,27 @@ public:
     {
         assert((uint32_t)picId < m_perFrameDecodeImageSet.size());
 
+        if (pFrameSynchronizationInfo->syncOnFrameCompleteFence == 1) {
+            // Check here that the frame for this entry (for this command buffer) has already completed decoding.
+            // Otherwise we may step over a hot command buffer by starting a new recording.
+            // This fence wait should be NOP in 99.9% of the cases, because the decode queue is deep enough to
+            // ensure the frame has already been completed.
+            assert(m_perFrameDecodeImageSet[picId].m_frameCompleteFence != VK_NULL_HANDLE);
+            vkWaitAndResetFence(m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameCompleteFence,
+                                "frameCompleteFence", (uint32_t)picId);
+        }
+
+        if ((pFrameSynchronizationInfo->syncOnFrameConsumerDoneFence  == 1) &&
+             ((m_perFrameDecodeImageSet[picId].m_hasConsummerSignalSemaphore == 0) ||
+              (m_perFrameDecodeImageSet[picId].m_frameConsumerDoneSemaphore == VK_NULL_HANDLE)) &&
+                (m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence == 1) &&
+                (m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence != VK_NULL_HANDLE)) {
+
+            vkWaitAndResetFence(m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence,
+                                "frameConsumerDoneFence", (uint32_t)picId);
+
+        }
+
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         m_perFrameDecodeImageSet[picId].m_picDispInfo = *pDecodePictureInfo;
         m_perFrameDecodeImageSet[picId].m_inDecodeQueue = true;
@@ -592,10 +613,6 @@ public:
             assert(m_ownedByDisplayMask & (1 << picId));
             m_ownedByDisplayMask &= ~(1 << picId);
             m_perFrameDecodeImageSet[picId].m_inDecodeQueue = false;
-            m_perFrameDecodeImageSet[picId].bitstreamData = nullptr;
-            m_perFrameDecodeImageSet[picId].stdPps = nullptr;
-            m_perFrameDecodeImageSet[picId].stdSps = nullptr;
-            m_perFrameDecodeImageSet[picId].stdVps = nullptr;
             m_perFrameDecodeImageSet[picId].m_ownedByDisplay = false;
             m_perFrameDecodeImageSet[picId].Release();
 
@@ -735,7 +752,7 @@ public:
     {
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         int32_t foundPicId = -1;
-        int64_t minDecodeOrder = m_perFrameDecodeImageSet[0].m_decodeOrder + ((uint64_t)-1)/2;
+        int64_t minDecodeOrder = m_perFrameDecodeImageSet[0].m_decodeOrder + 1000;
         for (uint32_t picId = 0; picId < m_perFrameDecodeImageSet.size(); picId++) {
             if (m_perFrameDecodeImageSet[picId].IsAvailable()) {
                 if ((int64_t)m_perFrameDecodeImageSet[picId].m_decodeOrder < minDecodeOrder) {

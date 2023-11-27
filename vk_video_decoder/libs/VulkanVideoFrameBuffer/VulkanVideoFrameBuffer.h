@@ -100,6 +100,8 @@ public:
         uint32_t numQueries;
         uint32_t hasFrameCompleteSignalFence : 1;
         uint32_t hasFrameCompleteSignalSemaphore : 1;
+        uint32_t syncOnFrameCompleteFence : 1;
+        uint32_t syncOnFrameConsumerDoneFence : 1;
     };
 
     struct ReferencedObjectsInfo {
@@ -173,5 +175,35 @@ public:
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            VkSharedBaseObj<VulkanVideoFrameBuffer>& vkVideoFrameBuffer);
 };
+
+static inline VkResult vkWaitAndResetFence(const VulkanDeviceContext* vkDevCtx, VkFence fence,
+                                           const char* fenceName = "unknown", uint32_t fenceNum = 0,
+                                           const uint64_t fenceWaitTimeout = 100 * 1000 * 1000 /* 100 mSec */) {
+
+    assert(vkDevCtx != nullptr);
+    assert(fence != VK_NULL_HANDLE);
+
+    VkResult result = vkDevCtx->WaitForFences(*vkDevCtx, 1, &fence, true, fenceWaitTimeout);
+    if (result != VK_SUCCESS) {
+        std::cerr << "\t *************** WARNING: fence " << fenceName << " is not done after  " << fenceWaitTimeout <<
+                         "nSec *************< " << fenceNum << " >**********************" << std::endl;
+        assert(!"Fence is not signaled yet after more than 100 mSec wait");
+    }
+
+    result = vkDevCtx->GetFenceStatus(*vkDevCtx, fence);
+    if (result == VK_NOT_READY) {
+        std::cerr << "\t *************** WARNING: fence " << fenceName << " is VK_NOT_READY *************< " <<
+                        fenceNum << " >**********************" << std::endl;
+        assert(!"Fence is not signaled yet");
+    }
+
+    result = vkDevCtx->ResetFences(*vkDevCtx, 1, &fence);
+    assert(result == VK_SUCCESS);
+
+    result = vkDevCtx->GetFenceStatus(*vkDevCtx, fence);
+    assert(result == VK_NOT_READY);
+
+    return result;
+}
 
 #endif /* _VULKANVIDEOFRAMEBUFFER_H_ */
