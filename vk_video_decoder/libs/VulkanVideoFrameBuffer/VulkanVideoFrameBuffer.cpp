@@ -735,10 +735,13 @@ public:
     {
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         int32_t foundPicId = -1;
+        int64_t minDecodeOrder = m_perFrameDecodeImageSet[0].m_decodeOrder + ((uint64_t)-1)/2;
         for (uint32_t picId = 0; picId < m_perFrameDecodeImageSet.size(); picId++) {
             if (m_perFrameDecodeImageSet[picId].IsAvailable()) {
-                foundPicId = picId;
-		break;
+                if ((int64_t)m_perFrameDecodeImageSet[picId].m_decodeOrder < minDecodeOrder) {
+                    foundPicId = picId;
+                    minDecodeOrder = (int64_t)m_perFrameDecodeImageSet[picId].m_decodeOrder;
+                }
             }
         }
 
