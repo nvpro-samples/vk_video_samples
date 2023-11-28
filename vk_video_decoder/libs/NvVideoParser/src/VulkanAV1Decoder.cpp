@@ -334,8 +334,7 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
     pnvpd->FrameHeightInMbs = nvsi.nCodedHeight >> 4;
     pnvpd->pCurrPic         = m_pCurrPic;
     pnvpd->progressive_frame = 1;
-    // QUESTION(charlie): I think this could be av1->refresh_frame_flags != 0
-    // The problem is radv always needs a setup slot index.
+    // TODO: always needs a setup slot index.
     pnvpd->ref_pic_flag     = true;
     pnvpd->chroma_format    = nvsi.nChromaFormat; // 1 : 420
 
