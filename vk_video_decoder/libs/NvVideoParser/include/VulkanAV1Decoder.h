@@ -480,7 +480,7 @@ protected:
     int32_t                     spatial_id;
     bool                        m_bSPSReceived;
     bool                        m_bSPSChanged;
-    bool                        m_bAnnexb;
+    bool                        m_obuAnnexB;
     uint8_t                     timing_info_present;
     av1_timing_info_t           timing_info;
     av1_dec_model_info_t        buffer_model;
@@ -536,7 +536,7 @@ protected:
     std::array<int, 256>        m_pSliceOffsets;
     int                         m_numTiles;
 public:
-    VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std);
+    VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std, bool annexB = false);
     virtual ~VulkanAV1Decoder();
 
     bool                    ParseByteStream(const VkParserBitstreamPacket* pck, size_t* pParsedBytes) override;

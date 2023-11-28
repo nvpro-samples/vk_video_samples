@@ -36,7 +36,7 @@
 #include "VulkanAV1Decoder.h"
 
 // constructor
-VulkanAV1Decoder::VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std)
+VulkanAV1Decoder::VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std, bool annexB)
     : VulkanVideoDecoder(std)
 {
     memset(&m_PicData, 0, sizeof(m_PicData));
@@ -51,7 +51,7 @@ VulkanAV1Decoder::VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std)
     spatial_id = 0;
     m_bSPSReceived = false;
     m_bSPSChanged = false;
-    m_bAnnexb = false;
+    m_obuAnnexB = annexB;
     timing_info_present = 0;
     memset(&timing_info, 0, sizeof(timing_info));
     memset(&buffer_model, 0, sizeof(buffer_model));
@@ -524,7 +524,7 @@ bool VulkanAV1Decoder::ReadObuHeader(const uint8_t* pData, uint32_t datasize, AV
     hdr->has_extension = (local[0] >> 2) & 1;
     hdr->has_size_field = (local[0] >> 1) & 1;
 
-    if (!hdr->has_size_field && !m_bAnnexb) {
+    if (!hdr->has_size_field && !m_obuAnnexB) {
         // obu streams must have obu_size field set.
         // Unsupported bitstream
         return false;
@@ -555,37 +555,50 @@ bool VulkanAV1Decoder::ReadObuHeader(const uint8_t* pData, uint32_t datasize, AV
 // 
 bool VulkanAV1Decoder::ParseOBUHeaderAndSize(const uint8_t* data, uint32_t datasize, AV1ObuHeader* hdr)
 {
-    uint32_t obu_size = 0, length_field_size = 0;
+    uint32_t annexb_obu_length = 0, annexb_uleb_length = 0;
 
     if (datasize == 0) {
         return false;
     }
 
-    if (m_bAnnexb) {
-        // Size field includes the OBU header
-        if (!ReadObuSize(data, datasize, &obu_size, &length_field_size)) {
+    if (m_obuAnnexB) {
+        if (!ReadObuSize(data, datasize, &annexb_obu_length, &annexb_uleb_length)) {
             return false;
         }
     }
 
-    if (!ReadObuHeader(data + length_field_size, datasize - length_field_size, hdr)) {
+    if (!ReadObuHeader(data + annexb_uleb_length, datasize - annexb_uleb_length, hdr)) {
         // read_obu_header() failed
         return false;;
     }
 
-    if (m_bAnnexb) {
+    if (m_obuAnnexB) {
         // Derive the payload size from the data we've already read
-        if (obu_size < hdr->header_size) return false;
+        if (annexb_obu_length < hdr->header_size) return false;
 
-        hdr->payload_size = obu_size - hdr->header_size;
-        hdr->header_size += length_field_size;
+        // The Annex B OBU length includes the OBU header.
+        hdr->payload_size = annexb_obu_length - hdr->header_size;
+        hdr->header_size += annexb_uleb_length;
+        uint32_t obu_size = 0;
+        uint32_t size_field_uleb_length = 0;
+        if (hdr->has_size_field) {
+            if (!ReadObuSize(data + hdr->header_size, datasize - hdr->header_size, &obu_size, &size_field_uleb_length)) {
+                return false;
+            }
+            hdr->header_size += size_field_uleb_length;
+            hdr->payload_size = obu_size;
+        }
     } else {
+        assert(hdr->has_size_field);
         // Size field comes after the OBU header, and is just the payload size
-        if (!ReadObuSize(data + hdr->header_size, datasize - hdr->header_size, &obu_size, &length_field_size)) {
+        uint32_t obu_size = 0;
+        uint32_t size_field_uleb_length = 0;
+
+        if (!ReadObuSize(data + hdr->header_size, datasize - hdr->header_size, &obu_size, &size_field_uleb_length)) {
             return false;
         }
         hdr->payload_size = obu_size;
-        hdr->header_size += length_field_size;
+        hdr->header_size += size_field_uleb_length;
     }
 
     return true;
@@ -2547,40 +2560,10 @@ bool VulkanAV1Decoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_
         m_lPTSPos = (m_lPTSPos + 1) % MAX_QUEUED_PTS;
     }
 
-    if (m_bAnnexb && (pck->nDataLength > 0)) {
-        // read the size of this temporal unit
-        uint32_t temporal_unit_size = 0, length_of_size = 0;
-
-        if (!ReadObuSize(pdataStart, datasize, &temporal_unit_size, &length_of_size)) {
-            return false;
-        }
-        pdataStart += length_of_size;
-        datasize -= length_of_size;
-        if (temporal_unit_size > (uint32_t)datasize) {
-            // Error: Truncated temporal unit\n
-            return false;
-        }
-        pdataEnd = pdataStart + temporal_unit_size;
-    }
-
     // Decode in serial mode.
     while (pdataStart < pdataEnd) {
         uint32_t frame_size = 0;
-        if (m_bAnnexb) {
-            // read the size of this frame unit
-            uint32_t length_of_size;
-            if (!ReadObuSize(pdataStart, datasize, &frame_size, &length_of_size)) {
-                return false;
-            }
-            pdataStart += length_of_size;
-            datasize -= length_of_size;
-            if (frame_size > (uint32_t)datasize) {
-                // Error: Truncated frame bitstream
-                return false;
-            }
-        } else {
-            frame_size = datasize;
-        }
+        frame_size = datasize;
 
         if (frame_size > (uint32_t)m_bitstreamDataLen) {
             if (!resizeBitstreamBuffer(frame_size - (m_bitstreamDataLen))) {
