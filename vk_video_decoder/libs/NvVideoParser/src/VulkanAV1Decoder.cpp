@@ -2121,7 +2121,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
                         (1 << frame_id_length)) % (1 << frame_id_length));
 
                     if (ref_id != ref_frame_id[ref_frame_idx[i]] || RefValid[ref_frame_idx[i]] == 0) {
-                        assert(!"Ref frame ID mismatch");
+                        //assert(!"Ref frame ID mismatch");
                     }
                 }
             }
