@@ -299,6 +299,37 @@ struct av1_seq_param_s : public StdVideoPictureParametersSet, public StdVideoAV1
 
     VkSharedBaseObj<VkVideoRefCountBase> client;
 
+    bool isDifferentFrom(const av1_seq_param_s* other)
+    {
+#define CHECK_PTR(f, t)  do { \
+        if (memcmp(this->f, other->f, sizeof(t))) \
+            return true; \
+        } while (0)
+
+#define CHECK_FIELD(f)  do { \
+        if (this->f != other->f) \
+            return true; \
+        } while (0)
+
+        if (memcmp(&this->flags, &other->flags, sizeof(StdVideoAV1SequenceHeaderFlags)))
+            return true;
+
+        CHECK_FIELD(seq_profile);
+        CHECK_FIELD(frame_width_bits_minus_1);
+        CHECK_FIELD(frame_height_bits_minus_1);
+        CHECK_FIELD(max_frame_width_minus_1);
+        CHECK_FIELD(max_frame_height_minus_1);
+        CHECK_FIELD(delta_frame_id_length_minus_2);
+        CHECK_FIELD(additional_frame_id_length_minus_1);
+        CHECK_FIELD(order_hint_bits_minus_1);
+        CHECK_FIELD(seq_force_integer_mv);
+        CHECK_FIELD(seq_force_screen_content_tools);
+        CHECK_PTR(pColorConfig, StdVideoAV1ColorConfig);
+        CHECK_PTR(pTimingInfo, StdVideoAV1TimingInfo);
+
+    	return false;
+    }
+
     int32_t GetVpsId(bool& isVps) const override {
         isVps = false;
         return -1;

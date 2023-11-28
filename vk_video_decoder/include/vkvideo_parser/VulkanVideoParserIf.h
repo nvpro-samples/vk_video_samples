@@ -474,7 +474,7 @@ typedef struct _av1_ref_frames_s
 
 typedef struct VkParserAv1PictureData {
     const StdVideoPictureParametersSet*     pStdSps;
-
+    bool needsSessionReset;
 
     //VkPicIf* RefPics[8]; // Read directly from ref_frame_map
     int32_t PicOrderCntVal[8]; // Populated in the loop in FillDpbAV1State.

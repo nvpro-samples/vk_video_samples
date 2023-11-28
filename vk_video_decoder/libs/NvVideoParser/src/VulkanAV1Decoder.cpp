@@ -219,6 +219,9 @@ bool VulkanAV1Decoder::end_of_picture(const uint8_t*, uint32_t dataSize, uint32_
     // Copy the tile group offsets and sizes.
     std::copy(std::begin(m_pSliceOffsets), std::end(m_pSliceOffsets), m_PicData.slice_offsets_and_size);
 
+    m_PicData.needsSessionReset = m_bSPSChanged;
+    m_bSPSChanged = false;
+
     m_pVkPictureData->firstSliceIndex = 0;
     m_pVkPictureData->CodecSpecific.av1 = m_PicData;
     m_pVkPictureData->intra_pic_flag = m_PicData.frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY;
@@ -314,9 +317,8 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
 
     nvsi.filmGrainEnabled = sps->flags.film_grain_params_present;
 
-    if (!init_sequence(&nvsi)) {
+    if (av1->needsSessionReset && !init_sequence(&nvsi))
         return false;
-    }
 
     // Allocate a buffer for the current picture
     if (m_pCurrPic == nullptr) {
@@ -669,6 +671,7 @@ static int spsSequenceCounter = 0;
 
 bool VulkanAV1Decoder::ParseObuSequenceHeader()
 {
+    auto prevSps = m_sps;
     VkResult result = av1_seq_param_s::Create(spsSequenceCounter++, m_sps);
 
     assert((result == VK_SUCCESS) && m_sps);
@@ -928,8 +931,10 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
 
     if (m_bSPSReceived) {
         // @review: this is not correct
-        if (!memcmp((void*)sps, &m_sps, sizeof(av1_seq_param_s)))
+	if (m_sps->isDifferentFrom(prevSps.Get()))
             m_bSPSChanged = true;
+    } else {
+        m_bSPSChanged = true;
     }
 
     m_bSPSReceived = true;
@@ -2416,7 +2421,6 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t* pdatain, int32_t datasize, c
             break;
         case AV1_OBU_SEQUENCE_HEADER:
             ParseObuSequenceHeader();
-            m_bSPSChanged = true;
             break;
         case AV1_OBU_FRAME_HEADER:
         case AV1_OBU_FRAME:
