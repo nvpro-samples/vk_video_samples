@@ -294,8 +294,8 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
     nvsi.nMaxHeight     = (sps->max_frame_height_minus_1 + 2) & ~1;
     nvsi.nCodedWidth    = av1->superres_width;   // nvdec does on the fly scaling so nvdec output has final width as superres_width
     nvsi.nCodedHeight   = m_dwHeight;
-    nvsi.nDisplayWidth  = nvsi.nCodedWidth;
-    nvsi.nDisplayHeight = nvsi.nCodedHeight;
+    nvsi.nDisplayWidth  = (nvsi.nCodedWidth + 1) & (~1);
+    nvsi.nDisplayHeight = (nvsi.nCodedHeight + 1)    & (~1);
     nvsi.bProgSeq = true; // AV1 doesnt have explicit interlaced coding.
 
     nvsi.uBitDepthLumaMinus8 = av1->color_config.BitDepth - 8;
