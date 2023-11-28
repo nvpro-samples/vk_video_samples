@@ -517,7 +517,7 @@ bool VulkanAV1Decoder::ReadObuHeader(const uint8_t* pData, uint32_t datasize, AV
 
     hdr->type = (AV1_OBU_TYPE)((local[0] >> 3) & 0xf);
 
-    if (!((hdr->type >= AV1_OBU_SEQUENCE_HEADER && hdr->type <= AV1_OBU_TILE_LIST) || hdr->type == AV1_OBU_PADDING)) {
+    if (!((hdr->type >= AV1_OBU_SEQUENCE_HEADER && hdr->type <= AV1_OBU_PADDING))) {
         // Invalid OBU type
         return false;
     }
