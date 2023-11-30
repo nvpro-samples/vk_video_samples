@@ -26,10 +26,15 @@ class VkPicIf {
 public:
     virtual void AddRef() = 0;
     virtual void Release() = 0;
-    int32_t decodeWidth;
-    int32_t decodeHeight;
-    int32_t decodeSuperResWidth;
-    int32_t reserved[16 - 3];
+
+  // FIXME: This is only used for AV1, need because of 5.9.7
+    int32_t upscaledWidth;
+    int32_t frameWidth;
+    int32_t frameHeight;
+    int32_t renderWidth;
+    int32_t renderHeight;
+
+    int32_t reserved[16 - 5];
 
 protected:
     virtual ~VkPicIf() { }

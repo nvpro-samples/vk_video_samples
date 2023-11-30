@@ -60,8 +60,8 @@ VulkanAV1Decoder::VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std, bool an
     last_frame_type = 0;
     last_intra_only = 0;
     all_lossless = 0;
-    m_dwWidth = 0;
-    m_dwHeight = 0;
+    frame_width = 0;
+    frame_height = 0;
     render_width = 0;
     render_height = 0;
     intra_only = 0;
@@ -271,8 +271,11 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
     av1_seq_param_s *const sps = m_sps.Get();
     DE_ASSERT(sps);
 
-    av1->width = m_dwWidth;
-    av1->height = m_dwHeight;
+    // TODO: drop all the SDK fluff
+    av1->upscaled_width = upscaled_width;
+    av1->frame_width = frame_width;
+    av1->frame_height = frame_height;
+
     av1->frame_offset = frame_offset;
     // sps
     av1->profile                              = sps->profile;
@@ -292,10 +295,10 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
     nvsi.nChromaFormat  = av1->color_config.flags.mono_chrome ? 0 : (av1->color_config.subsampling_x && av1->color_config.subsampling_y) ? 1 : (!av1->color_config.subsampling_x && !av1->color_config.subsampling_y) ? 3 : 2;
     nvsi.nMaxWidth      = (sps->max_frame_width_minus_1 + 2) & ~1;
     nvsi.nMaxHeight     = (sps->max_frame_height_minus_1 + 2) & ~1;
-    nvsi.nCodedWidth    = av1->superres_width;   // nvdec does on the fly scaling so nvdec output has final width as superres_width
-    nvsi.nCodedHeight   = m_dwHeight;
-    nvsi.nDisplayWidth  = (nvsi.nCodedWidth + 1) & (~1);
-    nvsi.nDisplayHeight = (nvsi.nCodedHeight + 1)    & (~1);
+    nvsi.nCodedWidth    = av1->upscaled_width;
+    nvsi.nCodedHeight   = frame_height;
+    nvsi.nDisplayWidth  = nvsi.nCodedWidth; // (nvsi.nCodedWidth + 1) & (~1);
+    nvsi.nDisplayHeight = nvsi.nCodedHeight; //(nvsi.nCodedHeight + 1) & (~1);
     nvsi.bProgSeq = true; // AV1 doesnt have explicit interlaced coding.
 
     nvsi.uBitDepthLumaMinus8 = av1->color_config.BitDepth - 8;
@@ -324,9 +327,11 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
     if (m_pCurrPic == nullptr) {
         m_pClient->AllocPictureBuffer(&m_pCurrPic);
         if (m_pCurrPic) {
-            m_pCurrPic->decodeWidth = m_dwWidth;
-            m_pCurrPic->decodeHeight = m_dwHeight;
-            m_pCurrPic->decodeSuperResWidth = m_PicData.superres_width;
+            m_pCurrPic->frameWidth = frame_width;
+            m_pCurrPic->frameHeight = frame_height;
+            m_pCurrPic->renderWidth = render_width;
+            m_pCurrPic->renderHeight = render_height;
+            m_pCurrPic->upscaledWidth = upscaled_width;
         }
     }
 
@@ -965,18 +970,18 @@ void VulkanAV1Decoder::SetupFrameSize(int frame_size_override_flag)
     VkParserAv1PictureData* pic_info = &m_PicData;
 
     if (frame_size_override_flag) {
-        m_dwWidth = u(sps->frame_width_bits_minus_1 + 1) + 1;
-        m_dwHeight = u(sps->frame_height_bits_minus_1 + 1) + 1;
-        if (m_dwWidth > (sps->max_frame_width_minus_1 + 1) || m_dwHeight > (sps->max_frame_height_minus_1 + 1)) {
-            // Error: frame resolution > Max resolution
-            //return 0
+        frame_width = u(sps->frame_width_bits_minus_1 + 1) + 1;
+        frame_height = u(sps->frame_height_bits_minus_1 + 1) + 1;
+        if (frame_width > (sps->max_frame_width_minus_1 + 1) || frame_height > (sps->max_frame_height_minus_1 + 1)) {
+            assert(false);
         }
     } else {
-        m_dwWidth = sps->max_frame_width_minus_1 + 1;
-        m_dwHeight = sps->max_frame_height_minus_1 + 1;
+        frame_width = sps->max_frame_width_minus_1 + 1;
+        frame_height = sps->max_frame_height_minus_1 + 1;
     }
+
     //superres_params 
-    pic_info->superres_width = m_dwWidth;
+    upscaled_width = frame_width;
     pic_info->coded_denom = 0;
     uint8_t superres_scale_denominator = 8;
     pic_info->use_superres = 0;
@@ -986,7 +991,7 @@ void VulkanAV1Decoder::SetupFrameSize(int frame_size_override_flag)
             superres_scale_denominator = u(3);
             pic_info->coded_denom = superres_scale_denominator;
             superres_scale_denominator += SUPERRES_DENOM_MIN;
-            m_dwWidth = (pic_info->superres_width*SUPERRES_NUM + superres_scale_denominator / 2) / superres_scale_denominator;
+            frame_width = (upscaled_width*SUPERRES_NUM + superres_scale_denominator / 2) / superres_scale_denominator;
         }
     }
 
@@ -996,8 +1001,8 @@ void VulkanAV1Decoder::SetupFrameSize(int frame_size_override_flag)
         render_height = u(16) + 1;
 
     } else {
-        render_width = pic_info->superres_width;
-        render_height = m_dwHeight;
+        render_width = upscaled_width;
+        render_height = frame_height;
     }
 }
 
@@ -1017,10 +1022,11 @@ int VulkanAV1Decoder::SetupFrameSizeWithRefs()
             found = 1;
             VkPicIf *m_pPic = m_pBuffers[ref_frame_idx[i]].buffer;
             if (m_pPic) {
-                m_dwWidth = m_pPic->decodeSuperResWidth;
-                m_dwHeight = m_pPic->decodeHeight;
-                //  render_width = PicBufProps.render_width;
-                //  render_height = PicBufProps.render_height;
+                upscaled_width = m_pPic->upscaledWidth;
+		frame_width = m_pPic->frameWidth;
+                frame_height = m_pPic->frameHeight;
+                render_width = m_pPic->renderWidth;
+                render_height = m_pPic->renderHeight;
             }
             break;
         }
@@ -1041,8 +1047,8 @@ int VulkanAV1Decoder::SetupFrameSizeWithRefs()
                 superres_scale_denominator += SUPERRES_DENOM_MIN;
             }
         }
-        pic_info->superres_width = m_dwWidth;
-        m_dwWidth = (pic_info->superres_width*SUPERRES_NUM + superres_scale_denominator / 2) / superres_scale_denominator;
+
+        frame_width = (upscaled_width*SUPERRES_NUM + superres_scale_denominator / 2) / superres_scale_denominator;
     }
 
     return 1;
@@ -1225,11 +1231,8 @@ bool VulkanAV1Decoder::DecodeTileInfo()
 
     VkParserAv1PictureData* pic_info = &m_PicData;
 
-    // Some aliases for badly named class members.
-    int frameWidth = m_dwWidth;
-    int frameHeight = m_dwHeight;
-    int mi_cols = 2 * ((frameWidth + 7) >> 3);
-    int mi_rows = 2 * ((frameHeight + 7) >> 3);
+    int mi_cols = 2 * ((frame_width + 7) >> 3);
+    int mi_rows = 2 * ((frame_height + 7) >> 3);
 
     int min_log2_tile_rows;
     uint32_t max_tile_height_sb;
@@ -2074,7 +2077,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
     if (IsFrameIntra()) {
         SetupFrameSize(frame_size_override_flag);
 
-        if (pic_info->allow_screen_content_tools && m_dwWidth == pic_info->superres_width) {
+        if (pic_info->allow_screen_content_tools && frame_width == upscaled_width) {
             pic_info->allow_intrabc = u(1);
         }
         pic_info->use_ref_frame_mvs = 0;
@@ -2229,7 +2232,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
         }
     }
 
-    all_lossless = pic_info->coded_lossless && (m_dwWidth == pic_info->superres_width);
+    all_lossless = pic_info->coded_lossless && (frame_width == upscaled_width);
     // setup_segmentation_dequant();  //FIXME
     if (pic_info->coded_lossless) {
         pic_info->loop_filter_level[0] = 0;

@@ -523,8 +523,9 @@ protected:
     uint8_t                     all_lossless;
 
     // frame header
-    uint16_t                    m_dwWidth;
-    uint16_t                    m_dwHeight;
+    uint16_t                    upscaled_width;
+    uint16_t                    frame_width;
+    uint16_t                    frame_height;
     int32_t                     render_width;
     int32_t                     render_height;
 

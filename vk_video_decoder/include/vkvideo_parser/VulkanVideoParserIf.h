@@ -486,9 +486,9 @@ typedef struct VkParserAv1PictureData {
     int32_t NumPocLtCurr; // Data is: ARRAYSIZE(pStdPictureInfo->pFrameHeader->ref_frame_idx); 
     int32_t RefPicSetLtCurr[8]; // Unpopulated, why is this needed?
 
-    uint32_t width;
-    uint32_t superres_width;
-    uint32_t height;
+    uint32_t upscaled_width;
+    uint32_t frame_width;
+    uint32_t frame_height;
     uint32_t frame_offset;
 
     // sequence header

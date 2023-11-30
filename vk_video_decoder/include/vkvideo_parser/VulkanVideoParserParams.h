@@ -137,6 +137,8 @@ struct VkParserDetectedVideoFormat {
         int32_t right; /** right position of display rect   */
         int32_t bottom; /** bottom position of display rect  */
     } display_area;
+    uint32_t max_session_width;
+    uint32_t max_session_height;
     uint32_t bitrate; /** video bitrate (bps, 0=unknown)   */
     /**
      * OUT: Display Aspect Ratio = x:y (4:3, 16:9, etc)
