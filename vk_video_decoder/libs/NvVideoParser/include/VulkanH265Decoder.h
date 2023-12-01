@@ -19,6 +19,7 @@
 
 #include "vkvideo_parser/StdVideoPictureParametersSet.h"
 #include "VulkanVideoDecoder.h"
+#include "nvVulkanh265ScalingList.h"
 #include "VulkanH26xDecoder.h"
 #include <memory>
 
