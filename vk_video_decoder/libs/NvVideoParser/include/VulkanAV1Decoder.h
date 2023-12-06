@@ -20,6 +20,7 @@
 #include "VulkanVideoDecoder.h"
 
 #include <array>
+#include <vector>
 
 #ifdef ENABLE_AV1_DECODER
 
@@ -496,9 +497,6 @@ typedef struct _av1_ref_frames_s
     //int32_t                 RefOrderHint;
 } av1_ref_frames_s;
 
-
-
-
 // AV1 decoder class
 class VulkanAV1Decoder : public VulkanVideoDecoder
 {
@@ -542,7 +540,7 @@ protected:
 
     int32_t                     lossless[MAX_SEGMENTS];
 
-    uint8_t                     tile_sz_mag;
+    uint8_t                     tile_size_bytes_minus_1;
     uint32_t                    log2_tile_cols;
     uint32_t                    log2_tile_rows;
 
@@ -565,8 +563,8 @@ protected:
     VkPicIf*                    m_pOutFrame[MAX_NUM_SPATIAL_LAYERS];
     bool                        m_showableFrame[MAX_NUM_SPATIAL_LAYERS];
 
-    std::array<int, 256>        m_pSliceOffsets;
-    int                         m_numTiles;
+	std::vector<uint32_t>		m_tileOffsets;
+	std::vector<uint32_t>		m_tileSizes;
 public:
     VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std, bool annexB = false);
     virtual ~VulkanAV1Decoder();
@@ -577,7 +575,7 @@ protected:
     bool                    IsPictureBoundary(int32_t) override             { return true; };
     int32_t                 ParseNalUnit() override                         { return NALU_UNKNOWN; };
     bool                    DecodePicture(VkParserPictureData *)            { return false; };
-    bool                    end_of_picture(const uint8_t* pdataIn, uint32_t dataSize, uint32_t dataOffset, uint8_t* pbSideDataIn = NULL, uint32_t sideDataSize = 0);
+    bool                    end_of_picture(uint32_t frameSize);
     void                    InitParser() override;
     bool                    BeginPicture(VkParserPictureData *pnvpd) override;
     void                    lEndPicture(VkPicIf* pDispPic, bool bEvict);
@@ -614,6 +612,16 @@ protected:
         return val;
     }
 
+    size_t le(int n)
+    {
+		size_t t = 0;
+		for (int i = 0; i < n; i++) {
+			uint8_t byte = u(8);
+			t += (byte << (i * 8));
+		}
+		return t;
+    }
+
     size_t read_tile_group_size(const uint8_t* src, int size)
     {
           switch (size) {
@@ -632,7 +640,7 @@ protected:
     bool                    ParseObuTemporalDelimiter();
     bool                    ParseObuSequenceHeader();
     bool                    ParseObuFrameHeader();
-    bool                    ParseObuTileGroupHeader(int& tile_start, int& tile_end, bool &last_tile_group, bool tile_start_implicit);
+    bool                    ParseObuTileGroup(const AV1ObuHeader&, int numTiles);
     bool                    ReadFilmGrainParams();
         
     void                    ReadTimingInfoHeader();
@@ -642,7 +650,6 @@ protected:
     int32_t                 SetupFrameSizeWithRefs();
 
     bool                    DecodeTileInfo();
-    void                    CalcTileOffsets(const uint8_t *base, const uint8_t *end, int offset, int tile_start, int tile_end, bool isFrameOBU);
     inline int32_t          ReadSignedBits(uint32_t bits);
     inline int32_t          ReadDeltaQ(uint32_t bits);
     uint32_t                SwGetUniform(uint32_t max_value);

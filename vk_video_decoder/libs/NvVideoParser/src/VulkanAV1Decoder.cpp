@@ -75,7 +75,7 @@ VulkanAV1Decoder::VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std, bool an
     refresh_frame_flags = (1 << NUM_REF_FRAMES) - 1;
     log2_tile_cols = 0;
     log2_tile_rows = 0;
-    tile_sz_mag = 3;
+    tile_size_bytes_minus_1 = 3;
     m_numOutFrames = 0;
     m_bOutputAllLayers = false;
     m_OperatingPointIDCActive = 0;
@@ -196,28 +196,17 @@ void VulkanAV1Decoder::AddBuffertoDispQueue(VkPicIf* pDispPic)
 }
 
 // kick-off decoding
-bool VulkanAV1Decoder::end_of_picture(const uint8_t*, uint32_t dataSize, uint32_t dataOffset, uint8_t* pbSideDataIn, uint32_t sideDataSize)
+bool VulkanAV1Decoder::end_of_picture(uint32_t frameSize)
 {
     *m_pVkPictureData = VkParserPictureData();
     m_pVkPictureData->numSlices = m_PicData.num_tile_cols * m_PicData.num_tile_rows;  // set number of tiles as AV1 doesn't have slice concept
     
-    m_pVkPictureData->bitstreamDataLen = dataSize + dataOffset;
+    m_pVkPictureData->bitstreamDataLen = frameSize;
     m_pVkPictureData->bitstreamData = m_bitstreamData.GetBitstreamBuffer();
-    m_pVkPictureData->bitstreamDataOffset = 0;
+    m_pVkPictureData->bitstreamDataOffset = 0; // TODO: The extra storage in this library and necessarily the app is silly.
 
-    // Dump the bistream for debugging purposes
-#if DEBUG_PARSER
-    if (false) {
-        VkDeviceSize bleh;
-        const uint8_t* ptr = m_pVkPictureData->bitstreamData->GetReadOnlyDataPtr(0, bleh);
-        printf(";;;; size (%d) %d\n", dataSize, m_pSliceOffsets[1]);
-        for (int i = m_pSliceOffsets[0]; i < m_pSliceOffsets[0]+m_pSliceOffsets[1]; i++) {
-            printf(";;;; %02d %02x\n", i - m_pSliceOffsets[0], ptr[i]);
-        }
-    }
-#endif
-    // Copy the tile group offsets and sizes.
-    std::copy(std::begin(m_pSliceOffsets), std::end(m_pSliceOffsets), m_PicData.slice_offsets_and_size);
+    std::copy(std::begin(m_tileOffsets), std::end(m_tileOffsets), m_PicData.tileOffsets);
+    std::copy(std::begin(m_tileSizes), std::end(m_tileSizes), m_PicData.tileSizes);
 
     m_PicData.needsSessionReset = m_bSPSChanged;
     m_bSPSChanged = false;
@@ -225,11 +214,6 @@ bool VulkanAV1Decoder::end_of_picture(const uint8_t*, uint32_t dataSize, uint32_
     m_pVkPictureData->firstSliceIndex = 0;
     m_pVkPictureData->CodecSpecific.av1 = m_PicData;
     m_pVkPictureData->intra_pic_flag = m_PicData.frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY;
-
-    if (pbSideDataIn != nullptr && sideDataSize != 0) {
-        m_pVkPictureData->pSideData = pbSideDataIn;
-        m_pVkPictureData->sideDataLen = sideDataSize;
-    }
 
     if (!BeginPicture(m_pVkPictureData)) {
         // Error: BeginPicture failed
@@ -612,8 +596,8 @@ bool VulkanAV1Decoder::ParseOBUHeaderAndSize(const uint8_t* data, uint32_t datas
 
 bool VulkanAV1Decoder::ParseObuTemporalDelimiter()
 {
-    m_pSliceOffsets.fill(0);
-    m_numTiles = 0;
+	m_tileOffsets.clear();
+	m_tileSizes.clear();
     return true;
 }
 
@@ -1320,7 +1304,7 @@ bool VulkanAV1Decoder::DecodeTileInfo()
         for (i = 0; start_sb < sb_cols && i < MAX_TILE_COLS; i++) {
             pic_info->tile_col_start_sb[i] = start_sb;
             max_width = std::min(sb_cols - start_sb, max_tile_width_sb);
-            pic_info->tile_width_in_sbs_minus_1[i] = SwGetUniform(max_width);
+            pic_info->tile_width_in_sbs_minus_1[i] = (max_width > 1) ? 1 + SwGetUniform(max_width) : 1;
             size_sb = pic_info->tile_width_in_sbs_minus_1[i] + 1;
             widest_tile_sb = std::max(size_sb, widest_tile_sb);
             start_sb += size_sb;
@@ -1338,7 +1322,7 @@ bool VulkanAV1Decoder::DecodeTileInfo()
         for (i = 0; start_sb < sb_rows && i < MAX_TILE_ROWS; i++) {
             pic_info->tile_row_start_sb[i] = start_sb;
             max_height = std::min(sb_rows - start_sb, max_tile_height_sb);
-            pic_info->tile_height_in_sbs_minus_1[i] = SwGetUniform(max_height);
+            pic_info->tile_height_in_sbs_minus_1[i] = (max_height > 1) ? 1 + SwGetUniform(max_height) : 1;
             size_sb = pic_info->tile_height_in_sbs_minus_1[i] + 1;
             start_sb += size_sb;
         }
@@ -1347,13 +1331,13 @@ bool VulkanAV1Decoder::DecodeTileInfo()
     }
 
     pic_info->context_update_tile_id = 0;
-    tile_sz_mag = 3;
+    tile_size_bytes_minus_1 = 3;
     if (pic_info->num_tile_rows * pic_info->num_tile_cols > 1) {
         // tile to use for cdf update
         pic_info->context_update_tile_id = u(log2_tile_rows + log2_tile_cols);
         // tile size magnitude
-        tile_sz_mag = u(2);
-        pic_info->tile_size_bytes_minus_1 = tile_sz_mag;
+        tile_size_bytes_minus_1 = u(2);
+        pic_info->tile_size_bytes_minus_1 = tile_size_bytes_minus_1;
     }
 
     return true;
@@ -2290,40 +2274,62 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
     return true;
 }
 
-bool VulkanAV1Decoder::ParseObuTileGroupHeader(int& tile_start, int& tile_end, bool &last_tile_group, bool tile_start_implicit)
-{
-    VkParserAv1PictureData* pic_info = &m_PicData;
 
-    int num_tiles = pic_info->num_tile_rows * pic_info->num_tile_cols;
+bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr, int num_tiles)
+{
+    // printf("parse_tile_group: ");
+    // for(int i = 0; i < 8; i++)
+    //     printf("%02x ", (m_bitstreamData.GetBitstreamPtr() + m_nalu.start_offset)[i]);
+    // printf("\n");
+
+	// Tile group header
     int log2_num_tiles = log2_tile_cols + log2_tile_rows;
     bool tile_start_and_end_present_flag = 0;
-    int previous_tile_end = tile_end; // init to -1 for first tile group
-
     if (num_tiles > 1) {
         tile_start_and_end_present_flag = !!(u(1));
     }
+    // "For OBU_FRAME type obu tile_start_and_end_present_flag must be 0"
+    if (hdr.type == AV1_OBU_FRAME && tile_start_and_end_present_flag) {
+		return false;
+	}
 
-    if (tile_start_implicit && tile_start_and_end_present_flag) {
-        // "For OBU_FRAME type obu tile_start_and_end_present_flag must be 0"
-        return false;
-    }
-
+	int tg_start = 0;
+	int tg_end = 0;
     if (num_tiles == 1 || !tile_start_and_end_present_flag) {
-        tile_start = 0;
-        tile_end = num_tiles - 1;
+        tg_start = 0;
+        tg_end = num_tiles - 1;
     } else {
-        tile_start = u(log2_num_tiles);
-        tile_end = u(log2_num_tiles);
+        tg_start = u(log2_num_tiles);
+        tg_end = u(log2_num_tiles);
     }
 
-    //   tile_group_hdr_size = (rb.strm_buff_read_bits + 7) / 8;
-    last_tile_group = tile_end == num_tiles - 1;
-    if (tile_start <= previous_tile_end || tile_start >= num_tiles ||
-        tile_end >= num_tiles || tile_start > tile_end) {
-        return false;
+	byte_alignment();
+	// Tile payload
+    int consumedBytes = (consumed_bits() + 7) / 8;
+	//                   offset of obu         number of bytes read getting the tile data
+	m_tileOffsets.push_back(m_nalu.start_offset + consumedBytes);
+
+	// Compute the tile group size
+	uint32_t totalTileSize = 0;
+    for (int TileNum = tg_start; TileNum <= tg_end; TileNum++)
+    {
+        int lastTile = TileNum == tg_end;
+        size_t tileSize = 0;
+        if (lastTile)
+        {
+            tileSize = hdr.payload_size - consumedBytes;
+        }
+        else
+        {
+            uint64_t tile_size_minus_1 = le(tile_size_bytes_minus_1 + 1);
+            tileSize = tile_size_minus_1 + 1;
+        }
+
+        totalTileSize += tileSize;
     }
-    
-    return true;
+
+	m_tileSizes.push_back(totalTileSize);
+    return (tg_end == num_tiles - 1);
 }
 
 bool IsObuInCurrentOperatingPoint(int  current_operating_point, AV1ObuHeader *hdr) {
@@ -2336,97 +2342,57 @@ bool IsObuInCurrentOperatingPoint(int  current_operating_point, AV1ObuHeader *hd
     return false;
 }
 
-void VulkanAV1Decoder::CalcTileOffsets(const uint8_t *base, const uint8_t *end, int offset, int tile_start, int tile_end, bool isFrameOBU)
-{
-    int tile_size_bytes = tile_sz_mag + 1;
-    const uint8_t* ptr = base;
-
-    for (int tile_id = tile_start; tile_id <= tile_end; tile_id++) {
-        size_t size = 0;
-        bool is_last = tile_id == tile_end;
-        if (!is_last)
-        {
-            size = read_tile_group_size(ptr, tile_size_bytes) + MIN_TILE_SIZE_BYTES;
-            ptr += tile_size_bytes;
-            assert(size <= (size_t)(end - ptr));
-        }
-        else
-        {
-            size = end - ptr;
-        }
-
-        assert((ptr - base) < INT_MAX);
-        assert(size < INT_MAX);
-        if (!isFrameOBU) {
-            m_pSliceOffsets[m_numTiles * 2] = offset + (int)(ptr - base);
-            m_pSliceOffsets[m_numTiles * 2 + 1] = (int)size;
-        } else {
-            m_pSliceOffsets[tile_id * 2] = offset + (int)(ptr - base);
-            m_pSliceOffsets[tile_id * 2 + 1] = (int)size;
-        }
-        m_numTiles++;
-        ptr += size;
-    }
-}
-
-bool VulkanAV1Decoder::ParseOneFrame(const uint8_t* pdatain, int32_t datasize, const VkParserBitstreamPacket* pck,
-                                     int* pParsedBytes)
+bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int32_t frameSizeBytes, const VkParserBitstreamPacket* pck, int* pParsedBytes)
 {
     m_bSPSChanged = false;
     uint32_t consumedBytes = 0;
     AV1ObuHeader hdr;
-    bool last_tile_group;
-    int tile_start = 0;
-    int tile_end = -1;
 
-    while (datasize > 0) {
+	const uint8_t* pCurrOBU = pFrameStart;
+	int32_t remainingFrameBytes = frameSizeBytes;
+
+    while (remainingFrameBytes > 0) {
         memset(&hdr, 0, sizeof(hdr));
-        if (!ParseOBUHeaderAndSize(pdatain, datasize, &hdr)) {
+		// NOTE: This does not modify any bitstream reader stare.
+        if (!ParseOBUHeaderAndSize(pCurrOBU, remainingFrameBytes, &hdr)) {
             // OBU header parsing failed
             return false;
         }
-#if DEBUG_PARSER
-        const uint8_t* ptr = pdatain;
-        printf("OBU size%d has_size?%d hdr size=%d payload size=%d:=============\n", datasize, hdr.has_size_field, hdr.header_size, hdr.payload_size);
-        for (int i = 0 ; i < datasize; i++)
-        {
-            printf("%02d ", i);
-        }
-        printf("\n");
-        for (int i = 0 ; i < datasize; i++)
-        {
-            printf("%02x ", ptr[i]);
-        }
-        printf("\n");
-        fflush(stdout);
-#endif
-        if (datasize < int(hdr.payload_size + hdr.header_size)) {
+
+        if (remainingFrameBytes < int(hdr.payload_size + hdr.header_size)) {
             // Error: Truncated frame data
             return false;
         }
+
         m_nalu.start_offset += hdr.header_size;
+
         temporal_id = hdr.temporal_id;
         spatial_id = hdr.spatial_id;
         if (hdr.type != AV1_OBU_TEMPORAL_DELIMITER && hdr.type != AV1_OBU_SEQUENCE_HEADER && hdr.type != AV1_OBU_PADDING) {
-            if (!IsObuInCurrentOperatingPoint(m_OperatingPointIDCActive, &hdr)) {
+            if (!IsObuInCurrentOperatingPoint(m_OperatingPointIDCActive, &hdr)) { // TODO: || !DecodeAllLayers
                 m_nalu.start_offset += hdr.payload_size;
-                pdatain  += (hdr.payload_size + hdr.header_size);
-                datasize -= (hdr.payload_size + hdr.header_size);
+                pCurrOBU  += (hdr.payload_size + hdr.header_size);
+                remainingFrameBytes -= (hdr.payload_size + hdr.header_size);
                 continue;
             }
         }
+
+		// Prime the bit buffer with the 4 bytes
         init_dbits();
         switch (hdr.type) {
         case AV1_OBU_TEMPORAL_DELIMITER:
             ParseObuTemporalDelimiter();
-            //pbi->seen_frame_header = 0;
             break;
+
         case AV1_OBU_SEQUENCE_HEADER:
             ParseObuSequenceHeader();
             break;
+
         case AV1_OBU_FRAME_HEADER:
         case AV1_OBU_FRAME:
         {
+            m_tileOffsets.clear();
+            m_tileSizes.clear();
             ParseObuFrameHeader();
             if (show_existing_frame) break;
             if (hdr.type != AV1_OBU_FRAME) {
@@ -2435,98 +2401,41 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t* pdatain, int32_t datasize, c
 
             if (hdr.type != AV1_OBU_FRAME) break;
 
-            // byte align before reading tile group header
-            while (!byte_aligned())
-                u(1);
-        }   // fallthru
+			byte_alignment();
+        }   // fall through
+
         case AV1_OBU_TILE_GROUP:
         {
-            bool isFrameOBU = hdr.type == AV1_OBU_FRAME;
-            ParseObuTileGroupHeader(tile_start, tile_end, last_tile_group, isFrameOBU);
-            while (!byte_aligned())
-                u(1);
-            consumedBytes = (consumed_bits() + 7) / 8;
-            assert(consumedBytes < hdr.payload_size);
-
-            uint32_t tileGroupSizeBytes = hdr.payload_size - consumedBytes;
-            uint8_t* pTileGroupPayloadDataStart = (uint8_t*)pdatain + hdr.header_size + consumedBytes;
-            uint8_t* pTileGroupPayloadDataEnd = pTileGroupPayloadDataStart + tileGroupSizeBytes;
-            assert((m_nalu.start_offset + consumedBytes) < UINT_MAX);
-            uint32_t tileGroupStartOffestInOBU = (uint32_t)(m_nalu.start_offset) + consumedBytes;
-            CalcTileOffsets(pTileGroupPayloadDataStart, pTileGroupPayloadDataEnd, tileGroupStartOffestInOBU, tile_start, tile_end, isFrameOBU);
-            if (isFrameOBU || m_numTiles == m_PicData.num_tile_cols*m_PicData.num_tile_rows)
-                if (!end_of_picture(NULL, tileGroupSizeBytes, tileGroupStartOffestInOBU))
+            int numTiles = m_PicData.num_tile_cols * m_PicData.num_tile_rows;
+            if (ParseObuTileGroup(hdr, numTiles)) {
+				// Last tile group for this frame
+		        consumedBytes = (consumed_bits() + 7) / 8;
+		        assert(consumedBytes < hdr.payload_size);
+		        uint32_t tileGroupSizeBytes = hdr.payload_size - consumedBytes;
+		        assert(m_tileOffsets.size() == m_tileSizes.size());
+		        assert(m_tileOffsets.size() == numTiles);
+		        //assert((m_nalu.start_offset + consumedBytes + tileGroupSizeBytes) == frameSizeBytes);
+                if (!end_of_picture(frameSizeBytes))
                     return false;
+            }
             break;
         }
-//#if NVCFG(GLOBAL_FEATURE_GR1524_NVDECODE_API_EXTRACT_SEI_DATA)
-#if 0
-        case AV1_OBU_METADATA: {
-            uint32_t metadata_obu_type = 0, metadata_obu_type_size = 0;
-            // The function name should be generic like leb128()
-            if(!ReadObuSize(pdatain + hdr.header_size, datasize - hdr.header_size, &metadata_obu_type, &metadata_obu_type_size)) {
-                break;
-            }
-            // According to standard unregistered metadata OBU type can range from 6 to 31
-            if (metadata_obu_type > 5 && metadata_obu_type < 32) {
-                uint32_t unregistered_user_metadata_size = hdr.payload_size - metadata_obu_type_size;
-                // Even though AV1 does not have SEI messages, reusing same variables as H264
-                // and HEVC to maintain compatibility
-                // Resize the SEI Message Buffer
-                if (m_SEIBufferOffset[m_SEIMessageIdx] + unregistered_user_metadata_size > m_SEIBufferSize[m_SEIMessageIdx]) {
-                    if (m_SEIBufferOffset[m_SEIMessageIdx] + unregistered_user_metadata_size > SEI_MAX_SIZE) {
-                        TPRINTF(("Out of memory could not reallocate buffer of size > MAX_SEI_SIZE\n"));
-                        break;
-                    }
-                    unsigned char *newSeiBuffer = new unsigned char[m_SEIBufferOffset[m_SEIMessageIdx] + unregistered_user_metadata_size];
-                    if (!newSeiBuffer) {
-                        TPRINTF(("Out of memory could not reallocate the SEI buffer\n"));
-                        break;
-                    }
-                    memcpy(newSeiBuffer, m_SEIBuffer[m_SEIMessageIdx], m_SEIBufferOffset[m_SEIMessageIdx]);
-                    delete [] m_SEIBuffer[m_SEIMessageIdx];
-                    m_SEIBuffer[m_SEIMessageIdx] = newSeiBuffer;
-                    m_SEIBufferSize[m_SEIMessageIdx] = m_SEIBufferOffset[m_SEIMessageIdx] + unregistered_user_metadata_size;
-                }
-
-                // Copy unregistered metadata OBU payload into SEI buffer
-                memcpy(m_SEIBuffer[m_SEIMessageIdx] + m_SEIBufferOffset[m_SEIMessageIdx], pdatain + hdr.header_size + metadata_obu_type_size, unregistered_user_metadata_size);
-                m_SEIBufferOffset[m_SEIMessageIdx] += unregistered_user_metadata_size;
-
-                // Resize the SEI Message Info Buffer
-                if (((m_SEINumMessages[m_SEIMessageIdx] + 1) * sizeof(SEIMessageInfo)) > m_SEIMessageInfoSize[m_SEIMessageIdx]) {
-                    SEIMessageInfo *newSeiMessageInfo = new SEIMessageInfo[m_SEINumMessages[m_SEIMessageIdx] + 1];
-                    if (!newSeiMessageInfo) {
-                        TPRINTF(("Out of memory could not reallocate the SEI Message Info buffer\n"));
-                        break;
-                    }
-                    memcpy(newSeiMessageInfo, m_SEIMessageInfo[m_SEIMessageIdx], sizeof(SEIMessageInfo) * m_SEINumMessages[m_SEIMessageIdx]);
-                    delete [] m_SEIMessageInfo[m_SEIMessageIdx];
-                    m_SEIMessageInfo[m_SEIMessageIdx] = newSeiMessageInfo;
-                    m_SEIMessageInfoSize[m_SEIMessageIdx] = (m_SEINumMessages[m_SEIMessageIdx] + 1) * sizeof(SEIMessageInfo);
-                }
-                
-                (*(m_SEIMessageInfo[m_SEIMessageIdx] + m_SEINumMessages[m_SEIMessageIdx])).sei_message_type = metadata_obu_type;
-                (*(m_SEIMessageInfo[m_SEIMessageIdx] + m_SEINumMessages[m_SEIMessageIdx])).sei_message_size = unregistered_user_metadata_size;
-                m_SEINumMessages[m_SEIMessageIdx]++;
-            }
-        }
-        break;
-#endif     
         case AV1_OBU_REDUNDANT_FRAME_HEADER:
         case AV1_OBU_PADDING:
         default:
             break;
         }
 
+		// The header was skipped over to parse the payload.
         m_nalu.start_offset += hdr.payload_size;
-        pdatain += (hdr.payload_size + hdr.header_size);
-        datasize -= (hdr.payload_size + hdr.header_size);
 
-        assert(datasize >= 0);
+        pCurrOBU += (hdr.payload_size + hdr.header_size);
+        remainingFrameBytes -= (hdr.payload_size + hdr.header_size);
+
+        assert(remainingFrameBytes >= 0);
     }
 
-    if (pParsedBytes) {
+    if (pParsedBytes) { // TODO: How is this useful with a boolean return value?
         *pParsedBytes += (int)pck->nDataLength;
     }
 
@@ -2580,10 +2489,11 @@ bool VulkanAV1Decoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_
 
         if (datasize > 0) {
             m_nalu.start_offset = 0;
-            m_nalu.end_offset = m_nalu.start_offset + frame_size;
-            memcpy(m_bitstreamData.GetBitstreamPtr() + m_nalu.start_offset, pdataStart, frame_size);
-            m_llNaluStartLocation = m_llFrameStartLocation = m_llParsedBytes;
+            m_nalu.end_offset = frame_size;
+            memcpy(m_bitstreamData.GetBitstreamPtr(), pdataStart, frame_size);
+            m_llNaluStartLocation = m_llFrameStartLocation = m_llParsedBytes; // TODO: NaluStart and FrameStart are always the same here
             m_llParsedBytes += frame_size;
+
         }
         int parsedBytes = 0;
         if (!ParseOneFrame(pdataStart, frame_size, pck, &parsedBytes)) {

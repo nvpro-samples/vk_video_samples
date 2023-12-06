@@ -168,6 +168,7 @@ protected:
     int32_t se();
     uint32_t f(uint32_t n, uint32_t) { return u(n); }
     bool byte_aligned() const { return ((m_nalu.get_bfroffs & 7) == 0); }
+    void byte_alignment() { while (!byte_aligned()) u(1); }
     void end_of_picture();
     void end_of_stream();
     bool IsSequenceChange(VkParserSequenceInfo *pnvsi);
