@@ -279,9 +279,9 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
     nvsi.nChromaFormat  = av1->color_config.flags.mono_chrome ? 0 : (av1->color_config.subsampling_x && av1->color_config.subsampling_y) ? 1 : (!av1->color_config.subsampling_x && !av1->color_config.subsampling_y) ? 3 : 2;
     nvsi.nMaxWidth      = (sps->max_frame_width_minus_1 + 2) & ~1;
     nvsi.nMaxHeight     = (sps->max_frame_height_minus_1 + 2) & ~1;
-    nvsi.nCodedWidth    = av1->upscaled_width;
+    nvsi.nCodedWidth    = frame_width;
     nvsi.nCodedHeight   = frame_height;
-    nvsi.nDisplayWidth  = nvsi.nCodedWidth; // (nvsi.nCodedWidth + 1) & (~1);
+    nvsi.nDisplayWidth  = av1->upscaled_width; // (nvsi.nCodedWidth + 1) & (~1);
     nvsi.nDisplayHeight = nvsi.nCodedHeight; //(nvsi.nCodedHeight + 1) & (~1);
     nvsi.bProgSeq = true; // AV1 doesnt have explicit interlaced coding.
 
@@ -1304,7 +1304,7 @@ bool VulkanAV1Decoder::DecodeTileInfo()
         for (i = 0; start_sb < sb_cols && i < MAX_TILE_COLS; i++) {
             pic_info->tile_col_start_sb[i] = start_sb;
             max_width = std::min(sb_cols - start_sb, max_tile_width_sb);
-            pic_info->tile_width_in_sbs_minus_1[i] = (max_width > 1) ? 1 + SwGetUniform(max_width) : 1;
+            pic_info->tile_width_in_sbs_minus_1[i] = (max_width > 1) ? SwGetUniform(max_width) : 0;
             size_sb = pic_info->tile_width_in_sbs_minus_1[i] + 1;
             widest_tile_sb = std::max(size_sb, widest_tile_sb);
             start_sb += size_sb;
@@ -1322,7 +1322,7 @@ bool VulkanAV1Decoder::DecodeTileInfo()
         for (i = 0; start_sb < sb_rows && i < MAX_TILE_ROWS; i++) {
             pic_info->tile_row_start_sb[i] = start_sb;
             max_height = std::min(sb_rows - start_sb, max_tile_height_sb);
-            pic_info->tile_height_in_sbs_minus_1[i] = (max_height > 1) ? 1 + SwGetUniform(max_height) : 1;
+            pic_info->tile_height_in_sbs_minus_1[i] = (max_height > 1) ? SwGetUniform(max_height) : 0;
             size_sb = pic_info->tile_height_in_sbs_minus_1[i] + 1;
             start_sb += size_sb;
         }
