@@ -2422,6 +2422,7 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
         }
         case AV1_OBU_REDUNDANT_FRAME_HEADER:
         case AV1_OBU_PADDING:
+        case AV1_OBU_METADATA:
         default:
             break;
         }
