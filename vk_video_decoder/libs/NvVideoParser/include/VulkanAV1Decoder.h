@@ -46,11 +46,7 @@
 #define OP_POINTS_CNT_MINUS_1_BITS  5
 #define OP_POINTS_IDC_BITS          12
 
-#define REFS_PER_FRAME              7               // number of reference frames that can be used for inter prediction
-#define TOTAL_REFS_PER_FRAME        8               // number of reference frame types (including intra prediction)
-#define NUM_REF_FRAMES              8               // number of frames that can be stored for future reference
 #define REF_FRAMES_BITS             3
-#define PRIMARY_REF_NONE            7               // number to indicate that there is no primary reference frame
 
 #define GM_GLOBAL_MODELS_PER_FRAME  7
 #define SUPERRES_NUM                8               // numerator for upscaling ratio
@@ -58,116 +54,13 @@
 #define SUPERRES_DENOM_BITS         3               // number pf bits sent to specify denominator of upscaling ratio
 
 // The minimum tile width or height is fixed at one superblock
-#define MAX_TILE_WIDTH              (4096)          // maximum widht of a tile in units of luma samples
-#define MAX_TILE_AREA               (4096 * 2304)   // maximum area of a tile in units of luma samples
-#define MAX_TILE_ROWS               64u              // maximum number of tile rows
-#define MAX_TILE_COLS               64u              // maximum number of tile columns
+#define MAX_TILE_WIDTH              (STD_VIDEO_AV1_MAX_TILE_COLS*STD_VIDEO_AV1_MAX_TILE_ROWS)          // maximum widht of a tile in units of luma samples
+#define MAX_TILE_AREA               (MAX_TILE_WIDTH * 2304)   // maximum area of a tile in units of luma samples
 #define MAX_TILES                   512             // maximum number of tiles
 #define MIN_TILE_SIZE_BYTES         1
 
-#define MAX_SEGMENTS                8               // number of segments allowed in segmentation map
-#define MAX_SEG_LVL                 8               // number of segment features
-
-#define NONE_FRAME                  -1
-#define INTRA_FRAME                 0
-#define LAST_FRAME                  1
-#define LAST2_FRAME                 2
-#define LAST3_FRAME                 3
-#define GOLDEN_FRAME                4
-#define BWDREF_FRAME                5
-#define ALTREF2_FRAME               6
-#define ALTREF_FRAME                7
-
-#define SELECT_SCREEN_CONTENT_TOOLS     2   // value that indicates the allow_screen_content_tools syntax element is coded
-#define SELECT_INTEGER_MV               2   // value that indicates the force_integer_mv syntax element is coded
-
-#define RESTORE_NONE                    0
-#define RESTORE_WIENER                  1
-#define RESTORE_SGRPROJ                 2
-#define RESTORE_SWITCHABLE              3
-
-typedef enum _AV1_SEGLEVEL_FEATURES
-{
-    AV1_SEG_LVL_ALT_Q,       // Use alternate Quantizer ....
-    AV1_SEG_LVL_ALT_LF_Y_V,  // Use alternate loop filter value on y plane vertical
-    AV1_SEG_LVL_ALT_LF_Y_H,  // Use alternate loop filter value on y plane horizontal
-    AV1_SEG_LVL_ALT_LF_U,    // Use alternate loop filter value on u plane
-    AV1_SEG_LVL_ALT_LF_V,    // Use alternate loop filter value on v plane
-    AV1_SEG_LVL_REF_FRAME,   // Optional Segment reference frame
-    AV1_SEG_LVL_SKIP,        // Optional Segment (0,0) + skip mode
-    AV1_SEG_LVL_GLOBALMV,
-    AV1_SEG_LVL_MAX
-} AV1_SEGLEVEL_FEATURES;
-
-
-// Profile-0.  8-bit and 10-bit 4:2:0 and 4:0:0 only.
-// Profile-1.  8-bit and 10-bit 4:4:4
-// Profile-2.  8-bit and 10-bit 4:2:2 and 4:0:0
-//            12-bit  4:0:0, 4:2:0, 4:2:2 and 4:4:4
-typedef enum _AV1_PROFILE 
-{
-    AV1_PROFILE_0,
-    AV1_PROFILE_1,
-    AV1_PROFILE_2,
-    AV1_MAX_PROFILES,
-} AV1_PROFILE;
-
-typedef enum _AV1_level
-{
-    LEVEL_0 = 0,
-    LEVEL_2_0 = LEVEL_0,
-    LEVEL_1 = 1,
-    LEVEL_2_1 = LEVEL_1,
-    LEVEL_2 = 2,
-    LEVEL_2_2 = LEVEL_2,
-    LEVEL_3 = 3,
-    LEVEL_2_3 = LEVEL_3,
-    LEVEL_4 = 4,
-    LEVEL_3_0 = LEVEL_4,
-    LEVEL_5 = 5,
-    LEVEL_3_1 = LEVEL_5,
-    LEVEL_6 = 6,
-    LEVEL_3_2 = LEVEL_6,
-    LEVEL_7 = 7,
-    LEVEL_3_3 = LEVEL_7,
-    LEVEL_8 = 8,
-    LEVEL_4_0 = LEVEL_8,
-    LEVEL_9 = 9,
-    LEVEL_4_1 = LEVEL_9,
-    LEVEL_10 = 10,
-    LEVEL_4_2 = LEVEL_10,
-    LEVEL_11 = 11,
-    LEVEL_4_3 = LEVEL_11,
-    LEVEL_12 = 12,
-    LEVEL_5_0 = LEVEL_12,
-    LEVEL_13 = 13,
-    LEVEL_5_1 = LEVEL_13,
-    LEVEL_14 = 14,
-    LEVEL_5_2 = LEVEL_14,
-    LEVEL_15 = 15,
-    LEVEL_5_3 = LEVEL_15,
-    LEVEL_16 = 16,
-    LEVEL_6_0 = LEVEL_16,
-    LEVEL_17 = 17,
-    LEVEL_6_1 = LEVEL_17,
-    LEVEL_18 = 18,
-    LEVEL_6_2 = LEVEL_18,
-    LEVEL_19 = 19,
-    LEVEL_6_3 = LEVEL_19,
-    LEVEL_20 = 20,
-    LEVEL_7_0 = LEVEL_20,
-    LEVEL_21 = 21,
-    LEVEL_7_1 = LEVEL_21,
-    LEVEL_22 = 22,
-    LEVEL_7_2 = LEVEL_22,
-    LEVEL_23 = 23,
-    LEVEL_7_3 = LEVEL_23,
-
-    LEVEL_MAX = 31
-} AV1_LEVEL;
-
 // OBU types
-typedef enum _AV1_OBU_TYPE 
+typedef enum _AV1_OBU_TYPE
 {
     AV1_OBU_SEQUENCE_HEADER         = 1,
     AV1_OBU_TEMPORAL_DELIMITER      = 2,
@@ -180,58 +73,7 @@ typedef enum _AV1_OBU_TYPE
     AV1_OBU_PADDING                 = 15,
 } AV1_OBU_TYPE;
 
-typedef enum _AV1_BLOCK_SIZE
-{
-    AV1_BLOCK_4X4,
-    AV1_BLOCK_4X8,
-    AV1_BLOCK_8X4,
-    AV1_BLOCK_8X8,
-    AV1_BLOCK_8X16,
-    AV1_BLOCK_16X8,
-    AV1_BLOCK_16X16,
-    AV1_BLOCK_16X32,
-    AV1_BLOCK_32X16,
-    AV1_BLOCK_32X32,
-    AV1_BLOCK_32X64,
-    AV1_BLOCK_64X32,
-    AV1_BLOCK_64X64,
-    AV1_BLOCK_64X128,
-    AV1_BLOCK_128X64,
-    AV1_BLOCK_128X128,
-    AV1_BLOCK_4X16,
-    AV1_BLOCK_16X4,
-    AV1_BLOCK_8X32,
-    AV1_BLOCK_32X8,
-    AV1_BLOCK_16X64,
-    AV1_BLOCK_64X16,
-} AV1_BLOCK_SIZE;
-
-typedef enum _AV1_TX_MODE 
-{
-    AV1_ONLY_4X4          = 0,
-    AV1_TX_MODE_LARGEST   = 1,
-    AV1_TX_MODE_SELECT    = 2,
-} AV1_TX_MODE;
-
-typedef enum _AV1_PRED_MODE_TYPE 
-{
-  AV1_SINGLE_PREDICTION_ONLY = 0,
-  AV1_REFERENCE_MODE_SELECT  = 1,
-} AV1_PRED_MODE_TYPE;
-
-typedef enum _AV1_INTERP_FILTER_TYPE
-{
-    AV1_EIGHTTAP_REGULAR,
-    AV1_EIGHTTAP_SMOOTH,
-    AV1_MULTITAP_SHARP,
-    AV1_BILINEAR,
-    AV1_INTERP_FILTERS_ALL,
-    AV1_SWITCHABLE_FILTERS = AV1_BILINEAR,
-    AV1_SWITCHABLE = AV1_SWITCHABLE_FILTERS + 1, /* the last switchable one */
-    AV1_EXTRA_FILTERS = AV1_INTERP_FILTERS_ALL - AV1_SWITCHABLE_FILTERS,
-} AV1_INTERP_FILTER_TYPE;
-
-// global motion
+// The Vulkan spec does not have definition for the xform types. Should it?
 typedef enum _AV1_TRANSFORMATION_TYPE
 {
     IDENTITY          = 0,        // identity transformation, 0-parameter
@@ -246,7 +88,7 @@ typedef enum _AV1_TRANSFORMATION_TYPE
 //      [x'     (m2 m3 m0   [x
 //  z .  y'  =   m4 m5 m1 *  y
 //       1]      m6 m7 1)    1]
-struct AV1WarpedMotionParams 
+struct AV1WarpedMotionParams
 {
   AV1_TRANSFORMATION_TYPE wmtype;
   int32_t wmmat[6];
@@ -254,7 +96,7 @@ struct AV1WarpedMotionParams
 };
 
 #define WARPEDMODEL_PREC_BITS 16
-static const AV1WarpedMotionParams default_warp_params = 
+static const AV1WarpedMotionParams default_warp_params =
 {
   IDENTITY,
   { 0, 0, (1 << WARPEDMODEL_PREC_BITS), 0, 0, (1 << WARPEDMODEL_PREC_BITS) },
@@ -278,21 +120,13 @@ typedef struct _AV1ObuHeader
 struct av1_seq_param_s : public StdVideoPictureParametersSet, public StdVideoAV1SequenceHeader
 {
     static const char* m_refClassId;
-    AV1_PROFILE     profile;                        // should use StdVideoAV1SequenceHeader.seq_profile // features that can be used like bit-depth, monochrome and chroma subsampling
-    uint8_t         frame_id_length{};  // length minus _2 ...
-    uint8_t         delta_frame_id_length{};
-    int32_t         force_screen_content_tools{}; // 0 - force off
-                                                // 1 - force on
-                                                // 2 - adaptive
-    int32_t         force_integer_mv{};           // 0 - Not to force. MV can be in 1/4 or 1/8
-                                                // 1 - force to integer
-                                                // 2 - adaptive
+
     // Operating point info.
     int32_t         operating_points_cnt_minus_1{};
     int32_t         operating_point_idc[MAX_NUM_OPERATING_POINTS]{};  // specifies which spatial and temporal layers should be decoded
     bool            display_model_info_present{};
     bool            decoder_model_info_present{};
-    AV1_LEVEL       level[MAX_NUM_OPERATING_POINTS]{};                // resolution, bitrate etc
+    StdVideoAV1Level       level[MAX_NUM_OPERATING_POINTS]{};                // resolution, bitrate etc
     uint8_t         tier[MAX_NUM_OPERATING_POINTS]{};
 
     StdVideoAV1ColorConfig color_config;
@@ -370,8 +204,9 @@ struct av1_seq_param_s : public StdVideoPictureParametersSet, public StdVideoAV1
     explicit av1_seq_param_s(uint64_t updateSequenceCount)
     : StdVideoPictureParametersSet(TYPE_AV1_SPS, AV1_SPS_TYPE, m_refClassId, updateSequenceCount)
     , StdVideoAV1SequenceHeader()
-    , profile(AV1_PROFILE_0)
+
     {
+       seq_profile = STD_VIDEO_AV1_PROFILE_MAIN;
     }
 
     ~av1_seq_param_s() override {
@@ -399,7 +234,7 @@ typedef struct _av1_timing_info_t
     uint32_t        num_ticks_per_picture;
 } av1_timing_info_t;
 
-typedef struct _av1_dec_model_info 
+typedef struct _av1_dec_model_info
 {
     uint32_t        num_units_in_decoding_tick;
     int32_t         encoder_decoder_buffer_delay_length;
@@ -407,7 +242,7 @@ typedef struct _av1_dec_model_info
     int32_t         frame_presentation_time_length;
 } av1_dec_model_info_t;
 
-typedef struct _av1_dec_model_op_params 
+typedef struct _av1_dec_model_op_params
 {
     bool            decoder_model_param_present;
     uint32_t        bitrate;
@@ -420,39 +255,6 @@ typedef struct _av1_dec_model_op_params
     int32_t         initial_display_delay;
 } av1_dec_model_op_params_t;
 
-
-typedef struct _av1_film_grain_s {
-    uint16_t        apply_grain              : 1;
-    uint16_t        update_grain             : 1;
-    uint16_t        scaling_shift_minus8     : 2;
-    uint16_t        chroma_scaling_from_luma : 1;
-    uint16_t        overlap_flag             : 1;
-    uint16_t        ar_coeff_shift_minus6    : 2;
-    uint16_t        ar_coeff_lag             : 2;
-    uint16_t        grain_scale_shift        : 2;
-    uint16_t        clip_to_restricted_range : 1;
-    uint16_t        reserved                 : 3;
-
-    uint16_t        grain_seed;
-
-    uint8_t         num_y_points;
-    uint8_t         scaling_points_y[14][2];
-    uint8_t         num_cb_points;
-    uint8_t         scaling_points_cb[10][2];
-    uint8_t         num_cr_points;
-    uint8_t         scaling_points_cr[10][2];
-
-    int16_t         ar_coeffs_y[24];
-    int16_t         ar_coeffs_cb[25];
-    int16_t         ar_coeffs_cr[25];
-    uint8_t         cb_mult;       // 8 bits
-    uint8_t         cb_luma_mult;  // 8 bits
-    int16_t         cb_offset;    // 9 bits
-    uint8_t         cr_mult;       // 8 bits
-    uint8_t         cr_luma_mult;  // 8 bits
-    int16_t         cr_offset;    // 9 bits
-} av1_film_grain_s;
-
 typedef struct _GlobalMotionParams {
     uint32_t        wmtype;
     int32_t         wmmat[6];
@@ -464,15 +266,15 @@ typedef struct _av1_ref_frames_s
 {
     VkPicIf*                buffer;
     StdVideoAV1FrameType    frame_type;
-    av1_film_grain_s        film_grain_params;
+    StdVideoAV1FilmGrain    film_grain_params;
     AV1WarpedMotionParams   global_models[GM_GLOBAL_MODELS_PER_FRAME];
-    int8_t                  lf_ref_delta[NUM_REF_FRAMES];
+    int8_t                  lf_ref_delta[STD_VIDEO_AV1_NUM_REF_FRAMES];
     int8_t                  lf_mode_delta[2];
     bool                    showable_frame;
     struct
     {
-        int16_t             feature_enable[8][8];
-        int16_t             feature_data[8][8];
+	    uint8_t				FeatureEnabled[STD_VIDEO_AV1_MAX_SEGMENTS];
+		int16_t				FeatureData[STD_VIDEO_AV1_MAX_SEGMENTS][STD_VIDEO_AV1_SEG_LVL_MAX];
         int32_t             last_active_id;
         uint8_t             preskip_id;
         uint8_t             reserved[3];
@@ -487,14 +289,6 @@ typedef struct _av1_ref_frames_s
     int8_t                  RefFrameSignBias[8];
     uint8_t                 ref_order_hint[8];
     uint8_t                 order_hint;
-    // 
-    //int32_t                 ref_frame_map;
-    //int32_t                 ref_frame_id;
-    //int32_t                 RefValid;
-    //int32_t                 ref_frame_idx;
-    //int32_t                 active_ref_idx;
-    //
-    //int32_t                 RefOrderHint;
 } av1_ref_frames_s;
 
 // AV1 decoder class
@@ -502,8 +296,8 @@ class VulkanAV1Decoder : public VulkanVideoDecoder
 {
 protected:
 	VkSharedBaseObj<av1_seq_param_s> m_sps; // active sps
-//    av1_seq_param_s             m_sps;
-    VkParserAv1PictureData      m_PicData;
+    VkParserAv1PictureData		m_PicData;
+
     // common params
     int32_t                     temporal_id;
     int32_t                     spatial_id;
@@ -515,10 +309,15 @@ protected:
     av1_dec_model_info_t        buffer_model;
     av1_dec_model_op_params_t   op_params[MAX_NUM_OPERATING_POINTS + 1];
     uint32_t                    op_frame_timing[MAX_NUM_OPERATING_POINTS + 1];
-    
+
+	uint8_t						delta_frame_id_length;
+	uint8_t						frame_id_length;
     uint8_t                     last_frame_type;
     uint8_t                     last_intra_only;
-    uint8_t                     all_lossless;
+	uint8_t						coded_lossless;
+    uint8_t                     all_lossless : 1;
+	uint8_t						delta_lf_present : 1;
+	uint8_t						delta_lf_multi : 1;
 
     // frame header
     uint16_t                    upscaled_width;
@@ -533,12 +332,7 @@ protected:
     int32_t                     show_existing_frame;
     int32_t                     tu_presentation_delay;
 
-    int32_t                     primary_ref_frame;
-    int32_t                     current_frame_id;
-    int32_t                     frame_offset;
-    int32_t                     refresh_frame_flags;
-
-    int32_t                     lossless[MAX_SEGMENTS];
+    int32_t                     lossless[STD_VIDEO_AV1_MAX_SEGMENTS];
 
     uint8_t                     tile_size_bytes_minus_1;
     uint32_t                    log2_tile_cols;
@@ -546,25 +340,24 @@ protected:
 
     // global motion
     AV1WarpedMotionParams       global_motions[GM_GLOBAL_MODELS_PER_FRAME];
-#if 1
-    int32_t                     ref_frame_id[NUM_REF_FRAMES];
-    int32_t                     RefValid[NUM_REF_FRAMES];
-    int32_t                     ref_frame_idx[REFS_PER_FRAME];
 
-    int32_t                     RefOrderHint[NUM_REF_FRAMES];
-#endif
-    av1_ref_frames_s            m_pBuffers[NUM_REF_FRAMES];
+    int32_t                     ref_frame_id[STD_VIDEO_AV1_NUM_REF_FRAMES];
+    int32_t                     pic_idx[STD_VIDEO_AV1_NUM_REF_FRAMES];
+    int32_t                     RefValid[STD_VIDEO_AV1_NUM_REF_FRAMES];
+    int32_t                     ref_frame_idx[STD_VIDEO_AV1_REFS_PER_FRAME];
+
+    int32_t                     RefOrderHint[STD_VIDEO_AV1_NUM_REF_FRAMES];
+
+    av1_ref_frames_s            m_pBuffers[STD_VIDEO_AV1_NUM_REF_FRAMES];
 
     VkPicIf*                    m_pCurrPic;
-    
+
     bool                        m_bOutputAllLayers;
     int32_t                     m_OperatingPointIDCActive;
     int                         m_numOutFrames;
     VkPicIf*                    m_pOutFrame[MAX_NUM_SPATIAL_LAYERS];
     bool                        m_showableFrame[MAX_NUM_SPATIAL_LAYERS];
 
-	std::vector<uint32_t>		m_tileOffsets;
-	std::vector<uint32_t>		m_tileSizes;
 public:
     VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std, bool annexB = false);
     virtual ~VulkanAV1Decoder();
@@ -640,9 +433,9 @@ protected:
     bool                    ParseObuTemporalDelimiter();
     bool                    ParseObuSequenceHeader();
     bool                    ParseObuFrameHeader();
-    bool                    ParseObuTileGroup(const AV1ObuHeader&, int numTiles);
+    bool                    ParseObuTileGroup(const AV1ObuHeader&);
     bool                    ReadFilmGrainParams();
-        
+
     void                    ReadTimingInfoHeader();
     void                    ReadDecoderModelInfo();
     uint32_t                ReadUvlc();
@@ -670,7 +463,7 @@ protected:
     uint16_t                Read_primitive_subexpfin(uint16_t n, uint16_t k);
     uint16_t                Read_primitive_quniform(uint16_t n);
     void                    UpdateFramePointers(VkPicIf* currentPicture);
-    bool                    IsFrameIntra() { return (m_PicData.frame_type == STD_VIDEO_AV1_FRAME_TYPE_INTRA_ONLY || m_PicData.frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY); }
+    bool                    IsFrameIntra() { return (m_PicData.std_info.frame_type == STD_VIDEO_AV1_FRAME_TYPE_INTRA_ONLY || m_PicData.std_info.frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY); }
     int32_t                 ChooseOperatingPoint();
     bool                    AddBuffertoOutputQueue(VkPicIf* pDispPic, bool bShowableFrame);
     void                    AddBuffertoDispQueue(VkPicIf* pDispPic);

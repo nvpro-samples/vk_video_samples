@@ -17,7 +17,6 @@
 #ifndef _VKPARSERVIDEOREFCOUNTBASE_H_
 #define _VKPARSERVIDEOREFCOUNTBASE_H_
 
-#include "stdint.h"
 #include "assert.h"
 
 class VkVideoRefCountBase {

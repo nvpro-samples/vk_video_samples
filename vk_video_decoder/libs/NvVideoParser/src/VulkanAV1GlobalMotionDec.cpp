@@ -83,7 +83,7 @@
 #define WARP_PARAM_REDUCE_BITS 6
 #define WARPEDMODEL_PREC_BITS 16
 
-int get_msb(unsigned int n) 
+int get_msb(unsigned int n)
 {
     int log = 0;
     unsigned int value = n;
@@ -104,7 +104,7 @@ int get_msb(unsigned int n)
 }
 
 // Inverse recenters a non-negative literal v around a reference r
-static uint16_t inv_recenter_nonneg(uint16_t r, uint16_t v) 
+static uint16_t inv_recenter_nonneg(uint16_t r, uint16_t v)
 {
     if (v > (r << 1))
         return v;
@@ -116,7 +116,7 @@ static uint16_t inv_recenter_nonneg(uint16_t r, uint16_t v)
 
 // Inverse recenters a non-negative literal v in [0, n-1] around a
 // reference r also in [0, n-1]
-static uint16_t inv_recenter_finite_nonneg(uint16_t n, uint16_t r, uint16_t v) 
+static uint16_t inv_recenter_finite_nonneg(uint16_t n, uint16_t r, uint16_t v)
 {
     if ((r << 1) <= n) {
         return inv_recenter_nonneg(r, v);
@@ -125,7 +125,7 @@ static uint16_t inv_recenter_finite_nonneg(uint16_t n, uint16_t r, uint16_t v)
     }
 }
 
-uint16_t VulkanAV1Decoder::Read_primitive_quniform(uint16_t n) 
+uint16_t VulkanAV1Decoder::Read_primitive_quniform(uint16_t n)
 {
     if (n <= 1) return 0;
     const int l = get_msb(n - 1) + 1;
@@ -134,7 +134,7 @@ uint16_t VulkanAV1Decoder::Read_primitive_quniform(uint16_t n)
     return v < m ? v : (v << 1) - m + u(1);
 }
 
-uint16_t VulkanAV1Decoder::Read_primitive_subexpfin(uint16_t n, uint16_t k) 
+uint16_t VulkanAV1Decoder::Read_primitive_subexpfin(uint16_t n, uint16_t k)
 {
     int i = 0;
     int mk = 0;
@@ -159,23 +159,23 @@ uint16_t VulkanAV1Decoder::Read_primitive_subexpfin(uint16_t n, uint16_t k)
     return 0;
 }
 
-uint16_t VulkanAV1Decoder::Read_primitive_refsubexpfin(uint16_t n, uint16_t k, uint16_t ref) 
+uint16_t VulkanAV1Decoder::Read_primitive_refsubexpfin(uint16_t n, uint16_t k, uint16_t ref)
 {
     return inv_recenter_finite_nonneg(n, ref,
                                     Read_primitive_subexpfin(n, k));
 }
 
-int16_t VulkanAV1Decoder::Read_signed_primitive_refsubexpfin(uint16_t n, uint16_t k, int16_t ref) 
+int16_t VulkanAV1Decoder::Read_signed_primitive_refsubexpfin(uint16_t n, uint16_t k, int16_t ref)
 {
     ref += n - 1;
     const uint16_t scaled_n = (n << 1) - 1;
     return Read_primitive_refsubexpfin(scaled_n, k, ref) - n + 1;
 }
 
-int VulkanAV1Decoder::ReadGlobalMotionParams(AV1WarpedMotionParams *params, const AV1WarpedMotionParams *ref_params, int allow_hp) 
+int VulkanAV1Decoder::ReadGlobalMotionParams(AV1WarpedMotionParams *params, const AV1WarpedMotionParams *ref_params, int allow_hp)
 {
     AV1_TRANSFORMATION_TYPE type = (AV1_TRANSFORMATION_TYPE)u(1);
-    if (type != IDENTITY) 
+    if (type != IDENTITY)
     {
         if (u(1))
         type = ROTZOOM;
@@ -239,22 +239,22 @@ int VulkanAV1Decoder::ReadGlobalMotionParams(AV1WarpedMotionParams *params, cons
 
 uint32_t VulkanAV1Decoder::DecodeGlobalMotionParams()
 {
-    VkParserAv1PictureData *pic_info = &m_PicData;
+	StdVideoDecodeAV1PictureInfo* pStd = &m_PicData.std_info;
 
     AV1WarpedMotionParams prev_models[GM_GLOBAL_MODELS_PER_FRAME];
 
     for(int i=0;i<GM_GLOBAL_MODELS_PER_FRAME;++i)
         prev_models[i] = default_warp_params;
 
-    if(primary_ref_frame != PRIMARY_REF_NONE) {
-        if (m_pBuffers[ref_frame_idx[primary_ref_frame]].buffer)
-            memcpy(prev_models, m_pBuffers[ref_frame_idx[primary_ref_frame]].global_models, sizeof(AV1WarpedMotionParams)*GM_GLOBAL_MODELS_PER_FRAME);
+    if(pStd->primary_ref_frame != STD_VIDEO_AV1_PRIMARY_REF_NONE) {
+        if (m_pBuffers[ref_frame_idx[pStd->primary_ref_frame]].buffer)
+            memcpy(prev_models, m_pBuffers[ref_frame_idx[pStd->primary_ref_frame]].global_models, sizeof(AV1WarpedMotionParams)*GM_GLOBAL_MODELS_PER_FRAME);
     }
-  
+
     for (int frame = 0; frame < GM_GLOBAL_MODELS_PER_FRAME; ++frame) {
         AV1WarpedMotionParams *ref_params = &prev_models[frame];
 
-        int good_params = ReadGlobalMotionParams(&global_motions[frame], ref_params, pic_info->allow_high_precision_mv);
+        int good_params = ReadGlobalMotionParams(&global_motions[frame], ref_params, pStd->flags.allow_high_precision_mv);
         if (!good_params) {
           global_motions[frame].invalid = 1;
         }
