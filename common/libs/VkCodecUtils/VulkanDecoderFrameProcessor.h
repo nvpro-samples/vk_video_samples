@@ -14,21 +14,18 @@
 * limitations under the License.
 */
 
-#ifndef LIBS_VKCODECUTILS_FRAMEPROCESSORFACTORY_H_
-#define LIBS_VKCODECUTILS_FRAMEPROCESSORFACTORY_H_
+#ifndef LIBS_VKCODECUTILS_VULKANDECODERFRAMEPROCESSOR_H_
+#define LIBS_VKCODECUTILS_VULKANDECODERFRAMEPROCESSOR_H_
 
-#include <string>
-#include <vector>
-#include "VkCodecUtils/ProgramConfig.h"
 #include "VkCodecUtils/VkVideoRefCountBase.h"
+#include "VkCodecUtils/VkVideoQueue.h"
+#include "VkCodecUtils/VulkanDecodedFrame.h"
 
 class FrameProcessor;
 class VulkanDeviceContext;
-class VulkanVideoProcessor;
 
-VkResult CreateFrameProcessor(const ProgramConfig& programConfig,
-                              const VulkanDeviceContext* vkDevCtx,
-                              VkSharedBaseObj<VulkanVideoProcessor>& videoProcessor,
-                              VkSharedBaseObj<FrameProcessor>& frameProcessor);
+VkResult CreateDecoderFrameProcessor(const VulkanDeviceContext* vkDevCtx,
+                                     VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>>& videoQueue,
+                                     VkSharedBaseObj<FrameProcessor>& frameProcessor);
 
-#endif /* LIBS_VKCODECUTILS_FRAMEPROCESSORFACTORY_H_ */
+#endif /* LIBS_VKCODECUTILS_VULKANDECODERFRAMEPROCESSOR_H_ */

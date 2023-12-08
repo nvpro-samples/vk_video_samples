@@ -88,6 +88,10 @@ public:
 
     const VkImageCreateInfo& GetImageCreateInfo() const { return m_imageCreateInfo; }
 
+    const VkSubresourceLayout* GetSubresourceLayout() const {
+        return m_isLinearImage ? m_layouts : nullptr;
+    }
+
 private:
     std::atomic<int32_t>    m_refCount;
     const VkImageCreateInfo m_imageCreateInfo;
@@ -96,14 +100,16 @@ private:
     VkDeviceSize            m_imageOffset;
     VkDeviceSize            m_imageSize;
     VkSharedBaseObj<VulkanDeviceMemoryImpl> m_vulkanDeviceMemory;
+    VkSubresourceLayout     m_layouts[3]; // per plane layout for linear images
+    uint32_t                m_isLinearImage : 1;
+    uint32_t                m_is16Bit : 1;
+    uint32_t                m_isSubsampledX : 1;
+    uint32_t                m_isSubsampledY : 1;
 
     VkImageResource(const VulkanDeviceContext* vkDevCtx,
                     const VkImageCreateInfo* pImageCreateInfo,
                     VkImage image, VkDeviceSize imageOffset, VkDeviceSize imageSize,
-                    VkSharedBaseObj<VulkanDeviceMemoryImpl>& vulkanDeviceMemory)
-       : m_refCount(0), m_imageCreateInfo(*pImageCreateInfo), m_vkDevCtx(vkDevCtx),
-         m_image(image), m_imageOffset(imageOffset), m_imageSize(imageSize),
-         m_vulkanDeviceMemory(vulkanDeviceMemory) { }
+                    VkSharedBaseObj<VulkanDeviceMemoryImpl>& vulkanDeviceMemory);
 
     void Destroy();
 

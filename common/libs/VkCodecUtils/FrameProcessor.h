@@ -27,7 +27,6 @@
 #include "VkCodecUtils/ProgramConfig.h"
 
 class Shell;
-struct DecodedFrame;
 
 class FrameProcessor : public VkVideoRefCountBase {
 public:
@@ -50,8 +49,6 @@ public:
     FrameProcessor(const FrameProcessor &frameProcessor) = delete;
     FrameProcessor &operator=(const FrameProcessor &frameProcessor) = delete;
 
-    const ProgramConfig &GetSettings() const { return m_settings; }
-
     virtual int AttachShell(const Shell &shell) = 0;
     virtual void DetachShell() = 0;
 
@@ -67,8 +64,7 @@ public:
                          uint32_t           waitSemaphoreCount = 0,
                          const VkSemaphore* pWaitSemaphores  = nullptr,
                          uint32_t           signalSemaphoreCount = 0,
-                         const VkSemaphore* pSignalSemaphores = nullptr,
-                         const DecodedFrame** ppOutFrame = nullptr) = 0;
+                         const VkSemaphore* pSignalSemaphores = nullptr) = 0;
 
     uint64_t GetTimeDiffNanoseconds(bool updateStartTime = true)
     {
@@ -106,14 +102,14 @@ public:
 protected:
     virtual ~FrameProcessor() {}
 
-    FrameProcessor(const ProgramConfig& programConfig)
+    FrameProcessor(bool verbose = false)
         : m_frameCount(0)
         , m_profileFramesCount(0)
         , m_displayTimePeriodMilliseconds(1000)
         , start_time (std::chrono::steady_clock::now())
-        , m_settings(programConfig)
+        , m_verbose(verbose)
     {
-        if (m_settings.verbose) {
+        if (m_verbose) {
             std::cout << "The clock resolution of high_resolution_clock is: "
                     << (double) std::chrono::high_resolution_clock::period::num /
                                    std::chrono::high_resolution_clock::period::den << std::endl;
@@ -131,7 +127,7 @@ protected:
     int64_t m_profileFramesCount;
     const int64_t m_displayTimePeriodMilliseconds;
     std::chrono::time_point<std::chrono::steady_clock> start_time;
-    const ProgramConfig& m_settings;
+    uint32_t m_verbose: 1;
 };
 
 #endif  // FRAMEPROCESSOR_H

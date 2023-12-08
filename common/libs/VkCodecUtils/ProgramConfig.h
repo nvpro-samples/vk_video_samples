@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <vector>
 #include "vulkan_interfaces.h"
@@ -28,7 +29,7 @@
 struct ProgramConfig {
 
     ProgramConfig(const char* programName) {
-        name = programName;
+        appName = programName;
         initialWidth = 1920;
         initialHeight = 1080;
         initialBitdepth = 8;
@@ -62,6 +63,7 @@ struct ProgramConfig {
         directMode = false;
         enableHwLoadBalancing = false;
         selectVideoWithComputeQueue = false;
+        enableVideoEncoder = false;
     }
 
     void ParseArgs(int argc, const char* argv[]) {
@@ -113,6 +115,12 @@ struct ProgramConfig {
             } else if (nullptr != strstr(argv[i], "-i")) {
                 i++;
                 videoFileName = argv[i];
+                std::ifstream validVideoFileStream(videoFileName, std::ifstream::in);
+                if (!validVideoFileStream) {
+                    std::cerr << "Invalid input video file: " << videoFileName << std::endl;
+                    std::cerr << "Please provide a valid name for the input video file to be decoded with the \"-i\" command line option." << std::endl;
+                    std::cerr << "   vk-video-dec-test -i <absolute file path location>" << std::endl;
+                }
             } else if (nullptr != strstr(argv[i], "--gpu")) {
                 i++;
                 gpuIndex = std::atoi(argv[i]);
@@ -143,7 +151,7 @@ struct ProgramConfig {
         }
     }
 
-    std::string name;
+    std::string appName;
     int initialWidth;
     int initialHeight;
     int initialBitdepth;
@@ -176,6 +184,7 @@ struct ProgramConfig {
     uint32_t noPresent : 1;
     uint32_t enableHwLoadBalancing : 1;
     uint32_t selectVideoWithComputeQueue : 1;
+    uint32_t enableVideoEncoder : 1;
 };
 
 #endif /* _PROGRAMSETTINGS_H_ */

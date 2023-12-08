@@ -195,7 +195,7 @@ VkResult VulkanVideoProcessor::Create(const VulkanDeviceContext* vkDevCtx,
     return VK_ERROR_OUT_OF_HOST_MEMORY;
 }
 
-VkFormat VulkanVideoProcessor::GetFrameImageFormat(int32_t* pWidth, int32_t* pHeight, int32_t* pBitDepth)
+VkFormat VulkanVideoProcessor::GetFrameImageFormat(int32_t* pWidth, int32_t* pHeight, int32_t* pBitDepth)  const
 {
     VkFormat frameImageFormat = VK_FORMAT_UNDEFINED;
     if (m_videoStreamDemuxer) {
@@ -210,32 +210,32 @@ VkFormat VulkanVideoProcessor::GetFrameImageFormat(int32_t* pWidth, int32_t* pHe
         }
 
         if (pWidth) {
-            *pWidth = m_videoStreamDemuxer->GetWidth();
+            *pWidth = GetWidth();
         }
 
         if (pHeight) {
-            *pHeight = m_videoStreamDemuxer->GetHeight();
+            *pHeight = GetHeight();
         }
 
         if (pBitDepth) {
-            *pBitDepth = m_videoStreamDemuxer->GetBitDepth();
+            *pBitDepth = GetBitDepth();
         }
     }
 
     return frameImageFormat;
 }
 
-int32_t VulkanVideoProcessor::GetWidth()
+int32_t VulkanVideoProcessor::GetWidth() const
 {
     return m_videoStreamDemuxer->GetWidth();
 }
 
-int32_t VulkanVideoProcessor::GetHeight()
+int32_t VulkanVideoProcessor::GetHeight()  const
 {
     return m_videoStreamDemuxer->GetHeight();
 }
 
-int32_t VulkanVideoProcessor::GetBitDepth()
+int32_t VulkanVideoProcessor::GetBitDepth()  const
 {
     return m_videoStreamDemuxer->GetBitDepth();
 }
@@ -378,7 +378,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
 
 const VkMpFormatInfo* YcbcrVkFormatInfo(const VkFormat format);
 
-size_t VulkanVideoProcessor::ConvertFrameToNv12(DecodedFrame* pFrame,
+size_t VulkanVideoProcessor::ConvertFrameToNv12(VulkanDecodedFrame* pFrame,
                                                 VkSharedBaseObj<VkImageResource>& imageResource,
                                                 uint8_t* pOutBuffer, size_t bufferSize)
 {
@@ -537,17 +537,17 @@ size_t VulkanVideoProcessor::ConvertFrameToNv12(DecodedFrame* pFrame,
     return outputBufferSize;
 }
 
-size_t VulkanVideoProcessor::OutputFrameToFile(DecodedFrame* pFrame)
+size_t VulkanVideoProcessor::OutputFrameToFile(VulkanDecodedFrame* pFrame)
 {
     if (!m_frameToFile) {
         return (size_t)-1;
     }
 
     assert(pFrame != nullptr);
-    assert(!!pFrame->outputImageView);
+    assert(!!pFrame->imageView);
     assert(pFrame->pictureIndex != -1);
 
-    VkSharedBaseObj<VkImageResource> imageResource = pFrame->outputImageView->GetImageResource();
+    VkSharedBaseObj<VkImageResource> imageResource = pFrame->imageView->GetImageResource();
     uint8_t* pLinearMemory = m_frameToFile.EnsureAllocation(m_vkDevCtx, imageResource);
     assert(pLinearMemory != nullptr);
 
@@ -628,7 +628,7 @@ int32_t VulkanVideoProcessor::ParserProcessNextDataChunk()
     return retValue;
 }
 
-int32_t VulkanVideoProcessor::GetNextFrame(DecodedFrame* pFrame, bool* endOfStream)
+int32_t VulkanVideoProcessor::GetNextFrame(VulkanDecodedFrame* pFrame, bool* endOfStream)
 {
     // The below call to DequeueDecodedPicture allows returning the next frame without parsing of the stream.
     // Parsing is only done when there are no more frames in the queue.
@@ -673,7 +673,7 @@ int32_t VulkanVideoProcessor::GetNextFrame(DecodedFrame* pFrame, bool* endOfStre
     return 1;
 }
 
-int32_t VulkanVideoProcessor::ReleaseDisplayedFrame(DecodedFrame* pDisplayedFrame)
+int32_t VulkanVideoProcessor::ReleaseFrame(VulkanDecodedFrame* pDisplayedFrame)
 {
     if (pDisplayedFrame->pictureIndex != -1) {
         DecodedFrameRelease decodedFramesRelease = { pDisplayedFrame->pictureIndex };

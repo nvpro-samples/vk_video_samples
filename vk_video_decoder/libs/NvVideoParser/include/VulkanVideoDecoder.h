@@ -19,7 +19,7 @@
 
 #include <atomic>
 #include <limits>
-#include "VulkanBitstreamBuffer.h"
+#include "VkCodecUtils/VulkanBitstreamBuffer.h"
 
 #define UNUSED_LOCAL_VAR(expr) do { (void)(expr); } while (0)
 

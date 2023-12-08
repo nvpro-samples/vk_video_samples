@@ -54,8 +54,11 @@ public:
         }
     }
 
-    VkSemaphore getSemaphore(size_t semIdx = 0) const {
-        return m_semaphores[semIdx];
+    VkSemaphore GetSemaphore(size_t semIdx = 0) const {
+        if (semIdx < m_semaphores.size()) {
+            return m_semaphores[semIdx];
+        }
+        return VK_NULL_HANDLE;
     }
 
     virtual ~VulkanSemaphoreSet() {

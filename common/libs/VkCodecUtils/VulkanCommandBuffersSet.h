@@ -52,11 +52,11 @@ public:
         }
     }
 
-    VkCommandPool getCommandPool() {
+    VkCommandPool GetCommandPool(uint32_t bufferIndex = 0) {
         return m_cmdPool;
     }
 
-    const VkCommandBuffer* getCommandBuffer(uint32_t bufferIndex = 0) const {
+    const VkCommandBuffer* GetCommandBuffer(uint32_t bufferIndex = 0) const {
 
         if ((size_t)bufferIndex >= m_cmdBuffer.size()) {
             return nullptr;

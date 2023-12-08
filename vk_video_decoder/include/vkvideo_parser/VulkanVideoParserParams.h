@@ -20,7 +20,7 @@
 #include <assert.h>
 #include <atomic>
 #include "vulkan_interfaces.h"
-#include "vkvideo_parser/VulkanBitstreamBuffer.h"
+#include "VkCodecUtils/VulkanBitstreamBuffer.h"
 
 typedef int64_t VkVideotimestamp;
 

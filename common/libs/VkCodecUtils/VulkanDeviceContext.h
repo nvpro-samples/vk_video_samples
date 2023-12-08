@@ -37,13 +37,17 @@ public:
     };
 
     enum QueueFamilySubmitType {
-        DECODE = VK_QUEUE_VIDEO_DECODE_BIT_KHR,
-        ENCODE = VK_QUEUE_VIDEO_ENCODE_BIT_KHR,
+        GRAPHICS = VK_QUEUE_GRAPHICS_BIT,
+        COMPUTE  = VK_QUEUE_COMPUTE_BIT,
+        TRANSFER = VK_QUEUE_TRANSFER_BIT,
+        DECODE   = VK_QUEUE_VIDEO_DECODE_BIT_KHR,
+        ENCODE   = VK_QUEUE_VIDEO_ENCODE_BIT_KHR,
+        PRESENT,
     };
 
     enum {
         MAX_QUEUE_INSTANCES = 8,
-        MAX_QUEUE_FAMILIES = 4, // Gfx, Present, Decode, Encode
+        MAX_QUEUE_FAMILIES = 6, // Gfx, Present, Compute, Transfer, Decode, Encode
     };
 
     VulkanDeviceContext(int32_t deviceId,
@@ -94,17 +98,38 @@ public:
     public:
         MtQueueMutex(const VulkanDeviceContext* devCtx, const QueueFamilySubmitType submitType, const int32_t queueIndex)
         {
-            if (submitType == DECODE) {
+            switch (submitType) {
+            case GRAPHICS:
+                m_queue = &devCtx->m_gfxQueue;
+                m_mutex = &devCtx->m_gfxQueueMutex;
+                break;
+            case COMPUTE:
+                m_queue = &devCtx->m_computeQueue;
+                m_mutex = &devCtx->m_computeQueueMutex;
+                break;
+            case TRANSFER:
+                m_queue = &devCtx->m_trasferQueue;
+                m_mutex = &devCtx->m_transferQueueMutex;
+                break;
+            case DECODE:
                 assert((queueIndex >= 0) && (queueIndex < devCtx->m_videoDecodeNumQueues));
                 m_queue = &devCtx->m_videoDecodeQueues[queueIndex];
                 m_mutex = &devCtx->m_videoDecodeQueueMutexes[queueIndex];
-            } else if (submitType == ENCODE) {
+                break;
+            case ENCODE:
                 assert((queueIndex >= 0) && (queueIndex < devCtx->m_videoEncodeNumQueues));
                 m_queue = &devCtx->m_videoEncodeQueues[queueIndex];
                 m_mutex = &devCtx->m_videoEncodeQueueMutexes[queueIndex];
-            } else {
+                break;
+            case PRESENT:
+                m_queue = &devCtx->m_presentQueue;
+                m_mutex = &devCtx->m_presentQueueMutex;
+                break;
+            default:
+                assert(!"Invalid queue type!");
                 m_queue = nullptr;
                 m_mutex = nullptr;
+                break;
             }
             if (m_mutex) {
                 m_mutex->lock();
@@ -211,8 +236,8 @@ public:
                                 const VkQueueFlags requestVideoEncodeQueueMask = VK_QUEUE_VIDEO_ENCODE_BIT_KHR |
                                                                                  VK_QUEUE_TRANSFER_BIT,
                                 const VkVideoCodecOperationFlagsKHR requestVideoEncodeQueueOperations =
-                                                                  (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT |
-                                                                   VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_EXT));
+                                                                  (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
+                                                                   VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR));
 
     VkResult CreateVulkanDevice(int32_t numDecodeQueues = 1,
                                 int32_t numEncodeQueues = 0,
@@ -257,10 +282,14 @@ private:
     VkDevice                m_device;
     VkQueue                 m_gfxQueue;
     VkQueue                 m_computeQueue;
+    VkQueue                 m_trasferQueue;
     VkQueue                 m_presentQueue;
     std::vector<VkQueue>    m_videoDecodeQueues;
     std::vector<VkQueue>    m_videoEncodeQueues;
-    mutable std::mutex                                  m_gfxQueueMutexes;
+    mutable std::mutex                                  m_gfxQueueMutex;
+    mutable std::mutex                                  m_computeQueueMutex;
+    mutable std::mutex                                  m_transferQueueMutex;
+    mutable std::mutex                                  m_presentQueueMutex;
     mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoDecodeQueueMutexes;
     mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoEncodeQueueMutexes;
     bool m_isExternallyManagedDevice;

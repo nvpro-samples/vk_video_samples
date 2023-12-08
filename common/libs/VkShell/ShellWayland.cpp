@@ -155,8 +155,8 @@ void ShellWayland::registry_handle_global_remove(void *data, wl_registry *regist
 
 const wl_registry_listener ShellWayland::registry_listener = {registry_handle_global, registry_handle_global_remove};
 
-ShellWayland::ShellWayland(const VulkanDeviceContext* vkDevCtx, VkSharedBaseObj<FrameProcessor>& frameProcessor)
-    : Shell(vkDevCtx, frameProcessor) {
+ShellWayland::ShellWayland(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration, VkSharedBaseObj<FrameProcessor>& frameProcessor)
+    : Shell(vkDevCtx, configuration, frameProcessor) {
 
     InitConnection();
 }
@@ -208,7 +208,7 @@ void ShellWayland::CreateWindow() {
 
     wl_shell_surface_add_listener(shell_surface_, &ShellWayland::shell_surface_listener, this);
     // set title
-    wl_shell_surface_set_title(shell_surface_, m_settings.name.c_str());
+    wl_shell_surface_set_title(shell_surface_, m_settings.m_windowName.c_str());
     wl_shell_surface_set_toplevel(shell_surface_);
 }
 
@@ -257,7 +257,7 @@ void ShellWayland::RunLoop() {
 
     CreateWindow();
     CreateContext();
-    ResizeSwapchain(m_settings.initialWidth, m_settings.initialHeight);
+    ResizeSwapchain(m_settings.m_initialWidth, m_settings.m_initialHeight);
 
     m_quit_loop = false;
     if (true) {

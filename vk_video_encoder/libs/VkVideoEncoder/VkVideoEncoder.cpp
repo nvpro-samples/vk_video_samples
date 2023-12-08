@@ -14,300 +14,309 @@
  * limitations under the License.
  */
 
+#include <functional>
+#include <vector>
 #include "VkVideoEncoder/VkVideoEncoder.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
+#include "VkVideoEncoder/VkEncoderConfigH264.h"
+#include "VkVideoEncoder/VkEncoderConfigH265.h"
+#include "VkCodecUtils/YCbCrConvUtilsCpu.h"
 
-#define DECODED_PICTURE_BUFFER_SIZE 16
-#define INPUT_FRAME_BUFFER_SIZE 16
-
-#define NON_VCL_BITSTREAM_OFFSET 4096
-
-void EncodeApp::ConvertYCbCrPitchToNv12(const uint8_t *lumaChIn, const uint8_t *cbChIn, const uint8_t *crChIn,
-                                        int32_t srcStride,
-                                        uint8_t *outImagePtr, VkSubresourceLayout outImageLayouts[3],
-                                        int32_t width, int32_t height)
+VkResult VkVideoEncoder::CreateVideoEncoder(const VulkanDeviceContext* vkDevCtx,
+                                            VkSharedBaseObj<EncoderConfig>& encoderConfig,
+                                            VkSharedBaseObj<VkVideoEncoder>& encoder)
 {
-    uint8_t *nv12Luma = outImagePtr + outImageLayouts[0].offset;
-    for (int32_t y = 0; y < height; y++) {
-        memcpy(nv12Luma + (outImageLayouts[0].rowPitch * y), lumaChIn + (srcStride * y), width);
+    if (encoderConfig->codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) {
+        return CreateVideoEncoderH264(vkDevCtx, encoderConfig, encoder);
+    } else if (encoderConfig->codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR) {
+        return CreateVideoEncoderH265(vkDevCtx, encoderConfig, encoder);
     }
+    return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
+}
 
-    uint8_t *nv12Chroma = outImagePtr + outImageLayouts[1].offset;
-    for (int32_t y = 0; y < (height + 1) / 2; y++) {
-        for (int32_t x = 0; x < width; x += 2) {
-            nv12Chroma[(y * outImageLayouts[1].rowPitch) + x] = cbChIn[(((srcStride + 1) / 2) * y) + (x >> 1)];
-            nv12Chroma[(y * outImageLayouts[1].rowPitch) + (x + 1)] = crChIn[(((srcStride + 1) / 2) * y) + (x >> 1)];
-        }
-    }
-};
-
-const uint8_t* EncodeApp::setPlaneOffset(const uint8_t* pFrameData, size_t bufferSize, size_t &currentReadOffset)
+const uint8_t* VkVideoEncoder::setPlaneOffset(const uint8_t* pFrameData, size_t bufferSize, size_t &currentReadOffset)
 {
     const uint8_t* buf = pFrameData + currentReadOffset;
     currentReadOffset += bufferSize;
     return buf;
 }
 
-int32_t EncodeApp::LoadCurrentFrame(uint8_t *outImagePtr, VkSubresourceLayout outImageLayouts[3],
-                                    mio::basic_mmap<mio::access_mode::read, uint8_t>& inputVideoMmap,
-                                    uint32_t frameIndex,
-                                    uint32_t srcWidth, uint32_t srcHeight,
-                                    uint32_t srcStride,
-                                    VkFormat inputVkFormat)
+// 1. Load current input frame from file
+// 2. Convert yuv image to nv12 (TODO: switch to Vulkan compute next, instead of using the CPU for that)
+// 3. Copy the nv12 input linear image to the optimal input image
+VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
-    // infere frame and individual plane sizes from formatInfo
-    const VkMpFormatInfo *formatInfo = YcbcrVkFormatInfo(inputVkFormat);
+    assert(encodeFrameInfo);
 
-    const uint32_t bytepp = formatInfo->planesLayout.bpp ? 2 : 1;
-    uint32_t inputPlaneSizes[VK_MAX_NUM_IMAGE_PLANES_EXT] = {};
-    inputPlaneSizes[0] = bytepp * srcStride * srcHeight; // luma plane size
-    uint32_t frameSize = inputPlaneSizes[0];      // add luma plane size
-    for(uint32_t plane = 1; plane <= formatInfo->planesLayout.numberOfExtraPlanes; plane++) {
-        uint32_t stride = srcStride;
-        uint32_t height = srcHeight;
+    encodeFrameInfo->frameInputOrderNum = m_inputFrameNum++;
+    encodeFrameInfo->lastFrame = !(encodeFrameInfo->frameInputOrderNum < (m_encoderConfig->numFrames - 1));
 
-        if (formatInfo->planesLayout.secondaryPlaneSubsampledX) { // if subsampled on X divide width by 2
-            stride = (srcStride + 1) / 2; // add 1 before division in case width is an odd number
-        }
-
-        if (formatInfo->planesLayout.secondaryPlaneSubsampledY) { // if subsampled on Y divide height by 2
-            height = (srcHeight + 1) / 2; // add 1 before division in case height is an odd number
-        }
-
-        inputPlaneSizes[plane] = bytepp * stride * height; // new plane size
-        frameSize += inputPlaneSizes[plane];     // add new plane size
+    if (encodeFrameInfo->srcStagingImageView == nullptr) {
+        bool success = m_linearInputImagePool->GetAvailableImage(encodeFrameInfo->srcStagingImageView,
+                                                                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        assert(success);
+        assert(encodeFrameInfo->srcStagingImageView != nullptr);
     }
 
-    assert(inputVideoMmap.is_mapped());
+    VkSharedBaseObj<VkImageResourceView> linearInputImageView;
+    encodeFrameInfo->srcStagingImageView->GetImageView(linearInputImageView);
 
-    size_t fileOffset = ((uint64_t)frameSize * frameIndex);
-    const size_t mappedLength = inputVideoMmap.mapped_length();
-    if (mappedLength < (fileOffset + frameSize)) {
-        printf("File overflow at frameIndex %d, width %d, height %d, frameSize %d\n",
-               frameIndex, srcWidth, srcHeight, frameSize);
-        assert(!"Input file overflow");
-        return -1;
-    }
-    const uint8_t* pFrameData = inputVideoMmap.data() + fileOffset;
-    size_t currentReadOffset = 0;
+    const VkSharedBaseObj<VkImageResource>& dstImageResource = linearInputImageView->GetImageResource();
+    VkSharedBaseObj<VulkanDeviceMemoryImpl> srcImageDeviceMemory(dstImageResource->GetMemory());
 
-    // set plane offset for every plane that was previously read/mapped from file
-    const uint8_t* yCbCrInputPtrs[3] = { nullptr, nullptr, nullptr };
-    yCbCrInputPtrs[0] = setPlaneOffset(pFrameData, inputPlaneSizes[0], currentReadOffset);
-    for(uint32_t plane = 1 ; plane <= formatInfo->planesLayout.numberOfExtraPlanes; plane++) {
-        yCbCrInputPtrs[plane] = setPlaneOffset(pFrameData, inputPlaneSizes[plane], currentReadOffset);
-    }
+    // Map the image and read the image data.
+    VkDeviceSize imageOffset = dstImageResource->GetImageDeviceMemoryOffset();
+    VkDeviceSize maxSize = 0;
+    uint8_t* writeImagePtr = srcImageDeviceMemory->GetDataPtr(imageOffset, maxSize);
+    assert(writeImagePtr != nullptr);
 
-    // convertYUVpitchtoNV12, currently only supports 8-bit formats.
-    assert(bytepp == 1);
-    ConvertYCbCrPitchToNv12(yCbCrInputPtrs[0], yCbCrInputPtrs[1], yCbCrInputPtrs[2],
-                            srcStride, outImagePtr, outImageLayouts,
-                            srcWidth, srcHeight);
+    size_t fileOffset = ((uint64_t)m_encoderConfig->input.fullImageSize * encodeFrameInfo->frameInputOrderNum);
+    const uint8_t* pInputFrameData = m_encoderConfig->inputFileHandler.GetMappedPtr(fileOffset);
 
-    return 0;
-};
+    const VkSubresourceLayout* dstSubresourceLayout = dstImageResource->GetSubresourceLayout();
 
-VkVideoComponentBitDepthFlagBitsKHR EncodeApp::GetComponentBitDepthFlagBits(uint32_t bpp)
-{
-    VkVideoComponentBitDepthFlagBitsKHR componentBitDepth;
-    switch (bpp) {
-    case 8:
-        componentBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
-        break;
-    case 10:
-        componentBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_10_BIT_KHR;
-        break;
-    case 12:
-        componentBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_12_BIT_KHR;
-        break;
-    default:
-        componentBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
-        break;
-    }
-    return componentBitDepth;
-};
+    // Load current frame from file and convert to NV12
+    if (0 == YCbCrConvUtilsCpu::I420ToNV12(
+                pInputFrameData + m_encoderConfig->input.planeLayouts[0].offset,      // src_y,
+                (int)m_encoderConfig->input.planeLayouts[0].rowPitch,                 // src_stride_y,
+                pInputFrameData + m_encoderConfig->input.planeLayouts[1].offset,      // src_u,
+                (int)m_encoderConfig->input.planeLayouts[1].rowPitch,                 // src_stride_u,
+                pInputFrameData + m_encoderConfig->input.planeLayouts[2].offset, // src_v,
+                (int)m_encoderConfig->input.planeLayouts[2].rowPitch,                 // src_stride_v,
+                writeImagePtr + dstSubresourceLayout[0].offset,                       // dst_y,
+                (int)dstSubresourceLayout[0].rowPitch,                                // dst_stride_y,
+                writeImagePtr + dstSubresourceLayout[1].offset,                       // dst_uv,
+                (int)dstSubresourceLayout[1].rowPitch,                                // dst_stride_uv,
+                m_encoderConfig->input.width,
+                m_encoderConfig->input.height)) {
 
 
-VkVideoChromaSubsamplingFlagBitsKHR EncodeApp::GetChromaSubsamplingFlagBits(uint32_t chromaFormatIDC)
-{
-    VkVideoChromaSubsamplingFlagBitsKHR chromaSubsamplingFlag;
-    switch (chromaFormatIDC) {
-    case STD_VIDEO_H264_CHROMA_FORMAT_IDC_MONOCHROME:
-        chromaSubsamplingFlag = VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR;
-        break;
-    case STD_VIDEO_H264_CHROMA_FORMAT_IDC_420:
-        chromaSubsamplingFlag = VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;
-        break;
-    case STD_VIDEO_H264_CHROMA_FORMAT_IDC_422:
-        chromaSubsamplingFlag = VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR;
-        break;
-    case STD_VIDEO_H264_CHROMA_FORMAT_IDC_444:
-        chromaSubsamplingFlag = VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
-        break;
-    default:
-        chromaSubsamplingFlag = VK_VIDEO_CHROMA_SUBSAMPLING_INVALID_KHR;
-        break;
-    }
-    return chromaSubsamplingFlag;
-};
-
-StdVideoH264SequenceParameterSet EncodeApp::GetStdVideoH264SequenceParameterSet(uint32_t width, uint32_t height,
-        StdVideoH264SequenceParameterSetVui* pVui)
-{
-    StdVideoH264SpsFlags spsFlags = {};
-    spsFlags.direct_8x8_inference_flag = 1u;
-    spsFlags.frame_mbs_only_flag = 1u;
-    spsFlags.vui_parameters_present_flag = (pVui == nullptr) ? 0u : 1u;
-
-    const uint32_t mbAlignedWidth = AlignSize(width, H264MbSizeAlignment);
-    const uint32_t mbAlignedHeight = AlignSize(height, H264MbSizeAlignment);
-
-    StdVideoH264SequenceParameterSet sps = {};
-    sps.profile_idc = STD_VIDEO_H264_PROFILE_IDC_HIGH;
-    sps.level_idc = STD_VIDEO_H264_LEVEL_IDC_4_1;
-    sps.seq_parameter_set_id = 0u;
-    sps.chroma_format_idc = STD_VIDEO_H264_CHROMA_FORMAT_IDC_420;
-    sps.bit_depth_luma_minus8 = 0u;
-    sps.bit_depth_chroma_minus8 = 0u;
-    sps.log2_max_frame_num_minus4 = 0u;
-    sps.pic_order_cnt_type = STD_VIDEO_H264_POC_TYPE_0;
-    sps.max_num_ref_frames = 1u;
-    sps.pic_width_in_mbs_minus1 = mbAlignedWidth / H264MbSizeAlignment - 1;
-    sps.pic_height_in_map_units_minus1 = mbAlignedHeight / H264MbSizeAlignment - 1;
-    sps.flags = spsFlags;
-    sps.pSequenceParameterSetVui = pVui;
-    sps.frame_crop_right_offset  = mbAlignedWidth - width;
-    sps.frame_crop_bottom_offset = mbAlignedHeight - height;
-
-    // This allows for picture order count values in the range [0, 255].
-    sps.log2_max_pic_order_cnt_lsb_minus4 = 4u;
-
-    if (sps.frame_crop_right_offset || sps.frame_crop_bottom_offset) {
-
-        sps.flags.frame_cropping_flag = true;
-
-        if (sps.chroma_format_idc == STD_VIDEO_H264_CHROMA_FORMAT_IDC_420) {
-            sps.frame_crop_right_offset >>= 1;
-            sps.frame_crop_bottom_offset >>= 1;
-        }
+        // On success, stage the input frame for the encoder video input
+        StageInputFrame(encodeFrameInfo);
+        return VK_SUCCESS;
     }
 
-    return sps;
+    return VK_ERROR_INITIALIZATION_FAILED;
 }
 
-StdVideoH264PictureParameterSet EncodeApp::GetStdVideoH264PictureParameterSet (void)
+VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
-    StdVideoH264PpsFlags ppsFlags = {};
-    ppsFlags.transform_8x8_mode_flag = 1u;
-    ppsFlags.constrained_intra_pred_flag = 0u;
-    ppsFlags.deblocking_filter_control_present_flag = 1u;
-    ppsFlags.entropy_coding_mode_flag = 1u;
+    assert(encodeFrameInfo);
 
-    StdVideoH264PictureParameterSet pps = {};
-    pps.seq_parameter_set_id = 0u;
-    pps.pic_parameter_set_id = 0u;
-    pps.num_ref_idx_l0_default_active_minus1 = 0u;
-    pps.flags = ppsFlags;
+    if (encodeFrameInfo->srcEncodeImageResource == nullptr) {
+        bool success = m_inputImagePool->GetAvailableImage(encodeFrameInfo->srcEncodeImageResource,
+                                                                 VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR);
+        assert(success);
+        assert(encodeFrameInfo->srcEncodeImageResource != nullptr);
+    }
 
-    return pps;
+    m_inputCommandBufferPool->GetAvailablePoolNode(encodeFrameInfo->inputCmdBuffer);
+    assert(encodeFrameInfo->inputCmdBuffer != nullptr);
+
+    // Make sure command buffer is not in use anymore and reset
+    encodeFrameInfo->inputCmdBuffer->ResetCommandBuffer();
+
+    // Begin command buffer
+    VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr };
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    VkCommandBuffer cmdBuf = encodeFrameInfo->inputCmdBuffer->BeginCommandBufferRecording(beginInfo);
+
+    VkSharedBaseObj<VkImageResourceView> linearInputImageView;
+    encodeFrameInfo->srcStagingImageView->GetImageView(linearInputImageView);
+
+    VkSharedBaseObj<VkImageResourceView> srcEncodeImageView;
+    encodeFrameInfo->srcEncodeImageResource->GetImageView(srcEncodeImageView);
+
+    CopyLinearToOptimalImage(cmdBuf, linearInputImageView, srcEncodeImageView);
+
+    VkResult result = encodeFrameInfo->inputCmdBuffer->EndCommandBufferRecording(cmdBuf);
+
+    // Now submit the staged input to the queue
+    SubmitStagedInputFrame(encodeFrameInfo);
+
+    // and encode the input frame with the encoder next
+    EncodeFrame(encodeFrameInfo);
+
+    return result;
 }
 
-VideoSessionParametersInfo::VideoSessionParametersInfo(VkVideoSessionKHR videoSession, StdVideoH264SequenceParameterSet* sps, StdVideoH264PictureParameterSet* pps)
+VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
-    m_videoSession = videoSession;
+    assert(encodeFrameInfo);
+    assert(encodeFrameInfo->inputCmdBuffer != nullptr);
 
-    m_encodeH264SessionParametersAddInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_ADD_INFO_EXT;
-    m_encodeH264SessionParametersAddInfo.pNext = nullptr;
-    m_encodeH264SessionParametersAddInfo.stdSPSCount = 1;
-    m_encodeH264SessionParametersAddInfo.pStdSPSs = sps;
-    m_encodeH264SessionParametersAddInfo.stdPPSCount = 1;
-    m_encodeH264SessionParametersAddInfo.pStdPPSs = pps;
+    const VkCommandBuffer* pCmdBuf = encodeFrameInfo->inputCmdBuffer->GetCommandBuffer();
+    VkSemaphore frameCompleteSemaphore = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
 
-    m_encodeH264SessionParametersCreateInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_CREATE_INFO_EXT;
-    m_encodeH264SessionParametersCreateInfo.pNext = nullptr;
-    m_encodeH264SessionParametersCreateInfo.maxStdSPSCount = 1;
-    m_encodeH264SessionParametersCreateInfo.maxStdPPSCount = 1;
-    m_encodeH264SessionParametersCreateInfo.pParametersAddInfo = &m_encodeH264SessionParametersAddInfo;
+    VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr };
+    submitInfo.waitSemaphoreCount = 0;
+    submitInfo.pWaitSemaphores = nullptr;
+    submitInfo.pWaitDstStageMask = nullptr;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = pCmdBuf;
+    submitInfo.pSignalSemaphores = (frameCompleteSemaphore != VK_NULL_HANDLE) ? &frameCompleteSemaphore : nullptr;
+    submitInfo.signalSemaphoreCount = (frameCompleteSemaphore != VK_NULL_HANDLE) ? 1 : 0;
 
-    m_encodeSessionParametersCreateInfo.sType = VK_STRUCTURE_TYPE_VIDEO_SESSION_PARAMETERS_CREATE_INFO_KHR;
-    m_encodeSessionParametersCreateInfo.pNext = &m_encodeH264SessionParametersCreateInfo;
-    m_encodeSessionParametersCreateInfo.videoSessionParametersTemplate = nullptr;
-    m_encodeSessionParametersCreateInfo.videoSession = m_videoSession;
+    VkFence queueCompleteFence = encodeFrameInfo->inputCmdBuffer->GetFence();
+    VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::ENCODE, 0,
+                                                           1, &submitInfo,
+                                                           queueCompleteFence);
+
+    encodeFrameInfo->inputCmdBuffer->SetCommandBufferSubmitted();
+    bool syncCpuAfterStaging = false;
+    if (syncCpuAfterStaging) {
+        encodeFrameInfo->inputCmdBuffer->SyncHostOnCmdBuffComplete();
+    }
+
+    if (result == VK_SUCCESS) {
+
+        if (m_displayQueue.IsValid()) {
+
+            // Optionally, submit the input frame for preview by the display, if enabled.
+            VulkanEncoderInputFrame displayEncoderInputFrame;
+            displayEncoderInputFrame.pictureIndex = (int32_t)encodeFrameInfo->frameInputOrderNum;
+            displayEncoderInputFrame.displayOrder = encodeFrameInfo->positionInGopInDecodeOrder;
+            displayEncoderInputFrame.frameCompleteSemaphore = frameCompleteSemaphore;
+            // displayEncoderInputFrame.frameCompleteFence = currentEncodeFrameData->m_frameCompleteFence;
+            encodeFrameInfo->srcEncodeImageResource->GetImageView(displayEncoderInputFrame.imageView );
+            // One can also look at the linear input instead
+            // displayEncoderInputFrame.imageView = currentEncodeFrameData->m_linearInputImage;
+            displayEncoderInputFrame.displayWidth  = m_encoderConfig->input.width;
+            displayEncoderInputFrame.displayHeight = m_encoderConfig->input.height;
+
+            m_displayQueue.EnqueueFrame(&displayEncoderInputFrame);
+        }
+    }
+
+    return result;
 }
 
-int32_t EncodeApp::InitEncoder(EncodeConfig* encodeConfig)
+VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                               uint32_t frameIdx, uint32_t ofTotalFrames)
 {
-    VkResult result = VK_SUCCESS;
+    assert(encodeFrameInfo->outputBitstreamBuffer != nullptr);
+    assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
 
-    // create profile
-    VkVideoCodecOperationFlagBitsKHR videoCodec = (VkVideoCodecOperationFlagBitsKHR)(encodeConfig->codec);
-    VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling = GetChromaSubsamplingFlagBits(encodeConfig->chromaFormatIDC); // VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR
-    VkVideoComponentBitDepthFlagBitsKHR lumaBitDepth = GetComponentBitDepthFlagBits(encodeConfig->bpp); // VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
-    VkVideoComponentBitDepthFlagBitsKHR chromaBitDepth = GetComponentBitDepthFlagBits(encodeConfig->bpp); // VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
-    m_videoProfile = VkVideoCoreProfile(videoCodec, chromaSubsampling, lumaBitDepth, chromaBitDepth, STD_VIDEO_H264_PROFILE_IDC_HIGH);
+    if(encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
+        size_t nonVcl = fwrite(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
+               1, encodeFrameInfo->bitstreamHeaderBufferSize,
+               m_encoderConfig->outputFileHandler.GetFileHandle());
+
+        if (m_encoderConfig->verboseFrameStruct) {
+            std::cout << ">>>>>> Non-Vcl data" << (nonVcl ? "SUCCESS" : "FAIL")
+                      << " File Output non-VCL data with size: " << encodeFrameInfo->bitstreamHeaderBufferSize
+                      << ", Display Order: " << (uint32_t)encodeFrameInfo->positionInGopInDisplayOrder
+                      << ", Decode  Order: " << (uint32_t)encodeFrameInfo->positionInGopInDecodeOrder
+                      << std::endl << std::flush;
+        }
+    }
+
+    uint32_t querySlotId = (uint32_t)-1;
+    VkQueryPool queryPool = encodeFrameInfo->encodeCmdBuffer->GetQueryPool(querySlotId);
+
+    // Since we can use a single command buffer from multiple frames,
+    // we can't just use the querySlotId from the command buffer.
+    // Instead we use the input image index that should be unique for each frame.
+    querySlotId = (uint32_t)encodeFrameInfo->srcEncodeImageResource->GetImageIndex();
+
+    // get output results
+    struct VulkanVideoEncodeStatus {
+        uint32_t bitstreamStartOffset;
+        uint32_t bitstreamSize;
+        VkQueryResultStatusKHR status;
+    } encodeResult{};
+
+    // Fetch the coded VCL data and its information
+    VkResult result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx, queryPool, querySlotId,
+                                                      1, sizeof(encodeResult), &encodeResult, sizeof(encodeResult),
+                                                      VK_QUERY_RESULT_WITH_STATUS_BIT_KHR | VK_QUERY_RESULT_WAIT_BIT);
+
+    assert(result == VK_SUCCESS);
+    assert(encodeResult.status == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
+
+    if(result != VK_SUCCESS) {
+        fprintf(stderr, "\nRetrieveData Error: Failed to get vcl query pool results.\n");
+        return result;
+    }
+
+    VkDeviceSize maxSize;
+    uint8_t* data = encodeFrameInfo->outputBitstreamBuffer->GetDataPtr(0, maxSize);
+
+    size_t vcl = fwrite(data + encodeResult.bitstreamStartOffset, 1, encodeResult.bitstreamSize,
+                        m_encoderConfig->outputFileHandler.GetFileHandle());
+
+    if (m_encoderConfig->verboseFrameStruct) {
+        std::cout << ">>>>>> Output VCL data " << (vcl ? "SUCCESS" : "FAIL") << " with size: " << encodeResult.bitstreamSize
+                  << " and offset: " << encodeResult.bitstreamStartOffset
+                  << ", Display Order: " << (uint32_t)encodeFrameInfo->positionInGopInDisplayOrder
+                  << ", Decode  Order: " << (uint32_t)encodeFrameInfo->positionInGopInDecodeOrder << std::endl << std::flush;
+    }
+    return result;
+}
+
+VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConfig)
+{
 
     if (!VulkanVideoCapabilities::IsCodecTypeSupported(m_vkDevCtx,
                                                        m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
-                                                       videoCodec)) {
-        std::cout << "*** The video codec " << VkVideoCoreProfile::CodecToName(videoCodec) << " is not supported! ***" << std::endl;
+                                                       encoderConfig->codec)) {
+        std::cout << "*** The video codec " << VkVideoCoreProfile::CodecToName(encoderConfig->codec) << " is not supported! ***" << std::endl;
         assert(!"The video codec is not supported");
-        return -1;
+        return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    VkVideoCapabilitiesKHR videoCapabilities;
-    VkVideoEncodeCapabilitiesKHR videoEncodeCapabilities;
-    VkVideoEncodeH264CapabilitiesEXT h264EncodeCapabilities;
-    result = VulkanVideoCapabilities::GetVideoEncodeCapabilities<VkVideoEncodeH264CapabilitiesEXT, VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_EXT>
-                                                                (m_vkDevCtx, m_videoProfile,
-                                                                 videoCapabilities,
-                                                                 videoEncodeCapabilities,
-                                                                 h264EncodeCapabilities);
-    if (result != VK_SUCCESS) {
-        std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
-        assert(!"Could not get Video Capabilities!");
-        return -1;
-    }
+    m_encoderConfig = encoderConfig;
 
-    if (m_verbose) {
-        std::cout << "\t\t\t" << ("h264") << "encode capabilities: " << std::endl;
-        std::cout << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << videoCapabilities.minBitstreamBufferOffsetAlignment << std::endl;
-        std::cout << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << videoCapabilities.minBitstreamBufferSizeAlignment << std::endl;
-        std::cout << "\t\t\t" << "pictureAccessGranularity: " << videoCapabilities.pictureAccessGranularity.width << " x " << videoCapabilities.pictureAccessGranularity.height << std::endl;
-        std::cout << "\t\t\t" << "minExtent: " << videoCapabilities.minCodedExtent.width << " x " << videoCapabilities.minCodedExtent.height << std::endl;
-        std::cout << "\t\t\t" << "maxExtent: " << videoCapabilities.maxCodedExtent.width  << " x " << videoCapabilities.maxCodedExtent.height << std::endl;
-        std::cout << "\t\t\t" << "maxDpbSlots: " << videoCapabilities.maxDpbSlots << std::endl;
-        std::cout << "\t\t\t" << "maxActiveReferencePictures: " << videoCapabilities.maxActiveReferencePictures << std::endl;
-    }
+    // Update the video profile
+    encoderConfig->InitVideoProfile();
+
+    encoderConfig->InitDeviceCapbilities(m_vkDevCtx);
+
+    // Reconfigure the gopStructure structure because the device may not support
+    // specific GOP structure. For example it may not support B-frames.
+    // gopStructure.Init() should be called after  encoderConfig->InitDeviceCapbilities().
+    m_encoderConfig->gopStructure.Init();
+    std::cout << std::endl << "GOP frame count: " << (uint32_t)m_encoderConfig->gopStructure.GetGopFrameCount();
+    std::cout << ", IDR period: " << (uint32_t)m_encoderConfig->gopStructure.GetIdrPeriod();
+    std::cout << ", Consecutive B frames: " << (uint32_t)m_encoderConfig->gopStructure.GetConsecutiveBFrameCount();
+    std::cout << std::endl;
+    m_encoderConfig->gopStructure.PrintGopStructure(m_encoderConfig->gopStructure.GetGopFrameCount() + 5);
+
+    // The the required num of DPB images
+    m_maxActiveReferencePictures = encoderConfig->InitDpbCount();
+
+    encoderConfig->InitRateControl();
 
     VkFormat supportedDpbFormats[8];
     VkFormat supportedInFormats[8];
     uint32_t formatCount = sizeof(supportedDpbFormats) / sizeof(supportedDpbFormats[0]);
-    result = VulkanVideoCapabilities::GetVideoFormats(m_vkDevCtx, m_videoProfile,
-                                                      VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR,
-                                                      formatCount, supportedDpbFormats);
+    VkResult result = VulkanVideoCapabilities::GetVideoFormats(m_vkDevCtx, encoderConfig->videoCoreProfile,
+                                                               VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR,
+                                                               formatCount, supportedDpbFormats);
 
     if(result != VK_SUCCESS) {
         fprintf(stderr, "\nInitEncoder Error: Failed to get desired video format for the decoded picture buffer.\n");
-        return -1;
+        return result;
     }
 
-    result = VulkanVideoCapabilities::GetVideoFormats(m_vkDevCtx, m_videoProfile,
+    result = VulkanVideoCapabilities::GetVideoFormats(m_vkDevCtx, encoderConfig->videoCoreProfile,
                                                       VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR,
                                                       formatCount, supportedInFormats);
 
     if(result != VK_SUCCESS) {
         fprintf(stderr, "\nInitEncoder Error: Failed to get desired video format for input images.\n");
-        return -1;
+        return result;
     }
 
 
     m_imageDpbFormat = supportedDpbFormats[0];
     m_imageInFormat = supportedInFormats[0];
 
-    m_maxCodedExtent = { encodeConfig->width, encodeConfig->height }; // codedSize
-    m_maxReferencePicturesSlotsCount = DECODED_PICTURE_BUFFER_SIZE;
+    m_maxCodedExtent = { encoderConfig->input.width, encoderConfig->input.height }; // codedSize
+
+    const uint32_t maxReferencePicturesSlotsCount = EncoderConfig::DEFAULT_MAX_NUM_REF_FRAMES;
 
     VkVideoSessionCreateFlagsKHR sessionCreateFlags{};
 #ifdef VK_KHR_video_maintenance1
@@ -321,24 +330,24 @@ int32_t EncodeApp::InitEncoder(EncodeConfig* encodeConfig)
             !m_videoSession->IsCompatible( m_vkDevCtx,
                                            sessionCreateFlags,
                                            m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
-                                           &m_videoProfile,
+                                           &encoderConfig->videoCoreProfile,
                                            m_imageInFormat,
                                            m_maxCodedExtent,
                                            m_imageDpbFormat,
-                                           m_maxReferencePicturesSlotsCount,
-                                           std::max<uint32_t>(m_maxReferencePicturesSlotsCount,
-                                                              DECODED_PICTURE_BUFFER_SIZE)) ) {
+                                           m_maxActiveReferencePictures,
+                                           std::max<uint32_t>(m_maxActiveReferencePictures,
+                                                              maxReferencePicturesSlotsCount)) ) {
 
         result = VulkanVideoSession::Create( m_vkDevCtx,
                                              sessionCreateFlags,
                                              m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
-                                             &m_videoProfile,
+                                             &encoderConfig->videoCoreProfile,
                                              m_imageInFormat,
                                              m_maxCodedExtent,
                                              m_imageDpbFormat,
-                                             m_maxReferencePicturesSlotsCount,
-                                             std::min<uint32_t>(m_maxReferencePicturesSlotsCount,
-                                                                DECODED_PICTURE_BUFFER_SIZE),
+                                             m_maxActiveReferencePictures,
+                                             std::max<uint32_t>(m_maxActiveReferencePictures,
+                                                                maxReferencePicturesSlotsCount),
                                              m_videoSession);
 
         // after creating a new video session, we need a codec reset.
@@ -347,902 +356,653 @@ int32_t EncodeApp::InitEncoder(EncodeConfig* encodeConfig)
     }
 
     VkExtent2D imageExtent {
-        std::max(m_maxCodedExtent.width, videoCapabilities.minCodedExtent.width),
-        std::max(m_maxCodedExtent.height, videoCapabilities.minCodedExtent.height)
+        std::max(m_maxCodedExtent.width, encoderConfig->videoCapabilities.minCodedExtent.width),
+        std::max(m_maxCodedExtent.height, encoderConfig->videoCapabilities.minCodedExtent.height)
     };
 
-    m_inputNumFrames = INPUT_FRAME_BUFFER_SIZE;
-    m_dpbNumFrames = DECODED_PICTURE_BUFFER_SIZE;
-
-    const VkImageUsageFlags outImageUsage = (VK_IMAGE_USAGE_VIDEO_ENCODE_DST_BIT_KHR |
-                                               VK_IMAGE_USAGE_SAMPLED_BIT      | VK_IMAGE_USAGE_STORAGE_BIT |
-                                               VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                               VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+    const VkImageUsageFlags inImageUsage = ( VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR |
+                                             VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                             VK_IMAGE_USAGE_TRANSFER_DST_BIT);
     const VkImageUsageFlags dpbImageUsage = VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR;
 
+    result =  VulkanVideoImagePool::Create(m_vkDevCtx, m_linearInputImagePool);
+    if(result != VK_SUCCESS) {
+        fprintf(stderr, "\nInitEncoder Error: Failed to create linearInputImagePool.\n");
+        return result;
+    }
 
-    {
-        // FIXME: need a separate imageCreateInfo for DPB and input images
-        assert(m_imageDpbFormat == m_imageInFormat);
-        // FIXME: Vulkan video also supports and multi-layered images
-        // and some implementations require image arrays for DPB.
-        uint32_t  fullImageSizeForStagingBuffer = 0;
-        result = m_videoFrameBuffer.InitFramePool(m_vkDevCtx,
-                                                    m_videoProfile.GetProfile(),
-                                                    m_inputNumFrames,
-                                                    m_imageDpbFormat,
-                                                    imageExtent.width,
-                                                    imageExtent.height,
-                                                    fullImageSizeForStagingBuffer,
-                                                    VK_IMAGE_TILING_OPTIMAL,
-                                                    outImageUsage | dpbImageUsage,
-                                                    m_vkDevCtx->GetVideoEncodeQueueFamilyIdx());
+    result = m_linearInputImagePool->Configure( m_vkDevCtx,
+                                                encoderConfig->numInputImages,
+                                                m_imageInFormat,
+                                                imageExtent,
+                                                  ( VK_IMAGE_USAGE_SAMPLED_BIT |
+                                                    VK_IMAGE_USAGE_STORAGE_BIT |
+                                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT),
+                                                m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
+                                                  ( VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT  |
+                                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                                                    VK_MEMORY_PROPERTY_HOST_CACHED_BIT),
+                                                nullptr, // pVideoProfile
+                                                false,   // useImageArray
+                                                false,   // useImageViewArray
+                                                true     // useLinear
+                                              );
+    if(result != VK_SUCCESS) {
+        fprintf(stderr, "\nInitEncoder Error: Failed to Configure linearInputImagePool.\n");
+        return result;
+    }
 
-        assert(result == VK_SUCCESS);
-        if (result != VK_SUCCESS) {
-            fprintf(stderr, "\nERROR: InitImagePool() ret(%d) for m_inputNumFrames(%d)\n", result, m_inputNumFrames);
-            return -1;
+    result =  VulkanVideoImagePool::Create(m_vkDevCtx, m_inputImagePool);
+    if(result != VK_SUCCESS) {
+        fprintf(stderr, "\nInitEncoder Error: Failed to create inputImagePool.\n");
+        return result;
+    }
+
+    result = m_inputImagePool->Configure( m_vkDevCtx,
+                                          encoderConfig->numInputImages,
+                                          m_imageInFormat,
+                                          imageExtent,
+                                          inImageUsage,
+                                          m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
+                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                          encoderConfig->videoCoreProfile.GetProfile(), // pVideoProfile
+                                          false,   // useImageArray
+                                          false,   // useImageViewArray
+                                          false    // useLinear
+                                          );
+    if(result != VK_SUCCESS) {
+        fprintf(stderr, "\nInitEncoder Error: Failed to Configure inputImagePool.\n");
+        return result;
+    }
+
+    result =  VulkanVideoImagePool::Create(m_vkDevCtx, m_dpbImagePool);
+    if(result != VK_SUCCESS) {
+        fprintf(stderr, "\nInitEncoder Error: Failed to create dpbImagePool.\n");
+        return result;
+    }
+
+    result = m_dpbImagePool->Configure(m_vkDevCtx,
+                                       maxReferencePicturesSlotsCount + 4,
+                                       m_imageDpbFormat,
+                                       imageExtent,
+                                       dpbImageUsage,
+                                       m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
+                                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                       encoderConfig->videoCoreProfile.GetProfile(), // pVideoProfile
+                                       false,   // useImageArray      TODO: check properties
+                                       false,   // useImageViewArray  TODO: check properties
+                                       false    // useLinear
+                                      );
+    if(result != VK_SUCCESS) {
+        fprintf(stderr, "\nInitEncoder Error: Failed to Configure inputImagePool.\n");
+        return result;
+    }
+
+    int32_t availableBuffers = (int32_t)m_bitstreamBuffersQueue.GetAvailableNodesNumber();
+    if (availableBuffers < encoderConfig->numBitstreamBuffersToPreallocate) {
+
+        uint32_t allocateNumBuffers = std::min<uint32_t>(
+                m_bitstreamBuffersQueue.GetMaxNodes(),
+                (encoderConfig->numBitstreamBuffersToPreallocate - availableBuffers));
+
+        allocateNumBuffers = std::min<uint32_t>(allocateNumBuffers,
+                m_bitstreamBuffersQueue.GetFreeNodesNumber());
+
+        for (uint32_t i = 0; i < allocateNumBuffers; i++) {
+
+            VkSharedBaseObj<VulkanBitstreamBufferImpl> bitstreamBuffer;
+            VkDeviceSize allocSize = std::max<VkDeviceSize>(m_streamBufferSize, m_minStreamBufferSize);
+
+            result = VulkanBitstreamBufferImpl::Create(m_vkDevCtx,
+                    m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
+                    allocSize,
+                    encoderConfig->videoCapabilities.minBitstreamBufferOffsetAlignment,
+                    encoderConfig->videoCapabilities.minBitstreamBufferSizeAlignment,
+                    nullptr, 0, bitstreamBuffer);
+            assert(result == VK_SUCCESS);
+            if (result != VK_SUCCESS) {
+                fprintf(stderr, "\nERROR: VulkanBitstreamBufferImpl::Create() result: 0x%x\n", result);
+                break;
+            }
+
+            int32_t nodeAddedWithIndex = m_bitstreamBuffersQueue.AddNodeToPool(bitstreamBuffer, false);
+            if (nodeAddedWithIndex < 0) {
+                assert("Could not add the new node to the pool");
+                break;
+            }
         }
     }
-    // create SPS and PPS
-    m_sessionParameters.m_sequenceParameterSet = GetStdVideoH264SequenceParameterSet(encodeConfig->width, encodeConfig->height, nullptr);
-    m_sessionParameters.m_pictureParameterSet = GetStdVideoH264PictureParameterSet();
 
-    VideoSessionParametersInfo videoSessionParametersInfo(m_videoSession->GetVideoSession(),
-            &m_sessionParameters.m_sequenceParameterSet,
-            &m_sessionParameters.m_pictureParameterSet);
-    VkVideoSessionParametersCreateInfoKHR* encodeSessionParametersCreateInfo = videoSessionParametersInfo.getVideoSessionParametersInfo();
-    result = m_vkDevCtx->CreateVideoSessionParametersKHR(*m_vkDevCtx,
-                                                         encodeSessionParametersCreateInfo,
-                                                         nullptr,
-                                                         &m_sessionParameters.m_encodeSessionParameters);
+    result = VulkanCommandBufferPool::Create(m_vkDevCtx, m_inputCommandBufferPool);
     if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nEncodeFrame Error: Failed to get create video session parameters.\n");
-        return -1;
+        fprintf(stderr, "\nInitEncoder Error: Failed to create m_inputCommandBufferPool.\n");
+        return result;
     }
 
-    return 0;
-}
-
-int32_t EncodeApp::InitRateControl(VkCommandBuffer cmdBuf, uint32_t qp)
-{
-    VkVideoBeginCodingInfoKHR encodeBeginInfo = {VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR};
-    encodeBeginInfo.videoSession = m_videoSession->GetVideoSession();
-    encodeBeginInfo.videoSessionParameters = m_sessionParameters.m_encodeSessionParameters;
-
-    VkVideoEncodeH264FrameSizeEXT encodeH264FrameSize;
-    encodeH264FrameSize.frameISize = 0;
-
-    VkVideoEncodeH264QpEXT encodeH264Qp;
-    encodeH264Qp.qpI = qp;
-
-    VkVideoEncodeH264RateControlLayerInfoEXT encodeH264RateControlLayerInfo = {VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_EXT};
-    encodeH264RateControlLayerInfo.useMinQp = VK_TRUE;
-    encodeH264RateControlLayerInfo.minQp = encodeH264Qp;
-    encodeH264RateControlLayerInfo.useMaxQp = VK_TRUE;
-    encodeH264RateControlLayerInfo.maxQp = encodeH264Qp;
-    encodeH264RateControlLayerInfo.useMaxFrameSize = VK_TRUE;
-    encodeH264RateControlLayerInfo.maxFrameSize = encodeH264FrameSize; 
-
-    VkVideoEncodeRateControlLayerInfoKHR encodeRateControlLayerInfo = {VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR};
-    encodeRateControlLayerInfo.pNext = &encodeH264RateControlLayerInfo;
-
-    VkVideoCodingControlInfoKHR codingControlInfo = {VK_STRUCTURE_TYPE_VIDEO_CODING_CONTROL_INFO_KHR};
-    codingControlInfo.flags = VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR;
-    codingControlInfo.pNext = &encodeRateControlLayerInfo;
-
-    VkVideoEndCodingInfoKHR encodeEndInfo = {VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR};
-
-    // Reset the video session before first use and apply QP values.
-    m_vkDevCtx->CmdBeginVideoCodingKHR(cmdBuf, &encodeBeginInfo);
-    m_vkDevCtx->CmdControlVideoCodingKHR(cmdBuf, &codingControlInfo);
-    m_vkDevCtx->CmdEndVideoCodingKHR(cmdBuf, &encodeEndInfo);
-
-    return 0;
-}
-
-// 1. load current input frame from file
-// 2. convert yuv image to nv12
-// 3. copy nv12 input image to the correct input vkimage slot (staging buffer)
-int32_t EncodeApp::LoadFrame(EncodeConfig* encodeConfig, uint32_t frameIndexNum, uint32_t currentFrameBufferIdx)
-{
-    EncodeFrameData* currentEncodeFrameData = m_videoFrameBuffer.GetEncodeFrameData(currentFrameBufferIdx);
-    VkSharedBaseObj<VkImageResourceView>& linearInputImageView = currentEncodeFrameData->m_linearInputImage;
-
-    const VkSharedBaseObj<VkImageResource>& dstImageResource = linearInputImageView->GetImageResource();
-    const VkFormat format = dstImageResource->GetImageCreateInfo().format;
-    VkSharedBaseObj<VulkanDeviceMemoryImpl> srcImageDeviceMemory(dstImageResource->GetMemory());
-    VkImage  srcImage = dstImageResource->GetImage ();
-
-    // Map the image and read the image data.
-    VkDeviceSize imageOffset = dstImageResource->GetImageDeviceMemoryOffset();
-    VkDeviceSize maxSize = 0;
-    uint8_t* writeImagePtr = srcImageDeviceMemory->GetDataPtr(imageOffset, maxSize);
-    assert(writeImagePtr != nullptr);
-
-    const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(format);
-    bool isUnnormalizedRgba = false;
-    if (mpInfo && (mpInfo->planesLayout.layout == YCBCR_SINGLE_PLANE_UNNORMALIZED) && !(mpInfo->planesLayout.disjoint)) {
-        isUnnormalizedRgba = true;
+    result = m_inputCommandBufferPool->Configure( m_vkDevCtx,
+                                                  encoderConfig->numInputImages, // numPoolNodes
+                                                  m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(), // queueFamilyIndex
+                                                  false,    // createQueryPool - not needed for the input transfer
+                                                  nullptr,  // pVideoProfile   - not needed for the input transfer
+                                                  true,     // createSemaphores
+                                                  true      // createFences
+                                                 );
+    if(result != VK_SUCCESS) {
+        fprintf(stderr, "\nInitEncoder Error: Failed to Configure m_inputCommandBufferPool.\n");
+        return result;
     }
 
-    VkImageSubresource subResource = {};
-    VkSubresourceLayout layouts[3];
-    memset(layouts, 0x00, sizeof(layouts));
+    result = VulkanCommandBufferPool::Create(m_vkDevCtx, m_encodeCommandBufferPool);
+    if(result != VK_SUCCESS) {
+        fprintf(stderr, "\nInitEncoder Error: Failed to create m_encodeCommandBufferPool.\n");
+        return result;
+    }
 
-    if (mpInfo && !isUnnormalizedRgba) {
-        switch (mpInfo->planesLayout.layout) {
-            case YCBCR_SINGLE_PLANE_UNNORMALIZED:
-            case YCBCR_SINGLE_PLANE_INTERLEAVED:
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(*m_vkDevCtx, srcImage, &subResource, &layouts[0]);
-                break;
-            case YCBCR_SEMI_PLANAR_CBCR_INTERLEAVED:
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(*m_vkDevCtx, srcImage, &subResource, &layouts[0]);
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(*m_vkDevCtx, srcImage, &subResource, &layouts[1]);
-                break;
-            case YCBCR_PLANAR_CBCR_STRIDE_INTERLEAVED:
-            case YCBCR_PLANAR_CBCR_BLOCK_JOINED:
-            case YCBCR_PLANAR_STRIDE_PADDED:
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(*m_vkDevCtx, srcImage, &subResource, &layouts[0]);
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(*m_vkDevCtx, srcImage, &subResource, &layouts[1]);
-                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_2_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(*m_vkDevCtx, srcImage, &subResource, &layouts[2]);
-                break;
-            default:
-                assert(0);
+    VkQueryPoolVideoEncodeFeedbackCreateInfoKHR encodeFeedbackCreateInfo =
+        {VK_STRUCTURE_TYPE_QUERY_POOL_VIDEO_ENCODE_FEEDBACK_CREATE_INFO_KHR};
+
+    encodeFeedbackCreateInfo.pNext = encoderConfig->videoCoreProfile.GetProfile();
+    encodeFeedbackCreateInfo.encodeFeedbackFlags = VK_VIDEO_ENCODE_FEEDBACK_BITSTREAM_BUFFER_OFFSET_BIT_KHR |
+                                                   VK_VIDEO_ENCODE_FEEDBACK_BITSTREAM_BYTES_WRITTEN_BIT_KHR;
+
+    result = m_encodeCommandBufferPool->Configure( m_vkDevCtx,
+                                                   encoderConfig->numInputImages, // numPoolNodes
+                                                   m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(), // queueFamilyIndex
+                                                   true,      // createQueryPool - not needed for the input transfer
+                                                   &encodeFeedbackCreateInfo, // VideoEncodeFeedback + VideoProfile
+                                                   true,     // createSemaphores
+                                                   true      // createFences
+                                                  );
+    if(result != VK_SUCCESS) {
+        fprintf(stderr, "\nInitEncoder Error: Failed to Configure m_encodeCommandBufferPool.\n");
+        return result;
+    }
+
+    result = CreateFrameInfoBuffersQueue(encoderConfig->numInputImages);
+    if(result != VK_SUCCESS) {
+        fprintf(stderr, "\nInitEncoder Error: Failed to create FrameInfoBuffersQueue.\n");
+        return result;
+    }
+
+    // Start the queue consumer thread
+    if (m_enableEncoderQueue) {
+
+        const uint32_t maxPendingQueueNodes = 2;
+        m_encoderQueue.SetMaxPendingQueueNodes(std::min<uint32_t>(m_encoderConfig->gopStructure.GetGopFrameCount() + 1, maxPendingQueueNodes));
+        m_encoderQueueConsumerThread = std::thread(&VkVideoEncoder::ConsumerThread, this);
+    }
+    return VK_SUCCESS;
+}
+
+VkDeviceSize VkVideoEncoder::GetBitstreamBuffer(VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer)
+{
+    VkDeviceSize newSize = m_streamBufferSize;
+    assert(m_vkDevCtx);
+
+    VkSharedBaseObj<VulkanBitstreamBufferImpl> newBitstreamBuffer;
+
+    const bool enablePool = true;
+    const bool debugBitstreamBufferDumpAlloc = false;
+    int32_t availablePoolNode = -1;
+    if (enablePool) {
+        availablePoolNode = m_bitstreamBuffersQueue.GetAvailableNodeFromPool(newBitstreamBuffer);
+    }
+    if (!(availablePoolNode >= 0)) {
+        VkResult result = VulkanBitstreamBufferImpl::Create(m_vkDevCtx,
+                m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
+                newSize,
+                m_encoderConfig->videoCapabilities.minBitstreamBufferOffsetAlignment,
+                m_encoderConfig->videoCapabilities.minBitstreamBufferSizeAlignment,
+                nullptr, 0, newBitstreamBuffer);
+        assert(result == VK_SUCCESS);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nERROR: VulkanBitstreamBufferImpl::Create() result: 0x%x\n", result);
+            return 0;
+        }
+        if (debugBitstreamBufferDumpAlloc) {
+            std::cout << "\tAllocated bitstream buffer with size " << newSize << " B, " <<
+                             newSize/1024 << " KB, " << newSize/1024/1024 << " MB" << std::endl;
+        }
+        if (enablePool) {
+            int32_t nodeAddedWithIndex = m_bitstreamBuffersQueue.AddNodeToPool(newBitstreamBuffer, true);
+            if (nodeAddedWithIndex < 0) {
+                assert("Could not add the new node to the pool");
+            }
         }
 
     } else {
-        m_vkDevCtx->GetImageSubresourceLayout(*m_vkDevCtx, srcImage, &subResource, &layouts[0]);
-    }
 
-    // Load current frame from file and convert to NV12
-    LoadCurrentFrame(writeImagePtr, layouts, encodeConfig->inputVideoMmap, frameIndexNum,
-                     encodeConfig->width, encodeConfig->height,
-                     encodeConfig->width,
-                     encodeConfig->inputVkFormat);
+        assert(newBitstreamBuffer);
+        newSize = newBitstreamBuffer->GetMaxSize();
 
-    return 0;
-}
+#ifdef CLEAR_BITSTREAM_BUFFERS_ON_CREATE
+        newBitstreamBuffer->MemsetData(0x0, copySize, newSize - copySize);
+#endif
+        if (debugBitstreamBufferDumpAlloc) {
+            std::cout << "\t\tFrom bitstream buffer pool with size " << newSize << " B, " <<
+                             newSize/1024 << " KB, " << newSize/1024/1024 << " MB" << std::endl;
 
-void EncodeApp::POCBasedRefPicManagement(StdVideoEncodeH264RefPicMarkingEntry* m_mmco,
-                                         uint8_t& m_refPicMarkingOpCount) {
-    int picNumX = -1;
-    int currPicNum = -1;
-    int maxPicNum = 1 << (m_h264.m_spsInfo.log2_max_frame_num_minus4 + 4);
-
-    picNumX = m_dpb264.GetPicNumXWithMinPOC(0, 0, 0);
-
-    // TODO: Check if this needs to be changed to m_dpb264.GetCurrentPicNum()
-    currPicNum = m_dpb264.GetCurrentDpbEntry()->frame_num % maxPicNum;
-
-    if (currPicNum > 0 && (picNumX >= 0)) {
-        m_mmco[m_refPicMarkingOpCount].memory_management_control_operation = STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_UNMARK_SHORT_TERM;
-        m_mmco[m_refPicMarkingOpCount++].difference_of_pic_nums_minus1 = currPicNum - picNumX - 1;
-        m_mmco[m_refPicMarkingOpCount++].memory_management_control_operation = STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_END;
-    }
-}
-
-void EncodeApp::FrameNumBasedRefPicManagement(StdVideoEncodeH264RefPicMarkingEntry* m_mmco,
-                                              uint8_t& m_refPicMarkingOpCount)
-{
-    int picNumX = -1;
-    int currPicNum = -1;
-    int maxPicNum = 1 << (m_h264.m_spsInfo.log2_max_frame_num_minus4 + 4);
-
-    picNumX = m_dpb264.GetPicNumXWithMinFrameNumWrap(0, 0, 0);
-
-    // TODO: Check if this needs to be changed to m_dpb264.GetCurrentPicNum()
-    currPicNum = m_dpb264.GetCurrentDpbEntry()->frame_num % maxPicNum;
-
-    if (currPicNum > 0 && (picNumX >= 0)) {
-        m_mmco[m_refPicMarkingOpCount].memory_management_control_operation = STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_UNMARK_SHORT_TERM;
-        m_mmco[m_refPicMarkingOpCount++].difference_of_pic_nums_minus1 = currPicNum - picNumX - 1;
-        m_mmco[m_refPicMarkingOpCount++].memory_management_control_operation = STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_END;
-    }
-}
-
-VkResult EncodeApp::SetupRefPicReorderingCommands(const StdVideoEncodeH264SliceHeader *slh,
-                                                  StdVideoEncodeH264ReferenceListsInfoFlags* pFlags,
-                                                  StdVideoEncodeH264RefListModEntry* m_ref_pic_list_modification_l0,
-                                                  uint8_t& m_refList0ModOpCount)
-{
-    bool bReorder = false;
-
-    StdVideoEncodeH264RefListModEntry *refPicList0Mod = m_ref_pic_list_modification_l0;
-
-    VkEncDpbEntry entries[MAX_DPB_SIZE];
-    memset(entries, 0, sizeof(entries));
-
-    uint32_t numEntries = (uint32_t)m_dpb264.GetValidEntries(entries);
-    assert(numEntries <= MAX_DPB_SIZE);
-
-    for (uint32_t i = 0; i < numEntries; i++) {
-        if (entries[i].bFrameCorrupted) {
-            bReorder = true;
-            break;
+            std::cout << "\t\t\t FreeNodes " << m_bitstreamBuffersQueue.GetFreeNodesNumber();
+            std::cout << " of MaxNodes " << m_bitstreamBuffersQueue.GetMaxNodes();
+            std::cout << ", AvailableNodes " << m_bitstreamBuffersQueue.GetAvailableNodesNumber();
+            std::cout << std::endl;
         }
     }
+    bitstreamBuffer = newBitstreamBuffer;
+    if (newSize > m_streamBufferSize) {
+        std::cout << "\tAllocated bitstream buffer with size " << newSize << " B, " <<
+                             newSize/1024 << " KB, " << newSize/1024/1024 << " MB" << std::endl;
+        m_streamBufferSize = newSize;
+    }
+    return bitstreamBuffer->GetMaxSize();
+}
 
-    // Either the current picture requires no references, or the active
-    // reference list does not contain corrupted pictures. Skip reordering.
-    if (!bReorder) {
-        return VK_SUCCESS;
+VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
+                                                    VkSharedBaseObj<VkImageResourceView>& imageView,
+                                                    VkImageLayout oldLayout, VkImageLayout newLayout)
+{
+    uint32_t baseArrayLayer = 0;
+    const VkImageMemoryBarrier2KHR imageBarrier = {
+
+            VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR, // VkStructureType sType
+            nullptr, // const void*     pNext
+            VK_PIPELINE_STAGE_2_NONE_KHR, // VkPipelineStageFlags2KHR srcStageMask
+            0, // VkAccessFlags2KHR        srcAccessMask
+            VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR, // VkPipelineStageFlags2KHR dstStageMask;
+            VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR, // VkAccessFlags   dstAccessMask
+            oldLayout, // VkImageLayout   oldLayout // FIXME - use the real old layout
+            newLayout, // VkImageLayout   newLayout
+            VK_QUEUE_FAMILY_IGNORED, // uint32_t        srcQueueFamilyIndex
+            (uint32_t)m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(), // uint32_t   dstQueueFamilyIndex
+            imageView->GetImageResource()->GetImage(), // VkImage         image;
+            {
+                // VkImageSubresourceRange   subresourceRange
+                VK_IMAGE_ASPECT_COLOR_BIT, // VkImageAspectFlags aspectMask
+                0, // uint32_t           baseMipLevel
+                1, // uint32_t           levelCount
+                baseArrayLayer, // uint32_t           baseArrayLayer
+                1, // uint32_t           layerCount;
+            },
+    };
+
+    const VkDependencyInfoKHR dependencyInfo = {
+        VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR,
+        nullptr,
+        VK_DEPENDENCY_BY_REGION_BIT,
+        0,
+        nullptr,
+        0,
+        nullptr,
+        1,
+        &imageBarrier,
+    };
+    m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &dependencyInfo);
+
+    return newLayout;
+}
+
+VkResult VkVideoEncoder::CopyLinearToOptimalImage(VkCommandBuffer& commandBuffer,
+                                                  VkSharedBaseObj<VkImageResourceView>& srcImageView,
+                                                  VkSharedBaseObj<VkImageResourceView>& dstImageView,
+                                                  uint32_t srcCopyArrayLayer,
+                                                  uint32_t dstCopyArrayLayer,
+                                                  VkImageLayout srcImageLayout,
+                                                  VkImageLayout dstImageLayout)
+
+{
+
+    const VkSharedBaseObj<VkImageResource>& srcImageResource = srcImageView->GetImageResource();
+    const VkSharedBaseObj<VkImageResource>& dstImageResource = dstImageView->GetImageResource();
+
+    const VkFormat format = srcImageResource->GetImageCreateInfo().format;
+
+    // Bind memory for the image.
+    const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(format);
+
+    // Currently formats that have more than 2 output planes are not supported. 444 formats have a shared CbCr planes in all current tests
+    assert((mpInfo->vkPlaneFormat[2] == VK_FORMAT_UNDEFINED) && (mpInfo->vkPlaneFormat[3] == VK_FORMAT_UNDEFINED));
+
+    // Copy src buffer to image.
+    VkImageCopy copyRegion[3]{};
+    copyRegion[0].extent = srcImageResource->GetImageCreateInfo().extent;
+    copyRegion[0].srcSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
+    copyRegion[0].srcSubresource.mipLevel = 0;
+    copyRegion[0].srcSubresource.baseArrayLayer = srcCopyArrayLayer;
+    copyRegion[0].srcSubresource.layerCount = 1;
+    copyRegion[0].dstSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
+    copyRegion[0].dstSubresource.mipLevel = 0;
+    copyRegion[0].dstSubresource.baseArrayLayer = dstCopyArrayLayer;
+    copyRegion[0].dstSubresource.layerCount = 1;
+    copyRegion[1].extent.width = copyRegion[0].extent.width;
+    if (mpInfo->planesLayout.secondaryPlaneSubsampledX != 0) {
+        copyRegion[1].extent.width /= 2;
     }
 
-    NvVideoEncodeH264DpbSlotInfoLists<2 * MAX_REFS> refLists;
-    m_dpb264.GetRefPicList(&refLists, &m_h264.m_spsInfo, &m_h264.m_ppsInfo, slh, NULL, true);
-
-    int maxPicNum = 1 << (m_h264.m_spsInfo.log2_max_frame_num_minus4 + 4);
-    int picNumLXPred = m_dpb264.GetCurrentDpbEntry()->frame_num % maxPicNum;
-    int numSTR = 0, numLTR = 0;
-    m_dpb264.GetNumRefFramesInDPB(0, &numSTR, &numLTR);
-
-    // Re-order the active list to skip all corrupted frames
-    pFlags->ref_pic_list_modification_flag_l0 = true;
-    m_refList0ModOpCount = 0;
-    if (numSTR) {
-        for (uint32_t i = 0; i < refLists.refPicList0Count; i++) {
-            int diff = m_dpb264.GetPicNum(refLists.refPicList0[i]) - picNumLXPred;
-            if (diff <= 0) {
-                refPicList0Mod[m_refList0ModOpCount].modification_of_pic_nums_idc =
-                    STD_VIDEO_H264_MODIFICATION_OF_PIC_NUMS_IDC_SHORT_TERM_SUBTRACT;
-                refPicList0Mod[m_refList0ModOpCount].abs_diff_pic_num_minus1 = abs(diff) ? abs(diff) - 1 : maxPicNum - 1;
-            } else {
-                refPicList0Mod[m_refList0ModOpCount].modification_of_pic_nums_idc =
-                    STD_VIDEO_H264_MODIFICATION_OF_PIC_NUMS_IDC_SHORT_TERM_ADD;
-                refPicList0Mod[m_refList0ModOpCount].abs_diff_pic_num_minus1 = abs(diff) - 1;
-            }
-            m_refList0ModOpCount++;
-            picNumLXPred = m_dpb264.GetPicNum(refLists.refPicList0[i]);
-        }
-    } else if (numLTR) {
-        // If we end up supporting LTR, add code here.
+    copyRegion[1].extent.height = copyRegion[0].extent.height;
+    if (mpInfo->planesLayout.secondaryPlaneSubsampledY != 0) {
+        copyRegion[1].extent.height /= 2;
     }
 
-    refPicList0Mod[m_refList0ModOpCount++].modification_of_pic_nums_idc = STD_VIDEO_H264_MODIFICATION_OF_PIC_NUMS_IDC_END;
+    copyRegion[1].extent.depth = 1;
+    copyRegion[1].srcSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
+    copyRegion[1].srcSubresource.mipLevel = 0;
+    copyRegion[1].srcSubresource.baseArrayLayer = srcCopyArrayLayer;
+    copyRegion[1].srcSubresource.layerCount = 1;
+    copyRegion[1].dstSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
+    copyRegion[1].dstSubresource.mipLevel = 0;
+    copyRegion[1].dstSubresource.baseArrayLayer = dstCopyArrayLayer;
+    copyRegion[1].dstSubresource.layerCount = 1;
 
-    assert(m_refList0ModOpCount > 1);
+    m_vkDevCtx->CmdCopyImage(commandBuffer, srcImageResource->GetImage(), srcImageLayout,
+                             dstImageResource->GetImage(), dstImageLayout,
+                             (uint32_t)2, copyRegion);
+
+    {
+        VkMemoryBarrier memoryBarrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+        memoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        memoryBarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+        m_vkDevCtx->CmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                               1, &memoryBarrier, 0,
+                                0, 0, 0);
+    }
 
     return VK_SUCCESS;
 }
 
-// Generates a mask of slots to be invalidated and frees those slots
-void EncodeApp::ResetPicDpbSlot(uint32_t validSlotsMask)
+VkResult VkVideoEncoder::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
-    uint32_t resetSlotsMask = ~(validSlotsMask | ~m_dpbSlotsMask);
+    m_sendControlCmd = false;
+    encodeFrameInfo->sendControlCmd = true;
 
-    if (resetSlotsMask != 0) {
-        for (uint32_t referencePictureIndex = 0; referencePictureIndex < m_maxDpbSlots;
-                                                                   referencePictureIndex++) {
-            if (resetSlotsMask & (1 << referencePictureIndex)) {
-                SetPicDpbSlot(referencePictureIndex, -1);
-                resetSlotsMask &= ~(1 << referencePictureIndex);
-            }
-        }
-    }
-}
+    VkBaseInStructure* pNext = nullptr;
 
-// Associate a picture with the current "DPB slot" being occupied by it.
-// Set dpbSlot == -1 to indicate that `picIdx' is no longer present in the DPB.
-int8_t EncodeApp::SetPicDpbSlot(uint32_t referencePictureIndex, int8_t dpbSlot)
-{
-    int8_t oldDpbSlot = m_picIdxToDpb[referencePictureIndex];
-    m_picIdxToDpb[referencePictureIndex] = dpbSlot;
+    if (m_sendResetControlCmd == true) {
 
-    if (dpbSlot >= 0) {
-        m_dpbSlotsMask |= (1 << referencePictureIndex);
-    } else {
-        m_dpbSlotsMask &= ~(1 << referencePictureIndex);
-    }
-
-    return oldDpbSlot;
-}
-
-VkResult EncodeApp::EncodeH264Frame(EncPicParams *pEncPicParams,
-                                    EncodeConfig* encodeConfig,
-                                    VkCommandBuffer cmdBuf,
-                                    uint32_t curFrameIndex,
-                                    uint32_t currentFrameBufferIdx,
-                                    VkSharedBaseObj<VkImageResourceView>& srcImageView,
-                                    VkSharedBaseObj<VkBufferResource>& outBitstream)
-{
-    // Configuration parameters
-    const uint32_t maxReferences = 16;
-    const uint32_t maxNumSlices = 64;
-
-    const EncodePerFrameConstConfig* pPerFrameConfig = nullptr;
-    if (curFrameIndex == 0) {
-        pPerFrameConfig = &encodeConfig->m_firstFrameConfig;
-    } else if (pEncPicParams->lastFrame) {
-        pPerFrameConfig = &encodeConfig->m_lastFrameConfig;
-    } else {
-        const uint32_t perFrameConfigIndx = curFrameIndex % encodeConfig->m_perFrameConfigSize;
-        pPerFrameConfig = &encodeConfig->m_perFrameConfig[perFrameConfigIndx];
-    }
-
-    VkVideoReferenceSlotInfoKHR refSlots[maxReferences];
-    StdVideoEncodeH264ReferenceInfo stdReferenceInfo[maxReferences];
-    VkVideoEncodeH264DpbSlotInfoEXT dpbSlotInfo[maxReferences];
-
-    VkVideoEncodeH264NaluSliceInfoEXT sliceInfo[maxNumSlices];
-
-    StdVideoH26XPictureType picType = pEncPicParams->pictureType = pPerFrameConfig->m_pictureType;
-    const bool refPicFlag = (picType == STD_VIDEO_H26X_PICTURE_TYPE_IDR) ? true :
-                            (picType != STD_VIDEO_H26X_PICTURE_TYPE_P) ? true : false;
-
-    bool isIdr = (picType == STD_VIDEO_H26X_PICTURE_TYPE_IDR);
-    bool isReference = refPicFlag;
-
-    if (isIdr && (curFrameIndex == 0)) {
-        VkResult result = VK_SUCCESS;
-
-        VkVideoEncodeH264SessionParametersGetInfoEXT h264GetInfo = {
-            VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_GET_INFO_EXT,
-            nullptr,
-            VK_TRUE,
-            VK_TRUE,
-            m_h264.m_spsInfo.seq_parameter_set_id,
-            m_h264.m_ppsInfo.pic_parameter_set_id,
-        };
-
-        VkVideoEncodeSessionParametersGetInfoKHR getInfo = {
-            VK_STRUCTURE_TYPE_VIDEO_ENCODE_SESSION_PARAMETERS_GET_INFO_KHR,
-            &h264GetInfo,
-            m_sessionParameters.m_encodeSessionParameters,
-        };
-
-        VkVideoEncodeH264SessionParametersFeedbackInfoEXT h264FeedbackInfo = {
-            VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_FEEDBACK_INFO_EXT,
-            nullptr,
-        };
-
-        VkVideoEncodeSessionParametersFeedbackInfoKHR feedbackInfo = {
-            VK_STRUCTURE_TYPE_VIDEO_ENCODE_SESSION_PARAMETERS_FEEDBACK_INFO_KHR,
-            &h264FeedbackInfo,
-        };
-
-        size_t bufferSize = 256;
-        result = m_vkDevCtx->GetEncodedVideoSessionParametersKHR(*m_vkDevCtx,
-                                                                 &getInfo,
-                                                                 &feedbackInfo,
-                                                                 &bufferSize,
-                                                                 pEncPicParams->bitstreamHeaderBuffer);
-
-        if (result != VK_SUCCESS) {
-            return result;
-        }
-        pEncPicParams->nonVclDataSize = bufferSize;
-    }
-
-    DpbPicInfo dpbPicInfo{};
-    StdVideoEncodeH264SliceHeader slh{};
-
-    StdVideoEncodeH264RefPicMarkingEntry m_mmco[MAX_MMCOS]{};
-    StdVideoEncodeH264RefListModEntry m_ref_pic_list_modification_l0[MAX_REFS]{};
-    StdVideoEncodeH264RefListModEntry m_ref_pic_list_modification_l1[MAX_REFS]{};
-
-    uint8_t m_refPicMarkingOpCount = 0;
-    // ref_pic_list_modification
-    uint8_t m_refList0ModOpCount = 0;
-    uint8_t m_refList1ModOpCount = 0;
-
-    m_refPicMarkingOpCount = m_refList0ModOpCount = m_refList1ModOpCount = 0;
-
-    dpbPicInfo.frameNum = m_frameNumSyntax & ((1 << (m_h264.m_spsInfo.log2_max_frame_num_minus4 + 4)) - 1);
-    dpbPicInfo.PicOrderCnt = (pEncPicParams->h264.displayPOCSyntax) & ((1 << (m_h264.m_spsInfo.log2_max_pic_order_cnt_lsb_minus4 + 4)) - 1);
-    dpbPicInfo.pictureType = picType;
-    dpbPicInfo.isLongTerm = false;  // TODO: replace this by a check for LONG_TERM_REFERENCE_BIT
-    dpbPicInfo.isRef = isReference;
-    dpbPicInfo.isIDR = isIdr;
-    dpbPicInfo.no_output_of_prior_pics_flag = false;        // TODO: replace this by a check for the corresponding slh flag
-    dpbPicInfo.adaptive_ref_pic_marking_mode_flag = false;  // TODO: replace this by a check for the corresponding slh flag
-    dpbPicInfo.timeStamp = pEncPicParams->inputTimeStamp;
-
-    int targetFbIndex = m_dpb264.DpbPictureStart(&dpbPicInfo, &m_h264.m_spsInfo);
-    uint32_t maxPictureImageIndexInUse = (targetFbIndex > 0) ? targetFbIndex : 0;
-
-    const uint32_t adaptiveRefPicManagementMode = 0; // FIXME
-    if ((m_dpb264.GetNumRefFramesInDPB(0) >= m_h264.m_spsInfo.max_num_ref_frames) && isReference &&
-        (adaptiveRefPicManagementMode > 0) && !isIdr) {
-        // slh.flags.adaptive_ref_pic_marking_mode_flag = true;
-
-        if (adaptiveRefPicManagementMode == 2) {
-            POCBasedRefPicManagement(m_mmco, m_refPicMarkingOpCount);
-        } else if (adaptiveRefPicManagementMode == 1) {
-            FrameNumBasedRefPicManagement(m_mmco, m_refPicMarkingOpCount);
-        }
-    }
-
-    StdVideoEncodeH264ReferenceListsInfoFlags refMgmtFlags = StdVideoEncodeH264ReferenceListsInfoFlags();
-    if ((m_dpb264.IsRefFramesCorrupted()) && ((picType == STD_VIDEO_H26X_PICTURE_TYPE_P) || (picType == STD_VIDEO_H26X_PICTURE_TYPE_B))) {
-        SetupRefPicReorderingCommands(&slh, &refMgmtFlags, m_ref_pic_list_modification_l0, m_refList0ModOpCount);
-    }
-
-    // Fill in the reference-related information for the current picture
-    StdVideoEncodeH264ReferenceListsInfo referenceFinalLists = {};
-    referenceFinalLists.flags = refMgmtFlags;
-    referenceFinalLists.refPicMarkingOpCount = m_refPicMarkingOpCount;
-    referenceFinalLists.refList0ModOpCount = m_refList0ModOpCount;
-    referenceFinalLists.refList1ModOpCount = m_refList1ModOpCount;
-    referenceFinalLists.pRefList0ModOperations = m_ref_pic_list_modification_l0;
-    referenceFinalLists.pRefList1ModOperations = m_ref_pic_list_modification_l1;
-    referenceFinalLists.pRefPicMarkingOperations = m_mmco;
-
-    if ((m_h264.m_ppsInfo.num_ref_idx_l0_default_active_minus1 > 0) &&
-            (picType == STD_VIDEO_H26X_PICTURE_TYPE_B)) {
-        // do not use multiple references for l0
-        slh.flags.num_ref_idx_active_override_flag = true;
-        referenceFinalLists.num_ref_idx_l0_active_minus1 = 0;
-    }
-
-    NvVideoEncodeH264DpbSlotInfoLists<2 * maxReferences> refLists;
-    m_dpb264.GetRefPicList(&refLists, &m_h264.m_spsInfo, &m_h264.m_ppsInfo, &slh, &referenceFinalLists);
-    assert(refLists.refPicList0Count <= 8);
-    assert(refLists.refPicList1Count <= 8);
-
-    memcpy(referenceFinalLists.RefPicList0, refLists.refPicList0, refLists.refPicList0Count);
-    memcpy(referenceFinalLists.RefPicList1, refLists.refPicList1, refLists.refPicList1Count);
-
-    referenceFinalLists.num_ref_idx_l0_active_minus1 = refLists.refPicList0Count > 0 ? refLists.refPicList0Count - 1 : 0;
-    referenceFinalLists.num_ref_idx_l1_active_minus1 = refLists.refPicList1Count > 0 ? refLists.refPicList1Count - 1 : 0;
-
-    slh.flags.num_ref_idx_active_override_flag = false;
-    if (picType == STD_VIDEO_H26X_PICTURE_TYPE_B) {
-        slh.flags.num_ref_idx_active_override_flag =
-            ((referenceFinalLists.num_ref_idx_l0_active_minus1 != m_h264.m_ppsInfo.num_ref_idx_l0_default_active_minus1) ||
-             (referenceFinalLists.num_ref_idx_l1_active_minus1 != m_h264.m_ppsInfo.num_ref_idx_l1_default_active_minus1));
-    } else if (picType == STD_VIDEO_H26X_PICTURE_TYPE_P) {
-        slh.flags.num_ref_idx_active_override_flag =
-            (referenceFinalLists.num_ref_idx_l0_active_minus1 != m_h264.m_ppsInfo.num_ref_idx_l0_default_active_minus1);
-    }
-
-    slh.disable_deblocking_filter_idc = encodeConfig->h264.disable_deblocking_filter_idc;
-
-    // FIXME: set cabac_init_idc based on a query
-    slh.cabac_init_idc = STD_VIDEO_H264_CABAC_INIT_IDC_0;
-
-    StdVideoH264PictureType stdPictureType = STD_VIDEO_H264_PICTURE_TYPE_INVALID;
-    switch (picType) {
-        case STD_VIDEO_H26X_PICTURE_TYPE_IDR:
-            slh.slice_type = STD_VIDEO_H264_SLICE_TYPE_I;
-            stdPictureType = STD_VIDEO_H264_PICTURE_TYPE_IDR;
-            break;
-        case STD_VIDEO_H26X_PICTURE_TYPE_I:
-            slh.slice_type = STD_VIDEO_H264_SLICE_TYPE_I;
-            stdPictureType = STD_VIDEO_H264_PICTURE_TYPE_I;
-            break;
-        case STD_VIDEO_H26X_PICTURE_TYPE_P:
-            slh.slice_type = STD_VIDEO_H264_SLICE_TYPE_P;
-            stdPictureType = STD_VIDEO_H264_PICTURE_TYPE_P;
-            break;
-        case STD_VIDEO_H26X_PICTURE_TYPE_B:
-            slh.slice_type = STD_VIDEO_H264_SLICE_TYPE_B;
-            stdPictureType = STD_VIDEO_H264_PICTURE_TYPE_B;
-            break;
-        default:
-            assert(!"Invalid value");
-            break;
-    }
-
-    StdVideoEncodeH264PictureInfo currentDpbEntry = *m_dpb264.GetCurrentDpbEntry();
-    currentDpbEntry.flags.IdrPicFlag = isIdr;
-    currentDpbEntry.flags.is_reference = isReference;
-    currentDpbEntry.seq_parameter_set_id = m_h264.m_spsInfo.seq_parameter_set_id;
-    currentDpbEntry.pic_parameter_set_id = m_h264.m_ppsInfo.pic_parameter_set_id;
-    currentDpbEntry.primary_pic_type = stdPictureType;
-
-    if (isIdr) {
-        currentDpbEntry.idr_pic_id = m_IDRPicId & 1;
-        m_IDRPicId++;
-    }
-
-    uint32_t usedFbSlotsMask = 0;
-
-    VkEncDpbEntry entries[MAX_DPB_SIZE];
-    memset(entries, 0, sizeof(entries));
-
-    // Get the valid reference entries to determine indices of in-use pictures
-    uint32_t numEntries = (uint32_t)m_dpb264.GetValidEntries(entries);
-    assert(numEntries <= MAX_DPB_SIZE);
-
-    for (uint32_t i = 0; i < numEntries; i++) {
-        int fbIdx = entries[i].fb_index;
-
-        assert(fbIdx >= 0);
-        usedFbSlotsMask |= (1 << fbIdx);
-    }
-
-    if (refPicFlag) {
-        usedFbSlotsMask |= (1 << targetFbIndex);
-    }
-
-    ResetPicDpbSlot(usedFbSlotsMask);
-
-    // We need the reference slot for the target picture
-    // Update the DPB
-    int8_t targetDpbSlot = m_dpb264.DpbPictureEnd(&m_h264.m_spsInfo, &slh, &referenceFinalLists);
-    if (refPicFlag) {
-        assert(targetDpbSlot >= 0);
-    }
-
-    if ((picType == STD_VIDEO_H26X_PICTURE_TYPE_P) || (picType == STD_VIDEO_H26X_PICTURE_TYPE_B)) {
-        currentDpbEntry.pRefLists = &referenceFinalLists;
-    }
-
-    memset(refSlots, 0, sizeof(refSlots));
-    memset(stdReferenceInfo, 0, sizeof(stdReferenceInfo));
-    memset(dpbSlotInfo, 0, sizeof(dpbSlotInfo));
-
-    uint32_t numReferenceSlots = 0;
-
-    if (targetFbIndex >= 0) {
-        maxPictureImageIndexInUse = std::max((uint32_t)targetFbIndex, maxPictureImageIndexInUse);
-
-        refSlots[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-        refSlots[numReferenceSlots].slotIndex = targetDpbSlot; // m_picIdxToDpb[targetFbIndex];
-        //targetReferencePictureIndex = numReferenceSlots;
-        refSlots[numReferenceSlots].pPictureResource = &pEncPicParams->refPicList[targetFbIndex];
-
-        numReferenceSlots++;
-        assert(numReferenceSlots <= ARRAYSIZE(refSlots));
-    }
-
-    // It's not entirely correct to have two separate loops below, one for L0
-    // and the other for L1. In each loop, elements are added to refSlots[]
-    // without checking for duplication. Duplication could occur if the same
-    // picture appears in both L0 and L1; AFAIK, we don't have a situation
-    // today like that so the two loops work fine.
-    // TODO: create a set out of the ref lists and then iterate over that to
-    // build refSlots[].
-
-    for (uint32_t i = 0; i < refLists.refPicList0Count; i++) {
-        uint32_t referencePictureIndex = m_dpb264.GetRefPicIdx(refLists.refPicList0[i]);
-        assert(referencePictureIndex != uint32_t(-1));
-
-        maxPictureImageIndexInUse = std::max(referencePictureIndex, maxPictureImageIndexInUse);
-
-        m_dpb264.FillStdReferenceInfo(refLists.refPicList0[i],
-                                              &stdReferenceInfo[numReferenceSlots]);
-
-        dpbSlotInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_DPB_SLOT_INFO_EXT;
-        dpbSlotInfo[numReferenceSlots].pStdReferenceInfo = &stdReferenceInfo[numReferenceSlots];
-
-        refSlots[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-        refSlots[numReferenceSlots].pNext = &dpbSlotInfo[numReferenceSlots];
-        refSlots[numReferenceSlots].slotIndex = m_picIdxToDpb[referencePictureIndex];
-        refSlots[numReferenceSlots].pPictureResource = &pEncPicParams->refPicList[referencePictureIndex];
-
-        numReferenceSlots++;
-        assert(numReferenceSlots <= ARRAYSIZE(refSlots));
-    }
-
-    for (uint32_t i = 0; i < refLists.refPicList1Count; i++) {
-        uint32_t referencePictureIndex = m_dpb264.GetRefPicIdx(refLists.refPicList1[i]);
-        assert(referencePictureIndex != uint32_t(-1));
-
-        maxPictureImageIndexInUse = std::max(referencePictureIndex, maxPictureImageIndexInUse);
-
-        m_dpb264.FillStdReferenceInfo(refLists.refPicList1[i],
-                                              &stdReferenceInfo[numReferenceSlots]);
-
-        dpbSlotInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_DPB_SLOT_INFO_EXT;
-        dpbSlotInfo[numReferenceSlots].pStdReferenceInfo = &stdReferenceInfo[numReferenceSlots];
-
-        refSlots[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-        refSlots[numReferenceSlots].pNext = &dpbSlotInfo[numReferenceSlots];
-        refSlots[numReferenceSlots].slotIndex = m_picIdxToDpb[referencePictureIndex];
-        refSlots[numReferenceSlots].pPictureResource = &pEncPicParams->refPicList[referencePictureIndex];
-
-        assert(numReferenceSlots <= ARRAYSIZE(refSlots));
-        numReferenceSlots++;
-    }
-
-    VkVideoBeginCodingInfoKHR encodeBeginInfo;
-    memset(&encodeBeginInfo, 0, sizeof(encodeBeginInfo));
-    encodeBeginInfo.sType = VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR;
-    encodeBeginInfo.videoSession = m_videoSession->GetVideoSession();
-    encodeBeginInfo.videoSessionParameters = m_sessionParameters.m_encodeSessionParameters;
-
-    assert((maxPictureImageIndexInUse + 1) <= ARRAYSIZE(pEncPicParams->refPicList));
-    encodeBeginInfo.referenceSlotCount = numReferenceSlots;
-
-    // TODO: Order reference slots based on slot # and not referencePictureIndex
-    // TODO: This information is currently discarded in the driver.
-    encodeBeginInfo.pReferenceSlots = refSlots;
-
-    m_vkDevCtx->CmdBeginVideoCodingKHR(cmdBuf, &encodeBeginInfo);
-
-    m_rcLayerInfo.pNext = & m_h264.m_rcLayerInfoH264;
-    m_h264.m_rcInfoH264.temporalLayerCount = 1;
-
-    VkVideoEncodeQualityLevelInfoKHR qualityLevelInfo = { VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR };
-    qualityLevelInfo.qualityLevel = pEncPicParams->qualityLevel;
-    qualityLevelInfo.pNext = & m_h264.m_rcInfoH264;
-
-    m_rcInfo.pNext = &qualityLevelInfo;
-    m_rcInfo.layerCount = 1;
-    m_rcInfo.pLayers = &m_rcLayerInfo;
-
-    if (m_sendControlCmd == true) {
-        void *pNext = nullptr;
-        VkVideoCodingControlFlagsKHR flags = 0;
-
-        if (m_rateControlTestMode) {
-                // Default case
-                // Reset Encoder + VkVideoEncodeRateControlInfoKHR
-                // Only VkVideoEncodeRateControlInfoKHR
-                flags |= VK_VIDEO_CODING_CONTROL_ENCODE_RATE_CONTROL_BIT_KHR |
-                         VK_VIDEO_CODING_CONTROL_ENCODE_QUALITY_LEVEL_BIT_KHR;
-                pNext = &m_rcInfo;
-        }
-
-        if (m_sendResetControlCmd == true) {
-            flags |= VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR;
-        }
-        VkVideoCodingControlInfoKHR renderControlInfo = {VK_STRUCTURE_TYPE_VIDEO_CODING_CONTROL_INFO_KHR, pNext, flags};
-        m_vkDevCtx->CmdControlVideoCodingKHR(cmdBuf, &renderControlInfo);
-        m_sendControlCmd = false;
         m_sendResetControlCmd = false;
+        encodeFrameInfo->sendResetControlCmd = true;
+        encodeFrameInfo->controlCmd |= VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR;
     }
 
-    VkVideoEncodeInfoKHR encodeInfo = {VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR};
-    encodeInfo.dstBuffer = outBitstream->GetBuffer();
+    if (m_sendQualityLevelCmd == true) {
 
-    // For the actual (VCL) data, specify its insertion starting from the
-    // provided offset into the bitstream buffer.
-    encodeInfo.dstBufferOffset = 0; // pEncPicParams->bitstreamBufferOffset;
+        m_sendQualityLevelCmd = false;
+        encodeFrameInfo->sendQualityLevelCmd = true;
+        encodeFrameInfo->controlCmd |= VK_VIDEO_CODING_CONTROL_ENCODE_QUALITY_LEVEL_BIT_KHR;
 
-    // XXX: We don't really test encoder state reset at the moment.
-    // For simplicity, only indicate that the state is to be reset for the
-    // first IDR picture.
-    // FIXME: The reset must use a RESET control command.
-    if (curFrameIndex == 0) {
-        encodeInfo.flags |= VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR;
-    }
-
-    VkVideoReferenceSlotInfoKHR setupReferenceSlot = VkVideoReferenceSlotInfoKHR();
-    if (refPicFlag) {
-        assert(targetDpbSlot >= 0);
-        setupReferenceSlot = refSlots[0];
-    }
-
-    encodeInfo.pSetupReferenceSlot = refPicFlag ? &setupReferenceSlot : nullptr;
-
-    // If the current picture is going to be a reference frame, the first
-    // entry in the refSlots array contains information about the picture
-    // resource associated with this frame. This entry should not be
-    // provided in the list of reference resources for the current picture,
-    // so skip refSlots[0].
-    encodeInfo.referenceSlotCount = 1 /* h264PicParams->refPicFlag */ ? numReferenceSlots - 1 : numReferenceSlots;
-    encodeInfo.pReferenceSlots = 1 /* h264PicParams->refPicFlag */ ? refSlots + 1 : refSlots;
-
-    encodeInfo.srcPictureResource.imageViewBinding = srcImageView->GetImageView();
-
-    memset(&sliceInfo, 0, sizeof(sliceInfo));
-
-    sliceInfo[0].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_INFO_EXT;
-    sliceInfo[0].pStdSliceHeader = &slh;
-
-    if (m_rcInfo.rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR) {
-        switch (picType) {
-            case STD_VIDEO_H26X_PICTURE_TYPE_IDR:
-            case STD_VIDEO_H26X_PICTURE_TYPE_I:
-                sliceInfo[0].constantQp = pEncPicParams->constQp.qpIntra;
-                break;
-            case STD_VIDEO_H26X_PICTURE_TYPE_P:
-                sliceInfo[0].constantQp = pEncPicParams->constQp.qpInterP;
-                break;
-            case STD_VIDEO_H26X_PICTURE_TYPE_B:
-                sliceInfo[0].constantQp = pEncPicParams->constQp.qpInterB;
-                break;
-            default:
-                assert(!"Invalid picture type");
-                break;
-
-
+        encodeFrameInfo->qualityLevel = m_encoderConfig->qualityLevel;
+        encodeFrameInfo->qualityLevelInfo.sType  = VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR;
+        encodeFrameInfo->qualityLevelInfo.qualityLevel = encodeFrameInfo->qualityLevel;
+        if (pNext != nullptr) {
+            encodeFrameInfo->rateControlInfo.pNext = pNext;
         }
+        pNext = (VkBaseInStructure*)&encodeFrameInfo->qualityLevelInfo;
     }
 
-    for (uint32_t i = 0; i < pEncPicParams->h264.numSlices; i++) {
-        sliceInfo[i] = sliceInfo[0];
+    if (m_sendRateControlCmd == true) {
+
+        m_sendRateControlCmd = false;
+        encodeFrameInfo->sendRateControlCmd = true;
+        encodeFrameInfo->controlCmd |= VK_VIDEO_CODING_CONTROL_ENCODE_RATE_CONTROL_BIT_KHR;
+
+        encodeFrameInfo->rateControlInfo = m_rateControlInfo;
+        encodeFrameInfo->rateControlInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR;
+
+        for (uint32_t layerIndx = 0; layerIndx < ARRAYSIZE(m_rateControlLayersInfo); layerIndx++) {
+            encodeFrameInfo->rateControlLayersInfo[layerIndx] = m_rateControlLayersInfo[layerIndx];
+            encodeFrameInfo->rateControlLayersInfo[layerIndx].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR;
+        }
+
+        encodeFrameInfo->rateControlInfo.pLayers = encodeFrameInfo->rateControlLayersInfo;
+        encodeFrameInfo->rateControlInfo.layerCount = 1;
+
+        if (pNext != nullptr) {
+            encodeFrameInfo->rateControlInfo.pNext = pNext;
+        }
+        pNext = (VkBaseInStructure*)&encodeFrameInfo->rateControlInfo;
     }
 
-    VkVideoEncodeH264PictureInfoEXT encodeH264FrameInfo = {VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PICTURE_INFO_EXT};
-    encodeH264FrameInfo.pNext = nullptr;
-    encodeH264FrameInfo.naluSliceEntryCount = pEncPicParams->h264.numSlices;
-    encodeH264FrameInfo.pNaluSliceEntries = sliceInfo;
-    encodeH264FrameInfo.pStdPictureInfo = &currentDpbEntry;
+    encodeFrameInfo->pControlCmdChain = pNext;
 
-    encodeInfo.pNext = &encodeH264FrameInfo;
+    return VK_SUCCESS;
+}
 
-    uint32_t querySlotId = currentFrameBufferIdx;
+VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                              uint32_t frameIdx, uint32_t ofTotalFrames)
+{
+    // Get a encodeCmdBuffer pool to record the video commands
+    bool success = m_encodeCommandBufferPool->GetAvailablePoolNode(encodeFrameInfo->encodeCmdBuffer);
+    assert(success);
+
+    VkSharedBaseObj<VulkanCommandBufferPool::PoolNode>& encodeCmdBuffer = encodeFrameInfo->encodeCmdBuffer;
+
+    assert(encodeFrameInfo != nullptr);
+    assert(encodeCmdBuffer != nullptr);
+
+    // ******* Start command buffer recording *************
+    const VkCommandBufferBeginInfo beginInfo { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr,
+                                               VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT };
+
+    VkCommandBuffer cmdBuf = encodeCmdBuffer->BeginCommandBufferRecording(beginInfo);
+
+    // ******* Record the video commands *************
+    VkVideoBeginCodingInfoKHR encodeBeginInfo { VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR };
+    encodeBeginInfo.videoSession = *encodeFrameInfo->videoSession;
+    encodeBeginInfo.videoSessionParameters = *encodeFrameInfo->videoSessionParameters;
+
+    assert((encodeFrameInfo->encodeInfo.referenceSlotCount) <= ARRAYSIZE(encodeFrameInfo->dpbImageResources));
+    // TODO: Calculate the number of DPB slots for begin against the multiple frames.
+    encodeBeginInfo.referenceSlotCount = encodeFrameInfo->encodeInfo.referenceSlotCount + 1;
+
+    encodeBeginInfo.pReferenceSlots = encodeFrameInfo->referenceSlotsInfo;
+
+    const VulkanDeviceContext* vkDevCtx = encodeCmdBuffer->GetDeviceContext();
+    vkDevCtx->CmdBeginVideoCodingKHR(cmdBuf, &encodeBeginInfo);
+
+    if (encodeFrameInfo->controlCmd != VkVideoCodingControlFlagsKHR()) {
+
+        VkVideoCodingControlInfoKHR renderControlInfo = { VK_STRUCTURE_TYPE_VIDEO_CODING_CONTROL_INFO_KHR,
+                                                          encodeFrameInfo->pControlCmdChain,
+                                                          encodeFrameInfo->controlCmd};
+        vkDevCtx->CmdControlVideoCodingKHR(cmdBuf, &renderControlInfo);
+    }
+
+    // Handle the query indexes
+    uint32_t querySlotId = (uint32_t)-1;
+    VkQueryPool queryPool = encodeCmdBuffer->GetQueryPool(querySlotId);
+
+    // Since we can use a single command buffer from multiple frames,
+    // we can't just use the querySlotId from the command buffer.
+    // Instead we use the input image index that should be unique for each frame.
+    querySlotId = (uint32_t)encodeFrameInfo->srcEncodeImageResource->GetImageIndex();
 
     // Clear the query results
     const uint32_t numQuerySamples = 1;
-    VkQueryPool queryPool = m_videoFrameBuffer.GetQueryPool();
-    m_vkDevCtx->CmdResetQueryPool(cmdBuf, queryPool, querySlotId, numQuerySamples);
+    vkDevCtx->CmdResetQueryPool(cmdBuf, queryPool, querySlotId, numQuerySamples);
 
-    m_vkDevCtx->CmdBeginQuery(cmdBuf, queryPool, querySlotId, VkQueryControlFlags());
+    vkDevCtx->CmdBeginQuery(cmdBuf, queryPool, querySlotId, VkQueryControlFlags());
 
-    m_vkDevCtx->CmdEncodeVideoKHR(cmdBuf, &encodeInfo);
+    vkDevCtx->CmdEncodeVideoKHR(cmdBuf, &encodeFrameInfo->encodeInfo);
 
-    m_vkDevCtx->CmdEndQuery(cmdBuf, queryPool, querySlotId);
+    vkDevCtx->CmdEndQuery(cmdBuf, queryPool, querySlotId);
 
-    VkVideoEndCodingInfoKHR encodeEndInfo;
-    memset(&encodeEndInfo, 0, sizeof(encodeEndInfo));
-    encodeEndInfo.sType = VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR;
+    VkVideoEndCodingInfoKHR encodeEndInfo { VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR };
+    vkDevCtx->CmdEndVideoCodingKHR(cmdBuf, &encodeEndInfo);
 
-    m_vkDevCtx->CmdEndVideoCodingKHR(cmdBuf, &encodeEndInfo);
+    // ******* End recording of the video commands *************
 
-
-    if (refPicFlag) {
-        // Mark the current picture index as in-use.
-        SetPicDpbSlot(targetFbIndex, targetDpbSlot);
-    }
-
-    if ((picType == STD_VIDEO_H26X_PICTURE_TYPE_P) || (picType == STD_VIDEO_H26X_PICTURE_TYPE_B)) {
-        uint64_t timeStamp = m_dpb264.GetPictureTimestamp(refSlots[0].slotIndex);
-        m_dpb264.SetCurRefFrameTimeStamp(timeStamp);
-    } else {
-        m_dpb264.SetCurRefFrameTimeStamp(0);
-    }
-
-    assert(m_dpb264.GetNumRefFramesInDPB(0) <= m_h264.m_spsInfo.max_num_ref_frames);
-
-    return VK_SUCCESS;
-}
-
-// 4. begin command buffer
-// 5. create SPS and PPS
-// 6. create encode session parameters
-// 7. begin video coding
-// 8. if frame = 0 -- encode non vcl data
-// 9. encode vcl data
-// 10. end video encoding
-VkResult EncodeApp::EncodeFrame(EncodeConfig* encodeConfig, uint32_t curFrameIndex, bool nonVcl, uint32_t currentFrameBufferIdx)
-{
-    // GOP structure config all intra:
-    // only using 1 input frame (I) - slot 0
-    // only using 1 reference frame - slot 0
-    // update POC
-
-    m_videoFrameBuffer.AddRefPic(currentFrameBufferIdx, currentFrameBufferIdx, curFrameIndex);
-
-    EncodeFrameData* currentEncodeFrameData = m_videoFrameBuffer.GetEncodeFrameData(currentFrameBufferIdx);
-    VkCommandBuffer cmdBuf = currentEncodeFrameData->m_cmdBufVideoEncode;
-
-    // Begin command buffer
-    VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr};
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    m_vkDevCtx->BeginCommandBuffer(cmdBuf, &beginInfo);
-
-    VkSharedBaseObj<VkImageResourceView>& srcImageView = currentEncodeFrameData->m_linearInputImage;
-    VkSharedBaseObj<VkImageResourceView>& dstImageView = currentEncodeFrameData->m_inputImageView;
-
-    m_videoFrameBuffer.CopyLinearToOptimalImage(cmdBuf, srcImageView, dstImageView);
-
-    // Begin video coding
-
-    EncPicParams encPicParams{};
-    VkResult result = EncodeH264Frame(&encPicParams,
-                                      encodeConfig,
-                                      cmdBuf,
-                                      curFrameIndex,
-                                      currentFrameBufferIdx,
-                                      dstImageView,
-                                      currentEncodeFrameData->m_outBitstreamBuffer);
-
-    m_vkDevCtx->EndCommandBuffer(cmdBuf);
-
-    // reset ref pic
-    m_videoFrameBuffer.ReleaseRefPic(currentFrameBufferIdx);
+    VkResult result = encodeCmdBuffer->EndCommandBufferRecording(cmdBuf);
 
     return result;
 }
 
-int32_t EncodeApp::BatchSubmit(uint32_t firstFrameBufferIdx, uint32_t framesInBatch)
+VkResult VkVideoEncoder::RecordVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                               uint32_t numFrames)
 {
-    if (!(framesInBatch > 0)) {
-        return 0;
-    }
-    const uint32_t maxFramesInBatch = 8;
-    assert(framesInBatch <= maxFramesInBatch);
-    VkCommandBuffer cmdBuf[maxFramesInBatch];
 
-    for(uint32_t cmdBufIdx = 0; cmdBufIdx < framesInBatch; cmdBufIdx++) {
-        EncodeFrameData* currentEncodeFrameData = m_videoFrameBuffer.GetEncodeFrameData(firstFrameBufferIdx + cmdBufIdx);
-        cmdBuf[cmdBufIdx] = currentEncodeFrameData->m_cmdBufVideoEncode;
-        currentEncodeFrameData->m_frameSubmitted = true;
-    }
+    uint32_t processedFramesCount = 0; // Initialize the counter
+    VkResult result = VkVideoEncodeFrameInfo::ProcessFrames(this, encodeFrameInfo,
+                                                            processedFramesCount, numFrames,
+       [this](VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame, uint32_t frameIdx, uint32_t ofTotalFrames)
+             { return RecordVideoCodingCmd(frame, frameIdx, ofTotalFrames); });
 
-    VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr};
-    submitInfo.waitSemaphoreCount = 0;
-    submitInfo.pWaitSemaphores = nullptr;
-    submitInfo.pWaitDstStageMask = nullptr;
-    submitInfo.commandBufferCount = framesInBatch;
-    submitInfo.pCommandBuffers = cmdBuf;
-    submitInfo.signalSemaphoreCount = 0;
-    submitInfo.pSignalSemaphores = nullptr;
-
-    VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::ENCODE, 0,
-                                                           1, &submitInfo, VK_NULL_HANDLE);
-
-    if (result == VK_SUCCESS) {
-        return framesInBatch;
-    }
-
-    return -1;
+    return result;
 }
 
-// 11. gather results
-// 12. write results to file
-int32_t EncodeApp::AssembleBitstreamData(EncodeConfig* encodeConfig, bool nonVcl, uint32_t currentFrameBufferIdx)
+VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                               uint32_t frameIdx, uint32_t ofTotalFrames)
+{
+    assert(encodeFrameInfo);
+    assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
+
+    // If we are processing the input staging, wait for it's semaphore
+    // to be done before processing the input frame with the encoder.
+    VkSemaphore inputWaitSemaphore = VK_NULL_HANDLE;
+    if (encodeFrameInfo->inputCmdBuffer) {
+        inputWaitSemaphore = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
+    }
+
+    const VkCommandBuffer* pCmdBuf = encodeFrameInfo->encodeCmdBuffer->GetCommandBuffer();
+    VkSemaphore frameCompleteSemaphore = encodeFrameInfo->encodeCmdBuffer->GetSemaphore();
+
+    VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr };
+    submitInfo.pWaitSemaphores = (inputWaitSemaphore != VK_NULL_HANDLE) ? &inputWaitSemaphore : nullptr;
+    submitInfo.waitSemaphoreCount = (inputWaitSemaphore != VK_NULL_HANDLE) ? 1 : 0;
+    submitInfo.pWaitDstStageMask = nullptr;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = pCmdBuf;
+    submitInfo.pSignalSemaphores = (frameCompleteSemaphore != VK_NULL_HANDLE) ? &frameCompleteSemaphore : nullptr;
+    submitInfo.signalSemaphoreCount = (frameCompleteSemaphore != VK_NULL_HANDLE) ? 1 : 0;
+
+    VkFence queueCompleteFence = encodeFrameInfo->encodeCmdBuffer->GetFence();
+    VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::ENCODE, 0,
+                                                           1, &submitInfo,
+                                                           queueCompleteFence);
+
+    encodeFrameInfo->encodeCmdBuffer->SetCommandBufferSubmitted();
+    bool syncCpuAfterStaging = false;
+    if (syncCpuAfterStaging) {
+        encodeFrameInfo->encodeCmdBuffer->SyncHostOnCmdBuffComplete();
+    }
+
+    return result;
+}
+
+VkResult VkVideoEncoder::PushOrderedFrames()
 {
     VkResult result = VK_SUCCESS;
+    if (m_lastDeferredFrame) {
 
-    EncodeFrameData* currentEncodeFrameData = m_videoFrameBuffer.GetEncodeFrameData(currentFrameBufferIdx);
-    if (!currentEncodeFrameData->m_frameSubmitted) {
-        return 0;
-    }
+        if (m_enableEncoderQueue) {
 
-    VkSharedBaseObj<VkBufferResource>& outBitstreamBuffer = currentEncodeFrameData->m_outBitstreamBuffer;
+            bool success = m_encoderQueue.Push(m_lastDeferredFrame);
+            if (success) {
+                m_lastDeferredFrame = nullptr;
+            } else {
+                assert(!"Queue returned not ready");
+                result = VK_NOT_READY;
+            }
 
-    // get output results
-    struct nvVideoEncodeStatus {
-        uint32_t bitstreamStartOffset;
-        uint32_t bitstreamSize;
-        VkQueryResultStatusKHR status;
-    };
-    nvVideoEncodeStatus encodeResult[2]; // 2nd slot is non vcl data
-    memset(&encodeResult, 0, sizeof(encodeResult));
+        } else {
 
-    VkDeviceSize maxSize;
-    uint8_t* data = outBitstreamBuffer->GetDataPtr(0, maxSize);
+            result = ProcessOrderedFrames(m_lastDeferredFrame, m_numDeferredFrames);
 
-    VkQueryPool queryPool = m_videoFrameBuffer.GetQueryPool();
-
-    uint32_t bitstreamOffset = 0; // necessary non zero value for first frame
-    if(nonVcl) {
-        // only on frame 0
-        bitstreamOffset = NON_VCL_BITSTREAM_OFFSET;
-        uint32_t querySlotIdNonVCL = currentFrameBufferIdx + INPUT_FRAME_BUFFER_SIZE;
-        result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx, queryPool, querySlotIdNonVCL, 1, sizeof(nvVideoEncodeStatus),
-                                       &encodeResult[1], sizeof(nvVideoEncodeStatus), VK_QUERY_RESULT_WITH_STATUS_BIT_KHR | VK_QUERY_RESULT_WAIT_BIT);
-        if(result != VK_SUCCESS) {
-            fprintf(stderr, "\nRetrieveData Error: Failed to get non vcl query pool results.\n");
-            return -1;
+            VkVideoEncodeFrameInfo::ReleaseChildrenFrames(m_lastDeferredFrame);
+            assert(m_lastDeferredFrame == nullptr);
         }
-        fwrite(data + encodeResult[1].bitstreamStartOffset, 1, encodeResult[1].bitstreamSize, encodeConfig->outputVid);
+        m_numDeferredFrames = 0;
+    }
+    return result;
+}
+
+VkResult VkVideoEncoder::ProcessOrderedFrames(VkSharedBaseObj<VkVideoEncodeFrameInfo>& frames, uint32_t numFrames) {
+
+    std::vector<std::pair<std::string, std::function<VkResult(VkSharedBaseObj<VkVideoEncodeFrameInfo>&, uint32_t, uint32_t)>>> callbacks = {
+        {"PrintVideoCodingLink",  [this](VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame, uint32_t frameIdx, uint32_t ofTotalFrames) { return PrintVideoCodingLink(frame, frameIdx, ofTotalFrames); }},
+        {"ProcessDpb",            [this](VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame, uint32_t frameIdx, uint32_t ofTotalFrames) { return ProcessDpb(frame, frameIdx, ofTotalFrames); }},
+        {"RecordVideoCodingCmd",  [this](VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame, uint32_t frameIdx, uint32_t ofTotalFrames) { return RecordVideoCodingCmd(frame, frameIdx, ofTotalFrames); }},
+        {"SubmitVideoCodingCmds", [this](VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame, uint32_t frameIdx, uint32_t ofTotalFrames) { return SubmitVideoCodingCmds(frame, frameIdx, ofTotalFrames); }},
+        {"AssembleBitstreamData", [this](VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame, uint32_t frameIdx, uint32_t ofTotalFrames) { return AssembleBitstreamData(frame, frameIdx, ofTotalFrames); }}
+    };
+
+    VkResult result = VK_SUCCESS;
+    for (const auto& pair : callbacks) {
+        const auto& callback = pair.second;
+
+        uint32_t processedFramesCount = 0;
+        result = VkVideoEncodeFrameInfo::ProcessFrames(this, frames, processedFramesCount, numFrames, callback);
+        if (m_encoderConfig->verbose) {
+            const std::string& description = pair.first;
+            std::cout << "====== Total number of frames processed by " << description << ": " << processedFramesCount << " : " << result << std::endl;
+        }
+
+        if (result != VK_SUCCESS) {
+            break;
+        }
     }
 
-    uint32_t querySlotIdVCL = currentFrameBufferIdx;
-    result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx, queryPool, querySlotIdVCL, 1, sizeof(nvVideoEncodeStatus),
-                                   &encodeResult[0], sizeof(nvVideoEncodeStatus), VK_QUERY_RESULT_WITH_STATUS_BIT_KHR | VK_QUERY_RESULT_WAIT_BIT);
-    if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nRetrieveData Error: Failed to get vcl query pool results.\n");
-        return -1;
-    }
-    fwrite(data + bitstreamOffset + encodeResult[0].bitstreamStartOffset, 1, encodeResult[0].bitstreamSize, encodeConfig->outputVid);
+    return result;
+}
 
-    currentEncodeFrameData->m_frameSubmitted = false;
+bool VkVideoEncoder::WaitForThreadsToComplete()
+{
+    PushOrderedFrames();
+
+    if (m_enableEncoderQueue) {
+        m_encoderQueue.SetFlushAndExit();
+        if (m_encoderQueueConsumerThread.joinable()) {
+            m_encoderQueueConsumerThread.join();
+        }
+    }
+
+    return true;
+}
+
+int32_t VkVideoEncoder::DeinitEncoder()
+{
+
+    m_displayQueue.Flush();
+
+    m_lastDeferredFrame = nullptr;
+
+    m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::ENCODE, 0);
+
+    m_linearInputImagePool = nullptr;
+    m_inputImagePool       = nullptr;
+    m_dpbImagePool         = nullptr;
+
+    m_inputCommandBufferPool  = nullptr;
+    m_encodeCommandBufferPool = nullptr;
+
+    m_videoSessionParameters =  nullptr;
+    m_videoSession = nullptr;
+
+    m_encoderConfig = nullptr;
 
     return 0;
 }
 
-int32_t EncodeApp::DeinitEncoder()
+void VkVideoEncoder::ConsumerThread()
 {
-    m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::ENCODE, 0);
-    m_vkDevCtx->DestroyVideoSessionParametersKHR(*m_vkDevCtx, m_sessionParameters.m_encodeSessionParameters, nullptr);
+   std::cout << "ConsumerThread is stating now.\n" << std::endl;
+   do {
+       VkSharedBaseObj<VkVideoEncodeFrameInfo> encodeFrameInfo;
+       bool success = m_encoderQueue.WaitAndPop(encodeFrameInfo);
+       if (success) { // 5 seconds in nanoseconds
+           std::cout << "==>>>> Consumed: " << (uint32_t)encodeFrameInfo->positionInGopInDisplayOrder
+                      << ", Order: " << (uint32_t)encodeFrameInfo->positionInGopInDecodeOrder << std::endl << std::flush;
 
-    m_videoSession = nullptr;
-    m_videoFrameBuffer.DeinitReferenceFramePool();
-    m_videoFrameBuffer.DeinitFramePool();
+           VkResult result = ProcessOrderedFrames(encodeFrameInfo, 0);
+           if (result != VK_SUCCESS) {
+               std::cout << "Error processing frames from the frame thread!" << std::endl;
+               m_encoderQueue.SetFlushAndExit();
+           }
 
-    return 0;
+       } else {
+           bool shouldExit = m_encoderQueue.ExitQueue();
+           std::cout << "Thread should exit: " << (shouldExit ? "Yes" : "No") << std::endl;
+       }
+   } while (!m_encoderQueue.ExitQueue());
+
+   std::cout << "ConsumerThread is exiting now.\n" << std::endl;
 }

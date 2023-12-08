@@ -31,7 +31,7 @@
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanFilterYuvCompute.h"
-#include "VkVideoDecoder/VulkanBistreamBufferImpl.h"
+#include "VkCodecUtils/VulkanBistreamBufferImpl.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkCodecUtils/VulkanVideoSession.h"
 #include "VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.h"
@@ -56,9 +56,9 @@ struct NvVkDecodeFrameDataSlot {
     VkCommandBuffer                                     commandBuffer;
 };
 
-using VulkanBitstreamBufferPool = VulkanVideoRefCountedPool<VulkanBitstreamBufferImpl, 64>;
-
 class NvVkDecodeFrameData {
+
+    using VulkanBitstreamBufferPool = VulkanVideoRefCountedPool<VulkanBitstreamBufferImpl, 64>;
 
 public:
     NvVkDecodeFrameData(const VulkanDeviceContext* vkDevCtx)

@@ -17,16 +17,12 @@
 #ifndef _VKVIDEOENCODERDEF_H_
 #define _VKVIDEOENCODERDEF_H_
 
+#include <limits.h>
 #include "vulkan/vulkan.h"
 #include "vk_video/vulkan_video_codec_h264std.h"
 #include "vk_video/vulkan_video_codec_h264std_encode.h"
 #include "vk_video/vulkan_video_codec_h265std.h"
 #include "vk_video/vulkan_video_codec_h265std_encode.h"
-
-#define MAX_REFS 16
-#define MAX_DPB_SIZE 16
-#define MAX_MMCOS 16        // max mmco commands.
-#define MAX_REFPIC_CMDS 16  // max reorder commands.
 
 #ifndef ARRAYSIZE
 #define ARRAYSIZE(a) ((sizeof(a) / sizeof(a[0])))
@@ -40,21 +36,65 @@ sizeType AlignSize(sizeType size, sizeType alignment) {
     return (size + alignment -1) & ~(alignment -1);
 }
 
-typedef enum StdVideoH26XPictureType {
-    STD_VIDEO_H26X_PICTURE_TYPE_P = STD_VIDEO_H265_PICTURE_TYPE_P,
-    STD_VIDEO_H26X_PICTURE_TYPE_B = STD_VIDEO_H265_PICTURE_TYPE_B,
-    STD_VIDEO_H26X_PICTURE_TYPE_I = STD_VIDEO_H265_PICTURE_TYPE_I,
-    STD_VIDEO_H26X_PICTURE_TYPE_IDR = STD_VIDEO_H265_PICTURE_TYPE_IDR,
-    STD_VIDEO_H26X_PICTURE_TYPE_INTRA_REFRESH = 6, // Special IDR : First picture in intra refresh cycle
-    STD_VIDEO_H26X_PICTURE_TYPE_INVALID = STD_VIDEO_H265_PICTURE_TYPE_INVALID,
-    STD_VIDEO_H26X_PICTURE_TYPE_MAX_ENUM = STD_VIDEO_H265_PICTURE_TYPE_MAX_ENUM
-} StdVideoH26XPictureType;
+template<typename valuesType>
+valuesType DivUp(valuesType value, valuesType divisor) {
+    assert(divisor != (valuesType)0);
+    return (value + (divisor - 1)) / divisor;
+}
 
-static_assert((uint32_t)STD_VIDEO_H264_PICTURE_TYPE_P == (uint32_t)STD_VIDEO_H265_PICTURE_TYPE_P, "STD_VIDEO_H265_PICTURE_TYPE_P");
-static_assert((uint32_t)STD_VIDEO_H264_PICTURE_TYPE_B == (uint32_t)STD_VIDEO_H265_PICTURE_TYPE_B, "STD_VIDEO_H265_PICTURE_TYPE_B");
-static_assert((uint32_t)STD_VIDEO_H264_PICTURE_TYPE_I == (uint32_t)STD_VIDEO_H265_PICTURE_TYPE_I, "STD_VIDEO_H265_PICTURE_TYPE_I");
-// static_assert((uint32_t)STD_VIDEO_H264_PICTURE_TYPE_IDR == (uint32_t)STD_VIDEO_H265_PICTURE_TYPE_IDR, "STD_VIDEO_H265_PICTURE_TYPE_IDR");
-static_assert((uint32_t)STD_VIDEO_H264_PICTURE_TYPE_INVALID == (uint32_t)STD_VIDEO_H265_PICTURE_TYPE_INVALID, "STD_VIDEO_H265_PICTURE_TYPE_INVALID");
-static_assert((uint32_t)STD_VIDEO_H264_PICTURE_TYPE_MAX_ENUM == (uint32_t)STD_VIDEO_H265_PICTURE_TYPE_MAX_ENUM, "STD_VIDEO_H265_PICTURE_TYPE_MAX_ENUM");
+template<typename valueType>
+uint32_t FastIntLog2(valueType val)
+{
+    uint32_t log2 = 0;
+    while (val != 0) {
+        val >>= 1;
+        log2++;
+    }
+
+    return log2;
+}
+
+template<typename valueType>
+static inline valueType IntAbs(valueType x)
+{
+    static const int inBits = (sizeof(valueType) * CHAR_BIT) - 1;
+    valueType y = x >> inBits;
+    return (x ^ y) - y;
+}
+
+// greatest common divisor
+template<typename valuesType>
+static valuesType Gcd(valuesType u, valuesType v)
+{
+    if (u <= 1 || v <= 1) {
+        return 1;
+    }
+
+    while (u != 0) {
+
+        if (u >= v) {
+            u -= v;
+        } else {
+            v -= u;
+        }
+    }
+    return v;
+}
+
+/**
+ * QP value for frames
+ */
+struct ConstQpSettings
+{
+    ConstQpSettings()
+        : qpInterP(0)
+        , qpInterB(0)
+        , qpIntra(0)
+    { }
+
+    uint32_t qpInterP;
+    uint32_t qpInterB;
+    uint32_t qpIntra;
+};
 
 #endif /* _VKVIDEOENCODERDEF_H_ */

@@ -31,8 +31,8 @@ const std::vector<VkExtensionProperties>& ShellWin32::GetRequiredInstanceExtensi
     return win32SurfaceExtensions;
 }
 
-ShellWin32::ShellWin32(const VulkanDeviceContext* vkDevCtx, VkSharedBaseObj<FrameProcessor>& frameProcessor)
-    : Shell(vkDevCtx, frameProcessor) {
+ShellWin32::ShellWin32(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration, VkSharedBaseObj<FrameProcessor>& frameProcessor)
+    : Shell(vkDevCtx, configuration, frameProcessor) {
 }
 
 ShellWin32::~ShellWin32() {
@@ -44,7 +44,7 @@ const char* ShellWin32::GetRequiredInstanceExtension()
 }
 
 void ShellWin32::VkCreateWindow() {
-    const std::string class_name(m_settings.name + "WindowClass");
+    const std::string class_name(m_settings.m_windowName + "WindowClass");
 
     m_hinstance = GetModuleHandle(nullptr);
 
@@ -59,10 +59,10 @@ void ShellWin32::VkCreateWindow() {
 
     const DWORD win_style = WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_VISIBLE | WS_OVERLAPPEDWINDOW;
 
-    RECT win_rect = {0, 0, m_settings.initialWidth, m_settings.initialHeight};
+    RECT win_rect = {0, 0, m_settings.m_initialWidth, m_settings.m_initialHeight};
     AdjustWindowRect(&win_rect, win_style, false);
 
-    m_hwnd = CreateWindowEx(WS_EX_APPWINDOW, class_name.c_str(), m_settings.name.c_str(), win_style, 0, 0,
+    m_hwnd = CreateWindowEx(WS_EX_APPWINDOW, class_name.c_str(), m_settings.m_windowName.c_str(), win_style, 0, 0,
                             win_rect.right - win_rect.left, win_rect.bottom - win_rect.top,
                             nullptr, nullptr, m_hinstance, nullptr);
 
@@ -146,7 +146,7 @@ void ShellWin32::RunLoop() {
 
     VkCreateWindow();
     CreateContext();
-    ResizeSwapchain(m_settings.initialWidth, m_settings.initialHeight);
+    ResizeSwapchain(m_settings.m_initialWidth, m_settings.m_initialHeight);
 
     while (true) {
         bool quit = false;

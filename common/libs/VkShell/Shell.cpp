@@ -21,13 +21,15 @@
 #include <string>
 #include <sstream>
 #include <set>
+#include <thread>
 #include "VkCodecUtils/Helpers.h"
 #include "Shell.h"
 
-Shell::Shell(const VulkanDeviceContext* devCtx, VkSharedBaseObj<FrameProcessor>& frameProcessor)
+Shell::Shell(const VulkanDeviceContext* devCtx, const Configuration& configuration,
+             VkSharedBaseObj<FrameProcessor>& frameProcessor)
     : m_refCount(0)
+    , m_settings(configuration)
     , m_frameProcessor(frameProcessor)
-    , m_settings(frameProcessor->GetSettings())
     , m_ctx(devCtx) { }
 
 Shell::AcquireBuffer::AcquireBuffer()
@@ -70,6 +72,10 @@ Shell::BackBuffer::BackBuffer()
     , m_imageIndex(0)
     , m_acquireBuffer(nullptr)
     , m_renderSemaphore(VkSemaphore())
+    , m_lastFrameTime()
+    , m_lastPresentTime()
+    , m_targetTimeDelta()
+    , m_framePresentAtTime()
 {
 }
 
@@ -107,8 +113,10 @@ void Shell::CreateContext() {
 
     assert(m_ctx.devCtx->GetPresentQueueFamilyIdx() != -1);
     assert(m_ctx.devCtx->GetGfxQueueFamilyIdx() != -1);
-    assert(m_ctx.devCtx->GetVideoDecodeQueueFamilyIdx() != -1);
-    assert(m_ctx.devCtx->GetVideoDecodeNumQueues() > 0);
+    assert((m_ctx.devCtx->GetVideoDecodeQueueFamilyIdx() != -1) ||
+           (m_ctx.devCtx->GetVideoEncodeQueueFamilyIdx() != -1));
+    assert((m_ctx.devCtx->GetVideoDecodeNumQueues() > 0) ||
+            m_ctx.devCtx->GetVideoEncodeNumQueues() > 0);
 
     CreateBackBuffers();
 
@@ -141,7 +149,7 @@ void Shell::CreateBackBuffers() {
     // sync primitives are busy.  Having more BackBuffer's than swapchain
     // images may allows us to replace CPU wait on present_fence by GPU wait
     // on acquire_semaphore.
-    const int count = m_settings.backBufferCount + 1;
+    const int count = m_settings.m_backBufferCount + 1;
     m_ctx.backBuffers.resize(count);
     for (auto &backBuffers : m_ctx.backBuffers) {
         AssertSuccess(backBuffers.Create(m_ctx.devCtx));
@@ -231,7 +239,7 @@ void Shell::ResizeSwapchain(uint32_t width_hint, uint32_t height_hint) {
 
     if (m_ctx.extent.width == extent.width && m_ctx.extent.height == extent.height) return;
 
-    uint32_t image_count = m_settings.backBufferCount;
+    uint32_t image_count = m_settings.m_backBufferCount;
     if (image_count < caps.minImageCount) {
         image_count = caps.minImageCount;
     }
@@ -252,7 +260,8 @@ void Shell::ResizeSwapchain(uint32_t width_hint, uint32_t height_hint) {
     // FIFO is the only mode universally supported
     VkPresentModeKHR mode = VK_PRESENT_MODE_FIFO_KHR;
     for (auto m : modes) {
-        if ((m_settings.vsync && m == VK_PRESENT_MODE_MAILBOX_KHR) || (!m_settings.vsync && m == VK_PRESENT_MODE_IMMEDIATE_KHR)) {
+        if ((m_settings.m_vsync && (m == VK_PRESENT_MODE_MAILBOX_KHR)) ||
+            (!m_settings.m_vsync && (m == VK_PRESENT_MODE_IMMEDIATE_KHR))) {
             mode = m;
             break;
         }
@@ -324,6 +333,42 @@ void Shell::AcquireBackBuffer(bool trainFrame) {
         // reset the fence
         AssertSuccess(m_ctx.devCtx->ResetFences(*m_ctx.devCtx, 1, &acquireBuf->m_fence));
 
+        // 16 milliseconds in nanoseconds
+        static const std::chrono::nanoseconds targetDuration(16 * 1000 * 1000); // 16 mSec targeting ~60 FPS
+        auto timeNow = std::chrono::high_resolution_clock::now();
+        if (false) {
+            m_ctx.lastFrameToFrameTimeNsec = timeNow - m_ctx.lastPresentTime;
+            std::cout << "Last Present Time: " << m_ctx.lastFrameToFrameTimeNsec.count() << " nSec, " << std::endl;
+            if (m_ctx.lastFrameToFrameTimeNsec.count() < 16000000) {
+
+            }
+        }
+
+        if (false) {
+            backBuffer.m_lastFrameTime = timeNow - backBuffer.m_lastPresentTime;
+            std::cout << "Frame Present Time: " << backBuffer.m_lastFrameTime.count() << " nSec, " << std::endl;
+
+            if (backBuffer.m_lastFrameTime / 8 < targetDuration) {
+                std::this_thread::sleep_for(targetDuration - backBuffer.m_lastFrameTime / 8);
+            }
+        }
+
+        if (false) {
+            std::cout << "Frame diff: " << (timeNow - backBuffer.m_framePresentAtTime).count() << " nSec, "
+                    << "m_targetTimeDelta: " << backBuffer.m_targetTimeDelta.count() << std::endl;
+        }
+
+        if ((backBuffer.m_targetTimeDelta.count() > 0) && (backBuffer.m_framePresentAtTime < timeNow)) {
+            auto timeDiff = timeNow - backBuffer.m_framePresentAtTime;
+            if (timeDiff < backBuffer.m_targetTimeDelta) {
+                std::this_thread::sleep_for(timeDiff);
+            } else {
+                std::this_thread::sleep_for(backBuffer.m_targetTimeDelta);
+            }
+        }
+
+        // std::this_thread::sleep_for (std::chrono::milliseconds(16));
+
         m_ctx.currentBackBuffer = imageIndex;
         m_ctx.acquireBuffers.pop();
         // Now return to the queue the old frame.
@@ -379,6 +424,11 @@ void Shell::PresentBackBuffer(bool trainFrame) {
         std::cout << "Out of date Present Surface" << res << std::endl;
         return;
     }
+
+    m_ctx.lastPresentTime = backBuffer->m_lastPresentTime = std::chrono::high_resolution_clock::now();
+    static const std::chrono::nanoseconds targetDuration(12 * 1000 * 1000); // 16 mSec targeting ~60 FPS
+    backBuffer->m_targetTimeDelta = targetDuration;
+    backBuffer->m_framePresentAtTime = backBuffer->m_lastPresentTime + targetDuration;
 }
 
 #include "ShellDirect.h"
@@ -407,19 +457,19 @@ const std::vector<VkExtensionProperties>& Shell::GetRequiredInstanceExtensions(b
 }
 
 VkResult Shell::Create(const VulkanDeviceContext* vkDevCtx,
+                       const Configuration& configuration,
                        VkSharedBaseObj<FrameProcessor>& frameProcessor,
-                       bool directToDisplayMode,
                        VkSharedBaseObj<Shell>& displayShell)
 {
-    if (directToDisplayMode) {
-        displayShell = new ShellDirect(vkDevCtx, frameProcessor);
+    if (configuration.m_directToDisplayMode) {
+        displayShell = new ShellDirect(vkDevCtx, configuration, frameProcessor);
     } else {
 #if defined(VK_USE_PLATFORM_XCB_KHR)
-        displayShell = new ShellXcb(vkDevCtx, frameProcessor);
+        displayShell = new ShellXcb(vkDevCtx, configuration, frameProcessor);
 #elif defined(VK_USE_PLATFORM_WAYLAND_KHR)
-        displayShell = new ShellWayland(vkDevCtx, frameProcessor);
+        displayShell = new ShellWayland(vkDevCtx, configuration, frameProcessor);
 #elif defined(VK_USE_PLATFORM_WIN32_KHR)
-        displayShell = new ShellWin32(vkDevCtx, frameProcessor);
+        displayShell = new ShellWin32(vkDevCtx, configuration, frameProcessor);
 #endif
     }
 

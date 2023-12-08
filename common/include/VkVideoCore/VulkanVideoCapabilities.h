@@ -53,14 +53,14 @@ public:
         return result;
     }
 
-    template<class VkVideoEncodeCodecCapabilitiesEXT, VkStructureType VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_CAPABILITIES_EXT>
+    template<class VkVideoEncodeCodecCapabilitiesKHR, VkStructureType VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_CAPABILITIES_KHR>
     static VkResult GetVideoEncodeCapabilities(const VulkanDeviceContext* vkDevCtx,
                                                const VkVideoCoreProfile& videoProfile,
                                                VkVideoCapabilitiesKHR& videoCapabilities,
                                                VkVideoEncodeCapabilitiesKHR& videoEncodeCapabilities,
-                                               VkVideoEncodeCodecCapabilitiesEXT& videoCodecCapabilities) {
+                                               VkVideoEncodeCodecCapabilitiesKHR& videoCodecCapabilities) {
 
-        videoCodecCapabilities  = VkVideoEncodeCodecCapabilitiesEXT { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_CAPABILITIES_EXT, nullptr };
+        videoCodecCapabilities  = VkVideoEncodeCodecCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_CAPABILITIES_KHR, nullptr };
         videoEncodeCapabilities = VkVideoEncodeCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CAPABILITIES_KHR, &videoCodecCapabilities };
         videoCapabilities       =       VkVideoCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR, &videoEncodeCapabilities };
 
@@ -150,18 +150,18 @@ public:
             assert(pH265DecCapabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_KHR);
         }
             break;
-        case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT:
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
         {
             assert(pVideoEncodeCapabilities->pNext);
-            const VkVideoEncodeH264CapabilitiesEXT* pH264EncCapabilities = (VkVideoEncodeH264CapabilitiesEXT*)pVideoEncodeCapabilities->pNext;
-            assert(pH264EncCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_EXT);
+            const VkVideoEncodeH264CapabilitiesKHR* pH264EncCapabilities = (VkVideoEncodeH264CapabilitiesKHR*)pVideoEncodeCapabilities->pNext;
+            assert(pH264EncCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_KHR);
         }
             break;
-        case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_EXT:
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR:
         {
             assert(pVideoEncodeCapabilities->pNext);
-            const VkVideoEncodeH265CapabilitiesEXT* pH265EncCapabilities = (VkVideoEncodeH265CapabilitiesEXT*)pVideoEncodeCapabilities->pNext;
-            assert(pH265EncCapabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_CAPABILITIES_EXT);
+            const VkVideoEncodeH265CapabilitiesKHR* pH265EncCapabilities = (VkVideoEncodeH265CapabilitiesKHR*)pVideoEncodeCapabilities->pNext;
+            assert(pH265EncCapabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_CAPABILITIES_KHR);
         }
             break;
         default:
@@ -271,7 +271,7 @@ public:
             VkQueueFlags queueFlagsRequired = ( VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR),
             VkVideoCodecOperationFlagsKHR videoCodeOperations =
                                               ( VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR | VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR |
-                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT | VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_EXT))
+                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR | VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR))
     {
         std::vector<VkQueueFamilyProperties2> queues;
         std::vector<VkQueueFamilyVideoPropertiesKHR> videoQueues;
@@ -347,9 +347,9 @@ public:
     static VkResult GetEncodeH264Capabilities(const VulkanDeviceContext* vkDevCtx, uint32_t vkVideoDecodeQueueFamily,
                                               const VkVideoProfileInfoKHR& videoProfile,
                                               VkVideoCapabilitiesKHR &videoEncodeCapabilities,
-                                              VkVideoEncodeH264CapabilitiesEXT &encode264Capabilities)
+                                              VkVideoEncodeH264CapabilitiesKHR &encode264Capabilities)
     {
-        encode264Capabilities.sType   = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_EXT;
+        encode264Capabilities.sType   = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_KHR;
         videoEncodeCapabilities.sType = VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR,
         videoEncodeCapabilities.pNext = &encode264Capabilities;
         return vkDevCtx->GetPhysicalDeviceVideoCapabilitiesKHR(vkDevCtx->getPhysicalDevice(),
@@ -364,8 +364,8 @@ public:
     {
         const bool isEncode = pProfile->IsEncodeCodecType();
 
-        VkVideoEncodeH264CapabilitiesEXT encode264Capabilities = VkVideoEncodeH264CapabilitiesEXT();
-        encode264Capabilities.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_EXT;
+        VkVideoEncodeH264CapabilitiesKHR encode264Capabilities = VkVideoEncodeH264CapabilitiesKHR();
+        encode264Capabilities.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_KHR;
         VkVideoCapabilitiesKHR videoDecodeCapabilities = { VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR,
                                                            isEncode ? &encode264Capabilities : NULL };
         return vkDevCtx->GetPhysicalDeviceVideoCapabilitiesKHR(vkDevCtx->getPhysicalDevice(),

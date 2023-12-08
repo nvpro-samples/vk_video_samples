@@ -21,6 +21,7 @@
 #include <vector>
 #include <stdexcept>
 #include <atomic>
+#include <chrono>
 #include <vulkan_interfaces.h>
 
 #include "VkCodecUtils/VkVideoRefCountBase.h"
@@ -35,6 +36,31 @@ class FrameProcessor;
 
 class Shell : public VkWsiDisplay, public VkVideoRefCountBase {
 public:
+
+    struct Configuration {
+        std::string m_windowName;
+        int32_t     m_initialWidth;
+        int32_t     m_initialHeight;
+        int32_t     m_initialBitdepth;
+        int32_t     m_backBufferCount;
+        uint32_t    m_directToDisplayMode : 1;
+        uint32_t    m_vsync : 1;
+        uint32_t    m_verbose : 1;
+
+        Configuration(const char* windowName, int32_t backBufferCount = 4, bool directToDisplayMode = false,
+               int32_t initialWidth = 1920, int32_t initialHeight = 1080, int32_t initialBitdepth = 8,
+               bool vsync = true, bool verbose = false)
+            : m_windowName(windowName)
+            , m_initialWidth(initialWidth)
+            , m_initialHeight(initialHeight)
+            , m_initialBitdepth(initialBitdepth)
+            , m_backBufferCount(backBufferCount)
+            , m_directToDisplayMode(false)
+            , m_vsync(vsync)
+            , m_verbose(verbose)
+        {}
+
+    };
 
     inline static VkResult AssertSuccess(VkResult res) {
         if ((res != VK_SUCCESS) && (res != VK_SUBOPTIMAL_KHR)) {
@@ -51,8 +77,8 @@ public:
 
     static const std::vector<VkExtensionProperties>& GetRequiredInstanceExtensions(bool directToDisplayMode);
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
+                           const Configuration& configuration,
                            VkSharedBaseObj<FrameProcessor>& frameProcessor,
-                           bool directToDisplayMode,
                            VkSharedBaseObj<Shell>& displayShell);
 
     virtual int32_t AddRef()
@@ -78,9 +104,9 @@ public:
         ~AcquireBuffer();
         VkResult Create(const VulkanDeviceContext* vkDevCtx);
 
-        const VulkanDeviceContext* m_vkDevCtx;
-        VkSemaphore                m_semaphore;
-        VkFence                    m_fence;
+        const VulkanDeviceContext*                                  m_vkDevCtx;
+        VkSemaphore                                                 m_semaphore;
+        VkFence                                                     m_fence;
     };
 
     class BackBuffer {
@@ -120,6 +146,12 @@ public:
 
         AcquireBuffer*             m_acquireBuffer;
         VkSemaphore                m_renderSemaphore;
+
+    public:
+        mutable std::chrono::nanoseconds                                    m_lastFrameTime;
+        mutable std::chrono::time_point<std::chrono::high_resolution_clock> m_lastPresentTime;
+        mutable std::chrono::nanoseconds                                    m_targetTimeDelta;
+        mutable std::chrono::time_point<std::chrono::high_resolution_clock> m_framePresentAtTime;
     };
 
     struct Context {
@@ -128,6 +160,8 @@ public:
         : devCtx(vkDevCtx)
         , acquireBuffers()
         , backBuffers()
+        , lastPresentTime()
+        , lastFrameToFrameTimeNsec()
         , currentBackBuffer()
         , surface()
         , format()
@@ -137,9 +171,11 @@ public:
 
         const VulkanDeviceContext* devCtx;
 
-        std::queue<AcquireBuffer*> acquireBuffers;
-        std::vector<BackBuffer>    backBuffers;
-        int32_t                    currentBackBuffer;
+        std::queue<AcquireBuffer*>                                  acquireBuffers;
+        std::vector<BackBuffer>                                     backBuffers;
+        std::chrono::time_point<std::chrono::high_resolution_clock> lastPresentTime;
+        std::chrono::nanoseconds                                    lastFrameToFrameTimeNsec;
+        int32_t                                                     currentBackBuffer;
 
         VkSurfaceKHR surface;
         VkSurfaceFormatKHR format;
@@ -173,7 +209,8 @@ public:
 private:
     std::atomic<int32_t>       m_refCount;
 protected:
-    Shell(const VulkanDeviceContext* devCtx, VkSharedBaseObj<FrameProcessor>& frameProcessor);
+    Shell(const VulkanDeviceContext* devCtx, const Configuration& configuration,
+          VkSharedBaseObj<FrameProcessor>& frameProcessor);
     virtual ~Shell() {}
 
     void CreateContext();
@@ -184,9 +221,8 @@ protected:
     void AcquireBackBuffer(bool trainFrame = false);
     void PresentBackBuffer(bool trainFrame = false);
 
+    const Configuration             m_settings;
     VkSharedBaseObj<FrameProcessor> m_frameProcessor;
-    const ProgramConfig &m_settings;
-
 private:
 
     // called by create_context

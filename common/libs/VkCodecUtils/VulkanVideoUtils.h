@@ -484,7 +484,6 @@ public:
     VkFramebuffer mFramebuffer;
 };
 
-
 class VulkanSyncPrimitives {
 
 public:
@@ -679,12 +678,7 @@ class VulkanRenderInfo {
 public:
 
     VulkanRenderInfo()
-      : currentBuffer(0),
-        lastBuffer(0xFFFFFFFF),
-        totalFrames(0),
-        skippedFrames(0),
-        frameId(0),
-        mVerbose(),
+      : mVerbose(),
         m_vkDevCtx()
         {}
 
@@ -709,45 +703,12 @@ public:
         return ((size_t)scIndx < perDrawCtx.size()) ? &perDrawCtx[scIndx] : nullptr;
     }
 
-    VkResult WaitCurrentSwapcahinDraw(VulkanSwapchainInfo* pSwapchainInfo, VulkanPerDrawContext* pPerDrawContext,
-            uint64_t timeoutNsec = 100000000);
-
-    int32_t GetNextSwapchainBuffer(
-            VulkanSwapchainInfo* pSwapchainInfo, VulkanPerDrawContext* pPerDrawContext, uint64_t timeoutNsec = 100000000);
-
-    // Draw one frame
-    VkResult DrawFrame(const VulkanDeviceContext* vkDevCtx,
-            VulkanSwapchainInfo* pSwapchainInfo, int64_t presentTimestamp,
-            VulkanPerDrawContext* pPerDrawContext,
-            uint32_t commandBufferCount = 1);
-
     ~VulkanRenderInfo() {
 
         perDrawCtx.clear();
     }
 
-    uint64_t GotFrame() {
-        return ++totalFrames;
-    }
-
-    uint64_t GetTotalFrames() {
-        return totalFrames;
-    }
-
-    uint32_t SkippedFrame() {
-        return ++skippedFrames;
-    }
-
-    uint32_t getframeId() {
-        return frameId;
-    }
-
 private:
-    uint32_t currentBuffer;
-    uint32_t lastBuffer;
-    uint64_t totalFrames;
-    uint32_t skippedFrames;
-    uint32_t frameId;
     uint32_t mVerbose : 1;
     const VulkanDeviceContext* m_vkDevCtx;
     std::vector<VulkanPerDrawContext> perDrawCtx;

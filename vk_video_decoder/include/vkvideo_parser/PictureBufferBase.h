@@ -40,8 +40,8 @@ private:
     std::atomic<int32_t> m_refCount;
 
 public:
-    int32_t m_picIdx;
-    int32_t m_displayOrder;
+    int32_t  m_picIdx;
+    uint32_t m_displayOrder;
     uint64_t m_decodeOrder;
     uint64_t m_timestamp;
     uint64_t m_presentTime;

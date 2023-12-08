@@ -58,10 +58,10 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
     case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR:
         createInfo.pStdHeaderVersion = &h265DecodeStdExtensionVersion;
         break;
-    case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT:
+    case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
         createInfo.pStdHeaderVersion = &h264EncodeStdExtensionVersion;
         break;
-    case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_EXT:
+    case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR:
         createInfo.pStdHeaderVersion = &h265EncodeStdExtensionVersion;
         break;
     default:

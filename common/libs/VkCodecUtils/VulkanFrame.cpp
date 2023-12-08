@@ -18,9 +18,6 @@
 #include <string>
 #include <vector>
 #include <iostream>
-#include <fstream>
-
-#include "VkCodecUtils/FrameProcessorFactory.h"
 
 #include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
@@ -28,31 +25,14 @@
 #include "VkCodecUtils/VulkanVideoUtils.h"
 #include "VulkanFrame.h"
 #include "vk_enum_string_helper.h"
-#include "VkDecoderUtils/VideoStreamDemuxer.h"
 
-#include "VkVideoDecoder/VkVideoDecoder.h"
-
-// Vulkan call wrapper
-#define CALL_VK(func)                                             \
-    if (VK_SUCCESS != (func)) {                                   \
-        std::cerr << "VulkanVideoFrame: "                        \
-                   << "File " << __FILE__ << "line " << __LINE__; \
-        assert(false);                                            \
-    }
-
-#ifndef ARRAYSIZE
-#define ARRAYSIZE(a) ((sizeof(a) / sizeof(a[0])))
-#endif
-
-#include <atomic>
-
-VulkanFrame::VulkanFrame(const ProgramConfig& programConfig,
-                         const VulkanDeviceContext* vkDevCtx,
-                         VkSharedBaseObj<VulkanVideoProcessor>& videoProcessor)
-    : FrameProcessor(programConfig)
+template<class FrameDataType>
+VulkanFrame<FrameDataType>::VulkanFrame(const VulkanDeviceContext* vkDevCtx,
+                                        VkSharedBaseObj<VkVideoQueue<FrameDataType>>& videoProcessor)
+    : FrameProcessor(true)
     , m_refCount(0)
     , m_vkDevCtx(vkDevCtx)
-    , m_videoProcessor(videoProcessor)
+    , m_videoQueue(videoProcessor)
     , m_samplerYcbcrModelConversion(VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709)
     , m_samplerYcbcrRange(VK_SAMPLER_YCBCR_RANGE_ITU_NARROW)
     , m_videoRenderer(nullptr)
@@ -65,16 +45,14 @@ VulkanFrame::VulkanFrame(const ProgramConfig& programConfig,
 {
 }
 
-VulkanFrame::~VulkanFrame()
+template<class FrameDataType>
+VulkanFrame<FrameDataType>::~VulkanFrame()
 {
     DetachShell();
 }
 
-int VulkanFrame::GetVideoWidth() { return m_videoProcessor->IsValid() ? m_videoProcessor->GetWidth() : m_scissor.extent.width; }
-
-int VulkanFrame::GetVideoHeight() { return m_videoProcessor->IsValid() ? m_videoProcessor->GetHeight() : m_scissor.extent.height; }
-
-int VulkanFrame::AttachShell(const Shell& sh)
+template<class FrameDataType>
+int VulkanFrame<FrameDataType>::AttachShell(const Shell& sh)
 {
     const Shell::Context& ctx = sh.GetContext();
     m_gfxQueue = ctx.devCtx->GetGfxQueue();
@@ -93,8 +71,8 @@ int VulkanFrame::AttachShell(const Shell& sh)
         return -1;
     }
 
-    VkQueue videoDecodeQueue = m_vkDevCtx->GetVideoDecodeQueue();
-    const bool useTestImage = (videoDecodeQueue == VkQueue());
+    const bool useTestImage = ((m_vkDevCtx->GetVideoDecodeQueue() == VkQueue()) &&
+                               (m_vkDevCtx->GetVideoEncodeQueue() == VkQueue()));
     m_videoRenderer = new vulkanVideoUtils::VkVideoAppCtx(useTestImage);
     if (m_videoRenderer == nullptr) {
         return -1;
@@ -117,14 +95,19 @@ int VulkanFrame::AttachShell(const Shell& sh)
 
     };
 
-    CALL_VK(m_videoRenderer->m_vertexBuffer.CreateVertexBuffer(m_videoRenderer->m_vkDevCtx,
+    if (VK_SUCCESS != m_videoRenderer->m_vertexBuffer.CreateVertexBuffer(m_videoRenderer->m_vkDevCtx,
                                                                (const float*)vertices, sizeof(vertices),
-                                                               sizeof(vertices) / sizeof(vertices[0])));
+                                                               sizeof(vertices) / sizeof(vertices[0]))) {
+
+        std::cerr << "VulkanVideoFrame: " << "File " << __FILE__ << "line " << __LINE__;
+        return -1;
+    }
 
     return 0;
 }
 
-void VulkanFrame::DetachShell()
+template<class FrameDataType>
+void VulkanFrame<FrameDataType>::DetachShell()
 {
     DestroyFrameData();
 
@@ -132,14 +115,15 @@ void VulkanFrame::DetachShell()
     m_videoRenderer = nullptr;
 }
 
-int VulkanFrame::CreateFrameData(int count)
+template<class FrameDataType>
+int VulkanFrame<FrameDataType>::CreateFrameData(int count)
 {
     m_frameData.resize(count);
 
     m_frameDataIndex = 0;
 
     for (auto& data : m_frameData) {
-        data.lastDecodedFrame.Reset();
+        data.Reset();
     }
 
     if (m_frameData.size() >= (size_t)count) {
@@ -149,10 +133,11 @@ int VulkanFrame::CreateFrameData(int count)
     return -1;
 }
 
-void VulkanFrame::DestroyFrameData()
+template<class FrameDataType>
+void VulkanFrame<FrameDataType>::DestroyFrameData()
 {
     for (auto& data : m_frameData) {
-        data.lastDecodedFrame.Reset();
+        data.Reset();
     }
 
     m_frameData.clear();
@@ -166,21 +151,23 @@ static const VkSamplerCreateInfo defaultSamplerInfo = {
     0.0, false, 0.00, false, VK_COMPARE_OP_NEVER, 0.0, 16.0, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE, false
 };
 
-int VulkanFrame::AttachSwapchain(const Shell& sh)
+template<class FrameDataType>
+int VulkanFrame<FrameDataType>::AttachSwapchain(const Shell& sh)
 {
     const Shell::Context& ctx = sh.GetContext();
 
     PrepareViewport(ctx.extent);
 
-    uint32_t imageWidth = GetVideoWidth();
-    uint32_t imageHeight = GetVideoHeight();
+    uint32_t imageWidth  = m_videoQueue->IsValid() ? m_videoQueue->GetWidth()  : m_scissor.extent.width;
+    uint32_t imageHeight = m_videoQueue->IsValid() ? m_videoQueue->GetHeight() : m_scissor.extent.height;
+    VkFormat imageFormat = m_videoQueue->GetFrameImageFormat();
 
     // Create test image, if enabled.
     VkImageCreateInfo imageCreateInfo = VkImageCreateInfo();
     imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageCreateInfo.pNext = NULL;
     imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageCreateInfo.format = m_videoProcessor->GetFrameImageFormat();
+    imageCreateInfo.format = imageFormat;
     imageCreateInfo.extent = { imageWidth, imageHeight, 1 };
     imageCreateInfo.mipLevels = 1;
     imageCreateInfo.arrayLayers = 1;
@@ -202,7 +189,7 @@ int VulkanFrame::AttachSwapchain(const Shell& sh)
     const static VkSamplerYcbcrConversionCreateInfo defaultSamplerYcbcrConversionCreateInfo = {
         VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO,
         NULL,
-        m_videoProcessor->GetFrameImageFormat(),
+        imageFormat,
         m_samplerYcbcrModelConversion,
         m_samplerYcbcrRange,
         { VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -236,9 +223,11 @@ int VulkanFrame::AttachSwapchain(const Shell& sh)
     return 0;
 }
 
-void VulkanFrame::DetachSwapchain() { }
+template<class FrameDataType>
+void VulkanFrame<FrameDataType>::DetachSwapchain() { }
 
-void VulkanFrame::PrepareViewport(const VkExtent2D& extent)
+template<class FrameDataType>
+void VulkanFrame<FrameDataType>::PrepareViewport(const VkExtent2D& extent)
 {
     this->m_extent = extent;
 
@@ -253,7 +242,8 @@ void VulkanFrame::PrepareViewport(const VkExtent2D& extent)
     m_scissor.extent = extent;
 }
 
-bool VulkanFrame::OnKey(Key key)
+template<class FrameDataType>
+bool VulkanFrame<FrameDataType>::OnKey(Key key)
 {
     switch (key) {
     case KEY_SHUTDOWN:
@@ -279,12 +269,12 @@ bool VulkanFrame::OnKey(Key key)
     return true;
 }
 
-bool VulkanFrame::OnFrame( int32_t           renderIndex,
+template<class FrameDataType>
+bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
                           uint32_t           waitSemaphoreCount,
                           const VkSemaphore* pWaitSemaphores,
                           uint32_t           signalSemaphoreCount,
-                          const VkSemaphore* pSignalSemaphores,
-                          const DecodedFrame** ppOutFrame)
+                          const VkSemaphore* pSignalSemaphores)
 {
     bool continueLoop = true;
     const bool dumpDebug = false;
@@ -305,12 +295,12 @@ bool VulkanFrame::OnFrame( int32_t           renderIndex,
                      " rate: " << 1000000000.0 / timeDiffNanoSec << std::endl;
     }
 
-    FrameData& data = m_frameData[m_frameDataIndex];
-    DecodedFrame* pLastDecodedFrame = NULL;
+    FrameDataType& data = m_frameData[m_frameDataIndex];
+    FrameDataType* pLastDecodedFrame = nullptr;
 
-    if (m_videoProcessor->IsValid() && !trainFrame) {
+    if (m_videoQueue->IsValid() && !trainFrame) {
 
-        pLastDecodedFrame = &data.lastDecodedFrame;
+        pLastDecodedFrame = &data;
 
         // Graphics and present stages are not enabled.
         // Make sure the frame complete query or fence are signaled (video frame is processed) before returning the frame.
@@ -351,14 +341,14 @@ bool VulkanFrame::OnFrame( int32_t           renderIndex,
             }
         }
 
-        m_videoProcessor->ReleaseDisplayedFrame(pLastDecodedFrame);
+        m_videoQueue->ReleaseFrame(pLastDecodedFrame);
 
         pLastDecodedFrame->Reset();
 
         bool endOfStream = false;
         int32_t numVideoFrames = 0;
 
-        numVideoFrames = m_videoProcessor->GetNextFrame(pLastDecodedFrame, &endOfStream);
+        numVideoFrames = m_videoQueue->GetNextFrame(pLastDecodedFrame, &endOfStream);
         if (endOfStream && (numVideoFrames < 0)) {
             continueLoop = false;
             bool displayTimeNow = true;
@@ -377,22 +367,18 @@ bool VulkanFrame::OnFrame( int32_t           renderIndex,
                   << "\t\tdisplayOrder: " << pLastDecodedFrame->displayOrder
                   << "\tdecodeOrder: " << pLastDecodedFrame->decodeOrder
                   << "\ttimestamp " << pLastDecodedFrame->timestamp
-                  << "\tdstImageView " << (pLastDecodedFrame->outputImageView ?
-                          pLastDecodedFrame->outputImageView->GetImageResource()->GetImage() : VkImage())
+                  << "\tdstImageView " << (pLastDecodedFrame->imageView ?
+                          pLastDecodedFrame->imageView->GetImageResource()->GetImage() : VkImage())
                   << std::endl;
     }
 
     if (pLastDecodedFrame) {
         // std::cout << pLastDecodedFrame->pictureIndex << " : DISP view: " << pLastDecodedFrame->decodedImageView->GetImageView() << ", signalSem: " <<  pLastDecodedFrame->frameCompleteSemaphore << std::endl << std::flush;
-        if (false && pLastDecodedFrame->outputImageView) {
-            std::cout << pLastDecodedFrame->pictureIndex << " : DISP OUT view: " << pLastDecodedFrame->outputImageView->GetImageView() << ", signalSem: " <<  pLastDecodedFrame->frameCompleteSemaphore << std::endl << std::flush;
+        if (false && pLastDecodedFrame->imageView) {
+            std::cout << pLastDecodedFrame->pictureIndex << " : DISP OUT view: " << pLastDecodedFrame->imageView->GetImageView() << ", signalSem: " <<  pLastDecodedFrame->frameCompleteSemaphore << std::endl << std::flush;
         }
     }
     if (gfxRendererIsEnabled == false) {
-
-        if (ppOutFrame) {
-            *ppOutFrame = pLastDecodedFrame;
-        }
 
         m_frameDataIndex = (m_frameDataIndex + 1) % m_frameData.size();
         return continueLoop;
@@ -413,13 +399,13 @@ bool VulkanFrame::OnFrame( int32_t           renderIndex,
     return continueLoop;
 }
 
-
-VkResult VulkanFrame::DrawFrame( int32_t           renderIndex,
-                                uint32_t           waitSemaphoreCount,
-                                const VkSemaphore* pWaitSemaphores,
-                                uint32_t           signalSemaphoreCount,
-                                const VkSemaphore* pSignalSemaphores,
-                                DecodedFrame*      inFrame)
+template<class FrameDataType>
+VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
+                                                uint32_t           waitSemaphoreCount,
+                                                const VkSemaphore* pWaitSemaphores,
+                                                uint32_t           signalSemaphoreCount,
+                                                const VkSemaphore* pSignalSemaphores,
+                                                FrameDataType*     inFrame)
 {
     const bool dumpDebug = false;
     if (renderIndex < 0) {
@@ -428,11 +414,12 @@ VkResult VulkanFrame::DrawFrame( int32_t           renderIndex,
     vulkanVideoUtils::VulkanPerDrawContext* pPerDrawContext = m_videoRenderer->m_renderInfo.GetDrawContext(renderIndex);
 
     bool doTestPatternFrame = ((inFrame == NULL) ||
-                               (!inFrame->outputImageView ||
-                                (inFrame->outputImageView->GetImageView() == VK_NULL_HANDLE)) ||
+                               (!inFrame->imageView ||
+                                (inFrame->imageView->GetImageView() == VK_NULL_HANDLE)) ||
                                m_videoRenderer->m_useTestImage);
 
-    vulkanVideoUtils::ImageResourceInfo rtImage(inFrame->outputImageView, VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR);
+    VkImageResourceView* pView = inFrame ? inFrame->imageView : (VkImageResourceView*)nullptr;
+    vulkanVideoUtils::ImageResourceInfo rtImage(pView, VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR);
     const vulkanVideoUtils::ImageResourceInfo* pRtImage = doTestPatternFrame ? &m_videoRenderer->m_testFrameImage : &rtImage;
     VkFence frameConsumerDoneFence = doTestPatternFrame ? VkFence() : inFrame->frameConsumerDoneFence;
     int32_t displayWidth  = doTestPatternFrame ? pRtImage->imageWidth  : inFrame->displayWidth;
@@ -493,7 +480,7 @@ VkResult VulkanFrame::DrawFrame( int32_t           renderIndex,
         pPerDrawContext->descriptorSetLayoutBinding.WriteDescriptorSet(1, &writeDescriptorSet);
     }
 
-    pPerDrawContext->RecordCommandBuffer(*pPerDrawContext->commandBuffer.getCommandBuffer(),
+    pPerDrawContext->RecordCommandBuffer(*pPerDrawContext->commandBuffer.GetCommandBuffer(),
                                          m_videoRenderer->m_renderPass.getRenderPass(),
                                          pRtImage,
                                          displayWidth, displayHeight,
@@ -543,7 +530,7 @@ VkResult VulkanFrame::DrawFrame( int32_t           renderIndex,
         }
     }
 
-    //For queryPool debugging
+    // For queryPool debugging
     bool getDecodeStatusBeforePresent = false;
     if (getDecodeStatusBeforePresent && (inFrame != nullptr) &&
             (inFrame->queryPool != VK_NULL_HANDLE) &&
@@ -630,7 +617,7 @@ VkResult VulkanFrame::DrawFrame( int32_t           renderIndex,
 
     primaryCmdSubmitInfo.waitSemaphoreCount = numWaitSemaphores;
     primaryCmdSubmitInfo.pWaitSemaphores = numWaitSemaphores ? waitSemaphores : NULL;
-    primaryCmdSubmitInfo.pCommandBuffers = pPerDrawContext->commandBuffer.getCommandBuffer();
+    primaryCmdSubmitInfo.pCommandBuffers = pPerDrawContext->commandBuffer.GetCommandBuffer();
 
     primaryCmdSubmitInfo.signalSemaphoreCount = numSignalSemaphores;
     primaryCmdSubmitInfo.pSignalSemaphores = numSignalSemaphores ? signalSemaphores : NULL;
@@ -649,10 +636,10 @@ VkResult VulkanFrame::DrawFrame( int32_t           renderIndex,
         }
     }
 
-    result = m_vkDevCtx->QueueSubmit(m_gfxQueue, 1, &primaryCmdSubmitInfo, frameConsumerDoneFence);
+    result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::GRAPHICS, 0, 1, &primaryCmdSubmitInfo, frameConsumerDoneFence);
     if (result != VK_SUCCESS) {
         assert(result == VK_SUCCESS);
-        fprintf(stderr, "\nERROR: QueueSubmit() result: 0x%x\n", result);
+        fprintf(stderr, "\nERROR: MultiThreadedQueueSubmit() result: 0x%x\n", result);
         return result;
     }
 
@@ -682,12 +669,12 @@ VkResult VulkanFrame::DrawFrame( int32_t           renderIndex,
     return result;
 }
 
-VkResult VulkanFrame::Create(const ProgramConfig& programConfig,
-                             const VulkanDeviceContext* vkDevCtx,
-                             VkSharedBaseObj<VulkanVideoProcessor>& videoProcessor,
-                             VkSharedBaseObj<VulkanFrame>& vulkanFrame)
+template<class FrameDataType>
+VkResult VulkanFrame<FrameDataType>::Create(const VulkanDeviceContext* vkDevCtx,
+                                            VkSharedBaseObj<VkVideoQueue<FrameDataType>>& videoQueue,
+                                            VkSharedBaseObj<VulkanFrame>& vulkanFrame)
 {
-    VkSharedBaseObj<VulkanFrame> vkVideoFrame(new VulkanFrame(programConfig, vkDevCtx, videoProcessor));
+    VkSharedBaseObj<VulkanFrame> vkVideoFrame(new VulkanFrame<FrameDataType>(vkDevCtx, videoQueue));
 
     if (vkVideoFrame) {
         vulkanFrame = vkVideoFrame;
@@ -696,27 +683,34 @@ VkResult VulkanFrame::Create(const ProgramConfig& programConfig,
     return VK_ERROR_INITIALIZATION_FAILED;
 }
 
-VkResult CreateFrameProcessor(const ProgramConfig& programConfig,
-                              const VulkanDeviceContext* vkDevCtx,
-                              VkSharedBaseObj<VulkanVideoProcessor>& videoProcessor,
-                              VkSharedBaseObj<FrameProcessor>& frameProcessor)
+#include "VulkanDecoderFrameProcessor.h"
+
+VkResult CreateDecoderFrameProcessor(const VulkanDeviceContext* vkDevCtx,
+                                     VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>>& videoQueue,
+                                     VkSharedBaseObj<FrameProcessor>& frameProcessor)
 {
 
-    VkSharedBaseObj<VulkanFrame> vulkanFrame;
-    VkResult result = VulkanFrame::Create(programConfig, vkDevCtx, videoProcessor, vulkanFrame);
+    VkSharedBaseObj<VulkanFrame<VulkanDecodedFrame>> vulkanFrame;
+    VkResult result = VulkanFrame<VulkanDecodedFrame>::Create(vkDevCtx, videoQueue, vulkanFrame);
     if (result != VK_SUCCESS) {
         return result;
     }
 
-    if (vulkanFrame) {
-        std::ifstream validVideoFileStream(vulkanFrame->GetSettings().videoFileName, std::ifstream::in);
-        if (!validVideoFileStream) {
-            std::cerr << "Invalid input video file: " << vulkanFrame->GetSettings().videoFileName << std::endl;
-            std::cerr << "Please provide a valid name for the input video file to be decoded with the \"-i\" command line option." << std::endl;
-            std::cerr << "   vk-video-dec-test -i <absolute file path location>" << std::endl;
+    frameProcessor = vulkanFrame;
+    return result;
+}
 
-            return VK_ERROR_INITIALIZATION_FAILED;
-        }
+#include "VkCodecUtils/VulkanEncoderFrameProcessor.h"
+
+VkResult CreateEncoderFrameProcessor(const VulkanDeviceContext* vkDevCtx,
+                                     VkSharedBaseObj<VkVideoQueue<VulkanEncoderInputFrame>>& videoQueue,
+                                     VkSharedBaseObj<FrameProcessor>& frameProcessor)
+{
+
+    VkSharedBaseObj<VulkanFrame<VulkanEncoderInputFrame>> vulkanFrame;
+    VkResult result = VulkanFrame<VulkanEncoderInputFrame>::Create(vkDevCtx, videoQueue, vulkanFrame);
+    if (result != VK_SUCCESS) {
+        return result;
     }
 
     frameProcessor = vulkanFrame;

@@ -19,118 +19,27 @@
 
 #include "VkDecoderUtils/VideoStreamDemuxer.h"
 #include "VkVideoDecoder/VkVideoDecoder.h"
+#include "VkCodecUtils/VkVideoFrameToFile.h"
 #include "VkCodecUtils/ProgramConfig.h"
+#include "VkCodecUtils/VkVideoQueue.h"
 
-class VkFrameVideoToFile {
-
+class VulkanVideoProcessor : public VkVideoQueue<VulkanDecodedFrame> {
 public:
 
-    VkFrameVideoToFile()
-        : m_outputFile(),
-          m_pLinearMemory()
-        , m_allocationSize() {}
-
-    ~VkFrameVideoToFile()
-    {
-        if (m_pLinearMemory) {
-            delete[] m_pLinearMemory;
-            m_pLinearMemory = nullptr;
-        }
-
-        if (m_outputFile) {
-            fclose(m_outputFile);
-            m_outputFile = nullptr;
-        }
-    }
-
-    uint8_t* EnsureAllocation(const VulkanDeviceContext* vkDevCtx,
-                              VkSharedBaseObj<VkImageResource>& imageResource) {
-
-        if (m_outputFile == nullptr) {
-            return nullptr;
-        }
-
-        VkDeviceSize imageMemorySize = imageResource->GetImageDeviceMemorySize();
-
-        if ((m_pLinearMemory == nullptr) || (imageMemorySize > m_allocationSize)) {
-
-            if (m_outputFile) {
-                fflush(m_outputFile);
-            }
-
-            if (m_pLinearMemory != nullptr) {
-                delete[] m_pLinearMemory;
-                m_pLinearMemory = nullptr;
-            }
-
-            // Allocate the memory that will be dumped to file directly.
-            m_allocationSize = (size_t)(imageMemorySize);
-            m_pLinearMemory = new uint8_t[m_allocationSize];
-            if (m_pLinearMemory == nullptr) {
-                return nullptr;
-            }
-            assert(m_pLinearMemory != nullptr);
-        }
-        return m_pLinearMemory;
-    }
-
-    FILE* AttachFile(const char* fileName) {
-
-        if (m_outputFile) {
-            fclose(m_outputFile);
-            m_outputFile = nullptr;
-        }
-
-        if (fileName != nullptr) {
-            m_outputFile = fopen(fileName, "wb");
-            if (m_outputFile) {
-                return m_outputFile;
-            }
-        }
-
-        return nullptr;
-    }
-
-    bool IsFileStreamValid() const
-    {
-        return m_outputFile != nullptr;
-    }
-
-    operator bool() const {
-        return IsFileStreamValid();
-    }
-
-    size_t WriteDataToFile(size_t offset, size_t size)
-    {
-        return fwrite(m_pLinearMemory + offset, size, 1, m_outputFile);
-    }
-
-    size_t GetMaxFrameSize() {
-        return m_allocationSize;
-    }
-
-private:
-    FILE*    m_outputFile;
-    uint8_t* m_pLinearMemory;
-    size_t   m_allocationSize;
-};
-
-class VulkanVideoProcessor : public VkVideoRefCountBase {
-public:
+    virtual bool IsValid(void)    const { return m_vkVideoDecoder; }
+    virtual int32_t GetWidth()    const;
+    virtual int32_t GetHeight()   const;
+    virtual int32_t GetBitDepth() const;
+    virtual VkFormat GetFrameImageFormat(int32_t* pWidth = NULL, int32_t* pHeight = NULL, int32_t* pBitDepth = NULL)  const;
+    virtual int32_t GetNextFrame(VulkanDecodedFrame* pFrame, bool* endOfStream);
+    virtual int32_t ReleaseFrame(VulkanDecodedFrame* pDisplayedFrame);
 
     static VkSharedBaseObj<VulkanVideoProcessor>& invalidVulkanVideoProcessor;
 
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            VkSharedBaseObj<VulkanVideoProcessor>& vulkanVideoProcessor = invalidVulkanVideoProcessor);
 
-    int32_t Initialize(const VulkanDeviceContext* vkDevCtx,
-                       ProgramConfig& programConfig);
-
-    VkFormat GetFrameImageFormat(int32_t* pWidth = NULL, int32_t* pHeight = NULL, int32_t* pBitDepth = NULL);
-
-    int32_t GetWidth();
-    int32_t GetHeight();
-    int32_t GetBitDepth();
+    int32_t Initialize(const VulkanDeviceContext* vkDevCtx, ProgramConfig& programConfig);
 
     void Deinit();
 
@@ -149,16 +58,11 @@ public:
         return ret;
     }
 
-    bool IsValid(void) { return m_vkVideoDecoder; }
-
     static void DumpVideoFormat(const VkParserDetectedVideoFormat* videoFormat, bool dumpData);
 
     int32_t ParserProcessNextDataChunk();
-    int32_t GetNextFrame(DecodedFrame* pFrame, bool* endOfStream);
 
-    int32_t ReleaseDisplayedFrame(DecodedFrame* pDisplayedFrame);
-
-    size_t OutputFrameToFile(DecodedFrame* pFrame);
+    size_t OutputFrameToFile(VulkanDecodedFrame* pFrame);
     void Restart(void);
 
 private:
@@ -194,7 +98,7 @@ private:
                                   size_t* pnVideoBytes = nullptr,
                                   bool doPartialParsing = false,
                                   uint32_t flags = 0, int64_t timestamp = 0);
-    size_t ConvertFrameToNv12(DecodedFrame* pFrame, VkSharedBaseObj<VkImageResource>& imageResource,
+    size_t ConvertFrameToNv12(VulkanDecodedFrame* pFrame, VkSharedBaseObj<VkImageResource>& imageResource,
                               uint8_t* pOutputBuffer, size_t bufferSize);
 
 
@@ -212,7 +116,7 @@ private:
     uint32_t m_videoStreamsCompleted : 1;
     uint32_t m_usesStreamDemuxer : 1;
     uint32_t m_usesFramePreparser : 1;
-    VkFrameVideoToFile m_frameToFile;
+    VkVideoFrameToFile m_frameToFile;
     int32_t   m_loopCount;
     uint32_t  m_startFrame;
     int32_t   m_maxFrameCount;

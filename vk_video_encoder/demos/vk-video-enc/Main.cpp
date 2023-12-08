@@ -14,128 +14,14 @@
  * limitations under the License.
  */
 
+#include "VkVideoEncoder/VkEncoderConfig.h"
 #include "VkVideoEncoder/VkVideoEncoder.h"
+#include "VkCodecUtils/VulkanVideoDisplayQueue.h"
+#include "VkCodecUtils/VulkanVideoEncodeDisplayQueue.h"
+#include "VkCodecUtils/VulkanEncoderFrameProcessor.h"
+#include "VkShell/Shell.h"
 
 #define INPUT_FRAME_BUFFER_SIZE 16
-
-int8_t parseArguments(EncodeConfig *encodeConfig, int argc, char *argv[])
-{
-    bool providedInputFileName = false;
-    bool providedOutputFileName = false;
-    bool providedQP = false;
-
-    encodeConfig->name = argv[0];
-
-    for (int32_t i = 1; i < argc; i++) {
-        if ((strcmp(argv[i], "--width") == 0)) {
-            if (++i >= argc || sscanf(argv[i], "%u", &encodeConfig->width) != 1) {
-                fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
-                return -1;
-            }
-        }
-        else if ((strcmp(argv[i], "--height") == 0)) {
-            if (++i >= argc || sscanf(argv[i], "%u", &encodeConfig->height) != 1) {
-                fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
-                return -1;
-            }
-        }
-        else if (strcmp(argv[i], "--startFrame") == 0) {
-            if (++i >= argc || sscanf(argv[i], "%u", &encodeConfig->startFrame) != 1) {
-                fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
-                return -1;
-            }
-        }
-        else if (strcmp(argv[i], "--numFrames") == 0) {
-            if (++i >= argc || sscanf(argv[i], "%u", &encodeConfig->numFrames) != 1) {
-                fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
-                return -1;
-            }
-        }
-        else if (strcmp(argv[i], "-i") == 0) {
-            if (++i >= argc) {
-                fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
-                return -1;
-            }
-            strcpy(encodeConfig->inFileName, argv[i]);
-            providedInputFileName = true;
-        }
-        else if (strcmp(argv[i], "-o") == 0) {
-            if (++i >= argc) {
-                fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
-                return -1;
-            }
-            strcpy(encodeConfig->outFileName, argv[i]);
-            providedOutputFileName = true;
-        }
-        else if (strcmp(argv[i], "-qp") == 0) {
-            if (++i >= argc || sscanf(argv[i], "%u", &encodeConfig->qp) != 1) {
-                fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
-                return -1;
-            }
-            providedQP = true;
-        }
-        else if (strcmp(argv[i], "--logBatchEncoding") == 0) {
-            encodeConfig->logBatchEncoding = true;
-        }
-        else {
-            fprintf(stderr, "Unrecognized option: %s\n", argv[i]);
-            return -1;
-        }
-    }
-
-    if (!providedInputFileName) {
-        fprintf(stderr, "The input file was not specified\n");
-        return -1;
-    }
-
-    if (!encodeConfig->width) {
-        fprintf(stderr, "The width was not specified\n");
-        return -1;
-    }
-
-    if (!encodeConfig->height) {
-        fprintf(stderr, "The height was not specified\n");
-        return -1;
-    }
-
-    if (!providedOutputFileName) {
-        fprintf(stdout, "No output file name provided. Using out.264.\n");
-        strcpy(encodeConfig->outFileName, "out.264");
-    }
-
-    if (!providedQP) {
-        fprintf(stdout, "No QP was provided. Using default value: 20.\n");
-        encodeConfig->qp = 20;
-    }
-
-    encodeConfig->codec = VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT; //H264
-    encodeConfig->chromaFormatIDC = STD_VIDEO_H264_CHROMA_FORMAT_IDC_420; // YUV 420
-    encodeConfig->inputVkFormat = VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM; // YUV420 8bpp VkFormat
-    encodeConfig->codecBlockAlignment = H264MbSizeAlignment; // H264
-    encodeConfig->alignedWidth = (encodeConfig->width + encodeConfig->codecBlockAlignment - 1) & ~(encodeConfig->codecBlockAlignment - 1);
-    encodeConfig->alignedHeight = (encodeConfig->height + encodeConfig->codecBlockAlignment - 1) & ~(encodeConfig->codecBlockAlignment - 1);
-    encodeConfig->lumaPlaneSize = encodeConfig->alignedWidth * encodeConfig->alignedHeight;
-    encodeConfig->chromaPlaneSize = ((encodeConfig->alignedWidth + 1) / 2) * ((encodeConfig->alignedHeight + 1) / 2);
-    encodeConfig->fullImageSize = encodeConfig->lumaPlaneSize + encodeConfig->chromaPlaneSize*2;
-    encodeConfig->bpp = 8;
-
-    return 0;
-}
-
-void printHelp()
-{
-    fprintf(stderr,
-            "Usage : EncodeApp \n\
-    -i                              .yuv Input YUV File Name (YUV420p 8bpp only) \n\
-    -o                              .264 Output H264 File Name \n\
-    --startFrame                    <integer> : Start Frame Number to be Encoded \n\
-    --numFrames                     <integer> : End Frame Number to be Encoded \n\
-    --width                         <integer> : Encode Width \n\
-    --height                        <integer> : Encode Height \n\
-    -qp                             <integer> : QP value in the range [0, 51] \n\
-    --logBatchEncoding              Enable verbose logging of batch recording and submission of commands \n"
-    );
-}
 
 int32_t handle_error(const std::error_code& error)
 {
@@ -144,73 +30,22 @@ int32_t handle_error(const std::error_code& error)
     return error.value();
 }
 
-int32_t openFiles(EncodeConfig *encodeConfig)
-{
-    encodeConfig->inputVid = fopen(encodeConfig->inFileName, "rb");
-    if (!encodeConfig->inputVid) {
-        fprintf(stderr, "Failed to open input file %s",encodeConfig->inFileName);
-        return -1;
-    }
-
-    std::error_code error;
-    encodeConfig->inputVideoMmap.map(encodeConfig->inFileName,
-                                     0, mio::map_entire_file, error);
-    if (error) {
-        return handle_error(error);
-        return -1;
-    }
-
-    printf("Input file size is: %zd\n", encodeConfig->inputVideoMmap.length());
-
-    encodeConfig->outputVid = fopen(encodeConfig->outFileName, "wb");
-    if (!encodeConfig->outputVid) {
-        fprintf(stderr, "Failed to open output file %s",encodeConfig->outFileName);
-        return -1;
-    }
-
-    return 0;
-}
-
-int8_t closeFiles(EncodeConfig *encodeConfig)
-{
-    if(fclose(encodeConfig->inputVid)) {
-        fprintf(stderr, "Failed to close input file %s",encodeConfig->inFileName);
-        return -1;
-    }
-
-    encodeConfig->inputVideoMmap.unmap();
-
-    if(fclose(encodeConfig->outputVid)) {
-        fprintf(stderr, "Failed to close output file %s",encodeConfig->outFileName);
-        return -1;
-    }
-
-    fflush(stdout);
-    return 0;
-}
-
-//--------------------------------------------------------------------------------------------------
-// Entry of the example
-//
 int main(int argc, char** argv)
 {
-    EncodeConfig programConfig{};
-
-    if (argc == 1) {
-        printHelp();
+    VkSharedBaseObj<EncoderConfig> encoderConfig;
+    if (VK_SUCCESS != EncoderConfig::CreateCodecConfig(argc, argv, encoderConfig)) {
         return -1;
     }
 
-    if(parseArguments(&programConfig, argc, argv))
-        return -1;
-
-    if(openFiles(&programConfig))
-        return -1;
-
-
     static const char* const requiredInstanceLayerExtensions[] = {
-        "VK_LAYER_LUNARG_standard_validation",
+        "VK_LAYER_KHRONOS_validation",
         VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
+        nullptr
+    };
+
+    static const char* const requiredWsiInstanceExtensions[] = {
+        // Required generic WSI extensions
+        VK_KHR_SURFACE_EXTENSION_NAME,
         nullptr
     };
 
@@ -225,6 +60,15 @@ int main(int argc, char** argv)
         nullptr
     };
 
+    static const char* const requiredWsiDeviceExtension[] = {
+        // Add the WSI required device extensions
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+#if !defined(VK_USE_PLATFORM_WIN32_KHR)
+        // VK_EXT_DISPLAY_CONTROL_EXTENSION_NAME,
+#endif
+        nullptr
+    };
+
     static const char* const optinalDeviceExtension[] = {
         VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME,
         VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
@@ -233,123 +77,230 @@ int main(int argc, char** argv)
         nullptr
     };
 
-    VulkanDeviceContext vkDevCtxt(programConfig.deviceId,
-            programConfig.validate ? requiredInstanceLayerExtensions : nullptr,
-            nullptr, // no instance extensions are required
-            requiredDeviceExtension,
+    std::vector<const char *> reqInstanceExtensions;
+    std::vector<const char *> reqDeviceExtensions;
+
+    if (encoderConfig->validate) {
+        reqInstanceExtensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+    }
+    /********** Start WSI instance extensions support *******************************************/
+    if (encoderConfig->enableFramePresent) {
+        const std::vector<VkExtensionProperties>& wsiRequiredInstanceInstanceExtensions =
+                Shell::GetRequiredInstanceExtensions(encoderConfig->enableFrameDirectModePresent);
+
+        for (size_t e = 0; e < wsiRequiredInstanceInstanceExtensions.size(); e++) {
+            reqInstanceExtensions.push_back(wsiRequiredInstanceInstanceExtensions[e].extensionName);
+        }
+
+        for (uint32_t i = 0; requiredWsiInstanceExtensions[0]; i++) {
+            const char* name = requiredWsiInstanceExtensions[i];
+            if (name == nullptr) {
+                break;
+            }
+            reqInstanceExtensions.push_back(name);
+        }
+        // terminate the reqInstanceExtensions list with nullptr
+        reqInstanceExtensions.push_back(nullptr);
+
+        // Add the WSI required device extensions
+        for (uint32_t i = 0; requiredWsiDeviceExtension[0]; i++) {
+            const char* name = requiredWsiDeviceExtension[i];
+            if (name == nullptr) {
+                break;
+            }
+            reqDeviceExtensions.push_back(name);
+        }
+    }
+    /********** End WSI instance extensions support *******************************************/
+
+    // Add the Vulkan video required device extensions
+    for (uint32_t i = 0; requiredDeviceExtension[0]; i++) {
+        const char* name = requiredDeviceExtension[i];
+        if (name == nullptr) {
+            break;
+        }
+        reqDeviceExtensions.push_back(name);
+    }
+    // terminate the reqDeviceExtensions list with nullptr
+    reqDeviceExtensions.push_back(nullptr);
+
+    VulkanDeviceContext vkDevCtxt(encoderConfig->deviceId,
+            encoderConfig->validate ? requiredInstanceLayerExtensions : nullptr,
+            reqInstanceExtensions.data(),
+            reqDeviceExtensions.data(),
             optinalDeviceExtension);
 
 
-    VkResult result = vkDevCtxt.InitVulkanDevice(programConfig.name.c_str(),
-                                                 programConfig.verbose);
+    VkResult result = vkDevCtxt.InitVulkanDevice(encoderConfig->appName.c_str(),
+                                                 encoderConfig->verbose);
     if (result != VK_SUCCESS) {
         printf("Could not initialize the Vulkan device!\n");
         return -1;
     }
 
-    result = vkDevCtxt.InitDebugReport(programConfig.validate,
-                                       programConfig.validateVerbose);
+    result = vkDevCtxt.InitDebugReport(encoderConfig->validate,
+                                       encoderConfig->validateVerbose);
     if (result != VK_SUCCESS) {
         return -1;
     }
 
-    result = vkDevCtxt.InitPhysicalDevice((VK_QUEUE_TRANSFER_BIT |
-                                           VK_QUEUE_VIDEO_ENCODE_BIT_KHR),
-                                           nullptr);
-    if (result != VK_SUCCESS) {
+    const bool supportsDisplay = true;
+    const int32_t numEncodeQueues = ((encoderConfig->queueId != 0) ||
+                                     (encoderConfig->enableHwLoadBalancing != 0)) ?
+                                     -1 : // all available HW encoders
+                                      1;  // only one HW encoder instance
 
-        assert(!"Can't initialize the Vulkan physical device!");
+    VkQueueFlags requestVideoEncodeQueueMask = VK_QUEUE_VIDEO_ENCODE_BIT_KHR |
+                                               VK_QUEUE_TRANSFER_BIT;
+
+    VkQueueFlags requestVideoDecodeQueueMask = 0;
+    if (encoderConfig->enableVideoDecoder) {
+        requestVideoDecodeQueueMask |= VK_QUEUE_VIDEO_DECODE_BIT_KHR |
+                                       VK_QUEUE_TRANSFER_BIT;
+    }
+
+    if (encoderConfig->selectVideoWithComputeQueue) {
+        requestVideoEncodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
+        if (encoderConfig->enableVideoDecoder) {
+            requestVideoDecodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
+        }
+    }
+
+    VkSharedBaseObj<VulkanVideoDisplayQueue<VulkanEncoderInputFrame>> videoDispayQueue;
+    result = CreateVulkanVideoEncodeDisplayQueue(&vkDevCtxt,
+                                                 encoderConfig->input.width,
+                                                 encoderConfig->input.height,
+                                                 encoderConfig->input.bpp,
+                                                 encoderConfig->input.vkFormat,
+                                                 videoDispayQueue);
+    if (result != VK_SUCCESS) {
         return -1;
     }
 
-    result = vkDevCtxt.CreateVulkanDevice(0,     // num decode queues
-                                          1,     // num encode queues
-                                          false, // createGraphicsQueue
-                                          false, // createDisplayQueue
-                                          false  // createComputeQueue
-                                          );
+    VkSharedBaseObj<VkVideoQueue<VulkanEncoderInputFrame>> videoQueue(videoDispayQueue);
+    VkSharedBaseObj<FrameProcessor> frameProcessor;
+    result = CreateEncoderFrameProcessor(&vkDevCtxt, videoQueue, frameProcessor);
     if (result != VK_SUCCESS) {
-
-        assert(!"Failed to create Vulkan device!");
         return -1;
     }
 
-    EncodeApp encodeApp(&vkDevCtxt);
-    encodeApp.InitEncoder(&programConfig);
+    VkSharedBaseObj<VkVideoEncoder> encoder; // the encoder's instance
+    if (supportsDisplay && encoderConfig->enableFramePresent) {
 
-    // Encoding loop
-    const bool logBatchEnc = programConfig.logBatchEncoding;
-    const uint32_t batchSize = 8;
-    const uint32_t numBatches = 2;
-    assert((batchSize > 0) && !(batchSize & (batchSize - 1)));
-    const uint32_t maxFramesInFlight = INPUT_FRAME_BUFFER_SIZE;
-    assert(batchSize * numBatches <= maxFramesInFlight);
-    uint32_t batchId = 0;
-    uint32_t framesToProcess = programConfig.numFrames;
-    if (logBatchEnc) fprintf(stdout, "programConfig.startFrame %d, totalFrames  %d, programConfig.endFrame  %d\n", programConfig.startFrame, framesToProcess, programConfig.numFrames);
-    uint32_t firstAsmBufferIdx = 0;
-    uint32_t numAsmBuffers = 0;
+        const Shell::Configuration configuration(encoderConfig->appName.c_str(),
+                                                 4, // the display queue size
+                                                 encoderConfig->enableFrameDirectModePresent);
+        VkSharedBaseObj<Shell> displayShell;
+        result = Shell::Create(&vkDevCtxt, configuration, frameProcessor, displayShell);
+        if (result != VK_SUCCESS) {
+            assert(!"Can't allocate display shell! Out of memory!");
+            return -1;
+        }
+
+        result = vkDevCtxt.InitPhysicalDevice((VK_QUEUE_GRAPHICS_BIT | requestVideoDecodeQueueMask | requestVideoEncodeQueueMask),
+                                               displayShell,
+                                               requestVideoDecodeQueueMask,
+                                               (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
+                                                VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR),
+                                               requestVideoEncodeQueueMask,
+                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
+                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR);
+        if (result != VK_SUCCESS) {
+
+            assert(!"Can't initialize the Vulkan physical device!");
+            return -1;
+        }
+        assert(displayShell->PhysDeviceCanPresent(vkDevCtxt.getPhysicalDevice(),
+                                                   vkDevCtxt.GetPresentQueueFamilyIdx()));
+
+        result = vkDevCtxt.CreateVulkanDevice(encoderConfig->enableVideoDecoder ? 1 : 0, // num decode queues
+                                              numEncodeQueues,   // num encode queues
+                                              true,              // createGraphicsQueue
+                                              true,              // createDisplayQueue
+                                              (encoderConfig->selectVideoWithComputeQueue == 1)  // createComputeQueue
+                                              );
+        if (result != VK_SUCCESS) {
+
+            assert(!"Failed to create Vulkan device!");
+            return -1;
+        }
+
+        result = VkVideoEncoder::CreateVideoEncoder(&vkDevCtxt, encoderConfig, encoder);
+        if (result != VK_SUCCESS) {
+            assert(!"Can't initialize the Vulkan physical device!");
+            return -1;
+        }
+
+        if (displayShell && videoDispayQueue) {
+            result = encoder->AttachDisplayQueue(displayShell, videoDispayQueue);
+        }
+
+        // std::this_thread::sleep_for(std::chrono::seconds(5));
+
+    } else {
+
+        // No display presentation and no decoder - just the encoder
+        result = vkDevCtxt.InitPhysicalDevice((requestVideoDecodeQueueMask | requestVideoEncodeQueueMask),
+                                               nullptr,
+                                               requestVideoDecodeQueueMask,
+                                               (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
+                                                VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR),
+                                               requestVideoEncodeQueueMask,
+                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
+                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR);
+        if (result != VK_SUCCESS) {
+
+            assert(!"Can't initialize the Vulkan physical device!");
+            return -1;
+        }
+
+        result = vkDevCtxt.CreateVulkanDevice(encoderConfig->enableVideoDecoder ? 1 : 0, // num decode queues
+                                              numEncodeQueues,     // num encode queues
+                                              false, // createGraphicsQueue
+                                              false, // createDisplayQueue
+                                              (encoderConfig->selectVideoWithComputeQueue == 1)  // createComputeQueue
+                                              );
+        if (result != VK_SUCCESS) {
+
+            assert(!"Failed to create Vulkan device!");
+            return -1;
+        }
+
+        result = VkVideoEncoder::CreateVideoEncoder(&vkDevCtxt, encoderConfig, encoder);
+        if (result != VK_SUCCESS) {
+            assert(!"Can't initialize the Vulkan physical device!");
+            return -1;
+        }
+    }
+
+    // Enter the encoding frame loop
     uint32_t curFrameIndex = 0;
-    uint32_t asmFrameIndex = 0;
+    for(; curFrameIndex < encoderConfig->numFrames; curFrameIndex++) {
 
-    // Encoding loop
-    while (framesToProcess || numAsmBuffers) {
-
-        if (logBatchEnc) fprintf(stdout, "####################################################################################\n");
-        if (logBatchEnc) fprintf(stdout, "Process framesToProcess %d, numAsmBuffers %d\n", framesToProcess, numAsmBuffers);
-
-        // 1. Process the first/next batch of encode frames
-        // #################################################################################################################
-        uint32_t numFramesLoadRecordCmd = std::min((uint32_t)batchSize, framesToProcess);
-        assert(numFramesLoadRecordCmd <= batchSize);
-        uint32_t firstLoadRecordCmdIndx = batchId * batchSize;
-
-        if (logBatchEnc) fprintf(stdout, "### Load and record command buffer for encoder batchId %d, numFramesLoadRecordCmd %d ###\n", batchId, numFramesLoadRecordCmd);
-        for(uint32_t cpuBatchIdx = 0; cpuBatchIdx < numFramesLoadRecordCmd; cpuBatchIdx++) {
-            const uint32_t cpuFrameBufferIdx = firstLoadRecordCmdIndx + cpuBatchIdx;
-            if (logBatchEnc) fprintf(stdout, "\tloadFrame curFrameIndex %d, cpuBatchIdx %d, cpuFrameBufferIdx %d\n", curFrameIndex, cpuBatchIdx, cpuFrameBufferIdx);
-            // load frame data for the current frame index
-            encodeApp.LoadFrame(&programConfig, curFrameIndex, cpuFrameBufferIdx);
-            if (logBatchEnc) fprintf(stdout, "\tRecord frame curFrameIndex %d, cpuBatchIdx %d, cpuFrameBufferIdx %d\n", curFrameIndex, cpuBatchIdx, cpuFrameBufferIdx);
-            // encode frame for the current frame index
-            encodeApp.EncodeFrame(&programConfig, curFrameIndex, (curFrameIndex == 0), cpuFrameBufferIdx);
-            curFrameIndex++;
+        if (encoderConfig->verboseFrameStruct) {
+            std::cout << "####################################################################################" << std::endl
+                      << "Start processing current input frame index: " << curFrameIndex << std::endl;
         }
-        // #################################################################################################################
 
-        // 2. Submit the current batch to the encoder's queue
-        // #################################################################################################################
-        if (logBatchEnc) fprintf(stdout, "### Submit to the HW encoder batchId %d, numFramesLoadRecordCmd %d, firstLoadRecordCmdIndx %d ###\n", batchId, numFramesLoadRecordCmd, firstLoadRecordCmdIndx);
-        // submit the current batch
-        encodeApp.BatchSubmit(firstLoadRecordCmdIndx, numFramesLoadRecordCmd);
-        // #################################################################################################################
-
-        // 3. Assemble the frame data from the previous batch processing (if any) of the submitted to the HW encoded frames.
-        // #################################################################################################################
-        if (logBatchEnc) fprintf(stdout, "### Assemble firstAsmBufferIdx %d, numAsmBuffers %d ###\n", firstAsmBufferIdx, numAsmBuffers);
-        for(uint32_t asmBufferIdx = firstAsmBufferIdx; asmBufferIdx < firstAsmBufferIdx + numAsmBuffers; asmBufferIdx++) {
-            if (logBatchEnc) fprintf(stdout, "\tAssemble asmFrameIndex %d, asmBatchIdx %d\n", asmFrameIndex, asmBufferIdx);
-            encodeApp.AssembleBitstreamData(&programConfig, (asmFrameIndex == 0), asmBufferIdx);
-            asmFrameIndex++;
+        VkSharedBaseObj<VkVideoEncoder::VkVideoEncodeFrameInfo> encodeFrameInfo;
+        encoder->GetAvailablePoolNode(encodeFrameInfo);
+        assert(encodeFrameInfo);
+        // load frame data from the file
+        result = encoder->LoadNextFrame(encodeFrameInfo);
+        if (result != VK_SUCCESS) {
+            std::cout << "ERROR processing input frame index: " << curFrameIndex << std::endl;
+            break;
         }
-        // #################################################################################################################
 
-        // Assemble frames with submitted firstSubmitFrameId and batchSize.
-        firstAsmBufferIdx = firstLoadRecordCmdIndx;
-        numAsmBuffers     = numFramesLoadRecordCmd;
-
-        framesToProcess -= numFramesLoadRecordCmd;
-
-        assert(framesToProcess < programConfig.numFrames);
-
-        // increment the current batchID
-        batchId++;
-        batchId %= numBatches;
-        if (logBatchEnc) fprintf(stdout, "####################################################################################\n\n");
+        if (encoderConfig->verboseFrameStruct) {
+            std::cout << "End processing current input frame index: " << curFrameIndex << std::endl;
+        }
     }
 
-    if(closeFiles(&programConfig))
-        return -1;
+    encoder->WaitForThreadsToComplete();
 
+    std::cout << "Done processing " << curFrameIndex << " input frames!" << std::endl
+              << "Encoded file's location is at " << encoderConfig->outputFileHandler.GetFileName()
+              << std::endl;
     return 0;
 }

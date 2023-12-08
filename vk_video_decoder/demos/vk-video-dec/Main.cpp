@@ -20,10 +20,11 @@
 #include <vector>
 #include <cstring>
 #include <cstdio>
+
 #include "VkCodecUtils/VulkanDeviceContext.h"
-#include "VkCodecUtils/FrameProcessorFactory.h"
 #include "VkCodecUtils/ProgramConfig.h"
 #include "VkCodecUtils/VulkanVideoProcessor.h"
+#include "VkCodecUtils/VulkanDecoderFrameProcessor.h"
 #include "VkShell/Shell.h"
 
 int main(int argc, const char **argv) {
@@ -123,7 +124,7 @@ int main(int argc, const char **argv) {
             reqDeviceExtensions.data(),
             optinalDeviceExtension);
 
-    VkResult result = vkDevCtxt.InitVulkanDevice(programConfig.name.c_str(),
+    VkResult result = vkDevCtxt.InitVulkanDevice(programConfig.appName.c_str(),
                                                  programConfig.verbose);
     if (result != VK_SUCCESS) {
         printf("Could not initialize the Vulkan device!\n");
@@ -132,18 +133,6 @@ int main(int argc, const char **argv) {
 
     result = vkDevCtxt.InitDebugReport(programConfig.validate,
                                        programConfig.validateVerbose);
-    if (result != VK_SUCCESS) {
-        return -1;
-    }
-
-    VkSharedBaseObj<VulkanVideoProcessor> vulkanVideoProcessor;
-    result = VulkanVideoProcessor::Create(&vkDevCtxt, vulkanVideoProcessor);
-    if (result != VK_SUCCESS) {
-        return -1;
-    }
-
-    VkSharedBaseObj<FrameProcessor> frameProcessor;
-    result = CreateFrameProcessor(programConfig, &vkDevCtxt, vulkanVideoProcessor, frameProcessor);
     if (result != VK_SUCCESS) {
         return -1;
     }
@@ -158,24 +147,38 @@ int main(int argc, const char **argv) {
                                                VK_QUEUE_TRANSFER_BIT;
 
     VkQueueFlags requestVideoEncodeQueueMask = 0;
-#ifdef DECODER_ADD_ENCODER_QUEUE
-#ifdef VK_ENABLE_BETA_EXTENSIONS
-    requestVideoEncodeQueueMask |= VK_QUEUE_VIDEO_ENCODE_BIT_KHR |
-                                   VK_QUEUE_TRANSFER_BIT;
-#endif // VK_ENABLE_BETA_EXTENSIONS
-#endif // DECODER_ADD_ENCODER_QUEUE
+    if (programConfig.enableVideoEncoder) {
+        requestVideoEncodeQueueMask |= VK_QUEUE_VIDEO_ENCODE_BIT_KHR |
+                                       VK_QUEUE_TRANSFER_BIT;
+    }
 
     if (programConfig.selectVideoWithComputeQueue) {
         requestVideoDecodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
-#ifdef DECODER_ADD_ENCODER_QUEUE
-        requestVideoEncodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
-#endif // DECODER_ADD_ENCODER_QUEUE
+        if (programConfig.enableVideoEncoder) {
+            requestVideoEncodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
+        }
+    }
+
+    VkSharedBaseObj<VulkanVideoProcessor> vulkanVideoProcessor;
+    result = VulkanVideoProcessor::Create(&vkDevCtxt, vulkanVideoProcessor);
+    if (result != VK_SUCCESS) {
+        return -1;
+    }
+
+    VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>> videoQueue(vulkanVideoProcessor);
+    VkSharedBaseObj<FrameProcessor> frameProcessor;
+    result = CreateDecoderFrameProcessor(&vkDevCtxt, videoQueue, frameProcessor);
+    if (result != VK_SUCCESS) {
+        return -1;
     }
 
     if (supportsDisplay && !programConfig.noPresent) {
 
+        const Shell::Configuration configuration(programConfig.appName.c_str(),
+                                                 programConfig.backBufferCount,
+                                                 programConfig.directMode);
         VkSharedBaseObj<Shell> displayShell;
-        result = Shell::Create(&vkDevCtxt, frameProcessor, programConfig.directMode, displayShell);
+        result = Shell::Create(&vkDevCtxt, configuration, frameProcessor, displayShell);
         if (result != VK_SUCCESS) {
             assert(!"Can't allocate display shell! Out of memory!");
             return -1;
@@ -187,8 +190,8 @@ int main(int argc, const char **argv) {
                                                (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
                                                 VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR),
                                                requestVideoEncodeQueueMask,
-                                               (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT |
-                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_EXT));
+                                               (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
+                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR));
         if (result != VK_SUCCESS) {
 
             assert(!"Can't initialize the Vulkan physical device!");
@@ -198,10 +201,10 @@ int main(int argc, const char **argv) {
                                                    vkDevCtxt.GetPresentQueueFamilyIdx()));
 
         vkDevCtxt.CreateVulkanDevice(numDecodeQueues,
-                                     0,    // num encode queues
+                                     programConfig.enableVideoEncoder ? 1 : 0, // num encode queues
                                      true, // createGraphicsQueue
                                      true, // createDisplayQueue
-                                     true // createComputeQueue
+                                     true  // createComputeQueue
                                      );
         vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig);
 

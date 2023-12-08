@@ -105,7 +105,6 @@ public:
         return m_ppsIdsUsed[ppsId];
     }
 
-
     bool UpdatePictureParametersHierarchy(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersObject);
 
     VkResult AddPictureParametersToQueue(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet);

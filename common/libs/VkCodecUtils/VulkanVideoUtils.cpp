@@ -506,8 +506,8 @@ VkResult VulkanGraphicsPipeline::CreatePipeline(const VulkanDeviceContext* vkDev
 
     const bool verbose = false;
 
-    if (verbose) printf("\nVertex shader output code:\n %s", vss);
-    if (verbose) printf("\nFragment shader output code:\n %s", imageFss.str().c_str());
+    if (false) printf("\nVertex shader output code:\n %s", vss);
+    if (false) printf("\nFragment shader output code:\n %s", imageFss.str().c_str());
 
     const bool loadShadersFromFile = false;
     if (loadShadersFromFile) {
@@ -943,126 +943,6 @@ VkResult VulkanRenderInfo::CreatePerDrawContexts(const VulkanDeviceContext* vkDe
     }
 
     return result;
-}
-
-VkResult VulkanRenderInfo::WaitCurrentSwapcahinDraw(VulkanSwapchainInfo* pSwapchainInfo, VulkanPerDrawContext* pPerDrawContext, uint64_t timeoutNsec) {
-
-    return m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &pPerDrawContext->syncPrimitives.mFence, VK_TRUE, timeoutNsec);
-}
-
-int32_t VulkanRenderInfo::GetNextSwapchainBuffer(
-        VulkanSwapchainInfo* pSwapchainInfo, VulkanPerDrawContext* pPerDrawContext,
-        uint64_t timeoutNsec)
-{
-    lastBuffer = currentBuffer;
-
-    VkSemaphore* pPresentCompleteSemaphore = pSwapchainInfo->GetPresentSemaphoreInFly();
-
-    // Acquire the next image from the swap chain
-    VkResult err = m_vkDevCtx->AcquireNextImageKHR(*m_vkDevCtx, pSwapchainInfo->mSwapchain,
-                       UINT64_MAX, *pPresentCompleteSemaphore, VK_NULL_HANDLE,
-                       &currentBuffer);
-
-    pSwapchainInfo->SetPresentSemaphoreInFly(currentBuffer, pPresentCompleteSemaphore);
-
-    // Recreate the swapchain if it's no longer compatible with the surface
-    // (OUT_OF_DATE) or no longer optimal for presentation (SUBOPTIMAL)
-    if ((err == VK_ERROR_OUT_OF_DATE_KHR) || (err == VK_SUBOPTIMAL_KHR)) {
-        // pWindowInfo->WindowResize();
-        return -1;
-    } else {
-        CALL_VK(err);
-    }
-
-    if (timeoutNsec) {
-    // Use a fence to wait until the command buffer has finished execution before
-    // using it again
-        CALL_VK(m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1,
-                            &pPerDrawContext->syncPrimitives.mFence,
-                            VK_TRUE, timeoutNsec));
-    }
-
-    return (int32_t)currentBuffer;
-}
-
-// Draw one frame
-VkResult VulkanRenderInfo::DrawFrame(const VulkanDeviceContext* vkDevCtx,
-        VulkanSwapchainInfo* pSwapchainInfo, int64_t presentTimestamp,
-        VulkanPerDrawContext* pPerDrawContext,
-        uint32_t commandBufferCount)
-{
-    CALL_VK(m_vkDevCtx->ResetFences(vkDevCtx->getDevice(), 1, &pPerDrawContext->syncPrimitives.mFence));
-
-    VkPipelineStageFlags waitStageMask =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    VkSubmitInfo submit_info = VkSubmitInfo();
-    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit_info.pNext = nullptr;
-    submit_info.waitSemaphoreCount = 1;
-    submit_info.pWaitSemaphores = pSwapchainInfo->GetPresentSemaphore(currentBuffer);
-    submit_info.pWaitDstStageMask = &waitStageMask;
-    submit_info.commandBufferCount = commandBufferCount;
-    submit_info.pCommandBuffers = pPerDrawContext->commandBuffer.getCommandBuffer();
-    submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &pPerDrawContext->syncPrimitives.mRenderCompleteSemaphore;
-    CALL_VK(m_vkDevCtx->QueueSubmit(vkDevCtx->GetGfxQueue(), 1, &submit_info, pPerDrawContext->syncPrimitives.mFence));
-
-
-    // check VK_KHR_display_control, VK_GOOGLE_display_timing
-    VkResult result;
-    VkPresentInfoKHR presentInfo = VkPresentInfoKHR();
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.pNext = nullptr;
-    presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &pSwapchainInfo->mSwapchain;
-    presentInfo.pImageIndices = &currentBuffer;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &pPerDrawContext->syncPrimitives.mRenderCompleteSemaphore;
-    presentInfo.pResults = &result;
-
-#ifdef VK_GOOGLE_display_timing
-    VkPresentTimeGOOGLE presentTime;
-    VkPresentTimesInfoGOOGLE presentTimesInfo;
-    if (pSwapchainInfo->mDisplayTiming.DisplayTimingIsEnabled()) {
-        presentTime.presentID = frameId;
-        presentTime.desiredPresentTime = presentTimestamp;
-
-        presentTimesInfo.sType = VK_STRUCTURE_TYPE_PRESENT_TIMES_INFO_GOOGLE;
-        presentTimesInfo.pNext = nullptr;
-        presentTimesInfo.swapchainCount = 1;
-        presentTimesInfo.pTimes = &presentTime;
-
-        presentInfo.pNext = &presentTimesInfo;
-    }
-#endif // VK_GOOGLE_display_timing
-    m_vkDevCtx->QueuePresentKHR(vkDevCtx->GetGfxQueue(), &presentInfo);
-
-    frameId++;
-
-    return VK_SUCCESS;
-}
-
-VkResult AllocateMemoryTypeFromProperties(const VulkanDeviceContext* vkDevCtx,
-        uint32_t typeBits,
-        VkFlags requirements_mask,
-        uint32_t *typeIndex)
-{
-    VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties = VkPhysicalDeviceMemoryProperties();
-    vkDevCtx->GetMemoryProperties(physicalDeviceMemoryProperties);
-    // Search memtypes to find first index with those properties
-    for (uint32_t i = 0; i < 32; i++) {
-        if ((typeBits & 1) == 1) {
-            // Type is available, does it match user properties?
-            if ((physicalDeviceMemoryProperties.memoryTypes[i].propertyFlags &
-                    requirements_mask) == requirements_mask) {
-                *typeIndex = i;
-                return VK_SUCCESS;
-            }
-        }
-        typeBits >>= 1;
-    }
-    // No memory types matched, return failure
-    return VK_ERROR_MEMORY_MAP_FAILED;
 }
 
 void setImageLayout(const VulkanDeviceContext* vkDevCtx,
