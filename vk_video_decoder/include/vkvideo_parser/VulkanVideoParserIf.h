@@ -232,6 +232,7 @@ typedef struct VkParserHevcPictureData {
 
     uint8_t IrapPicFlag;
     uint8_t IdrPicFlag;
+    uint8_t short_term_ref_pic_set_sps_flag;
 
     // RefPicSets
     int32_t NumBitsForShortTermRPSInSlice;
