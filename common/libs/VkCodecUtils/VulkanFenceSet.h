@@ -55,8 +55,11 @@ public:
         }
     }
 
-    VkFence getFence(uint32_t fenceIdx = 0) const {
-        return m_fences[fenceIdx];
+    VkFence GetFence(uint32_t fenceIdx = 0) const {
+        if (fenceIdx < m_fences.size()) {
+            return m_fences[fenceIdx];
+        }
+        return VK_NULL_HANDLE;
     }
 
     virtual ~VulkanFenceSet() {

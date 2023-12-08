@@ -21,7 +21,7 @@
 #include <iostream>
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/VulkanDeviceMemoryImpl.h"
-#include "vkvideo_parser/VulkanBitstreamBuffer.h"
+#include "VkCodecUtils/VulkanBitstreamBuffer.h"
 
 class VulkanBitstreamBufferImpl : public VulkanBitstreamBuffer
 {

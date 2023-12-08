@@ -24,56 +24,7 @@
 #include "vkvideo_parser/VulkanVideoParser.h"
 #include "vulkan_interfaces.h"
 #include "VkCodecUtils/VkImageResource.h"
-
-struct DecodedFrame {
-    int32_t pictureIndex;
-    uint32_t imageLayerIndex; // The layer of a multi-layered images. Always "0" for single layered images
-    int32_t displayWidth;
-    int32_t displayHeight;
-    VkSharedBaseObj<VkImageResourceView> decodedImageView;
-    VkSharedBaseObj<VkImageResourceView> outputImageView;
-    VkFence frameCompleteFence; // If valid, the fence is signaled when the decoder is done decoding the frame.
-    VkFence frameConsumerDoneFence; // If valid, the fence is signaled when the consumer (graphics, compute or display) is done using the frame.
-    VkSemaphore frameCompleteSemaphore; // If valid, the semaphore is signaled when the decoder is done decoding the frame.
-    VkSemaphore frameConsumerDoneSemaphore; // If valid, the semaphore is signaled when the consumer (graphics, compute or display) is done using the frame.
-    VkQueryPool queryPool; // queryPool handle used for the video queries.
-    int32_t startQueryId;  // query Id used for the this frame.
-    uint32_t numQueries;   // usually one query per frame
-    // If multiple queues are available, submittedVideoQueueIndex is the queue index that the video frame was submitted to.
-    // if only one queue is available, submittedVideoQueueIndex will always have a value of "0".
-    int32_t  submittedVideoQueueIndex;
-    uint64_t timestamp;
-    uint64_t decodeOrder;
-    uint32_t hasConsummerSignalFence : 1;
-    uint32_t hasConsummerSignalSemaphore : 1;
-    // For debugging
-    int32_t displayOrder;
-
-    void Reset()
-    {
-        pictureIndex = -1;
-        imageLayerIndex = 0;
-        displayWidth = 0;
-        displayHeight = 0;
-        decodedImageView  = nullptr;
-        outputImageView = nullptr;
-        frameCompleteFence = VkFence();
-        frameConsumerDoneFence = VkFence();
-        frameCompleteSemaphore = VkSemaphore();
-        frameConsumerDoneSemaphore = VkSemaphore();
-        queryPool = VkQueryPool();
-        startQueryId = 0;
-        numQueries = 0;
-        submittedVideoQueueIndex = 0;
-        timestamp = 0;
-        hasConsummerSignalFence = false;
-        hasConsummerSignalSemaphore = false;
-        // For debugging
-        decodeOrder = 0;
-        displayOrder = 0;
-    }
-
-};
+#include "VkCodecUtils/VulkanDecodedFrame.h"
 
 struct DecodedFrameRelease {
     int32_t pictureIndex;
@@ -81,7 +32,7 @@ struct DecodedFrameRelease {
     uint32_t hasConsummerSignalFence : 1;
     uint32_t hasConsummerSignalSemaphore : 1;
     // For debugging
-    int32_t displayOrder;
+    uint64_t displayOrder;
     uint64_t decodeOrder;
 };
 
@@ -149,7 +100,7 @@ public:
     virtual int32_t QueuePictureForDecode(int8_t picId, VkParserDecodePictureInfo* pDecodePictureInfo,
                                           ReferencedObjectsInfo* pReferencedObjectsInfo,
                                           FrameSynchronizationInfo* pFrameSynchronizationInfo) = 0;
-    virtual int32_t DequeueDecodedPicture(DecodedFrame* pDecodedFrame) = 0;
+    virtual int32_t DequeueDecodedPicture(VulkanDecodedFrame* pDecodedFrame) = 0;
     virtual int32_t ReleaseDisplayedPicture(DecodedFrameRelease** pDecodedFramesRelease, uint32_t numFramesToRelease) = 0;
     virtual int32_t GetDpbImageResourcesByIndex(uint32_t numResources, const int8_t* referenceSlotIndexes,
                                                 VkVideoPictureResourceInfoKHR* pictureResources,

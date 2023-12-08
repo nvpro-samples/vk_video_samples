@@ -14,26 +14,22 @@
 * limitations under the License.
 */
 
-#ifndef SMOKE_H
-#define SMOKE_H
+#ifndef _VKCODECUTILS_VULKANFRAME_H_
+#define _VKCODECUTILS_VULKANFRAME_H_
 
-#include <condition_variable>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <thread>
 #include <vector>
 
-#include "VkVideoDecoder/VkVideoDecoder.h"
 #include "VkCodecUtils/FrameProcessor.h"
-#include "VkCodecUtils/VulkanVideoProcessor.h"
+#include "VkCodecUtils/VkVideoQueue.h"
 
+template<class FrameDataType>
 class VulkanFrame : public FrameProcessor {
 public:
 
-    static VkResult Create(const ProgramConfig& programConfig,
-                           const VulkanDeviceContext* vkDevCtx,
-                           VkSharedBaseObj<VulkanVideoProcessor>& videoProcessor,
+    static VkResult Create(const VulkanDeviceContext* vkDevCtx,
+                           VkSharedBaseObj<VkVideoQueue<FrameDataType>>& videoQueue,
                            VkSharedBaseObj<VulkanFrame>& frameProcessor);
 
     virtual int32_t AddRef()
@@ -65,8 +61,7 @@ public:
                           uint32_t           waitSemaphoreCount = 0,
                           const VkSemaphore* pWaitSemaphores  = nullptr,
                           uint32_t           signalSemaphoreCount = 0,
-                          const VkSemaphore* pSignalSemaphores = nullptr,
-                          const DecodedFrame** ppOutFrame = nullptr);
+                          const VkSemaphore* pSignalSemaphores = nullptr);
 
 
     VkResult DrawFrame( int32_t           renderIndex,
@@ -74,25 +69,21 @@ public:
                        const VkSemaphore* pWaitSemaphores,
                        uint32_t           signalSemaphoreCount,
                        const VkSemaphore* pSignalSemaphores,
-                       DecodedFrame*      inFrame);
-
-    int GetVideoWidth();
-    int GetVideoHeight();
+                       FrameDataType*     inFrame);
 
     // called by attach_swapchain
     void PrepareViewport(const VkExtent2D& extent);
 
 private:
-    VulkanFrame(const ProgramConfig& programConfig,
-                const VulkanDeviceContext* vkDevCtx,
-                VkSharedBaseObj<VulkanVideoProcessor>& videoProcessor);
+    VulkanFrame(const VulkanDeviceContext* vkDevCtx,
+                VkSharedBaseObj<VkVideoQueue<FrameDataType>>& videoProcessor);
     virtual ~VulkanFrame();
 
 private:
     std::atomic<int32_t>                  m_refCount;
     const VulkanDeviceContext*            m_vkDevCtx;
     // Decoder specific members
-    VkSharedBaseObj<VulkanVideoProcessor> m_videoProcessor;
+    VkSharedBaseObj<VkVideoQueue<FrameDataType>> m_videoQueue;
 public:
 
     VkSamplerYcbcrModelConversion         m_samplerYcbcrModelConversion;
@@ -105,12 +96,7 @@ public:
     VkPhysicalDeviceProperties            m_physicalDevProps;
     std::vector<VkMemoryPropertyFlags>    m_memFlags;
 
-    struct FrameData {
-        // signaled when this struct is ready for reuse
-        DecodedFrame lastDecodedFrame;
-    };
-
-    std::vector<FrameData>                m_frameData;
+    std::vector<FrameDataType>            m_frameData;
     int                                   m_frameDataIndex;
 
     VkExtent2D                            m_extent;
@@ -118,4 +104,4 @@ public:
     VkRect2D                              m_scissor;
 };
 
-#endif // HOLOGRAM_H
+#endif // _VKCODECUTILS_VULKANFRAME_H_

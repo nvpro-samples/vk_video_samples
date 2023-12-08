@@ -80,11 +80,11 @@ public:
 
     virtual VkSemaphore GetFilterWaitSemaphore(uint32_t frameIdx) const
     {
-        return m_filterWaitSemaphoreSet.getSemaphore(frameIdx);
+        return m_filterWaitSemaphoreSet.GetSemaphore(frameIdx);
     }
 
     virtual VkFence GetFilterSignalFence(uint32_t frameIdx) const {
-        return m_filterCompleteFenceSet.getFence(frameIdx);
+        return m_filterCompleteFenceSet.GetFence(frameIdx);
     }
 
     virtual VkResult RecordCommandBuffer(uint32_t frameIdx,
@@ -95,7 +95,7 @@ public:
     {
 
         static const uint64_t fenceWaitTimeout = 100 * 1000 * 1000 /* 100 mSec */;
-        VkFence frameCompleteFence = m_filterCompleteFenceSet.getFence(frameIdx);
+        VkFence frameCompleteFence = m_filterCompleteFenceSet.GetFence(frameIdx);
         assert(frameCompleteFence != VK_NULL_HANDLE);
         VkResult result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameCompleteFence, true, fenceWaitTimeout);
         if (result != VK_SUCCESS) {
@@ -106,7 +106,7 @@ public:
         VkCommandBufferBeginInfo cmdBufferBeginInfo {};
         cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
-        VkCommandBuffer cmdBuf = *m_commandBuffersSet.getCommandBuffer((uint32_t)frameIdx);
+        VkCommandBuffer cmdBuf = *m_commandBuffersSet.GetCommandBuffer((uint32_t)frameIdx);
 
         result = m_vkDevCtx->BeginCommandBuffer(cmdBuf, &cmdBufferBeginInfo);
         if (result != VK_SUCCESS) {
@@ -334,7 +334,7 @@ public:
     }
 
     virtual uint32_t GetSubmitCommandBuffers(uint32_t frameIdx, const VkCommandBuffer** ppCommandBuffers) const {
-        *ppCommandBuffers = m_commandBuffersSet.getCommandBuffer(frameIdx);
+        *ppCommandBuffers = m_commandBuffersSet.GetCommandBuffer(frameIdx);
         return 1;
     }
 

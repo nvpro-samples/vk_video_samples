@@ -24,7 +24,7 @@
 class ShellWin32 : public Shell {
 
 public:
-    ShellWin32(const VulkanDeviceContext* vkDevCtx, VkSharedBaseObj<FrameProcessor>& frameProcessor);
+    ShellWin32(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration, VkSharedBaseObj<FrameProcessor>& frameProcessor);
     virtual ~ShellWin32();
 
     static const char* GetRequiredInstanceExtension();

@@ -106,6 +106,11 @@ public:
 
     VkVideoSessionKHR GetVideoSession() const { return m_videoSession; }
 
+    operator VkVideoSessionKHR() const {
+        assert(m_videoSession != VK_NULL_HANDLE);
+        return m_videoSession;
+    }
+
 private:
 
     VulkanVideoSession(const VulkanDeviceContext* vkDevCtx,

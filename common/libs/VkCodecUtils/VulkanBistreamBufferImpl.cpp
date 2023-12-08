@@ -15,7 +15,7 @@
 */
 
 #include <string.h>
-#include "VkVideoDecoder/VulkanBistreamBufferImpl.h"
+#include "VkCodecUtils/VulkanBistreamBufferImpl.h"
 #include "VkCodecUtils/Helpers.h"
 
 VkResult

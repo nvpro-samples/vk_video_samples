@@ -80,6 +80,27 @@ public:
         Reset(newObject.Get());
     }
 
+    // Move Constructor
+    VkSharedBaseObj(VkSharedBaseObj<VkBaseObjType>&& other) noexcept
+        : m_sharedObject(other.m_sharedObject) {
+        other.m_sharedObject = nullptr; // Set 'other' to a valid but empty state
+    }
+
+    // Move Assignment Operator
+    VkSharedBaseObj<VkBaseObjType>& operator=(VkSharedBaseObj<VkBaseObjType>&& other) noexcept {
+        if (this != &other) {
+            // Release current object if any
+            if (m_sharedObject) {
+                m_sharedObject->Release();
+            }
+
+            // Transfer ownership
+            m_sharedObject = other.m_sharedObject;
+            other.m_sharedObject = nullptr; // Set 'other' to a valid but empty state
+        }
+        return *this;
+    }
+
     ~VkSharedBaseObj()
     {
         Reset(nullptr);

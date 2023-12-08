@@ -539,7 +539,7 @@ public:
     }
 
     // dequeue
-    virtual int32_t DequeueDecodedPicture(DecodedFrame* pDecodedFrame)
+    virtual int32_t DequeueDecodedPicture(VulkanDecodedFrame* pDecodedFrame)
     {
         int numberofPendingFrames = 0;
         int pictureIndex = -1;
@@ -560,8 +560,8 @@ public:
 
             pDecodedFrame->imageLayerIndex = m_perFrameDecodeImageSet[pictureIndex].m_picDispInfo.imageLayerIndex;
 
-            pDecodedFrame->decodedImageView = m_perFrameDecodeImageSet[pictureIndex].GetFrameImageView();
-            pDecodedFrame->outputImageView = m_perFrameDecodeImageSet[pictureIndex].GetDisplayImageView();
+            pDecodedFrame->dpbImageView = m_perFrameDecodeImageSet[pictureIndex].GetFrameImageView();
+            pDecodedFrame->imageView = m_perFrameDecodeImageSet[pictureIndex].GetDisplayImageView();
 
             pDecodedFrame->displayWidth  = m_perFrameDecodeImageSet[pictureIndex].m_picDispInfo.displayWidth;
             pDecodedFrame->displayHeight = m_perFrameDecodeImageSet[pictureIndex].m_picDispInfo.displayHeight;

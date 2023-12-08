@@ -21,6 +21,67 @@
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 #include "VkImageResource.h"
 
+VkImageResource::VkImageResource(const VulkanDeviceContext* vkDevCtx,
+                const VkImageCreateInfo* pImageCreateInfo,
+                VkImage image, VkDeviceSize imageOffset, VkDeviceSize imageSize,
+                VkSharedBaseObj<VulkanDeviceMemoryImpl>& vulkanDeviceMemory)
+   : m_refCount(0), m_imageCreateInfo(*pImageCreateInfo), m_vkDevCtx(vkDevCtx)
+   , m_image(image), m_imageOffset(imageOffset), m_imageSize(imageSize)
+   , m_vulkanDeviceMemory(vulkanDeviceMemory), m_layouts{}
+   , m_isLinearImage(false), m_is16Bit(false), m_isSubsampledX(false), m_isSubsampledY(false) {
+
+    const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(pImageCreateInfo->format);
+
+    m_isSubsampledX = (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledX);
+    m_isSubsampledY = (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledY);
+
+    // Treat all non 8bpp formats as 16bpp for output to prevent any loss.
+    m_is16Bit = (mpInfo->planesLayout.bpp != YCBCRA_8BPP);
+
+    VkMemoryPropertyFlags memoryPropertyFlags = vulkanDeviceMemory->GetMemoryPropertyFlags();
+    if ((memoryPropertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
+        return;
+    }
+
+    m_isLinearImage = true;
+    bool isUnnormalizedRgba = false;
+    if (mpInfo && (mpInfo->planesLayout.layout == YCBCR_SINGLE_PLANE_UNNORMALIZED) && !(mpInfo->planesLayout.disjoint)) {
+        isUnnormalizedRgba = true;
+    }
+
+    VkImageSubresource subResource = {};
+    if (mpInfo && !isUnnormalizedRgba) {
+        switch (mpInfo->planesLayout.layout) {
+            case YCBCR_SINGLE_PLANE_UNNORMALIZED:
+            case YCBCR_SINGLE_PLANE_INTERLEAVED:
+                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
+                m_vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, image, &subResource, &m_layouts[0]);
+                break;
+            case YCBCR_SEMI_PLANAR_CBCR_INTERLEAVED:
+                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
+                m_vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, image, &subResource, &m_layouts[0]);
+                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
+                m_vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, image, &subResource, &m_layouts[1]);
+                break;
+            case YCBCR_PLANAR_CBCR_STRIDE_INTERLEAVED:
+            case YCBCR_PLANAR_CBCR_BLOCK_JOINED:
+            case YCBCR_PLANAR_STRIDE_PADDED:
+                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
+                m_vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, image, &subResource, &m_layouts[0]);
+                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
+                m_vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, image, &subResource, &m_layouts[1]);
+                subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_2_BIT;
+                m_vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, image, &subResource, &m_layouts[2]);
+                break;
+            default:
+                assert(0);
+        }
+
+    } else {
+        m_vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, image, &subResource, &m_layouts[0]);
+    }
+}
+
 VkResult VkImageResource::Create(const VulkanDeviceContext* vkDevCtx,
                                  const VkImageCreateInfo* pImageCreateInfo,
                                  VkMemoryPropertyFlags memoryPropertyFlags,
@@ -47,9 +108,9 @@ VkResult VkImageResource::Create(const VulkanDeviceContext* vkDevCtx,
         result = VulkanDeviceMemoryImpl::Create(vkDevCtx,
                                                 memoryRequirements,
                                                 memoryPropertyFlags,
-                                                nullptr, // pInitializeMemory
+                                                nullptr,  // pInitializeMemory
                                                 0ULL,     // initializeMemorySize
-                                                false,   // clearMemory
+                                                false,    // clearMemory
                                                 vkDeviceMemory);
         if (result != VK_SUCCESS) {
             assert(!"Create Memory Failed!");

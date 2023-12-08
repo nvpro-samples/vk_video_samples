@@ -18,29 +18,29 @@
 #define VK_ENCODER_DPB_264_H
 
 #include "VkVideoEncoderDef.h"
-
-enum dpb_state_e { DPB_EMPTY = 0, DPB_TOP, DPB_BOTTOM, DPB_FRAME };
+#include "VkCodecUtils/VulkanVideoImagePool.h"
 
 struct RefPicListEntry {
     int32_t dpbIndex;
 };
 
-typedef struct VkEncDpbEntry {
+struct DpbEntryH264 {
     // DPB attributes
     StdVideoEncodeH264PictureInfo picInfo;
 
-    int32_t state;
-    bool top_needed_for_output;
-    bool bottom_needed_for_output;
-    bool top_decoded_first;
-    bool reference_picture;
-    bool complementary_field_pair;
-    bool not_existing;
+    uint32_t state : 2;
+    uint32_t top_needed_for_output : 1;
+    uint32_t bottom_needed_for_output : 1;
+    uint32_t top_decoded_first : 1;
+    uint32_t reference_picture : 1;
+    uint32_t complementary_field_pair : 1;
+    uint32_t not_existing : 1;
+    uint32_t frame_is_corrupted : 1;
 
     // reference_frame_attributes
-    int32_t top_field_marking;     // unused, short term, longterm
-    int32_t bottom_field_marking;  // unused, short term, longterm
-    int32_t LongTermFrameIdx;
+    uint32_t top_field_marking  : 2;     // unused, short term, longterm
+    uint32_t bottom_field_marking : 2;  // unused, short term, longterm
+    int32_t  longTermFrameIdx;
 
     int32_t topFOC;
     int32_t bottomFOC;
@@ -51,72 +51,70 @@ typedef struct VkEncDpbEntry {
     int32_t topLongTermPicNum;
     int32_t bottomLongTermPicNum;
 
-    int32_t fb_index;  // index for yuv buffer, col and tempmv buffers..
+    // The YCbCr dpb image resource
+    VkSharedBaseObj<VulkanVideoImagePoolNode>  dpbImageView;
 
     // MVC
     uint32_t view_id;
 
     uint64_t timeStamp;
-    bool bFrameCorrupted;
-    uint64_t refFrameTimeStamp;
-
-} VkEncDpbEntry;
-
-struct DpbPicInfo {
-    uint32_t frameNum;
-    int32_t PicOrderCnt;
-    StdVideoH26XPictureType pictureType;
-
-    bool isLongTerm;
-    bool field_pic_flag;
-    bool bottom_field_flag;
-    bool isRef;
-    bool isIDR;
-    bool no_output_of_prior_pics_flag;
-    bool adaptive_ref_pic_marking_mode_flag;
-
-    uint64_t timeStamp;
-    uint32_t pictureIdx;
     uint64_t refFrameTimeStamp;
 };
 
-typedef bool (*PFNSORTCHECK)(const VkEncDpbEntry *, StdVideoH264PocType, int32_t *);
+struct PicInfoH264 : public StdVideoEncodeH264PictureInfo {
+    uint32_t field_pic_flag : 1;
+    uint32_t bottom_field_flag : 1;
+    uint64_t timeStamp;
+};
+
+typedef bool (*ptrFuncDpbSort)(const DpbEntryH264 *, StdVideoH264PocType, int32_t *);
 
 template < uint32_t MAX_PIC_REFS >
 struct NvVideoEncodeH264DpbSlotInfoLists {
 
-    NvVideoEncodeH264DpbSlotInfoLists() : refPicList0Count(0), refPicList1Count(0), dpbSlotsUseMask(0)
-    {
-        memset(refPicList0, 0, sizeof(refPicList0));
-        memset(refPicList1, 0, sizeof(refPicList1));
-    }
+    NvVideoEncodeH264DpbSlotInfoLists()
+        : refPicListCount{}
+        , dpbSlotsUseMask(0)
+        , refPicList{}
+    { }
 
-    uint32_t refPicList0Count;
-    uint32_t refPicList1Count;
+    uint32_t refPicListCount[2];
     uint32_t dpbSlotsUseMask;
-    uint8_t refPicList0[MAX_REFS];
-    uint8_t refPicList1[MAX_REFS];
+    uint8_t refPicList[2][MAX_PIC_REFS];
 };
 
 class VkEncDpbH264
 {
 public:
+
+    enum { MAX_DPB_SLOTS = 16 };
+
     VkEncDpbH264(void);
     ~VkEncDpbH264();
 
 public:
+    // 1. Init instance
     static VkEncDpbH264 *CreateInstance(void);
+    // 2. Init encode session
     int32_t DpbSequenceStart(int32_t userDpbSize = 0);
-    int32_t DpbPictureStart(const DpbPicInfo *pDPBPicInfo, const StdVideoH264SequenceParameterSet *sps);
-    int32_t DpbPictureEnd(const StdVideoH264SequenceParameterSet *sps, const StdVideoEncodeH264SliceHeader *slh,
-                          const StdVideoEncodeH264ReferenceListsInfo *ref);
+    // 3. Start Picture - returns the allocated DPB index for this frame
+    int8_t DpbPictureStart(const PicInfoH264 *pPicInfo,
+                           const StdVideoH264SequenceParameterSet *sps);
+    // 3. End Picture
+    int8_t DpbPictureEnd(const PicInfoH264 *pPicInfo,
+                         VkSharedBaseObj<VulkanVideoImagePoolNode>&  dpbImageView,
+                         const StdVideoH264SequenceParameterSet *sps,
+                         const StdVideoEncodeH264SliceHeader *slh,
+                         const StdVideoEncodeH264ReferenceListsInfo *ref,
+                         uint32_t maxMemMgmntCtrlOpsCommands);
     int32_t GetPicturePOC(int32_t picIndexField);
     void DpbDestroy();
-    void GetRefPicList(NvVideoEncodeH264DpbSlotInfoLists<2 * MAX_REFS>* pDpbSlotInfoLists,
+    void GetRefPicList(const PicInfoH264 *pPicInfo,
+                       NvVideoEncodeH264DpbSlotInfoLists<STD_VIDEO_H264_MAX_NUM_LIST_REF>* pDpbSlotInfoLists,
                        const StdVideoH264SequenceParameterSet *sps, const StdVideoH264PictureParameterSet *pps,
                        const StdVideoEncodeH264SliceHeader *slh, const StdVideoEncodeH264ReferenceListsInfo *ref,
                        bool bSkipCorruptFrames = false);
-    int32_t GetRefPicIdx(int32_t dpbIdx);
+    bool GetRefPicture(int8_t dpbIdx, VkSharedBaseObj<VulkanVideoImagePoolNode>&  dpbImageView);
     int32_t GetMaxDPBSize()
     {
         return m_max_dpb_size;
@@ -125,7 +123,6 @@ public:
     int32_t GetPicNumXWithMinPOC(uint32_t view_id, int32_t field_pic_flag, int32_t bottom_field);
     int32_t GetPicNumXWithMinFrameNumWrap(uint32_t view_id, int32_t field_pic_flag, int32_t bottom_field);
     int32_t GetPicNum(int32_t picIndex, bool bottomField = false);
-    int32_t GetColocReadIdx(int32_t picType);
     bool InvalidateReferenceFrames(uint64_t timeStamp);
     bool IsRefFramesCorrupted();
     bool IsRefPicCorrupted(int32_t picIndex);
@@ -135,57 +132,72 @@ public:
 
     const StdVideoEncodeH264PictureInfo *GetCurrentDpbEntry(void)
     {
-        assert(m_pCurDPBEntry);
-        return &m_pCurDPBEntry->picInfo;
+        assert((m_currDpbIdx < m_max_dpb_size) || (m_currDpbIdx == MAX_DPB_SLOTS));
+        return &m_DPB[m_currDpbIdx].picInfo;
     }
 
-    int32_t GetValidEntries(VkEncDpbEntry entries[MAX_DPB_SIZE]);
+    uint32_t GetUpdatedFrameNumAndPicOrderCnt(int32_t& PicOrderCnt)
+    {
+        const StdVideoEncodeH264PictureInfo * pPictureInfo = GetCurrentDpbEntry();
+
+        PicOrderCnt = pPictureInfo->PicOrderCnt;
+        return pPictureInfo->frame_num;
+    }
+
+    int32_t GetValidEntries(DpbEntryH264 entries[MAX_DPB_SLOTS]);
+    uint32_t GetUsedFbSlotsMask();
+    bool NeedToReorder();
     void FillStdReferenceInfo(uint8_t dpbIdx, StdVideoEncodeH264ReferenceInfo* pStdReferenceInfo);
 
 private:
     void DpbInit();
     void DpbDeinit();
-    void FillFrameNumGaps(const StdVideoH264SequenceParameterSet *sps);
+    void FillFrameNumGaps(const PicInfoH264 *pPicInfo, const StdVideoH264SequenceParameterSet *sps);
     bool IsDpbFull();
     bool IsDpbEmpty();
     void DpbBumping(bool alwaysbump);
-    void DecodedRefPicMarking(const StdVideoH264SequenceParameterSet *sps, const StdVideoEncodeH264SliceHeader *slh,
-                              const StdVideoEncodeH264ReferenceListsInfo *ref);
-    void SlidingWindowMemoryManagememt(const StdVideoH264SequenceParameterSet *sps);
-    void AdaptiveMemoryManagement(const StdVideoEncodeH264ReferenceListsInfo *ref);
-    void CalculatePOC(const StdVideoH264SequenceParameterSet *sps);
-    void CalculatePOCType0(const StdVideoH264SequenceParameterSet *sps);
-    void CalculatePOCType2(const StdVideoH264SequenceParameterSet *sps);
-    void CalculatePicNum(const StdVideoH264SequenceParameterSet *sps);
+    void DecodedRefPicMarking(const PicInfoH264 *pPicInfo,
+                              const StdVideoH264SequenceParameterSet *sps,
+                              const StdVideoEncodeH264SliceHeader *slh,
+                              const StdVideoEncodeH264ReferenceListsInfo *ref,
+                              uint32_t maxMemMgmntCtrlOpsCommands);
+    void SlidingWindowMemoryManagememt(const PicInfoH264 *pPicInfo, const StdVideoH264SequenceParameterSet *sps);
+    void AdaptiveMemoryManagement(const PicInfoH264 *pPicInfo, const StdVideoEncodeH264ReferenceListsInfo *ref,
+                                  uint32_t maxMemMgmntCtrlOpsCommands);
+    void CalculatePOC(const PicInfoH264 *pPicInfo, const StdVideoH264SequenceParameterSet *sps);
+    void CalculatePOCType0(const PicInfoH264 *pPicInfo, const StdVideoH264SequenceParameterSet *sps);
+    void CalculatePOCType2(const PicInfoH264 *pPicInfo, const StdVideoH264SequenceParameterSet *sps);
+    void CalculatePicNum(const PicInfoH264 *pPicInfo, const StdVideoH264SequenceParameterSet *sps);
     void OutputPicture(int32_t dpb_index, bool release);
     void FlushDpb();
 
     // void flush();
 
-    void RefPicListInitialization(RefPicListEntry *RefPicList0, RefPicListEntry *RefPicList1,
+    void RefPicListInitialization(const PicInfoH264 *pPicInfo, RefPicListEntry *RefPicList0, RefPicListEntry *RefPicList1,
                                   const StdVideoH264SequenceParameterSet *sps, bool bSkipCorruptFrames);
     void RefPicListInitializationPFrame(RefPicListEntry *RefPicList0, const StdVideoH264SequenceParameterSet *sps,
                                         bool bSkipCorruptFrames);
     void RefPicListInitializationPField(RefPicListEntry *RefPicList0, const StdVideoH264SequenceParameterSet *sps,
-                                        bool bSkipCorruptFrames);
+                                        bool bottomField, bool bSkipCorruptFrames);
     void RefPicListInitializationBFrame(RefPicListEntry *RefPicList0, RefPicListEntry *RefPicList1,
                                         const StdVideoH264SequenceParameterSet *sps, bool bSkipCorruptFrames);
-    void RefPicListInitializationBField(RefPicListEntry *RefPicList0, RefPicListEntry *RefPicList1,
+    void RefPicListInitializationBField(const PicInfoH264 *pPicInfo, RefPicListEntry *RefPicList0, RefPicListEntry *RefPicList1,
                                         const StdVideoH264SequenceParameterSet *sps, bool bSkipCorruptFrames);
     int32_t RefPicListInitializationField(RefPicListEntry *refFrameListXShortTerm, RefPicListEntry *refFrameListLongTerm, int32_t ksmax,
-                                          int32_t klmax, RefPicListEntry *RefPicListX, bool bSkipCorruptFrames);
+                                          int32_t klmax, RefPicListEntry *RefPicListX, bool bottomField, bool bSkipCorruptFrames);
     int32_t RefPicListInitializationFieldListX(RefPicListEntry *refFrameListX, int32_t kfmax, int32_t kmin, RefPicListEntry *RefPicListX,
-            bool bSkipCorruptFrames);
+                                               bool bottomField, bool bSkipCorruptFrames);
     int32_t RefPicListInitializationBFrameListX(RefPicListEntry *RefPicListX, const StdVideoH264SequenceParameterSet *sps,
             bool list1, bool bSkipCorruptFrames);
     int32_t SortListDescending(RefPicListEntry *RefPicListX, const StdVideoH264SequenceParameterSet *sps, int32_t kmin, int32_t n,
-                               PFNSORTCHECK sort_check, bool bSkipCorruptFrames);
+                               ptrFuncDpbSort sort_check, bool bSkipCorruptFrames);
     int32_t SortListAscending(RefPicListEntry *RefPicListX, const StdVideoH264SequenceParameterSet *sps, int32_t kmin, int32_t n,
-                              PFNSORTCHECK sort_check, bool bSkipCorruptFrames);
-    void RefPicListReordering(RefPicListEntry *RefPicList0, RefPicListEntry *RefPicList1,
+                              ptrFuncDpbSort sort_check, bool bSkipCorruptFrames);
+    void RefPicListReordering(const PicInfoH264 *pPicInfo, RefPicListEntry *RefPicList0, RefPicListEntry *RefPicList1,
                               const StdVideoH264SequenceParameterSet *sps, const StdVideoEncodeH264SliceHeader *slh,
                               const StdVideoEncodeH264ReferenceListsInfo *ref);
-    void RefPicListReorderingLX(RefPicListEntry *RefPicListX, const StdVideoH264SequenceParameterSet *sps,
+    void RefPicListReorderingLX(const PicInfoH264 *pPicInfo,
+                                RefPicListEntry *RefPicListX, const StdVideoH264SequenceParameterSet *sps,
                                 int32_t num_ref_idx_lX_active_minus1,
                                 const StdVideoEncodeH264RefListModEntry *ref_pic_list_reordering_lX, int32_t listX);
     void RefPicListReorderingShortTerm(RefPicListEntry *RefPicListX, int32_t refIdxLX, int32_t num_ref_idx_lX_active_minus1, int32_t picNumLX);
@@ -193,28 +205,19 @@ private:
                                       int32_t LongTermPicNum);
     int32_t DeriveL0RefCount(RefPicListEntry *RefPicList);
     int32_t DeriveL1RefCount(RefPicListEntry *RefPicList);
-    int32_t AllocateFrame();
-    void ReleaseFrame(int32_t fb_idx);
+    void ReleaseFrame(VkSharedBaseObj<VulkanVideoImagePoolNode>&  dpbImageView);
 
 private:
-    int32_t m_MaxLongTermFrameIdx;
-    int32_t m_max_dpb_size;
-    int32_t m_prevPicOrderCntMsb;
-    int32_t m_prevPicOrderCntLsb;
-    int32_t m_prevFrameNumOffset;
+    int32_t  m_maxLongTermFrameIdx;
+    int32_t  m_max_dpb_size;
+    int32_t  m_prevPicOrderCntMsb;
+    int32_t  m_prevPicOrderCntLsb;
+    int32_t  m_prevFrameNumOffset;
     uint32_t m_prevFrameNum;
     uint32_t m_PrevRefFrameNum;
-    int32_t m_max_num_list[2];
-    VkEncDpbEntry m_DPB[MAX_DPB_SIZE + 1];
-    DpbPicInfo *m_pCurPicInfo;
-    VkEncDpbEntry *m_pCurDPBEntry;
-    int32_t m_nCurDPBIdx;
-    int32_t m_FrameBuffer[MAX_DPB_SIZE + 1];
-
-    // This is a map from m_DPB indices to m_FrameBuffer indices and is
-    // actually not read from anywhere in the code, but is useful for
-    // understanding which framebuffer indices are in use.
-    int32_t m_DPBIdx2FBIndexMapping[MAX_DPB_SIZE + 1];
+    int32_t  m_max_num_list[2];
+    int8_t   m_currDpbIdx;
+    DpbEntryH264 m_DPB[MAX_DPB_SLOTS + 1]; // 1 for the current
 
     uint64_t m_lastIDRTimeStamp;
 };

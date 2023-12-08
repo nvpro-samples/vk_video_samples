@@ -999,11 +999,11 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 }
 
 VkDeviceSize VkVideoDecoder::GetBitstreamBuffer(VkDeviceSize size,
-                                          VkDeviceSize minBitstreamBufferOffsetAlignment,
-                                          VkDeviceSize minBitstreamBufferSizeAlignment,
-                                          const uint8_t* pInitializeBufferMemory,
-                                          VkDeviceSize initializeBufferMemorySize,
-                                          VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer)
+                                                VkDeviceSize minBitstreamBufferOffsetAlignment,
+                                                VkDeviceSize minBitstreamBufferSizeAlignment,
+                                                const uint8_t* pInitializeBufferMemory,
+                                                VkDeviceSize initializeBufferMemorySize,
+                                                VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer)
 {
     assert(initializeBufferMemorySize <= size);
     // size_t newSize = 4 * 1024 * 1024;

@@ -52,8 +52,8 @@ const std::vector<VkExtensionProperties>& ShellXcb::GetRequiredInstanceExtension
     return xcbSurfaceExtensions;
 }
 
-ShellXcb::ShellXcb(const VulkanDeviceContext* vkDevCtx, VkSharedBaseObj<FrameProcessor>& frameProcessor)
-    : Shell(vkDevCtx, frameProcessor)
+ShellXcb::ShellXcb(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration, VkSharedBaseObj<FrameProcessor>& frameProcessor)
+    : Shell(vkDevCtx, configuration, frameProcessor)
     , m_connection()
     , m_screen()
     , m_window()
@@ -117,8 +117,8 @@ void ShellXcb::CreateWindow() {
     // set title
     xcb_atom_t utf8_string = intern_atom(m_connection, utf8_string_cookie);
     xcb_atom_t _net_wm_name = intern_atom(m_connection, _net_wm_name_cookie);
-    xcb_change_property(m_connection, XCB_PROP_MODE_REPLACE, m_window, _net_wm_name, utf8_string, 8, m_settings.name.size(),
-                        m_settings.name.c_str());
+    xcb_change_property(m_connection, XCB_PROP_MODE_REPLACE, m_window, _net_wm_name, utf8_string, 8,
+                        m_settings.m_windowName.size(), m_settings.m_windowName.c_str());
 
     // advertise WM_DELETE_WINDOW
     m_wm_protocols = intern_atom(m_connection, wm_protocols_cookie);
@@ -158,7 +158,7 @@ void ShellXcb::HandleEvent(const xcb_generic_event_t *ev) {
     switch (ev->response_type & 0x7f) {
         case XCB_CONFIGURE_NOTIFY: {
             const xcb_configure_notify_event_t *notify = reinterpret_cast<const xcb_configure_notify_event_t *>(ev);
-            if (m_settings.verbose) {
+            if (m_settings.m_verbose) {
                 std::cout << "Notify display resize " << notify->width << " x " << notify->height << '\n';
             }
 
