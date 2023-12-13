@@ -166,7 +166,7 @@ VkResult VulkanDeviceContext::CheckAllInstanceExtensions(bool verbose)
     return VK_SUCCESS;
 }
 
-bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice, bool printMissingExt)
+bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice, const char* printMissingDeviceExt)
 {
     assert(physDevice != VK_NULL_HANDLE);
     // enumerate device extensions
@@ -178,6 +178,7 @@ bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice, bo
         ext_names.insert(ext.extensionName);
     }
 
+    bool hasAllRequiredExtensions = true;
     // all listed device extensions are required
     for (uint32_t i = 0; m_requestedDeviceExtensions; i++) {
         const char* name = m_requestedDeviceExtensions[i];
@@ -185,35 +186,41 @@ bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice, bo
             break;
         }
         if (ext_names.find(name) == ext_names.end()) {
-            if (printMissingExt) {
-                std::cerr << __FUNCTION__ << ": ERROR: requested device extension "
-                    << name << " is missing!" << std::endl << std::flush;
+            hasAllRequiredExtensions = false;
+            if (printMissingDeviceExt) {
+                std::cerr << __FUNCTION__
+                          << ": ERROR: required device extension "
+                          << name << " is missing for device with name: "
+                          << printMissingDeviceExt << std::endl << std::flush;
+            } else {
+                return hasAllRequiredExtensions;
             }
-            return false;
         } else {
             AddRequiredDeviceExtension(name);
+            m_requestedDeviceExtensionsSize++;
         }
-        m_requestedDeviceExtensionsSize++;
     }
 
-    // all listed device extensions are required
+    // all listed device extensions that are optional
     for (uint32_t i = 0; m_optDeviceExtensions; i++) {
         const char* name = m_optDeviceExtensions[i];
         if (name == nullptr) {
             break;
         }
         if (ext_names.find(name) == ext_names.end()) {
-            if (printMissingExt) {
-                std::cout << __FUNCTION__ << ":HasAllDeviceExtensions() WARNING: requested device extension "
-                    << name << " is missing!" << std::endl << std::flush;
+            if (printMissingDeviceExt) {
+                std::cout << __FUNCTION__
+                          << " : WARNING: requested optional device extension "
+                          << name << " is missing for device with name: "
+                          << printMissingDeviceExt << std::endl << std::flush;
             }
         } else {
             AddRequiredDeviceExtension(name);
+            m_optDeviceExtensionsSize++;
         }
-        m_optDeviceExtensionsSize++;
     }
 
-    return true;
+    return hasAllRequiredExtensions;
 }
 
 #if !defined(VK_USE_PLATFORM_WIN32_KHR)
@@ -355,7 +362,11 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
             continue;
         }
 
-        if (!HasAllDeviceExtensions(physicalDevice)) {
+        if (!HasAllDeviceExtensions(physicalDevice, props.deviceName)) {
+            std::cerr << "ERROR: Found physical device with name: " << props.deviceName << std::hex
+                         << ", vendor ID: " << props.vendorID << ", and device ID: " << props.deviceID
+                         << std::dec
+                         << " NOT having the required extensions!" << std::endl << std::flush;
             continue;
         }
 
@@ -413,7 +424,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                 videoDecodeQueueFamily = i;
                 videoDecodeQueueCount = queue.queueFamilyProperties.queueCount;
 
-                if (dumpQueues) std::cout << "Found video decode only queue family " <<  i <<
+                if (dumpQueues) std::cout << "\t Found video decode only queue family " <<  i <<
                         " with " << queue.queueFamilyProperties.queueCount <<
                         " max num of queues." << std::endl;
 
@@ -421,7 +432,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                 if (queueFamilyFlags & VK_QUEUE_TRANSFER_BIT) {
                     videoDecodeQueueTransferSupport = true;
 
-                    if (dumpQueues) std::cout << "\tVideo decode queue " <<  i <<
+                    if (dumpQueues) std::cout << "\t\t Video decode queue " <<  i <<
                             " supports transfer operations" << std::endl;
                 }
 
@@ -429,7 +440,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                 if (queueFamilyFlags & VK_QUEUE_COMPUTE_BIT) {
                     videoDecodeQueueComputeSupport = true;
 
-                    if (dumpQueues) std::cout << "\tVideo decode queue " <<  i <<
+                    if (dumpQueues) std::cout << "\t\t Video decode queue " <<  i <<
                             " supports compute operations" << std::endl;
                 }
 
@@ -444,21 +455,21 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                 videoEncodeQueueFamily = i;
                 videoEncodeQueueCount = queue.queueFamilyProperties.queueCount;
 
-                if (dumpQueues) std::cout << "Found video encode only queue family " <<  i <<
+                if (dumpQueues) std::cout << "\t Found video encode only queue family " <<  i <<
                         " with " << queue.queueFamilyProperties.queueCount <<
                         " max num of queues." << std::endl;
 
                 // Does the video encode queue also support transfer operations?
                 if (queueFamilyFlags & VK_QUEUE_TRANSFER_BIT) {
                     videoEncodeQueueTransferSupport = true;
-                    if (dumpQueues) std::cout << "\tVideo encode queue " <<  i <<
+                    if (dumpQueues) std::cout << "\t\t Video encode queue " <<  i <<
                             " supports transfer operations" << std::endl;
                 }
 
                 // Does the video encode queue also support compute operations?
                 if (queueFamilyFlags & VK_QUEUE_COMPUTE_BIT) {
                     videoEncodeQueueComputeSupport = true;
-                    if (dumpQueues) std::cout << "\tVideo encode queue " <<  i <<
+                    if (dumpQueues) std::cout << "\t\t Video encode queue " <<  i <<
                             " supports compute operations" << std::endl;
                 }
 
@@ -473,17 +484,17 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                     (queueFamilyFlags & VK_QUEUE_GRAPHICS_BIT)) {
                 gfxQueueFamily = i;
                 foundQueueTypes |= queueFamilyFlags;
-                if (dumpQueues) std::cout << "Found graphics queue family " <<  i << " with " << queue.queueFamilyProperties.queueCount << " max num of queues." << std::endl;
+                if (dumpQueues) std::cout << "\t Found graphics queue family " <<  i << " with " << queue.queueFamilyProperties.queueCount << " max num of queues." << std::endl;
             } else if ((requestQueueTypes & VK_QUEUE_COMPUTE_BIT) && (computeQueueFamilyOnly < 0) &&
                        ((VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT) == (queueFamilyFlags & (VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT)))) {
                 computeQueueFamilyOnly = i;
                 foundQueueTypes |= queueFamilyFlags;
-                if (dumpQueues) std::cout << "Found compute only queue family " <<  i << " with " << queue.queueFamilyProperties.queueCount << " max num of queues." << std::endl;
+                if (dumpQueues) std::cout << "\t Found compute only queue family " <<  i << " with " << queue.queueFamilyProperties.queueCount << " max num of queues." << std::endl;
             } else if ((requestQueueTypes & VK_QUEUE_TRANSFER_BIT) && (transferQueueFamilyOnly < 0) &&
                     (VK_QUEUE_TRANSFER_BIT == (queueFamilyFlags & VK_QUEUE_TRANSFER_BIT))) {
                 transferQueueFamilyOnly = i;
                 foundQueueTypes |= queueFamilyFlags;
-                if (dumpQueues) std::cout << "Found transfer only queue family " <<  i << " with " << queue.queueFamilyProperties.queueCount << " max num of queues." << std::endl;
+                if (dumpQueues) std::cout << "\t Found transfer only queue family " <<  i << " with " << queue.queueFamilyProperties.queueCount << " max num of queues." << std::endl;
             }
 
             // requires only COMPUTE for frameProcessor queues
@@ -491,12 +502,13 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                     (queueFamilyFlags & VK_QUEUE_COMPUTE_BIT)) {
                 computeQueueFamily = i;
                 foundQueueTypes |= queueFamilyFlags;
-                if (dumpQueues) std::cout << "Found compute queue family " <<  i << " with " << queue.queueFamilyProperties.queueCount << " max num of queues." << std::endl;
+                if (dumpQueues) std::cout << "\t Found compute queue family " <<  i << " with " << queue.queueFamilyProperties.queueCount << " max num of queues." << std::endl;
             }
 
             // present queue must support the surface
             if ((pWsiDisplay != nullptr) &&
                     (presentQueueFamily < 0) && pWsiDisplay->PhysDeviceCanPresent(physicalDevice, i)) {
+                if (dumpQueues) std::cout << "\t Found present queue family " <<  i << "." << std::endl;
                 presentQueueFamily = i;
             }
 
@@ -531,9 +543,17 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                     PrintExtensions(true);
                 }
 
+                std::cerr << "*** Selected Vulkan physical device with name: " << props.deviceName << std::hex
+                          << ", vendor ID: " << props.vendorID << ", and device ID: " << props.deviceID
+                          << std::dec << " ***" << std::endl << std::flush;
+
                 return VK_SUCCESS;
             }
         }
+        std::cerr << "ERROR: Found physical device with name: " << props.deviceName << std::hex
+                  << ", vendor ID: " << props.vendorID << ", and device ID: " << props.deviceID
+                  << std::dec
+                  << " NOT having the required queue families!" << std::endl << std::flush;
     }
 
     return (m_physDevice != VK_NULL_HANDLE) ? VK_SUCCESS : VK_ERROR_FEATURE_NOT_PRESENT;
