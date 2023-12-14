@@ -38,7 +38,7 @@ struct ProgramConfig {
         numDecodeImagesInFlight = 8;
         numDecodeImagesToPreallocate = -1; // pre-allocate the maximum num of images
         numBitstreamBuffersToPreallocate = 8;
-        backBufferCount = 3;
+        backBufferCount = 8;
         ticksPerSecond = 30;
         vsync = true;
 
