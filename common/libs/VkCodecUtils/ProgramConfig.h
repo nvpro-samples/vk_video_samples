@@ -255,6 +255,31 @@ struct ProgramConfig {
                 exit(EXIT_FAILURE);
             }
 
+            bool disableValueCheck = false;
+            if (i + 1 < argc && strcmp(argv[i + 1], "--") == 0) {
+                if (i + 1 + flag->numArgs >= argc) {
+                    std::cerr << "Missing arguments for \"" << argv[i] << "\"" << std::endl;
+                    exit(EXIT_FAILURE);
+                }
+                disableValueCheck = true; 
+                i++;
+            }
+
+            // Only allow values not starting with `-` unless prefixed with `-- ` (e.g. -i -- --inputfile-starting-with-minus)
+            // This allows us to give better error messages as we don't expect any values to start with `-`
+            if (!disableValueCheck) {
+                for (int j = 1; j <= flag->numArgs; j++) {
+                    if (argv[i + j][0] == '-') {
+                        std::cerr << "Invalid value \"" << argv[i + j] << "\" for \"" << argv[i] << "\" "
+                            "(we don't allow values starting with `-` by default). You probably missed to "
+                            "set a value for \"" << argv[i] << "\"." << std::endl;
+                        std::cerr << "Use \"-- " << argv[i + j] << "\" if you meant to set \"" << argv[i + j]
+                            << "\" for \"" << argv[i] << "\"." << std::endl;
+                        exit(EXIT_FAILURE);
+                    }
+                }
+            }
+
             if (!flag->lambda(argv + i + 1, spec)) {
                 exit(EXIT_FAILURE);
             }
