@@ -57,7 +57,6 @@ struct ProgramConfig {
         validate = false;
         validateVerbose = false;
 
-        noTick = false;
         noPresent = false;
 
         maxFrameCount = -1;
@@ -155,11 +154,6 @@ struct ProgramConfig {
                 [this](const char **args, const ProgramArgs &a) {
                     validate = true;
                     verbose = true;
-                    return true;
-                }},
-            {"--noTick", nullptr, 0, "???",
-                [this](const char **args, const ProgramArgs &a) {
-                    noTick = true;
                     return true;
                 }},
             {"--noPresent", nullptr, 0,
@@ -315,7 +309,6 @@ struct ProgramConfig {
     uint32_t validate : 1;
     uint32_t validateVerbose : 1;
     uint32_t verbose : 1;
-    uint32_t noTick : 1;
     uint32_t noPresent : 1;
     uint32_t enableHwLoadBalancing : 1;
     uint32_t selectVideoWithComputeQueue : 1;
