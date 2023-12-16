@@ -89,7 +89,7 @@ static int parseArguments(EncoderConfig *encoderConfig, int argc, char *argv[])
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
-            if ((encoderConfig->input.numPlanes < 2) && (encoderConfig->input.numPlanes > 3)) {
+            if ((encoderConfig->input.numPlanes < 2) || (encoderConfig->input.numPlanes > 3)) {
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 fprintf(stderr, "Currently supported number of planes are 2 or 3\n");
             }
