@@ -24,9 +24,20 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <functional>
+#include <algorithm>
+#include <iomanip> 
+#include <sstream>
 #include "vulkan_interfaces.h"
 
 struct ProgramConfig {
+     struct ArgSpec {
+       const char *flag;
+       const char *short_flag;
+       int numArgs;
+       const char *help;
+       std::function<bool(const char **, const std::vector<ArgSpec> &)> lambda;
+     };
 
     ProgramConfig(const char* programName) {
         appName = programName;
@@ -66,88 +77,189 @@ struct ProgramConfig {
         enableVideoEncoder = false;
     }
 
-    void ParseArgs(int argc, const char* argv[]) {
-        for (int i = 1; i < argc; i++) {
-            if (nullptr != strstr(argv[i], "--help")) {
-                i++;
-                break;
-            } else if (nullptr != strstr(argv[i], "--enableStrDemux")) {
-                enableStreamDemuxing = true;
-            } else if (nullptr != strstr(argv[i], "--disableStrDemux")) {
-                enableStreamDemuxing = false;
-            } else if (nullptr != strstr(argv[i], "--codec")) {
-                i++;
-                if ((nullptr != strstr(argv[i], "5")) || (nullptr != strstr(argv[i], "hevc"))) {
-                    forceParserType = VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR;
-                } else if ((nullptr != strstr(argv[i], "4")) || (nullptr != strstr(argv[i], "h264"))) {
-                    forceParserType = VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR;
-                }
-            } else if (nullptr != strstr(argv[i], "-b")) {
-                vsync = false;
-            } else if (nullptr != strstr(argv[i], "-w")) {
-                i++;
-                if (argv[i])
-                    initialWidth = std::atoi(argv[i]);
-            } else if (nullptr != strstr(argv[i], "-h")) {
-                i++;
-                if (argv[i])
-                    initialHeight = std::atoi(argv[i]);
-            } else if (nullptr != strstr(argv[i], "-v")) {
-                validate = true;
-            } else if (nullptr != strstr(argv[i], "--validate")) {
-                validate = true;
-            } else if (nullptr != strstr(argv[i], "-vv")) {
-                validate = true;
-                validateVerbose = true;
-            } else if (nullptr != strstr(argv[i], "--verbose")) {
-                verbose = true;
-            } else if (nullptr != strstr(argv[i], "--noTick")) {
-                noTick = true;
-            } else if (nullptr != strstr(argv[i], "--noPresent")) {
-                noPresent = true;
-            } else if (nullptr != strstr(argv[i], "--enableHwLoadBalancing")) {
-                enableHwLoadBalancing = true;
-            } else if (nullptr != strstr(argv[i], "--selectVideoWithComputeQueue")) {
-                selectVideoWithComputeQueue = true;
-            } else if (nullptr != strstr(argv[i], "-o")) {
-                i++;
-                outputFileName = argv[i];
-            } else if (nullptr != strstr(argv[i], "-i")) {
-                i++;
-                videoFileName = argv[i];
-                std::ifstream validVideoFileStream(videoFileName, std::ifstream::in);
-                if (!validVideoFileStream) {
-                    std::cerr << "Invalid input video file: " << videoFileName << std::endl;
-                    std::cerr << "Please provide a valid name for the input video file to be decoded with the \"-i\" command line option." << std::endl;
-                    std::cerr << "   vk-video-dec-test -i <absolute file path location>" << std::endl;
-                }
-            } else if (nullptr != strstr(argv[i], "--gpu")) {
-                i++;
-                gpuIndex = std::atoi(argv[i]);
-            } else if (nullptr != strstr(argv[i], "--queueSize")) {
-                i++;
-                decoderQueueSize = std::atoi(argv[i]);
-            } else if (nullptr != strstr(argv[i], "--enablePostProcessFilter")) {
-                i++;
-                enablePostProcessFilter = std::atoi(argv[i]);
-            } else if (nullptr != strstr(argv[i], "-c")) {
-                i++;
-                if (argv[i])
-                    maxFrameCount = std::atoi(argv[i]);
-            } else if (nullptr != strstr(argv[i], "--loop")) {
-                i++;
-                if (argv[i])
-                    loopCount = std::atoi(argv[i]);
-            } else if (nullptr != strstr(argv[i], "--queueid")) {
-                i++;
-                 if (argv[i])
-                    queueId = std::atoi(argv[i]);
-            } else  if (!strcmp(argv[i], "-deviceID")) {
-                ++i;
-                sscanf(argv[i], "%x", &deviceId);
-            } else if (!strcmp(argv[i], "--direct")) {
-                directMode = true;
+    using ProgramArgs = std::vector<ArgSpec>;
+    static bool showHelp(const char ** argv, const ProgramArgs &spec) { 
+        std::cout << argv[0] << std::endl;
+        for ( auto& flag : spec ) {
+            std::stringstream ss;
+            if (flag.flag) {
+                ss << flag.flag << (flag.short_flag ? ", " : "");
             }
+            if (flag.short_flag) {
+                ss << flag.short_flag;
+            }
+            // Print flags column 30 chars wide, left justified
+            std::cout << " " << std::left << std::setw(30) << ss.str();
+            // Print help if available, left justified
+            if (flag.help) {
+                std::cout << flag.help;
+            }
+            std::cout << std::endl;
+        }
+        return true;
+    };
+
+    void ParseArgs(int argc, const char *argv[]) {
+        ProgramArgs spec = {
+            {"--help", "-h", 0, "Show this help",
+                [argv](const char **, const ProgramArgs &a) {
+                    int rtn = showHelp(argv, a);
+                    exit(EXIT_SUCCESS);
+                    return rtn;
+                }},
+            {"--enableStrDemux", nullptr, 0, "Enable stream demuxing",
+                [this](const char **, const ProgramArgs &a) {
+                    enableStreamDemuxing = true;
+                    return true;
+                }},
+            {"--disableStrDemux", nullptr, 0, "Disable stream demuxing",
+                [this](const char **, const ProgramArgs &a) {
+                    enableStreamDemuxing = true;
+                    return true;
+                }},
+            {"--codec", nullptr, 1, "Codec to decode",
+                [this](const char **args, const ProgramArgs &a) {
+                    if ((strcmp(args[0], "hevc") == 0) ||
+                        (strcmp(args[0], "h265") == 0)) {
+                        forceParserType = VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR;
+                        return true;
+                    } else if ((strcmp(args[0], "avc") == 0) ||
+                        (strcmp(args[0], "h264") == 0)) {
+                        forceParserType = VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR;
+                        return true;
+                    } else {
+                        std::cerr << "Invalid codec \"" << args[0] << "\"" << std::endl;
+                        return false;
+                    }
+                }},
+            {"--disableVsync", "-b", 0, "Disable vsync",
+                [this](const char **args, const ProgramArgs &a) {
+                    vsync = false;
+                    return true;
+                }},
+            {"--initialWidth", "-w", 1, "Initial width of the video",
+                [this](const char **args, const ProgramArgs &a) {
+                    initialWidth = std::atoi(args[0]);
+                    return true;
+                }},
+            {"--initialHeight", "-l", 1, "Initial height of the video",
+                [this](const char **args, const ProgramArgs &a) {
+                    initialHeight = std::atoi(args[0]);
+                    return true;
+                }},
+            {"--validate", "-v", 0, "Validate input bitstream",
+                [this](const char **args, const ProgramArgs &a) {
+                    validate = true;
+                    return true;
+                }},
+            {"--verboseValidate", "-vv", 0,
+                "Validate input bitstream and be verbose",
+                [this](const char **args, const ProgramArgs &a) {
+                    validate = true;
+                    verbose = true;
+                    return true;
+                }},
+            {"--noTick", nullptr, 0, "???",
+                [this](const char **args, const ProgramArgs &a) {
+                    noTick = true;
+                    return true;
+                }},
+            {"--noPresent", nullptr, 0,
+                "Runs this program headless without presenting decode result to "
+                "screen",
+                [this](const char **args, const ProgramArgs &a) {
+                    noPresent = true;
+                    return true;
+                }},
+            {"--enableHwLoadBalancing", nullptr, 0,
+                "Enable hardware load balancing by doing a round-robin through all "
+                "available decode queues",
+                [this](const char **args, const ProgramArgs &a) {
+                    enableHwLoadBalancing = true;
+                    return true;
+                }},
+            {"--input", "-i", 1, "Input filename to decode",
+                [this](const char **args, const ProgramArgs &a) {
+                    videoFileName = args[0];
+                    return true;
+                }},
+            {"--output", "-o", 1, "Output filename to dump raw video to",
+                [this](const char **args, const ProgramArgs &a) {
+                    outputFileName = args[0];
+                    return true;
+                }},
+            {"--gpu", "-gpu", 1, "Index to Vulkan physical device to use",
+                [this](const char **args, const ProgramArgs &a) {
+                    gpuIndex = std::atoi(args[0]);
+                    return true;
+                }},
+            {"--queueSize", nullptr, 1,
+                "Size of decode operation in-flight before synchronizing for the "
+                "result",
+                [this](const char **args, const ProgramArgs &a) {
+                    decoderQueueSize = std::atoi(args[0]);
+                    return true;
+                }},
+            {"--computeShader", "-c", 0, "Enables post processing by running "
+                "a compute shader on the decode output",
+                [this](const char **args, const ProgramArgs &a) {
+                    maxFrameCount = std::atoi(args[0]);
+                    return true;
+                }},
+            {"--loop", nullptr, 1,
+                "Number of times the playback from input should be repeated",
+                [this](const char **args, const ProgramArgs &a) {
+                    loopCount = std::atoi(args[0]);
+                    if (loopCount < 0) {
+                        std::cerr << "Loop count must not be negative" << std::endl;
+                        return false;
+                    }
+                    return true;
+                }},
+            {"--queueid", nullptr, 1, "Index of the decoder queue to be used",
+                [this](const char **args, const ProgramArgs &a) {
+                    queueId = std::atoi(args[0]);
+                    std::cout << queueId << std::endl;
+                    if (queueId < 0) {
+                        std::cerr << "queueid must not be negative" << std::endl;
+                        return false;
+                    }
+                    return true;
+                }},
+            {"--deviceID", "-deviceID", 1, "Hex ID of the device to be used",
+                [this](const char **args, const ProgramArgs &a) {
+                    sscanf(args[0], "%x", &deviceId);
+                    return true;
+                }},
+            {"--direct", nullptr, 0, "Direct to display mode",
+                [this](const char **args, const ProgramArgs &a) {
+                    directMode = true;
+                    return true;
+                }},
+        };
+
+        for (int i = 1; i < argc; i++) {
+            auto flag = std::find_if(spec.begin(), spec.end(), [&](ArgSpec &a) {
+                return (a.flag != nullptr && strcmp(argv[i], a.flag) == 0) ||
+                (a.short_flag != nullptr && strcmp(argv[i], a.short_flag) == 0);
+            });
+            if (flag == spec.end()) {
+                std::cerr << "Unknown argument \"" << argv[i] << "\"" << std::endl;
+                std::cout << std::endl;
+                showHelp(argv, spec);
+                exit(EXIT_FAILURE);
+            }
+
+            if (i + flag->numArgs >= argc) {
+                std::cerr << "Missing arguments for \"" << argv[i] << "\"" << std::endl;
+                exit(EXIT_FAILURE);
+            }
+
+            if (!flag->lambda(argv + i + 1, spec)) {
+                exit(EXIT_FAILURE);
+            }
+
+            i += flag->numArgs;
         }
     }
 
