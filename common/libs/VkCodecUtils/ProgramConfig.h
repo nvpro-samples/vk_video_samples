@@ -58,7 +58,6 @@ struct ProgramConfig {
         validate = false;
         validateVerbose = false;
 
-        noTick = false;
         noPresent = false;
 
         maxFrameCount = -1;
@@ -101,7 +100,7 @@ struct ProgramConfig {
 
     void ParseArgs(int argc, const char *argv[]) {
         ProgramArgs spec = {
-            {"--help", "-h", 0, "Show this help",
+            {"--help", nullptr, 0, "Show this help",
                 [argv](const char **, const ProgramArgs &a) {
                     int rtn = showHelp(argv, a);
                     exit(EXIT_SUCCESS);
@@ -114,7 +113,7 @@ struct ProgramConfig {
                 }},
             {"--disableStrDemux", nullptr, 0, "Disable stream demuxing",
                 [this](const char **, const ProgramArgs &a) {
-                    enableStreamDemuxing = true;
+                    enableStreamDemuxing = false;
                     return true;
                 }},
             {"--codec", nullptr, 1, "Codec to decode",
@@ -142,7 +141,7 @@ struct ProgramConfig {
                     initialWidth = std::atoi(args[0]);
                     return true;
                 }},
-            {"--initialHeight", "-l", 1, "Initial height of the video",
+            {"--initialHeight", "-h", 1, "Initial height of the video",
                 [this](const char **args, const ProgramArgs &a) {
                     initialHeight = std::atoi(args[0]);
                     return true;
@@ -159,9 +158,10 @@ struct ProgramConfig {
                     verbose = true;
                     return true;
                 }},
-            {"--noTick", nullptr, 0, "???",
+            {"--selectVideoWithComputeQueue", nullptr, 0,
+                "Select a video queue that supports compute",
                 [this](const char **args, const ProgramArgs &a) {
-                    noTick = true;
+                    selectVideoWithComputeQueue = true;
                     return true;
                 }},
             {"--noPresent", nullptr, 0,
@@ -181,7 +181,8 @@ struct ProgramConfig {
             {"--input", "-i", 1, "Input filename to decode",
                 [this](const char **args, const ProgramArgs &a) {
                     videoFileName = args[0];
-                    return true;
+                    std::ifstream validVideoFileStream(videoFileName, std::ifstream::in);
+                    return (bool)validVideoFileStream;
                 }},
             {"--output", "-o", 1, "Output filename to dump raw video to",
                 [this](const char **args, const ProgramArgs &a) {
@@ -200,10 +201,10 @@ struct ProgramConfig {
                     decoderQueueSize = std::atoi(args[0]);
                     return true;
                 }},
-            {"--computeShader", "-c", 0, "Enables post processing by running "
+            {"--computeShader", nullptr, 0, "Enables post processing by running "
                 "a compute shader on the decode output",
                 [this](const char **args, const ProgramArgs &a) {
-                    maxFrameCount = std::atoi(args[0]);
+                    enablePostProcessFilter = true;
                     return true;
                 }},
             {"--loop", nullptr, 1,
@@ -214,6 +215,12 @@ struct ProgramConfig {
                         std::cerr << "Loop count must not be negative" << std::endl;
                         return false;
                     }
+                    return true;
+                }},
+            {"--maxFrameCount", "-c", 1,
+                "Limit number of frames to be processed",
+                [this](const char **args, const ProgramArgs &a) {
+                    maxFrameCount = true;
                     return true;
                 }},
             {"--queueid", nullptr, 1, "Index of the decoder queue to be used",
@@ -317,7 +324,6 @@ struct ProgramConfig {
     uint32_t validate : 1;
     uint32_t validateVerbose : 1;
     uint32_t verbose : 1;
-    uint32_t noTick : 1;
     uint32_t noPresent : 1;
     uint32_t enableHwLoadBalancing : 1;
     uint32_t selectVideoWithComputeQueue : 1;
