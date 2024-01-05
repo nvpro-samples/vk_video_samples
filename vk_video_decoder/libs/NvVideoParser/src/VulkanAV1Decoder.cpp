@@ -389,7 +389,7 @@ void VulkanAV1Decoder::UpdateFramePointers(VkPicIf* currentPicture)
 
             m_pBuffers[ref_index].frame_type = pStd->frame_type;
             m_pBuffers[ref_index].order_hint = pStd->OrderHint;
-            for (uint8_t refName = 0; refName < STD_VIDEO_AV1_NUM_REF_FRAMES; refName ++) {
+            for (uint8_t refName = 0; refName < STD_VIDEO_AV1_REFS_PER_FRAME; refName ++) {
                 uint8_t ref_order_hint = 0;
                 if ((ref_frame_idx[refName] < 8) && (ref_frame_idx[refName] >= 0)) {
                     ref_order_hint = pStd->OrderHints[refName];
@@ -2099,7 +2099,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
             pic_flags->use_ref_frame_mvs = 0;
         }
 
-        for (int i = 0; i < 8; i++)
+        for (int i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++)
         {
             pStd->OrderHints[i] = RefOrderHint[ref_frame_idx[i]];
         }
