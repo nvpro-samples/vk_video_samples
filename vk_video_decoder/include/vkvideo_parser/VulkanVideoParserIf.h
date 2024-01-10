@@ -491,7 +491,7 @@ public:
         = 0; // Returns max number of reference frames
         // (always at least 2 for MPEG-2)
     virtual bool
-    AllocPictureBuffer(VkPicIf** ppPicBuf)
+    AllocPictureBuffer(VkPicIf** ppPicBuf, uint32_t codedWidth, uint32_t codedHeight)
         = 0; // Returns a new VkPicIf interface
     virtual bool DecodePicture(
         VkParserPictureData* pParserPictureData)

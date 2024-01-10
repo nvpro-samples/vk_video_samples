@@ -292,14 +292,7 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
 
     // Allocate a buffer for the current picture
     if (m_pCurrPic == nullptr) {
-        m_pClient->AllocPictureBuffer(&m_pCurrPic);
-        if (m_pCurrPic) {
-            m_pCurrPic->frameWidth = frame_width;
-            m_pCurrPic->frameHeight = frame_height;
-            m_pCurrPic->renderWidth = render_width;
-            m_pCurrPic->renderHeight = render_height;
-            m_pCurrPic->upscaledWidth = upscaled_width;
-        }
+        m_pClient->AllocPictureBuffer(&m_pCurrPic, upscaled_width, frame_height);
     }
 
     pnvpd->PicWidthInMbs    = nvsi.nCodedWidth >> 4;

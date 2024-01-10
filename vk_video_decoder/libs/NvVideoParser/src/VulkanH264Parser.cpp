@@ -566,7 +566,10 @@ bool VulkanH264Decoder::BeginPicture_SVC(VkParserPictureData *pnvpd)
                         m_ds->dpb_entry[16].pPicBufRefBase = NULL;
                     }
                     // allocate buffer for current frame
-                    m_ds->dpb_entry[16].pPicBuf = alloc_picture();
+					uint32_t width = (m_sps->pic_width_in_mbs_minus1 + 1) * 16;
+				    uint32_t frameHeightInMbs = (2 - m_sps->flags.frame_mbs_only_flag) * (m_sps->pic_height_in_map_units_minus1 + 1);
+					uint32_t height = frameHeightInMbs * 16;
+                    m_ds->dpb_entry[16].pPicBuf = alloc_picture(width, height);
                     if (!m_ds->dpb_entry[16].pPicBuf)
                     {
                         nvParserLog("%s : Failed to allocate buffer for current picture\n", __FUNCTION__);
@@ -575,7 +578,7 @@ bool VulkanH264Decoder::BeginPicture_SVC(VkParserPictureData *pnvpd)
                     // allocate buffer for current base reference frame
                     if (m_dd->slh.store_ref_base_pic_flag && (m_iDQIdMax & 15)) // only if reference base layer and target layer differ
                     {
-                        m_ds->dpb_entry[16].pPicBufRefBase = alloc_picture();
+                        m_ds->dpb_entry[16].pPicBufRefBase = alloc_picture(width, height);
                         if (!m_ds->dpb_entry[16].pPicBufRefBase)
                         {
                             nvParserLog("%s : Failed to allocate buffer for ref base picture\n", __FUNCTION__);
@@ -1405,11 +1408,11 @@ int VulkanH264Decoder::dec_ref_base_pic_marking(memory_management_base_control_o
     return adaptive_ref_base_pic_marking_mode_flag;
 }
 
-VkPicIf *VulkanH264Decoder::alloc_picture()
+VkPicIf *VulkanH264Decoder::alloc_picture(uint32_t width, uint32_t height)
 {
     VkPicIf *p = NULL;
     if (m_pClient)
-        m_pClient->AllocPictureBuffer(&p);
+        m_pClient->AllocPictureBuffer(&p, width, height);
     return p;
 }
 
@@ -2907,7 +2910,10 @@ void VulkanH264Decoder::dpb_picture_start(pic_parameter_set_s *pps, slice_header
         cur->complementary_field_pair = false;
         cur->not_existing = false;
         cur->FrameNum = slh->frame_num;
-        cur->pPicBuf = alloc_picture();
+		uint32_t width = (m_sps->pic_width_in_mbs_minus1 + 1) * 16;
+	    uint32_t frameHeightInMbs = (2 - m_sps->flags.frame_mbs_only_flag) * (m_sps->pic_height_in_map_units_minus1 + 1);
+		uint32_t height = frameHeightInMbs * 16;
+        cur->pPicBuf = alloc_picture(width, height);
         if (!cur->pPicBuf)
         {
             nvParserLog("%s : Failed to allocate buffer for current picture\n", __FUNCTION__);

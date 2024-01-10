@@ -818,7 +818,7 @@ private:
     bool dpb_sequence_start(slice_header_s *slh);
     void dpb_picture_start(pic_parameter_set_s *pps, slice_header_s *slh);
     void dpb_picture_end();
-    VkPicIf *alloc_picture();
+    VkPicIf *alloc_picture(uint32_t width, uint32_t height);
     void output_picture(int nframe, int picture_structure);
     void picture_order_count(const seq_parameter_set_s *sps, const slice_header_s *slh);
     void picture_order_count_type_0(const seq_parameter_set_s *sps, const slice_header_s *slh);

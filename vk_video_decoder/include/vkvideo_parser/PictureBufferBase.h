@@ -27,7 +27,7 @@ public:
     virtual void AddRef() = 0;
     virtual void Release() = 0;
 
-  // FIXME: This is only used for AV1, need because of 5.9.7
+    // This is only used for AV1, need because of 5.9.7
     int32_t upscaledWidth;
     int32_t frameWidth;
     int32_t frameHeight;

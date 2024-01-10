@@ -2717,7 +2717,16 @@ void VulkanH265Decoder::dpb_picture_start(VkSharedBaseObj<hevc_pic_param_s>& pps
     cur->output = PicOutputFlag;
     if (!cur->pPicBuf)
     {
-        if (!m_pClient->AllocPictureBuffer(&cur->pPicBuf))
+	    const hevc_seq_param_s* sps = m_spss[pps->pps_seq_parameter_set_id];
+	    uint32_t pic_width_in_luma_samples = sps->pic_width_in_luma_samples;
+	    uint32_t pic_height_in_luma_samples = sps->pic_height_in_luma_samples;
+
+	    uint32_t Log2SubWidthC = (sps->chroma_format_idc == 1) || (sps->chroma_format_idc == 2);
+	    uint32_t Log2SubHeightC = (sps->chroma_format_idc == 1);
+
+		uint32_t width = pic_width_in_luma_samples - (sps->conf_win_right_offset << Log2SubWidthC);
+		uint32_t height = pic_height_in_luma_samples - (sps->conf_win_bottom_offset << Log2SubHeightC);
+        if (!m_pClient->AllocPictureBuffer(&cur->pPicBuf, width, height))
         {
             nvParserLog("WARNING: Failed to allocate frame buffer picture\n");
         }
