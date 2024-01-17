@@ -17,10 +17,10 @@
 #ifndef _VULKANVIDEOPARSER_IF_H_
 #define _VULKANVIDEOPARSER_IF_H_
 
-#include "vkvideo_parser/PictureBufferBase.h"
-#include "VkCodecUtils/VkVideoRefCountBase.h"
+#include "PictureBufferBase.h"
+#include "VkVideoCore/VkVideoRefCountBase.h"
 #include "vkvideo_parser/StdVideoPictureParametersSet.h"
-#include "vkvideo_parser/VulkanBitstreamBuffer.h"
+#include "VulkanBitstreamBuffer.h"
 #include "vk_video/vulkan_video_codecs_common.h"
 
 #define NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_9 VK_MAKE_VIDEO_STD_VERSION(0, 9, 9)

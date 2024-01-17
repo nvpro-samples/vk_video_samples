@@ -72,7 +72,6 @@ endif()
 add_definitions(-DVK_USE_VIDEO_QUEUE)
 add_definitions(-DVK_USE_VIDEO_DECODE_QUEUE)
 add_definitions(-DVK_USE_VIDEO_ENCODE_QUEUE)
-add_definitions(-DVK_ENABLE_BETA_EXTENSIONS)
 
 file(GLOB TEXTURES
   "${PROJECT_SOURCE_DIR}/demos/*.ppm"

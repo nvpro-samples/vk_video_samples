@@ -25,14 +25,14 @@
 #include <iostream>
 #include <queue> // std::queue
 
-#include "vkvideo_parser/VulkanVideoParserIf.h"
+#include "VulkanVideoParserIf.h"
 #include "NvVideoParser/nvVulkanVideoParser.h"
 #include "NvVideoParser/nvVulkanVideoUtils.h"
-#include "vkvideo_parser/PictureBufferBase.h"
+#include "PictureBufferBase.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
-#include "vkvideo_parser/StdVideoPictureParametersSet.h"
+#include "StdVideoPictureParametersSet.h"
 
-#include "vkvideo_parser/VulkanVideoParser.h"
+#include "VulkanVideoParser.h"
 
 #undef min
 #undef max
@@ -1644,14 +1644,14 @@ bool VulkanVideoParser::UpdatePictureParameters(
 
     if (m_decoderHandler == NULL) {
         assert(!"m_pDecoderHandler is NULL");
-        return false;
+        return NULL;
     }
 
     if (pictureParametersObject) {
         return m_decoderHandler->UpdatePictureParameters(pictureParametersObject, client);
     }
 
-    return false;
+    return NULL;
 }
 
 bool VulkanVideoParser::DecodePicture(

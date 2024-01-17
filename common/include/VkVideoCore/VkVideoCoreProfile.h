@@ -24,8 +24,8 @@
 #include "vk_video/vulkan_video_codecs_common.h"
 #include "vk_video/vulkan_video_codec_h264std.h"
 #include "vk_video/vulkan_video_codec_h265std.h"
+#define VK_ENABLE_BETA_EXTENSIONS 1
 #include "vulkan/vulkan.h"
-#include "nvidia_utils/vulkan/ycbcr_utils.h"
 
 typedef enum StdChromaFormatIdc {
     chroma_format_idc_monochrome  = STD_VIDEO_H264_CHROMA_FORMAT_IDC_MONOCHROME,
@@ -35,10 +35,10 @@ typedef enum StdChromaFormatIdc {
 } StdChromaFormatIdc;
 
 #if defined(__linux) || defined(__linux__) || defined(linux)
-static_assert((uint32_t)chroma_format_idc_monochrome == (uint32_t)STD_VIDEO_H265_CHROMA_FORMAT_IDC_MONOCHROME, "");
-static_assert((uint32_t)chroma_format_idc_420        == (uint32_t)STD_VIDEO_H265_CHROMA_FORMAT_IDC_420, "");
-static_assert((uint32_t)chroma_format_idc_422        == (uint32_t)STD_VIDEO_H265_CHROMA_FORMAT_IDC_422, "");
-static_assert((uint32_t)chroma_format_idc_444        == (uint32_t)STD_VIDEO_H265_CHROMA_FORMAT_IDC_444, "");
+static_assert((uint32_t)chroma_format_idc_monochrome == (uint32_t)STD_VIDEO_H265_CHROMA_FORMAT_IDC_MONOCHROME);
+static_assert((uint32_t)chroma_format_idc_420        == (uint32_t)STD_VIDEO_H265_CHROMA_FORMAT_IDC_420);
+static_assert((uint32_t)chroma_format_idc_422        == (uint32_t)STD_VIDEO_H265_CHROMA_FORMAT_IDC_422);
+static_assert((uint32_t)chroma_format_idc_444        == (uint32_t)STD_VIDEO_H265_CHROMA_FORMAT_IDC_444);
 #endif
 
 class VkVideoCoreProfile
@@ -601,65 +601,6 @@ public:
             break;
         }
     }
-
-    /*
-    VkComponentMapping               components;
-    VkChromaLocation                 xChromaOffset;
-    VkChromaLocation                 yChromaOffset;
-     */
-
-    static VkSamplerYcbcrRange CodecFullRangeToYCbCrRange(bool video_full_range_flag) {
-
-        if (video_full_range_flag) {
-            return VK_SAMPLER_YCBCR_RANGE_ITU_FULL;
-        }
-        return VK_SAMPLER_YCBCR_RANGE_ITU_NARROW;
-    }
-
-    static VkSamplerYcbcrModelConversion CodecColorPrimariesToYCbCrModel(uint32_t colour_primaries)
-    {
-        switch (colour_primaries) {
-        case 1: // Rec. ITU-R BT.709-6
-            return VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
-            break;
-        case 5: // Rec. ITU-R BT.601-7 625, Rec. ITU-R BT.1700-0 625 PAL and 625 SECAM
-        case 6: // Rec. ITU-R BT.601-7 525, Rec. ITU-R BT.1700-0 NTSC
-            return VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601;
-            break;
-        case 9: // Rec. ITU-R BT.2020-2, Rec. ITU-R BT.2100-2
-            return VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_2020;
-            break;
-        default:
-            return VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_IDENTITY;
-            break;
-        }
-        return VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_IDENTITY;
-    }
-
-    static YcbcrPrimariesConstants CodecGetMatrixCoefficients(uint32_t matrix_coefficients)
-    {
-        switch (matrix_coefficients) {
-        case 1: // Rec. ITU-R BT.709-6
-            return GetYcbcrPrimariesConstants(YcbcrBtStandardBt709);
-            break;
-        case 5: // Rec. ITU-R BT.601-7 625, Rec. ITU-R BT.1700-0 625 PAL and 625 SECAM
-        case 6: // Rec. ITU-R BT.601-7 525, Rec. ITU-R BT.1700-0 NTSC
-            return GetYcbcrPrimariesConstants(YcbcrBtStandardBt601Ebu);
-            break;
-        case 7: // Society of Motion Picture and Television Engineers 240M
-            return GetYcbcrPrimariesConstants(YcbcrBtStandardBt601Smtpe);
-            break;
-        case 9: // Rec. ITU-R BT.2020-2, Rec. ITU-R BT.2100-2
-            return GetYcbcrPrimariesConstants(YcbcrBtStandardBt2020);
-            break;
-        default:
-            return YcbcrPrimariesConstants{1.0, 1.0};
-            break;
-        }
-        return YcbcrPrimariesConstants{1.0, 1.0};
-    }
-
-
 
 private:
     VkVideoProfileInfoKHR     m_profile;

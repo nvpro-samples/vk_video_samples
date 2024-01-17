@@ -20,7 +20,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <algorithm>
-#include "VkCodecUtils/VkVideoRefCountBase.h"
+#include "VkVideoCore/VkVideoRefCountBase.h"
 #include <vulkan_interfaces.h>
 
 class VulkanBitstreamBuffer : public VkVideoRefCountBase

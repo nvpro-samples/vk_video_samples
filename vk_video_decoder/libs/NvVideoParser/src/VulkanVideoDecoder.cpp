@@ -15,7 +15,7 @@
 */
 
 #include <stdarg.h>
-#include "vkvideo_parser/VulkanVideoParserIf.h"
+#include "VulkanVideoParserIf.h"
 #include "VulkanVideoDecoder.h"
 #include "nvVulkanVideoUtils.h"
 #include "nvVulkanVideoParser.h"

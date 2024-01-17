@@ -24,7 +24,7 @@ set(LIBNVPARSER
   include/VulkanH265Decoder.h
   include/VulkanH26xDecoder.h
   include/VulkanVideoDecoder.h
-  ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VkVideoRefCountBase.h
+  ../../../common/include/VkVideoCore/VkVideoRefCountBase.h
   ${VULKAN_VIDEO_PARSER_INCLUDE}/../NvVideoParser/nvVulkanVideoUtils.h
   ${VULKAN_VIDEO_PARSER_INCLUDE}/VulkanVideoParser.h
   ${VULKAN_VIDEO_PARSER_INCLUDE}/VulkanVideoParserParams.h
@@ -37,9 +37,7 @@ set(LIBNVPARSER
 )
 
 include_directories(BEFORE "${CMAKE_CURRENT_LIST_DIR}/../")
-include_directories(BEFORE ${VULKAN_VIDEO_PARSER_INCLUDE}/../)
 include_directories(BEFORE ${VULKAN_VIDEO_PARSER_INCLUDE})
-include_directories(BEFORE ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT})
 
 add_library(${VULKAN_VIDEO_PARSER_LIB} SHARED ${LIBNVPARSER})
 

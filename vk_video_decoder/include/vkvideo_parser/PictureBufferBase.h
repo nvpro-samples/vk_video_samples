@@ -80,7 +80,13 @@ public:
     int32_t Reset()
     {
         int32_t ref = m_refCount;
+        m_picIdx = -1;
+        m_displayOrder = -1;
+        m_decodeOrder = 0;
+        m_timestamp = 0;
+        m_presentTime = 0;
         m_refCount = 0;
+        // assert(ref == 0);
         return ref;
     }
 

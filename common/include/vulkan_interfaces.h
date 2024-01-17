@@ -14,8 +14,13 @@
 * limitations under the License.
 */
 
+#ifdef VK_API_USE_DRIVER_REPO
+// If using the local driver repo with Vulkan APIs
+#include "vulkan/vulkannv.h"
+#else
 // Using the Vulkan APIs from Vulkan SDK
 #ifndef VK_ENABLE_BETA_EXTENSIONS
 #define VK_ENABLE_BETA_EXTENSIONS 1
 #endif
 #include "vulkan/vulkan.h"
+#endif

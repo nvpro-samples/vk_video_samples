@@ -21,7 +21,7 @@
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include <limits>
-#include "vkvideo_parser/VulkanVideoParserIf.h"
+#include "VulkanVideoParserIf.h"
 #include "nvVulkanh265ScalingList.h"
 #include "VulkanH265Decoder.h"
 #include "nvVulkanVideoUtils.h"
@@ -991,7 +991,7 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
     if (vps->flags.vps_timing_info_present_flag != 0)
     {
         vps->vps_num_units_in_tick = u(16);
-        vps->vps_num_units_in_tick <<= 16;
+        vps->vps_num_units_in_tick <<= 16;;
         vps->vps_num_units_in_tick += u(16);
         vps->vps_time_scale = u(16);
         vps->vps_time_scale <<= 16;
@@ -1015,9 +1015,7 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
 
         hevc_video_hrd_param_s* pHrdParameters = nullptr;
         if (vps->vps_num_hrd_parameters) {
-            // vps->stdHrdParameters.reset(new hevc_video_hrd_param_s[vps->vps_num_hrd_parameters]());
-            auto deleter = [](hevc_video_hrd_param_s* p) { delete[] p; };
-            vps->stdHrdParameters.reset(new hevc_video_hrd_param_s[vps->vps_num_hrd_parameters], deleter);
+            vps->stdHrdParameters.reset(new hevc_video_hrd_param_s[vps->vps_num_hrd_parameters]);
             if (vps->stdHrdParameters) {
                 pHrdParameters = vps->stdHrdParameters.get();
                 vps->pHrdParameters = pHrdParameters;
@@ -1754,6 +1752,7 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
         int RIdx = idx - (delta_idx_minus1 + 1);
         assert(RIdx >= 0);
         const short_term_ref_pic_set_s *rstrps = &strpss[RIdx];
+        int useCount = 0;
         for (int j = 0; j <= (rstrps->NumNegativePics + rstrps->NumPositivePics); j++)
         {
             assert(j < MAX_NUM_STRPS_ENTRIES + 1);
@@ -1765,6 +1764,7 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
             if (use_delta_flag[j]) {
                 stdShortTermRefPicSet->use_delta_flag |= 1 << j;
             }
+            useCount += use_delta_flag[j];
         }
 
         {

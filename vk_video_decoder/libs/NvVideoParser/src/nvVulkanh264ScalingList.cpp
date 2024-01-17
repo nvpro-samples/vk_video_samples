@@ -15,7 +15,7 @@
 */
 
 #include "string.h"
-#include "vkvideo_parser/VulkanVideoParserIf.h"
+#include "VulkanVideoParserIf.h"
 #include "VulkanH264Decoder.h"
 #include "nvVulkanh264ScalingList.h"
 
