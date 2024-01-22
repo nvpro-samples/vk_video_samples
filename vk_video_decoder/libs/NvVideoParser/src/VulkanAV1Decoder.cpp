@@ -2295,7 +2295,6 @@ bool IsObuInCurrentOperatingPoint(int  current_operating_point, AV1ObuHeader *hd
 bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int32_t frameSizeBytes, const VkParserBitstreamPacket* pck, int* pParsedBytes)
 {
     m_bSPSChanged = false;
-    uint32_t consumedBytes = 0;
     AV1ObuHeader hdr;
 
 	const uint8_t* pCurrOBU = pFrameStart;
@@ -2364,9 +2363,6 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
         {
             if (ParseObuTileGroup(hdr)) {
 				// Last tile group for this frame
-		        consumedBytes = (consumed_bits() + 7) / 8;
-		        assert(consumedBytes < hdr.payload_size);
-		        //assert((m_nalu.start_offset + consumedBytes + tileGroupSizeBytes) == frameSizeBytes);
                 if (!end_of_picture(frameSizeBytes))
                     return false;
             }
