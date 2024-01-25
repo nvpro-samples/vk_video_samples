@@ -271,11 +271,30 @@ bool VulkanDeviceContext::DebugReportCallback(VkDebugReportFlagsEXT flags, VkDeb
     else if (flags & VK_DEBUG_REPORT_DEBUG_BIT_EXT)
         prio = LOG_DEBUG;
 
+    std::vector<std::string> ignoredVUIDs = {
+        "VUID-VkBufferCreateInfo-usage-04813", // buffer profiles (they will be optional soon)
+        "VUID-vkCmdDecodeVideoKHR-pDecodeInfo-07135", // ditto
+        "VUID-vkCmdDecodeVideoKHR-pDecodeInfo-07156", // activation validation, requires deeper understand of DPB management
+        "VUID-vkCmdBeginVideoCodingKHR-slotIndex-07239", // ditto
+        "VUID-vkCmdDecodeVideoKHR-pDecodeInfo-07149", // ditto
+    };
     std::stringstream ss;
-    ss << layer_prefix << ": " << msg;
 
-    std::ostream &st = (prio >= LOG_ERR) ? std::cerr : std::cout;
-    st << msg << "\n";
+    if (prio >= LOG_ERR) {
+        bool ignored = false;
+        for (const auto& ignoredVUID : ignoredVUIDs) {
+            if (strstr(msg, ignoredVUID.c_str()) != nullptr) {
+                ignored = true;
+                break;
+            }
+        }
+        if (ignored)
+            return false;
+        ss << layer_prefix << ": " << msg;
+
+        std::ostream &st = (prio >= LOG_ERR) ? std::cerr : std::cout;
+        st << msg << "\n";
+    }
 
     return false;
 }
@@ -337,15 +356,18 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
         std::vector<VkQueueFamilyProperties2> queues;
         std::vector<VkQueueFamilyVideoPropertiesKHR> videoQueues;
         std::vector<VkQueueFamilyQueryResultStatusPropertiesKHR> queryResultStatus;
-        vk::get(this, physicalDevice, queues, videoQueues, queryResultStatus);
+        vk::getVideoRelatedQueuesProperties(this, physicalDevice, queues, videoQueues, queryResultStatus);
         bool videodecodequeryResultStatus = false;
         VkQueueFlags foundQueueTypes = 0;
         int gfxQueueFamily = -1,
             presentQueueFamily = -1,
+            transferQueueFamily = -1,
             videoDecodeQueueFamily = -1,
             videoDecodeQueueCount  = 0,
             videoEncodeQueueFamily = -1,
             videoEncodeQueueCount  = 0;
+
+        size_t transferQueueCount = 0;
 
         for (uint32_t i = 0; i < queues.size(); i++) {
             const VkQueueFamilyProperties2 &queue = queues[i];
@@ -359,6 +381,12 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                     (queue.queueFamilyProperties.queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
                 gfxQueueFamily = i;
                 foundQueueTypes |= VK_QUEUE_GRAPHICS_BIT;
+            }
+            if ((requestQueueTypes & VK_QUEUE_TRANSFER_BIT) &&
+                    (queue.queueFamilyProperties.queueCount > transferQueueCount) &&
+                    (queue.queueFamilyProperties.queueFlags & VK_QUEUE_TRANSFER_BIT)) {
+                transferQueueFamily = i;
+                foundQueueTypes |= VK_QUEUE_TRANSFER_BIT;
             }
 
             const VkQueueFamilyVideoPropertiesKHR &videoQueue = videoQueues[i];
@@ -389,11 +417,12 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
 
             if (((foundQueueTypes & requestQueueTypes) == requestQueueTypes) &&
                     ((pWsiDisplay == nullptr) || (presentQueueFamily >= 0))) {
-
+                printf("Selected device: %s (driver version: %d.%d.%d.%d)\n", props.deviceName, VK_VERSION_MAJOR(props.driverVersion),  VK_API_VERSION_MINOR(props.driverVersion),  VK_API_VERSION_PATCH(props.driverVersion), VK_API_VERSION_VARIANT(props.driverVersion));
                 // Selected a physical device
                 m_physDevice = physicalDevice;
                 m_gfxQueueFamily = gfxQueueFamily;
                 m_presentQueueFamily = presentQueueFamily;
+                m_transferQueueFamily = transferQueueFamily;
                 m_videoDecodeQueueFamily = videoDecodeQueueFamily;
                 m_videoDecodeNumQueues = videoDecodeQueueCount;
                 m_videoEncodeQueueFamily = videoEncodeQueueFamily;
@@ -474,6 +503,17 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         devInfo.queueCreateInfoCount++;
     }
 
+    if (m_transferQueueFamily != -1 &&
+        (m_transferQueueFamily != m_videoDecodeQueueFamily) &&
+        (!createGraphicsQueue || (m_transferQueueFamily != m_gfxQueueFamily)) &&
+        (!createPresentQueue  || (m_transferQueueFamily != m_presentQueueFamily))) {
+        queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_transferQueueFamily;
+        queueInfo[devInfo.queueCreateInfoCount].queueCount = 1;
+        queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
+        devInfo.queueCreateInfoCount++;
+    }
+
     if (m_videoDecodeQueueFamily != -1) {
         queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_videoDecodeQueueFamily;
@@ -501,9 +541,49 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
     devInfo.enabledExtensionCount = static_cast<uint32_t>(m_reqDeviceExtensions.size());
     devInfo.ppEnabledExtensionNames = m_reqDeviceExtensions.data();
 
-    // disable all features
-    VkPhysicalDeviceFeatures features = {};
-    devInfo.pEnabledFeatures = &features;
+    VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptorBufferFeature = {};
+    descriptorBufferFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT;
+
+    VkPhysicalDeviceVulkan13Features features_13 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+        .pNext = &descriptorBufferFeature,
+    };
+    VkPhysicalDeviceVulkan12Features features_12 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+        .pNext = &features_13,
+    };
+    VkPhysicalDeviceVulkan11Features features_11 = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+        .pNext = &features_12,
+    };
+    VkPhysicalDeviceFeatures2 devFeatures = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        .pNext = &features_11,
+    };
+
+    GetPhysicalDeviceFeatures2(m_physDevice, &devFeatures);
+
+    VkPhysicalDeviceVulkan13Features chosen13 = {};
+    chosen13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    VkPhysicalDeviceVulkan12Features chosen12 = {};
+    chosen12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    chosen12.pNext = &chosen13;
+    VkPhysicalDeviceVulkan11Features chosen11 = {};
+    chosen11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+    chosen11.pNext = &chosen12;
+
+    // TODO: Review all the usages of features and ensure they are checked here. Descriptor buffers, samplers, lots of things probably...
+    // if presenting: assert sampler conversion...
+    chosen11.samplerYcbcrConversion = features_11.samplerYcbcrConversion;
+    assert(features_13.synchronization2);
+    chosen13.synchronization2 = features_13.synchronization2;
+    assert(features_12.timelineSemaphore);
+    chosen12.timelineSemaphore = features_12.timelineSemaphore;
+
+    // Use all the supported core features, probably we should trim this down a bit.
+    devFeatures.pNext = &chosen11;
+    devInfo.pEnabledFeatures = nullptr; // use features2
+    devInfo.pNext = &devFeatures;
 
     VkResult result = CreateDevice(m_physDevice, &devInfo, nullptr, &m_device);
     if (result != VK_SUCCESS) {
@@ -512,8 +592,10 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
 
     vk::InitDispatchTableBottom(m_instance,m_device, this);
 
-    GetDeviceQueue(m_device, GetGfxQueueFamilyIdx(), 0, &m_gfxQueue);
-    GetDeviceQueue(m_device, GetPresentQueueFamilyIdx(), 0, &m_presentQueue);
+    if (createGraphicsQueue)
+        GetDeviceQueue(m_device, GetGfxQueueFamilyIdx(), 0, &m_gfxQueue);
+    if (createPresentQueue)
+        GetDeviceQueue(m_device, GetPresentQueueFamilyIdx(), 0, &m_presentQueue);
 
     if (numDecodeQueues) {
         assert(GetVideoDecodeQueueFamilyIdx() != -1);
@@ -523,6 +605,9 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         for (uint32_t queueIdx = 0; queueIdx < (uint32_t)numDecodeQueues; queueIdx++) {
             GetDeviceQueue(m_device, GetVideoDecodeQueueFamilyIdx(), queueIdx, &m_videoDecodeQueues[queueIdx]);
         }
+
+        // TODO: Use more transfer queues when available.
+        GetDeviceQueue(m_device, GetTransferQueueFamilyIdx(), 0, &m_transferQueue);
     }
 
     if (numEncodeQueues) {
@@ -546,6 +631,7 @@ VulkanDeviceContext::VulkanDeviceContext(uint32_t deviceId)
     , m_gfxQueueFamily(-1)
     , m_computeQueueFamily(-1)
     , m_presentQueueFamily(-1)
+    , m_transferQueueFamily(-1)
     , m_videoDecodeQueueFamily(-1)
     , m_videoDecodeDefaultQueueIndex(0)
     , m_videoDecodeNumQueues(0)

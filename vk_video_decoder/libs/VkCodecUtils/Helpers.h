@@ -57,7 +57,7 @@ inline VkResult enumerate(const VkInterfaceFunctions* vkIf, std::vector<VkLayerP
     return vkIf->EnumerateInstanceLayerProperties(&count, layer_props.data());
 }
 
-inline VkResult get(const VkInterfaceFunctions* vkIf,
+inline VkResult getVideoRelatedQueuesProperties(const VkInterfaceFunctions* vkIf,
                     VkPhysicalDevice phy, std::vector<VkQueueFamilyProperties2> &queues,
                     std::vector<VkQueueFamilyVideoPropertiesKHR> &videoQueues,
                     std::vector<VkQueueFamilyQueryResultStatusPropertiesKHR> &queryResultStatus) {
@@ -130,5 +130,18 @@ inline VkResult MapMemoryTypeToIndex(const VkInterfaceFunctions* vkIf,
 }
 
 }  // namespace vk
+
+static inline uint32_t NextPowerOf2U32(uint32_t v)
+{
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    v++;
+    return v;
+}
+
 
 #endif  // HELPERS_H

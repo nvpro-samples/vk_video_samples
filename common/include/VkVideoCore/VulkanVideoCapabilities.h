@@ -20,6 +20,7 @@
 #include "string.h"
 #include "vulkan_interfaces.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
+#include "VkCodecUtils/VkBufferResource.h"
 #include "VkCodecUtils/Helpers.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
 
@@ -56,8 +57,8 @@ public:
     static VkResult GetSupportedVideoFormats(const VulkanDeviceContext* vkDevCtx,
                                              const VkVideoCoreProfile& videoProfile,
                                              VkVideoDecodeCapabilityFlagsKHR capabilityFlags,
-                                             VkFormat& pictureFormat,
-                                             VkFormat& referencePicturesFormat)
+                                             VkFormat& outputPictureFormat,
+                                             VkFormat& dpbPictureFormat)
     {
         VkResult result = VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR;
         if ((capabilityFlags & VK_VIDEO_DECODE_CAPABILITY_DPB_AND_OUTPUT_COINCIDE_BIT_KHR) != 0) {
@@ -68,8 +69,9 @@ public:
                                     (VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR),
                                     formatCount, supportedDpbFormats);
 
-            referencePicturesFormat = supportedDpbFormats[0];
-            pictureFormat = supportedDpbFormats[0];
+            assert(formatCount == 1); // how should we rank the formats?
+            dpbPictureFormat = supportedDpbFormats[0];
+            outputPictureFormat = supportedDpbFormats[0];
 
         } else if ((capabilityFlags & VK_VIDEO_DECODE_CAPABILITY_DPB_AND_OUTPUT_DISTINCT_BIT_KHR) != 0) {
             // AMD
@@ -86,8 +88,9 @@ public:
                                     VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR,
                                     formatCount, supportedOutFormats);
 
-            referencePicturesFormat = supportedDpbFormats[0];
-            pictureFormat = supportedOutFormats[0];
+            assert(formatCount == 1); // how should we rank the formats?
+            dpbPictureFormat = supportedDpbFormats[0];
+            outputPictureFormat = supportedOutFormats[0];
 
         } else {
             fprintf(stderr, "\nERROR: Unsupported decode capability flags.");
@@ -99,8 +102,8 @@ public:
             fprintf(stderr, "\nERROR: GetVideoFormats() result: 0x%x\n", result);
         }
 
-        assert((referencePicturesFormat != VK_FORMAT_UNDEFINED) && (pictureFormat != VK_FORMAT_UNDEFINED));
-        assert(referencePicturesFormat == pictureFormat);
+        assert((dpbPictureFormat != VK_FORMAT_UNDEFINED) && (outputPictureFormat != VK_FORMAT_UNDEFINED));
+        assert(dpbPictureFormat == outputPictureFormat);
 
         return result;
     }
@@ -182,7 +185,7 @@ public:
     static VkResult GetVideoFormats(const VulkanDeviceContext* vkDevCtx,
                                     const VkVideoCoreProfile& videoProfile, VkImageUsageFlags imageUsage,
                                     uint32_t& formatCount, VkFormat* formats,
-                                    bool dumpData = false)
+                                    bool dumpData = true)
     {
         for (uint32_t i = 0; i < formatCount; i++) {
             formats[i] = VK_FORMAT_UNDEFINED;
@@ -206,9 +209,25 @@ public:
         result = vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(vkDevCtx->getPhysicalDevice(), &videoFormatInfo, &supportedFormatCount, pSupportedFormats);
         assert(result == VK_SUCCESS);
         if (dumpData) {
-            std::cout << "\t\t\t" << ((videoProfile.GetCodecType() == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) ? "h264" : "h265") << "decode formats: " << std::endl;
+            printf("supported decode formats:\n");
             for (uint32_t fmt = 0; fmt < supportedFormatCount; fmt++) {
-                std::cout << "\t\t\t " << fmt << ": " << std::hex << pSupportedFormats[fmt].format << std::dec << std::endl;
+                switch (pSupportedFormats[fmt].format) {
+		case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM_KHR:
+		    printf("\tVK_FORMAT_G8_B8_R8_3PLANE_420_UNORM_KHR\n");
+		    break;
+		case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM_KHR:
+		    printf("\tVK_FORMAT_G8_B8R8_2PLANE_420_UNORM_KHR\n");
+		    break;
+		case VK_FORMAT_G8_B8R8_2PLANE_422_UNORM_KHR:
+		    printf("\tVK_FORMAT_G8_B8R8_2PLANE_422_UNORM_KHR\n");
+		    break;
+		case VK_FORMAT_R10X6G10X6_UNORM_2PACK16_KHR:
+		    printf("\tVK_FORMAT_R10X6G10X6_UNORM_2PACK16_KHR\n");
+		    break;
+		default:
+		    printf("\tUnusual image format: %d\n", pSupportedFormats[fmt].format);
+		    break;
+                }
             }
         }
 
@@ -234,7 +253,7 @@ public:
         std::vector<VkQueueFamilyProperties2> queues;
         std::vector<VkQueueFamilyVideoPropertiesKHR> videoQueues;
         std::vector<VkQueueFamilyQueryResultStatusPropertiesKHR> queryResultStatus;
-        get(vkDevCtx, vkPhysicalDev, queues, videoQueues, queryResultStatus);
+        getVideoRelatedQueuesProperties(vkDevCtx, vkPhysicalDev, queues, videoQueues, queryResultStatus);
 
         for (uint32_t queueIndx = 0; queueIndx < queues.size(); queueIndx++) {
             const VkQueueFamilyProperties2 &q = queues[queueIndx];

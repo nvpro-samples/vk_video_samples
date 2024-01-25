@@ -135,12 +135,12 @@ public:
                                   const VkExtent2D&        maxImageExtent,
                                   VkImageUsageFlags        dpbImageUsage,
                                   VkImageUsageFlags        outImageUsage,
-                                  uint32_t                 queueFamilyIndex,
+                                  uint32_t                 decodeQueueFamilyIndex,
+                                  uint32_t                 transferQueueFamilyIndex,
                                   int32_t                  numImagesToPreallocate,
                                   bool                     useImageArray = false,
                                   bool                     useImageViewArray = false,
-                                  bool                     useSeparateOutputImage = false,
-                                  bool                     useLinearOutput = false) = 0;
+                                  bool                     useSeparateOutputImage = false) = 0;
 
     virtual int32_t QueuePictureForDecode(int8_t picId, VkParserDecodePictureInfo* pDecodePictureInfo,
                                           ReferencedObjectsInfo* pReferencedObjectsInfo,

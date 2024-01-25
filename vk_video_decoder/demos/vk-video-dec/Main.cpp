@@ -34,8 +34,9 @@ int main(int argc, const char **argv) {
     VulkanDeviceContext vkDevCtxt(programConfig.deviceId);
 
     if (programConfig.validate) {
-        vkDevCtxt.AddRequiredInstanceLayer("VK_LAYER_LUNARG_standard_validation");
-        vkDevCtxt.AddRequiredInstanceLayer(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+        // REVIEW: Should we make an effort to check for the old LUNARG validation layer name?
+        vkDevCtxt.AddRequiredInstanceLayer("VK_LAYER_KHRONOS_validation");
+        vkDevCtxt.AddRequiredInstanceExtension(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
     }
 
     /********** Start WSI instance extensions support *******************************************/
@@ -61,16 +62,15 @@ int main(int argc, const char **argv) {
     vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
     vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME);
 #endif
-    { // Vulkan Video required extensions
-        // VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME - for NV only
-        vkDevCtxt.AddOptinalDeviceExtension(VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME);
-        vkDevCtxt.AddOptinalDeviceExtension(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME);
-        vkDevCtxt.AddOptinalDeviceExtension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
-        vkDevCtxt.AddOptinalDeviceExtension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
-        vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
-        vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_VIDEO_QUEUE_EXTENSION_NAME);
-        vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME);
-    }
+    // VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME - for NV only
+    vkDevCtxt.AddOptionalDeviceExtension(VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME);
+    vkDevCtxt.AddOptionalDeviceExtension(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME);
+    vkDevCtxt.AddOptionalDeviceExtension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+    vkDevCtxt.AddOptionalDeviceExtension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+    // Vulkan Video required extensions
+    vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+    vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_VIDEO_QUEUE_EXTENSION_NAME);
+    vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME);
 
     VkResult result = vkDevCtxt.InitVulkanDevice(programConfig.name.c_str(),
                                                            programConfig.verbose);
@@ -97,12 +97,11 @@ int main(int argc, const char **argv) {
         return -1;
     }
 
-    const bool supportsDisplay = true;
     const int32_t numDecodeQueues = ((programConfig.queueId != 0) ||
                                      (programConfig.enableHwLoadBalancing != 0)) ?
 					 -1 : // all available HW decoders
 					  1;  // only one HW decoder instance
-    if (supportsDisplay && !programConfig.noPresent) {
+    if (!programConfig.noPresent) {
 
         VkSharedBaseObj<Shell> displayShell;
         result = Shell::Create(&vkDevCtxt, frameProcessor, programConfig.directMode, displayShell);
@@ -134,8 +133,8 @@ int main(int argc, const char **argv) {
         displayShell->RunLoop();
 
     } else {
-
         result = vkDevCtxt.InitPhysicalDevice((VK_QUEUE_GRAPHICS_BIT |
+                                               VK_QUEUE_TRANSFER_BIT |
                                                VK_QUEUE_VIDEO_DECODE_BIT_KHR),
                                                nullptr);
         if (result != VK_SUCCESS) {

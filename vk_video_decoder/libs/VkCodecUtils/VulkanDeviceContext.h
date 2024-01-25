@@ -64,6 +64,8 @@ public:
     VkQueue GetGfxQueue() const { return m_gfxQueue; }
     int32_t GetPresentQueueFamilyIdx() const { return m_presentQueueFamily; }
     VkQueue GetPresentQueue() const { return m_presentQueue; }
+    int32_t GetTransferQueueFamilyIdx() const { return m_transferQueueFamily; }
+    VkQueue GetTransferQueue() const { return m_transferQueue; }
     int32_t GetVideoDecodeQueueFamilyIdx() const { return m_videoDecodeQueueFamily; }
     int32_t GetVideoDecodeDefaultQueueIndex() const { return m_videoDecodeDefaultQueueIndex; }
     int32_t GetVideoDecodeNumQueues() const { return m_videoDecodeNumQueues; }
@@ -80,6 +82,13 @@ public:
             return VK_NULL_HANDLE;
         }
         return m_videoEncodeQueues[index];
+    }
+    std::vector<uint32_t> GetQueueFamiliesForResource() const {
+        assert(m_videoDecodeQueueFamily >= 0);
+        std::vector<uint32_t> familyIndices{ (uint32_t)m_videoDecodeQueueFamily };
+        if (m_transferQueueFamily >= 0 && m_transferQueueFamily != m_videoDecodeQueueFamily)
+            familyIndices.push_back((uint32_t)m_transferQueueFamily);
+        return familyIndices;
     }
     bool    GetVideoQueryResultStatusSupport() const { return m_queryResultStatusSupport; }
     class MtQueueMutex {
@@ -172,7 +181,7 @@ public:
         return (int32_t)m_reqDeviceExtensions.size();
     }
 
-    int32_t AddOptinalDeviceExtension(const char* deviceExtensionName) {
+    int32_t AddOptionalDeviceExtension(const char* deviceExtensionName) {
         m_optDeviceExtensions.push_back(deviceExtensionName);
         return (int32_t)m_optDeviceExtensions.size();
     }
@@ -243,6 +252,7 @@ private:
     int32_t m_gfxQueueFamily;
     int32_t m_computeQueueFamily;
     int32_t m_presentQueueFamily;
+    int32_t m_transferQueueFamily;
     int32_t m_videoDecodeQueueFamily;
     int32_t m_videoDecodeDefaultQueueIndex;
     int32_t m_videoDecodeNumQueues;
@@ -252,6 +262,7 @@ private:
     VkDevice                m_device;
     VkQueue                 m_gfxQueue;
     VkQueue                 m_presentQueue;
+    VkQueue                 m_transferQueue;
     std::vector<VkQueue>    m_videoDecodeQueues;
     std::vector<VkQueue>    m_videoEncodeQueues;
     mutable std::mutex                                  m_gfxQueueMutexes;

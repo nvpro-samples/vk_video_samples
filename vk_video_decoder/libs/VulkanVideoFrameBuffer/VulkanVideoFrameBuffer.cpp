@@ -67,8 +67,7 @@ public:
                           uint32_t imageIndex,
                           VkSharedBaseObj<VkImageResource>&  imageArrayParent,
                           VkSharedBaseObj<VkImageResourceView>& imageViewArrayParent,
-                          bool useSeparateOutputImage = false,
-                          bool useLinearOutput = false);
+                          bool useSeparateOutputImage = false);
 
     VkResult init( const VulkanDeviceContext* vkDevCtx);
 
@@ -182,7 +181,7 @@ public:
     static constexpr size_t maxImages = 32;
 
     NvPerFrameDecodeImageSet()
-        : m_queueFamilyIndex((uint32_t)-1)
+        : m_decodeQueueFamilyIndex((uint32_t)-1)
         , m_dpbImageCreateInfo()
         , m_outImageCreateInfo()
         , m_dpbRequiredMemProps(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
@@ -191,7 +190,6 @@ public:
         , m_usesImageArray(false)
         , m_usesImageViewArray(false)
         , m_usesSeparateOutputImage(false)
-        , m_usesLinearOutput(false)
         , m_perFrameDecodeResources(maxImages)
         , m_imageArray()
         , m_imageViewArray()
@@ -206,13 +204,13 @@ public:
         const VkExtent2D&     maxImageExtent,
         VkImageUsageFlags     dpbImageUsage,
         VkImageUsageFlags     outImageUsage,
-        uint32_t              queueFamilyIndex,
+        uint32_t              decodeQueueFamilyIndex,
+        uint32_t              transferQueueFamilyIndex,
         VkMemoryPropertyFlags dpbRequiredMemProps = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         VkMemoryPropertyFlags outRequiredMemProps = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         bool useImageArray = false,
         bool useImageViewArray = false,
-        bool useSeparateOutputImages = false,
-        bool useLinearOutput = false);
+        bool useSeparateOutputImages = false);
 
     void Deinit();
 
@@ -277,8 +275,7 @@ public:
                                imageIndex,
                                m_imageArray,
                                m_imageViewArray,
-                               m_usesSeparateOutputImage,
-                               m_usesLinearOutput);
+                               m_usesSeparateOutputImage);
 
             if (result == VK_SUCCESS) {
                 validImage = m_perFrameDecodeResources[imageIndex].GetImageSetNewLayout(
@@ -297,7 +294,8 @@ public:
     }
 
 private:
-    uint32_t                             m_queueFamilyIndex;
+    uint32_t                             m_decodeQueueFamilyIndex;
+    uint32_t                             m_transferQueueFamilyIndex;
     VkVideoCoreProfile                   m_videoProfile;
     VkImageCreateInfo                    m_dpbImageCreateInfo;
     VkImageCreateInfo                    m_outImageCreateInfo;
@@ -307,7 +305,6 @@ private:
     uint32_t                             m_usesImageArray:1;
     uint32_t                             m_usesImageViewArray:1;
     uint32_t                             m_usesSeparateOutputImage:1;
-    uint32_t                             m_usesLinearOutput:1;
     std::vector<NvPerFrameDecodeResources> m_perFrameDecodeResources;
     VkSharedBaseObj<VkImageResource>     m_imageArray;     // must be valid if m_usesImageArray is true
     VkSharedBaseObj<VkImageResourceView> m_imageViewArray; // must be valid if m_usesImageViewArray is true
@@ -388,12 +385,12 @@ public:
                                   const VkExtent2D&        maxImageExtent,
                                   VkImageUsageFlags        dpbImageUsage,
                                   VkImageUsageFlags        outImageUsage,
-                                  uint32_t                 queueFamilyIndex,
+                                  uint32_t                 decodeQueueFamilyIndex,
+                                  uint32_t                 transferQueueFamilyIndex,
                                   int32_t                  numImagesToPreallocate,
                                   bool                     useImageArray = false,
                                   bool                     useImageViewArray = false,
-                                  bool                     useSeparateOutputImage = false,
-                                  bool                     useLinearOutput = false)
+                                  bool                     useSeparateOutputImage = false)
     {
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
 
@@ -416,14 +413,12 @@ public:
                                               maxImageExtent,
                                               dpbImageUsage,
                                               outImageUsage,
-                                              queueFamilyIndex,
+                                              decodeQueueFamilyIndex,
+                                              transferQueueFamilyIndex,
                                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                              useLinearOutput ? ( VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT  |
-                                                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-                                                                  VK_MEMORY_PROPERTY_HOST_CACHED_BIT)  :
-                                                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                               useImageArray, useImageViewArray,
-                                              useSeparateOutputImage, useLinearOutput);
+                                              useSeparateOutputImage);
         m_numberParameterUpdates++;
 
         return imageSetCreateResult;
@@ -798,8 +793,7 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
                                                  uint32_t imageIndex,
                                                  VkSharedBaseObj<VkImageResource>& imageArrayParent,
                                                  VkSharedBaseObj<VkImageResourceView>& imageViewArrayParent,
-                                                 bool useSeparateOutputImage,
-                                                 bool useLinearOutput)
+                                                 bool useSeparateOutputImage)
 {
     VkResult result = VK_SUCCESS;
 
@@ -836,7 +830,7 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
                 return result;
             }
 
-            if (!(useSeparateOutputImage || useLinearOutput)) {
+            if (!useSeparateOutputImage) {
                 m_outImageView = m_frameDpbImageView;
             }
 
@@ -844,7 +838,7 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
 
             m_frameDpbImageView = imageViewArrayParent;
 
-            if (!(useSeparateOutputImage || useLinearOutput)) {
+            if (!useSeparateOutputImage) {
                 VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, imageIndex, 1 };
                 result = VkImageResourceView::Create(vkDevCtx, imageResource,
                                                      subresourceRange,
@@ -855,7 +849,7 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
             }
         }
 
-        if (useSeparateOutputImage || useLinearOutput) {
+        if (useSeparateOutputImage) {
 
             VkSharedBaseObj<VkImageResource> displayImageResource;
             result = VkImageResource::Create(vkDevCtx,
@@ -961,13 +955,13 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
                                        const VkExtent2D&        maxImageExtent,
                                        VkImageUsageFlags        dpbImageUsage,
                                        VkImageUsageFlags        outImageUsage,
-                                       uint32_t                 queueFamilyIndex,
+                                       uint32_t                 decodeQueueFamilyIndex,
+                                       uint32_t                 transferQueueFamilyIndex,
                                        VkMemoryPropertyFlags    dpbRequiredMemProps,
                                        VkMemoryPropertyFlags    outRequiredMemProps,
                                        bool                     useImageArray,
                                        bool                     useImageViewArray,
-                                       bool                     useSeparateOutputImage,
-                                       bool                     useLinearOutput)
+                                       bool                     useSeparateOutputImage)
 {
     if (numImages > m_perFrameDecodeResources.size()) {
         assert(!"Number of requested images exceeds the max size of the image array");
@@ -993,8 +987,8 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
     }
 
     m_videoProfile.InitFromProfile(pDecodeProfile);
-
-    m_queueFamilyIndex = queueFamilyIndex;
+    m_transferQueueFamilyIndex = transferQueueFamilyIndex;
+    m_decodeQueueFamilyIndex = decodeQueueFamilyIndex;
     m_dpbRequiredMemProps = dpbRequiredMemProps;
     m_outRequiredMemProps = outRequiredMemProps;
 
@@ -1010,9 +1004,10 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
     m_dpbImageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     m_dpbImageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     m_dpbImageCreateInfo.usage = dpbImageUsage;
-    m_dpbImageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    m_dpbImageCreateInfo.queueFamilyIndexCount = 1;
-    m_dpbImageCreateInfo.pQueueFamilyIndices = &m_queueFamilyIndex;
+    const auto resourceIndices = vkDevCtx->GetQueueFamiliesForResource();
+    m_dpbImageCreateInfo.sharingMode = resourceIndices.size() == 1 ? VK_SHARING_MODE_EXCLUSIVE : VK_SHARING_MODE_CONCURRENT;
+    m_dpbImageCreateInfo.queueFamilyIndexCount = resourceIndices.size();
+    m_dpbImageCreateInfo.pQueueFamilyIndices = resourceIndices.data();
     m_dpbImageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     m_dpbImageCreateInfo.flags = 0;
 
@@ -1021,13 +1016,8 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
         m_outImageCreateInfo = m_dpbImageCreateInfo;
         m_outImageCreateInfo.format = outImageFormat;
         m_outImageCreateInfo.arrayLayers = 1;
-        m_outImageCreateInfo.tiling = useLinearOutput ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
+        m_outImageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
         m_outImageCreateInfo.usage = outImageUsage;
-
-        if ((outImageUsage & VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR) == 0) {
-            // A simple output image not directly used by the decoder
-            m_outImageCreateInfo.pNext = nullptr;
-        }
     }
 
     if (useImageArray) {
@@ -1076,8 +1066,7 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
                                                                   imageIndex,
                                                                   m_imageArray,
                                                                   m_imageViewArray,
-                                                                  useSeparateOutputImage,
-                                                                  useLinearOutput);
+                                                                  useSeparateOutputImage);
 
             assert(result == VK_SUCCESS);
             if (result != VK_SUCCESS) {
@@ -1090,7 +1079,6 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
     m_usesImageArray          = useImageArray;
     m_usesImageViewArray      = useImageViewArray;
     m_usesSeparateOutputImage = useSeparateOutputImage;
-    m_usesLinearOutput        = useLinearOutput;
 
     return (int32_t)numImages;
 }

@@ -20,6 +20,7 @@
 
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 #include "VkVideoDecoder/VkVideoDecoder.h"
+#include "NvVideoParser/nvVulkanVideoUtils.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 
 #undef max
@@ -221,25 +222,99 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         assert(result == VK_SUCCESS);
     }
 
-    VkImageUsageFlags outImageUsage = (VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
-                                       VK_IMAGE_USAGE_SAMPLED_BIT      |
-                                       VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                       VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-    VkImageUsageFlags dpbImageUsage = VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
+    VkFormatProperties outProps{ };
+    VkFormatProperties dpbProps{ };
+    m_vkDevCtx->GetPhysicalDeviceFormatProperties(m_vkDevCtx->getPhysicalDevice(), dpbImageFormat, &dpbProps);
+    m_vkDevCtx->GetPhysicalDeviceFormatProperties(m_vkDevCtx->getPhysicalDevice(), outImageFormat, &outProps);
+
+    VkImageUsageFlags outImageUsage = 0;
+    VkImageUsageFlags dpbImageUsage = 0;
+    // NOTE(charlie): The drivers are not saying this usage is supported, but it's required if we wish to use linear tiling.
+    if (true || outProps.linearTilingFeatures & VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR)
+        outImageUsage |= VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
+    if (outProps.linearTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT)
+        outImageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    if (outProps.linearTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT)
+        outImageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    if (m_enablePresentation && (outProps.linearTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT))
+        outImageUsage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+
+
+    // assert (dpbProps.optimalTilingFeatures & VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR); // nvidia false
+    dpbImageUsage |= VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
 
     if (m_dpbAndOutputCoincide) {
-        dpbImageUsage = outImageUsage | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
-        outImageUsage &= ~VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
-    } else {
-        // The implementation does not support dpbAndOutputCoincide
-        m_useSeparateOutputImages = true;
+        // dpb usage = output usage
+        //assert(dpbProps.optimalTilingFeatures & VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR); // nvidia: false
+        dpbImageUsage |= VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
+        assert (dpbProps.optimalTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT);
+        dpbImageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        assert (dpbProps.optimalTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT);
+        dpbImageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        if (m_enablePresentation) {
+            assert (dpbProps.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
+            dpbImageUsage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+        }
+        // This would make sense, but I get a Validation Error: [ VUID-VkImageViewCreateInfo-image-04441 ] pCreateInfo.image was created with
+        // VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT but requires VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_STORAGE_BIT|VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT|VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT|VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR|VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT|VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR|VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR|VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR|VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR|VK_IMAGE_USAGE_SAMPLE_WEIGHT_BIT_QCOM|VK_IMAGE_USAGE_SAMPLE_BLOCK_MATCH_BIT_QCOM. The Vulkan spec states: image must have been created with a usage value containing at least one of the usages defined in the valid image usage list for image views (https://www.khronos.org/registry/vulkan/specs/1.3-extensions/html/vkspec.html#VUID-VkImageViewCreateInfo-image-04441)
+        // Are we doing something more fundamentally wrong? I don't know. We should probably be copying to a buffer.
+        // outImageUsage &= ~VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
     }
+
+    // Find supported formats info for the output image
+    VkPhysicalDeviceVideoFormatInfoKHR formatInfo{};
+    formatInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR;
+    formatInfo.pNext = videoProfile.GetProfileListInfo();
+    formatInfo.imageUsage = outImageUsage;
+    uint32_t formatPropertyCount = 0;
+    VkResult res = m_vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(m_vkDevCtx->getPhysicalDevice(),
+                &formatInfo,
+                &formatPropertyCount,
+                nullptr);
+    assert(res == VK_SUCCESS);
+    std::vector< VkVideoFormatPropertiesKHR> outputFormatProperties(formatPropertyCount);
+    for (auto& formatProperty : outputFormatProperties)
+        formatProperty.sType = VK_STRUCTURE_TYPE_VIDEO_FORMAT_PROPERTIES_KHR;
+    res = m_vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(m_vkDevCtx->getPhysicalDevice(),
+                &formatInfo,
+                &formatPropertyCount,
+                outputFormatProperties.data());
+    assert(res == VK_SUCCESS);
+
+    bool outputImageSupportsLinearTiling = false;
+    for (const auto& prop : outputFormatProperties) {
+        if (prop.imageTiling == VK_IMAGE_TILING_LINEAR)
+            outputImageSupportsLinearTiling = true;
+    }
+    // NOTE(charlie): This is what drivers report, hence, we must not use linear tiling. Is this is a reporting bug for drivers?
+    assert(!outputImageSupportsLinearTiling);
+
+    // Find supported formats info for the dpb image
+    formatInfo.imageUsage = dpbImageUsage;
+    formatPropertyCount = 0;
+    res = m_vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(m_vkDevCtx->getPhysicalDevice(),
+                &formatInfo,
+                &formatPropertyCount,
+                nullptr);
+    assert(res == VK_SUCCESS);
+    std::vector< VkVideoFormatPropertiesKHR> dpbFormatProperties(formatPropertyCount);
+    for (auto& formatProperty : dpbFormatProperties)
+        formatProperty.sType = VK_STRUCTURE_TYPE_VIDEO_FORMAT_PROPERTIES_KHR;
+    res = m_vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(m_vkDevCtx->getPhysicalDevice(),
+                &formatInfo,
+                &formatPropertyCount,
+                dpbFormatProperties.data());
+    assert(res == VK_SUCCESS);
+
 
     if(!(videoCapabilities.flags & VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR)) {
         // The implementation does not support individual images for DPB and so must use arrays
         m_useImageArray = true;
         m_useImageViewArray = true;
     }
+
+    m_minBitstreamBufferSizeAlignment = videoCapabilities.minBitstreamBufferSizeAlignment;
+    m_minBitstreamBufferOffsetAlignment = videoCapabilities.minBitstreamBufferOffsetAlignment;
 
     int32_t ret = m_videoFrameBuffer->InitImagePool(videoProfile.GetProfile(),
                                                     m_numDecodeSurfaces,
@@ -250,9 +325,10 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                                     dpbImageUsage,
                                                     outImageUsage,
                                                     m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
+                                                    m_vkDevCtx->GetTransferQueueFamilyIdx(),
                                                     m_numDecodeImagesToPreallocate,
                                                     m_useImageArray, m_useImageViewArray,
-                                                    m_useSeparateOutputImages, m_useLinearOutput);
+                                                    !m_dpbAndOutputCoincide);
 
     assert((uint32_t)ret == m_numDecodeSurfaces);
     if ((uint32_t)ret != m_numDecodeSurfaces) {
@@ -424,8 +500,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     pPicParams->decodeFrameInfo.srcBuffer = pPicParams->bitstreamData->GetBuffer();
     assert(pPicParams->bitstreamDataOffset == 0);
     assert(pPicParams->firstSliceIndex == 0);
-    pPicParams->decodeFrameInfo.srcBufferOffset = pPicParams->bitstreamDataOffset;
-    pPicParams->decodeFrameInfo.srcBufferRange = pPicParams->bitstreamDataLen;
+
+    pPicParams->decodeFrameInfo.srcBufferOffset = ALIGN_UP(pPicParams->bitstreamDataOffset, m_minBitstreamBufferOffsetAlignment);
+    pPicParams->decodeFrameInfo.srcBufferRange = ALIGN_UP(pPicParams->bitstreamDataLen, m_minBitstreamBufferSizeAlignment);
     // pPicParams->decodeFrameInfo.dstImageView = VkImageView();
 
     VkVideoBeginCodingInfoKHR decodeBeginInfo = { VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR };
@@ -438,12 +515,12 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     const VkBufferMemoryBarrier2KHR bitstreamBufferMemoryBarrier = {
         VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR,
         nullptr,
-        VK_PIPELINE_STAGE_2_NONE_KHR,
+        VK_PIPELINE_STAGE_2_HOST_BIT,
         VK_ACCESS_2_HOST_WRITE_BIT_KHR,
         VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR,
         VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR,
         VK_QUEUE_FAMILY_IGNORED,
-        (uint32_t)m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
+        VK_QUEUE_FAMILY_IGNORED,
         pPicParams->decodeFrameInfo.srcBuffer,
         pPicParams->decodeFrameInfo.srcBufferOffset,
         pPicParams->decodeFrameInfo.srcBufferRange
@@ -461,8 +538,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR, // VkAccessFlags   dstAccessMask
             VK_IMAGE_LAYOUT_UNDEFINED, // VkImageLayout   oldLayout
             VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR, // VkImageLayout   newLayout
-            VK_QUEUE_FAMILY_IGNORED, // uint32_t        srcQueueFamilyIndex
-            (uint32_t)m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(), // uint32_t   dstQueueFamilyIndex
+            VK_QUEUE_FAMILY_IGNORED, // uint32_t   srcQueueFamilyIndex
+            VK_QUEUE_FAMILY_IGNORED, // uint32_t   dstQueueFamilyIndex
             VkImage(), // VkImage         image;
             {
                 // VkImageSubresourceRange   subresourceRange
@@ -478,7 +555,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     uint32_t numDpbBarriers = 0;
     VulkanVideoFrameBuffer::PictureResourceInfo currentDpbPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
     VulkanVideoFrameBuffer::PictureResourceInfo currentOutputPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
-    VkVideoPictureResourceInfoKHR currentOutputPictureResource = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR, nullptr};
 
     VkVideoPictureResourceInfoKHR* pOutputPictureResource = nullptr;
     VulkanVideoFrameBuffer::PictureResourceInfo* pOutputPictureResourceInfo = nullptr;
@@ -486,11 +562,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         // Output Distinct will use the decodeFrameInfo.dstPictureResource directly.
         pOutputPictureResource = &pPicParams->decodeFrameInfo.dstPictureResource;
-
-    } else if (m_useLinearOutput) {
-
-        // Output Coincide needs the output only if we are processing linear images that we need to copy to below.
-        pOutputPictureResource = &currentOutputPictureResource;
 
     }
 
@@ -710,15 +781,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
     VkVideoEndCodingInfoKHR decodeEndInfo = { VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR };
     m_vkDevCtx->CmdEndVideoCodingKHR(frameDataSlot.commandBuffer, &decodeEndInfo);
-
-    if (m_dpbAndOutputCoincide && (m_useSeparateOutputImages || m_useLinearOutput)) {
-        CopyOptimalToLinearImage(frameDataSlot.commandBuffer,
-                                 pPicParams->decodeFrameInfo.dstPictureResource,
-                                 currentDpbPictureResourceInfo,
-                                 *pOutputPictureResource,
-                                 *pOutputPictureResourceInfo,
-                                 &frameSynchronizationInfo);
-    }
 
     m_vkDevCtx->EndCommandBuffer(frameDataSlot.commandBuffer);
 
@@ -981,7 +1043,7 @@ VkDeviceSize VkVideoDecoder::GetBitstreamBuffer(VkDeviceSize size,
 VkResult VkVideoDecoder::Create(const VulkanDeviceContext* vkDevCtx,
                                 VkSharedBaseObj<VulkanVideoFrameBuffer>& videoFrameBuffer,
                                 int32_t videoQueueIndx,
-                                bool useLinearOutput,
+                                bool enablePresentation,
                                 bool enableHwLoadBalancing,
                                 int32_t numDecodeImagesInFlight,
                                 int32_t numDecodeImagesToPreallocate,
@@ -991,7 +1053,7 @@ VkResult VkVideoDecoder::Create(const VulkanDeviceContext* vkDevCtx,
     VkSharedBaseObj<VkVideoDecoder> vkDecoder(new VkVideoDecoder(vkDevCtx,
                                                                  videoFrameBuffer,
                                                                  videoQueueIndx,
-                                                                 useLinearOutput,
+								                                 enablePresentation,
                                                                  enableHwLoadBalancing,
                                                                  numDecodeImagesInFlight,
                                                                  numBitstreamBuffersToPreallocate));

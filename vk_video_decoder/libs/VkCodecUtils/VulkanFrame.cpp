@@ -189,7 +189,7 @@ int VulkanFrame::AttachSwapchain(const Shell& sh)
     imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageCreateInfo.tiling = VK_IMAGE_TILING_LINEAR;
     imageCreateInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
-    imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageCreateInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
     imageCreateInfo.queueFamilyIndexCount = 1;
     const uint32_t queueFamilyIndices = m_videoRenderer->m_vkDevCtx->GetGfxQueueFamilyIdx();
     imageCreateInfo.pQueueFamilyIndices = &queueFamilyIndices;

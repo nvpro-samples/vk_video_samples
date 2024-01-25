@@ -231,7 +231,7 @@ VkResult VkParserVideoPictureParameters::UpdateParametersObject(const StdVideoPi
             return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    updateInfo.updateSequenceCount = std::max(pStdVideoPictureParametersSet->GetUpdateSequenceCount(), updateInfo.updateSequenceCount);
+    updateInfo.updateSequenceCount = std::max(pStdVideoPictureParametersSet->GetUpdateSequenceCount() + 1, updateInfo.updateSequenceCount);
 
 
     VkResult result = m_vkDevCtx->UpdateVideoSessionParametersKHR(*m_vkDevCtx,
