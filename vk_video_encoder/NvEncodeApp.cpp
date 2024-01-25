@@ -226,6 +226,9 @@ VkResult EncodeApp::getVideoCapabilities(VkPhysicalDevice physicalDevice, VkVide
             assert(!"Unsupported h.264 STD version");
             return VK_ERROR_INCOMPATIBLE_DRIVER;
         }
+        std::cout << "\t\t\t" << "h264maxPPictureL0ReferenceCount: " << (uint32_t)pH264Capabilities->maxPPictureL0ReferenceCount << std::endl;
+        std::cout << "\t\t\t" << "h264maxBPictureL0ReferenceCount: " << (uint32_t)pH264Capabilities->maxBPictureL0ReferenceCount << std::endl;
+        std::cout << "\t\t\t" << "h264maxL1ReferenceCount: " << (uint32_t)pH264Capabilities->maxL1ReferenceCount << std::endl;
     }
     else {
         assert(!"Unsupported codec");
@@ -296,7 +299,7 @@ StdVideoH264PictureParameterSet EncodeApp::getStdVideoH264PictureParameterSet (v
 }
 
 
-IntraFrameInfo::IntraFrameInfo(uint32_t frameCount, uint32_t width, uint32_t height, StdVideoH264SequenceParameterSet sps, StdVideoH264PictureParameterSet pps, bool isIdr)
+FrameInfo::FrameInfo(uint32_t frameCount, uint32_t width, uint32_t height, StdVideoH264SequenceParameterSet sps, StdVideoH264PictureParameterSet pps, bool isI)
 {
     const uint32_t MaxPicOrderCntLsb = 1 << (sps.log2_max_pic_order_cnt_lsb_minus4 + 4);
 
@@ -306,7 +309,7 @@ IntraFrameInfo::IntraFrameInfo(uint32_t frameCount, uint32_t width, uint32_t hei
     m_sliceHeaderFlags.no_prior_references_available_flag = 0;
 
     m_sliceHeader.flags = m_sliceHeaderFlags;
-    m_sliceHeader.slice_type = STD_VIDEO_H264_SLICE_TYPE_I;
+    m_sliceHeader.slice_type = isI ? STD_VIDEO_H264_SLICE_TYPE_I : STD_VIDEO_H264_SLICE_TYPE_P;
     m_sliceHeader.idr_pic_id = 0;
     m_sliceHeader.num_ref_idx_l0_active_minus1 = 0;
     m_sliceHeader.num_ref_idx_l1_active_minus1 = 0;
@@ -324,20 +327,17 @@ IntraFrameInfo::IntraFrameInfo(uint32_t frameCount, uint32_t width, uint32_t hei
     m_sliceInfo.pSliceHeaderStd = &m_sliceHeader;
     m_sliceInfo.mbCount = iPicSizeInMbs;
 
-    if (isIdr) {
-        m_pictureInfoFlags.idr_flag = 1;
-        m_pictureInfoFlags.is_reference_flag = 1;
-    }
+    m_pictureInfoFlags.idr_flag = isI ? 1 : 0; // every I frame is an IDR frame
+    m_pictureInfoFlags.is_reference_flag = 1;
 
     m_stdPictureInfo.flags = m_pictureInfoFlags;
     m_stdPictureInfo.seq_parameter_set_id = 0;
     m_stdPictureInfo.pic_parameter_set_id = pps.pic_parameter_set_id;
-    m_stdPictureInfo.pictureType = STD_VIDEO_H264_PICTURE_TYPE_I;
+    m_stdPictureInfo.pictureType = isI ? STD_VIDEO_H264_PICTURE_TYPE_I : STD_VIDEO_H264_PICTURE_TYPE_P;
 
     // frame_num is incremented for each reference frame transmitted.
-    // In our case, only the first frame (which is IDR) is a reference
-    // frame with frame_num == 0, and all others have frame_num == 1.
-    m_stdPictureInfo.frame_num = isIdr ? 0 : 1;
+    // In our case, every frame is a reference frame (for the next frame)
+    m_stdPictureInfo.frame_num = frameCount;
 
     // POC is incremented by 2 for each coded frame.
     m_stdPictureInfo.PicOrderCnt = (frameCount * 2) % MaxPicOrderCntLsb;
@@ -347,6 +347,17 @@ IntraFrameInfo::IntraFrameInfo(uint32_t frameCount, uint32_t width, uint32_t hei
     m_encodeH264FrameInfo.naluSliceEntryCount = 1;
     m_encodeH264FrameInfo.pNaluSliceEntries = &m_sliceInfo;
     m_encodeH264FrameInfo.pCurrentPictureInfo = &m_stdPictureInfo;
+    if (!isI) {
+        m_slotInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_DPB_SLOT_INFO_EXT;
+        m_slotInfo.slotIndex = 1;
+        m_slotInfo.pStdReferenceInfo = &m_referenceInfo;
+
+        m_referenceLists.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_REFERENCE_LISTS_INFO_EXT;
+        m_referenceLists.referenceList0EntryCount = 1;
+        m_referenceLists.pReferenceList0Entries = &m_slotInfo;
+
+        m_encodeH264FrameInfo.pReferenceFinalLists = &m_referenceLists;
+    }
 }
 
 VideoSessionParametersInfo::VideoSessionParametersInfo(VkVideoSessionKHR videoSession, StdVideoH264SequenceParameterSet* sps, StdVideoH264PictureParameterSet* pps)
@@ -579,9 +590,11 @@ int32_t EncodeApp::initRateControl(VkCommandBuffer cmdBuf, uint32_t qp)
 
     VkVideoEncodeH264FrameSizeEXT encodeH264FrameSize;
     encodeH264FrameSize.frameISize = 0;
+    encodeH264FrameSize.framePSize = 0;
 
     VkVideoEncodeH264QpEXT encodeH264Qp;
     encodeH264Qp.qpI = qp;
+    encodeH264Qp.qpP = qp;
 
     VkVideoEncodeH264RateControlLayerInfoEXT encodeH264RateControlLayerInfo = {VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_EXT};
     encodeH264RateControlLayerInfo.useInitialRcQp = VK_TRUE;
@@ -646,12 +659,16 @@ int32_t EncodeApp::encodeFrame(EncodeConfig* encodeConfig, uint32_t frameCount, 
 {
     VkResult result = VK_SUCCESS;
 
-    // GOP structure config all intra:
+    // GOP structure config: 1 Intra IDR, 15 Predicted P (referencing previous frame only)
     // only using 1 input frame (I) - slot 0
-    // only using 1 reference frame - slot 0
+    // using 2 reference frames:
+    //     current frame  - slot 0
+    //     previous frame - slot 1
     // update POC
-
     m_pictureBuffer.addRefPic(currentFrameBufferIdx, currentFrameBufferIdx, frameCount);
+    if (currentFrameBufferIdx > 0) {
+        m_pictureBuffer.addRefPic(currentFrameBufferIdx - 1, currentFrameBufferIdx - 1, frameCount - 1);
+    }
 
     EncodeFrameData* currentEncodeFrameData = m_pictureBuffer.getEncodeFrameData(currentFrameBufferIdx);
     VkBuffer outBitstream = currentEncodeFrameData->m_outBitstreamBuffer.buffer;
@@ -672,12 +689,30 @@ int32_t EncodeApp::encodeFrame(EncodeConfig* encodeConfig, uint32_t frameCount, 
     uint32_t querySlotIdVCL = currentFrameBufferIdx;
     uint32_t querySlotIdNonVCL = currentFrameBufferIdx + INPUT_FRAME_BUFFER_SIZE;
 
+    VkVideoPictureResourceInfoKHR dpbPicResource = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR};
+    VkVideoPictureResourceInfoKHR picReference = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR};
+    m_pictureBuffer.getReferenceFrameResourcesByIndex(currentFrameBufferIdx, &dpbPicResource);
+
     VkVideoBeginCodingInfoKHR encodeBeginInfo = {VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR};
     encodeBeginInfo.sType = VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR;
     encodeBeginInfo.videoSession = m_pVideoSession->getVideoSession();;
     encodeBeginInfo.videoSessionParameters = m_videoSessionParameters.m_encodeSessionParameters;
-    encodeBeginInfo.referenceSlotCount = 0;
-    encodeBeginInfo.pReferenceSlots = NULL;
+    encodeBeginInfo.referenceSlotCount = 1;
+
+    VkVideoReferenceSlotInfoKHR referenceSlots[2];
+    referenceSlots[0].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+    referenceSlots[0].pNext = NULL;
+    referenceSlots[0].slotIndex = 0;
+    referenceSlots[0].pPictureResource = &dpbPicResource;
+    if (currentFrameBufferIdx > 0) {
+        m_pictureBuffer.getReferenceFrameResourcesByIndex(currentFrameBufferIdx - 1, &picReference);
+        referenceSlots[1].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+        referenceSlots[1].pNext = NULL;
+        referenceSlots[1].slotIndex = 1;
+        referenceSlots[1].pPictureResource = &picReference;
+        encodeBeginInfo.referenceSlotCount = 2;
+    }
+    encodeBeginInfo.pReferenceSlots = referenceSlots;
 
     vkCmdBeginVideoCodingKHR(cmdBuf, &encodeBeginInfo);
 
@@ -696,18 +731,16 @@ int32_t EncodeApp::encodeFrame(EncodeConfig* encodeConfig, uint32_t frameCount, 
     }
     // Encode Frame
     // encode info for vkCmdEncodeVideoKHR
-    IntraFrameInfo intraFrameInfo(frameCount, encodeConfig->width, encodeConfig->height,
-                                  m_videoSessionParameters.m_sequenceParameterSet,
-                                  m_videoSessionParameters.m_pictureParameterSet,
-                                  frameCount == 0);
+    FrameInfo intraFrameInfo(currentFrameBufferIdx, encodeConfig->width, encodeConfig->height,
+                             m_videoSessionParameters.m_sequenceParameterSet,
+                             m_videoSessionParameters.m_pictureParameterSet,
+                             currentFrameBufferIdx == 0);
     VkVideoEncodeH264VclFrameInfoEXT* encodeH264FrameInfo = intraFrameInfo.getEncodeH264FrameInfo();
 
     VkVideoPictureResourceInfoKHR inputPicResource = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR};
-    VkVideoPictureResourceInfoKHR dpbPicResource = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR};
     m_pictureBuffer.getFrameResourcesByIndex(currentFrameBufferIdx, &inputPicResource);
-    m_pictureBuffer.getReferenceFrameResourcesByIndex(currentFrameBufferIdx, &dpbPicResource);
 
-    EncodeInfoVcl encodeInfoVcl(&outBitstream, bitstreamOffset, encodeH264FrameInfo, &inputPicResource, &dpbPicResource);
+    EncodeInfoVcl encodeInfoVcl(&outBitstream, bitstreamOffset, encodeH264FrameInfo, &inputPicResource, &dpbPicResource, currentFrameBufferIdx == 0 ? NULL : &picReference);
     VkVideoEncodeInfoKHR* videoEncodeInfoVcl = encodeInfoVcl.getVideoEncodeInfo();
 
     vkCmdResetQueryPool(cmdBuf, queryPool, querySlotIdVCL, 1);
@@ -720,6 +753,9 @@ int32_t EncodeApp::encodeFrame(EncodeConfig* encodeConfig, uint32_t frameCount, 
     vkEndCommandBuffer(cmdBuf);
 
     // reset ref pic
+    if (currentFrameBufferIdx > 0) {
+        m_pictureBuffer.removeRefPic(currentFrameBufferIdx - 1);
+    }
     m_pictureBuffer.removeRefPic(currentFrameBufferIdx);
 
     return 0;

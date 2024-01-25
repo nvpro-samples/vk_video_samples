@@ -64,9 +64,9 @@ struct EncodeConfig {
     uint32_t logBatchEncoding : 1;
 };
 
-class IntraFrameInfo {
+class FrameInfo {
 public:
-    IntraFrameInfo(uint32_t frameCount, uint32_t width, uint32_t height, StdVideoH264SequenceParameterSet sps, StdVideoH264PictureParameterSet pps, bool isIdr);
+    FrameInfo(uint32_t frameCount, uint32_t width, uint32_t height, StdVideoH264SequenceParameterSet sps, StdVideoH264PictureParameterSet pps, bool isIdr);
     inline VkVideoEncodeH264VclFrameInfoEXT* getEncodeH264FrameInfo()
     {
         return &m_encodeH264FrameInfo;
@@ -78,6 +78,9 @@ private:
     StdVideoEncodeH264PictureInfoFlags m_pictureInfoFlags = {};
     StdVideoEncodeH264PictureInfo m_stdPictureInfo = {};
     VkVideoEncodeH264VclFrameInfoEXT m_encodeH264FrameInfo = {};
+    VkVideoEncodeH264ReferenceListsInfoEXT m_referenceLists = {};
+    VkVideoEncodeH264DpbSlotInfoEXT m_slotInfo = {};
+    StdVideoEncodeH264ReferenceInfo m_referenceInfo = {};
 };
 
 class VideoSessionParametersInfo {
@@ -128,8 +131,8 @@ private:
 class EncodeInfoVcl : public EncodeInfo {
 public:
     EncodeInfoVcl(VkBuffer* dstBitstreamBuffer, VkDeviceSize dstBitstreamBufferOffset, VkVideoEncodeH264VclFrameInfoEXT* encodeH264FrameInfo,
-                  VkVideoPictureResourceInfoKHR* inputPicResource, VkVideoPictureResourceInfoKHR* dpbPicResource)
-        : m_referenceSlot{}
+                  VkVideoPictureResourceInfoKHR* inputPicResource, VkVideoPictureResourceInfoKHR* dpbPicResource, VkVideoPictureResourceInfoKHR* picReference)
+        : m_referenceSlot{}, m_referenceSlotRefPic{}
     {
         m_referenceSlot.sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
         m_referenceSlot.pNext = NULL;
@@ -144,9 +147,20 @@ public:
         m_encodeInfo.dstBitstreamBufferOffset = dstBitstreamBufferOffset;
         m_encodeInfo.srcPictureResource = *inputPicResource;
         m_encodeInfo.pSetupReferenceSlot = &m_referenceSlot;
+
+        if (picReference) {
+            m_referenceSlotRefPic.sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+            m_referenceSlotRefPic.pNext = NULL;
+            m_referenceSlotRefPic.slotIndex = 1;
+            m_referenceSlotRefPic.pPictureResource = picReference;
+
+            m_encodeInfo.referenceSlotCount = 1;
+            m_encodeInfo.pReferenceSlots = &m_referenceSlotRefPic;
+        }
     }
 private:
     VkVideoReferenceSlotInfoKHR m_referenceSlot;
+    VkVideoReferenceSlotInfoKHR m_referenceSlotRefPic;
 };
 
 class NvVideoSessionParameters {
