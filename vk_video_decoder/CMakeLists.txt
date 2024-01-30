@@ -3,6 +3,8 @@
 # to the root binary directory of the project as ${VULKAN_BINARY_DIR}.
 cmake_minimum_required(VERSION 2.8.11)
 
+include(CheckCXXCompilerFlag)
+
 # This must come before the project command.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.12" CACHE STRING "Minimum OS X deployment version")
 
@@ -16,7 +18,7 @@ set(API_NAME "Vulkan" CACHE STRING "API name to use when building")
 set(MAJOR "1")
 string(TOLOWER ${API_NAME} API_LOWERCASE)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/../cmake")
 find_package(PythonInterp 3 REQUIRED)
 
 option(USE_CCACHE "Use ccache" OFF)
@@ -97,7 +99,7 @@ endif()
 if (EXISTS "${VULKAN_VIDEO_PARSER_INCLUDE}")
     MESSAGE(STATUS "VULKAN_VIDEO_PARSER_INCLUDE is set and valid ${VULKAN_VIDEO_PARSER_INCLUDE}")
 else()
-    MESSAGE(STATUS "VULKAN_VIDEO_PARSER_INCLUDE path is not set. Setting the default path location to ${VULKAN_VIDEO_TESTS_SOURCE_DIR}/include/nv_vkvideo_parser")
+    MESSAGE(STATUS "VULKAN_VIDEO_PARSER_INCLUDE path is not set. Setting the default path location to ${VULKAN_VIDEO_TESTS_SOURCE_DIR}/include/vkvideo_parser")
     set(VULKAN_VIDEO_PARSER_INCLUDE  "${VULKAN_VIDEO_TESTS_SOURCE_DIR}/include/vkvideo_parser" CACHE PATH "Path to Vulkan Video Parser include directory" FORCE)
 endif()
 ############ VULKAN_VIDEO_PARSER_INCLUDE ######################################
@@ -228,7 +230,7 @@ else()
     endif()
 endif()
 
-set(SCRIPTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
+set(SCRIPTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../scripts")
 
 # Header file for CMake settings
 include_directories("${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/../common/include")
@@ -237,10 +239,12 @@ if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     set(COMMON_COMPILE_FLAGS "-Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers")
     set(COMMON_COMPILE_FLAGS "${COMMON_COMPILE_FLAGS} -fno-strict-aliasing -fno-builtin-memcmp")
 
-    # For GCC version 7.1 or greater, we need to disable the implicit fallthrough warning since
-    # there's no consistent way to satisfy all compilers until they all accept the C++17 standard
-    if (CMAKE_COMPILER_IS_GNUCC AND NOT (CMAKE_CXX_COMPILER_VERSION LESS 7.1))
-        set(COMMON_COMPILE_FLAGS "${COMMON_COMPILE_FLAGS} -Wimplicit-fallthrough=0")
+    # These flags are not supported on Windows and some older version of GCC
+    # that our bots use.
+    # Warning about implicit fallthrough in switch blocks
+    check_cxx_compiler_flag(-Wimplicit-fallthrough COMPILER_SUPPORTS_FALLTHROUGH_WARNING)
+    if (COMPILER_SUPPORTS_FALLTHROUGH_WARNING)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wimplicit-fallthrough")
     endif()
 
     if (APPLE)
@@ -322,8 +326,9 @@ set(SPIRV_TOOLS_OPT_BINARY_ROOT "${CMAKE_BINARY_DIR}/../SPIRV-Tools/opt" CACHE S
 
 # Define a variable for a default root location to the gslang, SPIRV-Tools and other external sources and cache it to allow the user to customize it as needed
 set(EXTERNAL_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/external" CACHE STRING "Root path to external sources such as glslang and SPIRV-Tools")
-set(EXTERNAL_LIBS_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs" CACHE STRING "Root path to external libs sources such as glm")
-set(EXTERNAL_LIBS_INCLUDE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/include" CACHE STRING "Root path to external libs includes like vulkan headers")
+set(VK_VIDEO_COMMON_LIBS_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../common/libs" CACHE STRING "Root path to common vkvideo libs sources")
+set(VK_VIDEO_DECODER_LIBS_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs" CACHE STRING "Root path to common vkvideo decoder libs sources")
+set(VK_VIDEO_DECODER_LIBS_INCLUDE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/include" CACHE STRING "Root path to video decoder libs includes")
 
 if(DEFINED ENV{TEGRA_TOP})
 	MESSAGE(STATUS "TEGRA_TOP is SET: $ENV{TEGRA_TOP}")
@@ -585,7 +590,7 @@ if(UNIX)
 
 # uninstall target
 configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/cmake_uninstall.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
     IMMEDIATE @ONLY)
 
@@ -597,7 +602,7 @@ endif()
 # For Windows, we use a static lib because the Windows loader has a fairly restrictive loader search
 # path that can't be easily modified to point it to the same directory that contains the layers.
 set(VKVIDEO_UTILS_VLF_SOURCES
-    layers/vk_format_utils.cpp
+    ../common/layers/vk_format_utils.cpp
     )
 if (WIN32)
     add_library(VkVideoUtils STATIC ${VKVIDEO_UTILS_VLF_SOURCES})

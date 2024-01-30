@@ -26,7 +26,7 @@
 #include <string>
 
 #include "vulkan_interfaces.h"
-#include "PictureBufferBase.h"
+#include "vkvideo_parser/PictureBufferBase.h"
 #include "VkCodecUtils/HelpersDispatchTable.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
@@ -171,7 +171,7 @@ public:
 private:
     VkImageLayout                        m_currentDpbImageLayerLayout;
     VkImageLayout                        m_currentOutputImageLayout;
-    const VulkanDeviceContext* m_vkDevCtx;
+    const VulkanDeviceContext*           m_vkDevCtx;
     VkSharedBaseObj<VkImageResourceView> m_frameDpbImageView;
     VkSharedBaseObj<VkImageResourceView> m_outImageView;
 };
@@ -340,7 +340,7 @@ public:
     {
         assert (numSlots <= maxFramebufferImages);
 
-        if ((m_queryPool == VK_NULL_HANDLE) && m_vkDevCtx->GetVideoQueryResultStatusSupport()) {
+        if ((m_queryPool == VK_NULL_HANDLE) && m_vkDevCtx->GetVideoDecodeQueryResultStatusSupport()) {
             // It would be difficult to resize a query pool, so allocate the maximum possible slot.
             numSlots = maxFramebufferImages;
             VkQueryPoolCreateInfo queryPoolCreateInfo = { VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
@@ -472,6 +472,27 @@ public:
     {
         assert((uint32_t)picId < m_perFrameDecodeImageSet.size());
 
+        if (pFrameSynchronizationInfo->syncOnFrameCompleteFence == 1) {
+            // Check here that the frame for this entry (for this command buffer) has already completed decoding.
+            // Otherwise we may step over a hot command buffer by starting a new recording.
+            // This fence wait should be NOP in 99.9% of the cases, because the decode queue is deep enough to
+            // ensure the frame has already been completed.
+            assert(m_perFrameDecodeImageSet[picId].m_frameCompleteFence != VK_NULL_HANDLE);
+            vkWaitAndResetFence(m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameCompleteFence,
+                                "frameCompleteFence", (uint32_t)picId);
+        }
+
+        if ((pFrameSynchronizationInfo->syncOnFrameConsumerDoneFence  == 1) &&
+             ((m_perFrameDecodeImageSet[picId].m_hasConsummerSignalSemaphore == 0) ||
+              (m_perFrameDecodeImageSet[picId].m_frameConsumerDoneSemaphore == VK_NULL_HANDLE)) &&
+                (m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence == 1) &&
+                (m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence != VK_NULL_HANDLE)) {
+
+            vkWaitAndResetFence(m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence,
+                                "frameConsumerDoneFence", (uint32_t)picId);
+
+        }
+
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         m_perFrameDecodeImageSet[picId].m_picDispInfo = *pDecodePictureInfo;
         m_perFrameDecodeImageSet[picId].m_inDecodeQueue = true;
@@ -537,6 +558,8 @@ public:
         if ((uint32_t)pictureIndex < m_perFrameDecodeImageSet.size()) {
             pDecodedFrame->pictureIndex = pictureIndex;
 
+            pDecodedFrame->imageLayerIndex = m_perFrameDecodeImageSet[pictureIndex].m_picDispInfo.imageLayerIndex;
+
             pDecodedFrame->decodedImageView = m_perFrameDecodeImageSet[pictureIndex].GetFrameImageView();
             pDecodedFrame->outputImageView = m_perFrameDecodeImageSet[pictureIndex].GetDisplayImageView();
 
@@ -590,10 +613,6 @@ public:
             assert(m_ownedByDisplayMask & (1 << picId));
             m_ownedByDisplayMask &= ~(1 << picId);
             m_perFrameDecodeImageSet[picId].m_inDecodeQueue = false;
-            m_perFrameDecodeImageSet[picId].bitstreamData = nullptr;
-            m_perFrameDecodeImageSet[picId].stdPps = nullptr;
-            m_perFrameDecodeImageSet[picId].stdSps = nullptr;
-            m_perFrameDecodeImageSet[picId].stdVps = nullptr;
             m_perFrameDecodeImageSet[picId].m_ownedByDisplay = false;
             m_perFrameDecodeImageSet[picId].Release();
 
@@ -671,6 +690,19 @@ public:
         return referenceSlotIndex;
     }
 
+    virtual int32_t GetCurrentImageResourceByIndex(int8_t referenceSlotIndex,
+                                                   VkSharedBaseObj<VkImageResourceView>& decodedImageView,
+                                                   VkSharedBaseObj<VkImageResourceView>& outputImageView)
+    {
+        std::lock_guard<std::mutex> lock(m_displayQueueMutex);
+        if ((uint32_t)referenceSlotIndex < m_perFrameDecodeImageSet.size()) {
+            decodedImageView = m_perFrameDecodeImageSet[referenceSlotIndex].GetFrameImageView();
+            outputImageView  = m_perFrameDecodeImageSet[referenceSlotIndex].GetDisplayImageView();
+            return referenceSlotIndex;
+        }
+        return -1;
+    }
+
     virtual int32_t ReleaseImageResources(uint32_t numResources, const uint32_t* indexes)
     {
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
@@ -720,10 +752,13 @@ public:
     {
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         int32_t foundPicId = -1;
+        int64_t minDecodeOrder = m_perFrameDecodeImageSet[0].m_decodeOrder + 1000;
         for (uint32_t picId = 0; picId < m_perFrameDecodeImageSet.size(); picId++) {
             if (m_perFrameDecodeImageSet[picId].IsAvailable()) {
-                foundPicId = picId;
-		break;
+                if ((int64_t)m_perFrameDecodeImageSet[picId].m_decodeOrder < minDecodeOrder) {
+                    foundPicId = picId;
+                    minDecodeOrder = (int64_t)m_perFrameDecodeImageSet[picId].m_decodeOrder;
+                }
             }
         }
 

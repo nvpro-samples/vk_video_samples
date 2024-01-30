@@ -17,7 +17,7 @@
 #ifndef _VULKANVIDEOPARSER_H_
 #define _VULKANVIDEOPARSER_H_
 
-#include "VkVideoCore/VkVideoRefCountBase.h"
+#include "VkCodecUtils/VkVideoRefCountBase.h"
 #include "VulkanVideoParserParams.h"
 
 class IVulkanVideoDecoderHandler : public VkVideoRefCountBase {

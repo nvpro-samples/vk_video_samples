@@ -22,7 +22,7 @@
 #include <atomic>
 #include <queue>
 #include <unordered_map>
-#include "VkVideoCore/VkVideoRefCountBase.h"
+#include "VkCodecUtils/VkVideoRefCountBase.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "vkvideo_parser/StdVideoPictureParametersSet.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"

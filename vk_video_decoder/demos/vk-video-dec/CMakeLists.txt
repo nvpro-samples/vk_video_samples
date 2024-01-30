@@ -1,9 +1,7 @@
-set (GLMINC_PREFIX ${PROJECT_SOURCE_DIR}/libs)
-
 macro(generate_dispatch_table out)
     add_custom_command(OUTPUT ${out}
-        COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/generate-dispatch-table.py ${out}
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/generate-dispatch-table.py
+        COMMAND ${PYTHON_EXECUTABLE} ${SCRIPTS_DIR}/generate-dispatch-table.py ${out}
+        DEPENDS ${SCRIPTS_DIR}/generate-dispatch-table.py
         )
 endmacro()
 
@@ -23,53 +21,69 @@ macro(compile_cuda src)
         )
 endmacro()
 
-generate_dispatch_table(${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.h)
-generate_dispatch_table(${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.cpp)
+generate_dispatch_table(${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.h)
+generate_dispatch_table(${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.cpp)
 
 set(sources
     Main.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/Shell.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/ShellDirect.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/Shell.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoDecoder/VkVideoDecoder.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoDecoder/VkVideoDecoder.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoDecoder/VkParserVideoPictureParameters.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoDecoder/VkParserVideoPictureParameters.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoDecoder/VulkanBistreamBufferImpl.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoDecoder/VulkanBistreamBufferImpl.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/Helpers.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceContext.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceContext.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceMemoryImpl.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceMemoryImpl.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VkBufferResource.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VkBufferResource.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VkImageResource.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VkImageResource.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoSession.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoSession.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/FrameProcessor.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoProcessor.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoProcessor.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanFrame.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanFrame.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/pattern.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/pattern.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoUtils.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoUtils.h
-    ${EXTERNAL_LIBS_SOURCE_ROOT}//NvCodecUtils/FFmpegDemuxer.cpp
-	${EXTERNAL_LIBS_SOURCE_ROOT}/NvCodecUtils/VideoStreamDemuxer.cpp
-	${EXTERNAL_LIBS_SOURCE_ROOT}/NvCodecUtils/VideoStreamDemuxer.h
-	${EXTERNAL_LIBS_SOURCE_ROOT}/NvCodecUtils/ElementaryStream.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/VkVideoParser/VulkanVideoParser.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/../../common/src/VkCodecUtils/nvVkFormats.cpp
-    ${EXTERNAL_LIBS_SOURCE_ROOT}/../../common/include/VkVideoCore/VkVideoRefCountBase.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkShell/Shell.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkShell/ShellDirect.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkShell/Shell.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/Helpers.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceContext.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceContext.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceMemoryImpl.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceMemoryImpl.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VkBufferResource.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VkBufferResource.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VkImageResource.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VkImageResource.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDescriptorSetLayout.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDescriptorSetLayout.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanCommandBuffersSet.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanCommandBuffersSet.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanComputePipeline.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanComputePipeline.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoSession.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoSession.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/FrameProcessor.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoProcessor.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoProcessor.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanFrame.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanFrame.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/pattern.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/pattern.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoUtils.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoUtils.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanFilter.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanFilter.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanFilterYuvCompute.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanFilterYuvCompute.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanSamplerYcbcrConversion.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanSamplerYcbcrConversion.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanFenceSet.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanFenceSet.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanSemaphoreSet.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanSemaphoreSet.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VkVideoRefCountBase.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/nvVkFormats.cpp
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/FFmpegDemuxer.cpp
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/VideoStreamDemuxer.cpp
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/VideoStreamDemuxer.h
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/ElementaryStream.cpp
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkVideoDecoder/VkVideoDecoder.cpp
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkVideoParser/VulkanVideoParser.cpp
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkVideoDecoder/VkVideoDecoder.h
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkVideoDecoder/VkParserVideoPictureParameters.h
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkVideoDecoder/VkParserVideoPictureParameters.cpp
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkVideoDecoder/VulkanBistreamBufferImpl.h
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkVideoDecoder/VulkanBistreamBufferImpl.cpp
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.h
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.cpp
     )
 
 set(definitions
@@ -77,7 +91,8 @@ set(definitions
     PRIVATE -DGLM_FORCE_RADIANS)
 
 set(includes
-    PRIVATE ${GLMINC_PREFIX}
+    PRIVATE ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}
+    PRIVATE ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}
     PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 set(libraries PRIVATE ${CMAKE_THREAD_LIBS_INIT})
@@ -122,21 +137,21 @@ if(WIN32)
     list(APPEND definitions PRIVATE -DVK_USE_PLATFORM_WIN32_KHR)
     list(APPEND definitions PRIVATE -DWIN32_LEAN_AND_MEAN)
 
-    list(APPEND sources ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/ShellWin32.cpp ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/ShellWin32.h)
+    list(APPEND sources ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkShell/ShellWin32.cpp ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkShell/ShellWin32.h)
 elseif(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
     list(APPEND libraries PRIVATE -ldl -lrt -lpthread)
 
     if(BUILD_WSI_XCB_SUPPORT AND DEMOS_WSI_SELECTION STREQUAL "XCB")
         find_package(XCB REQUIRED)
 
-        list(APPEND sources ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/ShellXcb.cpp ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/ShellXcb.h)
+        list(APPEND sources ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkShell/ShellXcb.cpp ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkShell/ShellXcb.h)
         list(APPEND definitions PRIVATE -DVK_USE_PLATFORM_XCB_KHR)
         list(APPEND includes PRIVATE ${XCB_INCLUDES})
         list(APPEND libraries PRIVATE ${XCB_LIBRARIES})
     elseif(BUILD_WSI_WAYLAND_SUPPORT AND DEMOS_WSI_SELECTION STREQUAL "WAYLAND")
         find_package(Wayland REQUIRED)
 
-        list(APPEND sources ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/ShellWayland.cpp ${EXTERNAL_LIBS_SOURCE_ROOT}/VkShell/ShellWayland.h)
+        list(APPEND sources ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkShell/ShellWayland.cpp ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkShell/ShellWayland.h)
         list(APPEND definitions PRIVATE -DVK_USE_PLATFORM_WAYLAND_KHR)
         list(APPEND includes PRIVATE ${WAYLAND_CLIENT_INCLUDE_DIR})
         list(APPEND libraries PRIVATE ${WAYLAND_CLIENT_LIBRARIES})
@@ -145,8 +160,8 @@ endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/..)
 
-list(APPEND includes PRIVATE ${EXTERNAL_LIBS_INCLUDE_ROOT})
-list(APPEND includes PRIVATE ${EXTERNAL_LIBS_SOURCE_ROOT})
+list(APPEND includes PRIVATE ${VK_VIDEO_DECODER_LIBS_INCLUDE_ROOT})
+list(APPEND includes PRIVATE ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT})
 list(APPEND includes PRIVATE ${VULKAN_VIDEO_PARSER_INCLUDE})
 list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE})
 list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE}/vulkan)
