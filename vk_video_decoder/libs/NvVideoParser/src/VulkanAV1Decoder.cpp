@@ -253,7 +253,7 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
 {
     VkParserAv1PictureData* const av1 = &pnvpd->CodecSpecific.av1;
     av1_seq_param_s *const sps = m_sps.Get();
-    DE_ASSERT(sps);
+    assert(sps != nullptr);
 
     // TODO: drop all the SDK fluff
     av1->upscaled_width = upscaled_width;
@@ -1912,29 +1912,39 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
 
             if (!(pStd->frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY && pic_info->showFrame)) {
                 int diff_frame_id = 0;
-                if (pStd->current_frame_id > prev_frame_id) {
-                    diff_frame_id = pStd->current_frame_id - prev_frame_id;
+                assert(prev_frame_id >= 0);
+                if (pStd->current_frame_id > (uint32_t)prev_frame_id) {
+                    diff_frame_id = pStd->current_frame_id - (uint32_t)prev_frame_id;
                 } else {
-                    diff_frame_id = (1 << frame_id_length) + pStd->current_frame_id - prev_frame_id;
+                    diff_frame_id = (1 << frame_id_length) + pStd->current_frame_id - (uint32_t)prev_frame_id;
                 }
                 // check for conformance
-                if (prev_frame_id == pStd->current_frame_id || diff_frame_id >= (1 << (frame_id_length - 1))) {
+                if (((uint32_t)prev_frame_id == pStd->current_frame_id) || (diff_frame_id >= (1 << (frame_id_length - 1)))) {
                     // Invalid pStd->current_frame_id
                     // return 0;
                 }
             }
             // Mark ref frames not valid for referencing
+            assert(diff_len >= 0);
             for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
                 if (pStd->frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY && pic_info->showFrame) {
                     RefValid[i] = 0;
-                } else if (pStd->current_frame_id > (1 << diff_len)) {
-                    if (ref_frame_id[i] > pStd->current_frame_id ||
-                        ref_frame_id[i] < pStd->current_frame_id - (1 << diff_len))
+                } else if ((uint32_t)ref_frame_id[i] < 0) {
+                    RefValid[i] = 0;
+                } else if (pStd->current_frame_id > (uint32_t)(1 << diff_len)) {
+                    assert(ref_frame_id[i] >= 0);
+                    if (((uint32_t)ref_frame_id[i] > pStd->current_frame_id) ||
+                        ((uint32_t)ref_frame_id[i] < pStd->current_frame_id - (uint32_t)(1 << diff_len))) {
+
                         RefValid[i] = 0;
+                    }
                 } else {
-                    if (ref_frame_id[i] > pStd->current_frame_id &&
-                        ref_frame_id[i] < (1 << frame_id_length) + pStd->current_frame_id - (1 << diff_len))
+                    assert(ref_frame_id[i] >= 0);
+                    if (((uint32_t)ref_frame_id[i] > pStd->current_frame_id) &&
+                        ((uint32_t)ref_frame_id[i] < (1 << frame_id_length) + pStd->current_frame_id - (1 << diff_len))) {
+
                         RefValid[i] = 0;
+                    }
                 }
             }
         } else {
@@ -2255,11 +2265,13 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
 	byte_alignment();
 	// Tile payload
     int consumedBytes = (consumed_bits() + 7) / 8;
+    assert(consumedBytes > 0);
+    assert((m_nalu.start_offset <= UINT32_MAX) && (m_nalu.start_offset >= 0));
 	//                                                    offset of obu         number of bytes read getting the tile data
-	m_PicData.tileOffsets[m_PicData.khr_info.tileCount] = m_nalu.start_offset + consumedBytes;
+	m_PicData.tileOffsets[m_PicData.khr_info.tileCount] = (uint32_t)m_nalu.start_offset + (uint32_t)consumedBytes;
 
 	// Compute the tile group size
-	uint32_t totalTileSize = 0;
+	size_t totalTileSize = 0;
     for (int TileNum = tg_start; TileNum <= tg_end; TileNum++)
     {
         int lastTile = TileNum == tg_end;
@@ -2277,8 +2289,9 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
         totalTileSize += tileSize;
     }
 
-	m_PicData.tileSizes[m_PicData.khr_info.tileCount] = totalTileSize;
-	m_PicData.khr_info.tileCount++;
+    assert(totalTileSize <= UINT32_MAX);
+    m_PicData.tileSizes[m_PicData.khr_info.tileCount] = (uint32_t)totalTileSize;
+    m_PicData.khr_info.tileCount++;
     return (tg_end == num_tiles - 1);
 }
 

@@ -32,6 +32,17 @@ extern "C" {
 #define STD_VIDEO_AV1_PRIMARY_REF_NONE    7
 #define STD_VIDEO_AV1_SELECT_INTEGER_MV   2
 #define STD_VIDEO_AV1_SELECT_SCREEN_CONTENT_TOOLS 2
+#define STD_VIDEO_AV1_SKIP_MODE_FRAMES    2
+#define STD_VIDEO_AV1_MAX_LOOP_FILTER_STRENGTHS 4
+#define STD_VIDEO_AV1_LOOP_FILTER_ADJUSTMENTS 2
+#define STD_VIDEO_AV1_MAX_CDEF_FILTER_STRENGTHS 8
+#define STD_VIDEO_AV1_MAX_NUM_PLANES      3
+#define STD_VIDEO_AV1_GLOBAL_MOTION_PARAMS 6
+#define STD_VIDEO_AV1_MAX_NUM_Y_POINTS    14
+#define STD_VIDEO_AV1_MAX_NUM_CB_POINTS   10
+#define STD_VIDEO_AV1_MAX_NUM_CR_POINTS   10
+#define STD_VIDEO_AV1_MAX_NUM_POS_LUMA    24
+#define STD_VIDEO_AV1_MAX_NUM_POS_CHROMA  25
 
 typedef enum StdVideoAV1Profile {
     STD_VIDEO_AV1_PROFILE_MAIN = 0,
@@ -109,6 +120,85 @@ typedef enum StdVideoAV1TxMode {
     STD_VIDEO_AV1_TX_MODE_INVALID = 0x7FFFFFFF,
     STD_VIDEO_AV1_TX_MODE_MAX_ENUM = 0x7FFFFFFF
 } StdVideoAV1TxMode;
+
+typedef enum StdVideoAV1FrameRestorationType {
+    STD_VIDEO_AV1_FRAME_RESTORATION_TYPE_NONE = 0,
+    STD_VIDEO_AV1_FRAME_RESTORATION_TYPE_WIENER = 1,
+    STD_VIDEO_AV1_FRAME_RESTORATION_TYPE_SGRPROJ = 2,
+    STD_VIDEO_AV1_FRAME_RESTORATION_TYPE_SWITCHABLE = 3,
+    STD_VIDEO_AV1_FRAME_RESTORATION_TYPE_INVALID = 0x7FFFFFFF,
+    STD_VIDEO_AV1_FRAME_RESTORATION_TYPE_MAX_ENUM = 0x7FFFFFFF
+} StdVideoAV1FrameRestorationType;
+
+typedef enum StdVideoAV1ColorPrimaries {
+    STD_VIDEO_AV1_COLOR_PRIMARIES_BT_709 = 1,
+    STD_VIDEO_AV1_COLOR_PRIMARIES_BT_UNSPECIFIED = 2,
+    STD_VIDEO_AV1_COLOR_PRIMARIES_BT_470_M = 4,
+    STD_VIDEO_AV1_COLOR_PRIMARIES_BT_470_B_G = 5,
+    STD_VIDEO_AV1_COLOR_PRIMARIES_BT_601 = 6,
+    STD_VIDEO_AV1_COLOR_PRIMARIES_SMPTE_240 = 7,
+    STD_VIDEO_AV1_COLOR_PRIMARIES_GENERIC_FILM = 8,
+    STD_VIDEO_AV1_COLOR_PRIMARIES_BT_2020 = 9,
+    STD_VIDEO_AV1_COLOR_PRIMARIES_XYZ = 10,
+    STD_VIDEO_AV1_COLOR_PRIMARIES_SMPTE_431 = 11,
+    STD_VIDEO_AV1_COLOR_PRIMARIES_SMPTE_432 = 12,
+    STD_VIDEO_AV1_COLOR_PRIMARIES_EBU_3213 = 22,
+    STD_VIDEO_AV1_COLOR_PRIMARIES_INVALID = 0x7FFFFFFF,
+    STD_VIDEO_AV1_COLOR_PRIMARIES_MAX_ENUM = 0x7FFFFFFF
+} StdVideoAV1ColorPrimaries;
+
+typedef enum StdVideoAV1TransferCharacteristics {
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_RESERVED_0 = 0,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_BT_709 = 1,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_UNSPECIFIED = 2,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_RESERVED_3 = 3,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_BT_470_M = 4,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_BT_470_B_G = 5,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_BT_601 = 6,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_SMPTE_240 = 7,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_LINEAR = 8,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_LOG_100 = 9,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_LOG_100_SQRT10 = 10,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_IEC_61966 = 11,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_BT_1361 = 12,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_SRGB = 13,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_BT_2020_10_BIT = 14,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_BT_2020_12_BIT = 15,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_SMPTE_2084 = 16,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_SMPTE_428 = 17,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_HLG = 18,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_INVALID = 0x7FFFFFFF,
+    STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_MAX_ENUM = 0x7FFFFFFF
+} StdVideoAV1TransferCharacteristics;
+
+typedef enum StdVideoAV1MatrixCoefficients {
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_IDENTITY = 0,
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_BT_709 = 1,
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_UNSPECIFIED = 2,
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_RESERVED_3 = 3,
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_FCC = 4,
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_BT_470_B_G = 5,
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_BT_601 = 6,
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_SMPTE_240 = 7,
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_SMPTE_YCGCO = 8,
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_BT_2020_NCL = 9,
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_BT_2020_CL = 10,
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_SMPTE_2085 = 11,
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_CHROMAT_NCL = 12,
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_CHROMAT_CL = 13,
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_ICTCP = 14,
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_INVALID = 0x7FFFFFFF,
+    STD_VIDEO_AV1_MATRIX_COEFFICIENTS_MAX_ENUM = 0x7FFFFFFF
+} StdVideoAV1MatrixCoefficients;
+
+typedef enum StdVideoAV1ChromaSamplePosition {
+    STD_VIDEO_AV1_CHROMA_SAMPLE_POSITION_UNKNOWN = 0,
+    STD_VIDEO_AV1_CHROMA_SAMPLE_POSITION_VERTICAL = 1,
+    STD_VIDEO_AV1_CHROMA_SAMPLE_POSITION_COLOCATED = 2,
+    STD_VIDEO_AV1_CHROMA_SAMPLE_POSITION_RESERVED = 3,
+    STD_VIDEO_AV1_CHROMA_SAMPLE_POSITION_INVALID = 0x7FFFFFFF,
+    STD_VIDEO_AV1_CHROMA_SAMPLE_POSITION_MAX_ENUM = 0x7FFFFFFF
+} StdVideoAV1ChromaSamplePosition;
 typedef struct StdVideoAV1ColorConfigFlags {
     uint32_t    mono_chrome : 1;
     uint32_t    color_range : 1;
@@ -118,16 +208,15 @@ typedef struct StdVideoAV1ColorConfigFlags {
 } StdVideoAV1ColorConfigFlags;
 
 typedef struct StdVideoAV1ColorConfig {
-    StdVideoAV1ColorConfigFlags    flags;
-    uint8_t                        BitDepth;
-    uint8_t                        subsampling_x;
-    uint8_t                        subsampling_y;
-    uint8_t                        color_primaries;
-    uint8_t                        transfer_characteristics;
-    uint8_t                        matrix_coefficients;
-    uint8_t                        chroma_sample_position;
-    uint8_t                        reserved1;
-    uint32_t                       reserved2;
+    StdVideoAV1ColorConfigFlags           flags;
+    uint8_t                               BitDepth;
+    uint8_t                               subsampling_x;
+    uint8_t                               subsampling_y;
+    uint8_t                               reserved1;
+    StdVideoAV1ColorPrimaries             color_primaries;
+    StdVideoAV1TransferCharacteristics    transfer_characteristics;
+    StdVideoAV1MatrixCoefficients         matrix_coefficients;
+    StdVideoAV1ChromaSamplePosition       chroma_sample_position;
 } StdVideoAV1ColorConfig;
 
 typedef struct StdVideoAV1TimingInfoFlags {
@@ -150,13 +239,12 @@ typedef struct StdVideoAV1LoopFilterFlags {
 
 typedef struct StdVideoAV1LoopFilter {
     StdVideoAV1LoopFilterFlags    flags;
-    uint8_t                       loop_filter_level[4];
+    uint8_t                       loop_filter_level[STD_VIDEO_AV1_MAX_LOOP_FILTER_STRENGTHS];
     uint8_t                       loop_filter_sharpness;
     uint8_t                       update_ref_delta;
     int8_t                        loop_filter_ref_deltas[STD_VIDEO_AV1_TOTAL_REFS_PER_FRAME];
     uint8_t                       update_mode_delta;
-    int8_t                        loop_filter_mode_deltas[2];
-    uint8_t                       reserved1[3];
+    int8_t                        loop_filter_mode_deltas[STD_VIDEO_AV1_LOOP_FILTER_ADJUSTMENTS];
 } StdVideoAV1LoopFilter;
 
 typedef struct StdVideoAV1QuantizationFlags {
@@ -176,7 +264,6 @@ typedef struct StdVideoAV1Quantization {
     uint8_t                         qm_y;
     uint8_t                         qm_u;
     uint8_t                         qm_v;
-    uint8_t                         reserved1[3];
 } StdVideoAV1Quantization;
 
 typedef struct StdVideoAV1Segmentation {
@@ -194,32 +281,31 @@ typedef struct StdVideoAV1TileInfo {
     uint8_t                     TileCols;
     uint8_t                     TileRows;
     uint16_t                    context_update_tile_id;
+    uint8_t                     tile_size_bytes_minus_1;
+    uint8_t                     reserved1[7];
     const uint16_t*             pMiColStarts;
     const uint16_t*             pMiRowStarts;
     const uint16_t*             pWidthInSbsMinus1;
     const uint16_t*             pHeightInSbsMinus1;
-    uint8_t                     tile_size_bytes_minus_1;
 } StdVideoAV1TileInfo;
 
 typedef struct StdVideoAV1CDEF {
     uint8_t    cdef_damping_minus_3;
     uint8_t    cdef_bits;
-    uint8_t    cdef_y_pri_strength[8];
-    uint8_t    cdef_y_sec_strength[8];
-    uint8_t    cdef_uv_pri_strength[8];
-    uint8_t    cdef_uv_sec_strength[8];
+    uint8_t    cdef_y_pri_strength[STD_VIDEO_AV1_MAX_CDEF_FILTER_STRENGTHS];
+    uint8_t    cdef_y_sec_strength[STD_VIDEO_AV1_MAX_CDEF_FILTER_STRENGTHS];
+    uint8_t    cdef_uv_pri_strength[STD_VIDEO_AV1_MAX_CDEF_FILTER_STRENGTHS];
+    uint8_t    cdef_uv_sec_strength[STD_VIDEO_AV1_MAX_CDEF_FILTER_STRENGTHS];
 } StdVideoAV1CDEF;
 
 typedef struct StdVideoAV1LoopRestoration {
-    uint8_t    lr_type[3];
-    uint8_t    lr_unit_shift;
-    uint8_t    lr_uv_shift;
-    uint8_t    reserved1[3];
+    StdVideoAV1FrameRestorationType    FrameRestorationType[STD_VIDEO_AV1_MAX_NUM_PLANES];
+    uint16_t                           LoopRestorationSize[STD_VIDEO_AV1_MAX_NUM_PLANES];
 } StdVideoAV1LoopRestoration;
 
 typedef struct StdVideoAV1GlobalMotion {
     uint8_t    GmType[STD_VIDEO_AV1_NUM_REF_FRAMES];
-    int32_t    gm_params[STD_VIDEO_AV1_NUM_REF_FRAMES][6];
+    int32_t    gm_params[STD_VIDEO_AV1_NUM_REF_FRAMES][STD_VIDEO_AV1_GLOBAL_MOTION_PARAMS];
 } StdVideoAV1GlobalMotion;
 
 typedef struct StdVideoAV1FilmGrainFlags {
@@ -237,25 +323,25 @@ typedef struct StdVideoAV1FilmGrain {
     uint8_t                      ar_coeff_shift_minus_6;
     uint8_t                      grain_scale_shift;
     uint16_t                     grain_seed;
+    uint8_t                      film_grain_params_ref_idx;
     uint8_t                      num_y_points;
-    uint8_t                      point_y_value[14];
-    uint8_t                      point_y_scaling[14];
+    uint8_t                      point_y_value[STD_VIDEO_AV1_MAX_NUM_Y_POINTS];
+    uint8_t                      point_y_scaling[STD_VIDEO_AV1_MAX_NUM_Y_POINTS];
     uint8_t                      num_cb_points;
-    uint8_t                      point_cb_value[10];
-    uint8_t                      point_cb_scaling[10];
+    uint8_t                      point_cb_value[STD_VIDEO_AV1_MAX_NUM_CB_POINTS];
+    uint8_t                      point_cb_scaling[STD_VIDEO_AV1_MAX_NUM_CB_POINTS];
     uint8_t                      num_cr_points;
-    uint8_t                      point_cr_value[10];
-    uint8_t                      point_cr_scaling[10];
-    int8_t                       ar_coeffs_y_plus_128[24];
-    int8_t                       ar_coeffs_cb_plus_128[25];
-    int8_t                       ar_coeffs_cr_plus_128[25];
+    uint8_t                      point_cr_value[STD_VIDEO_AV1_MAX_NUM_CR_POINTS];
+    uint8_t                      point_cr_scaling[STD_VIDEO_AV1_MAX_NUM_CR_POINTS];
+    int8_t                       ar_coeffs_y_plus_128[STD_VIDEO_AV1_MAX_NUM_POS_LUMA];
+    int8_t                       ar_coeffs_cb_plus_128[STD_VIDEO_AV1_MAX_NUM_POS_CHROMA];
+    int8_t                       ar_coeffs_cr_plus_128[STD_VIDEO_AV1_MAX_NUM_POS_CHROMA];
     uint8_t                      cb_mult;
     uint8_t                      cb_luma_mult;
     uint16_t                     cb_offset;
     uint8_t                      cr_mult;
     uint8_t                      cr_luma_mult;
     uint16_t                     cr_offset;
-    uint8_t                      film_grain_params_ref_idx;
 } StdVideoAV1FilmGrain;
 
 typedef struct StdVideoAV1SequenceHeaderFlags {
@@ -294,8 +380,8 @@ typedef struct StdVideoAV1SequenceHeader {
     uint8_t                           seq_force_integer_mv;
     uint8_t                           seq_force_screen_content_tools;
     uint8_t                           reserved1[5];
-    StdVideoAV1ColorConfig            color_config;
-    StdVideoAV1TimingInfo             timing_info;
+    const StdVideoAV1ColorConfig*     pColorConfig;
+    const StdVideoAV1TimingInfo*      pTimingInfo;
 } StdVideoAV1SequenceHeader;
 
 

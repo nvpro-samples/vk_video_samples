@@ -23,9 +23,9 @@ extern "C" {
 #define vulkan_video_codec_av1std_decode 1
 #include "vulkan_video_codec_av1std.h"
 
-#define VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_API_VERSION_0_9_3 VK_MAKE_VIDEO_STD_VERSION(0, 9, 3)
+#define VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_API_VERSION_1_0_0 VK_MAKE_VIDEO_STD_VERSION(1, 0, 0)
 
-#define VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_SPEC_VERSION VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_API_VERSION_0_9_3
+#define VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_SPEC_VERSION VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_API_VERSION_1_0_0
 #define VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_EXTENSION_NAME "VK_STD_vulkan_video_codec_av1_decode"
 typedef struct StdVideoDecodeAV1PictureInfoFlags {
     uint32_t    error_resilient_mode : 1;
@@ -63,33 +63,27 @@ typedef struct StdVideoDecodeAV1PictureInfoFlags {
 typedef struct StdVideoDecodeAV1PictureInfo {
     StdVideoDecodeAV1PictureInfoFlags    flags;
     StdVideoAV1FrameType                 frame_type;
-    uint32_t                             frame_presentation_time;
-    uint32_t                             display_frame_id;
     uint32_t                             current_frame_id;
-    uint8_t                              frame_to_show_map_idx;
     uint8_t                              OrderHint;
     uint8_t                              primary_ref_frame;
     uint8_t                              refresh_frame_flags;
-    uint16_t                             frame_width_minus_1;
-    uint16_t                             frame_height_minus_1;
-    uint16_t                             render_width_minus_1;
-    uint16_t                             render_height_minus_1;
+    uint8_t                              reserved1;
     StdVideoAV1InterpolationFilter       interpolation_filter;
     StdVideoAV1TxMode                    TxMode;
     uint8_t                              delta_q_res;
     uint8_t                              delta_lf_res;
-    uint8_t                              SkipModeFrame[2];
+    uint8_t                              SkipModeFrame[STD_VIDEO_AV1_SKIP_MODE_FRAMES];
     uint8_t                              coded_denom;
-    uint8_t                              reserved1[3];
+    uint8_t                              reserved2[3];
     uint8_t                              OrderHints[STD_VIDEO_AV1_NUM_REF_FRAMES];
     uint32_t                             expectedFrameId[STD_VIDEO_AV1_NUM_REF_FRAMES];
-    StdVideoAV1LoopFilter                loop_filter;
-    StdVideoAV1Quantization              quantization;
+    const StdVideoAV1TileInfo*           pTileInfo;
+    const StdVideoAV1Quantization*       pQuantization;
     const StdVideoAV1Segmentation*       pSegmentation;
-    StdVideoAV1TileInfo                  tile_info;
+    const StdVideoAV1LoopFilter*         pLoopFilter;
     const StdVideoAV1CDEF*               pCDEF;
-    StdVideoAV1LoopRestoration           lr;
-    StdVideoAV1GlobalMotion              global_motion;
+    const StdVideoAV1LoopRestoration*    pLoopRestoration;
+    const StdVideoAV1GlobalMotion*       pGlobalMotion;
     const StdVideoAV1FilmGrain*          pFilmGrain;
 } StdVideoDecodeAV1PictureInfo;
 
