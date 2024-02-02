@@ -303,39 +303,44 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
     pnvpd->ref_pic_flag     = true;
     pnvpd->chroma_format    = nvsi.nChromaFormat; // 1 : 420
 
-	// Setup slot information
-	av1->setupSlot.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_DPB_SLOT_INFO_KHR;
-	av1->setupSlotInfo.OrderHint = m_PicData.std_info.OrderHint;
-	memcpy(&av1->setupSlotInfo.SavedOrderHints, m_PicData.std_info.OrderHints, STD_VIDEO_AV1_NUM_REF_FRAMES);
-	// TODO: What goes in setupSlotInfo.RefFrameSignBias ? Guessing at the intra frame...
+    // Setup slot information
+    av1->setupSlot.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_DPB_SLOT_INFO_KHR;
+    av1->setupSlotInfo.OrderHint = m_PicData.std_info.OrderHint;
+    memcpy(&av1->setupSlotInfo.SavedOrderHints, m_PicData.std_info.OrderHints, STD_VIDEO_AV1_NUM_REF_FRAMES);
+    // TODO: What goes in setupSlotInfo.RefFrameSignBias ? Guessing at the intra frame...
     for (size_t av1name = 0; av1name < STD_VIDEO_AV1_NUM_REF_FRAMES; av1name += 1) {
-		av1->setupSlotInfo.RefFrameSignBias |= (m_pBuffers[0].RefFrameSignBias[av1name] <= 0) << av1name;
-	}
-	av1->setupSlotInfo.flags.disable_frame_end_update_cdf = m_PicData.std_info.flags.disable_frame_end_update_cdf;
-	av1->setupSlotInfo.flags.segmentation_enabled = m_PicData.std_info.flags.segmentation_enabled;
+        av1->setupSlotInfo.RefFrameSignBias |= (m_pBuffers[0].RefFrameSignBias[av1name] <= 0) << av1name;
+    }
+    av1->setupSlotInfo.flags.disable_frame_end_update_cdf = m_PicData.std_info.flags.disable_frame_end_update_cdf;
+    av1->setupSlotInfo.flags.segmentation_enabled = m_PicData.std_info.flags.segmentation_enabled;
 
-	// Referenced frame information
+    // Referenced frame information
+    printf("Saved order hints:\n");
     for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
-		vkPicBuffBase *pb = reinterpret_cast<vkPicBuffBase *>(m_pBuffers[i].buffer);
+        vkPicBuffBase *pb = reinterpret_cast<vkPicBuffBase *>(m_pBuffers[i].buffer);
         av1->pic_idx[i] = pb ? pb->m_picIdx : -1;
-		av1->dpbSlotInfos[i].flags.disable_frame_end_update_cdf = m_pBuffers[i].disable_frame_end_update_cdf;
-		av1->dpbSlotInfos[i].flags.segmentation_enabled = m_pBuffers[i].segmentation_enabled;
-		av1->dpbSlotInfos[i].frame_type = m_pBuffers[i].frame_type;
-		av1->dpbSlotInfos[i].OrderHint = m_pBuffers[i].order_hint;
+        av1->dpbSlotInfos[i].flags.disable_frame_end_update_cdf = m_pBuffers[i].disable_frame_end_update_cdf;
+        av1->dpbSlotInfos[i].flags.segmentation_enabled = m_pBuffers[i].segmentation_enabled;
+        av1->dpbSlotInfos[i].frame_type = m_pBuffers[i].frame_type;
+        av1->dpbSlotInfos[i].OrderHint = m_pBuffers[i].order_hint;
+        printf("%i ", m_pBuffers[i].order_hint);
         for (size_t av1name = 0; av1name < STD_VIDEO_AV1_NUM_REF_FRAMES; av1name += 1) {
-			av1->dpbSlotInfos[i].RefFrameSignBias |= (m_pBuffers[i].RefFrameSignBias[av1name] <= 0) << av1name;
-			av1->dpbSlotInfos[i].SavedOrderHints[av1name] = m_pBuffers[i].ref_order_hint[av1name];
+            av1->dpbSlotInfos[i].RefFrameSignBias |= (m_pBuffers[i].RefFrameSignBias[av1name] <= 0) << av1name;
+            av1->dpbSlotInfos[i].SavedOrderHints[av1name] = m_pBuffers[i].ref_order_hint[av1name];
+            printf("%i ", av1->dpbSlotInfos[i].SavedOrderHints[av1name]);
         }
-	}
+        printf("\n");
+    }
+    printf("\n");
 
-	// TODO: It's weird that the intra frame motion isn't tracked by the parser.
-	// Need an affine translation test case to properly check this.
+    // TODO: It's weird that the intra frame motion isn't tracked by the parser.
+    // Need an affine translation test case to properly check this.
     for (int i = 1; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
         av1->globalMotion.GmType[i] = global_motions[i-1].wmtype;
         for (int j = 0; j <= 5; j++) {
             av1->globalMotion.gm_params[i][j] = global_motions[i-1].wmmat[j];
         }
-	}
+    }
 
     for (int i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
         av1->ref_frame_idx[i] = ref_frame_idx[i];

@@ -1,9 +1,7 @@
 # Known issues AV1 BETA support
 Following CTS content files have issues with the sample app code:
-- av1-176x144-main-orderhint-10.ivf
 - av1-1920x1080-main-superres-8.ivf
 - av1-352x288-main-filmgrain-8.ivf 
-- av1-sizeup-fluster.ivf
 
 Debug spew is turned on
 
