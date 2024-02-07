@@ -265,7 +265,7 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
     nvsi.nChromaFormat  = sps->color_config.flags.mono_chrome ? 0 : (sps->color_config.subsampling_x && sps->color_config.subsampling_y) ? 1 : (!sps->color_config.subsampling_x && !sps->color_config.subsampling_y) ? 3 : 2;
     nvsi.nMaxWidth      = (sps->max_frame_width_minus_1 + 2) & ~1;
     nvsi.nMaxHeight     = (sps->max_frame_height_minus_1 + 2) & ~1;
-    nvsi.nCodedWidth    = frame_width;
+    nvsi.nCodedWidth    = upscaled_width;
     nvsi.nCodedHeight   = frame_height;
     nvsi.nDisplayWidth  = av1->upscaled_width; // (nvsi.nCodedWidth + 1) & (~1);
     nvsi.nDisplayHeight = nvsi.nCodedHeight; //(nvsi.nCodedHeight + 1) & (~1);
