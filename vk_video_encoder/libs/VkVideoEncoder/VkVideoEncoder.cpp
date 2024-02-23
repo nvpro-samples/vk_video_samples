@@ -160,8 +160,9 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
     submitInfo.signalSemaphoreCount = (frameCompleteSemaphore != VK_NULL_HANDLE) ? 1 : 0;
 
     VkFence queueCompleteFence = encodeFrameInfo->inputCmdBuffer->GetFence();
-    VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::ENCODE, 0,
-                                                           1, &submitInfo,
+    VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(m_vkDevCtx->GetVideoEncodeQueueTransferSupport() ?
+                                                               VulkanDeviceContext::ENCODE : VulkanDeviceContext::TRANSFER,
+                                                           0, 1, &submitInfo,
                                                            queueCompleteFence);
 
     encodeFrameInfo->inputCmdBuffer->SetCommandBufferSubmitted();
@@ -482,7 +483,9 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
     result = m_inputCommandBufferPool->Configure( m_vkDevCtx,
                                                   encoderConfig->numInputImages, // numPoolNodes
-                                                  m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(), // queueFamilyIndex
+                                                  m_vkDevCtx->GetVideoEncodeQueueTransferSupport() ?
+                                                      m_vkDevCtx->GetVideoEncodeQueueFamilyIdx() :
+                                                      m_vkDevCtx->GetTransferQueueFamilyIdx(), // queueFamilyIndex
                                                   false,    // createQueryPool - not needed for the input transfer
                                                   nullptr,  // pVideoProfile   - not needed for the input transfer
                                                   true,     // createSemaphores
