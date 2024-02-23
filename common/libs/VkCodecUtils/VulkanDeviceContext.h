@@ -74,6 +74,8 @@ public:
     VkQueue GetComputeQueue() const { return m_computeQueue; }
     int32_t GetPresentQueueFamilyIdx() const { return m_presentQueueFamily; }
     VkQueue GetPresentQueue() const { return m_presentQueue; }
+    int32_t GetTransferQueueFamilyIdx() const { return m_transferQueueFamily; }
+    VkQueue GetTransferQueue() const { return m_trasferQueue; }
     int32_t GetVideoDecodeQueueFamilyIdx() const { return m_videoDecodeQueueFamily; }
     int32_t GetVideoDecodeDefaultQueueIndex() const { return m_videoDecodeDefaultQueueIndex; }
     int32_t GetVideoDecodeNumQueues() const { return m_videoDecodeNumQueues; }
@@ -93,6 +95,7 @@ public:
     }
     bool    GetVideoDecodeQueryResultStatusSupport() const { return m_videoDecodeQueryResultStatusSupport; }
     bool    GetVideoEncodeQueryResultStatusSupport() const { return m_videoEncodeQueryResultStatusSupport; }
+    bool    GetVideoEncodeQueueTransferSupport() const { return m_videoEncodeQueueTransferSupport; }
     class MtQueueMutex {
 
     public:

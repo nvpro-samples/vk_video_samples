@@ -602,6 +602,11 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         numEncodeQueues = std::min(numEncodeQueues, m_videoEncodeNumQueues);
     }
 
+    // If no graphics, compute, or present queue is requested (i.e. for encoder app), only video
+    // queues will be created. Not all implementations support transfer on video queues.
+    const bool createTransferQueue = !(createGraphicsQueue || createPresentQueue || createComputeQueue) &&
+        !(numEncodeQueues > 0 && m_videoEncodeQueueTransferSupport);
+
     const int32_t maxQueueInstances = std::max(numDecodeQueues, numEncodeQueues);
     assert(maxQueueInstances <= MAX_QUEUE_INSTANCES);
     const std::vector<float> queuePriorities(maxQueueInstances, 0.0f);
@@ -657,6 +662,16 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         devInfo.queueCreateInfoCount++;
     }
 
+    if (createTransferQueue &&
+            (m_transferQueueFamily != -1) &&
+            uniqueQueueFamilies.insert(m_transferQueueFamily).second) {
+        queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_transferQueueFamily;
+        queueInfo[devInfo.queueCreateInfoCount].queueCount = 1;
+        queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
+        devInfo.queueCreateInfoCount++;
+    }
+
     assert(devInfo.queueCreateInfoCount <= MAX_QUEUE_FAMILIES);
 
     devInfo.pQueueCreateInfos = queueInfo.data();
@@ -683,6 +698,9 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
     }
     if (createPresentQueue) {
         GetDeviceQueue(m_device, GetPresentQueueFamilyIdx(), 0, &m_presentQueue);
+    }
+    if (createTransferQueue) {
+        GetDeviceQueue(m_device, GetTransferQueueFamilyIdx(), 0, &m_trasferQueue);
     }
     if (numDecodeQueues) {
         assert(GetVideoDecodeQueueFamilyIdx() != -1);
