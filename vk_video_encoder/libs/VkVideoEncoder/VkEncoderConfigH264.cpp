@@ -328,6 +328,7 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
     }
 
     sps->profile_idc = profileIdc;
+    sps->level_idc = levelIdc;
 
     // constraint_setX_flag values
     sps->flags.constraint_set0_flag = profileIdc == STD_VIDEO_H264_PROFILE_IDC_BASELINE;
