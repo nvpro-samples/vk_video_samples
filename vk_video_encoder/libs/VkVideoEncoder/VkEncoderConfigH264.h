@@ -108,6 +108,9 @@ struct EncoderConfigH264 : public EncoderConfig {
 
             levelLimits = levelLimitsTbl;
             levelLimitsSize = ARRAYSIZE(levelLimitsTbl);
+
+            frameRateNumerator = FRAME_RATE_NUM_DEFAULT;
+            frameRateDenominator = FRAME_RATE_DEN_DEFAULT;
     }
 
     virtual ~EncoderConfigH264() {}
