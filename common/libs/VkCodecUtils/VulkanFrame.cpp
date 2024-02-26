@@ -304,7 +304,7 @@ bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
 
         // Graphics and present stages are not enabled.
         // Make sure the frame complete query or fence are signaled (video frame is processed) before returning the frame.
-        if ((gfxRendererIsEnabled == false) && (pLastDecodedFrame != nullptr)) {
+        if (false && (gfxRendererIsEnabled == false) && (pLastDecodedFrame != nullptr)) {
 
             if (pLastDecodedFrame->queryPool != VK_NULL_HANDLE) {
                 auto startTime = std::chrono::steady_clock::now();
