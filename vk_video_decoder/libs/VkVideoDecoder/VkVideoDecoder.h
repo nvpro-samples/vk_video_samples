@@ -269,6 +269,8 @@ private:
             if (result == VK_SUCCESS) {
                 m_currentVideoQueueIndx = 0; // start with index zero
             }
+            std::cout << "\t Enabling HW Load Balancing for device with "
+                      << m_vkDevCtx->GetVideoDecodeNumQueues() << " queues" << std::endl;
         }
 
     }

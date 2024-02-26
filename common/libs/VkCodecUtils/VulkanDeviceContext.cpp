@@ -543,9 +543,11 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                     PrintExtensions(true);
                 }
 
-                std::cerr << "*** Selected Vulkan physical device with name: " << props.deviceName << std::hex
-                          << ", vendor ID: " << props.vendorID << ", and device ID: " << props.deviceID
-                          << std::dec << " ***" << std::endl << std::flush;
+                std::cout << "*** Selected Vulkan physical device with name: " << props.deviceName << std::hex
+                          << ", vendor ID: " << props.vendorID << ", and device ID: " << props.deviceID << std::dec
+			  << ", Num Decode Queues: " << m_videoDecodeNumQueues
+			  << ", Num Encode Queues: " << m_videoEncodeNumQueues
+			  << " ***" << std::endl << std::flush;
 
                 return VK_SUCCESS;
             }
