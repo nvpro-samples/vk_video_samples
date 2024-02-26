@@ -700,6 +700,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         assert(!"QueuePictureForDecode has failed");
     }
 
+    assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameSynchronizationInfo.frameCompleteFence));
+
     VkFence frameCompleteFence = frameSynchronizationInfo.frameCompleteFence;
     VkSemaphore frameCompleteSemaphore = frameSynchronizationInfo.frameCompleteSemaphore;
     VkSemaphore frameConsumerDoneSemaphore = frameSynchronizationInfo.frameConsumerDoneSemaphore;
@@ -824,7 +826,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             uint64_t  currSemValue = 0;
             VkResult semResult = m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, m_hwLoadBalancingTimelineSemaphore, &currSemValue);
             std::cout << "\t TL semaphore value: " << currSemValue << ", status: " << semResult << std::endl;
-	}
+        }
 
         waitSemaphores[waitSemaphoreCount] = m_hwLoadBalancingTimelineSemaphore;
         waitTlSemaphoresValues[waitSemaphoreCount] = m_decodePicCount - 1; // wait for the previous value to be signaled
@@ -843,9 +845,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         timelineSemaphoreInfos.signalSemaphoreValueCount = signalSemaphoreCount;
         timelineSemaphoreInfos.pSignalSemaphoreValues = signalTlSemaphoresValues;
         if (m_dumpDecodeData) {
-	    std::cout << "\t Wait for: " << (waitSemaphoreCount ? waitTlSemaphoresValues[waitSemaphoreCount - 1] : 0) <<
-                         ", signal at " << signalTlSemaphoresValues[signalSemaphoreCount - 1] << std::endl;
-	}
+            std::cout << "\t Wait for: " << (waitSemaphoreCount ? waitTlSemaphoresValues[waitSemaphoreCount - 1] : 0) <<
+                             ", signal at " << signalTlSemaphoresValues[signalSemaphoreCount - 1] << std::endl;
+        }
     }
 
     assert(waitSemaphoreCount <= waitSemaphoreMaxCount);
@@ -885,7 +887,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     }
 
     VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::DECODE, m_currentVideoQueueIndx,
-                                                  1, &submitInfo, frameCompleteFence);
+                                                           1, &submitInfo, frameCompleteFence);
     assert(result == VK_SUCCESS);
 
     if (m_dumpDecodeData) {
