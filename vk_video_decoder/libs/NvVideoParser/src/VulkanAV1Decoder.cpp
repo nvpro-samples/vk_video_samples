@@ -285,7 +285,7 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
     nvsi.lTransferCharacteristics = sps->color_config.transfer_characteristics;
     nvsi.lMatrixCoefficients = sps->color_config.matrix_coefficients;
 
-    nvsi.filmGrainEnabled = sps->flags.film_grain_params_present;
+    nvsi.hasFilmGrain = sps->flags.film_grain_params_present;
 
     if (av1->needsSessionReset && !init_sequence(&nvsi))
         return false;

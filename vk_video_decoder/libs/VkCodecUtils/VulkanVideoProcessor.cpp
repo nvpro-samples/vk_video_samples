@@ -596,10 +596,10 @@ size_t VulkanVideoProcessor::OutputFrameToFile(DecodedFrame* pFrame)
     }
 
     assert(pFrame != nullptr);
-    assert(!!pFrame->outputImageView);
+    assert(!!pFrame->outLinearImage);
     assert(pFrame->pictureIndex != -1);
 
-    VkSharedBaseObj<VkImageResource> imageResource = pFrame->outputImageView->GetImageResource();
+    VkSharedBaseObj<VkImageResource> imageResource = pFrame->outLinearImage;
     uint8_t* pLinearMemory = m_frameToFile.EnsureAllocation(m_vkDevCtx, imageResource);
     assert(pLinearMemory != nullptr);
 

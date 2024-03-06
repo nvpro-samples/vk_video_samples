@@ -25,12 +25,21 @@
 #include "vulkan_interfaces.h"
 #include "VkCodecUtils/VkImageResource.h"
 
+enum ImageType{
+    ReferenceableImage,
+    PresentableImage,
+    HostVisibleImage,
+    ImageTypeMAX,
+};
+
 struct DecodedFrame {
     int32_t pictureIndex;
     int32_t displayWidth;
     int32_t displayHeight;
     VkSharedBaseObj<VkImageResourceView> decodedImageView;
     VkSharedBaseObj<VkImageResourceView> outputImageView;
+    VkSharedBaseObj<VkImageResource>     outLinearImage;
+
     VkFence frameCompleteFence; // If valid, the fence is signaled when the decoder is done decoding the frame.
     VkFence frameConsumerDoneFence; // If valid, the fence is signaled when the consumer (graphics, compute or display) is done using the frame.
     VkSemaphore frameCompleteSemaphore; // If valid, the semaphore is signaled when the decoder is done decoding the frame.
@@ -126,42 +135,37 @@ public:
     };
 
     struct PictureResourceInfo {
-        VkImage  image;
-        VkFormat imageFormat;
+        VkImage       image;
+        VkFormat      imageFormat;
         VkImageLayout currentImageLayout;
     };
 
     virtual int32_t InitImagePool(const VkVideoProfileInfoKHR* pDecodeProfile,
                                   uint32_t                 numImages,
                                   VkFormat                 dpbImageFormat,
-                                  VkFormat                 outImageFormat,
                                   const VkExtent2D&        codedExtent,
                                   const VkExtent2D&        maxImageExtent,
                                   VkImageUsageFlags        dpbImageUsage,
-                                  VkImageUsageFlags        outImageUsage,
                                   uint32_t                 queueFamilyIndex,
                                   int32_t                  numImagesToPreallocate,
+                                  ImageType                imageType,
                                   bool                     useImageArray = false,
-                                  bool                     useImageViewArray = false,
-                                  bool                     useSeparateOutputImage = false,
-                                  bool                     useLinearOutput = false) = 0;
+                                  bool                     useImageViewArray = false) = 0;
 
     virtual int32_t QueuePictureForDecode(int8_t picId, VkParserDecodePictureInfo* pDecodePictureInfo,
                                           ReferencedObjectsInfo* pReferencedObjectsInfo,
                                           FrameSynchronizationInfo* pFrameSynchronizationInfo) = 0;
     virtual int32_t DequeueDecodedPicture(DecodedFrame* pDecodedFrame) = 0;
     virtual int32_t ReleaseDisplayedPicture(DecodedFrameRelease** pDecodedFramesRelease, uint32_t numFramesToRelease) = 0;
-    virtual int32_t GetDpbImageResourcesByIndex(uint32_t numResources, const int8_t* referenceSlotIndexes,
-                                                VkVideoPictureResourceInfoKHR* pictureResources,
-                                                PictureResourceInfo* pictureResourcesInfo,
-                                                VkImageLayout newDpbImageLayerLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) = 0;
-    virtual int32_t GetCurrentImageResourceByIndex(int8_t referenceSlotIndex,
-                                                   VkVideoPictureResourceInfoKHR* dpbPictureResource,
-                                                   PictureResourceInfo* dpbPictureResourceInfo,
-                                                   VkImageLayout newDpbImageLayerLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR,
-                                                   VkVideoPictureResourceInfoKHR* outputPictureResource = nullptr,
-                                                   PictureResourceInfo* outputPictureResourceInfo = nullptr,
-                                                   VkImageLayout newOutputImageLayerLayout = VK_IMAGE_LAYOUT_MAX_ENUM) = 0;
+    virtual int32_t AcquireImageResourceArrayByIndex(uint32_t numResources, const int8_t* referenceSlotIndexes,
+                                                     VkVideoPictureResourceInfoKHR* pictureResources,
+                                                     PictureResourceInfo* pictureResourcesInfo,
+                                                     VkImageLayout newDpbImageLayerLayout) = 0;
+    virtual int32_t AcquireImageResourceByIndex(int8_t referenceSlotIndex,
+                                                VkVideoPictureResourceInfoKHR* dpbPictureResource,
+                                                PictureResourceInfo* dpbPictureResourceInfo,
+                                                VkImageLayout newDpbImageLayerLayout,
+                                                ImageType imageType) = 0;
     virtual int32_t ReleaseImageResources(uint32_t numResources, const uint32_t* indexes) = 0;
     virtual uint64_t SetPicNumInDecodeOrder(int32_t picId, uint64_t picNumInDecodeOrder) = 0;
     virtual int32_t SetPicNumInDisplayOrder(int32_t picId, int32_t picNumInDisplayOrder) = 0;

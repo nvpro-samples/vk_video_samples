@@ -213,10 +213,10 @@ private:
         , m_decodeFramesData(vkDevCtx)
         , m_decodePicCount(0)
         , m_hwLoadBalancingTimelineSemaphore()
-        , m_dpbAndOutputCoincide(true)
+        , m_preferDPBAndOutputCoincide(true)
         , m_useImageArray(false)
         , m_useImageViewArray(false)
-        , m_useSeparateOutputImages(useLinearOutput)
+        , m_useSeparateOutputImages(false)
         , m_useLinearOutput(useLinearOutput)
         , m_resetDecoder(true)
         , m_dumpDecodeData(false)
@@ -303,7 +303,7 @@ private:
     uint64_t                                         m_decodePicCount; // Also used for the HW load balancing timeline semaphore
     VkSharedBaseObj<VkParserVideoPictureParameters>  m_currentPictureParameters;
     VkSemaphore m_hwLoadBalancingTimelineSemaphore;
-    uint32_t m_dpbAndOutputCoincide : 1;
+    uint32_t m_preferDPBAndOutputCoincide : 1;
     uint32_t m_useImageArray : 1;
     uint32_t m_useImageViewArray : 1;
     uint32_t m_useSeparateOutputImages : 1;

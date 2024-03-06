@@ -165,7 +165,7 @@ struct VkParserDetectedVideoFormat {
     } video_signal_description;
     uint32_t seqhdr_data_length; /** Additional bytes following (NVVIDEOFORMATEX)                  */
     uint32_t codecProfile;
-    bool filmGrainEnabled;
+    bool filmGrainUsed;
 };
 
 typedef enum {

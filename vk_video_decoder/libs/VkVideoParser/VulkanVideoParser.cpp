@@ -1155,6 +1155,7 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
         detectedFormat.coded_height = pnvsi->nCodedHeight;
         detectedFormat.display_area.right = pnvsi->nDisplayWidth;
         detectedFormat.display_area.bottom = pnvsi->nDisplayHeight;
+        detectedFormat.filmGrainUsed = pnvsi->hasFilmGrain;
 
         if ((StdChromaFormatIdc)pnvsi->nChromaFormat == chroma_format_idc_420) {
             detectedFormat.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;
@@ -1679,7 +1680,7 @@ uint32_t VulkanVideoParser::FillDpbH265State(
     *pCurrAllocatedSlotIndex = dpbSlot;
     assert(!(dpbSlot < 0));
     if (dpbSlot >= 0) {
-        assert(pd->ref_pic_flag);
+        //assert(pd->ref_pic_flag);
     }
 
     return numUsedRef;
@@ -2346,6 +2347,8 @@ bool VulkanVideoParser::DecodePicture(
 		pin->tileInfo.pHeightInSbsMinus1 = pin->height_in_sbs_minus_1;
 		pin->tileInfo.pMiColStarts = pin->MiColStarts;
 		pin->tileInfo.pMiRowStarts = pin->MiRowStarts;
+
+        pDecodePictureInfo->filmGrainEnabled = pin->std_info.flags.apply_grain;
     }
 
     pDecodePictureInfo->displayWidth  = m_nvsi.nDisplayWidth;

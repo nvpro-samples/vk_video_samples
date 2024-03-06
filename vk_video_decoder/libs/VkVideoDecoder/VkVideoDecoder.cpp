@@ -182,7 +182,8 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         return -1;
     }
     m_capabilityFlags = videoDecodeCapabilities.flags;
-    m_dpbAndOutputCoincide = (m_capabilityFlags & VK_VIDEO_DECODE_CAPABILITY_DPB_AND_OUTPUT_COINCIDE_BIT_KHR);
+    m_preferDPBAndOutputCoincide = (m_capabilityFlags & VK_VIDEO_DECODE_CAPABILITY_DPB_AND_OUTPUT_COINCIDE_BIT_KHR);
+
     VkFormat dpbImageFormat = VK_FORMAT_UNDEFINED;
     VkFormat outImageFormat = VK_FORMAT_UNDEFINED;
     result = VulkanVideoCapabilities::GetSupportedVideoFormats(m_vkDevCtx, videoProfile,
@@ -237,12 +238,15 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                        VK_IMAGE_USAGE_TRANSFER_DST_BIT);
     VkImageUsageFlags dpbImageUsage = VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
 
-    if (m_dpbAndOutputCoincide) {
+    bool filmGrainEnabled = ((videoCodec == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) && (pVideoFormat->filmGrainUsed != false));
+    if ((m_preferDPBAndOutputCoincide != false) && (filmGrainEnabled == false)) {
         dpbImageUsage = outImageUsage | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
         outImageUsage &= ~VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
     } else {
         // The implementation does not support dpbAndOutputCoincide
         m_useSeparateOutputImages = true;
+        // When the implementation needs a separate output image, how to query whether the output image supports linear.
+        // Should the attempt of allocating an image with DECODE + LINEAR be attempted and if failed tried with just LINEAR?
     }
 
     if(!(videoCapabilities.flags & VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR)) {
@@ -251,22 +255,53 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         m_useImageViewArray = true;
     }
 
+    // Init the ReferenceableImages
     int32_t ret = m_videoFrameBuffer->InitImagePool(videoProfile.GetProfile(),
                                                     m_numDecodeSurfaces,
                                                     dpbImageFormat,
-                                                    outImageFormat,
                                                     codedExtent,
                                                     imageExtent,
                                                     dpbImageUsage,
-                                                    outImageUsage,
                                                     m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                                     m_numDecodeImagesToPreallocate,
-                                                    m_useImageArray, m_useImageViewArray,
-                                                    m_useSeparateOutputImages, m_useLinearOutput);
+                                                    ReferenceableImage,
+                                                    m_useImageArray,
+                                                    m_useImageViewArray
+                                                    );
 
     assert((uint32_t)ret == m_numDecodeSurfaces);
     if ((uint32_t)ret != m_numDecodeSurfaces) {
         fprintf(stderr, "\nERROR: InitImagePool() ret(%d) != m_numDecodeSurfaces(%d)\n", ret, m_numDecodeSurfaces);
+    }
+
+    if (m_useSeparateOutputImages != false) {
+        m_videoFrameBuffer->InitImagePool(videoProfile.GetProfile(),
+                                                    m_numDecodeSurfaces,
+                                                    outImageFormat, // Should be moved.
+                                                    codedExtent,
+                                                    imageExtent,
+                                                    outImageUsage, // Should be moved.
+                                                    m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
+                                                    m_numDecodeImagesToPreallocate,
+                                                    PresentableImage,
+                                                    false,
+                                                    false);
+    }
+
+    if (m_useLinearOutput != false) {
+        m_videoFrameBuffer->InitImagePool(videoProfile.GetProfile(),
+                                            m_numDecodeSurfaces,
+                                            outImageFormat, // Should be moved.
+                                            codedExtent,
+                                            imageExtent,
+                                            (VK_IMAGE_USAGE_SAMPLED_BIT      |
+                                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                             VK_IMAGE_USAGE_TRANSFER_DST_BIT), // Should be moved.
+                                            m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
+                                            m_numDecodeImagesToPreallocate,
+                                            HostVisibleImage,
+                                            false,
+                                            false);
     }
 
     if (m_dumpDecodeData) {
@@ -505,45 +540,60 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     uint32_t numDpbBarriers = 0;
     VulkanVideoFrameBuffer::PictureResourceInfo currentDpbPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
     VulkanVideoFrameBuffer::PictureResourceInfo currentOutputPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
+    VulkanVideoFrameBuffer::PictureResourceInfo currentLinearPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
     VkVideoPictureResourceInfoKHR currentOutputPictureResource = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR, nullptr};
+    VkVideoPictureResourceInfoKHR currentLinearPictureResource = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR, nullptr};
 
     VkVideoPictureResourceInfoKHR* pOutputPictureResource = nullptr;
     VulkanVideoFrameBuffer::PictureResourceInfo* pOutputPictureResourceInfo = nullptr;
-    if (!m_dpbAndOutputCoincide) {
-
-        // Output Distinct will use the decodeFrameInfo.dstPictureResource directly.
+    VkVideoPictureResourceInfoKHR* pFrameDumpStagingResource = nullptr;
+    VulkanVideoFrameBuffer::PictureResourceInfo* pFrameDumpStagingResourceInfo = nullptr;
+    if ((pDecodePictureInfo->filmGrainEnabled != false) || (m_preferDPBAndOutputCoincide == 0)) {
+        // When FG is enabled, distinct is forced. Output Distinct will use the decodeFrameInfo.dstPictureResource directly.
         pOutputPictureResource = &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource;
-    } else if (m_useLinearOutput) {
-
-        // Output Coincide needs the output only if we are processing linear images that we need to copy to below.
-        pOutputPictureResource = &currentOutputPictureResource;
     }
 
-    if (pOutputPictureResource) {
-
-        // if the pOutputPictureResource is set then we also need the pOutputPictureResourceInfo.
-        pOutputPictureResourceInfo = &currentOutputPictureResourceInfo;
-
+    if (m_useLinearOutput != false) {
+        pFrameDumpStagingResource = &currentLinearPictureResource;
+        pFrameDumpStagingResourceInfo = &currentLinearPictureResourceInfo;
     }
 
-    if (pCurrFrameDecParams->currPicIdx !=
-            m_videoFrameBuffer->GetCurrentImageResourceByIndex(pCurrFrameDecParams->currPicIdx,
-                                                               &pCurrFrameDecParams->dpbSetupPictureResource,
-                                                               &currentDpbPictureResourceInfo,
-                                                               VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR,
-                                                               pOutputPictureResource,
-                                                               pOutputPictureResourceInfo,
-                                                               VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR)) {
+    int currentResourceIndex = m_videoFrameBuffer->AcquireImageResourceByIndex(pCurrFrameDecParams->currPicIdx,
+                                                    &pCurrFrameDecParams->dpbSetupPictureResource,
+                                                    &currentDpbPictureResourceInfo,
+                                                    VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR,
+                                                    ReferenceableImage);
 
+    if (pCurrFrameDecParams->currPicIdx != currentResourceIndex) {
         assert(!"GetImageResourcesByIndex has failed");
     }
 
-    if (m_dpbAndOutputCoincide) {
+    if (pOutputPictureResource != nullptr) {
+        assert((m_useSeparateOutputImages != false) || (m_useLinearOutput != false));
+
+        // When the pOutputPictureResource is set, the pOutputPictureResourceInfo is also needed.
+        pOutputPictureResourceInfo = &currentOutputPictureResourceInfo;
+        m_videoFrameBuffer->AcquireImageResourceByIndex(pCurrFrameDecParams->currPicIdx,
+                                                        pOutputPictureResource,
+                                                        pOutputPictureResourceInfo,
+                                                        VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR,
+                                                        PresentableImage);
+    }
+
+    if (m_useLinearOutput != false) {
+        m_videoFrameBuffer->AcquireImageResourceByIndex(pCurrFrameDecParams->currPicIdx,
+                                                        pFrameDumpStagingResource,
+                                                        pFrameDumpStagingResourceInfo,
+                                                        VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR,
+                                                        HostVisibleImage);
+    }
+
+    if ((m_preferDPBAndOutputCoincide != 0) && (pDecodePictureInfo->filmGrainEnabled == false)) {
 
         // For the Output Coincide, the DPB and destination output resources are the same.
         pCurrFrameDecParams->decodeFrameInfo.dstPictureResource = pCurrFrameDecParams->dpbSetupPictureResource;
 
-    } else if (pOutputPictureResourceInfo) {
+    } else if (pOutputPictureResource != nullptr) {
 
         // For Output Distinct transition the image to DECODE_DST
         if (pOutputPictureResourceInfo->currentImageLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
@@ -570,20 +620,26 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     VulkanVideoFrameBuffer::PictureResourceInfo pictureResourcesInfo[VkParserPerFrameDecodeParameters::MAX_DPB_REF_AND_SETUP_SLOTS];
     memset(&pictureResourcesInfo[0], 0, sizeof(pictureResourcesInfo));
     const int8_t* pGopReferenceImagesIndexes = pCurrFrameDecParams->pGopReferenceImagesIndexes;
-    if (pCurrFrameDecParams->numGopReferenceSlots) {
-        if (pCurrFrameDecParams->numGopReferenceSlots != m_videoFrameBuffer->GetDpbImageResourcesByIndex(
-                                                                        pCurrFrameDecParams->numGopReferenceSlots,
-                                                                        pGopReferenceImagesIndexes,
-                                                                        pCurrFrameDecParams->pictureResources,
-                                                                        pictureResourcesInfo,
-                                                                        VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR)) {
+    if (pCurrFrameDecParams->numGopReferenceSlots != 0) {
+         int32_t resourceCount = m_videoFrameBuffer->AcquireImageResourceArrayByIndex(
+            pCurrFrameDecParams->numGopReferenceSlots,
+            pGopReferenceImagesIndexes,
+            pCurrFrameDecParams->pictureResources,
+            pictureResourcesInfo,
+            VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR);
+
+        if (pCurrFrameDecParams->numGopReferenceSlots != resourceCount) {
             assert(!"GetImageResourcesByIndex has failed");
         }
+
         for (int32_t resId = 0; resId < pCurrFrameDecParams->numGopReferenceSlots; resId++) {
             // slotLayer requires NVIDIA specific extension VK_KHR_video_layers, not enabled, just yet.
             // pGopReferenceSlots[resId].slotLayerIndex = 0;
             // pictureResourcesInfo[resId].image can be a nullptr handle if the picture is not-existent.
-            if (pictureResourcesInfo[resId].image && (pictureResourcesInfo[resId].currentImageLayout != VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) && (pictureResourcesInfo[resId].currentImageLayout != VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR)) {
+            if ((pictureResourcesInfo[resId].image != 0) && 
+                (pictureResourcesInfo[resId].currentImageLayout != VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) &&
+                (pictureResourcesInfo[resId].currentImageLayout != VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR)) {
+
                 imageBarriers[numDpbBarriers] = dpbBarrierTemplates[0];
                 imageBarriers[numDpbBarriers].oldLayout = pictureResourcesInfo[resId].currentImageLayout;
                 imageBarriers[numDpbBarriers].newLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR;
@@ -598,7 +654,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     if (pCurrFrameDecParams->isAV1) {
         // AV1 always keeps a setup slot active.
         //pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount--;
-    }    
+    }
     decodeBeginInfo.pReferenceSlots = pCurrFrameDecParams->decodeFrameInfo.pReferenceSlots;
     
     if (false) {
@@ -771,12 +827,19 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     VkVideoEndCodingInfoKHR decodeEndInfo = { VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR };
     m_vkDevCtx->CmdEndVideoCodingKHR(frameDataSlot.commandBuffer, &decodeEndInfo);
 
-    if (m_dpbAndOutputCoincide && (m_useSeparateOutputImages || m_useLinearOutput)) {
+    if (m_useLinearOutput != false) {
+        VkVideoPictureResourceInfoKHR* pCopySrcResource = &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource;
+        VulkanVideoFrameBuffer::PictureResourceInfo* pCopySrcResourceInfo = &currentDpbPictureResourceInfo;
+        if (pOutputPictureResource != nullptr) {
+            pCopySrcResource = pOutputPictureResource;
+            pCopySrcResourceInfo = pOutputPictureResourceInfo;
+        }
+
         CopyOptimalToLinearImage(frameDataSlot.commandBuffer,
-                                 pCurrFrameDecParams->decodeFrameInfo.dstPictureResource,
-                                 currentDpbPictureResourceInfo,
-                                 *pOutputPictureResource,
-                                 *pOutputPictureResourceInfo,
+                                 *pCopySrcResource,
+                                 *pCopySrcResourceInfo,
+                                 *pFrameDumpStagingResource,
+                                 *pFrameDumpStagingResourceInfo,
                                  &frameSynchronizationInfo);
     }
 
