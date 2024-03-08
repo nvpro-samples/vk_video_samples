@@ -159,6 +159,11 @@ int main(int argc, const char **argv) {
         }
     }
 
+    VkQueueFlags requestVideoComputeQueueMask = 0;
+    if (programConfig.enablePostProcessFilter != -1) {
+        requestVideoComputeQueueMask = VK_QUEUE_COMPUTE_BIT;
+    }
+
     VkSharedBaseObj<VulkanVideoProcessor> vulkanVideoProcessor;
     result = VulkanVideoProcessor::Create(&vkDevCtxt, vulkanVideoProcessor);
     if (result != VK_SUCCESS) {
@@ -184,7 +189,10 @@ int main(int argc, const char **argv) {
             return -1;
         }
 
-        result = vkDevCtxt.InitPhysicalDevice((VK_QUEUE_GRAPHICS_BIT | requestVideoDecodeQueueMask | requestVideoEncodeQueueMask),
+        result = vkDevCtxt.InitPhysicalDevice((VK_QUEUE_GRAPHICS_BIT |
+                                               requestVideoComputeQueueMask |
+                                               requestVideoDecodeQueueMask |
+                                               requestVideoEncodeQueueMask),
                                                displayShell,
                                                requestVideoDecodeQueueMask,
                                                (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
@@ -213,7 +221,9 @@ int main(int argc, const char **argv) {
 
     } else {
 
-        result = vkDevCtxt.InitPhysicalDevice((requestVideoDecodeQueueMask | requestVideoEncodeQueueMask),
+        result = vkDevCtxt.InitPhysicalDevice((requestVideoDecodeQueueMask  |
+                                               requestVideoComputeQueueMask |
+                                               requestVideoEncodeQueueMask),
                                                nullptr,
                                                requestVideoDecodeQueueMask);
         if (result != VK_SUCCESS) {
