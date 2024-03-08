@@ -358,7 +358,7 @@ void Shell::AcquireBackBuffer(bool trainFrame) {
                     << "m_targetTimeDelta: " << backBuffer.m_targetTimeDelta.count() << std::endl;
         }
 
-        if ((backBuffer.m_targetTimeDelta.count() > 0) && (backBuffer.m_framePresentAtTime < timeNow)) {
+        if (false && (backBuffer.m_targetTimeDelta.count() > 0) && (backBuffer.m_framePresentAtTime < timeNow)) {
             auto timeDiff = timeNow - backBuffer.m_framePresentAtTime;
             if (timeDiff < backBuffer.m_targetTimeDelta) {
                 std::this_thread::sleep_for(timeDiff);
