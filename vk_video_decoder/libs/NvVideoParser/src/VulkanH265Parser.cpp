@@ -1592,19 +1592,19 @@ static StdVideoH265LevelIdc generalLevelIdcToVulkanLevelIdcEnum(uint8_t general_
     // general_level_idc and sub_layer_level_idc[ OpTid ] shall be set equal to a value of
     // 30 times the level number specified in Table A.4.
     // Table A.4 - General tier and level limits
-    static const uint32_t H265_LEVEL_IDC_1_0 = (uint32_t)(1.0 * 30);
-    static const uint32_t H265_LEVEL_IDC_2_0 = (uint32_t)(2.0 * 30);
-    static const uint32_t H265_LEVEL_IDC_2_1 = (uint32_t)(2.1 * 30);
-    static const uint32_t H265_LEVEL_IDC_3_0 = (uint32_t)(3.0 * 30);
-    static const uint32_t H265_LEVEL_IDC_3_1 = (uint32_t)(3.1 * 30);
-    static const uint32_t H265_LEVEL_IDC_4_0 = (uint32_t)(4.0 * 30);
-    static const uint32_t H265_LEVEL_IDC_4_1 = (uint32_t)(4.1 * 30);
-    static const uint32_t H265_LEVEL_IDC_5_0 = (uint32_t)(5.0 * 30);
-    static const uint32_t H265_LEVEL_IDC_5_1 = (uint32_t)(5.1 * 30);
-    static const uint32_t H265_LEVEL_IDC_5_2 = (uint32_t)(5.2 * 30);
-    static const uint32_t H265_LEVEL_IDC_6_0 = (uint32_t)(6.0 * 30);
-    static const uint32_t H265_LEVEL_IDC_6_1 = (uint32_t)(6.1 * 30);
-    static const uint32_t H265_LEVEL_IDC_6_2 = (uint32_t)(6.2 * 30);
+    static const uint32_t H265_LEVEL_IDC_1_0 = (uint32_t)(1.0f * 30);
+    static const uint32_t H265_LEVEL_IDC_2_0 = (uint32_t)(2.0f * 30);
+    static const uint32_t H265_LEVEL_IDC_2_1 = (uint32_t)(2.1f * 30);
+    static const uint32_t H265_LEVEL_IDC_3_0 = (uint32_t)(3.0f * 30);
+    static const uint32_t H265_LEVEL_IDC_3_1 = (uint32_t)(3.1f * 30);
+    static const uint32_t H265_LEVEL_IDC_4_0 = (uint32_t)(4.0f * 30);
+    static const uint32_t H265_LEVEL_IDC_4_1 = (uint32_t)(4.1f * 30);
+    static const uint32_t H265_LEVEL_IDC_5_0 = (uint32_t)(5.0f * 30);
+    static const uint32_t H265_LEVEL_IDC_5_1 = (uint32_t)(5.1f * 30);
+    static const uint32_t H265_LEVEL_IDC_5_2 = (uint32_t)(5.2f * 30);
+    static const uint32_t H265_LEVEL_IDC_6_0 = (uint32_t)(6.0f * 30);
+    static const uint32_t H265_LEVEL_IDC_6_1 = (uint32_t)(6.1f * 30);
+    static const uint32_t H265_LEVEL_IDC_6_2 = (uint32_t)(6.2f * 30);
 
     switch (general_level_idc) {
         case H265_LEVEL_IDC_1_0: return STD_VIDEO_H265_LEVEL_IDC_1_0;
