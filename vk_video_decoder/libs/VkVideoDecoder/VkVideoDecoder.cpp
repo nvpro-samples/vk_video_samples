@@ -709,7 +709,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     // If the video frame filter is enabled, since it is executed after the decoder's queue,
     // the filter will provide its own semaphore for the video decoder to signal, instead.
     // Then the frameCompleteSemaphore will be signaled by the filter of its completion.
+    VkFence videoDecodeCompleteFence = frameCompleteFence;
     VkSemaphore videoDecodeCompleteSemaphore = frameCompleteSemaphore;
+
 
     VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -796,6 +798,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         // frameCompleteSemaphore is the semaphore that the filter is going to signal on completion when enabled.
         // The videoDecodeCompleteSemaphore semaphore will be signaled by the decoder and then used by the filter to wait on.
+        videoDecodeCompleteFence     = m_yuvFilter->GetFilterSignalFence(currPicIdx);
         videoDecodeCompleteSemaphore = m_yuvFilter->GetFilterWaitSemaphore(currPicIdx);
     }
 
@@ -887,27 +890,27 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     }
 
     VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::DECODE, m_currentVideoQueueIndx,
-                                                           1, &submitInfo, frameCompleteFence);
+                                                           1, &submitInfo, videoDecodeCompleteFence);
     assert(result == VK_SUCCESS);
 
     if (m_dumpDecodeData) {
         std::cout << "\t +++++++++++++++++++++++++++< " << currPicIdx << " >++++++++++++++++++++++++++++++" << std::endl;
         std::cout << "\t => Decode Submitted for CurrPicIdx: " << currPicIdx << std::endl
-                  << "\t\tm_nPicNumInDecodeOrder: " << picNumInDecodeOrder << "\t\tframeCompleteFence " << frameCompleteFence
+                  << "\t\tm_nPicNumInDecodeOrder: " << picNumInDecodeOrder << "\t\tframeCompleteFence " << videoDecodeCompleteFence
                   << "\t\tvideoDecodeCompleteSemaphore " << videoDecodeCompleteSemaphore << "\t\tdstImageView "
                   << pPicParams->decodeFrameInfo.dstPictureResource.imageViewBinding << std::endl;
     }
 
     const bool checkDecodeIdleSync = false; // For fence/sync/idle debugging
     if (checkDecodeIdleSync) { // For fence/sync debugging
-        if (frameCompleteFence == VkFence()) {
+        if (videoDecodeCompleteFence == VkFence()) {
             result = m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::DECODE, m_currentVideoQueueIndx);
             assert(result == VK_SUCCESS);
         } else {
             if (videoDecodeCompleteSemaphore == VkSemaphore()) {
-                result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameCompleteFence, true, gFenceTimeout);
+                result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &videoDecodeCompleteFence, true, gFenceTimeout);
                 assert(result == VK_SUCCESS);
-                result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameCompleteFence);
+                result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, videoDecodeCompleteFence);
                 assert(result == VK_SUCCESS);
             }
         }
@@ -933,9 +936,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
     // For fence/sync debugging
     if (pDecodePictureInfo->flags.fieldPic) {
-        result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameCompleteFence, true, gFenceTimeout);
+        result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &videoDecodeCompleteFence, true, gFenceTimeout);
         assert(result == VK_SUCCESS);
-        result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameCompleteFence);
+        result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, videoDecodeCompleteFence);
         assert(result == VK_SUCCESS);
     }
 
@@ -993,7 +996,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         assert(videoDecodeCompleteSemaphore != frameCompleteSemaphore);
         result = m_yuvFilter->SubmitCommandBuffer(currPicIdx,
                                                   1, &videoDecodeCompleteSemaphore,
-                                                  1, &frameCompleteSemaphore);
+                                                  1, &frameCompleteSemaphore,
+                                                  frameCompleteFence);
         assert(result == VK_SUCCESS);
     }
 

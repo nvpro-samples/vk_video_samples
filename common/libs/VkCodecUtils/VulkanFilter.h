@@ -98,7 +98,8 @@ public:
                                          uint32_t waitSemaphoreCount,
                                          const VkSemaphore* pWaitSemaphores,
                                          uint32_t signalSemaphoreCount,
-                                         const VkSemaphore* pSignalSemaphores) const
+                                         const VkSemaphore* pSignalSemaphores,
+                                         VkFence filterCompleteFence) const
     {
 
         assert(m_queue != VK_NULL_HANDLE);
@@ -115,8 +116,7 @@ public:
         submitInfo.pWaitDstStageMask = &waitStageMask;
         submitInfo.signalSemaphoreCount = signalSemaphoreCount;
         submitInfo.pSignalSemaphores = pSignalSemaphores;
-        VkFence fence = GetFilterSignalFence(frameIdx);
-        return m_vkDevCtx->QueueSubmit(m_queue, 1, &submitInfo, fence);
+        return m_vkDevCtx->QueueSubmit(m_queue, 1, &submitInfo, filterCompleteFence);
     }
 
 private:
