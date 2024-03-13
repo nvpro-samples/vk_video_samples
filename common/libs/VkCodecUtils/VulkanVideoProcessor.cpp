@@ -392,16 +392,17 @@ size_t VulkanVideoProcessor::ConvertFrameToNv12(VulkanDecodedFrame* pFrame,
 
     const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(format);
     assert(pFrame->frameCompleteFence != VK_NULL_HANDLE);
-    const uint64_t fenceTimeout = 100 * 1000 * 1000 /* 100 mSec */;
-    int32_t retryCount = 5;
+    const uint64_t fenceTimeout = 100 * 1000 * 1000; // 100 mSec
+    int32_t retryCount = 300; // Allow for a timeout of 30s, this should allow for any frame to complete correctly when -o is used.
+
     do {
         result = m_vkDevCtx->WaitForFences(device, 1, &pFrame->frameCompleteFence, VK_TRUE, fenceTimeout);
-        if ((result != VK_SUCCESS) && (pFrame->queryPool != VK_NULL_HANDLE)) {
+        if (result != VK_SUCCESS) {
             std::cout << "WaitForFences timeout " << fenceTimeout
                     << " result " << result << " retry " << retryCount << std::endl << std::flush;
 
-            VkQueryResultStatusKHR decodeStatus;
-            result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx,
+            VkQueryResultStatusKHR decodeStatus = VK_QUERY_RESULT_STATUS_NOT_READY_KHR;
+            VkResult queryResult = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx,
                                                      pFrame->queryPool,
                                                      pFrame->startQueryId,
                                                      1,
@@ -410,15 +411,23 @@ size_t VulkanVideoProcessor::ConvertFrameToNv12(VulkanDecodedFrame* pFrame,
                                                      sizeof(decodeStatus),
                                                      VK_QUERY_RESULT_WITH_STATUS_BIT_KHR);
 
-            if (result != VK_SUCCESS) {
-                printf("\nERROR: GetQueryPoolResults() result: 0x%x\n", result);
-            }
-
+            printf("\nERROR: GetQueryPoolResults() result: 0x%x\n", queryResult);
             std::cout << "\t +++++++++++++++++++++++++++< " << (pFrame ? pFrame->pictureIndex : -1)
                     << " >++++++++++++++++++++++++++++++" << std::endl;
             std::cout << "\t => Decode Status for CurrPicIdx: " << (pFrame ? pFrame->pictureIndex : -1) << std::endl
                     << "\t\tdecodeStatus: " << decodeStatus << std::endl;
+
+            if (queryResult == VK_ERROR_DEVICE_LOST) {
+                std::cout << "\t Dropping frame" << std::endl;
+                break;
+            }
+
+            if ((queryResult == VK_SUCCESS) && (decodeStatus == VK_QUERY_RESULT_STATUS_ERROR_KHR)) {
+                std::cout << "\t Decoding of the frame failed." << std::endl;
+                break;
+            }
         }
+
         retryCount--;
     } while ((result == VK_TIMEOUT) && (retryCount > 0));
 
