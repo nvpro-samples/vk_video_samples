@@ -992,6 +992,10 @@ VkResult NvPerFrameDecodeResources::CreateImage(const VulkanDeviceContext* vkDev
         }
     }
 
+    if (m_recreateImage != false) {
+        m_recreateImage = false;
+    }
+
     return result;
 }
 
