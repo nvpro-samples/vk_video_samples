@@ -106,9 +106,11 @@ public:
             }
 
         } else {
+            assert(m_frameUsesFg == false);
             if (m_frameDpbImageView) {
                 return m_frameDpbImageView;
             } else {
+                assert(false);
                 return emptyImageView;
             }
         }
@@ -946,7 +948,7 @@ VkResult NvPerFrameDecodeResources::CreateImage(const VulkanDeviceContext* vkDev
             m_frameDpbImageView = imageViewArrayParent;
             if (imageType == ReferenceableImage) {
                 VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, imageIndex, 1 };
-                result = VkImageResourceView::Create(vkDevCtx, imageResource, subresourceRange, m_outImageView);
+                result = VkImageResourceView::Create(vkDevCtx, imageResource, subresourceRange, m_frameDpbImageView);
                 if (result != VK_SUCCESS) {
                     return result;
                 }
@@ -965,6 +967,7 @@ VkResult NvPerFrameDecodeResources::CreateImage(const VulkanDeviceContext* vkDev
             return result;
         }
 
+        // TODO: May need to support array layers here.
         VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
         result = VkImageResourceView::Create(vkDevCtx,
                                              displayImageResource,
@@ -979,11 +982,10 @@ VkResult NvPerFrameDecodeResources::CreateImage(const VulkanDeviceContext* vkDev
         VkImageCreateInfo outImageLinearCreateInfo(*pImageCreateInfo);
         outImageLinearCreateInfo.tiling = VK_IMAGE_TILING_LINEAR;
 
+        assert(requiredMemProps == ( VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT  | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT));
         result = VkImageResource::Create(vkDevCtx,
                                          pImageCreateInfo,
-                                         ( VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT  |
-                                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-                                           VK_MEMORY_PROPERTY_HOST_CACHED_BIT),
+                                         requiredMemProps,
                                          m_outLinearImage);
         if (result != VK_SUCCESS) {
             return result;
@@ -1193,6 +1195,9 @@ int32_t NvPerFrameDecodeImageSet::initOutputImages(const VulkanDeviceContext* vk
                                        bool                     useImageArray,
                                        bool                     useImageViewArray)
 {
+    // Image arrays are not supported for output specific images
+    assert((useImageArray == false) && (useImageViewArray == false));
+
     // Image create info for the output
     m_outRequiredMemProps = outRequiredMemProps;
     m_outImageCreateInfo = m_dpbImageCreateInfo;
@@ -1255,7 +1260,7 @@ int32_t NvPerFrameDecodeImageSet::initLinearImages(const VulkanDeviceContext* vk
                                        bool                     useImageArray,
                                        bool                     useImageViewArray)
 {
-    // ImageArrays and ViewArrays are unsupported for linearImages.
+    // ImageArrays and ViewArrays are unsupported for linearImages, however they could be.
     assert(useImageArray == false);
     assert(useImageViewArray == false);
 
@@ -1267,9 +1272,7 @@ int32_t NvPerFrameDecodeImageSet::initLinearImages(const VulkanDeviceContext* vk
     m_linearOutImageCreateInfo.tiling = VK_IMAGE_TILING_LINEAR;
     m_linearOutImageCreateInfo.usage = imageUsage;
 
-    const VkImageUsageFlags usage = (VK_IMAGE_USAGE_SAMPLED_BIT      |
-                                     VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                     VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+    assert(imageUsage == (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT));
 
     const bool reconfigureImages = (m_numImages[HostVisibleImage] &&
         (m_linearOutImageCreateInfo.sType == VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO)) &&
@@ -1304,20 +1307,13 @@ int32_t NvPerFrameDecodeImageSet::initLinearImages(const VulkanDeviceContext* vk
         }
     }
 
-    m_linearOutImageCreateInfo.usage = usage;
     m_linearOutImageCreateInfo.pNext = nullptr;
     return VK_SUCCESS;
 }
 
 void NvPerFrameDecodeImageSet::Deinit()
 {
-    for (size_t i = 0; i < ReferenceableImage; i++) {
-        for (size_t ndx = 0; ndx < m_numImages[i]; ndx++) {
-            m_perFrameDecodeResources[ndx].Deinit();
-        }
-
-        m_numImages[i] = 0;
+    for (size_t ndx = 0; ndx < m_perFrameDecodeResources.size(); ndx++) {
+        m_perFrameDecodeResources[ndx].Deinit();
     }
-
-
 }
