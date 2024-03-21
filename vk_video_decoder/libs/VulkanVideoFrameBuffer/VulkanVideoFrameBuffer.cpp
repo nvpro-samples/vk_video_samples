@@ -87,15 +87,11 @@ public:
     VkSharedBaseObj<VkImageResourceView>& GetDisplayImageView() {
         if (ImageExist(PresentableImage)) {
             return m_outImageView;
-
+        } else if (ImageExist(ReferenceableImage)) {
+            return m_frameDpbImageView;
         } else {
-            assert(m_frameUsesFg == false);
-            if (m_frameDpbImageView) {
-                return m_outImageView;
-            } else {
-                assert(false);
-                return emptyImageView;
-            }
+            assert(false);
+            return emptyImageView;
         }
     }
 
@@ -241,22 +237,6 @@ public:
         , m_imageViewArray()
     {
     }
-
-    /*int32_t init(const VulkanDeviceContext* vkDevCtx,
-        const VkVideoProfileInfoKHR* pDecodeProfile,
-        uint32_t              numImages,
-        VkFormat              dpbImageFormat,
-        VkFormat              outImageFormat,
-        VkFormat              linearImageFormat,
-        const VkExtent2D&     maxImageExtent,
-        VkImageUsageFlags     dpbImageUsage,
-        VkImageUsageFlags     outImageUsage,
-        VkImageUsageFlags     linearImageUsage,
-        uint32_t              queueFamilyIndex,
-        VkMemoryPropertyFlags dpbRequiredMemProps = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        VkMemoryPropertyFlags outRequiredMemProps = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        bool useImageArray = false,
-        bool useImageViewArray = false);*/
 
     int32_t initDpbImages(const VulkanDeviceContext* vkDevCtx,
                           const VkVideoProfileInfoKHR* pDecodeProfile,
@@ -945,11 +925,11 @@ VkResult NvPerFrameDecodeResources::CreateImage(const VulkanDeviceContext* vkDev
             return result;
         }
 
-        // TODO: May need to support array layers here.
         result = VkImageResourceView::Create(vkDevCtx,
                                              imageResource,
                                              subresourceRange,
                                              m_outImageView);
+
         if (result != VK_SUCCESS) {
             return result;
         }

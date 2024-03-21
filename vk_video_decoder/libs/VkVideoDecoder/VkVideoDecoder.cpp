@@ -274,32 +274,34 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         fprintf(stderr, "\nERROR: InitImagePool() ret(%d) != m_numDecodeSurfaces(%d)\n", ret, m_numDecodeSurfaces);
     }
 
-    if (m_useSeparateOutputImages != false) {
-        // Create both a resource and an imageview for the output image.
-        m_videoFrameBuffer->InitImagePool(videoProfile.GetProfile(),
-                                                    m_numDecodeSurfaces,
-                                                    outImageFormat, // Should be moved.
-                                                    codedExtent,
-                                                    imageExtent,
-                                                    outImageUsage, // Should be moved.
-                                                    m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
-                                                    m_numDecodeImagesToPreallocate,
-                                                    PresentableImage,
-                                                    false,
-                                                    false);
-    } else {
-        // Only create image views for the DPB images that will be read by the present operation.
-        m_videoFrameBuffer->InitImagePool(videoProfile.GetProfile(),
-                                                    m_numDecodeSurfaces,
-                                                    outImageFormat, // Should be moved.
-                                                    codedExtent,
-                                                    imageExtent,
-                                                    outImageUsage, // Should be moved.
-                                                    m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
-                                                    m_numDecodeImagesToPreallocate,
-                                                    PresentableImage,
-                                                    true,
-                                                    false);
+    if ((m_useImageArray != false) || (filmGrainEnabled != false)) {
+        if (m_useSeparateOutputImages != false) {
+            // Create both a resource and an imageview for the output image.
+            m_videoFrameBuffer->InitImagePool(videoProfile.GetProfile(),
+                                                        m_numDecodeSurfaces,
+                                                        outImageFormat, // Should be moved.
+                                                        codedExtent,
+                                                        imageExtent,
+                                                        outImageUsage, // Should be moved.
+                                                        m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
+                                                        m_numDecodeImagesToPreallocate,
+                                                        PresentableImage,
+                                                        false,
+                                                        false);
+        } else {
+            // Only create image views for the DPB images that will be read by the present operation.
+            m_videoFrameBuffer->InitImagePool(videoProfile.GetProfile(),
+                                                        m_numDecodeSurfaces,
+                                                        outImageFormat, // Should be moved.
+                                                        codedExtent,
+                                                        imageExtent,
+                                                        outImageUsage, // Should be moved.
+                                                        m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
+                                                        m_numDecodeImagesToPreallocate,
+                                                        PresentableImage,
+                                                        true,
+                                                        false);
+        }
     }
 
     if (m_useLinearOutput != false) {
