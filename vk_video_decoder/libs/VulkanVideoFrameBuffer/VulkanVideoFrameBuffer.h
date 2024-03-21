@@ -36,7 +36,6 @@ struct DecodedFrame {
     int32_t pictureIndex;
     int32_t displayWidth;
     int32_t displayHeight;
-    VkSharedBaseObj<VkImageResourceView> decodedImageView;
     VkSharedBaseObj<VkImageResourceView> outputImageView;
     VkSharedBaseObj<VkImageResource>     outLinearImage;
 
@@ -62,7 +61,6 @@ struct DecodedFrame {
         pictureIndex = -1;
         displayWidth = 0;
         displayHeight = 0;
-        decodedImageView  = nullptr;
         outputImageView = nullptr;
         frameCompleteFence = VkFence();
         frameConsumerDoneFence = VkFence();

@@ -84,31 +84,14 @@ public:
         Deinit();
     }
 
-    VkSharedBaseObj<VkImageResourceView>& GetFrameImageView() {
-        if (ImageExist(ReferenceableImage)) {
-            if (m_frameUsesFg) {
-                return m_frameDpbImageView;
-            } else {
-                return m_outImageView;
-            }
-
-        } else {
-            return emptyImageView;
-        }
-    }
-
     VkSharedBaseObj<VkImageResourceView>& GetDisplayImageView() {
         if (ImageExist(PresentableImage)) {
-            if (m_frameUsesFg) {
-                return m_outImageView;
-            } else {
-                return m_frameDpbImageView;
-            }
+            return m_outImageView;
 
         } else {
             assert(m_frameUsesFg == false);
             if (m_frameDpbImageView) {
-                return m_frameDpbImageView;
+                return m_outImageView;
             } else {
                 assert(false);
                 return emptyImageView;
@@ -148,7 +131,7 @@ public:
         }
 
         switch (imageType) {
-            case ReferenceableImage:        
+            case ReferenceableImage:
                 image = m_frameDpbImageView->GetImageResource()->GetImage();
                 imageFormat = m_frameDpbImageView->GetImageResource()->GetImageCreateInfo().format;
                 imageView = m_frameDpbImageView->GetImageView();
@@ -479,7 +462,7 @@ public:
                                   const VkExtent2D&        maxImageExtent,
                                   VkImageUsageFlags        dpbImageUsage,
                                   uint32_t                 queueFamilyIndex,
-                                  int32_t                  numImagesToPreallocate, // Unused?
+                                  int32_t                  numImagesToPreallocate,
                                   ImageType                imageType,
                                   bool                     useImageArray = false,
                                   bool                     useImageViewArray = false)
@@ -644,10 +627,8 @@ public:
 
         if ((uint32_t)pictureIndex < m_perFrameDecodeImageSet.size()) {
             pDecodedFrame->pictureIndex = pictureIndex;
-
-            pDecodedFrame->decodedImageView = m_perFrameDecodeImageSet[pictureIndex].GetFrameImageView();
-            pDecodedFrame->outputImageView  = m_perFrameDecodeImageSet[pictureIndex].GetDisplayImageView();
-            pDecodedFrame->outLinearImage   = m_perFrameDecodeImageSet[pictureIndex].GetLinearImage();
+            pDecodedFrame->outputImageView = m_perFrameDecodeImageSet[pictureIndex].GetDisplayImageView();
+            pDecodedFrame->outLinearImage = m_perFrameDecodeImageSet[pictureIndex].GetLinearImage();
             pDecodedFrame->displayWidth  = m_perFrameDecodeImageSet[pictureIndex].m_picDispInfo.displayWidth;
             pDecodedFrame->displayHeight = m_perFrameDecodeImageSet[pictureIndex].m_picDispInfo.displayHeight;
 
@@ -813,16 +794,6 @@ public:
         return -1;
     }
 
-    virtual const VkSharedBaseObj<VkImageResourceView>& GetImageResourceByIndex(int8_t picId)
-    {
-        std::lock_guard<std::mutex> lock(m_displayQueueMutex);
-        if ((uint32_t)picId < m_perFrameDecodeImageSet.size()) {
-            return m_perFrameDecodeImageSet[picId].GetFrameImageView();
-        }
-        assert(false);
-        return emptyImageView;
-    }
-
     virtual vkPicBuffBase* ReservePictureBuffer()
     {
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
@@ -929,13 +900,14 @@ VkResult NvPerFrameDecodeResources::CreateImage(const VulkanDeviceContext* vkDev
                 return result;
             }
         } else {
-            // We are using a parent array image
+            // Use a passed in image instead.
             imageResource = imageArrayParent;
         }
 
         if (imageViewArrayParent) {
             m_frameDpbImageView = imageViewArrayParent;
-
+            // If no presentable images are created, views need to be created here.
+            // But there is no need to create these incase 
         } else {
             uint32_t baseArrayLayer = imageArrayParent ? imageIndex : 0;
             VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, baseArrayLayer, 1 };
@@ -948,19 +920,30 @@ VkResult NvPerFrameDecodeResources::CreateImage(const VulkanDeviceContext* vkDev
 
     if (imageType == PresentableImage) {
         m_currentOutputImageLayout = pImageCreateInfo->initialLayout;
-        VkSharedBaseObj<VkImageResource> displayImageResource;
-        result = VkImageResource::Create(vkDevCtx,
-                                         pImageCreateInfo,
-                                         requiredMemProps,
-                                         displayImageResource);
+        VkSharedBaseObj<VkImageResource> imageResource;
+        VkImageSubresourceRange subresourceRange;
+        if (!imageArrayParent) {
+            subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+            result = VkImageResource::Create(vkDevCtx,
+                                             pImageCreateInfo,
+                                             requiredMemProps,
+                                             imageResource);
+            if (result != VK_SUCCESS) {
+                return result;
+            }
+        } else {
+            // Use a passed in image instead.
+            imageResource = imageArrayParent;
+            subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, imageIndex, 1 };
+        }
+
         if (result != VK_SUCCESS) {
             return result;
         }
 
         // TODO: May need to support array layers here.
-        VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
         result = VkImageResourceView::Create(vkDevCtx,
-                                             displayImageResource,
+                                             imageResource,
                                              subresourceRange,
                                              m_outImageView);
         if (result != VK_SUCCESS) {
@@ -972,7 +955,7 @@ VkResult NvPerFrameDecodeResources::CreateImage(const VulkanDeviceContext* vkDev
         VkImageCreateInfo outImageLinearCreateInfo(*pImageCreateInfo);
         outImageLinearCreateInfo.tiling = VK_IMAGE_TILING_LINEAR;
 
-        assert(requiredMemProps == ( VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT  | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT));
+        assert(requiredMemProps == (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT));
         result = VkImageResource::Create(vkDevCtx,
                                          pImageCreateInfo,
                                          requiredMemProps,
@@ -1190,7 +1173,7 @@ int32_t NvPerFrameDecodeImageSet::initOutputImages(const VulkanDeviceContext* vk
                                        bool                     useImageViewArray)
 {
     // Image arrays are not supported for output specific images
-    assert((useImageArray == false) && (useImageViewArray == false));
+    assert(useImageViewArray == false);
 
     const bool reconfigureImages = (m_numImages[PresentableImage] &&
         (m_outImageCreateInfo.sType == VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO)) &&
@@ -1221,6 +1204,10 @@ int32_t NvPerFrameDecodeImageSet::initOutputImages(const VulkanDeviceContext* vk
             m_perFrameDecodeResources[imageIndex].m_recreateImage[PresentableImage] = true;
 
         } else if (!m_perFrameDecodeResources[imageIndex].ImageExist(PresentableImage)) {
+            VkSharedBaseObj<VkImageResource> imageArray;
+            if (useImageArray != false) {
+                 imageArray = m_imageArray;
+            }
 
             // Shouldn't CreateImage happen automatically as part of the GetImage code? Why is this needed?
             VkResult result =
@@ -1228,7 +1215,7 @@ int32_t NvPerFrameDecodeImageSet::initOutputImages(const VulkanDeviceContext* vk
                                                                        &m_outImageCreateInfo,
                                                                        outRequiredMemProps,
                                                                        imageIndex,
-                                                                       m_imageArray,
+                                                                       imageArray,
                                                                        m_imageViewArray,
                                                                        PresentableImage);
 
