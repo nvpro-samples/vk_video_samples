@@ -341,8 +341,12 @@ public:
         bool validImage = decodeResource.GetImage(pPictureResource, pPictureResourceInfo, imageType);
         if (validImage == false) {
             switch (imageType) {
-                case ReferenceableImage:
+                case ReferenceableImage: {
                     result = decodeResource.CreateImage(vkDevCtx, &m_dpbImageCreateInfo, m_dpbRequiredMemProps, imageIndex, m_imageArray, m_imageViewArray, imageType);
+                    if (m_usesImageArray) {
+                        result = decodeResource.CreateImage(vkDevCtx, &m_outImageCreateInfo, m_outRequiredMemProps, imageIndex, m_imageArray, nullViewArray, PresentableImage);
+                    }
+                }
                 break;
                 case PresentableImage:
                     result = decodeResource.CreateImage(vkDevCtx, &m_outImageCreateInfo, m_outRequiredMemProps, imageIndex, nullImageArray, nullViewArray, imageType);
