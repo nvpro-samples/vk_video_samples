@@ -151,6 +151,7 @@ protected:
 
 protected:
     // Byte stream parsing
+    size_t next_start_code_old(const uint8_t *pdatain, size_t datasize, bool& found_start_code);
     size_t next_start_code(const uint8_t *pdatain, size_t datasize, bool& found_start_code);
     void nal_unit();
     void init_dbits();
