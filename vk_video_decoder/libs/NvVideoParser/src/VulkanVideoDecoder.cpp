@@ -257,7 +257,7 @@ int32_t VulkanVideoDecoder::se()
 }
 
 
-size_t VulkanVideoDecoder::next_start_code_old(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+size_t VulkanVideoDecoder::next_start_code(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     uint32_t bfr = m_BitBfr;
     size_t i = 0;
@@ -273,7 +273,7 @@ size_t VulkanVideoDecoder::next_start_code_old(const uint8_t *pdatain, size_t da
     return i;
 }
 
-size_t VulkanVideoDecoder::next_start_code(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+size_t VulkanVideoDecoder::next_start_code_tymur(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
     size_t datasize128 = (datasize >> 7) << 7;
