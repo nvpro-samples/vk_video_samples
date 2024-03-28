@@ -800,15 +800,6 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
     encodeBeginInfo.pReferenceSlots = encodeFrameInfo->referenceSlotsInfo;
 
     const VulkanDeviceContext* vkDevCtx = encodeCmdBuffer->GetDeviceContext();
-    vkDevCtx->CmdBeginVideoCodingKHR(cmdBuf, &encodeBeginInfo);
-
-    if (encodeFrameInfo->controlCmd != VkVideoCodingControlFlagsKHR()) {
-
-        VkVideoCodingControlInfoKHR renderControlInfo = { VK_STRUCTURE_TYPE_VIDEO_CODING_CONTROL_INFO_KHR,
-                                                          encodeFrameInfo->pControlCmdChain,
-                                                          encodeFrameInfo->controlCmd};
-        vkDevCtx->CmdControlVideoCodingKHR(cmdBuf, &renderControlInfo);
-    }
 
     // Handle the query indexes
     uint32_t querySlotId = (uint32_t)-1;
@@ -822,6 +813,16 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
     // Clear the query results
     const uint32_t numQuerySamples = 1;
     vkDevCtx->CmdResetQueryPool(cmdBuf, queryPool, querySlotId, numQuerySamples);
+
+    vkDevCtx->CmdBeginVideoCodingKHR(cmdBuf, &encodeBeginInfo);
+
+    if (encodeFrameInfo->controlCmd != VkVideoCodingControlFlagsKHR()) {
+
+        VkVideoCodingControlInfoKHR renderControlInfo = { VK_STRUCTURE_TYPE_VIDEO_CODING_CONTROL_INFO_KHR,
+                                                          encodeFrameInfo->pControlCmdChain,
+                                                          encodeFrameInfo->controlCmd};
+        vkDevCtx->CmdControlVideoCodingKHR(cmdBuf, &renderControlInfo);
+    }
 
     vkDevCtx->CmdBeginQuery(cmdBuf, queryPool, querySlotId, VkQueryControlFlags());
 
