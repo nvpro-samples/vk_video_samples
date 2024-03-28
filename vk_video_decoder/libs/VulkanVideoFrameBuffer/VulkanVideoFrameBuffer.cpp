@@ -753,8 +753,10 @@ public:
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         int32_t foundPicId = -1;
         int64_t minDecodeOrder = m_perFrameDecodeImageSet[0].m_decodeOrder + 1000;
+        uint32_t numAvailablePictures = 0;
         for (uint32_t picId = 0; picId < m_perFrameDecodeImageSet.size(); picId++) {
             if (m_perFrameDecodeImageSet[picId].IsAvailable()) {
+                numAvailablePictures++;
                 if ((int64_t)m_perFrameDecodeImageSet[picId].m_decodeOrder < minDecodeOrder) {
                     foundPicId = picId;
                     minDecodeOrder = (int64_t)m_perFrameDecodeImageSet[picId].m_decodeOrder;
@@ -766,6 +768,14 @@ public:
             m_perFrameDecodeImageSet[foundPicId].Reset();
             m_perFrameDecodeImageSet[foundPicId].AddRef();
             m_perFrameDecodeImageSet[foundPicId].m_picIdx = foundPicId;
+
+            if (m_debug) {
+                std::cout << "==> ReservePictureBuffer picIdx: " << (uint32_t)foundPicId << " of " << numAvailablePictures
+                          << "\t\tdisplayOrder: " << m_perFrameDecodeImageSet[foundPicId].m_decodeOrder << "\tdecodeOrder: "
+                          << m_perFrameDecodeImageSet[foundPicId].m_decodeOrder
+                          << "\ttimestamp " << m_perFrameDecodeImageSet[foundPicId].m_timestamp << std::endl;
+            }
+
             return &m_perFrameDecodeImageSet[foundPicId];
         }
 
