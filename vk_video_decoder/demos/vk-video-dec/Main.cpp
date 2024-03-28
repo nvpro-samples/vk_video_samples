@@ -143,13 +143,11 @@ int main(int argc, const char **argv) {
 					 -1 : // all available HW decoders
 					  1;  // only one HW decoder instance
 
-    VkQueueFlags requestVideoDecodeQueueMask = VK_QUEUE_VIDEO_DECODE_BIT_KHR |
-                                               VK_QUEUE_TRANSFER_BIT;
+    VkQueueFlags requestVideoDecodeQueueMask = VK_QUEUE_VIDEO_DECODE_BIT_KHR;
 
     VkQueueFlags requestVideoEncodeQueueMask = 0;
     if (programConfig.enableVideoEncoder) {
-        requestVideoEncodeQueueMask |= VK_QUEUE_VIDEO_ENCODE_BIT_KHR |
-                                       VK_QUEUE_TRANSFER_BIT;
+        requestVideoEncodeQueueMask |= VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
     }
 
     if (programConfig.selectVideoWithComputeQueue) {
@@ -189,7 +187,7 @@ int main(int argc, const char **argv) {
             return -1;
         }
 
-        result = vkDevCtxt.InitPhysicalDevice((VK_QUEUE_GRAPHICS_BIT |
+        result = vkDevCtxt.InitPhysicalDevice((VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT |
                                                requestVideoComputeQueueMask |
                                                requestVideoDecodeQueueMask |
                                                requestVideoEncodeQueueMask),
@@ -210,9 +208,10 @@ int main(int argc, const char **argv) {
 
         vkDevCtxt.CreateVulkanDevice(numDecodeQueues,
                                      programConfig.enableVideoEncoder ? 1 : 0, // num encode queues
-                                     true, // createGraphicsQueue
-                                     true, // createDisplayQueue
-                                     true  // createComputeQueue
+                                     false, //  createTransferQueue
+                                     true,  // createGraphicsQueue
+                                     true,  // createDisplayQueue
+                                     true   // createComputeQueue
                                      );
         vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig);
 
@@ -221,7 +220,7 @@ int main(int argc, const char **argv) {
 
     } else {
 
-        result = vkDevCtxt.InitPhysicalDevice((requestVideoDecodeQueueMask  |
+        result = vkDevCtxt.InitPhysicalDevice((VK_QUEUE_TRANSFER_BIT | requestVideoDecodeQueueMask  |
                                                requestVideoComputeQueueMask |
                                                requestVideoEncodeQueueMask),
                                                nullptr,
@@ -234,6 +233,10 @@ int main(int argc, const char **argv) {
 
         result = vkDevCtxt.CreateVulkanDevice(numDecodeQueues,
                                               0,     // num encode queues
+                                              // If no graphics or compute queue is requested, only video queues
+                                              // will be created. Not all implementations support transfer on video queues,
+                                              // so request a separate transfer queue for such implementations.
+                                              ((vkDevCtxt.GetVideoDecodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) == 0), //  createTransferQueue
                                               false, // createGraphicsQueue
                                               false, // createDisplayQueue
                                               true   // createComputeQueue

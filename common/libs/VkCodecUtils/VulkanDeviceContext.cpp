@@ -376,11 +376,6 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
         std::vector<VkQueueFamilyQueryResultStatusPropertiesKHR> queryResultStatus;
         vk::get(this, physicalDevice, queues, videoQueues, queryResultStatus);
 
-        bool videoDecodeQueueTransferSupport = false;
-        bool videoEncodeQueueTransferSupport = false;
-        bool videoDecodeQueueComputeSupport = false;
-        bool videoEncodeQueueComputeSupport = false;
-
         bool videoDecodeQueryResultStatus = false;
         bool videoEncodeQueryResultStatus = false;
         VkQueueFlags foundQueueTypes = 0;
@@ -430,20 +425,17 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
 
                 // Does the video decode queue also support transfer operations?
                 if (queueFamilyFlags & VK_QUEUE_TRANSFER_BIT) {
-                    videoDecodeQueueTransferSupport = true;
-
                     if (dumpQueues) std::cout << "\t\t Video decode queue " <<  i <<
                             " supports transfer operations" << std::endl;
                 }
 
                 // Does the video decode queue also support compute operations?
                 if (queueFamilyFlags & VK_QUEUE_COMPUTE_BIT) {
-                    videoDecodeQueueComputeSupport = true;
-
                     if (dumpQueues) std::cout << "\t\t Video decode queue " <<  i <<
                             " supports compute operations" << std::endl;
                 }
 
+                m_videoDecodeQueueFlags = queueFamilyFlags;
                 foundQueueTypes |= queueFamilyFlags;
                 // assert(queueFamilyFlags & VK_QUEUE_TRANSFER_BIT);
                 videoDecodeQueryResultStatus = queryResultStatus[i].queryResultStatusSupport;
@@ -461,18 +453,17 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
 
                 // Does the video encode queue also support transfer operations?
                 if (queueFamilyFlags & VK_QUEUE_TRANSFER_BIT) {
-                    videoEncodeQueueTransferSupport = true;
                     if (dumpQueues) std::cout << "\t\t Video encode queue " <<  i <<
                             " supports transfer operations" << std::endl;
                 }
 
                 // Does the video encode queue also support compute operations?
                 if (queueFamilyFlags & VK_QUEUE_COMPUTE_BIT) {
-                    videoEncodeQueueComputeSupport = true;
                     if (dumpQueues) std::cout << "\t\t Video encode queue " <<  i <<
                             " supports compute operations" << std::endl;
                 }
 
+                m_videoEncodeQueueFlags = queueFamilyFlags;
                 foundQueueTypes |= queueFamilyFlags;
                 // assert(queueFamilyFlags & VK_QUEUE_TRANSFER_BIT);
                 videoEncodeQueryResultStatus = queryResultStatus[i].queryResultStatusSupport;
@@ -525,11 +516,6 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
                 m_videoEncodeQueueFamily = videoEncodeQueueFamily;
                 m_videoEncodeNumQueues = videoEncodeQueueCount;
 
-                m_videoDecodeQueueTransferSupport = videoDecodeQueueTransferSupport;
-                m_videoEncodeQueueTransferSupport = videoEncodeQueueTransferSupport;
-                m_videoDecodeQueueComputeSupport = videoDecodeQueueComputeSupport;
-                m_videoEncodeQueueComputeSupport = videoEncodeQueueComputeSupport;
-
                 m_videoDecodeQueryResultStatusSupport = videoDecodeQueryResultStatus;
                 m_videoEncodeQueryResultStatusSupport = videoEncodeQueryResultStatus;
                 m_videoDecodeEncodeComputeQueueFamily = videoDecodeEncodeComputeQueueFamily;
@@ -580,6 +566,7 @@ VkResult VulkanDeviceContext::InitVulkanDevice(const char * pAppName, bool verbo
 
 VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
                                                  int32_t numEncodeQueues,
+                                                 bool createTransferQueue,
                                                  bool createGraphicsQueue,
                                                  bool createPresentQueue,
                                                  bool createComputeQueue)
@@ -601,11 +588,6 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
     } else {
         numEncodeQueues = std::min(numEncodeQueues, m_videoEncodeNumQueues);
     }
-
-    // If no graphics, compute, or present queue is requested (i.e. for encoder app), only video
-    // queues will be created. Not all implementations support transfer on video queues.
-    const bool createTransferQueue = !(createGraphicsQueue || createPresentQueue || createComputeQueue) &&
-        !(numEncodeQueues > 0 && m_videoEncodeQueueTransferSupport);
 
     const int32_t maxQueueInstances = std::max(numDecodeQueues, numEncodeQueues);
     assert(maxQueueInstances <= MAX_QUEUE_INSTANCES);
@@ -746,10 +728,8 @@ VulkanDeviceContext::VulkanDeviceContext(int32_t deviceId,
     , m_videoEncodeNumQueues(0)
     , m_videoDecodeEncodeComputeQueueFamily(-1)
     , m_videoDecodeEncodeComputeNumQueues(0)
-    , m_videoDecodeQueueTransferSupport(false)
-    , m_videoEncodeQueueTransferSupport(false)
-    , m_videoDecodeQueueComputeSupport(false)
-    , m_videoEncodeQueueComputeSupport(false)
+    , m_videoDecodeQueueFlags(0)
+    , m_videoEncodeQueueFlags(0)
     , m_videoDecodeQueryResultStatusSupport(false)
     , m_videoEncodeQueryResultStatusSupport(false)
     , m_device()

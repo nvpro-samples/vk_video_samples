@@ -214,6 +214,7 @@ int main(int argc, char** argv)
 
         result = vkDevCtxt.CreateVulkanDevice(encoderConfig->enableVideoDecoder ? 1 : 0, // num decode queues
                                               numEncodeQueues,   // num encode queues
+                                              false,             // createTransferQueue
                                               true,              // createGraphicsQueue
                                               true,              // createDisplayQueue
                                               (encoderConfig->selectVideoWithComputeQueue == 1)  // createComputeQueue
@@ -255,6 +256,10 @@ int main(int argc, char** argv)
 
         result = vkDevCtxt.CreateVulkanDevice(encoderConfig->enableVideoDecoder ? 1 : 0, // num decode queues
                                               numEncodeQueues,     // num encode queues
+                                              // If no graphics or compute queue is requested, only video queues
+                                              // will be created. Not all implementations support transfer on video queues,
+                                              // so request a separate transfer queue for such implementations.
+                                              ((vkDevCtxt.GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) == 0), //  createTransferQueue
                                               false, // createGraphicsQueue
                                               false, // createDisplayQueue
                                               (encoderConfig->selectVideoWithComputeQueue == 1)  // createComputeQueue
