@@ -211,7 +211,7 @@ int main(int argc, const char **argv) {
                                      false, //  createTransferQueue
                                      true,  // createGraphicsQueue
                                      true,  // createDisplayQueue
-                                     true   // createComputeQueue
+                                     requestVideoComputeQueueMask != 0  // createComputeQueue
                                      );
         vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig);
 
@@ -239,7 +239,7 @@ int main(int argc, const char **argv) {
                                               ((vkDevCtxt.GetVideoDecodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) == 0), //  createTransferQueue
                                               false, // createGraphicsQueue
                                               false, // createDisplayQueue
-                                              true   // createComputeQueue
+                                              requestVideoComputeQueueMask != 0   // createComputeQueue
                                               );
         if (result != VK_SUCCESS) {
 
