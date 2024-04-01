@@ -696,8 +696,6 @@ void VkFillYuv::fillVkImage(const VulkanDeviceContext* vkDevCtx,
 
     result = vkDevCtx->FlushMappedMemoryRanges(*vkDevCtx, 1u, &range);
     ABORT_IF_TRUE(result != VK_SUCCESS);
-
-    vkDevCtx->UnmapMemory(*vkDevCtx, mem);
 }
 
 } // namespace Pattern
