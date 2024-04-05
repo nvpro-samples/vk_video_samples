@@ -282,7 +282,7 @@ VkResult VulkanVideoImagePool::Configure(const VulkanDeviceContext*   vkDevCtx,
     m_imageCreateInfo.queueFamilyIndexCount = 1;
     m_imageCreateInfo.pQueueFamilyIndices = &m_queueFamilyIndex;
     m_imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    m_imageCreateInfo.flags = 0;
+    m_imageCreateInfo.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
 
     if (useImageArray) {
         // Create an image that has the same number of layers as the DPB images required.
