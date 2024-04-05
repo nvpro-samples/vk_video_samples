@@ -151,9 +151,10 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
     VkSemaphore frameCompleteSemaphore = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
 
     VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr };
+    const VkPipelineStageFlags videoTransferSubmitWaitStages = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
     submitInfo.waitSemaphoreCount = 0;
     submitInfo.pWaitSemaphores = nullptr;
-    submitInfo.pWaitDstStageMask = nullptr;
+    submitInfo.pWaitDstStageMask = &videoTransferSubmitWaitStages;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = pCmdBuf;
     submitInfo.pSignalSemaphores = (frameCompleteSemaphore != VK_NULL_HANDLE) ? &frameCompleteSemaphore : nullptr;
@@ -870,9 +871,10 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     VkSemaphore frameCompleteSemaphore = encodeFrameInfo->encodeCmdBuffer->GetSemaphore();
 
     VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr };
+    const VkPipelineStageFlags videoEncodeSubmitWaitStages = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
     submitInfo.pWaitSemaphores = (inputWaitSemaphore != VK_NULL_HANDLE) ? &inputWaitSemaphore : nullptr;
     submitInfo.waitSemaphoreCount = (inputWaitSemaphore != VK_NULL_HANDLE) ? 1 : 0;
-    submitInfo.pWaitDstStageMask = nullptr;
+    submitInfo.pWaitDstStageMask = &videoEncodeSubmitWaitStages;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = pCmdBuf;
     submitInfo.pSignalSemaphores = (frameCompleteSemaphore != VK_NULL_HANDLE) ? &frameCompleteSemaphore : nullptr;
