@@ -43,7 +43,7 @@ public:
         }
     }
 
-    uint8_t* EnsureAllocation(const VulkanDeviceContext* vkDevCtx,
+    uint8_t* EnsureAllocation(const VulkanDeviceContext*,
                               VkSharedBaseObj<VkImageResource>& imageResource) {
 
         if (m_outputFile == nullptr) {

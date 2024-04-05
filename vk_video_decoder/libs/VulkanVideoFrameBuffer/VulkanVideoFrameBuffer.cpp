@@ -51,13 +51,14 @@ public:
         , m_inDecodeQueue(false)
         , m_inDisplayQueue(false)
         , m_ownedByDisplay(false)
+        , m_frameUsesFg(false)
         , m_recreateImage{false,false,false}
         , m_currentDpbImageLayerLayout(VK_IMAGE_LAYOUT_UNDEFINED)
         , m_currentOutputImageLayout(VK_IMAGE_LAYOUT_UNDEFINED)
         , m_vkDevCtx()
         , m_frameDpbImageView()
         , m_outImageView()
-        , m_frameUsesFg(false)
+        , m_outLinearImage()
     {
     }
 
@@ -334,6 +335,9 @@ public:
                 case HostVisibleImage:
                     result = decodeResource.CreateImage(vkDevCtx, &m_linearOutImageCreateInfo, m_linearRequiredMemProps, imageIndex, nullImageArray, nullViewArray, imageType);
                 break;
+                default:
+                    assert(!"Invalid picture type");
+                    break;
             }
 
             if (result == VK_SUCCESS) {
@@ -345,7 +349,7 @@ public:
         return result;
     }
 
-    VkResult SetNewLayout(const VulkanDeviceContext* vkDevCtx,
+    VkResult SetNewLayout(const VulkanDeviceContext*,
                           uint32_t imageIndex,
                           VkImageLayout newImageLayout,
                           ImageType imageType)
@@ -446,7 +450,7 @@ public:
                                   const VkExtent2D&        maxImageExtent,
                                   VkImageUsageFlags        dpbImageUsage,
                                   uint32_t                 queueFamilyIndex,
-                                  int32_t                  numImagesToPreallocate,
+                                  int32_t                                  ,
                                   ImageType                imageType,
                                   bool                     useImageArray = false,
                                   bool                     useImageViewArray = false)
@@ -1146,12 +1150,12 @@ int32_t NvPerFrameDecodeImageSet::initDpbImages(const VulkanDeviceContext* vkDev
 }
 
 int32_t NvPerFrameDecodeImageSet::initOutputImages(const VulkanDeviceContext* vkDevCtx,
-                                       const VkVideoProfileInfoKHR* pDecodeProfile,
+                                       const VkVideoProfileInfoKHR*,
                                        uint32_t                 numImages,
                                        VkFormat                 outImageFormat,
                                        const VkExtent2D&        maxImageExtent,
                                        VkImageUsageFlags        outImageUsage,
-                                       uint32_t                 queueFamilyIndex,
+                                       uint32_t                 ,
                                        VkMemoryPropertyFlags    outRequiredMemProps,
                                        bool                     useImageArray,
                                        bool                     useImageViewArray)
@@ -1216,12 +1220,12 @@ int32_t NvPerFrameDecodeImageSet::initOutputImages(const VulkanDeviceContext* vk
 }
 
 int32_t NvPerFrameDecodeImageSet::initLinearImages(const VulkanDeviceContext* vkDevCtx,
-                                       const VkVideoProfileInfoKHR* pDecodeProfile,
+                                       const VkVideoProfileInfoKHR*,
                                        uint32_t                 numImages,
                                        VkFormat                 imageFormat,
                                        const VkExtent2D&        maxImageExtent,
                                        VkImageUsageFlags        imageUsage,
-                                       uint32_t                 queueFamilyIndex,
+                                       uint32_t                 ,
                                        VkMemoryPropertyFlags    requiredMemProps,
                                        bool                     useImageArray,
                                        bool                     useImageViewArray)

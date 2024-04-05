@@ -29,7 +29,7 @@ public:
                            VkMemoryPropertyFlags memoryPropertyFlags,
                            VkSharedBaseObj<VkImageResource>& imageResource);
 
-    bool IsCompatible ( VkDevice dev,
+    bool IsCompatible ( VkDevice,
                         const VkImageCreateInfo* pImageCreateInfo)
     {
 

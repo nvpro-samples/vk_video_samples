@@ -16,11 +16,6 @@
 
 #include "VkVideoDecoder/VkParserVideoPictureParameters.h"
 
-#if HEADLESS_AV1
-#include "HeadlessEmulatorAV1/nvVkVideoDecoderDevice.h"
-#include "HeadlessEmulatorAV1/NVDECAV1Decode.h"
-#endif
-
 const char* VkParserVideoPictureParameters::m_refClassId = "VkParserVideoPictureParameters";
 int32_t VkParserVideoPictureParameters::m_currentId = 0;
 
@@ -176,26 +171,12 @@ VkResult VkParserVideoPictureParameters::CreateParametersObject(const VulkanDevi
             return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-#if HEADLESS_AV1
-    using namespace AV1_Emulator;
-    VkSharedBaseObj<NvVideoSessionParameters> sessionParametersTemplate;
-    VkSharedBaseObj<NvVideoSessionParameters> sessionParameters;
-    VkResult result = HeadlessAv1_Emulator.CreateVideoSessionParameters (
-        createInfo,
-        sessionParametersTemplate,
-        nullptr,
-        nullptr,
-        sessionParameters
-        );
-#else
     createInfo.videoSessionParametersTemplate = pTemplatePictureParameters ? VkVideoSessionParametersKHR(*pTemplatePictureParameters) : VkVideoSessionParametersKHR();
     createInfo.videoSession = videoSession->GetVideoSession();
     VkResult result = vkDevCtx->CreateVideoSessionParametersKHR(*vkDevCtx,
                                                                 &createInfo,
                                                                 nullptr,
                                                                 &m_sessionParameters);
-#endif
-
     if (result != VK_SUCCESS) {
 
         assert(!"Could not create Session Parameters Object");

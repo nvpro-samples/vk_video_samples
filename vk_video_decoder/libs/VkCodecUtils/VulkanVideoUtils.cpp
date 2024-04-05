@@ -315,7 +315,7 @@ VkResult ImageObject::CopyYuvToVkImage(uint32_t numPlanes, const uint8_t* yuvPla
     return VK_SUCCESS;
 }
 
-VkResult VulkanFrameBuffer::CreateFrameBuffer(const VulkanDeviceContext* vkDevCtx, VkSwapchainKHR swapchain,
+VkResult VulkanFrameBuffer::CreateFrameBuffer(const VulkanDeviceContext* vkDevCtx, VkSwapchainKHR,
         const VkExtent2D* pExtent2D,const VkSurfaceFormatKHR* pSurfaceFormat, VkImage fbImage,
         VkRenderPass renderPass, VkImageView depthView)
 {
@@ -1254,7 +1254,7 @@ VkResult VulkanRenderInfo::CreatePerDrawContexts(const VulkanDeviceContext* vkDe
     return VK_SUCCESS;
 }
 
-VkResult VulkanRenderInfo::WaitCurrentSwapcahinDraw(VulkanSwapchainInfo* pSwapchainInfo, VulkanPerDrawContext* pPerDrawContext, uint64_t timeoutNsec) {
+VkResult VulkanRenderInfo::WaitCurrentSwapcahinDraw(VulkanSwapchainInfo*, VulkanPerDrawContext* pPerDrawContext, uint64_t timeoutNsec) {
 
     return m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &pPerDrawContext->syncPrimitives.mFence, VK_TRUE, timeoutNsec);
 }

@@ -42,40 +42,40 @@ enum LogLevel {
 
 class Logger {
 public:
-    Logger(LogLevel level, bool bPrintTimeStamp) : level(level), bPrintTimeStamp(bPrintTimeStamp) {}
+    Logger(LogLevel level, bool bPrintTimeStamp) : m_level(level), m_bPrintTimeStamp(bPrintTimeStamp) {}
     virtual ~Logger() {}
     virtual std::ostream& GetStream() = 0;
     virtual void FlushStream() {}
     bool ShouldLogFor(LogLevel l) {
-        return l >= level;
+        return l >= m_level;
     }
-    char* GetLead(LogLevel l, const char *szFile, int nLine, const char *szFunc) {
+    char* GetLead(LogLevel l, const char*, int, const char*) {
         if (l < TRACE || l > FATAL) {
-            sprintf(szLead, "[?????] ");
-            return szLead;
+            sprintf(m_szLead, "[?????] ");
+            return m_szLead;
         }
         const char *szLevels[] = {"TRACE", "INFO", "WARN", "ERROR", "FATAL"};
-        if (bPrintTimeStamp) {
+        if (m_bPrintTimeStamp) {
             time_t t = time(NULL);
             struct tm *ptm = localtime(&t);
-            sprintf(szLead, "[%-5s][%02d:%02d:%02d] ",
+            sprintf(m_szLead, "[%-5s][%02d:%02d:%02d] ",
                 szLevels[l], ptm->tm_hour, ptm->tm_min, ptm->tm_sec);
         } else {
-            sprintf(szLead, "[%-5s] ", szLevels[l]);
+            sprintf(m_szLead, "[%-5s] ", szLevels[l]);
         }
-        return szLead;
+        return m_szLead;
     }
     void EnterCriticalSection() {
-        mtx.lock();
+        m_mtx.lock();
     }
     void LeaveCriticalSection() {
-        mtx.unlock();
+        m_mtx.unlock();
     }
 private:
-    LogLevel level;
-    char szLead[80];
-    bool bPrintTimeStamp;
-    std::mutex mtx;
+    LogLevel m_level;
+    char m_szLead[80];
+    bool m_bPrintTimeStamp;
+    std::mutex m_mtx;
 };
 
 class LoggerFactory {
@@ -122,7 +122,7 @@ private:
 
 class LogTransaction {
 public:
-    LogTransaction(Logger *pLogger, LogLevel level, const char *szFile, const int nLine, const char *szFunc) : pLogger(pLogger), level(level) {
+    LogTransaction(Logger *pLogger, LogLevel level, const char *szFile, const int nLine, const char *szFunc) : m_pLogger(pLogger), m_level(level) {
         if (!pLogger) {
             std::cout << "[-----] ";
             return;
@@ -134,32 +134,32 @@ public:
         pLogger->GetStream() << pLogger->GetLead(level, szFile, nLine, szFunc);
     }
     ~LogTransaction() {
-        if (!pLogger) {
+        if (!m_pLogger) {
             std::cout << std::endl;
             return;
         }
-        if (!pLogger->ShouldLogFor(level)) {
+        if (!m_pLogger->ShouldLogFor(m_level)) {
             return;
         }
-        pLogger->GetStream() << std::endl;
-        pLogger->FlushStream();
-        pLogger->LeaveCriticalSection();
-        if (level == FATAL) {
+        m_pLogger->GetStream() << std::endl;
+        m_pLogger->FlushStream();
+        m_pLogger->LeaveCriticalSection();
+        if (m_level == FATAL) {
             exit(1);
         }
     }
     std::ostream& GetStream() {
-        if (!pLogger) {
+        if (!m_pLogger) {
             return std::cout;
         }
-        if (!pLogger->ShouldLogFor(level)) {
+        if (!m_pLogger->ShouldLogFor(m_level)) {
             return ossNull;
         }
-        return pLogger->GetStream();
+        return m_pLogger->GetStream();
     }
 private:
-    Logger *pLogger;
-    LogLevel level;
+    Logger *m_pLogger;
+    LogLevel m_level;
     std::ostringstream ossNull;
 };
 

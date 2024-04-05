@@ -25,8 +25,6 @@
 #include <climits>
 #include "VulkanVideoParserIf.h"
 
-#ifdef ENABLE_AV1_DECODER
-
 #define DEBUG_PARSER 0
 #if DEBUG_PARSER
 #include <stdio.h>
@@ -315,7 +313,6 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
     av1->setupSlotInfo.flags.segmentation_enabled = m_PicData.std_info.flags.segmentation_enabled;
 
     // Referenced frame information
-    printf("Saved order hints:\n");
     for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
         vkPicBuffBase *pb = reinterpret_cast<vkPicBuffBase *>(m_pBuffers[i].buffer);
         av1->pic_idx[i] = pb ? pb->m_picIdx : -1;
@@ -323,15 +320,11 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
         av1->dpbSlotInfos[i].flags.segmentation_enabled = m_pBuffers[i].segmentation_enabled;
         av1->dpbSlotInfos[i].frame_type = m_pBuffers[i].frame_type;
         av1->dpbSlotInfos[i].OrderHint = m_pBuffers[i].order_hint;
-        printf("%i ", m_pBuffers[i].order_hint);
         for (size_t av1name = 0; av1name < STD_VIDEO_AV1_NUM_REF_FRAMES; av1name += 1) {
             av1->dpbSlotInfos[i].RefFrameSignBias |= (m_pBuffers[i].RefFrameSignBias[av1name] <= 0) << av1name;
             av1->dpbSlotInfos[i].SavedOrderHints[av1name] = m_pBuffers[i].ref_order_hint[av1name];
-            printf("%i ", av1->dpbSlotInfos[i].SavedOrderHints[av1name]);
         }
-        printf("\n");
     }
-    printf("\n");
 
     // TODO: It's weird that the intra frame motion isn't tracked by the parser.
     // Need an affine translation test case to properly check this.
@@ -1934,7 +1927,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
             for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
                 if (pStd->frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY && pic_info->showFrame) {
                     RefValid[i] = 0;
-                } else if ((uint32_t)ref_frame_id[i] < 0) {
+                } else if (ref_frame_id[i] < 0) {
                     RefValid[i] = 0;
                 } else if (pStd->current_frame_id > (uint32_t)(1 << diff_len)) {
                     assert(ref_frame_id[i] >= 0);
@@ -2239,11 +2232,6 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
 
 bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
 {
-    // printf("parse_tile_group: ");
-    // for(int i = 0; i < 8; i++)
-    //     printf("%02x ", (m_bitstreamData.GetBitstreamPtr() + m_nalu.start_offset)[i]);
-    // printf("\n");
-
 	int num_tiles = m_PicData.tileInfo.TileCols * m_PicData.tileInfo.TileRows;
 
 	// Tile group header
@@ -2502,5 +2490,3 @@ bool VulkanAV1Decoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_
 }
 
 const char* av1_seq_param_s::m_refClassId = "av1SpsVideoPictureParametersSet";
-
-#endif // ENABLE_AV1_DECODER

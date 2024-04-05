@@ -22,8 +22,6 @@
 #include <array>
 #include <vector>
 
-#ifdef ENABLE_AV1_DECODER
-
 #define ALIGN(value, n)         (((value) + (n) - 1) & ~((n) - 1))
 #define CLAMP(value, low, high) ((value) < (low) ? (low) : ((value) > (high) ? (high) : (value)))
 
@@ -472,6 +470,5 @@ protected:
     void                    FreeContext() override {}
     int                     GetRelativeDist(int a, int b);
 };
-#endif // ENABLE_AV1_DECODER
 
 #endif // _VULKANAV1DECODER_H_

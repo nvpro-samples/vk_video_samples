@@ -250,6 +250,7 @@ if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     # there's no consistent way to satisfy all compilers until they all accept the C++17 standard
     if (CMAKE_COMPILER_IS_GNUCC AND NOT (CMAKE_CXX_COMPILER_VERSION LESS 7.1))
         set(COMMON_COMPILE_FLAGS "${COMMON_COMPILE_FLAGS} -Wimplicit-fallthrough=0")
+        set(COMMON_COMPILE_FLAGS "${COMMON_COMPILE_FLAGS} -Wno-missing-field-initializers")
     endif()
 
     if (APPLE)
@@ -310,7 +311,6 @@ else()
     endif()
 endif()
 
-add_compile_definitions(ENABLE_AV1_DECODER=1)
 option(BUILD_LOADER "Build loader" ON)
 option(BUILD_TESTS "Build tests" ON)
 option(BUILD_LAYERS "Build layers" ON)

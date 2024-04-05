@@ -48,7 +48,7 @@ public:
         m_pBitstreamData = m_inputVideoStreamMmap.data();
     }
 
-    ElementaryStream(const uint8_t *pInput, const size_t len,
+    ElementaryStream(const uint8_t *pInput, const size_t,
                      VkVideoCodecOperationFlagBitsKHR codecType)
         : m_width(176)
         , m_height(144)
@@ -141,7 +141,7 @@ public:
     virtual int32_t GetWidth() const { return m_width; }
     virtual int32_t GetHeight() const { return m_height; }
     virtual int32_t GetBitDepth() const { return m_bitDepth; }
-    virtual int64_t DemuxFrame(const uint8_t **ppVideo) {
+    virtual int64_t DemuxFrame(const uint8_t**) {
         return -1;
     }
     virtual int64_t ReadBitstreamData(const uint8_t **ppVideo, int64_t offset)

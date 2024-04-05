@@ -122,9 +122,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
             VK_QUEUE_VIDEO_DECODE_BIT_KHR,
             VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR
             | VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR
-#ifdef ENABLE_AV1_DECODER
             | VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR
-#endif
     );
     assert(videoCodecs != VK_VIDEO_CODEC_OPERATION_NONE_KHR);
 
@@ -140,15 +138,6 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
 
     VkVideoCoreProfile videoProfile(videoCodec, pVideoFormat->chromaSubsampling, pVideoFormat->lumaBitDepth, pVideoFormat->chromaBitDepth,
                                     pVideoFormat->codecProfile);
-#ifndef HEADLESS_AV1
-    if (!VulkanVideoCapabilities::IsCodecTypeSupported(m_vkDevCtx,
-                                                       m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
-                                                       videoCodec)) {
-        std::cout << "*** The video codec " << VkVideoCoreProfile::CodecToName(videoCodec) << " is not supported! ***" << std::endl;
-        assert(!"The video codec is not supported");
-        return -1;
-    }
-#endif
 
     if (m_videoFormat.coded_width && m_videoFormat.coded_height) {
         // CreateDecoder() has been called before, and now there's possible config change
@@ -392,7 +381,7 @@ int VkVideoDecoder::CopyOptimalToLinearImage(VkCommandBuffer& commandBuffer,
                                           VulkanVideoFrameBuffer::PictureResourceInfo& srcPictureResourceInfo,
                                           VkVideoPictureResourceInfoKHR& dstPictureResource,
                                           VulkanVideoFrameBuffer::PictureResourceInfo& dstPictureResourceInfo,
-                                          VulkanVideoFrameBuffer::FrameSynchronizationInfo *pFrameSynchronizationInfo)
+                                          VulkanVideoFrameBuffer::FrameSynchronizationInfo* )
 
 {
     // Bind memory for the image.
@@ -557,8 +546,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     VulkanVideoFrameBuffer::PictureResourceInfo currentDpbPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
     VulkanVideoFrameBuffer::PictureResourceInfo currentOutputPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
     VulkanVideoFrameBuffer::PictureResourceInfo currentLinearPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
-    VkVideoPictureResourceInfoKHR currentOutputPictureResource = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR, nullptr};
-    VkVideoPictureResourceInfoKHR currentLinearPictureResource = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR, nullptr};
+    VkVideoPictureResourceInfoKHR currentLinearPictureResource{VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR, nullptr};
 
     VkVideoPictureResourceInfoKHR* pOutputPictureResource = nullptr;
     VulkanVideoFrameBuffer::PictureResourceInfo* pOutputPictureResourceInfo = nullptr;
@@ -1123,7 +1111,7 @@ VkResult VkVideoDecoder::Create(const VulkanDeviceContext* vkDevCtx,
                                 bool useLinearOutput,
                                 bool enableHwLoadBalancing,
                                 int32_t numDecodeImagesInFlight,
-                                int32_t numDecodeImagesToPreallocate,
+                                int32_t,
                                 int32_t numBitstreamBuffersToPreallocate,
                                 VkSharedBaseObj<VkVideoDecoder>& vkVideoDecoder)
 {

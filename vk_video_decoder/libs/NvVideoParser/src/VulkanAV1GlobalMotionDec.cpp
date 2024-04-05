@@ -18,7 +18,6 @@
 
 #include "VulkanVideoParserIf.h"
 
-#ifdef ENABLE_AV1_DECODER
 #include "VulkanAV1Decoder.h"
 
 
@@ -261,4 +260,3 @@ uint32_t VulkanAV1Decoder::DecodeGlobalMotionParams()
     }
     return 1;
 }
-#endif // ENABLE_AV1_DECODER

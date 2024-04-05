@@ -271,10 +271,10 @@ private:
 public:
     static VkResult Create(const char *pFilePath,
                            VkVideoCodecOperationFlagBitsKHR codecType,
-                           bool requiresStreamDemuxing,
-                           int32_t defaultWidth,
-                           int32_t defaultHeight,
-                           int32_t defaultBitDepth,
+                           bool,
+                           int32_t,
+                           int32_t,
+                           int32_t,
                            VkSharedBaseObj<FFmpegDemuxer>& ffmpegDemuxer)
     {
         enum AVCodecID videoCodecId = AV_CODEC_ID_NONE;
@@ -480,7 +480,7 @@ public:
         }
     }
 
-    virtual int64_t ReadBitstreamData(const uint8_t **ppVideo, int64_t offset) {
+    virtual int64_t ReadBitstreamData(const uint8_t**, int64_t) {
         return -1;
     }
 

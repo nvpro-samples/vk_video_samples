@@ -124,12 +124,12 @@ public:
                               const VkVideoRefCountBase* pStdPpsRef,
                               const VkVideoRefCountBase* pStdSpsRef,
                               const VkVideoRefCountBase* pStdVpsRef = nullptr,
-                              const VkVideoRefCountBase* pStdAv1Sps = nullptr)
+                              const VkVideoRefCountBase* pStdAv1SpsRef = nullptr)
         : pBitstreamData(pBitstreamDataRef)
         , pStdPps(pStdPpsRef)
         , pStdSps(pStdSpsRef)
         , pStdVps(pStdVpsRef)
-        , pStdAv1Sps(pStdAv1Sps) {}
+        , pStdAv1Sps(pStdAv1SpsRef) {}
     };
 
     struct PictureResourceInfo {

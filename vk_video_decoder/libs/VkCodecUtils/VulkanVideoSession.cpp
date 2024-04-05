@@ -23,7 +23,7 @@
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkCodecUtils/VulkanVideoSession.h"
 
-static constexpr bool DEBUGGING = true;
+static constexpr bool DEBUGGING = false;
 
 VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
                                     uint32_t            videoQueueFamily,
@@ -41,9 +41,7 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
     static const VkExtensionProperties h265DecodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION };
     static const VkExtensionProperties h264EncodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_ENCODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_ENCODE_SPEC_VERSION };
     static const VkExtensionProperties h265EncodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_ENCODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_ENCODE_SPEC_VERSION };
-#ifdef ENABLE_AV1_DECODER
     static const VkExtensionProperties av1StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_SPEC_VERSION };
-#endif
 
     VkVideoSessionCreateInfoKHR& createInfo = pNewVideoSession->m_createInfo;
     createInfo.flags = 0;
@@ -62,11 +60,9 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
     case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR:
         createInfo.pStdHeaderVersion = &h265DecodeStdExtensionVersion;
         break;
-#ifdef ENABLE_AV1_DECODER
     case VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR:
         createInfo.pStdHeaderVersion = &av1StdExtensionVersion;
         break;
-#endif
     case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT:
         createInfo.pStdHeaderVersion = &h264EncodeStdExtensionVersion;
         break;

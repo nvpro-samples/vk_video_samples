@@ -127,16 +127,6 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                                     m_videoStreamDemuxer->GetProfileIdc());
 
 
-#if HEADLESS_AV1
-    if (VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR != m_videoStreamDemuxer->GetVideoCodec()) {
-        assert(!"The video codec is not supported");
-        return -1;
-    }
-
-    VkVideoCapabilitiesKHR videoCapabilities;
-    videoCapabilities.minBitstreamBufferOffsetAlignment = 256;
-    videoCapabilities.minBitstreamBufferSizeAlignment = 256;
-#else
     if (!VulkanVideoCapabilities::IsCodecTypeSupported(vkDevCtx,
                                                        vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                                        m_videoStreamDemuxer->GetVideoCodec())) {
@@ -156,7 +146,6 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
         assert(!"Could not get Video Capabilities!");
         return -result;
     }
-#endif
 
     const uint32_t defaultMinBufferSize = 2 * 1024 * 1024; // 2MB
     result = CreateParser(filePath,
@@ -373,7 +362,7 @@ const VkMpFormatInfo* YcbcrVkFormatInfo(const VkFormat format);
 
 size_t VulkanVideoProcessor::ConvertFrameToNv12(DecodedFrame* pFrame,
                                                 VkSharedBaseObj<VkImageResource>& imageResource,
-                                                uint8_t* pOutBuffer, size_t bufferSize)
+                                                uint8_t* pOutBuffer, size_t)
 {
     size_t outputBufferSize = 0;
     VkResult result = VK_SUCCESS;
@@ -746,7 +735,7 @@ int32_t VulkanVideoProcessor::ReleaseDisplayedFrame(DecodedFrame* pDisplayedFram
     return -1;
 }
 
-VkResult VulkanVideoProcessor::CreateParser(const char* filename,
+VkResult VulkanVideoProcessor::CreateParser(const char*,
                                             VkVideoCodecOperationFlagBitsKHR vkCodecType,
                                             uint32_t defaultMinBufferSize,
                                             uint32_t bufferOffsetAlignment,
@@ -754,19 +743,15 @@ VkResult VulkanVideoProcessor::CreateParser(const char* filename,
 {
     static const VkExtensionProperties h264StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION };
     static const VkExtensionProperties h265StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION };
-#ifdef ENABLE_AV1_DECODER
     static const VkExtensionProperties av1StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_SPEC_VERSION };
-#endif
 
     const VkExtensionProperties* pStdExtensionVersion = NULL;
     if (vkCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
         pStdExtensionVersion = &h264StdExtensionVersion;
     } else if (vkCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) {
         pStdExtensionVersion = &h265StdExtensionVersion;
-#ifdef ENABLE_AV1_DECODER
     } else if (vkCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
         pStdExtensionVersion = &av1StdExtensionVersion;
-#endif
     } else {
         assert(!"Unsupported Codec Type");
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
