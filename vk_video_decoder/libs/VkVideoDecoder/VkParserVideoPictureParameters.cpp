@@ -164,6 +164,11 @@ VkResult VkParserVideoPictureParameters::CreateParametersObject(const VulkanDevi
                 currentId = pStdVideoPictureParametersSet->GetAv1SpsId(isAv1Sps);
                 assert(isAv1Sps);
             }
+            // VUID-VkVideoSessionParametersCreateInfoKHR-videoSession-09258
+            // If videoSession was created with the video codec operation VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR,
+            // then videoSessionParametersTemplate must be VK_NULL_HANDLE
+            // AV1 does not support template parameters.
+            pTemplatePictureParameters = nullptr;
         }
         break;
         default:
@@ -171,7 +176,7 @@ VkResult VkParserVideoPictureParameters::CreateParametersObject(const VulkanDevi
             return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    createInfo.videoSessionParametersTemplate = pTemplatePictureParameters ? VkVideoSessionParametersKHR(*pTemplatePictureParameters) : VkVideoSessionParametersKHR();
+    createInfo.videoSessionParametersTemplate = pTemplatePictureParameters ? VkVideoSessionParametersKHR(*pTemplatePictureParameters) : VK_NULL_HANDLE;
     createInfo.videoSession = videoSession->GetVideoSession();
     VkResult result = vkDevCtx->CreateVideoSessionParametersKHR(*vkDevCtx,
                                                                 &createInfo,
