@@ -2102,7 +2102,9 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
 
         for (int i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++)
         {
-            pStd->OrderHints[i] = RefOrderHint[ref_frame_idx[i]];
+            int ref_frame = STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME + i;
+            int hint = RefOrderHint[ref_frame_idx[i]]
+            pStd->OrderHints[ref_frame] = hint;
         }
 
         /*      for (int i = 0; i < REFS_PER_FRAME; ++i)
