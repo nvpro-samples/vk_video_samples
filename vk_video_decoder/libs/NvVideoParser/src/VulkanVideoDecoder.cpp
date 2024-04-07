@@ -283,9 +283,9 @@ size_t VulkanVideoDecoder::next_start_code_tymur(const uint8_t *pdatain, size_t 
         const __m512i v254 = _mm512_set1_epi8(0xFE);
         __m512i vdata = _mm512_loadu_epi8(pdatain);
         __m512i vBfr = _mm512_set1_epi16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF));
-        __m512i vdata_36bytesshift_init = _mm512_alignr_epi32(vdata, vBfr, 12);
-        __m512i vdata_prev1 = _mm512_alignr_epi8(vdata, vdata_36bytesshift_init, 15);
-        __m512i vdata_prev2 = _mm512_alignr_epi8(vdata, vdata_36bytesshift_init, 14);
+        __m512i vdata_alignr48b_init = _mm512_alignr_epi32(vdata, vBfr, 12);
+        __m512i vdata_prev1 = _mm512_alignr_epi8(vdata, vdata_alignr48b_init, 15);
+        __m512i vdata_prev2 = _mm512_alignr_epi8(vdata, vdata_alignr48b_init, 14);
         for ( ; i < datasize128 - 128; i += 128)
         {
             for (int c = 0; c < 128; c += 64) // this might force compiler to unroll the loop so we might have 2 loads in parallel
@@ -300,16 +300,21 @@ size_t VulkanVideoDecoder::next_start_code_tymur(const uint8_t *pdatain, size_t 
                 // hotspot end
                 if (resmask)
                 {
+                    #ifndef _WIN32
                     const int offset = __builtin_ctzll(resmask);
+                    #else
+                    int offset = 0;
+                    const uint8_t dummyIsNonZero =_BitScanForward64(&offset, resmask); // resmask can't be 0 in this if
+                    #endif
                     found_start_code = true;
                     m_BitBfr =  1;
                     return offset + i + c + 1;
                 }
                 // hotspot begin
                 __m512i vdata_next = _mm512_loadu_epi8(&pdatain[i + c + 64]); // 7-8 clocks
-                __m512i vdata_36bytesshift_next = _mm512_alignr_epi32(vdata_next, vdata, 12);
-                vdata_prev1 = _mm512_alignr_epi8(vdata_next, vdata_36bytesshift_next, 15);
-                vdata_prev2 = _mm512_alignr_epi8(vdata_next, vdata_36bytesshift_next, 14);
+                __m512i vdata_alignr48b_next = _mm512_alignr_epi32(vdata_next, vdata, 12);
+                vdata_prev1 = _mm512_alignr_epi8(vdata_next, vdata_alignr48b_next, 15);
+                vdata_prev2 = _mm512_alignr_epi8(vdata_next, vdata_alignr48b_next, 14);
                 vdata = vdata_next;
                 // hotspot end
             }
