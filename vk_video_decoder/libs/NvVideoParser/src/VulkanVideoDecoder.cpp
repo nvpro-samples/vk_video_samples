@@ -257,7 +257,7 @@ int32_t VulkanVideoDecoder::se()
 }
 
 
-size_t VulkanVideoDecoder::next_start_code(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+size_t VulkanVideoDecoder::next_start_code_c(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     uint32_t bfr = m_BitBfr;
     size_t i = 0;
@@ -273,7 +273,18 @@ size_t VulkanVideoDecoder::next_start_code(const uint8_t *pdatain, size_t datasi
     return i;
 }
 
-size_t VulkanVideoDecoder::next_start_code_tymur(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+static int inline count_trailing_zeros(uint64_t resmask)
+{
+#ifndef _WIN32
+    int offset = __builtin_ctzll(resmask);
+#else
+    unsigned long offset = 0;
+    const unsigned char dummyIsNonZero =_BitScanForward64(&offset, resmask); // resmask can't be 0 in this if
+#endif
+    return offset;
+}
+
+size_t VulkanVideoDecoder::next_start_code_tym_avx512(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
     size_t datasize128 = (datasize >> 7) << 7;
@@ -300,12 +311,7 @@ size_t VulkanVideoDecoder::next_start_code_tymur(const uint8_t *pdatain, size_t 
                 // hotspot end
                 if (resmask)
                 {
-                    #ifndef _WIN32
-                    const int offset = __builtin_ctzll(resmask);
-                    #else
-                    int offset = 0;
-                    const uint8_t dummyIsNonZero =_BitScanForward64(&offset, resmask); // resmask can't be 0 in this if
-                    #endif
+                    const int offset = count_trailing_zeros(resmask);
                     found_start_code = true;
                     m_BitBfr =  1;
                     return offset + i + c + 1;
@@ -333,6 +339,196 @@ size_t VulkanVideoDecoder::next_start_code_tymur(const uint8_t *pdatain, size_t 
     m_BitBfr = bfr;
     found_start_code = ((bfr & 0x00ffffff) == 1);
     return i;
+}
+
+size_t VulkanVideoDecoder::next_start_code_tym_avx2(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+{
+    size_t i = 0;
+    size_t datasize64 = (datasize >> 6) << 6;
+    if (datasize64 > 64)
+    {
+        const __m256i v1 = _mm256_set1_epi8(1);
+        __m256i vdata = _mm256_loadu_epi8(pdatain);
+        __m256i vBfr = _mm256_set1_epi16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF));
+        __m256i vdata_alignr16b_init = _mm256_permute2x128_si256(vdata, vBfr,  2);
+        __m256i vdata_prev1 = _mm256_alignr_epi8(vdata, vdata_alignr16b_init, 15);
+        __m256i vdata_prev2 = _mm256_alignr_epi8(vdata, vdata_alignr16b_init, 14);
+        for ( ; i < datasize64 - 64; i += 64)
+        {
+            for (int c = 0; c < 64; c += 32) // this might force compiler to unroll the loop so we might have 2 loads in parallel
+            {
+                // hotspot begin
+                __m256i vmask0 = _mm256_andnot_si256(_mm256_or_si256(vdata_prev2, vdata_prev1), vdata); // 1 clock .. debug
+                __m256i vmask1 = _mm256_or_si256(_mm256_or_si256(vdata_prev2, vdata_prev1), vdata); // in parallel. debug
+                const int resmask = _mm256_movemask_epi8(_mm256_cmpeq_epi8(_mm256_or_si256(vmask0, _mm256_andnot_si256(v1, vmask1)), v1)); // 4 = 3 + 1 clocks + 1 extra clock after debug
+                // hotspot end
+                if (resmask)
+                {
+                    const int offset = count_trailing_zeros((uint64_t) (resmask & ~(1u<<31))); // sign bit doesn't matter
+                    found_start_code = true;
+                    m_BitBfr =  1;
+                    return offset + i + c + 1;
+                }
+                // hotspot begin
+                __m256i vdata_next = _mm256_loadu_epi8(&pdatain[i + c + 32]); // 7-8 clocks
+                __m256i vdata_alignr16b_next = _mm256_permute2x128_si256(vdata_next, vdata, 2);
+                vdata_prev1 = _mm256_alignr_epi8(vdata_next, vdata_alignr16b_next, 15);
+                vdata_prev2 = _mm256_alignr_epi8(vdata_next, vdata_alignr16b_next, 14);
+                vdata = vdata_next;
+                // hotspot end
+            }
+        } // main processing loop end
+        m_BitBfr = (pdatain[i-2] << 8) | pdatain[i-1];
+    }
+    // process a tail (rest):
+    uint32_t bfr = m_BitBfr;
+    do
+    {
+        bfr = (bfr << 8) | pdatain[i++];
+        if ((bfr & 0x00ffffff) == 1) {
+            break;
+        }
+    } while (i < datasize);
+    m_BitBfr = bfr;
+    found_start_code = ((bfr & 0x00ffffff) == 1);
+    return i;
+}
+
+size_t VulkanVideoDecoder::next_start_code_tym_sse42(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+{
+    size_t i = 0;
+    size_t datasize32 = (datasize >> 5) << 5;
+    if (datasize32 > 32)
+    {
+        const __m128i v1 = _mm_set1_epi8(1);
+        __m128i vdata = _mm_loadu_epi8(pdatain);
+        __m128i vBfr = _mm_set1_epi16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF));
+        __m128i vdata_prev1 = _mm_alignr_epi8(vdata, vBfr, 15);
+        __m128i vdata_prev2 = _mm_alignr_epi8(vdata, vBfr, 14);
+        for ( ; i < datasize32 - 32; i += 32)
+        {
+            for (int c = 0; c < 32; c += 16) // this might force compiler to unroll the loop so we might have 2 loads in parallel
+            {
+                // hotspot begin
+                __m128i vmask0 = _mm_andnot_si128(_mm_or_si128(vdata_prev2, vdata_prev1), vdata); // 1 clock .. debug
+                __m128i vmask1 = _mm_or_si128(_mm_or_si128(vdata_prev2, vdata_prev1), vdata); // in parallel. debug
+                const int resmask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_or_si128(vmask0, _mm_andnot_si128(v1, vmask1)), v1)); // 4 = 3 + 1 clocks + 1 extra clock after debug
+                // hotspot end
+                if (resmask)
+                {
+                    const int offset = count_trailing_zeros((uint64_t) (resmask & ~(1u<<31)));
+                    found_start_code = true;
+                    m_BitBfr =  1;
+                    return offset + i + c + 1;
+                }
+                // hotspot begin
+                __m128i vdata_next = _mm_loadu_epi8(&pdatain[i + c + 16]); // 7-8 clocks
+                vdata_prev1 = _mm_alignr_epi8(vdata_next, vdata, 15);
+                vdata_prev2 = _mm_alignr_epi8(vdata_next, vdata, 14);
+                vdata = vdata_next;
+                // hotspot end
+            }
+        } // main processing loop end
+        m_BitBfr = (pdatain[i-2] << 8) | pdatain[i-1];
+    }
+    // process a tail (rest):
+    uint32_t bfr = m_BitBfr;
+    do
+    {
+        bfr = (bfr << 8) | pdatain[i++];
+        if ((bfr & 0x00ffffff) == 1) {
+            break;
+        }
+    } while (i < datasize);
+    m_BitBfr = bfr;
+    found_start_code = ((bfr & 0x00ffffff) == 1);
+    return i;
+}
+
+#if defined (__aarch64__) || defined(_M_ARM64) // TODO: tymur: check NEON version on device & double-check armv5/armv7 conformance, to improve.
+size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+{
+    size_t i = 0;
+    size_t datasize32 = (datasize >> 5) << 5;
+    if (datasize > 32)
+    {
+        const __m128i v1 = vdupq_n_u8(1);
+        uint8x16_t vdata = vldq_u8(pdatain);
+        uint8x16_t vBfr = vdupq_n_u16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF));
+        uint8x16_t vdata_prev1 = vextq_u8(vBfr, vdata, 15);
+        uint8x16_t vdata_prev2 = vextq_u8(vBfr, vdata, 14);
+        uint8x16_t voddmask_u8 = vdupq_n_u16(1);
+        for ( ; i < datasize32 - 32; i += 32)
+        {
+            for (int c = 0; c < 32; c += 16) // this might force compiler to unroll the loop so we might have 2 loads in parallel
+            {
+                // hotspot begin
+                uint8x16_t vmask0 = vbicq_u8(vorrq_u8(vdata_prev2, vdata_prev1), vdata); // 1 clock .. debug
+                uint8x16_t vmask1 = vorrq_u8(vorrq_u8(vdata_prev2, vdata_prev1), vdata); // in parallel. debug
+                uint8x16_t vmask = vceqq_u8(vorrq_u8(vmask0, vandq_u8(v1, vmask1)), v1);
+                // hotspot end
+                #if defined (__aarch64__) || defined(_M_ARM64)
+                uint64_t resmask = vaddvq_u8(vmask);
+                #else
+                uint64_t resmask = vgetq_lane_u64(vpaddq_u8(vmask, vmask), 0);
+                #endif
+                if (resmask)
+                {
+                    vmask_lo = vshrqn_u8(vmask, 4);
+                    vmask_hi = vshlqn_u8(vmask, 4);
+                    vmask = vblsq_u8(vmask_lo, vmask_hi, voddmask_u8);
+                    vmask = vpaddq_u8(vmask, vmask);
+                    resmask = vgetq_lane_u64(vmask, 0);
+                    int offset = count_trailing_zeroes(resmask);
+                    offset >>= 2; // 4-bit chunks of 0s or 1s -> 1 bit mask
+                    found_start_code = true;
+                    m_BitBfr =  1;
+                    return offset + i + c + 1;
+                }
+                // hotspot begin
+                uint8x16_t vdata_next = vldq_u8(&pdatain[i + c + 16]); // 7-8 clocks
+                vdata_prev1 = vextq_u8(vdata, vdata_next, 15);
+                vdata_prev2 = vextq_u8(vdata, vdata_next, 14);
+                vdata = vdata_next;
+                // hotspot end
+            }
+        } // main processing loop end
+        m_BitBfr = (pdatain[i-2] << 8) | pdatain[i-1];
+    }
+    // process a tail (rest):
+    uint32_t bfr = m_BitBfr;
+    do
+    {
+        bfr = (bfr << 8) | pdatain[i++];
+        if ((bfr & 0x00ffffff) == 1) {
+            break;
+        }
+    } while (i < datasize);
+    m_BitBfr = bfr;
+    found_start_code = ((bfr & 0x00ffffff) == 1);
+    return i;
+}
+#endif
+
+// #include <cstdio>
+size_t VulkanVideoDecoder::next_start_code(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+{
+#if defined(__aarch64__) || defined(_M_ARM64)
+    // printf("NEON");
+    return next_start_code_tym_neon(pdatain, datasize, found_start_code);
+#elif defined (__AVX512BW__) && defined(__AVX512F__) && defined(__AVX512VL__)
+    // printf("AVX512");
+    return next_start_code_tym_avx512(pdatain, datasize, found_start_code);
+#elif defined (__AVX2__)
+    // printf("AVX2");
+    return next_start_code_tym_avx2(pdatain, datasize, found_start_code);
+#elif defined (__SSE4_2__)
+    // printf("SSE42");
+    return next_start_code_tym_sse42(pdatain, datasize, found_start_code);
+#else
+    // printf("Scalar");
+    return next_start_code_c(pdatain, datasize, found_start_code);
+#endif
 }
 
 bool VulkanVideoDecoder::resizeBitstreamBuffer(VkDeviceSize extraBytes)
