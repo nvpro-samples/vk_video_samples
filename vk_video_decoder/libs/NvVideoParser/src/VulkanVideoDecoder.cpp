@@ -20,7 +20,11 @@
 #include "nvVulkanVideoUtils.h"
 #include "nvVulkanVideoParser.h"
 #include <algorithm>
+#if defined (__aarch64__) || defined(_M_ARM64) // TODO: tymur: check NEON version on device & double-check armv5/armv7 conformance, to improve.
+#include <arm_neon.h>
+#elif defined(__SSE2__)
 #include <immintrin.h>
+#endif
 
 VulkanVideoDecoder::VulkanVideoDecoder(VkVideoCodecOperationFlagBitsKHR std)
   : m_refCount(0),
@@ -284,6 +288,7 @@ static int inline count_trailing_zeros(uint64_t resmask)
     return offset;
 }
 
+#if defined(__AVX512BW__) && defined(__AVX512F__) && defined(__AVX512VL__)
 size_t VulkanVideoDecoder::next_start_code_tym_avx512(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
@@ -340,7 +345,9 @@ size_t VulkanVideoDecoder::next_start_code_tym_avx512(const uint8_t *pdatain, si
     found_start_code = ((bfr & 0x00ffffff) == 1);
     return i;
 }
+#endif
 
+#if defined(__AVX2__)
 size_t VulkanVideoDecoder::next_start_code_tym_avx2(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
@@ -394,7 +401,9 @@ size_t VulkanVideoDecoder::next_start_code_tym_avx2(const uint8_t *pdatain, size
     found_start_code = ((bfr & 0x00ffffff) == 1);
     return i;
 }
+#endif
 
+#if defined(__SSE2__)
 size_t VulkanVideoDecoder::next_start_code_tym_sse42(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
@@ -446,6 +455,7 @@ size_t VulkanVideoDecoder::next_start_code_tym_sse42(const uint8_t *pdatain, siz
     found_start_code = ((bfr & 0x00ffffff) == 1);
     return i;
 }
+#endif
 
 #if defined (__aarch64__) || defined(_M_ARM64) // TODO: tymur: check NEON version on device & double-check armv5/armv7 conformance, to improve.
 size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
@@ -466,7 +476,7 @@ size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size
             {
                 // hotspot begin
                 uint8x16_t vdata_prev1or2 = vorrq_u8(vdata_prev2, vdata_prev1);
-                uint8x16_t vmask0 = vbicq_u8(vdata, vdata1or2);
+                uint8x16_t vmask0 = vbicq_u8(vdata, vdata_prev1or2);
                 uint8x16_t vmask1 = vorrq_u8(vdata_prev1or2, vdata);
                 uint8x16_t vmask = vceqq_u8(vorrq_u8(vmask0, vandq_u8(v1, vmask1)), v1);
                 // hotspot end
