@@ -1114,6 +1114,7 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
         pFilmGrain->flags.overlap_flag = u(1);
         pFilmGrain->flags.clip_to_restricted_range = u(1);
     } else {
+        pStd->flags.apply_grain = 0;
         memset(pFilmGrain, 0, sizeof(StdVideoAV1FilmGrain));
     }
 
