@@ -489,6 +489,7 @@ size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size
                 if (resmask)
                 {
                     int8x16_t v015mask = vmulq_s8(vmask, v015);
+                    v015mask = vbslq_s8(vmask, v015mask, vdupq_n_s8(INT8_MAX));
 #if defined (__aarch64__) || defined(_M_ARM64)
                     const int offset = vminvq_s8(v015mask);
 #else
