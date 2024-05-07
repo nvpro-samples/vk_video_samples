@@ -529,7 +529,7 @@ size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size
 // #include <cstdio>
 size_t VulkanVideoDecoder::next_start_code(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if defined(__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
     // printf("NEON");
     return next_start_code_tym_neon(pdatain, datasize, found_start_code);
 #elif defined(__AVX512BW__) && defined(__AVX512F__) && defined(__AVX512VL__)
