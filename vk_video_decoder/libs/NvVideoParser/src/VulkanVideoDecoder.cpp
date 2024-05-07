@@ -457,7 +457,7 @@ size_t VulkanVideoDecoder::next_start_code_tym_sse42(const uint8_t *pdatain, siz
 }
 #endif
 
-#if defined (__aarch64__) || defined(_M_ARM64) // TODO: tymur: check NEON version on device & double-check armv5/armv7 conformance, to improve.
+#if defined (__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
 size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
@@ -469,7 +469,8 @@ size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size
         uint8x16_t vBfr = vdupq_n_u16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF));
         uint8x16_t vdata_prev1 = vextq_u8(vBfr, vdata, 15);
         uint8x16_t vdata_prev2 = vextq_u8(vBfr, vdata, 14);
-        uint8x16_t voddmask_u8 = vdupq_n_u16(1);
+        int8_t data015[16] = {0, -1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -14, -15};
+        int8x16_t v015 = vld1q_s8(data015);
         for ( ; i < datasize32 - 32; i += 32)
         {
             for (int c = 0; c < 32; c += 16)
@@ -478,22 +479,24 @@ size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size
                 uint8x16_t vdata_prev1or2 = vorrq_u8(vdata_prev2, vdata_prev1);
                 uint8x16_t vmask0 = vbicq_u8(vdata, vdata_prev1or2);
                 uint8x16_t vmask1 = vorrq_u8(vdata_prev1or2, vdata);
-                uint8x16_t vmask = vceqq_u8(vorrq_u8(vmask0, vandq_u8(v1, vmask1)), v1);
+                int8x16_t vmask = vreinterpret_s8_u8(vceqq_u8(vorrq_u8(vmask0, vandq_u8(v1, vmask1)), v1));
                 // hotspot end
-                #if defined (__aarch64__) || defined(_M_ARM64)
-                uint64_t resmask = vaddvq_u8(vmask);
-                #else // tymur: TODO: armv7 needs 32 bit r-register, fix this case
-                uint64_t resmask = vgetq_lane_u64(vpaddq_u8(vmask, vmask), 0);
-                #endif
+#if defined (__aarch64__) || defined(_M_ARM64)
+                int64_t resmask = vaddvq_s8(vmask);
+#else
+                int64_t resmask = vget_lane_s64(vreinterpret_s64_s8(vpmax_s8(vget_low_s8(vmask), vget_high_s8(vmask)), 0));
+#endif
                 if (resmask)
                 {
-                    vmask_lo = vshrqn_u8(vmask, 4);
-                    vmask_hi = vshlqn_u8(vmask, 4);
-                    vmask = vblsq_u8(vmask_lo, vmask_hi, voddmask_u8);
-                    vmask = vpaddq_u8(vmask, vmask);
-                    resmask = vgetq_lane_u64(vmask, 0);
-                    const int offset = count_trailing_zeroes(resmask);
-                    offset >>= 2;
+                    int8x16_t v015mask = vmulq_s8(vmask, v015);
+#if defined (__aarch64__) || defined(_M_ARM64)
+                    const int offset = vminvq_s8(v015mask);
+#else
+                    int8x8_t minval = vpmin_s8(vget_low_s8(v015mask), vget_high_s8(v015mask));
+                    minval = vpmin_s8(minval, minval);
+                    minval = vpmin_s8(minval, minval);
+                    const int offset = vget_lane_s8(vpmin_s8(minval, minval), 0);
+#endif
                     found_start_code = true;
                     m_BitBfr =  1;
                     return offset + i + c + 1;
