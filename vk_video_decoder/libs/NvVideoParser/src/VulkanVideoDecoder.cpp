@@ -366,9 +366,8 @@ size_t VulkanVideoDecoder::next_start_code_tym_avx2(const uint8_t *pdatain, size
             {
                 // hotspot begin
                 __m256i vdata_prev1or2 = _mm256_or_si256(vdata_prev2, vdata_prev1);
-                __m256i vmask0 = _mm256_andnot_si256(vdata_prev1or2, vdata);
-                __m256i vmask1 = _mm256_or_si256(vdata_prev1or2, vdata);
-                const int resmask = _mm256_movemask_epi8(_mm256_cmpeq_epi8(_mm256_or_si256(vmask0, _mm256_andnot_si256(v1, vmask1)), v1));
+                __m256i vmask = _mm256_cmpeq_epi8(_mm256_and_si256(vdata, _mm256_cmpeq_epi8(vdata_prev1or2, _mm256_setzero_si256())), v1);
+                const int resmask = _mm256_movemask_epi8(vmask);
                 // hotspot end
                 if (resmask)
                 {
@@ -421,9 +420,8 @@ size_t VulkanVideoDecoder::next_start_code_tym_sse42(const uint8_t *pdatain, siz
             {
                 // hotspot begin
                 __m128i vdata_prev1or2 = _mm_or_si128(vdata_prev2, vdata_prev1);
-                __m128i vmask0 = _mm_andnot_si128(vdata_prev1or2 , vdata);
-                __m128i vmask1 = _mm_or_si128(vdata_prev1or2 , vdata);
-                const int resmask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_or_si128(vmask0, _mm_andnot_si128(v1, vmask1)), v1));
+                __m128i vmask = _mm_cmpeq_epi8(_mm_and_si128(vdata, _mm_cmpeq_epi8(vdata_prev1or2, _mm_setzero_si128())), v1);
+                const int resmask = _mm_movemask_epi8(vmask);
                 // hotspot end
                 if (resmask)
                 {
@@ -477,16 +475,15 @@ size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size
             {
                 // hotspot begin
                 uint8x16_t vdata_prev1or2 = vorrq_u8(vdata_prev2, vdata_prev1);
-                uint8x16_t vmask0 = vbicq_u8(vdata, vdata_prev1or2);
-                uint8x16_t vmask1 = vorrq_u8(vdata_prev1or2, vdata);
-                int8x16_t vmask = vreinterpretq_s8_u8(vceqq_u8(vorrq_u8(vmask0, vbicq_u8(vmask1, v1)), v1));
+                uint8x16_t vmask = vandq_u8(vceqq_u8(vdata_prev1or2, v0), vdata_prev1or2);
                 // hotspot end
 #if defined (__aarch64__) || defined(_M_ARM64)
-                int64_t resmask = vaddvq_s8(vmask);
+                int64_t resmask = vmaxvq_s8(vmask);
+                if (resmask == 1)
 #else
-                int64_t resmask = vget_lane_s64(vreinterpret_s64_s8(vpmax_s8(vget_low_s8(vmask), vget_high_s8(vmask))), 0);
-#endif
+                int64_t resmask = vget_lane_s64(vreinterpret_s64_s8(vceqq_s8(vpmax_s8(vget_low_s8(vmask), vget_high_s8(vmask))), v1), 0);
                 if (resmask)
+#endif
                 {
                     int8x16_t v015mask = vmulq_s8(vmask, v015);
                     v015mask = vbslq_s8(vmask, v015mask, vdupq_n_s8(INT8_MAX));
