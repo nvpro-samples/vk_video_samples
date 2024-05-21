@@ -475,14 +475,14 @@ size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size
             {
                 // hotspot begin
                 uint8x16_t vdata_prev1or2 = vorrq_u8(vdata_prev2, vdata_prev1);
-                uint8x16_t vmask = vandq_u8(vceqq_u8(vdata_prev1or2, v0), vdata_prev1or2);
+                int8x16_t vmask = vreinterpretq_s8_u8(vandq_u8(vceqq_u8(vdata_prev1or2, v0), vdata));
                 // hotspot end
 #if defined (__aarch64__) || defined(_M_ARM64)
                 int64_t resmask = vmaxvq_s8(vmask);
                 if (resmask == 1)
 #else
-                int64_t resmask = vget_lane_s64(vreinterpret_s64_s8(vceqq_s8(vpmax_s8(vget_low_s8(vmask), vget_high_s8(vmask))), v1), 0);
-                if (resmask)
+                int64_t resmask = vget_lane_s64(vmax_s8(vget_low_s8(vmask), vget_high_s8(vmask)), 0);
+                if (resmask & 0x1010101010101)
 #endif
                 {
                     int8x16_t v015mask = vmulq_s8(vmask, v015);
