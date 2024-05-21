@@ -462,7 +462,8 @@ size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size
     size_t datasize32 = (datasize >> 5) << 5;
     if (datasize > 32)
     {
-        const uint8x16_t v1 = vdupq_n_u8(1);
+        const uint8x16_t v0 = vdupq_n_u8(0);
+        const int8x8_t v1 = vdup_n_s8(1);
         uint8x16_t vdata = vld1q_u8(pdatain);
         uint8x16_t vBfr = vdupq_n_u16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF));
         uint8x16_t vdata_prev1 = vextq_u8(vBfr, vdata, 15);
@@ -481,8 +482,8 @@ size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size
                 int64_t resmask = vmaxvq_s8(vmask);
                 if (resmask == 1)
 #else
-                int64_t resmask = vget_lane_s64(vmax_s8(vget_low_s8(vmask), vget_high_s8(vmask)), 0);
-                if (resmask & 0x1010101010101)
+                uint64_t resmask = vget_lane_u64(vceq_s8(vmax_s8(vget_low_s8(vmask), vget_high_s8(vmask)), v1), 0);
+                if (resmask)
 #endif
                 {
                     int8x16_t v015mask = vmulq_s8(vmask, v015);
