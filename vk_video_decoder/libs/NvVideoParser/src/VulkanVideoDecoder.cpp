@@ -291,7 +291,7 @@ static int inline count_trailing_zeros(uint64_t resmask)
 }
 
 #if defined(__AVX512BW__) && defined(__AVX512F__) && defined(__AVX512VL__)
-size_t VulkanVideoDecoder::next_start_code_tym_avx512(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+size_t VulkanVideoDecoder::next_start_code_avx512(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
     size_t datasize128 = (datasize >> 7) << 7;
@@ -350,7 +350,7 @@ size_t VulkanVideoDecoder::next_start_code_tym_avx512(const uint8_t *pdatain, si
 #endif
 
 #if defined(__AVX2__)
-size_t VulkanVideoDecoder::next_start_code_tym_avx2(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+size_t VulkanVideoDecoder::next_start_code_avx2(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
     size_t datasize64 = (datasize >> 6) << 6;
@@ -405,7 +405,7 @@ size_t VulkanVideoDecoder::next_start_code_tym_avx2(const uint8_t *pdatain, size
 #endif
 
 #if defined(__SSE2__)
-size_t VulkanVideoDecoder::next_start_code_tym_sse42(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+size_t VulkanVideoDecoder::next_start_code_sse42(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
     size_t datasize32 = (datasize >> 5) << 5;
@@ -459,7 +459,7 @@ size_t VulkanVideoDecoder::next_start_code_tym_sse42(const uint8_t *pdatain, siz
 
 #if defined(__ARM_FEATURE_SVE) // TODO: tymur: check SVE version compilation and run on  armv9/armv8.2+sve device
 #define SVE_REGISTER_MAX_BYTES 256 // 2048 bits
-size_t VulkanVideoDecoder::next_start_code_tym_sve(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
     {
@@ -510,7 +510,7 @@ size_t VulkanVideoDecoder::next_start_code_tym_sve(const uint8_t *pdatain, size_
 #endif
 
 #if defined (__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
-size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+size_t VulkanVideoDecoder::next_start_code_neon(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
     size_t datasize32 = (datasize >> 5) << 5;
@@ -581,19 +581,19 @@ size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size
 size_t VulkanVideoDecoder::next_start_code(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
 #if defined(__ARM_FEATURE_SVE)
-    return next_start_code_tym_sve(pdatain, datasize, found_start_code);
+    return next_start_code_sve(pdatain, datasize, found_start_code);
 #elif defined(__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
     // printf("NEON");
-    return next_start_code_tym_neon(pdatain, datasize, found_start_code);
+    return next_start_code_neon(pdatain, datasize, found_start_code);
 #elif defined(__AVX512BW__) && defined(__AVX512F__) && defined(__AVX512VL__)
     // printf("AVX512");
-    return next_start_code_tym_avx512(pdatain, datasize, found_start_code);
+    return next_start_code_avx512(pdatain, datasize, found_start_code);
 #elif defined(__AVX2__)
     // printf("AVX2");
-    return next_start_code_tym_avx2(pdatain, datasize, found_start_code);
+    return next_start_code_avx2(pdatain, datasize, found_start_code);
 #elif defined(__SSE4_2__)
     // printf("SSE42");
-    return next_start_code_tym_sse42(pdatain, datasize, found_start_code);
+    return next_start_code_sse42(pdatain, datasize, found_start_code);
 #else
     // printf("Scalar");
     return next_start_code_c(pdatain, datasize, found_start_code);
