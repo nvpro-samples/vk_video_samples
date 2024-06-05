@@ -543,7 +543,7 @@ size_t VulkanVideoDecoder::next_start_code_neon(const uint8_t *pdatain, size_t d
 #if defined (__aarch64__) || defined(_M_ARM64)
                     const size_t offset = vminvq_u8(v015mask);
 #else
-                    int8x8_t minval = vpmax_u8(vget_low_u8(v015mask), vget_high_u8(v015mask));
+                    uint8x8_t minval = vpmax_u8(vget_low_u8(v015mask), vget_high_u8(v015mask));
                     minval = vpmin_u8(minval, minval);
                     minval = vpmin_u8(minval, minval);
                     const size_t offset = vget_lane_u8(vpmin_u8(minval, minval), 0);
