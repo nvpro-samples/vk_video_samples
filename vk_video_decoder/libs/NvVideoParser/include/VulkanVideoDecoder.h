@@ -152,7 +152,9 @@ protected:
 protected:
     // Byte stream parsing
     size_t next_start_code_c(const uint8_t *pdatain, size_t datasize, bool& found_start_code);
-#if defined (__aarch64__) || defined(_M_ARM64)
+#if defined(__ARM_FEATURE_SVE)
+    size_t next_start_code_tym_sve(const uint8_t *pdatain, size_t datasize, bool& found_start_code);
+#elif defined (__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
     size_t next_start_code_tym_neon(const uint8_t *pdatain, size_t datasize, bool& found_start_code);
 #elif defined(__SSE2__)
     size_t next_start_code_tym_sse42(const uint8_t *pdatain, size_t datasize, bool& found_start_code);

@@ -20,7 +20,9 @@
 #include "nvVulkanVideoUtils.h"
 #include "nvVulkanVideoParser.h"
 #include <algorithm>
-#if defined (__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
+#if defined(__ARM_FEATURE_SVE) // TODO: tymur: check SVE version compilation and run on  armv9/armv8.2+sve device
+#include "arm_sve.h"
+#elif defined(__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
 #include "arm_neon.h"
 #elif defined(__SSE2__)
 #include <immintrin.h>
@@ -455,6 +457,58 @@ size_t VulkanVideoDecoder::next_start_code_tym_sse42(const uint8_t *pdatain, siz
 }
 #endif
 
+#if defined(__ARM_FEATURE_SVE) // TODO: tymur: check SVE version compilation and run on  armv9/armv8.2+sve device
+#define SVE_REGISTER_MAX_BYTES 256 // 2048 bits
+size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+{
+    size_t i = 0;
+    {
+        const unsigned int lanes = svlen(svuint8_t());
+        const svuint8 v0 = svdup_n_u8(0);
+        const svuint8 v1 = svdup_n_u8(1);
+        svuint8 vdata = svld1_u8(pdatain);
+        svuint8 vBfr = svreinterpret_u8_u16(svdup_n_u16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF)));
+        svuint8 vdata_prev1 = svext_u8(vBfr, vdata, lanes-1);
+        svuint8 vdata_prev2 = svext_u8(vBfr, vdata, lanes-2);
+        uint8_t data0n[SVE_REGISTER_MAX_BYTES/sizeof(uint8_t)];
+        for (int idx = 0; idx < lanes; idx++)
+        {
+            data0n[idx] = idx;
+        }
+        svuint8 v0n = svld1_u8(data0n);
+
+        for ( ; i < datasize; i += lanes)
+        {
+            const svbool_t pred = svwhilelt_b8(i, datasize); // assume 2 cntdb'es excecute in parallalel
+            const svbool_t pred_next = svwhilelt_b8(i, datasize-lanes); // TODO: remove svwhilelt_b8 (currently prefer code size to performance)
+            // hotspot begin
+            svuint8 vdata_prev1or2 = svorr_u8_m(pred, vdata_prev2, vdata_prev1);
+            svuint8 vmask = svcmpeq_u8(svand_u8_m(pred, svcmpeq_u8(vdata_prev1or2, v0), vdata), v1);
+
+            int64_t resmask = svmaxv_u8(pred, vmask);
+            if (resmask)
+            {
+                svuint8 v0nmask = svbsl_u8(vmask, v0n, svdup_n_u8(UINT8_MAX));
+                const size_t offset = svminv_u8(pred, v0n);
+                found_start_code = true;
+                m_BitBfr =  1;
+                return offset + i + 1;
+            }
+            // hotspot begin
+            svuint8 vdata_next = svld1_u8(pred_next, &pdatain[i + lanes]);
+            vdata_prev1 = svext_u8(vdata, vdata_next, lanes-1);
+            vdata_prev2 = svext_u8(vdata, vdata_next, lanes-2);
+            vdata = vdata_next;
+            // hotspot end
+        }
+    }
+    m_BitBfr = (pdatain[i-2] << 8) | pdatain[i-1];
+    found_start_code = ((m_BitBfr & 0x00ffffff) == 1);
+    return i;
+}
+#undef SVE_REGISTER_MAX_BYTES
+#endif
+
 #if defined (__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
 size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
@@ -463,37 +517,36 @@ size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size
     if (datasize > 32)
     {
         const uint8x16_t v0 = vdupq_n_u8(0);
-        const uint8x16_t v1 = vdupq_n_s8(1);
+        const uint8x16_t v1 = vdupq_n_u8(1);
         uint8x16_t vdata = vld1q_u8(pdatain);
-        uint8x16_t vBfr = vdupq_n_u16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF));
+        uint8x16_t vBfr = vreinterpretq_u8_u16(vdupq_n_u16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF)));
         uint8x16_t vdata_prev1 = vextq_u8(vBfr, vdata, 15);
         uint8x16_t vdata_prev2 = vextq_u8(vBfr, vdata, 14);
-        int8_t data015[16] = {0, -1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12, -13, -14, -15};
-        int8x16_t v015 = vld1q_s8(data015);
+        uint8_t idx0n[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+        uint8x16_t v015 = vld1q_u8(idx0n);
         for ( ; i < datasize32 - 32; i += 32)
         {
             for (int c = 0; c < 32; c += 16)
             {
                 // hotspot begin
                 uint8x16_t vdata_prev1or2 = vorrq_u8(vdata_prev2, vdata_prev1);
-                int8x16_t vmask = vreinterpretq_s8_u8(vceqq_u8(vandq_u8(vceqq_u8(vdata_prev1or2, v0), vdata), v1));
+                uint8x16_t vmask = vceqq_u8(vandq_u8(vceqq_u8(vdata_prev1or2, v0), vdata), v1);
                 // hotspot end
 #if defined (__aarch64__) || defined(_M_ARM64)
-                int64_t resmask = vmaxvq_s8(vmask);
+                uint64_t resmask = vmaxvq_u8(vmask);
 #else
-                int64_t resmask = vget_lane_s64(vmax_s8(vget_low_s8(vmask), vget_high_s8(vmask)), 0);
+                uint64_t resmask = vget_lane_u64(vmax_u8(vget_low_u8(vmask), vget_high_u8(vmask)), 0);
 #endif
                 if (resmask)
                 {
-                    int8x16_t v015mask = vmulq_s8(vmask, v015);
-                    v015mask = vbslq_s8(vmask, v015mask, vdupq_n_s8(INT8_MAX));
+                    uint8x16_t v015mask = vbslq_u8(vmask, v015, vdupq_n_u8(UINT8_MAX));
 #if defined (__aarch64__) || defined(_M_ARM64)
-                    const int offset = vminvq_s8(v015mask);
+                    const size_t offset = vminvq_u8(v015mask);
 #else
-                    int8x8_t minval = vpmin_s8(vget_low_s8(v015mask), vget_high_s8(v015mask));
-                    minval = vpmin_s8(minval, minval);
-                    minval = vpmin_s8(minval, minval);
-                    const int offset = vget_lane_s8(vpmin_s8(minval, minval), 0);
+                    int8x8_t minval = vpmax_u8(vget_low_u8(v015mask), vget_high_u8(v015mask));
+                    minval = vpmin_u8(minval, minval);
+                    minval = vpmin_u8(minval, minval);
+                    const size_t offset = vget_lane_u8(vpmin_u8(minval, minval), 0);
 #endif
                     found_start_code = true;
                     m_BitBfr =  1;
@@ -527,7 +580,9 @@ size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size
 // #include <cstdio>
 size_t VulkanVideoDecoder::next_start_code(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
-#if defined(__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
+#if defined(__ARM_FEATURE_SVE)
+    return next_start_code_tym_sve(pdatain, datasize, found_start_code);
+#elif defined(__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
     // printf("NEON");
     return next_start_code_tym_neon(pdatain, datasize, found_start_code);
 #elif defined(__AVX512BW__) && defined(__AVX512F__) && defined(__AVX512VL__)
