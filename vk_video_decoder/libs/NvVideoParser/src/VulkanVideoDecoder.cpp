@@ -459,7 +459,7 @@ size_t VulkanVideoDecoder::next_start_code_tym_sse42(const uint8_t *pdatain, siz
 
 #if defined(__ARM_FEATURE_SVE) // TODO: tymur: check SVE version compilation and run on  armv9/armv8.2+sve device
 #define SVE_REGISTER_MAX_BYTES 256 // 2048 bits
-size_t VulkanVideoDecoder::next_start_code_tym_neon(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+size_t VulkanVideoDecoder::next_start_code_tym_sve(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
     {
