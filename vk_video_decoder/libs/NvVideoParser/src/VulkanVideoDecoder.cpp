@@ -485,11 +485,11 @@ size_t VulkanVideoDecoder::next_start_code_tym_sve(const uint8_t *pdatain, size_
             svuint8 vdata_prev1or2 = svorr_u8_m(pred, vdata_prev2, vdata_prev1);
             svuint8 vmask = svcmpeq_u8(svand_u8_m(pred, svcmpeq_u8(vdata_prev1or2, v0), vdata), v1);
 
-            int64_t resmask = svmaxv_u8(pred, vmask);
+            uint64_t resmask = svmaxv_u8(pred, vmask);
             if (resmask)
             {
                 svuint8 v0nmask = svbsl_u8(vmask, v0n, svdup_n_u8(UINT8_MAX));
-                const size_t offset = svminv_u8(pred, v0n);
+                const size_t offset = svminv_u8(pred, v0nmask);
                 found_start_code = true;
                 m_BitBfr =  1;
                 return offset + i + 1;
