@@ -327,7 +327,6 @@ public:
         , m_queryPool()
         , m_ownedByDisplayMask(0)
         , m_frameNumInDisplayOrder(0)
-        , m_codedExtent { 0, 0 }
         , m_numberParameterUpdates(0)
         , m_debug()
     {
@@ -384,7 +383,6 @@ public:
                                   uint32_t                 numImages,
                                   VkFormat                 dpbImageFormat,
                                   VkFormat                 outImageFormat,
-                                  const VkExtent2D&        codedExtent,
                                   const VkExtent2D&        maxImageExtent,
                                   VkImageUsageFlags        dpbImageUsage,
                                   VkImageUsageFlags        outImageUsage,
@@ -403,9 +401,6 @@ public:
         if (result != VK_SUCCESS) {
             return 0;
         }
-
-        // m_extent is for the codedExtent, not the max image resolution
-        m_codedExtent = codedExtent;
 
         int32_t imageSetCreateResult =
                 m_perFrameDecodeImageSet.init(m_vkDevCtx,
@@ -644,8 +639,6 @@ public:
                 }
 
                 assert(dpbPictureResources[resId].sType == VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR);
-                dpbPictureResources[resId].codedOffset = { 0, 0 }; // FIXME: This parameter must to be adjusted based on the interlaced mode.
-                dpbPictureResources[resId].codedExtent = m_codedExtent;
             }
         }
         return numResources;
@@ -677,13 +670,8 @@ public:
             }
 
             assert(dpbPictureResource->sType == VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR);
-            dpbPictureResource->codedOffset = { 0, 0 }; // FIXME: This parameter must to be adjusted based on the interlaced mode.
-            dpbPictureResource->codedExtent = m_codedExtent;
-
             if (outputPictureResource) {
                 assert(outputPictureResource->sType == VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR);
-                outputPictureResource->codedOffset = { 0, 0 }; // FIXME: This parameter must to be adjusted based on the interlaced mode.
-                outputPictureResource->codedExtent = m_codedExtent;
             }
 
         }
@@ -803,7 +791,6 @@ private:
     VkQueryPool              m_queryPool;
     uint32_t                 m_ownedByDisplayMask;
     int32_t                  m_frameNumInDisplayOrder;
-    VkExtent2D               m_codedExtent;               // for the codedExtent, not the max image resolution
     uint32_t                 m_numberParameterUpdates;
     uint32_t                 m_debug : 1;
 };

@@ -208,6 +208,7 @@ private:
         : m_vkDevCtx(vkDevCtx)
         , m_currentVideoQueueIndx(videoQueueIndx)
         , m_refCount(0)
+        , m_codedExtent {}
         , m_videoFormat {}
         , m_numDecodeImagesInFlight(numDecodeImagesInFlight)
         , m_numDecodeImagesToPreallocate(numDecodeImagesToPreallocate)
@@ -299,6 +300,8 @@ private:
     const VulkanDeviceContext*  m_vkDevCtx;
     int32_t                     m_currentVideoQueueIndx;
     std::atomic<int32_t>        m_refCount;
+    // The current decoder coded extent
+    VkExtent2D                  m_codedExtent;
     // dimension of the output
     VkParserDetectedVideoFormat m_videoFormat;
     int32_t                     m_numDecodeImagesInFlight; // driven by how deep is the decoder queue

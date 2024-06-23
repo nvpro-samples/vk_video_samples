@@ -87,7 +87,8 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     const uint32_t surfaceMinWidthExtent  = 4096;
     const uint32_t surfaceMinHeightExtent = 4096;
 
-    VkExtent2D codedExtent = { pVideoFormat->coded_width, pVideoFormat->coded_height };
+    m_codedExtent.width  = pVideoFormat->coded_width;
+    m_codedExtent.height = pVideoFormat->coded_height;
 
     // Width and height of the image surface
     VkExtent2D imageExtent = VkExtent2D { std::max((uint32_t)(pVideoFormat->display_area.right  - pVideoFormat->display_area.left), pVideoFormat->coded_width),
@@ -105,7 +106,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
               << "\tFrame rate   : " << pVideoFormat->frame_rate.numerator << "/" << pVideoFormat->frame_rate.denominator << " = "
               << ((pVideoFormat->frame_rate.denominator != 0) ? (1.0 * pVideoFormat->frame_rate.numerator / pVideoFormat->frame_rate.denominator) : 0.0) << " fps" << std::endl
               << "\tSequence     : " << (pVideoFormat->progressive_sequence ? "Progressive" : "Interlaced") << std::endl
-              << "\tCoded size   : [" << codedExtent.width << ", " << codedExtent.height << "]" << std::endl
+              << "\tCoded size   : [" << m_codedExtent.width << ", " << m_codedExtent.height << "]" << std::endl
               << "\tDisplay area : [" << pVideoFormat->display_area.left << ", " << pVideoFormat->display_area.top << ", "
               << pVideoFormat->display_area.right << ", " << pVideoFormat->display_area.bottom << "]" << std::endl
               << "\tChroma       : " << GetVideoChromaFormatString(pVideoFormat->chromaSubsampling) << std::endl
@@ -152,7 +153,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
 
     std::cout << "Video Decoding Params:" << std::endl
               << "\tNum Surfaces : " << m_numDecodeSurfaces << std::endl
-              << "\tResize       : " << codedExtent.width << " x " << codedExtent.height << std::endl;
+              << "\tResize       : " << m_codedExtent.width << " x " << m_codedExtent.height << std::endl;
 
     uint32_t maxDpbSlotCount = pVideoFormat->maxNumDpbSlots;
 
@@ -308,7 +309,6 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                                     m_numDecodeSurfaces,
                                                     dpbImageFormat,
                                                     outImageFormat,
-                                                    codedExtent,
                                                     imageExtent,
                                                     dpbImageUsage,
                                                     outImageUsage,
@@ -573,6 +573,13 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         assert(!"GetImageResourcesByIndex has failed");
     }
+    pPicParams->dpbSetupPictureResource.codedOffset = { 0, 0 }; // FIXME: This parameter must to be adjusted based on the interlaced mode.
+    pPicParams->dpbSetupPictureResource.codedExtent = m_codedExtent;
+
+    if (pOutputPictureResource) {
+        pOutputPictureResource->codedOffset = { 0, 0 }; // FIXME: This parameter must to be adjusted based on the interlaced mode.
+        pOutputPictureResource->codedExtent = m_codedExtent;
+    }
 
     if (m_dpbAndOutputCoincide) {
 
@@ -623,6 +630,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             // slotLayer requires NVIDIA specific extension VK_KHR_video_layers, not enabled, just yet.
             // pGopReferenceSlots[resId].slotLayerIndex = 0;
             // pictureResourcesInfo[resId].image can be a nullptr handle if the picture is not-existent.
+            pPicParams->pictureResources[resId].codedExtent = m_codedExtent; // FIXME this sequence should go
+            pPicParams->pictureResources[resId].codedOffset = { 0, 0 }; // FIXME: This parameter must to be adjusted based on the interlaced mode.
             if (pictureResourcesInfo[resId].image && (pictureResourcesInfo[resId].currentImageLayout != VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) && (pictureResourcesInfo[resId].currentImageLayout != VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR)) {
                 imageBarriers[numDpbBarriers] = dpbBarrierTemplates[0];
                 imageBarriers[numDpbBarriers].oldLayout = pictureResourcesInfo[resId].currentImageLayout;

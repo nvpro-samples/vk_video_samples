@@ -86,7 +86,6 @@ public:
                                   uint32_t                 numImages,
                                   VkFormat                 dpbImageFormat,
                                   VkFormat                 outImageFormat,
-                                  const VkExtent2D&        codedExtent,
                                   const VkExtent2D&        maxImageExtent,
                                   VkImageUsageFlags        dpbImageUsage,
                                   VkImageUsageFlags        outImageUsage,
