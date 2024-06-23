@@ -630,9 +630,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             // slotLayer requires NVIDIA specific extension VK_KHR_video_layers, not enabled, just yet.
             // pGopReferenceSlots[resId].slotLayerIndex = 0;
             // pictureResourcesInfo[resId].image can be a nullptr handle if the picture is not-existent.
-            pPicParams->pictureResources[resId].codedExtent = m_codedExtent; // FIXME this sequence should go
-            pPicParams->pictureResources[resId].codedOffset = { 0, 0 }; // FIXME: This parameter must to be adjusted based on the interlaced mode.
-            if (pictureResourcesInfo[resId].image && (pictureResourcesInfo[resId].currentImageLayout != VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) && (pictureResourcesInfo[resId].currentImageLayout != VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR)) {
+            if (pictureResourcesInfo[resId].image && (pictureResourcesInfo[resId].currentImageLayout != VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR)) {
+                pPicParams->pictureResources[resId].codedExtent = m_codedExtent;
+                pPicParams->pictureResources[resId].codedOffset = { 0, 0 }; // FIXME: This parameter must to be adjusted based on the interlaced mode.
                 imageBarriers[numDpbBarriers] = dpbBarrierTemplates[0];
                 imageBarriers[numDpbBarriers].oldLayout = pictureResourcesInfo[resId].currentImageLayout;
                 imageBarriers[numDpbBarriers].newLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR;
