@@ -552,11 +552,15 @@ size_t VulkanVideoProcessor::OutputFrameToFile(VulkanDecodedFrame* pFrame)
         return (size_t)-1;
     }
 
+    VkSharedBaseObj<VkImageResourceView> imageResourceView;
+    pFrame->imageViews[DecodeFrameBufferIf::IMAGE_TYPE_IDX_OUT].GetImageResourceView(imageResourceView);
+
+
     assert(pFrame != nullptr);
-    assert(!!pFrame->imageView);
+    assert(!!imageResourceView);
     assert(pFrame->pictureIndex != -1);
 
-    VkSharedBaseObj<VkImageResource> imageResource = pFrame->imageView->GetImageResource();
+    VkSharedBaseObj<VkImageResource> imageResource = imageResourceView->GetImageResource();
     uint8_t* pLinearMemory = m_frameToFile.EnsureAllocation(m_vkDevCtx, imageResource);
     assert(pLinearMemory != nullptr);
 

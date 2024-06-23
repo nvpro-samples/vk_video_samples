@@ -182,7 +182,11 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
             displayEncoderInputFrame.displayOrder = encodeFrameInfo->positionInGopInDecodeOrder;
             displayEncoderInputFrame.frameCompleteSemaphore = frameCompleteSemaphore;
             // displayEncoderInputFrame.frameCompleteFence = currentEncodeFrameData->m_frameCompleteFence;
-            encodeFrameInfo->srcEncodeImageResource->GetImageView(displayEncoderInputFrame.imageView );
+            encodeFrameInfo->srcEncodeImageResource->GetImageView(
+                    displayEncoderInputFrame.imageViews[DecodeFrameBufferIf::IMAGE_TYPE_IDX_DPB].singleLevelView );
+            displayEncoderInputFrame.imageViews[DecodeFrameBufferIf::IMAGE_TYPE_IDX_DPB].inUse = true;
+            displayEncoderInputFrame.optimalOutputIndex = DecodeFrameBufferIf::IMAGE_TYPE_IDX_DPB;
+
             // One can also look at the linear input instead
             // displayEncoderInputFrame.imageView = currentEncodeFrameData->m_linearInputImage;
             displayEncoderInputFrame.displayWidth  = m_encoderConfig->input.width;

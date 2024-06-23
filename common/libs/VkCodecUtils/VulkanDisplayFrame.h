@@ -18,7 +18,9 @@
 #define COMMON_LIBS_VKCODECUTILS_VULKANDISPLAYFRAME_H_
 
 #include "stdint.h"
+#include "array"
 #include "VkCodecUtils/VkImageResource.h"
+#include "VkVideoCore/DecodeFrameBufferIf.h"
 
 class VulkanDisplayFrame
 {
@@ -30,8 +32,7 @@ public:
     uint64_t decodeOrder;
     uint64_t displayOrder;
     uint64_t timestamp;
-    VkSharedBaseObj<VkImageResourceView> imageView; // input or output image view resource to be displayed
-    VkSharedBaseObj<VkImageResourceView> dpbImageView;   // dpb image view (optional)
+    std::array<DecodeFrameBufferIf::ImageViews, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES> imageViews;
     VkFence frameCompleteFence; // If valid, the fence is signaled when the decoder or encoder is done decoding / encoding the frame.
     VkFence frameConsumerDoneFence; // If valid, the fence is signaled when the consumer (graphics, compute or display) is done using the frame.
     VkSemaphore frameCompleteSemaphore; // If valid, the semaphore is signaled when the decoder or encoder is done decoding / encoding the frame.
@@ -44,6 +45,7 @@ public:
     int32_t  submittedVideoQueueIndex;
     uint32_t hasConsummerSignalFence : 1;
     uint32_t hasConsummerSignalSemaphore : 1;
+    uint32_t optimalOutputIndex : 4;
 
     void Reset()
     {
@@ -51,8 +53,13 @@ public:
         imageLayerIndex = 0;
         displayWidth = 0;
         displayHeight = 0;
-        imageView  = nullptr;
-        dpbImageView = nullptr;
+        for (uint32_t imageTypeIdx = 0; imageTypeIdx < DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES; imageTypeIdx++) {
+            if (imageViews[imageTypeIdx].inUse) {
+                imageViews[imageTypeIdx].view = nullptr;
+                imageViews[imageTypeIdx].singleLevelView = nullptr;
+                imageViews[imageTypeIdx].inUse = false;
+            }
+        }
         frameCompleteFence = VkFence();
         frameConsumerDoneFence = VkFence();
         frameCompleteSemaphore = VkSemaphore();
@@ -67,6 +74,7 @@ public:
         // For debugging
         decodeOrder = 0;
         displayOrder = 0;
+        optimalOutputIndex = 0;
     }
 
     VulkanDisplayFrame()
@@ -77,8 +85,7 @@ public:
     , decodeOrder()
     , displayOrder()
     , timestamp()
-    , imageView()
-    , dpbImageView()
+    , imageViews()
     , frameCompleteFence()
     , frameConsumerDoneFence()
     , frameCompleteSemaphore()
@@ -89,6 +96,7 @@ public:
     , submittedVideoQueueIndex()
     , hasConsummerSignalFence()
     , hasConsummerSignalSemaphore()
+    , optimalOutputIndex()
     {}
 
     virtual ~VulkanDisplayFrame() {

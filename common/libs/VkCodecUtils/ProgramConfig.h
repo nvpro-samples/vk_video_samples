@@ -213,10 +213,10 @@ struct ProgramConfig {
                     backBufferCount = std::atoi(args[0]);
                     return true;
                 }},
-            {"--computeShader", nullptr, 0, "Enables post processing by running "
+            {"--enablePostProcessFilter", nullptr, 1, "Enables post processing by running "
                 "a compute shader on the decode output",
                 [this](const char **args, const ProgramArgs &a) {
-                    enablePostProcessFilter = true;
+                    enablePostProcessFilter = std::atoi(args[0]);
                     return true;
                 }},
             {"--loop", nullptr, 1,

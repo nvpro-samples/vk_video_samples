@@ -236,6 +236,8 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                        VK_IMAGE_USAGE_TRANSFER_DST_BIT);
     VkImageUsageFlags dpbImageUsage = VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
 
+    uint32_t maxNumImageTypeIdx = 1; // start with 1 image for coincide DPB and output image
+
     if (m_dpbAndOutputCoincide) {
         dpbImageUsage = outImageUsage | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
         outImageUsage &= ~VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
@@ -305,17 +307,65 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
 
     }
 
+    std::array<VulkanVideoFrameBuffer::ImageSpec, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES> imageSpecs;
+
+    // Image create info for the DPBs
+    VulkanVideoFrameBuffer::ImageSpec& imageSpecDpb = imageSpecs[DecodeFrameBufferIf::IMAGE_TYPE_IDX_DPB];
+    imageSpecDpb.createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageSpecDpb.createInfo.pNext = nullptr; // the profile will get set in the FB
+    imageSpecDpb.createInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageSpecDpb.createInfo.format = dpbImageFormat;
+    imageSpecDpb.createInfo.extent = { imageExtent.width, imageExtent.height, 1 };
+    imageSpecDpb.createInfo.mipLevels = 1;
+    imageSpecDpb.createInfo.arrayLayers = m_useImageArray ? m_numDecodeSurfaces : 1;
+    imageSpecDpb.createInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageSpecDpb.createInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageSpecDpb.createInfo.usage = dpbImageUsage;
+    imageSpecDpb.createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageSpecDpb.createInfo.queueFamilyIndexCount = 1;
+    imageSpecDpb.createInfo.pQueueFamilyIndices = nullptr; // the profile will get set in the FB
+    imageSpecDpb.createInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageSpecDpb.createInfo.flags = 0;
+    imageSpecDpb.usesImageArray = m_useImageArray;
+    imageSpecDpb.usesImageViewArray = m_useImageViewArray;
+
+    imageSpecDpb.memoryProperty = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    imageSpecDpb.imageTypeIdx = DecodeFrameBufferIf::IMAGE_TYPE_IDX_DPB;
+
+    if (m_useSeparateOutputImages || m_useLinearOutput) {
+        // Add one more image for the separate output image used for platforms
+        // requiring a separate output image or the output needs to be linear
+
+        VulkanVideoFrameBuffer::ImageSpec& imageSpecOut = imageSpecs[DecodeFrameBufferIf::IMAGE_TYPE_IDX_OUT];
+        imageSpecOut.createInfo = imageSpecDpb.createInfo;
+        imageSpecOut.createInfo.format = outImageFormat;
+        imageSpecOut.createInfo.arrayLayers = 1;
+        imageSpecOut.createInfo.tiling = m_useLinearOutput ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
+        imageSpecOut.createInfo.usage = outImageUsage;
+
+        // We will use discrete images for the output, for now.
+        // imageSpecs[IMAGE_TYPE_IDX_OUT].usesImageArray = m_useImageArray;
+        // imageSpecs[IMAGE_TYPE_IDX_OUT].usesImageViewArray = m_useImageViewArray;
+
+        if ((outImageUsage & VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR) == 0) {
+            // A simple output image not directly used by the decoder
+            imageSpecOut.createInfo.pNext = nullptr;
+        }
+
+        imageSpecOut.memoryProperty = m_useLinearOutput ? ( VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT  |
+                                                                              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                                                                              VK_MEMORY_PROPERTY_HOST_CACHED_BIT)  :
+                                                                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        imageSpecOut.imageTypeIdx = DecodeFrameBufferIf::IMAGE_TYPE_IDX_OUT;
+        maxNumImageTypeIdx++;
+    }
+
     int32_t ret = m_videoFrameBuffer->InitImagePool(videoProfile.GetProfile(),
                                                     m_numDecodeSurfaces,
-                                                    dpbImageFormat,
-                                                    outImageFormat,
-                                                    imageExtent,
-                                                    dpbImageUsage,
-                                                    outImageUsage,
+                                                    maxNumImageTypeIdx,
+                                                    imageSpecs,
                                                     m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
-                                                    m_numDecodeImagesToPreallocate,
-                                                    m_useImageArray, m_useImageViewArray,
-                                                    m_useSeparateOutputImages, m_useLinearOutput);
+                                                    m_numDecodeImagesToPreallocate);
 
     assert((uint32_t)ret == m_numDecodeSurfaces);
     if ((uint32_t)ret != m_numDecodeSurfaces) {
@@ -563,16 +613,23 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     }
 
     if (pPicParams->currPicIdx !=
-            m_videoFrameBuffer->GetCurrentImageResourceByIndex(pPicParams->currPicIdx,
+            m_videoFrameBuffer->GetCurrentImageResourceByIndex(pPicParams->currPicIdx, DecodeFrameBufferIf::IMAGE_TYPE_IDX_DPB,
                                                                &pPicParams->dpbSetupPictureResource,
                                                                &currentDpbPictureResourceInfo,
-                                                               VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR,
-                                                               pOutputPictureResource,
-                                                               pOutputPictureResourceInfo,
-                                                               VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR)) {
+                                                               VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR)) {
 
         assert(!"GetImageResourcesByIndex has failed");
     }
+
+    if ((pOutputPictureResourceInfo != nullptr) && (pPicParams->currPicIdx !=
+            m_videoFrameBuffer->GetCurrentImageResourceByIndex(pPicParams->currPicIdx, DecodeFrameBufferIf::IMAGE_TYPE_IDX_OUT,
+                                                               pOutputPictureResource,
+                                                               pOutputPictureResourceInfo,
+                                                               VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR))) {
+
+        assert(!"GetImageResourcesByIndex has failed");
+    }
+
     pPicParams->dpbSetupPictureResource.codedOffset = { 0, 0 }; // FIXME: This parameter must to be adjusted based on the interlaced mode.
     pPicParams->dpbSetupPictureResource.codedExtent = m_codedExtent;
 
@@ -618,9 +675,10 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     memset(&pictureResourcesInfo[0], 0, sizeof(pictureResourcesInfo));
     const int8_t* pGopReferenceImagesIndexes = pPicParams->pGopReferenceImagesIndexes;
     if (pPicParams->numGopReferenceSlots) {
-        if (pPicParams->numGopReferenceSlots != m_videoFrameBuffer->GetDpbImageResourcesByIndex(
+        if (pPicParams->numGopReferenceSlots != m_videoFrameBuffer->GetImageResourcesByIndex(
                                                                         pPicParams->numGopReferenceSlots,
                                                                         pGopReferenceImagesIndexes,
+                                                                        DecodeFrameBufferIf::IMAGE_TYPE_IDX_DPB,
                                                                         pPicParams->pictureResources,
                                                                         pictureResourcesInfo,
                                                                         VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR)) {
@@ -658,6 +716,10 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     frameSynchronizationInfo.hasFrameCompleteSignalSemaphore = true;
     frameSynchronizationInfo.syncOnFrameCompleteFence = true;
     frameSynchronizationInfo.syncOnFrameConsumerDoneFence = true;
+
+    frameSynchronizationInfo.optimalOutputIndex = (m_dpbAndOutputCoincide && !m_enableDecodeFilter) ?
+            DecodeFrameBufferIf::IMAGE_TYPE_IDX_DPB : DecodeFrameBufferIf::IMAGE_TYPE_IDX_OUT;
+
 
     if (pPicParams->useInlinedPictureParameters == false) {
         // out of band parameters
@@ -983,11 +1045,14 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         VkSharedBaseObj<VkImageResourceView> inputImageView;
         VkSharedBaseObj<VkImageResourceView> outputImageView;
-        int32_t index = m_videoFrameBuffer->GetCurrentImageResourceByIndex(currPicIdx,
-                                                                           inputImageView,
-                                                                           outputImageView);
+        int32_t index = m_videoFrameBuffer->GetCurrentImageResourceByIndex(currPicIdx, DecodeFrameBufferIf::IMAGE_TYPE_IDX_DPB,
+                                                                           inputImageView);
         assert(index == currPicIdx);
         assert(inputImageView);
+        index = m_videoFrameBuffer->GetCurrentImageResourceByIndex(currPicIdx, DecodeFrameBufferIf::IMAGE_TYPE_IDX_OUT,
+                                                                   outputImageView);
+
+        assert(index == currPicIdx);
         assert(outputImageView);
         assert(inputImageView->GetImageView() != outputImageView->GetImageView());
         assert(inputImageView->GetPlaneImageView(0) != outputImageView->GetPlaneImageView(0));

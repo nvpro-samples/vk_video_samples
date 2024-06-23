@@ -25,6 +25,7 @@
 #include "VkCodecUtils/VulkanVideoUtils.h"
 #include "VulkanFrame.h"
 #include "vk_enum_string_helper.h"
+#include "VkVideoCore/DecodeFrameBufferIf.h"
 
 template<class FrameDataType>
 VulkanFrame<FrameDataType>::VulkanFrame(const VulkanDeviceContext* vkDevCtx,
@@ -361,23 +362,20 @@ bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
 
     // wait for the last submission since we reuse frame data
     if (dumpDebug && pLastDecodedFrame) {
+
+        VkSharedBaseObj<VkImageResourceView> imageResourceView;
+        pLastDecodedFrame->imageViews[pLastDecodedFrame->optimalOutputIndex].GetImageResourceView(imageResourceView);
+
         std::cout << "<= Wait on picIdx: " << pLastDecodedFrame->pictureIndex
                   << "\t\tdisplayWidth: " << pLastDecodedFrame->displayWidth
                   << "\t\tdisplayHeight: " << pLastDecodedFrame->displayHeight
                   << "\t\tdisplayOrder: " << pLastDecodedFrame->displayOrder
                   << "\tdecodeOrder: " << pLastDecodedFrame->decodeOrder
                   << "\ttimestamp " << pLastDecodedFrame->timestamp
-                  << "\tdstImageView " << (pLastDecodedFrame->imageView ?
-                          pLastDecodedFrame->imageView->GetImageResource()->GetImage() : VkImage())
+                  << "\tdstImageView " << (imageResourceView ? imageResourceView->GetImageResource()->GetImage() : VkImage())
                   << std::endl;
     }
 
-    if (pLastDecodedFrame) {
-        // std::cout << pLastDecodedFrame->pictureIndex << " : DISP view: " << pLastDecodedFrame->decodedImageView->GetImageView() << ", signalSem: " <<  pLastDecodedFrame->frameCompleteSemaphore << std::endl << std::flush;
-        if (false && pLastDecodedFrame->imageView) {
-            std::cout << pLastDecodedFrame->pictureIndex << " : DISP OUT view: " << pLastDecodedFrame->imageView->GetImageView() << ", signalSem: " <<  pLastDecodedFrame->frameCompleteSemaphore << std::endl << std::flush;
-        }
-    }
     if (gfxRendererIsEnabled == false) {
 
         m_frameDataIndex = (m_frameDataIndex + 1) % m_frameData.size();
@@ -413,12 +411,15 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
     }
     vulkanVideoUtils::VulkanPerDrawContext* pPerDrawContext = m_videoRenderer->m_renderInfo.GetDrawContext(renderIndex);
 
+    VkSharedBaseObj<VkImageResourceView> imageResourceView;
+    inFrame->imageViews[inFrame->optimalOutputIndex].GetImageResourceView(imageResourceView);
+
     bool doTestPatternFrame = ((inFrame == NULL) ||
-                               (!inFrame->imageView ||
-                                (inFrame->imageView->GetImageView() == VK_NULL_HANDLE)) ||
+                               (!imageResourceView ||
+                                (imageResourceView->GetImageView() == VK_NULL_HANDLE)) ||
                                m_videoRenderer->m_useTestImage);
 
-    VkImageResourceView* pView = inFrame ? inFrame->imageView : (VkImageResourceView*)nullptr;
+    VkImageResourceView* pView = inFrame ? imageResourceView : (VkImageResourceView*)nullptr;
     vulkanVideoUtils::ImageResourceInfo rtImage(pView, VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR);
     const vulkanVideoUtils::ImageResourceInfo* pRtImage = doTestPatternFrame ? &m_videoRenderer->m_testFrameImage : &rtImage;
     VkFence frameConsumerDoneFence = doTestPatternFrame ? VkFence() : inFrame->frameConsumerDoneFence;

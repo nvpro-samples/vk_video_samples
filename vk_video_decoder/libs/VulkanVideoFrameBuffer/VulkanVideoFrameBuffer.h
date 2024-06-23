@@ -25,6 +25,7 @@
 #include "vulkan_interfaces.h"
 #include "VkCodecUtils/VkImageResource.h"
 #include "VkCodecUtils/VulkanDecodedFrame.h"
+#include "VkVideoCore/DecodeFrameBufferIf.h"
 
 struct DecodedFrameRelease {
     int32_t pictureIndex;
@@ -40,6 +41,7 @@ class VkParserVideoPictureParameters;
 
 class VulkanVideoFrameBuffer : public IVulkanVideoFrameBufferParserCb {
 public:
+
     // Synchronization
     struct FrameSynchronizationInfo {
         VkFence frameCompleteFence;
@@ -49,6 +51,7 @@ public:
         VkQueryPool queryPool;
         uint32_t startQueryId;
         uint32_t numQueries;
+        uint32_t optimalOutputIndex : 4;
         uint32_t hasFrameCompleteSignalFence : 1;
         uint32_t hasFrameCompleteSignalSemaphore : 1;
         uint32_t syncOnFrameCompleteFence : 1;
@@ -82,39 +85,52 @@ public:
         VkImageLayout currentImageLayout;
     };
 
+    struct ImageSpec {
+
+        ImageSpec()
+        : imageTypeIdx((uint32_t)-1)
+        , usesImageArray(false)
+        , usesImageViewArray(false)
+        , deferCreate(false)
+        , createInfo()
+        , memoryProperty()
+        , imageArray()
+        , imageViewArray() {}
+
+        uint32_t              imageTypeIdx;  // -1 is an invalid index and the entry is skipped
+        uint32_t              usesImageArray     : 1;
+        uint32_t              usesImageViewArray : 1;
+        uint32_t              deferCreate        : 1;
+        VkImageCreateInfo     createInfo;
+        VkMemoryPropertyFlags memoryProperty;
+        // must be valid if m_usesImageArray is true
+        VkSharedBaseObj<VkImageResource>     imageArray;
+        // must be valid if m_usesImageViewArray is true
+        VkSharedBaseObj<VkImageResourceView> imageViewArray;
+    };
+
     virtual int32_t InitImagePool(const VkVideoProfileInfoKHR* pDecodeProfile,
                                   uint32_t                 numImages,
-                                  VkFormat                 dpbImageFormat,
-                                  VkFormat                 outImageFormat,
-                                  const VkExtent2D&        maxImageExtent,
-                                  VkImageUsageFlags        dpbImageUsage,
-                                  VkImageUsageFlags        outImageUsage,
+                                  uint32_t                 maxNumImageTypeIdx,
+                                  std::array<VulkanVideoFrameBuffer::ImageSpec, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES>& imageSpecs,
                                   uint32_t                 queueFamilyIndex,
-                                  int32_t                  numImagesToPreallocate,
-                                  bool                     useImageArray = false,
-                                  bool                     useImageViewArray = false,
-                                  bool                     useSeparateOutputImage = false,
-                                  bool                     useLinearOutput = false) = 0;
+                                  int32_t                  numImagesToPreallocate) = 0;
 
     virtual int32_t QueuePictureForDecode(int8_t picId, VkParserDecodePictureInfo* pDecodePictureInfo,
                                           ReferencedObjectsInfo* pReferencedObjectsInfo,
                                           FrameSynchronizationInfo* pFrameSynchronizationInfo) = 0;
     virtual int32_t DequeueDecodedPicture(VulkanDecodedFrame* pDecodedFrame) = 0;
     virtual int32_t ReleaseDisplayedPicture(DecodedFrameRelease** pDecodedFramesRelease, uint32_t numFramesToRelease) = 0;
-    virtual int32_t GetDpbImageResourcesByIndex(uint32_t numResources, const int8_t* referenceSlotIndexes,
-                                                VkVideoPictureResourceInfoKHR* pictureResources,
-                                                PictureResourceInfo* pictureResourcesInfo,
-                                                VkImageLayout newDpbImageLayerLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) = 0;
-    virtual int32_t GetCurrentImageResourceByIndex(int8_t referenceSlotIndex,
-                                                   VkVideoPictureResourceInfoKHR* dpbPictureResource,
-                                                   PictureResourceInfo* dpbPictureResourceInfo,
-                                                   VkImageLayout newDpbImageLayerLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR,
-                                                   VkVideoPictureResourceInfoKHR* outputPictureResource = nullptr,
-                                                   PictureResourceInfo* outputPictureResourceInfo = nullptr,
-                                                   VkImageLayout newOutputImageLayerLayout = VK_IMAGE_LAYOUT_MAX_ENUM) = 0;
-    virtual int32_t GetCurrentImageResourceByIndex(int8_t referenceSlotIndex,
-                                                   VkSharedBaseObj<VkImageResourceView>& decodedImageView,
-                                                   VkSharedBaseObj<VkImageResourceView>& outputImageView) = 0;
+    virtual int32_t GetImageResourcesByIndex(uint32_t numResources, const int8_t* referenceSlotIndexes, uint32_t imageTypeIdx,
+                                             VkVideoPictureResourceInfoKHR* pictureResources,
+                                             PictureResourceInfo* pictureResourcesInfo,
+                                             VkImageLayout newImageLayerLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) = 0;
+    virtual int32_t GetCurrentImageResourceByIndex(int8_t referenceSlotIndex, uint32_t imageTypeIdx,
+                                                   VkVideoPictureResourceInfoKHR* pPictureResource,
+                                                   PictureResourceInfo* pPictureResourceInfo,
+                                                   VkImageLayout newImageLayerLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) = 0;
+    virtual int32_t GetCurrentImageResourceByIndex(int8_t referenceSlotIndex, uint32_t imageTypeIdx,
+                                                   VkSharedBaseObj<VkImageResourceView>& imageView) = 0;
     virtual int32_t ReleaseImageResources(uint32_t numResources, const uint32_t* indexes) = 0;
     virtual uint64_t SetPicNumInDecodeOrder(int32_t picId, uint64_t picNumInDecodeOrder) = 0;
     virtual int32_t SetPicNumInDisplayOrder(int32_t picId, int32_t picNumInDisplayOrder) = 0;
