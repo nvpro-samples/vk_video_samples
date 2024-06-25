@@ -50,7 +50,7 @@ struct ProgramConfig {
         numDecodeImagesInFlight = 8;
         numDecodeImagesToPreallocate = -1; // pre-allocate the maximum num of images
         numBitstreamBuffersToPreallocate = 8;
-        backBufferCount = 8;
+        backBufferCount = 3;
         ticksPerSecond = 30;
         vsync = true;
 
@@ -199,6 +199,12 @@ struct ProgramConfig {
                 "result",
                 [this](const char **args, const ProgramArgs &a) {
                     decoderQueueSize = std::atoi(args[0]);
+                    return true;
+                }},
+            {"--displayBackBufferSize", nullptr, 1,
+                "Size of display back-buffers swapchain queue size",
+                [this](const char **args, const ProgramArgs &a) {
+                    backBufferCount = std::atoi(args[0]);
                     return true;
                 }},
             {"--computeShader", nullptr, 0, "Enables post processing by running "
