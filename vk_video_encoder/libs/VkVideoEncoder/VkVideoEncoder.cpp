@@ -179,7 +179,7 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
             // Optionally, submit the input frame for preview by the display, if enabled.
             VulkanEncoderInputFrame displayEncoderInputFrame;
             displayEncoderInputFrame.pictureIndex = (int32_t)encodeFrameInfo->frameInputOrderNum;
-            displayEncoderInputFrame.displayOrder = encodeFrameInfo->positionInGopInDecodeOrder;
+            displayEncoderInputFrame.displayOrder = encodeFrameInfo->gopPosition.inputOrder;
             displayEncoderInputFrame.frameCompleteSemaphore = frameCompleteSemaphore;
             // displayEncoderInputFrame.frameCompleteFence = currentEncodeFrameData->m_frameCompleteFence;
             encodeFrameInfo->srcEncodeImageResource->GetImageView(
@@ -213,8 +213,8 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
         if (m_encoderConfig->verboseFrameStruct) {
             std::cout << ">>>>>> Non-Vcl data" << (nonVcl ? "SUCCESS" : "FAIL")
                       << " File Output non-VCL data with size: " << encodeFrameInfo->bitstreamHeaderBufferSize
-                      << ", Display Order: " << (uint32_t)encodeFrameInfo->positionInGopInDisplayOrder
-                      << ", Decode  Order: " << (uint32_t)encodeFrameInfo->positionInGopInDecodeOrder
+                      << ", Input Order: " << encodeFrameInfo->gopPosition.inputOrder
+                      << ", Encode  Order: " << encodeFrameInfo->gopPosition.encodeOrder
                       << std::endl << std::flush;
         }
     }
@@ -247,6 +247,20 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
         return result;
     }
 
+    if(encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
+        size_t nonVcl = fwrite(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
+               1, encodeFrameInfo->bitstreamHeaderBufferSize,
+               m_encoderConfig->outputFileHandler.GetFileHandle());
+
+        if (m_encoderConfig->verboseFrameStruct) {
+            std::cout << ">>>>>> Non-Vcl data" << (nonVcl ? "SUCCESS" : "FAIL")
+                      << " File Output non-VCL data with size: " << encodeFrameInfo->bitstreamHeaderBufferSize
+                      << ", Input Order: " << encodeFrameInfo->gopPosition.inputOrder
+                      << ", Encode  Order: " << encodeFrameInfo->gopPosition.encodeOrder
+                      << std::endl << std::flush;
+        }
+    }
+
     VkDeviceSize maxSize;
     uint8_t* data = encodeFrameInfo->outputBitstreamBuffer->GetDataPtr(0, maxSize);
 
@@ -256,8 +270,8 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     if (m_encoderConfig->verboseFrameStruct) {
         std::cout << ">>>>>> Output VCL data " << (vcl ? "SUCCESS" : "FAIL") << " with size: " << encodeResult.bitstreamSize
                   << " and offset: " << encodeResult.bitstreamStartOffset
-                  << ", Display Order: " << (uint32_t)encodeFrameInfo->positionInGopInDisplayOrder
-                  << ", Decode  Order: " << (uint32_t)encodeFrameInfo->positionInGopInDecodeOrder << std::endl << std::flush;
+                  << ", Input Order: " << encodeFrameInfo->gopPosition.inputOrder
+                  << ", Encode  Order: " << encodeFrameInfo->gopPosition.encodeOrder << std::endl << std::flush;
     }
     return result;
 }
@@ -282,13 +296,16 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
     // Reconfigure the gopStructure structure because the device may not support
     // specific GOP structure. For example it may not support B-frames.
-    // gopStructure.Init() should be called after  encoderConfig->InitDeviceCapbilities().
-    m_encoderConfig->gopStructure.Init();
+    // gopStructure.Init() should be called after encoderConfig->InitDeviceCapabilities().
+    m_encoderConfig->gopStructure.Init(m_encoderConfig->numFrames);
     std::cout << std::endl << "GOP frame count: " << (uint32_t)m_encoderConfig->gopStructure.GetGopFrameCount();
     std::cout << ", IDR period: " << (uint32_t)m_encoderConfig->gopStructure.GetIdrPeriod();
     std::cout << ", Consecutive B frames: " << (uint32_t)m_encoderConfig->gopStructure.GetConsecutiveBFrameCount();
     std::cout << std::endl;
-    m_encoderConfig->gopStructure.PrintGopStructure(m_encoderConfig->gopStructure.GetGopFrameCount() + 5);
+    const uint64_t maxFramesToDump = std::min<uint32_t>(m_encoderConfig->numFrames, m_encoderConfig->gopStructure.GetGopFrameCount() + 19);
+    m_encoderConfig->gopStructure.PrintGopStructure(maxFramesToDump);
+
+    m_encoderConfig->gopStructure.DumpFramesGopStructure(0, maxFramesToDump);
 
     // The the required num of DPB images
     m_maxActiveReferencePictures = encoderConfig->InitDpbCount();
@@ -999,8 +1016,8 @@ void VkVideoEncoder::ConsumerThread()
        VkSharedBaseObj<VkVideoEncodeFrameInfo> encodeFrameInfo;
        bool success = m_encoderQueue.WaitAndPop(encodeFrameInfo);
        if (success) { // 5 seconds in nanoseconds
-           std::cout << "==>>>> Consumed: " << (uint32_t)encodeFrameInfo->positionInGopInDisplayOrder
-                      << ", Order: " << (uint32_t)encodeFrameInfo->positionInGopInDecodeOrder << std::endl << std::flush;
+           std::cout << "==>>>> Consumed: " << (uint32_t)encodeFrameInfo->gopPosition.inputOrder
+                      << ", Order: " << (uint32_t)encodeFrameInfo->gopPosition.encodeOrder << std::endl << std::flush;
 
            VkResult result = ProcessOrderedFrames(encodeFrameInfo, 0);
            if (result != VK_SUCCESS) {

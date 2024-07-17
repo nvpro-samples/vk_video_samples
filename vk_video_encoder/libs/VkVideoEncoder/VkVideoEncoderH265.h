@@ -94,7 +94,6 @@ public:
     VkVideoEncoderH265(const VulkanDeviceContext* vkDevCtx)
         : VkVideoEncoder(vkDevCtx)
         , m_encoderConfig()
-        , m_positionInGopInDisplayOrder()
         , m_bBottomFieldFirst()
         , m_reconfigForcedIDR()
         , m_bReconfigForcedIDR()
@@ -142,7 +141,6 @@ private:
     }
 private:
     VkSharedBaseObj<EncoderConfigH265>         m_encoderConfig;
-    uint8_t                                    m_positionInGopInDisplayOrder;
     uint8_t                                    m_bBottomFieldFirst;
     uint8_t                                    m_reconfigForcedIDR;
     uint8_t                                    m_bReconfigForcedIDR;

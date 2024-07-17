@@ -96,7 +96,6 @@ public:
     VkVideoEncoderH264(const VulkanDeviceContext* vkDevCtx)
         : VkVideoEncoder(vkDevCtx)
         , m_encoderConfig()
-        , m_positionInGopInDisplayOrder()
         , m_h264()
         , m_dpb264()
     { }
@@ -156,7 +155,6 @@ private:
 
 private:
     VkSharedBaseObj<EncoderConfigH264> m_encoderConfig;
-    uint8_t                            m_positionInGopInDisplayOrder;
     EncoderH264State                   m_h264;
     VkEncDpbH264*                      m_dpb264;
     VkSharedBaseObj<VulkanBufferPool<VkVideoEncodeFrameInfoH264>> m_frameInfoBuffersQueue;

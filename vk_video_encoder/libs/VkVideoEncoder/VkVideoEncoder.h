@@ -60,10 +60,8 @@ public:
             : encodeInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR, pNext}
             , frameInputOrderNum(uint64_t(-1))
             , frameEncodeOrderNum(uint64_t(-1))
-            , positionInGopInDisplayOrder(uint8_t(-1))
-            , positionInGopInDecodeOrder(uint8_t(-1))
+            , gopPosition(uint32_t(-1))
             , picOrderCntVal(-1)
-            , pictureType(VkVideoGopStructure::FRAME_TYPE_IDR)
             , inputTimeStamp(0)
             , bitstreamHeaderBufferSize(0)
             , bitstreamHeaderOffset(0)
@@ -107,12 +105,10 @@ public:
         }
 
         VkVideoEncodeInfoKHR                               encodeInfo;
-        uint64_t                                           frameInputOrderNum;
-        uint64_t                                           frameEncodeOrderNum;         // == display order
-        uint8_t                                            positionInGopInDisplayOrder; // == display order
-        uint8_t                                            positionInGopInDecodeOrder;  // == decode order
+        uint64_t                                           frameInputOrderNum;          // == encoder input order in sequence
+        uint64_t                                           frameEncodeOrderNum;         // == encoder encode input order sequence number
+        VkVideoGopStructure::GopPosition                   gopPosition;
         int32_t                                            picOrderCntVal;
-        VkVideoGopStructure::FrameType                     pictureType;
         uint64_t                                           inputTimeStamp;
         size_t                                             bitstreamHeaderBufferSize;
         uint32_t                                           bitstreamHeaderOffset;
@@ -209,10 +205,10 @@ public:
 
             frameInputOrderNum = (uint64_t)-1;          // For debugging
             frameEncodeOrderNum = (uint64_t)-1;         // For debugging
-            positionInGopInDisplayOrder  = uint8_t(-1); // For debugging
-            positionInGopInDecodeOrder = uint8_t(-1);   // For debugging
+            gopPosition.inputOrder  = uint32_t(-1);     // For debugging
+            gopPosition.encodeOrder = uint32_t(-1);     // For debugging
             picOrderCntVal = -1; // For debugging
-            pictureType = VkVideoGopStructure::FRAME_TYPE_INVALID;
+            gopPosition.pictureType = VkVideoGopStructure::FRAME_TYPE_INVALID;
             inputTimeStamp = (uint64_t)-1; // For debugging
             bitstreamHeaderBufferSize = 0;
             bitstreamHeaderOffset = 0;
@@ -386,6 +382,7 @@ public:
         , m_rateControlInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR }
         , m_rateControlLayersInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR }
         , m_picIdxToDpb{}
+        , m_gopState()
         , m_dpbSlotsMask(0)
         , m_frameNumSyntax(0)
         , m_frameNumInGop()
@@ -473,12 +470,12 @@ public:
 
     VkResult PrintVideoCodingLink(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, uint32_t frameIdx, uint32_t ofTotalFrames)
     {
-        if (m_encoderConfig->verbose) {
-            std::cout << "Frame: " << frameIdx << " of " << ofTotalFrames
-                      << " " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->pictureType)
+        if (true) {
+            std::cout << "Encode: " << frameIdx << " of " << ofTotalFrames
+                      << " " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
                       << ", frameEncodeOrderNum: " << (uint32_t)encodeFrameInfo->frameEncodeOrderNum
-                      << ", GOP display order: " << (uint32_t)encodeFrameInfo->positionInGopInDisplayOrder
-                      << ", GOP decode  order: " << (uint32_t)encodeFrameInfo->positionInGopInDecodeOrder << std::endl << std::flush;
+                      << ", GOP input order: " << encodeFrameInfo->gopPosition.inputOrder
+                      << ", GOP encode  order: " << encodeFrameInfo->gopPosition.encodeOrder << std::endl << std::flush;
         }
         return VK_SUCCESS;
     }
@@ -535,7 +532,7 @@ protected:
                        VkSharedBaseObj<VkVideoEncodeFrameInfo>& prev,
                        VkSharedBaseObj<VkVideoEncodeFrameInfo>& node) {
 
-        if ((current == nullptr) || (current->positionInGopInDecodeOrder >= node->positionInGopInDecodeOrder)) {
+        if ((current == nullptr) || (current->gopPosition.encodeOrder >= node->gopPosition.encodeOrder)) {
 
             node->dependantFrames = current;
 
@@ -590,6 +587,7 @@ protected:
     VkVideoEncodeRateControlInfoKHR       m_rateControlInfo;
     VkVideoEncodeRateControlLayerInfoKHR  m_rateControlLayersInfo[1];
     int8_t   m_picIdxToDpb[17]; // MAX_DPB_SLOTS + 1
+    VkVideoGopStructure::GopState         m_gopState;
     uint32_t m_dpbSlotsMask;
     uint32_t m_frameNumSyntax;
     uint32_t m_frameNumInGop;

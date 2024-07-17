@@ -141,6 +141,56 @@ static int parseArguments(EncoderConfig *encoderConfig, int argc, char *argv[])
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
+        // GOP structure
+        } else if (strcmp(argv[i], "--gopFrameCount") == 0) {
+            uint8_t gopFrameCount = EncoderConfig::DEFAULT_GOP_FRAME_COUNT;
+            if (++i >= argc || sscanf(argv[i], "%hhu", &gopFrameCount) != 1) {
+                fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
+                return -1;
+            }
+            encoderConfig->gopStructure.SetGopFrameCount(gopFrameCount);
+            printf("Selected gopFrameCount: %d\n", gopFrameCount);
+        } else if (strcmp(argv[i], "--idrPeriod") == 0) {
+            int32_t idrPeriod = EncoderConfig::DEFAULT_GOP_IDR_PERIOD;
+            if (++i >= argc || sscanf(argv[i], "%d", &idrPeriod) != 1) {
+                fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
+                return -1;
+            }
+            encoderConfig->gopStructure.SetIdrPeriod(idrPeriod);
+            printf("Selected idrPeriod: %d\n", idrPeriod);
+        } else if (strcmp(argv[i], "--consecutiveBFrameCount") == 0) {
+            uint8_t consecutiveBFrameCount = EncoderConfig::DEFAULT_CONSECUTIVE_B_FRAME_COUNT;
+            if (++i >= argc || sscanf(argv[i], "%hhu", &consecutiveBFrameCount) != 1) {
+                fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
+                return -1;
+            }
+            encoderConfig->gopStructure.SetConsecutiveBFrameCount(consecutiveBFrameCount);
+            printf("Selected consecutiveBFrameCount: %d\n", consecutiveBFrameCount);
+        } else if (strcmp(argv[i], "--temporalLayerCount") == 0) {
+            uint8_t temporalLayerCount = EncoderConfig::DEFAULT_TEMPORAL_LAYER_COUNT;
+            if (++i >= argc || sscanf(argv[i], "%hhu", &temporalLayerCount) != 1) {
+                fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
+                return -1;
+            }
+            encoderConfig->gopStructure.SetTemporalLayerCount(temporalLayerCount);
+            printf("Selected temporalLayerCount: %d\n", temporalLayerCount);
+        } else if (strcmp(argv[i], "--lastFrameType") == 0) {
+            VkVideoGopStructure::FrameType lastFrameType = VkVideoGopStructure::FRAME_TYPE_P;
+            const char *frameTypeName = argv[i + 1];
+            if ((strcmp(frameTypeName, "p") == 0) || (strcmp(frameTypeName, "P") == 0)) {
+                lastFrameType = VkVideoGopStructure::FRAME_TYPE_P;
+            } else if ((strcmp(frameTypeName, "b") == 0) || (strcmp(frameTypeName, "B") == 0)) {
+                lastFrameType = VkVideoGopStructure::FRAME_TYPE_B;
+            } else if ((strcmp(frameTypeName, "i") == 0) || (strcmp(frameTypeName, "I") == 0)) {
+                lastFrameType = VkVideoGopStructure::FRAME_TYPE_I;
+            } else {
+                // Invalid frameTypeName
+                fprintf(stderr, "Invalid frameTypeName: %s\n", frameTypeName);
+                return -1;
+            }
+            i++; // Skip the next argument since it's the frameTypeName value
+            encoderConfig->gopStructure.SetLastFrameType(lastFrameType);
+            printf("Selected frameTypeName: %s\n", encoderConfig->gopStructure.GetFrameTypeName(lastFrameType));
         } else {
             fprintf(stderr, "Unrecognized option: %s\n", argv[i]);
             printHelp();

@@ -34,20 +34,51 @@ public:
     enum FrameType { FRAME_TYPE_P = 0, FRAME_TYPE_B = 1, FRAME_TYPE_I = 2,
                      FRAME_TYPE_IDR = 3, FRAME_TYPE_INTRA_REFRESH = 6, FRAME_TYPE_INVALID = -1 };
 
-    struct GopEntry {
-      FrameType                 frameType;
-      uint8_t                   decodeOrder;
-      uint8_t                   isReference : 1;
-      std::bitset<MAX_GOP_SIZE> references;
+
+    enum Flags { FLAGS_IS_REF         = (1 << 0), // frame is a reference
+                 FLAGS_CLOSE_GOP      = (1 << 1), // Last reference in the Gop. Indicates the end of a closed Gop.
+                 FLAGS_NONUNIFORM_GOP = (1 << 2), // nonuniform  Gop part of sequence (usually used to terminate Gop).
+               };
+
+    struct GopState {
+        uint32_t positionInInputOrder;
+        uint32_t lastRefInInputOrder;
+        uint32_t lastRefInEncodeOrder;
+
+        GopState()
+        : positionInInputOrder(0)
+        , lastRefInInputOrder(0)
+        , lastRefInEncodeOrder(0) {}
     };
 
-    VkVideoGopStructure(int8_t gopFrameCount = 8,
-                        int8_t idrPeriod = 16,
-                        int8_t consecutiveBFrameCount = 2,
-                        int8_t temporalLayerCount = 1,
-                        FrameType lastFrameType = FRAME_TYPE_P);
+    struct GopPosition {
+        uint32_t   inputOrder;  // input order in the IDR sequence
+        uint32_t   encodeOrder; // encode order in the Gop
+        uint8_t    inGop;       // The position in Gop in input order
+        int8_t     numBFrames;  // Number of B frames in this part of the Gop, -1 if not a B frame
+        int8_t     bFramePos;   // The B position in Gop, -1 if not a B frame
+        FrameType  pictureType;   // The type of the picture
+        uint32_t   flags;       // one or multiple of flags of type Flags above
 
-    bool Init();
+        GopPosition(uint32_t positionInGopInInputOrder)
+        : inputOrder(positionInGopInInputOrder)
+        , encodeOrder(0)
+        , inGop(0)
+        , numBFrames(-1)
+        , bFramePos(-1)
+        , pictureType(FRAME_TYPE_INVALID)
+        , flags(0)
+        {}
+    };
+
+    VkVideoGopStructure(uint8_t gopFrameCount = 8,
+                        int32_t idrPeriod = 60,
+                        uint8_t consecutiveBFrameCount = 2,
+                        uint8_t temporalLayerCount = 1,
+                        FrameType lastFrameType = FRAME_TYPE_P,
+                        FrameType preIdrAnchorFrameType = FRAME_TYPE_P);
+
+    bool Init(uint64_t maxNumFrames);
 
     static const char* GetFrameTypeName(FrameType frameType)
     {
@@ -74,22 +105,22 @@ public:
     // If it is set to 0, the rate control algorithm may assume an
     // implementation-dependent GOP length. If it is set to UINT32_MAX,
     // the GOP length is treated as infinite.
-    void SetGopFrameCount(int8_t gopFrameCount) { m_gopFrameCount = gopFrameCount; }
-    int8_t GetGopFrameCount() const { return m_gopFrameCount; }
+    void SetGopFrameCount(uint8_t gopFrameCount) { m_gopFrameCount = gopFrameCount; }
+    uint8_t GetGopFrameCount() const { return m_gopFrameCount; }
 
     // idrPeriod is the interval, in terms of number of frames, between two IDR frames (see IDR period).
     // If it is set to 0, the rate control algorithm may assume an implementation-dependent IDR period.
     // If it is set to UINT8_MAX, the IDR period is treated as infinite.
-    void SetIdrPeriod(int8_t idrPeriod) { m_idrPeriod = idrPeriod; }
-    int8_t GetIdrPeriod() const { return m_idrPeriod; }
+    void SetIdrPeriod(uint32_t idrPeriod) { m_idrPeriod = idrPeriod; }
+    uint32_t GetIdrPeriod() const { return m_idrPeriod; }
 
     // consecutiveBFrameCount is the number of consecutive B frames between I and/or P frames within the GOP.
-    void SetConsecutiveBFrameCount(int8_t consecutiveBFrameCount) { m_consecutiveBFrameCount = consecutiveBFrameCount; }
-    int8_t GetConsecutiveBFrameCount() const { return m_consecutiveBFrameCount; }
+    void SetConsecutiveBFrameCount(uint8_t consecutiveBFrameCount) { m_consecutiveBFrameCount = consecutiveBFrameCount; }
+    uint8_t GetConsecutiveBFrameCount() const { return m_consecutiveBFrameCount; }
 
     // specifies the number of H.264/5 sub-layers that the application intends to use.
-    void SetTemporalLayerCount(int8_t temporalLayerCount) { m_temporalLayerCount = temporalLayerCount; }
-    int8_t GetTemporalLayerCount() const { return m_temporalLayerCount; }
+    void SetTemporalLayerCount(uint8_t temporalLayerCount) { m_temporalLayerCount = temporalLayerCount; }
+    uint8_t GetTemporalLayerCount() const { return m_temporalLayerCount; }
 
     // lastFrameType is the type of frame that will be used for the last frame in the stream.
     // This frame type will replace the type regardless on the type determined by the GOP structure.
@@ -99,72 +130,124 @@ public:
         return true;
     }
 
-    virtual FrameType GetFrameType(uint64_t frameNumInDisplayOrder,
-                                   bool firstFrame = false, bool lastFrame = false) const;
-
     virtual void PrintGopStructure(uint64_t numFrames = uint64_t(-1)) const;
 
-    virtual void VisitGopFrames(int8_t gopNum,
-                                const std::function<void(int8_t, FrameType)>& callback,
-                                bool searchBackward = true, bool searchForward = true) const;
+    int32_t GetIdrRefDelta(const GopState& gopState, int32_t& idrPeriodDelta) const
+    {
+        if (m_idrPeriod > 0) {
+            idrPeriodDelta = m_idrPeriod - (gopState.positionInInputOrder % m_idrPeriod);
+            const int32_t idrPeriodPositionInInputOrder = idrPeriodDelta + gopState.positionInInputOrder;
+            const int32_t refDelta = idrPeriodPositionInInputOrder - gopState.lastRefInInputOrder;
+            return refDelta;
+        } else {
+            idrPeriodDelta = -1;
+            return -1;
+        }
+    }
 
-    virtual uint8_t GetReferences(int gopNum, std::bitset<64>& refMask) const;
-    virtual uint8_t GetReferenceNumbers(int8_t gopNum, std::vector<int8_t>& refNumbers,
-                                        bool searchBackward = true, bool searchForward = true) const;
+    // GetPositionInGOP() returns true of it start a new IDR sequence.
+    bool GetPositionInGOP(GopState& gopState, GopPosition& gopPos,
+                          bool firstFrame = false, bool lastFrame = false) const {
 
+        gopPos = GopPosition(gopState.positionInInputOrder);
 
-    uint8_t GetPositionInGOP(uint8_t& positionInGopInDisplayOrder, FrameType& frameType,
-                             bool firstFrame = false, bool lastFrame = false) const {
+        if (firstFrame || ((m_idrPeriod > 0) &&
+                ((gopState.positionInInputOrder % m_idrPeriod) == 0))) {
 
-        frameType = GetFrameType(positionInGopInDisplayOrder, firstFrame, lastFrame);
-        if (frameType >= FRAME_TYPE_IDR) {
-            positionInGopInDisplayOrder = 1; // next frame
-            return 0;
+            gopPos.pictureType = FRAME_TYPE_IDR;
+            gopPos.inputOrder = 0;  // reset the IDR sequence
+            gopPos.flags |= FLAGS_IS_REF | FLAGS_CLOSE_GOP;
+            gopState.lastRefInInputOrder  = 0;
+            gopState.lastRefInEncodeOrder = 0;
+            gopState.positionInInputOrder = 1; // next frame value
+            return true;
         }
 
-        uint8_t currentPositionInGop = positionInGopInDisplayOrder++;
+        gopPos.inputOrder = gopState.positionInInputOrder;
 
-        return currentPositionInGop % m_idrPeriod;
-    }
+        // consecutiveBFrameCount can be modified before the IDR sequence
+        uint8_t consecutiveBFrameCount = m_consecutiveBFrameCount;
 
-    uint8_t GetFrameDecodeOrderPosition(uint64_t frameNumInDisplayOrder, bool useGopFrameCountPeriod = false) const {
+        if (lastFrame) {
+            // Last frame is always set to the m_lastFrameType
+            gopPos.pictureType = m_lastFrameType;
+        } else if ((gopState.positionInInputOrder % m_gopFrameCount) == 0) {
+            // This is the start of a new (open or close) GOP.
+            gopPos.pictureType = FRAME_TYPE_I;
+        } else if ((gopState.positionInInputOrder % (consecutiveBFrameCount + 1) == 0)) {
+            // This is A P or B frame based on m_consecutiveBFrameCount.
+            gopPos.pictureType = FRAME_TYPE_P;
+        } else if (consecutiveBFrameCount > 0) {
+            // This supposed to be a B frame, if we have a forward anchor
+            int32_t idrPeriodDelta = -1;
+            const int32_t refDelta = GetIdrRefDelta(gopState, idrPeriodDelta);
+            if ((refDelta > 0) && ((consecutiveBFrameCount + 1) >= refDelta)) {
+                // This are B frames before the IDR. We can't use B frames only here
+                // because we can't use the IDR frame as a forward reference anchor.
+                // So we need to introduce one extra I or P ref. frame just before the IDR.
 
-        uint8_t positionInGopInDecodeOrder = m_decodeOrderMap[frameNumInDisplayOrder % m_gopFrameCount].decodeOrder;
-        if (useGopFrameCountPeriod) {
-            return positionInGopInDecodeOrder;
+                // consecutiveBFrameCount is the refDelta minus prev ref minus
+                // the extra P ref at the end before the IDR
+                consecutiveBFrameCount = refDelta - 2;
+
+                if (idrPeriodDelta == 1) { // This is the last frame before the IDR
+                    // A promoted B-frame to a reference of type m_preIdrAnchorFrameType
+                    gopPos.pictureType = m_preIdrAnchorFrameType;
+                } else {
+                    // A modified B-frame from the GOP
+                    gopPos.pictureType = FRAME_TYPE_B;
+                }
+
+            } else {
+                // Just a regular B-frame from the GOP
+                gopPos.pictureType = FRAME_TYPE_B;
+            }
         }
-        uint8_t gopIndex = uint8_t(frameNumInDisplayOrder / m_idrPeriod);
-        uint8_t baseDecodeOrder = gopIndex * m_idrPeriod;
-        return baseDecodeOrder + positionInGopInDecodeOrder;
+
+        if (gopPos.pictureType == FRAME_TYPE_B) {
+            gopPos.encodeOrder = gopState.positionInInputOrder + 1;
+            gopPos.bFramePos = (int8_t)((gopState.positionInInputOrder % (consecutiveBFrameCount + 1)) - 1);
+            gopPos.numBFrames = consecutiveBFrameCount;
+        } else {
+
+            if (gopState.positionInInputOrder > consecutiveBFrameCount) {
+                gopPos.encodeOrder = gopState.positionInInputOrder - consecutiveBFrameCount;
+            } else {
+                gopPos.encodeOrder = gopState.positionInInputOrder;
+            }
+
+            gopPos.flags |= FLAGS_IS_REF;
+            gopState.lastRefInInputOrder  = gopState.positionInInputOrder;
+            gopState.lastRefInEncodeOrder = gopPos.encodeOrder;
+        }
+
+        gopPos.inGop = gopState.positionInInputOrder % m_gopFrameCount;
+        gopState.positionInInputOrder++;
+
+        return false;
     }
 
-    uint64_t GetFrameInDecodeOrder(uint64_t frameNumInDisplayOrder) const {
-            uint8_t positionInGOP = GetFrameDecodeOrderPosition(frameNumInDisplayOrder);
-            uint64_t gopIndex = frameNumInDisplayOrder / m_gopFrameCount;
-            uint64_t baseDecodeOrder = gopIndex * m_gopFrameCount;
-            return baseDecodeOrder + positionInGOP;
+    bool IsFrameReference(GopPosition& gopPos) const {
+
+        return ((gopPos.flags & FLAGS_IS_REF) != 0);
     }
 
-    bool IsFrameReference(uint64_t frameNumInDisplayOrder) const {
-        return (m_decodeOrderMap[frameNumInDisplayOrder % m_gopFrameCount].isReference == 1);
-    }
-
-    virtual void DumpFrameGopStructure(uint64_t frameNumInInputOrder,
+    virtual void DumpFrameGopStructure(GopState& gopState,
                                        bool firstFrame = false, bool lastFrame = false) const;
+
+    virtual void DumpFramesGopStructure(uint64_t firstFrameNumInInputOrder, uint64_t numFrames) const;
 
     virtual ~VkVideoGopStructure() {
 
     }
 
-protected:
-    virtual void ComputeDecodeOrderMap();
 private:
-    int8_t                m_gopFrameCount;
-    int8_t                m_idrPeriod;
-    int8_t                m_consecutiveBFrameCount;
-    int8_t                m_gopFrameCycle;
-    int8_t                m_temporalLayerCount;
+    uint8_t               m_gopFrameCount;
+    uint8_t               m_consecutiveBFrameCount;
+    uint8_t               m_gopFrameCycle;
+    uint8_t               m_temporalLayerCount;
+    uint32_t              m_idrPeriod; // 0 means unlimited GOP with no IDRs.
     FrameType             m_lastFrameType;
-    std::vector<GopEntry> m_decodeOrderMap;
+    FrameType             m_preIdrAnchorFrameType;
 };
 #endif /* _VKVIDEOENCODER_VKVIDEOGOPSTRUCTURE_H_ */

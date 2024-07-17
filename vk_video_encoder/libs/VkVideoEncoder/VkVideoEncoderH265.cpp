@@ -123,18 +123,18 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     uint32_t numRefL0 = m_encoderConfig->numRefL0;
     uint32_t numRefL1 = m_encoderConfig->numRefL1;
 
-    if ((encodeFrameInfo->pictureType == VkVideoGopStructure::FRAME_TYPE_P) ||
-        (encodeFrameInfo->pictureType == VkVideoGopStructure::FRAME_TYPE_B)) {
+    if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_P) ||
+        (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B)) {
 
         numRefL0 = (numRefL0 == 0) ? 1 : numRefL0;
 
-        if (encodeFrameInfo->pictureType == VkVideoGopStructure::FRAME_TYPE_B) {
+        if (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B) {
             numRefL1 = (numRefL1 == 0) ? 1 : numRefL1;
         }
     }
 
     m_dpb.ReferencePictureMarking(encodeFrameInfo->picOrderCntVal,
-                                  (StdVideoH265PictureType)encodeFrameInfo->pictureType,
+                                  (StdVideoH265PictureType)encodeFrameInfo->gopPosition.pictureType,
                                   m_sps.sps.flags.long_term_ref_pics_present_flag);
 
 
@@ -180,10 +180,10 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
                                                  &refPicSet);
     assert(targetDpbSlot >= 0);
 
-    if ((encodeFrameInfo->pictureType == VkVideoGopStructure::FRAME_TYPE_P) ||
-        (encodeFrameInfo->pictureType == VkVideoGopStructure::FRAME_TYPE_B)) {
+    if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_P) ||
+        (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B)) {
 
-        m_dpb.SetupReferencePictureListLx((StdVideoH265PictureType)encodeFrameInfo->pictureType, &refPicSet,
+        m_dpb.SetupReferencePictureListLx((StdVideoH265PictureType)encodeFrameInfo->gopPosition.pictureType, &refPicSet,
                                           &pFrameInfo->stdReferenceListsInfo, numRefL0, numRefL1);
 
         pFrameInfo->stdPictureInfo.pRefLists = &pFrameInfo->stdReferenceListsInfo;
@@ -219,8 +219,8 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     }
     pFrameInfo->numDpbImageResources = numReferenceSlots;
 
-    if ((encodeFrameInfo->pictureType == VkVideoGopStructure::FRAME_TYPE_P) ||
-            (encodeFrameInfo->pictureType == VkVideoGopStructure::FRAME_TYPE_B)) {
+    if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_P) ||
+            (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B)) {
 
         for (uint32_t i = 0; i <= pFrameInfo->stdReferenceListsInfo.num_ref_idx_l0_active_minus1; i++) {
 
@@ -246,7 +246,7 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         pFrameInfo->numDpbImageResources = numReferenceSlots;
 
         // TODO: iterate over L1 when coding B-frames
-        if (encodeFrameInfo->pictureType == VkVideoGopStructure::FRAME_TYPE_B) {
+        if (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B) {
             for (uint32_t i = 0; i <= pFrameInfo->stdReferenceListsInfo.num_ref_idx_l1_active_minus1; i++) {
 
                 uint8_t dpbIndex = pFrameInfo->stdReferenceListsInfo.RefPicList1[i];
@@ -358,33 +358,30 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     encodeFrameInfo->frameEncodeOrderNum = m_encodeFrameNum++;
 
-    encodeFrameInfo->positionInGopInDisplayOrder = m_encoderConfig->gopStructure.GetPositionInGOP(m_positionInGopInDisplayOrder,
-                                                                                                  encodeFrameInfo->pictureType,
-                                                                                                 (encodeFrameInfo->frameEncodeOrderNum == 0),
-                                                                                                  encodeFrameInfo->lastFrame);
+    bool isIdr = m_encoderConfig->gopStructure.GetPositionInGOP(m_gopState,
+                                                                encodeFrameInfo->gopPosition,
+                                                                (encodeFrameInfo->frameEncodeOrderNum == 0),
+                                                                encodeFrameInfo->lastFrame);
 
-    if (encodeFrameInfo->frameEncodeOrderNum == 0) {
-        assert(encodeFrameInfo->pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
+    if (isIdr) {
+        assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
     }
-    const bool isIdr = ((encodeFrameInfo->pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) ||
-                        (encodeFrameInfo->pictureType == VkVideoGopStructure::FRAME_TYPE_INTRA_REFRESH));
-    const bool isReference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->frameEncodeOrderNum);
+    const bool isReference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
 
-    encodeFrameInfo->picOrderCntVal = encodeFrameInfo->positionInGopInDisplayOrder;
-    encodeFrameInfo->positionInGopInDecodeOrder = m_encoderConfig->gopStructure.GetFrameDecodeOrderPosition(encodeFrameInfo->positionInGopInDisplayOrder);
+    encodeFrameInfo->picOrderCntVal = encodeFrameInfo->gopPosition.inputOrder;
 
     if (m_encoderConfig->verboseFrameStruct) {
-        std::cout << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->pictureType)
-                  << " inputOrderNum: "  << (int)encodeFrameInfo->frameEncodeOrderNum
-                  << " encodeFrameNum: " << (int)encodeFrameInfo->frameEncodeOrderNum
-                  << " display order: "  << (int)encodeFrameInfo->positionInGopInDisplayOrder
-                  << " decode order: "   << (int)encodeFrameInfo->positionInGopInDecodeOrder
-                  << " picOrderCntVal: " << (int)encodeFrameInfo->picOrderCntVal
+        std::cout << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
+                  << " inputOrderNum: "  << encodeFrameInfo->frameEncodeOrderNum
+                  << " encodeFrameNum: " << encodeFrameInfo->frameEncodeOrderNum
+                  << " input order: "  << encodeFrameInfo->gopPosition.inputOrder
+                  << " encode order: "   << encodeFrameInfo->gopPosition.encodeOrder
+                  << " picOrderCntVal: " << encodeFrameInfo->picOrderCntVal
                   << std::endl << std::flush;
 
         if (encodeFrameInfo->lastFrame) {
             std::cout << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
-                      << " of type " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->pictureType)
+                      << " of type " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
                       << " ###"
                       << std::endl << std::flush;
         }
@@ -428,7 +425,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     StdVideoH265PictureType stdPictureType = STD_VIDEO_H265_PICTURE_TYPE_INVALID;
     StdVideoH265SliceType sliceType = STD_VIDEO_H265_SLICE_TYPE_I;
-    switch (encodeFrameInfo->pictureType) {
+    switch (encodeFrameInfo->gopPosition.pictureType) {
         case VkVideoGopStructure::FRAME_TYPE_P:
             stdPictureType = STD_VIDEO_H265_PICTURE_TYPE_P;
             sliceType = STD_VIDEO_H265_SLICE_TYPE_P;
@@ -470,7 +467,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     pFrameInfo->stdSliceSegmentHeader.flags.slice_loop_filter_across_slices_enabled_flag = 0;
 
     if (m_rateControlInfo.rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR) {
-        switch (encodeFrameInfo->pictureType) {
+        switch (encodeFrameInfo->gopPosition.pictureType) {
             case VkVideoGopStructure::FRAME_TYPE_IDR:
             case VkVideoGopStructure::FRAME_TYPE_I:
                 pFrameInfo->naluSliceSegmentInfo.constantQp = encodeFrameInfo->constQp.qpIntra;
@@ -489,8 +486,8 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     pFrameInfo->stdPictureInfo.flags.is_reference = isReference;
     pFrameInfo->stdPictureInfo.flags.short_term_ref_pic_set_sps_flag = 1;
-    pFrameInfo->stdPictureInfo.flags.IrapPicFlag = ((encodeFrameInfo->pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) ||
-                                                    (encodeFrameInfo->pictureType == VkVideoGopStructure::FRAME_TYPE_I)) ? 1 : 0;
+    pFrameInfo->stdPictureInfo.flags.IrapPicFlag = ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) ||
+                                                    (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_I)) ? 1 : 0;
     pFrameInfo->stdPictureInfo.flags.pic_output_flag = 1;
     pFrameInfo->stdPictureInfo.flags.no_output_of_prior_pics_flag = isIdr ? 1 : 0;
     pFrameInfo->stdPictureInfo.pic_type = stdPictureType;
@@ -504,7 +501,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         HandleCtrlCmd(encodeFrameInfo);
     }
 
-    const bool preFlushQueue = isIdr || (encodeFrameInfo->positionInGopInDecodeOrder == 0);
+    const bool preFlushQueue = isIdr;
     const bool postFlushQueue = encodeFrameInfo->lastFrame | isReference;
     EnqueueFrame(encodeFrameInfo, preFlushQueue, postFlushQueue);
     return result;
