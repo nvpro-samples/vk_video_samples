@@ -515,9 +515,9 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
             // hotspot end
         }
     }
-    m_BitBfr = (pdatain[i-2] << 8) | pdatain[i-1];
+    m_BitBfr = (pdatain[datasize-2] << 8) | pdatain[datasize-1];
     found_start_code = ((m_BitBfr & 0x00ffffff) == 1);
-    return i;
+    return datasize;
 }
 #undef SVE_REGISTER_MAX_BYTES
 #endif
