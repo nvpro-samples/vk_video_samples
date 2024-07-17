@@ -464,7 +464,10 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
     size_t i = 0;
     {
         const int lanes = (int)svcntb();
-        svuint8 vdata = svld1_u8(pdatain);
+        svbool_t pred = svptrue_b8();
+        svbool_t pred_next = svptrue_b8();
+
+        svuint8 vdata = svld1_u8(pred, pdatain);
         svuint8 vBfr = svreinterpret_u8_u16(svdup_n_u16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF)));
         svuint8 vdata_prev1 = svext_u8(vBfr, vdata, lanes-1);
         svuint8 vdata_prev2 = svext_u8(vBfr, vdata, lanes-2);
@@ -478,10 +481,7 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
             }
             isArrayFilled = 1;
         }
-        svuint8 v0n = svld1_u8(data0n);
-
-        svbool_t pred = svptrue_b8();
-        svbool_t pred_next = svptrue_b8();
+        svuint8 v0n = svld1_u8(pred, data0n);
 
         for ( ; i < datasize; i += lanes)
         {
@@ -498,7 +498,7 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
                 return offset + i + 1;
             }
             // hotspot begin
-            pred_next = svwhilelt_b8(i + lanes, datasize); // assume 2 cntdb'es excecute in parallalel
+            pred_next = svwhilelt_b8_u64(i + lanes, datasize); // assume 2 cntdb'es excecute in parallalel
             svuint8 vdata_next = svld1_u8(pred_next, &pdatain[i + lanes]);
             vdata_prev1 = svext_u8(vdata, vdata_next, lanes-1);
             vdata_prev2 = svext_u8(vdata, vdata_next, lanes-2);
