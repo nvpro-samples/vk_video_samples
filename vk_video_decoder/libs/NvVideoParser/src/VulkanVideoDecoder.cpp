@@ -493,6 +493,7 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
             if (resmask)
             {
                 const size_t offset = svminv_u8(vmask, v0n);
+                found_start_code = true;
                 m_BitBfr =  1;
                 return offset + i + 1;
             }
