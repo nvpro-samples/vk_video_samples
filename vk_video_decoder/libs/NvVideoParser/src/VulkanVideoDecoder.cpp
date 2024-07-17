@@ -463,14 +463,14 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
 {
     size_t i = 0;
     {
-        const int lanes = (int)svcntb();
-        svbool_t pred = svptrue_b8();
-        svbool_t pred_next = svptrue_b8();
+        static const int lanes = (int)svcntb();
 
-        svuint8 vdata = svld1_u8(pred, pdatain);
-        svuint8 vBfr = svreinterpret_u8_u16(svdup_n_u16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF)));
-        svuint8 vdata_prev1 = svext_u8(vBfr, vdata, lanes-1);
-        svuint8 vdata_prev2 = svext_u8(vBfr, vdata, lanes-2);
+        svbool_t pred = svwhilelt_b8_u64(i, datasize);
+        svbool_t pred_next = svpfalse_b();
+
+        svuint8_t vdata = svld1_u8(pred, pdatain);
+        ssvuint8 vBfr = svreinterpret_u8_u16(svdup_n_u16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF)));
+
         static uint8_t data0n[SVE_REGISTER_MAX_BYTES];
         static uint8_t isArrayFilled = 0;
         if (!isArrayFilled)
@@ -481,27 +481,35 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
             }
             isArrayFilled = 1;
         }
-        svuint8 v0n = svld1_u8(pred, data0n);
+        svuint8_t v0n = svld1_u8(pred, data0n);
+
+        const svbool_t vext15_mask = svcmpge_n_u8(svptrue_b8(), v0n, lanes-1);
+        const svbool_t vext14_mask = svcmpge_n_u8(svptrue_b8(), v0n, lanes-2);
+        svuint8_t vdata_prev1 = svsplice_u8(vext15_mask, vBfr, vdata); //svext_u8(vdata, vdata_next, lanes-1);
+        svuint8_t vdata_prev2 = svsplice_u8(vext14_mask, vBfr, vdata); //svext_u8(vdata, vdata_next, lanes-2);
 
         for ( ; i < datasize; i += lanes)
         {
             // hotspot begin
-            svuint8 vdata_prev1or2 = svorr_u8_z(pred, vdata_prev2, vdata_prev1);
+            svuint8_t vdata_prev1or2 = svorr_u8_z(pred, vdata_prev2, vdata_prev1);
             svbool_t vmask = svcmpeq_n_u8(svcmpeq_n_u8(pred, vdata_prev1or2, 0), vdata, 1);
+            const size_t offset = svminv_u8(vmask, v0n);
 
-            uint64_t resmask = svmaxv_u8(pred, vmask);
-            if (resmask)
+            if (offset < lanes)
             {
-                const size_t offset = svminv_u8(vmask, v0n);
+              if (svmaxv_u8(vmask, v0n)) // check for the rare case when hw has 2048 bit-width register, and vminv_u8 false predicated val
+                                        // can overlap with 255-th lane order number, but inside this scope it doesn't affect performance
+              {
                 found_start_code = true;
                 m_BitBfr =  1;
                 return offset + i + 1;
+              }
             }
             // hotspot begin
-            pred_next = svwhilelt_b8_u64(i + lanes, datasize); // assume 2 cntdb'es excecute in parallalel
-            svuint8 vdata_next = svld1_u8(pred_next, &pdatain[i + lanes]);
-            vdata_prev1 = svext_u8(vdata, vdata_next, lanes-1);
-            vdata_prev2 = svext_u8(vdata, vdata_next, lanes-2);
+            pred_next = svwhilelt_b8_u64(i + lanes, datasize);
+            svuint8_t vdata_next = svld1_u8(pred_next, &pdatain[i + lanes]);
+            vdata_prev1 = svsplice_u8(vext15_mask, vdata, vdata_next); //svext_u8(vdata, vdata_next, lanes-1);
+            vdata_prev2 = svsplice_u8(vext14_mask, vdata, vdata_next); //svext_u8(vdata, vdata_next, lanes-2);
             pred = pred_next;
             vdata = vdata_next;
             // hotspot end
