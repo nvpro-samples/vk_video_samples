@@ -493,17 +493,14 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
             // hotspot begin
             svuint8_t vdata_prev1or2 = svorr_u8_z(pred, vdata_prev2, vdata_prev1);
             svbool_t vmask = svcmpeq_n_u8(svcmpeq_n_u8(pred, vdata_prev1or2, 0), vdata, 1);
-            const size_t offset = svminv_u8(vmask, v0n);
+            const size_t resmask = svmaxv_u8(vmask, v0n);
 
-            if (offset < lanes)
+            if (resmask)
             {
-              if (svmaxv_u8(vmask, v0n)) // check for the rare case when hw has 2048 bit-width register, and vminv_u8 false predicated val
-                                        // can overlap with 255-th lane order number, but inside this scope it doesn't affect performance
-              {
-                found_start_code = true;
-                m_BitBfr =  1;
-                return offset + i + 1;
-              }
+              const size_t offset = svminv_u8(vmask, v0n);
+              found_start_code = true;
+              m_BitBfr =  1;
+              return offset + i + 1;
             }
             // hotspot begin
             pred_next = svwhilelt_b8_u64(i + lanes, datasize);
