@@ -464,8 +464,6 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
     size_t i = 0;
     {
         const unsigned int lanes = svlen(svuint8_t());
-        const svuint8 v0 = svdup_n_u8(0);
-        const svuint8 v1 = svdup_n_u8(1);
         svuint8 vdata = svld1_u8(pdatain);
         svuint8 vBfr = svreinterpret_u8_u16(svdup_n_u16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF)));
         svuint8 vdata_prev1 = svext_u8(vBfr, vdata, lanes-1);
@@ -477,27 +475,29 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
         }
         svuint8 v0n = svld1_u8(data0n);
 
+        svbool_t pred = svptrue_b8();
+        svbool_t pred_next = svptrue_b8();
+
         for ( ; i < datasize; i += lanes)
         {
-            const svbool_t pred = svwhilelt_b8(i, datasize); // assume 2 cntdb'es excecute in parallalel
-            const svbool_t pred_next = svwhilelt_b8(i, datasize-lanes); // TODO: remove svwhilelt_b8 (currently prefer code size to performance)
             // hotspot begin
-            svuint8 vdata_prev1or2 = svorr_u8_m(pred, vdata_prev2, vdata_prev1);
-            svuint8 vmask = svcmpeq_u8(svand_u8_m(pred, svcmpeq_u8(vdata_prev1or2, v0), vdata), v1);
+            svuint8 vdata_prev1or2 = svorr_u8_z(pred, vdata_prev2, vdata_prev1);
+            svbool_t vmask = svcmpeq_n_u8(svcmpeq_n_u8(pred, vdata_prev1or2, 0), vdata, 1);
 
             uint64_t resmask = svmaxv_u8(pred, vmask);
             if (resmask)
             {
-                svuint8 v0nmask = svbsl_u8(vmask, v0n, svdup_n_u8(UINT8_MAX));
-                const size_t offset = svminv_u8(pred, v0nmask);
+                const size_t offset = svminv_u8(vmask, v0n);
                 found_start_code = true;
                 m_BitBfr =  1;
                 return offset + i + 1;
             }
             // hotspot begin
+            pred_next = svwhilelt_b8(i + lanes, datasize); // assume 2 cntdb'es excecute in parallalel
             svuint8 vdata_next = svld1_u8(pred_next, &pdatain[i + lanes]);
             vdata_prev1 = svext_u8(vdata, vdata_next, lanes-1);
             vdata_prev2 = svext_u8(vdata, vdata_next, lanes-2);
+            pred = pred_next;
             vdata = vdata_next;
             // hotspot end
         }
