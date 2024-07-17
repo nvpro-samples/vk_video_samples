@@ -489,10 +489,10 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
             svuint8 vdata_prev1or2 = svorr_u8_z(pred, vdata_prev2, vdata_prev1);
             svbool_t vmask = svcmpeq_n_u8(svcmpeq_n_u8(pred, vdata_prev1or2, 0), vdata, 1);
 
-            const size_t offset = svminv_u8(vmask, v0n); // it's the same to calculate offset at once as reducing the check mask
-            if (offset < UINT8_MAX)
+            uint64_t resmask = svmaxv_u8(pred, vmask);
+            if (resmask)
             {
-                found_start_code = true;
+                const size_t offset = svminv_u8(vmask, v0n);
                 m_BitBfr =  1;
                 return offset + i + 1;
             }
