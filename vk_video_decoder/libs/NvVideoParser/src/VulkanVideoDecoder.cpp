@@ -468,10 +468,15 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
         svuint8 vBfr = svreinterpret_u8_u16(svdup_n_u16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF)));
         svuint8 vdata_prev1 = svext_u8(vBfr, vdata, lanes-1);
         svuint8 vdata_prev2 = svext_u8(vBfr, vdata, lanes-2);
-        uint8_t data0n[SVE_REGISTER_MAX_BYTES/sizeof(uint8_t)];
-        for (int idx = 0; idx < lanes; idx++)
+        static uint8_t data0n[SVE_REGISTER_MAX_BYTES];
+        static uint8_t isArrayFilled = 0;
+        if (!isArrayFilled)
         {
-            data0n[idx] = idx;
+            for (int idx = 0; idx < lanes; idx++)
+            {
+                data0n[idx] = idx;
+            }
+            isArrayFilled = 1;
         }
         svuint8 v0n = svld1_u8(data0n);
 
@@ -484,10 +489,9 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
             svuint8 vdata_prev1or2 = svorr_u8_z(pred, vdata_prev2, vdata_prev1);
             svbool_t vmask = svcmpeq_n_u8(svcmpeq_n_u8(pred, vdata_prev1or2, 0), vdata, 1);
 
-            uint64_t resmask = svmaxv_u8(pred, vmask);
-            if (resmask)
+            const size_t offset = svminv_u8(vmask, v0n); // it's the same to calculate offset at once as reducing the check mask
+            if (offset < UINT8_MAX)
             {
-                const size_t offset = svminv_u8(vmask, v0n);
                 found_start_code = true;
                 m_BitBfr =  1;
                 return offset + i + 1;
