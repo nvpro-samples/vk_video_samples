@@ -463,7 +463,7 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
 {
     size_t i = 0;
     {
-        const unsigned int lanes = svlen_u8(svundef_u8());
+        const int lanes = (int)svcntb();
         svuint8 vdata = svld1_u8(pdatain);
         svuint8 vBfr = svreinterpret_u8_u16(svdup_n_u16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF)));
         svuint8 vdata_prev1 = svext_u8(vBfr, vdata, lanes-1);
