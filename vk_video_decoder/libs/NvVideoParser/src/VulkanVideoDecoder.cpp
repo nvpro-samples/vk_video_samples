@@ -469,7 +469,7 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
         svbool_t pred_next = svpfalse_b();
 
         svuint8_t vdata = svld1_u8(pred, pdatain);
-        ssvuint8 vBfr = svreinterpret_u8_u16(svdup_n_u16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF)));
+        svuint8 vBfr = svreinterpret_u8_u16(svdup_n_u16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF)));
 
         static uint8_t data0n[SVE_REGISTER_MAX_BYTES];
         static uint8_t isArrayFilled = 0;
