@@ -34,6 +34,7 @@ set(LIBNVPARSER
   src/VulkanH265Parser.cpp
   src/VulkanVideoDecoder.cpp
   src/nvVulkanh264ScalingList.cpp
+  src/cpudetect.cpp
 )
 
 include_directories(BEFORE "${CMAKE_CURRENT_LIST_DIR}/../")

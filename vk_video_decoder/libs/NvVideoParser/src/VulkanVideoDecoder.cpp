@@ -290,7 +290,7 @@ static int inline count_trailing_zeros(uint64_t resmask)
     return offset;
 }
 
-#if defined(__AVX512BW__) && defined(__AVX512F__) && defined(__AVX512VL__)
+#if defined(__x86_64__) || defined(_M_X64)
 size_t VulkanVideoDecoder::next_start_code_avx512(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
@@ -347,9 +347,7 @@ size_t VulkanVideoDecoder::next_start_code_avx512(const uint8_t *pdatain, size_t
     found_start_code = ((bfr & 0x00ffffff) == 1);
     return i;
 }
-#endif
 
-#if defined(__AVX2__)
 size_t VulkanVideoDecoder::next_start_code_avx2(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
@@ -402,9 +400,7 @@ size_t VulkanVideoDecoder::next_start_code_avx2(const uint8_t *pdatain, size_t d
     found_start_code = ((bfr & 0x00ffffff) == 1);
     return i;
 }
-#endif
 
-#if defined(__SSSE3__)
 size_t VulkanVideoDecoder::next_start_code_ssse3(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
@@ -457,7 +453,7 @@ size_t VulkanVideoDecoder::next_start_code_ssse3(const uint8_t *pdatain, size_t 
 }
 #endif
 
-#if defined(__ARM_FEATURE_SVE) // TODO: tymur: check SVE version compilation and run on  armv9/armv8.2+sve device
+#if defined (__aarch64__) || defined(_M_ARM64) // TODO: tymur: check SVE version compilation and run on  armv9/armv8.2+sve device
 #define SVE_REGISTER_MAX_BYTES 256 // 2048 bits
 size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
@@ -517,9 +513,7 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
     return datasize;
 }
 #undef SVE_REGISTER_MAX_BYTES
-#endif
-
-#if defined (__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
+//#elif defined (__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
 size_t VulkanVideoDecoder::next_start_code_neon(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
@@ -603,7 +597,7 @@ size_t VulkanVideoDecoder::next_start_code(const uint8_t *pdatain, size_t datasi
     return next_start_code_avx2(pdatain, datasize, found_start_code);
 #elif defined(__SSSE3__)
     // printf("SSE42");
-    return next_start_code_sse42(pdatain, datasize, found_start_code);
+    return next_start_code_ssse3(pdatain, datasize, found_start_code);
 #else
     // printf("Scalar");
     return next_start_code_c(pdatain, datasize, found_start_code);
