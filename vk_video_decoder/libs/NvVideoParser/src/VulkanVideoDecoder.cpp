@@ -357,7 +357,7 @@ size_t VulkanVideoDecoder::next_start_code_avx2(const uint8_t *pdatain, size_t d
     if (datasize64 > 64)
     {
         const __m256i v1 = _mm256_set1_epi8(1);
-        __m256i vdata = _mm256_loadu_epi8(pdatain);
+        __m256i vdata = _mm256_loadu_si256((__m256i*)pdatain);
         __m256i vBfr = _mm256_set1_epi16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF));
         __m256i vdata_alignr16b_init = _mm256_permute2f128_si256(vdata, vBfr,  2);
         __m256i vdata_prev1 = _mm256_alignr_epi8(vdata, vdata_alignr16b_init, 15);
@@ -379,7 +379,7 @@ size_t VulkanVideoDecoder::next_start_code_avx2(const uint8_t *pdatain, size_t d
                     return offset + i + c + 1;
                 }
                 // hotspot begin
-                __m256i vdata_next = _mm256_loadu_epi8(&pdatain[i + c + 32]); // 7-8 clocks
+                __m256i vdata_next = _mm256_loadu_si256((__m256i*)&pdatain[i + c + 32]); // 7-8 clocks
                 __m256i vdata_alignr16b_next = _mm256_permute2f128_si256(vdata_next, vdata, 1+(2<<4));
                 vdata_prev1 = _mm256_alignr_epi8(vdata_next, vdata_alignr16b_next, 15);
                 vdata_prev2 = _mm256_alignr_epi8(vdata_next, vdata_alignr16b_next, 14);
@@ -404,15 +404,15 @@ size_t VulkanVideoDecoder::next_start_code_avx2(const uint8_t *pdatain, size_t d
 }
 #endif
 
-#if defined(__SSE2__)
-size_t VulkanVideoDecoder::next_start_code_sse42(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+#if 1
+size_t VulkanVideoDecoder::next_start_code_ssse3(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
     size_t datasize32 = (datasize >> 5) << 5;
     if (datasize32 > 32)
     {
         const __m128i v1 = _mm_set1_epi8(1);
-        __m128i vdata = _mm_loadu_epi8(pdatain);
+        __m128i vdata = _mm_loadu_si128((__m128i*)pdatain);
         __m128i vBfr = _mm_set1_epi16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF));
         __m128i vdata_prev1 = _mm_alignr_epi8(vdata, vBfr, 15);
         __m128i vdata_prev2 = _mm_alignr_epi8(vdata, vBfr, 14);
@@ -433,7 +433,7 @@ size_t VulkanVideoDecoder::next_start_code_sse42(const uint8_t *pdatain, size_t 
                     return offset + i + c + 1;
                 }
                 // hotspot begin
-                __m128i vdata_next = _mm_loadu_epi8(&pdatain[i + c + 16]);
+                __m128i vdata_next = _mm_loadu_si128((__m128i*)&pdatain[i + c + 16]);
                 vdata_prev1 = _mm_alignr_epi8(vdata_next, vdata, 15);
                 vdata_prev2 = _mm_alignr_epi8(vdata_next, vdata, 14);
                 vdata = vdata_next;
@@ -601,7 +601,7 @@ size_t VulkanVideoDecoder::next_start_code(const uint8_t *pdatain, size_t datasi
 #elif defined(__AVX2__)
     // printf("AVX2");
     return next_start_code_avx2(pdatain, datasize, found_start_code);
-#elif defined(__SSE4_2__)
+#elif defined(__SSSE3__)
     // printf("SSE42");
     return next_start_code_sse42(pdatain, datasize, found_start_code);
 #else
