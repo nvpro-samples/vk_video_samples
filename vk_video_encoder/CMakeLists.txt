@@ -81,6 +81,52 @@ else()
 endif()
 ############ VULKAN_VIDEO_APIS_INCLUDE ######################################
 
+############ VULKAN_VIDEO_ENCODER_INCLUDE ######################################
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libs/VkVideoEncoder")
+    set(LIBVKVIDEOENCODER_BINARY_ROOT "${CMAKE_BINARY_DIR}/libs" CACHE STRING "User defined path to the the encoder library binaries for this project")
+else()
+   set(LIBVKVIDEOENCODER_BINARY_ROOT "${VULKAN_VIDEO_TESTS_SOURCE_DIR}/bin/libs/vk_video_encoder/${LIB_ARCH_DIR}" CACHE STRING "User defined path to the the encoder library binaries for this project")
+endif()
+message(STATUS "LIBVKVIDEOENCODER_BINARY_ROOT is at ${LIBVKVIDEOENCODER_BINARY_ROOT}" )
+
+if (DEFINED ENV{VULKAN_VIDEO_ENCODER_INCLUDE_PATH})
+    MESSAGE(STATUS "VULKAN_VIDEO_ENCODER_INCLUDE_PATH ENV VAR is set to $ENV{VULKAN_VIDEO_ENCODER_INCLUDE_PATH}")
+    set(VULKAN_VIDEO_ENCODER_INCLUDE  "$ENV{VULKAN_VIDEO_ENCODER_INCLUDE_PATH}" CACHE PATH "Path to Vulkan Video Encoder include directory" FORCE)
+else()
+    set(VULKAN_VIDEO_ENCODER_INCLUDE  "${VULKAN_VIDEO_ENCODER_INCLUDE}" CACHE PATH "Path to Vulkan Video Encoder include directory")
+endif()
+
+if (EXISTS "${VULKAN_VIDEO_ENCODER_INCLUDE}")
+    MESSAGE(STATUS "VULKAN_VIDEO_ENCODER_INCLUDE is set and valid ${VULKAN_VIDEO_ENCODER_INCLUDE}")
+else()
+    MESSAGE(STATUS "VULKAN_VIDEO_ENCODER_INCLUDE path is not set. Setting the default path location to ${CMAKE_CURRENT_SOURCE_DIR}/include")
+    set(VULKAN_VIDEO_ENCODER_INCLUDE  "${CMAKE_CURRENT_SOURCE_DIR}/include" CACHE PATH "Path to Vulkan Video Encoder include directory" FORCE)
+endif()
+############ VULKAN_VIDEO_ENCODER_INCLUDE ######################################
+
+############ VULKAN_VIDEO_ENCODER_LIB_PATH ######################################
+if (DEFINED ENV{VULKAN_VIDEO_ENCODER_LIB_DIR_PATH})
+    MESSAGE(STATUS "VULKAN_VIDEO_ENCODER_LIB_DIR_PATH ENV VAR is set to $ENV{VULKAN_VIDEO_ENCODER_LIB_DIR_PATH}")
+    set(VULKAN_VIDEO_ENCODER_LIB_PATH  "$ENV{VULKAN_VIDEO_ENCODER_LIB_DIR_PATH}" CACHE PATH "Path to Vulkan Video Encoder library directory" FORCE)
+else()
+    set(VULKAN_VIDEO_ENCODER_LIB_PATH  "${LIBVKVIDEOENCODER_BINARY_ROOT}" CACHE PATH "Path to Vulkan Video Encoder library directory")
+endif()
+
+set(VULKAN_VIDEO_ENCODER_LIB vkvideo-encoder CACHE PATH "The name of Vulkan Video Encoder library")
+set(VULKAN_VIDEO_ENCODER_STATIC_LIB vkvideo-encoder-static CACHE PATH "The name of Vulkan Video Encoder library")
+set(VULKAN_VIDEO_ENCODER_LIB_VERSION 1 CACHE PATH "The version of Vulkan Video Encoder library")
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libs/VkVideoEncoder")
+
+else()
+    if (EXISTS "${VULKAN_VIDEO_ENCODER_LIB_PATH}")
+        message(STATUS "Trying to find Vulkan Video Encoder library at ${VULKAN_VIDEO_ENCODER_LIB_PATH}" )
+        find_library(VULKAN_VIDEO_ENCODER_LIB_WITH_PATH NAMES ${VULKAN_VIDEO_ENCODER_LIB} PATHS ${VULKAN_VIDEO_ENCODER_LIB_PATH})
+        message(STATUS "Vulkan Video Encoder Lib: ${VULKAN_VIDEO_ENCODER_LIB_WITH_PATH}" )
+    endif()
+endif()
+############ VULKAN_VIDEO_ENCODER_LIB_PATH ######################################
+
+############ VULKAN_VIDEO_PARSER_INCLUDE ######################################
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../vk_video_decoder/libs/NvVideoParser")
     set(LIBNVPARSER_BINARY_ROOT "${CMAKE_BINARY_DIR}/libs/NvVideoParser" CACHE STRING "User defined path to the the parser library binaries for this project")
 else()
@@ -88,7 +134,6 @@ else()
 endif()
 message(STATUS "LIBNVPARSER_BINARY_ROOT is at ${LIBNVPARSER_BINARY_ROOT}" )
 
-############ VULKAN_VIDEO_PARSER_INCLUDE ######################################
 if (DEFINED ENV{VULKAN_VIDEO_PARSER_INCLUDE_PATH})
     MESSAGE(STATUS "VULKAN_VIDEO_PARSER_INCLUDE_PATH ENV VAR is set to $ENV{VULKAN_VIDEO_PARSER_INCLUDE_PATH}")
     set(VULKAN_VIDEO_PARSER_INCLUDE  "$ENV{VULKAN_VIDEO_PARSER_INCLUDE_PATH}" CACHE PATH "Path to Vulkan Video Parser include directory" FORCE)
@@ -633,6 +678,17 @@ else()
            PATTERN "*.def" EXCLUDE
            PATTERN "*.a" EXCLUDE)
 endif()
+
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libs")
+    add_subdirectory(libs)
+else()
+    install(DIRECTORY "${LIBVKVIDEOENCODER_BINARY_ROOT}/"
+            DESTINATION "${CMAKE_INSTALL_PREFIX}/bin"
+            PATTERN "*.def" EXCLUDE
+            PATTERN "*.a" EXCLUDE)
+endif()
+
+add_subdirectory(test/vulkan-video-enc)
 
 if(BUILD_DEMOS)
     add_subdirectory(demos)

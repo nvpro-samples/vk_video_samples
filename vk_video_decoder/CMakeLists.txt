@@ -81,6 +81,7 @@ else()
 endif()
 ############ VULKAN_VIDEO_APIS_INCLUDE ######################################
 
+############ VULKAN_VIDEO_PARSER_INCLUDE ######################################
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libs/NvVideoParser")
     set(LIBNVPARSER_BINARY_ROOT "${CMAKE_BINARY_DIR}/libs/NvVideoParser" CACHE STRING "User defined path to the the parser library binaries for this project")
 else()
@@ -88,7 +89,6 @@ else()
 endif()
 message(STATUS "LIBNVPARSER_BINARY_ROOT is at ${LIBNVPARSER_BINARY_ROOT}" )
 
-############ VULKAN_VIDEO_PARSER_INCLUDE ######################################
 if (DEFINED ENV{VULKAN_VIDEO_PARSER_INCLUDE_PATH})
     MESSAGE(STATUS "VULKAN_VIDEO_PARSER_INCLUDE_PATH ENV VAR is set to $ENV{VULKAN_VIDEO_PARSER_INCLUDE_PATH}")
     set(VULKAN_VIDEO_PARSER_INCLUDE  "$ENV{VULKAN_VIDEO_PARSER_INCLUDE_PATH}" CACHE PATH "Path to Vulkan Video Parser include directory" FORCE)

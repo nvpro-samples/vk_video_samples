@@ -26,7 +26,6 @@
 #include <string>
 
 #include "vulkan_interfaces.h"
-#include "vkvideo_parser/PictureBufferBase.h"
 #include "VkCodecUtils/HelpersDispatchTable.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
