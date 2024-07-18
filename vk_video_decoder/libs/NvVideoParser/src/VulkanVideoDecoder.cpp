@@ -404,7 +404,7 @@ size_t VulkanVideoDecoder::next_start_code_avx2(const uint8_t *pdatain, size_t d
 }
 #endif
 
-#if 1
+#if defined(__SSSE3__)
 size_t VulkanVideoDecoder::next_start_code_ssse3(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
