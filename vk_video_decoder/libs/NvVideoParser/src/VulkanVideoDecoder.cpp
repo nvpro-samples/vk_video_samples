@@ -454,7 +454,7 @@ size_t VulkanVideoDecoder::next_start_code_ssse3(const uint8_t *pdatain, size_t 
     return i;
 }
 
-#elif (__ARM_FEATURE_SVE==1) // TODO: tymur: check SVE version compilation and run on  armv9/armv8.2+sve device
+#elif defined(__ARM_FEATURE_SVE) // TODO: tymur: check SVE version compilation and run on  armv9/armv8.2+sve device
 #define SVE_REGISTER_MAX_BYTES 256 // 2048 bits
 size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
