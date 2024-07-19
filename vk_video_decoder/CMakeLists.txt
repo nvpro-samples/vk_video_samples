@@ -286,7 +286,7 @@ endif()
 if (ENABLE_AVX512 OR ENABLE_AVX2 OR ENABLE_SSSE3 OR ENABLE_SVE)
     message("ISA has been set explicity by user")
 elseif (UNIX)
-    EXECUTE_PROCESS(COMMAND cat /proc/cpuinfo COMMAND grep "flags" OUTPUT_VARIABLE SIMD OUTPUT_STRIP_TRAILING_WHITESPACE)
+    EXECUTE_PROCESS(COMMAND lscpu COMMAND grep "Flags:" OUTPUT_VARIABLE SIMD OUTPUT_STRIP_TRAILING_WHITESPACE)
     if (CMAKE_SYSTEM_PROCESSOR MATCHES "^x86_64")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native") # this should work correct for x86 targets on linux
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^aarch64")
