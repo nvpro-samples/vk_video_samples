@@ -290,7 +290,7 @@ static int inline count_trailing_zeros(uint64_t resmask)
     return offset;
 }
 
-#if defined(__AVX512__)
+#if defined(__AVX512BW__) && defined(__AVX512F__) && defined(__AVX512VL__)
 size_t VulkanVideoDecoder::next_start_code_avx512(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
