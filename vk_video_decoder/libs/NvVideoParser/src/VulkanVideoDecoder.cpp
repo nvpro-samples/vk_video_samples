@@ -290,7 +290,7 @@ static int inline count_trailing_zeros(uint64_t resmask)
     return offset;
 }
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if defined(__AVX512__)
 size_t VulkanVideoDecoder::next_start_code_avx512(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
@@ -347,6 +347,7 @@ size_t VulkanVideoDecoder::next_start_code_avx512(const uint8_t *pdatain, size_t
     found_start_code = ((bfr & 0x00ffffff) == 1);
     return i;
 }
+#elif defined(__AVX2__)
 
 size_t VulkanVideoDecoder::next_start_code_avx2(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
@@ -400,6 +401,7 @@ size_t VulkanVideoDecoder::next_start_code_avx2(const uint8_t *pdatain, size_t d
     found_start_code = ((bfr & 0x00ffffff) == 1);
     return i;
 }
+#elif defined(__SSSE3__)
 
 size_t VulkanVideoDecoder::next_start_code_ssse3(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
@@ -451,9 +453,8 @@ size_t VulkanVideoDecoder::next_start_code_ssse3(const uint8_t *pdatain, size_t 
     found_start_code = ((bfr & 0x00ffffff) == 1);
     return i;
 }
-#endif
 
-#if defined (__aarch64__) || defined(_M_ARM64) // TODO: tymur: check SVE version compilation and run on  armv9/armv8.2+sve device
+#elif (__ARM_FEATURE_SVE==1) // TODO: tymur: check SVE version compilation and run on  armv9/armv8.2+sve device
 #define SVE_REGISTER_MAX_BYTES 256 // 2048 bits
 size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
@@ -513,7 +514,8 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
     return datasize;
 }
 #undef SVE_REGISTER_MAX_BYTES
-//#elif defined (__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
+#elif defined (__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
+
 size_t VulkanVideoDecoder::next_start_code_neon(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
