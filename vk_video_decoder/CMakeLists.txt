@@ -284,7 +284,7 @@ elseif(WIN32)
 endif()
 
 if (ENABLE_AVX512 OR ENABLE_AVX2 OR ENABLE_SSSE3 OR ENABLE_SVE)
-    message("ISA has been set mannualy")
+    message("ISA has been set explicity by user")
 elseif (UNIX)
     EXECUTE_PROCESS(COMMAND cat /proc/cpuinfo COMMAND grep "flags" OUTPUT_VARIABLE SIMD OUTPUT_STRIP_TRAILING_WHITESPACE)
     if (CMAKE_SYSTEM_PROCESSOR MATCHES "^x86_64")
