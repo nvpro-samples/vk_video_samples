@@ -150,19 +150,9 @@ const InstructionSet::InstructionSet_Internal InstructionSet::CPU_Rep;
 // Print out supported instruction set extensions
 int main()
 {
-    auto& outstream = std::cout;
-
-    auto support_message = [&outstream](std::string isa_feature, bool is_supported) {
-        if (is_supported)
-        outstream << isa_feature << std::endl;
-    };
-
-    std::cout << InstructionSet::Vendor() << std::endl;
-    std::cout << InstructionSet::Brand() << std::endl;
-
-    support_message("AVX2",        InstructionSet::AVX2());
-    support_message("AVX512F",     InstructionSet::AVX512F());
-    support_message("SSSE3",       InstructionSet::SSSE3());
+    if (InstructionSet::AVX512F()) { std::cout << "AVX512F"; }
+    else if (InstructionSet::AVX2()) { std::cout << "AVX2"; }
+    else if (InstructionSet::SSSE3()) { std::cout << "SSSE3"; };
 }
 
 #endif
