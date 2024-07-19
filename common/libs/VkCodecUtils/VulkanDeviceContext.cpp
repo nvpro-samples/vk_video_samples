@@ -104,6 +104,20 @@ PFN_vkGetInstanceProcAddr VulkanDeviceContext::LoadVk(VulkanLibraryHandleType &v
 }
 #endif  // defined(VK_USE_PLATFORM_WIN32_KHR)
 
+VkResult VulkanDeviceContext::AddReqInstanceLayers(const char* const* requiredInstanceLayers, bool verbose)
+{
+    // Add the Vulkan video required layers
+    for (uint32_t i = 0; requiredInstanceLayers[0]; i++) {
+        const char* name = requiredInstanceLayers[i];
+        if (name == nullptr) {
+            break;
+        }
+        m_reqInstanceLayers.push_back(name);
+    }
+
+    return VK_SUCCESS;
+}
+
 VkResult VulkanDeviceContext::CheckAllInstanceLayers(bool verbose)
 {
     // enumerate instance layer
@@ -119,7 +133,7 @@ VkResult VulkanDeviceContext::CheckAllInstanceLayers(bool verbose)
 
     // all listed instance layers are required
     if (verbose) std::cout << "Looking for instance layers:" << std::endl;
-    for (uint32_t i = 0; m_reqInstanceLayers; i++) {
+    for (uint32_t i = 0; i < m_reqInstanceLayers.size(); i++) {
         const char* name = m_reqInstanceLayers[i];
         if (name == nullptr) {
             break;
@@ -130,8 +144,31 @@ VkResult VulkanDeviceContext::CheckAllInstanceLayers(bool verbose)
                     << name << " is missing!" << std::endl << std::flush;
             return VK_ERROR_LAYER_NOT_PRESENT;
         }
-        m_reqInstanceLayersSize++;
     }
+    return VK_SUCCESS;
+}
+
+VkResult VulkanDeviceContext::AddReqInstanceExtensions(const char* const* requiredInstanceExtensions, bool verbose)
+{
+    // Add the Vulkan video required instance extensions
+    for (uint32_t i = 0; requiredInstanceExtensions[0]; i++) {
+        const char* name = requiredInstanceExtensions[i];
+        if (name == nullptr) {
+            break;
+        }
+        m_reqInstanceExtensions.push_back(name);
+    }
+
+    return VK_SUCCESS;
+}
+
+VkResult VulkanDeviceContext::AddReqInstanceExtension(const char* requiredInstanceExtension, bool verbose)
+{
+    // Add the Vulkan video required instance extensions
+    if (requiredInstanceExtension) {
+        m_reqInstanceExtensions.push_back(requiredInstanceExtension);
+    }
+
     return VK_SUCCESS;
 }
 
@@ -150,7 +187,7 @@ VkResult VulkanDeviceContext::CheckAllInstanceExtensions(bool verbose)
 
     // all listed instance extensions are required
     if (verbose) std::cout << "Looking for instance extensions:" << std::endl;
-    for (uint32_t i = 0; m_reqInstanceExtensions; i++) {
+    for (uint32_t i = 0; i < m_reqInstanceExtensions.size(); i++) {
         const char* name = m_reqInstanceExtensions[i];
         if (name == nullptr) {
             break;
@@ -161,8 +198,36 @@ VkResult VulkanDeviceContext::CheckAllInstanceExtensions(bool verbose)
                     << name << " is missing!" << std::endl << std::flush;
             return VK_ERROR_EXTENSION_NOT_PRESENT;
         }
-        m_reqInstanceExtensionsSize++;
     }
+    return VK_SUCCESS;
+}
+
+VkResult VulkanDeviceContext::AddReqDeviceExtensions(const char* const* requiredDeviceExtensions, bool verbose)
+{
+    // Add the Vulkan video required device extensions
+    for (uint32_t i = 0; requiredDeviceExtensions[0]; i++) {
+        const char* name = requiredDeviceExtensions[i];
+        if (name == nullptr) {
+            break;
+        }
+        m_requestedDeviceExtensions.push_back(name);
+    }
+
+    return VK_SUCCESS;
+}
+
+// optional device extensions
+VkResult VulkanDeviceContext::AddOptDeviceExtensions(const char* const* optionalDeviceExtensions, bool verbose)
+{
+    // Add the Vulkan video optional device extensions
+    for (uint32_t i = 0; optionalDeviceExtensions[0]; i++) {
+        const char* name = optionalDeviceExtensions[i];
+        if (name == nullptr) {
+            break;
+        }
+        m_optDeviceExtensions.push_back(name);
+    }
+
     return VK_SUCCESS;
 }
 
@@ -180,7 +245,7 @@ bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice, co
 
     bool hasAllRequiredExtensions = true;
     // all listed device extensions are required
-    for (uint32_t i = 0; m_requestedDeviceExtensions; i++) {
+    for (uint32_t i = 0; i < m_requestedDeviceExtensions.size(); i++) {
         const char* name = m_requestedDeviceExtensions[i];
         if (name == nullptr) {
             break;
@@ -197,12 +262,11 @@ bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice, co
             }
         } else {
             AddRequiredDeviceExtension(name);
-            m_requestedDeviceExtensionsSize++;
         }
     }
 
     // all listed device extensions that are optional
-    for (uint32_t i = 0; m_optDeviceExtensions; i++) {
+    for (uint32_t i = 0; i < m_optDeviceExtensions.size(); i++) {
         const char* name = m_optDeviceExtensions[i];
         if (name == nullptr) {
             break;
@@ -216,7 +280,6 @@ bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice, co
             }
         } else {
             AddRequiredDeviceExtension(name);
-            m_optDeviceExtensionsSize++;
         }
     }
 
@@ -267,10 +330,10 @@ VkResult VulkanDeviceContext::InitVkInstance(const char * pAppName, bool verbose
     VkInstanceCreateInfo instance_info = {};
     instance_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instance_info.pApplicationInfo = &app_info;
-    instance_info.enabledLayerCount = m_reqInstanceLayersSize;
-    instance_info.ppEnabledLayerNames = m_reqInstanceLayers;
-    instance_info.enabledExtensionCount = m_reqInstanceExtensionsSize;
-    instance_info.ppEnabledExtensionNames = m_reqInstanceExtensions;
+    instance_info.enabledLayerCount = m_reqInstanceLayers.size();
+    instance_info.ppEnabledLayerNames = m_reqInstanceLayers.data();
+    instance_info.enabledExtensionCount = m_reqInstanceExtensions.size();
+    instance_info.ppEnabledExtensionNames = m_reqInstanceExtensions.data();
 
     result = CreateInstance(&instance_info, nullptr, &m_instance);
 
@@ -339,7 +402,8 @@ VkResult VulkanDeviceContext::InitDebugReport(bool validate, bool validateVerbos
     return CreateDebugReportCallbackEXT(m_instance, &debug_report_info, nullptr, &m_debugReport);
 }
 
-VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueueTypes,
+VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId,
+                                                 const VkQueueFlags requestQueueTypes,
                                                  const VkWsiDisplay* pWsiDisplay,
                                                  const VkQueueFlags requestVideoDecodeQueueMask,
                                                  const VkVideoCodecOperationFlagsKHR requestVideoDecodeQueueOperations,
@@ -358,7 +422,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(const VkQueueFlags requestQueue
 
         VkPhysicalDeviceProperties props;
         GetPhysicalDeviceProperties(physicalDevice, &props);
-        if ((m_deviceId != -1) && (props.deviceID != (uint32_t)m_deviceId)) {
+        if ((deviceId != -1) && (props.deviceID != (uint32_t)deviceId)) {
             continue;
         }
 
@@ -707,13 +771,8 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
     return result;
 }
 
-VulkanDeviceContext::VulkanDeviceContext(int32_t deviceId,
-                                         const char* const* reqInstanceLayers,
-                                         const char* const* reqInstanceExtensions,
-                                         const char* const* requestedDeviceExtensions,
-                                         const char* const* optDeviceExtensions)
-    : m_deviceId(deviceId)
-    , m_libHandle()
+VulkanDeviceContext::VulkanDeviceContext()
+    : m_libHandle()
     , m_instance()
     , m_physDevice()
     , m_gfxQueueFamily(-1)
@@ -739,14 +798,10 @@ VulkanDeviceContext::VulkanDeviceContext(int32_t deviceId,
     , m_presentQueue()
     , m_isExternallyManagedDevice()
     , m_debugReport()
-    , m_reqInstanceLayers(reqInstanceLayers)
-    , m_reqInstanceLayersSize(0)
-    , m_reqInstanceExtensions(reqInstanceExtensions)
-    , m_reqInstanceExtensionsSize(0)
-    , m_requestedDeviceExtensions(requestedDeviceExtensions)
-    , m_requestedDeviceExtensionsSize(0)
-    , m_optDeviceExtensions(optDeviceExtensions)
-    , m_optDeviceExtensionsSize(0)
+    , m_reqInstanceLayers()
+    , m_reqInstanceExtensions()
+    , m_requestedDeviceExtensions()
+    , m_optDeviceExtensions()
 {
 
 }

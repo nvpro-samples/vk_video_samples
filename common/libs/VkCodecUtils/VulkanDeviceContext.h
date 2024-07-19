@@ -50,11 +50,7 @@ public:
         MAX_QUEUE_FAMILIES = 6, // Gfx, Present, Compute, Transfer, Decode, Encode
     };
 
-    VulkanDeviceContext(int32_t deviceId,
-                        const char* const* reqInstanceLayers,
-                        const char* const* reqInstanceExtensions,
-                        const char* const* requestedDeviceExtensions,
-                        const char* const* optDeviceExtensions = nullptr);
+    VulkanDeviceContext();
 
     VkInstance getInstance() const {
         return m_instance;
@@ -218,15 +214,21 @@ public:
     VkResult InitVulkanDevice(const char * pAppName, bool verbose = false,
                               const char * pCustomLoader = nullptr);
 
+    VkResult AddReqInstanceLayers(const char* const* requiredInstanceLayers, bool verbose = false);
     VkResult CheckAllInstanceLayers(bool verbose = false);
+    VkResult AddReqInstanceExtensions(const char* const* requiredInstanceExtensions, bool verbose = false);
+    VkResult AddReqInstanceExtension(const char* requiredInstanceExtension, bool verbose = false);
     VkResult CheckAllInstanceExtensions(bool verbose = false);
+    VkResult AddReqDeviceExtensions(const char* const* requiredDeviceExtensions, bool verbose = false);
+    VkResult AddOptDeviceExtensions(const char* const* optionalDeviceExtensions, bool verbose = false);
     bool HasAllDeviceExtensions(VkPhysicalDevice physDevice, const char* printMissingDeviceExt = nullptr);
 
     bool DebugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT obj_type,
                              uint64_t object, size_t location,
                              int32_t msg_code, const char *layer_prefix, const char *msg);
 
-    VkResult InitPhysicalDevice(const VkQueueFlags requestQueueTypes =  (VK_QUEUE_GRAPHICS_BIT |
+    VkResult InitPhysicalDevice(int32_t deviceId = -1,
+                                const VkQueueFlags requestQueueTypes =  (VK_QUEUE_GRAPHICS_BIT |
                                                                    /*  VK_QUEUE_COMPUTE_BIT |  */
                                                                    /* VK_QUEUE_TRANSFER_BIT | */
                                                                    VK_QUEUE_VIDEO_DECODE_BIT_KHR |
@@ -262,7 +264,6 @@ private:
     VkResult PopulateDeviceExtensions();
 
 private:
-    int32_t                 m_deviceId;
     VulkanLibraryHandleType m_libHandle;
     VkInstance m_instance;
     VkPhysicalDevice m_physDevice;
@@ -297,14 +298,10 @@ private:
     mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoEncodeQueueMutexes;
     bool m_isExternallyManagedDevice;
     VkDebugReportCallbackEXT           m_debugReport;
-    const char* const*                 m_reqInstanceLayers;
-    uint32_t                           m_reqInstanceLayersSize;
-    const char* const*                 m_reqInstanceExtensions;
-    uint32_t                           m_reqInstanceExtensionsSize;
-    const char* const*                 m_requestedDeviceExtensions;
-    uint32_t                           m_requestedDeviceExtensionsSize;
-    const char* const*                 m_optDeviceExtensions;
-    uint32_t                           m_optDeviceExtensionsSize;
+    std::vector<const char *>          m_reqInstanceLayers;
+    std::vector<const char *>          m_reqInstanceExtensions;
+    std::vector<const char *>          m_requestedDeviceExtensions;
+    std::vector<const char *>          m_optDeviceExtensions;
     std::vector<const char *>          m_reqDeviceExtensions;
     std::vector<VkExtensionProperties> m_instanceExtensions;
     std::vector<VkExtensionProperties> m_deviceExtensions;
