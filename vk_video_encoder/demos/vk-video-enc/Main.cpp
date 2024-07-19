@@ -21,15 +21,6 @@
 #include "VkCodecUtils/VulkanEncoderFrameProcessor.h"
 #include "VkShell/Shell.h"
 
-#define INPUT_FRAME_BUFFER_SIZE 16
-
-int32_t handle_error(const std::error_code& error)
-{
-    const auto& errmsg = error.message();
-    std::printf("error mapping file: %s, exiting...\n", errmsg.c_str());
-    return error.value();
-}
-
 int main(int argc, char** argv)
 {
     VkSharedBaseObj<EncoderConfig> encoderConfig;
@@ -37,8 +28,12 @@ int main(int argc, char** argv)
         return -1;
     }
 
-    static const char* const requiredInstanceLayerExtensions[] = {
+    static const char* const requiredInstanceLayers[] = {
         "VK_LAYER_KHRONOS_validation",
+        nullptr
+    };
+
+    static const char* const requiredInstanceExtensions[] = {
         VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
         nullptr
     };
@@ -77,59 +72,33 @@ int main(int argc, char** argv)
         nullptr
     };
 
-    std::vector<const char *> reqInstanceExtensions;
-    std::vector<const char *> reqDeviceExtensions;
+    VulkanDeviceContext vkDevCtxt;
 
     if (encoderConfig->validate) {
-        reqInstanceExtensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+        vkDevCtxt.AddReqInstanceLayers(requiredInstanceLayers);
+        vkDevCtxt.AddReqInstanceExtensions(requiredInstanceExtensions);
     }
+
+    // Add the Vulkan video required device extensions
+    vkDevCtxt.AddReqDeviceExtensions(requiredDeviceExtension);
+    vkDevCtxt.AddOptDeviceExtensions(optinalDeviceExtension);
+
     /********** Start WSI instance extensions support *******************************************/
     if (encoderConfig->enableFramePresent) {
         const std::vector<VkExtensionProperties>& wsiRequiredInstanceInstanceExtensions =
                 Shell::GetRequiredInstanceExtensions(encoderConfig->enableFrameDirectModePresent);
 
         for (size_t e = 0; e < wsiRequiredInstanceInstanceExtensions.size(); e++) {
-            reqInstanceExtensions.push_back(wsiRequiredInstanceInstanceExtensions[e].extensionName);
+            vkDevCtxt.AddReqInstanceExtension(wsiRequiredInstanceInstanceExtensions[e].extensionName);
         }
 
-        for (uint32_t i = 0; requiredWsiInstanceExtensions[0]; i++) {
-            const char* name = requiredWsiInstanceExtensions[i];
-            if (name == nullptr) {
-                break;
-            }
-            reqInstanceExtensions.push_back(name);
-        }
-        // terminate the reqInstanceExtensions list with nullptr
-        reqInstanceExtensions.push_back(nullptr);
+        // Add the WSI required instance extensions
+        vkDevCtxt.AddReqInstanceExtensions(requiredWsiInstanceExtensions);
 
         // Add the WSI required device extensions
-        for (uint32_t i = 0; requiredWsiDeviceExtension[0]; i++) {
-            const char* name = requiredWsiDeviceExtension[i];
-            if (name == nullptr) {
-                break;
-            }
-            reqDeviceExtensions.push_back(name);
-        }
+        vkDevCtxt.AddReqDeviceExtensions(requiredWsiDeviceExtension);
     }
     /********** End WSI instance extensions support *******************************************/
-
-    // Add the Vulkan video required device extensions
-    for (uint32_t i = 0; requiredDeviceExtension[0]; i++) {
-        const char* name = requiredDeviceExtension[i];
-        if (name == nullptr) {
-            break;
-        }
-        reqDeviceExtensions.push_back(name);
-    }
-    // terminate the reqDeviceExtensions list with nullptr
-    reqDeviceExtensions.push_back(nullptr);
-
-    VulkanDeviceContext vkDevCtxt(encoderConfig->deviceId,
-            encoderConfig->validate ? requiredInstanceLayerExtensions : nullptr,
-            reqInstanceExtensions.data(),
-            reqDeviceExtensions.data(),
-            optinalDeviceExtension);
-
 
     VkResult result = vkDevCtxt.InitVulkanDevice(encoderConfig->appName.c_str(),
                                                  encoderConfig->verbose);
@@ -196,14 +165,15 @@ int main(int argc, char** argv)
             return -1;
         }
 
-        result = vkDevCtxt.InitPhysicalDevice((VK_QUEUE_GRAPHICS_BIT | requestVideoDecodeQueueMask | requestVideoEncodeQueueMask),
-                                               displayShell,
-                                               requestVideoDecodeQueueMask,
-                                               (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
-                                                VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR),
-                                               requestVideoEncodeQueueMask,
-                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
-                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR);
+        result = vkDevCtxt.InitPhysicalDevice(encoderConfig->deviceId,
+                                              (VK_QUEUE_GRAPHICS_BIT | requestVideoDecodeQueueMask | requestVideoEncodeQueueMask),
+                                              displayShell,
+                                              requestVideoDecodeQueueMask,
+                                              (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
+                                               VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR),
+                                              requestVideoEncodeQueueMask,
+                                              (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
+                                               VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR));
         if (result != VK_SUCCESS) {
 
             assert(!"Can't initialize the Vulkan physical device!");
@@ -240,14 +210,15 @@ int main(int argc, char** argv)
     } else {
 
         // No display presentation and no decoder - just the encoder
-        result = vkDevCtxt.InitPhysicalDevice((requestVideoDecodeQueueMask | requestVideoEncodeQueueMask | VK_QUEUE_TRANSFER_BIT),
-                                               nullptr,
-                                               requestVideoDecodeQueueMask,
-                                               (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
-                                                VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR),
-                                               requestVideoEncodeQueueMask,
-                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
-                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR);
+        result = vkDevCtxt.InitPhysicalDevice(encoderConfig->deviceId,
+                                              (requestVideoDecodeQueueMask | requestVideoEncodeQueueMask | VK_QUEUE_TRANSFER_BIT),
+                                              nullptr,
+                                              requestVideoDecodeQueueMask,
+                                              (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
+                                               VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR),
+                                              requestVideoEncodeQueueMask,
+                                              (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
+                                               VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR));
         if (result != VK_SUCCESS) {
 
             assert(!"Can't initialize the Vulkan physical device!");
