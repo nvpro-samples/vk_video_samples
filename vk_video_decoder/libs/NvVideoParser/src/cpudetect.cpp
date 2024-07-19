@@ -150,7 +150,7 @@ const InstructionSet::InstructionSet_Internal InstructionSet::CPU_Rep;
 // Print out supported instruction set extensions
 int main()
 {
-    if (InstructionSet::AVX512F()) { std::cout << "AVX512F"; }
+    if (InstructionSet::AVX512F()) { std::cout << "AVX512"; }
     else if (InstructionSet::AVX2()) { std::cout << "AVX2"; }
     else if (InstructionSet::SSSE3()) { std::cout << "SSSE3"; };
 }
