@@ -309,7 +309,7 @@ elseif(WIN32)
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /arch:AVX2")
         elseif (TempRuntimeOut STREQUAL "SSSE3")
             # MSVC has no officially documented options "SSSE3", "SSE4.1", or "SSE4.2" for /arch, /arch:SSE2 is set by default if no option is specified
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /DSSSE3")
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /D__SSSE3__")
         endif()
     endif()
 endif()
