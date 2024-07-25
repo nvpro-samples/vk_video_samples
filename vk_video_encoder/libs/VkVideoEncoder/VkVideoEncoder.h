@@ -32,9 +32,12 @@
 #include "VkCodecUtils/VulkanVideoReferenceCountedPool.h"
 #include "VkCodecUtils/VkBufferResource.h"
 #include "VkCodecUtils/VulkanBistreamBufferImpl.h"
+#include "VkCodecUtils/VkThreadSafeQueue.h"
 #include "VkEncoderDpbH264.h"
+#ifdef ENCODER_DISPLAY_QUEUE_SUPPORT
 #include "VkCodecUtils/VulkanVideoEncodeDisplayQueue.h"
 #include "VkShell/Shell.h"
+#endif // ENCODER_DISPLAY_QUEUE_SUPPORT
 #include "mio/mio.hpp"
 
 class VkVideoEncoderH264;
@@ -299,7 +302,7 @@ public:
         VkSharedBaseObj<VulkanBufferPoolIf> m_parent;
         int32_t                             m_parentIndex;
     };
-
+#ifdef ENCODER_DISPLAY_QUEUE_SUPPORT
     class DisplayQueue {
 
     public:
@@ -363,7 +366,7 @@ public:
         VkSharedBaseObj<VulkanVideoDisplayQueue<VulkanEncoderInputFrame>> m_videoDispayQueue;
         std::thread            m_runLoopThread;
     };
-
+#endif // ENCODER_DISPLAY_QUEUE_SUPPORT
 public:
     VkVideoEncoder(const VulkanDeviceContext* vkDevCtx)
         : refCount(0)
@@ -409,7 +412,9 @@ public:
         , m_inputCommandBufferPool()
         , m_encodeCommandBufferPool()
         , m_bitstreamBuffersQueue()
+#ifdef ENCODER_DISPLAY_QUEUE_SUPPORT
         , m_displayQueue()
+#endif // ENCODER_DISPLAY_QUEUE_SUPPORT
     { }
 
     // Factory Function
@@ -440,11 +445,13 @@ public:
         return nullptr;
     }
 
+ #ifdef ENCODER_DISPLAY_QUEUE_SUPPORT
     VkResult AttachDisplayQueue(VkSharedBaseObj<Shell>& displayShell,
                                 VkSharedBaseObj<VulkanVideoDisplayQueue<VulkanEncoderInputFrame>>& videoDispayQueue)
     {
         return m_displayQueue.AttachDisplayQueue(displayShell, videoDispayQueue);
     }
+#endif // ENCODER_DISPLAY_QUEUE_SUPPORT
 
     virtual VkResult CreateFrameInfoBuffersQueue(uint32_t numPoolNodes) = 0;
     virtual bool GetAvailablePoolNode(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) = 0;
@@ -567,7 +574,6 @@ protected:
     VkResult ProcessOrderedFrames(VkSharedBaseObj<VkVideoEncodeFrameInfo>& frames, uint32_t numFrames);
 
     typedef VkThreadSafeQueue<VkSharedBaseObj<VkVideoEncodeFrameInfo>> EncoderFrameQueue;
-
 private:
     std::atomic<int32_t> refCount;
 protected:
@@ -612,7 +618,9 @@ protected:
     VkSharedBaseObj<VulkanCommandBufferPool> m_inputCommandBufferPool;
     VkSharedBaseObj<VulkanCommandBufferPool> m_encodeCommandBufferPool;
     VulkanBitstreamBufferPool                m_bitstreamBuffersQueue;
+#ifdef ENCODER_DISPLAY_QUEUE_SUPPORT
     DisplayQueue                             m_displayQueue;
+#endif // ENCODER_DISPLAY_QUEUE_SUPPORT
     EncoderFrameQueue                        m_encoderQueue;
     std::thread                              m_encoderQueueConsumerThread;
     VkSharedBaseObj<VkVideoEncodeFrameInfo>  m_lastDeferredFrame;
