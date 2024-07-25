@@ -321,8 +321,12 @@ public:
             bool halfCbCr = false,
             int yMin    = 16, int yMax    = 235, int yOffset = 16,
             int cbCrMin = 16, int cbCrMax = 240, int cbCrOffset = 128)
-        : m_bppShift(bpp - 8), // 8 bit is the base.
-          m_bpp16BitShift(m_bppShift ? (16 - bpp) : 0)
+        : m_bppShift(bpp - 8) // 8 bit is the base.
+        , m_bpp16BitShift(m_bppShift ? (16 - bpp) : 0)
+        , m_deNormalizeScale{1.0, 1.0, 1.0, 1.0}
+        , m_deNormalizeShift{0, 0, 0, 0}
+        , m_normalizeScale{1.0, 1.0, 1.0, 1.0}
+        , m_normalizeShift{0.0, 0.0, 0.0, 0.0}
 
     {
         const int twoToBppPower = (1 << bpp);
