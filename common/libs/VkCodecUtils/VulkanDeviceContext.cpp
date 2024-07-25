@@ -659,6 +659,9 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
     std::array<VkDeviceQueueCreateInfo, MAX_QUEUE_FAMILIES> queueInfo = {};
     const bool isUnique = uniqueQueueFamilies.insert(m_gfxQueueFamily).second;
     assert(isUnique);
+    if (!isUnique) {
+	return VK_ERROR_INITIALIZATION_FAILED;
+    }
     if (createGraphicsQueue) {
         queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_gfxQueueFamily;

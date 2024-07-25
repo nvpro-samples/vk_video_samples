@@ -239,6 +239,9 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     bool success = m_dpbImagePool->GetAvailableImage(encodeFrameInfo->setupImageResource,
                                                      VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR);
     assert(success);
+    if (!success) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
     assert(encodeFrameInfo->setupImageResource != nullptr);
     VkVideoPictureResourceInfoKHR* setupImageViewPictureResource = encodeFrameInfo->setupImageResource->GetPictureResourceInfo();
     setupImageViewPictureResource->codedOffset = pFrameInfo->encodeInfo.srcPictureResource.codedOffset;
@@ -247,6 +250,9 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     int8_t newDpbSlot = m_dpb264->DpbPictureStart(&pictureInfo,
                                                   &m_h264.m_spsInfo);
     assert(newDpbSlot >= 0);
+    if (newDpbSlot < 0) {
+	return VK_ERROR_INITIALIZATION_FAILED;
+    }
 
     uint8_t refPicMarkingOpCount = 0;
     const uint32_t adaptiveRefPicManagementMode = 0; // FIXME
@@ -358,6 +364,9 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
             int8_t slotIndex = refLists.refPicList[listNum][i];
             bool refPicAvailable = m_dpb264->GetRefPicture(slotIndex, pFrameInfo->dpbImageResources[numReferenceSlots]);
             assert(refPicAvailable);
+            if (!refPicAvailable) {
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
 
             m_dpb264->FillStdReferenceInfo(slotIndex, &pFrameInfo->stdReferenceInfo[numReferenceSlots]);
 
@@ -568,6 +577,9 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     // NOTE: dstBuffer resource acquisition can be deferred at the last moment before submit
     VkDeviceSize size = GetBitstreamBuffer(encodeFrameInfo->outputBitstreamBuffer);
     assert((size > 0) && (encodeFrameInfo->outputBitstreamBuffer != nullptr));
+    if ((size == 0) || (encodeFrameInfo->outputBitstreamBuffer == nullptr)) {
+	return VK_ERROR_INITIALIZATION_FAILED;
+    }
     pFrameInfo->encodeInfo.dstBuffer = encodeFrameInfo->outputBitstreamBuffer->GetBuffer();
 
     // For the actual (VCL) data, specify its insertion starting from the

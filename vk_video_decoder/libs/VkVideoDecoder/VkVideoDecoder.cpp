@@ -963,6 +963,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::DECODE, m_currentVideoQueueIndx,
                                                            1, &submitInfo, videoDecodeCompleteFence);
     assert(result == VK_SUCCESS);
+    if (result != VK_SUCCESS) {
+	return -1;
+    }
 
     if (m_dumpDecodeData) {
         std::cout << "\t +++++++++++++++++++++++++++< " << currPicIdx << " >++++++++++++++++++++++++++++++" << std::endl;
@@ -1049,6 +1052,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
                                                                            inputImageView);
         assert(index == currPicIdx);
         assert(inputImageView);
+	if ((index != currPicIdx) || !inputImageView) {
+           return -1;
+	}
         index = m_videoFrameBuffer->GetCurrentImageResourceByIndex(currPicIdx, DecodeFrameBufferIf::IMAGE_TYPE_IDX_OUT,
                                                                    outputImageView);
 

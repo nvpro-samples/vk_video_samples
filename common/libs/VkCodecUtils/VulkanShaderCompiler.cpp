@@ -89,7 +89,10 @@ VkShaderModule VulkanShaderCompiler::BuildGlslShader(const char *shaderCode, siz
         shaderModuleCreateInfo.flags = 0;
         VkResult result = vkDevCtx->CreateShaderModule(*vkDevCtx, &shaderModuleCreateInfo, nullptr, &shaderModule);
         assert(result == VK_SUCCESS);
-
+	if (result != VK_SUCCESS) {
+	    std::cerr << "Failed to create shader module" << std::endl;
+	    return VK_NULL_HANDLE;
+	}
         shaderc_result_release(spvShader);
     }
     return shaderModule;
