@@ -191,6 +191,8 @@ static int parseArguments(EncoderConfig *encoderConfig, int argc, char *argv[])
             i++; // Skip the next argument since it's the frameTypeName value
             encoderConfig->gopStructure.SetLastFrameType(lastFrameType);
             printf("Selected frameTypeName: %s\n", encoderConfig->gopStructure.GetFrameTypeName(lastFrameType));
+        } else if (strcmp(argv[i], "--closedGop") == 0) {
+            encoderConfig->gopStructure.SetClosedGop();
         } else {
             fprintf(stderr, "Unrecognized option: %s\n", argv[i]);
             printHelp();

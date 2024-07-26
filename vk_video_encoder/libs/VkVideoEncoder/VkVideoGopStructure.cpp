@@ -21,14 +21,16 @@ VkVideoGopStructure::VkVideoGopStructure(uint8_t gopFrameCount,
                                          uint8_t consecutiveBFrameCount,
                                          uint8_t temporalLayerCount,
                                          FrameType lastFrameType,
-                                         FrameType preIdrAnchorFrameType)
+                                         FrameType preIdrAnchorFrameType,
+                                         bool closedGop)
     : m_gopFrameCount(gopFrameCount)
     , m_consecutiveBFrameCount(consecutiveBFrameCount)
     , m_gopFrameCycle(m_consecutiveBFrameCount + 1)
     , m_temporalLayerCount(temporalLayerCount)
     , m_idrPeriod(idrPeriod)
     , m_lastFrameType(lastFrameType)
-    , m_preIdrAnchorFrameType(preIdrAnchorFrameType)
+    , m_preClosedGopAnchorFrameType(preIdrAnchorFrameType)
+    , m_closedGop(closedGop)
 {
     Init(uint64_t(-1));
 }
@@ -65,7 +67,7 @@ void VkVideoGopStructure::PrintGopStructure(uint64_t numFrames) const
     std::cout << std::endl << "Encode  order: ";
 
     gopState = GopState();
-    for (uint64_t i = 0; i < numFrames; i++) {
+    for (uint64_t i = 0; i < (numFrames - 1); i++) {
         GetPositionInGOP(gopState, gopPos);
         std::cout << std::setw(3) << gopPos.encodeOrder << " ";
     }

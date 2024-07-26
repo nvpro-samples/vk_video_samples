@@ -478,7 +478,7 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     bool isIdr = m_encoderConfig->gopStructure.GetPositionInGOP(m_gopState,
                                                                 encodeFrameInfo->gopPosition,
                                                                 (encodeFrameInfo->frameEncodeOrderNum == 0),
-                                                                encodeFrameInfo->lastFrame);
+                                                                uint32_t(m_encoderConfig->numFrames - encodeFrameInfo->frameEncodeOrderNum));
 
     if (isIdr) {
         assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
