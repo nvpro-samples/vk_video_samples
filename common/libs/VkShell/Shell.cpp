@@ -310,7 +310,7 @@ void Shell::ResizeSwapchain(uint32_t width_hint, uint32_t height_hint) {
     m_frameProcessor->AttachSwapchain(*this);
 }
 
-void Shell::AcquireBackBuffer(bool trainFrame) {
+void Shell::AcquireBackBuffer(bool) {
 
     if(!m_ctx.acquireBuffers.empty()) {
 

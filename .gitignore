@@ -38,3 +38,4 @@
 build
 build32
 __pycache__
+.ccls-cache/

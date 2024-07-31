@@ -34,6 +34,7 @@ struct VkParserPerFrameDecodeParameters {
         MAX_DPB_REF_AND_SETUP_SLOTS = MAX_DPB_REF_SLOTS + 1, // plus 1 for the current picture (h.264 only)
     };
     int currPicIdx; /** Output index of the current picture                       */
+
     // VPS
     const StdVideoPictureParametersSet*     pStdVps;
     // SPS
@@ -48,8 +49,8 @@ struct VkParserPerFrameDecodeParameters {
     uint32_t firstSliceIndex;
     uint32_t numSlices;
     size_t bitstreamDataOffset; // bitstream data offset in bitstreamData buffer
-    size_t bitstreamDataLen;   /** Number of bytes in bitstream data buffer                  */
-    VkSharedBaseObj<VulkanBitstreamBuffer> bitstreamData; /** bitstream data for this picture (slice-layer) */
+    size_t bitstreamDataLen;   // Number of bytes in bitstream data buffer
+    VkSharedBaseObj<VulkanBitstreamBuffer> bitstreamData; // bitstream data for this picture (slice-layer)
     VkVideoDecodeInfoKHR decodeFrameInfo;
     VkVideoPictureResourceInfoKHR dpbSetupPictureResource;
     int32_t numGopReferenceSlots;
@@ -88,8 +89,8 @@ struct VkParserDecodePictureInfo {
     uint64_t decodePicCount;
     VkVideotimestamp timestamp; // decode time
     VkParserFrameSyncinfo frameSyncinfo;
-    uint16_t videoFrameType; // VideoFrameType - use Vulkan codec specific type pd->CodecSpecific.h264.slice_type.
     uint16_t viewId; // HEVC nuh_layer_id & from pictureInfoH264->ext.mvcext.view_id
+    bool filmGrainEnabled;
 };
 
 struct VulkanVideoDisplayPictureInfo {
@@ -131,6 +132,8 @@ struct VkParserDetectedVideoFormat {
         int32_t right; /** right position of display rect   */
         int32_t bottom; /** bottom position of display rect  */
     } display_area;
+    uint32_t max_session_width;
+    uint32_t max_session_height;
     uint32_t bitrate; /** video bitrate (bps, 0=unknown)   */
     /**
      * OUT: Display Aspect Ratio = x:y (4:3, 16:9, etc)
@@ -157,6 +160,7 @@ struct VkParserDetectedVideoFormat {
     } video_signal_description;
     uint32_t seqhdr_data_length; /** Additional bytes following (NVVIDEOFORMATEX)                  */
     uint32_t codecProfile;
+    bool filmGrainUsed;
 };
 
 typedef enum {

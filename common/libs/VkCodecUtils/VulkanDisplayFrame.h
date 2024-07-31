@@ -46,6 +46,7 @@ public:
     uint32_t hasConsummerSignalFence : 1;
     uint32_t hasConsummerSignalSemaphore : 1;
     uint32_t optimalOutputIndex : 4;
+    uint32_t linearOutputIndex : 4;
 
     void Reset()
     {

@@ -225,7 +225,7 @@ private:
         , m_enableDecodeFilter((enableDecoderFeatures & ENABLE_POST_PROCESS_FILTER) != 0)
         , m_useImageArray(false)
         , m_useImageViewArray(false)
-        , m_useSeparateOutputImages(((enableDecoderFeatures & ENABLE_LINEAR_OUTPUT) != 0) || m_enableDecodeFilter)
+        , m_useSeparateOutputImages(false)
         , m_useLinearOutput((enableDecoderFeatures & ENABLE_LINEAR_OUTPUT) != 0)
         , m_resetDecoder(true)
         , m_dumpDecodeData(false)

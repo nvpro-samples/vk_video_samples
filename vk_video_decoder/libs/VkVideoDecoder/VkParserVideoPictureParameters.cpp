@@ -120,6 +120,8 @@ VkResult VkParserVideoPictureParameters::CreateParametersObject(const VulkanDevi
     VkVideoDecodeH265SessionParametersCreateInfoKHR h265SessionParametersCreateInfo = { VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_CREATE_INFO_KHR };
     VkVideoDecodeH265SessionParametersAddInfoKHR h265SessionParametersAddInfo = { VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_ADD_INFO_KHR};
 
+    VkVideoDecodeAV1SessionParametersCreateInfoKHR av1SessionParametersCreateInfo = { VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_SESSION_PARAMETERS_CREATE_INFO_KHR };
+
     StdVideoPictureParametersSet::StdType updateType = pStdVideoPictureParametersSet->GetStdType();
     switch (updateType)
     {
@@ -148,18 +150,36 @@ VkResult VkParserVideoPictureParameters::CreateParametersObject(const VulkanDevi
             currentId = PopulateH265UpdateFields(pStdVideoPictureParametersSet, h265SessionParametersAddInfo);
         }
         break;
+        case StdVideoPictureParametersSet::TYPE_AV1_SPS:
+        {
+            createInfo.pNext = &av1SessionParametersCreateInfo;
+            if (pStdVideoPictureParametersSet == nullptr) {
+                currentId = -1;
+            } else {
+                assert(pStdVideoPictureParametersSet->GetStdType() == StdVideoPictureParametersSet::TYPE_AV1_SPS);
+                assert(av1SessionParametersCreateInfo.sType == VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_SESSION_PARAMETERS_CREATE_INFO_KHR);
+                av1SessionParametersCreateInfo.pStdSequenceHeader = const_cast<StdVideoAV1SequenceHeader*>(pStdVideoPictureParametersSet->GetStdAV1Sps());
+                currentId = 0;
+            }
+
+            // VUID-VkVideoSessionParametersCreateInfoKHR-videoSession-09258
+            // If videoSession was created with the video codec operation VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR,
+            // then videoSessionParametersTemplate must be VK_NULL_HANDLE
+            // AV1 does not support template parameters.
+            pTemplatePictureParameters = nullptr;
+        }
+        break;
         default:
             assert(!"Invalid Parser format");
             return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    createInfo.videoSessionParametersTemplate = pTemplatePictureParameters ? VkVideoSessionParametersKHR(*pTemplatePictureParameters) : VkVideoSessionParametersKHR();
+    createInfo.videoSessionParametersTemplate = pTemplatePictureParameters ? VkVideoSessionParametersKHR(*pTemplatePictureParameters) : VK_NULL_HANDLE;
     createInfo.videoSession = videoSession->GetVideoSession();
     VkResult result = vkDevCtx->CreateVideoSessionParametersKHR(*vkDevCtx,
                                                                 &createInfo,
                                                                 nullptr,
                                                                 &m_sessionParameters);
-
     if (result != VK_SUCCESS) {
 
         assert(!"Could not create Session Parameters Object");
@@ -173,6 +193,7 @@ VkResult VkParserVideoPictureParameters::CreateParametersObject(const VulkanDevi
             m_vpsIdsUsed = pTemplatePictureParameters->m_vpsIdsUsed;
             m_spsIdsUsed = pTemplatePictureParameters->m_spsIdsUsed;
             m_ppsIdsUsed = pTemplatePictureParameters->m_ppsIdsUsed;
+            m_av1SpsIdsUsed = pTemplatePictureParameters->m_av1SpsIdsUsed;
         }
 
         assert (currentId >= 0);
@@ -188,6 +209,10 @@ VkResult VkParserVideoPictureParameters::CreateParametersObject(const VulkanDevi
             case StdVideoPictureParametersSet::VPS_TYPE:
                 m_vpsIdsUsed.set(currentId, true);
             break;
+
+            case StdVideoPictureParametersSet::AV1_SPS_TYPE:
+                m_av1SpsIdsUsed.set(currentId, true);
+                break;
             default:
                 assert(!"Invalid StdVideoPictureParametersSet Parameter Type!");
         }
@@ -226,6 +251,12 @@ VkResult VkParserVideoPictureParameters::UpdateParametersObject(const StdVideoPi
             currentId = PopulateH265UpdateFields(pStdVideoPictureParametersSet, h265SessionParametersAddInfo);
         }
         break;
+        case StdVideoPictureParametersSet::TYPE_AV1_SPS:
+        {
+            assert(false && "There should be no calls to UpdateParametersObject for AV1");
+            return VK_SUCCESS;
+        }
+        break;
         default:
             assert(!"Invalid Parser format");
             return VK_ERROR_INITIALIZATION_FAILED;
@@ -252,6 +283,10 @@ VkResult VkParserVideoPictureParameters::UpdateParametersObject(const StdVideoPi
 
             case StdVideoPictureParametersSet::VPS_TYPE:
                 m_vpsIdsUsed.set(currentId, true);
+            break;
+
+            case StdVideoPictureParametersSet::AV1_SPS_TYPE:
+            m_av1SpsIdsUsed.set(currentId, true);
             break;
             default:
                 assert(!"Invalid StdVideoPictureParametersSet Parameter Type!");

@@ -154,7 +154,11 @@ protected:
     size_t next_start_code(const uint8_t *pdatain, size_t datasize, bool& found_start_code);
     void nal_unit();
     void init_dbits();
-    int32_t available_bits() { assert((m_nalu.end_offset - m_nalu.get_offset) < std::numeric_limits<int32_t>::max());
+    int32_t available_bits() {
+		// end_offset=566 - get_offset=568 for example are values seen in the debugger, causing an unsigned integer overflow below since get_btroffs is a uint32 while end_offset and get_offset are int64 explicitly casted to int32, which then gets implicitly casted to a unint32. This code could use a review from the original authors about the intentions here. The early return is to avoid the sanitizer violation and appears semantically correct.
+		if ((m_nalu.end_offset - m_nalu.get_offset) < 0)
+			return 0;
+		assert((m_nalu.end_offset - m_nalu.get_offset) < std::numeric_limits<int32_t>::max());
                                return (int32_t)(m_nalu.end_offset - m_nalu.get_offset) * 8 + (32 - m_nalu.get_bfroffs); }
     int32_t consumed_bits() { assert((m_nalu.get_offset - m_nalu.start_offset - m_nalu.get_emulcnt) < std::numeric_limits<int32_t>::max());
                           return (int32_t)(m_nalu.get_offset - m_nalu.start_offset - m_nalu.get_emulcnt) * 8 - (32 - m_nalu.get_bfroffs); }
@@ -168,6 +172,7 @@ protected:
     int32_t se();
     uint32_t f(uint32_t n, uint32_t) { return u(n); }
     bool byte_aligned() const { return ((m_nalu.get_bfroffs & 7) == 0); }
+    void byte_alignment() { while (!byte_aligned()) u(1); }
     void end_of_picture();
     void end_of_stream();
     bool IsSequenceChange(VkParserSequenceInfo *pnvsi);
