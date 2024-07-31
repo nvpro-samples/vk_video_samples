@@ -55,6 +55,7 @@ public:
         , m_frameConsumerDoneFence()
         , m_frameConsumerDoneSemaphore()
         , m_optimalOutputIndex(0)
+        , m_linearOutputIndex(0)
         , m_hasFrameCompleteSignalFence(false)
         , m_hasFrameCompleteSignalSemaphore(false)
         , m_hasConsummerSignalFence(false)
@@ -145,6 +146,7 @@ public:
     VkFence m_frameConsumerDoneFence;
     VkSemaphore m_frameConsumerDoneSemaphore;
     uint32_t m_optimalOutputIndex : 4;
+    uint32_t m_linearOutputIndex : 4;
     uint32_t m_hasFrameCompleteSignalFence : 1;
     uint32_t m_hasFrameCompleteSignalSemaphore : 1;
     uint32_t m_hasConsummerSignalFence : 1;
@@ -425,6 +427,7 @@ public:
         m_perFrameDecodeImageSet[picId].m_picDispInfo = *pDecodePictureInfo;
         m_perFrameDecodeImageSet[picId].m_inDecodeQueue = true;
         m_perFrameDecodeImageSet[picId].m_optimalOutputIndex = pFrameSynchronizationInfo->optimalOutputIndex;
+        m_perFrameDecodeImageSet[picId].m_linearOutputIndex = pFrameSynchronizationInfo->linearOutputIndex;
         m_perFrameDecodeImageSet[picId].stdPps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdPps);
         m_perFrameDecodeImageSet[picId].stdSps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdSps);
         m_perFrameDecodeImageSet[picId].stdVps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdVps);
@@ -433,7 +436,7 @@ public:
         if (m_debug) {
             std::cout << "==> Queue Decode Picture picIdx: " << (uint32_t)picId
                       << "\t\tdisplayOrder: " << m_perFrameDecodeImageSet[picId].m_displayOrder << "\tdecodeOrder: " << m_perFrameDecodeImageSet[picId].m_decodeOrder
-                      << "\tFrameType " << m_perFrameDecodeImageSet[picId].m_picDispInfo.videoFrameType << std::endl;
+                      << std::endl;
         }
 
         if (pFrameSynchronizationInfo->hasFrameCompleteSignalFence) {
@@ -498,6 +501,7 @@ public:
             }
 
             pDecodedFrame->optimalOutputIndex = m_perFrameDecodeImageSet[pictureIndex].m_optimalOutputIndex;
+            pDecodedFrame->linearOutputIndex = m_perFrameDecodeImageSet[pictureIndex].m_linearOutputIndex;
 
             pDecodedFrame->displayWidth  = m_perFrameDecodeImageSet[pictureIndex].m_picDispInfo.displayWidth;
             pDecodedFrame->displayHeight = m_perFrameDecodeImageSet[pictureIndex].m_picDispInfo.displayHeight;
@@ -804,7 +808,6 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
 
     m_imageViewState[pImageSpec->imageTypeIdx].currentLayerLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     m_imageViewState[pImageSpec->imageTypeIdx].recreateImage = false;
-
     return result;
 }
 

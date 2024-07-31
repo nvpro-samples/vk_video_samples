@@ -39,3 +39,4 @@ build
 build32
 __pycache__
 vk_video_decoder/bin/libs/ffmpeg/
+.ccls-cache/

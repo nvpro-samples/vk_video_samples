@@ -29,8 +29,7 @@ public:
     int32_t decodeWidth;
     int32_t decodeHeight;
     int32_t decodeSuperResWidth;
-    int32_t reserved[16 - 3];
-
+    int32_t reserved[16 - 5];
 protected:
     virtual ~VkPicIf() { }
 };

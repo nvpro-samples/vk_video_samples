@@ -107,14 +107,14 @@ void ShellDirect::InitDisplay()
     // AssertSuccess(vk::AcquireXlibDisplayEXT(ctx_.physical_dev, &dpy, display_));
 }
 
-bool ShellDirect::PhysDeviceCanPresent(VkPhysicalDevice physicalDevice, uint32_t presentQueueFamily) const
+bool ShellDirect::PhysDeviceCanPresent(VkPhysicalDevice, uint32_t) const
 {
     // todo ?
     return true;
 }
 
 // called by create_context
-VkSurfaceKHR ShellDirect::CreateSurface(VkInstance instance)
+VkSurfaceKHR ShellDirect::CreateSurface(VkInstance)
 {
     assert(m_vkDisplay != VK_NULL_HANDLE);
 

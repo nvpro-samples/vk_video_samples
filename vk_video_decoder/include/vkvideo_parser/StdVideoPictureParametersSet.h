@@ -28,13 +28,15 @@ public:
         TYPE_H264_PPS,
         TYPE_H265_VPS,
         TYPE_H265_SPS,
-        TYPE_H265_PPS
+        TYPE_H265_PPS,
+        TYPE_AV1_SPS,
     };
 
     enum ParameterType {
         PPS_TYPE = 0,
         SPS_TYPE,
         VPS_TYPE,
+        AV1_SPS_TYPE,
         NUM_OF_TYPES,
         INVALID_TYPE,
     };
@@ -48,6 +50,7 @@ public:
     virtual const StdVideoH265VideoParameterSet*    GetStdH265Vps() const { return nullptr; }
     virtual const StdVideoH265SequenceParameterSet* GetStdH265Sps() const { return nullptr; }
     virtual const StdVideoH265PictureParameterSet*  GetStdH265Pps() const { return nullptr; }
+    virtual const StdVideoAV1SequenceHeader*        GetStdAV1Sps() const { return nullptr; }
 
     virtual const char* GetRefClassId() const = 0;
 

@@ -147,7 +147,7 @@ bool VulkanH265Decoder::BeginPicture(VkParserPictureData *pnvpd)
     pnvpd->progressive_frame = 1;
     pnvpd->top_field_first = 0;
     pnvpd->repeat_first_field = 0;
-    pnvpd->ref_pic_flag = 1;    // TBD
+    pnvpd->ref_pic_flag = m_slh.nal_unit_type < 16 ? m_slh.nal_unit_type & 1 : 1;
     pnvpd->intra_pic_flag = m_intra_pic_flag;
     pnvpd->chroma_format = sps->chroma_format_idc;
     pnvpd->picture_order_count = cur->PicOrderCntVal << 1;
@@ -176,6 +176,7 @@ bool VulkanH265Decoder::BeginPicture(VkParserPictureData *pnvpd)
 
     hevc->IrapPicFlag = m_slh.nal_unit_type >= NUT_BLA_W_LP && m_slh.nal_unit_type <= NUT_CRA_NUT;
     hevc->IdrPicFlag = m_slh.nal_unit_type == NUT_IDR_W_RADL || m_slh.nal_unit_type == NUT_IDR_N_LP;
+    hevc->short_term_ref_pic_set_sps_flag = m_slh.short_term_ref_pic_set_sps_flag;
 
     // ref pic sets
     hevc->CurrPicOrderCntVal = cur->PicOrderCntVal;
