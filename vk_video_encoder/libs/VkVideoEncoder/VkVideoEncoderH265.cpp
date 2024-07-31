@@ -380,7 +380,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     if (m_encoderConfig->verboseFrameStruct) {
         std::cout << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
-                  << " inputOrderNum: "  << encodeFrameInfo->frameEncodeOrderNum
+                  << " inputOrderNum: "  << encodeFrameInfo->frameInputOrderNum
                   << " encodeFrameNum: " << encodeFrameInfo->frameEncodeOrderNum
                   << " input order: "  << encodeFrameInfo->gopPosition.inputOrder
                   << " encode order: "   << encodeFrameInfo->gopPosition.encodeOrder

@@ -489,7 +489,7 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     if (true) {
         std::cout << "Input: " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
-                  << " inputOrderNum: "  << encodeFrameInfo->frameEncodeOrderNum
+                  << " inputOrderNum: "  << encodeFrameInfo->frameInputOrderNum
                   << " encodeFrameNum: " << encodeFrameInfo->frameEncodeOrderNum
                   << " encode order: "  << encodeFrameInfo->gopPosition.inputOrder
                   << " encode order: "   << encodeFrameInfo->gopPosition.encodeOrder
