@@ -8,7 +8,12 @@
 
 #include <cpudetect.h>
 
-#if defined(_M_X64)
+#if defined(__aarch64__)
+
+#include <asm/hwcap.h>
+#include <sys/auxv.h>
+
+#elif defined(_M_X64)
 
 #include <iostream>
 #include <vector>
@@ -162,6 +167,12 @@ SIMD_ISA check_simd_support()
     if (__builtin_cpu_supports("avx512f")) { return SIMD_ISA::AVX512; }
     else if (__builtin_cpu_supports("avx2")) { return SIMD_ISA::AVX2; }
     else if (__builtin_cpu_supports("ssse3")) { return SIMD_ISA::SSSE3; };
+#elif defined(__aarch64__)
+    long hwcaps = getauxval(AT_HWCAP);
+    if(hwcaps & HWCAP_SVE) { return SIMD_ISA::SVE; }
+    else if(hwcaps & HWCAP_ASIMD) { return SIMD_ISA::NEON; }
+#elif defined(__ARM_ARCH_7A__) || defined(_M_ARM64)
+    return SIMD_ISA::NEON;
 #endif
     return SIMD_ISA::NOSIMD;
 };

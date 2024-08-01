@@ -638,8 +638,8 @@ bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, siz
     else if (m_NextStartCode == SIMD_ISA::SSSE3)
     {
         return ParseByteStreamSimd<SIMD_ISA::SSSE3>(pck, pParsedBytes);
-    }
-#elif defined(__aarch64__)
+    } else
+#elif (__aarch64__)
     if (m_NextStartCode == SIMD_ISA::SVE)
     {
         return ParseByteStreamSimd<SIMD_ISA::SVE>(pck, pParsedBytes);
@@ -647,9 +647,12 @@ bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, siz
     else if (m_NextStartCode == SIMD_ISA::NEON)
     {
         return ParseByteStreamSimd<SIMD_ISA::NEON>(pck, pParsedBytes);
+    } else
+#elif defined(__ARM_ARCH_7A__) || defined(_M_ARM64)
+    {
+        return ParseByteStreamSimd<SIMD_ISA::NEON>(pck, pParsedBytes);
     }
 #endif
-    else
     {
         return ParseByteStreamSimd<SIMD_ISA::NOSIMD>(pck, pParsedBytes);
     }

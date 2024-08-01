@@ -255,7 +255,7 @@ if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     endif()
 endif()
 
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "^aarch^")
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "^aarch64")
     if (UNIX)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8.2-a+sve")
     elseif(WIN32)
