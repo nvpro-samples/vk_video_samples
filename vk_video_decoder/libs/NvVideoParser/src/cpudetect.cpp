@@ -6,6 +6,8 @@
 // Uses the __cpuid intrinsic to get information about
 // CPU extended instruction set support.
 
+#include <cpudetect.h>
+
 #if defined(_M_X64)
 
 #include <iostream>
@@ -147,12 +149,19 @@ private:
 // Initialize static member data
 const InstructionSet::InstructionSet_Internal InstructionSet::CPU_Rep;
 
-// Print out supported instruction set extensions
-int main()
-{
-    if (InstructionSet::AVX512F()) { std::cout << "AVX512"; }
-    else if (InstructionSet::AVX2()) { std::cout << "AVX2"; }
-    else if (InstructionSet::SSSE3()) { std::cout << "SSSE3"; };
-}
-
 #endif
+
+// Print out supported instruction set extensions
+SIMD_ISA check_simd_support()
+{
+#if defined(_M_X64)
+    if (InstructionSet::AVX512F()) { return SIMD_ISA::AVX512; }
+    else if (InstructionSet::AVX2()) { return SIMD_ISA::AVX2; }
+    else if (InstructionSet::SSSE3()) { return SIMD_ISA::SSSE3; };
+#elif defined (__x86_64__)
+    if (__builtin_cpu_supports("avx512f")) { return SIMD_ISA::AVX512; }
+    else if (__builtin_cpu_supports("avx2")) { return SIMD_ISA::AVX2; }
+    else if (__builtin_cpu_supports("ssse3")) { return SIMD_ISA::SSSE3; };
+#endif
+    return SIMD_ISA::NOSIMD;
+};

@@ -24,7 +24,7 @@
 #include "arm_sve.h"
 #elif defined(__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
 #include "arm_neon.h"
-#elif defined(__SSE2__)
+#elif defined(_M_X64) || defined(__x86_64__)
 #include <immintrin.h>
 #endif
 
@@ -126,7 +126,8 @@ VkResult VulkanVideoDecoder::Initialize(const VkParserInitDecodeParameters *pPar
     m_lPTSPos = 0;
     InitParser();
     memset(&m_nalu, 0, sizeof(m_nalu)); // reset nalu again (in case parser used init_dbits during initialization)
-    
+    m_NextStartCode = check_simd_support();
+
     return VK_SUCCESS;
 }
 
@@ -262,8 +263,8 @@ int32_t VulkanVideoDecoder::se()
     return codeNum;
 }
 
-
-size_t VulkanVideoDecoder::next_start_code_c(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+template<>
+size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::NOSIMD>(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     uint32_t bfr = m_BitBfr;
     size_t i = 0;
@@ -290,8 +291,9 @@ static int inline count_trailing_zeros(uint64_t resmask)
     return offset;
 }
 
-#if defined(__AVX512BW__) && defined(__AVX512F__) && defined(__AVX512VL__)
-size_t VulkanVideoDecoder::next_start_code_avx512(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+#if defined(__x86_64__) || defined(_M_X64)
+template<>
+size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::AVX512>(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
     size_t datasize128 = (datasize >> 7) << 7;
@@ -347,9 +349,9 @@ size_t VulkanVideoDecoder::next_start_code_avx512(const uint8_t *pdatain, size_t
     found_start_code = ((bfr & 0x00ffffff) == 1);
     return i;
 }
-#elif defined(__AVX2__)
 
-size_t VulkanVideoDecoder::next_start_code_avx2(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+template<>
+size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::AVX2>(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
     size_t datasize64 = (datasize >> 6) << 6;
@@ -401,9 +403,9 @@ size_t VulkanVideoDecoder::next_start_code_avx2(const uint8_t *pdatain, size_t d
     found_start_code = ((bfr & 0x00ffffff) == 1);
     return i;
 }
-#elif defined(__SSSE3__)
 
-size_t VulkanVideoDecoder::next_start_code_ssse3(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+template<>
+size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::SSSE3>(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
     size_t datasize32 = (datasize >> 5) << 5;
@@ -453,10 +455,11 @@ size_t VulkanVideoDecoder::next_start_code_ssse3(const uint8_t *pdatain, size_t 
     found_start_code = ((bfr & 0x00ffffff) == 1);
     return i;
 }
+#endif
 
-#elif defined(__ARM_FEATURE_SVE) // TODO: tymur: check SVE version compilation and run on  armv9/armv8.2+sve device
+#if defined(__aarch64__) // TODO: tymur: check SVE version compilation and run on  armv9/armv8.2+sve device
 #define SVE_REGISTER_MAX_BYTES 256 // 2048 bits
-size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::SVE>(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
     {
@@ -514,7 +517,6 @@ size_t VulkanVideoDecoder::next_start_code_sve(const uint8_t *pdatain, size_t da
     return datasize;
 }
 #undef SVE_REGISTER_MAX_BYTES
-#elif defined (__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
 
 size_t VulkanVideoDecoder::next_start_code_neon(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
@@ -583,29 +585,6 @@ size_t VulkanVideoDecoder::next_start_code_neon(const uint8_t *pdatain, size_t d
 }
 #endif
 
-// #include <cstdio>
-size_t VulkanVideoDecoder::next_start_code(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
-{
-#if defined(__ARM_FEATURE_SVE)
-    return next_start_code_sve(pdatain, datasize, found_start_code);
-#elif defined(__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
-    // printf("NEON");
-    return next_start_code_neon(pdatain, datasize, found_start_code);
-#elif defined(__AVX512BW__) && defined(__AVX512F__) && defined(__AVX512VL__)
-    // printf("AVX512");
-    return next_start_code_avx512(pdatain, datasize, found_start_code);
-#elif defined(__AVX2__)
-    // printf("AVX2");
-    return next_start_code_avx2(pdatain, datasize, found_start_code);
-#elif defined(__SSSE3__)
-    // printf("SSE42");
-    return next_start_code_ssse3(pdatain, datasize, found_start_code);
-#else
-    // printf("Scalar");
-    return next_start_code_c(pdatain, datasize, found_start_code);
-#endif
-}
-
 bool VulkanVideoDecoder::resizeBitstreamBuffer(VkDeviceSize extraBytes)
 {
     // increasing min 2MB size per resizeBitstreamBuffer()
@@ -646,6 +625,38 @@ VkDeviceSize VulkanVideoDecoder::swapBitstreamBuffer(VkDeviceSize copyCurrBuffOf
 }
 
 bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_t *pParsedBytes)
+{
+#if defined(__x86_64__) || defined (__aarch64__)
+    if (m_NextStartCode == SIMD_ISA::AVX512)
+    {
+        return ParseByteStreamSimd<SIMD_ISA::AVX512>(pck, pParsedBytes);
+    }
+    else if (m_NextStartCode == SIMD_ISA::AVX2)
+    {
+        return ParseByteStreamSimd<SIMD_ISA::AVX2>(pck, pParsedBytes);
+    }
+    else if (m_NextStartCode == SIMD_ISA::SSSE3)
+    {
+        return ParseByteStreamSimd<SIMD_ISA::SSSE3>(pck, pParsedBytes);
+    }
+#elif defined(__aarch64__)
+    if (m_NextStartCode == SIMD_ISA::SVE)
+    {
+        return ParseByteStreamSimd<SIMD_ISA::SVE>(pck, pParsedBytes);
+    }
+    else if (m_NextStartCode == SIMD_ISA::NEON)
+    {
+        return ParseByteStreamSimd<SIMD_ISA::NEON>(pck, pParsedBytes);
+    }
+#endif
+    else
+    {
+        return ParseByteStreamSimd<SIMD_ISA::NOSIMD>(pck, pParsedBytes);
+    }
+}
+
+template<SIMD_ISA T>
+bool VulkanVideoDecoder::ParseByteStreamSimd(const VkParserBitstreamPacket* pck, size_t *pParsedBytes)
 {
     VkDeviceSize curr_data_size = pck->nDataLength;
     unsigned int framesinpkt = 0;
@@ -758,7 +769,7 @@ bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, siz
             buflen = std::min<VkDeviceSize>(buflen, (m_lMinBytesForBoundaryDetection - (m_nalu.end_offset - m_nalu.start_offset)));
         }
         bool found_start_code = false;
-        VkDeviceSize start_offset = next_start_code(pdatain, (size_t)buflen, found_start_code);
+        VkDeviceSize start_offset = next_start_code<T>(pdatain, (size_t)buflen, found_start_code);
         VkDeviceSize data_used = found_start_code ? start_offset : buflen;
         if (data_used > 0)
         {
