@@ -493,7 +493,7 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::SVE>(const uint8_t *pdatain
             // hotspot begin
             svuint8_t vdata_prev1or2 = svorr_u8_z(pred, vdata_prev2, vdata_prev1);
             svbool_t vmask = svcmpeq_n_u8(svcmpeq_n_u8(pred, vdata_prev1or2, 0), vdata, 1);
-            const size_t resmask = svmaxv_u8(vmask, v0n);
+            const size_t resmask = svmaxv_u8(vmask, vdata);
 
             if (resmask)
             {
@@ -639,7 +639,7 @@ bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, siz
     {
         return ParseByteStreamSimd<SIMD_ISA::SSSE3>(pck, pParsedBytes);
     } else
-#elif (__aarch64__)
+#elif defined(__aarch64__)
     if (m_NextStartCode == SIMD_ISA::SVE)
     {
         return ParseByteStreamSimd<SIMD_ISA::SVE>(pck, pParsedBytes);
