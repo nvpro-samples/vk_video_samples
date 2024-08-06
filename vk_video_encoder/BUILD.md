@@ -155,7 +155,7 @@ VK_KHR_video_encode_h264                      : extension revision 14
 
 To run the Vulkan Video Encode sample from the build dir (for Windows change to build\install\Debug\bin\ or build\install\Release\bin\):
 
-        $ ./demos/vk-video-enc-test -i <yuv-video-input-file.yuv> --codec <"h264" | "h265"> --inputNumPlanes <2 | 3> --inputWidth <input Y width> --inputHeight <input Y height> --startFrame 0 --numFrames <max frame num>
+        $ ./demos/vk-video-enc-test -i <yuv-video-input-file.yuv> --codec <"h264" | "h265" | "av1"> --inputNumPlanes <2 | 3> --inputWidth <input Y width> --inputHeight <input Y height> --startFrame 0 --numFrames <max frame num>
 
 You can select which WSI subsystem is used to build the demos using a CMake option
 called DEMOS_WSI_SELECTION.

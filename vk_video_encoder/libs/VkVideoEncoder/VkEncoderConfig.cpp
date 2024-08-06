@@ -24,7 +24,7 @@ void printHelp()
             "Usage : EncodeApp \n\
     -i                              .yuv Input YUV File Name (YUV420p 8bpp only) \n\
     -o                              .264/5 Output H264/5 File Name \n\
-    --codec                         <sting> select codec type: avc (h264) or hevc (h265)   \n\
+    --codec                         <sting> select codec type: avc (h264) or hevc (h265) or av1\n\
     --startFrame                    <integer> : Start Frame Number to be Encoded \n\
     --numFrames                     <integer> : End Frame Number to be Encoded \n\
     --inputWidth                         <integer> : Encode Width \n\
