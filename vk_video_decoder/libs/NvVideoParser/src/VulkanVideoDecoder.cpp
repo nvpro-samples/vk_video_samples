@@ -300,7 +300,7 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::AVX512>(const uint8_t *pdat
     if (datasize128 > 128)
     {
         const __m512i v1 = _mm512_set1_epi8(1);
-        const __m512i v254 = _mm512_set1_epi8(0xFE);
+        const __m512i v254 = _mm512_set1_epi8(-2);
         __m512i vdata = _mm512_loadu_epi8(pdatain);
         __m512i vBfr = _mm512_set1_epi16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF));
         __m512i vdata_alignr48b_init = _mm512_alignr_epi32(vdata, vBfr, 12);

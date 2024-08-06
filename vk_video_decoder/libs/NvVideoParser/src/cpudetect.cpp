@@ -34,6 +34,7 @@ public:
 
     static bool SSSE3(void) { return CPU_Rep.f_1_ECX_[9]; }
     static bool AVX(void) { return CPU_Rep.f_1_ECX_[28]; }
+    static bool AVX2(void) { return CPU_Rep.f_7_EBX_[5]; }
     static bool AVX512F(void) { return CPU_Rep.f_7_EBX_[16]; }
     static bool AVX512PF(void) { return CPU_Rep.f_7_EBX_[26]; }
     static bool AVX512ER(void) { return CPU_Rep.f_7_EBX_[27]; }
