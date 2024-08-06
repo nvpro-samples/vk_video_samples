@@ -34,9 +34,12 @@ void printHelp()
     );
 }
 
-static int parseArguments(EncoderConfig *encoderConfig, int argc, char *argv[])
+int EncoderConfig::ParseArguments(int argc, char *argv[])
 {
-    encoderConfig->appName = argv[0];
+    int argcount = 0;
+    std::vector<char*> arglist;
+
+    appName = argv[0];
 
     for (int32_t i = 1; i < argc; i++) {
 
@@ -45,7 +48,7 @@ static int parseArguments(EncoderConfig *encoderConfig, int argc, char *argv[])
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
-            size_t fileSize = encoderConfig->inputFileHandler.SetFileName(argv[i]);
+            size_t fileSize = inputFileHandler.SetFileName(argv[i]);
             if (fileSize <= 0) {
                 return (int)fileSize;
             }
@@ -54,7 +57,7 @@ static int parseArguments(EncoderConfig *encoderConfig, int argc, char *argv[])
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
-            size_t fileSize = encoderConfig->outputFileHandler.SetFileName(argv[i]);
+            size_t fileSize = outputFileHandler.SetFileName(argv[i]);
             if (fileSize <= 0) {
                 return (int)fileSize;
             }
@@ -62,47 +65,51 @@ static int parseArguments(EncoderConfig *encoderConfig, int argc, char *argv[])
             printHelp();
             return -1;
         } else if (strcmp(argv[i], "--codec") == 0) {
-            const char *codec = argv[i + 1];
-            if ((strcmp(codec, "avc") == 0) || (strcmp(codec, "h264") == 0)) {
-                encoderConfig->codec = VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR;
-            } else if ((strcmp(codec, "hevc") == 0) || (strcmp(codec, "h265") == 0)) {
-                encoderConfig->codec = VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR;
+            const char *codec_ = argv[i + 1];
+            if ((strcmp(codec_, "avc") == 0) || (strcmp(codec_, "h264") == 0)) {
+                codec = VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR;
+            } else if ((strcmp(codec_, "hevc") == 0) || (strcmp(codec_, "h265") == 0)) {
+                codec = VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR;
+            } else if (strcmp(codec_, "av1") == 0) {
+                // codec = VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR;
+		assert(!"AV1 is not supported yet!");
+		return -1;
             } else {
                 // Invalid codec
-                fprintf(stderr, "Invalid codec: %s\n", codec);
+                fprintf(stderr, "Invalid codec: %s\n", codec_);
                 return -1;
             }
-            printf("Selected codec: %s\n", codec);
+            printf("Selected codec: %s\n", codec_);
             i++; // Skip the next argument since it's the codec value
         } else if ((strcmp(argv[i], "--inputWidth") == 0)) {
-            if ((++i >= argc) || (sscanf(argv[i], "%u", &encoderConfig->input.width) != 1)) {
+            if ((++i >= argc) || (sscanf(argv[i], "%u", &input.width) != 1)) {
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
         }  else if ((strcmp(argv[i], "--inputHeight") == 0)) {
-            if ((++i >= argc) || (sscanf(argv[i], "%u", &encoderConfig->input.height) != 1)) {
+            if ((++i >= argc) || (sscanf(argv[i], "%u", &input.height) != 1)) {
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
         }  else if ((strcmp(argv[i], "--inputNumPlanes") == 0)) {
-            if ((++i >= argc) || (sscanf(argv[i], "%u", &encoderConfig->input.numPlanes) != 1)) {
+            if ((++i >= argc) || (sscanf(argv[i], "%u", &input.numPlanes) != 1)) {
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
-            if ((encoderConfig->input.numPlanes < 2) || (encoderConfig->input.numPlanes > 3)) {
+            if ((input.numPlanes < 2) || (input.numPlanes > 3)) {
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 fprintf(stderr, "Currently supported number of planes are 2 or 3\n");
             }
         } else if (strcmp(argv[i], "--inputChromaSubsampling") == 0) {
             const char *chromeSubsampling = argv[i + 1];
             if (strcmp(chromeSubsampling, "400") == 0) {
-                encoderConfig->input.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR;
+                input.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR;
             } else if (strcmp(chromeSubsampling, "420") == 0) {
-                encoderConfig->input.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;
+                input.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;
             } else if (strcmp(chromeSubsampling, "422") == 0) {
-                encoderConfig->input.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR;
+                input.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR;
             } else if (strcmp(chromeSubsampling, "444") == 0) {
-                encoderConfig->input.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
+                input.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
             } else {
                 // Invalid chromeSubsampling
                 fprintf(stderr, "Invalid chromeSubsampling: %s\n", chromeSubsampling);
@@ -112,32 +119,32 @@ static int parseArguments(EncoderConfig *encoderConfig, int argc, char *argv[])
             i++; // Skip the next argument since it's the chromeSubsampling value
         }  else if ((strcmp(argv[i], "--inputLumaPlanePitch") == 0)) {
             if ((++i >= argc) || (sscanf(argv[i], "%llu",
-                    (long long unsigned int*)&encoderConfig->input.planeLayouts[0].rowPitch) != 1)) {
+                    (long long unsigned int*)&input.planeLayouts[0].rowPitch) != 1)) {
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
         }  else if ((strcmp(argv[i], "--inputBpp") == 0)) {
-            if ((++i >= argc) || (sscanf(argv[i], "%hhu", &encoderConfig->input.bpp) != 1)) {
+            if ((++i >= argc) || (sscanf(argv[i], "%hhu", &input.bpp) != 1)) {
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
         } else if (strcmp(argv[i], "--startFrame") == 0) {
-            if (++i >= argc || sscanf(argv[i], "%u", &encoderConfig->startFrame) != 1) {
+            if (++i >= argc || sscanf(argv[i], "%u", &startFrame) != 1) {
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
         } else if (strcmp(argv[i], "--numFrames") == 0) {
-            if (++i >= argc || sscanf(argv[i], "%u", &encoderConfig->numFrames) != 1) {
+            if (++i >= argc || sscanf(argv[i], "%u", &numFrames) != 1) {
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
         } else if (strcmp(argv[i], "--minQp") == 0) {
-            if (++i >= argc || sscanf(argv[i], "%u", &encoderConfig->minQp) != 1) {
+            if (++i >= argc || sscanf(argv[i], "%u", &minQp) != 1) {
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
         } else if (strcmp(argv[i], "--maxQp") == 0) {
-            if (++i >= argc || sscanf(argv[i], "%u", &encoderConfig->minQp) != 1) {
+            if (++i >= argc || sscanf(argv[i], "%u", &minQp) != 1) {
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
@@ -148,7 +155,7 @@ static int parseArguments(EncoderConfig *encoderConfig, int argc, char *argv[])
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
-            encoderConfig->gopStructure.SetGopFrameCount(gopFrameCount);
+            gopStructure.SetGopFrameCount(gopFrameCount);
             printf("Selected gopFrameCount: %d\n", gopFrameCount);
         } else if (strcmp(argv[i], "--idrPeriod") == 0) {
             int32_t idrPeriod = EncoderConfig::DEFAULT_GOP_IDR_PERIOD;
@@ -156,7 +163,7 @@ static int parseArguments(EncoderConfig *encoderConfig, int argc, char *argv[])
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
-            encoderConfig->gopStructure.SetIdrPeriod(idrPeriod);
+            gopStructure.SetIdrPeriod(idrPeriod);
             printf("Selected idrPeriod: %d\n", idrPeriod);
         } else if (strcmp(argv[i], "--consecutiveBFrameCount") == 0) {
             uint8_t consecutiveBFrameCount = EncoderConfig::DEFAULT_CONSECUTIVE_B_FRAME_COUNT;
@@ -164,7 +171,7 @@ static int parseArguments(EncoderConfig *encoderConfig, int argc, char *argv[])
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
-            encoderConfig->gopStructure.SetConsecutiveBFrameCount(consecutiveBFrameCount);
+            gopStructure.SetConsecutiveBFrameCount(consecutiveBFrameCount);
             printf("Selected consecutiveBFrameCount: %d\n", consecutiveBFrameCount);
         } else if (strcmp(argv[i], "--temporalLayerCount") == 0) {
             uint8_t temporalLayerCount = EncoderConfig::DEFAULT_TEMPORAL_LAYER_COUNT;
@@ -172,7 +179,7 @@ static int parseArguments(EncoderConfig *encoderConfig, int argc, char *argv[])
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }
-            encoderConfig->gopStructure.SetTemporalLayerCount(temporalLayerCount);
+            gopStructure.SetTemporalLayerCount(temporalLayerCount);
             printf("Selected temporalLayerCount: %d\n", temporalLayerCount);
         } else if (strcmp(argv[i], "--lastFrameType") == 0) {
             VkVideoGopStructure::FrameType lastFrameType = VkVideoGopStructure::FRAME_TYPE_P;
@@ -189,52 +196,51 @@ static int parseArguments(EncoderConfig *encoderConfig, int argc, char *argv[])
                 return -1;
             }
             i++; // Skip the next argument since it's the frameTypeName value
-            encoderConfig->gopStructure.SetLastFrameType(lastFrameType);
-            printf("Selected frameTypeName: %s\n", encoderConfig->gopStructure.GetFrameTypeName(lastFrameType));
+            gopStructure.SetLastFrameType(lastFrameType);
+            printf("Selected frameTypeName: %s\n", gopStructure.GetFrameTypeName(lastFrameType));
         } else if (strcmp(argv[i], "--closedGop") == 0) {
-            encoderConfig->gopStructure.SetClosedGop();
+            gopStructure.SetClosedGop();
         } else {
-            fprintf(stderr, "Unrecognized option: %s\n", argv[i]);
-            printHelp();
-            return -1;
+            argcount++;
+            arglist.push_back(argv[i]);
         }
     }
 
-    if (!encoderConfig->inputFileHandler.HasFileName()) {
+    if (!inputFileHandler.HasFileName()) {
         fprintf(stderr, "An input file was not specified\n");
         return -1;
     }
 
-    if (encoderConfig->input.width == 0) {
+    if (input.width == 0) {
         fprintf(stderr, "The width was not specified\n");
         return -1;
     }
-    encoderConfig->encodeWidth = encoderConfig->input.width;
+    encodeWidth = input.width;
 
-    if (encoderConfig->input.height == 0) {
+    if (input.height == 0) {
         fprintf(stderr, "The height was not specified\n");
         return -1;
     }
-    encoderConfig->encodeHeight = encoderConfig->input.height;
+    encodeHeight = input.height;
 
-    if (!encoderConfig->outputFileHandler.HasFileName()) {
-        const char* defaultOutName = (encoderConfig->codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) ?
-                                      "out.264" : "out.265";
+    if (!outputFileHandler.HasFileName()) {
+        const char* defaultOutName = (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) ? "out.264" :
+                                     (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR) ? "out.265" : "out.ivf";
         fprintf(stdout, "No output file name provided. Using %s.\n", defaultOutName);
-        size_t fileSize = encoderConfig->outputFileHandler.SetFileName(defaultOutName);
+        size_t fileSize = outputFileHandler.SetFileName(defaultOutName);
         if (fileSize <= 0) {
             return (int)fileSize;
         }
     }
 
-    if (encoderConfig->minQp == -1) {
+    if (minQp == -1) {
         fprintf(stdout, "No QP was provided. Using default value: 20.\n");
-        encoderConfig->minQp = 20;
+        minQp = 20;
     }
 
-    encoderConfig->codecBlockAlignment = H264MbSizeAlignment; // H264
+    codecBlockAlignment = H264MbSizeAlignment; // H264
 
-    return 0;
+    return DoParseArguments(argcount, arglist.data());
 }
 
 VkResult EncoderConfig::CreateCodecConfig(int argc, char *argv[],
@@ -263,7 +269,7 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, char *argv[],
     if (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) {
 
         VkSharedBaseObj<EncoderConfigH264> vkEncoderConfigh264(new EncoderConfigH264());
-        int ret = parseArguments(vkEncoderConfigh264, argc, argv);
+        int ret = vkEncoderConfigh264->ParseArguments(argc, argv);
         if (ret != 0) {
             assert(!"Invalid arguments");
             return VK_ERROR_INITIALIZATION_FAILED;
@@ -281,7 +287,7 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, char *argv[],
     } else if (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR) {
 
         VkSharedBaseObj<EncoderConfigH265> vkEncoderConfigh265(new EncoderConfigH265());
-        int ret = parseArguments(vkEncoderConfigh265, argc, argv);
+        int ret = vkEncoderConfigh265->ParseArguments(argc, argv);
         if (ret != 0) {
             assert(!"Invalid arguments");
             return VK_ERROR_INITIALIZATION_FAILED;

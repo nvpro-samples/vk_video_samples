@@ -526,6 +526,10 @@ public:
 
     void InitVideoProfile();
 
+    int ParseArguments(int argc, char *argv[]);
+
+    virtual int DoParseArguments(int argc, char *argv[]) { return 0; };
+
     virtual VkResult InitializeParameters()
     {
         if (!input.VerifyInputs()) {
