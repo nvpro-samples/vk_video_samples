@@ -321,7 +321,7 @@ VkDeviceSize VulkanVideoDecoder::swapBitstreamBuffer(VkDeviceSize copyCurrBuffOf
 
 bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_t *pParsedBytes)
 {
-#if defined(__x86_64__) || defined (__aarch64__)
+#if defined(__x86_64__) || defined (_M_X64)
     if (m_NextStartCode == SIMD_ISA::AVX512)
     {
         return ParseByteStreamSimd<SIMD_ISA::AVX512>(pck, pParsedBytes);
