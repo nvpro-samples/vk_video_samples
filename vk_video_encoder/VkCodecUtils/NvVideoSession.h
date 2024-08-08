@@ -19,7 +19,6 @@
 #include "nvvk/memorymanagement_vk.hpp"
 #include "nvvk/memallocator_vk.hpp"
 #include "nvvk/memallocator_dedicated_vk.hpp"
-#define VK_ENABLE_BETA_EXTENSIONS 1
 #include "vulkan/vulkan.hpp"
 #include "nvvk/context_vk.hpp"
 

@@ -20,58 +20,12 @@
 #include <assert.h>
 #include <stdint.h>
 
-#include "VkVideoCore/VkVideoRefCountBase.h"
-#include "VulkanVideoParser.h"
+#include "VkCodecUtils/VkVideoRefCountBase.h"
+#include "vkvideo_parser/VulkanVideoParser.h"
 #include "vulkan_interfaces.h"
 #include "VkCodecUtils/VkImageResource.h"
-
-struct DecodedFrame {
-    int32_t pictureIndex;
-    int32_t displayWidth;
-    int32_t displayHeight;
-    VkSharedBaseObj<VkImageResourceView> decodedImageView;
-    VkSharedBaseObj<VkImageResourceView> outputImageView;
-    VkFence frameCompleteFence; // If valid, the fence is signaled when the decoder is done decoding the frame.
-    VkFence frameConsumerDoneFence; // If valid, the fence is signaled when the consumer (graphics, compute or display) is done using the frame.
-    VkSemaphore frameCompleteSemaphore; // If valid, the semaphore is signaled when the decoder is done decoding the frame.
-    VkSemaphore frameConsumerDoneSemaphore; // If valid, the semaphore is signaled when the consumer (graphics, compute or display) is done using the frame.
-    VkQueryPool queryPool; // queryPool handle used for the video queries.
-    int32_t startQueryId;  // query Id used for the this frame.
-    uint32_t numQueries;   // usually one query per frame
-    // If multiple queues are available, submittedVideoQueueIndex is the queue index that the video frame was submitted to.
-    // if only one queue is available, submittedVideoQueueIndex will always have a value of "0".
-    int32_t  submittedVideoQueueIndex;
-    uint64_t timestamp;
-    uint64_t decodeOrder;
-    uint32_t hasConsummerSignalFence : 1;
-    uint32_t hasConsummerSignalSemaphore : 1;
-    // For debugging
-    int32_t displayOrder;
-
-    void Reset()
-    {
-        pictureIndex = -1;
-        displayWidth = 0;
-        displayHeight = 0;
-        decodedImageView  = nullptr;
-        outputImageView = nullptr;
-        frameCompleteFence = VkFence();
-        frameConsumerDoneFence = VkFence();
-        frameCompleteSemaphore = VkSemaphore();
-        frameConsumerDoneSemaphore = VkSemaphore();
-        queryPool = VkQueryPool();
-        startQueryId = 0;
-        numQueries = 0;
-        submittedVideoQueueIndex = 0;
-        timestamp = 0;
-        hasConsummerSignalFence = false;
-        hasConsummerSignalSemaphore = false;
-        // For debugging
-        decodeOrder = 0;
-        displayOrder = 0;
-    }
-
-};
+#include "VkCodecUtils/VulkanDecodedFrame.h"
+#include "VkVideoCore/DecodeFrameBufferIf.h"
 
 struct DecodedFrameRelease {
     int32_t pictureIndex;
@@ -79,7 +33,7 @@ struct DecodedFrameRelease {
     uint32_t hasConsummerSignalFence : 1;
     uint32_t hasConsummerSignalSemaphore : 1;
     // For debugging
-    int32_t displayOrder;
+    uint64_t displayOrder;
     uint64_t decodeOrder;
 };
 
@@ -87,6 +41,7 @@ class VkParserVideoPictureParameters;
 
 class VulkanVideoFrameBuffer : public IVulkanVideoFrameBufferParserCb {
 public:
+
     // Synchronization
     struct FrameSynchronizationInfo {
         VkFence frameCompleteFence;
@@ -94,10 +49,13 @@ public:
         VkFence frameConsumerDoneFence;
         VkSemaphore frameConsumerDoneSemaphore;
         VkQueryPool queryPool;
-        int32_t startQueryId;
+        uint32_t startQueryId;
         uint32_t numQueries;
+        uint32_t optimalOutputIndex : 4;
         uint32_t hasFrameCompleteSignalFence : 1;
         uint32_t hasFrameCompleteSignalSemaphore : 1;
+        uint32_t syncOnFrameCompleteFence : 1;
+        uint32_t syncOnFrameConsumerDoneFence : 1;
     };
 
     struct ReferencedObjectsInfo {
@@ -127,37 +85,52 @@ public:
         VkImageLayout currentImageLayout;
     };
 
+    struct ImageSpec {
+
+        ImageSpec()
+        : imageTypeIdx((uint32_t)-1)
+        , usesImageArray(false)
+        , usesImageViewArray(false)
+        , deferCreate(false)
+        , createInfo()
+        , memoryProperty()
+        , imageArray()
+        , imageViewArray() {}
+
+        uint32_t              imageTypeIdx;  // -1 is an invalid index and the entry is skipped
+        uint32_t              usesImageArray     : 1;
+        uint32_t              usesImageViewArray : 1;
+        uint32_t              deferCreate        : 1;
+        VkImageCreateInfo     createInfo;
+        VkMemoryPropertyFlags memoryProperty;
+        // must be valid if m_usesImageArray is true
+        VkSharedBaseObj<VkImageResource>     imageArray;
+        // must be valid if m_usesImageViewArray is true
+        VkSharedBaseObj<VkImageResourceView> imageViewArray;
+    };
+
     virtual int32_t InitImagePool(const VkVideoProfileInfoKHR* pDecodeProfile,
                                   uint32_t                 numImages,
-                                  VkFormat                 dpbImageFormat,
-                                  VkFormat                 outImageFormat,
-                                  const VkExtent2D&        codedExtent,
-                                  const VkExtent2D&        maxImageExtent,
-                                  VkImageUsageFlags        dpbImageUsage,
-                                  VkImageUsageFlags        outImageUsage,
+                                  uint32_t                 maxNumImageTypeIdx,
+                                  std::array<VulkanVideoFrameBuffer::ImageSpec, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES>& imageSpecs,
                                   uint32_t                 queueFamilyIndex,
-                                  int32_t                  numImagesToPreallocate,
-                                  bool                     useImageArray = false,
-                                  bool                     useImageViewArray = false,
-                                  bool                     useSeparateOutputImage = false,
-                                  bool                     useLinearOutput = false) = 0;
+                                  int32_t                  numImagesToPreallocate) = 0;
 
     virtual int32_t QueuePictureForDecode(int8_t picId, VkParserDecodePictureInfo* pDecodePictureInfo,
                                           ReferencedObjectsInfo* pReferencedObjectsInfo,
                                           FrameSynchronizationInfo* pFrameSynchronizationInfo) = 0;
-    virtual int32_t DequeueDecodedPicture(DecodedFrame* pDecodedFrame) = 0;
+    virtual int32_t DequeueDecodedPicture(VulkanDecodedFrame* pDecodedFrame) = 0;
     virtual int32_t ReleaseDisplayedPicture(DecodedFrameRelease** pDecodedFramesRelease, uint32_t numFramesToRelease) = 0;
-    virtual int32_t GetDpbImageResourcesByIndex(uint32_t numResources, const int8_t* referenceSlotIndexes,
-                                                VkVideoPictureResourceInfoKHR* pictureResources,
-                                                PictureResourceInfo* pictureResourcesInfo,
-                                                VkImageLayout newDpbImageLayerLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) = 0;
-    virtual int32_t GetCurrentImageResourceByIndex(int8_t referenceSlotIndex,
-                                                   VkVideoPictureResourceInfoKHR* dpbPictureResource,
-                                                   PictureResourceInfo* dpbPictureResourceInfo,
-                                                   VkImageLayout newDpbImageLayerLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR,
-                                                   VkVideoPictureResourceInfoKHR* outputPictureResource = nullptr,
-                                                   PictureResourceInfo* outputPictureResourceInfo = nullptr,
-                                                   VkImageLayout newOutputImageLayerLayout = VK_IMAGE_LAYOUT_MAX_ENUM) = 0;
+    virtual int32_t GetImageResourcesByIndex(uint32_t numResources, const int8_t* referenceSlotIndexes, uint32_t imageTypeIdx,
+                                             VkVideoPictureResourceInfoKHR* pictureResources,
+                                             PictureResourceInfo* pictureResourcesInfo,
+                                             VkImageLayout newImageLayerLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) = 0;
+    virtual int32_t GetCurrentImageResourceByIndex(int8_t referenceSlotIndex, uint32_t imageTypeIdx,
+                                                   VkVideoPictureResourceInfoKHR* pPictureResource,
+                                                   PictureResourceInfo* pPictureResourceInfo,
+                                                   VkImageLayout newImageLayerLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) = 0;
+    virtual int32_t GetCurrentImageResourceByIndex(int8_t referenceSlotIndex, uint32_t imageTypeIdx,
+                                                   VkSharedBaseObj<VkImageResourceView>& imageView) = 0;
     virtual int32_t ReleaseImageResources(uint32_t numResources, const uint32_t* indexes) = 0;
     virtual uint64_t SetPicNumInDecodeOrder(int32_t picId, uint64_t picNumInDecodeOrder) = 0;
     virtual int32_t SetPicNumInDisplayOrder(int32_t picId, int32_t picNumInDisplayOrder) = 0;
@@ -168,5 +141,35 @@ public:
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            VkSharedBaseObj<VulkanVideoFrameBuffer>& vkVideoFrameBuffer);
 };
+
+static inline VkResult vkWaitAndResetFence(const VulkanDeviceContext* vkDevCtx, VkFence fence,
+                                           const char* fenceName = "unknown", uint32_t fenceNum = 0,
+                                           const uint64_t fenceWaitTimeout = 100 * 1000 * 1000 /* 100 mSec */) {
+
+    assert(vkDevCtx != nullptr);
+    assert(fence != VK_NULL_HANDLE);
+
+    VkResult result = vkDevCtx->WaitForFences(*vkDevCtx, 1, &fence, true, fenceWaitTimeout);
+    if (result != VK_SUCCESS) {
+        std::cerr << "\t *************** WARNING: fence " << fenceName << " is not done after  " << fenceWaitTimeout <<
+                         "nSec *************< " << fenceNum << " >**********************" << std::endl;
+        assert(!"Fence is not signaled yet after more than 100 mSec wait");
+    }
+
+    result = vkDevCtx->GetFenceStatus(*vkDevCtx, fence);
+    if (result == VK_NOT_READY) {
+        std::cerr << "\t *************** WARNING: fence " << fenceName << " is VK_NOT_READY *************< " <<
+                        fenceNum << " >**********************" << std::endl;
+        assert(!"Fence is not signaled yet");
+    }
+
+    result = vkDevCtx->ResetFences(*vkDevCtx, 1, &fence);
+    assert(result == VK_SUCCESS);
+
+    result = vkDevCtx->GetFenceStatus(*vkDevCtx, fence);
+    assert(result == VK_NOT_READY);
+
+    return result;
+}
 
 #endif /* _VULKANVIDEOFRAMEBUFFER_H_ */

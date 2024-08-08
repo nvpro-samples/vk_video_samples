@@ -21,7 +21,7 @@
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include <limits>
-#include "VulkanVideoParserIf.h"
+#include "vkvideo_parser/VulkanVideoParserIf.h"
 #include "nvVulkanh265ScalingList.h"
 #include "VulkanH265Decoder.h"
 #include "nvVulkanVideoUtils.h"
@@ -991,7 +991,7 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
     if (vps->flags.vps_timing_info_present_flag != 0)
     {
         vps->vps_num_units_in_tick = u(16);
-        vps->vps_num_units_in_tick <<= 16;;
+        vps->vps_num_units_in_tick <<= 16;
         vps->vps_num_units_in_tick += u(16);
         vps->vps_time_scale = u(16);
         vps->vps_time_scale <<= 16;
@@ -1015,7 +1015,9 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
 
         hevc_video_hrd_param_s* pHrdParameters = nullptr;
         if (vps->vps_num_hrd_parameters) {
-            vps->stdHrdParameters.reset(new hevc_video_hrd_param_s[vps->vps_num_hrd_parameters]);
+            // vps->stdHrdParameters.reset(new hevc_video_hrd_param_s[vps->vps_num_hrd_parameters]());
+            auto deleter = [](hevc_video_hrd_param_s* p) { delete[] p; };
+            vps->stdHrdParameters.reset(new hevc_video_hrd_param_s[vps->vps_num_hrd_parameters], deleter);
             if (vps->stdHrdParameters) {
                 pHrdParameters = vps->stdHrdParameters.get();
                 vps->pHrdParameters = pHrdParameters;
@@ -1590,19 +1592,19 @@ static StdVideoH265LevelIdc generalLevelIdcToVulkanLevelIdcEnum(uint8_t general_
     // general_level_idc and sub_layer_level_idc[ OpTid ] shall be set equal to a value of
     // 30 times the level number specified in Table A.4.
     // Table A.4 - General tier and level limits
-    static const uint32_t H265_LEVEL_IDC_1_0 = (uint32_t)(1.0 * 30);
-    static const uint32_t H265_LEVEL_IDC_2_0 = (uint32_t)(2.0 * 30);
-    static const uint32_t H265_LEVEL_IDC_2_1 = (uint32_t)(2.1 * 30);
-    static const uint32_t H265_LEVEL_IDC_3_0 = (uint32_t)(3.0 * 30);
-    static const uint32_t H265_LEVEL_IDC_3_1 = (uint32_t)(3.1 * 30);
-    static const uint32_t H265_LEVEL_IDC_4_0 = (uint32_t)(4.0 * 30);
-    static const uint32_t H265_LEVEL_IDC_4_1 = (uint32_t)(4.1 * 30);
-    static const uint32_t H265_LEVEL_IDC_5_0 = (uint32_t)(5.0 * 30);
-    static const uint32_t H265_LEVEL_IDC_5_1 = (uint32_t)(5.1 * 30);
-    static const uint32_t H265_LEVEL_IDC_5_2 = (uint32_t)(5.2 * 30);
-    static const uint32_t H265_LEVEL_IDC_6_0 = (uint32_t)(6.0 * 30);
-    static const uint32_t H265_LEVEL_IDC_6_1 = (uint32_t)(6.1 * 30);
-    static const uint32_t H265_LEVEL_IDC_6_2 = (uint32_t)(6.2 * 30);
+    static const uint32_t H265_LEVEL_IDC_1_0 = (uint32_t)(1.0f * 30);
+    static const uint32_t H265_LEVEL_IDC_2_0 = (uint32_t)(2.0f * 30);
+    static const uint32_t H265_LEVEL_IDC_2_1 = (uint32_t)(2.1f * 30);
+    static const uint32_t H265_LEVEL_IDC_3_0 = (uint32_t)(3.0f * 30);
+    static const uint32_t H265_LEVEL_IDC_3_1 = (uint32_t)(3.1f * 30);
+    static const uint32_t H265_LEVEL_IDC_4_0 = (uint32_t)(4.0f * 30);
+    static const uint32_t H265_LEVEL_IDC_4_1 = (uint32_t)(4.1f * 30);
+    static const uint32_t H265_LEVEL_IDC_5_0 = (uint32_t)(5.0f * 30);
+    static const uint32_t H265_LEVEL_IDC_5_1 = (uint32_t)(5.1f * 30);
+    static const uint32_t H265_LEVEL_IDC_5_2 = (uint32_t)(5.2f * 30);
+    static const uint32_t H265_LEVEL_IDC_6_0 = (uint32_t)(6.0f * 30);
+    static const uint32_t H265_LEVEL_IDC_6_1 = (uint32_t)(6.1f * 30);
+    static const uint32_t H265_LEVEL_IDC_6_2 = (uint32_t)(6.2f * 30);
 
     switch (general_level_idc) {
         case H265_LEVEL_IDC_1_0: return STD_VIDEO_H265_LEVEL_IDC_1_0;
@@ -1752,7 +1754,6 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
         int RIdx = idx - (delta_idx_minus1 + 1);
         assert(RIdx >= 0);
         const short_term_ref_pic_set_s *rstrps = &strpss[RIdx];
-        int useCount = 0;
         for (int j = 0; j <= (rstrps->NumNegativePics + rstrps->NumPositivePics); j++)
         {
             assert(j < MAX_NUM_STRPS_ENTRIES + 1);
@@ -1764,7 +1765,6 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
             if (use_delta_flag[j]) {
                 stdShortTermRefPicSet->use_delta_flag |= 1 << j;
             }
-            useCount += use_delta_flag[j];
         }
 
         {

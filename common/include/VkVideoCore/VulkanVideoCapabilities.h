@@ -53,6 +53,25 @@ public:
         return result;
     }
 
+    template<class VkVideoEncodeCodecCapabilitiesKHR, VkStructureType VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_CAPABILITIES_KHR>
+    static VkResult GetVideoEncodeCapabilities(const VulkanDeviceContext* vkDevCtx,
+                                               const VkVideoCoreProfile& videoProfile,
+                                               VkVideoCapabilitiesKHR& videoCapabilities,
+                                               VkVideoEncodeCapabilitiesKHR& videoEncodeCapabilities,
+                                               VkVideoEncodeCodecCapabilitiesKHR& videoCodecCapabilities) {
+
+        videoCodecCapabilities  = VkVideoEncodeCodecCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_CAPABILITIES_KHR, nullptr };
+        videoEncodeCapabilities = VkVideoEncodeCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CAPABILITIES_KHR, &videoCodecCapabilities };
+        videoCapabilities       =       VkVideoCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR, &videoEncodeCapabilities };
+
+        VkResult result = GetVideoCapabilities(vkDevCtx, videoProfile, &videoCapabilities);
+        assert(result == VK_SUCCESS);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nERROR: Input is not supported. GetVideoCapabilities() result: 0x%x\n", result);
+        }
+        return result;
+    }
+
     static VkResult GetSupportedVideoFormats(const VulkanDeviceContext* vkDevCtx,
                                              const VkVideoCoreProfile& videoProfile,
                                              VkVideoDecodeCapabilityFlagsKHR capabilityFlags,
@@ -112,19 +131,52 @@ public:
     {
         assert(pVideoCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR);
         VkVideoDecodeCapabilitiesKHR* pVideoDecodeCapabilities = (VkVideoDecodeCapabilitiesKHR*)pVideoCapabilities->pNext;
-        assert(pVideoDecodeCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_DECODE_CAPABILITIES_KHR);
-        VkVideoDecodeH264CapabilitiesKHR* pH264Capabilities = nullptr;
-        VkVideoDecodeH265CapabilitiesKHR* pH265Capabilities = nullptr;
+        VkVideoEncodeCapabilitiesKHR* pVideoEncodeCapabilities = (VkVideoEncodeCapabilitiesKHR*)pVideoCapabilities->pNext;
+        assert((pVideoDecodeCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_DECODE_CAPABILITIES_KHR) ||
+               (pVideoEncodeCapabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_ENCODE_CAPABILITIES_KHR));
 
-        if (videoProfile.GetCodecType() == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
+        switch(videoProfile.GetCodecType()) {
+        case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR:
+        {
             assert(pVideoDecodeCapabilities->pNext);
-            pH264Capabilities = (VkVideoDecodeH264CapabilitiesKHR*)pVideoDecodeCapabilities->pNext;
-            assert(pH264Capabilities->sType == VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_KHR);
-        } else if (videoProfile.GetCodecType() == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) {
+            const VkVideoDecodeH264CapabilitiesKHR* pH264DecCapabilities = (VkVideoDecodeH264CapabilitiesKHR*)pVideoDecodeCapabilities->pNext;
+            assert(pH264DecCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_KHR);
+            if (pH264DecCapabilities->sType != VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_KHR) {
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+        }
+            break;
+        case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR:
+        {
             assert(pVideoDecodeCapabilities->pNext);
-            pH265Capabilities = (VkVideoDecodeH265CapabilitiesKHR*)pVideoDecodeCapabilities->pNext;
-            assert(pH265Capabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_KHR);
-        } else {
+            const VkVideoDecodeH265CapabilitiesKHR* pH265DecCapabilities = (VkVideoDecodeH265CapabilitiesKHR*)pVideoDecodeCapabilities->pNext;
+            assert(pH265DecCapabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_KHR);
+            if (pH265DecCapabilities->sType != VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_KHR) {
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+        }
+            break;
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
+        {
+            assert(pVideoEncodeCapabilities->pNext);
+            const VkVideoEncodeH264CapabilitiesKHR* pH264EncCapabilities = (VkVideoEncodeH264CapabilitiesKHR*)pVideoEncodeCapabilities->pNext;
+            assert(pH264EncCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_KHR);
+            if (pH264EncCapabilities->sType != VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_KHR) {
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+        }
+            break;
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR:
+        {
+            assert(pVideoEncodeCapabilities->pNext);
+            const VkVideoEncodeH265CapabilitiesKHR* pH265EncCapabilities = (VkVideoEncodeH265CapabilitiesKHR*)pVideoEncodeCapabilities->pNext;
+            assert(pH265EncCapabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_CAPABILITIES_KHR);
+            if (pH265EncCapabilities->sType != VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_CAPABILITIES_KHR) {
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+        }
+            break;
+        default:
             assert(!"Unsupported codec");
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
         }
@@ -152,8 +204,9 @@ public:
             std::cout << "\t\t\t" << "maxActiveReferencePictures: " << pVideoCapabilities->maxActiveReferencePictures << std::endl;
 
             if (videoProfile.GetCodecType() == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
-                std::cout << "\t\t\t" << "maxLevelIdc: " << pH264Capabilities->maxLevelIdc << std::endl;
-                std::cout << "\t\t\t" << "fieldOffsetGranularity: " << pH264Capabilities->fieldOffsetGranularity.x << " x " << pH264Capabilities->fieldOffsetGranularity.y << std::endl;;
+                const VkVideoDecodeH264CapabilitiesKHR* pH264DecCapabilities = (VkVideoDecodeH264CapabilitiesKHR*)pVideoDecodeCapabilities->pNext;
+                std::cout << "\t\t\t" << "maxLevelIdc: " << pH264DecCapabilities->maxLevelIdc << std::endl;
+                std::cout << "\t\t\t" << "fieldOffsetGranularity: " << pH264DecCapabilities->fieldOffsetGranularity.x << " x " << pH264DecCapabilities->fieldOffsetGranularity.y << std::endl;
 
                 if (strncmp(pVideoCapabilities->stdHeaderVersion.extensionName,
                         VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME,
@@ -163,7 +216,8 @@ public:
                     return VK_ERROR_INCOMPATIBLE_DRIVER;
                 }
             } else if (videoProfile.GetCodecType() == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) {
-                std::cout << "\t\t\t" << "maxLevelIdc: " << pH265Capabilities->maxLevelIdc << std::endl;
+                const VkVideoDecodeH265CapabilitiesKHR* pH265DecCapabilities = (VkVideoDecodeH265CapabilitiesKHR*)pVideoDecodeCapabilities->pNext;
+                std::cout << "\t\t\t" << "maxLevelIdc: " << pH265DecCapabilities->maxLevelIdc << std::endl;
                 if (strncmp(pVideoCapabilities->stdHeaderVersion.extensionName,
                         VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME,
                             sizeof (pVideoCapabilities->stdHeaderVersion.extensionName) - 1U) ||
@@ -229,7 +283,7 @@ public:
             VkQueueFlags queueFlagsRequired = ( VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR),
             VkVideoCodecOperationFlagsKHR videoCodeOperations =
                                               ( VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR | VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR |
-                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_EXT | VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_EXT))
+                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR | VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR))
     {
         std::vector<VkQueueFamilyProperties2> queues;
         std::vector<VkQueueFamilyVideoPropertiesKHR> videoQueues;
@@ -259,25 +313,22 @@ public:
     }
 
     static VkVideoCodecOperationFlagsKHR GetSupportedCodecs(const VulkanDeviceContext* vkDevCtx,
-                                                            uint32_t vkVideoDecodeQueueFamily)
+                                                            uint32_t videoQueueFamily,
+                                                            VkVideoCodecOperationFlagBitsKHR videoCodec)
     {
-        int32_t videoDecodeQueueFamily = (int32_t)vkVideoDecodeQueueFamily;
+        int32_t videoDecodeQueueFamily = (int32_t)videoQueueFamily;
         VkVideoCodecOperationFlagsKHR videoCodecs = GetSupportedCodecs(vkDevCtx, vkDevCtx->getPhysicalDevice(),
-                                                                       &videoDecodeQueueFamily,
-                                                                       VK_QUEUE_VIDEO_DECODE_BIT_KHR,
-                                                                       (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
-                                                                        VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR));
+                                                                       &videoDecodeQueueFamily);
 
         assert(videoCodecs != VK_VIDEO_CODEC_OPERATION_NONE_KHR);
 
         return videoCodecs;
     }
 
-    static bool IsCodecTypeSupported(const VulkanDeviceContext* vkDevCtx, uint32_t vkVideoDecodeQueueFamily,
+    static bool IsCodecTypeSupported(const VulkanDeviceContext* vkDevCtx, uint32_t videoQueueFamily,
                                      VkVideoCodecOperationFlagBitsKHR videoCodec)
     {
-        VkVideoCodecOperationFlagsKHR videoCodecs = GetSupportedCodecs(vkDevCtx, vkVideoDecodeQueueFamily);
-
+        VkVideoCodecOperationFlagsKHR videoCodecs = GetSupportedCodecs(vkDevCtx, videoQueueFamily, videoCodec);
         if (videoCodecs & videoCodec) {
             return true;
         }
@@ -308,9 +359,9 @@ public:
     static VkResult GetEncodeH264Capabilities(const VulkanDeviceContext* vkDevCtx, uint32_t vkVideoDecodeQueueFamily,
                                               const VkVideoProfileInfoKHR& videoProfile,
                                               VkVideoCapabilitiesKHR &videoEncodeCapabilities,
-                                              VkVideoEncodeH264CapabilitiesEXT &encode264Capabilities)
+                                              VkVideoEncodeH264CapabilitiesKHR &encode264Capabilities)
     {
-        encode264Capabilities.sType   = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_EXT;
+        encode264Capabilities.sType   = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_KHR;
         videoEncodeCapabilities.sType = VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR,
         videoEncodeCapabilities.pNext = &encode264Capabilities;
         return vkDevCtx->GetPhysicalDeviceVideoCapabilitiesKHR(vkDevCtx->getPhysicalDevice(),
@@ -325,13 +376,28 @@ public:
     {
         const bool isEncode = pProfile->IsEncodeCodecType();
 
-        VkVideoEncodeH264CapabilitiesEXT encode264Capabilities = VkVideoEncodeH264CapabilitiesEXT();
-        encode264Capabilities.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_EXT;
+        VkVideoEncodeH264CapabilitiesKHR encode264Capabilities = VkVideoEncodeH264CapabilitiesKHR();
+        encode264Capabilities.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_KHR;
         VkVideoCapabilitiesKHR videoDecodeCapabilities = { VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR,
                                                            isEncode ? &encode264Capabilities : NULL };
         return vkDevCtx->GetPhysicalDeviceVideoCapabilitiesKHR(vkDevCtx->getPhysicalDevice(),
                                                                pProfile->GetProfile(),
                                                                &videoDecodeCapabilities);
+    }
+
+    static bool GetVideoMaintenance1FeatureSupported(const VulkanDeviceContext* vkDevCtx)
+    {
+#ifdef VK_KHR_video_maintenance1
+        VkPhysicalDeviceVideoMaintenance1FeaturesKHR videoMaintenance1Features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR,
+                                                                               nullptr,
+                                                                               false};
+        VkPhysicalDeviceFeatures2 deviceFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &videoMaintenance1Features};
+        vkDevCtx->GetPhysicalDeviceFeatures2(vkDevCtx->getPhysicalDevice(),
+                                             &deviceFeatures);
+        return (videoMaintenance1Features.videoMaintenance1 == VK_TRUE);
+#else  // VK_KHR_video_maintenance1
+        return false;
+#endif // VK_KHR_video_maintenance1
     }
 
 };

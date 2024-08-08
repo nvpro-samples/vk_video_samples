@@ -30,14 +30,15 @@
 #include "VkCodecUtils/VulkanVideoReferenceCountedPool.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/Helpers.h"
-#include "VkVideoDecoder/VulkanBistreamBufferImpl.h"
+#include "VkCodecUtils/VulkanFilterYuvCompute.h"
+#include "VkCodecUtils/VulkanBistreamBufferImpl.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkCodecUtils/VulkanVideoSession.h"
 #include "VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.h"
-#include "VulkanVideoParser.h"
-#include "VulkanVideoParserIf.h"
+#include "vkvideo_parser/VulkanVideoParser.h"
+#include "vkvideo_parser/VulkanVideoParserIf.h"
 #include "VkParserVideoPictureParameters.h"
-#include "StdVideoPictureParametersSet.h"
+#include "vkvideo_parser/StdVideoPictureParametersSet.h"
 
 struct Rect {
     int32_t l;
@@ -55,9 +56,9 @@ struct NvVkDecodeFrameDataSlot {
     VkCommandBuffer                                     commandBuffer;
 };
 
-using VulkanBitstreamBufferPool = VulkanVideoRefCountedPool<VulkanBitstreamBufferImpl, 64>;
-
 class NvVkDecodeFrameData {
+
+    using VulkanBitstreamBufferPool = VulkanVideoRefCountedPool<VulkanBitstreamBufferImpl, 64>;
 
 public:
     NvVkDecodeFrameData(const VulkanDeviceContext* vkDevCtx)
@@ -145,11 +146,16 @@ public:
 
     static VkSharedBaseObj<VkVideoDecoder> invalidVkDecoder;
 
+    enum DecoderFeatures { ENABLE_LINEAR_OUTPUT       = (1 << 0),
+                           ENABLE_HW_LOAD_BALANCING   = (1 << 1),
+                           ENABLE_POST_PROCESS_FILTER = (1 << 2),
+                         };
+
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            VkSharedBaseObj<VulkanVideoFrameBuffer>& videoFrameBuffer,
                            int32_t videoQueueIndx = 0,
-                           bool useLinearOutput = false,
-                           bool enableHwLoadBalancing = false,
+                           uint32_t enableDecoderFeatures = 0, // a list of DecoderFeatures
+                           VulkanFilterYuvCompute::FilterType filterType = VulkanFilterYuvCompute::YCBCRCOPY,
                            int32_t numDecodeImagesInFlight = 8,
                            int32_t numDecodeImagesToPreallocate = -1, // preallocate the maximum required
                            int32_t numBitstreamBuffersToPreallocate = 8,
@@ -193,15 +199,16 @@ private:
 
     VkVideoDecoder(const VulkanDeviceContext* vkDevCtx,
                    VkSharedBaseObj<VulkanVideoFrameBuffer>& videoFrameBuffer,
-                   int32_t videoQueueIndx = 0,
-                   bool useLinearOutput = false,
-                   bool enableHwLoadBalancing = false,
-                   int32_t numDecodeImagesInFlight = 8,
-                   int32_t numDecodeImagesToPreallocate = -1, // preallocate the maximum required
-                   int32_t numBitstreamBuffersToPreallocate = 8)
+                   int32_t  videoQueueIndx = 0,
+                   uint32_t enableDecoderFeatures = 0, // a list of DecoderFeatures
+                   VulkanFilterYuvCompute::FilterType filterType = VulkanFilterYuvCompute::YCBCRCOPY,
+                   int32_t  numDecodeImagesInFlight = 8,
+                   int32_t  numDecodeImagesToPreallocate = -1, // preallocate the maximum required
+                   int32_t  numBitstreamBuffersToPreallocate = 8)
         : m_vkDevCtx(vkDevCtx)
         , m_currentVideoQueueIndx(videoQueueIndx)
         , m_refCount(0)
+        , m_codedExtent {}
         , m_videoFormat {}
         , m_numDecodeImagesInFlight(numDecodeImagesInFlight)
         , m_numDecodeImagesToPreallocate(numDecodeImagesToPreallocate)
@@ -214,14 +221,17 @@ private:
         , m_decodePicCount(0)
         , m_hwLoadBalancingTimelineSemaphore()
         , m_dpbAndOutputCoincide(true)
+        , m_videoMaintenance1FeaturesSupported(false)
+        , m_enableDecodeFilter((enableDecoderFeatures & ENABLE_POST_PROCESS_FILTER) != 0)
         , m_useImageArray(false)
         , m_useImageViewArray(false)
-        , m_useSeparateOutputImages(useLinearOutput)
-        , m_useLinearOutput(useLinearOutput)
+        , m_useSeparateOutputImages(((enableDecoderFeatures & ENABLE_LINEAR_OUTPUT) != 0) || m_enableDecodeFilter)
+        , m_useLinearOutput((enableDecoderFeatures & ENABLE_LINEAR_OUTPUT) != 0)
         , m_resetDecoder(true)
         , m_dumpDecodeData(false)
         , m_numBitstreamBuffersToPreallocate(numBitstreamBuffersToPreallocate)
         , m_maxStreamBufferSize()
+        , m_filterType(filterType)
     {
 
         assert(m_vkDevCtx->GetVideoDecodeQueueFamilyIdx() != -1);
@@ -237,7 +247,7 @@ private:
             m_currentVideoQueueIndx = 0;
         }
 
-        if (enableHwLoadBalancing) {
+        if (enableDecoderFeatures & ENABLE_HW_LOAD_BALANCING) {
 
             if (m_vkDevCtx->GetVideoDecodeNumQueues() < 2) {
                 std::cout << "\t WARNING: Enabling HW Load Balancing for device with only " <<
@@ -260,6 +270,8 @@ private:
             if (result == VK_SUCCESS) {
                 m_currentVideoQueueIndx = 0; // start with index zero
             }
+            std::cout << "\t Enabling HW Load Balancing for device with "
+                      << m_vkDevCtx->GetVideoDecodeNumQueues() << " queues" << std::endl;
         }
 
     }
@@ -288,6 +300,8 @@ private:
     const VulkanDeviceContext*  m_vkDevCtx;
     int32_t                     m_currentVideoQueueIndx;
     std::atomic<int32_t>        m_refCount;
+    // The current decoder coded extent
+    VkExtent2D                  m_codedExtent;
     // dimension of the output
     VkParserDetectedVideoFormat m_videoFormat;
     int32_t                     m_numDecodeImagesInFlight; // driven by how deep is the decoder queue
@@ -304,6 +318,8 @@ private:
     VkSharedBaseObj<VkParserVideoPictureParameters>  m_currentPictureParameters;
     VkSemaphore m_hwLoadBalancingTimelineSemaphore;
     uint32_t m_dpbAndOutputCoincide : 1;
+    uint32_t m_videoMaintenance1FeaturesSupported : 1;
+    uint32_t m_enableDecodeFilter : 1;
     uint32_t m_useImageArray : 1;
     uint32_t m_useImageViewArray : 1;
     uint32_t m_useSeparateOutputImages : 1;
@@ -312,4 +328,6 @@ private:
     uint32_t m_dumpDecodeData : 1;
     int32_t  m_numBitstreamBuffersToPreallocate;
     VkDeviceSize   m_maxStreamBufferSize;
+    VulkanFilterYuvCompute::FilterType m_filterType;
+    VkSharedBaseObj<VulkanFilter> m_yuvFilter;
 };

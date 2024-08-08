@@ -20,10 +20,11 @@
 #include <vector>
 #include <cstring>
 #include <cstdio>
+
 #include "VkCodecUtils/VulkanDeviceContext.h"
-#include "VkCodecUtils/FrameProcessorFactory.h"
 #include "VkCodecUtils/ProgramConfig.h"
 #include "VkCodecUtils/VulkanVideoProcessor.h"
+#include "VkCodecUtils/VulkanDecoderFrameProcessor.h"
 #include "VkShell/Shell.h"
 
 int main(int argc, const char **argv) {
@@ -31,12 +32,60 @@ int main(int argc, const char **argv) {
     ProgramConfig programConfig(argv[0]);
     programConfig.ParseArgs(argc, argv);
 
-    VulkanDeviceContext vkDevCtxt(programConfig.deviceId);
+    static const char* const requiredInstanceLayers[] = {
+        "VK_LAYER_KHRONOS_validation",
+        nullptr
+    };
+
+    static const char* const requiredInstanceExtensions[] = {
+        VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
+        nullptr
+    };
+
+    static const char* const requiredWsiInstanceExtensions[] = {
+        // Required generic WSI extensions
+        VK_KHR_SURFACE_EXTENSION_NAME,
+        nullptr
+    };
+
+    static const char* const requiredDeviceExtension[] = {
+#if defined(__linux) || defined(__linux__) || defined(linux)
+        VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME,
+#endif
+        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
+        VK_KHR_VIDEO_QUEUE_EXTENSION_NAME,
+        VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME,
+        nullptr
+    };
+
+    static const char* const requiredWsiDeviceExtension[] = {
+        // Add the WSI required device extensions
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+#if !defined(VK_USE_PLATFORM_WIN32_KHR)
+        // VK_EXT_DISPLAY_CONTROL_EXTENSION_NAME,
+#endif
+        nullptr
+    };
+
+    static const char* const optinalDeviceExtension[] = {
+        VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME,
+        VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
+        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+        VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+        nullptr
+    };
+
+    VulkanDeviceContext vkDevCtxt;
 
     if (programConfig.validate) {
-        vkDevCtxt.AddRequiredInstanceLayer("VK_LAYER_LUNARG_standard_validation");
-        vkDevCtxt.AddRequiredInstanceLayer(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+        vkDevCtxt.AddReqInstanceLayers(requiredInstanceLayers);
+        vkDevCtxt.AddReqInstanceExtensions(requiredInstanceExtensions);
     }
+
+    // Add the Vulkan video required device extensions
+    vkDevCtxt.AddReqDeviceExtensions(requiredDeviceExtension);
+    vkDevCtxt.AddOptDeviceExtensions(optinalDeviceExtension);
 
     /********** Start WSI instance extensions support *******************************************/
     if (!programConfig.noPresent) {
@@ -44,55 +93,26 @@ int main(int argc, const char **argv) {
                 Shell::GetRequiredInstanceExtensions(programConfig.directMode);
 
         for (size_t e = 0; e < wsiRequiredInstanceInstanceExtensions.size(); e++) {
-            vkDevCtxt.AddRequiredInstanceExtension(wsiRequiredInstanceInstanceExtensions[e].extensionName);
+            vkDevCtxt.AddReqInstanceExtension(wsiRequiredInstanceInstanceExtensions[e].extensionName);
         }
-        // Required generic WSI extensions
-        vkDevCtxt.AddRequiredInstanceExtension(VK_KHR_SURFACE_EXTENSION_NAME);
+
+        // Add the WSI required instance extensions
+        vkDevCtxt.AddReqInstanceExtensions(requiredWsiInstanceExtensions);
 
         // Add the WSI required device extensions
-        vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-#if !defined(VK_USE_PLATFORM_WIN32_KHR)
-        // vulkanDeviceContext.AddRequiredDeviceExtension(VK_EXT_DISPLAY_CONTROL_EXTENSION_NAME);
-#endif
+        vkDevCtxt.AddReqDeviceExtensions(requiredWsiDeviceExtension);
     }
     /********** End WSI instance extensions support *******************************************/
 
-#if defined(__linux) || defined(__linux__) || defined(linux)
-    vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME);
-    vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME);
-#endif
-    { // Vulkan Video required extensions
-        // VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME - for NV only
-        vkDevCtxt.AddOptinalDeviceExtension(VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME);
-        vkDevCtxt.AddOptinalDeviceExtension(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME);
-        vkDevCtxt.AddOptinalDeviceExtension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
-        vkDevCtxt.AddOptinalDeviceExtension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
-        vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
-        vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_VIDEO_QUEUE_EXTENSION_NAME);
-        vkDevCtxt.AddRequiredDeviceExtension(VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME);
-    }
-
-    VkResult result = vkDevCtxt.InitVulkanDevice(programConfig.name.c_str(),
-                                                           programConfig.verbose);
+    VkResult result = vkDevCtxt.InitVulkanDevice(programConfig.appName.c_str(),
+                                                 programConfig.verbose);
     if (result != VK_SUCCESS) {
         printf("Could not initialize the Vulkan device!\n");
         return -1;
     }
 
     result = vkDevCtxt.InitDebugReport(programConfig.validate,
-                                                 programConfig.validateVerbose);
-    if (result != VK_SUCCESS) {
-        return -1;
-    }
-
-    VkSharedBaseObj<VulkanVideoProcessor> vulkanVideoProcessor;
-    result = VulkanVideoProcessor::Create(&vkDevCtxt, vulkanVideoProcessor);
-    if (result != VK_SUCCESS) {
-        return -1;
-    }
-
-    VkSharedBaseObj<FrameProcessor> frameProcessor;
-    result = CreateFrameProcessor(programConfig, &vkDevCtxt, vulkanVideoProcessor, frameProcessor);
+                                       programConfig.validateVerbose);
     if (result != VK_SUCCESS) {
         return -1;
     }
@@ -102,18 +122,63 @@ int main(int argc, const char **argv) {
                                      (programConfig.enableHwLoadBalancing != 0)) ?
 					 -1 : // all available HW decoders
 					  1;  // only one HW decoder instance
+
+    VkQueueFlags requestVideoDecodeQueueMask = VK_QUEUE_VIDEO_DECODE_BIT_KHR;
+
+    VkQueueFlags requestVideoEncodeQueueMask = 0;
+    if (programConfig.enableVideoEncoder) {
+        requestVideoEncodeQueueMask |= VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
+    }
+
+    if (programConfig.selectVideoWithComputeQueue) {
+        requestVideoDecodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
+        if (programConfig.enableVideoEncoder) {
+            requestVideoEncodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
+        }
+    }
+
+    VkQueueFlags requestVideoComputeQueueMask = 0;
+    if (programConfig.enablePostProcessFilter != -1) {
+        requestVideoComputeQueueMask = VK_QUEUE_COMPUTE_BIT;
+    }
+
+    VkSharedBaseObj<VulkanVideoProcessor> vulkanVideoProcessor;
+    result = VulkanVideoProcessor::Create(&vkDevCtxt, vulkanVideoProcessor);
+    if (result != VK_SUCCESS) {
+        return -1;
+    }
+
+    VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>> videoQueue(vulkanVideoProcessor);
+    VkSharedBaseObj<FrameProcessor> frameProcessor;
+    result = CreateDecoderFrameProcessor(&vkDevCtxt, videoQueue, frameProcessor);
+    if (result != VK_SUCCESS) {
+        return -1;
+    }
+
     if (supportsDisplay && !programConfig.noPresent) {
 
+        const Shell::Configuration configuration(programConfig.appName.c_str(),
+                                                 programConfig.backBufferCount,
+                                                 programConfig.directMode);
         VkSharedBaseObj<Shell> displayShell;
-        result = Shell::Create(&vkDevCtxt, frameProcessor, programConfig.directMode, displayShell);
+        result = Shell::Create(&vkDevCtxt, configuration, frameProcessor, displayShell);
         if (result != VK_SUCCESS) {
             assert(!"Can't allocate display shell! Out of memory!");
             return -1;
         }
 
-        result = vkDevCtxt.InitPhysicalDevice((VK_QUEUE_GRAPHICS_BIT |
-                                               VK_QUEUE_VIDEO_DECODE_BIT_KHR),
-                                               displayShell);
+        result = vkDevCtxt.InitPhysicalDevice(programConfig.deviceId,
+                                              (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT |
+                                              requestVideoComputeQueueMask |
+                                              requestVideoDecodeQueueMask |
+                                              requestVideoEncodeQueueMask),
+                                              displayShell,
+                                              requestVideoDecodeQueueMask,
+                                              (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
+                                               VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR),
+                                              requestVideoEncodeQueueMask,
+                                              (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
+                                               VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR));
         if (result != VK_SUCCESS) {
 
             assert(!"Can't initialize the Vulkan physical device!");
@@ -123,10 +188,11 @@ int main(int argc, const char **argv) {
                                                    vkDevCtxt.GetPresentQueueFamilyIdx()));
 
         vkDevCtxt.CreateVulkanDevice(numDecodeQueues,
-                                     0,    // num encode queues
-                                     true, // createGraphicsQueue
-                                     true, // createDisplayQueue
-                                     false // createComputeQueue
+                                     programConfig.enableVideoEncoder ? 1 : 0, // num encode queues
+                                     false, //  createTransferQueue
+                                     true,  // createGraphicsQueue
+                                     true,  // createDisplayQueue
+                                     requestVideoComputeQueueMask != 0  // createComputeQueue
                                      );
         vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig);
 
@@ -135,9 +201,12 @@ int main(int argc, const char **argv) {
 
     } else {
 
-        result = vkDevCtxt.InitPhysicalDevice((VK_QUEUE_GRAPHICS_BIT |
-                                               VK_QUEUE_VIDEO_DECODE_BIT_KHR),
-                                               nullptr);
+        result = vkDevCtxt.InitPhysicalDevice(programConfig.deviceId,
+                                              (VK_QUEUE_TRANSFER_BIT | requestVideoDecodeQueueMask  |
+                                              requestVideoComputeQueueMask |
+                                              requestVideoEncodeQueueMask),
+                                              nullptr,
+                                              requestVideoDecodeQueueMask);
         if (result != VK_SUCCESS) {
 
             assert(!"Can't initialize the Vulkan physical device!");
@@ -146,9 +215,13 @@ int main(int argc, const char **argv) {
 
         result = vkDevCtxt.CreateVulkanDevice(numDecodeQueues,
                                               0,     // num encode queues
+                                              // If no graphics or compute queue is requested, only video queues
+                                              // will be created. Not all implementations support transfer on video queues,
+                                              // so request a separate transfer queue for such implementations.
+                                              ((vkDevCtxt.GetVideoDecodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) == 0), //  createTransferQueue
                                               false, // createGraphicsQueue
                                               false, // createDisplayQueue
-                                              false  // createComputeQueue
+                                              requestVideoComputeQueueMask != 0   // createComputeQueue
                                               );
         if (result != VK_SUCCESS) {
 
