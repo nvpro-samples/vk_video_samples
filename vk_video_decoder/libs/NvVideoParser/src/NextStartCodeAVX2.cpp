@@ -3,9 +3,14 @@
 #include <cpudetect.h>
 #include <cstdint>
 #include "VulkanVideoParserIf.h"
-#include "VulkanVideoDecoder.h"
+#include "ByteStreamParser.h"
 #include "NvVideoParser/nvVulkanVideoUtils.h"
 #include "NvVideoParser/nvVulkanVideoParser.h"
+
+bool VulkanVideoDecoder::ParseByteStreamAVX2(const VkParserBitstreamPacket* pck, size_t *pParsedBytes)
+{
+    return ParseByteStreamSimd<SIMD_ISA::AVX2>(pck, pParsedBytes);
+}
 
 template<>
 size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::AVX2>(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
@@ -60,4 +65,5 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::AVX2>(const uint8_t *pdatai
     found_start_code = ((bfr & 0x00ffffff) == 1);
     return i;
 }
+
 #endif

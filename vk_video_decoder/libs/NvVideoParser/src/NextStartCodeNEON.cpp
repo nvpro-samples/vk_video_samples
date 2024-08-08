@@ -2,12 +2,15 @@
 #include <immintrin.h>
 #include <cpudetect.h>
 #include <cstdint>
-#include "VulkanVideoParserIf.h"
-#include "VulkanVideoDecoder.h"
+#include "ByteStreamParser.h"
 #include "NvVideoParser/nvVulkanVideoUtils.h"
 #include "NvVideoParser/nvVulkanVideoParser.h"
 
-template<>
+bool VulkanVideoDecoder::ParseByteStreamNEON(const VkParserBitstreamPacket* pck, size_t *pParsedBytes)
+{
+    return ParseByteStreamSimd<SIMD_ISA::NEON>(pck, pParsedBytes);
+}
+
 size_t VulkanVideoDecoder::next_start_code_neon<SIMD_ISA:NEON>(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;

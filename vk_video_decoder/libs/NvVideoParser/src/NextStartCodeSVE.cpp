@@ -2,10 +2,14 @@
 #include <immintrin.h>
 #include <cpudetect.h>
 #include <cstdint>
-#include "VulkanVideoParserIf.h"
-#include "VulkanVideoDecoder.h"
+#include "ByteStreamParser.h"
 #include "NvVideoParser/nvVulkanVideoUtils.h"
 #include "NvVideoParser/nvVulkanVideoParser.h"
+
+bool VulkanVideoDecoder::ParseByteStreamSVE(const VkParserBitstreamPacket* pck, size_t *pParsedBytes)
+{
+    return ParseByteStreamSimd<SIMD_ISA::SVE>(pck, pParsedBytes);
+}
 
 #define SVE_REGISTER_MAX_BYTES 256 // 2048 bits
 template<>
