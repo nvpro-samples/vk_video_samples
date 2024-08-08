@@ -142,6 +142,7 @@ public:
     template <SIMD_ISA T>
 
     bool ParseByteStreamSimd(const VkParserBitstreamPacket *pck, size_t *pParsedBytes);
+    bool ParseByteStreamC(const VkParserBitstreamPacket *pck, size_t *pParsedBytes);
 #if defined(__x86_64__) || defined (_M_X64)
     bool ParseByteStreamAVX2(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
     bool ParseByteStreamAVX512(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);

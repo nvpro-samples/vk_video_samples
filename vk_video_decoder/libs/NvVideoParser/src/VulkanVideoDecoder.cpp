@@ -256,23 +256,6 @@ int32_t VulkanVideoDecoder::se()
     return codeNum;
 }
 
-template<>
-size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::NOSIMD>(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
-{
-    uint32_t bfr = m_BitBfr;
-    size_t i = 0;
-    do
-    {
-        bfr = (bfr << 8) | pdatain[i++];
-        if ((bfr & 0x00ffffff) == 1) {
-            break;
-        }
-    } while (i < datasize);
-    m_BitBfr = bfr;
-    found_start_code = ((bfr & 0x00ffffff) == 1);
-    return i;
-}
-
 bool VulkanVideoDecoder::resizeBitstreamBuffer(VkDeviceSize extraBytes)
 {
     // increasing min 2MB size per resizeBitstreamBuffer()
@@ -342,7 +325,7 @@ bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, siz
     }
 #endif
     {
-        return ParseByteStreamSimd<SIMD_ISA::NOSIMD>(pck, pParsedBytes);
+        return ParseByteStreamC(pck, pParsedBytes);
     }
 }
 
