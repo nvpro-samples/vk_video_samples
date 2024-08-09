@@ -52,6 +52,7 @@ public:
         uint32_t startQueryId;
         uint32_t numQueries;
         uint32_t optimalOutputIndex : 4;
+        uint32_t linearOutputIndex : 4;
         uint32_t hasFrameCompleteSignalFence : 1;
         uint32_t hasFrameCompleteSignalSemaphore : 1;
         uint32_t syncOnFrameCompleteFence : 1;
@@ -80,8 +81,8 @@ public:
     };
 
     struct PictureResourceInfo {
-        VkImage  image;
-        VkFormat imageFormat;
+        VkImage       image;
+        VkFormat      imageFormat;
         VkImageLayout currentImageLayout;
     };
 

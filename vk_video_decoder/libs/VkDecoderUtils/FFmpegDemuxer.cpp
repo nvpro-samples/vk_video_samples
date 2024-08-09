@@ -271,10 +271,10 @@ private:
 public:
     static VkResult Create(const char *pFilePath,
                            VkVideoCodecOperationFlagBitsKHR codecType,
-                           bool requiresStreamDemuxing,
-                           int32_t defaultWidth,
-                           int32_t defaultHeight,
-                           int32_t defaultBitDepth,
+                           bool,
+                           int32_t,
+                           int32_t,
+                           int32_t,
                            VkSharedBaseObj<FFmpegDemuxer>& ffmpegDemuxer)
     {
         enum AVCodecID videoCodecId = AV_CODEC_ID_NONE;
@@ -308,6 +308,9 @@ public:
     #ifdef VK_EXT_video_decode_vp9
         case AV_CODEC_ID_VP9        : return VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR;
     #endif // VK_EXT_video_decode_vp9
+    #ifdef vulkan_video_codec_av1std_decode
+        case AV_CODEC_ID_AV1        : return VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR;
+    #endif
         case AV_CODEC_ID_MJPEG      : assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
         default                     : assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
         }
@@ -414,6 +417,18 @@ public:
                 }
             }
             break;
+            case VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR:
+            {
+                switch(profile) {
+                    case STD_VIDEO_AV1_PROFILE_MAIN:
+                    case STD_VIDEO_AV1_PROFILE_HIGH:
+                    case STD_VIDEO_AV1_PROFILE_PROFESSIONAL:
+                        break;
+                    default:
+                        std::cerr << "\nInvalid AV1 profile: " << profile << std::endl;
+                }
+            }
+            break;
             default:
                 std::cerr << "\nInvalid codec type: " << FFmpegToVkCodecOperation(videoCodec) << std::endl;
         }
@@ -465,7 +480,7 @@ public:
         }
     }
 
-    virtual int64_t ReadBitstreamData(const uint8_t **ppVideo, int64_t offset) {
+    virtual int64_t ReadBitstreamData(const uint8_t**, int64_t) {
         return -1;
     }
 

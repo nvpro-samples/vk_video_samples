@@ -402,7 +402,7 @@ public:
     }
 
     VkResult CreateVertexBuffer(const VulkanDeviceContext* vkDevCtx,  const float* pVertexData,
-                                VkDeviceSize vertexDataSize, uint32_t numVertices)
+                                VkDeviceSize vertexDataSize, uint32_t)
     {
         DestroyVertexBuffer();
 

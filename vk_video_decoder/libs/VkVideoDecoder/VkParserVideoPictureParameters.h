@@ -105,6 +105,10 @@ public:
         return m_ppsIdsUsed[ppsId];
     }
 
+    bool HasAv1PpsId(uint32_t ppsId) const {
+        return m_av1SpsIdsUsed[ppsId];
+    }
+
     bool UpdatePictureParametersHierarchy(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersObject);
 
     VkResult AddPictureParametersToQueue(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet);
@@ -135,6 +139,7 @@ private:
     std::bitset<MAX_VPS_IDS>        m_vpsIdsUsed;
     std::bitset<MAX_SPS_IDS>        m_spsIdsUsed;
     std::bitset<MAX_PPS_IDS>        m_ppsIdsUsed;
+    std::bitset<MAX_SPS_IDS>        m_av1SpsIdsUsed;
     VkSharedBaseObj<VkParserVideoPictureParameters> m_templatePictureParameters; // needed only for the create
 
     std::queue<VkSharedBaseObj<StdVideoPictureParametersSet>>  m_pictureParametersQueue;

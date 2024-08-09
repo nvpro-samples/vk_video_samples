@@ -2904,6 +2904,9 @@ void VulkanH264Decoder::dpb_picture_start(pic_parameter_set_s *pps, slice_header
         cur->complementary_field_pair = false;
         cur->not_existing = false;
         cur->FrameNum = slh->frame_num;
+		uint32_t width = (m_sps->pic_width_in_mbs_minus1 + 1) * 16;
+	    uint32_t frameHeightInMbs = (2 - m_sps->flags.frame_mbs_only_flag) * (m_sps->pic_height_in_map_units_minus1 + 1);
+		uint32_t height = frameHeightInMbs * 16;
         cur->pPicBuf = alloc_picture();
         if (!cur->pPicBuf)
         {

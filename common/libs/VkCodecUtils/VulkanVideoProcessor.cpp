@@ -380,7 +380,7 @@ const VkMpFormatInfo* YcbcrVkFormatInfo(const VkFormat format);
 
 size_t VulkanVideoProcessor::ConvertFrameToNv12(VulkanDecodedFrame* pFrame,
                                                 VkSharedBaseObj<VkImageResource>& imageResource,
-                                                uint8_t* pOutBuffer, size_t bufferSize)
+                                                uint8_t* pOutBuffer, size_t)
 {
     size_t outputBufferSize = 0;
     VkResult result = VK_SUCCESS;
@@ -516,7 +516,9 @@ size_t VulkanVideoProcessor::ConvertFrameToNv12(VulkanDecodedFrame* pFrame,
         }
     }
 
-    // Copy the chroma plane(s)
+
+    assert(mpInfo->planesLayout.bpp == YCBCRA_8BPP);
+    assert(format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM);
     for (uint32_t plane = numCompatiblePlanes; plane < numPlanes; plane++) {
         uint32_t srcPlane = std::min(plane, mpInfo->planesLayout.numberOfExtraPlanes);
         uint8_t* pDst = pOutBuffer + yuvPlaneLayouts[plane].offset;
@@ -552,12 +554,14 @@ size_t VulkanVideoProcessor::OutputFrameToFile(VulkanDecodedFrame* pFrame)
         return (size_t)-1;
     }
 
-    VkSharedBaseObj<VkImageResourceView> imageResourceView;
-    pFrame->imageViews[DecodeFrameBufferIf::IMAGE_TYPE_IDX_OUT].GetImageResourceView(imageResourceView);
-
-
     assert(pFrame != nullptr);
-    assert(!!imageResourceView);
+
+    VkSharedBaseObj<VkImageResourceView> imageResourceView;
+    pFrame->imageViews[pFrame->linearOutputIndex].GetImageResourceView(imageResourceView);
+    assert(!!imageResourceView); // TODO: The codebase should move to "!= nullptr".
+                                 // It's much more explicit and the VkSharedBaseObj doesn't have an operator that returns true or false.
+                                 // So it's secretly implicitely casting a ptr to a bool..
+
     assert(pFrame->pictureIndex != -1);
 
     VkSharedBaseObj<VkImageResource> imageResource = imageResourceView->GetImageResource();
@@ -707,7 +711,7 @@ int32_t VulkanVideoProcessor::ReleaseFrame(VulkanDecodedFrame* pDisplayedFrame)
     return -1;
 }
 
-VkResult VulkanVideoProcessor::CreateParser(const char* filename,
+VkResult VulkanVideoProcessor::CreateParser(const char*,
                                             VkVideoCodecOperationFlagBitsKHR vkCodecType,
                                             uint32_t defaultMinBufferSize,
                                             uint32_t bufferOffsetAlignment,
@@ -715,12 +719,15 @@ VkResult VulkanVideoProcessor::CreateParser(const char* filename,
 {
     static const VkExtensionProperties h264StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION };
     static const VkExtensionProperties h265StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION };
+    static const VkExtensionProperties av1StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_SPEC_VERSION };
 
     const VkExtensionProperties* pStdExtensionVersion = NULL;
     if (vkCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
         pStdExtensionVersion = &h264StdExtensionVersion;
     } else if (vkCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) {
         pStdExtensionVersion = &h265StdExtensionVersion;
+    } else if (vkCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
+        pStdExtensionVersion = &av1StdExtensionVersion;
     } else {
         assert(!"Unsupported Codec Type");
         return VK_ERROR_FORMAT_NOT_SUPPORTED;

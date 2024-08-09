@@ -314,7 +314,7 @@ VkResult ImageObject::CopyYuvToVkImage(uint32_t numPlanes, const uint8_t* yuvPla
     return VK_SUCCESS;
 }
 
-VkResult VulkanFrameBuffer::CreateFrameBuffer(const VulkanDeviceContext* vkDevCtx, VkSwapchainKHR swapchain,
+VkResult VulkanFrameBuffer::CreateFrameBuffer(const VulkanDeviceContext* vkDevCtx, VkSwapchainKHR,
         const VkExtent2D* pExtent2D,const VkSurfaceFormatKHR* pSurfaceFormat, VkImage fbImage,
         VkRenderPass renderPass, VkImageView depthView)
 {

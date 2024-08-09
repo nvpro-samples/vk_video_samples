@@ -321,10 +321,11 @@ bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
 
                 assert(result == VK_SUCCESS);
                 assert(decodeStatus == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
-		if ((result != VK_SUCCESS) || (decodeStatus != VK_QUERY_RESULT_STATUS_COMPLETE_KHR)) {
-		    fprintf(stderr, "\nERROR: GetQueryPoolResults() result: 0x%x\n", result);
-		    return false;
-		}
+                if ((result != VK_SUCCESS) || (decodeStatus != VK_QUERY_RESULT_STATUS_COMPLETE_KHR)) {
+                    fprintf(stderr, "\nERROR: GetQueryPoolResults() result: 0x%x\n", result);
+                    return false;
+                }
+
                 auto deltaTime = std::chrono::steady_clock::now() - startTime;
                 auto diffMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(deltaTime);
                 auto diffMicroseconds = std::chrono::duration_cast<std::chrono::microseconds>(deltaTime);

@@ -141,7 +141,7 @@ bool ShellXcb::PhysDeviceCanPresent(VkPhysicalDevice physicalDevice, uint32_t pr
                                                                     m_connection, m_screen->root_visual);
 }
 
-VkSurfaceKHR ShellXcb::CreateSurface(VkInstance instance) {
+VkSurfaceKHR ShellXcb::CreateSurface(VkInstance) {
     VkXcbSurfaceCreateInfoKHR surface_info = {};
     surface_info.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
     surface_info.connection = m_connection;

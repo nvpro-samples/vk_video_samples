@@ -120,8 +120,8 @@ int main(int argc, const char **argv) {
     const bool supportsDisplay = true;
     const int32_t numDecodeQueues = ((programConfig.queueId != 0) ||
                                      (programConfig.enableHwLoadBalancing != 0)) ?
-					 -1 : // all available HW decoders
-					  1;  // only one HW decoder instance
+                                     -1 : // all available HW decoders
+                                      1;  // only one HW decoder instance
 
     VkQueueFlags requestVideoDecodeQueueMask = VK_QUEUE_VIDEO_DECODE_BIT_KHR;
 

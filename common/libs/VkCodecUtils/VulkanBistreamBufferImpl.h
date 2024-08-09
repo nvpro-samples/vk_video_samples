@@ -109,13 +109,13 @@ private:
     VkResult Initialize(VkDeviceSize bufferSize, const void* pInitializeBufferMemory, VkDeviceSize initializeBufferMemorySize);
 
     VulkanBitstreamBufferImpl(const VulkanDeviceContext* vkDevCtx,
-                              uint32_t m_queueFamilyIndex,
+                              uint32_t queueFamilyIndex,
                               VkDeviceSize bufferOffsetAlignment,
                               VkDeviceSize bufferSizeAlignment)
         : VulkanBitstreamBuffer()
         , m_refCount(0)
         , m_vkDevCtx(vkDevCtx)
-        , m_queueFamilyIndex(m_queueFamilyIndex)
+        , m_queueFamilyIndex(queueFamilyIndex)
         , m_memoryPropertyFlags()
         , m_buffer()
         , m_bufferOffset()

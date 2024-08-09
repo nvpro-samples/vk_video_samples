@@ -21,13 +21,19 @@
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 #include "vkvideo_parser/StdVideoPictureParametersSet.h"
 #include "VkCodecUtils/VulkanBitstreamBuffer.h"
-#include "vk_video/vulkan_video_codecs_common.h"
 
+// DE_BUILD_VIDEO is used by the CTS, in this case it prevents redefinitions that stem from the common includes.
+#ifndef DE_BUILD_VIDEO
+#include "vk_video/vulkan_video_codecs_common.h"
+#endif
+
+#include "vk_video/vulkan_video_codec_av1std.h"
+#include "vk_video/vulkan_video_codec_av1std_decode.h"
 #define NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_9 VK_MAKE_VIDEO_STD_VERSION(0, 9, 9)
 
-#define NV_VULKAN_VIDEO_PARSER_API_VERSION   NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_9
+#define NV_VULKAN_VIDEO_PARSER_API_VERSION NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_9
 
-typedef uint32_t FrameRate; // Packed 18-bit numerator & 14-bit denominator
+typedef uint32_t FrameRate;  // Packed 18-bit numerator & 14-bit denominator
 
 // Definitions for video_format
 enum {
@@ -49,17 +55,17 @@ enum {
     ColorPrimariesReserved = 3,
     ColorPrimariesBT470M = 4,
     ColorPrimariesBT470BG = 5,
-    ColorPrimariesSMPTE170M = 6, // Also, ITU-R BT.601
+    ColorPrimariesSMPTE170M = 6,  // Also, ITU-R BT.601
     ColorPrimariesSMPTE240M = 7,
     ColorPrimariesGenericFilm = 8,
     ColorPrimariesBT2020 = 9,
     // below are defined in AOM standard
-    ColorPrimariesXYZ = 10, /**< SMPTE 428 (CIE 1921 XYZ) */
-    ColorPrimariesSMPTE431 = 11, /**< SMPTE RP 431-2 */
-    ColorPrimariesSMPTE432 = 12, /**< SMPTE EG 432-1  */
+    ColorPrimariesXYZ = 10,        /**< SMPTE 428 (CIE 1921 XYZ) */
+    ColorPrimariesSMPTE431 = 11,   /**< SMPTE RP 431-2 */
+    ColorPrimariesSMPTE432 = 12,   /**< SMPTE EG 432-1  */
     ColorPrimariesRESERVED13 = 13, /**< For future use (values 13 - 21)  */
-    ColorPrimariesEBU3213 = 22, /**< EBU Tech. 3213-E  */
-    ColorPrimariesRESERVED23 = 23 /**< For future use (values 23 - 255)  */
+    ColorPrimariesEBU3213 = 22,    /**< EBU Tech. 3213-E  */
+    ColorPrimariesRESERVED23 = 23  /**< For future use (values 23 - 255)  */
 };
 
 // Definitions for transfer_characteristics
@@ -83,7 +89,7 @@ enum {
     TransferCharacteristicsST2084 = 16,
     TransferCharacteristicsST428_1 = 17,
     // below are defined in AOM standard
-    TransferCharacteristicsHLG = 18, /**< BT.2100 HLG, ARIB STD-B67 */
+    TransferCharacteristicsHLG = 18,       /**< BT.2100 HLG, ARIB STD-B67 */
     TransferCharacteristicsRESERVED19 = 19 /**< For future use (values 19-255) */
 };
 
@@ -98,37 +104,37 @@ enum {
     MatrixCoefficientsSMPTE170M = 6,
     MatrixCoefficientsSMPTE240M = 7,
     MatrixCoefficientsYCgCo = 8,
-    MatrixCoefficientsBT2020_NCL = 9, // Non-constant luminance
-    MatrixCoefficientsBT2020_CL = 10, // Constant luminance
+    MatrixCoefficientsBT2020_NCL = 9,  // Non-constant luminance
+    MatrixCoefficientsBT2020_CL = 10,  // Constant luminance
     // below are defined in AOM standard
-    MatrixCoefficientsSMPTE2085 = 11, /**< SMPTE ST 2085 YDzDx */
+    MatrixCoefficientsSMPTE2085 = 11,   /**< SMPTE ST 2085 YDzDx */
     MatrixCoefficientsCHROMAT_NCL = 12, /**< Chromaticity-derived non-constant luminance */
-    MatrixCoefficientsCHROMAT_CL = 13, /**< Chromaticity-derived constant luminance */
-    MatrixCoefficientsICTCP = 14, /**< BT.2100 ICtCp */
+    MatrixCoefficientsCHROMAT_CL = 13,  /**< Chromaticity-derived constant luminance */
+    MatrixCoefficientsICTCP = 14,       /**< BT.2100 ICtCp */
     MatrixCoefficientsRESERVED15 = 15
 };
 
 // Maximum raw sequence header length (all codecs)
-#define VK_MAX_SEQ_HDR_LEN (1024) // 1024 bytes
+#define VK_MAX_SEQ_HDR_LEN (1024)  // 1024 bytes
 
 typedef struct VkParserH264DpbEntry {
-    VkPicIf* pPicBuf; // ptr to reference frame
-    int32_t FrameIdx; // frame_num(short-term) or LongTermFrameIdx(long-term)
-    int32_t is_long_term; // 0=short term reference, 1=long term reference
-    int32_t not_existing; // non-existing reference frame (corresponding PicIdx
-        // should be set to -1)
-    int32_t used_for_reference; // 0=unused, 1=top_field, 2=bottom_field,
-        // 3=both_fields
-    int32_t FieldOrderCnt[2]; // field order count of top and bottom fields
+    VkPicIf* pPicBuf;      // ptr to reference frame
+    int32_t FrameIdx;      // frame_num(short-term) or LongTermFrameIdx(long-term)
+    int32_t is_long_term;  // 0=short term reference, 1=long term reference
+    int32_t not_existing;  // non-existing reference frame (corresponding PicIdx
+                           // should be set to -1)
+    int32_t used_for_reference;  // 0=unused, 1=top_field, 2=bottom_field,
+                                 // 3=both_fields
+    int32_t FieldOrderCnt[2];  // field order count of top and bottom fields
 } VkParserH264DpbEntry;
 
 typedef struct VkParserH264PictureData {
     // SPS
-    const StdVideoPictureParametersSet*     pStdSps;
+    const StdVideoPictureParametersSet* pStdSps;
     // PPS
-    const StdVideoPictureParametersSet*     pStdPps;
-    uint8_t  pic_parameter_set_id;          // PPS ID
-    uint8_t  seq_parameter_set_id;          // SPS ID
+    const StdVideoPictureParametersSet* pStdPps;
+    uint8_t pic_parameter_set_id;  // PPS ID
+    uint8_t seq_parameter_set_id;  // SPS ID
     int32_t num_ref_idx_l0_active_minus1;
     int32_t num_ref_idx_l1_active_minus1;
     int32_t weighted_pred_flag;
@@ -151,7 +157,7 @@ typedef struct VkParserH264PictureData {
     int8_t pic_init_qs_minus26;
     uint32_t slice_group_change_rate_minus1;
     // DPB
-    VkParserH264DpbEntry dpb[16 + 1]; // List of reference frames within the DPB
+    VkParserH264DpbEntry dpb[16 + 1];  // List of reference frames within the DPB
 
     // Quantization Matrices (raster-order)
     union {
@@ -217,18 +223,19 @@ typedef struct VkParserH264PictureData {
 
 typedef struct VkParserHevcPictureData {
     // VPS
-    const StdVideoPictureParametersSet*     pStdVps;
+    const StdVideoPictureParametersSet* pStdVps;
     // SPS
-    const StdVideoPictureParametersSet*     pStdSps;
+    const StdVideoPictureParametersSet* pStdSps;
     // PPS
-    const StdVideoPictureParametersSet*     pStdPps;
+    const StdVideoPictureParametersSet* pStdPps;
 
-    uint8_t pic_parameter_set_id;       // PPS ID
-    uint8_t seq_parameter_set_id;       // SPS ID
-    uint8_t vps_video_parameter_set_id; // VPS ID
+    uint8_t pic_parameter_set_id;        // PPS ID
+    uint8_t seq_parameter_set_id;        // SPS ID
+    uint8_t vps_video_parameter_set_id;  // VPS ID
 
     uint8_t IrapPicFlag;
     uint8_t IdrPicFlag;
+    uint8_t short_term_ref_pic_set_sps_flag;
 
     // RefPicSets
     int32_t NumBitsForShortTermRPSInSlice;
@@ -240,7 +247,7 @@ typedef struct VkParserHevcPictureData {
     int32_t CurrPicOrderCntVal;
     VkPicIf* RefPics[16];
     int32_t PicOrderCntVal[16];
-    uint8_t IsLongTerm[16]; // 1=long-term reference
+    uint8_t IsLongTerm[16];  // 1=long-term reference
     int8_t RefPicSetStCurrBefore[8];
     int8_t RefPicSetStCurrAfter[8];
     int8_t RefPicSetLtCurr[8];
@@ -249,7 +256,7 @@ typedef struct VkParserHevcPictureData {
     // 0 = invalid, 1 = Main, 2 = Main10, 3 = still picture, 4 = Main 12,
     // 5 = MV-HEVC Main8
     uint8_t ProfileLevel;
-    uint8_t ColorPrimaries; // ColorPrimariesBTXXXX enum
+    uint8_t ColorPrimaries;  // ColorPrimariesBTXXXX enum
     uint8_t bit_depth_luma_minus8;
     uint8_t bit_depth_chroma_minus8;
 
@@ -324,238 +331,103 @@ typedef struct VkParserVp9PictureData {
     uint32_t offsetToDctParts;
 } VkParserVp9PictureData;
 
-typedef struct VkParserAv1FilmGrain {
-    uint16_t apply_grain : 1;
-    uint16_t update_grain : 1;
-    uint16_t scaling_shift_minus8 : 2;
-    uint16_t chroma_scaling_from_luma : 1;
-    uint16_t overlap_flag : 1;
-    uint16_t ar_coeff_shift_minus6 : 2;
-    uint16_t ar_coeff_lag : 2;
-    uint16_t grain_scale_shift : 2;
-    uint16_t clip_to_restricted_range : 1;
-    uint16_t reserved : 3;
+struct VkParserAv1PictureData {
+    // The picture info structure is mostly pointing at other
+    // structures defining the coding tool parameters. Those
+    // additional structures live below this one.
+    VkVideoDecodeAV1PictureInfoKHR khr_info;
+    // --- The following fields are referred to by pointer from pKHR  ---
+    StdVideoDecodeAV1PictureInfo std_info;
+    uint8_t SkipModeFrame[STD_VIDEO_AV1_SKIP_MODE_FRAMES];
+    uint8_t OrderHints[STD_VIDEO_AV1_NUM_REF_FRAMES];
+    uint32_t expectedFrameId[STD_VIDEO_AV1_NUM_REF_FRAMES];
 
-    uint16_t grain_seed;
+    StdVideoAV1TileInfo tileInfo;
+    // --- The following fields are referred to by pointer from tileInfo ---
+    uint16_t MiColStarts[64];
+    uint16_t MiRowStarts[64];
+    uint16_t width_in_sbs_minus_1[64];
+    uint16_t height_in_sbs_minus_1[64];
+    // --- End of tileInfo data ---
 
-    uint8_t num_y_points;
-    uint8_t scaling_points_y[14][2];
-    uint8_t num_cb_points;
-    uint8_t scaling_points_cb[10][2];
-    uint8_t num_cr_points;
-    uint8_t scaling_points_cr[10][2];
+    StdVideoAV1Quantization quantization;
+    StdVideoAV1Segmentation segmentation;
+    StdVideoAV1LoopFilter loopFilter;
+    StdVideoAV1CDEF CDEF;
+    StdVideoAV1LoopRestoration loopRestoration;
+    StdVideoAV1GlobalMotion globalMotion;
+    StdVideoAV1FilmGrain filmGrain;
+    uint32_t tileOffsets[64];  // TODO: Hack until the interfaces get cleaned up (all the cached parameters should be ref-counted
+                               // etc, AV1_MAX_COLS*AV1_MAX_ROWS is larger than 64, switch to dynamic structure. Cheat while the CTS
+                               // uses simpler bitstreams)
+    uint32_t tileSizes[64];
+    // --- End of pKHR data ---
 
-    int16_t ar_coeffs_y[24];
-    int16_t ar_coeffs_cb[25];
-    int16_t ar_coeffs_cr[25];
-    uint8_t cb_mult; // 8 bits
-    uint8_t cb_luma_mult; // 8 bits
-    int16_t cb_offset; // 9 bits
-    uint8_t cr_mult; // 8 bits
-    uint8_t cr_luma_mult; // 8 bits
-    int16_t cr_offset; // 9 bits
-} VkParserAv1FilmGrain;
+    const StdVideoPictureParametersSet* pStdSps;
+    bool needsSessionReset;  // true: new session detected
+    bool showFrame;
 
-typedef struct VkParserAv1GlobalMotionParameters {
-    uint32_t wmtype;
-    int32_t wmmat[6];
-    int8_t invalid;
-    int8_t reserved[3];
-} VkParserAv1GlobalMotionParameters;
+    uint8_t ref_frame_idx[STD_VIDEO_AV1_REFS_PER_FRAME];
+    int32_t pic_idx[STD_VIDEO_AV1_NUM_REF_FRAMES];
 
-typedef struct VkParserAv1PictureData {
-    VkPicIf* pDecodePic;
-    uint32_t width;
-    uint32_t superres_width;
-    uint32_t height;
-    uint32_t frame_offset;
+    VkVideoDecodeAV1DpbSlotInfoKHR setupSlot;
+    StdVideoDecodeAV1ReferenceInfo setupSlotInfo;
+    VkVideoDecodeAV1DpbSlotInfoKHR dpbSlots[STD_VIDEO_AV1_NUM_REF_FRAMES];
+    StdVideoDecodeAV1ReferenceInfo dpbSlotInfos[STD_VIDEO_AV1_NUM_REF_FRAMES];
 
-    // sequence header
-    uint32_t profile : 3; // 0 = profile0, 1 = profile1, 2 = profile2
-    uint32_t use_128x128_superblock : 1; // superblock 0:64x64, 1: 128x128
-    uint32_t subsampling_x : 1; // 0:400,1:420,others:reserved for future
-    uint32_t
-        subsampling_y : 1; // (subsampling_x, _y) 1,1 = 420, 1,0 = 422, 0,0 = 444
-    uint32_t mono_chrome : 1;
-    uint32_t bit_depth_minus8 : 4;
-    uint32_t enable_filter_intra : 1; // tool enable in seq level, 0 : disable 1:
-        // frame header control
-    uint32_t enable_intra_edge_filter : 1;
-    uint32_t enable_interintra_compound : 1;
-    uint32_t enable_masked_compound : 1;
-    uint32_t enable_dual_filter : 1; // enable or disable vertical and horiz
-        // filter selection
-    uint32_t enable_order_hint : 1; // 0 - disable order hint, and related tools
-    uint32_t order_hint_bits_minus1 : 3; // is used to compute OrderHintBits
-    uint32_t enable_jnt_comp : 1; // 0 - disable joint compound modes
-    uint32_t enable_superres : 1;
-    uint32_t enable_cdef : 1;
-    uint32_t enable_restoration : 1;
-    uint32_t enable_fgs : 1;
-    uint32_t reserved0 : 7;
-
-    // frame header
-    uint32_t frame_type : 2; // Key frame, Inter frame, intra only, s-frame
-    uint32_t show_frame : 1; // Key frame, Inter frame, intra only, s-frame
-    uint32_t error_resilient_mode : 1;
-    uint32_t disable_cdf_update : 1; // disable CDF update during symbol decoding
-    uint32_t allow_screen_content_tools : 1; // screen content tool enable
-    uint32_t force_integer_mv : 1; // AMVR enable
-    uint32_t coded_denom : 3; // The denominator minus9  of the superres scale
-    uint32_t allow_intrabc : 1; // IBC enable
-    uint32_t allow_high_precision_mv : 1; // 1/8 precision mv enable
-    uint32_t interp_filter : 3; // interpolation filter : EIGHTTAP_REGULAR,....
-    uint32_t switchable_motion_mode : 1; // 0 : simple motion mode, 1 : SIMPLE,
-        // OBMC, LOCAL  WARP
-    uint32_t use_ref_frame_mvs : 1; // 1: current frame can use the previous
-        // frame mv information, MFMV
-    uint32_t disable_frame_end_update_cdf : 1; // backward update flag
-    uint32_t delta_q_present : 1; // quantizer index delta values are present in
-        // the block level
-    uint32_t delta_q_res : 2; // left shift will apply to decoded quantizer index
-        // delta values
-    uint32_t delta_lf_present : 1; // specified whether loop filter delta values
-        // are present in the block level
-    uint32_t delta_lf_res : 2; // specifies  the left shift will apply  to
-        // decoded  loop  filter values
-    uint32_t
-        delta_lf_multi : 1; // seperate loop filter deltas for Hy,Vy,U,V edges
-    uint32_t
-        using_qmatrix : 1; // 1: quantizer matrix will be used to compute
-        // quantizers, iqt will select iqmatrix when enable
-    uint32_t
-        coded_lossless : 1; // 1 means all segments use lossless coding.Framem is
-        // fully lossless, CDEF/DBF will disable
-    uint32_t use_superres : 1; // frame level frame for using_superres
-    uint32_t reserved1 : 4;
-
-    uint32_t num_tile_cols : 8; // horizontal tile numbers in frame, max is 64
-    uint32_t num_tile_rows : 8; // vertical tile numbers in frame, max is 64
-    uint32_t context_update_tile_id : 16; // which tile cdf will be seleted as
-        // the backward update CDF,
-        // MAXTILEROW=64, MAXTILECOL=64, 12bits
-    uint16_t tile_row_start_sb[65]; // valid for 0 <= i <= tile_rows
-    uint16_t tile_col_start_sb[65]; // valid for 0 <= i <= tile_cols
-    uint32_t cdef_damping_minus_3 : 2; // controls the amount of damping in the
-        // deringing filter
-    uint32_t cdef_bits : 2; // the number of bits needed to specify which CDEF
-        // filter to apply
-    uint32_t tx_mode : 2; // 0:ONLY4x4,3:LARGEST,4:SELECT
-    uint32_t reference_mode : 1; // single,compound,select
-    uint32_t skip_mode : 1; // skip mode
-    uint32_t SkipModeFrame0 : 4;
-    uint32_t SkipModeFrame1 : 4;
-    uint32_t allow_warped_motion : 1; // sequence level & frame level warp enable
-    uint32_t reduced_tx_set : 1; // whether the frame is  restricted to oa reduced
-        // subset of the full set of transform types
-    uint32_t loop_filter_delta_enabled : 1;
-    uint32_t reserved2 : 13; // reserved bits
-
-    // Quantization
-    uint8_t base_qindex; // the maximum qp is 255
-    int8_t qp_y_dc_delta_q;
-    int8_t qp_u_dc_delta_q;
-    int8_t qp_v_dc_delta_q;
-    int8_t qp_u_ac_delta_q;
-    int8_t qp_v_ac_delta_q;
-    int8_t qm_y;
-    int8_t qm_u;
-    int8_t qm_v;
-
-    // cdef
-    uint8_t cdef_y_pri_strength[8]; // 4bit for one
-    uint8_t cdef_y_sec_strength[8]; // 2bit for one
-    uint8_t cdef_uv_pri_strength[8]; // 4bit for one
-    uint8_t cdef_uv_sec_strength[8]; // 2bit for one
-
-    // segmentation
-    uint8_t segmentation_enabled;
-    uint8_t segmentation_update_map;
-    uint8_t segmentation_update_data;
-    uint8_t segmentation_temporal_update;
-    int16_t segmentation_feature_enable[8][8];
-    int16_t segmentation_feature_data[8][8];
-    int32_t last_active_segid; // The highest numbered segment id that has some
-        // enabled feature.
-    uint8_t segid_preskip;
-    uint8_t segment_quant_sign; // sign bit  for  segment alternative QP
-
-    // loopfilter
-    uint8_t loop_filter_level[2];
-    uint8_t loop_filter_level_u;
-    uint8_t loop_filter_level_v;
-    uint8_t loop_filter_sharpness;
-    int8_t loop_filter_ref_deltas[8];
-    int8_t loop_filter_mode_deltas[2];
-
-    // loop restoration
-    uint8_t lr_type[3]; // 0: NONE, 1: WIENER, 2: SGR, 3: SWITCHABLE
-    uint8_t lr_unit_size[3]; // 0: 32,   1: 64,     2: 128, 3: 256
-
-    uint8_t temporal_layer_id : 4; // temporal layer id
-    uint8_t spatial_layer_id : 4; // spatial layer id
-
-    // film grain params
-    VkParserAv1FilmGrain fgs;
-
-    // order: Last frame,Last2 frame,Last3 frame,Golden frame,BWDREF frame,ALTREF2
-    // frame,ALTREF frame
-    uint8_t primary_ref_frame;
-    uint8_t ref_frame[7];
-    VkPicIf* ref_frame_map[8];
-
-    VkParserAv1GlobalMotionParameters ref_global_motion[7];
-} VkParserAv1PictureData;
+    uint32_t upscaled_width;
+    uint32_t frame_width;
+    uint32_t frame_height;
+};
 
 typedef struct VkParserPictureData {
-    int32_t PicWidthInMbs; // Coded Frame Size
-    int32_t FrameHeightInMbs; // Coded Frame Height
-    VkPicIf* pCurrPic; // Current picture (output)
-    int32_t field_pic_flag; // 0=frame picture, 1=field picture
-    int32_t bottom_field_flag; // 0=top field, 1=bottom field (ignored if
-        // field_pic_flag=0)
-    int32_t second_field; // Second field of a complementary field pair
-    int32_t progressive_frame; // Frame is progressive
-    int32_t top_field_first; // Frame pictures only
-    int32_t repeat_first_field; // For 3:2 pulldown (number of additional fields,
-        // 2=frame doubling, 4=frame tripling)
-    int32_t ref_pic_flag; // Frame is a reference frame
-    int32_t intra_pic_flag; // Frame is entirely intra coded (no temporal
-        // dependencies)
-    int32_t chroma_format; // Chroma Format (should match sequence info)
-    int32_t picture_order_count; // picture order count (if known)
-    uint8_t* pSideData; // Encryption Info
-    uint32_t sideDataLen; // Encryption Info length
+    int32_t PicWidthInMbs;      // Coded Frame Size
+    int32_t FrameHeightInMbs;   // Coded Frame Height
+    VkPicIf* pCurrPic;          // Current picture (output)
+    int32_t field_pic_flag;     // 0=frame picture, 1=field picture
+    int32_t bottom_field_flag;  // 0=top field, 1=bottom field (ignored if
+                                // field_pic_flag=0)
+    int32_t second_field;        // Second field of a complementary field pair
+    int32_t progressive_frame;   // Frame is progressive
+    int32_t top_field_first;     // Frame pictures only
+    int32_t repeat_first_field;  // For 3:2 pulldown (number of additional fields,
+                                 // 2=frame doubling, 4=frame tripling)
+    int32_t ref_pic_flag;    // Frame is a reference frame
+    int32_t intra_pic_flag;  // Frame is entirely intra coded (no temporal
+                             // dependencies)
+    int32_t chroma_format;        // Chroma Format (should match sequence info)
+    int32_t picture_order_count;  // picture order count (if known)
 
     // Codec-specific data
     union {
         VkParserH264PictureData h264;
         VkParserHevcPictureData hevc;
-        VkParserVp9PictureData vp9;
         VkParserAv1PictureData av1;
+        VkParserVp9PictureData vp9;
     } CodecSpecific;
+
     // Dpb Id for the setup (current picture to be reference) slot
     int8_t current_dpb_id;
     // Bitstream data
     uint32_t firstSliceIndex;
     uint32_t numSlices;
-    size_t   bitstreamDataOffset; // bitstream data offset in bitstreamData buffer
-    size_t   bitstreamDataLen;    // Number of bytes in bitstream data buffer
-    VkSharedBaseObj<VulkanBitstreamBuffer> bitstreamData; // bitstream data for this picture (slice-layer)
+    size_t bitstreamDataOffset;                            // bitstream data offset in bitstreamData buffer
+    size_t bitstreamDataLen;                               // Number of bytes in bitstream data buffer
+    VkSharedBaseObj<VulkanBitstreamBuffer> bitstreamData;  // bitstream data for this picture (slice-layer)
 } VkParserPictureData;
 
 // Packet input for parsing
 typedef struct VkParserBitstreamPacket {
-    const uint8_t* pByteStream; // Ptr to byte stream data decode/display event
-    size_t         nDataLength; // Data length for this packet
-    int64_t llPTS; // Presentation Time Stamp for this packet (clock rate specified at initialization)
-    uint32_t bEOS:1;            // true if this is an End-Of-Stream packet (flush everything)
-    uint32_t bPTSValid:1;       // true if llPTS is valid (also used to detect frame boundaries for VC1 SP/MP)
-    uint32_t bDiscontinuity:1;  // true if DecMFT is signalling a discontinuity
-    uint32_t bPartialParsing:1; // 0: parse entire packet, 1: parse until next
-    uint32_t bEOP:1;            // true if the packet in pByteStream is exactly one frame
-    uint8_t* pbSideData;        // Auxiliary encryption information
-    int32_t nSideDataLength;    // Auxiliary encrypton information length
+    const uint8_t* pByteStream;    // Ptr to byte stream data decode/display event
+    size_t nDataLength;            // Data length for this packet
+    int64_t llPTS;                 // Presentation Time Stamp for this packet (clock rate specified at initialization)
+    uint32_t bEOS : 1;             // true if this is an End-Of-Stream packet (flush everything)
+    uint32_t bPTSValid : 1;        // true if llPTS is valid (also used to detect frame boundaries for VC1 SP/MP)
+    uint32_t bDiscontinuity : 1;   // true if DecMFT is signalling a discontinuity
+    uint32_t bPartialParsing : 1;  // 0: parse entire packet, 1: parse until next
+    uint32_t bEOP : 1;             // true if the packet in pByteStream is exactly one frame
+    uint8_t* pbSideData;           // Auxiliary encryption information
+    int32_t nSideDataLength;       // Auxiliary encrypton information length
 } VkParserBitstreamPacket;
 
 typedef struct VkParserOperatingPointInfo {
@@ -572,35 +444,34 @@ typedef struct VkParserOperatingPointInfo {
 
 // Sequence information
 typedef struct VkParserSequenceInfo {
-    VkVideoCodecOperationFlagBitsKHR eCodec; // Compression Standard
-    bool isSVC; // h.264 SVC
-    FrameRate frameRate;     // Frame Rate stored in the bitstream
-    int32_t bProgSeq;        // Progressive Sequence
-    int32_t nDisplayWidth;   // Displayed Horizontal Size
-    int32_t nDisplayHeight;  // Displayed Vertical Size
-    int32_t nCodedWidth;     // Coded Picture Width
-    int32_t nCodedHeight;    // Coded Picture Height
-    int32_t nMaxWidth;       // Max width within sequence
-    int32_t nMaxHeight;      // Max height within sequence
-    uint8_t nChromaFormat;         // Chroma Format (0=4:0:0, 1=4:2:0, 2=4:2:2, 3=4:4:4)
-    uint8_t uBitDepthLumaMinus8;   // Luma bit depth (0=8bit)
-    uint8_t uBitDepthChromaMinus8; // Chroma bit depth (0=8bit)
-    uint8_t uVideoFullRange;       // 0=16-235, 1=0-255
-    int32_t lBitrate;              // Video bitrate (bps)
+    VkVideoCodecOperationFlagBitsKHR eCodec;  // Compression Standard
+    bool isSVC;                               // h.264 SVC
+    FrameRate frameRate;                      // Frame Rate stored in the bitstream
+    int32_t bProgSeq;                         // Progressive Sequence
+    int32_t nDisplayWidth;                    // Displayed Horizontal Size
+    int32_t nDisplayHeight;                   // Displayed Vertical Size
+    int32_t nCodedWidth;                      // Coded Picture Width
+    int32_t nCodedHeight;                     // Coded Picture Height
+    int32_t nMaxWidth;                        // Max width within sequence
+    int32_t nMaxHeight;                       // Max height within sequence
+    uint8_t nChromaFormat;                    // Chroma Format (0=4:0:0, 1=4:2:0, 2=4:2:2, 3=4:4:4)
+    uint8_t uBitDepthLumaMinus8;              // Luma bit depth (0=8bit)
+    uint8_t uBitDepthChromaMinus8;            // Chroma bit depth (0=8bit)
+    uint8_t uVideoFullRange;                  // 0=16-235, 1=0-255
+    int32_t lBitrate;                         // Video bitrate (bps)
     int32_t lDARWidth,
-        lDARHeight; // Display Aspect Ratio = lDARWidth : lDARHeight
-    int32_t lVideoFormat; // Video Format (VideoFormatXXX)
-    int32_t lColorPrimaries; // Colour Primaries (ColorPrimariesXXX)
-    int32_t lTransferCharacteristics; // Transfer Characteristics
-    int32_t lMatrixCoefficients; // Matrix Coefficients
-    int32_t cbSequenceHeader; // Number of bytes in SequenceHeaderData
-    int32_t nMinNumDpbSlots;       // Minimum number of DPB slots for correct decoding
-    int32_t nMinNumDecodeSurfaces; // Minimum number of decode surfaces for correct decoding
-    uint8_t SequenceHeaderData[VK_MAX_SEQ_HDR_LEN]; // Raw sequence header data
-        // (codec-specific)
-    uint8_t* pbSideData; // Auxiliary encryption information
-    uint32_t cbSideData; // Auxiliary encryption information length
+        lDARHeight;                                  // Display Aspect Ratio = lDARWidth : lDARHeight
+    int32_t lVideoFormat;                            // Video Format (VideoFormatXXX)
+    int32_t lColorPrimaries;                         // Colour Primaries (ColorPrimariesXXX)
+    int32_t lTransferCharacteristics;                // Transfer Characteristics
+    int32_t lMatrixCoefficients;                     // Matrix Coefficients
+    int32_t cbSequenceHeader;                        // Number of bytes in SequenceHeaderData
+    int32_t nMinNumDpbSlots;                         // Minimum number of DPB slots for correct decoding
+    int32_t nMinNumDecodeSurfaces;                   // Minimum number of decode surfaces for correct decoding
+    uint8_t SequenceHeaderData[VK_MAX_SEQ_HDR_LEN];  // Raw sequence header data
+                                                     // (codec-specific)
     uint32_t codecProfile;
+    bool hasFilmGrain;  // AV1 specific filmgrain.
 } VkParserSequenceInfo;
 
 enum {
@@ -620,73 +491,57 @@ typedef struct VkParserDisplayMasteringInfo {
 
 // Interface to allow decoder to communicate with the client
 class VkParserVideoDecodeClient {
-public:
-    virtual int32_t
-    BeginSequence(const VkParserSequenceInfo* pnvsi)
-        = 0; // Returns max number of reference frames
-        // (always at least 2 for MPEG-2)
-    virtual bool
-    AllocPictureBuffer(VkPicIf** ppPicBuf)
-        = 0; // Returns a new VkPicIf interface
-    virtual bool DecodePicture(
-        VkParserPictureData* pParserPictureData)
-        = 0; // Called when a picture is
-        // ready to be decoded
-    virtual bool UpdatePictureParameters(
-        VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersObject, // IN
-        VkSharedBaseObj<VkVideoRefCountBase>& client) // OUT
-        = 0; // Called when a picture is
-        // ready to be decoded
-    virtual bool DisplayPicture(
-        VkPicIf* pPicBuf,
-        int64_t llPTS)
-        = 0; // Called when a picture is ready to be displayed
-    virtual void UnhandledNALU(
-        const uint8_t* pbData, size_t cbData)
-        = 0; // Called for custom NAL parsing (not required)
-    virtual uint32_t GetDecodeCaps() { return 0; } // NVD_CAPS_XXX
-    virtual int32_t GetOperatingPoint(VkParserOperatingPointInfo* pOPInfo)
-    {
-        return 0;
-    } // called from sequence header of av1 scalable video streams
-    virtual VkDeviceSize GetBitstreamBuffer(VkDeviceSize size,
-                                      VkDeviceSize minBitstreamBufferOffsetAlignment,
-                                      VkDeviceSize minBitstreamBufferSizeAlignment,
-                                      const uint8_t* pInitializeBufferMemory,
-                                      VkDeviceSize initializeBufferMemorySize,
-                                      VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer) = 0;
-protected:
-    virtual ~VkParserVideoDecodeClient() { }
+   public:
+    virtual int32_t BeginSequence(const VkParserSequenceInfo* pnvsi) = 0;  // Returns max number of reference frames
+    // (always at least 2 for MPEG-2)
+    virtual bool AllocPictureBuffer(VkPicIf** ppPicBuf) = 0;                // Returns a new VkPicIf interface
+    virtual bool DecodePicture(VkParserPictureData* pParserPictureData) = 0;  // Called when a picture is
+    // ready to be decoded
+    virtual bool UpdatePictureParameters(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersObject,  // IN
+                                         VkSharedBaseObj<VkVideoRefCountBase>& client)                            // OUT
+        = 0;  // Called when a picture is
+    // ready to be decoded
+    virtual bool DisplayPicture(VkPicIf* pPicBuf,
+                                int64_t llPTS) = 0;                        // Called when a picture is ready to be displayed
+    virtual void UnhandledNALU(const uint8_t* pbData, size_t cbData) = 0;  // Called for custom NAL parsing (not required)
+    virtual uint32_t GetDecodeCaps() { return 0; }                         // NVD_CAPS_XXX
+    // called from sequence header of av1 scalable video streams
+    virtual VkDeviceSize GetBitstreamBuffer(VkDeviceSize size, VkDeviceSize minBitstreamBufferOffsetAlignment,
+                                            VkDeviceSize minBitstreamBufferSizeAlignment, const uint8_t* pInitializeBufferMemory,
+                                            VkDeviceSize initializeBufferMemorySize,
+                                            VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer) = 0;
+
+   protected:
+    virtual ~VkParserVideoDecodeClient() {}
 };
 
 // Initialization parameters for decoder class
 typedef struct VkParserInitDecodeParameters {
-    uint32_t                   interfaceVersion;
-    VkParserVideoDecodeClient* pClient; // should always be present if using parsing functionality
+    uint32_t interfaceVersion;
+    VkParserVideoDecodeClient* pClient;  // should always be present if using parsing functionality
     uint32_t defaultMinBufferSize;
     uint32_t bufferOffsetAlignment;
     uint32_t bufferSizeAlignment;
-    uint64_t referenceClockRate; // ticks per second of PTS clock
-        // (0 = default = 10000000 = 10Mhz)
-    int32_t  errorThreshold;     // threshold for deciding to bypass of picture
-                                 // (0 = do not decode, 100 = always decode)
-    VkParserSequenceInfo* pExternalSeqInfo; // optional external sequence header
-        // data from system layer
+    uint64_t referenceClockRate;  // ticks per second of PTS clock
+                                  // (0 = default = 10000000 = 10Mhz)
+    int32_t errorThreshold;                  // threshold for deciding to bypass of picture
+                                             // (0 = do not decode, 100 = always decode)
+    VkParserSequenceInfo* pExternalSeqInfo;  // optional external sequence header
+                                             // data from system layer
 
     // If set, Picture Parameters are going to be provided via UpdatePictureParameters callback
-    bool     outOfBandPictureParameters;
+    bool outOfBandPictureParameters;
 } VkParserInitDecodeParameters;
 
 // High-level interface to video decoder (Note that parsing and decoding
 // functionality are decoupled from each other)
 class VulkanVideoDecodeParser : public virtual VkVideoRefCountBase {
-public:
+   public:
     virtual VkResult Initialize(const VkParserInitDecodeParameters* pParserPictureData) = 0;
-    virtual bool ParseByteStream(const VkParserBitstreamPacket* pck,
-                                 size_t* pParsedBytes = NULL) = 0;
+    virtual bool ParseByteStream(const VkParserBitstreamPacket* pck, size_t* pParsedBytes = NULL) = 0;
     virtual bool GetDisplayMasteringInfo(VkParserDisplayMasteringInfo* pdisp) = 0;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
-#endif // _VULKANVIDEOPARSER_IF_H_
+#endif  // _VULKANVIDEOPARSER_IF_H_

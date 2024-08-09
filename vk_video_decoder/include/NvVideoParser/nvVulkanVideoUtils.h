@@ -25,6 +25,10 @@
 #define ALIGN64(p) ((unsigned char*)((((size_t)(p)) + 63) & ~63))
 #define ALIGN128(p) ((unsigned char*)((((size_t)(p)) + 127) & ~127))
 
+#ifndef ARRAYSIZE
+#define ARRAYSIZE(a) ((sizeof(a) / sizeof(a[0])))
+#endif
+
 #define MAKEFRAMERATE(num, den) (((num) << 14) | (den))
 #define NV_FRAME_RATE_NUM(rate) ((rate) >> 14)
 #define NV_FRAME_RATE_DEN(rate) ((rate)&0x3fff)

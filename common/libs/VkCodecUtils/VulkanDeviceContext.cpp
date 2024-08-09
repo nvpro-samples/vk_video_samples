@@ -330,9 +330,9 @@ VkResult VulkanDeviceContext::InitVkInstance(const char * pAppName, bool verbose
     VkInstanceCreateInfo instance_info = {};
     instance_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instance_info.pApplicationInfo = &app_info;
-    instance_info.enabledLayerCount = m_reqInstanceLayers.size();
+    instance_info.enabledLayerCount = (uint32_t)m_reqInstanceLayers.size();
     instance_info.ppEnabledLayerNames = m_reqInstanceLayers.data();
-    instance_info.enabledExtensionCount = m_reqInstanceExtensions.size();
+    instance_info.enabledExtensionCount = (uint32_t)m_reqInstanceExtensions.size();
     instance_info.ppEnabledExtensionNames = m_reqInstanceExtensions.data();
 
     result = CreateInstance(&instance_info, nullptr, &m_instance);
@@ -351,9 +351,9 @@ VkResult VulkanDeviceContext::InitVkInstance(const char * pAppName, bool verbose
     return result;
 }
 
-bool VulkanDeviceContext::DebugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT obj_type,
-                                              uint64_t object, size_t location,
-                                              int32_t msg_code, const char *layer_prefix, const char *msg)
+bool VulkanDeviceContext::DebugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT,
+                                              uint64_t, size_t,
+                                              int32_t, const char *layer_prefix, const char *msg)
 {
     LogPriority prio = LOG_WARN;
     if (flags & VK_DEBUG_REPORT_ERROR_BIT_EXT)

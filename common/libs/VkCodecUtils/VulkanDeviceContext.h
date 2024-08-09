@@ -238,7 +238,8 @@ public:
                                                                                  VK_QUEUE_TRANSFER_BIT,
                                 const VkVideoCodecOperationFlagsKHR requestVideoDecodeQueueOperations =
                                                                   (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
-                                                                   VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR),
+                                                                   VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR |
+                                                                   VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR),
                                 const VkQueueFlags requestVideoEncodeQueueMask = VK_QUEUE_VIDEO_ENCODE_BIT_KHR |
                                                                                  VK_QUEUE_TRANSFER_BIT,
                                 const VkVideoCodecOperationFlagsKHR requestVideoEncodeQueueOperations =
