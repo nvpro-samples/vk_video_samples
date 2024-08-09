@@ -1584,7 +1584,7 @@ void VulkanAV1Decoder::SetFrameRefs(int last_frame_idx, int gold_frame_idx)
     }
 
     ref_frame_idx[STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME - STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME] = last_frame_idx;
-    ref_frame_idx[STD_VIDEO_AV1_REFERENCE_NAME_GOLDEN_FRAME - STD_VIDEO_AV1_REFERENCE_NAME_GOLDEN_FRAME] = gold_frame_idx;
+    ref_frame_idx[STD_VIDEO_AV1_REFERENCE_NAME_GOLDEN_FRAME - STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME] = gold_frame_idx;
     usedFrame[last_frame_idx] = 1;
     usedFrame[gold_frame_idx] = 1;
 
