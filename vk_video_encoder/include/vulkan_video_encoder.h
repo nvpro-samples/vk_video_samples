@@ -50,7 +50,7 @@ public:
 };
 
 
-VK_VIDEO_ENCODER_EXPORT
+extern "C" VK_VIDEO_ENCODER_EXPORT
 VkResult CreateVulkanVideoEncoder(VkVideoCodecOperationFlagBitsKHR videoCodecOperation,
                                   int argc, char** argv,
                                   VkSharedBaseObj<VulkanVideoEncoder>& vulkanVideoEncoder);
