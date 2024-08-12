@@ -138,7 +138,7 @@ void VkVideoEncoderH264::POCBasedRefPicManagement(StdVideoEncodeH264RefPicMarkin
 
     if (currPicNum > 0 && (picNumX >= 0)) {
         m_mmco[m_refPicMarkingOpCount].memory_management_control_operation = STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_UNMARK_SHORT_TERM;
-        m_mmco[m_refPicMarkingOpCount++].difference_of_pic_nums_minus1 = currPicNum - picNumX - 1;
+        m_mmco[m_refPicMarkingOpCount++].difference_of_pic_nums_minus1 = (uint16_t)(currPicNum - picNumX - 1);
         m_mmco[m_refPicMarkingOpCount++].memory_management_control_operation = STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_END;
     }
 }
@@ -157,7 +157,7 @@ void VkVideoEncoderH264::FrameNumBasedRefPicManagement(StdVideoEncodeH264RefPicM
 
     if (currPicNum > 0 && (picNumX >= 0)) {
         m_mmco[m_refPicMarkingOpCount].memory_management_control_operation = STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_UNMARK_SHORT_TERM;
-        m_mmco[m_refPicMarkingOpCount++].difference_of_pic_nums_minus1 = currPicNum - picNumX - 1;
+        m_mmco[m_refPicMarkingOpCount++].difference_of_pic_nums_minus1 = (uint16_t)(currPicNum - picNumX - 1);
         m_mmco[m_refPicMarkingOpCount++].memory_management_control_operation = STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_END;
     }
 }
@@ -193,11 +193,11 @@ VkResult VkVideoEncoderH264::SetupRefPicReorderingCommands(const PicInfoH264 *pP
             if (diff <= 0) {
                 refPicList0Mod[m_refList0ModOpCount].modification_of_pic_nums_idc =
                     STD_VIDEO_H264_MODIFICATION_OF_PIC_NUMS_IDC_SHORT_TERM_SUBTRACT;
-                refPicList0Mod[m_refList0ModOpCount].abs_diff_pic_num_minus1 = abs(diff) ? abs(diff) - 1 : maxPicNum - 1;
+                refPicList0Mod[m_refList0ModOpCount].abs_diff_pic_num_minus1 = (uint16_t)(abs(diff) ? abs(diff) - 1 : maxPicNum - 1);
             } else {
                 refPicList0Mod[m_refList0ModOpCount].modification_of_pic_nums_idc =
                     STD_VIDEO_H264_MODIFICATION_OF_PIC_NUMS_IDC_SHORT_TERM_ADD;
-                refPicList0Mod[m_refList0ModOpCount].abs_diff_pic_num_minus1 = abs(diff) - 1;
+                refPicList0Mod[m_refList0ModOpCount].abs_diff_pic_num_minus1 = (uint16_t)(abs(diff) - 1);
             }
             m_refList0ModOpCount++;
             picNumLXPred = m_dpb264->GetPicNum(refLists.refPicList[0][i]);
@@ -301,8 +301,8 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     memcpy(pFrameInfo->stdReferenceListsInfo.RefPicList0, refLists.refPicList[0], refLists.refPicListCount[0]);
     memcpy(pFrameInfo->stdReferenceListsInfo.RefPicList1, refLists.refPicList[1], refLists.refPicListCount[1]);
 
-    pFrameInfo->stdReferenceListsInfo.num_ref_idx_l0_active_minus1 = refLists.refPicListCount[0] > 0 ? refLists.refPicListCount[0] - 1 : 0;
-    pFrameInfo->stdReferenceListsInfo.num_ref_idx_l1_active_minus1 = refLists.refPicListCount[1] > 0 ? refLists.refPicListCount[1] - 1 : 0;
+    pFrameInfo->stdReferenceListsInfo.num_ref_idx_l0_active_minus1 = refLists.refPicListCount[0] > 0 ? (uint8_t)(refLists.refPicListCount[0] - 1) : 0;
+    pFrameInfo->stdReferenceListsInfo.num_ref_idx_l1_active_minus1 = refLists.refPicListCount[1] > 0 ? (uint8_t)(refLists.refPicListCount[1] - 1) : 0;
 
     pFrameInfo->stdSliceHeader.flags.num_ref_idx_active_override_flag = false;
     if (picType == VkVideoGopStructure::FRAME_TYPE_B) {

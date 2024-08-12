@@ -117,7 +117,7 @@ static int parseArguments(EncoderConfig *encoderConfig, int argc, char *argv[])
                 return -1;
             }
         }  else if ((strcmp(argv[i], "--inputBpp") == 0)) {
-            if ((++i >= argc) || (sscanf(argv[i], "%u", &encoderConfig->input.bpp) != 1)) {
+            if ((++i >= argc) || (sscanf(argv[i], "%hhu", &encoderConfig->input.bpp) != 1)) {
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
                 return -1;
             }

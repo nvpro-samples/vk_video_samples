@@ -70,7 +70,7 @@ struct EncoderInputImageParameters
 public:
     uint32_t width;
     uint32_t height;
-    uint32_t bpp;
+    uint8_t  bpp;
     VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling;
     uint32_t numPlanes;
     VkSubresourceLayout planeLayouts[3];

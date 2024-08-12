@@ -18,7 +18,7 @@
 
 StdVideoH264LevelIdc EncoderConfigH264::DetermineLevel(uint8_t dpbSize,
                                                        uint32_t bitrate,
-                                                       uint32_t vbvBufferSize,
+                                                       uint32_t _vbvBufferSize,
                                                        double frameRate)
 {
 
@@ -30,7 +30,7 @@ StdVideoH264LevelIdc EncoderConfigH264::DetermineLevel(uint8_t dpbSize,
         if ((frameSizeInMbs * dpbSize * 384) > levelLimits[idx].maxDPB * 1024) continue;
 
         if ((bitrate != 0) && (bitrate > ((uint32_t)levelLimits[idx].maxBR * 1200))) continue;
-        if ((vbvBufferSize != 0) && (vbvBufferSize > ((uint32_t)levelLimits[idx].maxCPB * 1200))) continue;
+        if ((_vbvBufferSize != 0) && (_vbvBufferSize > ((uint32_t)levelLimits[idx].maxCPB * 1200))) continue;
 
         return levelLimits[idx].level;
     }
@@ -228,7 +228,7 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
     pps->seq_parameter_set_id = sps->seq_parameter_set_id;
     pps->pic_parameter_set_id = ppsId;
     pps->weighted_bipred_idc = STD_VIDEO_H264_WEIGHTED_BIPRED_IDC_DEFAULT;
-    pps->num_ref_idx_l0_default_active_minus1 = ((gopStructure.GetGopFrameCount() > dpbCount) ? dpbCount : gopStructure.GetGopFrameCount()) - 1;
+    pps->num_ref_idx_l0_default_active_minus1 = (uint8_t)(((gopStructure.GetGopFrameCount() > dpbCount) ? dpbCount : gopStructure.GetGopFrameCount()) - 1);
     pps->num_ref_idx_l1_default_active_minus1 = gopStructure.GetConsecutiveBFrameCount() - 1;
 
     if ((sps->chroma_format_idc == 3) && !sps->flags.qpprime_y_zero_transform_bypass_flag) {
@@ -243,7 +243,7 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
            (sps->max_num_ref_frames <= pps->num_ref_idx_l0_default_active_minus1)) {
         sps->max_num_ref_frames = pps->num_ref_idx_l0_default_active_minus1 + 1;
         if (gopStructure.GetConsecutiveBFrameCount() > 0) {
-            sps->max_num_ref_frames += pps->num_ref_idx_l1_default_active_minus1 + 1;
+            sps->max_num_ref_frames += (uint8_t)(pps->num_ref_idx_l1_default_active_minus1 + 1U);
         }
 
         // max_num_ref_frames must not exceed the largest DPB size allowed by
@@ -386,8 +386,8 @@ int8_t EncoderConfigH264::InitDpbCount()
     // value.
     assert(pic_width_in_mbs > 0);
     assert(pic_height_in_map_units > 0);
-    uint8_t levelDpbSize = ((uint8_t)(1024 * levelLimits[levelIdc].maxDPB)) /
-                            ((pic_width_in_mbs * pic_height_in_map_units) * 384);
+    uint8_t levelDpbSize = (uint8_t)(((1024 * levelLimits[levelIdc].maxDPB)) /
+                            ((pic_width_in_mbs * pic_height_in_map_units) * 384));
 
     // XXX: If the level is 5.2, it is highly likely that we forced it to that
     // value as a WAR for super HD. In that case, force the DPB size to
@@ -498,8 +498,8 @@ bool EncoderConfigH264::GetRateControlParameters(VkVideoEncodeRateControlInfoKHR
     pRateControlLayersInfo->maxBitrate = hrdBitrate;
 
     if (averageBitrate > 0 || hrdBitrate > 0) {
-       pRateControlInfo->virtualBufferSizeInMs = vbvBufferSize * 1000ull / (hrdBitrate ? hrdBitrate : averageBitrate);
-       pRateControlInfo->initialVirtualBufferSizeInMs = vbvInitialDelay * 1000ull / (hrdBitrate ? hrdBitrate : averageBitrate);
+       pRateControlInfo->virtualBufferSizeInMs = (uint32_t)(vbvBufferSize * 1000ull / (hrdBitrate ? hrdBitrate : averageBitrate));
+       pRateControlInfo->initialVirtualBufferSizeInMs = (uint32_t)(vbvInitialDelay * 1000ull / (hrdBitrate ? hrdBitrate : averageBitrate));
     }
 
     pRateControlInfoH264->consecutiveBFrameCount = gopStructure.GetConsecutiveBFrameCount();

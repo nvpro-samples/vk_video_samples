@@ -52,8 +52,8 @@ static void SetupAspectRatio(StdVideoH265SequenceParameterSetVui *vui, uint32_t 
         vui->aspect_ratio_idc = (StdVideoH265AspectRatioIdc)(indexFound + 1); // 1..16
     } else {
         vui->aspect_ratio_idc = STD_VIDEO_H265_ASPECT_RATIO_IDC_EXTENDED_SAR; // Extended_SAR
-        vui->sar_width  = w;
-        vui->sar_height = h;
+        vui->sar_width  = (uint16_t)w;
+        vui->sar_height = (uint16_t)h;
     }
 }
 
@@ -156,7 +156,7 @@ int8_t EncoderConfigH265::VerifyDpbSize()
         uint32_t maxDpbSize = GetMaxDpbSize(picSize, levelIdxFound);
         if ((uint32_t)dpbCount > maxDpbSize) {
             assert(!"DpbSize is greater than the maximum supported value.");
-            return maxDpbSize;
+            return (int8_t)(uint8_t)maxDpbSize;
         }
     } else {
         assert(!"Invalid level idc");
@@ -293,8 +293,8 @@ EncoderConfigH265::InitVuiParameters(StdVideoH265SequenceParameterSetVui *vuiInf
     }
     int32_t leftMvxLimit = left_mvx_int << 2 | left_mvx_frac;
     int32_t topMvyLimit  = top_mvy_int << 2 | top_mvy_frac;
-    vuiInfo->log2_max_mv_length_horizontal = FastIntLog2(std::max(IntAbs(leftMvxLimit) - 1, 1));
-    vuiInfo->log2_max_mv_length_vertical   = FastIntLog2(std::max(IntAbs(topMvyLimit)  - 1, 1));
+    vuiInfo->log2_max_mv_length_horizontal = (uint8_t)FastIntLog2(std::max(IntAbs(leftMvxLimit) - 1, 1));
+    vuiInfo->log2_max_mv_length_vertical   = (uint8_t)FastIntLog2(std::max(IntAbs(topMvyLimit)  - 1, 1));
     vuiInfo->vui_num_ticks_poc_diff_one_minus1 = 0;
 
     return vuiInfo;
@@ -486,8 +486,8 @@ bool EncoderConfigH265::GetRateControlParameters(VkVideoEncodeRateControlInfoKHR
     pRcLayerInfo->maxBitrate = hrdBitrate;
 
     if ((averageBitrate > 0) || (hrdBitrate > 0)) {
-        rcInfo->virtualBufferSizeInMs = vbvBufferSize * 1000ull / (hrdBitrate ? hrdBitrate : averageBitrate);
-        rcInfo->initialVirtualBufferSizeInMs = vbvInitialDelay * 1000ull / (hrdBitrate ? hrdBitrate : averageBitrate);
+        rcInfo->virtualBufferSizeInMs = (uint32_t)(vbvBufferSize * 1000ull / (hrdBitrate ? hrdBitrate : averageBitrate));
+        rcInfo->initialVirtualBufferSizeInMs = (uint32_t)(vbvInitialDelay * 1000ull / (hrdBitrate ? hrdBitrate : averageBitrate));
     }
 
     rcInfoH265->consecutiveBFrameCount = gopStructure.GetConsecutiveBFrameCount();
@@ -514,7 +514,7 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
 
     for (uint32_t i = 0; i <= maxSubLayersMinus1; i++) {
         spsInfo->decPicBufMgr.max_latency_increase_plus1[i] = 0;
-        spsInfo->decPicBufMgr.max_dec_pic_buffering_minus1[i] = dpbCount - 1;
+        spsInfo->decPicBufMgr.max_dec_pic_buffering_minus1[i] = (uint8_t)(dpbCount - 1);
         spsInfo->decPicBufMgr.max_num_reorder_pics[i] = gopStructure.GetConsecutiveBFrameCount() ? 1 : 0;
     }
 
@@ -591,16 +591,16 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
     spsInfo->sps.bit_depth_luma_minus8      = encodeBitDepthLuma - 8;
     spsInfo->sps.bit_depth_chroma_minus8    = encodeBitDepthChroma - 8;
     spsInfo->sps.log2_max_pic_order_cnt_lsb_minus4 = 4;
-    spsInfo->sps.log2_min_luma_coding_block_size_minus3 = minCbLog2SizeY - 3;
-    spsInfo->sps.log2_diff_max_min_luma_coding_block_size = ctbLog2SizeY - minCbLog2SizeY;
-    spsInfo->sps.log2_min_luma_transform_block_size_minus2 = log2MinTransformBlockSize - 2;
-    spsInfo->sps.log2_diff_max_min_luma_transform_block_size = log2MaxTransformBlockSize - log2MinTransformBlockSize;
-    spsInfo->sps.max_transform_hierarchy_depth_inter = std::max(ctbLog2SizeY - log2MinTransformBlockSize, 1U);
+    spsInfo->sps.log2_min_luma_coding_block_size_minus3 = (uint8_t)(minCbLog2SizeY - 3);
+    spsInfo->sps.log2_diff_max_min_luma_coding_block_size = (uint8_t)(ctbLog2SizeY - minCbLog2SizeY);
+    spsInfo->sps.log2_min_luma_transform_block_size_minus2 = (uint8_t)(log2MinTransformBlockSize - 2);
+    spsInfo->sps.log2_diff_max_min_luma_transform_block_size = (uint8_t)(log2MaxTransformBlockSize - log2MinTransformBlockSize);
+    spsInfo->sps.max_transform_hierarchy_depth_inter = (uint8_t)(std::max(ctbLog2SizeY - log2MinTransformBlockSize, 1U));
     spsInfo->sps.max_transform_hierarchy_depth_intra = 3;
     spsInfo->sps.pcm_sample_bit_depth_luma_minus1 = 8 - 1;
     spsInfo->sps.pcm_sample_bit_depth_chroma_minus1 = 8 - 1;
-    spsInfo->sps.log2_min_pcm_luma_coding_block_size_minus3 = minCbLog2SizeY - 3;
-    spsInfo->sps.log2_diff_max_min_pcm_luma_coding_block_size = ctbLog2SizeY - minCbLog2SizeY;
+    spsInfo->sps.log2_min_pcm_luma_coding_block_size_minus3 = (uint8_t)(minCbLog2SizeY - 3);
+    spsInfo->sps.log2_diff_max_min_pcm_luma_coding_block_size = (uint8_t)(ctbLog2SizeY - minCbLog2SizeY);
 
     if (verbose) {
         std::cout << "sps.log2_min_luma_coding_block_size_minus3: "         << (uint32_t)spsInfo->sps.log2_min_luma_coding_block_size_minus3
@@ -650,7 +650,7 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
     vpsInfo->vpsInfo.flags.vps_timing_info_present_flag = 0;
     vpsInfo->vpsInfo.flags.vps_poc_proportional_to_timing_flag = 0;
     vpsInfo->vpsInfo.vps_video_parameter_set_id = vpsId;
-    vpsInfo->vpsInfo.vps_max_sub_layers_minus1 = maxSubLayersMinus1;
+    vpsInfo->vpsInfo.vps_max_sub_layers_minus1 = (uint8_t)maxSubLayersMinus1;
     vpsInfo->vpsInfo.vps_num_units_in_tick = 0;
     vpsInfo->vpsInfo.vps_time_scale = 0;
     vpsInfo->vpsInfo.vps_num_ticks_poc_diff_one_minus1 = 0;

@@ -173,7 +173,7 @@ public:
 
         // consecutiveBFrameCount can be modified before the IDR sequence
         uint8_t consecutiveBFrameCount = m_consecutiveBFrameCount;
-        gopPos.inGop = (gopState.positionInInputOrder % m_gopFrameCount);
+        gopPos.inGop = (uint8_t)(gopState.positionInInputOrder % m_gopFrameCount);
 
         if (gopPos.inGop == 0) {
             // This is the start of a new (open or close) GOP.
@@ -215,7 +215,7 @@ public:
 
                 // consecutiveBFrameCount is now the refDelta minus the previous reference minus
                 // the extra P references at the end before the next reference
-                consecutiveBFrameCount = refDelta - 2U;
+                consecutiveBFrameCount = (uint8_t)(refDelta - 2U);
 
                 if (periodDelta == 1U) { // This is the last frame before the IDR
                     // A promoted B-frame to a reference of type m_preIdrAnchorFrameType
