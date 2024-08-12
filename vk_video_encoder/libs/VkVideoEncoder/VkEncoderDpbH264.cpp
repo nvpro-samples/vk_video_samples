@@ -1040,7 +1040,7 @@ void VkEncDpbH264::GetRefPicList(const PicInfoH264 *pPicInfo,
                 break;
             }
 
-            pDpbSlotInfoLists->refPicList[listNum][i] = dpbIndex;
+            pDpbSlotInfoLists->refPicList[listNum][i] = (uint8_t)dpbIndex;
 
             pDpbSlotInfoLists->dpbSlotsUseMask |= (1 << dpbIndex);
 
@@ -1705,5 +1705,5 @@ void VkEncDpbH264::FillStdReferenceInfo(uint8_t dpbIdx, StdVideoEncodeH264Refere
 
     pStdReferenceInfo->PicOrderCnt = pDpbEntry->picInfo.PicOrderCnt;
     pStdReferenceInfo->flags.used_for_long_term_reference = isLongTerm;
-    pStdReferenceInfo->long_term_frame_idx = isLongTerm ? pDpbEntry->longTermFrameIdx : (uint16_t)-1;
+    pStdReferenceInfo->long_term_frame_idx = isLongTerm ? (uint16_t)pDpbEntry->longTermFrameIdx : (uint16_t)-1;
 }
