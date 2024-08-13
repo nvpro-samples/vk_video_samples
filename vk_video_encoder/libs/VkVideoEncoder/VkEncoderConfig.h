@@ -31,6 +31,10 @@
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 
+#ifndef VK_KHR_video_encode_av1
+#define VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR                  ((VkVideoCodecOperationFlagBitsKHR)0x00000000)
+#endif
+
 struct EncoderConfigH264;
 struct EncoderConfigH265;
 class VulkanDeviceContext;

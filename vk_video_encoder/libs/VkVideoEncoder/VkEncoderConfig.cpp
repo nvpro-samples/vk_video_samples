@@ -30,8 +30,10 @@ void printHelp()
     --inputWidth                         <integer> : Encode Width \n\
     --inputHeight                        <integer> : Encode Height \n\
     --minQp                         <integer> : Minimum QP value in the range [0, 51] \n\
-    --logBatchEncoding              Enable verbose logging of batch recording and submission of commands \n"
-    );
+    --consecutiveBFrameCount        <integer> : Number of consecutive B frame count in a GOP \n\
+    --rateControlMode               <integer> or <string>: select different rate control modes: \n\
+                                        default(0), disabled(1), cbr(2), vbr(4)\n");
+
 }
 
 int EncoderConfig::ParseArguments(int argc, char *argv[])
@@ -71,9 +73,9 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
             } else if ((strcmp(codec_, "hevc") == 0) || (strcmp(codec_, "h265") == 0)) {
                 codec = VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR;
             } else if (strcmp(codec_, "av1") == 0) {
-                // codec = VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR;
-		assert(!"AV1 is not supported yet!");
-		return -1;
+                codec = VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR;
+                assert(!"AV1 is not supported yet!");
+                return -1;
             } else {
                 // Invalid codec
                 fprintf(stderr, "Invalid codec: %s\n", codec_);
@@ -200,6 +202,25 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
             printf("Selected frameTypeName: %s\n", gopStructure.GetFrameTypeName(lastFrameType));
         } else if (strcmp(argv[i], "--closedGop") == 0) {
             gopStructure.SetClosedGop();
+        } else if (strcmp(argv[i], "--rateControlMode") == 0) {
+            if (++i >= argc) {
+                fprintf(stderr, "invalid parameter for %s\n", argv[i-1]);
+                return -1;
+            }
+            const char* rc = argv[i];
+            if ((strcmp(rc, "0") == 0) || (strcmp(rc, "default") == 0)) {
+                rateControlMode = VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DEFAULT_KHR;
+            } else if ((strcmp(rc, "1") == 0) || (strcmp(rc, "disabled") == 0)) {
+                rateControlMode = VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR;
+            } else if ((strcmp(rc, "2") == 0) || (strcmp(rc, "cbr") == 0)) {
+                rateControlMode = VK_VIDEO_ENCODE_RATE_CONTROL_MODE_CBR_BIT_KHR;
+            } else if ((strcmp(rc, "4") == 0) || (strcmp(rc, "vbr") == 0)) {
+                rateControlMode = VK_VIDEO_ENCODE_RATE_CONTROL_MODE_VBR_BIT_KHR;
+            }else {
+                // Invalid rateControlMode
+                fprintf(stderr, "Invalid rateControlMode: %s\n", rc);
+                return -1;
+            }
         } else if (strcmp(argv[i], "--deviceID") == 0) {
             if ((++i >= argc) || (sscanf(argv[i], "%x", &deviceId) != 1)) {
                  fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
