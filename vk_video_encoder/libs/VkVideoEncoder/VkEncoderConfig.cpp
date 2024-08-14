@@ -25,6 +25,7 @@ void printHelp()
     -i                              .yuv Input YUV File Name (YUV420p 8bpp only) \n\
     -o                              .264/5 Output H264/5 File Name \n\
     --codec                         <sting> select codec type: avc (h264) or hevc (h265) or av1\n\
+    --dpbMode                       <string>  : select DPB mode: layered, separate\n\
     --startFrame                    <integer> : Start Frame Number to be Encoded \n\
     --numFrames                     <integer> : End Frame Number to be Encoded \n\
     --inputWidth                         <integer> : Encode Width \n\
@@ -83,6 +84,19 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
             }
             printf("Selected codec: %s\n", codec_);
             i++; // Skip the next argument since it's the codec value
+        } else if ((strcmp(argv[i], "--dpbMode") == 0)) {
+            const char *dpbMode = argv[i + 1];
+            if (strcmp(dpbMode, "separate") == 0) {
+                useDpbArray = false;
+            } else if (strcmp(dpbMode, "layered") == 0) {
+                useDpbArray = true;
+            } else {
+                // Invalid codec
+                fprintf(stderr, "Invalid DPB mode: %s\n", dpbMode);
+                return -1;
+            }
+            printf("Selected DPB mode: %s\n", dpbMode);
+            i++; // Skip the next argument since it's the dpbMode value
         } else if ((strcmp(argv[i], "--inputWidth") == 0)) {
             if ((++i >= argc) || (sscanf(argv[i], "%u", &input.width) != 1)) {
                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);

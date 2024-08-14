@@ -358,6 +358,7 @@ public:
     int32_t  deviceId;
     int32_t  queueId;
     VkVideoCodecOperationFlagBitsKHR codec;
+    bool useDpbArray;
     uint32_t videoProfileIdc;
     uint32_t numInputImages;
     EncoderInputImageParameters input;
@@ -433,6 +434,7 @@ public:
     , deviceId(-1)
     , queueId(0)
     , codec(VK_VIDEO_CODEC_OPERATION_NONE_KHR)
+    , useDpbArray(false)
     , videoProfileIdc((uint32_t)-1)
     , numInputImages(DEFAULT_NUM_INPUT_IMAGES)
     , input()

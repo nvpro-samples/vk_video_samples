@@ -312,6 +312,13 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
     encoderConfig->InitDeviceCapbilities(m_vkDevCtx);
 
+    if (encoderConfig->useDpbArray == false &&
+        (encoderConfig->videoCapabilities.flags & VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR) == 0) {
+        std::cout << "Separate DPB was requested, but the implementation does not support it!" << std::endl;
+        assert(!"Separate DPB is not supported");
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
     // Reconfigure the gopStructure structure because the device may not support
     // specific GOP structure. For example it may not support B-frames.
     // gopStructure.Init() should be called after encoderConfig->InitDeviceCapabilities().
@@ -471,8 +478,8 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                        m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
                                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                        encoderConfig->videoCoreProfile.GetProfile(), // pVideoProfile
-                                       false,   // useImageArray      TODO: check properties
-                                       false,   // useImageViewArray  TODO: check properties
+                                       encoderConfig->useDpbArray,                   // useImageArray
+                                       false,   // useImageViewArrays
                                        false    // useLinear
                                       );
     if(result != VK_SUCCESS) {
