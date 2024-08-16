@@ -32,6 +32,9 @@ void printHelp()
     --inputHeight                        <integer> : Encode Height \n\
     --minQp                         <integer> : Minimum QP value in the range [0, 51] \n\
     --consecutiveBFrameCount        <integer> : Number of consecutive B frame count in a GOP \n\
+    --qualityLevel                  <integer> : Select quality level \n\
+    --tuningMode                    <integer> or <string> : Select tuning mode \n\
+                                        default(0), hq(1), lowlatency(2), lossless(3) \n\
     --rateControlMode               <integer> or <string>: select different rate control modes: \n\
                                         default(0), disabled(1), cbr(2), vbr(4)\n");
 
