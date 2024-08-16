@@ -216,6 +216,29 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
             printf("Selected frameTypeName: %s\n", gopStructure.GetFrameTypeName(lastFrameType));
         } else if (strcmp(argv[i], "--closedGop") == 0) {
             gopStructure.SetClosedGop();
+        } else if (strcmp(argv[i], "--qualityLevel") == 0) {
+            if (++i >= argc || sscanf(argv[i], "%u", &qualityLevel) != 1) {
+                fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
+                return -1;
+            }
+        } else if (strcmp(argv[i], "--tuningMode") == 0) {
+            if (++i >= argc) {
+                fprintf(stderr, "Invalid parameter for %s\n", argv[i - 1]);
+                return -1;
+            }
+            const char* tuningModeStr = argv[i];
+            if ((strcmp(tuningModeStr, "0") == 0) || (strcmp(tuningModeStr, "default") == 0)) {
+                tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_DEFAULT_KHR;
+            } else if ((strcmp(tuningModeStr, "1") == 0) || (strcmp(tuningModeStr, "hq") == 0)) {
+                tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_HIGH_QUALITY_KHR;
+            } else if ((strcmp(tuningModeStr, "2") == 0) || (strcmp(tuningModeStr, "lowlatency") == 0)) {
+                tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_LOW_LATENCY_KHR;
+            } else if ((strcmp(tuningModeStr, "3") == 0) || (strcmp(tuningModeStr, "lossless") == 0)) {
+                tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_LOSSLESS_KHR;
+            } else {
+                fprintf(stderr, "Invalid tuningMode: %s\n", tuningModeStr);
+                return -1;
+            }
         } else if (strcmp(argv[i], "--rateControlMode") == 0) {
             if (++i >= argc) {
                 fprintf(stderr, "invalid parameter for %s\n", argv[i-1]);
@@ -371,7 +394,8 @@ void EncoderConfig::InitVideoProfile()
                                           GetComponentBitDepthFlagBits(encodeBitDepthLuma),
                                           GetComponentBitDepthFlagBits(encodeBitDepthChroma),
                                           (videoProfileIdc != (uint32_t)-1) ? videoProfileIdc :
-                                                  GetDefaultVideoProfileIdc());
+                                                  GetDefaultVideoProfileIdc(),
+                                          tuningMode);
 }
 
 bool EncoderConfig::InitRateControl()

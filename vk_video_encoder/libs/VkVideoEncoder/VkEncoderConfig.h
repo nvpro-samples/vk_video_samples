@@ -373,6 +373,7 @@ public:
     uint32_t numFrames;
     uint32_t codecBlockAlignment;
     uint32_t qualityLevel;
+    VkVideoEncodeTuningModeKHR tuningMode;
     VkVideoCoreProfile videoCoreProfile;
     VkVideoCapabilitiesKHR videoCapabilities;
     VkVideoEncodeCapabilitiesKHR videoEncodeCapabilities;
@@ -448,7 +449,8 @@ public:
     , startFrame(0)
     , numFrames(0)
     , codecBlockAlignment(16)
-    , qualityLevel(0) // FIXME: qualityLevel
+    , qualityLevel(0)
+    , tuningMode(VK_VIDEO_ENCODE_TUNING_MODE_DEFAULT_KHR)
     , videoCoreProfile(codec, encodeChromaSubsampling, encodeBitDepthLuma, encodeBitDepthChroma)
     , videoCapabilities()
     , videoEncodeCapabilities()
