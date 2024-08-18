@@ -200,6 +200,25 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
             printf("Selected frameTypeName: %s\n", gopStructure.GetFrameTypeName(lastFrameType));
         } else if (strcmp(argv[i], "--closedGop") == 0) {
             gopStructure.SetClosedGop();
+        } else if (strcmp(argv[i], "--deviceID") == 0) {
+            if ((++i >= argc) || (sscanf(argv[i], "%x", &deviceId) != 1)) {
+                 fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
+                 return -1;
+             }
+        } else if (strcmp(argv[i], "--deviceUuid") == 0) {
+            if (++i >= argc) {
+               fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
+               return -1;
+            }
+            size_t size = SetHexDeviceUUID(argv[i]);
+            if (size != VK_UUID_SIZE) {
+                std::cerr << "Invalid deviceUuid format used: " << argv[i]
+                          << " with size: " << strlen(argv[i])
+                          << std::endl;
+                std::cerr << "deviceUuid must be represented by 16 hex (32 bytes) values."
+                          << std::endl;
+                return -1;
+            }
         } else {
             argcount++;
             arglist.push_back(argv[i]);

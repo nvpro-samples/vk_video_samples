@@ -402,7 +402,7 @@ VkResult VulkanDeviceContext::InitDebugReport(bool validate, bool validateVerbos
     return CreateDebugReportCallbackEXT(m_instance, &debug_report_info, nullptr, &m_debugReport);
 }
 
-VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId,
+VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const uint8_t* pDeviceUuid,
                                                  const VkQueueFlags requestQueueTypes,
                                                  const VkWsiDisplay* pWsiDisplay,
                                                  const VkQueueFlags requestVideoDecodeQueueMask,
@@ -424,6 +424,17 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId,
         GetPhysicalDeviceProperties(physicalDevice, &props);
         if ((deviceId != -1) && (props.deviceID != (uint32_t)deviceId)) {
             continue;
+        }
+
+        if (pDeviceUuid != nullptr) {
+            size_t length = strlen(reinterpret_cast<const char*>(pDeviceUuid));
+            if (length != VK_UUID_SIZE) {
+                continue;
+            }
+
+            if ( 0 != strncmp((const char *)props.pipelineCacheUUID, (const char *)pDeviceUuid, VK_UUID_SIZE)) {
+                continue;
+            }
         }
 
         if (!HasAllDeviceExtensions(physicalDevice, props.deviceName)) {
