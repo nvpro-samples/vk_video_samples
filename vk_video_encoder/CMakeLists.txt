@@ -500,7 +500,7 @@ find_library(SPIRV_TOOLS_OPT_LIB NAMES SPIRV-Tools-opt
 find_library(SHADERC_LIB NAMES shaderc_shared
              HINTS ${SHADERC_SEARCH_PATH} )
 
-if (WIN32)
+if (WIN32 AND NOT DEFINED DEQP_TARGET)
     add_library(glslang         STATIC IMPORTED)
     add_library(OGLCompiler     STATIC IMPORTED)
     add_library(OSDependent     STATIC IMPORTED)
@@ -690,6 +690,6 @@ endif()
 
 add_subdirectory(test/vulkan-video-enc)
 
-if(BUILD_DEMOS)
+if(BUILD_DEMOS AND NOT DEFINED DEQP_TARGET)
     add_subdirectory(demos)
 endif()
