@@ -135,6 +135,11 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     VkSharedBaseObj<VkImageResourceView> srcEncodeImageView;
     encodeFrameInfo->srcEncodeImageResource->GetImageView(srcEncodeImageView);
 
+    VkImageLayout linearImgNewLayout = TransitionImageLayout(cmdBuf, linearInputImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    VkImageLayout srcImgNewLayout = TransitionImageLayout(cmdBuf, srcEncodeImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    (void)linearImgNewLayout;
+    (void)srcImgNewLayout;
+
     CopyLinearToOptimalImage(cmdBuf, linearInputImageView, srcEncodeImageView);
 
     VkResult result = encodeFrameInfo->inputCmdBuffer->EndCommandBufferRecording(cmdBuf);
