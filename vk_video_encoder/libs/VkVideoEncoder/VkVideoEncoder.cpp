@@ -737,8 +737,8 @@ VkResult VkVideoEncoder::CopyLinearToOptimalImage(VkCommandBuffer& commandBuffer
     {
         VkMemoryBarrier memoryBarrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
         memoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-        memoryBarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-        m_vkDevCtx->CmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+        memoryBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        m_vkDevCtx->CmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
                                1, &memoryBarrier, 0,
                                 0, 0, 0);
     }
