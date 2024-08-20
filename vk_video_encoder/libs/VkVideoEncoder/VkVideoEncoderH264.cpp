@@ -298,6 +298,9 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     assert(refLists.refPicListCount[0] <= 8);
     assert(refLists.refPicListCount[1] <= 8);
 
+    memset(pFrameInfo->stdReferenceListsInfo.RefPicList0, STD_VIDEO_H264_NO_REFERENCE_PICTURE, sizeof(pFrameInfo->stdReferenceListsInfo.RefPicList0));
+    memset(pFrameInfo->stdReferenceListsInfo.RefPicList1, STD_VIDEO_H264_NO_REFERENCE_PICTURE, sizeof(pFrameInfo->stdReferenceListsInfo.RefPicList1));
+
     memcpy(pFrameInfo->stdReferenceListsInfo.RefPicList0, refLists.refPicList[0], refLists.refPicListCount[0]);
     memcpy(pFrameInfo->stdReferenceListsInfo.RefPicList1, refLists.refPicList[1], refLists.refPicListCount[1]);
 
