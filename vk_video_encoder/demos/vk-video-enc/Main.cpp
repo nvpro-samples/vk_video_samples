@@ -52,6 +52,7 @@ int main(int argc, char** argv)
         VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
         VK_KHR_VIDEO_QUEUE_EXTENSION_NAME,
         VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME,
+        VK_KHR_VIDEO_MAINTENANCE_1_EXTENSION_NAME,
         nullptr
     };
 

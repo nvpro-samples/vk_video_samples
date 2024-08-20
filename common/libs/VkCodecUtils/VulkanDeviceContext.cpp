@@ -740,8 +740,20 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
     devInfo.ppEnabledExtensionNames = m_reqDeviceExtensions.data();
 
     // disable all features
-    VkPhysicalDeviceFeatures features = {};
-    devInfo.pEnabledFeatures = &features;
+    devInfo.pEnabledFeatures = nullptr;
+
+    VkPhysicalDeviceVideoMaintenance1FeaturesKHR videoMaintenance1Features {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR,
+                                                                               nullptr,
+                                                                               false};
+
+    VkPhysicalDeviceSynchronization2Features synchronization2Features {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
+                                                                    nullptr,
+                                                                    false};
+    synchronization2Features.pNext = &videoMaintenance1Features;
+
+    VkPhysicalDeviceFeatures2 deviceFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &synchronization2Features};
+    GetPhysicalDeviceFeatures2(m_physDevice, &deviceFeatures);
+    devInfo.pNext = &deviceFeatures;
 
     VkResult result = CreateDevice(m_physDevice, &devInfo, nullptr, &m_device);
     if (result != VK_SUCCESS) {
