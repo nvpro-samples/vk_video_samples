@@ -650,7 +650,7 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
             oldLayout, // VkImageLayout   oldLayout // FIXME - use the real old layout
             newLayout, // VkImageLayout   newLayout
             VK_QUEUE_FAMILY_IGNORED, // uint32_t        srcQueueFamilyIndex
-            (uint32_t)m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(), // uint32_t   dstQueueFamilyIndex
+            VK_QUEUE_FAMILY_IGNORED, // uint32_t   dstQueueFamilyIndex
             imageView->GetImageResource()->GetImage(), // VkImage         image;
             {
                 // VkImageSubresourceRange   subresourceRange
