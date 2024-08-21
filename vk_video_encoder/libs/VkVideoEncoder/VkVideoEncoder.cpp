@@ -873,11 +873,26 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         vkDevCtx->CmdControlVideoCodingKHR(cmdBuf, &renderControlInfo);
     }
 
-    vkDevCtx->CmdBeginQuery(cmdBuf, queryPool, querySlotId, VkQueryControlFlags());
+    if (m_videoMaintenance1FeaturesSupported)
+    {
+        VkVideoInlineQueryInfoKHR videoInlineQueryInfoKHR;
+        videoInlineQueryInfoKHR.pNext = NULL;
+        videoInlineQueryInfoKHR.sType = VK_STRUCTURE_TYPE_VIDEO_INLINE_QUERY_INFO_KHR;
+        videoInlineQueryInfoKHR.queryPool = queryPool;
+        videoInlineQueryInfoKHR.firstQuery = querySlotId;
+        videoInlineQueryInfoKHR.queryCount = numQuerySamples;
+        ((VkVideoEncodeH264PictureInfoKHR*)(encodeFrameInfo->encodeInfo.pNext))->pNext = &videoInlineQueryInfoKHR;
 
-    vkDevCtx->CmdEncodeVideoKHR(cmdBuf, &encodeFrameInfo->encodeInfo);
+        vkDevCtx->CmdEncodeVideoKHR(cmdBuf, &encodeFrameInfo->encodeInfo);
+    }
+    else
+    {
+        vkDevCtx->CmdBeginQuery(cmdBuf, queryPool, querySlotId, VkQueryControlFlags());
 
-    vkDevCtx->CmdEndQuery(cmdBuf, queryPool, querySlotId);
+        vkDevCtx->CmdEncodeVideoKHR(cmdBuf, &encodeFrameInfo->encodeInfo);
+
+        vkDevCtx->CmdEndQuery(cmdBuf, queryPool, querySlotId);
+    }
 
     VkVideoEndCodingInfoKHR encodeEndInfo { VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR };
     vkDevCtx->CmdEndVideoCodingKHR(cmdBuf, &encodeEndInfo);
