@@ -406,6 +406,10 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         m_dpb264->SetCurRefFrameTimeStamp(0);
     }
 
+    // since encodeInfo.pReferenceSlots points to the address of the next element (+1), it's safe to set it one to -1
+    // this is needed to explicity mark the unused element in BeginInfo for vkCmdBeginVideoCodingKHR() as inactive
+    pFrameInfo->referenceSlotsInfo[0].slotIndex = -1;
+
     assert(m_dpb264->GetNumRefFramesInDPB(0) <= m_h264.m_spsInfo.max_num_ref_frames);
 
     return VK_SUCCESS;

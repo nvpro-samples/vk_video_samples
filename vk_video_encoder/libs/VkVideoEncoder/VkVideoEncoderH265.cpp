@@ -291,6 +291,10 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     encodeFrameInfo->encodeInfo.referenceSlotCount = numReferenceSlots - 1;
     encodeFrameInfo->encodeInfo.pReferenceSlots = pFrameInfo->referenceSlotsInfo + 1;
 
+    // since encodeInfo.pReferenceSlots points to the address of the next element (+1), it's safe to set it one to -1
+    // this is needed to explicity mark the unused element in BeginInfo for vkCmdBeginVideoCodingKHR() as inactive
+    pFrameInfo->referenceSlotsInfo[0].slotIndex = -1;
+
     // ***************** End Update DPB info ************** //
 
     return VK_SUCCESS;
