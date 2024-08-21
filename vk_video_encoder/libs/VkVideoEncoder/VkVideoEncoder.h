@@ -591,6 +591,7 @@ protected:
     size_t                                m_streamBufferSize;
     VkVideoEncodeQualityLevelInfoKHR      m_qualityLevelInfo;
     VkVideoEncodeRateControlInfoKHR       m_rateControlInfo;
+    VkVideoEncodeRateControlInfoKHR       m_beginRateControlInfo;
     VkVideoEncodeRateControlLayerInfoKHR  m_rateControlLayersInfo[1];
     int8_t   m_picIdxToDpb[17]; // MAX_DPB_SLOTS + 1
     VkVideoGopStructure::GopState         m_gopState;

@@ -784,7 +784,11 @@ VkResult VkVideoEncoder::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
         encodeFrameInfo->qualityLevelInfo.sType  = VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR;
         encodeFrameInfo->qualityLevelInfo.qualityLevel = encodeFrameInfo->qualityLevel;
         if (pNext != nullptr) {
-            encodeFrameInfo->rateControlInfo.pNext = pNext;
+            if (encodeFrameInfo->rateControlInfo.pNext == nullptr) {
+                encodeFrameInfo->rateControlInfo.pNext = pNext;
+            } else {
+                ((VkBaseInStructure*)(encodeFrameInfo->rateControlInfo.pNext))->pNext = pNext;
+            }
         }
         pNext = (VkBaseInStructure*)&encodeFrameInfo->qualityLevelInfo;
     }
@@ -805,9 +809,14 @@ VkResult VkVideoEncoder::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
 
         encodeFrameInfo->rateControlInfo.pLayers = encodeFrameInfo->rateControlLayersInfo;
         encodeFrameInfo->rateControlInfo.layerCount = 1;
+        m_beginRateControlInfo = encodeFrameInfo->rateControlInfo;
 
         if (pNext != nullptr) {
-            encodeFrameInfo->rateControlInfo.pNext = pNext;
+            if (encodeFrameInfo->rateControlInfo.pNext == nullptr) {
+                encodeFrameInfo->rateControlInfo.pNext = pNext;
+            } else {
+                ((VkBaseInStructure*)(encodeFrameInfo->rateControlInfo.pNext))->pNext = pNext;
+            }
         }
         pNext = (VkBaseInStructure*)&encodeFrameInfo->rateControlInfo;
     }
@@ -863,6 +872,13 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
     const uint32_t numQuerySamples = 1;
     vkDevCtx->CmdResetQueryPool(cmdBuf, queryPool, querySlotId, numQuerySamples);
 
+    if (encodeFrameInfo->controlCmd != VkVideoCodingControlFlagsKHR())
+    {
+        m_beginRateControlInfo = {VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR, NULL};
+    }
+
+    encodeBeginInfo.pNext = &m_beginRateControlInfo;
+
     vkDevCtx->CmdBeginVideoCodingKHR(cmdBuf, &encodeBeginInfo);
 
     if (encodeFrameInfo->controlCmd != VkVideoCodingControlFlagsKHR()) {
@@ -871,6 +887,9 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
                                                           encodeFrameInfo->pControlCmdChain,
                                                           encodeFrameInfo->controlCmd};
         vkDevCtx->CmdControlVideoCodingKHR(cmdBuf, &renderControlInfo);
+
+        m_beginRateControlInfo = *(VkVideoEncodeRateControlInfoKHR*)encodeFrameInfo->pControlCmdChain;
+        ((VkBaseInStructure*)(m_beginRateControlInfo.pNext))->pNext = NULL;
     }
 
     if (m_videoMaintenance1FeaturesSupported)
