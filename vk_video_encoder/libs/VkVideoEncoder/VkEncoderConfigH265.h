@@ -22,6 +22,8 @@
 
 struct EncoderConfigH265 : public EncoderConfig {
 
+    enum { FRAME_RATE_NUM_DEFAULT = 30000 };
+    enum { FRAME_RATE_DEN_DEFAULT = 1001 };
     enum { MAX_LEVELS = 14 };
     enum { MAX_NUM_REF_PICS = 15 };
     enum { LOG2_MB_SIZE = 4 };
@@ -117,6 +119,10 @@ struct EncoderConfigH265 : public EncoderConfig {
 
         levelLimits = levelLimitsTbl;
         levelLimitsTblSize = ARRAYSIZE(levelLimitsTbl);
+
+        frameRateNumerator = FRAME_RATE_NUM_DEFAULT;
+        frameRateDenominator = FRAME_RATE_DEN_DEFAULT;
+
     }
 
     virtual ~EncoderConfigH265() {}
