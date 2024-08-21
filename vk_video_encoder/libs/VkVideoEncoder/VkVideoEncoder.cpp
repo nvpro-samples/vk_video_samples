@@ -350,7 +350,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
     m_maxCodedExtent = { encoderConfig->input.width, encoderConfig->input.height }; // codedSize
 
-    const uint32_t maxReferencePicturesSlotsCount = EncoderConfig::DEFAULT_MAX_NUM_REF_FRAMES;
+    const uint32_t maxReferencePicturesSlotsCount = encoderConfig->videoCapabilities.maxActiveReferencePictures;
 
     VkVideoSessionCreateFlagsKHR sessionCreateFlags{};
 #ifdef VK_KHR_video_maintenance1
