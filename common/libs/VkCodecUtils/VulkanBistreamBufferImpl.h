@@ -27,7 +27,7 @@ class VulkanBitstreamBufferImpl : public VulkanBitstreamBuffer
 {
 public:
 
-    static VkResult Create(const VulkanDeviceContext* vkDevCtx, uint32_t queueFamilyIndex,
+    static VkResult Create(const VulkanDeviceContext* vkDevCtx, uint32_t queueFamilyIndex, VkBufferUsageFlags usage,
              VkDeviceSize bufferSize, VkDeviceSize bufferOffsetAlignment, VkDeviceSize bufferSizeAlignment,
              const void* pInitializeBufferMemory, VkDeviceSize initializeBufferMemorySize,
              VkSharedBaseObj<VulkanBitstreamBufferImpl>& vulkanBitstreamBuffer);
@@ -95,6 +95,7 @@ public:
 private:
 
     static VkResult CreateBuffer(const VulkanDeviceContext* vkDevCtx, uint32_t queueFamilyIndex,
+                                 VkBufferUsageFlags usage,
                                  VkDeviceSize& bufferSize,
                                  VkDeviceSize bufferSizeAlignment,
                                  VkBuffer& buffer,
@@ -110,6 +111,7 @@ private:
 
     VulkanBitstreamBufferImpl(const VulkanDeviceContext* vkDevCtx,
                               uint32_t queueFamilyIndex,
+                              VkBufferUsageFlags usage,
                               VkDeviceSize bufferOffsetAlignment,
                               VkDeviceSize bufferSizeAlignment)
         : VulkanBitstreamBuffer()
@@ -123,7 +125,8 @@ private:
         , m_bufferOffsetAlignment(bufferOffsetAlignment)
         , m_bufferSizeAlignment(bufferSizeAlignment)
         , m_vulkanDeviceMemory()
-        , m_streamMarkers(256) { }
+        , m_streamMarkers(256)
+        , m_usage(usage) { }
 
     void Deinitialize();
 
@@ -141,6 +144,7 @@ private:
     VkDeviceSize               m_bufferSizeAlignment;
     VkSharedBaseObj<VulkanDeviceMemoryImpl> m_vulkanDeviceMemory;
     std::vector<uint32_t>      m_streamMarkers;
+    VkBufferUsageFlags         m_usage;
 };
 
 #endif /* _VULKANBISTREAMBUFFERIMPL_H_ */

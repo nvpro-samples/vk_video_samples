@@ -490,6 +490,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
             result = VulkanBitstreamBufferImpl::Create(m_vkDevCtx,
                     m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
+                    VK_BUFFER_USAGE_VIDEO_ENCODE_DST_BIT_KHR,
                     allocSize,
                     encoderConfig->videoCapabilities.minBitstreamBufferOffsetAlignment,
                     encoderConfig->videoCapabilities.minBitstreamBufferSizeAlignment,
@@ -587,6 +588,7 @@ VkDeviceSize VkVideoEncoder::GetBitstreamBuffer(VkSharedBaseObj<VulkanBitstreamB
     if (!(availablePoolNode >= 0)) {
         VkResult result = VulkanBitstreamBufferImpl::Create(m_vkDevCtx,
                 m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
+                VK_BUFFER_USAGE_VIDEO_ENCODE_DST_BIT_KHR,
                 newSize,
                 m_encoderConfig->videoCapabilities.minBitstreamBufferOffsetAlignment,
                 m_encoderConfig->videoCapabilities.minBitstreamBufferSizeAlignment,

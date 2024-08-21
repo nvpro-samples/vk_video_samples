@@ -401,6 +401,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
 
             result = VulkanBitstreamBufferImpl::Create(m_vkDevCtx,
                     m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
+                    VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR,
                     allocSize,
                     videoCapabilities.minBitstreamBufferOffsetAlignment,
                     videoCapabilities.minBitstreamBufferSizeAlignment,
@@ -1107,6 +1108,7 @@ VkDeviceSize VkVideoDecoder::GetBitstreamBuffer(VkDeviceSize size,
     if (!(availablePoolNode >= 0)) {
         VkResult result = VulkanBitstreamBufferImpl::Create(m_vkDevCtx,
                 m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
+                VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR,
                 newSize, minBitstreamBufferOffsetAlignment,
                 minBitstreamBufferSizeAlignment,
                 pInitializeBufferMemory, initializeBufferMemorySize, newBitstreamBuffer);
