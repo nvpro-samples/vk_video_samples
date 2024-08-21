@@ -662,16 +662,21 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
             },
     };
 
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+    if ((oldLayout == VK_IMAGE_LAYOUT_UNDEFINED) && (newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)) {
         imageBarrier.srcAccessMask = 0;
         imageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_UNDEFINED) && (newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)) {
         imageBarrier.srcAccessMask = 0;
         imageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR) && (newLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR)) {
+        imageBarrier.srcAccessMask = VK_ACCESS_2_VIDEO_ENCODE_WRITE_BIT_KHR;
+        imageBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
     } else {
         throw std::invalid_argument("unsupported layout transition!");
     }
@@ -912,6 +917,12 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
 
         vkDevCtx->CmdEndQuery(cmdBuf, queryPool, querySlotId);
     }
+
+    VkSharedBaseObj<VkImageResourceView> setupEncodeImageView;
+    encodeFrameInfo->setupImageResource->GetImageView(setupEncodeImageView);
+
+    VkImageLayout setupImgNewLayout = TransitionImageLayout(cmdBuf, setupEncodeImageView, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR);
+    (void)setupImgNewLayout;
 
     VkVideoEndCodingInfoKHR encodeEndInfo { VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR };
     vkDevCtx->CmdEndVideoCodingKHR(cmdBuf, &encodeEndInfo);
