@@ -209,9 +209,9 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     assert(pFrameInfo->numDpbImageResources == 0);
     if (encodeFrameInfo->setupImageResource != nullptr) { // && pFrameInfo->stdPictureInfo.flags.is_reference
         // setup ref slot index 0
-        pFrameInfo->referenceSlotsInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-        pFrameInfo->referenceSlotsInfo[numReferenceSlots].slotIndex = targetDpbSlot; // m_picIdxToDpb[targetFbIndex];
-        pFrameInfo->referenceSlotsInfo[numReferenceSlots].pPictureResource = setupImageViewPictureResource;
+        pFrameInfo->referenceSlotsInfo[numReferenceSlots] = { VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR,
+                                                              pFrameInfo->stdDpbSlotInfo, targetDpbSlot, setupImageViewPictureResource };
+
         pFrameInfo->setupReferenceSlotInfo = pFrameInfo->referenceSlotsInfo[numReferenceSlots];
         pFrameInfo->encodeInfo.pSetupReferenceSlot = &pFrameInfo->setupReferenceSlotInfo;
 

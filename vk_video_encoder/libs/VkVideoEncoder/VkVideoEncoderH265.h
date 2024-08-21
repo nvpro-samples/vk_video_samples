@@ -63,6 +63,9 @@ class VkVideoEncoderH265 : public VkVideoEncoder {
             stdPictureInfo.pRefLists           = &stdReferenceListsInfo;
             stdPictureInfo.pShortTermRefPicSet = &stdShortTermRefPicSet;
             stdPictureInfo.pLongTermRefPics    = &stdLongTermRefPics;
+
+            stdDpbSlotInfo->sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_DPB_SLOT_INFO_KHR;
+            stdDpbSlotInfo->pStdReferenceInfo = stdReferenceInfo;
         };
 
         virtual void Reset(bool releaseResources = true) {
