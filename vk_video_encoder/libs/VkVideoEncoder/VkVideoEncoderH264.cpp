@@ -68,6 +68,7 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
                                                           &m_h264.m_ppsInfo);
 
     VkVideoSessionParametersCreateInfoKHR* encodeSessionParametersCreateInfo = videoSessionParametersInfo.getVideoSessionParametersInfo();
+    encodeSessionParametersCreateInfo->flags = 0;
     VkVideoSessionParametersKHR sessionParameters;
     result = m_vkDevCtx->CreateVideoSessionParametersKHR(*m_vkDevCtx,
                                                          encodeSessionParametersCreateInfo,

@@ -87,6 +87,7 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     VkVideoSessionParametersCreateInfoKHR encodeSessionParametersCreateInfo = {
         VK_STRUCTURE_TYPE_VIDEO_SESSION_PARAMETERS_CREATE_INFO_KHR, &encodeH265SessionParametersCreateInfo};
     encodeSessionParametersCreateInfo.videoSession = *m_videoSession;
+    encodeSessionParametersCreateInfo.flags = 0;
 
     VkVideoSessionParametersKHR sessionParameters;
     result = m_vkDevCtx->CreateVideoSessionParametersKHR(*m_vkDevCtx,
