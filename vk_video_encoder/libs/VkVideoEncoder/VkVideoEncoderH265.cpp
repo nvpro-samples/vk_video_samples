@@ -285,6 +285,7 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     // resource associated with this frame. This entry should not be
     // provided in the list of reference resources for the current picture,
     // so skip refSlots[0].
+    pFrameInfo->encodeInfo.srcPictureResource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
     encodeFrameInfo->encodeInfo.referenceSlotCount = numReferenceSlots - 1;
     encodeFrameInfo->encodeInfo.pReferenceSlots = pFrameInfo->referenceSlotsInfo + 1;
 
