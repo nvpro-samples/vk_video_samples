@@ -388,6 +388,8 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         pFrameInfo->numDpbImageResources = numReferenceSlots;
     }
 
+    pFrameInfo->encodeInfo.srcPictureResource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
+    pFrameInfo->encodeInfo.flags = 0;
     // If the current picture is going to be a reference frame, the first
     // entry in the refSlots array contains information about the picture
     // resource associated with this frame. This entry should not be
