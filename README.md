@@ -63,3 +63,51 @@ Please download and install [Beta NVIDIA Driver with Vulkan Video Enabled](https
 For Vulkan Video Specification please refer to [Vulkan Spec with Video Extensions](https://www.khronos.org/registry/vulkan/specs/1.3-extensions/html/vkspec.html).
 
 For deep-dive information on Vulkan Video please refer to the [Deep Dive Slide Deck](https://www.khronos.org/assets/uploads/apis/Vulkan-Video-Deep-Dive-Apr21.pdf).
+
+## Enabling Vulkan Validation Layers
+
+The Khronos Valiation Layer can be used for to verify the application correctly use the Vulkan API. There are two options for running the validation layers using the application.
+
+### Option 1: Vulkan Configurator
+
+Vulkan Configurator is installed with the Vulkan SDK. When Vulkan Configurator opens its GUI put the ticks opposite `VK_LAYER_KHRONOS_validation`, `VK_VALIDATION_VALIDATE_SYNC`, `VK_VALIDATION_THREAD_SAFETY`.
+
+On Ubuntu
+
+Make sure Qt is installed - it can be installed by executing `sudo apt install qt5-default`. To launch Vulkan Configurator GUI execute `vkconfig`.
+
+On Windows
+
+Vulkan Configurator is located in Start menu, in the Vulkan SDK folder. Vulkan Configurator can be launched from command-line shell `vkconfig`.
+
+To turn off the Validation layers override click "Yes" when closing Vulkan Configurator window.
+
+For more information on Vulkan Configurator please refer to the [LunarG, Using the Vulkan Configurator](https://vulkan.lunarg.com/doc/sdk/1.3.290.0/windows/vkconfig.html)
+
+### Option 2: Environmental variables
+
+Open command-line shell, execute the following commands to enable `VK_LAYER_KHRONOS_validation`, `VK_VALIDATION_VALIDATE_SYNC`, `VK_VALIDATION_THREAD_SAFETY`.
+
+On Ubuntu:
+
+`$ export VK_LOADER_LAYERS_ENABLE=*validation`
+
+`$ export VK_VALIDATION_VALIDATE_SYNC=true`
+
+`$ export VK_VALIDATION_THREAD_SAFETY=true`
+
+`$ export VK_LOADER_LAYERS_DISABLE=~implicit~,*validation`
+
+On Windows:
+
+`C:\> set VK_LOADER_LAYERS_ENABLE=*validation`
+
+`C:\> set VK_VALIDATION_VALIDATE_SYNC=true`
+
+`C:\> set VK_VALIDATION_THREAD_SAFETY=true`
+
+`C:\> set VK_LOADER_LAYERS_DISABLE=~implicit~,*validation`
+
+Do not use `~all~` or `~explicit~` options with `VK_LOADER_LAYERS_DISABLE` because these options disable the validation layers that other applications might attempt to enable programmaticaly.
+
+For more information on Layers configuration please refer to the [LunarG, Layers Configuration](https://vulkan.lunarg.com/doc/sdk/1.3.290.0/windows/layer_configuration.html)
