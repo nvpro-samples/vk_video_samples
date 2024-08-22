@@ -931,7 +931,8 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     }
 
     const VkCommandBuffer* pCmdBuf = encodeFrameInfo->encodeCmdBuffer->GetCommandBuffer();
-    VkSemaphore frameCompleteSemaphore = encodeFrameInfo->encodeCmdBuffer->GetSemaphore();
+    // The encode operation complete semaphore is not needed at this point.
+    VkSemaphore frameCompleteSemaphore = VK_NULL_HANDLE; // encodeFrameInfo->encodeCmdBuffer->GetSemaphore();
 
     VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr };
     const VkPipelineStageFlags videoEncodeSubmitWaitStages = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
