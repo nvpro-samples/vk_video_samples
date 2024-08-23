@@ -47,7 +47,7 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
     createInfo.queueFamilyIndex = videoQueueFamily;
     createInfo.pictureFormat = pictureFormat;
     createInfo.maxCodedExtent = maxCodedExtent;
-    createInfo.maxDpbSlots = maxDpbSlots;
+    createInfo.maxDpbSlots = maxDpbSlots + 1;
     createInfo.maxActiveReferencePictures = maxActiveReferencePictures;
     createInfo.referencePictureFormat = referencePicturesFormat;
 

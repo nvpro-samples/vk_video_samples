@@ -245,23 +245,18 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
 
     // C.4.4 Removal of pictures from the DPB before possible insertion of the current picture
     if (pPicInfo->flags.IdrPicFlag) { // IDR picture
+        for (int32_t i = 0; i < MAX_DPB_SLOTS; i++) {
+            m_DPB[i].top_field_marking = MARKING_UNUSED;
+            m_DPB[i].bottom_field_marking = MARKING_UNUSED;
+            m_DPB[i].state = MARKING_UNUSED;
+            ReleaseFrame(m_DPB[i].dpbImageView);
+        }
         // TODO: infer no_output_of_prior_pics_flag if size has changed etc.
         if (pPicInfo->flags.no_output_of_prior_pics_flag) {
             for (i = 0; i < MAX_DPB_SLOTS; i++) {
                 m_DPB[i].state = DPB_EMPTY;  // empty
                 ReleaseFrame(m_DPB[i].dpbImageView);
             }
-        }
-    }
-
-    // this differs from the standard
-    // empty frame buffers marked as "not needed for output" and "unused for reference"
-    for (i = 0; i < MAX_DPB_SLOTS; i++) {
-        if ((!(m_DPB[i].state & DPB_TOP) || (!m_DPB[i].top_needed_for_output && (m_DPB[i].top_field_marking == MARKING_UNUSED))) &&
-                (!(m_DPB[i].state & DPB_BOTTOM) ||
-                 (!m_DPB[i].bottom_needed_for_output && (m_DPB[i].bottom_field_marking == MARKING_UNUSED)))) {
-            m_DPB[i].state = DPB_EMPTY;  // empty
-            ReleaseFrame(m_DPB[i].dpbImageView);
         }
     }
 

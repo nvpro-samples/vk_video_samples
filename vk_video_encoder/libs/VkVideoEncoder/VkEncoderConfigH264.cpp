@@ -229,7 +229,7 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
     pps->pic_parameter_set_id = ppsId;
     pps->weighted_bipred_idc = STD_VIDEO_H264_WEIGHTED_BIPRED_IDC_DEFAULT;
     pps->num_ref_idx_l0_default_active_minus1 = (uint8_t)(((gopStructure.GetGopFrameCount() > dpbCount) ? dpbCount : gopStructure.GetGopFrameCount()) - 1);
-    pps->num_ref_idx_l1_default_active_minus1 = gopStructure.GetConsecutiveBFrameCount() - 1;
+    pps->num_ref_idx_l1_default_active_minus1 = (gopStructure.GetConsecutiveBFrameCount() > 0) ? gopStructure.GetConsecutiveBFrameCount() - 1 : 0;
 
     if ((sps->chroma_format_idc == 3) && !sps->flags.qpprime_y_zero_transform_bypass_flag) {
         pps->chroma_qp_index_offset = pps->second_chroma_qp_index_offset = 6;
@@ -376,10 +376,7 @@ VkResult EncoderConfigH264::InitDeviceCapbilities(const VulkanDeviceContext* vkD
 
 int8_t EncoderConfigH264::InitDpbCount()
 {
-    if (dpbCount < 1) {
-        dpbCount = (gopStructure.GetConsecutiveBFrameCount() > 0) ? gopStructure.GetConsecutiveBFrameCount() : 1;
-    }
-
+    dpbCount = (gopStructure.GetConsecutiveBFrameCount() > 0) ? gopStructure.GetConsecutiveBFrameCount() : 1;
     // spsInfo->level represents the smallest level that we require for the
     // given stream. This level constrains the maximum size (in terms of
     // number of frames) that the DPB can have. levelDpbSize is this maximum
