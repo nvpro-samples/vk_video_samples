@@ -234,8 +234,6 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
                                    const StdVideoEncodeH264ReferenceListsInfo *ref,
                                    uint32_t maxMemMgmntCtrlOpsCommands)
 {
-    int32_t i;
-
     DpbEntryH264 *pCurDPBEntry = &m_DPB[m_currDpbIdx];
     if (pCurDPBEntry->complementary_field_pair)  // second field of a CFP
         pCurDPBEntry->picInfo.PicOrderCnt = std::min(pCurDPBEntry->topFOC, pCurDPBEntry->bottomFOC);
@@ -253,7 +251,7 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
         }
         // TODO: infer no_output_of_prior_pics_flag if size has changed etc.
         if (pPicInfo->flags.no_output_of_prior_pics_flag) {
-            for (i = 0; i < MAX_DPB_SLOTS; i++) {
+            for (int32_t i = 0; i < MAX_DPB_SLOTS; i++) {
                 m_DPB[i].state = DPB_EMPTY;  // empty
                 ReleaseFrame(m_DPB[i].dpbImageView);
             }
@@ -315,8 +313,9 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
         } else {
             while (1) {
                 if (IsDpbFull()) {
+                    int32_t i = 0;
                     // does current have the lowest value of PicOrderCnt?
-                    for (i = 0; i < MAX_DPB_SLOTS; i++) {
+                    for (; i < MAX_DPB_SLOTS; i++) {
                         // If we decide to support MVC, the following check must
                         // be performed only if the view_id of the current DPB
                         // entry matches the view_id in m_DPB[i].

@@ -330,9 +330,9 @@ VkResult VulkanDeviceContext::InitVkInstance(const char * pAppName, bool verbose
     VkInstanceCreateInfo instance_info = {};
     instance_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instance_info.pApplicationInfo = &app_info;
-    instance_info.enabledLayerCount = m_reqInstanceLayers.size();
+    instance_info.enabledLayerCount = (uint32_t)m_reqInstanceLayers.size();
     instance_info.ppEnabledLayerNames = m_reqInstanceLayers.data();
-    instance_info.enabledExtensionCount = m_reqInstanceExtensions.size();
+    instance_info.enabledExtensionCount = (uint32_t)m_reqInstanceExtensions.size();
     instance_info.ppEnabledExtensionNames = m_reqInstanceExtensions.data();
 
     result = CreateInstance(&instance_info, nullptr, &m_instance);

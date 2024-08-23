@@ -21,6 +21,10 @@ add_definitions(-DVK_USE_VIDEO_DECODE_QUEUE)
 add_definitions(-DVK_USE_VIDEO_ENCODE_QUEUE)
 add_definitions(-DVK_ENABLE_BETA_EXTENSIONS)
 
+if(WIN32)
+    add_definitions(-DVK_USE_PLATFORM_WIN32_KHR)
+endif()
+
 # Define a custom target to generate the dispatch table files
 add_custom_target(GenerateDispatchTables
     DEPENDS ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.h
