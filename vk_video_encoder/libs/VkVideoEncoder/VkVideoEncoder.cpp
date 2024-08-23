@@ -172,6 +172,7 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
     submitInfo.signalSemaphoreCount = (frameCompleteSemaphore != VK_NULL_HANDLE) ? 1 : 0;
 
     VkFence queueCompleteFence = encodeFrameInfo->inputCmdBuffer->GetFence();
+    assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, queueCompleteFence));
     VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(((m_vkDevCtx->GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) != 0) ?
                                                                VulkanDeviceContext::ENCODE : VulkanDeviceContext::TRANSFER,
                                                            0, 1, &submitInfo,
@@ -981,6 +982,7 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     submitInfo.signalSemaphoreCount = (frameCompleteSemaphore != VK_NULL_HANDLE) ? 1 : 0;
 
     VkFence queueCompleteFence = encodeFrameInfo->encodeCmdBuffer->GetFence();
+    assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, queueCompleteFence));
     VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::ENCODE, 0,
                                                            1, &submitInfo,
                                                            queueCompleteFence);

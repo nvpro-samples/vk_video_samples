@@ -174,6 +174,8 @@ public:
                 if (result != VK_SUCCESS) {
                     fprintf(stderr, "\nERROR: ResetFences() result: 0x%x\n", result);
                 }
+
+                assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, cmdBufferCompleteFence));
             }
 
             return result;
