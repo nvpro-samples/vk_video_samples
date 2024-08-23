@@ -842,6 +842,9 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
     if (!success) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
+    // Reset the command buffer and sync
+    encodeFrameInfo->encodeCmdBuffer->ResetCommandBuffer();
+
     VkSharedBaseObj<VulkanCommandBufferPool::PoolNode>& encodeCmdBuffer = encodeFrameInfo->encodeCmdBuffer;
 
     assert(encodeFrameInfo != nullptr);
