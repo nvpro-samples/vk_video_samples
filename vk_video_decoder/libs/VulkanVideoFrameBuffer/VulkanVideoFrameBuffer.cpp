@@ -29,6 +29,7 @@
 #include "vulkan_interfaces.h"
 #include "vkvideo_parser/PictureBufferBase.h"
 #include "VkCodecUtils/HelpersDispatchTable.h"
+#include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VulkanVideoFrameBuffer.h"
@@ -405,8 +406,8 @@ public:
             // This fence wait should be NOP in 99.9% of the cases, because the decode queue is deep enough to
             // ensure the frame has already been completed.
             assert(m_perFrameDecodeImageSet[picId].m_frameCompleteFence != VK_NULL_HANDLE);
-            vkWaitAndResetFence(m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameCompleteFence,
-                                "frameCompleteFence", (uint32_t)picId);
+            vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameCompleteFence,
+                                  "frameCompleteFence");
         }
 
         if ((pFrameSynchronizationInfo->syncOnFrameConsumerDoneFence  == 1) &&
@@ -415,8 +416,8 @@ public:
                 (m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence == 1) &&
                 (m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence != VK_NULL_HANDLE)) {
 
-            vkWaitAndResetFence(m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence,
-                                "frameConsumerDoneFence", (uint32_t)picId);
+            vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence,
+                                  "frameConsumerDoneFence");
 
         }
 

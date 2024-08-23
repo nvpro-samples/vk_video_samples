@@ -18,6 +18,7 @@
 #ifndef _VULKANFILTERYUVCOMPUTE_H_
 #define _VULKANFILTERYUVCOMPUTE_H_
 
+#include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanCommandBuffersSet.h"
 #include "VkCodecUtils/VulkanSemaphoreSet.h"
 #include "VkCodecUtils/VulkanFenceSet.h"
@@ -84,23 +85,35 @@ public:
     }
 
     virtual VkFence GetFilterSignalFence(uint32_t frameIdx) const {
-        return m_filterCompleteFenceSet.GetFence(frameIdx);
+
+        VkFence filterCompleteFence = m_filterCompleteFenceSet.GetFence(frameIdx);
+
+        vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, filterCompleteFence,
+                              "filterCompleteFence");
+
+        return filterCompleteFence;
     }
 
     virtual VkResult RecordCommandBuffer(uint32_t frameIdx,
                                          const VkImageResourceView* inputImageView,
                                          const VkVideoPictureResourceInfoKHR * inputImageResourceInfo,
                                          const VkImageResourceView* outputImageView,
-                                         const VkVideoPictureResourceInfoKHR * outputImageResourceInfo)
+                                         const VkVideoPictureResourceInfoKHR * outputImageResourceInfo,
+                                         VkFence frameCompleteFence = VK_NULL_HANDLE)
     {
 
-        static const uint64_t fenceWaitTimeout = 100 * 1000 * 1000 /* 100 mSec */;
-        VkFence frameCompleteFence = m_filterCompleteFenceSet.GetFence(frameIdx);
-        assert(frameCompleteFence != VK_NULL_HANDLE);
-        VkResult result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameCompleteFence, true, fenceWaitTimeout);
-        if (result != VK_SUCCESS) {
-            std::cerr << "\t *************** WARNING: frameCompleteFence is not done *************< " << frameIdx << " >**********************" << std::endl;
-            assert(!"frameCompleteFence is not signaled yet after more than 100 mSec wait");
+        if (frameCompleteFence != VK_NULL_HANDLE) {
+
+            // if frameCompleteFence is a valid handle, then it must to be in a non-signaled state
+            // i.e. if this frameIdx was previously submitted, then it had to be waited for and
+            // the fence reset.
+            assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameCompleteFence));
+
+        } else {
+
+            // Get our own fence for this frame
+            frameCompleteFence = GetFilterSignalFence(frameIdx);
+            assert(frameCompleteFence != VK_NULL_HANDLE);
         }
 
         VkCommandBufferBeginInfo cmdBufferBeginInfo {};
@@ -108,7 +121,7 @@ public:
 
         VkCommandBuffer cmdBuf = *m_commandBuffersSet.GetCommandBuffer((uint32_t)frameIdx);
 
-        result = m_vkDevCtx->BeginCommandBuffer(cmdBuf, &cmdBufferBeginInfo);
+        VkResult result = m_vkDevCtx->BeginCommandBuffer(cmdBuf, &cmdBufferBeginInfo);
         if (result != VK_SUCCESS) {
             return result;
         }

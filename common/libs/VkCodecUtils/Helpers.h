@@ -222,6 +222,49 @@ inline VkResult MapMemoryTypeToIndex(const VkInterfaceFunctions* vkIf,
     return VK_ERROR_VALIDATION_FAILED_EXT;
 }
 
+inline VkResult WaitAndResetFence(const VkInterfaceFunctions* vkIf, VkDevice device, VkFence fence,
+                                  const char* fenceName = "unknown",
+                                  const uint64_t fenceWaitTimeout = 100ULL * 1000ULL * 1000ULL /* 100 mSec */,
+                                  const uint64_t fenceTotalWaitTimeout = 5ULL * 1000ULL * 1000ULL * 1000ULL /* 5 sec */) {
+
+    assert(vkIf != nullptr);
+    assert(device != VK_NULL_HANDLE);
+    assert(fence != VK_NULL_HANDLE);
+
+    uint64_t fenceCurrentWaitTimeout = 0;
+
+    VkResult result = VK_SUCCESS;
+
+    while (fenceTotalWaitTimeout >= fenceCurrentWaitTimeout) {
+
+        result = vkIf->WaitForFences(device, 1, &fence, true, fenceWaitTimeout);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\t **** WARNING: fence  %s(%p) is not done after %llu nSec with result 0x%x ****\n",
+                            fenceName, fence, fenceWaitTimeout, result);
+            assert(!"Fence is not signaled yet after more than 100 mSec wait");
+        }
+
+        if (result != VK_TIMEOUT) {
+            break;
+        }
+
+        fenceCurrentWaitTimeout += fenceWaitTimeout;
+    }
+
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "\t **** ERROR: fence  %s(%p) is not done after %llu nSec with result 0x%x ****\n",
+                        fenceName, fence, fenceTotalWaitTimeout, vkIf->GetFenceStatus(device, fence));
+        assert(!"Fence is not signaled yet after more than 100 mSec wait");
+    }
+
+    result = vkIf->ResetFences(device, 1, &fence);
+    assert(result == VK_SUCCESS);
+
+    assert(vkIf->GetFenceStatus(device, fence) == VK_NOT_READY);
+
+    return result;
+}
+
 }  // namespace vk
 
 #endif  // HELPERS_H

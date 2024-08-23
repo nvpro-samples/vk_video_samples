@@ -88,6 +88,9 @@ VkResult VulkanFilterYuvCompute::Init(const VkSamplerYcbcrConversionCreateInfo* 
         return result;
     }
 
+    // Before start recording the command buffer, the filter waits on the corresponding fence
+    // For the first frame, however, there is not command buffer submission, so we need to create
+    // the fence signaled. See RecordCommandBuffer()
     result = m_filterCompleteFenceSet.CreateSet(m_vkDevCtx, m_maxNumFrames, VK_FENCE_CREATE_SIGNALED_BIT);
     if (result != VK_SUCCESS) {
         assert(!"ERROR: CreateCommandBufferPool!");
