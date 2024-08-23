@@ -923,11 +923,12 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         vkDevCtx->CmdEndQuery(cmdBuf, queryPool, querySlotId);
     }
 
-    VkSharedBaseObj<VkImageResourceView> setupEncodeImageView;
-    encodeFrameInfo->setupImageResource->GetImageView(setupEncodeImageView);
+    if (encodeFrameInfo->setupImageResource) {
+        VkSharedBaseObj<VkImageResourceView> setupEncodeImageView;
+        encodeFrameInfo->setupImageResource->GetImageView(setupEncodeImageView);
 
-    VkImageLayout setupImgNewLayout = TransitionImageLayout(cmdBuf, setupEncodeImageView, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR);
-    (void)setupImgNewLayout;
+        TransitionImageLayout(cmdBuf, setupEncodeImageView, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR);
+    }
 
     VkVideoEndCodingInfoKHR encodeEndInfo { VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR };
     vkDevCtx->CmdEndVideoCodingKHR(cmdBuf, &encodeEndInfo);
