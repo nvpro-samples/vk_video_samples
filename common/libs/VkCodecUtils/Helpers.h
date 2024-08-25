@@ -240,7 +240,7 @@ inline VkResult WaitAndResetFence(const VkInterfaceFunctions* vkIf, VkDevice dev
         result = vkIf->WaitForFences(device, 1, &fence, true, fenceWaitTimeout);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "\t **** WARNING: fence  %s(%p) is not done after %llu nSec with result 0x%x ****\n",
-                            fenceName, fence, fenceWaitTimeout, result);
+                            fenceName, fence, (long long unsigned int)fenceWaitTimeout, result);
             assert(!"Fence is not signaled yet after more than 100 mSec wait");
         }
 
@@ -253,7 +253,7 @@ inline VkResult WaitAndResetFence(const VkInterfaceFunctions* vkIf, VkDevice dev
 
     if (result != VK_SUCCESS) {
         fprintf(stderr, "\t **** ERROR: fence  %s(%p) is not done after %llu nSec with result 0x%x ****\n",
-                        fenceName, fence, fenceTotalWaitTimeout, vkIf->GetFenceStatus(device, fence));
+                        fenceName, fence, (long long unsigned int)fenceTotalWaitTimeout, vkIf->GetFenceStatus(device, fence));
         assert(!"Fence is not signaled yet after more than 100 mSec wait");
     }
 
