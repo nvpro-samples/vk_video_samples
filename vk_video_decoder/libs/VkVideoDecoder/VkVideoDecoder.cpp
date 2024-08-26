@@ -568,7 +568,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     assert(pCurrFrameDecParams->bitstreamDataOffset == 0);
     assert(pCurrFrameDecParams->firstSliceIndex == 0);
     pCurrFrameDecParams->decodeFrameInfo.srcBufferOffset = pCurrFrameDecParams->bitstreamDataOffset;
-    pCurrFrameDecParams->decodeFrameInfo.srcBufferRange =  (pCurrFrameDecParams->bitstreamDataLen + 127) & ~127; // TODO: alignment macro / wiring the alignment requirement in.
+    pCurrFrameDecParams->decodeFrameInfo.srcBufferRange =  pCurrFrameDecParams->bitstreamDataLen;
 
     VkVideoBeginCodingInfoKHR decodeBeginInfo = { VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR };
     decodeBeginInfo.pNext = pCurrFrameDecParams->beginCodingInfoPictureParametersExt;
