@@ -521,9 +521,7 @@ size_t VulkanVideoProcessor::ConvertFrameToNv12(VulkanDecodedFrame* pFrame,
         }
     }
 
-
-    assert(mpInfo->planesLayout.bpp == YCBCRA_8BPP);
-    assert(format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM);
+    // 9+ bpp is output as 16bpp yuv.
     for (uint32_t plane = numCompatiblePlanes; plane < numPlanes; plane++) {
         uint32_t srcPlane = std::min(plane, mpInfo->planesLayout.numberOfExtraPlanes);
         uint8_t* pDst = pOutBuffer + yuvPlaneLayouts[plane].offset;
