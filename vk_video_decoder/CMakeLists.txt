@@ -195,13 +195,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         find_package(Mir REQUIRED)
     endif()
 
-    # FIXME - make this var be based on the build type - for now Linux Debug only.
-    if(DEFINED ENV{TEGRA_TOP})
-        add_definitions(-DNV_RMAPI_TEGRA)
-        add_definitions(-DNVCPU_ARM)
-        add_definitions(-DNV_DEBUG=1)
-    else()
-    endif()
     SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_LIBDIR}")
 endif()
 
@@ -245,7 +238,7 @@ set(SCRIPTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../scripts")
 include_directories("${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/../common/include")
 
 if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
-    set(COMMON_COMPILE_FLAGS "-Wall -Wextra -Wno-long-long -Wshadow -Wundef -Wconversion -Wno-sign-conversion -Wno-conversion -Wno-sign-compare")
+    # set(COMMON_COMPILE_FLAGS "-Wall -Wextra -Wno-long-long -Wshadow -Wundef -Wconversion -Wno-sign-conversion -Wno-conversion -Wno-sign-compare")
     set(COMMON_COMPILE_FLAGS "${COMMON_COMPILE_FLAGS} -fno-strict-aliasing -fno-builtin-memcmp")
 
     # These flags are not supported on Windows and some older version of GCC
@@ -339,20 +332,6 @@ set(VK_VIDEO_COMMON_LIBS_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../common/libs
 set(VK_VIDEO_DECODER_LIBS_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs" CACHE STRING "Root path to common vkvideo decoder libs sources")
 set(VK_VIDEO_DECODER_LIBS_INCLUDE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/include" CACHE STRING "Root path to video decoder libs includes")
 
-if(DEFINED ENV{TEGRA_TOP})
-	MESSAGE(STATUS "TEGRA_TOP is SET: $ENV{TEGRA_TOP}")
-	set(VULKAN_TEGRA_LIBS_PATH "/usr/lib/aarch64-linux-gnu/tegra" CACHE STRING "Path to tegra so libraries")
-	set (VULKAN_LIB_SEARCH_PATH "${VULKAN_TEGRA_LIBS_PATH}" "/usr/lib/aarch64-linux-gnu" )
-	# add_definitions(-DUNINSTALLED_LOADER="libGLX_nvidia.so.0")
-elseif(DEFINED ENV{LINUX_DRIVER_BRANCH_TOP})
-	MESSAGE(STATUS "LINUX_DRIVER_BRANCH_TOP is set: $ENV{LINUX_DRIVER_BRANCH_TOP}")
-	# add_definitions(-DUNINSTALLED_LOADER="libGLX_nvidia.so.0")
-elseif(DEFINED ENV{WINDOWS_DRIVER_BRANCH_TOP})
-	MESSAGE(STATUS "WINDOWS_DRIVER_BRANCH_TOP is set: $ENV{WINDOWS_DRIVER_BRANCH_TOP}")
-else()
-	MESSAGE(STATUS "TEGRA_TOP nor LINUX_DRIVER_BRANCH_TOP nor WINDOWS_DRIVER_BRANCH_TOP are set")
-endif()
-
 if (WIN32)
     if(CUSTOM_GLSLANG_BIN_ROOT)
         set(GSLANG_FINAL_BINARY_PATH ${GLSLANG_BINARY_ROOT}/${BUILDTGT_DIR})
@@ -430,9 +409,7 @@ find_path(SPIRV_TOOLS_INCLUDE_DIR spirv-tools/libspirv.h HINTS "${EXTERNAL_SOURC
 
 
 set(SHADERC_ROOT_PATH "${EXTERNAL_SOURCE_ROOT}/shaderc/${BUILDTGT_DIR}")
-# TODO: use pkg-config? lib vs lib64
-set(SHADERC_SEARCH_PATH "${SHADERC_ROOT_PATH}/install/lib64")
-
+set(SHADERC_SEARCH_PATH "${SHADERC_ROOT_PATH}/install/lib")
 
 find_library(VULKAN_LIB NAMES vulkan
              HINTS ${VULKAN_LIB_SEARCH_PATH} )

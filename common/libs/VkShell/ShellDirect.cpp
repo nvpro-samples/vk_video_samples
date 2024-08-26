@@ -109,8 +109,8 @@ void ShellDirect::InitDisplay()
 
 bool ShellDirect::PhysDeviceCanPresent(VkPhysicalDevice, uint32_t) const
 {
-    // todo ?
-    return true;
+    // Each WSI platform extension should implement this function
+    return false;
 }
 
 // called by create_context

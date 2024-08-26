@@ -1508,7 +1508,7 @@ protected:
                          const uint32_t num_events[]);
     void adapt_prob(vp9_prob *dest, vp9_prob prep, uint32_t ct[2]);
     void adaptNmvProbs(vp9_prob_update_s *pProbSetup);
-    
+
 protected:
     void vp9_reader_fill();
     int32_t vp9_reader_init (uint32_t size);

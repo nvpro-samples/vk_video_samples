@@ -23,6 +23,7 @@
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
 #include "VkCodecUtils/YCbCrConvUtilsCpu.h"
+#include "VkVideoCore/DecodeFrameBufferIf.h"
 
 VkResult VkVideoEncoder::CreateVideoEncoder(const VulkanDeviceContext* vkDevCtx,
                                             VkSharedBaseObj<EncoderConfig>& encoderConfig,
@@ -234,9 +235,8 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
             displayEncoderInputFrame.frameCompleteSemaphore = frameCompleteSemaphore;
             // displayEncoderInputFrame.frameCompleteFence = currentEncodeFrameData->m_frameCompleteFence;
             encodeFrameInfo->srcEncodeImageResource->GetImageView(
-                    displayEncoderInputFrame.imageViews[DecodeFrameBufferIf::IMAGE_TYPE_IDX_DPB].singleLevelView );
-            displayEncoderInputFrame.imageViews[DecodeFrameBufferIf::IMAGE_TYPE_IDX_DPB].inUse = true;
-            displayEncoderInputFrame.optimalOutputIndex = DecodeFrameBufferIf::IMAGE_TYPE_IDX_DPB;
+                    displayEncoderInputFrame.imageViews[VulkanEncoderInputFrame::IMAGE_VIEW_TYPE_LINEAR].singleLevelView );
+            displayEncoderInputFrame.imageViews[VulkanEncoderInputFrame::IMAGE_VIEW_TYPE_LINEAR].inUse = true;
 
             // One can also look at the linear input instead
             // displayEncoderInputFrame.imageView = currentEncodeFrameData->m_linearInputImage;

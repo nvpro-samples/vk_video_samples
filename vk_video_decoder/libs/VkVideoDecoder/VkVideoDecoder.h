@@ -149,6 +149,7 @@ public:
     enum DecoderFeatures { ENABLE_LINEAR_OUTPUT       = (1 << 0),
                            ENABLE_HW_LOAD_BALANCING   = (1 << 1),
                            ENABLE_POST_PROCESS_FILTER = (1 << 2),
+                           ENABLE_GRAPHICS_TEXTURE_SAMPLING = (1 << 3),
                          };
 
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
@@ -220,15 +221,21 @@ private:
         , m_decodeFramesData(vkDevCtx)
         , m_decodePicCount(0)
         , m_hwLoadBalancingTimelineSemaphore()
-        , m_dpbAndOutputCoincide(true)
-        , m_videoMaintenance1FeaturesSupported(false)
-        , m_enableDecodeFilter((enableDecoderFeatures & ENABLE_POST_PROCESS_FILTER) != 0)
-        , m_useImageArray(false)
-        , m_useImageViewArray(false)
-        , m_useSeparateOutputImages(false)
+        , m_dpbAndOutputCoincide(VK_TRUE)
+        , m_videoMaintenance1FeaturesSupported(VK_FALSE)
+        , m_enableDecodeComputeFilter((enableDecoderFeatures & ENABLE_POST_PROCESS_FILTER) != 0)
+        , m_enableGraphicsSampleFromDecodeOutput((enableDecoderFeatures & ENABLE_GRAPHICS_TEXTURE_SAMPLING) != 0)
+        , m_useImageArray(VK_FALSE)
+        , m_useImageViewArray(VK_FALSE)
+        , m_useSeparateOutputImages(VK_FALSE)
         , m_useLinearOutput((enableDecoderFeatures & ENABLE_LINEAR_OUTPUT) != 0)
-        , m_resetDecoder(true)
-        , m_dumpDecodeData(false)
+        , m_useSeparateLinearImages(VK_FALSE)
+        , m_useTransferOperation(VK_FALSE)
+        , m_resetDecoder(VK_TRUE)
+        , m_dumpDecodeData(VK_FALSE)
+        , m_numImageTypes(1) // At least the decoder requires images for DPB
+        , m_numImageTypesEnabled(DecodeFrameBufferIf::IMAGE_TYPE_MASK_DECODE_DPB)
+        , m_imageSpecsIndex()
         , m_numBitstreamBuffersToPreallocate(numBitstreamBuffersToPreallocate)
         , m_maxStreamBufferSize()
         , m_filterType(filterType)
@@ -319,13 +326,19 @@ private:
     VkSemaphore m_hwLoadBalancingTimelineSemaphore;
     uint32_t m_dpbAndOutputCoincide : 1;
     uint32_t m_videoMaintenance1FeaturesSupported : 1;
-    uint32_t m_enableDecodeFilter : 1;
+    uint32_t m_enableDecodeComputeFilter : 1;
+    uint32_t m_enableGraphicsSampleFromDecodeOutput : 1;
     uint32_t m_useImageArray : 1;
     uint32_t m_useImageViewArray : 1;
     uint32_t m_useSeparateOutputImages : 1;
     uint32_t m_useLinearOutput : 1;
+    uint32_t m_useSeparateLinearImages : 1;
+    uint32_t m_useTransferOperation : 1;
     uint32_t m_resetDecoder : 1;
     uint32_t m_dumpDecodeData : 1;
+    uint32_t m_numImageTypes;
+    uint32_t m_numImageTypesEnabled;
+    DecodeFrameBufferIf::ImageSpecsIndex m_imageSpecsIndex;
     int32_t  m_numBitstreamBuffersToPreallocate;
     VkDeviceSize   m_maxStreamBufferSize;
     VulkanFilterYuvCompute::FilterType m_filterType;

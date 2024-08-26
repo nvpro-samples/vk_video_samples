@@ -25,12 +25,6 @@
 #include <climits>
 #include "VulkanVideoParserIf.h"
 
-#define DEBUG_PARSER 0
-#if DEBUG_PARSER
-#include <stdio.h>
-#endif
-
-
 #include "VulkanAV1Decoder.h"
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
@@ -38,48 +32,63 @@
 // constructor
 VulkanAV1Decoder::VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std, bool annexB)
     : VulkanVideoDecoder(std)
+    , m_sps()
+    , m_PicData()
+    , temporal_id()
+    , spatial_id()
+    , m_bSPSReceived()
+    , m_bSPSChanged()
+    , m_obuAnnexB(annexB)
+    , timing_info_present()
+    , timing_info()
+    , buffer_model()
+    , op_params{}
+    , op_frame_timing{}
+    , delta_frame_id_length()
+    , frame_id_length()
+    , last_frame_type()
+    , last_intra_only()
+    , coded_lossless()
+    , all_lossless(0)
+    , delta_lf_present(0)
+    , delta_lf_multi(0)
+    , upscaled_width()
+    , frame_width()
+    , frame_height()
+    , render_width()
+    , render_height()
+    , intra_only()
+    , showable_frame()
+    , last_show_frame()
+    , show_existing_frame()
+    , tu_presentation_delay()
+    , lossless{}
+    , tile_size_bytes_minus_1(3)
+    , log2_tile_cols()
+    , log2_tile_rows()
+    , global_motions{}
+    , ref_frame_id{}
+    , pic_idx{}
+    , RefValid{}
+    , ref_frame_idx{}
+    , RefOrderHint{}
+    , m_pBuffers{}
+    , m_pCurrPic(nullptr)
+    , m_bOutputAllLayers()
+    , m_OperatingPointIDCActive()
+    , m_numOutFrames()
+    , m_pOutFrame{}
+    , m_showableFrame{}
+
 {
-	memset(&m_PicData, 0, sizeof(m_PicData));
-    m_pCurrPic = nullptr;
-    for (int i = 0; i < 8; i++) {
-        memset(&m_pBuffers[i], 0, sizeof(m_pBuffers[0]));
-    }
     for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
         ref_frame_id[i] = -1;
 		pic_idx[i] = -1;
     }
-    temporal_id = 0;
-    spatial_id = 0;
-    m_bSPSReceived = false;
-    m_bSPSChanged = false;
-    m_obuAnnexB = annexB;
-    timing_info_present = 0;
-    memset(&timing_info, 0, sizeof(timing_info));
-    memset(&buffer_model, 0, sizeof(buffer_model));
-    memset(&op_params, 0, sizeof(op_params));
-    memset(&op_frame_timing, 0, sizeof(op_frame_timing));
-    last_frame_type = 0;
-    last_intra_only = 0;
-    all_lossless = 0;
-    frame_width = 0;
-    frame_height = 0;
-    render_width = 0;
-    render_height = 0;
-    intra_only = 0;
-    showable_frame = 0;
-    last_show_frame = 0;
-    show_existing_frame = 0;
-    tu_presentation_delay = 0;
+
 	m_PicData.std_info.primary_ref_frame = STD_VIDEO_AV1_PRIMARY_REF_NONE;
     m_PicData.std_info.refresh_frame_flags = (1 << STD_VIDEO_AV1_NUM_REF_FRAMES) - 1;
-    log2_tile_cols = 0;
-    log2_tile_rows = 0;
-    tile_size_bytes_minus_1 = 3;
-    m_numOutFrames = 0;
-    m_bOutputAllLayers = false;
-    m_OperatingPointIDCActive = 0;
-    memset(&m_pOutFrame[0], 0, sizeof(m_pOutFrame));
-    memset(&m_showableFrame[0], 0, sizeof(m_showableFrame));
+
     for (int i = 0; i < GM_GLOBAL_MODELS_PER_FRAME; ++i)
     {
         global_motions[i] = default_warp_params;

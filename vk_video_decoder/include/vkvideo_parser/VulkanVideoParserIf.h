@@ -17,21 +17,14 @@
 #ifndef _VULKANVIDEOPARSER_IF_H_
 #define _VULKANVIDEOPARSER_IF_H_
 
+#include "vk_video/vulkan_video_codecs_common.h"
+
 #include "vkvideo_parser/PictureBufferBase.h"
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 #include "vkvideo_parser/StdVideoPictureParametersSet.h"
 #include "VkCodecUtils/VulkanBitstreamBuffer.h"
 
-// DE_BUILD_VIDEO is used by the CTS, in this case it prevents redefinitions that stem from the common includes.
-#ifndef DE_BUILD_VIDEO
-#include "vk_video/vulkan_video_codecs_common.h"
-#endif
-
-#include "vk_video/vulkan_video_codec_av1std.h"
-#include "vk_video/vulkan_video_codec_av1std_decode.h"
-#define NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_9 VK_MAKE_VIDEO_STD_VERSION(0, 9, 9)
-
-#define NV_VULKAN_VIDEO_PARSER_API_VERSION NV_VULKAN_VIDEO_PARSER_API_VERSION_0_9_9
+static const uint32_t NV_VULKAN_VIDEO_PARSER_API_VERSION = VK_MAKE_VIDEO_STD_VERSION(0, 9, 9);
 
 typedef uint32_t FrameRate;  // Packed 18-bit numerator & 14-bit denominator
 

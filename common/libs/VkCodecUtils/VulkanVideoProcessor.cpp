@@ -63,6 +63,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     const int32_t numBitstreamBuffersToPreallocate = std::max(programConfig.numBitstreamBuffersToPreallocate, 4);
     const bool enableHwLoadBalancing = programConfig.enableHwLoadBalancing;
     const bool enablePostProcessFilter = (programConfig.enablePostProcessFilter >= 0);
+    const bool enableDisplayPresent = (programConfig.noPresent == 0);
     const  VulkanFilterYuvCompute::FilterType postProcessFilterType = enablePostProcessFilter ?
             (VulkanFilterYuvCompute::FilterType)programConfig.enablePostProcessFilter :
                                                       VulkanFilterYuvCompute::YCBCRCOPY;
@@ -123,6 +124,10 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
 
     if (enablePostProcessFilter) {
         enableDecoderFeatures |= VkVideoDecoder::ENABLE_POST_PROCESS_FILTER;
+    }
+
+    if (enableDisplayPresent) {
+        enableDecoderFeatures |= VkVideoDecoder::ENABLE_GRAPHICS_TEXTURE_SAMPLING;
     }
 
     result = VkVideoDecoder::Create(vkDevCtx,
@@ -557,11 +562,8 @@ size_t VulkanVideoProcessor::OutputFrameToFile(VulkanDecodedFrame* pFrame)
     assert(pFrame != nullptr);
 
     VkSharedBaseObj<VkImageResourceView> imageResourceView;
-    pFrame->imageViews[pFrame->linearOutputIndex].GetImageResourceView(imageResourceView);
-    assert(!!imageResourceView); // TODO: The codebase should move to "!= nullptr".
-                                 // It's much more explicit and the VkSharedBaseObj doesn't have an operator that returns true or false.
-                                 // So it's secretly implicitely casting a ptr to a bool..
-
+    pFrame->imageViews[VulkanDecodedFrame::IMAGE_VIEW_TYPE_LINEAR].GetImageResourceView(imageResourceView);
+    assert(!!imageResourceView);
     assert(pFrame->pictureIndex != -1);
 
     VkSharedBaseObj<VkImageResource> imageResource = imageResourceView->GetImageResource();

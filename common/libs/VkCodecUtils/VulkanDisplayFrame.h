@@ -25,6 +25,11 @@
 class VulkanDisplayFrame
 {
 public:
+
+    enum { IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY = 0,
+           IMAGE_VIEW_TYPE_LINEAR = 1,
+           IMAGE_VIEW_TYPE_MAX = 2};
+
     int32_t  pictureIndex;
     uint32_t imageLayerIndex; // The layer of a multi-layered images. Always "0" for single layered images
     int32_t  displayWidth;    // Valid usable width of the image
@@ -32,7 +37,7 @@ public:
     uint64_t decodeOrder;
     uint64_t displayOrder;
     uint64_t timestamp;
-    std::array<DecodeFrameBufferIf::ImageViews, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES> imageViews;
+    std::array<DecodeFrameBufferIf::ImageViews, IMAGE_VIEW_TYPE_MAX> imageViews;
     VkFence frameCompleteFence; // If valid, the fence is signaled when the decoder or encoder is done decoding / encoding the frame.
     VkFence frameConsumerDoneFence; // If valid, the fence is signaled when the consumer (graphics, compute or display) is done using the frame.
     VkSemaphore frameCompleteSemaphore; // If valid, the semaphore is signaled when the decoder or encoder is done decoding / encoding the frame.
@@ -45,8 +50,6 @@ public:
     int32_t  submittedVideoQueueIndex;
     uint32_t hasConsummerSignalFence : 1;
     uint32_t hasConsummerSignalSemaphore : 1;
-    uint32_t optimalOutputIndex : 4;
-    uint32_t linearOutputIndex : 4;
 
     void Reset()
     {
@@ -54,7 +57,7 @@ public:
         imageLayerIndex = 0;
         displayWidth = 0;
         displayHeight = 0;
-        for (uint32_t imageTypeIdx = 0; imageTypeIdx < DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES; imageTypeIdx++) {
+        for (uint32_t imageTypeIdx = 0; imageTypeIdx < IMAGE_VIEW_TYPE_MAX; imageTypeIdx++) {
             if (imageViews[imageTypeIdx].inUse) {
                 imageViews[imageTypeIdx].view = nullptr;
                 imageViews[imageTypeIdx].singleLevelView = nullptr;
@@ -75,7 +78,6 @@ public:
         // For debugging
         decodeOrder = 0;
         displayOrder = 0;
-        optimalOutputIndex = 0;
     }
 
     VulkanDisplayFrame()
@@ -97,7 +99,6 @@ public:
     , submittedVideoQueueIndex()
     , hasConsummerSignalFence()
     , hasConsummerSignalSemaphore()
-    , optimalOutputIndex()
     {}
 
     virtual ~VulkanDisplayFrame() {

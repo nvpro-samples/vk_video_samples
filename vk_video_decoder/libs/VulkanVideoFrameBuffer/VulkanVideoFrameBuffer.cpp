@@ -54,8 +54,7 @@ public:
         , m_frameCompleteSemaphore()
         , m_frameConsumerDoneFence()
         , m_frameConsumerDoneSemaphore()
-        , m_optimalOutputIndex(0)
-        , m_linearOutputIndex(0)
+        , m_imageSpecsIndex()
         , m_hasFrameCompleteSignalFence(false)
         , m_hasFrameCompleteSignalSemaphore(false)
         , m_hasConsummerSignalFence(false)
@@ -86,7 +85,7 @@ public:
         Deinit();
     }
 
-    VkSharedBaseObj<VkImageResourceView>& GetImageView(uint32_t imageTypeIdx) {
+    VkSharedBaseObj<VkImageResourceView>& GetImageView(uint8_t imageTypeIdx) {
         if (ImageExist(imageTypeIdx)) {
             return m_imageViewState[imageTypeIdx].view;
         } else {
@@ -94,7 +93,7 @@ public:
         }
     }
 
-    VkSharedBaseObj<VkImageResourceView>& GetSingleLevelImageView(uint32_t imageTypeIdx) {
+    VkSharedBaseObj<VkImageResourceView>& GetSingleLevelImageView(uint8_t imageTypeIdx) {
         if (ImageExist(imageTypeIdx)) {
             return m_imageViewState[imageTypeIdx].singleLevelView;
         } else {
@@ -102,19 +101,23 @@ public:
         }
     }
 
-    bool ImageExist(uint32_t imageTypeIdx) const {
+    bool ImageExist(uint8_t imageTypeIdx) const {
+
+        if ((imageTypeIdx == InvalidImageTypeIdx) || !(imageTypeIdx < DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES)) {
+            return false;
+        }
 
         return (!!m_imageViewState[imageTypeIdx].view && (m_imageViewState[imageTypeIdx].view->GetImageView() != VK_NULL_HANDLE));
     }
 
-    bool SetRecreateImage(uint32_t imageTypeIdx) {
+    bool SetRecreateImage(uint8_t imageTypeIdx) {
 
         bool recreateImage = m_imageViewState[imageTypeIdx].recreateImage;
         m_imageViewState[imageTypeIdx].recreateImage = true;
         return recreateImage;
     }
 
-    bool GetImageSetNewLayout(uint32_t imageTypeIdx, VkImageLayout newImageLayout,
+    bool GetImageSetNewLayout(uint8_t imageTypeIdx, VkImageLayout newImageLayout,
                               VkVideoPictureResourceInfoKHR* pPictureResource,
                               VulkanVideoFrameBuffer::PictureResourceInfo* pPictureResourceInfo) {
 
@@ -145,8 +148,7 @@ public:
     VkSemaphore m_frameCompleteSemaphore;
     VkFence m_frameConsumerDoneFence;
     VkSemaphore m_frameConsumerDoneSemaphore;
-    uint32_t m_optimalOutputIndex : 4;
-    uint32_t m_linearOutputIndex : 4;
+    DecodeFrameBufferIf::ImageSpecsIndex m_imageSpecsIndex;
     uint32_t m_hasFrameCompleteSignalFence : 1;
     uint32_t m_hasFrameCompleteSignalSemaphore : 1;
     uint32_t m_hasConsummerSignalFence : 1;
@@ -208,7 +210,7 @@ public:
     }
 
     VkResult GetImageSetNewLayout(const VulkanDeviceContext* vkDevCtx,
-                                  uint32_t imageIndex, uint32_t imageTypeIdx,
+                                  uint32_t imageIndex, uint8_t imageTypeIdx,
                                   VkImageLayout newImageLayout,
                                   VkVideoPictureResourceInfoKHR* pPictureResource = nullptr,
                                   VulkanVideoFrameBuffer::PictureResourceInfo* pPictureResourceInfo = nullptr) {
@@ -426,8 +428,7 @@ public:
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         m_perFrameDecodeImageSet[picId].m_picDispInfo = *pDecodePictureInfo;
         m_perFrameDecodeImageSet[picId].m_inDecodeQueue = true;
-        m_perFrameDecodeImageSet[picId].m_optimalOutputIndex = pFrameSynchronizationInfo->optimalOutputIndex;
-        m_perFrameDecodeImageSet[picId].m_linearOutputIndex = pFrameSynchronizationInfo->linearOutputIndex;
+        m_perFrameDecodeImageSet[picId].m_imageSpecsIndex = pFrameSynchronizationInfo->imageSpecsIndex;
         m_perFrameDecodeImageSet[picId].stdPps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdPps);
         m_perFrameDecodeImageSet[picId].stdSps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdSps);
         m_perFrameDecodeImageSet[picId].stdVps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdVps);
@@ -492,16 +493,23 @@ public:
 
             pDecodedFrame->imageLayerIndex = m_perFrameDecodeImageSet[pictureIndex].m_picDispInfo.imageLayerIndex;
 
-            for (uint32_t imageTypeIdx = 0; imageTypeIdx < m_maxNumImageTypeIdx; imageTypeIdx++) {
-                if (m_perFrameDecodeImageSet[pictureIndex].ImageExist(imageTypeIdx)) {
-                    pDecodedFrame->imageViews[imageTypeIdx].view = m_perFrameDecodeImageSet[pictureIndex].GetImageView(imageTypeIdx);
-                    pDecodedFrame->imageViews[imageTypeIdx].singleLevelView = m_perFrameDecodeImageSet[pictureIndex].GetSingleLevelImageView(imageTypeIdx);
-                    pDecodedFrame->imageViews[imageTypeIdx].inUse = true;
+            {
+                uint8_t displayOutImageType = m_perFrameDecodeImageSet[pictureIndex].m_imageSpecsIndex.displayOut;
+                if (m_perFrameDecodeImageSet[pictureIndex].ImageExist(displayOutImageType)) {
+                    pDecodedFrame->imageViews[VulkanDisplayFrame::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY].view = m_perFrameDecodeImageSet[pictureIndex].GetImageView(displayOutImageType);
+                    pDecodedFrame->imageViews[VulkanDisplayFrame::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY].singleLevelView = m_perFrameDecodeImageSet[pictureIndex].GetSingleLevelImageView(displayOutImageType);
+                    pDecodedFrame->imageViews[VulkanDisplayFrame::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY].inUse = true;
                 }
             }
 
-            pDecodedFrame->optimalOutputIndex = m_perFrameDecodeImageSet[pictureIndex].m_optimalOutputIndex;
-            pDecodedFrame->linearOutputIndex = m_perFrameDecodeImageSet[pictureIndex].m_linearOutputIndex;
+            {
+                uint8_t linearOutImageType = m_perFrameDecodeImageSet[pictureIndex].m_imageSpecsIndex.linearOut;
+                if (m_perFrameDecodeImageSet[pictureIndex].ImageExist(linearOutImageType)) {
+                    pDecodedFrame->imageViews[VulkanDisplayFrame::IMAGE_VIEW_TYPE_LINEAR].view = m_perFrameDecodeImageSet[pictureIndex].GetImageView(linearOutImageType);
+                    pDecodedFrame->imageViews[VulkanDisplayFrame::IMAGE_VIEW_TYPE_LINEAR].singleLevelView = m_perFrameDecodeImageSet[pictureIndex].GetSingleLevelImageView(linearOutImageType);
+                    pDecodedFrame->imageViews[VulkanDisplayFrame::IMAGE_VIEW_TYPE_LINEAR].inUse = true;
+                }
+            }
 
             pDecodedFrame->displayWidth  = m_perFrameDecodeImageSet[pictureIndex].m_picDispInfo.displayWidth;
             pDecodedFrame->displayHeight = m_perFrameDecodeImageSet[pictureIndex].m_picDispInfo.displayHeight;
@@ -564,7 +572,7 @@ public:
 
     virtual int32_t GetImageResourcesByIndex(uint32_t numResources,
                                              const int8_t* referenceSlotIndexes,
-                                             uint32_t imageTypeIdx,
+                                             uint8_t imageTypeIdx,
                                              VkVideoPictureResourceInfoKHR* pPictureResources,
                                              PictureResourceInfo* pPictureResourcesInfo,
                                              VkImageLayout newImageLayerLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR)
@@ -591,7 +599,7 @@ public:
         return numResources;
     }
 
-    virtual int32_t GetCurrentImageResourceByIndex(int8_t referenceSlotIndex, uint32_t imageTypeIdx,
+    virtual int32_t GetCurrentImageResourceByIndex(int8_t referenceSlotIndex, uint8_t imageTypeIdx,
                                                    VkVideoPictureResourceInfoKHR* pPictureResource,
                                                    PictureResourceInfo* pPictureResourceInfo,
                                                    VkImageLayout newImageLayerLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR)
@@ -617,7 +625,7 @@ public:
         return referenceSlotIndex;
     }
 
-    virtual int32_t GetCurrentImageResourceByIndex(int8_t referenceSlotIndex, uint32_t imageTypeIdx,
+    virtual int32_t GetCurrentImageResourceByIndex(int8_t referenceSlotIndex, uint8_t imageTypeIdx,
                                                    VkSharedBaseObj<VkImageResourceView>& imageView)
     {
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);

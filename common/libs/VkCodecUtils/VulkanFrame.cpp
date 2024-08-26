@@ -369,7 +369,7 @@ bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
     if (dumpDebug && pLastDecodedFrame) {
 
         VkSharedBaseObj<VkImageResourceView> imageResourceView;
-        pLastDecodedFrame->imageViews[pLastDecodedFrame->optimalOutputIndex].GetImageResourceView(imageResourceView);
+        pLastDecodedFrame->imageViews[FrameDataType::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY].GetImageResourceView(imageResourceView);
 
         std::cout << "<= Wait on picIdx: " << pLastDecodedFrame->pictureIndex
                   << "\t\tdisplayWidth: " << pLastDecodedFrame->displayWidth
@@ -417,7 +417,7 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
     vulkanVideoUtils::VulkanPerDrawContext* pPerDrawContext = m_videoRenderer->m_renderInfo.GetDrawContext(renderIndex);
 
     VkSharedBaseObj<VkImageResourceView> imageResourceView;
-    inFrame->imageViews[inFrame->optimalOutputIndex].GetImageResourceView(imageResourceView);
+    inFrame->imageViews[FrameDataType::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY].GetImageResourceView(imageResourceView);
 
     bool doTestPatternFrame = ((inFrame == NULL) ||
                                (!imageResourceView ||

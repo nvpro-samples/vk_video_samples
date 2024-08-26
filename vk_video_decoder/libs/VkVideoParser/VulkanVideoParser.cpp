@@ -36,7 +36,6 @@
 
 #include "vkvideo_parser/VulkanVideoParser.h"
 
-
 #undef min
 #undef max
 
@@ -2316,7 +2315,7 @@ bool VulkanVideoParser::DecodePicture(
         pin->tileInfo.pMiColStarts = pin->MiColStarts;
         pin->tileInfo.pMiRowStarts = pin->MiRowStarts;
 
-        pDecodePictureInfo->filmGrainEnabled = pin->std_info.flags.apply_grain;
+        pDecodePictureInfo->flags.applyFilmGrain = pin->std_info.flags.apply_grain;
     }
 
     pDecodePictureInfo->displayWidth  = m_nvsi.nDisplayWidth;

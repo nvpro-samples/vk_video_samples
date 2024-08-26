@@ -25,31 +25,50 @@
 #endif
 
 VulkanVideoDecoder::VulkanVideoDecoder(VkVideoCodecOperationFlagBitsKHR std)
-  : m_refCount(0),
-    m_standard(std),
-    m_264SvcEnabled(false),
-    m_outOfBandPictureParameters(false),
-    m_initSequenceIsCalled(false),
-    m_pClient(),
-    m_defaultMinBufferSize(2 * 1024 * 1024),
-    m_bufferOffsetAlignment(256),
-    m_bufferSizeAlignment(256),
-    m_bitstreamData(),
-    m_bitstreamDataLen()
+    : m_refCount(0)
+    , m_standard(std)
+    , m_264SvcEnabled(false)
+    , m_outOfBandPictureParameters(false)
+    , m_initSequenceIsCalled(false)
+    , m_pClient()
+    , m_defaultMinBufferSize(2 * 1024 * 1024)
+    , m_bufferOffsetAlignment(256)
+    , m_bufferSizeAlignment(256)
+    , m_bitstreamData()
+    , m_bitstreamDataLen()
+    , m_BitBfr()
+    , m_bEmulBytesPresent()
+    , m_bNoStartCodes(false)
+    , m_bFilterTimestamps(false)
+    , m_MaxFrameBuffers()
+    , m_nalu()
+    , m_lMinBytesForBoundaryDetection(256)
+    , m_lClockRate()
+    , m_lFrameDuration()
+    , m_llExpectedPTS()
+    , m_llParsedBytes()
+    , m_llNaluStartLocation()
+    , m_llFrameStartLocation()
+    , m_lErrorThreshold()
+    , m_bFirstPTS()
+    , m_lPTSPos()
+    , m_nCallbackEventCount()
+    , m_PrevSeqInfo()
+    , m_ExtSeqInfo()
+    , m_DispInfo{}
+    , m_PTSQueue{}
+    , m_bDiscontinuityReported()
+    , m_pVkPictureData()
+    , m_iTargetLayer(0)
+    , m_bDecoderInitFailed()
+    , m_lCheckPTS()
+    , m_eError(NV_NO_ERROR)
 {
-    m_bNoStartCodes = false;
-    m_lMinBytesForBoundaryDetection = 256;
-    m_bFilterTimestamps = false;
-    if (m_264SvcEnabled)
-    {
+    if (m_264SvcEnabled) {
         m_pVkPictureData = new VkParserPictureData[128];
-    }
-    else
-    {
+    } else {
         m_pVkPictureData = new VkParserPictureData;
     }
-    m_iTargetLayer = 0;
-    m_eError = NV_NO_ERROR;
 }
 
 
@@ -70,6 +89,10 @@ VulkanVideoDecoder::~VulkanVideoDecoder()
 
 VkResult VulkanVideoDecoder::Initialize(const VkParserInitDecodeParameters *pParserPictureData)
 {
+    if (pParserPictureData->interfaceVersion != NV_VULKAN_VIDEO_PARSER_API_VERSION) {
+        return VK_ERROR_INCOMPATIBLE_DRIVER;
+    }
+
     Deinitialize();
     m_pClient = pParserPictureData->pClient;
     m_defaultMinBufferSize  = pParserPictureData->defaultMinBufferSize;

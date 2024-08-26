@@ -116,19 +116,6 @@ else()
     list(APPEND libraries PRIVATE -L${LIBNVPARSER_BINARY_ROOT} -l${VULKAN_VIDEO_PARSER_LIB})
 endif()
 
-if(DEFINED ENV{TEGRA_TOP})
-    # For the Tegra parser: NvRmChipGetCapabilityU32
-    list(APPEND libraries PRIVATE -lnvrm_chip)
-    # For the Tegra parser: NvOsGetConfigString
-    list(APPEND libraries PRIVATE -lnvos)
-endif()
-
-if(DEFINED ENV{TEGRA_TOP})
-    list(APPEND definitions PRIVATE -D_FILE_OFFSET_BITS=64)
-    list(APPEND definitions PRIVATE -DNV_BUILD_CONFIGURATION_EXPOSING_T19X=1)
-    list(APPEND definitions PRIVATE -DTVMR_NVDEC4=1)
-endif()
-
 if(TARGET vulkan)
     list(APPEND definitions PRIVATE -DUNINSTALLED_LOADER="$<TARGET_FILE:vulkan>")
 endif()

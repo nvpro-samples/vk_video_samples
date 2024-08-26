@@ -62,11 +62,10 @@ public:
         NALU_UNKNOWN,   // This NALU type is not supported (callback client)
     };
     typedef enum {
-        NV_NO_ERROR=0,           // No error detected
+        NV_NO_ERROR = 0,         // No error detected
         NV_NON_COMPLIANT_STREAM  // Stream is not compliant with codec standards
     } NVCodecErrors;
 
-    NVCodecErrors m_eError;
 protected:
     std::atomic<int32_t>             m_refCount;
     VkVideoCodecOperationFlagBitsKHR m_standard;        // Encoding standard
@@ -110,6 +109,7 @@ protected:
     int32_t m_iTargetLayer;                     // Specific to SVC only
     int32_t m_bDecoderInitFailed;               // Set when m_pClient->BeginSequence fails to create the decoder
     int32_t m_lCheckPTS;                        // Run the m_bFilterTimestamps for the first few framew to look for out of order PTS
+    NVCodecErrors m_eError;
 public:
     VulkanVideoDecoder(VkVideoCodecOperationFlagBitsKHR std);
     virtual ~VulkanVideoDecoder();

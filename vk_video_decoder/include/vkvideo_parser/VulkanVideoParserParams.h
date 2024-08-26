@@ -76,6 +76,7 @@ union VkParserFieldFlags {
         uint32_t syncToFirstField : 1; // Synchronize the second field to the first one.
         uint32_t repeatFirstField : 3; // For 3:2 pulldown (number of additional fields, 2 = frame doubling, 4 = frame tripling)
         uint32_t refPic : 1; // Frame is a reference frame
+        uint32_t applyFilmGrain : 1; // Valid for AV1 only
     };
     uint32_t fieldFlags;
 };
@@ -90,7 +91,6 @@ struct VkParserDecodePictureInfo {
     VkVideotimestamp timestamp; // decode time
     VkParserFrameSyncinfo frameSyncinfo;
     uint16_t viewId; // HEVC nuh_layer_id & from pictureInfoH264->ext.mvcext.view_id
-    bool filmGrainEnabled;
 };
 
 struct VulkanVideoDisplayPictureInfo {

@@ -82,7 +82,7 @@ void VulkanVP9Decoder::vp9_init_mbmode_probs(vp9_prob_update_s *pProbSetup)
 void VulkanVP9Decoder::ResetProbs(vp9_prob_update_s *pProbSetup)
 {
     //reset segmentMap (buffers going to HWIF_SEGMENT_READ_BASE_LSB and HWIF_SEGMENT_WRITE_BASE_LSB)
-    
+
     uint32_t i, j, k, l, m;
 
     memcpy(pProbSetup->pProbTab->a.inter_mode_prob, vp9_default_inter_mode_prob, sizeof(vp9_default_inter_mode_prob));
@@ -285,7 +285,7 @@ uint32_t VulkanVP9Decoder::UpdateForwardProbability(vp9_prob_update_s *pProbSetu
         }
     }
 
-    // Coefficient probability update 
+    // Coefficient probability update
     tmp = vp9hwdDecodeCoeffUpdate( fc->a.probCoeffs);
 
     if( tmp != OK ) return (tmp);
@@ -342,7 +342,7 @@ uint32_t VulkanVP9Decoder::UpdateForwardProbability(vp9_prob_update_s *pProbSetu
             }
         }
 
-        // Compound prediction mode probabilities 
+        // Compound prediction mode probabilities
         if (pProbSetup->allow_comp_inter_inter) {
             tmp = vp9_read_literal( 1);
             pProbSetup->comp_pred_mode = tmp;
@@ -390,7 +390,7 @@ uint32_t VulkanVP9Decoder::UpdateForwardProbability(vp9_prob_update_s *pProbSetu
             }
         }
 
-        // Superblock intra luma pred mode probabilities 
+        // Superblock intra luma pred mode probabilities
         for(j = 0 ; j < BLOCK_SIZE_GROUPS; ++j)
         {
             for( i = 0 ; i < 8; ++i ) {
@@ -417,7 +417,7 @@ uint32_t VulkanVP9Decoder::UpdateForwardProbability(vp9_prob_update_s *pProbSetu
             }
         }
 
-        // Motion vector tree update 
+        // Motion vector tree update
         tmp = vp9hwdDecodeMvUpdate(pProbSetup);
         if( tmp != OK )
             return (tmp);
