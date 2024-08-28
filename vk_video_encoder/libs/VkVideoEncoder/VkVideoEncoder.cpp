@@ -122,7 +122,7 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     assert(encodeFrameInfo->inputCmdBuffer != nullptr);
 
     // Make sure command buffer is not in use anymore and reset
-    encodeFrameInfo->inputCmdBuffer->ResetCommandBuffer();
+    encodeFrameInfo->inputCmdBuffer->ResetCommandBuffer(true, "encoderStagedInputFence");
 
     // Begin command buffer
     VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr };
@@ -181,7 +181,7 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
     encodeFrameInfo->inputCmdBuffer->SetCommandBufferSubmitted();
     bool syncCpuAfterStaging = false;
     if (syncCpuAfterStaging) {
-        encodeFrameInfo->inputCmdBuffer->SyncHostOnCmdBuffComplete();
+        encodeFrameInfo->inputCmdBuffer->SyncHostOnCmdBuffComplete(false, "encoderStagedInputFence");
     }
 #ifdef ENCODER_DISPLAY_QUEUE_SUPPORT
     if (result == VK_SUCCESS) {
@@ -231,6 +231,12 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
         }
     }
 
+    VkResult result = encodeFrameInfo->encodeCmdBuffer->SyncHostOnCmdBuffComplete(false, "encoderEncodeFence");
+    if(result != VK_SUCCESS) {
+        fprintf(stderr, "\nWait on encoder complete fence has failed with result 0x%x.\n", result);
+        return result;
+    }
+
     uint32_t querySlotId = (uint32_t)-1;
     VkQueryPool queryPool = encodeFrameInfo->encodeCmdBuffer->GetQueryPool(querySlotId);
 
@@ -247,9 +253,9 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     } encodeResult{};
 
     // Fetch the coded VCL data and its information
-    VkResult result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx, queryPool, querySlotId,
-                                                      1, sizeof(encodeResult), &encodeResult, sizeof(encodeResult),
-                                                      VK_QUERY_RESULT_WITH_STATUS_BIT_KHR | VK_QUERY_RESULT_WAIT_BIT);
+    result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx, queryPool, querySlotId,
+                                             1, sizeof(encodeResult), &encodeResult, sizeof(encodeResult),
+                                             VK_QUERY_RESULT_WITH_STATUS_BIT_KHR | VK_QUERY_RESULT_WAIT_BIT);
 
     assert(result == VK_SUCCESS);
     assert(encodeResult.status == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
@@ -844,7 +850,7 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     // Reset the command buffer and sync
-    encodeFrameInfo->encodeCmdBuffer->ResetCommandBuffer();
+    encodeFrameInfo->encodeCmdBuffer->ResetCommandBuffer(true, "encoderEncodeFence");
 
     VkSharedBaseObj<VulkanCommandBufferPool::PoolNode>& encodeCmdBuffer = encodeFrameInfo->encodeCmdBuffer;
 
@@ -988,9 +994,9 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
                                                            queueCompleteFence);
 
     encodeFrameInfo->encodeCmdBuffer->SetCommandBufferSubmitted();
-    bool syncCpuAfterStaging = false;
-    if (syncCpuAfterStaging) {
-        encodeFrameInfo->encodeCmdBuffer->SyncHostOnCmdBuffComplete();
+    bool syncCpuAfterEncoding = false;
+    if (syncCpuAfterEncoding) {
+        encodeFrameInfo->encodeCmdBuffer->SyncHostOnCmdBuffComplete(false, "encoderEncodeFence");
     }
 
     return result;

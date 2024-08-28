@@ -21,6 +21,7 @@
 #include <stdint.h>
 
 #include "VkCodecUtils/VkVideoRefCountBase.h"
+#include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/VulkanCommandBuffersSet.h"
 #include "VkCodecUtils/VulkanSemaphoreSet.h"
@@ -142,7 +143,9 @@ public:
         }
 
         VkResult SyncHostOnCmdBuffComplete(bool resetAfterWait = true,
-                                           uint64_t timeoutNanosec = 100 * 1000 * 1000)
+                                           const char* fenceName = "unknown",
+                                           const uint64_t fenceWaitTimeoutNsec = 100ULL * 1000ULL * 1000ULL /* 200 mSec */,
+                                           const uint64_t fenceTotalWaitTimeoutNsec = 5ULL * 1000ULL * 1000ULL * 1000ULL /* 5 sec */)
         {
             if(m_cmdBufState != CmdBufStateSubmitted) {
                 return VK_ERROR_INITIALIZATION_FAILED;
@@ -155,40 +158,25 @@ public:
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
 
-            VkResult result = m_vkDevCtx->WaitForFences(*m_vkDevCtx,
-                                                        1, &cmdBufferCompleteFence,
-                                                        true, timeoutNanosec);
-            assert(result == VK_SUCCESS);
+            VkResult result = vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, cmdBufferCompleteFence, resetAfterWait,
+                                                    fenceName, fenceWaitTimeoutNsec, fenceTotalWaitTimeoutNsec);
             if (result != VK_SUCCESS) {
-                fprintf(stderr, "\nERROR: WaitForFences() result: 0x%x\n", result);
-            }
-
-            result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, cmdBufferCompleteFence);
-            assert(result == VK_SUCCESS);
-            if (result != VK_SUCCESS) {
-                fprintf(stderr, "\nERROR: GetFenceStatus() result: 0x%x\n", result);
-            }
-
-            if (resetAfterWait) {
-                result = m_vkDevCtx->ResetFences(*m_vkDevCtx, 1, &cmdBufferCompleteFence);
-                if (result != VK_SUCCESS) {
-                    fprintf(stderr, "\nERROR: ResetFences() result: 0x%x\n", result);
-                }
-
-                assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, cmdBufferCompleteFence));
+                fprintf(stderr, "\nERROR: WaitAndResetFence() for %s with result: 0x%x\n", fenceName, result);
+                assert(result == VK_SUCCESS);
             }
 
             return result;
         }
 
-        bool ResetCommandBuffer(bool syncWithHost = true)
+        bool ResetCommandBuffer(bool syncWithHost = true,
+                                const char* fenceName = "unknown")
         {
            if (m_cmdBufState == CmdBufStateReset) {
                return false;
            }
 
            if (syncWithHost) {
-               SyncHostOnCmdBuffComplete();
+               SyncHostOnCmdBuffComplete(true, fenceName);
            }
 
            m_cmdBufState = CmdBufStateReset;

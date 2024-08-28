@@ -223,7 +223,7 @@ inline VkResult MapMemoryTypeToIndex(const VkInterfaceFunctions* vkIf,
 }
 
 inline VkResult WaitAndResetFence(const VkInterfaceFunctions* vkIf, VkDevice device, VkFence fence,
-                                  const char* fenceName = "unknown",
+                                  bool resetAfterWait = true, const char* fenceName = "unknown",
                                   const uint64_t fenceWaitTimeout = 100ULL * 1000ULL * 1000ULL /* 100 mSec */,
                                   const uint64_t fenceTotalWaitTimeout = 5ULL * 1000ULL * 1000ULL * 1000ULL /* 5 sec */) {
 
@@ -257,11 +257,15 @@ inline VkResult WaitAndResetFence(const VkInterfaceFunctions* vkIf, VkDevice dev
         assert(!"Fence is not signaled yet after more than 100 mSec wait");
     }
 
-    result = vkIf->ResetFences(device, 1, &fence);
-    assert(result == VK_SUCCESS);
+    if (resetAfterWait) {
+        result = vkIf->ResetFences(device, 1, &fence);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nERROR: ResetFences() result: 0x%x\n", result);
+            assert(result == VK_SUCCESS);
+        }
 
-    assert(vkIf->GetFenceStatus(device, fence) == VK_NOT_READY);
-
+        assert(vkIf->GetFenceStatus(device, fence) == VK_NOT_READY);
+    }
     return result;
 }
 

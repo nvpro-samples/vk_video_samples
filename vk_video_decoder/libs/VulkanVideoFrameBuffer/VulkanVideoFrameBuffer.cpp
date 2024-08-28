@@ -407,7 +407,7 @@ public:
             // ensure the frame has already been completed.
             assert(m_perFrameDecodeImageSet[picId].m_frameCompleteFence != VK_NULL_HANDLE);
             vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameCompleteFence,
-                                  "frameCompleteFence");
+                                  true, "frameCompleteFence");
         }
 
         if ((pFrameSynchronizationInfo->syncOnFrameConsumerDoneFence  == 1) &&
@@ -417,7 +417,7 @@ public:
                 (m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence != VK_NULL_HANDLE)) {
 
             vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence,
-                                  "frameConsumerDoneFence");
+                                  true, "frameConsumerDoneFence");
 
         }
 

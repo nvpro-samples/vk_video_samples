@@ -146,11 +146,11 @@ public:
         VkResult SyncHostOnCmdBuffComplete() {
 
             if (inputCmdBuffer) {
-                inputCmdBuffer->ResetCommandBuffer(true);
+                inputCmdBuffer->ResetCommandBuffer(true, "encoderStagedInputFence");
             }
 
             if (encodeCmdBuffer) {
-                encodeCmdBuffer->ResetCommandBuffer(true);
+                encodeCmdBuffer->ResetCommandBuffer(true, "encoderEncodeFence");
             }
 
             return VK_SUCCESS;

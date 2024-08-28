@@ -88,7 +88,7 @@ public:
 
         VkFence filterCompleteFence = m_filterCompleteFenceSet.GetFence(frameIdx);
 
-        vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, filterCompleteFence,
+        vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, filterCompleteFence, true,
                               "filterCompleteFence");
 
         return filterCompleteFence;
