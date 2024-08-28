@@ -147,6 +147,9 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
             if (fileSize <= 0) {
                 return (int)fileSize;
             }
+            if (inputFileHandler.parseY4M(&input.width, &input.height, &frameRateNumerator, &frameRateDenominator)) {
+                printf("Y4M file detected: width %d height %d\n", input.width, input.height);
+            }
         } else if (args[i] == "-o" || args[i] == "--output") {
             if (++i >= argc) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
