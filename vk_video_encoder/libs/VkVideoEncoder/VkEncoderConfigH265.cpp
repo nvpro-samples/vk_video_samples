@@ -412,7 +412,11 @@ bool EncoderConfigH265::InitRateControl()
     if (profileTierLevel.general_profile_idc == STD_VIDEO_H265_PROFILE_IDC_INVALID) {
         profileTierLevel.general_profile_idc = STD_VIDEO_H265_PROFILE_IDC_MAIN;
     }
-    uint32_t level = profileTierLevel.general_profile_idc;
+    uint32_t level = profileTierLevel.general_level_idc;
+    if (level >= levelLimitsTblSize) {
+        assert(!"The h.265 level index is invalid");
+        return false;
+    }
     uint32_t cpbVclFactor = GetCpbVclFactor();
 
     // Safe default maximum bitrate
