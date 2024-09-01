@@ -622,7 +622,7 @@ protected:
 #ifdef ENCODER_DISPLAY_QUEUE_SUPPORT
     DisplayQueue                             m_displayQueue;
 #endif // ENCODER_DISPLAY_QUEUE_SUPPORT
-    EncoderFrameQueue                        m_encoderQueue;
+    EncoderFrameQueue                        m_encoderThreadQueue;
     std::thread                              m_encoderQueueConsumerThread;
     VkSharedBaseObj<VkVideoEncodeFrameInfo>  m_lastDeferredFrame;
 };

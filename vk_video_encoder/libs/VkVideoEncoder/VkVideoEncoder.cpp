@@ -580,7 +580,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     if (m_enableEncoderQueue) {
 
         const uint32_t maxPendingQueueNodes = 2;
-        m_encoderQueue.SetMaxPendingQueueNodes(std::min<uint32_t>(m_encoderConfig->gopStructure.GetGopFrameCount() + 1, maxPendingQueueNodes));
+        m_encoderThreadQueue.SetMaxPendingQueueNodes(std::min<uint32_t>(m_encoderConfig->gopStructure.GetGopFrameCount() + 1, maxPendingQueueNodes));
         m_encoderQueueConsumerThread = std::thread(&VkVideoEncoder::ConsumerThread, this);
     }
     return VK_SUCCESS;
@@ -1016,7 +1016,7 @@ VkResult VkVideoEncoder::PushOrderedFrames()
 
         if (m_enableEncoderQueue) {
 
-            bool success = m_encoderQueue.Push(m_lastDeferredFrame);
+            bool success = m_encoderThreadQueue.Push(m_lastDeferredFrame);
             if (success) {
                 m_lastDeferredFrame = nullptr;
             } else {
@@ -1070,7 +1070,7 @@ bool VkVideoEncoder::WaitForThreadsToComplete()
     PushOrderedFrames();
 
     if (m_enableEncoderQueue) {
-        m_encoderQueue.SetFlushAndExit();
+        m_encoderThreadQueue.SetFlushAndExit();
         if (m_encoderQueueConsumerThread.joinable()) {
             m_encoderQueueConsumerThread.join();
         }
@@ -1108,7 +1108,7 @@ void VkVideoEncoder::ConsumerThread()
    std::cout << "ConsumerThread is stating now.\n" << std::endl;
    do {
        VkSharedBaseObj<VkVideoEncodeFrameInfo> encodeFrameInfo;
-       bool success = m_encoderQueue.WaitAndPop(encodeFrameInfo);
+       bool success = m_encoderThreadQueue.WaitAndPop(encodeFrameInfo);
        if (success) { // 5 seconds in nanoseconds
            std::cout << "==>>>> Consumed: " << (uint32_t)encodeFrameInfo->gopPosition.inputOrder
                       << ", Order: " << (uint32_t)encodeFrameInfo->gopPosition.encodeOrder << std::endl << std::flush;
@@ -1116,14 +1116,14 @@ void VkVideoEncoder::ConsumerThread()
            VkResult result = ProcessOrderedFrames(encodeFrameInfo, 0);
            if (result != VK_SUCCESS) {
                std::cout << "Error processing frames from the frame thread!" << std::endl;
-               m_encoderQueue.SetFlushAndExit();
+               m_encoderThreadQueue.SetFlushAndExit();
            }
 
        } else {
-           bool shouldExit = m_encoderQueue.ExitQueue();
+           bool shouldExit = m_encoderThreadQueue.ExitQueue();
            std::cout << "Thread should exit: " << (shouldExit ? "Yes" : "No") << std::endl;
        }
-   } while (!m_encoderQueue.ExitQueue());
+   } while (!m_encoderThreadQueue.ExitQueue());
 
    std::cout << "ConsumerThread is exiting now.\n" << std::endl;
 }
