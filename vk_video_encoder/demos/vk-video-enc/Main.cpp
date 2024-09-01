@@ -137,8 +137,8 @@ int main(int argc, char** argv)
 
     VkSharedBaseObj<VulkanVideoDisplayQueue<VulkanEncoderInputFrame>> videoDispayQueue;
     result = CreateVulkanVideoEncodeDisplayQueue(&vkDevCtxt,
-                                                 encoderConfig->input.width,
-                                                 encoderConfig->input.height,
+                                                 encoderConfig->encodeWidth,
+                                                 encoderConfig->encodeHeight,
                                                  encoderConfig->input.bpp,
                                                  encoderConfig->input.vkFormat,
                                                  videoDispayQueue);

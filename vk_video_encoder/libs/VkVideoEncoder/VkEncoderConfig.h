@@ -367,6 +367,8 @@ public:
     uint8_t  encodeNumPlanes;
     uint8_t  numBitstreamBuffersToPreallocate;
     VkVideoChromaSubsamplingFlagBitsKHR  encodeChromaSubsampling;
+    uint32_t encodeOffsetX;
+    uint32_t encodeOffsetY;
     uint32_t encodeWidth;
     uint32_t encodeHeight;
     uint32_t startFrame;
@@ -444,6 +446,8 @@ public:
     , encodeNumPlanes(2)
     , numBitstreamBuffersToPreallocate(8)
     , encodeChromaSubsampling(VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR)
+    , encodeOffsetX(0)
+    , encodeOffsetY(0)
     , encodeWidth(0)
     , encodeHeight(0)
     , startFrame(0)
@@ -585,11 +589,11 @@ public:
             return VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR;
         }
 
-        if (encodeWidth == 0) {
+        if ((encodeWidth == 0) || (encodeWidth > input.width)) {
             encodeWidth = input.width;
         }
 
-        if (encodeHeight == 0) {
+        if ((encodeHeight == 0) || (encodeHeight > input.height)) {
             encodeHeight = input.height;
         }
 

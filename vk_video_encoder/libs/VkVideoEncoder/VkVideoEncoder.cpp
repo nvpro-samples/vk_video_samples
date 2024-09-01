@@ -201,8 +201,8 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
 
             // One can also look at the linear input instead
             // displayEncoderInputFrame.imageView = currentEncodeFrameData->m_linearInputImage;
-            displayEncoderInputFrame.displayWidth  = m_encoderConfig->input.width;
-            displayEncoderInputFrame.displayHeight = m_encoderConfig->input.height;
+            displayEncoderInputFrame.displayWidth  = m_encoderConfig->encodeWidth;
+            displayEncoderInputFrame.displayHeight = m_encoderConfig->encodeHeight;
 
             m_displayQueue.EnqueueFrame(&displayEncoderInputFrame);
         }
@@ -358,10 +358,10 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         return result;
     }
 
-
     m_imageDpbFormat = supportedDpbFormats[0];
     m_imageInFormat = supportedInFormats[0];
 
+    // m_maxCodedExtent = { encoderConfig->encodeWidth, encoderConfig->encodeHeight }; // codedSize
     m_maxCodedExtent = { encoderConfig->input.width, encoderConfig->input.height }; // codedSize
 
     const uint32_t maxReferencePicturesSlotsCount = encoderConfig->videoCapabilities.maxActiveReferencePictures;

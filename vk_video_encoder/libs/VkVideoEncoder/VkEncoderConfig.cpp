@@ -170,6 +170,26 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
+        } else if (args[i] == "--encodeOffsetX") {
+            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &encodeOffsetX) != 1)) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+        } else if (args[i] == "--encodeOffsetY") {
+            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &encodeOffsetY) != 1)) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+        } else if (args[i] == "--encodeWidth") {
+            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &encodeWidth) != 1)) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+        } else if (args[i] == "--encodeHeight") {
+            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &encodeHeight) != 1)) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
         } else if (args[i] == "--minQp") {
             if (++i >= argc || sscanf(args[i].c_str(), "%u", &minQp) != 1) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
@@ -305,13 +325,11 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
         fprintf(stderr, "The width was not specified\n");
         return -1;
     }
-    encodeWidth = input.width;
 
     if (input.height == 0) {
         fprintf(stderr, "The height was not specified\n");
         return -1;
     }
-    encodeHeight = input.height;
 
     if (!outputFileHandler.HasFileName()) {
         const char* defaultOutName = (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) ? "out.264" :
@@ -321,6 +339,14 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
         if (fileSize <= 0) {
             return (int)fileSize;
         }
+    }
+
+    if ((encodeWidth == 0) || (encodeWidth > input.width)) {
+        encodeWidth = input.width;
+    }
+
+    if ((encodeHeight == 0) || (encodeHeight > input.height)) {
+        encodeHeight = input.height;
     }
 
     if (minQp == -1) {
