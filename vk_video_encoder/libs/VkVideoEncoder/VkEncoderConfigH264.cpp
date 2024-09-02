@@ -347,7 +347,7 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
     return true;
 }
 
-VkResult EncoderConfigH264::InitDeviceCapbilities(const VulkanDeviceContext* vkDevCtx)
+VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx)
 {
     VkResult result = VulkanVideoCapabilities::GetVideoEncodeCapabilities<VkVideoEncodeH264CapabilitiesKHR, VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_KHR>
                                                                 (vkDevCtx, videoCoreProfile,

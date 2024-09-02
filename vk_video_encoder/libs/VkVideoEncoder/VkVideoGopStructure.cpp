@@ -77,7 +77,6 @@ void VkVideoGopStructure::PrintGopStructure(uint64_t numFrames) const
     std::cout << std::endl;
 }
 
-
 void VkVideoGopStructure::DumpFrameGopStructure(GopState& gopState,
                                                 bool firstFrame, bool lastFrame) const
 {
@@ -94,13 +93,13 @@ void VkVideoGopStructure::DumpFrameGopStructure(GopState& gopState,
 
 void VkVideoGopStructure::DumpFramesGopStructure(uint64_t firstFrameNumInInputOrder, uint64_t numFrames) const
 {
-    std::cout << "Input Encode Position  Frame" << std::endl;
-    std::cout << "order order   in GOP   type" << std::endl;
+    std::cout << "Input Encode Position  Frame " << std::endl;
+    std::cout << "order order   in GOP   type  " << std::endl;
     const uint64_t lastFrameNumInInputOrder = firstFrameNumInInputOrder + numFrames - 1;
     GopState gopState;
     for (uint64_t frameNumInDisplayOrder = firstFrameNumInInputOrder; frameNumInDisplayOrder < lastFrameNumInInputOrder; ++frameNumInDisplayOrder) {
-    // Print GOP structure for a certain number of frames
-        DumpFrameGopStructure(gopState); // Example: print for first maxFrames - 1 frames
+        // Print GOP structure for a number of frames
+        DumpFrameGopStructure(gopState);
     }
     DumpFrameGopStructure(gopState, true);
 

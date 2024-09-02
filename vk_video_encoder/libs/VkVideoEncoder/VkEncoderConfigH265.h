@@ -145,7 +145,7 @@ struct EncoderConfigH265 : public EncoderConfig {
         return VK_SUCCESS;
     }
 
-    virtual VkResult InitDeviceCapbilities(const VulkanDeviceContext* vkDevCtx);
+    virtual VkResult InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx);
 
     virtual uint32_t GetDefaultVideoProfileIdc() { return STD_VIDEO_H265_PROFILE_IDC_MAIN; };
 

@@ -270,7 +270,7 @@ public:
 
     const VkVideoEncodeH264ProfileInfoKHR* GetEncodeH264Profile() const
     {
-        if (m_h264DecodeProfile.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_KHR) {
+        if (m_h264EncodeProfile.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_KHR) {
             return &m_h264EncodeProfile;
         } else {
             return NULL;
@@ -279,7 +279,7 @@ public:
 
     const VkVideoEncodeH265ProfileInfoKHR* GetEncodeH265Profile() const
     {
-        if (m_h265DecodeProfile.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_INFO_KHR) {
+        if (m_h265EncodeProfile.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_INFO_KHR) {
             return &m_h265EncodeProfile;
         } else {
             return NULL;

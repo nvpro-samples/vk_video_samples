@@ -55,6 +55,65 @@ void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --deviceID                      <string>  : DeviceID to be used, \n\
     --deviceUuid                    <string>  : deviceUuid to be used \n");
 
+    if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR)) {
+        fprintf(stderr, "\nH264 specific arguments: None\n");
+    }
+
+    if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR)) {
+        fprintf(stderr, "\nH265 specific arguments: None\n");
+    }
+
+    if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR)) {
+        fprintf(stderr,
+                "\nAV1 specific arguments:\n\
+        --tiles                         Enable tile configuration\n\
+        --params                        Enable custom tile configuration when followed by --tiles option\n\
+                                        Otherwise default tile configuration will be used\n\
+                                        Following tile paramers must be followed in order with this option\n\
+                                        <uniform_tile_spacing_flag> <TileCols> [tileWidthInSbsMinus1[0] ...]\n\
+                                        <TileRows> [tileHeightInSbsMinus1[0] ...] <context_update_tile_id>\n\
+                                        Eg: 1. \"--tiles --params 0   5  3 3 3 3 3   3  2 4 3  2\"\n\
+                                            2. \"--tiles --params 1   5              3         2\"\n\
+                                            3. \"--tiles\"\n\n\
+        --quant                         Enable quant configuration\n\
+        --params                        Enable custom quant configuration when followed by --quant option\n\
+                                        Otherwise default quant configuration will be used\n\
+                                        Following quant parameters must be followed in order with this option\n\
+                                        <base_q_idx> <DeltaQYDc> <DeltaQUDc> <DeltaQUAc> <diff_uv_delta [\n\
+                                            <DeltaQVDc> <DeltaQVAc>]> <using_qmatrix [<qm_y> <qm_u> [qm_v]]>\n\
+                                        Eg: 1. \"--quant --params 92   -1  2 -2   1  -1 0   1   2 4 3\"\n\
+                                            2. \"--quant --params 92   -1  2 -2   0         0\"\n\
+                                            3. \"--quant\"\n\n\
+        --lf                            Enable loop filter configuration\n\
+        --params                        Enable custom loop filter configuration when followed by --lf option\n\
+                                        Otherwise default loop filter configuration will be used\n\
+                                        Following loop filter parameters must be followed in order with this option\n\
+                                        <level0> <level1> [<leve2> <level3>] <sharpness> <delta_enabled [<delta_update\n\
+                                            [<update_ref_delta> <ref_deltas[0] ... ref_deltas[7]> <update_mode_delta>\n\
+                                            <mode_deltas[0]< <mode_deltas[1]>] >]\n\
+                                        Eg: 1. \"--lf --params 10 11 12 13   5  1  1  255  1 2 -1 2 1 2 -1 2   3  -1 1\"\n\
+                                            2. \"--lf --params 10 11 12 13   5  1  0\"\n\
+                                            3. \"--lf --params 10 11 12 13   5  0\"\n\
+                                            4. \"--lf --params  0  0         5  0\"\n\
+                                            5. \"--lf\"\n\n\
+        --cdef                          Enable CDEF configuration\n\
+        --params                        Enabel custom CDEF configuration when followed by --cdef option\n\
+                                        Otherwise default CDEF configuration will be used\n\
+                                        Following CDEF parameters must be followed in order with this option\n\
+                                        <damping_minus_3> <bits> <y_pri[0]> <y_sec[0]> <uv_pri[0]> <uv_sec[0]> ...\n\
+                                        Eg: 1. \"--cdef --params 3  2  1 2 9 1   2 3 7 3   3 1 4 2   4 0 3 2\"\n\
+                                            2. \"--cdef --params 3  0  1 2 9 1\"\n\
+                                            3. \"--cdef\"\n\
+        --lr                            Enable loop restoration filter\n\
+        --params                        Enabel custom loop restoration filter configuration when followed by --lr option\n\
+                                        Otherwise default loop restoration filter configuration will be used\n\
+                                        Following loop restoration parameters must be followed in order with this option\n\
+                                        <type[0]> <type[1]> <type[2]> <size[0]> <size[1]> <size[2]>\n\
+                                        Eg: 1. \"--lr --params 2 2 2   1 1 1\"\n\
+                                            2. \"--lr\"\n\
+        --profile                       <integer> or <string>: select different encoding profile: \n\
+                                        main(0), high(1), professional(2)\n");
+        }
 }
 
 int EncoderConfig::ParseArguments(int argc, char *argv[])

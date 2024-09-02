@@ -65,7 +65,7 @@ struct EncoderInputImageParameters
     , height(0)
     , bpp(8)
     , chromaSubsampling(VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR)
-    , numPlanes(2)
+    , numPlanes(3)
     , planeLayouts{}
     , fullImageSize(0)
     , vkFormat(VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM)
@@ -570,7 +570,7 @@ public:
         return nullptr;
     }
 
-    virtual EncoderConfigH265* GetEncoderConfigh265(){
+    virtual EncoderConfigH265* GetEncoderConfigh265() {
         return nullptr;
     }
 
@@ -601,7 +601,7 @@ public:
     }
 
     // These functions should be overwritten from the codec-specific classes
-    virtual VkResult InitDeviceCapbilities(const VulkanDeviceContext* vkDevCtx) { return VK_ERROR_INITIALIZATION_FAILED; };
+    virtual VkResult InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx) { return VK_ERROR_INITIALIZATION_FAILED; };
 
     virtual uint32_t GetDefaultVideoProfileIdc() { return 0; };
 

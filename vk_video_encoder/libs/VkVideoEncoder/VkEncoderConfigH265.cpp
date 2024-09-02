@@ -67,7 +67,7 @@ uint32_t EncoderConfigH265::GetCpbVclFactor()
     return baseFactor + depthFactor;
 }
 
-VkResult EncoderConfigH265::InitDeviceCapbilities(const VulkanDeviceContext* vkDevCtx)
+VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx)
 {
     VkResult result = VulkanVideoCapabilities::GetVideoEncodeCapabilities<VkVideoEncodeH265CapabilitiesKHR, VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_CAPABILITIES_KHR>
                                                                 (vkDevCtx, videoCoreProfile,

@@ -174,7 +174,7 @@ struct EncoderConfigH264 : public EncoderConfig {
         return VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR;
     }
 
-    virtual VkResult InitDeviceCapbilities(const VulkanDeviceContext* vkDevCtx);
+    virtual VkResult InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx);
 
     virtual uint32_t GetDefaultVideoProfileIdc() { return STD_VIDEO_H264_PROFILE_IDC_HIGH; };
 

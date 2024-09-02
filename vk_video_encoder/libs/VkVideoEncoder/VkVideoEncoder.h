@@ -472,8 +472,8 @@ public:
     VkResult SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                    uint32_t frameIdx, uint32_t ofTotalFrames);
 
-    VkResult AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
-                                   uint32_t frameIdx, uint32_t ofTotalFrames);
+    virtual VkResult AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                           uint32_t frameIdx, uint32_t ofTotalFrames);
 
     VkResult PrintVideoCodingLink(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, uint32_t frameIdx, uint32_t ofTotalFrames)
     {

@@ -108,6 +108,12 @@ public:
 
     int32_t GetImageIndex() { return m_parentIndex; }
 
+    virtual int32_t GetRefCount()
+    {
+        assert(m_refCount > 0);
+        return m_refCount;
+    }
+
 private:
     VkResult SetParent(VulkanVideoImagePool* imagePool, int32_t parentIndex);
 

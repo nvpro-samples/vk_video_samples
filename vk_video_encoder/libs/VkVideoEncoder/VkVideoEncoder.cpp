@@ -86,7 +86,7 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
                 (int)m_encoderConfig->input.planeLayouts[0].rowPitch,                 // src_stride_y,
                 pInputFrameData + m_encoderConfig->input.planeLayouts[1].offset,      // src_u,
                 (int)m_encoderConfig->input.planeLayouts[1].rowPitch,                 // src_stride_u,
-                pInputFrameData + m_encoderConfig->input.planeLayouts[2].offset, // src_v,
+                pInputFrameData + m_encoderConfig->input.planeLayouts[2].offset,      // src_v,
                 (int)m_encoderConfig->input.planeLayouts[2].rowPitch,                 // src_stride_v,
                 writeImagePtr + dstSubresourceLayout[0].offset,                       // dst_y,
                 (int)dstSubresourceLayout[0].rowPitch,                                // dst_stride_y,
@@ -265,20 +265,6 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
         return result;
     }
 
-    if(encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
-        size_t nonVcl = fwrite(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
-               1, encodeFrameInfo->bitstreamHeaderBufferSize,
-               m_encoderConfig->outputFileHandler.GetFileHandle());
-
-        if (m_encoderConfig->verboseFrameStruct) {
-            std::cout << ">>>>>> Non-Vcl data" << (nonVcl ? "SUCCESS" : "FAIL")
-                      << " File Output non-VCL data with size: " << encodeFrameInfo->bitstreamHeaderBufferSize
-                      << ", Input Order: " << encodeFrameInfo->gopPosition.inputOrder
-                      << ", Encode  Order: " << encodeFrameInfo->gopPosition.encodeOrder
-                      << std::endl << std::flush;
-        }
-    }
-
     VkDeviceSize maxSize;
     uint8_t* data = encodeFrameInfo->outputBitstreamBuffer->GetDataPtr(0, maxSize);
 
@@ -310,7 +296,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     // Update the video profile
     encoderConfig->InitVideoProfile();
 
-    encoderConfig->InitDeviceCapbilities(m_vkDevCtx);
+    encoderConfig->InitDeviceCapabilities(m_vkDevCtx);
 
     if (encoderConfig->useDpbArray == false &&
         (encoderConfig->videoCapabilities.flags & VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR) == 0) {
@@ -321,7 +307,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
     // Reconfigure the gopStructure structure because the device may not support
     // specific GOP structure. For example it may not support B-frames.
-    // gopStructure.Init() should be called after encoderConfig->InitDeviceCapabilities().
+    // gopStructure.Init() should be called after  encoderConfig->InitDeviceCapabilities().
     m_encoderConfig->gopStructure.Init(m_encoderConfig->numFrames);
     std::cout << std::endl << "GOP frame count: " << (uint32_t)m_encoderConfig->gopStructure.GetGopFrameCount();
     std::cout << ", IDR period: " << (uint32_t)m_encoderConfig->gopStructure.GetIdrPeriod();
@@ -332,7 +318,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
     m_encoderConfig->gopStructure.DumpFramesGopStructure(0, maxFramesToDump);
 
-    // The the required num of DPB images
+    // The required num of DPB images
     m_maxActiveReferencePictures = encoderConfig->InitDpbCount();
 
     encoderConfig->InitRateControl();
