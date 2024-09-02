@@ -27,14 +27,18 @@ void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     -o, --output                    .264/5,ivf Output H264/5/AV1 File Name \n\
     -c, --codec                     <string> select codec type: avc (h264) or hevc (h265) or av1\n\
     --dpbMode                       <string>  : select DPB mode: layered, separate\n\
-    --inputWidth                    <integer> : Encode Width \n\
-    --inputHeight                   <integer> : Encode Height \n\
+    --inputWidth                    <integer> : Input Width \n\
+    --inputHeight                   <integer> : Input Height \n\
     --inputNumPlanes                <integer> : Number of planes \n\
     --inputChromaSubsampling        <string>  : Chromat subsapling to use, default 420 \n\
     --inputLumaPlanePitch           <integer> : Pitch for Luma plane \n\
     --inputBpp                      <integer> : Bits per pixel, default 8 \n\
     --startFrame                    <integer> : Start Frame Number to be Encoded \n\
     --numFrames                     <integer> : End Frame Number to be Encoded \n\
+    --encodeOffsetX                 <integer> : Encoded offset X \n\
+    --encodeOffsetY                 <integer> : Encoded offset Y \n\
+    --encodeWidth                   <integer> : Encoded width \n\
+    --encodeHeight                  <integer> : Encoded height \n\
     --minQp                         <integer> : Minimum QP value in the range [0, 51] \n\
     --maxQp                         <integer> : Maximum QP value in the range [0, 51] \n\
     --gopFrameCount                 <integer> : Number of frame in the GOP, default 16\n\
