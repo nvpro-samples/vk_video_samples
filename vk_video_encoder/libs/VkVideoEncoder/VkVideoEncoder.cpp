@@ -92,9 +92,8 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
                 (int)dstSubresourceLayout[0].rowPitch,                                // dst_stride_y,
                 writeImagePtr + dstSubresourceLayout[1].offset,                       // dst_uv,
                 (int)dstSubresourceLayout[1].rowPitch,                                // dst_stride_uv,
-                m_encoderConfig->input.width,
-                m_encoderConfig->input.height)) {
-
+                std::min(m_encoderConfig->encodeWidth,  m_encoderConfig->input.width),     // width
+                std::min(m_encoderConfig->encodeHeight, m_encoderConfig->input.height))) { // height
 
         // On success, stage the input frame for the encoder video input
         StageInputFrame(encodeFrameInfo);
@@ -140,7 +139,12 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     (void)linearImgNewLayout;
     (void)srcImgNewLayout;
 
-    CopyLinearToOptimalImage(cmdBuf, linearInputImageView, srcEncodeImageView);
+    VkExtent2D copyImageExtent {
+        std::min(m_encoderConfig->encodeWidth,  m_encoderConfig->input.width),
+        std::min(m_encoderConfig->encodeHeight, m_encoderConfig->input.height)
+    };
+
+    CopyLinearToOptimalImage(cmdBuf, linearInputImageView, srcEncodeImageView, copyImageExtent);
 
     VkResult result = encodeFrameInfo->inputCmdBuffer->EndCommandBufferRecording(cmdBuf);
 
@@ -347,8 +351,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     m_imageDpbFormat = supportedDpbFormats[0];
     m_imageInFormat = supportedInFormats[0];
 
-    // m_maxCodedExtent = { encoderConfig->encodeWidth, encoderConfig->encodeHeight }; // codedSize
-    m_maxCodedExtent = { encoderConfig->input.width, encoderConfig->input.height }; // codedSize
+    m_maxCodedExtent = { encoderConfig->encodeMaxWidth, encoderConfig->encodeMaxHeight }; // max coded size
 
     const uint32_t maxReferencePicturesSlotsCount = encoderConfig->videoCapabilities.maxActiveReferencePictures;
 
@@ -389,10 +392,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         assert(result == VK_SUCCESS);
     }
 
-    VkExtent2D imageExtent {
-        std::max(m_maxCodedExtent.width, encoderConfig->videoCapabilities.minCodedExtent.width),
-        std::max(m_maxCodedExtent.height, encoderConfig->videoCapabilities.minCodedExtent.height)
-    };
+
 
     const VkImageUsageFlags inImageUsage = ( VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR |
                                              VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
@@ -406,10 +406,15 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         return result;
     }
 
+    VkExtent2D linearInputImageExtent {
+        std::max(m_maxCodedExtent.width,  encoderConfig->input.width),
+        std::max(m_maxCodedExtent.height, encoderConfig->input.height)
+    };
+
     result = m_linearInputImagePool->Configure( m_vkDevCtx,
                                                 encoderConfig->numInputImages,
                                                 m_imageInFormat,
-                                                imageExtent,
+                                                linearInputImageExtent,
                                                   ( VK_IMAGE_USAGE_SAMPLED_BIT |
                                                     VK_IMAGE_USAGE_STORAGE_BIT |
                                                     VK_IMAGE_USAGE_TRANSFER_SRC_BIT),
@@ -432,6 +437,11 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         fprintf(stderr, "\nInitEncoder Error: Failed to create inputImagePool.\n");
         return result;
     }
+
+    VkExtent2D imageExtent {
+        std::max(m_maxCodedExtent.width, encoderConfig->videoCapabilities.minCodedExtent.width),
+        std::max(m_maxCodedExtent.height, encoderConfig->videoCapabilities.minCodedExtent.height)
+    };
 
     result = m_inputImagePool->Configure( m_vkDevCtx,
                                           encoderConfig->numInputImages,
@@ -702,6 +712,7 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
 VkResult VkVideoEncoder::CopyLinearToOptimalImage(VkCommandBuffer& commandBuffer,
                                                   VkSharedBaseObj<VkImageResourceView>& srcImageView,
                                                   VkSharedBaseObj<VkImageResourceView>& dstImageView,
+                                                  const VkExtent2D& copyImageExtent,
                                                   uint32_t srcCopyArrayLayer,
                                                   uint32_t dstCopyArrayLayer,
                                                   VkImageLayout srcImageLayout,
@@ -711,6 +722,12 @@ VkResult VkVideoEncoder::CopyLinearToOptimalImage(VkCommandBuffer& commandBuffer
 
     const VkSharedBaseObj<VkImageResource>& srcImageResource = srcImageView->GetImageResource();
     const VkSharedBaseObj<VkImageResource>& dstImageResource = dstImageView->GetImageResource();
+
+    assert(srcImageResource->GetImageCreateInfo().extent.width  >= copyImageExtent.width);
+    assert(srcImageResource->GetImageCreateInfo().extent.height >= copyImageExtent.height);
+
+    assert(dstImageResource->GetImageCreateInfo().extent.width  >= copyImageExtent.width);
+    assert(dstImageResource->GetImageCreateInfo().extent.height >= copyImageExtent.height);
 
     const VkFormat format = srcImageResource->GetImageCreateInfo().format;
 
@@ -722,7 +739,9 @@ VkResult VkVideoEncoder::CopyLinearToOptimalImage(VkCommandBuffer& commandBuffer
 
     // Copy src buffer to image.
     VkImageCopy copyRegion[3]{};
-    copyRegion[0].extent = srcImageResource->GetImageCreateInfo().extent;
+    copyRegion[0].extent.width  = copyImageExtent.width;
+    copyRegion[0].extent.height = copyImageExtent.height;
+    copyRegion[0].extent.depth  = 1;
     copyRegion[0].srcSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
     copyRegion[0].srcSubresource.mipLevel = 0;
     copyRegion[0].srcSubresource.baseArrayLayer = srcCopyArrayLayer;

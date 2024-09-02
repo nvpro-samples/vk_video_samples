@@ -507,6 +507,7 @@ protected:
     VkResult CopyLinearToOptimalImage(VkCommandBuffer& commandBuffer,
                                       VkSharedBaseObj<VkImageResourceView>& srcImageView,
                                       VkSharedBaseObj<VkImageResourceView>& dstImageView,
+                                      const VkExtent2D& copyImageExtent,
                                       uint32_t srcCopyArrayLayer = 0,
                                       uint32_t dstCopyArrayLayer = 0,
                                       VkImageLayout srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
