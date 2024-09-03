@@ -54,10 +54,7 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     // Initialize DPB
     m_dpb.DpbSequenceStart(m_maxActiveReferencePictures, (m_encoderConfig->numRefL0 > 0));
 
-    m_maxDpbSlots = m_maxActiveReferencePictures;
-
-    std::cout << "maxDpbSlots: " << m_maxDpbSlots
-              << ", numRefL0: "    << (uint32_t)m_encoderConfig->numRefL0
+    std::cout << ", numRefL0: "    << (uint32_t)m_encoderConfig->numRefL0
               << ", numRefL1: "    << (uint32_t)m_encoderConfig->numRefL1 << std::endl;
 
     m_encoderConfig->GetRateControlParameters(&m_rateControlInfo, m_rateControlLayersInfo, &m_rateControlInfoH265, m_rateControlLayersInfoH265);
@@ -87,6 +84,7 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     VkVideoSessionParametersCreateInfoKHR encodeSessionParametersCreateInfo = {
         VK_STRUCTURE_TYPE_VIDEO_SESSION_PARAMETERS_CREATE_INFO_KHR, &encodeH265SessionParametersCreateInfo};
     encodeSessionParametersCreateInfo.videoSession = *m_videoSession;
+    encodeSessionParametersCreateInfo.flags = 0;
 
     VkVideoSessionParametersKHR sessionParameters;
     result = m_vkDevCtx->CreateVideoSessionParametersKHR(*m_vkDevCtx,
@@ -209,9 +207,9 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     assert(pFrameInfo->numDpbImageResources == 0);
     if (encodeFrameInfo->setupImageResource != nullptr) { // && pFrameInfo->stdPictureInfo.flags.is_reference
         // setup ref slot index 0
-        pFrameInfo->referenceSlotsInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-        pFrameInfo->referenceSlotsInfo[numReferenceSlots].slotIndex = targetDpbSlot; // m_picIdxToDpb[targetFbIndex];
-        pFrameInfo->referenceSlotsInfo[numReferenceSlots].pPictureResource = setupImageViewPictureResource;
+        pFrameInfo->referenceSlotsInfo[numReferenceSlots] = { VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR,
+                                                              pFrameInfo->stdDpbSlotInfo, targetDpbSlot, setupImageViewPictureResource };
+
         pFrameInfo->setupReferenceSlotInfo = pFrameInfo->referenceSlotsInfo[numReferenceSlots];
         pFrameInfo->encodeInfo.pSetupReferenceSlot = &pFrameInfo->setupReferenceSlotInfo;
 
@@ -280,13 +278,20 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         }
     }
 
+    pFrameInfo->encodeInfo.srcPictureResource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
+    pFrameInfo->encodeInfo.flags = 0;
     // If the current picture is going to be a reference frame, the first
     // entry in the refSlots array contains information about the picture
     // resource associated with this frame. This entry should not be
     // provided in the list of reference resources for the current picture,
     // so skip refSlots[0].
+    pFrameInfo->encodeInfo.srcPictureResource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
     encodeFrameInfo->encodeInfo.referenceSlotCount = numReferenceSlots - 1;
     encodeFrameInfo->encodeInfo.pReferenceSlots = pFrameInfo->referenceSlotsInfo + 1;
+
+    // since encodeInfo.pReferenceSlots points to the address of the next element (+1), it's safe to set it one to -1
+    // this is needed to explicity mark the unused element in BeginInfo for vkCmdBeginVideoCodingKHR() as inactive
+    pFrameInfo->referenceSlotsInfo[0].slotIndex = -1;
 
     // ***************** End Update DPB info ************** //
 
@@ -380,7 +385,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     if (m_encoderConfig->verboseFrameStruct) {
         std::cout << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
-                  << " inputOrderNum: "  << encodeFrameInfo->frameEncodeOrderNum
+                  << " inputOrderNum: "  << encodeFrameInfo->frameInputOrderNum
                   << " encodeFrameNum: " << encodeFrameInfo->frameEncodeOrderNum
                   << " input order: "  << encodeFrameInfo->gopPosition.inputOrder
                   << " encode order: "   << encodeFrameInfo->gopPosition.encodeOrder

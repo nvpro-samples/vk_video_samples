@@ -146,11 +146,11 @@ public:
         VkResult SyncHostOnCmdBuffComplete() {
 
             if (inputCmdBuffer) {
-                inputCmdBuffer->ResetCommandBuffer(true);
+                inputCmdBuffer->ResetCommandBuffer(true, "encoderStagedInputFence");
             }
 
             if (encodeCmdBuffer) {
-                encodeCmdBuffer->ResetCommandBuffer(true);
+                encodeCmdBuffer->ResetCommandBuffer(true, "encoderEncodeFence");
             }
 
             return VK_SUCCESS;
@@ -472,8 +472,8 @@ public:
     VkResult SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                    uint32_t frameIdx, uint32_t ofTotalFrames);
 
-    VkResult AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
-                                   uint32_t frameIdx, uint32_t ofTotalFrames);
+    virtual VkResult AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                           uint32_t frameIdx, uint32_t ofTotalFrames);
 
     VkResult PrintVideoCodingLink(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, uint32_t frameIdx, uint32_t ofTotalFrames)
     {
@@ -591,6 +591,7 @@ protected:
     size_t                                m_streamBufferSize;
     VkVideoEncodeQualityLevelInfoKHR      m_qualityLevelInfo;
     VkVideoEncodeRateControlInfoKHR       m_rateControlInfo;
+    VkVideoEncodeRateControlInfoKHR       m_beginRateControlInfo;
     VkVideoEncodeRateControlLayerInfoKHR  m_rateControlLayersInfo[1];
     int8_t   m_picIdxToDpb[17]; // MAX_DPB_SLOTS + 1
     VkVideoGopStructure::GopState         m_gopState;
@@ -621,7 +622,7 @@ protected:
 #ifdef ENCODER_DISPLAY_QUEUE_SUPPORT
     DisplayQueue                             m_displayQueue;
 #endif // ENCODER_DISPLAY_QUEUE_SUPPORT
-    EncoderFrameQueue                        m_encoderQueue;
+    EncoderFrameQueue                        m_encoderThreadQueue;
     std::thread                              m_encoderQueueConsumerThread;
     VkSharedBaseObj<VkVideoEncodeFrameInfo>  m_lastDeferredFrame;
 };

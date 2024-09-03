@@ -31,6 +31,10 @@
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 
+#ifndef VK_KHR_video_encode_av1
+#define VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR                  ((VkVideoCodecOperationFlagBitsKHR)0x00000000)
+#endif
+
 struct EncoderConfigH264;
 struct EncoderConfigH265;
 class VulkanDeviceContext;
@@ -61,7 +65,7 @@ struct EncoderInputImageParameters
     , height(0)
     , bpp(8)
     , chromaSubsampling(VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR)
-    , numPlanes(2)
+    , numPlanes(3)
     , planeLayouts{}
     , fullImageSize(0)
     , vkFormat(VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM)
@@ -70,7 +74,7 @@ struct EncoderInputImageParameters
 public:
     uint32_t width;
     uint32_t height;
-    uint32_t bpp;
+    uint8_t  bpp;
     VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling;
     uint32_t numPlanes;
     VkSubresourceLayout planeLayouts[3];
@@ -350,9 +354,11 @@ private:
 
 public:
     std::string appName;
+    std::basic_string<uint8_t> deviceUUID;
     int32_t  deviceId;
     int32_t  queueId;
     VkVideoCodecOperationFlagBitsKHR codec;
+    bool useDpbArray;
     uint32_t videoProfileIdc;
     uint32_t numInputImages;
     EncoderInputImageParameters input;
@@ -361,12 +367,15 @@ public:
     uint8_t  encodeNumPlanes;
     uint8_t  numBitstreamBuffersToPreallocate;
     VkVideoChromaSubsamplingFlagBitsKHR  encodeChromaSubsampling;
+    uint32_t encodeOffsetX;
+    uint32_t encodeOffsetY;
     uint32_t encodeWidth;
     uint32_t encodeHeight;
     uint32_t startFrame;
     uint32_t numFrames;
     uint32_t codecBlockAlignment;
     uint32_t qualityLevel;
+    VkVideoEncodeTuningModeKHR tuningMode;
     VkVideoCoreProfile videoCoreProfile;
     VkVideoCapabilitiesKHR videoCapabilities;
     VkVideoEncodeCapabilitiesKHR videoEncodeCapabilities;
@@ -428,6 +437,7 @@ public:
     , deviceId(-1)
     , queueId(0)
     , codec(VK_VIDEO_CODEC_OPERATION_NONE_KHR)
+    , useDpbArray(false)
     , videoProfileIdc((uint32_t)-1)
     , numInputImages(DEFAULT_NUM_INPUT_IMAGES)
     , input()
@@ -436,12 +446,15 @@ public:
     , encodeNumPlanes(2)
     , numBitstreamBuffersToPreallocate(8)
     , encodeChromaSubsampling(VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR)
+    , encodeOffsetX(0)
+    , encodeOffsetY(0)
     , encodeWidth(0)
     , encodeHeight(0)
     , startFrame(0)
     , numFrames(0)
     , codecBlockAlignment(16)
-    , qualityLevel(0) // FIXME: qualityLevel
+    , qualityLevel(0)
+    , tuningMode(VK_VIDEO_ENCODE_TUNING_MODE_DEFAULT_KHR)
     , videoCoreProfile(codec, encodeChromaSubsampling, encodeBitDepthLuma, encodeBitDepthChroma)
     , videoCapabilities()
     , videoEncodeCapabilities()
@@ -513,11 +526,51 @@ public:
         return ret;
     }
 
+    // Assuming we have the length as a parameter:
+    size_t SetDeviceUUID(const uint8_t* pDeviceUuid, size_t length) {
+
+        if ((pDeviceUuid == nullptr) || (length == 0)) {
+            deviceUUID.clear();
+        }
+
+        deviceUUID.assign(pDeviceUuid, pDeviceUuid + length);
+        return length;
+    }
+
+    // If deviceUuid is null-terminated (less common for binary data):
+    size_t SetDeviceUUID(const uint8_t* pDeviceUuid) {
+        size_t length = strlen(reinterpret_cast<const char*>(pDeviceUuid));
+        return SetDeviceUUID(pDeviceUuid, length);
+    }
+
+    size_t SetHexDeviceUUID(const char* pDeviceUuid) {
+
+        size_t deviceUuidLen = strnlen(pDeviceUuid, (VK_UUID_SIZE * 2));
+
+        if (deviceUuidLen <  (VK_UUID_SIZE * 2)) {
+            return 0;
+        }
+
+        deviceUUID.clear();
+        for (size_t i = 0; i < VK_UUID_SIZE; ++i) {
+            uint8_t hexByte = 0;
+            sscanf(pDeviceUuid, "%2hhx", &hexByte);
+            deviceUUID.push_back(hexByte);
+            pDeviceUuid += 2;
+        }
+
+        return VK_UUID_SIZE;
+    }
+
+    const uint8_t* GetDeviceUUID() const {
+        return deviceUUID.empty() ? nullptr : deviceUUID.data();
+    }
+
     virtual EncoderConfigH264* GetEncoderConfigh264() {
         return nullptr;
     }
 
-    virtual EncoderConfigH265* GetEncoderConfigh265(){
+    virtual EncoderConfigH265* GetEncoderConfigh265() {
         return nullptr;
     }
 
@@ -526,17 +579,21 @@ public:
 
     void InitVideoProfile();
 
+    int ParseArguments(int argc, char *argv[]);
+
+    virtual int DoParseArguments(int argc, char *argv[]) { return 0; };
+
     virtual VkResult InitializeParameters()
     {
         if (!input.VerifyInputs()) {
             return VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR;
         }
 
-        if (encodeWidth == 0) {
+        if ((encodeWidth == 0) || (encodeWidth > input.width)) {
             encodeWidth = input.width;
         }
 
-        if (encodeHeight == 0) {
+        if ((encodeHeight == 0) || (encodeHeight > input.height)) {
             encodeHeight = input.height;
         }
 
@@ -544,7 +601,7 @@ public:
     }
 
     // These functions should be overwritten from the codec-specific classes
-    virtual VkResult InitDeviceCapbilities(const VulkanDeviceContext* vkDevCtx) { return VK_ERROR_INITIALIZATION_FAILED; };
+    virtual VkResult InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx) { return VK_ERROR_INITIALIZATION_FAILED; };
 
     virtual uint32_t GetDefaultVideoProfileIdc() { return 0; };
 

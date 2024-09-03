@@ -63,6 +63,9 @@ class VkVideoEncoderH265 : public VkVideoEncoder {
             stdPictureInfo.pRefLists           = &stdReferenceListsInfo;
             stdPictureInfo.pShortTermRefPicSet = &stdShortTermRefPicSet;
             stdPictureInfo.pLongTermRefPics    = &stdLongTermRefPics;
+
+            stdDpbSlotInfo->sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_DPB_SLOT_INFO_KHR;
+            stdDpbSlotInfo->pStdReferenceInfo = stdReferenceInfo;
         };
 
         virtual void Reset(bool releaseResources = true) {
@@ -103,7 +106,6 @@ public:
         , m_rateControlInfoH265{VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR}
         , m_rateControlLayersInfoH265{VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR}
         , m_dpb{}
-        , m_maxDpbSlots(0)
     { }
 
     virtual VkResult InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& encoderConfig);
@@ -150,7 +152,6 @@ private:
     VkVideoEncodeH265RateControlInfoKHR        m_rateControlInfoH265;
     VkVideoEncodeH265RateControlLayerInfoKHR   m_rateControlLayersInfoH265[1];
     VkEncDpbH265                               m_dpb;
-    uint32_t                                   m_maxDpbSlots;
     VkSharedBaseObj<VulkanBufferPool<VkVideoEncodeFrameInfoH265>> m_frameInfoBuffersQueue;
 };
 

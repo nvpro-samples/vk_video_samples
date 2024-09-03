@@ -19,13 +19,15 @@
 #include "VkCodecUtils/Helpers.h"
 
 VkResult
-VulkanBitstreamBufferImpl::Create(const VulkanDeviceContext* vkDevCtx, uint32_t queueFamilyIndex,
+VulkanBitstreamBufferImpl::Create(const VulkanDeviceContext* vkDevCtx,
+        uint32_t queueFamilyIndex, VkBufferUsageFlags usage,
         VkDeviceSize bufferSize, VkDeviceSize bufferOffsetAlignment, VkDeviceSize bufferSizeAlignment,
         const void* pInitializeBufferMemory, VkDeviceSize initializeBufferMemorySize,
         VkSharedBaseObj<VulkanBitstreamBufferImpl>& vulkanBitstreamBuffer)
 {
     VkSharedBaseObj<VulkanBitstreamBufferImpl> vkBitstreamBuffer(new VulkanBitstreamBufferImpl(vkDevCtx,
                                                                       queueFamilyIndex,
+                                                                      usage,
                                                                       bufferOffsetAlignment,
                                                                       bufferSizeAlignment));
     if (!vkBitstreamBuffer) {
@@ -50,6 +52,7 @@ VkDeviceSize VulkanBitstreamBufferImpl::Clone(VkDeviceSize newSize, VkDeviceSize
 {
     VkSharedBaseObj<VulkanBitstreamBufferImpl> vkBitstreamBuffer(new VulkanBitstreamBufferImpl(m_vkDevCtx,
                                                                       m_queueFamilyIndex,
+                                                                      m_usage,
                                                                       m_bufferOffsetAlignment,
                                                                       m_bufferSizeAlignment));
     if (!vkBitstreamBuffer) {
@@ -74,6 +77,7 @@ VkDeviceSize VulkanBitstreamBufferImpl::Clone(VkDeviceSize newSize, VkDeviceSize
 
 VkResult VulkanBitstreamBufferImpl::CreateBuffer(const VulkanDeviceContext* vkDevCtx,
                                                  uint32_t queueFamilyIndex,
+                                                 VkBufferUsageFlags usage,
                                                  VkDeviceSize& bufferSize,
                                                  VkDeviceSize  bufferSizeAlignment,
                                                  VkBuffer& buffer,
@@ -90,8 +94,8 @@ VkResult VulkanBitstreamBufferImpl::CreateBuffer(const VulkanDeviceContext* vkDe
     VkBufferCreateInfo createBufferInfo = VkBufferCreateInfo();
     createBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     createBufferInfo.size = bufferSize;
-    createBufferInfo.usage = VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR;
-    createBufferInfo.flags = 0;
+    createBufferInfo.usage = usage;
+    createBufferInfo.flags = VK_BUFFER_CREATE_VIDEO_PROFILE_INDEPENDENT_BIT_KHR;
     createBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     createBufferInfo.queueFamilyIndexCount = 1;
     createBufferInfo.pQueueFamilyIndices = &queueFamilyIndex;
@@ -158,6 +162,7 @@ VkResult VulkanBitstreamBufferImpl::Initialize(VkDeviceSize bufferSize,
                              VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
     VkResult result = CreateBuffer(m_vkDevCtx,
                                    m_queueFamilyIndex,
+                                   m_usage,
                                    bufferSize,
                                    m_bufferSizeAlignment,
                                    m_buffer,
@@ -244,6 +249,7 @@ VkDeviceSize VulkanBitstreamBufferImpl::Resize(VkDeviceSize newSize, VkDeviceSiz
     }
     VkResult result = CreateBuffer(m_vkDevCtx,
                                    m_queueFamilyIndex,
+                                   m_usage,
                                    newSize,
                                    m_bufferSizeAlignment,
                                    newBuffer,

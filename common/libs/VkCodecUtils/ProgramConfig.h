@@ -31,6 +31,7 @@
 #include "vulkan_interfaces.h"
 
 struct ProgramConfig {
+
      struct ArgSpec {
        const char *flag;
        const char *short_flag;
@@ -250,6 +251,19 @@ struct ProgramConfig {
                     sscanf(args[0], "%x", &deviceId);
                     return true;
                 }},
+            {"--deviceUuid", "-deviceUuid", 1, "UUID HEX string of the device to be used",
+                [this](const char **args, const ProgramArgs &a) {
+                    size_t size = SetHexDeviceUUID(args[0]);
+                    if (size != VK_UUID_SIZE) {
+                        std::cerr << "Invalid deviceUuid format used: " << args[0]
+                                  << " with size: " << strlen(args[0])
+                                  << std::endl;
+                        std::cerr << "deviceUuid must be represented by 16 hex (32 bytes) values."
+                                  << std::endl;
+                        return false;
+                    }
+                    return true;
+                }},
             {"--direct", nullptr, 0, "Direct to display mode",
                 [this](const char **args, const ProgramArgs &a) {
                     directMode = true;
@@ -307,7 +321,48 @@ struct ProgramConfig {
         }
     }
 
+    // Assuming we have the length as a parameter:
+    size_t SetDeviceUUID(const uint8_t* pDeviceUuid, size_t length) {
+
+        if ((pDeviceUuid == nullptr) || (length == 0)) {
+            deviceUUID.clear();
+        }
+
+        deviceUUID.assign(pDeviceUuid, pDeviceUuid + length);
+        return length;
+    }
+
+    // If deviceUuid is null-terminated (less common for binary data):
+    size_t SetDeviceUUID(const uint8_t* pDeviceUuid) {
+        size_t length = strlen(reinterpret_cast<const char*>(pDeviceUuid));
+        return SetDeviceUUID(pDeviceUuid, length);
+    }
+
+    size_t SetHexDeviceUUID(const char* pDeviceUuid) {
+
+        size_t deviceUuidLen = strnlen(pDeviceUuid, (VK_UUID_SIZE * 2));
+
+        if (deviceUuidLen <  (VK_UUID_SIZE * 2)) {
+            return 0;
+        }
+
+        deviceUUID.clear();
+        for (size_t i = 0; i < VK_UUID_SIZE; ++i) {
+            uint8_t hexByte = 0;
+            sscanf(pDeviceUuid, "%2hhx", &hexByte);
+            deviceUUID.push_back(hexByte);
+            pDeviceUuid += 2;
+        }
+
+        return VK_UUID_SIZE;
+    }
+
+    const uint8_t* GetDeviceUUID() const {
+        return deviceUUID.empty() ? nullptr : deviceUUID.data();
+    }
+
     std::string appName;
+    std::basic_string<uint8_t> deviceUUID;
     int initialWidth;
     int initialHeight;
     int initialBitdepth;

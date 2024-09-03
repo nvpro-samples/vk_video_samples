@@ -24,8 +24,10 @@
 #include "vk_video/vulkan_video_codec_h265std.h"
 #include "vk_video/vulkan_video_codec_h265std_encode.h"
 
+#if !defined(VK_USE_PLATFORM_WIN32_KHR)
 #ifndef ARRAYSIZE
 #define ARRAYSIZE(a) ((sizeof(a) / sizeof(a[0])))
+#endif
 #endif
 
 static const uint32_t H264MbSizeAlignment = 16;

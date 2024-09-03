@@ -100,6 +100,7 @@ VkResult VulkanVideoImagePoolNode::CreateImage( const VulkanDeviceContext* vkDev
     m_vkDevCtx           = vkDevCtx;
     m_currentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     m_recreateImage      = false;
+    m_pictureResourceInfo.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
     m_pictureResourceInfo.codedOffset.x = 0;
     m_pictureResourceInfo.codedOffset.y = 0;
     m_pictureResourceInfo.codedExtent.width = pImageCreateInfo->extent.width;

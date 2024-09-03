@@ -75,7 +75,7 @@ void generateColorPatternRgba(ColorPattern pattern, colorType *dataPtr,
         colorType grad[4];
         grad[0] = grad[1] = grad[2] = minC;
         grad[3] = alphaMax;
-        colorType step = (maxC - minC) / height;
+        colorType step = (colorType)((maxC - minC) / height);
 
         colorType *rowStartPtr = dataPtr;
         for (unsigned int i = 0; i < height; i++) {
@@ -246,7 +246,7 @@ static int rgbToYcbcr(const YcbcrBtMatrix* pYcbcrBtMatrix, const YcbcrNormalizeC
     float normRgbColor[3];
 
     for (unsigned int i = 0; i < 3; i++) {
-        normRgbColor[i] = (float)rgb[i] / rgbNormDiv;
+        normRgbColor[i] = (float)rgb[i] / (float)rgbNormDiv;
     }
 
     // 2. Gamma correction in RGB space.
@@ -540,9 +540,9 @@ void VkFillYuv::fillVkCommon(const ImageData *pImageData, VkSubresourceLayout la
         rgbaColPtr = ptr + offset;
     }
 
-    const uint16_t maxC = (1 << rgbBitsPerColor) - 1;
+    const uint16_t maxC = (uint16_t)((1 << rgbBitsPerColor) - 1);
     const uint16_t minC = 0;
-    const uint16_t alphaMax = (1 << rgbBitsPerColor) - 1;
+    const uint16_t alphaMax = (uint16_t)((1 << rgbBitsPerColor) - 1);
 
     ColorPattern patttern = pImageData->patttern;
     unsigned int rgbaSkipChannelsMask = 0;

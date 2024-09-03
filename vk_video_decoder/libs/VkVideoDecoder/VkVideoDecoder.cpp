@@ -401,6 +401,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
 
             result = VulkanBitstreamBufferImpl::Create(m_vkDevCtx,
                     m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
+                    VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR,
                     allocSize,
                     videoCapabilities.minBitstreamBufferOffsetAlignment,
                     videoCapabilities.minBitstreamBufferSizeAlignment,
@@ -960,6 +961,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 					         submitInfo.pSignalSemaphores[2] << std::endl << std::endl;
     }
 
+    assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, videoDecodeCompleteFence));
     VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::DECODE, m_currentVideoQueueIndx,
                                                            1, &submitInfo, videoDecodeCompleteFence);
     assert(result == VK_SUCCESS);
@@ -1069,11 +1071,12 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         result = m_yuvFilter->RecordCommandBuffer(currPicIdx,
                                                   inputImageView, &pPicParams->decodeFrameInfo.dstPictureResource,
-                                                  outputImageView, nullptr);
+                                                  outputImageView, nullptr, frameCompleteFence);
         assert(result == VK_SUCCESS);
 
         if (false) std::cout << currPicIdx << " : OUT view: " << outputImageView->GetImageView() << ", signalSem: " <<  frameCompleteSemaphore << std::endl << std::flush;
         assert(videoDecodeCompleteSemaphore != frameCompleteSemaphore);
+        assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameCompleteFence));
         result = m_yuvFilter->SubmitCommandBuffer(currPicIdx,
                                                   1, &videoDecodeCompleteSemaphore,
                                                   1, &frameCompleteSemaphore,
@@ -1107,6 +1110,7 @@ VkDeviceSize VkVideoDecoder::GetBitstreamBuffer(VkDeviceSize size,
     if (!(availablePoolNode >= 0)) {
         VkResult result = VulkanBitstreamBufferImpl::Create(m_vkDevCtx,
                 m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
+                VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR,
                 newSize, minBitstreamBufferOffsetAlignment,
                 minBitstreamBufferSizeAlignment,
                 pInitializeBufferMemory, initializeBufferMemorySize, newBitstreamBuffer);

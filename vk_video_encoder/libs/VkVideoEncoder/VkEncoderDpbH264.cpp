@@ -234,8 +234,6 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
                                    const StdVideoEncodeH264ReferenceListsInfo *ref,
                                    uint32_t maxMemMgmntCtrlOpsCommands)
 {
-    int32_t i;
-
     DpbEntryH264 *pCurDPBEntry = &m_DPB[m_currDpbIdx];
     if (pCurDPBEntry->complementary_field_pair)  // second field of a CFP
         pCurDPBEntry->picInfo.PicOrderCnt = std::min(pCurDPBEntry->topFOC, pCurDPBEntry->bottomFOC);
@@ -245,23 +243,18 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
 
     // C.4.4 Removal of pictures from the DPB before possible insertion of the current picture
     if (pPicInfo->flags.IdrPicFlag) { // IDR picture
+        for (int32_t i = 0; i < MAX_DPB_SLOTS; i++) {
+            m_DPB[i].top_field_marking = MARKING_UNUSED;
+            m_DPB[i].bottom_field_marking = MARKING_UNUSED;
+            m_DPB[i].state = MARKING_UNUSED;
+            ReleaseFrame(m_DPB[i].dpbImageView);
+        }
         // TODO: infer no_output_of_prior_pics_flag if size has changed etc.
         if (pPicInfo->flags.no_output_of_prior_pics_flag) {
-            for (i = 0; i < MAX_DPB_SLOTS; i++) {
+            for (int32_t i = 0; i < MAX_DPB_SLOTS; i++) {
                 m_DPB[i].state = DPB_EMPTY;  // empty
                 ReleaseFrame(m_DPB[i].dpbImageView);
             }
-        }
-    }
-
-    // this differs from the standard
-    // empty frame buffers marked as "not needed for output" and "unused for reference"
-    for (i = 0; i < MAX_DPB_SLOTS; i++) {
-        if ((!(m_DPB[i].state & DPB_TOP) || (!m_DPB[i].top_needed_for_output && (m_DPB[i].top_field_marking == MARKING_UNUSED))) &&
-                (!(m_DPB[i].state & DPB_BOTTOM) ||
-                 (!m_DPB[i].bottom_needed_for_output && (m_DPB[i].bottom_field_marking == MARKING_UNUSED)))) {
-            m_DPB[i].state = DPB_EMPTY;  // empty
-            ReleaseFrame(m_DPB[i].dpbImageView);
         }
     }
 
@@ -320,8 +313,9 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
         } else {
             while (1) {
                 if (IsDpbFull()) {
+                    int32_t i = 0;
                     // does current have the lowest value of PicOrderCnt?
-                    for (i = 0; i < MAX_DPB_SLOTS; i++) {
+                    for (; i < MAX_DPB_SLOTS; i++) {
                         // If we decide to support MVC, the following check must
                         // be performed only if the view_id of the current DPB
                         // entry matches the view_id in m_DPB[i].
@@ -1040,7 +1034,7 @@ void VkEncDpbH264::GetRefPicList(const PicInfoH264 *pPicInfo,
                 break;
             }
 
-            pDpbSlotInfoLists->refPicList[listNum][i] = dpbIndex;
+            pDpbSlotInfoLists->refPicList[listNum][i] = (uint8_t)dpbIndex;
 
             pDpbSlotInfoLists->dpbSlotsUseMask |= (1 << dpbIndex);
 
@@ -1705,5 +1699,5 @@ void VkEncDpbH264::FillStdReferenceInfo(uint8_t dpbIdx, StdVideoEncodeH264Refere
 
     pStdReferenceInfo->PicOrderCnt = pDpbEntry->picInfo.PicOrderCnt;
     pStdReferenceInfo->flags.used_for_long_term_reference = isLongTerm;
-    pStdReferenceInfo->long_term_frame_idx = isLongTerm ? pDpbEntry->longTermFrameIdx : (uint16_t)-1;
+    pStdReferenceInfo->long_term_frame_idx = isLongTerm ? (uint16_t)pDpbEntry->longTermFrameIdx : (uint16_t)-1;
 }

@@ -402,7 +402,7 @@ VkResult VulkanDeviceContext::InitDebugReport(bool validate, bool validateVerbos
     return CreateDebugReportCallbackEXT(m_instance, &debug_report_info, nullptr, &m_debugReport);
 }
 
-VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId,
+VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const uint8_t* pDeviceUuid,
                                                  const VkQueueFlags requestQueueTypes,
                                                  const VkWsiDisplay* pWsiDisplay,
                                                  const VkQueueFlags requestVideoDecodeQueueMask,
@@ -424,6 +424,17 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId,
         GetPhysicalDeviceProperties(physicalDevice, &props);
         if ((deviceId != -1) && (props.deviceID != (uint32_t)deviceId)) {
             continue;
+        }
+
+        if (pDeviceUuid != nullptr) {
+            size_t length = strlen(reinterpret_cast<const char*>(pDeviceUuid));
+            if (length != VK_UUID_SIZE) {
+                continue;
+            }
+
+            if ( 0 != strncmp((const char *)props.pipelineCacheUUID, (const char *)pDeviceUuid, VK_UUID_SIZE)) {
+                continue;
+            }
         }
 
         if (!HasAllDeviceExtensions(physicalDevice, props.deviceName)) {
@@ -729,8 +740,20 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
     devInfo.ppEnabledExtensionNames = m_reqDeviceExtensions.data();
 
     // disable all features
-    VkPhysicalDeviceFeatures features = {};
-    devInfo.pEnabledFeatures = &features;
+    devInfo.pEnabledFeatures = nullptr;
+
+    VkPhysicalDeviceVideoMaintenance1FeaturesKHR videoMaintenance1Features {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR,
+                                                                               nullptr,
+                                                                               false};
+
+    VkPhysicalDeviceSynchronization2Features synchronization2Features {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
+                                                                    nullptr,
+                                                                    false};
+    synchronization2Features.pNext = &videoMaintenance1Features;
+
+    VkPhysicalDeviceFeatures2 deviceFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &synchronization2Features};
+    GetPhysicalDeviceFeatures2(m_physDevice, &deviceFeatures);
+    devInfo.pNext = &deviceFeatures;
 
     VkResult result = CreateDevice(m_physDevice, &devInfo, nullptr, &m_device);
     if (result != VK_SUCCESS) {

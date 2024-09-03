@@ -147,7 +147,7 @@ VkResult VulkanCommandBufferPool::Configure(const VulkanDeviceContext*   vkDevCt
     }
 
     if (createFences) {
-        result = m_fenceSet.CreateSet(vkDevCtx, numPoolNodes, VK_FENCE_CREATE_SIGNALED_BIT);
+        result = m_fenceSet.CreateSet(vkDevCtx, numPoolNodes);
         if (result != VK_SUCCESS) {
             assert(!"ERROR: CreateCommandBufferPool!");
             return result;

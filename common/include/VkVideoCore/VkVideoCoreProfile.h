@@ -94,13 +94,18 @@ public:
             }
             if (pProfileExt) {
                 m_h264EncodeProfile = *pProfileExt;
+                VkVideoEncodeUsageInfoKHR const * pEncodeUsageInfo = (VkVideoEncodeUsageInfoKHR const *)pProfileExt->pNext;
+                if (pEncodeUsageInfo && (pEncodeUsageInfo->sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR)) {
+                    m_encodeUsageInfo = *pEncodeUsageInfo;
+                    m_h264EncodeProfile.pNext = &m_encodeUsageInfo;
+                }
             } else {
                 //  Use default ext profile parameters
                 m_h264DecodeProfile.sType         = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_KHR;
                 m_h264DecodeProfile.stdProfileIdc = STD_VIDEO_H264_PROFILE_IDC_MAIN;
+                m_h264EncodeProfile.pNext         = nullptr;
             }
             m_profile.pNext = &m_h264EncodeProfile;
-            m_h264EncodeProfile.pNext = NULL;
         } else if (m_profile.videoCodecOperation == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR) {
             VkVideoEncodeH265ProfileInfoKHR const * pProfileExt = (VkVideoEncodeH265ProfileInfoKHR const *)pVideoProfileExt;
             if (pProfileExt && (pProfileExt->sType != VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_INFO_KHR)) {
@@ -109,10 +114,16 @@ public:
             }
             if (pProfileExt) {
                 m_h265EncodeProfile = *pProfileExt;
+                VkVideoEncodeUsageInfoKHR const * pEncodeUsageInfo = (VkVideoEncodeUsageInfoKHR const *)pProfileExt->pNext;
+                if (pEncodeUsageInfo && (pEncodeUsageInfo->sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR)) {
+                    m_encodeUsageInfo = *pEncodeUsageInfo;
+                    m_h265EncodeProfile.pNext = &m_encodeUsageInfo;
+                }
             } else {
               //  Use default ext profile parameters
                 m_h265EncodeProfile.sType         = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_INFO_KHR;
                 m_h265EncodeProfile.stdProfileIdc = STD_VIDEO_H265_PROFILE_IDC_MAIN;
+                m_h265EncodeProfile.pNext         = nullptr;
             }
             m_profile.pNext = &m_h265EncodeProfile;
             m_h265EncodeProfile.pNext = NULL;
@@ -142,7 +153,8 @@ public:
                           VkVideoChromaSubsamplingFlagsKHR chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_INVALID_KHR,
                           VkVideoComponentBitDepthFlagsKHR lumaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR,
                           VkVideoComponentBitDepthFlagsKHR chromaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR,
-                          uint32_t videoH26xProfileIdc = 0)
+                          uint32_t videoH26xProfileIdc = 0,
+                          VkVideoEncodeTuningModeKHR tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_DEFAULT_KHR)
         : m_profile({VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR, NULL,
                      videoCodecOperation, chromaSubsampling, lumaBitDepth, chromaBitDepth}),
           m_profileList({VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR, NULL, 1, &m_profile})
@@ -156,6 +168,10 @@ public:
         VkVideoEncodeH264ProfileInfoKHR encodeH264ProfilesRequest;
         VkVideoEncodeH265ProfileInfoKHR encodeH265ProfilesRequest;
         VkBaseInStructure* pVideoProfileExt = NULL;
+
+        VkVideoEncodeUsageInfoKHR encodeUsageInfoRequest{VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR,
+                                                         NULL, 0, 0, tuningMode};
+        VkBaseInStructure* pEncodeUsageInfo = (VkBaseInStructure*)&encodeUsageInfoRequest;
 
         if (videoCodecOperation == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
             decodeH264ProfilesRequest.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PROFILE_INFO_KHR;
@@ -174,14 +190,14 @@ public:
             pVideoProfileExt = (VkBaseInStructure*)&decodeH265ProfilesRequest;
         } else if (videoCodecOperation == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) {
             encodeH264ProfilesRequest.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_KHR;
-            encodeH264ProfilesRequest.pNext = NULL;
+            encodeH264ProfilesRequest.pNext = pEncodeUsageInfo;
             encodeH264ProfilesRequest.stdProfileIdc = (videoH26xProfileIdc == 0) ?
                                                        STD_VIDEO_H264_PROFILE_IDC_INVALID :
                                                        (StdVideoH264ProfileIdc)videoH26xProfileIdc;
             pVideoProfileExt = (VkBaseInStructure*)&encodeH264ProfilesRequest;
         } else if (videoCodecOperation == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR) {
             encodeH265ProfilesRequest.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_INFO_KHR;
-            encodeH265ProfilesRequest.pNext = NULL;
+            encodeH265ProfilesRequest.pNext = pEncodeUsageInfo;
             encodeH265ProfilesRequest.stdProfileIdc = (videoH26xProfileIdc == 0) ?
                                                        STD_VIDEO_H265_PROFILE_IDC_INVALID :
                                                        (StdVideoH265ProfileIdc)videoH26xProfileIdc;
@@ -254,7 +270,7 @@ public:
 
     const VkVideoEncodeH264ProfileInfoKHR* GetEncodeH264Profile() const
     {
-        if (m_h264DecodeProfile.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_KHR) {
+        if (m_h264EncodeProfile.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_KHR) {
             return &m_h264EncodeProfile;
         } else {
             return NULL;
@@ -263,7 +279,7 @@ public:
 
     const VkVideoEncodeH265ProfileInfoKHR* GetEncodeH265Profile() const
     {
-        if (m_h265DecodeProfile.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_INFO_KHR) {
+        if (m_h265EncodeProfile.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_INFO_KHR) {
             return &m_h265EncodeProfile;
         } else {
             return NULL;
@@ -662,6 +678,7 @@ public:
 private:
     VkVideoProfileInfoKHR     m_profile;
     VkVideoProfileListInfoKHR m_profileList;
+    VkVideoEncodeUsageInfoKHR m_encodeUsageInfo;
     union
     {
         VkVideoDecodeH264ProfileInfoKHR m_h264DecodeProfile;

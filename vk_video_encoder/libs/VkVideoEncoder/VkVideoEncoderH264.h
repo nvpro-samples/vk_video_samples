@@ -66,6 +66,9 @@ public:
             naluSliceInfo.pStdSliceHeader = &stdSliceHeader;
 
             stdPictureInfo.pRefLists           = &stdReferenceListsInfo;
+
+            stdDpbSlotInfo->sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_DPB_SLOT_INFO_KHR;
+            stdDpbSlotInfo->pStdReferenceInfo = stdReferenceInfo;
         };
 
         virtual void Reset(bool releaseResources = true) {
