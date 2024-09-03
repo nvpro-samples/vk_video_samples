@@ -19,6 +19,8 @@
 
 #include <atomic>
 #include <limits>
+
+#include <cpudetect.h>
 #include "VkCodecUtils/VulkanBitstreamBuffer.h"
 
 #define UNUSED_LOCAL_VAR(expr) do { (void)(expr); } while (0)
@@ -110,6 +112,7 @@ protected:
     int32_t m_bDecoderInitFailed;               // Set when m_pClient->BeginSequence fails to create the decoder
     int32_t m_lCheckPTS;                        // Run the m_bFilterTimestamps for the first few framew to look for out of order PTS
     NVCodecErrors m_eError;
+    SIMD_ISA m_NextStartCode;
 public:
     VulkanVideoDecoder(VkVideoCodecOperationFlagBitsKHR std);
     virtual ~VulkanVideoDecoder();
@@ -137,6 +140,19 @@ public:
     virtual VkResult Initialize(const VkParserInitDecodeParameters *pNvVkp);
     virtual bool Deinitialize();
     virtual bool ParseByteStream(const VkParserBitstreamPacket *pck, size_t *pParsedBytes);
+    template <SIMD_ISA T>
+    bool ParseByteStreamSimd(const VkParserBitstreamPacket *pck, size_t *pParsedBytes);
+    bool ParseByteStreamC(const VkParserBitstreamPacket *pck, size_t *pParsedBytes);
+#if defined(__x86_64__) || defined (_M_X64)
+    bool ParseByteStreamAVX2(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
+    bool ParseByteStreamAVX512(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
+    bool ParseByteStreamSSSE3(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
+#elif defined(__aarch64__)
+    bool ParseByteStreamSVE(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
+    bool ParseByteStreamNEON(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
+#elif defined(__ARM_ARCH_7A__) || defined(_M_ARM64)
+    bool ParseByteStreamNEON(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
+#endif
     virtual bool GetDisplayMasteringInfo(VkParserDisplayMasteringInfo *) { return false; }
 
 protected:
@@ -151,6 +167,7 @@ protected:
 
 protected:
     // Byte stream parsing
+    template<SIMD_ISA T>
     size_t next_start_code(const uint8_t *pdatain, size_t datasize, bool& found_start_code);
     void nal_unit();
     void init_dbits();
