@@ -323,7 +323,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     m_encoderConfig->gopStructure.DumpFramesGopStructure(0, maxFramesToDump);
 
     // The required num of DPB images
-    m_maxActiveReferencePictures = encoderConfig->InitDpbCount();
+    m_maxDpbPicturesCount = encoderConfig->InitDpbCount();
 
     encoderConfig->InitRateControl();
 
@@ -353,7 +353,8 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
     m_maxCodedExtent = { encoderConfig->encodeMaxWidth, encoderConfig->encodeMaxHeight }; // max coded size
 
-    const uint32_t maxReferencePicturesSlotsCount = encoderConfig->videoCapabilities.maxActiveReferencePictures;
+    const uint32_t maxActiveReferencePicturesCount = encoderConfig->videoCapabilities.maxActiveReferencePictures;
+    const uint32_t m_maxDpbPicturesCount = std::min<uint32_t>(m_maxDpbPicturesCount, encoderConfig->videoCapabilities.maxDpbSlots);
 
     VkVideoSessionCreateFlagsKHR sessionCreateFlags{};
 #ifdef VK_KHR_video_maintenance1
@@ -371,9 +372,8 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                            m_imageInFormat,
                                            m_maxCodedExtent,
                                            m_imageDpbFormat,
-                                           m_maxActiveReferencePictures,
-                                           std::max<uint32_t>(m_maxActiveReferencePictures,
-                                                              maxReferencePicturesSlotsCount)) ) {
+                                           m_maxDpbPicturesCount,
+                                           maxActiveReferencePicturesCount) ) {
 
         result = VulkanVideoSession::Create( m_vkDevCtx,
                                              sessionCreateFlags,
@@ -382,9 +382,8 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                              m_imageInFormat,
                                              m_maxCodedExtent,
                                              m_imageDpbFormat,
-                                             m_maxActiveReferencePictures,
-                                             std::max<uint32_t>(m_maxActiveReferencePictures,
-                                                                maxReferencePicturesSlotsCount),
+                                             m_maxDpbPicturesCount,
+                                             maxActiveReferencePicturesCount,
                                              m_videoSession);
 
         // after creating a new video session, we need a codec reset.
@@ -467,7 +466,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     }
 
     result = m_dpbImagePool->Configure(m_vkDevCtx,
-                                       maxReferencePicturesSlotsCount + 4,
+                                       maxActiveReferencePicturesCount + 4,
                                        m_imageDpbFormat,
                                        imageExtent,
                                        dpbImageUsage,

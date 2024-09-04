@@ -52,7 +52,7 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     }
 
     // Initialize DPB
-    m_dpb.DpbSequenceStart(m_maxActiveReferencePictures, (m_encoderConfig->numRefL0 > 0));
+    m_dpb.DpbSequenceStart(m_maxDpbPicturesCount, (m_encoderConfig->numRefL0 > 0));
 
     std::cout << ", numRefL0: "    << (uint32_t)m_encoderConfig->numRefL0
               << ", numRefL1: "    << (uint32_t)m_encoderConfig->numRefL1 << std::endl;

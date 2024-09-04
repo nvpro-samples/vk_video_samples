@@ -379,7 +379,7 @@ public:
         , m_imageDpbFormat()
         , m_imageInFormat()
         , m_maxCodedExtent()
-        , m_maxActiveReferencePictures(16)
+        , m_maxDpbPicturesCount(16)
         , m_minStreamBufferSize(2 * 1024 * 1024)
         , m_streamBufferSize(m_minStreamBufferSize)
         , m_rateControlInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR }
@@ -587,7 +587,7 @@ protected:
     VkFormat                              m_imageDpbFormat;
     VkFormat                              m_imageInFormat;
     VkExtent2D                            m_maxCodedExtent;
-    uint32_t                              m_maxActiveReferencePictures;
+    uint32_t                              m_maxDpbPicturesCount;
     size_t                                m_minStreamBufferSize;
     size_t                                m_streamBufferSize;
     VkVideoEncodeQualityLevelInfoKHR      m_qualityLevelInfo;

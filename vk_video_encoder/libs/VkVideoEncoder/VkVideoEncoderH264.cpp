@@ -54,7 +54,7 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     // Initialize DPB
     m_dpb264 = VkEncDpbH264::CreateInstance();
     assert(m_dpb264);
-    m_dpb264->DpbSequenceStart(m_maxActiveReferencePictures);
+    m_dpb264->DpbSequenceStart(m_maxDpbPicturesCount);
 
     m_encoderConfig->GetRateControlParameters(&m_rateControlInfo, m_rateControlLayersInfo, &m_h264.m_rateControlInfoH264, m_h264.m_rateControlLayersInfoH264);
 
