@@ -1,7 +1,4 @@
 #include <cpudetect.h>
-#include <cstdint>
-#include "VulkanVideoParserIf.h"
-#include "VulkanVideoDecoder.h"
 #include "ByteStreamParser.h"
 #include "NvVideoParser/nvVulkanVideoUtils.h"
 #include "NvVideoParser/nvVulkanVideoParser.h"

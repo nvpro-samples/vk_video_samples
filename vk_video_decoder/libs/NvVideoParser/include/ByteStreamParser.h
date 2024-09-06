@@ -1,3 +1,6 @@
+#ifndef _VULKANBYTESTREAMPARSER_H_
+#define _VULKANBYTESTREAMPARSER_H_
+
 #include <stdarg.h>
 #include "VulkanVideoParserIf.h"
 #include "VulkanVideoDecoder.h"
@@ -220,3 +223,5 @@ bool VulkanVideoDecoder::ParseByteStreamSimd(const VkParserBitstreamPacket* pck,
 
     return (m_eError == NV_NO_ERROR ? true : false);
 }
+
+#endif //_VULKANBYTESTREAMPARSER_H_

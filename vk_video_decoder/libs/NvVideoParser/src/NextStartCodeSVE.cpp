@@ -1,7 +1,6 @@
 #if defined(__aarch64__) // || defined(_M_ARM64)
 #include "arm_sve.h"
 #include <cpudetect.h>
-#include <cstdint>
 #include "ByteStreamParser.h"
 #include "NvVideoParser/nvVulkanVideoUtils.h"
 #include "NvVideoParser/nvVulkanVideoParser.h"

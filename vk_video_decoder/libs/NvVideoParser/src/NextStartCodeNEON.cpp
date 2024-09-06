@@ -1,7 +1,6 @@
 #if defined(__aarch64__) || defined(__ARM_ARCH_7A__) || defined(_M_ARM64)
 #include "arm_neon.h"
 #include <cpudetect.h>
-#include <cstdint>
 #include "ByteStreamParser.h"
 #include "NvVideoParser/nvVulkanVideoUtils.h"
 #include "NvVideoParser/nvVulkanVideoParser.h"

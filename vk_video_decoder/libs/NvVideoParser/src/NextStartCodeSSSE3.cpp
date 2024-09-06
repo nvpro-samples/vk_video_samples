@@ -1,9 +1,6 @@
 #if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
 #include <cpudetect.h>
-#include <cstdint>
-#include "VulkanVideoParserIf.h"
-#include "VulkanVideoDecoder.h"
 #include "ByteStreamParser.h"
 #include "NvVideoParser/nvVulkanVideoUtils.h"
 #include "NvVideoParser/nvVulkanVideoParser.h"
