@@ -4,13 +4,6 @@
 #include "NvVideoParser/nvVulkanVideoUtils.h"
 #include "NvVideoParser/nvVulkanVideoParser.h"
 #include <algorithm>
-#if defined(__ARM_FEATURE_SVE) // TODO: tymur: check SVE version compilation and run on  armv9/armv8.2+sve device
-#include "arm_sve.h"
-#elif defined(__aarch64__) || defined(_M_ARM64) || __ARM_ARCH >= 7
-#include "arm_neon.h"
-#elif defined(_M_X64) || defined(__x86_64__)
-#include <immintrin.h>
-#endif
 
 template<SIMD_ISA T>
 bool VulkanVideoDecoder::ParseByteStreamSimd(const VkParserBitstreamPacket* pck, size_t *pParsedBytes)

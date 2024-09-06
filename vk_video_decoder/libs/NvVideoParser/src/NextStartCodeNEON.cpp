@@ -1,5 +1,5 @@
 #if defined(__aarch64__) || defined(__ARM_ARCH_7A__) || defined(_M_ARM64)
-#include <immintrin.h>
+#include "arm_neon.h"
 #include <cpudetect.h>
 #include <cstdint>
 #include "ByteStreamParser.h"
@@ -11,7 +11,8 @@ bool VulkanVideoDecoder::ParseByteStreamNEON(const VkParserBitstreamPacket* pck,
     return ParseByteStreamSimd<SIMD_ISA::NEON>(pck, pParsedBytes);
 }
 
-size_t VulkanVideoDecoder::next_start_code_neon<SIMD_ISA:NEON>(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+template<>
+size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::NEON>(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
 {
     size_t i = 0;
     size_t datasize32 = (datasize >> 5) << 5;
