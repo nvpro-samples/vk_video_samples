@@ -1,4 +1,4 @@
-#if defined(__aarch64__) || defined(_M_ARM64)
+#if defined(__aarch64__) // || defined(_M_ARM64)
 #include "arm_sve.h"
 #include <cpudetect.h>
 #include <cstdint>
