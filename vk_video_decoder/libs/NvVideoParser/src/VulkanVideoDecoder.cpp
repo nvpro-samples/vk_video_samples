@@ -310,12 +310,13 @@ bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, siz
     {
         return ParseByteStreamSSSE3(pck, pParsedBytes);
     } else
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) || defined(__ARM_ARCH_7A__) || defined(_M_ARM64)
+#if defined(__aarch64__)
     if (m_NextStartCode == SIMD_ISA::SVE)
     {
         return ParseByteStreamSVE(pck, pParsedBytes);
     } else
-#elif defined(__aarch64__) || defined(__ARM_ARCH_7A__) || defined(_M_ARM64)
+#endif //__aarch64__
     if (m_NextStartCode == SIMD_ISA::NEON)
     {
         return ParseByteStreamNEON(pck, pParsedBytes);
