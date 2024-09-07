@@ -572,7 +572,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     }
 
     // Start the queue consumer thread
-    if (m_enableEncoderQueue) {
+    if (m_enableEncoderThreadQueue) {
 
         const uint32_t maxPendingQueueNodes = 2;
         m_encoderThreadQueue.SetMaxPendingQueueNodes(std::min<uint32_t>(m_encoderConfig->gopStructure.GetGopFrameCount() + 1, maxPendingQueueNodes));
@@ -1018,7 +1018,7 @@ VkResult VkVideoEncoder::PushOrderedFrames()
     VkResult result = VK_SUCCESS;
     if (m_lastDeferredFrame) {
 
-        if (m_enableEncoderQueue) {
+        if (m_enableEncoderThreadQueue) {
 
             bool success = m_encoderThreadQueue.Push(m_lastDeferredFrame);
             if (success) {
@@ -1042,7 +1042,7 @@ VkResult VkVideoEncoder::PushOrderedFrames()
 
 VkResult VkVideoEncoder::ProcessOrderedFrames(VkSharedBaseObj<VkVideoEncodeFrameInfo>& frames, uint32_t numFrames) {
 
-    std::vector<std::pair<std::string, std::function<VkResult(VkSharedBaseObj<VkVideoEncodeFrameInfo>&, uint32_t, uint32_t)>>> callbacks = {
+    static const std::vector<std::pair<std::string, std::function<VkResult(VkSharedBaseObj<VkVideoEncodeFrameInfo>&, uint32_t, uint32_t)>>> callbacks = {
         {"PrintVideoCodingLink",  [this](VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame, uint32_t frameIdx, uint32_t ofTotalFrames) { return PrintVideoCodingLink(frame, frameIdx, ofTotalFrames); }},
         {"ProcessDpb",            [this](VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame, uint32_t frameIdx, uint32_t ofTotalFrames) { return ProcessDpb(frame, frameIdx, ofTotalFrames); }},
         {"RecordVideoCodingCmd",  [this](VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame, uint32_t frameIdx, uint32_t ofTotalFrames) { return RecordVideoCodingCmd(frame, frameIdx, ofTotalFrames); }},
@@ -1073,7 +1073,7 @@ bool VkVideoEncoder::WaitForThreadsToComplete()
 {
     PushOrderedFrames();
 
-    if (m_enableEncoderQueue) {
+    if (m_enableEncoderThreadQueue) {
         m_encoderThreadQueue.SetFlushAndExit();
         if (m_encoderQueueConsumerThread.joinable()) {
             m_encoderQueueConsumerThread.join();
@@ -1118,6 +1118,8 @@ void VkVideoEncoder::ConsumerThread()
                       << ", Order: " << (uint32_t)encodeFrameInfo->gopPosition.encodeOrder << std::endl << std::flush;
 
            VkResult result = ProcessOrderedFrames(encodeFrameInfo, 0);
+           VkVideoEncodeFrameInfo::ReleaseChildrenFrames(encodeFrameInfo);
+           assert(encodeFrameInfo == nullptr);
            if (result != VK_SUCCESS) {
                std::cout << "Error processing frames from the frame thread!" << std::endl;
                m_encoderThreadQueue.SetFlushAndExit();

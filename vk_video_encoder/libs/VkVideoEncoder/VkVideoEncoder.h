@@ -400,7 +400,7 @@ public:
         , m_useSeparateOutputImages(false)
         , m_useLinearInput(false)
         , m_resetEncoder(false)
-        , m_enableEncoderQueue(false)
+        , m_enableEncoderThreadQueue(false)
         , m_verbose(false)
         , m_numDeferredFrames()
         , m_controlCmd(VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR |
@@ -610,7 +610,7 @@ protected:
     uint32_t m_useSeparateOutputImages : 1;
     uint32_t m_useLinearInput : 1;
     uint32_t m_resetEncoder : 1;
-    uint32_t m_enableEncoderQueue : 1;
+    uint32_t m_enableEncoderThreadQueue : 1;
     uint32_t m_verbose : 1;
     uint32_t                                 m_numDeferredFrames;
     VkVideoCodingControlFlagsKHR             m_controlCmd;

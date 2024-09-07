@@ -25,6 +25,7 @@
 #include <functional>
 #include <future>
 #include <stdexcept>
+#include <iostream>
 
 class VkThreadPool
 {
@@ -43,7 +44,11 @@ public:
                         task = std::move(this->tasks.front());
                         this->tasks.pop();
                     }
-                    task();
+                    try {
+                        task();
+                    } catch (const std::exception& e) {
+                        std::cerr << "Task threw an exception: " << e.what() << std::endl;
+                    }
                 }
             });
     }

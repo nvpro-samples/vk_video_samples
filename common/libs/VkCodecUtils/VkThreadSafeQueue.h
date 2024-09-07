@@ -43,7 +43,7 @@ public:
         // Wait for the consumer to consume the previous node item(s)
         m_condProducer.wait(lock, [this]{ return (!m_queueIsFlushing && (m_queue.size() < m_maxPendingQueueNodes)); });
 
-        m_queue.push(std::move(node));
+        m_queue.push(node);
         m_condConsumer.notify_one();
 
         return true;
@@ -62,7 +62,7 @@ public:
         }
 
         m_condConsumer.wait(lock, [this]{ return ((m_queueIsFlushing == false) && !m_queue.empty()); });
-        node = std::move(m_queue.front());
+        node = m_queue.front();
         m_queue.pop();
         // Notify the producer
         m_condProducer.notify_one();
@@ -101,7 +101,7 @@ private:
         if (m_queue.empty()) {
             return false;
         }
-        node = std::move(m_queue.front());
+        node = m_queue.front();
         m_queue.pop();
         return true;
     }
