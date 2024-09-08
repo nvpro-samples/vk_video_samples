@@ -261,12 +261,18 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
                                              1, sizeof(encodeResult), &encodeResult, sizeof(encodeResult),
                                              VK_QUERY_RESULT_WITH_STATUS_BIT_KHR | VK_QUERY_RESULT_WAIT_BIT);
 
-    assert(result == VK_SUCCESS);
-    assert(encodeResult.status == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
 
     if(result != VK_SUCCESS) {
         fprintf(stderr, "\nRetrieveData Error: Failed to get vcl query pool results.\n");
+        assert(result == VK_SUCCESS);
         return result;
+    }
+
+    if (encodeResult.status != VK_QUERY_RESULT_STATUS_COMPLETE_KHR) {
+        fprintf(stderr, "\nencodeResult.status is (0x%x) NOT STATUS_COMPLETE! bitstreamStartOffset %u, bitstreamSize %u\n",
+                encodeResult.status, encodeResult.bitstreamStartOffset, encodeResult.bitstreamSize);
+        assert(encodeResult.status == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
+        return VK_INCOMPLETE;
     }
 
     VkDeviceSize maxSize;

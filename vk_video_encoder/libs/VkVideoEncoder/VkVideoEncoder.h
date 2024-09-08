@@ -181,6 +181,8 @@ public:
                 return VK_SUCCESS;  // Base case: No more frames, return success
             }
 
+            assert(processFramesIndex < totalFrameCount);
+
             // Invoke the callback for the current frame
             VkResult result = callback(frame, processFramesIndex, totalFrameCount);
             if (result != VK_SUCCESS) {
