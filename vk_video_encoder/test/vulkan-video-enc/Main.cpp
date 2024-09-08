@@ -37,7 +37,6 @@ int main(int argc, char** argv)
         if (result != VK_SUCCESS) {
             std::cerr << "Error encoding frame: "  << frameNum  << ", error: " << result << std::endl;
         }
-        std::cout << "Encoded frame: " << frameNumEncoded << std::endl;
     }
 
     result = vulkanVideoEncoder->GetBitstream();

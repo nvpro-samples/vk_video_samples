@@ -116,6 +116,10 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
 {
     VkVideoEncodeFrameInfoH265* pFrameInfo = GetEncodeFrameInfoH265(encodeFrameInfo);
 
+    if (m_encoderConfig->verboseFrameStruct) {
+        DumpStateInfo("process DPB", 3, encodeFrameInfo, frameIdx, ofTotalFrames);
+    }
+
     // TODO: Optimize this below very complex and inefficient DPB management code.
 
     uint32_t numRefL0 = m_encoderConfig->numRefL0;
@@ -172,7 +176,7 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     setupImageViewPictureResource->codedExtent = pFrameInfo->encodeInfo.srcPictureResource.codedExtent;
 
     VkEncDpbH265::RefPicSet refPicSet{};
-    int8_t targetDpbSlot = m_dpb.DpbPictureStart(encodeFrameInfo->frameEncodeOrderNum,
+    int8_t targetDpbSlot = m_dpb.DpbPictureStart(encodeFrameInfo->frameEncodeInputOrderNum,
                                                  &pFrameInfo->stdPictureInfo,
                                                  pShortTermRefPicSet,
                                                  pLongTermRefPicsSps,
@@ -369,12 +373,12 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     assert(m_encoderConfig);
     assert(encodeFrameInfo->srcEncodeImageResource);
 
-    encodeFrameInfo->frameEncodeOrderNum = m_encodeFrameNum++;
+    encodeFrameInfo->frameEncodeInputOrderNum = m_encodeInputFrameNum++;
 
     bool isIdr = m_encoderConfig->gopStructure.GetPositionInGOP(m_gopState,
                                                                 encodeFrameInfo->gopPosition,
-                                                                (encodeFrameInfo->frameEncodeOrderNum == 0),
-                                                                uint32_t(m_encoderConfig->numFrames - encodeFrameInfo->frameEncodeOrderNum));
+                                                                (encodeFrameInfo->frameEncodeInputOrderNum == 0),
+                                                                uint32_t(m_encoderConfig->numFrames - encodeFrameInfo->frameEncodeInputOrderNum));
 
     if (isIdr) {
         assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
@@ -384,13 +388,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     encodeFrameInfo->picOrderCntVal = encodeFrameInfo->gopPosition.inputOrder;
 
     if (m_encoderConfig->verboseFrameStruct) {
-        std::cout << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
-                  << " inputOrderNum: "  << encodeFrameInfo->frameInputOrderNum
-                  << " encodeFrameNum: " << encodeFrameInfo->frameEncodeOrderNum
-                  << " input order: "  << encodeFrameInfo->gopPosition.inputOrder
-                  << " encode order: "   << encodeFrameInfo->gopPosition.encodeOrder
-                  << " picOrderCntVal: " << encodeFrameInfo->picOrderCntVal
-                  << std::endl << std::flush;
+        DumpStateInfo("input", 1, encodeFrameInfo);
 
         if (encodeFrameInfo->lastFrame) {
             std::cout << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
@@ -430,7 +428,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     // provided offset into the bitstream buffer.
     encodeFrameInfo->encodeInfo.dstBufferOffset = 0; // FIXME: pEncPicParams->bitstreamBufferOffset;
 
-    if (isIdr && (encodeFrameInfo->frameEncodeOrderNum == 0 /*|| pEncodeConfigH265->repeatSPSPPS || m_bReconfigForcedIDR*/)) {
+    if (isIdr && (encodeFrameInfo->frameEncodeInputOrderNum == 0 /*|| pEncodeConfigH265->repeatSPSPPS || m_bReconfigForcedIDR*/)) {
 
         result = EncodeVideoSessionParameters(encodeFrameInfo);
         if (result != VK_SUCCESS ) {

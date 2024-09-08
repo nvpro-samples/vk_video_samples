@@ -219,6 +219,10 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
 {
     VkVideoEncodeFrameInfoH264* pFrameInfo = GetEncodeFrameInfoH264(encodeFrameInfo);
 
+    if (m_encoderConfig->verboseFrameStruct) {
+        DumpStateInfo("process DPB", 3, encodeFrameInfo, frameIdx, ofTotalFrames);
+    }
+
     // TODO: Optimize this below very complex and inefficient DPB management code.
 
     VkVideoGopStructure::FrameType picType = encodeFrameInfo->gopPosition.pictureType;
@@ -487,12 +491,12 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     assert(m_encoderConfig);
     assert(encodeFrameInfo->srcEncodeImageResource);
 
-    encodeFrameInfo->frameEncodeOrderNum = m_encodeFrameNum++;
+    encodeFrameInfo->frameEncodeInputOrderNum = m_encodeInputFrameNum++;
 
     bool isIdr = m_encoderConfig->gopStructure.GetPositionInGOP(m_gopState,
                                                                 encodeFrameInfo->gopPosition,
-                                                                (encodeFrameInfo->frameEncodeOrderNum == 0),
-                                                                uint32_t(m_encoderConfig->numFrames - encodeFrameInfo->frameEncodeOrderNum));
+                                                                (encodeFrameInfo->frameEncodeInputOrderNum == 0),
+                                                                uint32_t(m_encoderConfig->numFrames - encodeFrameInfo->frameEncodeInputOrderNum));
 
     if (isIdr) {
         assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
@@ -501,14 +505,8 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     encodeFrameInfo->picOrderCntVal = 2 * encodeFrameInfo->gopPosition.inputOrder;
 
-    if (true) {
-        std::cout << "Input: " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
-                  << " inputOrderNum: "  << encodeFrameInfo->frameInputOrderNum
-                  << " encodeFrameNum: " << encodeFrameInfo->frameEncodeOrderNum
-                  << " encode order: "  << encodeFrameInfo->gopPosition.inputOrder
-                  << " encode order: "   << encodeFrameInfo->gopPosition.encodeOrder
-                  << " picOrderCntVal: " << encodeFrameInfo->picOrderCntVal
-                  << std::endl << std::flush;
+    if (m_encoderConfig->verboseFrameStruct) {
+        DumpStateInfo("input", 1, encodeFrameInfo);
 
         if (encodeFrameInfo->lastFrame) {
             std::cout << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
@@ -573,7 +571,7 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         m_IDRPicId++;
     }
 
-    if (isIdr && (encodeFrameInfo->frameEncodeOrderNum == 0)) {
+    if (isIdr && (encodeFrameInfo->frameEncodeInputOrderNum == 0)) {
         VkResult result = EncodeVideoSessionParameters(encodeFrameInfo);
         if (result != VK_SUCCESS) {
             return result;
@@ -584,7 +582,7 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     // For simplicity, only indicate that the state is to be reset for the
     // first IDR picture.
     // FIXME: The reset must use a RESET control command.
-    if (encodeFrameInfo->frameEncodeOrderNum == 0) {
+    if (encodeFrameInfo->frameEncodeInputOrderNum == 0) {
         pFrameInfo->encodeInfo.flags |= VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR;
     }
 

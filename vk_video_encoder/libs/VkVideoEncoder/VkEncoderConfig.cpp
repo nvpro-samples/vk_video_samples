@@ -55,7 +55,8 @@ void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --rateControlMode               <integer> or <string>: select different rate control modes: \n\
                                         default(0), disabled(1), cbr(2), vbr(4)\n\
     --deviceID                      <string>  : DeviceID to be used, \n\
-    --deviceUuid                    <string>  : deviceUuid to be used \n");
+    --deviceUuid                    <string>  : deviceUuid to be used \n\
+    --testOutOfOrderRecording      Testing only: enable testing for out-of-order-recording\n");
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR)) {
         fprintf(stderr, "\nH264 specific arguments: None\n");
@@ -385,6 +386,8 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                                "deviceUuid must be represented by 16 hex (32 bytes) values.", args[i].c_str(), args[i].length());
                 return -1;
             }
+        } else if (args[i] == "--testOutOfOrderRecording") {
+            enableOutOfOrderRecording = true;
         } else {
             argcount++;
             arglist.push_back((char*)args[i].c_str());
