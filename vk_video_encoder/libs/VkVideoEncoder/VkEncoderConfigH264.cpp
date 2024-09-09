@@ -408,7 +408,7 @@ bool EncoderConfigH264::InitRateControl()
 
     double frameRate = ((frameRateNumerator > 0) && (frameRateDenominator > 0))
                            ? (double)frameRateNumerator / frameRateDenominator
-                           : (double)FRAME_RATE_NUM_DEFAULT / FRAME_RATE_DEN_DEFAULT;
+                           : (double)FRAME_RATE_NUM_DEFAULT / (double)FRAME_RATE_DEN_DEFAULT;
 
     // WAR for super HD resolution (bypass H264 level check for frame mode and use level 5.2)
     if ((frameSizeInMbs > ((uint32_t)levelLimits[levelLimitsSize - 1].maxFS) ||
