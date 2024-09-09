@@ -367,7 +367,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     m_maxCodedExtent = { encoderConfig->encodeMaxWidth, encoderConfig->encodeMaxHeight }; // max coded size
 
     const uint32_t maxActiveReferencePicturesCount = encoderConfig->videoCapabilities.maxActiveReferencePictures;
-    const uint32_t m_maxDpbPicturesCount = std::min<uint32_t>(m_maxDpbPicturesCount, encoderConfig->videoCapabilities.maxDpbSlots);
+    const uint32_t maxDpbPicturesCount = std::min<uint32_t>(m_maxDpbPicturesCount, encoderConfig->videoCapabilities.maxDpbSlots);
 
     VkVideoSessionCreateFlagsKHR sessionCreateFlags{};
 #ifdef VK_KHR_video_maintenance1
@@ -385,7 +385,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                            m_imageInFormat,
                                            m_maxCodedExtent,
                                            m_imageDpbFormat,
-                                           m_maxDpbPicturesCount,
+                                           maxDpbPicturesCount,
                                            maxActiveReferencePicturesCount) ) {
 
         result = VulkanVideoSession::Create( m_vkDevCtx,
@@ -395,7 +395,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                              m_imageInFormat,
                                              m_maxCodedExtent,
                                              m_imageDpbFormat,
-                                             m_maxDpbPicturesCount,
+                                             maxDpbPicturesCount,
                                              maxActiveReferencePicturesCount,
                                              m_videoSession);
 
