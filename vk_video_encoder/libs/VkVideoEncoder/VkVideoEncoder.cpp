@@ -479,7 +479,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     }
 
     result = m_dpbImagePool->Configure(m_vkDevCtx,
-                                       maxActiveReferencePicturesCount + 4,
+                                       std::max<uint32_t>(maxDpbPicturesCount, maxActiveReferencePicturesCount) + 4,
                                        m_imageDpbFormat,
                                        imageExtent,
                                        dpbImageUsage,
