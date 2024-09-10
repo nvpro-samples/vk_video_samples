@@ -57,9 +57,9 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
         bool success = m_linearInputImagePool->GetAvailableImage(encodeFrameInfo->srcStagingImageView,
                                                                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
         assert(success);
-    if (!success) {
-        return VK_ERROR_INITIALIZATION_FAILED;
-    }
+        if (!success) {
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
         assert(encodeFrameInfo->srcStagingImageView != nullptr);
     }
 
@@ -112,9 +112,9 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
                                                                  VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR);
         assert(success);
         assert(encodeFrameInfo->srcEncodeImageResource != nullptr);
-    if (!success || encodeFrameInfo->srcEncodeImageResource == nullptr) {
-        return VK_ERROR_INITIALIZATION_FAILED;
-    }
+        if (!success || encodeFrameInfo->srcEncodeImageResource == nullptr) {
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
     }
 
     m_inputCommandBufferPool->GetAvailablePoolNode(encodeFrameInfo->inputCmdBuffer);

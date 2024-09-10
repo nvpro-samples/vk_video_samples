@@ -204,29 +204,29 @@ VkResult VulkanVideoEncoderImpl::EncodeNextFrame(int64_t& frameNumEncoded)
     }
 
     if (m_encoderConfig->verboseFrameStruct) {
-         std::cout << "####################################################################################" << std::endl
-                   << "Start processing current input frame index: " << m_lastFrameIndex << std::endl;
-     }
+        std::cout << "####################################################################################" << std::endl
+                  << "Start processing current input frame index: " << m_lastFrameIndex << std::endl;
+    }
 
-     VkSharedBaseObj<VkVideoEncoder::VkVideoEncodeFrameInfo> encodeFrameInfo;
-     m_encoder->GetAvailablePoolNode(encodeFrameInfo);
-     assert(encodeFrameInfo);
-     // load frame data from the file
-     VkResult result = m_encoder->LoadNextFrame(encodeFrameInfo);
-     if (result != VK_SUCCESS) {
-         std::cout << "ERROR processing input frame index: " << m_lastFrameIndex << std::endl;
-         return result;
-     }
+    VkSharedBaseObj<VkVideoEncoder::VkVideoEncodeFrameInfo> encodeFrameInfo;
+    m_encoder->GetAvailablePoolNode(encodeFrameInfo);
+    assert(encodeFrameInfo);
+    // load frame data from the file
+    VkResult result = m_encoder->LoadNextFrame(encodeFrameInfo);
+    if (result != VK_SUCCESS) {
+        std::cout << "ERROR processing input frame index: " << m_lastFrameIndex << std::endl;
+        return result;
+    }
 
-     frameNumEncoded = encodeFrameInfo->frameInputOrderNum;
+    frameNumEncoded = encodeFrameInfo->frameInputOrderNum;
 
-     if (m_encoderConfig->verboseFrameStruct) {
-         std::cout << "End processing current input frame index: " << m_lastFrameIndex << std::endl;
-     }
+    if (m_encoderConfig->verboseFrameStruct) {
+        std::cout << "End processing current input frame index: " << m_lastFrameIndex << std::endl;
+    }
 
-     m_lastFrameIndex++;
+    m_lastFrameIndex++;
 
-     return result;
+    return result;
 }
 
 VK_VIDEO_ENCODER_EXPORT
