@@ -60,7 +60,7 @@ void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --qpI                           <integer> : QP or QIndex (for AV1) used for I-frames when RC disabled\n\
     --qpP                           <integer> : QP or QIndex (for AV1) used for P-frames when RC disabled\n\
     --qpB                           <integer> : QP or QIndex (for AV1) used for B-frames when RC disabled\n\
-    --deviceID                      <string>  : DeviceID to be used, \n\
+    --deviceID                      <hexadec> : deviceID to be used, \n\
     --deviceUuid                    <string>  : deviceUuid to be used \n\
     --testOutOfOrderRecording      Testing only: enable testing for out-of-order-recording\n");
 
