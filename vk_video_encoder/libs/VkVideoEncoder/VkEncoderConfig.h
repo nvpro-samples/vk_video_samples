@@ -390,6 +390,7 @@ public:
 
     int32_t  minQp;
     int32_t  maxQp;
+    ConstQpSettings constQp;
 
     VkVideoGopStructure gopStructure;
     int8_t dpbCount;
@@ -471,6 +472,7 @@ public:
     , frameRateDenominator()
     , minQp(-1)
     , maxQp(-1)
+    , constQp()
     , gopStructure(DEFAULT_GOP_FRAME_COUNT,
                    DEFAULT_GOP_IDR_PERIOD,
                    DEFAULT_CONSECUTIVE_B_FRAME_COUNT,

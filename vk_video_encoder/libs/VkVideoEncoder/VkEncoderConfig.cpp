@@ -54,6 +54,11 @@ void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
                                         default(0), hq(1), lowlatency(2), lossless(3) \n\
     --rateControlMode               <integer> or <string>: select different rate control modes: \n\
                                         default(0), disabled(1), cbr(2), vbr(4)\n\
+    --averageBitrate                <integer> : Target bitrate for cbr/vbr RC modes\n\
+    --maxBitrate                    <integer> : Peak bitrate for cbr/vbr RC modes\n\
+    --qpI                           <integer> : QP or QIndex (for AV1) used for I-frames when RC disabled\n\
+    --qpP                           <integer> : QP or QIndex (for AV1) used for P-frames when RC disabled\n\
+    --qpB                           <integer> : QP or QIndex (for AV1) used for B-frames when RC disabled\n\
     --deviceID                      <string>  : DeviceID to be used, \n\
     --deviceUuid                    <string>  : deviceUuid to be used \n\
     --testOutOfOrderRecording      Testing only: enable testing for out-of-order-recording\n");
@@ -370,6 +375,32 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                 fprintf(stderr, "Invalid rateControlMode: %s\n", rc.c_str());
                 return -1;
             }
+        }
+        else if (args[i] == "--averageBitrate") {
+            if (++i >= argc || sscanf(args[i].c_str(), "%u", &averageBitrate) != 1) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+        } else if (args[i] == "--maxBitrate") {
+                if (++i >= argc || sscanf(args[i].c_str(), "%u", &maxBitrate) != 1) {
+                    fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                    return -1;
+                }
+        } else if (args[i] == "--qpI") {
+                if (++i >= argc || sscanf(args[i].c_str(), "%u", &constQp.qpIntra) != 1) {
+                    fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                    return -1;
+                }
+        } else if (args[i] == "--qpP") {
+                if (++i >= argc || sscanf(args[i].c_str(), "%u", &constQp.qpInterP) != 1) {
+                    fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                    return -1;
+                }
+        } else if (args[i] == "--qpB") {
+                if (++i >= argc || sscanf(args[i].c_str(), "%u", &constQp.qpInterB) != 1) {
+                    fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                    return -1;
+                }
         } else if (args[i] == "--deviceID") {
             if ((++i >= argc) || (sscanf(args[i].c_str(), "%x", &deviceId) != 1)) {
                  fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
