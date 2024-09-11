@@ -151,6 +151,8 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     // Now submit the staged input to the queue
     SubmitStagedInputFrame(encodeFrameInfo);
 
+    encodeFrameInfo->constQp = m_encoderConfig->constQp;
+
     // and encode the input frame with the encoder next
     EncodeFrame(encodeFrameInfo);
 
