@@ -293,8 +293,6 @@ class VulkanAV1Decoder : public VulkanVideoDecoder {
     uint8_t last_intra_only;
     uint8_t coded_lossless;
     uint8_t all_lossless : 1;
-    uint8_t delta_lf_present : 1;
-    uint8_t delta_lf_multi : 1;
 
     // frame header
     uint16_t upscaled_width;
