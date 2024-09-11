@@ -2138,17 +2138,17 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
 
     pStd->delta_q_res = 0;
     pStd->delta_lf_res = 0;
-    delta_lf_present = 0;
-    delta_lf_multi = 0;
+    pic_flags->delta_lf_present = 0;
+    pic_flags->delta_lf_multi = 0;
     pic_flags->delta_q_present = pic_info->quantization.base_q_idx > 0 ? u(1) : 0;
     if (pic_flags->delta_q_present) {
         pStd->delta_q_res = u(2); // 1 << u(2); use log2(). Shift is done at HW
         if (!pic_flags->allow_intrabc) {
-            delta_lf_present = u(1);
+            pic_flags->delta_lf_present = u(1);
         }
-        if (delta_lf_present) {
+        if (pic_flags->delta_lf_present) {
             pStd->delta_lf_res = u(2); //1 << u(2);
-            delta_lf_multi = u(1); // TODO curious not used by the api...
+            pic_flags->delta_lf_multi = u(1);
             // av1_reset_loop_filter_delta(xd, av1_num_planes(cm)); // FIXME
         }
     }
