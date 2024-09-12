@@ -31,6 +31,13 @@ VkImageResource::VkImageResource(const VulkanDeviceContext* vkDevCtx,
    , m_isLinearImage(false), m_is16Bit(false), m_isSubsampledX(false), m_isSubsampledY(false) {
 
     const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(pImageCreateInfo->format);
+    VkImageSubresource subResource = {};
+    if (mpInfo == nullptr) {
+        m_isLinearImage = true;
+        subResource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        m_vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, image, &subResource, &m_layouts[0]);
+        return;
+    }
 
     m_isSubsampledX = (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledX);
     m_isSubsampledY = (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledY);
@@ -49,7 +56,6 @@ VkImageResource::VkImageResource(const VulkanDeviceContext* vkDevCtx,
         isUnnormalizedRgba = true;
     }
 
-    VkImageSubresource subResource = {};
     if (mpInfo && !isUnnormalizedRgba) {
         switch (mpInfo->planesLayout.layout) {
             case YCBCR_SINGLE_PLANE_UNNORMALIZED:
