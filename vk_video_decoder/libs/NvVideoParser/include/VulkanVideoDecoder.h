@@ -141,7 +141,6 @@ public:
     virtual bool Deinitialize();
     virtual bool ParseByteStream(const VkParserBitstreamPacket *pck, size_t *pParsedBytes);
     template <SIMD_ISA T>
-
     bool ParseByteStreamSimd(const VkParserBitstreamPacket *pck, size_t *pParsedBytes);
     bool ParseByteStreamC(const VkParserBitstreamPacket *pck, size_t *pParsedBytes);
 #if defined(__x86_64__) || defined (_M_X64)
