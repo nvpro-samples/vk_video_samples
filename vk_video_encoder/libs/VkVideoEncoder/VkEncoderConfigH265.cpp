@@ -105,9 +105,8 @@ int8_t EncoderConfigH265::InitDpbCount()
 
 uint32_t EncoderConfigH265::GetMaxDpbSize(uint32_t pictureSizeInSamplesY, int32_t levelIdx)
 {
-
     uint32_t maxDpbSize = 0;
-    const uint32_t maxDpbPicBuf = 6;
+    const uint32_t maxDpbPicBuf = 9;
 
     // From A.4.1 General tier and level limits
     if (pictureSizeInSamplesY <= (levelLimits[levelIdx].maxLumaPS >> 2)) {
