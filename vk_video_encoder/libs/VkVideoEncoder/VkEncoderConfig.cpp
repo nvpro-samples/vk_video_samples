@@ -33,6 +33,7 @@ void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --inputChromaSubsampling        <string>  : Chromat subsapling to use, default 420 \n\
     --inputLumaPlanePitch           <integer> : Pitch for Luma plane \n\
     --inputBpp                      <integer> : Bits per pixel, default 8 \n\
+    --msbShift                      <integer> : Shift the input plane pixels to the left when bpp > 8, default: 16 - inputBpp  \n\
     --startFrame                    <integer> : Start Frame Number to be Encoded \n\
     --numFrames                     <integer> : End Frame Number to be Encoded \n\
     --encodeOffsetX                 <integer> : Encoded offset X \n\
@@ -228,6 +229,11 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
             }
         }  else if (args[i] == "--inputBpp") {
             if ((++i >= argc) || (sscanf(args[i].c_str(), "%hhu", &input.bpp) != 1)) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+        }  else if (args[i] == "--msbShift") {
+            if ((++i >= argc) || (sscanf(args[i].c_str(), "%hhu", &input.msbShift) != 1)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
@@ -562,6 +568,14 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, char *argv[],
 
 void EncoderConfig::InitVideoProfile()
 {
+    if (encodeBitDepthLuma == 0) {
+        encodeBitDepthLuma = input.bpp;
+    }
+
+    if (encodeBitDepthChroma == 0) {
+        encodeBitDepthChroma = encodeBitDepthLuma;
+    }
+
     // update the video profile
     videoCoreProfile = VkVideoCoreProfile(codec, encodeChromaSubsampling,
                                           GetComponentBitDepthFlagBits(encodeBitDepthLuma),

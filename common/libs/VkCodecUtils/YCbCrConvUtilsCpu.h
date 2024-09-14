@@ -34,55 +34,84 @@
 #include <assert.h>
 #include <stdint.h>
 
+template <typename planeType>  // T can be uint8_t for 8-bit or uint16_t for 16-bit
 class YCbCrConvUtilsCpu
 {
 public:
-    YCbCrConvUtilsCpu();
-    virtual ~YCbCrConvUtilsCpu();
 
-    static void CopyRow(const uint8_t* src, uint8_t* dst, int count) {
+    YCbCrConvUtilsCpu()
+    {
+        // TODO Auto-generated constructor stub
+
+    }
+
+    virtual ~YCbCrConvUtilsCpu()
+    {
+        // TODO Auto-generated destructor stub
+    }
+
+    static void CopyRow(const planeType* src, planeType* dst, int count, int /* shiftBits */) {
+
+        count *= sizeof(planeType);
         memcpy(dst, src, count);
     }
 
-    static void CopyPlane(const uint8_t* src_y,
+    static void CopyRowShiftLeft(const planeType* src, planeType* dst, int count, int shiftBits) {
+
+        for (int col = 0; col < count; col++) {
+            *dst = *src << shiftBits;
+            dst++;
+            src++;
+        }
+    }
+
+    static void CopyPlane(const planeType* src_y,
                           int src_stride_y,
-                          uint8_t* dst_y,
+                          planeType* dst_y,
                           int dst_stride_y,
                           int width,
-                          int height) {
+                          int height,
+                          int shiftBits) {
         int y;
         if ((width <= 0) || (height == 0)) {
             return;
         }
+
         // Negative height means invert the image.
         if (height < 0) {
             height = -height;
             dst_y = dst_y + (height - 1) * dst_stride_y;
             dst_stride_y = -dst_stride_y;
         }
+
+        // Nothing to do.
+        if ((src_y == dst_y) && (src_stride_y == dst_stride_y)) {
+            return;
+        }
+
         // Coalesce rows.
         if ((src_stride_y == width) && (dst_stride_y == width)) {
             width *= height;
             height = 1;
             src_stride_y = dst_stride_y = 0;
         }
-        // Nothing to do.
-        if ((src_y == dst_y) && (src_stride_y == dst_stride_y)) {
-            return;
-        }
+
+        void (*pfCopyRow)(const planeType* src, planeType* dst, int width, int shiftBits) =
+                (shiftBits == 0) ? CopyRow : CopyRowShiftLeft;
 
         // Copy plane
         for (y = 0; y < height; ++y) {
-            CopyRow(src_y, dst_y, width);
+            pfCopyRow(src_y, dst_y, width, shiftBits);
             src_y += src_stride_y;
             dst_y += dst_stride_y;
         }
     }
 
-    static void MergeUVRow(const uint8_t* src_u,
-                           const uint8_t* src_v,
-                           uint8_t* dst_uv,
-                           int width) {
+    static void MergeUVRow(const planeType* src_u,
+                           const planeType* src_v,
+                           planeType* dst_uv,
+                           int width,
+                           int /* shiftBits */) {
 
         for (int x = 0; x < width - 1; x += 2) {
             dst_uv[0] = src_u[x];
@@ -97,14 +126,34 @@ public:
         }
     }
 
-    static void MergeUVPlane(const uint8_t* src_u,
+    static void MergeUVRowShiftLeft(const planeType* src_u,
+                           const planeType* src_v,
+                           planeType* dst_uv,
+                           int width,
+                           int shiftBits) {
+
+        for (int x = 0; x < width - 1; x += 2) {
+            dst_uv[0] = src_u[x] << shiftBits;
+            dst_uv[1] = src_v[x] << shiftBits;
+            dst_uv[2] = src_u[x + 1] << shiftBits;
+            dst_uv[3] = src_v[x + 1] << shiftBits;
+            dst_uv += 4;
+        }
+        if (width & 1) {
+            dst_uv[0] = src_u[width - 1] << shiftBits;
+            dst_uv[1] = src_v[width - 1] << shiftBits;
+        }
+    }
+
+    static void MergeUVPlane(const planeType* src_u,
                              int src_stride_u,
-                             const uint8_t* src_v,
+                             const planeType* src_v,
                              int src_stride_v,
-                             uint8_t* dst_uv,
+                             planeType* dst_uv,
                              int dst_stride_uv,
                              int width,
-                             int height) {
+                             int height,
+                             int shiftBits) {
 
         if ((width <= 0) || (height == 0)) {
             return;
@@ -125,33 +174,51 @@ public:
             src_stride_u = src_stride_v = dst_stride_uv = 0;
         }
 
+        void (*pfMergeUVRow)(const planeType* src_u,
+                const planeType* src_v,
+                planeType* dst_uv,
+                int width,
+                int shiftBits) =
+                (shiftBits == 0) ? MergeUVRow : MergeUVRowShiftLeft;
+
         for (int y = 0; y < height; ++y) {
             // Merge a row of U and V into a row of UV.
-            MergeUVRow(src_u, src_v, dst_uv, width);
+            pfMergeUVRow(src_u, src_v, dst_uv, width, shiftBits);
             src_u += src_stride_u;
             src_v += src_stride_v;
             dst_uv += dst_stride_uv;
         }
+
     }
 
-    static int I420ToNV12(const uint8_t* src_y,
+    static int I420ToNV12(const planeType* src_y,
                           int src_stride_y,
-                          const uint8_t* src_u,
+                          const planeType* src_u,
                           int src_stride_u,
-                          const uint8_t* src_v,
+                          const planeType* src_v,
                           int src_stride_v,
-                          uint8_t* dst_y,
+                          planeType* dst_y,
                           int dst_stride_y,
-                          uint8_t* dst_uv,
+                          planeType* dst_uv,
                           int dst_stride_uv,
                           int width,
-                          int height) {
+                          int height,
+                          int shiftBits = 0) {
 
         int halfwidth = (width + 1) / 2;
         int halfheight = (height + 1) / 2;
         if (!src_y || !src_u || !src_v || !dst_uv || width <= 0 || height == 0) {
             return -1;
         }
+
+        src_stride_y /= sizeof(planeType);
+        dst_stride_y /= sizeof(planeType);
+
+        src_stride_u /= sizeof(planeType);
+        src_stride_v /= sizeof(planeType);
+
+        dst_stride_uv /= sizeof(planeType);
+
         // Negative height means invert the image.
         if (height < 0) {
             height = -height;
@@ -165,11 +232,11 @@ public:
         }
 
         if (dst_y) {
-            CopyPlane(src_y, src_stride_y, dst_y, dst_stride_y, width, height);
+            CopyPlane(src_y, src_stride_y, dst_y, dst_stride_y, width, height, shiftBits);
         }
 
         MergeUVPlane(src_u, src_stride_u, src_v, src_stride_v, dst_uv, dst_stride_uv,
-                     halfwidth, halfheight);
+                     halfwidth, halfheight, shiftBits);
 
         return 0;
     }
