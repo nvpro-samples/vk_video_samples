@@ -620,9 +620,7 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         HandleCtrlCmd(encodeFrameInfo);
     }
 
-    const bool preFlushQueue = isIdr;
-    const bool postFlushQueue = encodeFrameInfo->lastFrame || isReference;
-    EnqueueFrame(encodeFrameInfo, preFlushQueue, postFlushQueue);
+    EnqueueFrame(encodeFrameInfo, isIdr, isReference);
 
     return VK_SUCCESS;
 }

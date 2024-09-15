@@ -435,7 +435,7 @@ public:
     uint32_t enableVideoDecoder : 1;
     uint32_t enableHwLoadBalancing : 1;
     uint32_t selectVideoWithComputeQueue : 1;
-    uint32_t enableOutOfOrderRecording : 1;
+    uint32_t enableOutOfOrderRecording : 1; // Testing only - don't use for production!
 
     EncoderConfig()
     : refCount(0)

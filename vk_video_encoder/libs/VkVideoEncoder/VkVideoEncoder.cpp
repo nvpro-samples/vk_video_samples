@@ -1091,12 +1091,14 @@ VkResult VkVideoEncoder::PushOrderedFrames()
             if (!m_encoderConfig->enableOutOfOrderRecording) {
                 result = ProcessOrderedFrames(m_lastDeferredFrame, m_numDeferredFrames);
             } else {
+                // Testing only - don't use for production!
                 result = ProcessOutOfOrderFrames(m_lastDeferredFrame, m_numDeferredFrames);
             }
             VkVideoEncodeFrameInfo::ReleaseChildrenFrames(m_lastDeferredFrame);
             assert(m_lastDeferredFrame == nullptr);
         }
         m_numDeferredFrames = 0;
+        m_numDeferredRefFrames = 0;
     }
     return result;
 }
@@ -1231,6 +1233,7 @@ void VkVideoEncoder::ConsumerThread()
            if (!m_encoderConfig->enableOutOfOrderRecording) {
                result = ProcessOrderedFrames(encodeFrameInfo, 0);
            } else {
+               // Testing only - don't use for production!
                result = ProcessOutOfOrderFrames(encodeFrameInfo, 0);
            }
            VkVideoEncodeFrameInfo::ReleaseChildrenFrames(encodeFrameInfo);

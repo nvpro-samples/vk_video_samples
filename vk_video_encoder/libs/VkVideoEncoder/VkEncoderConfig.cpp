@@ -424,6 +424,8 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                 return -1;
             }
         } else if (args[i] == "--testOutOfOrderRecording") {
+            // Testing only - don't use this feature for production!
+            fprintf(stdout, "Warning: %s should only be used for testing!\n", args[i].c_str());
             enableOutOfOrderRecording = true;
         } else {
             argcount++;

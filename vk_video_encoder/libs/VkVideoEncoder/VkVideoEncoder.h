@@ -438,6 +438,7 @@ public:
         , m_enableEncoderThreadQueue(false)
         , m_verbose(false)
         , m_numDeferredFrames()
+        , m_numDeferredRefFrames()
         , m_controlCmd(VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR |
                        VK_VIDEO_CODING_CONTROL_ENCODE_QUALITY_LEVEL_BIT_KHR |
                        VK_VIDEO_CODING_CONTROL_ENCODE_RATE_CONTROL_BIT_KHR)
@@ -554,12 +555,34 @@ protected:
 
     int32_t DeinitEncoder();
 
-    bool EnqueueFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, bool preFlushQueue, bool postFlushQueue) {
+    bool EnqueueFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                      bool isIdrFrame, bool isReferenceFrame) {
+
+        uint32_t holdRefFramesInQueue = 0;
+        if (m_encoderConfig->enableOutOfOrderRecording) {
+
+            // Testing only - don't use for production!
+            if (m_encoderConfig->gopStructure.GetConsecutiveBFrameCount() == 0) {
+                // Queue at least 4 IDR, I, P frames to be able to test the out-of-order
+                // recording sequence.
+                holdRefFramesInQueue = 4;
+            } else {
+                holdRefFramesInQueue = 2;
+            }
+
+            if (holdRefFramesInQueue > 4) {
+                // We don't want to make the queue too deep. This would require a lot of reference images
+                holdRefFramesInQueue = 4;
+            }
+        }
+        const bool preFlushQueue = isIdrFrame;
+        const bool postFlushQueue = (encodeFrameInfo->lastFrame ||
+                                        (isReferenceFrame && (m_numDeferredRefFrames == holdRefFramesInQueue)));
 
         if (preFlushQueue) {
             PushOrderedFrames();
         }
-        InsertOrdered(encodeFrameInfo);
+        InsertOrdered(encodeFrameInfo, isReferenceFrame);
         if (postFlushQueue) {
             PushOrderedFrames();
         }
@@ -568,6 +591,8 @@ protected:
 
     void ConsumerThread();
 
+    // Insert frames in order from the reference frame first and B frames next in the list.
+    // Uses a simple ordering for now where B frame as reference are not supported yet.
     void InsertOrdered(VkSharedBaseObj<VkVideoEncodeFrameInfo>& current,
                        VkSharedBaseObj<VkVideoEncodeFrameInfo>& prev,
                        VkSharedBaseObj<VkVideoEncodeFrameInfo>& node) {
@@ -592,15 +617,17 @@ protected:
     }
 
     // Wrapper function to start the recursion
-    void InsertOrdered(VkSharedBaseObj<VkVideoEncodeFrameInfo>& dependantFrames) {
+    void InsertOrdered(VkSharedBaseObj<VkVideoEncodeFrameInfo>& dependantFrames, bool isReferenceFrame) {
+        m_numDeferredFrames++;
+        if (isReferenceFrame) {
+            m_numDeferredRefFrames++;
+        }
         if (m_lastDeferredFrame == nullptr) {
             m_lastDeferredFrame = dependantFrames;
-            m_numDeferredFrames++;
             return;
         }
         VkSharedBaseObj<VkVideoEncodeFrameInfo> prev;
         InsertOrdered(m_lastDeferredFrame, prev, dependantFrames);
-        m_numDeferredFrames++;
     }
 
     VkResult PushOrderedFrames();
@@ -650,6 +677,7 @@ protected:
     uint32_t m_enableEncoderThreadQueue : 1;
     uint32_t m_verbose : 1;
     uint32_t                                 m_numDeferredFrames;
+    uint32_t                                 m_numDeferredRefFrames;
     VkVideoCodingControlFlagsKHR             m_controlCmd;
     VkSharedBaseObj<VulkanVideoImagePool>    m_linearInputImagePool;
     VkSharedBaseObj<VulkanVideoImagePool>    m_inputImagePool;
