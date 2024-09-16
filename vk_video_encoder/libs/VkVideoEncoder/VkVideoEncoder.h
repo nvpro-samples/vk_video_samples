@@ -567,7 +567,10 @@ protected:
                 // recording sequence.
                 holdRefFramesInQueue = 4;
             } else {
-                holdRefFramesInQueue = 2;
+                // This currently does not work, because there is an issue with the sample
+                // application's AV1 DPB management incorrectly providing a pointer to image references.
+                // holdRefFramesInQueue = 2;
+                holdRefFramesInQueue = 0;
             }
 
             if (holdRefFramesInQueue > 4) {
