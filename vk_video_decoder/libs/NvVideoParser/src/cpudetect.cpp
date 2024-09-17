@@ -29,9 +29,6 @@ class InstructionSet
 
 public:
     // getters
-    static std::string Vendor(void) { return CPU_Rep.vendor_; }
-    static std::string Brand(void) { return CPU_Rep.brand_; }
-
     static bool SSSE3(void) { return CPU_Rep.f_1_ECX_[9]; }
     static bool AVX(void) { return CPU_Rep.f_1_ECX_[28]; }
     static bool AVX2(void) { return CPU_Rep.f_7_EBX_[5]; }
