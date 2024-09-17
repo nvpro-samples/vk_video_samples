@@ -303,6 +303,7 @@ public:
                 m_parent->ReleasePoolNodeToPool(m_parentIndex);
                 m_parentIndex = -1;
                 m_parent = nullptr;
+                Reset();
             } else if (ret == 0) {
                 // Destroy the resources if ref-count reaches zero
             }
@@ -325,8 +326,6 @@ public:
             m_parent      = buffPool;
             assert(m_parentIndex == -1);
             m_parentIndex = parentIndex;
-
-            Reset();
 
             return VK_SUCCESS;
         }
