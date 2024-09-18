@@ -169,7 +169,7 @@ void VkEncDpbH265::DpbPictureEnd(VkSharedBaseObj<VulkanVideoImagePoolNode>& dpbI
 
 bool VkEncDpbH265::IsDpbFull() {
     int32_t numDpbPictures = 0;
-    int32_t numNeededForOutput = 0;
+    [[maybe_unused]] int32_t numNeededForOutput = 0;
     for (int32_t i = 0; i < m_dpbSize; i++) {
         if (m_stDpb[i].state == 1) {
             numDpbPictures++;
@@ -366,7 +366,7 @@ void VkEncDpbH265::ApplyReferencePictureSet(const StdVideoEncodeH265PictureInfo 
                 usedByCurrPicLt[i] = (pLongTermRefPicsSps->used_by_curr_pic_lt_sps_flag >> index) & 0x1;
             } else {
                 pocLsbLt[i] = pLongTermRefPics->poc_lsb_lt[i];
-                usedByCurrPicLt[i] = (pLongTermRefPics->used_by_curr_pic_lt_flag >> i) && 0x1;
+                usedByCurrPicLt[i] = (pLongTermRefPics->used_by_curr_pic_lt_flag >> i) & 0x1;
             }
 
             if (i == 0 || i == pLongTermRefPics->num_long_term_sps)

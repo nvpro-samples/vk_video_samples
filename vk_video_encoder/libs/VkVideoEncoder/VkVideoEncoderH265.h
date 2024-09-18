@@ -47,7 +47,7 @@ class VkVideoEncoderH265 : public VkVideoEncoder {
           , naluSliceSegmentInfo { VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_INFO_KHR }
           , stdPictureInfo()
           , rateControlInfoH265{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR }
-          , rateControlLayersInfoH265{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR }
+          , rateControlLayersInfoH265{{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR }}
           , stdSliceSegmentHeader()
           , stdReferenceListsInfo()
           , stdShortTermRefPicSet()
@@ -104,7 +104,7 @@ public:
         , m_sps{}
         , m_pps{}
         , m_rateControlInfoH265{VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR}
-        , m_rateControlLayersInfoH265{VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR}
+        , m_rateControlLayersInfoH265{{VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR}}
         , m_dpb{}
     { }
 
@@ -143,9 +143,9 @@ private:
     }
 private:
     VkSharedBaseObj<EncoderConfigH265>         m_encoderConfig;
-    uint8_t                                    m_bBottomFieldFirst;
-    uint8_t                                    m_reconfigForcedIDR;
-    uint8_t                                    m_bReconfigForcedIDR;
+    [[maybe_unused]] uint8_t                   m_bBottomFieldFirst;
+    [[maybe_unused]] uint8_t                   m_reconfigForcedIDR;
+    [[maybe_unused]] uint8_t                   m_bReconfigForcedIDR;
     VpsH265                                    m_vps;
     SpsH265                                    m_sps;
     StdVideoH265PictureParameterSet            m_pps;

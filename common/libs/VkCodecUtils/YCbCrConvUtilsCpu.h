@@ -59,7 +59,7 @@ public:
     static void CopyRowShiftLeft(const planeType* src, planeType* dst, int count, int shiftBits) {
 
         for (int col = 0; col < count; col++) {
-            *dst = *src << shiftBits;
+            *dst = static_cast<planeType>(*src << shiftBits);
             dst++;
             src++;
         }
@@ -133,15 +133,15 @@ public:
                            int shiftBits) {
 
         for (int x = 0; x < width - 1; x += 2) {
-            dst_uv[0] = src_u[x] << shiftBits;
-            dst_uv[1] = src_v[x] << shiftBits;
-            dst_uv[2] = src_u[x + 1] << shiftBits;
-            dst_uv[3] = src_v[x + 1] << shiftBits;
+            dst_uv[0] = static_cast<planeType>(src_u[x] << shiftBits);
+            dst_uv[1] = static_cast<planeType>(src_v[x] << shiftBits);
+            dst_uv[2] = static_cast<planeType>(src_u[x + 1] << shiftBits);
+            dst_uv[3] = static_cast<planeType>(src_v[x + 1] << shiftBits);
             dst_uv += 4;
         }
         if (width & 1) {
-            dst_uv[0] = src_u[width - 1] << shiftBits;
-            dst_uv[1] = src_v[width - 1] << shiftBits;
+            dst_uv[0] = static_cast<planeType>(src_u[width - 1] << shiftBits);
+            dst_uv[1] = static_cast<planeType>(src_v[width - 1] << shiftBits);
         }
     }
 

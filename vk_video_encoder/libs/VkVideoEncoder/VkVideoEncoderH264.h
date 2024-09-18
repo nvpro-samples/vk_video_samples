@@ -52,7 +52,7 @@ public:
           , stdPictureInfo()
           , stdSliceHeader()
           , rateControlInfoH264{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR }
-          , rateControlLayersInfoH264 { VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_KHR }
+          , rateControlLayersInfoH264 {{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_KHR }}
           , stdReferenceListsInfo()
           , stdReferenceInfo{}
           , stdDpbSlotInfo{}

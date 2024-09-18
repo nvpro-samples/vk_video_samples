@@ -271,13 +271,13 @@ public:
             switch (pDescriptorWrite->descriptorType) {
             case VK_DESCRIPTOR_TYPE_SAMPLER:
                 descriptorSize = m_descriptorBufferProperties.samplerDescriptorSize;
-                // fall through
+                [[fallthrough]];
             case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
                 descriptorSize = m_descriptorBufferProperties.combinedImageSamplerDescriptorSize;
-                // fall through
+                [[fallthrough]];
             case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
                 descriptorSize = m_descriptorBufferProperties.sampledImageDescriptorSize;
-                // fall through
+                [[fallthrough]];
             case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
             {
                 assert((dstBindingOffset + descriptorSize) < m_descriptorLayoutSize);

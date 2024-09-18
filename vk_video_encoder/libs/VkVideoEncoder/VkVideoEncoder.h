@@ -83,7 +83,7 @@ public:
             , pControlCmdChain(nullptr)
             , qualityLevelInfo { VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR }
             , rateControlInfo { VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR }
-            , rateControlLayersInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR }
+            , rateControlLayersInfo{{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR }}
             , referenceSlotsInfo{}
             , setupReferenceSlotInfo{ VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR }
             , videoSession()
@@ -418,7 +418,7 @@ public:
         , m_minStreamBufferSize(2 * 1024 * 1024)
         , m_streamBufferSize(m_minStreamBufferSize)
         , m_rateControlInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR }
-        , m_rateControlLayersInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR }
+        , m_rateControlLayersInfo{{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR }}
         , m_picIdxToDpb{}
         , m_gopState()
         , m_dpbSlotsMask(0)
