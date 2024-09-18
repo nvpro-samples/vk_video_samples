@@ -76,9 +76,8 @@ VkResult VulkanVideoImagePoolNode::CreateImage( const VulkanDeviceContext* vkDev
             imageResource = imageArrayParent;
         }
 
+        uint32_t baseArrayLayer = imageArrayParent ? imageIndex : 0;
         if (!imageViewArrayParent) {
-
-            uint32_t baseArrayLayer = imageArrayParent ? imageIndex : 0;
             VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, baseArrayLayer, 1 };
             result = VkImageResourceView::Create(vkDevCtx, imageResource,
                                                  subresourceRange,
@@ -88,11 +87,10 @@ VkResult VulkanVideoImagePoolNode::CreateImage( const VulkanDeviceContext* vkDev
                 return result;
             }
 
-            m_pictureResourceInfo.baseArrayLayer = baseArrayLayer;
-
-        } else {
-
+            // The picture resource's baseArrayLayer is an index into the image view's layers
             m_pictureResourceInfo.baseArrayLayer = 0;
+        } else {
+            m_pictureResourceInfo.baseArrayLayer = baseArrayLayer;
             m_imageResourceView = imageViewArrayParent;
         }
     }
