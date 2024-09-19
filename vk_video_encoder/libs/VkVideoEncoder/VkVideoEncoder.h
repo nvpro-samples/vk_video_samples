@@ -438,6 +438,7 @@ public:
         , m_verbose(false)
         , m_numDeferredFrames()
         , m_numDeferredRefFrames()
+        , m_holdRefFramesInQueue()
         , m_controlCmd(VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR |
                        VK_VIDEO_CODING_CONTROL_ENCODE_QUALITY_LEVEL_BIT_KHR |
                        VK_VIDEO_CODING_CONTROL_ENCODE_RATE_CONTROL_BIT_KHR)
@@ -498,19 +499,18 @@ public:
     virtual VkResult EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) = 0; // Must be implemented by the codec
     virtual VkResult HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
 
-
-    VkResult RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
-                                  uint32_t frameIdx, uint32_t ofTotalFrames);
+    virtual VkResult RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                         uint32_t frameIdx, uint32_t ofTotalFrames);
 
     VkResult RecordVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, uint32_t numFrames);
 
-    VkResult SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
-                                   uint32_t frameIdx, uint32_t ofTotalFrames);
+    virtual VkResult SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                           uint32_t frameIdx, uint32_t ofTotalFrames);
 
     virtual VkResult AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                            uint32_t frameIdx, uint32_t ofTotalFrames);
 
-    VkResult StartOfVideoCodingEncodeOrder(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, uint32_t frameIdx, uint32_t ofTotalFrames)
+    virtual VkResult StartOfVideoCodingEncodeOrder(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, uint32_t frameIdx, uint32_t ofTotalFrames)
     {
         encodeFrameInfo->frameEncodeEncodeOrderNum = m_encodeEncodeFrameNum++;
         if (m_encoderConfig->verboseFrameStruct) {
@@ -557,29 +557,9 @@ protected:
     bool EnqueueFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                       bool isIdrFrame, bool isReferenceFrame) {
 
-        uint32_t holdRefFramesInQueue = 0;
-        if (m_encoderConfig->enableOutOfOrderRecording) {
-
-            // Testing only - don't use for production!
-            if (m_encoderConfig->gopStructure.GetConsecutiveBFrameCount() == 0) {
-                // Queue at least 4 IDR, I, P frames to be able to test the out-of-order
-                // recording sequence.
-                holdRefFramesInQueue = 4;
-            } else {
-                // This currently does not work, because there is an issue with the sample
-                // application's AV1 DPB management incorrectly providing a pointer to image references.
-                // holdRefFramesInQueue = 2;
-                holdRefFramesInQueue = 0;
-            }
-
-            if (holdRefFramesInQueue > 4) {
-                // We don't want to make the queue too deep. This would require a lot of reference images
-                holdRefFramesInQueue = 4;
-            }
-        }
         const bool preFlushQueue = isIdrFrame;
         const bool postFlushQueue = (encodeFrameInfo->lastFrame ||
-                                        (isReferenceFrame && (m_numDeferredRefFrames == holdRefFramesInQueue)));
+                                        (isReferenceFrame && (m_numDeferredRefFrames == m_holdRefFramesInQueue)));
 
         if (preFlushQueue) {
             PushOrderedFrames();
@@ -595,9 +575,9 @@ protected:
 
     // Insert frames in order from the reference frame first and B frames next in the list.
     // Uses a simple ordering for now where B frame as reference are not supported yet.
-    void InsertOrdered(VkSharedBaseObj<VkVideoEncodeFrameInfo>& current,
-                       VkSharedBaseObj<VkVideoEncodeFrameInfo>& prev,
-                       VkSharedBaseObj<VkVideoEncodeFrameInfo>& node) {
+    virtual void InsertOrdered(VkSharedBaseObj<VkVideoEncodeFrameInfo>& current,
+                               VkSharedBaseObj<VkVideoEncodeFrameInfo>& prev,
+                               VkSharedBaseObj<VkVideoEncodeFrameInfo>& node) {
 
         if ((current == nullptr) || (current->gopPosition.encodeOrder >= node->gopPosition.encodeOrder)) {
 
@@ -680,6 +660,7 @@ protected:
     uint32_t m_verbose : 1;
     uint32_t                                 m_numDeferredFrames;
     uint32_t                                 m_numDeferredRefFrames;
+    uint32_t                                 m_holdRefFramesInQueue;
     VkVideoCodingControlFlagsKHR             m_controlCmd;
     VkSharedBaseObj<VulkanVideoImagePool>    m_linearInputImagePool;
     VkSharedBaseObj<VulkanVideoImagePool>    m_inputImagePool;
