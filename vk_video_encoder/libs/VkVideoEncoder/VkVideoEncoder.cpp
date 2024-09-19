@@ -370,6 +370,25 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         m_encoderConfig->gopStructure.DumpFramesGopStructure(0, maxFramesToDump);
     }
 
+    if (m_encoderConfig->enableOutOfOrderRecording) {
+
+        // Testing only - don't use for production!
+        if (m_encoderConfig->gopStructure.GetConsecutiveBFrameCount() == 0) {
+            // Queue at least 4 IDR, I, P frames to be able to test the out-of-order
+            // recording sequence.
+            m_holdRefFramesInQueue = 4;
+        } else {
+            // Queue atleast 2 reference frames along with non-ref frames
+            m_holdRefFramesInQueue = 2;
+        }
+
+        if (m_holdRefFramesInQueue > 4) {
+            // We don't want to make the queue too deep. This would require a lot of reference images
+            m_holdRefFramesInQueue = 4;
+        }
+
+    }
+
     // The required num of DPB images
     m_maxDpbPicturesCount = encoderConfig->InitDpbCount();
 
@@ -513,8 +532,9 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         return result;
     }
 
+    uint32_t numEncodeImagesInFlight = std::max<uint32_t>(m_holdRefFramesInQueue + m_holdRefFramesInQueue * m_encoderConfig->gopStructure.GetConsecutiveBFrameCount(), 4);
     result = m_dpbImagePool->Configure(m_vkDevCtx,
-                                       std::max<uint32_t>(maxDpbPicturesCount, maxActiveReferencePicturesCount) + 4,
+                                       std::max<uint32_t>(maxDpbPicturesCount, maxActiveReferencePicturesCount) + numEncodeImagesInFlight,
                                        m_imageDpbFormat,
                                        imageExtent,
                                        dpbImageUsage,
@@ -625,26 +645,6 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         const uint32_t maxPendingQueueNodes = 2;
         m_encoderThreadQueue.SetMaxPendingQueueNodes(std::min<uint32_t>(m_encoderConfig->gopStructure.GetGopFrameCount() + 1, maxPendingQueueNodes));
         m_encoderQueueConsumerThread = std::thread(&VkVideoEncoder::ConsumerThread, this);
-    }
-
-    if (m_encoderConfig->enableOutOfOrderRecording) {
-
-        // Testing only - don't use for production!
-        if (m_encoderConfig->gopStructure.GetConsecutiveBFrameCount() == 0) {
-            // Queue at least 4 IDR, I, P frames to be able to test the out-of-order
-            // recording sequence.
-            m_holdRefFramesInQueue = 4;
-        } else {
-            // This currently does not work, because there is an issue with the sample
-            // application's AV1 DPB management incorrectly providing a pointer to image references.
-            m_holdRefFramesInQueue = 2;
-            //m_holdRefFramesInQueue = 0;
-        }
-
-        if (m_holdRefFramesInQueue > 4) {
-            // We don't want to make the queue too deep. This would require a lot of reference images
-            m_holdRefFramesInQueue = 4;
-        }
     }
 
     return VK_SUCCESS;

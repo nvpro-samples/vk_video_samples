@@ -438,7 +438,7 @@ public:
         , m_verbose(false)
         , m_numDeferredFrames()
         , m_numDeferredRefFrames()
-        , m_holdRefFramesInQueue()
+        , m_holdRefFramesInQueue(1)
         , m_controlCmd(VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR |
                        VK_VIDEO_CODING_CONTROL_ENCODE_QUALITY_LEVEL_BIT_KHR |
                        VK_VIDEO_CODING_CONTROL_ENCODE_RATE_CONTROL_BIT_KHR)
@@ -558,13 +558,14 @@ protected:
                       bool isIdrFrame, bool isReferenceFrame) {
 
         const bool preFlushQueue = isIdrFrame;
-        const bool postFlushQueue = (encodeFrameInfo->lastFrame ||
-                                        (isReferenceFrame && (m_numDeferredRefFrames == m_holdRefFramesInQueue)));
-
         if (preFlushQueue) {
             PushOrderedFrames();
         }
+
         InsertOrdered(encodeFrameInfo, isReferenceFrame);
+
+        const bool postFlushQueue = (encodeFrameInfo->lastFrame ||
+                                        (isReferenceFrame && (m_numDeferredRefFrames == m_holdRefFramesInQueue)));
         if (postFlushQueue) {
             PushOrderedFrames();
         }
