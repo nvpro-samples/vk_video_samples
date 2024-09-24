@@ -42,16 +42,16 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::NEON>(const uint8_t *pdatai
                 {
                     uint8x16_t v015mask = vbslq_u8(vmask, v015, vdupq_n_u8(UINT8_MAX));
 #if defined (__aarch64__) || defined(_M_ARM64)
-                    const size_t offset = vminvq_u8(v015mask);
+                    const uint8_t offset = vminvq_u8(v015mask);
 #else
                     uint8x8_t minval = vmin_u8(vget_low_u8(v015mask), vget_high_u8(v015mask));
                     minval = vpmin_u8(minval, minval);
                     minval = vpmin_u8(minval, minval);
-                    const size_t offset = vget_lane_u8(vpmin_u8(minval, minval), 0);
+                    const uint8_t offset = vget_lane_u8(vpmin_u8(minval, minval), 0);
 #endif
                     found_start_code = true;
                     m_BitBfr =  1;
-                    return offset + i + c + 1;
+                    return (size_t)offset + i + c + 1;
                 }
                 // hotspot begin
                 uint8x16_t vdata_next = vld1q_u8(&pdatain[i + c + 16]);

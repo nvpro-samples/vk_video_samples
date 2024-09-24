@@ -50,10 +50,10 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::SVE>(const uint8_t *pdatain
 
             if (resmask)
             {
-              const size_t offset = svminv_u8(vmask, v0n);
+              const uint8_t offset = svminv_u8(vmask, v0n);
               found_start_code = true;
               m_BitBfr =  1;
-              return offset + i + 1;
+              return (size_t)offset + i + 1;
             }
             // hotspot begin
             pred_next = svwhilelt_b8_u64(i + lanes, datasize);
