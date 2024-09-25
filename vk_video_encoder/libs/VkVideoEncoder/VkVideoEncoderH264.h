@@ -73,6 +73,8 @@ public:
 
         virtual void Reset(bool releaseResources = true) {
 
+            pictureInfo.pNext = nullptr;
+
             // Reset the base first
             VkVideoEncodeFrameInfo::Reset(releaseResources);
 

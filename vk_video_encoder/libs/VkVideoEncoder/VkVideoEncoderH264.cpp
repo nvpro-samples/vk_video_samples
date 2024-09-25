@@ -397,7 +397,7 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     }
 
     pFrameInfo->encodeInfo.srcPictureResource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
-    pFrameInfo->encodeInfo.flags = 0;
+    //pFrameInfo->encodeInfo.flags = 0;
     // If the current picture is going to be a reference frame, the first
     // entry in the refSlots array contains information about the picture
     // resource associated with this frame. This entry should not be
@@ -516,6 +516,7 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         }
     }
 
+    pFrameInfo->encodeInfo.flags = 0;
     assert(pFrameInfo->encodeInfo.srcPictureResource.codedOffset.x == 0);
     assert(pFrameInfo->encodeInfo.srcPictureResource.codedOffset.y == 0);
     pFrameInfo->encodeInfo.srcPictureResource.codedExtent.width = m_encoderConfig->encodeWidth;
@@ -582,9 +583,9 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     // For simplicity, only indicate that the state is to be reset for the
     // first IDR picture.
     // FIXME: The reset must use a RESET control command.
-    if (encodeFrameInfo->frameEncodeInputOrderNum == 0) {
-        pFrameInfo->encodeInfo.flags |= VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR;
-    }
+    //if (encodeFrameInfo->frameEncodeOrderNum == 0) {
+    //    pFrameInfo->encodeInfo.flags |= VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR;
+    //}
 
     // NOTE: dstBuffer resource acquisition can be deferred at the last moment before submit
     VkDeviceSize size = GetBitstreamBuffer(encodeFrameInfo->outputBitstreamBuffer);

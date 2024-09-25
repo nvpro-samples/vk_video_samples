@@ -70,6 +70,8 @@ class VkVideoEncoderH265 : public VkVideoEncoder {
 
         virtual void Reset(bool releaseResources = true) {
 
+            pictureInfo.pNext = nullptr;
+
             // Reset the base first
             VkVideoEncodeFrameInfo::Reset(releaseResources);
 
@@ -97,9 +99,6 @@ public:
     VkVideoEncoderH265(const VulkanDeviceContext* vkDevCtx)
         : VkVideoEncoder(vkDevCtx)
         , m_encoderConfig()
-        , m_bBottomFieldFirst()
-        , m_reconfigForcedIDR()
-        , m_bReconfigForcedIDR()
         , m_vps{}
         , m_sps{}
         , m_pps{}
@@ -143,9 +142,6 @@ private:
     }
 private:
     VkSharedBaseObj<EncoderConfigH265>         m_encoderConfig;
-    [[maybe_unused]] uint8_t                   m_bBottomFieldFirst;
-    [[maybe_unused]] uint8_t                   m_reconfigForcedIDR;
-    [[maybe_unused]] uint8_t                   m_bReconfigForcedIDR;
     VpsH265                                    m_vps;
     SpsH265                                    m_sps;
     StdVideoH265PictureParameterSet            m_pps;

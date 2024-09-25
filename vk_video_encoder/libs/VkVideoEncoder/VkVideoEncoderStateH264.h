@@ -40,6 +40,7 @@ public:
 
         m_encodeSessionParametersCreateInfo.sType = VK_STRUCTURE_TYPE_VIDEO_SESSION_PARAMETERS_CREATE_INFO_KHR;
         m_encodeSessionParametersCreateInfo.pNext = &m_encodeH264SessionParametersCreateInfo;
+        m_encodeSessionParametersCreateInfo.flags = 0;
         m_encodeSessionParametersCreateInfo.videoSessionParametersTemplate = nullptr;
         m_encodeSessionParametersCreateInfo.videoSession = m_videoSession;
     }

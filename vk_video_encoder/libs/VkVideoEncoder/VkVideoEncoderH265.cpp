@@ -283,7 +283,7 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     }
 
     pFrameInfo->encodeInfo.srcPictureResource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
-    pFrameInfo->encodeInfo.flags = 0;
+    //pFrameInfo->encodeInfo.flags = 0;
     // If the current picture is going to be a reference frame, the first
     // entry in the refSlots array contains information about the picture
     // resource associated with this frame. This entry should not be
@@ -398,6 +398,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         }
     }
 
+    pFrameInfo->encodeInfo.flags = 0;
     assert(pFrameInfo->encodeInfo.srcPictureResource.codedOffset.x == 0);
     assert(pFrameInfo->encodeInfo.srcPictureResource.codedOffset.y == 0);
     pFrameInfo->encodeInfo.srcPictureResource.codedExtent.width = m_encoderConfig->encodeWidth;

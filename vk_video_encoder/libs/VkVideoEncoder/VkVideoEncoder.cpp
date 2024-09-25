@@ -981,7 +981,9 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         videoInlineQueryInfoKHR.queryPool = queryPool;
         videoInlineQueryInfoKHR.firstQuery = querySlotId;
         videoInlineQueryInfoKHR.queryCount = numQuerySamples;
-        ((VkVideoEncodeH264PictureInfoKHR*)(encodeFrameInfo->encodeInfo.pNext))->pNext = &videoInlineQueryInfoKHR;
+        VkBaseInStructure* pStruct = (VkBaseInStructure*)&encodeFrameInfo->encodeInfo;
+        while (pStruct->pNext) pStruct = (VkBaseInStructure*)pStruct->pNext;
+        pStruct->pNext = (VkBaseInStructure*)&videoInlineQueryInfoKHR;
 
         vkDevCtx->CmdEncodeVideoKHR(cmdBuf, &encodeFrameInfo->encodeInfo);
     }
