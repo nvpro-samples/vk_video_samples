@@ -2264,10 +2264,8 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
     assert(consumedBytes > 0);
     assert((m_nalu.start_offset <= UINT32_MAX) && (m_nalu.start_offset >= 0));
 	//                                                    offset of obu         number of bytes read getting the tile data
-	m_PicData.tileOffsets[m_PicData.khr_info.tileCount] = (uint32_t)m_nalu.start_offset + (uint32_t)consumedBytes;
 
 	// Compute the tile group size
-	size_t totalTileSize = 0;
     for (int TileNum = tg_start; TileNum <= tg_end; TileNum++)
     {
         int lastTile = TileNum == tg_end;
@@ -2275,19 +2273,24 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
         if (lastTile)
         {
             tileSize = hdr.payload_size - consumedBytes;
+            m_PicData.tileOffsets[m_PicData.khr_info.tileCount] = (uint32_t)m_nalu.start_offset + (uint32_t)consumedBytes;
         }
         else
         {
             uint64_t tile_size_minus_1 = le(tile_size_bytes_minus_1 + 1);
+            consumedBytes += tile_size_bytes_minus_1 + 1;
+            m_PicData.tileOffsets[m_PicData.khr_info.tileCount] = (uint32_t)m_nalu.start_offset + (uint32_t)consumedBytes;
+
             tileSize = tile_size_minus_1 + 1;
+            consumedBytes += (uint32_t)tileSize;
+
+            skip_bits((uint32_t)(tileSize * 8));
         }
 
-        totalTileSize += tileSize;
+        m_PicData.tileSizes[m_PicData.khr_info.tileCount] = (uint32_t)tileSize;
+        m_PicData.khr_info.tileCount++;
     }
 
-    assert(totalTileSize <= UINT32_MAX);
-    m_PicData.tileSizes[m_PicData.khr_info.tileCount] = (uint32_t)totalTileSize;
-    m_PicData.khr_info.tileCount++;
     return (tg_end == num_tiles - 1);
 }
 
