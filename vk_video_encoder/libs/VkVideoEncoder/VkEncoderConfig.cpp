@@ -17,6 +17,7 @@
 #include "VkVideoEncoder/VkEncoderConfig.h"
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
+#include "VkVideoEncoder/VkEncoderConfigAV1.h"
 
 void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
 {
@@ -44,6 +45,8 @@ void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --encodeMaxHeight               <integer> : Encoded max height - the maximum content height supported. Used with content resize. \n\
     --minQp                         <integer> : Minimum QP value in the range [0, 51] \n\
     --maxQp                         <integer> : Maximum QP value in the range [0, 51] \n\
+    --qpMap                         <string>  : selct quantization map type : deltaQpMap or emaphasisMap \n\
+    --qpMapFileName                 <string>  : quantization map file name \n\
     --gopFrameCount                 <integer> : Number of frame in the GOP, default 16\n\
     --idrPeriod                     <integer> : Number of frame between 2 IDR frame, default 60\n\
     --consecutiveBFrameCount        <integer> : Number of consecutive B frame count in a GOP \n\
@@ -164,8 +167,6 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                 codec = VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR;
             } else if (codec_ == "av1") {
                 codec = VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR;
-                assert(!"AV1 is not supported yet!");
-                return -1;
             } else {
                 // Invalid codec
                 fprintf(stderr, "Invalid codec: %s\n", codec_.c_str());
@@ -423,6 +424,30 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                                "deviceUuid must be represented by 16 hex (32 bytes) values.", args[i].c_str(), args[i].length());
                 return -1;
             }
+        } else if (args[i] == "--qpMap") {
+            if (++i >= argc) {
+                fprintf(stderr, "Invalid paramter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            if (args[i] == "deltaQpMap") {
+                qpMapMode = DELTA_QP_MAP;
+            } else if (args[i] == "emphasisMap") {
+                qpMapMode = EMPHASIS_MAP;
+            } else {
+                fprintf(stderr, "Invalid quntization map mode %s\n", args[i].c_str());
+                return -1;
+            }
+            enableQpMap = true;
+        } else if (args[i] == "--qpMapFileName") {
+            if (++i >= argc) {
+                fprintf(stderr, "Invaid paramter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            size_t fileSize = qpMapFileHandler.SetFileName(args[i].c_str());
+            if (fileSize <= 0) {
+                return (int)fileSize;
+            }
+            enableQpMap = true;
         } else if (args[i] == "--testOutOfOrderRecording") {
             // Testing only - don't use this feature for production!
             fprintf(stdout, "Warning: %s should only be used for testing!\n", args[i].c_str());
@@ -489,6 +514,11 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
 
     codecBlockAlignment = H264MbSizeAlignment; // H264
 
+    if (enableQpMap && !qpMapFileHandler.HasFileName()) {
+        fprintf(stderr, "No qpMap file was provided.");
+        return -1;
+    }
+
     return DoParseArguments(argcount, arglist.data());
 }
 
@@ -509,8 +539,6 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, char *argv[],
                 codec = VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR;
             } else if (codecStr == "av1") {
                 codec = VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR;
-                assert(!"AV1 is not supported yet!");
-                return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
             } else {
                 // Invalid codec
                 fprintf(stderr, "Invalid codec: %s\n", codecStr.c_str());
@@ -557,6 +585,24 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, char *argv[],
         }
 
         encoderConfig = vkEncoderConfigh265;
+        return VK_SUCCESS;
+
+    } else if (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) {
+
+        VkSharedBaseObj<EncoderConfigAV1> vkEncoderConfigAV1(new EncoderConfigAV1());
+        int ret = vkEncoderConfigAV1->ParseArguments(argc, argv);
+        if (ret != 0) {
+            assert(!"Invalid arguments");
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+
+        VkResult result = vkEncoderConfigAV1->InitializeParameters();
+        if (result != VK_SUCCESS) {
+            assert(!"InitializeParameters failed");
+            return result;
+        }
+
+        encoderConfig = vkEncoderConfigAV1;
         return VK_SUCCESS;
 
     } else {

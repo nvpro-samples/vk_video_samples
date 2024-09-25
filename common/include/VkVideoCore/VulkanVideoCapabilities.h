@@ -57,14 +57,19 @@ public:
         return result;
     }
 
-    template<class VkVideoEncodeCodecCapabilitiesKHR, VkStructureType VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_CAPABILITIES_KHR>
+    template<class VkVideoEncodeCodecCapabilitiesKHR, VkStructureType VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_CAPABILITIES_KHR,
+             class VkVideoEncodeCodecQuantizationMapCapabilitiesKHR, VkStructureType VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_QUANTIZATION_MAP_CAPABILITIES_KHR>
     static VkResult GetVideoEncodeCapabilities(const VulkanDeviceContext* vkDevCtx,
                                                const VkVideoCoreProfile& videoProfile,
                                                VkVideoCapabilitiesKHR& videoCapabilities,
                                                VkVideoEncodeCapabilitiesKHR& videoEncodeCapabilities,
-                                               VkVideoEncodeCodecCapabilitiesKHR& videoCodecCapabilities) {
+                                               VkVideoEncodeCodecCapabilitiesKHR& videoCodecCapabilities,
+                                               VkVideoEncodeQuantizationMapCapabilitiesKHR& quantizationMapCapabilities,
+                                               VkVideoEncodeCodecQuantizationMapCapabilitiesKHR& codecQuantizationMapCapabilities) {
 
-        videoCodecCapabilities  = VkVideoEncodeCodecCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_CAPABILITIES_KHR, nullptr };
+        codecQuantizationMapCapabilities = VkVideoEncodeCodecQuantizationMapCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_QUANTIZATION_MAP_CAPABILITIES_KHR, nullptr };
+        quantizationMapCapabilities = VkVideoEncodeQuantizationMapCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUANTIZATION_MAP_CAPABILITIES_KHR, &codecQuantizationMapCapabilities };
+        videoCodecCapabilities  = VkVideoEncodeCodecCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_CAPABILITIES_KHR, &quantizationMapCapabilities };
         videoEncodeCapabilities = VkVideoEncodeCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CAPABILITIES_KHR, &videoCodecCapabilities };
         videoCapabilities       =       VkVideoCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR, &videoEncodeCapabilities };
 
@@ -139,7 +144,7 @@ public:
         assert((pVideoDecodeCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_DECODE_CAPABILITIES_KHR) ||
                (pVideoEncodeCapabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_ENCODE_CAPABILITIES_KHR));
 
-        switch(videoProfile.GetCodecType()) {
+        switch((uint32_t)videoProfile.GetCodecType()) {
         case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR:
         {
             assert(pVideoDecodeCapabilities->pNext);
@@ -186,6 +191,16 @@ public:
             const VkVideoEncodeH265CapabilitiesKHR* pH265EncCapabilities = (VkVideoEncodeH265CapabilitiesKHR*)pVideoEncodeCapabilities->pNext;
             assert(pH265EncCapabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_CAPABILITIES_KHR);
             if (pH265EncCapabilities->sType != VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_CAPABILITIES_KHR) {
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+        }
+            break;
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:
+        {
+            assert(pVideoEncodeCapabilities->pNext);
+            const VkVideoEncodeAV1CapabilitiesKHR* pAV1EncCapabilities = (VkVideoEncodeAV1CapabilitiesKHR*)pVideoEncodeCapabilities->pNext;
+            assert(pAV1EncCapabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_CAPABILITIES_KHR);
+            if (pAV1EncCapabilities->sType != VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_CAPABILITIES_KHR) {
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
         }
@@ -250,7 +265,8 @@ public:
 
     static VkResult GetVideoFormats(const VulkanDeviceContext* vkDevCtx,
                                     const VkVideoCoreProfile& videoProfile, VkImageUsageFlags imageUsage,
-                                    uint32_t& formatCount, VkFormat* formats,
+                                    uint32_t& formatCount, VkFormat* formats, VkImageTiling* tiling = nullptr,
+                                    bool enableQpMap = false, VkExtent2D* pQuantizationMapTexelSize = nullptr,
                                     bool dumpData = false)
     {
         for (uint32_t i = 0; i < formatCount; i++) {
@@ -272,6 +288,16 @@ public:
             pSupportedFormats[i].sType = VK_STRUCTURE_TYPE_VIDEO_FORMAT_PROPERTIES_KHR;
         }
 
+        VkVideoFormatQuantizationMapPropertiesKHR* pQuantizationMapProperties = nullptr;
+        if (enableQpMap) {
+            pQuantizationMapProperties= new VkVideoFormatQuantizationMapPropertiesKHR[supportedFormatCount];
+            memset(pQuantizationMapProperties, 0x00, supportedFormatCount * sizeof(VkVideoFormatQuantizationMapPropertiesKHR));
+            for (uint32_t i = 0; i < supportedFormatCount; i++) {
+                pQuantizationMapProperties[i].sType = VK_STRUCTURE_TYPE_VIDEO_FORMAT_QUANTIZATION_MAP_PROPERTIES_KHR;
+                pSupportedFormats[i].pNext = &pQuantizationMapProperties[i];
+            }
+        }
+
         result = vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(vkDevCtx->getPhysicalDevice(), &videoFormatInfo, &supportedFormatCount, pSupportedFormats);
         assert(result == VK_SUCCESS);
         if (dumpData) {
@@ -285,9 +311,18 @@ public:
 
         for (uint32_t i = 0; i < formatCount; i++) {
             formats[i] = pSupportedFormats[i].format;
+            if (tiling) {
+                tiling[i] = pSupportedFormats[i].imageTiling;
+            }
+            if (pQuantizationMapProperties && pQuantizationMapTexelSize) {
+                pQuantizationMapTexelSize[i] = pQuantizationMapProperties[i].quantizationMapTexelSize;
+            }
         }
 
         delete[] pSupportedFormats;
+        if (pQuantizationMapProperties != nullptr) {
+            delete[] pQuantizationMapProperties;
+        }
 
         return result;
     }
@@ -298,7 +333,8 @@ public:
             VkQueueFlags queueFlagsRequired = ( VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR),
             VkVideoCodecOperationFlagsKHR videoCodeOperations =
                                               ( VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR | VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR |
-                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR | VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR))
+                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR | VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR |
+                                                VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR))
     {
         std::vector<VkQueueFamilyProperties2> queues;
         std::vector<VkQueueFamilyVideoPropertiesKHR> videoQueues;

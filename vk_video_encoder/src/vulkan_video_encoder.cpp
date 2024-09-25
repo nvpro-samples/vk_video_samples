@@ -160,7 +160,8 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
                                              VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR),
                                             requestVideoEncodeQueueMask,
                                             (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
-                                             VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR));
+                                             VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR |
+                                             VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR));
     if (result != VK_SUCCESS) {
 
         assert(!"Can't initialize the Vulkan physical device!");
@@ -238,6 +239,7 @@ VkResult CreateVulkanVideoEncoder(VkVideoCodecOperationFlagBitsKHR videoCodecOpe
     {
         case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
         case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR:
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:
         {
 
         }

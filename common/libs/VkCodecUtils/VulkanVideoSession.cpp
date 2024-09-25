@@ -38,9 +38,10 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
 
     static const VkExtensionProperties h264DecodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION };
     static const VkExtensionProperties h265DecodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION };
+    static const VkExtensionProperties av1DecodeStdExtensionVersion =  { VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_SPEC_VERSION };
     static const VkExtensionProperties h264EncodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_ENCODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_ENCODE_SPEC_VERSION };
     static const VkExtensionProperties h265EncodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_ENCODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_ENCODE_SPEC_VERSION };
-    static const VkExtensionProperties av1StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_SPEC_VERSION };
+    static const VkExtensionProperties av1EncodeStdExtensionVersion =  { VK_STD_VULKAN_VIDEO_CODEC_AV1_ENCODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_AV1_ENCODE_SPEC_VERSION };
 
     VkVideoSessionCreateInfoKHR& createInfo = pNewVideoSession->m_createInfo;
     createInfo.flags = sessionCreateFlags;
@@ -60,13 +61,16 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
         createInfo.pStdHeaderVersion = &h265DecodeStdExtensionVersion;
         break;
     case VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR:
-        createInfo.pStdHeaderVersion = &av1StdExtensionVersion;
+        createInfo.pStdHeaderVersion = &av1DecodeStdExtensionVersion;
         break;
     case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
         createInfo.pStdHeaderVersion = &h264EncodeStdExtensionVersion;
         break;
     case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR:
         createInfo.pStdHeaderVersion = &h265EncodeStdExtensionVersion;
+        break;
+    case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:
+        createInfo.pStdHeaderVersion = &av1EncodeStdExtensionVersion;
         break;
     default:
         assert(0);

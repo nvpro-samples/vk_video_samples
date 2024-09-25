@@ -24,6 +24,7 @@
 #include "vk_video/vulkan_video_codecs_common.h"
 #include "vk_video/vulkan_video_codec_h264std.h"
 #include "vk_video/vulkan_video_codec_h265std.h"
+#include "vk_video/vulkan_video_codec_av1std.h"
 #include "vulkan/vulkan.h"
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 #include "VkVideoEncoder/VkVideoEncoderDef.h"
@@ -31,12 +32,9 @@
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 
-#ifndef VK_KHR_video_encode_av1
-#define VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR                  ((VkVideoCodecOperationFlagBitsKHR)0x00000000)
-#endif
-
 struct EncoderConfigH264;
 struct EncoderConfigH265;
+struct EncoderConfigAV1;
 class VulkanDeviceContext;
 
 static VkVideoComponentBitDepthFlagBitsKHR GetComponentBitDepthFlagBits(uint32_t bpp)
@@ -341,6 +339,110 @@ private:
     mio::basic_mmap<mio::access_mode::write, uint8_t> m_memMapedFile;
 };
 
+
+class EncoderQpMapFileHandler
+{
+public:
+    EncoderQpMapFileHandler()
+    : m_fileName{},
+      m_fileHandle(),
+      m_memMapedFile()
+    {
+
+    }
+
+    ~EncoderQpMapFileHandler()
+    {
+        Destroy();
+    }
+
+    void Destroy()
+    {
+        m_memMapedFile.unmap();
+
+        if (m_fileHandle != nullptr) {
+            if(fclose(m_fileHandle)) {
+                fprintf(stderr, "Failed to close input file %s", m_fileName);
+            }
+
+            m_fileHandle = nullptr;
+        }
+    }
+
+    bool HasFileName()
+    {
+        return m_fileName[0] != 0;
+    }
+
+    size_t SetFileName(const char* inputFileName)
+    {
+        Destroy();
+        strcpy(m_fileName, inputFileName);
+        return OpenFile();
+    }
+
+    bool HandleIsValid() const {
+        return (m_fileHandle != nullptr);
+    }
+
+    bool FileIsValid() const {
+        if (HandleIsValid()) {
+            return true;
+        }
+        return (m_fileHandle != nullptr);
+    }
+
+    FILE* GetFileHandle() const {
+        assert(m_fileHandle != nullptr);
+        return m_fileHandle;
+    }
+
+    const uint8_t* GetMappedPtr(uint64_t fileOffset)
+    {
+        assert(m_memMapedFile.is_mapped());
+
+        const uint64_t mappedLength = (uint64_t)m_memMapedFile.mapped_length();
+        if (mappedLength < fileOffset) {
+            printf("File overflow at fileOffset %llu\n",  (unsigned long long int)fileOffset);
+            assert(!"Input file overflow");
+            return nullptr;
+        }
+        return m_memMapedFile.data() + fileOffset;
+    }
+
+private:
+    size_t OpenFile()
+    {
+        m_fileHandle = fopen(m_fileName, "rb");
+        if (m_fileHandle == nullptr) {
+            fprintf(stderr, "Failed to open input file %s", m_fileName);
+            return 0;
+        }
+
+        std::error_code error;
+        m_memMapedFile.map(m_fileName, 0, mio::map_entire_file, error);
+        if (error) {
+            fprintf(stderr, "Failed to map the input file %s", m_fileName);
+            const auto& errmsg = error.message();
+            std::printf("error mapping file: %s, exiting...\n", errmsg.c_str());
+            return error.value();
+        }
+
+        printf("Input file size is: %zd\n", m_memMapedFile.length());
+
+        return m_memMapedFile.length();
+    }
+
+    size_t GetFileSize() const {
+        return m_memMapedFile.length();
+    }
+
+private:
+    char  m_fileName[256];
+    FILE* m_fileHandle;
+    mio::basic_mmap<mio::access_mode::read, uint8_t> m_memMapedFile;
+};
+
 struct EncoderConfig : public VkVideoRefCountBase {
 
     enum { DEFAULT_NUM_INPUT_IMAGES = 16 };
@@ -350,6 +452,7 @@ struct EncoderConfig : public VkVideoRefCountBase {
     enum { DEFAULT_TEMPORAL_LAYER_COUNT = 1 };
     enum { DEFAULT_NUM_SLICES_PER_PICTURE = 4 };
     enum { DEFAULT_MAX_NUM_REF_FRAMES = 16 };
+    enum QpMapMode { DELTA_QP_MAP, EMPHASIS_MAP };
 
 private:
     std::atomic<int32_t> refCount;
@@ -383,6 +486,7 @@ public:
     VkVideoCoreProfile videoCoreProfile;
     VkVideoCapabilitiesKHR videoCapabilities;
     VkVideoEncodeCapabilitiesKHR videoEncodeCapabilities;
+    VkVideoEncodeQuantizationMapCapabilitiesKHR quantizationMapCapabilities;
     VkVideoEncodeRateControlModeFlagBitsKHR rateControlMode;
     uint32_t averageBitrate; // kbits/sec
     uint32_t maxBitrate;     // kbits/sec
@@ -393,6 +497,9 @@ public:
     int32_t  minQp;
     int32_t  maxQp;
     ConstQpSettings constQp;
+
+    uint32_t enableQpMap : 1;
+    QpMapMode qpMapMode;
 
     VkVideoGopStructure gopStructure;
     int8_t dpbCount;
@@ -425,6 +532,7 @@ public:
 
     EncoderInputFileHandler inputFileHandler;
     EncoderOutputFileHandler outputFileHandler;
+    EncoderQpMapFileHandler qpMapFileHandler;
     uint32_t validate : 1;
     uint32_t validateVerbose : 1;
     uint32_t verbose : 1;
@@ -466,6 +574,7 @@ public:
     , videoCoreProfile(codec, encodeChromaSubsampling, encodeBitDepthLuma, encodeBitDepthChroma)
     , videoCapabilities()
     , videoEncodeCapabilities()
+    , quantizationMapCapabilities()
     , rateControlMode(VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DEFAULT_KHR)
     , averageBitrate()
     , maxBitrate()
@@ -475,6 +584,8 @@ public:
     , minQp(-1)
     , maxQp(-1)
     , constQp()
+    , enableQpMap(false)
+    , qpMapMode(DELTA_QP_MAP)
     , gopStructure(DEFAULT_GOP_FRAME_COUNT,
                    DEFAULT_GOP_IDR_PERIOD,
                    DEFAULT_CONSECUTIVE_B_FRAME_COUNT,
@@ -584,6 +695,10 @@ public:
         return nullptr;
     }
 
+    virtual EncoderConfigAV1* GetEncoderConfigAV1() {
+        return nullptr;
+    }
+
     // Factory Function
     static VkResult CreateCodecConfig(int argc, char *argv[], VkSharedBaseObj<EncoderConfig>& encoderConfig);
 
@@ -626,5 +741,7 @@ public:
 VkResult CreateCodecConfigH264(int argc, char *argv[], VkSharedBaseObj<EncoderConfig>& encoderConfig);
 // Create codec configuration for H.265 encoder
 VkResult CreateCodecConfigH265(int argc, char *argv[], VkSharedBaseObj<EncoderConfig>& encoderConfig);
+// Create codec configuration for AV1 encoder
+VkResult CreateCodecConfigAV1(int artc, char *argv[], VkSharedBaseObj<EncoderConfig>& encoderConfig);
 
 #endif /* VKVIDEOENCODER_VKENCODERCONFIG_H_ */

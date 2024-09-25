@@ -65,7 +65,9 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     // create SPS and PPS set
     VideoSessionParametersInfo videoSessionParametersInfo(*m_videoSession,
                                                           &m_h264.m_spsInfo,
-                                                          &m_h264.m_ppsInfo);
+                                                          &m_h264.m_ppsInfo,
+                                                          m_encoderConfig->enableQpMap,
+                                                          m_qpMapTexelSize);
 
     VkVideoSessionParametersCreateInfoKHR* encodeSessionParametersCreateInfo = videoSessionParametersInfo.getVideoSessionParametersInfo();
     encodeSessionParametersCreateInfo->flags = 0;
@@ -586,6 +588,22 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     //if (encodeFrameInfo->frameEncodeOrderNum == 0) {
     //    pFrameInfo->encodeInfo.flags |= VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR;
     //}
+
+    if (m_encoderConfig->enableQpMap) {
+        VkVideoPictureResourceInfoKHR* pSrcQpMapPictureResource = encodeFrameInfo->srcQpMapImageResource->GetPictureResourceInfo();
+        encodeFrameInfo->quantizationMapInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUANTIZATION_MAP_INFO_KHR;
+        encodeFrameInfo->quantizationMapInfo.pNext = nullptr;
+        encodeFrameInfo->quantizationMapInfo.quantizationMap = pSrcQpMapPictureResource->imageViewBinding;
+        encodeFrameInfo->quantizationMapInfo.quantizationMapExtent = { (m_encoderConfig->encodeWidth + m_qpMapTexelSize.width - 1) / m_qpMapTexelSize.width,
+                                                                       (m_encoderConfig->encodeHeight + m_qpMapTexelSize.height - 1) / m_qpMapTexelSize.height };
+
+        VkBaseInStructure* pStruct = (VkBaseInStructure*)&encodeFrameInfo->encodeInfo;
+        while (pStruct->pNext) pStruct = (VkBaseInStructure*)pStruct->pNext;
+        pStruct->pNext = (VkBaseInStructure*)&encodeFrameInfo->quantizationMapInfo;
+        encodeFrameInfo->encodeInfo.flags |= ((m_encoderConfig->qpMapMode == EncoderConfig::DELTA_QP_MAP) ?
+                                                VK_VIDEO_ENCODE_WITH_QUANTIZATION_DELTA_MAP_BIT_KHR :
+                                                VK_VIDEO_ENCODE_WITH_EMPHASIS_MAP_BIT_KHR);
+    }
 
     // NOTE: dstBuffer resource acquisition can be deferred at the last moment before submit
     VkDeviceSize size = GetBitstreamBuffer(encodeFrameInfo->outputBitstreamBuffer);

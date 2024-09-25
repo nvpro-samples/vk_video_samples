@@ -21,7 +21,8 @@ class VideoSessionParametersInfo {
 public:
     VideoSessionParametersInfo(VkVideoSessionKHR videoSession,
                                StdVideoH264SequenceParameterSet* sps,
-                               StdVideoH264PictureParameterSet* pps)
+                               StdVideoH264PictureParameterSet* pps,
+                               bool enableQpMap = false, VkExtent2D qpMapTexelSize = {0, 0})
     {
         m_videoSession = videoSession;
 
@@ -43,6 +44,15 @@ public:
         m_encodeSessionParametersCreateInfo.flags = 0;
         m_encodeSessionParametersCreateInfo.videoSessionParametersTemplate = VK_NULL_HANDLE;
         m_encodeSessionParametersCreateInfo.videoSession = m_videoSession;
+
+        if (enableQpMap) {
+            m_encodeQuantizationMapSessionParametersCreateInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUANTIZATION_MAP_SESSION_PARAMETERS_CREATE_INFO_KHR;
+            m_encodeQuantizationMapSessionParametersCreateInfo.pNext = nullptr;
+            m_encodeQuantizationMapSessionParametersCreateInfo.quantizationMapTexelSize = qpMapTexelSize;
+
+            m_encodeH264SessionParametersCreateInfo.pNext = &m_encodeQuantizationMapSessionParametersCreateInfo;
+            m_encodeSessionParametersCreateInfo.flags = VK_VIDEO_SESSION_PARAMETERS_CREATE_QUANTIZATION_MAP_COMPATIBLE_BIT_KHR;
+        }
     }
 
     inline VkVideoSessionParametersCreateInfoKHR* getVideoSessionParametersInfo()
@@ -54,6 +64,7 @@ private:
     VkVideoEncodeH264SessionParametersAddInfoKHR m_encodeH264SessionParametersAddInfo;
     VkVideoEncodeH264SessionParametersCreateInfoKHR m_encodeH264SessionParametersCreateInfo;
     VkVideoSessionParametersCreateInfoKHR m_encodeSessionParametersCreateInfo;
+    VkVideoEncodeQuantizationMapSessionParametersCreateInfoKHR m_encodeQuantizationMapSessionParametersCreateInfo;
 };
 
 struct EncoderH264State {

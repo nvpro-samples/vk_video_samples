@@ -34,6 +34,7 @@
 #include "VkCodecUtils/VulkanBistreamBufferImpl.h"
 #include "VkCodecUtils/VkThreadSafeQueue.h"
 #include "VkEncoderDpbH264.h"
+#include "VkEncoderDpbAV1.h"
 #ifdef ENCODER_DISPLAY_QUEUE_SUPPORT
 #include "VkCodecUtils/VulkanVideoEncodeDisplayQueue.h"
 #include "VkShell/Shell.h"
@@ -42,6 +43,7 @@
 
 class VkVideoEncoderH264;
 class VkVideoEncoderH265;
+class VkVideoEncoderAV1;
 
 class VkVideoEncoder : public VkVideoRefCountBase {
 
@@ -61,6 +63,7 @@ public:
 
         VkVideoEncodeFrameInfo(const void* pNext = nullptr)
             : encodeInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR, pNext}
+            , quantizationMapInfo()
             , frameInputOrderNum(uint64_t(-1))
             , frameEncodeInputOrderNum(uint64_t(-1))
             , frameEncodeEncodeOrderNum(uint64_t(-1))
@@ -93,6 +96,9 @@ public:
             , setupImageResource()
             , outputBitstreamBuffer()
             , dpbImageResources()
+            , srcQpMapStagingImageView()
+            , srcQpMapImageResource()
+            , qpMapCmdBuffer()
             , m_refCount(0)
             , m_parent()
             , m_parentIndex(-1)
@@ -109,6 +115,7 @@ public:
         }
 
         VkVideoEncodeInfoKHR                               encodeInfo;
+        VkVideoEncodeQuantizationMapInfoKHR                quantizationMapInfo;
         uint64_t                                           frameInputOrderNum;          // == encoder input order in sequence
         uint64_t                                           frameEncodeInputOrderNum;    // == encoder input order sequence number
         uint64_t                                           frameEncodeEncodeOrderNum;   // == encoder encode order sequence number
@@ -145,10 +152,18 @@ public:
         VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> encodeCmdBuffer;
         VkSharedBaseObj<VkVideoEncodeFrameInfo>            dependantFrames;
 
+        VkSharedBaseObj<VulkanVideoImagePoolNode>          srcQpMapStagingImageView;
+        VkSharedBaseObj<VulkanVideoImagePoolNode>          srcQpMapImageResource;
+        VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> qpMapCmdBuffer;
+
         VkResult SyncHostOnCmdBuffComplete() {
 
             if (inputCmdBuffer) {
                 inputCmdBuffer->ResetCommandBuffer(true, "encoderStagedInputFence");
+            }
+
+            if (qpMapCmdBuffer) {
+                qpMapCmdBuffer->ResetCommandBuffer(true, "encoderStagedQpMapFence");
             }
 
             if (encodeCmdBuffer) {
@@ -281,6 +296,7 @@ public:
                 }
                 numDpbImageResources = 0;
                 inputCmdBuffer = nullptr;
+                qpMapCmdBuffer = nullptr;
                 encodeCmdBuffer = nullptr;
 
                 // recurse and free the children frames
@@ -451,6 +467,11 @@ public:
 #ifdef ENCODER_DISPLAY_QUEUE_SUPPORT
         , m_displayQueue()
 #endif // ENCODER_DISPLAY_QUEUE_SUPPORT
+        , m_imageQpMapFormat()
+        , m_qpMapTexelSize()
+        , m_qpMapTiling()
+        , m_linearQpMapImagePool()
+        , m_qpMapImagePool()
     { }
 
     // Factory Function
@@ -496,6 +517,7 @@ public:
     VkResult LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
     VkResult StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
     VkResult SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
+    VkResult SubmitStagedQpMap(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
     virtual VkResult EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) = 0; // Must be implemented by the codec
     virtual VkResult HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
 
@@ -544,6 +566,14 @@ protected:
                                       uint32_t dstCopyArrayLayer = 0,
                                       VkImageLayout srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                       VkImageLayout dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    VkResult CopyLinearToLinearImage(VkCommandBuffer& commandBuffer,
+                                     VkSharedBaseObj<VkImageResourceView>& srcImageView,
+                                     VkSharedBaseObj<VkImageResourceView>& dstImageView,
+                                     const VkExtent2D& copyImageExtent,
+                                     uint32_t srcCopyArrayLayer = 0,
+                                     uint32_t dstCopyArrayLayer = 0,
+                                     VkImageLayout srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                     VkImageLayout dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
     virtual VkResult ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                 uint32_t frameIdx, uint32_t ofTotalFrames) = 0;
@@ -675,6 +705,12 @@ protected:
     EncoderFrameQueue                        m_encoderThreadQueue;
     std::thread                              m_encoderQueueConsumerThread;
     VkSharedBaseObj<VkVideoEncodeFrameInfo>  m_lastDeferredFrame;
+
+    VkFormat                                 m_imageQpMapFormat;
+    VkExtent2D                               m_qpMapTexelSize;
+    VkImageTiling                            m_qpMapTiling;
+    VkSharedBaseObj<VulkanVideoImagePool>    m_linearQpMapImagePool;
+    VkSharedBaseObj<VulkanVideoImagePool>    m_qpMapImagePool;
 };
 
 VkResult CreateVideoEncoderH264(const VulkanDeviceContext* vkDevCtx,
@@ -684,5 +720,9 @@ VkResult CreateVideoEncoderH264(const VulkanDeviceContext* vkDevCtx,
 VkResult CreateVideoEncoderH265(const VulkanDeviceContext* vkDevCtx,
                                 VkSharedBaseObj<EncoderConfig>& encoderConfig,
                                 VkSharedBaseObj<VkVideoEncoder>& encoder);
+
+VkResult CreateVideoEncoderAV1(const VulkanDeviceContext* vkDevCtx,
+                               VkSharedBaseObj<EncoderConfig>& encoderConfig,
+                               VkSharedBaseObj<VkVideoEncoder>& encoder);
 
 #endif /* _VKVIDEOENCODER_VKVIDEOENCODER_H_ */
