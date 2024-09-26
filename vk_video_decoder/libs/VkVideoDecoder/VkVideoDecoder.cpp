@@ -233,7 +233,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         assert(result == VK_SUCCESS);
     }
 
-    uint16_t imageSpecsIndex = 0;
+    uint8_t imageSpecsIndex = 0;
     m_imageSpecsIndex.decodeDpb = imageSpecsIndex++;
     std::array<VulkanVideoFrameBuffer::ImageSpec, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES> imageSpecs;
     imageSpecs[m_imageSpecsIndex.decodeDpb].imageTypeIdx = m_imageSpecsIndex.decodeDpb;
@@ -844,7 +844,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         pFrameFilterOutResourceInfo = &currentFilterOutPictureResourceInfo;
     }
 
-    uint16_t filterOutImageSpecsIndex = (m_imageSpecsIndex.filterOut != InvalidImageTypeIdx) ?
+    uint8_t filterOutImageSpecsIndex = (m_imageSpecsIndex.filterOut != InvalidImageTypeIdx) ?
                                             m_imageSpecsIndex.filterOut : m_imageSpecsIndex.linearOut ;
 
     if (filterOutImageSpecsIndex != InvalidImageTypeIdx) {

@@ -114,8 +114,9 @@ int8_t VkEncDpbH265::DpbPictureStart(uint64_t frameId, const StdVideoEncodeH265P
                 m_stDpb[i].dpbImageView = nullptr;
             }
         }
-        while (IsDpbFull())
+        while (IsDpbFull()) {
             DpbBumping();
+        }
     }
 
     // select decoded picture buffer
@@ -169,12 +170,9 @@ void VkEncDpbH265::DpbPictureEnd(VkSharedBaseObj<VulkanVideoImagePoolNode>& dpbI
 
 bool VkEncDpbH265::IsDpbFull() {
     int32_t numDpbPictures = 0;
-    [[maybe_unused]] int32_t numNeededForOutput = 0;
     for (int32_t i = 0; i < m_dpbSize; i++) {
         if (m_stDpb[i].state == 1) {
             numDpbPictures++;
-            if (m_stDpb[i].output)
-                numNeededForOutput++;
         }
     }
     return numDpbPictures >= m_dpbSize;

@@ -91,6 +91,7 @@ public:
 
         ImageSpec()
         : imageTypeIdx(InvalidImageTypeIdx)
+        , reserved(0)
         , imageTypeMask(0)
         , usesImageArray(false)
         , usesImageViewArray(false)
@@ -100,7 +101,8 @@ public:
         , imageArray()
         , imageViewArray() {}
 
-        uint16_t              imageTypeIdx;  // -1 is an invalid index and the entry is skipped
+        uint8_t               imageTypeIdx;  // InvalidImageTypeIdx is an invalid index and the entry is skipped
+        uint8_t               reserved;
         uint16_t              imageTypeMask;
         uint32_t              usesImageArray     : 1;
         uint32_t              usesImageViewArray : 1;
