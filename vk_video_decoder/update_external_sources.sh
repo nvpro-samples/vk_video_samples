@@ -45,7 +45,7 @@ function create_glslang () {
 function update_glslang () {
    echo "Updating ${BASEDIR}/glslang"
    cd "${BASEDIR}"/glslang
-   git fetch --all
+   git fetch origin
    git checkout --force ${GLSLANG_REVISION}
    ./update_glslang_sources.py
 }
@@ -73,7 +73,7 @@ function create_shaderc () {
 function update_shaderc () {
    echo "Updating ${BASEDIR}/shaderc"
    cd "${BASEDIR}"/shaderc
-   git fetch --all
+   git fetch origin
    git checkout --force ${SHADERC_REVISION}
    ./utils/git-sync-deps
 }
