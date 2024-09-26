@@ -243,7 +243,7 @@ typedef enum {
 
 #define DCT_EOB_MODEL_TOKEN 3 /* EOB Extra Bits 0+0 */
 
-typedef char vp9_tree_index;
+typedef signed char vp9_tree_index;
 
 static const int32_t seg_feature_data_signed[SEG_LVL_MAX] = {1, 1, 0, 0};
 static const int32_t seg_feature_data_max[SEG_LVL_MAX] = {MAXQ, 63, 3, 0};
@@ -1502,7 +1502,7 @@ protected:
     void adaptModeProbs(vp9_prob_update_s *pProbSetup);
     void adaptModeContext(vp9_prob_update_s *pProbSetup);
     uint32_t adapt_probs(uint32_t i,
-                         const char* tree,
+                         const signed char* tree,
                          vp9_prob this_probs[],
                          const vp9_prob last_probs[],
                          const uint32_t num_events[]);

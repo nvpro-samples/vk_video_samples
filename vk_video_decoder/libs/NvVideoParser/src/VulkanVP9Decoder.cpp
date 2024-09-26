@@ -950,7 +950,7 @@ void VulkanVP9Decoder::adaptModeContext(vp9_prob_update_s *pProbSetup)
 }
 
 uint32_t VulkanVP9Decoder::adapt_probs(uint32_t i,
-                            const char* tree,
+                            const signed char* tree,
                             vp9_prob this_probs[],
                             const vp9_prob last_probs[],
                             const uint32_t num_events[])
