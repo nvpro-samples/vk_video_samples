@@ -912,7 +912,7 @@ struct mmap_context
 inline mmap_context memory_map(const file_handle_type file_handle, const int64_t offset,
     const int64_t length, const access_mode mode, std::error_code& error)
 {
-    const int64_t aligned_offset = make_offset_page_aligned(offset);
+    const int64_t aligned_offset = make_offset_page_aligned((size_t)offset);
     const int64_t length_to_map = offset - aligned_offset + length;
 #ifdef _WIN32
     const int64_t max_file_size = offset + length;
@@ -944,11 +944,11 @@ inline mmap_context memory_map(const file_handle_type file_handle, const int64_t
 #else // POSIX
     char* mapping_start = static_cast<char*>(::mmap(
             0, // Don't give hint as to where to map.
-            length_to_map,
+            (size_t)length_to_map,
             mode == access_mode::read ? PROT_READ : PROT_WRITE,
             MAP_SHARED,
             file_handle,
-            aligned_offset));
+            (size_t)aligned_offset));
     if(mapping_start == MAP_FAILED)
     {
         error = detail::last_error();
@@ -1099,8 +1099,8 @@ void basic_mmap<AccessMode, ByteT>::map(const handle_type handle,
         file_handle_ = handle;
         is_handle_internal_ = false;
         data_ = reinterpret_cast<pointer>(ctx.data);
-        length_ = ctx.length;
-        mapped_length_ = ctx.mapped_length;
+        length_ = (size_t)ctx.length;
+        mapped_length_ = (size_t)ctx.mapped_length;
 #ifdef _WIN32
         file_mapping_handle_ = ctx.file_mapping_handle;
 #endif
