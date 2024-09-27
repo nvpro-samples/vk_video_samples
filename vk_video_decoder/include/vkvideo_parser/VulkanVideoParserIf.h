@@ -374,22 +374,22 @@ struct VkParserAv1PictureData {
 };
 
 typedef struct VkParserPictureData {
-    int32_t PicWidthInMbs;      // Coded Frame Size
-    int32_t FrameHeightInMbs;   // Coded Frame Height
-    VkPicIf* pCurrPic;          // Current picture (output)
-    int32_t field_pic_flag;     // 0=frame picture, 1=field picture
-    int32_t bottom_field_flag;  // 0=top field, 1=bottom field (ignored if
-                                // field_pic_flag=0)
-    int32_t second_field;        // Second field of a complementary field pair
-    int32_t progressive_frame;   // Frame is progressive
-    int32_t top_field_first;     // Frame pictures only
-    int32_t repeat_first_field;  // For 3:2 pulldown (number of additional fields,
-                                 // 2=frame doubling, 4=frame tripling)
-    int32_t ref_pic_flag;    // Frame is a reference frame
-    int32_t intra_pic_flag;  // Frame is entirely intra coded (no temporal
-                             // dependencies)
-    int32_t chroma_format;        // Chroma Format (should match sequence info)
-    int32_t picture_order_count;  // picture order count (if known)
+    int32_t PicWidthInMbs;            // Coded Frame Size
+    int32_t FrameHeightInMbs;         // Coded Frame Height
+    VkPicIf* pCurrPic;                // Current picture (output)
+    uint32_t field_pic_flag : 1;      // 0=frame picture, 1=field picture
+    uint32_t bottom_field_flag : 1;   // 0=top field, 1=bottom field (ignored if
+                                      // field_pic_flag=0)
+    uint32_t second_field : 1;        // Second field of a complementary field pair
+    uint32_t progressive_frame : 1;   // Frame is progressive
+    uint32_t top_field_first : 1;     // Frame pictures only
+    uint32_t repeat_first_field : 3;  // For 3:2 pulldown (number of additional fields,
+                                      // 2 = frame doubling, 4 = frame tripling)
+    uint32_t ref_pic_flag : 1;        // Frame is a reference frame
+    uint32_t intra_pic_flag : 1;      // Frame is entirely intra coded (no temporal
+                                      // dependencies)
+    int32_t chroma_format;            // Chroma Format (should match sequence info)
+    int32_t picture_order_count;      // picture order count (if known)
 
     // Codec-specific data
     union {

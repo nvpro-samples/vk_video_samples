@@ -221,10 +221,11 @@ bool VulkanH264Decoder::BeginPicture(VkParserPictureData *pnvpd)
         pnvpd->field_pic_flag = slh->field_pic_flag;
         pnvpd->bottom_field_flag = slh->bottom_field_flag;
         pnvpd->second_field = (slh->field_pic_flag) && (dpb[iCur].complementary_field_pair);
-        if (slh->field_pic_flag)
+        if (slh->field_pic_flag) {
             pnvpd->top_field_first = (pnvpd->second_field == pnvpd->bottom_field_flag);
-        else
+        } else {
             pnvpd->top_field_first = (dpb[iCur].TopFieldOrderCnt < dpb[iCur].BottomFieldOrderCnt);
+        }
         pnvpd->progressive_frame = (!slh->field_pic_flag) && (dpb[iCur].TopFieldOrderCnt == dpb[iCur].BottomFieldOrderCnt);
         pnvpd->ref_pic_flag = (slh->nal_ref_idc != 0);
         pnvpd->intra_pic_flag = m_intra_pic_flag;
@@ -792,7 +793,7 @@ void VulkanH264Decoder::output_order_dpb_SVC(bool is_target_dep, dependency_data
     {
         if (dd->slh.no_output_of_prior_pics_flag)
         {
-            for (int k=0; k<MAX_DPB_SIZE; k++)
+            for (int k = 0; k < MAX_DPB_SIZE; k++)
             {
                 ds->dpb_entry[k].output = false;
             }
@@ -2274,10 +2275,10 @@ bool VulkanH264Decoder::slice_header(slice_header_s *slh, int nal_ref_idc, int n
     PicSizeInMbs = (sps->pic_width_in_mbs_minus1 + 1) * (sps->pic_height_in_map_units_minus1 + 1);
     if (!sps->flags.frame_mbs_only_flag)
     {
-        slh->field_pic_flag = u(1);
+        slh->field_pic_flag = flag();
         if (slh->field_pic_flag)
         {
-            slh->bottom_field_flag = u(1);
+            slh->bottom_field_flag = flag();
         } else
         {
             PicSizeInMbs <<= 1;
@@ -2311,8 +2312,9 @@ bool VulkanH264Decoder::slice_header(slice_header_s *slh, int nal_ref_idc, int n
     
     if (quality_id == 0)
     {
-        if (slh->slice_type == B)
-            slh->direct_spatial_mv_pred_flag = u(1);
+        if (slh->slice_type == B) {
+            slh->direct_spatial_mv_pred_flag = flag();
+        }
         if (slh->slice_type == P || slh->slice_type == SP || slh->slice_type == B)
         {
             if (u(1)) // num_ref_idx_active_override_flag
@@ -2497,7 +2499,7 @@ bool VulkanH264Decoder::ref_pic_list_reordering(slice_header_s *slh)
 
     if (slh->slice_type != I && slh->slice_type != SI)
     {
-        slh->ref_pic_list_reordering_flag_l0 = (unsigned char)u(1);
+        slh->ref_pic_list_reordering_flag_l0 = flag();
         if (slh->ref_pic_list_reordering_flag_l0)
         {
             for (i=0; ; i++)
@@ -2518,7 +2520,7 @@ bool VulkanH264Decoder::ref_pic_list_reordering(slice_header_s *slh)
     }
     if (slh->slice_type == B)
     {
-        slh->ref_pic_list_reordering_flag_l1 = (unsigned char)u(1);
+        slh->ref_pic_list_reordering_flag_l1 = flag();
         if (slh->ref_pic_list_reordering_flag_l1)
         {
             for (i=0; ; i++)
@@ -2641,12 +2643,12 @@ void VulkanH264Decoder::dec_ref_pic_marking(slice_header_s *slh)
 {
     if (slh->IdrPicFlag)
     {
-        slh->no_output_of_prior_pics_flag = (unsigned char)u(1);
-        slh->long_term_reference_flag = (unsigned char)u(1);
+        slh->no_output_of_prior_pics_flag = flag();
+        slh->long_term_reference_flag = flag();
     }
     else
     {
-        slh->adaptive_ref_pic_marking_mode_flag = (unsigned char)u(1);
+        slh->adaptive_ref_pic_marking_mode_flag = flag();
         if (slh->adaptive_ref_pic_marking_mode_flag)
         {
             for (int i=0; i<MAX_MMCOS; i++)
@@ -2689,8 +2691,9 @@ bool VulkanH264Decoder::dpb_sequence_start(slice_header_s *slh)
 
     const seq_parameter_set_s* sps = m_sps;
 
-    if (!slh->no_output_of_prior_pics_flag)
+    if (!slh->no_output_of_prior_pics_flag) {
         flush_decoded_picture_buffer();
+    }
     PicWidthInMbs    = sps->pic_width_in_mbs_minus1 + 1;
     FrameHeightInMbs = (2 - sps->flags.frame_mbs_only_flag) * (sps->pic_height_in_map_units_minus1 + 1);
     MaxDecFrameBuffering = std::min<int32_t>(std::max<int32_t>(sps->vui.max_dec_frame_buffering, (int)sps->max_num_ref_frames), 16);
@@ -3643,11 +3646,11 @@ void VulkanH264Decoder::decoded_reference_picture_marking_SVC(dependency_data_s 
         picture_numbers_SVC(dd, ds);
         if (dd->slh.adaptive_ref_base_pic_marking_mode_flag)
             adaptive_ref_base_pic_marking(dd, ds);
-        if (dd->slh.adaptive_ref_pic_marking_mode_flag)
+        if (dd->slh.adaptive_ref_pic_marking_mode_flag) {
             adaptive_ref_pic_marking(dd, ds);
-        else
+        } else {
             sliding_window_ref_pic_marking(dd, ds);
-
+        }
         if (ds->dpb_entry[16].ref != MARKING_LONG)
         {
             ds->dpb_entry[16].ref = MARKING_SHORT;

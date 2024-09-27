@@ -795,8 +795,8 @@ protected:
     int m_bPictureStarted;
     int m_prevPicOrderCntMsb;
     int m_prevPicOrderCntLsb;
-    int m_intra_pic_flag;
-    int NoRaslOutputFlag;
+    uint32_t m_intra_pic_flag : 1;
+    uint32_t  NoRaslOutputFlag : 1;
     int m_NumBitsForShortTermRPSInSlice;
     int m_NumDeltaPocsOfRefRpsIdx;
     int m_NumPocTotalCurr;

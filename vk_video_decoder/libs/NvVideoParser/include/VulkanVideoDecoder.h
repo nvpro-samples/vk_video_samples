@@ -182,6 +182,7 @@ protected:
     uint32_t next_bits(uint32_t n) { return (m_nalu.get_bfr << m_nalu.get_bfroffs) >> (32 - n); } // NOTE: n must be in the [1..25] range
     void skip_bits(uint32_t n);  // advance bitstream position
     uint32_t u(uint32_t n);   // return next n bits, advance bitstream position
+    bool flag()          { return (0 != u(1)); }     // returns flag value
     uint32_t u16_le()    { uint32_t tmp = u(8); tmp |= u(8) << 8; return tmp; }
     uint32_t u24_le()    { uint32_t tmp = u16_le(); tmp |= u(8) << 16; return tmp; }
     uint32_t u32_le()    { uint32_t tmp = u16_le(); tmp |= u16_le() << 16; return tmp; }

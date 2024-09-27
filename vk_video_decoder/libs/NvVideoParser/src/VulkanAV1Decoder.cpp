@@ -218,7 +218,7 @@ bool VulkanAV1Decoder::end_of_picture(uint32_t frameSize)
 
     m_pVkPictureData->firstSliceIndex = 0;
     memcpy(&m_pVkPictureData->CodecSpecific.av1, &m_PicData, sizeof(m_PicData));
-    m_pVkPictureData->intra_pic_flag = pStd->frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY;
+    m_pVkPictureData->intra_pic_flag = (pStd->frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY);
 
     if (!BeginPicture(m_pVkPictureData)) {
         // Error: BeginPicture failed

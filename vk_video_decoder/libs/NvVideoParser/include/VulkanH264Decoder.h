@@ -547,27 +547,28 @@ struct slice_header_s
     int pic_parameter_set_id;
     int colour_plane_id;
     int frame_num;
-    int field_pic_flag;
-    int bottom_field_flag;
     int idr_pic_id;
     int pic_order_cnt_lsb;
     int delta_pic_order_cnt_bottom;
     int delta_pic_order_cnt[2];
     int redundant_pic_cnt;
-    int direct_spatial_mv_pred_flag;
     int num_ref_idx_l0_active_minus1;
     int num_ref_idx_l1_active_minus1;
     // dec_ref_pic_marking
-    unsigned char no_output_of_prior_pics_flag;
-    unsigned char long_term_reference_flag;
-    unsigned char adaptive_ref_pic_marking_mode_flag;
-    unsigned char mmco5; // derived value that indicates presence of an mmco equal to 5
+    uint32_t direct_spatial_mv_pred_flag : 1;
+    uint32_t field_pic_flag : 1;
+    uint32_t bottom_field_flag  : 1;
+    uint32_t no_output_of_prior_pics_flag : 1;
+    uint32_t long_term_reference_flag : 1;
+    uint32_t adaptive_ref_pic_marking_mode_flag : 1;
+    uint32_t mmco5  : 1; // derived value that indicates presence of an mmco equal to 5
+    uint32_t IdrPicFlag : 1;
     memory_management_control_operation_s mmco[MAX_MMCOS];
     // ref_pic_list_reordering
-    unsigned char nal_ref_idc;        // extracted from NAL start code
-    unsigned char nal_unit_type;      // extracted from NAL start code
-    unsigned char ref_pic_list_reordering_flag_l0;
-    unsigned char ref_pic_list_reordering_flag_l1;
+    uint32_t nal_ref_idc : 8;        // extracted from NAL start code
+    uint32_t nal_unit_type : 8;      // extracted from NAL start code
+    uint32_t ref_pic_list_reordering_flag_l0 : 1;
+    uint32_t ref_pic_list_reordering_flag_l1 : 1;
     ref_pic_list_reordering_s ref_pic_list_reordering_l0[MAX_REFS];
     ref_pic_list_reordering_s ref_pic_list_reordering_l1[MAX_REFS];
     // pred_weight_table
@@ -582,7 +583,6 @@ struct slice_header_s
     int primary_pic_type;
     // pic_timing
     int sei_pic_struct;
-    int IdrPicFlag;
     int view_id;
     // FMO
     unsigned int slice_group_change_cycle;
@@ -884,14 +884,14 @@ private:
     int prevFrameNumOffset, prevFrameNum;
     int iCur;
     int picture_started;
-    int m_intra_pic_flag;
-    int m_idr_found_flag;   // true in steady-state once we found an IDR picture
+    uint32_t m_intra_pic_flag : 1;
+    uint32_t m_idr_found_flag : 1;   // true in steady-state once we found an IDR picture
+    uint32_t m_aso : 1;                 // true if ASO detected in current picture
+    uint32_t m_prefix_nalu_valid : 1;
     int m_last_sps_id;
     int m_last_sei_pic_struct;
     int m_last_primary_pic_type;
     int m_first_mb_in_slice;
-    bool m_aso;                 // true if ASO detected in current picture
-    bool m_prefix_nalu_valid;
     dpb_entry_s *cur;
     dpb_entry_s dpb[MAX_DPB_SIZE+1];
     slice_header_s m_slh;       // 1st slice header of current picture
