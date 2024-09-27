@@ -1034,19 +1034,6 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
     return result;
 }
 
-VkResult VkVideoEncoder::RecordVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
-                                               uint32_t numFrames)
-{
-
-    uint32_t processedFramesCount = 0; // Initialize the counter
-    VkResult result = VkVideoEncodeFrameInfo::ProcessFrames(this, encodeFrameInfo,
-                                                            processedFramesCount, numFrames,
-       [this](VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame, uint32_t frameIdx, uint32_t ofTotalFrames)
-             { return RecordVideoCodingCmd(frame, frameIdx, ofTotalFrames); });
-
-    return result;
-}
-
 VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                                uint32_t frameIdx, uint32_t ofTotalFrames)
 {

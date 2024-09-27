@@ -210,11 +210,6 @@ public:
                 return VK_SUCCESS;  // Base case: No more frames, return success
             }
 
-            // Decrement the counter before processing the next frame
-            lastFramesIndex--;
-
-            assert(lastFramesIndex < totalFrameCount);
-
             // Recursive call to process the next frame
             VkResult result = ProcessFramesReverse(encoder, frame->dependantFrames,
                                                    lastFramesIndex, totalFrameCount, callback);
@@ -222,6 +217,11 @@ public:
             if (result != VK_SUCCESS) {
                 return result;  // If an error occurred, return the error code
             }
+
+            // Decrement the counter before processing the next frame
+            lastFramesIndex--;
+
+            assert(lastFramesIndex < totalFrameCount);
 
             // Invoke the callback for the current frame at the end
             return callback(frame, lastFramesIndex, totalFrameCount);
