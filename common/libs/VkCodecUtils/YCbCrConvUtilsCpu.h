@@ -52,7 +52,7 @@ public:
 
     static void CopyRow(const planeType* src, planeType* dst, int count, int /* shiftBits */) {
 
-        count *= sizeof(planeType);
+        count *= (int)sizeof(planeType);
         memcpy(dst, src, count);
     }
 
@@ -211,13 +211,13 @@ public:
             return -1;
         }
 
-        src_stride_y /= sizeof(planeType);
-        dst_stride_y /= sizeof(planeType);
+        src_stride_y /= (int)sizeof(planeType);
+        dst_stride_y /= (int)sizeof(planeType);
 
-        src_stride_u /= sizeof(planeType);
-        src_stride_v /= sizeof(planeType);
+        src_stride_u /= (int)sizeof(planeType);
+        src_stride_v /= (int)sizeof(planeType);
 
-        dst_stride_uv /= sizeof(planeType);
+        dst_stride_uv /= (int)sizeof(planeType);
 
         // Negative height means invert the image.
         if (height < 0) {

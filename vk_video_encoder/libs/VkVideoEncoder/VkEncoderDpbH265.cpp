@@ -550,7 +550,7 @@ void VkEncDpbH265::SetupReferencePictureListLx(StdVideoH265PictureType picType,
     }
 
     if ((picType == STD_VIDEO_H265_PICTURE_TYPE_P) || (picType == STD_VIDEO_H265_PICTURE_TYPE_B)) {
-        uint8_t nNumRpsCurrTempList0 = std::max<uint8_t>(pRefLists->num_ref_idx_l0_active_minus1 + 1, numPocTotalCurr);
+        uint8_t nNumRpsCurrTempList0 = std::max<uint8_t>((uint8_t)(pRefLists->num_ref_idx_l0_active_minus1 + 1), numPocTotalCurr);
         assert(nNumRpsCurrTempList0 <= STD_VIDEO_H265_MAX_NUM_LIST_REF);
         int8_t RefPicListTemp0[STD_VIDEO_H265_MAX_NUM_LIST_REF];
         uint8_t rIdx = 0;
@@ -580,7 +580,7 @@ void VkEncDpbH265::SetupReferencePictureListLx(StdVideoH265PictureType picType,
     }
 
     if (picType == STD_VIDEO_H265_PICTURE_TYPE_B) {
-        uint8_t nNumRpsCurrTempList1 = std::max<uint8_t>(pRefLists->num_ref_idx_l1_active_minus1 + 1, numPocTotalCurr);
+        uint8_t nNumRpsCurrTempList1 = std::max<uint8_t>((uint8_t)(pRefLists->num_ref_idx_l1_active_minus1 + 1), numPocTotalCurr);
         assert(nNumRpsCurrTempList1 <= STD_VIDEO_H265_MAX_NUM_LIST_REF);
         int8_t RefPicListTemp1[STD_VIDEO_H265_MAX_NUM_LIST_REF];
         uint8_t rIdx = 0, i = 0;
@@ -762,7 +762,7 @@ void VkEncDpbH265::InitializeShortTermRPSPFrame(int32_t numPocLtCurr,
         int32_t prevDelta = 0;
         for (int32_t numStRefL0 = 0; numStRefL0 < tmpSTRPS.num_negative_pics; numStRefL0++) {
             tmpSTRPS.delta_poc_s0_minus1[numStRefL0] = (uint8_t)(prevDelta - deltaPocS0[numStRefL0] - 1);
-            tmpSTRPS.used_by_curr_pic_s0_flag |= (usedByCurrPicS0[numStRefL0] & 1) << numStRefL0;
+            tmpSTRPS.used_by_curr_pic_s0_flag |= (uint16_t)((usedByCurrPicS0[numStRefL0] & 1) << numStRefL0);
             // tmpSTRPS.DeltaPocS0[numStRefL0]                      = iDeltaPocS0[numStRefL0];
             // tmpSTRPS.UsedByCurrPicS0[numStRefL0]                 = iUsedByCurrPicS0[numStRefL0];
             prevDelta = deltaPocS0[numStRefL0];
@@ -771,7 +771,7 @@ void VkEncDpbH265::InitializeShortTermRPSPFrame(int32_t numPocLtCurr,
         if (m_useMultipleRefs) {
             for (int32_t numStRefL1 = 0; numStRefL1 < tmpSTRPS.num_positive_pics; numStRefL1++) {
                 tmpSTRPS.delta_poc_s1_minus1[numStRefL1] = (uint8_t)(deltaPocS1[numStRefL1] - prevDelta - 1);
-                tmpSTRPS.used_by_curr_pic_s1_flag |= (usedByCurrPicS1[numStRefL1] & 1) << numStRefL1;
+                tmpSTRPS.used_by_curr_pic_s1_flag |= (uint16_t)((usedByCurrPicS1[numStRefL1] & 1) << numStRefL1);
                 // tmpSTRPS.DeltaPocS1[numStRefL1] = iDeltaPocS1[numStRefL1];
                 // tmpSTRPS.UsedByCurrPicS1[numStRefL1] = iUsedByCurrPicS1[numStRefL1];
                 prevDelta = deltaPocS1[numStRefL1];

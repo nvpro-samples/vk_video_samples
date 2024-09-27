@@ -591,8 +591,8 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
     spsInfo->sps.sps_video_parameter_set_id = vpsId;
     spsInfo->sps.sps_max_sub_layers_minus1  = 0;
     spsInfo->sps.sps_seq_parameter_set_id   = spsId;
-    spsInfo->sps.bit_depth_luma_minus8      = encodeBitDepthLuma - 8;
-    spsInfo->sps.bit_depth_chroma_minus8    = encodeBitDepthChroma - 8;
+    spsInfo->sps.bit_depth_luma_minus8      = (uint8_t)(encodeBitDepthLuma - 8);
+    spsInfo->sps.bit_depth_chroma_minus8    = (uint8_t)(encodeBitDepthChroma - 8);
     spsInfo->sps.log2_max_pic_order_cnt_lsb_minus4 = 4;
     spsInfo->sps.log2_min_luma_coding_block_size_minus3 = (uint8_t)(minCbLog2SizeY - 3);
     spsInfo->sps.log2_diff_max_min_luma_coding_block_size = (uint8_t)(ctbLog2SizeY - minCbLog2SizeY);
@@ -695,8 +695,8 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
     pps->pps_seq_parameter_set_id = spsId;
     pps->sps_video_parameter_set_id = vpsId;
     pps->num_extra_slice_header_bits = 0;
-    pps->num_ref_idx_l0_default_active_minus1 = numRefL0 > 0 ? numRefL0 - 1 : 0;
-    pps->num_ref_idx_l1_default_active_minus1 = numRefL1 > 0 ? numRefL1 - 1 : 0;
+    pps->num_ref_idx_l0_default_active_minus1 = numRefL0 > 0 ? (uint8_t)(numRefL0 - 1) : 0;
+    pps->num_ref_idx_l1_default_active_minus1 = numRefL1 > 0 ? (uint8_t)(numRefL1 - 1) : 0;
     pps->init_qp_minus26 = 0;
     pps->diff_cu_qp_delta_depth = 0;
     pps->pps_cb_qp_offset = 0;

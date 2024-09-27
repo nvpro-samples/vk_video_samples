@@ -25,7 +25,7 @@ VkVideoGopStructure::VkVideoGopStructure(uint8_t gopFrameCount,
                                          bool closedGop)
     : m_gopFrameCount(gopFrameCount)
     , m_consecutiveBFrameCount(consecutiveBFrameCount)
-    , m_gopFrameCycle(m_consecutiveBFrameCount + 1)
+    , m_gopFrameCycle((uint8_t)(m_consecutiveBFrameCount + 1))
     , m_temporalLayerCount(temporalLayerCount)
     , m_idrPeriod(idrPeriod)
     , m_lastFrameType(lastFrameType)
@@ -37,7 +37,7 @@ VkVideoGopStructure::VkVideoGopStructure(uint8_t gopFrameCount,
 
 bool VkVideoGopStructure::Init(uint64_t maxNumFrames)
 {
-    m_gopFrameCycle = m_consecutiveBFrameCount + 1;
+    m_gopFrameCycle = (uint8_t)(m_consecutiveBFrameCount + 1);
     m_gopFrameCount = (uint8_t)std::min<uint64_t>(m_gopFrameCount, maxNumFrames);
     if (m_idrPeriod > 0) {
         m_idrPeriod = (uint32_t)std::min<uint64_t>(m_idrPeriod, maxNumFrames);

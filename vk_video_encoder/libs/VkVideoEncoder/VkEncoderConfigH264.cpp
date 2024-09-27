@@ -229,7 +229,7 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
     pps->pic_parameter_set_id = ppsId;
     pps->weighted_bipred_idc = STD_VIDEO_H264_WEIGHTED_BIPRED_IDC_DEFAULT;
     pps->num_ref_idx_l0_default_active_minus1 = (uint8_t)(((gopStructure.GetGopFrameCount() > dpbCount) ? dpbCount : gopStructure.GetGopFrameCount()) - 1);
-    pps->num_ref_idx_l1_default_active_minus1 = (gopStructure.GetConsecutiveBFrameCount() > 0) ? gopStructure.GetConsecutiveBFrameCount() - 1 : 0;
+    pps->num_ref_idx_l1_default_active_minus1 = (gopStructure.GetConsecutiveBFrameCount() > 0) ? (uint8_t)(gopStructure.GetConsecutiveBFrameCount() - 1) : 0;
 
     if ((sps->chroma_format_idc == 3) && !sps->flags.qpprime_y_zero_transform_bypass_flag) {
         pps->chroma_qp_index_offset = pps->second_chroma_qp_index_offset = 6;
@@ -241,9 +241,9 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
     // max_num_ref_frames if required (in case of multi-ref).
     if ((sps->max_num_ref_frames == 0) ||
            (sps->max_num_ref_frames <= pps->num_ref_idx_l0_default_active_minus1)) {
-        sps->max_num_ref_frames = pps->num_ref_idx_l0_default_active_minus1 + 1;
+        sps->max_num_ref_frames = (uint8_t)(pps->num_ref_idx_l0_default_active_minus1 + 1);
         if (gopStructure.GetConsecutiveBFrameCount() > 0) {
-            sps->max_num_ref_frames += (uint8_t)(pps->num_ref_idx_l1_default_active_minus1 + 1U);
+            sps->max_num_ref_frames = (uint8_t)(sps->max_num_ref_frames + pps->num_ref_idx_l1_default_active_minus1 + 1U);
         }
 
         // max_num_ref_frames must not exceed the largest DPB size allowed by
@@ -391,7 +391,7 @@ int8_t EncoderConfigH264::InitDpbCount()
     // DEFAULT_MAX_NUM_REF_FRAMES. Otherwise, clamp the computed DPB size to DEFAULT_MAX_NUM_REF_FRAMES.
     levelDpbSize = (levelIdc == STD_VIDEO_H264_LEVEL_IDC_5_2) ? (uint8_t)DEFAULT_MAX_NUM_REF_FRAMES : std::min(uint8_t(DEFAULT_MAX_NUM_REF_FRAMES), levelDpbSize);
 
-    uint8_t dpbSize = ((dpbCount < 1) ? levelDpbSize : std::min((uint8_t)dpbCount, levelDpbSize)) + 1;
+    uint8_t dpbSize = (uint8_t)((dpbCount < 1) ? levelDpbSize : (uint8_t)(std::min((uint8_t)dpbCount, levelDpbSize)) + 1);
 
     dpbCount = dpbSize;
     return dpbSize;

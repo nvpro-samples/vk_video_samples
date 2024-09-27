@@ -94,9 +94,9 @@ void generateColorPatternRgba(ColorPattern pattern, colorType *dataPtr,
 
             rowStartPtr = (colorType *)((uint8_t *)rowStartPtr + strideBytes);
 
-            grad[0] += step;
-            grad[1] += step;
-            grad[2] += step;
+            grad[0] = (colorType)(grad[0] + step);
+            grad[1] = (colorType)(grad[1] + step);
+            grad[2] = (colorType)(grad[2] + step);
         }
     }
     break;
@@ -510,7 +510,7 @@ void VkFillYuv::fillVkCommon(const ImageData *pImageData, VkSubresourceLayout la
     }
 
     uint8_t* rgbImageData = NULL;
-    const unsigned int rgbMaxSize   = imageWidth * imageHeight * 4 * sizeof(uint16_t);
+    const unsigned int rgbMaxSize   = (unsigned int)(imageWidth * imageHeight * 4 * sizeof(uint16_t));
     if (mpInfo && !isUnnormalizedRgba) {
 
         if (!rgbImageData) {
@@ -562,7 +562,7 @@ void VkFillYuv::fillVkCommon(const ImageData *pImageData, VkSubresourceLayout la
         uint16_t  clearColor[4];
 
         for (unsigned int i = 0; i < 4; i++ ) {
-            clearColor[i] = (uint16_t)pImageData->clearColor[i] * 256;
+            clearColor[i] = (uint16_t)(pImageData->clearColor[i] * 256);
         }
 
         generateColorPatternRgba16161616(patttern, (uint16_t *)rgbaColPtr, (uint32_t)imageWidth, (uint32_t)imageHeight,
