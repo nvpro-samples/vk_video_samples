@@ -956,7 +956,7 @@ VkResult VulkanVideoParser::Initialize(
         return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
     }
 
-    return CreateVulkanVideoDecodeParser(m_codecType, pStdExtensionVersion, &nvParserLog, 1, &nvdp, m_vkParser);
+    return CreateVulkanVideoDecodeParser(m_codecType, pStdExtensionVersion, &nvParserLog, 0, &nvdp, m_vkParser);
 }
 
 void VulkanVideoParser::Deinitialize()

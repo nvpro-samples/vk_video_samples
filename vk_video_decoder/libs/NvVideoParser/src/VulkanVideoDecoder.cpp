@@ -648,7 +648,7 @@ void VulkanVideoDecoder::end_of_stream()
 #include "VulkanAV1Decoder.h"
 
 static nvParserLogFuncType gParserLogFunc = nullptr;
-static int gLogLevel = 1;
+static int gLogLevel = 0;
 
 void nvParserErrorLog(const char* format, ...)
 {
@@ -663,7 +663,7 @@ void nvParserErrorLog(const char* format, ...)
 
 void nvParserLog(const char* format, ...)
 {
-    if (!gParserLogFunc || !gLogLevel) {
+    if ((gParserLogFunc == nullptr) || (gLogLevel == 0)) {
         return;
     }
     va_list argptr;
