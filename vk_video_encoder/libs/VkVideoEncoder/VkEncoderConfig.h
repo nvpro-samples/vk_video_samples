@@ -136,7 +136,7 @@ public:
             offset += planeLayouts[plane].size;
         }
 
-        fullImageSize = offset;
+        fullImageSize = (size_t)offset;
 
         vkFormat = VkVideoCoreProfile::CodecGetVkFormat(chromaSubsampling,
                                                         GetComponentBitDepthFlagBits(bpp),
@@ -208,13 +208,13 @@ public:
         return m_fileHandle;
     }
 
-    const uint8_t* GetMappedPtr(size_t fileOffset)
+    const uint8_t* GetMappedPtr(uint64_t fileOffset)
     {
         assert(m_memMapedFile.is_mapped());
 
-        const size_t mappedLength = m_memMapedFile.mapped_length();
+        const uint64_t mappedLength = (uint64_t)m_memMapedFile.mapped_length();
         if (mappedLength < fileOffset) {
-            printf("File overflow at fileOffset %zd\n", fileOffset);
+            printf("File overflow at fileOffset %llu\n", (unsigned long long int)fileOffset);
             assert(!"Input file overflow");
             return nullptr;
         }

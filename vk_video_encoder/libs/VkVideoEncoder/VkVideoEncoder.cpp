@@ -74,7 +74,7 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
     VkDeviceSize imageOffset = dstImageResource->GetImageDeviceMemoryOffset();
     VkDeviceSize maxSize = 0;
 
-    size_t fileOffset = ((uint64_t)m_encoderConfig->input.fullImageSize * encodeFrameInfo->frameInputOrderNum);
+    uint64_t fileOffset = m_encoderConfig->input.fullImageSize * encodeFrameInfo->frameInputOrderNum;
     const uint8_t* pInputFrameData = m_encoderConfig->inputFileHandler.GetMappedPtr(fileOffset);
 
     uint8_t* writeImagePtr = srcImageDeviceMemory->GetDataPtr(imageOffset, maxSize);
@@ -709,7 +709,7 @@ VkDeviceSize VkVideoEncoder::GetBitstreamBuffer(VkSharedBaseObj<VulkanBitstreamB
     if (newSize > m_streamBufferSize) {
         std::cout << "\tAllocated bitstream buffer with size " << newSize << " B, " <<
                              newSize/1024 << " KB, " << newSize/1024/1024 << " MB" << std::endl;
-        m_streamBufferSize = newSize;
+        m_streamBufferSize = (size_t)newSize;
     }
     return bitstreamBuffer->GetMaxSize();
 }
