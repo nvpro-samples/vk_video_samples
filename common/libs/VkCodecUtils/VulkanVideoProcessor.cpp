@@ -31,6 +31,7 @@
 #include "VulkanVideoProcessor.h"
 #include "vulkan_interfaces.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
+#include "crcgenerator.h"
 
 inline void CheckInputFile(const char* szInFilePath)
 {
@@ -188,10 +189,10 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     return 0;
 }
 
-VkResult VulkanVideoProcessor::Create(const VulkanDeviceContext* vkDevCtx,
+VkResult VulkanVideoProcessor::Create(const ProgramConfig& settings, const VulkanDeviceContext* vkDevCtx,
                                       VkSharedBaseObj<VulkanVideoProcessor>& vulkanVideoProcessor)
 {
-    VkSharedBaseObj<VulkanVideoProcessor> videoProcessor(new VulkanVideoProcessor(vkDevCtx));
+    VkSharedBaseObj<VulkanVideoProcessor> videoProcessor(new VulkanVideoProcessor(settings, vkDevCtx));
 
     if (videoProcessor) {
         vulkanVideoProcessor = videoProcessor;
@@ -382,59 +383,17 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
 }
 
 const VkMpFormatInfo* YcbcrVkFormatInfo(const VkFormat format);
-
-size_t VulkanVideoProcessor::ConvertFrameToNv12(VulkanDecodedFrame* pFrame,
-                                                VkSharedBaseObj<VkImageResource>& imageResource,
-                                                uint8_t* pOutBuffer, size_t)
+size_t ConvertFrameToNv12(const VulkanDeviceContext *vkDevCtx, int32_t frameWidth, int32_t frameHeight,
+                                                    VkSharedBaseObj<VkImageResource>& imageResource,
+                                                    uint8_t* pOutBuffer, const VkMpFormatInfo* mpInfo)
 {
-    size_t outputBufferSize = 0;
     VkResult result = VK_SUCCESS;
 
+    size_t outputBufferSize = 0;
     VkDevice device   = imageResource->GetDevice();
     VkImage  srcImage = imageResource->GetImage ();
     VkFormat format   = imageResource->GetImageCreateInfo().format;
     VkSharedBaseObj<VulkanDeviceMemoryImpl> srcImageDeviceMemory(imageResource->GetMemory());
-
-    const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(format);
-    assert(pFrame->frameCompleteFence != VK_NULL_HANDLE);
-    const uint64_t fenceTimeout = 100 * 1000 * 1000; // 100 mSec
-    int32_t retryCount = 300; // Allow for a timeout of 30s, this should allow for any frame to complete correctly when -o is used.
-
-    do {
-        result = m_vkDevCtx->WaitForFences(device, 1, &pFrame->frameCompleteFence, VK_TRUE, fenceTimeout);
-        if (result != VK_SUCCESS) {
-            std::cout << "WaitForFences timeout " << fenceTimeout
-                    << " result " << result << " retry " << retryCount << std::endl << std::flush;
-
-            VkQueryResultStatusKHR decodeStatus = VK_QUERY_RESULT_STATUS_NOT_READY_KHR;
-            VkResult queryResult = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx,
-                                                     pFrame->queryPool,
-                                                     pFrame->startQueryId,
-                                                     1,
-                                                     sizeof(decodeStatus),
-                                                     &decodeStatus,
-                                                     sizeof(decodeStatus),
-                                                     VK_QUERY_RESULT_WITH_STATUS_BIT_KHR);
-
-            printf("\nERROR: GetQueryPoolResults() result: 0x%x\n", queryResult);
-            std::cout << "\t +++++++++++++++++++++++++++< " << (pFrame ? pFrame->pictureIndex : -1)
-                    << " >++++++++++++++++++++++++++++++" << std::endl;
-            std::cout << "\t => Decode Status for CurrPicIdx: " << (pFrame ? pFrame->pictureIndex : -1) << std::endl
-                    << "\t\tdecodeStatus: " << decodeStatus << std::endl;
-
-            if (queryResult == VK_ERROR_DEVICE_LOST) {
-                std::cout << "\t Dropping frame" << std::endl;
-                break;
-            }
-
-            if ((queryResult == VK_SUCCESS) && (decodeStatus == VK_QUERY_RESULT_STATUS_ERROR_KHR)) {
-                std::cout << "\t Decoding of the frame failed." << std::endl;
-                break;
-            }
-        }
-
-        retryCount--;
-    } while ((result == VK_TIMEOUT) && (retryCount > 0));
 
     // Map the image and read the image data.
     VkDeviceSize imageOffset = imageResource->GetImageDeviceMemoryOffset();
@@ -442,8 +401,8 @@ size_t VulkanVideoProcessor::ConvertFrameToNv12(VulkanDecodedFrame* pFrame,
     const uint8_t* readImagePtr = srcImageDeviceMemory->GetReadOnlyDataPtr(imageOffset, maxSize);
     assert(readImagePtr != nullptr);
 
-    int secondaryPlaneHeight = pFrame->displayHeight;
-    int imageHeight = pFrame->displayHeight;
+    int32_t secondaryPlaneHeight = frameHeight;
+    int32_t imageHeight = frameHeight;
     bool isUnnormalizedRgba = false;
     if (mpInfo && (mpInfo->planesLayout.layout == YCBCR_SINGLE_PLANE_UNNORMALIZED) && !(mpInfo->planesLayout.disjoint)) {
         isUnnormalizedRgba = true;
@@ -462,30 +421,30 @@ size_t VulkanVideoProcessor::ConvertFrameToNv12(VulkanDecodedFrame* pFrame,
             case YCBCR_SINGLE_PLANE_UNNORMALIZED:
             case YCBCR_SINGLE_PLANE_INTERLEAVED:
                 subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
+                vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
                 break;
             case YCBCR_SEMI_PLANAR_CBCR_INTERLEAVED:
                 subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
+                vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
                 subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[1]);
+                vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[1]);
                 break;
             case YCBCR_PLANAR_CBCR_STRIDE_INTERLEAVED:
             case YCBCR_PLANAR_CBCR_BLOCK_JOINED:
             case YCBCR_PLANAR_STRIDE_PADDED:
                 subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
+                vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
                 subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[1]);
+                vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[1]);
                 subResource.aspectMask = VK_IMAGE_ASPECT_PLANE_2_BIT;
-                m_vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[2]);
+                vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[2]);
                 break;
             default:
                 assert(0);
         }
 
     } else {
-        m_vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
+        vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
     }
 
     // Treat all non 8bpp formats as 16bpp for output to prevent any loss.
@@ -497,14 +456,14 @@ size_t VulkanVideoProcessor::ConvertFrameToNv12(VulkanDecodedFrame* pFrame,
     uint32_t numPlanes = 3;
     VkSubresourceLayout yuvPlaneLayouts[3] = {};
     yuvPlaneLayouts[0].offset = 0;
-    yuvPlaneLayouts[0].rowPitch = pFrame->displayWidth * bytesPerPixel;
-    yuvPlaneLayouts[1].offset = yuvPlaneLayouts[0].rowPitch * pFrame->displayHeight;
-    yuvPlaneLayouts[1].rowPitch = pFrame->displayWidth * bytesPerPixel;
+    yuvPlaneLayouts[0].rowPitch = frameWidth * bytesPerPixel;
+    yuvPlaneLayouts[1].offset = yuvPlaneLayouts[0].rowPitch * frameHeight;
+    yuvPlaneLayouts[1].rowPitch = frameWidth * bytesPerPixel;
     if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledX) {
         yuvPlaneLayouts[1].rowPitch /= 2;
     }
     yuvPlaneLayouts[2].offset = yuvPlaneLayouts[1].offset + (yuvPlaneLayouts[1].rowPitch * secondaryPlaneHeight);
-    yuvPlaneLayouts[2].rowPitch = pFrame->displayWidth * bytesPerPixel;
+    yuvPlaneLayouts[2].rowPitch = frameWidth * bytesPerPixel;
     if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledX) {
         yuvPlaneLayouts[2].rowPitch /= 2;
     }
@@ -565,20 +524,53 @@ size_t VulkanVideoProcessor::OutputFrameToFile(VulkanDecodedFrame* pFrame)
     assert(pFrame->pictureIndex != -1);
 
     VkSharedBaseObj<VkImageResource> imageResource = imageResourceView->GetImageResource();
-    uint8_t* pLinearMemory = m_frameToFile.EnsureAllocation(m_vkDevCtx, imageResource);
-    assert(pLinearMemory != nullptr);
+    uint8_t* pOutputBuffer = m_frameToFile.EnsureAllocation(m_vkDevCtx, imageResource);
+    assert(pOutputBuffer != nullptr);
 
     // Needed allocation size can shrink, but may never grow. Frames will be allocated for maximum resolution upfront.
     assert((pFrame->displayWidth >= 0) && (pFrame->displayHeight >= 0));
 
-    // Convert frame to linear image format.
-    size_t usedBufferSize = ConvertFrameToNv12(pFrame,
-                                               imageResource,
-                                               pLinearMemory,
-                                               m_frameToFile.GetMaxFrameSize());
+    // Wait for decoder and copy engine to be done with this frame.
+    WaitAndGetStatus(m_vkDevCtx,
+                     *m_vkDevCtx,
+                     pFrame->frameCompleteFence,
+                     pFrame->queryPool,
+                     pFrame->startQueryId,
+                     pFrame->pictureIndex, false, "frameCompleteFence");
+
+    // Convert frame to linear image format and write it to file.
+    VkFormat format = imageResource->GetImageCreateInfo().format;
+    const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(format);
+    size_t usedBufferSize = ConvertFrameToNv12(m_vkDevCtx, pFrame->displayWidth, pFrame->displayHeight, imageResource, pOutputBuffer, mpInfo);
+
+    // Output a crc for this frame.
+    if (m_settings.outputcrcPerFrame != 0) {
+        fprintf(m_settings.crcOutputFile, "CRC Frame[%i]:", pFrame->pictureIndex);
+        size_t crcCount = m_settings.crcInitValue.size();
+        for (int i = 0; i < crcCount; i += 1) {
+            uint32_t frameCrc = m_settings.crcInitValue[i];
+            getCRC(&frameCrc, pOutputBuffer, usedBufferSize, Crc32Table);
+            fprintf(m_settings.crcOutputFile, "0x%08X ", frameCrc);
+        }
+        fprintf(m_settings.crcOutputFile, "\n");
+        if (m_settings.crcOutputFile != stdout) {
+            fflush(m_settings.crcOutputFile);
+        }
+    }
+
+    if ((m_settings.outputcrc != 0) && (m_settings.crcOutput != nullptr)) {
+        size_t crcCount = m_settings.crcInitValue.size();
+        for (int i = 0; i < crcCount; i += 1) {
+            getCRC(&(m_settings.crcOutput[i]), pOutputBuffer, usedBufferSize, Crc32Table);
+        }
+    }
 
     // Write image to file.
-    return m_frameToFile.WriteDataToFile(0, usedBufferSize);
+    if (m_settings.outputy4m != 0) {
+        return m_frameToFile.WriteFrameToFileY4M(0, usedBufferSize, pFrame->displayWidth, pFrame->displayHeight, mpInfo);
+    } else {
+        return m_frameToFile.WriteDataToFile(0, usedBufferSize);
+    }
 }
 
 void VulkanVideoProcessor::Restart(void)

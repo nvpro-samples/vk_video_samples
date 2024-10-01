@@ -17,6 +17,8 @@
 #ifndef _VKCODECUTILS_VKVIDEOFRAMETOFILE_H_
 #define _VKCODECUTILS_VKVIDEOFRAMETOFILE_H_
 
+#include "nvidia_utils/vulkan/ycbcrvkinfo.h"
+
 class VkVideoFrameToFile {
 
 public:
@@ -24,7 +26,8 @@ public:
     VkVideoFrameToFile()
         : m_outputFile(),
           m_pLinearMemory()
-        , m_allocationSize() {}
+        , m_allocationSize()
+        , m_firstFrame(true) {}
 
     ~VkVideoFrameToFile()
     {
@@ -105,10 +108,50 @@ public:
         return m_allocationSize;
     }
 
+    size_t WriteFrameToFileY4M(size_t offset, size_t size, size_t width, size_t height, const VkMpFormatInfo *mpInfo)
+    {
+        // Output Frame.
+        if (m_firstFrame != false) {
+            m_firstFrame = false;
+            fprintf(m_outputFile, "YUV4MPEG2 ");
+            fprintf(m_outputFile, "W%i H%i ", (int)width, (int)height);
+            m_height = height;
+            m_width = width;
+            fprintf(m_outputFile, "F24:1 ");
+            fprintf(m_outputFile, "Ip ");
+            fprintf(m_outputFile, "A1:1 ");
+            if (mpInfo->planesLayout.secondaryPlaneSubsampledX == false) {
+                fprintf(m_outputFile, "C444");
+            } else {
+                fprintf(m_outputFile, "C420");
+            }
+
+            if (mpInfo->planesLayout.bpp != YCBCRA_8BPP) {
+                fprintf(m_outputFile, "p16");
+            }
+
+            fprintf(m_outputFile, "\n");
+        }
+
+        fprintf(m_outputFile, "FRAME");
+        if ((m_width != width) || (m_height != height)) {
+            fprintf(m_outputFile, " ");
+            fprintf(m_outputFile, "W%i H%i", (int)width, (int)height);
+            m_height = height;
+            m_width = width;
+        }
+
+        fprintf(m_outputFile, "\n");
+        return size;
+    }
+
 private:
     FILE*    m_outputFile;
     uint8_t* m_pLinearMemory;
     size_t   m_allocationSize;
+    bool     m_firstFrame;
+    size_t   m_height;
+    size_t   m_width;
 };
 
 
