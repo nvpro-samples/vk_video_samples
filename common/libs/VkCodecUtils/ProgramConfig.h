@@ -75,6 +75,11 @@ struct ProgramConfig {
         enableHwLoadBalancing = false;
         selectVideoWithComputeQueue = false;
         enableVideoEncoder = false;
+        crcOutput = nullptr;
+        outputy4m = false;
+        outputcrcPerFrame = false;
+        outputcrc = false;
+        crcOutputFile = nullptr;
     }
 
     using ProgramArgs = std::vector<ArgSpec>;
@@ -233,7 +238,7 @@ struct ProgramConfig {
             {"--maxFrameCount", "-c", 1,
                 "Limit number of frames to be processed",
                 [this](const char **args, const ProgramArgs &a) {
-                    maxFrameCount = true;
+                    maxFrameCount = std::atoi(args[0]);
                     return true;
                 }},
             {"--queueid", nullptr, 1, "Index of the decoder queue to be used",
@@ -267,6 +272,54 @@ struct ProgramConfig {
             {"--direct", nullptr, 0, "Direct to display mode",
                 [this](const char **args, const ProgramArgs &a) {
                     directMode = true;
+                    return true;
+                }},
+            {"--y4m", nullptr, 0, "Output to a Y4M container for easier loading by tools",
+                [this](const char **args, const ProgramArgs &a) {
+                    outputy4m = true;
+                    return true;
+                }},
+            {"--crc", nullptr, 0, "Output a CRC for the entire stream",
+                [this](const char **args, const ProgramArgs &a) {
+                    outputcrc = true;
+                    return true;
+                }},
+            {"--crcperframe", nullptr, 0, "Output a CRC for each frame",
+                [this](const char **args, const ProgramArgs &a) {
+                    outputcrcPerFrame = true;
+                    return true;
+                }},
+            {"--crcoutfile", nullptr, 1, "Output file to store the CRC output into.",
+                    [this](const char **args, const ProgramArgs &a) {
+                    crcOutputFile = fopen(args[0], "wt");
+                    return true;
+                }},
+            {"--crcinit", nullptr, 1, "Initial value of the CRC separated by a comma, a set of CRCs can be specified with this commandline parameter",
+                [this](const char **args, const ProgramArgs &a) {
+                    // Find out the amount of CRCs that need to be calculated.
+                    // Using this feature allows the CRC generator to create multiple CRCs for the same frame or stream where the seed of the CRCs is different.
+                    // Usually this will just be 1 entry, but can be used if a 32bit integer CRC is causing hash collisions.
+                    // Example
+                    // --crcinit ffffffff,0,5,6 will produce 4 crc's per frame and 4 crc's for the stream. Where each CRC is different.
+                    // --crcinit X,Y,Z,W -> CRC: X^,Y^,Z^,W^
+                    // --crcinit X,Y -> CRC: X^,Y^
+                    // --crcinit X -> CRC: X^
+                    std::vector<uint32_t> crcInitValueTemp;
+                    std::istringstream stream(args[0]);
+                    std::string token;
+                    while (std::getline(stream, token, ',')) {
+                        char* endPtr = NULL;
+                        uint32_t initValue = strtoul(token.c_str(), &endPtr, 16);
+                        if ((endPtr == NULL) || (*endPtr != 0)) {
+                            std::cerr << "Failed to parse the following initial CRC value:"
+                                  << token << std::endl;
+                            return false;
+                        }
+
+                        crcInitValueTemp.push_back(initValue);
+                    }
+
+                    crcInitValue = crcInitValueTemp;
                     return true;
                 }},
         };
@@ -319,6 +372,25 @@ struct ProgramConfig {
 
             i += flag->numArgs;
         }
+
+        // Resolve the CRC request in case there is a --crcinit specified.
+        if (((outputcrcPerFrame != 0) || (outputcrc != 0))) {
+            if (crcInitValue.empty() != false) {
+                if (outputFileName.empty() != false) {
+                    std::cerr << "Please specify -o if you intend to use CRC calculation, CRC calculation requires HOST accessible memory."
+                                "Host accessible linear images requires an extra copy at the moment."
+                                << std::endl;
+
+                    exit(EXIT_FAILURE);
+                }
+
+                crcInitValue.push_back(0);
+            }
+
+            if (crcOutputFile == nullptr) {
+                crcOutputFile = stdout;
+            }
+        }
     }
 
     // Assuming we have the length as a parameter:
@@ -361,6 +433,7 @@ struct ProgramConfig {
         return deviceUUID.empty() ? nullptr : deviceUUID.data();
     }
 
+    FILE* crcOutputFile;
     std::string appName;
     std::basic_string<uint8_t> deviceUUID;
     int initialWidth;
@@ -382,9 +455,12 @@ struct ProgramConfig {
     int loopCount;
     int queueId;
     VkVideoCodecOperationFlagBitsKHR forceParserType;
+    std::vector<uint32_t> crcInitValue;
+    uint32_t *crcValues;
     uint32_t deviceId;
     uint32_t decoderQueueSize;
     int32_t enablePostProcessFilter;
+    uint32_t *crcOutput;
     uint32_t enableStreamDemuxing : 1;
     uint32_t directMode : 1;
     uint32_t vsync : 1;
@@ -395,6 +471,9 @@ struct ProgramConfig {
     uint32_t enableHwLoadBalancing : 1;
     uint32_t selectVideoWithComputeQueue : 1;
     uint32_t enableVideoEncoder : 1;
+    uint32_t outputy4m : 1;
+    uint32_t outputcrc : 1;
+    uint32_t outputcrcPerFrame : 1;
 };
 
 #endif /* _PROGRAMSETTINGS_H_ */

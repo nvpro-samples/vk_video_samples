@@ -21,6 +21,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <assert.h>
+#include <iostream>
 #include "HelpersDispatchTable.h"
 
 namespace vk {
@@ -268,6 +269,54 @@ inline VkResult WaitAndResetFence(const VkInterfaceFunctions* vkIf, VkDevice dev
     }
     return result;
 }
+
+inline VkResult WaitAndGetStatus(const VkInterfaceFunctions* vkIf, VkDevice device, VkFence fence,
+                                 VkQueryPool queryPool, int32_t startQueryId, uint32_t pictureIndex,
+                                  bool resetAfterWait = true, const char* fenceName = "unknown",
+                                  const uint64_t fenceWaitTimeout = 100ULL * 1000ULL * 1000ULL /* 100 mSec */,
+                                  const uint64_t fenceTotalWaitTimeout = 5ULL * 1000ULL * 1000ULL * 1000ULL /* 5 sec */,
+                                  uint32_t retryCount = 6 /* 30s */) {
+
+    VkResult result;
+
+    do {
+        result = WaitAndResetFence(vkIf, device, fence, resetAfterWait, fenceName, fenceWaitTimeout, fenceTotalWaitTimeout);
+        if (result != VK_SUCCESS) {
+            std::cout << "WaitForFences timeout " << fenceWaitTimeout
+                    << " result " << result << " retry " << retryCount << std::endl << std::flush;
+
+            VkQueryResultStatusKHR decodeStatus = VK_QUERY_RESULT_STATUS_NOT_READY_KHR;
+            VkResult queryResult = vkIf->GetQueryPoolResults(device,
+                                                     queryPool,
+                                                     startQueryId,
+                                                     1,
+                                                     sizeof(decodeStatus),
+                                                     &decodeStatus,
+                                                     sizeof(decodeStatus),
+                                                     VK_QUERY_RESULT_WITH_STATUS_BIT_KHR);
+
+            printf("\nERROR: GetQueryPoolResults() result: 0x%x\n", queryResult);
+            std::cout << "\t +++++++++++++++++++++++++++< " << pictureIndex
+                    << " >++++++++++++++++++++++++++++++" << std::endl;
+            std::cout << "\t => Decode Status for CurrPicIdx: " << pictureIndex << std::endl
+                    << "\t\tdecodeStatus: " << decodeStatus << std::endl;
+
+            if (queryResult == VK_ERROR_DEVICE_LOST) {
+                std::cout << "\t Dropping frame" << std::endl;
+                break;
+            }
+
+            if ((queryResult == VK_SUCCESS) && (decodeStatus == VK_QUERY_RESULT_STATUS_ERROR_KHR)) {
+                std::cout << "\t Decoding of the frame failed." << std::endl;
+                break;
+            }
+        }
+
+        retryCount--;
+    } while ((result == VK_TIMEOUT) && (retryCount > 0));
+
+    return result;
+ }
 
 }  // namespace vk
 

@@ -32,6 +32,17 @@ int main(int argc, const char **argv) {
     ProgramConfig programConfig(argv[0]);
     programConfig.ParseArgs(argc, argv);
 
+    // In the regular application usecase the CRC output variables are allocated here and also output as part of main.
+    // In the library case it is up to the caller of the library to allocate the values and initialize them.
+    std::vector<uint32_t> crcAllocation;
+    crcAllocation.resize(programConfig.crcInitValue.size());
+    if (crcAllocation.empty() == false) {
+        programConfig.crcOutput = &crcAllocation[0];
+        for (size_t i = 0; i < programConfig.crcInitValue.size(); i += 1) {
+            crcAllocation[i] = programConfig.crcInitValue[i];
+        }
+    }
+
     static const char* const requiredInstanceLayers[] = {
         "VK_LAYER_KHRONOS_validation",
         nullptr
@@ -143,7 +154,7 @@ int main(int argc, const char **argv) {
     }
 
     VkSharedBaseObj<VulkanVideoProcessor> vulkanVideoProcessor;
-    result = VulkanVideoProcessor::Create(&vkDevCtxt, vulkanVideoProcessor);
+    result = VulkanVideoProcessor::Create(programConfig, &vkDevCtxt, vulkanVideoProcessor);
     if (result != VK_SUCCESS) {
         return -1;
     }
@@ -242,6 +253,19 @@ int main(int argc, const char **argv) {
             continueLoop = frameProcessor->OnFrame(0);
         } while (continueLoop);
         frameProcessor->DestroyFrameData();
+    }
+
+    if (programConfig.outputcrc != 0) {
+        fprintf(programConfig.crcOutputFile, "CRC: ");
+        for (size_t i = 0; i < programConfig.crcInitValue.size(); i += 1) {
+            fprintf(programConfig.crcOutputFile, "0x%08X ", crcAllocation[i]);
+        }
+
+        fprintf(programConfig.crcOutputFile, "\n");
+        if (programConfig.crcOutputFile != stdout) {
+            fclose(programConfig.crcOutputFile);
+            programConfig.crcOutputFile = stdout;
+        }
     }
 
     return 0;
