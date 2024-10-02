@@ -142,7 +142,7 @@ public:
         }
 
         fprintf(m_outputFile, "\n");
-        return size;
+        return WriteDataToFile(offset, size);
     }
 
 private:
