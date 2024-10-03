@@ -389,6 +389,25 @@ beach:
         return i + 1;
     }
 
+    uint32_t GetFrameCount(uint32_t width, uint32_t height, uint8_t bpp, VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling) {
+        uint8_t nBytes = (uint8_t)std::ceil ( bpp / 8);
+        double samplingFactor = 1.5;
+        switch (chromaSubsampling)
+        {
+        case VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR:
+            samplingFactor = 1.5;
+            break;
+        default:
+            break;
+        }
+        uint32_t frameSize = (uint32_t)(width * height * nBytes * samplingFactor);
+
+        if(frameSize)
+            return (uint32_t)(GetFileSize()/frameSize);
+
+        return 0;
+    }
+
 private:
     size_t OpenFile()
     {

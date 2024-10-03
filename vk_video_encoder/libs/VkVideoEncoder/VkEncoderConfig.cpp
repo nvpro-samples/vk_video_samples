@@ -133,6 +133,7 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
     int argcount = 0;
     std::vector<char*> arglist;
     std::vector<std::string> args(argv, argv + argc);
+    uint32_t frameCount = 0;
 
     appName = args[0];
 
@@ -522,6 +523,19 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
     if (enableQpMap && !qpMapFileHandler.HasFileName()) {
         fprintf(stderr, "No qpMap file was provided.");
         return -1;
+    }
+
+    frameCount = inputFileHandler.GetFrameCount(input.width, input.height, input.bpp, input.chromaSubsampling);
+
+    if (numFrames == 0 || numFrames > frameCount) {
+        std::cout << "numFrames " << numFrames
+                  <<  " should be different from zero and inferior to input file frame count: "
+                  << frameCount << ". Use input file frame count." << std::endl;
+        numFrames = frameCount;
+        if (numFrames == 0) {
+            fprintf(stderr, "No frames found in the input file, frame count is zero. Exit.");
+            return -1;
+        }
     }
 
     return DoParseArguments(argcount, arglist.data());
