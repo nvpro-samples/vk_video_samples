@@ -24,6 +24,7 @@
 #include <string>
 #include <vector>
 #include <fstream>
+#include <inttypes.h>
 
 #include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
@@ -542,7 +543,7 @@ size_t VulkanVideoProcessor::OutputFrameToFile(VulkanDecodedFrame* pFrame)
 
     // Output a crc for this frame.
     if (m_settings.outputcrcPerFrame != 0) {
-        fprintf(m_settings.crcOutputFile, "CRC Frame[%i]:", pFrame->pictureIndex);
+        fprintf(m_settings.crcOutputFile, "CRC Frame[%" PRId64 "]:", pFrame->displayOrder);
         size_t crcCount = m_settings.crcInitValue.size();
         for (size_t i = 0; i < crcCount; i += 1) {
             uint32_t frameCrc = m_settings.crcInitValue[i];
