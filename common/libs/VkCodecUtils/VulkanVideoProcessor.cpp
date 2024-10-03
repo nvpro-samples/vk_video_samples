@@ -387,12 +387,9 @@ size_t ConvertFrameToNv12(const VulkanDeviceContext *vkDevCtx, int32_t frameWidt
                                                     VkSharedBaseObj<VkImageResource>& imageResource,
                                                     uint8_t* pOutBuffer, const VkMpFormatInfo* mpInfo)
 {
-    VkResult result = VK_SUCCESS;
-
     size_t outputBufferSize = 0;
     VkDevice device   = imageResource->GetDevice();
     VkImage  srcImage = imageResource->GetImage ();
-    VkFormat format   = imageResource->GetImageCreateInfo().format;
     VkSharedBaseObj<VulkanDeviceMemoryImpl> srcImageDeviceMemory(imageResource->GetMemory());
 
     // Map the image and read the image data.
@@ -547,7 +544,7 @@ size_t VulkanVideoProcessor::OutputFrameToFile(VulkanDecodedFrame* pFrame)
     if (m_settings.outputcrcPerFrame != 0) {
         fprintf(m_settings.crcOutputFile, "CRC Frame[%i]:", pFrame->pictureIndex);
         size_t crcCount = m_settings.crcInitValue.size();
-        for (int i = 0; i < crcCount; i += 1) {
+        for (size_t i = 0; i < crcCount; i += 1) {
             uint32_t frameCrc = m_settings.crcInitValue[i];
             getCRC(&frameCrc, pOutputBuffer, usedBufferSize, Crc32Table);
             fprintf(m_settings.crcOutputFile, "0x%08X ", frameCrc);
@@ -560,7 +557,7 @@ size_t VulkanVideoProcessor::OutputFrameToFile(VulkanDecodedFrame* pFrame)
 
     if ((m_settings.outputcrc != 0) && (m_settings.crcOutput != nullptr)) {
         size_t crcCount = m_settings.crcInitValue.size();
-        for (int i = 0; i < crcCount; i += 1) {
+        for (size_t i = 0; i < crcCount; i += 1) {
             getCRC(&(m_settings.crcOutput[i]), pOutputBuffer, usedBufferSize, Crc32Table);
         }
     }
