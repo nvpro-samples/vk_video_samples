@@ -13,7 +13,7 @@ env:
   REPO_NAME: vk_video_samples
 
 jobs:
-  vk_video_decoder-linux:
+  vk_video_samples-linux:
     strategy:
       matrix:
         platform: [linux-x86_64, linux-x86]
@@ -56,64 +56,14 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          cd vk_video_decoder
           bash ./update_external_sources.sh
           mkdir BUILD
           cd BUILD
           cmake -DCMAKE_BUILD_TYPE=Debug ..
           make -j
 
-  vk_video_encoder-linux:
-    strategy:
-      matrix:
-        platform: [linux-x86_64, linux-x86]
-    runs-on: ubuntu-22.04
 
-    env:
-      TERM: dumb
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set environment variables
-        run: |
-          echo "DESTDIR=$REPO_NAME-release" >> $GITHUB_ENV
-
-      - name: Set i386 environment variables
-        if: matrix.platform == 'linux-x86'
-        run: |
-          echo "CC=cc -m32" >> $GITHUB_ENV
-          echo "CXX=c++ -m32" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig/" >> $GITHUB_ENV
-
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install --assume-yes --no-install-recommends valgrind python3-pip ninja-build
-          sudo apt install cmake
-          sudo apt install libx11-dev libwayland-dev
-
-      - name: Install i386 dependencies
-        if: matrix.platform == 'linux-x86'
-        run: |
-          sudo dpkg --add-architecture i386
-          sudo apt update
-          sudo apt install gcc-multilib g++-multilib libc6-dbg:i386
-          # hack to avoid that zlib x64 gets picked up
-          sudo apt remove --assume-yes zlib1g-dev
-
-      - name: Build
-        shell: bash
-        run: |
-          bash ./vk_video_decoder/update_external_sources.sh
-          cd vk_video_encoder
-          mkdir BUILD
-          cd BUILD
-          cmake -DCMAKE_BUILD_TYPE=Debug ..
-          make -j
-
-  vk_video_decoder-win:
+  vk_video_samples-win:
     strategy:
       matrix:
         platform: [windows-x64, windows-x86]
@@ -145,47 +95,7 @@ jobs:
 
       - name: Build
         run: |
-          ./vk_video_decoder/update_external_sources.bat
-          cd vk_video_decoder
-          mkdir BUILD
-          cd BUILD
-          cmake -DCMAKE_BUILD_TYPE=Debug ..
-          make -j
-
-  vk_video_encoder-win:
-    strategy:
-      matrix:
-        platform: [windows-x64, windows-x86]
-    runs-on: windows-latest
-
-    steps:
-      - name: Set up X86 MSVC environment
-        if: matrix.platform == 'windows-x86'
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: "x86"
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set environment variables
-        run: echo "DESTDIR=$Env:REPO_NAME-release" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Install dependencies
-        run: |
-          choco install --yes zip
-
-      - name: Install python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
-
-      - name: Install cmake
-        run: choco install cmake
-
-      - name: Build
-        run: |
-          ./vk_video_decoder/update_external_sources.bat
-          cd vk_video_encoder
+          ./update_external_sources.bat
           mkdir BUILD
           cd BUILD
           cmake -DCMAKE_BUILD_TYPE=Debug ..

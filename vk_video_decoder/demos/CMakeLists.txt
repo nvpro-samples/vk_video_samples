@@ -2,7 +2,8 @@ set(CMAKE_WARN_DEPRECATED OFF)
 
 set(DEMO_INCLUDE_DIRS
     ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_CURRENT_BINARY_DIR}/..
+    # Path to project wide vulkan helper generation
+    ${CMAKE_CURRENT_BINARY_DIR}/../..
 )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
