@@ -44,6 +44,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         endif()
     endif()
     message(STATUS "Selected Linux build binary arch: " ${LIB_ARCH_DIR})
+    # Ubuntu detection
+    file(READ "/etc/os-release" OS_RELEASE_CONTENT)
+    string(FIND "${OS_RELEASE_CONTENT}" "Ubuntu" UBUNTU_FOUND)
+    if(UBUNTU_FOUND GREATER -1)
+        message(STATUS "Detected Ubuntu system, setting library path")
+        set(CMAKE_INSTALL_LIBDIR "lib/x86_64-linux-gnu" CACHE PATH "Path to Ubuntu library dir")
+    else()
+        message(STATUS "Non-Ubuntu Linux detected")
+    endif()
 endif()
 ############ LINUX LIBRARY includes ######################################
 
