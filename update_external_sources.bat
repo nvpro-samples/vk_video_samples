@@ -13,8 +13,8 @@ del /Q /F vsversion.tmp
 setlocal EnableDelayedExpansion
 set errorCode=0
 set BUILD_DIR=%~dp0
-set BASE_DIR="%BUILD_DIR%external"
-set REVISION_DIR="%BUILD_DIR%external_revisions"
+set BASE_DIR="%BUILD_DIR%\vk_video_decoder\external"
+set REVISION_DIR="%BUILD_DIR%\vk_video_decoder\external_revisions"
 set GLSLANG_DIR=%BASE_DIR%\glslang
 set SHADERC_DIR=%BASE_DIR%\shaderc
 set do_32=0

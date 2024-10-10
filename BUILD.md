@@ -20,8 +20,8 @@ Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file in this repository for mo
 ## Repository Set-Up
 
   Please make sure you have installed the latest NVIDIA BETA drivers from https://developer.nvidia.com/vulkan-driver.
-  The minimum supported BETA driver versions by this application are 527.86 (Windows) / 525.47.04 (Linux) that
-  must support Vulkan API version 1.3.230 or later.
+  The minimum supported BETA driver versions by this application are 538.31 (Windows) / 535.43.23 (Linux) that
+  must support Vulkan API version 1.3.274 or later.
   The Windows and Linux BETA drivers are available for download at https://developer.nvidia.com/vulkan-beta-51769-windows
   and https://developer.nvidia.com/vulkan-beta-5154924-linux, respectively.
 
@@ -33,6 +33,7 @@ Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file in this repository for mo
    $ git clone $VULKAN_VIDEO_GIT_REPO
 
    APP_INSTALLED_LOC=$(pwd)/"vk_video_samples/vk_video_decoder"
+   APP_INSTALLED_LOC=$(PWD)/"vk_video_samples/vk_video_encoder"
 
 ## Building On Windows
 
@@ -40,7 +41,7 @@ Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file in this repository for mo
 
 Windows 10 or Windows 11 with the following software packages:
 
-- Microsoft Visual Studio VS2017 or later (any version).
+- Microsoft Visual Studio VS2019 or later (any version).
 - [CMake](http://www.cmake.org/download/)
   - Tell the installer to "Add CMake to the system PATH" environment variable.
 - [Python 3](https://www.python.org/downloads)
@@ -71,19 +72,19 @@ Windows 10 or Windows 11 with the following software packages:
 ### Windows Build - Microsoft Visual Studio
 
 1. Open a Developer Command Prompt for VS201x
-2. Change directory to `<APP_INSTALLED_LOC>` -- the vk_video_decoder root of the cloned git repository
+2. Change directory to `<APP_INSTALLED_LOC>` -- the root of the cloned git repository
 3. Run `update_external_sources.bat` -- this will download and build external components
 4. Create a `build` directory, change into that directory, and run cmake and build as follows:
 
 ### Windows Build for debug - using shell
 
-        cmake .. -DCMAKE_GENERATOR_PLATFORM=x64 -DCMAKE_INSTALL_PREFIX="$(pwd)/install/Debug" -DCMAKE_BUILD_TYPE=Debug
+        cmake .. -DCMAKE_GENERATOR_PLATFORM=x64 -DCMAKE_INSTALL_PREFIX="$(PWD)/install/Debug" -DCMAKE_BUILD_TYPE=Debug
         cmake --build . --parallel 16 --config Debug
         cmake --build . --config Debug --target INSTALL
 
 ### Windows Build for release - using shell
 
-        cmake .. -DCMAKE_GENERATOR_PLATFORM=x64 -DCMAKE_INSTALL_PREFIX="$(pwd)/install/Release" -DCMAKE_BUILD_TYPE=Release
+        cmake .. -DCMAKE_GENERATOR_PLATFORM=x64 -DCMAKE_INSTALL_PREFIX="$(PWD)/install/Release" -DCMAKE_BUILD_TYPE=Release
         cmake --build . --parallel 16 --config Release
         cmake --build . --config Release --target INSTALL
 
@@ -122,7 +123,7 @@ It should be straightforward to adapt this repository to other Linux distributio
 
 5. Run cmake to configure the build:
 
-        # Decoder build configuration (please select Debug or Release build type):
+        # Decoder/Encoder build configuration (please select Debug or Release build type):
         For example, for Debug build:
         cmake -DCMAKE_BUILD_TYPE=Debug ..
 
@@ -159,6 +160,33 @@ To run the Vulkan Video Decode sample from the build dir (for Windows change to 
         $ ./demos/vk-video-dec-test -i /data/nvidia-l4t/video-samples/Palm_Trees_4Videvo.mov --c 100
         # One can find some sample videos in h.264 and h.265 formats here:
         # http://jell.yfish.us/
+
+You can select which WSI subsystem is used to build the demos using a CMake option
+called DEMOS_WSI_SELECTION.
+Supported options are XCB (default), XLIB, WAYLAND, and MIR.
+Note that you must build using the corresponding BUILD_WSI_*_SUPPORT enabled at the
+base repository level (all SUPPORT options are ON by default).
+For instance, creating a build that will use Xlib to build the demos,
+your CMake command line might look like:
+
+    cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=Debug -DDEMOS_WSI_SELECTION=XLIB
+
+### Linux Encoder Tests
+
+Before you begin, check if your driver has Vulkan Video extensions enabled:
+
+        $ vulkaninfo | grep VK_KHR_video
+
+The output should be:
+VK_KHR_video_encode_h264                      : extension revision 14
+        VK_KHR_video_encode_h265                      : extension revision 14
+        VK_KHR_video_encode_queue                     : extension revision 12
+        VK_KHR_video_maintenance1                     : extension revision 1
+        VK_KHR_video_queue                            : extension revision 8
+
+To run the Vulkan Video Encode sample from the build dir (for Windows change to build\install\Debug\bin\ or build\install\Release\bin\):
+
+        $ ./demos/vk-video-enc-test -i <yuv-video-input-file.yuv> --codec <"h264" | "h265" | "av1"> --inputNumPlanes <2 | 3> --inputWidth <input Y width> --inputHeight <input Y height> --startFrame 0 --numFrames <max frame num>
 
 You can select which WSI subsystem is used to build the demos using a CMake option
 called DEMOS_WSI_SELECTION.
