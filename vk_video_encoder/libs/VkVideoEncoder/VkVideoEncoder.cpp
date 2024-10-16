@@ -351,8 +351,8 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     if (encoderConfig->useDpbArray == false &&
         (encoderConfig->videoCapabilities.flags & VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR) == 0) {
         std::cout << "Separate DPB was requested, but the implementation does not support it!" << std::endl;
-        assert(!"Separate DPB is not supported");
-        return VK_ERROR_INITIALIZATION_FAILED;
+        std::cout << "Fallback to layered DPB!" << std::endl;
+        encoderConfig->useDpbArray = true;
     }
 
     // Reconfigure the gopStructure structure because the device may not support
