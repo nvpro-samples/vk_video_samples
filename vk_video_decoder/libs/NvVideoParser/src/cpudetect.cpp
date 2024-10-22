@@ -33,9 +33,8 @@ public:
     static bool AVX(void) { return CPU_Rep.f_1_ECX_[28]; }
     static bool AVX2(void) { return CPU_Rep.f_7_EBX_[5]; }
     static bool AVX512F(void) { return CPU_Rep.f_7_EBX_[16]; }
-    static bool AVX512PF(void) { return CPU_Rep.f_7_EBX_[26]; }
-    static bool AVX512ER(void) { return CPU_Rep.f_7_EBX_[27]; }
-    static bool AVX512CD(void) { return CPU_Rep.f_7_EBX_[28]; }
+    static bool AVX512BW(void) { return CPU_Rep.f_7_EBX_[30]; }
+    static bool AVX512VL(void) { return CPU_Rep.f_7_EBX_[31]; } // VL isn't required
 
 private:
     static const InstructionSet_Internal CPU_Rep;
@@ -92,11 +91,11 @@ const InstructionSet::InstructionSet_Internal InstructionSet::CPU_Rep;
 SIMD_ISA check_simd_support()
 {
 #if defined(_M_X64)
-    if (InstructionSet::AVX512F()) { return SIMD_ISA::AVX512; }
+    if (InstructionSet::AVX512F() && InstructionSet::AVX512BW()) { return SIMD_ISA::AVX512; }
     else if (InstructionSet::AVX2()) { return SIMD_ISA::AVX2; }
     else if (InstructionSet::SSSE3()) { return SIMD_ISA::SSSE3; };
 #elif defined (__x86_64__)
-    if (__builtin_cpu_supports("avx512f")) { return SIMD_ISA::AVX512; }
+    if (__builtin_cpu_supports("avx512f") && __builtin_cpu_supports("avx512bw")) { return SIMD_ISA::AVX512; }
     else if (__builtin_cpu_supports("avx2")) { return SIMD_ISA::AVX2; }
     else if (__builtin_cpu_supports("ssse3")) { return SIMD_ISA::SSSE3; };
 #elif defined(__aarch64__)
