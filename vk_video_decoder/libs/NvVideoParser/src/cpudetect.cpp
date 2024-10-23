@@ -33,8 +33,10 @@ public:
     static bool AVX(void) { return CPU_Rep.f_1_ECX_[28]; }
     static bool AVX2(void) { return CPU_Rep.f_7_EBX_[5]; }
     static bool AVX512F(void) { return CPU_Rep.f_7_EBX_[16]; }
+    static bool AVX512DQ(void) { return CPU_Rep.f_7_EBX_[17]; }
+    static bool AVX512CD(void) { return CPU_Rep.f_7_EBX_[28]; }
     static bool AVX512BW(void) { return CPU_Rep.f_7_EBX_[30]; }
-    static bool AVX512VL(void) { return CPU_Rep.f_7_EBX_[31]; } // VL isn't required
+    static bool AVX512VL(void) { return CPU_Rep.f_7_EBX_[31]; } // all the 5 bits should be checked if "/arch:AVX512" option is passed
 
 private:
     static const InstructionSet_Internal CPU_Rep;
