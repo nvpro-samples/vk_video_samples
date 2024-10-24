@@ -13,7 +13,7 @@ fi
 echo CURRENT_DIR=$CURRENT_DIR
 echo CORE_COUNT=$CORE_COUNT
 
-REVISION_DIR="$CURRENT_DIR/external_revisions"
+REVISION_DIR="$CURRENT_DIR/vk_video_decoder/external_revisions"
 
 # git submodule update --init --recursive
 
@@ -30,7 +30,7 @@ echo "SHADERC_GITURL=${SHADERC_GITURL}"
 echo "SHADERC_REVISION=${SHADERC_REVISION}"
 
 BUILDDIR=${CURRENT_DIR}
-BASEDIR="$BUILDDIR/external"
+BASEDIR="$BUILDDIR/vk_video_decoder/external"
 
 function create_glslang () {
    rm -rf "${BASEDIR}"/glslang
