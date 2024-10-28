@@ -138,6 +138,8 @@ private:
                 bsf = av_bsf_get_by_name("h264_mp4toannexb");
             } else if (videoCodec == AV_CODEC_ID_HEVC) {
                 bsf = av_bsf_get_by_name("hevc_mp4toannexb");
+            } else if (videoCodec == AV_CODEC_ID_AV1) {
+                bsf = av_bsf_get_by_name("av1_metadata");
             }
 
             if (!bsf) {
