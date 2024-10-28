@@ -618,6 +618,8 @@ public:
     virtual int8_t InitDpbCount() { return 16; };
 
     virtual bool InitRateControl();
+
+    virtual uint8_t GetMaxBFrameCount() { return 0;}
 };
 
 // Create codec configuration for H.264 encoder
