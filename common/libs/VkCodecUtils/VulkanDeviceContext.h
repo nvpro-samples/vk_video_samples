@@ -248,6 +248,13 @@ public:
 
     VkResult CreateVulkanDevice(int32_t numDecodeQueues = 1,
                                 int32_t numEncodeQueues = 0,
+                                VkVideoCodecOperationFlagsKHR videoCodecs =
+                                        (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR  |
+                                          VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR |
+                                          VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) |
+                                        (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR  |
+                                          VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR |
+                                          VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR),
                                 bool createTransferQueue = false,
                                 bool createGraphicsQueue = false,
                                 bool createPresentQueue = false,

@@ -173,15 +173,28 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
                                      -1 : // all available HW encoders
                                       1;  // only one HW encoder instance
 
+    VkVideoCodecOperationFlagsKHR videoDecodeCodecs = (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR  |
+                                                       VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR  |
+                                                       VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR);
+
+    VkVideoCodecOperationFlagsKHR videoEncodeCodecs = ( VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR  |
+                                                        VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR  |
+                                                        VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR);
+
+    VkVideoCodecOperationFlagsKHR videoCodecs = videoEncodeCodecs |
+                                        (m_encoderConfig->enableVideoDecoder ? videoDecodeCodecs : VK_VIDEO_CODEC_OPERATION_NONE_KHR);
+
+
     result = m_vkDevCtxt.CreateVulkanDevice(m_encoderConfig->enableVideoDecoder ? 1 : 0, // num decode queues
-                                          numEncodeQueues,     // num encode queues
-                                          // If no graphics or compute queue is requested, only video queues
-                                          // will be created. Not all implementations support transfer on video queues,
-                                          // so request a separate transfer queue for such implementations.
-                                          ((m_vkDevCtxt.GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) == 0), //  createTransferQueue
-                                          false, // createGraphicsQueue
-                                          false, // createDisplayQueue
-                                          (m_encoderConfig->selectVideoWithComputeQueue == 1)  // createComputeQueue
+                                            numEncodeQueues,     // num encode queues
+                                            videoCodecs,
+                                            // If no graphics or compute queue is requested, only video queues
+                                            // will be created. Not all implementations support transfer on video queues,
+                                            // so request a separate transfer queue for such implementations.
+                                            ((m_vkDevCtxt.GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) == 0), //  createTransferQueue
+                                            false, // createGraphicsQueue
+                                            false, // createDisplayQueue
+                                            (m_encoderConfig->selectVideoWithComputeQueue == 1)  // createComputeQueue
                                           );
     if (result != VK_SUCCESS) {
 

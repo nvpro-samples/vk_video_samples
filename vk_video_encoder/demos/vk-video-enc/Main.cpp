@@ -153,6 +153,19 @@ int main(int argc, char** argv)
         return -1;
     }
 
+
+    VkVideoCodecOperationFlagsKHR videoDecodeCodecs = (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR  |
+                                                       VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR  |
+                                                       VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR);
+
+    VkVideoCodecOperationFlagsKHR videoEncodeCodecs = ( VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR  |
+                                                        VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR  |
+                                                        VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR);
+
+    VkVideoCodecOperationFlagsKHR videoCodecs = videoEncodeCodecs |
+                                        (encoderConfig->enableVideoDecoder ? videoDecodeCodecs : VK_VIDEO_CODEC_OPERATION_NONE_KHR);
+
+
     VkSharedBaseObj<VkVideoEncoder> encoder; // the encoder's instance
     if (supportsDisplay && encoderConfig->enableFramePresent) {
 
@@ -186,6 +199,7 @@ int main(int argc, char** argv)
 
         result = vkDevCtxt.CreateVulkanDevice(encoderConfig->enableVideoDecoder ? 1 : 0, // num decode queues
                                               numEncodeQueues,   // num encode queues
+                                              videoCodecs,
                                               false,             // createTransferQueue
                                               true,              // createGraphicsQueue
                                               true,              // createDisplayQueue
@@ -230,6 +244,7 @@ int main(int argc, char** argv)
 
         result = vkDevCtxt.CreateVulkanDevice(encoderConfig->enableVideoDecoder ? 1 : 0, // num decode queues
                                               numEncodeQueues,     // num encode queues
+                                              videoCodecs,
                                               // If no graphics or compute queue is requested, only video queues
                                               // will be created. Not all implementations support transfer on video queues,
                                               // so request a separate transfer queue for such implementations.

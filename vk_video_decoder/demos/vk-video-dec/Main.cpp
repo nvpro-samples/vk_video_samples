@@ -166,6 +166,18 @@ int main(int argc, const char **argv) {
         return -1;
     }
 
+    VkVideoCodecOperationFlagsKHR videoDecodeCodecs = (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR  |
+                                                       VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR  |
+                                                       VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR);
+
+    VkVideoCodecOperationFlagsKHR videoEncodeCodecs = ( VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR  |
+                                                        VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR  |
+                                                        VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR);
+
+    VkVideoCodecOperationFlagsKHR videoCodecs = videoDecodeCodecs |
+                                        (programConfig.enableVideoEncoder ? videoEncodeCodecs : VK_VIDEO_CODEC_OPERATION_NONE_KHR);
+
+
     if (supportsDisplay && !programConfig.noPresent) {
 
         const Shell::Configuration configuration(programConfig.appName.c_str(),
@@ -186,10 +198,12 @@ int main(int argc, const char **argv) {
                                               displayShell,
                                               requestVideoDecodeQueueMask,
                                               (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
-                                               VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR),
+                                               VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR |
+                                               VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR),
                                               requestVideoEncodeQueueMask,
                                               (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
-                                               VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR));
+                                               VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR |
+                                               VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR));
         if (result != VK_SUCCESS) {
 
             assert(!"Can't initialize the Vulkan physical device!");
@@ -200,6 +214,7 @@ int main(int argc, const char **argv) {
 
         vkDevCtxt.CreateVulkanDevice(numDecodeQueues,
                                      programConfig.enableVideoEncoder ? 1 : 0, // num encode queues
+                                     videoCodecs,
                                      false, //  createTransferQueue
                                      true,  // createGraphicsQueue
                                      true,  // createDisplayQueue
@@ -224,8 +239,10 @@ int main(int argc, const char **argv) {
             return -1;
         }
 
+
         result = vkDevCtxt.CreateVulkanDevice(numDecodeQueues,
                                               0,     // num encode queues
+                                              videoCodecs,
                                               // If no graphics or compute queue is requested, only video queues
                                               // will be created. Not all implementations support transfer on video queues,
                                               // so request a separate transfer queue for such implementations.

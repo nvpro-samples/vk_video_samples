@@ -641,6 +641,7 @@ VkResult VulkanDeviceContext::InitVulkanDevice(const char * pAppName, bool verbo
 
 VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
                                                  int32_t numEncodeQueues,
+                                                 VkVideoCodecOperationFlagsKHR videoCodecs,
                                                  bool createTransferQueue,
                                                  bool createGraphicsQueue,
                                                  bool createPresentQueue,
@@ -671,7 +672,7 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
     const bool isUnique = uniqueQueueFamilies.insert(m_gfxQueueFamily).second;
     assert(isUnique);
     if (!isUnique) {
-	return VK_ERROR_INITIALIZATION_FAILED;
+        return VK_ERROR_INITIALIZATION_FAILED;
     }
     if (createGraphicsQueue) {
         queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -691,6 +692,28 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
         devInfo.queueCreateInfoCount++;
     }
+
+    VkPhysicalDeviceVideoEncodeAV1FeaturesKHR videoEncodeAV1Feature { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_AV1_FEATURES_KHR,
+                                                                      nullptr,
+                                                                      false // videoEncodeAV1
+                                                                     };
+
+
+
+    VkPhysicalDeviceVideoMaintenance1FeaturesKHR videoMaintenance1Features { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR,
+                                                                             ((videoCodecs & VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) != 0) ?
+                                                                                     &videoEncodeAV1Feature :
+                                                                                     nullptr,
+                                                                             false};
+
+    VkPhysicalDeviceSynchronization2Features synchronization2Features { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
+                                                                        &videoMaintenance1Features,
+                                                                        false
+                                                                       };
+
+    VkPhysicalDeviceFeatures2 deviceFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &synchronization2Features};
+    GetPhysicalDeviceFeatures2(m_physDevice, &deviceFeatures);
+    devInfo.pNext = &deviceFeatures;
 
     if ((numDecodeQueues > 0) &&
             (m_videoDecodeQueueFamily != -1) &&
@@ -741,19 +764,6 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
 
     // disable all features
     devInfo.pEnabledFeatures = nullptr;
-
-    VkPhysicalDeviceVideoMaintenance1FeaturesKHR videoMaintenance1Features {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR,
-                                                                               nullptr,
-                                                                               false};
-
-    VkPhysicalDeviceSynchronization2Features synchronization2Features {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
-                                                                    nullptr,
-                                                                    false};
-    synchronization2Features.pNext = &videoMaintenance1Features;
-
-    VkPhysicalDeviceFeatures2 deviceFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &synchronization2Features};
-    GetPhysicalDeviceFeatures2(m_physDevice, &deviceFeatures);
-    devInfo.pNext = &deviceFeatures;
 
     VkResult result = CreateDevice(m_physDevice, &devInfo, nullptr, &m_device);
     if (result != VK_SUCCESS) {
