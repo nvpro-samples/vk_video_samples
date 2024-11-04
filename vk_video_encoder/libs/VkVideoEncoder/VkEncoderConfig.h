@@ -361,7 +361,11 @@ beach:
         size_t s;
 
         memset (header, 0, Y4M_MAX_BUFF_SIZE);
+#if !defined(VK_USE_PLATFORM_WIN32_KHR)
         fseeko(m_fileHandle, static_cast<off_t>(offset), SEEK_SET);
+#else
+        fseek(m_fileHandle, static_cast<off_t>(offset), SEEK_SET);
+#endif
         s = fread (header, 1, 5, m_fileHandle);
         if (s < 5) {
             return 0;
