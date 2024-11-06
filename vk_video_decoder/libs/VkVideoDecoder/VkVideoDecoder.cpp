@@ -352,10 +352,10 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     if ((m_enableDecodeComputeFilter == VK_FALSE) && (m_useLinearOutput == VK_TRUE)) {
 
         // If the compute filter is not enabled and we need linear images
-        // Use a transfer operation to copy the decoder's output to a linear image.
-        m_useTransferOperation = VK_TRUE;
 
         if (m_dpbAndOutputCoincide == VK_TRUE) {
+            // Use a transfer operation to copy the decoder's output to a linear image.
+            m_useTransferOperation = VK_TRUE;
 
             // We need an extra image for the filter output for coincide - linear or optimal image
             m_imageSpecsIndex.linearOut = imageSpecsIndex++;

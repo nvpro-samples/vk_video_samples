@@ -504,6 +504,10 @@ public:
 
             {
                 uint8_t linearOutImageType = m_perFrameDecodeImageSet[pictureIndex].m_imageSpecsIndex.linearOut;
+                if (linearOutImageType == InvalidImageTypeIdx) {
+                    linearOutImageType = m_perFrameDecodeImageSet[pictureIndex].m_imageSpecsIndex.decodeOut;
+                }
+
                 if (m_perFrameDecodeImageSet[pictureIndex].ImageExist(linearOutImageType)) {
                     pDecodedFrame->imageViews[VulkanDisplayFrame::IMAGE_VIEW_TYPE_LINEAR].view = m_perFrameDecodeImageSet[pictureIndex].GetImageView(linearOutImageType);
                     pDecodedFrame->imageViews[VulkanDisplayFrame::IMAGE_VIEW_TYPE_LINEAR].singleLevelView = m_perFrameDecodeImageSet[pictureIndex].GetSingleLevelImageView(linearOutImageType);
