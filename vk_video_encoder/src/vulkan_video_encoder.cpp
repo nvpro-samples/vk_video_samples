@@ -182,7 +182,7 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
                                                         VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR);
 
     VkVideoCodecOperationFlagsKHR videoCodecs = videoEncodeCodecs |
-                                        (m_encoderConfig->enableVideoDecoder ? videoDecodeCodecs : VK_VIDEO_CODEC_OPERATION_NONE_KHR);
+                                        (m_encoderConfig->enableVideoDecoder ? videoDecodeCodecs : (uint32_t)VK_VIDEO_CODEC_OPERATION_NONE_KHR);
 
 
     result = m_vkDevCtxt.CreateVulkanDevice(m_encoderConfig->enableVideoDecoder ? 1 : 0, // num decode queues
