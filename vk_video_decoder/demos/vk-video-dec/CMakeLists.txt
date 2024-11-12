@@ -1,10 +1,3 @@
-macro(generate_dispatch_table out)
-    add_custom_command(OUTPUT ${out}
-        COMMAND ${PYTHON_EXECUTABLE} ${SCRIPTS_DIR}/generate-dispatch-table.py ${out}
-        DEPENDS ${SCRIPTS_DIR}/generate-dispatch-table.py
-        )
-endmacro()
-
 macro(glsl_to_spirv src)
     add_custom_command(OUTPUT ${src}.h
         COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/glsl-to-spirv ${CMAKE_CURRENT_SOURCE_DIR}/${src} ${CMAKE_CURRENT_SOURCE_DIR}/${src}.h ${GLSLANG_VALIDATOR}
