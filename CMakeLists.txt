@@ -677,19 +677,7 @@ else()
            PATTERN "*.a" EXCLUDE)
 endif()
 
-# Define a custom target to generate the dispatch table files
-add_custom_target(GenerateDispatchTables
-    DEPENDS ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.h
-            ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.cpp
-)
-
-# Add the custom command to generate the dispatch tables
-macro(generate_dispatch_table out)
-    add_custom_command(OUTPUT ${out}
-        COMMAND ${PYTHON_EXECUTABLE} ${SCRIPTS_DIR}/generate-dispatch-table.py ${out}
-        DEPENDS ${SCRIPTS_DIR}/generate-dispatch-table.py
-        )
-endmacro()
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/common/libs/VkCodecUtils)
 
 if(BUILD_DECODER)
     add_subdirectory(vk_video_decoder)
