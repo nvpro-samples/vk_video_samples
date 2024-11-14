@@ -5,6 +5,12 @@ cmake_minimum_required(VERSION 3.0)
 
 include(CheckCXXCompilerFlag)
 
+
+
+
+
+
+
 add_dependencies(VkVideoUtils generate_helper_files)
 target_include_directories(
     VkVideoUtils PUBLIC
