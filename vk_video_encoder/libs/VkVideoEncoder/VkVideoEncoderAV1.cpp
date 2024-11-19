@@ -1084,6 +1084,8 @@ void VkVideoEncoderAV1::InsertOrdered(VkSharedBaseObj<VkVideoEncodeFrameInfo>& c
             pCurrentFrameInfo->bShowExistingFrame = true;
             pCurrentFrameInfo->gopPosition = node->gopPosition;
             pCurrentFrameInfo->picOrderCntVal = node->picOrderCntVal;
+            pCurrentFrameInfo->frameInputOrderNum = node->frameInputOrderNum;
+            pCurrentFrameInfo->inputTimeStamp = node->frameInputOrderNum;
 
             AppendShowExistingFrame(node->dependantFrames, showExistingFrameInfo);
             m_numDeferredFrames++;
