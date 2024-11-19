@@ -172,7 +172,7 @@ bool EncoderConfigAV1::InitSequenceHeader(StdVideoAV1SequenceHeader *seqHdr)
     seqHdr->max_frame_height_minus_1 = (uint16_t)(encodeHeight - 1);
     seqHdr->frame_width_bits_minus_1 = (uint8_t)(std::max((int)FastIntLog2(encodeWidth) - 1, 0));
     seqHdr->frame_height_bits_minus_1 = (uint8_t)(std::max((int)FastIntLog2(encodeHeight) - 1, 0));
-    seqHdr->flags.frame_id_numbers_present_flag = 1;
+    seqHdr->flags.frame_id_numbers_present_flag = 0;
     seqHdr->additional_frame_id_length_minus_1 = FRAME_ID_BITS - DELTA_FRAME_ID_BITS - 1;
     seqHdr->delta_frame_id_length_minus_2 = DELTA_FRAME_ID_BITS - 2;
     seqHdr->flags.enable_order_hint = 1;
