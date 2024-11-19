@@ -122,6 +122,7 @@ struct EncoderConfigH264 : public EncoderConfig {
     StdVideoH264ProfileIdc                     profileIdc;
     StdVideoH264LevelIdc                       levelIdc;
     VkVideoEncodeH264CapabilitiesKHR           h264EncodeCapabilities;
+    VkVideoEncodeH264QualityLevelPropertiesKHR h264QualityLevelProperties;
     VkVideoEncodeH264QuantizationMapCapabilitiesKHR h264QuantizationMapCapabilities;
     uint32_t                                   hrdBitrate;           // hypothetical reference decoder bitrate
     uint32_t                                   pic_width_in_mbs;

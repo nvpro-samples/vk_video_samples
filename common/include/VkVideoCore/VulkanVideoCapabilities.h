@@ -81,6 +81,28 @@ public:
         return result;
     }
 
+    template<class VkVideoEncodeCodecQualityLevelPropertiesKHR, VkStructureType VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_QUALITY_LEVEL_PROPERTIES_KHR>
+    static VkResult GetPhysicalDeviceVideoEncodeQualityLevelProperties(const VulkanDeviceContext* vkDevCtx,
+                                                                       const VkVideoCoreProfile& videoProfile,
+                                                                       uint32_t qualityLevel,
+                                                                       VkVideoEncodeQualityLevelPropertiesKHR& qualityLevelProperties,
+                                                                       VkVideoEncodeCodecQualityLevelPropertiesKHR& codecQualityLevelProperties)
+    {
+        VkPhysicalDeviceVideoEncodeQualityLevelInfoKHR qualityLevelInfo = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR,
+                                                                            nullptr,
+                                                                            videoProfile.GetProfile(),
+                                                                            qualityLevel};
+        codecQualityLevelProperties = VkVideoEncodeCodecQualityLevelPropertiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_QUALITY_LEVEL_PROPERTIES_KHR };
+        qualityLevelProperties = VkVideoEncodeQualityLevelPropertiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_PROPERTIES_KHR, &codecQualityLevelProperties };
+        VkResult result = vkDevCtx->GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR(vkDevCtx->getPhysicalDevice(),
+                            &qualityLevelInfo, &qualityLevelProperties);
+        assert(result == VK_SUCCESS);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nERROR: GetPhysicalDeviceVideoEncodeQualityLevelProperties() RESULT: 0x%x\n", result);
+        }
+        return result;
+    }
+
     static VkResult GetSupportedVideoFormats(const VulkanDeviceContext* vkDevCtx,
                                              const VkVideoCoreProfile& videoProfile,
                                              VkVideoDecodeCapabilityFlagsKHR capabilityFlags,

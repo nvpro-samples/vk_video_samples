@@ -210,6 +210,39 @@ VkResult EncoderConfigAV1::InitDeviceCapabilities(const VulkanDeviceContext* vkD
         std::cout << "\t\t\t" << "maxActiveReferencePictures: " << videoCapabilities.maxActiveReferencePictures << std::endl;
     }
 
+    result = VulkanVideoCapabilities::GetPhysicalDeviceVideoEncodeQualityLevelProperties<VkVideoEncodeAV1QualityLevelPropertiesKHR, VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_QUALITY_LEVEL_PROPERTIES_KHR>
+                                                                                (vkDevCtx, videoCoreProfile, qualityLevel,
+                                                                                 qualityLevelProperties,
+                                                                                 av1QualityLevelProperties);
+    if (result != VK_SUCCESS) {
+        std::cout << "*** Could not get Video Encode QualityLevel Properties :" << result << " ***" << std::endl;
+        assert(!"Could not get Video Encode QualityLevel Properties");
+        return result;
+    }
+
+    if (verboseMsg) {
+        std::cout << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode quality level properties: " << std::endl;
+        std::cout << "\t\t\t" << "preferredRateControlMode : " << qualityLevelProperties.preferredRateControlMode << std::endl;
+        std::cout << "\t\t\t" << "preferredRateControlLayerCount : " << qualityLevelProperties.preferredRateControlLayerCount << std::endl;
+        std::cout << "\t\t\t" << "preferredRateControlFlags : " << av1QualityLevelProperties.preferredRateControlFlags << std::endl;
+        std::cout << "\t\t\t" << "preferredGopFrameCount : " << av1QualityLevelProperties.preferredGopFrameCount << std::endl;
+        std::cout << "\t\t\t" << "preferredKeyFramePeriod : " << av1QualityLevelProperties.preferredKeyFramePeriod << std::endl;
+        std::cout << "\t\t\t" << "preferredConsecutiveBipredictiveFrameCount : " << av1QualityLevelProperties.preferredConsecutiveBipredictiveFrameCount << std::endl;
+        std::cout << "\t\t\t" << "preferredTemporalLayerCount : " << av1QualityLevelProperties.preferredTemporalLayerCount << std::endl;
+        std::cout << "\t\t\t" << "preferredConstantQIndex.intraQIndex : " << av1QualityLevelProperties.preferredConstantQIndex.intraQIndex << std::endl;
+        std::cout << "\t\t\t" << "preferredConstantQIndex.predictiveQIndex : " << av1QualityLevelProperties.preferredConstantQIndex.predictiveQIndex << std::endl;
+        std::cout << "\t\t\t" << "preferredConstantQIndex.bipredictiveQIndex : " << av1QualityLevelProperties.preferredConstantQIndex.bipredictiveQIndex << std::endl;
+        std::cout << "\t\t\t" << "preferredMaxSingleReferenceCount : " << av1QualityLevelProperties.preferredMaxSingleReferenceCount << std::endl;
+        std::cout << "\t\t\t" << "preferredSingleReferenceNameMask : " << av1QualityLevelProperties.preferredSingleReferenceNameMask << std::endl;
+        std::cout << "\t\t\t" << "preferredMaxUnidirectionalCompoundReferenceCount : " << av1QualityLevelProperties.preferredMaxUnidirectionalCompoundReferenceCount << std::endl;
+        std::cout << "\t\t\t" << "preferredMaxUnidirectionalCompoundGroup1ReferenceCount : " << av1QualityLevelProperties.preferredMaxUnidirectionalCompoundGroup1ReferenceCount << std::endl;
+        std::cout << "\t\t\t" << "preferredUnidirectionalCompoundReferenceNameMask : " << av1QualityLevelProperties.preferredUnidirectionalCompoundReferenceNameMask << std::endl;
+        std::cout << "\t\t\t" << "preferredMaxBidirectionalCompoundReferenceCount : " << av1QualityLevelProperties.preferredMaxBidirectionalCompoundReferenceCount << std::endl;
+        std::cout << "\t\t\t" << "preferredMaxBidirectionalCompoundGroup1ReferenceCount : " << av1QualityLevelProperties.preferredMaxBidirectionalCompoundGroup1ReferenceCount << std::endl;
+        std::cout << "\t\t\t" << "preferredMaxBidirectionalCompoundGroup2ReferenceCount : " << av1QualityLevelProperties.preferredMaxBidirectionalCompoundGroup2ReferenceCount << std::endl;
+        std::cout << "\t\t\t" << "preferredBidirectionalCompoundReferenceNameMask : " << av1QualityLevelProperties.preferredBidirectionalCompoundReferenceNameMask << std::endl;
+    }
+
     return VK_SUCCESS;
 }
 

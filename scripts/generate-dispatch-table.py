@@ -383,6 +383,7 @@ vk_khr_video_decode_queue = Extension(name='VK_KHR_video_decode_queue', version=
 vk_khr_video_encode_queue = Extension(name='VK_KHR_video_encode_queue', version=1, guard='VK_USE_VIDEO_ENCODE_QUEUE', commands=[
     Command(name='CmdEncodeVideoKHR', dispatch='VkCommandBuffer'),
     Command(name='GetEncodedVideoSessionParametersKHR', dispatch='VkCommandBuffer'),
+    Command(name='GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR', dispatch='VkPhysicalDevice'),
 ])
 
 vk_khr_synchronization2 = Extension(name='VK_KHR_synchronization2', version=1, guard=None, commands=[

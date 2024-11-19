@@ -62,6 +62,7 @@ struct EncoderConfigH265 : public EncoderConfig {
     StdVideoH265ProfileIdc profile;
     StdVideoH265LevelIdc   levelIdc;
     VkVideoEncodeH265CapabilitiesKHR h265EncodeCapabilities;
+    VkVideoEncodeH265QualityLevelPropertiesKHR h265QualityLevelProperties;
     VkVideoEncodeH265QuantizationMapCapabilitiesKHR h265QuantizationMapCapabilities;
     uint32_t               general_tier_flag : 1; // Specifies the level tier of the encoded bitstream.
     uint8_t                numRefL0;              // Specifies max number of L0 list reference frame used for prediction of a frame.

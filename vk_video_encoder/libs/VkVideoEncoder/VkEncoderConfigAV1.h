@@ -160,6 +160,7 @@ struct EncoderConfigAV1 : public EncoderConfig {
     StdVideoAV1Level                        level{ STD_VIDEO_AV1_LEVEL_5_0 };
     uint8_t                                 tier{};
     VkVideoEncodeAV1CapabilitiesKHR         av1EncodeCapabilities{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_CAPABILITIES_KHR };
+    VkVideoEncodeAV1QualityLevelPropertiesKHR av1QualityLevelProperties{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_QUALITY_LEVEL_PROPERTIES_KHR };
     VkVideoEncodeAV1QuantizationMapCapabilitiesKHR av1QuantizationMapCapabilities { VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_QUANTIZATION_MAP_CAPABILITIES_KHR };
     uint32_t                                maxBitrate{};
     uint32_t                                hrdBitrate{};
