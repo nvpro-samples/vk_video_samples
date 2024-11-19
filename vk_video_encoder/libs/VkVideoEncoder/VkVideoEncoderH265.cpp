@@ -52,7 +52,7 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     }
 
     // Initialize DPB
-    m_dpb.DpbSequenceStart(m_maxDpbPicturesCount, (m_encoderConfig->numRefL0 > 0));
+    m_dpb.DpbSequenceStart(m_maxDpbPicturesCount, (m_encoderConfig->numRefL0 > 0) || (m_encoderConfig->numRefL1 > 0));
 
     if (m_encoderConfig->verbose) {
         std::cout << ", numRefL0: "    << (uint32_t)m_encoderConfig->numRefL0
@@ -506,7 +506,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     pFrameInfo->stdPictureInfo.flags.IrapPicFlag = ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) ||
                                                     (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_I)) ? 1 : 0;
     pFrameInfo->stdPictureInfo.flags.pic_output_flag = 1;
-    pFrameInfo->stdPictureInfo.flags.no_output_of_prior_pics_flag = isIdr ? 1 : 0;
+    pFrameInfo->stdPictureInfo.flags.no_output_of_prior_pics_flag = (isIdr && (encodeFrameInfo->frameEncodeInputOrderNum != 0)) ? 1 : 0;
     pFrameInfo->stdPictureInfo.pic_type = stdPictureType;
     pFrameInfo->stdPictureInfo.pps_seq_parameter_set_id = m_sps.sps.sps_seq_parameter_set_id;
     pFrameInfo->stdPictureInfo.pps_pic_parameter_set_id = m_pps.pps_pic_parameter_set_id;
