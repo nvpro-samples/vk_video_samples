@@ -416,6 +416,7 @@ void EncoderConfigH265::InitializeSpsRefPicSet(SpsH265 *pSps)
 StdVideoH265ProfileTierLevel EncoderConfigH265::GetLevelTier()
 {
     StdVideoH265ProfileTierLevel profileTierLevel{};
+    profileTierLevel.general_profile_idc = STD_VIDEO_H265_PROFILE_IDC_INVALID;
     profileTierLevel.general_level_idc = STD_VIDEO_H265_LEVEL_IDC_INVALID;
     uint32_t levelIdx = 0;
     for (; levelIdx < levelLimitsTblSize; levelIdx++) {
