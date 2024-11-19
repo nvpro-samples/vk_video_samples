@@ -55,7 +55,7 @@ void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --closedGop                     Close the Gop, default open\n\
     --qualityLevel                  <integer> : Select quality level \n\
     --tuningMode                    <integer> or <string> : Select tuning mode \n\
-                                        default(0), hq(1), lowlatency(2), lossless(3) \n\
+                                        default(0), hq(1), lowlatency(2), ultralowlatency(3), lossless(4) \n\
     --rateControlMode               <integer> or <string>: select different rate control modes: \n\
                                         default(0), disabled(1), cbr(2), vbr(4)\n\
     --averageBitrate                <integer> : Target bitrate for cbr/vbr RC modes\n\
@@ -360,8 +360,10 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                 tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_HIGH_QUALITY_KHR;
             } else if (tuningModeStr == "2" || tuningModeStr == "lowlatency") {
                 tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_LOW_LATENCY_KHR;
-            } else if (tuningModeStr == "3" || tuningModeStr == "lossless") {
-                tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_LOSSLESS_KHR;
+            } else if (tuningModeStr == "3" || tuningModeStr == "ultralowlatency") {
+                tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_ULTRA_LOW_LATENCY_KHR;
+            } else if (tuningModeStr == "4" || tuningModeStr == "lossless") {
+                 tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_LOSSLESS_KHR;
             } else {
                 fprintf(stderr, "Invalid tuningMode: %s\n", tuningModeStr.c_str());
                 return -1;
