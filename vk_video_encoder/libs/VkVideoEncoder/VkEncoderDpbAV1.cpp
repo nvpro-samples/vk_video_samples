@@ -416,6 +416,8 @@ VkVideoEncoderAV1PrimaryRefType VkEncDpbAV1::GetPrimaryRefType(StdVideoAV1Refere
         return GLD_FRAME;
     } else if (refName == STD_VIDEO_AV1_REFERENCE_NAME_BWDREF_FRAME) {
         return BRF_FRAME;
+    } else if (m_maxRefFramesL1 > 0) {
+        return INT_ARF_FRAME;
     } else {
         return REGULAR_FRAME;
     }
@@ -429,6 +431,14 @@ int32_t VkEncDpbAV1::GetPrimaryRefBufId(VkVideoEncoderAV1PrimaryRefType primaryR
 
     if ((primaryRefType >= REGULAR_FRAME) && (primaryRefType < MAX_PRI_REF_TYPES)) {
         refBufId = m_primaryRefBufIdMap[primaryRefType];
+    }
+
+    if (refBufId == VkEncDpbAV1::INVALID_IDX) {
+        if (primaryRefType == INT_ARF_FRAME) {
+            refBufId = m_primaryRefBufIdMap[ARF_FRAME];
+        } else {
+            refBufId = m_primaryRefBufIdMap[(m_maxRefFramesL1 > 0) ? BRF_FRAME : REGULAR_FRAME];
+        }
     }
 
     return refBufId;
