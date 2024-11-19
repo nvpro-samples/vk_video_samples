@@ -27,7 +27,6 @@ struct EncoderConfigH264 : public EncoderConfig {
      */
     enum EntropyCodingMode
     {
-        ENTROPY_CODING_MODE_AUTOSELECT = 0x0,   /**< Entropy coding mode is auto selected by the encoder driver */
         ENTROPY_CODING_MODE_CABAC      = 0x1,   /**< Entropy coding mode is CABAC */
         ENTROPY_CODING_MODE_CAVLC      = 0x2    /**< Entropy coding mode is CAVLC */
     };
@@ -65,9 +64,12 @@ struct EncoderConfigH264 : public EncoderConfig {
         , h264EncodeCapabilities()
         , hrdBitrate(maxBitrate)
         , pic_width_in_mbs(DivUp<uint32_t>(encodeWidth, 16))
+        , numRefL0(0)
+        , numRefL1(0)
+        , numRefFrames(0)
         , pic_height_in_map_units(DivUp<uint32_t>(encodeHeight, 16))
         , entropyCodingMode(ENTROPY_CODING_MODE_CABAC)
-        , adaptiveTransformMode(ADAPTIVE_TRANSFORM_DISABLE)
+        , adaptiveTransformMode(ADAPTIVE_TRANSFORM_ENABLE)
         , spsId(0)
         , ppsId()
         , numSlicesPerPicture(DEFAULT_NUM_SLICES_PER_PICTURE)
@@ -79,7 +81,7 @@ struct EncoderConfigH264 : public EncoderConfig {
         , rcLayerInfoH264{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_KHR }
         , rcInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR, &rcInfoH264 }
         , rcLayerInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR, &rcLayerInfoH264 }
-        , disable_deblocking_filter_idc(STD_VIDEO_H264_DISABLE_DEBLOCKING_FILTER_IDC_ENABLED)
+        , disable_deblocking_filter_idc(STD_VIDEO_H264_DISABLE_DEBLOCKING_FILTER_IDC_DISABLED)
         , qpprime_y_zero_transform_bypass_flag(true)
         , constrained_intra_pred_flag(false)
         , levelLimits()
@@ -127,6 +129,9 @@ struct EncoderConfigH264 : public EncoderConfig {
     uint32_t                                   hrdBitrate;           // hypothetical reference decoder bitrate
     uint32_t                                   pic_width_in_mbs;
     uint32_t                                   pic_height_in_map_units;
+    uint8_t                                    numRefL0;
+    uint8_t                                    numRefL1;
+    uint8_t                                    numRefFrames;
     EntropyCodingMode                          entropyCodingMode;     // Specifies the entropy coding mode. Check support for CABAC mode!
     AdaptiveTransformMode                      adaptiveTransformMode; // Specifies the AdaptiveTransform Mode.
     uint8_t                                    spsId;                 // Specifies the SPS id of the sequence header
