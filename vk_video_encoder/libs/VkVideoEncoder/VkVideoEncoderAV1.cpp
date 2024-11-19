@@ -100,7 +100,8 @@ VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& enc
     // Initialize DPB
     m_dpbAV1 = VkEncDpbAV1::CreateInstance();
     assert(m_dpbAV1);
-    m_dpbAV1->DpbSequenceStart(encodeCaps, m_maxDpbPicturesCount, encoderConfig->gopStructure.GetConsecutiveBFrameCount());
+    m_dpbAV1->DpbSequenceStart(encodeCaps, m_maxDpbPicturesCount, encoderConfig->gopStructure.GetConsecutiveBFrameCount(),
+                               encoderConfig->tuningMode, encoderConfig->qualityLevel);
 
     m_encoderConfig->GetRateControlParameters(&m_rateControlInfo, m_rateControlLayersInfo, &m_stateAV1.m_rateControlInfoAV1, m_stateAV1.m_rateControlLayersInfoAV1);
 

@@ -243,6 +243,14 @@ VkResult EncoderConfigAV1::InitDeviceCapabilities(const VulkanDeviceContext* vkD
         std::cout << "\t\t\t" << "preferredBidirectionalCompoundReferenceNameMask : " << av1QualityLevelProperties.preferredBidirectionalCompoundReferenceNameMask << std::endl;
     }
 
+    rateControlMode = qualityLevelProperties.preferredRateControlMode;
+    gopStructure.SetGopFrameCount(av1QualityLevelProperties.preferredGopFrameCount);
+    gopStructure.SetIdrPeriod(av1QualityLevelProperties.preferredKeyFramePeriod);
+    gopStructure.SetConsecutiveBFrameCount(av1QualityLevelProperties.preferredConsecutiveBipredictiveFrameCount);
+    constQp.qpIntra = av1QualityLevelProperties.preferredConstantQIndex.intraQIndex;
+    constQp.qpInterP = av1QualityLevelProperties.preferredConstantQIndex.predictiveQIndex;
+    constQp.qpInterB = av1QualityLevelProperties.preferredConstantQIndex.bipredictiveQIndex;
+
     return VK_SUCCESS;
 }
 

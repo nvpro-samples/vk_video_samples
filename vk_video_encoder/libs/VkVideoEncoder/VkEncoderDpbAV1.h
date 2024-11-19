@@ -112,7 +112,8 @@ public:
     // 1. Init instance
     static VkEncDpbAV1 *CreateInstance(void);
     // 2. Init encode session
-    int32_t DpbSequenceStart(const VkVideoEncodeAV1CapabilitiesKHR& capabilities, uint32_t userDpbSize = 0, int32_t numBFrames = 0);
+    int32_t DpbSequenceStart(const VkVideoEncodeAV1CapabilitiesKHR& capabilities, uint32_t userDpbSize, int32_t numBFrames,
+                             VkVideoEncodeTuningModeKHR tuningMode, uint32_t qualityLevel);
     // 3. Start Picture - returns the allocated DPB index for this frame
     int8_t DpbPictureStart(StdVideoAV1FrameType frameType,
                            StdVideoAV1ReferenceName refName,

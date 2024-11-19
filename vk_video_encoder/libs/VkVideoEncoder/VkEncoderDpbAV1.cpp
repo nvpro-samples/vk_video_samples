@@ -125,7 +125,8 @@ void VkEncDpbAV1::DpbDestroy()
     delete this;
 }
 
-int32_t VkEncDpbAV1::DpbSequenceStart(const VkVideoEncodeAV1CapabilitiesKHR& capabilities, uint32_t userDpbSize, int32_t numBFrames)
+int32_t VkEncDpbAV1::DpbSequenceStart(const VkVideoEncodeAV1CapabilitiesKHR& capabilities, uint32_t userDpbSize, int32_t numBFrames,
+                                      VkVideoEncodeTuningModeKHR tuningMode, uint32_t qualityLevel)
 {
     DpbDeinit();
 
