@@ -7,9 +7,7 @@
 *.o
 *.obj
 
-# Precompiled Headers
-**/HelpersDispatchTable.cpp
-**/HelpersDispatchTable.h
+# External
 **/external
 
 *.gch
