@@ -115,11 +115,9 @@ public:
         m_imageViewState[imageTypeIdx].currentLayerLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     }
 
-    bool SetRecreateImage(uint8_t imageTypeIdx) {
+    void SetRecreateImage(uint8_t imageTypeIdx) {
 
-        bool recreateImage = m_imageViewState[imageTypeIdx].recreateImage;
         m_imageViewState[imageTypeIdx].recreateImage = true;
-        return recreateImage;
     }
 
     bool GetImageSetNewLayout(uint8_t imageTypeIdx, VkImageLayout newImageLayout,
@@ -178,13 +176,11 @@ private:
 class NvPerFrameDecodeImageSet {
 public:
 
-    static constexpr size_t maxImages = 32;
-
     NvPerFrameDecodeImageSet()
         : m_queueFamilyIndex((uint32_t)-1)
         , m_numImages(0)
         , m_maxNumImageTypeIdx(0)
-        , m_perFrameDecodeResources(maxImages)
+        , m_perFrameDecodeResources(VulkanVideoFrameBuffer::maxImages)
         , m_imageSpecs()
     {
     }
@@ -193,7 +189,7 @@ public:
         const VkVideoProfileInfoKHR* pDecodeProfile,
         uint32_t                 numImages,
         uint32_t                 maxNumImageTypeIdx,
-        std::array<VulkanVideoFrameBuffer::ImageSpec, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES>& imageSpecs,
+        const std::array<VulkanVideoFrameBuffer::ImageSpec, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES>& imageSpecs,
         uint32_t                 queueFamilyIndex);
 
     void Deinit();
@@ -209,7 +205,7 @@ public:
         return m_perFrameDecodeResources[index];
     }
 
-    size_t size()
+    uint32_t size() const
     {
         return m_numImages;
     }
@@ -270,8 +266,6 @@ private:
 class VkVideoFrameBuffer : public VulkanVideoFrameBuffer {
 public:
 
-    static constexpr size_t maxFramebufferImages = 32;
-
     VkVideoFrameBuffer(const VulkanDeviceContext* vkDevCtx)
         : m_vkDevCtx(vkDevCtx)
         , m_refCount(0)
@@ -292,11 +286,11 @@ public:
 
     VkResult CreateVideoQueries(uint32_t numSlots, const VulkanDeviceContext* vkDevCtx, const VkVideoProfileInfoKHR* pDecodeProfile)
     {
-        assert (numSlots <= maxFramebufferImages);
+        assert (numSlots <= maxImages);
 
         if ((m_queryPool == VK_NULL_HANDLE) && m_vkDevCtx->GetVideoDecodeQueryResultStatusSupport()) {
             // It would be difficult to resize a query pool, so allocate the maximum possible slot.
-            numSlots = maxFramebufferImages;
+            numSlots = maxImages;
             VkQueryPoolCreateInfo queryPoolCreateInfo = { VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
             queryPoolCreateInfo.pNext = pDecodeProfile;
             queryPoolCreateInfo.queryType = VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR;
@@ -337,13 +331,13 @@ public:
     virtual int32_t InitImagePool(const VkVideoProfileInfoKHR* pDecodeProfile,
                                   uint32_t                 numImages,
                                   uint32_t                 maxNumImageTypeIdx,
-                                  std::array<VulkanVideoFrameBuffer::ImageSpec, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES>& imageSpecs,
+                                  const std::array<VulkanVideoFrameBuffer::ImageSpec, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES>& imageSpecs,
                                   uint32_t                 queueFamilyIndex,
                                   int32_t                  numImagesToPreallocate)
     {
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
 
-        assert(numImages && (numImages <= maxFramebufferImages) && pDecodeProfile);
+        assert(numImages && (numImages <= maxImages) && pDecodeProfile);
 
         VkResult result = CreateVideoQueries(numImages, m_vkDevCtx, pDecodeProfile);
         if (result != VK_SUCCESS) {
@@ -715,7 +709,7 @@ public:
         return NULL;
     }
 
-    virtual size_t GetSize()
+    virtual uint32_t GetCurrentNumberQueueSlots() const
     {
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         return m_perFrameDecodeImageSet.size();
@@ -729,7 +723,7 @@ public:
 private:
     const VulkanDeviceContext* m_vkDevCtx;
     std::atomic<int32_t>     m_refCount;
-    std::mutex               m_displayQueueMutex;
+    mutable std::mutex       m_displayQueueMutex;
     NvPerFrameDecodeImageSet m_perFrameDecodeImageSet;
     std::queue<uint8_t>      m_displayFrames;
     VkQueryPool              m_queryPool;
@@ -775,6 +769,13 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
 {
     VkResult result = VK_SUCCESS;
 
+    if (false) {
+        std::cout << "Create FB Image: " << (int)pImageSpec->imageTypeIdx << " : " << imageIndex
+                                                               << ", extent: " << pImageSpec->createInfo.extent.width << " x "
+                                                               << pImageSpec->createInfo.extent.height << ", format "
+                                                               << pImageSpec->createInfo.format
+                                                               << std::endl;
+    }
     if (!ImageExist(pImageSpec->imageTypeIdx) || m_imageViewState[pImageSpec->imageTypeIdx].recreateImage) {
 
         assert(m_vkDevCtx != nullptr);
@@ -903,7 +904,7 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
                                        const VkVideoProfileInfoKHR* pDecodeProfile,
                                        uint32_t                 numImages,
                                        uint32_t                 maxNumImageTypeIdx,
-                                       std::array<VulkanVideoFrameBuffer::ImageSpec, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES>& imageSpecs,
+                                       const std::array<VulkanVideoFrameBuffer::ImageSpec, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES>& imageSpecs,
                                        uint32_t                 queueFamilyIndex)
 {
     if (numImages > m_perFrameDecodeResources.size()) {
@@ -929,18 +930,40 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
             continue;
         }
 
-        const bool reconfigureImages = (m_numImages &&
+        const bool reconfigureImages = ((m_numImages != 0) &&
                 (m_imageSpecs[imageTypeIdx].createInfo.sType == VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO)) &&
                       ((m_imageSpecs[imageTypeIdx].createInfo.format != imageSpecs[imageTypeIdx].createInfo.format) ||
                        (m_imageSpecs[imageTypeIdx].createInfo.extent.width < imageSpecs[imageTypeIdx].createInfo.extent.width) ||
                        (m_imageSpecs[imageTypeIdx].createInfo.extent.height < imageSpecs[imageTypeIdx].createInfo.extent.height));
 
 
-        bool usesImageViewArray = imageSpecs[imageTypeIdx].usesImageViewArray;
-        bool usesImageArray =   usesImageViewArray ? true : imageSpecs[imageTypeIdx].usesImageArray;
+        const bool usesImageViewArray = imageSpecs[imageTypeIdx].usesImageViewArray;
+        const bool usesImageArray     = usesImageViewArray ? true : imageSpecs[imageTypeIdx].usesImageArray;
 
+        const bool updateFrameBufferGeometry = (m_numImages != 0) &&
+                (m_imageSpecs[imageTypeIdx].createInfo.extent != imageSpecs[imageTypeIdx].createInfo.extent);
+
+        VkExtent3D maxExtent;
+        if (reconfigureImages || updateFrameBufferGeometry) {
+
+            if (false) {
+                std::cout << "Reconfigure FB: " << (int)imageTypeIdx << ", extent: " << m_imageSpecs[imageTypeIdx].createInfo.extent.width << " x "
+                                                                       << m_imageSpecs[imageTypeIdx].createInfo.extent.height << " to "
+                                                                       << imageSpecs[imageTypeIdx].createInfo.extent.width << " x "
+                                                                       << imageSpecs[imageTypeIdx].createInfo.extent.height
+                                                                       << std::endl;
+            }
+            assert(m_imageSpecs[imageTypeIdx].usesImageArray == imageSpecs[imageTypeIdx].usesImageArray);
+            assert(m_imageSpecs[imageTypeIdx].usesImageViewArray == imageSpecs[imageTypeIdx].usesImageViewArray);
+            maxExtent.width  = std::max(m_imageSpecs[imageTypeIdx].createInfo.extent.width,  imageSpecs[imageTypeIdx].createInfo.extent.width);
+            maxExtent.height = std::max(m_imageSpecs[imageTypeIdx].createInfo.extent.height, imageSpecs[imageTypeIdx].createInfo.extent.height);
+            maxExtent.depth  = std::max(m_imageSpecs[imageTypeIdx].createInfo.extent.depth,  imageSpecs[imageTypeIdx].createInfo.extent.depth);
+        }
 
         m_imageSpecs[imageTypeIdx] = imageSpecs[imageTypeIdx];
+        if (reconfigureImages || updateFrameBufferGeometry) {
+            m_imageSpecs[imageTypeIdx].createInfo.extent = maxExtent;
+        }
         m_imageSpecs[imageTypeIdx].createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         m_imageSpecs[imageTypeIdx].createInfo.pNext = m_videoProfile.GetProfileListInfo();
         m_imageSpecs[imageTypeIdx].createInfo.queueFamilyIndexCount = 1;
@@ -1006,14 +1029,12 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
             // layout in order for them to be cleared next time before use by transitioning
             // their layout from undefined to any of the encoder/decode/DPB.
             for (uint32_t imageIndex = 0; imageIndex < m_numImages; imageIndex++) {
-                if (m_perFrameDecodeResources[imageIndex].ImageExist(imageTypeIdx)) {
-                    m_perFrameDecodeResources[imageIndex].InvalidateImageLayout(imageTypeIdx);
-                }
+                m_perFrameDecodeResources[imageIndex].InvalidateImageLayout(imageTypeIdx);
             }
         }
     }
 
-    m_numImages               = numImages;
+    m_numImages               = std::max(m_numImages, numImages); // Don't trim the size
     m_maxNumImageTypeIdx      = maxNumImageTypeIdx;
 
     return (int32_t)numImages;

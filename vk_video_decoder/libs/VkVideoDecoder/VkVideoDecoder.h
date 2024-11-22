@@ -213,8 +213,6 @@ private:
         , m_videoFormat {}
         , m_numDecodeImagesInFlight(numDecodeImagesInFlight)
         , m_numDecodeImagesToPreallocate(numDecodeImagesToPreallocate)
-        , m_numDecodeSurfaces()
-        , m_maxDecodeFramesCount(0)
         , m_capabilityFlags()
         , m_videoSession(nullptr)
         , m_videoFrameBuffer(videoFrameBuffer)
@@ -287,11 +285,11 @@ private:
     void Deinitialize();
 
     int CopyOptimalToLinearImage(VkCommandBuffer& commandBuffer,
-                                 VkVideoPictureResourceInfoKHR& srcPictureResource,
-                                 VulkanVideoFrameBuffer::PictureResourceInfo& srcPictureResourceInfo,
-                                 VkVideoPictureResourceInfoKHR& dstPictureResource,
-                                 VulkanVideoFrameBuffer::PictureResourceInfo& dstPictureResourceInfo,
-                                 VulkanVideoFrameBuffer::FrameSynchronizationInfo *pFrameSynchronizationInfo);
+                                 const VkVideoPictureResourceInfoKHR& srcPictureResource,
+                                 const VulkanVideoFrameBuffer::PictureResourceInfo& srcPictureResourceInfo,
+                                 const VkVideoPictureResourceInfoKHR& dstPictureResource,
+                                 const VulkanVideoFrameBuffer::PictureResourceInfo& dstPictureResourceInfo,
+                                 const VulkanVideoFrameBuffer::FrameSynchronizationInfo *pFrameSynchronizationInfo);
 
     int32_t GetCurrentFrameData(uint32_t slotId, NvVkDecodeFrameDataSlot& frameDataSlot)
     {
@@ -313,8 +311,6 @@ private:
     VkParserDetectedVideoFormat m_videoFormat;
     int32_t                     m_numDecodeImagesInFlight; // driven by how deep is the decoder queue
     int32_t                     m_numDecodeImagesToPreallocate; // -1 means pre-allocate all required images on setup
-    uint32_t                    m_numDecodeSurfaces;
-    uint32_t                    m_maxDecodeFramesCount;
 
     VkVideoDecodeCapabilityFlagsKHR         m_capabilityFlags;
     VkSharedBaseObj<VulkanVideoSession>     m_videoSession;

@@ -91,14 +91,16 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     m_codedExtent.height = pVideoFormat->coded_height;
 
     // Width and height of the image surface
-    VkExtent2D imageExtent = VkExtent2D { std::max((uint32_t)(pVideoFormat->display_area.right  - pVideoFormat->display_area.left), pVideoFormat->coded_width),
-                                          std::max((uint32_t)(pVideoFormat->display_area.bottom - pVideoFormat->display_area.top),  pVideoFormat->coded_height) };
+    VkExtent3D imageExtent = VkExtent3D { std::max((uint32_t)(pVideoFormat->display_area.right  - pVideoFormat->display_area.left), pVideoFormat->coded_width),
+                                          std::max((uint32_t)(pVideoFormat->display_area.bottom - pVideoFormat->display_area.top),  pVideoFormat->coded_height),
+                                          1};
 
     // If we are testing content with different sizes against max sized surface vs. images dynamic resize
     // then set the imageExtent to the max surface size selected.
     if (testUseLargestSurfaceExtent) {
         imageExtent = { std::max(surfaceMinWidthExtent,  imageExtent.width),
-                        std::max(surfaceMinHeightExtent, imageExtent.height) };
+                        std::max(surfaceMinHeightExtent, imageExtent.height),
+                        1};
     }
 
     std::cout << "Video Input Information" << std::endl
@@ -112,7 +114,9 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
               << "\tChroma       : " << GetVideoChromaFormatString(pVideoFormat->chromaSubsampling) << std::endl
               << "\tBit depth    : " << pVideoFormat->bit_depth_luma_minus8 + 8 << std::endl;
 
-    m_numDecodeSurfaces = std::max(m_numDecodeSurfaces, (pVideoFormat->minNumDecodeSurfaces + m_numDecodeImagesInFlight));
+    uint32_t numDecodeSurfaces = std::max(m_videoFrameBuffer->GetCurrentNumberQueueSlots(),
+                                          (pVideoFormat->minNumDecodeSurfaces + m_numDecodeImagesInFlight));
+    assert(numDecodeSurfaces <= VulkanVideoFrameBuffer::maxImages);
 
     int32_t videoQueueFamily = m_vkDevCtx->GetVideoDecodeQueueFamilyIdx();
     VkVideoCodecOperationFlagsKHR videoCodecs = VulkanVideoCapabilities::GetSupportedCodecs(m_vkDevCtx,
@@ -155,7 +159,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     }
 
     std::cout << "Video Decoding Params:" << std::endl
-              << "\tNum Surfaces : " << m_numDecodeSurfaces << std::endl
+              << "\tNum Surfaces : " << numDecodeSurfaces << std::endl
               << "\tResize       : " << m_codedExtent.width << " x " << m_codedExtent.height << std::endl;
 
     uint32_t maxDpbSlotCount = pVideoFormat->maxNumDpbSlots;
@@ -206,13 +210,14 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         sessionCreateFlags |= VK_VIDEO_SESSION_CREATE_INLINE_QUERIES_BIT_KHR;
     }
 #endif // VK_KHR_video_maintenance1
+    const VkExtent2D sessionMaxCodedExtent{imageExtent.width, imageExtent.height};
     if (!m_videoSession ||
             !m_videoSession->IsCompatible( m_vkDevCtx,
                                            sessionCreateFlags,
                                            m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                            &videoProfile,
                                            outImageFormat,
-                                           imageExtent,
+                                           sessionMaxCodedExtent,
                                            dpbImageFormat,
                                            maxDpbSlotCount,
                                            std::max<uint32_t>(maxDpbSlotCount, VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS)) ) {
@@ -222,7 +227,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                              m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                              &videoProfile,
                                              outImageFormat,
-                                             imageExtent,
+                                             sessionMaxCodedExtent,
                                              dpbImageFormat,
                                              maxDpbSlotCount,
                                              std::min<uint32_t>(maxDpbSlotCount, VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS),
@@ -315,7 +320,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                                 m_vkDevCtx->GetComputeQueueFamilyIdx(),
                                                 0,
                                                 m_filterType,
-                                                m_numDecodeSurfaces,
+                                                numDecodeSurfaces,
                                                 inputFormat,
                                                 outputFormat,
                                                 &ycbcrConversionCreateInfo,
@@ -429,11 +434,11 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     VulkanVideoFrameBuffer::ImageSpec& imageSpecDpb = imageSpecs[m_imageSpecsIndex.decodeDpb];
     imageSpecDpb.createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageSpecDpb.createInfo.pNext = nullptr; // the profile will get set in the FB
-    imageSpecDpb.createInfo.imageType = VK_IMAGE_TYPE_2D;
     imageSpecDpb.createInfo.format = dpbImageFormat;
-    imageSpecDpb.createInfo.extent = { imageExtent.width, imageExtent.height, 1 };
+    imageSpecDpb.createInfo.extent = imageExtent;
+    imageSpecDpb.createInfo.arrayLayers = m_useImageArray ? numDecodeSurfaces : 1;
+    imageSpecDpb.createInfo.imageType = VK_IMAGE_TYPE_2D;
     imageSpecDpb.createInfo.mipLevels = 1;
-    imageSpecDpb.createInfo.arrayLayers = m_useImageArray ? m_numDecodeSurfaces : 1;
     imageSpecDpb.createInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageSpecDpb.createInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageSpecDpb.createInfo.usage = dpbImageUsage;
@@ -524,27 +529,27 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     assert(imageSpecsIndex < DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES);
 
     int32_t ret = m_videoFrameBuffer->InitImagePool(videoProfile.GetProfile(),
-                                                    m_numDecodeSurfaces,
+                                                    numDecodeSurfaces,
                                                     imageSpecsIndex,
                                                     imageSpecs,
                                                     m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                                     m_numDecodeImagesToPreallocate);
 
-    assert((uint32_t)ret == m_numDecodeSurfaces);
-    if ((uint32_t)ret != m_numDecodeSurfaces) {
-        fprintf(stderr, "\nERROR: InitImagePool() ret(%d) != m_numDecodeSurfaces(%d)\n", ret, m_numDecodeSurfaces);
+    assert((uint32_t)ret == numDecodeSurfaces);
+    if ((uint32_t)ret != numDecodeSurfaces) {
+        fprintf(stderr, "\nERROR: InitImagePool() ret(%d) != m_numDecodeSurfaces(%d)\n", ret, numDecodeSurfaces);
     }
 
     if (m_dumpDecodeData) {
         std::cout << "Allocating Video Device Memory" << std::endl
-                  << "Allocating " << m_numDecodeSurfaces << " Num Decode Surfaces and "
+                  << "Allocating " << numDecodeSurfaces << " Num Decode Surfaces and "
                   << maxDpbSlotCount << " Video Device Memory Images for DPB " << std::endl
                   << imageExtent.width << " x " << imageExtent.height << std::endl;
     }
-    m_maxDecodeFramesCount = m_numDecodeSurfaces;
 
-    // There will be no more than 32 frames in the queue.
-    m_decodeFramesData.resize(std::max<uint32_t>(m_maxDecodeFramesCount, 32));
+    const uint32_t maxDecodeFramesCount = std::max(numDecodeSurfaces, m_videoFrameBuffer->GetCurrentNumberQueueSlots());
+    // There will be no more than VulkanVideoFrameBuffer::maxImages frames in the queue.
+    m_decodeFramesData.resize(std::max<uint32_t>(maxDecodeFramesCount, VulkanVideoFrameBuffer::maxImages));
 
     int32_t availableBuffers = (int32_t)m_decodeFramesData.GetBitstreamBuffersQueue().
                                                       GetAvailableNodesNumber();
@@ -586,7 +591,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
 
     // Save the original config
     m_videoFormat = *pVideoFormat;
-    return m_numDecodeSurfaces;
+    return numDecodeSurfaces;
 }
 
 bool VkVideoDecoder::UpdatePictureParameters(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersObject,
@@ -603,11 +608,11 @@ bool VkVideoDecoder::UpdatePictureParameters(VkSharedBaseObj<StdVideoPicturePara
 
 
 int VkVideoDecoder::CopyOptimalToLinearImage(VkCommandBuffer& commandBuffer,
-                                          VkVideoPictureResourceInfoKHR& srcPictureResource,
-                                          VulkanVideoFrameBuffer::PictureResourceInfo& srcPictureResourceInfo,
-                                          VkVideoPictureResourceInfoKHR& dstPictureResource,
-                                          VulkanVideoFrameBuffer::PictureResourceInfo& dstPictureResourceInfo,
-                                          VulkanVideoFrameBuffer::FrameSynchronizationInfo* )
+                                             const VkVideoPictureResourceInfoKHR& srcPictureResource,
+                                             const VulkanVideoFrameBuffer::PictureResourceInfo& srcPictureResourceInfo,
+                                             const VkVideoPictureResourceInfoKHR& dstPictureResource,
+                                             const VulkanVideoFrameBuffer::PictureResourceInfo& dstPictureResourceInfo,
+                                             const VulkanVideoFrameBuffer::FrameSynchronizationInfo* )
 
 {
     // Bind memory for the image.
@@ -682,7 +687,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
            (pDecodePictureInfo->flags.applyFilmGrain == VK_FALSE));
 
     int32_t currPicIdx = pCurrFrameDecParams->currPicIdx;
-    assert((uint32_t)currPicIdx < m_numDecodeSurfaces);
+    assert((uint32_t)currPicIdx < m_videoFrameBuffer->GetCurrentNumberQueueSlots());
 
     int32_t picNumInDecodeOrder = (int32_t)(uint32_t)m_decodePicCount;
     if (m_dumpDecodeData) {
@@ -785,7 +790,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     VkVideoPictureResourceInfoKHR* pOutputPictureResource = &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource;
     // Decoder's output output picture resource info, if enabled
     VulkanVideoFrameBuffer::PictureResourceInfo currentOutputPictureResourceInfo = VulkanVideoFrameBuffer::PictureResourceInfo();
-    VulkanVideoFrameBuffer::PictureResourceInfo* pOutputPictureResourceInfo = &dpbSetupPictureResourceInfo;
+    const VulkanVideoFrameBuffer::PictureResourceInfo* pOutputPictureResourceInfo = &dpbSetupPictureResourceInfo;
 
     // If the implementation does not support dpb and output image coincide, use a separate image for the output.
     // Also, when FG is enabled and applied, the output is always used for the FG post-processed data.
@@ -794,17 +799,17 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
     if (useSeparateDecodeOutput) {
 
-        // When the pOutputPictureResource is set, the pOutputPictureResourceInfo is also needed.
-        pOutputPictureResourceInfo = &currentOutputPictureResourceInfo;
-
         assert(m_useSeparateOutputImages != VK_FALSE);
 
         int resourceIndexOut = m_videoFrameBuffer->GetCurrentImageResourceByIndex(
                                                               pCurrFrameDecParams->currPicIdx,
                                                               m_imageSpecsIndex.decodeOut,
                                                               pOutputPictureResource,
-                                                              pOutputPictureResourceInfo,
+                                                              &currentOutputPictureResourceInfo,
                                                               VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR);
+
+        // When the pOutputPictureResource is set, the pOutputPictureResourceInfo is also needed.
+        pOutputPictureResourceInfo = &currentOutputPictureResourceInfo;
 
         if (pCurrFrameDecParams->currPicIdx != resourceIndexOut) {
             assert(!"GetImageResourcesByIndex has failed");
@@ -833,6 +838,14 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         // This is if a multi-layered image is used for the DPB and the output (since they coincide).
         pDecodePictureInfo->imageLayerIndex = pCurrFrameDecParams->dpbSetupPictureResource.baseArrayLayer;
 
+    }
+
+    if (m_dumpDecodeData) {
+        std::cout << "currPicIdx: " << currPicIdx << ", OutInfo: " << pOutputPictureResource->codedExtent.width << " x "
+                                                                   << pOutputPictureResource->codedExtent.height << " with layout "
+                                                                   << ((pOutputPictureResourceInfo->currentImageLayout == VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR) ||
+                                                                           (pOutputPictureResourceInfo->currentImageLayout == VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) ? "OUT" : "INVALID")
+                                                                   << std::endl;
     }
 
     VkVideoPictureResourceInfoKHR currentFilterOutPictureResource { VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR, nullptr};
@@ -900,6 +913,14 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
                 pCurrFrameDecParams->pictureResources[resId].codedExtent = m_codedExtent;
                 // FIXME: This parameter must to be adjusted based on the interlaced mode.
                 pCurrFrameDecParams->pictureResources[resId].codedOffset = { 0, 0 };
+            }
+
+            if (m_dumpDecodeData) {
+                std::cout << "\tdpb: " << (int)pCurrFrameDecParams->pGopReferenceImagesIndexes[resId]
+                                       << ", DpbInfo: " << pOutputPictureResource->codedExtent.width << " x "
+                                       << pOutputPictureResource->codedExtent.height << " with layout "
+                                       << ((pictureResourcesInfo[resId].currentImageLayout == VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) ? "DPB" : "INVALID")
+                                       << std::endl;
             }
         }
     }

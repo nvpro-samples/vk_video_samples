@@ -27,6 +27,18 @@
 #include "VkCodecUtils/VulkanDecodedFrame.h"
 #include "VkVideoCore/DecodeFrameBufferIf.h"
 
+// Overload the equality operator
+inline bool operator==(const VkExtent3D& lhs, const VkExtent3D& rhs) {
+    return (lhs.width == rhs.width) &&
+           (lhs.height == rhs.height) &&
+           (lhs.depth == rhs.depth);
+}
+
+// Overload the inequality operator
+inline bool operator!=(const VkExtent3D& lhs, const VkExtent3D& rhs) {
+    return !(lhs == rhs);
+}
+
 struct DecodedFrameRelease {
     int32_t pictureIndex;
     VkVideotimestamp timestamp;
@@ -42,7 +54,13 @@ class VkParserVideoPictureParameters;
 class VulkanVideoFrameBuffer : public IVulkanVideoFrameBufferParserCb {
 public:
 
-    // enum class uint16_t { InvalidImageTypeIdx = (uint16_t)-1 };
+    static constexpr size_t maxImages = 32;
+
+    enum class InitType : uint8_t {
+            INIT_INVALIDATE_IMAGES_LAYOUT = 0,      // Only invalidate image layouts, don't recreate or add images.
+            INIT_RECREATE_IMAGES          = 1 << 1, // Recreate images because their formats or extent has increased
+            INIT_INCRESE_NUM_SLOTS        = 1 << 2, // Increase the number of the slots available.
+        };
 
     // Synchronization
     struct FrameSynchronizationInfo {
@@ -118,7 +136,7 @@ public:
     virtual int32_t InitImagePool(const VkVideoProfileInfoKHR* pDecodeProfile,
                                   uint32_t                 numImages,
                                   uint32_t                 maxNumImageTypeIdx,
-                                  std::array<VulkanVideoFrameBuffer::ImageSpec, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES>& imageSpecs,
+                                  const std::array<VulkanVideoFrameBuffer::ImageSpec, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES>& imageSpecs,
                                   uint32_t                 queueFamilyIndex,
                                   int32_t                  numImagesToPreallocate) = 0;
 
@@ -140,7 +158,7 @@ public:
     virtual int32_t ReleaseImageResources(uint32_t numResources, const uint32_t* indexes) = 0;
     virtual uint64_t SetPicNumInDecodeOrder(int32_t picId, uint64_t picNumInDecodeOrder) = 0;
     virtual int32_t SetPicNumInDisplayOrder(int32_t picId, int32_t picNumInDisplayOrder) = 0;
-    virtual size_t GetSize() = 0;
+    virtual uint32_t GetCurrentNumberQueueSlots() const = 0;
 
     virtual ~VulkanVideoFrameBuffer() { }
 
