@@ -110,6 +110,11 @@ public:
         return (!!m_imageViewState[imageTypeIdx].view && (m_imageViewState[imageTypeIdx].view->GetImageView() != VK_NULL_HANDLE));
     }
 
+    void InvalidateImageLayout(uint8_t imageTypeIdx) {
+
+        m_imageViewState[imageTypeIdx].currentLayerLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    }
+
     bool SetRecreateImage(uint8_t imageTypeIdx) {
 
         bool recreateImage = m_imageViewState[imageTypeIdx].recreateImage;
@@ -991,6 +996,18 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
                 assert(result == VK_SUCCESS);
                 if (result != VK_SUCCESS) {
                     return -1;
+                }
+
+            }
+        }
+
+        if (!reconfigureImages) {
+            // If we are not reconfiguring (resizing) images, invalidate the existing images
+            // layout in order for them to be cleared next time before use by transitioning
+            // their layout from undefined to any of the encoder/decode/DPB.
+            for (uint32_t imageIndex = 0; imageIndex < m_numImages; imageIndex++) {
+                if (m_perFrameDecodeResources[imageIndex].ImageExist(imageTypeIdx)) {
+                    m_perFrameDecodeResources[imageIndex].InvalidateImageLayout(imageTypeIdx);
                 }
             }
         }
