@@ -899,6 +899,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             // pictureResourcesInfo[resId].image can be a nullptr handle if the picture is not-existent.
             if (pictureResourcesInfo[resId].image && (pictureResourcesInfo[resId].currentImageLayout != VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR)) {
                 imageBarriers[numDpbBarriers] = dpbBarrierTemplates[0];
+                imageBarriers[numDpbBarriers].subresourceRange.baseArrayLayer = pCurrFrameDecParams->pictureResources[resId].baseArrayLayer;
                 imageBarriers[numDpbBarriers].oldLayout = pictureResourcesInfo[resId].currentImageLayout;
                 imageBarriers[numDpbBarriers].newLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR;
                 imageBarriers[numDpbBarriers].image = pictureResourcesInfo[resId].image;
