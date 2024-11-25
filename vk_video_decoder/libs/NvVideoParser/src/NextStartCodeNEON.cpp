@@ -15,7 +15,7 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::NEON>(const uint8_t *pdatai
 {
     size_t i = 0;
     size_t datasize32 = (datasize >> 5) << 5;
-    if (datasize > 32)
+    if (datasize32 > 32)
     {
         const uint8x16_t v0 = vdupq_n_u8(0);
         const uint8x16_t v1 = vdupq_n_u8(1);
