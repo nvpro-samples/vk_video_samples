@@ -185,7 +185,7 @@ struct EncoderConfigH264 : public EncoderConfig {
     // 2. First h.264 determine the rate control parameters
     virtual bool InitRateControl();
 
-    virtual uint8_t GetMaxBFrameCount() { return h264EncodeCapabilities.maxBPictureL0ReferenceCount; }
+    virtual uint8_t GetMaxBFrameCount() { return static_cast<uint8_t>(h264EncodeCapabilities.maxBPictureL0ReferenceCount); }
 
     bool GetRateControlParameters(VkVideoEncodeRateControlInfoKHR *rcInfo,
                                   VkVideoEncodeRateControlLayerInfoKHR *pRcLayerInfo,
