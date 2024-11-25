@@ -9,6 +9,9 @@ if [[ $(uname) == "Linux" || $(uname) =~ "CYGWIN" ]]; then
 elif [[ $(uname) == "Darwin" ]]; then
     CURRENT_DIR="$(dirname "$(python -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' ${BASH_SOURCE[0]})")"
     CORE_COUNT=$(sysctl -n hw.ncpu || echo 4)
+else
+    CURRENT_DIR="$PWD"
+    CORE_COUNT=$(nproc || echo 4)
 fi
 echo CURRENT_DIR=$CURRENT_DIR
 echo CORE_COUNT=$CORE_COUNT

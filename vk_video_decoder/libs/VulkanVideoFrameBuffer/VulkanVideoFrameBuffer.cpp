@@ -943,7 +943,7 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
         const bool updateFrameBufferGeometry = (m_numImages != 0) &&
                 (m_imageSpecs[imageTypeIdx].createInfo.extent != imageSpecs[imageTypeIdx].createInfo.extent);
 
-        VkExtent3D maxExtent;
+        VkExtent3D maxExtent(imageSpecs[imageTypeIdx].createInfo.extent);
         if (reconfigureImages || updateFrameBufferGeometry) {
 
             if (false) {
