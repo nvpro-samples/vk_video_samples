@@ -620,10 +620,6 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
                   << std::endl;
     }
 
-    const bool padToCtbSize = true;
-    if (padToCtbSize) {
-        GetCtbAlignedPicSizeInSamples(picWidthAlignedToMinCbsY, picHeightAlignedToMinCbsY, false);
-    }
     uint32_t subWidthC  = (encodeChromaSubsampling == 3) ? 1 : 2;
     uint32_t subHeightC = (encodeChromaSubsampling == 3) ? 1 : 2;
     spsInfo->sps.conf_win_left_offset   = 0;
