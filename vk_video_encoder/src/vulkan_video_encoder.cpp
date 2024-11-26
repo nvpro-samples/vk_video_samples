@@ -45,7 +45,7 @@ public:
     {
         m_encoder->WaitForThreadsToComplete();
 
-        std::cout << "Done processing " << m_lastFrameIndex << " input frames!" << std::endl
+        LOG_S_INFO << "Done processing " << m_lastFrameIndex << " input frames!" << std::endl
                   << "Encoded file's location is at " << m_encoderConfig->outputFileHandler.GetFileName()
                   << std::endl;
 
@@ -126,7 +126,7 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
     result = m_vkDevCtxt.InitVulkanDevice(m_encoderConfig->appName.c_str(),
                                           m_encoderConfig->verbose);
     if (result != VK_SUCCESS) {
-        printf("Could not initialize the Vulkan device!\n");
+        LOG_S_ERROR << "Could not initialize the Vulkan device!" << std::endl;
         return result;
     }
 
@@ -218,7 +218,7 @@ VkResult VulkanVideoEncoderImpl::EncodeNextFrame(int64_t& frameNumEncoded)
     }
 
     if (m_encoderConfig->verboseFrameStruct) {
-        std::cout << "####################################################################################" << std::endl
+        LOG_S_DEBUG << "####################################################################################" << std::endl
                   << "Start processing current input frame index: " << m_lastFrameIndex << std::endl;
     }
 
@@ -228,14 +228,14 @@ VkResult VulkanVideoEncoderImpl::EncodeNextFrame(int64_t& frameNumEncoded)
     // load frame data from the file
     VkResult result = m_encoder->LoadNextFrame(encodeFrameInfo);
     if (result != VK_SUCCESS) {
-        std::cout << "ERROR processing input frame index: " << m_lastFrameIndex << std::endl;
+        LOG_S_ERROR << "ERROR processing input frame index: " << m_lastFrameIndex << std::endl;
         return result;
     }
 
     frameNumEncoded = encodeFrameInfo->frameInputOrderNum;
 
     if (m_encoderConfig->verboseFrameStruct) {
-        std::cout << "End processing current input frame index: " << m_lastFrameIndex << std::endl;
+        LOG_S_DEBUG << "End processing current input frame index: " << m_lastFrameIndex << std::endl;
     }
 
     m_lastFrameIndex++;

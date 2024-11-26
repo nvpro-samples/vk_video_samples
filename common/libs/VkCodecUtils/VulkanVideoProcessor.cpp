@@ -33,6 +33,7 @@
 #include "vulkan_interfaces.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 #include "crcgenerator.h"
+#include "Logger.h"
 
 inline void CheckInputFile(const char* szInFilePath)
 {
@@ -72,7 +73,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     const bool verbose = false;
 
     if (vkDevCtx->GetVideoDecodeQueue(videoQueueIndx) == VkQueue()) {
-        std::cerr << "videoQueueIndx is out of bounds: " << videoQueueIndx <<
+        LOG_S_ERROR << "videoQueueIndx is out of bounds: " << videoQueueIndx <<
                      " Max decode queues: " << vkDevCtx->GetVideoDecodeNumQueues() << std::endl;
         assert(!"Invalid Video Queue");
         return -1;
@@ -106,12 +107,12 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     result =  VulkanVideoFrameBuffer::Create(vkDevCtx, m_vkVideoFrameBuffer);
     assert(result == VK_SUCCESS);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nERROR: Create VulkanVideoFrameBuffer result: 0x%x\n", result);
+        LOG_ERROR("\nERROR: Create VulkanVideoFrameBuffer result: 0x%x\n", result);
     }
 
     FILE* outFile = m_frameToFile.AttachFile(outputFileName);
     if ((outputFileName != nullptr) && (outFile == nullptr)) {
-        fprintf( stderr, "Error opening the output file %s", outputFileName);
+        LOG_ERROR("Error opening the output file %s", outputFileName);
         return -1;
     }
 
@@ -143,7 +144,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                                     m_vkVideoDecoder);
     assert(result == VK_SUCCESS);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nERROR: Create VkVideoDecoder result: 0x%x\n", result);
+        LOG_ERROR("\nERROR: Create VkVideoDecoder result: 0x%x\n", result);
     }
 
     VkVideoCoreProfile videoProfile(m_videoStreamDemuxer->GetVideoCodec(),
@@ -155,7 +156,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     if (!VulkanVideoCapabilities::IsCodecTypeSupported(vkDevCtx,
                                                        vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                                        m_videoStreamDemuxer->GetVideoCodec())) {
-        std::cout << "*** The video codec " << VkVideoCoreProfile::CodecToName(m_videoStreamDemuxer->GetVideoCodec()) << " is not supported! ***" << std::endl;
+        LOG_S_ERROR << "*** The video codec " << VkVideoCoreProfile::CodecToName(m_videoStreamDemuxer->GetVideoCodec()) << " is not supported! ***" << std::endl;
         assert(!"The video codec is not supported");
         return -1;
     }
@@ -167,7 +168,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                                                                  videoDecodeCapabilities);
 
     if (result != VK_SUCCESS) {
-        std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
+        LOG_S_ERROR << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
         assert(!"Could not get Video Capabilities!");
         return -result;
     }
@@ -180,7 +181,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                           (uint32_t)videoCapabilities.minBitstreamBufferSizeAlignment);
     assert(result == VK_SUCCESS);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nERROR: CreateParser() result: 0x%x\n", result);
+        LOG_ERROR("\nERROR: CreateParser() result: 0x%x\n", result);
     }
 
     m_loopCount = loopCount;
@@ -259,7 +260,7 @@ void VulkanVideoProcessor::Deinit()
 void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* videoFormat, bool dumpData)
 {
     if (dumpData) {
-        std::cout << "Display Area : " << std::endl
+        LOG_S_DEBUG << "Display Area : " << std::endl
                   << "\tLeft : " << videoFormat->display_area.left << std::endl
                   << "\tRight : " << videoFormat->display_area.right << std::endl
                   << "\tTop : " << videoFormat->display_area.top << std::endl
@@ -267,7 +268,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
     }
 
     if (dumpData) {
-        std::cout << "Geometry  : " << std::endl
+        LOG_S_DEBUG << "Geometry  : " << std::endl
                   << "\tCoded Width : " << videoFormat->coded_width << std::endl
                   << "\tDisplayed Width : " << videoFormat->display_area.right - videoFormat->display_area.left << std::endl
                   << "\tCoded Height : " << videoFormat->coded_height << std::endl
@@ -276,7 +277,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
 
     const char* pCodec = VkVideoCoreProfile::CodecToName(videoFormat->codec);
     if (dumpData) {
-        std::cout << "Codec : " << pCodec << std::endl;
+        LOG_S_DEBUG << "Codec : " << pCodec << std::endl;
     }
 
     /* These below token numbers are based on "chroma_format_idc" from the spec. */
@@ -296,7 +297,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
     assert(nvVideoChromaFormat[videoFormat->chromaSubsampling] != nullptr);
     const char* pVideoChromaFormat = nvVideoChromaFormat[videoFormat->chromaSubsampling];
     if (dumpData) {
-        std::cout << "VideoChromaFormat : " << pVideoChromaFormat << std::endl;
+        LOG_S_DEBUG << "VideoChromaFormat : " << pVideoChromaFormat << std::endl;
     }
 
     static const char* VideoFormat[] = {
@@ -314,7 +315,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
     assert(videoFormat->video_signal_description.video_format < sizeof(VideoFormat)/sizeof(VideoFormat[0]));
     const char* pVideoFormat = VideoFormat[videoFormat->video_signal_description.video_format];
     if (dumpData) {
-        std::cout << "VideoFormat : " << pVideoFormat << std::endl;
+        LOG_S_DEBUG << "VideoFormat : " << pVideoFormat << std::endl;
     }
 
     const char* ColorPrimaries[] = {
@@ -334,7 +335,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
     assert(videoFormat->video_signal_description.color_primaries < sizeof(ColorPrimaries)/sizeof(ColorPrimaries[0]));
     const char* pColorPrimaries = ColorPrimaries[videoFormat->video_signal_description.color_primaries];
     if (dumpData) {
-        std::cout << "ColorPrimaries : " << pColorPrimaries << std::endl;
+        LOG_S_DEBUG << "ColorPrimaries : " << pColorPrimaries << std::endl;
     }
 
     const char* TransferCharacteristics[] = {
@@ -360,7 +361,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
     assert(videoFormat->video_signal_description.transfer_characteristics < sizeof(TransferCharacteristics)/sizeof(TransferCharacteristics[0]));
     const char* pTransferCharacteristics = TransferCharacteristics[videoFormat->video_signal_description.transfer_characteristics];
     if (dumpData) {
-        std::cout << "TransferCharacteristics : " << pTransferCharacteristics << std::endl;
+        LOG_S_DEBUG << "TransferCharacteristics : " << pTransferCharacteristics << std::endl;
     }
 
     const char* MatrixCoefficients[] = {
@@ -379,7 +380,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
     assert(videoFormat->video_signal_description.matrix_coefficients < sizeof(MatrixCoefficients)/sizeof(MatrixCoefficients[0]));
     const char* pMatrixCoefficients = MatrixCoefficients[videoFormat->video_signal_description.matrix_coefficients];
     if (dumpData) {
-        std::cout << "MatrixCoefficients : " << pMatrixCoefficients << std::endl;
+        LOG_S_DEBUG << "MatrixCoefficients : " << pMatrixCoefficients << std::endl;
     }
 }
 
@@ -581,12 +582,12 @@ void VulkanVideoProcessor::Restart(void)
 bool VulkanVideoProcessor::StreamCompleted()
 {
     if (--m_loopCount > 0) {
-        std::cout << "Restarting video stream with loop number " << (m_loopCount + 1) << std::endl;
+        LOG_S_INFO << "Restarting video stream with loop number " << (m_loopCount + 1) << std::endl;
         // Reload the file stream
         Restart();
         return false;
     } else {
-        std::cout << "End of Video Stream with status  " << VK_SUCCESS << std::endl;
+        LOG_S_INFO << "End of Video Stream with status  " << VK_SUCCESS << std::endl;
         return true;
     }
 }
@@ -618,7 +619,7 @@ int32_t VulkanVideoProcessor::ParserProcessNextDataChunk()
                                                      requiresPartialParsing);
         if (parserStatus != VK_SUCCESS) {
             m_videoStreamsCompleted = true;
-            std::cerr << "Parser: end of Video Stream with status  " << parserStatus << std::endl;
+            LOG_S_ERROR << "Parser: end of Video Stream with status  " << parserStatus << std::endl;
             retValue = -1;
         } else {
             retValue = (int32_t)bitstreamBytesConsumed;
@@ -664,7 +665,7 @@ int32_t VulkanVideoProcessor::GetNextFrame(VulkanDecodedFrame* pFrame, bool* end
 
     if ((m_maxFrameCount != -1) && (m_videoFrameNum >= (uint32_t)m_maxFrameCount)) {
         // Tell the FrameProcessor we're done after this frame is drawn.
-        std::cout << "Number of video frames " << m_videoFrameNum
+        LOG_S_ERROR << "Number of video frames " << m_videoFrameNum
                   << " of max frame number " << m_maxFrameCount << std::endl;
         m_videoStreamsCompleted = StreamCompleted();
         *endOfStream = m_videoStreamsCompleted;

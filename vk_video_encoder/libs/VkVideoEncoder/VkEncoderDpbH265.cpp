@@ -23,6 +23,7 @@
 #include <algorithm>
 
 #include "VkEncoderDpbH265.h"
+#include "Logger.h"
 
 template<typename T>
 static inline T clampl(T value, T minbound) {
@@ -306,7 +307,7 @@ void VkEncDpbH265::ApplyReferencePictureSet(const StdVideoEncodeH265PictureInfo 
         }
 
         if (numRefPics > (m_dpbSize - 1)) {
-            printf("too many reference frames (%d, max is %d)\n", numRefPics, (m_dpbSize - 1));
+            LOG_S_WARN << "too many reference frames" << numRefPics << ", max is " << (m_dpbSize - 1) << std::endl;
         }
 
         assert(numRefPics <= STD_VIDEO_H265_MAX_NUM_LIST_REF);
@@ -410,7 +411,7 @@ void VkEncDpbH265::ApplyReferencePictureSet(const StdVideoEncodeH265PictureInfo 
             }
         }
         if (pRefPicSet->ltCurr[i] < 0)
-            printf("long-term reference picture not available (POC=%d)\n", pocLtCurr[i]);
+            LOG_S_WARN << "long-term reference picture not available POC=" << pocLtCurr[i] << std::endl;
     }
 
     for (int32_t i = 0; i < m_numPocLtFoll; i++) {
@@ -454,7 +455,7 @@ void VkEncDpbH265::ApplyReferencePictureSet(const StdVideoEncodeH265PictureInfo 
             }
         }
         if (pRefPicSet->stCurrBefore[i] < 0)
-            printf("short-term reference picture not available (POC=%d)\n", pocStCurrBefore[i]);
+            LOG_S_WARN << "short-term reference picture not available POC=" << pocStCurrBefore[i] << std::endl;
     }
 
     for (int32_t i = 0; i < m_numPocStCurrAfter; i++) {
@@ -466,7 +467,7 @@ void VkEncDpbH265::ApplyReferencePictureSet(const StdVideoEncodeH265PictureInfo 
             }
         }
         if (pRefPicSet->stCurrAfter[i] < 0)
-            printf("short-term reference picture not available (POC=%d)\n", pocStCurrAfter[i]);
+            LOG_S_WARN << "short-term reference picture not available POC=" << pocStCurrAfter[i] << std::endl;
     }
 
     for (int32_t i = 0; i < m_numPocStFoll; i++) {

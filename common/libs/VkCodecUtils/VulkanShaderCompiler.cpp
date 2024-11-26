@@ -40,7 +40,7 @@ static shaderc_shader_kind getShadercShaderType(VkShaderStageFlagBits type)
     case VK_SHADER_STAGE_COMPUTE_BIT:
         return shaderc_glsl_compute_shader;
     default:
-        std::cerr << "VulkanShaderCompiler: " << "invalid VKShaderStageFlagBits" << "type = " <<  type;
+        LOG_S_ERROR << "VulkanShaderCompiler: " << "invalid VKShaderStageFlagBits" << "type = " <<  type;
     }
     return static_cast<shaderc_shader_kind>(-1);
 }
@@ -75,7 +75,7 @@ VkShaderModule VulkanShaderCompiler::BuildGlslShader(const char *shaderCode, siz
         if (shaderc_result_get_compilation_status(spvShader) !=
                 shaderc_compilation_status_success) {
 
-            std::cerr << "Compilation error: \n" << shaderc_result_get_error_message(spvShader) << std::endl;
+            LOG_S_ERROR << "Compilation error: \n" << shaderc_result_get_error_message(spvShader) << std::endl;
 
             return VK_NULL_HANDLE;
         }
@@ -90,7 +90,7 @@ VkShaderModule VulkanShaderCompiler::BuildGlslShader(const char *shaderCode, siz
         VkResult result = vkDevCtx->CreateShaderModule(*vkDevCtx, &shaderModuleCreateInfo, nullptr, &shaderModule);
         assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
-            std::cerr << "Failed to create shader module" << std::endl;
+            LOG_S_ERROR << "Failed to create shader module" << std::endl;
             return VK_NULL_HANDLE;
         }
         shaderc_result_release(spvShader);

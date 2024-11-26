@@ -26,6 +26,7 @@
 #include "VulkanFrame.h"
 #include "vk_enum_string_helper.h"
 #include "VkVideoCore/DecodeFrameBufferIf.h"
+#include "Logger.h"
 
 template<class FrameDataType>
 VulkanFrame<FrameDataType>::VulkanFrame(const VulkanDeviceContext* vkDevCtx,
@@ -65,9 +66,9 @@ int VulkanFrame<FrameDataType>::AttachShell(const Shell& sh)
     const uint32_t apiPatchVersion = VK_API_VERSION_PATCH(m_physicalDevProps.apiVersion);
 
     if (m_physicalDevProps.apiVersion < VK_MAKE_API_VERSION(0, 1, 2, 199)) {
-        std::cerr << std::endl << "Incompatible Vulkan API version: " << apiMajorVersion << "." << apiMinorVersion << "." << apiPatchVersion << std::endl;
-        std::cerr << "Info: Driver version is: " << m_physicalDevProps.driverVersion << std::endl;
-        std::cerr << "Please upgrade your driver. The version supported is: 1.2.199 or later aka " << std::hex << VK_MAKE_API_VERSION(0, 1, 2, 199) << std::endl;
+        LOG_S_ERROR << std::endl << "Incompatible Vulkan API version: " << apiMajorVersion << "." << apiMinorVersion << "." << apiPatchVersion << std::endl;
+        LOG_S_ERROR << "Info: Driver version is: " << m_physicalDevProps.driverVersion << std::endl;
+        LOG_S_ERROR << "Please upgrade your driver. The version supported is: 1.2.199 or later aka " << std::hex << VK_MAKE_API_VERSION(0, 1, 2, 199) << std::endl;
         assert(!"Incompatible API version - please upgrade your driver.");
         return -1;
     }
@@ -100,7 +101,7 @@ int VulkanFrame<FrameDataType>::AttachShell(const Shell& sh)
                                                                (const float*)vertices, sizeof(vertices),
                                                                sizeof(vertices) / sizeof(vertices[0]))) {
 
-        std::cerr << "VulkanVideoFrame: " << "File " << __FILE__ << "line " << __LINE__;
+        LOG_S_ERROR << "VulkanVideoFrame: " << "File " << __FILE__ << "line " << __LINE__;
         return -1;
     }
 
@@ -287,11 +288,11 @@ bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
         bool displayTimeNow = false;
         float fps = GetFrameRateFps(displayTimeNow);
         if (displayTimeNow) {
-            std::cout << "\t\tFrame " << m_frameCount << ", FPS: " << fps << std::endl;
+            LOG_S_DEBUG << "\t\tFrame " << m_frameCount << ", FPS: " << fps << std::endl;
         }
     } else {
         uint64_t timeDiffNanoSec = GetTimeDiffNanoseconds();
-        std::cout << "\t\t Time nanoseconds: " << timeDiffNanoSec <<
+        LOG_S_DEBUG << "\t\t Time nanoseconds: " << timeDiffNanoSec <<
                      " milliseconds: " << timeDiffNanoSec / 1000 <<
                      " rate: " << 1000000000.0 / timeDiffNanoSec << std::endl;
     }
@@ -322,7 +323,7 @@ bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
                 assert(result == VK_SUCCESS);
                 assert(decodeStatus == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
                 if ((result != VK_SUCCESS) || (decodeStatus != VK_QUERY_RESULT_STATUS_COMPLETE_KHR)) {
-                    fprintf(stderr, "\nERROR: GetQueryPoolResults() result: 0x%x\n", result);
+                    LOG_ERROR( "\nERROR: GetQueryPoolResults() result: 0x%x\n", result);
                     return false;
                 }
 
@@ -330,19 +331,19 @@ bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
                 auto diffMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(deltaTime);
                 auto diffMicroseconds = std::chrono::duration_cast<std::chrono::microseconds>(deltaTime);
                 if (dumpDebug) {
-                    std::cout << pLastDecodedFrame->pictureIndex << ": frameWaitTime: " <<
+                    LOG_S_DEBUG << pLastDecodedFrame->pictureIndex << ": frameWaitTime: " <<
                                  diffMilliseconds.count() << "." << diffMicroseconds.count() << " mSec" << std::endl;
                 }
             } else if (pLastDecodedFrame->frameCompleteFence != VkFence()) {
                 VkResult result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &pLastDecodedFrame->frameCompleteFence, true, 100 * 1000 * 1000 /* 100 mSec */);
                 assert(result == VK_SUCCESS);
                 if (result != VK_SUCCESS) {
-                    fprintf(stderr, "\nERROR: WaitForFences() result: 0x%x\n", result);
+                    LOG_ERROR("\nERROR: WaitForFences() result: 0x%x\n", result);
                 }
                 result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, pLastDecodedFrame->frameCompleteFence);
                 assert(result == VK_SUCCESS);
                 if (result != VK_SUCCESS) {
-                    fprintf(stderr, "\nERROR: GetFenceStatus() result: 0x%x\n", result);
+                    LOG_ERROR("\nERROR: GetFenceStatus() result: 0x%x\n", result);
                 }
             }
         }
@@ -360,7 +361,7 @@ bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
             bool displayTimeNow = true;
             float fps = GetFrameRateFps(displayTimeNow);
             if (displayTimeNow) {
-                std::cout << "\t\tFrame " << m_frameCount << ", FPS: " << fps << std::endl;
+                LOG_S_DEBUG << "\t\tFrame " << m_frameCount << ", FPS: " << fps << std::endl;
             }
         }
     }
@@ -371,14 +372,14 @@ bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
         VkSharedBaseObj<VkImageResourceView> imageResourceView;
         pLastDecodedFrame->imageViews[FrameDataType::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY].GetImageResourceView(imageResourceView);
 
-        std::cout << "<= Wait on picIdx: " << pLastDecodedFrame->pictureIndex
-                  << "\t\tdisplayWidth: " << pLastDecodedFrame->displayWidth
-                  << "\t\tdisplayHeight: " << pLastDecodedFrame->displayHeight
-                  << "\t\tdisplayOrder: " << pLastDecodedFrame->displayOrder
-                  << "\tdecodeOrder: " << pLastDecodedFrame->decodeOrder
-                  << "\ttimestamp " << pLastDecodedFrame->timestamp
-                  << "\tdstImageView " << (imageResourceView ? imageResourceView->GetImageResource()->GetImage() : VkImage())
-                  << std::endl;
+        LOG_S_DEBUG << "<= Wait on picIdx: " << pLastDecodedFrame->pictureIndex
+                    << "\t\tdisplayWidth: " << pLastDecodedFrame->displayWidth
+                    << "\t\tdisplayHeight: " << pLastDecodedFrame->displayHeight
+                    << "\t\tdisplayOrder: " << pLastDecodedFrame->displayOrder
+                    << "\tdecodeOrder: " << pLastDecodedFrame->decodeOrder
+                    << "\ttimestamp " << pLastDecodedFrame->timestamp
+                    << "\tdstImageView " << (imageResourceView ? imageResourceView->GetImageResource()->GetImage() : VkImage())
+                    << std::endl;
     }
 
     if (gfxRendererIsEnabled == false) {
@@ -498,11 +499,11 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
                                          m_videoRenderer->m_vertexBuffer);
 
     if (dumpDebug) {
-        std::cout << "Drawing Frame " << m_frameCount << " FB: " << renderIndex << std::endl;
+        LOG_S_DEBUG << "Drawing Frame " << m_frameCount << " FB: " << renderIndex << std::endl;
     }
 
     if (dumpDebug && inFrame) {
-        std::cout << "<= Present picIdx: " << inFrame->pictureIndex
+        LOG_S_DEBUG << "<= Present picIdx: " << inFrame->pictureIndex
                   << "\t\tdisplayOrder: " << inFrame->displayOrder
                   << "\tdecodeOrder: " << inFrame->decodeOrder
                   << "\ttimestamp " << inFrame->timestamp
@@ -518,19 +519,19 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
                     result = m_vkDevCtx->QueueWaitIdle(videoDecodeQueue);
                     assert(result == VK_SUCCESS);
                     if (result != VK_SUCCESS) {
-                        fprintf(stderr, "\nERROR: QueueWaitIdle() result: 0x%x\n", result);
+                        LOG_ERROR("\nERROR: QueueWaitIdle() result: 0x%x\n", result);
                     }
                 }
             } else {
                 result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &inFrame->frameCompleteFence, true, 100 * 1000 * 1000 /* 100 mSec */);
                 assert(result == VK_SUCCESS);
                 if (result != VK_SUCCESS) {
-                    fprintf(stderr, "\nERROR: WaitForFences() result: 0x%x\n", result);
+                    LOG_ERROR("\nERROR: WaitForFences() result: 0x%x\n", result);
                 }
                 result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, inFrame->frameCompleteFence);
                 assert(result == VK_SUCCESS);
                 if (result != VK_SUCCESS) {
-                    fprintf(stderr, "\nERROR: GetFenceStatus() result: 0x%x\n", result);
+                    LOG_ERROR("\nERROR: GetFenceStatus() result: 0x%x\n", result);
                 }
             }
         }
@@ -547,12 +548,12 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
             result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &inFrame->frameCompleteFence, true, 100 * 1000 * 1000 /* 100 mSec */);
             assert(result == VK_SUCCESS);
             if (result != VK_SUCCESS) {
-                fprintf(stderr, "\nERROR: WaitForFences() result: 0x%x (%s)\n", result, string_VkResult(result));
+                LOG_ERROR("\nERROR: WaitForFences() result: 0x%x (%s)\n", result, string_VkResult(result));
             }
             result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, inFrame->frameCompleteFence);
             assert(result == VK_SUCCESS);
             if (result != VK_SUCCESS) {
-                fprintf(stderr, "\nERROR: GetFenceStatus() result: 0x%x\n", result);
+                LOG_ERROR("\nERROR: GetFenceStatus() result: 0x%x\n", result);
             }
         }
 
@@ -567,14 +568,14 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
                                                  VK_QUERY_RESULT_WITH_STATUS_BIT_KHR | VK_QUERY_RESULT_WAIT_BIT);
         assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
-            fprintf(stderr, "\nERROR: GetQueryPoolResults() result: 0x%x\n", result);
+            LOG_ERROR("\nERROR: GetQueryPoolResults() result: 0x%x\n", result);
         }
         assert(decodeStatus == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
 
         if (dumpDebug) {
-            std::cout << "\t +++++++++++++++++++++++++++< " << (inFrame ? inFrame->pictureIndex : -1)
+            LOG_S_DEBUG << "\t +++++++++++++++++++++++++++< " << (inFrame ? inFrame->pictureIndex : -1)
                       << " >++++++++++++++++++++++++++++++" << std::endl;
-            std::cout << "\t => Decode Status for CurrPicIdx: " << (inFrame ? inFrame->pictureIndex : -1) << std::endl
+            LOG_S_DEBUG << "\t => Decode Status for CurrPicIdx: " << (inFrame ? inFrame->pictureIndex : -1) << std::endl
                       << "\t\tdecodeStatus: " << decodeStatus << std::endl;
         }
     }
@@ -633,19 +634,19 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
         result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &inFrame->frameCompleteFence, true, 100 * 1000 * 1000);
         assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
-            fprintf(stderr, "\nERROR: WaitForFences() result: 0x%x\n", result);
+            LOG_ERROR("\nERROR: WaitForFences() result: 0x%x\n", result);
         }
         result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, inFrame->frameCompleteFence);
         assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
-            fprintf(stderr, "\nERROR: GetFenceStatus() result: 0x%x\n", result);
+            LOG_ERROR("\nERROR: GetFenceStatus() result: 0x%x\n", result);
         }
     }
 
     result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::GRAPHICS, 0, 1, &primaryCmdSubmitInfo, frameConsumerDoneFence);
     if (result != VK_SUCCESS) {
         assert(result == VK_SUCCESS);
-        fprintf(stderr, "\nERROR: MultiThreadedQueueSubmit() result: 0x%x\n", result);
+        LOG_ERROR("\nERROR: MultiThreadedQueueSubmit() result: 0x%x\n", result);
         return result;
     }
 
@@ -654,12 +655,12 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
         result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameConsumerDoneFence, true, fenceTimeout);
         assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
-            fprintf(stderr, "\nERROR: WaitForFences() result: 0x%x\n", result);
+            LOG_ERROR("\nERROR: WaitForFences() result: 0x%x\n", result);
         }
         result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameConsumerDoneFence);
         assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
-            fprintf(stderr, "\nERROR: GetFenceStatus() result: 0x%x\n", result);
+            LOG_ERROR("\nERROR: GetFenceStatus() result: 0x%x\n", result);
         }
     }
 
