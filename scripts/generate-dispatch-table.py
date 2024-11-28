@@ -363,6 +363,7 @@ vk_mvk_macos_surface = Extension(name='VK_MVK_macos_surface', version=1, guard='
 vk_khr_video_queue = Extension(name='VK_KHR_video_queue', version=1, guard='VK_USE_VIDEO_QUEUE', commands=[
     Command(name='GetPhysicalDeviceVideoFormatPropertiesKHR', dispatch='VkPhysicalDevice'),
     Command(name='GetPhysicalDeviceVideoCapabilitiesKHR', dispatch='VkPhysicalDevice'),
+    Command(name='GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR', dispatch='VkPhysicalDevice'),
     Command(name='CreateVideoSessionKHR', dispatch='VkDevice'),
     Command(name='DestroyVideoSessionKHR', dispatch='VkDevice'),
     Command(name='CreateVideoSessionParametersKHR', dispatch='VkDevice'),
