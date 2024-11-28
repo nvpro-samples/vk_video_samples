@@ -117,7 +117,7 @@ struct EncoderConfigAV1 : public EncoderConfig {
 
     virtual bool InitRateControl() override;
 
-    virtual uint8_t GetMaxBFrameCount() { return  static_cast<uint8_t>(av1EncodeCapabilities.maxBidirectionalCompoundReferenceCount); }
+    virtual uint8_t GetMaxBFrameCount() override { return  static_cast<uint8_t>(av1EncodeCapabilities.maxBidirectionalCompoundReferenceCount); }
 
     bool GetRateControlParameters(VkVideoEncodeRateControlInfoKHR* rcInfo,
                                   VkVideoEncodeRateControlLayerInfoKHR* rcLayerInfo,
