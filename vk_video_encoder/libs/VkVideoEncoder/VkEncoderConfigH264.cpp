@@ -469,7 +469,7 @@ bool EncoderConfigH264::InitRateControl()
 #if (_TRANSCODING)
     if (encodingProfile == EncoderConfig::LOW_LATENCY_STREAMING)
     {
-        vbvBufferSize = averageBitrate / frameRate * vbvbufratio; // averageBitrate is a uint32_t, no overflow
+        vbvBufferSize = (uint32_t)(averageBitrate / frameRate * vbvbufratio); // averageBitrate is a uint32_t, no overflow
     }
     else if (encodingProfile == EncoderConfig::ARCHIVING)
     {

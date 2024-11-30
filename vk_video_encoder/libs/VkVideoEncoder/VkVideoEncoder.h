@@ -502,7 +502,7 @@ public:
         , m_qpMapImagePool()
 #if (_TRANSCODING)
         , m_encodeTimeMicroSec(0)
-#endif // _TRANSCODING
+#endif  //_TRANSCODING
     { }
 
     // Factory Function

@@ -76,7 +76,7 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
 
         if (encoderConfig->encodingProfile == EncoderConfig::LOW_LATENCY_STREAMING)
         {
-            m_encoderConfig->vbvBufferSize = encoderConfig->averageBitrate / frameRate * encoderConfig->vbvbufratio; // averageBitrate is a uint32_t, no overflow
+            m_encoderConfig->vbvBufferSize = (uint32_t)(encoderConfig->averageBitrate / frameRate * encoderConfig->vbvbufratio); // averageBitrate is a uint32_t, no overflow
             printf("vbv size %u\n", m_encoderConfig->vbvBufferSize);
         }
         else if (encoderConfig->encodingProfile == EncoderConfig::ARCHIVING)

@@ -346,13 +346,15 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
             averageBitrate = targetBitrate << 20;
             }
         } else if (strcmp(argv[i], "--vbvbuf-ratio") == 0) {
-            int vbvbuf_ratio;
-            int sscanf_result = sscanf(argv[i+1], "%d", &vbvbuf_ratio);
-            if (sscanf_result != 1 || vbvbuf_ratio <= 0 || vbvbuf_ratio > 8) {
-                fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
-                return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
+            if ((++i >= argc) !=1) {
+                int vbvbuf_ratio;
+                int sscanf_result = sscanf(argv[i], "%d", &vbvbuf_ratio);
+                if (sscanf_result != 1 || vbvbuf_ratio <= 0 || vbvbuf_ratio > 8) {
+                    fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
+                    return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
+                }
+                vbvbufratio = vbvbuf_ratio;
             }
-            vbvbufratio = vbvbuf_ratio;
 #endif //_TRANSCODING
         } else if (args[i] == "--idrPeriod") {
             int32_t idrPeriod = EncoderConfig::DEFAULT_GOP_IDR_PERIOD;
@@ -678,7 +680,7 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, char *argv[],
 
         VkResult result = vkEncoderConfigh264->InitializeParameters();
         if (result != VK_SUCCESS) {
-#if (!_TRANSCODING)            
+#if (!_TRANSCODING)
             assert(!"InitializeParameters failed");
             return result;
 #endif // !_TRANSCODING
@@ -698,7 +700,7 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, char *argv[],
 
         VkResult result = vkEncoderConfigh265->InitializeParameters();
         if (result != VK_SUCCESS) {
-#if (!_TRANSCODING)            
+#if (!_TRANSCODING)
             assert(!"InitializeParameters failed");
             return result;
 #endif // !_TRANSCODING
@@ -718,8 +720,10 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, char *argv[],
 
         VkResult result = vkEncoderConfigAV1->InitializeParameters();
         if (result != VK_SUCCESS) {
+#if (!_TRANSCODING)
             assert(!"InitializeParameters failed");
             return result;
+#endif //!_TRANSCODING
         }
 
         encoderConfig = vkEncoderConfigAV1;

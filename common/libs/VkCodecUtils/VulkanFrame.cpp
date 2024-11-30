@@ -282,7 +282,7 @@ static int InitPreset(VkSharedBaseObj<EncoderConfig>& encoderConfig)
     {
         encoderConfig->rateControlMode = VkVideoEncodeRateControlModeFlagBitsKHR::VK_VIDEO_ENCODE_RATE_CONTROL_MODE_CBR_BIT_KHR;
         encoderConfig->gopStructure.SetConsecutiveBFrameCount(0);
-        encoderConfig->gopStructure.SetGopFrameCount(-1);
+        encoderConfig->gopStructure.SetGopFrameCount((uint16_t)-1);
         encoderConfig->gopStructure.SetIdrPeriod(0);
         encoderConfig->gopStructure.SetLastFrameType(VkVideoGopStructure::FrameType::FRAME_TYPE_P); // ? set right value
         encoderConfig->encodeUsageHints = VK_VIDEO_ENCODE_USAGE_STREAMING_BIT_KHR;
