@@ -53,6 +53,10 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::AVX512>(const uint8_t *pdat
             }
         } // main processing loop end
         m_BitBfr = (pdatain[i-2] << 8) | pdatain[i-1];
+        if (i >= datasize) {
+            found_start_code = false;
+            return datasize;
+        }
     }
     // process a tail (rest):
     uint32_t bfr = m_BitBfr;

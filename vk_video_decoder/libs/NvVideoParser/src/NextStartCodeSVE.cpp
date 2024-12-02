@@ -65,8 +65,12 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::SVE>(const uint8_t *pdatain
             // hotspot end
         }
     }
-    m_BitBfr = (pdatain[datasize-2] << 8) | pdatain[datasize-1];
-    found_start_code = ((m_BitBfr & 0x00ffffff) == 1);
+    // a very rare case:
+    if (datasize >= 2) {
+        m_BitBfr = pdatain[datasize-2];
+    }
+    m_BitBfr = (m_BitBfr << 8) | pdatain[datasize >= 1 ? datasize - 1 : 0];
+    found_start_code = false;
     return datasize;
 }
 #undef SVE_REGISTER_MAX_BYTES
