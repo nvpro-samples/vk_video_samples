@@ -34,7 +34,7 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::SVE>(const uint8_t *pdatain
             }
             isArrayFilled = 1;
         }
-        svuint8_t v0n = svld1_u8(pred, data0n);
+        svuint8_t v0n = svld1_u8(svptrue_b8(), data0n);
 
         const svbool_t vext15_mask = svcmpge_n_u8(svptrue_b8(), v0n, lanes-1);
         const svbool_t vext14_mask = svcmpge_n_u8(svptrue_b8(), v0n, lanes-2);
