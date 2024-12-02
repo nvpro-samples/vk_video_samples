@@ -15,7 +15,7 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::AVX2>(const uint8_t *pdatai
 {
     size_t i = 0;
     size_t datasize64 = (datasize >> 6) << 6;
-    if (datasize64 > 64)
+    if (datasize64 >= 64)
     {
         const __m256i v1 = _mm256_set1_epi8(1);
         __m256i vdata = _mm256_loadu_si256((const __m256i*)pdatain);
@@ -23,7 +23,7 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::AVX2>(const uint8_t *pdatai
         __m256i vdata_alignr16b_init = _mm256_permute2f128_si256(vBfr, vdata, 1 | (2<<4));
         __m256i vdata_prev1 = _mm256_alignr_epi8(vdata, vdata_alignr16b_init, 15);
         __m256i vdata_prev2 = _mm256_alignr_epi8(vdata, vdata_alignr16b_init, 14);
-        for ( ; i < datasize64 - 64; i += 64)
+        for ( ; i < datasize64; i += 64)
         {
             for (int c = 0; c < 64; c += 32) // this might force compiler to unroll the loop so we might have 2 loads in parallel
             {

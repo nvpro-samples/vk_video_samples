@@ -15,7 +15,7 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::NEON>(const uint8_t *pdatai
 {
     size_t i = 0;
     size_t datasize32 = (datasize >> 5) << 5;
-    if (datasize32 > 32)
+    if (datasize32 >= 32)
     {
         const uint8x16_t v0 = vdupq_n_u8(0);
         const uint8x16_t v1 = vdupq_n_u8(1);
@@ -25,7 +25,7 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::NEON>(const uint8_t *pdatai
         uint8x16_t vdata_prev2 = vextq_u8(vBfr, vdata, 14);
         uint8_t idx0n[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
         uint8x16_t v015 = vld1q_u8(idx0n);
-        for ( ; i < datasize32 - 32; i += 32)
+        for ( ; i < datasize32; i += 32)
         {
             for (int c = 0; c < 32; c += 16)
             {

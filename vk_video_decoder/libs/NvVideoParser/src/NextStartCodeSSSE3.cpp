@@ -15,14 +15,14 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::SSSE3>(const uint8_t *pdata
 {
     size_t i = 0;
     size_t datasize32 = (datasize >> 5) << 5;
-    if (datasize32 > 32)
+    if (datasize32 >= 32)
     {
         const __m128i v1 = _mm_set1_epi8(1);
         __m128i vdata = _mm_loadu_si128((const __m128i*)pdatain);
         __m128i vBfr = _mm_set1_epi16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF));
         __m128i vdata_prev1 = _mm_alignr_epi8(vdata, vBfr, 15);
         __m128i vdata_prev2 = _mm_alignr_epi8(vdata, vBfr, 14);
-        for ( ; i < datasize32 - 32; i += 32)
+        for ( ; i < datasize32; i += 32)
         {
             for (int c = 0; c < 32; c += 16)
             {

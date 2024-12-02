@@ -15,7 +15,7 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::AVX512>(const uint8_t *pdat
 {
     size_t i = 0;
     size_t datasize128 = (datasize >> 7) << 7;
-    if (datasize128 > 128)
+    if (datasize128 >= 128)
     {
         const __m512i v1 = _mm512_set1_epi8(1);
         const __m512i v254 = _mm512_set1_epi8(-2);
@@ -24,7 +24,7 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::AVX512>(const uint8_t *pdat
         __m512i vdata_alignr48b_init = _mm512_alignr_epi32(vdata, vBfr, 12);
         __m512i vdata_prev1 = _mm512_alignr_epi8(vdata, vdata_alignr48b_init, 15);
         __m512i vdata_prev2 = _mm512_alignr_epi8(vdata, vdata_alignr48b_init, 14);
-        for ( ; i < datasize128 - 128; i += 128)
+        for ( ; i < datasize128; i += 128)
         {
             for (int c = 0; c < 128; c += 64) // this might force compiler to unroll the loop so we might have 2 loads in parallel
             {
