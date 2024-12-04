@@ -193,7 +193,12 @@ public:
                           VkVideoComponentBitDepthFlagsKHR lumaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR,
                           VkVideoComponentBitDepthFlagsKHR chromaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR,
                           uint32_t videoH26xProfileIdc = 0,
-                          VkVideoEncodeTuningModeKHR tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_DEFAULT_KHR)
+#if (_TRANSCODING)
+                          VkVideoEncodeUsageInfoKHR InEncodeUsage = {}
+#else
+                          VkVideoEncodeTuningModeKHR tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_DEFAULT_KHR
+#endif // _TRANSCODING
+    )
         : m_profile({VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR, NULL,
                      videoCodecOperation, chromaSubsampling, lumaBitDepth, chromaBitDepth}),
           m_profileList({VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR, NULL, 1, &m_profile})
@@ -210,8 +215,12 @@ public:
         VkVideoEncodeAV1ProfileInfoKHR encodeAV1ProfilesRequest;
         VkBaseInStructure* pVideoProfileExt = NULL;
 
+#if (_TRANSCODING)
+        VkVideoEncodeUsageInfoKHR encodeUsageInfoRequest = InEncodeUsage;
+#else
         VkVideoEncodeUsageInfoKHR encodeUsageInfoRequest{VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR,
                                                          NULL, 0, 0, tuningMode};
+#endif // _TRANSCODING
         VkBaseInStructure* pEncodeUsageInfo = (VkBaseInStructure*)&encodeUsageInfoRequest;
 
         if (videoCodecOperation == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
