@@ -15,6 +15,7 @@
  */
 
 #include "VkVideoGopStructure.h"
+#include "Logger.h"
 
 VkVideoGopStructure::VkVideoGopStructure(uint8_t gopFrameCount,
                                          int32_t idrPeriod,
@@ -48,33 +49,33 @@ bool VkVideoGopStructure::Init(uint64_t maxNumFrames)
 
 void VkVideoGopStructure::PrintGopStructure(uint64_t numFrames) const
 {
-    std::cout << std::endl << "Input order:   ";
+    LOG_S_INFO << std::endl << "Input order:   ";
     for (uint64_t frameNum = 0; frameNum < numFrames; frameNum++) {
-        std::cout << std::setw(3) << frameNum << " ";
+        LOG_S_INFO << std::setw(3) << frameNum << " ";
     }
-    std::cout << std::endl << "Frame Type:   ";
+    LOG_S_INFO << std::endl << "Frame Type:   ";
 
     GopState gopState;
     GopPosition gopPos(gopState.positionInInputOrder);
     for (uint64_t frameNum = 0; frameNum < (numFrames - 1); frameNum++) {
 
         GetPositionInGOP(gopState, gopPos);
-        std::cout << std::setw(4) << GetFrameTypeName(gopPos.pictureType);
+        LOG_S_INFO << std::setw(4) << GetFrameTypeName(gopPos.pictureType);
     }
     GetPositionInGOP(gopState, gopPos, false, true);
-    std::cout << std::setw(4) << GetFrameTypeName(gopPos.pictureType);
+    LOG_S_INFO << std::setw(4) << GetFrameTypeName(gopPos.pictureType);
 
-    std::cout << std::endl << "Encode  order: ";
+    LOG_S_INFO << std::endl << "Encode  order: ";
 
     gopState = GopState();
     for (uint64_t i = 0; i < (numFrames - 1); i++) {
         GetPositionInGOP(gopState, gopPos);
-        std::cout << std::setw(3) << gopPos.encodeOrder << " ";
+        LOG_S_INFO << std::setw(3) << gopPos.encodeOrder << " ";
     }
     GetPositionInGOP(gopState, gopPos, false, true);
-    std::cout << std::setw(3) << gopPos.encodeOrder << " ";
+    LOG_S_INFO << std::setw(3) << gopPos.encodeOrder << " ";
 
-    std::cout << std::endl;
+    LOG_S_INFO << std::endl;
 }
 
 void VkVideoGopStructure::DumpFrameGopStructure(GopState& gopState,
@@ -83,18 +84,18 @@ void VkVideoGopStructure::DumpFrameGopStructure(GopState& gopState,
     GopPosition gopPos(gopState.positionInInputOrder);
     GetPositionInGOP(gopState, gopPos);
 
-    std::cout << "  " << gopPos.inputOrder   << ", "
+    LOG_S_DEBUG << "  " << gopPos.inputOrder   << ", "
               << "\t" << gopPos.encodeOrder   << ", "
               << "\t" << (uint32_t)gopPos.inGop   << ", "
               << "\t" << GetFrameTypeName(gopPos.pictureType);
 
-    std::cout << std::endl;
+    LOG_S_DEBUG << std::endl;
 }
 
 void VkVideoGopStructure::DumpFramesGopStructure(uint64_t firstFrameNumInInputOrder, uint64_t numFrames) const
 {
-    std::cout << "Input Encode Position  Frame " << std::endl;
-    std::cout << "order order   in GOP   type  " << std::endl;
+    LOG_S_DEBUG<< "Input Encode Position  Frame " << std::endl;
+    LOG_S_DEBUG << "order order   in GOP   type  " << std::endl;
     const uint64_t lastFrameNumInInputOrder = firstFrameNumInInputOrder + numFrames - 1;
     GopState gopState;
     for (uint64_t frameNumInDisplayOrder = firstFrameNumInInputOrder; frameNumInDisplayOrder < lastFrameNumInInputOrder; ++frameNumInDisplayOrder) {

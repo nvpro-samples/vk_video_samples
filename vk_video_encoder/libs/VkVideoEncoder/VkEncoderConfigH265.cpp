@@ -78,21 +78,21 @@ VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                  quantizationMapCapabilities,
                                                                  h265QuantizationMapCapabilities);
     if (result != VK_SUCCESS) {
-        std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
+        LOG_S_ERROR << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
         assert(!"Could not get Video Capabilities!");
         return result;
     }
 
-    if (verboseMsg) {
-        std::cout << "\t\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode capabilities: " << std::endl;
-        std::cout << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << videoCapabilities.minBitstreamBufferOffsetAlignment << std::endl;
-        std::cout << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << videoCapabilities.minBitstreamBufferSizeAlignment << std::endl;
-        std::cout << "\t\t\t" << "pictureAccessGranularity: " << videoCapabilities.pictureAccessGranularity.width << " x " << videoCapabilities.pictureAccessGranularity.height << std::endl;
-        std::cout << "\t\t\t" << "minExtent: " << videoCapabilities.minCodedExtent.width << " x " << videoCapabilities.minCodedExtent.height << std::endl;
-        std::cout << "\t\t\t" << "maxExtent: " << videoCapabilities.maxCodedExtent.width  << " x " << videoCapabilities.maxCodedExtent.height << std::endl;
-        std::cout << "\t\t\t" << "maxDpbSlots: " << videoCapabilities.maxDpbSlots << std::endl;
-        std::cout << "\t\t\t" << "maxActiveReferencePictures: " << videoCapabilities.maxActiveReferencePictures << std::endl;
-        std::cout << "\t\t\t" << "maxBPictureL0ReferenceCount: " << h265EncodeCapabilities.maxBPictureL0ReferenceCount << std::endl;
+    if (verbose) {
+        LOG_S_INFO << "\t\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode capabilities: " << std::endl;
+        LOG_S_INFO << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << videoCapabilities.minBitstreamBufferOffsetAlignment << std::endl;
+        LOG_S_INFO << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << videoCapabilities.minBitstreamBufferSizeAlignment << std::endl;
+        LOG_S_INFO << "\t\t\t" << "pictureAccessGranularity: " << videoCapabilities.pictureAccessGranularity.width << " x " << videoCapabilities.pictureAccessGranularity.height << std::endl;
+        LOG_S_INFO << "\t\t\t" << "minExtent: " << videoCapabilities.minCodedExtent.width << " x " << videoCapabilities.minCodedExtent.height << std::endl;
+        LOG_S_INFO << "\t\t\t" << "maxExtent: " << videoCapabilities.maxCodedExtent.width  << " x " << videoCapabilities.maxCodedExtent.height << std::endl;
+        LOG_S_INFO << "\t\t\t" << "maxDpbSlots: " << videoCapabilities.maxDpbSlots << std::endl;
+        LOG_S_INFO << "\t\t\t" << "maxActiveReferencePictures: " << videoCapabilities.maxActiveReferencePictures << std::endl;
+        LOG_S_INFO << "\t\t\t" << "maxBPictureL0ReferenceCount: " << h265EncodeCapabilities.maxBPictureL0ReferenceCount << std::endl;
     }
 
     return VK_SUCCESS;
@@ -586,11 +586,10 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
     // pic_height_in_luma_samples shall not be equal to 0 and shall be an integer multiple of MinCbSizeY.
     spsInfo->sps.pic_height_in_luma_samples = picHeightAlignedToMinCbsY;
 
-    if (verbose) {
-        std::cout << "sps.pic_width_in_luma_samples: " << spsInfo->sps.pic_width_in_luma_samples
-                  << ", sps.pic_height_in_luma_samples: " << spsInfo->sps.pic_height_in_luma_samples
-                  << ", cuSize: " << (uint32_t)cuSize << ", cuMinSize: " << (uint32_t)cuMinSize << std::endl;
-    }
+
+    LOG_S_DEBUG << "sps.pic_width_in_luma_samples: " << spsInfo->sps.pic_width_in_luma_samples
+                << ", sps.pic_height_in_luma_samples: " << spsInfo->sps.pic_height_in_luma_samples
+                << ", cuSize: " << (uint32_t)cuSize << ", cuMinSize: " << (uint32_t)cuMinSize << std::endl;
 
     spsInfo->sps.sps_video_parameter_set_id = vpsId;
     spsInfo->sps.sps_max_sub_layers_minus1  = 0;
@@ -609,8 +608,8 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
     spsInfo->sps.log2_min_pcm_luma_coding_block_size_minus3 = (uint8_t)(minCbLog2SizeY - 3);
     spsInfo->sps.log2_diff_max_min_pcm_luma_coding_block_size = (uint8_t)(ctbLog2SizeY - minCbLog2SizeY);
 
-    if (verbose) {
-        std::cout << "sps.log2_min_luma_coding_block_size_minus3: "         << (uint32_t)spsInfo->sps.log2_min_luma_coding_block_size_minus3
+
+        LOG_S_DEBUG << "sps.log2_min_luma_coding_block_size_minus3: "         << (uint32_t)spsInfo->sps.log2_min_luma_coding_block_size_minus3
                   << ", sps.log2_diff_max_min_luma_coding_block_size: "     << (uint32_t)spsInfo->sps.log2_diff_max_min_luma_coding_block_size
                   << ", sps.log2_min_luma_transform_block_size_minus2: "    << (uint32_t)spsInfo->sps.log2_min_luma_transform_block_size_minus2
                   << ", sps.log2_diff_max_min_luma_transform_block_size: "  << (uint32_t)spsInfo->sps.log2_diff_max_min_luma_transform_block_size
@@ -618,7 +617,6 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
                   << ", sps.log2_min_pcm_luma_coding_block_size_minus3: "   << (uint32_t)spsInfo->sps.log2_min_pcm_luma_coding_block_size_minus3
                   << ", sps.log2_diff_max_min_pcm_luma_coding_block_size: " << (uint32_t)spsInfo->sps.log2_diff_max_min_pcm_luma_coding_block_size
                   << std::endl;
-    }
 
     uint32_t subWidthC  = (encodeChromaSubsampling == 3) ? 1 : 2;
     uint32_t subHeightC = (encodeChromaSubsampling == 3) ? 1 : 2;
@@ -631,14 +629,13 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
                                                       (spsInfo->sps.conf_win_top_offset != 0) ||
                                                       (spsInfo->sps.conf_win_bottom_offset != 0));
 
-    if (verbose) {
-        std::cout << "sps.conf_win_left_offset: "     << spsInfo->sps.conf_win_left_offset
-                  << ", sps.conf_win_right_offset: "  << spsInfo->sps.conf_win_right_offset
-                  << ", sps.conf_win_top_offset: "    << spsInfo->sps.conf_win_top_offset
-                  << ", sps.conf_win_bottom_offset: " << spsInfo->sps.conf_win_bottom_offset
-                  << ", sps.flags.conformance_window_flag: " << spsInfo->sps.flags.conformance_window_flag
-                  << std::endl;
-    }
+
+    LOG_S_DEBUG << "sps.conf_win_left_offset: "     << spsInfo->sps.conf_win_left_offset
+                << ", sps.conf_win_right_offset: "  << spsInfo->sps.conf_win_right_offset
+                << ", sps.conf_win_top_offset: "    << spsInfo->sps.conf_win_top_offset
+                << ", sps.conf_win_bottom_offset: " << spsInfo->sps.conf_win_bottom_offset
+                << ", sps.flags.conformance_window_flag: " << spsInfo->sps.flags.conformance_window_flag
+                << std::endl;
 
     spsInfo->sps.pScalingLists = NULL;
 

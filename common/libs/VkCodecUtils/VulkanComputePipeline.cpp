@@ -45,7 +45,7 @@ VkResult VulkanComputePipeline::CreatePipeline(const VulkanDeviceContext* vkDevC
 
     const bool verbose = false;
 
-    if (verbose) printf("\nCompute shader code:\n %s", shaderCode);
+    if (verbose) LOG_DEBUG("\nCompute shader code:\n %s", shaderCode);
 
     DestroyShaderModule();
     m_shaderModule = shaderCompiler.BuildGlslShader(shaderCode,

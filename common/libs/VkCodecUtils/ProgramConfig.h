@@ -26,9 +26,10 @@
 #include <vector>
 #include <functional>
 #include <algorithm>
-#include <iomanip> 
+#include <iomanip>
 #include <sstream>
 #include "vulkan_interfaces.h"
+#include "Logger.h"
 
 struct ProgramConfig {
 
@@ -83,7 +84,7 @@ struct ProgramConfig {
     }
 
     using ProgramArgs = std::vector<ArgSpec>;
-    static bool showHelp(const char ** argv, const ProgramArgs &spec) { 
+    static bool showHelp(const char ** argv, const ProgramArgs &spec) {
         std::cout << argv[0] << std::endl;
         for ( auto& flag : spec ) {
             std::stringstream ss;
@@ -111,6 +112,12 @@ struct ProgramConfig {
                     int rtn = showHelp(argv, a);
                     exit(EXIT_SUCCESS);
                     return rtn;
+                }},
+            {"--logLevel", "-l", 1, "Set the log level",
+                [this](const char **args, const ProgramArgs &a) {
+                    int logLevel = std::atoi(args[0]);
+                    Logger::instance().setLogLevel(logLevel);
+                    return true;
                 }},
             {"--enableStrDemux", nullptr, 0, "Enable stream demuxing",
                 [this](const char **, const ProgramArgs &a) {
@@ -347,7 +354,7 @@ struct ProgramConfig {
                     std::cerr << "Missing arguments for \"" << argv[i] << "\"" << std::endl;
                     exit(EXIT_FAILURE);
                 }
-                disableValueCheck = true; 
+                disableValueCheck = true;
                 i++;
             }
 
