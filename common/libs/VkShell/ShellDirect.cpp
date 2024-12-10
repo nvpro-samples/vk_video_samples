@@ -164,7 +164,7 @@ VkSurfaceKHR ShellDirect::CreateSurface(VkInstance)
 
     if (foundPlaneIndex == planeProperties.size()) {
         printf("No plane found compatible with the display. Ooops.");
-        return nullptr;
+        assert(false);
     }
 
     const VkExtent2D surfaceExtent = {
