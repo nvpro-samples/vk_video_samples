@@ -734,6 +734,9 @@ private:
     uint32_t                 m_debug : 1;
 };
 
+// Pre C++17 compatibility
+constexpr size_t VulkanVideoFrameBuffer::maxImages;
+
 VkResult VulkanVideoFrameBuffer::Create(const VulkanDeviceContext* vkDevCtx,
                                         VkSharedBaseObj<VulkanVideoFrameBuffer>& vkVideoFrameBuffer)
 {
