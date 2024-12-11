@@ -175,7 +175,7 @@ int main(int argc, const char **argv) {
                                                         VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR);
 
     VkVideoCodecOperationFlagsKHR videoCodecs = videoDecodeCodecs |
-                                        (programConfig.enableVideoEncoder ? videoEncodeCodecs : VK_VIDEO_CODEC_OPERATION_NONE_KHR);
+                                        (programConfig.enableVideoEncoder ? videoEncodeCodecs : (VkVideoCodecOperationFlagsKHR) VK_VIDEO_CODEC_OPERATION_NONE_KHR);
 
 
     if (supportsDisplay && !programConfig.noPresent) {
