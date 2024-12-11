@@ -156,7 +156,9 @@ int main(int argc, const char* argv[])
         VkSharedBaseObj<Shell> displayShell;
         const Shell::Configuration configuration(encoderConfig->appName.c_str(),
                                                  4, // the display queue size
-                                                 encoderConfig->enableFrameDirectModePresent);
+                                                 encoderConfig->enableFrameDirectModePresent,
+                                                 encoderConfig->encodeWidth,
+                                                 encoderConfig->encodeHeight);
         result = Shell::Create(&vkDevCtxt, configuration, displayShell);
         if (result != VK_SUCCESS) {
             assert(!"Can't allocate display shell! Out of memory!");
@@ -258,6 +260,11 @@ int main(int argc, const char* argv[])
     // Enter the encoding frame loop
     uint32_t curFrameIndex = 0;
     for(; curFrameIndex < encoderConfig->numFrames; curFrameIndex++) {
+
+        if (encoderConfig->enableFramePresent) {
+            // Slow down the display rate to be able to examine the frames
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
 
         if (encoderConfig->verboseFrameStruct) {
             std::cout << "####################################################################################" << std::endl
