@@ -183,11 +183,12 @@ public:
 class EncoderInputFileHandler
 {
 public:
-    EncoderInputFileHandler()
-    : m_fileName{},
-      m_fileHandle(),
-      m_Y4MHeaderOffset(0),
-      m_memMapedFile()
+    EncoderInputFileHandler(bool verbose = false)
+    : m_fileName{}
+    , m_fileHandle()
+    , m_Y4MHeaderOffset(0)
+    , m_memMapedFile()
+    , m_verbose(verbose)
     {
 
     }
@@ -426,7 +427,9 @@ private:
             return error.value();
         }
 
-        printf("Input file size is: %zd\n", m_memMapedFile.length());
+        if (m_verbose) {
+            printf("Input file size is: %zd\n", m_memMapedFile.length());
+        }
 
         return m_memMapedFile.length();
     }
@@ -440,6 +443,7 @@ private:
     FILE* m_fileHandle;
     uint64_t m_Y4MHeaderOffset;
     mio::basic_mmap<mio::access_mode::read, uint8_t> m_memMapedFile;
+    uint32_t m_verbose : 1;
 };
 
 class EncoderOutputFileHandler
@@ -533,10 +537,11 @@ private:
 class EncoderQpMapFileHandler
 {
 public:
-    EncoderQpMapFileHandler()
-    : m_fileName{},
-      m_fileHandle(),
-      m_memMapedFile()
+    EncoderQpMapFileHandler(bool verbose = false)
+    : m_fileName{}
+    , m_fileHandle()
+    , m_memMapedFile()
+    , m_verbose(verbose)
     {
 
     }
@@ -618,7 +623,9 @@ private:
             return error.value();
         }
 
-        printf("Input file size is: %zd\n", m_memMapedFile.length());
+        if (m_verbose) {
+            printf("Input file size is: %zd\n", m_memMapedFile.length());
+        }
 
         return m_memMapedFile.length();
     }
@@ -631,6 +638,7 @@ private:
     char  m_fileName[256];
     FILE* m_fileHandle;
     mio::basic_mmap<mio::access_mode::read, uint8_t> m_memMapedFile;
+    uint32_t m_verbose : 1;
 };
 
 struct EncoderConfig : public VkVideoRefCountBase {
@@ -811,7 +819,7 @@ public:
     , validateVerbose(false)
     , verbose(false)
     , verboseFrameStruct(false)
-    , verboseMsg(true)
+    , verboseMsg(false)
     , enableFramePresent(false)
     , enableFrameDirectModePresent(false)
     , enableVideoDecoder(false)

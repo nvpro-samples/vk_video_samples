@@ -45,9 +45,11 @@ public:
     {
         m_encoder->WaitForThreadsToComplete();
 
-        std::cout << "Done processing " << m_lastFrameIndex << " input frames!" << std::endl
-                  << "Encoded file's location is at " << m_encoderConfig->outputFileHandler.GetFileName()
-                  << std::endl;
+        if (m_encoderConfig->verbose) {
+            std::cout << "Done processing " << m_lastFrameIndex << " input frames!" << std::endl
+                      << "Encoded file's location is at " << m_encoderConfig->outputFileHandler.GetFileName()
+                      << std::endl;
+        }
 
         m_encoder       = nullptr;
         m_encoderConfig = nullptr;
