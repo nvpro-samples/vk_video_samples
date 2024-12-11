@@ -163,7 +163,7 @@ int main(int argc, char** argv)
                                                         VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR);
 
     VkVideoCodecOperationFlagsKHR videoCodecs = videoEncodeCodecs |
-                                        (encoderConfig->enableVideoDecoder ? videoDecodeCodecs : VK_VIDEO_CODEC_OPERATION_NONE_KHR);
+                                        encoderConfig->enableVideoDecoder ? videoDecodeCodecs : (VkVideoCodecOperationFlagsKHR) VK_VIDEO_CODEC_OPERATION_NONE_KHR;
 
 
     VkSharedBaseObj<VkVideoEncoder> encoder; // the encoder's instance
