@@ -69,6 +69,7 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --deviceID                      <hexadec> : deviceID to be used, \n\
     --deviceUuid                    <string>  : deviceUuid to be used \n\
     --enableHwLoadBalancing                   : enables HW load balancing using multiple encoder devices when available \n\
+    --enableDebugEncoderInputDisplay  none    : Testing only - enable presenting to the display the frames input to the encoder\n\
     --testOutOfOrderRecording                 : Testing only - enable testing for out-of-order-recording\n\
     --intraRefreshCycleDuration     <integer> : Duration of (number of frames in) an intra-refresh cycle\n\
     --intraRefreshMode              <string>  : Intra-refresh mode to be used\n\
@@ -504,6 +505,9 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             // Testing only - don't use this feature for production!
             fprintf(stdout, "Warning: %s should only be used for testing!\n", args[i].c_str());
             enableOutOfOrderRecording = true;
+        } else if (args[i] == "--enableDebugEncoderInputDisplay") {
+            fprintf(stdout, "Warning: %s Enabling the display for testing encoder input frames!\n", args[i].c_str());
+            enableFramePresent = true;
         } else if (args[i] == "--intraRefreshCycleDuration") {
             if (++i >= argc || sscanf(args[i].c_str(), "%u", &intraRefreshCycleDuration) != 1) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());

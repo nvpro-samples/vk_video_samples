@@ -628,15 +628,17 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
         waitSemaphoreInfos[waitSemaphoreCount].deviceIndex = 0;
         waitSemaphoreCount++;
 
-        signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
-        signalSemaphoreInfos[signalSemaphoreCount].pNext = nullptr;
-        signalSemaphoreInfos[signalSemaphoreCount].semaphore = inFrame->consumerCompleteSemaphore;
-        signalSemaphoreInfos[signalSemaphoreCount].value     = inFrame->frameConsumerDoneSemValue;
-        signalSemaphoreInfos[signalSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
-        signalSemaphoreInfos[signalSemaphoreCount].deviceIndex = 0;
-        signalSemaphoreCount++;
+        if (inFrame->consumerCompleteSemaphore) {
+            signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+            signalSemaphoreInfos[signalSemaphoreCount].pNext = nullptr;
+            signalSemaphoreInfos[signalSemaphoreCount].semaphore = inFrame->consumerCompleteSemaphore;
+            signalSemaphoreInfos[signalSemaphoreCount].value = inFrame->frameConsumerDoneSemValue;
+            signalSemaphoreInfos[signalSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+            signalSemaphoreInfos[signalSemaphoreCount].deviceIndex = 0;
+            signalSemaphoreCount++;
 
-        inFrame->hasConsummerSignalSemaphore = true;
+            inFrame->hasConsummerSignalSemaphore = true;
+        }
     }
 
     assert(waitSemaphoreCount <= waitSemaphoreMaxCount);
