@@ -149,7 +149,9 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                 return (int)fileSize;
             }
             if (inputFileHandler.parseY4M(&input.width, &input.height, &frameRateNumerator, &frameRateDenominator)) {
-                printf("Y4M file detected: width %d height %d\n", input.width, input.height);
+                if (verbose) {
+                    printf("Y4M file detected: width %d height %d\n", input.width, input.height);
+                }
             }
         } else if (args[i] == "-o" || args[i] == "--output") {
             if (++i >= argc) {
@@ -176,7 +178,9 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                 fprintf(stderr, "Invalid codec: %s\n", codec_.c_str());
                 return -1;
             }
-            printf("Selected codec: %s\n", codec_.c_str());
+            if (verbose) {
+                printf("Selected codec: %s\n", codec_.c_str());
+            }
             i++; // Skip the next argument since it's the codec value
         } else if (args[i] == "--dpbMode") {
             std::string dpbMode = args[i + 1];
@@ -189,7 +193,9 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                 fprintf(stderr, "Invalid DPB mode: %s\n", dpbMode.c_str());
                 return -1;
             }
-            printf("Selected DPB mode: %s\n", dpbMode.c_str());
+            if (verbose) {
+                printf("Selected DPB mode: %s\n", dpbMode.c_str());
+            }
             i++; // Skip the next argument since it's the dpbMode value
         } else if (args[i] == "--inputWidth") {
             if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &input.width) != 1)) {
@@ -300,7 +306,9 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                 return -1;
             }
             gopStructure.SetGopFrameCount(gopFrameCount);
-            printf("Selected gopFrameCount: %d\n", gopFrameCount);
+            if (verbose) {
+                printf("Selected gopFrameCount: %d\n", gopFrameCount);
+            }
         } else if (args[i] == "--idrPeriod") {
             int32_t idrPeriod = EncoderConfig::DEFAULT_GOP_IDR_PERIOD;
             if (++i >= argc || sscanf(args[i].c_str(), "%d", &idrPeriod) != 1) {
@@ -308,7 +316,9 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                 return -1;
             }
             gopStructure.SetIdrPeriod(idrPeriod);
-            printf("Selected idrPeriod: %d\n", idrPeriod);
+            if (verbose) {
+                printf("Selected idrPeriod: %d\n", idrPeriod);
+            }
         } else if (args[i] == "--consecutiveBFrameCount") {
             uint8_t consecutiveBFrameCount = EncoderConfig::DEFAULT_CONSECUTIVE_B_FRAME_COUNT;
             if (++i >= argc || sscanf(args[i].c_str(), "%hhu", &consecutiveBFrameCount) != 1) {
@@ -316,7 +326,9 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                 return -1;
             }
             gopStructure.SetConsecutiveBFrameCount(consecutiveBFrameCount);
-            printf("Selected consecutiveBFrameCount: %d\n", consecutiveBFrameCount);
+            if (verbose) {
+                printf("Selected consecutiveBFrameCount: %d\n", consecutiveBFrameCount);
+            }
         } else if (args[i] == "--temporalLayerCount") {
             uint8_t temporalLayerCount = EncoderConfig::DEFAULT_TEMPORAL_LAYER_COUNT;
             if (++i >= argc || sscanf(args[i].c_str(), "%hhu", &temporalLayerCount) != 1) {
@@ -324,7 +336,9 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                 return -1;
             }
             gopStructure.SetTemporalLayerCount(temporalLayerCount);
-            printf("Selected temporalLayerCount: %d\n", temporalLayerCount);
+            if (verbose) {
+                printf("Selected temporalLayerCount: %d\n", temporalLayerCount);
+            }
         } else if (args[i] == "--lastFrameType") {
             VkVideoGopStructure::FrameType lastFrameType = VkVideoGopStructure::FRAME_TYPE_P;
             std::string frameTypeName = args[i + 1];
@@ -341,7 +355,9 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
             }
             i++; // Skip the next argument since it's the frameTypeName value
             gopStructure.SetLastFrameType(lastFrameType);
-            printf("Selected frameTypeName: %s\n", gopStructure.GetFrameTypeName(lastFrameType));
+            if (verbose) {
+                printf("Selected frameTypeName: %s\n", gopStructure.GetFrameTypeName(lastFrameType));
+            }
         } else if (args[i] == "--closedGop") {
             gopStructure.SetClosedGop();
         } else if (args[i] == "--qualityLevel") {
@@ -482,7 +498,9 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
     if (!outputFileHandler.HasFileName()) {
         const char* defaultOutName = (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) ? "out.264" :
                                      (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR) ? "out.265" : "out.ivf";
-        fprintf(stdout, "No output file name provided. Using %s.\n", defaultOutName);
+        if (verbose) {
+            fprintf(stdout, "No output file name provided. Using %s.\n", defaultOutName);
+        }
         size_t fileSize = outputFileHandler.SetFileName(defaultOutName);
         if (fileSize <= 0) {
             return (int)fileSize;
@@ -514,7 +532,9 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
     }
 
     if (minQp == -1) {
-        fprintf(stdout, "No QP was provided. Using default value: 20.\n");
+        if (verbose) {
+            fprintf(stdout, "No QP was provided. Using default value: 20.\n");
+        }
         minQp = 20;
     }
 

@@ -468,7 +468,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const uint8_t
             transferQueueFamilyOnly = -1,
             transferNumQueues = 0;
 
-        const bool dumpQueues = true;
+        const bool dumpQueues = false;
         for (uint32_t i = 0; i < queues.size(); i++) {
             const VkQueueFamilyProperties2 &queue = queues[i];
 
@@ -604,12 +604,13 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const uint8_t
                     PrintExtensions(true);
                 }
 
-                std::cout << "*** Selected Vulkan physical device with name: " << props.deviceName << std::hex
-                          << ", vendor ID: " << props.vendorID << ", and device ID: " << props.deviceID << std::dec
-			  << ", Num Decode Queues: " << m_videoDecodeNumQueues
-			  << ", Num Encode Queues: " << m_videoEncodeNumQueues
-			  << " ***" << std::endl << std::flush;
-
+                if (dumpQueues) {
+                    std::cout << "*** Selected Vulkan physical device with name: " << props.deviceName << std::hex
+                              << ", vendor ID: " << props.vendorID << ", and device ID: " << props.deviceID << std::dec
+                              << ", Num Decode Queues: " << m_videoDecodeNumQueues
+                              << ", Num Encode Queues: " << m_videoEncodeNumQueues
+                              << " ***" << std::endl << std::flush;
+                }
                 return VK_SUCCESS;
             }
         }
