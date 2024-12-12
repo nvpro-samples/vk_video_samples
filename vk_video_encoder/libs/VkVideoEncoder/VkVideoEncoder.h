@@ -96,7 +96,7 @@ public:
             , setupImageResource()
             , outputBitstreamBuffer()
             , dpbImageResources()
-            , srcQpMapStagingImageView()
+            , srcQpMapStagingResource()
             , srcQpMapImageResource()
             , qpMapCmdBuffer()
             , m_refCount(0)
@@ -152,7 +152,7 @@ public:
         VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> encodeCmdBuffer;
         VkSharedBaseObj<VkVideoEncodeFrameInfo>            dependantFrames;
 
-        VkSharedBaseObj<VulkanVideoImagePoolNode>          srcQpMapStagingImageView;
+        VkSharedBaseObj<VulkanVideoImagePoolNode>          srcQpMapStagingResource;
         VkSharedBaseObj<VulkanVideoImagePoolNode>          srcQpMapImageResource;
         VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> qpMapCmdBuffer;
 
