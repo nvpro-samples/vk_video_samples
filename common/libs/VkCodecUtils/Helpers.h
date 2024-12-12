@@ -318,6 +318,39 @@ inline VkResult WaitAndGetStatus(const VkInterfaceFunctions* vkIf, VkDevice devi
     return result;
  }
 
+template<typename NodeType, typename ChainedNodeType>
+inline VkBaseInStructure* ChainNextVkStruct(NodeType& node, ChainedNodeType& nextChainedNode) {
+    // make sure the node is of type VkBaseInStructure
+    static_assert(offsetof(NodeType, sType) == offsetof(VkBaseInStructure, sType),
+                  "NodeType does not have sType at the same offset as VkBaseInStructure");
+
+    static_assert(offsetof(NodeType, pNext) == offsetof(VkBaseInStructure, pNext),
+                  "NodeType does not have pNext at the same offset as VkBaseInStructure");
+
+    static_assert(std::is_standard_layout<NodeType>::value,
+                  "NodeType must be a standard-layout type");
+
+    static_assert(offsetof(ChainedNodeType, sType) == offsetof(VkBaseInStructure, sType),
+                  "ChainedNodeType does not have sType at the same offset as VkBaseInStructure");
+
+    static_assert(offsetof(ChainedNodeType, pNext) == offsetof(VkBaseInStructure, pNext),
+                  "ChainedNodeType does not have pNext at the same offset as VkBaseInStructure");
+
+    static_assert(std::is_standard_layout<ChainedNodeType>::value,
+                  "ChainedNodeType must be a standard-layout type");
+
+    assert(node.sType > 0);
+    VkBaseInStructure* pNode = (VkBaseInStructure*)&node;
+    while (pNode->pNext != nullptr) {
+         pNode = (VkBaseInStructure*)pNode->pNext;
+     }
+     pNode->pNext = (VkBaseInStructure*)&nextChainedNode;
+     // make sure the nextChainedNode is of type VkBaseInStructure
+     assert(nextChainedNode.sType > 0);
+     assert(nextChainedNode.pNext == nullptr);
+     return (VkBaseInStructure*)nextChainedNode.pNext;
+ }
+
 }  // namespace vk
 
 #endif  // HELPERS_H

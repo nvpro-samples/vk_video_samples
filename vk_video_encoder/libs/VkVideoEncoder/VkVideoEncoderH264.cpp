@@ -590,19 +590,7 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     //}
 
     if (m_encoderConfig->enableQpMap) {
-        VkVideoPictureResourceInfoKHR* pSrcQpMapPictureResource = encodeFrameInfo->srcQpMapImageResource->GetPictureResourceInfo();
-        encodeFrameInfo->quantizationMapInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUANTIZATION_MAP_INFO_KHR;
-        encodeFrameInfo->quantizationMapInfo.pNext = nullptr;
-        encodeFrameInfo->quantizationMapInfo.quantizationMap = pSrcQpMapPictureResource->imageViewBinding;
-        encodeFrameInfo->quantizationMapInfo.quantizationMapExtent = { (m_encoderConfig->encodeWidth + m_qpMapTexelSize.width - 1) / m_qpMapTexelSize.width,
-                                                                       (m_encoderConfig->encodeHeight + m_qpMapTexelSize.height - 1) / m_qpMapTexelSize.height };
-
-        VkBaseInStructure* pStruct = (VkBaseInStructure*)&encodeFrameInfo->encodeInfo;
-        while (pStruct->pNext) pStruct = (VkBaseInStructure*)pStruct->pNext;
-        pStruct->pNext = (VkBaseInStructure*)&encodeFrameInfo->quantizationMapInfo;
-        encodeFrameInfo->encodeInfo.flags |= ((m_encoderConfig->qpMapMode == EncoderConfig::DELTA_QP_MAP) ?
-                                                VK_VIDEO_ENCODE_WITH_QUANTIZATION_DELTA_MAP_BIT_KHR :
-                                                VK_VIDEO_ENCODE_WITH_EMPHASIS_MAP_BIT_KHR);
+        ProcessQpMap(encodeFrameInfo);
     }
 
     // NOTE: dstBuffer resource acquisition can be deferred at the last moment before submit

@@ -66,29 +66,22 @@ const uint8_t* VkVideoEncoder::setPlaneOffset(const uint8_t* pFrameData, size_t 
     return buf;
 }
 
-// 1. Load current input frame from file
-// 2. Convert yuv image to nv12 (TODO: switch to Vulkan compute next, instead of using the CPU for that)
-// 3. Copy the nv12 input linear image to the optimal input image
-// 4. Load qp map from file
-// 5. Copy linear image to the optimal image
-VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
+VkResult VkVideoEncoder::LoadNextQpMapFrameFromFile(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
-    assert(encodeFrameInfo);
+    if ((m_encoderConfig->enableQpMap == VK_FALSE) || (!m_encoderConfig->qpMapFileHandler.HandleIsValid()))  {
+        return VK_SUCCESS;
+    }
 
-    encodeFrameInfo->frameInputOrderNum = m_inputFrameNum++;
-    encodeFrameInfo->lastFrame = !(encodeFrameInfo->frameInputOrderNum < (m_encoderConfig->numFrames - 1));
-
-    if (m_encoderConfig->enableQpMap) {
-
-        if (encodeFrameInfo->srcQpMapStagingImageView == nullptr) {
-            bool success = m_linearQpMapImagePool->GetAvailableImage(encodeFrameInfo->srcQpMapStagingImageView,
-                                                                     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-            assert(success);
-            if (!success) {
-                return VK_ERROR_INITIALIZATION_FAILED;
-            }
-            assert(encodeFrameInfo->srcQpMapStagingImageView != nullptr);
+    // If srcQpMapStagingImageView is valid at this point, it means that the client had provided
+    // the QpMap image.
+    if (encodeFrameInfo->srcQpMapStagingImageView == nullptr) {
+        bool success = m_linearQpMapImagePool->GetAvailableImage(encodeFrameInfo->srcQpMapStagingImageView,
+                                                                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        assert(success);
+        if (!success) {
+            return VK_ERROR_INITIALIZATION_FAILED;
         }
+        assert(encodeFrameInfo->srcQpMapStagingImageView != nullptr);
 
         VkSharedBaseObj<VkImageResourceView> linearQpMapImageView;
         encodeFrameInfo->srcQpMapStagingImageView->GetImageView(linearQpMapImageView);
@@ -114,6 +107,29 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
         for (uint32_t j = 0; j < qpMapHeight; j++) {
             memcpy(writeQpMapImagePtr + (dstQpMapSubresourceLayout[0].offset + j * dstQpMapSubresourceLayout[0].rowPitch),
                    pQpMapData + j * inputQpMapWidth * formatSize, qpMapWidth * formatSize);
+        }
+    }
+
+    return VK_SUCCESS;
+}
+
+// 1. Load current input frame from file
+// 2. Convert yuv image to nv12 (TODO: switch to Vulkan compute next, instead of using the CPU for that)
+// 3. Copy the nv12 input linear image to the optimal input image
+// 4. Load qp map from file
+// 5. Copy linear image to the optimal image
+VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
+{
+    assert(encodeFrameInfo);
+
+    encodeFrameInfo->frameInputOrderNum = m_inputFrameNum++;
+    encodeFrameInfo->lastFrame = !(encodeFrameInfo->frameInputOrderNum < (m_encoderConfig->numFrames - 1));
+
+    if ((m_encoderConfig->enableQpMap == VK_TRUE) && m_encoderConfig->qpMapFileHandler.HandleIsValid()) {
+
+        VkResult result = LoadNextQpMapFrameFromFile(encodeFrameInfo);
+        if (result != VK_SUCCESS) {
+            return result;
         }
     }
 
@@ -1167,6 +1183,26 @@ VkResult VkVideoEncoder::CopyLinearToLinearImage(VkCommandBuffer& commandBuffer,
     }
 
     return VK_SUCCESS;
+}
+
+void VkVideoEncoder::ProcessQpMap(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
+{
+    if ((m_encoderConfig->enableQpMap == VK_FALSE) || (encodeFrameInfo->srcQpMapImageResource == nullptr)) {
+        return;
+    }
+
+    VkVideoPictureResourceInfoKHR* pSrcQpMapPictureResource = encodeFrameInfo->srcQpMapImageResource->GetPictureResourceInfo();
+    encodeFrameInfo->quantizationMapInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUANTIZATION_MAP_INFO_KHR;
+    encodeFrameInfo->quantizationMapInfo.pNext = nullptr;
+    encodeFrameInfo->quantizationMapInfo.quantizationMap = pSrcQpMapPictureResource->imageViewBinding;
+    encodeFrameInfo->quantizationMapInfo.quantizationMapExtent = { (m_encoderConfig->encodeWidth + m_qpMapTexelSize.width - 1) / m_qpMapTexelSize.width,
+                                                                   (m_encoderConfig->encodeHeight + m_qpMapTexelSize.height - 1) / m_qpMapTexelSize.height };
+
+    encodeFrameInfo->encodeInfo.flags |= ((m_encoderConfig->qpMapMode == EncoderConfig::DELTA_QP_MAP) ?
+                                            VK_VIDEO_ENCODE_WITH_QUANTIZATION_DELTA_MAP_BIT_KHR :
+                                            VK_VIDEO_ENCODE_WITH_EMPHASIS_MAP_BIT_KHR);
+
+    vk::ChainNextVkStruct(encodeFrameInfo->encodeInfo, encodeFrameInfo->quantizationMapInfo);
 }
 
 VkResult VkVideoEncoder::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
