@@ -23,6 +23,7 @@
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/VulkanShaderCompiler.h"
 #include "VkCodecUtils/VkImageResource.h"
+#include "VkCodecUtils/VulkanCommandBufferPool.h"
 
 struct VulkanShaderInput {
     const std::string     shader;
@@ -30,41 +31,26 @@ struct VulkanShaderInput {
     uint32_t              shaderIsFsPath : 1;
 };
 
-class VulkanFilter : public VkVideoRefCountBase
+class VulkanFilter : public VulkanCommandBufferPool
 {
 public:
 
     VulkanFilter(const VulkanDeviceContext* vkDevCtx,
                  uint32_t queueFamilyIndex,
                  uint32_t queueIndex)
-        : m_refCount(0), m_vkDevCtx(vkDevCtx),
+        : VulkanCommandBufferPool(vkDevCtx),
           m_vulkanShaderCompiler(),
           m_queueFamilyIndex(queueFamilyIndex),
           m_queueIndex(queueIndex),
           m_queue()
     {
         m_vkDevCtx->GetDeviceQueue(*m_vkDevCtx, queueFamilyIndex, queueIndex, &m_queue);
+        assert(m_queue != VK_NULL_HANDLE);
     }
 
     virtual ~VulkanFilter()
     {
         assert(m_vkDevCtx != nullptr);
-        m_vkDevCtx = nullptr;
-    }
-
-    virtual int32_t AddRef()
-    {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --m_refCount;
-        // Destroy the object if ref-count reaches zero
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
     }
 
     VkShaderModule CreateShaderModule(const char *shaderCode, size_t shaderSize,
@@ -82,20 +68,15 @@ public:
         }
     }
 
-    virtual VkSemaphore GetFilterWaitSemaphore(uint32_t frameIdx) const = 0;
-
-    virtual VkResult RecordCommandBuffer(uint32_t frameIdx,
+    virtual VkResult RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                          const VkImageResourceView* inputImageView,
                                          const VkVideoPictureResourceInfoKHR * inputImageResourceInfo,
                                          const VkImageResourceView* outputImageView,
                                          const VkVideoPictureResourceInfoKHR * outputImageResourceInfo,
-                                         VkFence frameCompleteFence = VK_NULL_HANDLE) = 0;
+                                         uint32_t bufferIdx) = 0;
 
-    virtual uint32_t GetSubmitCommandBuffers(uint32_t frameIdx, const VkCommandBuffer** ppCommandBuffers) const = 0;
-
-    virtual VkFence GetFilterSignalFence(uint32_t frameIdx) const = 0;
-
-    virtual VkResult SubmitCommandBuffer(uint32_t frameIdx,
+    virtual VkResult SubmitCommandBuffer(uint32_t commandBufferCount,
+                                         const VkCommandBuffer*  pCommandBuffers,
                                          uint32_t waitSemaphoreCount,
                                          const VkSemaphore* pWaitSemaphores,
                                          uint32_t signalSemaphoreCount,
@@ -111,22 +92,28 @@ public:
         // Submit compute commands
         VkSubmitInfo submitInfo {};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = GetSubmitCommandBuffers(frameIdx, &submitInfo.pCommandBuffers);
+        submitInfo.pCommandBuffers = pCommandBuffers;
+        submitInfo.commandBufferCount = commandBufferCount;
         submitInfo.waitSemaphoreCount = waitSemaphoreCount;
         submitInfo.pWaitSemaphores = pWaitSemaphores;
         submitInfo.pWaitDstStageMask = &waitStageMask;
         submitInfo.signalSemaphoreCount = signalSemaphoreCount;
         submitInfo.pSignalSemaphores = pSignalSemaphores;
-        return m_vkDevCtx->QueueSubmit(m_queue, 1, &submitInfo, filterCompleteFence);
+
+        assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, filterCompleteFence));
+        VkResult result = m_vkDevCtx->QueueSubmit(m_queue, 1, &submitInfo, filterCompleteFence);
+
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+
+        return result;
     }
 
-private:
-    std::atomic<int32_t>               m_refCount;
 protected:
-    const VulkanDeviceContext*         m_vkDevCtx;
-    VulkanShaderCompiler               m_vulkanShaderCompiler;
-    uint32_t                           m_queueFamilyIndex;
-    uint32_t                           m_queueIndex;
-    VkQueue                            m_queue;
+    VulkanShaderCompiler m_vulkanShaderCompiler;
+    uint32_t             m_queueFamilyIndex;
+    uint32_t             m_queueIndex;
+    VkQueue              m_queue;
 };
 #endif /* _VKCODECUTILS_VULKANFILTER_H_ */

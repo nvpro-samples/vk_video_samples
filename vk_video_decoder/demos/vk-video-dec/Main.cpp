@@ -228,9 +228,10 @@ int main(int argc, const char **argv) {
     } else {
 
         result = vkDevCtxt.InitPhysicalDevice(programConfig.deviceId, programConfig.GetDeviceUUID(),
-                                              (VK_QUEUE_TRANSFER_BIT | requestVideoDecodeQueueMask  |
-                                              requestVideoComputeQueueMask |
-                                              requestVideoEncodeQueueMask),
+                                              (VK_QUEUE_TRANSFER_BIT        |
+                                               requestVideoDecodeQueueMask  |
+                                               requestVideoComputeQueueMask |
+                                               requestVideoEncodeQueueMask),
                                               nullptr,
                                               requestVideoDecodeQueueMask);
         if (result != VK_SUCCESS) {

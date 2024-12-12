@@ -320,7 +320,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                                 m_vkDevCtx->GetComputeQueueFamilyIdx(),
                                                 0,
                                                 m_filterType,
-                                                numDecodeSurfaces,
+                                                numDecodeSurfaces + 1,
                                                 inputFormat,
                                                 outputFormat,
                                                 &ycbcrConversionCreateInfo,
@@ -1011,10 +1011,21 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         decodeBeginInfo.videoSessionParameters = VK_NULL_HANDLE;
     }
 
+    VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> filterCmdBuffer;
+    if (m_enableDecodeComputeFilter) {
+
+        m_yuvFilter->GetAvailablePoolNode(filterCmdBuffer);
+        assert(filterCmdBuffer != nullptr);
+
+        // Make sure command buffer is not in use anymore and reset
+        filterCmdBuffer->ResetCommandBuffer(true, "encoderStagedInputFence");
+    }
+
     VulkanVideoFrameBuffer::ReferencedObjectsInfo referencedObjectsInfo(pCurrFrameDecParams->bitstreamData,
                                                                         pCurrFrameDecParams->pStdPps,
                                                                         pCurrFrameDecParams->pStdSps,
-                                                                        pCurrFrameDecParams->pStdVps);
+                                                                        pCurrFrameDecParams->pStdVps,
+                                                                        filterCmdBuffer);
     int32_t retVal = m_videoFrameBuffer->QueuePictureForDecode(currPicIdx, pDecodePictureInfo,
                                                                &referencedObjectsInfo,
                                                                &frameSynchronizationInfo);
@@ -1033,7 +1044,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     // Then the frameCompleteSemaphore will be signaled by the filter of its completion.
     VkFence videoDecodeCompleteFence = frameCompleteFence;
     VkSemaphore videoDecodeCompleteSemaphore = frameCompleteSemaphore;
-
 
     VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1121,10 +1131,13 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
     if (m_enableDecodeComputeFilter) {
 
+        assert(filterCmdBuffer != nullptr);
+
         // frameCompleteSemaphore is the semaphore that the filter is going to signal on completion when enabled.
         // The videoDecodeCompleteSemaphore semaphore will be signaled by the decoder and then used by the filter to wait on.
-        videoDecodeCompleteFence     = m_yuvFilter->GetFilterSignalFence(currPicIdx);
-        videoDecodeCompleteSemaphore = m_yuvFilter->GetFilterWaitSemaphore(currPicIdx);
+
+        videoDecodeCompleteFence     = filterCmdBuffer->GetFence();
+        videoDecodeCompleteSemaphore = filterCmdBuffer->GetSemaphore();
     }
 
     const uint32_t waitSemaphoreMaxCount = 3;
@@ -1301,6 +1314,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
     if (m_enableDecodeComputeFilter) {
 
+        assert(filterCmdBuffer != nullptr);
+
         VkSharedBaseObj<VkImageResourceView> inputImageView;
         VkSharedBaseObj<VkImageResourceView> outputImageView;
         assert(m_imageSpecsIndex.filterIn != InvalidImageTypeIdx);
@@ -1323,19 +1338,37 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         assert(pCurrFrameDecParams->decodeFrameInfo.dstPictureResource.imageViewBinding == inputImageView->GetImageView());
 
-        result = m_yuvFilter->RecordCommandBuffer(currPicIdx,
+        assert(filterCmdBuffer != nullptr);
+
+        // Make sure command buffer is not in use anymore and reset
+        filterCmdBuffer->ResetCommandBuffer(true, "computeFilterFence");
+
+        // Begin command buffer
+        VkCommandBufferBeginInfo computeBeginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr };
+        // beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        VkCommandBuffer cmdBuf = filterCmdBuffer->BeginCommandBufferRecording(computeBeginInfo);
+
+        result = m_yuvFilter->RecordCommandBuffer(cmdBuf,
                                                   inputImageView, &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource,
-                                                  outputImageView, nullptr, frameCompleteFence);
+                                                  outputImageView, nullptr,
+                                                  filterCmdBuffer->GetNodePoolIndex());
+
+        assert(result == VK_SUCCESS);
+        result = filterCmdBuffer->EndCommandBufferRecording(cmdBuf);
         assert(result == VK_SUCCESS);
 
         if (false) std::cout << currPicIdx << " : OUT view: " << outputImageView->GetImageView() << ", signalSem: " <<  frameCompleteSemaphore << std::endl << std::flush;
         assert(videoDecodeCompleteSemaphore != frameCompleteSemaphore);
-        assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameCompleteFence));
-        result = m_yuvFilter->SubmitCommandBuffer(currPicIdx,
+        result = m_yuvFilter->SubmitCommandBuffer(1, filterCmdBuffer->GetCommandBuffer(),
                                                   1, &videoDecodeCompleteSemaphore,
                                                   1, &frameCompleteSemaphore,
                                                   frameCompleteFence);
         assert(result == VK_SUCCESS);
+        filterCmdBuffer->SetCommandBufferSubmitted();
+        bool syncCpuAfterStaging = false;
+        if (syncCpuAfterStaging) {
+            filterCmdBuffer->SyncHostOnCmdBuffComplete(false, "filterFence");
+        }
     }
 
     return currPicIdx;

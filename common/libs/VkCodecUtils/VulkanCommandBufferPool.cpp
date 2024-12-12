@@ -108,7 +108,7 @@ bool VulkanCommandBufferPool::ReleasePoolNodeToPool(uint32_t poolNodeIndex)
 VkResult VulkanCommandBufferPool::Create(const VulkanDeviceContext* vkDevCtx,
                                          VkSharedBaseObj<VulkanCommandBufferPool>& cmdBuffPool)
 {
-    VkSharedBaseObj<VulkanCommandBufferPool> _cmdBuffPool(new VulkanCommandBufferPool());
+    VkSharedBaseObj<VulkanCommandBufferPool> _cmdBuffPool(new VulkanCommandBufferPool(vkDevCtx));
 
     if (_cmdBuffPool) {
         cmdBuffPool = _cmdBuffPool;

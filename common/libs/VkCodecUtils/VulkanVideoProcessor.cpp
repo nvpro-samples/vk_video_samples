@@ -249,10 +249,9 @@ int32_t VulkanVideoProcessor::GetBitDepth()  const
 
 void VulkanVideoProcessor::Deinit()
 {
-
     m_vkParser = nullptr;
-    m_vkVideoDecoder = nullptr;
     m_vkVideoFrameBuffer = nullptr;
+    m_vkVideoDecoder = nullptr;
     m_videoStreamDemuxer = nullptr;
 }
 

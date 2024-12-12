@@ -89,14 +89,18 @@ public:
         // VPS
         const VkVideoRefCountBase*     pStdVps;
 
+        const VkVideoRefCountBase*     pFilterPoolNode;
+
         ReferencedObjectsInfo(const VkVideoRefCountBase* pBitstreamDataRef,
                               const VkVideoRefCountBase* pStdPpsRef,
                               const VkVideoRefCountBase* pStdSpsRef,
-                              const VkVideoRefCountBase* pStdVpsRef = nullptr)
+                              const VkVideoRefCountBase* pStdVpsRef = nullptr,
+                              const VkVideoRefCountBase* pFilterPoolNodeRef = nullptr)
         : pBitstreamData(pBitstreamDataRef)
         , pStdPps(pStdPpsRef)
         , pStdSps(pStdSpsRef)
-        , pStdVps(pStdVpsRef) {}
+        , pStdVps(pStdVpsRef)
+        , pFilterPoolNode(pFilterPoolNodeRef) {}
     };
 
     struct PictureResourceInfo {

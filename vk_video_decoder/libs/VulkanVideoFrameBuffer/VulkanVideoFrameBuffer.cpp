@@ -168,6 +168,8 @@ public:
     // The bitstream Buffer
     VkSharedBaseObj<VkVideoRefCountBase>  bitstreamData;
 
+    // The filter's pool node
+    VkSharedBaseObj<VkVideoRefCountBase>  filterPoolNode;
 private:
     const VulkanDeviceContext*  m_vkDevCtx;
     std::array<ImageViewState, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES> m_imageViewState;
@@ -432,6 +434,7 @@ public:
         m_perFrameDecodeImageSet[picId].stdSps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdSps);
         m_perFrameDecodeImageSet[picId].stdVps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdVps);
         m_perFrameDecodeImageSet[picId].bitstreamData = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pBitstreamData);
+        m_perFrameDecodeImageSet[picId].filterPoolNode = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pFilterPoolNode);
 
         if (m_debug) {
             std::cout << "==> Queue Decode Picture picIdx: " << (uint32_t)picId

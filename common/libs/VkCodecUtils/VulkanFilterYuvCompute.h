@@ -60,7 +60,9 @@ public:
         , m_workgroupSizeX(16)
         , m_workgroupSizeY(16)
         , m_maxNumFrames(maxNumFrames)
-        , m_ycbcrPrimariesConstants (*pYcbcrPrimariesConstants)
+        , m_ycbcrPrimariesConstants (pYcbcrPrimariesConstants ?
+                                        *pYcbcrPrimariesConstants :
+                                        YcbcrPrimariesConstants{0.0, 0.0})
         , m_inputImageAspects(  VK_IMAGE_ASPECT_COLOR_BIT |
                                 VK_IMAGE_ASPECT_PLANE_0_BIT |
                                 VK_IMAGE_ASPECT_PLANE_1_BIT |
@@ -76,55 +78,18 @@ public:
                   const VkSamplerCreateInfo* pSamplerCreateInfo);
 
     virtual ~VulkanFilterYuvCompute() {
-
+        assert(m_vkDevCtx != nullptr);
     }
 
-    virtual VkSemaphore GetFilterWaitSemaphore(uint32_t frameIdx) const
-    {
-        return m_filterWaitSemaphoreSet.GetSemaphore(frameIdx);
-    }
-
-    virtual VkFence GetFilterSignalFence(uint32_t frameIdx) const {
-
-        VkFence filterCompleteFence = m_filterCompleteFenceSet.GetFence(frameIdx);
-
-        vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, filterCompleteFence, true,
-                              "filterCompleteFence");
-
-        return filterCompleteFence;
-    }
-
-    virtual VkResult RecordCommandBuffer(uint32_t frameIdx,
+    virtual VkResult RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                          const VkImageResourceView* inputImageView,
                                          const VkVideoPictureResourceInfoKHR * inputImageResourceInfo,
                                          const VkImageResourceView* outputImageView,
                                          const VkVideoPictureResourceInfoKHR * outputImageResourceInfo,
-                                         VkFence frameCompleteFence = VK_NULL_HANDLE)
+                                         uint32_t bufferIdx)
     {
 
-        if (frameCompleteFence != VK_NULL_HANDLE) {
-
-            // if frameCompleteFence is a valid handle, then it must to be in a non-signaled state
-            // i.e. if this frameIdx was previously submitted, then it had to be waited for and
-            // the fence reset.
-            assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameCompleteFence));
-
-        } else {
-
-            // Get our own fence for this frame
-            frameCompleteFence = GetFilterSignalFence(frameIdx);
-            assert(frameCompleteFence != VK_NULL_HANDLE);
-        }
-
-        VkCommandBufferBeginInfo cmdBufferBeginInfo {};
-        cmdBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-
-        VkCommandBuffer cmdBuf = *m_commandBuffersSet.GetCommandBuffer((uint32_t)frameIdx);
-
-        VkResult result = m_vkDevCtx->BeginCommandBuffer(cmdBuf, &cmdBufferBeginInfo);
-        if (result != VK_SUCCESS) {
-            return result;
-        }
+        assert(cmdBuf != VK_NULL_HANDLE);
 
         m_vkDevCtx->CmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline.getPipeline());
 
@@ -291,7 +256,10 @@ public:
                 } else {
 
                     VkDeviceOrHostAddressConstKHR imageDescriptorBufferDeviceAddress =
-                          m_descriptorSetLayout.UpdateDescriptorBuffer(frameIdx, set, descrIndex, writeDescriptorSets.data());
+                          m_descriptorSetLayout.UpdateDescriptorBuffer(bufferIdx,
+                                                                       set,
+                                                                       descrIndex,
+                                                                       writeDescriptorSets.data());
 
 
                     // Descriptor buffer bindings
@@ -343,12 +311,7 @@ public:
 
         m_vkDevCtx->CmdDispatch(cmdBuf, width / m_workgroupSizeX, height / m_workgroupSizeY, 1);
 
-        return m_vkDevCtx->EndCommandBuffer(cmdBuf);
-    }
-
-    virtual uint32_t GetSubmitCommandBuffers(uint32_t frameIdx, const VkCommandBuffer** ppCommandBuffers) const {
-        *ppCommandBuffers = m_commandBuffersSet.GetCommandBuffer(frameIdx);
-        return 1;
+        return VK_SUCCESS;
     }
 
 private:
@@ -368,9 +331,6 @@ private:
     VulkanSamplerYcbcrConversion             m_samplerYcbcrConversion;
     VulkanDescriptorSetLayout                m_descriptorSetLayout;
     VulkanComputePipeline                    m_computePipeline;
-    VulkanCommandBuffersSet                  m_commandBuffersSet;
-    VulkanSemaphoreSet                       m_filterWaitSemaphoreSet;
-    VulkanFenceSet                           m_filterCompleteFenceSet;
     VkImageAspectFlags                       m_inputImageAspects;
     VkImageAspectFlags                       m_outputImageAspects;
 

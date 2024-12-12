@@ -56,8 +56,15 @@ VkResult VulkanFilterYuvCompute::Create(const VulkanDeviceContext* vkDevCtx,
 VkResult VulkanFilterYuvCompute::Init(const VkSamplerYcbcrConversionCreateInfo* pYcbcrConversionCreateInfo,
                                       const VkSamplerCreateInfo* pSamplerCreateInfo)
 {
+    VkResult result = Configure( m_vkDevCtx,
+                                 m_maxNumFrames, // numPoolNodes
+                                 m_vkDevCtx->GetComputeQueueFamilyIdx(), // queueFamilyIndex
+                                 false,    // createQueryPool - not needed for the compute filter
+                                 nullptr,  // pVideoProfile   - not needed for the compute filter
+                                 true,     // createSemaphores
+                                 true      // createFences
+                                );
 
-    VkResult result = VK_SUCCESS;
     if (pYcbcrConversionCreateInfo) {
          result = m_samplerYcbcrConversion.CreateVulkanSampler(m_vkDevCtx,
                                                                pSamplerCreateInfo,
@@ -73,27 +80,6 @@ VkResult VulkanFilterYuvCompute::Init(const VkSamplerYcbcrConversionCreateInfo* 
     result = InitDescriptorSetLayout(m_maxNumFrames);
     if (result != VK_SUCCESS) {
         assert(!"ERROR: InitDescriptorSetLayout!");
-        return result;
-    }
-
-    result = m_commandBuffersSet.CreateCommandBufferPool(m_vkDevCtx, m_queueFamilyIndex, m_maxNumFrames);
-    if (result != VK_SUCCESS) {
-        assert(!"ERROR: CreateCommandBufferPool!");
-        return result;
-    }
-
-    result = m_filterWaitSemaphoreSet.CreateSet(m_vkDevCtx, m_maxNumFrames);
-    if (result != VK_SUCCESS) {
-        assert(!"ERROR: m_filterWaitSemaphoreSet.CreateSet!");
-        return result;
-    }
-
-    // Before start recording the command buffer, the filter waits on the corresponding fence
-    // For the first frame, however, there is not command buffer submission, so we need to create
-    // the fence signaled. See RecordCommandBuffer()
-    result = m_filterCompleteFenceSet.CreateSet(m_vkDevCtx, m_maxNumFrames, VK_FENCE_CREATE_SIGNALED_BIT);
-    if (result != VK_SUCCESS) {
-        assert(!"ERROR: CreateCommandBufferPool!");
         return result;
     }
 

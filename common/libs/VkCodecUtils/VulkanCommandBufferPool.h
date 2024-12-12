@@ -202,6 +202,14 @@ public:
             return m_parent->m_queryPoolSet.GetQueryPool(queryIdx);
         }
 
+        uint32_t GetNodePoolIndex() const {
+            if ((m_parent == nullptr) || (m_parentIndex < 0)) {
+                assert(!"Invalid PoolNode state!");
+                return (uint32_t)-1;
+            }
+            return m_parentIndex;
+        }
+
         const VulkanDeviceContext* GetDeviceContext() const { return m_vkDevCtx; }
 
     private:
@@ -217,8 +225,8 @@ public:
 
     static constexpr size_t maxPoolNodes = 64;
 
-    VulkanCommandBufferPool()
-        : m_vkDevCtx()
+    VulkanCommandBufferPool(const VulkanDeviceContext* vkDevCtx)
+        : m_vkDevCtx(vkDevCtx)
         , m_refCount()
         , m_queueMutex()
         , m_poolSize(0)
@@ -281,8 +289,9 @@ public:
 
     bool ReleasePoolNodeToPool(uint32_t poolNodeIndex);
 
-private:
+protected:
     const VulkanDeviceContext* m_vkDevCtx;
+private:
     std::atomic<int32_t>       m_refCount;
     std::mutex                 m_queueMutex;
     uint32_t                   m_poolSize;
