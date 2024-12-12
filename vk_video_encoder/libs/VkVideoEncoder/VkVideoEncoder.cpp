@@ -215,23 +215,28 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
     return VK_ERROR_INITIALIZATION_FAILED;
 }
 
-VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
+VkResult VkVideoEncoder::StageInputFrameQpMap(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                              VkCommandBuffer cmdBuf)
 {
-    assert(encodeFrameInfo);
 
-    VkResult result;
+    if (m_encoderConfig->enableQpMap == VK_FALSE) {
+        return VK_SUCCESS;
+    }
 
-    if (m_encoderConfig->enableQpMap) {
-        if (encodeFrameInfo->srcQpMapImageResource == nullptr) {
-            bool success = m_qpMapImagePool->GetAvailableImage(encodeFrameInfo->srcQpMapImageResource,
-                                                               VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR);
-            assert(success);
-            assert(encodeFrameInfo->srcQpMapImageResource != nullptr);
-            if (!success || encodeFrameInfo->srcQpMapImageResource == nullptr) {
-                return VK_ERROR_INITIALIZATION_FAILED;
-            }
+    const bool useDedicatedCommandBuf = (cmdBuf != VK_NULL_HANDLE);
+
+    if (encodeFrameInfo->srcQpMapImageResource == nullptr) {
+        bool success = m_qpMapImagePool->GetAvailableImage(encodeFrameInfo->srcQpMapImageResource,
+                                                           VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR);
+        assert(success);
+        assert(encodeFrameInfo->srcQpMapImageResource != nullptr);
+        if (!success || encodeFrameInfo->srcQpMapImageResource == nullptr) {
+            return VK_ERROR_INITIALIZATION_FAILED;
         }
+    }
 
+    if (useDedicatedCommandBuf) {
+        assert(m_inputCommandBufferPool);
         m_inputCommandBufferPool->GetAvailablePoolNode(encodeFrameInfo->qpMapCmdBuffer);
         assert(encodeFrameInfo->qpMapCmdBuffer != nullptr);
 
@@ -241,35 +246,56 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         // Begin command buffer
         VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr };
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        VkCommandBuffer cmdBuf = encodeFrameInfo->qpMapCmdBuffer->BeginCommandBufferRecording(beginInfo);
+        cmdBuf = encodeFrameInfo->qpMapCmdBuffer->BeginCommandBufferRecording(beginInfo);
+    }
 
-        VkSharedBaseObj<VkImageResourceView> linearQpMapImageView;
-        encodeFrameInfo->srcQpMapStagingImageView->GetImageView(linearQpMapImageView);
+    VkSharedBaseObj<VkImageResourceView> linearQpMapImageView;
+    encodeFrameInfo->srcQpMapStagingImageView->GetImageView(linearQpMapImageView);
 
-        VkSharedBaseObj<VkImageResourceView> srcQpMapImageView;
-        encodeFrameInfo->srcQpMapImageResource->GetImageView(srcQpMapImageView);
+    VkSharedBaseObj<VkImageResourceView> srcQpMapImageView;
+    encodeFrameInfo->srcQpMapImageResource->GetImageView(srcQpMapImageView);
 
-        VkImageLayout linearQpMapImgNewLayout = TransitionImageLayout(cmdBuf, linearQpMapImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-        VkImageLayout srcQpMapImgNewLayout = TransitionImageLayout(cmdBuf, srcQpMapImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-        (void)linearQpMapImgNewLayout;
-        (void)srcQpMapImgNewLayout;
+    VkImageLayout linearQpMapImgNewLayout = TransitionImageLayout(cmdBuf, linearQpMapImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    VkImageLayout srcQpMapImgNewLayout = TransitionImageLayout(cmdBuf, srcQpMapImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    (void)linearQpMapImgNewLayout;
+    (void)srcQpMapImgNewLayout;
 
-        VkExtent2D copyImageExtent {
-            (std::min(m_encoderConfig->encodeWidth,  m_encoderConfig->input.width) + m_qpMapTexelSize.width - 1) / m_qpMapTexelSize.width,
-            (std::min(m_encoderConfig->encodeHeight, m_encoderConfig->input.height) + m_qpMapTexelSize.height - 1) / m_qpMapTexelSize.height
-        };
+    VkExtent2D copyImageExtent {
+        (std::min(m_encoderConfig->encodeWidth,  m_encoderConfig->input.width) + m_qpMapTexelSize.width - 1) / m_qpMapTexelSize.width,
+        (std::min(m_encoderConfig->encodeHeight, m_encoderConfig->input.height) + m_qpMapTexelSize.height - 1) / m_qpMapTexelSize.height
+    };
 
-        CopyLinearToLinearImage(cmdBuf, linearQpMapImageView, srcQpMapImageView, copyImageExtent);
+    CopyLinearToLinearImage(cmdBuf, linearQpMapImageView, srcQpMapImageView, copyImageExtent);
 
+    if (useDedicatedCommandBuf) {
+        VkResult result = VK_SUCCESS;
         result = encodeFrameInfo->qpMapCmdBuffer->EndCommandBufferRecording(cmdBuf);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
 
         // Now submit the staged input to the queue
-        SubmitStagedQpMap(encodeFrameInfo);
+        return SubmitStagedQpMap(encodeFrameInfo);
     }
+
+    return VK_SUCCESS;
+}
+
+VkResult VkVideoEncoder::EncodeFrameCommon(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
+{
+    encodeFrameInfo->constQp = m_encoderConfig->constQp;
+
+    // and encode the input frame with the encoder next
+    return EncodeFrame(encodeFrameInfo);
+}
+
+VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
+{
+    assert(encodeFrameInfo);
 
     if (encodeFrameInfo->srcEncodeImageResource == nullptr) {
         bool success = m_inputImagePool->GetAvailableImage(encodeFrameInfo->srcEncodeImageResource,
-                                                                 VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR);
+                                                           VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR);
         assert(success);
         assert(encodeFrameInfo->srcEncodeImageResource != nullptr);
         if (!success || encodeFrameInfo->srcEncodeImageResource == nullptr) {
@@ -306,17 +332,25 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     CopyLinearToOptimalImage(cmdBuf, linearInputImageView, srcEncodeImageView, copyImageExtent);
 
+    VkResult result;
+    // Stage QPMap if it needs staging. Reuse the same command buffer used for staging of the input image
+    if (m_encoderConfig->enableQpMap) {
+        result = StageInputFrameQpMap(encodeFrameInfo, cmdBuf);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+    }
+
     result = encodeFrameInfo->inputCmdBuffer->EndCommandBufferRecording(cmdBuf);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
 
     // Now submit the staged input to the queue
     SubmitStagedInputFrame(encodeFrameInfo);
 
-    encodeFrameInfo->constQp = m_encoderConfig->constQp;
-
     // and encode the input frame with the encoder next
-    EncodeFrame(encodeFrameInfo);
-
-    return result;
+    return EncodeFrameCommon(encodeFrameInfo);
 }
 
 VkResult VkVideoEncoder::SubmitStagedQpMap(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
@@ -873,7 +907,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     }
 
     result = m_inputCommandBufferPool->Configure( m_vkDevCtx,
-                                                  (encoderConfig->enableQpMap) ? encoderConfig->numInputImages * 2 : encoderConfig->numInputImages, // numPoolNodes
+                                                  encoderConfig->numInputImages, // numPoolNodes
                                                   ((m_vkDevCtx->GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) != 0) ?
                                                       m_vkDevCtx->GetVideoEncodeQueueFamilyIdx() :
                                                       m_vkDevCtx->GetTransferQueueFamilyIdx(), // queueFamilyIndex
