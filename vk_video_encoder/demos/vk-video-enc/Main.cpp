@@ -135,6 +135,11 @@ int main(int argc, char** argv)
         }
     }
 
+    VkQueueFlags requestVideoComputeQueueMask = 0;
+    if (encoderConfig->enablePreprocessComputeFilter == VK_TRUE) {
+        requestVideoComputeQueueMask = VK_QUEUE_COMPUTE_BIT;
+    }
+
     VkSharedBaseObj<VulkanVideoDisplayQueue<VulkanEncoderInputFrame>> videoDispayQueue;
     result = CreateVulkanVideoEncodeDisplayQueue(&vkDevCtxt,
                                                  encoderConfig->encodeWidth,
@@ -180,7 +185,10 @@ int main(int argc, char** argv)
         }
 
         result = vkDevCtxt.InitPhysicalDevice(encoderConfig->deviceId, encoderConfig->GetDeviceUUID(),
-                                              (VK_QUEUE_GRAPHICS_BIT | requestVideoDecodeQueueMask | requestVideoEncodeQueueMask),
+                                              (VK_QUEUE_GRAPHICS_BIT |
+                                                      requestVideoComputeQueueMask |
+                                                      requestVideoDecodeQueueMask  |
+                                                      requestVideoEncodeQueueMask),
                                               displayShell,
                                               requestVideoDecodeQueueMask,
                                               (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
@@ -203,7 +211,8 @@ int main(int argc, char** argv)
                                               false,             // createTransferQueue
                                               true,              // createGraphicsQueue
                                               true,              // createDisplayQueue
-                                              (encoderConfig->selectVideoWithComputeQueue == 1)  // createComputeQueue
+                                              ((encoderConfig->selectVideoWithComputeQueue == 1) ||  // createComputeQueue
+                                               (encoderConfig->enablePreprocessComputeFilter == VK_TRUE))
                                               );
         if (result != VK_SUCCESS) {
 
@@ -227,7 +236,10 @@ int main(int argc, char** argv)
 
         // No display presentation and no decoder - just the encoder
         result = vkDevCtxt.InitPhysicalDevice(encoderConfig->deviceId, encoderConfig->GetDeviceUUID(),
-                                              (requestVideoDecodeQueueMask | requestVideoEncodeQueueMask | VK_QUEUE_TRANSFER_BIT),
+                                              (requestVideoComputeQueueMask |
+                                               requestVideoDecodeQueueMask  |
+                                               requestVideoEncodeQueueMask  |
+                                               VK_QUEUE_TRANSFER_BIT),
                                               nullptr,
                                               requestVideoDecodeQueueMask,
                                               (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
@@ -251,7 +263,8 @@ int main(int argc, char** argv)
                                               ((vkDevCtxt.GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) == 0), //  createTransferQueue
                                               false, // createGraphicsQueue
                                               false, // createDisplayQueue
-                                              (encoderConfig->selectVideoWithComputeQueue == 1)  // createComputeQueue
+                                              ((encoderConfig->selectVideoWithComputeQueue == 1) ||  // createComputeQueue
+                                               (encoderConfig->enablePreprocessComputeFilter == VK_TRUE))
                                               );
         if (result != VK_SUCCESS) {
 

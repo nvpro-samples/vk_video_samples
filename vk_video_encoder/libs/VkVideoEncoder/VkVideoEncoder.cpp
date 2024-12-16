@@ -303,6 +303,7 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     assert(encodeFrameInfo);
 
     if (encodeFrameInfo->srcEncodeImageResource == nullptr) {
+
         bool success = m_inputImagePool->GetAvailableImage(encodeFrameInfo->srcEncodeImageResource,
                                                            VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR);
         assert(success);
@@ -329,19 +330,33 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     VkSharedBaseObj<VkImageResourceView> srcEncodeImageView;
     encodeFrameInfo->srcEncodeImageResource->GetImageView(srcEncodeImageView);
 
-    VkImageLayout linearImgNewLayout = TransitionImageLayout(cmdBuf, linearInputImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-    VkImageLayout srcImgNewLayout = TransitionImageLayout(cmdBuf, srcEncodeImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    (void)linearImgNewLayout;
-    (void)srcImgNewLayout;
-
-    VkExtent2D copyImageExtent {
-        std::min(m_encoderConfig->encodeWidth,  m_encoderConfig->input.width),
-        std::min(m_encoderConfig->encodeHeight, m_encoderConfig->input.height)
-    };
-
-    CopyLinearToOptimalImage(cmdBuf, linearInputImageView, srcEncodeImageView, copyImageExtent);
-
     VkResult result;
+    if (m_inputComputeFilter == nullptr) {
+        VkImageLayout linearImgNewLayout = TransitionImageLayout(cmdBuf, linearInputImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        VkImageLayout srcImgNewLayout = TransitionImageLayout(cmdBuf, srcEncodeImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+        (void)linearImgNewLayout;
+        (void)srcImgNewLayout;
+
+        VkExtent2D copyImageExtent {
+            std::min(m_encoderConfig->encodeWidth,  m_encoderConfig->input.width),
+            std::min(m_encoderConfig->encodeHeight, m_encoderConfig->input.height)
+        };
+
+        CopyLinearToOptimalImage(cmdBuf, linearInputImageView, srcEncodeImageView, copyImageExtent);
+
+    } else {
+
+        result = m_inputComputeFilter->RecordCommandBuffer(cmdBuf,
+                                                           linearInputImageView,
+                                                           encodeFrameInfo->srcStagingImageView->GetPictureResourceInfo(),
+                                                           srcEncodeImageView,
+                                                           encodeFrameInfo->srcEncodeImageResource->GetPictureResourceInfo(),
+                                                           encodeFrameInfo->inputCmdBuffer->GetNodePoolIndex());
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+    }
+
     // Stage QPMap if it needs staging. Reuse the same command buffer used for staging of the input image
     if (m_encoderConfig->enableQpMap && (m_qpMapTiling != VK_IMAGE_TILING_LINEAR)) {
         result = StageInputFrameQpMap(encodeFrameInfo, cmdBuf);
@@ -416,8 +431,11 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
 
     VkFence queueCompleteFence = encodeFrameInfo->inputCmdBuffer->GetFence();
     assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, queueCompleteFence));
-    VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(((m_vkDevCtx->GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) != 0) ?
-                                                               VulkanDeviceContext::ENCODE : VulkanDeviceContext::TRANSFER,
+    const VulkanDeviceContext::QueueFamilySubmitType submitType =
+            (m_inputComputeFilter != nullptr) ? VulkanDeviceContext::COMPUTE :
+                    (((m_vkDevCtx->GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) != 0) ?
+                            VulkanDeviceContext::ENCODE : VulkanDeviceContext::TRANSFER);
+    VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(submitType,
                                                            0, 1, &submitInfo,
                                                            queueCompleteFence);
 
@@ -917,23 +935,78 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         }
     }
 
-    result = VulkanCommandBufferPool::Create(m_vkDevCtx, m_inputCommandBufferPool);
-    if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nInitEncoder Error: Failed to create m_inputCommandBufferPool.\n");
-        return result;
+    if (encoderConfig->enablePreprocessComputeFilter) {
+
+        const VkSamplerYcbcrRange ycbcrRange = VK_SAMPLER_YCBCR_RANGE_ITU_FULL; // FIXME
+        const VkSamplerYcbcrModelConversion ycbcrModelConversion = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_2020;   // FIXME
+        const YcbcrPrimariesConstants ycbcrPrimariesConstants = GetYcbcrPrimariesConstants(YcbcrBtStandardBt2020); // FIXME
+
+        const VkSamplerYcbcrConversionCreateInfo ycbcrConversionCreateInfo {
+                   VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO,
+                   nullptr,
+                   m_imageInFormat,
+                   ycbcrModelConversion,
+                   ycbcrRange,
+                   { VK_COMPONENT_SWIZZLE_IDENTITY,
+                     VK_COMPONENT_SWIZZLE_IDENTITY,
+                     VK_COMPONENT_SWIZZLE_IDENTITY,
+                     VK_COMPONENT_SWIZZLE_IDENTITY
+                   },
+                   VK_CHROMA_LOCATION_MIDPOINT, // FIXME
+                   VK_CHROMA_LOCATION_MIDPOINT, // FIXME
+                   VK_FILTER_LINEAR,
+                   false
+                   };
+
+        static const VkSamplerCreateInfo samplerInfo = {
+                   VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+                   nullptr,
+                   0,
+                   VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                   VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                   // mipLodBias  anisotropyEnable  maxAnisotropy  compareEnable      compareOp         minLod  maxLod          borderColor
+                   // unnormalizedCoordinates
+                   0.0, false, 0.00, false, VK_COMPARE_OP_NEVER, 0.0, 16.0, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE, false
+        };
+
+        result = VulkanFilterYuvCompute::Create(m_vkDevCtx,
+                                                m_vkDevCtx->GetComputeQueueFamilyIdx(),
+                                                0, // queueIndex
+                                                encoderConfig->filterType,
+                                                encoderConfig->numInputImages,
+                                                m_imageInFormat,  // in filter format (can be RGB)
+                                                m_imageInFormat,  // out filter - same as input for now.
+                                                &ycbcrConversionCreateInfo,
+                                                &ycbcrPrimariesConstants,
+                                                &samplerInfo,
+                                                m_inputComputeFilter);
     }
 
-    result = m_inputCommandBufferPool->Configure( m_vkDevCtx,
-                                                  encoderConfig->numInputImages, // numPoolNodes
-                                                  ((m_vkDevCtx->GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) != 0) ?
-                                                      m_vkDevCtx->GetVideoEncodeQueueFamilyIdx() :
-                                                      m_vkDevCtx->GetTransferQueueFamilyIdx(), // queueFamilyIndex
-                                                  false,    // createQueryPool - not needed for the input transfer
-                                                  nullptr,  // pVideoProfile   - not needed for the input transfer
-                                                  true,     // createSemaphores
-                                                  true      // createFences
-                                                 );
-    if(result != VK_SUCCESS) {
+    if ((result == VK_SUCCESS) && (m_inputComputeFilter != nullptr) ) {
+
+        m_inputCommandBufferPool = m_inputComputeFilter;
+
+    } else {
+
+        result = VulkanCommandBufferPool::Create(m_vkDevCtx, m_inputCommandBufferPool);
+        if(result != VK_SUCCESS) {
+            fprintf(stderr, "\nInitEncoder Error: Failed to create m_inputCommandBufferPool.\n");
+            return result;
+        }
+
+        result = m_inputCommandBufferPool->Configure( m_vkDevCtx,
+                                                      encoderConfig->numInputImages, // numPoolNodes
+                                                      ((m_vkDevCtx->GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) != 0) ?
+                                                          m_vkDevCtx->GetVideoEncodeQueueFamilyIdx() :
+                                                          m_vkDevCtx->GetTransferQueueFamilyIdx(), // queueFamilyIndex
+                                                      false,    // createQueryPool - not needed for the input transfer
+                                                      nullptr,  // pVideoProfile   - not needed for the input transfer
+                                                      true,     // createSemaphores
+                                                      true      // createFences
+                                                     );
+    }
+
+    if (result != VK_SUCCESS) {
         fprintf(stderr, "\nInitEncoder Error: Failed to Configure m_inputCommandBufferPool.\n");
         return result;
     }
@@ -1626,6 +1699,7 @@ int32_t VkVideoEncoder::DeinitEncoder()
     m_inputImagePool       = nullptr;
     m_dpbImagePool         = nullptr;
 
+    m_inputComputeFilter      = nullptr;
     m_inputCommandBufferPool  = nullptr;
     m_encodeCommandBufferPool = nullptr;
 

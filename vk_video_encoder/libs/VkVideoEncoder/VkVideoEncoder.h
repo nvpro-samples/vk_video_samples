@@ -702,6 +702,7 @@ protected:
     VkSharedBaseObj<VulkanVideoImagePool>    m_linearInputImagePool;
     VkSharedBaseObj<VulkanVideoImagePool>    m_inputImagePool;
     VkSharedBaseObj<VulkanVideoImagePool>    m_dpbImagePool;
+    VkSharedBaseObj<VulkanFilter>            m_inputComputeFilter;
     VkSharedBaseObj<VulkanCommandBufferPool> m_inputCommandBufferPool;
     VkSharedBaseObj<VulkanCommandBufferPool> m_encodeCommandBufferPool;
     VulkanBitstreamBufferPool                m_bitstreamBuffersQueue;

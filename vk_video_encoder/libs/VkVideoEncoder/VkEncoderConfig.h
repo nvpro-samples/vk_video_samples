@@ -31,6 +31,7 @@
 #include "VkVideoEncoder/VkVideoGopStructure.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
+#include "VkCodecUtils/VulkanFilterYuvCompute.h"
 
 struct EncoderConfigH264;
 struct EncoderConfigH265;
@@ -731,6 +732,9 @@ public:
     EncoderInputFileHandler inputFileHandler;
     EncoderOutputFileHandler outputFileHandler;
     EncoderQpMapFileHandler qpMapFileHandler;
+
+    VulkanFilterYuvCompute::FilterType filterType;
+
     uint32_t validate : 1;
     uint32_t validateVerbose : 1;
     uint32_t verbose : 1;
@@ -741,6 +745,7 @@ public:
     uint32_t enableVideoDecoder : 1;
     uint32_t enableHwLoadBalancing : 1;
     uint32_t selectVideoWithComputeQueue : 1;
+    uint32_t enablePreprocessComputeFilter : 1;
     uint32_t enableOutOfOrderRecording : 1; // Testing only - don't use for production!
 
     EncoderConfig()
@@ -815,6 +820,7 @@ public:
     , max_dec_frame_buffering()
     , chroma_sample_loc_type()
     , inputFileHandler()
+    , filterType(VulkanFilterYuvCompute::YCBCRCOPY)
     , validate(false)
     , validateVerbose(false)
     , verbose(false)
@@ -826,6 +832,7 @@ public:
     , enableHwLoadBalancing(false)
     , selectVideoWithComputeQueue(false)
     , enableOutOfOrderRecording(false)
+    , enablePreprocessComputeFilter(false)
     { }
 
     virtual ~EncoderConfig() {}
