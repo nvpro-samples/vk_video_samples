@@ -30,6 +30,7 @@
 #include <algorithm>    // std::find_if
 #include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
+#include "Logger.h"
 
 #if !defined(VK_USE_PLATFORM_WIN32_KHR)
 PFN_vkGetInstanceProcAddr VulkanDeviceContext::LoadVk(VulkanLibraryHandleType &vulkanLibHandle,
@@ -124,23 +125,23 @@ VkResult VulkanDeviceContext::CheckAllInstanceLayers(bool verbose)
     std::vector<VkLayerProperties> layers;
     vk::enumerate(this, layers);
 
-    if (verbose) std::cout << "Enumerating instance layers:" << std::endl;
+    if (verbose) LOG_S_INFO << "Enumerating instance layers:" << std::endl;
     std::set<std::string> layer_names;
     for (const auto &layer : layers) {
         layer_names.insert(layer.layerName);
-        if (verbose ) std::cout << '\t' << layer.layerName << std::endl;
+        if (verbose ) LOG_S_INFO << '\t' << layer.layerName << std::endl;
     }
 
     // all listed instance layers are required
-    if (verbose) std::cout << "Looking for instance layers:" << std::endl;
+    if (verbose) LOG_S_INFO << "Looking for instance layers:" << std::endl;
     for (uint32_t i = 0; i < m_reqInstanceLayers.size(); i++) {
         const char* name = m_reqInstanceLayers[i];
         if (name == nullptr) {
             break;
         }
-        std::cout << '\t' << name << std::endl;
+        LOG_S_INFO << '\t' << name << std::endl;
         if (layer_names.find(name) == layer_names.end()) {
-            std::cerr << "AssertAllInstanceLayers() ERROR: requested instance layer"
+            LOG_S_ERROR << "AssertAllInstanceLayers() ERROR: requested instance layer"
                     << name << " is missing!" << std::endl << std::flush;
             return VK_ERROR_LAYER_NOT_PRESENT;
         }
@@ -178,23 +179,23 @@ VkResult VulkanDeviceContext::CheckAllInstanceExtensions(bool verbose)
     std::vector<VkExtensionProperties> exts;
     vk::enumerate(this, nullptr, exts);
 
-    if (verbose) std::cout << "Enumerating instance extensions:" << std::endl;
+    if (verbose) LOG_S_INFO << "Enumerating instance extensions:" << std::endl;
     std::set<std::string> ext_names;
     for (const auto &ext : exts) {
         ext_names.insert(ext.extensionName);
-        if (verbose) std::cout << '\t' <<  ext.extensionName << std::endl;
+        if (verbose) LOG_S_INFO << '\t' <<  ext.extensionName << std::endl;
     }
 
     // all listed instance extensions are required
-    if (verbose) std::cout << "Looking for instance extensions:" << std::endl;
+    if (verbose) LOG_S_INFO << "Looking for instance extensions:" << std::endl;
     for (uint32_t i = 0; i < m_reqInstanceExtensions.size(); i++) {
         const char* name = m_reqInstanceExtensions[i];
         if (name == nullptr) {
             break;
         }
-        if (verbose) std::cout << '\t' <<  name << std::endl;
+        if (verbose) LOG_S_INFO << '\t' <<  name << std::endl;
         if (ext_names.find(name) == ext_names.end()) {
-            std::cerr << "AssertAllInstanceExtensions() ERROR: requested instance extension "
+            LOG_S_ERROR << "AssertAllInstanceExtensions() ERROR: requested instance extension "
                     << name << " is missing!" << std::endl << std::flush;
             return VK_ERROR_EXTENSION_NOT_PRESENT;
         }
@@ -253,7 +254,7 @@ bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice, co
         if (ext_names.find(name) == ext_names.end()) {
             hasAllRequiredExtensions = false;
             if (printMissingDeviceExt) {
-                std::cerr << __FUNCTION__
+                LOG_S_ERROR << __FUNCTION__
                           << ": ERROR: required device extension "
                           << name << " is missing for device with name: "
                           << printMissingDeviceExt << std::endl << std::flush;
@@ -273,7 +274,7 @@ bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice, co
         }
         if (ext_names.find(name) == ext_names.end()) {
             if (printMissingDeviceExt) {
-                std::cout << __FUNCTION__
+                LOG_S_INFO << __FUNCTION__
                           << " : WARNING: requested optional device extension "
                           << name << " is missing for device with name: "
                           << printMissingDeviceExt << std::endl << std::flush;
@@ -301,7 +302,7 @@ static int DumpSoLibs()
     auto* map = reinterpret_cast<LinkMap*>(p->ptr);
 
     while (map) {
-      std::cout << map->l_name << std::endl;
+      LOG_S_INFO << map->l_name << std::endl;
       // do something with |map| like with handle, returned by |dlopen()|.
       map = map->l_next;
     }
@@ -438,7 +439,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const uint8_t
         }
 
         if (!HasAllDeviceExtensions(physicalDevice, props.deviceName)) {
-            std::cerr << "ERROR: Found physical device with name: " << props.deviceName << std::hex
+            LOG_S_ERROR << "ERROR: Found physical device with name: " << props.deviceName << std::hex
                          << ", vendor ID: " << props.vendorID << ", and device ID: " << props.deviceID
                          << std::dec
                          << " NOT having the required extensions!" << std::endl << std::flush;
@@ -494,19 +495,19 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const uint8_t
                 videoDecodeQueueFamily = i;
                 videoDecodeQueueCount = queue.queueFamilyProperties.queueCount;
 
-                if (dumpQueues) std::cout << "\t Found video decode only queue family " <<  i <<
+                if (dumpQueues) LOG_S_INFO << "\t Found video decode only queue family " <<  i <<
                         " with " << queue.queueFamilyProperties.queueCount <<
                         " max num of queues." << std::endl;
 
                 // Does the video decode queue also support transfer operations?
                 if (queueFamilyFlags & VK_QUEUE_TRANSFER_BIT) {
-                    if (dumpQueues) std::cout << "\t\t Video decode queue " <<  i <<
+                    if (dumpQueues) LOG_S_INFO << "\t\t Video decode queue " <<  i <<
                             " supports transfer operations" << std::endl;
                 }
 
                 // Does the video decode queue also support compute operations?
                 if (queueFamilyFlags & VK_QUEUE_COMPUTE_BIT) {
-                    if (dumpQueues) std::cout << "\t\t Video decode queue " <<  i <<
+                    if (dumpQueues) LOG_S_INFO << "\t\t Video decode queue " <<  i <<
                             " supports compute operations" << std::endl;
                 }
 
@@ -522,19 +523,19 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const uint8_t
                 videoEncodeQueueFamily = i;
                 videoEncodeQueueCount = queue.queueFamilyProperties.queueCount;
 
-                if (dumpQueues) std::cout << "\t Found video encode only queue family " <<  i <<
+                if (dumpQueues) LOG_S_INFO << "\t Found video encode only queue family " <<  i <<
                         " with " << queue.queueFamilyProperties.queueCount <<
                         " max num of queues." << std::endl;
 
                 // Does the video encode queue also support transfer operations?
                 if (queueFamilyFlags & VK_QUEUE_TRANSFER_BIT) {
-                    if (dumpQueues) std::cout << "\t\t Video encode queue " <<  i <<
+                    if (dumpQueues) LOG_S_INFO << "\t\t Video encode queue " <<  i <<
                             " supports transfer operations" << std::endl;
                 }
 
                 // Does the video encode queue also support compute operations?
                 if (queueFamilyFlags & VK_QUEUE_COMPUTE_BIT) {
-                    if (dumpQueues) std::cout << "\t\t Video encode queue " <<  i <<
+                    if (dumpQueues) LOG_S_INFO << "\t\t Video encode queue " <<  i <<
                             " supports compute operations" << std::endl;
                 }
 
@@ -550,17 +551,17 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const uint8_t
                     (queueFamilyFlags & VK_QUEUE_GRAPHICS_BIT)) {
                 gfxQueueFamily = i;
                 foundQueueTypes |= queueFamilyFlags;
-                if (dumpQueues) std::cout << "\t Found graphics queue family " <<  i << " with " << queue.queueFamilyProperties.queueCount << " max num of queues." << std::endl;
+                if (dumpQueues) LOG_S_INFO << "\t Found graphics queue family " <<  i << " with " << queue.queueFamilyProperties.queueCount << " max num of queues." << std::endl;
             } else if ((requestQueueTypes & VK_QUEUE_COMPUTE_BIT) && (computeQueueFamilyOnly < 0) &&
                        ((VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT) == (queueFamilyFlags & (VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT)))) {
                 computeQueueFamilyOnly = i;
                 foundQueueTypes |= queueFamilyFlags;
-                if (dumpQueues) std::cout << "\t Found compute only queue family " <<  i << " with " << queue.queueFamilyProperties.queueCount << " max num of queues." << std::endl;
+                if (dumpQueues) LOG_S_INFO << "\t Found compute only queue family " <<  i << " with " << queue.queueFamilyProperties.queueCount << " max num of queues." << std::endl;
             } else if ((requestQueueTypes & VK_QUEUE_TRANSFER_BIT) && (transferQueueFamilyOnly < 0) &&
                     (VK_QUEUE_TRANSFER_BIT == (queueFamilyFlags & VK_QUEUE_TRANSFER_BIT))) {
                 transferQueueFamilyOnly = i;
                 foundQueueTypes |= queueFamilyFlags;
-                if (dumpQueues) std::cout << "\t Found transfer only queue family " <<  i << " with " << queue.queueFamilyProperties.queueCount << " max num of queues." << std::endl;
+                if (dumpQueues) LOG_S_INFO << "\t Found transfer only queue family " <<  i << " with " << queue.queueFamilyProperties.queueCount << " max num of queues." << std::endl;
             }
 
             // requires only COMPUTE for frameProcessor queues
@@ -568,13 +569,13 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const uint8_t
                     (queueFamilyFlags & VK_QUEUE_COMPUTE_BIT)) {
                 computeQueueFamily = i;
                 foundQueueTypes |= queueFamilyFlags;
-                if (dumpQueues) std::cout << "\t Found compute queue family " <<  i << " with " << queue.queueFamilyProperties.queueCount << " max num of queues." << std::endl;
+                if (dumpQueues) LOG_S_INFO << "\t Found compute queue family " <<  i << " with " << queue.queueFamilyProperties.queueCount << " max num of queues." << std::endl;
             }
 
             // present queue must support the surface
             if ((pWsiDisplay != nullptr) &&
                     (presentQueueFamily < 0) && pWsiDisplay->PhysDeviceCanPresent(physicalDevice, i)) {
-                if (dumpQueues) std::cout << "\t Found present queue family " <<  i << "." << std::endl;
+                if (dumpQueues) LOG_S_INFO << "\t Found present queue family " <<  i << "." << std::endl;
                 presentQueueFamily = i;
             }
 
@@ -604,17 +605,17 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const uint8_t
                     PrintExtensions(true);
                 }
 
-                if (dumpQueues) {
-                    std::cout << "*** Selected Vulkan physical device with name: " << props.deviceName << std::hex
-                              << ", vendor ID: " << props.vendorID << ", and device ID: " << props.deviceID << std::dec
-                              << ", Num Decode Queues: " << m_videoDecodeNumQueues
-                              << ", Num Encode Queues: " << m_videoEncodeNumQueues
-                              << " ***" << std::endl << std::flush;
+            if (dumpQueues) {
+                LOG_S_INFO << "*** Selected Vulkan physical device with name: " << props.deviceName << std::hex
+                          << ", vendor ID: " << props.vendorID << ", and device ID: " << props.deviceID << std::dec
+			  << ", Num Decode Queues: " << m_videoDecodeNumQueues
+			  << ", Num Encode Queues: " << m_videoEncodeNumQueues
+			  << " ***" << std::endl << std::flush;
                 }
                 return VK_SUCCESS;
             }
         }
-        std::cerr << "ERROR: Found physical device with name: " << props.deviceName << std::hex
+        LOG_S_ERROR << "ERROR: Found physical device with name: " << props.deviceName << std::hex
                   << ", vendor ID: " << props.vendorID << ", and device ID: " << props.deviceID
                   << std::dec
                   << " NOT having the required queue families!" << std::endl << std::flush;
@@ -918,9 +919,9 @@ const char * VulkanDeviceContext::FindRequiredDeviceExtension(const char* name) 
 
 void VulkanDeviceContext::PrintExtensions(bool deviceExt) const {
     const std::vector<VkExtensionProperties>& extensions = deviceExt ? m_deviceExtensions : m_instanceExtensions;
-    std::cout << "###### List of " <<  (deviceExt ? "Device" : "Instance") << " Extensions: ######" << std::endl;
+    LOG_S_INFO << "###### List of " <<  (deviceExt ? "Device" : "Instance") << " Extensions: ######" << std::endl;
     for (const auto& e : extensions) {
-        std::cout << "\t " << e.extensionName << "(v." << e.specVersion << ")\n";
+        LOG_S_INFO << "\t " << e.extensionName << "(v." << e.specVersion << ")\n";
     }
 }
 
@@ -929,13 +930,13 @@ VkResult VulkanDeviceContext::PopulateInstanceExtensions()
     uint32_t extensionsCount = 0;
     VkResult result = EnumerateInstanceExtensionProperties( nullptr, &extensionsCount, nullptr );
     if ((result != VK_SUCCESS) || (extensionsCount == 0)) {
-        std::cout << "Could not get the number of instance extensions." << std::endl;
+        LOG_S_ERROR << "Could not get the number of instance extensions." << std::endl;
         return result;
     }
     m_instanceExtensions.resize( extensionsCount );
     result = EnumerateInstanceExtensionProperties( nullptr, &extensionsCount, m_instanceExtensions.data() );
     if ((result != VK_SUCCESS) || (extensionsCount == 0)) {
-        std::cout << "Could not enumerate instance extensions." << std::endl;
+        LOG_S_ERROR << "Could not enumerate instance extensions." << std::endl;
         return result;
     }
     return result;
@@ -946,13 +947,13 @@ VkResult VulkanDeviceContext::PopulateDeviceExtensions()
     uint32_t extensions_count = 0;
     VkResult result = EnumerateDeviceExtensionProperties( m_physDevice, nullptr, &extensions_count, nullptr );
     if ((result != VK_SUCCESS) || (extensions_count == 0)) {
-        std::cout << "Could not get the number of device extensions." << std::endl;
+        LOG_S_ERROR << "Could not get the number of device extensions." << std::endl;
         return result;
     }
     m_deviceExtensions.resize( extensions_count );
     result = EnumerateDeviceExtensionProperties( m_physDevice, nullptr, &extensions_count, m_deviceExtensions.data() );
     if ((result != VK_SUCCESS) || (extensions_count == 0)) {
-        std::cout << "Could not enumerate device extensions." << std::endl;
+        LOG_S_ERROR << "Could not enumerate device extensions." << std::endl;
         return result;
     }
     return result;

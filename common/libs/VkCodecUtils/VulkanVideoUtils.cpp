@@ -22,11 +22,12 @@
 
 #include "VulkanVideoUtils.h"
 #include <nvidia_utils/vulkan/ycbcrvkinfo.h>
+#include "Logger.h"
 
 // Vulkan call wrapper
 #define CALL_VK(func)                                                 \
   if (VK_SUCCESS != (func)) {                                         \
-      std::cerr << "VkVideoUtils: " << "File " << __FILE__ << "line " <<  __LINE__; \
+      LOG_S_ERROR << "VkVideoUtils: " << "File " << __FILE__ << "line " <<  __LINE__; \
     assert(false);                                                    \
   }
 
@@ -43,7 +44,7 @@ using namespace Pattern;
 
 void VulkanSwapchainInfo::CreateSwapChain(const VulkanDeviceContext* vkDevCtx, VkSwapchainKHR swapchain)
 {
-    if (mVerbose) std::cout << "VkVideoUtils: " << "Enter Function: " << __FUNCTION__ <<  "File " << __FILE__ << "line " <<  __LINE__ << std::endl;
+    if (mVerbose) LOG_S_DEBUG << "VkVideoUtils: " << "Enter Function: " << __FUNCTION__ <<  "File " << __FILE__ << "line " <<  __LINE__ << std::endl;
 
     mInstance = vkDevCtx->getInstance();
     m_vkDevCtx = vkDevCtx;
@@ -77,7 +78,7 @@ void VulkanSwapchainInfo::CreateSwapChain(const VulkanDeviceContext* vkDevCtx, V
     m_vkDevCtx->GetPhysicalDeviceSurfaceFormatsKHR(vkDevCtx->getPhysicalDevice(),
                                          mSurface,
                                          &formatCount, formats);
-    std::cout << "VkVideoUtils: " << "VulkanSwapchainInfo - got " << formatCount << "surface formats";
+    LOG_S_INFO << "VkVideoUtils: " << "VulkanSwapchainInfo - got " << formatCount << "surface formats";
 
     uint32_t chosenFormat;
     for (chosenFormat = 0; chosenFormat < formatCount; chosenFormat++) {
@@ -506,8 +507,8 @@ VkResult VulkanGraphicsPipeline::CreatePipeline(const VulkanDeviceContext* vkDev
 
     const bool verbose = false;
 
-    if (false) printf("\nVertex shader output code:\n %s", vss);
-    if (false) printf("\nFragment shader output code:\n %s", imageFss.str().c_str());
+    if (false) LOG_DEBUG("\nVertex shader output code:\n %s", vss);
+    if (false) LOG_DEBUG("\nFragment shader output code:\n %s", imageFss.str().c_str());
 
     const bool loadShadersFromFile = false;
     if (loadShadersFromFile) {
@@ -536,7 +537,7 @@ VkResult VulkanGraphicsPipeline::CreatePipeline(const VulkanDeviceContext* vkDev
                                 m_vkDevCtx);
 
             m_fssCache.swap(imageFss);
-            if (verbose) printf("\nFragment shader cache output code:\n %s", m_fssCache.str().c_str());
+            if (verbose) LOG_DEBUG("\nFragment shader cache output code:\n %s", m_fssCache.str().c_str());
         }
     }
 
@@ -848,14 +849,14 @@ VkResult VulkanRenderInfo::UpdatePerDrawContexts(VulkanPerDrawContext* pPerDrawC
         const VkSamplerYcbcrConversionCreateInfo* pSamplerYcbcrConversionCreateInfo)
 {
 
-    if (mVerbose) std::cout << "VkVideoUtils: " << "CreateVulkanSamplers " << pPerDrawContext->contextIndex << std::endl;
+    if (mVerbose) LOG_S_DEBUG << "VkVideoUtils: " << "CreateVulkanSamplers " << pPerDrawContext->contextIndex << std::endl;
     VkResult result = pPerDrawContext->samplerYcbcrConversion.CreateVulkanSampler(m_vkDevCtx, pSamplerCreateInfo,
             pSamplerYcbcrConversionCreateInfo);
     if (result != VK_SUCCESS) {
         return result;
     }
 
-    if (mVerbose) std::cout << "VkVideoUtils: " << "CreateDescriptorSet " << pPerDrawContext->contextIndex << std::endl;
+    if (mVerbose) LOG_S_DEBUG << "VkVideoUtils: " << "CreateDescriptorSet " << pPerDrawContext->contextIndex << std::endl;
 
     VkSampler immutableSampler = pPerDrawContext->samplerYcbcrConversion.GetSampler();
     const std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings{
@@ -880,7 +881,7 @@ VkResult VulkanRenderInfo::UpdatePerDrawContexts(VulkanPerDrawContext* pPerDrawC
     if (result != VK_SUCCESS) {
         return result;
     }
-    if (mVerbose) std::cout << "VkVideoUtils: " << "CreateGraphicsPipeline " << pPerDrawContext->contextIndex << std::endl;
+    if (mVerbose) LOG_S_DEBUG << "VkVideoUtils: " << "CreateGraphicsPipeline " << pPerDrawContext->contextIndex << std::endl;
     // Create graphics pipeline
     result = pPerDrawContext->gfxPipeline.CreatePipeline(m_vkDevCtx,
                                                          pViewport,
@@ -913,15 +914,15 @@ VkResult VulkanRenderInfo::CreatePerDrawContexts(const VulkanDeviceContext* vkDe
         VulkanPerDrawContext* pPerDrawContext = GetDrawContext(ctxsIndx);
         pPerDrawContext->m_vkDevCtx = vkDevCtx;
         pPerDrawContext->contextIndex = ctxsIndx;
-        if (mVerbose) std::cout << "VkVideoUtils: " << "Init pPerDrawContext " << ctxsIndx << std::endl;
+        if (mVerbose) LOG_S_DEBUG << "VkVideoUtils: " << "Init pPerDrawContext " << ctxsIndx << std::endl;
 
-        if (mVerbose) std::cout << "VkVideoUtils: " << "CreateCommandBufferPool " << pPerDrawContext->contextIndex << std::endl;
+        if (mVerbose) LOG_S_DEBUG << "VkVideoUtils: " << "CreateCommandBufferPool " << pPerDrawContext->contextIndex << std::endl;
         result = pPerDrawContext->commandBuffer.CreateCommandBufferPool(vkDevCtx, vkDevCtx->GetGfxQueueFamilyIdx());
         if (result != VK_SUCCESS) {
             return result;
         }
 
-        if (mVerbose) std::cout << "VkVideoUtils: " << "CreateFrameBuffer " << pPerDrawContext->contextIndex << std::endl;
+        if (mVerbose) LOG_S_DEBUG << "VkVideoUtils: " << "CreateFrameBuffer " << pPerDrawContext->contextIndex << std::endl;
         result = pPerDrawContext->frameBuffer.CreateFrameBuffer(m_vkDevCtx, swapchain,
                                                                 pFbExtent2D, pSurfaceFormat,
                 fbImages[ctxsIndx], renderPass);
@@ -929,7 +930,7 @@ VkResult VulkanRenderInfo::CreatePerDrawContexts(const VulkanDeviceContext* vkDe
             return result;
         }
 
-        if (mVerbose) std::cout << "VkVideoUtils: " << "CreateSyncPrimitives " << pPerDrawContext->contextIndex << std::endl;
+        if (mVerbose) LOG_S_DEBUG << "VkVideoUtils: " << "CreateSyncPrimitives " << pPerDrawContext->contextIndex << std::endl;
         result = pPerDrawContext->syncPrimitives.CreateSyncPrimitives(m_vkDevCtx);
         if (result != VK_SUCCESS) {
             return result;

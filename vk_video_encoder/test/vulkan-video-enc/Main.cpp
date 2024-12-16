@@ -16,6 +16,7 @@
 
 #include <iostream>
 #include "vulkan_video_encoder.h"
+#include "Logger.h"
 
 int main(int argc, char** argv)
 {
@@ -25,7 +26,7 @@ int main(int argc, char** argv)
                                   argc, argv, vulkanVideoEncoder);
 
     if (result != VK_SUCCESS) {
-        std::cerr << "Error creating the encoder instance: " << result << std::endl;
+        LOG_S_ERROR << "Error creating the encoder instance: " << result << std::endl;
     }
 
     int64_t numFrames = vulkanVideoEncoder->GetNumberOfFrames();
@@ -35,16 +36,16 @@ int main(int argc, char** argv)
         int64_t frameNumEncoded = -1;
         result = vulkanVideoEncoder->EncodeNextFrame(frameNumEncoded);
         if (result != VK_SUCCESS) {
-            std::cerr << "Error encoding frame: "  << frameNum  << ", error: " << result << std::endl;
+            LOG_S_ERROR << "Error encoding frame: "  << frameNum  << ", error: " << result << std::endl;
         }
     }
 
     result = vulkanVideoEncoder->GetBitstream();
     if (result != VK_SUCCESS) {
-        std::cerr << "Error obtaining the encoded bitstream file: " << result << std::endl;
+        LOG_S_ERROR << "Error obtaining the encoded bitstream file: " << result << std::endl;
     }
 
-    std::cout << "Exit encoder test" << std::endl;
+    LOG_S_INFO << "Exit encoder test successfully" << std::endl;
 }
 
 

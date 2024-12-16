@@ -27,6 +27,7 @@ void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     -i, --input                     .yuv Input YUV File Name (YUV420p 8bpp only) \n\
     -o, --output                    .264/5,ivf Output H264/5/AV1 File Name \n\
     -c, --codec                     <string> select codec type: avc (h264) or hevc (h265) or av1\n\
+    --logLevel                      <integer> : select the log level, default 1 for errors\n\
     --dpbMode                       <string>  : select DPB mode: layered, separate\n\
     --inputWidth                    <integer> : Input Width \n\
     --inputHeight                   <integer> : Input Height \n\
@@ -137,6 +138,18 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
 
     appName = args[0];
 
+    // Double argument list handling to have the log level ready during the argument parsing.
+    for (int32_t i = 1; i < argc; i++) {
+        if (args[i] == "-l" || args[i] == "--logLevel") {
+            u_int32_t logLevel = LogLevel::INFO;
+            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &logLevel) != 1)) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            Logger::instance().setLogLevel(logLevel);
+        }
+    }
+
     for (int32_t i = 1; i < argc; i++) {
 
         if (args[i] == "-i" || args[i] == "--input") {
@@ -179,9 +192,16 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                 return -1;
             }
             if (verbose) {
-                printf("Selected codec: %s\n", codec_.c_str());
+                LOG_INFO("Selected codec: %s\n", codec_.c_str());
             }
             i++; // Skip the next argument since it's the codec value
+        } else if (args[i] == "-l" || args[i] == "--logLevel") {
+            u_int32_t logLevel = LogLevel::INFO;
+            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &logLevel) != 1)) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            Logger::instance().setLogLevel(logLevel);
         } else if (args[i] == "--dpbMode") {
             std::string dpbMode = args[i + 1];
             if (dpbMode == "separate") {
@@ -194,7 +214,7 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                 return -1;
             }
             if (verbose) {
-                printf("Selected DPB mode: %s\n", dpbMode.c_str());
+                LOG_INFO("Selected DPB mode: %s\n", dpbMode.c_str());
             }
             i++; // Skip the next argument since it's the dpbMode value
         } else if (args[i] == "--inputWidth") {
@@ -307,7 +327,7 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
             }
             gopStructure.SetGopFrameCount(gopFrameCount);
             if (verbose) {
-                printf("Selected gopFrameCount: %d\n", gopFrameCount);
+                LOG_INFO ("Selected gopFrameCount: %d\n", gopFrameCount);
             }
         } else if (args[i] == "--idrPeriod") {
             int32_t idrPeriod = EncoderConfig::DEFAULT_GOP_IDR_PERIOD;
@@ -317,7 +337,7 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
             }
             gopStructure.SetIdrPeriod(idrPeriod);
             if (verbose) {
-                printf("Selected idrPeriod: %d\n", idrPeriod);
+                LOG_INFO ("Selected idrPeriod: %d\n", idrPeriod);
             }
         } else if (args[i] == "--consecutiveBFrameCount") {
             uint8_t consecutiveBFrameCount = EncoderConfig::DEFAULT_CONSECUTIVE_B_FRAME_COUNT;
@@ -327,7 +347,7 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
             }
             gopStructure.SetConsecutiveBFrameCount(consecutiveBFrameCount);
             if (verbose) {
-                printf("Selected consecutiveBFrameCount: %d\n", consecutiveBFrameCount);
+                LOG_INFO ("Selected consecutiveBFrameCount: %d\n", consecutiveBFrameCount);
             }
         } else if (args[i] == "--temporalLayerCount") {
             uint8_t temporalLayerCount = EncoderConfig::DEFAULT_TEMPORAL_LAYER_COUNT;
@@ -337,7 +357,7 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
             }
             gopStructure.SetTemporalLayerCount(temporalLayerCount);
             if (verbose) {
-                printf("Selected temporalLayerCount: %d\n", temporalLayerCount);
+                LOG_INFO("Selected temporalLayerCount: %d\n", temporalLayerCount);
             }
         } else if (args[i] == "--lastFrameType") {
             VkVideoGopStructure::FrameType lastFrameType = VkVideoGopStructure::FRAME_TYPE_P;
@@ -356,7 +376,7 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
             i++; // Skip the next argument since it's the frameTypeName value
             gopStructure.SetLastFrameType(lastFrameType);
             if (verbose) {
-                printf("Selected frameTypeName: %s\n", gopStructure.GetFrameTypeName(lastFrameType));
+                LOG_INFO("Selected frameTypeName: %s\n", gopStructure.GetFrameTypeName(lastFrameType));
             }
         } else if (args[i] == "--closedGop") {
             gopStructure.SetClosedGop();

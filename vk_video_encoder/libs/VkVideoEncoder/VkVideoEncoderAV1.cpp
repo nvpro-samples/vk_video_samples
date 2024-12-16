@@ -83,7 +83,7 @@ VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& enc
 
     VkResult result = InitEncoder(encoderConfig);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nERROR: InitEncoder() failed with ret(%d)\n", result);
+        LOG_S_ERROR <<  "ERROR: InitEncoder() failed with ret: " << result << std::endl;
         return result;
     }
 
@@ -92,7 +92,7 @@ VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& enc
         encodeCaps.maxSingleReferenceCount < 2 &&
         encodeCaps.maxUnidirectionalCompoundReferenceCount == 0 &&
         encodeCaps.maxBidirectionalCompoundReferenceCount == 0) {
-        std::cout << "B-frames were requested but the implementation does not support multiple reference frames!" << std::endl;
+        LOG_S_INFO << "B-frames were requested but the implementation does not support multiple reference frames!" << std::endl;
         assert(!"B-frames not supported");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -117,14 +117,14 @@ VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& enc
                                                          nullptr,
                                                          &sessionParameters);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nEncodeFrame Error: Failed to get create video session parameters.\n");
+        LOG_S_ERROR <<  "EncodeFrame Error: Failed to get create video session parameters." << std::endl;
         return result;
     }
 
     result = VulkanVideoSessionParameters::Create(m_vkDevCtx, m_videoSession,
                                                   sessionParameters, m_videoSessionParameters);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nEncodeFrame Error: Failed to get create video session object.\n");
+        LOG_S_ERROR <<  "EncodeFrame Error: Failed to get create video session object." << std::endl;
         return result;
     }
 
@@ -493,7 +493,7 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         DumpStateInfo("input", 1, encodeFrameInfo);
 
         if (encodeFrameInfo->lastFrame) {
-            std::cout << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
+            LOG_S_INFO << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
                       << " of type " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
                       << " ###"
                       << std::endl << std::flush;
@@ -834,7 +834,7 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
 
     VkResult result = encodeFrameInfo->encodeCmdBuffer->SyncHostOnCmdBuffComplete(false, "encoderEncodeFence");
     if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nWait on encoder complete fence has failed with result 0x%x.\n", result);
+        LOG_S_ERROR << "Wait on encoder complete fence has failed with result 0x" << result << std::endl;
         return result;
     }
 
@@ -862,7 +862,7 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
     assert(encodeResult.status == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
 
     if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nRetrieveData Error: Failed to get vcl query pool results.\n");
+        LOG_S_ERROR <<  "RetrieveData Error: Failed to get vcl query pool results." << std::endl;
         return result;
     }
 
@@ -881,7 +881,7 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
     }
 
     if (m_encoderConfig->verboseFrameStruct) {
-        std::cout << "       == Output VCL data SUCCESS for " << frameIdx << " with size: " << encodeResult.bitstreamSize
+        LOG_S_DEBUG << "       == Output VCL data SUCCESS for " << frameIdx << " with size: " << encodeResult.bitstreamSize
                   << " and offset: " << encodeResult.bitstreamStartOffset
                   << ", Input Order: " << (uint32_t)encodeFrameInfo->gopPosition.inputOrder
                   << ", Encode  Order: " << (uint32_t)encodeFrameInfo->gopPosition.encodeOrder << std::endl << std::flush;
@@ -922,13 +922,13 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
             framesSize += frameSize;
 
             if (m_encoderConfig->verboseFrameStruct) {
-                std::cout << ">>>>>> Assembly VCL index " << curIndex << " has size: " << frameSize
+                LOG_S_DEBUG << ">>>>>> Assembly VCL index " << curIndex << " has size: " << frameSize
                            << std::endl << std::flush;
             }
         }
 
         if (m_encoderConfig->verboseFrameStruct) {
-            std::cout << ">>>>>> Assembly total VCL data at " << frameIdx << " is: "
+            LOG_S_DEBUG << ">>>>>> Assembly total VCL data at " << frameIdx << " is: "
                        << framesSize - (2 + encodeFrameInfo->bitstreamHeaderBufferSize)
                        << std::endl << std::flush;
         }
@@ -957,7 +957,7 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
                         m_encoderConfig->outputFileHandler.GetFileHandle());
 
             if (m_encoderConfig->verboseFrameStruct) {
-                std::cout << "       == Non-Vcl data " << (nonVcl ? "SUCCESS" : "FAIL")
+                LOG_S_DEBUG << "       == Non-Vcl data " << (nonVcl ? "SUCCESS" : "FAIL")
                           << " File Output non-VCL data with size: " << encodeFrameInfo->bitstreamHeaderBufferSize
                           << ", Input Order: " << (uint32_t)encodeFrameInfo->gopPosition.inputOrder
                           << ", Encode  Order: " << (uint32_t)encodeFrameInfo->gopPosition.encodeOrder

@@ -47,7 +47,7 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
 
     VkResult result = InitEncoder(encoderConfig);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nERROR: InitEncoder() failed with ret(%d)\n", result);
+        LOG_S_ERROR << "ERROR: InitEncoder() failed with ret: " << result << std::endl;
         return result;
     }
 
@@ -77,14 +77,14 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
                                                          nullptr,
                                                          &sessionParameters);
     if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nEncodeFrame Error: Failed to get create video session parameters.\n");
+        LOG_S_ERROR << "EncodeFrame Error: Failed to get create video session parameters." << std::endl;
         return result;
     }
 
     result = VulkanVideoSessionParameters::Create(m_vkDevCtx, m_videoSession,
                                                   sessionParameters, m_videoSessionParameters);
     if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nEncodeFrame Error: Failed to get create video session object.\n");
+        LOG_S_ERROR << "EncodeFrame Error: Failed to get create video session object." << std::endl;
         return result;
     }
 
@@ -511,10 +511,10 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         DumpStateInfo("input", 1, encodeFrameInfo);
 
         if (encodeFrameInfo->lastFrame) {
-            std::cout << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
-                      << " of type " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
-                      << " ###"
-                      << std::endl << std::flush;
+            LOG_S_DEBUG << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
+                        << " of type " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
+                        << " ###"
+                        << std::endl << std::flush;
         }
     }
 
