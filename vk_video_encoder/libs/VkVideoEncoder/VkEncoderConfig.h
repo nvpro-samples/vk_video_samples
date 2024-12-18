@@ -831,8 +831,8 @@ public:
     , enableVideoDecoder(false)
     , enableHwLoadBalancing(false)
     , selectVideoWithComputeQueue(false)
-    , enableOutOfOrderRecording(false)
     , enablePreprocessComputeFilter(false)
+    , enableOutOfOrderRecording(false)
     { }
 
     virtual ~EncoderConfig() {}
