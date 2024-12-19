@@ -58,13 +58,6 @@ typedef struct ImageData {
 
 namespace Pattern {
 
-typedef struct VkFormatDesc {
-    VkFormat    format;
-    uint8_t     numberOfChannels;
-    uint8_t     numberOfBytes;
-    const char* name;
-} VkFormatDesc;
-
 class VkFillYuv {
 public:
 

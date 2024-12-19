@@ -34,6 +34,15 @@ typedef struct VkMpFormatInfo {
     VkFormat              vkPlaneFormat[VK_MAX_NUM_IMAGE_PLANES_EXT]; // VkFormats for the corresponding plane.
 } VkMpFormatInfo;
 
+typedef struct VkFormatDesc {
+    VkFormat    format;
+    uint8_t     numberOfChannels;
+    uint8_t     numberOfBytes;
+    const char* name;
+} VkFormatDesc;
+
+extern const VkFormatDesc* vkFormatLookUp(VkFormat format);
+
 #ifdef __cplusplus
 extern "C" {
 #endif

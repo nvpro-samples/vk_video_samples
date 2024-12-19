@@ -842,7 +842,7 @@ public:
     , enableVideoDecoder(false)
     , enableHwLoadBalancing(false)
     , selectVideoWithComputeQueue(false)
-    , enablePreprocessComputeFilter(false)
+    , enablePreprocessComputeFilter(true)
     , enableOutOfOrderRecording(false)
     { }
 

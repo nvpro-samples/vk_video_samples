@@ -174,56 +174,155 @@ static YcbcrBtStandard GetYcbcrPrimariesConstantsId(VkSamplerYcbcrModelConversio
     return YcbcrBtStandardUnknown;
 }
 
+static void GenImageIoBindingLayout(std::stringstream& shaderStr,
+                                    const char *imageName,
+                                    const char *imageSubName,
+                                    const char *imageFormat,
+                                    bool isInput,
+                                    uint32_t binding,
+                                    uint32_t set,
+                                    bool imageArray) {
+
+    shaderStr << "layout (set = " << set << ", binding = " << binding << ", " << imageFormat << ") uniform"
+              << (isInput ? " readonly" : " writeonly")
+              << (imageArray ? " image2DArray " : " image2D ")
+              << imageName << imageSubName
+              << ";\n";
+
+}
+
+void VulkanFilterYuvCompute::ShaderGeneratePlaneDescriptors(std::stringstream& shaderStr,
+                                                            VkImageAspectFlags& imageAspects,
+                                                            const char *imageName,
+                                                            VkFormat    imageFormat,
+                                                            bool isInput,
+                                                            uint32_t startBinding,
+                                                            uint32_t set,
+                                                            bool imageArray)
+{
+    // Image binding goes in this pattern:
+    // offset 0: RGBA image
+    // offset 1: multi-planar image plane Y
+    // offset 2: 2-planar image plane CbCr or 3-planar image plane Cb
+    // offset 3: 3-planar image plane Cr
+    const VkMpFormatInfo* inputMpInfo = YcbcrVkFormatInfo(imageFormat);
+    if (inputMpInfo) {
+
+        GenImageIoBindingLayout(shaderStr, imageName, "Y",
+                                vkFormatLookUp(inputMpInfo->vkPlaneFormat[0])->name,
+                                isInput,
+                                ++startBinding,
+                                set,
+                                imageArray);
+
+        if (inputMpInfo->planesLayout.numberOfExtraPlanes == 1) {
+
+            imageAspects = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT;
+
+            GenImageIoBindingLayout(shaderStr, imageName, "CbCr",
+                                    vkFormatLookUp(inputMpInfo->vkPlaneFormat[1])->name,
+                                    isInput,
+                                    ++startBinding,
+                                    set,
+                                    imageArray);
+
+        } else if (inputMpInfo->planesLayout.numberOfExtraPlanes == 2) {
+
+            imageAspects = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_2_BIT;
+
+            GenImageIoBindingLayout(shaderStr, imageName, "Cb",
+                                    vkFormatLookUp(inputMpInfo->vkPlaneFormat[1])->name,
+                                    isInput,
+                                    ++startBinding,
+                                    set,
+                                    imageArray);
+
+            GenImageIoBindingLayout(shaderStr, imageName, "Cr",
+                                    vkFormatLookUp(inputMpInfo->vkPlaneFormat[2])->name,
+                                    isInput,
+                                    ++startBinding,
+                                    set,
+                                    imageArray);
+        }
+    } else {
+
+        imageAspects = VK_IMAGE_ASPECT_COLOR_BIT;
+
+        GenImageIoBindingLayout(shaderStr, imageName, "RGB",
+                                vkFormatLookUp(imageFormat)->name,
+                                isInput,
+                                startBinding,
+                                set,
+                                imageArray);
+    }
+}
+
 size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
 {
-    // The compute filter uses two input images as separate planes
+    // The compute filter uses two or three input images as separate planes
     // Y (R) binding = 1
-    // CbCr (RG) binding = 2
-    // TODO: Add more YCbCr formats
-    m_inputImageAspects = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT;
-
-    // The compute filter uses RGBA output image with binding = 4
-    m_outputImageAspects = VK_IMAGE_ASPECT_COLOR_BIT;
+    // 2-planar: CbCr (RG) binding = 2
+    // OR
+    // 3-planar: Cb (R) binding = 2
+    // 3-planar: Cr (R) binding = 3
 
     // Create compute pipeline
     std::stringstream shaderStr;
     shaderStr << "#version 450\n"
-                        "layout(push_constant) uniform PushConstants {\n"
-                        "    uint srcImageLayer;\n"
-                        "    uint dstImageLayer;\n"
-                        "} pushConstants;\n"
-                        "\n"
-                        "layout (local_size_x = 16, local_size_y = 16) in;\n"
-                        " // TODO: use set and binding from the layout\n"
-                        " // TODO: use r16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 1, r8) uniform readonly image2DArray inputImageY;\n"
-                        " // TODO: use rg16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 2, rg8) uniform readonly image2DArray inputImageCbCr;\n"
-                        " // TODO: use rgba16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 4, rgba8) uniform writeonly image2DArray outImage;\n"
-                        "\n"
-                        " // TODO: normalize only narrow\n"
-                        "float normalizeY(float Y) {\n"
-                            "//    return (Y - (16.0 / 255.0)) * (255.0 / (235.0 - 16.0));\n"
-                            "return (Y - 0.0627451) * 1.164383562;\n"
-                        "}\n"
-                        "\n"
-                        "vec2 shiftCbCr(vec2 CbCr) {\n"
-                        "    return CbCr - 0.5;\n"
-                        "}\n"
-                        "\n"
-                        "vec3 shiftCbCr(vec3 ycbcr) {\n"
-                        "    const vec3 shiftCbCr  = vec3(0.0, -0.5, -0.5);\n"
-                        "    return ycbcr + shiftCbCr;\n"
-                        "}\n"
-                        "\n"
-                        " // TODO: normalize only narrow\n"
-                        "vec2 normalizeCbCr(vec2 CbCr) {\n"
-                        "    // return (CbCr - (16.0 / 255.0)) / ((240.0 - 16.0) / 255.0);\n"
-                        "    return (CbCr - 0.0627451) * 1.138392857;\n"
-                        "}\n"
-                        "\n";
+                 "layout(push_constant) uniform PushConstants {\n"
+                 "    uint srcImageLayer;\n"
+                 "    uint dstImageLayer;\n"
+                 "} pushConstants;\n"
+                 "\n"
+                 "layout (local_size_x = 16, local_size_y = 16) in;\n"
+                 "\n";
 
+    // Input image
+    shaderStr << " // The input YCbCr image binding\n";
+    ShaderGeneratePlaneDescriptors(shaderStr,
+                                   m_inputImageAspects,
+                                   "inputImage",
+                                   m_inputFormat,
+                                   true, // isInput
+                                   0,    // startBinding
+                                   0,    // set
+                                   true  // imageArray
+                                   );
+
+        // Output image
+        shaderStr << " // The output RGBA image binding\n";
+        ShaderGeneratePlaneDescriptors(shaderStr,
+                                       m_outputImageAspects,
+                                       "outputImage",
+                                       m_outputFormat,
+                                       false, // isInput
+                                       4,     // startBinding
+                                       0,     // set
+                                       true   // imageArray
+                                       );
+
+        shaderStr << "\n"
+                     " // TODO: normalize only narrow\n"
+                     "float normalizeY(float Y) {\n"
+                      "    // return (Y - (16.0 / 255.0)) * (255.0 / (235.0 - 16.0));\n"
+                      "    return (Y - 0.0627451) * 1.164383562;\n"
+                     "}\n"
+                     "\n"
+                     "vec2 shiftCbCr(vec2 CbCr) {\n"
+                     "    return CbCr - 0.5;\n"
+                     "}\n"
+                     "\n"
+                     "vec3 shiftCbCr(vec3 ycbcr) {\n"
+                     "    const vec3 shiftCbCr  = vec3(0.0, -0.5, -0.5);\n"
+                     "    return ycbcr + shiftCbCr;\n"
+                     "}\n"
+                     "\n"
+                     " // TODO: normalize only narrow\n"
+                     "vec2 normalizeCbCr(vec2 CbCr) {\n"
+                     "    // return (CbCr - (16.0 / 255.0)) / ((240.0 - 16.0) / 255.0);\n"
+                     "    return (CbCr - 0.0627451) * 1.138392857;\n"
+                     "}\n"
+                     "\n";
 
     const VkSamplerYcbcrConversionCreateInfo& samplerYcbcrConversionCreateInfo = m_samplerYcbcrConversion.GetSamplerYcbcrConversionCreateInfo();
     const VkMpFormatInfo * mpInfo = YcbcrVkFormatInfo(samplerYcbcrConversionCreateInfo.format);
@@ -273,7 +372,7 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
         "    vec3 ycbcr = shiftCbCr(normalizeYCbCr(vec3(Y, CbCr)));\n"
         "    vec4 rgba = vec4(convertYCbCrToRgb(ycbcr),1.0);\n"
         "    // Store it back.\n"
-        "    imageStore(outImage, ivec3(pos, pushConstants.dstImageLayer), rgba);\n"
+        "    imageStore(outputImageRGB, ivec3(pos, pushConstants.dstImageLayer), rgba);\n"
         "}\n";
 
     computeShader = shaderStr.str();
@@ -283,20 +382,21 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
 
 size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
 {
-    // The compute filter uses two input images as separate planes
+    // The compute filter uses two or three input images as separate planes
     // Y (R) binding = 1
-    // CbCr (RG) binding = 2
-    // TODO: Add more YCbCr formats
-    m_inputImageAspects = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT;
+    // 2-planar: CbCr (RG) binding = 2
+    // OR
+    // 3-planar: Cb (R) binding = 2
+    // 3-planar: Cr (R) binding = 3
 
-    // The compute filter uses two output images as separate planes
+    // The compute filter uses two or three output images as separate planes
     // Y (R) binding = 5
-    // CbCr (RG) binding = 6
-    // TODO: Add more YCbCr formats
-    m_outputImageAspects = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT;
+    // 2-planar: CbCr (RG) binding = 6
+    // OR
+    // 3-planar: Cb (R) binding = 6
+    // 3-planar: Cr (R) binding = 7
 
     std::stringstream shaderStr;
-    // Create compute pipeline
     shaderStr << "#version 450\n"
                         "layout(push_constant) uniform PushConstants {\n"
                         "    uint srcImageLayer;\n"
@@ -304,17 +404,31 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
                         "} pushConstants;\n"
                         "\n"
                         "layout (local_size_x = 16, local_size_y = 16) in;\n"
-                        " // TODO: use set and binding from the layout\n"
-                        " // TODO: use r16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 1, r8) uniform  readonly  image2DArray inputImageY;\n"
-                        " // TODO: use rg16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 2, rg8) uniform readonly  image2DArray inputImageCbCr;\n"
-                        " // TODO: use rgba16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 5, r8) uniform  writeonly image2DArray outImageY;\n"
-                        " // TODO: use rg16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 6, rg8) uniform writeonly image2DArray outImageCbCr;\n"
-                        "\n"
                         "\n";
+    // Input image
+    shaderStr << " // The input image binding\n";
+    ShaderGeneratePlaneDescriptors(shaderStr,
+                                   m_inputImageAspects,
+                                   "inputImage",
+                                   m_inputFormat,
+                                   true, // isInput
+                                   0,    // startBinding
+                                   0,    // set
+                                   true  // imageArray
+                                   );
+
+    // Output image
+    shaderStr << " // The output image binding\n";
+    ShaderGeneratePlaneDescriptors(shaderStr,
+                                   m_outputImageAspects,
+                                   "outputImage",
+                                   m_outputFormat,
+                                   false, // isInput
+                                   4,     // startBinding
+                                   0,     // set
+                                   true   // imageArray
+                                   );
+    shaderStr << "\n\n";
 
     shaderStr <<
         "void main()\n"
@@ -323,13 +437,13 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
         "\n"
         "    // Read Y value from source Y plane and write it to destination Y plane\n"
         "    float Y = imageLoad(inputImageY, ivec3(pos, pushConstants.srcImageLayer)).r;\n"
-        "    imageStore(outImageY, ivec3(pos, pushConstants.dstImageLayer), vec4(Y, 0, 0, 1));\n"
+        "    imageStore(outputImageY, ivec3(pos, pushConstants.dstImageLayer), vec4(Y, 0, 0, 1));\n"
         "\n"
         "    // Do the same for the CbCr plane, but remember about the 4:2:0 subsampling\n"
         "    if (pos % 2 == ivec2(0, 0)) {\n"
         "        pos /= 2;\n"
         "        vec2 CbCr = imageLoad(inputImageCbCr, ivec3(pos, pushConstants.srcImageLayer)).rg;\n"
-        "        imageStore(outImageCbCr, ivec3(pos, pushConstants.dstImageLayer), vec4(CbCr, 0, 1));\n"
+        "        imageStore(outputImageCbCr, ivec3(pos, pushConstants.dstImageLayer), vec4(CbCr, 0, 1));\n"
         "    }\n"
         "}\n";
 
@@ -343,11 +457,12 @@ size_t VulkanFilterYuvCompute::InitYCBCRCLEAR(std::string& computeShader)
     // The compute filter uses NO input images
     m_inputImageAspects = VK_IMAGE_ASPECT_NONE;
 
-    // The compute filter uses two output images as separate planes
+    // The compute filter uses two or three output images as separate planes
     // Y (R) binding = 5
-    // CbCr (RG) binding = 6
-    // TODO: Add more YCbCr formats
-    m_outputImageAspects = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT;
+    // 2-planar: CbCr (RG) binding = 6
+    // OR
+    // 3-planar: Cb (R) binding = 6
+    // 3-planar: Cr (R) binding = 7
 
     // Create compute pipeline
     std::stringstream shaderStr;
@@ -358,24 +473,32 @@ size_t VulkanFilterYuvCompute::InitYCBCRCLEAR(std::string& computeShader)
                         "} pushConstants;\n"
                         "\n"
                         "layout (local_size_x = 16, local_size_y = 16) in;\n"
-                        " // TODO: use rgba16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 5, r8) uniform writeonly image2DArray outImageY;\n"
-                        " // TODO: use rg16 for 16-bit formats\n"
-                        "layout (set = 0, binding = 6, rg8) uniform writeonly image2DArray outImageCbCr;\n"
-                        "\n"
                         "\n";
+
+    // Output image
+    shaderStr << " // The output image binding\n";
+    ShaderGeneratePlaneDescriptors(shaderStr,
+                                   m_outputImageAspects,
+                                   "outputImage",
+                                   m_outputFormat,
+                                   false, // isInput
+                                   4,     // startBinding
+                                   0,     // set
+                                   true   // imageArray
+                                   );
+    shaderStr << "\n\n";
 
     shaderStr <<
         "void main()\n"
         "{\n"
         "    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);\n"
         "\n"
-        "    imageStore(outImageY, ivec3(pos, pushConstants.dstImageLayer), vec4(0.5, 0, 0, 1));\n"
+        "    imageStore(outputImageY, ivec3(pos, pushConstants.dstImageLayer), vec4(0.5, 0, 0, 1));\n"
         "\n"
         "    // Do the same for the CbCr plane, but remember about the 4:2:0 subsampling\n"
         "    if (pos % 2 == ivec2(0, 0)) {\n"
         "        pos /= 2;\n"
-        "        imageStore(outImageCbCr, ivec3(pos, pushConstants.dstImageLayer), vec4(0.5, 0.5, 0.0, 1.0));\n"
+        "        imageStore(outputImageCbCr, ivec3(pos, pushConstants.dstImageLayer), vec4(0.5, 0.5, 0.0, 1.0));\n"
         "    }\n"
         "}\n";
 

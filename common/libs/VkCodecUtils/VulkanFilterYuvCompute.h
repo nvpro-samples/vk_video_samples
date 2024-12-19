@@ -316,6 +316,14 @@ public:
 
 private:
     VkResult InitDescriptorSetLayout(uint32_t maxNumFrames);
+    void ShaderGeneratePlaneDescriptors(std::stringstream& computeShader,
+                                          VkImageAspectFlags& imageAspects,
+                                          const char *imageName,
+                                          VkFormat    imageFormat,
+                                          bool isInput,
+                                          uint32_t startBinding = 0,
+                                          uint32_t set = 0,
+                                          bool imageArray = true);
     size_t InitYCBCRCOPY(std::string& computeShader);
     size_t InitYCBCRCLEAR(std::string& computeShader);
     size_t InitYCBCR2RGBA(std::string& computeShader);
