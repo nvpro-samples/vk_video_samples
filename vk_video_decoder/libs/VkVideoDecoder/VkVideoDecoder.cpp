@@ -1331,9 +1331,17 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         }
 
         assert(m_imageSpecsIndex.filterOut != InvalidImageTypeIdx);
-        index = m_videoFrameBuffer->GetCurrentImageResourceByIndex(currPicIdx, m_imageSpecsIndex.filterOut, outputImageView);
+        index = m_videoFrameBuffer->GetCurrentImageResourceByIndex(currPicIdx, m_imageSpecsIndex.filterOut,
+                                                                   outputImageView);
 
         assert(index == currPicIdx);
+        VkVideoPictureResourceInfoKHR outputImageResource {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR};
+        index = m_videoFrameBuffer->GetCurrentImageResourceByIndex(currPicIdx, m_imageSpecsIndex.filterOut,
+                                                                   &outputImageResource, nullptr,
+                                                                   VK_IMAGE_LAYOUT_GENERAL);
+
+        assert(index == currPicIdx);
+        outputImageResource.codedExtent = pCurrFrameDecParams->decodeFrameInfo.dstPictureResource.codedExtent;
         assert(outputImageView);
         assert(inputImageView->GetImageView() != outputImageView->GetImageView());
         assert(inputImageView->GetPlaneImageView(0) != outputImageView->GetPlaneImageView(0));
@@ -1353,7 +1361,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         result = m_yuvFilter->RecordCommandBuffer(cmdBuf,
                                                   inputImageView, &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource,
-                                                  outputImageView, nullptr,
+                                                  outputImageView, &outputImageResource,
                                                   filterCmdBuffer->GetNodePoolIndex());
 
         assert(result == VK_SUCCESS);
