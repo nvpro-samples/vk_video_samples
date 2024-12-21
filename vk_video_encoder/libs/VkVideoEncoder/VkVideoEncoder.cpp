@@ -491,8 +491,8 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
             displayEncoderInputFrame.frameCompleteSemaphore = frameCompleteSemaphore;
             // displayEncoderInputFrame.frameCompleteFence = currentEncodeFrameData->m_frameCompleteFence;
             encodeFrameInfo->srcEncodeImageResource->GetImageView(
-                    displayEncoderInputFrame.imageViews[VulkanEncoderInputFrame::IMAGE_VIEW_TYPE_LINEAR].singleLevelView );
-            displayEncoderInputFrame.imageViews[VulkanEncoderInputFrame::IMAGE_VIEW_TYPE_LINEAR].inUse = true;
+                    displayEncoderInputFrame.imageViews[VulkanEncoderInputFrame::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY].singleLevelView );
+            displayEncoderInputFrame.imageViews[VulkanEncoderInputFrame::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY].inUse = true;
 
             // One can also look at the linear input instead
             // displayEncoderInputFrame.imageView = currentEncodeFrameData->m_linearInputImage;

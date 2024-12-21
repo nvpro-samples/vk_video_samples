@@ -388,7 +388,7 @@ public:
                 m_videoDispayQueue->StopQueue();
                 m_displayShell->QuitLoop();
                 if (m_runLoopThread.joinable()) {
-                    m_runLoopThread.join();
+                    // m_runLoopThread.join();
                 }
                 m_displayShell = nullptr;
                 m_videoDispayQueue = nullptr;
