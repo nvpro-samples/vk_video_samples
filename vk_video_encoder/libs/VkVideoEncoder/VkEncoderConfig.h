@@ -685,6 +685,8 @@ public:
     uint32_t encodeOffsetY;
     uint32_t encodeWidth;
     uint32_t encodeHeight;
+    uint32_t encodeAlignedWidth;
+    uint32_t encodeAlignedHeight;
     uint32_t encodeMaxWidth;
     uint32_t encodeMaxHeight;
     uint32_t startFrame;
@@ -757,6 +759,11 @@ public:
     uint32_t enableHwLoadBalancing : 1;
     uint32_t selectVideoWithComputeQueue : 1;
     uint32_t enablePreprocessComputeFilter : 1;
+    // enablePictureRowColReplication
+    // 0: row and column replication is disabled;
+    // 1: (default) replicate the last row and column to the padding area;
+    // 2: replicate only one row and one column to the padding area;
+    uint32_t enablePictureRowColReplication : 2;
     uint32_t enableOutOfOrderRecording : 1; // Testing only - don't use for production!
 
     EncoderConfig()
@@ -778,6 +785,8 @@ public:
     , encodeOffsetY(0)
     , encodeWidth(0)
     , encodeHeight(0)
+    , encodeAlignedWidth(0)
+    , encodeAlignedHeight(0)
     , encodeMaxWidth(0)
     , encodeMaxHeight(0)
     , startFrame(0)
@@ -843,6 +852,7 @@ public:
     , enableHwLoadBalancing(false)
     , selectVideoWithComputeQueue(false)
     , enablePreprocessComputeFilter(true)
+    , enablePictureRowColReplication(1)
     , enableOutOfOrderRecording(false)
     { }
 

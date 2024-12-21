@@ -71,6 +71,7 @@ public:
                                 VK_IMAGE_ASPECT_PLANE_0_BIT |
                                 VK_IMAGE_ASPECT_PLANE_1_BIT |
                                 VK_IMAGE_ASPECT_PLANE_2_BIT)
+        , m_enableRowAndColumnReplication(true)
     {
     }
 
@@ -288,14 +289,26 @@ public:
                                               0, 1, m_descriptorSetLayout.GetDescriptorSet(), 0, 0);
         }
 
+        struct ivec2 {
+            uint32_t width;
+            uint32_t height;
+
+            ivec2() : width(0), height(0) {}
+            ivec2(int32_t width_, int32_t height_) : width(width_), height(height_) {}
+        };
+
         struct PushConstants {
             uint32_t srcLayer;
             uint32_t dstLayer;
+            ivec2    inputSize;  // Original input image size (width, height)
+            ivec2    outputSize; // Output image size (width, height, with padding)
         };
 
         PushConstants pushConstants = {
-                inputImageResourceInfo  ? inputImageResourceInfo->baseArrayLayer : 0, // Set the source layer index
-                outputImageResourceInfo ? outputImageResourceInfo->baseArrayLayer : 0 // Set the destination layer index
+                inputImageResourceInfo->baseArrayLayer, // Set the source layer index
+                outputImageResourceInfo->baseArrayLayer, // Set the destination layer index
+                ivec2(inputImageResourceInfo->codedExtent.width, inputImageResourceInfo->codedExtent.height),
+                ivec2(outputImageResourceInfo->codedExtent.width, outputImageResourceInfo->codedExtent.height)
         };
 
         m_vkDevCtx->CmdPushConstants(cmdBuf,
@@ -305,11 +318,9 @@ public:
                                      sizeof(PushConstants),
                                      &pushConstants);
 
-        const VkImageCreateInfo& imageCreateInfo = outputImageView->GetImageResource()->GetImageCreateInfo();
-        uint32_t  width  = imageCreateInfo.extent.width  + (m_workgroupSizeX - 1);
-        uint32_t  height = imageCreateInfo.extent.height + (m_workgroupSizeY - 1);
-
-        m_vkDevCtx->CmdDispatch(cmdBuf, width / m_workgroupSizeX, height / m_workgroupSizeY, 1);
+        const uint32_t  workgroupWidth  = (pushConstants.outputSize.width  + (m_workgroupSizeX - 1)) / m_workgroupSizeX;
+        const uint32_t  workgroupHeight = (pushConstants.outputSize.height + (m_workgroupSizeY - 1)) / m_workgroupSizeY;
+        m_vkDevCtx->CmdDispatch(cmdBuf, workgroupWidth, workgroupHeight, 1);
 
         return VK_SUCCESS;
     }
@@ -341,6 +352,7 @@ private:
     VulkanComputePipeline                    m_computePipeline;
     VkImageAspectFlags                       m_inputImageAspects;
     VkImageAspectFlags                       m_outputImageAspects;
+    uint32_t                                 m_enableRowAndColumnReplication : 1;
 
 };
 

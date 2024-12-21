@@ -365,6 +365,11 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     VkSharedBaseObj<VkImageResourceView> srcEncodeImageView;
     encodeFrameInfo->srcEncodeImageResource->GetImageView(srcEncodeImageView);
 
+    VkExtent2D copyImageExtent {
+        std::min(m_encoderConfig->encodeWidth,  m_encoderConfig->input.width),
+        std::min(m_encoderConfig->encodeHeight, m_encoderConfig->input.height)
+    };
+
     VkResult result;
     if (m_inputComputeFilter == nullptr) {
         VkImageLayout linearImgNewLayout = TransitionImageLayout(cmdBuf, linearInputImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
@@ -372,20 +377,36 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         (void)linearImgNewLayout;
         (void)srcImgNewLayout;
 
-        VkExtent2D copyImageExtent {
-            std::min(m_encoderConfig->encodeWidth,  m_encoderConfig->input.width),
-            std::min(m_encoderConfig->encodeHeight, m_encoderConfig->input.height)
-        };
-
         CopyLinearToOptimalImage(cmdBuf, linearInputImageView, srcEncodeImageView, copyImageExtent);
 
     } else {
 
+        VkVideoPictureResourceInfoKHR srcPictureResourceInfo(*encodeFrameInfo->srcStagingImageView->GetPictureResourceInfo());
+        VkVideoPictureResourceInfoKHR dstPictureResourceInfo(*encodeFrameInfo->srcEncodeImageResource->GetPictureResourceInfo());
+
+        srcPictureResourceInfo.codedExtent = copyImageExtent;
+
+        if (m_encoderConfig->enablePictureRowColReplication == 1) {
+            // replicate the last row and column to the padding area
+            dstPictureResourceInfo.codedExtent.width = m_encoderConfig->encodeAlignedWidth;
+            dstPictureResourceInfo.codedExtent.height = m_encoderConfig->encodeAlignedHeight;
+        } else if (m_encoderConfig->enablePictureRowColReplication == 2) {
+            // replicate only one row and one column to the padding area
+            if (dstPictureResourceInfo.codedExtent.width < m_encoderConfig->encodeAlignedWidth) {
+                dstPictureResourceInfo.codedExtent.width += 1;
+            }
+            if (dstPictureResourceInfo.codedExtent.height < m_encoderConfig->encodeAlignedHeight) {
+                dstPictureResourceInfo.codedExtent.height += 1;
+            }
+        } else {
+            // row and column replication is disabled. Don't touch the image padding area.
+            dstPictureResourceInfo.codedExtent = copyImageExtent;
+        }
         result = m_inputComputeFilter->RecordCommandBuffer(cmdBuf,
                                                            linearInputImageView,
-                                                           encodeFrameInfo->srcStagingImageView->GetPictureResourceInfo(),
+                                                           &srcPictureResourceInfo,
                                                            srcEncodeImageView,
-                                                           encodeFrameInfo->srcEncodeImageResource->GetPictureResourceInfo(),
+                                                           &dstPictureResourceInfo,
                                                            encodeFrameInfo->inputCmdBuffer->GetNodePoolIndex());
         if (result != VK_SUCCESS) {
             return result;
@@ -737,8 +758,17 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         m_qpMapTiling = supportedQpMapTiling[0];
     }
 
+    encoderConfig->encodeWidth  = std::max(encoderConfig->encodeWidth,  encoderConfig->videoCapabilities.minCodedExtent.width);
+    encoderConfig->encodeHeight = std::max(encoderConfig->encodeHeight, encoderConfig->videoCapabilities.minCodedExtent.height);
+
+    encoderConfig->encodeWidth  = std::min(encoderConfig->encodeWidth,  encoderConfig->videoCapabilities.maxCodedExtent.width);
+    encoderConfig->encodeHeight = std::min(encoderConfig->encodeHeight, encoderConfig->videoCapabilities.maxCodedExtent.height);
+
     m_maxCodedExtent = { encoderConfig->encodeMaxWidth, encoderConfig->encodeMaxHeight }; // max coded size
     m_streamBufferSize = std::max(m_minStreamBufferSize, (size_t)encoderConfig->input.fullImageSize); // use worst case size
+
+    encoderConfig->encodeAlignedWidth  = vk::alignedSize (encoderConfig->encodeWidth, encoderConfig->videoCapabilities.pictureAccessGranularity.width);
+    encoderConfig->encodeAlignedHeight = vk::alignedSize (encoderConfig->encodeHeight, encoderConfig->videoCapabilities.pictureAccessGranularity.height);
 
     const uint32_t maxActiveReferencePicturesCount = encoderConfig->videoCapabilities.maxActiveReferencePictures;
     const uint32_t maxDpbPicturesCount = std::min<uint32_t>(m_maxDpbPicturesCount, encoderConfig->videoCapabilities.maxDpbSlots);

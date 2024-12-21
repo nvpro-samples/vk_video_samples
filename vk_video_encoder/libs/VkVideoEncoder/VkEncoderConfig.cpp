@@ -527,8 +527,16 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
         encodeMaxWidth = encodeWidth;
     }
 
+    if (encodeAlignedWidth == 0) {
+        encodeAlignedWidth = encodeWidth;
+    }
+
     if (encodeMaxHeight == 0) {
         encodeMaxHeight = encodeHeight;
+    }
+
+    if (encodeAlignedHeight == 0) {
+        encodeAlignedHeight = encodeHeight;
     }
 
     if (minQp == -1) {

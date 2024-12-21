@@ -174,6 +174,20 @@ static YcbcrBtStandard GetYcbcrPrimariesConstantsId(VkSamplerYcbcrModelConversio
     return YcbcrBtStandardUnknown;
 }
 
+static void GenHeaderAndPushConst(std::stringstream& shaderStr)
+{
+    shaderStr << "#version 450\n"
+                 "layout(push_constant) uniform PushConstants {\n"
+                 "    uint srcImageLayer;  // Source image layer index\n"
+                 "    uint dstImageLayer;  // Destination image layer index\n"
+                 "    ivec2 inputSize;     // Original input image size (width, height)\n"
+                 "    ivec2 outputSize;    // Output image size (width, height, with padding)\n"
+                 "} pushConstants;\n"
+                 "\n"
+                 "layout (local_size_x = 16, local_size_y = 16) in;\n"
+                 "\n";
+}
+
 static void GenImageIoBindingLayout(std::stringstream& shaderStr,
                                     const char *imageName,
                                     const char *imageSubName,
@@ -189,6 +203,30 @@ static void GenImageIoBindingLayout(std::stringstream& shaderStr,
               << imageName << imageSubName
               << ";\n";
 
+}
+
+static void GenHandleImagePosition(std::stringstream& shaderStr)
+{
+    shaderStr <<
+    "    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);\n"
+    "    // Check for out-of-bounds writes\n"
+    "    if ((pos.x >= pushConstants.outputSize.x) || (pos.y >= pushConstants.outputSize.y)) {\n"
+    "        return;\n"
+    "    }\n"
+    "\n";
+}
+
+static void GenHandleSourcePositionWithReplicate(std::stringstream& shaderStr, bool enableReplicate)
+{
+    if (enableReplicate) {
+        shaderStr <<
+        "    ivec2 srcPos = min(pos, pushConstants.inputSize );\n"
+        "\n";
+    } else {
+        shaderStr <<
+        "    ivec2 srcPos = pos;\n"
+        "\n";
+    }
 }
 
 void VulkanFilterYuvCompute::ShaderGeneratePlaneDescriptors(std::stringstream& shaderStr,
@@ -268,15 +306,7 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
 
     // Create compute pipeline
     std::stringstream shaderStr;
-    shaderStr << "#version 450\n"
-                 "layout(push_constant) uniform PushConstants {\n"
-                 "    uint srcImageLayer;\n"
-                 "    uint dstImageLayer;\n"
-                 "} pushConstants;\n"
-                 "\n"
-                 "layout (local_size_x = 16, local_size_y = 16) in;\n"
-                 "\n";
-
+    GenHeaderAndPushConst(shaderStr);
     // Input image
     shaderStr << " // The input YCbCr image binding\n";
     ShaderGeneratePlaneDescriptors(shaderStr,
@@ -361,13 +391,14 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
 
     shaderStr <<
         "void main()\n"
-        "{\n"
-        "    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);\n"
-        "\n"
+        "{\n";
+    GenHandleImagePosition(shaderStr);
+    GenHandleSourcePositionWithReplicate(shaderStr, m_enableRowAndColumnReplication);
+    shaderStr <<
         "    // Fetch from the texture.\n"
-        "    float Y = imageLoad(inputImageY, ivec3(pos, pushConstants.srcImageLayer)).r;\n"
+        "    float Y = imageLoad(inputImageY, ivec3(srcPos, pushConstants.srcImageLayer)).r;\n"
         "    // TODO: it is /2 only for sub-sampled formats\n"
-        "    vec2 CbCr = imageLoad(inputImageCbCr, ivec3(pos/2, pushConstants.srcImageLayer)).rg;\n"
+        "    vec2 CbCr = imageLoad(inputImageCbCr, ivec3(srcPos/2, pushConstants.srcImageLayer)).rg;\n"
         "\n"
         "    vec3 ycbcr = shiftCbCr(normalizeYCbCr(vec3(Y, CbCr)));\n"
         "    vec4 rgba = vec4(convertYCbCrToRgb(ycbcr),1.0);\n"
@@ -397,14 +428,7 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
     // 3-planar: Cr (R) binding = 7
 
     std::stringstream shaderStr;
-    shaderStr << "#version 450\n"
-                        "layout(push_constant) uniform PushConstants {\n"
-                        "    uint srcImageLayer;\n"
-                        "    uint dstImageLayer;\n"
-                        "} pushConstants;\n"
-                        "\n"
-                        "layout (local_size_x = 16, local_size_y = 16) in;\n"
-                        "\n";
+    GenHeaderAndPushConst(shaderStr);
     // Input image
     shaderStr << " // The input image binding\n";
     ShaderGeneratePlaneDescriptors(shaderStr,
@@ -432,17 +456,19 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
 
     shaderStr <<
         "void main()\n"
-        "{\n"
-        "    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);\n"
-        "\n"
+        "{\n";
+    GenHandleImagePosition(shaderStr);
+    GenHandleSourcePositionWithReplicate(shaderStr, m_enableRowAndColumnReplication);
+    shaderStr <<
         "    // Read Y value from source Y plane and write it to destination Y plane\n"
-        "    float Y = imageLoad(inputImageY, ivec3(pos, pushConstants.srcImageLayer)).r;\n"
+        "    float Y = imageLoad(inputImageY, ivec3(srcPos, pushConstants.srcImageLayer)).r;\n"
         "    imageStore(outputImageY, ivec3(pos, pushConstants.dstImageLayer), vec4(Y, 0, 0, 1));\n"
         "\n"
         "    // Do the same for the CbCr plane, but remember about the 4:2:0 subsampling\n"
-        "    if (pos % 2 == ivec2(0, 0)) {\n"
+        "    if (srcPos % 2 == ivec2(0, 0)) {\n"
+        "        srcPos /= 2;\n"
         "        pos /= 2;\n"
-        "        vec2 CbCr = imageLoad(inputImageCbCr, ivec3(pos, pushConstants.srcImageLayer)).rg;\n"
+        "        vec2 CbCr = imageLoad(inputImageCbCr, ivec3(srcPos, pushConstants.srcImageLayer)).rg;\n"
         "        imageStore(outputImageCbCr, ivec3(pos, pushConstants.dstImageLayer), vec4(CbCr, 0, 1));\n"
         "    }\n"
         "}\n";
@@ -466,14 +492,7 @@ size_t VulkanFilterYuvCompute::InitYCBCRCLEAR(std::string& computeShader)
 
     // Create compute pipeline
     std::stringstream shaderStr;
-    shaderStr << "#version 450\n"
-                        "layout(push_constant) uniform PushConstants {\n"
-                        "    uint srcImageLayer;\n"
-                        "    uint dstImageLayer;\n"
-                        "} pushConstants;\n"
-                        "\n"
-                        "layout (local_size_x = 16, local_size_y = 16) in;\n"
-                        "\n";
+    GenHeaderAndPushConst(shaderStr);
 
     // Output image
     shaderStr << " // The output image binding\n";
@@ -490,9 +509,9 @@ size_t VulkanFilterYuvCompute::InitYCBCRCLEAR(std::string& computeShader)
 
     shaderStr <<
         "void main()\n"
-        "{\n"
-        "    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);\n"
-        "\n"
+        "{\n";
+    GenHandleImagePosition(shaderStr);
+    shaderStr <<
         "    imageStore(outputImageY, ivec3(pos, pushConstants.dstImageLayer), vec4(0.5, 0, 0, 1));\n"
         "\n"
         "    // Do the same for the CbCr plane, but remember about the 4:2:0 subsampling\n"
