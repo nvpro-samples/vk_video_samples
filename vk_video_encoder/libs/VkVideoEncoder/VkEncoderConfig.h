@@ -759,7 +759,6 @@ public:
     uint32_t verboseMsg : 1;
     uint32_t enableFramePresent : 1;
     uint32_t enableFrameDirectModePresent : 1;
-    uint32_t enableVideoDecoder : 1;
     uint32_t enableHwLoadBalancing : 1;
     uint32_t selectVideoWithComputeQueue : 1;
     uint32_t enablePreprocessComputeFilter : 1;
@@ -852,7 +851,6 @@ public:
     , verboseMsg(false)
     , enableFramePresent(false)
     , enableFrameDirectModePresent(false)
-    , enableVideoDecoder(false)
     , enableHwLoadBalancing(false)
     , selectVideoWithComputeQueue(false)
     , enablePreprocessComputeFilter(true)

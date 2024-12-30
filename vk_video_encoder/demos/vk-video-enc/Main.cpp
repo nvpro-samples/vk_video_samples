@@ -52,7 +52,6 @@ int main(int argc, const char* argv[])
         VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
         VK_KHR_VIDEO_QUEUE_EXTENSION_NAME,
         VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME,
-        VK_KHR_VIDEO_MAINTENANCE_1_EXTENSION_NAME,
         VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
         nullptr
     };
@@ -71,6 +70,7 @@ int main(int argc, const char* argv[])
         VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
         VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+        VK_KHR_VIDEO_MAINTENANCE_1_EXTENSION_NAME,
         nullptr
     };
 
@@ -123,17 +123,9 @@ int main(int argc, const char* argv[])
 
     VkQueueFlags requestVideoEncodeQueueMask = VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
 
-    VkQueueFlags requestVideoDecodeQueueMask = 0;
-    if (encoderConfig->enableVideoDecoder) {
-        requestVideoDecodeQueueMask |= VK_QUEUE_VIDEO_DECODE_BIT_KHR |
-                                       VK_QUEUE_TRANSFER_BIT;
-    }
 
     if (encoderConfig->selectVideoWithComputeQueue) {
         requestVideoEncodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
-        if (encoderConfig->enableVideoDecoder) {
-            requestVideoDecodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
-        }
     }
 
     VkQueueFlags requestVideoComputeQueueMask = 0;
@@ -158,19 +150,6 @@ int main(int argc, const char* argv[])
         return -1;
     }
 
-
-    VkVideoCodecOperationFlagsKHR videoDecodeCodecs = (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR  |
-                                                       VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR  |
-                                                       VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR);
-
-    VkVideoCodecOperationFlagsKHR videoEncodeCodecs = ( VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR  |
-                                                        VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR  |
-                                                        VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR);
-
-    VkVideoCodecOperationFlagsKHR videoCodecs = videoEncodeCodecs |
-                                        encoderConfig->enableVideoDecoder ? videoDecodeCodecs : (VkVideoCodecOperationFlagsKHR) VK_VIDEO_CODEC_OPERATION_NONE_KHR;
-
-
     VkSharedBaseObj<VkVideoEncoder> encoder; // the encoder's instance
     if (supportsDisplay && encoderConfig->enableFramePresent) {
 
@@ -186,14 +165,11 @@ int main(int argc, const char* argv[])
 
         result = vkDevCtxt.InitPhysicalDevice(encoderConfig->deviceId, encoderConfig->deviceUUID,
                                               (VK_QUEUE_GRAPHICS_BIT |
-                                                      requestVideoComputeQueueMask |
-                                                      requestVideoDecodeQueueMask  |
-                                                      requestVideoEncodeQueueMask),
+                                              requestVideoComputeQueueMask |
+                                              requestVideoEncodeQueueMask),
                                               displayShell,
-                                              requestVideoDecodeQueueMask,
-                                              (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
-                                               VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR |
-                                               VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR),
+                                              0,
+                                              VK_VIDEO_CODEC_OPERATION_NONE_KHR,
                                               requestVideoEncodeQueueMask,
                                               (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR |
@@ -206,9 +182,9 @@ int main(int argc, const char* argv[])
         assert(displayShell->PhysDeviceCanPresent(vkDevCtxt.getPhysicalDevice(),
                                                    vkDevCtxt.GetPresentQueueFamilyIdx()));
 
-        result = vkDevCtxt.CreateVulkanDevice(encoderConfig->enableVideoDecoder ? 1 : 0, // num decode queues
+        result = vkDevCtxt.CreateVulkanDevice(0, // num decode queues
                                               numEncodeQueues,   // num encode queues
-                                              videoCodecs,
+                                              encoderConfig->codec,
                                               false,             // createTransferQueue
                                               true,              // createGraphicsQueue
                                               true,              // createDisplayQueue
@@ -241,27 +217,22 @@ int main(int argc, const char* argv[])
         // No display presentation and no decoder - just the encoder
         result = vkDevCtxt.InitPhysicalDevice(encoderConfig->deviceId, encoderConfig->deviceUUID,
                                               (requestVideoComputeQueueMask |
-                                               requestVideoDecodeQueueMask  |
                                                requestVideoEncodeQueueMask  |
                                                VK_QUEUE_TRANSFER_BIT),
                                               nullptr,
-                                              requestVideoDecodeQueueMask,
-                                              (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
-                                               VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR |
-                                               VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR),
+                                              0,
+                                              VK_VIDEO_CODEC_OPERATION_NONE_KHR,
                                               requestVideoEncodeQueueMask,
-                                              (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
-                                               VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR |
-                                               VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR));
+                                              encoderConfig->codec);
         if (result != VK_SUCCESS) {
 
             assert(!"Can't initialize the Vulkan physical device!");
             return -1;
         }
 
-        result = vkDevCtxt.CreateVulkanDevice(encoderConfig->enableVideoDecoder ? 1 : 0, // num decode queues
+        result = vkDevCtxt.CreateVulkanDevice(0, // num decode queues
                                               numEncodeQueues,     // num encode queues
-                                              videoCodecs,
+                                              encoderConfig->codec,
                                               // If no graphics or compute queue is requested, only video queues
                                               // will be created. Not all implementations support transfer on video queues,
                                               // so request a separate transfer queue for such implementations.

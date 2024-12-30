@@ -20,1044 +20,889 @@
 
 VulkanVP9Decoder::VulkanVP9Decoder(VkVideoCodecOperationFlagBitsKHR std)
     : VulkanVideoDecoder(std)
-{
-    memset(&m_EntropyLast, 0, sizeof(m_EntropyLast));
-    memset(&m_PrevCtx, 0, sizeof(m_PrevCtx));
-    memset(&reader, 0, sizeof(vp9_reader));
-    m_pCompressedHeader = NULL;
+    , m_PicData()
+    , m_pCurrPic()
+    , m_frameIdx(-1)
+    , m_dataSize()
+    , m_frameSize()
+    , m_frameSizeChanged()
+    , m_rtOrigWidth()
+    , m_rtOrigHeight()
+    , m_pictureStarted()
+    , m_bitstreamComplete(true)
+    , m_lastFrameWidth(0)
+    , m_lastFrameHeight(0)
+    , m_lastShowFrame(false)
+    , m_pBuffers() {
 }
-void VulkanVP9Decoder::vp9_init_mbmode_probs(vp9_prob_update_s *pProbSetup)
+
+VulkanVP9Decoder::~VulkanVP9Decoder()
 {
-    uint32_t i, j;
+}
 
-    for (i = 0; i < BLOCK_SIZE_GROUPS; i++)
-    {
-        for (j = 0; j < 8; j++)
-            pProbSetup->pProbTab->a.sb_ymode_prob[i][j] = default_if_y_probs[i][j];
-        pProbSetup->pProbTab->a.sb_ymode_probB[i][0] = default_if_y_probs[i][8];
+void VulkanVP9Decoder::InitParser()
+{
+    m_bNoStartCodes = true;
+    m_bEmulBytesPresent = false;
+    m_pCurrPic = nullptr;
+    m_bitstreamComplete = true;
+    m_pictureStarted = false;
+    EndOfStream();
+}
+
+void VulkanVP9Decoder::EndOfStream()
+{
+    if (m_pCurrPic) {
+        m_pCurrPic->Release();
+        m_pCurrPic = nullptr;
     }
-
-    for (i = 0; i < VP9_INTRA_MODES; i++)
-    {
-        for (j = 0; j < 8; j++)
-            pProbSetup->pProbTab->kf_uv_mode_prob[i][j] = default_kf_uv_probs[i][j];
-        pProbSetup->pProbTab->kf_uv_mode_probB[i][0] = default_kf_uv_probs[i][8];
-
-        for (j = 0; j < 8; j++)
-            pProbSetup->pProbTab->a.uv_mode_prob[i][j] = default_if_uv_probs[i][j];
-        pProbSetup->pProbTab->a.uv_mode_probB[i][0] = default_if_uv_probs[i][8];
-    }
-
-    memcpy(pProbSetup->pProbTab->a.switchable_interp_prob, vp9_switchable_interp_prob,
-             sizeof(vp9_switchable_interp_prob));
-    memcpy(pProbSetup->pProbTab->a.partition_prob, vp9_partition_probs,
-             sizeof(vp9_partition_probs));
-    memcpy(pProbSetup->pProbTab->a.intra_inter_prob, default_intra_inter_p,
-             sizeof(default_intra_inter_p));
-    memcpy(pProbSetup->pProbTab->a.comp_inter_prob, default_comp_inter_p,
-             sizeof(default_comp_inter_p));
-    memcpy(pProbSetup->pProbTab->a.comp_ref_prob, default_comp_ref_p,
-             sizeof(default_comp_ref_p));
-    memcpy(pProbSetup->pProbTab->a.single_ref_prob, default_single_ref_p,
-             sizeof(default_single_ref_p));
-    memcpy(pProbSetup->pProbTab->a.tx32x32_prob, vp9_default_tx_probs_32x32p,
-             sizeof(vp9_default_tx_probs_32x32p));
-    memcpy(pProbSetup->pProbTab->a.tx16x16_prob, vp9_default_tx_probs_16x16p,
-             sizeof(vp9_default_tx_probs_16x16p));
-    memcpy(pProbSetup->pProbTab->a.tx8x8_prob, vp9_default_tx_probs_8x8p,
-             sizeof(vp9_default_tx_probs_8x8p));
-    memcpy(pProbSetup->pProbTab->a.mbskip_probs, vp9_default_mbskip_probs,
-             sizeof(vp9_default_mbskip_probs));
-
-    for (i = 0; i < VP9_INTRA_MODES; i++)
-    {
-        for (j = 0; j < VP9_INTRA_MODES; j++)
-        {
-            memcpy(pProbSetup->pProbTab->kf_bmode_prob[i][j], vp9_kf_default_bmode_probs[i][j], 8);
-            pProbSetup->pProbTab->kf_bmode_probB[i][j][0] = vp9_kf_default_bmode_probs[i][j][8];
+    for (int i = 0; i < 8; i++) {
+        if (m_pBuffers[i].buffer) {
+            m_pBuffers[i].buffer->Release();
+            m_pBuffers[i].buffer = nullptr;
         }
     }
 }
 
-void VulkanVP9Decoder::ResetProbs(vp9_prob_update_s *pProbSetup)
+bool VulkanVP9Decoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_t* pParsedBytes)
 {
-    //reset segmentMap (buffers going to HWIF_SEGMENT_READ_BASE_LSB and HWIF_SEGMENT_WRITE_BASE_LSB)
+    const uint8_t* pDataIn = (uint8_t*)pck->pByteStream;
+    int dataSize = (int)pck->nDataLength;
 
-    uint32_t i, j, k, l, m;
+    if (pParsedBytes) {
+        *pParsedBytes = 0;
+    }
 
-    memcpy(pProbSetup->pProbTab->a.inter_mode_prob, vp9_default_inter_mode_prob, sizeof(vp9_default_inter_mode_prob));
-    vp9_init_mbmode_probs(pProbSetup);
-    memcpy(&pProbSetup->pProbTab->a.nmvc, &vp9_default_nmv_context, sizeof(nvdec_nmv_context));
+    // Use different bitstreamBuffer than the previous frames bitstreamBuffer
+    // TODO: Make sure that the bitstreamBuffer is not in use.
+    VkSharedBaseObj<VulkanBitstreamBuffer> bitstreamBuffer;
+    assert(m_pClient);
+    m_pClient->GetBitstreamBuffer(m_bitstreamDataLen,
+                                  m_bufferOffsetAlignment, m_bufferSizeAlignment,
+                                  nullptr, 0, bitstreamBuffer);
+    assert(bitstreamBuffer);
+    if (!bitstreamBuffer) {
+        return false;
+    }
+    m_bitstreamDataLen = m_bitstreamData.SetBitstreamBuffer(bitstreamBuffer);
+    m_bitstreamData.ResetStreamMarkers();
 
-    /* Copy the default probs into two separate prob tables: part1 and part2. */
+    if (m_bitstreamData.GetBitstreamBuffer() == nullptr) {
+        // make sure we're initialized
+        return false;
+    }
 
-    for( i = 0; i < VP9_BLOCK_TYPES; i++ ) {
-        for ( j = 0; j < VP9_REF_TYPES; j++ ) {
-            for ( k = 0; k < VP9_COEF_BANDS; k++ ) {
-                for ( l = 0; l < VP9_PREV_COEF_CONTEXTS; l++ ) {
-                    if (l >= 3 && k == 0)
-                        continue;
+    m_nCallbackEventCount = 0;
 
-                    for ( m = 0; m < UNCONSTRAINED_NODES; m++ ) {
-                        pProbSetup->pProbTab->a.probCoeffs[i][j][k][l][m] =
-                            default_coef_probs_4x4[i][j][k][l][m];
-                        pProbSetup->pProbTab->a.probCoeffs8x8[i][j][k][l][m] =
-                            default_coef_probs_8x8[i][j][k][l][m];
-                        pProbSetup->pProbTab->a.probCoeffs16x16[i][j][k][l][m] =
-                            default_coef_probs_16x16[i][j][k][l][m];
-                        pProbSetup->pProbTab->a.probCoeffs32x32[i][j][k][l][m] =
-                            default_coef_probs_32x32[i][j][k][l][m];
-                    }
-                }
+    // Handle discontinuity
+    if (pck->bDiscontinuity) {
+        memset(&m_nalu, 0, sizeof(m_nalu));
+        memset(&m_PTSQueue, 0, sizeof(m_PTSQueue));
+        m_bDiscontinuityReported = true;
+        m_pictureStarted = false;
+    }
+
+    if (pck->bPTSValid) {
+        m_PTSQueue[m_lPTSPos].bPTSValid = true;
+        m_PTSQueue[m_lPTSPos].llPTS = pck->llPTS;
+        m_PTSQueue[m_lPTSPos].llPTSPos = m_llParsedBytes;
+        m_PTSQueue[m_lPTSPos].bDiscontinuity = m_bDiscontinuityReported;
+        m_bDiscontinuityReported = false;
+        m_lPTSPos = (m_lPTSPos + 1) % MAX_QUEUED_PTS;
+    }
+
+    if (pck->pByteStream && pck->nDataLength && m_frameIdx == -1) {
+        memset(&m_PicData, 0, sizeof(VkParserVp9PictureData));
+        m_frameIdx++;
+    }
+
+    while ((dataSize > 0) || m_pictureStarted) {
+        if (!m_pictureStarted) {
+            if (m_bitstreamComplete) {
+                // fill bitstreambuffer from start
+                //  assuming parser will get bitstream per frame from demuxer
+                m_frameSize = dataSize;
+                m_nalu.start_offset = 0;
+                m_nalu.end_offset = 0;
             }
-        }
-    }
-
-    /* Store the default probs for all saved contexts */
-    if (pProbSetup->keyFrame || pProbSetup->errorResilient || pProbSetup->resetFrameContext == 3)
-    {
-        for (i = 0; i < FRAME_CONTEXTS; i++)
-            memcpy( &m_EntropyLast[i], pProbSetup->pProbTab, sizeof(nvdec_vp9EntropyProbs_t));
-    }
-    else if (pProbSetup->resetFrameContext == 2)
-        memcpy( &m_EntropyLast[pProbSetup->frameContextIdx], pProbSetup->pProbTab, sizeof(nvdec_vp9EntropyProbs_t));
-}
-
-void VulkanVP9Decoder::GetProbs(vp9_prob_update_s *pProbSetup)
-{
-    memcpy(pProbSetup->pProbTab, &m_EntropyLast[pProbSetup->frameContextIdx], sizeof(m_EntropyLast[pProbSetup->frameContextIdx]));
-}
-
-/////////////////////////////////////////////////////////////////////////////////
-
-
-void VulkanVP9Decoder::vp9_reader_fill()
-{
-    vp9_reader *r = &reader;
-    uint32_t buffer_end = r->buffer_end;
-    uint32_t buffer = r->buffer;
-    VP9_BD_VALUE value = r->value;
-    int32_t count = r->count;
-    int32_t shift = BD_VALUE_SIZE - 8 - (count + 8);
-    int32_t loop_end = 0;
-    const int32_t bits_left = (int32_t)((buffer_end - buffer)*CHAR_BIT);
-    const int32_t x = shift + CHAR_BIT - bits_left;
-    if (x >= 0) {
-        count += LOTS_OF_BITS;
-        loop_end = x;
-    }
-    if (x < 0 || bits_left)
-    {
-        while (shift >= loop_end)
-        {
-            count += CHAR_BIT;
-            uint8_t temp = m_pCompressedHeader[r->pos++]; //u( 8);
-            value |= (VP9_BD_VALUE)temp << shift;
-            shift -= CHAR_BIT;
-            buffer++;
-        }
-    }
-    r->buffer = buffer;
-    r->value = value;
-    r->count = count;
-}
-
-int32_t VulkanVP9Decoder::vp9_reader_init(uint32_t size)
-{
-    int32_t marker_bit = 0;
-    vp9_reader *r = &reader;
-    r->buffer_end = 0 + size;
-    r->buffer = 0;
-    r->value = 0;
-    r->count = -8;
-    r->range = 255;
-    r->pos = 0;
-
-    vp9_reader_fill();
-    marker_bit = vp9_read_bit();
-    return marker_bit != 0;
-}
-
-int32_t VulkanVP9Decoder::vp9_read_bit()
-{
-    return vp9_read( 128);
-}
-
-int32_t VulkanVP9Decoder::vp9_read(int32_t probability)
-{
-
-    vp9_reader *br = &reader;
-    uint32_t bit = 0;
-    VP9_BD_VALUE value;
-    VP9_BD_VALUE bigsplit;
-    int32_t count;
-    uint32_t range;
-    uint32_t split = 1 + (((br->range - 1) * probability) >> 8);
-    if (br->count < 0)
-        vp9_reader_fill();
-    value = br->value;
-    count = br->count;
-    bigsplit = (VP9_BD_VALUE)split << (BD_VALUE_SIZE - 8);
-
-    range = split;
-    if (value >= bigsplit)
-    {
-        range = br->range - split;
-        value = value - bigsplit;
-        bit = 1;
-    }
-    uint32_t shift = vp9dx_bitreader_norm[range];
-    range <<= shift;
-    value <<= shift;
-    count -= shift;
-    br->value = value;
-    br->count = count;
-    br->range = range;
-    return bit;
-}
-
-int32_t VulkanVP9Decoder::vp9_read_literal( int32_t bits)
-{
-    int32_t z = 0, bit;
-
-    for (bit = bits - 1; bit >= 0; bit--)
-    {
-        z |= vp9_read_bit() << bit;
-    }
-    return z;
-}
-////////////////////////////////////////////////////////////////////////////////////
-//Forward Update
-uint32_t VulkanVP9Decoder::UpdateForwardProbability(vp9_prob_update_s *pProbSetup, const unsigned char* pCompressed_Header)
-{
-    nvdec_vp9EntropyProbs_t *fc = pProbSetup->pProbTab; // Frame context
-
-    uint32_t tmp, i, j, k;
-
-    m_pCompressedHeader = pCompressed_Header;
-    m_PrevCtx = pProbSetup->pProbTab->a;
-
-    if (vp9_reader_init(pProbSetup->offsetToDctParts) != 0)
-    {
-        return NOK;
-    }
-
-    if (pProbSetup->lossless)
-        pProbSetup->transform_mode = ONLY_4X4;
-    else
-    {
-        pProbSetup->transform_mode = vp9_read_literal( 2);
-        if (pProbSetup->transform_mode == ALLOW_32X32)
-            pProbSetup->transform_mode += vp9_read_literal( 1);
-        if (pProbSetup->transform_mode == TX_MODE_SELECT)
-        {
-             for (i = 0; i < TX_SIZE_CONTEXTS; ++i)
-             {
-                for (j = 0; j < TX_SIZE_MAX_SB - 3; ++j)
-                {
-                    tmp = vp9_read( VP9_DEF_UPDATE_PROB);
-                    if (tmp) {
-                        uint8_t *prob = &fc->a.tx8x8_prob[i][j];
-                        *prob = vp9hwdReadProbDiffUpdate( *prob);
-                    }
-                }
+            if (((VkDeviceSize)dataSize > m_bitstreamDataLen) && !resizeBitstreamBuffer(dataSize - m_bitstreamDataLen)) {
+                return false;
             }
-            for (i = 0; i < TX_SIZE_CONTEXTS; ++i)
-            {
-                for (j = 0; j < TX_SIZE_MAX_SB - 2; ++j) {
-                    tmp = vp9_read( VP9_DEF_UPDATE_PROB);
-                    if (tmp) {
-                        uint8_t *prob = &fc->a.tx16x16_prob[i][j];
-                        *prob = vp9hwdReadProbDiffUpdate( *prob);
-                    }
-                }
-            }
-            for (i = 0; i < TX_SIZE_CONTEXTS; ++i)
-            {
-                for (j = 0; j < TX_SIZE_MAX_SB - 1; ++j) {
-                    tmp = vp9_read( VP9_DEF_UPDATE_PROB);
-                    if (tmp) {
-                        uint8_t *prob = &fc->a.tx32x32_prob[i][j];
-                        *prob = vp9hwdReadProbDiffUpdate( *prob);
-                    }
-                }
-            }
-        }
-    }
 
-    // Coefficient probability update
-    tmp = vp9hwdDecodeCoeffUpdate( fc->a.probCoeffs);
-
-    if( tmp != OK ) return (tmp);
-    if (pProbSetup->transform_mode > ONLY_4X4) {
-        tmp = vp9hwdDecodeCoeffUpdate( fc->a.probCoeffs8x8);
-        if( tmp != OK ) return (tmp);
-    }
-    if (pProbSetup->transform_mode > ALLOW_8X8) {
-        tmp = vp9hwdDecodeCoeffUpdate( fc->a.probCoeffs16x16);
-        if( tmp != OK ) return (tmp);
-    }
-    if (pProbSetup->transform_mode > ALLOW_16X16) {
-        tmp = vp9hwdDecodeCoeffUpdate( fc->a.probCoeffs32x32);
-        if( tmp != OK ) return (tmp);
-    }
-
-    pProbSetup->probsDecoded = 1;
-
-    for (k = 0; k < MBSKIP_CONTEXTS; ++k) {
-        tmp = vp9_read( VP9_DEF_UPDATE_PROB);
-        if (tmp) {
-            fc->a.mbskip_probs[k] = vp9hwdReadProbDiffUpdate( fc->a.mbskip_probs[k]);
-        }
-    }
-
-    if(!pProbSetup->keyFrame)
-    {
-        for (i = 0; i < INTER_MODE_CONTEXTS; i++) {
-            for (j = 0; j < VP9_INTER_MODES - 1; j++) {
-                tmp = vp9_read( VP9_DEF_UPDATE_PROB);
-                if (tmp) {
-                    uint8_t *prob = &fc->a.inter_mode_prob[i][j];
-                    *prob = vp9hwdReadProbDiffUpdate( *prob);
-                }
-            }
-        }
-        if (pProbSetup->mcomp_filter_type == SWITCHABLE) {
-            for (j = 0; j < VP9_SWITCHABLE_FILTERS+1; ++j) {
-                for (i = 0; i < VP9_SWITCHABLE_FILTERS-1; ++i) {
-                    tmp = vp9_read( VP9_DEF_UPDATE_PROB);
-                    if (tmp) {
-                        uint8_t *prob = &fc->a.switchable_interp_prob[j][i];
-                        *prob = vp9hwdReadProbDiffUpdate( *prob);
-                    }
-                }
-            }
-        }
-
-        for (i = 0; i < INTRA_INTER_CONTEXTS; i++) {
-            tmp = vp9_read( VP9_DEF_UPDATE_PROB);
-            if (tmp) {
-                uint8_t *prob = &fc->a.intra_inter_prob[i];
-                *prob = vp9hwdReadProbDiffUpdate( *prob);
-            }
-        }
-
-        // Compound prediction mode probabilities
-        if (pProbSetup->allow_comp_inter_inter) {
-            tmp = vp9_read_literal( 1);
-            pProbSetup->comp_pred_mode = tmp;
-            if(tmp) {
-                tmp = vp9_read_literal( 1);
-                pProbSetup->comp_pred_mode += tmp;
-                if (pProbSetup->comp_pred_mode == HYBRID_PREDICTION)
-                {
-                    for (i = 0; i < COMP_INTER_CONTEXTS; i++)
-                    {
-                        tmp = vp9_read( VP9_DEF_UPDATE_PROB);
-                        if (tmp) {
-                            uint8_t *prob = &fc->a.comp_inter_prob[i];
-                            *prob = vp9hwdReadProbDiffUpdate( *prob);
-                        }
-                    }
-                }
-            }
-        } else {
-            pProbSetup->comp_pred_mode = SINGLE_PREDICTION_ONLY;
-        }
-
-        if (pProbSetup->comp_pred_mode != COMP_PREDICTION_ONLY) {
-            for (i = 0; i < REF_CONTEXTS; i++) {
-                tmp = vp9_read( VP9_DEF_UPDATE_PROB);
-                if (tmp) {
-                    uint8_t *prob = &fc->a.single_ref_prob[i][0];
-                    *prob = vp9hwdReadProbDiffUpdate( *prob);
-                }
-                tmp = vp9_read( VP9_DEF_UPDATE_PROB);
-                if (tmp) {
-                    uint8_t *prob = &fc->a.single_ref_prob[i][1];
-                    *prob = vp9hwdReadProbDiffUpdate( *prob);
-                }
-            }
-        }
-
-        if (pProbSetup->comp_pred_mode != SINGLE_PREDICTION_ONLY) {
-            for (i = 0; i < REF_CONTEXTS; i++) {
-                tmp = vp9_read( VP9_DEF_UPDATE_PROB);
-                if (tmp) {
-                    uint8_t *prob = &fc->a.comp_ref_prob[i];
-                    *prob = vp9hwdReadProbDiffUpdate( *prob);
-                }
-            }
-        }
-
-        // Superblock intra luma pred mode probabilities
-        for(j = 0 ; j < BLOCK_SIZE_GROUPS; ++j)
-        {
-            for( i = 0 ; i < 8; ++i ) {
-                tmp = vp9_read( VP9_DEF_UPDATE_PROB);
-                if (tmp) {
-                    fc->a.sb_ymode_prob[j][i] = vp9hwdReadProbDiffUpdate(
-                            fc->a.sb_ymode_prob[j][i]);
-                }
-            }
-            tmp = vp9_read( VP9_DEF_UPDATE_PROB);
-            if (tmp) {
-                fc->a.sb_ymode_probB[j][0] = vp9hwdReadProbDiffUpdate(
-                        fc->a.sb_ymode_probB[j][0]);
-            }
-        }
-
-        for (j = 0; j < NUM_PARTITION_CONTEXTS; j++) {
-            for (i = 0; i < PARTITION_TYPES - 1; i++) {
-                tmp = vp9_read( VP9_DEF_UPDATE_PROB);
-                if (tmp) {
-                    uint8_t *prob = &fc->a.partition_prob[INTER_FRAME][j][i];
-                    *prob = vp9hwdReadProbDiffUpdate( *prob);
-                }
-            }
-        }
-
-        // Motion vector tree update
-        tmp = vp9hwdDecodeMvUpdate(pProbSetup);
-        if( tmp != OK )
-            return (tmp);
-    }
-
-    return (OK);
-}
-
-void VulkanVP9Decoder::update_nmv( vp9_prob *const p, const vp9_prob upd_p)
-{
-    uint32_t tmp = vp9_read( upd_p);
-    if (tmp) {
-#if 1 //def LOW_PRECISION_MV_UPDATE
-        *p = (vp9_read_literal( 7) << 1) | 1;
-#else
-        *p = vp9_read_literal( 8);
-#endif
-    }
-}
-
-uint32_t VulkanVP9Decoder::vp9hwdDecodeMvUpdate(vp9_prob_update_s *pProbSetup)
-{
-    uint32_t i, j, k;
-    nvdec_nmv_context *mvctx = &pProbSetup->pProbTab->a.nmvc;
-
-#if 0
-    tmp = vp9_read_literal( 1);
-    if (!tmp) return HANTRO_OK;
-#endif
-
-    for (j = 0; j < MV_JOINTS - 1; ++j) {
-      update_nmv( &mvctx->joints[j],
-                 VP9_NMV_UPDATE_PROB);
-    }
-    for (i = 0; i < 2; ++i) {
-      update_nmv( &mvctx->sign[i], VP9_NMV_UPDATE_PROB);
-      for (j = 0; j < MV_CLASSES - 1; ++j) {
-        update_nmv( &mvctx->classes[i][j], VP9_NMV_UPDATE_PROB);
-      }
-      for (j = 0; j < CLASS0_SIZE - 1; ++j) {
-        update_nmv( &mvctx->class0[i][j], VP9_NMV_UPDATE_PROB);
-      }
-      for (j = 0; j < MV_OFFSET_BITS; ++j) {
-        update_nmv( &mvctx->bits[i][j], VP9_NMV_UPDATE_PROB);
-      }
-    }
-
-    for (i = 0; i < 2; ++i) {
-      for (j = 0; j < CLASS0_SIZE; ++j) {
-        for (k = 0; k < 3; ++k)
-          update_nmv( &mvctx->class0_fp[i][j][k], VP9_NMV_UPDATE_PROB);
-      }
-      for (j = 0; j < 3; ++j) {
-        update_nmv( &mvctx->fp[i][j], VP9_NMV_UPDATE_PROB);
-      }
-    }
-
-    if (pProbSetup->allow_high_precision_mv) {
-      for (i = 0; i < 2; ++i) {
-        update_nmv( &mvctx->class0_hp[i], VP9_NMV_UPDATE_PROB);
-        update_nmv( &mvctx->hp[i], VP9_NMV_UPDATE_PROB);
-      }
-    }
-
-    return (OK);
-}
-
-uint32_t  VulkanVP9Decoder::vp9hwdDecodeCoeffUpdate(
-        uint8_t probCoeffs[VP9_BLOCK_TYPES][VP9_REF_TYPES][VP9_COEF_BANDS][VP9_PREV_COEF_CONTEXTS][ENTROPY_NODES_PART1])
-{
-    uint32_t i, j, k, l, m;
-    uint32_t tmp;
-    tmp = vp9_read_literal( 1);
-    if (!tmp) return OK;
-    for( i = 0; i < VP9_BLOCK_TYPES; i++ )
-    {
-        for ( j = 0; j < VP9_REF_TYPES; j++ )
-        {
-            for ( k = 0; k < VP9_COEF_BANDS; k++ )
-            {
-                for ( l = 0; l < VP9_PREV_COEF_CONTEXTS; l++ )
-                {
-                    if (l >= 3 && k == 0)
-                        continue;
-
-                    for ( m = 0; m < UNCONSTRAINED_NODES; m++ )
-                    {
-                        tmp = vp9_read( 252);
-                        CHECK_END_OF_STREAM(tmp);
-                        if ( tmp )
-                        {
-                            uint8_t old, latest;
-                            old = probCoeffs[i][j][k][l][m];
-                            latest = vp9hwdReadProbDiffUpdate( old);
-                            CHECK_END_OF_STREAM(tmp);
-
-                            probCoeffs[i][j][k][l][m] = latest;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return (OK);
-}
-
-int32_t VulkanVP9Decoder::get_unsigned_bits(uint32_t num_values)
-{
-    int32_t cat = 0;
-    if (num_values <= 1)
-        return 0;
-    num_values--;
-    while(num_values > 0)
-    {
-        cat++;
-        num_values >>= 1;
-    }
-    return cat;
-}
-
-uint32_t VulkanVP9Decoder::BoolDecodeUniform( uint32_t n)
-{
-    int32_t value, v;
-    int32_t l = get_unsigned_bits(n);
-    int32_t m = (1 << l) - n;
-    if (!l) return 0;
-    value = vp9_read_literal( l - 1);
-    if (value >= m) {
-        v = vp9_read_literal( 1);
-        value = (value << 1) - m + v;
-    }
-    return value;
-}
-
-uint32_t VulkanVP9Decoder::vp9hwdDecodeSubExp( uint32_t k, uint32_t num_syms)
-{
-    uint32_t i=0, mk=0, value=0;
-    while (1) {
-        int32_t b = (i ? k + i - 1 : k);
-        uint32_t a = (1 << b);
-        if (num_syms <= mk + 3 * a) {
-            value = BoolDecodeUniform( num_syms - mk) + mk;
-            break;
-        } else {
-            value = vp9_read_bit();
-            if (value) {
-                i++;
-                mk += a;
+            if (dataSize >= (m_frameSize - m_nalu.end_offset)) {
+                memcpy(m_bitstreamData.GetBitstreamPtr() + m_nalu.end_offset, pDataIn, m_frameSize - m_nalu.end_offset);
+                m_pictureStarted = true;
+                pDataIn += (m_frameSize - (int)m_nalu.end_offset);
+                dataSize -= (m_frameSize - (int)m_nalu.end_offset);
+                m_nalu.end_offset = m_frameSize;
+                m_bitstreamComplete = true;
             } else {
-                value = vp9_read_literal( b) + mk;
-                break;
+                memcpy(m_bitstreamData.GetBitstreamPtr() + m_nalu.end_offset, pDataIn, dataSize);
+                m_nalu.end_offset += dataSize;
+                pDataIn += dataSize;
+                dataSize = 0;
+                m_bitstreamComplete = false;
+            }
+        } else {
+            uint32_t frames_processed = 0;
+            uint32_t sizeparsed = 0, framesdone = 0;
+
+            uint32_t frame_size = m_frameSize;
+
+            const uint8_t* data_start = m_bitstreamData.GetBitstreamPtr();
+            const uint8_t* data_end = data_start + m_frameSize;
+            uint32_t data_size = m_frameSize;
+            uint32_t frames_in_superframe, frame_sizes[8];
+
+            ParseSuperFrameIndex(data_start, data_size, frame_sizes, &frames_in_superframe);
+
+            do {
+                // Skip over the superframe index, if present
+                if ((data_size > 0) && ((data_start[0] & 0xe0) == 0xc0)) {
+                    const uint8_t marker = data_start[0];
+                    const uint32_t frames = (marker & 0x7) + 1;
+                    const uint32_t mag = ((marker >> 3) & 0x3) + 1;
+                    const uint32_t index_sz = 2 + mag * frames;
+
+                    if ((data_size >= index_sz) && (data_start[index_sz - 1] == marker)) {
+                        data_start += index_sz;
+                        data_size -= index_sz;
+                        if (data_start < data_end) {
+                            continue;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                // Use the correct size for this frame, if an index is present
+                if (frames_in_superframe > 0) {
+                    frame_size = frame_sizes[frames_processed];
+                    if (data_size < frame_size) {
+                        // Invalid frame size in index
+                        return false;
+                    }
+                    data_size = frame_size;
+                    m_nalu.start_offset = sizeparsed;
+
+                }
+
+                ParseFrameHeader(frame_size);
+
+                if (frames_in_superframe > 0) {
+                    sizeparsed += frame_sizes[framesdone];
+                    framesdone++;
+                }
+                data_start += data_size;
+                while (data_start < data_end && *data_start == 0) {
+                    data_start++;
+                }
+
+                data_size = (int)(data_end - data_start);
+                frames_processed += 1;
+            } while (data_start < data_end);
+
+            m_frameIdx++;
+            m_pictureStarted = false;
+        }
+
+    }
+
+    if (pck->bEOS) {
+        end_of_stream();
+    }
+
+    if (pParsedBytes) {
+        *pParsedBytes = pck->nDataLength;
+    }
+
+    return true;
+}
+
+
+bool VulkanVP9Decoder::ParseFrameHeader(uint32_t framesize)
+{
+    m_llNaluStartLocation = m_llParsedBytes;
+    m_llFrameStartLocation = m_llNaluStartLocation;
+    m_llParsedBytes += framesize;
+    //m_pSliceOffsets[0] = 0;
+
+    init_dbits();
+    //parse uncompressed header
+    if(!ParseUncompressedHeader())
+    {
+        assert((!"Error in ParseUncompressedVP9\n"));
+        return 0;
+    }
+    if (m_PicData.show_existing_frame == true)  {
+        // display an existing frame
+        VkPicIf* pDispPic = m_pBuffers[m_PicData.frame_to_show_map_idx].buffer;
+        if (pDispPic) {
+            pDispPic->AddRef();
+        }
+
+        AddBuffertoOutputQueue(pDispPic);
+
+        return 0;
+    }
+
+    // handle bitstream start offset alignment (for super frame)
+    uint32_t addOffset = m_nalu.start_offset & (m_bufferOffsetAlignment - 1);
+    m_PicData.uncompressedHeaderOffset += addOffset;
+    m_PicData.compressedHeaderOffset += addOffset;
+    m_PicData.tilesOffset += addOffset;
+
+    *m_pVkPictureData = VkParserPictureData();
+    m_pVkPictureData->CodecSpecific.vp9 = m_PicData;
+    m_pVkPictureData->numSlices = m_PicData.numTiles;
+    m_pVkPictureData->bitstreamDataLen = (framesize + addOffset + m_bufferSizeAlignment - 1) & ~(m_bufferSizeAlignment - 1); // buffer is already aligned so, no issues.
+    m_pVkPictureData->bitstreamData = m_bitstreamData.GetBitstreamBuffer();
+    m_pVkPictureData->bitstreamDataOffset = m_nalu.start_offset & ~((int64_t)m_bufferOffsetAlignment - 1);
+
+    if (!BeginPicture(m_pVkPictureData)) {
+        assert(!"BeginPicture failed");
+        return false;
+    }
+
+    bool bSkipped = false;
+    if (m_pClient != nullptr) {
+        // Notify client
+        if (!m_pClient->DecodePicture(m_pVkPictureData)) {
+            bSkipped = true;
+            // WARNING: skipped decoding current picture;
+        } else {
+            m_nCallbackEventCount++;
+        }
+    } else {
+        // WARNING: no valid render target for current picture
+    }
+
+    //m_PicData.prevIsKeyFrame = m_PicData.keyFrame;
+    //m_PicData.PrevShowFrame  = m_PicData.showFrame;
+    UpdateFramePointers(m_pCurrPic);
+
+    if (m_PicData.stdPictureInfo.flags.show_frame && !bSkipped) {
+        // Call back codec for post-decode event (display the decoded frame)
+        AddBuffertoOutputQueue(m_pCurrPic);
+        m_pCurrPic = nullptr;
+    } else {
+        m_pCurrPic->Release();
+        m_pCurrPic = nullptr;
+    }
+
+    return 1;
+}
+
+void VulkanVP9Decoder::UpdateFramePointers(VkPicIf* currentPicture)
+{
+    StdVideoDecodeVP9PictureInfo* const pStdPicInfo = &m_PicData.stdPictureInfo;
+
+    uint32_t mask, ref_index = 0;
+
+    for (mask = pStdPicInfo->refresh_frame_flags; mask; mask >>= 1) {
+        if (mask & 1) {
+            if (m_pBuffers[ref_index].buffer) {
+                m_pBuffers[ref_index].buffer->Release();
+            }
+            m_pBuffers[ref_index].buffer = currentPicture;
+
+            if (m_pBuffers[ref_index].buffer) {
+                m_pBuffers[ref_index].buffer->AddRef();
+            }
+        }
+        ++ref_index;
+    }
+
+    // Invalidate these references until the next frame starts.
+    //for (int i = 0; i < ALLOWED_REFS_PER_FRAME; i++) {
+    //    pFrameInfo->activeRefIdx[i] = 0xffff;
+    //}
+}
+
+bool VulkanVP9Decoder::AddBuffertoOutputQueue(VkPicIf* pDispPic)
+{
+    AddBuffertoDispQueue(pDispPic);
+    lEndPicture(pDispPic);
+
+    return true;
+}
+
+void VulkanVP9Decoder::AddBuffertoDispQueue(VkPicIf* pDispPic)
+{
+    int lDisp = 0;
+
+    // Find an entry in m_DispInfo
+    for (int i = 0; i < MAX_DELAY; i++) {
+        if (m_DispInfo[i].pPicBuf == pDispPic) {
+            lDisp = i;
+            break;
+        }
+        if ((m_DispInfo[i].pPicBuf == nullptr)
+            || ((m_DispInfo[lDisp].pPicBuf != nullptr) && (m_DispInfo[i].llPTS - m_DispInfo[lDisp].llPTS < 0))) {
+            lDisp = i;
+        }
+    }
+    m_DispInfo[lDisp].pPicBuf = pDispPic;
+    m_DispInfo[lDisp].bSkipped = false;
+    m_DispInfo[lDisp].lPOC = 0;
+    m_DispInfo[lDisp].lNumFields = 2;
+
+    // Find a PTS in the list
+    unsigned int ndx = m_lPTSPos;
+    m_DispInfo[lDisp].llPTS = m_llExpectedPTS; // Will be updated later on
+
+    for (int k = 0; k < MAX_QUEUED_PTS; k++) {
+        if ((m_PTSQueue[ndx].bPTSValid) && (m_PTSQueue[ndx].llPTSPos - m_llFrameStartLocation <= (m_bNoStartCodes?0:3))) {
+            m_DispInfo[lDisp].bPTSValid = true;
+            m_DispInfo[lDisp].llPTS = m_PTSQueue[ndx].llPTS;
+            m_PTSQueue[ndx].bPTSValid = false;
+        }
+        ndx = (ndx + 1) % MAX_QUEUED_PTS;
+    }
+}
+
+void VulkanVP9Decoder::lEndPicture(VkPicIf* pDispPic)
+{
+    if (pDispPic) {
+        display_picture(pDispPic);
+        pDispPic->Release();
+    }
+
+}
+
+
+bool VulkanVP9Decoder::ParseUncompressedHeader()
+{
+    VkParserVp9PictureData *pPicData = &m_PicData;
+    StdVideoDecodeVP9PictureInfo* pStdPicInfo = &m_PicData.stdPictureInfo;
+    StdVideoVP9ColorConfig* pStdColorConfig = &m_PicData.stdColorConfig;
+    StdVideoVP9LoopFilter* pStdLoopFilter = &m_PicData.stdLoopFilter;
+    m_frameSizeChanged = false;
+
+    VP9_CHECK_FRAME_MARKER;
+
+    uint32_t profile = u(1);
+    profile |= u(1) << 1;
+    pStdPicInfo->profile = (StdVideoVP9Profile)profile;
+    if (pStdPicInfo->profile == STD_VIDEO_VP9_PROFILE_3) {
+        if (u(1) != 0) {
+            assert(!"Invalid syntax");
+            return false;
+        }
+    }
+
+    pPicData->show_existing_frame = u(1);
+    if (pPicData->show_existing_frame) {
+        pPicData->frame_to_show_map_idx = u(3);
+        //U32 frame_to_show = vp9parser->m_pBuffers[idx_to_show];
+        //Handle direct show:   CHECK
+        pPicData->uncompressedHeaderOffset = (consumed_bits() + 7) >> 3;
+        pPicData->compressedHeaderSize = 0;
+        pStdPicInfo->refresh_frame_flags = 0;
+        pStdLoopFilter->loop_filter_level = 0;
+        return true;
+    }
+
+    pStdPicInfo->frame_type = (StdVideoVP9FrameType)u(1);
+    pStdPicInfo->flags.show_frame = u(1);
+    pStdPicInfo->flags.error_resilient_mode = u(1);
+
+    if (pStdPicInfo->frame_type == STD_VIDEO_VP9_FRAME_TYPE_KEY) {
+        VP9_CHECK_FRAME_SYNC_CODE;
+        ParseColorConfig();
+        ParseFrameAndRenderSize();
+        pStdPicInfo->refresh_frame_flags = (1 << STD_VIDEO_VP9_NUM_REF_FRAMES) - 1;
+        pPicData->FrameIsIntra = true;
+
+        for (int i = 0; i < STD_VIDEO_VP9_REFS_PER_FRAME; ++i) {
+            pPicData->ref_frame_idx[i] = 0;
+        }
+    } else { // non key frame
+        pStdPicInfo->flags.intra_only = pStdPicInfo->flags.show_frame ? 0 : u(1);
+        pPicData->FrameIsIntra = pStdPicInfo->flags.intra_only;
+        pStdPicInfo->reset_frame_context = pStdPicInfo->flags.error_resilient_mode ? 0 : u(2);
+
+        if (pStdPicInfo->flags.intra_only == 1) {
+            VP9_CHECK_FRAME_SYNC_CODE;
+            if (pStdPicInfo->profile > STD_VIDEO_VP9_PROFILE_0) {
+                ParseColorConfig();
+            } else {
+                pStdColorConfig->color_space = STD_VIDEO_VP9_COLOR_SPACE_BT_601;
+                pStdColorConfig->subsampling_x = 1;
+                pStdColorConfig->subsampling_y = 1;
+                pStdColorConfig->BitDepth = 8;
+            }
+
+            pStdPicInfo->refresh_frame_flags = u(STD_VIDEO_VP9_NUM_REF_FRAMES); //for non key frame refresh only some
+
+            ParseFrameAndRenderSize();
+        } else { // inter frame
+            pStdPicInfo->refresh_frame_flags = u(STD_VIDEO_VP9_NUM_REF_FRAMES);
+
+            pStdPicInfo->ref_frame_sign_bias_mask = 0;
+            for (int i = 0; i < STD_VIDEO_VP9_REFS_PER_FRAME; i++) {
+                pPicData->ref_frame_idx[i] = u(3);
+                pStdPicInfo->ref_frame_sign_bias_mask |= (u(1) << (STD_VIDEO_VP9_REFERENCE_NAME_LAST_FRAME + i));
+            }
+
+            ParseFrameAndRenderSizeWithRefs();
+
+            pStdPicInfo->flags.allow_high_precision_mv = u(1);
+
+            // interpolation filter
+            bool is_filter_switchable = u(1); //mb_switchable_mcomp_filt
+            if (is_filter_switchable) {
+                pStdPicInfo->interpolation_filter = STD_VIDEO_VP9_INTERPOLATION_FILTER_SWITCHABLE;
+            } else {
+                const StdVideoVP9InterpolationFilter literal_to_filter[] = {
+                                            STD_VIDEO_VP9_INTERPOLATION_FILTER_EIGHTTAP_SMOOTH,
+                                            STD_VIDEO_VP9_INTERPOLATION_FILTER_EIGHTTAP,
+                                            STD_VIDEO_VP9_INTERPOLATION_FILTER_EIGHTTAP_SHARP,
+                                            STD_VIDEO_VP9_INTERPOLATION_FILTER_BILINEAR };
+                pStdPicInfo->interpolation_filter = literal_to_filter[u(2)];
             }
         }
     }
-    return value;
-}
 
-int32_t VulkanVP9Decoder::merge_index(int32_t v, int32_t n, int32_t modulus)
-{
-    int32_t max1 = (n - 1 - modulus / 2) / modulus + 1;
-    if (v < max1) v = v * modulus + modulus / 2;
-    else
-    {
-        int32_t w;
-        v -= max1;
-        w = v;
-        v += (v + modulus - modulus / 2) / modulus;
-        while (v % modulus == modulus / 2 ||
-            w != v - (v + modulus - modulus / 2) / modulus) v++;
+    if (pStdPicInfo->flags.error_resilient_mode == 0) {
+         /* Refresh entropy probs,
+         * 0 == this frame probs are used only for this frame decoding,
+         * 1 == this frame probs will be stored for future reference */
+        pStdPicInfo->flags.refresh_frame_context = u(1);
+        pStdPicInfo->flags.frame_parallel_decoding_mode = u(1);
+    } else {
+        pStdPicInfo->flags.refresh_frame_context = 0;
+        pStdPicInfo->flags.frame_parallel_decoding_mode = 1;
     }
-    return v;
-}
 
-int32_t VulkanVP9Decoder::vp9_inv_recenter_nonneg(int32_t v, int32_t m)
-{
-    if (v > (m << 1)) return v;
-    else if ((v & 1) == 0) return (v >> 1) + m;
-    else return m - ((v + 1) >> 1);
-}
+    pStdPicInfo->frame_context_idx = u(2);
 
-int32_t VulkanVP9Decoder::inv_remap_prob(int32_t v, int32_t m)
-{
-    const int32_t n = 255;
-    v = merge_index(v, n - 1, MODULUS_PARAM);
-    m--;
-    if ((m << 1) <= n)
-        return 1 + vp9_inv_recenter_nonneg(v + 1, m);
-    else
-        return n - vp9_inv_recenter_nonneg(v + 1, n - 1 - m);
-}
-
-vp9_prob VulkanVP9Decoder::vp9hwdReadProbDiffUpdate( uint8_t oldp)
-{
-    int32_t p;
-    int32_t delp = vp9hwdDecodeSubExp( 4, 255 );
-    p = (vp9_prob)inv_remap_prob(delp, oldp);
-    return p;
-}
-
-//Backward update
-
-
-// this function assumes prob1 and prob2 are already within [1,255] range
-vp9_prob VulkanVP9Decoder::weighted_prob(int32_t prob1, int32_t prob2, int32_t factor)
-{
-    return ROUND_POWER_OF_TWO(prob1 * (256 - factor) + prob2 * factor, 8);
-}
-
-vp9_prob VulkanVP9Decoder::clip_prob(uint32_t p)
-{
-    return (vp9_prob)((p > 255) ? 255u : (p < 1) ? 1u : p);
-}
-
-vp9_prob VulkanVP9Decoder::get_prob(uint32_t num, uint32_t den)
-{
-    return (den == 0) ? 128u : clip_prob((num * 256 + (den >> 1)) / den);
-}
-
-vp9_prob VulkanVP9Decoder::get_binary_prob(uint32_t n0, uint32_t n1)
-{
-    return get_prob(n0, n0 + n1);
-}
-
-uint32_t VulkanVP9Decoder::convert_distribution(uint32_t i,
-                            const vp9_tree_index * tree,
-                            vp9_prob probs[],
-                            uint32_t branch_ct[][2],
-                            const uint32_t num_events[],
-                            uint32_t tok0_offset)
-{
-    uint32_t left, right;
-
-    if (tree[i] <= 0)
-    {
-        left = num_events[-tree[i] - tok0_offset];
+    if ((pPicData->FrameIsIntra == 1) || (pStdPicInfo->flags.error_resilient_mode == 1)) {
+        StdVideoVP9Segmentation* pStdSegment = &pPicData->stdSegmentation;
+        ///* Clear all previous segment data */
+        memset(pStdSegment->FeatureEnabled, 0, sizeof(pStdSegment->FeatureEnabled));
+        memset(pStdSegment->FeatureData, 0, sizeof(pStdSegment->FeatureData));
+        pStdPicInfo->frame_context_idx = 0;
     }
-    else
-    {
-        left = convert_distribution(tree[i], tree, probs, branch_ct, num_events, tok0_offset);
-    }
-    if (tree[i + 1] <= 0)
-    {
-        right = num_events[-tree[i + 1] - tok0_offset];
-    }
-    else
-    {
-        right = convert_distribution(tree[i + 1], tree, probs, branch_ct, num_events, tok0_offset);
-    }
-    probs[i>>1] = get_binary_prob(left, right);
-    branch_ct[i>>1][0] = left;
-    branch_ct[i>>1][1] = right;
-    return left + right;
+
+    ParseLoopFilterParams();
+    ParseQuantizationParams();
+    ParseSegmentationParams();
+    ParseTileInfo();
+
+    pPicData->compressedHeaderSize = u(16);
+
+    pPicData->uncompressedHeaderOffset = 0;
+    pPicData->compressedHeaderOffset = (consumed_bits() + 7) >> 3;
+    pPicData->tilesOffset = pPicData->compressedHeaderOffset + pPicData->compressedHeaderSize;
+
+    pPicData->ChromaFormat = (pStdColorConfig->subsampling_x == 1) && (pStdColorConfig->subsampling_y == 1) ? 1 : 0;
+    assert(pPicData->ChromaFormat); // TODO: support only YUV420
+
+    return true;
 }
 
-void VulkanVP9Decoder::vp9_tree_probs_from_distribution(const vp9_tree_index * tree,
-                                        vp9_prob probs          [ /* n-1 */ ],
-                                        uint32_t branch_ct       [ /* n-1 */ ] [2],
-                                        const uint32_t num_events[ /* n */ ],
-                                        uint32_t tok0_offset)
+bool VulkanVP9Decoder::ParseColorConfig()
 {
-    convert_distribution(0, tree, probs, branch_ct, num_events, tok0_offset);
+    StdVideoDecodeVP9PictureInfo* pStdPicInfo = &m_PicData.stdPictureInfo;
+    StdVideoVP9ColorConfig* pStdColorConfig = &m_PicData.stdColorConfig;
+
+    if (pStdPicInfo->profile >= STD_VIDEO_VP9_PROFILE_2) {
+        pStdColorConfig->BitDepth = u(1) ? 12 : 10;
+    } else {
+        pStdColorConfig->BitDepth = 8;
+    }
+
+    pStdColorConfig->color_space = (StdVideoVP9ColorSpace)u(3);
+
+    if (pStdColorConfig->color_space != STD_VIDEO_VP9_COLOR_SPACE_RGB) {
+        pStdColorConfig->flags.color_range = u(1);
+        if ((pStdPicInfo->profile == STD_VIDEO_VP9_PROFILE_1) ||
+            (pStdPicInfo->profile == STD_VIDEO_VP9_PROFILE_3)) {
+            pStdColorConfig->subsampling_x = u(1);
+            pStdColorConfig->subsampling_y = u(1);
+            VP9_CHECK_ZERO_BIT
+        } else {
+            pStdColorConfig->subsampling_x = 1;
+            pStdColorConfig->subsampling_y = 1;
+        }
+    } else {
+        pStdColorConfig->flags.color_range = 1;
+        if ((pStdPicInfo->profile == STD_VIDEO_VP9_PROFILE_1) ||
+            (pStdPicInfo->profile == STD_VIDEO_VP9_PROFILE_3)) {
+            pStdColorConfig->subsampling_x = 0;
+            pStdColorConfig->subsampling_y = 0;
+            VP9_CHECK_ZERO_BIT
+        }
+    }
+    return true;
 }
 
-void VulkanVP9Decoder::update_coef_probs(uint8_t dst_coef_probs[VP9_BLOCK_TYPES][VP9_REF_TYPES][VP9_COEF_BANDS][VP9_PREV_COEF_CONTEXTS][ENTROPY_NODES_PART1],
-                        uint8_t pre_coef_probs[VP9_BLOCK_TYPES][VP9_REF_TYPES][VP9_COEF_BANDS][VP9_PREV_COEF_CONTEXTS][ENTROPY_NODES_PART1],
-                        uint32_t coef_counts[VP9_BLOCK_TYPES][VP9_REF_TYPES][VP9_COEF_BANDS][VP9_PREV_COEF_CONTEXTS][UNCONSTRAINED_NODES+1],
-                        uint32_t (*eob_counts)[VP9_REF_TYPES][VP9_COEF_BANDS][VP9_PREV_COEF_CONTEXTS],
-                        int32_t count_sat, int32_t update_factor)
+void VulkanVP9Decoder::ParseFrameAndRenderSize()
 {
-    int32_t t, i, j, k, l, count;
-    uint32_t branch_ct[VP9_ENTROPY_NODES][2];
-    vp9_prob coef_probs[VP9_ENTROPY_NODES];
-    int32_t factor;
+    VkParserVp9PictureData *pPicData = &m_PicData;
 
-    //int32_t brancharr[VP9_BLOCK_TYPES][VP9_REF_TYPES][36][VP9_PREV_COEF_CONTEXTS] = {0};
-    //int32_t coeffprobarr[VP9_BLOCK_TYPES][VP9_REF_TYPES][VP9_COEF_BANDS][VP9_PREV_COEF_CONTEXTS] = {0};
-    //memset(brancharr, 0, sizeof(int32_t)*VP9_BLOCK_TYPES*VP9_REF_TYPES*VP9_COEF_BANDS*VP9_PREV_COEF_CONTEXTS);
-    //memset(coeffprobarr, 0, sizeof(int32_t)*VP9_BLOCK_TYPES*VP9_REF_TYPES*VP9_COEF_BANDS*VP9_PREV_COEF_CONTEXTS);
+    pPicData->FrameWidth = u(16) + 1;
+    pPicData->FrameHeight = u(16) + 1;
 
-    for (i = 0; i < VP9_BLOCK_TYPES; ++i)
-    {
-        for (j = 0; j < VP9_REF_TYPES; ++j)
-        {
-            for (k = 0; k < VP9_COEF_BANDS; ++k)
-            {
-                for (l = 0; l < VP9_PREV_COEF_CONTEXTS; ++l)
-                {
-                    if (l >= 3 && k == 0)
-                        continue;
-                    vp9_tree_probs_from_distribution(vp9_coefmodel_tree,
-                                                    coef_probs, branch_ct,
-                                                     coef_counts[i][j][k][l], 0);
-                    branch_ct[0][1] = eob_counts[i][j][k][l] - branch_ct[0][0];
-                    coef_probs[0] = get_binary_prob(branch_ct[0][0], branch_ct[0][1]);
-                    //brancharr[i][j][k][l] = branch_ct[0][1];
-                    //coeffprobarr[i][j][k][l] = coef_probs[0];
-                    for (t = 0; t < UNCONSTRAINED_NODES; ++t)
-                    {
-                        count = branch_ct[t][0] + branch_ct[t][1];
-                        count = count > count_sat ? count_sat : count;
-                        factor = (update_factor * count / count_sat);
-                        dst_coef_probs[i][j][k][l][t] = weighted_prob(pre_coef_probs[i][j][k][l][t], coef_probs[t], factor);
+    ComputeImageSize();
+
+    if (u(1) == 1) { // render_and_frame_size_different
+        pPicData->renderWidth = u(16) + 1;
+        pPicData->renderHeight = u(16) + 1;
+    } else {
+        pPicData->renderWidth = pPicData->FrameWidth;
+        pPicData->renderHeight = pPicData->FrameHeight;
+    }
+}
+
+void VulkanVP9Decoder::ParseFrameAndRenderSizeWithRefs()
+{
+    VkParserVp9PictureData* pPicData = &m_PicData;
+
+    bool found_ref = false;
+
+    for (int i = 0; i < STD_VIDEO_VP9_REFS_PER_FRAME; ++i) {
+        found_ref = u(1);
+        if (found_ref) {
+            VkPicIf* pRefPic = m_pBuffers[pPicData->ref_frame_idx[i]].buffer;
+            if (pRefPic != nullptr) {
+                pPicData->FrameWidth = pRefPic->decodeWidth;
+                pPicData->FrameHeight = pRefPic->decodeHeight;
+
+                ComputeImageSize();
+            }
+
+            if (u(1) == 1) { // render_and_frame_size_different
+                pPicData->renderWidth = u(16) + 1;
+                pPicData->renderHeight = u(16) + 1;
+            } else {
+                pPicData->renderWidth = pPicData->FrameWidth;
+                pPicData->renderHeight = pPicData->FrameHeight;
+            }
+
+            break;
+        }
+    }
+    if (!found_ref) {
+        ParseFrameAndRenderSize();
+    }
+}
+
+void VulkanVP9Decoder::ComputeImageSize()
+{
+    VkParserVp9PictureData* pPicData = &m_PicData;
+
+    // compute_image_size()
+    pPicData->MiCols = (pPicData->FrameWidth + 7) >> 3;
+    pPicData->MiRows = (pPicData->FrameHeight + 7) >> 3;
+    pPicData->Sb64Cols = (pPicData->MiCols + 7) >> 3;
+    pPicData->Sb64Rows = (pPicData->MiRows + 7) >> 3;
+
+    // compute_image_size() side effects (7.2.6)
+    if (((uint32_t)m_lastFrameHeight != pPicData->FrameHeight) || ((uint32_t)m_lastFrameWidth != pPicData->FrameWidth)) {
+        m_frameSizeChanged = true;
+        pPicData->stdPictureInfo.flags.UsePrevFrameMvs = false;
+    } else { /* 2.a, 2.b */
+        bool intraOnly = pPicData->stdPictureInfo.frame_type == STD_VIDEO_VP9_FRAME_TYPE_KEY || pPicData->stdPictureInfo.flags.intra_only;
+        pPicData->stdPictureInfo.flags.UsePrevFrameMvs = m_lastShowFrame && /* 2.c */
+                                                         pPicData->stdPictureInfo.flags.error_resilient_mode == 0 && /* 2.d */
+                                                         !intraOnly /* 2.e */;
+    }
+    m_lastFrameHeight = pPicData->FrameHeight;
+    m_lastFrameWidth = pPicData->FrameWidth;
+    m_lastShowFrame = pPicData->stdPictureInfo.flags.show_frame;
+
+}
+
+void VulkanVP9Decoder::ParseLoopFilterParams()
+{
+    VkParserVp9PictureData *pPicData = &m_PicData;
+    StdVideoDecodeVP9PictureInfo *pStdPicInfo = &m_PicData.stdPictureInfo;
+    StdVideoVP9LoopFilter* pStdLoopFilter = &m_PicData.stdLoopFilter;
+
+    if (pPicData->FrameIsIntra || (pStdPicInfo->flags.error_resilient_mode == 1)) {
+        // setup_past_independence() for loop filter params
+        memset(m_loopFilterRefDeltas, 0, sizeof(m_loopFilterRefDeltas));
+        memset(m_loopFilterModeDeltas, 0, sizeof(m_loopFilterModeDeltas));
+        m_loopFilterRefDeltas[0] = 1;
+        m_loopFilterRefDeltas[1] = 0;
+        m_loopFilterRefDeltas[2] = -1;
+        m_loopFilterRefDeltas[3] = -1;
+    }
+
+    pStdLoopFilter->loop_filter_level =  u(6);
+    pStdLoopFilter->loop_filter_sharpness = u(3);
+
+    pStdLoopFilter->flags.loop_filter_delta_enabled = u(1);
+    if (pStdLoopFilter->flags.loop_filter_delta_enabled) {
+
+        pStdLoopFilter->flags.loop_filter_delta_update = u(1);
+
+        if (pStdLoopFilter->flags.loop_filter_delta_update) {
+
+            for (int i = 0; i < STD_VIDEO_VP9_MAX_REF_FRAMES; i++) {
+                uint8_t update_ref_delta = u(1);
+                pStdLoopFilter->update_ref_delta |= update_ref_delta << i;
+                if (update_ref_delta == 1) {
+                    m_loopFilterRefDeltas[i] = u(6);
+                    if (u(1)) { // sign
+                        m_loopFilterRefDeltas[i] = -m_loopFilterRefDeltas[i];
+                    }
+                }
+            }
+
+            for (int i = 0; i < STD_VIDEO_VP9_LOOP_FILTER_ADJUSTMENTS; i++) {
+                uint8_t update_mode_delta = u( 1);
+                pStdLoopFilter->update_mode_delta |= update_mode_delta << i;
+                if (update_mode_delta) {
+                    m_loopFilterModeDeltas[i] = u(6);
+                    if(u(1)) { // sign
+                        m_loopFilterModeDeltas[i] = -m_loopFilterRefDeltas[i];
                     }
                 }
             }
         }
     }
+
+    memcpy(pStdLoopFilter->loop_filter_ref_deltas, m_loopFilterRefDeltas, sizeof(m_loopFilterRefDeltas));
+    memcpy(pStdLoopFilter->loop_filter_mode_deltas, m_loopFilterModeDeltas, sizeof(m_loopFilterModeDeltas));
 }
 
-void VulkanVP9Decoder::adaptCoefProbs(vp9_prob_update_s *pProbSetup)
+void VulkanVP9Decoder::ParseQuantizationParams()
 {
-    int32_t update_factor; /* denominator 256 */
-    int32_t count_sat;
+   VkParserVp9PictureData *pPicData = &m_PicData;
+   StdVideoDecodeVP9PictureInfo* pStdPicInfo = &pPicData->stdPictureInfo;
 
-    if(pProbSetup->keyFrame)
-    {
-        update_factor = COEF_MAX_UPDATE_FACTOR_KEY;
-        count_sat = COEF_COUNT_SAT_KEY;
-    }
-    else if (pProbSetup->prevIsKeyFrame)
-    {
-        update_factor = COEF_MAX_UPDATE_FACTOR_AFTER_KEY; // adapt quickly
-        count_sat = COEF_COUNT_SAT_AFTER_KEY;
-    }
-    else
-    {
-        update_factor = COEF_MAX_UPDATE_FACTOR;
-        count_sat = COEF_COUNT_SAT;
-    }
-
-    update_coef_probs(pProbSetup->pProbTab->a.probCoeffs,
-                        m_PrevCtx.probCoeffs,
-                        pProbSetup->pCtxCounters->countCoeffs,
-                        pProbSetup->pCtxCounters->countEobs[TX_4X4],
-                        count_sat, update_factor);
-    update_coef_probs(pProbSetup->pProbTab->a.probCoeffs8x8,
-                        m_PrevCtx.probCoeffs8x8,
-                        pProbSetup->pCtxCounters->countCoeffs8x8,
-                        pProbSetup->pCtxCounters->countEobs[TX_8X8],
-                        count_sat, update_factor);
-    update_coef_probs(pProbSetup->pProbTab->a.probCoeffs16x16,
-                        m_PrevCtx.probCoeffs16x16,
-                        pProbSetup->pCtxCounters->countCoeffs16x16,
-                        pProbSetup->pCtxCounters->countEobs[TX_16X16],
-                        count_sat, update_factor);
-    update_coef_probs(pProbSetup->pProbTab->a.probCoeffs32x32,
-                        m_PrevCtx.probCoeffs32x32,
-                        pProbSetup->pCtxCounters->countCoeffs32x32,
-                        pProbSetup->pCtxCounters->countEobs[TX_32X32],
-                        count_sat, update_factor);
+    pStdPicInfo->base_q_idx = u(8);
+    pStdPicInfo->delta_q_y_dc = ReadDeltaQ();
+    pStdPicInfo->delta_q_uv_dc = ReadDeltaQ();
+    pStdPicInfo->delta_q_uv_ac = ReadDeltaQ();
 }
 
-int32_t VulkanVP9Decoder::update_mode_ct(vp9_prob pre_prob, vp9_prob prob, uint32_t branch_ct[2])
+int32_t VulkanVP9Decoder::ReadDeltaQ()
 {
-    int32_t factor, count = branch_ct[0] + branch_ct[1];
-    count = count > MODE_COUNT_SAT ? MODE_COUNT_SAT : count;
-    factor = (MODE_MAX_UPDATE_FACTOR * count / MODE_COUNT_SAT);
-    return weighted_prob(pre_prob, prob, factor);
-}
-
-int32_t VulkanVP9Decoder::update_mode_ct2(vp9_prob pre_prob, uint32_t branch_ct[2])
-{
-    return update_mode_ct(pre_prob, get_binary_prob(branch_ct[0], branch_ct[1]), branch_ct);
-}
-
-void VulkanVP9Decoder::update_mode_probs(int32_t n_modes,
-                        const vp9_tree_index *tree, uint32_t *cnt,
-                        vp9_prob *pre_probs, vp9_prob *pre_probsB,
-                        vp9_prob *dst_probs, vp9_prob *dst_probsB,
-                        uint32_t tok0_offset)
-{
-    vp9_prob probs[MAX_PROBS];
-    uint32_t branch_ct[MAX_PROBS][2];
-    int32_t t, count, factor;
-
-    assert(n_modes - 1 < MAX_PROBS);
-    vp9_tree_probs_from_distribution(tree, probs, branch_ct, cnt, tok0_offset);
-    for (t = 0; t < n_modes - 1; ++t)
-    {
-        count = branch_ct[t][0] + branch_ct[t][1];
-        count = count > MODE_COUNT_SAT ? MODE_COUNT_SAT : count;
-        factor = (MODE_MAX_UPDATE_FACTOR * count / MODE_COUNT_SAT);
-        if (t < 8 || dst_probsB == NULL)
-            dst_probs[t] = weighted_prob(pre_probs[t], probs[t], factor);
-        else
-            dst_probsB[t-8] = weighted_prob(pre_probsB[t-8], probs[t], factor);
-    }
-}
-
-void VulkanVP9Decoder::tx_counts_to_branch_counts_32x32(uint32_t *tx_count_32x32p,
-                                      uint32_t (*ct_32x32p)[2])
-{
-    ct_32x32p[0][0] = tx_count_32x32p[TX_4X4];
-    ct_32x32p[0][1] = tx_count_32x32p[TX_8X8] + tx_count_32x32p[TX_16X16] + tx_count_32x32p[TX_32X32];
-    ct_32x32p[1][0] = tx_count_32x32p[TX_8X8];
-    ct_32x32p[1][1] = tx_count_32x32p[TX_16X16] + tx_count_32x32p[TX_32X32];
-    ct_32x32p[2][0] = tx_count_32x32p[TX_16X16];
-    ct_32x32p[2][1] = tx_count_32x32p[TX_32X32];
-}
-
-void VulkanVP9Decoder::tx_counts_to_branch_counts_16x16(uint32_t *tx_count_16x16p,
-                                      uint32_t (*ct_16x16p)[2])
-{
-    ct_16x16p[0][0] = tx_count_16x16p[TX_4X4];
-    ct_16x16p[0][1] = tx_count_16x16p[TX_8X8] + tx_count_16x16p[TX_16X16];
-    ct_16x16p[1][0] = tx_count_16x16p[TX_8X8];
-    ct_16x16p[1][1] = tx_count_16x16p[TX_16X16];
-}
-
-void VulkanVP9Decoder::tx_counts_to_branch_counts_8x8(uint32_t *tx_count_8x8p,
-                                    uint32_t (*ct_8x8p)[2])
-{
-    ct_8x8p[0][0] =   tx_count_8x8p[TX_4X4];
-    ct_8x8p[0][1] =   tx_count_8x8p[TX_8X8];
-}
-
-void VulkanVP9Decoder::adaptModeProbs(vp9_prob_update_s *pProbSetup)
-{
-    uint32_t i, j;
-
-    for (i = 0; i < INTRA_INTER_CONTEXTS; i++)
-        pProbSetup->pProbTab->a.intra_inter_prob[i] = update_mode_ct2(m_PrevCtx.intra_inter_prob[i], pProbSetup->pCtxCounters->intra_inter_count[i]);
-    for (i = 0; i < COMP_INTER_CONTEXTS; i++)
-        pProbSetup->pProbTab->a.comp_inter_prob[i] = update_mode_ct2(m_PrevCtx.comp_inter_prob[i], pProbSetup->pCtxCounters->comp_inter_count[i]);
-    for (i = 0; i < REF_CONTEXTS; i++)
-        pProbSetup->pProbTab->a.comp_ref_prob[i] = update_mode_ct2(m_PrevCtx.comp_ref_prob[i], pProbSetup->pCtxCounters->comp_ref_count[i]);
-    for (i = 0; i < REF_CONTEXTS; i++)
-        for (j = 0; j < 2; j++)
-            pProbSetup->pProbTab->a.single_ref_prob[i][j] = update_mode_ct2(m_PrevCtx.single_ref_prob[i][j], pProbSetup->pCtxCounters->single_ref_count[i][j]);
-
-    for (i = 0; i < BLOCK_SIZE_GROUPS; ++i)
-    {
-        update_mode_probs(VP9_INTRA_MODES, vp9_intra_mode_tree,
-                            pProbSetup->pCtxCounters->sb_ymode_counts[i],
-                            m_PrevCtx.sb_ymode_prob[i], m_PrevCtx.sb_ymode_probB[i],
-                            pProbSetup->pProbTab->a.sb_ymode_prob[i], pProbSetup->pProbTab->a.sb_ymode_probB[i], 0);
-    }
-    for (i = 0; i < VP9_INTRA_MODES; ++i)
-    {
-        update_mode_probs(VP9_INTRA_MODES, vp9_intra_mode_tree,
-                            pProbSetup->pCtxCounters->uv_mode_counts[i],
-                            m_PrevCtx.uv_mode_prob[i],
-                            m_PrevCtx.uv_mode_probB[i],
-                            pProbSetup->pProbTab->a.uv_mode_prob[i],
-                            pProbSetup->pProbTab->a.uv_mode_probB[i], 0);
-    }
-    for (i = 0; i < NUM_PARTITION_CONTEXTS; i++)
-        update_mode_probs(PARTITION_TYPES, vp9_partition_tree,
-                            pProbSetup->pCtxCounters->partition_counts[i],
-                            m_PrevCtx.partition_prob[INTER_FRAME][i], NULL,
-                            pProbSetup->pProbTab->a.partition_prob[INTER_FRAME][i], NULL, 0);
-
-    if (pProbSetup->mcomp_filter_type == SWITCHABLE)
-    {
-        for (i = 0; i <= VP9_SWITCHABLE_FILTERS; ++i)
-        {
-            update_mode_probs(VP9_SWITCHABLE_FILTERS, vp9_switchable_interp_tree,
-                                pProbSetup->pCtxCounters->switchable_interp_counts[i],
-                                m_PrevCtx.switchable_interp_prob[i], NULL,
-                                pProbSetup->pProbTab->a.switchable_interp_prob[i], NULL, 0);
+    int32_t delta;
+    if (u(1)) {
+        delta = u(4);
+        if (u(1)) {
+            delta = -delta;
         }
+        return delta;
+    } else {
+        return 0;
+    }
+}
+
+void VulkanVP9Decoder::ParseSegmentationParams()
+{
+    uint8_t segmentation_feature_bits[STD_VIDEO_VP9_SEG_LVL_MAX] = { 8, 6, 2, 0};
+    uint8_t segmentation_feature_signed[STD_VIDEO_VP9_SEG_LVL_MAX] = {1, 1, 0, 0};
+
+    StdVideoDecodeVP9PictureInfo* pStdPicInfo = &m_PicData.stdPictureInfo;
+    StdVideoVP9Segmentation* pSegment = &m_PicData.stdSegmentation;
+
+    pSegment->flags.segmentation_update_map = 0;
+    pSegment->flags.segmentation_temporal_update = 0;
+
+    pStdPicInfo->flags.segmentation_enabled = u(1);
+    if (pStdPicInfo->flags.segmentation_enabled == 0) {
+        return;
     }
 
-    if (pProbSetup->transform_mode == TX_MODE_SELECT)
-    {
-        uint32_t branch_ct_8x8p[TX_SIZE_MAX_SB - 3][2];
-        uint32_t branch_ct_16x16p[TX_SIZE_MAX_SB - 2][2];
-        uint32_t branch_ct_32x32p[TX_SIZE_MAX_SB - 1][2];
-        for (i = 0; i < TX_SIZE_CONTEXTS; ++i)
-        {
-            tx_counts_to_branch_counts_8x8(pProbSetup->pCtxCounters->tx8x8_count[i], branch_ct_8x8p);
-            for (j = 0; j < TX_SIZE_MAX_SB - 3; ++j)
-            {
-                int32_t factor;
-                int32_t count = branch_ct_8x8p[j][0] + branch_ct_8x8p[j][1];
-                vp9_prob prob = get_binary_prob(branch_ct_8x8p[j][0], branch_ct_8x8p[j][1]);
-                count = count > MODE_COUNT_SAT ? MODE_COUNT_SAT : count;
-                factor = (MODE_MAX_UPDATE_FACTOR * count / MODE_COUNT_SAT);
-                pProbSetup->pProbTab->a.tx8x8_prob[i][j] = weighted_prob(m_PrevCtx.tx8x8_prob[i][j], prob, factor);
-            }
+    pSegment->flags.segmentation_update_map = u(1);
+
+    if (pSegment->flags.segmentation_update_map == 1) {
+
+        for (int i = 0; i < STD_VIDEO_VP9_MAX_SEGMENTATION_TREE_PROBS; i++) {
+            uint8_t prob_coded = u(1);
+            pSegment->segmentation_tree_probs[i] = (prob_coded == 1) ? u(8) : VP9_MAX_PRBABILITY;
         }
-        for (i = 0; i < TX_SIZE_CONTEXTS; ++i)
-        {
-            tx_counts_to_branch_counts_16x16(pProbSetup->pCtxCounters->tx16x16_count[i], branch_ct_16x16p);
-            for (j = 0; j < TX_SIZE_MAX_SB - 2; ++j)
-            {
-                int32_t factor;
-                int32_t count = branch_ct_16x16p[j][0] + branch_ct_16x16p[j][1];
-                vp9_prob prob = get_binary_prob(branch_ct_16x16p[j][0], branch_ct_16x16p[j][1]);
-                count = count > MODE_COUNT_SAT ? MODE_COUNT_SAT : count;
-                factor = (MODE_MAX_UPDATE_FACTOR * count / MODE_COUNT_SAT);
-                pProbSetup->pProbTab->a.tx16x16_prob[i][j] = weighted_prob(m_PrevCtx.tx16x16_prob[i][j], prob, factor);
-            }
-        }
-        for (i = 0; i < TX_SIZE_CONTEXTS; ++i)
-        {
-            tx_counts_to_branch_counts_32x32(pProbSetup->pCtxCounters->tx32x32_count[i], branch_ct_32x32p);
-            for (j = 0; j < TX_SIZE_MAX_SB - 1; ++j)
-            {
-                int32_t factor;
-                int32_t count = branch_ct_32x32p[j][0] + branch_ct_32x32p[j][1];
-                vp9_prob prob = get_binary_prob(branch_ct_32x32p[j][0], branch_ct_32x32p[j][1]);
-                count = count > MODE_COUNT_SAT ? MODE_COUNT_SAT : count;
-                factor = (MODE_MAX_UPDATE_FACTOR * count / MODE_COUNT_SAT);
-                pProbSetup->pProbTab->a.tx32x32_prob[i][j] = weighted_prob(m_PrevCtx.tx32x32_prob[i][j], prob, factor);
+
+        pSegment->flags.segmentation_temporal_update = u(1);
+        for (int i = 0; i < STD_VIDEO_VP9_MAX_SEGMENTATION_PRED_PROB; i++) {
+            if (pSegment->flags.segmentation_temporal_update) {
+                uint8_t prob_coded = u(1);
+                pSegment->segmentation_pred_prob[i] = (prob_coded == 1) ? u(8) : VP9_MAX_PRBABILITY;
+            } else {
+                pSegment->segmentation_pred_prob[i] = VP9_MAX_PRBABILITY;
             }
         }
     }
-    for (i = 0; i < MBSKIP_CONTEXTS; ++i)
-        pProbSetup->pProbTab->a.mbskip_probs[i] = update_mode_ct2(m_PrevCtx.mbskip_probs[i],pProbSetup->pCtxCounters->mbskip_count[i]);
+
+    pSegment->flags.segmentation_update_data = u(1);
+    if (pSegment->flags.segmentation_update_data == 1) {
+        pSegment->flags.segmentation_abs_or_delta_update = u(1);
+
+        /* Clear all previous segment data */
+        memset(pSegment->FeatureEnabled, 0, sizeof(pSegment->FeatureEnabled));
+        memset(pSegment->FeatureData, 0, sizeof(pSegment->FeatureData));
+
+        for (int i = 0; i < STD_VIDEO_VP9_MAX_SEGMENTS; i++) {
+            for (int j = 0; j < STD_VIDEO_VP9_SEG_LVL_MAX; j++) {
+                uint8_t feature_enabled = u(1);
+                pSegment->FeatureEnabled[i] |= (feature_enabled << j);
+
+                if (feature_enabled == 1) {
+                    pSegment->FeatureData[i][j] = u(segmentation_feature_bits[j]);
+
+                    if (segmentation_feature_signed[j] == 1) {
+                        if (u(1) == 1) {
+                            pSegment->FeatureData[i][j] = -pSegment->FeatureData[i][j];
+                        }
+                    }
+                }
+            }
+        }
+
+    } // segmentation_update_data
 }
 
-void VulkanVP9Decoder::adaptModeContext(vp9_prob_update_s *pProbSetup)
+uint8_t VulkanVP9Decoder::CalcMinLog2TileCols()
 {
-    uint32_t i, j;
-    uint32_t (*mode_ct)[VP9_INTER_MODES - 1][2] = pProbSetup->pCtxCounters->inter_mode_counts;
+    VkParserVp9PictureData* pPicData = &m_PicData;
+    uint8_t minLog2 = 0;
 
-    for (j = 0; j < INTER_MODE_CONTEXTS; j++)
-    {
-        for (i = 0; i < VP9_INTER_MODES - 1; i++)
-        {
-            int32_t count = mode_ct[j][i][0] + mode_ct[j][i][1], factor;
-            count = count > MVREF_COUNT_SAT ? MVREF_COUNT_SAT : count;
-            factor = (MVREF_MAX_UPDATE_FACTOR * count / MVREF_COUNT_SAT);
-            pProbSetup->pProbTab->a.inter_mode_prob[j][i] = weighted_prob(m_PrevCtx.inter_mode_prob[j][i],
-                                                                        get_binary_prob(mode_ct[j][i][0], mode_ct[j][i][1]),
-                                                                        factor);
+    while (((uint32_t)VP9_MAX_TILE_WIDTH_B64 << minLog2) < pPicData->Sb64Cols) {
+        minLog2++;
+    }
+
+    return minLog2;
+}
+
+uint8_t VulkanVP9Decoder::CalcMaxLog2TileCols()
+{
+    VkParserVp9PictureData* pPicData = &m_PicData;
+    uint8_t maxLog2 = 1;
+
+    while ((pPicData->Sb64Cols >> maxLog2) >= VP9_MIN_TILE_WIDTH_B64) {
+        maxLog2++;
+    }
+
+    return maxLog2 - 1;
+}
+
+void VulkanVP9Decoder::ParseTileInfo()
+{
+    VkParserVp9PictureData* pPicData = &m_PicData;
+    StdVideoDecodeVP9PictureInfo* pStdPicInfo = &m_PicData.stdPictureInfo;
+
+    uint8_t minLog2TileCols = CalcMinLog2TileCols();
+    uint8_t maxLog2TileCols = CalcMaxLog2TileCols();
+
+    pStdPicInfo->tile_cols_log2 = minLog2TileCols;
+
+    while (pStdPicInfo->tile_cols_log2 < maxLog2TileCols) {
+        if (u(1) == 1) { // increment_tile_cols_log2
+            pStdPicInfo->tile_cols_log2++;
+        } else {
+            break;
+        }
+    }
+
+    pStdPicInfo->tile_rows_log2 = u(1);
+    if (pStdPicInfo->tile_rows_log2 == 1) {
+        pStdPicInfo->tile_rows_log2 += u(1);
+    }
+
+    pPicData->numTiles = (1 << pStdPicInfo->tile_rows_log2) * (1 << pStdPicInfo->tile_cols_log2);
+}
+
+void VulkanVP9Decoder::ParseSuperFrameIndex(const uint8_t* data, uint32_t data_sz, uint32_t frame_sizes[8], uint32_t* frame_count)
+{
+    uint8_t final_byte = data[data_sz - 1];
+    *frame_count = 0;
+
+    if ((final_byte & 0xe0) == 0xc0) {
+        const uint32_t frames = (final_byte & 0x7) + 1;
+        const uint32_t mag = ((final_byte >> 3) & 0x3) + 1;
+        const uint32_t index_sz = 2 + mag * frames;
+
+        if (data_sz >= index_sz && data[data_sz - index_sz] == final_byte) {
+            // found a valid superframe index
+            const uint8_t* x = data + data_sz - index_sz + 1;
+            for (uint32_t i = 0; i < frames; i++) {
+                uint32_t this_sz = 0;
+                for (uint32_t j = 0; j < mag; j++) {
+                    this_sz |= (*x++) << (j * 8);
+                }
+                frame_sizes[i] = this_sz;
+            }
+            *frame_count = frames;
         }
     }
 }
 
-uint32_t VulkanVP9Decoder::adapt_probs(uint32_t i,
-                            const signed char* tree,
-                            vp9_prob this_probs[],
-                            const vp9_prob last_probs[],
-                            const uint32_t num_events[])
+bool VulkanVP9Decoder::BeginPicture(VkParserPictureData* pnvpd)
 {
-    vp9_prob this_prob;
-    uint32_t weight;
+    VkParserVp9PictureData* const pPicDataVP9 = &pnvpd->CodecSpecific.vp9;
+    StdVideoVP9ColorConfig* pStdColorConfig = &pPicDataVP9->stdColorConfig;
+    StdVideoDecodeVP9PictureInfo* pStdPicInfo = &m_PicData.stdPictureInfo;
 
-    const uint32_t left = tree[i] <= 0 ? num_events[-tree[i]] : adapt_probs(tree[i], tree, this_probs, last_probs, num_events);
-    const uint32_t right = tree[i + 1] <= 0 ? num_events[-tree[i + 1]] : adapt_probs(tree[i + 1], tree, this_probs, last_probs, num_events);
-    weight = left + right;
-    if (weight)
-    {
-        this_prob = get_binary_prob(left, right);
-        weight = weight > MV_COUNT_SAT ? MV_COUNT_SAT : weight;
-        this_prob = weighted_prob(last_probs[i >> 1], this_prob, MV_MAX_UPDATE_FACTOR * weight / MV_COUNT_SAT);
-    }
-    else
-    {
-        this_prob = last_probs[i >> 1];
-    }
-    this_probs[i >> 1] = this_prob;
-    return left + right;
-}
+    uint32_t width = pPicDataVP9->FrameWidth;
+    uint32_t height = pPicDataVP9->FrameHeight;
 
-void VulkanVP9Decoder::adapt_prob(vp9_prob *dest, vp9_prob prep, uint32_t ct[2])
-{
-    const int32_t count = std::min<int32_t>(ct[0] + ct[1], MV_COUNT_SAT);
-    if (count)
-    {
-        const vp9_prob newp = get_binary_prob(ct[0], ct[1]);
-        const int32_t factor = MV_MAX_UPDATE_FACTOR * count / MV_COUNT_SAT;
-        *dest = weighted_prob(prep, newp, factor);
-    }
-    else
-        *dest = prep;
-}
+    VkParserSequenceInfo nvsi = m_ExtSeqInfo;
+    nvsi.eCodec = VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR;
+    nvsi.nChromaFormat = pPicDataVP9->ChromaFormat;
+    nvsi.nMaxWidth = std::max(width, pPicDataVP9->renderWidth);
+    nvsi.nMaxHeight = std::max(height, pPicDataVP9->renderHeight);
+    nvsi.nCodedWidth = width;
+    nvsi.nCodedHeight = height;
+    nvsi.nDisplayWidth = pPicDataVP9->renderWidth;
+    nvsi.nDisplayHeight = pPicDataVP9->renderHeight;
+    nvsi.lDARWidth = pPicDataVP9->renderWidth;
+    nvsi.lDARHeight = pPicDataVP9->renderHeight;
+    nvsi.bProgSeq = true; // VP9 doesn't have explicit interlaced coding.
+    nvsi.nMinNumDecodeSurfaces = 9;
+    nvsi.uBitDepthLumaMinus8 = pStdColorConfig->BitDepth - 8;
+    nvsi.uBitDepthChromaMinus8 = pStdColorConfig->BitDepth - 8;
+    nvsi.codecProfile = pStdPicInfo->profile;
 
-void VulkanVP9Decoder::adaptNmvProbs(vp9_prob_update_s *pProbSetup)
-{
-    uint32_t usehp = pProbSetup->allow_high_precision_mv;
-    uint32_t i, j;
+    // Reset decoder only if decode RT orig width is less than required coded width
+    if ((nvsi.nMaxWidth > m_rtOrigWidth) || (nvsi.nMaxHeight > m_rtOrigHeight)) {
+        m_rtOrigWidth = nvsi.nMaxWidth;
+        m_rtOrigHeight = nvsi.nMaxHeight;
 
-    adapt_probs(0, vp9_mv_joint_tree,
-                pProbSetup->pProbTab->a.nmvc.joints,
-                m_PrevCtx.nmvc.joints,
-                pProbSetup->pCtxCounters->nmvcount.joints);
-    for (i = 0; i < 2; ++i)
-    {
-        adapt_prob(&pProbSetup->pProbTab->a.nmvc.sign[i],
-                    m_PrevCtx.nmvc.sign[i],
-                    pProbSetup->pCtxCounters->nmvcount.sign[i]);
-        adapt_probs(0, vp9_mv_class_tree,
-                    pProbSetup->pProbTab->a.nmvc.classes[i],
-                    m_PrevCtx.nmvc.classes[i],
-                    pProbSetup->pCtxCounters->nmvcount.classes[i]);
-        adapt_probs(0, vp9_mv_class0_tree,
-                    pProbSetup->pProbTab->a.nmvc.class0[i],
-                    m_PrevCtx.nmvc.class0[i],
-                    pProbSetup->pCtxCounters->nmvcount.class0[i]);
-        for (j = 0; j < MV_OFFSET_BITS; ++j)
-        {
-            adapt_prob(&pProbSetup->pProbTab->a.nmvc.bits[i][j],
-            m_PrevCtx.nmvc.bits[i][j],
-            pProbSetup->pCtxCounters->nmvcount.bits[i][j]);
+        for (int i = 0; i < 8; i++) {
+            if (m_pBuffers[i].buffer != nullptr) {
+                m_pBuffers[i].buffer->Release();
+                m_pBuffers[i].buffer = nullptr;
+            }
         }
-        for (j = 0; j < CLASS0_SIZE; ++j)
-        {
-        adapt_probs(0, vp9_mv_fp_tree,
-                    pProbSetup->pProbTab->a.nmvc.class0_fp[i][j],
-                    m_PrevCtx.nmvc.class0_fp[i][j],
-                    pProbSetup->pCtxCounters->nmvcount.class0_fp[i][j]);
-        }
-        adapt_probs(0, vp9_mv_fp_tree,
-                    pProbSetup->pProbTab->a.nmvc.fp[i],
-                    m_PrevCtx.nmvc.fp[i],
-                    pProbSetup->pCtxCounters->nmvcount.fp[i]);
-    }
-    if (usehp)
-    {
-        for (i = 0; i < 2; ++i)
-        {
-            adapt_prob(&pProbSetup->pProbTab->a.nmvc.class0_hp[i],
-                        m_PrevCtx.nmvc.class0_hp[i],
-                        pProbSetup->pCtxCounters->nmvcount.class0_hp[i]);
-            adapt_prob(&pProbSetup->pProbTab->a.nmvc.hp[i],
-                        m_PrevCtx.nmvc.hp[i],
-                        pProbSetup->pCtxCounters->nmvcount.hp[i]);
+        if (m_pCurrPic != nullptr) {
+            m_pCurrPic->Release();
+            m_pCurrPic = nullptr;
         }
     }
-}
 
-void VulkanVP9Decoder::UpdateBackwardProbability(vp9_prob_update_s *pProbSetup)
-{
-    if (!pProbSetup->errorResilient && !pProbSetup->FrameParallelDecoding)
-    {
-        adaptCoefProbs(pProbSetup); //vp9_adapt_coef_probs
-        if(!pProbSetup->keyFrame && !pProbSetup->intraOnly)
-        {
-            adaptModeProbs(pProbSetup); //vp9_adapt_mode_probs
-            adaptModeContext(pProbSetup);
-            adaptNmvProbs(pProbSetup); //vp9_adapt_mv_probs
-        }
+    if (!init_sequence(&nvsi)) {
+        assert(!"init_sequence failed!");
+        return false;
     }
-    //vp9hwdStoreProbs
-    if (pProbSetup->RefreshEntropyProbs)
-    {
-        memcpy(&m_EntropyLast[pProbSetup->frameContextIdx], pProbSetup->pProbTab, sizeof(m_EntropyLast[pProbSetup->frameContextIdx]));
+
+    // Allocate a buffer for the current picture
+    if (m_pCurrPic == nullptr) {
+        m_pClient->AllocPictureBuffer(&m_pCurrPic);
+        assert(m_pCurrPic);
+
+        m_pCurrPic->decodeWidth = width;
+        m_pCurrPic->decodeHeight = height;
     }
-    //VP9HwdUpdateRefs
+
+    pnvpd->PicWidthInMbs = nvsi.nCodedWidth >> 4;
+    pnvpd->FrameHeightInMbs = nvsi.nCodedHeight >> 4;
+    pnvpd->pCurrPic = m_pCurrPic;
+    pnvpd->progressive_frame = 1;
+    pnvpd->ref_pic_flag = 1;
+    pnvpd->intra_pic_flag = pPicDataVP9->FrameIsIntra;
+    pnvpd->chroma_format = pPicDataVP9->ChromaFormat;
+
+    // Reference slots information
+    for (int i = 0; i < STD_VIDEO_VP9_NUM_REF_FRAMES; i++) {
+        vkPicBuffBase* pb = reinterpret_cast<vkPicBuffBase*>(m_pBuffers[i].buffer);
+        pPicDataVP9->pic_idx[i] = pb ? pb->m_picIdx : -1;
+    }
+
+    return true;
 }

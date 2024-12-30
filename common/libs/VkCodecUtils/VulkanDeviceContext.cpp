@@ -213,6 +213,21 @@ VkResult VulkanDeviceContext::AddReqDeviceExtensions(const char* const* required
             break;
         }
         m_requestedDeviceExtensions.push_back(name);
+        if (verbose) {
+            std::cout << "Added required device extension: " << name << std::endl;
+        }
+    }
+
+    return VK_SUCCESS;
+}
+
+VkResult VulkanDeviceContext::AddReqDeviceExtension(const char* requiredDeviceExtension, bool verbose)
+{
+    if (requiredDeviceExtension) {
+        m_requestedDeviceExtensions.push_back(requiredDeviceExtension);
+        if (verbose) {
+            std::cout << "Added required device extension: " << requiredDeviceExtension << std::endl;
+        }
     }
 
     return VK_SUCCESS;
@@ -228,6 +243,9 @@ VkResult VulkanDeviceContext::AddOptDeviceExtensions(const char* const* optional
             break;
         }
         m_optDeviceExtensions.push_back(name);
+        if (verbose) {
+            std::cout << "Added optional device extension: " << name << std::endl;
+        }
     }
 
     return VK_SUCCESS;
@@ -729,6 +747,11 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
             devInfo.queueCreateInfoCount++;
         }
 
+        VkPhysicalDeviceVideoDecodeVP9FeaturesKHR videoDecodeVP9Feature { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_DECODE_VP9_FEATURES_KHR,
+                                                                          nullptr,
+                                                                          false // videoDecodeVP9
+                                                                        };
+
         VkPhysicalDeviceVideoEncodeAV1FeaturesKHR videoEncodeAV1Feature { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_AV1_FEATURES_KHR,
                                                                           nullptr,
                                                                           false // videoEncodeAV1
@@ -739,6 +762,10 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         if (videoCodecs & VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) {
             videoEncodeAV1Feature.pNext = pNext;
             pNext = (VkBaseInStructure*)&videoEncodeAV1Feature;
+        }
+        if (videoCodecs & VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
+            videoDecodeVP9Feature.pNext = pNext;
+            pNext = (VkBaseInStructure*)&videoDecodeVP9Feature;
         }
 
         VkPhysicalDeviceTimelineSemaphoreFeatures timelineSemaphoreFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES,
@@ -764,6 +791,8 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         assert(synchronization2Features.synchronization2);
         assert(((videoCodecs & VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) != 0) ==
                 (videoEncodeAV1Feature.videoEncodeAV1 != VK_FALSE));
+        assert(((videoCodecs & VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) != 0) ==
+                (videoDecodeVP9Feature.videoDecodeVP9 != VK_FALSE));
 
         devInfo.pNext = &deviceFeatures;
 
@@ -1021,6 +1050,7 @@ VkResult VulkanDeviceContext::PopulateDeviceExtensions()
 
 VkResult VulkanDeviceContext::InitVulkanDecoderDevice(const char * pAppName,
                                                       VkInstance vkInstance,
+                                                      VkVideoCodecOperationFlagsKHR videoCodecs,
                                                       bool enableWsi,
                                                       bool enableWsiDirectMode,
                                                       bool enableValidation,
@@ -1074,6 +1104,7 @@ VkResult VulkanDeviceContext::InitVulkanDecoderDevice(const char * pAppName,
         VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
         VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+        VK_KHR_VIDEO_MAINTENANCE_1_EXTENSION_NAME,
         nullptr
     };
 
@@ -1104,6 +1135,19 @@ VkResult VulkanDeviceContext::InitVulkanDecoderDevice(const char * pAppName,
     }
     /********** End WSI instance extensions support *******************************************/
 #endif // VIDEO_DISPLAY_QUEUE_SUPPORT
+
+    if (videoCodecs == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
+        AddReqDeviceExtension(VK_KHR_VIDEO_DECODE_H264_EXTENSION_NAME);
+    }
+    if (videoCodecs == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) {
+        AddReqDeviceExtension(VK_KHR_VIDEO_DECODE_H265_EXTENSION_NAME);
+    }
+    if (videoCodecs == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
+        AddReqDeviceExtension(VK_KHR_VIDEO_DECODE_AV1_EXTENSION_NAME);
+    }
+    if (videoCodecs == VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
+        AddReqDeviceExtension(VK_KHR_VIDEO_DECODE_VP9_EXTENSION_NAME);
+    }
 
     VkResult result = InitVulkanDevice(pAppName, vkInstance, enbaleVerboseDump);
     if (result != VK_SUCCESS) {
