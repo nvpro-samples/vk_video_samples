@@ -75,7 +75,6 @@ struct DecoderConfig {
         directMode = false;
         enableHwLoadBalancing = false;
         selectVideoWithComputeQueue = false;
-        enableVideoEncoder = false;
         outputy4m = true; // by default, use Y4M
         outputcrcPerFrame = false;
         outputcrc = false;
@@ -129,6 +128,9 @@ struct DecoderConfig {
                         return true;
                     } else if (strcmp(args[0], "av1") == 0) {
                         forceParserType = VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR;
+                        return true;
+                    } else if ((strcmp(args[0], "vp9") == 0)) {
+                        forceParserType = VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR;
                         return true;
                     } else {
                         std::cerr << "Invalid codec \"" << args[0] << "\"" << std::endl;
@@ -427,7 +429,6 @@ struct DecoderConfig {
     uint32_t noPresent : 1;
     uint32_t enableHwLoadBalancing : 1;
     uint32_t selectVideoWithComputeQueue : 1;
-    uint32_t enableVideoEncoder : 1;
     uint32_t outputy4m : 1;
     uint32_t outputcrc : 1;
     uint32_t outputcrcPerFrame : 1;

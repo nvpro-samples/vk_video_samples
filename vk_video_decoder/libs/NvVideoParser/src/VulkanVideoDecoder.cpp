@@ -20,9 +20,6 @@
 #include "nvVulkanVideoUtils.h"
 #include "nvVulkanVideoParser.h"
 #include <algorithm>
-#ifdef ENABLE_VP9_DECODER
-#include <VulkanVP9Decoder.h>
-#endif
 
 VulkanVideoDecoder::VulkanVideoDecoder(VkVideoCodecOperationFlagBitsKHR std)
     : m_refCount(0)
@@ -646,6 +643,7 @@ void VulkanVideoDecoder::end_of_stream()
 #include "VulkanH264Decoder.h"
 #include "VulkanH265Decoder.h"
 #include "VulkanAV1Decoder.h"
+#include "VulkanVP9Decoder.h"
 
 static nvParserLogFuncType gParserLogFunc = nullptr;
 static int gLogLevel = 0;
@@ -739,12 +737,17 @@ VkResult CreateVulkanVideoDecodeParser(VkVideoCodecOperationFlagBitsKHR videoCod
         }
         nvVideoDecodeParser =  VkSharedBaseObj<VulkanAV1Decoder>(new VulkanAV1Decoder(videoCodecOperation));
         break;
-#ifdef ENABLE_VP9_DECODER
     case VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR:
-        // TODO: This will not work and is only here as a placeholder to get the compiler to include and link the class.
+        if ((pStdExtensionVersion == nullptr) ||
+                (0 != strcmp(pStdExtensionVersion->extensionName, VK_STD_VULKAN_VIDEO_CODEC_VP9_DECODE_EXTENSION_NAME)) ||
+                (pStdExtensionVersion->specVersion != VK_STD_VULKAN_VIDEO_CODEC_VP9_DECODE_SPEC_VERSION)) {
+             nvParserErrorLog("The requested decoder VP9 Codec STD version is NOT supported\n");
+             nvParserErrorLog("The supported decoder VP9 Codec STD version is verion %d of %s\n",
+                    VK_STD_VULKAN_VIDEO_CODEC_VP9_DECODE_SPEC_VERSION, VK_STD_VULKAN_VIDEO_CODEC_VP9_DECODE_EXTENSION_NAME);
+             return VK_ERROR_INCOMPATIBLE_DRIVER;
+        }
         nvVideoDecodeParser =  VkSharedBaseObj<VulkanVP9Decoder>(new VulkanVP9Decoder(videoCodecOperation));
         break;
-#endif
     default:
         nvParserErrorLog("Unsupported codec type!!!\n");
     }
