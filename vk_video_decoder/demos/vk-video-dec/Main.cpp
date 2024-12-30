@@ -28,14 +28,33 @@
 #include "VkShell/Shell.h"
 #include "VkCodecUtils/VkVideoFrameOutput.h"
 
-int main(int argc, const char **argv) {
+int main(int argc, const char **argv)
+{
 
     DecoderConfig decoderConfig(argv[0]);
     decoderConfig.ParseArgs(argc, argv);
 
+    VkSharedBaseObj<VideoStreamDemuxer> videoStreamDemuxer;
+    VkResult result = VideoStreamDemuxer::Create(decoderConfig.videoFileName.c_str(),
+                                        decoderConfig.forceParserType,
+                                        decoderConfig.enableStreamDemuxing,
+                                        decoderConfig.initialWidth,
+                                        decoderConfig.initialHeight,
+                                        decoderConfig.initialBitdepth,
+                                        videoStreamDemuxer);
+    if (result != VK_SUCCESS) {
+        assert(!"Can't initialize the VideoStreamDemuxer!");
+        return -1;
+    }
+
+    VkVideoCodecOperationFlagsKHR videoCodecOperation = (decoderConfig.forceParserType != VK_VIDEO_CODEC_OPERATION_NONE_KHR) ?
+                                                                    decoderConfig.forceParserType :
+                                                                    videoStreamDemuxer->GetVideoCodec();
+
     VulkanDeviceContext vkDevCtxt;
-    VkResult result = vkDevCtxt.InitVulkanDecoderDevice(decoderConfig.appName.c_str(),
+    result = vkDevCtxt.InitVulkanDecoderDevice(decoderConfig.appName.c_str(),
                                                         VK_NULL_HANDLE,
+                                                        videoCodecOperation,
                                                         !decoderConfig.noPresent,
                                                         decoderConfig.directMode,
                                                         decoderConfig.validate,
@@ -54,33 +73,14 @@ int main(int argc, const char **argv) {
 
     VkQueueFlags requestVideoDecodeQueueMask = VK_QUEUE_VIDEO_DECODE_BIT_KHR;
 
-    VkQueueFlags requestVideoEncodeQueueMask = 0;
-    if (decoderConfig.enableVideoEncoder) {
-        requestVideoEncodeQueueMask |= VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
-    }
-
     if (decoderConfig.selectVideoWithComputeQueue) {
         requestVideoDecodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
-        if (decoderConfig.enableVideoEncoder) {
-            requestVideoEncodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
-        }
     }
 
     VkQueueFlags requestVideoComputeQueueMask = 0;
     if (decoderConfig.enablePostProcessFilter != -1) {
         requestVideoComputeQueueMask = VK_QUEUE_COMPUTE_BIT;
     }
-
-    VkVideoCodecOperationFlagsKHR videoDecodeCodecs = (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR  |
-                                                       VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR  |
-                                                       VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR);
-
-    VkVideoCodecOperationFlagsKHR videoEncodeCodecs = ( VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR  |
-                                                        VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR  |
-                                                        VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR);
-
-    VkVideoCodecOperationFlagsKHR videoCodecs = videoDecodeCodecs |
-                                        (decoderConfig.enableVideoEncoder ? videoEncodeCodecs : (VkVideoCodecOperationFlagsKHR) VK_VIDEO_CODEC_OPERATION_NONE_KHR);
 
     if (!decoderConfig.noPresent) {
 
@@ -98,17 +98,12 @@ int main(int argc, const char **argv) {
         result = vkDevCtxt.InitPhysicalDevice(decoderConfig.deviceId, decoderConfig.deviceUUID,
                                               (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT |
                                               requestVideoComputeQueueMask |
-                                              requestVideoDecodeQueueMask |
-                                              requestVideoEncodeQueueMask),
+                                              requestVideoDecodeQueueMask),
                                               displayShell,
                                               requestVideoDecodeQueueMask,
-                                              (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
-                                               VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR |
-                                               VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR),
-                                              requestVideoEncodeQueueMask,
-                                              (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
-                                               VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR |
-                                               VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR));
+                                              videoCodecOperation,
+                                              0,
+                                              VK_VIDEO_CODEC_OPERATION_NONE_KHR);
         if (result != VK_SUCCESS) {
 
             assert(!"Can't initialize the Vulkan physical device!");
@@ -117,29 +112,14 @@ int main(int argc, const char **argv) {
         assert(displayShell->PhysDeviceCanPresent(vkDevCtxt.getPhysicalDevice(),
                                                   vkDevCtxt.GetPresentQueueFamilyIdx()));
 
-        vkDevCtxt.CreateVulkanDevice(numDecodeQueues,
-                                     decoderConfig.enableVideoEncoder ? 1 : 0, // num encode queues
-                                     videoCodecs,
-                                     false, //  createTransferQueue
-                                     true,  // createGraphicsQueue
-                                     true,  // createDisplayQueue
+        vkDevCtxt.CreateVulkanDevice(numDecodeQueues,           // numDecodeQueues
+                                     0,                         // num encode queues
+                                     videoCodecOperation,       // videoCodecs
+                                     false,                     // createTransferQueue
+                                     true,                      // createGraphicsQueue
+                                     true,                      // createDisplayQueue
                                      requestVideoComputeQueueMask != 0  // createComputeQueue
                                      );
-
-        VkSharedBaseObj<VideoStreamDemuxer> videoStreamDemuxer;
-        result = VideoStreamDemuxer::Create(decoderConfig.videoFileName.c_str(),
-                                            decoderConfig.forceParserType,
-                                            decoderConfig.enableStreamDemuxing,
-                                            decoderConfig.initialWidth,
-                                            decoderConfig.initialHeight,
-                                            decoderConfig.initialBitdepth,
-                                            videoStreamDemuxer);
-
-        if (result != VK_SUCCESS) {
-
-            assert(!"Can't initialize the VideoStreamDemuxer!");
-            return result;
-        }
 
         VkSharedBaseObj<VulkanVideoProcessor> vulkanVideoProcessor;
         result = VulkanVideoProcessor::Create(decoderConfig, &vkDevCtxt, vulkanVideoProcessor);
@@ -176,8 +156,7 @@ int main(int argc, const char **argv) {
         result = vkDevCtxt.InitPhysicalDevice(decoderConfig.deviceId, decoderConfig.deviceUUID,
                                               (VK_QUEUE_TRANSFER_BIT        |
                                                requestVideoDecodeQueueMask  |
-                                               requestVideoComputeQueueMask |
-                                               requestVideoEncodeQueueMask),
+                                               requestVideoComputeQueueMask),
                                               nullptr,
                                               requestVideoDecodeQueueMask);
         if (result != VK_SUCCESS) {
@@ -187,9 +166,9 @@ int main(int argc, const char **argv) {
         }
 
 
-        result = vkDevCtxt.CreateVulkanDevice(numDecodeQueues,
-                                              0,     // num encode queues
-                                              videoCodecs,
+        result = vkDevCtxt.CreateVulkanDevice(numDecodeQueues,  // numDecodeQueues
+                                              0,                // num encode queues
+                                              videoCodecOperation,  // videoCodecs
                                               // If no graphics or compute queue is requested, only video queues
                                               // will be created. Not all implementations support transfer on video queues,
                                               // so request a separate transfer queue for such implementations.
@@ -202,21 +181,6 @@ int main(int argc, const char **argv) {
 
             assert(!"Failed to create Vulkan device!");
             return -1;
-        }
-
-        VkSharedBaseObj<VideoStreamDemuxer> videoStreamDemuxer;
-        result = VideoStreamDemuxer::Create(decoderConfig.videoFileName.c_str(),
-                                            decoderConfig.forceParserType,
-                                            decoderConfig.enableStreamDemuxing,
-                                            decoderConfig.initialWidth,
-                                            decoderConfig.initialHeight,
-                                            decoderConfig.initialBitdepth,
-                                            videoStreamDemuxer);
-
-        if (result != VK_SUCCESS) {
-
-            assert(!"Can't initialize the VideoStreamDemuxer!");
-            return result;
         }
 
         VkSharedBaseObj<VulkanVideoProcessor> vulkanVideoProcessor;
