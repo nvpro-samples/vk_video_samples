@@ -131,6 +131,9 @@ struct DecoderConfig {
                                (strcmp(args[0], "h264") == 0)) {
                         forceParserType = VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR;
                         return true;
+                    } else if (strcmp(args[0], "av1") == 0) {
+                        forceParserType = VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR;
+                        return true;
                     } else {
                         std::cerr << "Invalid codec \"" << args[0] << "\"" << std::endl;
                         return false;
