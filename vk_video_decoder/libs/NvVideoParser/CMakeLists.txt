@@ -16,9 +16,6 @@
 cmake_minimum_required(VERSION 2.8.12)
 project(${VULKAN_VIDEO_PARSER_LIB}, LANGUAGES CXX)
 
-# Even though shaderc.hpp is a headers-only library, adding
-# a dependency here will force clients of the library to rebuild
-# when it changes.
 set(LIBNVPARSER
   include/VulkanH264Decoder.h
   include/VulkanH265Decoder.h

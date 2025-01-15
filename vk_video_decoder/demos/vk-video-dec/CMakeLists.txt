@@ -5,22 +5,6 @@ macro(generate_dispatch_table out)
         )
 endmacro()
 
-macro(glsl_to_spirv src)
-    add_custom_command(OUTPUT ${src}.h
-        COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/glsl-to-spirv ${CMAKE_CURRENT_SOURCE_DIR}/${src} ${CMAKE_CURRENT_SOURCE_DIR}/${src}.h ${GLSLANG_VALIDATOR}
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/glsl-to-spirv ${CMAKE_CURRENT_SOURCE_DIR}/${src} ${GLSLANG_VALIDATOR}
-        )
-endmacro()
-
-macro(compile_cuda src)
-    get_filename_component(OUT_FILE_NAME ${src} NAME)
-    set(CUDA_OUT_FILE_NAME ${OUT_FILE_NAME}.o)
-    add_custom_command(OUTPUT ${CUDA_OUT_FILE_NAME}
-        COMMAND ${NVCC} -std=c++11 -o ${CMAKE_CURRENT_BINARY_DIR}/${CUDA_OUT_FILE_NAME} -c ${CMAKE_CURRENT_SOURCE_DIR}/${src}
-        DEPENDS ${NVCC} ${CMAKE_CURRENT_SOURCE_DIR}/${src}
-        )
-endmacro()
-
 generate_dispatch_table(${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.h)
 generate_dispatch_table(${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.cpp)
 
@@ -100,21 +84,23 @@ set(includes
 
 set(libraries PRIVATE ${CMAKE_THREAD_LIBS_INIT})
 
+# Extract the directory part of the Vulkan library path
+get_filename_component(VULKAN_LIB_DIR "${Vulkan_LIBRARIES}" DIRECTORY)
+
 link_directories(
     ${VULKAN_VIDEO_DEVICE_LIBS_PATH}
     ${VULKAN_VIDEO_DEC_LIBS_PATH}
-    ${VULKAN_TEGRA_LIBS_PATH}
     ${VULKAN_VIDEO_PARSER_LIB_PATH}
-    ${SHADERC_SEARCH_PATH}
     ${LIBNVPARSER_BINARY_ROOT}
+    ${VULKAN_LIB_DIR}
     )
 
 if(WIN32)
-    list(APPEND libraries PRIVATE ${AVCODEC_LIB} ${AVFORMAT_LIB} ${AVUTIL_LIB} ${VULKAN_VIDEO_PARSER_LIB} ${GLSLANG_LIBRARIES})
+    list(APPEND libraries PRIVATE ${AVCODEC_LIB} ${AVFORMAT_LIB} ${AVUTIL_LIB} ${VULKAN_VIDEO_PARSER_LIB} ${SHADERC_LIB_SHARED})
 else()
     list(APPEND libraries PRIVATE -lX11)
     list(APPEND libraries PRIVATE -lavcodec -lavutil -lavformat)
-    list(APPEND libraries PRIVATE -L${SHADERC_SEARCH_PATH} -lshaderc_shared)
+    list(APPEND libraries PRIVATE -l${SHADERC_LIB_SHARED})
     list(APPEND libraries PRIVATE -L${CMAKE_INSTALL_LIBDIR} -l${VULKAN_VIDEO_PARSER_LIB})
     list(APPEND libraries PRIVATE -L${LIBNVPARSER_BINARY_ROOT} -l${VULKAN_VIDEO_PARSER_LIB})
 endif()
@@ -156,7 +142,6 @@ list(APPEND includes PRIVATE ${VULKAN_VIDEO_PARSER_INCLUDE})
 list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE})
 list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE}/vulkan)
 list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE}/nvidia_utils/vulkan)
-list(APPEND includes PRIVATE ${SHADERC_ROOT_PATH}/install/include)
 
 add_executable(vk-video-dec-test ${generate_helper_files} ${sources})
 target_compile_definitions(vk-video-dec-test ${definitions})

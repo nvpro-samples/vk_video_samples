@@ -42,9 +42,6 @@ endmacro()
 generate_dispatch_table(${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.h)
 generate_dispatch_table(${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.cpp)
 
-# Even though shaderc.hpp is a headers-only library, adding
-# a dependency here will force clients of the library to rebuild
-# when it changes.
 set(LIBVKVIDEOENCODER
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/../src/vulkan_video_encoder.cpp
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfigH264.cpp
@@ -123,11 +120,14 @@ include_directories(BEFORE "${CMAKE_CURRENT_LIST_DIR}/../")
 include_directories(BEFORE ${VULKAN_VIDEO_ENCODER_INCLUDE}/../libs)
 include_directories(BEFORE ${VULKAN_VIDEO_ENCODER_INCLUDE})
 include_directories(BEFORE ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT})
-include_directories(BEFORE ${SHADERC_ROOT_PATH}/install/include)
+
+link_directories(
+    ${VULKAN_LIB_DIR}
+    )
 
 add_library(${VULKAN_VIDEO_ENCODER_LIB} SHARED ${LIBVKVIDEOENCODER})
 # Link the libraries
-target_link_libraries(${VULKAN_VIDEO_ENCODER_LIB} PUBLIC ${GLSLANG_LIBRARIES})
+target_link_libraries(${VULKAN_VIDEO_ENCODER_LIB} PUBLIC ${SHADERC_LIB_SHARED})
 # Ensure the library depends on the generation of these files
 add_dependencies(${VULKAN_VIDEO_ENCODER_LIB} GenerateDispatchTables)
 
@@ -153,7 +153,7 @@ endif()
 
 add_library(${VULKAN_VIDEO_ENCODER_STATIC_LIB} STATIC ${LIBVKVIDEOENCODER})
 # Link the libraries
-target_link_libraries(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PUBLIC ${GLSLANG_LIBRARIES})
+target_link_libraries(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PUBLIC ${SHADERC_LIB_SHARED})
 # Ensure the library depends on the generation of these files
 add_dependencies(${VULKAN_VIDEO_ENCODER_STATIC_LIB} GenerateDispatchTables)
 target_include_directories(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PUBLIC ${VULKAN_VIDEO_ENCODER_INCLUDE} ${VULKAN_VIDEO_ENCODER_INCLUDE}/../NvVideoParser PRIVATE include)
