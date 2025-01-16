@@ -20,10 +20,9 @@ Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file in this repository for mo
 ## Repository Set-Up
 
   Please make sure you have installed the latest NVIDIA BETA drivers from https://developer.nvidia.com/vulkan-driver.
-  The minimum supported BETA driver versions by this application are 538.31 (Windows) / 535.43.23 (Linux) that
-  must support Vulkan API version 1.3.274 or later.
-  The Windows and Linux BETA drivers are available for download at https://developer.nvidia.com/vulkan-beta-51769-windows
-  and https://developer.nvidia.com/vulkan-beta-5154924-linux, respectively.
+  The minimum supported BETA driver versions by this application are 553.51 (Windows) / 550.40.82 (Linux) that
+  must support Vulkan API version 1.3.230 or later.
+  The Windows and Linux BETA drivers are available for download at https://developer.nvidia.com/vulkan-driver.
 
 ### Download the Repository
 
@@ -54,8 +53,8 @@ Windows 10 or Windows 11 with the following software packages:
   - Tell the installer to treat line endings "as is" (i.e. both DOS and Unix-style line endings).
   - Install both the 32-bit and 64-bit versions, as the 64-bit installer does not install the
     32-bit libraries and tools.
-- [Vulkan SDK](https://vulkan.lunarg.com)
-  - install current Vulkan SDK (i.e. VulkanSDK-1.3.*-Installer.exe) from https://vulkan.lunarg.com/
+- [Vulkan SDK](https://vulkan.lunarg.com/sdk/home#windows)
+  - install current Vulkan SDK (i.e. VulkanSDK-1.4.304.0-Installer.exe or later) from https://vulkan.lunarg.com/
 - [FFMPEG libraries for Windows]
     Download the latest version of the FFMPEG shared libraries archive from https://github.com/BtbN/FFmpeg-Builds/releases.
     The archive must have the following pattern in the name ffmpeg-*-win64-*-shared.zip
@@ -72,8 +71,7 @@ Windows 10 or Windows 11 with the following software packages:
 
 1. Open a Developer Command Prompt for VS201x
 2. Change directory to `<APP_INSTALLED_LOC>` -- the vk_video_encoder root of the cloned git repository
-3. Run `update_external_sources.bat` -- this will download and build external components
-4. Create a `build` directory, change into that directory, and run cmake and build as follows:
+3. Create a `build` directory, change into that directory, and run cmake and build as follows:
 
 ### Windows Build for debug - using shell
 
@@ -100,7 +98,7 @@ Make sure the library is either installed in the C:\Windows\System folder, or th
 ### Linux Build Requirements
 
 This repository has been built and tested on the two most recent Ubuntu LTS versions with
-Vulkan SDK vulkansdk-linux-x86_64-1.2.189.0.tar.gz from https://vulkan.lunarg.com/sdk/home#linux.
+Vulkan SDK vulkansdk-linux-x86_64-1.4.304.0.tar.xz from https://vulkan.lunarg.com/sdk/home#linux.
 Currently, the oldest supported version is Ubuntu 18.04.5 LTS, meaning that the minimum supported
 compiler versions are GCC 7.5.0 and Clang 6.0.0, although earlier versions may work.
 It should be straightforward to adapt this repository to other Linux distributions.
@@ -113,8 +111,8 @@ It should be straightforward to adapt this repository to other Linux distributio
 
 2. In a Linux terminal, `cd <APP_INSTALLED_LOC>` -- the root of the cloned git repository
         cd $APP_INSTALLED_LOC
-3. Execute `./update_external_sources.sh` -- this will download and build external components
-        $ ./update_external_sources.sh
+3. Execute `./ubuntu-update-dependencies.sh` -- this will download and build external components
+        $ ./ubuntu-update-dependencies.sh
 4. Create a `build` directory, change into that directory:
 
         mkdir build
@@ -147,11 +145,25 @@ Before you begin, check if your driver has Vulkan Video extensions enabled:
         $ vulkaninfo | grep VK_KHR_video
 
 The output should be:
-VK_KHR_video_encode_h264                      : extension revision 14
-        VK_KHR_video_encode_h265                      : extension revision 14
-        VK_KHR_video_encode_queue                     : extension revision 12
-        VK_KHR_video_maintenance1                     : extension revision 1
-        VK_KHR_video_queue                            : extension revision 8
+	VK_KHR_video_decode_av1                       : extension revision 1
+	VK_KHR_video_decode_h264                      : extension revision 9
+	VK_KHR_video_decode_h265                      : extension revision 8
+	VK_KHR_video_decode_queue                     : extension revision 8
+	VK_KHR_video_encode_h264                      : extension revision 14
+	VK_KHR_video_encode_h265                      : extension revision 14
+	VK_KHR_video_encode_queue                     : extension revision 12
+	VK_KHR_video_maintenance1                     : extension revision 1
+	VK_KHR_video_queue                            : extension revision 8
+	VK_KHR_video_decode_av1                       : extension revision 1
+	VK_KHR_video_decode_h264                      : extension revision 9
+	VK_KHR_video_decode_h265                      : extension revision 8
+	VK_KHR_video_decode_queue                     : extension revision 8
+	VK_KHR_video_encode_h264                      : extension revision 14
+	VK_KHR_video_encode_h265                      : extension revision 14
+	VK_KHR_video_encode_queue                     : extension revision 12
+	VK_KHR_video_maintenance1                     : extension revision 1
+	VK_KHR_video_queue                            : extension revision 8
+
 
 To run the Vulkan Video Encode sample from the build dir (for Windows change to build\install\Debug\bin\ or build\install\Release\bin\):
 
