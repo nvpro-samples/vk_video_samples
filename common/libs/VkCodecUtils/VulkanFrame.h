@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include "VkCodecUtils/VulkanVideoUtils.h"
 #include "VkCodecUtils/FrameProcessor.h"
 #include "VkCodecUtils/VkVideoQueue.h"
 
@@ -53,7 +54,7 @@ public:
     virtual int AttachSwapchain(const Shell& sh);
     virtual void DetachSwapchain();
 
-    virtual int CreateFrameData(int count);
+    virtual int32_t CreateFrameData(int32_t count);
     virtual void DestroyFrameData();
 
     virtual bool OnKey(Key key);
@@ -76,7 +77,7 @@ public:
 
 private:
     VulkanFrame(const VulkanDeviceContext* vkDevCtx,
-                VkSharedBaseObj<VkVideoQueue<FrameDataType>>& videoProcessor);
+                VkSharedBaseObj<VkVideoQueue<FrameDataType>>& videoQueue);
     virtual ~VulkanFrame();
 
 private:

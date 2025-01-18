@@ -17,21 +17,19 @@
 #ifndef _VKCODECUTILS_VKVIDEOQUEUE_H_
 #define _VKCODECUTILS_VKVIDEOQUEUE_H_
 
+#include <stdint.h>
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 
 template<class FrameDataType>
 class VkVideoQueue : public VkVideoRefCountBase {
 public:
 
-    virtual bool     IsValid(void)    const = 0;
-    virtual int32_t  GetWidth()       const = 0;
-    virtual int32_t  GetHeight()      const = 0;
-    virtual int32_t  GetBitDepth()    const = 0;
-    virtual VkFormat GetFrameImageFormat(int32_t* pWidth = nullptr,
-                                         int32_t* pHeight = nullptr,
-                                         int32_t* pBitDepth = nullptr) const = 0;
-    virtual int32_t GetNextFrame(FrameDataType* pFrame, bool* endOfStream) = 0;
-    virtual int32_t ReleaseFrame(FrameDataType* pDisplayedFrame) = 0;
+    virtual int32_t  GetWidth()            const = 0;
+    virtual int32_t  GetHeight()           const = 0;
+    virtual int32_t  GetBitDepth()         const = 0;
+    virtual VkFormat GetFrameImageFormat() const = 0;
+    virtual int32_t  GetNextFrame(FrameDataType* pNewFrame, bool* endOfStream) = 0;
+    virtual int32_t  ReleaseFrame(FrameDataType* pFrameDone) = 0;
 public:
     virtual ~VkVideoQueue() {};
 };

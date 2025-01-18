@@ -202,7 +202,24 @@ VkResult VulkanVideoProcessor::Create(const ProgramConfig& settings, const Vulka
     return VK_ERROR_OUT_OF_HOST_MEMORY;
 }
 
-VkFormat VulkanVideoProcessor::GetFrameImageFormat(int32_t* pWidth, int32_t* pHeight, int32_t* pBitDepth)  const
+VkVideoProfileInfoKHR VulkanVideoProcessor::GetVkProfile() const
+{
+
+    VkVideoProfileInfoKHR videoProfile({VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR, NULL,
+                                        m_videoStreamDemuxer->GetVideoCodec(),
+                                        m_videoStreamDemuxer->GetChromaSubsampling(),
+                                        m_videoStreamDemuxer->GetLumaBitDepth(),
+                                        m_videoStreamDemuxer->GetChromaBitDepth()});
+
+    return videoProfile;
+}
+
+uint32_t VulkanVideoProcessor::GetProfileIdc() const
+{
+    return m_videoStreamDemuxer->GetProfileIdc();
+}
+
+VkFormat VulkanVideoProcessor::GetFrameImageFormat()  const
 {
     VkFormat frameImageFormat = VK_FORMAT_UNDEFINED;
     if (m_videoStreamDemuxer) {
@@ -214,18 +231,6 @@ VkFormat VulkanVideoProcessor::GetFrameImageFormat(int32_t* pWidth, int32_t* pHe
             frameImageFormat = VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16;
         } else {
             assert(0);
-        }
-
-        if (pWidth) {
-            *pWidth = GetWidth();
-        }
-
-        if (pHeight) {
-            *pHeight = GetHeight();
-        }
-
-        if (pBitDepth) {
-            *pBitDepth = GetBitDepth();
         }
     }
 
@@ -570,11 +575,13 @@ size_t VulkanVideoProcessor::OutputFrameToFile(VulkanDecodedFrame* pFrame)
     }
 }
 
-void VulkanVideoProcessor::Restart(void)
+uint32_t VulkanVideoProcessor::Restart(int64_t& bitstreamOffset)
 {
     m_videoStreamDemuxer->Rewind();
-    m_videoFrameNum = false;
+    m_videoFrameNum = 0;
     m_currentBitstreamOffset = 0;
+    bitstreamOffset = m_currentBitstreamOffset;
+    return m_videoFrameNum;
 }
 
 bool VulkanVideoProcessor::StreamCompleted()
@@ -582,7 +589,8 @@ bool VulkanVideoProcessor::StreamCompleted()
     if (--m_loopCount > 0) {
         std::cout << "Restarting video stream with loop number " << (m_loopCount + 1) << std::endl;
         // Reload the file stream
-        Restart();
+        int64_t bitstreamOffset = 0;
+        Restart(bitstreamOffset);
         return false;
     } else {
         std::cout << "End of Video Stream with status  " << VK_SUCCESS << std::endl;

@@ -27,12 +27,10 @@ template<class FrameDataType>
 class VulkanVideoDisplayQueue : public VkVideoQueue<FrameDataType> {
 public:
 
-    virtual bool IsValid(void)    const { return true; }
     virtual int32_t GetWidth()    const { return m_defaultWidth; }
     virtual int32_t GetHeight()   const { return m_defaultHeight; }
     virtual int32_t GetBitDepth() const { return m_defaultBitDepth; }
-    virtual VkFormat GetFrameImageFormat(int32_t* pWidth = NULL, int32_t* pHeight = NULL,
-                                         int32_t* pBitDepth = NULL)  const;
+    virtual VkFormat GetFrameImageFormat()  const;
     virtual int32_t GetNextFrame(FrameDataType* pFrame, bool* endOfStream);
     virtual int32_t ReleaseFrame(FrameDataType* pDisplayedFrame);
 
@@ -124,31 +122,17 @@ VkResult VulkanVideoDisplayQueue<FrameDataType>::Create(const VulkanDeviceContex
 }
 
 template<class FrameDataType>
-VkFormat VulkanVideoDisplayQueue<FrameDataType>::GetFrameImageFormat(int32_t* pWidth, int32_t* pHeight, int32_t* pBitDepth)  const
+VkFormat VulkanVideoDisplayQueue<FrameDataType>::GetFrameImageFormat()  const
 {
     VkFormat frameImageFormat = VK_FORMAT_UNDEFINED;
-    if (true) {
-        if (GetBitDepth() == 8) {
-            frameImageFormat = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
-        } else if (GetBitDepth() == 10) {
-            frameImageFormat = VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16;
-        } else if (GetBitDepth() == 12) {
-            frameImageFormat = VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16;
-        } else {
-            assert(0);
-        }
-
-        if (pWidth) {
-            *pWidth = GetWidth();
-        }
-
-        if (pHeight) {
-            *pHeight = GetHeight();
-        }
-
-        if (pBitDepth) {
-            *pBitDepth = GetBitDepth();
-        }
+    if (GetBitDepth() == 8) {
+        frameImageFormat = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+    } else if (GetBitDepth() == 10) {
+        frameImageFormat = VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16;
+    } else if (GetBitDepth() == 12) {
+        frameImageFormat = VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16;
+    } else {
+        assert(0);
     }
 
     return frameImageFormat;

@@ -26,11 +26,12 @@
 class VulkanVideoProcessor : public VkVideoQueue<VulkanDecodedFrame> {
 public:
 
-    virtual bool IsValid(void)    const { return m_vkVideoDecoder; }
     virtual int32_t GetWidth()    const;
     virtual int32_t GetHeight()   const;
     virtual int32_t GetBitDepth() const;
-    virtual VkFormat GetFrameImageFormat(int32_t* pWidth = NULL, int32_t* pHeight = NULL, int32_t* pBitDepth = NULL)  const;
+    virtual VkVideoProfileInfoKHR GetVkProfile() const;
+    virtual uint32_t GetProfileIdc() const;
+    virtual VkFormat GetFrameImageFormat()  const;
     virtual int32_t GetNextFrame(VulkanDecodedFrame* pFrame, bool* endOfStream);
     virtual int32_t ReleaseFrame(VulkanDecodedFrame* pDisplayedFrame);
 
@@ -63,7 +64,7 @@ public:
     int32_t ParserProcessNextDataChunk();
 
     size_t OutputFrameToFile(VulkanDecodedFrame* pFrame);
-    void Restart(void);
+    uint32_t Restart(int64_t& bitstreamOffset);
 
 private:
 
@@ -101,10 +102,6 @@ private:
                                   uint32_t flags = 0, int64_t timestamp = 0);
 
     bool StreamCompleted();
-
-private:
-    void WaitForFrameCompletion(VulkanDecodedFrame* pFrame, 
-                                VkSharedBaseObj<VkImageResource>& imageResource);
 
 private:
     std::atomic<int32_t>       m_refCount;

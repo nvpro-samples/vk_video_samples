@@ -617,7 +617,7 @@ public:
         return "UNKNON";
     }
 
-    static void DumpFormatProfiles(VkVideoProfileInfoKHR* pVideoProfile)
+    static void DumpFormatProfiles(const VkVideoProfileInfoKHR* pVideoProfile)
     {
         // formatProfile info based on supported chroma_format_idc
         if (pVideoProfile->chromaSubsampling & VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR) {

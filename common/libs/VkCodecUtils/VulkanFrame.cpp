@@ -29,11 +29,11 @@
 
 template<class FrameDataType>
 VulkanFrame<FrameDataType>::VulkanFrame(const VulkanDeviceContext* vkDevCtx,
-                                        VkSharedBaseObj<VkVideoQueue<FrameDataType>>& videoProcessor)
+                                        VkSharedBaseObj<VkVideoQueue<FrameDataType>>& videoQueue)
     : FrameProcessor(true)
     , m_refCount(0)
     , m_vkDevCtx(vkDevCtx)
-    , m_videoQueue(videoProcessor)
+    , m_videoQueue(videoQueue)
     , m_samplerYcbcrModelConversion(VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709)
     , m_samplerYcbcrRange(VK_SAMPLER_YCBCR_RANGE_ITU_NARROW)
     , m_videoRenderer(nullptr)
@@ -83,7 +83,7 @@ int VulkanFrame<FrameDataType>::AttachShell(const Shell& sh)
 
     m_vkFormat = ctx.format.format;
 
-    CreateFrameData((int)ctx.backBuffers.size());
+    CreateFrameData((int32_t)ctx.backBuffers.size());
 
     // Create Vulkan's Vertex buffer
     // position/texture coordinate pair per vertex.
@@ -117,7 +117,7 @@ void VulkanFrame<FrameDataType>::DetachShell()
 }
 
 template<class FrameDataType>
-int VulkanFrame<FrameDataType>::CreateFrameData(int count)
+int32_t VulkanFrame<FrameDataType>::CreateFrameData(int32_t count)
 {
     m_frameData.resize(count);
 
@@ -159,8 +159,8 @@ int VulkanFrame<FrameDataType>::AttachSwapchain(const Shell& sh)
 
     PrepareViewport(ctx.extent);
 
-    uint32_t imageWidth  = m_videoQueue->IsValid() ? m_videoQueue->GetWidth()  : m_scissor.extent.width;
-    uint32_t imageHeight = m_videoQueue->IsValid() ? m_videoQueue->GetHeight() : m_scissor.extent.height;
+    uint32_t imageWidth  = (m_videoQueue->GetWidth() > 0)  ? m_videoQueue->GetWidth()  : m_scissor.extent.width;
+    uint32_t imageHeight = (m_videoQueue->GetHeight() > 0) ? m_videoQueue->GetHeight() : m_scissor.extent.height;
     VkFormat imageFormat = m_videoQueue->GetFrameImageFormat();
 
     // Create test image, if enabled.
@@ -299,7 +299,7 @@ bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
     FrameDataType& data = m_frameData[m_frameDataIndex];
     FrameDataType* pLastDecodedFrame = nullptr;
 
-    if (m_videoQueue->IsValid() && !trainFrame) {
+    if ((m_videoQueue->GetWidth() > 0) && !trainFrame) {
 
         pLastDecodedFrame = &data;
 
@@ -704,6 +704,38 @@ VkResult CreateDecoderFrameProcessor(const VulkanDeviceContext* vkDevCtx,
 
     frameProcessor = vulkanFrame;
     return result;
+}
+
+VkResult DecoderFrameProcessorState::Init(const VulkanDeviceContext* vkDevCtx,
+                                          VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>>& videoQueue,
+                                          int32_t maxNumberOfFrames)
+{
+    VkResult result = CreateDecoderFrameProcessor(vkDevCtx, videoQueue, m_frameProcessor);
+
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+
+    if ((maxNumberOfFrames > 0 ) && (m_frameProcessor != nullptr)) {
+
+        int32_t ret = m_frameProcessor->CreateFrameData(maxNumberOfFrames);
+        assert(ret == maxNumberOfFrames);
+        if (ret != maxNumberOfFrames) {
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+
+        m_maxNumberOfFrames = maxNumberOfFrames;
+    }
+
+    return result;
+}
+
+void DecoderFrameProcessorState::Deinit()
+{
+    if (m_maxNumberOfFrames > 0) {
+        m_frameProcessor->DestroyFrameData();
+        m_maxNumberOfFrames = 0;
+    }
 }
 
 #include "VkCodecUtils/VulkanEncoderFrameProcessor.h"

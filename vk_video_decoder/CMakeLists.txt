@@ -148,6 +148,37 @@ else()
 endif()
 ############ VULKAN_VIDEO_PARSER_LIB_PATH ######################################
 
+############ VULKAN_VIDEO_DECODER_LIB_PATH ######################################
+
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libs/VkVideoDecoder")
+    set(LIBVKVIDEODECODER_BINARY_ROOT "${CMAKE_BINARY_DIR}/libs" CACHE STRING "User defined path to the the decoder library binaries for this project")
+else()
+   set(LIBVKVIDEODECODER_BINARY_ROOT "${VULKAN_VIDEO_TESTS_SOURCE_DIR}/bin/libs/vk_video_decoder/${LIB_ARCH_DIR}" CACHE STRING "User defined path to the the decoder library binaries for this project")
+endif()
+message(STATUS "LIBVKVIDEODECODER_BINARY_ROOT is at ${LIBVKVIDEODECODER_BINARY_ROOT}" )
+
+if (DEFINED ENV{VULKAN_VIDEO_DECODER_LIB_DIR_PATH})
+    MESSAGE(STATUS "VULKAN_VIDEO_DECODER_LIB_DIR_PATH ENV VAR is set to $ENV{VULKAN_VIDEO_DECODER_LIB_DIR_PATH}")
+    set(VULKAN_VIDEO_DECODER_LIB_PATH  "$ENV{VULKAN_VIDEO_DECODER_LIB_DIR_PATH}" CACHE PATH "Path to Vulkan Video Decoder library directory" FORCE)
+else()
+    set(VULKAN_VIDEO_DECODER_LIB_PATH  "${LIBVKVIDEODECODER_BINARY_ROOT}" CACHE PATH "Path to Vulkan Video Decoder library directory")
+endif()
+
+set(VULKAN_VIDEO_DECODER_LIB vkvideo-decoder CACHE PATH "The name of Vulkan Video Decoder library")
+set(VULKAN_VIDEO_DECODER_STATIC_LIB vkvideo-decoder-static CACHE PATH "The name of Vulkan Video Decoder static library")
+set(VULKAN_VIDEO_DECODER_LIB_VERSION 1 CACHE PATH "The version of Vulkan Video Decoder library")
+
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libs")
+
+else()
+    if (EXISTS "${VULKAN_VIDEO_DECODER_LIB_PATH}")
+        message(STATUS "Trying to find Vulkan Video Decoder library at ${VULKAN_VIDEO_DECODER_LIB_PATH}" )
+        find_library(VULKAN_VIDEO_DECODER_LIB_WITH_PATH NAMES ${VULKAN_VIDEO_DECODER_LIB} PATHS ${VULKAN_VIDEO_DECODER_LIB_PATH})
+        message(STATUS "Vulkan Video Decoder Lib: ${VULKAN_VIDEO_DECODER_LIB_WITH_PATH}" )
+    endif()
+endif()
+############ VULKAN_VIDEO_DECODER_LIB_PATH ######################################
+
 ############ VULKAN_FFMPEG_LIB_PATH ######################################
 if (DEFINED ENV{VULKAN_FFMPEG_LIB_DIR_PATH})
     MESSAGE(STATUS "VULKAN_FFMPEG_LIB_DIR_PATH ENV VAR is set to $ENV{VULKAN_FFMPEG_LIB_DIR_PATH}")
@@ -340,7 +371,10 @@ else()
 endif()
 option(BUILD_ICD "Build icd" ON)
 
-set(VK_VIDEO_COMMON_LIBS_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../common/libs" CACHE STRING "Root path to common vkvideo libs sources")
+set(VK_VIDEO_COMMON_LIBS_SOURCE_REL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../common/libs")
+get_filename_component(VK_VIDEO_COMMON_LIBS_SOURCE_ABS_PATH "${VK_VIDEO_COMMON_LIBS_SOURCE_REL_PATH}" ABSOLUTE)
+
+set(VK_VIDEO_COMMON_LIBS_SOURCE_ROOT "${VK_VIDEO_COMMON_LIBS_SOURCE_ABS_PATH}" CACHE STRING "Root path to common vkvideo libs sources")
 set(VK_VIDEO_DECODER_LIBS_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs" CACHE STRING "Root path to common vkvideo decoder libs sources")
 set(VK_VIDEO_DECODER_LIBS_INCLUDE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/include" CACHE STRING "Root path to video decoder libs includes")
 
@@ -475,6 +509,17 @@ else()
            PATTERN "*.def" EXCLUDE
            PATTERN "*.a" EXCLUDE)
 endif()
+
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libs")
+    add_subdirectory(libs)
+else()
+    install(DIRECTORY "${LIBVKVIDEODECODER_BINARY_ROOT}/"
+            DESTINATION "${CMAKE_INSTALL_PREFIX}/bin"
+            PATTERN "*.def" EXCLUDE
+            PATTERN "*.a" EXCLUDE)
+endif()
+
+add_subdirectory(test/vulkan-video-dec)
 
 if(BUILD_DEMOS)
     add_subdirectory(demos)

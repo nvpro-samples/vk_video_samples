@@ -454,6 +454,7 @@ const std::vector<VkExtensionProperties>& Shell::GetRequiredInstanceExtensions(b
         return  ShellWin32::GetRequiredInstanceExtensions();
 #endif
     }
+    return ShellDirect::GetRequiredInstanceExtensions();
 }
 
 VkResult Shell::Create(const VulkanDeviceContext* vkDevCtx,

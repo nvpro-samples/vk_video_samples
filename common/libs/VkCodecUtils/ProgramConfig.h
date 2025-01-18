@@ -67,6 +67,7 @@ struct ProgramConfig {
         queueId = 0;
         gpuIndex = -1;
         forceParserType = VK_VIDEO_CODEC_OPERATION_NONE_KHR;
+        crcValues = nullptr;
         decoderQueueSize = 5;
         enablePostProcessFilter = -1,
         enableStreamDemuxing = true;
@@ -122,14 +123,14 @@ struct ProgramConfig {
                     enableStreamDemuxing = false;
                     return true;
                 }},
-            {"--codec", nullptr, 1, "Codec to decode",
+            {"--codec", nullptr, 1, "Codec to use, if no stream auto-detect is in use",
                 [this](const char **args, const ProgramArgs &a) {
                     if ((strcmp(args[0], "hevc") == 0) ||
                         (strcmp(args[0], "h265") == 0)) {
                         forceParserType = VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR;
                         return true;
                     } else if ((strcmp(args[0], "avc") == 0) ||
-                        (strcmp(args[0], "h264") == 0)) {
+                               (strcmp(args[0], "h264") == 0)) {
                         forceParserType = VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR;
                         return true;
                     } else {

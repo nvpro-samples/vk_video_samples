@@ -55,7 +55,7 @@ public:
     virtual int AttachSwapchain(const Shell &shell) = 0;
     virtual void DetachSwapchain() {}
 
-    virtual int CreateFrameData(int count) = 0;
+    virtual int32_t CreateFrameData(int32_t count) = 0;
     virtual void DestroyFrameData() = 0;
 
     virtual bool OnKey(Key key) = 0;

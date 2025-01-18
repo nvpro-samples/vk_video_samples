@@ -28,4 +28,49 @@ VkResult CreateDecoderFrameProcessor(const VulkanDeviceContext* vkDevCtx,
                                      VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>>& videoQueue,
                                      VkSharedBaseObj<FrameProcessor>& frameProcessor);
 
+class DecoderFrameProcessorState
+{
+public:
+    VkResult Init(const VulkanDeviceContext* vkDevCtx,
+                  VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>>& videoQueue,
+                  int32_t maxNumberOfFrames = 0);
+
+    DecoderFrameProcessorState()
+    : m_frameProcessor()
+    , m_maxNumberOfFrames(0) {}
+
+    DecoderFrameProcessorState(const VulkanDeviceContext* vkDevCtx,
+                               VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>>& videoQueue,
+                               int32_t maxNumberOfFrames = 0)
+    : m_frameProcessor()
+    , m_maxNumberOfFrames(0)
+    {
+        VkResult result = Init(vkDevCtx, videoQueue, maxNumberOfFrames);
+        assert (result == VK_SUCCESS);
+    }
+
+    void Deinit();
+
+    ~DecoderFrameProcessorState()
+    {
+        Deinit();
+    }
+
+    // Conversion operator returning m_frameProcessor by non-const reference
+    operator VkSharedBaseObj<FrameProcessor>&()
+    {
+        return m_frameProcessor;
+    }
+
+    // Conversion operator returning m_frameProcessor by const reference
+    operator const VkSharedBaseObj<FrameProcessor>&() const
+    {
+        return m_frameProcessor;
+    }
+
+private:
+    VkSharedBaseObj<FrameProcessor> m_frameProcessor;
+    int32_t                         m_maxNumberOfFrames;
+};
+
 #endif /* LIBS_VKCODECUTILS_VULKANDECODERFRAMEPROCESSOR_H_ */

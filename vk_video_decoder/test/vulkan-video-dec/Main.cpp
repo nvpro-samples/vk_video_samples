@@ -1,12 +1,11 @@
 /*
- * Copyright (C) 2016 Google, Inc.
- * Copyright 2020 NVIDIA Corporation.
+ * Copyright 2024 NVIDIA Corporation.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,33 +14,20 @@
  * limitations under the License.
  */
 
-#include <assert.h>
-#include <string>
-#include <vector>
-#include <cstring>
-#include <cstdio>
-
-#include "VkCodecUtils/VulkanDeviceContext.h"
+#include <iostream>
+#include "vulkan_video_decoder.h"
+#include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkCodecUtils/ProgramConfig.h"
-#include "VkCodecUtils/VulkanVideoProcessor.h"
+#include "VkCodecUtils/VulkanFrame.h"
 #include "VkCodecUtils/VulkanDecoderFrameProcessor.h"
 #include "VkShell/Shell.h"
 
-int main(int argc, const char **argv) {
+int main(int argc, const char** argv)
+{
+    std::cout << "Enter decoder test" << std::endl;
 
-    ProgramConfig programConfig(argv[0]);
-    programConfig.ParseArgs(argc, argv);
-
-    // In the regular application usecase the CRC output variables are allocated here and also output as part of main.
-    // In the library case it is up to the caller of the library to allocate the values and initialize them.
-    std::vector<uint32_t> crcAllocation;
-    crcAllocation.resize(programConfig.crcInitValue.size());
-    if (crcAllocation.empty() == false) {
-        programConfig.crcOutput = &crcAllocation[0];
-        for (size_t i = 0; i < programConfig.crcInitValue.size(); i += 1) {
-            crcAllocation[i] = programConfig.crcInitValue[i];
-        }
-    }
+    ProgramConfig decoderConfig(argv[0]);
+    decoderConfig.ParseArgs(argc, argv);
 
     static const char* const requiredInstanceLayers[] = {
         "VK_LAYER_KHRONOS_validation",
@@ -89,7 +75,7 @@ int main(int argc, const char **argv) {
 
     VulkanDeviceContext vkDevCtxt;
 
-    if (programConfig.validate) {
+    if (decoderConfig.validate) {
         vkDevCtxt.AddReqInstanceLayers(requiredInstanceLayers);
         vkDevCtxt.AddReqInstanceExtensions(requiredInstanceExtensions);
     }
@@ -99,9 +85,9 @@ int main(int argc, const char **argv) {
     vkDevCtxt.AddOptDeviceExtensions(optinalDeviceExtension);
 
     /********** Start WSI instance extensions support *******************************************/
-    if (!programConfig.noPresent) {
+    if (!decoderConfig.noPresent) {
         const std::vector<VkExtensionProperties>& wsiRequiredInstanceInstanceExtensions =
-                Shell::GetRequiredInstanceExtensions(programConfig.directMode);
+                Shell::GetRequiredInstanceExtensions(decoderConfig.directMode);
 
         for (size_t e = 0; e < wsiRequiredInstanceInstanceExtensions.size(); e++) {
             vkDevCtxt.AddReqInstanceExtension(wsiRequiredInstanceInstanceExtensions[e].extensionName);
@@ -115,53 +101,42 @@ int main(int argc, const char **argv) {
     }
     /********** End WSI instance extensions support *******************************************/
 
-    VkResult result = vkDevCtxt.InitVulkanDevice(programConfig.appName.c_str(),
-                                                 programConfig.verbose);
+    VkResult result = vkDevCtxt.InitVulkanDevice(decoderConfig.appName.c_str(),
+                                                 decoderConfig.verbose);
     if (result != VK_SUCCESS) {
         printf("Could not initialize the Vulkan device!\n");
-        return -1;
+        return result;
     }
 
-    result = vkDevCtxt.InitDebugReport(programConfig.validate,
-                                       programConfig.validateVerbose);
+    result = vkDevCtxt.InitDebugReport(decoderConfig.validate,
+                                       decoderConfig.validateVerbose);
     if (result != VK_SUCCESS) {
-        return -1;
+        return result;
     }
 
-    const int32_t numDecodeQueues = ((programConfig.queueId != 0) ||
-                                     (programConfig.enableHwLoadBalancing != 0)) ?
+    const int32_t numDecodeQueues = ((decoderConfig.queueId != 0) ||
+                                     (decoderConfig.enableHwLoadBalancing != 0)) ?
                                      -1 : // all available HW decoders
                                       1;  // only one HW decoder instance
 
     VkQueueFlags requestVideoDecodeQueueMask = VK_QUEUE_VIDEO_DECODE_BIT_KHR;
 
     VkQueueFlags requestVideoEncodeQueueMask = 0;
-    if (programConfig.enableVideoEncoder) {
+    if (decoderConfig.enableVideoEncoder) {
         requestVideoEncodeQueueMask |= VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
     }
 
-    if (programConfig.selectVideoWithComputeQueue) {
+    if (decoderConfig.selectVideoWithComputeQueue) {
         requestVideoDecodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
-        if (programConfig.enableVideoEncoder) {
+        if (decoderConfig.enableVideoEncoder) {
             requestVideoEncodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
         }
     }
 
     VkQueueFlags requestVideoComputeQueueMask = 0;
-    if (programConfig.enablePostProcessFilter != -1) {
+    if (decoderConfig.enablePostProcessFilter != -1) {
         requestVideoComputeQueueMask = VK_QUEUE_COMPUTE_BIT;
     }
-
-    VkSharedBaseObj<VulkanVideoProcessor> vulkanVideoProcessor;
-    result = VulkanVideoProcessor::Create(programConfig, &vkDevCtxt, vulkanVideoProcessor);
-    if (result != VK_SUCCESS) {
-        return -1;
-    }
-
-    VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>> videoQueue(vulkanVideoProcessor);
-
-    DecoderFrameProcessorState frameProcessor(&vkDevCtxt, videoQueue,
-                                              programConfig.noPresent ? programConfig.decoderQueueSize : 0);
 
     VkVideoCodecOperationFlagsKHR videoDecodeCodecs = (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR  |
                                                        VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR  |
@@ -172,22 +147,35 @@ int main(int argc, const char **argv) {
                                                         VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR);
 
     VkVideoCodecOperationFlagsKHR videoCodecs = videoDecodeCodecs |
-                                        (programConfig.enableVideoEncoder ? videoEncodeCodecs : (VkVideoCodecOperationFlagsKHR) VK_VIDEO_CODEC_OPERATION_NONE_KHR);
+                                        (decoderConfig.enableVideoEncoder ? videoEncodeCodecs : (VkVideoCodecOperationFlagsKHR) VK_VIDEO_CODEC_OPERATION_NONE_KHR);
 
 
-    if (!programConfig.noPresent) {
+    VkSharedBaseObj<VulkanVideoDecoder> vulkanVideoDecoder;
+    result = CreateVulkanVideoDecoder(decoderConfig.forceParserType,
+                                      argc, argv, vulkanVideoDecoder);
 
-        const Shell::Configuration configuration(programConfig.appName.c_str(),
-                                                 programConfig.backBufferCount,
-                                                 programConfig.directMode);
+    if (result != VK_SUCCESS) {
+        std::cerr << "Error creating the decoder instance: " << result << std::endl;
+    }
+
+    VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>> videoQueue(vulkanVideoDecoder);
+
+    DecoderFrameProcessorState frameProcessor(&vkDevCtxt, videoQueue,
+                                              decoderConfig.noPresent ? decoderConfig.decoderQueueSize : 0);
+
+    if (!decoderConfig.noPresent) {
+
+        const Shell::Configuration configuration(decoderConfig.appName.c_str(),
+                                                 decoderConfig.backBufferCount,
+                                                 decoderConfig.directMode);
         VkSharedBaseObj<Shell> displayShell;
         result = Shell::Create(&vkDevCtxt, configuration, frameProcessor, displayShell);
         if (result != VK_SUCCESS) {
             assert(!"Can't allocate display shell! Out of memory!");
-            return -1;
+            return result;
         }
 
-        result = vkDevCtxt.InitPhysicalDevice(programConfig.deviceId, programConfig.GetDeviceUUID(),
+        result = vkDevCtxt.InitPhysicalDevice(decoderConfig.deviceId, decoderConfig.GetDeviceUUID(),
                                               (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT |
                                               requestVideoComputeQueueMask |
                                               requestVideoDecodeQueueMask |
@@ -204,27 +192,25 @@ int main(int argc, const char **argv) {
         if (result != VK_SUCCESS) {
 
             assert(!"Can't initialize the Vulkan physical device!");
-            return -1;
+            return result;
         }
         assert(displayShell->PhysDeviceCanPresent(vkDevCtxt.getPhysicalDevice(),
-                                                   vkDevCtxt.GetPresentQueueFamilyIdx()));
+                                                  vkDevCtxt.GetPresentQueueFamilyIdx()));
 
         vkDevCtxt.CreateVulkanDevice(numDecodeQueues,
-                                     programConfig.enableVideoEncoder ? 1 : 0, // num encode queues
-                                     videoCodecs,
-                                     false, //  createTransferQueue
-                                     true,  // createGraphicsQueue
-                                     true,  // createDisplayQueue
-                                     requestVideoComputeQueueMask != 0  // createComputeQueue
-                                     );
-        vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig);
-
+                                       decoderConfig.enableVideoEncoder ? 1 : 0, // num encode queues
+                                       videoCodecs,
+                                       false, //  createTransferQueue
+                                       true,  // createGraphicsQueue
+                                       true,  // createDisplayQueue
+                                       requestVideoComputeQueueMask != 0  // createComputeQueue
+                                       );
 
         displayShell->RunLoop();
 
     } else {
 
-        result = vkDevCtxt.InitPhysicalDevice(programConfig.deviceId, programConfig.GetDeviceUUID(),
+        result = vkDevCtxt.InitPhysicalDevice(decoderConfig.deviceId, decoderConfig.GetDeviceUUID(),
                                               (VK_QUEUE_TRANSFER_BIT        |
                                                requestVideoDecodeQueueMask  |
                                                requestVideoComputeQueueMask |
@@ -234,7 +220,7 @@ int main(int argc, const char **argv) {
         if (result != VK_SUCCESS) {
 
             assert(!"Can't initialize the Vulkan physical device!");
-            return -1;
+            return result;
         }
 
 
@@ -252,31 +238,43 @@ int main(int argc, const char **argv) {
         if (result != VK_SUCCESS) {
 
             assert(!"Failed to create Vulkan device!");
-            return -1;
+            return result;
         }
 
-        vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig);
-
         VkSharedBaseObj<FrameProcessor> decodeFrameProcessor(frameProcessor);
-
         bool continueLoop = true;
         do {
             continueLoop = decodeFrameProcessor->OnFrame(0);
         } while (continueLoop);
     }
 
-    if (programConfig.outputcrc != 0) {
-        fprintf(programConfig.crcOutputFile, "CRC: ");
-        for (size_t i = 0; i < programConfig.crcInitValue.size(); i += 1) {
-            fprintf(programConfig.crcOutputFile, "0x%08X ", crcAllocation[i]);
-        }
+    /*******************************************************************************************/
 
-        fprintf(programConfig.crcOutputFile, "\n");
-        if (programConfig.crcOutputFile != stdout) {
-            fclose(programConfig.crcOutputFile);
-            programConfig.crcOutputFile = stdout;
+    int64_t numFrames = vulkanVideoDecoder->GetMaxNumberOfFrames();
+    if (numFrames > 0) {
+        std::cout << "Max number of frames to decode: " << numFrames << std::endl;
+    }
+
+    const VkVideoProfileInfoKHR videoProfileInfo = vulkanVideoDecoder->GetVkProfile();
+
+    const VkExtent3D extent = vulkanVideoDecoder->GetVideoExtent();
+
+    std::cout << "Test Video Input Information" << std::endl
+               << "\tCodec        : " << VkVideoCoreProfile::CodecToName(videoProfileInfo.videoCodecOperation) << std::endl
+               << "\tCoded size   : [" << extent.width << ", " << extent.height << "]" << std::endl
+               << "\tChroma Subsampling:";
+    VkVideoCoreProfile::DumpFormatProfiles(&videoProfileInfo);
+    std::cout << std::endl;
+
+    for (int64_t frameNum = 0; frameNum < numFrames; frameNum++) {
+        int64_t frameNumDecoded = -1;
+        result = VK_SUCCESS; // vulkanVideoDecoder->GetNextFrame(frameNumDecoded);
+        if (result != VK_SUCCESS) {
+            std::cerr << "Error encoding frame: "  << frameNum  << ", error: " << result << std::endl;
         }
     }
 
-    return 0;
+    std::cout << "Exit decoder test" << std::endl;
 }
+
+
