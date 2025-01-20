@@ -25,6 +25,12 @@
 
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 #include "VkCodecUtils/ProgramConfig.h"
+#if (_TRANSCODING)
+#include "VkCodecUtils/VulkanDecodedFrame.h"
+#include "VkCodecUtils/VulkanEncoderFrameProcessor.h"
+#include "VkCodecUtils/ProgramConfig.h"
+#include "VkVideoEncoder/VkEncoderConfig.h"
+#endif // _TRANSCODING
 
 class Shell;
 
@@ -65,6 +71,16 @@ public:
                          const VkSemaphore* pWaitSemaphores  = nullptr,
                          uint32_t           signalSemaphoreCount = 0,
                          const VkSemaphore* pSignalSemaphores = nullptr) = 0;
+#if (_TRANSCODING)
+    virtual bool OnFrameTranscoding( int32_t renderIndex,
+                         ProgramConfig* programConfig,
+                         VkSharedBaseObj<EncoderConfig>& encoderConfig,
+                         uint32_t           waitSemaphoreCount = 0,
+                         const VkSemaphore* pWaitSemaphores  = nullptr,
+                         uint32_t           signalSemaphoreCount = 0,
+                         const VkSemaphore* pSignalSemaphores = nullptr,
+                         VulkanDecodedFrame* pLastFrameDecoded = nullptr) = 0;
+#endif // _TRANSCODING
 
     uint64_t GetTimeDiffNanoseconds(bool updateStartTime = true)
     {

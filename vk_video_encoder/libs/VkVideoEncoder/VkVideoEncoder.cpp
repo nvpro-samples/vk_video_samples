@@ -471,6 +471,100 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
     return result;
 }
 
+#if (_TRANSCODING)
+VkResult VkVideoEncoder::LoadNextFrameDecoded(VulkanDecodedFrame* vkLastFrameDecoded)
+{
+    VkSharedBaseObj<VkVideoEncoder::VkVideoEncodeFrameInfo> encodeFrameInfo;
+    GetAvailablePoolNode(encodeFrameInfo);
+    assert(encodeFrameInfo);
+    encodeFrameInfo->frameInputOrderNum = m_inputFrameNum++;
+    encodeFrameInfo->lastFrame = !(encodeFrameInfo->frameInputOrderNum < (m_encoderConfig->numFrames - 1));
+
+
+    if ((m_encoderConfig->enableQpMap == VK_TRUE) && m_encoderConfig->qpMapFileHandler.HandleIsValid()) {
+
+        VkResult result = LoadNextQpMapFrameFromFile(encodeFrameInfo);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+    }
+
+    {
+        // On success, stage the input frame for the encoder video input
+        StageInputFrameDecoded(encodeFrameInfo, vkLastFrameDecoded);
+        return VK_SUCCESS;
+    }
+
+    return VK_ERROR_INITIALIZATION_FAILED;
+}
+
+VkResult VkVideoEncoder::StageInputFrameDecoded(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, VulkanDecodedFrame* vkLastFrameDecoded)
+{
+    assert(encodeFrameInfo);
+
+    VkResult result;
+    if ((m_inputComputeFilter != nullptr) || (m_encoderConfig->enableQpMap)) {
+        // Begin command buffer
+        VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr };
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        VkCommandBuffer cmdBuf = encodeFrameInfo->inputCmdBuffer->BeginCommandBufferRecording(beginInfo);
+
+        if (m_inputComputeFilter != nullptr) {
+
+            VkSharedBaseObj<VkImageResourceView> linearInputImageView;
+            encodeFrameInfo->srcStagingImageView->GetImageView(linearInputImageView);
+
+            VkSharedBaseObj<VkImageResourceView> srcEncodeImageView;
+            encodeFrameInfo->srcEncodeImageResource->GetImageView(srcEncodeImageView);
+
+            result = m_inputComputeFilter->RecordCommandBuffer(cmdBuf,
+                                                            linearInputImageView,
+                                                            encodeFrameInfo->srcStagingImageView->GetPictureResourceInfo(),
+                                                            srcEncodeImageView,
+                                                            encodeFrameInfo->srcEncodeImageResource->GetPictureResourceInfo(),
+                                                            encodeFrameInfo->inputCmdBuffer->GetNodePoolIndex());
+            if (result != VK_SUCCESS) {
+                return result;
+            }
+        }
+            // Stage QPMap if it needs staging. Reuse the same command buffer used for staging of the input image
+        if (m_encoderConfig->enableQpMap && (m_qpMapTiling != VK_IMAGE_TILING_LINEAR)) {
+            result = StageInputFrameQpMap(encodeFrameInfo, cmdBuf);
+            if (result != VK_SUCCESS) {
+                return result;
+            }
+        }
+        result = encodeFrameInfo->inputCmdBuffer->EndCommandBufferRecording(cmdBuf);
+        // Now submit the staged input to the queue
+        SubmitStagedInputFrame(encodeFrameInfo);
+    }
+
+
+    if (encodeFrameInfo->srcEncodeImageResource == nullptr) {
+        bool success = m_inputImagePool->GetAvailableImage(encodeFrameInfo->srcEncodeImageResource,
+                                                                 VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR);
+        assert(success);
+        assert(encodeFrameInfo->srcEncodeImageResource != nullptr);
+    }
+    encodeFrameInfo->setLastDecodedFrame(vkLastFrameDecoded);
+
+    encodeFrameInfo->constQp = m_encoderConfig->constQp;
+
+    // and encode the input frame with the encoder next
+    auto timeStart = std::chrono::steady_clock::now();
+    EncodeFrame(encodeFrameInfo);
+    auto timeEnd = std::chrono::steady_clock::now();
+    m_encodeTimeMicroSec += std::chrono::duration_cast<std::chrono::microseconds>(timeEnd - timeStart).count();
+
+    return VK_SUCCESS;
+}
+
+VkResult VkVideoEncoder::SubmitStagedInputFrameDecoded(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, VulkanDecodedFrame& vkLastFrameDecoded)
+{
+    return VK_SUCCESS; // not used
+}
+#endif //_TRANSCODING
+
 VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                                uint32_t frameIdx, uint32_t ofTotalFrames)
 {
@@ -602,6 +696,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         }
         m_encoderConfig->gopStructure.SetConsecutiveBFrameCount(encoderConfig->GetMaxBFrameCount());
     }
+
     if (m_encoderConfig->verbose) {
         std::cout << std::endl << "GOP frame count: " << (uint32_t)m_encoderConfig->gopStructure.GetGopFrameCount();
         std::cout << ", IDR period: " << (uint32_t)m_encoderConfig->gopStructure.GetIdrPeriod();
@@ -609,7 +704,13 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         std::cout << std::endl;
 
         const uint64_t maxFramesToDump = std::min<uint32_t>(m_encoderConfig->numFrames, m_encoderConfig->gopStructure.GetGopFrameCount() + 19);
+
+#if (_TRANSCODING)
+    if (maxFramesToDump < 256)
+#endif // _TRANSCODING
+    {
         m_encoderConfig->gopStructure.PrintGopStructure(maxFramesToDump);
+    }
 
         if (m_encoderConfig->verboseFrameStruct) {
             m_encoderConfig->gopStructure.DumpFramesGopStructure(0, maxFramesToDump);
@@ -1161,6 +1262,15 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         imageBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+#if (_TRANSCODING)
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) && (newLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR || newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)) {
+        imageBarrier.srcAccessMask = VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR;
+        imageBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+        imageBarrier.srcQueueFamilyIndex = (uint32_t)m_vkDevCtx->GetVideoDecodeQueueFamilyIdx();
+        imageBarrier.dstQueueFamilyIndex = (uint32_t)m_vkDevCtx->GetVideoEncodeQueueFamilyIdx();
+#endif // _TRANSCODING
     } else {
         throw std::invalid_argument("unsupported layout transition!");
     }
@@ -1430,6 +1540,23 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
     encodeBeginInfo.videoSession = *encodeFrameInfo->videoSession;
     encodeBeginInfo.videoSessionParameters = *encodeFrameInfo->videoSessionParameters;
 
+#if (_TRANSCODING)
+    VkSharedBaseObj<VkImageResourceView> srcEncodeImageView;
+    encodeFrameInfo->srcEncodeImageResource->GetImageView(srcEncodeImageView);
+    VkSharedBaseObj<VkImageResourceView> lastDecodedImageView;
+    VulkanDecodedFrame* vkLast = encodeFrameInfo->getLastDecodedFrame();
+    bool getResourceView = vkLast->imageViews[VulkanDecodedFrame::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY].GetImageResourceView(lastDecodedImageView);
+    assert(getResourceView);
+    VkImageLayout srcImgNewLayout = TransitionImageLayout(cmdBuf, srcEncodeImageView, VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR, VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR);
+    VkImageLayout linearImgNewLayout = TransitionImageLayout(cmdBuf, lastDecodedImageView, VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    (void)srcImgNewLayout;
+    (void)linearImgNewLayout;
+    VkVideoPictureResourceInfoKHR* pSrcPictureResource = encodeFrameInfo->srcEncodeImageResource->GetPictureResourceInfo();
+    pSrcPictureResource->imageViewBinding = lastDecodedImageView->GetImageView(VulkanDecodedFrame::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY);
+    encodeFrameInfo->encodeInfo.srcPictureResource.imageViewBinding = pSrcPictureResource->imageViewBinding;
+    encodeFrameInfo->setDecodeCompleteSemaphore(&vkLast->frameCompleteSemaphore);
+#endif // _TRANSCODING
+
     assert((encodeFrameInfo->encodeInfo.referenceSlotCount) <= ARRAYSIZE(encodeFrameInfo->dpbImageResources));
     // TODO: Calculate the number of DPB slots for begin against the multiple frames.
     encodeBeginInfo.referenceSlotCount = encodeFrameInfo->encodeInfo.referenceSlotCount + 1;
@@ -1526,9 +1653,16 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     // to be done before processing the input frame with the encoder.
     VkSemaphore inputWaitSemaphore[2] = { VK_NULL_HANDLE };
     uint32_t waitSemaphoreCount = 0;
+
+#if (!_TRANSCODING)
     if (encodeFrameInfo->inputCmdBuffer) {
         inputWaitSemaphore[waitSemaphoreCount++] = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
     }
+#else
+    if (encodeFrameInfo->inputCmdBuffer == nullptr) {
+        inputWaitSemaphore[waitSemaphoreCount++] = *encodeFrameInfo->getDecodeCompleteSemaphore(); // transcoding: inputCmdBuff is nullptr
+    }
+#endif //(!_TRANSCODING)
     if (encodeFrameInfo->qpMapCmdBuffer) {
         inputWaitSemaphore[waitSemaphoreCount++] = encodeFrameInfo->qpMapCmdBuffer->GetSemaphore();
     }

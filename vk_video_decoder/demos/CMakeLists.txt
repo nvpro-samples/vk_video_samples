@@ -5,6 +5,10 @@ set(DEMO_INCLUDE_DIRS
     ${CMAKE_CURRENT_BINARY_DIR}/..
 )
 
+IF (${_TRANSCODING} MATCHES 1)
+    list (APPEND DEMO_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/../../vk_video_encoder/libs)
+ENDIF()
+
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     add_definitions(-DVK_USE_PLATFORM_WIN32_KHR -DWIN32_LEAN_AND_MEAN)
     set(DisplayServer Win32)

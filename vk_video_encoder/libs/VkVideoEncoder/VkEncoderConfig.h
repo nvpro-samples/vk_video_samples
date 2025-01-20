@@ -682,6 +682,10 @@ public:
     uint32_t codecBlockAlignment;
     uint32_t qualityLevel;
     VkVideoEncodeTuningModeKHR tuningMode;
+#if (_TRANSCODING)
+    VkVideoEncodeUsageFlagBitsKHR encodeUsageHints;
+    VkVideoEncodeContentFlagBitsKHR encodeContentHints;
+#endif // _TRANSCODING
     VkVideoCoreProfile videoCoreProfile;
     VkVideoCapabilitiesKHR videoCapabilities;
     VkVideoEncodeCapabilitiesKHR videoEncodeCapabilities;
@@ -748,6 +752,12 @@ public:
     uint32_t enablePreprocessComputeFilter : 1;
     uint32_t enableOutOfOrderRecording : 1; // Testing only - don't use for production!
 
+#if (_TRANSCODING)
+    int vbvbufratio;
+    enum ENCODING_PROFILE { LOW_LATENCY_STREAMING = 0, ARCHIVING, SVC, ENUM_MAXVAL_NOTSET };
+    ENCODING_PROFILE encodingProfile;
+#endif // _TRANSCODING
+
     EncoderConfig()
     : refCount(0)
     , appName()
@@ -773,6 +783,10 @@ public:
     , numFrames(0)
     , codecBlockAlignment(16)
     , qualityLevel(0)
+#if (_TRANSCODING)
+    , encodeUsageHints(VK_VIDEO_ENCODE_USAGE_DEFAULT_KHR)
+    , encodeContentHints(VK_VIDEO_ENCODE_CONTENT_DEFAULT_KHR)
+#endif // _TRANSCODING
     , tuningMode(VK_VIDEO_ENCODE_TUNING_MODE_DEFAULT_KHR)
     , videoCoreProfile(codec, encodeChromaSubsampling, encodeBitDepthLuma, encodeBitDepthChroma)
     , videoCapabilities()
@@ -833,6 +847,10 @@ public:
     , selectVideoWithComputeQueue(false)
     , enablePreprocessComputeFilter(false)
     , enableOutOfOrderRecording(false)
+#if (_TRANSCODING)
+    , vbvbufratio(1)
+    , encodingProfile(ENUM_MAXVAL_NOTSET)
+#endif // _TRANSCODING
     { }
 
     virtual ~EncoderConfig() {}

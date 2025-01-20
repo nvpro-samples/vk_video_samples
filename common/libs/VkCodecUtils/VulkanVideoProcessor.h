@@ -23,6 +23,10 @@
 #include "VkCodecUtils/ProgramConfig.h"
 #include "VkCodecUtils/VkVideoQueue.h"
 
+#if (_TRANSCODING)
+#include "VkVideoEncoder/VkVideoEncoder.h"
+#endif //_TRANSCODING
+
 class VulkanVideoProcessor : public VkVideoQueue<VulkanDecodedFrame> {
 public:
 
@@ -30,8 +34,18 @@ public:
     virtual int32_t GetWidth()    const;
     virtual int32_t GetHeight()   const;
     virtual int32_t GetBitDepth() const;
+#if (_TRANSCODING)
+    virtual int32_t GetCodedWidth()    const;
+    virtual int32_t GetCodedHeight()   const;
+    virtual uint32_t GetFrameRate() const;
+    virtual uint32_t GetFramesCount() const;
+#endif // _TRANSCODING
     virtual VkFormat GetFrameImageFormat(int32_t* pWidth = NULL, int32_t* pHeight = NULL, int32_t* pBitDepth = NULL)  const;
-    virtual int32_t GetNextFrame(VulkanDecodedFrame* pFrame, bool* endOfStream);
+    virtual int32_t GetNextFrame(VulkanDecodedFrame* pFrame, bool* endOfStream
+#if (_TRANSCODING)
+    , ProgramConfig* programConfig = nullptr, VkSharedBaseObj<EncoderConfig>* encoderConfig = nullptr
+#endif // _TRANSCODING
+);
     virtual int32_t ReleaseFrame(VulkanDecodedFrame* pDisplayedFrame);
 
     static VkSharedBaseObj<VulkanVideoProcessor>& invalidVulkanVideoProcessor;
@@ -73,6 +87,9 @@ private:
           m_videoStreamDemuxer()
         , m_vkVideoFrameBuffer()
         , m_vkVideoDecoder()
+#if (_TRANSCODING)
+        , m_vkVideoEncoder()
+#endif // _TRANSCODING
         , m_vkParser()
         , m_currentBitstreamOffset(0)
         , m_videoFrameNum(0)
@@ -102,6 +119,13 @@ private:
 
     bool StreamCompleted();
 
+#if (_TRANSCODING)
+public:
+    VkSharedBaseObj<VkVideoEncoder> getEncoder() const {
+        return m_vkVideoEncoder;
+    };
+#endif // _TRANSCODING
+
 private:
     void WaitForFrameCompletion(VulkanDecodedFrame* pFrame, 
                                 VkSharedBaseObj<VkImageResource>& imageResource);
@@ -112,6 +136,9 @@ private:
     VkSharedBaseObj<VideoStreamDemuxer> m_videoStreamDemuxer;
     VkSharedBaseObj<VulkanVideoFrameBuffer> m_vkVideoFrameBuffer;
     VkSharedBaseObj<VkVideoDecoder> m_vkVideoDecoder;
+#if (_TRANSCODING)
+    VkSharedBaseObj<VkVideoEncoder> m_vkVideoEncoder;
+#endif // _TRANSCODING
     VkSharedBaseObj<IVulkanVideoParser> m_vkParser;
     int64_t  m_currentBitstreamOffset;
     uint32_t m_videoFrameNum;

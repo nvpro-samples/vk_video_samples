@@ -270,11 +270,13 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     }
     m_numImageTypesEnabled |= DecodeFrameBufferIf::IMAGE_TYPE_MASK_DECODE_OUT;
 
+#if (!_TRANSCODING)
     if(!(videoCapabilities.flags & VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR)) {
         // The implementation does not support individual images for DPB and so must use arrays
         m_useImageArray = VK_TRUE;
         m_useImageViewArray = VK_FALSE;
     }
+#endif //_TRANSCODING
 
     if (m_enableDecodeComputeFilter) {
 

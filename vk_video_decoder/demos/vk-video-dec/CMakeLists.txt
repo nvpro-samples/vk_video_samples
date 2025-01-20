@@ -8,8 +8,19 @@ endmacro()
 generate_dispatch_table(${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.h)
 generate_dispatch_table(${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.cpp)
 
-set(sources
-    Main.cpp
+set(VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../vk_video_encoder/libs
+)
+
+if (${_TRANSCODING} MATCHES 1)
+    set(TARGET_EXECUTABLE_NAME vk-video-trans-test)
+    set(sources ${CMAKE_CURRENT_SOURCE_DIR}/../../../vk_video_transcoder/demos/vk-video-trans/Main.cpp)
+else()
+    set(TARGET_EXECUTABLE_NAME vk-video-dec-test)
+    set(sources Main.cpp)
+endif()
+
+list(APPEND sources
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkShell/Shell.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkShell/ShellDirect.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkShell/Shell.h
@@ -72,6 +83,46 @@ set(sources
     ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.h
     ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.cpp
     )
+
+IF (${_TRANSCODING} MATCHES 1)
+list(APPEND sources
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfigH264.cpp
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfigH264.h
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderDpbH264.cpp
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderDpbH264.h
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderH264.cpp
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderH264.h
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfigH265.cpp
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfigH265.h
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderDpbH265.cpp
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderDpbH265.h
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderH265.cpp
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderH265.h
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfigAV1.cpp
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfigAV1.h
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderDpbAV1.cpp
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderDpbAV1.h
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderAV1.cpp
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderAV1.h    
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfig.cpp
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoder.cpp
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoGopStructure.cpp
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoGopStructure.h
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoder.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/YCbCrConvUtilsCpu.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/YCbCrConvUtilsCpu.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoImagePool.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoImagePool.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanCommandBufferPool.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanCommandBufferPool.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanQueryPoolSet.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanQueryPoolSet.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoSessionParameters.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoSessionParameters.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoDisplayQueue.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanVideoDisplayQueue.h)
+    add_compile_definitions(_TRANSCODING)
+ENDIF()
 
 set(definitions
     PRIVATE -DVK_NO_PROTOTYPES
@@ -143,10 +194,10 @@ list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE})
 list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE}/vulkan)
 list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE}/nvidia_utils/vulkan)
 
-add_executable(vk-video-dec-test ${generate_helper_files} ${sources})
-target_compile_definitions(vk-video-dec-test ${definitions})
-target_include_directories(vk-video-dec-test ${includes})
-target_link_libraries(vk-video-dec-test ${libraries})
-add_dependencies(vk-video-dec-test generate_helper_files)
+add_executable(${TARGET_EXECUTABLE_NAME} ${generate_helper_files} ${sources})
+target_compile_definitions(${TARGET_EXECUTABLE_NAME} ${definitions})
+target_include_directories(${TARGET_EXECUTABLE_NAME} ${includes})
+target_link_libraries(${TARGET_EXECUTABLE_NAME} ${libraries})
+add_dependencies(${TARGET_EXECUTABLE_NAME} generate_helper_files)
 
-install(TARGETS vk-video-dec-test RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS ${TARGET_EXECUTABLE_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

@@ -18,6 +18,10 @@
 #define _VKCODECUTILS_VKVIDEOQUEUE_H_
 
 #include "VkCodecUtils/VkVideoRefCountBase.h"
+#if (_TRANSCODING)
+#include "VkCodecUtils/ProgramConfig.h"
+#include "VkVideoEncoder/VkEncoderConfig.h"
+#endif // _TRANSCODING
 
 template<class FrameDataType>
 class VkVideoQueue : public VkVideoRefCountBase {
@@ -30,7 +34,11 @@ public:
     virtual VkFormat GetFrameImageFormat(int32_t* pWidth = nullptr,
                                          int32_t* pHeight = nullptr,
                                          int32_t* pBitDepth = nullptr) const = 0;
-    virtual int32_t GetNextFrame(FrameDataType* pFrame, bool* endOfStream) = 0;
+    virtual int32_t GetNextFrame(FrameDataType* pFrame, bool* endOfStream
+#if (_TRANSCODING)
+    , ProgramConfig* programConfig = nullptr, VkSharedBaseObj<EncoderConfig>* encoderConfig = nullptr
+#endif // _TRANSCODING
+    ) = 0;
     virtual int32_t ReleaseFrame(FrameDataType* pDisplayedFrame) = 0;
 public:
     virtual ~VkVideoQueue() {};
