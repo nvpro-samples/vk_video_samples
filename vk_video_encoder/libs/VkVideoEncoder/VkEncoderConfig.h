@@ -681,6 +681,8 @@ public:
     uint32_t numFrames;
     uint32_t codecBlockAlignment;
     uint32_t qualityLevel;
+    VkVideoEncodeUsageFlagsKHR encodeUsageHints;
+    VkVideoEncodeContentFlagBitsKHR encodeContentHints;
     VkVideoEncodeTuningModeKHR tuningMode;
     VkVideoCoreProfile videoCoreProfile;
     VkVideoCapabilitiesKHR videoCapabilities;
@@ -773,6 +775,8 @@ public:
     , numFrames(0)
     , codecBlockAlignment(16)
     , qualityLevel(0)
+    , encodeUsageHints(VK_VIDEO_ENCODE_USAGE_DEFAULT_KHR)
+    , encodeContentHints(VK_VIDEO_ENCODE_CONTENT_DEFAULT_KHR)
     , tuningMode(VK_VIDEO_ENCODE_TUNING_MODE_DEFAULT_KHR)
     , videoCoreProfile(codec, encodeChromaSubsampling, encodeBitDepthLuma, encodeBitDepthChroma)
     , videoCapabilities()
