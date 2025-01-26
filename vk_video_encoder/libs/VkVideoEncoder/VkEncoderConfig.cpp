@@ -57,8 +57,12 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --lastFrameType                 <integer> : Last frame type \n\
     --closedGop                       none    : Close the Gop, default open\n\
     --qualityLevel                  <integer> : Select quality level \n\
-    --tuningMode                    <integer> or <string> : Select tuning mode \n\
-                                        default(0), hq(1), lowlatency(2), ultralowlatency(3), lossless(4) \n\
+    --usageHints                    <string> : Select encode usage hints \n\
+                                        default, transcoding, streaming, recording, conferencing \n\
+    --contentHints                  <string> : Select encode content hints \n\
+                                        default, camera, desktop, rendered \n\
+    --tuningMode                    <string> : Select tuning mode \n\
+                                        default, highquality, lowlatency, ultralowlatency, lossless \n\
     --rateControlMode               <integer> or <string>: select different rate control modes: \n\
                                         default(0), disabled(1), cbr(2), vbr(4)\n\
     --averageBitrate                <integer> : Target bitrate for cbr/vbr RC modes\n\
@@ -162,6 +166,8 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
     uint32_t frameCount = 0;
 
     appName = args[0];
+
+    const auto lambdaToLower = [](unsigned char c) { return std::tolower(c); };
 
     for (int32_t i = 1; i < argc; i++) {
 
@@ -393,21 +399,62 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
+        } else if (args[i] == "--usageHints") {
+            if (++i >= argc) {
+                fprintf(stderr, "Invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            std::string encodeUsageStr = argv[i];
+            std::transform(encodeUsageStr.begin(), encodeUsageStr.end(), encodeUsageStr.begin(), lambdaToLower);
+            if (encodeUsageStr == "default") {
+                encodeUsageHints = VK_VIDEO_ENCODE_USAGE_DEFAULT_KHR;
+            } else if (encodeUsageStr == "transcoding") {
+                encodeUsageHints = VK_VIDEO_ENCODE_USAGE_TRANSCODING_BIT_KHR;
+            } else if (encodeUsageStr == "streaming") {
+                encodeUsageHints = VK_VIDEO_ENCODE_USAGE_STREAMING_BIT_KHR;
+            } else if (encodeUsageStr == "recording") {
+                encodeUsageHints = VK_VIDEO_ENCODE_USAGE_RECORDING_BIT_KHR;
+            } else if (encodeUsageStr == "conferencing") {
+                encodeUsageHints = VK_VIDEO_ENCODE_USAGE_CONFERENCING_BIT_KHR;
+            } else {
+                fprintf(stderr, "Invalid encodeUsage: %s\n", encodeUsageStr.c_str());
+                return -1;
+            }
+        } else if (args[i] == "--contentHints") {
+            if (++i >= argc) {
+                fprintf(stderr, "Invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            std::string encodeContentStr = argv[i];
+            std::transform(encodeContentStr.begin(), encodeContentStr.end(), encodeContentStr.begin(), lambdaToLower);
+            if (encodeContentStr == "default") {
+                encodeContentHints = VK_VIDEO_ENCODE_CONTENT_DEFAULT_KHR;
+            } else if (encodeContentStr == "camera") {
+                encodeContentHints = VK_VIDEO_ENCODE_CONTENT_CAMERA_BIT_KHR;
+            } else if (encodeContentStr == "desktop") {
+                encodeContentHints = VK_VIDEO_ENCODE_CONTENT_DESKTOP_BIT_KHR;
+            } else if (encodeContentStr == "rendered") {
+                encodeContentHints = VK_VIDEO_ENCODE_CONTENT_RENDERED_BIT_KHR;
+            } else {
+                fprintf(stderr, "Invalid encodeContent: %s\n", encodeContentStr.c_str());
+                return -1;
+            }
         } else if (args[i] == "--tuningMode") {
             if (++i >= argc) {
                 fprintf(stderr, "Invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             std::string tuningModeStr = argv[i];
-            if (tuningModeStr == "0" || tuningModeStr == "default") {
+            std::transform(tuningModeStr.begin(), tuningModeStr.end(), tuningModeStr.begin(), lambdaToLower);
+            if (tuningModeStr == "default") {
                 tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_DEFAULT_KHR;
-            } else if (tuningModeStr == "1" || tuningModeStr == "hq") {
+            } else if (tuningModeStr == "highquality") {
                 tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_HIGH_QUALITY_KHR;
-            } else if (tuningModeStr == "2" || tuningModeStr == "lowlatency") {
+            } else if (tuningModeStr == "lowlatency") {
                 tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_LOW_LATENCY_KHR;
-            } else if (tuningModeStr == "3" || tuningModeStr == "ultralowlatency") {
+            } else if (tuningModeStr == "ultralowlatency") {
                 tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_ULTRA_LOW_LATENCY_KHR;
-            } else if (tuningModeStr == "4" || tuningModeStr == "lossless") {
+            } else if (tuningModeStr == "lossless") {
                  tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_LOSSLESS_KHR;
             } else {
                 fprintf(stderr, "Invalid tuningMode: %s\n", tuningModeStr.c_str());
@@ -427,7 +474,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 rateControlMode = VK_VIDEO_ENCODE_RATE_CONTROL_MODE_CBR_BIT_KHR;
             } else if (rc == "4" || rc == "vbr") {
                 rateControlMode = VK_VIDEO_ENCODE_RATE_CONTROL_MODE_VBR_BIT_KHR;
-            }else {
+            } else {
                 // Invalid rateControlMode
                 fprintf(stderr, "Invalid rateControlMode: %s\n", rc.c_str());
                 return -1;
@@ -800,13 +847,21 @@ void EncoderConfig::InitVideoProfile()
         encodeBitDepthChroma = encodeBitDepthLuma;
     }
 
+    VkVideoEncodeUsageInfoKHR encodeUsageInfo {
+        .sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR,
+        .pNext = NULL,
+        .videoUsageHints = encodeUsageHints,
+        .videoContentHints = encodeContentHints,
+        .tuningMode = tuningMode,
+    };
+
     // update the video profile
     videoCoreProfile = VkVideoCoreProfile(codec, encodeChromaSubsampling,
                                           GetComponentBitDepthFlagBits(encodeBitDepthLuma),
                                           GetComponentBitDepthFlagBits(encodeBitDepthChroma),
                                           (videoProfileIdc != (uint32_t)-1) ? videoProfileIdc :
                                                   GetDefaultVideoProfileIdc(),
-                                          tuningMode);
+                                          encodeUsageInfo);
 }
 
 bool EncoderConfig::InitRateControl()
