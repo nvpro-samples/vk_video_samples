@@ -51,6 +51,41 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
         return result;
     }
 
+#if (_TRANSCODING)
+    const VkPhysicalDeviceVideoEncodeQualityLevelInfoKHR deviceQualityLevelInfo { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR, nullptr, encoderConfig->videoCoreProfile.GetProfile(), encoderConfig->videoEncodeCapabilities.maxQualityLevels - 1} ; // should be less than maxQualityLevels;
+    VkVideoEncodeQualityLevelPropertiesKHR qualityLevelProperties { VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_PROPERTIES_KHR, nullptr, VK_VIDEO_ENCODE_RATE_CONTROL_MODE_VBR_BIT_KHR, 1 };
+
+    if (encoderConfig->videoCoreProfile.GetProfile()->videoCodecOperation == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR)
+    {
+        // DRAFT: I'm just filling the random data to check that the app works (doesn't crash)
+        VkVideoEncodeH265QualityLevelPropertiesKHR encodeH265QualityLevelProperties; // this structure is used as pNext in for return value from getPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR
+        encodeH265QualityLevelProperties.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_QUALITY_LEVEL_PROPERTIES_KHR;
+        encodeH265QualityLevelProperties.pNext = NULL;
+        encodeH265QualityLevelProperties.preferredRateControlFlags = VK_VIDEO_ENCODE_H265_RATE_CONTROL_REGULAR_GOP_BIT_KHR;
+        qualityLevelProperties.pNext = &encodeH265QualityLevelProperties;
+        result = m_vkDevCtx->GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR(m_vkDevCtx->getPhysicalDevice(), &deviceQualityLevelInfo, &qualityLevelProperties); // result is unused currently
+
+        if(result != VK_SUCCESS) {
+            fprintf(stderr, "\nInitEncoder Error: Failed to GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR.\n");
+            return result;
+        }
+
+        double frameRate = ((encoderConfig->frameRateNumerator > 0) && (encoderConfig->frameRateDenominator > 0))
+                        ? (double)encoderConfig->frameRateNumerator / encoderConfig->frameRateDenominator
+                        : 60.f;
+
+        if (encoderConfig->encodingProfile == EncoderConfig::LOW_LATENCY_STREAMING)
+        {
+            m_encoderConfig->vbvBufferSize = (uint32_t)(encoderConfig->averageBitrate / frameRate * encoderConfig->vbvbufratio); // averageBitrate is a uint32_t, no overflow
+            printf("vbv size %u\n", m_encoderConfig->vbvBufferSize);
+        }
+        else if (encoderConfig->encodingProfile == EncoderConfig::ARCHIVING)
+        {
+            m_encoderConfig->vbvBufferSize = encoderConfig->averageBitrate *  encoderConfig->vbvbufratio; // avgBitrate * 4 * (kbits-to-bits)
+        }
+    }
+#endif // _TRANSCODING
+
     // Initialize DPB
     m_dpb.DpbSequenceStart(m_maxDpbPicturesCount, (m_encoderConfig->numRefL0 > 0));
 
@@ -89,6 +124,17 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     encodeSessionParametersCreateInfo.flags = 0;
 
     VkVideoSessionParametersKHR sessionParameters;
+
+#if (_TRANSCODING)
+    VkVideoEncodeQualityLevelInfoKHR qualityLevel;
+    qualityLevel.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR;
+    qualityLevel.pNext = nullptr;
+    qualityLevel.qualityLevel = encoderConfig->qualityLevel;
+
+    VkVideoEncodeH265SessionParametersCreateInfoKHR* p_encodeH265SessionParametersCreateInfo = (VkVideoEncodeH265SessionParametersCreateInfoKHR*)&encodeSessionParametersCreateInfo.pNext;
+    p_encodeH265SessionParametersCreateInfo->pNext = &qualityLevel;
+#endif //_TRANSCODING
+
     result = m_vkDevCtx->CreateVideoSessionParametersKHR(*m_vkDevCtx,
                                                          &encodeSessionParametersCreateInfo,
                                                          nullptr,

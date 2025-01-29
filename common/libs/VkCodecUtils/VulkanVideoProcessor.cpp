@@ -109,16 +109,21 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
         fprintf(stderr, "\nERROR: Create VulkanVideoFrameBuffer result: 0x%x\n", result);
     }
 
+    uint32_t enableDecoderFeatures = 0;
+
+#if (!_TRANSCODING)
     FILE* outFile = m_frameToFile.AttachFile(outputFileName);
     if ((outputFileName != nullptr) && (outFile == nullptr)) {
         fprintf( stderr, "Error opening the output file %s", outputFileName);
         return -1;
     }
 
-    uint32_t enableDecoderFeatures = 0;
     if (outFile != nullptr) {
+    // Transcoding does not need a linear output (but this line alone causes output's freeze on Ampere, fixed in VkVideoDecoder.cpp L246 ..
+    // .. by force setup if (!(videoCapabilities.flags & VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR) to if(0) alongside
         enableDecoderFeatures |= VkVideoDecoder::ENABLE_LINEAR_OUTPUT;
     }
+#endif // !_TRANSCODING
 
     if (enableHwLoadBalancing) {
         enableDecoderFeatures |= VkVideoDecoder::ENABLE_HW_LOAD_BALANCING;
@@ -246,6 +251,29 @@ int32_t VulkanVideoProcessor::GetBitDepth()  const
 {
     return m_videoStreamDemuxer->GetBitDepth();
 }
+
+#if (_TRANSCODING)
+
+int32_t VulkanVideoProcessor::GetCodedHeight()  const
+{
+    return m_vkVideoDecoder->GetVideoFormatInfo()->coded_height;
+}
+
+int32_t VulkanVideoProcessor::GetCodedWidth()  const
+{
+    return m_vkVideoDecoder->GetVideoFormatInfo()->coded_width;
+}
+
+uint32_t VulkanVideoProcessor::GetFrameRate()  const
+{
+    return (m_vkVideoDecoder->GetVideoFormatInfo()->frame_rate.denominator) |  (m_vkVideoDecoder->GetVideoFormatInfo()->frame_rate.numerator << 14);
+}
+
+uint32_t VulkanVideoProcessor::GetFramesCount()  const
+{
+    return m_maxFrameCount;
+}
+#endif //_TRANSCODING
 
 void VulkanVideoProcessor::Deinit()
 {
@@ -634,7 +662,31 @@ int32_t VulkanVideoProcessor::ParserProcessNextDataChunk()
     return retValue;
 }
 
-int32_t VulkanVideoProcessor::GetNextFrame(VulkanDecodedFrame* pFrame, bool* endOfStream)
+#if (_TRANSCODING)
+static void setGeneratedOutputFileName(ProgramConfig* programConfig, VkSharedBaseObj<EncoderConfig>& encoderConfig)
+{
+    std::string filename = std::string{programConfig->videoFileName};
+    size_t filePath = filename.rfind("/");
+    if (filePath == std::string::npos) filePath = filename.rfind("\\");
+    if (filePath == std::string::npos) filePath = 0; else filePath += 1;
+    filename = filename.substr(filePath, filename.size() - 1);
+    size_t fileExtension = filename.rfind(".");
+    filename = filename.substr(0, fileExtension);
+    encoderConfig->outputFileHandler.SetFileName((filename +
+                                                "_" + std::to_string(encoderConfig->encodeHeight) +  "p" +
+                                                "_p" + std::to_string(encoderConfig->qualityLevel + 1) +
+                                                "_vbv" + std::to_string(encoderConfig->vbvbufratio) +  "_" +
+                                                std::to_string(encoderConfig->averageBitrate>>20) +  "Mbps" +
+                                                (encoderConfig->codec == VkVideoCodecOperationFlagBitsKHR::VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR ? ".264" : ".265")
+                                                ).c_str());
+}
+#endif
+
+int32_t VulkanVideoProcessor::GetNextFrame(VulkanDecodedFrame* pFrame, bool* endOfStream
+#if (_TRANSCODING)
+    , ProgramConfig* programConfig, VkSharedBaseObj<EncoderConfig>* encoderConfig
+#endif
+)
 {
     // The below call to DequeueDecodedPicture allows returning the next frame without parsing of the stream.
     // Parsing is only done when there are no more frames in the queue.
@@ -652,11 +704,31 @@ int32_t VulkanVideoProcessor::GetNextFrame(VulkanDecodedFrame* pFrame, bool* end
 
         if (m_videoFrameNum == 0) {
             DumpVideoFormat(m_vkVideoDecoder->GetVideoFormatInfo(), true);
+#if (_TRANSCODING)
+            {
+                (*encoderConfig)->encodeWidth = (*encoderConfig)->encodeMaxWidth = GetWidth();
+                (*encoderConfig)->encodeHeight = (*encoderConfig)->encodeMaxHeight = GetHeight();
+                (*encoderConfig)->input.width = GetCodedWidth();
+                (*encoderConfig)->input.height = GetCodedHeight();
+                setGeneratedOutputFileName(programConfig, *encoderConfig);
+                uint32_t frameRate = GetFrameRate();
+                (*encoderConfig)->numFrames = GetFramesCount();
+                (*encoderConfig)->frameRateDenominator = frameRate & ((1 << 14) - 1);
+                (*encoderConfig)->frameRateNumerator = frameRate >> 14;
+                (*encoderConfig)->InitializeParameters();
+                VkResult result = VkVideoEncoder::CreateVideoEncoder(m_vkDevCtx, *encoderConfig, m_vkVideoEncoder);
+                assert(result == VK_SUCCESS);
+            }
+#endif //_TRANSCODING
         }
 
+#if (!_TRANSCODING)
         if (m_frameToFile) {
             OutputFrameToFile(pFrame);
         }
+#else
+        m_vkVideoEncoder->LoadNextFrameDecoded(pFrame);
+#endif // !_TRANSCODING 
 
         m_videoFrameNum++;
     }
