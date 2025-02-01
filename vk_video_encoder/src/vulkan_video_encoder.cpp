@@ -125,7 +125,7 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
     m_vkDevCtxt.AddReqDeviceExtensions(requiredDeviceExtension);
     m_vkDevCtxt.AddOptDeviceExtensions(optinalDeviceExtension);
 
-    result = m_vkDevCtxt.InitVulkanDevice(m_encoderConfig->appName.c_str(),
+    result = m_vkDevCtxt.InitVulkanDevice(m_encoderConfig->appName.c_str(), VK_NULL_HANDLE,
                                           m_encoderConfig->verbose);
     if (result != VK_SUCCESS) {
         printf("Could not initialize the Vulkan device!\n");

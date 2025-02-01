@@ -25,11 +25,10 @@
 #include "VkCodecUtils/Helpers.h"
 #include "Shell.h"
 
-Shell::Shell(const VulkanDeviceContext* devCtx, const Configuration& configuration,
-             VkSharedBaseObj<FrameProcessor>& frameProcessor)
+Shell::Shell(const VulkanDeviceContext* devCtx, const Configuration& configuration)
     : m_refCount(0)
     , m_settings(configuration)
-    , m_frameProcessor(frameProcessor)
+    , m_frameProcessor()
     , m_ctx(devCtx) { }
 
 Shell::AcquireBuffer::AcquireBuffer()
@@ -457,20 +456,24 @@ const std::vector<VkExtensionProperties>& Shell::GetRequiredInstanceExtensions(b
     return ShellDirect::GetRequiredInstanceExtensions();
 }
 
+void Shell::AttachFrameProcessor(VkSharedBaseObj<FrameProcessor>& frameProcessor)
+{
+    m_frameProcessor = frameProcessor;
+}
+
 VkResult Shell::Create(const VulkanDeviceContext* vkDevCtx,
                        const Configuration& configuration,
-                       VkSharedBaseObj<FrameProcessor>& frameProcessor,
                        VkSharedBaseObj<Shell>& displayShell)
 {
     if (configuration.m_directToDisplayMode) {
-        displayShell = new ShellDirect(vkDevCtx, configuration, frameProcessor);
+        displayShell = new ShellDirect(vkDevCtx, configuration);
     } else {
 #if defined(VK_USE_PLATFORM_XCB_KHR)
-        displayShell = new ShellXcb(vkDevCtx, configuration, frameProcessor);
+        displayShell = new ShellXcb(vkDevCtx, configuration);
 #elif defined(VK_USE_PLATFORM_WAYLAND_KHR)
-        displayShell = new ShellWayland(vkDevCtx, configuration, frameProcessor);
+        displayShell = new ShellWayland(vkDevCtx, configuration);
 #elif defined(VK_USE_PLATFORM_WIN32_KHR)
-        displayShell = new ShellWin32(vkDevCtx, configuration, frameProcessor);
+        displayShell = new ShellWin32(vkDevCtx, configuration);
 #endif
     }
 

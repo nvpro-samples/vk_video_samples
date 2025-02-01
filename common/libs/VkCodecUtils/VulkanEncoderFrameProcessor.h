@@ -25,7 +25,6 @@ class FrameProcessor;
 class VulkanDeviceContext;
 
 VkResult CreateEncoderFrameProcessor(const VulkanDeviceContext* vkDevCtx,
-                                     VkSharedBaseObj<VkVideoQueue<VulkanEncoderInputFrame>>& videoQueue,
                                      VkSharedBaseObj<FrameProcessor>& frameProcessor);
 
 #endif /* LIBS_VKCODECUTILS_VULKANENCODERFRAMEPROCESSOR_H_ */

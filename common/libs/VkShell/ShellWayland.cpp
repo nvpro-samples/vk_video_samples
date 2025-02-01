@@ -155,8 +155,8 @@ void ShellWayland::registry_handle_global_remove(void *data, wl_registry *regist
 
 const wl_registry_listener ShellWayland::registry_listener = {registry_handle_global, registry_handle_global_remove};
 
-ShellWayland::ShellWayland(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration, VkSharedBaseObj<FrameProcessor>& frameProcessor)
-    : Shell(vkDevCtx, configuration, frameProcessor) {
+ShellWayland::ShellWayland(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration)
+    : Shell(vkDevCtx, configuration) {
 
     InitConnection();
 }

@@ -1,11 +1,6 @@
 cmake_minimum_required(VERSION 2.8.12)
 project(${VULKAN_VIDEO_DECODER_LIB}, LANGUAGES CXX)
 
-add_definitions(-DVK_USE_VIDEO_QUEUE)
-add_definitions(-DVK_USE_VIDEO_DECODE_QUEUE)
-add_definitions(-DVK_USE_VIDEO_ENCODE_QUEUE)
-add_definitions(-DVK_ENABLE_BETA_EXTENSIONS)
-
 macro(generate_dispatch_table out)
     add_custom_command(OUTPUT ${out}
         COMMAND ${PYTHON_EXECUTABLE} ${SCRIPTS_DIR}/generate-dispatch-table.py ${out}
@@ -167,7 +162,6 @@ find_package(Threads)
 set_target_properties(${VULKAN_VIDEO_DECODER_LIB} PROPERTIES SOVERSION ${VULKAN_VIDEO_DECODER_LIB_VERSION})
 
 if(WIN32)
-    add_definitions(-DVK_USE_PLATFORM_WIN32_KHR -DWIN32_LEAN_AND_MEAN -DNOMINMAX)
     set_target_properties(${VULKAN_VIDEO_DECODER_LIB} PROPERTIES LINK_FLAGS_DEBUG "/SUBSYSTEM:WINDOWS")
     set_target_properties(${VULKAN_VIDEO_DECODER_LIB} PROPERTIES COMPILE_DEFINITIONS_DEBUG "/SUBSYSTEM:WINDOWS")
     set_target_properties(${VULKAN_VIDEO_DECODER_LIB} PROPERTIES LINK_FLAGS_RELWITHDEBINFO "/SUBSYSTEM:WINDOWS")

@@ -49,6 +49,8 @@ public:
     FrameProcessor(const FrameProcessor &frameProcessor) = delete;
     FrameProcessor &operator=(const FrameProcessor &frameProcessor) = delete;
 
+    virtual int AttachQueue(VkSharedBaseObj<VkVideoRefCountBase>& videoQueue) = 0;
+
     virtual int AttachShell(const Shell &shell) = 0;
     virtual void DetachShell() = 0;
 

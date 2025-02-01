@@ -24,7 +24,7 @@
 class ShellXcb : public Shell {
 
 public:
-    ShellXcb(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration, VkSharedBaseObj<FrameProcessor>& frameProcessor);
+    ShellXcb(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration);
     virtual ~ShellXcb();
 
     static const char* GetRequiredInstanceExtension();

@@ -71,7 +71,6 @@ endif()
 
 ############ WINDOWS LIBRARY includes ######################################
 if(WIN32)
-    add_definitions(-DNOMINMAX="1")
     if ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
         message(STATUS "Selected Windows build type: Debug")
         if(NOT DEFINED ENV{LIB_ARCH_DIR})
@@ -250,6 +249,72 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
     SET(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_LIBDIR}")
 endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    add_definitions(-DVK_USE_PLATFORM_WIN32_KHR -DWIN32_LEAN_AND_MEAN -DNOMINMAX="1")
+    set(DisplayServer Win32)
+    if (NOT MSVC_VERSION LESS 1900)
+        # Enable control flow guard
+        message(STATUS "Building demos with control flow guard")
+        add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/guard:cf>")
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /guard:cf")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /guard:cf")
+    endif()
+    set(DEMO_INCLUDE_DIRS
+       "${PROJECT_SOURCE_DIR}/icd/common"
+        ${DEMO_INCLUDE_DIRS}
+    )
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    if (NOT DEMOS_WSI_SELECTION)
+        set(DEMOS_WSI_SELECTION "XCB")
+    endif()
+
+    if (DEMOS_WSI_SELECTION STREQUAL "XCB")
+        if (NOT BUILD_WSI_XCB_SUPPORT)
+            message( FATAL_ERROR "Selected XCB for demos build but not building Xcb support" )
+        endif()
+        set(DEMO_INCLUDE_DIRS
+            ${XCB_INCLUDE_DIRS}
+            ${DEMO_INCLUDE_DIRS}
+        )
+        link_libraries(${XCB_LIBRARIES})
+        add_definitions(-DVK_USE_PLATFORM_XCB_KHR)
+    elseif(DEMOS_WSI_SELECTION STREQUAL "XLIB")
+        if (NOT BUILD_WSI_XLIB_SUPPORT)
+            message( FATAL_ERROR "Selected XLIB for demos build but not building Xlib support" )
+        endif()
+        set(DEMO_INCLUDE_DIRS
+            ${X11_INCLUDE_DIR}
+            ${DEMO_INCLUDE_DIRS}
+        )
+        link_libraries(${X11_LIBRARIES})
+        add_definitions(-DVK_USE_PLATFORM_XLIB_KHR)
+    elseif(DEMOS_WSI_SELECTION STREQUAL "WAYLAND")
+        if (NOT BUILD_WSI_WAYLAND_SUPPORT)
+            message( FATAL_ERROR "Selected Wayland for demos build but not building Wayland support" )
+        endif()
+        set(DEMO_INCLUDE_DIRS
+            ${WAYLAND_CLIENT_INCLUDE_DIR}
+            ${DEMO_INCLUDE_DIRS}
+        )
+        link_libraries(${WAYLAND_CLIENT_LIBRARIES})
+        add_definitions(-DVK_USE_PLATFORM_WAYLAND_KHR)
+    elseif(DEMOS_WSI_SELECTION STREQUAL "DISPLAY")
+        add_definitions(-DVK_USE_PLATFORM_DISPLAY_KHR)
+    else()
+        message( FATAL_ERROR "Unrecognized value for DEMOS_WSI_SELECTION: ${DEMOS_WSI_SELECTION}" )
+     endif()
+
+    include_directories ("${PROJECT_SOURCE_DIR}/icd/common")
+    link_libraries(${API_LOWERCASE} m)
+else()
+    message(FATAL_ERROR "Unsupported Platform!")
+endif()
+
+add_definitions(-DVK_USE_VIDEO_QUEUE)
+add_definitions(-DVK_USE_VIDEO_DECODE_QUEUE)
+add_definitions(-DVK_USE_VIDEO_ENCODE_QUEUE)
+add_definitions(-DVK_ENABLE_BETA_EXTENSIONS)
 
 find_package(FFmpeg REQUIRED)
 

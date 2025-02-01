@@ -34,6 +34,8 @@ public:
                            int32_t defaultBitDepth = 12,
                            VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer = invalidDemuxer);
 
+    static bool CheckFile(const char* szInFilePath);
+
     virtual int32_t AddRef()
     {
         return ++m_refCount;
@@ -84,3 +86,11 @@ VkResult ElementaryStreamCreate(const char *pFilePath,
                                 int32_t defaultHeight,
                                 int32_t defaultBitDepth,
                                 VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer);
+
+VkResult FFmpegDemuxerCreate(const char *pFilePath,
+                             VkVideoCodecOperationFlagBitsKHR codecType,
+                             bool requiresStreamDemuxing,
+                             int32_t defaultWidth,
+                             int32_t defaultHeight,
+                             int32_t defaultBitDepth,
+                             VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer);

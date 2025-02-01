@@ -25,7 +25,6 @@ class FrameProcessor;
 class VulkanDeviceContext;
 
 VkResult CreateDecoderFrameProcessor(const VulkanDeviceContext* vkDevCtx,
-                                     VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>>& videoQueue,
                                      VkSharedBaseObj<FrameProcessor>& frameProcessor);
 
 class DecoderFrameProcessorState
@@ -46,7 +45,9 @@ public:
     , m_maxNumberOfFrames(0)
     {
         VkResult result = Init(vkDevCtx, videoQueue, maxNumberOfFrames);
-        assert (result == VK_SUCCESS);
+        if (result != VK_SUCCESS) {
+            assert(!"DecoderFrameProcessorState::Init() has failed");
+        }
     }
 
     void Deinit();
@@ -65,6 +66,16 @@ public:
     // Conversion operator returning m_frameProcessor by const reference
     operator const VkSharedBaseObj<FrameProcessor>&() const
     {
+        return m_frameProcessor;
+    }
+
+    // The key: operator-> returns a reference to the underlying VkSharedBaseObj
+    VkSharedBaseObj<FrameProcessor>& operator->() {
+        return m_frameProcessor;
+    }
+
+    // And optionally a const-qualified version if needed
+    const VkSharedBaseObj<FrameProcessor>& operator->() const {
         return m_frameProcessor;
     }
 

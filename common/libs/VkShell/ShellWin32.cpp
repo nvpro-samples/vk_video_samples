@@ -31,8 +31,8 @@ const std::vector<VkExtensionProperties>& ShellWin32::GetRequiredInstanceExtensi
     return win32SurfaceExtensions;
 }
 
-ShellWin32::ShellWin32(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration, VkSharedBaseObj<FrameProcessor>& frameProcessor)
-    : Shell(vkDevCtx, configuration, frameProcessor) {
+ShellWin32::ShellWin32(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration)
+    : Shell(vkDevCtx, configuration) {
 }
 
 ShellWin32::~ShellWin32() {

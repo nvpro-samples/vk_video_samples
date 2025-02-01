@@ -211,8 +211,19 @@ public:
     typedef HMODULE VulkanLibraryHandleType;
 #endif
 
-    VkResult InitVulkanDevice(const char * pAppName, bool verbose = false,
+    VkResult InitVulkanDevice(const char * pAppName,
+                              VkInstance vkInstance = VK_NULL_HANDLE,
+                              bool verbose = false,
                               const char * pCustomLoader = nullptr);
+
+    VkResult InitVulkanDecoderDevice(const char * pAppName,
+                                     VkInstance vkInstance = VK_NULL_HANDLE,
+                                     bool enableWsi = false,
+                                     bool enableWsiDirectMode = false,
+                                     bool enableValidation = false,
+                                     bool enableVerboseValidation = false,
+                                     bool enbaleVerboseDump = false,
+                                     const char * pCustomLoader = nullptr);
 
     VkResult AddReqInstanceLayers(const char* const* requiredInstanceLayers, bool verbose = false);
     VkResult CheckAllInstanceLayers(bool verbose = false);
@@ -244,7 +255,9 @@ public:
                                                                                  VK_QUEUE_TRANSFER_BIT,
                                 const VkVideoCodecOperationFlagsKHR requestVideoEncodeQueueOperations =
                                                                   (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
-                                                                   VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR));
+                                                                   VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR |
+                                                                   VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR),
+                                VkPhysicalDevice vkPhysicalDevice = VK_NULL_HANDLE);
 
     VkResult CreateVulkanDevice(int32_t numDecodeQueues = 1,
                                 int32_t numEncodeQueues = 0,
@@ -258,14 +271,15 @@ public:
                                 bool createTransferQueue = false,
                                 bool createGraphicsQueue = false,
                                 bool createPresentQueue = false,
-                                bool createComputeQueue = false);
+                                bool createComputeQueue = false,
+                                VkDevice vkDevice = VK_NULL_HANDLE);
     VkResult InitDebugReport(bool validate = false, bool validateVerbose = false);
 private:
 
     static PFN_vkGetInstanceProcAddr LoadVk(VulkanLibraryHandleType &vulkanLibHandle,
                                             const char * pCustomLoader = nullptr);
 
-    VkResult InitVkInstance(const char * pAppName, bool verbose = false);
+    VkResult InitVkInstance(const char * pAppName, VkInstance vkInstance = VK_NULL_HANDLE, bool verbose = false);
 
     VkResult PopulateInstanceExtensions();
 
@@ -289,6 +303,8 @@ private:
     int32_t  m_videoDecodeEncodeComputeNumQueues;
     VkQueueFlags m_videoDecodeQueueFlags;
     VkQueueFlags m_videoEncodeQueueFlags;
+    uint32_t m_importedInstanceHandle : 1;
+    uint32_t m_importedDeviceHandle : 1;
     uint32_t m_videoDecodeQueryResultStatusSupport : 1;
     uint32_t m_videoEncodeQueryResultStatusSupport : 1;
     VkDevice                m_device;
@@ -304,7 +320,6 @@ private:
     mutable std::mutex                                  m_presentQueueMutex;
     mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoDecodeQueueMutexes;
     mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoEncodeQueueMutexes;
-    bool m_isExternallyManagedDevice;
     VkDebugReportCallbackEXT           m_debugReport;
     std::vector<const char *>          m_reqInstanceLayers;
     std::vector<const char *>          m_reqInstanceExtensions;

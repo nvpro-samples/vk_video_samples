@@ -34,29 +34,14 @@
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 #include "crcgenerator.h"
 
-inline void CheckInputFile(const char* szInFilePath)
-{
-    std::ifstream fpIn(szInFilePath, std::ios::in | std::ios::binary);
-    if (fpIn.fail()) {
-        std::ostringstream err;
-        err << "Unable to open input file: " << szInFilePath << std::endl;
-        throw std::invalid_argument(err.str());
-    }
-}
-
 int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
+                                         VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
                                          ProgramConfig& programConfig)
 {
 
-    const char* filePath = programConfig.videoFileName.c_str();
     int32_t videoQueueIndx =  programConfig.queueId;
     const char* outputFileName = (programConfig.outputFileName.size() == 0) ?
             nullptr : programConfig.outputFileName.c_str();
-    const VkVideoCodecOperationFlagBitsKHR forceCodecType = programConfig.forceParserType;
-    const bool enableStreamDemuxing = (programConfig.enableStreamDemuxing == 1);
-    const int32_t defaultWidth = programConfig.initialWidth;
-    const int32_t defaultHeight = programConfig.initialHeight;
-    const int32_t defaultBitDepth = programConfig.initialBitdepth;
     const uint32_t loopCount = programConfig.loopCount;
     const uint32_t startFrame = 0;
     const int32_t  maxFrameCount = programConfig.maxFrameCount;
@@ -80,21 +65,11 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
 
     Deinit();
 
+    assert(vkDevCtx);
     m_vkDevCtx = vkDevCtx;
 
-    CheckInputFile(filePath);
-
-    VkResult result = VideoStreamDemuxer::Create(filePath,
-                                                 forceCodecType,
-                                                 enableStreamDemuxing,
-                                                 defaultWidth,
-                                                 defaultHeight,
-                                                 defaultBitDepth,
-                                                 m_videoStreamDemuxer);
-
-    if (result != VK_SUCCESS) {
-        return -result;
-    }
+    assert(videoStreamDemuxer);
+    m_videoStreamDemuxer = videoStreamDemuxer;
 
     m_usesStreamDemuxer = m_videoStreamDemuxer->IsStreamDemuxerEnabled();
     m_usesFramePreparser = m_videoStreamDemuxer->HasFramePreparser();
@@ -103,7 +78,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
         m_videoStreamDemuxer->DumpStreamParameters();
     }
 
-    result =  VulkanVideoFrameBuffer::Create(vkDevCtx, m_vkVideoFrameBuffer);
+    VkResult result =  VulkanVideoFrameBuffer::Create(vkDevCtx, m_vkVideoFrameBuffer);
     assert(result == VK_SUCCESS);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "\nERROR: Create VulkanVideoFrameBuffer result: 0x%x\n", result);
@@ -173,7 +148,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     }
 
     const uint32_t defaultMinBufferSize = 2 * 1024 * 1024; // 2MB
-    result = CreateParser(filePath,
+    result = CreateParser(nullptr,
                           m_videoStreamDemuxer->GetVideoCodec(),
                           defaultMinBufferSize,
                           (uint32_t)videoCapabilities.minBitstreamBufferOffsetAlignment,

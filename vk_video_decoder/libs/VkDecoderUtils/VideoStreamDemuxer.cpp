@@ -14,22 +14,20 @@
 * limitations under the License.
 */
 
+#include <sstream>
+#include <fstream>
 #include "VkDecoderUtils/VideoStreamDemuxer.h"
 
-VkResult FFmpegDemuxerCreate(const char *pFilePath,
-                             VkVideoCodecOperationFlagBitsKHR codecType,
-                             bool requiresStreamDemuxing,
-                             int32_t defaultWidth,
-                             int32_t defaultHeight,
-                             int32_t defaultBitDepth,
-                             VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer);
-
-VkResult ElementaryStreamCreate(const char *pFilePath,
-                                VkVideoCodecOperationFlagBitsKHR codecType,
-                                int32_t defaultWidth,
-                                int32_t defaultHeight,
-                                int32_t defaultBitDepth,
-                                VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer);
+bool VideoStreamDemuxer::CheckFile(const char* szInFilePath)
+{
+    std::ifstream fpIn(szInFilePath, std::ios::in | std::ios::binary);
+    if (fpIn.fail()) {
+        std::ostringstream err;
+        err << "Unable to open input file: " << szInFilePath << std::endl;
+        throw std::invalid_argument(err.str());
+    }
+    return true;
+}
 
 VkResult VideoStreamDemuxer::Create(const char *pFilePath,
                                     VkVideoCodecOperationFlagBitsKHR codecType,
@@ -39,6 +37,8 @@ VkResult VideoStreamDemuxer::Create(const char *pFilePath,
                                     int32_t defaultBitDepth,
                                     VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer)
 {
+    VideoStreamDemuxer::CheckFile(pFilePath);
+
     if (requiresStreamDemuxing || (codecType == VK_VIDEO_CODEC_OPERATION_NONE_KHR)) {
         return FFmpegDemuxerCreate(pFilePath,
                                    codecType,

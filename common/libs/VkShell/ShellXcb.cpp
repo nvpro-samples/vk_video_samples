@@ -52,8 +52,8 @@ const std::vector<VkExtensionProperties>& ShellXcb::GetRequiredInstanceExtension
     return xcbSurfaceExtensions;
 }
 
-ShellXcb::ShellXcb(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration, VkSharedBaseObj<FrameProcessor>& frameProcessor)
-    : Shell(vkDevCtx, configuration, frameProcessor)
+ShellXcb::ShellXcb(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration)
+    : Shell(vkDevCtx, configuration)
     , m_connection()
     , m_screen()
     , m_window()

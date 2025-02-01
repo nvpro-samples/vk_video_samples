@@ -78,8 +78,9 @@ public:
     static const std::vector<VkExtensionProperties>& GetRequiredInstanceExtensions(bool directToDisplayMode);
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            const Configuration& configuration,
-                           VkSharedBaseObj<FrameProcessor>& frameProcessor,
                            VkSharedBaseObj<Shell>& displayShell);
+
+    virtual void AttachFrameProcessor(VkSharedBaseObj<FrameProcessor>& frameProcessor);
 
     virtual int32_t AddRef()
     {
@@ -209,8 +210,7 @@ public:
 private:
     std::atomic<int32_t>       m_refCount;
 protected:
-    Shell(const VulkanDeviceContext* devCtx, const Configuration& configuration,
-          VkSharedBaseObj<FrameProcessor>& frameProcessor);
+    Shell(const VulkanDeviceContext* devCtx, const Configuration& configuration);
     virtual ~Shell() {}
 
     void CreateContext();

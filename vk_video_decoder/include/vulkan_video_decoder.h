@@ -40,11 +40,13 @@
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 #include "VkCodecUtils/VkVideoQueue.h"
 #include "VkCodecUtils/VulkanDecodedFrame.h"
+#include "VkDecoderUtils/VideoStreamDemuxer.h"
 
-// High-level interface of the video encoder
+// High-level interface of the video decoder
 class VulkanVideoDecoder : public VkVideoQueue<VulkanDecodedFrame> {
 public:
-    virtual VkResult Initialize(VkVideoCodecOperationFlagBitsKHR videoCodecOperation,
+    virtual VkResult Initialize(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
+                                VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
                                 int argc, const char** argv) = 0;
     virtual int64_t  GetMaxNumberOfFrames() const = 0;
     virtual VkVideoProfileInfoKHR GetVkProfile() const  = 0;
@@ -56,7 +58,8 @@ public:
 };
 
 extern "C" VK_VIDEO_DECODER_EXPORT
-VkResult CreateVulkanVideoDecoder(VkVideoCodecOperationFlagBitsKHR videoCodecOperation,
+VkResult CreateVulkanVideoDecoder(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
+                                  VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
                                   int argc, const char** argv,
                                   VkSharedBaseObj<VulkanVideoDecoder>& vulkanVideoDecoder);
 

@@ -23,7 +23,7 @@
 class ShellDirect : public Shell {
 
 public:
-    ShellDirect(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration, VkSharedBaseObj<FrameProcessor>& frameProcessor);
+    ShellDirect(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration);
     virtual ~ShellDirect();
 
     static const char* GetRequiredInstanceExtension();

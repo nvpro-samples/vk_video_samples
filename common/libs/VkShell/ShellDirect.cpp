@@ -39,8 +39,8 @@ const std::vector<VkExtensionProperties>& ShellDirect::GetRequiredInstanceExtens
     return directSurfaceExtensions;
 }
 
-ShellDirect::ShellDirect(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration, VkSharedBaseObj<FrameProcessor>& frameProcessor)
-    : Shell(vkDevCtx, configuration, frameProcessor),
+ShellDirect::ShellDirect(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration)
+    : Shell(vkDevCtx, configuration),
       m_vkDisplay(), m_displayWidth(), m_displayHeight(), m_quitLoop(false)
 {
 

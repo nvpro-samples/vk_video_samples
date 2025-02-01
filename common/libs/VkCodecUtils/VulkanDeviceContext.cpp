@@ -30,6 +30,7 @@
 #include <algorithm>    // std::find_if
 #include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
+#include "VkShell/Shell.h"
 
 #if !defined(VK_USE_PLATFORM_WIN32_KHR)
 PFN_vkGetInstanceProcAddr VulkanDeviceContext::LoadVk(VulkanLibraryHandleType &vulkanLibHandle,
@@ -310,7 +311,7 @@ static int DumpSoLibs()
 }
 #endif
 
-VkResult VulkanDeviceContext::InitVkInstance(const char * pAppName, bool verbose)
+VkResult VulkanDeviceContext::InitVkInstance(const char * pAppName, VkInstance vkInstance, bool verbose)
 {
     VkResult result = CheckAllInstanceLayers(verbose);
     if (result != VK_SUCCESS) {
@@ -335,7 +336,13 @@ VkResult VulkanDeviceContext::InitVkInstance(const char * pAppName, bool verbose
     instance_info.enabledExtensionCount = (uint32_t)m_reqInstanceExtensions.size();
     instance_info.ppEnabledExtensionNames = m_reqInstanceExtensions.data();
 
-    result = CreateInstance(&instance_info, nullptr, &m_instance);
+    if (vkInstance == VK_NULL_HANDLE) {
+        result = CreateInstance(&instance_info, nullptr, &m_instance);
+        m_importedInstanceHandle = false;
+    } else {
+        m_instance = vkInstance;
+        m_importedInstanceHandle = true;
+    }
 
 #if !defined(VK_USE_PLATFORM_WIN32_KHR)
     // For debugging which .so libraries are loaded and in use
@@ -408,13 +415,18 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const uint8_t
                                                  const VkQueueFlags requestVideoDecodeQueueMask,
                                                  const VkVideoCodecOperationFlagsKHR requestVideoDecodeQueueOperations,
                                                  const VkQueueFlags requestVideoEncodeQueueMask,
-                                                 const VkVideoCodecOperationFlagsKHR requestVideoEncodeQueueOperations)
+                                                 const VkVideoCodecOperationFlagsKHR requestVideoEncodeQueueOperations,
+                                                 VkPhysicalDevice vkPhysicalDevice)
 {
-    // enumerate physical devices
     std::vector<VkPhysicalDevice> availablePhysicalDevices;
-    VkResult result = vk::enumerate(this, m_instance, availablePhysicalDevices);
-    if (result != VK_SUCCESS) {
-        return result;
+    if (vkPhysicalDevice == VK_NULL_HANDLE) {
+        // enumerate physical devices
+        VkResult result = vk::enumerate(this, m_instance, availablePhysicalDevices);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+    } else {
+        availablePhysicalDevices.push_back(vkPhysicalDevice);
     }
 
     m_physDevice = VK_NULL_HANDLE;
@@ -623,7 +635,9 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const uint8_t
     return (m_physDevice != VK_NULL_HANDLE) ? VK_SUCCESS : VK_ERROR_FEATURE_NOT_PRESENT;
 }
 
-VkResult VulkanDeviceContext::InitVulkanDevice(const char * pAppName, bool verbose,
+VkResult VulkanDeviceContext::InitVulkanDevice(const char * pAppName,
+                                               VkInstance vkInstance,
+                                               bool verbose,
                                                const char * pCustomLoader) {
     PFN_vkGetInstanceProcAddr getInstanceProcAddrFunc = LoadVk(m_libHandle, pCustomLoader);
     if ((getInstanceProcAddrFunc == nullptr) || m_libHandle == VulkanLibraryHandleType()) {
@@ -631,7 +645,7 @@ VkResult VulkanDeviceContext::InitVulkanDevice(const char * pAppName, bool verbo
     }
     vk::InitDispatchTableTop(getInstanceProcAddrFunc, this);
 
-    VkResult result = InitVkInstance(pAppName, verbose);
+    VkResult result = InitVkInstance(pAppName, vkInstance, verbose);
     if (result != VK_SUCCESS) {
         return result;
     }
@@ -646,132 +660,142 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
                                                  bool createTransferQueue,
                                                  bool createGraphicsQueue,
                                                  bool createPresentQueue,
-                                                 bool createComputeQueue)
+                                                 bool createComputeQueue,
+                                                 VkDevice vkDevice)
 {
-    std::unordered_set<int32_t> uniqueQueueFamilies;
-    VkDeviceCreateInfo devInfo = {};
-    devInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    devInfo.pNext = nullptr;
-    devInfo.queueCreateInfoCount = 0;
+    if (vkDevice == VK_NULL_HANDLE) {
+        std::unordered_set<int32_t> uniqueQueueFamilies;
+        VkDeviceCreateInfo devInfo = {};
+        devInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+        devInfo.pNext = nullptr;
+        devInfo.queueCreateInfoCount = 0;
 
-    if (numDecodeQueues < 0) {
-        numDecodeQueues = m_videoDecodeNumQueues;
+        if (numDecodeQueues < 0) {
+            numDecodeQueues = m_videoDecodeNumQueues;
+        } else {
+            numDecodeQueues = std::min(numDecodeQueues, m_videoDecodeNumQueues);
+        }
+
+        if (numEncodeQueues < 0) {
+            numEncodeQueues = m_videoEncodeNumQueues;
+        } else {
+            numEncodeQueues = std::min(numEncodeQueues, m_videoEncodeNumQueues);
+        }
+
+        const int32_t maxQueueInstances = std::max(numDecodeQueues, numEncodeQueues);
+        assert(maxQueueInstances <= MAX_QUEUE_INSTANCES);
+        const std::vector<float> queuePriorities(maxQueueInstances, 0.0f);
+        std::array<VkDeviceQueueCreateInfo, MAX_QUEUE_FAMILIES> queueInfo = {};
+        const bool isUnique = uniqueQueueFamilies.insert(m_gfxQueueFamily).second;
+        assert(isUnique);
+        if (!isUnique) {
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        if (createGraphicsQueue) {
+            queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_gfxQueueFamily;
+            queueInfo[devInfo.queueCreateInfoCount].queueCount = 1;
+            queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
+            devInfo.queueCreateInfoCount++;
+        }
+
+        if (createPresentQueue &&
+                !(m_presentQueueFamily != -1) &&
+                uniqueQueueFamilies.insert(m_presentQueueFamily).second) {
+
+            queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_presentQueueFamily;
+            queueInfo[devInfo.queueCreateInfoCount].queueCount = 1;
+            queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
+            devInfo.queueCreateInfoCount++;
+        }
+
+        VkPhysicalDeviceVideoEncodeAV1FeaturesKHR videoEncodeAV1Feature { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_AV1_FEATURES_KHR,
+                                                                          nullptr,
+                                                                          false // videoEncodeAV1
+                                                                         };
+
+
+
+        VkPhysicalDeviceVideoMaintenance1FeaturesKHR videoMaintenance1Features { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR,
+                                                                                 ((videoCodecs & VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) != 0) ?
+                                                                                         &videoEncodeAV1Feature :
+                                                                                         nullptr,
+                                                                                 false};
+
+        VkPhysicalDeviceSynchronization2Features synchronization2Features { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
+                                                                            &videoMaintenance1Features,
+                                                                            false
+                                                                           };
+
+        VkPhysicalDeviceFeatures2 deviceFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &synchronization2Features};
+        GetPhysicalDeviceFeatures2(m_physDevice, &deviceFeatures);
+        devInfo.pNext = &deviceFeatures;
+
+        if ((numDecodeQueues > 0) &&
+                (m_videoDecodeQueueFamily != -1) &&
+                uniqueQueueFamilies.insert(m_videoDecodeQueueFamily).second) {
+            queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_videoDecodeQueueFamily;
+            queueInfo[devInfo.queueCreateInfoCount].queueCount = numDecodeQueues;
+            queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
+            devInfo.queueCreateInfoCount++;
+        }
+
+        if ((numEncodeQueues > 0) &&
+                (m_videoEncodeQueueFamily != -1) &&
+                uniqueQueueFamilies.insert(m_videoEncodeQueueFamily).second) {
+            queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_videoEncodeQueueFamily;
+            queueInfo[devInfo.queueCreateInfoCount].queueCount = numEncodeQueues;
+            queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
+            devInfo.queueCreateInfoCount++;
+        }
+
+        if (createComputeQueue &&
+                (m_computeQueueFamily != -1) &&
+                uniqueQueueFamilies.insert(m_computeQueueFamily).second) {
+            queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_computeQueueFamily;
+            queueInfo[devInfo.queueCreateInfoCount].queueCount = 1;
+            queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
+            devInfo.queueCreateInfoCount++;
+        }
+
+        if (createTransferQueue &&
+                (m_transferQueueFamily != -1) &&
+                uniqueQueueFamilies.insert(m_transferQueueFamily).second) {
+            queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_transferQueueFamily;
+            queueInfo[devInfo.queueCreateInfoCount].queueCount = 1;
+            queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
+            devInfo.queueCreateInfoCount++;
+        }
+
+        assert(devInfo.queueCreateInfoCount <= MAX_QUEUE_FAMILIES);
+
+        devInfo.pQueueCreateInfos = queueInfo.data();
+
+        devInfo.enabledExtensionCount = static_cast<uint32_t>(m_reqDeviceExtensions.size());
+        devInfo.ppEnabledExtensionNames = m_reqDeviceExtensions.data();
+
+        // disable all features
+        devInfo.pEnabledFeatures = nullptr;
+
+        VkResult result = CreateDevice(m_physDevice, &devInfo, nullptr, &m_device);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+
+        m_importedDeviceHandle = false;
+
     } else {
-        numDecodeQueues = std::min(numDecodeQueues, m_videoDecodeNumQueues);
+
+        m_device = vkDevice;
+        m_importedDeviceHandle = true;
     }
 
-    if (numEncodeQueues < 0) {
-        numEncodeQueues = m_videoEncodeNumQueues;
-    } else {
-        numEncodeQueues = std::min(numEncodeQueues, m_videoEncodeNumQueues);
-    }
-
-    const int32_t maxQueueInstances = std::max(numDecodeQueues, numEncodeQueues);
-    assert(maxQueueInstances <= MAX_QUEUE_INSTANCES);
-    const std::vector<float> queuePriorities(maxQueueInstances, 0.0f);
-    std::array<VkDeviceQueueCreateInfo, MAX_QUEUE_FAMILIES> queueInfo = {};
-    const bool isUnique = uniqueQueueFamilies.insert(m_gfxQueueFamily).second;
-    assert(isUnique);
-    if (!isUnique) {
-        return VK_ERROR_INITIALIZATION_FAILED;
-    }
-    if (createGraphicsQueue) {
-        queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_gfxQueueFamily;
-        queueInfo[devInfo.queueCreateInfoCount].queueCount = 1;
-        queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
-        devInfo.queueCreateInfoCount++;
-    }
-
-    if (createPresentQueue &&
-            !(m_presentQueueFamily != -1) &&
-            uniqueQueueFamilies.insert(m_presentQueueFamily).second) {
-
-        queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_presentQueueFamily;
-        queueInfo[devInfo.queueCreateInfoCount].queueCount = 1;
-        queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
-        devInfo.queueCreateInfoCount++;
-    }
-
-    VkPhysicalDeviceVideoEncodeAV1FeaturesKHR videoEncodeAV1Feature { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_AV1_FEATURES_KHR,
-                                                                      nullptr,
-                                                                      false // videoEncodeAV1
-                                                                     };
-
-
-
-    VkPhysicalDeviceVideoMaintenance1FeaturesKHR videoMaintenance1Features { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR,
-                                                                             ((videoCodecs & VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) != 0) ?
-                                                                                     &videoEncodeAV1Feature :
-                                                                                     nullptr,
-                                                                             false};
-
-    VkPhysicalDeviceSynchronization2Features synchronization2Features { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
-                                                                        &videoMaintenance1Features,
-                                                                        false
-                                                                       };
-
-    VkPhysicalDeviceFeatures2 deviceFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &synchronization2Features};
-    GetPhysicalDeviceFeatures2(m_physDevice, &deviceFeatures);
-    devInfo.pNext = &deviceFeatures;
-
-    if ((numDecodeQueues > 0) &&
-            (m_videoDecodeQueueFamily != -1) &&
-            uniqueQueueFamilies.insert(m_videoDecodeQueueFamily).second) {
-        queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_videoDecodeQueueFamily;
-        queueInfo[devInfo.queueCreateInfoCount].queueCount = numDecodeQueues;
-        queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
-        devInfo.queueCreateInfoCount++;
-    }
-
-    if ((numEncodeQueues > 0) &&
-            (m_videoEncodeQueueFamily != -1) &&
-            uniqueQueueFamilies.insert(m_videoEncodeQueueFamily).second) {
-        queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_videoEncodeQueueFamily;
-        queueInfo[devInfo.queueCreateInfoCount].queueCount = numEncodeQueues;
-        queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
-        devInfo.queueCreateInfoCount++;
-    }
-
-    if (createComputeQueue &&
-            (m_computeQueueFamily != -1) &&
-            uniqueQueueFamilies.insert(m_computeQueueFamily).second) {
-        queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_computeQueueFamily;
-        queueInfo[devInfo.queueCreateInfoCount].queueCount = 1;
-        queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
-        devInfo.queueCreateInfoCount++;
-    }
-
-    if (createTransferQueue &&
-            (m_transferQueueFamily != -1) &&
-            uniqueQueueFamilies.insert(m_transferQueueFamily).second) {
-        queueInfo[devInfo.queueCreateInfoCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queueInfo[devInfo.queueCreateInfoCount].queueFamilyIndex = m_transferQueueFamily;
-        queueInfo[devInfo.queueCreateInfoCount].queueCount = 1;
-        queueInfo[devInfo.queueCreateInfoCount].pQueuePriorities = queuePriorities.data();
-        devInfo.queueCreateInfoCount++;
-    }
-
-    assert(devInfo.queueCreateInfoCount <= MAX_QUEUE_FAMILIES);
-
-    devInfo.pQueueCreateInfos = queueInfo.data();
-
-    devInfo.enabledExtensionCount = static_cast<uint32_t>(m_reqDeviceExtensions.size());
-    devInfo.ppEnabledExtensionNames = m_reqDeviceExtensions.data();
-
-    // disable all features
-    devInfo.pEnabledFeatures = nullptr;
-
-    VkResult result = CreateDevice(m_physDevice, &devInfo, nullptr, &m_device);
-    if (result != VK_SUCCESS) {
-        return result;
-    }
-
-    vk::InitDispatchTableBottom(m_instance,m_device, this);
+    vk::InitDispatchTableBottom(m_instance, m_device, this);
 
     if (createGraphicsQueue) {
         GetDeviceQueue(m_device, GetGfxQueueFamilyIdx()    , 0, &m_gfxQueue);
@@ -805,7 +829,7 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         }
     }
 
-    return result;
+    return VK_SUCCESS;
 }
 
 VulkanDeviceContext::VulkanDeviceContext()
@@ -826,6 +850,8 @@ VulkanDeviceContext::VulkanDeviceContext()
     , m_videoDecodeEncodeComputeNumQueues(0)
     , m_videoDecodeQueueFlags(0)
     , m_videoEncodeQueueFlags(0)
+    , m_importedInstanceHandle(false)
+    , m_importedDeviceHandle(false)
     , m_videoDecodeQueryResultStatusSupport(false)
     , m_videoEncodeQueryResultStatusSupport(false)
     , m_device()
@@ -833,7 +859,6 @@ VulkanDeviceContext::VulkanDeviceContext()
     , m_computeQueue()
     , m_trasferQueue()
     , m_presentQueue()
-    , m_isExternallyManagedDevice()
     , m_debugReport()
     , m_reqInstanceLayers()
     , m_reqInstanceExtensions()
@@ -851,7 +876,7 @@ void VulkanDeviceContext::DeviceWaitIdle() const
 VulkanDeviceContext::~VulkanDeviceContext() {
 
     if (m_device) {
-        if (!m_isExternallyManagedDevice) {
+        if (!m_importedDeviceHandle) {
             DestroyDevice(m_device, nullptr);
         }
         m_device = VkDevice();
@@ -862,7 +887,7 @@ VulkanDeviceContext::~VulkanDeviceContext() {
     }
 
     if (m_instance) {
-        if (!m_isExternallyManagedDevice) {
+        if (!m_importedInstanceHandle) {
             DestroyInstance(m_instance, nullptr);
         }
         m_instance = VkInstance();
@@ -880,7 +905,7 @@ VulkanDeviceContext::~VulkanDeviceContext() {
         m_videoEncodeQueues[i] = VK_NULL_HANDLE;
     }
 
-    m_isExternallyManagedDevice = false;
+    m_importedDeviceHandle = false;
 
 #if !defined(VK_USE_PLATFORM_WIN32_KHR)
     dlclose(m_libHandle);
@@ -958,4 +983,95 @@ VkResult VulkanDeviceContext::PopulateDeviceExtensions()
     return result;
 }
 
+VkResult VulkanDeviceContext::InitVulkanDecoderDevice(const char * pAppName,
+                                                      VkInstance vkInstance,
+                                                      bool enableWsi,
+                                                      bool enableWsiDirectMode,
+                                                      bool enableValidation,
+                                                      bool enableVerboseValidation,
+                                                      bool enbaleVerboseDump,
+                                                      const char * pCustomLoader)
+{
+    static const char* const requiredInstanceLayers[] = {
+        "VK_LAYER_KHRONOS_validation",
+        nullptr
+    };
 
+    static const char* const requiredInstanceExtensions[] = {
+        VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
+        nullptr
+    };
+
+    static const char* const requiredWsiInstanceExtensions[] = {
+        // Required generic WSI extensions
+        VK_KHR_SURFACE_EXTENSION_NAME,
+        nullptr
+    };
+
+    static const char* const requiredDeviceExtension[] = {
+#if defined(__linux) || defined(__linux__) || defined(linux)
+        VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME,
+#endif
+        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
+        VK_KHR_VIDEO_QUEUE_EXTENSION_NAME,
+        VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME,
+        nullptr
+    };
+
+    static const char* const requiredWsiDeviceExtension[] = {
+        // Add the WSI required device extensions
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+#if !defined(VK_USE_PLATFORM_WIN32_KHR)
+        // VK_EXT_DISPLAY_CONTROL_EXTENSION_NAME,
+#endif
+        nullptr
+    };
+
+    static const char* const optinalDeviceExtension[] = {
+        VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME,
+        VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
+        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+        VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+        nullptr
+    };
+
+    if (enableValidation) {
+        AddReqInstanceLayers(requiredInstanceLayers);
+        AddReqInstanceExtensions(requiredInstanceExtensions);
+    }
+
+    // Add the Vulkan video required device extensions
+    AddReqDeviceExtensions(requiredDeviceExtension);
+    AddOptDeviceExtensions(optinalDeviceExtension);
+
+    /********** Start WSI instance extensions support *******************************************/
+    if (enableWsi) {
+        const std::vector<VkExtensionProperties>& wsiRequiredInstanceInstanceExtensions =
+                Shell::GetRequiredInstanceExtensions(enableWsiDirectMode);
+
+        for (size_t e = 0; e < wsiRequiredInstanceInstanceExtensions.size(); e++) {
+            AddReqInstanceExtension(wsiRequiredInstanceInstanceExtensions[e].extensionName);
+        }
+
+        // Add the WSI required instance extensions
+        AddReqInstanceExtensions(requiredWsiInstanceExtensions);
+
+        // Add the WSI required device extensions
+        AddReqDeviceExtensions(requiredWsiDeviceExtension);
+    }
+    /********** End WSI instance extensions support *******************************************/
+
+    VkResult result = InitVulkanDevice(pAppName, vkInstance, enbaleVerboseDump);
+    if (result != VK_SUCCESS) {
+        printf("Could not initialize the Vulkan device!\n");
+        return result;
+    }
+
+    result = InitDebugReport(enableValidation, enableVerboseValidation);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+
+    return result;
+}

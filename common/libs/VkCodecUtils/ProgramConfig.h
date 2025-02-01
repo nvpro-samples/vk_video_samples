@@ -70,7 +70,7 @@ struct ProgramConfig {
         crcValues = nullptr;
         decoderQueueSize = 5;
         enablePostProcessFilter = -1,
-        enableStreamDemuxing = true;
+        enableStreamDemuxing = false;
         deviceId = (uint32_t)-1;
         directMode = false;
         enableHwLoadBalancing = false;

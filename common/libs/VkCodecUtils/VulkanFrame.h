@@ -30,7 +30,6 @@ class VulkanFrame : public FrameProcessor {
 public:
 
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
-                           VkSharedBaseObj<VkVideoQueue<FrameDataType>>& videoQueue,
                            VkSharedBaseObj<VulkanFrame>& frameProcessor);
 
     virtual int32_t AddRef()
@@ -47,6 +46,8 @@ public:
         }
         return ret;
     }
+
+    virtual int AttachQueue(VkSharedBaseObj<VkVideoRefCountBase>& videoQueue);
 
     virtual int AttachShell(const Shell& sh);
     virtual void DetachShell();
@@ -76,8 +77,7 @@ public:
     void PrepareViewport(const VkExtent2D& extent);
 
 private:
-    VulkanFrame(const VulkanDeviceContext* vkDevCtx,
-                VkSharedBaseObj<VkVideoQueue<FrameDataType>>& videoQueue);
+    VulkanFrame(const VulkanDeviceContext* vkDevCtx);
     virtual ~VulkanFrame();
 
 private:

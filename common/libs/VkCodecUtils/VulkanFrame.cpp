@@ -28,12 +28,11 @@
 #include "VkVideoCore/DecodeFrameBufferIf.h"
 
 template<class FrameDataType>
-VulkanFrame<FrameDataType>::VulkanFrame(const VulkanDeviceContext* vkDevCtx,
-                                        VkSharedBaseObj<VkVideoQueue<FrameDataType>>& videoQueue)
+VulkanFrame<FrameDataType>::VulkanFrame(const VulkanDeviceContext* vkDevCtx)
     : FrameProcessor(true)
     , m_refCount(0)
     , m_vkDevCtx(vkDevCtx)
-    , m_videoQueue(videoQueue)
+    , m_videoQueue()
     , m_samplerYcbcrModelConversion(VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709)
     , m_samplerYcbcrRange(VK_SAMPLER_YCBCR_RANGE_ITU_NARROW)
     , m_videoRenderer(nullptr)
@@ -50,6 +49,14 @@ template<class FrameDataType>
 VulkanFrame<FrameDataType>::~VulkanFrame()
 {
     DetachShell();
+}
+
+template<class FrameDataType>
+int VulkanFrame<FrameDataType>::AttachQueue(VkSharedBaseObj<VkVideoRefCountBase>& videoQueue)
+{
+    m_videoQueue = (VkSharedBaseObj<VkVideoQueue<FrameDataType>>&)videoQueue;
+
+    return 0;
 }
 
 template<class FrameDataType>
@@ -677,10 +684,9 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
 
 template<class FrameDataType>
 VkResult VulkanFrame<FrameDataType>::Create(const VulkanDeviceContext* vkDevCtx,
-                                            VkSharedBaseObj<VkVideoQueue<FrameDataType>>& videoQueue,
                                             VkSharedBaseObj<VulkanFrame>& vulkanFrame)
 {
-    VkSharedBaseObj<VulkanFrame> vkVideoFrame(new VulkanFrame<FrameDataType>(vkDevCtx, videoQueue));
+    VkSharedBaseObj<VulkanFrame> vkVideoFrame(new VulkanFrame<FrameDataType>(vkDevCtx));
 
     if (vkVideoFrame) {
         vulkanFrame = vkVideoFrame;
@@ -692,12 +698,11 @@ VkResult VulkanFrame<FrameDataType>::Create(const VulkanDeviceContext* vkDevCtx,
 #include "VulkanDecoderFrameProcessor.h"
 
 VkResult CreateDecoderFrameProcessor(const VulkanDeviceContext* vkDevCtx,
-                                     VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>>& videoQueue,
                                      VkSharedBaseObj<FrameProcessor>& frameProcessor)
 {
 
     VkSharedBaseObj<VulkanFrame<VulkanDecodedFrame>> vulkanFrame;
-    VkResult result = VulkanFrame<VulkanDecodedFrame>::Create(vkDevCtx, videoQueue, vulkanFrame);
+    VkResult result = VulkanFrame<VulkanDecodedFrame>::Create(vkDevCtx, vulkanFrame);
     if (result != VK_SUCCESS) {
         return result;
     }
@@ -710,7 +715,7 @@ VkResult DecoderFrameProcessorState::Init(const VulkanDeviceContext* vkDevCtx,
                                           VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>>& videoQueue,
                                           int32_t maxNumberOfFrames)
 {
-    VkResult result = CreateDecoderFrameProcessor(vkDevCtx, videoQueue, m_frameProcessor);
+    VkResult result = CreateDecoderFrameProcessor(vkDevCtx, m_frameProcessor);
 
     if (result != VK_SUCCESS) {
         return result;
@@ -727,6 +732,9 @@ VkResult DecoderFrameProcessorState::Init(const VulkanDeviceContext* vkDevCtx,
         m_maxNumberOfFrames = maxNumberOfFrames;
     }
 
+    VkSharedBaseObj<VkVideoRefCountBase> _videoQueue(videoQueue);
+    m_frameProcessor->AttachQueue(_videoQueue);
+
     return result;
 }
 
@@ -741,12 +749,11 @@ void DecoderFrameProcessorState::Deinit()
 #include "VkCodecUtils/VulkanEncoderFrameProcessor.h"
 
 VkResult CreateEncoderFrameProcessor(const VulkanDeviceContext* vkDevCtx,
-                                     VkSharedBaseObj<VkVideoQueue<VulkanEncoderInputFrame>>& videoQueue,
                                      VkSharedBaseObj<FrameProcessor>& frameProcessor)
 {
 
     VkSharedBaseObj<VulkanFrame<VulkanEncoderInputFrame>> vulkanFrame;
-    VkResult result = VulkanFrame<VulkanEncoderInputFrame>::Create(vkDevCtx, videoQueue, vulkanFrame);
+    VkResult result = VulkanFrame<VulkanEncoderInputFrame>::Create(vkDevCtx, vulkanFrame);
     if (result != VK_SUCCESS) {
         return result;
     }

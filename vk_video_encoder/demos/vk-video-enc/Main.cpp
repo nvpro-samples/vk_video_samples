@@ -101,7 +101,7 @@ int main(int argc, char** argv)
     }
     /********** End WSI instance extensions support *******************************************/
 
-    VkResult result = vkDevCtxt.InitVulkanDevice(encoderConfig->appName.c_str(),
+    VkResult result = vkDevCtxt.InitVulkanDevice(encoderConfig->appName.c_str(), VK_NULL_HANDLE,
                                                  encoderConfig->verbose);
     if (result != VK_SUCCESS) {
         printf("Could not initialize the Vulkan device!\n");
@@ -151,9 +151,8 @@ int main(int argc, char** argv)
         return -1;
     }
 
-    VkSharedBaseObj<VkVideoQueue<VulkanEncoderInputFrame>> videoQueue(videoDispayQueue);
     VkSharedBaseObj<FrameProcessor> frameProcessor;
-    result = CreateEncoderFrameProcessor(&vkDevCtxt, videoQueue, frameProcessor);
+    result = CreateEncoderFrameProcessor(&vkDevCtxt, frameProcessor);
     if (result != VK_SUCCESS) {
         return -1;
     }
@@ -174,11 +173,11 @@ int main(int argc, char** argv)
     VkSharedBaseObj<VkVideoEncoder> encoder; // the encoder's instance
     if (supportsDisplay && encoderConfig->enableFramePresent) {
 
+        VkSharedBaseObj<Shell> displayShell;
         const Shell::Configuration configuration(encoderConfig->appName.c_str(),
                                                  4, // the display queue size
                                                  encoderConfig->enableFrameDirectModePresent);
-        VkSharedBaseObj<Shell> displayShell;
-        result = Shell::Create(&vkDevCtxt, configuration, frameProcessor, displayShell);
+        result = Shell::Create(&vkDevCtxt, configuration, displayShell);
         if (result != VK_SUCCESS) {
             assert(!"Can't allocate display shell! Out of memory!");
             return -1;
@@ -192,7 +191,8 @@ int main(int argc, char** argv)
                                               displayShell,
                                               requestVideoDecodeQueueMask,
                                               (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
-                                               VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR),
+                                               VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR |
+                                               VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR),
                                               requestVideoEncodeQueueMask,
                                               (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR |
@@ -227,6 +227,9 @@ int main(int argc, char** argv)
         }
 
         if (displayShell && videoDispayQueue) {
+            VkSharedBaseObj<VkVideoRefCountBase> videoQueue(videoDispayQueue);
+            frameProcessor->AttachQueue(videoQueue);
+            displayShell->AttachFrameProcessor(frameProcessor);
             result = encoder->AttachDisplayQueue(displayShell, videoDispayQueue);
         }
 

@@ -22,7 +22,7 @@
 class ShellWayland : public Shell {
 
 public:
-    ShellWayland(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration, VkSharedBaseObj<FrameProcessor>& frameProcessor);
+    ShellWayland(const VulkanDeviceContext* vkDevCtx, const Configuration& configuration);
     virtual ~ShellWayland();
 
     static const char* GetRequiredInstanceExtension();

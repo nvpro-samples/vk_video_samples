@@ -29,6 +29,10 @@ set(VULKAN_VIDEO_DEC_SOURCES
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanSamplerYcbcrConversion.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanSamplerYcbcrConversion.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/nvVkFormats.cpp
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/FFmpegDemuxer.cpp
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/VideoStreamDemuxer.cpp
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/VideoStreamDemuxer.h
+    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/ElementaryStream.cpp
     )
 
 set(VULKAN_VIDEO_DEC_DEFINITIONS
@@ -51,7 +55,6 @@ link_directories(
     )
 
 if(WIN32)
-    add_definitions(-DVK_USE_PLATFORM_WIN32_KHR -DWIN32_LEAN_AND_MEAN)
     list(APPEND VULKAN_VIDEO_DEC_LIBRARIES PRIVATE ${VULKAN_VIDEO_DECODER_LIB})
 else()
     list(APPEND VULKAN_VIDEO_DEC_LIBRARIES PRIVATE -l${SHADERC_LIB_SHARED})
@@ -59,6 +62,13 @@ else()
     list(APPEND VULKAN_VIDEO_DEC_LIBRARIES PRIVATE -L${LIBVKVIDEODECODER_BINARY_ROOT} -l${VULKAN_VIDEO_DECODER_LIB})
 endif()
 
+######## TODO make FFMPEG linbraries and demuxer optional. ###################
+if(WIN32)
+    list(APPEND VULKAN_VIDEO_DEC_LIBRARIES PRIVATE ${AVCODEC_LIB} ${AVFORMAT_LIB} ${AVUTIL_LIB})
+else()
+    list(APPEND VULKAN_VIDEO_DEC_LIBRARIES PRIVATE -lavcodec -lavutil -lavformat)
+endif()
+######## END of TODO make FFMPEG linbraries and demuxer optional. ###################
 
 if(TARGET vulkan)
     list(APPEND VULKAN_VIDEO_DEC_DEFINITIONS PRIVATE -DUNINSTALLED_LOADER="$<TARGET_FILE:vulkan>")
