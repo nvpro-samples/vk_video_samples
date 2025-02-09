@@ -20,17 +20,62 @@
 #include <vector>
 #include <cstring>
 #include <cstdio>
+#ifndef _WIN32
+#include <unistd.h>
+#include <sys/wait.h>
+#else
+#include <Windows.h>
+#include <psapi.h>
+#endif
 
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/ProgramConfig.h"
 #include "VkCodecUtils/VulkanVideoProcessor.h"
 #include "VkCodecUtils/VulkanDecoderFrameProcessor.h"
+#include "VkCodecUtils/poll_manager.h"
 #include "VkShell/Shell.h"
 
 int main(int argc, const char **argv) {
 
+    int spawn = 0;
+#ifdef _WIN32
+    PROCESS_INFORMATION pi {};
+    STARTUPINFO si {};
+    if (strncmp(argv[argc-1],"spawn",5)==0) {
+        spawn = 1;
+        argc--;
+    }
+#endif
+
     ProgramConfig programConfig(argv[0]);
     programConfig.ParseArgs(argc, argv);
+
+    int pid = getpid();
+    if (spawn == 0) {
+        for (int n = 0; n < (int)programConfig.numberOfDecodeWorkers; n++) {
+#ifdef _WIN32
+            cloneTheProcess(argc, argv, pi, si);
+#else
+            if(fork() == 0) {
+                break;
+            }
+#endif
+        }
+    }
+#ifdef _WIN32
+    if (spawn == 0)
+#else
+    if (pid == getpid())
+#endif
+    {
+        if (programConfig.enableWorkerProcessesPoll == 1) {
+            int result = 1;
+            if (programConfig.ipcType == IPC_TYPE::UNIX_DOMAIN_SOCKETS) {
+                result = usoc_manager(programConfig.noPresent, programConfig.fileListIpc);
+            }
+            return result;
+        }
+    }
 
     // In the regular application usecase the CRC output variables are allocated here and also output as part of main.
     // In the library case it is up to the caller of the library to allocate the values and initialize them.
@@ -154,17 +199,36 @@ int main(int argc, const char **argv) {
     }
 
     VkSharedBaseObj<VulkanVideoProcessor> vulkanVideoProcessor;
-    result = VulkanVideoProcessor::Create(programConfig, &vkDevCtxt, vulkanVideoProcessor);
-    if (result != VK_SUCCESS) {
-        return -1;
-    }
-
-    VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>> videoQueue(vulkanVideoProcessor);
     VkSharedBaseObj<FrameProcessor> frameProcessor;
-    result = CreateDecoderFrameProcessor(&vkDevCtxt, videoQueue, frameProcessor);
-    if (result != VK_SUCCESS) {
-        return -1;
-    }
+    std::vector<std::string> messageBuffer(128);
+    auto processInputFile = [&] (const int i) -> bool {
+        int res = 0;
+        if (programConfig.enableWorkerProcessesPoll) {
+            std::string receivedMessage;
+            receivedMessage.resize(DEFAULT_BUFLEN);
+            res = receiveNewBitstream(static_cast<IPC_TYPE>(programConfig.ipcType), programConfig.enableWorkerProcessesPoll, receivedMessage);
+            if (res) {
+                receivedMessage.resize(DEFAULT_BUFLEN);
+                res = parseCharArray(messageBuffer, receivedMessage.c_str(), argc, argv);
+                if (0) { // if(parseAllCmdline) { // we can pass full cmdline as well in case we need to change some decoding parameters
+                    programConfig.ParseArgs(argc, argv);
+                } else if (res) {
+                    programConfig.videoFileName = argv[0];
+                    std::cout << argv[0] << std::endl;
+                } else {
+                    return 0;
+                }
+            }
+        }
+        result = VulkanVideoProcessor::Create(programConfig, &vkDevCtxt, vulkanVideoProcessor);
+        vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig);
+        VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>> videoQueue(vulkanVideoProcessor);
+        result = CreateDecoderFrameProcessor(&vkDevCtxt, videoQueue, frameProcessor);
+        if (!programConfig.enableWorkerProcessesPoll) {
+            return i == 0;
+        }
+        return res;
+    };
 
     VkVideoCodecOperationFlagsKHR videoDecodeCodecs = (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR  |
                                                        VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR  |
@@ -220,18 +284,18 @@ int main(int argc, const char **argv) {
                                      true,  // createDisplayQueue
                                      requestVideoComputeQueueMask != 0  // createComputeQueue
                                      );
-        vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig);
-
-
-        displayShell->RunLoop();
+        int i0 = 0;
+        while (processInputFile(i0++)) {
+            Shell::Create(&vkDevCtxt, configuration, frameProcessor, displayShell);
+            displayShell->RunLoop();
+        }
 
     } else {
 
         result = vkDevCtxt.InitPhysicalDevice(programConfig.deviceId, programConfig.GetDeviceUUID(),
-                                              (VK_QUEUE_TRANSFER_BIT        |
-                                               requestVideoDecodeQueueMask  |
-                                               requestVideoComputeQueueMask |
-                                               requestVideoEncodeQueueMask),
+                                              (VK_QUEUE_TRANSFER_BIT | requestVideoDecodeQueueMask  |
+                                              requestVideoComputeQueueMask |
+                                              requestVideoEncodeQueueMask),
                                               nullptr,
                                               requestVideoDecodeQueueMask);
         if (result != VK_SUCCESS) {
@@ -258,19 +322,21 @@ int main(int argc, const char **argv) {
             return -1;
         }
 
-        vulkanVideoProcessor->Initialize(&vkDevCtxt, programConfig);
-
-        const int numberOfFrames = programConfig.decoderQueueSize;
-        int ret = frameProcessor->CreateFrameData(numberOfFrames);
-        assert(ret == numberOfFrames);
-        if (ret != numberOfFrames) {
-            return -1;
+        int i1 = 0;
+        while (processInputFile(i1++))
+        {
+            const int numberOfFrames = programConfig.decoderQueueSize;
+            int ret = frameProcessor->CreateFrameData(numberOfFrames);
+            assert(ret == numberOfFrames);
+            if (ret != numberOfFrames) {
+                return -1;
+            }
+            bool continueLoop = true;
+            do {
+                continueLoop = frameProcessor->OnFrame(0);
+            } while (continueLoop);
+            frameProcessor->DestroyFrameData();
         }
-        bool continueLoop = true;
-        do {
-            continueLoop = frameProcessor->OnFrame(0);
-        } while (continueLoop);
-        frameProcessor->DestroyFrameData();
     }
 
     if (programConfig.outputcrc != 0) {
@@ -285,6 +351,14 @@ int main(int argc, const char **argv) {
             programConfig.crcOutputFile = stdout;
         }
     }
-
+#ifdef _WIN32
+    WaitForSingleObject( pi.hProcess, INFINITE );
+    CloseHandle( pi.hProcess );
+    CloseHandle( pi.hThread );
+#else
+    int status = 1;
+    wait(&status);
+    exit(status);
+#endif
     return 0;
 }
