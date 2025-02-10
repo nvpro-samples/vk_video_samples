@@ -11,6 +11,7 @@ on:
       - main
 env:
   REPO_NAME: vk_video_samples
+  BUILD_JOBS: 16
 
 jobs:
   vk_video_samples-linux:
@@ -31,6 +32,7 @@ jobs:
         run: |
           echo "CC=cc -m32" >> $GITHUB_ENV
           echo "CXX=c++ -m32" >> $GITHUB_ENV
+          echo "ASM=as --32" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig/" >> $GITHUB_ENV
 
       - name: Install dependencies
@@ -40,6 +42,7 @@ jobs:
           sudo apt install cmake
           sudo apt install libx11-dev libwayland-dev
           sudo apt install libavformat-dev
+          sudo apt install libxrandr-dev
           sudo apt install libvulkan-dev
 
       - name: Install i386 dependencies
@@ -52,22 +55,22 @@ jobs:
           sudo apt remove --assume-yes zlib1g-dev
           sudo apt install libx11-dev:i386 libwayland-dev:i386
           sudo apt install libavformat-dev:i386
+          sudo apt install libxrandr-dev:i386
           sudo apt install libvulkan-dev:i386
 
       - name: Build
         shell: bash
         run: |
           cd vk_video_decoder
-          ./update_external_sources.sh
-          mkdir BUILD
-          cd BUILD
+          mkdir build
+          cd build
           cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-Wall -Werror" -DCMAKE_C_FLAGS="-Wall -Wextra -Werror" ..
-          make -j
+          cmake --build . --parallel $BUILD_JOBS --config Debug
           cd ../../vk_video_encoder
-          mkdir BUILD
-          cd BUILD
+          mkdir build
+          cd build
           cmake -DCMAKE_BUILD_TYPE=Debug ..
-          make -j
+          cmake --build . --parallel $BUILD_JOBS --config Debug
 
 
   vk_video_samples-win:
@@ -122,13 +125,12 @@ jobs:
       - name: Build
         run: |
           cd vk_video_decoder
-          .\update_external_sources.bat
-          mkdir BUILD
-          cd BUILD
+          mkdir build
+          cd build
           cmake -DCMAKE_BUILD_TYPE=Debug ..
-          cmake --build . --parallel 16 --config Debug
+          cmake --build . --parallel $BUILD_JOBS --config Debug
           cd ..\..\vk_video_encoder
-          mkdir BUILD
-          cd BUILD
+          mkdir build
+          cd build
           cmake -DCMAKE_BUILD_TYPE=Debug ..
-          cmake --build . --parallel 16 --config Debug
+          cmake --build . --parallel $BUILD_JOBS --config Debug

@@ -45,18 +45,45 @@
 // High-level interface of the video decoder
 class VulkanVideoDecoder : public VkVideoQueue<VulkanDecodedFrame> {
 public:
-    virtual VkResult Initialize(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
-                                VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
-                                int argc, const char** argv) = 0;
-    virtual int64_t  GetMaxNumberOfFrames() const = 0;
-    virtual VkVideoProfileInfoKHR GetVkProfile() const  = 0;
-    virtual uint32_t GetProfileIdc() const = 0;
-    virtual VkExtent3D GetVideoExtent() const = 0;
-    virtual int32_t  ParserProcessNextDataChunk() = 0;
-    virtual uint32_t RestartStream(int64_t& bitstreamOffset) = 0;
-    virtual size_t   OutputFrameToFile(VulkanDecodedFrame* pNewDecodedFrame) = 0;
+    virtual ~VulkanVideoDecoder() {};
 };
 
+/**
+ * @brief Creates an instance of the Vulkan video decoder, returning a reference-counted
+ *        VulkanVideoDecoder interface.
+ *
+ * This function instantiates a video decoder and hands back a reference-counted interface
+ * (`VulkanVideoDecoder`) via the `vulkanVideoDecoder` parameter. The video decoder uses Vulkan
+ * for video processing. The client may optionally provide existing Vulkan handles for
+ * `VkInstance`, `VkPhysicalDevice`, and `VkDevice` to share resources with other parts of the
+ * application. If the client does not require sharing, any of these parameters can be passed as
+ * `VK_NULL_HANDLE`.
+ *
+ * @param[in]  vkInstance         Optional Vulkan instance handle. If not required, pass
+ *                                `VK_NULL_HANDLE`.
+ * @param[in]  vkPhysicalDevice   Optional Vulkan physical device handle. If not required, pass
+ *                                `VK_NULL_HANDLE`. If vkPhysicalDevice is not `VK_NULL_HANDLE` then
+ *                                vkInstance must be a valid Vulkan instance handle.
+ * @param[in]  vkDevice           Optional Vulkan device handle. If not required, pass
+ *                                `VK_NULL_HANDLE`. If vkDevice is not `VK_NULL_HANDLE` then
+ *                                vkPhysicalDevice must be a valid Vulkan physical device handle.
+ * @param[in]  videoStreamDemuxer A stream processor that abstracts elementary streams or container
+ *                                formats (e.g., MPEG, Matroska). This object will be used to
+ *                                feed data into the decoder.
+ * @param[in]  argc               The number of configuration arguments passed for decoder setup.
+ * @param[in]  argv               An array of null-terminated strings, containing the decoder
+ *                                configuration options. All possible arguments are documented
+ *                                in the @c DecoderConfig structure.
+ * @param[out] vulkanVideoDecoder A smart pointer (reference-counted) that will receive the newly
+ *                                created decoder interface on success.
+ *
+ * @return
+ * - `VK_SUCCESS` on success.
+ * - Appropriate Vulkan error codes if creation or initialization fails.
+ *
+ * @note If `vkInstance`, `vkPhysicalDevice`, or `vkDevice` are provided, they must remain valid
+ *       for the duration of the decoder's lifetime if resources are shared with them.
+ */
 extern "C" VK_VIDEO_DECODER_EXPORT
 VkResult CreateVulkanVideoDecoder(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
                                   VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,

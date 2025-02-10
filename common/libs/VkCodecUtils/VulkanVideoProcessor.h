@@ -17,10 +17,10 @@
 #ifndef _VULKANVIDEOPROCESSOR_H_
 #define _VULKANVIDEOPROCESSOR_H_
 
+#include "DecoderConfig.h"
 #include "VkDecoderUtils/VideoStreamDemuxer.h"
 #include "VkVideoDecoder/VkVideoDecoder.h"
 #include "VkCodecUtils/VkVideoFrameToFile.h"
-#include "VkCodecUtils/ProgramConfig.h"
 #include "VkCodecUtils/VkVideoQueue.h"
 
 class VulkanVideoProcessor : public VkVideoQueue<VulkanDecodedFrame> {
@@ -32,17 +32,18 @@ public:
     virtual VkVideoProfileInfoKHR GetVkProfile() const;
     virtual uint32_t GetProfileIdc() const;
     virtual VkFormat GetFrameImageFormat()  const;
+    virtual VkExtent3D GetVideoExtent() const;
     virtual int32_t GetNextFrame(VulkanDecodedFrame* pFrame, bool* endOfStream);
     virtual int32_t ReleaseFrame(VulkanDecodedFrame* pDisplayedFrame);
 
     static VkSharedBaseObj<VulkanVideoProcessor>& invalidVulkanVideoProcessor;
 
-    static VkResult Create(const ProgramConfig& settings, const VulkanDeviceContext* vkDevCtx,
+    static VkResult Create(const DecoderConfig& settings, const VulkanDeviceContext* vkDevCtx,
                            VkSharedBaseObj<VulkanVideoProcessor>& vulkanVideoProcessor = invalidVulkanVideoProcessor);
 
     int32_t Initialize(const VulkanDeviceContext* vkDevCtx,
                        VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
-                       ProgramConfig& programConfig);
+                       DecoderConfig& programConfig);
 
     void Deinit();
 
@@ -70,7 +71,7 @@ public:
 
 private:
 
-    VulkanVideoProcessor(const ProgramConfig& settings, const VulkanDeviceContext* vkDevCtx)
+    VulkanVideoProcessor(const DecoderConfig& settings, const VulkanDeviceContext* vkDevCtx)
         : m_refCount(0),
           m_vkDevCtx(vkDevCtx),
           m_videoStreamDemuxer()
@@ -121,7 +122,7 @@ private:
     int32_t   m_loopCount;
     uint32_t  m_startFrame;
     int32_t   m_maxFrameCount;
-    const ProgramConfig& m_settings;
+    const DecoderConfig& m_settings;
 };
 
 #endif /* _VULKANVIDEOPROCESSOR_H_ */

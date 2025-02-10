@@ -73,9 +73,20 @@ set(sources
     ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.cpp
     )
 
+# Conditionally include FFmpegDemuxer.cpp
+if(FFMPEG_AVAILABLE)
+    list(APPEND sources ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/FFmpegDemuxer.cpp)
+endif()
+
 set(definitions
     PRIVATE -DVK_NO_PROTOTYPES
-    PRIVATE -DGLM_FORCE_RADIANS)
+    PRIVATE -DGLM_FORCE_RADIANS
+    PRIVATE -DVIDEO_DISPLAY_QUEUE_SUPPORT)
+
+# Conditionally include FFMPEG_DEMUXER_SUPPORT
+if(FFMPEG_AVAILABLE)
+    list(APPEND definitions PRIVATE -DFFMPEG_DEMUXER_SUPPORT)
+endif()
 
 set(includes
     PRIVATE ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}
@@ -96,11 +107,11 @@ link_directories(
     )
 
 if(WIN32)
-    list(APPEND libraries PRIVATE ${AVCODEC_LIB} ${AVFORMAT_LIB} ${AVUTIL_LIB} ${VULKAN_VIDEO_PARSER_LIB} ${SHADERC_LIB_SHARED})
+    list(APPEND libraries PUBLIC ${AVCODEC_LIB} ${AVFORMAT_LIB} ${AVUTIL_LIB} ${VULKAN_VIDEO_PARSER_LIB} ${SHADERC_LIB_SHARED})
 else()
     list(APPEND libraries PRIVATE -lX11)
     list(APPEND libraries PRIVATE -lavcodec -lavutil -lavformat)
-    list(APPEND libraries PRIVATE -l${SHADERC_LIB_SHARED})
+    list(APPEND libraries PRIVATE -L${SHADERC_LIB_SHARED_DIR} -l${SHADERC_LIB_SHARED})
     list(APPEND libraries PRIVATE -L${CMAKE_INSTALL_LIBDIR} -l${VULKAN_VIDEO_PARSER_LIB})
     list(APPEND libraries PRIVATE -L${LIBNVPARSER_BINARY_ROOT} -l${VULKAN_VIDEO_PARSER_LIB})
 endif()
@@ -146,7 +157,7 @@ list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE}/nvidia_utils/vulkan)
 add_executable(vk-video-dec-test ${generate_helper_files} ${sources})
 target_compile_definitions(vk-video-dec-test ${definitions})
 target_include_directories(vk-video-dec-test ${includes})
-target_link_libraries(vk-video-dec-test ${libraries})
-add_dependencies(vk-video-dec-test generate_helper_files)
+target_link_libraries(vk-video-dec-test PUBLIC ${libraries})
+add_dependencies(vk-video-dec-test generate_helper_files ${VULKAN_VIDEO_DECODER_LIB} ${SHADERC_LIB})
 
 install(TARGETS vk-video-dec-test RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

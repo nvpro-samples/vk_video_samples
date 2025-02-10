@@ -15,9 +15,10 @@
  */
 
 #include <iostream>
+
+#include "VkCodecUtils/DecoderConfig.h"
 #include "vulkan_video_decoder.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
-#include "VkCodecUtils/ProgramConfig.h"
 #include "VkCodecUtils/VulkanFrame.h"
 #include "VkCodecUtils/VulkanDecoderFrameProcessor.h"
 #include "VkDecoderUtils/VideoStreamDemuxer.h"
@@ -25,11 +26,6 @@
 
 static void DumpDecoderStreeamInfo(VkSharedBaseObj<VulkanVideoDecoder>& vulkanVideoDecoder)
 {
-    int64_t numFrames = vulkanVideoDecoder->GetMaxNumberOfFrames();
-    if (numFrames > 0) {
-        std::cout << "Max number of frames to decode: " << numFrames << std::endl;
-    }
-
     const VkVideoProfileInfoKHR videoProfileInfo = vulkanVideoDecoder->GetVkProfile();
 
     const VkExtent3D extent = vulkanVideoDecoder->GetVideoExtent();
@@ -47,7 +43,7 @@ int main(int argc, const char** argv)
 {
     std::cout << "Enter decoder test" << std::endl;
 
-    ProgramConfig decoderConfig(argv[0]);
+    DecoderConfig decoderConfig(argv[0]);
     decoderConfig.ParseArgs(argc, argv);
 
     VulkanDeviceContext vkDevCtxt;

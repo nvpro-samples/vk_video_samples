@@ -1,9 +1,10 @@
 # The name of our project is "VULKAN_VIDEO_TESTS". CMakeLists files in this project can
 # refer to the root source directory of the project as ${VULKAN_VIDEO_TESTS_SOURCE_DIR} and
 # to the root binary directory of the project as ${VULKAN_BINARY_DIR}.
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.20.0)
 
 include(CheckCXXCompilerFlag)
+include(FetchContent)
 
 # This must come before the project command.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.12" CACHE STRING "Minimum OS X deployment version")
@@ -30,18 +31,8 @@ if (USE_CCACHE)
     endif(CCACHE_FOUND)
 endif()
 
-find_package(Vulkan REQUIRED)
-
-if(Vulkan_FOUND)
-    message(STATUS "Found Vulkan inlcude: ${Vulkan_INCLUDE_DIR}")
-    message(STATUS "Found Vulkan libs: ${Vulkan_LIBRARIES}")
-
-    # Extract the directory part of the Vulkan library path
-    get_filename_component(VULKAN_LIB_DIR "${Vulkan_LIBRARIES}" DIRECTORY)
-    set(SHADERC_LIB_SHARED "shaderc_shared")
-else()
-    message(FATAL_ERROR "Could not find Vulkan SDK")
-endif()
+# Handle Vulkan and shaderc dependencies
+include(FindVulkanAndDependencies)
 
 ############ LINUX LIBRARY includes ######################################
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -222,13 +213,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(DEMOS_WSI_SELECTION "XCB" CACHE STRING "Select WSI target for demos (XCB, XLIB, WAYLAND, MIR, DISPLAY)")
 
     if (BUILD_WSI_XCB_SUPPORT)
-        # Workaround this spurious warning, which for this project is not an issue,
-        #
-        # The package name passed to `find_package_handle_standard_args` (xcb) does not match the name of the calling package (XCB).  This can lead to problems
-        # in calling code that expects `find_package` result variables (e.g.,`_FOUND`) to follow a certain pattern.
-        set(FPHSA_NAME_MISMATCHED 1)
         find_package(XCB REQUIRED)
-        unset(FPHSA_NAME_MISMATCHED)
     endif()
 
     if (BUILD_WSI_XLIB_SUPPORT)
@@ -236,10 +221,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     endif()
 
     if (BUILD_WSI_WAYLAND_SUPPORT)
-        # See comments above for XCB
-        set(FPHSA_NAME_MISMATCHED 1)
         find_package(Wayland REQUIRED)
-        unset(FPHSA_NAME_MISMATCHED)
         include_directories(${WAYLAND_CLIENT_INCLUDE_DIR})
     endif()
 
@@ -317,6 +299,7 @@ add_definitions(-DVK_USE_VIDEO_ENCODE_QUEUE)
 add_definitions(-DVK_ENABLE_BETA_EXTENSIONS)
 
 find_package(FFmpeg REQUIRED)
+set(FFMPEG_AVAILABLE OFF)
 
 # FFMPEG_FOUND - system has ffmpeg or libav
 # FFMPEG_INCLUDE_DIR - the ffmpeg include directory
@@ -327,33 +310,44 @@ find_package(FFmpeg REQUIRED)
 if(FFMPEG_FOUND)
     message("Found FFMPEG/LibAV libraries")
     include_directories(${FFMPEG_INCLUDE_DIR})
+    set(FFMPEG_AVAILABLE ON)
 else()
     if(WIN32)
-		find_library(AVCODEC_LIB NAMES avcodec PATHS ${VULKAN_FFMPEG_LIB_PATH})
-		message(STATUS ${AVCODEC_LIB})
-		find_library(AVFORMAT_LIB NAMES avformat PATHS ${VULKAN_FFMPEG_LIB_PATH})
-		message(STATUS ${AVFORMAT_LIB})
-		find_library(AVUTIL_LIB NAMES avutil PATHS ${VULKAN_FFMPEG_LIB_PATH})
-		message(STATUS ${AVUTIL_LIB})
-		include_directories(${FFMPEG_INCLUDE_DIR})
+       find_library(AVCODEC_LIB NAMES avcodec PATHS ${VULKAN_FFMPEG_LIB_PATH})
+       message(STATUS ${AVCODEC_LIB})
+       find_library(AVFORMAT_LIB NAMES avformat PATHS ${VULKAN_FFMPEG_LIB_PATH})
+       message(STATUS ${AVFORMAT_LIB})
+       find_library(AVUTIL_LIB NAMES avutil PATHS ${VULKAN_FFMPEG_LIB_PATH})
+       message(STATUS ${AVUTIL_LIB})
 
-   install(DIRECTORY "${VULKAN_FFMPEG_LIB_PATH}/../bin/"
-           DESTINATION "${CMAKE_INSTALL_PREFIX}/bin"
-           PATTERN "*.def" EXCLUDE
-           PATTERN "*.a" EXCLUDE)
+       if(AVCODEC_LIB AND AVFORMAT_LIB AND AVUTIL_LIB)
+           message(STATUS "Found FFMPEG libraries manually")
+           set(FFMPEG_AVAILABLE ON)
+	       include_directories(${FFMPEG_INCLUDE_DIR})
 
-   install(DIRECTORY "${VULKAN_FFMPEG_LIB_PATH}/"
-           DESTINATION "${CMAKE_INSTALL_PREFIX}/lib")
+	       install(DIRECTORY "${VULKAN_FFMPEG_LIB_PATH}/../bin/"
+	       DESTINATION "${CMAKE_INSTALL_PREFIX}/bin"
+	            PATTERN "*.def" EXCLUDE
+	            PATTERN "*.a" EXCLUDE)
 
+	       install(DIRECTORY "${VULKAN_FFMPEG_LIB_PATH}/"
+	            DESTINATION "${CMAKE_INSTALL_PREFIX}/lib")
+       else()
+            message(WARNING "Can't find libavcodec, libavformat, or libavutil on Windows!")
+       endif()
     else()
-		message("Can't find libavcodec, libavformat or libavutil. Please add them!")
+        message(WARNING "Can't find libavcodec, libavformat, or libavutil on Linux!")
     endif()
+endif()
+
+if (NOT FFMPEG_AVAILABLE)
+    message(WARNING "FFMPEG demuxing is not going to be suppored.")
 endif()
 
 set(SCRIPTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../scripts")
 
 # Header file for CMake settings
-include_directories("${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/../common/include" "${Vulkan_INCLUDE_DIR}")
+include_directories("${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/../common/include" "${VULKAN_HEADERS_INCLUDE_DIR}" "${Vulkan_INCLUDE_DIR}")
 
 if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     # set(COMMON_COMPILE_FLAGS "-Wall -Wextra -Wno-long-long -Wshadow -Wundef -Wconversion -Wno-sign-conversion -Wno-conversion -Wno-sign-compare")
@@ -416,8 +410,8 @@ else()
         set (LIBSOURCE_DIR "")
     elseif (CMAKE_CL_64)
         set (BUILDTGT_DIR build)
-        set (BINDATA_DIR Bin)
-        set (LIBSOURCE_DIR Lib)
+        set (BINDATA_DIR "")
+        set (LIBSOURCE_DIR "")
     else()
         set (BUILDTGT_DIR build32)
         set (BINDATA_DIR Bin32)
@@ -427,7 +421,6 @@ endif()
 
 option(BUILD_LOADER "Build loader" ON)
 option(BUILD_TESTS "Build tests" ON)
-option(BUILD_LAYERS "Build layers" ON)
 option(BUILD_DEMOS "Build demos" ON)
 if (APPLE)
     option(BUILD_VKJSON "Build vkjson" OFF)
@@ -451,19 +444,9 @@ if (WIN32)
         set (DEBUG_DECORATION "Debug")
         set (RELEASE_DECORATION "Release")
     endif()
-
 else()
     # not WIN32
-
 endif()
-
-if (WIN32)
-
-else ()
-    # not WIN32
-
-endif()
-
 
 set (PYTHON_CMD ${PYTHON_EXECUTABLE})
 
@@ -546,6 +529,7 @@ endif()
 set(VKVIDEO_UTILS_VLF_SOURCES
     ../common/layers/vk_format_utils.cpp
     )
+
 if (WIN32)
     add_library(VkVideoUtils STATIC ${VKVIDEO_UTILS_VLF_SOURCES})
     target_compile_definitions(VkVideoUtils PUBLIC _CRT_SECURE_NO_WARNINGS)
@@ -586,6 +570,6 @@ endif()
 
 add_subdirectory(test/vulkan-video-dec)
 
-if(BUILD_DEMOS)
+if(BUILD_DEMOS AND NOT DEFINED DEQP_TARGET)
     add_subdirectory(demos)
 endif()

@@ -444,7 +444,7 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
     if (syncCpuAfterStaging) {
         encodeFrameInfo->inputCmdBuffer->SyncHostOnCmdBuffComplete(false, "encoderStagedInputFence");
     }
-#ifdef ENCODER_DISPLAY_QUEUE_SUPPORT
+#ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
     if (result == VK_SUCCESS) {
 
         if (m_displayQueue.IsValid()) {
@@ -467,7 +467,7 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
             m_displayQueue.EnqueueFrame(&displayEncoderInputFrame);
         }
     }
-#endif // ENCODER_DISPLAY_QUEUE_SUPPORT
+#endif // VIDEO_DISPLAY_QUEUE_SUPPORT
     return result;
 }
 
@@ -1688,9 +1688,9 @@ bool VkVideoEncoder::WaitForThreadsToComplete()
 
 int32_t VkVideoEncoder::DeinitEncoder()
 {
-#ifdef ENCODER_DISPLAY_QUEUE_SUPPORT
+#ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
     m_displayQueue.Flush();
-#endif // ENCODER_DISPLAY_QUEUE_SUPPORT
+#endif // VIDEO_DISPLAY_QUEUE_SUPPORT
     m_lastDeferredFrame = nullptr;
 
     m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::ENCODE, 0);

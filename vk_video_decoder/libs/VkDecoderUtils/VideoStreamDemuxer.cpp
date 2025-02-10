@@ -39,6 +39,7 @@ VkResult VideoStreamDemuxer::Create(const char *pFilePath,
 {
     VideoStreamDemuxer::CheckFile(pFilePath);
 
+#ifdef FFMPEG_DEMUXER_SUPPORT
     if (requiresStreamDemuxing || (codecType == VK_VIDEO_CODEC_OPERATION_NONE_KHR)) {
         return FFmpegDemuxerCreate(pFilePath,
                                    codecType,
@@ -47,7 +48,13 @@ VkResult VideoStreamDemuxer::Create(const char *pFilePath,
                                    defaultHeight,
                                    defaultBitDepth,
                                    videoStreamDemuxer);
-    }  else {
+    }  else
+#endif // FFMPEG_DEMUXER_SUPPORT
+    {
+        assert(codecType != VK_VIDEO_CODEC_OPERATION_NONE_KHR);
+        assert(defaultWidth > 0);
+        assert(defaultHeight > 0);
+        assert((defaultBitDepth == 8) || (defaultBitDepth == 10) || (defaultBitDepth == 12));
         return ElementaryStreamCreate(pFilePath,
                                       codecType,
                                       defaultWidth,

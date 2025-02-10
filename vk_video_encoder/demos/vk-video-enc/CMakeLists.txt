@@ -83,7 +83,6 @@ set(sources
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanBistreamBufferImpl.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanBistreamBufferImpl.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/crcgenerator.cpp
-    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/FFmpegDemuxer.cpp
     ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/VideoStreamDemuxer.cpp
     ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/VideoStreamDemuxer.h
     ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/ElementaryStream.cpp
@@ -96,10 +95,20 @@ set(sources
     ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VulkanVideoFrameBuffer/VulkanVideoFrameBuffer.cpp
     )
 
+# Conditionally include FFmpegDemuxer.cpp
+if(FFMPEG_AVAILABLE)
+    list(APPEND sources ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/FFmpegDemuxer.cpp)
+endif()
+
 set(definitions
     PRIVATE -DVK_NO_PROTOTYPES
     PRIVATE -DGLM_FORCE_RADIANS
-    PRIVATE -DENCODER_DISPLAY_QUEUE_SUPPORT)
+    PRIVATE -DVIDEO_DISPLAY_QUEUE_SUPPORT)
+
+# Conditionally include FFMPEG_DEMUXER_SUPPORT
+if(FFMPEG_AVAILABLE)
+    list(APPEND definitions PRIVATE -DFFMPEG_DEMUXER_SUPPORT)
+endif()
 
 set(includes
     PRIVATE ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}
@@ -124,7 +133,7 @@ if(WIN32)
 else()
     list(APPEND libraries PRIVATE -lX11)
     list(APPEND libraries PRIVATE -lavcodec -lavutil -lavformat)
-    list(APPEND libraries PRIVATE -l${SHADERC_LIB_SHARED})
+    list(APPEND libraries PRIVATE -L${SHADERC_LIB_SHARED_DIR} -l${SHADERC_LIB_SHARED})
     list(APPEND libraries PRIVATE -L${CMAKE_INSTALL_LIBDIR} -l${VULKAN_VIDEO_PARSER_LIB})
     list(APPEND libraries PRIVATE -L${LIBNVPARSER_BINARY_ROOT} -l${VULKAN_VIDEO_PARSER_LIB})
 endif()
@@ -170,7 +179,7 @@ list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE}/nvidia_utils/vulkan)
 add_executable(vk-video-enc-test ${generate_helper_files} ${sources})
 target_compile_definitions(vk-video-enc-test ${definitions})
 target_include_directories(vk-video-enc-test ${includes})
-target_link_libraries(vk-video-enc-test ${libraries})
-add_dependencies(vk-video-enc-test generate_helper_files)
+target_link_libraries(vk-video-enc-test PUBLIC ${libraries})
+add_dependencies(vk-video-enc-test generate_helper_files ${SHADERC_LIB})
 
 install(TARGETS vk-video-enc-test RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

@@ -36,7 +36,7 @@
 
 int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                                          VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
-                                         ProgramConfig& programConfig)
+                                         DecoderConfig& programConfig)
 {
 
     int32_t videoQueueIndx =  programConfig.queueId;
@@ -165,7 +165,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     return 0;
 }
 
-VkResult VulkanVideoProcessor::Create(const ProgramConfig& settings, const VulkanDeviceContext* vkDevCtx,
+VkResult VulkanVideoProcessor::Create(const DecoderConfig& settings, const VulkanDeviceContext* vkDevCtx,
                                       VkSharedBaseObj<VulkanVideoProcessor>& vulkanVideoProcessor)
 {
     VkSharedBaseObj<VulkanVideoProcessor> videoProcessor(new VulkanVideoProcessor(settings, vkDevCtx));
@@ -210,6 +210,15 @@ VkFormat VulkanVideoProcessor::GetFrameImageFormat()  const
     }
 
     return frameImageFormat;
+}
+
+VkExtent3D VulkanVideoProcessor::GetVideoExtent() const
+{
+    VkExtent3D extent ({ (uint32_t)m_videoStreamDemuxer->GetWidth(),
+                         (uint32_t)m_videoStreamDemuxer->GetHeight(),
+                         (uint32_t)1
+                       });
+    return extent;
 }
 
 int32_t VulkanVideoProcessor::GetWidth() const

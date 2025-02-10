@@ -21,15 +21,15 @@
 #include <cstring>
 #include <cstdio>
 
+#include "VkCodecUtils/DecoderConfig.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
-#include "VkCodecUtils/ProgramConfig.h"
 #include "VkCodecUtils/VulkanVideoProcessor.h"
 #include "VkCodecUtils/VulkanDecoderFrameProcessor.h"
 #include "VkShell/Shell.h"
 
 int main(int argc, const char **argv) {
 
-    ProgramConfig decoderConfig(argv[0]);
+    DecoderConfig decoderConfig(argv[0]);
     decoderConfig.ParseArgs(argc, argv);
 
     // In the regular application usecase the CRC output variables are allocated here and also output as part of main.

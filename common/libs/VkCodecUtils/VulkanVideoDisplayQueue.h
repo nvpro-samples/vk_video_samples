@@ -31,6 +31,14 @@ public:
     virtual int32_t GetHeight()   const { return m_defaultHeight; }
     virtual int32_t GetBitDepth() const { return m_defaultBitDepth; }
     virtual VkFormat GetFrameImageFormat()  const;
+    virtual VkVideoProfileInfoKHR GetVkProfile() const
+    {
+        VkVideoProfileInfoKHR videoProfile{};
+        return videoProfile;
+    }
+
+    virtual uint32_t GetProfileIdc() const { return 0; }
+    virtual VkExtent3D GetVideoExtent() const;
     virtual int32_t GetNextFrame(FrameDataType* pFrame, bool* endOfStream);
     virtual int32_t ReleaseFrame(FrameDataType* pDisplayedFrame);
 
@@ -136,6 +144,16 @@ VkFormat VulkanVideoDisplayQueue<FrameDataType>::GetFrameImageFormat()  const
     }
 
     return frameImageFormat;
+}
+
+template<class FrameDataType>
+VkExtent3D VulkanVideoDisplayQueue<FrameDataType>::GetVideoExtent() const
+{
+    VkExtent3D extent ({ (uint32_t)m_defaultWidth,
+                         (uint32_t)m_defaultHeight,
+                         (uint32_t)1
+                       });
+    return extent;
 }
 
 template<class FrameDataType>

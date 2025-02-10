@@ -24,7 +24,6 @@
 #include <vector>
 
 #include "VkCodecUtils/VkVideoRefCountBase.h"
-#include "VkCodecUtils/ProgramConfig.h"
 
 class Shell;
 

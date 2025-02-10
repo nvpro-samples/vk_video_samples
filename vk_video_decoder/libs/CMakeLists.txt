@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.20.0)
 project(${VULKAN_VIDEO_DECODER_LIB}, LANGUAGES CXX)
 
 macro(generate_dispatch_table out)
@@ -10,6 +10,12 @@ endmacro()
 
 generate_dispatch_table(${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.h)
 generate_dispatch_table(${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.cpp)
+
+add_custom_target(GenerateDispatchTables
+    DEPENDS
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.cpp
+)
 
 set(LIBVKVIDEODECODER_SRC
     ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/../src/vulkan_video_decoder.cpp
@@ -63,8 +69,6 @@ set(LIBVKVIDEODECODER_SRC
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/crcgenerator.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanCommandBufferPool.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanCommandBufferPool.h
-    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/FFmpegDemuxer.cpp
-    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/VideoStreamDemuxer.cpp
     ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/VideoStreamDemuxer.h
     ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/ElementaryStream.cpp
     ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkVideoDecoder/VkVideoDecoder.cpp
@@ -103,7 +107,7 @@ if(WIN32)
 else()
     list(APPEND libraries PRIVATE -lX11)
     list(APPEND libraries PRIVATE -lavcodec -lavutil -lavformat)
-    list(APPEND libraries PRIVATE -l${SHADERC_LIB_SHARED})
+    list(APPEND libraries PRIVATE -L${SHADERC_LIB_SHARED_DIR} -l${SHADERC_LIB_SHARED})
     list(APPEND libraries PRIVATE -L${CMAKE_INSTALL_LIBDIR} -l${VULKAN_VIDEO_PARSER_LIB})
     list(APPEND libraries PRIVATE -L${LIBNVPARSER_BINARY_ROOT} -l${VULKAN_VIDEO_PARSER_LIB})
 endif()
@@ -148,7 +152,7 @@ add_library(${VULKAN_VIDEO_DECODER_LIB} SHARED ${LIBVKVIDEODECODER_SRC})
 # Link the libraries
 target_link_libraries(${VULKAN_VIDEO_DECODER_LIB} PUBLIC ${libraries})
 # Ensure the library depends on the generation of these files
-add_dependencies(${VULKAN_VIDEO_DECODER_LIB} generate_helper_files GenerateDispatchTables ${LIBVKVIDEODECODER_SRC})
+add_dependencies(${VULKAN_VIDEO_DECODER_LIB} generate_helper_files GenerateDispatchTables ${SHADERC_LIB})
 target_compile_definitions(${VULKAN_VIDEO_DECODER_LIB} ${definitions})
 
 target_include_directories(${VULKAN_VIDEO_DECODER_LIB} PUBLIC ${includes} ${VULKAN_VIDEO_DECODER_INCLUDE} ${VULKAN_VIDEO_DECODER_INCLUDE}/../NvVideoParser PRIVATE include)
@@ -174,15 +178,9 @@ add_library(${VULKAN_VIDEO_DECODER_STATIC_LIB} STATIC ${LIBVKVIDEODECODER_SRC})
 # Link the libraries
 target_link_libraries(${VULKAN_VIDEO_DECODER_STATIC_LIB} PUBLIC ${libraries})
 # Ensure the library depends on the generation of these files
-add_dependencies(${VULKAN_VIDEO_DECODER_STATIC_LIB} generate_helper_files GenerateDispatchTables ${LIBVKVIDEODECODER_SRC})
+add_dependencies(${VULKAN_VIDEO_DECODER_STATIC_LIB} generate_helper_files GenerateDispatchTables ${SHADERC_LIB})
 target_include_directories(${VULKAN_VIDEO_DECODER_STATIC_LIB} PUBLIC ${includes} ${VULKAN_VIDEO_DECODER_INCLUDE} ${VULKAN_VIDEO_DECODER_INCLUDE}/../NvVideoParser PRIVATE include)
 target_compile_definitions(${VULKAN_VIDEO_DECODER_STATIC_LIB} ${definitions})
-
-install(TARGETS ${VULKAN_VIDEO_DECODER_LIB} ${VULKAN_VIDEO_DECODER_STATIC_LIB}
-                RUNTIME DESTINATION "${VULKAN_VIDEO_TESTS_SOURCE_DIR}/bin/libs/vk_video_decoder/${LIB_ARCH_DIR}"
-                ARCHIVE DESTINATION "${VULKAN_VIDEO_TESTS_SOURCE_DIR}/bin/libs/vk_video_decoder/${LIB_ARCH_DIR}"
-                LIBRARY DESTINATION "${VULKAN_VIDEO_TESTS_SOURCE_DIR}/bin/libs/vk_video_decoder/${LIB_ARCH_DIR}"
-        )
 
 install(TARGETS ${VULKAN_VIDEO_DECODER_LIB} ${VULKAN_VIDEO_DECODER_STATIC_LIB}
                 RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -190,3 +188,10 @@ install(TARGETS ${VULKAN_VIDEO_DECODER_LIB} ${VULKAN_VIDEO_DECODER_STATIC_LIB}
                 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         )
 
+if(WIN32)
+    install(TARGETS ${VULKAN_VIDEO_DECODER_LIB} ${VULKAN_VIDEO_DECODER_STATIC_LIB}
+                    RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
+                    ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
+                    LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
+            )
+endif()

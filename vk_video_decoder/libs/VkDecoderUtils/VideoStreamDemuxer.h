@@ -87,6 +87,7 @@ VkResult ElementaryStreamCreate(const char *pFilePath,
                                 int32_t defaultBitDepth,
                                 VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer);
 
+#ifdef FFMPEG_DEMUXER_SUPPORT
 VkResult FFmpegDemuxerCreate(const char *pFilePath,
                              VkVideoCodecOperationFlagBitsKHR codecType,
                              bool requiresStreamDemuxing,
@@ -94,3 +95,4 @@ VkResult FFmpegDemuxerCreate(const char *pFilePath,
                              int32_t defaultHeight,
                              int32_t defaultBitDepth,
                              VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer);
+#endif // FFMPEG_DEMUXER_SUPPORT

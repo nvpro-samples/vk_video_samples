@@ -21,14 +21,12 @@ link_directories(
     )
 
 if(WIN32)
-    add_definitions(-DVK_USE_PLATFORM_WIN32_KHR -DWIN32_LEAN_AND_MEAN)
     list(APPEND VULKAN_VIDEO_ENC_LIBRARIES PRIVATE ${VULKAN_VIDEO_ENCODER_LIB})
 else()
-    list(APPEND VULKAN_VIDEO_ENC_LIBRARIES PRIVATE -l${SHADERC_LIB_SHARED})
+    list(APPEND VULKAN_VIDEO_ENC_LIBRARIES PRIVATE -L${SHADERC_LIB_SHARED_DIR} -l${SHADERC_LIB_SHARED})
     list(APPEND VULKAN_VIDEO_ENC_LIBRARIES PRIVATE -L${CMAKE_INSTALL_LIBDIR} -l${VULKAN_VIDEO_ENCODER_LIB})
     list(APPEND VULKAN_VIDEO_ENC_LIBRARIES PRIVATE -L${LIBVKVIDEOENCODER_BINARY_ROOT} -l${VULKAN_VIDEO_ENCODER_LIB})
 endif()
-
 
 if(TARGET vulkan)
     list(APPEND VULKAN_VIDEO_ENC_DEFINITIONS PRIVATE -DUNINSTALLED_LOADER="$<TARGET_FILE:vulkan>")
@@ -53,7 +51,7 @@ project (vulkan-video-enc-test)
 add_executable(vulkan-video-enc-test ${VULKAN_VIDEO_ENC_SOURCES})
 target_compile_definitions(vulkan-video-enc-test ${VULKAN_VIDEO_ENC_DEFINITIONS})
 target_include_directories(vulkan-video-enc-test ${VULKAN_VIDEO_ENC_INCLUDES})
-target_link_libraries(vulkan-video-enc-test ${VULKAN_VIDEO_ENC_LIBRARIES})
-add_dependencies(vulkan-video-enc-test ${VULKAN_VIDEO_ENCODER_LIB})
+target_link_libraries(vulkan-video-enc-test PUBLIC ${VULKAN_VIDEO_ENC_LIBRARIES})
+add_dependencies(vulkan-video-enc-test ${VULKAN_VIDEO_ENCODER_LIB} ${SHADERC_LIB})
 
 install(TARGETS vulkan-video-enc-test RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

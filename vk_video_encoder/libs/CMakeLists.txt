@@ -13,17 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.20.0)
 project(${VULKAN_VIDEO_ENCODER_LIB}, LANGUAGES CXX)
-
-add_definitions(-DVK_USE_VIDEO_QUEUE)
-add_definitions(-DVK_USE_VIDEO_DECODE_QUEUE)
-add_definitions(-DVK_USE_VIDEO_ENCODE_QUEUE)
-add_definitions(-DVK_ENABLE_BETA_EXTENSIONS)
-
-if(WIN32)
-    add_definitions(-DVK_USE_PLATFORM_WIN32_KHR)
-endif()
 
 # Define a custom target to generate the dispatch table files
 add_custom_target(GenerateDispatchTables
@@ -129,7 +120,7 @@ add_library(${VULKAN_VIDEO_ENCODER_LIB} SHARED ${LIBVKVIDEOENCODER_SRC})
 # Link the libraries
 target_link_libraries(${VULKAN_VIDEO_ENCODER_LIB} PUBLIC ${SHADERC_LIB_SHARED})
 # Ensure the library depends on the generation of these files
-add_dependencies(${VULKAN_VIDEO_ENCODER_LIB} GenerateDispatchTables)
+add_dependencies(${VULKAN_VIDEO_ENCODER_LIB} GenerateDispatchTables ${SHADERC_LIB})
 
 target_include_directories(${VULKAN_VIDEO_ENCODER_LIB} PUBLIC ${VULKAN_VIDEO_ENCODER_INCLUDE} ${VULKAN_VIDEO_ENCODER_INCLUDE}/../NvVideoParser PRIVATE include)
 target_compile_definitions(${VULKAN_VIDEO_ENCODER_LIB}
@@ -142,7 +133,6 @@ find_package(Threads)
 set_target_properties(${VULKAN_VIDEO_ENCODER_LIB} PROPERTIES SOVERSION ${VULKAN_VIDEO_ENCODER_LIB_VERSION})
 
 if(WIN32)
-    add_definitions(-DVK_USE_PLATFORM_WIN32_KHR -DWIN32_LEAN_AND_MEAN -DNOMINMAX)
     set_target_properties(${VULKAN_VIDEO_ENCODER_LIB} PROPERTIES LINK_FLAGS_DEBUG "/SUBSYSTEM:WINDOWS")
     set_target_properties(${VULKAN_VIDEO_ENCODER_LIB} PROPERTIES COMPILE_DEFINITIONS_DEBUG "/SUBSYSTEM:WINDOWS")
     set_target_properties(${VULKAN_VIDEO_ENCODER_LIB} PROPERTIES LINK_FLAGS_RELWITHDEBINFO "/SUBSYSTEM:WINDOWS")
@@ -155,7 +145,7 @@ add_library(${VULKAN_VIDEO_ENCODER_STATIC_LIB} STATIC ${LIBVKVIDEOENCODER_SRC})
 # Link the libraries
 target_link_libraries(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PUBLIC ${SHADERC_LIB_SHARED})
 # Ensure the library depends on the generation of these files
-add_dependencies(${VULKAN_VIDEO_ENCODER_STATIC_LIB} GenerateDispatchTables)
+add_dependencies(${VULKAN_VIDEO_ENCODER_STATIC_LIB} GenerateDispatchTables ${SHADERC_LIB})
 target_include_directories(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PUBLIC ${VULKAN_VIDEO_ENCODER_INCLUDE} ${VULKAN_VIDEO_ENCODER_INCLUDE}/../NvVideoParser PRIVATE include)
 
 install(TARGETS ${VULKAN_VIDEO_ENCODER_LIB} ${VULKAN_VIDEO_ENCODER_STATIC_LIB}

@@ -23,10 +23,10 @@
 #include <atomic>
 #include <chrono>
 #include <vulkan_interfaces.h>
+#include "VkCodecUtils/DecoderConfig.h"
 
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 #include "VkCodecUtils/FrameProcessor.h"
-#include "VkCodecUtils/ProgramConfig.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkShell/VkWsiDisplay.h"
 

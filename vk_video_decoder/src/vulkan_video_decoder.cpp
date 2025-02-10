@@ -16,7 +16,8 @@
 
 #include <atomic>
 #include "vulkan_video_decoder.h"
-#include "VkCodecUtils/ProgramConfig.h"
+
+#include "VkCodecUtils/DecoderConfig.h"
 #include "VkVideoDecoder/VkVideoDecoder.h"
 
 // To remove
@@ -26,14 +27,6 @@
 
 class VulkanVideoDecoderImpl : public VulkanVideoDecoder {
 public:
-    virtual VkResult Initialize(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
-                                VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
-                                int argc, const char** argv);
-
-    virtual int64_t GetMaxNumberOfFrames() const
-    {
-        return m_decoderConfig.maxFrameCount;
-    }
 
     virtual int32_t  GetWidth() const
     {
@@ -59,6 +52,7 @@ public:
     {
         return m_vulkanVideoProcessor->GetNextFrame(pNewDecodedFrame, endOfStream);
     }
+
     virtual int32_t  ReleaseFrame(VulkanDecodedFrame* pDoneDecodedFrame)
     {
         return m_vulkanVideoProcessor->ReleaseFrame(pDoneDecodedFrame);
@@ -83,21 +77,6 @@ public:
         return extent;
     }
 
-    virtual int32_t  ParserProcessNextDataChunk()
-    {
-        return m_vulkanVideoProcessor->ParserProcessNextDataChunk();
-    }
-
-    virtual uint32_t RestartStream(int64_t& bitstreamOffset)
-    {
-        return m_vulkanVideoProcessor->Restart(bitstreamOffset);
-    }
-
-    virtual size_t OutputFrameToFile(VulkanDecodedFrame* pNewDecodedFrame)
-    {
-        return m_vulkanVideoProcessor->OutputFrameToFile(pNewDecodedFrame);
-    }
-
     VulkanVideoDecoderImpl(const char* programName)
     : m_refCount(0)
     , m_vkDevCtxt()
@@ -106,6 +85,10 @@ public:
     , m_vulkanVideoProcessor()
     , m_frameProcessor()
     { }
+
+    VkResult Initialize(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
+                        VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
+                        int argc, const char** argv);
 
     virtual ~VulkanVideoDecoderImpl() { }
 
@@ -140,7 +123,7 @@ public:
 private:
     std::atomic<int32_t>                  m_refCount;
     VulkanDeviceContext                   m_vkDevCtxt;
-    ProgramConfig                         m_decoderConfig;
+    DecoderConfig                         m_decoderConfig;
     VkSharedBaseObj<VkVideoDecoder>       m_decoder;
     VkSharedBaseObj<VulkanVideoProcessor> m_vulkanVideoProcessor;
     DecoderFrameProcessorState            m_frameProcessor;
@@ -380,7 +363,7 @@ VkResult CreateVulkanVideoDecoder(VkInstance vkInstance, VkPhysicalDevice vkPhys
         return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
     }
 
-    VkSharedBaseObj<VulkanVideoDecoder> vulkanVideoDecoderObj( new VulkanVideoDecoderImpl(argv[0]));
+    VkSharedBaseObj<VulkanVideoDecoderImpl> vulkanVideoDecoderObj( new VulkanVideoDecoderImpl(argv[0]));
     if (!vulkanVideoDecoderObj) {
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }

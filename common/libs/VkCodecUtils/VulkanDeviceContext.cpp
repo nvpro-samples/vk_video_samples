@@ -30,7 +30,9 @@
 #include <algorithm>    // std::find_if
 #include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
+#ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
 #include "VkShell/Shell.h"
+#endif // VIDEO_DISPLAY_QUEUE_SUPPORT
 
 #if !defined(VK_USE_PLATFORM_WIN32_KHR)
 PFN_vkGetInstanceProcAddr VulkanDeviceContext::LoadVk(VulkanLibraryHandleType &vulkanLibHandle,
@@ -1002,11 +1004,13 @@ VkResult VulkanDeviceContext::InitVulkanDecoderDevice(const char * pAppName,
         nullptr
     };
 
+#ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
     static const char* const requiredWsiInstanceExtensions[] = {
         // Required generic WSI extensions
         VK_KHR_SURFACE_EXTENSION_NAME,
         nullptr
     };
+#endif // VIDEO_DISPLAY_QUEUE_SUPPORT
 
     static const char* const requiredDeviceExtension[] = {
 #if defined(__linux) || defined(__linux__) || defined(linux)
@@ -1019,6 +1023,7 @@ VkResult VulkanDeviceContext::InitVulkanDecoderDevice(const char * pAppName,
         nullptr
     };
 
+#ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
     static const char* const requiredWsiDeviceExtension[] = {
         // Add the WSI required device extensions
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -1027,6 +1032,7 @@ VkResult VulkanDeviceContext::InitVulkanDecoderDevice(const char * pAppName,
 #endif
         nullptr
     };
+#endif // VIDEO_DISPLAY_QUEUE_SUPPORT
 
     static const char* const optinalDeviceExtension[] = {
         VK_EXT_YCBCR_2PLANE_444_FORMATS_EXTENSION_NAME,
@@ -1045,6 +1051,7 @@ VkResult VulkanDeviceContext::InitVulkanDecoderDevice(const char * pAppName,
     AddReqDeviceExtensions(requiredDeviceExtension);
     AddOptDeviceExtensions(optinalDeviceExtension);
 
+#ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
     /********** Start WSI instance extensions support *******************************************/
     if (enableWsi) {
         const std::vector<VkExtensionProperties>& wsiRequiredInstanceInstanceExtensions =
@@ -1061,6 +1068,7 @@ VkResult VulkanDeviceContext::InitVulkanDecoderDevice(const char * pAppName,
         AddReqDeviceExtensions(requiredWsiDeviceExtension);
     }
     /********** End WSI instance extensions support *******************************************/
+#endif // VIDEO_DISPLAY_QUEUE_SUPPORT
 
     VkResult result = InitVulkanDevice(pAppName, vkInstance, enbaleVerboseDump);
     if (result != VK_SUCCESS) {

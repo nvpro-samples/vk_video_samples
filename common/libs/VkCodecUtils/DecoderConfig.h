@@ -30,7 +30,7 @@
 #include <sstream>
 #include "vulkan_interfaces.h"
 
-struct ProgramConfig {
+struct DecoderConfig {
 
      struct ArgSpec {
        const char *flag;
@@ -40,7 +40,7 @@ struct ProgramConfig {
        std::function<bool(const char **, const std::vector<ArgSpec> &)> lambda;
      };
 
-    ProgramConfig(const char* programName) {
+    DecoderConfig(const char* programName) {
         appName = programName;
         initialWidth = 1920;
         initialHeight = 1080;
