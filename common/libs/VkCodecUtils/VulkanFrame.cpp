@@ -24,7 +24,6 @@
 #include "VkShell/Shell.h"
 #include "VkCodecUtils/VulkanVideoUtils.h"
 #include "VulkanFrame.h"
-#include "vk_enum_string_helper.h"
 #include "VkVideoCore/DecodeFrameBufferIf.h"
 
 template<class FrameDataType>
@@ -554,7 +553,7 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
             result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &inFrame->frameCompleteFence, true, 100 * 1000 * 1000 /* 100 mSec */);
             assert(result == VK_SUCCESS);
             if (result != VK_SUCCESS) {
-                fprintf(stderr, "\nERROR: WaitForFences() result: 0x%x (%s)\n", result, string_VkResult(result));
+                fprintf(stderr, "\nERROR: WaitForFences() result: 0x%x\n", result);
             }
             result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, inFrame->frameCompleteFence);
             assert(result == VK_SUCCESS);

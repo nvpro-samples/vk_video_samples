@@ -61,16 +61,11 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          cd vk_video_decoder
-          mkdir build
-          cd build
-          cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-Wall -Werror" -DCMAKE_C_FLAGS="-Wall -Wextra -Werror" ..
-          cmake --build . --parallel $BUILD_JOBS --config Debug
-          cd ../../vk_video_encoder
           mkdir build
           cd build
           cmake -DCMAKE_BUILD_TYPE=Debug ..
           cmake --build . --parallel $BUILD_JOBS --config Debug
+
 
 
   vk_video_samples-win:
@@ -99,10 +94,9 @@ jobs:
 
       - name: Install FFmpeg
         run: |
-          cd vk_video_decoder
           # Define the custom installation location
           $currentDir = pwd
-          $finalDestination = "$currentDir\bin\libs\ffmpeg\win64"
+          $finalDestination = "$currentDir\vk_video_decoder\bin\libs\ffmpeg\win64"
           echo $finalDestination
 
           # Create the directory
@@ -124,12 +118,6 @@ jobs:
 
       - name: Build
         run: |
-          cd vk_video_decoder
-          mkdir build
-          cd build
-          cmake -DCMAKE_BUILD_TYPE=Debug ..
-          cmake --build . --parallel $BUILD_JOBS --config Debug
-          cd ..\..\vk_video_encoder
           mkdir build
           cd build
           cmake -DCMAKE_BUILD_TYPE=Debug ..

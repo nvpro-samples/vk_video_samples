@@ -50,6 +50,7 @@ if(FFMPEG_AVAILABLE)
 endif()
 
 set(VULKAN_VIDEO_DEC_INCLUDES
+    PRIVATE ${VK_VIDEO_DECODER_LIBS_INCLUDE_ROOT}
     PRIVATE ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}
     PRIVATE ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}
     PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
@@ -116,10 +117,10 @@ endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/..)
 
 project (vulkan-video-dec-test)
-add_executable(vulkan-video-dec-test ${generate_helper_files} ${VULKAN_VIDEO_DEC_SOURCES})
+add_executable(vulkan-video-dec-test ${VULKAN_VIDEO_DEC_SOURCES})
 target_compile_definitions(vulkan-video-dec-test ${VULKAN_VIDEO_DEC_DEFINITIONS})
 target_include_directories(vulkan-video-dec-test ${VULKAN_VIDEO_DEC_INCLUDES})
 target_link_libraries(vulkan-video-dec-test PUBLIC ${VULKAN_VIDEO_DEC_LIBRARIES})
-add_dependencies(vulkan-video-dec-test ${generate_helper_files} ${VULKAN_VIDEO_DECODER_LIB} ${SHADERC_LIB})
+add_dependencies(vulkan-video-dec-test GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB} ${VULKAN_VIDEO_DECODER_LIB} ${SHADERC_LIB})
 
 install(TARGETS vulkan-video-dec-test RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

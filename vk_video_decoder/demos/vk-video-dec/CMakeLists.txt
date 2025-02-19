@@ -1,13 +1,3 @@
-macro(generate_dispatch_table out)
-    add_custom_command(OUTPUT ${out}
-        COMMAND ${PYTHON_EXECUTABLE} ${SCRIPTS_DIR}/generate-dispatch-table.py ${out}
-        DEPENDS ${SCRIPTS_DIR}/generate-dispatch-table.py
-        )
-endmacro()
-
-generate_dispatch_table(${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.h)
-generate_dispatch_table(${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.cpp)
-
 set(sources
     Main.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkShell/Shell.cpp
@@ -154,10 +144,10 @@ list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE})
 list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE}/vulkan)
 list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE}/nvidia_utils/vulkan)
 
-add_executable(vk-video-dec-test ${generate_helper_files} ${sources})
+add_executable(vk-video-dec-test ${sources})
 target_compile_definitions(vk-video-dec-test ${definitions})
 target_include_directories(vk-video-dec-test ${includes})
 target_link_libraries(vk-video-dec-test PUBLIC ${libraries})
-add_dependencies(vk-video-dec-test generate_helper_files ${VULKAN_VIDEO_DECODER_LIB} ${SHADERC_LIB})
+add_dependencies(vk-video-dec-test GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB} ${VULKAN_VIDEO_DECODER_LIB} ${SHADERC_LIB})
 
 install(TARGETS vk-video-dec-test RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

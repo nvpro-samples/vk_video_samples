@@ -44,12 +44,25 @@ else()
     set(USE_SYSTEM_VULKAN OFF)
 endif()
 
+# Find Vulkan SDK
 find_package(Vulkan QUIET)
-message(STATUS "Vulkan_FOUND: ${Vulkan_FOUND}")
-message(STATUS "Vulkan_LIBRARIES: ${Vulkan_LIBRARIES}")
-message(STATUS "Vulkan_VERSION: ${Vulkan_VERSION}")
-message(STATUS "Vulkan Header Version: ${Vulkan_HEADER_VERSION}")
-set(USE_SYSTEM_VULKAN ON)
+
+if(Vulkan_FOUND)
+    # Set Vulkan headers path (we are using the local headers)
+    # set(VULKAN_HEADERS_INCLUDE_DIR ${Vulkan_INCLUDE_DIR})
+
+    # Additional Vulkan-related variables
+    set(VULKAN_LIBRARIES ${Vulkan_LIBRARIES})
+
+    # Check for required components
+    if(NOT EXISTS "${VULKAN_HEADERS_INCLUDE_DIR}/vulkan/vulkan.h")
+        message(STATUS "Could not find vulkan.h in ${VULKAN_HEADERS_INCLUDE_DIR}")
+    endif()
+else()
+    message(STATUS "Vulkan SDK not found. Please install Vulkan SDK.")
+endif()
+
+# Optional: Find other dependencies like SPIRV-Tools if needed
 
 if(USE_SYSTEM_VULKAN)
     # Use system Vulkan
@@ -271,4 +284,66 @@ else()
                 FILES_MATCHING
                 PATTERN "glslc.exe")
     endif()
+endif()
+
+# Add after finding Vulkan SDK
+# Find Shaderc
+if(DEFINED ENV{VULKAN_SDK})
+    # Try to find shaderc in Vulkan SDK first
+    find_path(SHADERC_INCLUDE_DIR
+        NAMES shaderc/shaderc.h
+        PATHS
+        "$ENV{VULKAN_SDK}/Include"
+        "$ENV{VULKAN_SDK}/include"
+        NO_DEFAULT_PATH
+    )
+
+    find_library(SHADERC_LIBRARY
+        NAMES shaderc_combined
+        PATHS
+        "$ENV{VULKAN_SDK}/Lib"
+        "$ENV{VULKAN_SDK}/lib"
+        NO_DEFAULT_PATH
+    )
+endif()
+
+# If not found in SDK, try system paths
+if(NOT SHADERC_INCLUDE_DIR)
+    find_path(SHADERC_INCLUDE_DIR
+        NAMES shaderc/shaderc.h
+    )
+endif()
+
+if(NOT SHADERC_LIBRARY)
+    find_library(SHADERC_LIBRARY
+        NAMES shaderc_combined
+    )
+endif()
+
+# If still not found, build from source
+if(NOT SHADERC_INCLUDE_DIR OR NOT SHADERC_LIBRARY)
+    message(STATUS "Shaderc not found in SDK or system, building from source...")
+    include(FetchContent)
+    FetchContent_Declare(
+        shaderc
+        GIT_REPOSITORY https://github.com/google/shaderc
+        GIT_TAG main
+    )
+
+    set(SHADERC_SKIP_TESTS ON)
+    set(SHADERC_SKIP_EXAMPLES ON)
+    set(SHADERC_SKIP_COPYRIGHT_CHECK ON)
+
+    FetchContent_MakeAvailable(shaderc)
+
+    set(SHADERC_INCLUDE_DIR ${shaderc_SOURCE_DIR}/libshaderc/include)
+    set(SHADERC_LIBRARY shaderc)
+endif()
+
+if(SHADERC_INCLUDE_DIR AND SHADERC_LIBRARY)
+    message(STATUS "Found Shaderc: ${SHADERC_LIBRARY}")
+    message(STATUS "Shaderc include: ${SHADERC_INCLUDE_DIR}")
+    include_directories(${SHADERC_INCLUDE_DIR})
+else()
+    message(FATAL_ERROR "Could not find or build Shaderc")
 endif()

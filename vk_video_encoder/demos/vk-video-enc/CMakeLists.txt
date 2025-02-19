@@ -176,10 +176,10 @@ list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE})
 list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE}/vulkan)
 list(APPEND includes PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE}/nvidia_utils/vulkan)
 
-add_executable(vk-video-enc-test ${generate_helper_files} ${sources})
+add_executable(vk-video-enc-test ${sources})
 target_compile_definitions(vk-video-enc-test ${definitions})
 target_include_directories(vk-video-enc-test ${includes})
 target_link_libraries(vk-video-enc-test PUBLIC ${libraries})
-add_dependencies(vk-video-enc-test generate_helper_files ${SHADERC_LIB})
+add_dependencies(vk-video-enc-test GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB} ${SHADERC_LIB})
 
 install(TARGETS vk-video-enc-test RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

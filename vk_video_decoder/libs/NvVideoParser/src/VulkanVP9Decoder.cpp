@@ -206,7 +206,7 @@ int32_t VulkanVP9Decoder::vp9_read(int32_t probability)
         value = value - bigsplit;
         bit = 1;
     }
-    register uint32_t shift = vp9dx_bitreader_norm[range];
+    uint32_t shift = vp9dx_bitreader_norm[range];
     range <<= shift;
     value <<= shift;
     count -= shift;
