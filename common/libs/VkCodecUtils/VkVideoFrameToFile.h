@@ -17,143 +17,63 @@
 #ifndef _VKCODECUTILS_VKVIDEOFRAMETOFILE_H_
 #define _VKCODECUTILS_VKVIDEOFRAMETOFILE_H_
 
-#include "nvidia_utils/vulkan/ycbcrvkinfo.h"
+#include <vector>
+#include <atomic>
+#include <cstdio>
+#include <vulkan/vulkan.h>
+#include "VkCodecUtils/VkVideoRefCountBase.h"
 
-class VkVideoFrameToFile {
+// Forward declarations
+class VulkanDeviceContext;
+class VulkanDecodedFrame;
 
+/**
+ * @brief Interface for writing video frames to a file.
+ *
+ * This class provides functionality to write decoded video frames to a file,
+ * with support for various formats including Y4M and CRC generation.
+ */
+class VkVideoFrameToFile : public VkVideoRefCountBase {
 public:
+    /** @brief Reference to an invalid frame-to-file object used as default value */
+    static VkSharedBaseObj<VkVideoFrameToFile>& invalidFrameToFile;
 
-    VkVideoFrameToFile()
-        : m_outputFile(),
-          m_pLinearMemory()
-        , m_allocationSize()
-        , m_firstFrame(true) {}
+    /**
+     * @brief Creates a new VkVideoFrameToFile instance
+     *
+     * @param fileName Output file name for the video frames
+     * @param outputy4m Whether to output in Y4M format
+     * @param outputcrcPerFrame Whether to generate CRC for each frame
+     * @param crcOutputFile File name for CRC output
+     * @param crcInitValue Initial CRC values
+     * @param frameToFile Reference to store the created instance
+     * @return VkResult VK_SUCCESS on success, error code otherwise
+     */
+    static VkResult Create(const char* fileName,
+                          bool outputy4m = true,
+                          bool outputcrcPerFrame = false,
+                          const char* crcOutputFile = nullptr,
+                          const std::vector<uint32_t>& crcInitValue = std::vector<uint32_t>(),
+                          VkSharedBaseObj<VkVideoFrameToFile>& frameToFile = invalidFrameToFile);
 
-    ~VkVideoFrameToFile()
-    {
-        if (m_pLinearMemory) {
-            delete[] m_pLinearMemory;
-            m_pLinearMemory = nullptr;
-        }
+    virtual ~VkVideoFrameToFile() = default;
 
-        if (m_outputFile) {
-            fclose(m_outputFile);
-            m_outputFile = nullptr;
-        }
-    }
+    /**
+     * @brief Outputs a decoded frame to file
+     *
+     * @param pFrame Pointer to the decoded frame
+     * @param vkDevCtx Vulkan device context
+     * @return size_t Number of bytes written, (size_t)-1 on error
+     */
+    virtual size_t OutputFrame(VulkanDecodedFrame* pFrame, const VulkanDeviceContext* vkDevCtx) = 0;
 
-    uint8_t* EnsureAllocation(const VulkanDeviceContext* vkDevCtx,
-                              VkSharedBaseObj<VkImageResource>& imageResource) {
-
-        if (m_outputFile == nullptr) {
-            return nullptr;
-        }
-
-        VkDeviceSize imageMemorySize = imageResource->GetImageDeviceMemorySize();
-
-        if ((m_pLinearMemory == nullptr) || (imageMemorySize > m_allocationSize)) {
-
-            if (m_outputFile) {
-                fflush(m_outputFile);
-            }
-
-            if (m_pLinearMemory != nullptr) {
-                delete[] m_pLinearMemory;
-                m_pLinearMemory = nullptr;
-            }
-
-            // Allocate the memory that will be dumped to file directly.
-            m_allocationSize = (size_t)(imageMemorySize);
-            m_pLinearMemory = new uint8_t[m_allocationSize];
-            if (m_pLinearMemory == nullptr) {
-                return nullptr;
-            }
-            assert(m_pLinearMemory != nullptr);
-        }
-        return m_pLinearMemory;
-    }
-
-    FILE* AttachFile(const char* fileName) {
-
-        if (m_outputFile) {
-            fclose(m_outputFile);
-            m_outputFile = nullptr;
-        }
-
-        if (fileName != nullptr) {
-            m_outputFile = fopen(fileName, "wb");
-            if (m_outputFile) {
-                return m_outputFile;
-            }
-        }
-
-        return nullptr;
-    }
-
-    bool IsFileStreamValid() const
-    {
-        return m_outputFile != nullptr;
-    }
-
-    operator bool() const {
-        return IsFileStreamValid();
-    }
-
-    size_t WriteDataToFile(size_t offset, size_t size)
-    {
-        return fwrite(m_pLinearMemory + offset, size, 1, m_outputFile);
-    }
-
-    size_t GetMaxFrameSize() {
-        return m_allocationSize;
-    }
-
-    size_t WriteFrameToFileY4M(size_t offset, size_t size, size_t width, size_t height, const VkMpFormatInfo *mpInfo)
-    {
-        // Output Frame.
-        if (m_firstFrame != false) {
-            m_firstFrame = false;
-            fprintf(m_outputFile, "YUV4MPEG2 ");
-            fprintf(m_outputFile, "W%i H%i ", (int)width, (int)height);
-            m_height = height;
-            m_width = width;
-            fprintf(m_outputFile, "F24:1 ");
-            fprintf(m_outputFile, "Ip ");
-            fprintf(m_outputFile, "A1:1 ");
-            if (mpInfo->planesLayout.secondaryPlaneSubsampledX == false) {
-                fprintf(m_outputFile, "C444");
-            } else {
-                fprintf(m_outputFile, "C420");
-            }
-
-            if (mpInfo->planesLayout.bpp != YCBCRA_8BPP) {
-                fprintf(m_outputFile, "p16");
-            }
-
-            fprintf(m_outputFile, "\n");
-        }
-
-        fprintf(m_outputFile, "FRAME");
-        if ((m_width != width) || (m_height != height)) {
-            fprintf(m_outputFile, " ");
-            fprintf(m_outputFile, "W%i H%i", (int)width, (int)height);
-            m_height = height;
-            m_width = width;
-        }
-
-        fprintf(m_outputFile, "\n");
-        return WriteDataToFile(offset, size);
-    }
+protected:
+    VkVideoFrameToFile() = default;
 
 private:
-    FILE*    m_outputFile;
-    uint8_t* m_pLinearMemory;
-    size_t   m_allocationSize;
-    bool     m_firstFrame;
-    size_t   m_height;
-    size_t   m_width;
+    // Prevent copying
+    VkVideoFrameToFile(const VkVideoFrameToFile&) = delete;
+    VkVideoFrameToFile& operator=(const VkVideoFrameToFile&) = delete;
 };
-
-
 
 #endif /* _VKCODECUTILS_VKVIDEOFRAMETOFILE_H_ */

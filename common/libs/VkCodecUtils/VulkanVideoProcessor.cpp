@@ -36,12 +36,11 @@
 
 int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                                          VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
+                                         VkSharedBaseObj<VkVideoFrameToFile>& frameToFile,
                                          DecoderConfig& programConfig)
 {
 
     int32_t videoQueueIndx =  programConfig.queueId;
-    const char* outputFileName = (programConfig.outputFileName.size() == 0) ?
-            nullptr : programConfig.outputFileName.c_str();
     const uint32_t loopCount = programConfig.loopCount;
     const uint32_t startFrame = 0;
     const int32_t  maxFrameCount = programConfig.maxFrameCount;
@@ -84,14 +83,10 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
         fprintf(stderr, "\nERROR: Create VulkanVideoFrameBuffer result: 0x%x\n", result);
     }
 
-    FILE* outFile = m_frameToFile.AttachFile(outputFileName);
-    if ((outputFileName != nullptr) && (outFile == nullptr)) {
-        fprintf( stderr, "Error opening the output file %s", outputFileName);
-        return -1;
-    }
+    m_frameToFile = frameToFile;
 
     uint32_t enableDecoderFeatures = 0;
-    if (outFile != nullptr) {
+    if (!!m_frameToFile) {
         enableDecoderFeatures |= VkVideoDecoder::ENABLE_LINEAR_OUTPUT;
     }
 
@@ -502,61 +497,7 @@ size_t VulkanVideoProcessor::OutputFrameToFile(VulkanDecodedFrame* pFrame)
         return (size_t)-1;
     }
 
-    assert(pFrame != nullptr);
-
-    VkSharedBaseObj<VkImageResourceView> imageResourceView;
-    pFrame->imageViews[VulkanDecodedFrame::IMAGE_VIEW_TYPE_LINEAR].GetImageResourceView(imageResourceView);
-    assert(!!imageResourceView);
-    assert(pFrame->pictureIndex != -1);
-
-    VkSharedBaseObj<VkImageResource> imageResource = imageResourceView->GetImageResource();
-    uint8_t* pOutputBuffer = m_frameToFile.EnsureAllocation(m_vkDevCtx, imageResource);
-    assert(pOutputBuffer != nullptr);
-
-    // Needed allocation size can shrink, but may never grow. Frames will be allocated for maximum resolution upfront.
-    assert((pFrame->displayWidth >= 0) && (pFrame->displayHeight >= 0));
-
-    // Wait for decoder and copy engine to be done with this frame.
-    WaitAndGetStatus(m_vkDevCtx,
-                     *m_vkDevCtx,
-                     pFrame->frameCompleteFence,
-                     pFrame->queryPool,
-                     pFrame->startQueryId,
-                     pFrame->pictureIndex, false, "frameCompleteFence");
-
-    // Convert frame to linear image format and write it to file.
-    VkFormat format = imageResource->GetImageCreateInfo().format;
-    const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(format);
-    size_t usedBufferSize = ConvertFrameToNv12(m_vkDevCtx, pFrame->displayWidth, pFrame->displayHeight, imageResource, pOutputBuffer, mpInfo);
-
-    // Output a crc for this frame.
-    if (m_settings.outputcrcPerFrame != 0) {
-        fprintf(m_settings.crcOutputFile, "CRC Frame[%" PRId64 "]:", pFrame->displayOrder);
-        size_t crcCount = m_settings.crcInitValue.size();
-        for (size_t i = 0; i < crcCount; i += 1) {
-            uint32_t frameCrc = m_settings.crcInitValue[i];
-            getCRC(&frameCrc, pOutputBuffer, usedBufferSize, Crc32Table);
-            fprintf(m_settings.crcOutputFile, "0x%08X ", frameCrc);
-        }
-        fprintf(m_settings.crcOutputFile, "\n");
-        if (m_settings.crcOutputFile != stdout) {
-            fflush(m_settings.crcOutputFile);
-        }
-    }
-
-    if ((m_settings.outputcrc != 0) && (m_settings.crcOutput != nullptr)) {
-        size_t crcCount = m_settings.crcInitValue.size();
-        for (size_t i = 0; i < crcCount; i += 1) {
-            getCRC(&(m_settings.crcOutput[i]), pOutputBuffer, usedBufferSize, Crc32Table);
-        }
-    }
-
-    // Write image to file.
-    if (m_settings.outputy4m != 0) {
-        return m_frameToFile.WriteFrameToFileY4M(0, usedBufferSize, pFrame->displayWidth, pFrame->displayHeight, mpInfo);
-    } else {
-        return m_frameToFile.WriteDataToFile(0, usedBufferSize);
-    }
+    return m_frameToFile->OutputFrame(pFrame, m_vkDevCtx);
 }
 
 uint32_t VulkanVideoProcessor::Restart(int64_t& bitstreamOffset)

@@ -41,6 +41,7 @@
 #include "VkCodecUtils/VkVideoQueue.h"
 #include "VkCodecUtils/VulkanDecodedFrame.h"
 #include "VkDecoderUtils/VideoStreamDemuxer.h"
+#include "VkCodecUtils/VkVideoFrameToFile.h"
 
 // High-level interface of the video decoder
 class VulkanVideoDecoder : public VkVideoQueue<VulkanDecodedFrame> {
@@ -87,6 +88,7 @@ public:
 extern "C" VK_VIDEO_DECODER_EXPORT
 VkResult CreateVulkanVideoDecoder(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
                                   VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
+                                  VkSharedBaseObj<VkVideoFrameToFile>& frameToFile,
                                   int argc, const char** argv,
                                   VkSharedBaseObj<VulkanVideoDecoder>& vulkanVideoDecoder);
 

@@ -123,7 +123,6 @@ int main(int argc, const char** argv)
                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR |
                                                VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR));
         if (result != VK_SUCCESS) {
-
             assert(!"Can't initialize the Vulkan physical device!");
             return -1;
         }
@@ -149,18 +148,35 @@ int main(int argc, const char** argv)
                                             videoStreamDemuxer);
 
         if (result != VK_SUCCESS) {
-
             assert(!"Can't initialize the VideoStreamDemuxer!");
             return result;
         }
 
-        VkSharedBaseObj<VulkanVideoDecoder> vulkanVideoDecoder;
-        result = CreateVulkanVideoDecoder(vkDevCtxt.getInstance(), vkDevCtxt.getPhysicalDevice(), vkDevCtxt.getDevice(),
-                                          videoStreamDemuxer,
-                                          argc, argv, vulkanVideoDecoder);
+        VkSharedBaseObj<VkVideoFrameToFile> frameToFile;
+        if (!decoderConfig.outputFileName.empty()) {
+            const char* crcOutputFile = decoderConfig.outputcrcPerFrame ? decoderConfig.crcOutputFileName.c_str() : nullptr;
+            result = VkVideoFrameToFile::Create(decoderConfig.outputFileName.c_str(),
+                                              decoderConfig.outputy4m,
+                                              decoderConfig.outputcrcPerFrame,
+                                              crcOutputFile,
+                                              decoderConfig.crcInitValue,
+                                              frameToFile);
+            if (result != VK_SUCCESS) {
+                fprintf(stderr, "Error creating output file %s\n", decoderConfig.outputFileName.c_str());
+                return -1;
+            }
+        }
 
+        VkSharedBaseObj<VulkanVideoDecoder> vulkanVideoDecoder;
+        result = CreateVulkanVideoDecoder(vkDevCtxt.getInstance(),
+                                        vkDevCtxt.getPhysicalDevice(),
+                                        vkDevCtxt.getDevice(),
+                                        videoStreamDemuxer,
+                                        frameToFile,
+                                        argc, argv,
+                                        vulkanVideoDecoder);
         if (result != VK_SUCCESS) {
-            std::cerr << "Error creating the decoder instance: " << result << std::endl;
+            fprintf(stderr, "Error creating video decoder\n");
             return -1;
         }
 
@@ -170,7 +186,6 @@ int main(int argc, const char** argv)
         DecoderFrameProcessorState frameProcessor(&vkDevCtxt, videoQueue, 0);
 
         displayShell->AttachFrameProcessor(frameProcessor);
-
         displayShell->RunLoop();
 
     } else {
@@ -183,11 +198,9 @@ int main(int argc, const char** argv)
                                               nullptr,
                                               requestVideoDecodeQueueMask);
         if (result != VK_SUCCESS) {
-
             assert(!"Can't initialize the Vulkan physical device!");
             return -1;
         }
-
 
         result = vkDevCtxt.CreateVulkanDevice(numDecodeQueues,
                                               0,     // num encode queues
@@ -201,7 +214,6 @@ int main(int argc, const char** argv)
                                               requestVideoComputeQueueMask != 0   // createComputeQueue
                                               );
         if (result != VK_SUCCESS) {
-
             assert(!"Failed to create Vulkan device!");
             return -1;
         }
@@ -216,18 +228,35 @@ int main(int argc, const char** argv)
                                             videoStreamDemuxer);
 
         if (result != VK_SUCCESS) {
-
             assert(!"Can't initialize the VideoStreamDemuxer!");
             return result;
         }
 
-        VkSharedBaseObj<VulkanVideoDecoder> vulkanVideoDecoder;
-        result = CreateVulkanVideoDecoder(vkDevCtxt.getInstance(), vkDevCtxt.getPhysicalDevice(), vkDevCtxt.getDevice(),
-                                          videoStreamDemuxer,
-                                          argc, argv, vulkanVideoDecoder);
+        VkSharedBaseObj<VkVideoFrameToFile> frameToFile;
+        if (!decoderConfig.outputFileName.empty()) {
+            const char* crcOutputFile = decoderConfig.outputcrcPerFrame ? decoderConfig.crcOutputFileName.c_str() : nullptr;
+            result = VkVideoFrameToFile::Create(decoderConfig.outputFileName.c_str(),
+                                              decoderConfig.outputy4m,
+                                              decoderConfig.outputcrcPerFrame,
+                                              crcOutputFile,
+                                              decoderConfig.crcInitValue,
+                                              frameToFile);
+            if (result != VK_SUCCESS) {
+                fprintf(stderr, "Error creating output file %s\n", decoderConfig.outputFileName.c_str());
+                return -1;
+            }
+        }
 
+        VkSharedBaseObj<VulkanVideoDecoder> vulkanVideoDecoder;
+        result = CreateVulkanVideoDecoder(vkDevCtxt.getInstance(),
+                                        vkDevCtxt.getPhysicalDevice(),
+                                        vkDevCtxt.getDevice(),
+                                        videoStreamDemuxer,
+                                        frameToFile,
+                                        argc, argv,
+                                        vulkanVideoDecoder);
         if (result != VK_SUCCESS) {
-            std::cerr << "Error creating the decoder instance: " << result << std::endl;
+            fprintf(stderr, "Error creating video decoder\n");
             return -1;
         }
 

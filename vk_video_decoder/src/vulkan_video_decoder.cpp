@@ -88,6 +88,7 @@ public:
 
     VkResult Initialize(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
                         VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
+                        VkSharedBaseObj<VkVideoFrameToFile>& frameToFile,
                         int argc, const char** argv);
 
     virtual ~VulkanVideoDecoderImpl() { }
@@ -131,22 +132,12 @@ private:
 
 VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
                                             VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
+                                            VkSharedBaseObj<VkVideoFrameToFile>& frameToFile,
                                             int argc, const char** argv)
 {
     const bool libraryMode = true;
 
     m_decoderConfig.ParseArgs(argc, argv);
-
-    // In the regular application use case the CRC output variables are allocated here and also output as part of main.
-    // In the library case it is up to the caller of the library to allocate the values and initialize them.
-    std::vector<uint32_t> crcAllocation;
-    crcAllocation.resize(m_decoderConfig.crcInitValue.size());
-    if (crcAllocation.empty() == false) {
-        m_decoderConfig.crcOutput = &crcAllocation[0];
-        for (size_t i = 0; i < m_decoderConfig.crcInitValue.size(); i += 1) {
-            crcAllocation[i] = m_decoderConfig.crcInitValue[i];
-        }
-    }
 
     VkResult result = m_vkDevCtxt.InitVulkanDecoderDevice(m_decoderConfig.appName.c_str(),
                                                           vkInstance,
@@ -253,7 +244,7 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance, VkPhysicalDev
             return result;
         }
 
-        m_vulkanVideoProcessor->Initialize(&m_vkDevCtxt, videoStreamDemuxer, m_decoderConfig);
+        m_vulkanVideoProcessor->Initialize(&m_vkDevCtxt, videoStreamDemuxer, frameToFile, m_decoderConfig);
 
         if (!libraryMode) {
 
@@ -311,7 +302,7 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance, VkPhysicalDev
             return result;
         }
 
-        m_vulkanVideoProcessor->Initialize(&m_vkDevCtxt, videoStreamDemuxer, m_decoderConfig);
+        m_vulkanVideoProcessor->Initialize(&m_vkDevCtxt, videoStreamDemuxer, frameToFile, m_decoderConfig);
 
         if (!libraryMode) {
 
@@ -325,25 +316,13 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance, VkPhysicalDev
         }
     }
 
-    if (m_decoderConfig.outputcrc != 0) {
-        fprintf(m_decoderConfig.crcOutputFile, "CRC: ");
-        for (size_t i = 0; i < m_decoderConfig.crcInitValue.size(); i += 1) {
-            fprintf(m_decoderConfig.crcOutputFile, "0x%08X ", crcAllocation[i]);
-        }
-
-        fprintf(m_decoderConfig.crcOutputFile, "\n");
-        if (m_decoderConfig.crcOutputFile != stdout) {
-            fclose(m_decoderConfig.crcOutputFile);
-            m_decoderConfig.crcOutputFile = stdout;
-        }
-    }
-
     return result;
 }
 
 VK_VIDEO_DECODER_EXPORT
 VkResult CreateVulkanVideoDecoder(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
                                   VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
+                                  VkSharedBaseObj<VkVideoFrameToFile>& frameToFile,
                                   int argc, const char** argv,
                                   VkSharedBaseObj<VulkanVideoDecoder>& vulkanVideoDecoder)
 {
@@ -368,7 +347,7 @@ VkResult CreateVulkanVideoDecoder(VkInstance vkInstance, VkPhysicalDevice vkPhys
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 
-    VkResult result = vulkanVideoDecoderObj->Initialize(vkInstance, vkPhysicalDevice, vkDevice, videoStreamDemuxer, argc, argv);
+    VkResult result = vulkanVideoDecoderObj->Initialize(vkInstance, vkPhysicalDevice, vkDevice, videoStreamDemuxer, frameToFile, argc, argv);
     if (result != VK_SUCCESS) {
         vulkanVideoDecoderObj = nullptr;
     } else {

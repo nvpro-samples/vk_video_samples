@@ -26,22 +26,12 @@
 #include "VkCodecUtils/VulkanVideoProcessor.h"
 #include "VkCodecUtils/VulkanDecoderFrameProcessor.h"
 #include "VkShell/Shell.h"
+#include "VkCodecUtils/VkVideoFrameToFile.h"
 
 int main(int argc, const char **argv) {
 
     DecoderConfig decoderConfig(argv[0]);
     decoderConfig.ParseArgs(argc, argv);
-
-    // In the regular application usecase the CRC output variables are allocated here and also output as part of main.
-    // In the library case it is up to the caller of the library to allocate the values and initialize them.
-    std::vector<uint32_t> crcAllocation;
-    crcAllocation.resize(decoderConfig.crcInitValue.size());
-    if (crcAllocation.empty() == false) {
-        decoderConfig.crcOutput = &crcAllocation[0];
-        for (size_t i = 0; i < decoderConfig.crcInitValue.size(); i += 1) {
-            crcAllocation[i] = decoderConfig.crcInitValue[i];
-        }
-    }
 
     VulkanDeviceContext vkDevCtxt;
     VkResult result = vkDevCtxt.InitVulkanDecoderDevice(decoderConfig.appName.c_str(),
@@ -156,7 +146,23 @@ int main(int argc, const char **argv) {
         if (result != VK_SUCCESS) {
             return -1;
         }
-        vulkanVideoProcessor->Initialize(&vkDevCtxt, videoStreamDemuxer, decoderConfig);
+
+        VkSharedBaseObj<VkVideoFrameToFile> frameToFile;
+        if (!decoderConfig.outputFileName.empty()) {
+            const char* crcOutputFile = decoderConfig.outputcrcPerFrame ? decoderConfig.crcOutputFileName.c_str() : nullptr;
+            result = VkVideoFrameToFile::Create(decoderConfig.outputFileName.c_str(),
+                                              decoderConfig.outputy4m,
+                                              decoderConfig.outputcrcPerFrame,
+                                              crcOutputFile,
+                                              decoderConfig.crcInitValue,
+                                              frameToFile);
+            if (result != VK_SUCCESS) {
+                fprintf(stderr, "Error creating output file %s\n", decoderConfig.outputFileName.c_str());
+                return -1;
+            }
+        }
+
+        vulkanVideoProcessor->Initialize(&vkDevCtxt, videoStreamDemuxer, frameToFile, decoderConfig);
 
         VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>> videoQueue(vulkanVideoProcessor);
         DecoderFrameProcessorState frameProcessor(&vkDevCtxt, videoQueue, 0);
@@ -219,7 +225,23 @@ int main(int argc, const char **argv) {
             std::cerr << "Error creating the decoder instance: " << result << std::endl;
             return -1;
         }
-        vulkanVideoProcessor->Initialize(&vkDevCtxt, videoStreamDemuxer, decoderConfig);
+
+        VkSharedBaseObj<VkVideoFrameToFile> frameToFile;
+        if (!decoderConfig.outputFileName.empty()) {
+            const char* crcOutputFile = decoderConfig.outputcrcPerFrame ? decoderConfig.crcOutputFileName.c_str() : nullptr;
+            result = VkVideoFrameToFile::Create(decoderConfig.outputFileName.c_str(),
+                                              decoderConfig.outputy4m,
+                                              decoderConfig.outputcrcPerFrame,
+                                              crcOutputFile,
+                                              decoderConfig.crcInitValue,
+                                              frameToFile);
+            if (result != VK_SUCCESS) {
+                fprintf(stderr, "Error creating output file %s\n", decoderConfig.outputFileName.c_str());
+                return -1;
+            }
+        }
+
+        vulkanVideoProcessor->Initialize(&vkDevCtxt, videoStreamDemuxer, frameToFile, decoderConfig);
 
         VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>> videoQueue(vulkanVideoProcessor);
         DecoderFrameProcessorState frameProcessor(&vkDevCtxt, videoQueue, decoderConfig.decoderQueueSize);
@@ -228,19 +250,6 @@ int main(int argc, const char **argv) {
         do {
             continueLoop = frameProcessor->OnFrame(0);
         } while (continueLoop);
-    }
-
-    if (decoderConfig.outputcrc != 0) {
-        fprintf(decoderConfig.crcOutputFile, "CRC: ");
-        for (size_t i = 0; i < decoderConfig.crcInitValue.size(); i += 1) {
-            fprintf(decoderConfig.crcOutputFile, "0x%08X ", crcAllocation[i]);
-        }
-
-        fprintf(decoderConfig.crcOutputFile, "\n");
-        if (decoderConfig.crcOutputFile != stdout) {
-            fclose(decoderConfig.crcOutputFile);
-            decoderConfig.crcOutputFile = stdout;
-        }
     }
 
     return 0;

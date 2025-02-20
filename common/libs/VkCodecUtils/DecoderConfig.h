@@ -67,7 +67,6 @@ struct DecoderConfig {
         queueId = 0;
         gpuIndex = -1;
         forceParserType = VK_VIDEO_CODEC_OPERATION_NONE_KHR;
-        crcValues = nullptr;
         decoderQueueSize = 5;
         enablePostProcessFilter = -1,
         enableStreamDemuxing = false;
@@ -76,11 +75,10 @@ struct DecoderConfig {
         enableHwLoadBalancing = false;
         selectVideoWithComputeQueue = false;
         enableVideoEncoder = false;
-        crcOutput = nullptr;
         outputy4m = false;
         outputcrcPerFrame = false;
         outputcrc = false;
-        crcOutputFile = nullptr;
+        crcOutputFileName.clear();
     }
 
     using ProgramArgs = std::vector<ArgSpec>;
@@ -292,7 +290,7 @@ struct DecoderConfig {
                 }},
             {"--crcoutfile", nullptr, 1, "Output file to store the CRC output into.",
                     [this](const char **args, const ProgramArgs &a) {
-                    crcOutputFile = fopen(args[0], "wt");
+                    crcOutputFileName = args[0];
                     return true;
                 }},
             {"--crcinit", nullptr, 1, "Initial value of the CRC separated by a comma, a set of CRCs can be specified with this commandline parameter",
@@ -387,10 +385,6 @@ struct DecoderConfig {
 
                 crcInitValue.push_back(0);
             }
-
-            if (crcOutputFile == nullptr) {
-                crcOutputFile = stdout;
-            }
         }
     }
 
@@ -434,7 +428,7 @@ struct DecoderConfig {
         return deviceUUID.empty() ? nullptr : deviceUUID.data();
     }
 
-    FILE* crcOutputFile;
+    std::string crcOutputFileName;
     std::string appName;
     std::basic_string<uint8_t> deviceUUID;
     int initialWidth;
@@ -457,11 +451,9 @@ struct DecoderConfig {
     int queueId;
     VkVideoCodecOperationFlagBitsKHR forceParserType;
     std::vector<uint32_t> crcInitValue;
-    uint32_t *crcValues;
     uint32_t deviceId;
     uint32_t decoderQueueSize;
     int32_t enablePostProcessFilter;
-    uint32_t *crcOutput;
     uint32_t enableStreamDemuxing : 1;
     uint32_t directMode : 1;
     uint32_t vsync : 1;
