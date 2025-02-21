@@ -298,6 +298,7 @@ struct VkInterfaceFunctions {
 // VK_KHR_video_encode_queue
     PFN_vkCmdEncodeVideoKHR CmdEncodeVideoKHR;
     PFN_vkGetEncodedVideoSessionParametersKHR GetEncodedVideoSessionParametersKHR;
+    PFN_vkGetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR;
 #endif
 
 // VK_KHR_synchronization2

@@ -98,6 +98,9 @@ void InitDispatchTableMiddle(VkInstance instance, bool include_bottom, VkInterfa
 #ifdef VK_USE_VIDEO_QUEUE
     pVkFunctions->GetPhysicalDeviceVideoCapabilitiesKHR = reinterpret_cast<PFN_vkGetPhysicalDeviceVideoCapabilitiesKHR>(getInstanceProcAddrFunc(instance, "vkGetPhysicalDeviceVideoCapabilitiesKHR"));
 #endif
+#ifdef VK_USE_VIDEO_ENCODE_QUEUE
+    pVkFunctions->GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR = reinterpret_cast<PFN_vkGetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR>(getInstanceProcAddrFunc(instance, "vkGetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR"));
+#endif
 
     if (!include_bottom)
         return;
