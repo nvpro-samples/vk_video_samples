@@ -33,6 +33,7 @@ public:
                            VkFormat            referencePicturesFormat,
                            uint32_t            maxDpbSlots,
                            uint32_t            maxActiveReferencePictures,
+                           const void*         sessionCreateInfoChain,
                            VkSharedBaseObj<VulkanVideoSession>& videoSession);
 
     bool IsCompatible ( const VulkanDeviceContext* vkDevCtx,
@@ -114,9 +115,10 @@ public:
 private:
 
     VulkanVideoSession(const VulkanDeviceContext* vkDevCtx,
-                   VkVideoCoreProfile* pVideoProfile)
+                       VkVideoCoreProfile* pVideoProfile,
+                       const void* sessionCreateInfoChain)
        : m_refCount(0), m_flags(), m_profile(*pVideoProfile), m_vkDevCtx(vkDevCtx),
-         m_createInfo{ VK_STRUCTURE_TYPE_VIDEO_SESSION_CREATE_INFO_KHR, NULL },
+         m_createInfo{ VK_STRUCTURE_TYPE_VIDEO_SESSION_CREATE_INFO_KHR, sessionCreateInfoChain },
          m_videoSession(VkVideoSessionKHR()), m_memoryBound{}
     {
 

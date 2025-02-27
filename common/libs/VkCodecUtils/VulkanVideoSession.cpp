@@ -32,9 +32,10 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
                                     VkFormat            referencePicturesFormat,
                                     uint32_t            maxDpbSlots,
                                     uint32_t            maxActiveReferencePictures,
+                                    const void*         sessionCreateInfoChain,
                                     VkSharedBaseObj<VulkanVideoSession>& videoSession)
 {
-    VulkanVideoSession* pNewVideoSession = new VulkanVideoSession(vkDevCtx, pVideoProfile);
+    VulkanVideoSession* pNewVideoSession = new VulkanVideoSession(vkDevCtx, pVideoProfile, sessionCreateInfoChain);
 
     static const VkExtensionProperties h264DecodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION };
     static const VkExtensionProperties h265DecodeStdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION };
