@@ -882,6 +882,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                              m_imageDpbFormat,
                                              maxDpbPicturesCount,
                                              maxActiveReferencePicturesCount,
+                                             nullptr,
                                              m_videoSession);
 
         // after creating a new video session, we need a codec reset.
