@@ -270,11 +270,13 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     }
     m_numImageTypesEnabled |= DecodeFrameBufferIf::IMAGE_TYPE_MASK_DECODE_OUT;
 
+#if (!_TRANSCODING)
     if(!(videoCapabilities.flags & VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR)) {
         // The implementation does not support individual images for DPB and so must use arrays
         m_useImageArray = VK_TRUE;
         m_useImageViewArray = VK_FALSE;
     }
+#endif //_TRANSCODING
 
     if (m_enableDecodeComputeFilter) {
 
@@ -326,7 +328,11 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                                 &ycbcrConversionCreateInfo,
                                                 &ycbcrPrimariesConstants,
                                                 &samplerInfo,
-                                                m_yuvFilter);
+                                                m_yuvFilter
+#if (_TRANSCODING)
+                                                , m_resizeResolution
+#endif
+                                            );
         if (result == VK_SUCCESS) {
 
             // We need extra image for the filter output - linear or optimal image
@@ -496,12 +502,16 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         VulkanVideoFrameBuffer::ImageSpec& imageSpecFilter = imageSpecs[filterOutImageSpecsIndex];
         imageSpecFilter.createInfo = imageSpecDpb.createInfo;
         imageSpecFilter.createInfo.format = outImageFormat;
-        imageSpecFilter.createInfo.arrayLayers = 1;
+#if (_TRANSCODING)
+        if (m_numResizes > 0) {
+            imageSpecFilter.createInfo.arrayLayers = m_numResizes;
+        }
+#endif
 
         if (m_enableDecodeComputeFilter == VK_TRUE) {
 
             // This is the image for the compute filter output: VK_IMAGE_USAGE_STORAGE_BIT
-            imageSpecFilter.createInfo.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+            imageSpecFilter.createInfo.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR;
 
         } else if (m_useTransferOperation == VK_TRUE) {
 
@@ -1038,6 +1048,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     VkFence frameCompleteFence = frameSynchronizationInfo.frameCompleteFence;
     VkSemaphore frameCompleteSemaphore = frameSynchronizationInfo.frameCompleteSemaphore;
     VkSemaphore frameConsumerDoneSemaphore = frameSynchronizationInfo.frameConsumerDoneSemaphore;
+#if (_TRANSCODING)
+    VkSemaphore* frameResizeSemaphores =  frameSynchronizationInfo.frameResizeSemaphore;
+#endif
     // By default, the frameCompleteSemaphore is the videoDecodeCompleteSemaphore.
     // If the video frame filter is enabled, since it is executed after the decoder's queue,
     // the filter will provide its own semaphore for the video decoder to signal, instead.
@@ -1359,9 +1372,14 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         if (false) std::cout << currPicIdx << " : OUT view: " << outputImageView->GetImageView() << ", signalSem: " <<  frameCompleteSemaphore << std::endl << std::flush;
         assert(videoDecodeCompleteSemaphore != frameCompleteSemaphore);
+
         result = m_yuvFilter->SubmitCommandBuffer(1, filterCmdBuffer->GetCommandBuffer(),
                                                   1, &videoDecodeCompleteSemaphore,
+#if (_TRANSCODING)
+                                                  std::max(1, m_numResizes), m_numResizes > 0 ? frameResizeSemaphores : &frameCompleteSemaphore,
+#else
                                                   1, &frameCompleteSemaphore,
+#endif // _TRANSCODING
                                                   frameCompleteFence);
         assert(result == VK_SUCCESS);
         filterCmdBuffer->SetCommandBufferSubmitted();

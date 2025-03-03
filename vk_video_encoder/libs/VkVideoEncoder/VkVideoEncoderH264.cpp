@@ -51,6 +51,27 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
         return result;
     }
 
+#if (_TRANSCODING)
+    const VkPhysicalDeviceVideoEncodeQualityLevelInfoKHR deviceQualityLevelInfo { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR, nullptr, encoderConfig->videoCoreProfile.GetProfile(), encoderConfig->videoEncodeCapabilities.maxQualityLevels - 1} ; // should be less than maxQualityLevels;
+    VkVideoEncodeQualityLevelPropertiesKHR qualityLevelProperties { VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_PROPERTIES_KHR, nullptr, VK_VIDEO_ENCODE_RATE_CONTROL_MODE_VBR_BIT_KHR, 1 };
+
+    if (encoderConfig->videoCoreProfile.GetProfile()->videoCodecOperation == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR)
+    {
+        // DRAFT: I'm just filling the random data to check that the app works (doesn't crash), the results are unused
+        VkVideoEncodeH264QualityLevelPropertiesKHR encodeH264QualityLevelProperties; // this structure is used as pNext in for return value from getPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR
+        encodeH264QualityLevelProperties.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_QUALITY_LEVEL_PROPERTIES_KHR;
+        encodeH264QualityLevelProperties.pNext = NULL;
+        encodeH264QualityLevelProperties.preferredRateControlFlags = VK_VIDEO_ENCODE_H264_RATE_CONTROL_REGULAR_GOP_BIT_KHR;
+        qualityLevelProperties.pNext = &encodeH264QualityLevelProperties;
+        result = m_vkDevCtx->GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR(m_vkDevCtx->getPhysicalDevice(), &deviceQualityLevelInfo, &qualityLevelProperties); // result is unused currently
+
+        if(result != VK_SUCCESS) {
+            fprintf(stderr, "\nInitEncoder Error: Failed to GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR.\n");
+            return result;
+        }
+    }
+#endif //(_TRANSCODING)
+
     // Initialize DPB
     m_dpb264 = VkEncDpbH264::CreateInstance();
     assert(m_dpb264);
@@ -72,6 +93,17 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     VkVideoSessionParametersCreateInfoKHR* encodeSessionParametersCreateInfo = videoSessionParametersInfo.getVideoSessionParametersInfo();
     encodeSessionParametersCreateInfo->flags = 0;
     VkVideoSessionParametersKHR sessionParameters;
+
+#if (_TRANSCODING)
+    VkVideoEncodeQualityLevelInfoKHR qualityLevel;
+    qualityLevel.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR;
+    qualityLevel.pNext = nullptr;
+    qualityLevel.qualityLevel = encoderConfig->qualityLevel;
+
+    VkVideoEncodeH264SessionParametersCreateInfoKHR* encodeH264SessionParametersCreateInfo = (VkVideoEncodeH264SessionParametersCreateInfoKHR*)encodeSessionParametersCreateInfo->pNext;
+    encodeH264SessionParametersCreateInfo->pNext = &qualityLevel;
+#endif //_TRANSCODING
+
     result = m_vkDevCtx->CreateVideoSessionParametersKHR(*m_vkDevCtx,
                                                          encodeSessionParametersCreateInfo,
                                                          nullptr,

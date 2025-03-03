@@ -277,6 +277,7 @@ struct VkInterfaceFunctions {
 // VK_KHR_video_queue
     PFN_vkGetPhysicalDeviceVideoFormatPropertiesKHR GetPhysicalDeviceVideoFormatPropertiesKHR;
     PFN_vkGetPhysicalDeviceVideoCapabilitiesKHR GetPhysicalDeviceVideoCapabilitiesKHR;
+    PFN_vkGetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR;
     PFN_vkCreateVideoSessionKHR CreateVideoSessionKHR;
     PFN_vkDestroyVideoSessionKHR DestroyVideoSessionKHR;
     PFN_vkCreateVideoSessionParametersKHR CreateVideoSessionParametersKHR;

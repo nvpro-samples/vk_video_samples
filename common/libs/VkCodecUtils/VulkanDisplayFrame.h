@@ -42,6 +42,9 @@ public:
     VkFence frameConsumerDoneFence; // If valid, the fence is signaled when the consumer (graphics, compute or display) is done using the frame.
     VkSemaphore frameCompleteSemaphore; // If valid, the semaphore is signaled when the decoder or encoder is done decoding / encoding the frame.
     VkSemaphore frameConsumerDoneSemaphore; // If valid, the semaphore is signaled when the consumer (graphics, compute or display) is done using the frame.
+#if (_TRANSCODING)
+    VkSemaphore frameResizeSemaphore[16];
+#endif //_TRANSCODING
     VkQueryPool queryPool;                  // queryPool handle used for the video queries.
     int32_t startQueryId;                   // query Id used for the this frame.
     uint32_t numQueries;                    // usually one query per frame

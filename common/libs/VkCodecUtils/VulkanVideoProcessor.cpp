@@ -84,16 +84,21 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
         fprintf(stderr, "\nERROR: Create VulkanVideoFrameBuffer result: 0x%x\n", result);
     }
 
+    uint32_t enableDecoderFeatures = 0;
+
+#if (!_TRANSCODING)
     FILE* outFile = m_frameToFile.AttachFile(outputFileName);
     if ((outputFileName != nullptr) && (outFile == nullptr)) {
         fprintf( stderr, "Error opening the output file %s", outputFileName);
         return -1;
     }
 
-    uint32_t enableDecoderFeatures = 0;
     if (outFile != nullptr) {
+    // Transcoding does not need a linear output (but this line alone causes output's freeze on Ampere, fixed in VkVideoDecoder.cpp L246 ..
+    // .. by force setup if (!(videoCapabilities.flags & VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR) to if(0) alongside
         enableDecoderFeatures |= VkVideoDecoder::ENABLE_LINEAR_OUTPUT;
     }
+#endif // !_TRANSCODING
 
     if (enableHwLoadBalancing) {
         enableDecoderFeatures |= VkVideoDecoder::ENABLE_HW_LOAD_BALANCING;
@@ -235,6 +240,29 @@ int32_t VulkanVideoProcessor::GetBitDepth()  const
 {
     return m_videoStreamDemuxer->GetBitDepth();
 }
+
+#if (_TRANSCODING)
+
+int32_t VulkanVideoProcessor::GetCodedHeight()  const
+{
+    return m_vkVideoDecoder->GetVideoFormatInfo()->coded_height;
+}
+
+int32_t VulkanVideoProcessor::GetCodedWidth()  const
+{
+    return m_vkVideoDecoder->GetVideoFormatInfo()->coded_width;
+}
+
+uint32_t VulkanVideoProcessor::GetFrameRate()  const
+{
+    return (m_vkVideoDecoder->GetVideoFormatInfo()->frame_rate.denominator) |  (m_vkVideoDecoder->GetVideoFormatInfo()->frame_rate.numerator << 14);
+}
+
+uint32_t VulkanVideoProcessor::GetFramesCount()  const
+{
+    return m_maxFrameCount;
+}
+#endif //_TRANSCODING
 
 void VulkanVideoProcessor::Deinit()
 {
@@ -626,11 +654,45 @@ int32_t VulkanVideoProcessor::ParserProcessNextDataChunk()
     return retValue;
 }
 
-int32_t VulkanVideoProcessor::GetNextFrame(VulkanDecodedFrame* pFrame, bool* endOfStream)
+#if (_TRANSCODING)
+static void setGeneratedOutputFileName(DecoderConfig* programConfig, VkSharedBaseObj<EncoderConfig>& encoderConfig)
+{
+    std::string filename = std::string{programConfig->videoFileName};
+    size_t filePath = filename.rfind("/");
+    if (filePath == std::string::npos) filePath = filename.rfind("\\");
+    if (filePath == std::string::npos) filePath = 0; else filePath += 1;
+    filename = filename.substr(filePath, filename.size() - 1);
+    size_t fileExtension = filename.rfind(".");
+    filename = filename.substr(0, fileExtension);
+    std::string fileFormat = encoderConfig->codec == VkVideoCodecOperationFlagBitsKHR::VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR ? ".264" : ".265";
+    std::string generatedName = filename +
+                                "_" + std::to_string(encoderConfig->encodeHeight) +  "p" +
+                                "_p" + std::to_string(encoderConfig->qualityLevel + 1) +
+                                "_vbv" + std::to_string(encoderConfig->vbvbufratio) +  "_" +
+                                std::to_string(encoderConfig->averageBitrate>>20) +  "Mbps";
+    encoderConfig->outputFileHandler.SetFileName((generatedName + fileFormat).c_str());
+    for (int i = 0; i < encoderConfig->numEncoderResizedOutputs; i++)
+    {
+        encoderConfig->resizedOutputFileHandler[i].SetFileName((generatedName + "_" + std::to_string(i) + fileFormat).c_str());
+    }
+}
+#endif
+
+int32_t VulkanVideoProcessor::GetNextFrame(VulkanDecodedFrame* pFrame, bool* endOfStream
+#if (_TRANSCODING)
+    , DecoderConfig* programConfig, VkSharedBaseObj<EncoderConfig>* encoderConfig
+#endif
+)
 {
     // The below call to DequeueDecodedPicture allows returning the next frame without parsing of the stream.
     // Parsing is only done when there are no more frames in the queue.
     int32_t framesInQueue = m_vkVideoFrameBuffer->DequeueDecodedPicture(pFrame);
+
+#if (_TRANSCODING)
+    const int numberOfEncoders = std::max(1, (*encoderConfig)->numEncoderResizedOutputs);
+    m_vkVideoDecoder->m_numResizes = (*encoderConfig)->numEncoderResizedOutputs;
+    m_vkVideoDecoder->m_resizeResolution = (*encoderConfig)->resizedOutputResolution;
+#endif
 
     // Loop until a frame (or more) is parsed and added to the queue.
     while ((framesInQueue == 0) && !m_videoStreamsCompleted) {
@@ -644,11 +706,49 @@ int32_t VulkanVideoProcessor::GetNextFrame(VulkanDecodedFrame* pFrame, bool* end
 
         if (m_videoFrameNum == 0) {
             DumpVideoFormat(m_vkVideoDecoder->GetVideoFormatInfo(), true);
+#if (_TRANSCODING)
+            {
+                (*encoderConfig)->encodeWidth = (*encoderConfig)->encodeMaxWidth = GetWidth();
+                (*encoderConfig)->encodeHeight = (*encoderConfig)->encodeMaxHeight = GetHeight();
+                (*encoderConfig)->input.width = GetCodedWidth();
+                (*encoderConfig)->input.height = GetCodedHeight();
+                setGeneratedOutputFileName(programConfig, *encoderConfig);
+                uint32_t frameRate = GetFrameRate();
+                (*encoderConfig)->numFrames = GetFramesCount();
+                (*encoderConfig)->frameRateDenominator = frameRate & ((1 << 14) - 1);
+                (*encoderConfig)->frameRateNumerator = frameRate >> 14;
+                m_vkVideoEncoder.resize(numberOfEncoders);
+                int i = 0;
+                do {
+                    if ((*encoderConfig)->numEncoderResizedOutputs > 0) {
+                        (*encoderConfig)->input.width = (*encoderConfig)->resizedOutputResolution[i].width;
+                        (*encoderConfig)->input.height = (*encoderConfig)->resizedOutputResolution[i].height;
+                        (*encoderConfig)->encodeWidth = (*encoderConfig)->encodeMaxWidth = (*encoderConfig)->resizedOutputResolution[i].width;
+                        (*encoderConfig)->encodeHeight = (*encoderConfig)->encodeMaxHeight = (*encoderConfig)->resizedOutputResolution[i].height;
+                    }
+                    (*encoderConfig)->InitializeParameters();
+                    VkResult result = VkVideoEncoder::CreateVideoEncoder(m_vkDevCtx, *encoderConfig, m_vkVideoEncoder[i]);
+                    assert(result == VK_SUCCESS);
+                    i++;
+                } while (i < numberOfEncoders);
+            }
+#endif //_TRANSCODING
         }
 
+#if (!_TRANSCODING)
         if (m_frameToFile) {
             OutputFrameToFile(pFrame);
         }
+#else
+        std::vector<VkSharedBaseObj<VkVideoEncoder::VkVideoEncodeFrameInfo>> encodeFrameInfo(numberOfEncoders);
+        int i = 0;
+        do {
+            m_vkVideoEncoder[i]->GetAvailablePoolNode(encodeFrameInfo[i]);
+            assert(encodeFrameInfo[i]);
+            m_vkVideoEncoder[i]->LoadNextFrameDecoded(encodeFrameInfo[i], pFrame, i);
+            i++;
+        } while (i < numberOfEncoders);
+#endif // !_TRANSCODING
 
         m_videoFrameNum++;
     }
