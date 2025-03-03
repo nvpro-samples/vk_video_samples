@@ -905,6 +905,8 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     const uint32_t maxDpbPicturesCount = std::min<uint32_t>(m_maxDpbPicturesCount, encoderConfig->videoCapabilities.maxDpbSlots);
 
     VkVideoSessionCreateFlagsKHR sessionCreateFlags{};
+    void* sessionCreateInfoChain = nullptr;
+
 #ifdef VK_KHR_video_maintenance1
     m_videoMaintenance1FeaturesSupported = VulkanVideoCapabilities::GetVideoMaintenance1FeatureSupported(m_vkDevCtx);
     if (m_videoMaintenance1FeaturesSupported) {
@@ -917,6 +919,34 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         } else {
             sessionCreateFlags |= VK_VIDEO_SESSION_CREATE_ALLOW_ENCODE_EMPHASIS_MAP_BIT_KHR;
         }
+    }
+
+    VkVideoEncodeSessionIntraRefreshCreateInfoKHR intraRefreshCreateInfo{};
+    if (m_encoderConfig->enableIntraRefresh) {
+        VkVideoEncodeIntraRefreshModeFlagBitsKHR mode = VK_VIDEO_ENCODE_INTRA_REFRESH_MODE_NONE_KHR;
+
+        switch (m_encoderConfig->intraRefreshMode) {
+        case EncoderConfig::REFRESH_PER_PARTITION:
+            mode = VK_VIDEO_ENCODE_INTRA_REFRESH_MODE_PER_PICTURE_PARTITION_BIT_KHR;
+            break;
+        case EncoderConfig::REFRESH_BLOCK_ROWS:
+            mode = VK_VIDEO_ENCODE_INTRA_REFRESH_MODE_BLOCK_ROW_BASED_BIT_KHR;
+            break;
+        case EncoderConfig::REFRESH_BLOCK_COLUMNS:
+            mode = VK_VIDEO_ENCODE_INTRA_REFRESH_MODE_BLOCK_COLUMN_BASED_BIT_KHR;
+            break;
+        case EncoderConfig::REFRESH_BLOCKS:
+            mode = VK_VIDEO_ENCODE_INTRA_REFRESH_MODE_BLOCK_BASED_BIT_KHR;
+            break;
+        default:
+            break;
+        }
+
+        intraRefreshCreateInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_SESSION_INTRA_REFRESH_CREATE_INFO_KHR;
+        intraRefreshCreateInfo.pNext = sessionCreateInfoChain;
+        intraRefreshCreateInfo.intraRefreshMode = mode;
+
+        sessionCreateInfoChain = &intraRefreshCreateInfo;
     }
 
     if (!m_videoSession ||
@@ -939,7 +969,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                              m_imageDpbFormat,
                                              maxDpbPicturesCount,
                                              maxActiveReferencePicturesCount,
-                                             nullptr,
+                                             sessionCreateInfoChain,
                                              m_videoSession);
 
         // after creating a new video session, we need a codec reset.
