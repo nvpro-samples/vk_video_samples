@@ -36,7 +36,7 @@
 
 int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                                          VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
-                                         VkSharedBaseObj<VkVideoFrameToFile>& frameToFile,
+                                         VkSharedBaseObj<VkVideoFrameOutput>& frameToFile,
                                          DecoderConfig& programConfig)
 {
 

@@ -88,7 +88,7 @@ public:
 
     VkResult Initialize(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
                         VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
-                        VkSharedBaseObj<VkVideoFrameToFile>& frameToFile,
+                        VkSharedBaseObj<VkVideoFrameOutput>& frameToFile,
                         int argc, const char** argv);
 
     virtual ~VulkanVideoDecoderImpl() { }
@@ -132,7 +132,7 @@ private:
 
 VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
                                             VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
-                                            VkSharedBaseObj<VkVideoFrameToFile>& frameToFile,
+                                            VkSharedBaseObj<VkVideoFrameOutput>& frameToFile,
                                             int argc, const char** argv)
 {
     const bool libraryMode = true;
@@ -322,7 +322,7 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance, VkPhysicalDev
 VK_VIDEO_DECODER_EXPORT
 VkResult CreateVulkanVideoDecoder(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
                                   VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
-                                  VkSharedBaseObj<VkVideoFrameToFile>& frameToFile,
+                                  VkSharedBaseObj<VkVideoFrameOutput>& frameToFile,
                                   int argc, const char** argv,
                                   VkSharedBaseObj<VulkanVideoDecoder>& vulkanVideoDecoder)
 {

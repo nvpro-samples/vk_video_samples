@@ -33,13 +33,13 @@ class VulkanDecodedFrame;
  * This class provides functionality to write decoded video frames to a file,
  * with support for various formats including Y4M and CRC generation.
  */
-class VkVideoFrameToFile : public VkVideoRefCountBase {
+class VkVideoFrameOutput : public VkVideoRefCountBase {
 public:
     /** @brief Reference to an invalid frame-to-file object used as default value */
-    static VkSharedBaseObj<VkVideoFrameToFile>& invalidFrameToFile;
+    static VkSharedBaseObj<VkVideoFrameOutput>& invalidFrameToFile;
 
     /**
-     * @brief Creates a new VkVideoFrameToFile instance
+     * @brief Creates a new VkVideoFrameOutput instance
      *
      * @param fileName Output file name for the video frames
      * @param outputy4m Whether to output in Y4M format
@@ -54,9 +54,9 @@ public:
                           bool outputcrcPerFrame = false,
                           const char* crcOutputFile = nullptr,
                           const std::vector<uint32_t>& crcInitValue = std::vector<uint32_t>(),
-                          VkSharedBaseObj<VkVideoFrameToFile>& frameToFile = invalidFrameToFile);
+                          VkSharedBaseObj<VkVideoFrameOutput>& frameToFile = invalidFrameToFile);
 
-    virtual ~VkVideoFrameToFile() = default;
+    virtual ~VkVideoFrameOutput() = default;
 
     /**
      * @brief Outputs a decoded frame to file
@@ -68,12 +68,12 @@ public:
     virtual size_t OutputFrame(VulkanDecodedFrame* pFrame, const VulkanDeviceContext* vkDevCtx) = 0;
 
 protected:
-    VkVideoFrameToFile() = default;
+    VkVideoFrameOutput() = default;
 
 private:
     // Prevent copying
-    VkVideoFrameToFile(const VkVideoFrameToFile&) = delete;
-    VkVideoFrameToFile& operator=(const VkVideoFrameToFile&) = delete;
+    VkVideoFrameOutput(const VkVideoFrameOutput&) = delete;
+    VkVideoFrameOutput& operator=(const VkVideoFrameOutput&) = delete;
 };
 
 #endif /* _VKCODECUTILS_VKVIDEOFRAMETOFILE_H_ */

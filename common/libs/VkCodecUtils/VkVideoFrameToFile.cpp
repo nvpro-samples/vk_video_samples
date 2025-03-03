@@ -18,12 +18,12 @@
 #include <inttypes.h>
 #include <vulkan/vulkan.h>
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
-#include "VkVideoFrameToFile.h"
 #include "VulkanDeviceContext.h"
 #include "VulkanDeviceMemoryImpl.h"
 #include "VkImageResource.h"
 #include "VulkanDecodedFrame.h"
 #include "Helpers.h"
+#include "VkVideoFrameOutput.h"
 
 // CRC32 lookup table
 static unsigned long Crc32Table[256] = {
@@ -122,7 +122,7 @@ static void CopyPlaneData(const uint8_t* pSrc, uint8_t* pDst,
     }
 }
 
-class VkVideoFrameToFileImpl : public VkVideoFrameToFile {
+class VkVideoFrameToFileImpl : public VkVideoFrameOutput {
 public:
     VkVideoFrameToFileImpl(bool outputy4m,
                           bool outputcrcPerFrame,
@@ -486,15 +486,15 @@ private:
 };
 
 // Define the static member for invalid instance
-static VkSharedBaseObj<VkVideoFrameToFile> s_invalidFrameToFile;
-VkSharedBaseObj<VkVideoFrameToFile>& VkVideoFrameToFile::invalidFrameToFile = s_invalidFrameToFile;
+static VkSharedBaseObj<VkVideoFrameOutput> s_invalidFrameToFile;
+VkSharedBaseObj<VkVideoFrameOutput>& VkVideoFrameOutput::invalidFrameToFile = s_invalidFrameToFile;
 
-VkResult VkVideoFrameToFile::Create(const char* fileName,
+VkResult VkVideoFrameOutput::Create(const char* fileName,
                                    bool outputy4m,
                                    bool outputcrcPerFrame,
                                    const char* crcOutputFile,
                                    const std::vector<uint32_t>& crcInitValue,
-                                   VkSharedBaseObj<VkVideoFrameToFile>& frameToFile) {
+                                   VkSharedBaseObj<VkVideoFrameOutput>& frameToFile) {
     VkVideoFrameToFileImpl* newFrameToFile = new VkVideoFrameToFileImpl(outputy4m, outputcrcPerFrame,
                                                                        crcOutputFile, crcInitValue);
     if (!newFrameToFile) {
