@@ -49,6 +49,7 @@ public:
     virtual ~VulkanVideoDecoder() {};
 };
 
+class VkWsiDisplay;
 /**
  * @brief Creates an instance of the Vulkan video decoder, returning a reference-counted
  *        VulkanVideoDecoder interface.
@@ -71,6 +72,8 @@ public:
  * @param[in]  videoStreamDemuxer A stream processor that abstracts elementary streams or container
  *                                formats (e.g., MPEG, Matroska). This object will be used to
  *                                feed data into the decoder.
+ * @param[in]  pWsiDisplay        The display device context, if display is required, otherwise a nullptr.
+ *
  * @param[in]  argc               The number of configuration arguments passed for decoder setup.
  * @param[in]  argv               An array of null-terminated strings, containing the decoder
  *                                configuration options. All possible arguments are documented
@@ -89,6 +92,7 @@ extern "C" VK_VIDEO_DECODER_EXPORT
 VkResult CreateVulkanVideoDecoder(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
                                   VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
                                   VkSharedBaseObj<VkVideoFrameOutput>& frameToFile,
+                                  const VkWsiDisplay* pWsiDisplay,
                                   int argc, const char** argv,
                                   VkSharedBaseObj<VulkanVideoDecoder>& vulkanVideoDecoder);
 

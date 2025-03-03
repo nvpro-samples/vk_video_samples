@@ -173,6 +173,7 @@ int main(int argc, const char** argv)
                                         vkDevCtxt.getDevice(),
                                         videoStreamDemuxer,
                                         frameToFile,
+                                        displayShell,
                                         argc, argv,
                                         vulkanVideoDecoder);
         if (result != VK_SUCCESS) {
@@ -253,6 +254,7 @@ int main(int argc, const char** argv)
                                         vkDevCtxt.getDevice(),
                                         videoStreamDemuxer,
                                         frameToFile,
+                                        nullptr,
                                         argc, argv,
                                         vulkanVideoDecoder);
         if (result != VK_SUCCESS) {
