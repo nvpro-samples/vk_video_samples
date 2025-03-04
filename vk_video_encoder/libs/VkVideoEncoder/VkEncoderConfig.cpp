@@ -493,6 +493,10 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
+            gopStructure.SetIntraRefreshCycleDuration(intraRefreshCycleDuration);
+            if (verbose) {
+                printf("Selected intraRefreshCycleDuration: %d\n", intraRefreshCycleDuration);
+            }
         } else if (args[i] == "--intraRefreshMode") {
             if (++i >= argc) {
                 fprintf(stderr, "Invalid paramter for %s\n", args[i - 1].c_str());
