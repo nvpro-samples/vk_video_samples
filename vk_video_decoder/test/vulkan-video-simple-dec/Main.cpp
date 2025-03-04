@@ -23,7 +23,7 @@
 #include "VkCodecUtils/VulkanDecoderFrameProcessor.h"
 #include "VkDecoderUtils/VideoStreamDemuxer.h"
 
-static void DumpDecoderStreeamInfo(VkSharedBaseObj<VulkanVideoDecoder>& vulkanVideoDecoder)
+static void DumpDecoderStreamInfo(VkSharedBaseObj<VulkanVideoDecoder>& vulkanVideoDecoder)
 {
     const VkVideoProfileInfoKHR videoProfileInfo = vulkanVideoDecoder->GetVkProfile();
 
@@ -149,7 +149,7 @@ int main(int argc, const char** argv)
         return -1;
     }
 
-    DumpDecoderStreeamInfo(vulkanVideoDecoder);
+    DumpDecoderStreamInfo(vulkanVideoDecoder);
 
     VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>> videoQueue(vulkanVideoDecoder);
     DecoderFrameProcessorState frameProcessor(&vkDevCtxt, videoQueue, decoderConfig.decoderQueueSize);
