@@ -1621,6 +1621,18 @@ void VkVideoEncoder::ProcessQpMap(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encod
     vk::ChainNextVkStruct(encodeFrameInfo->encodeInfo, encodeFrameInfo->quantizationMapInfo);
 }
 
+void VkVideoEncoder::FillIntraRefreshInfo(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
+{
+    encodeFrameInfo->intraRefreshInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_INTRA_REFRESH_INFO_KHR;
+    encodeFrameInfo->intraRefreshInfo.pNext = nullptr;
+    encodeFrameInfo->intraRefreshInfo.intraRefreshCycleDuration = m_encoderConfig->intraRefreshCycleDuration;
+    encodeFrameInfo->intraRefreshInfo.intraRefreshIndex = encodeFrameInfo->gopPosition.intraRefreshIndex;
+
+    encodeFrameInfo->encodeInfo.flags |= VK_VIDEO_ENCODE_INTRA_REFRESH_BIT_KHR;
+
+    vk::ChainNextVkStruct(encodeFrameInfo->encodeInfo, encodeFrameInfo->intraRefreshInfo);
+}
+
 VkResult VkVideoEncoder::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
     m_sendControlCmd = false;

@@ -64,6 +64,7 @@ public:
                                VkVideoCodecOperationFlagBitsKHR codec = VK_VIDEO_CODEC_OPERATION_NONE_KHR)
             : encodeInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR, pNext}
             , quantizationMapInfo()
+            , intraRefreshInfo()
             , frameInputOrderNum(uint64_t(-1))
             , frameEncodeInputOrderNum(uint64_t(-1))
             , frameEncodeEncodeOrderNum(uint64_t(-1))
@@ -117,6 +118,7 @@ public:
 
         VkVideoEncodeInfoKHR                               encodeInfo;
         VkVideoEncodeQuantizationMapInfoKHR                quantizationMapInfo;
+        VkVideoEncodeIntraRefreshInfoKHR                   intraRefreshInfo;
         uint64_t                                           frameInputOrderNum;          // == encoder input order in sequence
         uint64_t                                           frameEncodeInputOrderNum;    // == encoder input order sequence number
         uint64_t                                           frameEncodeEncodeOrderNum;   // == encoder encode order sequence number
@@ -608,6 +610,8 @@ protected:
                                      VkImageLayout dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
     void ProcessQpMap(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
+
+    void FillIntraRefreshInfo(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
 
     virtual VkResult ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                 uint32_t frameIdx, uint32_t ofTotalFrames) = 0;
