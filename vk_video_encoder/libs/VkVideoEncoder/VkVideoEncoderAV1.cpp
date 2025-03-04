@@ -556,6 +556,11 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         ProcessQpMap(encodeFrameInfo);
     }
 
+    const bool isIntraRefreshFrame = m_encoderConfig->gopStructure.IsIntraRefreshFrame(encodeFrameInfo->gopPosition);
+    if (m_encoderConfig->enableIntraRefresh && isIntraRefreshFrame) {
+        FillIntraRefreshInfo(encodeFrameInfo);
+    }
+
     EnqueueFrame(encodeFrameInfo, pFrameInfo->bIsKeyFrame, pFrameInfo->bIsReference);
 
     return VK_SUCCESS;

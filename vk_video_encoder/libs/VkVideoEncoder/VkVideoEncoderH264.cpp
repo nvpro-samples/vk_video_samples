@@ -368,6 +368,21 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     }
     pFrameInfo->numDpbImageResources = numReferenceSlots;
 
+    const bool isIntraRefreshFrame = m_encoderConfig->gopStructure.IsIntraRefreshFrame(encodeFrameInfo->gopPosition);
+    if (m_encoderConfig->enableIntraRefresh && isIntraRefreshFrame) {
+
+        if (m_encoderConfig->intraRefreshMode == EncoderConfig::REFRESH_PER_PARTITION) {
+            // When using per-picture partition intra-refresh, mark the slice corresponding
+            // to the currently refreshed intra-refresh region as an intra slice.
+            for (uint32_t i = 0; i < pFrameInfo->pictureInfo.naluSliceEntryCount; i++) {
+                if (i != encodeFrameInfo->gopPosition.intraRefreshIndex)
+                    continue;
+
+                pFrameInfo->stdSliceHeader[i].slice_type = STD_VIDEO_H264_SLICE_TYPE_I;
+            }
+        }
+    }
+
     // It's not entirely correct to have two separate loops below, one for L0
     // and the other for L1. In each loop, elements are added to referenceSlotsInfo[]
     // without checking for duplication. Duplication could occur if the same
@@ -601,6 +616,11 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     if (m_encoderConfig->enableQpMap) {
         ProcessQpMap(encodeFrameInfo);
+    }
+
+    const bool isIntraRefreshFrame = m_encoderConfig->gopStructure.IsIntraRefreshFrame(encodeFrameInfo->gopPosition);
+    if (m_encoderConfig->enableIntraRefresh && isIntraRefreshFrame) {
+        FillIntraRefreshInfo(encodeFrameInfo);
     }
 
     // NOTE: dstBuffer resource acquisition can be deferred at the last moment before submit

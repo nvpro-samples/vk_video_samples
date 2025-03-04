@@ -236,6 +236,21 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     }
     pFrameInfo->numDpbImageResources = numReferenceSlots;
 
+    const bool isIntraRefreshFrame = m_encoderConfig->gopStructure.IsIntraRefreshFrame(encodeFrameInfo->gopPosition);
+    if (m_encoderConfig->enableIntraRefresh && isIntraRefreshFrame) {
+
+        if (m_encoderConfig->intraRefreshMode == EncoderConfig::REFRESH_PER_PARTITION) {
+            // When using per-picture partition intra-refresh, mark the slice corresponding
+            // to the currently refreshed intra-refresh region as an intra slice.
+            for (uint32_t i = 0; i < pFrameInfo->pictureInfo.naluSliceSegmentEntryCount; i++) {
+                if (i != encodeFrameInfo->gopPosition.intraRefreshIndex)
+                    continue;
+
+                pFrameInfo->stdSliceSegmentHeader[i].slice_type = STD_VIDEO_H265_SLICE_TYPE_I;
+            }
+        }
+    }
+
     if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_P) ||
             (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B)) {
 
@@ -540,6 +555,11 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     if (m_encoderConfig->enableQpMap) {
         ProcessQpMap(encodeFrameInfo);
+    }
+
+    const bool isIntraRefreshFrame = m_encoderConfig->gopStructure.IsIntraRefreshFrame(encodeFrameInfo->gopPosition);
+    if (m_encoderConfig->enableIntraRefresh && isIntraRefreshFrame) {
+        FillIntraRefreshInfo(encodeFrameInfo);
     }
 
     EnqueueFrame(encodeFrameInfo, isIdr, isReference);
