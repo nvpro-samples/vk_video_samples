@@ -357,6 +357,7 @@ endif()
     endif()
 
     if(BUILD_TESTS AND NOT DEFINED DEQP_TARGET)
+        add_subdirectory(vk_video_decoder/test/vulkan-video-simple-dec)
         add_subdirectory(vk_video_decoder/test/vulkan-video-dec)
     endif()
 
