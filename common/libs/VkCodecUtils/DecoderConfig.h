@@ -75,7 +75,7 @@ struct DecoderConfig {
         enableHwLoadBalancing = false;
         selectVideoWithComputeQueue = false;
         enableVideoEncoder = false;
-        outputy4m = false;
+        outputy4m = true; // by default, use Y4M
         outputcrcPerFrame = false;
         outputcrc = false;
         crcOutputFileName.clear();
