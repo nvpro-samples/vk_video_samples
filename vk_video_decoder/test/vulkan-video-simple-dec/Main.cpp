@@ -38,6 +38,54 @@ static void DumpDecoderStreamInfo(VkSharedBaseObj<VulkanVideoDecoder>& vulkanVid
     std::cout << std::endl;
 }
 
+static std::vector<VulkanDecodedFrame> frameDataQueue;
+static uint32_t                        curFrameDataQueueIndex = 0;
+bool GetNextFrame(VkSharedBaseObj<VulkanVideoDecoder>& vulkanVideoDecoder)
+{
+    bool continueLoop = true;
+
+    VulkanDecodedFrame& data = frameDataQueue[curFrameDataQueueIndex];
+    VulkanDecodedFrame* pLastDecodedFrame = nullptr;
+
+    if (vulkanVideoDecoder->GetWidth() > 0) {
+
+        pLastDecodedFrame = &data;
+
+        vulkanVideoDecoder->ReleaseFrame(pLastDecodedFrame);
+
+        pLastDecodedFrame->Reset();
+
+        bool endOfStream = false;
+        int32_t numVideoFrames = 0;
+
+        numVideoFrames = vulkanVideoDecoder->GetNextFrame(pLastDecodedFrame, &endOfStream);
+        if (endOfStream && (numVideoFrames < 0)) {
+            continueLoop = false;
+        }
+    }
+
+    // wait for the last submission since we reuse frame data
+    const bool dumpDebug = true;
+    if (dumpDebug && pLastDecodedFrame) {
+
+        VkSharedBaseObj<VkImageResourceView> imageResourceView;
+        pLastDecodedFrame->imageViews[VulkanDecodedFrame::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY].GetImageResourceView(imageResourceView);
+
+        std::cout << "picIdx: " << pLastDecodedFrame->pictureIndex
+                  << "\tdisplayWidth: " << pLastDecodedFrame->displayWidth
+                  << "\tdisplayHeight: " << pLastDecodedFrame->displayHeight
+                  << "\tdisplayOrder: " << pLastDecodedFrame->displayOrder
+                  << "\tdecodeOrder: " << pLastDecodedFrame->decodeOrder
+                  << "\ttimestamp " << pLastDecodedFrame->timestamp
+                  << "\tdstImageView " << (imageResourceView ? imageResourceView->GetImageResource()->GetImage() : VkImage())
+                  << std::endl;
+    }
+
+    curFrameDataQueueIndex = (curFrameDataQueueIndex + 1) % frameDataQueue.size();
+
+    return continueLoop;
+}
+
 int main(int argc, const char** argv)
 {
     std::cout << "Enter decoder test" << std::endl;
@@ -151,12 +199,11 @@ int main(int argc, const char** argv)
 
     DumpDecoderStreamInfo(vulkanVideoDecoder);
 
-    VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>> videoQueue(vulkanVideoDecoder);
-    DecoderFrameProcessorState frameProcessor(&vkDevCtxt, videoQueue, decoderConfig.decoderQueueSize);
+    frameDataQueue.resize(decoderConfig.decoderQueueSize);
 
     bool continueLoop = true;
     do {
-        continueLoop = frameProcessor->OnFrame(0);
+        continueLoop = GetNextFrame(vulkanVideoDecoder);
     } while (continueLoop);
 
     /*******************************************************************************************/
