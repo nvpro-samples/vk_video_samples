@@ -39,17 +39,20 @@ public:
     enum Flags { FLAGS_IS_REF         = (1 << 0), // frame is a reference
                  FLAGS_CLOSE_GOP      = (1 << 1), // Last reference in the Gop. Indicates the end of a closed Gop.
                  FLAGS_NONUNIFORM_GOP = (1 << 2), // nonuniform  Gop part of sequence (usually used to terminate Gop).
+                 FLAGS_INTRA_REFRESH  = (1 << 3), // This frame is part of an intra-refresh cycle
                };
 
     struct GopState {
         uint32_t positionInInputOrder;
         uint32_t lastRefInInputOrder;
         uint32_t lastRefInEncodeOrder;
+        uint32_t intraRefreshCounter;
 
         GopState()
         : positionInInputOrder(0)
         , lastRefInInputOrder(0)
-        , lastRefInEncodeOrder(0) {}
+        , lastRefInEncodeOrder(0)
+        , intraRefreshCounter(0) {}
     };
 
     struct GopPosition {
@@ -60,6 +63,7 @@ public:
         int8_t     bFramePos;   // The B position in Gop, -1 if not a B frame
         FrameType  pictureType;   // The type of the picture
         uint32_t   flags;       // one or multiple of flags of type Flags above
+        uint32_t   intraRefreshIndex; // the index of the frame within the intra-refresh cycle
 
         GopPosition(uint32_t positionInGopInInputOrder)
         : inputOrder(positionInGopInInputOrder)
@@ -69,6 +73,7 @@ public:
         , bFramePos(-1)
         , pictureType(FRAME_TYPE_INVALID)
         , flags(0)
+        , intraRefreshIndex(UINT32_MAX)
         {}
     };
 
@@ -78,7 +83,8 @@ public:
                         uint8_t temporalLayerCount = 1,
                         FrameType lastFrameType = FRAME_TYPE_P,
                         FrameType preIdrAnchorFrameType = FRAME_TYPE_P,
-                        bool m_closedGop = false);
+                        bool m_closedGop = false,
+                        uint32_t intraRefreshCycleDuration = 0);
 
     bool Init(uint64_t maxNumFrames);
 
@@ -119,6 +125,8 @@ public:
     // consecutiveBFrameCount is the number of consecutive B frames between I and/or P frames within the GOP.
     void SetConsecutiveBFrameCount(uint8_t consecutiveBFrameCount) { m_consecutiveBFrameCount = consecutiveBFrameCount; }
     uint8_t GetConsecutiveBFrameCount() const { return m_consecutiveBFrameCount; }
+
+    void SetIntraRefreshCycleDuration(uint32_t intraRefreshCycleDuration) { m_intraRefreshCycleDuration = intraRefreshCycleDuration; }
 
     // specifies the number of H.264/5 sub-layers that the application intends to use.
     void SetTemporalLayerCount(uint8_t temporalLayerCount) { m_temporalLayerCount = temporalLayerCount; }
@@ -167,6 +175,7 @@ public:
             gopState.lastRefInInputOrder  = 0;
             gopState.lastRefInEncodeOrder = 0;
             gopState.positionInInputOrder = 1U; // next frame value
+            gopState.intraRefreshCounter = 0;
             return true;
         }
 
@@ -182,6 +191,7 @@ public:
             if (m_closedGop) {
                 consecutiveBFrameCount = 0; // closed gop
             }
+            gopState.intraRefreshCounter = 0;
         } else if ((gopPos.inGop % (consecutiveBFrameCount + 1) == 0)) {
             // This is a P or B frame based on m_consecutiveBFrameCount.
             gopPos.pictureType = FRAME_TYPE_P;
@@ -250,6 +260,15 @@ public:
             gopState.lastRefInEncodeOrder = gopPos.encodeOrder;
         }
 
+        if (gopPos.pictureType == FRAME_TYPE_P || gopPos.pictureType == FRAME_TYPE_B) {
+            gopPos.intraRefreshIndex = gopState.intraRefreshCounter;
+            gopPos.flags |= FLAGS_INTRA_REFRESH;
+
+            if (m_intraRefreshCycleDuration > 0) {
+                gopState.intraRefreshCounter = (gopState.intraRefreshCounter + 1) % m_intraRefreshCycleDuration;
+            }
+        }
+
         gopState.positionInInputOrder++;
 
         return false;
@@ -258,6 +277,11 @@ public:
     bool IsFrameReference(GopPosition& gopPos) const {
 
         return ((gopPos.flags & FLAGS_IS_REF) != 0);
+    }
+
+    bool IsIntraRefreshFrame(GopPosition& gopPos) const {
+
+        return ((gopPos.flags & FLAGS_INTRA_REFRESH) != 0);
     }
 
     virtual void DumpFrameGopStructure(GopState& gopState,
@@ -278,5 +302,6 @@ private:
     FrameType             m_lastFrameType;
     FrameType             m_preClosedGopAnchorFrameType;
     uint32_t              m_closedGop : 1;
+    uint32_t              m_intraRefreshCycleDuration;
 };
 #endif /* _VKVIDEOENCODER_VKVIDEOGOPSTRUCTURE_H_ */

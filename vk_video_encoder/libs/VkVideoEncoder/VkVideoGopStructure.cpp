@@ -22,7 +22,8 @@ VkVideoGopStructure::VkVideoGopStructure(uint8_t gopFrameCount,
                                          uint8_t temporalLayerCount,
                                          FrameType lastFrameType,
                                          FrameType preIdrAnchorFrameType,
-                                         bool closedGop)
+                                         bool closedGop,
+                                         uint32_t intraRefreshCycleDuration)
     : m_gopFrameCount(gopFrameCount)
     , m_consecutiveBFrameCount(consecutiveBFrameCount)
     , m_gopFrameCycle((uint8_t)(m_consecutiveBFrameCount + 1))
@@ -31,6 +32,7 @@ VkVideoGopStructure::VkVideoGopStructure(uint8_t gopFrameCount,
     , m_lastFrameType(lastFrameType)
     , m_preClosedGopAnchorFrameType(preIdrAnchorFrameType)
     , m_closedGop(closedGop)
+    , m_intraRefreshCycleDuration(intraRefreshCycleDuration)
 {
     Init(uint64_t(-1));
 }
