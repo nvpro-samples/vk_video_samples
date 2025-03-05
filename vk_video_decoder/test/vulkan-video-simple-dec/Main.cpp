@@ -36,9 +36,17 @@ static void DumpDecoderStreamInfo(VkSharedBaseObj<VulkanVideoDecoder>& vulkanVid
     std::cout << std::endl;
 }
 
-static std::vector<VulkanDecodedFrame> frameDataQueue;
-static uint32_t                        curFrameDataQueueIndex = 0;
-bool GetNextFrame(VkSharedBaseObj<VulkanVideoDecoder>& vulkanVideoDecoder)
+static size_t init(std::vector<VulkanDecodedFrame>& frameDataQueue, uint32_t& curFrameDataQueueIndex,
+                   const uint32_t decoderQueueSize)
+{
+    curFrameDataQueueIndex = 0;
+    frameDataQueue.resize(decoderQueueSize);
+    return frameDataQueue.size();
+}
+
+static bool GetNextFrame(VkSharedBaseObj<VulkanVideoDecoder>& vulkanVideoDecoder,
+                         std::vector<VulkanDecodedFrame>& frameDataQueue,
+                         uint32_t& curFrameDataQueueIndex)
 {
     bool continueLoop = true;
 
@@ -82,6 +90,13 @@ bool GetNextFrame(VkSharedBaseObj<VulkanVideoDecoder>& vulkanVideoDecoder)
     curFrameDataQueueIndex = (curFrameDataQueueIndex + 1) % frameDataQueue.size();
 
     return continueLoop;
+}
+
+static void deinit(std::vector<VulkanDecodedFrame>& frameDataQueue,
+                   uint32_t& curFrameDataQueueIndex)
+{
+    frameDataQueue.clear();
+    curFrameDataQueueIndex = 0;
 }
 
 int main(int argc, const char** argv)
@@ -151,14 +166,19 @@ int main(int argc, const char** argv)
 
     DumpDecoderStreamInfo(vulkanVideoDecoder);
 
+    std::vector<VulkanDecodedFrame> frameDataQueue;
+    uint32_t                        curFrameDataQueueIndex = 0;
+
     frameDataQueue.resize(decoderConfig.decoderQueueSize);
+
+    init(frameDataQueue, curFrameDataQueueIndex, decoderConfig.decoderQueueSize);
 
     bool continueLoop = true;
     do {
-        continueLoop = GetNextFrame(vulkanVideoDecoder);
+        continueLoop = GetNextFrame(vulkanVideoDecoder, frameDataQueue, curFrameDataQueueIndex);
     } while (continueLoop);
 
-    /*******************************************************************************************/
+    deinit(frameDataQueue, curFrameDataQueueIndex);
 
     std::cout << "Exit decoder test" << std::endl;
 }
