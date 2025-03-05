@@ -184,7 +184,6 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance,
                                         (m_decoderConfig.enableVideoEncoder ? videoEncodeCodecs : (VkVideoCodecOperationFlagsKHR) VK_VIDEO_CODEC_OPERATION_NONE_KHR);
 
     const bool supportsShellPresent = ((!m_decoderConfig.noPresent == false) && (pWsiDisplay != nullptr));
-    const bool createTransferQueue = supportsShellPresent ? false : true;
     const bool createGraphicsQueue = supportsShellPresent ? true  : false;
     const bool createDisplayQueue  = supportsShellPresent ? true  : false;
 

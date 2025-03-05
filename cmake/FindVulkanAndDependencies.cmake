@@ -347,3 +347,26 @@ if(SHADERC_INCLUDE_DIR AND SHADERC_LIBRARY)
 else()
     message(FATAL_ERROR "Could not find or build Shaderc")
 endif()
+
+# Add this section to check for system-installed shaderc on Linux
+if(NOT DEFINED SHADERC_LIB_SHARED_DIR AND UNIX)
+    # Try to find system-installed shaderc on Linux
+    find_library(SHADERC_SHARED_LIB
+        NAMES shaderc_shared
+        PATHS
+            /usr/lib
+            /usr/lib64
+            /usr/lib/x86_64-linux-gnu
+            /usr/local/lib
+            /usr/local/lib64
+            /lib
+            /lib64
+    )
+
+    if(SHADERC_SHARED_LIB)
+        get_filename_component(SHADERC_LIB_SHARED_DIR ${SHADERC_SHARED_LIB} DIRECTORY)
+        message(STATUS "Found Linux system shaderc at: ${SHADERC_LIB_SHARED_DIR}")
+    else()
+        message(WARNING "Could not find shaderc_shared library on Linux. Please install it using your package manager (e.g., apt install libshaderc-dev) or specify SHADERC_LIB_SHARED_DIR manually.")
+    endif()
+endif()
