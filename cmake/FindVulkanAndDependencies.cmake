@@ -72,6 +72,9 @@ else()
     # Fetch and build our own Vulkan components
     message(STATUS "Building Vulkan components from source")
 
+    # Set Vulkan Loader options to disable tests
+    set(BUILD_TESTS OFF CACHE BOOL "Disable Vulkan-Loader tests" FORCE)
+
     # Fetch the Vulkan Loader
     FetchContent_Declare(
         vulkan-loader
