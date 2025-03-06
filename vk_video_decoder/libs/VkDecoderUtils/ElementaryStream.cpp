@@ -18,6 +18,10 @@
 #include <fstream>
 #include "mio/mio.hpp"
 #include "VkDecoderUtils/VideoStreamDemuxer.h"
+#define DKIF_FRAME_CONTAINER_HEADER_SIZE 12
+#define DKIF_HEADER_MAGIC *((const uint32_t*)"DKIF")
+#define DKIF_FILE_HEADER_SIZE 32
+#define USE_SIMPLE_MALLOC 1
 
 class ElementaryStream : public VideoStreamDemuxer {
 
@@ -32,11 +36,38 @@ public:
         , m_height(defaultHeight)
         , m_bitDepth(defaultBitDepth)
         , m_videoCodecType(forceParserType)
+#ifndef USE_SIMPLE_MALLOC
         , m_inputVideoStreamMmap()
+#endif
         , m_pBitstreamData(nullptr)
         , m_bitstreamDataSize(0)
         , m_bytesRead(0) {
 
+#ifdef USE_SIMPLE_MALLOC
+        FILE* handle = fopen(pFilePath, "rb");
+        if (handle == nullptr) {
+            printf("Failed to open video file %s\n", pFilePath);
+            m_bitstreamDataSize = 0;
+            m_pBitstreamData = nullptr;
+            return;
+        }
+
+        fseek(handle, 0, SEEK_END);
+        size_t size = ftell(handle);
+        uint8_t* data = (uint8_t*)malloc(size);
+
+        if (data == nullptr) {
+            printf("Failed to allocate memory for video file: %i\n", (uint32_t)size);
+            m_bitstreamDataSize = 0;
+            return;
+        }
+
+        m_bitstreamDataSize = size;
+        fseek(handle, 0, SEEK_SET);
+        fread(data, 1, size, handle);
+        m_pBitstreamData = data;
+        fclose(handle);
+#else
         std::error_code error;
         m_inputVideoStreamMmap.map(pFilePath, 0, mio::map_entire_file, error);
         if (error) {
@@ -46,6 +77,14 @@ public:
         m_bitstreamDataSize = m_inputVideoStreamMmap.mapped_length();
 
         m_pBitstreamData = m_inputVideoStreamMmap.data();
+#endif
+        if (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
+            // Assume Duck IVF. DKIF.
+            assert(*(const uint32_t*)m_pBitstreamData == DKIF_HEADER_MAGIC);
+            const uint32_t firstFrameOffset = (DKIF_FILE_HEADER_SIZE + DKIF_FRAME_CONTAINER_HEADER_SIZE);
+            m_pBitstreamData += firstFrameOffset;
+            m_bitstreamDataSize -= firstFrameOffset;
+        }
     }
 
     ElementaryStream(const uint8_t *pInput, const size_t,
@@ -54,11 +93,19 @@ public:
         , m_height(144)
         , m_bitDepth(8)
         , m_videoCodecType(codecType)
+#ifndef USE_SIMPLE_MALLOC
         , m_inputVideoStreamMmap()
+#endif
         , m_pBitstreamData(pInput)
         , m_bitstreamDataSize(0)
-        , m_bytesRead(0) {
-
+        , m_bytesRead(0)
+    {
+        if (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
+            // Assume Duck IVF. DKIF.
+            assert(*(const uint32_t*)pInput == DKIF_HEADER_MAGIC);
+            const uint32_t firstFrameOffset = (DKIF_FILE_HEADER_SIZE + DKIF_FRAME_CONTAINER_HEADER_SIZE);
+            m_pBitstreamData += firstFrameOffset;
+        }
     }
 
     int32_t Initialize() { return 0; }
@@ -83,7 +130,11 @@ public:
     }
 
     virtual ~ElementaryStream() {
+#ifdef USE_SIMPLE_MALLOC
+
+#else
         m_inputVideoStreamMmap.unmap();
+#endif
     }
 
     virtual bool IsStreamDemuxerEnabled() const { return false; }
@@ -135,7 +186,17 @@ public:
     }
     virtual uint32_t GetProfileIdc() const
     {
-        return STD_VIDEO_H264_PROFILE_IDC_MAIN;
+        switch (m_videoCodecType) {
+        case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR:
+            return STD_VIDEO_H264_PROFILE_IDC_MAIN;
+        case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR:
+            return STD_VIDEO_H265_PROFILE_IDC_MAIN;
+        case VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR:
+            return STD_VIDEO_AV1_PROFILE_MAIN;
+        default:
+            assert(0);
+        }
+        return (uint32_t)(-1);
     }
 
     virtual int32_t GetWidth() const { return m_width; }
@@ -150,8 +211,18 @@ public:
         assert(m_pBitstreamData != nullptr);
 
         // Compute and return the pointer to data at new offset.
-        *ppVideo = (m_pBitstreamData + offset);
-        return m_bitstreamDataSize - offset;
+        if (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
+            *ppVideo = (m_pBitstreamData + offset);
+            uint32_t dataSize = *(const uint32_t*)(*ppVideo - DKIF_FRAME_CONTAINER_HEADER_SIZE);
+            if ((m_bitstreamDataSize - (offset + dataSize)) == 0) {
+                return dataSize;
+            }
+
+            return dataSize + DKIF_FRAME_CONTAINER_HEADER_SIZE;
+        } else {
+            *ppVideo = (m_pBitstreamData + offset);
+            return m_bitstreamDataSize - offset;
+        }
     }
 
     virtual void DumpStreamParameters() const {
@@ -160,7 +231,9 @@ public:
 private:
     int32_t    m_width, m_height, m_bitDepth;
     VkVideoCodecOperationFlagBitsKHR m_videoCodecType;
+#ifndef USE_SIMPLE_MALLOC
     mio::basic_mmap<mio::access_mode::read, uint8_t> m_inputVideoStreamMmap;
+#endif
     const uint8_t* m_pBitstreamData;
     VkDeviceSize   m_bitstreamDataSize;
     VkDeviceSize   m_bytesRead;
