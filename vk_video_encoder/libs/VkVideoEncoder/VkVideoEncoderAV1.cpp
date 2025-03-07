@@ -955,12 +955,29 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
         }
 
         for (const auto& curIndex : m_batchFramesIndxSetToAssemble) {
-            if (frameIdx == curIndex) {
-                fwrite(data + encodeResult.bitstreamStartOffset, 1, encodeResult.bitstreamSize,
-                                   m_encoderConfig->outputFileHandler.GetFileHandle());
-            } else {
-                fwrite(m_bitstream[curIndex].data(), 1, m_bitstream[curIndex].size(),
-                                   m_encoderConfig->outputFileHandler.GetFileHandle());
+            const uint8_t* writeData = (frameIdx == curIndex) ? (data + encodeResult.bitstreamStartOffset) : m_bitstream[curIndex].data();
+            const size_t bytesToWrite = (frameIdx == curIndex) ? encodeResult.bitstreamSize : m_bitstream[curIndex].size();
+
+            // Write data in chunks to handle partial writes
+            size_t totalBytesWritten = 0;
+            while (totalBytesWritten < bytesToWrite) {
+                const size_t remainingBytes = bytesToWrite - totalBytesWritten;
+                const size_t bytesWritten = fwrite(writeData + totalBytesWritten, 1, 
+                                                 remainingBytes,
+                                                 m_encoderConfig->outputFileHandler.GetFileHandle());
+
+                if (bytesWritten == 0) {
+                    std::cerr << "Failed to write bitstream data" << std::endl;
+                    return VK_ERROR_OUT_OF_HOST_MEMORY;
+                }
+
+                totalBytesWritten += bytesWritten;
+            }
+
+            // Verify complete write
+            if (totalBytesWritten != bytesToWrite) {
+                std::cerr << "Warning: Incomplete write - expected " << bytesToWrite << " bytes but wrote " << totalBytesWritten << " bytes\n";
+                return VK_ERROR_OUT_OF_HOST_MEMORY;
             }
         }
         // reset the batch frames to assemble counter
