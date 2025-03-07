@@ -124,29 +124,53 @@ struct EncoderConfigAV1 : public EncoderConfig {
                                   VkVideoEncodeAV1RateControlInfoKHR* rcInfoAV1,
                                   VkVideoEncodeAV1RateControlLayerInfoKHR* rcLayerInfoAV1);
 
-    bool InitSequenceHeader(StdVideoAV1SequenceHeader* seqHeader);
+    bool InitSequenceHeader(StdVideoAV1SequenceHeader* seqHeader,
+                            StdVideoEncodeAV1OperatingPointInfo* opInfo);
 
     virtual EncoderConfigAV1* GetEncoderConfigAV1() override {
         return this;
     }
 
+    bool ValidateLevel(uint32_t lLevel, uint32_t lTier);
 
     bool DetermineLevelTier();
 
-    uint32_t GetLevelMaxBitrate() {
-        return (tier == 0) ? levelLimits[level].mainBps : levelLimits[level].highBps;
-    }
+    uint32_t GetLevelMaxBitrate(uint32_t lLevel, uint32_t lTier) {
+        if (lLevel < STD_VIDEO_AV1_LEVEL_4_0) {
+            lTier = 0;
+        }
 
-    uint32_t GetLevelBitrate() {
+        uint32_t _maxBitrate = lTier ? levelLimits[lLevel].highBps : levelLimits[lLevel].mainBps;
         uint32_t bitrateProfileFactor = (profile == STD_VIDEO_AV1_PROFILE_MAIN) ? 1 :
-                                            ((profile == STD_VIDEO_AV1_PROFILE_HIGH) ? 2 : 3);
-        uint32_t _maxBitrate = (tier == 0) ? levelLimits[level].mainBps : levelLimits[level].highBps;
+                                            ((profile == STD_VIDEO_AV1_PROFILE_HIGH) ? 1 : 3);
+
         return _maxBitrate * bitrateProfileFactor;
     }
 
-    double GetMinCompressRatio(uint32_t decodeRate) {
-        double speedAdj = (double)decodeRate / (double)levelLimits[level].maxDisplayRate;
-        double minCompBasis = (tier == 0) ? levelLimits[level].mainCR : levelLimits[level].highCR;
+    double GetLevelMinCR(uint32_t lLevel, uint32_t lTier, double decodeRate) {
+        if (lLevel < STD_VIDEO_AV1_LEVEL_4_0) {
+            lTier = 0;
+        }
+
+        uint32_t minCRBase = lTier ? levelLimits[lLevel].highCR : levelLimits[lLevel].mainCR;
+        double speedAdj = decodeRate / levelLimits[lLevel].maxDisplayRate;
+
+        return std::max(minCRBase * speedAdj, 0.8);
+    }
+
+    uint32_t GetLevelBitrate(uint32_t lLevel, uint32_t lTier) {
+        if (lLevel < STD_VIDEO_AV1_LEVEL_4_0) {
+            lTier = 0;
+        }
+        uint32_t bitrateProfileFactor = (profile == STD_VIDEO_AV1_PROFILE_MAIN) ? 1 :
+                                            ((profile == STD_VIDEO_AV1_PROFILE_HIGH) ? 2 : 3);
+        uint32_t _maxBitrate = (lTier == 0) ? levelLimits[lLevel].mainBps : levelLimits[lLevel].highBps;
+        return _maxBitrate * bitrateProfileFactor;
+    }
+
+    double GetMinCompressRatio(uint32_t lLevel, uint32_t lTier, uint32_t decodeRate) {
+        double speedAdj = (double)decodeRate / (double)levelLimits[lLevel].maxDisplayRate;
+        double minCompBasis = (lTier == 0) ? levelLimits[lLevel].mainCR : levelLimits[lLevel].highCR;
         return std::max(0.8, minCompBasis * speedAdj);
     }
 
@@ -162,8 +186,6 @@ struct EncoderConfigAV1 : public EncoderConfig {
     VkVideoEncodeAV1CapabilitiesKHR         av1EncodeCapabilities{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_CAPABILITIES_KHR };
     VkVideoEncodeAV1QualityLevelPropertiesKHR av1QualityLevelProperties{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_QUALITY_LEVEL_PROPERTIES_KHR };
     VkVideoEncodeAV1QuantizationMapCapabilitiesKHR av1QuantizationMapCapabilities { VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_QUANTIZATION_MAP_CAPABILITIES_KHR };
-    uint32_t                                maxBitrate{};
-    uint32_t                                hrdBitrate{};
     uint32_t                                vbvBufferSize{};
     uint32_t                                vbvInitialDelay{};
     uint32_t                                pic_width_in_sbs{};
