@@ -539,11 +539,20 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     VkDeviceSize maxSize;
     uint8_t* data = encodeFrameInfo->outputBitstreamBuffer->GetDataPtr(0, maxSize);
 
-    size_t vcl = fwrite(data + encodeResult.bitstreamStartOffset, 1, encodeResult.bitstreamSize,
-                        m_encoderConfig->outputFileHandler.GetFileHandle());
+    size_t totalBytesWritten = 0;
+    while (totalBytesWritten < encodeResult.bitstreamSize) { // handle partial writes
+        size_t remainingBytes = encodeResult.bitstreamSize - totalBytesWritten;
+        size_t bytesWritten = fwrite(data + encodeResult.bitstreamStartOffset + totalBytesWritten, 1, remainingBytes,
+                                    m_encoderConfig->outputFileHandler.GetFileHandle());
+        if (bytesWritten == 0) {
+            std::cerr << "Error writing VCL data" << std::endl;
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        totalBytesWritten += bytesWritten;
+    }
 
     if (m_encoderConfig->verboseFrameStruct) {
-        std::cout << "       == Output VCL data " << (vcl ? "SUCCESS" : "FAIL") << " with size: " << encodeResult.bitstreamSize
+        std::cout << "       == Output VCL data " << ((totalBytesWritten == encodeResult.bitstreamSize) ? "SUCCESS" : "FAIL") << " with size: " << encodeResult.bitstreamSize
                   << " and offset: " << encodeResult.bitstreamStartOffset
                   << ", Input Order: " << encodeFrameInfo->gopPosition.inputOrder
                   << ", Encode  Order: " << encodeFrameInfo->gopPosition.encodeOrder << std::endl << std::flush;
@@ -687,6 +696,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     }
 
     m_maxCodedExtent = { encoderConfig->encodeMaxWidth, encoderConfig->encodeMaxHeight }; // max coded size
+    m_streamBufferSize = std::max(m_minStreamBufferSize, (size_t)encoderConfig->input.fullImageSize); // use worst case size
 
     const uint32_t maxActiveReferencePicturesCount = encoderConfig->videoCapabilities.maxActiveReferencePictures;
     const uint32_t maxDpbPicturesCount = std::min<uint32_t>(m_maxDpbPicturesCount, encoderConfig->videoCapabilities.maxDpbSlots);
