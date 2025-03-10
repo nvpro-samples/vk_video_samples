@@ -365,7 +365,7 @@ public:
         }
 
         if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledY) {
-            secondaryPlaneHeight /= 2;
+            secondaryPlaneHeight = (secondaryPlaneHeight + 1) / 2;
         }
 
         VkImageSubresource subResource = {};
@@ -412,12 +412,12 @@ public:
         yuvPlaneLayouts[1].offset = yuvPlaneLayouts[0].rowPitch * frameHeight;
         yuvPlaneLayouts[1].rowPitch = frameWidth * bytesPerPixel;
         if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledX) {
-            yuvPlaneLayouts[1].rowPitch /= 2;
+            yuvPlaneLayouts[1].rowPitch  = (yuvPlaneLayouts[1].rowPitch + 1) / 2;
         }
         yuvPlaneLayouts[2].offset = yuvPlaneLayouts[1].offset + (yuvPlaneLayouts[1].rowPitch * secondaryPlaneHeight);
         yuvPlaneLayouts[2].rowPitch = frameWidth * bytesPerPixel;
         if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledX) {
-            yuvPlaneLayouts[2].rowPitch /= 2;
+            yuvPlaneLayouts[2].rowPitch  = (yuvPlaneLayouts[2].rowPitch + 1) / 2;
         }
 
         // Copy the luma plane
@@ -439,7 +439,7 @@ public:
         for (uint32_t plane = numCompatiblePlanes; plane < numPlanes; plane++) {
             const uint32_t srcPlane = std::min(plane, mpInfo->planesLayout.numberOfExtraPlanes);
             uint8_t* pDst = pOutBuffer + yuvPlaneLayouts[plane].offset;
-            const int32_t planeWidth = mpInfo->planesLayout.secondaryPlaneSubsampledX ? frameWidth / 2 : frameWidth;
+            const int32_t planeWidth = mpInfo->planesLayout.secondaryPlaneSubsampledX ? (frameWidth + 1) / 2 : frameWidth;
 
             for (int32_t height = 0; height < secondaryPlaneHeight; height++) {
                 const uint8_t* pSrc;

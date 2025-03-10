@@ -1276,12 +1276,12 @@ VkResult VkVideoEncoder::CopyLinearToOptimalImage(VkCommandBuffer& commandBuffer
     copyRegion[0].dstSubresource.layerCount = 1;
     copyRegion[1].extent.width = copyRegion[0].extent.width;
     if (mpInfo->planesLayout.secondaryPlaneSubsampledX != 0) {
-        copyRegion[1].extent.width /= 2;
+        copyRegion[1].extent.width = (copyRegion[1].extent.width + 1) / 2;
     }
 
     copyRegion[1].extent.height = copyRegion[0].extent.height;
     if (mpInfo->planesLayout.secondaryPlaneSubsampledY != 0) {
-        copyRegion[1].extent.height /= 2;
+        copyRegion[1].extent.height = (copyRegion[1].extent.height + 1) / 2;
     }
 
     copyRegion[1].extent.depth = 1;

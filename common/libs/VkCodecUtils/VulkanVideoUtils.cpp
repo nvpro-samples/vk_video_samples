@@ -256,7 +256,7 @@ VkResult ImageObject::CopyYuvToVkImage(uint32_t numPlanes, const uint8_t* yuvPla
     }
 
     if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledY) {
-        cbimageHeight /= 2;
+        cbimageHeight = (cbimageHeight + 1) / 2;
     }
 
     if (mpInfo && !isUnnormalizedRgba) {
