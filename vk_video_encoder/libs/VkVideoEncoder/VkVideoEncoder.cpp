@@ -578,6 +578,13 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
     encoderConfig->InitDeviceCapabilities(m_vkDevCtx);
 
+    if (encoderConfig->qualityLevel >= encoderConfig->videoEncodeCapabilities.maxQualityLevels) {
+        std::cerr << "Quality level " << encoderConfig->qualityLevel
+                  << " is greater than the maximum supported quality level "
+                  << (encoderConfig->videoEncodeCapabilities.maxQualityLevels - 1) << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
     if (encoderConfig->useDpbArray == false &&
         (encoderConfig->videoCapabilities.flags & VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR) == 0) {
         std::cout << "Separate DPB was requested, but the implementation does not support it!" << std::endl;
