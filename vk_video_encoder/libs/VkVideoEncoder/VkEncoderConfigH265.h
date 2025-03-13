@@ -78,6 +78,7 @@ struct EncoderConfigH265 : public EncoderConfig {
     uint32_t               vbvInitialDelay;       // Specifies the VBV(HRD) initial delay in bits. Set 0 to use the default VBV  initial delay.
     VkVideoEncodeH265QpKHR minQp;                 // Specifies the const or minimum or QP used for rate control.
     VkVideoEncodeH265QpKHR maxQp;                 // Specifies the maximum QP used for rate control.
+    uint32_t               sliceCount;
     const LevelLimits*     levelLimits;
     size_t                 levelLimitsTblSize;
 
@@ -99,6 +100,7 @@ struct EncoderConfigH265 : public EncoderConfig {
       , vbvInitialDelay()
       , minQp{}
       , maxQp{}
+      , sliceCount(1)
     {
         // Table A-1
         static const LevelLimits levelLimitsTbl[] = {
@@ -132,6 +134,8 @@ struct EncoderConfigH265 : public EncoderConfig {
     virtual EncoderConfigH265* GetEncoderConfigh265() override {
         return this;
     }
+
+    virtual int DoParseArguments(int argc, const char* argv[]) override;
 
     uint32_t GetCtbAlignedPicSizeInSamples(uint32_t& picWidthInCtbsY, uint32_t& picHeightInCtbsY, bool minCtbsY = false);
 

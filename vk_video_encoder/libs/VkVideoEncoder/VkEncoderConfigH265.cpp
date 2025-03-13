@@ -67,6 +67,25 @@ uint32_t EncoderConfigH265::GetCpbVclFactor()
     return baseFactor + depthFactor;
 }
 
+int EncoderConfigH265::DoParseArguments(int argc, const char* argv[])
+{
+    std::vector<std::string> args(argv, argv + argc);
+
+    for (int32_t i = 0; i < argc; i++) {
+        if (args[i] == "--slices") {
+            if (++i >= argc || sscanf(args[i].c_str(), "%u", &sliceCount) != 1) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+        } else {
+            fprintf(stderr, "Unrecognized option: %s\n", argv[i]);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx)
 {
     VkResult result = VulkanVideoCapabilities::GetVideoEncodeCapabilities<VkVideoEncodeH265CapabilitiesKHR, VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_CAPABILITIES_KHR,

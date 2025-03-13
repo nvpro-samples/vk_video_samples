@@ -30,11 +30,11 @@ class VkVideoEncoderH265 : public VkVideoEncoder {
     struct VkVideoEncodeFrameInfoH265 : public VkVideoEncodeFrameInfo {
 
         VkVideoEncodeH265PictureInfoKHR          pictureInfo;
-        VkVideoEncodeH265NaluSliceSegmentInfoKHR naluSliceSegmentInfo;
+        VkVideoEncodeH265NaluSliceSegmentInfoKHR naluSliceSegmentInfo[MAX_NUM_SLICES];
         StdVideoEncodeH265PictureInfo            stdPictureInfo;
         VkVideoEncodeH265RateControlInfoKHR      rateControlInfoH265;
         VkVideoEncodeH265RateControlLayerInfoKHR rateControlLayersInfoH265[1];
-        StdVideoEncodeH265SliceSegmentHeader     stdSliceSegmentHeader;
+        StdVideoEncodeH265SliceSegmentHeader     stdSliceSegmentHeader[MAX_NUM_SLICES];
         StdVideoEncodeH265ReferenceListsInfo     stdReferenceListsInfo;
         StdVideoH265ShortTermRefPicSet           stdShortTermRefPicSet;
         StdVideoEncodeH265LongTermRefPics        stdLongTermRefPics;
@@ -44,11 +44,11 @@ class VkVideoEncoderH265 : public VkVideoEncoder {
         VkVideoEncodeFrameInfoH265()
           : VkVideoEncodeFrameInfo(&pictureInfo, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR)
           , pictureInfo { VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PICTURE_INFO_KHR }
-          , naluSliceSegmentInfo { VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_INFO_KHR }
+          , naluSliceSegmentInfo{}
           , stdPictureInfo()
           , rateControlInfoH265{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR }
           , rateControlLayersInfoH265{{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR }}
-          , stdSliceSegmentHeader()
+          , stdSliceSegmentHeader{}
           , stdReferenceListsInfo()
           , stdShortTermRefPicSet()
           , stdLongTermRefPics()
@@ -56,9 +56,16 @@ class VkVideoEncoderH265 : public VkVideoEncoder {
           , stdDpbSlotInfo{}
         {
             pictureInfo.naluSliceSegmentEntryCount = 1;
-            pictureInfo.pNaluSliceSegmentEntries = &naluSliceSegmentInfo;
+            pictureInfo.pNaluSliceSegmentEntries = naluSliceSegmentInfo;
             pictureInfo.pStdPictureInfo = &stdPictureInfo;
-            naluSliceSegmentInfo.pStdSliceSegmentHeader = &stdSliceSegmentHeader;
+
+            for (uint32_t i = 0; i < MAX_NUM_SLICES; i++) {
+                auto& sliceInfo = naluSliceSegmentInfo[i];
+
+                sliceInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_INFO_KHR;
+                sliceInfo.pNext = nullptr;
+                sliceInfo.pStdSliceSegmentHeader = &stdSliceSegmentHeader[i];
+            }
 
             stdPictureInfo.pRefLists           = &stdReferenceListsInfo;
             stdPictureInfo.pShortTermRefPicSet = &stdShortTermRefPicSet;
@@ -80,7 +87,7 @@ class VkVideoEncoderH265 : public VkVideoEncoder {
 
             // Clear and check state
             assert(pictureInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PICTURE_INFO_KHR);
-            assert(naluSliceSegmentInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_INFO_KHR);
+            assert(naluSliceSegmentInfo[0].sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_INFO_KHR);
             // stdPictureInfo()
             assert(rateControlInfoH265.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR);
             assert(rateControlLayersInfoH265[0].sType ==  VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR);
