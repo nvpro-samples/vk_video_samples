@@ -77,7 +77,8 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     }
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR)) {
-        fprintf(stderr, "\nH265 specific arguments: None\n");
+        fprintf(stderr, "\nH265 specific arguments:\n\
+        --slices                        <integer> : Number of slices to divide the picture into\n");
     }
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR)) {
