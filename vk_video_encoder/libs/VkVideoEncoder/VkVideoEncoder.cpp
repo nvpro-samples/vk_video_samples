@@ -170,8 +170,24 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
     int yCbCrConvResult = 0;
     if (m_encoderConfig->input.bpp == 8) {
 
-        // Load current 8-bit frame from file and convert to NV12
-        yCbCrConvResult = YCbCrConvUtilsCpu<uint8_t>::I420ToNV12(
+        if (m_encoderConfig->encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR) {
+            // Load current 8-bit frame from file and convert to 2-plane YUV444
+            yCbCrConvResult = YCbCrConvUtilsCpu<uint8_t>::I444ToP444(
+                    pInputFrameData + m_encoderConfig->input.planeLayouts[0].offset,         // src_y
+                    (int)m_encoderConfig->input.planeLayouts[0].rowPitch,                    // src_stride_y
+                    pInputFrameData + m_encoderConfig->input.planeLayouts[1].offset,         // src_u
+                    (int)m_encoderConfig->input.planeLayouts[1].rowPitch,                    // src_stride_u
+                    pInputFrameData + m_encoderConfig->input.planeLayouts[2].offset,         // src_v
+                    (int)m_encoderConfig->input.planeLayouts[2].rowPitch,                    // src_stride_v
+                    writeImagePtr + dstSubresourceLayout[0].offset,                          // dst_y
+                    (int)dstSubresourceLayout[0].rowPitch,                                   // dst_stride_y
+                    writeImagePtr + dstSubresourceLayout[1].offset,                          // dst_uv
+                    (int)dstSubresourceLayout[1].rowPitch,                                   // dst_stride_uv
+                    std::min(m_encoderConfig->encodeWidth,  m_encoderConfig->input.width),   // width
+                    std::min(m_encoderConfig->encodeHeight, m_encoderConfig->input.height)); // height
+        } else {
+            // Load current 8-bit frame from file and convert to NV12
+            yCbCrConvResult = YCbCrConvUtilsCpu<uint8_t>::I420ToNV12(
                     pInputFrameData + m_encoderConfig->input.planeLayouts[0].offset,         // src_y,
                     (int)m_encoderConfig->input.planeLayouts[0].rowPitch,                    // src_stride_y,
                     pInputFrameData + m_encoderConfig->input.planeLayouts[1].offset,         // src_u,
@@ -184,6 +200,7 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
                     (int)dstSubresourceLayout[1].rowPitch,                                   // dst_stride_uv,
                     std::min(m_encoderConfig->encodeWidth,  m_encoderConfig->input.width),   // width
                     std::min(m_encoderConfig->encodeHeight, m_encoderConfig->input.height)); // height
+        }
 
     } else if (m_encoderConfig->input.bpp == 10) { // 10-bit - actually 16-bit only for now.
 
@@ -194,8 +211,25 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
             shiftBits = 16 - m_encoderConfig->input.bpp;
         }
 
-        // Load current 10-bit frame from file and convert to P010/P016
-        yCbCrConvResult = YCbCrConvUtilsCpu<uint16_t>::I420ToNV12(
+        if (m_encoderConfig->encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR) {
+            // Load current 10-bit frame from file and convert to 2-plane YUV444
+            yCbCrConvResult = YCbCrConvUtilsCpu<uint16_t>::I444ToP444(
+                    (const uint16_t*)(pInputFrameData + m_encoderConfig->input.planeLayouts[0].offset), // src_y
+                    (int)m_encoderConfig->input.planeLayouts[0].rowPitch,                               // src_stride_y
+                    (const uint16_t*)(pInputFrameData + m_encoderConfig->input.planeLayouts[1].offset), // src_u
+                    (int)m_encoderConfig->input.planeLayouts[1].rowPitch,                               // src_stride_u
+                    (const uint16_t*)(pInputFrameData + m_encoderConfig->input.planeLayouts[2].offset), // src_v
+                    (int)m_encoderConfig->input.planeLayouts[2].rowPitch,                               // src_stride_v
+                    (uint16_t*)(writeImagePtr + dstSubresourceLayout[0].offset),                        // dst_y
+                    (int)dstSubresourceLayout[0].rowPitch,                                              // dst_stride_y
+                    (uint16_t*)(writeImagePtr + dstSubresourceLayout[1].offset),                        // dst_uv
+                    (int)dstSubresourceLayout[1].rowPitch,                                              // dst_stride_uv
+                    std::min(m_encoderConfig->encodeWidth,  m_encoderConfig->input.width),              // width
+                    std::min(m_encoderConfig->encodeHeight, m_encoderConfig->input.height),             // height
+                    shiftBits);
+        } else {
+            // Load current 10-bit frame from file and convert to P010/P016
+            yCbCrConvResult = YCbCrConvUtilsCpu<uint16_t>::I420ToNV12(
                     (const uint16_t*)(pInputFrameData + m_encoderConfig->input.planeLayouts[0].offset), // src_y,
                     (int)m_encoderConfig->input.planeLayouts[0].rowPitch,                               // src_stride_y,
                     (const uint16_t*)(pInputFrameData + m_encoderConfig->input.planeLayouts[1].offset), // src_u,
@@ -209,6 +243,7 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
                     std::min(m_encoderConfig->encodeWidth,  m_encoderConfig->input.width),              // width
                     std::min(m_encoderConfig->encodeHeight, m_encoderConfig->input.height),             // height
                     shiftBits);
+        }
 
     } else {
         assert(!"Requested bit-depth is not supported!");

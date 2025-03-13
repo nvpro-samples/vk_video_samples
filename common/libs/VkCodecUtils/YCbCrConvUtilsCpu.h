@@ -240,6 +240,51 @@ public:
 
         return 0;
     }
+
+    static int I444ToP444(const planeType* src_y,
+                         int src_stride_y,
+                         const planeType* src_u,
+                         int src_stride_u,
+                         const planeType* src_v,
+                         int src_stride_v,
+                         planeType* dst_y,
+                         int dst_stride_y,
+                         planeType* dst_uv,
+                         int dst_stride_uv,
+                         int width,
+                         int height,
+                         int shiftBits = 0) {
+        if (!src_y || !src_u || !src_v || !dst_y || !dst_uv || width <= 0 || height == 0) {
+            return -1;
+        }
+
+        // Convert strides from bytes to elements
+        src_stride_y /= (int)sizeof(planeType);
+        dst_stride_y /= (int)sizeof(planeType);
+        src_stride_u /= (int)sizeof(planeType);
+        src_stride_v /= (int)sizeof(planeType);
+        dst_stride_uv /= (int)sizeof(planeType);
+
+        // Handle negative height (image inversion)
+        if (height < 0) {
+            height = -height;
+            src_y = src_y + (height - 1) * src_stride_y;
+            src_u = src_u + (height - 1) * src_stride_u;
+            src_v = src_v + (height - 1) * src_stride_v;
+            src_stride_y = -src_stride_y;
+            src_stride_u = -src_stride_u;
+            src_stride_v = -src_stride_v;
+        }
+
+        // Copy Y plane at full resolution
+        CopyPlane(src_y, src_stride_y, dst_y, dst_stride_y, width, height, shiftBits);
+
+        // Merge U and V planes at full resolution
+        MergeUVPlane(src_u, src_stride_u, src_v, src_stride_v, dst_uv, dst_stride_uv,
+                     width, height, shiftBits);
+
+        return 0;
+    }
 };
 
 #endif /* _VKCODECUTILS_YCBCRCONVUTILSCPU_H_ */

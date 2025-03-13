@@ -393,13 +393,23 @@ beach:
 
     uint32_t GetFrameCount(uint32_t width, uint32_t height, uint8_t bpp, VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling) {
         uint8_t nBytes = (bpp + 7) / 8;
-        double samplingFactor = 1.5;
+        double samplingFactor = 1.5; // Default for 420
         switch (chromaSubsampling)
         {
+        case VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR:
+            samplingFactor = 1.0; // Only Y component
+            break;
         case VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR:
-            samplingFactor = 1.5;
+            samplingFactor = 1.5; // Y + 1/4 U + 1/4 V = 1.5
+            break;
+        case VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR:
+            samplingFactor = 2.0; // Y + 1/2 U + 1/2 V = 2.0
+            break;
+        case VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR:
+            samplingFactor = 3.0; // Full Y + full U + full V = 3.0
             break;
         default:
+            assert(!"Unknown chroma subsampling");
             break;
         }
         uint32_t frameSize = (uint32_t)(width * height * nBytes * samplingFactor);
@@ -919,6 +929,9 @@ public:
         if (!input.VerifyInputs()) {
             return VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR;
         }
+
+        // Copy chroma subsampling from input to encoder config
+        encodeChromaSubsampling = input.chromaSubsampling;
 
         if ((encodeWidth == 0) || (encodeWidth > input.width)) {
             encodeWidth = input.width;
