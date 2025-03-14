@@ -1,13 +1,13 @@
 # VK_VULKAN_VIDEO
 
-This project conatins two Vulkan Video sample applications which demonstrate video decoding and encoding, respectively. These samples can be independently compiled. Instructions on how to build either the encoder or decoder sample are present within each respective folder.
+This project contains two Vulkan Video sample applications which demonstrate video decoding and encoding, respectively. Instructions on how to build either the encoder or decoder sample are present within the root folder.
 
 ## VK_VIDEO_DECODE
 
 ![vk_video_decode](vk_video_decoder/doc/VideoDecode.png)
 
 
-This project is a Vulkan Video Sample Application demonstrating an end-to-end, all-Vulkan, processing of h.264/5 compressed video content. The application decodes the  h.264/5 compressed content using an HW accelerated decoder, the decoded YCbCr frames are processed with Vulkan Graphics and then presented via the Vulkan WSI.
+This project is a Vulkan Video Sample Application demonstrating an end-to-end, all-Vulkan, processing of h.264/5, AV1 compressed video content. The application decodes the compressed content using an HW accelerated decoder, the decoded YCbCr frames are processed with Vulkan Graphics and then presented via the Vulkan WSI.
 
 Currently, the sample application supports Linux and Windows10 operating systems.
 
@@ -15,14 +15,14 @@ Currently, the sample application supports Linux and Windows10 operating systems
 Features
 ========
 
-- [x] Extracts (DEMUX via FFMPEG) compressed video from .mp4, .mkv .mov and others video containers using h.264 (AVC), h.265 (HEVC) or AV1 compression formats.
-- [x] The HW video decoder processes textures to Vulkan Video Images that can be directly sampled from Vulkan Samplers (Textures). 
+- [x] Extracts (DEMUX via FFMPEG) compressed video from .mp4, .mkv, .mov and others video containers using h.264 (AVC), h.265 (HEVC) or AV1 compression formats.
+- [x] The HW video decoder processes textures to Vulkan Video Images that can be directly sampled from Vulkan Samplers (Textures).
 - [x] Converts the YCbCr (YUV) Images to RGB while sampling the decoded images using the [VK_KHR_sampler_ycbcr_conversion](https://www.khronos.org/registry/vulkan/specs/1.2-extensions/man/html/VK_KHR_sampler_ycbcr_conversion.html)
 - [x] Displays the post-processed video frames using Vulkan WSI.
 - [ ] Use Video display timing synchronization (such as VK_EXT_present_timing) at the WSI side - currently the video is played at the maximum frame rate that the display device can support. The video may be played at a faster rate than it is authored.
 
 
-For instructions on how to build the sample decode application, please see [the build instructions.](https://github.com/nvpro-samples/vk_video_samples/blob/main/vk_video_decoder/BUILD.md)
+For instructions on how to build the sample decode application, please see [the build instructions.](https://github.com/KhronosGroup/Vulkan-Video-Samples/blob/main/BUILD.md)
 
 Please download and install [Beta NVIDIA Driver with Vulkan Video Enabled](https://developer.nvidia.com/vulkan-driver).
 
@@ -32,7 +32,7 @@ For deep-dive information on Vulkan Video please refer to the [Deep Dive Slide D
 
 ## VK_VIDEO_ENCODE
 
-This project is a Nvpro-based Vulkan Video sample application demonstrating video encoding. By using the Vulkan video encoding extensions to drive the HW-accelerated video encoder, this application encodes YCbCr content and writes the h.264 or h.265 compressed video to a file.
+This project is a Nvpro-based Vulkan Video sample application demonstrating video encoding. By using the Vulkan video encoding extensions to drive the HW-accelerated video encoder, this application encodes YCbCr content and writes the h.264, h.265 or AV1 compressed video to a file.
 
 The sample is still in development and has issues such as missing POC numbers and corrupted frames.
 
@@ -55,7 +55,7 @@ Features
 - [x] Support for multi-threaded encoding
 - [x] Tested 10-bit encoding
 
-For instructions on how to build the sample decode application, please see [the build instructions.](https://github.com/nvpro-samples/vk_video_samples/blob/main/vk_video_encoder/BUILD.md)
+For instructions on how to build the sample decode application, please see [the build instructions.](https://github.com/KhronosGroup/Vulkan-Video-Samples/blob/main/BUILD.md)
 
 Please download and install [Beta NVIDIA Driver with Vulkan Video Enabled](https://developer.nvidia.com/vulkan-driver).
 
@@ -109,4 +109,4 @@ On Windows:
 
 Do not use `~all~` or `~explicit~` options with `VK_LOADER_LAYERS_DISABLE` because these options disable the validation layers that other applications might attempt to enable programmaticaly.
 
-For more information on Layers configuration please refer to the [LunarG, Layers Configuration](https://vulkan.lunarg.com/doc/sdk/1.3.290.0/windows/layer_configuration.html)
+For more information on Layers configuration please refer to the [LunarG, Layers Configuration](https://vulkan.lunarg.com/doc/sdk/latest/windows/layer_configuration.html)

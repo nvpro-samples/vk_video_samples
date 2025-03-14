@@ -18,11 +18,11 @@ The Windows and Linux BETA drivers are available for download at https://develop
 
 ### Download the Repository
 
-> Note: An alternative version of this repository is also available at the official Khronos Group repository:
-> https://github.com/KhronosGroup/Vulkan-Video-Samples
+> Note: An alternative version of this repository is also available:
+> https://github.com/nvpro-samples/vk_video_samples
 
 ```bash
-VULKAN_VIDEO_GIT_REPO="https://github.com/nvpro-samples/vk_video_samples.git"
+VULKAN_VIDEO_GIT_REPO="https://github.com/KhronosGroup/Vulkan-Video-Samples.git"
 git clone $VULKAN_VIDEO_GIT_REPO
 cd vk_video_samples
 ```
@@ -115,7 +115,7 @@ sudo apt-get install git cmake build-essential libx11-xcb-dev libxkbcommon-dev \
 
 1. Execute the dependency script:
 ```bash
-./ubuntu-update-dependencies.sh
+./vk_video_decoder/ubuntu-update-dependencies.sh
 ```
 
 2. Configure and build:
@@ -135,12 +135,12 @@ vulkaninfo | grep VK_KHR_video
 
 For decoder testing:
 ```bash
-./demos/vk-video-dec-test -i '<Video content file with h.264 or h.265 format>' [--c N]
+./vk_video_decoder/demos/vk-video-dec-test -i '<Video content file with h.264 or h.265 format>' [--c N]
 ```
 
 For encoder testing:
 ```bash
-./demos/vk-video-enc-test -i <yuv-video-input-file.yuv> --codec <"h264" | "h265" | "av1"> \
+./vk_video_encoder/demos/vk-video-enc-test -i <yuv-video-input-file.yuv> --codec <"h264" | "h265" | "av1"> \
     --inputNumPlanes <2 | 3> --inputWidth <input Y width> --inputHeight <input Y height> \
     --startFrame 0 --numFrames <max frame num>
 ```
