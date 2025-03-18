@@ -88,6 +88,11 @@ VkImageResource::VkImageResource(const VulkanDeviceContext* vkDevCtx,
     }
 }
 
+VkImageResource::~VkImageResource()
+{
+    Destroy();
+}
+
 VkResult VkImageResource::Create(const VulkanDeviceContext* vkDevCtx,
                                  const VkImageCreateInfo* pImageCreateInfo,
                                  VkMemoryPropertyFlags memoryPropertyFlags,

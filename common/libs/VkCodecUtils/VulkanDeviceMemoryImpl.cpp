@@ -410,3 +410,8 @@ const uint8_t* VulkanDeviceMemoryImpl::GetReadOnlyDataPtr(VkDeviceSize offset, V
     maxSize = m_memoryRequirements.size - offset;
     return readData;
 }
+
+VulkanDeviceMemoryImpl::~VulkanDeviceMemoryImpl()
+{
+    Deinitialize();
+}

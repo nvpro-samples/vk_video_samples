@@ -64,7 +64,12 @@ public:
 
         m_bitstreamDataSize = size;
         fseek(handle, 0, SEEK_SET);
-        fread(data, 1, size, handle);
+        size_t readBytes = fread(data, 1, size, handle);
+        if (readBytes != size) {
+            free(data);
+            fclose(handle);
+            return;
+        }
         m_pBitstreamData = data;
         fclose(handle);
 #else
