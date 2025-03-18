@@ -63,13 +63,21 @@ jobs:
           sudo apt install libxrandr-dev:i386
           sudo apt install libvulkan-dev:i386
 
-      - name: Build
+      - name: Build debug
         shell: bash
         run: |
-          mkdir build
-          cd build
+          mkdir BUILD_DEBUG
+          cd BUILD_DEBUG
           cmake -DCMAKE_BUILD_TYPE=Debug ..
           cmake --build . --parallel $BUILD_JOBS --config Debug
+
+      - name: Build release
+        shell: bash
+        run: |
+          mkdir BUILD_RELEASE
+          cd BUILD_RELEASE
+          cmake -DCMAKE_BUILD_TYPE=Release ..
+          cmake --build . --parallel $BUILD_JOBS --config Release
 
   vk_video_samples-win:
     strategy:
@@ -120,9 +128,16 @@ jobs:
           Get-ChildItem -Path $tempExtractPath\ffmpeg-master-latest-win64-gpl-shared | Where-Object { $_.PSIsContainer } | Copy-Item -Destination $finalDestination -Force -Recurse
           echo "$finalDestination\bin" | Out-File -Encoding ASCII -Append $env:GITHUB_PATH
 
-      - name: Build
+      - name: Build Debug
         run: |
-          mkdir build
-          cd build
+          mkdir BUILD_DEBUG
+          cd BUILD_DEBUG
           cmake -DCMAKE_BUILD_TYPE=Debug ..
           cmake --build . --parallel $BUILD_JOBS --config Debug
+
+      - name: Build Release
+        run: |
+            mkdir BUILD_RELEASE
+            cd BUILD_RELEASE
+            cmake -DCMAKE_BUILD_TYPE=Release ..
+            cmake --build . --parallel $BUILD_JOBS --config Release
