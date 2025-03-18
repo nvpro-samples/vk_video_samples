@@ -960,6 +960,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         bool valid = pCurrFrameDecParams->pStdSps->GetClientObject(currentVkPictureParameters);
         assert(valid);
+        if (!valid) {
+            return -1;
+        }
         VkParserVideoPictureParameters* pOwnerPictureParameters =
             VkParserVideoPictureParameters::VideoPictureParametersFromBase(currentVkPictureParameters);
 

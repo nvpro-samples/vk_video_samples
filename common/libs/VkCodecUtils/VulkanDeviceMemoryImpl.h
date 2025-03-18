@@ -106,7 +106,7 @@ private:
 
     void Deinitialize();
 
-    virtual ~VulkanDeviceMemoryImpl() { Deinitialize(); }
+    virtual ~VulkanDeviceMemoryImpl();
 
 private:
     std::atomic<int32_t>       m_refCount;

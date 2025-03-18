@@ -113,7 +113,7 @@ private:
 
     void Destroy();
 
-    virtual ~VkImageResource() { Destroy(); }
+    virtual ~VkImageResource();
 };
 
 class VkImageResourceView : public VkVideoRefCountBase
