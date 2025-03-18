@@ -17,7 +17,7 @@ jobs:
   vk_video_samples-linux:
     strategy:
       matrix:
-        platform: [linux-x86_64, linux-x86]
+        platform: [linux-x86_64, linux-x86_64-ffmpeg, linux-x86]
     runs-on: ubuntu-22.04
 
     env:
@@ -45,6 +45,11 @@ jobs:
           sudo apt install libxrandr-dev
           sudo apt install libvulkan-dev
 
+      - name: Install FFmpeg
+        if: matrix.platform == 'linux-x86_64-ffmpeg'
+        run: |
+          sudo apt install --assume-yes libavformat-dev
+
       - name: Install i386 dependencies
         if: matrix.platform == 'linux-x86'
         run: |
@@ -66,12 +71,10 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=Debug ..
           cmake --build . --parallel $BUILD_JOBS --config Debug
 
-
-
   vk_video_samples-win:
     strategy:
       matrix:
-        platform: [windows-x64]
+        platform: [windows-x64, windows-x64-ffmpeg]
     runs-on: windows-latest
 
     steps:
@@ -93,6 +96,7 @@ jobs:
           python-version: "3.10"
 
       - name: Install FFmpeg
+        if: matrix.platform == 'windows-x64-ffmpeg'
         run: |
           # Define the custom installation location
           $currentDir = pwd
