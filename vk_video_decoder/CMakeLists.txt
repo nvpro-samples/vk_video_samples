@@ -341,7 +341,7 @@ else()
 endif()
 
 if (NOT FFMPEG_AVAILABLE)
-    message(WARNING "FFMPEG demuxing is not going to be suppored.")
+    message(WARNING "FFMPEG demuxing is not going to be supported.")
 endif()
 
 set(SCRIPTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../scripts")

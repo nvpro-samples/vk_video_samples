@@ -132,7 +132,7 @@ else()
 endif()
 
 if (NOT FFMPEG_AVAILABLE)
-    message(WARNING "FFMPEG demuxing is not going to be suppored.")
+    message(WARNING "FFMPEG demuxing is not going to be supported.")
 endif()
 
 # Platform specific settings
