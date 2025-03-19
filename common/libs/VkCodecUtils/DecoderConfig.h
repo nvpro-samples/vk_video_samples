@@ -273,6 +273,11 @@ struct DecoderConfig {
                     directMode = true;
                     return true;
                 }},
+            {"--yuv", nullptr, 0, "Output raw YUV data",
+                [this](const char **args, const ProgramArgs &a) {
+                    outputy4m = false;
+                    return true;
+                }},
             {"--y4m", nullptr, 0, "Output to a Y4M container for easier loading by tools",
                 [this](const char **args, const ProgramArgs &a) {
                     outputy4m = true;
