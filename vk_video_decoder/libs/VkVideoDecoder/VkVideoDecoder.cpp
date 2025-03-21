@@ -629,11 +629,11 @@ int VkVideoDecoder::CopyOptimalToLinearImage(VkCommandBuffer& commandBuffer,
     copyRegion[0].extent.depth = 1;
     copyRegion[0].srcSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
     copyRegion[0].srcSubresource.mipLevel = 0;
-    copyRegion[0].srcSubresource.baseArrayLayer = srcPictureResource.baseArrayLayer;
+    copyRegion[0].srcSubresource.baseArrayLayer = srcPictureResourceInfo.baseArrayLayer;
     copyRegion[0].srcSubresource.layerCount = 1;
     copyRegion[0].dstSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
     copyRegion[0].dstSubresource.mipLevel = 0;
-    copyRegion[0].dstSubresource.baseArrayLayer = dstPictureResource.baseArrayLayer;
+    copyRegion[0].dstSubresource.baseArrayLayer = dstPictureResourceInfo.baseArrayLayer;
     copyRegion[0].dstSubresource.layerCount = 1;
     copyRegion[1].extent.width = copyRegion[0].extent.width;
     if (mpInfo->planesLayout.secondaryPlaneSubsampledX != 0) {
@@ -648,11 +648,11 @@ int VkVideoDecoder::CopyOptimalToLinearImage(VkCommandBuffer& commandBuffer,
     copyRegion[1].extent.depth = 1;
     copyRegion[1].srcSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
     copyRegion[1].srcSubresource.mipLevel = 0;
-    copyRegion[1].srcSubresource.baseArrayLayer = srcPictureResource.baseArrayLayer;
+    copyRegion[1].srcSubresource.baseArrayLayer = srcPictureResourceInfo.baseArrayLayer;
     copyRegion[1].srcSubresource.layerCount = 1;
     copyRegion[1].dstSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
     copyRegion[1].dstSubresource.mipLevel = 0;
-    copyRegion[1].dstSubresource.baseArrayLayer = dstPictureResource.baseArrayLayer;
+    copyRegion[1].dstSubresource.baseArrayLayer = dstPictureResourceInfo.baseArrayLayer;
     copyRegion[1].dstSubresource.layerCount = 1;
 
     m_vkDevCtx->CmdCopyImage(commandBuffer, srcPictureResourceInfo.image, srcPictureResourceInfo.currentImageLayout,

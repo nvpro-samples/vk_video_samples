@@ -107,6 +107,7 @@ public:
         VkImage       image;
         VkFormat      imageFormat;
         VkImageLayout currentImageLayout;
+        uint32_t      baseArrayLayer;
     };
 
     struct ImageSpec {

@@ -133,6 +133,7 @@ public:
             pPictureResourceInfo->image = m_imageViewState[imageTypeIdx].view->GetImageResource()->GetImage();
             pPictureResourceInfo->imageFormat = m_imageViewState[imageTypeIdx].view->GetImageResource()->GetImageCreateInfo().format;
             pPictureResourceInfo->currentImageLayout = m_imageViewState[imageTypeIdx].currentLayerLayout;
+            pPictureResourceInfo->baseArrayLayer = m_imageViewState[imageTypeIdx].view->GetImageSubresourceRange().baseArrayLayer;
         }
 
         if (VK_IMAGE_LAYOUT_MAX_ENUM != newImageLayout) {
