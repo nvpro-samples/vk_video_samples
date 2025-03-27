@@ -246,15 +246,44 @@ public:
         }
     }
 
-    FILE* AttachFile(const char* fileName) {
+    bool hasExtension(const char* fileName, const char* extension) {
+        size_t fileLen = std::strlen(fileName);
+        size_t extLen = std::strlen(extension);
+
+        if (fileLen < extLen) {
+            return false;
+        }
+
+        return std::strcmp(fileName + fileLen - extLen, extension) == 0;
+    }
+
+    FILE* AttachFile(const char* fileName, bool y4mFormat) {
         if (m_outputFile) {
             fclose(m_outputFile);
             m_outputFile = nullptr;
         }
 
+        std::string fileNameWithModExt;
+        // Check if the file does not have a y4m extension,
+        // but y4m format is requested.
+        if (y4mFormat && !hasExtension(fileName, ".y4m")) {
+            std::cout << std::endl << "y4m output format is requested, ";
+            std::cout << "but the output file's (" << fileName << ") extension isn't .y4m!"
+                      << std::endl;
+            fileNameWithModExt = fileName + std::string(".y4m");
+            fileName = fileNameWithModExt.c_str();
+        } else if (!hasExtension(fileName, ".yuv")) {
+            std::cout << std::endl << "Raw yuv output format is requested, ";
+            std::cout << "but the output file's (" << fileName << ") extension isn't .yuv!"
+                      << std::endl;
+            fileNameWithModExt = fileName + std::string(".yuv");
+            fileName = fileNameWithModExt.c_str();
+        }
+
         if (fileName != nullptr) {
             m_outputFile = fopen(fileName, "wb");
             if (m_outputFile) {
+                std::cout << "Output file name is: " << fileName << std::endl;
                 return m_outputFile;
             }
         }
@@ -501,7 +530,7 @@ VkResult VkVideoFrameOutput::Create(const char* fileName,
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 
-    FILE* outFile = newFrameToFile->AttachFile(fileName);
+    FILE* outFile = newFrameToFile->AttachFile(fileName, outputy4m);
     if ((fileName != nullptr) && (outFile == nullptr)) {
         delete newFrameToFile;
         return VK_ERROR_INITIALIZATION_FAILED;
