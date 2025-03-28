@@ -149,6 +149,9 @@ public:
     VkParserDecodePictureInfo m_picDispInfo;
     VkFence m_frameCompleteFence;
     VkSemaphore m_frameCompleteSemaphore;
+#if (_TRANSCODING)
+    VkSemaphore m_frameResizeSemaphore[16];
+#endif //_TRANSCODING
     VkFence m_frameConsumerDoneFence;
     VkSemaphore m_frameConsumerDoneSemaphore;
     DecodeFrameBufferIf::ImageSpecsIndex m_imageSpecsIndex;
@@ -459,6 +462,11 @@ public:
             if (pFrameSynchronizationInfo->frameCompleteSemaphore) {
                 m_perFrameDecodeImageSet[picId].m_hasFrameCompleteSignalSemaphore = true;
             }
+#if (_TRANSCODING)
+            for (int i = 0; i < 16; i++) {
+                pFrameSynchronizationInfo->frameResizeSemaphore[i] = m_perFrameDecodeImageSet[picId].m_frameResizeSemaphore[i];
+            }
+#endif //_TRANSCODING
         }
 
         if (m_perFrameDecodeImageSet[picId].m_hasConsummerSignalSemaphore) {
@@ -530,6 +538,11 @@ public:
             if (m_perFrameDecodeImageSet[pictureIndex].m_hasFrameCompleteSignalSemaphore) {
                 pDecodedFrame->frameCompleteSemaphore = m_perFrameDecodeImageSet[pictureIndex].m_frameCompleteSemaphore;
                 m_perFrameDecodeImageSet[pictureIndex].m_hasFrameCompleteSignalSemaphore = false;
+#if (_TRANSCODING)
+                for (int i = 0; i < 16; i++) {
+                    pDecodedFrame->frameResizeSemaphore[i] = m_perFrameDecodeImageSet[pictureIndex].m_frameResizeSemaphore[i];
+                }
+#endif //_TRANSCODING
             } else {
                 pDecodedFrame->frameCompleteSemaphore = VkSemaphore();
             }
@@ -805,7 +818,7 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
         if (!imageViewArrayParent) {
 
             uint32_t baseArrayLayer = imageArrayParent ? imageIndex : 0;
-            VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, baseArrayLayer, 1 };
+            VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, baseArrayLayer, pImageSpec->createInfo.arrayLayers };
             result = VkImageResourceView::Create(vkDevCtx, imageResource,
                                                  subresourceRange,
                                                  m_imageViewState[pImageSpec->imageTypeIdx].view);
@@ -820,7 +833,7 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
 
             m_imageViewState[pImageSpec->imageTypeIdx].view = imageViewArrayParent;
 
-            VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, imageIndex, 1 };
+            VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, imageIndex, pImageSpec->createInfo.arrayLayers };
             result = VkImageResourceView::Create(vkDevCtx, imageResource,
                                                  subresourceRange,
                                                  m_imageViewState[pImageSpec->imageTypeIdx].singleLevelView);
@@ -854,6 +867,12 @@ VkResult NvPerFrameDecodeResources::init(const VulkanDeviceContext* vkDevCtx)
     assert(result == VK_SUCCESS);
     result = m_vkDevCtx->CreateSemaphore(*m_vkDevCtx, &semInfo, nullptr, &m_frameConsumerDoneSemaphore);
     assert(result == VK_SUCCESS);
+#if (_TRANSCODING)
+    for (int i = 0; i < 16; i++) {
+        result = m_vkDevCtx->CreateSemaphore(*m_vkDevCtx, &semInfo, nullptr, &m_frameResizeSemaphore[i]);
+        assert(result == VK_SUCCESS);
+    }
+#endif //_TRANSCODING
 
     Reset();
 
@@ -888,6 +907,12 @@ void NvPerFrameDecodeResources::Deinit()
     if (m_frameCompleteSemaphore != VkSemaphore()) {
         m_vkDevCtx->DestroySemaphore(*m_vkDevCtx, m_frameCompleteSemaphore, nullptr);
         m_frameCompleteSemaphore = VkSemaphore();
+#if (_TRANSCODING)
+        for (int i = 0; i < 16; i++) {
+            m_vkDevCtx->DestroySemaphore(*m_vkDevCtx, m_frameResizeSemaphore[i], nullptr);
+            m_frameResizeSemaphore[i] = VkSemaphore();
+        }
+#endif //_TRANSCODING
     }
 
     if (m_frameConsumerDoneSemaphore != VkSemaphore()) {

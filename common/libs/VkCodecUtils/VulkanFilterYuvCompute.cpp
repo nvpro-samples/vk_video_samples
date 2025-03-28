@@ -28,7 +28,11 @@ VkResult VulkanFilterYuvCompute::Create(const VulkanDeviceContext* vkDevCtx,
                                         const VkSamplerYcbcrConversionCreateInfo* pYcbcrConversionCreateInfo,
                                         const YcbcrPrimariesConstants* pYcbcrPrimariesConstants,
                                         const VkSamplerCreateInfo* pSamplerCreateInfo,
-                                        VkSharedBaseObj<VulkanFilter>& vulkanFilter)
+                                        VkSharedBaseObj<VulkanFilter>& vulkanFilter
+#ifdef _TRANSCODING
+                                        , const std::vector<Rectangle>& resizedResolutions
+#endif
+)
 {
 
     VkSharedBaseObj<VulkanFilterYuvCompute> yCbCrVulkanFilter(new VulkanFilterYuvCompute(vkDevCtx,
@@ -38,7 +42,11 @@ VkResult VulkanFilterYuvCompute::Create(const VulkanDeviceContext* vkDevCtx,
                                                                                          maxNumFrames,
                                                                                          inputFormat,
                                                                                          outputFormat,
-                                                                                         pYcbcrPrimariesConstants));
+                                                                                         pYcbcrPrimariesConstants
+#ifdef _TRANSCODING
+                                                                                         , resizedResolutions
+#endif
+                                                                                         ));
 
     if (!yCbCrVulkanFilter) {
        return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -75,6 +83,17 @@ VkResult VulkanFilterYuvCompute::Init(const VkSamplerYcbcrConversionCreateInfo* 
          }
     }
 
+#if (_TRANSCODING)
+   if (m_filterType == RESIZE)
+   {
+        result = m_samplerResize.CreateVulkanSampler(m_vkDevCtx);
+        if (result != VK_SUCCESS) {
+            assert(!"ERROR: samplerResizeCreate!");
+            return result;
+        }
+   }
+#endif
+
     assert(m_queue != VK_NULL_HANDLE);
 
     result = InitDescriptorSetLayout(m_maxNumFrames);
@@ -98,6 +117,9 @@ VkResult VulkanFilterYuvCompute::Init(const VkSamplerYcbcrConversionCreateInfo* 
      case RGBA2YCBCR:
          assert(!"TODO RGBA2YCBCR");
          break;
+    case RESIZE:
+         computeShaderSize = InitResize(computeShader);
+         break;
      default:
          assert(!"Invalid filter type");
          break;
@@ -116,18 +138,19 @@ VkResult VulkanFilterYuvCompute::InitDescriptorSetLayout(uint32_t maxNumFrames)
 {
 
     VkSampler ccSampler = m_samplerYcbcrConversion.GetSampler();
+    VkSampler textureSampler = m_samplerResize.GetSampler();
     assert(ccSampler != VK_NULL_HANDLE);
     VkDescriptorType type = (ccSampler != VK_NULL_HANDLE) ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER : VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    const VkSampler* pImmutableSamplers = (ccSampler != VK_NULL_HANDLE) ? &ccSampler : nullptr;
+    const VkSampler* pImmutableSamplersResize = &textureSampler;
 
     const std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings{
         //                        binding,  descriptorType,          descriptorCount, stageFlags, pImmutableSamplers;
         // Binding 0: Input image (read-only) RGBA or RGBA YCbCr sampler sampled
-        VkDescriptorSetLayoutBinding{ 0, type,                             1, VK_SHADER_STAGE_COMPUTE_BIT, pImmutableSamplers},
+        VkDescriptorSetLayoutBinding{ 0, type,                             1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         // Binding 1: Input image (read-only) Y plane of YCbCr Image
-        VkDescriptorSetLayoutBinding{ 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+        VkDescriptorSetLayoutBinding{ 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, pImmutableSamplersResize},
         // Binding 2: Input image (read-only) Cb or CbCr plane
-        VkDescriptorSetLayoutBinding{ 2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+        VkDescriptorSetLayoutBinding{ 2, type, 1, VK_SHADER_STAGE_COMPUTE_BIT,  pImmutableSamplersResize},
         // Binding 3: Input image (read-only) Cr plane
         VkDescriptorSetLayoutBinding{ 3, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
 
@@ -331,6 +354,76 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
         "        vec2 CbCr = imageLoad(inputImageCbCr, ivec3(pos, pushConstants.srcImageLayer)).rg;\n"
         "        imageStore(outImageCbCr, ivec3(pos, pushConstants.dstImageLayer), vec4(CbCr, 0, 1));\n"
         "    }\n"
+        "}\n";
+
+    computeShader = shaderStr.str();
+    std::cout << "\nCompute Shader:\n" << computeShader;
+    return computeShader.size();
+}
+
+size_t VulkanFilterYuvCompute::InitResize(std::string& computeShader)
+{
+    // The compute filter uses two input images as separate planes
+    // Y (R) binding = 1
+    // CbCr (RG) binding = 2
+    // TODO: Add more YCbCr formats
+    m_inputImageAspects = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT;
+
+    // The compute filter uses two output images as separate planes
+    // Y (R) binding = 5
+    // CbCr (RG) binding = 6
+    // TODO: Add more YCbCr formats
+    m_outputImageAspects = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT;
+
+    std::stringstream shaderStr;
+    // Create compute pipeline
+    shaderStr << "#version 450\n"
+                        "layout(push_constant) uniform PushConstants {\n"
+                        "    uint srcImageLayer;\n"
+                        "    uint dstImageLayer;\n"
+                        "    uint width;\n"
+                        "    uint height;\n"
+                        "    float scalingFactorX;\n"
+                        "    float scalingFactorY;\n"
+                        "} pushConstants;\n"
+                        "\n"
+                        "layout (local_size_x = 16, local_size_y = 16) in;\n"
+                        " // TODO: use set and binding from the layout\n"
+                        " // TODO: use r16 for 16-bit formats\n"
+                        "layout (set = 0, binding = 1) uniform sampler2D texSampler;\n"
+                        "layout (set = 0, binding = 2) uniform sampler2D texSamplerUV;\n"
+                        " // TODO: use rgba16 for 16-bit formats\n"
+                        "layout (set = 0, binding = 5, r8) uniform  writeonly image2DArray outImageY;\n"
+                        " // TODO: use rg16 for 16-bit formats\n"
+                        "layout (set = 0, binding = 6, rg8) uniform writeonly image2DArray outImageCbCr;\n"
+                        "\n"
+                        "\n";
+
+    shaderStr <<
+        "void main()\n"
+        "{\n"
+        "    ivec2 uvpos = ivec2(gl_GlobalInvocationID.xy);\n"
+        "    ivec2 pos = uvpos *2; \n"
+        "    vec2 scalingFactor = vec2(pushConstants.scalingFactorX, pushConstants.scalingFactorY);\n"
+        "    vec2 sourcepos00 = vec2(vec2(pushConstants.scalingFactorX, pushConstants.scalingFactorY) * vec2(pos));\n"
+        "    vec2 sourcepos10 = vec2(vec2(pushConstants.scalingFactorX, pushConstants.scalingFactorY) * vec2(pos.x+1, pos.y));\n"
+        "    vec2 sourcepos01 = vec2(vec2(pushConstants.scalingFactorX, pushConstants.scalingFactorY) * vec2(pos.x, pos.y+1));\n"
+        "    vec2 sourcepos11 = vec2(vec2(pushConstants.scalingFactorX, pushConstants.scalingFactorY) * vec2(pos.x+1, pos.y+1));\n"
+        "\n"
+        "    // Read Y value from source Y plane and write it to destination Y plane\n"
+        "    float Y00 = texture(texSampler, sourcepos00).r;\n"
+        "    float Y10 = texture(texSampler, sourcepos10).r;\n"
+        "    float Y01 = texture(texSampler, sourcepos01).r;\n"
+        "    float Y11 = texture(texSampler, sourcepos11).r;\n"
+        "    imageStore(outImageY, ivec3(pos, pushConstants.dstImageLayer), vec4(Y00, 0, 0, 1));\n"
+        "    imageStore(outImageY, ivec3(ivec2(pos.x+1, pos.y), pushConstants.dstImageLayer), vec4(Y10, 0, 0, 1));\n"
+        "    imageStore(outImageY, ivec3(ivec2(pos.x, pos.y+1), pushConstants.dstImageLayer), vec4(Y01, 0, 0, 1));\n"
+        "    imageStore(outImageY, ivec3(ivec2(pos.x+1, pos.y+1), pushConstants.dstImageLayer), vec4(Y11, 0, 0, 1));\n"
+        "\n"
+        "    // Do the same for the CbCr plane, but remember about the 4:2:0 subsampling\n"
+        "    vec2 sourceposuv = ivec2(vec2(pushConstants.scalingFactorX, pushConstants.scalingFactorY) * vec2(uvpos));\n"
+        "    vec2 CbCr = texture(texSamplerUV, sourceposuv).rg;\n"
+        "    imageStore(outImageCbCr, ivec3(uvpos, pushConstants.dstImageLayer), vec4(CbCr, 0, 1));\n"
         "}\n";
 
     computeShader = shaderStr.str();

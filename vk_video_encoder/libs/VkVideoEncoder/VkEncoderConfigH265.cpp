@@ -121,7 +121,7 @@ VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vk
         std::cout << "\t\t\t" << "preferredMaxL1ReferenceCount : " << h265QualityLevelProperties.preferredMaxL1ReferenceCount << std::endl;
     }
 
-    rateControlMode = qualityLevelProperties.preferredRateControlMode;
+    // rateControlMode = qualityLevelProperties.preferredRateControlMode; // TODO: FIX by removing - this overrides the rc mode has been already set
     gopStructure.SetGopFrameCount(h265QualityLevelProperties.preferredGopFrameCount);
     gopStructure.SetIdrPeriod(h265QualityLevelProperties.preferredIdrPeriod);
     gopStructure.SetConsecutiveBFrameCount(h265QualityLevelProperties.preferredConsecutiveBFrameCount);
