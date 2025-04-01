@@ -129,7 +129,7 @@ int main(int argc, const char **argv) {
         VkSharedBaseObj<VideoStreamDemuxer> videoStreamDemuxer;
         result = VideoStreamDemuxer::Create(decoderConfig.videoFileName.c_str(),
                                             decoderConfig.forceParserType,
-                                            (decoderConfig.enableStreamDemuxing == 1),
+                                            decoderConfig.enableStreamDemuxing,
                                             decoderConfig.initialWidth,
                                             decoderConfig.initialHeight,
                                             decoderConfig.initialBitdepth,
@@ -207,7 +207,7 @@ int main(int argc, const char **argv) {
         VkSharedBaseObj<VideoStreamDemuxer> videoStreamDemuxer;
         result = VideoStreamDemuxer::Create(decoderConfig.videoFileName.c_str(),
                                             decoderConfig.forceParserType,
-                                            (decoderConfig.enableStreamDemuxing == 1),
+                                            decoderConfig.enableStreamDemuxing,
                                             decoderConfig.initialWidth,
                                             decoderConfig.initialHeight,
                                             decoderConfig.initialBitdepth,

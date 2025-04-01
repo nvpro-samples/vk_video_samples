@@ -69,7 +69,7 @@ struct DecoderConfig {
         forceParserType = VK_VIDEO_CODEC_OPERATION_NONE_KHR;
         decoderQueueSize = 5;
         enablePostProcessFilter = -1,
-        enableStreamDemuxing = false;
+        enableStreamDemuxing = true;
         deviceId = (uint32_t)-1;
         directMode = false;
         enableHwLoadBalancing = false;
@@ -110,11 +110,6 @@ struct DecoderConfig {
                     int rtn = showHelp(argv, a);
                     exit(EXIT_SUCCESS);
                     return rtn;
-                }},
-            {"--enableStrDemux", nullptr, 0, "Enable stream demuxing",
-                [this](const char **, const ProgramArgs &a) {
-                    enableStreamDemuxing = true;
-                    return true;
                 }},
             {"--disableStrDemux", nullptr, 0, "Disable stream demuxing",
                 [this](const char **, const ProgramArgs &a) {
