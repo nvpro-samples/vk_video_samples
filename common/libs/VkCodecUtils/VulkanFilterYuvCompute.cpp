@@ -18,6 +18,8 @@
 #include "VulkanFilterYuvCompute.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 
+static bool dumpShaders = false;
+
 VkResult VulkanFilterYuvCompute::Create(const VulkanDeviceContext* vkDevCtx,
                                         uint32_t queueFamilyIndex,
                                         uint32_t queueIndex,
@@ -407,7 +409,8 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
         "}\n";
 
     computeShader = shaderStr.str();
-    std::cout << "\nCompute Shader:\n" << computeShader;
+    if (dumpShaders)
+        std::cout << "\nCompute Shader:\n" << computeShader;
     return computeShader.size();
 }
 
@@ -474,7 +477,8 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
         "}\n";
 
     computeShader = shaderStr.str();
-    std::cout << "\nCompute Shader:\n" << computeShader;
+    if (dumpShaders)
+        std::cout << "\nCompute Shader:\n" << computeShader;
     return computeShader.size();
 }
 
@@ -522,6 +526,7 @@ size_t VulkanFilterYuvCompute::InitYCBCRCLEAR(std::string& computeShader)
         "}\n";
 
     computeShader = shaderStr.str();
-    std::cout << "\nCompute Shader:\n" << computeShader;
+    if (dumpShaders)
+        std::cout << "\nCompute Shader:\n" << computeShader;
     return computeShader.size();
 }
