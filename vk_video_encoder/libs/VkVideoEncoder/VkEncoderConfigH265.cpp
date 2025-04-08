@@ -572,9 +572,16 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
 
     // Assigning default main profile if invalid.
     if (spsInfo->profileTierLevel.general_profile_idc == STD_VIDEO_H265_PROFILE_IDC_INVALID) {
-        spsInfo->profileTierLevel.general_profile_idc = STD_VIDEO_H265_PROFILE_IDC_MAIN;
-        if (input.bpp > 10) {
-            spsInfo->profileTierLevel.general_profile_idc = STD_VIDEO_H265_PROFILE_IDC_MAIN_10;
+        if (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR) {
+            if (input.bpp == 8) {
+                spsInfo->profileTierLevel.general_profile_idc = STD_VIDEO_H265_PROFILE_IDC_MAIN;
+            } else if (input.bpp == 10) {
+                spsInfo->profileTierLevel.general_profile_idc = STD_VIDEO_H265_PROFILE_IDC_MAIN_10;
+            } else {
+                spsInfo->profileTierLevel.general_profile_idc = STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS;
+            }
+        } else {
+            spsInfo->profileTierLevel.general_profile_idc = STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS;
         }
     }
 
@@ -658,8 +665,8 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
                   << std::endl;
     }
 
-    uint32_t subWidthC  = (encodeChromaSubsampling == 3) ? 1 : 2;
-    uint32_t subHeightC = (encodeChromaSubsampling == 3) ? 1 : 2;
+    uint32_t subWidthC  = (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR) ? 1 : 2;
+    uint32_t subHeightC = (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR) ? 1 : 2;
     spsInfo->sps.conf_win_left_offset   = 0;
     spsInfo->sps.conf_win_right_offset  = (picWidthAlignedToMinCbsY - encodeWidth) / subWidthC;
     spsInfo->sps.conf_win_top_offset    = 0;
