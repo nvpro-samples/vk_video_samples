@@ -200,6 +200,11 @@ struct EncoderConfigH264 : public EncoderConfig {
         return static_cast<uint8_t>(h264EncodeCapabilities.maxBPictureL0ReferenceCount);
     }
 
+    virtual bool IntraRefreshWithBFramesAllowed() override
+    {
+        return ((h264EncodeCapabilities.flags & VK_VIDEO_ENCODE_H264_CAPABILITY_B_PICTURE_INTRA_REFRESH_BIT_KHR) != 0);
+    }
+
     bool GetRateControlParameters(VkVideoEncodeRateControlInfoKHR *rcInfo,
                                   VkVideoEncodeRateControlLayerInfoKHR *pRcLayerInfo,
                                   VkVideoEncodeH264RateControlInfoKHR *rcInfoH264,
