@@ -1016,6 +1016,8 @@ public:
     virtual bool InitRateControl();
 
     virtual uint8_t GetMaxBFrameCount() { return 0;}
+
+    virtual bool IntraRefreshWithBFramesAllowed() { return false; }
 };
 
 // Create codec configuration for H.264 encoder

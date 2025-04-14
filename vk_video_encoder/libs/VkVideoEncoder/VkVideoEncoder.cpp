@@ -792,6 +792,19 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         }
         m_encoderConfig->gopStructure.SetConsecutiveBFrameCount(encoderConfig->GetMaxBFrameCount());
     }
+
+    if (m_encoderConfig->enableIntraRefresh) {
+        if (!m_encoderConfig->IntraRefreshWithBFramesAllowed() &&
+            (m_encoderConfig->gopStructure.GetConsecutiveBFrameCount() != 0)) {
+
+            if (m_encoderConfig->verbose) {
+                std::cout << "Use of B-frames / compound prediction is not supported when intra-refresh is enabled" << std::endl;
+                std::cout << "Setting the count of Consecutive B-frames to 0" << std::endl;
+            }
+            m_encoderConfig->gopStructure.SetConsecutiveBFrameCount(0);
+        }
+    }
+
     if (m_encoderConfig->verbose) {
         std::cout << std::endl << "GOP frame count: " << (uint32_t)m_encoderConfig->gopStructure.GetGopFrameCount();
         std::cout << ", IDR period: " << (uint32_t)m_encoderConfig->gopStructure.GetIdrPeriod();

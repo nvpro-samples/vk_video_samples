@@ -119,6 +119,11 @@ struct EncoderConfigAV1 : public EncoderConfig {
 
     virtual uint8_t GetMaxBFrameCount() override { return  static_cast<uint8_t>(av1EncodeCapabilities.maxBidirectionalCompoundReferenceCount); }
 
+    virtual bool IntraRefreshWithBFramesAllowed() override
+    {
+        return ((av1EncodeCapabilities.flags & VK_VIDEO_ENCODE_AV1_CAPABILITY_COMPOUND_PREDICTION_INTRA_REFRESH_BIT_KHR) != 0);
+    }
+
     bool GetRateControlParameters(VkVideoEncodeRateControlInfoKHR* rcInfo,
                                   VkVideoEncodeRateControlLayerInfoKHR* rcLayerInfo,
                                   VkVideoEncodeAV1RateControlInfoKHR* rcInfoAV1,
