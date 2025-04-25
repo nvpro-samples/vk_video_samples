@@ -147,10 +147,10 @@ public:
     bool ParseByteStreamAVX2(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
     bool ParseByteStreamAVX512(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
     bool ParseByteStreamSSSE3(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) || defined(_M_ARM64)
     bool ParseByteStreamSVE(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
     bool ParseByteStreamNEON(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
-#elif defined(__ARM_ARCH_7A__) || defined(_M_ARM64)
+#elif defined(__ARM_ARCH_7A__)
     bool ParseByteStreamNEON(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
 #endif
     virtual bool GetDisplayMasteringInfo(VkParserDisplayMasteringInfo *) { return false; }

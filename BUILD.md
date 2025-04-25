@@ -59,6 +59,7 @@ Windows 10 or Windows 11 with the following software packages:
   - Install both 32-bit and 64-bit versions
 - [Vulkan SDK](https://vulkan.lunarg.com/sdk/home#windows)
   - Install current Vulkan SDK (i.e. VulkanSDK-1.4.304.0-Installer.exe or later)
+  - Make sure to install the the correct SDK for the targeted system arch - x86_64 or ARM64
 - [FFMPEG libraries for Windows]
   - Download the latest version of the FFMPEG shared libraries archive from https://github.com/BtbN/FFmpeg-Builds/releases
   - The archive must have the following pattern in the name: ffmpeg-*-win64-*-shared.zip
@@ -75,14 +76,20 @@ Windows 10 or Windows 11 with the following software packages:
 
 For Debug build:
 ```bash
-cmake . -B build -DCMAKE_GENERATOR_PLATFORM=x64 -DCMAKE_INSTALL_PREFIX="$(PWD)/build/install/Debug" -DCMAKE_BUILD_TYPE=Debug
+For X86_64 based platforms:
+  cmake . -B build -DCMAKE_GENERATOR_PLATFORM=x64 -DCMAKE_INSTALL_PREFIX="$(PWD)/build/install/Debug" -DCMAKE_BUILD_TYPE=Debug
+For ARM64 based platforms:
+  cmake . -B build -DCMAKE_GENERATOR_PLATFORM=ARM64 -DCMAKE_INSTALL_PREFIX="$(PWD)/build/install/Debug" -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel 16 --config Debug
 cmake --build build --config Debug --target INSTALL
 ```
 
 For Release build:
 ```bash
-cmake . -B build -DCMAKE_GENERATOR_PLATFORM=x64 -DCMAKE_INSTALL_PREFIX="$(PWD)/build/install/Release" -DCMAKE_BUILD_TYPE=Release
+For X86_64 based platforms:
+  cmake . -B build -DCMAKE_GENERATOR_PLATFORM=x64 -DCMAKE_INSTALL_PREFIX="$(PWD)/build/install/Release" -DCMAKE_BUILD_TYPE=Release
+For ARM64 based platforms:
+  cmake . -B build -DCMAKE_GENERATOR_PLATFORM=ARM64 -DCMAKE_INSTALL_PREFIX="$(PWD)/build/install/Release" -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel 16 --config Release
 cmake --build build --config Release --target INSTALL
 ```
@@ -94,7 +101,7 @@ cmake --build build --config Release --target INSTALL
 This repository has been tested on recent Ubuntu LTS versions. Minimum requirements:
 - Ubuntu 18.04.5 LTS or later
 - GCC 7.5.0 or Clang 6.0.0
-- Vulkan SDK vulkansdk-linux-x86_64-1.4.304.0.tar.xz or later
+- Vulkan SDK vulkansdk-linux-x86_64-1.4.304.0.tar.xz or later for x86_64
 
 Required packages:
 ```bash
