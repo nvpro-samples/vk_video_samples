@@ -24,6 +24,7 @@
 #include <vulkan_interfaces.h>
 #include <VkCodecUtils/HelpersDispatchTable.h>
 #include "VkShell/VkWsiDisplay.h"
+#include "VkCodecUtils/VulkanSemaphoreDump.h"
 
 class VulkanDeviceContext : public vk::VkInterfaceFunctions {
 
@@ -157,11 +158,22 @@ public:
     };
 
     VkResult MultiThreadedQueueSubmit(const QueueFamilySubmitType submitType, const int32_t queueIndex,
-                                      uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence) const
+                                      uint32_t submitCount, const VkSubmitInfo2KHR* pSubmits, VkFence fence,
+                                      const char* submissionName = nullptr,
+                                      uint64_t decodeEncodeOrder = UINT64_MAX,
+                                      uint64_t displayInputOrder = UINT64_MAX) const
     {
         MtQueueMutex queue(this, submitType, queueIndex);
         if (queue) {
-            return QueueSubmit(queue, submitCount, pSubmits, fence);
+
+            // Dump semaphore info for debugging
+            if (false) {
+                for (uint32_t i = 0; i < submitCount; i++) {
+                    VulkanSemaphoreDump::DumpSemaphoreInfo(pSubmits[i], submissionName, decodeEncodeOrder, displayInputOrder);
+                }
+            }
+
+            return QueueSubmit2KHR(queue, submitCount, pSubmits, fence);
         } else {
             return VK_ERROR_INITIALIZATION_FAILED;
         }

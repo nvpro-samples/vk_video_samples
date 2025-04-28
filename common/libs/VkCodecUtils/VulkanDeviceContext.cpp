@@ -724,18 +724,30 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
             pNext = (VkBaseInStructure*)&videoEncodeAV1Feature;
         }
 
+        VkPhysicalDeviceTimelineSemaphoreFeatures timelineSemaphoreFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES,
+                                                                              pNext,
+                                                                              VK_FALSE
+        };
+
         VkPhysicalDeviceVideoMaintenance1FeaturesKHR videoMaintenance1Features { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR,
-                                                                                 pNext,
-                                                                                 false
+                                                                                 &timelineSemaphoreFeatures,
+                                                                                 VK_FALSE
                                                                                };
 
         VkPhysicalDeviceSynchronization2Features synchronization2Features { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
                                                                             &videoMaintenance1Features,
-                                                                            false
+                                                                            VK_FALSE
                                                                            };
 
         VkPhysicalDeviceFeatures2 deviceFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &synchronization2Features};
         GetPhysicalDeviceFeatures2(m_physDevice, &deviceFeatures);
+
+        assert(timelineSemaphoreFeatures.timelineSemaphore);
+        assert(videoMaintenance1Features.videoMaintenance1);
+        assert(synchronization2Features.synchronization2);
+        assert(((videoCodecs & VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) != 0) ==
+                (videoEncodeAV1Feature.videoEncodeAV1 != VK_FALSE));
+
         devInfo.pNext = &deviceFeatures;
 
         if ((numDecodeQueues > 0) &&
@@ -1024,6 +1036,7 @@ VkResult VulkanDeviceContext::InitVulkanDecoderDevice(const char * pAppName,
         VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
         VK_KHR_VIDEO_QUEUE_EXTENSION_NAME,
         VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME,
+        VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
         nullptr
     };
 

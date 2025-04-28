@@ -51,18 +51,17 @@ public:
     NvPerFrameDecodeResources()
         : m_picDispInfo()
         , m_frameCompleteFence()
-        , m_frameCompleteSemaphore()
         , m_frameConsumerDoneFence()
-        , m_frameConsumerDoneSemaphore()
+        , m_frameCompleteTimelineValue()
+        , m_frameConsumerDoneTimelineValue()
         , m_imageSpecsIndex()
         , m_hasFrameCompleteSignalFence(false)
         , m_hasFrameCompleteSignalSemaphore(false)
         , m_hasConsummerSignalFence(false)
-        , m_hasConsummerSignalSemaphore(false)
+        , m_useConsummerSignalSemaphore(false)
         , m_inDecodeQueue(false)
         , m_inDisplayQueue(false)
         , m_ownedByConsummer(false)
-        , m_vkDevCtx()
         , m_imageViewState()
     {
     }
@@ -75,14 +74,14 @@ public:
 
     VkResult init( const VulkanDeviceContext* vkDevCtx);
 
-    void Deinit();
+    void Deinit(const VulkanDeviceContext* vkDevCtx);
 
     NvPerFrameDecodeResources (const NvPerFrameDecodeResources &srcObj) = delete;
     NvPerFrameDecodeResources (NvPerFrameDecodeResources &&srcObj) = delete;
 
     ~NvPerFrameDecodeResources()
     {
-        Deinit();
+        Deinit(nullptr);
     }
 
     VkSharedBaseObj<VkImageResourceView>& GetImageView(uint8_t imageTypeIdx) {
@@ -149,14 +148,14 @@ public:
 
     VkParserDecodePictureInfo m_picDispInfo;
     VkFence m_frameCompleteFence;
-    VkSemaphore m_frameCompleteSemaphore;
     VkFence m_frameConsumerDoneFence;
-    VkSemaphore m_frameConsumerDoneSemaphore;
+    uint64_t m_frameCompleteTimelineValue;
+    uint64_t m_frameConsumerDoneTimelineValue;
     DecodeFrameBufferIf::ImageSpecsIndex m_imageSpecsIndex;
     uint32_t m_hasFrameCompleteSignalFence : 1;
     uint32_t m_hasFrameCompleteSignalSemaphore : 1;
     uint32_t m_hasConsummerSignalFence : 1;
-    uint32_t m_hasConsummerSignalSemaphore : 1;
+    uint32_t m_useConsummerSignalSemaphore : 1;
     uint32_t m_inDecodeQueue : 1;
     uint32_t m_inDisplayQueue : 1;
     uint32_t m_ownedByConsummer : 1;
@@ -171,8 +170,8 @@ public:
 
     // The filter's pool node
     VkSharedBaseObj<VkVideoRefCountBase>  filterPoolNode;
+
 private:
-    const VulkanDeviceContext*  m_vkDevCtx;
     std::array<ImageViewState, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES> m_imageViewState;
 };
 
@@ -180,7 +179,10 @@ class NvPerFrameDecodeImageSet {
 public:
 
     NvPerFrameDecodeImageSet()
-        : m_queueFamilyIndex((uint32_t)-1)
+        : m_vkDevCtx()
+        , m_queueFamilyIndex((uint32_t)-1)
+        , m_frameCompleteSemaphore()
+        , m_consumerCompleteSemaphore()
         , m_numImages(0)
         , m_maxNumImageTypeIdx(0)
         , m_perFrameDecodeResources(VulkanVideoFrameBuffer::maxImages)
@@ -195,11 +197,12 @@ public:
         const std::array<VulkanVideoFrameBuffer::ImageSpec, DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES>& imageSpecs,
         uint32_t                 queueFamilyIndex);
 
-    void Deinit();
+    void Deinit(const VulkanDeviceContext* vkDevCtx);
 
     ~NvPerFrameDecodeImageSet()
     {
-        Deinit();
+        Deinit(m_vkDevCtx);
+        m_vkDevCtx = nullptr;
     }
 
     NvPerFrameDecodeResources& operator[](unsigned int index)
@@ -258,8 +261,13 @@ public:
     }
 
 private:
+    const VulkanDeviceContext*             m_vkDevCtx;
     uint32_t                               m_queueFamilyIndex;
     VkVideoCoreProfile                     m_videoProfile;
+public:
+    VkSemaphore                            m_frameCompleteSemaphore;
+    VkSemaphore                            m_consumerCompleteSemaphore;
+private:
     uint32_t                               m_numImages;
     uint32_t                               m_maxNumImageTypeIdx;
     std::vector<NvPerFrameDecodeResources> m_perFrameDecodeResources;
@@ -372,7 +380,7 @@ public:
         m_ownedByDisplayMask = 0;
         m_frameNumInDisplayOrder = 0;
 
-        m_perFrameDecodeImageSet.Deinit();
+        m_perFrameDecodeImageSet.Deinit(m_vkDevCtx);
 
         if (m_queryPool != VkQueryPool()) {
             m_vkDevCtx->DestroyQueryPool(*m_vkDevCtx, m_queryPool, NULL);
@@ -417,10 +425,9 @@ public:
         }
 
         if ((pFrameSynchronizationInfo->syncOnFrameConsumerDoneFence  == 1) &&
-             ((m_perFrameDecodeImageSet[picId].m_hasConsummerSignalSemaphore == 0) ||
-              (m_perFrameDecodeImageSet[picId].m_frameConsumerDoneSemaphore == VK_NULL_HANDLE)) &&
-                (m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence == 1) &&
-                (m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence != VK_NULL_HANDLE)) {
+             (m_perFrameDecodeImageSet[picId].m_useConsummerSignalSemaphore == 0) &&
+             (m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence == 1) &&
+             (m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence != VK_NULL_HANDLE)) {
 
             vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence,
                                   true, "frameConsumerDoneFence");
@@ -456,15 +463,35 @@ public:
         }
 
         if (pFrameSynchronizationInfo->hasFrameCompleteSignalSemaphore) {
-            pFrameSynchronizationInfo->frameCompleteSemaphore = m_perFrameDecodeImageSet[picId].m_frameCompleteSemaphore;
-            if (pFrameSynchronizationInfo->frameCompleteSemaphore) {
+            pFrameSynchronizationInfo->frameCompleteSemaphore = m_perFrameDecodeImageSet.m_frameCompleteSemaphore;
+            if (pFrameSynchronizationInfo->frameCompleteSemaphore != VK_NULL_HANDLE) {
+
+                pFrameSynchronizationInfo->decodeCompleteTimelineValue = DecodeFrameBufferIf::GetSemaphoreValue(
+                                                                            DecodeFrameBufferIf::SEM_SYNC_TYPE_IDX_DECODE,
+                                                                            m_perFrameDecodeImageSet[picId].m_decodeOrder);
+
+                if (pFrameSynchronizationInfo->hasFilterSignalSemaphore) {
+                    pFrameSynchronizationInfo->filterCompleteTimelineValue = DecodeFrameBufferIf::GetSemaphoreValue(
+                                                                              DecodeFrameBufferIf::SEM_SYNC_TYPE_IDX_FILTER,
+                                                                              m_perFrameDecodeImageSet[picId].m_decodeOrder);
+
+                    m_perFrameDecodeImageSet[picId].m_frameCompleteTimelineValue = pFrameSynchronizationInfo->filterCompleteTimelineValue;
+
+                } else {
+
+                    m_perFrameDecodeImageSet[picId].m_frameCompleteTimelineValue = pFrameSynchronizationInfo->decodeCompleteTimelineValue;
+
+                }
+
                 m_perFrameDecodeImageSet[picId].m_hasFrameCompleteSignalSemaphore = true;
             }
         }
 
-        if (m_perFrameDecodeImageSet[picId].m_hasConsummerSignalSemaphore) {
-            pFrameSynchronizationInfo->frameConsumerDoneSemaphore = m_perFrameDecodeImageSet[picId].m_frameConsumerDoneSemaphore;
-            m_perFrameDecodeImageSet[picId].m_hasConsummerSignalSemaphore = false;
+        if (m_perFrameDecodeImageSet[picId].m_useConsummerSignalSemaphore) {
+            pFrameSynchronizationInfo->hasFrameConsumerSignalSemaphore = true;
+            pFrameSynchronizationInfo->consumerCompleteSemaphore = m_perFrameDecodeImageSet.m_consumerCompleteSemaphore;
+            pFrameSynchronizationInfo->frameConsumerDoneTimelineValue = m_perFrameDecodeImageSet[picId].m_frameConsumerDoneTimelineValue;
+            m_perFrameDecodeImageSet[picId].m_useConsummerSignalSemaphore = false;
         }
 
         pFrameSynchronizationInfo->queryPool = m_queryPool;
@@ -529,14 +556,20 @@ public:
             }
 
             if (m_perFrameDecodeImageSet[pictureIndex].m_hasFrameCompleteSignalSemaphore) {
-                pDecodedFrame->frameCompleteSemaphore = m_perFrameDecodeImageSet[pictureIndex].m_frameCompleteSemaphore;
+                pDecodedFrame->frameCompleteSemaphore = m_perFrameDecodeImageSet.m_frameCompleteSemaphore;
+                pDecodedFrame->frameCompleteDoneSemValue = m_perFrameDecodeImageSet[pictureIndex].m_frameCompleteTimelineValue;
                 m_perFrameDecodeImageSet[pictureIndex].m_hasFrameCompleteSignalSemaphore = false;
+
+                pDecodedFrame->consumerCompleteSemaphore = m_perFrameDecodeImageSet.m_consumerCompleteSemaphore;
+                pDecodedFrame->frameConsumerDoneSemValue = DecodeFrameBufferIf::GetSemaphoreValue(
+                                                               DecodeFrameBufferIf::SEM_SYNC_TYPE_IDX_DISPLAY,
+                                                               m_perFrameDecodeImageSet[pictureIndex].m_displayOrder);
+
             } else {
-                pDecodedFrame->frameCompleteSemaphore = VkSemaphore();
+                pDecodedFrame->frameCompleteSemaphore = VK_NULL_HANDLE;
             }
 
             pDecodedFrame->frameConsumerDoneFence = m_perFrameDecodeImageSet[pictureIndex].m_frameConsumerDoneFence;
-            pDecodedFrame->frameConsumerDoneSemaphore = m_perFrameDecodeImageSet[pictureIndex].m_frameConsumerDoneSemaphore;
 
             pDecodedFrame->timestamp = m_perFrameDecodeImageSet[pictureIndex].m_timestamp;
             pDecodedFrame->decodeOrder = m_perFrameDecodeImageSet[pictureIndex].m_decodeOrder;
@@ -572,7 +605,13 @@ public:
             m_perFrameDecodeImageSet[picId].Release();
 
             m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence = pDecodedFrameRelease->hasConsummerSignalFence;
-            m_perFrameDecodeImageSet[picId].m_hasConsummerSignalSemaphore = pDecodedFrameRelease->hasConsummerSignalSemaphore;
+            m_perFrameDecodeImageSet[picId].m_useConsummerSignalSemaphore = pDecodedFrameRelease->hasConsummerSignalSemaphore;
+            if (pDecodedFrameRelease->hasConsummerSignalSemaphore) {
+                m_perFrameDecodeImageSet[picId].m_frameConsumerDoneTimelineValue =
+                        DecodeFrameBufferIf::GetSemaphoreValue(
+                            DecodeFrameBufferIf::SEM_SYNC_TYPE_IDX_DISPLAY,
+                            pDecodedFrameRelease->displayOrder);
+            }
         }
         return 0;
     }
@@ -648,7 +687,7 @@ public:
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         for (unsigned int resId = 0; resId < numResources; resId++) {
             if ((uint32_t)indexes[resId] < m_perFrameDecodeImageSet.size()) {
-                m_perFrameDecodeImageSet[indexes[resId]].Deinit();
+                m_perFrameDecodeImageSet[indexes[resId]].Deinit(m_vkDevCtx);
             }
         }
         return (int32_t)m_perFrameDecodeImageSet.size();
@@ -785,8 +824,6 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
     }
     if (!ImageExist(pImageSpec->imageTypeIdx) || m_imageViewState[pImageSpec->imageTypeIdx].recreateImage) {
 
-        assert(m_vkDevCtx != nullptr);
-
         m_imageViewState[pImageSpec->imageTypeIdx].currentLayerLayout = pImageSpec->createInfo.initialLayout;
 
         VkSharedBaseObj<VkImageResource> imageResource;
@@ -839,21 +876,13 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
 VkResult NvPerFrameDecodeResources::init(const VulkanDeviceContext* vkDevCtx)
 {
 
-    m_vkDevCtx = vkDevCtx;
-
     // The fence waited on for the first frame should be signaled.
     const VkFenceCreateInfo fenceFrameCompleteInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr,
                                                        VK_FENCE_CREATE_SIGNALED_BIT };
-    VkResult result = m_vkDevCtx->CreateFence(*m_vkDevCtx, &fenceFrameCompleteInfo, nullptr, &m_frameCompleteFence);
+    VkResult result = vkDevCtx->CreateFence(*vkDevCtx, &fenceFrameCompleteInfo, nullptr, &m_frameCompleteFence);
 
     const VkFenceCreateInfo fenceInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr };
-    result = m_vkDevCtx->CreateFence(*m_vkDevCtx, &fenceInfo, nullptr, &m_frameConsumerDoneFence);
-    assert(result == VK_SUCCESS);
-
-    const VkSemaphoreCreateInfo semInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr };
-    result = m_vkDevCtx->CreateSemaphore(*m_vkDevCtx, &semInfo, nullptr, &m_frameCompleteSemaphore);
-    assert(result == VK_SUCCESS);
-    result = m_vkDevCtx->CreateSemaphore(*m_vkDevCtx, &semInfo, nullptr, &m_frameConsumerDoneSemaphore);
+    result = vkDevCtx->CreateFence(*vkDevCtx, &fenceInfo, nullptr, &m_frameConsumerDoneFence);
     assert(result == VK_SUCCESS);
 
     Reset();
@@ -861,39 +890,27 @@ VkResult NvPerFrameDecodeResources::init(const VulkanDeviceContext* vkDevCtx)
     return result;
 }
 
-void NvPerFrameDecodeResources::Deinit()
+void NvPerFrameDecodeResources::Deinit(const VulkanDeviceContext* vkDevCtx)
 {
     bitstreamData = nullptr;
     stdPps = nullptr;
     stdSps = nullptr;
     stdVps = nullptr;
 
-    if (m_vkDevCtx == nullptr) {
+    if (vkDevCtx == nullptr) {
         assert ((m_frameCompleteFence == VK_NULL_HANDLE) &&
-                (m_frameConsumerDoneFence == VK_NULL_HANDLE) &&
-                (m_frameCompleteSemaphore == VK_NULL_HANDLE) &&
-                (m_frameConsumerDoneSemaphore == VK_NULL_HANDLE));
+                (m_frameConsumerDoneFence == VK_NULL_HANDLE));
         return;
     }
 
     if (m_frameCompleteFence != VkFence()) {
-        m_vkDevCtx->DestroyFence(*m_vkDevCtx, m_frameCompleteFence, nullptr);
+        vkDevCtx->DestroyFence(*vkDevCtx, m_frameCompleteFence, nullptr);
         m_frameCompleteFence = VkFence();
     }
 
     if (m_frameConsumerDoneFence != VkFence()) {
-        m_vkDevCtx->DestroyFence(*m_vkDevCtx, m_frameConsumerDoneFence, nullptr);
+        vkDevCtx->DestroyFence(*vkDevCtx, m_frameConsumerDoneFence, nullptr);
         m_frameConsumerDoneFence = VkFence();
-    }
-
-    if (m_frameCompleteSemaphore != VkSemaphore()) {
-        m_vkDevCtx->DestroySemaphore(*m_vkDevCtx, m_frameCompleteSemaphore, nullptr);
-        m_frameCompleteSemaphore = VkSemaphore();
-    }
-
-    if (m_frameConsumerDoneSemaphore != VkSemaphore()) {
-        m_vkDevCtx->DestroySemaphore(*m_vkDevCtx, m_frameConsumerDoneSemaphore, nullptr);
-        m_frameConsumerDoneSemaphore = VkSemaphore();
     }
 
     for (uint32_t imageTypeIdx = 0; imageTypeIdx < DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES; imageTypeIdx++) {
@@ -901,8 +918,6 @@ void NvPerFrameDecodeResources::Deinit()
         m_imageViewState[imageTypeIdx].view = nullptr;
         m_imageViewState[imageTypeIdx].singleLevelView = nullptr;
     }
-
-    m_vkDevCtx = nullptr;
 
     Reset();
 }
@@ -919,6 +934,8 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
         return -1;
     }
 
+    m_vkDevCtx = vkDevCtx;
+
     for (uint32_t imageIndex = m_numImages; imageIndex < numImages; imageIndex++) {
         VkResult result = m_perFrameDecodeResources[imageIndex].init(vkDevCtx);
         assert(result == VK_SUCCESS);
@@ -926,6 +943,20 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
             return -1;
         }
     }
+
+    // Create timeline semaphores instead of binary semaphores
+    VkSemaphoreTypeCreateInfo timelineCreateInfo = {};
+    timelineCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+    timelineCreateInfo.pNext = nullptr;
+    timelineCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    timelineCreateInfo.initialValue = 0ULL;
+
+    VkSemaphoreCreateInfo semInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, &timelineCreateInfo };
+    VkResult result = vkDevCtx->CreateSemaphore(*vkDevCtx, &semInfo, nullptr, &m_frameCompleteSemaphore);
+    assert(result == VK_SUCCESS);
+
+    result = vkDevCtx->CreateSemaphore(*vkDevCtx, &semInfo, nullptr, &m_consumerCompleteSemaphore);
+    assert(result == VK_SUCCESS);
 
     m_videoProfile.InitFromProfile(pDecodeProfile);
 
@@ -1047,10 +1078,21 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
     return (int32_t)numImages;
 }
 
-void NvPerFrameDecodeImageSet::Deinit()
+void NvPerFrameDecodeImageSet::Deinit(const VulkanDeviceContext* vkDevCtx)
 {
+
+    if (m_frameCompleteSemaphore != VK_NULL_HANDLE) {
+        m_vkDevCtx->DestroySemaphore(*vkDevCtx, m_frameCompleteSemaphore, nullptr);
+        m_frameCompleteSemaphore = VK_NULL_HANDLE;
+    }
+
+    if (m_consumerCompleteSemaphore != VK_NULL_HANDLE) {
+        m_vkDevCtx->DestroySemaphore(*vkDevCtx, m_consumerCompleteSemaphore, nullptr);
+        m_consumerCompleteSemaphore = VK_NULL_HANDLE;
+    }
+
     for (size_t ndx = 0; ndx < m_numImages; ndx++) {
-        m_perFrameDecodeResources[ndx].Deinit();
+        m_perFrameDecodeResources[ndx].Deinit(vkDevCtx);
     }
 
     for (uint32_t imageTypeIdx = 0; imageTypeIdx < DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES; imageTypeIdx++) {

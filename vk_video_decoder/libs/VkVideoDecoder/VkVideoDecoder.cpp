@@ -951,6 +951,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     VulkanVideoFrameBuffer::FrameSynchronizationInfo frameSynchronizationInfo = VulkanVideoFrameBuffer::FrameSynchronizationInfo();
     frameSynchronizationInfo.hasFrameCompleteSignalFence = true;
     frameSynchronizationInfo.hasFrameCompleteSignalSemaphore = true;
+    frameSynchronizationInfo.hasFilterSignalSemaphore = m_enableDecodeComputeFilter;
+    frameSynchronizationInfo.hasFrameConsumerSignalSemaphore = false;
     frameSynchronizationInfo.syncOnFrameCompleteFence = true;
     frameSynchronizationInfo.syncOnFrameConsumerDoneFence = true;
     frameSynchronizationInfo.imageSpecsIndex = m_imageSpecsIndex;
@@ -1039,14 +1041,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameSynchronizationInfo.frameCompleteFence));
 
     VkFence frameCompleteFence = frameSynchronizationInfo.frameCompleteFence;
-    VkSemaphore frameCompleteSemaphore = frameSynchronizationInfo.frameCompleteSemaphore;
-    VkSemaphore frameConsumerDoneSemaphore = frameSynchronizationInfo.frameConsumerDoneSemaphore;
-    // By default, the frameCompleteSemaphore is the videoDecodeCompleteSemaphore.
-    // If the video frame filter is enabled, since it is executed after the decoder's queue,
-    // the filter will provide its own semaphore for the video decoder to signal, instead.
-    // Then the frameCompleteSemaphore will be signaled by the filter of its completion.
+    VkSemaphore videoDecodeCompleteSemaphore = frameSynchronizationInfo.frameCompleteSemaphore;
+    VkSemaphore  consumerCompleteSemaphore = frameSynchronizationInfo.consumerCompleteSemaphore;
     VkFence videoDecodeCompleteFence = frameCompleteFence;
-    VkSemaphore videoDecodeCompleteSemaphore = frameCompleteSemaphore;
 
     VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1136,34 +1133,45 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         assert(filterCmdBuffer != nullptr);
 
-        // frameCompleteSemaphore is the semaphore that the filter is going to signal on completion when enabled.
-        // The videoDecodeCompleteSemaphore semaphore will be signaled by the decoder and then used by the filter to wait on.
-
+        // videoDecodeCompleteFence is the fence that the filter is going to signal on completion when enabled.
         videoDecodeCompleteFence     = filterCmdBuffer->GetFence();
-        videoDecodeCompleteSemaphore = filterCmdBuffer->GetSemaphore();
     }
 
     const uint32_t waitSemaphoreMaxCount = 3;
-    VkSemaphore waitSemaphores[waitSemaphoreMaxCount] = { VK_NULL_HANDLE };
+    VkSemaphoreSubmitInfoKHR waitSemaphoreInfos[waitSemaphoreMaxCount]{};
 
     const uint32_t signalSemaphoreMaxCount = 3;
-    VkSemaphore signalSemaphores[signalSemaphoreMaxCount] = { VK_NULL_HANDLE };
+    VkSemaphoreSubmitInfoKHR signalSemaphoreInfos[signalSemaphoreMaxCount]{};
+
+    VkTimelineSemaphoreSubmitInfo timelineSemaphoreInfos = {};
 
     uint32_t waitSemaphoreCount = 0;
-    if (frameConsumerDoneSemaphore != VK_NULL_HANDLE) {
-        waitSemaphores[waitSemaphoreCount] = frameConsumerDoneSemaphore;
+    uint32_t signalSemaphoreCount = 0;
+
+    if (consumerCompleteSemaphore != VK_NULL_HANDLE) {
+
+        waitSemaphoreInfos[waitSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        waitSemaphoreInfos[waitSemaphoreCount].pNext = nullptr;
+        waitSemaphoreInfos[waitSemaphoreCount].semaphore = consumerCompleteSemaphore;
+        waitSemaphoreInfos[waitSemaphoreCount].value = frameSynchronizationInfo.frameConsumerDoneTimelineValue;
+        waitSemaphoreInfos[waitSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR |
+                                                           VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR |
+                                                           VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+        waitSemaphoreInfos[waitSemaphoreCount].deviceIndex = 0;
         waitSemaphoreCount++;
     }
 
-    uint32_t signalSemaphoreCount = 0;
     if (videoDecodeCompleteSemaphore != VK_NULL_HANDLE) {
-        signalSemaphores[signalSemaphoreCount] = videoDecodeCompleteSemaphore;
+
+        signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        signalSemaphoreInfos[signalSemaphoreCount].pNext = nullptr;
+        signalSemaphoreInfos[signalSemaphoreCount].semaphore = videoDecodeCompleteSemaphore;
+        signalSemaphoreInfos[signalSemaphoreCount].value = frameSynchronizationInfo.decodeCompleteTimelineValue;
+        signalSemaphoreInfos[signalSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
+        signalSemaphoreInfos[signalSemaphoreCount].deviceIndex = 0;
         signalSemaphoreCount++;
     }
 
-    uint64_t waitTlSemaphoresValues[waitSemaphoreMaxCount] = { 0 /* ignored for binary semaphores */ };
-    uint64_t signalTlSemaphoresValues[signalSemaphoreMaxCount] = { 0 /* ignored for binary semaphores */ };
-    VkTimelineSemaphoreSubmitInfo timelineSemaphoreInfos = {};
     if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
 
         if (m_dumpDecodeData) {
@@ -1172,67 +1180,53 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             std::cout << "\t TL semaphore value: " << currSemValue << ", status: " << semResult << std::endl;
         }
 
-        waitSemaphores[waitSemaphoreCount] = m_hwLoadBalancingTimelineSemaphore;
-        waitTlSemaphoresValues[waitSemaphoreCount] = m_decodePicCount - 1; // wait for the previous value to be signaled
+        waitSemaphoreInfos[waitSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        waitSemaphoreInfos[waitSemaphoreCount].pNext = nullptr;
+        waitSemaphoreInfos[waitSemaphoreCount].semaphore = m_hwLoadBalancingTimelineSemaphore;
+        waitSemaphoreInfos[waitSemaphoreCount].value = m_decodePicCount - 1; // wait for the previous value to be signaled
+        waitSemaphoreInfos[waitSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
+        waitSemaphoreInfos[waitSemaphoreCount].deviceIndex = 0;
         waitSemaphoreCount++;
 
-        signalSemaphores[signalSemaphoreCount] = m_hwLoadBalancingTimelineSemaphore;
-        signalTlSemaphoresValues[signalSemaphoreCount] = m_decodePicCount; // signal the current m_decodePicCount value
+        signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        signalSemaphoreInfos[signalSemaphoreCount].pNext = nullptr;
+        signalSemaphoreInfos[signalSemaphoreCount].semaphore = m_hwLoadBalancingTimelineSemaphore;
+        signalSemaphoreInfos[signalSemaphoreCount].value = m_decodePicCount; // signal the current m_decodePicCount value
+        signalSemaphoreInfos[signalSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
+        signalSemaphoreInfos[signalSemaphoreCount].deviceIndex = 0;
         signalSemaphoreCount++;
 
-        timelineSemaphoreInfos.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
-        timelineSemaphoreInfos.pNext = NULL;
         assert(waitSemaphoreCount < waitSemaphoreMaxCount);
-        timelineSemaphoreInfos.waitSemaphoreValueCount = waitSemaphoreCount;
-        timelineSemaphoreInfos.pWaitSemaphoreValues = waitTlSemaphoresValues;
         assert(signalSemaphoreCount < signalSemaphoreMaxCount);
-        timelineSemaphoreInfos.signalSemaphoreValueCount = signalSemaphoreCount;
-        timelineSemaphoreInfos.pSignalSemaphoreValues = signalTlSemaphoresValues;
-        if (m_dumpDecodeData) {
-            std::cout << "\t Wait for: " << (waitSemaphoreCount ? waitTlSemaphoresValues[waitSemaphoreCount - 1] : 0) <<
-                             ", signal at " << signalTlSemaphoresValues[signalSemaphoreCount - 1] << std::endl;
-        }
     }
 
     assert(waitSemaphoreCount <= waitSemaphoreMaxCount);
     assert(signalSemaphoreCount <= signalSemaphoreMaxCount);
 
-    VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr };
-    const VkPipelineStageFlags videoDecodeSubmitWaitStages = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-    submitInfo.pNext = (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) ? &timelineSemaphoreInfos : nullptr;
-    submitInfo.waitSemaphoreCount = waitSemaphoreCount;
-    submitInfo.pWaitSemaphores = waitSemaphores;
-    submitInfo.pWaitDstStageMask = &videoDecodeSubmitWaitStages;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &frameDataSlot.commandBuffer;
-    submitInfo.signalSemaphoreCount = signalSemaphoreCount;
-    submitInfo.pSignalSemaphores = signalSemaphores;
+    VkCommandBufferSubmitInfoKHR cmdBufferInfos;
+    cmdBufferInfos.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR;
+    cmdBufferInfos.pNext = nullptr;
+    cmdBufferInfos.commandBuffer = frameDataSlot.commandBuffer;
+    cmdBufferInfos.deviceMask = 0;
 
-    if (m_dumpDecodeData) {
-        if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
-            std::cout << "\t\t waitSemaphoreValueCount: " << timelineSemaphoreInfos.waitSemaphoreValueCount << std::endl;
-            std::cout << "\t pWaitSemaphoreValues: " << timelineSemaphoreInfos.pWaitSemaphoreValues[0] << ", " <<
-                                                timelineSemaphoreInfos.pWaitSemaphoreValues[1] << ", " <<
-                                                timelineSemaphoreInfos.pWaitSemaphoreValues[2] << std::endl;
-            std::cout << "\t\t signalSemaphoreValueCount: " << timelineSemaphoreInfos.signalSemaphoreValueCount << std::endl;
-            std::cout << "\t pSignalSemaphoreValues: " << timelineSemaphoreInfos.pSignalSemaphoreValues[0] << ", " <<
-                                                timelineSemaphoreInfos.pSignalSemaphoreValues[1] << ", " <<
-                                                timelineSemaphoreInfos.pSignalSemaphoreValues[2] << std::endl;
-        }
-
-        std::cout << "\t waitSemaphoreCount: " << submitInfo.waitSemaphoreCount << std::endl;
-        std::cout << "\t\t pWaitSemaphores: " << submitInfo.pWaitSemaphores[0] << ", " <<
-                                                 submitInfo.pWaitSemaphores[1] << ", " <<
-                                                 submitInfo.pWaitSemaphores[2] << std::endl;
-        std::cout << "\t signalSemaphoreCount: " << submitInfo.signalSemaphoreCount << std::endl;
-        std::cout << "\t\t pSignalSemaphores: " << submitInfo.pSignalSemaphores[0] << ", " <<
-                                             submitInfo.pSignalSemaphores[1] << ", " <<
-                                             submitInfo.pSignalSemaphores[2] << std::endl << std::endl;
-    }
+    // Submit info
+    VkSubmitInfo2KHR submitInfo { VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR, nullptr };
+    submitInfo.flags = 0;
+    submitInfo.waitSemaphoreInfoCount = waitSemaphoreCount;
+    submitInfo.pWaitSemaphoreInfos = waitSemaphoreInfos;
+    submitInfo.commandBufferInfoCount = 1;
+    submitInfo.pCommandBufferInfos = &cmdBufferInfos;
+    submitInfo.signalSemaphoreInfoCount = signalSemaphoreCount;
+    submitInfo.pSignalSemaphoreInfos = signalSemaphoreInfos;
 
     assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, videoDecodeCompleteFence));
-    VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::DECODE, m_currentVideoQueueIndx,
-                                                           1, &submitInfo, videoDecodeCompleteFence);
+    VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::DECODE,
+                                                           m_currentVideoQueueIndx,
+                                                           1,
+                                                           &submitInfo,
+                                                           videoDecodeCompleteFence,
+                                                           "Video Decode",
+                                                           picNumInDecodeOrder);
     assert(result == VK_SUCCESS);
     if (result != VK_SUCCESS) {
         return -1;
@@ -1368,11 +1362,23 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         result = filterCmdBuffer->EndCommandBufferRecording(cmdBuf);
         assert(result == VK_SUCCESS);
 
-        if (false) std::cout << currPicIdx << " : OUT view: " << outputImageView->GetImageView() << ", signalSem: " <<  frameCompleteSemaphore << std::endl << std::flush;
-        assert(videoDecodeCompleteSemaphore != frameCompleteSemaphore);
-        result = m_yuvFilter->SubmitCommandBuffer(1, filterCmdBuffer->GetCommandBuffer(),
-                                                  1, &videoDecodeCompleteSemaphore,
-                                                  1, &frameCompleteSemaphore,
+        // Wait for the decoder to complete.
+        const VkPipelineStageFlags2KHR waitDecoderStageMasks = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
+
+        // Signal the compute stage after done.
+        const uint64_t computeCompleteTimelineValue = frameSynchronizationInfo.filterCompleteTimelineValue;
+        const VkPipelineStageFlags2KHR signalComputeStageMasks = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR;
+
+        result = m_yuvFilter->SubmitCommandBuffer(1, // commandBufferCount
+                                                  filterCmdBuffer->GetCommandBuffer(),
+                                                  1, // waitSemaphoreCount
+                                                  &videoDecodeCompleteSemaphore,
+                                                  &frameSynchronizationInfo.decodeCompleteTimelineValue,
+                                                  &waitDecoderStageMasks,
+                                                  1, // signalSemaphoreCount
+                                                  &videoDecodeCompleteSemaphore,
+                                                  &computeCompleteTimelineValue,
+                                                  &signalComputeStageMasks,
                                                   frameCompleteFence);
         assert(result == VK_SUCCESS);
         filterCmdBuffer->SetCommandBufferSubmitted();
