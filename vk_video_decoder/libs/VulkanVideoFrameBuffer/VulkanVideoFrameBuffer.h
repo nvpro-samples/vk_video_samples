@@ -66,14 +66,20 @@ public:
     struct FrameSynchronizationInfo {
         VkFence frameCompleteFence;
         VkSemaphore frameCompleteSemaphore;
+        VkSemaphore consumerCompleteSemaphore;
         VkFence frameConsumerDoneFence;
-        VkSemaphore frameConsumerDoneSemaphore;
+        uint64_t frameConsumerDoneTimelineValue;
+        uint64_t decodeCompleteTimelineValue;
+        uint64_t filterCompleteTimelineValue;
         VkQueryPool queryPool;
         uint32_t startQueryId;
         uint32_t numQueries;
         DecodeFrameBufferIf::ImageSpecsIndex imageSpecsIndex;
         uint32_t hasFrameCompleteSignalFence : 1;
+        uint32_t hasFrameConsumerSignalSemaphore : 1;
         uint32_t hasFrameCompleteSignalSemaphore : 1;
+        // post processing filter
+        uint32_t hasFilterSignalSemaphore : 1;
         uint32_t syncOnFrameCompleteFence : 1;
         uint32_t syncOnFrameConsumerDoneFence : 1;
     };
