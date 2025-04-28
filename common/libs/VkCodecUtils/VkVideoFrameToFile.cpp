@@ -285,6 +285,7 @@ public:
         assert(readImagePtr != nullptr);
         assert(maxSize <= SIZE_MAX);  // Ensure we don't lose data in conversion
 
+        int32_t secondaryPlaneWidth = frameWidth;
         int32_t secondaryPlaneHeight = frameHeight;
         int32_t imageHeight = frameHeight;
         bool isUnnormalizedRgba = false;
@@ -292,6 +293,9 @@ public:
             isUnnormalizedRgba = true;
         }
 
+        if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledX) {
+            secondaryPlaneWidth = (secondaryPlaneWidth + 1) / 2;
+        }
         if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledY) {
             secondaryPlaneHeight = (secondaryPlaneHeight + 1) / 2;
         }
@@ -338,15 +342,9 @@ public:
         yuvPlaneLayouts[0].offset = 0;
         yuvPlaneLayouts[0].rowPitch = frameWidth * bytesPerPixel;
         yuvPlaneLayouts[1].offset = yuvPlaneLayouts[0].rowPitch * frameHeight;
-        yuvPlaneLayouts[1].rowPitch = frameWidth * bytesPerPixel;
-        if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledX) {
-            yuvPlaneLayouts[1].rowPitch  = (yuvPlaneLayouts[1].rowPitch + 1) / 2;
-        }
+        yuvPlaneLayouts[1].rowPitch = secondaryPlaneWidth * bytesPerPixel;
         yuvPlaneLayouts[2].offset = yuvPlaneLayouts[1].offset + (yuvPlaneLayouts[1].rowPitch * secondaryPlaneHeight);
-        yuvPlaneLayouts[2].rowPitch = frameWidth * bytesPerPixel;
-        if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledX) {
-            yuvPlaneLayouts[2].rowPitch  = (yuvPlaneLayouts[2].rowPitch + 1) / 2;
-        }
+        yuvPlaneLayouts[2].rowPitch = secondaryPlaneWidth * bytesPerPixel;
 
         // Copy the luma plane
         const uint32_t numCompatiblePlanes = 1;
