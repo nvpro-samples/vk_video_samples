@@ -2278,11 +2278,6 @@ bool VulkanVideoParser::DecodePicture(
             h264.stdPictureInfo.flags, &setupReferenceSlot.slotIndex);
         // TODO: Remove it is for debugging only. Reserved fields must be set to "0".
         pout->stdPictureInfo.reserved1 = pCurrFrameDecParams->numGopReferenceSlots;
-        assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
-        if (setupReferenceSlot.slotIndex >= 0) {
-            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
-            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
-        }
         if (pCurrFrameDecParams->numGopReferenceSlots) {
             assert(pCurrFrameDecParams->numGopReferenceSlots <= (int32_t)MAX_DPB_REF_SLOTS);
             for (uint32_t dpbEntryIdx = 0; dpbEntryIdx < (uint32_t)pCurrFrameDecParams->numGopReferenceSlots;
@@ -2297,6 +2292,15 @@ bool VulkanVideoParser::DecodePicture(
         } else {
             pCurrFrameDecParams->decodeFrameInfo.pReferenceSlots = NULL;
             pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount = 0;
+        }
+        assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
+        if (setupReferenceSlot.slotIndex >= 0) {
+            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
+            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
+
+            // add the setup slot to the end of referenceSlots
+            assert((uint32_t)pCurrFrameDecParams->numGopReferenceSlots < MAX_DPB_REF_AND_SETUP_SLOTS);
+            referenceSlots[pCurrFrameDecParams->numGopReferenceSlots] = setupReferenceSlot;
         }
 
     }
@@ -2387,11 +2391,6 @@ bool VulkanVideoParser::DecodePicture(
             referenceSlots, pCurrFrameDecParams->pGopReferenceImagesIndexes,
             &setupReferenceSlot.slotIndex);
 
-        assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
-        if (setupReferenceSlot.slotIndex >= 0) {
-            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
-            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
-        }
 
         if (pCurrFrameDecParams->numGopReferenceSlots) {
             assert(pCurrFrameDecParams->numGopReferenceSlots <= (int32_t)MAX_DPB_REF_SLOTS);
@@ -2407,6 +2406,16 @@ bool VulkanVideoParser::DecodePicture(
         } else {
             pCurrFrameDecParams->decodeFrameInfo.pReferenceSlots = NULL;
             pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount = 0;
+        }
+
+        assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
+        if (setupReferenceSlot.slotIndex >= 0) {
+            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
+            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
+
+            // add the setup slot to the end of referenceSlots
+            assert((uint32_t)pCurrFrameDecParams->numGopReferenceSlots < MAX_DPB_REF_AND_SETUP_SLOTS);
+            referenceSlots[pCurrFrameDecParams->numGopReferenceSlots] = setupReferenceSlot;
         }
 
         if (m_dumpParserData) {
@@ -2461,12 +2470,6 @@ bool VulkanVideoParser::DecodePicture(
                             pCurrFrameDecParams->pGopReferenceImagesIndexes,
                             &setupReferenceSlot.slotIndex);
 
-        assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
-        if (setupReferenceSlot.slotIndex >= 0) {
-            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
-            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
-        }
-
         if (pCurrFrameDecParams->numGopReferenceSlots) {
             assert(pCurrFrameDecParams->numGopReferenceSlots <= (int32_t)MAX_DPB_REF_SLOTS);
             for (uint32_t dpbEntryIdx = 0; dpbEntryIdx < (uint32_t)pCurrFrameDecParams->numGopReferenceSlots;
@@ -2480,6 +2483,17 @@ bool VulkanVideoParser::DecodePicture(
         } else {
             pCurrFrameDecParams->decodeFrameInfo.pReferenceSlots = NULL;
             pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount = 0;
+        }
+
+
+        assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
+        if (setupReferenceSlot.slotIndex >= 0) {
+            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
+            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
+
+            // add the setup slot to the end of referenceSlots
+            assert((uint32_t)pCurrFrameDecParams->numGopReferenceSlots < MAX_DPB_REF_AND_SETUP_SLOTS);
+            referenceSlots[pCurrFrameDecParams->numGopReferenceSlots] = setupReferenceSlot;
         }
 
         // @review: this field seems only useful for debug display, but since AV1 needs a dword, should probably change the interface.
@@ -2561,14 +2575,6 @@ bool VulkanVideoParser::DecodePicture(
                                                                     pCurrFrameDecParams->pGopReferenceImagesIndexes,
                                                                     &setupReferenceSlot.slotIndex);
 
-        assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
-        if (setupReferenceSlot.slotIndex >= 0) {
-            pCurrFrameDecParams->dpbSetupPictureResource.codedExtent.width = pin->FrameWidth;
-            pCurrFrameDecParams->dpbSetupPictureResource.codedExtent.height = pin->FrameHeight;
-            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
-            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
-        }
-
         if (pCurrFrameDecParams->numGopReferenceSlots) {
             assert(pCurrFrameDecParams->numGopReferenceSlots <= (int32_t)MAX_DPB_REF_SLOTS);
             for (uint32_t dpbEntryIdx = 0; dpbEntryIdx < (uint32_t)pCurrFrameDecParams->numGopReferenceSlots;
@@ -2583,6 +2589,18 @@ bool VulkanVideoParser::DecodePicture(
         } else {
             pCurrFrameDecParams->decodeFrameInfo.pReferenceSlots = nullptr;
             pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount = 0;
+        }
+
+        assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
+        if (setupReferenceSlot.slotIndex >= 0) {
+            pCurrFrameDecParams->dpbSetupPictureResource.codedExtent.width = pin->FrameWidth;
+            pCurrFrameDecParams->dpbSetupPictureResource.codedExtent.height = pin->FrameHeight;
+            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
+            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
+
+            // add the setup slot to the end of referenceSlots
+            assert((uint32_t)pCurrFrameDecParams->numGopReferenceSlots < MAX_DPB_REF_AND_SETUP_SLOTS);
+            referenceSlots[pCurrFrameDecParams->numGopReferenceSlots] = setupReferenceSlot;
         }
 
         // @review: this field seems only useful for debug display, but since AV1 needs a dword, should probably change the interface.

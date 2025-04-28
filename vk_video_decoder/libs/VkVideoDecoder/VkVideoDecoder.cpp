@@ -939,8 +939,12 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         }
     }
 
-    decodeBeginInfo.referenceSlotCount = pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount;
-    decodeBeginInfo.pReferenceSlots = pCurrFrameDecParams->decodeFrameInfo.pReferenceSlots;
+    // Add setup reference slot details to decodeBeginInfo
+    decodeBeginInfo.referenceSlotCount = pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount +
+                                            (pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot ? 1 : 0);
+    decodeBeginInfo.pReferenceSlots = (pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount > 0) ?
+                                            pCurrFrameDecParams->decodeFrameInfo.pReferenceSlots :
+                                            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot;
 
     m_imageSpecsIndex.displayOut = ((m_dpbAndOutputCoincide == VK_TRUE) &&
                                     !(pDecodePictureInfo->flags.applyFilmGrain == VK_TRUE)) ?
