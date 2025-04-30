@@ -247,13 +247,27 @@ VkResult EncoderConfigAV1::InitDeviceCapabilities(const VulkanDeviceContext* vkD
         std::cout << "\t\t\t" << "preferredBidirectionalCompoundReferenceNameMask : " << av1QualityLevelProperties.preferredBidirectionalCompoundReferenceNameMask << std::endl;
     }
 
-    rateControlMode = qualityLevelProperties.preferredRateControlMode;
-    gopStructure.SetGopFrameCount(av1QualityLevelProperties.preferredGopFrameCount);
-    gopStructure.SetIdrPeriod(av1QualityLevelProperties.preferredKeyFramePeriod);
-    gopStructure.SetConsecutiveBFrameCount(av1QualityLevelProperties.preferredConsecutiveBipredictiveFrameCount);
-    constQp.qpIntra = av1QualityLevelProperties.preferredConstantQIndex.intraQIndex;
-    constQp.qpInterP = av1QualityLevelProperties.preferredConstantQIndex.predictiveQIndex;
-    constQp.qpInterB = av1QualityLevelProperties.preferredConstantQIndex.bipredictiveQIndex;
+    if (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_FLAG_BITS_MAX_ENUM_KHR) {
+        rateControlMode = qualityLevelProperties.preferredRateControlMode;
+    }
+    if (gopStructure.GetGopFrameCount() == ZERO_GOP_FRAME_COUNT) {
+        gopStructure.SetGopFrameCount(av1QualityLevelProperties.preferredGopFrameCount);
+    }
+    if (gopStructure.GetIdrPeriod() == ZERO_GOP_IDR_PERIOD) {
+        gopStructure.SetIdrPeriod(av1QualityLevelProperties.preferredKeyFramePeriod);
+    }
+    if (gopStructure.GetConsecutiveBFrameCount() == CONSECUTIVE_B_FRAME_COUNT_MAX_VALUE) {
+        gopStructure.SetConsecutiveBFrameCount(av1QualityLevelProperties.preferredConsecutiveBipredictiveFrameCount);
+    }
+    if (constQp.qpIntra == 0) {
+        constQp.qpIntra = av1QualityLevelProperties.preferredConstantQIndex.intraQIndex;
+    }
+    if (constQp.qpInterP == 0) {
+        constQp.qpInterP = av1QualityLevelProperties.preferredConstantQIndex.predictiveQIndex;
+    }
+    if (constQp.qpInterB == 0) {
+        constQp.qpInterB = av1QualityLevelProperties.preferredConstantQIndex.bipredictiveQIndex;
+    }
 
     return VK_SUCCESS;
 }
