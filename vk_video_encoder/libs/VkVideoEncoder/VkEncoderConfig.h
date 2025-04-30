@@ -663,6 +663,10 @@ struct EncoderConfig : public VkVideoRefCountBase {
     enum { DEFAULT_MAX_NUM_REF_FRAMES = 16 };
     enum QpMapMode { DELTA_QP_MAP, EMPHASIS_MAP };
 
+    enum { ZERO_GOP_FRAME_COUNT = 0 };
+    enum { ZERO_GOP_IDR_PERIOD  = 0 };
+    enum { CONSECUTIVE_B_FRAME_COUNT_MAX_VALUE = UINT8_MAX};
+
 private:
     std::atomic<int32_t> refCount;
 
@@ -789,7 +793,7 @@ public:
     , videoCapabilities()
     , videoEncodeCapabilities()
     , quantizationMapCapabilities()
-    , rateControlMode(VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DEFAULT_KHR)
+    , rateControlMode(VK_VIDEO_ENCODE_RATE_CONTROL_MODE_FLAG_BITS_MAX_ENUM_KHR)
     , averageBitrate()
     , maxBitrate()
     , hrdBitrate(maxBitrate)
@@ -800,9 +804,9 @@ public:
     , constQp()
     , enableQpMap(false)
     , qpMapMode(DELTA_QP_MAP)
-    , gopStructure(DEFAULT_GOP_FRAME_COUNT,
-                   DEFAULT_GOP_IDR_PERIOD,
-                   DEFAULT_CONSECUTIVE_B_FRAME_COUNT,
+    , gopStructure(ZERO_GOP_FRAME_COUNT,
+                   ZERO_GOP_IDR_PERIOD,
+                   CONSECUTIVE_B_FRAME_COUNT_MAX_VALUE,
                    DEFAULT_TEMPORAL_LAYER_COUNT)
     , dpbCount(8)
     , ycbcrModel(VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709)

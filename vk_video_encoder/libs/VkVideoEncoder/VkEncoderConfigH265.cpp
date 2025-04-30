@@ -121,13 +121,27 @@ VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vk
         std::cout << "\t\t\t" << "preferredMaxL1ReferenceCount : " << h265QualityLevelProperties.preferredMaxL1ReferenceCount << std::endl;
     }
 
-    rateControlMode = qualityLevelProperties.preferredRateControlMode;
-    gopStructure.SetGopFrameCount(h265QualityLevelProperties.preferredGopFrameCount);
-    gopStructure.SetIdrPeriod(h265QualityLevelProperties.preferredIdrPeriod);
-    gopStructure.SetConsecutiveBFrameCount(h265QualityLevelProperties.preferredConsecutiveBFrameCount);
-    constQp.qpIntra = h265QualityLevelProperties.preferredConstantQp.qpI;
-    constQp.qpInterP = h265QualityLevelProperties.preferredConstantQp.qpP;
-    constQp.qpInterB = h265QualityLevelProperties.preferredConstantQp.qpB;
+    if (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_FLAG_BITS_MAX_ENUM_KHR) {
+        rateControlMode = qualityLevelProperties.preferredRateControlMode;
+    }
+    if (gopStructure.GetGopFrameCount() == ZERO_GOP_FRAME_COUNT) {
+        gopStructure.SetGopFrameCount(h265QualityLevelProperties.preferredGopFrameCount);
+    }
+    if (gopStructure.GetIdrPeriod() == ZERO_GOP_IDR_PERIOD) {
+        gopStructure.SetIdrPeriod(h265QualityLevelProperties.preferredIdrPeriod);
+    }
+    if (gopStructure.GetConsecutiveBFrameCount() == CONSECUTIVE_B_FRAME_COUNT_MAX_VALUE) {
+        gopStructure.SetConsecutiveBFrameCount(h265QualityLevelProperties.preferredConsecutiveBFrameCount);
+    }
+    if (constQp.qpIntra == 0) {
+        constQp.qpIntra = h265QualityLevelProperties.preferredConstantQp.qpI;
+    }
+    if (constQp.qpInterP == 0) {
+        constQp.qpInterP = h265QualityLevelProperties.preferredConstantQp.qpP;
+    }
+    if (constQp.qpInterB == 0) {
+        constQp.qpInterB = h265QualityLevelProperties.preferredConstantQp.qpB;
+    }
     numRefL0 = h265QualityLevelProperties.preferredMaxL0ReferenceCount;
     numRefL1 = h265QualityLevelProperties.preferredMaxL1ReferenceCount;
 

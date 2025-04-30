@@ -387,13 +387,27 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
         std::cout << "\t\t\t" << "preferredStdEntropyCodingModeFlag : " << h264QualityLevelProperties.preferredStdEntropyCodingModeFlag << std::endl;
     }
 
-    rateControlMode = qualityLevelProperties.preferredRateControlMode;
-    gopStructure.SetGopFrameCount(h264QualityLevelProperties.preferredGopFrameCount);
-    gopStructure.SetIdrPeriod(h264QualityLevelProperties.preferredIdrPeriod);
-    gopStructure.SetConsecutiveBFrameCount(h264QualityLevelProperties.preferredConsecutiveBFrameCount);
-    constQp.qpIntra = h264QualityLevelProperties.preferredConstantQp.qpI;
-    constQp.qpInterP = h264QualityLevelProperties.preferredConstantQp.qpP;
-    constQp.qpInterB = h264QualityLevelProperties.preferredConstantQp.qpB;
+    if (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_FLAG_BITS_MAX_ENUM_KHR) {
+        rateControlMode = qualityLevelProperties.preferredRateControlMode;
+    }
+    if (gopStructure.GetGopFrameCount() == ZERO_GOP_FRAME_COUNT) {
+        gopStructure.SetGopFrameCount(h264QualityLevelProperties.preferredGopFrameCount);
+    }
+    if (gopStructure.GetIdrPeriod() == ZERO_GOP_IDR_PERIOD) {
+        gopStructure.SetIdrPeriod(h264QualityLevelProperties.preferredIdrPeriod);
+    }
+    if (gopStructure.GetConsecutiveBFrameCount() == CONSECUTIVE_B_FRAME_COUNT_MAX_VALUE) {
+        gopStructure.SetConsecutiveBFrameCount(h264QualityLevelProperties.preferredConsecutiveBFrameCount);
+    }
+    if (constQp.qpIntra == 0) {
+        constQp.qpIntra = h264QualityLevelProperties.preferredConstantQp.qpI;
+    }
+    if (constQp.qpInterP == 0) {
+        constQp.qpInterP = h264QualityLevelProperties.preferredConstantQp.qpP;
+    }
+    if (constQp.qpInterB == 0) {
+        constQp.qpInterB = h264QualityLevelProperties.preferredConstantQp.qpB;
+    }
     if (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR) {
         minQp = h264QualityLevelProperties.preferredConstantQp;
         maxQp = h264QualityLevelProperties.preferredConstantQp;
