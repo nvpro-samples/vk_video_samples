@@ -392,7 +392,7 @@ beach:
     }
 
     uint32_t GetFrameCount(uint32_t width, uint32_t height, uint8_t bpp, VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling) {
-        uint8_t nBytes = (bpp + 7) / 8;
+        uint8_t nBytes = (uint8_t)(bpp + 7) / 8;
         double samplingFactor = 1.5; // Default for 420
         switch (chromaSubsampling)
         {
