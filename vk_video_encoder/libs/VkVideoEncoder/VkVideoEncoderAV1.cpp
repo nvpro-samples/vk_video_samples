@@ -110,6 +110,7 @@ VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& enc
     VideoSessionParametersInfoAV1 videoSessionParametersInfo(*m_videoSession, &m_stateAV1.m_sequenceHeader,
                                                           nullptr/*decoderModelInfo*/,
                                                           1, m_stateAV1.m_operatingPointsInfo /*operatingPointsInfo*/,
+                                                          encoderConfig->qualityLevel,
                                                           encoderConfig->enableQpMap, m_qpMapTexelSize);
     VkVideoSessionParametersCreateInfoKHR* encodeSessionParametersCreateInfo = videoSessionParametersInfo.getVideoSessionParametersInfo();
     VkVideoSessionParametersKHR sessionParameters;

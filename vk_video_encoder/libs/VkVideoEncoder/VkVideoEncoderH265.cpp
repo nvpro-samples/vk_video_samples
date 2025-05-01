@@ -77,9 +77,14 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     encodeH265SessionParametersAddInfo.stdPPSCount = 1;
     encodeH265SessionParametersAddInfo.pStdPPSs = &m_pps;
 
+    VkVideoEncodeQualityLevelInfoKHR qualityLevelInfo;
+    qualityLevelInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR;
+    qualityLevelInfo.pNext = nullptr;
+    qualityLevelInfo.qualityLevel = encoderConfig->qualityLevel;
+
     VkVideoEncodeH265SessionParametersCreateInfoKHR encodeH265SessionParametersCreateInfo = {
         VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_PARAMETERS_CREATE_INFO_KHR,
-        NULL, 1 /* maxStdVPSCount */, 1 /* maxSpsStdCount */, 1 /* maxPpsStdCount */,
+        &qualityLevelInfo, 1 /* maxStdVPSCount */, 1 /* maxSpsStdCount */, 1 /* maxPpsStdCount */,
         &encodeH265SessionParametersAddInfo
     };
 
