@@ -246,7 +246,8 @@ int main(int argc, char** argv)
                                               nullptr,
                                               requestVideoDecodeQueueMask,
                                               (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
-                                               VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR),
+                                               VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR |
+                                               VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR),
                                               requestVideoEncodeQueueMask,
                                               (VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR |

@@ -269,61 +269,6 @@ typedef struct VkParserHevcPictureData {
 
 } VkParserHevcPictureData;
 
-typedef struct VkParserVp9PictureData {
-    uint32_t width;
-    uint32_t height;
-
-    // Frame Indexes
-    VkPicIf* pLastRef;
-    VkPicIf* pGoldenRef;
-    VkPicIf* pAltRef;
-
-    uint32_t keyFrame;
-    uint32_t version;
-    uint32_t showFrame;
-    uint32_t errorResilient;
-    uint32_t bit_depth_minus8;
-    uint32_t colorSpace;
-    uint32_t subsamplingX;
-    uint32_t subsamplingY;
-    uint32_t activeRefIdx[3];
-    uint32_t intraOnly;
-    uint32_t resetFrameContext;
-    uint32_t frameParallelDecoding;
-    uint32_t refreshFrameFlags;
-    uint8_t refFrameSignBias[4];
-    uint32_t frameContextIdx;
-    uint32_t allow_high_precision_mv;
-    uint32_t mcomp_filter_type;
-    uint32_t loopFilterLevel;
-    uint32_t loopFilterSharpness;
-    uint32_t log2_tile_columns;
-    uint32_t log2_tile_rows;
-    int32_t mbRefLfDelta[4];
-    int32_t mbModeLfDelta[2];
-    int32_t segmentMapTemporalUpdate;
-    uint8_t segmentFeatureEnable[8][4];
-    uint8_t mb_segment_tree_probs[7];
-    uint8_t segment_pred_probs[3];
-    int16_t segmentFeatureData[8][4];
-    uint32_t scaledWidth;
-    uint32_t scaledHeight;
-    uint32_t scalingActive;
-    uint32_t segmentEnabled;
-    uint32_t prevIsKeyFrame;
-    uint32_t PrevShowFrame;
-    uint32_t modeRefLfEnabled;
-    int32_t qpYAc;
-    int32_t qpYDc;
-    int32_t qpChDc;
-    int32_t qpChAc;
-    uint32_t segmentMapUpdate;
-    uint32_t segmentFeatureMode;
-    uint32_t refreshEntropyProbs;
-    uint32_t frameTagSize;
-    uint32_t offsetToDctParts;
-} VkParserVp9PictureData;
-
 struct VkParserAv1PictureData {
     // The picture info structure is mostly pointing at other
     // structures defining the coding tool parameters. Those
@@ -372,6 +317,42 @@ struct VkParserAv1PictureData {
     uint32_t frame_width;
     uint32_t frame_height;
 };
+
+typedef struct VkParserVp9PictureData {
+
+    StdVideoDecodeVP9PictureInfo stdPictureInfo;
+    StdVideoVP9ColorConfig       stdColorConfig;
+    StdVideoVP9LoopFilter        stdLoopFilter;
+    StdVideoVP9Segmentation      stdSegmentation;
+
+    // frame dimentions
+    uint32_t FrameWidth, FrameHeight;
+    uint32_t MiCols, MiRows;
+    uint32_t Sb64Cols, Sb64Rows;
+    uint32_t renderWidth, renderHeight;
+
+    // display details
+    uint8_t  frame_to_show_map_idx;
+    bool     show_existing_frame;
+
+    // references
+    uint8_t  ref_frame_idx[STD_VIDEO_VP9_REFS_PER_FRAME];
+    uint8_t  pic_idx[STD_VIDEO_VP9_NUM_REF_FRAMES];
+    VkPicIf* pLastRef;
+    VkPicIf* pGoldenRef;
+    VkPicIf* pAltRef;
+
+    // other derived parameters
+    bool     FrameIsIntra;
+    uint8_t  ChromaFormat;
+    uint32_t numTiles;
+    uint32_t compressedHeaderSize;
+
+    // bitstream divisons
+    uint32_t uncompressedHeaderOffset;
+    uint32_t compressedHeaderOffset;
+    uint32_t tilesOffset;
+} VkParserVp9PictureData;
 
 typedef struct VkParserPictureData {
     int32_t PicWidthInMbs;            // Coded Frame Size

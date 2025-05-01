@@ -286,6 +286,8 @@ public:
                 videoCodecId = AV_CODEC_ID_H264;
             } else if (codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) {
                 videoCodecId = AV_CODEC_ID_HEVC;
+            } else if (codecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
+                videoCodecId = AV_CODEC_ID_AV1;
             }
         }
 
@@ -365,6 +367,7 @@ public:
         case AV_PIX_FMT_YUVJ420P:    ///< planar YUV 4:2:0, 12bpp, full scale (JPEG), deprecated in favor of AV_PIX_FMT_YUV420P and setting color_range
         case AV_PIX_FMT_YUV420P:     ///< planar YUV 4:2:0, 12bpp, (1 Cr & Cb sample per 2x2 Y samples)
         case AV_PIX_FMT_YUV420P10LE: ///< planar YUV 4:2:0, 15bpp, (1 Cr & Cb sample per 2x2 Y samples), little-endian
+        case AV_PIX_FMT_YUV420P12LE: ///< planar YUV 4:2:0, 12bpp, (1 Cr & Cb sample per 2x2 Y samples), little-endian
         case AV_PIX_FMT_YUV420P16LE: ///< planar YUV 4:2:0, 24bpp, (1 Cr & Cb sample per 2x2 Y samples), little-endian
         case AV_PIX_FMT_YUV420P16BE: ///< planar YUV 4:2:0, 24bpp, (1 Cr & Cb sample per 2x2 Y samples), big-endian
             return VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;

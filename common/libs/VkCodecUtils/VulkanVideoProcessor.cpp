@@ -390,7 +390,7 @@ size_t ConvertFrameToNv12(const VulkanDeviceContext *vkDevCtx, int32_t frameWidt
     }
 
     if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledY) {
-        secondaryPlaneHeight /= 2;
+        secondaryPlaneHeight = (secondaryPlaneHeight + 1) / 2;
     }
 
     VkImageSubresource subResource = {};
@@ -441,12 +441,12 @@ size_t ConvertFrameToNv12(const VulkanDeviceContext *vkDevCtx, int32_t frameWidt
     yuvPlaneLayouts[1].offset = yuvPlaneLayouts[0].rowPitch * frameHeight;
     yuvPlaneLayouts[1].rowPitch = frameWidth * bytesPerPixel;
     if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledX) {
-        yuvPlaneLayouts[1].rowPitch /= 2;
+        yuvPlaneLayouts[1].rowPitch = (yuvPlaneLayouts[1].rowPitch + 1) / 2;
     }
     yuvPlaneLayouts[2].offset = yuvPlaneLayouts[1].offset + (yuvPlaneLayouts[1].rowPitch * secondaryPlaneHeight);
     yuvPlaneLayouts[2].rowPitch = frameWidth * bytesPerPixel;
     if (mpInfo && mpInfo->planesLayout.secondaryPlaneSubsampledX) {
-        yuvPlaneLayouts[2].rowPitch /= 2;
+        yuvPlaneLayouts[2].rowPitch = (yuvPlaneLayouts[2].rowPitch + 1) / 2;
     }
 
     // Copy the luma plane, always assume the 422 or 444 formats and src CbCr always is interleaved (shares the same plane).

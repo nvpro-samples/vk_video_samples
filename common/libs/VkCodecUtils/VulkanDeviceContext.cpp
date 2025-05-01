@@ -715,15 +715,19 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         VkPhysicalDeviceVideoEncodeAV1FeaturesKHR videoEncodeAV1Feature { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_AV1_FEATURES_KHR,
                                                                           nullptr,
                                                                           false // videoEncodeAV1
-                                                                         };
+                                                                        };
 
-
+        // Chain only the structures that are requested
+        VkBaseInStructure* pNext = nullptr;
+        if (videoCodecs & VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) {
+            videoEncodeAV1Feature.pNext = pNext;
+            pNext = (VkBaseInStructure*)&videoEncodeAV1Feature;
+        }
 
         VkPhysicalDeviceVideoMaintenance1FeaturesKHR videoMaintenance1Features { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR,
-                                                                                 ((videoCodecs & VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) != 0) ?
-                                                                                         &videoEncodeAV1Feature :
-                                                                                         nullptr,
-                                                                                 false};
+                                                                                 pNext,
+                                                                                 false
+                                                                               };
 
         VkPhysicalDeviceSynchronization2Features synchronization2Features { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
                                                                             &videoMaintenance1Features,

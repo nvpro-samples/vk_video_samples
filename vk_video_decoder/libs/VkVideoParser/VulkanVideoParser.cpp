@@ -550,9 +550,9 @@ public:
             // Vulkan Video parser.cpp -- maintains its own indices.
             // We can use more indices in the parser than the spec. (Ther eis a max of 8 but we can use 16)
             // Reason for single structure for DPB -- the array is passed in the callback (in the proxy of the processor)
-            // It checks which references are in use. 
+            // It checks which references are in use.
             // 2nd Finds which DPB references were assigned before - and reuses indices.
-            // The local array maintains the 
+            // The local array maintains the
             pRefPicInfo->flags.disable_frame_end_update_cdf = ;
             pRefPicInfo->flags.segmentation_enabled = ;
             pRefPicInfo->base_q_idx = ;
@@ -1097,6 +1097,9 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
 
     if (pnvsi->eCodec == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
         maxDpbSlots = 9;
+        if ((pnvsi->nCodedWidth <= m_nvsi.nCodedWidth) && (pnvsi->nCodedHeight <= m_nvsi.nCodedHeight)) {
+            return 1;
+        }
     }
 
     uint32_t configDpbSlots = (pnvsi->nMinNumDpbSlots > 0) ? pnvsi->nMinNumDpbSlots : maxDpbSlots;
@@ -1119,8 +1122,8 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
     }
 
     m_nvsi = *pnvsi;
-    m_nvsi.nMaxWidth = pnvsi->nCodedWidth;
-    m_nvsi.nMaxHeight = pnvsi->nCodedHeight;
+    m_nvsi.nMaxWidth = pnvsi->nMaxWidth;
+    m_nvsi.nMaxHeight = pnvsi->nMaxHeight;
 
     m_maxNumDecodeSurfaces = pnvsi->nMinNumDecodeSurfaces;
 
@@ -1813,7 +1816,7 @@ uint32_t VulkanVideoParser::FillDpbAV1State(
         uint8_t yellowSquare[] = { 0xf0, 0x9f,  0x9f, 0xa8, 0x00 };
         printf("\nSlotsInUse: ");
         for (int i = 0; i < 9; i++) {
-            printf("%-2s ", (slotsInUse & (1<<i)) ? (i == dpbSlot ? (char*)yellowSquare : (char*)greenSquare) : (char*)redSquare); 
+            printf("%-2s ", (slotsInUse & (1<<i)) ? (i == dpbSlot ? (char*)yellowSquare : (char*)greenSquare) : (char*)redSquare);
         }
         printf("\n");
     }
@@ -1875,7 +1878,7 @@ int8_t VulkanVideoParser::AllocateDpbSlotForCurrentAV1(vkPicBuffBase* pPic,
     if (isReference) {
         dpbSlot = GetPicDpbSlot(currPicIdx); // use the associated slot, if not allocate a new slot.
         if (dpbSlot < 0) {
-            dpbSlot = m_dpb.AllocateSlot(); 
+            dpbSlot = m_dpb.AllocateSlot();
             assert(dpbSlot >= 0);
             SetPicDpbSlot(currPicIdx, dpbSlot); // Assign the dpbSlot to the current picture index.
             m_dpb[dpbSlot].setPictureResource(pPic, m_nCurrentPictureID); // m_nCurrentPictureID is our main index.
@@ -2244,7 +2247,7 @@ bool VulkanVideoParser::DecodePicture(
         }
 
         nvVideoDecodeAV1DpbSlotInfo* dpbSlotsAv1 = av1.dpbRefList;
-        pCurrFrameDecParams->numGopReferenceSlots = 
+        pCurrFrameDecParams->numGopReferenceSlots =
             FillDpbAV1State(pd,
                             pin,
                             dpbSlotsAv1,

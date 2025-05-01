@@ -100,7 +100,7 @@ public:
                 m_av1DecodeProfile = *pProfileExt;
             } else {
                 //  Use default ext profile parameters
-                m_av1DecodeProfile.sType      = VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PROFILE_INFO_KHR;
+                m_av1DecodeProfile.sType      = VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_PROFILE_INFO_KHR;
                 m_av1DecodeProfile.stdProfile = STD_VIDEO_AV1_PROFILE_MAIN;
             }
             m_profile.pNext = &m_av1DecodeProfile;
@@ -287,7 +287,8 @@ public:
     bool IsDecodeCodecType() const
     {
         return ((m_profile.videoCodecOperation == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) ||
-                (m_profile.videoCodecOperation == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR));
+                (m_profile.videoCodecOperation == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) ||
+                (m_profile.videoCodecOperation == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR));
     }
 
     operator bool() const

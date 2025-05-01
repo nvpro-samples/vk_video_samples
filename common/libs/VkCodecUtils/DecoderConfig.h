@@ -26,7 +26,7 @@
 #include <vector>
 #include <functional>
 #include <algorithm>
-#include <iomanip> 
+#include <iomanip>
 #include <sstream>
 #include "vulkan_interfaces.h"
 
@@ -82,7 +82,7 @@ struct DecoderConfig {
     }
 
     using ProgramArgs = std::vector<ArgSpec>;
-    static bool showHelp(const char ** argv, const ProgramArgs &spec) { 
+    static bool showHelp(const char ** argv, const ProgramArgs &spec) {
         std::cout << argv[0] << std::endl;
         for ( auto& flag : spec ) {
             std::stringstream ss;
@@ -349,7 +349,7 @@ struct DecoderConfig {
                     std::cerr << "Missing arguments for \"" << argv[i] << "\"" << std::endl;
                     exit(EXIT_FAILURE);
                 }
-                disableValueCheck = true; 
+                disableValueCheck = true;
                 i++;
             }
 
