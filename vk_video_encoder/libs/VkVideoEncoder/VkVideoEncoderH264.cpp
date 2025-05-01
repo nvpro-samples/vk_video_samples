@@ -72,6 +72,15 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     VkVideoSessionParametersCreateInfoKHR* encodeSessionParametersCreateInfo = videoSessionParametersInfo.getVideoSessionParametersInfo();
     encodeSessionParametersCreateInfo->flags = 0;
     VkVideoSessionParametersKHR sessionParameters;
+
+    VkVideoEncodeQualityLevelInfoKHR qualityLevel;
+    qualityLevel.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR;
+    qualityLevel.pNext = nullptr;
+    qualityLevel.qualityLevel = encoderConfig->qualityLevel;
+
+    VkVideoEncodeH264SessionParametersCreateInfoKHR* encodeH264SessionParametersCreateInfo = (VkVideoEncodeH264SessionParametersCreateInfoKHR*)encodeSessionParametersCreateInfo->pNext;
+    encodeH264SessionParametersCreateInfo->pNext = &qualityLevel;
+
     result = m_vkDevCtx->CreateVideoSessionParametersKHR(*m_vkDevCtx,
                                                          encodeSessionParametersCreateInfo,
                                                          nullptr,
