@@ -113,6 +113,15 @@ VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& enc
                                                           encoderConfig->enableQpMap, m_qpMapTexelSize);
     VkVideoSessionParametersCreateInfoKHR* encodeSessionParametersCreateInfo = videoSessionParametersInfo.getVideoSessionParametersInfo();
     VkVideoSessionParametersKHR sessionParameters;
+
+    VkVideoEncodeQualityLevelInfoKHR qualityLevel;
+    qualityLevel.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR;
+    qualityLevel.pNext = nullptr;
+    qualityLevel.qualityLevel = encoderConfig->qualityLevel;
+
+    VkVideoEncodeAV1SessionParametersCreateInfoKHR* encodeAV1SessionParametersCreateInfo = (VkVideoEncodeAV1SessionParametersCreateInfoKHR*)encodeSessionParametersCreateInfo->pNext;
+    encodeAV1SessionParametersCreateInfo->pNext = &qualityLevel;
+
     result = m_vkDevCtx->CreateVideoSessionParametersKHR(*m_vkDevCtx,
                                                          encodeSessionParametersCreateInfo,
                                                          nullptr,
