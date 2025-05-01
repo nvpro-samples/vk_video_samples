@@ -82,7 +82,7 @@ jobs:
   vk_video_samples-win:
     strategy:
       matrix:
-        platform: [windows-x64, windows-x64-ffmpeg]
+        platform: [windows-x64]
     runs-on: windows-latest
 
     steps:
@@ -104,7 +104,6 @@ jobs:
           python-version: "3.10"
 
       - name: Install FFmpeg
-        if: matrix.platform == 'windows-x64-ffmpeg'
         run: |
           # Define the custom installation location
           $currentDir = pwd
