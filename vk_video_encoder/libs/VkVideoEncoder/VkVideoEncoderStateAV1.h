@@ -24,6 +24,7 @@ public:
                                StdVideoEncodeAV1DecoderModelInfo* decoderModel,
                                uint32_t operatingPointsCnt,
                                StdVideoEncodeAV1OperatingPointInfo* opInfo,
+                               uint32_t qualityLevel,
                                bool enableQpMap, VkExtent2D quantizationMapTexelSize)
     {
         m_videoSession = videoSession;
@@ -41,12 +42,18 @@ public:
         m_sessionParametersCreateInfo.videoSessionParametersTemplate = VK_NULL_HANDLE;
         m_sessionParametersCreateInfo.videoSession = m_videoSession;
 
+        m_qualityLevelInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR;
+        m_qualityLevelInfo.pNext = nullptr;
+        m_qualityLevelInfo.qualityLevel = qualityLevel;
+
+        m_encodeAV1SessionParametersCreateInfo.pNext = &m_qualityLevelInfo;
+
         if (enableQpMap) {
             m_quantizationMapSessionParametersCreateInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUANTIZATION_MAP_SESSION_PARAMETERS_CREATE_INFO_KHR;
             m_quantizationMapSessionParametersCreateInfo.pNext = nullptr;
             m_quantizationMapSessionParametersCreateInfo.quantizationMapTexelSize = quantizationMapTexelSize;
 
-            m_encodeAV1SessionParametersCreateInfo.pNext = &m_quantizationMapSessionParametersCreateInfo;
+            m_qualityLevelInfo.pNext = &m_quantizationMapSessionParametersCreateInfo;
 
             m_sessionParametersCreateInfo.flags = VK_VIDEO_SESSION_PARAMETERS_CREATE_QUANTIZATION_MAP_COMPATIBLE_BIT_KHR;
         }
@@ -61,6 +68,7 @@ public:
 private:
     VkVideoSessionKHR m_videoSession;
     VkVideoEncodeAV1SessionParametersCreateInfoKHR m_encodeAV1SessionParametersCreateInfo;
+    VkVideoEncodeQualityLevelInfoKHR m_qualityLevelInfo;
     VkVideoEncodeQuantizationMapSessionParametersCreateInfoKHR m_quantizationMapSessionParametersCreateInfo;
     VkVideoSessionParametersCreateInfoKHR m_sessionParametersCreateInfo;
 };

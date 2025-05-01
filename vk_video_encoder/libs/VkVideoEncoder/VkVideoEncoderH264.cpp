@@ -66,6 +66,7 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     VideoSessionParametersInfo videoSessionParametersInfo(*m_videoSession,
                                                           &m_h264.m_spsInfo,
                                                           &m_h264.m_ppsInfo,
+                                                          m_encoderConfig->qualityLevel,
                                                           m_encoderConfig->enableQpMap,
                                                           m_qpMapTexelSize);
 
