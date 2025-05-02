@@ -107,6 +107,16 @@ public:
         }
     };
 
+    enum SemSyncTypeIdx : uint64_t  {  SEM_SYNC_TYPE_IDX_DECODE      =  (1ULL << 0), // Decode operation was signaled
+                                       SEM_SYNC_TYPE_IDX_DISPLAY     =  (1ULL << 0), // Display operation was signaled
+                                       SEM_SYNC_TYPE_IDX_FILTER      =  (1ULL << 1), // Filter operation was signaled
+                                       SEM_SYNC_TYPE_IDX_SHIFT  = 2,                 // Shift semaphore counter value left
+                                    };
+
+    static uint64_t GetSemaphoreValue(SemSyncTypeIdx semSyncType, uint64_t semOrder) {
+        return (semOrder << SEM_SYNC_TYPE_IDX_SHIFT) | semSyncType;
+    }
+
 };
 
 #endif /* _VKVIDEOCORE_DECODEFRAMEBUFFERIF_H_ */

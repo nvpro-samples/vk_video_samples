@@ -24,7 +24,6 @@
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
 #include "VkCodecUtils/YCbCrConvUtilsCpu.h"
-#include "VkVideoCore/DecodeFrameBufferIf.h"
 
 static size_t getFormatTexelSize(VkFormat format)
 {
@@ -441,22 +440,36 @@ VkResult VkVideoEncoder::SubmitStagedQpMap(VkSharedBaseObj<VkVideoEncodeFrameInf
     const VkCommandBuffer* pCmdBuf = encodeFrameInfo->qpMapCmdBuffer->GetCommandBuffer();
     VkSemaphore frameCompleteSemaphore = encodeFrameInfo->qpMapCmdBuffer->GetSemaphore();
 
-    VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr };
-    const VkPipelineStageFlags videoTransferSubmitWaitStages = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-    submitInfo.waitSemaphoreCount = 0;
-    submitInfo.pWaitSemaphores = nullptr;
-    submitInfo.pWaitDstStageMask = &videoTransferSubmitWaitStages;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = pCmdBuf;
-    submitInfo.pSignalSemaphores = (frameCompleteSemaphore != VK_NULL_HANDLE) ? &frameCompleteSemaphore : nullptr;
-    submitInfo.signalSemaphoreCount = (frameCompleteSemaphore != VK_NULL_HANDLE) ? 1 : 0;
+    VkCommandBufferSubmitInfoKHR cmdBufferInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR };
+    cmdBufferInfo.commandBuffer = *pCmdBuf;
+    cmdBufferInfo.deviceMask = 0;
+
+    VkSemaphoreSubmitInfoKHR signalSemaphoreInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR };
+    signalSemaphoreInfo.semaphore = frameCompleteSemaphore;
+    signalSemaphoreInfo.value = 0; // Binary semaphore
+    signalSemaphoreInfo.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR; // Signal after transfer operations complete
+    signalSemaphoreInfo.deviceIndex = 0;
+
+    VkSubmitInfo2KHR submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR, nullptr };
+    submitInfo.flags = 0;
+    submitInfo.waitSemaphoreInfoCount = 0;
+    submitInfo.pWaitSemaphoreInfos = nullptr;
+    submitInfo.commandBufferInfoCount = 1;
+    submitInfo.pCommandBufferInfos = &cmdBufferInfo;
+    submitInfo.signalSemaphoreInfoCount = (frameCompleteSemaphore != VK_NULL_HANDLE) ? 1 : 0;
+    submitInfo.pSignalSemaphoreInfos = (frameCompleteSemaphore != VK_NULL_HANDLE) ? &signalSemaphoreInfo : nullptr;
 
     VkFence queueCompleteFence = encodeFrameInfo->qpMapCmdBuffer->GetFence();
     assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, queueCompleteFence));
+
     VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(((m_vkDevCtx->GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) != 0) ?
-                                                               VulkanDeviceContext::ENCODE : VulkanDeviceContext::TRANSFER,
-                                                           0, 1, &submitInfo,
-                                                           queueCompleteFence);
+                                                                     VulkanDeviceContext::ENCODE : VulkanDeviceContext::TRANSFER,
+                                                             0, // queueIndex
+                                                             1, // submitCount
+                                                             &submitInfo, queueCompleteFence,
+                                                             "Encode Staging QpMap",
+                                                             m_encodeEncodeFrameNum,
+                                                             m_encodeInputFrameNum);
 
     encodeFrameInfo->qpMapCmdBuffer->SetCommandBufferSubmitted();
     bool syncCpuAfterStaging = false;
@@ -475,15 +488,24 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
     const VkCommandBuffer* pCmdBuf = encodeFrameInfo->inputCmdBuffer->GetCommandBuffer();
     VkSemaphore frameCompleteSemaphore = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
 
-    VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr };
-    const VkPipelineStageFlags videoTransferSubmitWaitStages = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-    submitInfo.waitSemaphoreCount = 0;
-    submitInfo.pWaitSemaphores = nullptr;
-    submitInfo.pWaitDstStageMask = &videoTransferSubmitWaitStages;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = pCmdBuf;
-    submitInfo.pSignalSemaphores = (frameCompleteSemaphore != VK_NULL_HANDLE) ? &frameCompleteSemaphore : nullptr;
-    submitInfo.signalSemaphoreCount = (frameCompleteSemaphore != VK_NULL_HANDLE) ? 1 : 0;
+    VkCommandBufferSubmitInfoKHR cmdBufferInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR };
+    cmdBufferInfo.commandBuffer = *pCmdBuf;
+    cmdBufferInfo.deviceMask = 0;
+
+    VkSemaphoreSubmitInfoKHR signalSemaphoreInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR };
+    signalSemaphoreInfo.semaphore = frameCompleteSemaphore;
+    signalSemaphoreInfo.value = 0; // Binary semaphore
+    signalSemaphoreInfo.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR; // Signal after transfer operations complete
+    signalSemaphoreInfo.deviceIndex = 0;
+
+    VkSubmitInfo2KHR submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR, nullptr };
+    submitInfo.flags = 0;
+    submitInfo.waitSemaphoreInfoCount = 0;
+    submitInfo.pWaitSemaphoreInfos = nullptr;
+    submitInfo.commandBufferInfoCount = 1;
+    submitInfo.pCommandBufferInfos = &cmdBufferInfo;
+    submitInfo.signalSemaphoreInfoCount = (frameCompleteSemaphore != VK_NULL_HANDLE) ? 1 : 0;
+    submitInfo.pSignalSemaphoreInfos = (frameCompleteSemaphore != VK_NULL_HANDLE) ? &signalSemaphoreInfo : nullptr;
 
     VkFence queueCompleteFence = encodeFrameInfo->inputCmdBuffer->GetFence();
     assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, queueCompleteFence));
@@ -491,9 +513,15 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
             (m_inputComputeFilter != nullptr) ? VulkanDeviceContext::COMPUTE :
                     (((m_vkDevCtx->GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) != 0) ?
                             VulkanDeviceContext::ENCODE : VulkanDeviceContext::TRANSFER);
+
     VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(submitType,
-                                                           0, 1, &submitInfo,
-                                                           queueCompleteFence);
+                                                           0, // queueIndex
+                                                           1, // submitCount
+                                                           &submitInfo,
+                                                           queueCompleteFence,
+                                                           "Encode Staging Input",
+                                                           m_encodeEncodeFrameNum,
+                                                           m_encodeInputFrameNum);
 
     encodeFrameInfo->inputCmdBuffer->SetCommandBufferSubmitted();
     bool syncCpuAfterStaging = false;
@@ -720,7 +748,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                                                formatCount, supportedDpbFormats);
 
     if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nInitEncoder Error: Failed to get desired video format for the decoded picture buffer.\n");
+        fprintf(stderr, "\nInitEncoder Error: Failed to get desired video format for the DPB.\n");
         return result;
     }
 
@@ -881,6 +909,47 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     if(result != VK_SUCCESS) {
         fprintf(stderr, "\nInitEncoder Error: Failed to Configure inputImagePool.\n");
         return result;
+    }
+
+    assert(m_vkDevCtx->GetVideoEncodeQueueFamilyIdx() != -1);
+    assert(m_vkDevCtx->GetVideoEncodeNumQueues() > 0);
+    assert(m_vkDevCtx->GetVideoEncodeDefaultQueueIndex() < m_vkDevCtx->GetVideoEncodeNumQueues());
+
+    if (m_currentVideoQueueIndx < 0) {
+        m_currentVideoQueueIndx = m_vkDevCtx->GetVideoEncodeDefaultQueueIndex();
+    } else if (m_vkDevCtx->GetVideoEncodeNumQueues() > 1) {
+        m_currentVideoQueueIndx %= m_vkDevCtx->GetVideoEncodeNumQueues();
+        assert(m_currentVideoQueueIndx < m_vkDevCtx->GetVideoEncodeNumQueues());
+        assert(m_currentVideoQueueIndx >= 0);
+    } else {
+        m_currentVideoQueueIndx = 0;
+    }
+
+    if (encoderConfig->enableHwLoadBalancing) {
+
+        if (m_vkDevCtx->GetVideoEncodeNumQueues() < 2) {
+            std::cout << "\t WARNING: Enabling HW Load Balancing for a device with only " <<
+                    m_vkDevCtx->GetVideoEncodeNumQueues() << " queue!!!" << std::endl;
+        }
+
+        // Create the timeline semaphore object for the HW LoadBalancing Timeline Semaphore
+        VkSemaphoreTypeCreateInfo timelineCreateInfo;
+        timelineCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+        timelineCreateInfo.pNext = NULL;
+        timelineCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+        timelineCreateInfo.initialValue = 0LLU; // assuming m_EncodePicCount starts at 0.
+
+        VkSemaphoreCreateInfo createInfo;
+        createInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        createInfo.pNext = &timelineCreateInfo;
+        createInfo.flags = 0;
+
+        VkResult result = m_vkDevCtx->CreateSemaphore(*m_vkDevCtx, &createInfo, NULL, &m_hwLoadBalancingTimelineSemaphore);
+        if (result == VK_SUCCESS) {
+            m_currentVideoQueueIndx = 0; // start with index zero
+        }
+        std::cout << "\t Enabling HW Load Balancing for device with "
+                  << m_vkDevCtx->GetVideoEncodeNumQueues() << " queues" << std::endl;
     }
 
     if (encoderConfig->enableQpMap) {
@@ -1602,43 +1671,134 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     }
 
     assert(encodeFrameInfo);
-    assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
 
-    // If we are processing the input staging, wait for it's semaphore
-    // to be done before processing the input frame with the encoder.
-    VkSemaphore inputWaitSemaphore[2] = { VK_NULL_HANDLE };
-    uint32_t waitSemaphoreCount = 0;
-    if (encodeFrameInfo->inputCmdBuffer) {
-        inputWaitSemaphore[waitSemaphoreCount++] = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
-    }
-    if (encodeFrameInfo->qpMapCmdBuffer) {
-        inputWaitSemaphore[waitSemaphoreCount++] = encodeFrameInfo->qpMapCmdBuffer->GetSemaphore();
-    }
+    assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
 
     const VkCommandBuffer* pCmdBuf = encodeFrameInfo->encodeCmdBuffer->GetCommandBuffer();
     // The encode operation complete semaphore is not needed at this point.
     VkSemaphore frameCompleteSemaphore = VK_NULL_HANDLE; // encodeFrameInfo->encodeCmdBuffer->GetSemaphore();
 
-    VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr };
-    const VkPipelineStageFlags videoEncodeSubmitWaitStages = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-    submitInfo.pWaitSemaphores = (waitSemaphoreCount > 0) ? inputWaitSemaphore : nullptr;
-    submitInfo.waitSemaphoreCount = waitSemaphoreCount;
-    submitInfo.pWaitDstStageMask = &videoEncodeSubmitWaitStages;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = pCmdBuf;
-    submitInfo.pSignalSemaphores = (frameCompleteSemaphore != VK_NULL_HANDLE) ? &frameCompleteSemaphore : nullptr;
-    submitInfo.signalSemaphoreCount = (frameCompleteSemaphore != VK_NULL_HANDLE) ? 1 : 0;
+    // Create command buffer submit info
+    VkCommandBufferSubmitInfoKHR cmdBufferInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR };
+    cmdBufferInfo.commandBuffer = *pCmdBuf;
+    cmdBufferInfo.deviceMask = 0;
+
+    // Create wait semaphore submit infos
+    // If we are processing the input staging, wait for it's semaphore
+    // to be done before processing the input frame with the encoder.
+    const uint32_t waitSemaphoreMaxCount = 3;
+    VkSemaphoreSubmitInfoKHR waitSemaphoreInfos[waitSemaphoreMaxCount]{};
+
+    const uint32_t signalSemaphoreMaxCount = 1;
+    VkSemaphoreSubmitInfoKHR signalSemaphoreInfos[signalSemaphoreMaxCount]{};
+
+    uint32_t waitSemaphoreCount = 0;
+    uint32_t signalSemaphoreCount = 0;
+
+    if (encodeFrameInfo->inputCmdBuffer) {
+        waitSemaphoreInfos[waitSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        waitSemaphoreInfos[waitSemaphoreCount].semaphore = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
+        waitSemaphoreInfos[waitSemaphoreCount].value = 0; // Binary semaphore
+        // Use transfer bit since these semaphores come from transfer operations
+        waitSemaphoreInfos[waitSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+        waitSemaphoreInfos[waitSemaphoreCount].deviceIndex = 0;
+        waitSemaphoreCount++;
+    }
+    if (encodeFrameInfo->qpMapCmdBuffer) {
+        waitSemaphoreInfos[waitSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        waitSemaphoreInfos[waitSemaphoreCount].semaphore = encodeFrameInfo->qpMapCmdBuffer->GetSemaphore();
+        waitSemaphoreInfos[waitSemaphoreCount].value = 0; // Binary semaphore
+        // Use transfer bit since these semaphores come from transfer operations
+        waitSemaphoreInfos[waitSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+        waitSemaphoreInfos[waitSemaphoreCount].deviceIndex = 0;
+        waitSemaphoreCount++;
+    }
+
+    // Create signal semaphore submit info if needed
+    VkSemaphoreSubmitInfoKHR signalSemaphoreInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR };
+    if (frameCompleteSemaphore != VK_NULL_HANDLE) {
+        signalSemaphoreInfo.semaphore = frameCompleteSemaphore;
+        signalSemaphoreInfo.value = 0; // Binary semaphore
+        signalSemaphoreInfo.stageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+        signalSemaphoreInfo.deviceIndex = 0;
+    }
+
+    if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
+
+        if (m_verbose) {
+            uint64_t  currSemValue = 0;
+            VkResult semResult = m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, m_hwLoadBalancingTimelineSemaphore, &currSemValue);
+            std::cout << "\t TL semaphore value: " << currSemValue << ", status: " << semResult << std::endl;
+        }
+
+        waitSemaphoreInfos[waitSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        waitSemaphoreInfos[waitSemaphoreCount].pNext = nullptr;
+        waitSemaphoreInfos[waitSemaphoreCount].semaphore = m_hwLoadBalancingTimelineSemaphore;
+        waitSemaphoreInfos[waitSemaphoreCount].value = encodeFrameInfo->frameEncodeEncodeOrderNum; // wait for the current value to be signaled
+        waitSemaphoreInfos[waitSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
+        waitSemaphoreInfos[waitSemaphoreCount].deviceIndex = 0;
+        waitSemaphoreCount++;
+
+        signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        signalSemaphoreInfos[signalSemaphoreCount].pNext = nullptr;
+        signalSemaphoreInfos[signalSemaphoreCount].semaphore = m_hwLoadBalancingTimelineSemaphore;
+        signalSemaphoreInfos[signalSemaphoreCount].value = encodeFrameInfo->frameEncodeEncodeOrderNum + 1; // signal the future m_decodePicCount value
+        signalSemaphoreInfos[signalSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
+        signalSemaphoreInfos[signalSemaphoreCount].deviceIndex = 0;
+        signalSemaphoreCount++;
+    }
+
+    // Create submit info
+    VkSubmitInfo2KHR submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR, nullptr };
+    submitInfo.flags = 0;
+    submitInfo.waitSemaphoreInfoCount = waitSemaphoreCount;
+    submitInfo.pWaitSemaphoreInfos = (waitSemaphoreCount > 0) ? waitSemaphoreInfos : nullptr;
+    submitInfo.commandBufferInfoCount = 1;
+    submitInfo.pCommandBufferInfos = &cmdBufferInfo;
+    submitInfo.signalSemaphoreInfoCount = (frameCompleteSemaphore != VK_NULL_HANDLE) ? 1 : 0;
+    submitInfo.pSignalSemaphoreInfos = (frameCompleteSemaphore != VK_NULL_HANDLE) ? &signalSemaphoreInfo : nullptr;
+    submitInfo.signalSemaphoreInfoCount = signalSemaphoreCount;
+    submitInfo.pSignalSemaphoreInfos = (signalSemaphoreCount > 0) ? signalSemaphoreInfos : nullptr;
 
     VkFence queueCompleteFence = encodeFrameInfo->encodeCmdBuffer->GetFence();
     assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, queueCompleteFence));
-    VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::ENCODE, 0,
-                                                           1, &submitInfo,
-                                                           queueCompleteFence);
+
+    VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::ENCODE,
+                                                           m_currentVideoQueueIndx, // queueIndex
+                                                           1, // submitCount
+                                                           &submitInfo,
+                                                           queueCompleteFence,
+                                                           "Video Encode",
+                                                           m_encodeEncodeFrameNum,
+                                                           m_encodeInputFrameNum);
 
     encodeFrameInfo->encodeCmdBuffer->SetCommandBufferSubmitted();
     bool syncCpuAfterEncoding = false;
     if (syncCpuAfterEncoding) {
         encodeFrameInfo->encodeCmdBuffer->SyncHostOnCmdBuffComplete(false, "encoderEncodeFence");
+    }
+
+    if (m_verbose && (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE)) { // For TL semaphore debug
+       uint64_t  currSemValue = 0;
+       VkResult semResult = m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, m_hwLoadBalancingTimelineSemaphore, &currSemValue);
+       std::cout << "\t TL semaphore value ater submit: " << currSemValue << ", status: " << semResult << std::endl;
+
+       const bool waitOnTlSemaphore = false;
+       if (waitOnTlSemaphore) {
+           uint64_t value = encodeFrameInfo->frameEncodeEncodeOrderNum + 1; // wait on the future frameEncodeEncodeOrderNum
+           VkSemaphoreWaitInfo waitInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO, nullptr, VK_SEMAPHORE_WAIT_ANY_BIT, 1,
+                                        &m_hwLoadBalancingTimelineSemaphore, &value };
+           std::cout << "\t TL semaphore wait for value: " << value << std::endl;
+           semResult = m_vkDevCtx->WaitSemaphores(*m_vkDevCtx, &waitInfo, 1000 * 1000 * 1000 /* 1000 mSec */);
+
+           semResult = m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, m_hwLoadBalancingTimelineSemaphore, &currSemValue);
+           std::cout << "\t TL semaphore value: " << currSemValue << ", status: " << semResult << std::endl;
+       }
+    }
+
+    if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
+        m_currentVideoQueueIndx++;
+        m_currentVideoQueueIndx %= m_vkDevCtx->GetVideoEncodeNumQueues();
     }
 
     return result;
@@ -1776,6 +1936,11 @@ int32_t VkVideoEncoder::DeinitEncoder()
     m_lastDeferredFrame = nullptr;
 
     m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::ENCODE, 0);
+
+    if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
+         m_vkDevCtx->DestroySemaphore(*m_vkDevCtx, m_hwLoadBalancingTimelineSemaphore, NULL);
+         m_hwLoadBalancingTimelineSemaphore = VK_NULL_HANDLE;
+    }
 
     m_linearInputImagePool = nullptr;
     m_inputImagePool       = nullptr;

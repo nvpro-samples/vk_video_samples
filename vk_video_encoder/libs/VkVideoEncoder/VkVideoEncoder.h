@@ -467,6 +467,8 @@ public:
 #ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
         , m_displayQueue()
 #endif // VIDEO_DISPLAY_QUEUE_SUPPORT
+        , m_hwLoadBalancingTimelineSemaphore()
+        , m_currentVideoQueueIndx(-1)
         , m_imageQpMapFormat()
         , m_qpMapTexelSize()
         , m_qpMapTiling()
@@ -712,6 +714,8 @@ protected:
     EncoderFrameQueue                        m_encoderThreadQueue;
     std::thread                              m_encoderQueueConsumerThread;
     VkSharedBaseObj<VkVideoEncodeFrameInfo>  m_lastDeferredFrame;
+    VkSemaphore                              m_hwLoadBalancingTimelineSemaphore;
+    int32_t                                  m_currentVideoQueueIndx;
 
     VkFormat                                 m_imageQpMapFormat;
     VkExtent2D                               m_qpMapTexelSize;
