@@ -83,6 +83,7 @@ public:
         return m_videoDecodeQueues[index];
     }
     int32_t GetVideoEncodeQueueFamilyIdx() const { return m_videoEncodeQueueFamily; }
+    int32_t GetVideoEncodeDefaultQueueIndex() const { return m_videoEncodeDefaultQueueIndex; }
     int32_t GetVideoEncodeNumQueues() const { return m_videoEncodeNumQueues; }
     VkQueue GetVideoEncodeQueue(int32_t index = 0) const {
         if ((size_t)index >= m_videoEncodeQueues.size()) {
@@ -310,6 +311,7 @@ private:
     int32_t  m_videoDecodeDefaultQueueIndex;
     int32_t  m_videoDecodeNumQueues;
     int32_t  m_videoEncodeQueueFamily;
+    int32_t  m_videoEncodeDefaultQueueIndex;
     int32_t  m_videoEncodeNumQueues;
     int32_t  m_videoDecodeEncodeComputeQueueFamily;
     int32_t  m_videoDecodeEncodeComputeNumQueues;

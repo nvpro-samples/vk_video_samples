@@ -241,6 +241,7 @@ private:
 
         assert(m_vkDevCtx->GetVideoDecodeQueueFamilyIdx() != -1);
         assert(m_vkDevCtx->GetVideoDecodeNumQueues() > 0);
+        assert(m_vkDevCtx->GetVideoDecodeDefaultQueueIndex() < m_vkDevCtx->GetVideoDecodeNumQueues());
 
         if (m_currentVideoQueueIndx < 0) {
             m_currentVideoQueueIndx = m_vkDevCtx->GetVideoDecodeDefaultQueueIndex();
@@ -264,7 +265,7 @@ private:
             timelineCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
             timelineCreateInfo.pNext = NULL;
             timelineCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-            timelineCreateInfo.initialValue = (uint64_t)-1; // assuming m_decodePicCount starts at 0.
+            timelineCreateInfo.initialValue = 0LLU; // assuming m_decodePicCount starts at 0.
 
             VkSemaphoreCreateInfo createInfo;
             createInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;

@@ -1143,8 +1143,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     const uint32_t signalSemaphoreMaxCount = 3;
     VkSemaphoreSubmitInfoKHR signalSemaphoreInfos[signalSemaphoreMaxCount]{};
 
-    VkTimelineSemaphoreSubmitInfo timelineSemaphoreInfos = {};
-
     uint32_t waitSemaphoreCount = 0;
     uint32_t signalSemaphoreCount = 0;
 
@@ -1183,7 +1181,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         waitSemaphoreInfos[waitSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
         waitSemaphoreInfos[waitSemaphoreCount].pNext = nullptr;
         waitSemaphoreInfos[waitSemaphoreCount].semaphore = m_hwLoadBalancingTimelineSemaphore;
-        waitSemaphoreInfos[waitSemaphoreCount].value = m_decodePicCount - 1; // wait for the previous value to be signaled
+        waitSemaphoreInfos[waitSemaphoreCount].value = m_decodePicCount; // wait for the current value to be signaled
         waitSemaphoreInfos[waitSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
         waitSemaphoreInfos[waitSemaphoreCount].deviceIndex = 0;
         waitSemaphoreCount++;
@@ -1191,13 +1189,10 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
         signalSemaphoreInfos[signalSemaphoreCount].pNext = nullptr;
         signalSemaphoreInfos[signalSemaphoreCount].semaphore = m_hwLoadBalancingTimelineSemaphore;
-        signalSemaphoreInfos[signalSemaphoreCount].value = m_decodePicCount; // signal the current m_decodePicCount value
+        signalSemaphoreInfos[signalSemaphoreCount].value = m_decodePicCount + 1; // signal the future m_decodePicCount value
         signalSemaphoreInfos[signalSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
         signalSemaphoreInfos[signalSemaphoreCount].deviceIndex = 0;
         signalSemaphoreCount++;
-
-        assert(waitSemaphoreCount < waitSemaphoreMaxCount);
-        assert(signalSemaphoreCount < signalSemaphoreMaxCount);
     }
 
     assert(waitSemaphoreCount <= waitSemaphoreMaxCount);
@@ -1262,7 +1257,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
        const bool waitOnTlSemaphore = false;
        if (waitOnTlSemaphore) {
-           uint64_t value = m_decodePicCount;
+           uint64_t value = m_decodePicCount + 1; // wait on the future m_decodePicCount
            VkSemaphoreWaitInfo waitInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO, nullptr, VK_SEMAPHORE_WAIT_ANY_BIT, 1,
                                         &m_hwLoadBalancingTimelineSemaphore, &value };
            std::cout << "\t TL semaphore wait for value: " << value << std::endl;
