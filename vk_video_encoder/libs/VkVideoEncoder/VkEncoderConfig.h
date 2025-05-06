@@ -896,7 +896,17 @@ public:
 
     int ParseArguments(int argc, char *argv[]);
 
-    virtual int DoParseArguments(int argc, char *argv[]) { return 0; };
+    virtual int DoParseArguments(int argc, char *argv[]) {
+        if (argc > 0) {
+            std::cout << "Invalid paramters: ";
+            for (int i = 0; i < argc; i++) {
+                std::cout << argv[i] << " ";
+            }
+            std::cout << std::endl;
+            return -1;
+        }
+        return 0;
+    };
 
     virtual VkResult InitializeParameters()
     {
