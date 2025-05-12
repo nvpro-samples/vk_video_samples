@@ -551,6 +551,29 @@ public:
 
     const uint8_t* setPlaneOffset(const uint8_t* pFrameData, size_t bufferSize, size_t &currentReadOffset);
 
+    /**
+     * @brief Copies YCbCr planes directly from input buffer to output buffer when formats are the same
+     *
+     * @param pInputFrameData Source buffer containing YCbCr planes
+     * @param inputPlaneLayouts Array of source buffer plane layouts (offset, pitch, etc.)
+     * @param writeImagePtr Destination buffer for the YCbCr planes
+     * @param dstSubresourceLayout Array of destination buffer plane layouts
+     * @param width Width of the image in pixels
+     * @param height Height of the image in pixels
+     * @param numPlanes Number of planes in the format (1, 2, or 3)
+     * @param format The VkFormat of the image for proper subsampling and bit depth detection
+     * @return none
+     */
+    void CopyYCbCrPlanesDirectCPU(
+        const uint8_t* pInputFrameData,
+        const VkSubresourceLayout* inputPlaneLayouts,
+        uint8_t* writeImagePtr,
+        const VkSubresourceLayout* dstSubresourceLayout,
+        uint32_t width,
+        uint32_t height,
+        uint32_t numPlanes,
+        VkFormat format);
+
     bool WaitForThreadsToComplete();
 
 protected:

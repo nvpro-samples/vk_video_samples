@@ -106,7 +106,7 @@ protected:
     FrameProcessor(bool verbose = false)
         : m_frameCount(0)
         , m_profileFramesCount(0)
-        , m_displayTimePeriodMilliseconds(1000)
+        , m_displayTimePeriodMilliseconds(100)
         , start_time (std::chrono::steady_clock::now())
         , m_verbose(verbose)
     {
