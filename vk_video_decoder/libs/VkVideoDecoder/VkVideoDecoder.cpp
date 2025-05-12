@@ -323,6 +323,8 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                                 numDecodeSurfaces + 1,
                                                 inputFormat,
                                                 outputFormat,
+                                                false, // inputEnableMsbToLsbShift
+                                                false, // outputEnableLsbToMsbShift
                                                 &ycbcrConversionCreateInfo,
                                                 &ycbcrPrimariesConstants,
                                                 &samplerInfo,
