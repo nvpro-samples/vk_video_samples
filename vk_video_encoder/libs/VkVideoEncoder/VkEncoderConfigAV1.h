@@ -152,7 +152,7 @@ struct EncoderConfigAV1 : public EncoderConfig {
             lTier = 0;
         }
 
-        uint32_t minCRBase = lTier ? levelLimits[lLevel].highCR : levelLimits[lLevel].mainCR;
+        double minCRBase = lTier ? levelLimits[lLevel].highCR : levelLimits[lLevel].mainCR;
         double speedAdj = decodeRate / levelLimits[lLevel].maxDisplayRate;
 
         return std::max(minCRBase * speedAdj, 0.8);

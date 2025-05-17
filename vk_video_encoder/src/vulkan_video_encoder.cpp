@@ -83,7 +83,7 @@ private:
 VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR videoCodecOperation,
                                             int argc, char** argv)
 {
-    VkResult result = EncoderConfig::CreateCodecConfig(argc, argv, m_encoderConfig);
+    VkResult result = EncoderConfig::CreateCodecConfig(argc, (const char**)argv, m_encoderConfig);
     if (VK_SUCCESS != result) {
         return result;
     }
