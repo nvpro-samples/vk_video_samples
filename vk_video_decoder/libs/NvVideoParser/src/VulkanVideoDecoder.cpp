@@ -319,33 +319,32 @@ VkDeviceSize VulkanVideoDecoder::swapBitstreamBuffer(VkDeviceSize copyCurrBuffOf
 bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_t *pParsedBytes)
 {
 #if defined(__x86_64__) || defined (_M_X64)
-    if (m_NextStartCode == SIMD_ISA::AVX512)
-    {
+    #if defined(__AVX512F__) && defined(__AVX512BW__)
         return ParseByteStreamAVX512(pck, pParsedBytes);
-    }
-    else if (m_NextStartCode == SIMD_ISA::AVX2)
-    {
+    #elif defined(__AVX2__)
         return ParseByteStreamAVX2(pck, pParsedBytes);
-    }
-    else if (m_NextStartCode == SIMD_ISA::SSSE3)
-    {
+    #elif defined(__SSSE3__)
         return ParseByteStreamSSSE3(pck, pParsedBytes);
-    } else
-#elif defined(__aarch64__) || defined(__ARM_ARCH_7A__) || defined(_M_ARM64)
-#if defined(__aarch64__)
-    if (m_NextStartCode == SIMD_ISA::SVE)
-    {
-        return ParseByteStreamSVE(pck, pParsedBytes);
-    } else
-#endif //__aarch64__
-    if (m_NextStartCode == SIMD_ISA::NEON)
-    {
-        return ParseByteStreamNEON(pck, pParsedBytes);
-    } else
-#endif
-    {
+    #else
         return ParseByteStreamC(pck, pParsedBytes);
-    }
+    #endif
+#elif defined(__aarch64__)
+    #if defined(__ARM_FEATURE_SVE)
+        return ParseByteStreamSVE(pck, pParsedBytes);
+    #elif defined(__ARM_NEON)
+        return ParseByteStreamNEON(pck, pParsedBytes);
+    #else
+        return ParseByteStreamC(pck, pParsedBytes);
+    #endif
+#elif defined(__ARM_ARCH_7A__) || defined(_M_ARM64)
+    #if defined(__ARM_NEON)
+        return ParseByteStreamNEON(pck, pParsedBytes);
+    #else
+        return ParseByteStreamC(pck, pParsedBytes);
+    #endif
+#else
+    return ParseByteStreamC(pck, pParsedBytes);
+#endif
 }
 
 void VulkanVideoDecoder::nal_unit()
