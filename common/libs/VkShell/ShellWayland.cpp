@@ -23,6 +23,7 @@
 #include "ShellWayland.h"
 
 #include "VkCodecUtils/Helpers.h"
+#include "VkCodecUtils/ExitWrapper.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -195,7 +196,7 @@ void ShellWayland::InitConnection() {
         if (!m_shell) throw std::runtime_error("failed to bind shell");
     } catch (const std::exception &e) {
         std::cerr << "Could not initialize Wayland: " << e.what() << std::endl;
-        exit(-1);
+        safe_exit(-1);
     }
 }
 
