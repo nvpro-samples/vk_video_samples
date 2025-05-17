@@ -88,6 +88,8 @@ static VkVideoComponentBitDepthFlagBitsKHR GetComponentBitDepthFlagBits(uint32_t
     return VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
 };
 
+void printHelp(VkVideoCodecOperationFlagBitsKHR codec);
+
 struct EncoderInputImageParameters
 {
     EncoderInputImageParameters()
@@ -890,13 +892,13 @@ public:
     }
 
     // Factory Function
-    static VkResult CreateCodecConfig(int argc, char *argv[], VkSharedBaseObj<EncoderConfig>& encoderConfig);
+    static VkResult CreateCodecConfig(int argc, const char *argv[], VkSharedBaseObj<EncoderConfig>& encoderConfig);
 
     void InitVideoProfile();
 
-    int ParseArguments(int argc, char *argv[]);
+    int ParseArguments(int argc, const char *argv[]);
 
-    virtual int DoParseArguments(int argc, char *argv[]) {
+    virtual int DoParseArguments(int argc, const char *argv[]) {
         if (argc > 0) {
             std::cout << "Invalid paramters: ";
             for (int i = 0; i < argc; i++) {

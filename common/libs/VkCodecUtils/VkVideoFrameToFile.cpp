@@ -221,7 +221,7 @@ public:
                                                   imageResource, pOutputBuffer, mpInfo);
 
         if (m_outputcrcPerFrame && m_crcOutputFile) {
-            fprintf(m_crcOutputFile, "CRC Frame[%" PRId64 "]:", pFrame->displayOrder);
+            fprintf(m_crcOutputFile, "CRC Frame[%lld]:", (long long)pFrame->displayOrder);
             for (size_t i = 0; i < m_crcInitValue.size(); i += 1) {
                 uint32_t frameCrc = m_crcInitValue[i];
                 getCRC(&frameCrc, pOutputBuffer, usedBufferSize, Crc32Table);
@@ -356,6 +356,7 @@ public:
         VkDeviceSize maxSize = 0;
         const uint8_t* readImagePtr = srcImageDeviceMemory->GetReadOnlyDataPtr(imageOffset, maxSize);
         assert(readImagePtr != nullptr);
+        assert(maxSize <= SIZE_MAX);  // Ensure we don't lose data in conversion
 
         int32_t secondaryPlaneHeight = frameHeight;
         int32_t imageHeight = frameHeight;
@@ -423,14 +424,18 @@ public:
         // Copy the luma plane
         const uint32_t numCompatiblePlanes = 1;
         for (uint32_t plane = 0; plane < numCompatiblePlanes; plane++) {
-            const uint8_t* pSrc = readImagePtr + layouts[plane].offset;
-            uint8_t* pDst = pOutBuffer + yuvPlaneLayouts[plane].offset;
+            const uint8_t* pSrc = readImagePtr + static_cast<size_t>(layouts[plane].offset);
+            uint8_t* pDst = pOutBuffer + static_cast<size_t>(yuvPlaneLayouts[plane].offset);
 
             if (is8Bit) {
-                CopyPlaneData<uint8_t>(pSrc, pDst, layouts[plane].rowPitch, yuvPlaneLayouts[plane].rowPitch,
+                assert(layouts[plane].rowPitch <= SIZE_MAX);
+                assert(yuvPlaneLayouts[plane].rowPitch <= SIZE_MAX);
+                CopyPlaneData<uint8_t>(pSrc, pDst, static_cast<size_t>(layouts[plane].rowPitch), static_cast<size_t>(yuvPlaneLayouts[plane].rowPitch),
                                       frameWidth, imageHeight);
             } else {
-                CopyPlaneData<uint16_t>(pSrc, pDst, layouts[plane].rowPitch, yuvPlaneLayouts[plane].rowPitch,
+                assert(layouts[plane].rowPitch <= SIZE_MAX);
+                assert(yuvPlaneLayouts[plane].rowPitch <= SIZE_MAX);
+                CopyPlaneData<uint16_t>(pSrc, pDst, static_cast<size_t>(layouts[plane].rowPitch), static_cast<size_t>(yuvPlaneLayouts[plane].rowPitch),
                                        frameWidth, imageHeight);
             }
         }
@@ -450,10 +455,14 @@ public:
                 }
 
                 if (is8Bit) {
-                    CopyPlaneData<uint8_t>(pSrc, pDst, layouts[srcPlane].rowPitch, yuvPlaneLayouts[plane].rowPitch,
+                    assert(layouts[srcPlane].rowPitch <= SIZE_MAX);
+                    assert(yuvPlaneLayouts[plane].rowPitch <= SIZE_MAX);
+                    CopyPlaneData<uint8_t>(pSrc, pDst, static_cast<size_t>(layouts[srcPlane].rowPitch), static_cast<size_t>(yuvPlaneLayouts[plane].rowPitch),
                                            planeWidth, 1, 2);
                 } else {
-                    CopyPlaneData<uint16_t>(pSrc, pDst, layouts[srcPlane].rowPitch, yuvPlaneLayouts[plane].rowPitch,
+                    assert(layouts[srcPlane].rowPitch <= SIZE_MAX);
+                    assert(yuvPlaneLayouts[plane].rowPitch <= SIZE_MAX);
+                    CopyPlaneData<uint16_t>(pSrc, pDst, static_cast<size_t>(layouts[srcPlane].rowPitch), static_cast<size_t>(yuvPlaneLayouts[plane].rowPitch),
                                             planeWidth, 1, 2);
                 }
                 pDst += yuvPlaneLayouts[plane].rowPitch;
@@ -461,10 +470,10 @@ public:
         }
 
         // Calculate total buffer size
-        outputBufferSize = yuvPlaneLayouts[0].rowPitch * imageHeight;
+        outputBufferSize = static_cast<size_t>(yuvPlaneLayouts[0].rowPitch * imageHeight);
         if (mpInfo->planesLayout.numberOfExtraPlanes >= 1) {
-            outputBufferSize += yuvPlaneLayouts[1].rowPitch * secondaryPlaneHeight;
-            outputBufferSize += yuvPlaneLayouts[2].rowPitch * secondaryPlaneHeight;
+            outputBufferSize += static_cast<size_t>(yuvPlaneLayouts[1].rowPitch * secondaryPlaneHeight);
+            outputBufferSize += static_cast<size_t>(yuvPlaneLayouts[2].rowPitch * secondaryPlaneHeight);
         }
 
         return outputBufferSize;
@@ -478,6 +487,7 @@ private:
         }
 
         VkDeviceSize imageMemorySize = imageResource->GetImageDeviceMemorySize();
+        assert(imageMemorySize <= SIZE_MAX);  // Ensure we don't lose data in conversion
 
         if ((m_pLinearMemory == nullptr) || (imageMemorySize > m_allocationSize)) {
             if (m_outputFile) {
@@ -489,7 +499,7 @@ private:
                 m_pLinearMemory = nullptr;
             }
 
-            m_allocationSize = (size_t)(imageMemorySize);
+            m_allocationSize = static_cast<size_t>(imageMemorySize);
             m_pLinearMemory = new uint8_t[m_allocationSize];
             if (m_pLinearMemory == nullptr) {
                 return nullptr;

@@ -29,6 +29,7 @@
 #include <iomanip>
 #include <sstream>
 #include "vulkan_interfaces.h"
+#include "ExitWrapper.h"
 #include "VkCodecUtils/Helpers.h"
 
 struct DecoderConfig {
@@ -40,6 +41,14 @@ struct DecoderConfig {
        const char *help;
        std::function<bool(const char **, const std::vector<ArgSpec> &)> lambda;
      };
+
+    static inline void safe_exit(int status) {
+    #if defined(DECODER_APP_BUILD_AS_LIB) || defined(ENCODER_APP_BUILD_AS_LIB)
+        printf("Application would exit with status %d\n", status);
+    #else
+        exit(status);
+    #endif
+    } 
 
     DecoderConfig(const char* programName) {
         appName = programName;
@@ -109,7 +118,7 @@ struct DecoderConfig {
             {"--help", nullptr, 0, "Show this help",
                 [argv](const char **, const ProgramArgs &a) {
                     int rtn = showHelp(argv, a);
-                    exit(EXIT_SUCCESS);
+                    safe_exit(EXIT_SUCCESS);
                     return rtn;
                 }},
             {"--disableStrDemux", nullptr, 0, "Disable stream demuxing",
@@ -336,19 +345,19 @@ struct DecoderConfig {
                 std::cerr << "Unknown argument \"" << argv[i] << "\"" << std::endl;
                 std::cout << std::endl;
                 showHelp(argv, spec);
-                exit(EXIT_FAILURE);
+                safe_exit(EXIT_FAILURE);
             }
 
             if (i + flag->numArgs >= argc) {
                 std::cerr << "Missing arguments for \"" << argv[i] << "\"" << std::endl;
-                exit(EXIT_FAILURE);
+                safe_exit(EXIT_FAILURE);
             }
 
             bool disableValueCheck = false;
             if (i + 1 < argc && strcmp(argv[i + 1], "--") == 0) {
                 if (i + 1 + flag->numArgs >= argc) {
                     std::cerr << "Missing arguments for \"" << argv[i] << "\"" << std::endl;
-                    exit(EXIT_FAILURE);
+                    safe_exit(EXIT_FAILURE);
                 }
                 disableValueCheck = true;
                 i++;
@@ -364,13 +373,13 @@ struct DecoderConfig {
                             "set a value for \"" << argv[i] << "\"." << std::endl;
                         std::cerr << "Use \"-- " << argv[i + j] << "\" if you meant to set \"" << argv[i + j]
                             << "\" for \"" << argv[i] << "\"." << std::endl;
-                        exit(EXIT_FAILURE);
+                        safe_exit(EXIT_FAILURE);
                     }
                 }
             }
 
             if (!flag->lambda(argv + i + 1, spec)) {
-                exit(EXIT_FAILURE);
+                safe_exit(EXIT_FAILURE);
             }
 
             i += flag->numArgs;
@@ -384,7 +393,7 @@ struct DecoderConfig {
                                 "Host accessible linear images requires an extra copy at the moment."
                                 << std::endl;
 
-                    exit(EXIT_FAILURE);
+                    safe_exit(EXIT_FAILURE);
                 }
 
                 crcInitValue.push_back(0);

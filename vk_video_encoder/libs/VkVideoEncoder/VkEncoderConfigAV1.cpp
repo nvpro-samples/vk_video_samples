@@ -26,7 +26,7 @@
     }                                                           \
 }
 
-int EncoderConfigAV1::DoParseArguments(int argc, char* argv[])
+int EncoderConfigAV1::DoParseArguments(int argc, const char* argv[])
 {
     // No validation of command line options.  So, all options must be valid and
     // values with in the limits of vulkan and av1 specification
