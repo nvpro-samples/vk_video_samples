@@ -128,7 +128,7 @@ void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
         }
 }
 
-int EncoderConfig::ParseArguments(int argc, char *argv[])
+int EncoderConfig::ParseArguments(int argc, const char *argv[])
 {
     int argcount = 0;
     std::vector<char*> arglist;
@@ -569,7 +569,7 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
     return DoParseArguments(argcount, arglist.data());
 }
 
-VkResult EncoderConfig::CreateCodecConfig(int argc, char *argv[],
+VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
                                           VkSharedBaseObj<EncoderConfig>& encoderConfig)
 {
 
