@@ -41,7 +41,9 @@ public:
     VkFence frameCompleteFence; // If valid, the fence is signaled when the decoder or encoder is done decoding / encoding the frame.
     VkFence frameConsumerDoneFence; // If valid, the fence is signaled when the consumer (graphics, compute or display) is done using the frame.
     VkSemaphore frameCompleteSemaphore; // If valid, the semaphore is signaled when the decoder or encoder is done decoding / encoding the frame.
-    VkSemaphore frameConsumerDoneSemaphore; // If valid, the semaphore is signaled when the consumer (graphics, compute or display) is done using the frame.
+    VkSemaphore consumerCompleteSemaphore; // If valid, the semaphore is signaled when the decoder or encoder is done decoding / encoding the frame.
+    uint64_t frameCompleteDoneSemValue; // The semaphore is signaled by the decoder or the decoder's filter when this semaphore value has been reached.
+    uint64_t frameConsumerDoneSemValue; // The semaphore is signaled by the consumer (graphics, compute or display) when this semaphore value has been reached.
     VkQueryPool queryPool;                  // queryPool handle used for the video queries.
     int32_t startQueryId;                   // query Id used for the this frame.
     uint32_t numQueries;                    // usually one query per frame
@@ -64,10 +66,12 @@ public:
                 imageViews[imageTypeIdx].inUse = false;
             }
         }
-        frameCompleteFence = VkFence();
-        frameConsumerDoneFence = VkFence();
-        frameCompleteSemaphore = VkSemaphore();
-        frameConsumerDoneSemaphore = VkSemaphore();
+        frameCompleteFence = VK_NULL_HANDLE;
+        frameConsumerDoneFence = VK_NULL_HANDLE;
+        frameCompleteSemaphore = VK_NULL_HANDLE;
+        consumerCompleteSemaphore = VK_NULL_HANDLE;
+        frameCompleteDoneSemValue =  (0ULL); // Frame 0 signaled by the decoder and/or filter
+        frameConsumerDoneSemValue =  (0ULL); // Frame 0 signaled by the consumer
         queryPool = VkQueryPool();
         startQueryId = 0;
         numQueries = 0;
@@ -92,7 +96,9 @@ public:
     , frameCompleteFence()
     , frameConsumerDoneFence()
     , frameCompleteSemaphore()
-    , frameConsumerDoneSemaphore()
+    , consumerCompleteSemaphore()
+    , frameCompleteDoneSemValue(0ULL)
+    , frameConsumerDoneSemValue(0ULL)
     , queryPool()
     , startQueryId()
     , numQueries()

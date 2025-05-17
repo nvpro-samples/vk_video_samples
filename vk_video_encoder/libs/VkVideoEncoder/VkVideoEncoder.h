@@ -467,6 +467,8 @@ public:
 #ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
         , m_displayQueue()
 #endif // VIDEO_DISPLAY_QUEUE_SUPPORT
+        , m_hwLoadBalancingTimelineSemaphore()
+        , m_currentVideoQueueIndx(-1)
         , m_imageQpMapFormat()
         , m_qpMapTexelSize()
         , m_qpMapTiling()
@@ -548,6 +550,29 @@ public:
     virtual VkResult InitRateControl(VkCommandBuffer cmdBuf, uint32_t qp) = 0; // Must be implemented by the codec
 
     const uint8_t* setPlaneOffset(const uint8_t* pFrameData, size_t bufferSize, size_t &currentReadOffset);
+
+    /**
+     * @brief Copies YCbCr planes directly from input buffer to output buffer when formats are the same
+     *
+     * @param pInputFrameData Source buffer containing YCbCr planes
+     * @param inputPlaneLayouts Array of source buffer plane layouts (offset, pitch, etc.)
+     * @param writeImagePtr Destination buffer for the YCbCr planes
+     * @param dstSubresourceLayout Array of destination buffer plane layouts
+     * @param width Width of the image in pixels
+     * @param height Height of the image in pixels
+     * @param numPlanes Number of planes in the format (1, 2, or 3)
+     * @param format The VkFormat of the image for proper subsampling and bit depth detection
+     * @return none
+     */
+    void CopyYCbCrPlanesDirectCPU(
+        const uint8_t* pInputFrameData,
+        const VkSubresourceLayout* inputPlaneLayouts,
+        uint8_t* writeImagePtr,
+        const VkSubresourceLayout* dstSubresourceLayout,
+        uint32_t width,
+        uint32_t height,
+        uint32_t numPlanes,
+        VkFormat format);
 
     bool WaitForThreadsToComplete();
 
@@ -712,6 +737,8 @@ protected:
     EncoderFrameQueue                        m_encoderThreadQueue;
     std::thread                              m_encoderQueueConsumerThread;
     VkSharedBaseObj<VkVideoEncodeFrameInfo>  m_lastDeferredFrame;
+    VkSemaphore                              m_hwLoadBalancingTimelineSemaphore;
+    int32_t                                  m_currentVideoQueueIndx;
 
     VkFormat                                 m_imageQpMapFormat;
     VkExtent2D                               m_qpMapTexelSize;

@@ -103,6 +103,24 @@ typedef struct YcbcrPlanesLayoutInfo {
     uint8_t              reserved;                    // reserved for structure alignment.
 } YcbcrPlanesLayoutInfo;
 
+static inline uint32_t GetBitsPerChannel(const YcbcrPlanesLayoutInfo& pYcbcrPlanesLayoutInfo)
+{
+    switch (pYcbcrPlanesLayoutInfo.bpp) {
+        case YCBCRA_8BPP:
+            return 8;
+        case YCBCRA_10BPP:
+            return 10;
+        case YCBCRA_12BPP:
+            return 12;
+        case YCBCRA_14BPP:
+            return 14;
+        case YCBCRA_16BPP:
+            return 16;
+        default:
+            return 8;
+    }
+}
+
 static inline size_t YcbcrAlign(size_t toAlign, size_t alignment)
 {
     return ((toAlign + (alignment - 1)) & ~(alignment -1));

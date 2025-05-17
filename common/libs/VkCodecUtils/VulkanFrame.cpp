@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <thread>  // Added for std::this_thread::sleep_for
 
 #include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
@@ -25,6 +26,7 @@
 #include "VkCodecUtils/VulkanVideoUtils.h"
 #include "VulkanFrame.h"
 #include "VkVideoCore/DecodeFrameBufferIf.h"
+#include "VkCodecUtils/VulkanSemaphoreDump.h"
 
 template<class FrameDataType>
 VulkanFrame<FrameDataType>::VulkanFrame(const VulkanDeviceContext* vkDevCtx)
@@ -420,6 +422,7 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
     if (renderIndex < 0) {
         renderIndex = -renderIndex;
     }
+
     vulkanVideoUtils::VulkanPerDrawContext* pPerDrawContext = m_videoRenderer->m_renderInfo.GetDrawContext(renderIndex);
 
     VkSharedBaseObj<VkImageResourceView> imageResourceView;
@@ -585,54 +588,77 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
         }
     }
 
-    const uint32_t maxWaitSemaphores = 2;
-    uint32_t numWaitSemaphores = 0;
-    VkSemaphore waitSemaphores[maxWaitSemaphores] = {};
+    const uint32_t waitSemaphoreMaxCount = 2;
+    VkSemaphoreSubmitInfoKHR waitSemaphoreInfos[waitSemaphoreMaxCount]{};
 
-    assert(waitSemaphoreCount <= 1);
-    if ((waitSemaphoreCount > 0) && (pWaitSemaphores != nullptr)) {
-        waitSemaphores[numWaitSemaphores++] = *pWaitSemaphores;
+    const uint32_t signalSemaphoreMaxCount = 2;
+    VkSemaphoreSubmitInfoKHR signalSemaphoreInfos[signalSemaphoreMaxCount]{};
+
+    for (uint32_t i = 0; i < waitSemaphoreCount; i++) {
+        waitSemaphoreInfos[i].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        waitSemaphoreInfos[i].pNext = nullptr;
+        waitSemaphoreInfos[i].semaphore = pWaitSemaphores[i];
+        waitSemaphoreInfos[i].value = 0; // Binary semaphore
+        waitSemaphoreInfos[i].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        waitSemaphoreInfos[i].deviceIndex = 0;
     }
 
-    if (inFrame && (inFrame->frameCompleteSemaphore != VkSemaphore())) {
-        waitSemaphores[numWaitSemaphores++] = inFrame->frameCompleteSemaphore;
-    }
-    assert(numWaitSemaphores <= maxWaitSemaphores);
-
-    const uint32_t maxSignalSemaphores = 2;
-    uint32_t numSignalSemaphores = 0;
-    VkSemaphore signalSemaphores[maxSignalSemaphores] = {};
-
-    assert(signalSemaphoreCount <= 1);
-    if ((signalSemaphoreCount > 0) && (pSignalSemaphores != nullptr)) {
-        signalSemaphores[numSignalSemaphores++] = *pSignalSemaphores;
+    for (uint32_t i = 0; i < signalSemaphoreCount; i++) {
+        signalSemaphoreInfos[i].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        signalSemaphoreInfos[i].pNext = nullptr;
+        signalSemaphoreInfos[i].semaphore = pSignalSemaphores[i];
+        signalSemaphoreInfos[i].value = 0; // Binary semaphore
+        signalSemaphoreInfos[i].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        signalSemaphoreInfos[i].deviceIndex = 0;
     }
 
-    if (inFrame && (inFrame->frameConsumerDoneSemaphore != VkSemaphore())) {
-        signalSemaphores[numSignalSemaphores++] = inFrame->frameConsumerDoneSemaphore;
+    if (inFrame && (inFrame->frameCompleteSemaphore != VK_NULL_HANDLE)) {
+
+        waitSemaphoreInfos[waitSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        waitSemaphoreInfos[waitSemaphoreCount].pNext = nullptr;
+        waitSemaphoreInfos[waitSemaphoreCount].semaphore = inFrame->frameCompleteSemaphore;
+        waitSemaphoreInfos[waitSemaphoreCount].value =     inFrame->frameCompleteDoneSemValue;
+        waitSemaphoreInfos[waitSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR |
+                                                           VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR |
+                                                           VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR;
+        waitSemaphoreInfos[waitSemaphoreCount].deviceIndex = 0;
+        waitSemaphoreCount++;
+
+        signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        signalSemaphoreInfos[signalSemaphoreCount].pNext = nullptr;
+        signalSemaphoreInfos[signalSemaphoreCount].semaphore = inFrame->consumerCompleteSemaphore;
+        signalSemaphoreInfos[signalSemaphoreCount].value     = inFrame->frameConsumerDoneSemValue;
+        signalSemaphoreInfos[signalSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+        signalSemaphoreInfos[signalSemaphoreCount].deviceIndex = 0;
+        signalSemaphoreCount++;
+
         inFrame->hasConsummerSignalSemaphore = true;
     }
-    assert(numSignalSemaphores <= maxSignalSemaphores);
+
+    assert(waitSemaphoreCount <= waitSemaphoreMaxCount);
+    assert(signalSemaphoreCount <= signalSemaphoreMaxCount);
 
     if (frameConsumerDoneFence != VkFence()) {
         inFrame->hasConsummerSignalFence = true;
     }
 
+    VkCommandBufferSubmitInfoKHR cmdBufferInfos;
+    cmdBufferInfos.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR;
+    cmdBufferInfos.pNext = nullptr;
+    cmdBufferInfos.commandBuffer = *pPerDrawContext->commandBuffer.GetCommandBuffer();
+    cmdBufferInfos.deviceMask = 0;
 
-    // Wait for the image to be owned and signal for render completion
-    VkPipelineStageFlags primaryCmdSubmitWaitStages[2] = { VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                                                           VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT };
-    VkSubmitInfo primaryCmdSubmitInfo = VkSubmitInfo();
-    primaryCmdSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    primaryCmdSubmitInfo.pWaitDstStageMask = primaryCmdSubmitWaitStages;
-    primaryCmdSubmitInfo.commandBufferCount = 1;
-
-    primaryCmdSubmitInfo.waitSemaphoreCount = numWaitSemaphores;
-    primaryCmdSubmitInfo.pWaitSemaphores = numWaitSemaphores ? waitSemaphores : NULL;
-    primaryCmdSubmitInfo.pCommandBuffers = pPerDrawContext->commandBuffer.GetCommandBuffer();
-
-    primaryCmdSubmitInfo.signalSemaphoreCount = numSignalSemaphores;
-    primaryCmdSubmitInfo.pSignalSemaphores = numSignalSemaphores ? signalSemaphores : NULL;
+    // Submit info
+    VkSubmitInfo2KHR submitInfo = {};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR;
+    submitInfo.pNext = nullptr;
+    submitInfo.flags = 0;
+    submitInfo.waitSemaphoreInfoCount = waitSemaphoreCount;
+    submitInfo.pWaitSemaphoreInfos = waitSemaphoreInfos;
+    submitInfo.commandBufferInfoCount = 1;
+    submitInfo.pCommandBufferInfos = &cmdBufferInfos;
+    submitInfo.signalSemaphoreInfoCount = signalSemaphoreCount;
+    submitInfo.pSignalSemaphoreInfos = signalSemaphoreInfos;
 
     // For fence/sync debugging
     if (false && inFrame && inFrame->frameCompleteFence) {
@@ -648,7 +674,14 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
         }
     }
 
-    result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::GRAPHICS, 0, 1, &primaryCmdSubmitInfo, frameConsumerDoneFence);
+    result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::GRAPHICS,
+                                                  0, // queueIndex
+                                                  1, // submitCount
+                                                  &submitInfo,
+                                                  frameConsumerDoneFence,
+                                                  "Graphics Submit",
+                                                  (inFrame != nullptr) ? inFrame->decodeOrder  : UINT64_MAX,
+                                                  (inFrame != nullptr) ? inFrame->displayOrder : UINT64_MAX);
     if (result != VK_SUCCESS) {
         assert(result == VK_SUCCESS);
         fprintf(stderr, "\nERROR: MultiThreadedQueueSubmit() result: 0x%x\n", result);
@@ -677,6 +710,11 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
 #endif
 
     m_frameDataIndex = (m_frameDataIndex + 1) % m_frameData.size();
+
+    if (false) {
+        // Add a 20ms sleep
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
 
     return result;
 }
