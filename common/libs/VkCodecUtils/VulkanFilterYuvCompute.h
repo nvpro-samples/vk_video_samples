@@ -31,7 +31,12 @@ class VulkanFilterYuvCompute : public VulkanFilter
 {
 public:
 
-    enum FilterType { YCBCRCOPY, YCBCRCLEAR, YCBCR2RGBA, RGBA2YCBCR };
+    enum FilterType { YCBCRCOPY, YCBCRCLEAR, YCBCR2RGBA, RGBA2YCBCR, RESIZE };
+
+    struct Rectangle {
+        int width = 0;
+        int height = 0;
+    };
 
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            uint32_t queueFamilyIndex,
@@ -43,7 +48,11 @@ public:
                            const VkSamplerYcbcrConversionCreateInfo* pYcbcrConversionCreateInfo,
                            const YcbcrPrimariesConstants* pYcbcrPrimariesConstants,
                            const VkSamplerCreateInfo* pSamplerCreateInfo,
-                           VkSharedBaseObj<VulkanFilter>& vulkanFilter);
+                           VkSharedBaseObj<VulkanFilter>& vulkanFilter
+#ifdef _TRANSCODING
+                            , const std::vector<Rectangle>& resizedResolutions = {}
+#endif
+                            );
 
     VulkanFilterYuvCompute(const VulkanDeviceContext* vkDevCtx,
                            uint32_t queueFamilyIndex,
@@ -52,7 +61,11 @@ public:
                            uint32_t maxNumFrames,
                            VkFormat inputFormat,
                            VkFormat outputFormat,
-                           const YcbcrPrimariesConstants* pYcbcrPrimariesConstants)
+                           const YcbcrPrimariesConstants* pYcbcrPrimariesConstants
+#ifdef _TRANSCODING
+                           , const std::vector<Rectangle>& resizedResolutions = {}
+#endif
+                            )
         : VulkanFilter(vkDevCtx, queueFamilyIndex, queueIndex)
         , m_filterType(filterType)
         , m_inputFormat(inputFormat)
@@ -71,6 +84,9 @@ public:
                                 VK_IMAGE_ASPECT_PLANE_0_BIT |
                                 VK_IMAGE_ASPECT_PLANE_1_BIT |
                                 VK_IMAGE_ASPECT_PLANE_2_BIT)
+#ifdef _TRANSCODING
+        , m_resizedResolutions( resizedResolutions )
+#endif
         , m_enableRowAndColumnReplication(true)
     {
     }
@@ -300,27 +316,59 @@ public:
         struct PushConstants {
             uint32_t srcLayer;
             uint32_t dstLayer;
-            ivec2    inputSize;  // Original input image size (width, height)
-            ivec2    outputSize; // Output image size (width, height, with padding)
+#if(_TRANSCODING)
+            uint32_t width;
+            uint32_t height;
+            float scalingFactorX;
+            float scalingFactorY;
+#endif //_TRANSCODING
         };
 
-        PushConstants pushConstants = {
-                inputImageResourceInfo->baseArrayLayer, // Set the source layer index
-                outputImageResourceInfo->baseArrayLayer, // Set the destination layer index
-                ivec2(inputImageResourceInfo->codedExtent.width, inputImageResourceInfo->codedExtent.height),
-                ivec2(outputImageResourceInfo->codedExtent.width, outputImageResourceInfo->codedExtent.height)
-        };
+#if(_TRANSCODING)
+        int numResizes = m_resizedResolutions.size();
 
-        m_vkDevCtx->CmdPushConstants(cmdBuf,
-                                     m_descriptorSetLayout.GetPipelineLayout(),
-                                     VK_SHADER_STAGE_COMPUTE_BIT,
-                                     0, // offset
-                                     sizeof(PushConstants),
-                                     &pushConstants);
+        for (int i = 0; i < numResizes; i++)
+        {
+            float resizedWidth =  m_resizedResolutions[i].width;
+            float resizedHeight =  m_resizedResolutions[i].height;
+#endif //_TRANSCODING
+            const VkImageCreateInfo& imageCreateInfo = outputImageView->GetImageResource()->GetImageCreateInfo();
+            uint32_t  width  = imageCreateInfo.extent.width;
+            uint32_t  height = imageCreateInfo.extent.height;
 
-        const uint32_t  workgroupWidth  = (pushConstants.outputSize.width  + (m_workgroupSizeX - 1)) / m_workgroupSizeX;
-        const uint32_t  workgroupHeight = (pushConstants.outputSize.height + (m_workgroupSizeY - 1)) / m_workgroupSizeY;
-        m_vkDevCtx->CmdDispatch(cmdBuf, workgroupWidth, workgroupHeight, 1);
+            PushConstants pushConstants = {
+                    inputImageResourceInfo  ? inputImageResourceInfo->baseArrayLayer : 0, // Set the source layer index
+#if(!_TRANSCODING)
+                    outputImageResourceInfo ? outputImageResourceInfo->baseArrayLayer : 0, // Set the destination layer index
+#else
+                    outputImageResourceInfo ? outputImageResourceInfo->baseArrayLayer + i : i, // Set the destination layer index
+                    width,
+                    height,
+                    width / resizedWidth,
+                    height / resizedHeight
+#endif //_TRANSCODING
+            };
+
+            m_vkDevCtx->CmdPushConstants(cmdBuf,
+                                            m_descriptorSetLayout.GetPipelineLayout(),
+                                            VK_SHADER_STAGE_COMPUTE_BIT,
+                                            0, // offset
+                                            sizeof(PushConstants),
+                                            &pushConstants);
+
+#if(_TRANSCODING)
+            const uint32_t yuv_scale_x = 2; // yuv420 & yuv 422 only
+            const uint32_t yuv_scale_y = 2; // yuv420 only
+            int numPixelsPerInvocationX = yuv_scale_x * m_workgroupSizeX;
+            int numPixelsPerInvocationY = yuv_scale_y * m_workgroupSizeY;
+            uint32_t numTotalInvocationsRoundedUpX = (resizedWidth + numPixelsPerInvocationX - 1) / numPixelsPerInvocationX;
+            uint32_t numTotalInvocationsRoundedUpY = (resizedHeight + numPixelsPerInvocationY  - 1) / numPixelsPerInvocationY;
+
+            m_vkDevCtx->CmdDispatch(cmdBuf, numTotalInvocationsRoundedUpX, numTotalInvocationsRoundedUpY, 1);
+        }
+#else
+        m_vkDevCtx->CmdDispatch(cmdBuf, width / m_workgroupSizeX, height / m_workgroupSizeY, 1);
+#endif //_TRANSCODING
 
         return VK_SUCCESS;
     }
@@ -338,6 +386,7 @@ private:
     size_t InitYCBCRCOPY(std::string& computeShader);
     size_t InitYCBCRCLEAR(std::string& computeShader);
     size_t InitYCBCR2RGBA(std::string& computeShader);
+    size_t InitResize(std::string& computeShader);
 
 private:
     const FilterType                         m_filterType;
@@ -348,10 +397,14 @@ private:
     uint32_t                                 m_maxNumFrames;
     const YcbcrPrimariesConstants            m_ycbcrPrimariesConstants;
     VulkanSamplerYcbcrConversion             m_samplerYcbcrConversion;
+    VulkanSamplerResize                      m_samplerResize;
     VulkanDescriptorSetLayout                m_descriptorSetLayout;
     VulkanComputePipeline                    m_computePipeline;
     VkImageAspectFlags                       m_inputImageAspects;
     VkImageAspectFlags                       m_outputImageAspects;
+#ifdef _TRANSCODING
+    std::vector<Rectangle>                   m_resizedResolutions;
+#endif
     uint32_t                                 m_enableRowAndColumnReplication : 1;
 
 };
