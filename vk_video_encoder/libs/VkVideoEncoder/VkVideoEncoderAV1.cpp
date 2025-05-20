@@ -271,6 +271,14 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
         pFrameInfo->encodeInfo.pSetupReferenceSlot = nullptr;
     }
 
+    const bool isIntraRefreshFrame = m_encoderConfig->gopStructure.IsIntraRefreshFrame(encodeFrameInfo->gopPosition);
+    if (m_encoderConfig->enableIntraRefresh && isIntraRefreshFrame) {
+        // The number of dirty intra-refresh regions in the current picture
+        uint32_t dirtyIntraRefreshRegions = m_encoderConfig->intraRefreshCycleDuration - encodeFrameInfo->gopPosition.intraRefreshIndex - 1;
+
+        m_dpbAV1->SetDirtyIntraRefreshRegions(dpbIndx, dirtyIntraRefreshRegions);
+    }
+
     // reference frames
     memset(pFrameInfo->pictureInfo.referenceNameSlotIndices, 0xff, sizeof(pFrameInfo->pictureInfo.referenceNameSlotIndices));
     bool primaryRefCdfOnly = true;
@@ -309,6 +317,14 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
             pFrameInfo->dpbSlotInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_DPB_SLOT_INFO_KHR;
             pFrameInfo->dpbSlotInfo[numReferenceSlots].pNext = nullptr;
             pFrameInfo->dpbSlotInfo[numReferenceSlots].pStdReferenceInfo = &pFrameInfo->stdReferenceInfo[numReferenceSlots];
+
+            if (isIntraRefreshFrame) {
+                pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_INTRA_REFRESH_INFO_KHR;
+                pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].dirtyIntraRefreshRegions =
+                    m_dpbAV1->GetDirtyIntraRefreshRegions((int8_t)dpbIdx);
+
+                pFrameInfo->dpbSlotInfo[numReferenceSlots].pNext = &pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots];
+            }
 
             pFrameInfo->referenceSlotsInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
             pFrameInfo->referenceSlotsInfo[numReferenceSlots].pNext = &pFrameInfo->dpbSlotInfo[numReferenceSlots];

@@ -59,6 +59,9 @@ struct DpbEntryH264 {
 
     uint64_t timeStamp;
     uint64_t refFrameTimeStamp;
+
+    // Intra-refresh
+    uint32_t dirtyIntraRefreshRegions;
 };
 
 struct PicInfoH264 : public StdVideoEncodeH264PictureInfo {
@@ -129,6 +132,9 @@ public:
     int32_t GetPicNumFromDpbIdx(int32_t dpbIdx, bool *shortterm, bool *longterm);
     uint64_t GetPictureTimestamp(int32_t picIdx);
     void SetCurRefFrameTimeStamp(uint64_t timeStamp);
+
+    uint32_t GetDirtyIntraRefreshRegions(int32_t dpbIdx);
+    void SetCurDirtyIntraRefreshRegions(uint32_t dirtyIntraRefreshRegions);
 
     const StdVideoEncodeH264PictureInfo *GetCurrentDpbEntry(void)
     {

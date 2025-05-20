@@ -1639,6 +1639,19 @@ void VkEncDpbH264::SetCurRefFrameTimeStamp(uint64_t refFrameTimeStamp)
     m_DPB[m_currDpbIdx].refFrameTimeStamp = refFrameTimeStamp;
 }
 
+uint32_t VkEncDpbH264::GetDirtyIntraRefreshRegions(int32_t dpb_idx)
+{
+    if ((dpb_idx >= 0) && (dpb_idx < MAX_DPB_SLOTS) && (m_DPB[dpb_idx].state != DPB_EMPTY)) {
+        return (m_DPB[dpb_idx].dirtyIntraRefreshRegions);
+    }
+    return 0;
+}
+
+void VkEncDpbH264::SetCurDirtyIntraRefreshRegions(uint32_t dirtyIntraRefreshRegions)
+{
+    m_DPB[m_currDpbIdx].dirtyIntraRefreshRegions = dirtyIntraRefreshRegions;
+}
+
 // Returns a "view" of the DPB in terms of the entries holding valid reference
 // pictures.
 int32_t VkEncDpbH264::GetValidEntries(DpbEntryH264 entries[MAX_DPB_SLOTS])

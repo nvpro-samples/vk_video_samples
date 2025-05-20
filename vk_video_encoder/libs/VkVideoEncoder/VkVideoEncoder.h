@@ -89,6 +89,7 @@ public:
             , rateControlInfo { VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR }
             , rateControlLayersInfo{{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR }}
             , referenceSlotsInfo{}
+            , referenceIntraRefreshInfo{}
             , setupReferenceSlotInfo{ VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR }
             , videoSession()
             , videoSessionParameters()
@@ -108,6 +109,10 @@ public:
             assert(ARRAYSIZE(referenceSlotsInfo) == MAX_IMAGE_REF_RESOURCES);
             for (uint32_t i = 0; i < MAX_IMAGE_REF_RESOURCES; i++) {
                 referenceSlotsInfo[i].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+            }
+            for (uint32_t i = 0; i < MAX_IMAGE_REF_RESOURCES; i++) {
+                referenceIntraRefreshInfo[i].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_INTRA_REFRESH_INFO_KHR;
+                referenceIntraRefreshInfo[i].pNext = nullptr;
             }
             assert(numDpbImageResources <= ARRAYSIZE(dpbImageResources));
             for (uint32_t i = 0; i < numDpbImageResources; i++) {
@@ -143,6 +148,7 @@ public:
         VkVideoEncodeRateControlInfoKHR                    rateControlInfo;
         VkVideoEncodeRateControlLayerInfoKHR               rateControlLayersInfo[1];
         VkVideoReferenceSlotInfoKHR                        referenceSlotsInfo[MAX_IMAGE_REF_RESOURCES];
+        VkVideoReferenceIntraRefreshInfoKHR                referenceIntraRefreshInfo[MAX_IMAGE_REF_RESOURCES];
         VkVideoReferenceSlotInfoKHR                        setupReferenceSlotInfo;
         VkSharedBaseObj<VulkanVideoSession>                videoSession;
         VkSharedBaseObj<VulkanVideoSessionParameters>      videoSessionParameters;
