@@ -35,6 +35,9 @@ struct DpbEntryH265 {
     VkSharedBaseObj<VulkanVideoImagePoolNode>  dpbImageView;
     uint64_t frameId;      // internal unique id
     int32_t  temporalId;
+
+    // Intra-refresh
+    uint32_t dirtyIntraRefreshRegions;
 };
 
 class VkEncDpbH265 {
@@ -84,6 +87,9 @@ public:
     void FillStdReferenceInfo(uint8_t dpbIndex, StdVideoEncodeH265ReferenceInfo *pRefInfo);
 
     void ReferencePictureListIntializationLx(int32_t refPicListLx[2][STD_VIDEO_H265_MAX_NUM_LIST_REF], int32_t refPicListSize[2], const StdVideoEncodeH265SliceSegmentHeader *slh);
+
+    uint32_t GetDirtyIntraRefreshRegions(int32_t dpbIdx);
+    void SetCurDirtyIntraRefreshRegions(uint32_t dirtyIntraRefreshRegions);
 
 private:
     void FlushDpb();

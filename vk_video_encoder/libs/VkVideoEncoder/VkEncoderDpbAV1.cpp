@@ -848,3 +848,18 @@ void VkEncDpbAV1::FillStdReferenceInfo(uint8_t dpbIdx, StdVideoEncodeAV1Referenc
     pStdReferenceInfo->frame_type = pDpbEntry->frameType;
     pStdReferenceInfo->OrderHint = pDpbEntry->picOrderCntVal % (1 << ORDER_HINT_BITS);
 }
+
+uint32_t VkEncDpbAV1::GetDirtyIntraRefreshRegions(int8_t dpbIdx)
+{
+    assert(dpbIdx < m_maxDpbSize);
+    const DpbEntryAV1* pDpbEntry = &m_DPB[dpbIdx];
+
+    return pDpbEntry->dirtyIntraRefreshRegions;
+}
+
+void VkEncDpbAV1::SetDirtyIntraRefreshRegions(int8_t dpbIdx, uint32_t dirtyIntraRefreshRegions)
+{
+    assert(dpbIdx < m_maxDpbSize);
+
+    m_DPB[dpbIdx].dirtyIntraRefreshRegions = dirtyIntraRefreshRegions;
+}

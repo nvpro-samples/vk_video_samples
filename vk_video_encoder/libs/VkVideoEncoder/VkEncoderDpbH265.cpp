@@ -926,3 +926,16 @@ void VkEncDpbH265::InitializeRPS(const StdVideoH265ShortTermRefPicSet *pSpsShort
     InitializeShortTermRPSPFrame(numPocLtCurr, pSpsShortTermRps, spsNumShortTermRefPicSets,
                                  pPicInfo, pShortTermRefPicSet, numRefL0, numRefL1);
 }
+
+uint32_t VkEncDpbH265::GetDirtyIntraRefreshRegions(int32_t dpb_idx)
+{
+    if ((dpb_idx >= 0) && (dpb_idx < STD_VIDEO_H265_MAX_DPB_SIZE) && (m_stDpb[dpb_idx].state != 0)) {
+        return (m_stDpb[dpb_idx].dirtyIntraRefreshRegions);
+    }
+    return 0;
+}
+
+void VkEncDpbH265::SetCurDirtyIntraRefreshRegions(uint32_t dirtyIntraRefreshRegions)
+{
+    m_stDpb[m_curDpbIndex].dirtyIntraRefreshRegions = dirtyIntraRefreshRegions;
+}

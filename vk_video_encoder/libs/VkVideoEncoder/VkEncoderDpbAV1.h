@@ -55,6 +55,9 @@ struct DpbEntryAV1 {
 
     // The YCbCr dpb image resource
     VkSharedBaseObj<VulkanVideoImagePoolNode>  dpbImageView;
+
+    // Intra-refresh information
+    uint32_t dirtyIntraRefreshRegions;
 };
 
 struct PicInfoAV1 : public StdVideoEncodeAV1PictureInfo {
@@ -134,6 +137,9 @@ public:
     }
     uint64_t GetPictureTimestamp(int32_t picIdx);
     void SetCurRefFrameTimeStamp(uint64_t timeStamp);
+
+    uint32_t GetDirtyIntraRefreshRegions(int8_t dpbIdx);
+    void SetDirtyIntraRefreshRegions(int8_t dpbIdx, uint32_t dirtyIntraRefreshRegions);
 
     void FillStdReferenceInfo(uint8_t dpbIdx, StdVideoEncodeAV1ReferenceInfo* pStdReferenceInfo);
 
