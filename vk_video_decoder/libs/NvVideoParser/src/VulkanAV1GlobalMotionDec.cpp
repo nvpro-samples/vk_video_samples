@@ -82,6 +82,9 @@
 #define WARP_PARAM_REDUCE_BITS 6
 #define WARPEDMODEL_PREC_BITS 16
 
+// Function declaration
+int get_msb(unsigned int n);
+
 int get_msb(unsigned int n)
 {
     int log = 0;
