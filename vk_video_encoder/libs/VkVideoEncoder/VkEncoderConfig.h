@@ -88,6 +88,8 @@ static VkVideoComponentBitDepthFlagBitsKHR GetComponentBitDepthFlagBits(uint32_t
     return VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
 };
 
+void printHelp(VkVideoCodecOperationFlagBitsKHR codec);
+
 struct EncoderInputImageParameters
 {
     EncoderInputImageParameters()
@@ -936,7 +938,7 @@ public:
 
     int ParseArguments(int argc, const char *argv[]);
 
-    virtual int DoParseArguments(int argc, char *argv[]) { return 0; };
+    virtual int DoParseArguments(int argc, const char *argv[]) { return 0; };
 
     virtual VkResult InitializeParameters()
     {

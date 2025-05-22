@@ -26,6 +26,16 @@
 #include "VkCodecUtils/YCbCrConvUtilsCpu.h"
 #include "VkVideoCore/DecodeFrameBufferIf.h"
 
+void JankyHelperFunctionToForceWritepNext(const void *ppNext, const void* pNext) {
+    if (ppNext != NULL) {
+        // FIX-ME: Compiler flags -Werror=cast-qual will not permit a const_cast. Does the Vk api assume that the pNext is always pre-determined?
+        const void* _fixMe_stomp = ppNext;
+        void* tempPnext = NULL;
+        memcpy(&tempPnext, &_fixMe_stomp, sizeof(const void*));
+        memcpy(tempPnext, &pNext, sizeof(const void*));
+    }
+}
+
 static size_t getFormatTexelSize(VkFormat format)
 {
     switch (format) {
@@ -1244,7 +1254,9 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
     } else {
+#ifdef __cpp_exceptions
         throw std::invalid_argument("unsupported layout transition!");
+#endif
     }
 
     const VkDependencyInfoKHR dependencyInfo = {
@@ -1438,9 +1450,9 @@ VkResult VkVideoEncoder::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
         encodeFrameInfo->qualityLevelInfo.qualityLevel = encodeFrameInfo->qualityLevel;
         if (pNext != nullptr) {
             if (encodeFrameInfo->rateControlInfo.pNext == nullptr) {
-                encodeFrameInfo->rateControlInfo.pNext = pNext;
+                JankyHelperFunctionToForceWritepNext(&encodeFrameInfo->rateControlInfo.pNext, pNext);
             } else {
-                ((VkBaseInStructure*)(encodeFrameInfo->rateControlInfo.pNext))->pNext = pNext;
+                JankyHelperFunctionToForceWritepNext(&((const VkBaseInStructure*)(encodeFrameInfo->rateControlInfo.pNext))->pNext, pNext);
             }
         }
         pNext = (VkBaseInStructure*)&encodeFrameInfo->qualityLevelInfo;
@@ -1466,9 +1478,9 @@ VkResult VkVideoEncoder::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
 
         if (pNext != nullptr) {
             if (encodeFrameInfo->rateControlInfo.pNext == nullptr) {
-                encodeFrameInfo->rateControlInfo.pNext = pNext;
+                JankyHelperFunctionToForceWritepNext(&encodeFrameInfo->rateControlInfo.pNext, pNext);
             } else {
-                ((VkBaseInStructure*)(encodeFrameInfo->rateControlInfo.pNext))->pNext = pNext;
+                JankyHelperFunctionToForceWritepNext(&((const VkBaseInStructure*)(encodeFrameInfo->rateControlInfo.pNext))->pNext, pNext);
             }
         }
         pNext = (VkBaseInStructure*)&encodeFrameInfo->rateControlInfo;
@@ -1550,7 +1562,7 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         vkDevCtx->CmdControlVideoCodingKHR(cmdBuf, &renderControlInfo);
 
         m_beginRateControlInfo = *(VkVideoEncodeRateControlInfoKHR*)encodeFrameInfo->pControlCmdChain;
-        ((VkBaseInStructure*)(m_beginRateControlInfo.pNext))->pNext = NULL;
+        JankyHelperFunctionToForceWritepNext(&m_beginRateControlInfo.pNext, encodeFrameInfo->pControlCmdChain);
     }
 
     if (m_videoMaintenance1FeaturesSupported)
@@ -1561,10 +1573,9 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         videoInlineQueryInfoKHR.queryPool = queryPool;
         videoInlineQueryInfoKHR.firstQuery = querySlotId;
         videoInlineQueryInfoKHR.queryCount = numQuerySamples;
-        VkBaseInStructure* pStruct = (VkBaseInStructure*)&encodeFrameInfo->encodeInfo;
-        while (pStruct->pNext) pStruct = (VkBaseInStructure*)pStruct->pNext;
-        pStruct->pNext = (VkBaseInStructure*)&videoInlineQueryInfoKHR;
-
+        const VkBaseInStructure* pStruct = (const VkBaseInStructure*)&encodeFrameInfo->encodeInfo;
+        while (pStruct->pNext) pStruct = (const VkBaseInStructure*)pStruct->pNext;
+        JankyHelperFunctionToForceWritepNext(&pStruct->pNext, &videoInlineQueryInfoKHR);
         vkDevCtx->CmdEncodeVideoKHR(cmdBuf, &encodeFrameInfo->encodeInfo);
     }
     else
@@ -1644,7 +1655,7 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     return result;
 }
 
-VkResult VkVideoEncoder::PushOrderedFrames()
+VkResult VkVideoEncoder::PushOrderedFrames() 
 {
     VkResult result = VK_SUCCESS;
     if (m_lastDeferredFrame) {

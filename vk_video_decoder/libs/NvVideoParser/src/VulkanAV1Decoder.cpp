@@ -29,6 +29,10 @@
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
+// Forward declarations
+static uint32_t FloorLog2(uint32_t x);
+static bool IsObuInCurrentOperatingPoint(int current_operating_point, AV1ObuHeader *hdr);
+
 // constructor
 VulkanAV1Decoder::VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std, bool annexB)
     : VulkanVideoDecoder(std)

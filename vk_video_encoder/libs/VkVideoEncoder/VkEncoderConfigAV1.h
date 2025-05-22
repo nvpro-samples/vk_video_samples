@@ -88,7 +88,7 @@ struct EncoderConfigAV1 : public EncoderConfig {
     }
     virtual ~EncoderConfigAV1() {}
 
-    virtual int DoParseArguments(int argc, char* argv[]) override;
+    virtual int DoParseArguments(int argc, const char* argv[]) override;
 
     virtual VkResult InitializeParameters() override
     {
