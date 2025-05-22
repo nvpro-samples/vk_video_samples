@@ -131,7 +131,7 @@ void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
 int EncoderConfig::ParseArguments(int argc, const char *argv[])
 {
     int argcount = 0;
-    std::vector<char*> arglist;
+    std::vector<const char*> arglist;
     std::vector<std::string> args(argv, argv + argc);
     uint32_t frameCount = 0;
 
@@ -476,7 +476,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             enableOutOfOrderRecording = true;
         } else {
             argcount++;
-            arglist.push_back((char*)args[i].c_str());
+            arglist.push_back(args[i].c_str());
         }
     }
 

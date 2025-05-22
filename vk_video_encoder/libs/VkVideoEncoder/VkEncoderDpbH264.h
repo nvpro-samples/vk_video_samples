@@ -133,7 +133,7 @@ public:
     const StdVideoEncodeH264PictureInfo *GetCurrentDpbEntry(void)
     {
         assert((m_currDpbIdx < m_max_dpb_size) || (m_currDpbIdx == MAX_DPB_SLOTS));
-        return &m_DPB[m_currDpbIdx].picInfo;
+        return &m_DPB[(int)m_currDpbIdx].picInfo;
     }
 
     uint32_t GetUpdatedFrameNumAndPicOrderCnt(int32_t& PicOrderCnt)

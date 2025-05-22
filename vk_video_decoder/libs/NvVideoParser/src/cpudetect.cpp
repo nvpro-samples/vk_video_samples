@@ -13,6 +13,10 @@
 #include <asm/hwcap.h>
 #include <sys/auxv.h>
 
+#ifndef HWCAP_SVE
+#define HWCAP_SVE (1 << 22)  // This value might need to be adjusted based on your ARM architecture
+#endif
+
 #elif defined(_M_X64)
 
 #include <iostream>

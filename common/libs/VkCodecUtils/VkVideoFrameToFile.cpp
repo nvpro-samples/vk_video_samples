@@ -221,7 +221,7 @@ public:
                                                   imageResource, pOutputBuffer, mpInfo);
 
         if (m_outputcrcPerFrame && m_crcOutputFile) {
-            fprintf(m_crcOutputFile, "CRC Frame[%" PRId64 "]:", pFrame->displayOrder);
+            fprintf(m_crcOutputFile, "CRC Frame[%lld]:", (long long)pFrame->displayOrder);
             for (size_t i = 0; i < m_crcInitValue.size(); i += 1) {
                 uint32_t frameCrc = m_crcInitValue[i];
                 getCRC(&frameCrc, pOutputBuffer, usedBufferSize, Crc32Table);
