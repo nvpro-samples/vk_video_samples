@@ -538,6 +538,9 @@ public:
     virtual VkResult AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                            uint32_t frameIdx, uint32_t ofTotalFrames);
 
+    // Write data to file with CRC generation
+    size_t WriteDataToFileWithCRC(const uint8_t* data, size_t size);
+
     virtual VkResult StartOfVideoCodingEncodeOrder(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, uint32_t frameIdx, uint32_t ofTotalFrames)
     {
         encodeFrameInfo->frameEncodeEncodeOrderNum = m_encodeEncodeFrameNum++;

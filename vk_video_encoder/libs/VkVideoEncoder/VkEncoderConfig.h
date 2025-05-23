@@ -771,6 +771,8 @@ public:
     // 2: replicate only one row and one column to the padding area;
     uint32_t enablePictureRowColReplication : 2;
     uint32_t enableOutOfOrderRecording : 1; // Testing only - don't use for production!
+    uint32_t* crcOutput;  // Pointer to CRC output array
+    std::vector<uint32_t> crcInitValues;  // initialize crc values
 
     EncoderConfig()
     : refCount(0)
@@ -860,6 +862,7 @@ public:
     , enablePreprocessComputeFilter(true)
     , enablePictureRowColReplication(1)
     , enableOutOfOrderRecording(false)
+    , crcOutput(nullptr)
     { }
 
     virtual ~EncoderConfig() {}

@@ -19,11 +19,11 @@
 #include "VkVideoEncoder/VkVideoEncoder.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
-#include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
 #include "VkCodecUtils/YCbCrConvUtilsCpu.h"
+#include "crcgenerator.h"
 
 static size_t getFormatTexelSize(VkFormat format)
 {
@@ -608,9 +608,8 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
 
     if(encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
-        size_t nonVcl = fwrite(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
-               1, encodeFrameInfo->bitstreamHeaderBufferSize,
-               m_encoderConfig->outputFileHandler.GetFileHandle());
+        size_t nonVcl = WriteDataToFileWithCRC(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
+                                              encodeFrameInfo->bitstreamHeaderBufferSize);
 
         if (m_encoderConfig->verboseFrameStruct) {
             std::cout << "       == Non-Vcl data " << (nonVcl ? "SUCCESS" : "FAIL")
@@ -667,8 +666,8 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     size_t totalBytesWritten = 0;
     while (totalBytesWritten < encodeResult.bitstreamSize) { // handle partial writes
         size_t remainingBytes = encodeResult.bitstreamSize - totalBytesWritten;
-        size_t bytesWritten = fwrite(data + encodeResult.bitstreamStartOffset + totalBytesWritten, 1, remainingBytes,
-                                    m_encoderConfig->outputFileHandler.GetFileHandle());
+        size_t bytesWritten = WriteDataToFileWithCRC(data + encodeResult.bitstreamStartOffset + totalBytesWritten,
+                                                    remainingBytes);
         if (bytesWritten == 0) {
             std::cerr << "Error writing VCL data" << std::endl;
             return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -2033,4 +2032,26 @@ void VkVideoEncoder::ConsumerThread()
    } while (!m_encoderThreadQueue.ExitQueue());
 
    std::cout << "ConsumerThread is exiting now.\n" << std::endl;
+}
+
+size_t VkVideoEncoder::WriteDataToFileWithCRC(const uint8_t* data, size_t size)
+{
+    if (!data || size == 0) {
+        return 0;
+    }
+
+    // Write data to file
+    size_t bytesWritten = fwrite(data, 1, size, m_encoderConfig->outputFileHandler.GetFileHandle());
+    if (bytesWritten != size) {
+        return bytesWritten;
+    }
+
+    // Generate CRC if enabled
+    if (m_encoderConfig->crcOutput != nullptr) {
+        for (size_t i = 0; i < m_encoderConfig->crcInitValues.size(); i++) {
+            getCRC(&m_encoderConfig->crcOutput[i], data, size, Crc32Table);
+        }
+    }
+
+    return bytesWritten;
 }
