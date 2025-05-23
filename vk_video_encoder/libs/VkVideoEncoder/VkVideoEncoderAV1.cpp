@@ -874,7 +874,7 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
             mem_put_le32(header + 20, m_encoderConfig->frameRateDenominator);
             mem_put_le32(header + 24, m_encoderConfig->numFrames);
             mem_put_le32(header + 28, 0);
-            fwrite(header, 1, sizeof(header), m_encoderConfig->outputFileHandler.GetFileHandle());
+            WriteDataToFileWithCRC(header, sizeof(header));
         }
 
         // IVF frame header
@@ -914,11 +914,11 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
         mem_put_le32(frameHeader    , (uint32_t)framesSize); // updated with correct size later on
         mem_put_le32(frameHeader + 4, (uint32_t)(pts & 0xffffffff));
         mem_put_le32(frameHeader + 8, (uint32_t)(pts >> 32));
-        fwrite(frameHeader, 1, sizeof(frameHeader), m_encoderConfig->outputFileHandler.GetFileHandle());
+        WriteDataToFileWithCRC(frameHeader, sizeof(frameHeader));
 
         // Temporal delimiter
         uint8_t tdObu[2] = { 0x12, 0x00 };
-        fwrite(tdObu, 1, sizeof(tdObu), m_encoderConfig->outputFileHandler.GetFileHandle());
+        WriteDataToFileWithCRC(tdObu, sizeof(tdObu));
 
         // sequence header
         if(encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
@@ -1010,15 +1010,15 @@ void VkVideoEncoderAV1::WriteShowExistingFrameHeader(VkSharedBaseObj<VkVideoEnco
     mem_put_le32(frameHeader    , (uint32_t)frameSize); // updated with correct size lateron
     mem_put_le32(frameHeader + 4, (uint32_t)(pts & 0xffffffff));
     mem_put_le32(frameHeader + 8, (uint32_t)(pts >> 32));
-    fwrite(frameHeader, 1, sizeof(frameHeader), m_encoderConfig->outputFileHandler.GetFileHandle());
+    WriteDataToFileWithCRC(frameHeader, sizeof(frameHeader));
 
     // Temporal delimiter
     uint8_t tdObu[2] = { 0x12, 0x00 };
-    fwrite(tdObu, 1, sizeof(tdObu), m_encoderConfig->outputFileHandler.GetFileHandle());
+    WriteDataToFileWithCRC(tdObu, sizeof(tdObu));
 
     // frame header
-    fwrite(header.data(), 1, header.size(), m_encoderConfig->outputFileHandler.GetFileHandle());
-    fwrite(payload.data(), 1, payload.size(), m_encoderConfig->outputFileHandler.GetFileHandle());
+    WriteDataToFileWithCRC(header.data(), header.size());
+    WriteDataToFileWithCRC(payload.data(), payload.size());
     fflush(m_encoderConfig->outputFileHandler.GetFileHandle());
 }
 
