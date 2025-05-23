@@ -143,6 +143,7 @@ int main(int argc, const char** argv)
                                           decoderConfig.outputcrcPerFrame,
                                           crcOutputFile,
                                           decoderConfig.crcInitValue,
+                                          nullptr,
                                           frameToFile);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "Error creating output file %s\n", decoderConfig.outputFileName.c_str());

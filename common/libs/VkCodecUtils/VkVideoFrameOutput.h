@@ -46,6 +46,7 @@ public:
      * @param outputcrcPerFrame Whether to generate CRC for each frame
      * @param crcOutputFile File name for CRC output
      * @param crcInitValue Initial CRC values
+     * @param crcOutput Pointer to store the generated CRC
      * @param frameToFile Reference to store the created instance
      * @return VkResult VK_SUCCESS on success, error code otherwise
      */
@@ -54,6 +55,7 @@ public:
                           bool outputcrcPerFrame = false,
                           const char* crcOutputFile = nullptr,
                           const std::vector<uint32_t>& crcInitValue = std::vector<uint32_t>(),
+                          uint32_t* crcOutput = nullptr,
                           VkSharedBaseObj<VkVideoFrameOutput>& frameToFile = invalidFrameToFile);
 
     virtual ~VkVideoFrameOutput() = default;

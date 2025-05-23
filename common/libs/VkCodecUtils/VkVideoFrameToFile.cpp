@@ -127,7 +127,8 @@ public:
     VkVideoFrameToFileImpl(bool outputy4m,
                           bool outputcrcPerFrame,
                           const char* crcOutputFile,
-                          const std::vector<uint32_t>& crcInitValue)
+                          const std::vector<uint32_t>& crcInitValue,
+                          uint32_t* crcOutput = nullptr)
         : m_refCount(0)
         , m_outputFile(nullptr)
         , m_pLinearMemory(nullptr)
@@ -139,6 +140,7 @@ public:
         , m_outputcrcPerFrame(outputcrcPerFrame)
         , m_crcOutputFile(nullptr)
         , m_crcInitValue(crcInitValue)
+        , m_crcOutput(crcOutput)
         , m_crcAllocation() {
         if (crcOutputFile != nullptr) {
             m_crcOutputFile = fopen(crcOutputFile, "w");
@@ -236,6 +238,12 @@ public:
         if (!m_crcAllocation.empty()) {
             for (size_t i = 0; i < m_crcAllocation.size(); i += 1) {
                 getCRC(&m_crcAllocation[i], pOutputBuffer, usedBufferSize, Crc32Table);
+            }
+        }
+
+        if (m_crcOutput != nullptr) {
+            for (size_t i = 0; i < m_crcInitValue.size(); i += 1) {
+                getCRC(&m_crcOutput[i], pOutputBuffer, usedBufferSize, Crc32Table);
             }
         }
 
@@ -521,6 +529,7 @@ private:
     bool     m_outputcrcPerFrame;
     FILE*    m_crcOutputFile;
     std::vector<uint32_t> m_crcInitValue;
+    uint32_t* m_crcOutput;  // Pointer to store CRC output values
     std::vector<uint32_t> m_crcAllocation;
 };
 
@@ -533,9 +542,10 @@ VkResult VkVideoFrameOutput::Create(const char* fileName,
                                    bool outputcrcPerFrame,
                                    const char* crcOutputFile,
                                    const std::vector<uint32_t>& crcInitValue,
+                                   uint32_t* crcOutput,
                                    VkSharedBaseObj<VkVideoFrameOutput>& frameToFile) {
     VkVideoFrameToFileImpl* newFrameToFile = new VkVideoFrameToFileImpl(outputy4m, outputcrcPerFrame,
-                                                                       crcOutputFile, crcInitValue);
+                                                                       crcOutputFile, crcInitValue, crcOutput);
     if (!newFrameToFile) {
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
