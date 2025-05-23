@@ -199,7 +199,7 @@ public:
                       << std::endl;
             fileNameWithModExt = fileName + std::string(".y4m");
             fileName = fileNameWithModExt.c_str();
-        } else if (!hasExtension(fileName, ".yuv")) {
+        } else if ((y4mFormat == false) && !hasExtension(fileName, ".yuv")) {
             std::cout << std::endl << "Raw yuv output format is requested, ";
             std::cout << "but the output file's (" << fileName << ") extension isn't .yuv!"
                       << std::endl;
