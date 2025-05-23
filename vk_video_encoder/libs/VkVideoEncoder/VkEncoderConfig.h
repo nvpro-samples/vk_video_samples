@@ -871,6 +871,8 @@ public:
     // 2: replicate only one row and one column to the padding area;
     uint32_t enablePictureRowColReplication : 2;
     uint32_t enableOutOfOrderRecording : 1; // Testing only - don't use for production!
+    uint32_t* crcOutput;  // Pointer to CRC output array
+    std::vector<uint32_t> crcInitValue;  // initialize crc values
     uint32_t disableEncodeParameterOptimizations : 1;
 
     EncoderConfig()
@@ -1016,12 +1018,11 @@ public:
 
     virtual int DoParseArguments(int argc, const char *argv[]) {
         if (argc > 0) {
-            std::cout << "Invalid paramters: ";
+            std::cout << "Invalid parameters: ";
             for (int i = 0; i < argc; i++) {
                 std::cout << argv[i] << " ";
             }
             std::cout << std::endl;
-            return -1;
         }
         return 0;
     };
