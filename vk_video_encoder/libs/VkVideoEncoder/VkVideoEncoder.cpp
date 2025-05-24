@@ -19,12 +19,22 @@
 #include "VkVideoEncoder/VkVideoEncoder.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
-#include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
 #include "VkCodecUtils/YCbCrConvUtilsCpu.h"
 #include "VkVideoCore/DecodeFrameBufferIf.h"
+#include "crcgenerator.h"
+
+void JankyHelperFunctionToForceWritepNext(const void *ppNext, const void* pNext) {
+    if (ppNext != NULL) {
+        // FIX-ME: Compiler flags -Werror=cast-qual will not permit a const_cast. Does the Vk api assume that the pNext is always pre-determined?
+        const void* _fixMe_stomp = ppNext;
+        void* tempPnext = NULL;
+        memcpy(&tempPnext, &_fixMe_stomp, sizeof(const void*));
+        memcpy(tempPnext, &pNext, sizeof(const void*));
+    }
+}
 
 static size_t getFormatTexelSize(VkFormat format)
 {
@@ -539,9 +549,8 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
 
     if(encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
-        size_t nonVcl = fwrite(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
-               1, encodeFrameInfo->bitstreamHeaderBufferSize,
-               m_encoderConfig->outputFileHandler.GetFileHandle());
+        size_t nonVcl = WriteDataToFileWithCRC(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
+                                              encodeFrameInfo->bitstreamHeaderBufferSize);
 
         if (m_encoderConfig->verboseFrameStruct) {
             std::cout << "       == Non-Vcl data " << (nonVcl ? "SUCCESS" : "FAIL")
@@ -598,8 +607,8 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     size_t totalBytesWritten = 0;
     while (totalBytesWritten < encodeResult.bitstreamSize) { // handle partial writes
         size_t remainingBytes = encodeResult.bitstreamSize - totalBytesWritten;
-        size_t bytesWritten = fwrite(data + encodeResult.bitstreamStartOffset + totalBytesWritten, 1, remainingBytes,
-                                    m_encoderConfig->outputFileHandler.GetFileHandle());
+        size_t bytesWritten = WriteDataToFileWithCRC(data + encodeResult.bitstreamStartOffset + totalBytesWritten,
+                                                    remainingBytes);
         if (bytesWritten == 0) {
             std::cerr << "Error writing VCL data" << std::endl;
             return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -1244,7 +1253,9 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
     } else {
+#ifdef __cpp_exceptions
         throw std::invalid_argument("unsupported layout transition!");
+#endif
     }
 
     const VkDependencyInfoKHR dependencyInfo = {
@@ -1438,9 +1449,9 @@ VkResult VkVideoEncoder::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
         encodeFrameInfo->qualityLevelInfo.qualityLevel = encodeFrameInfo->qualityLevel;
         if (pNext != nullptr) {
             if (encodeFrameInfo->rateControlInfo.pNext == nullptr) {
-                encodeFrameInfo->rateControlInfo.pNext = pNext;
+                JankyHelperFunctionToForceWritepNext(&encodeFrameInfo->rateControlInfo.pNext, pNext);
             } else {
-                ((VkBaseInStructure*)(encodeFrameInfo->rateControlInfo.pNext))->pNext = pNext;
+                JankyHelperFunctionToForceWritepNext(&((const VkBaseInStructure*)(encodeFrameInfo->rateControlInfo.pNext))->pNext, pNext);
             }
         }
         pNext = (VkBaseInStructure*)&encodeFrameInfo->qualityLevelInfo;
@@ -1466,9 +1477,9 @@ VkResult VkVideoEncoder::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
 
         if (pNext != nullptr) {
             if (encodeFrameInfo->rateControlInfo.pNext == nullptr) {
-                encodeFrameInfo->rateControlInfo.pNext = pNext;
+                JankyHelperFunctionToForceWritepNext(&encodeFrameInfo->rateControlInfo.pNext, pNext);
             } else {
-                ((VkBaseInStructure*)(encodeFrameInfo->rateControlInfo.pNext))->pNext = pNext;
+                JankyHelperFunctionToForceWritepNext(&((const VkBaseInStructure*)(encodeFrameInfo->rateControlInfo.pNext))->pNext, pNext);
             }
         }
         pNext = (VkBaseInStructure*)&encodeFrameInfo->rateControlInfo;
@@ -1550,7 +1561,7 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         vkDevCtx->CmdControlVideoCodingKHR(cmdBuf, &renderControlInfo);
 
         m_beginRateControlInfo = *(VkVideoEncodeRateControlInfoKHR*)encodeFrameInfo->pControlCmdChain;
-        ((VkBaseInStructure*)(m_beginRateControlInfo.pNext))->pNext = NULL;
+        JankyHelperFunctionToForceWritepNext(&m_beginRateControlInfo.pNext, encodeFrameInfo->pControlCmdChain);
     }
 
     if (m_videoMaintenance1FeaturesSupported)
@@ -1561,10 +1572,9 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         videoInlineQueryInfoKHR.queryPool = queryPool;
         videoInlineQueryInfoKHR.firstQuery = querySlotId;
         videoInlineQueryInfoKHR.queryCount = numQuerySamples;
-        VkBaseInStructure* pStruct = (VkBaseInStructure*)&encodeFrameInfo->encodeInfo;
-        while (pStruct->pNext) pStruct = (VkBaseInStructure*)pStruct->pNext;
-        pStruct->pNext = (VkBaseInStructure*)&videoInlineQueryInfoKHR;
-
+        const VkBaseInStructure* pStruct = (const VkBaseInStructure*)&encodeFrameInfo->encodeInfo;
+        while (pStruct->pNext) pStruct = (const VkBaseInStructure*)pStruct->pNext;
+        JankyHelperFunctionToForceWritepNext(&pStruct->pNext, &videoInlineQueryInfoKHR);
         vkDevCtx->CmdEncodeVideoKHR(cmdBuf, &encodeFrameInfo->encodeInfo);
     }
     else
@@ -1644,7 +1654,7 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     return result;
 }
 
-VkResult VkVideoEncoder::PushOrderedFrames()
+VkResult VkVideoEncoder::PushOrderedFrames() 
 {
     VkResult result = VK_SUCCESS;
     if (m_lastDeferredFrame) {
@@ -1824,4 +1834,26 @@ void VkVideoEncoder::ConsumerThread()
    } while (!m_encoderThreadQueue.ExitQueue());
 
    std::cout << "ConsumerThread is exiting now.\n" << std::endl;
+}
+
+size_t VkVideoEncoder::WriteDataToFileWithCRC(const uint8_t* data, size_t size)
+{
+    if (!data || size == 0) {
+        return 0;
+    }
+
+    // Write data to file
+    size_t bytesWritten = fwrite(data, 1, size, m_encoderConfig->outputFileHandler.GetFileHandle());
+    if (bytesWritten != size) {
+        return bytesWritten;
+    }
+
+    // Generate CRC if enabled
+    if (m_encoderConfig->crcOutput != nullptr) {
+        for (size_t i = 0; i < m_encoderConfig->crcInitValues.size(); i++) {
+            getCRC(&m_encoderConfig->crcOutput[i], data, size, Crc32Table);
+        }
+    }
+
+    return bytesWritten;
 }

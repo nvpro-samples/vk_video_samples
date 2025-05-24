@@ -786,13 +786,13 @@ namespace win {
 /** Returns the 4 upper bytes of an 8-byte integer. */
 inline DWORD int64_high(int64_t n) noexcept
 {
-    return n >> 32;
+    return (DWORD)(n >> 32);
 }
 
 /** Returns the 4 lower bytes of an 8-byte integer. */
 inline DWORD int64_low(int64_t n) noexcept
 {
-    return n & 0xffffffff;
+    return (DWORD)(n & 0xffffffff);
 }
 
 inline std::wstring s_2_ws(const std::string& s)
@@ -887,7 +887,7 @@ inline size_t query_file_size(file_handle_type handle, std::error_code& error)
         error = detail::last_error();
         return 0;
     }
-	return static_cast<int64_t>(file_size.QuadPart);
+	return static_cast<size_t>(file_size.QuadPart);
 #else // POSIX
     struct stat sbuf;
     if(::fstat(handle, &sbuf) == -1)
@@ -933,7 +933,7 @@ inline mmap_context memory_map(const file_handle_type file_handle, const int64_t
             mode == access_mode::read ? FILE_MAP_READ : FILE_MAP_WRITE,
             win::int64_high(aligned_offset),
             win::int64_low(aligned_offset),
-            length_to_map));
+            (size_t)length_to_map));
     if(mapping_start == nullptr)
     {
         // Close file handle if mapping it failed.

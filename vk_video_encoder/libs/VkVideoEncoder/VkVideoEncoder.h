@@ -41,6 +41,8 @@
 #endif // VIDEO_DISPLAY_QUEUE_SUPPORT
 #include "mio/mio.hpp"
 
+void JankyHelperFunctionToForceWritepNext(const void *ppNext, const void* pNext);
+
 class VkVideoEncoderH264;
 class VkVideoEncoderH265;
 class VkVideoEncoderAV1;
@@ -58,7 +60,7 @@ public:
     {
         VkStructureType GetType() {
             return (encodeInfo.pNext == nullptr) ?
-                    VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR : ((VkBaseInStructure*)encodeInfo.pNext)->sType;
+                    VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR : reinterpret_cast<const VkBaseInStructure*>(encodeInfo.pNext)->sType;
         }
 
         VkVideoEncodeFrameInfo(const void* pNext = nullptr)
@@ -535,6 +537,9 @@ public:
 
     virtual VkResult AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                            uint32_t frameIdx, uint32_t ofTotalFrames);
+
+    // Write data to file with CRC generation
+    size_t WriteDataToFileWithCRC(const uint8_t* data, size_t size);
 
     virtual VkResult StartOfVideoCodingEncodeOrder(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, uint32_t frameIdx, uint32_t ofTotalFrames)
     {

@@ -29,6 +29,10 @@
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
+// Forward declarations
+static uint32_t FloorLog2(uint32_t x);
+static bool IsObuInCurrentOperatingPoint(int current_operating_point, AV1ObuHeader *hdr);
+
 // constructor
 VulkanAV1Decoder::VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std, bool annexB)
     : VulkanVideoDecoder(std)
@@ -2281,7 +2285,11 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
             consumedBytes += tile_size_bytes_minus_1 + 1;
             m_PicData.tileOffsets[m_PicData.khr_info.tileCount] = (uint32_t)m_nalu.start_offset + (uint32_t)consumedBytes;
 
-            tileSize = tile_size_minus_1 + 1;
+            // Add bounds checking and safe conversion
+            if (tile_size_minus_1 > SIZE_MAX - 1) {
+                return false; // Tile size too large
+            }
+            tileSize = (size_t)(tile_size_minus_1 + 1);
             consumedBytes += (uint32_t)tileSize;
 
             skip_bits((uint32_t)(tileSize * 8));

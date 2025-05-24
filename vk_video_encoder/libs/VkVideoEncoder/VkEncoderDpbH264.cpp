@@ -28,6 +28,7 @@
 #include <stdint.h>
 
 #include "VkEncoderDpbH264.h"
+#include "ExitWrapper.h"
 
 #define VK_DPB_DBG_PRINT(expr) printf expr
 
@@ -278,7 +279,7 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
             }
             if (m_currDpbIdx >= MAX_DPB_SLOTS) {
                 VK_DPB_DBG_PRINT(("could not allocate a frame buffer\n"));
-                exit(1);
+                safe_exit(1);
             }
             if (pCurDPBEntry != &m_DPB[m_currDpbIdx]) {
                 ReleaseFrame(m_DPB[m_currDpbIdx].dpbImageView);
@@ -355,7 +356,7 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
                     }
                     if (m_currDpbIdx >= MAX_DPB_SLOTS) {
                         VK_DPB_DBG_PRINT(("could not allocate a frame buffer\n"));
-                        exit(1);
+                        safe_exit(1);
                     }
                     if (pCurDPBEntry != &m_DPB[m_currDpbIdx]) {
                         ReleaseFrame(m_DPB[m_currDpbIdx].dpbImageView);
