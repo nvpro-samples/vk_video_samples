@@ -22,6 +22,8 @@
 #include <stdexcept>
 #include <assert.h>
 #include <iostream>
+#include <cstring>
+#include <iomanip>
 #include "HelpersDispatchTable.h"
 
 namespace vk {
@@ -348,6 +350,98 @@ inline VkBaseInStructure* ChainNextVkStruct(NodeType& node, ChainedNodeType& nex
      assert(nextChainedNode.pNext == nullptr);
      return (VkBaseInStructure*)nextChainedNode.pNext;
  }
+
+class DeviceUuidUtils
+{
+
+public:
+    DeviceUuidUtils() {
+        clear();
+    }
+
+    DeviceUuidUtils(const uint8_t deviceUUID[VK_UUID_SIZE]) {
+        memcpy(m_deviceUUID, deviceUUID, VK_UUID_SIZE);
+        m_deviceUuidIsValid = 1;
+    }
+
+    // Function to convert a UUID string to a byte array
+    size_t StringToUUID(const char* uuidStr) {
+
+        size_t numHexDigits = 0;
+
+        // Validate basic format: 36 characters (32 hex digits + 4 hyphens)
+        if (strlen(uuidStr) != 36) {
+            std::cerr << "Error: UUID string must be 36 characters long" << std::endl;
+            return numHexDigits;
+        }
+
+        for (size_t i = 0; i < 36; ++i) {
+
+            if (*uuidStr == '-') {
+                uuidStr++;
+                continue;
+            }
+
+            uint8_t hexByte = 0;
+            sscanf(uuidStr, "%2hhx", &hexByte);
+            m_deviceUUID[numHexDigits] = hexByte;
+            uuidStr += 2;
+            numHexDigits++;
+            if (numHexDigits == VK_UUID_SIZE) {
+                m_deviceUuidIsValid = 1;
+                break;
+            }
+        }
+
+        return numHexDigits;
+    }
+
+    const uint8_t* GetDeviceUUID() const {
+        return m_deviceUuidIsValid ? m_deviceUUID : nullptr;
+    }
+
+    std::string ToString() const {
+        std::stringstream ss;
+
+        // Format: 8-4-4-4-12 hex digits (32 hex digits total with 4 hyphens)
+        for (uint32_t i = 0; i < VK_UUID_SIZE; ++i) {
+            // Add hyphens at positions 4, 6, 8, and 10 (after 8, 4, 4, and 4 hex digits)
+            if (i == 4 || i == 6 || i == 8 || i == 10) {
+                ss << "-";
+            }
+
+            // Convert byte to hex and ensure it's always two digits
+            ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(m_deviceUUID[i]);
+        }
+
+        return ss.str();
+    }
+
+    explicit operator bool() const {
+        return m_deviceUuidIsValid;
+    }
+
+    bool Compare(const uint8_t deviceUUID[VK_UUID_SIZE]) const {
+
+        if (m_deviceUuidIsValid == 0) {
+            return false;
+        }
+        if ( 0 == memcmp(m_deviceUUID, deviceUUID, VK_UUID_SIZE)) {
+            return true;
+        }
+
+        return false;
+    }
+private:
+    void clear() {
+        m_deviceUuidIsValid = false;
+        memset(m_deviceUUID, 0x00, sizeof(m_deviceUUID));
+    }
+
+private:
+    uint8_t  m_deviceUUID[VK_UUID_SIZE];
+    uint32_t m_deviceUuidIsValid : 1;
+};
 
 }  // namespace vk
 

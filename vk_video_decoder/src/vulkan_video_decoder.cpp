@@ -192,7 +192,7 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance,
         requestGraphicsQueueMask = VK_QUEUE_GRAPHICS_BIT;
     }
 
-    result = m_vkDevCtxt.InitPhysicalDevice(m_decoderConfig.deviceId, m_decoderConfig.GetDeviceUUID(),
+    result = m_vkDevCtxt.InitPhysicalDevice(m_decoderConfig.deviceId, m_decoderConfig.deviceUUID,
                                             ( VK_QUEUE_TRANSFER_BIT |
                                               requestGraphicsQueueMask |
                                               requestVideoComputeQueueMask |

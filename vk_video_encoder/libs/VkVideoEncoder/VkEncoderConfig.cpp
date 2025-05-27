@@ -441,7 +441,7 @@ int EncoderConfig::ParseArguments(int argc, char *argv[])
                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                return -1;
             }
-            size_t size = SetHexDeviceUUID(args[i].c_str());
+            size_t size = deviceUUID.StringToUUID(args[i].c_str());
             if (size != VK_UUID_SIZE) {
                 fprintf(stderr,"Invalid deviceUuid format used: %s with size: %zu."
                                "deviceUuid must be represented by 16 hex (32 bytes) values.", args[i].c_str(), args[i].length());
