@@ -22,6 +22,7 @@
 #include <array>
 #include <mutex>
 #include <vulkan_interfaces.h>
+#include "VkCodecUtils/Helpers.h"
 #include <VkCodecUtils/HelpersDispatchTable.h>
 #include "VkShell/VkWsiDisplay.h"
 #include "VkCodecUtils/VulkanSemaphoreDump.h"
@@ -251,7 +252,7 @@ public:
                              uint64_t object, size_t location,
                              int32_t msg_code, const char *layer_prefix, const char *msg);
 
-    VkResult InitPhysicalDevice(int32_t deviceId = -1, const uint8_t* pDeviceUuid = nullptr,
+    VkResult InitPhysicalDevice(int32_t deviceId, const vk::DeviceUuidUtils& deviceUuid,
                                 const VkQueueFlags requestQueueTypes =  (VK_QUEUE_GRAPHICS_BIT |
                                                                    /*  VK_QUEUE_COMPUTE_BIT |  */
                                                                    /* VK_QUEUE_TRANSFER_BIT | */

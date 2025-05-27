@@ -28,7 +28,6 @@
 #include <set>
 #include <unordered_set>
 #include <algorithm>    // std::find_if
-#include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
 #include "VkShell/Shell.h"
@@ -411,7 +410,7 @@ VkResult VulkanDeviceContext::InitDebugReport(bool validate, bool validateVerbos
     return CreateDebugReportCallbackEXT(m_instance, &debug_report_info, nullptr, &m_debugReport);
 }
 
-VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const uint8_t* pDeviceUuid,
+VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const vk::DeviceUuidUtils& deviceUuid,
                                                  const VkQueueFlags requestQueueTypes,
                                                  const VkWsiDisplay* pWsiDisplay,
                                                  const VkQueueFlags requestVideoDecodeQueueMask,
@@ -434,26 +433,40 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const uint8_t
     m_physDevice = VK_NULL_HANDLE;
     for (auto physicalDevice : availablePhysicalDevices) {
 
-        VkPhysicalDeviceProperties props;
-        GetPhysicalDeviceProperties(physicalDevice, &props);
-        if ((deviceId != -1) && (props.deviceID != (uint32_t)deviceId)) {
+        // Get Vulkan 1.1 specific properties which include deviceUUID
+        VkPhysicalDeviceVulkan11Properties deviceVulkan11Properties = {};
+        deviceVulkan11Properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES;
+
+        VkPhysicalDeviceProperties2 devProp2 = {};
+        devProp2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        devProp2.pNext = &deviceVulkan11Properties;
+
+        // Get the properties
+        GetPhysicalDeviceProperties2(physicalDevice, &devProp2);
+
+        if ((deviceId != -1) && (devProp2.properties.deviceID != (uint32_t)deviceId)) {
             continue;
         }
 
-        if (pDeviceUuid != nullptr) {
-            size_t length = strlen(reinterpret_cast<const char*>(pDeviceUuid));
-            if (length != VK_UUID_SIZE) {
-                continue;
-            }
+        if (deviceUuid) {
+            if (!deviceUuid.Compare( deviceVulkan11Properties.deviceUUID)) {
 
-            if ( 0 != strncmp((const char *)props.pipelineCacheUUID, (const char *)pDeviceUuid, VK_UUID_SIZE)) {
+                vk::DeviceUuidUtils deviceUuid(deviceVulkan11Properties.deviceUUID);
+                std::cout << "*** Skipping vulkan physical device with NOT matching UUID: "
+                          << "Device Name: " << devProp2.properties.deviceName << std::hex
+                          << ", vendor ID: " << devProp2.properties.vendorID
+                          << ", device UUID: " << deviceUuid.ToString()
+                          << ", and device ID: " << devProp2.properties.deviceID << std::dec
+                          << ", Num Decode Queues: " << m_videoDecodeNumQueues
+                          << ", Num Encode Queues: " << m_videoEncodeNumQueues
+                          << " ***" << std::endl << std::flush;
                 continue;
             }
         }
 
-        if (!HasAllDeviceExtensions(physicalDevice, props.deviceName)) {
-            std::cerr << "ERROR: Found physical device with name: " << props.deviceName << std::hex
-                         << ", vendor ID: " << props.vendorID << ", and device ID: " << props.deviceID
+        if (!HasAllDeviceExtensions(physicalDevice, devProp2.properties.deviceName)) {
+            std::cerr << "ERROR: Found physical device with name: " << devProp2.properties.deviceName << std::hex
+                         << ", vendor ID: " << devProp2.properties.vendorID << ", and device ID: " << devProp2.properties.deviceID
                          << std::dec
                          << " NOT having the required extensions!" << std::endl << std::flush;
             continue;
@@ -618,9 +631,13 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const uint8_t
                     PrintExtensions(true);
                 }
 
-                if (dumpQueues) {
-                    std::cout << "*** Selected Vulkan physical device with name: " << props.deviceName << std::hex
-                              << ", vendor ID: " << props.vendorID << ", and device ID: " << props.deviceID << std::dec
+                if (true) {
+
+                    vk::DeviceUuidUtils deviceUuid(deviceVulkan11Properties.deviceUUID);
+                    std::cout << "*** Selected Vulkan physical device with name: " << devProp2.properties.deviceName << std::hex
+                              << ", vendor ID: " << devProp2.properties.vendorID
+                              << ", device UUID: " << deviceUuid.ToString()
+                              << ", and device ID: " << devProp2.properties.deviceID << std::dec
                               << ", Num Decode Queues: " << m_videoDecodeNumQueues
                               << ", Num Encode Queues: " << m_videoEncodeNumQueues
                               << " ***" << std::endl << std::flush;
@@ -628,8 +645,8 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const uint8_t
                 return VK_SUCCESS;
             }
         }
-        std::cerr << "ERROR: Found physical device with name: " << props.deviceName << std::hex
-                  << ", vendor ID: " << props.vendorID << ", and device ID: " << props.deviceID
+        std::cerr << "ERROR: Found physical device with name: " << devProp2.properties.deviceName << std::hex
+                  << ", vendor ID: " << devProp2.properties.vendorID << ", and device ID: " << devProp2.properties.deviceID
                   << std::dec
                   << " NOT having the required queue families!" << std::endl << std::flush;
     }
