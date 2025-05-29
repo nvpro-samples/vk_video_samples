@@ -14,11 +14,10 @@
 * limitations under the License.
 */
 
-
 #include "VulkanFilterYuvCompute.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 
-static bool dumpShaders = true;
+static bool dumpShaders = false;
 
 VkResult VulkanFilterYuvCompute::Create(const VulkanDeviceContext* vkDevCtx,
                                         uint32_t queueFamilyIndex,

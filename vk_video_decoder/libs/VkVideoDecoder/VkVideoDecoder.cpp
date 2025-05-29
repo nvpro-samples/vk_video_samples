@@ -1458,8 +1458,10 @@ VkDeviceSize VkVideoDecoder::GetBitstreamBuffer(VkDeviceSize size,
     }
     bitstreamBuffer = newBitstreamBuffer;
     if (newSize > m_maxStreamBufferSize) {
-        std::cout << "\tAllocated bitstream buffer with size " << newSize << " B, " <<
+        std::cout << "\nRe-allocated bitstream buffer with size " << newSize << " B, " <<
                              newSize/1024 << " KB, " << newSize/1024/1024 << " MB" << std::endl;
+        std::cout << "Previously set max bitstream buffer size was " << m_maxStreamBufferSize << " B, " <<
+                m_maxStreamBufferSize/1024 << " KB, " << m_maxStreamBufferSize/1024/1024 << " MB" << std::endl;
         m_maxStreamBufferSize = newSize;
     }
     return bitstreamBuffer->GetMaxSize();

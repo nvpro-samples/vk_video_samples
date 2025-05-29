@@ -235,7 +235,7 @@ private:
         , m_numImageTypesEnabled(DecodeFrameBufferIf::IMAGE_TYPE_MASK_DECODE_DPB)
         , m_imageSpecsIndex()
         , m_numBitstreamBuffersToPreallocate(numBitstreamBuffersToPreallocate)
-        , m_maxStreamBufferSize()
+        , m_maxStreamBufferSize(2097152) // 2MB max bitstream by default
         , m_filterType(filterType)
     {
 

@@ -30,7 +30,7 @@
 
 template<class FrameDataType>
 VulkanFrame<FrameDataType>::VulkanFrame(const VulkanDeviceContext* vkDevCtx)
-    : FrameProcessor(true)
+    : FrameProcessor(false)
     , m_refCount(0)
     , m_vkDevCtx(vkDevCtx)
     , m_videoQueue()

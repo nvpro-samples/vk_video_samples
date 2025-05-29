@@ -276,28 +276,6 @@ private:
      */
     size_t InitYCBCR2RGBA(std::string& computeShader);
 
-    /**
-     * @brief Initializes GLSL shader for RGBA to YCbCr conversion
-     *
-     * Generates a compute shader that converts RGBA input to YCbCr output
-     * using the appropriate color space conversion matrix.
-     *
-     * @param computeShader Output string for the complete GLSL shader code
-     * @return Size of the generated shader code in bytes
-     */
-    size_t InitRGBA2YCBCR(std::string& computeShader);
-
-    /**
-     * @brief Initializes GLSL shader for YUV to NV12 conversion using buffer input
-     *
-     * Generates a compute shader that converts YUV input from buffer to NV12 output,
-     * handling different YUV formats (I420, I422, I444) with appropriate chroma subsampling.
-     *
-     * @param computeShader Output string for the complete GLSL shader code
-     * @return Size of the generated shader code in bytes
-     */
-    size_t InitYUV2NV12FromBuffer(std::string& computeShader);
-
 private:
     const FilterType                         m_filterType;
     VkFormat                                 m_inputFormat;
