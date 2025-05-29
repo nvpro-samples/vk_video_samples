@@ -88,6 +88,8 @@ static VkVideoComponentBitDepthFlagBitsKHR GetComponentBitDepthFlagBits(uint32_t
     return VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
 };
 
+void printHelp(VkVideoCodecOperationFlagBitsKHR codec);
+
 struct EncoderInputImageParameters
 {
     EncoderInputImageParameters()
@@ -769,6 +771,8 @@ public:
     // 2: replicate only one row and one column to the padding area;
     uint32_t enablePictureRowColReplication : 2;
     uint32_t enableOutOfOrderRecording : 1; // Testing only - don't use for production!
+    uint32_t* crcOutput;  // Pointer to CRC output array
+    std::vector<uint32_t> crcInitValues;  // initialize crc values
 
     EncoderConfig()
     : refCount(0)
@@ -858,6 +862,7 @@ public:
     , enablePreprocessComputeFilter(true)
     , enablePictureRowColReplication(1)
     , enableOutOfOrderRecording(false)
+    , crcOutput(nullptr)
     { }
 
     virtual ~EncoderConfig() {}
@@ -930,13 +935,13 @@ public:
     }
 
     // Factory Function
-    static VkResult CreateCodecConfig(int argc, char *argv[], VkSharedBaseObj<EncoderConfig>& encoderConfig);
+    static VkResult CreateCodecConfig(int argc, const char *argv[], VkSharedBaseObj<EncoderConfig>& encoderConfig);
 
     void InitVideoProfile();
 
-    int ParseArguments(int argc, char *argv[]);
+    int ParseArguments(int argc, const char *argv[]);
 
-    virtual int DoParseArguments(int argc, char *argv[]) { return 0; };
+    virtual int DoParseArguments(int argc, const char *argv[]) { return 0; };
 
     virtual VkResult InitializeParameters()
     {
