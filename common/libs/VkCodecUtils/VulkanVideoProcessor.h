@@ -27,10 +27,6 @@
 class VulkanDeviceContext;
 struct VkMpFormatInfo;
 
-size_t ConvertFrameToNv12(const VulkanDeviceContext* vkDevCtx, int32_t frameWidth, int32_t frameHeight,
-                         VkSharedBaseObj<VkImageResource>& imageResource,
-                         uint8_t* pOutBuffer, const VkMpFormatInfo* mpInfo);
-
 class VulkanVideoProcessor : public VkVideoQueue<VulkanDecodedFrame> {
 public:
 

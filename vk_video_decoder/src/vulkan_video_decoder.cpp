@@ -21,7 +21,7 @@
 #include "VkVideoDecoder/VkVideoDecoder.h"
 #include "VkCodecUtils/VulkanVideoProcessor.h"
 
-class VulkanVideoDecoderImpl : public VulkanVideoDecoderHighLevel {
+class VulkanVideoDecoderImpl : public VulkanVideoDecoder {
 public:
 
     virtual int32_t  GetWidth() const
@@ -66,7 +66,7 @@ public:
 
     virtual VkExtent3D GetVideoExtent() const
     {
-        VkExtent3D extent = {
+        VkExtent3D extent {
             (uint32_t)m_vulkanVideoProcessor->GetWidth(),
             (uint32_t)m_vulkanVideoProcessor->GetHeight(),
             1
@@ -257,7 +257,7 @@ VkResult CreateVulkanVideoDecoder(VkInstance vkInstance, VkPhysicalDevice vkPhys
                                   VkSharedBaseObj<VkVideoFrameOutput>& frameToFile,
                                   const VkWsiDisplay* pWsiDisplay,
                                   int argc, const char** argv,
-                                  VkSharedBaseObj<VulkanVideoDecoderHighLevel>& vulkanVideoDecoder)
+                                  VkSharedBaseObj<VulkanVideoDecoder>& vulkanVideoDecoder)
 {
     switch((uint32_t)videoStreamDemuxer->GetVideoCodec())
     {

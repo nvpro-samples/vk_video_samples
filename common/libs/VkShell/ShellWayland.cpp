@@ -196,7 +196,7 @@ void ShellWayland::InitConnection() {
         if (!m_shell) throw std::runtime_error("failed to bind shell");
     } catch (const std::exception &e) {
         std::cerr << "Could not initialize Wayland: " << e.what() << std::endl;
-        safe_exit(-1);
+        SAFE_EXIT(-1, "Failed to initialize Wayland display server");
     }
 }
 

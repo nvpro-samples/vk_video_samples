@@ -35,6 +35,10 @@
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 #include "crcgenerator.h"
 
+size_t ConvertFrameToNv12(const VulkanDeviceContext* vkDevCtx, int32_t frameWidth, int32_t frameHeight,
+                         VkSharedBaseObj<VkImageResource>& imageResource,
+                         uint8_t* pOutBuffer, const VkMpFormatInfo* mpInfo);
+
 int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                                          VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
                                          VkSharedBaseObj<VkVideoFrameOutput>& frameToFile,
@@ -177,7 +181,7 @@ VkResult VulkanVideoProcessor::Create(const DecoderConfig& settings, const Vulka
 
 VkVideoProfileInfoKHR VulkanVideoProcessor::GetVkProfile() const
 {
-    VkVideoProfileInfoKHR videoProfile = {VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR, NULL,
+    VkVideoProfileInfoKHR videoProfile {VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR, NULL,
                                         m_videoStreamDemuxer->GetVideoCodec(),
                                         m_videoStreamDemuxer->GetChromaSubsampling(),
                                         m_videoStreamDemuxer->GetLumaBitDepth(),
@@ -211,10 +215,10 @@ VkFormat VulkanVideoProcessor::GetFrameImageFormat()  const
 
 VkExtent3D VulkanVideoProcessor::GetVideoExtent() const
 {
-    VkExtent3D extent = { (uint32_t)m_videoStreamDemuxer->GetWidth(),
-                         (uint32_t)m_videoStreamDemuxer->GetHeight(),
-                         (uint32_t)1
-                       };
+    VkExtent3D extent { (uint32_t)m_videoStreamDemuxer->GetWidth(),
+                        (uint32_t)m_videoStreamDemuxer->GetHeight(),
+                        (uint32_t)1
+                      };
     return extent;
 }
 

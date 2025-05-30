@@ -2286,7 +2286,7 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
             m_PicData.tileOffsets[m_PicData.khr_info.tileCount] = (uint32_t)m_nalu.start_offset + (uint32_t)consumedBytes;
 
             // Add bounds checking and safe conversion
-            if (tile_size_minus_1 > SIZE_MAX - 1) {
+            if (tile_size_minus_1 > (SIZE_MAX - 1)) {
                 return false; // Tile size too large
             }
             tileSize = (size_t)(tile_size_minus_1 + 1);
