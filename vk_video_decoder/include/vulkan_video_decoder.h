@@ -44,9 +44,9 @@
 #include "VkDecoderUtils/VideoStreamDemuxer.h"
 
 // High-level interface of the video decoder
-class VulkanVideoDecoderHighLevel : public VkVideoQueue<VulkanDecodedFrame> {
+class VulkanVideoDecoder : public VkVideoQueue<VulkanDecodedFrame> {
 public:
-    virtual ~VulkanVideoDecoderHighLevel() {};
+    virtual ~VulkanVideoDecoder() {};
 };
 
 class VkWsiDisplay;
@@ -94,6 +94,6 @@ VkResult CreateVulkanVideoDecoder(VkInstance vkInstance, VkPhysicalDevice vkPhys
                                   VkSharedBaseObj<VkVideoFrameOutput>& frameToFile,
                                   const VkWsiDisplay* pWsiDisplay,
                                   int argc, const char** argv,
-                                  VkSharedBaseObj<VulkanVideoDecoderHighLevel>& vulkanVideoDecoder);
+                                  VkSharedBaseObj<VulkanVideoDecoder>& vulkanVideoDecoder);
 
 #endif /* _VULKAN_VIDEO_DECODER_H_ */

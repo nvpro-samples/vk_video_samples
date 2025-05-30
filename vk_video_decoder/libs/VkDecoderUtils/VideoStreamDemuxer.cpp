@@ -17,6 +17,7 @@
 #include <sstream>
 #include <fstream>
 #include "VkDecoderUtils/VideoStreamDemuxer.h"
+#include "VkCodecUtils/ExitWrapper.h"
 
 bool VideoStreamDemuxer::CheckFile(const char* szInFilePath)
 {
@@ -26,6 +27,8 @@ bool VideoStreamDemuxer::CheckFile(const char* szInFilePath)
         err << "Unable to open input file: " << szInFilePath << std::endl;
 #ifdef __cpp_exceptions
         throw std::invalid_argument(err.str());
+#else
+        SAFE_EXIT(-1, err.str().c_str());
 #endif
     }
     return true;

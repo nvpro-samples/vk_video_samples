@@ -3,10 +3,6 @@
 #include <cstdio>
 #include <cstdlib>
 
-inline void safe_exit(int status) {
-#if defined(DECODER_APP_BUILD_AS_LIB) || defined(ENCODER_APP_BUILD_AS_LIB)
-    printf("Application would exit with status %d\n", status);
-#else
-    exit(status);
-#endif
-} 
+void safe_exit(int status, const char* function_name, int line_number, const char* description);
+
+#define SAFE_EXIT(status, description) safe_exit(status, __FUNCTION__, __LINE__, description)
