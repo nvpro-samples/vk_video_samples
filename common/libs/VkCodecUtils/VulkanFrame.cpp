@@ -26,6 +26,9 @@
 #include "VkCodecUtils/VulkanVideoUtils.h"
 #include "VulkanFrame.h"
 #include "VkVideoCore/DecodeFrameBufferIf.h"
+#if (_TRANSCODING)
+#include "VkVideoEncoder/VkVideoEncoder.h"
+#endif // _TRANSCODING
 #include "VkCodecUtils/VulkanSemaphoreDump.h"
 
 template<class FrameDataType>
@@ -278,6 +281,37 @@ bool VulkanFrame<FrameDataType>::OnKey(Key key)
     return true;
 }
 
+#if (_TRANSCODING)
+static int InitPreset(VkSharedBaseObj<EncoderConfig>& encoderConfig)
+{
+    if (encoderConfig->encodingProfile == EncoderConfig::LOW_LATENCY_STREAMING)
+    {
+        encoderConfig->rateControlMode = VkVideoEncodeRateControlModeFlagBitsKHR::VK_VIDEO_ENCODE_RATE_CONTROL_MODE_CBR_BIT_KHR;
+        encoderConfig->gopStructure.SetConsecutiveBFrameCount(0);
+        encoderConfig->gopStructure.SetGopFrameCount((uint16_t)-1);
+        encoderConfig->gopStructure.SetIdrPeriod((uint16_t)-1);
+        encoderConfig->gopStructure.SetLastFrameType(VkVideoGopStructure::FrameType::FRAME_TYPE_P); // ? set right value
+        // encoderConfig->encodeUsageHints = VK_VIDEO_ENCODE_USAGE_STREAMING_BIT_KHR;
+        // encoderConfig->encodeContentHints = VK_VIDEO_ENCODE_CONTENT_RENDERED_BIT_KHR;
+        encoderConfig->tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_LOW_LATENCY_KHR;
+        // encoderConfig->gopStructure.SetTemporalLayerCount(3);
+    }
+    else if (encoderConfig->encodingProfile == EncoderConfig::ARCHIVING)
+    {
+        encoderConfig->rateControlMode = VkVideoEncodeRateControlModeFlagBitsKHR::VK_VIDEO_ENCODE_RATE_CONTROL_MODE_VBR_BIT_KHR;
+        encoderConfig->maxBitrate = (uint32_t)(1.2f * encoderConfig->averageBitrate); // This is used in Variable Bit Rate (VBR) mode and is ignored for Constant Bit Rate (CBR) mode.
+        encoderConfig->gopStructure.SetConsecutiveBFrameCount(3);
+        encoderConfig->gopStructure.SetIdrPeriod(MAX_GOP_SIZE);
+        encoderConfig->gopStructure.SetGopFrameCount(MAX_GOP_SIZE);
+        encoderConfig->gopStructure.SetTemporalLayerCount(1);
+        // encoderConfig->encodeUsageHints = VK_VIDEO_ENCODE_USAGE_RECORDING_BIT_KHR;
+        // encoderConfig->encodeContentHints = VK_VIDEO_ENCODE_CONTENT_RENDERED_BIT_KHR;
+        encoderConfig->tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_HIGH_QUALITY_KHR;
+    };
+    return 0;
+}
+#endif // _TRANSCODING
+
 template<class FrameDataType>
 bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
                           uint32_t           waitSemaphoreCount,
@@ -402,6 +436,7 @@ bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
                                 pSignalSemaphores,
                                 pLastDecodedFrame);
 
+    // VkImageLastDecodedFrame()
 
     if (VK_SUCCESS != result) {
         return false;
@@ -409,6 +444,143 @@ bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
 
     return continueLoop;
 }
+
+#if (_TRANSCODING)
+template<class FrameDataType>
+bool VulkanFrame<FrameDataType>::OnFrameTranscoding( int32_t renderIndex,
+                          DecoderConfig* decoderConfig,
+                          VkSharedBaseObj<EncoderConfig>& encoderConfig,
+                          uint32_t           waitSemaphoreCount,
+                          const VkSemaphore* pWaitSemaphores,
+                          uint32_t           signalSemaphoreCount,
+                          const VkSemaphore* pSignalSemaphores,
+                          VulkanDecodedFrame* pLastDecodedFrameRet)
+{
+    // must not be used by encoder
+    int isFunctionUsed = 0;
+    isFunctionUsed++;
+    assert(isFunctionUsed == 0);//, "must not be used by encoder");
+    return false;
+}
+
+template<>
+bool VulkanFrame<VulkanDecodedFrame>::OnFrameTranscoding( int32_t renderIndex,
+                          DecoderConfig* decoderConfig,
+                          VkSharedBaseObj<EncoderConfig>& encoderConfig,
+                          uint32_t           waitSemaphoreCount,
+                          const VkSemaphore* pWaitSemaphores,
+                          uint32_t           signalSemaphoreCount,
+                          const VkSemaphore* pSignalSemaphores,
+                          VulkanDecodedFrame* pLastDecodedFrameRet)
+{
+    InitPreset(encoderConfig);
+    bool continueLoop = true;
+    const bool dumpDebug = false;
+    const bool trainFrame = (renderIndex < 0);
+    const bool gfxRendererIsEnabled = (m_videoRenderer != nullptr);
+    m_frameCount++;
+
+    if (dumpDebug == false) {
+        bool displayTimeNow = false;
+        float fps = GetFrameRateFps(displayTimeNow);
+        if (displayTimeNow) {
+            std::cout << "\t\tFrame " << m_frameCount << ", FPS: " << fps << std::endl;
+        }
+    } else {
+        uint64_t timeDiffNanoSec = GetTimeDiffNanoseconds();
+        std::cout << "\t\t Time nanoseconds: " << timeDiffNanoSec <<
+                     " milliseconds: " << timeDiffNanoSec / 1000 <<
+                     " rate: " << 1000000000.0 / timeDiffNanoSec << std::endl;
+    }
+
+    VulkanDecodedFrame* pLastDecodedFrame = nullptr;
+    // FrameDataType* pLastDecodedFrame = nullptr;
+
+    if ((m_videoQueue->GetWidth() > 0) && !trainFrame) {
+
+        pLastDecodedFrame = &m_frameData[m_frameDataIndex];
+
+        // Graphics and present stages are not enabled.
+        // Make sure the frame complete query or fence are signaled (video frame is processed) before returning the frame.
+        if (false && (gfxRendererIsEnabled == false) && (pLastDecodedFrame != nullptr)) {
+
+            if (pLastDecodedFrame->queryPool != VK_NULL_HANDLE) {
+                auto startTime = std::chrono::steady_clock::now();
+                VkQueryResultStatusKHR decodeStatus;
+                VkResult result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx,
+                                                 pLastDecodedFrame->queryPool,
+                                                 pLastDecodedFrame->startQueryId,
+                                                 1,
+                                                 sizeof(decodeStatus),
+                                                 &decodeStatus,
+                                                 sizeof(decodeStatus),
+                                                 VK_QUERY_RESULT_WITH_STATUS_BIT_KHR | VK_QUERY_RESULT_WAIT_BIT);
+
+                assert(result == VK_SUCCESS);
+                assert(decodeStatus == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
+                auto deltaTime = std::chrono::steady_clock::now() - startTime;
+                auto diffMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(deltaTime);
+                auto diffMicroseconds = std::chrono::duration_cast<std::chrono::microseconds>(deltaTime);
+                if (dumpDebug) {
+                    std::cout << pLastDecodedFrame->pictureIndex << ": frameWaitTime: " <<
+                                 diffMilliseconds.count() << "." << diffMicroseconds.count() << " mSec" << std::endl;
+                }
+            } else if (pLastDecodedFrame->frameCompleteFence != VkFence()) {
+                VkResult result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &pLastDecodedFrame->frameCompleteFence, true, 100 * 1000 * 1000 /* 100 mSec */);
+                assert(result == VK_SUCCESS);
+                if (result != VK_SUCCESS) {
+                    fprintf(stderr, "\nERROR: WaitForFences() result: 0x%x\n", result);
+                }
+                result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, pLastDecodedFrame->frameCompleteFence);
+                assert(result == VK_SUCCESS);
+                if (result != VK_SUCCESS) {
+                    fprintf(stderr, "\nERROR: GetFenceStatus() result: 0x%x\n", result);
+                }
+            }
+        }
+
+        m_videoQueue->ReleaseFrame(pLastDecodedFrame);
+
+        pLastDecodedFrame->Reset();
+
+        bool endOfStream = false;
+        int32_t numVideoFrames = 0;
+
+        if (pLastDecodedFrame) {
+            numVideoFrames = m_videoQueue->GetNextFrame(pLastDecodedFrame, &endOfStream, decoderConfig, &encoderConfig);
+        }
+        if (endOfStream && (numVideoFrames < 0)) {
+            continueLoop = false;
+            bool displayTimeNow = true;
+            float fps = GetFrameRateFps(displayTimeNow);
+            if (displayTimeNow) {
+                std::cout << "\t\tFrame " << m_frameCount << ", FPS: " << fps << std::endl;
+            }
+        }
+    }
+
+    if (gfxRendererIsEnabled == false) {
+        m_frameDataIndex = (m_frameDataIndex + 1) % m_frameData.size();
+        return continueLoop;
+    }
+
+    VkResult result = DrawFrame(renderIndex,
+                                waitSemaphoreCount,
+                                pWaitSemaphores,
+                                signalSemaphoreCount,
+                                pSignalSemaphores,
+                                pLastDecodedFrame);
+
+    // VkImageLastDecodedFrame()
+
+
+    if (VK_SUCCESS != result) {
+        return false;
+    }
+
+    return continueLoop;
+}
+#endif // _TRANSCODING
 
 template<class FrameDataType>
 VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,

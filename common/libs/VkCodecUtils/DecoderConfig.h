@@ -109,7 +109,9 @@ struct DecoderConfig {
             {"--help", nullptr, 0, "Show this help",
                 [argv](const char **, const ProgramArgs &a) {
                     int rtn = showHelp(argv, a);
+#if (!_TRANSCODING) // transcoding: should print encode info as well
                     exit(EXIT_SUCCESS);
+#endif // !_TRANSCODING
                     return rtn;
                 }},
             {"--disableStrDemux", nullptr, 0, "Disable stream demuxing",
@@ -117,7 +119,12 @@ struct DecoderConfig {
                     enableStreamDemuxing = false;
                     return true;
                 }},
-            {"--codec", nullptr, 1, "Codec to use, if no stream auto-detect is in use",
+                {
+#if (!_TRANSCODING) // transcoding: to prevent overlap with encoder's codec option
+            "--codec", nullptr, 1, "Codec to use, if no stream auto-detect is in use",
+#else
+            "--codec-input", nullptr, 1, "Codec to decode",
+#endif // !_TRANSCODING
                 [this](const char **args, const ProgramArgs &a) {
                     if ((strcmp(args[0], "hevc") == 0) ||
                         (strcmp(args[0], "h265") == 0)) {
@@ -333,10 +340,15 @@ struct DecoderConfig {
                 (a.short_flag != nullptr && strcmp(argv[i], a.short_flag) == 0);
             });
             if (flag == spec.end()) {
+#if (!_TRANSCODING) // transcoding: should parse encode info after decode info as well
                 std::cerr << "Unknown argument \"" << argv[i] << "\"" << std::endl;
                 std::cout << std::endl;
+                continue;
                 showHelp(argv, spec);
                 exit(EXIT_FAILURE);
+#else
+                continue;
+#endif // !_TRANSCODING
             }
 
             if (i + flag->numArgs >= argc) {

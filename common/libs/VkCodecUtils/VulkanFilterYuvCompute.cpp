@@ -16,6 +16,7 @@
 
 #include "VulkanFilterYuvCompute.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
+#include "vulkan/vulkan_core.h"
 
 static bool dumpShaders = false;
 
@@ -31,7 +32,11 @@ VkResult VulkanFilterYuvCompute::Create(const VulkanDeviceContext* vkDevCtx,
                                         const VkSamplerYcbcrConversionCreateInfo* pYcbcrConversionCreateInfo,
                                         const YcbcrPrimariesConstants* pYcbcrPrimariesConstants,
                                         const VkSamplerCreateInfo* pSamplerCreateInfo,
-                                        VkSharedBaseObj<VulkanFilter>& vulkanFilter)
+                                        VkSharedBaseObj<VulkanFilter>& vulkanFilter
+#ifdef _TRANSCODING
+                                        , const std::vector<Rectangle>& resizedResolutions
+#endif
+)
 {
 
     VkSharedBaseObj<VulkanFilterYuvCompute> yCbCrVulkanFilter(new VulkanFilterYuvCompute(vkDevCtx,
@@ -43,7 +48,11 @@ VkResult VulkanFilterYuvCompute::Create(const VulkanDeviceContext* vkDevCtx,
                                                                                          outputFormat,
                                                                                          inputEnableMsbToLsbShift,
                                                                                          outputEnableLsbToMsbShift,
-                                                                                         pYcbcrPrimariesConstants));
+                                                                                         pYcbcrPrimariesConstants
+#ifdef _TRANSCODING
+                                                                                         , resizedResolutions
+#endif
+                                                                                         ));
 
     if (!yCbCrVulkanFilter) {
        return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -80,6 +89,17 @@ VkResult VulkanFilterYuvCompute::Init(const VkSamplerYcbcrConversionCreateInfo* 
          }
     }
 
+#if (_TRANSCODING)
+   if (m_filterType == RESIZE)
+   {
+        result = m_samplerResize.CreateVulkanSampler(m_vkDevCtx);
+        if (result != VK_SUCCESS) {
+            assert(!"ERROR: samplerResizeCreate!");
+            return result;
+        }
+   }
+#endif
+
     assert(m_queue != VK_NULL_HANDLE);
 
     result = InitDescriptorSetLayout(m_maxNumFrames);
@@ -103,6 +123,9 @@ VkResult VulkanFilterYuvCompute::Init(const VkSamplerYcbcrConversionCreateInfo* 
      case RGBA2YCBCR:
          assert(!"TODO RGBA2YCBCR");
          break;
+    case RESIZE:
+         computeShaderSize = InitResize(computeShader);
+         break;
      default:
          assert(!"Invalid filter type");
          break;
@@ -122,9 +145,12 @@ VkResult VulkanFilterYuvCompute::InitDescriptorSetLayout(uint32_t maxNumFrames)
 
 
     VkSampler ccSampler = m_samplerYcbcrConversion.GetSampler();
+    VkSampler textureSampler = m_samplerResize.GetSampler();
     VkDescriptorType type = (ccSampler != VK_NULL_HANDLE) ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER :
                                                             VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     const VkSampler* pImmutableSamplers = (ccSampler != VK_NULL_HANDLE) ? &ccSampler : nullptr;
+    const VkSampler* pImmutableSamplersResize = &textureSampler;
+    assert(pImmutableSamplersResize != nullptr);
 
     std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings;
 
@@ -140,11 +166,11 @@ VkResult VulkanFilterYuvCompute::InitDescriptorSetLayout(uint32_t maxNumFrames)
         setLayoutBindings.push_back(VkDescriptorSetLayoutBinding{ 3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
     } else {
         // Binding 0: Input image (read-only) RGBA or RGBA YCbCr sampler sampled
-        setLayoutBindings.push_back(VkDescriptorSetLayoutBinding{ 0, type, 1, VK_SHADER_STAGE_COMPUTE_BIT, pImmutableSamplers});
+        setLayoutBindings.push_back(VkDescriptorSetLayoutBinding{ 0, type, 1, VK_SHADER_STAGE_COMPUTE_BIT, textureSampler ? nullptr : pImmutableSamplers});
         // Binding 1: Input image (read-only) Y plane of YCbCr Image
-        setLayoutBindings.push_back(VkDescriptorSetLayoutBinding{ 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
+        setLayoutBindings.push_back(VkDescriptorSetLayoutBinding{ 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE , 1, VK_SHADER_STAGE_COMPUTE_BIT, textureSampler ? pImmutableSamplersResize : nullptr});
         // Binding 2: Input image (read-only) Cb or CbCr plane
-        setLayoutBindings.push_back(VkDescriptorSetLayoutBinding{ 2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
+        setLayoutBindings.push_back(VkDescriptorSetLayoutBinding{ 2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, textureSampler ? pImmutableSamplersResize : nullptr});
         // Binding 3: Input image (read-only) Cr plane
         setLayoutBindings.push_back(VkDescriptorSetLayoutBinding{ 3, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
     }
@@ -2157,6 +2183,76 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
     return computeShader.size();
 }
 
+size_t VulkanFilterYuvCompute::InitResize(std::string& computeShader)
+{
+    // The compute filter uses two input images as separate planes
+    // Y (R) binding = 1
+    // CbCr (RG) binding = 2
+    // TODO: Add more YCbCr formats
+    m_inputImageAspects = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT;
+
+    // The compute filter uses two output images as separate planes
+    // Y (R) binding = 5
+    // CbCr (RG) binding = 6
+    // TODO: Add more YCbCr formats
+    m_outputImageAspects = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT;
+
+    std::stringstream shaderStr;
+    // Create compute pipeline
+    shaderStr << "#version 450\n"
+                        "layout(push_constant) uniform PushConstants {\n"
+                        "    uint srcImageLayer;\n"
+                        "    uint dstImageLayer;\n"
+                        "    uint width;\n"
+                        "    uint height;\n"
+                        "    float scalingFactorX;\n"
+                        "    float scalingFactorY;\n"
+                        "} pushConstants;\n"
+                        "\n"
+                        "layout (local_size_x = 16, local_size_y = 16) in;\n"
+                        " // TODO: use set and binding from the layout\n"
+                        " // TODO: use r16 for 16-bit formats\n"
+                        "layout (set = 0, binding = 1) uniform sampler2D texSampler;\n"
+                        "layout (set = 0, binding = 2) uniform sampler2D texSamplerUV;\n"
+                        " // TODO: use rgba16 for 16-bit formats\n"
+                        "layout (set = 0, binding = 5, r8) uniform  writeonly image2DArray outImageY;\n"
+                        " // TODO: use rg16 for 16-bit formats\n"
+                        "layout (set = 0, binding = 6, rg8) uniform writeonly image2DArray outImageCbCr;\n"
+                        "\n"
+                        "\n";
+
+    shaderStr <<
+        "void main()\n"
+        "{\n"
+        "    ivec2 uvpos = ivec2(gl_GlobalInvocationID.xy);\n"
+        "    ivec2 pos = uvpos *2; \n"
+        "    vec2 scalingFactor = vec2(pushConstants.scalingFactorX, pushConstants.scalingFactorY);\n"
+        "    vec2 sourcepos00 = vec2(vec2(pushConstants.scalingFactorX, pushConstants.scalingFactorY) * vec2(pos));\n"
+        "    vec2 sourcepos10 = vec2(vec2(pushConstants.scalingFactorX, pushConstants.scalingFactorY) * vec2(pos.x+1, pos.y));\n"
+        "    vec2 sourcepos01 = vec2(vec2(pushConstants.scalingFactorX, pushConstants.scalingFactorY) * vec2(pos.x, pos.y+1));\n"
+        "    vec2 sourcepos11 = vec2(vec2(pushConstants.scalingFactorX, pushConstants.scalingFactorY) * vec2(pos.x+1, pos.y+1));\n"
+        "\n"
+        "    // Read Y value from source Y plane and write it to destination Y plane\n"
+        "    float Y00 = texture(texSampler, sourcepos00).r;\n"
+        "    float Y10 = texture(texSampler, sourcepos10).r;\n"
+        "    float Y01 = texture(texSampler, sourcepos01).r;\n"
+        "    float Y11 = texture(texSampler, sourcepos11).r;\n"
+        "    imageStore(outImageY, ivec3(pos, pushConstants.dstImageLayer), vec4(Y00, 0, 0, 1));\n"
+        "    imageStore(outImageY, ivec3(ivec2(pos.x+1, pos.y), pushConstants.dstImageLayer), vec4(Y10, 0, 0, 1));\n"
+        "    imageStore(outImageY, ivec3(ivec2(pos.x, pos.y+1), pushConstants.dstImageLayer), vec4(Y01, 0, 0, 1));\n"
+        "    imageStore(outImageY, ivec3(ivec2(pos.x+1, pos.y+1), pushConstants.dstImageLayer), vec4(Y11, 0, 0, 1));\n"
+        "\n"
+        "    // Do the same for the CbCr plane, but remember about the 4:2:0 subsampling\n"
+        "    vec2 sourceposuv = ivec2(vec2(pushConstants.scalingFactorX, pushConstants.scalingFactorY) * vec2(uvpos));\n"
+        "    vec2 CbCr = texture(texSamplerUV, sourceposuv).rg;\n"
+        "    imageStore(outImageCbCr, ivec3(uvpos, pushConstants.dstImageLayer), vec4(CbCr, 0, 1));\n"
+        "}\n";
+
+    computeShader = shaderStr.str();
+    std::cout << "\nCompute Shader:\n" << computeShader;
+    return computeShader.size();
+}
+
 size_t VulkanFilterYuvCompute::InitYCBCRCLEAR(std::string& computeShader)
 {
     // The compute filter uses NO input images
@@ -2474,9 +2570,24 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
         ivec2(int32_t width_, int32_t height_) : width(width_), height(height_) {}
     };
 
+#if(_TRANSCODING)
+        int numResizes = m_resizedResolutions.size();
+
+        for (int i = 0; i < numResizes; i++)
+        {
+            float resizedWidth =  m_resizedResolutions[i].width;
+            float resizedHeight =  m_resizedResolutions[i].height;
+#endif //_TRANSCODING
+
     struct PushConstants {
         uint32_t srcLayer;
         uint32_t dstLayer;
+#if(_TRANSCODING)
+            uint32_t width;
+            uint32_t height;
+            float scalingFactorX;
+            float scalingFactorY;
+#endif //_TRANSCODING
         ivec2    inputSize;
         ivec2    outputSize;
         uint32_t yOffset;   // Y plane offset
@@ -2489,7 +2600,15 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
 
     PushConstants pushConstants = {
             inImageResourceInfo->baseArrayLayer, // Set the source layer index
+#if(_TRANSCODING)
+            outImageResourceInfo->baseArrayLayer + i,
+            inImageResourceInfo->codedExtent.width,
+            inImageResourceInfo->codedExtent.height,
+            inImageResourceInfo->codedExtent.width / resizedWidth,
+            inImageResourceInfo->codedExtent.height / resizedHeight,
+#else
             outImageResourceInfo->baseArrayLayer, // Set the destination layer index
+#endif //_TRANSCODING
             ivec2(inImageResourceInfo->codedExtent.width, inImageResourceInfo->codedExtent.height),
             ivec2(outImageResourceInfo->codedExtent.width, outImageResourceInfo->codedExtent.height),
             0,  // yOffset - not used for image input
@@ -2506,11 +2625,21 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                  0,
                                  sizeof(PushConstants),
                                  &pushConstants);
+#if(_TRANSCODING)
+            const uint32_t yuv_scale_x = 2; // yuv420 & yuv 422 only
+            const uint32_t yuv_scale_y = 2; // yuv420 only
+            int numPixelsPerInvocationX = yuv_scale_x * m_workgroupSizeX;
+            int numPixelsPerInvocationY = yuv_scale_y * m_workgroupSizeY;
+            uint32_t numTotalInvocationsRoundedUpX = (resizedWidth + numPixelsPerInvocationX - 1) / numPixelsPerInvocationX;
+            uint32_t numTotalInvocationsRoundedUpY = (resizedHeight + numPixelsPerInvocationY  - 1) / numPixelsPerInvocationY;
 
+            m_vkDevCtx->CmdDispatch(cmdBuf, numTotalInvocationsRoundedUpX, numTotalInvocationsRoundedUpY, 1);
+        }
+#else
     const uint32_t  workgroupWidth  = (pushConstants.outputSize.width  + (m_workgroupSizeX - 1)) / m_workgroupSizeX;
     const uint32_t  workgroupHeight = (pushConstants.outputSize.height + (m_workgroupSizeY - 1)) / m_workgroupSizeY;
     m_vkDevCtx->CmdDispatch(cmdBuf, workgroupWidth, workgroupHeight, 1);
-
+#endif // _TRANSCODING
     return VK_SUCCESS;
 }
 
@@ -2992,8 +3121,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
     VkDeviceSize crOffset = cbOffset + (planeSize / 4);
 
     PushConstants pushConstants = {
+            0,
             0, // Source layer (buffer has no layers)
-            0, // Destination layer (buffer has no layers)
             ivec2(inBufferExtent.width, inBufferExtent.height),
             ivec2(outBufferExtent.width, outBufferExtent.height),
             static_cast<uint32_t>(yOffset),

@@ -236,7 +236,7 @@ private:
         , m_imageSpecsIndex()
         , m_numBitstreamBuffersToPreallocate(numBitstreamBuffersToPreallocate)
         , m_maxStreamBufferSize(2097152) // 2MB max bitstream by default
-        , m_filterType(filterType)
+        , m_filterType(VulkanFilterYuvCompute::RESIZE)
     {
 
         assert(m_vkDevCtx->GetVideoDecodeQueueFamilyIdx() != -1);
@@ -340,4 +340,9 @@ private:
     VkDeviceSize   m_maxStreamBufferSize;
     VulkanFilterYuvCompute::FilterType m_filterType;
     VkSharedBaseObj<VulkanFilter> m_yuvFilter;
+#if (_TRANSCODING)
+public:
+    int m_numResizes = 0;
+    std::vector<VulkanFilterYuvCompute::Rectangle> m_resizeResolution;
+#endif // _TRANSCODING
 };
