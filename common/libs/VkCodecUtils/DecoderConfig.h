@@ -80,6 +80,9 @@ struct DecoderConfig {
         outputcrcPerFrame = false;
         outputcrc = false;
         crcOutputFileName.clear();
+        numberOfDecodeWorkers = 0;
+        enableWorkerProcessesPoll = false;
+        ipcType = 0;
     }
 
     using ProgramArgs = std::vector<ArgSpec>;
@@ -185,8 +188,7 @@ struct DecoderConfig {
             {"--input", "-i", 1, "Input filename to decode",
                 [this](const char **args, const ProgramArgs &a) {
                     videoFileName = args[0];
-                    std::ifstream validVideoFileStream(videoFileName, std::ifstream::in);
-                    return (bool)validVideoFileStream;
+                    return true;
                 }},
             {"--output", "-o", 1, "Output filename to dump raw video to",
                 [this](const char **args, const ProgramArgs &a) {
@@ -325,6 +327,17 @@ struct DecoderConfig {
                     crcInitValue = crcInitValueTemp;
                     return true;
                 }},
+            {"--poll-of-processes", nullptr, 1, "Use poll of worker processes and specify number of workers.",
+                    [this](const char **args, const ProgramArgs &a) {
+                    enableWorkerProcessesPoll = true;
+                    numberOfDecodeWorkers = std::atoi(args[0]);
+                    return true;
+                }},
+            {"--files-to-decode", nullptr, 1, "Specify a file location where command lines for the poll of worker processes are saved.",
+                    [this](const char **args, const ProgramArgs &a) {
+                    fileListIpc = args[0];
+                    return true;
+                }},
         };
 
         for (int i = 1; i < argc; i++) {
@@ -390,6 +403,18 @@ struct DecoderConfig {
                 crcInitValue.push_back(0);
             }
         }
+
+        if (!enableWorkerProcessesPoll) {
+            if (videoFileName.length() == 0) {
+                std::cerr << "Input file should be specified" << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            std::ifstream validVideoFileStream(videoFileName, std::ifstream::in);
+            if (!(bool)validVideoFileStream) {
+                std::cerr << "Can't open input file: invalid file name" << std::endl;
+                exit(EXIT_FAILURE);
+            }
+        }
     }
 
     std::string crcOutputFileName;
@@ -418,6 +443,7 @@ struct DecoderConfig {
     uint32_t deviceId;
     uint32_t decoderQueueSize;
     int32_t enablePostProcessFilter;
+    uint32_t numberOfDecodeWorkers;
     uint32_t enableStreamDemuxing : 1;
     uint32_t directMode : 1;
     uint32_t vsync : 1;
@@ -431,6 +457,9 @@ struct DecoderConfig {
     uint32_t outputy4m : 1;
     uint32_t outputcrc : 1;
     uint32_t outputcrcPerFrame : 1;
+    uint32_t enableWorkerProcessesPoll : 1;
+    uint32_t ipcType : 1;
+    std::string fileListIpc;
 };
 
 #endif /* _PROGRAMSETTINGS_H_ */

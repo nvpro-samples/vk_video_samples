@@ -20,6 +20,13 @@
 #include <vector>
 #include <cstring>
 #include <cstdio>
+#ifndef _WIN32
+#include <unistd.h>
+#include <sys/wait.h>
+#else
+#include <Windows.h>
+#include <psapi.h>
+#endif
 
 #include "VkCodecUtils/DecoderConfig.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
@@ -28,10 +35,49 @@
 #include "VkShell/Shell.h"
 #include "VkCodecUtils/VkVideoFrameOutput.h"
 
+#include "VkCodecUtils/poll_manager.h"
+
 int main(int argc, const char **argv) {
+
+    int spawn = 0;
+#ifdef _WIN32
+    PROCESS_INFORMATION pi {};
+    STARTUPINFO si {};
+    if (strncmp(argv[argc-1],"spawn",5)==0) {
+        spawn = 1;
+        argc--;
+    }
+#endif
 
     DecoderConfig decoderConfig(argv[0]);
     decoderConfig.ParseArgs(argc, argv);
+
+    int pid = getpid();
+    if (spawn == 0) {
+        for (int n = 0; n < (int)decoderConfig.numberOfDecodeWorkers; n++) {
+#ifdef _WIN32
+            cloneTheProcess(argc, argv, pi, si);
+#else
+            if(fork() == 0) {
+                break;
+            }
+#endif
+        }
+    }
+#ifdef _WIN32
+    if (spawn == 0)
+#else
+    if (pid == getpid())
+#endif
+    {
+        if (decoderConfig.enableWorkerProcessesPoll == 1) {
+            int result = 1;
+            if (decoderConfig.ipcType == IPC_TYPE::UNIX_DOMAIN_SOCKETS) {
+                result = usoc_manager(decoderConfig.noPresent, decoderConfig.fileListIpc);
+            }
+            return result;
+        }
+    }
 
     VulkanDeviceContext vkDevCtxt;
     VkResult result = vkDevCtxt.InitVulkanDecoderDevice(decoderConfig.appName.c_str(),
@@ -70,6 +116,74 @@ int main(int argc, const char **argv) {
     if (decoderConfig.enablePostProcessFilter != -1) {
         requestVideoComputeQueueMask = VK_QUEUE_COMPUTE_BIT;
     }
+
+    VkSharedBaseObj<VulkanVideoProcessor> vulkanVideoProcessor;
+    DecoderFrameProcessorState frameProcessor;
+    std::vector<std::string> messageBuffer(128);
+    auto processInputFile = [&] (const int i) -> bool {
+        int res = 0;
+        if (decoderConfig.enableWorkerProcessesPoll) {
+            std::string receivedMessage;
+            receivedMessage.resize(DEFAULT_BUFLEN);
+            res = receiveNewBitstream(static_cast<IPC_TYPE>(decoderConfig.ipcType), decoderConfig.enableWorkerProcessesPoll, receivedMessage);
+            if (res) {
+                receivedMessage.resize(DEFAULT_BUFLEN);
+                res = parseCharArray(messageBuffer, receivedMessage.c_str(), argc, argv);
+                if (0) { // if(parseAllCmdline) { // we can pass full cmdline as well in case we need to change some decoding parameters
+                    decoderConfig.ParseArgs(argc, argv);
+                } else if (res) {
+                    decoderConfig.videoFileName = argv[0];
+                    std::cout << argv[0] << std::endl;
+                } else {
+                    return 0;
+                }
+            }
+        }
+        VkSharedBaseObj<VideoStreamDemuxer> videoStreamDemuxer;
+        result = VideoStreamDemuxer::Create(decoderConfig.videoFileName.c_str(),
+                                            decoderConfig.forceParserType,
+                                            decoderConfig.enableStreamDemuxing,
+                                            decoderConfig.initialWidth,
+                                            decoderConfig.initialHeight,
+                                            decoderConfig.initialBitdepth,
+                                            videoStreamDemuxer);
+
+        if (result != VK_SUCCESS) {
+
+            assert(!"Can't initialize the VideoStreamDemuxer!");
+            return result;
+        }
+
+        result = VulkanVideoProcessor::Create(decoderConfig, &vkDevCtxt, vulkanVideoProcessor);
+        if (result != VK_SUCCESS) {
+            std::cerr << "Error creating the decoder instance: " << result << std::endl;
+            return -1;
+        }
+
+        VkSharedBaseObj<VkVideoFrameOutput> frameToFile;
+        if (!decoderConfig.outputFileName.empty()) {
+            const char* crcOutputFile = decoderConfig.outputcrcPerFrame ? decoderConfig.crcOutputFileName.c_str() : nullptr;
+            result = VkVideoFrameOutput::Create(decoderConfig.outputFileName.c_str(),
+                                              decoderConfig.outputy4m,
+                                              decoderConfig.outputcrcPerFrame,
+                                              crcOutputFile,
+                                              decoderConfig.crcInitValue,
+                                              frameToFile);
+            if (result != VK_SUCCESS) {
+                fprintf(stderr, "Error creating output file %s\n", decoderConfig.outputFileName.c_str());
+                return -1;
+            }
+        }
+
+        vulkanVideoProcessor->Initialize(&vkDevCtxt, videoStreamDemuxer, frameToFile, decoderConfig);
+
+        VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>> videoQueue(vulkanVideoProcessor);
+        frameProcessor = { &vkDevCtxt, videoQueue, static_cast<int32_t>(decoderConfig.decoderQueueSize) };
+        if (!decoderConfig.enableWorkerProcessesPoll) {
+            return i == 0;
+        }
+        return res;
+    };
 
     VkVideoCodecOperationFlagsKHR videoDecodeCodecs = (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR  |
                                                        VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR  |
@@ -126,50 +240,11 @@ int main(int argc, const char **argv) {
                                      requestVideoComputeQueueMask != 0  // createComputeQueue
                                      );
 
-        VkSharedBaseObj<VideoStreamDemuxer> videoStreamDemuxer;
-        result = VideoStreamDemuxer::Create(decoderConfig.videoFileName.c_str(),
-                                            decoderConfig.forceParserType,
-                                            decoderConfig.enableStreamDemuxing,
-                                            decoderConfig.initialWidth,
-                                            decoderConfig.initialHeight,
-                                            decoderConfig.initialBitdepth,
-                                            videoStreamDemuxer);
-
-        if (result != VK_SUCCESS) {
-
-            assert(!"Can't initialize the VideoStreamDemuxer!");
-            return result;
+        int i0 = 0;
+        while (processInputFile(i0++)) {
+            displayShell->AttachFrameProcessor(frameProcessor);
+            displayShell->RunLoop();
         }
-
-        VkSharedBaseObj<VulkanVideoProcessor> vulkanVideoProcessor;
-        result = VulkanVideoProcessor::Create(decoderConfig, &vkDevCtxt, vulkanVideoProcessor);
-        if (result != VK_SUCCESS) {
-            return -1;
-        }
-
-        VkSharedBaseObj<VkVideoFrameOutput> frameToFile;
-        if (!decoderConfig.outputFileName.empty()) {
-            const char* crcOutputFile = decoderConfig.outputcrcPerFrame ? decoderConfig.crcOutputFileName.c_str() : nullptr;
-            result = VkVideoFrameOutput::Create(decoderConfig.outputFileName.c_str(),
-                                              decoderConfig.outputy4m,
-                                              decoderConfig.outputcrcPerFrame,
-                                              crcOutputFile,
-                                              decoderConfig.crcInitValue,
-                                              frameToFile);
-            if (result != VK_SUCCESS) {
-                fprintf(stderr, "Error creating output file %s\n", decoderConfig.outputFileName.c_str());
-                return -1;
-            }
-        }
-
-        vulkanVideoProcessor->Initialize(&vkDevCtxt, videoStreamDemuxer, frameToFile, decoderConfig);
-
-        VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>> videoQueue(vulkanVideoProcessor);
-        DecoderFrameProcessorState frameProcessor(&vkDevCtxt, videoQueue, 0);
-
-        displayShell->AttachFrameProcessor(frameProcessor);
-
-        displayShell->RunLoop();
 
     } else {
 
@@ -204,53 +279,32 @@ int main(int argc, const char **argv) {
             return -1;
         }
 
-        VkSharedBaseObj<VideoStreamDemuxer> videoStreamDemuxer;
-        result = VideoStreamDemuxer::Create(decoderConfig.videoFileName.c_str(),
-                                            decoderConfig.forceParserType,
-                                            decoderConfig.enableStreamDemuxing,
-                                            decoderConfig.initialWidth,
-                                            decoderConfig.initialHeight,
-                                            decoderConfig.initialBitdepth,
-                                            videoStreamDemuxer);
-
-        if (result != VK_SUCCESS) {
-
-            assert(!"Can't initialize the VideoStreamDemuxer!");
-            return result;
-        }
-
-        VkSharedBaseObj<VulkanVideoProcessor> vulkanVideoProcessor;
-        result = VulkanVideoProcessor::Create(decoderConfig, &vkDevCtxt, vulkanVideoProcessor);
-        if (result != VK_SUCCESS) {
-            std::cerr << "Error creating the decoder instance: " << result << std::endl;
-            return -1;
-        }
-
-        VkSharedBaseObj<VkVideoFrameOutput> frameToFile;
-        if (!decoderConfig.outputFileName.empty()) {
-            const char* crcOutputFile = decoderConfig.outputcrcPerFrame ? decoderConfig.crcOutputFileName.c_str() : nullptr;
-            result = VkVideoFrameOutput::Create(decoderConfig.outputFileName.c_str(),
-                                              decoderConfig.outputy4m,
-                                              decoderConfig.outputcrcPerFrame,
-                                              crcOutputFile,
-                                              decoderConfig.crcInitValue,
-                                              frameToFile);
-            if (result != VK_SUCCESS) {
-                fprintf(stderr, "Error creating output file %s\n", decoderConfig.outputFileName.c_str());
+        int i1 = 0;
+        while (processInputFile(i1++))
+        {
+            const int numberOfFrames = decoderConfig.decoderQueueSize;
+            int ret = frameProcessor->CreateFrameData(numberOfFrames);
+            assert(ret == numberOfFrames);
+            if (ret != numberOfFrames) {
                 return -1;
             }
+            bool continueLoop = true;
+            do {
+                continueLoop = frameProcessor->OnFrame(0);
+            } while (continueLoop);
+            frameProcessor->DestroyFrameData();
         }
-
-        vulkanVideoProcessor->Initialize(&vkDevCtxt, videoStreamDemuxer, frameToFile, decoderConfig);
-
-        VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>> videoQueue(vulkanVideoProcessor);
-        DecoderFrameProcessorState frameProcessor(&vkDevCtxt, videoQueue, decoderConfig.decoderQueueSize);
-
-        bool continueLoop = true;
-        do {
-            continueLoop = frameProcessor->OnFrame(0);
-        } while (continueLoop);
     }
+
+#ifdef _WIN32
+    WaitForSingleObject( pi.hProcess, INFINITE );
+    CloseHandle( pi.hProcess );
+    CloseHandle( pi.hThread );
+#else
+    int status = 1;
+    wait(&status);
+    exit(status);
+#endif
 
     return 0;
 }
