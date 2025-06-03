@@ -251,6 +251,8 @@ else()
     # Ensure the linker knows where to find these libraries
     link_directories(${SHADERC_LIBRARY_DIR})
 
+    set(SHADERC_SHARED_LIBRARY ${SHADERC_LIB})
+
     # Set explicit dependencies
     if(TARGET glslang)
         add_dependencies(glslang SPIRV-Tools)
