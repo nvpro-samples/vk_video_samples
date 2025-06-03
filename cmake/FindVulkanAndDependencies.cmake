@@ -101,10 +101,9 @@ if(USE_SYSTEM_VULKAN AND USE_SYSTEM_SHADERC)
             find_library(SHADERC_SHARED_LIBRARY NAMES shaderc_shared
                          PATHS "${VULKAN_SDK_PATH}/lib"
                          NO_DEFAULT_PATH)
-            message(STATUS "shaderc_shared found at " ${SHADERC_SHARED_LIBRARY})
 
             if(SHADERC_SHARED_LIBRARY)
-                message(STATUS "Found shaderc in Vulkan SDK: ${SHADERC_SHARED_LIBRARY}")
+                message(STATUS "Found shaderc at: ${SHADERC_SHARED_LIBRARY}")
                 set(shaderc_FOUND TRUE)
                 # Store the Bin directory for later use
                 get_filename_component(VULKAN_SDK_BIN_DIR "${SHADERC_SHARED_LIBRARY}" DIRECTORY)
@@ -115,10 +114,9 @@ if(USE_SYSTEM_VULKAN AND USE_SYSTEM_SHADERC)
         endif()
     else()
         find_library(SHADERC_SHARED_LIBRARY NAMES shaderc_shared shaderc)
-        message(STATUS "shaderc_shared found at " ${SHADERC_SHARED_LIBRARY})
 
         if(SHADERC_SHARED_LIBRARY)
-            message(STATUS "Found shaderc in Vulkan SDK: ${SHADERC_SHARED_LIBRARY}")
+            message(STATUS "Found shaderc at: ${SHADERC_SHARED_LIBRARY}")
             set(shaderc_FOUND TRUE)
             # Store the Bin directory for later use
             get_filename_component(VULKAN_SDK_BIN_DIR "${SHADERC_SHARED_LIBRARY}" DIRECTORY)
