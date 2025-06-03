@@ -88,8 +88,6 @@ static VkVideoComponentBitDepthFlagBitsKHR GetComponentBitDepthFlagBits(uint32_t
     return VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
 };
 
-void printHelp(VkVideoCodecOperationFlagBitsKHR codec);
-
 struct EncoderInputImageParameters
 {
     EncoderInputImageParameters()

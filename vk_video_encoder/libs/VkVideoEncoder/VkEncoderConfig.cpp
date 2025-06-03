@@ -19,7 +19,7 @@
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
 
-void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
+static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
 {
     fprintf(stderr,
     "Usage : EncodeApp \n\

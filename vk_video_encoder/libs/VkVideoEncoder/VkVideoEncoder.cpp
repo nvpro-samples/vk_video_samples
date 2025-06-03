@@ -476,8 +476,10 @@ void VkVideoEncoder::CopyYCbCrPlanesDirectCPU(
         }
 
         // Source and destination strides
-        const size_t srcStride = inputPlaneLayouts[plane].rowPitch;
-        const size_t dstStride = dstSubresourceLayout[plane].rowPitch;
+        assert(inputPlaneLayouts[plane].rowPitch <= SIZE_MAX);
+        assert(dstSubresourceLayout[plane].rowPitch <= SIZE_MAX);
+        const size_t srcStride = (size_t)inputPlaneLayouts[plane].rowPitch;
+        const size_t dstStride = (size_t)dstSubresourceLayout[plane].rowPitch;
 
         // Line width in bytes
         const size_t lineBytes = planeWidth * bytesPerPixel;

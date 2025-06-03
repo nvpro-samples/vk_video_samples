@@ -29,10 +29,6 @@
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
-// Forward declarations
-static uint32_t FloorLog2(uint32_t x);
-static bool IsObuInCurrentOperatingPoint(int current_operating_point, AV1ObuHeader *hdr);
-
 // constructor
 VulkanAV1Decoder::VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std, bool annexB)
     : VulkanVideoDecoder(std)
@@ -1132,7 +1128,7 @@ static uint32_t tile_log2(int blk_size, int target)
     return k;
 }
 
-uint32_t FloorLog2(uint32_t x)
+static uint32_t FloorLog2(uint32_t x)
 {
     int s = 0;
 
@@ -2302,7 +2298,7 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
     return (tg_end == num_tiles - 1);
 }
 
-bool IsObuInCurrentOperatingPoint(int  current_operating_point, AV1ObuHeader *hdr) {
+static bool IsObuInCurrentOperatingPoint(int  current_operating_point, AV1ObuHeader *hdr) {
     if (current_operating_point == 0) return true;
     if (((current_operating_point >> hdr->temporal_id) & 0x1) &&
         ((current_operating_point >> (hdr->spatial_id + 8)) & 0x1)) {

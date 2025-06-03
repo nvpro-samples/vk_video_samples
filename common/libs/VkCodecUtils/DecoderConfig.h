@@ -29,7 +29,7 @@
 #include <iomanip>
 #include <sstream>
 #include "vulkan_interfaces.h"
-#include "ExitWrapper.h"
+#include "VkCodecUtils/ExitWrapper.h"
 #include "VkCodecUtils/Helpers.h"
 
 struct DecoderConfig {
