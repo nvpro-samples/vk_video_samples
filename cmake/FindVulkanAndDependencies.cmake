@@ -101,10 +101,9 @@ if(USE_SYSTEM_VULKAN AND USE_SYSTEM_SHADERC)
             find_library(SHADERC_SHARED_LIBRARY NAMES shaderc_shared
                          PATHS "${VULKAN_SDK_PATH}/lib"
                          NO_DEFAULT_PATH)
-            message(STATUS "shaderc_shared found at " ${SHADERC_SHARED_LIBRARY})
 
             if(SHADERC_SHARED_LIBRARY)
-                message(STATUS "Found shaderc in Vulkan SDK: ${SHADERC_SHARED_LIBRARY}")
+                message(STATUS "Found shaderc at: ${SHADERC_SHARED_LIBRARY}")
                 set(shaderc_FOUND TRUE)
                 # Store the Bin directory for later use
                 get_filename_component(VULKAN_SDK_BIN_DIR "${SHADERC_SHARED_LIBRARY}" DIRECTORY)
@@ -115,10 +114,9 @@ if(USE_SYSTEM_VULKAN AND USE_SYSTEM_SHADERC)
         endif()
     else()
         find_library(SHADERC_SHARED_LIBRARY NAMES shaderc_shared shaderc)
-        message(STATUS "shaderc_shared found at " ${SHADERC_SHARED_LIBRARY})
 
         if(SHADERC_SHARED_LIBRARY)
-            message(STATUS "Found shaderc in Vulkan SDK: ${SHADERC_SHARED_LIBRARY}")
+            message(STATUS "Found shaderc at: ${SHADERC_SHARED_LIBRARY}")
             set(shaderc_FOUND TRUE)
             # Store the Bin directory for later use
             get_filename_component(VULKAN_SDK_BIN_DIR "${SHADERC_SHARED_LIBRARY}" DIRECTORY)
@@ -138,13 +136,11 @@ if(USE_SYSTEM_VULKAN AND USE_SYSTEM_SHADERC)
     endif()
 endif()
 
-set(SHADERC_LIB_SHARED "shaderc_shared" CACHE PATH "The name of the shaderc library the decoder/encoder are using." FORCE)
-
 if(USE_SYSTEM_SHADERC AND shaderc_FOUND)
     message(STATUS "Using system shaderc")
     set(SHADERC_LIB "")
 else()
-    set(SHADERC_LIB ${SHADERC_LIB_SHARED} CACHE PATH "The name of the shaderc library target decoder/encoder are using." FORCE)
+    set(SHADERC_LIB "shaderc_shared" CACHE PATH "The name of the shaderc library target decoder/encoder are using." FORCE)
     message(STATUS "Building shaderc and dependencies from source")
 
     # Fetch SPIRV-Headers first (needed by SPIRV-Tools)
@@ -251,6 +247,8 @@ else()
     # Ensure the linker knows where to find these libraries
     link_directories(${SHADERC_LIBRARY_DIR})
 
+    set(SHADERC_SHARED_LIBRARY ${SHADERC_LIB})
+
     # Set explicit dependencies
     if(TARGET glslang)
         add_dependencies(glslang SPIRV-Tools)
@@ -261,9 +259,6 @@ else()
     if(TARGET shaderc_shared)
         add_dependencies(shaderc_shared glslang SPIRV-Tools)
     endif()
-
-    set(SHADERC_LIB_SHARED_DIR ${SHADERC_LIBRARY_DIR})
-    message(STATUS "shaderc lib directory: " ${SHADERC_LIB_SHARED_DIR})
 
     find_path(SHADERC_INCLUDE_DIR NAMES shaderc/shaderc.h PATHS "${CMAKE_BINARY_DIR}/_deps/shaderc-src/libshaderc/include" NO_DEFAULT_PATH)
     message(STATUS "shaderc inlcude directory: " ${SHADERC_INCLUDE_DIR})
@@ -349,27 +344,4 @@ if(SHADERC_INCLUDE_DIR AND SHADERC_LIBRARY)
     include_directories(${SHADERC_INCLUDE_DIR})
 else()
     message(FATAL_ERROR "Could not find or build Shaderc")
-endif()
-
-# Add this section to check for system-installed shaderc on Linux
-if(NOT DEFINED SHADERC_LIB_SHARED_DIR AND UNIX)
-    # Try to find system-installed shaderc on Linux
-    find_library(SHADERC_SHARED_LIB
-        NAMES shaderc_shared
-        PATHS
-            /usr/lib
-            /usr/lib64
-            /usr/lib/x86_64-linux-gnu
-            /usr/local/lib
-            /usr/local/lib64
-            /lib
-            /lib64
-    )
-
-    if(SHADERC_SHARED_LIB)
-        get_filename_component(SHADERC_LIB_SHARED_DIR ${SHADERC_SHARED_LIB} DIRECTORY)
-        message(STATUS "Found Linux system shaderc at: ${SHADERC_LIB_SHARED_DIR}")
-    else()
-        message(WARNING "Could not find shaderc_shared library on Linux. Please install it using your package manager (e.g., apt install libshaderc-dev) or specify SHADERC_LIB_SHARED_DIR manually.")
-    endif()
 endif()
