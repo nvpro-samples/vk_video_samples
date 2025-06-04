@@ -318,6 +318,7 @@ VkDeviceSize VulkanVideoDecoder::swapBitstreamBuffer(VkDeviceSize copyCurrBuffOf
 
 bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_t *pParsedBytes)
 {
+#if !defined(DISABLE_VK_VIDEO_PARSER_SIMD_OPTIMIZATIONS)
 #if defined(__x86_64__) || defined (_M_X64)
     if (m_NextStartCode == SIMD_ISA::AVX512)
     {
@@ -343,6 +344,7 @@ bool VulkanVideoDecoder::ParseByteStream(const VkParserBitstreamPacket* pck, siz
         return ParseByteStreamNEON(pck, pParsedBytes);
     } else
 #endif
+#endif // DISABLE_VK_VIDEO_PARSER_SIMD_OPTIMIZATIONS
     {
         return ParseByteStreamC(pck, pParsedBytes);
     }
