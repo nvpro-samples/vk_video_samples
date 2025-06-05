@@ -218,7 +218,9 @@ public:
         if (fileName != nullptr) {
             m_outputFile = fopen(fileName, "wb");
             if (m_outputFile) {
+#if !defined(REDUCE_VK_VIDEO_STDOUT_SPEW)
                 std::cout << "Output file name is: " << fileName << std::endl;
+#endif
                 return m_outputFile;
             }
         }
