@@ -99,6 +99,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                         1};
     }
 
+#if !defined(VK_VIDEO_NO_STDOUT_INFO)
     std::cout << "Video Input Information" << std::endl
               << "\tCodec        : " << GetVideoCodecString(pVideoFormat->codec) << std::endl
               << "\tFrame rate   : " << pVideoFormat->frame_rate.numerator << "/" << pVideoFormat->frame_rate.denominator << " = "
@@ -109,6 +110,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
               << pVideoFormat->display_area.right << ", " << pVideoFormat->display_area.bottom << "]" << std::endl
               << "\tChroma       : " << GetVideoChromaFormatString(pVideoFormat->chromaSubsampling) << std::endl
               << "\tBit depth    : " << pVideoFormat->bit_depth_luma_minus8 + 8 << std::endl;
+#endif
 
     uint32_t numDecodeSurfaces = std::max(m_videoFrameBuffer->GetCurrentNumberQueueSlots(),
                                           (pVideoFormat->minNumDecodeSurfaces + m_numDecodeImagesInFlight));
@@ -155,9 +157,11 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         }
     }
 
+#if !defined(VK_VIDEO_NO_STDOUT_INFO)
     std::cout << "Video Decoding Params:" << std::endl
               << "\tNum Surfaces : " << numDecodeSurfaces << std::endl
               << "\tResize       : " << m_codedExtent.width << " x " << m_codedExtent.height << std::endl;
+#endif
 
     uint32_t maxDpbSlotCount = pVideoFormat->maxNumDpbSlots;
 
