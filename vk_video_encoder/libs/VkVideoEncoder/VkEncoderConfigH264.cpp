@@ -422,34 +422,18 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
 
 int8_t EncoderConfigH264::InitDpbCount()
 {
-    dpbCount = 0;
+    dpbCount = 0; // TODO: What is the need for this?
+
     // spsInfo->level represents the smallest level that we require for the
     // given stream. This level constrains the maximum size (in terms of
     // number of frames) that the DPB can have. levelDpbSize is this maximum
     // value.
+    uint32_t levelBitRate = ((rateControlMode != VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR) && hrdBitrate == 0)
+                                ? averageBitrate // constrained by avg bitrate
+                                : hrdBitrate;  // constrained by max bitrate
+
     assert(pic_width_in_mbs > 0);
     assert(pic_height_in_map_units > 0);
-    uint8_t levelDpbSize = (uint8_t)(((1024 * levelLimits[levelIdc].maxDPB)) /
-                            ((pic_width_in_mbs * pic_height_in_map_units) * 384));
-
-    // XXX: If the level is 5.2, it is highly likely that we forced it to that
-    // value as a WAR for super HD. In that case, force the DPB size to
-    // DEFAULT_MAX_NUM_REF_FRAMES. Otherwise, clamp the computed DPB size to DEFAULT_MAX_NUM_REF_FRAMES.
-    levelDpbSize = (levelIdc == STD_VIDEO_H264_LEVEL_IDC_5_2) ? (uint8_t)DEFAULT_MAX_NUM_REF_FRAMES : std::min(uint8_t(DEFAULT_MAX_NUM_REF_FRAMES), levelDpbSize);
-
-    uint8_t dpbSize = (uint8_t)((dpbCount < 1) ? levelDpbSize : (uint8_t)(std::min((uint8_t)dpbCount, levelDpbSize)) + 1);
-
-    dpbCount = dpbSize;
-    return dpbSize;
-}
-
-bool EncoderConfigH264::InitRateControl()
-{
-    uint32_t levelBitRate = ((rateControlMode != VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR) && hrdBitrate == 0)
-                                ? averageBitrate
-                                :            // constrained by avg bitrate
-                                hrdBitrate;  // constrained by max bitrate
-
     uint32_t frameSizeInMbs = pic_width_in_mbs * pic_height_in_map_units;
 
     double frameRate = ((frameRateNumerator > 0) && (frameRateDenominator > 0))
@@ -464,6 +448,27 @@ bool EncoderConfigH264::InitRateControl()
         // find lowest possible level
         levelIdc = DetermineLevel(dpbCount, levelBitRate, vbvBufferSize, frameRate);
     }
+
+    uint8_t levelDpbSize = (uint8_t)(((1024 * levelLimits[levelIdc].maxDPB)) /
+                            ((pic_width_in_mbs * pic_height_in_map_units) * 384));
+
+    // XXX: If the level is 5.2, it is highly likely that we forced it to that
+    // value as a WAR for super HD. In that case, force the DPB size to
+    // DEFAULT_MAX_NUM_REF_FRAMES. Otherwise, clamp the computed DPB size to DEFAULT_MAX_NUM_REF_FRAMES.
+    levelDpbSize = (levelIdc == STD_VIDEO_H264_LEVEL_IDC_5_2) ? (uint8_t)DEFAULT_MAX_NUM_REF_FRAMES : std::min(uint8_t(DEFAULT_MAX_NUM_REF_FRAMES), levelDpbSize);
+
+    uint8_t dpbSize = (uint8_t)((dpbCount < 1) ? levelDpbSize : (uint8_t)(std::min((uint8_t)dpbCount, levelDpbSize))) + 1;
+
+    dpbCount = dpbSize;
+    return dpbSize;
+}
+
+bool EncoderConfigH264::InitRateControl()
+{
+    uint32_t levelBitRate = ((rateControlMode != VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR) && hrdBitrate == 0)
+                                ? averageBitrate
+                                :            // constrained by avg bitrate
+                                hrdBitrate;  // constrained by max bitrate
 
     // Update levelBitrate to the maximum allowed (used to determine default average and HRD bitrates below)
     //  800 instead of 1000 is to remain BD-compliant for level 4.1 (40Mbps at level 4.x)
