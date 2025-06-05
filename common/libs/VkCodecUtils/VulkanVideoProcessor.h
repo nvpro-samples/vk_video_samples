@@ -23,6 +23,10 @@
 #include "VkCodecUtils/VkVideoQueue.h"
 #include "VkVideoFrameOutput.h"
 
+// Forward declarations
+class VulkanDeviceContext;
+struct VkMpFormatInfo;
+
 class VulkanVideoProcessor : public VkVideoQueue<VulkanDecodedFrame> {
 public:
 

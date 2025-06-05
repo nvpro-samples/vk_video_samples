@@ -21,7 +21,6 @@
 #define DKIF_FRAME_CONTAINER_HEADER_SIZE 12
 #define DKIF_HEADER_MAGIC *((const uint32_t*)"DKIF")
 #define DKIF_FILE_HEADER_SIZE 32
-#define USE_SIMPLE_MALLOC 1
 
 class ElementaryStream : public VideoStreamDemuxer {
 
@@ -136,7 +135,12 @@ public:
 
     virtual ~ElementaryStream() {
 #ifdef USE_SIMPLE_MALLOC
+        if (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
+            const uint32_t firstFrameOffset = (DKIF_FILE_HEADER_SIZE + DKIF_FRAME_CONTAINER_HEADER_SIZE);
+            m_pBitstreamData -= firstFrameOffset;
+        }
 
+        free((void*)(m_pBitstreamData));
 #else
         m_inputVideoStreamMmap.unmap();
 #endif

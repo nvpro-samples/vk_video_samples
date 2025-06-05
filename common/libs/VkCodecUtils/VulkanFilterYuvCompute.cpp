@@ -214,7 +214,7 @@ static YcbcrBtStandard GetYcbcrPrimariesConstantsId(VkSamplerYcbcrModelConversio
  *
  * @param shaderStr Output stringstream where the GLSL code will be written
  */
-void GenPushConstantsDecl(std::stringstream& shaderStr) {
+static void GenPushConstantsDecl(std::stringstream& shaderStr) {
     shaderStr << "layout(push_constant) uniform PushConstants {\n"
               << "    uint srcLayer;        // src image layer to use\n"
               << "    uint dstLayer;        // dst image layer to use\n"
