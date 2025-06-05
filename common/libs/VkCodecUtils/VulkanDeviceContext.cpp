@@ -630,7 +630,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const vk::Dev
                 if (false) {
                     PrintExtensions(true);
                 }
-
+#if !defined(VK_VIDEO_NO_STDOUT_INFO)
                 if (true) {
 
                     vk::DeviceUuidUtils deviceUuid(deviceVulkan11Properties.deviceUUID);
@@ -642,6 +642,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const vk::Dev
                               << ", Num Encode Queues: " << m_videoEncodeNumQueues
                               << " ***" << std::endl << std::flush;
                 }
+#endif
                 return VK_SUCCESS;
             }
         }

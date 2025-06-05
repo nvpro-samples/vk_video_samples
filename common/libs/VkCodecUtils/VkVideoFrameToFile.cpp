@@ -210,7 +210,9 @@ public:
         if (fileName != nullptr) {
             m_outputFile = fopen(fileName, "wb");
             if (m_outputFile) {
+#if !defined(VK_VIDEO_NO_STDOUT_INFO)
                 std::cout << "Output file name is: " << fileName << std::endl;
+#endif
                 return m_outputFile;
             }
         }
