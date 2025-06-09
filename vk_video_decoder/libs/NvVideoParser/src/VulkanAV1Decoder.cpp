@@ -1128,7 +1128,7 @@ static uint32_t tile_log2(int blk_size, int target)
     return k;
 }
 
-uint32_t FloorLog2(uint32_t x)
+static uint32_t FloorLog2(uint32_t x)
 {
     int s = 0;
 
@@ -2281,7 +2281,11 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
             consumedBytes += tile_size_bytes_minus_1 + 1;
             m_PicData.tileOffsets[m_PicData.khr_info.tileCount] = (uint32_t)m_nalu.start_offset + (uint32_t)consumedBytes;
 
-            tileSize = tile_size_minus_1 + 1;
+            // Add bounds checking and safe conversion
+            if (tile_size_minus_1 > (SIZE_MAX - 1)) {
+                return false; // Tile size too large
+            }
+            tileSize = (size_t)(tile_size_minus_1 + 1);
             consumedBytes += (uint32_t)tileSize;
 
             skip_bits((uint32_t)(tileSize * 8));
@@ -2294,7 +2298,7 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
     return (tg_end == num_tiles - 1);
 }
 
-bool IsObuInCurrentOperatingPoint(int  current_operating_point, AV1ObuHeader *hdr) {
+static bool IsObuInCurrentOperatingPoint(int  current_operating_point, AV1ObuHeader *hdr) {
     if (current_operating_point == 0) return true;
     if (((current_operating_point >> hdr->temporal_id) & 0x1) &&
         ((current_operating_point >> (hdr->spatial_id + 8)) & 0x1)) {

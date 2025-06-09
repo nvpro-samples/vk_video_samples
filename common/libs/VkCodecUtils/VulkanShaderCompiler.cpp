@@ -103,13 +103,19 @@ VkShaderModule VulkanShaderCompiler::BuildShaderFromFile(const char *fileName,
                                                          VkShaderStageFlagBits type,
                                                          const VulkanDeviceContext* vkDevCtx)
 {
+#ifdef seekg
     // read file from the path
     std::ifstream is(fileName, std::ios::binary | std::ios::in | std::ios::ate);
 
     if (is.is_open()) {
-
-        size_t size = is.tellg();
-        is.seekg(0, std::ios::beg);
+        is.seekg (0, is.end);
+        std::streamoff fileSize = is.tellg();
+        if (fileSize < 0 || static_cast<size_t>(fileSize) > std::numeric_limits<size_t>::max()) {
+            std::cerr << "File size is too large or invalid" << std::endl;
+            return VK_NULL_HANDLE;
+        }
+        size_t size = static_cast<size_t>(fileSize);
+        is.seekg(0, is.beg);
         char* shaderCode = new char[size];
         is.read(shaderCode, size);
         is.close();
@@ -122,6 +128,7 @@ VkShaderModule VulkanShaderCompiler::BuildShaderFromFile(const char *fileName,
 
         return shaderModule;
     }
+#endif
 
     return VK_NULL_HANDLE;
 }

@@ -476,8 +476,10 @@ void VkVideoEncoder::CopyYCbCrPlanesDirectCPU(
         }
 
         // Source and destination strides
-        const size_t srcStride = inputPlaneLayouts[plane].rowPitch;
-        const size_t dstStride = dstSubresourceLayout[plane].rowPitch;
+        assert(inputPlaneLayouts[plane].rowPitch <= SIZE_MAX);
+        assert(dstSubresourceLayout[plane].rowPitch <= SIZE_MAX);
+        const size_t srcStride = (size_t)inputPlaneLayouts[plane].rowPitch;
+        const size_t dstStride = (size_t)dstSubresourceLayout[plane].rowPitch;
 
         // Line width in bytes
         const size_t lineBytes = planeWidth * bytesPerPixel;
@@ -1357,7 +1359,9 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
     } else {
+#ifdef __cpp_exceptions
         throw std::invalid_argument("unsupported layout transition!");
+#endif
     }
 
     const VkDependencyInfoKHR dependencyInfo = {
