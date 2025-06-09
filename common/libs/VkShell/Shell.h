@@ -66,7 +66,10 @@ public:
         if ((res != VK_SUCCESS) && (res != VK_SUBOPTIMAL_KHR)) {
             std::stringstream ss;
             ss << "VkResult " << res << " returned";
+#ifdef __cpp_exceptions
             throw std::runtime_error(ss.str());
+#endif // __cpp_exceptions
+
         }
 
         return res;

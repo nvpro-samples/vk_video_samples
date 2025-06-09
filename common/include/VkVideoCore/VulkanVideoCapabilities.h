@@ -339,7 +339,7 @@ public:
             }
         }
 
-        formatCount = std::min(supportedFormatCount, formatCount);
+        formatCount = std::min<uint32_t>(supportedFormatCount, formatCount);
 
         for (uint32_t i = 0; i < formatCount; i++) {
             formats[i] = pSupportedFormats[i].format;

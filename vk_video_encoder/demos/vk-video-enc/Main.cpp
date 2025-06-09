@@ -21,7 +21,7 @@
 #include "VkCodecUtils/VulkanEncoderFrameProcessor.h"
 #include "VkShell/Shell.h"
 
-int main(int argc, char** argv)
+int main(int argc, const char* argv[])
 {
     VkSharedBaseObj<EncoderConfig> encoderConfig;
     if (VK_SUCCESS != EncoderConfig::CreateCodecConfig(argc, argv, encoderConfig)) {

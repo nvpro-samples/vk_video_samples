@@ -25,6 +25,7 @@
 #include <functional>
 #include <iostream>
 #include <iomanip>
+#include <algorithm>  // for std::min
 
 static const uint32_t MAX_GOP_SIZE = 64;
 
@@ -189,15 +190,15 @@ public:
 
             uint32_t periodDelta = INT32_MAX; // the delta of this frame to the next closed GOP reference. -1 if it is not a B-frame
             if (framesLeft <= consecutiveBFrameCount) { // Handle last frames sequence
-                periodDelta = std::min(periodDelta, framesLeft);
+                periodDelta = std::min<uint32_t>(periodDelta, framesLeft);
             }
 
             if (m_idrPeriod > 0) { // Is the IDR period valid
-                periodDelta = std::min(periodDelta, GetPeriodDelta(gopState, m_idrPeriod));
+                periodDelta = std::min<uint32_t>(periodDelta, GetPeriodDelta(gopState, m_idrPeriod));
             }
 
             if (m_closedGop) { // A closed GOP is required.
-                periodDelta = std::min(periodDelta, GetPeriodDelta(gopState, m_gopFrameCount));
+                periodDelta = std::min<uint32_t>(periodDelta, GetPeriodDelta(gopState, m_gopFrameCount));
             }
 
             uint32_t refDelta = INT32_MAX;    // the delta of this frame from the last reference. -1 if it is not a B-frame

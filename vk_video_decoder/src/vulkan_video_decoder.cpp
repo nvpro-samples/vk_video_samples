@@ -66,10 +66,11 @@ public:
 
     virtual VkExtent3D GetVideoExtent() const
     {
-        VkExtent3D extent ({ (uint32_t)m_vulkanVideoProcessor->GetWidth(),
-                             (uint32_t)m_vulkanVideoProcessor->GetHeight(),
-                             (uint32_t)1
-                           });
+        VkExtent3D extent {
+            (uint32_t)m_vulkanVideoProcessor->GetWidth(),
+            (uint32_t)m_vulkanVideoProcessor->GetHeight(),
+            1
+        };
         return extent;
     }
 
