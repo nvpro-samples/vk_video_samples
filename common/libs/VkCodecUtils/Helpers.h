@@ -319,7 +319,7 @@ inline VkResult WaitAndGetStatus(const VkInterfaceFunctions* vkIf, VkDevice devi
  }
 
 template<typename NodeType, typename ChainedNodeType>
-inline VkBaseInStructure* ChainNextVkStruct(NodeType& node, ChainedNodeType& nextChainedNode) {
+inline void ChainNextVkStruct(NodeType& node, ChainedNodeType& nextChainedNode) {
     // make sure the node is of type VkBaseInStructure
     static_assert(offsetof(NodeType, sType) == offsetof(VkBaseInStructure, sType),
                   "NodeType does not have sType at the same offset as VkBaseInStructure");
@@ -340,16 +340,16 @@ inline VkBaseInStructure* ChainNextVkStruct(NodeType& node, ChainedNodeType& nex
                   "ChainedNodeType must be a standard-layout type");
 
     assert(node.sType > 0);
-    VkBaseInStructure* pNode = (VkBaseInStructure*)&node;
-    while (pNode->pNext != nullptr) {
-         pNode = (VkBaseInStructure*)pNode->pNext;
-     }
-     pNode->pNext = (VkBaseInStructure*)&nextChainedNode;
-     // make sure the nextChainedNode is of type VkBaseInStructure
-     assert(nextChainedNode.sType > 0);
-     assert(nextChainedNode.pNext == nullptr);
-     return (VkBaseInStructure*)nextChainedNode.pNext;
- }
+    VkBaseInStructure* pNode = (VkBaseInStructure*)(&node);
+    VkBaseInStructure* pNextNode = (VkBaseInStructure*)(&nextChainedNode);
+
+    // The incoming object may not have anything chained.
+    assert(pNextNode->pNext == nullptr);
+
+    // Inserts the incoming object at the beginning of the list.
+    pNextNode->pNext = pNode->pNext;
+    pNode->pNext = pNextNode;
+}
 
 class DeviceUuidUtils
 {
