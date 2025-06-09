@@ -23,7 +23,7 @@
 class VulkanVideoEncoderImpl : public VulkanVideoEncoder {
 public:
     virtual VkResult Initialize(VkVideoCodecOperationFlagBitsKHR videoCodecOperation,
-                                int argc, char** argv);
+                                int argc, const char** argv);
     virtual int64_t GetNumberOfFrames()
     {
         return m_encoderConfig->numFrames;
@@ -81,7 +81,7 @@ private:
 };
 
 VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR videoCodecOperation,
-                                            int argc, char** argv)
+                                            int argc, const char** argv)
 {
     VkResult result = EncoderConfig::CreateCodecConfig(argc, argv, m_encoderConfig);
     if (VK_SUCCESS != result) {
@@ -258,7 +258,7 @@ VkResult VulkanVideoEncoderImpl::EncodeNextFrame(int64_t& frameNumEncoded)
 
 VK_VIDEO_ENCODER_EXPORT
 VkResult CreateVulkanVideoEncoder(VkVideoCodecOperationFlagBitsKHR videoCodecOperation,
-                                  int argc, char** argv,
+                                  int argc, const char** argv,
                                   VkSharedBaseObj<VulkanVideoEncoder>& vulkanVideoEncoder)
 {
     switch((uint32_t)videoCodecOperation)

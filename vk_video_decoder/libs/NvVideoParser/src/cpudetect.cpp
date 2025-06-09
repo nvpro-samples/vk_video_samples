@@ -92,6 +92,7 @@ const InstructionSet::InstructionSet_Internal InstructionSet::CPU_Rep;
 // Print out supported instruction set extensions
 SIMD_ISA check_simd_support()
 {
+#if !defined(DISABLE_VK_VIDEO_PARSER_SIMD_OPTIMIZATIONS)
 #if defined(_M_X64)
     if (InstructionSet::AVX512F() && InstructionSet::AVX512BW()) { return SIMD_ISA::AVX512; }
     else if (InstructionSet::AVX2()) { return SIMD_ISA::AVX2; }
@@ -107,5 +108,6 @@ SIMD_ISA check_simd_support()
 #elif defined(__ARM_ARCH_7A__) || defined(_M_ARM64)
     return SIMD_ISA::NEON;
 #endif
+#endif // DISABLE_VK_VIDEO_PARSER_SIMD_OPTIMIZATIONS
     return SIMD_ISA::NOSIMD;
 };
