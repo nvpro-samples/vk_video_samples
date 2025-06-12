@@ -103,13 +103,12 @@ struct DecoderConfig {
         return true;
     };
 
-    void ParseArgs(int argc, const char *argv[]) {
+    bool ParseArgs(int argc, const char *argv[]) {
         ProgramArgs spec = {
             {"--help", nullptr, 0, "Show this help",
                 [argv](const char **, const ProgramArgs &a) {
-                    int rtn = showHelp(argv, a);
-                    exit(EXIT_SUCCESS);
-                    return rtn;
+                    showHelp(argv, a);
+                    return false;
                 }},
             {"--disableStrDemux", nullptr, 0, "Disable stream demuxing",
                 [this](const char **, const ProgramArgs &a) {
@@ -338,19 +337,19 @@ struct DecoderConfig {
                 std::cerr << "Unknown argument \"" << argv[i] << "\"" << std::endl;
                 std::cout << std::endl;
                 showHelp(argv, spec);
-                exit(EXIT_FAILURE);
+                return false;
             }
 
             if (i + flag->numArgs >= argc) {
                 std::cerr << "Missing arguments for \"" << argv[i] << "\"" << std::endl;
-                exit(EXIT_FAILURE);
+                return false;
             }
 
             bool disableValueCheck = false;
             if (i + 1 < argc && strcmp(argv[i + 1], "--") == 0) {
                 if (i + 1 + flag->numArgs >= argc) {
                     std::cerr << "Missing arguments for \"" << argv[i] << "\"" << std::endl;
-                    exit(EXIT_FAILURE);
+                    return false;
                 }
                 disableValueCheck = true;
                 i++;
@@ -366,13 +365,14 @@ struct DecoderConfig {
                             "set a value for \"" << argv[i] << "\"." << std::endl;
                         std::cerr << "Use \"-- " << argv[i + j] << "\" if you meant to set \"" << argv[i + j]
                             << "\" for \"" << argv[i] << "\"." << std::endl;
-                        exit(EXIT_FAILURE);
+                        return false;
                     }
                 }
             }
 
-            if (!flag->lambda(argv + i + 1, spec)) {
-                exit(EXIT_FAILURE);
+            bool result = flag->lambda(argv + i + 1, spec);
+            if (!result) {
+                return false;
             }
 
             i += flag->numArgs;
@@ -386,12 +386,14 @@ struct DecoderConfig {
                                 "Host accessible linear images requires an extra copy at the moment."
                                 << std::endl;
 
-                    exit(EXIT_FAILURE);
+                    return false;
                 }
 
                 crcInitValue.push_back(0);
             }
         }
+
+        return true;
     }
 
     std::string crcOutputFileName;
