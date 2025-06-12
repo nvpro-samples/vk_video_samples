@@ -69,11 +69,12 @@ public:
         , m_crcAllocation() {
         if (crcOutputFile != nullptr) {
             m_crcOutputFile = fopen(crcOutputFile, "w");
-            if (m_crcOutputFile && !m_crcInitValue.empty()) {
-                m_crcAllocation.resize(m_crcInitValue.size());
-                for (size_t i = 0; i < m_crcInitValue.size(); i += 1) {
-                    m_crcAllocation[i] = m_crcInitValue[i];
-                }
+        }
+
+        if (!m_crcInitValue.empty()) {
+            m_crcAllocation.resize(m_crcInitValue.size());
+            for (size_t i = 0; i < m_crcInitValue.size(); i += 1) {
+                m_crcAllocation[i] = m_crcInitValue[i];
             }
         }
     }
@@ -404,6 +405,19 @@ public:
         }
 
         return outputBufferSize;
+    }
+
+    virtual size_t GetCrcValues(uint32_t* pCrcValues, size_t buffSize) const override {
+        if (pCrcValues == nullptr) {
+            return 0;
+        }
+
+        size_t numValuesToWrite = std::min(buffSize, m_crcAllocation.size());
+        for (size_t i = 0; i < numValuesToWrite; i++) {
+            pCrcValues[i] = m_crcAllocation[i];
+        }
+
+        return numValuesToWrite;
     }
 
 private:
