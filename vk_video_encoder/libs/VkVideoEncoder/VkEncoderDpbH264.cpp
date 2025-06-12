@@ -278,7 +278,7 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
             }
             if (m_currDpbIdx >= MAX_DPB_SLOTS) {
                 VK_DPB_DBG_PRINT(("could not allocate a frame buffer\n"));
-                exit(1);
+                return (-1);
             }
             if (pCurDPBEntry != &m_DPB[m_currDpbIdx]) {
                 ReleaseFrame(m_DPB[m_currDpbIdx].dpbImageView);
@@ -355,7 +355,7 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
                     }
                     if (m_currDpbIdx >= MAX_DPB_SLOTS) {
                         VK_DPB_DBG_PRINT(("could not allocate a frame buffer\n"));
-                        exit(1);
+                        return (-1);
                     }
                     if (pCurDPBEntry != &m_DPB[m_currDpbIdx]) {
                         ReleaseFrame(m_DPB[m_currDpbIdx].dpbImageView);
