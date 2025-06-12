@@ -82,7 +82,7 @@
 #define WARP_PARAM_REDUCE_BITS 6
 #define WARPEDMODEL_PREC_BITS 16
 
-int get_msb(unsigned int n)
+static int get_msb(unsigned int n)
 {
     int log = 0;
     unsigned int value = n;

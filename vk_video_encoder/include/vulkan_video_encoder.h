@@ -43,7 +43,7 @@
 class VulkanVideoEncoder : public virtual VkVideoRefCountBase {
 public:
     virtual VkResult Initialize(VkVideoCodecOperationFlagBitsKHR videoCodecOperation,
-                                int argc, char** argv) = 0;
+                                int argc, const char** argv) = 0;
     virtual int64_t  GetNumberOfFrames() = 0;
     virtual VkResult EncodeNextFrame(int64_t& frameNumEncoded) = 0;
     virtual VkResult GetBitstream() = 0;
@@ -52,7 +52,7 @@ public:
 
 extern "C" VK_VIDEO_ENCODER_EXPORT
 VkResult CreateVulkanVideoEncoder(VkVideoCodecOperationFlagBitsKHR videoCodecOperation,
-                                  int argc, char** argv,
+                                  int argc, const char** argv,
                                   VkSharedBaseObj<VulkanVideoEncoder>& vulkanVideoEncoder);
 
 #endif /* _VULKAN_VIDEO_ENCODER_H_ */

@@ -476,8 +476,10 @@ void VkVideoEncoder::CopyYCbCrPlanesDirectCPU(
         }
 
         // Source and destination strides
-        const size_t srcStride = inputPlaneLayouts[plane].rowPitch;
-        const size_t dstStride = dstSubresourceLayout[plane].rowPitch;
+        assert(inputPlaneLayouts[plane].rowPitch <= SIZE_MAX);
+        assert(dstSubresourceLayout[plane].rowPitch <= SIZE_MAX);
+        const size_t srcStride = (size_t)inputPlaneLayouts[plane].rowPitch;
+        const size_t dstStride = (size_t)dstSubresourceLayout[plane].rowPitch;
 
         // Line width in bytes
         const size_t lineBytes = planeWidth * bytesPerPixel;
@@ -1357,7 +1359,9 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
     } else {
+#ifdef __cpp_exceptions
         throw std::invalid_argument("unsupported layout transition!");
+#endif
     }
 
     const VkDependencyInfoKHR dependencyInfo = {
@@ -1550,12 +1554,9 @@ VkResult VkVideoEncoder::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
         encodeFrameInfo->qualityLevelInfo.sType  = VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR;
         encodeFrameInfo->qualityLevelInfo.qualityLevel = encodeFrameInfo->qualityLevel;
         if (pNext != nullptr) {
-            if (encodeFrameInfo->rateControlInfo.pNext == nullptr) {
-                encodeFrameInfo->rateControlInfo.pNext = pNext;
-            } else {
-                ((VkBaseInStructure*)(encodeFrameInfo->rateControlInfo.pNext))->pNext = pNext;
-            }
+            vk::ChainNextVkStruct(encodeFrameInfo->rateControlInfo, *pNext);
         }
+
         pNext = (VkBaseInStructure*)&encodeFrameInfo->qualityLevelInfo;
     }
 
@@ -1578,12 +1579,9 @@ VkResult VkVideoEncoder::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
         m_beginRateControlInfo = encodeFrameInfo->rateControlInfo;
 
         if (pNext != nullptr) {
-            if (encodeFrameInfo->rateControlInfo.pNext == nullptr) {
-                encodeFrameInfo->rateControlInfo.pNext = pNext;
-            } else {
-                ((VkBaseInStructure*)(encodeFrameInfo->rateControlInfo.pNext))->pNext = pNext;
-            }
+            vk::ChainNextVkStruct(encodeFrameInfo->rateControlInfo, *pNext);
         }
+
         pNext = (VkBaseInStructure*)&encodeFrameInfo->rateControlInfo;
     }
 
@@ -1663,7 +1661,8 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         vkDevCtx->CmdControlVideoCodingKHR(cmdBuf, &renderControlInfo);
 
         m_beginRateControlInfo = *(VkVideoEncodeRateControlInfoKHR*)encodeFrameInfo->pControlCmdChain;
-        ((VkBaseInStructure*)(m_beginRateControlInfo.pNext))->pNext = NULL;
+        // Do not walk the chain, otherwise we end up creating a loop here.
+        m_beginRateControlInfo.pNext = (VkBaseInStructure*)(&encodeFrameInfo->pControlCmdChain);
     }
 
     if (m_videoMaintenance1FeaturesSupported)
@@ -1675,10 +1674,12 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         videoInlineQueryInfoKHR.firstQuery = querySlotId;
         videoInlineQueryInfoKHR.queryCount = numQuerySamples;
         VkBaseInStructure* pStruct = (VkBaseInStructure*)&encodeFrameInfo->encodeInfo;
-        while (pStruct->pNext) pStruct = (VkBaseInStructure*)pStruct->pNext;
-        pStruct->pNext = (VkBaseInStructure*)&videoInlineQueryInfoKHR;
+        vk::ChainNextVkStruct(*pStruct, videoInlineQueryInfoKHR);
 
         vkDevCtx->CmdEncodeVideoKHR(cmdBuf, &encodeFrameInfo->encodeInfo);
+
+        // Remove the stack pointer from the chain, causes a use after free otherwise in GetEncodeFrameInfoH264
+        encodeFrameInfo->encodeInfo.pNext = videoInlineQueryInfoKHR.pNext;
     }
     else
     {
