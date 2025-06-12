@@ -524,7 +524,9 @@ bool VulkanVideoProcessor::StreamCompleted()
         Restart(bitstreamOffset);
         return false;
     } else {
+#if !defined(VK_VIDEO_NO_STDOUT_INFO)
         std::cout << "End of Video Stream with status  " << VK_SUCCESS << std::endl;
+#endif
         return true;
     }
 }
@@ -590,7 +592,9 @@ int32_t VulkanVideoProcessor::GetNextFrame(VulkanDecodedFrame* pFrame, bool* end
     if (framesInQueue) {
 
         if (m_videoFrameNum == 0) {
+#if !defined(VK_VIDEO_NO_STDOUT_INFO)
             DumpVideoFormat(m_vkVideoDecoder->GetVideoFormatInfo(), true);
+#endif
         }
 
         if (m_frameToFile) {
@@ -602,8 +606,10 @@ int32_t VulkanVideoProcessor::GetNextFrame(VulkanDecodedFrame* pFrame, bool* end
 
     if ((m_maxFrameCount != -1) && (m_videoFrameNum >= (uint32_t)m_maxFrameCount)) {
         // Tell the FrameProcessor we're done after this frame is drawn.
+#if !defined(VK_VIDEO_NO_STDOUT_INFO)
         std::cout << "Number of video frames " << m_videoFrameNum
                   << " of max frame number " << m_maxFrameCount << std::endl;
+#endif
         m_videoStreamsCompleted = StreamCompleted();
         *endOfStream = m_videoStreamsCompleted;
         return -1;

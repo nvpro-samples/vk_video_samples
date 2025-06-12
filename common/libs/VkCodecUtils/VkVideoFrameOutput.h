@@ -67,6 +67,14 @@ public:
      */
     virtual size_t OutputFrame(VulkanDecodedFrame* pFrame, const VulkanDeviceContext* vkDevCtx) = 0;
 
+    /**
+     * @brief Get the CRC values for the frame
+     *
+     * @param pCrcValues Pointer to store the CRC values
+     * @param buffSize Size of the buffer to store the CRC values
+     * @return size_t Number of CRC values written, (size_t)-1 on error
+     */
+    virtual size_t GetCrcValues(uint32_t* pCrcValues, size_t buffSize) const  = 0;
 protected:
     VkVideoFrameOutput() = default;
 

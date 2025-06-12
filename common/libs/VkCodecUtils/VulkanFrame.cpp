@@ -291,6 +291,7 @@ bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
     const bool gfxRendererIsEnabled = (m_videoRenderer != nullptr);
     m_frameCount++;
 
+#if !defined(VK_VIDEO_NO_STDOUT_INFO)
     if (dumpDebug == false) {
         bool displayTimeNow = false;
         float fps = GetFrameRateFps(displayTimeNow);
@@ -303,6 +304,7 @@ bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
                      " milliseconds: " << timeDiffNanoSec / 1000 <<
                      " rate: " << 1000000000.0 / timeDiffNanoSec << std::endl;
     }
+#endif
 
     FrameDataType& data = m_frameData[m_frameDataIndex];
     FrameDataType* pLastDecodedFrame = nullptr;
@@ -365,11 +367,13 @@ bool VulkanFrame<FrameDataType>::OnFrame( int32_t renderIndex,
         numVideoFrames = m_videoQueue->GetNextFrame(pLastDecodedFrame, &endOfStream);
         if (endOfStream && (numVideoFrames < 0)) {
             continueLoop = false;
+#if !defined(VK_VIDEO_NO_STDOUT_INFO)
             bool displayTimeNow = true;
             float fps = GetFrameRateFps(displayTimeNow);
             if (displayTimeNow) {
                 std::cout << "\t\tFrame " << m_frameCount << ", FPS: " << fps << std::endl;
             }
+#endif
         }
     }
 
