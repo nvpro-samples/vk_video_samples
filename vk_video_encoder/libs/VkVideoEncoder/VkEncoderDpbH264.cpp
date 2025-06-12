@@ -276,10 +276,6 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
                 if (m_DPB[m_currDpbIdx].state == DPB_EMPTY)
                     break;
             }
-            if (m_currDpbIdx >= MAX_DPB_SLOTS) {
-                VK_DPB_DBG_PRINT(("could not allocate a frame buffer\n"));
-                exit(1);
-            }
             if (pCurDPBEntry != &m_DPB[m_currDpbIdx]) {
                 ReleaseFrame(m_DPB[m_currDpbIdx].dpbImageView);
                 m_DPB[m_currDpbIdx] = *pCurDPBEntry;
@@ -352,10 +348,6 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
                 } else {
                     for (m_currDpbIdx = 0; m_currDpbIdx < MAX_DPB_SLOTS; m_currDpbIdx++) {
                         if (m_DPB[m_currDpbIdx].state == DPB_EMPTY) break;
-                    }
-                    if (m_currDpbIdx >= MAX_DPB_SLOTS) {
-                        VK_DPB_DBG_PRINT(("could not allocate a frame buffer\n"));
-                        exit(1);
                     }
                     if (pCurDPBEntry != &m_DPB[m_currDpbIdx]) {
                         ReleaseFrame(m_DPB[m_currDpbIdx].dpbImageView);
