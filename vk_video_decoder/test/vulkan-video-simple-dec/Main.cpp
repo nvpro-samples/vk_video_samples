@@ -114,6 +114,8 @@ int main(int argc, const char** argv)
             break;
         case VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR:
             break;
+        case VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR:
+            break;
         default:
             std::cout << "Simple decoder does not support demuxing "
                       << "and the decoder type must be set with --codec <codec type>"

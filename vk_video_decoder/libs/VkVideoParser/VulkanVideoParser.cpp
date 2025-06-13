@@ -173,6 +173,30 @@ struct nvVideoAV1PicParameters {
     nvVideoDecodeAV1DpbSlotInfo dpbRefList[nvVideoDecodeAV1DpbSlotInfo::TOTAL_REFS_PER_FRAME + 1];
 };
 
+
+struct nvVideoDecodeVP9DpbSlotInfo
+{
+    enum {
+        // Number of reference frame types (including intra type)
+        TOTAL_REFS_PER_FRAME = 8,
+    };
+    VkExtent2D codedExtent{};
+
+    void Invalidate() { memset(this, 0x00, sizeof(*this)); }
+
+    // Set the STD data here for VP9.
+
+};
+
+struct nvVideoVP9PicParameters {
+    StdVideoDecodeVP9PictureInfo stdPictureInfo;
+    StdVideoVP9ColorConfig stdColorConfig;
+    StdVideoVP9Segmentation stdSegment;
+    StdVideoVP9LoopFilter stdLoopFilter;
+    VkVideoDecodeVP9PictureInfoKHR vkPictureInfo{ VK_STRUCTURE_TYPE_VIDEO_DECODE_VP9_PICTURE_INFO_KHR, nullptr, &stdPictureInfo };
+    nvVideoDecodeVP9DpbSlotInfo dpbRefList[nvVideoDecodeVP9DpbSlotInfo::TOTAL_REFS_PER_FRAME + 1];
+};
+
 static vkPicBuffBase* GetPic(VkPicIf* pPicBuf)
 {
     return (vkPicBuffBase*)pPicBuf;
@@ -574,6 +598,14 @@ public:
             }
         }
 
+        void setVP9PictureData(nvVideoDecodeVP9DpbSlotInfo* pDpbSlotInfo,
+            VkVideoReferenceSlotInfoKHR* pReferenceSlots,
+            uint32_t dpbEntryIdx, uint32_t dpbSlotIndex)
+        {
+            // TODO: VP9 dpb management
+            assert(0);
+        }
+
     } dpbH264Entry;
 
     virtual int32_t AddRef();
@@ -685,6 +717,14 @@ protected:
         VkVideoReferenceSlotInfoKHR* pReferenceSlots,
         int8_t* pGopReferenceImagesIndexes,
         int32_t* pCurrAllocatedSlotIndex);
+    uint32_t FillDpbVP9State(const VkParserPictureData* pd,
+        VkParserVp9PictureData* pin,
+        nvVideoDecodeVP9DpbSlotInfo* pDpbSlotInfo,
+        StdVideoDecodeVP9PictureInfo* pStdPictureInfo,
+        uint32_t maxRefPictures,
+        VkVideoReferenceSlotInfoKHR* pReferenceSlots,
+        int8_t* pGopReferenceImagesIndexes,
+        int32_t* pCurrAllocatedSlotIndex);
 
     int8_t AllocateDpbSlotForCurrentH264(
         vkPicBuffBase* pPic, StdVideoDecodeH264PictureInfoFlags currPicFlags,
@@ -693,7 +733,8 @@ protected:
                                          int8_t presetDpbSlot);
     int8_t AllocateDpbSlotForCurrentAV1(vkPicBuffBase* pPic, bool isReference,
                                          int8_t presetDpbSlot);
-    
+    int8_t AllocateDpbSlotForCurrentVP9(vkPicBuffBase* pPic, bool isReference,
+                                         int8_t presetDpbSlot);
 
 protected:
     VkSharedBaseObj<VulkanVideoDecodeParser>    m_vkParser;
@@ -943,6 +984,7 @@ VkResult VulkanVideoParser::Initialize(
     static const VkExtensionProperties h264StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION };
     static const VkExtensionProperties h265StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION };
     static const VkExtensionProperties av1StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_SPEC_VERSION };
+    static const VkExtensionProperties vp9StdExtensionVersion = { VK_STD_VULKAN_VIDEO_CODEC_VP9_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_VP9_DECODE_SPEC_VERSION };
 
     const VkExtensionProperties* pStdExtensionVersion = NULL;
     if (m_codecType == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
@@ -951,6 +993,8 @@ VkResult VulkanVideoParser::Initialize(
         pStdExtensionVersion = &h265StdExtensionVersion;
     } else if (m_codecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
         pStdExtensionVersion = &av1StdExtensionVersion;
+    } else if (m_codecType == VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
+        pStdExtensionVersion = &vp9StdExtensionVersion;
     } else {
         assert(!"Unsupported codec type");
         return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
@@ -1098,6 +1142,11 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
     if (pnvsi->eCodec == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
         maxDpbSlots = 9;
         if ((pnvsi->nCodedWidth <= m_nvsi.nCodedWidth) && (pnvsi->nCodedHeight <= m_nvsi.nCodedHeight)) {
+            return 1;
+        }
+    } else if (pnvsi->eCodec == VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
+        maxDpbSlots = 9;
+        if ((pnvsi->nMaxWidth <= m_nvsi.nMaxWidth) && (pnvsi->nMaxHeight <= m_nvsi.nMaxHeight)) {
             return 1;
         }
     }
@@ -1824,6 +1873,160 @@ uint32_t VulkanVideoParser::FillDpbAV1State(
     return referenceIndex;
 }
 
+
+uint32_t VulkanVideoParser::FillDpbVP9State(
+        const VkParserPictureData* pd,
+        VkParserVp9PictureData* pin,
+        nvVideoDecodeVP9DpbSlotInfo* pDpbSlotInfo,
+        StdVideoDecodeVP9PictureInfo*,
+        uint32_t,
+        VkVideoReferenceSlotInfoKHR* pReferenceSlots,
+        int8_t* pGopReferenceImagesIndexes,
+        int32_t* pCurrAllocatedSlotIndex)
+{
+    assert(m_maxNumDpbSlots <= STD_VIDEO_VP9_NUM_REF_FRAMES + 1);
+    uint32_t refDpbUsedAndValidMask = 0;
+    uint32_t referenceIndex = 0;
+
+    if (m_dumpParserData) {
+        std::cout << "Ref frames data: " << std::endl;
+    }
+
+    if (m_dumpDpbData) {
+        printf(";;;; ======= VP9 DPB fill begin %d =======\n", m_nCurrentPictureID);
+        printf("ref_frame_idx: "); {
+        for (int i = 0 ; i < STD_VIDEO_VP9_REFS_PER_FRAME; i++)
+            printf("%02d ", i);
+        }
+        printf("\nref_frame_idx: ");
+        for (int i = 0 ; i < STD_VIDEO_VP9_REFS_PER_FRAME; i++) {
+            printf("%02d ", pin->ref_frame_idx[i]);
+        }
+        printf("\n");
+
+        printf("m_pictureToDpbSlotMap: ");
+        for (int i = 0; i < MAX_FRM_CNT; i++) {
+            printf("%02d ", i);
+        }
+        printf("\nm_pictureToDpbSlotMap: ");
+        for (int i = 0; i < MAX_FRM_CNT; i++) {
+            printf("%02d ", m_pictureToDpbSlotMap[i]);
+        }
+        printf("\n");
+
+        printf("ref_frame_picture: ");
+        for (int32_t inIdx = 0; inIdx < STD_VIDEO_VP9_NUM_REF_FRAMES; inIdx++) {
+            printf("%02d ", inIdx);
+        }
+        printf("\nref_frame_picture: ");
+        for (int32_t inIdx = 0; inIdx < STD_VIDEO_VP9_NUM_REF_FRAMES; inIdx++) {
+            int8_t picIdx = pin->pic_idx[inIdx];
+            printf("%02d ", picIdx);
+        }
+        printf("\n");
+    }
+
+    bool isKeyFrame = (pin->stdPictureInfo.frame_type == STD_VIDEO_VP9_FRAME_TYPE_KEY);
+
+    // It doesn't look like this tracking is needed.
+    int8_t activeReferences[32];
+    memset(activeReferences, 0, sizeof(activeReferences));
+    for (size_t refName = 0; refName < STD_VIDEO_VP9_REFS_PER_FRAME; refName++) {
+        int8_t picIdx = isKeyFrame ? -1 : pin->pic_idx[pin->ref_frame_idx[refName]];
+        if (picIdx < 0) {
+            //pKhr->referenceNameSlotIndices[refName] = -1;
+            continue;
+        }
+        int8_t dpbSlot = GetPicDpbSlot(picIdx);
+        assert(dpbSlot >= 0);
+        //pKhr->referenceNameSlotIndices[refName] = dpbSlot;
+        activeReferences[dpbSlot]++;
+        //hdr.delta_frame_id_minus_1[dpbSlot] = pin->delta_frame_id_minus_1[pin->ref_frame_idx[i]];
+    }
+
+    for (int32_t inIdx = 0; inIdx < STD_VIDEO_VP9_NUM_REF_FRAMES; inIdx++) {
+        int8_t picIdx = isKeyFrame ? -1 : pin->pic_idx[inIdx];
+        int8_t dpbSlot = -1;
+        if ((picIdx >= 0) && !(refDpbUsedAndValidMask & (1 << picIdx))) {
+            dpbSlot = GetPicDpbSlot(picIdx);
+
+            assert(dpbSlot >= 0); // There is still content hitting this assert.
+            if (dpbSlot < 0) {
+                continue;
+            }
+
+            refDpbUsedAndValidMask |= (1 << picIdx);
+            m_dpb[dpbSlot].MarkInUse(m_nCurrentPictureID);
+            if (activeReferences[dpbSlot] == 0) {
+                continue;
+            }
+
+            pReferenceSlots[referenceIndex].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+            pReferenceSlots[referenceIndex].pNext = nullptr;
+            pReferenceSlots[referenceIndex].slotIndex = dpbSlot;
+            pGopReferenceImagesIndexes[referenceIndex] = picIdx;
+
+            VkExtent2D &codedExtent = pDpbSlotInfo[referenceIndex].codedExtent;
+            codedExtent.width = m_dpb[dpbSlot].getPictureResource()->decodeWidth;
+            codedExtent.height = m_dpb[dpbSlot].getPictureResource()->decodeHeight;
+
+            referenceIndex++;
+        }
+    }
+
+    if (m_dumpDpbData) {
+        printf(";;; pReferenceSlots (%d): ", referenceIndex);
+        for (size_t i =0 ;i < referenceIndex; i++) {
+            printf("%02d ", pReferenceSlots[i].slotIndex);
+        }
+        printf("\n");
+    }
+
+    ResetPicDpbSlots(refDpbUsedAndValidMask);
+
+    // Take into account the reference picture now.
+    int8_t currPicIdx = GetPicIdx(pd->pCurrPic);
+    assert(currPicIdx >= 0);
+    if (currPicIdx >= 0) {
+        refDpbUsedAndValidMask |= (1 << currPicIdx);
+    }
+
+    // NOTE(charlie): Most likely we can consider isReference = refresh_frame_flags != 0;
+    // However, the AMD fw interface appears to always need a setup slot & a destination resource,
+    // so it's not clear what to properly do in that case.
+    int8_t dpbSlot = AllocateDpbSlotForCurrentAV1(GetPic(pd->pCurrPic),
+        true /* isReference */, pd->current_dpb_id);
+
+    assert(dpbSlot >= 0);
+
+    *pCurrAllocatedSlotIndex = dpbSlot;
+    assert(!(dpbSlot < 0));
+    if (dpbSlot >= 0) {
+        assert(pd->ref_pic_flag);
+    }
+
+    if (m_dumpDpbData) {
+        printf("SlotsInUse: ");
+        uint32_t slotsInUse = m_dpb.getSlotInUseMask();
+        for (int i = 0; i < 9; i++) {
+            printf("%02d ", i);
+        }
+        uint8_t greenSquare[] = { 0xf0, 0x9f,  0x9f, 0xa9, 0x00 };
+        uint8_t redSquare[] = { 0xf0, 0x9f,  0x9f, 0xa5, 0x00 };
+        uint8_t yellowSquare[] = { 0xf0, 0x9f,  0x9f, 0xa8, 0x00 };
+        printf("\nSlotsInUse: ");
+        for (int i = 0; i < 9; i++) {
+            printf("%-2s ", (slotsInUse & (1<<i)) ? (i == dpbSlot ? (char*)yellowSquare : (char*)greenSquare) : (char*)redSquare);
+        }
+        printf("\n");
+    }
+
+    return referenceIndex;
+
+    return 1;
+}
+
+
 int8_t VulkanVideoParser::AllocateDpbSlotForCurrentH264(
     vkPicBuffBase* pPic, StdVideoDecodeH264PictureInfoFlags currPicFlags,
     int8_t /*presetDpbSlot*/)
@@ -1944,6 +2147,7 @@ bool VulkanVideoParser::DecodePicture(
     nvVideoH264PicParameters h264;
     nvVideoH265PicParameters hevc;
     nvVideoAV1PicParameters av1;
+    nvVideoVP9PicParameters vp9;
     // };
 
     if (m_decoderHandler == NULL) {
@@ -2074,11 +2278,6 @@ bool VulkanVideoParser::DecodePicture(
             h264.stdPictureInfo.flags, &setupReferenceSlot.slotIndex);
         // TODO: Remove it is for debugging only. Reserved fields must be set to "0".
         pout->stdPictureInfo.reserved1 = pCurrFrameDecParams->numGopReferenceSlots;
-        assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
-        if (setupReferenceSlot.slotIndex >= 0) {
-            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
-            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
-        }
         if (pCurrFrameDecParams->numGopReferenceSlots) {
             assert(pCurrFrameDecParams->numGopReferenceSlots <= (int32_t)MAX_DPB_REF_SLOTS);
             for (uint32_t dpbEntryIdx = 0; dpbEntryIdx < (uint32_t)pCurrFrameDecParams->numGopReferenceSlots;
@@ -2093,6 +2292,15 @@ bool VulkanVideoParser::DecodePicture(
         } else {
             pCurrFrameDecParams->decodeFrameInfo.pReferenceSlots = NULL;
             pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount = 0;
+        }
+        assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
+        if (setupReferenceSlot.slotIndex >= 0) {
+            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
+            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
+
+            // add the setup slot to the end of referenceSlots
+            assert((uint32_t)pCurrFrameDecParams->numGopReferenceSlots < MAX_DPB_REF_AND_SETUP_SLOTS);
+            referenceSlots[pCurrFrameDecParams->numGopReferenceSlots] = setupReferenceSlot;
         }
 
     }
@@ -2183,11 +2391,6 @@ bool VulkanVideoParser::DecodePicture(
             referenceSlots, pCurrFrameDecParams->pGopReferenceImagesIndexes,
             &setupReferenceSlot.slotIndex);
 
-        assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
-        if (setupReferenceSlot.slotIndex >= 0) {
-            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
-            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
-        }
 
         if (pCurrFrameDecParams->numGopReferenceSlots) {
             assert(pCurrFrameDecParams->numGopReferenceSlots <= (int32_t)MAX_DPB_REF_SLOTS);
@@ -2203,6 +2406,16 @@ bool VulkanVideoParser::DecodePicture(
         } else {
             pCurrFrameDecParams->decodeFrameInfo.pReferenceSlots = NULL;
             pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount = 0;
+        }
+
+        assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
+        if (setupReferenceSlot.slotIndex >= 0) {
+            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
+            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
+
+            // add the setup slot to the end of referenceSlots
+            assert((uint32_t)pCurrFrameDecParams->numGopReferenceSlots < MAX_DPB_REF_AND_SETUP_SLOTS);
+            referenceSlots[pCurrFrameDecParams->numGopReferenceSlots] = setupReferenceSlot;
         }
 
         if (m_dumpParserData) {
@@ -2257,12 +2470,6 @@ bool VulkanVideoParser::DecodePicture(
                             pCurrFrameDecParams->pGopReferenceImagesIndexes,
                             &setupReferenceSlot.slotIndex);
 
-        assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
-        if (setupReferenceSlot.slotIndex >= 0) {
-            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
-            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
-        }
-
         if (pCurrFrameDecParams->numGopReferenceSlots) {
             assert(pCurrFrameDecParams->numGopReferenceSlots <= (int32_t)MAX_DPB_REF_SLOTS);
             for (uint32_t dpbEntryIdx = 0; dpbEntryIdx < (uint32_t)pCurrFrameDecParams->numGopReferenceSlots;
@@ -2276,6 +2483,17 @@ bool VulkanVideoParser::DecodePicture(
         } else {
             pCurrFrameDecParams->decodeFrameInfo.pReferenceSlots = NULL;
             pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount = 0;
+        }
+
+
+        assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
+        if (setupReferenceSlot.slotIndex >= 0) {
+            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
+            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
+
+            // add the setup slot to the end of referenceSlots
+            assert((uint32_t)pCurrFrameDecParams->numGopReferenceSlots < MAX_DPB_REF_AND_SETUP_SLOTS);
+            referenceSlots[pCurrFrameDecParams->numGopReferenceSlots] = setupReferenceSlot;
         }
 
         // @review: this field seems only useful for debug display, but since AV1 needs a dword, should probably change the interface.
@@ -2319,10 +2537,102 @@ bool VulkanVideoParser::DecodePicture(
         pin->tileInfo.pMiRowStarts = pin->MiRowStarts;
 
         pDecodePictureInfo->flags.applyFilmGrain = pin->std_info.flags.apply_grain;
+
+    } else if (m_codecType == VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
+
+        VkParserVp9PictureData* pin = &pd->CodecSpecific.vp9;
+
+        vp9 = nvVideoVP9PicParameters();
+        StdVideoDecodeVP9PictureInfo* pStdPicInfo   = &vp9.stdPictureInfo;
+        VkVideoDecodeVP9PictureInfoKHR* pVkPicInfo = &vp9.vkPictureInfo;
+        nvVideoDecodeVP9DpbSlotInfo* pNvDpbSlotInfo = vp9.dpbRefList;
+
+        // Copy std data and link pointers
+        memcpy(pStdPicInfo, &pin->stdPictureInfo, sizeof(StdVideoDecodeVP9PictureInfo));
+        memcpy(&vp9.stdColorConfig, &pin->stdColorConfig, sizeof(StdVideoVP9ColorConfig));
+        pStdPicInfo->pColorConfig = &vp9.stdColorConfig;
+        if (pStdPicInfo->flags.segmentation_enabled == 1) {
+            memcpy(&vp9.stdSegment, &pin->stdSegmentation, sizeof(StdVideoVP9Segmentation));
+            pStdPicInfo->pSegmentation = &vp9.stdSegment;
+        }
+        memcpy(&vp9.stdLoopFilter, &pin->stdLoopFilter, sizeof(StdVideoVP9LoopFilter));
+        pStdPicInfo->pLoopFilter = &vp9.stdLoopFilter;
+
+        pVkPicInfo->sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_VP9_PICTURE_INFO_KHR;
+        pVkPicInfo->pStdPictureInfo = pStdPicInfo;
+
+        VkVideoDecodeInfoKHR* pKhrDecodeInfo = &pCurrFrameDecParams->decodeFrameInfo;
+        pKhrDecodeInfo->sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_INFO_KHR;
+        pKhrDecodeInfo->pNext = pVkPicInfo;
+
+        // dpb slots
+        pCurrFrameDecParams->numGopReferenceSlots = FillDpbVP9State(pd,
+                                                                    pin,
+                                                                    pNvDpbSlotInfo,
+                                                                    pStdPicInfo,
+                                                                    9,
+                                                                    referenceSlots,
+                                                                    pCurrFrameDecParams->pGopReferenceImagesIndexes,
+                                                                    &setupReferenceSlot.slotIndex);
+
+        if (pCurrFrameDecParams->numGopReferenceSlots) {
+            assert(pCurrFrameDecParams->numGopReferenceSlots <= (int32_t)MAX_DPB_REF_SLOTS);
+            for (uint32_t dpbEntryIdx = 0; dpbEntryIdx < (uint32_t)pCurrFrameDecParams->numGopReferenceSlots;
+                 dpbEntryIdx++) {
+                pCurrFrameDecParams->pictureResources[dpbEntryIdx].sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
+                pCurrFrameDecParams->pictureResources[dpbEntryIdx].codedExtent = pNvDpbSlotInfo[dpbEntryIdx].codedExtent;
+                referenceSlots[dpbEntryIdx].pPictureResource = &pCurrFrameDecParams->pictureResources[dpbEntryIdx];
+            }
+
+            pCurrFrameDecParams->decodeFrameInfo.pReferenceSlots = referenceSlots;
+            pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount = pCurrFrameDecParams->numGopReferenceSlots;
+        } else {
+            pCurrFrameDecParams->decodeFrameInfo.pReferenceSlots = nullptr;
+            pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount = 0;
+        }
+
+        assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
+        if (setupReferenceSlot.slotIndex >= 0) {
+            pCurrFrameDecParams->dpbSetupPictureResource.codedExtent.width = pin->FrameWidth;
+            pCurrFrameDecParams->dpbSetupPictureResource.codedExtent.height = pin->FrameHeight;
+            setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
+            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
+
+            // add the setup slot to the end of referenceSlots
+            assert((uint32_t)pCurrFrameDecParams->numGopReferenceSlots < MAX_DPB_REF_AND_SETUP_SLOTS);
+            referenceSlots[pCurrFrameDecParams->numGopReferenceSlots] = setupReferenceSlot;
+        }
+
+        // @review: this field seems only useful for debug display, but since AV1 needs a dword, should probably change the interface.
+        //pDecodePictureInfo->videoFrameType = static_cast<uint16_t>(pin->frame_type);
+        pDecodePictureInfo->viewId = 0; // @review: Doesn't seem to be used in Vulkan?
+
+        bool isKeyFrame = pin->stdPictureInfo.frame_type == STD_VIDEO_VP9_FRAME_TYPE_KEY;
+        for (size_t i = 0; i < STD_VIDEO_VP9_REFS_PER_FRAME; i++) {
+            int8_t picIdx = isKeyFrame ? -1 : pin->pic_idx[pin->ref_frame_idx[i]];
+            if (picIdx < 0) {
+                pVkPicInfo->referenceNameSlotIndices[i] = -1;
+                continue;
+            }
+
+            int8_t dpbSlot = GetPicDpbSlot(picIdx);
+            assert(dpbSlot >= 0);
+            pVkPicInfo->referenceNameSlotIndices[i] = dpbSlot;
+        }
+
+        pVkPicInfo->uncompressedHeaderOffset = pin->uncompressedHeaderOffset;
+        pVkPicInfo->compressedHeaderOffset = pin->compressedHeaderOffset;
+        pVkPicInfo->tilesOffset = pin->tilesOffset;
+
+        // Use current frames with and height for display and writing to output
+        pDecodePictureInfo->displayWidth = pin->FrameWidth;
+        pDecodePictureInfo->displayHeight = pin->FrameHeight;
     }
 
-    pDecodePictureInfo->displayWidth  = m_nvsi.nDisplayWidth;
-    pDecodePictureInfo->displayHeight = m_nvsi.nDisplayHeight;
+    if (m_codecType != VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
+        pDecodePictureInfo->displayWidth  = m_nvsi.nDisplayWidth;
+        pDecodePictureInfo->displayHeight = m_nvsi.nDisplayHeight;
+    }
 
     bRet = (m_decoderHandler->DecodePictureWithParameters(pCurrFrameDecParams, pDecodePictureInfo) >= 0);
 
@@ -2405,6 +2715,11 @@ VkResult vulkanCreateVideoParser(
     } else if (videoCodecOperation == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
         if (!pStdExtensionVersion || strcmp(pStdExtensionVersion->extensionName, VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_EXTENSION_NAME) || (pStdExtensionVersion->specVersion != VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_SPEC_VERSION)) {
             assert(!"Decoder AV1 Codec version is NOT supported");
+            return VK_ERROR_VIDEO_STD_VERSION_NOT_SUPPORTED_KHR;
+        }
+    } else if (videoCodecOperation == VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
+        if (!pStdExtensionVersion || strcmp(pStdExtensionVersion->extensionName, VK_STD_VULKAN_VIDEO_CODEC_VP9_DECODE_EXTENSION_NAME) || (pStdExtensionVersion->specVersion != VK_STD_VULKAN_VIDEO_CODEC_VP9_DECODE_SPEC_VERSION)) {
+            assert(!"Decoder VP9 Codec version is NOT supported");
             return VK_ERROR_VIDEO_STD_VERSION_NOT_SUPPORTED_KHR;
         }
     } else {

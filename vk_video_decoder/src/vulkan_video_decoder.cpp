@@ -155,16 +155,8 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance,
 
     VkQueueFlags requestVideoDecodeQueueMask = VK_QUEUE_VIDEO_DECODE_BIT_KHR;
 
-    VkQueueFlags requestVideoEncodeQueueMask = 0;
-    if (m_decoderConfig.enableVideoEncoder) {
-        requestVideoEncodeQueueMask |= VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
-    }
-
     if (m_decoderConfig.selectVideoWithComputeQueue) {
         requestVideoDecodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
-        if (m_decoderConfig.enableVideoEncoder) {
-            requestVideoEncodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
-        }
     }
 
     VkQueueFlags requestVideoComputeQueueMask = 0;
@@ -172,16 +164,7 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance,
         requestVideoComputeQueueMask = VK_QUEUE_COMPUTE_BIT;
     }
 
-    VkVideoCodecOperationFlagsKHR videoDecodeCodecs = (VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR  |
-                                                       VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR  |
-                                                       VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR);
-
-    VkVideoCodecOperationFlagsKHR videoEncodeCodecs = ( VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR  |
-                                                        VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR  |
-                                                        VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR);
-
-    VkVideoCodecOperationFlagsKHR videoCodecs = videoDecodeCodecs |
-                                        (m_decoderConfig.enableVideoEncoder ? videoEncodeCodecs : (VkVideoCodecOperationFlagsKHR) VK_VIDEO_CODEC_OPERATION_NONE_KHR);
+    VkVideoCodecOperationFlagsKHR videoCodecOperation = videoStreamDemuxer->GetVideoCodec();
 
     const bool supportsShellPresent = ((!m_decoderConfig.noPresent == false) && (pWsiDisplay != nullptr));
     const bool createGraphicsQueue = supportsShellPresent ? true  : false;
@@ -196,17 +179,12 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance,
                                             ( VK_QUEUE_TRANSFER_BIT |
                                               requestGraphicsQueueMask |
                                               requestVideoComputeQueueMask |
-                                              requestVideoDecodeQueueMask |
-                                              requestVideoEncodeQueueMask),
+                                              requestVideoDecodeQueueMask),
                                             pWsiDisplay,
                                             requestVideoDecodeQueueMask,
-                                            ( VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR |
-                                              VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR |
-                                              VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR),
-                                              requestVideoEncodeQueueMask,
-                                            ( VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR |
-                                              VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR |
-                                              VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR),
+                                            videoCodecOperation,
+                                              0,
+                                            VK_VIDEO_CODEC_OPERATION_NONE_KHR,
                                             vkPhysicalDevice);
 
     if (result != VK_SUCCESS) {
@@ -216,8 +194,8 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance,
     }
 
     m_vkDevCtxt.CreateVulkanDevice(numDecodeQueues,
-                                   m_decoderConfig.enableVideoEncoder ? 1 : 0, // num encode queues
-                                   videoCodecs,
+                                   0, // num encode queues
+                                   videoCodecOperation,
                                    // If no graphics or compute queue is requested, only video queues
                                    // will be created. Not all implementations support transfer on video queues,
                                    // so request a separate transfer queue for such implementations.
@@ -264,6 +242,7 @@ VkResult CreateVulkanVideoDecoder(VkInstance vkInstance, VkPhysicalDevice vkPhys
         case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR:
         case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR:
         case VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR:
+        case VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR:
         {
 
         }

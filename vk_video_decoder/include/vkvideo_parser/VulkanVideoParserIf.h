@@ -320,10 +320,10 @@ struct VkParserAv1PictureData {
 
 typedef struct VkParserVp9PictureData {
 
-    // StdVideoDecodeVP9PictureInfo stdPictureInfo;
-    // StdVideoVP9ColorConfig       stdColorConfig;
-    // StdVideoVP9LoopFilter        stdLoopFilter;
-    // StdVideoVP9Segmentation      stdSegmentation;
+    StdVideoDecodeVP9PictureInfo stdPictureInfo;
+    StdVideoVP9ColorConfig       stdColorConfig;
+    StdVideoVP9LoopFilter        stdLoopFilter;
+    StdVideoVP9Segmentation      stdSegmentation;
 
     // frame dimentions
     uint32_t FrameWidth, FrameHeight;
@@ -336,8 +336,8 @@ typedef struct VkParserVp9PictureData {
     bool     show_existing_frame;
 
     // references
-    // uint8_t  ref_frame_idx[STD_VIDEO_VP9_REFS_PER_FRAME];
-    // uint8_t  pic_idx[STD_VIDEO_VP9_NUM_REF_FRAMES];
+    uint8_t  ref_frame_idx[STD_VIDEO_VP9_REFS_PER_FRAME];
+    uint8_t  pic_idx[STD_VIDEO_VP9_NUM_REF_FRAMES];
     VkPicIf* pLastRef;
     VkPicIf* pGoldenRef;
     VkPicIf* pAltRef;
