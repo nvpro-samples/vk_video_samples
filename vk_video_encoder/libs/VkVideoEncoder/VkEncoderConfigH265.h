@@ -129,7 +129,7 @@ struct EncoderConfigH265 : public EncoderConfig {
 
     virtual ~EncoderConfigH265() {}
 
-    virtual EncoderConfigH265* GetEncoderConfigh265() {
+    virtual EncoderConfigH265* GetEncoderConfigh265() override {
         return this;
     }
 
@@ -137,7 +137,7 @@ struct EncoderConfigH265 : public EncoderConfig {
 
     uint32_t GetCpbVclFactor();
 
-    virtual VkResult InitializeParameters()
+    virtual VkResult InitializeParameters() override
     {
         VkResult result = EncoderConfig::InitializeParameters();
         if (result != VK_SUCCESS) {
@@ -147,20 +147,23 @@ struct EncoderConfigH265 : public EncoderConfig {
         return VK_SUCCESS;
     }
 
-    virtual VkResult InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx);
+    virtual VkResult InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx) override;
 
-    virtual uint32_t GetDefaultVideoProfileIdc() { return STD_VIDEO_H265_PROFILE_IDC_MAIN; };
+    virtual uint32_t GetDefaultVideoProfileIdc() override { return STD_VIDEO_H265_PROFILE_IDC_MAIN; };
 
     // 1. First h.265 determine the number of the Dpb buffers required
-    virtual int8_t InitDpbCount();
+    virtual int8_t InitDpbCount() override;
 
     uint32_t GetMaxDpbSize(uint32_t pictureSizeInSamplesY, int32_t levelIndex);
     int8_t VerifyDpbSize();
 
     // 2. First h.265 determine the rate control parameters
-    virtual bool InitRateControl();
+    virtual bool InitRateControl() override;
 
-    virtual uint8_t GetMaxBFrameCount() { return  static_cast<uint8_t>(h265EncodeCapabilities.maxBPictureL0ReferenceCount); }
+    virtual uint8_t GetMaxBFrameCount() override
+    {
+        return static_cast<uint8_t>(h265EncodeCapabilities.maxBPictureL0ReferenceCount);
+    }
 
     bool GetRateControlParameters(VkVideoEncodeRateControlInfoKHR *rcInfo,
                                   VkVideoEncodeRateControlLayerInfoKHR *pRcLayerInfo,

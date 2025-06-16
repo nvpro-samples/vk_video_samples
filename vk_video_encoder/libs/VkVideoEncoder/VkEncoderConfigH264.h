@@ -117,7 +117,7 @@ struct EncoderConfigH264 : public EncoderConfig {
 
     virtual ~EncoderConfigH264() {}
 
-    virtual EncoderConfigH264* GetEncoderConfigh264() {
+    virtual EncoderConfigH264* GetEncoderConfigh264() override {
         return this;
     }
 
@@ -162,7 +162,7 @@ struct EncoderConfigH264 : public EncoderConfig {
     static void SetAspectRatio(StdVideoH264SequenceParameterSetVui *vui, int32_t width, int32_t height,
                                int32_t darWidth, int32_t darHeight);
 
-    virtual VkResult InitializeParameters()
+    virtual VkResult InitializeParameters() override
     {
         VkResult result = EncoderConfig::InitializeParameters();
         if (result != VK_SUCCESS) {
@@ -181,17 +181,20 @@ struct EncoderConfigH264 : public EncoderConfig {
         return VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR;
     }
 
-    virtual VkResult InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx);
+    virtual VkResult InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx) override;
 
-    virtual uint32_t GetDefaultVideoProfileIdc() { return STD_VIDEO_H264_PROFILE_IDC_HIGH; };
+    virtual uint32_t GetDefaultVideoProfileIdc() override { return STD_VIDEO_H264_PROFILE_IDC_HIGH; };
 
     // 1. First h.264 determine the number of the Dpb buffers required
-    virtual int8_t InitDpbCount();
+    virtual int8_t InitDpbCount() override;
 
     // 2. First h.264 determine the rate control parameters
-    virtual bool InitRateControl();
+    virtual bool InitRateControl() override;
 
-    virtual uint8_t GetMaxBFrameCount() { return static_cast<uint8_t>(h264EncodeCapabilities.maxBPictureL0ReferenceCount); }
+    virtual uint8_t GetMaxBFrameCount() override
+    {
+        return static_cast<uint8_t>(h264EncodeCapabilities.maxBPictureL0ReferenceCount);
+    }
 
     bool GetRateControlParameters(VkVideoEncodeRateControlInfoKHR *rcInfo,
                                   VkVideoEncodeRateControlLayerInfoKHR *pRcLayerInfo,
