@@ -66,6 +66,9 @@ public:
     struct FrameSynchronizationInfo {
         VkFence frameCompleteFence;
         VkSemaphore frameCompleteSemaphore;
+#if (_TRANSCODING)
+        VkSemaphore frameResizeSemaphore[16];
+#endif //_TRANSCODING
         VkSemaphore consumerCompleteSemaphore;
         VkFence frameConsumerDoneFence;
         uint64_t frameConsumerDoneTimelineValue;

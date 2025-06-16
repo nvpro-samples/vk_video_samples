@@ -31,7 +31,12 @@ class VulkanFilterYuvCompute : public VulkanFilter
 {
 public:
 
-    enum FilterType { YCBCRCOPY, YCBCRCLEAR, YCBCR2RGBA, RGBA2YCBCR };
+    enum FilterType { YCBCRCOPY, YCBCRCLEAR, YCBCR2RGBA, RGBA2YCBCR, RESIZE };
+
+    struct Rectangle {
+        int width = 0;
+        int height = 0;
+    };
     static constexpr uint32_t maxNumComputeDescr = 8;
 
     static constexpr VkImageAspectFlags validPlaneAspects = VK_IMAGE_ASPECT_PLANE_0_BIT |
@@ -54,7 +59,11 @@ public:
                            const VkSamplerYcbcrConversionCreateInfo* pYcbcrConversionCreateInfo,
                            const YcbcrPrimariesConstants* pYcbcrPrimariesConstants,
                            const VkSamplerCreateInfo* pSamplerCreateInfo,
-                           VkSharedBaseObj<VulkanFilter>& vulkanFilter);
+                           VkSharedBaseObj<VulkanFilter>& vulkanFilter
+#ifdef _TRANSCODING
+                            , const std::vector<Rectangle>& resizedResolutions = {}
+#endif
+                            );
 
     VulkanFilterYuvCompute(const VulkanDeviceContext* vkDevCtx,
                            uint32_t queueFamilyIndex,
@@ -65,7 +74,11 @@ public:
                            VkFormat outputFormat,
                            bool inputEnableMsbToLsbShift,
                            bool outputEnableLsbToMsbShift,
-                           const YcbcrPrimariesConstants* pYcbcrPrimariesConstants)
+                           const YcbcrPrimariesConstants* pYcbcrPrimariesConstants
+#ifdef _TRANSCODING
+                           , const std::vector<Rectangle>& resizedResolutions = {}
+#endif
+                            )
         : VulkanFilter(vkDevCtx, queueFamilyIndex, queueIndex)
         , m_filterType(filterType)
         , m_inputFormat(inputFormat)
@@ -84,6 +97,9 @@ public:
                                 VK_IMAGE_ASPECT_PLANE_0_BIT |
                                 VK_IMAGE_ASPECT_PLANE_1_BIT |
                                 VK_IMAGE_ASPECT_PLANE_2_BIT)
+#ifdef _TRANSCODING
+        , m_resizedResolutions( resizedResolutions )
+#endif
         , m_inputEnableMsbToLsbShift(inputEnableMsbToLsbShift)
         , m_outputEnableLsbToMsbShift(outputEnableLsbToMsbShift)
         , m_enableRowAndColumnReplication(true)
@@ -275,6 +291,7 @@ private:
      * @return Size of the generated shader code in bytes
      */
     size_t InitYCBCR2RGBA(std::string& computeShader);
+    size_t InitResize(std::string& computeShader);
 
 private:
     const FilterType                         m_filterType;
@@ -285,10 +302,14 @@ private:
     uint32_t                                 m_maxNumFrames;
     const YcbcrPrimariesConstants            m_ycbcrPrimariesConstants;
     VulkanSamplerYcbcrConversion             m_samplerYcbcrConversion;
+    VulkanSamplerResize                      m_samplerResize;
     VulkanDescriptorSetLayout                m_descriptorSetLayout;
     VulkanComputePipeline                    m_computePipeline;
     VkImageAspectFlags                       m_inputImageAspects;
     VkImageAspectFlags                       m_outputImageAspects;
+#ifdef _TRANSCODING
+    std::vector<Rectangle>                   m_resizedResolutions;
+#endif
     uint32_t                                 m_inputEnableMsbToLsbShift : 1;
     uint32_t                                 m_outputEnableLsbToMsbShift : 1;
     uint32_t                                 m_enableRowAndColumnReplication : 1;
