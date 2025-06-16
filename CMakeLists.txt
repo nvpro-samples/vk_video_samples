@@ -375,6 +375,7 @@ endif()
 
     if(BUILD_DEMOS AND NOT DEFINED DEQP_TARGET)
         add_subdirectory(vk_video_decoder/demos)
+        add_subdirectory(vk_video_transcoder/demos)
     endif()
 endif()
 ############ VULKAN_VIDEO_DECODER_LIB ######################################

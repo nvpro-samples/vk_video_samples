@@ -340,4 +340,9 @@ private:
     VkDeviceSize   m_maxStreamBufferSize;
     VulkanFilterYuvCompute::FilterType m_filterType;
     VkSharedBaseObj<VulkanFilter> m_yuvFilter;
+#if (_TRANSCODING)
+public:
+    int m_numResizes = 0;
+    std::vector<VulkanFilterYuvCompute::Rectangle> m_resizeResolution;
+#endif // _TRANSCODING
 };
