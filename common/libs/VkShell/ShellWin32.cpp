@@ -130,7 +130,7 @@ LRESULT ShellWin32::HandleMessage(UINT msg, WPARAM wparam, LPARAM lparam) {
             }
             break;
         case WM_DESTROY:
-            QuitLoop();
+            SendMessage(m_hwnd, WM_QUIT, 0, 0);
             break;
         default:
             return DefWindowProc(m_hwnd, msg, wparam, lparam);
