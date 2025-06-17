@@ -66,7 +66,7 @@ void VulkanVP9Decoder::EndOfStream()
 
 bool VulkanVP9Decoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_t* pParsedBytes)
 {
-    const uint8_t* pDataIn = (uint8_t*)pck->pByteStream;
+    const uint8_t* pDataIn = pck->pByteStream;
     int dataSize = (int)pck->nDataLength;
 
     if (pParsedBytes) {
@@ -130,14 +130,14 @@ bool VulkanVP9Decoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_
             }
 
             if (dataSize >= (m_frameSize - m_nalu.end_offset)) {
-                memcpy(m_bitstreamData.GetBitstreamPtr() + m_nalu.end_offset, pDataIn, m_frameSize - m_nalu.end_offset);
+                memcpy(m_bitstreamData.GetBitstreamPtr() + m_nalu.end_offset, pDataIn, (size_t)(m_frameSize - m_nalu.end_offset));
                 m_pictureStarted = true;
                 pDataIn += (m_frameSize - (int)m_nalu.end_offset);
                 dataSize -= (m_frameSize - (int)m_nalu.end_offset);
                 m_nalu.end_offset = m_frameSize;
                 m_bitstreamComplete = true;
             } else {
-                memcpy(m_bitstreamData.GetBitstreamPtr() + m_nalu.end_offset, pDataIn, dataSize);
+                memcpy(m_bitstreamData.GetBitstreamPtr() + m_nalu.end_offset, pDataIn, (size_t)(dataSize));
                 m_nalu.end_offset += dataSize;
                 pDataIn += dataSize;
                 dataSize = 0;
@@ -247,7 +247,8 @@ bool VulkanVP9Decoder::ParseFrameHeader(uint32_t framesize)
     }
 
     // handle bitstream start offset alignment (for super frame)
-    uint32_t addOffset = m_nalu.start_offset & (m_bufferOffsetAlignment - 1);
+    assert((m_nalu.start_offset >= 0) && (m_nalu.start_offset <= UINT32_MAX));
+    uint32_t addOffset = (uint32_t)(m_nalu.start_offset & (m_bufferOffsetAlignment - 1));
     m_PicData.uncompressedHeaderOffset += addOffset;
     m_PicData.compressedHeaderOffset += addOffset;
     m_PicData.tilesOffset += addOffset;
@@ -257,7 +258,7 @@ bool VulkanVP9Decoder::ParseFrameHeader(uint32_t framesize)
     m_pVkPictureData->numSlices = m_PicData.numTiles;
     m_pVkPictureData->bitstreamDataLen = (framesize + addOffset + m_bufferSizeAlignment - 1) & ~(m_bufferSizeAlignment - 1); // buffer is already aligned so, no issues.
     m_pVkPictureData->bitstreamData = m_bitstreamData.GetBitstreamBuffer();
-    m_pVkPictureData->bitstreamDataOffset = m_nalu.start_offset & ~((int64_t)m_bufferOffsetAlignment - 1);
+    m_pVkPictureData->bitstreamDataOffset = (size_t)(m_nalu.start_offset & ~((int64_t)m_bufferOffsetAlignment - 1));
 
     if (!BeginPicture(m_pVkPictureData)) {
         assert(!"BeginPicture failed");
