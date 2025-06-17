@@ -351,7 +351,7 @@ include_directories("${PROJECT_SOURCE_DIR}/include" "${PROJECT_SOURCE_DIR}/../co
 
 if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     # set(COMMON_COMPILE_FLAGS "-Wall -Wextra -Wno-long-long -Wshadow -Wundef -Wconversion -Wno-sign-conversion -Wno-conversion -Wno-sign-compare")
-    set(COMMON_COMPILE_FLAGS "${COMMON_COMPILE_FLAGS} -fno-strict-aliasing -fno-builtin-memcmp")
+    set(COMMON_COMPILE_FLAGS "${COMMON_COMPILE_FLAGS} -fno-strict-aliasing -fno-builtin-memcmp -Wcast-qual")
 
     # These flags are not supported on Windows and some older version of GCC
     # that our bots use.
@@ -389,6 +389,9 @@ if(WIN32)
     add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/w34245>")
     # Warn about deprecated functions
     add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/wd4996>")
+    # Warn about const-casting (cast-qual)
+    add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/w34100>")
+    add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/w34101>")
 endif()
 
 if(NOT WIN32)
