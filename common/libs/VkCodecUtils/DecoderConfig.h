@@ -79,6 +79,7 @@ struct DecoderConfig {
         outputcrcPerFrame = false;
         outputcrc = false;
         crcOutputFileName.clear();
+        help = false;
     }
 
     using ProgramArgs = std::vector<ArgSpec>;
@@ -106,9 +107,10 @@ struct DecoderConfig {
     bool ParseArgs(int argc, const char *argv[]) {
         ProgramArgs spec = {
             {"--help", nullptr, 0, "Show this help",
-                [argv](const char **, const ProgramArgs &a) {
+                [this](const char **argv, const ProgramArgs &a) {
                     showHelp(argv, a);
-                    return false;
+                    help = true;
+                    return true;
                 }},
             {"--disableStrDemux", nullptr, 0, "Disable stream demuxing",
                 [this](const char **, const ProgramArgs &a) {
@@ -411,6 +413,7 @@ struct DecoderConfig {
     int backBufferCount;
     int ticksPerSecond;
     int maxFrameCount;
+    bool help;
 
     std::string videoFileName;
     std::string outputFileName;

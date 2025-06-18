@@ -134,7 +134,12 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance,
                                             const VkWsiDisplay* pWsiDisplay,
                                             int argc, const char** argv)
 {
-    m_decoderConfig.ParseArgs(argc, argv);
+    bool configResult = m_decoderConfig.ParseArgs(argc, argv);
+    if (!configResult && (m_decoderConfig.help == true)) {
+        return VK_SUCCESS;
+    } else if (!configResult) {
+        return VK_NOT_READY;
+    }
 
     VkResult result = m_vkDevCtxt.InitVulkanDecoderDevice(m_decoderConfig.appName.c_str(),
                                                           vkInstance,

@@ -32,7 +32,12 @@ int main(int argc, const char **argv)
 {
 
     DecoderConfig decoderConfig(argv[0]);
-    decoderConfig.ParseArgs(argc, argv);
+    bool configResult = decoderConfig.ParseArgs(argc, argv);
+    if (!configResult && (decoderConfig.help == true)) {
+        return 0;
+    } else if (!configResult) {
+        return -1;
+    }
 
     VkSharedBaseObj<VideoStreamDemuxer> videoStreamDemuxer;
     VkResult result = VideoStreamDemuxer::Create(decoderConfig.videoFileName.c_str(),
