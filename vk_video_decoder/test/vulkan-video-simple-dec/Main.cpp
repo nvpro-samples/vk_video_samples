@@ -104,7 +104,12 @@ int main(int argc, const char** argv)
     std::cout << "Enter decoder test" << std::endl;
 
     DecoderConfig decoderConfig(argv[0]);
-    decoderConfig.ParseArgs(argc, argv);
+    bool configResult = decoderConfig.ParseArgs(argc, argv);
+    if (!configResult && (decoderConfig.help == true)) {
+        return 0;
+    } else if (!configResult) {
+        return -1;
+    }
 
     switch (decoderConfig.forceParserType)
     {
