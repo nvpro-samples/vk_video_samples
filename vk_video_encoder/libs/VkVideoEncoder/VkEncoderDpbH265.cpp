@@ -323,7 +323,7 @@ void VkEncDpbH265::ApplyReferencePictureSet(const StdVideoEncodeH265PictureInfo 
 
         for (i = 0; i < pShortTermRefPicSet->num_positive_pics; i++) {
             DeltaPocS1[i] = (i == 0) ? (pShortTermRefPicSet->delta_poc_s1_minus1[i] + 1) :
-                            DeltaPocS1[i - 1] - (pShortTermRefPicSet->delta_poc_s1_minus1[i] + 1);
+                            DeltaPocS1[i - 1] + (pShortTermRefPicSet->delta_poc_s1_minus1[i] + 1);
         }
         for (; i < STD_VIDEO_H265_MAX_DPB_SIZE; i++) {
             DeltaPocS1[i] = -1;
