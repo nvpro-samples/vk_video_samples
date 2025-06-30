@@ -461,9 +461,8 @@ class EncoderOutputFileHandler
 {
 public:
     EncoderOutputFileHandler()
-    : m_fileName{},
-      m_fileHandle(),
-      m_memMapedFile()
+    : m_fileName{}
+    , m_fileHandle()
     {
 
     }
@@ -475,10 +474,6 @@ public:
 
     void Destroy()
     {
-        std::error_code ec;
-        m_memMapedFile.sync(ec);
-        m_memMapedFile.unmap();
-
         if (m_fileHandle != nullptr) {
             if(fclose(m_fileHandle)) {
                 fprintf(stderr, "Failed to close output file %s", m_fileName);
@@ -534,14 +529,9 @@ private:
         return 1;
     }
 
-    size_t GetFileSize() const {
-        return m_memMapedFile.length();
-    }
-
 private:
     char  m_fileName[256];
     FILE* m_fileHandle;
-    mio::basic_mmap<mio::access_mode::write, uint8_t> m_memMapedFile;
 };
 
 
