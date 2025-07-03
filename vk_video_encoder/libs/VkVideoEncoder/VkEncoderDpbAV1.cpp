@@ -658,7 +658,7 @@ void VkEncDpbAV1::SetupReferenceFrameGroups(VkVideoGopStructure::FrameType pictu
     // sort L1 list in increasing order of POC value
     for (int32_t i = 0; i < numRefFramesL1; i++) {
         for (int j = 0; j < numRefFramesL1 - 1; j++) {
-            if (refFramePocListL1[j] < refFramePocListL1[j + 1]) {
+            if (refFramePocListL1[j] > refFramePocListL1[j + 1]) {
                 int32_t temp;
                 SWAP(refFramePocListL1[j], refFramePocListL1[j + 1], temp);
                 SWAP(refFrameDpbIdListL1[j], refFrameDpbIdListL1[j + 1], temp);
