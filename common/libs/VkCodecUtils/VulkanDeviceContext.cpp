@@ -784,7 +784,12 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
                                                                             VK_FALSE
                                                                            };
 
-        VkPhysicalDeviceFeatures2 deviceFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &synchronization2Features};
+        VkPhysicalDeviceVideoEncodeIntraRefreshFeaturesKHR intraRefreshFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_INTRA_REFRESH_FEATURES_KHR,
+                                                                                  &synchronization2Features,
+                                                                                  VK_FALSE
+                                                                                };
+
+        VkPhysicalDeviceFeatures2 deviceFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &intraRefreshFeatures};
         GetPhysicalDeviceFeatures2(m_physDevice, &deviceFeatures);
 
         assert(timelineSemaphoreFeatures.timelineSemaphore);
