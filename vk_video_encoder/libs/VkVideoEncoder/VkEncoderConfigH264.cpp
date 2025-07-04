@@ -16,6 +16,25 @@
 
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
 
+int EncoderConfigH264::DoParseArguments(int argc, const char* argv[])
+{
+    std::vector<std::string> args(argv, argv + argc);
+
+    for (int32_t i = 0; i < argc; i++) {
+        if (args[i] == "--slices") {
+            if (++i >= argc || sscanf(args[i].c_str(), "%u", &sliceCount) != 1) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+        } else {
+            fprintf(stderr, "Unrecognized option: %s\n", argv[i]);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 StdVideoH264LevelIdc EncoderConfigH264::DetermineLevel(uint8_t dpbSize,
                                                        uint32_t bitrate,
                                                        uint32_t _vbvBufferSize,

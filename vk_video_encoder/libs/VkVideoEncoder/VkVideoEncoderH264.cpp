@@ -281,7 +281,7 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
 
     StdVideoEncodeH264ReferenceListsInfoFlags refMgmtFlags = StdVideoEncodeH264ReferenceListsInfoFlags();
     if ((m_dpb264->IsRefFramesCorrupted()) && ((picType == VkVideoGopStructure::FRAME_TYPE_P) || (picType == VkVideoGopStructure::FRAME_TYPE_B))) {
-        SetupRefPicReorderingCommands(&pictureInfo, &pFrameInfo->stdSliceHeader, &refMgmtFlags, pFrameInfo->refList0ModOperations, refList0ModOpCount);
+        SetupRefPicReorderingCommands(&pictureInfo, &pFrameInfo->stdSliceHeader[0], &refMgmtFlags, pFrameInfo->refList0ModOperations, refList0ModOpCount);
     }
 
     // Fill in the reference-related information for the current picture
@@ -297,12 +297,12 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     if ((m_h264.m_ppsInfo.num_ref_idx_l0_default_active_minus1 > 0) &&
             (picType == VkVideoGopStructure::FRAME_TYPE_B)) {
         // do not use multiple references for l0
-        pFrameInfo->stdSliceHeader.flags.num_ref_idx_active_override_flag = true;
+        pFrameInfo->stdSliceHeader[0].flags.num_ref_idx_active_override_flag = true;
         pFrameInfo->stdReferenceListsInfo.num_ref_idx_l0_active_minus1 = 0;
     }
 
     NvVideoEncodeH264DpbSlotInfoLists<STD_VIDEO_H264_MAX_NUM_LIST_REF> refLists;
-    m_dpb264->GetRefPicList(&pictureInfo, &refLists, &m_h264.m_spsInfo, &m_h264.m_ppsInfo, &pFrameInfo->stdSliceHeader, &pFrameInfo->stdReferenceListsInfo);
+    m_dpb264->GetRefPicList(&pictureInfo, &refLists, &m_h264.m_spsInfo, &m_h264.m_ppsInfo, &pFrameInfo->stdSliceHeader[0], &pFrameInfo->stdReferenceListsInfo);
     assert(refLists.refPicListCount[0] <= 8);
     assert(refLists.refPicListCount[1] <= 8);
 
@@ -315,14 +315,19 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     pFrameInfo->stdReferenceListsInfo.num_ref_idx_l0_active_minus1 = refLists.refPicListCount[0] > 0 ? (uint8_t)(refLists.refPicListCount[0] - 1) : 0;
     pFrameInfo->stdReferenceListsInfo.num_ref_idx_l1_active_minus1 = refLists.refPicListCount[1] > 0 ? (uint8_t)(refLists.refPicListCount[1] - 1) : 0;
 
-    pFrameInfo->stdSliceHeader.flags.num_ref_idx_active_override_flag = false;
+    pFrameInfo->stdSliceHeader[0].flags.num_ref_idx_active_override_flag = false;
     if (picType == VkVideoGopStructure::FRAME_TYPE_B) {
-        pFrameInfo->stdSliceHeader.flags.num_ref_idx_active_override_flag =
+        pFrameInfo->stdSliceHeader[0].flags.num_ref_idx_active_override_flag =
             ((pFrameInfo->stdReferenceListsInfo.num_ref_idx_l0_active_minus1 != m_h264.m_ppsInfo.num_ref_idx_l0_default_active_minus1) ||
              (pFrameInfo->stdReferenceListsInfo.num_ref_idx_l1_active_minus1 != m_h264.m_ppsInfo.num_ref_idx_l1_default_active_minus1));
     } else if (picType == VkVideoGopStructure::FRAME_TYPE_P) {
-        pFrameInfo->stdSliceHeader.flags.num_ref_idx_active_override_flag =
+        pFrameInfo->stdSliceHeader[0].flags.num_ref_idx_active_override_flag =
             (pFrameInfo->stdReferenceListsInfo.num_ref_idx_l0_active_minus1 != m_h264.m_ppsInfo.num_ref_idx_l0_default_active_minus1);
+    }
+
+    // Populate all Std slice header entries. For now, they are all identical.
+    for (uint32_t i = 1; i < pFrameInfo->pictureInfo.naluSliceEntryCount; i++) {
+        pFrameInfo->stdSliceHeader[i] = pFrameInfo->stdSliceHeader[0];
     }
 
     // Update the frame_num and PicOrderCnt picture parameters, if changed.
@@ -331,7 +336,7 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     // We need the reference slot for the target picture
     // Update the DPB
     int8_t targetDpbSlot = m_dpb264->DpbPictureEnd(&pictureInfo, encodeFrameInfo->setupImageResource,
-                                                   &m_h264.m_spsInfo, &pFrameInfo->stdSliceHeader,
+                                                   &m_h264.m_spsInfo, &pFrameInfo->stdSliceHeader[0],
                                                    &pFrameInfo->stdReferenceListsInfo, MAX_MEM_MGMNT_CTRL_OPS_COMMANDS);
     if (targetDpbSlot >= VkEncDpbH264::MAX_DPB_SLOTS) {
         targetDpbSlot = static_cast<int8_t>((encodeFrameInfo->setupImageResource!=nullptr) + refLists.refPicListCount[0] + refLists.refPicListCount[1] + 1);
@@ -532,26 +537,30 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     pFrameInfo->videoSession = m_videoSession;
     pFrameInfo->videoSessionParameters = m_videoSessionParameters;
 
+    pFrameInfo->pictureInfo.naluSliceEntryCount = m_encoderConfig->sliceCount;
+
     pFrameInfo->stdPictureInfo.seq_parameter_set_id = m_h264.m_spsInfo.seq_parameter_set_id;
     pFrameInfo->stdPictureInfo.pic_parameter_set_id = m_h264.m_ppsInfo.pic_parameter_set_id;
+
+    memset(pFrameInfo->stdSliceHeader, 0, sizeof(pFrameInfo->stdSliceHeader));
 
     StdVideoH264PictureType stdPictureType = STD_VIDEO_H264_PICTURE_TYPE_INVALID;
     switch (encodeFrameInfo->gopPosition.pictureType) {
         case VkVideoGopStructure::FRAME_TYPE_IDR:
         case VkVideoGopStructure::FRAME_TYPE_INTRA_REFRESH:
-            pFrameInfo->stdSliceHeader.slice_type = STD_VIDEO_H264_SLICE_TYPE_I;
+            pFrameInfo->stdSliceHeader[0].slice_type = STD_VIDEO_H264_SLICE_TYPE_I;
             stdPictureType = STD_VIDEO_H264_PICTURE_TYPE_IDR;
             break;
         case VkVideoGopStructure::FRAME_TYPE_I:
-            pFrameInfo->stdSliceHeader.slice_type = STD_VIDEO_H264_SLICE_TYPE_I;
+            pFrameInfo->stdSliceHeader[0].slice_type = STD_VIDEO_H264_SLICE_TYPE_I;
             stdPictureType = STD_VIDEO_H264_PICTURE_TYPE_I;
             break;
         case VkVideoGopStructure::FRAME_TYPE_P:
-            pFrameInfo->stdSliceHeader.slice_type = STD_VIDEO_H264_SLICE_TYPE_P;
+            pFrameInfo->stdSliceHeader[0].slice_type = STD_VIDEO_H264_SLICE_TYPE_P;
             stdPictureType = STD_VIDEO_H264_PICTURE_TYPE_P;
             break;
         case VkVideoGopStructure::FRAME_TYPE_B:
-            pFrameInfo->stdSliceHeader.slice_type = STD_VIDEO_H264_SLICE_TYPE_B;
+            pFrameInfo->stdSliceHeader[0].slice_type = STD_VIDEO_H264_SLICE_TYPE_B;
             stdPictureType = STD_VIDEO_H264_PICTURE_TYPE_B;
             break;
         default:
@@ -566,9 +575,9 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     pFrameInfo->stdPictureInfo.flags.no_output_of_prior_pics_flag = false;        // TODO: replace this by a check for the corresponding slh flag
     pFrameInfo->stdPictureInfo.flags.adaptive_ref_pic_marking_mode_flag = false;  // TODO: replace this by a check for the corresponding slh flag
 
-    pFrameInfo->stdSliceHeader.disable_deblocking_filter_idc = m_encoderConfig->disable_deblocking_filter_idc;
+    pFrameInfo->stdSliceHeader[0].disable_deblocking_filter_idc = m_encoderConfig->disable_deblocking_filter_idc;
      // FIXME: set cabac_init_idc based on a query
-     pFrameInfo->stdSliceHeader.cabac_init_idc = STD_VIDEO_H264_CABAC_INIT_IDC_0;
+     pFrameInfo->stdSliceHeader[0].cabac_init_idc = STD_VIDEO_H264_CABAC_INIT_IDC_0;
 
     if (isIdr) {
         pFrameInfo->stdPictureInfo.idr_pic_id = m_IDRPicId & 1;
@@ -607,20 +616,26 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     pFrameInfo->encodeInfo.dstBufferOffset = 0;
 
     if (m_rateControlInfo.rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR) {
+        int32_t constantQp = 0;
+
         switch (encodeFrameInfo->gopPosition.pictureType) {
             case VkVideoGopStructure::FRAME_TYPE_IDR:
             case VkVideoGopStructure::FRAME_TYPE_I:
-                pFrameInfo->naluSliceInfo.constantQp = encodeFrameInfo->constQp.qpIntra;
+                constantQp = encodeFrameInfo->constQp.qpIntra;
                 break;
             case VkVideoGopStructure::FRAME_TYPE_P:
-                pFrameInfo->naluSliceInfo.constantQp = encodeFrameInfo->constQp.qpInterP;
+                constantQp = encodeFrameInfo->constQp.qpInterP;
                 break;
             case VkVideoGopStructure::FRAME_TYPE_B:
-                pFrameInfo->naluSliceInfo.constantQp = encodeFrameInfo->constQp.qpInterB;
+                constantQp = encodeFrameInfo->constQp.qpInterB;
                 break;
             default:
                 assert(!"Invalid picture type");
                 break;
+        }
+
+        for (uint32_t i = 0; i < pFrameInfo->pictureInfo.naluSliceEntryCount; i++) {
+            pFrameInfo->naluSliceInfo[i].constantQp = constantQp;
         }
     }
 
