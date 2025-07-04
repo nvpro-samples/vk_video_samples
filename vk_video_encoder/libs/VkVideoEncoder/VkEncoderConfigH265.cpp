@@ -776,6 +776,18 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
     pps->num_extra_slice_header_bits = 0;
     pps->num_ref_idx_l0_default_active_minus1 = numRefL0 > 0 ? (uint8_t)(numRefL0 - 1) : 0;
     pps->num_ref_idx_l1_default_active_minus1 = numRefL1 > 0 ? (uint8_t)(numRefL1 - 1) : 0;
+
+    if (enableIntraRefresh) {
+        uint8_t maxReferencePictures = std::min((uint8_t)intraRefreshCapabilities.maxIntraRefreshActiveReferencePictures,
+                                                (uint8_t)(pps->num_ref_idx_l0_default_active_minus1 + 1));
+
+        pps->num_ref_idx_l0_default_active_minus1 = maxReferencePictures - 1;
+
+        // TODO: Allow reference frames in reference list L1 if the implementation
+        // supports using B-frames in intra-refresh.
+        pps->num_ref_idx_l1_default_active_minus1 = 0;
+    }
+
     pps->init_qp_minus26 = 0;
     pps->diff_cu_qp_delta_depth = 0;
     pps->pps_cb_qp_offset = 0;

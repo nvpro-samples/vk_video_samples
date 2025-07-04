@@ -250,6 +250,17 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
     pps->num_ref_idx_l0_default_active_minus1 = numRefL0 > 0 ? numRefL0 - 1 : 0;
     pps->num_ref_idx_l1_default_active_minus1 = numRefL1 > 0 ? numRefL1 - 1 : 0;
 
+    if (enableIntraRefresh) {
+        uint8_t maxReferencePictures = std::min((uint8_t)intraRefreshCapabilities.maxIntraRefreshActiveReferencePictures,
+                                                (uint8_t)(pps->num_ref_idx_l0_default_active_minus1 + 1));
+
+        pps->num_ref_idx_l0_default_active_minus1 = maxReferencePictures - 1;
+
+        // TODO: Allow reference frames in reference list L1 if the implementation
+        // supports using B-frames in intra-refresh.
+        pps->num_ref_idx_l1_default_active_minus1 = 0;
+    }
+
     if ((sps->chroma_format_idc == 3) && !sps->flags.qpprime_y_zero_transform_bypass_flag) {
         pps->chroma_qp_index_offset = pps->second_chroma_qp_index_offset = 6;
     }
