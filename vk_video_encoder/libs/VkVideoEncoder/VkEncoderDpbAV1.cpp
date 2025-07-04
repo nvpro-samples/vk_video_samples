@@ -28,7 +28,6 @@
 #include <stdint.h>
 
 #include "VkEncoderDpbAV1.h"
-#include "VkEncoderConfigAV1.h"
 
 #define VK_DPB_DBG_PRINT(expr) printf expr
 
@@ -125,9 +124,11 @@ void VkEncDpbAV1::DpbDestroy()
     delete this;
 }
 
-int32_t VkEncDpbAV1::DpbSequenceStart(const VkVideoEncodeAV1CapabilitiesKHR& capabilities, uint32_t userDpbSize, int32_t numBFrames,
-                                      VkVideoEncodeTuningModeKHR tuningMode, uint32_t qualityLevel)
+int32_t VkEncDpbAV1::DpbSequenceStart(const VkSharedBaseObj<EncoderConfigAV1>& encoderConfig, uint32_t userDpbSize)
 {
+    const VkVideoEncodeAV1CapabilitiesKHR& capabilities = encoderConfig->av1EncodeCapabilities;
+    int32_t numBFrames = encoderConfig->gopStructure.GetConsecutiveBFrameCount();
+
     DpbDeinit();
 
     assert(userDpbSize <= BUFFER_POOL_MAX_SIZE);

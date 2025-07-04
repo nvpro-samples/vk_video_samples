@@ -20,6 +20,7 @@
 #include "VkVideoEncoderDef.h"
 #include "VkCodecUtils/VulkanVideoImagePool.h"
 #include "VkVideoEncoder/VkVideoGopStructure.h"
+#include "VkEncoderConfigAV1.h"
 
 enum VkVideoEncoderAV1PrimaryRefType {
     REGULAR_FRAME   = 0,        // regular inter frame
@@ -112,8 +113,7 @@ public:
     // 1. Init instance
     static VkEncDpbAV1 *CreateInstance(void);
     // 2. Init encode session
-    int32_t DpbSequenceStart(const VkVideoEncodeAV1CapabilitiesKHR& capabilities, uint32_t userDpbSize, int32_t numBFrames,
-                             VkVideoEncodeTuningModeKHR tuningMode, uint32_t qualityLevel);
+    int32_t DpbSequenceStart(const VkSharedBaseObj<EncoderConfigAV1>& encoderConfig, uint32_t userDpbSize = 0);
     // 3. Start Picture - returns the allocated DPB index for this frame
     int8_t DpbPictureStart(StdVideoAV1FrameType frameType,
                            StdVideoAV1ReferenceName refName,
