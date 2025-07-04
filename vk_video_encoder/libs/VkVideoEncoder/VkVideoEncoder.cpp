@@ -737,6 +737,50 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         }
     }
 
+    if (m_encoderConfig->enableIntraRefresh) {
+        VkVideoEncodeIntraRefreshModeFlagBitsKHR mode = VK_VIDEO_ENCODE_INTRA_REFRESH_MODE_NONE_KHR;
+        const char* modeString = nullptr;
+
+        if (!VulkanVideoCapabilities::IsVideoEncodeIntraRefreshSupported(m_vkDevCtx)) {
+            std::cout << "Intra-refresh has been requested, but the implementation does not support it." << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+
+        switch (m_encoderConfig->intraRefreshMode) {
+        case EncoderConfig::REFRESH_PER_PARTITION:
+            mode = VK_VIDEO_ENCODE_INTRA_REFRESH_MODE_PER_PICTURE_PARTITION_BIT_KHR;
+            modeString = "Per-picture partition";
+            break;
+        case EncoderConfig::REFRESH_BLOCK_ROWS:
+            mode = VK_VIDEO_ENCODE_INTRA_REFRESH_MODE_BLOCK_ROW_BASED_BIT_KHR;
+            modeString = "Block row-based";
+            break;
+        case EncoderConfig::REFRESH_BLOCK_COLUMNS:
+            mode = VK_VIDEO_ENCODE_INTRA_REFRESH_MODE_BLOCK_COLUMN_BASED_BIT_KHR;
+            modeString = "Block column-based";
+            break;
+        case EncoderConfig::REFRESH_BLOCKS:
+            mode = VK_VIDEO_ENCODE_INTRA_REFRESH_MODE_BLOCK_BASED_BIT_KHR;
+            modeString = "Block-based";
+            break;
+        default:
+            break;
+        }
+
+        if ((mode & m_encoderConfig->intraRefreshCapabilities.intraRefreshModes) == 0) {
+            std::cout << modeString << " intra-refresh was requested, but the implementation does not support it." << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+
+        if (m_encoderConfig->intraRefreshCycleDuration >
+            m_encoderConfig->intraRefreshCapabilities.maxIntraRefreshCycleDuration) {
+            std::cout << "The requested intra-refresh cycle duration is greater than the maximum ("
+                      << m_encoderConfig->intraRefreshCapabilities.maxIntraRefreshCycleDuration
+                      << ") supported by the implementation" << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+
     // Reconfigure the gopStructure structure because the device may not support
     // specific GOP structure. For example it may not support B-frames.
     // gopStructure.Init() should be called after  encoderConfig->InitDeviceCapabilities().

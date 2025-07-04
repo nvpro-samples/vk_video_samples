@@ -68,9 +68,11 @@ public:
                                                VkVideoEncodeCapabilitiesKHR& videoEncodeCapabilities,
                                                VkVideoEncodeCodecCapabilitiesKHR& videoCodecCapabilities,
                                                VkVideoEncodeQuantizationMapCapabilitiesKHR& quantizationMapCapabilities,
-                                               VkVideoEncodeCodecQuantizationMapCapabilitiesKHR& codecQuantizationMapCapabilities) {
+                                               VkVideoEncodeCodecQuantizationMapCapabilitiesKHR& codecQuantizationMapCapabilities,
+                                               VkVideoEncodeIntraRefreshCapabilitiesKHR& intraRefreshCapabilities) {
 
-        codecQuantizationMapCapabilities = VkVideoEncodeCodecQuantizationMapCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_QUANTIZATION_MAP_CAPABILITIES_KHR, nullptr };
+        intraRefreshCapabilities = VkVideoEncodeIntraRefreshCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_INTRA_REFRESH_CAPABILITIES_KHR, nullptr };
+        codecQuantizationMapCapabilities = VkVideoEncodeCodecQuantizationMapCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_QUANTIZATION_MAP_CAPABILITIES_KHR, &intraRefreshCapabilities };
         quantizationMapCapabilities = VkVideoEncodeQuantizationMapCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUANTIZATION_MAP_CAPABILITIES_KHR, &codecQuantizationMapCapabilities };
         videoCodecCapabilities  = VkVideoEncodeCodecCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_CAPABILITIES_KHR, &quantizationMapCapabilities };
         videoEncodeCapabilities = VkVideoEncodeCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CAPABILITIES_KHR, &videoCodecCapabilities };
@@ -518,6 +520,17 @@ public:
 #else  // VK_KHR_video_maintenance1
         return false;
 #endif // VK_KHR_video_maintenance1
+    }
+
+    static bool IsVideoEncodeIntraRefreshSupported(const VulkanDeviceContext* vkDevCtx)
+    {
+        VkPhysicalDeviceVideoEncodeIntraRefreshFeaturesKHR intraRefreshFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_INTRA_REFRESH_FEATURES_KHR,
+                                                                                nullptr,
+                                                                                false};
+        VkPhysicalDeviceFeatures2 deviceFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &intraRefreshFeatures};
+        vkDevCtx->GetPhysicalDeviceFeatures2(vkDevCtx->getPhysicalDevice(),
+                                             &deviceFeatures);
+        return (intraRefreshFeatures.videoEncodeIntraRefresh == VK_TRUE);
     }
 
 };

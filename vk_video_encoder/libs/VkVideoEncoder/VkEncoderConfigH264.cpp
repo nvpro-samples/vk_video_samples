@@ -360,7 +360,8 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                  videoEncodeCapabilities,
                                                                  h264EncodeCapabilities,
                                                                  quantizationMapCapabilities,
-                                                                 h264QuantizationMapCapabilities);
+                                                                 h264QuantizationMapCapabilities,
+                                                                 intraRefreshCapabilities);
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
         assert(!"Could not get Video Capabilities!");

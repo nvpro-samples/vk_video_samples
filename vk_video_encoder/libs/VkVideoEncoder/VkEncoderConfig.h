@@ -770,6 +770,7 @@ public:
     VkVideoCapabilitiesKHR videoCapabilities;
     VkVideoEncodeCapabilitiesKHR videoEncodeCapabilities;
     VkVideoEncodeQuantizationMapCapabilitiesKHR quantizationMapCapabilities;
+    VkVideoEncodeIntraRefreshCapabilitiesKHR intraRefreshCapabilities;
     VkVideoEncodeQualityLevelPropertiesKHR qualityLevelProperties;
     VkVideoEncodeRateControlModeFlagBitsKHR rateControlMode;
     uint32_t averageBitrate; // kbits/sec
@@ -875,6 +876,7 @@ public:
     , videoCapabilities()
     , videoEncodeCapabilities()
     , quantizationMapCapabilities()
+    , intraRefreshCapabilities()
     , rateControlMode(VK_VIDEO_ENCODE_RATE_CONTROL_MODE_FLAG_BITS_MAX_ENUM_KHR)
     , averageBitrate()
     , maxBitrate()
