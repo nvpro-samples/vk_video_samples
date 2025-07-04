@@ -151,6 +151,16 @@ int32_t VkEncDpbAV1::DpbSequenceStart(const VkVideoEncodeAV1CapabilitiesKHR& cap
     } else {
         m_maxRefFramesL1 = 3; // 0
     }
+
+    if (encoderConfig->enableIntraRefresh) {
+        const VkVideoEncodeIntraRefreshCapabilitiesKHR& intraRefreshCaps = encoderConfig->intraRefreshCapabilities;
+
+        m_maxRefFramesL0 = std::min(m_maxRefFramesL0, (int32_t)intraRefreshCaps.maxIntraRefreshActiveReferencePictures);
+
+        // TODO: check for compound prediction being allowed with intra-refresh
+        m_maxRefFramesL1 = 0;
+    }
+
     // Restricts the number of references in Group1 and Group2
     m_maxRefFramesGroup1 = 4;
     if (numBFrames > 0) {
