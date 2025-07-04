@@ -72,7 +72,8 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --testOutOfOrderRecording                 : Testing only - enable testing for out-of-order-recording\n");
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR)) {
-        fprintf(stderr, "\nH264 specific arguments: None\n");
+        fprintf(stderr, "\nH264 specific arguments:\n\
+        --slices                        <integer> : Number of slices to divide the picture into\n");
     }
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR)) {

@@ -33,9 +33,9 @@ public:
     struct VkVideoEncodeFrameInfoH264 : public VkVideoEncodeFrameInfo {
 
         VkVideoEncodeH264PictureInfoKHR          pictureInfo;
-        VkVideoEncodeH264NaluSliceInfoKHR        naluSliceInfo;
+        VkVideoEncodeH264NaluSliceInfoKHR        naluSliceInfo[MAX_NUM_SLICES_H264];
         StdVideoEncodeH264PictureInfo            stdPictureInfo;
-        StdVideoEncodeH264SliceHeader            stdSliceHeader;
+        StdVideoEncodeH264SliceHeader            stdSliceHeader[MAX_NUM_SLICES_H264];
         VkVideoEncodeH264RateControlInfoKHR      rateControlInfoH264;
         VkVideoEncodeH264RateControlLayerInfoKHR rateControlLayersInfoH264[1];
         StdVideoEncodeH264ReferenceListsInfo     stdReferenceListsInfo;
@@ -48,9 +48,9 @@ public:
         VkVideoEncodeFrameInfoH264()
           : VkVideoEncodeFrameInfo(&pictureInfo, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR)
           , pictureInfo { VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PICTURE_INFO_KHR }
-          , naluSliceInfo { VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_INFO_KHR }
+          , naluSliceInfo{}
           , stdPictureInfo()
-          , stdSliceHeader()
+          , stdSliceHeader{}
           , rateControlInfoH264{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR }
           , rateControlLayersInfoH264 {{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_KHR }}
           , stdReferenceListsInfo()
@@ -61,9 +61,16 @@ public:
           , refPicMarkingEntry{}
         {
             pictureInfo.naluSliceEntryCount = 1; // FIXME: support more than one
-            pictureInfo.pNaluSliceEntries = &naluSliceInfo;
+            pictureInfo.pNaluSliceEntries = naluSliceInfo;
             pictureInfo.pStdPictureInfo = &stdPictureInfo;
-            naluSliceInfo.pStdSliceHeader = &stdSliceHeader;
+
+            for (uint32_t i = 0; i < MAX_NUM_SLICES_H264; i++) {
+                auto& sliceInfo = naluSliceInfo[i];
+
+                sliceInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_INFO_KHR;
+                sliceInfo.pNext = nullptr;
+                sliceInfo.pStdSliceHeader = &stdSliceHeader[i];
+            }
 
             stdPictureInfo.pRefLists           = &stdReferenceListsInfo;
 
@@ -83,7 +90,7 @@ public:
 
             // Clear and check state
             assert(pictureInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PICTURE_INFO_KHR);
-            assert(naluSliceInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_INFO_KHR);
+            assert(naluSliceInfo[0].sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_INFO_KHR);
             // stdPictureInfo()
             // stdSliceHeader()
             assert(rateControlInfoH264.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR);
