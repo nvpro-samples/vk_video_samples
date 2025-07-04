@@ -196,7 +196,8 @@ VkResult EncoderConfigAV1::InitDeviceCapabilities(const VulkanDeviceContext* vkD
                                                          videoEncodeCapabilities,
                                                          av1EncodeCapabilities,
                                                          quantizationMapCapabilities,
-                                                         av1QuantizationMapCapabilities);
+                                                         av1QuantizationMapCapabilities,
+                                                         intraRefreshCapabilities);
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get video capabilities :" << result << " ***" << std::endl;
         assert(!"Coult not get Video Capabilities!");
