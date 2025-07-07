@@ -162,7 +162,10 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
     uint8_t* writeImagePtr = srcImageDeviceMemory->GetDataPtr(imageOffset, maxSize);
     assert(writeImagePtr != nullptr);
 
-    const uint8_t* pInputFrameData = m_encoderConfig->inputFileHandler.GetMappedPtr(m_encoderConfig->input.fullImageSize, encodeFrameInfo->frameInputOrderNum);
+    // AdvanceFrameOffset() assumes we increment the frame counter, i.e. m_inputFrameNum++
+    const size_t frameOffset = m_encoderConfig->inputFileHandler.GetCurrFrameOffset();
+    m_encoderConfig->inputFileHandler.AdvanceFrameOffset(frameOffset);
+    const uint8_t* pInputFrameData = m_encoderConfig->inputFileHandler.GetMappedPtr(frameOffset);
 
     // NOTE: Get image layout
     const VkSubresourceLayout* dstSubresourceLayout = dstImageResource->GetSubresourceLayout();
