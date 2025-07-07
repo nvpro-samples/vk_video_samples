@@ -38,37 +38,6 @@ struct EncoderConfigH265;
 struct EncoderConfigAV1;
 class VulkanDeviceContext;
 
-static const size_t Y4M_MAX_BUFF_SIZE = 8192;
-
-static inline bool
-parse_int (const char * str, uint32_t * out_value_ptr)
-{
-  uint32_t saved_errno;
-  uint32_t value;
-  bool ret;
-
-  if (!str) {
-    return false;
-  }
-  str += 1;
-  if (*str == '\0') {
-    return false;
-  }
-
-  saved_errno = errno;
-  errno = 0;
-  value = (uint32_t)strtol (str, NULL, 0);
-  ret = (errno == 0);
-  errno = saved_errno;
-  if (value > 0 && value <= UINT32_MAX) {
-    *out_value_ptr = value;
-  } else {
-    ret = false;
-  }
-
-  return ret;
-}
-
 static VkVideoComponentBitDepthFlagBitsKHR GetComponentBitDepthFlagBits(uint32_t bpp)
 {
     switch (bpp) {
@@ -183,12 +152,18 @@ public:
 
 class EncoderInputFileHandler
 {
+    // Why is this header size so big?
+    static constexpr size_t Y4M_MAX_BUFF_SIZE = 8192;
+
 public:
     EncoderInputFileHandler(bool verbose = false)
     : m_fileName{}
     , m_fileHandle()
+    , m_currFrameOffset()
     , m_Y4MHeaderOffset(0)
     , m_memMapedFile()
+    , m_frameSize()
+    , m_maxFrameCount()
     , m_verbose(verbose)
     {
 
@@ -240,37 +215,15 @@ public:
         return m_fileHandle;
     }
 
-    const uint8_t* GetMappedPtr(uint64_t frameSize, uint64_t frame_num)
+    const uint8_t* GetMappedPtr(size_t frameOffset)
     {
         assert(m_memMapedFile.is_mapped());
-        uint64_t offset = 0;
-        uint64_t frame_offset = 0;
-        uint64_t frame_i = 0;
+        assert(frameOffset < (uint64_t)m_memMapedFile.mapped_length());
 
-        if (m_Y4MHeaderOffset) {
-            offset += m_Y4MHeaderOffset;
-        }
-
-        while (frame_i < frame_num) {
-            if (m_Y4MHeaderOffset) {
-                frame_offset = skipY4MFrameHeader(offset);
-                offset += frame_offset;
-            }
-            frame_i++;
-            offset += frameSize;
-        }
-
-        const uint64_t mappedLength = (uint64_t)m_memMapedFile.mapped_length();
-        if (mappedLength < offset) {
-            printf("File overflow at fileOffset %lld\n", (long long unsigned int)offset);
-            assert(!"Input file overflow");
-            return nullptr;
-        }
-
-        return m_memMapedFile.data() + offset;
+        return m_memMapedFile.data() + frameOffset;
     }
 
-    bool parseY4M (uint32_t *width, uint32_t *height, uint32_t *fps_n, uint32_t *fps_d)
+    bool ParseY4mHeader (uint32_t *width, uint32_t *height, uint32_t *fps_n, uint32_t *fps_d)
     {
         size_t i, j, s;
         int b;
@@ -303,12 +256,12 @@ public:
             if ((header[j] != 0x20) && (header[j - 1] == 0x20)) {
                 switch (header[j]) {
                     case 'W':
-                        if (!parse_int ((char *) & header[j], width)) {
+                        if (!ParseY4mInt ((char *) & header[j], width)) {
                             goto beach;
                         }
                         break;
                     case 'H':
-                        if (!parse_int ((char *) & header[j], height)) {
+                        if (!ParseY4mInt ((char *) & header[j], height)) {
                             goto beach;
                         }
                         break;
@@ -320,13 +273,13 @@ public:
                     {
                         uint32_t num, den;
 
-                        if (!parse_int ((char *) & header[j], &num)) {
+                        if (!ParseY4mInt ((char *) & header[j], &num)) {
                             goto beach;
                         }
                         while ((header[j] != ':') && (j < i)) {
                             j++;
                         }
-                        if (!parse_int ((char *) & header[j], &den)) {
+                        if (!ParseY4mInt ((char *) & header[j], &den)) {
                             goto beach;
                         }
 
@@ -355,7 +308,7 @@ beach:
         return ret;
     }
 
-    uint32_t skipY4MFrameHeader (uint64_t offset)
+    uint32_t SkipY4mFrameHeader (uint64_t offset)
     {
         uint32_t i;
         int b;
@@ -391,8 +344,85 @@ beach:
         return i + 1;
     }
 
-    uint32_t GetFrameCount(uint32_t width, uint32_t height, uint8_t bpp, VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling) {
-        uint8_t nBytes = (uint8_t)(bpp + 7) / 8;
+    size_t GetCurrFrameOffset()
+    {
+        uint64_t offset = m_currFrameOffset;
+        if (m_Y4MHeaderOffset) {
+
+            if (offset == 0) {
+                offset += m_Y4MHeaderOffset;
+            }
+            offset += SkipY4mFrameHeader(offset);
+        }
+
+        return offset;
+    }
+
+    // Advances frame pointer with one frame.
+    size_t AdvanceFrameOffset(uint64_t currOffset = 0) {
+
+        if (m_frameSize == 0) {
+            // Geometry is not set
+            return 0;
+        }
+
+        uint64_t offset = currOffset;
+
+        offset += m_frameSize;
+
+        const uint64_t mappedLength = (uint64_t)m_memMapedFile.mapped_length();
+        if (!(mappedLength >= (offset + m_frameSize))) {
+            // reset back to the beginning of the stream
+            offset = 0;
+            if (m_Y4MHeaderOffset) {
+                offset += m_Y4MHeaderOffset;
+            }
+        }
+
+        m_currFrameOffset = offset;
+
+        return m_currFrameOffset;
+    }
+
+    size_t ResetFrameOffset(uint64_t frameNum = 0)
+    {
+
+        if (m_frameSize == 0) {
+            // Geometry is not set
+            return 0;
+        }
+
+        uint64_t offset = 0;
+
+        if (m_Y4MHeaderOffset) {
+            offset += m_Y4MHeaderOffset;
+        }
+
+        while (frameNum--) {
+            if (m_Y4MHeaderOffset) {
+                // FIXME: (TZ) this function is terribly inefficient and needs fixing.
+                offset += SkipY4mFrameHeader(offset);
+            }
+            offset += m_frameSize;
+        }
+
+        const uint64_t mappedLength = (uint64_t)m_memMapedFile.mapped_length();
+        if (!(mappedLength >= (offset + m_frameSize))) {
+            printf("File overflow at fileOffset %lld\n", (long long unsigned int)offset);
+            assert(!"Input file overflow");
+            return 0;
+        }
+
+        m_currFrameOffset = offset;
+
+        return m_currFrameOffset;
+    }
+
+    // Sets frame geometry and reset the stream offset
+    uint32_t SetFrameGeometry(uint32_t width, uint32_t height, uint8_t bpp,
+                              VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling)
+    {
+        uint8_t numBytes = (uint8_t)(bpp + 7) / 8;
         double samplingFactor = 1.5; // Default for 420
         switch (chromaSubsampling)
         {
@@ -412,10 +442,19 @@ beach:
             assert(!"Unknown chroma subsampling");
             break;
         }
-        uint32_t frameSize = (uint32_t)(width * height * nBytes * samplingFactor);
 
-        if(frameSize)
-            return (uint32_t)(GetFileSize()/frameSize);
+        m_frameSize = (uint32_t)(width * height * numBytes * samplingFactor);
+
+        m_currFrameOffset = 0;
+
+        return m_frameSize;
+    }
+
+    uint32_t GetMaxFrameCount() const
+    {
+        if(m_frameSize) {
+            return (uint32_t)(GetFileSize() / m_frameSize);
+        }
 
         return 0;
     }
@@ -449,11 +488,43 @@ private:
         return m_memMapedFile.length();
     }
 
+    static inline bool
+    ParseY4mInt (const char * str, uint32_t * out_value_ptr)
+    {
+      uint32_t saved_errno;
+      uint32_t value;
+      bool ret;
+
+      if (!str) {
+        return false;
+      }
+      str += 1;
+      if (*str == '\0') {
+        return false;
+      }
+
+      saved_errno = errno;
+      errno = 0;
+      value = (uint32_t)strtol (str, NULL, 0);
+      ret = (errno == 0);
+      errno = saved_errno;
+      if ((value > 0) && (value <= UINT32_MAX)) {
+        *out_value_ptr = value;
+      } else {
+        ret = false;
+      }
+
+      return ret;
+    }
+
 private:
     char  m_fileName[256];
     FILE* m_fileHandle;
+    size_t m_currFrameOffset;
     uint64_t m_Y4MHeaderOffset;
     mio::basic_mmap<mio::access_mode::read, uint8_t> m_memMapedFile;
+    uint32_t m_frameSize;
+    uint32_t m_maxFrameCount;
     uint32_t m_verbose : 1;
 };
 
@@ -752,6 +823,7 @@ public:
     uint32_t enableHwLoadBalancing : 1;
     uint32_t selectVideoWithComputeQueue : 1;
     uint32_t enablePreprocessComputeFilter : 1;
+    uint32_t repeatInputFrames : 1;
     // enablePictureRowColReplication
     // 0: row and column replication is disabled;
     // 1: (default) replicate the last row and column to the padding area;
@@ -844,6 +916,7 @@ public:
     , enableHwLoadBalancing(false)
     , selectVideoWithComputeQueue(false)
     , enablePreprocessComputeFilter(true)
+    , repeatInputFrames(false)
     , enablePictureRowColReplication(1)
     , enableOutOfOrderRecording(false)
     { }

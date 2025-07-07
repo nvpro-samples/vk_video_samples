@@ -37,6 +37,9 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --msbShift                      <integer> : Shift the input plane pixels to the left when bpp > 8, default: 16 - inputBpp  \n\
     --startFrame                    <integer> : Start Frame Number to be Encoded \n\
     --numFrames                     <integer> : End Frame Number to be Encoded \n\
+    --repeatInputFrames                none :   Repeat the input file frame'ss sequence by reseting the the stream to the beginning \n\
+                                                when the file ends. The numFrames parameter in this case can be higher than \n\
+                                                the max frames contained in the file.\n\
     --encodeOffsetX                 <integer> : Encoded offset X \n\
     --encodeOffsetY                 <integer> : Encoded offset Y \n\
     --encodeWidth                   <integer> : Encoded width \n\
@@ -45,14 +48,14 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --encodeMaxHeight               <integer> : Encoded max height - the maximum content height supported. Used with content resize. \n\
     --minQp                         <integer> : Minimum QP value in the range [0, 51] \n\
     --maxQp                         <integer> : Maximum QP value in the range [0, 51] \n\
-    --qpMap                         <string>  : selct quantization map type : deltaQpMap or emaphasisMap \n\
+    --qpMap                         <string>  : select quantization map type : deltaQpMap or emaphasisMap \n\
     --qpMapFileName                 <string>  : quantization map file name \n\
     --gopFrameCount                 <integer> : Number of frame in the GOP, default 16\n\
     --idrPeriod                     <integer> : Number of frame between 2 IDR frame, default 60\n\
     --consecutiveBFrameCount        <integer> : Number of consecutive B frame count in a GOP \n\
     --temporalLayerCount            <integer> : Count of temporal layer \n\
     --lastFrameType                 <integer> : Last frame type \n\
-    --closedGop                     Close the Gop, default open\n\
+    --closedGop                       none    : Close the Gop, default open\n\
     --qualityLevel                  <integer> : Select quality level \n\
     --tuningMode                    <integer> or <string> : Select tuning mode \n\
                                         default(0), hq(1), lowlatency(2), ultralowlatency(3), lossless(4) \n\
@@ -149,7 +152,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             if (fileSize <= 0) {
                 return (int)fileSize;
             }
-            if (inputFileHandler.parseY4M(&input.width, &input.height, &frameRateNumerator, &frameRateDenominator)) {
+            if (inputFileHandler.ParseY4mHeader(&input.width, &input.height, &frameRateNumerator, &frameRateDenominator)) {
                 if (verbose) {
                     printf("Y4M file detected: width %d height %d\n", input.width, input.height);
                 }
@@ -259,6 +262,8 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
+        } else if (args[i] == "--repeatInputFrames") {
+            repeatInputFrames = true;
         } else if (args[i] == "--encodeOffsetX") {
             if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &encodeOffsetX) != 1)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
@@ -485,18 +490,45 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
     }
 
     if (!inputFileHandler.HasFileName()) {
-        fprintf(stderr, "An input file was not specified\n");
+        fprintf(stderr, "An input file must be specified\n");
         return -1;
     }
 
     if (input.width == 0) {
-        fprintf(stderr, "The width was not specified\n");
+        fprintf(stderr, "The input width must be specified\n");
         return -1;
     }
 
     if (input.height == 0) {
-        fprintf(stderr, "The height was not specified\n");
+        fprintf(stderr, "The input height must specified\n");
         return -1;
+    }
+
+    inputFileHandler.SetFrameGeometry(input.width, input.height, input.bpp, input.chromaSubsampling);
+
+    frameCount = inputFileHandler.GetMaxFrameCount();
+
+    if (startFrame > 0) {
+        if (startFrame >= frameCount) {
+            std::cout << "startFrame " << startFrame
+                      <<  " must be inferior to input file max frame count of "
+                      << frameCount << ". Reseting startFrame to 0." << std::endl;
+            startFrame = 0;
+        } else {
+            inputFileHandler.ResetFrameOffset(startFrame);
+        }
+    }
+
+    if ((repeatInputFrames == false) &&
+            ((numFrames == 0) || (numFrames > (frameCount - startFrame)))) {
+        std::cout << "numFrames " << numFrames
+                  <<  " should be different from zero and inferior to input file max frame count of "
+                  << frameCount << ". Using input file frame count." << std::endl;
+        numFrames = frameCount;
+        if (numFrames == 0) {
+            fprintf(stderr, "No frames found in the input file, frame count is zero. Exit.");
+            return -1;
+        }
     }
 
     if (!outputFileHandler.HasFileName()) {
@@ -555,19 +587,6 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
     if (enableQpMap && !qpMapFileHandler.HasFileName()) {
         fprintf(stderr, "No qpMap file was provided.");
         return -1;
-    }
-
-    frameCount = inputFileHandler.GetFrameCount(input.width, input.height, input.bpp, input.chromaSubsampling);
-
-    if (numFrames == 0 || numFrames > frameCount) {
-        std::cout << "numFrames " << numFrames
-                  <<  " should be different from zero and inferior to input file frame count: "
-                  << frameCount << ". Use input file frame count." << std::endl;
-        numFrames = frameCount;
-        if (numFrames == 0) {
-            fprintf(stderr, "No frames found in the input file, frame count is zero. Exit.");
-            return -1;
-        }
     }
 
     return DoParseArguments(argcount, arglist.data());
