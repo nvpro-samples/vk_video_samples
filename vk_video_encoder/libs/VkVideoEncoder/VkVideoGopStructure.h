@@ -47,12 +47,14 @@ public:
         uint32_t lastRefInInputOrder;
         uint32_t lastRefInEncodeOrder;
         uint32_t intraRefreshCounter;
+        bool     intraRefreshCycleRestarted;
 
         GopState()
         : positionInInputOrder(0)
         , lastRefInInputOrder(0)
         , lastRefInEncodeOrder(0)
-        , intraRefreshCounter(0) {}
+        , intraRefreshCounter(0)
+        , intraRefreshCycleRestarted(false) {}
     };
 
     struct GopPosition {
@@ -127,6 +129,8 @@ public:
     uint8_t GetConsecutiveBFrameCount() const { return m_consecutiveBFrameCount; }
 
     void SetIntraRefreshCycleDuration(uint32_t intraRefreshCycleDuration) { m_intraRefreshCycleDuration = intraRefreshCycleDuration; }
+
+    void SetIntraRefreshCycleRestartIndex(uint32_t intraRefreshCycleRestartIndex) { m_intraRefreshCycleRestartIndex = intraRefreshCycleRestartIndex; }
 
     // specifies the number of H.264/5 sub-layers that the application intends to use.
     void SetTemporalLayerCount(uint8_t temporalLayerCount) { m_temporalLayerCount = temporalLayerCount; }
@@ -260,12 +264,34 @@ public:
             gopState.lastRefInEncodeOrder = gopPos.encodeOrder;
         }
 
-        if (gopPos.pictureType == FRAME_TYPE_P || gopPos.pictureType == FRAME_TYPE_B) {
+        if ((gopPos.pictureType == FRAME_TYPE_P || gopPos.pictureType == FRAME_TYPE_B) &&
+            (m_intraRefreshCycleDuration > 0)) {
+
+            // Check if the intra-refresh cycle needs to be restarted. This is useful
+            // only for testing that an existing intra-refresh cycle can be
+            // interrupted to start a new intra-refresh cycle (also called as
+            // "mid-way intra-refresh").
+            //
+            // m_intraRefreshCycleRestartIndex == 0 is a no-op and is set when mid-way
+            // intra-refresh was not requested. If mid-way intra-refresh was
+            // requested, the option parsing logic ensures that
+            // 1 <= m_intraRefreshCycleRestartIndex < intraRefreshCycleDuration .
+            if (!gopState.intraRefreshCycleRestarted &&
+                (gopState.intraRefreshCounter >= m_intraRefreshCycleRestartIndex)) {
+
+                gopState.intraRefreshCounter = 0;
+                gopState.intraRefreshCycleRestarted = true;
+            }
+
             gopPos.intraRefreshIndex = gopState.intraRefreshCounter;
             gopPos.flags |= FLAGS_INTRA_REFRESH;
 
-            if (m_intraRefreshCycleDuration > 0) {
-                gopState.intraRefreshCounter = (gopState.intraRefreshCounter + 1) % m_intraRefreshCycleDuration;
+            gopState.intraRefreshCounter = (gopState.intraRefreshCounter + 1) % m_intraRefreshCycleDuration;
+
+            // A full intra-refresh cycle has completed and a new intra-refresh cycle
+            // will begin at the next frame. Allow a mid-way restart of intra-refresh.
+            if (gopState.intraRefreshCounter == 0) {
+                gopState.intraRefreshCycleRestarted = false;
             }
         }
 
@@ -303,5 +329,6 @@ private:
     FrameType             m_preClosedGopAnchorFrameType;
     uint32_t              m_closedGop : 1;
     uint32_t              m_intraRefreshCycleDuration;
+    uint32_t              m_intraRefreshCycleRestartIndex;
 };
 #endif /* _VKVIDEOENCODER_VKVIDEOGOPSTRUCTURE_H_ */

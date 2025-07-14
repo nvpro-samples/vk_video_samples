@@ -72,7 +72,15 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --testOutOfOrderRecording                 : Testing only - enable testing for out-of-order-recording\n\
     --intraRefreshCycleDuration     <integer> : Duration of (number of frames in) an intra-refresh cycle\n\
     --intraRefreshMode              <string>  : Intra-refresh mode to be used\n\
-                                        picpartition, blockrows, blockcolumns, blocks\n");
+                                        picpartition, blockrows, blockcolumns, blocks\n\
+    --testIntraRefreshMidway        <integer> : Index at which an intra-refresh cycle is to be interrupted.\n\
+                                        This is for testing purposes only. Allowed values for this option\n\
+                                        are such that 0 <= index < intraRefreshCycleDuration .\n\
+                                        A value of 0 is a no-op; for other values, a new intra-refresh\n\
+                                        cycle will start `index` frames into an existing intra-refresh\n\
+                                        cycle and a complete cycle will be finished. This results in\n\
+                                        a fully intra-refreshed frame being available after every\n\
+                                        `intraRefreshCycleDuration + index` frames.\n");
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR)) {
         fprintf(stderr, "\nH264 specific arguments:\n\
@@ -515,6 +523,14 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 fprintf(stderr, "Invalid intra-refresh mode %s\n", args[i].c_str());
                 return -1;
             }
+        } else if (args[i] == "--testIntraRefreshMidway") {
+            // Testing only - don't use this feature for production!
+            fprintf(stdout, "Warning: %s should only be used for testing!\n", args[i].c_str());
+            if (++i >= argc || sscanf(args[i].c_str(), "%u", &intraRefreshCycleRestartIndex) != 1) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            gopStructure.SetIntraRefreshCycleRestartIndex(intraRefreshCycleRestartIndex);
         } else {
             argcount++;
             arglist.push_back(args[i].c_str());
@@ -630,6 +646,17 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
     }
 
     enableIntraRefresh = (intraRefreshMode != REFRESH_NONE) && (intraRefreshCycleDuration > 0);
+
+    if (!enableIntraRefresh && intraRefreshCycleRestartIndex > 0) {
+        fprintf(stderr, "Intra-refresh must be enabled when using --testIntraRefreshMidway\n");
+        return -1;
+    }
+
+    if (enableIntraRefresh && intraRefreshCycleRestartIndex >= intraRefreshCycleDuration) {
+        fprintf(stderr, "The value specified for --testIntraRefreshMidway must be in "
+                        "the range [0, intraRefreshCycleDuration-1]\n");
+        return -1;
+    }
 
     return DoParseArguments(argcount, arglist.data());
 }
