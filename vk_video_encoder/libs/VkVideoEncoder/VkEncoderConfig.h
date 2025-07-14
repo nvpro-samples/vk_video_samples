@@ -723,6 +723,13 @@ struct EncoderConfig : public VkVideoRefCountBase {
     enum { DEFAULT_NUM_SLICES_PER_PICTURE = 4 };
     enum { DEFAULT_MAX_NUM_REF_FRAMES = 16 };
     enum QpMapMode { DELTA_QP_MAP, EMPHASIS_MAP };
+    enum IntraRefreshMode {
+        REFRESH_NONE,
+        REFRESH_PER_PARTITION,
+        REFRESH_BLOCK_ROWS,
+        REFRESH_BLOCK_COLUMNS,
+        REFRESH_BLOCKS
+    };
 
     enum { ZERO_GOP_FRAME_COUNT = 0 };
     enum { ZERO_GOP_IDR_PERIOD  = 0 };
@@ -780,6 +787,11 @@ public:
 
     VkVideoGopStructure gopStructure;
     int8_t dpbCount;
+
+    // Parameters related to intra-refresh
+    bool enableIntraRefresh;
+    uint32_t intraRefreshCycleDuration;
+    IntraRefreshMode intraRefreshMode;
 
     // Vulkan Input color space and transfer characteristics parameters
     VkSamplerYcbcrModelConversion              ycbcrModel;
@@ -879,6 +891,9 @@ public:
                    CONSECUTIVE_B_FRAME_COUNT_MAX_VALUE,
                    DEFAULT_TEMPORAL_LAYER_COUNT)
     , dpbCount(8)
+    , enableIntraRefresh(false)
+    , intraRefreshCycleDuration(0)
+    , intraRefreshMode(REFRESH_NONE)
     , ycbcrModel(VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709)
     , ycbcrRange(VK_SAMPLER_YCBCR_RANGE_ITU_FULL)
     , components{VK_COMPONENT_SWIZZLE_IDENTITY,
