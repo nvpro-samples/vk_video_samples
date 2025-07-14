@@ -48,13 +48,15 @@ public:
         uint32_t lastRefInEncodeOrder;
         uint32_t intraRefreshCounter;
         bool     intraRefreshCycleRestarted;
+        bool     intraRefreshStartSkipped;
 
         GopState()
         : positionInInputOrder(0)
         , lastRefInInputOrder(0)
         , lastRefInEncodeOrder(0)
         , intraRefreshCounter(0)
-        , intraRefreshCycleRestarted(false) {}
+        , intraRefreshCycleRestarted(false)
+        , intraRefreshStartSkipped(false) {}
     };
 
     struct GopPosition {
@@ -131,6 +133,8 @@ public:
     void SetIntraRefreshCycleDuration(uint32_t intraRefreshCycleDuration) { m_intraRefreshCycleDuration = intraRefreshCycleDuration; }
 
     void SetIntraRefreshCycleRestartIndex(uint32_t intraRefreshCycleRestartIndex) { m_intraRefreshCycleRestartIndex = intraRefreshCycleRestartIndex; }
+
+    void SetIntraRefreshSkippedStartIndex(uint32_t intraRefreshSkippedStartIndex) { m_intraRefreshSkippedStartIndex = intraRefreshSkippedStartIndex; }
 
     // specifies the number of H.264/5 sub-layers that the application intends to use.
     void SetTemporalLayerCount(uint8_t temporalLayerCount) { m_temporalLayerCount = temporalLayerCount; }
@@ -283,6 +287,27 @@ public:
                 gopState.intraRefreshCycleRestarted = true;
             }
 
+            // Check if the intra-refresh cycle needs a "skipped start" i.e., a start
+            // with an intra-refresh index > 0. This is to be used only for testing
+            // purposes, to check that the intra-refresh implementation is stateless.
+            //
+            // m_intraRefreshSkippedStartIndex == 0 is a no-op and is set when
+            // intra-refresh with a skipped start was not requested. If intra-refresh
+            // with a skipped start was requested, the option parsing logic ensures
+            // that 1 <= m_intraRefreshSkippedStartIndex < intraRefreshCycleDuration .
+            if (gopState.intraRefreshCounter == 0) {
+                if (!gopState.intraRefreshStartSkipped) {
+                    // A new intra-refresh cycle needs to be started but with a
+                    // skipped start.
+                    gopState.intraRefreshCounter = m_intraRefreshSkippedStartIndex;
+                    gopState.intraRefreshStartSkipped = true;
+                } else {
+                    // The previous intra-refresh cycle had a skipped start. Make
+                    // the current intra-refresh cycle a full cycle.
+                    gopState.intraRefreshStartSkipped = false;
+                }
+            }
+
             gopPos.intraRefreshIndex = gopState.intraRefreshCounter;
             gopPos.flags |= FLAGS_INTRA_REFRESH;
 
@@ -330,5 +355,6 @@ private:
     uint32_t              m_closedGop : 1;
     uint32_t              m_intraRefreshCycleDuration;
     uint32_t              m_intraRefreshCycleRestartIndex;
+    uint32_t              m_intraRefreshSkippedStartIndex;
 };
 #endif /* _VKVIDEOENCODER_VKVIDEOGOPSTRUCTURE_H_ */

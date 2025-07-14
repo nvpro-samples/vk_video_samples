@@ -80,7 +80,15 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
                                         cycle will start `index` frames into an existing intra-refresh\n\
                                         cycle and a complete cycle will be finished. This results in\n\
                                         a fully intra-refreshed frame being available after every\n\
-                                        `intraRefreshCycleDuration + index` frames.\n");
+                                        `intraRefreshCycleDuration + index` frames.\n\
+    --testSkipIntraRefreshStart     <integer> : Index at which an intra-refresh cycle should start.\n\
+                                        This is for testing purposes only. Allowed values for this option\n\
+                                        are such that 0 <= index < intraRefreshCycleDuration .\n\
+                                        A value of 0 is a no-op; for other values, a new intra-refresh\n\
+                                        cycle will start with an intra-refresh index of `index` and\n\
+                                        will run to completion. This will be followed by a full\n\
+                                        intra-refresh cycle. This results in a fully intra-refreshed frame\n\
+                                        being available after every `intraRefreshCycleDuration + index` frames.\n");
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR)) {
         fprintf(stderr, "\nH264 specific arguments:\n\
@@ -531,6 +539,14 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 return -1;
             }
             gopStructure.SetIntraRefreshCycleRestartIndex(intraRefreshCycleRestartIndex);
+        } else if (args[i] == "--testSkipIntraRefreshStart") {
+            // Testing only - don't use this feature for production!
+            fprintf(stdout, "Warning: %s should only be used for testing!\n", args[i].c_str());
+            if (++i >= argc || sscanf(args[i].c_str(), "%u", &intraRefreshSkippedStartIndex) != 1) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            gopStructure.SetIntraRefreshSkippedStartIndex(intraRefreshSkippedStartIndex);
         } else {
             argcount++;
             arglist.push_back(args[i].c_str());
@@ -655,6 +671,23 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
     if (enableIntraRefresh && intraRefreshCycleRestartIndex >= intraRefreshCycleDuration) {
         fprintf(stderr, "The value specified for --testIntraRefreshMidway must be in "
                         "the range [0, intraRefreshCycleDuration-1]\n");
+        return -1;
+    }
+
+    if (!enableIntraRefresh && intraRefreshSkippedStartIndex > 0) {
+        fprintf(stderr, "Intra-refresh must be enabled when using --testSkipIntraRefreshStart\n");
+        return -1;
+    }
+
+    if (enableIntraRefresh && intraRefreshSkippedStartIndex >= intraRefreshCycleDuration) {
+        fprintf(stderr, "The value specified for --testSkipIntraRefreshStart must be in "
+                        "the range [0, intraRefreshCycleDuration-1]\n");
+        return -1;
+    }
+
+    if (intraRefreshCycleRestartIndex > 0 && intraRefreshSkippedStartIndex > 0) {
+        fprintf(stderr, "Combining --testIntraRefreshMidway with --testSkipIntraRefreshStart "
+                        "is not supported\n");
         return -1;
     }
 
