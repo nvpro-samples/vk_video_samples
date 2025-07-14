@@ -794,6 +794,7 @@ public:
     uint32_t intraRefreshCycleDuration;
     IntraRefreshMode intraRefreshMode;
     uint32_t intraRefreshCycleRestartIndex;
+    uint32_t intraRefreshSkippedStartIndex;
 
     // Vulkan Input color space and transfer characteristics parameters
     VkSamplerYcbcrModelConversion              ycbcrModel;
@@ -898,6 +899,7 @@ public:
     , intraRefreshCycleDuration(0)
     , intraRefreshMode(REFRESH_NONE)
     , intraRefreshCycleRestartIndex(0)
+    , intraRefreshSkippedStartIndex(0)
     , ycbcrModel(VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709)
     , ycbcrRange(VK_SAMPLER_YCBCR_RANGE_ITU_FULL)
     , components{VK_COMPONENT_SWIZZLE_IDENTITY,
