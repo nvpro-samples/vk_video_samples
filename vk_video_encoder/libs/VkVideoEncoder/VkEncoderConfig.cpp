@@ -69,7 +69,10 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --deviceID                      <hexadec> : deviceID to be used, \n\
     --deviceUuid                    <string>  : deviceUuid to be used \n\
     --enableHwLoadBalancing                   : enables HW load balancing using multiple encoder devices when available \n\
-    --testOutOfOrderRecording                 : Testing only - enable testing for out-of-order-recording\n");
+    --testOutOfOrderRecording                 : Testing only - enable testing for out-of-order-recording\n\
+    --intraRefreshCycleDuration     <integer> : Duration of (number of frames in) an intra-refresh cycle\n\
+    --intraRefreshMode              <string>  : Intra-refresh mode to be used\n\
+                                        picpartition, blockrows, blockcolumns, blocks\n");
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR)) {
         fprintf(stderr, "\nH264 specific arguments:\n\
@@ -485,6 +488,29 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             // Testing only - don't use this feature for production!
             fprintf(stdout, "Warning: %s should only be used for testing!\n", args[i].c_str());
             enableOutOfOrderRecording = true;
+        } else if (args[i] == "--intraRefreshCycleDuration") {
+            if (++i >= argc || sscanf(args[i].c_str(), "%u", &intraRefreshCycleDuration) != 1) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+        } else if (args[i] == "--intraRefreshMode") {
+            if (++i >= argc) {
+                fprintf(stderr, "Invalid paramter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+
+            if (args[i] == "picpartition") {
+                intraRefreshMode = REFRESH_PER_PARTITION;
+            } else if (args[i] == "blockrows") {
+                intraRefreshMode = REFRESH_BLOCK_ROWS;
+            } else if (args[i] == "blockcolumns") {
+                intraRefreshMode = REFRESH_BLOCK_COLUMNS;
+            } else if (args[i] == "blocks") {
+                intraRefreshMode = REFRESH_BLOCKS;
+            } else {
+                fprintf(stderr, "Invalid intra-refresh mode %s\n", args[i].c_str());
+                return -1;
+            }
         } else {
             argcount++;
             arglist.push_back(args[i].c_str());
@@ -590,6 +616,16 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         fprintf(stderr, "No qpMap file was provided.");
         return -1;
     }
+
+    if ((intraRefreshMode == REFRESH_NONE && intraRefreshCycleDuration > 0) ||
+        (intraRefreshMode != REFRESH_NONE && intraRefreshCycleDuration == 0)) {
+
+        fprintf(stderr, "Both --intraRefreshMode and --intraRefreshCycleDuration must be "
+                        "specified to enable intra-refresh.\n");
+        return -1;
+    }
+
+    enableIntraRefresh = (intraRefreshMode != REFRESH_NONE) && (intraRefreshCycleDuration > 0);
 
     return DoParseArguments(argcount, arglist.data());
 }
