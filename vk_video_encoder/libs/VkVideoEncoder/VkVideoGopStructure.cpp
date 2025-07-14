@@ -33,6 +33,7 @@ VkVideoGopStructure::VkVideoGopStructure(uint8_t gopFrameCount,
     , m_preClosedGopAnchorFrameType(preIdrAnchorFrameType)
     , m_closedGop(closedGop)
     , m_intraRefreshCycleDuration(intraRefreshCycleDuration)
+    , m_intraRefreshCycleRestartIndex(0)
 {
     Init(uint64_t(-1));
 }
