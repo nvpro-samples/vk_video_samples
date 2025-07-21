@@ -42,7 +42,7 @@ class VkVideoEncoderH265 : public VkVideoEncoder {
         VkVideoEncodeH265DpbSlotInfoKHR          stdDpbSlotInfo[MAX_REFFERENCES];
 
         VkVideoEncodeFrameInfoH265()
-          : VkVideoEncodeFrameInfo(&pictureInfo)
+          : VkVideoEncodeFrameInfo(&pictureInfo, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR)
           , pictureInfo { VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PICTURE_INFO_KHR }
           , naluSliceSegmentInfo { VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_INFO_KHR }
           , stdPictureInfo()
@@ -136,7 +136,7 @@ protected:
 private:
 
     VkVideoEncodeFrameInfoH265* GetEncodeFrameInfoH265(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) {
-        assert(VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PICTURE_INFO_KHR == encodeFrameInfo->GetType());
+        assert(VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR == encodeFrameInfo->GetType());
         VkVideoEncodeFrameInfo* pEncodeFrameInfo = encodeFrameInfo;
         return (VkVideoEncodeFrameInfoH265*)pEncodeFrameInfo;
     }
