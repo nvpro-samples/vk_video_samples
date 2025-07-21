@@ -56,12 +56,12 @@ public:
 
     struct VkVideoEncodeFrameInfo : public VkVideoRefCountBase
     {
-        VkStructureType GetType() {
-            return (encodeInfo.pNext == nullptr) ?
-                    VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR : reinterpret_cast<const VkBaseInStructure*>(encodeInfo.pNext)->sType;
+        inline VkVideoCodecOperationFlagBitsKHR GetType() const {
+            return m_codec;
         }
 
-        VkVideoEncodeFrameInfo(const void* pNext = nullptr)
+        VkVideoEncodeFrameInfo(const void* pNext = nullptr,
+                               VkVideoCodecOperationFlagBitsKHR codec = VK_VIDEO_CODEC_OPERATION_NONE_KHR)
             : encodeInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR, pNext}
             , quantizationMapInfo()
             , frameInputOrderNum(uint64_t(-1))
@@ -102,6 +102,7 @@ public:
             , m_refCount(0)
             , m_parent()
             , m_parentIndex(-1)
+            , m_codec(codec)
         {
             assert(ARRAYSIZE(referenceSlotsInfo) == MAX_IMAGE_REF_RESOURCES);
             for (uint32_t i = 0; i < MAX_IMAGE_REF_RESOURCES; i++) {
@@ -350,6 +351,7 @@ public:
         std::atomic<int32_t>                m_refCount;
         VkSharedBaseObj<VulkanBufferPoolIf> m_parent;
         int32_t                             m_parentIndex;
+        VkVideoCodecOperationFlagBitsKHR    m_codec;
     };
 #ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
     class DisplayQueue {
