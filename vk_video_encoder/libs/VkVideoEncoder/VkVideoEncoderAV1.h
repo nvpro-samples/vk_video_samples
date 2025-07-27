@@ -75,6 +75,9 @@ public:
 
             // Reset the base first
             VkVideoEncodeFrameInfo::Reset(releaseResources);
+
+            // After resetting the base structure parameters, start building the pNext chain again
+            encodeInfo.pNext = &pictureInfo;
         }
 
         virtual ~VkVideoEncodeFrameInfoAV1() {

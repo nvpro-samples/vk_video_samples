@@ -78,6 +78,9 @@ public:
             // Reset the base first
             VkVideoEncodeFrameInfo::Reset(releaseResources);
 
+            // After resetting the base structure parameters, start building the pNext chain again
+            encodeInfo.pNext = &pictureInfo;
+
             // Clear and check state
             assert(pictureInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PICTURE_INFO_KHR);
             assert(naluSliceInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_INFO_KHR);
