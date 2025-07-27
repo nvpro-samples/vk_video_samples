@@ -246,7 +246,8 @@ public:
         virtual void Reset(bool releaseResources = true) {
             // Clear and check state
             assert(encodeInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR);
-            assert(encodeInfo.pNext != nullptr);
+
+            encodeInfo.pNext = nullptr;
 
             if ((frameInputOrderNum == (uint64_t)-1) &&
                 (frameEncodeInputOrderNum == (uint64_t)-1) &&
