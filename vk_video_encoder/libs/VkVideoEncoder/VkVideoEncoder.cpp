@@ -1673,13 +1673,10 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         videoInlineQueryInfoKHR.queryPool = queryPool;
         videoInlineQueryInfoKHR.firstQuery = querySlotId;
         videoInlineQueryInfoKHR.queryCount = numQuerySamples;
-        VkBaseInStructure* pStruct = (VkBaseInStructure*)&encodeFrameInfo->encodeInfo;
-        vk::ChainNextVkStruct(*pStruct, videoInlineQueryInfoKHR);
+
+        vk::ChainNextVkStruct(encodeFrameInfo->encodeInfo, videoInlineQueryInfoKHR);
 
         vkDevCtx->CmdEncodeVideoKHR(cmdBuf, &encodeFrameInfo->encodeInfo);
-
-        // Remove the stack pointer from the chain, causes a use after free otherwise in GetEncodeFrameInfoH264
-        encodeFrameInfo->encodeInfo.pNext = videoInlineQueryInfoKHR.pNext;
     }
     else
     {
