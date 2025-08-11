@@ -606,6 +606,19 @@ public:
         return m_memMapedFile.data() + fileOffset;
     }
 
+    uint32_t GetFrameCount(uint32_t width, uint32_t height, const VkExtent2D& qpMapTexelSize)
+    {
+        uint32_t widthQpMapTexels  = (width  + qpMapTexelSize.width  - 1) / qpMapTexelSize.width;
+        uint32_t heightQpMapTexels = (height + qpMapTexelSize.height - 1) / qpMapTexelSize.height;
+
+        uint32_t frameSize = widthQpMapTexels * heightQpMapTexels;
+
+        if (frameSize)
+            return (uint32_t)(GetFileSize() / frameSize);
+
+        return 0;
+    }
+
 private:
     size_t OpenFile()
     {
