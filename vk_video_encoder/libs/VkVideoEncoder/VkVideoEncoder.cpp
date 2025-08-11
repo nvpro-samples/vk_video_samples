@@ -887,6 +887,16 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         m_imageQpMapFormat = supportedQpMapFormats[0];
         m_qpMapTexelSize = supportedQpMapTexelSize[0];
         m_qpMapTiling = supportedQpMapTiling[0];
+
+        uint32_t qpMapFrameCount = encoderConfig->qpMapFileHandler.GetFrameCount(encoderConfig->input.width,
+                                                                                 encoderConfig->input.height,
+                                                                                 m_qpMapTexelSize);
+        if (qpMapFrameCount < encoderConfig->numFrames) {
+            std::cerr << "Number of QP maps (" << qpMapFrameCount << ") in the input QP map file "
+                      << "is less than the number of frames (" << encoderConfig->numFrames
+                      << ") to be encoded." << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
     }
 
     encoderConfig->encodeWidth  = std::max(encoderConfig->encodeWidth,  encoderConfig->videoCapabilities.minCodedExtent.width);
