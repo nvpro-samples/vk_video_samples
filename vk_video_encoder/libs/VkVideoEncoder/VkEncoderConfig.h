@@ -1009,6 +1009,27 @@ public:
             return VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR;
         }
 
+        // Deal with the input shift values, if not explicitly set.
+        if (input.msbShift == -1) {
+
+            if (input.bpp > 8) {
+
+                // Only apply the shift for higher bit-depth formats (10/12-bit)
+                assert ((input.bpp == 10) || (input.bpp == 12));
+
+                // Calculate shift amount based on bit depth
+                // We shift the content to the MSB of the word if it is a 16-bit container
+                input.msbShift = 16 - input.bpp;
+
+                assert ((input.msbShift == 6) || (input.msbShift == 4));
+
+            } else {
+
+                input.msbShift = 0;
+
+            }
+        }
+
         // Copy chroma subsampling from input to encoder config
         encodeChromaSubsampling = input.chromaSubsampling;
 
