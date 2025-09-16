@@ -122,7 +122,6 @@ void VkEncDpbH264::DpbInit()
 void VkEncDpbH264::DpbDeinit()
 {
     m_max_dpb_size = 0;
-    m_currDpbIdx = 0;
     m_lastIDRTimeStamp = 0;
     m_currDpbIdx = -1;
 };
@@ -246,15 +245,8 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
         for (int32_t i = 0; i < MAX_DPB_SLOTS; i++) {
             m_DPB[i].top_field_marking = MARKING_UNUSED;
             m_DPB[i].bottom_field_marking = MARKING_UNUSED;
-            m_DPB[i].state = MARKING_UNUSED;
+            m_DPB[i].state = DPB_EMPTY;
             ReleaseFrame(m_DPB[i].dpbImageView);
-        }
-        // TODO: infer no_output_of_prior_pics_flag if size has changed etc.
-        if (pPicInfo->flags.no_output_of_prior_pics_flag) {
-            for (int32_t i = 0; i < MAX_DPB_SLOTS; i++) {
-                m_DPB[i].state = DPB_EMPTY;  // empty
-                ReleaseFrame(m_DPB[i].dpbImageView);
-            }
         }
     }
 

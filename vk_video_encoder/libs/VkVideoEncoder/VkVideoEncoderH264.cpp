@@ -333,48 +333,16 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     // Update the frame_num and PicOrderCnt picture parameters, if changed.
     pFrameInfo->stdPictureInfo.frame_num = m_dpb264->GetUpdatedFrameNumAndPicOrderCnt(pFrameInfo->stdPictureInfo.PicOrderCnt);
 
-    // We need the reference slot for the target picture
-    // Update the DPB
-    int8_t targetDpbSlot = m_dpb264->DpbPictureEnd(&pictureInfo, encodeFrameInfo->setupImageResource,
-                                                   &m_h264.m_spsInfo, &pFrameInfo->stdSliceHeader[0],
-                                                   &pFrameInfo->stdReferenceListsInfo, MAX_MEM_MGMNT_CTRL_OPS_COMMANDS);
-    if (targetDpbSlot >= VkEncDpbH264::MAX_DPB_SLOTS) {
-        targetDpbSlot = static_cast<int8_t>((encodeFrameInfo->setupImageResource!=nullptr) + refLists.refPicListCount[0] + refLists.refPicListCount[1] + 1);
-    }
-    if (isReference) {
-        assert(targetDpbSlot >= 0);
-    }
-
-    if ((picType == VkVideoGopStructure::FRAME_TYPE_P) || (picType == VkVideoGopStructure::FRAME_TYPE_B)) {
-        pFrameInfo->stdPictureInfo.pRefLists = &pFrameInfo->stdReferenceListsInfo;
-    }
-
     uint32_t numReferenceSlots = 0;
     assert(pFrameInfo->numDpbImageResources == 0);
     if (encodeFrameInfo->setupImageResource != nullptr) {
-
-        assert(setupImageViewPictureResource);
-        pFrameInfo->referenceSlotsInfo[numReferenceSlots] = { VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR,
-                                                              pFrameInfo->stdDpbSlotInfo, targetDpbSlot, setupImageViewPictureResource };
-
-        pFrameInfo->setupReferenceSlotInfo = pFrameInfo->referenceSlotsInfo[numReferenceSlots];
-        pFrameInfo->encodeInfo.pSetupReferenceSlot = &pFrameInfo->setupReferenceSlotInfo;
-
-        numReferenceSlots++;
-
+        numReferenceSlots++; // fill slot 0 later with current picture index
         assert(numReferenceSlots <= ARRAYSIZE(pFrameInfo->referenceSlotsInfo));
-    } else {
-        pFrameInfo->encodeInfo.pSetupReferenceSlot = nullptr;
     }
     pFrameInfo->numDpbImageResources = numReferenceSlots;
 
     const bool isIntraRefreshFrame = m_encoderConfig->gopStructure.IsIntraRefreshFrame(encodeFrameInfo->gopPosition);
     if (m_encoderConfig->enableIntraRefresh && isIntraRefreshFrame) {
-        // The number of dirty intra-refresh regions in the current picture
-        uint32_t dirtyIntraRefreshRegions = m_encoderConfig->intraRefreshCycleDuration - encodeFrameInfo->gopPosition.intraRefreshIndex - 1;
-
-        m_dpb264->SetCurDirtyIntraRefreshRegions(dirtyIntraRefreshRegions);
-
         if (m_encoderConfig->intraRefreshMode == EncoderConfig::REFRESH_PER_PARTITION) {
             // When using per-picture partition intra-refresh, mark the slice corresponding
             // to the currently refreshed intra-refresh region as an intra slice.
@@ -429,6 +397,42 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
             assert(numReferenceSlots <= ARRAYSIZE(pFrameInfo->referenceSlotsInfo));
         }
         pFrameInfo->numDpbImageResources = numReferenceSlots;
+    }
+
+    // We need the reference slot for the target picture
+    // Update the DPB
+    int8_t targetDpbSlot = m_dpb264->DpbPictureEnd(&pictureInfo, encodeFrameInfo->setupImageResource,
+                                                   &m_h264.m_spsInfo, &pFrameInfo->stdSliceHeader[0],
+                                                   &pFrameInfo->stdReferenceListsInfo, MAX_MEM_MGMNT_CTRL_OPS_COMMANDS);
+    if (targetDpbSlot >= VkEncDpbH264::MAX_DPB_SLOTS) {
+        targetDpbSlot = static_cast<int8_t>((encodeFrameInfo->setupImageResource!=nullptr) + refLists.refPicListCount[0] + refLists.refPicListCount[1] + 1);
+    }
+    if (isReference) {
+        assert(targetDpbSlot >= 0);
+    }
+
+    if ((picType == VkVideoGopStructure::FRAME_TYPE_P) || (picType == VkVideoGopStructure::FRAME_TYPE_B)) {
+        pFrameInfo->stdPictureInfo.pRefLists = &pFrameInfo->stdReferenceListsInfo;
+    }
+    if (encodeFrameInfo->setupImageResource != nullptr) {
+
+        assert(setupImageViewPictureResource);
+        pFrameInfo->referenceSlotsInfo[0] = { VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR,
+                                              pFrameInfo->stdDpbSlotInfo, targetDpbSlot, setupImageViewPictureResource };
+
+        pFrameInfo->setupReferenceSlotInfo = pFrameInfo->referenceSlotsInfo[0];
+        pFrameInfo->encodeInfo.pSetupReferenceSlot = &pFrameInfo->setupReferenceSlotInfo;
+
+
+    } else {
+        pFrameInfo->encodeInfo.pSetupReferenceSlot = nullptr;
+    }
+
+    if (m_encoderConfig->enableIntraRefresh && isIntraRefreshFrame) {
+        // The number of dirty intra-refresh regions in the current picture
+        uint32_t dirtyIntraRefreshRegions = m_encoderConfig->intraRefreshCycleDuration - encodeFrameInfo->gopPosition.intraRefreshIndex - 1;
+
+        m_dpb264->SetCurDirtyIntraRefreshRegions(dirtyIntraRefreshRegions);
     }
 
     pFrameInfo->encodeInfo.srcPictureResource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
