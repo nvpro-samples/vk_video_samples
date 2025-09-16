@@ -130,7 +130,7 @@ public:
     bool IsRefFramesCorrupted();
     bool IsRefPicCorrupted(int32_t picIndex);
     int32_t GetPicNumFromDpbIdx(int32_t dpbIdx, bool *shortterm, bool *longterm);
-    uint64_t GetPictureTimestamp(int32_t picIdx);
+    uint64_t GetPictureTimestamp(int32_t dpbIdx);
     void SetCurRefFrameTimeStamp(uint64_t timeStamp);
 
     uint32_t GetDirtyIntraRefreshRegions(int32_t dpbIdx);
