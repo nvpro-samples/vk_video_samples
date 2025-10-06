@@ -32,7 +32,7 @@ class VulkanFilterYuvCompute : public VulkanFilter
 public:
 
     enum FilterType { YCBCRCOPY, YCBCRCLEAR, YCBCR2RGBA, RGBA2YCBCR };
-    static constexpr uint32_t maxNumComputeDescr = 8;
+    static constexpr uint32_t maxNumComputeDescr = 10;
 
     static constexpr VkImageAspectFlags validPlaneAspects = VK_IMAGE_ASPECT_PLANE_0_BIT |
                                                             VK_IMAGE_ASPECT_PLANE_1_BIT |
@@ -89,6 +89,7 @@ public:
         , m_enableRowAndColumnReplication(true)
         , m_inputIsBuffer(false)
         , m_outputIsBuffer(false)
+        , m_enableYSubsampling(false)
     {
     }
 
@@ -122,39 +123,48 @@ public:
                                         std::array<VkWriteDescriptorSet, maxNumComputeDescr>& writeDescriptorSets,
                                         const uint32_t maxDescriptors = maxNumComputeDescr);
 
-    // Image input -> Image output
-    virtual VkResult RecordCommandBuffer(VkCommandBuffer cmdBuf,
-                                         const VkImageResourceView* inputImageView,
-                                         const VkVideoPictureResourceInfoKHR * inputImageResourceInfo,
-                                         const VkImageResourceView* outputImageView,
-                                         const VkVideoPictureResourceInfoKHR * outputImageResourceInfo,
-                                         uint32_t bufferIdx) override;
+
+    // Image input -> Image output + optional subsampled Y output (overload for AQ)
+    VkResult RecordCommandBuffer(VkCommandBuffer cmdBuf,
+                                 uint32_t bufferIdx,
+                                 const VkImageResourceView* inputImageView,
+                                 const VkVideoPictureResourceInfoKHR * inputImageResourceInfo,
+                                 const VkImageResourceView* outputImageView,
+                                 const VkVideoPictureResourceInfoKHR * outputImageResourceInfo,
+                                 const VkImageResourceView* subsampledImageView = nullptr,
+                                 const VkVideoPictureResourceInfoKHR * subsampledImageResourceInfo = nullptr);
+
     // Buffer input -> Image output
     VkResult RecordCommandBuffer(VkCommandBuffer cmdBuf,
-                                const VkBuffer*            inBuffers,     // with size numInBuffers
-                                uint32_t                   numInBuffers,
-                                const VkFormat*            inBufferFormats, // with size inBufferNumPlanes
-                                const VkSubresourceLayout* inBufferSubresourceLayouts, // with size inBufferNumPlanes
-                                uint32_t                   inBufferNumPlanes,
-                                const VkImageResourceView* outImageView,
-                                const VkVideoPictureResourceInfoKHR* outImageResourceInfo,
-                                const VkBufferImageCopy*   pBufferImageCopy,
-                                uint32_t bufferIdx);
+                                 uint32_t bufferIdx,
+                                 const VkBuffer*            inBuffers,     // with size numInBuffers
+                                 uint32_t                   numInBuffers,
+                                 const VkFormat*            inBufferFormats, // with size inBufferNumPlanes
+                                 const VkSubresourceLayout* inBufferSubresourceLayouts, // with size inBufferNumPlanes
+                                 uint32_t                   inBufferNumPlanes,
+                                 const VkImageResourceView* outImageView,
+                                 const VkVideoPictureResourceInfoKHR* outImageResourceInfo,
+                                 const VkBufferImageCopy*   pBufferImageCopy,
+                                 const VkImageResourceView* subsampledYImageView = nullptr,
+                                 const VkVideoPictureResourceInfoKHR * subsampledImageResourceInfo = nullptr);
 
     // Image input -> Buffer output
     VkResult RecordCommandBuffer(VkCommandBuffer cmdBuf,
-                                const VkImageResourceView* inImageView,
-                                const VkVideoPictureResourceInfoKHR* inImageResourceInfo,
-                                const VkBuffer*            outBuffers,        // with size numOutBuffers
-                                uint32_t                   numOutBuffers,
-                                const VkFormat*            inBufferFormats,   // with size outBufferNumPlanes
-                                const VkSubresourceLayout* outBufferSubresourceLayouts, // with size outBufferNumPlanes
-                                uint32_t                   outBufferNumPlanes,
-                                const VkBufferImageCopy*   pBufferImageCopy,
-                                uint32_t bufferIdx);
+                                 uint32_t bufferIdx,
+                                 const VkImageResourceView* inImageView,
+                                 const VkVideoPictureResourceInfoKHR* inImageResourceInfo,
+                                 const VkBuffer*            outBuffers,        // with size numOutBuffers
+                                 uint32_t                   numOutBuffers,
+                                 const VkFormat*            inBufferFormats,   // with size outBufferNumPlanes
+                                 const VkSubresourceLayout* outBufferSubresourceLayouts, // with size outBufferNumPlanes
+                                 uint32_t                   outBufferNumPlanes,
+                                 const VkBufferImageCopy*   pBufferImageCopy,
+                                 const VkImageResourceView* subsampledYImageView = nullptr,
+                                 const VkVideoPictureResourceInfoKHR * subsampledImageResourceInfo = nullptr);
 
     // Buffer input -> Buffer output
     VkResult RecordCommandBuffer(VkCommandBuffer cmdBuf,
+                                 uint32_t bufferIdx,
                                  const VkBuffer*            inBuffers,       // with size numInBuffers
                                  uint32_t                   numInBuffers,
                                  const VkFormat*            inBufferFormats, // with size inBufferNumPlanes
@@ -167,7 +177,8 @@ public:
                                  const VkSubresourceLayout* outBufferSubresourceLayouts, // with size outBufferNumPlanes
                                  uint32_t                   outBufferNumPlanes,
                                  const VkExtent3D&          outBufferExtent,
-                                 uint32_t bufferIdx);
+                                 const VkImageResourceView* subsampledYImageView = nullptr,
+                                 const VkVideoPictureResourceInfoKHR * subsampledImageResourceInfo = nullptr);
 
 private:
     VkResult InitDescriptorSetLayout(uint32_t maxNumFrames);
@@ -236,6 +247,7 @@ private:
      * @param bufferType The Vulkan descriptor type to use for buffer resources
      * @return The next available binding number after all descriptors are created
      */
+protected:
     uint32_t ShaderGeneratePlaneDescriptors(std::stringstream& shaderStr,
                                             bool isInput,
                                             uint32_t startBinding,
@@ -276,7 +288,6 @@ private:
      */
     size_t InitYCBCR2RGBA(std::string& computeShader);
 
-private:
     const FilterType                         m_filterType;
     VkFormat                                 m_inputFormat;
     VkFormat                                 m_outputFormat;
@@ -294,6 +305,7 @@ private:
     uint32_t                                 m_enableRowAndColumnReplication : 1;
     uint32_t                                 m_inputIsBuffer : 1;
     uint32_t                                 m_outputIsBuffer : 1;
+    uint32_t                                 m_enableYSubsampling : 1; // Enable 2x2 Y subsampling output
 
     struct PushConstants {
         uint32_t srcLayer;        // src image layer to use

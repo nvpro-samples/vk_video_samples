@@ -173,6 +173,9 @@ VkResult VulkanFilterYuvCompute::InitDescriptorSetLayout(uint32_t maxNumFrames)
     // Binding 8: uniform buffer for input parameters.
     setLayoutBindings.push_back(VkDescriptorSetLayoutBinding{ 8, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
 
+    // Binding 9: Output image (write) for 2x2 subsampled Y (for AQ operations)
+    setLayoutBindings.push_back(VkDescriptorSetLayoutBinding{ 9, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
+
     VkPushConstantRange pushConstantRange = {};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT; // Stage the push constant is for
     pushConstantRange.offset = 0;
@@ -368,156 +371,6 @@ static void GenBufferIoBindingLayout(std::stringstream& shaderStr,
 }
 
 /**
- * @brief Generates GLSL code for determining if a position has chroma information
- *
- * Creates a condition that checks if the current pixel position contains
- * chroma information based on the subsampling ratios. For example, in 4:2:0
- * subsampling, only pixels at even x and y coordinates have chroma samples.
- *
- * @param shaderStr Output stringstream where the GLSL code will be written
- * @param chromaHorzRatio Horizontal subsampling ratio (1 for 4:4:4, 2 for 4:2:2/4:2:0)
- * @param chromaVertRatio Vertical subsampling ratio (1 for 4:4:4/4:2:2, 2 for 4:2:0)
- * @param useCondition Whether to output as a full if-condition (true) or just the condition expression (false)
- * @param pixelPosName Name of the pixel position variable in the shader (default: "srcPos")
- * @param setProcessChromaBool Name of the boolean variable to set (default: "processChromaBool")
- */
-static void GenHandleChromaPosition(std::stringstream& shaderStr,
-                                uint32_t chromaHorzRatio,
-                                uint32_t chromaVertRatio,
-                                bool useCondition = true,
-                                const char* pixelPosName = "srcPos",
-                                const char* setProcessChromaBool = "processChromaBool")
-{
-    // Skip this for 4:4:4 since all pixels have chroma
-    if (chromaHorzRatio <= 1 && chromaVertRatio <= 1) {
-        if (useCondition) {
-            // For 4:4:4, no subsampling check needed - process all pixels
-            shaderStr << "    bool " << setProcessChromaBool << " = true;\n";
-        } else {
-            shaderStr << "true";
-        }
-        return;
-    }
-
-    // Build condition for chroma sampling
-    std::stringstream condition;
-    if (chromaHorzRatio > 1)
-        condition << "(" << pixelPosName << ".x % " << chromaHorzRatio << " == 0)";
-
-    if (chromaHorzRatio > 1 && chromaVertRatio > 1)
-        condition << " && ";
-
-    if (chromaVertRatio > 1)
-        condition << "(" << pixelPosName << ".y % " << chromaVertRatio << " == 0)";
-
-    if (useCondition) {
-        shaderStr << "    bool " << setProcessChromaBool << " = " << condition.str() << ";\n";
-    } else {
-        shaderStr << condition.str();
-    }
-}
-
-/**
- * @brief Generates GLSL code for calculating subsampled chroma positions
- *
- * Creates code to compute the chroma position from a pixel position
- * based on the subsampling ratios. For example, in 4:2:0 subsampling,
- * the chroma position is calculated by dividing both x and y by 2.
- *
- * @param shaderStr Output stringstream where the GLSL code will be written
- * @param chromaHorzRatio Horizontal subsampling ratio (1 for 4:4:4, 2 for 4:2:2/4:2:0)
- * @param chromaVertRatio Vertical subsampling ratio (1 for 4:4:4/4:2:2, 2 for 4:2:0)
- * @param srcPosName Name of the source position variable (default: "srcPos")
- * @param dstPosName Name of the destination position variable (default: "chromaSrcPos")
- * @param indent Number of spaces to indent the output code (default: 8)
- * @param generateIfBlock Whether to generate an if-block or just assignment statements (default: false)
- */
-static void GenCalculateChromaPosition(std::stringstream& shaderStr,
-                                     uint32_t chromaHorzRatio,
-                                     uint32_t chromaVertRatio,
-                                     const char* srcPosName = "srcPos",
-                                     const char* dstPosName = "chromaSrcPos",
-                                     int indent = 8,
-                                     bool generateIfBlock = false)
-{
-    std::string indentStr(indent, ' ');
-
-    // For 4:4:4, no subsampling needed
-    if (chromaHorzRatio <= 1 && chromaVertRatio <= 1) {
-        shaderStr << indentStr << "// No subsampling for 4:4:4 format, use original position\n";
-        if (generateIfBlock) {
-            shaderStr << indentStr << "// " << dstPosName << " already equals " << srcPosName << "\n";
-        } else {
-            shaderStr << indentStr << dstPosName << " = " << srcPosName << ";\n";
-        }
-        return;
-    }
-
-    shaderStr << indentStr << "// Calculate subsampled positions based on format's subsampling\n";
-
-    if (generateIfBlock) {
-        // Generate an if-block for conditional calculation
-        shaderStr << indentStr << dstPosName << " = " << srcPosName << ";\n";
-        shaderStr << indentStr << "if (processChroma) {\n";
-
-        if (chromaHorzRatio > 1) {
-            shaderStr << indentStr << "    " << dstPosName << ".x = " << srcPosName << ".x / " << chromaHorzRatio << ";\n";
-        }
-
-        if (chromaVertRatio > 1) {
-            shaderStr << indentStr << "    " << dstPosName << ".y = " << srcPosName << ".y / " << chromaVertRatio << ";\n";
-        }
-
-        shaderStr << indentStr << "}\n";
-    } else {
-        // Generate direct assignment statements
-        shaderStr << indentStr << dstPosName << " = ivec2(";
-
-        if (chromaHorzRatio > 1)
-            shaderStr << srcPosName << ".x / " << chromaHorzRatio;
-        else
-            shaderStr << srcPosName << ".x";
-
-        shaderStr << ", ";
-
-        if (chromaVertRatio > 1)
-            shaderStr << srcPosName << ".y / " << chromaVertRatio;
-        else
-            shaderStr << srcPosName << ".y";
-
-        shaderStr << ");\n";
-    }
-}
-
-/**
- * @brief Generates GLSL code for handling buffer position calculations with chroma subsampling
- *
- * Creates code to:
- * - Get the current pixel position from gl_GlobalInvocationID
- * - Check if the position is within output bounds
- * - Calculate appropriate buffer indices based on subsampling ratios
- *
- * @param shaderStr Output stringstream where the GLSL code will be written
- * @param chromaHorzRatio Horizontal subsampling ratio (default: 2 for 4:2:0/4:2:2)
- * @param chromaVertRatio Vertical subsampling ratio (default: 2 for 4:2:0)
- */
-static void GenHandleBufferPosition(std::stringstream& shaderStr, int chromaHorzRatio = 2, int chromaVertRatio = 2)
-{
-    shaderStr <<
-    "    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);\n"
-    "    // Check for out-of-bounds writes\n"
-    "    if ((pos.x >= pushConstants.outputWidth) || (pos.y >= pushConstants.outputHeight)) {\n"
-    "        return;\n"
-    "    }\n"
-    "    \n"
-    "    // Calculate buffer indices based on position and strides\n"
-    "    uint yIndex = pushConstants.inYOffset + pos.y * pushConstants.inYPitch + pos.x;\n"
-    "    uint cbIndex = pushConstants.inCbOffset + (pos.y / " << chromaVertRatio << ") * pushConstants.inCbPitch + (pos.x / " << chromaHorzRatio << ");\n"
-    "    uint crIndex = pushConstants.inCrOffset + (pos.y / " << chromaVertRatio << ") * pushConstants.inCrPitch + (pos.x / " << chromaHorzRatio << ");\n"
-    "\n";
-}
-
-/**
  * @brief Generates GLSL code for handling source position with optional replication
  *
  * Creates code to calculate source position, with optional boundary handling
@@ -537,6 +390,282 @@ static void GenHandleSourcePositionWithReplicate(std::stringstream& shaderStr, b
         "    ivec2 srcPos = pos;\n"
         "\n";
     }
+}
+
+/**
+ * @brief Generates block coordinates for chroma-resolution dispatch
+ *
+ * Creates coordinate calculations for block-based processing where one thread
+ * handles NxM luma pixels. Includes bounds checking and optional replication.
+ *
+ * @param shaderStr Output stringstream
+ * @param chromaHorzRatio Horizontal chroma subsampling (1, 2, or 4)
+ * @param chromaVertRatio Vertical chroma subsampling (1 or 2)
+ * @param enableReplication Whether to enable edge pixel replication
+ */
+static void GenBlockCoordinates(std::stringstream& shaderStr,
+                                uint32_t chromaHorzRatio,
+                                uint32_t chromaVertRatio,
+                                bool enableReplication)
+{
+    shaderStr <<
+        "    // Block-based dispatch: one thread per chroma pixel\n"
+        "    ivec2 chromaPos = ivec2(gl_GlobalInvocationID.xy);\n"
+        "    \n"
+        "    // Calculate chroma output dimensions\n"
+        "    uint chromaWidth = (pushConstants.outputWidth + " << (chromaHorzRatio-1) << ") / " << chromaHorzRatio << ";\n"
+        "    uint chromaHeight = (pushConstants.outputHeight + " << (chromaVertRatio-1) << ") / " << chromaVertRatio << ";\n"
+        "    \n"
+        "    // Bounds check at chroma resolution\n"
+        "    if ((chromaPos.x >= chromaWidth) || (chromaPos.y >= chromaHeight)) {\n"
+        "        return;\n"
+        "    }\n"
+        "    \n"
+        "    // Calculate top-left luma position for this block\n"
+        "    ivec2 lumaPos = chromaPos * ivec2(" << chromaHorzRatio << ", " << chromaVertRatio << ");\n"
+        "    \n";
+
+    // Generate input bounds for replication
+    if (enableReplication) {
+        shaderStr <<
+            "    // Input bounds for edge replication\n"
+            "    ivec2 inputLumaMax = ivec2(pushConstants.inputWidth - 1, pushConstants.inputHeight - 1);\n"
+            "    ivec2 inputChromaMax = ivec2((pushConstants.inputWidth + " << (chromaHorzRatio-1) << ") / " << chromaHorzRatio << " - 1, "
+            "(pushConstants.inputHeight + " << (chromaVertRatio-1) << ") / " << chromaVertRatio << " - 1);\n"
+            "    ivec2 srcChromaPos = min(chromaPos, inputChromaMax);\n";
+    } else {
+        shaderStr <<
+            "    // No replication - use positions as-is\n"
+            "    ivec2 srcChromaPos = chromaPos;\n";
+    }
+
+    shaderStr << "    \n";
+}
+
+/**
+ * @brief Generates code to read a block of Y pixels and chroma
+ *
+ * Reads NxM Y pixels and 1 chroma sample for block-based processing.
+ * Handles replication, 2-plane vs 3-plane, and missing chroma.
+ *
+ * @param shaderStr Output stringstream
+ * @param chromaHorzRatio Horizontal block size
+ * @param chromaVertRatio Vertical block size
+ * @param isInputTwoPlane Whether input is 2-plane (NV12) or 3-plane (I420)
+ * @param hasInputChroma Whether input has chroma planes
+ * @param enableReplication Whether to clamp reads for edge replication
+ */
+static void GenReadYCbCrBlock(std::stringstream& shaderStr,
+                              uint32_t chromaHorzRatio,
+                              uint32_t chromaVertRatio,
+                              bool isInputTwoPlane,
+                              bool hasInputChroma,
+                              bool enableReplication)
+{
+    shaderStr << "    // Read " << chromaHorzRatio << "x" << chromaVertRatio << " Y block\n";
+
+    // Read all Y pixels in the block
+    for (uint32_t y = 0; y < chromaVertRatio; y++) {
+        for (uint32_t x = 0; x < chromaHorzRatio; x++) {
+            shaderStr << "    float y" << x << y << " = imageLoad(inputImageY, ivec3(";
+            if (enableReplication) {
+                shaderStr << "min(lumaPos + ivec2(" << x << ", " << y << "), inputLumaMax)";
+            } else {
+                shaderStr << "lumaPos + ivec2(" << x << ", " << y << ")";
+            }
+            shaderStr << ", pushConstants.srcLayer)).r;\n";
+        }
+    }
+
+    shaderStr << "    \n";
+
+    // Read chroma for the block
+    if (hasInputChroma) {
+        if (isInputTwoPlane) {
+            shaderStr << "    // Read 1 CbCr sample (2-plane format)\n"
+                      << "    vec2 cbcr = imageLoad(inputImageCbCr, ivec3(srcChromaPos, pushConstants.srcLayer)).rg;\n"
+                      << "    float cb = cbcr.r;\n"
+                      << "    float cr = cbcr.g;\n";
+        } else {
+            shaderStr << "    // Read 1 Cb and 1 Cr sample (3-plane format)\n"
+                      << "    float cb = imageLoad(inputImageCb, ivec3(srcChromaPos, pushConstants.srcLayer)).r;\n"
+                      << "    float cr = imageLoad(inputImageCr, ivec3(srcChromaPos, pushConstants.srcLayer)).r;\n";
+        }
+    } else {
+        shaderStr << "    // No chroma in input, use default (128/255 limited range)\n"
+                  << "    float cb = 128.0/255.0;\n"
+                  << "    float cr = 128.0/255.0;\n";
+    }
+
+    shaderStr << "    \n";
+}
+
+/**
+ * @brief Generates code to convert a block of YCbCr pixels
+ *
+ * Applies format conversion (bit depth / range) to all Y pixels and chroma.
+ * Uses convertYCbCrFormat() helper if conversion is needed.
+ *
+ * @param shaderStr Output stringstream
+ * @param chromaHorzRatio Horizontal block size
+ * @param chromaVertRatio Vertical block size
+ * @param needsConversion Whether format conversion is needed
+ */
+static void GenConvertYCbCrBlock(std::stringstream& shaderStr,
+                                 uint32_t chromaHorzRatio,
+                                 uint32_t chromaVertRatio,
+                                 bool needsConversion)
+{
+    if (needsConversion) {
+        shaderStr << "    // Apply format conversion to block\n";
+        // Convert each Y pixel
+        for (uint32_t y = 0; y < chromaVertRatio; y++) {
+            for (uint32_t x = 0; x < chromaHorzRatio; x++) {
+                shaderStr << "    float yOut" << x << y << " = convertYCbCrFormat(vec3(y" << x << y << ", cb, cr)).x;\n";
+            }
+        }
+        // Convert chroma once
+        shaderStr << "    vec2 cbcrOut = convertYCbCrFormat(vec3(y00, cb, cr)).yz;\n";
+    } else {
+        shaderStr << "    // No conversion needed - direct copy\n";
+        for (uint32_t y = 0; y < chromaVertRatio; y++) {
+            for (uint32_t x = 0; x < chromaHorzRatio; x++) {
+                shaderStr << "    float yOut" << x << y << " = y" << x << y << ";\n";
+            }
+        }
+        shaderStr << "    vec2 cbcrOut = vec2(cb, cr);\n";
+    }
+
+    shaderStr << "    \n";
+}
+
+/**
+ * @brief Generates code to apply LSB-to-MSB bit shift for block output
+ *
+ * For 10/12-bit output, shifts values from LSB-aligned to MSB-aligned format.
+ * Multiplies all Y pixels and chroma by shift factor.
+ *
+ * @param shaderStr Output stringstream
+ * @param chromaHorzRatio Horizontal block size
+ * @param chromaVertRatio Vertical block size
+ * @param outputBitDepth Output bit depth (8, 10, 12, or 16)
+ * @param enableShift Whether LSB-to-MSB shift is enabled
+ */
+static void GenApplyBlockOutputShift(std::stringstream& shaderStr,
+                                     uint32_t chromaHorzRatio,
+                                     uint32_t chromaVertRatio,
+                                     uint32_t outputBitDepth,
+                                     bool enableShift)
+{
+    if (!enableShift) {
+        return;
+    }
+
+    float shiftFactor = 0.0f;
+    if (outputBitDepth == 10) {
+        shiftFactor = 64.0f;  // 1 << (16 - 10)
+    } else if (outputBitDepth == 12) {
+        shiftFactor = 16.0f;  // 1 << (16 - 12)
+    } else {
+        return;  // No shift for 8 or 16-bit
+    }
+
+    shaderStr << "    // Apply LSB-to-MSB shift for " << outputBitDepth << "-bit output\n";
+
+    // Shift all Y pixels
+    for (uint32_t y = 0; y < chromaVertRatio; y++) {
+        for (uint32_t x = 0; x < chromaHorzRatio; x++) {
+            shaderStr << "    yOut" << x << y << " *= " << shiftFactor << ";\n";
+        }
+    }
+
+    // Shift chroma
+    shaderStr << "    cbcrOut *= " << shiftFactor << ";\n";
+    shaderStr << "    \n";
+}
+
+/**
+ * @brief Generates code to write a block of Y pixels and chroma
+ *
+ * Writes NxM Y pixels and 1 chroma sample to output.
+ * Handles 2-plane vs 3-plane output formats.
+ *
+ * @param shaderStr Output stringstream
+ * @param chromaHorzRatio Horizontal block size
+ * @param chromaVertRatio Vertical block size
+ * @param isOutputTwoPlane Whether output is 2-plane or 3-plane
+ * @param hasOutputChroma Whether output has chroma planes
+ */
+static void GenWriteYCbCrBlock(std::stringstream& shaderStr,
+                               uint32_t chromaHorzRatio,
+                               uint32_t chromaVertRatio,
+                               bool isOutputTwoPlane,
+                               bool hasOutputChroma)
+{
+    shaderStr << "    // Write " << chromaHorzRatio << "x" << chromaVertRatio << " Y pixels\n";
+
+    // Write all Y pixels
+    for (uint32_t y = 0; y < chromaVertRatio; y++) {
+        for (uint32_t x = 0; x < chromaHorzRatio; x++) {
+            shaderStr <<
+                "    imageStore(outputImageY, ivec3(lumaPos + ivec2(" << x << ", " << y << "), pushConstants.dstLayer), "
+                "vec4(yOut" << x << y << ", 0, 0, 1));\n";
+        }
+    }
+
+    shaderStr << "    \n";
+
+    // Write chroma
+    if (!hasOutputChroma) {
+        return;
+    }
+
+    if (isOutputTwoPlane) {
+        shaderStr <<
+            "    // Write 1 CbCr sample (2-plane format)\n"
+            "    imageStore(outputImageCbCr, ivec3(chromaPos, pushConstants.dstLayer), "
+            "vec4(cbcrOut.x, cbcrOut.y, 0, 1));\n";
+    } else {
+        shaderStr <<
+            "    // Write 1 Cb and 1 Cr sample (3-plane format)\n"
+            "    imageStore(outputImageCb, ivec3(chromaPos, pushConstants.dstLayer), vec4(cbcrOut.x, 0, 0, 1));\n"
+            "    imageStore(outputImageCr, ivec3(chromaPos, pushConstants.dstLayer), vec4(cbcrOut.y, 0, 0, 1));\n";
+    }
+
+    shaderStr << "    \n";
+}
+
+/**
+ * @brief Generates code to compute and write subsampled Y
+ *
+ * Computes box filter average of NxM Y pixels and writes to binding 9.
+ *
+ * @param shaderStr Output stringstream
+ * @param chromaHorzRatio Horizontal block size
+ * @param chromaVertRatio Vertical block size
+ */
+static void GenComputeAndWriteSubsampledY(std::stringstream& shaderStr,
+                                          uint32_t chromaHorzRatio,
+                                          uint32_t chromaVertRatio)
+{
+    float scale = 1.0f / (chromaHorzRatio * chromaVertRatio);
+
+    shaderStr << "    // Compute " << chromaHorzRatio << "x" << chromaVertRatio << " box filter for subsampled Y\n"
+              << "    float subsampledY = (";
+
+    bool first = true;
+    for (uint32_t y = 0; y < chromaVertRatio; y++) {
+        for (uint32_t x = 0; x < chromaHorzRatio; x++) {
+            if (!first) shaderStr << " + ";
+            shaderStr << "yOut" << x << y;
+            first = false;
+        }
+    }
+
+    shaderStr <<
+        ") * " << scale << ";\n"
+        "    imageStore(subsampledYImage, ivec3(chromaPos, pushConstants.dstLayer), vec4(subsampledY, 0, 0, 1));\n"
+        "    \n";
 }
 
 /**
@@ -2067,7 +2196,19 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
                                    true,  // imageArray
                                    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 
-    shaderStr << "\n\n";
+    // Binding 9: Subsampled Y output image (half resolution, R8 or R16)
+    shaderStr << "// Binding 9: Subsampled Y output (2x2 downsampled luma for AQ)\n";
+    const char* subsampleImageFormat = (outputBitDepth > 8) ? "r16" : "r8";
+    GenImageIoBindingLayout(shaderStr,
+                            "subsampledY",         // imageName
+                            "Image",               // imageSubName
+                            subsampleImageFormat,  // imageFormat (r8 or r16)
+                            false,                 // isInput (it's output)
+                            9,                     // binding
+                            0,                     // set
+                            true);                 // imageArray
+
+    shaderStr << "\n";
 
     // Determine input and output plane configurations
     const bool hasInputChroma = (m_inputImageAspects & (VK_IMAGE_ASPECT_PLANE_1_BIT | VK_IMAGE_ASPECT_PLANE_2_BIT)) != 0;
@@ -2119,71 +2260,29 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
         "void main()\n"
         "{\n";
 
-    // 10. Handle position calculation
-    if (isInputBuffer || isOutputBuffer) {
-        // Use buffer position calculation
-        GenHandleBufferPosition(shaderStr);
-    } else {
-        // Use image position calculation
-        GenHandleImagePosition(shaderStr);
-    }
+    // Get subsampling ratios for output format
+    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 1;
+    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 1;
 
-    // 11. Calculate source position with replication if enabled
-    GenHandleSourcePositionWithReplicate(shaderStr, m_enableRowAndColumnReplication);
+    // 10. Generate block coordinates
+    GenBlockCoordinates(shaderStr, chromaHorzRatio, chromaVertRatio, m_enableRowAndColumnReplication);
 
-    // 12. Handle YCbCr processing
+    // 11. Read YCbCr block
+    GenReadYCbCrBlock(shaderStr, chromaHorzRatio, chromaVertRatio, isInputTwoPlane, hasInputChroma, m_enableRowAndColumnReplication);
 
-    // For inputs with chroma, we need to handle subsampling
-    // Get subsampling ratios for input format
-    const uint32_t chromaHorzRatio = (inputMpInfo != nullptr) ? (1 << inputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 1;
-    const uint32_t chromaVertRatio = (inputMpInfo != nullptr) ? (1 << inputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 1;
+    // 12. Convert block (if needed)
+    GenConvertYCbCrBlock(shaderStr, chromaHorzRatio, chromaVertRatio, needsBitDepthConversion || needsRangeConversion);
 
-    // Generate condition for chroma processing based on actual subsampling
-    shaderStr <<
-        "    // Handle proper subsampling based on format (" <<
-        (chromaHorzRatio == 2 ? (chromaVertRatio == 2 ? "4:2:0" : "4:2:2") : "4:4:4") << ")\n";
+    // 13. Apply output bit shifts (if needed)
+    GenApplyBlockOutputShift(shaderStr, chromaHorzRatio, chromaVertRatio, outputBitDepth, m_outputEnableLsbToMsbShift);
 
-    // Generate the chroma position condition with a boolean variable
-    GenHandleChromaPosition(shaderStr, chromaHorzRatio, chromaVertRatio, true, "pos", "processChroma");
+    // 14. Write YCbCr block
+    GenWriteYCbCrBlock(shaderStr, chromaHorzRatio, chromaVertRatio, isOutputTwoPlane, hasOutputChroma);
 
-    // Initialize chroma positions with default values
-    shaderStr << "    // Initialize chroma positions\n"
-              << "    ivec2 chromaSrcPos = srcPos;\n"
-              << "    ivec2 chromaPos = pos;\n\n"
-              << "    // Check if we need to process chroma\n"
-              << "    if (processChroma) {\n";
+    // 15. Compute and write subsampled Y
+    GenComputeAndWriteSubsampledY(shaderStr, chromaHorzRatio, chromaVertRatio);
 
-    // Generate chroma position calculations for source position
-    GenCalculateChromaPosition(shaderStr, chromaHorzRatio, chromaVertRatio, "srcPos", "chromaSrcPos", 8);
-
-    // Generate chroma position calculations for destination position
-    GenCalculateChromaPosition(shaderStr, chromaHorzRatio, chromaVertRatio, "pos", "chromaPos", 8);
-
-    shaderStr << "    }\n";
-
-    // Read YCbCr data using the helper function
-    shaderStr << "\n"
-              << "    // Read YCbCr data from source\n"
-              << "    vec3 YCbCrRawIn = readYCbCrFromSource(srcPos, chromaSrcPos, pushConstants.srcLayer, processChroma);\n\n";
-
-    // Process the data based on whether we need conversion
-    if (needsBitDepthConversion || needsRangeConversion) {
-        shaderStr <<
-                 "    // Need format conversion - normalize and denormalize\n"
-                 "    vec3 YCbCrRawOut = convertYCbCrFormat(YCbCrRawIn);\n\n";
-    } else {
-        shaderStr <<
-                 "    // No format conversion needed - direct copy\n"
-                 "    vec3 YCbCrRawOut = YCbCrRawIn;\n\n";
-    }
-
-    // Write the processed data using the helper function
-    shaderStr <<
-                 "    // Write processed data to destination\n"
-                 "    writeYCbCrToDestination(YCbCrRawOut, pos, chromaPos, pushConstants.dstLayer, processChroma);\n"
-                 "\n\n";
-
-    // Close the main function
+    // Close main function
     shaderStr << "}\n";
 
     computeShader = shaderStr.str();
@@ -2228,51 +2327,55 @@ size_t VulkanFilterYuvCompute::InitYCBCRCLEAR(std::string& computeShader)
     const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 1;
 
 
-    // 3. Main function
+    // 3. Main function - OPTIMIZED: One thread clears one chroma-sized block
     shaderStr <<
         "void main()\n"
         "{\n";
 
-    // 4. Handle position calculation
-    GenHandleImagePosition(shaderStr);
-
-    // 5. Clear operations for Y plane
     shaderStr <<
-        "    // Clear Y plane with 50% intensity\n"
-        "    imageStore(outputImageY, ivec3(pos, pushConstants.dstLayer), vec4(0.5, 0, 0, 1));\n"
-        "\n";
+        "    // OPTIMIZED: Dispatch at chroma resolution (" <<
+        (chromaHorzRatio == 2 ? (chromaVertRatio == 2 ? "4:2:0" : "4:2:2") : "4:4:4") << ")\n"
+        "    // Each thread clears " << chromaHorzRatio << "x" << chromaVertRatio << " Y pixels + 1 CbCr pixel\n"
+        "    ivec2 chromaPos = ivec2(gl_GlobalInvocationID.xy);\n"
+        "    \n"
+        "    // Calculate chroma output dimensions\n"
+        "    uint chromaWidth = (pushConstants.outputWidth + " << (chromaHorzRatio-1) << ") / " << chromaHorzRatio << ";\n"
+        "    uint chromaHeight = (pushConstants.outputHeight + " << (chromaVertRatio-1) << ") / " << chromaVertRatio << ";\n"
+        "    \n"
+        "    // Bounds check at chroma resolution\n"
+        "    if ((chromaPos.x >= chromaWidth) || (chromaPos.y >= chromaHeight)) {\n"
+        "        return;\n"
+        "    }\n"
+        "    \n"
+        "    // Calculate top-left luma position for this " << chromaHorzRatio << "x" << chromaVertRatio << " block\n"
+        "    ivec2 lumaPos = chromaPos * ivec2(" << chromaHorzRatio << ", " << chromaVertRatio << ");\n"
+        "    \n";
 
-    // Handle CbCr plane clearing based on format's subsampling
-    shaderStr <<
-        "    // Clear CbCr plane with " <<
-        (chromaHorzRatio == 2 ? (chromaVertRatio == 2 ? "4:2:0" : "4:2:2") : "4:4:4") <<
-        " subsampling\n";
+    // Clear Y pixels in the block
+    shaderStr << "    // Clear " << chromaHorzRatio << "x" << chromaVertRatio << " Y pixels (50% intensity)\n";
+    for (uint32_t y = 0; y < chromaVertRatio; y++) {
+        for (uint32_t x = 0; x < chromaHorzRatio; x++) {
+            shaderStr <<
+                "    imageStore(outputImageY, ivec3(lumaPos + ivec2(" << x << ", " << y << "), pushConstants.dstLayer), "
+                "vec4(0.5, 0, 0, 1));\n";
+        }
+    }
 
-    // Generate a boolean to track whether this position needs chroma clearing
-    GenHandleChromaPosition(shaderStr, chromaHorzRatio, chromaVertRatio, true, "pos", "shouldClearChroma");
+    shaderStr << "    \n";
 
-    // Handle position for chroma planes
-    shaderStr << "    ivec2 chromaPos = pos;\n";
-    shaderStr << "    if (shouldClearChroma) {\n";
-
-    // Calculate chroma position if necessary
-    GenCalculateChromaPosition(shaderStr, chromaHorzRatio, chromaVertRatio, "pos", "chromaPos", 8);
-
-    // For 2-plane format, output CbCr together
+    // Clear chroma planes
     if (m_outputImageAspects & VK_IMAGE_ASPECT_PLANE_1_BIT) {
-        shaderStr << "        // Clear CbCr plane with 50% intensity (middle range)\n"
-                  << "        imageStore(outputImageCbCr, ivec3(chromaPos, pushConstants.dstLayer), vec4(0.5, 0.5, 0.0, 1.0));\n";
+        shaderStr << "    // Clear 1 CbCr pixel (2-plane, 50% intensity = middle range)\n"
+                  << "    imageStore(outputImageCbCr, ivec3(chromaPos, pushConstants.dstLayer), vec4(0.5, 0.5, 0, 1));\n";
     }
 
-    // For 3-plane format, handle Cb and Cr separately
     if (m_outputImageAspects & VK_IMAGE_ASPECT_PLANE_2_BIT) {
-        shaderStr << "        // Clear separate Cb and Cr planes with 50% intensity (middle range)\n"
-                  << "        imageStore(outputImageCb, ivec3(chromaPos, pushConstants.dstLayer), vec4(0.5, 0.0, 0.0, 1.0));\n"
-                  << "        imageStore(outputImageCr, ivec3(chromaPos, pushConstants.dstLayer), vec4(0.5, 0.0, 0.0, 1.0));\n";
+        shaderStr << "    // Clear 1 Cb and 1 Cr pixel (3-plane, 50% intensity = middle range)\n"
+                  << "    imageStore(outputImageCb, ivec3(chromaPos, pushConstants.dstLayer), vec4(0.5, 0, 0, 1));\n"
+                  << "    imageStore(outputImageCr, ivec3(chromaPos, pushConstants.dstLayer), vec4(0.5, 0, 0, 1));\n";
     }
 
-    shaderStr << "    }\n"
-              << "}\n";
+    shaderStr << "}\n";
 
     computeShader = shaderStr.str();
     if (dumpShaders)
@@ -2400,13 +2503,16 @@ uint32_t VulkanFilterYuvCompute::UpdateImageDescriptorSets(
     return descrIndex;
 }
 
-// Image input -> Image output
+
+// Image input -> Image output + optional subsampled Y output (overload for AQ)
 VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
+                                                     uint32_t bufferIdx,
                                                      const VkImageResourceView* inImageView,
                                                      const VkVideoPictureResourceInfoKHR * inImageResourceInfo,
                                                      const VkImageResourceView* outImageView,
                                                      const VkVideoPictureResourceInfoKHR * outImageResourceInfo,
-                                                     uint32_t bufferIdx)
+                                                     const VkImageResourceView* subsampledImageView,
+                                                     const VkVideoPictureResourceInfoKHR* subsampledImageResourceInfo)
 {
 
     assert(cmdBuf != VK_NULL_HANDLE);
@@ -2458,6 +2564,21 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                       imageDescriptors,
                                       writeDescriptorSets,
                                       maxNumComputeDescr /* max descriptors */);
+
+            dstBinding = 9;
+            // Binding 9: Optional subsampled Y output image (for AQ)
+            if (subsampledImageView != nullptr) {
+                writeDescriptorSets[descrIndex].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                writeDescriptorSets[descrIndex].dstSet = VK_NULL_HANDLE;
+                writeDescriptorSets[descrIndex].dstBinding = dstBinding;
+                writeDescriptorSets[descrIndex].descriptorCount = 1;
+                writeDescriptorSets[descrIndex].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+                imageDescriptors[descrIndex].sampler = VK_NULL_HANDLE;
+                imageDescriptors[descrIndex].imageView = subsampledImageView->GetImageView();
+                imageDescriptors[descrIndex].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+                writeDescriptorSets[descrIndex].pImageInfo = &imageDescriptors[descrIndex];
+                descrIndex++;
+            }
 
             assert(descrIndex <= maxNumComputeDescr);
             assert(descrIndex >= 2);
@@ -2542,8 +2663,16 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                  sizeof(PushConstants),
                                  &pushConstants);
 
-    const uint32_t  workgroupWidth  = (pushConstants.outputSize.width  + (m_workgroupSizeX - 1)) / m_workgroupSizeX;
-    const uint32_t  workgroupHeight = (pushConstants.outputSize.height + (m_workgroupSizeY - 1)) / m_workgroupSizeY;
+    // OPTIMIZED: Dispatch at chroma resolution (one thread per chroma pixel handles NxM Y block)
+    const VkMpFormatInfo* outputMpInfo = YcbcrVkFormatInfo(m_outputFormat);
+    const uint32_t chromaSubsampleX = outputMpInfo ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 1;
+    const uint32_t chromaSubsampleY = outputMpInfo ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 1;
+
+    const uint32_t chromaWidth = (pushConstants.outputSize.width + chromaSubsampleX - 1) / chromaSubsampleX;
+    const uint32_t chromaHeight = (pushConstants.outputSize.height + chromaSubsampleY - 1) / chromaSubsampleY;
+
+    const uint32_t workgroupWidth = (chromaWidth + (m_workgroupSizeX - 1)) / m_workgroupSizeX;
+    const uint32_t workgroupHeight = (chromaHeight + (m_workgroupSizeY - 1)) / m_workgroupSizeY;
     m_vkDevCtx->CmdDispatch(cmdBuf, workgroupWidth, workgroupHeight, 1);
 
     return VK_SUCCESS;
@@ -2551,6 +2680,7 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
 
 // Buffer input -> Image output
 VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
+                                                     uint32_t bufferIdx,
                                                      const VkBuffer*            inBuffers,
                                                      uint32_t                   numInBuffers,
                                                      const VkFormat*            inBufferFormats,
@@ -2559,7 +2689,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                                      const VkImageResourceView* outImageView,
                                                      const VkVideoPictureResourceInfoKHR* outImageResourceInfo,
                                                      const VkBufferImageCopy* pBufferImageCopy,
-                                                     uint32_t bufferIdx)
+                                                     const VkImageResourceView* subsampledYImageView,
+                                                     const VkVideoPictureResourceInfoKHR* subsampledImageResourceInfo)
 {
     assert(cmdBuf != VK_NULL_HANDLE);
     assert(m_inputIsBuffer  == true);
@@ -2712,8 +2843,16 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                  sizeof(PushConstants),
                                  &pushConstants);
 
-    const uint32_t workgroupWidth = (pushConstants.outputSize.width + (m_workgroupSizeX - 1)) / m_workgroupSizeX;
-    const uint32_t workgroupHeight = (pushConstants.outputSize.height + (m_workgroupSizeY - 1)) / m_workgroupSizeY;
+    // OPTIMIZED: Dispatch at chroma resolution
+    const VkMpFormatInfo* outputMpInfo = YcbcrVkFormatInfo(m_outputFormat);
+    const uint32_t chromaSubsampleX = outputMpInfo ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 1;
+    const uint32_t chromaSubsampleY = outputMpInfo ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 1;
+
+    const uint32_t chromaWidth = (pushConstants.outputSize.width + chromaSubsampleX - 1) / chromaSubsampleX;
+    const uint32_t chromaHeight = (pushConstants.outputSize.height + chromaSubsampleY - 1) / chromaSubsampleY;
+
+    const uint32_t workgroupWidth = (chromaWidth + (m_workgroupSizeX - 1)) / m_workgroupSizeX;
+    const uint32_t workgroupHeight = (chromaHeight + (m_workgroupSizeY - 1)) / m_workgroupSizeY;
     m_vkDevCtx->CmdDispatch(cmdBuf, workgroupWidth, workgroupHeight, 1);
 
     return VK_SUCCESS;
@@ -2721,6 +2860,7 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
 
 // Image input -> Buffer output
 VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
+                                                     uint32_t bufferIdx,
                                                      const VkImageResourceView* inImageView,
                                                      const VkVideoPictureResourceInfoKHR* inImageResourceInfo,
                                                      const VkBuffer*            outBuffers,        // with size numOutBuffers
@@ -2729,7 +2869,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                                      const VkSubresourceLayout* outBufferSubresourceLayouts, // with size outBufferNumPlanes
                                                      uint32_t                   outBufferNumPlanes,
                                                      const VkBufferImageCopy*   pBufferImageCopy,
-                                                     uint32_t bufferIdx)
+                                                     const VkImageResourceView* subsampledYImageView,
+                                                     const VkVideoPictureResourceInfoKHR* subsampledImageResourceInfo)
 {
     assert(cmdBuf != VK_NULL_HANDLE);
     assert(m_inputIsBuffer  == false);
@@ -2883,8 +3024,16 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                sizeof(PushConstants),
                                &pushConstants);
 
-    const uint32_t workgroupWidth = (pushConstants.outputSize.width + (m_workgroupSizeX - 1)) / m_workgroupSizeX;
-    const uint32_t workgroupHeight = (pushConstants.outputSize.height + (m_workgroupSizeY - 1)) / m_workgroupSizeY;
+    // OPTIMIZED: Dispatch at chroma resolution
+    const VkMpFormatInfo* outputMpInfo = YcbcrVkFormatInfo(m_outputFormat);
+    const uint32_t chromaSubsampleX = outputMpInfo ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 1;
+    const uint32_t chromaSubsampleY = outputMpInfo ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 1;
+
+    const uint32_t chromaWidth = (pushConstants.outputSize.width + chromaSubsampleX - 1) / chromaSubsampleX;
+    const uint32_t chromaHeight = (pushConstants.outputSize.height + chromaSubsampleY - 1) / chromaSubsampleY;
+
+    const uint32_t workgroupWidth = (chromaWidth + (m_workgroupSizeX - 1)) / m_workgroupSizeX;
+    const uint32_t workgroupHeight = (chromaHeight + (m_workgroupSizeY - 1)) / m_workgroupSizeY;
     m_vkDevCtx->CmdDispatch(cmdBuf, workgroupWidth, workgroupHeight, 1);
 
     return VK_SUCCESS;
@@ -2892,6 +3041,7 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
 
 // Buffer input -> Buffer output (all buffer case)
 VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
+                                                     uint32_t bufferIdx,
                                                      const VkBuffer*            inBuffers,
                                                      uint32_t                   numInBuffers,
                                                      const VkFormat*            inBufferFormats, // with size inBufferNumPlanes
@@ -2904,7 +3054,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                                      const VkSubresourceLayout* outBufferSubresourceLayouts,
                                                      uint32_t                   numOutPlanes,
                                                      const VkExtent3D&          outBufferExtent,
-                                                     uint32_t bufferIdx)
+                                                     const VkImageResourceView* subsampledYImageView,
+                                                     const VkVideoPictureResourceInfoKHR* subsampledImageResourceInfo)
 {
     assert(cmdBuf != VK_NULL_HANDLE);
     assert(m_inputIsBuffer  == true);
