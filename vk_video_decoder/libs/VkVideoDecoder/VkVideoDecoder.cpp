@@ -1387,9 +1387,11 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         VkCommandBuffer cmdBuf = filterCmdBuffer->BeginCommandBufferRecording(computeBeginInfo);
 
         result = m_yuvFilter->RecordCommandBuffer(cmdBuf,
-                                                  inputImageView, &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource,
-                                                  outputImageView, &outputImageResource,
-                                                  filterCmdBuffer->GetNodePoolIndex());
+                                                  filterCmdBuffer->GetNodePoolIndex(),
+                                                  inputImageView,
+                                                  &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource,
+                                                  outputImageView,
+                                                  &outputImageResource);
 
         assert(result == VK_SUCCESS);
         result = filterCmdBuffer->EndCommandBufferRecording(cmdBuf);
