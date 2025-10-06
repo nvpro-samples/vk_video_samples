@@ -330,12 +330,29 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
             // row and column replication is disabled. Don't touch the image padding area.
             dstPictureResourceInfo.codedExtent = copyImageExtent;
         }
+        
+        // Get subsampled Y image if pool is available (ref-counted in encodeFrameInfo)
+        if (m_inputSubsampledImagePool != nullptr) {
+            bool success = m_inputSubsampledImagePool->GetAvailableImage(encodeFrameInfo->subsampledImageResource,
+                                                                         VK_IMAGE_LAYOUT_GENERAL);
+            assert(success && encodeFrameInfo->subsampledImageResource);
+        }
+
+        // Get image view for filter (nullptr if no pool)
+        VkSharedBaseObj<VkImageResourceView> subsampledImageView;
+        if (encodeFrameInfo->subsampledImageResource) {
+            encodeFrameInfo->subsampledImageResource->GetImageView(subsampledImageView);
+        }
+
+        // Call filter (binding 9 only bound if subsampledYImageView is valid)
         result = m_inputComputeFilter->RecordCommandBuffer(cmdBuf,
+                                                           encodeFrameInfo->inputCmdBuffer->GetNodePoolIndex(),
                                                            linearInputImageView,
                                                            &srcPictureResourceInfo,
                                                            srcEncodeImageView,
                                                            &dstPictureResourceInfo,
-                                                           encodeFrameInfo->inputCmdBuffer->GetNodePoolIndex());
+                                                           subsampledImageView); // nullptr if no pool
+
         if (result != VK_SUCCESS) {
             return result;
         }
@@ -1270,6 +1287,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                    0.0, false, 0.00, false, VK_COMPARE_OP_NEVER, 0.0, 16.0, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE, false
         };
 
+        // VulkanFilterYuvCompute now supports subsampling
         result = VulkanFilterYuvCompute::Create(m_vkDevCtx,
                                                 m_vkDevCtx->GetComputeQueueFamilyIdx(),
                                                 0, // queueIndex
@@ -1288,6 +1306,47 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     if ((result == VK_SUCCESS) && (m_inputComputeFilter != nullptr) ) {
 
         m_inputCommandBufferPool = m_inputComputeFilter;
+
+        // Allocate subsampled image pool for the new filter capability
+        result = VulkanVideoImagePool::Create(m_vkDevCtx, m_inputSubsampledImagePool);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nInitEncoder Error: Failed to create inputSubsampledImagePool.\n");
+            return result;
+        }
+
+        // Subsampled dimensions: half of input dimensions
+        VkExtent2D subsampledExtent {
+            (std::max(m_maxCodedExtent.width, encoderConfig->input.width) + 1) / 2,
+            (std::max(m_maxCodedExtent.height, encoderConfig->input.height) + 1) / 2
+        };
+
+        // Determine format based on input bit depth
+        const VkMpFormatInfo* inputMpInfo = YcbcrVkFormatInfo(encoderConfig->input.vkFormat);
+        const uint32_t inputBitDepth = inputMpInfo ? GetBitsPerChannel(inputMpInfo->planesLayout) : 8;
+        VkFormat subsampledYFormat = (inputBitDepth > 8) ? VK_FORMAT_R16_UNORM : VK_FORMAT_R8_UNORM;
+
+        result = m_inputSubsampledImagePool->Configure(
+            m_vkDevCtx,
+            encoderConfig->numInputImages,
+            subsampledYFormat, // R8_UNORM or R16_UNORM (single-channel Y)
+            subsampledExtent,
+            VK_IMAGE_USAGE_STORAGE_BIT |           // Write from this filter, read from AQ
+            VK_IMAGE_USAGE_SAMPLED_BIT |           // Texture sampling for AQ
+            VK_IMAGE_USAGE_TRANSFER_SRC_BIT |      // CPU readback for debug
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT,       // Clear/init if needed
+            m_vkDevCtx->GetComputeQueueFamilyIdx(),
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,  // Device-local for max GPU performance
+            nullptr,  // pVideoProfile
+            VK_IMAGE_ASPECT_PLANE_0_BIT, // Y-plane only image
+            false,    // useImageArray
+            false,    // useImageViewArray  
+            false     // useLinear - OPTIMAL tiling for GPU performance
+        );
+        
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nInitEncoder Error: Failed to Configure inputSubsampledImagePool.\n");
+            return result;
+        }
 
     } else {
 
@@ -2101,9 +2160,10 @@ int32_t VkVideoEncoder::DeinitEncoder()
          m_hwLoadBalancingTimelineSemaphore = VK_NULL_HANDLE;
     }
 
-    m_linearInputImagePool = nullptr;
-    m_inputImagePool       = nullptr;
-    m_dpbImagePool         = nullptr;
+    m_linearInputImagePool    = nullptr;
+    m_inputImagePool          = nullptr;
+    m_dpbImagePool            = nullptr;
+    m_inputSubsampledImagePool = nullptr;
 
     m_inputComputeFilter      = nullptr;
     m_inputCommandBufferPool  = nullptr;
