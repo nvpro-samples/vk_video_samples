@@ -415,7 +415,7 @@ bool VulkanVP9Decoder::ParseUncompressedHeader()
         pStdPicInfo->refresh_frame_flags = (1 << STD_VIDEO_VP9_NUM_REF_FRAMES) - 1;
         pPicData->FrameIsIntra = true;
 
-        for (int i = 0; i < STD_VIDEO_VP9_REFS_PER_FRAME; ++i) {
+        for (uint32_t i = 0; i < STD_VIDEO_VP9_REFS_PER_FRAME; ++i) {
             pPicData->ref_frame_idx[i] = 0;
         }
     } else { // non key frame
@@ -441,7 +441,7 @@ bool VulkanVP9Decoder::ParseUncompressedHeader()
             pStdPicInfo->refresh_frame_flags = u(STD_VIDEO_VP9_NUM_REF_FRAMES);
 
             pStdPicInfo->ref_frame_sign_bias_mask = 0;
-            for (int i = 0; i < STD_VIDEO_VP9_REFS_PER_FRAME; i++) {
+            for (uint32_t i = 0; i < STD_VIDEO_VP9_REFS_PER_FRAME; i++) {
                 pPicData->ref_frame_idx[i] = u(3);
                 pStdPicInfo->ref_frame_sign_bias_mask |= (u(1) << (STD_VIDEO_VP9_REFERENCE_NAME_LAST_FRAME + i));
             }
@@ -563,7 +563,7 @@ void VulkanVP9Decoder::ParseFrameAndRenderSizeWithRefs()
 
     bool found_ref = false;
 
-    for (int i = 0; i < STD_VIDEO_VP9_REFS_PER_FRAME; ++i) {
+    for (uint32_t i = 0; i < STD_VIDEO_VP9_REFS_PER_FRAME; ++i) {
         found_ref = u(1);
         if (found_ref) {
             VkPicIf* pRefPic = m_pBuffers[pPicData->ref_frame_idx[i]].buffer;
@@ -642,7 +642,7 @@ void VulkanVP9Decoder::ParseLoopFilterParams()
 
         if (pStdLoopFilter->flags.loop_filter_delta_update) {
 
-            for (int i = 0; i < STD_VIDEO_VP9_MAX_REF_FRAMES; i++) {
+            for (uint32_t i = 0; i < STD_VIDEO_VP9_MAX_REF_FRAMES; i++) {
                 uint8_t update_ref_delta = u(1);
                 pStdLoopFilter->update_ref_delta |= update_ref_delta << i;
                 if (update_ref_delta == 1) {
@@ -653,7 +653,7 @@ void VulkanVP9Decoder::ParseLoopFilterParams()
                 }
             }
 
-            for (int i = 0; i < STD_VIDEO_VP9_LOOP_FILTER_ADJUSTMENTS; i++) {
+            for (uint32_t i = 0; i < STD_VIDEO_VP9_LOOP_FILTER_ADJUSTMENTS; i++) {
                 uint8_t update_mode_delta = u( 1);
                 pStdLoopFilter->update_mode_delta |= update_mode_delta << i;
                 if (update_mode_delta) {
@@ -715,13 +715,13 @@ void VulkanVP9Decoder::ParseSegmentationParams()
 
     if (pSegment->flags.segmentation_update_map == 1) {
 
-        for (int i = 0; i < STD_VIDEO_VP9_MAX_SEGMENTATION_TREE_PROBS; i++) {
+        for (uint32_t i = 0; i < STD_VIDEO_VP9_MAX_SEGMENTATION_TREE_PROBS; i++) {
             uint8_t prob_coded = u(1);
             pSegment->segmentation_tree_probs[i] = (prob_coded == 1) ? u(8) : VP9_MAX_PRBABILITY;
         }
 
         pSegment->flags.segmentation_temporal_update = u(1);
-        for (int i = 0; i < STD_VIDEO_VP9_MAX_SEGMENTATION_PRED_PROB; i++) {
+        for (uint32_t i = 0; i < STD_VIDEO_VP9_MAX_SEGMENTATION_PRED_PROB; i++) {
             if (pSegment->flags.segmentation_temporal_update) {
                 uint8_t prob_coded = u(1);
                 pSegment->segmentation_pred_prob[i] = (prob_coded == 1) ? u(8) : VP9_MAX_PRBABILITY;
@@ -739,8 +739,8 @@ void VulkanVP9Decoder::ParseSegmentationParams()
         memset(pSegment->FeatureEnabled, 0, sizeof(pSegment->FeatureEnabled));
         memset(pSegment->FeatureData, 0, sizeof(pSegment->FeatureData));
 
-        for (int i = 0; i < STD_VIDEO_VP9_MAX_SEGMENTS; i++) {
-            for (int j = 0; j < STD_VIDEO_VP9_SEG_LVL_MAX; j++) {
+        for (uint32_t i = 0; i < STD_VIDEO_VP9_MAX_SEGMENTS; i++) {
+            for (uint32_t j = 0; j < STD_VIDEO_VP9_SEG_LVL_MAX; j++) {
                 uint8_t feature_enabled = u(1);
                 pSegment->FeatureEnabled[i] |= (feature_enabled << j);
 
@@ -900,7 +900,7 @@ bool VulkanVP9Decoder::BeginPicture(VkParserPictureData* pnvpd)
     pnvpd->chroma_format = pPicDataVP9->ChromaFormat;
 
     // Reference slots information
-    for (int i = 0; i < STD_VIDEO_VP9_NUM_REF_FRAMES; i++) {
+    for (uint32_t i = 0; i < STD_VIDEO_VP9_NUM_REF_FRAMES; i++) {
         vkPicBuffBase* pb = reinterpret_cast<vkPicBuffBase*>(m_pBuffers[i].buffer);
         pPicDataVP9->pic_idx[i] = pb ? pb->m_picIdx : -1;
     }

@@ -678,7 +678,7 @@ void VkVideoEncoderAV1::InitializeFrameHeader(StdVideoAV1SequenceHeader* pSequen
                 pStdPictureInfo->ref_frame_idx[ref - STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME] = (int8_t)m_dpbAV1->GetRefBufId(ref);
             }
 
-            for (int32_t bufIdx = 0; bufIdx < STD_VIDEO_AV1_NUM_REF_FRAMES; bufIdx++) {
+            for (uint32_t bufIdx = 0; bufIdx < STD_VIDEO_AV1_NUM_REF_FRAMES; bufIdx++) {
                 int32_t dpbIdx = m_dpbAV1->GetRefBufDpbId(bufIdx);
                 assert(dpbIdx != VkEncDpbAV1::INVALID_IDX);
                 pStdPictureInfo->ref_order_hint[bufIdx] = (uint8_t)m_dpbAV1->GetPicOrderCntVal(dpbIdx);
