@@ -170,7 +170,7 @@ int32_t VkEncDpbAV1::DpbSequenceStart(const VkSharedBaseObj<EncoderConfigAV1>& e
         m_maxRefFramesGroup2 = 3;
     }
 
-    for (int32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+    for (uint32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
         m_refBufIdMap[i] = i;
     }
 
@@ -255,7 +255,7 @@ int32_t VkEncDpbAV1::GetRefFrameDpbId(StdVideoAV1ReferenceName refName)
 
             int32_t refBufId = m_refBufIdMap[refName];
 
-            if ((refBufId >= 0) && (refBufId < STD_VIDEO_AV1_NUM_REF_FRAMES)) {
+            if ((refBufId >= 0) && (refBufId < (int32_t)STD_VIDEO_AV1_NUM_REF_FRAMES)) {
                 refFrameDpbId = m_refFrameDpbIdMap[refBufId];
             }
     }
@@ -279,7 +279,7 @@ int8_t VkEncDpbAV1::GetRefBufDpbId(int32_t refBufId)
 {
     int8_t refBufDpbId = INVALID_IDX;
 
-    if ((refBufId >= 0) && (refBufId < STD_VIDEO_AV1_NUM_REF_FRAMES)) {
+    if ((refBufId >= 0) && (refBufId < (int32_t)STD_VIDEO_AV1_NUM_REF_FRAMES)) {
             refBufDpbId = m_refFrameDpbIdMap[refBufId];
     }
 
@@ -293,7 +293,7 @@ int32_t VkEncDpbAV1::GetOverlayRefBufId(int32_t picOrderCntVal)
     for (auto ref : refNameFullList) {
 
         int32_t refBufId = m_refBufIdMap[ref];
-        if (refBufId >= STD_VIDEO_AV1_NUM_REF_FRAMES) continue;
+        if (refBufId >= (int32_t)STD_VIDEO_AV1_NUM_REF_FRAMES) continue;
 
         int32_t refBufDpbId = m_refFrameDpbIdMap[refBufId];
         if (refBufDpbId >= m_maxDpbSize) {
@@ -498,7 +498,7 @@ int32_t VkEncDpbAV1::GetRefreshFrameFlags(bool bShownKeyFrameOrSwitch, bool bSho
     } else if (bShowExistingFrame) {
         refreshFrameFlags = 0;
     } else {
-        for (int32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+        for (uint32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
             if (m_refBufUpdateFlag & (1 << i)) {
                 int32_t refBufId = GetRefBufId((StdVideoAV1ReferenceName)i);
                 if (refBufId == VkEncDpbAV1::INVALID_IDX) continue;
@@ -512,7 +512,7 @@ int32_t VkEncDpbAV1::GetRefreshFrameFlags(bool bShownKeyFrameOrSwitch, bool bSho
 
 void VkEncDpbAV1::UpdateRefFrameDpbIdMap(int8_t dpbIndx)
 {
-    for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+    for (uint32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
 
         if (((m_refBufUpdateFlag >> i) & 1) == 1) {
 

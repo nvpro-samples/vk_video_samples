@@ -79,9 +79,9 @@ VulkanAV1Decoder::VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std, bool an
     , m_showableFrame{}
 
 {
-    for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+    for (uint32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
         ref_frame_id[i] = -1;
-		pic_idx[i] = -1;
+        pic_idx[i] = -1;
     }
 
 	m_PicData.std_info.primary_ref_frame = STD_VIDEO_AV1_PRIMARY_REF_NONE;
@@ -317,7 +317,7 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
     av1->setupSlotInfo.flags.segmentation_enabled = m_PicData.std_info.flags.segmentation_enabled;
 
     // Referenced frame information
-    for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+    for (uint32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
         vkPicBuffBase *pb = reinterpret_cast<vkPicBuffBase *>(m_pBuffers[i].buffer);
         av1->pic_idx[i] = pb ? pb->m_picIdx : -1;
         av1->dpbSlotInfos[i].flags.disable_frame_end_update_cdf = m_pBuffers[i].disable_frame_end_update_cdf;
@@ -332,14 +332,14 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
 
     // TODO: It's weird that the intra frame motion isn't tracked by the parser.
     // Need an affine translation test case to properly check this.
-    for (int i = 1; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+    for (uint32_t i = 1; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
         av1->globalMotion.GmType[i] = global_motions[i-1].wmtype;
         for (int j = 0; j <= 5; j++) {
             av1->globalMotion.gm_params[i][j] = global_motions[i-1].wmmat[j];
         }
     }
 
-    for (int i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
+    for (uint32_t i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
         av1->ref_frame_idx[i] = ref_frame_idx[i];
     }
 
@@ -950,7 +950,7 @@ int VulkanAV1Decoder::SetupFrameSizeWithRefs()
 
     found = 0;
 
-    for (i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; ++i) {
+    for (i = 0; i < (int32_t)STD_VIDEO_AV1_REFS_PER_FRAME; ++i) {
         tmp = u(1);
         if (tmp) {
             found = 1;
@@ -1069,12 +1069,12 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
         pFilmGrain->ar_coeff_lag = u(2);
 
         int numPosLuma = 2 * pFilmGrain->ar_coeff_lag * (pFilmGrain->ar_coeff_lag + 1);
-		assert(numPosLuma <= STD_VIDEO_AV1_MAX_NUM_POS_LUMA);
+        assert(numPosLuma <= (int)STD_VIDEO_AV1_MAX_NUM_POS_LUMA);
         int numPosChroma = numPosLuma;
         if (pFilmGrain->num_y_points > 0) {
             ++numPosChroma;
         }
-		assert(numPosChroma <= STD_VIDEO_AV1_MAX_NUM_POS_CHROMA);
+        assert(numPosChroma <= (int)STD_VIDEO_AV1_MAX_NUM_POS_CHROMA);
 
         if (pFilmGrain->num_y_points) {
             for (int i = 0; i < numPosLuma; i++) {
@@ -1374,9 +1374,9 @@ void VulkanAV1Decoder::DecodeSegmentationData()
     }
 
     if (flags->segmentation_update_data) {
-        for (int i = 0; i < STD_VIDEO_AV1_MAX_SEGMENTS; i++) {
-		    pSegmentation->FeatureEnabled[i] = 0;
-            for (int j = 0; j < STD_VIDEO_AV1_SEG_LVL_MAX; j++) {
+        for (uint32_t i = 0; i < STD_VIDEO_AV1_MAX_SEGMENTS; i++) {
+            pSegmentation->FeatureEnabled[i] = 0;
+            for (uint32_t j = 0; j < STD_VIDEO_AV1_SEG_LVL_MAX; j++) {
                 int feature_value = 0;
 				int enabled = u(1);
 				pSegmentation->FeatureEnabled[i] |= enabled << j;
@@ -1445,13 +1445,13 @@ void VulkanAV1Decoder::DecodeLoopFilterdata()
         lf_mode_ref_delta_update = u(1);
         pLoopFilter->flags.loop_filter_delta_update = lf_mode_ref_delta_update;
         if (lf_mode_ref_delta_update) {
-            for (int i = 0; i < STD_VIDEO_AV1_TOTAL_REFS_PER_FRAME; i++) {
+            for (uint32_t i = 0; i < STD_VIDEO_AV1_TOTAL_REFS_PER_FRAME; i++) {
                 if (u(1)) {
                     pLoopFilter->loop_filter_ref_deltas[i] = ReadSignedBits(6);
                 }
             }
 
-            for (int i = 0; i < STD_VIDEO_AV1_LOOP_FILTER_ADJUSTMENTS; i++) {
+            for (uint32_t i = 0; i < STD_VIDEO_AV1_LOOP_FILTER_ADJUSTMENTS; i++) {
                 if (u(1)) {
                     pLoopFilter->loop_filter_mode_deltas[i] = ReadSignedBits(6);
                 }
@@ -1582,11 +1582,11 @@ void VulkanAV1Decoder::SetFrameRefs(int last_frame_idx, int gold_frame_idx)
     int Ref_OrderHint;
     int usedFrame[STD_VIDEO_AV1_NUM_REF_FRAMES];
     int hint;
-    for (int i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
+    for (uint32_t i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
         ref_frame_idx[i] = -1;
     }
 
-    for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+    for (uint32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
         usedFrame[i] = 0;
     }
 
@@ -1595,7 +1595,7 @@ void VulkanAV1Decoder::SetFrameRefs(int last_frame_idx, int gold_frame_idx)
     usedFrame[last_frame_idx] = 1;
     usedFrame[gold_frame_idx] = 1;
 
-    for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+    for (uint32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
         Ref_OrderHint = RefOrderHint[i];
         shiftedOrderHints[i] = curFrameHint + GetRelativeDist1(Ref_OrderHint, pStd->OrderHint);
     }
@@ -1603,7 +1603,7 @@ void VulkanAV1Decoder::SetFrameRefs(int last_frame_idx, int gold_frame_idx)
     {//ALTREF_FRAME
         int ref = -1;
         int latestOrderHint = -1;
-        for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+        for (uint32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
             hint = shiftedOrderHints[i];
             if (!usedFrame[i] &&
                 hint >= curFrameHint &&
@@ -1621,7 +1621,7 @@ void VulkanAV1Decoder::SetFrameRefs(int last_frame_idx, int gold_frame_idx)
     {//BWDREF_FRAME
         int ref = -1;
         int earliestOrderHint = -1;
-        for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+        for (uint32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
             hint = shiftedOrderHints[i];
             if (!usedFrame[i] &&
                 hint >= curFrameHint &&
@@ -1639,7 +1639,7 @@ void VulkanAV1Decoder::SetFrameRefs(int last_frame_idx, int gold_frame_idx)
     {//ALTREF2_FRAME
         int ref = -1;
         int earliestOrderHint = -1;
-        for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+        for (uint32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
             hint = shiftedOrderHints[i];
             if (!usedFrame[i] &&
                 hint >= curFrameHint &&
@@ -1662,12 +1662,12 @@ void VulkanAV1Decoder::SetFrameRefs(int last_frame_idx, int gold_frame_idx)
 		STD_VIDEO_AV1_REFERENCE_NAME_ALTREF_FRAME
 	};
 
-    for (int j = 0; j < STD_VIDEO_AV1_REFS_PER_FRAME - 2; j++) {
+    for (uint32_t j = 0; j < STD_VIDEO_AV1_REFS_PER_FRAME - 2; j++) {
         int refFrame = Ref_Frame_List[j];
         if (ref_frame_idx[refFrame - STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME] < 0) {
             int ref = -1;
             int latestOrderHint = -1;
-            for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+            for (uint32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
                 hint = shiftedOrderHints[i];
                 if (!usedFrame[i] &&
                     hint < curFrameHint &&
@@ -1686,14 +1686,14 @@ void VulkanAV1Decoder::SetFrameRefs(int last_frame_idx, int gold_frame_idx)
     {
         int ref = -1;
         int earliestOrderHint = -1;
-        for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+        for (uint32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
             hint = shiftedOrderHints[i];
             if (ref < 0 || hint < earliestOrderHint) {
                 ref = i;
                 earliestOrderHint = hint;
             }
         }
-        for (int i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
+        for (uint32_t i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
             if (ref_frame_idx[i] < 0) {
                 ref_frame_idx[i] = ref;
             }
@@ -1717,7 +1717,7 @@ int VulkanAV1Decoder::IsSkipModeAllowed()
     // Identify the nearest forward and backward references.
     int ref0 = -1, ref1 = -1;
     int ref0_off = -1, ref1_off = -1;
-    for (int i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
+    for (uint32_t i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
         int frame_idx = ref_frame_idx[i];
         if (frame_idx != -1) {
             int ref_frame_offset = RefOrderHint[frame_idx];
@@ -1746,7 +1746,7 @@ int VulkanAV1Decoder::IsSkipModeAllowed()
     } else if (ref0 != -1) {
         // == Forward prediction only ==
         // Identify the second nearest forward reference.
-        for (int i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
+        for (uint32_t i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
             int frame_idx = ref_frame_idx[i];
             if (frame_idx != -1) {
                 int ref_frame_offset = RefOrderHint[frame_idx];
@@ -1864,7 +1864,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
 
 
     if (pStd->frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY && pic_info->showFrame) {
-        for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+        for (uint32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
             RefValid[i] = 0;
             RefOrderHint[i] = 0;
         }
@@ -1922,7 +1922,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
             }
             // Mark ref frames not valid for referencing
             assert(diff_len >= 0);
-            for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+            for (uint32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
                 if (pStd->frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY && pic_info->showFrame) {
                     RefValid[i] = 0;
                 } else if (ref_frame_id[i] < 0) {
@@ -1982,7 +1982,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
             pStd->refresh_frame_flags = (1 << STD_VIDEO_AV1_NUM_REF_FRAMES) - 1;
         }
 
-        for (int i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
+        for (uint32_t i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
             ref_frame_idx[i] = 0;
         }
 
@@ -2002,11 +2002,11 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
 
     if (((!IsFrameIntra()) || pStd->refresh_frame_flags != 0xFF) &&
         pic_flags->error_resilient_mode && sps->flags.enable_order_hint) {
-        for (int buf_idx = 0; buf_idx < STD_VIDEO_AV1_NUM_REF_FRAMES; buf_idx++) {
+        for (uint32_t buf_idx = 0; buf_idx < STD_VIDEO_AV1_NUM_REF_FRAMES; buf_idx++) {
             // ref_order_hint[i]
             int offset = u(sps->order_hint_bits_minus_1 + 1);
             // assert(buf_idx < FRAME_BUFFERS);
-            if (buf_idx == -1 || offset != RefOrderHint[buf_idx]) {
+            if ((buf_idx == (uint32_t)-1) || (offset != RefOrderHint[buf_idx])) {
                 //RefValid[buf_idx] = 0;
                 //RefOrderHint[buf_idx] = frame_offset;
                 assert(0);
@@ -2045,7 +2045,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
                 SetFrameRefs(lst_ref, gld_ref);
             }
 
-            for (int i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
+            for (uint32_t i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
                 if (!pic_flags->frame_refs_short_signaling) {
                     int ref_frame_index = u(REF_FRAMES_BITS);
                     ref_frame_idx[i] = ref_frame_index;
@@ -2099,7 +2099,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
         }
 
         // According to AV1 specification: "5.9.2. Uncompressed header syntax"
-        for (int i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
+        for (uint32_t i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
             // Range check ref_frame_idx, RefOrderHint[] needs to be of size: BUFFER_POOL_MAX_SIZE.
             if ((ref_frame_idx[i] >= BUFFER_POOL_MAX_SIZE) && (ref_frame_idx[i] < 0)) {
                 assert(false);
@@ -2124,7 +2124,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
     if (sps->flags.frame_id_numbers_present_flag) {
         // Update reference frame id's
         int tmp_flags = pStd->refresh_frame_flags;
-        for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
+        for (uint32_t i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
             if ((tmp_flags >> i) & 1) {
                 ref_frame_id[i] = pStd->current_frame_id;
                 RefValid[i] = 1;
@@ -2160,7 +2160,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
         }
     }
 
-    for (int i = 0; i < STD_VIDEO_AV1_MAX_SEGMENTS; ++i) {
+    for (uint32_t i = 0; i < STD_VIDEO_AV1_MAX_SEGMENTS; ++i) {
         int qindex = pic_flags->segmentation_enabled && (pic_info->segmentation.FeatureEnabled[i] & 0)
             ? pic_info->segmentation.FeatureData[i][0] + pic_info->quantization.base_q_idx : pic_info->quantization.base_q_idx;
         qindex = CLAMP(qindex, 0, 255);
@@ -2171,7 +2171,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
 
     coded_lossless = lossless[0];
     if (pic_flags->segmentation_enabled) {
-        for (int i = 1; i < STD_VIDEO_AV1_MAX_SEGMENTS; i++) {
+        for (uint32_t i = 1; i < STD_VIDEO_AV1_MAX_SEGMENTS; i++) {
             coded_lossless &= lossless[i];
         }
     }
