@@ -779,7 +779,7 @@ public:
     uint32_t codecBlockAlignment;
     uint32_t qualityLevel;
     VkVideoEncodeUsageFlagsKHR encodeUsageHints;
-    VkVideoEncodeContentFlagBitsKHR encodeContentHints;
+    VkVideoEncodeContentFlagsKHR encodeContentHints;
     VkVideoEncodeTuningModeKHR tuningMode;
     VkVideoCoreProfile videoCoreProfile;
     VkVideoCapabilitiesKHR videoCapabilities;
