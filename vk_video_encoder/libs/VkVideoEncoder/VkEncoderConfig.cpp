@@ -847,13 +847,12 @@ void EncoderConfig::InitVideoProfile()
         encodeBitDepthChroma = encodeBitDepthLuma;
     }
 
-    VkVideoEncodeUsageInfoKHR encodeUsageInfo {
-        .sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR,
-        .pNext = NULL,
-        .videoUsageHints = encodeUsageHints,
-        .videoContentHints = encodeContentHints,
-        .tuningMode = tuningMode,
-    };
+    VkVideoEncodeUsageInfoKHR encodeUsageInfo = {};
+    encodeUsageInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR;
+    encodeUsageInfo.pNext = NULL;
+    encodeUsageInfo.videoUsageHints = encodeUsageHints;
+    encodeUsageInfo.videoContentHints = encodeContentHints;
+    encodeUsageInfo.tuningMode = tuningMode;
 
     // update the video profile
     videoCoreProfile = VkVideoCoreProfile(codec, encodeChromaSubsampling,
