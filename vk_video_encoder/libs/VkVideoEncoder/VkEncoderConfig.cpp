@@ -860,6 +860,7 @@ void EncoderConfig::InitVideoProfile()
                                           GetComponentBitDepthFlagBits(encodeBitDepthChroma),
                                           (videoProfileIdc != (uint32_t)-1) ? videoProfileIdc :
                                                   GetDefaultVideoProfileIdc(),
+                                                  VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_PROGRESSIVE_KHR, // interlaced video is supported with encode
                                           encodeUsageInfo);
 }
 

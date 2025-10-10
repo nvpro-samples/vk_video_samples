@@ -445,7 +445,8 @@ typedef struct VkParserSequenceInfo {
     uint8_t SequenceHeaderData[VK_MAX_SEQ_HDR_LEN];  // Raw sequence header data
                                                      // (codec-specific)
     uint32_t codecProfile;
-    bool hasFilmGrain;  // AV1 specific filmgrain.
+    uint32_t hasFilmGrain : 1;  // AV1 specific filmgrain.
+    uint32_t canUseFields : 1;  // H.264 only: can have field pictures. Otherwise the content has frames only to decode.
 } VkParserSequenceInfo;
 
 enum {

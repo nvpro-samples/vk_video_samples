@@ -2714,6 +2714,7 @@ bool VulkanH264Decoder::dpb_sequence_start(slice_header_s *slh)
     nvsi.nCodedHeight = FrameHeightInMbs * 16;
     nvsi.nDisplayWidth = nvsi.nCodedWidth;
     nvsi.nDisplayHeight = nvsi.nCodedHeight;
+    nvsi.canUseFields  = !sps->flags.frame_mbs_only_flag;
     if (sps->flags.frame_cropping_flag)
     {
         int crop_right = sps->frame_crop_right_offset * 2;
