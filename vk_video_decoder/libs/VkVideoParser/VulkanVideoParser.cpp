@@ -1196,6 +1196,7 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
         detectedFormat.display_area.right = pnvsi->nDisplayWidth;
         detectedFormat.display_area.bottom = pnvsi->nDisplayHeight;
         detectedFormat.filmGrainUsed = pnvsi->hasFilmGrain;
+        detectedFormat.canUseFields  = pnvsi->canUseFields;
 
         if ((StdChromaFormatIdc)pnvsi->nChromaFormat == chroma_format_idc_420) {
             detectedFormat.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;

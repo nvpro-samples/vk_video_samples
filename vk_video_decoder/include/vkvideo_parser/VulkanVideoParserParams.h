@@ -160,7 +160,8 @@ struct VkParserDetectedVideoFormat {
     } video_signal_description;
     uint32_t seqhdr_data_length; /** Additional bytes following (NVVIDEOFORMATEX)                  */
     uint32_t codecProfile;
-    bool filmGrainUsed;
+    uint32_t  filmGrainUsed : 1; // AV1 only, set when filmGrain is used with the content
+    uint32_t  canUseFields  : 1; // H.264 only: can have field pictures. Otherwise the content has frames only to decode.
 };
 
 typedef enum {
