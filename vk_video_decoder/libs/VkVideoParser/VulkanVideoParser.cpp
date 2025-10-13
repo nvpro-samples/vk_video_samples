@@ -481,12 +481,12 @@ public:
                 // picFlags.field_pic_flag = true;
             }
 
-            if (!currentPictureIsProgressive && (used_for_reference & topFieldMask)) {
+            if (is_field_ref && (used_for_reference & topFieldMask)) {
                 if (m_dumpParserData)
                     std::cout << "TOP_FIELD_IS_REF ";
                 picFlags.top_field_flag = true;
             }
-            if (!currentPictureIsProgressive && (used_for_reference & bottomFieldMask)) {
+            if (is_field_ref && (used_for_reference & bottomFieldMask)) {
                 if (m_dumpParserData)
                     std::cout << "BOTTOM_FIELD_IS_REF ";
                 picFlags.bottom_field_flag = true;
