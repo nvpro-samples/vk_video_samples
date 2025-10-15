@@ -15,6 +15,7 @@
  */
 
 #ifndef _VKCODECUTILS_VULKANFILTER_H_
+#define _VKCODECUTILS_VULKANFILTER_H_
 
 #include <atomic>
 #include <string>
