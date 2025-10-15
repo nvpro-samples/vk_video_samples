@@ -317,24 +317,28 @@ protected:
     uint32_t                                 m_enableYSubsampling : 1; // Enable 2x2 Y subsampling output
 
     struct PushConstants {
-        uint32_t srcLayer;        // src image layer to use
-        uint32_t dstLayer;        // dst image layer to use
-        uint32_t inputWidth;      // input image or buffer width
-        uint32_t inputHeight;     // input image or buffer height
-        uint32_t outputWidth;     // output image or buffer width
-        uint32_t outputHeight;    // output image or buffer height
-        uint32_t inYOffset;       // input buffer Y plane offset
-        uint32_t inCbOffset;      // input buffer Cb plane offset
-        uint32_t inCrOffset;      // input buffer Cr plane offset
-        uint32_t inYPitch;        // input buffer Y plane pitch
-        uint32_t inCbPitch;       // input buffer Cb plane pitch
-        uint32_t inCrPitch;       // input buffer Cr plane pitch
-        uint32_t outYOffset;      // output buffer Y plane offset
-        uint32_t outCbOffset;     // output buffer Cb plane offset
-        uint32_t outCrOffset;     // output buffer Cr plane offset
-        uint32_t outYPitch;       // output buffer Y plane pitch
-        uint32_t outCbPitch;      // output buffer Cb plane pitch
-        uint32_t outCrPitch;      // output buffer Cr plane pitch
+        uint32_t srcLayer;         // src image layer to use
+        uint32_t dstLayer;         // dst image layer to use
+        uint32_t inputWidth;       // input image or buffer width
+        uint32_t inputHeight;      // input image or buffer height
+        uint32_t outputWidth;      // output image or buffer width
+        uint32_t outputHeight;     // output image or buffer height
+        uint32_t halfInputWidth;   // (inputWidth + 1) / 2 - precomputed for 2x2 blocks
+        uint32_t halfInputHeight;  // (inputHeight + 1) / 2
+        uint32_t halfOutputWidth;  // (outputWidth + 1) / 2 - precomputed for 2x2 blocks
+        uint32_t halfOutputHeight; // (outputHeight + 1) / 2
+        uint32_t inYOffset;        // input buffer Y plane offset
+        uint32_t inCbOffset;       // input buffer Cb plane offset
+        uint32_t inCrOffset;       // input buffer Cr plane offset
+        uint32_t inYPitch;         // input buffer Y plane pitch
+        uint32_t inCbPitch;        // input buffer Cb plane pitch
+        uint32_t inCrPitch;        // input buffer Cr plane pitch
+        uint32_t outYOffset;       // output buffer Y plane offset
+        uint32_t outCbOffset;      // output buffer Cb plane offset
+        uint32_t outCrOffset;      // output buffer Cr plane offset
+        uint32_t outYPitch;        // output buffer Y plane pitch
+        uint32_t outCbPitch;       // output buffer Cb plane pitch
+        uint32_t outCrPitch;       // output buffer Cr plane pitch
     };
 };
 
