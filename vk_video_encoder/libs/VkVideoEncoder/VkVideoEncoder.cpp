@@ -1071,6 +1071,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
                                                     VK_MEMORY_PROPERTY_HOST_CACHED_BIT),
                                                 nullptr, // pVideoProfile
+                                                VK_IMAGE_ASPECT_COLOR_BIT, // a whole YCbCr or RGBA image
                                                 false,   // useImageArray
                                                 false,   // useImageViewArray
                                                 true     // useLinear
@@ -1099,6 +1100,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                           m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
                                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                           encoderConfig->videoCoreProfile.GetProfile(), // pVideoProfile
+                                          VK_IMAGE_ASPECT_COLOR_BIT, // a whole YCbCr or RGBA image
                                           false,   // useImageArray
                                           false,   // useImageViewArray
                                           false    // useLinear
@@ -1175,6 +1177,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
                                                           VK_MEMORY_PROPERTY_HOST_CACHED_BIT),
                                                         nullptr, // pVideoProfile
+                                                        VK_IMAGE_ASPECT_COLOR_BIT, // a whole YCbCr or RGBA image
                                                         false,   // useImageArray
                                                         false,   // useImageViewArray
                                                         true     // useLinear
@@ -1213,6 +1216,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
                                                       VK_MEMORY_PROPERTY_HOST_CACHED_BIT),
                                               encoderConfig->videoCoreProfile.GetProfile(), // pVideoProfile
+                                              VK_IMAGE_ASPECT_COLOR_BIT, // a whole YCbCr or RGBA image
                                               false,   // useImageArray
                                               false,   // useImageViewArray
                                               m_qpMapTiling == VK_IMAGE_TILING_LINEAR   // useLinear
@@ -1239,6 +1243,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                        m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
                                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                        encoderConfig->videoCoreProfile.GetProfile(), // pVideoProfile
+                                       VK_IMAGE_ASPECT_COLOR_BIT, // a whole YCbCr or RGBA image
                                        encoderConfig->useDpbArray,                   // useImageArray
                                        false,   // useImageViewArrays
                                        false    // useLinear
