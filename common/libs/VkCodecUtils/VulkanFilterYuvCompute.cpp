@@ -26,13 +26,11 @@ VkResult VulkanFilterYuvCompute::Create(const VulkanDeviceContext* vkDevCtx,
                                         uint32_t maxNumFrames,
                                         VkFormat inputFormat,
                                         VkFormat outputFormat,
-                                        bool inputEnableMsbToLsbShift,
-                                        bool outputEnableLsbToMsbShift,
+                                        uint32_t filterFlags,
                                         const VkSamplerYcbcrConversionCreateInfo* pYcbcrConversionCreateInfo,
                                         const YcbcrPrimariesConstants* pYcbcrPrimariesConstants,
                                         const VkSamplerCreateInfo* pSamplerCreateInfo,
-                                        VkSharedBaseObj<VulkanFilter>& vulkanFilter,
-                                        bool enableYSubsampling)
+                                        VkSharedBaseObj<VulkanFilter>& vulkanFilter)
 {
 
     VkSharedBaseObj<VulkanFilterYuvCompute> yCbCrVulkanFilter(new VulkanFilterYuvCompute(vkDevCtx,
@@ -42,10 +40,8 @@ VkResult VulkanFilterYuvCompute::Create(const VulkanDeviceContext* vkDevCtx,
                                                                                          maxNumFrames,
                                                                                          inputFormat,
                                                                                          outputFormat,
-                                                                                         inputEnableMsbToLsbShift,
-                                                                                         outputEnableLsbToMsbShift,
-                                                                                         pYcbcrPrimariesConstants,
-                                                                                         enableYSubsampling));
+                                                                                         filterFlags,
+                                                                                         pYcbcrPrimariesConstants));
 
     if (!yCbCrVulkanFilter) {
        return VK_ERROR_OUT_OF_HOST_MEMORY;
