@@ -27,7 +27,7 @@
 #include <iomanip>
 #include <algorithm>  // for std::min
 
-static const uint32_t MAX_GOP_SIZE = 64;
+static const uint32_t MAX_GOP_SIZE = UINT16_MAX;
 
 class VkVideoGopStructure {
 
@@ -62,7 +62,7 @@ public:
     struct GopPosition {
         uint32_t   inputOrder;  // input order in the IDR sequence
         uint32_t   encodeOrder; // encode order in the Gop
-        uint8_t    inGop;       // The position in Gop in input order
+        uint16_t   inGop;       // The position in Gop in input order
         int8_t     numBFrames;  // Number of B frames in this part of the Gop, -1 if not a B frame
         int8_t     bFramePos;   // The B position in Gop, -1 if not a B frame
         FrameType  pictureType;   // The type of the picture
@@ -81,7 +81,7 @@ public:
         {}
     };
 
-    VkVideoGopStructure(uint8_t gopFrameCount = 8,
+    VkVideoGopStructure(uint16_t gopFrameCount = 8,
                         int32_t idrPeriod = 60,
                         uint8_t consecutiveBFrameCount = 2,
                         uint8_t temporalLayerCount = 1,
@@ -117,8 +117,8 @@ public:
     // If it is set to 0, the rate control algorithm may assume an
     // implementation-dependent GOP length. If it is set to UINT32_MAX,
     // the GOP length is treated as infinite.
-    void SetGopFrameCount(uint8_t gopFrameCount) { m_gopFrameCount = gopFrameCount; }
-    uint8_t GetGopFrameCount() const { return m_gopFrameCount; }
+    void SetGopFrameCount(uint16_t gopFrameCount) { m_gopFrameCount = gopFrameCount; }
+    uint16_t GetGopFrameCount() const { return m_gopFrameCount; }
 
     // idrPeriod is the interval, in terms of number of frames, between two IDR frames (see IDR period).
     // If it is set to 0, the rate control algorithm may assume an implementation-dependent IDR period.
@@ -191,7 +191,7 @@ public:
 
         // consecutiveBFrameCount can be modified before the IDR sequence
         uint8_t consecutiveBFrameCount = m_consecutiveBFrameCount;
-        gopPos.inGop = (uint8_t)(gopState.positionInInputOrder % m_gopFrameCount);
+        gopPos.inGop = (uint16_t)(gopState.positionInInputOrder % m_gopFrameCount);
 
         if (gopPos.inGop == 0) {
             // This is the start of a new (open or close) GOP.
@@ -345,7 +345,7 @@ public:
     }
 
 private:
-    uint8_t               m_gopFrameCount;
+    uint16_t              m_gopFrameCount;
     uint8_t               m_consecutiveBFrameCount;
     uint8_t               m_gopFrameCycle;
     uint8_t               m_temporalLayerCount;

@@ -22,6 +22,10 @@
 #include <condition_variable>
 #include "VkCodecUtils/VkVideoQueue.h"
 #include "VkCodecUtils/VkThreadSafeQueue.h"
+#if (_TRANSCODING)
+#include "VkCodecUtils/DecoderConfig.h"
+#include "VkVideoEncoder/VkEncoderConfig.h"
+#endif // _TRANSCODING
 
 template<class FrameDataType>
 class VulkanVideoDisplayQueue : public VkVideoQueue<FrameDataType> {
@@ -39,7 +43,11 @@ public:
 
     virtual uint32_t GetProfileIdc() const { return 0; }
     virtual VkExtent3D GetVideoExtent() const;
-    virtual int32_t GetNextFrame(FrameDataType* pFrame, bool* endOfStream);
+    virtual int32_t GetNextFrame(FrameDataType* pFrame, bool* endOfStream
+#if (_TRANSCODING)
+        , DecoderConfig* programConfig, VkSharedBaseObj<EncoderConfig>* encoderConfig
+#endif // _TRANSCODING
+    );
     virtual int32_t ReleaseFrame(FrameDataType* pDisplayedFrame);
 
     static VkSharedBaseObj<VulkanVideoDisplayQueue>& invalidVulkanVideoDisplayQueue;
@@ -175,7 +183,11 @@ int32_t VulkanVideoDisplayQueue<FrameDataType>::EnqueueFrame(FrameDataType* pFra
 }
 
 template<class FrameDataType>
-int32_t VulkanVideoDisplayQueue<FrameDataType>::GetNextFrame(FrameDataType* pFrame, bool* endOfStream)
+int32_t VulkanVideoDisplayQueue<FrameDataType>::GetNextFrame(FrameDataType* pFrame, bool* endOfStream
+#if (_TRANSCODING)
+    , DecoderConfig* programConfig, VkSharedBaseObj<EncoderConfig>* encoderConfig
+#endif // _TRANSCODING
+)
 {
     if (m_exitQueueRequested) {
         m_queue.SetFlushAndExit();

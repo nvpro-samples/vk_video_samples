@@ -20,6 +20,7 @@
 #include <vulkan_interfaces.h>
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/VulkanSamplerYcbcrConversion.h"
+#include "vulkan/vulkan_core.h"
 
 class VulkanSamplerYcbcrConversion {
 
@@ -102,5 +103,58 @@ private:
     VkSamplerYcbcrConversion           m_samplerYcbcrConversion;
     VkSampler                          m_sampler;
 };
+
+#if (_TRANSCODING)
+class VulkanSamplerResize {
+
+public:
+    ~VulkanSamplerResize () {
+        DestroyVulkanSamplerResize();
+    }
+
+    void DestroyVulkanSamplerResize() {
+        if (m_samplerResize) {
+            m_vkDevCtx->DestroySampler(*m_vkDevCtx, m_samplerResize, nullptr);
+        }
+        m_samplerResize = VkSampler(0);
+    }
+
+    VkSampler GetSampler() const {
+        return m_samplerResize;
+    }
+
+    VkResult CreateVulkanSampler(const VulkanDeviceContext* vkDevCtx,
+                                 const VkSamplerCreateInfo* pSamplerCreateInfo = NULL) {
+        m_vkDevCtx = const_cast<VulkanDeviceContext*>(vkDevCtx);
+        VkSamplerCreateInfo samplerInfo{};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = VK_FILTER_LINEAR;
+        samplerInfo.minFilter = VK_FILTER_LINEAR;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.anisotropyEnable = VK_FALSE; //VK_TRUE;
+        samplerInfo.maxAnisotropy = 1.0f; //m_vkDevCtx->GetMaxAnisotropy();
+        samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+        samplerInfo.unnormalizedCoordinates = VK_FALSE;
+        samplerInfo.compareEnable = VK_FALSE;
+        samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        samplerInfo.mipLodBias = 0.0f;
+        samplerInfo.minLod = 0.0f;
+        samplerInfo.maxLod = 0.0f;
+        samplerInfo.pNext = NULL;
+        if (vkDevCtx->CreateSampler(vkDevCtx->getDevice(), &samplerInfo, nullptr, &m_samplerResize) != VK_SUCCESS) {
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        return VK_SUCCESS;
+    }
+
+private:
+    VkSampler m_samplerResize;
+    VulkanDeviceContext* m_vkDevCtx;
+    VkSamplerCreateInfo m_samplerInfo;
+};
+#endif // (_TRANSCODING)
 
 #endif /* _VULKANSAMPLERYCBCRCONVERSION_H_ */

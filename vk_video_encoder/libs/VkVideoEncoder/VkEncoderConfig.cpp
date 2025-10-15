@@ -94,6 +94,14 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
                                         will run to completion. This will be followed by a full\n\
                                         intra-refresh cycle. This results in a fully intra-refreshed frame\n\
                                         being available after every `intraRefreshCycleDuration + index` frames.\n");
+#if (_TRANSCODING)
+    fprintf(stderr,
+    "--preset                        <integer> : [1, 4] corresponds to p1..p4 \n\
+    --profile                       <integer> : 0 - low latency streaming, 1 - archiving, 2 - svc \n\
+    --bitrate                       <integer> : Target bitrate of the encoded file in Mbps (Megabit per second)\n\
+    --vbvbuf-ratio                  <integer> : [1, 4] multiplier to vbv buffer size: CBR's vbvbuf = bitrate/framerate * vbvbuf-ratio, VBR's vbvbuf = bitrate * vbvbuf-ratio\n\
+    --numberResizedOutputs           <integer> followed by <integer>x<integer> : Number N of resized outputs to encode, followed by N resolution in format WidthxHeight\n");
+#endif //_TRANSCODING
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR)) {
         fprintf(stderr, "\nH264 specific arguments:\n\
@@ -343,6 +351,81 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             if (verbose) {
                 printf("Selected gopFrameCount: %d\n", gopFrameCount);
             }
+#if (_TRANSCODING)
+        } else if (strcmp(argv[i], "--profile") == 0) {
+            if ((++i >= argc) !=1) {
+                int encodeProfileVal;
+                int sscanf_result = sscanf(argv[i], "%d", &encodeProfileVal);
+                if (sscanf_result != 1 || encodeProfileVal < 0 || encodeProfileVal > 2) {
+                    fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
+                    return -1;
+                } else {
+                    encodingProfile = static_cast<EncoderConfig::ENCODING_PROFILE>(encodeProfileVal);
+                }
+            }
+        } else if (strcmp(argv[i], "--preset") == 0) {
+            if ((++i >= argc) !=1) {
+                int pn;
+                int sscanf_result = sscanf(argv[i], "%d", &pn);
+                if (sscanf_result != 1 || pn < 1) {
+                    fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
+                    return -1;
+                } else {
+                    qualityLevel = std::min(pn, 4) - 1;
+                }
+            }
+        } else if (strcmp(argv[i], "--bitrate") == 0) {
+            if ((++i >= argc) !=1) {
+            int targetBitrate;
+            int sscanf_result = sscanf(argv[i], "%d", &targetBitrate);
+            if (sscanf_result != 1 || targetBitrate <= 0 || targetBitrate >= 200) {
+                fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
+                return -1;
+            }
+            averageBitrate = targetBitrate << 20;
+            }
+        } else if (strcmp(argv[i], "--vbvbuf-ratio") == 0) {
+            if ((++i >= argc) !=1) {
+                int vbvbuf_ratio;
+                int sscanf_result = sscanf(argv[i], "%d", &vbvbuf_ratio);
+                if (sscanf_result != 1 || vbvbuf_ratio <= 0 || vbvbuf_ratio > 8) {
+                    fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
+                    return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
+                }
+                vbvbufratio = vbvbuf_ratio;
+            }
+        } else if (strcmp(argv[i], "--numberResizedOutputs") == 0) {
+            if ((++i >= argc) !=1) {
+                int numResizedOutputs;
+                int sscanf_result = sscanf(argv[i], "%d", &numResizedOutputs);
+                if (sscanf_result != 1 || numResizedOutputs <= 0 || numResizedOutputs > 16) {
+                    fprintf(stderr, "invalid parameter for %s\n", argv[i - 1]);
+                    return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
+                }
+                numEncoderResizedOutputs = numResizedOutputs;
+                std::cout << "numResizedOutputs " << numEncoderResizedOutputs << std::endl;
+                i++;
+                for (int n = 0; n < numResizedOutputs; n++)
+                {
+                    std::string resolutionStr { argv[i] };
+                    size_t x_pos = resolutionStr.find('x');
+                    if (x_pos != std::string::npos)
+                    {
+                        int resizedWidth = std::stoi(resolutionStr.substr(0, x_pos));
+                        int resizedHeight = std::stoi(resolutionStr.substr(x_pos + 1));
+                        if ((resizedWidth <= 0) || (resizedHeight <= 0)) {
+                            return VK_ERROR_INITIALIZATION_FAILED;
+                        }
+                        VulkanFilterYuvCompute::Rectangle resolutionRectangle;
+                        resolutionRectangle.width = resizedWidth;
+                        resolutionRectangle.height = resizedHeight;
+                        resizedOutputResolution.push_back(resolutionRectangle);
+                        std::cout << resizedWidth << " x " << resizedHeight << std::endl;
+                        i++;
+                    }
+                }
+            }
+#endif //_TRANSCODING
         } else if (args[i] == "--idrPeriod") {
             int32_t idrPeriod = EncoderConfig::DEFAULT_GOP_IDR_PERIOD;
             if (++i >= argc || sscanf(args[i].c_str(), "%d", &idrPeriod) != 1) {
@@ -609,6 +692,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         return -1;
     }
 
+#if (!_TRANSCODING) // transcoding: the resolution will be read later when 1st frame is decoded
     if (input.width == 0) {
         fprintf(stderr, "The input width must be specified\n");
         return -1;
@@ -618,6 +702,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         fprintf(stderr, "The input height must specified\n");
         return -1;
     }
+#endif // !_TRANSCODING
 
     inputFileHandler.SetFrameGeometry(input.width, input.height, input.bpp, input.chromaSubsampling);
 
@@ -640,10 +725,12 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                   <<  " should be different from zero and inferior to input file max frame count of "
                   << frameCount << ". Using input file frame count." << std::endl;
         numFrames = frameCount;
+#if (!_TRANSCODING) // For transcoding, frame count is determined during decoding
         if (numFrames == 0) {
             fprintf(stderr, "No frames found in the input file, frame count is zero. Exit.");
             return -1;
         }
+#endif // !_TRANSCODING
     }
 
     if (!outputFileHandler.HasFileName()) {
@@ -785,8 +872,10 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
 
         VkResult result = vkEncoderConfigh264->InitializeParameters();
         if (result != VK_SUCCESS) {
+#if (!_TRANSCODING)
             assert(!"InitializeParameters failed");
             return result;
+#endif // !_TRANSCODING
         }
 
         encoderConfig = vkEncoderConfigh264;
@@ -803,8 +892,10 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
 
         VkResult result = vkEncoderConfigh265->InitializeParameters();
         if (result != VK_SUCCESS) {
+#if (!_TRANSCODING)
             assert(!"InitializeParameters failed");
             return result;
+#endif // !_TRANSCODING
         }
 
         encoderConfig = vkEncoderConfigh265;
@@ -821,8 +912,10 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
 
         VkResult result = vkEncoderConfigAV1->InitializeParameters();
         if (result != VK_SUCCESS) {
+#if (!_TRANSCODING)
             assert(!"InitializeParameters failed");
             return result;
+#endif //!_TRANSCODING
         }
 
         encoderConfig = vkEncoderConfigAV1;
