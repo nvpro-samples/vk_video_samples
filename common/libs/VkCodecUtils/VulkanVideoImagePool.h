@@ -58,7 +58,8 @@ public:
                           uint32_t                   imageIndex,
                           VkSharedBaseObj<VkImageResource>&  imageArrayParent,
                           VkSharedBaseObj<VkImageResourceView>& imageViewArrayParent,
-                          bool useLinear = false);
+                          VkImageAspectFlags aspectMask,
+                          bool useLinear);
 
     VkResult Init(const VulkanDeviceContext* vkDevCtx);
 
@@ -141,6 +142,7 @@ public:
         , m_requiredMemProps(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
         , m_poolSize(0)
         , m_nextNodeToUse(0)
+        , m_aspectMask(VK_IMAGE_ASPECT_COLOR_BIT)
         , m_usesImageArray(false)
         , m_usesImageViewArray(false)
         , m_usesLinearImage(false)
@@ -175,11 +177,12 @@ public:
                        const VkExtent2D&            maxImageExtent,
                        VkImageUsageFlags            imageUsage,
                        uint32_t                     queueFamilyIndex,
-                       VkMemoryPropertyFlags        requiredMemProps = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                       const VkVideoProfileInfoKHR* pVideoProfile = nullptr,
-                       bool                         useImageArray = false,
-                       bool                         useImageViewArray = false,
-                       bool                         useLinear = false);
+                       VkMemoryPropertyFlags        requiredMemProps,
+                       const VkVideoProfileInfoKHR* pVideoProfile,
+                       VkImageAspectFlags           aspectMask,
+                       bool                         useImageArray,
+                       bool                         useImageViewArray,
+                       bool                         useLinear);
 
     void Deinit();
 
@@ -218,6 +221,7 @@ private:
     VkMemoryPropertyFlags                 m_requiredMemProps;
     uint32_t                              m_poolSize;
     uint32_t                              m_nextNodeToUse;
+    VkImageAspectFlags                    m_aspectMask;
     uint32_t                              m_usesImageArray : 1;
     uint32_t                              m_usesImageViewArray : 1;
     uint32_t                              m_usesLinearImage : 1;

@@ -1155,6 +1155,41 @@ uint32_t VulkanFilterYuvCompute::ShaderGenerateImagePlaneDescriptors(std::string
                                                                      bool imageArray)
 {
     shaderStr << " // The " << (isInput ? "input" : "output") << " image binding\n";
+
+    // Handle the Y only and CbCr only images
+    switch(imageFormat) {
+    case VK_FORMAT_R8_UNORM:
+        // fallthrough
+    case VK_FORMAT_R16_UNORM:
+        imageAspects = VK_IMAGE_ASPECT_PLANE_0_BIT;
+
+        GenImageIoBindingLayout(shaderStr, imageName, "Y",
+                                       vkFormatLookUp(imageFormat)->name,
+                                       isInput,
+                                       ++startBinding,
+                                       set,
+                                       imageArray);
+        return startBinding;
+    case VK_FORMAT_R8G8_UNORM:
+        // fallthrough
+    case VK_FORMAT_R16G16_UNORM:
+
+        imageAspects = VK_IMAGE_ASPECT_PLANE_1_BIT | VK_IMAGE_ASPECT_PLANE_2_BIT;
+
+        GenImageIoBindingLayout(shaderStr, imageName, "CbCr",
+                                vkFormatLookUp(imageFormat)->name,
+                                isInput,
+                                ++startBinding,
+                                set,
+                                imageArray);
+
+
+        // fallthrough
+        return startBinding;
+    default:
+        break;
+    }
+
     // Image binding goes in this pattern:
     // offset 0: RGBA image
     // offset 1: multi-planar image plane Y
