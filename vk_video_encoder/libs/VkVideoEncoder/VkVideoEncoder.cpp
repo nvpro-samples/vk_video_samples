@@ -1288,6 +1288,13 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         };
 
         // VulkanFilterYuvCompute now supports subsampling
+        uint32_t filterFlags = VulkanFilterYuvCompute::FILTER_FLAG_NONE;
+        if (encoderConfig->input.msbShift > 0) {
+            filterFlags |= VulkanFilterYuvCompute::FILTER_FLAG_OUTPUT_LSB_TO_MSB_SHIFT;
+        }
+        // Enable Y subsampling for AQ (always enabled in encoder)
+        filterFlags |= VulkanFilterYuvCompute::FILTER_FLAG_ENABLE_Y_SUBSAMPLING;
+        
         result = VulkanFilterYuvCompute::Create(m_vkDevCtx,
                                                 m_vkDevCtx->GetComputeQueueFamilyIdx(),
                                                 0, // queueIndex
@@ -1295,8 +1302,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                                 encoderConfig->numInputImages,
                                                 encoderConfig->input.vkFormat,  // in filter format (can be RGB)
                                                 m_imageInFormat,  // out filter - same as input for now.
-                                                false, // inputEnableMsbToLsbShift
-                                                (encoderConfig->input.msbShift > 0),
+                                                filterFlags,
                                                 &ycbcrConversionCreateInfo,
                                                 &ycbcrPrimariesConstants,
                                                 &samplerInfo,
