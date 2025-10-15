@@ -54,7 +54,8 @@ public:
                            const VkSamplerYcbcrConversionCreateInfo* pYcbcrConversionCreateInfo,
                            const YcbcrPrimariesConstants* pYcbcrPrimariesConstants,
                            const VkSamplerCreateInfo* pSamplerCreateInfo,
-                           VkSharedBaseObj<VulkanFilter>& vulkanFilter);
+                           VkSharedBaseObj<VulkanFilter>& vulkanFilter,
+                           bool enableYSubsampling = false);
 
     VulkanFilterYuvCompute(const VulkanDeviceContext* vkDevCtx,
                            uint32_t queueFamilyIndex,
@@ -65,7 +66,8 @@ public:
                            VkFormat outputFormat,
                            bool inputEnableMsbToLsbShift,
                            bool outputEnableLsbToMsbShift,
-                           const YcbcrPrimariesConstants* pYcbcrPrimariesConstants)
+                           const YcbcrPrimariesConstants* pYcbcrPrimariesConstants,
+                           bool enableYSubsampling = false)
         : VulkanFilter(vkDevCtx, queueFamilyIndex, queueIndex)
         , m_filterType(filterType)
         , m_inputFormat(inputFormat)
@@ -89,7 +91,7 @@ public:
         , m_enableRowAndColumnReplication(true)
         , m_inputIsBuffer(false)
         , m_outputIsBuffer(false)
-        , m_enableYSubsampling(false)
+        , m_enableYSubsampling(enableYSubsampling)
     {
     }
 
