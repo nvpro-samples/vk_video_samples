@@ -32,6 +32,17 @@ class VulkanFilterYuvCompute : public VulkanFilter
 public:
 
     enum FilterType { YCBCRCOPY, YCBCRCLEAR, YCBCR2RGBA, RGBA2YCBCR };
+    
+    // Filter configuration flags (bitmask)
+    enum FilterFlags : uint32_t {
+        FLAG_NONE                               = 0,
+        FLAG_INPUT_MSB_TO_LSB_SHIFT             = (1 << 0),  // Enable MSB-to-LSB shift for input
+        FLAG_OUTPUT_LSB_TO_MSB_SHIFT            = (1 << 1),  // Enable LSB-to-MSB shift for output
+        FLAG_ENABLE_Y_SUBSAMPLING               = (1 << 2),  // Enable 2x2 Y subsampling output (binding 9)
+        FLAG_ENABLE_ROW_COLUMN_REPLICATION_ONE  = (1 << 3),  // Replicate one row/column at edges
+        FLAG_ENABLE_ROW_COLUMN_REPLICATION_ALL  = (1 << 4),  // Replicate all out-of-bounds pixels
+    };
+    
     static constexpr uint32_t maxNumComputeDescr = 10;
 
     static constexpr VkImageAspectFlags validPlaneAspects = VK_IMAGE_ASPECT_PLANE_0_BIT |
@@ -49,13 +60,11 @@ public:
                            uint32_t maxNumFrames,
                            VkFormat inputFormat,
                            VkFormat outputFormat,
-                           bool inputEnableMsbToLsbShift,
-                           bool outputEnableLsbToMsbShift,
+                           uint32_t filterFlags,  // FilterFlags bitmask
                            const VkSamplerYcbcrConversionCreateInfo* pYcbcrConversionCreateInfo,
                            const YcbcrPrimariesConstants* pYcbcrPrimariesConstants,
                            const VkSamplerCreateInfo* pSamplerCreateInfo,
-                           VkSharedBaseObj<VulkanFilter>& vulkanFilter,
-                           bool enableYSubsampling = false);
+                           VkSharedBaseObj<VulkanFilter>& vulkanFilter);
 
     VulkanFilterYuvCompute(const VulkanDeviceContext* vkDevCtx,
                            uint32_t queueFamilyIndex,
@@ -64,10 +73,8 @@ public:
                            uint32_t maxNumFrames,
                            VkFormat inputFormat,
                            VkFormat outputFormat,
-                           bool inputEnableMsbToLsbShift,
-                           bool outputEnableLsbToMsbShift,
-                           const YcbcrPrimariesConstants* pYcbcrPrimariesConstants,
-                           bool enableYSubsampling = false)
+                           uint32_t filterFlags,  // FilterFlags bitmask
+                           const YcbcrPrimariesConstants* pYcbcrPrimariesConstants)
         : VulkanFilter(vkDevCtx, queueFamilyIndex, queueIndex)
         , m_filterType(filterType)
         , m_inputFormat(inputFormat)
@@ -86,12 +93,12 @@ public:
                                 VK_IMAGE_ASPECT_PLANE_0_BIT |
                                 VK_IMAGE_ASPECT_PLANE_1_BIT |
                                 VK_IMAGE_ASPECT_PLANE_2_BIT)
-        , m_inputEnableMsbToLsbShift(inputEnableMsbToLsbShift)
-        , m_outputEnableLsbToMsbShift(outputEnableLsbToMsbShift)
-        , m_enableRowAndColumnReplication(true)
+        , m_inputEnableMsbToLsbShift((filterFlags & FLAG_INPUT_MSB_TO_LSB_SHIFT) != 0)
+        , m_outputEnableLsbToMsbShift((filterFlags & FLAG_OUTPUT_LSB_TO_MSB_SHIFT) != 0)
+        , m_enableRowAndColumnReplication((filterFlags & (FLAG_ENABLE_ROW_COLUMN_REPLICATION_ONE | FLAG_ENABLE_ROW_COLUMN_REPLICATION_ALL)) != 0)
         , m_inputIsBuffer(false)
         , m_outputIsBuffer(false)
-        , m_enableYSubsampling(enableYSubsampling)
+        , m_enableYSubsampling((filterFlags & FLAG_ENABLE_Y_SUBSAMPLING) != 0)
     {
     }
 
