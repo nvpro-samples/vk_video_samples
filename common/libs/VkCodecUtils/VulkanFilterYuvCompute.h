@@ -35,10 +35,12 @@ public:
     
     // Filter configuration flags (bitmask)
     enum FilterFlags : uint32_t {
-        FILTER_FLAG_NONE                        = 0,
-        FILTER_FLAG_INPUT_MSB_TO_LSB_SHIFT      = (1 << 0),  // Enable MSB-to-LSB shift for input
-        FILTER_FLAG_OUTPUT_LSB_TO_MSB_SHIFT     = (1 << 1),  // Enable LSB-to-MSB shift for output
-        FILTER_FLAG_ENABLE_Y_SUBSAMPLING        = (1 << 2),  // Enable 2x2 Y subsampling output (binding 9)
+        FLAG_NONE                               = 0,
+        FLAG_INPUT_MSB_TO_LSB_SHIFT             = (1 << 0),  // Enable MSB-to-LSB shift for input
+        FLAG_OUTPUT_LSB_TO_MSB_SHIFT            = (1 << 1),  // Enable LSB-to-MSB shift for output
+        FLAG_ENABLE_Y_SUBSAMPLING               = (1 << 2),  // Enable 2x2 Y subsampling output (binding 9)
+        FLAG_ENABLE_ROW_COLUMN_REPLICATION_ONE  = (1 << 3),  // Replicate one row/column at edges
+        FLAG_ENABLE_ROW_COLUMN_REPLICATION_ALL  = (1 << 4),  // Replicate all out-of-bounds pixels
     };
     
     static constexpr uint32_t maxNumComputeDescr = 10;
@@ -91,12 +93,12 @@ public:
                                 VK_IMAGE_ASPECT_PLANE_0_BIT |
                                 VK_IMAGE_ASPECT_PLANE_1_BIT |
                                 VK_IMAGE_ASPECT_PLANE_2_BIT)
-        , m_inputEnableMsbToLsbShift((filterFlags & FILTER_FLAG_INPUT_MSB_TO_LSB_SHIFT) != 0)
-        , m_outputEnableLsbToMsbShift((filterFlags & FILTER_FLAG_OUTPUT_LSB_TO_MSB_SHIFT) != 0)
-        , m_enableRowAndColumnReplication(true)
+        , m_inputEnableMsbToLsbShift((filterFlags & FLAG_INPUT_MSB_TO_LSB_SHIFT) != 0)
+        , m_outputEnableLsbToMsbShift((filterFlags & FLAG_OUTPUT_LSB_TO_MSB_SHIFT) != 0)
+        , m_enableRowAndColumnReplication((filterFlags & (FLAG_ENABLE_ROW_COLUMN_REPLICATION_ONE | FLAG_ENABLE_ROW_COLUMN_REPLICATION_ALL)) != 0)
         , m_inputIsBuffer(false)
         , m_outputIsBuffer(false)
-        , m_enableYSubsampling((filterFlags & FILTER_FLAG_ENABLE_Y_SUBSAMPLING) != 0)
+        , m_enableYSubsampling((filterFlags & FLAG_ENABLE_Y_SUBSAMPLING) != 0)
     {
     }
 

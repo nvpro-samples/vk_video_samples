@@ -320,7 +320,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                    0.0, false, 0.00, false, VK_COMPARE_OP_NEVER, 0.0, 16.0, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE, false
         };
 
-        uint32_t filterFlags = VulkanFilterYuvCompute::FILTER_FLAG_NONE;
+        uint32_t filterFlags = VulkanFilterYuvCompute::FLAG_NONE;
         
         result = VulkanFilterYuvCompute::Create(m_vkDevCtx,
                                                 m_vkDevCtx->GetComputeQueueFamilyIdx(),

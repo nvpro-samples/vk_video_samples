@@ -1288,12 +1288,14 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         };
 
         // VulkanFilterYuvCompute now supports subsampling
-        uint32_t filterFlags = VulkanFilterYuvCompute::FILTER_FLAG_NONE;
+        uint32_t filterFlags = VulkanFilterYuvCompute::FLAG_NONE;
         if (encoderConfig->input.msbShift > 0) {
-            filterFlags |= VulkanFilterYuvCompute::FILTER_FLAG_OUTPUT_LSB_TO_MSB_SHIFT;
+            filterFlags |= VulkanFilterYuvCompute::FLAG_OUTPUT_LSB_TO_MSB_SHIFT;
         }
         // Enable Y subsampling for AQ (always enabled in encoder)
-        filterFlags |= VulkanFilterYuvCompute::FILTER_FLAG_ENABLE_Y_SUBSAMPLING;
+        filterFlags |= VulkanFilterYuvCompute::FLAG_ENABLE_Y_SUBSAMPLING;
+        // Enable row/column replication (previously hardcoded to true)
+        filterFlags |= VulkanFilterYuvCompute::FLAG_ENABLE_ROW_COLUMN_REPLICATION_ALL;
         
         result = VulkanFilterYuvCompute::Create(m_vkDevCtx,
                                                 m_vkDevCtx->GetComputeQueueFamilyIdx(),
