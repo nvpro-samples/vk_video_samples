@@ -177,7 +177,7 @@ VkResult VulkanFilterYuvCompute::InitDescriptorSetLayout(uint32_t maxNumFrames)
     VkPushConstantRange pushConstantRange = {};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT; // Stage the push constant is for
     pushConstantRange.offset = 0;
-    pushConstantRange.size = 6 * sizeof(uint32_t); // Size of the push constant - source and destination image layers + 2 * ivec2
+    pushConstantRange.size = sizeof(PushConstants); // Size matches the actual PushConstants struct
 
     return m_descriptorSetLayout.CreateDescriptorSet(m_vkDevCtx,
                                                      setLayoutBindings,
@@ -217,24 +217,28 @@ static YcbcrBtStandard GetYcbcrPrimariesConstantsId(VkSamplerYcbcrModelConversio
  */
 static void GenPushConstantsDecl(std::stringstream& shaderStr) {
     shaderStr << "layout(push_constant) uniform PushConstants {\n"
-              << "    uint srcLayer;        // src image layer to use\n"
-              << "    uint dstLayer;        // dst image layer to use\n"
-              << "    uint inputWidth;      // input image or buffer width\n"
-              << "    uint inputHeight;     // input image or buffer height\n"
-              << "    uint outputWidth;     // output image or buffer width\n"
-              << "    uint outputHeight;    // output image or buffer height\n"
-              << "    uint inYOffset;       // input  buffer Y plane offset\n"
-              << "    uint inCbOffset;      // input  buffer Cb plane offset\n"
-              << "    uint inCrOffset;      // input  buffer Cr plane offset\n"
-              << "    uint inYPitch;        // input  buffer Y plane pitch\n"
-              << "    uint inCbPitch;       // input  buffer Cb plane pitch\n"
-              << "    uint inCrPitch;       // input  buffer Cr plane pitch\n"
-              << "    uint outYOffset;      // output buffer Y plane offset\n"
-              << "    uint outCbOffset;     // output buffer Cb plane offset\n"
-              << "    uint outCrOffset;     // output buffer Cr plane offset\n"
-              << "    uint outYPitch;       // output buffer Y plane pitch\n"
-              << "    uint outCbPitch;      // output buffer Cb plane pitch\n"
-              << "    uint outCrPitch;      // output buffer Cr plane pitch\n"
+              << "    uint srcLayer;         // src image layer to use\n"
+              << "    uint dstLayer;         // dst image layer to use\n"
+              << "    uint inputWidth;       // input image or buffer width\n"
+              << "    uint inputHeight;      // input image or buffer height\n"
+              << "    uint outputWidth;      // output image or buffer width\n"
+              << "    uint outputHeight;     // output image or buffer height\n"
+              << "    uint halfInputWidth;   // (inputWidth + 1) / 2 - precomputed\n"
+              << "    uint halfInputHeight;  // (inputHeight + 1) / 2 - precomputed\n"
+              << "    uint halfOutputWidth;  // (outputWidth + 1) / 2 - precomputed\n"
+              << "    uint halfOutputHeight; // (outputHeight + 1) / 2 - precomputed\n"
+              << "    uint inYOffset;        // input  buffer Y plane offset\n"
+              << "    uint inCbOffset;       // input  buffer Cb plane offset\n"
+              << "    uint inCrOffset;       // input  buffer Cr plane offset\n"
+              << "    uint inYPitch;         // input  buffer Y plane pitch\n"
+              << "    uint inCbPitch;        // input  buffer Cb plane pitch\n"
+              << "    uint inCrPitch;        // input  buffer Cr plane pitch\n"
+              << "    uint outYOffset;       // output buffer Y plane offset\n"
+              << "    uint outCbOffset;      // output buffer Cb plane offset\n"
+              << "    uint outCrOffset;      // output buffer Cr plane offset\n"
+              << "    uint outYPitch;        // output buffer Y plane pitch\n"
+              << "    uint outCbPitch;       // output buffer Cb plane pitch\n"
+              << "    uint outCrPitch;       // output buffer Cr plane pitch\n"
               << "} pushConstants;\n";
 }
 
@@ -409,10 +413,23 @@ static void GenBlockCoordinates(std::stringstream& shaderStr,
     shaderStr <<
         "    // Block-based dispatch: one thread per chroma pixel\n"
         "    ivec2 chromaPos = ivec2(gl_GlobalInvocationID.xy);\n"
-        "    \n"
-        "    // Calculate chroma output dimensions\n"
-        "    uint chromaWidth = (pushConstants.outputWidth + " << (chromaHorzRatio-1) << ") / " << chromaHorzRatio << ";\n"
-        "    uint chromaHeight = (pushConstants.outputHeight + " << (chromaVertRatio-1) << ") / " << chromaVertRatio << ";\n"
+        "    \n";
+    
+    // Use precomputed half-resolution for 2x2 blocks (optimal case)
+    if (chromaHorzRatio == 2 && chromaVertRatio == 2) {
+        shaderStr <<
+            "    // Use precomputed half-resolution bounds (avoid division in shader)\n"
+            "    uint chromaWidth = pushConstants.halfOutputWidth;\n"
+            "    uint chromaHeight = pushConstants.halfOutputHeight;\n";
+    } else {
+        // Fallback for non-2x2 blocks (4:2:2, etc.)
+        shaderStr <<
+            "    // Calculate chroma output dimensions\n"
+            "    uint chromaWidth = (pushConstants.outputWidth + " << (chromaHorzRatio - 1) << ") / " << chromaHorzRatio << ";\n"
+            "    uint chromaHeight = (pushConstants.outputHeight + " << (chromaVertRatio - 1) << ") / " << chromaVertRatio << ";\n";
+    }
+    
+    shaderStr <<
         "    \n"
         "    // Bounds check at chroma resolution\n"
         "    if ((chromaPos.x >= chromaWidth) || (chromaPos.y >= chromaHeight)) {\n"
@@ -427,10 +444,19 @@ static void GenBlockCoordinates(std::stringstream& shaderStr,
     if (enableReplication) {
         shaderStr <<
             "    // Input bounds for edge replication\n"
-            "    ivec2 inputLumaMax = ivec2(pushConstants.inputWidth - 1, pushConstants.inputHeight - 1);\n"
-            "    ivec2 inputChromaMax = ivec2((pushConstants.inputWidth + " << (chromaHorzRatio-1) << ") / " << chromaHorzRatio << " - 1, "
-            "(pushConstants.inputHeight + " << (chromaVertRatio-1) << ") / " << chromaVertRatio << " - 1);\n"
-            "    ivec2 srcChromaPos = min(chromaPos, inputChromaMax);\n";
+            "    ivec2 inputLumaMax = ivec2(pushConstants.inputWidth - 1, pushConstants.inputHeight - 1);\n";
+        
+        // Use precomputed half-resolution for input chroma bounds (2x2 case)
+        if ((chromaHorzRatio == 2) && (chromaVertRatio == 2)) {
+            shaderStr <<
+                "    ivec2 inputChromaMax = ivec2(pushConstants.halfInputWidth - 1, pushConstants.halfInputHeight - 1);\n";
+        } else {
+            shaderStr <<
+                "    ivec2 inputChromaMax = ivec2((pushConstants.inputWidth + " << (chromaHorzRatio-1) << ") / " << chromaHorzRatio << " - 1, "
+                "(pushConstants.inputHeight + " << (chromaVertRatio-1) << ") / " << chromaVertRatio << " - 1);\n";
+        }
+        
+        shaderStr << "    ivec2 srcChromaPos = min(chromaPos, inputChromaMax);\n";
     } else {
         shaderStr <<
             "    // No replication - use positions as-is\n"
@@ -2737,6 +2763,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
         uint32_t dstLayer;
         ivec2    inputSize;
         ivec2    outputSize;
+        ivec2    halfInputSize;    // Precomputed (inputSize + 1) / 2
+        ivec2    halfOutputSize;   // Precomputed (outputSize + 1) / 2
         uint32_t yOffset;   // Y plane offset
         uint32_t cbOffset;  // Cb plane offset
         uint32_t crOffset;  // Cr plane offset
@@ -2745,11 +2773,18 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
         uint32_t crPitch;   // Cr plane pitch
     };
 
+    uint32_t inputWidth = inImageResourceInfo->codedExtent.width;
+    uint32_t inputHeight = inImageResourceInfo->codedExtent.height;
+    uint32_t outputWidth = outImageResourceInfo->codedExtent.width;
+    uint32_t outputHeight = outImageResourceInfo->codedExtent.height;
+
     PushConstants pushConstants = {
             inImageResourceInfo->baseArrayLayer, // Set the source layer index
             outImageResourceInfo->baseArrayLayer, // Set the destination layer index
-            ivec2(inImageResourceInfo->codedExtent.width, inImageResourceInfo->codedExtent.height),
-            ivec2(outImageResourceInfo->codedExtent.width, outImageResourceInfo->codedExtent.height),
+            ivec2(inputWidth, inputHeight),
+            ivec2(outputWidth, outputHeight),
+            ivec2((inputWidth + 1) / 2, (inputHeight + 1) / 2),    // halfInputSize
+            ivec2((outputWidth + 1) / 2, (outputHeight + 1) / 2),  // halfOutputSize
             0,  // yOffset - not used for image input
             0,  // cbOffset - not used for image input
             0,  // crOffset - not used for image input
@@ -2895,6 +2930,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
         uint32_t dstLayer;
         ivec2    inputSize;
         ivec2    outputSize;
+        ivec2    halfInputSize;    // Precomputed (inputSize + 1) / 2
+        ivec2    halfOutputSize;   // Precomputed (outputSize + 1) / 2
         uint32_t yOffset;   // Y plane offset
         uint32_t cbOffset;  // Cb plane offset
         uint32_t crOffset;  // Cr plane offset
@@ -2927,6 +2964,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
             outImageResourceInfo->baseArrayLayer,
             ivec2(width, height),
             ivec2(outputExtent.width, outputExtent.height),
+            ivec2((width + 1) / 2, (height + 1) / 2),                              // halfInputSize
+            ivec2((outputExtent.width + 1) / 2, (outputExtent.height + 1) / 2),    // halfOutputSize
             static_cast<uint32_t>(yOffset),
             static_cast<uint32_t>(cbOffset),
             static_cast<uint32_t>(crOffset),
@@ -3069,6 +3108,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
         uint32_t dstLayer;
         ivec2    inputSize;
         ivec2    outputSize;
+        ivec2    halfInputSize;    // Precomputed (inputSize + 1) / 2
+        ivec2    halfOutputSize;   // Precomputed (outputSize + 1) / 2
         uint32_t yOffset;   // Y plane offset
         uint32_t cbOffset;  // Cb plane offset
         uint32_t crOffset;  // Cr plane offset
@@ -3105,6 +3146,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
             0, // Destination layer (buffer has no layers)
             ivec2(inputExtent.width, inputExtent.height),
             ivec2(width, height),
+            ivec2((inputExtent.width + 1) / 2, (inputExtent.height + 1) / 2),  // halfInputSize
+            ivec2((width + 1) / 2, (height + 1) / 2),                          // halfOutputSize
             static_cast<uint32_t>(yOffset),
             static_cast<uint32_t>(cbOffset),
             static_cast<uint32_t>(crOffset),
@@ -3245,22 +3288,24 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
     };
 
     struct PushConstants {
-        uint32_t srcLayer;    // src image layer to use
-        uint32_t dstLayer;    // dst image layer to use
-        ivec2    inputSize;   // input image or buffer extent
-        ivec2    outputSize;  // output image or buffer extent
-        uint32_t inYOffset;   // input  buffer Y plane offset
-        uint32_t inCbOffset;  // input  buffer Cb plane offset
-        uint32_t inCrOffset;  // input  buffer Cr plane offset
-        uint32_t inYPitch;    // input  buffer Y plane pitch
-        uint32_t inCbPitch;   // input  buffer Cb plane pitch
-        uint32_t inCrPitch;   // input  buffer Cr plane pitch
-        uint32_t outYOffset;   // output buffer Y plane offset
-        uint32_t outCbOffset;  // output buffer Cb plane offset
-        uint32_t outCrOffset;  // output buffer Cr plane offset
-        uint32_t outYPitch;    // output buffer Y plane pitch
-        uint32_t outCbPitch;   // output buffer Cb plane pitch
-        uint32_t outCrPitch;   // output buffer Cr plane pitch
+        uint32_t srcLayer;      // src image layer to use
+        uint32_t dstLayer;      // dst image layer to use
+        ivec2    inputSize;     // input image or buffer extent
+        ivec2    outputSize;    // output image or buffer extent
+        ivec2    halfInputSize;    // Precomputed (inputSize + 1) / 2
+        ivec2    halfOutputSize;   // Precomputed (outputSize + 1) / 2
+        uint32_t inYOffset;     // input  buffer Y plane offset
+        uint32_t inCbOffset;    // input  buffer Cb plane offset
+        uint32_t inCrOffset;    // input  buffer Cr plane offset
+        uint32_t inYPitch;      // input  buffer Y plane pitch
+        uint32_t inCbPitch;     // input  buffer Cb plane pitch
+        uint32_t inCrPitch;     // input  buffer Cr plane pitch
+        uint32_t outYOffset;    // output buffer Y plane offset
+        uint32_t outCbOffset;   // output buffer Cb plane offset
+        uint32_t outCrOffset;   // output buffer Cr plane offset
+        uint32_t outYPitch;     // output buffer Y plane pitch
+        uint32_t outCbPitch;    // output buffer Cb plane pitch
+        uint32_t outCrPitch;    // output buffer Cr plane pitch
     };
 
     // Calculate buffer parameters
@@ -3275,6 +3320,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
             0, // Destination layer (buffer has no layers)
             ivec2(inBufferExtent.width, inBufferExtent.height),
             ivec2(outBufferExtent.width, outBufferExtent.height),
+            ivec2((inBufferExtent.width + 1) / 2, (inBufferExtent.height + 1) / 2),    // halfInputSize
+            ivec2((outBufferExtent.width + 1) / 2, (outBufferExtent.height + 1) / 2),  // halfOutputSize
             static_cast<uint32_t>(yOffset),
             static_cast<uint32_t>(cbOffset),
             static_cast<uint32_t>(crOffset),
