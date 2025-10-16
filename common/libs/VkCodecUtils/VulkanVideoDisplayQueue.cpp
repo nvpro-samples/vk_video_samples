@@ -14,7 +14,7 @@
 * limitations under the License.
 */
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <iostream>
 #include <mutex>
 #include <queue>

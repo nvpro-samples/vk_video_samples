@@ -17,7 +17,7 @@
 #ifndef _VULKANVIDEOFRAMEBUFFER_H_
 #define _VULKANVIDEOFRAMEBUFFER_H_
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <stdint.h>
 
 #include "VkCodecUtils/VkVideoRefCountBase.h"

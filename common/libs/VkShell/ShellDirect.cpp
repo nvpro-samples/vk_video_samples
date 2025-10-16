@@ -116,7 +116,7 @@ bool ShellDirect::PhysDeviceCanPresent(VkPhysicalDevice, uint32_t) const
 // called by create_context
 VkSurfaceKHR ShellDirect::CreateSurface(VkInstance)
 {
-    assert(m_vkDisplay != VK_NULL_HANDLE);
+    vv_assert(m_vkDisplay != VK_NULL_HANDLE);
 
     std::vector<VkDisplayModePropertiesKHR> modeProperties;
 
@@ -127,7 +127,7 @@ VkSurfaceKHR ShellDirect::CreateSurface(VkInstance)
     AssertSuccess(m_ctx.devCtx->GetDisplayModePropertiesKHR(m_ctx.devCtx->getPhysicalDevice(), m_vkDisplay, &modeCount, &modeProperties[0]));
 
     // choose the first display mode
-    assert(!modeProperties.empty());
+    vv_assert(!modeProperties.empty());
     const auto& modeProps = modeProperties[0];
 
     // Get the list of planes
@@ -164,7 +164,7 @@ VkSurfaceKHR ShellDirect::CreateSurface(VkInstance)
 
     if (foundPlaneIndex == planeProperties.size()) {
         printf("No plane found compatible with the display. Ooops.");
-        assert(false);
+        vv_assert(false);
     }
 
     const VkExtent2D surfaceExtent = {

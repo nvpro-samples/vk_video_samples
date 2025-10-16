@@ -34,13 +34,13 @@ static const uint32_t H264MbSizeAlignment = 16;
 
 template<typename sizeType>
 sizeType AlignSize(sizeType size, sizeType alignment) {
-    assert((alignment & (alignment - 1)) == 0);
+    vv_assert((alignment & (alignment - 1)) == 0);
     return (size + alignment -1) & ~(alignment -1);
 }
 
 template<typename valuesType>
 valuesType DivUp(valuesType value, valuesType divisor) {
-    assert(divisor != (valuesType)0);
+    vv_assert(divisor != (valuesType)0);
     return (value + (divisor - 1)) / divisor;
 }
 

@@ -53,7 +53,7 @@ VkResult VulkanDescriptorSetLayout::CreateFragmentShaderLayouts(const uint32_t* 
                        setId << pBinding->binding << "[" << pBinding->descriptorCount << "];\n";
                 break;
             default:
-                assert(0);
+                vv_assert(0);
                 break;
             }
         }
@@ -179,7 +179,7 @@ VkResult VulkanDescriptorSetLayout::CreateDescriptorSet(const VulkanDeviceContex
 VkResult VulkanDescriptorSetLayout::WriteDescriptorSet(uint32_t descriptorWriteCount,
                                                        const VkWriteDescriptorSet* pDescriptorWrites)
 {
-    assert(m_descriptorSetLayoutInfo.GetDescriptorLayoutMode() == 0);
+    vv_assert(m_descriptorSetLayoutInfo.GetDescriptorLayoutMode() == 0);
 
     m_vkDevCtx->UpdateDescriptorSets(*m_vkDevCtx, descriptorWriteCount, pDescriptorWrites, 0, nullptr);
 
@@ -211,7 +211,7 @@ VkResult VulkanDescriptorSetLayout::CreateFragmentShaderOutput(VkDescriptorType 
                "}\n";
         break;
     default:
-        assert(0);
+        vv_assert(0);
         break;
     }
 

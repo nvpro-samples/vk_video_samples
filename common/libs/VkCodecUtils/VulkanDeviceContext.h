@@ -17,7 +17,7 @@
 #ifndef _VULKANDEVICECONTEXT_H_
 #define _VULKANDEVICECONTEXT_H_
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <vector>
 #include <array>
 #include <mutex>
@@ -130,12 +130,12 @@ public:
                 m_mutex = &devCtx->m_transferQueueMutex;
                 break;
             case DECODE:
-                assert((queueIndex >= 0) && (queueIndex < devCtx->m_videoDecodeNumQueues));
+                vv_assert((queueIndex >= 0) && (queueIndex < devCtx->m_videoDecodeNumQueues));
                 m_queue = &devCtx->m_videoDecodeQueues[queueIndex];
                 m_mutex = &devCtx->m_videoDecodeQueueMutexes[queueIndex];
                 break;
             case ENCODE:
-                assert((queueIndex >= 0) && (queueIndex < devCtx->m_videoEncodeNumQueues));
+                vv_assert((queueIndex >= 0) && (queueIndex < devCtx->m_videoEncodeNumQueues));
                 m_queue = &devCtx->m_videoEncodeQueues[queueIndex];
                 m_mutex = &devCtx->m_videoEncodeQueueMutexes[queueIndex];
                 break;
@@ -144,7 +144,7 @@ public:
                 m_mutex = &devCtx->m_presentQueueMutex;
                 break;
             default:
-                assert(!"Invalid queue type!");
+                vv_assert(!"Invalid queue type!");
                 m_queue = nullptr;
                 m_mutex = nullptr;
                 break;

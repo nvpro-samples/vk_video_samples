@@ -207,7 +207,7 @@ public:
 
     NvPerFrameDecodeResources& operator[](unsigned int index)
     {
-        assert(index < m_perFrameDecodeResources.size());
+        vv_assert(index < m_perFrameDecodeResources.size());
         return m_perFrameDecodeResources[index];
     }
 
@@ -253,7 +253,7 @@ public:
                                                                                         pPictureResource,
                                                                                         pPictureResourceInfo);
 
-                assert(validImage);
+                vv_assert(validImage);
             }
         }
 
@@ -297,7 +297,7 @@ public:
 
     VkResult CreateVideoQueries(uint32_t numSlots, const VulkanDeviceContext* vkDevCtx, const VkVideoProfileInfoKHR* pDecodeProfile)
     {
-        assert (numSlots <= maxImages);
+        vv_assert(numSlots <= maxImages);
 
         if ((m_queryPool == VK_NULL_HANDLE) && m_vkDevCtx->GetVideoDecodeQueryResultStatusSupport()) {
             // It would be difficult to resize a query pool, so allocate the maximum possible slot.
@@ -327,7 +327,7 @@ public:
         uint32_t flushedImages = 0;
         while (!m_displayFrames.empty()) {
             int8_t pictureIndex = m_displayFrames.front();
-            assert((pictureIndex >= 0) && ((uint32_t)pictureIndex < m_perFrameDecodeImageSet.size()));
+            vv_assert((pictureIndex >= 0) && ((uint32_t)pictureIndex < m_perFrameDecodeImageSet.size()));
             m_displayFrames.pop();
             if (m_perFrameDecodeImageSet[(uint32_t)pictureIndex].IsAvailable()) {
                 // The frame is not released yet - force release it.
@@ -348,7 +348,7 @@ public:
     {
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
 
-        assert(numImages && (numImages <= maxImages) && pDecodeProfile);
+        vv_assert(numImages && (numImages <= maxImages) && pDecodeProfile);
 
         VkResult result = CreateVideoQueries(numImages, m_vkDevCtx, pDecodeProfile);
         if (result != VK_SUCCESS) {
@@ -390,7 +390,7 @@ public:
 
     virtual int32_t QueueDecodedPictureForDisplay(int8_t picId, VulkanVideoDisplayPictureInfo* pDispInfo)
     {
-        assert((uint32_t)picId < m_perFrameDecodeImageSet.size());
+        vv_assert((uint32_t)picId < m_perFrameDecodeImageSet.size());
 
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         m_perFrameDecodeImageSet[picId].m_displayOrder = m_frameNumInDisplayOrder++;
@@ -412,14 +412,14 @@ public:
                                           ReferencedObjectsInfo* pReferencedObjectsInfo,
                                           FrameSynchronizationInfo* pFrameSynchronizationInfo)
     {
-        assert((uint32_t)picId < m_perFrameDecodeImageSet.size());
+        vv_assert((uint32_t)picId < m_perFrameDecodeImageSet.size());
 
         if (pFrameSynchronizationInfo->syncOnFrameCompleteFence == 1) {
             // Check here that the frame for this entry (for this command buffer) has already completed decoding.
             // Otherwise we may step over a hot command buffer by starting a new recording.
             // This fence wait should be NOP in 99.9% of the cases, because the decode queue is deep enough to
             // ensure the frame has already been completed.
-            assert(m_perFrameDecodeImageSet[picId].m_frameCompleteFence != VK_NULL_HANDLE);
+            vv_assert(m_perFrameDecodeImageSet[picId].m_frameCompleteFence != VK_NULL_HANDLE);
             vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameCompleteFence,
                                   true, "frameCompleteFence");
         }
@@ -510,8 +510,8 @@ public:
         if (!m_displayFrames.empty()) {
             numberofPendingFrames = (int)m_displayFrames.size();
             pictureIndex = m_displayFrames.front();
-            assert((pictureIndex >= 0) && ((uint32_t)pictureIndex < m_perFrameDecodeImageSet.size()));
-            assert(!(m_ownedByDisplayMask & (1 << pictureIndex)));
+            vv_assert((pictureIndex >= 0) && ((uint32_t)pictureIndex < m_perFrameDecodeImageSet.size()));
+            vv_assert(!(m_ownedByDisplayMask & (1 << pictureIndex)));
             m_ownedByDisplayMask |= (1 << pictureIndex);
             m_displayFrames.pop();
             m_perFrameDecodeImageSet[pictureIndex].m_inDisplayQueue = false;
@@ -593,12 +593,12 @@ public:
         for (uint32_t i = 0; i < numFramesToRelease; i++) {
             const DecodedFrameRelease* pDecodedFrameRelease = pDecodedFramesRelease[i];
             int picId = pDecodedFrameRelease->pictureIndex;
-            assert((picId >= 0) && ((uint32_t)picId < m_perFrameDecodeImageSet.size()));
+            vv_assert((picId >= 0) && ((uint32_t)picId < m_perFrameDecodeImageSet.size()));
 
-            assert(m_perFrameDecodeImageSet[picId].m_decodeOrder == pDecodedFrameRelease->decodeOrder);
-            assert(m_perFrameDecodeImageSet[picId].m_displayOrder == pDecodedFrameRelease->displayOrder);
+            vv_assert(m_perFrameDecodeImageSet[picId].m_decodeOrder == pDecodedFrameRelease->decodeOrder);
+            vv_assert(m_perFrameDecodeImageSet[picId].m_displayOrder == pDecodedFrameRelease->displayOrder);
 
-            assert(m_ownedByDisplayMask & (1 << picId));
+            vv_assert(m_ownedByDisplayMask & (1 << picId));
             m_ownedByDisplayMask &= ~(1 << picId);
             m_perFrameDecodeImageSet[picId].m_inDecodeQueue = false;
             m_perFrameDecodeImageSet[picId].m_ownedByConsummer = false;
@@ -623,7 +623,7 @@ public:
                                              PictureResourceInfo* pPictureResourcesInfo,
                                              VkImageLayout newImageLayerLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR)
     {
-        assert(pPictureResources);
+        vv_assert(pPictureResources);
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         for (unsigned int resId = 0; resId < numResources; resId++) {
             if ((uint32_t)referenceSlotIndexes[resId] < m_perFrameDecodeImageSet.size()) {
@@ -634,12 +634,12 @@ public:
                                      &pPictureResources[resId],
                                      &pPictureResourcesInfo[resId]);
 
-                assert(result == VK_SUCCESS);
+                vv_assert(result == VK_SUCCESS);
                 if (result != VK_SUCCESS) {
                     return -1;
                 }
 
-                assert(pPictureResources[resId].sType == VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR);
+                vv_assert(pPictureResources[resId].sType == VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR);
             }
         }
         return numResources;
@@ -650,7 +650,7 @@ public:
                                                    PictureResourceInfo* pPictureResourceInfo,
                                                    VkImageLayout newImageLayerLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR)
     {
-        assert(pPictureResource);
+        vv_assert(pPictureResource);
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         if ((uint32_t)referenceSlotIndex < m_perFrameDecodeImageSet.size()) {
 
@@ -660,12 +660,12 @@ public:
                                                                             newImageLayerLayout,
                                                                             pPictureResource,
                                                                             pPictureResourceInfo);
-            assert(result == VK_SUCCESS);
+            vv_assert(result == VK_SUCCESS);
             if (result != VK_SUCCESS) {
                 return -1;
             }
 
-            assert(pPictureResource->sType == VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR);
+            vv_assert(pPictureResource->sType == VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR);
 
         }
         return referenceSlotIndex;
@@ -701,7 +701,7 @@ public:
             m_perFrameDecodeImageSet[picId].m_decodeOrder = picNumInDecodeOrder;
             return oldPicNumInDecodeOrder;
         }
-        assert(false);
+        vv_assert(false);
         return (uint64_t)-1;
     }
 
@@ -713,7 +713,7 @@ public:
             m_perFrameDecodeImageSet[picId].m_displayOrder = picNumInDisplayOrder;
             return oldPicNumInDisplayOrder;
         }
-        assert(false);
+        vv_assert(false);
         return -1;
     }
 
@@ -748,7 +748,7 @@ public:
             return &m_perFrameDecodeImageSet[foundPicId];
         }
 
-        assert(foundPicId >= 0);
+        vv_assert(foundPicId >= 0);
         return NULL;
     }
 
@@ -883,7 +883,7 @@ VkResult NvPerFrameDecodeResources::init(const VulkanDeviceContext* vkDevCtx)
 
     const VkFenceCreateInfo fenceInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr };
     result = vkDevCtx->CreateFence(*vkDevCtx, &fenceInfo, nullptr, &m_frameConsumerDoneFence);
-    assert(result == VK_SUCCESS);
+    vv_assert(result == VK_SUCCESS);
 
     Reset();
 
@@ -898,7 +898,7 @@ void NvPerFrameDecodeResources::Deinit(const VulkanDeviceContext* vkDevCtx)
     stdVps = nullptr;
 
     if (vkDevCtx == nullptr) {
-        assert ((m_frameCompleteFence == VK_NULL_HANDLE) &&
+        vv_assert((m_frameCompleteFence == VK_NULL_HANDLE) &&
                 (m_frameConsumerDoneFence == VK_NULL_HANDLE));
         return;
     }
@@ -930,7 +930,7 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
                                        uint32_t                 queueFamilyIndex)
 {
     if (numImages > m_perFrameDecodeResources.size()) {
-        assert(!"Number of requested images exceeds the max size of the image array");
+        vv_assert(!"Number of requested images exceeds the max size of the image array");
         return -1;
     }
 
@@ -938,7 +938,7 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
 
     for (uint32_t imageIndex = m_numImages; imageIndex < numImages; imageIndex++) {
         VkResult result = m_perFrameDecodeResources[imageIndex].init(vkDevCtx);
-        assert(result == VK_SUCCESS);
+        vv_assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
             return -1;
         }
@@ -953,10 +953,10 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
 
     VkSemaphoreCreateInfo semInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, &timelineCreateInfo };
     VkResult result = vkDevCtx->CreateSemaphore(*vkDevCtx, &semInfo, nullptr, &m_frameCompleteSemaphore);
-    assert(result == VK_SUCCESS);
+    vv_assert(result == VK_SUCCESS);
 
     result = vkDevCtx->CreateSemaphore(*vkDevCtx, &semInfo, nullptr, &m_consumerCompleteSemaphore);
-    assert(result == VK_SUCCESS);
+    vv_assert(result == VK_SUCCESS);
 
     m_videoProfile.InitFromProfile(pDecodeProfile);
 
@@ -991,8 +991,8 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
                                                                        << imageSpecs[imageTypeIdx].createInfo.extent.height
                                                                        << std::endl;
             }
-            assert(m_imageSpecs[imageTypeIdx].usesImageArray == imageSpecs[imageTypeIdx].usesImageArray);
-            assert(m_imageSpecs[imageTypeIdx].usesImageViewArray == imageSpecs[imageTypeIdx].usesImageViewArray);
+            vv_assert(m_imageSpecs[imageTypeIdx].usesImageArray == imageSpecs[imageTypeIdx].usesImageArray);
+            vv_assert(m_imageSpecs[imageTypeIdx].usesImageViewArray == imageSpecs[imageTypeIdx].usesImageViewArray);
             maxExtent.width  = std::max(m_imageSpecs[imageTypeIdx].createInfo.extent.width,  imageSpecs[imageTypeIdx].createInfo.extent.width);
             maxExtent.height = std::max(m_imageSpecs[imageTypeIdx].createInfo.extent.height, imageSpecs[imageTypeIdx].createInfo.extent.height);
             maxExtent.depth  = std::max(m_imageSpecs[imageTypeIdx].createInfo.extent.depth,  imageSpecs[imageTypeIdx].createInfo.extent.depth);
@@ -1023,7 +1023,7 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
         }
 
         if (usesImageViewArray) {
-            assert(m_imageSpecs[imageTypeIdx].imageArray);
+            vv_assert(m_imageSpecs[imageTypeIdx].imageArray);
             // Create an image view that has the same number of layers as the image.
             // In that scenario, while specifying the resource, the API must specifically choose the image layer.
             VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, numImages };
@@ -1054,7 +1054,7 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
                                                                                     m_imageSpecs[imageTypeIdx].imageArray,
                                                                                     m_imageSpecs[imageTypeIdx].imageViewArray);
 
-                assert(result == VK_SUCCESS);
+                vv_assert(result == VK_SUCCESS);
                 if (result != VK_SUCCESS) {
                     return -1;
                 }

@@ -163,7 +163,7 @@ static YcbcrBtStandard GetYcbcrPrimariesConstantsId(VkSamplerYcbcrModelConversio
     case VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_2020:
         return YcbcrBtStandardBt709;
     default:
-        ;// assert(0);
+        ;// vv_assert(0);
     }
 
     return YcbcrBtStandardUnknown;
@@ -236,7 +236,7 @@ static int ConvertRgbToYcbcrSinglePlaneInterleavedLayout(const VkMpFormatInfo * 
         const  VkSamplerYcbcrConversionCreateInfo * pYcbcrConversionInfo,
         const rgbType *rgbaPtr, uint32_t width, uint32_t height, uint32_t rgbStrideBytes, uint32_t rgbChannelsPerColor, uint32_t rgbBpp, yuvType *yuvPtr, VkSubresourceLayout layouts[3], uint32_t)
 {
-    assert(mpInfo->planesLayout.layout == YCBCR_SINGLE_PLANE_INTERLEAVED);
+    vv_assert(mpInfo->planesLayout.layout == YCBCR_SINGLE_PLANE_INTERLEAVED);
 
     const bool yFirst = (mpInfo->planesLayout.channel0 == CC_Y0);
 
@@ -293,13 +293,13 @@ static int ConvertRgbToYcbcrMultiPlanarCbCrInterleaved(const VkMpFormatInfo * mp
         const rgbType *colRgbaPtr, uint32_t width, uint32_t height, uint32_t rgbStrideBytes, uint32_t rgbChannelsPerColor, uint32_t rgbBpp, yuvType *yuvPtr,
         VkSubresourceLayout layouts[3], uint32_t skipChannelsMask)
 {
-    assert((mpInfo->planesLayout.layout == YCBCR_SINGLE_PLANE_UNNORMALIZED)   || \
+    vv_assert((mpInfo->planesLayout.layout == YCBCR_SINGLE_PLANE_UNNORMALIZED)   || \
            (mpInfo->planesLayout.layout == YCBCR_SEMI_PLANAR_CBCR_INTERLEAVED)   || \
            (mpInfo->planesLayout.layout == YCBCR_PLANAR_CBCR_STRIDE_INTERLEAVED) ||
            (mpInfo->planesLayout.layout == YCBCR_PLANAR_STRIDE_PADDED));
 
     if (mpInfo->planesLayout.layout == YCBCR_SINGLE_PLANE_UNNORMALIZED) {
-        assert(skipChannelsMask);
+        vv_assert(skipChannelsMask);
     }
 
     const uint32_t enabledChannelsMask = ~skipChannelsMask;
@@ -502,7 +502,7 @@ void VkFillYuv::fillVkCommon(const ImageData *pImageData, VkSubresourceLayout la
                                      (uint32_t)rgbaPitch,
                                      rgbaChannelsPerColor, (uint8_t)maxC, (uint8_t)minC, (uint8_t)alphaMax, clearColor, rgbaSkipChannelsMask, incOnSkip);
     } else {
-        assert(rgbBitsPerColor == 16);
+        vv_assert(rgbBitsPerColor == 16);
         uint16_t  clearColor[4];
 
         for (unsigned int i = 0; i < 4; i++ ) {
@@ -538,7 +538,7 @@ void VkFillYuv::fillVkCommon(const ImageData *pImageData, VkSubresourceLayout la
             } else if (mpAspectInfo->planesLayout.numberOfExtraPlanes == 1) {
                 yCbCrSkipChannelsMask |= (1 << 0);
             } else {
-                assert(0);
+                vv_assert(0);
             }
             if (aspectMainFormat != VK_FORMAT_UNDEFINED) {
                 layouts[1] = layouts[0];
@@ -546,7 +546,7 @@ void VkFillYuv::fillVkCommon(const ImageData *pImageData, VkSubresourceLayout la
             break;
         case VK_IMAGE_ASPECT_PLANE_2_BIT:
             // Select the third plane only.
-            assert(mpAspectInfo->planesLayout.numberOfExtraPlanes == 2);
+            vv_assert(mpAspectInfo->planesLayout.numberOfExtraPlanes == 2);
             yCbCrSkipChannelsMask |= ((1 << 1) | (1 << 0));
             if (aspectMainFormat != VK_FORMAT_UNDEFINED) {
                 layouts[2] = layouts[1] = layouts[0];
@@ -619,7 +619,7 @@ void VkFillYuv::fillVkImage(const VulkanDeviceContext* vkDevCtx,
             vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, vkImage, &subResource, &layouts[2]);
             break;
         default:
-            assert(0);
+            vv_assert(0);
         }
 
     } else {

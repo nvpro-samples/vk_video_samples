@@ -117,9 +117,9 @@ VkResult VulkanVideoImagePoolNode::Init(const VulkanDeviceContext* vkDevCtx)
 
 VkResult VulkanVideoImagePoolNode::SetParent(VulkanVideoImagePool* imagePool, int32_t parentIndex)
 {
-    assert(m_parent == nullptr);
+    vv_assert(m_parent == nullptr);
     m_parent      = imagePool;
-    assert(m_parentIndex == -1);
+    vv_assert(m_parentIndex == -1);
     m_parentIndex = parentIndex;
 
     return VK_SUCCESS;
@@ -155,7 +155,7 @@ VkResult VulkanVideoImagePool::GetImageSetNewLayout(uint32_t imageIndex,
     }
 
     bool validImage = m_imageResources[imageIndex].SetNewLayout(newImageLayout);
-    assert(validImage);
+    vv_assert(validImage);
     if (!validImage) {
 	return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -209,7 +209,7 @@ bool VulkanVideoImagePool::ReleaseImageToPool(uint32_t imageIndex)
 {
     std::lock_guard<std::mutex> lock(m_queueMutex);
 
-    assert(!(m_availablePoolNodes & (1ULL << imageIndex)));
+    vv_assert(!(m_availablePoolNodes & (1ULL << imageIndex)));
     m_availablePoolNodes |= (1ULL << imageIndex);
 
     return true;
@@ -242,7 +242,7 @@ VkResult VulkanVideoImagePool::Configure(const VulkanDeviceContext*   vkDevCtx,
 {
     std::lock_guard<std::mutex> lock(m_queueMutex);
     if (numImages > m_imageResources.size()) {
-        assert(!"Number of requested images exceeds the max size of the image array");
+        vv_assert(!"Number of requested images exceeds the max size of the image array");
         return VK_ERROR_TOO_MANY_OBJECTS;
     }
 
@@ -299,7 +299,7 @@ VkResult VulkanVideoImagePool::Configure(const VulkanDeviceContext*   vkDevCtx,
     }
 
     if (useImageViewArray) {
-        assert(m_imageArray);
+        vv_assert(m_imageArray);
         // Create an image view that has the same number of layers as the image.
         // In that scenario, while specifying the resource, the API must specifically choose the image layer.
         VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, numImages };
@@ -331,7 +331,7 @@ VkResult VulkanVideoImagePool::Configure(const VulkanDeviceContext*   vkDevCtx,
                                                                        m_imageViewArray,
                                                                        useLinearImage);
 
-            assert(result == VK_SUCCESS);
+            vv_assert(result == VK_SUCCESS);
             if (result != VK_SUCCESS) {
                 return result;
             }

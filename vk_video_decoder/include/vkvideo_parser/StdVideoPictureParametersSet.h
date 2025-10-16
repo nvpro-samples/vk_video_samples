@@ -62,7 +62,7 @@ public:
         if (pPictureParameters->IsMyClassId(pPictureParameters->GetRefClassId())) {
             return pPictureParameters;
         }
-        assert(!"Invalid StdVideoPictureParametersSet from base");
+        vv_assert(!"Invalid StdVideoPictureParametersSet from base");
         return nullptr;
     }
 

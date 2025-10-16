@@ -40,12 +40,12 @@ NativeHandle::NativeHandle (const NativeHandle& other) :
 {
 #if defined(VK_USE_PLATFORM_ANDROID_KHR) || defined(VK_PLATFORM_IS_UNIX)
     if ((m_externalMemoryHandleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT) && (other.m_fd >= 0)) {
-        assert(m_fd >= 0);
+        vv_assert(m_fd >= 0);
     }
 #if defined(VK_ANDROID_external_memory_android_hardware_buffer)
     else if ((m_externalMemoryHandleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID) && other.m_androidHardwareBuffer) {
         m_androidHardwareBuffer = other.m_androidHardwareBuffer;
-        assert(m_androidHardwareBuffer);
+        vv_assert(m_androidHardwareBuffer);
     }
 #endif //defined(VK_ANDROID_external_memory_android_hardware_buffer)
 #endif // defined(VK_USE_PLATFORM_ANDROID_KHR) || defined(VK_PLATFORM_IS_UNIX)
@@ -143,7 +143,7 @@ void NativeHandle::disown (void)
 #if defined(VK_USE_PLATFORM_ANDROID_KHR) || defined(VK_PLATFORM_IS_UNIX)
 int NativeHandle::getFd (void) const
 {
-    assert(m_externalMemoryHandleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT);
+    vv_assert(m_externalMemoryHandleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT);
     return m_fd;
 }
 #endif // defined(VK_USE_PLATFORM_ANDROID_KHR) || defined(VK_PLATFORM_IS_UNIX)
@@ -151,8 +151,8 @@ int NativeHandle::getFd (void) const
 #if defined(VK_ANDROID_external_memory_android_hardware_buffer)
 AHardwareBufferHandle NativeHandle::getAndroidHardwareBuffer (void) const
 {
-    assert(m_fd == -1);
-    assert(m_externalMemoryHandleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID);
+    vv_assert(m_fd == -1);
+    vv_assert(m_externalMemoryHandleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID);
     return m_androidHardwareBuffer;
 }
 #endif // defined(VK_ANDROID_external_memory_android_hardware_buffer)

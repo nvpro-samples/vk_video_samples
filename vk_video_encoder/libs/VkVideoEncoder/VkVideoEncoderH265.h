@@ -86,11 +86,11 @@ class VkVideoEncoderH265 : public VkVideoEncoder {
             encodeInfo.pNext = &pictureInfo;
 
             // Clear and check state
-            assert(pictureInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PICTURE_INFO_KHR);
-            assert(naluSliceSegmentInfo[0].sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_INFO_KHR);
+            vv_assert(pictureInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PICTURE_INFO_KHR);
+            vv_assert(naluSliceSegmentInfo[0].sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_INFO_KHR);
             // stdPictureInfo()
-            assert(rateControlInfoH265.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR);
-            assert(rateControlLayersInfoH265[0].sType ==  VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR);
+            vv_assert(rateControlInfoH265.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR);
+            vv_assert(rateControlLayersInfoH265[0].sType ==  VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR);
             // stdSliceSegmentHeader()
             // stdReferenceListsInfo()
             // stdShortTermRefPicSet()
@@ -146,6 +146,8 @@ protected:
 private:
 
     VkVideoEncodeFrameInfoH265* GetEncodeFrameInfoH265(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) {
+        assert(VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PICTURE_INFO_KHR == encodeFrameInfo->GetType());
+        vv_assert(VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PICTURE_INFO_KHR == encodeFrameInfo->GetType());
         assert(VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR == encodeFrameInfo->GetType());
         VkVideoEncodeFrameInfo* pEncodeFrameInfo = encodeFrameInfo;
         return (VkVideoEncodeFrameInfoH265*)pEncodeFrameInfo;

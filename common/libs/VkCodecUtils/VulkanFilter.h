@@ -49,12 +49,12 @@ public:
           m_queue()
     {
         m_vkDevCtx->GetDeviceQueue(*m_vkDevCtx, queueFamilyIndex, queueIndex, &m_queue);
-        assert(m_queue != VK_NULL_HANDLE);
+        vv_assert(m_queue != VK_NULL_HANDLE);
     }
 
     virtual ~VulkanFilter()
     {
-        assert(m_vkDevCtx != nullptr);
+        vv_assert(m_vkDevCtx != nullptr);
     }
 
     VkShaderModule CreateShaderModule(const char *shaderCode, size_t shaderSize,
@@ -89,10 +89,10 @@ public:
                                          const VkPipelineStageFlags2KHR* pSignalStageMasks,
                                          VkFence filterCompleteFence) const
     {
-        assert(m_queue != VK_NULL_HANDLE);
-        assert(commandBufferCount <= MAX_CMD_BUFFERS);
-        assert(waitSemaphoreCount <= MAX_SEMAPHORES);
-        assert(signalSemaphoreCount <= MAX_SEMAPHORES);
+        vv_assert(m_queue != VK_NULL_HANDLE);
+        vv_assert(commandBufferCount <= MAX_CMD_BUFFERS);
+        vv_assert(waitSemaphoreCount <= MAX_SEMAPHORES);
+        vv_assert(signalSemaphoreCount <= MAX_SEMAPHORES);
 
         // Prepare command buffer info on stack
         VkCommandBufferSubmitInfoKHR cmdBufferInfos[MAX_CMD_BUFFERS];
@@ -142,7 +142,7 @@ public:
             VulkanSemaphoreDump::DumpSemaphoreInfo(submitInfo, "DECODE FILTER", 0);
         }
 
-        assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, filterCompleteFence));
+        vv_assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, filterCompleteFence));
         VkResult result = m_vkDevCtx->QueueSubmit2KHR(m_queue, 1, &submitInfo, filterCompleteFence);
 
         return result;
@@ -160,10 +160,10 @@ public:
                                          const VkPipelineStageFlags2KHR* pSignalStageMasks,
                                          VkFence filterCompleteFence) const
     {
-        assert(m_queue != VK_NULL_HANDLE);
-        assert(commandBufferCount <= MAX_CMD_BUFFERS);
-        assert(waitSemaphoreCount <= MAX_SEMAPHORES);
-        assert(signalSemaphoreCount <= MAX_SEMAPHORES);
+        vv_assert(m_queue != VK_NULL_HANDLE);
+        vv_assert(commandBufferCount <= MAX_CMD_BUFFERS);
+        vv_assert(waitSemaphoreCount <= MAX_SEMAPHORES);
+        vv_assert(signalSemaphoreCount <= MAX_SEMAPHORES);
 
         // Prepare command buffer info on stack
         VkCommandBufferSubmitInfoKHR cmdBufferInfos[MAX_CMD_BUFFERS];
@@ -213,7 +213,7 @@ public:
             VulkanSemaphoreDump::DumpSemaphoreInfo(submitInfo, "DECODE FILTER", 0);
         }
 
-        assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, filterCompleteFence));
+        vv_assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, filterCompleteFence));
         VkResult result = m_vkDevCtx->QueueSubmit2KHR(m_queue, 1, &submitInfo, filterCompleteFence);
 
         return result;

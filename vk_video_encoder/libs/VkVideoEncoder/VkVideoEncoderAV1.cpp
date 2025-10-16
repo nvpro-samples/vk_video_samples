@@ -75,7 +75,7 @@ VkResult CreateVideoEncoderAV1(const VulkanDeviceContext* vkDevCtx,
 VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& encoderConfig)
 {
     m_encoderConfig = encoderConfig->GetEncoderConfigAV1();
-    assert(m_encoderConfig);
+    vv_assert(m_encoderConfig);
 
     if (m_encoderConfig->codec != VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) {
         return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
@@ -93,13 +93,13 @@ VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& enc
         encodeCaps.maxUnidirectionalCompoundReferenceCount == 0 &&
         encodeCaps.maxBidirectionalCompoundReferenceCount == 0) {
         std::cout << "B-frames were requested but the implementation does not support multiple reference frames!" << std::endl;
-        assert(!"B-frames not supported");
+        vv_assert(!"B-frames not supported");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
     // Initialize DPB
     m_dpbAV1 = VkEncDpbAV1::CreateInstance();
-    assert(m_dpbAV1);
+    vv_assert(m_dpbAV1);
     m_dpbAV1->DpbSequenceStart(m_encoderConfig, m_maxDpbPicturesCount);
 
     m_encoderConfig->GetRateControlParameters(&m_rateControlInfo, m_rateControlLayersInfo, &m_stateAV1.m_rateControlInfoAV1, m_stateAV1.m_rateControlLayersInfoAV1);
@@ -141,8 +141,8 @@ VkResult VkVideoEncoderAV1::EncodeVideoSessionParameters(VkSharedBaseObj<VkVideo
 {
     VkVideoEncodeFrameInfoAV1* pFrameInfo = GetEncodeFrameInfoAV1(encodeFrameInfo);
 
-    assert(pFrameInfo->videoSession);
-    assert(pFrameInfo->videoSessionParameters);
+    vv_assert(pFrameInfo->videoSession);
+    vv_assert(pFrameInfo->videoSessionParameters);
 
     VkVideoEncodeSessionParametersGetInfoKHR getInfo = {
         VK_STRUCTURE_TYPE_VIDEO_ENCODE_SESSION_PARAMETERS_GET_INFO_KHR,
@@ -222,7 +222,7 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
                                                pFrameInfo->stdPictureInfo.current_frame_id,
                                                pFrameInfo->bShowExistingFrame, pFrameInfo->frameToShowBufId);
 
-    assert(dpbIndx >= 0);
+    vv_assert(dpbIndx >= 0);
 
     m_dpbAV1->ConfigureRefBufUpdate(pFrameInfo->bShownKeyFrameOrSwitch, pFrameInfo->bShowExistingFrame, frameUpdateType);
     pFrameInfo->stdPictureInfo.refresh_frame_flags = (uint8_t)m_dpbAV1->GetRefreshFrameFlags(pFrameInfo->bShownKeyFrameOrSwitch, pFrameInfo->bShowExistingFrame);
@@ -239,8 +239,8 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
     // setup recon picture (pSetupReferenceSlot)
     bool success = m_dpbImagePool->GetAvailableImage(encodeFrameInfo->setupImageResource,
                                                      VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR);
-    assert(success);
-    assert(encodeFrameInfo->setupImageResource != nullptr);
+    vv_assert(success);
+    vv_assert(encodeFrameInfo->setupImageResource != nullptr);
     if (!success || (encodeFrameInfo->setupImageResource == nullptr)) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -249,9 +249,9 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
     setupImageViewPictureResource->codedExtent = pFrameInfo->encodeInfo.srcPictureResource.codedExtent;
 
     uint32_t numReferenceSlots = 0;
-    assert(pFrameInfo->numDpbImageResources == 0);
+    vv_assert(pFrameInfo->numDpbImageResources == 0);
     if (encodeFrameInfo->setupImageResource != nullptr) {
-        assert(setupImageViewPictureResource);
+        vv_assert(setupImageViewPictureResource);
         m_dpbAV1->FillStdReferenceInfo((uint8_t) dpbIndx, &pFrameInfo->stdReferenceInfo[numReferenceSlots]);
         pFrameInfo->dpbSlotInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_DPB_SLOT_INFO_KHR;
         pFrameInfo->dpbSlotInfo[numReferenceSlots].pNext = nullptr;
@@ -266,7 +266,7 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
         pFrameInfo->encodeInfo.pSetupReferenceSlot = &pFrameInfo->setupReferenceSlotInfo;
 
         numReferenceSlots++;
-        assert(numReferenceSlots <= ARRAYSIZE(pFrameInfo->referenceSlotsInfo));
+        vv_assert(numReferenceSlots <= ARRAYSIZE(pFrameInfo->referenceSlotsInfo));
     } else {
         pFrameInfo->encodeInfo.pSetupReferenceSlot = nullptr;
     }
@@ -287,14 +287,14 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
             int32_t refNameMinus1 = m_dpbAV1->GetRefNameMinus1(groupId, i);
 
             int32_t dpbIdx = m_dpbAV1->GetDpbIdx(groupId, i);
-            assert(dpbIdx == m_dpbAV1->GetDpbIdx(refNameMinus1));
+            vv_assert(dpbIdx == m_dpbAV1->GetDpbIdx(refNameMinus1));
 
-            assert(pFrameInfo->pictureInfo.referenceNameSlotIndices[refNameMinus1] == -1);
+            vv_assert(pFrameInfo->pictureInfo.referenceNameSlotIndices[refNameMinus1] == -1);
             pFrameInfo->pictureInfo.referenceNameSlotIndices[refNameMinus1] = dpbIdx;
 
             VkSharedBaseObj<VulkanVideoImagePoolNode> dpbImageView;
             bool refPicAvailable = m_dpbAV1->GetDpbPictureResource(dpbIdx, dpbImageView);
-            assert(refPicAvailable);
+            vv_assert(refPicAvailable);
             if (!refPicAvailable) {
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
@@ -382,7 +382,7 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
 
         VkSharedBaseObj<VulkanVideoImagePoolNode> dpbImageView;
         bool refPicAvailable = m_dpbAV1->GetDpbPictureResource(dpbIdx, dpbImageView);
-        assert(refPicAvailable);
+        vv_assert(refPicAvailable);
         if (!refPicAvailable) {
             return VK_ERROR_INITIALIZATION_FAILED;
         }
@@ -397,7 +397,7 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
         }
         if (bDuplicate) {
             // reference is already present.  So, update referenceNameSlotIndices
-            assert(pFrameInfo->pictureInfo.referenceNameSlotIndices[pFrameInfo->stdPictureInfo.primary_ref_frame] == -1);
+            vv_assert(pFrameInfo->pictureInfo.referenceNameSlotIndices[pFrameInfo->stdPictureInfo.primary_ref_frame] == -1);
             pFrameInfo->pictureInfo.referenceNameSlotIndices[pFrameInfo->stdPictureInfo.primary_ref_frame] = dpbIdx;
         } else {
             // reference itself is not present.  Add it to the referenceSlotInfo and udpate referenceNameSlotIndices
@@ -414,7 +414,7 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
             pFrameInfo->referenceSlotsInfo[numReferenceSlots].pPictureResource =
                     pFrameInfo->dpbImageResources[numReferenceSlots]->GetPictureResourceInfo();
 
-            assert(pFrameInfo->pictureInfo.referenceNameSlotIndices[pFrameInfo->stdPictureInfo.primary_ref_frame] == -1);
+            vv_assert(pFrameInfo->pictureInfo.referenceNameSlotIndices[pFrameInfo->stdPictureInfo.primary_ref_frame] == -1);
             pFrameInfo->pictureInfo.referenceNameSlotIndices[pFrameInfo->stdPictureInfo.primary_ref_frame] = dpbIdx;
 
             numReferenceSlots++;
@@ -445,7 +445,7 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
     pFrameInfo->referenceSlotsInfo[0].slotIndex = -1;
 
     if (pFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B) {
-        assert(m_numBFramesToEncode != 0);
+        vv_assert(m_numBFramesToEncode != 0);
         m_numBFramesToEncode--;
     }
 
@@ -469,9 +469,9 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
 {
     VkVideoEncodeFrameInfoAV1* pFrameInfo = GetEncodeFrameInfoAV1(encodeFrameInfo);
 
-    assert(encodeFrameInfo);
-    assert(m_encoderConfig);
-    assert(encodeFrameInfo->srcEncodeImageResource);
+    vv_assert(encodeFrameInfo);
+    vv_assert(m_encoderConfig);
+    vv_assert(encodeFrameInfo->srcEncodeImageResource);
 
     pFrameInfo->videoSession = m_videoSession;
     pFrameInfo->videoSessionParameters = m_videoSessionParameters;
@@ -484,7 +484,7 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
                                                                 (encodeFrameInfo->frameEncodeInputOrderNum == 0),
                                                                 uint32_t(m_encoderConfig->numFrames - encodeFrameInfo->frameEncodeInputOrderNum));
     if (isIdr) {
-        assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
+        vv_assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
         VkResult result = EncodeVideoSessionParameters(encodeFrameInfo);
         if (result != VK_SUCCESS) {
             return result;
@@ -501,7 +501,7 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         m_numBFramesToEncode++;
     }
     if (pFrameInfo->bIsKeyFrame) {
-        assert(encodeFrameInfo->picOrderCntVal == 0);
+        vv_assert(encodeFrameInfo->picOrderCntVal == 0);
         m_lastKeyFrameOrderHint = encodeFrameInfo->picOrderCntVal;
     }
     pFrameInfo->picOrderCntVal = encodeFrameInfo->picOrderCntVal - m_lastKeyFrameOrderHint;
@@ -518,8 +518,8 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     }
 
     pFrameInfo->encodeInfo.srcPictureResource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
-    assert(pFrameInfo->encodeInfo.srcPictureResource.codedOffset.x == 0);
-    assert(pFrameInfo->encodeInfo.srcPictureResource.codedOffset.y == 0);
+    vv_assert(pFrameInfo->encodeInfo.srcPictureResource.codedOffset.x == 0);
+    vv_assert(pFrameInfo->encodeInfo.srcPictureResource.codedOffset.y == 0);
     pFrameInfo->encodeInfo.srcPictureResource.codedExtent.width = m_encoderConfig->encodeWidth;
     pFrameInfo->encodeInfo.srcPictureResource.codedExtent.height = m_encoderConfig->encodeHeight;
     VkVideoPictureResourceInfoKHR* pSrcPictureResource = encodeFrameInfo->srcEncodeImageResource->GetPictureResourceInfo();
@@ -533,7 +533,7 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     //}
 
     VkDeviceSize size = GetBitstreamBuffer(encodeFrameInfo->outputBitstreamBuffer);
-    assert((size > 0) && (encodeFrameInfo->outputBitstreamBuffer != nullptr));
+    vv_assert((size > 0) && (encodeFrameInfo->outputBitstreamBuffer != nullptr));
     if ((size == 0) || (encodeFrameInfo->outputBitstreamBuffer == nullptr)) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -554,11 +554,11 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
                 pFrameInfo->pictureInfo.constantQIndex = (uint8_t)encodeFrameInfo->constQp.qpInterB;
                 break;
             default:
-                assert(!"Invalid picture type");
+                vv_assert(!"Invalid picture type");
                 break;
         }
         if (pFrameInfo->stdPictureInfo.pQuantization != nullptr) {
-            assert(pFrameInfo->stdPictureInfo.pQuantization == &pFrameInfo->stdQuantInfo);
+            vv_assert(pFrameInfo->stdPictureInfo.pQuantization == &pFrameInfo->stdQuantInfo);
             pFrameInfo->stdQuantInfo.base_q_idx = (uint8_t)pFrameInfo->pictureInfo.constantQIndex;
         }
     }
@@ -639,9 +639,9 @@ void VkVideoEncoderAV1::InitializeFrameHeader(StdVideoAV1SequenceHeader* pSequen
     pStdPictureInfo->current_frame_id = (uint32_t)(pFrameInfo->gopPosition.encodeOrder % (1ULL << frameIdBits));
     pStdPictureInfo->order_hint = (uint8_t)(pFrameInfo->picOrderCntVal % (1 << orderHintBits));
     if (pFrameInfo->bOverlayFrame) {
-        assert(pFrameInfo->bShowExistingFrame);
+        vv_assert(pFrameInfo->bShowExistingFrame);
         pFrameInfo->frameToShowBufId = m_dpbAV1->GetOverlayRefBufId(pFrameInfo->picOrderCntVal);
-        assert(pFrameInfo->frameToShowBufId != VkEncDpbAV1::INVALID_IDX);
+        vv_assert(pFrameInfo->frameToShowBufId != VkEncDpbAV1::INVALID_IDX);
         // Re-initialize
         int32_t refBufDpbId = m_dpbAV1->GetRefBufDpbId(pFrameInfo->frameToShowBufId);
         refName = m_dpbAV1->GetRefName(refBufDpbId);
@@ -667,11 +667,11 @@ void VkVideoEncoderAV1::InitializeFrameHeader(StdVideoAV1SequenceHeader* pSequen
                 if (pSequenceHdr->flags.frame_id_numbers_present_flag) {
                     int32_t dpbIdx = m_dpbAV1->GetRefFrameDpbId(ref);
                     if (dpbIdx == VkEncDpbAV1::INVALID_IDX){
-                        assert(0);
+                        vv_assert(0);
                         continue;
                     }
                     int32_t deltaFrameIdMinus1 = ((pStdPictureInfo->current_frame_id - m_dpbAV1->GetFrameId(dpbIdx) + ( 1<< frameIdBits))) % (1 << frameIdBits) - 1;
-                    assert((deltaFrameIdMinus1 >= 0) && (deltaFrameIdMinus1 < (1 << (pSequenceHdr->delta_frame_id_length_minus_2 + 2))));
+                    vv_assert((deltaFrameIdMinus1 >= 0) && (deltaFrameIdMinus1 < (1 << (pSequenceHdr->delta_frame_id_length_minus_2 + 2))));
                     pStdPictureInfo->delta_frame_id_minus_1[ref - STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME] =deltaFrameIdMinus1;
                 }
 
@@ -680,7 +680,7 @@ void VkVideoEncoderAV1::InitializeFrameHeader(StdVideoAV1SequenceHeader* pSequen
 
             for (uint32_t bufIdx = 0; bufIdx < STD_VIDEO_AV1_NUM_REF_FRAMES; bufIdx++) {
                 int32_t dpbIdx = m_dpbAV1->GetRefBufDpbId(bufIdx);
-                assert(dpbIdx != VkEncDpbAV1::INVALID_IDX);
+                vv_assert(dpbIdx != VkEncDpbAV1::INVALID_IDX);
                 pStdPictureInfo->ref_order_hint[bufIdx] = (uint8_t)m_dpbAV1->GetPicOrderCntVal(dpbIdx);
             }
         }
@@ -839,8 +839,8 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
         return VK_SUCCESS;
     }
 
-    assert(encodeFrameInfo->outputBitstreamBuffer != nullptr);
-    assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
+    vv_assert(encodeFrameInfo->outputBitstreamBuffer != nullptr);
+    vv_assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
 
     VkResult result = encodeFrameInfo->encodeCmdBuffer->SyncHostOnCmdBuffComplete(false, "encoderEncodeFence");
     if(result != VK_SUCCESS) {
@@ -868,8 +868,8 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
                                              1, sizeof(encodeResult), &encodeResult, sizeof(encodeResult),
                                              VK_QUERY_RESULT_WITH_STATUS_BIT_KHR | VK_QUERY_RESULT_WAIT_BIT);
 
-    assert(result == VK_SUCCESS);
-    assert(encodeResult.status == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
+    vv_assert(result == VK_SUCCESS);
+    vv_assert(encodeResult.status == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
 
     if(result != VK_SUCCESS) {
         fprintf(stderr, "\nRetrieveData Error: Failed to get vcl query pool results.\n");
@@ -1022,7 +1022,7 @@ void VkVideoEncoderAV1::WriteShowExistingFrameHeader(VkSharedBaseObj<VkVideoEnco
     bool equalPictureIntervalFlag = m_stateAV1.m_sequenceHeader.pTimingInfo ?
                                         m_stateAV1.m_sequenceHeader.pTimingInfo->flags.equal_picture_interval : 1;
     if (decoderModelInfoPresentFlag && !equalPictureIntervalFlag) {
-        assert(0);
+        vv_assert(0);
         uint32_t n = m_stateAV1.m_decoderModelInfo.frame_presentation_time_length_minus_1 + 1;
         uint32_t mask = (1 << n) - 1;
         payloadWriter.PutBits((int32_t)(pFrameInfo->inputTimeStamp & mask), n);
@@ -1065,7 +1065,7 @@ void VkVideoEncoderAV1::WriteShowExistingFrameHeader(VkSharedBaseObj<VkVideoEnco
 void VkVideoEncoderAV1::AppendShowExistingFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& current,
                                                 VkSharedBaseObj<VkVideoEncodeFrameInfo>& node)
 {
-    assert(current);
+    vv_assert(current);
 
     if (current->dependantFrames == nullptr) {
         current->dependantFrames = node;
@@ -1104,7 +1104,7 @@ void VkVideoEncoderAV1::InsertOrdered(VkSharedBaseObj<VkVideoEncodeFrameInfo>& c
         if (node->dependantFrames != nullptr) {
             VkSharedBaseObj<VkVideoEncodeFrameInfo> showExistingFrameInfo;
             GetAvailablePoolNode(showExistingFrameInfo);
-            assert(showExistingFrameInfo);
+            vv_assert(showExistingFrameInfo);
 
             VkVideoEncodeFrameInfoAV1* pCurrentFrameInfo = GetEncodeFrameInfoAV1(showExistingFrameInfo);
             pCurrentFrameInfo->bOverlayFrame = true;

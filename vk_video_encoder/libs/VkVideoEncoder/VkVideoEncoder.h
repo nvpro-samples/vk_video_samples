@@ -17,7 +17,7 @@
 #ifndef _VKVIDEOENCODER_VKVIDEOENCODER_H_
 #define _VKVIDEOENCODER_VKVIDEOENCODER_H_
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <thread>
 #include <atomic>
 #include "VkCodecUtils/VkVideoRefCountBase.h"
@@ -106,7 +106,7 @@ public:
             , m_parentIndex(-1)
             , m_codec(codec)
         {
-            assert(ARRAYSIZE(referenceSlotsInfo) == MAX_IMAGE_REF_RESOURCES);
+            vv_assert(ARRAYSIZE(referenceSlotsInfo) == MAX_IMAGE_REF_RESOURCES);
             for (uint32_t i = 0; i < MAX_IMAGE_REF_RESOURCES; i++) {
                 referenceSlotsInfo[i].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
             }
@@ -114,7 +114,7 @@ public:
                 referenceIntraRefreshInfo[i].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_INTRA_REFRESH_INFO_KHR;
                 referenceIntraRefreshInfo[i].pNext = nullptr;
             }
-            assert(numDpbImageResources <= ARRAYSIZE(dpbImageResources));
+            vv_assert(numDpbImageResources <= ARRAYSIZE(dpbImageResources));
             for (uint32_t i = 0; i < numDpbImageResources; i++) {
                dpbImageResources[i] = nullptr;
             }
@@ -207,7 +207,7 @@ public:
                 return VK_SUCCESS;  // Base case: No more frames, return success
             }
 
-            assert(processFramesIndex < totalFrameCount);
+            vv_assert(processFramesIndex < totalFrameCount);
 
             // Invoke the callback for the current frame
             VkResult result = callback(frame, processFramesIndex, totalFrameCount);
@@ -245,7 +245,7 @@ public:
             // Decrement the counter before processing the next frame
             lastFramesIndex--;
 
-            assert(lastFramesIndex < totalFrameCount);
+            vv_assert(lastFramesIndex < totalFrameCount);
 
             // Invoke the callback for the current frame at the end
             return callback(frame, lastFramesIndex, totalFrameCount);
@@ -253,6 +253,10 @@ public:
 
         virtual void Reset(bool releaseResources = true) {
             // Clear and check state
+            assert(encodeInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR);
+            assert(encodeInfo.pNext != nullptr);
+            vv_assert(encodeInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR);
+            vv_assert(encodeInfo.pNext != nullptr);
             assert(encodeInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR);
 
             encodeInfo.pNext = nullptr;
@@ -283,11 +287,11 @@ public:
             lastFrame = false;
             controlCmd = VkVideoCodingControlFlagsKHR();
             pControlCmdChain = nullptr;
-            assert(qualityLevelInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR);
-            assert(rateControlInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR);
-            assert(rateControlLayersInfo[0].sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR);
-            assert(referenceSlotsInfo[0].sType == VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR);
-            assert(setupReferenceSlotInfo.sType == VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR);
+            vv_assert(qualityLevelInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR);
+            vv_assert(rateControlInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR);
+            vv_assert(rateControlLayersInfo[0].sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR);
+            vv_assert(referenceSlotsInfo[0].sType == VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR);
+            vv_assert(setupReferenceSlotInfo.sType == VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR);
 
             // Clear up the resources
             if (releaseResources) {
@@ -300,7 +304,7 @@ public:
                 srcEncodeImageResource = nullptr;
                 setupImageResource = nullptr;
                 outputBitstreamBuffer = nullptr;
-                assert(numDpbImageResources <= ARRAYSIZE(dpbImageResources));
+                vv_assert(numDpbImageResources <= ARRAYSIZE(dpbImageResources));
                 for (uint32_t i = 0; i < numDpbImageResources; i++) {
                    dpbImageResources[i] = nullptr;
                 }
@@ -348,9 +352,9 @@ public:
 
         VkResult SetParent(VulkanBufferPoolIf* buffPool, int32_t parentIndex)
         {
-            assert(m_parent == nullptr);
+            vv_assert(m_parent == nullptr);
             m_parent      = buffPool;
-            assert(m_parentIndex == -1);
+            vv_assert(m_parentIndex == -1);
             m_parentIndex = parentIndex;
 
             return VK_SUCCESS;

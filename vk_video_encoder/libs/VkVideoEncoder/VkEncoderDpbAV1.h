@@ -184,18 +184,18 @@ public:
         dpbImageView = m_DPB[dpbIdx].dpbImageView;
         return (dpbImageView != nullptr) ? true : false;
     }
-    StdVideoAV1FrameType GetFrameType(int32_t dpbIdx) { assert(dpbIdx != INVALID_IDX); return m_DPB[dpbIdx].frameType; }
-    StdVideoAV1ReferenceName GetRefName(int32_t dpbIdx) { assert(dpbIdx != INVALID_IDX); return m_DPB[dpbIdx].refName; }
-    int32_t GetFrameId(int32_t dpbIdx) { assert(dpbIdx != INVALID_IDX); return m_DPB[dpbIdx].frameId; }
-    int32_t GetPicOrderCntVal(int32_t dpbIdx) { assert(dpbIdx != INVALID_IDX); return m_DPB[dpbIdx].picOrderCntVal; }
+    StdVideoAV1FrameType GetFrameType(int32_t dpbIdx) { vv_assert(dpbIdx != INVALID_IDX); return m_DPB[dpbIdx].frameType; }
+    StdVideoAV1ReferenceName GetRefName(int32_t dpbIdx) { vv_assert(dpbIdx != INVALID_IDX); return m_DPB[dpbIdx].refName; }
+    int32_t GetFrameId(int32_t dpbIdx) { vv_assert(dpbIdx != INVALID_IDX); return m_DPB[dpbIdx].frameId; }
+    int32_t GetPicOrderCntVal(int32_t dpbIdx) { vv_assert(dpbIdx != INVALID_IDX); return m_DPB[dpbIdx].picOrderCntVal; }
     int32_t GetNumRefsInGroup(int32_t groupId) {
-        assert(groupId < 2);
+        vv_assert(groupId < 2);
         return (groupId == 0) ? m_numRefFramesInGroup1 : m_numRefFramesInGroup2;
     }
     int32_t GetNumRefsInGroup1() { return m_numRefFramesInGroup1; }
     int32_t GetNumRefsInGroup2() { return m_numRefFramesInGroup2; }
     int32_t GetRefNameMinus1(int32_t groupId, int32_t i) {
-        assert(groupId < 2);
+        vv_assert(groupId < 2);
         return (groupId == 0) ? m_refNamesInGroup1[i] : m_refNamesInGroup2[i];
     }
     int32_t GetNumRefsL0() { return m_numRefFramesL0; }
@@ -213,9 +213,9 @@ private:
 
     void ReleaseFrame(int32_t dpbId)
     {
-        assert(dpbId < m_maxDpbSize);
-        assert(m_DPB[dpbId].refCount > 0);
-        assert(m_DPB[dpbId].dpbImageView != nullptr);
+        vv_assert(dpbId < m_maxDpbSize);
+        vv_assert(m_DPB[dpbId].refCount > 0);
+        vv_assert(m_DPB[dpbId].dpbImageView != nullptr);
         if (m_DPB[dpbId].refCount > 0) {
             m_DPB[dpbId].refCount--;
             // release the dpbImageView since it is not needed anymore
@@ -226,7 +226,7 @@ private:
     }
 
     int32_t GetRefCount(int32_t dpbId) {
-        assert(dpbId < m_maxDpbSize);
+        vv_assert(dpbId < m_maxDpbSize);
         return m_DPB[dpbId].refCount;
     }
 

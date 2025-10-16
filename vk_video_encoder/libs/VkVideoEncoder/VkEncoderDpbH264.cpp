@@ -19,7 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
+#include "vv_assert.h"
 #include <limits.h>
 #include <algorithm>
 
@@ -308,8 +308,8 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
                         // be performed only if the view_id of the current DPB
                         // entry matches the view_id in m_DPB[i].
 
-                        assert(m_DPB[i].topFOC >= 0);
-                        assert(m_DPB[i].bottomFOC >= 0);
+                        vv_assert(m_DPB[i].topFOC >= 0);
+                        vv_assert(m_DPB[i].bottomFOC >= 0);
 
                         if (((m_DPB[i].state & DPB_TOP) && m_DPB[i].top_needed_for_output &&
                                 ((int32_t)m_DPB[i].topFOC) <= pCurDPBEntry->picInfo.PicOrderCnt) ||
@@ -362,7 +362,7 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
         }
     }
 
-    assert(pCurDPBEntry);
+    vv_assert(pCurDPBEntry);
     if (pCurDPBEntry) {
         pCurDPBEntry->dpbImageView = dpbImageView;
     }
@@ -784,7 +784,7 @@ void VkEncDpbH264::AdaptiveMemoryManagement(const PicInfoH264 *pPicInfo, const S
         case STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_END:
         case STD_VIDEO_H264_MEM_MGMT_CONTROL_OP_INVALID:
         default:
-            assert(!"Invalid case");
+            vv_assert(!"Invalid case");
             break;
         }
     }
@@ -895,7 +895,7 @@ void VkEncDpbH264::CalculatePicNum(const PicInfoH264 *pPicInfo, const StdVideoH2
 {
     int32_t maxFrameNum = 1 << (sps->log2_max_frame_num_minus4 + 4);  // (7-1)
 
-    assert(pPicInfo->frame_num != (uint32_t)(-1));
+    vv_assert(pPicInfo->frame_num != (uint32_t)(-1));
 
     for (int32_t i = 0; i < MAX_DPB_SLOTS; i++) {
         // (8-28)
@@ -1373,7 +1373,7 @@ void VkEncDpbH264::RefPicListReorderingLX(const PicInfoH264 *pPicInfo,
             break;
         case STD_VIDEO_H264_MODIFICATION_OF_PIC_NUMS_IDC_INVALID:
         default:
-            assert(!"Invalid case");
+            vv_assert(!"Invalid case");
             break;
         }
         refIdxLX++;
@@ -1598,7 +1598,7 @@ int32_t VkEncDpbH264::GetPicNumFromDpbIdx(int32_t dpbIdx, bool *shortterm, bool 
 {
     if ((dpbIdx >= 0) && (dpbIdx <= MAX_DPB_SLOTS) && (m_DPB[dpbIdx].state != DPB_EMPTY)) {
         // field pictures not supported/tested
-        assert(m_DPB[dpbIdx].state == DPB_FRAME);
+        vv_assert(m_DPB[dpbIdx].state == DPB_FRAME);
 
         if (m_DPB[dpbIdx].top_field_marking == MARKING_SHORT) {
             *shortterm = true;
@@ -1666,7 +1666,7 @@ uint32_t VkEncDpbH264::GetUsedFbSlotsMask()
         if ((m_DPB[i].top_field_marking != 0) || (m_DPB[i].bottom_field_marking != 0)) {
 
             int32_t fbIdx = m_DPB[i].dpbImageView->GetImageIndex();
-            assert(fbIdx >= 0);
+            vv_assert(fbIdx >= 0);
             usedFbSlotsMask |= (1 << fbIdx);
         }
     }
@@ -1689,7 +1689,7 @@ bool VkEncDpbH264::NeedToReorder()
 }
 void VkEncDpbH264::FillStdReferenceInfo(uint8_t dpbIdx, StdVideoEncodeH264ReferenceInfo* pStdReferenceInfo)
 {
-    assert(dpbIdx < MAX_DPB_SLOTS);
+    vv_assert(dpbIdx < MAX_DPB_SLOTS);
     const DpbEntryH264* pDpbEntry = &m_DPB[dpbIdx];
 
     bool isLongTerm = (pDpbEntry->top_field_marking == MARKING_LONG);

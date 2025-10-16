@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <string>
 #include <vector>
 #include <cstring>
@@ -48,7 +48,7 @@ int main(int argc, const char **argv)
                                         decoderConfig.initialBitdepth,
                                         videoStreamDemuxer);
     if (result != VK_SUCCESS) {
-        assert(!"Can't initialize the VideoStreamDemuxer!");
+        vv_assert(!"Can't initialize the VideoStreamDemuxer!");
         return -1;
     }
 
@@ -96,7 +96,7 @@ int main(int argc, const char **argv)
 
         result = Shell::Create(&vkDevCtxt, configuration, displayShell);
         if (result != VK_SUCCESS) {
-            assert(!"Can't allocate display shell! Out of memory!");
+            vv_assert(!"Can't allocate display shell! Out of memory!");
             return -1;
         }
 
@@ -111,10 +111,10 @@ int main(int argc, const char **argv)
                                               VK_VIDEO_CODEC_OPERATION_NONE_KHR);
         if (result != VK_SUCCESS) {
 
-            assert(!"Can't initialize the Vulkan physical device!");
+            vv_assert(!"Can't initialize the Vulkan physical device!");
             return -1;
         }
-        assert(displayShell->PhysDeviceCanPresent(vkDevCtxt.getPhysicalDevice(),
+        vv_assert(displayShell->PhysDeviceCanPresent(vkDevCtxt.getPhysicalDevice(),
                                                   vkDevCtxt.GetPresentQueueFamilyIdx()));
 
         vkDevCtxt.CreateVulkanDevice(numDecodeQueues,           // numDecodeQueues
@@ -166,7 +166,7 @@ int main(int argc, const char **argv)
                                               requestVideoDecodeQueueMask);
         if (result != VK_SUCCESS) {
 
-            assert(!"Can't initialize the Vulkan physical device!");
+            vv_assert(!"Can't initialize the Vulkan physical device!");
             return -1;
         }
 
@@ -184,7 +184,7 @@ int main(int argc, const char **argv)
                                               );
         if (result != VK_SUCCESS) {
 
-            assert(!"Failed to create Vulkan device!");
+            vv_assert(!"Failed to create Vulkan device!");
             return -1;
         }
 

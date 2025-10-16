@@ -138,7 +138,7 @@ public:
 
     const StdVideoEncodeH264PictureInfo *GetCurrentDpbEntry(void)
     {
-        assert((m_currDpbIdx < m_max_dpb_size) || (m_currDpbIdx == MAX_DPB_SLOTS));
+        vv_assert((m_currDpbIdx < m_max_dpb_size) || (m_currDpbIdx == MAX_DPB_SLOTS));
         return &m_DPB[(int)m_currDpbIdx].picInfo;
     }
 

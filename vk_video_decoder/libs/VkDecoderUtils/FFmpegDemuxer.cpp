@@ -306,17 +306,17 @@ public:
 
     VkVideoCodecOperationFlagBitsKHR FFmpegToVkCodecOperation(AVCodecID id) const {
         switch (id) {
-        case AV_CODEC_ID_MPEG1VIDEO : assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
-        case AV_CODEC_ID_MPEG2VIDEO : assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
-        case AV_CODEC_ID_MPEG4      : assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
-        case AV_CODEC_ID_VC1        : assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
+        case AV_CODEC_ID_MPEG1VIDEO : vv_assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
+        case AV_CODEC_ID_MPEG2VIDEO : vv_assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
+        case AV_CODEC_ID_MPEG4      : vv_assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
+        case AV_CODEC_ID_VC1        : vv_assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
         case AV_CODEC_ID_H264       : return VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR;
         case AV_CODEC_ID_HEVC       : return VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR;
-        case AV_CODEC_ID_VP8        : assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
+        case AV_CODEC_ID_VP8        : vv_assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
         case AV_CODEC_ID_VP9        : return VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR;
         case AV_CODEC_ID_AV1        : return VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR;
-        case AV_CODEC_ID_MJPEG      : assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
-        default                     : assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
+        case AV_CODEC_ID_MJPEG      : vv_assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
+        default                     : vv_assert(false); return VkVideoCodecOperationFlagBitsKHR(0);
         }
     }
 
@@ -338,7 +338,7 @@ public:
             return VK_VIDEO_COMPONENT_BIT_DEPTH_12_BIT_KHR;
             break;
         default:
-            assert(!"Unknown Luma Bit Depth!");
+            vv_assert(!"Unknown Luma Bit Depth!");
         }
         return VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
     }
@@ -356,7 +356,7 @@ public:
             return VK_VIDEO_COMPONENT_BIT_DEPTH_12_BIT_KHR;
             break;
         default:
-            assert(!"Unknown Chroma Bit Depth!");
+            vv_assert(!"Unknown Chroma Bit Depth!");
         }
         return VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
     }
@@ -387,7 +387,7 @@ public:
         default:
             break;
         }
-        // assert(!"Unknown CHROMA_SUBSAMPLING!");
+        // vv_assert(!"Unknown CHROMA_SUBSAMPLING!");
         std::cerr << "\nUnknown CHROMA_SUBSAMPLING from format: " << format << std::endl;
         return VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
     }

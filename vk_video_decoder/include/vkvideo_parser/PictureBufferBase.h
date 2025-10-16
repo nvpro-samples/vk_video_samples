@@ -17,7 +17,7 @@
 #ifndef _PICTUREBUFFERBASE_H_
 #define _PICTUREBUFFERBASE_H_
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <atomic>
 #include <stdint.h>
 #include <string.h>
@@ -48,12 +48,12 @@ public:
 public:
     virtual void AddRef()
     {
-        assert(m_refCount >= 0);
+        vv_assert(m_refCount >= 0);
         ++m_refCount;
     }
     virtual void Release()
     {
-        assert(m_refCount > 0);
+        vv_assert(m_refCount > 0);
         int32_t ref = --m_refCount;
         if (ref == 0) {
             Reset();
@@ -72,7 +72,7 @@ public:
 
     bool IsAvailable() const
     {
-        assert(m_refCount >= 0);
+        vv_assert(m_refCount >= 0);
         return (m_refCount == 0);
     }
 

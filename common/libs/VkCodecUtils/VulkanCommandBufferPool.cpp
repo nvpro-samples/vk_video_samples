@@ -42,9 +42,9 @@ VkResult VulkanCommandBufferPool::PoolNode::Init(const VulkanDeviceContext* vkDe
 
 VkResult VulkanCommandBufferPool::PoolNode::SetParent(VulkanCommandBufferPool* cmdBuffPool, int32_t parentIndex)
 {
-    assert(m_parent == nullptr);
+    vv_assert(m_parent == nullptr);
     m_parent      = cmdBuffPool;
-    assert(m_parentIndex == -1);
+    vv_assert(m_parentIndex == -1);
     m_parentIndex = parentIndex;
 
     return VK_SUCCESS;
@@ -99,7 +99,7 @@ bool VulkanCommandBufferPool::ReleasePoolNodeToPool(uint32_t poolNodeIndex)
 {
     std::lock_guard<std::mutex> lock(m_queueMutex);
 
-    assert(!(m_availablePoolNodes & (1ULL << poolNodeIndex)));
+    vv_assert(!(m_availablePoolNodes & (1ULL << poolNodeIndex)));
     m_availablePoolNodes |= (1ULL << poolNodeIndex);
 
     return true;
@@ -128,20 +128,20 @@ VkResult VulkanCommandBufferPool::Configure(const VulkanDeviceContext*   vkDevCt
 {
     std::lock_guard<std::mutex> lock(m_queueMutex);
     if (numPoolNodes > m_poolNodes.size()) {
-        assert(!"Number of requested number of pool nodes exceeds the max size of the m_poolNodes array");
+        vv_assert(!"Number of requested number of pool nodes exceeds the max size of the m_poolNodes array");
         return VK_ERROR_TOO_MANY_OBJECTS;
     }
 
     VkResult result = m_commandBuffersSet.CreateCommandBufferPool(vkDevCtx, queueFamilyIndex, numPoolNodes);
     if (result != VK_SUCCESS) {
-        assert(!"ERROR: CreateCommandBufferPool!");
+        vv_assert(!"ERROR: CreateCommandBufferPool!");
         return result;
     }
 
     if (createSemaphores) {
         result = m_semaphoreSet.CreateSet(vkDevCtx, numPoolNodes);
         if (result != VK_SUCCESS) {
-            assert(!"ERROR: m_filterWaitSemaphoreSet.CreateSet!");
+            vv_assert(!"ERROR: m_filterWaitSemaphoreSet.CreateSet!");
             return result;
         }
     }
@@ -149,7 +149,7 @@ VkResult VulkanCommandBufferPool::Configure(const VulkanDeviceContext*   vkDevCt
     if (createFences) {
         result = m_fenceSet.CreateSet(vkDevCtx, numPoolNodes);
         if (result != VK_SUCCESS) {
-            assert(!"ERROR: CreateCommandBufferPool!");
+            vv_assert(!"ERROR: CreateCommandBufferPool!");
             return result;
         }
     }

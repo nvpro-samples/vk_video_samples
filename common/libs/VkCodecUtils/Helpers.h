@@ -20,7 +20,7 @@
 #include <vector>
 #include <sstream>
 #include <stdexcept>
-#include <assert.h>
+#include "vv_assert.h"
 #include <iostream>
 #include <cstring>
 #include <iomanip>
@@ -230,9 +230,9 @@ inline VkResult WaitAndResetFence(const VkInterfaceFunctions* vkIf, VkDevice dev
                                   const uint64_t fenceWaitTimeout = 100ULL * 1000ULL * 1000ULL /* 100 mSec */,
                                   const uint64_t fenceTotalWaitTimeout = 5ULL * 1000ULL * 1000ULL * 1000ULL /* 5 sec */) {
 
-    assert(vkIf != nullptr);
-    assert(device != VK_NULL_HANDLE);
-    assert(fence != VK_NULL_HANDLE);
+    vv_assert(vkIf != nullptr);
+    vv_assert(device != VK_NULL_HANDLE);
+    vv_assert(fence != VK_NULL_HANDLE);
 
     uint64_t fenceCurrentWaitTimeout = 0;
 
@@ -255,17 +255,17 @@ inline VkResult WaitAndResetFence(const VkInterfaceFunctions* vkIf, VkDevice dev
     if (result != VK_SUCCESS) {
         fprintf(stderr, "\t **** ERROR: fence  %s(%llu) is not done after %llu mSec with result 0x%x ****\n",
                         fenceName, (long long unsigned int)fence, (long long unsigned int)fenceTotalWaitTimeout/(1000ULL * 1000ULL), vkIf->GetFenceStatus(device, fence));
-        assert(!"Fence is not signaled yet after more than 100 mSec wait");
+        vv_assert(!"Fence is not signaled yet after more than 100 mSec wait");
     }
 
     if (resetAfterWait) {
         result = vkIf->ResetFences(device, 1, &fence);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "\nERROR: ResetFences() result: 0x%x\n", result);
-            assert(result == VK_SUCCESS);
+            vv_assert(result == VK_SUCCESS);
         }
 
-        assert(vkIf->GetFenceStatus(device, fence) == VK_NOT_READY);
+        vv_assert(vkIf->GetFenceStatus(device, fence) == VK_NOT_READY);
     }
     return result;
 }
@@ -339,12 +339,12 @@ inline void ChainNextVkStruct(NodeType& node, ChainedNodeType& nextChainedNode) 
     static_assert(std::is_standard_layout<ChainedNodeType>::value,
                   "ChainedNodeType must be a standard-layout type");
 
-    assert(node.sType > 0);
+    vv_assert(node.sType > 0);
     VkBaseInStructure* pNode = (VkBaseInStructure*)(&node);
     VkBaseInStructure* pNextNode = (VkBaseInStructure*)(&nextChainedNode);
 
     // The incoming object may not have anything chained.
-    assert(pNextNode->pNext == nullptr);
+    vv_assert(pNextNode->pNext == nullptr);
 
     // Inserts the incoming object at the beginning of the list.
     pNextNode->pNext = pNode->pNext;

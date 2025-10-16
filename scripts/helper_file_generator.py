@@ -605,7 +605,7 @@ class HelperFileOutputGenerator(OutputGenerator):
                     '    uint32_t InitFromDeviceCreateInfo(const %s *instance_extensions, uint32_t requested_api_version,' % instance_struct_type,
                     '                                      const VkDeviceCreateInfo *pCreateInfo) {',
                     '        // Initialize: this to defaults,  base class fields to input.',
-                    '        assert(instance_extensions);',
+                    '        vv_assert(instance_extensions);',
                     '        *this = %s(*instance_extensions);' % struct_type])
 
             struct.extend([
@@ -627,7 +627,7 @@ class HelperFileOutputGenerator(OutputGenerator):
                 '        if (api_version >= VK_API_VERSION_1_1) {',
                 '            for (auto promoted_ext : V_1_0_promoted_%s_extensions) {' % type.lower(),
                 '                auto info = get_info(promoted_ext);',
-                '                assert(info.state);',
+                '                vv_assert(info.state);',
                 '                if (info.state) this->*(info.state) = true;',
                 '            }',
                 '        }',

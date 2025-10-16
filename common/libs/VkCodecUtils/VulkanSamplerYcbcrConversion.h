@@ -85,7 +85,7 @@ public:
                                                                               &imageFormatInfo,
                                                                               &imageFormatProperties);
         if (result != VK_SUCCESS) {
-            assert(!"ERROR: vkGetPhysicalDeviceImageFormatProperties2!");
+            vv_assert(!"ERROR: vkGetPhysicalDeviceImageFormatProperties2!");
         }
 
         return samplerYcbcrConversionImageFormatProperties.combinedImageSamplerDescriptorCount;

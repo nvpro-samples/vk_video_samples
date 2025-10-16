@@ -123,18 +123,18 @@ public:
             return (size_t)-1;
         }
 
-        assert(pFrame != nullptr);
+        vv_assert(pFrame != nullptr);
 
         VkSharedBaseObj<VkImageResourceView> imageResourceView;
         pFrame->imageViews[VulkanDecodedFrame::IMAGE_VIEW_TYPE_LINEAR].GetImageResourceView(imageResourceView);
-        assert(!!imageResourceView);
-        assert(pFrame->pictureIndex != -1);
+        vv_assert(!!imageResourceView);
+        vv_assert(pFrame->pictureIndex != -1);
 
         VkSharedBaseObj<VkImageResource> imageResource = imageResourceView->GetImageResource();
         uint8_t* pOutputBuffer = EnsureAllocation(vkDevCtx, imageResource);
-        assert(pOutputBuffer != nullptr);
+        vv_assert(pOutputBuffer != nullptr);
 
-        assert((pFrame->displayWidth >= 0) && (pFrame->displayHeight >= 0));
+        vv_assert((pFrame->displayWidth >= 0) && (pFrame->displayHeight >= 0));
 
         WaitAndGetStatus(vkDevCtx,
                         *vkDevCtx,
@@ -285,8 +285,8 @@ public:
         VkDeviceSize imageOffset = imageResource->GetImageDeviceMemoryOffset();
         VkDeviceSize maxSize = 0;
         const uint8_t* readImagePtr = srcImageDeviceMemory->GetReadOnlyDataPtr(imageOffset, maxSize);
-        assert(readImagePtr != nullptr);
-        assert(maxSize <= SIZE_MAX);  // Ensure we don't lose data in conversion
+        vv_assert(readImagePtr != nullptr);
+        vv_assert(maxSize <= SIZE_MAX);  // Ensure we don't lose data in conversion
 
         int32_t secondaryPlaneWidth = frameWidth;
         int32_t secondaryPlaneHeight = frameHeight;
@@ -330,7 +330,7 @@ public:
                     vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[2]);
                     break;
                 default:
-                    assert(0);
+                    vv_assert(0);
             }
         } else {
             vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[0]);
@@ -356,13 +356,13 @@ public:
             uint8_t* pDst = pOutBuffer + static_cast<size_t>(yuvPlaneLayouts[plane].offset);
 
             if (is8Bit) {
-                assert(layouts[plane].rowPitch <= SIZE_MAX);
-                assert(yuvPlaneLayouts[plane].rowPitch <= SIZE_MAX);
+                vv_assert(layouts[plane].rowPitch <= SIZE_MAX);
+                vv_assert(yuvPlaneLayouts[plane].rowPitch <= SIZE_MAX);
                 CopyPlaneData<uint8_t>(pSrc, pDst, static_cast<size_t>(layouts[plane].rowPitch), static_cast<size_t>(yuvPlaneLayouts[plane].rowPitch),
                                       frameWidth, imageHeight);
             } else {
-                assert(layouts[plane].rowPitch <= SIZE_MAX);
-                assert(yuvPlaneLayouts[plane].rowPitch <= SIZE_MAX);
+                vv_assert(layouts[plane].rowPitch <= SIZE_MAX);
+                vv_assert(yuvPlaneLayouts[plane].rowPitch <= SIZE_MAX);
                 CopyPlaneData<uint16_t>(pSrc, pDst, static_cast<size_t>(layouts[plane].rowPitch), static_cast<size_t>(yuvPlaneLayouts[plane].rowPitch),
                                        frameWidth, imageHeight);
             }
@@ -383,13 +383,13 @@ public:
                 }
 
                 if (is8Bit) {
-                    assert(layouts[srcPlane].rowPitch <= SIZE_MAX);
-                    assert(yuvPlaneLayouts[plane].rowPitch <= SIZE_MAX);
+                    vv_assert(layouts[srcPlane].rowPitch <= SIZE_MAX);
+                    vv_assert(yuvPlaneLayouts[plane].rowPitch <= SIZE_MAX);
                     CopyPlaneData<uint8_t>(pSrc, pDst, static_cast<size_t>(layouts[srcPlane].rowPitch), static_cast<size_t>(yuvPlaneLayouts[plane].rowPitch),
                                            planeWidth, 1, 2);
                 } else {
-                    assert(layouts[srcPlane].rowPitch <= SIZE_MAX);
-                    assert(yuvPlaneLayouts[plane].rowPitch <= SIZE_MAX);
+                    vv_assert(layouts[srcPlane].rowPitch <= SIZE_MAX);
+                    vv_assert(yuvPlaneLayouts[plane].rowPitch <= SIZE_MAX);
                     CopyPlaneData<uint16_t>(pSrc, pDst, static_cast<size_t>(layouts[srcPlane].rowPitch), static_cast<size_t>(yuvPlaneLayouts[plane].rowPitch),
                                             planeWidth, 1, 2);
                 }
@@ -428,7 +428,7 @@ private:
         }
 
         VkDeviceSize imageMemorySize = imageResource->GetImageDeviceMemorySize();
-        assert(imageMemorySize <= SIZE_MAX);  // Ensure we don't lose data in conversion
+        vv_assert(imageMemorySize <= SIZE_MAX);  // Ensure we don't lose data in conversion
 
         if ((m_pLinearMemory == nullptr) || (imageMemorySize > m_allocationSize)) {
             if (m_outputFile) {
@@ -445,7 +445,7 @@ private:
             if (m_pLinearMemory == nullptr) {
                 return nullptr;
             }
-            assert(m_pLinearMemory != nullptr);
+            vv_assert(m_pLinearMemory != nullptr);
         }
         return m_pLinearMemory;
     }

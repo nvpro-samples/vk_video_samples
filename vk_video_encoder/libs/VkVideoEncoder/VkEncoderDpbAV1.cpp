@@ -19,7 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
+#include "vv_assert.h"
 #include <limits.h>
 #include <algorithm>
 
@@ -131,8 +131,8 @@ int32_t VkEncDpbAV1::DpbSequenceStart(const VkSharedBaseObj<EncoderConfigAV1>& e
 
     DpbDeinit();
 
-    assert(userDpbSize <= BUFFER_POOL_MAX_SIZE);
-    assert(userDpbSize >= STD_VIDEO_AV1_NUM_REF_FRAMES); // less than 8 slots are not supported now
+    vv_assert(userDpbSize <= BUFFER_POOL_MAX_SIZE);
+    vv_assert(userDpbSize >= STD_VIDEO_AV1_NUM_REF_FRAMES); // less than 8 slots are not supported now
 
     m_maxSingleReferenceCount = capabilities.maxSingleReferenceCount;
     m_singleReferenceNameMask = capabilities.singleReferenceNameMask;
@@ -189,12 +189,12 @@ int8_t VkEncDpbAV1::DpbPictureStart(StdVideoAV1FrameType frameType,
     if (!bShowExistingFrame) {
         for (dpbIndx = 0; dpbIndx < m_maxDpbSize; dpbIndx++) {
             if (m_DPB[dpbIndx].refCount == 0) {
-                assert(m_DPB[dpbIndx].dpbImageView == nullptr);
+                vv_assert(m_DPB[dpbIndx].dpbImageView == nullptr);
                 break;
             }
         }
         if ((dpbIndx == INVALID_IDX) || (dpbIndx >= m_maxDpbSize)) {
-            assert(!"DPB mangement error");
+            vv_assert(!"DPB mangement error");
             return INVALID_IDX;
         }
 
@@ -439,7 +439,7 @@ int32_t VkEncDpbAV1::GetPrimaryRefBufId(VkVideoEncoderAV1PrimaryRefType primaryR
 {
     int32_t refBufId = VkEncDpbAV1::INVALID_IDX;
 
-    assert((primaryRefType >= REGULAR_FRAME) && (primaryRefType < MAX_PRI_REF_TYPES));
+    vv_assert((primaryRefType >= REGULAR_FRAME) && (primaryRefType < MAX_PRI_REF_TYPES));
 
     if ((primaryRefType >= REGULAR_FRAME) && (primaryRefType < MAX_PRI_REF_TYPES)) {
         refBufId = m_primaryRefBufIdMap[primaryRefType];
@@ -526,7 +526,7 @@ void VkEncDpbAV1::UpdateRefFrameDpbIdMap(int8_t dpbIndx)
             // assign new DPB entry
             m_refFrameDpbIdMap[bufId] = dpbIndx;
             // increase reference count (
-            assert(m_DPB[dpbIndx].refCount <= STD_VIDEO_AV1_NUM_REF_FRAMES);
+            vv_assert(m_DPB[dpbIndx].refCount <= STD_VIDEO_AV1_NUM_REF_FRAMES);
             m_DPB[dpbIndx].refCount++;
         }
     }
@@ -710,7 +710,7 @@ void VkEncDpbAV1::SetupReferenceFrameGroups(VkVideoGopStructure::FrameType pictu
             }
         }
 
-        assert(supportedReferenceMask != 0);
+        vv_assert(supportedReferenceMask != 0);
 
         // Group 1
         int32_t numRef = 0;
@@ -840,7 +840,7 @@ void VkEncDpbAV1::SetupReferenceFrameGroups(VkVideoGopStructure::FrameType pictu
 
 void VkEncDpbAV1::FillStdReferenceInfo(uint8_t dpbIdx, StdVideoEncodeAV1ReferenceInfo* pStdReferenceInfo)
 {
-    assert(dpbIdx < m_maxDpbSize);
+    vv_assert(dpbIdx < m_maxDpbSize);
     const DpbEntryAV1* pDpbEntry = &m_DPB[dpbIdx];
 
     memset(pStdReferenceInfo, 0, sizeof(StdVideoEncodeAV1ReferenceInfo));

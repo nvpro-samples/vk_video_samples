@@ -17,7 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
+#include "vv_assert.h"
 
 #if defined(__unix__)
 #include <unistd.h>
@@ -200,15 +200,15 @@ public:
     }
 
     VkSemaphore* GetPresentSemaphoreInFly() {
-        assert(mPresentCompleteSemaphoreInFly);
+        vv_assert(mPresentCompleteSemaphoreInFly);
 
         return mPresentCompleteSemaphoreInFly;
     }
 
     void SetPresentSemaphoreInFly(uint32_t scIndex, VkSemaphore* semaphore)
     {
-        assert(mPresentCompleteSemaphoreInFly == semaphore);
-        assert(scIndex < mSwapchainNumBufs);
+        vv_assert(mPresentCompleteSemaphoreInFly == semaphore);
+        vv_assert(scIndex < mSwapchainNumBufs);
 
         // Swap the semaphore on the fly with the one that is requested to be set.
         VkSemaphore* tempSem = mPresentCompleteSemaphores[scIndex];
@@ -219,7 +219,7 @@ public:
     VkSemaphore* GetPresentSemaphore(uint32_t scIndex)
     {
         VkSemaphore* tempSem = mPresentCompleteSemaphores[scIndex];
-        assert(tempSem);
+        vv_assert(tempSem);
         return tempSem;
     }
 

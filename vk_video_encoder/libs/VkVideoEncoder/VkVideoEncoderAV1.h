@@ -121,7 +121,7 @@ public:
         }
 
         void PutLeb128(uint32_t size) {
-            assert(bitcount == 0);
+            vv_assert(bitcount == 0);
 
             while (size >> 7) {
                 buffer.push_back(0x80 & (size & 0x7f));
@@ -187,7 +187,7 @@ protected:
 
 private:
     VkVideoEncodeFrameInfoAV1* GetEncodeFrameInfoAV1(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) {
-        assert(VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR == encodeFrameInfo->GetType());
+        vv_assert(VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR == encodeFrameInfo->GetType());
         VkVideoEncodeFrameInfo* pEncodeFrameInfo = encodeFrameInfo;
         return (VkVideoEncodeFrameInfoAV1*)pEncodeFrameInfo;
     }

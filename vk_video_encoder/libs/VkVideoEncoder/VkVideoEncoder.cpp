@@ -39,7 +39,7 @@ static size_t getFormatTexelSize(VkFormat format)
     case VK_FORMAT_R32_SINT:
         return 4;
     default:
-        assert(!"unknown format");
+        vv_assert(!"unknown format");
         return 0;
     }
 }
@@ -83,11 +83,11 @@ VkResult VkVideoEncoder::LoadNextQpMapFrameFromFile(VkSharedBaseObj<VkVideoEncod
     if (srcQpMapResource == nullptr) {
         bool success = qpMapImagePool->GetAvailableImage(srcQpMapResource,
                                                          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-        assert(success);
+        vv_assert(success);
         if (!success) {
             return VK_ERROR_INITIALIZATION_FAILED;
         }
-        assert(srcQpMapResource != nullptr);
+        vv_assert(srcQpMapResource != nullptr);
 
         VkSharedBaseObj<VkImageResourceView> linearQpMapImageView;
         srcQpMapResource->GetImageView(linearQpMapImageView);
@@ -99,7 +99,7 @@ VkResult VkVideoEncoder::LoadNextQpMapFrameFromFile(VkSharedBaseObj<VkVideoEncod
         VkDeviceSize qpMapImageOffset = dstQpMapImageResource->GetImageDeviceMemoryOffset();
         VkDeviceSize qpMapMaxSize = 0;
         uint8_t* writeQpMapImagePtr = srcQpMapImageDeviceMemory->GetDataPtr(qpMapImageOffset, qpMapMaxSize);
-        assert(writeQpMapImagePtr != nullptr);
+        vv_assert(writeQpMapImagePtr != nullptr);
 
         size_t formatSize = getFormatTexelSize(m_imageQpMapFormat);
         uint32_t inputQpMapWidth = (m_encoderConfig->input.width + m_qpMapTexelSize.width - 1) / m_qpMapTexelSize.width;
@@ -126,7 +126,7 @@ VkResult VkVideoEncoder::LoadNextQpMapFrameFromFile(VkSharedBaseObj<VkVideoEncod
 // 5. Copy linear image to the optimal image
 VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
-    assert(encodeFrameInfo);
+    vv_assert(encodeFrameInfo);
 
     encodeFrameInfo->frameInputOrderNum = m_inputFrameNum++;
     encodeFrameInfo->lastFrame = !(encodeFrameInfo->frameInputOrderNum < (m_encoderConfig->numFrames - 1));
@@ -142,11 +142,11 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
     if (encodeFrameInfo->srcStagingImageView == nullptr) {
         bool success = m_linearInputImagePool->GetAvailableImage(encodeFrameInfo->srcStagingImageView,
                                                                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-        assert(success);
+        vv_assert(success);
         if (!success) {
             return VK_ERROR_INITIALIZATION_FAILED;
         }
-        assert(encodeFrameInfo->srcStagingImageView != nullptr);
+        vv_assert(encodeFrameInfo->srcStagingImageView != nullptr);
     }
 
     VkSharedBaseObj<VkImageResourceView> linearInputImageView;
@@ -160,7 +160,7 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
     VkDeviceSize maxSize = 0;
 
     uint8_t* writeImagePtr = srcImageDeviceMemory->GetDataPtr(imageOffset, maxSize);
-    assert(writeImagePtr != nullptr);
+    vv_assert(writeImagePtr != nullptr);
 
     // AdvanceFrameOffset() assumes we increment the frame counter, i.e. m_inputFrameNum++
     const size_t frameOffset = m_encoderConfig->inputFileHandler.GetCurrFrameOffset();
@@ -198,17 +198,17 @@ VkResult VkVideoEncoder::StageInputFrameQpMap(VkSharedBaseObj<VkVideoEncodeFrame
     if (encodeFrameInfo->srcQpMapImageResource == nullptr) {
         bool success = m_qpMapImagePool->GetAvailableImage(encodeFrameInfo->srcQpMapImageResource,
                                                            VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR);
-        assert(success);
-        assert(encodeFrameInfo->srcQpMapImageResource != nullptr);
+        vv_assert(success);
+        vv_assert(encodeFrameInfo->srcQpMapImageResource != nullptr);
         if (!success || encodeFrameInfo->srcQpMapImageResource == nullptr) {
             return VK_ERROR_INITIALIZATION_FAILED;
         }
     }
 
     if (useDedicatedCommandBuf) {
-        assert(m_inputCommandBufferPool != nullptr);
+        vv_assert(m_inputCommandBufferPool != nullptr);
         m_inputCommandBufferPool->GetAvailablePoolNode(encodeFrameInfo->qpMapCmdBuffer);
-        assert(encodeFrameInfo->qpMapCmdBuffer != nullptr);
+        vv_assert(encodeFrameInfo->qpMapCmdBuffer != nullptr);
 
         // Make sure command buffer is not in use anymore and reset
         encodeFrameInfo->qpMapCmdBuffer->ResetCommandBuffer(true, "encoderStagedInputFence");
@@ -219,7 +219,7 @@ VkResult VkVideoEncoder::StageInputFrameQpMap(VkSharedBaseObj<VkVideoEncodeFrame
         cmdBuf = encodeFrameInfo->qpMapCmdBuffer->BeginCommandBufferRecording(beginInfo);
     }
 
-    assert(cmdBuf != VK_NULL_HANDLE);
+    vv_assert(cmdBuf != VK_NULL_HANDLE);
 
     VkSharedBaseObj<VkImageResourceView> linearQpMapImageView;
     encodeFrameInfo->srcQpMapStagingResource->GetImageView(linearQpMapImageView);
@@ -263,21 +263,21 @@ VkResult VkVideoEncoder::EncodeFrameCommon(VkSharedBaseObj<VkVideoEncodeFrameInf
 
 VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
-    assert(encodeFrameInfo);
+    vv_assert(encodeFrameInfo);
 
     if (encodeFrameInfo->srcEncodeImageResource == nullptr) {
 
         bool success = m_inputImagePool->GetAvailableImage(encodeFrameInfo->srcEncodeImageResource,
                                                            VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR);
-        assert(success);
-        assert(encodeFrameInfo->srcEncodeImageResource != nullptr);
+        vv_assert(success);
+        vv_assert(encodeFrameInfo->srcEncodeImageResource != nullptr);
         if (!success || encodeFrameInfo->srcEncodeImageResource == nullptr) {
             return VK_ERROR_INITIALIZATION_FAILED;
         }
     }
 
     m_inputCommandBufferPool->GetAvailablePoolNode(encodeFrameInfo->inputCmdBuffer);
-    assert(encodeFrameInfo->inputCmdBuffer != nullptr);
+    vv_assert(encodeFrameInfo->inputCmdBuffer != nullptr);
 
     // Make sure command buffer is not in use anymore and reset
     encodeFrameInfo->inputCmdBuffer->ResetCommandBuffer(true, "encoderStagedInputFence");
@@ -363,8 +363,8 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
 VkResult VkVideoEncoder::SubmitStagedQpMap(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
-    assert(encodeFrameInfo);
-    assert(encodeFrameInfo->qpMapCmdBuffer != nullptr);
+    vv_assert(encodeFrameInfo);
+    vv_assert(encodeFrameInfo->qpMapCmdBuffer != nullptr);
 
     const VkCommandBuffer* pCmdBuf = encodeFrameInfo->qpMapCmdBuffer->GetCommandBuffer();
     VkSemaphore frameCompleteSemaphore = encodeFrameInfo->qpMapCmdBuffer->GetSemaphore();
@@ -389,7 +389,7 @@ VkResult VkVideoEncoder::SubmitStagedQpMap(VkSharedBaseObj<VkVideoEncodeFrameInf
     submitInfo.pSignalSemaphoreInfos = (frameCompleteSemaphore != VK_NULL_HANDLE) ? &signalSemaphoreInfo : nullptr;
 
     VkFence queueCompleteFence = encodeFrameInfo->qpMapCmdBuffer->GetFence();
-    assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, queueCompleteFence));
+    vv_assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, queueCompleteFence));
 
     VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(((m_vkDevCtx->GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) != 0) ?
                                                                      VulkanDeviceContext::ENCODE : VulkanDeviceContext::TRANSFER,
@@ -479,8 +479,8 @@ void VkVideoEncoder::CopyYCbCrPlanesDirectCPU(
         }
 
         // Source and destination strides
-        assert(inputPlaneLayouts[plane].rowPitch <= SIZE_MAX);
-        assert(dstSubresourceLayout[plane].rowPitch <= SIZE_MAX);
+        vv_assert(inputPlaneLayouts[plane].rowPitch <= SIZE_MAX);
+        vv_assert(dstSubresourceLayout[plane].rowPitch <= SIZE_MAX);
         const size_t srcStride = (size_t)inputPlaneLayouts[plane].rowPitch;
         const size_t dstStride = (size_t)dstSubresourceLayout[plane].rowPitch;
 
@@ -528,8 +528,8 @@ void VkVideoEncoder::CopyYCbCrPlanesDirectCPU(
 
 VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
-    assert(encodeFrameInfo);
-    assert(encodeFrameInfo->inputCmdBuffer != nullptr);
+    vv_assert(encodeFrameInfo);
+    vv_assert(encodeFrameInfo->inputCmdBuffer != nullptr);
 
     const VkCommandBuffer* pCmdBuf = encodeFrameInfo->inputCmdBuffer->GetCommandBuffer();
     VkSemaphore frameCompleteSemaphore = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
@@ -554,7 +554,7 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
     submitInfo.pSignalSemaphoreInfos = (frameCompleteSemaphore != VK_NULL_HANDLE) ? &signalSemaphoreInfo : nullptr;
 
     VkFence queueCompleteFence = encodeFrameInfo->inputCmdBuffer->GetFence();
-    assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, queueCompleteFence));
+    vv_assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, queueCompleteFence));
     const VulkanDeviceContext::QueueFamilySubmitType submitType =
             (m_inputComputeFilter != nullptr) ? VulkanDeviceContext::COMPUTE :
                     (((m_vkDevCtx->GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) != 0) ?
@@ -609,8 +609,8 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
         DumpStateInfo("assemble bitstream", 6, encodeFrameInfo, frameIdx, ofTotalFrames);
     }
 
-    assert(encodeFrameInfo->outputBitstreamBuffer != nullptr);
-    assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
+    vv_assert(encodeFrameInfo->outputBitstreamBuffer != nullptr);
+    vv_assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
 
     if(encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
         size_t nonVcl = fwrite(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
@@ -655,14 +655,14 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
 
     if(result != VK_SUCCESS) {
         fprintf(stderr, "\nRetrieveData Error: Failed to get vcl query pool results.\n");
-        assert(result == VK_SUCCESS);
+        vv_assert(result == VK_SUCCESS);
         return result;
     }
 
     if (encodeResult.status != VK_QUERY_RESULT_STATUS_COMPLETE_KHR) {
         fprintf(stderr, "\nencodeResult.status is (0x%x) NOT STATUS_COMPLETE! bitstreamStartOffset %u, bitstreamSize %u\n",
                 encodeResult.status, encodeResult.bitstreamStartOffset, encodeResult.bitstreamSize);
-        assert(encodeResult.status == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
+        vv_assert(encodeResult.status == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
         return VK_INCOMPLETE;
     }
 
@@ -697,7 +697,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                                        m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
                                                        encoderConfig->codec)) {
         std::cout << "*** The video codec " << VkVideoCoreProfile::CodecToName(encoderConfig->codec) << " is not supported! ***" << std::endl;
-        assert(!"The video codec is not supported");
+        vv_assert(!"The video codec is not supported");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
@@ -726,13 +726,13 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         if ((m_encoderConfig->qpMapMode == EncoderConfig::DELTA_QP_MAP) &&
             ((m_encoderConfig->videoEncodeCapabilities.flags & VK_VIDEO_ENCODE_CAPABILITY_QUANTIZATION_DELTA_MAP_BIT_KHR) == 0)) {
                 std::cout << "Delta QP Map was requested, but the implementation does not support it!" << std::endl;
-                assert(!"Delta QP Map is not supported");
+                vv_assert(!"Delta QP Map is not supported");
                 return VK_ERROR_INITIALIZATION_FAILED;
         }
         if ((m_encoderConfig->qpMapMode == EncoderConfig::EMPHASIS_MAP) &&
             ((m_encoderConfig->videoEncodeCapabilities.flags & VK_VIDEO_ENCODE_CAPABILITY_EMPHASIS_MAP_BIT_KHR) == 0)) {
                 std::cout << "Emphasis Map was requested, but the implementation does not support it!" << std::endl;
-                assert(!"Emphasis QP Map is not supported");
+                vv_assert(!"Emphasis QP Map is not supported");
                 return VK_ERROR_INITIALIZATION_FAILED;
         }
     }
@@ -984,7 +984,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
         // after creating a new video session, we need a codec reset.
         m_resetEncoder = true;
-        assert(result == VK_SUCCESS);
+        vv_assert(result == VK_SUCCESS);
     }
 
 
@@ -1056,16 +1056,16 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         return result;
     }
 
-    assert(m_vkDevCtx->GetVideoEncodeQueueFamilyIdx() != -1);
-    assert(m_vkDevCtx->GetVideoEncodeNumQueues() > 0);
-    assert(m_vkDevCtx->GetVideoEncodeDefaultQueueIndex() < m_vkDevCtx->GetVideoEncodeNumQueues());
+    vv_assert(m_vkDevCtx->GetVideoEncodeQueueFamilyIdx() != -1);
+    vv_assert(m_vkDevCtx->GetVideoEncodeNumQueues() > 0);
+    vv_assert(m_vkDevCtx->GetVideoEncodeDefaultQueueIndex() < m_vkDevCtx->GetVideoEncodeNumQueues());
 
     if (m_currentVideoQueueIndx < 0) {
         m_currentVideoQueueIndx = m_vkDevCtx->GetVideoEncodeDefaultQueueIndex();
     } else if (m_vkDevCtx->GetVideoEncodeNumQueues() > 1) {
         m_currentVideoQueueIndx %= m_vkDevCtx->GetVideoEncodeNumQueues();
-        assert(m_currentVideoQueueIndx < m_vkDevCtx->GetVideoEncodeNumQueues());
-        assert(m_currentVideoQueueIndx >= 0);
+        vv_assert(m_currentVideoQueueIndx < m_vkDevCtx->GetVideoEncodeNumQueues());
+        vv_assert(m_currentVideoQueueIndx >= 0);
     } else {
         m_currentVideoQueueIndx = 0;
     }
@@ -1217,7 +1217,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                     encoderConfig->videoCapabilities.minBitstreamBufferOffsetAlignment,
                     encoderConfig->videoCapabilities.minBitstreamBufferSizeAlignment,
                     nullptr, 0, bitstreamBuffer);
-            assert(result == VK_SUCCESS);
+            vv_assert(result == VK_SUCCESS);
             if (result != VK_SUCCESS) {
                 fprintf(stderr, "\nERROR: VulkanBitstreamBufferImpl::Create() result: 0x%x\n", result);
                 break;
@@ -1225,7 +1225,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
             int32_t nodeAddedWithIndex = m_bitstreamBuffersQueue.AddNodeToPool(bitstreamBuffer, false);
             if (nodeAddedWithIndex < 0) {
-                assert("Could not add the new node to the pool");
+                vv_assert("Could not add the new node to the pool");
                 break;
             }
         }
@@ -1355,7 +1355,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 VkDeviceSize VkVideoEncoder::GetBitstreamBuffer(VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer)
 {
     VkDeviceSize newSize = m_streamBufferSize;
-    assert(m_vkDevCtx);
+    vv_assert(m_vkDevCtx);
 
     VkSharedBaseObj<VulkanBitstreamBufferImpl> newBitstreamBuffer;
 
@@ -1373,7 +1373,7 @@ VkDeviceSize VkVideoEncoder::GetBitstreamBuffer(VkSharedBaseObj<VulkanBitstreamB
                 m_encoderConfig->videoCapabilities.minBitstreamBufferOffsetAlignment,
                 m_encoderConfig->videoCapabilities.minBitstreamBufferSizeAlignment,
                 nullptr, 0, newBitstreamBuffer);
-        assert(result == VK_SUCCESS);
+        vv_assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "\nERROR: VulkanBitstreamBufferImpl::Create() result: 0x%x\n", result);
             return 0;
@@ -1385,13 +1385,13 @@ VkDeviceSize VkVideoEncoder::GetBitstreamBuffer(VkSharedBaseObj<VulkanBitstreamB
         if (enablePool) {
             int32_t nodeAddedWithIndex = m_bitstreamBuffersQueue.AddNodeToPool(newBitstreamBuffer, true);
             if (nodeAddedWithIndex < 0) {
-                assert("Could not add the new node to the pool");
+                vv_assert("Could not add the new node to the pool");
             }
         }
 
     } else {
 
-        assert(newBitstreamBuffer);
+        vv_assert(newBitstreamBuffer);
         newSize = newBitstreamBuffer->GetMaxSize();
 
 #ifdef CLEAR_BITSTREAM_BUFFERS_ON_CREATE
@@ -1495,11 +1495,11 @@ VkResult VkVideoEncoder::CopyLinearToOptimalImage(VkCommandBuffer& commandBuffer
     const VkSharedBaseObj<VkImageResource>& srcImageResource = srcImageView->GetImageResource();
     const VkSharedBaseObj<VkImageResource>& dstImageResource = dstImageView->GetImageResource();
 
-    assert(srcImageResource->GetImageCreateInfo().extent.width  >= copyImageExtent.width);
-    assert(srcImageResource->GetImageCreateInfo().extent.height >= copyImageExtent.height);
+    vv_assert(srcImageResource->GetImageCreateInfo().extent.width  >= copyImageExtent.width);
+    vv_assert(srcImageResource->GetImageCreateInfo().extent.height >= copyImageExtent.height);
 
-    assert(dstImageResource->GetImageCreateInfo().extent.width  >= copyImageExtent.width);
-    assert(dstImageResource->GetImageCreateInfo().extent.height >= copyImageExtent.height);
+    vv_assert(dstImageResource->GetImageCreateInfo().extent.width  >= copyImageExtent.width);
+    vv_assert(dstImageResource->GetImageCreateInfo().extent.height >= copyImageExtent.height);
 
     const VkFormat format = srcImageResource->GetImageCreateInfo().format;
 
@@ -1507,7 +1507,7 @@ VkResult VkVideoEncoder::CopyLinearToOptimalImage(VkCommandBuffer& commandBuffer
     const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(format);
 
     // Currently formats that have more than 2 output planes are not supported. 444 formats have a shared CbCr planes in all current tests
-    assert((mpInfo->vkPlaneFormat[2] == VK_FORMAT_UNDEFINED) && (mpInfo->vkPlaneFormat[3] == VK_FORMAT_UNDEFINED));
+    vv_assert((mpInfo->vkPlaneFormat[2] == VK_FORMAT_UNDEFINED) && (mpInfo->vkPlaneFormat[3] == VK_FORMAT_UNDEFINED));
 
     // Copy src buffer to image.
     VkImageCopy copyRegion[3]{};
@@ -1573,11 +1573,11 @@ VkResult VkVideoEncoder::CopyLinearToLinearImage(VkCommandBuffer& commandBuffer,
     const VkSharedBaseObj<VkImageResource>& srcImageResource = srcImageView->GetImageResource();
     const VkSharedBaseObj<VkImageResource>& dstImageResource = dstImageView->GetImageResource();
 
-    assert(srcImageResource->GetImageCreateInfo().extent.width  >= copyImageExtent.width);
-    assert(srcImageResource->GetImageCreateInfo().extent.height >= copyImageExtent.height);
+    vv_assert(srcImageResource->GetImageCreateInfo().extent.width  >= copyImageExtent.width);
+    vv_assert(srcImageResource->GetImageCreateInfo().extent.height >= copyImageExtent.height);
 
-    assert(dstImageResource->GetImageCreateInfo().extent.width  >= copyImageExtent.width);
-    assert(dstImageResource->GetImageCreateInfo().extent.height >= copyImageExtent.height);
+    vv_assert(dstImageResource->GetImageCreateInfo().extent.width  >= copyImageExtent.width);
+    vv_assert(dstImageResource->GetImageCreateInfo().extent.height >= copyImageExtent.height);
 
     // Copy src buffer to image.
     VkImageCopy copyRegion{};
@@ -1713,7 +1713,7 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
 
     // Get a encodeCmdBuffer pool to record the video commands
     bool success = m_encodeCommandBufferPool->GetAvailablePoolNode(encodeFrameInfo->encodeCmdBuffer);
-    assert(success);
+    vv_assert(success);
     if (!success) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -1722,8 +1722,8 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
 
     VkSharedBaseObj<VulkanCommandBufferPool::PoolNode>& encodeCmdBuffer = encodeFrameInfo->encodeCmdBuffer;
 
-    assert(encodeFrameInfo != nullptr);
-    assert(encodeCmdBuffer != nullptr);
+    vv_assert(encodeFrameInfo != nullptr);
+    vv_assert(encodeCmdBuffer != nullptr);
 
     // ******* Start command buffer recording *************
     const VkCommandBufferBeginInfo beginInfo { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr,
@@ -1736,7 +1736,7 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
     encodeBeginInfo.videoSession = *encodeFrameInfo->videoSession;
     encodeBeginInfo.videoSessionParameters = *encodeFrameInfo->videoSessionParameters;
 
-    assert((encodeFrameInfo->encodeInfo.referenceSlotCount) <= ARRAYSIZE(encodeFrameInfo->dpbImageResources));
+    vv_assert((encodeFrameInfo->encodeInfo.referenceSlotCount) <= ARRAYSIZE(encodeFrameInfo->dpbImageResources));
     // TODO: Calculate the number of DPB slots for begin against the multiple frames.
     encodeBeginInfo.referenceSlotCount = encodeFrameInfo->encodeInfo.referenceSlotCount + 1;
 
@@ -1824,9 +1824,9 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
         DumpStateInfo("queue submit", 5, encodeFrameInfo, frameIdx, ofTotalFrames);
     }
 
-    assert(encodeFrameInfo);
+    vv_assert(encodeFrameInfo);
 
-    assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
+    vv_assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
 
     const VkCommandBuffer* pCmdBuf = encodeFrameInfo->encodeCmdBuffer->GetCommandBuffer();
     // The encode operation complete semaphore is not needed at this point.
@@ -1915,7 +1915,7 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     submitInfo.pSignalSemaphoreInfos = (signalSemaphoreCount > 0) ? signalSemaphoreInfos : nullptr;
 
     VkFence queueCompleteFence = encodeFrameInfo->encodeCmdBuffer->GetFence();
-    assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, queueCompleteFence));
+    vv_assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, queueCompleteFence));
 
     VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::ENCODE,
                                                            m_currentVideoQueueIndx, // queueIndex
@@ -1969,7 +1969,7 @@ VkResult VkVideoEncoder::PushOrderedFrames()
             if (success) {
                 m_lastDeferredFrame = nullptr;
             } else {
-                assert(!"Queue returned not ready");
+                vv_assert(!"Queue returned not ready");
                 result = VK_NOT_READY;
             }
 
@@ -1982,7 +1982,7 @@ VkResult VkVideoEncoder::PushOrderedFrames()
                 result = ProcessOutOfOrderFrames(m_lastDeferredFrame, m_numDeferredFrames);
             }
             VkVideoEncodeFrameInfo::ReleaseChildrenFrames(m_lastDeferredFrame);
-            assert(m_lastDeferredFrame == nullptr);
+            vv_assert(m_lastDeferredFrame == nullptr);
         }
         m_numDeferredFrames = 0;
         m_numDeferredRefFrames = 0;
@@ -2037,11 +2037,11 @@ VkResult VkVideoEncoder::ProcessOutOfOrderFrames(VkSharedBaseObj<VkVideoEncodeFr
         if (inOrder) {
             uint32_t processedFramesCount = 0;
             result = VkVideoEncodeFrameInfo::ProcessFrames(this, frames, processedFramesCount, numFrames, callback);
-            assert(processedFramesCount == numFrames);
+            vv_assert(processedFramesCount == numFrames);
         } else {
             uint32_t lastFramesIndex = numFrames;
             result = VkVideoEncodeFrameInfo::ProcessFramesReverse(this, frames, lastFramesIndex, numFrames, callback);
-            assert(lastFramesIndex == 0);
+            vv_assert(lastFramesIndex == 0);
         }
 
         if (result != VK_SUCCESS) {
@@ -2130,7 +2130,7 @@ void VkVideoEncoder::ConsumerThread()
                result = ProcessOutOfOrderFrames(encodeFrameInfo, 0);
            }
            VkVideoEncodeFrameInfo::ReleaseChildrenFrames(encodeFrameInfo);
-           assert(encodeFrameInfo == nullptr);
+           vv_assert(encodeFrameInfo == nullptr);
            if (result != VK_SUCCESS) {
                std::cout << "Error processing frames from the frame thread!" << std::endl;
                m_encoderThreadQueue.SetFlushAndExit();

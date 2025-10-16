@@ -105,7 +105,7 @@ struct EncoderConfigAV1 : public EncoderConfig {
             return VK_SUCCESS;
         }
 
-        assert(!"Invalid pic_width_in_sbs and pic_height_in_sbs");
+        vv_assert(!"Invalid pic_width_in_sbs and pic_height_in_sbs");
         return VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR;
     }
 

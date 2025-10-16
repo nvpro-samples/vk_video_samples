@@ -108,7 +108,7 @@ public:
     VkVideoSessionKHR GetVideoSession() const { return m_videoSession; }
 
     operator VkVideoSessionKHR() const {
-        assert(m_videoSession != VK_NULL_HANDLE);
+        vv_assert(m_videoSession != VK_NULL_HANDLE);
         return m_videoSession;
     }
 
@@ -127,7 +127,7 @@ private:
     ~VulkanVideoSession()
     {
         if (m_videoSession) {
-            assert(m_vkDevCtx != nullptr);
+            vv_assert(m_vkDevCtx != nullptr);
             m_vkDevCtx->DestroyVideoSessionKHR(*m_vkDevCtx, m_videoSession, NULL);
             m_videoSession = VkVideoSessionKHR();
         }

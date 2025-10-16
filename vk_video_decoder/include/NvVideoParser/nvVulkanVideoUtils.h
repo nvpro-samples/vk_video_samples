@@ -51,7 +51,7 @@ enum {
 
 static inline int32_t Log2U31(int32_t n)
 {
-    assert(n >= 0);
+    vv_assert(n >= 0);
     int32_t sz = 0;
     while (n) {
         sz++;

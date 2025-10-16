@@ -163,7 +163,7 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
                                             videoCodecOperation);
     if (result != VK_SUCCESS) {
 
-        assert(!"Can't initialize the Vulkan physical device!");
+        vv_assert(!"Can't initialize the Vulkan physical device!");
         return result;
     }
 
@@ -186,13 +186,13 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
                                           );
     if (result != VK_SUCCESS) {
 
-        assert(!"Failed to create Vulkan device!");
+        vv_assert(!"Failed to create Vulkan device!");
         return result;
     }
 
     result = VkVideoEncoder::CreateVideoEncoder(&m_vkDevCtxt, m_encoderConfig, m_encoder);
     if (result != VK_SUCCESS) {
-        assert(!"Can't initialize the Vulkan physical device!");
+        vv_assert(!"Can't initialize the Vulkan physical device!");
         return result;
     }
 
@@ -212,7 +212,7 @@ VkResult VulkanVideoEncoderImpl::EncodeNextFrame(int64_t& frameNumEncoded)
 
     VkSharedBaseObj<VkVideoEncoder::VkVideoEncodeFrameInfo> encodeFrameInfo;
     m_encoder->GetAvailablePoolNode(encodeFrameInfo);
-    assert(encodeFrameInfo);
+    vv_assert(encodeFrameInfo);
     // load frame data from the file
     VkResult result = m_encoder->LoadNextFrame(encodeFrameInfo);
     if (result != VK_SUCCESS) {
@@ -247,7 +247,7 @@ VkResult CreateVulkanVideoEncoder(VkVideoCodecOperationFlagBitsKHR videoCodecOpe
         break;
 
     default:
-        assert(!"Unsupported codec type!!!\n");
+        vv_assert(!"Unsupported codec type!!!\n");
         return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
     }
 

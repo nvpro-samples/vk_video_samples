@@ -27,7 +27,7 @@
 #define CALL_VK(func)                                                 \
   if (VK_SUCCESS != (func)) {                                         \
       std::cerr << "VkVideoUtils: " << "File " << __FILE__ << "line " <<  __LINE__; \
-    assert(false);                                                    \
+    vv_assert(false);                                                    \
   }
 
 // A macro to check value is VK_SUCCESS
@@ -83,7 +83,7 @@ void VulkanSwapchainInfo::CreateSwapChain(const VulkanDeviceContext* vkDevCtx, V
     for (chosenFormat = 0; chosenFormat < formatCount; chosenFormat++) {
         if (formats[chosenFormat].format == VK_FORMAT_R8G8B8A8_UNORM) break;
     }
-    assert(chosenFormat < formatCount);
+    vv_assert(chosenFormat < formatCount);
 
     mDisplaySize = surfaceCapabilities.currentExtent;
     mDisplayFormat = formats[chosenFormat].format;
@@ -192,7 +192,7 @@ int32_t ImageObject::GetImageSubresourceAndLayout(VkSubresourceLayout layouts[3]
             numPlanes = 3;
             break;
         default:
-            assert(0);
+            vv_assert(0);
         }
     } else {
         subResource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -287,7 +287,7 @@ VkResult ImageObject::CopyYuvToVkImage(uint32_t numPlanes, const uint8_t* yuvPla
             m_vkDevCtx->GetImageSubresourceLayout(*m_vkDevCtx, image, &subResource, &layouts[2]);
             break;
         default:
-            assert(0);
+            vv_assert(0);
         }
 
     } else {

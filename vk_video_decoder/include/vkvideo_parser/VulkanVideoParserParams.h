@@ -17,7 +17,7 @@
 #if !defined(__NV_VULKANVIDEOPARSERPARAMS_H__)
 #define __NV_VULKANVIDEOPARSERPARAMS_H__
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <atomic>
 #include "vulkan_interfaces.h"
 #include "VkCodecUtils/VulkanBitstreamBuffer.h"

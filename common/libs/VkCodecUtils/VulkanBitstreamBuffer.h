@@ -99,8 +99,8 @@ public:
         m_maxAccessLocation = 0;
 
         m_pData = m_bitstreamBuffer->GetDataPtr(0, m_maxSize);
-        assert(m_pData);
-        assert(m_maxSize);
+        vv_assert(m_pData);
+        vv_assert(m_maxSize);
 
         if (resetStreamMarkers) {
             ResetStreamMarkers();
@@ -129,14 +129,14 @@ public:
         VkSharedBaseObj<VulkanBitstreamBuffer> newVulkanBitstreamBuffer;
         VkDeviceSize retSize = m_bitstreamBuffer->Clone(newSize, copySize, copyOffset, newVulkanBitstreamBuffer);
         if (!(retSize >= newSize)) {
-            assert(!"Could not resize the bitstream buffer!");
+            vv_assert(!"Could not resize the bitstream buffer!");
             return retSize;
         }
         m_bitstreamBuffer = newVulkanBitstreamBuffer;
 
         m_pData = m_bitstreamBuffer->GetDataPtr(0, m_maxSize);
-        assert(m_pData);
-        assert(m_maxSize);
+        vv_assert(m_pData);
+        vv_assert(m_maxSize);
 
         ResetStreamMarkers();
 
@@ -144,15 +144,15 @@ public:
     }
 
     uint8_t& operator [](VkDeviceSize indx) {     // write
-        assert(m_pData);
-        assert(indx < m_maxSize);
+        vv_assert(m_pData);
+        vv_assert(indx < m_maxSize);
         m_maxAccessLocation = std::max<VkDeviceSize>(m_maxAccessLocation, indx);
         return m_pData[indx];
     }
 
     uint8_t operator [](VkDeviceSize indx) const {  //read
-        assert(m_pData);
-        assert(indx < m_maxSize);
+        vv_assert(m_pData);
+        vv_assert(indx < m_maxSize);
         // m_maxAccess = std::max(m_maxAccess, indx);
         return m_pData[indx];
     }
@@ -169,8 +169,8 @@ public:
 
     // startcode found at given slice offset
     bool HasSliceStartCodeAtOffset(VkDeviceSize indx) const {
-        assert(m_pData);
-        assert(indx < m_maxSize);
+        vv_assert(m_pData);
+        vv_assert(indx < m_maxSize);
 
         return ((m_pData[indx + 0] == 0x00) &&
                 (m_pData[indx + 1] == 0x00) &&
@@ -178,8 +178,8 @@ public:
     }
 
     VkDeviceSize SetSliceStartCodeAtOffset(VkDeviceSize indx) {
-        assert(m_pData);
-        assert(indx < m_maxSize);
+        vv_assert(m_pData);
+        vv_assert(indx < m_maxSize);
         m_pData[indx + 0] = 0x00;
         m_pData[indx + 1] = 0x00;
         m_pData[indx + 2] = 0x01;
@@ -187,7 +187,7 @@ public:
     }
 
     uint8_t* GetBitstreamPtr() {
-        assert(m_pData);
+        vv_assert(m_pData);
         return m_pData;
     }
 
@@ -197,7 +197,7 @@ public:
 
     uint32_t GetStreamMarkersCount()
     {
-        assert(m_bitstreamBuffer->GetStreamMarkersCount() == m_numSlices);
+        vv_assert(m_bitstreamBuffer->GetStreamMarkersCount() == m_numSlices);
         return m_bitstreamBuffer->GetStreamMarkersCount();
     }
 

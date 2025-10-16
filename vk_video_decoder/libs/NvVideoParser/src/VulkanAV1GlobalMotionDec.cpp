@@ -88,7 +88,7 @@ static int get_msb(unsigned int n)
     unsigned int value = n;
     int i;
 
-    assert(n != 0);
+    vv_assert(n != 0);
 
     for (i = 4; i >= 0; --i) {
         const int shift = (1 << i);
@@ -154,7 +154,7 @@ uint16_t VulkanAV1Decoder::Read_primitive_subexpfin(uint16_t n, uint16_t k)
         mk += a;
     }
 
-    assert(0);
+    vv_assert(0);
     return 0;
 }
 

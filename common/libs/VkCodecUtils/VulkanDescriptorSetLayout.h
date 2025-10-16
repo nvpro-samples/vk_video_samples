@@ -78,7 +78,7 @@ public:
     VkResult AllocateDescriptorSets(uint32_t descriptorCount,
                                     VkDescriptorSetLayout* dscLayout)
     {
-        assert(m_vkDevCtx);
+        vv_assert(m_vkDevCtx);
         DestroyDescriptorSets();
 
         VkDescriptorSetAllocateInfo alloc_info = VkDescriptorSetAllocateInfo();
@@ -245,18 +245,18 @@ public:
                                                          const VkWriteDescriptorSet* pDescriptorWrites) const {
 
         if (!(bufferIdx < m_maxNumFrames)) {
-            assert(!"bufferIdx is out of range!");
+            vv_assert(!"bufferIdx is out of range!");
             return VkDeviceOrHostAddressConstKHR();
         }
 
         const VkDeviceSize bufferIdxOffset = (bufferIdx * m_descriptorLayoutSize);
-        assert(bufferIdxOffset < m_descriptorBufferSize);
+        vv_assert(bufferIdxOffset < m_descriptorBufferSize);
 
         // Set descriptors for image
         VkDeviceSize dstBufferOffset = 0;
         VkDeviceSize maxSize = 0;
         uint8_t* imageDescriptorBufPtr = const_cast<uint8_t*>((const uint8_t*)m_resourceDescriptorBuffer->GetDataPtr(dstBufferOffset, maxSize));
-        assert(imageDescriptorBufPtr);
+        vv_assert(imageDescriptorBufPtr);
         imageDescriptorBufPtr += bufferIdxOffset;
 
         for (uint32_t i = 0; i < descriptorWriteCount; i++) {
@@ -280,7 +280,7 @@ public:
                 // fall through
             case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
             {
-                assert((dstBindingOffset + descriptorSize) < m_descriptorLayoutSize);
+                vv_assert((dstBindingOffset + descriptorSize) < m_descriptorLayoutSize);
 
                 VkDescriptorGetInfoEXT descriptorInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT };
                 descriptorInfo.type = pDescriptorWrite->descriptorType;
@@ -291,11 +291,11 @@ public:
             }
             break;
             default:
-                assert(!"Unknown descriptor type");
+                vv_assert(!"Unknown descriptor type");
             }
         }
         VkBuffer imageDescriptorBuffer = m_resourceDescriptorBuffer->GetBuffer();
-        assert(imageDescriptorBuffer);
+        vv_assert(imageDescriptorBuffer);
         VkDeviceOrHostAddressConstKHR imageDescriptorBufferDeviceAddress;
         VkBufferDeviceAddressInfoKHR bufferDeviceAddressInfo{};
         bufferDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
@@ -310,7 +310,7 @@ public:
     VulkanDescriptorSet* GetNextDescriptorSet() {
         m_currentDescriptorSetPools++;
         m_currentDescriptorSetPools = m_currentDescriptorSetPools % MAX_DESCRIPTOR_SET_POOLS;
-        assert((m_currentDescriptorSetPools >= 0) && (m_currentDescriptorSetPools < MAX_DESCRIPTOR_SET_POOLS));
+        vv_assert((m_currentDescriptorSetPools >= 0) && (m_currentDescriptorSetPools < MAX_DESCRIPTOR_SET_POOLS));
         return &m_descSets[m_currentDescriptorSetPools];
     }
 

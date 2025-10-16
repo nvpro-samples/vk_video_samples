@@ -181,7 +181,7 @@ struct EncoderConfigH264 : public EncoderConfig {
             return VK_SUCCESS;
         }
 
-        assert(!"Invalid pic_width_in_mbs and pic_height_in_map_units");
+        vv_assert(!"Invalid pic_width_in_mbs and pic_height_in_map_units");
         return VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR;
     }
 

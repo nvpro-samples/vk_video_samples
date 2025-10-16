@@ -17,7 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
+#include "vv_assert.h"
 #include <limits.h>
 
 #include <algorithm>
@@ -50,7 +50,7 @@ VkEncDpbH265::VkEncDpbH265()
 
 bool VkEncDpbH265::DpbSequenceStart(int32_t dpbSize, bool useMultipleReferences)
 {
-    assert(dpbSize >= 0);
+    vv_assert(dpbSize >= 0);
     m_dpbSize = std::min<int8_t>((int8_t)dpbSize, STD_VIDEO_H265_MAX_DPB_SIZE);
 
     for (uint32_t i = 0; i < STD_VIDEO_H265_MAX_DPB_SIZE; i++) {
@@ -125,7 +125,7 @@ int8_t VkEncDpbH265::DpbPictureStart(uint64_t frameId, const StdVideoEncodeH265P
             break;
     }
     if (m_curDpbIndex >= m_dpbSize) {
-        assert(!"Dpb index out of bounds");
+        vv_assert(!"Dpb index out of bounds");
         return false;
     }
 
@@ -217,7 +217,7 @@ void VkEncDpbH265::DpbBumping() {
     }
 
     if (dpbIndxWithMinPoc < 0) {
-        assert(!"Invalid Dpb state");
+        vv_assert(!"Invalid Dpb state");
         return;
     }
 
@@ -230,7 +230,7 @@ void VkEncDpbH265::DpbBumping() {
 
 bool VkEncDpbH265::GetRefPicture(int8_t dpbIndex, VkSharedBaseObj<VulkanVideoImagePoolNode>& dpbImageView)
 {
-    assert(dpbIndex < (int8_t)STD_VIDEO_H265_MAX_DPB_SIZE);
+    vv_assert(dpbIndex < (int8_t)STD_VIDEO_H265_MAX_DPB_SIZE);
 
     if (!(dpbIndex < (int8_t)STD_VIDEO_H265_MAX_DPB_SIZE)) {
         return false;
@@ -242,7 +242,7 @@ bool VkEncDpbH265::GetRefPicture(int8_t dpbIndex, VkSharedBaseObj<VulkanVideoIma
 
 void VkEncDpbH265::FillStdReferenceInfo(uint8_t dpbIndex, StdVideoEncodeH265ReferenceInfo *pRefInfo)
 {
-    assert(dpbIndex < STD_VIDEO_H265_MAX_DPB_SIZE);
+    vv_assert(dpbIndex < STD_VIDEO_H265_MAX_DPB_SIZE);
 
     const DpbEntryH265 *entry = &m_stDpb[dpbIndex];
 
@@ -309,7 +309,7 @@ void VkEncDpbH265::ApplyReferencePictureSet(const StdVideoEncodeH265PictureInfo 
             printf("too many reference frames (%d, max is %d)\n", numRefPics, (m_dpbSize - 1));
         }
 
-        assert(numRefPics <= (int32_t)STD_VIDEO_H265_MAX_NUM_LIST_REF);
+        vv_assert(numRefPics <= (int32_t)STD_VIDEO_H265_MAX_NUM_LIST_REF);
 
         int8_t i = 0, j = 0, k = 0;
 
@@ -353,7 +353,7 @@ void VkEncDpbH265::ApplyReferencePictureSet(const StdVideoEncodeH265PictureInfo 
         uint32_t deltaPocMSBCycleLt[STD_VIDEO_H265_MAX_NUM_LIST_REF]{};
 
         if (pLongTermRefPics && (pLongTermRefPics->num_long_term_sps > 0)) {
-            assert(pLongTermRefPicsSps);
+            vv_assert(pLongTermRefPicsSps);
         }
 
         for (i = 0; i < (int32_t)numLongTermRefPics; i++) {
@@ -429,7 +429,7 @@ void VkEncDpbH265::ApplyReferencePictureSet(const StdVideoEncodeH265PictureInfo 
         if (pRefPicSet->ltCurr[i] != -1) {
             // encoder driver should have already done the reference picture marking process
             if (m_stDpb[pRefPicSet->ltCurr[i]].marking != 2) {
-                assert(!"Forcing reference picture marking to be used as long term");
+                vv_assert(!"Forcing reference picture marking to be used as long term");
                 m_stDpb[pRefPicSet->ltCurr[i]].marking = 2;
             }
         }
@@ -439,7 +439,7 @@ void VkEncDpbH265::ApplyReferencePictureSet(const StdVideoEncodeH265PictureInfo 
         if (pRefPicSet->ltFoll[i] != -1) {
             // encoder driver should have already done the reference picture marking process
             if (m_stDpb[pRefPicSet->ltCurr[i]].marking != 2) {
-                assert(!"Forcing reference picture marking to be used as long term");
+                vv_assert(!"Forcing reference picture marking to be used as long term");
                 m_stDpb[pRefPicSet->ltCurr[i]].marking = 2;
             }
         }
@@ -524,9 +524,9 @@ void VkEncDpbH265::SetupReferencePictureListLx(StdVideoH265PictureType picType,
                                                uint32_t numRefL0, uint32_t numRefL1) {
     int32_t isLongTerm[32] = { 0 };
     uint8_t numPocTotalCurr = (uint8_t)(m_numPocStCurrBefore + m_numPocStCurrAfter + m_numPocLtCurr);
-    assert(numPocTotalCurr <= 8);
+    vv_assert(numPocTotalCurr <= 8);
 
-    assert(pRefLists); // P- and B-frames must have non-NULL reference lists.
+    vv_assert(pRefLists); // P- and B-frames must have non-NULL reference lists.
 
     pRefLists->num_ref_idx_l0_active_minus1 = (uint8_t)((numRefL0 > 0) ? (numRefL0 - 1) : 0);
     pRefLists->num_ref_idx_l1_active_minus1 = (uint8_t)((numRefL1 > 0) ? (numRefL1) - 1 : 0);
@@ -551,7 +551,7 @@ void VkEncDpbH265::SetupReferencePictureListLx(StdVideoH265PictureType picType,
 
     if ((picType == STD_VIDEO_H265_PICTURE_TYPE_P) || (picType == STD_VIDEO_H265_PICTURE_TYPE_B)) {
         uint8_t nNumRpsCurrTempList0 = std::max<uint8_t>((uint8_t)(pRefLists->num_ref_idx_l0_active_minus1 + 1), numPocTotalCurr);
-        assert(nNumRpsCurrTempList0 <= STD_VIDEO_H265_MAX_NUM_LIST_REF);
+        vv_assert(nNumRpsCurrTempList0 <= STD_VIDEO_H265_MAX_NUM_LIST_REF);
         int8_t RefPicListTemp0[STD_VIDEO_H265_MAX_NUM_LIST_REF];
         uint8_t rIdx = 0;
 
@@ -572,7 +572,7 @@ void VkEncDpbH265::SetupReferencePictureListLx(StdVideoH265PictureType picType,
             }
         }
 
-        assert(pRefLists->num_ref_idx_l0_active_minus1 < STD_VIDEO_H265_MAX_NUM_LIST_REF);
+        vv_assert(pRefLists->num_ref_idx_l0_active_minus1 < STD_VIDEO_H265_MAX_NUM_LIST_REF);
         for (rIdx = 0; rIdx <= pRefLists->num_ref_idx_l0_active_minus1; rIdx++) {
             pRefLists->RefPicList0[rIdx] = pRefLists->flags.ref_pic_list_modification_flag_l0 ? RefPicListTemp0[pRefLists->list_entry_l0[rIdx]] : RefPicListTemp0[rIdx];
             m_longTermFlags |= pRefLists->flags.ref_pic_list_modification_flag_l0 ? (isLongTerm[pRefLists->list_entry_l0[rIdx]] << rIdx) : (isLongTerm[rIdx] << rIdx);
@@ -581,20 +581,26 @@ void VkEncDpbH265::SetupReferencePictureListLx(StdVideoH265PictureType picType,
 
     if (picType == STD_VIDEO_H265_PICTURE_TYPE_B) {
         uint8_t nNumRpsCurrTempList1 = std::max<uint8_t>((uint8_t)(pRefLists->num_ref_idx_l1_active_minus1 + 1), numPocTotalCurr);
-        assert(nNumRpsCurrTempList1 <= STD_VIDEO_H265_MAX_NUM_LIST_REF);
+        vv_assert(nNumRpsCurrTempList1 <= STD_VIDEO_H265_MAX_NUM_LIST_REF);
         int8_t RefPicListTemp1[STD_VIDEO_H265_MAX_NUM_LIST_REF];
         uint8_t rIdx = 0, i = 0;
         while (rIdx < nNumRpsCurrTempList1) {
+            assert(m_numPocStCurrAfter < STD_VIDEO_H265_MAX_NUM_LIST_REF);
+            vv_assert(m_numPocStCurrAfter < STD_VIDEO_H265_MAX_NUM_LIST_REF);
             assert(m_numPocStCurrAfter < (int8_t)STD_VIDEO_H265_MAX_NUM_LIST_REF);
             for (i = 0; (i < m_numPocStCurrAfter) && (rIdx < nNumRpsCurrTempList1); rIdx++, i++) {
                 RefPicListTemp1[rIdx] = pRefPicSet->stCurrAfter[i];
                 isLongTerm[16 + rIdx] = 0;
             }
+            assert(m_numPocStCurrBefore < STD_VIDEO_H265_MAX_NUM_LIST_REF);
+            vv_assert(m_numPocStCurrBefore < STD_VIDEO_H265_MAX_NUM_LIST_REF);
             assert(m_numPocStCurrBefore < (int8_t)STD_VIDEO_H265_MAX_NUM_LIST_REF);
             for (i = 0;  (i < m_numPocStCurrBefore) && (rIdx < nNumRpsCurrTempList1); rIdx++, i++) {
                 RefPicListTemp1[rIdx] = pRefPicSet->stCurrBefore[i];
                 isLongTerm[16 + rIdx] = 0;
             }
+            assert(m_numPocLtCurr < STD_VIDEO_H265_MAX_NUM_LIST_REF);
+            vv_assert(m_numPocLtCurr < STD_VIDEO_H265_MAX_NUM_LIST_REF);
             assert(m_numPocLtCurr < (int8_t)STD_VIDEO_H265_MAX_NUM_LIST_REF);
             for (i = 0; (i < m_numPocLtCurr) && (rIdx<nNumRpsCurrTempList1); rIdx++, i++) {
                 RefPicListTemp1[rIdx] = pRefPicSet->ltCurr[i];
@@ -602,7 +608,7 @@ void VkEncDpbH265::SetupReferencePictureListLx(StdVideoH265PictureType picType,
             }
         }
 
-        assert(pRefLists->num_ref_idx_l1_active_minus1 < STD_VIDEO_H265_MAX_NUM_LIST_REF);
+        vv_assert(pRefLists->num_ref_idx_l1_active_minus1 < STD_VIDEO_H265_MAX_NUM_LIST_REF);
         for (rIdx = 0; rIdx <= pRefLists->num_ref_idx_l1_active_minus1; rIdx++) {
             pRefLists->RefPicList1[rIdx] = pRefLists->flags.ref_pic_list_modification_flag_l1 ? RefPicListTemp1[pRefLists->list_entry_l1[rIdx]] : RefPicListTemp1[rIdx];
             m_longTermFlags |= pRefLists->flags.ref_pic_list_modification_flag_l1 ? (isLongTerm[16 + pRefLists->list_entry_l1[rIdx]] << (16 + rIdx)) : (isLongTerm[16 + rIdx] << (16 + rIdx));
@@ -727,7 +733,7 @@ void VkEncDpbH265::InitializeShortTermRPSPFrame(int32_t numPocLtCurr,
     if (!isIrapPic) {
         for (int32_t i = 0; i < numNegativeRefPics; i++) {
             if (i < numNegativeRefPicsUsed && i < (int32_t)numRefL0) {
-                assert(shortTermRefPicTemporalIdL0[i] <= curTemporalId);
+                vv_assert(shortTermRefPicTemporalIdL0[i] <= curTemporalId);
                 usedByCurrPicS0[i] = 1;
                 numPocStCurrBefore++;
             } else {
@@ -748,10 +754,10 @@ void VkEncDpbH265::InitializeShortTermRPSPFrame(int32_t numPocLtCurr,
     }
 
     if (isIrapPic) {
-        assert((numPocStCurrBefore + numPocStCurrAfter + numPocLtCurr) == 0);
+        vv_assert((numPocStCurrBefore + numPocStCurrAfter + numPocLtCurr) == 0);
     } else {
         if ((numPocStCurrBefore + numPocStCurrAfter + numPocLtCurr) == 0) {
-            assert(!"Invalid configuration - no reference pictures selected for inter picture");
+            vv_assert(!"Invalid configuration - no reference pictures selected for inter picture");
             return;
         }
     }
@@ -894,7 +900,7 @@ void VkEncDpbH265::ReferencePictureMarking(int32_t curPOC, StdVideoH265PictureTy
                     }
                 }
             } else {
-                assert(picType != STD_VIDEO_H265_PICTURE_TYPE_B);
+                vv_assert(picType != STD_VIDEO_H265_PICTURE_TYPE_B);
                 // In order to achieve a balance between the number of LTR and STR frames, the number of LTR frames should not exceed 50%
                 // of the active references in Dpb
                 int32_t num_active_ref_frames = numShortTermRefPics + numLongTermRefPics + numCorruptedRefPics;

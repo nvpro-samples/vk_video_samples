@@ -17,6 +17,8 @@
 #ifndef YCBCRINFOTBL_H_
 #define YCBCRINFOTBL_H_
 
+#include <vv_assert.h>
+
 // Start of plane byte alignment.
 #ifndef PLATFORM_YCBCR_PLANES_BYTE_ALIGN
   #define PLATFORM_YCBCR_PLANES_BYTE_ALIGN 32
@@ -134,14 +136,14 @@ static const VkMpFormatInfo * __ycbcrVkFormatInfo(const VkFormat format)
 {
     const VkMpFormatInfo *info = NULL;
 
-    assert((sizeof(vkMpFormatInfo)/sizeof(vkMpFormatInfo[0])) == (VK_YCBCR_FORMAT_RANGE_SIZE + VK_YCBCR_FORMAT_EXT_RANGE_SIZE));
+    vv_assert((sizeof(vkMpFormatInfo)/sizeof(vkMpFormatInfo[0])) == (VK_YCBCR_FORMAT_RANGE_SIZE + VK_YCBCR_FORMAT_EXT_RANGE_SIZE));
 
     if ((format >= static_cast<VkFormat>(VK_YCBCR_FORMAT_BEGIN_RANGE)) &&
             (format <= static_cast<VkFormat>(VK_YCBCR_FORMAT_END_RANGE))) {
 
         info = &vkMpFormatInfo[format - VK_YCBCR_FORMAT_BEGIN_RANGE];
 
-        assert(vkMpFormatInfo[format - VK_YCBCR_FORMAT_BEGIN_RANGE].vkFormat == format);
+        vv_assert(vkMpFormatInfo[format - VK_YCBCR_FORMAT_BEGIN_RANGE].vkFormat == format);
     } else if ((format >= static_cast<VkFormat>(VK_YCBCR_FORMAT_EXT_BEGIN_RANGE)) &&
             (format <= static_cast<VkFormat>(VK_YCBCR_FORMAT_EXT_END_RANGE))) {
 
@@ -149,7 +151,7 @@ static const VkMpFormatInfo * __ycbcrVkFormatInfo(const VkFormat format)
 
         info = &vkMpFormatInfo[extFormatIndex];
 
-        assert(vkMpFormatInfo[extFormatIndex].vkFormat == format);
+        vv_assert(vkMpFormatInfo[extFormatIndex].vkFormat == format);
     }
 
     return info;

@@ -89,12 +89,12 @@ public:
             encodeInfo.pNext = &pictureInfo;
 
             // Clear and check state
-            assert(pictureInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PICTURE_INFO_KHR);
-            assert(naluSliceInfo[0].sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_INFO_KHR);
+            vv_assert(pictureInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PICTURE_INFO_KHR);
+            vv_assert(naluSliceInfo[0].sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_INFO_KHR);
             // stdPictureInfo()
             // stdSliceHeader()
-            assert(rateControlInfoH264.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR);
-            assert(rateControlLayersInfoH264[0].sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_KHR);
+            vv_assert(rateControlInfoH264.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR);
+            vv_assert(rateControlLayersInfoH264[0].sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_KHR);
             // stdReferenceListsInfo()
             // stdReferenceInfo{}
             // stdDpbSlotInfo{}
@@ -151,7 +151,7 @@ protected:
 private:
 
     VkVideoEncodeFrameInfoH264* GetEncodeFrameInfoH264(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) {
-        assert(VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR == encodeFrameInfo->GetType());
+        vv_assert(VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR == encodeFrameInfo->GetType());
         VkVideoEncodeFrameInfo* pEncodeFrameInfo = encodeFrameInfo;
         return (VkVideoEncodeFrameInfoH264*)pEncodeFrameInfo;
     }

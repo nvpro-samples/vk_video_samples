@@ -39,7 +39,7 @@ VkResult CreateVideoEncoderH264(const VulkanDeviceContext* vkDevCtx,
 VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& encoderConfig)
 {
     m_encoderConfig = encoderConfig->GetEncoderConfigh264();
-    assert(m_encoderConfig);
+    vv_assert(m_encoderConfig);
 
     if (m_encoderConfig->codec != VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) {
         return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
@@ -53,7 +53,7 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
 
     // Initialize DPB
     m_dpb264 = VkEncDpbH264::CreateInstance();
-    assert(m_dpb264);
+    vv_assert(m_dpb264);
     m_dpb264->DpbSequenceStart(m_maxDpbPicturesCount);
 
     m_encoderConfig->GetRateControlParameters(&m_rateControlInfo, m_rateControlLayersInfo, &m_h264.m_rateControlInfoH264, m_h264.m_rateControlLayersInfoH264);
@@ -212,7 +212,7 @@ VkResult VkVideoEncoderH264::SetupRefPicReorderingCommands(const PicInfoH264 *pP
 
     refPicList0Mod[m_refList0ModOpCount++].modification_of_pic_nums_idc = STD_VIDEO_H264_MODIFICATION_OF_PIC_NUMS_IDC_END;
 
-    assert(m_refList0ModOpCount > 1);
+    vv_assert(m_refList0ModOpCount > 1);
 
     return VK_SUCCESS;
 }
@@ -246,18 +246,18 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
 
     bool success = m_dpbImagePool->GetAvailableImage(encodeFrameInfo->setupImageResource,
                                                      VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR);
-    assert(success);
+    vv_assert(success);
     if (!success) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
-    assert(encodeFrameInfo->setupImageResource != nullptr);
+    vv_assert(encodeFrameInfo->setupImageResource != nullptr);
     VkVideoPictureResourceInfoKHR* setupImageViewPictureResource = encodeFrameInfo->setupImageResource->GetPictureResourceInfo();
     setupImageViewPictureResource->codedOffset = pFrameInfo->encodeInfo.srcPictureResource.codedOffset;
     setupImageViewPictureResource->codedExtent = pFrameInfo->encodeInfo.srcPictureResource.codedExtent;
 
     int8_t newDpbSlot = m_dpb264->DpbPictureStart(&pictureInfo,
                                                   &m_h264.m_spsInfo);
-    assert(newDpbSlot >= 0);
+    vv_assert(newDpbSlot >= 0);
     if (newDpbSlot < 0) {
 	return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -303,8 +303,8 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
 
     NvVideoEncodeH264DpbSlotInfoLists<STD_VIDEO_H264_MAX_NUM_LIST_REF> refLists;
     m_dpb264->GetRefPicList(&pictureInfo, &refLists, &m_h264.m_spsInfo, &m_h264.m_ppsInfo, &pFrameInfo->stdSliceHeader[0], &pFrameInfo->stdReferenceListsInfo);
-    assert(refLists.refPicListCount[0] <= 8);
-    assert(refLists.refPicListCount[1] <= 8);
+    vv_assert(refLists.refPicListCount[0] <= 8);
+    vv_assert(refLists.refPicListCount[1] <= 8);
 
     memset(pFrameInfo->stdReferenceListsInfo.RefPicList0, STD_VIDEO_H264_NO_REFERENCE_PICTURE, sizeof(pFrameInfo->stdReferenceListsInfo.RefPicList0));
     memset(pFrameInfo->stdReferenceListsInfo.RefPicList1, STD_VIDEO_H264_NO_REFERENCE_PICTURE, sizeof(pFrameInfo->stdReferenceListsInfo.RefPicList1));
@@ -334,10 +334,9 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     pFrameInfo->stdPictureInfo.frame_num = m_dpb264->GetUpdatedFrameNumAndPicOrderCnt(pFrameInfo->stdPictureInfo.PicOrderCnt);
 
     uint32_t numReferenceSlots = 0;
-    assert(pFrameInfo->numDpbImageResources == 0);
     if (encodeFrameInfo->setupImageResource != nullptr) {
         numReferenceSlots++; // fill slot 0 later with current picture index
-        assert(numReferenceSlots <= ARRAYSIZE(pFrameInfo->referenceSlotsInfo));
+        vv_assert(numReferenceSlots <= ARRAYSIZE(pFrameInfo->referenceSlotsInfo));
     }
     pFrameInfo->numDpbImageResources = numReferenceSlots;
 
@@ -369,7 +368,7 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
 
             int8_t slotIndex = refLists.refPicList[listNum][i];
             bool refPicAvailable = m_dpb264->GetRefPicture(slotIndex, pFrameInfo->dpbImageResources[numReferenceSlots]);
-            assert(refPicAvailable);
+            vv_assert(refPicAvailable);
             if (!refPicAvailable) {
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
@@ -394,7 +393,7 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
                         pFrameInfo->dpbImageResources[numReferenceSlots]->GetPictureResourceInfo();
 
             numReferenceSlots++;
-            assert(numReferenceSlots <= ARRAYSIZE(pFrameInfo->referenceSlotsInfo));
+            vv_assert(numReferenceSlots <= ARRAYSIZE(pFrameInfo->referenceSlotsInfo));
         }
         pFrameInfo->numDpbImageResources = numReferenceSlots;
     }
@@ -408,7 +407,7 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         targetDpbSlot = static_cast<int8_t>((encodeFrameInfo->setupImageResource!=nullptr) + refLists.refPicListCount[0] + refLists.refPicListCount[1] + 1);
     }
     if (isReference) {
-        assert(targetDpbSlot >= 0);
+        vv_assert(targetDpbSlot >= 0);
     }
 
     if ((picType == VkVideoGopStructure::FRAME_TYPE_P) || (picType == VkVideoGopStructure::FRAME_TYPE_B)) {
@@ -416,7 +415,7 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     }
     if (encodeFrameInfo->setupImageResource != nullptr) {
 
-        assert(setupImageViewPictureResource);
+        vv_assert(setupImageViewPictureResource);
         pFrameInfo->referenceSlotsInfo[0] = { VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR,
                                               pFrameInfo->stdDpbSlotInfo, targetDpbSlot, setupImageViewPictureResource };
 
@@ -457,7 +456,7 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     // this is needed to explicity mark the unused element in BeginInfo for vkCmdBeginVideoCodingKHR() as inactive
     pFrameInfo->referenceSlotsInfo[0].slotIndex = -1;
 
-    assert(m_dpb264->GetNumRefFramesInDPB(0) <= m_h264.m_spsInfo.max_num_ref_frames);
+    vv_assert(m_dpb264->GetNumRefFramesInDPB(0) <= m_h264.m_spsInfo.max_num_ref_frames);
 
     return VK_SUCCESS;
 }
@@ -466,10 +465,10 @@ VkResult VkVideoEncoderH264::EncodeVideoSessionParameters(VkSharedBaseObj<VkVide
 {
     VkVideoEncodeFrameInfoH264* pFrameInfo = GetEncodeFrameInfoH264(encodeFrameInfo);
 
-    assert(pFrameInfo->stdPictureInfo.seq_parameter_set_id >= 0);
-    assert(pFrameInfo->stdPictureInfo.pic_parameter_set_id >= 0);
-    assert(pFrameInfo->videoSession);
-    assert(pFrameInfo->videoSessionParameters);
+    vv_assert(pFrameInfo->stdPictureInfo.seq_parameter_set_id >= 0);
+    vv_assert(pFrameInfo->stdPictureInfo.pic_parameter_set_id >= 0);
+    vv_assert(pFrameInfo->videoSession);
+    vv_assert(pFrameInfo->videoSessionParameters);
 
     VkVideoEncodeH264SessionParametersGetInfoKHR h264GetInfo = {
         VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_GET_INFO_KHR,
@@ -526,9 +525,9 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 {
     VkVideoEncodeFrameInfoH264* pFrameInfo = GetEncodeFrameInfoH264(encodeFrameInfo);
 
-    assert(encodeFrameInfo);
-    assert(m_encoderConfig);
-    assert(encodeFrameInfo->srcEncodeImageResource);
+    vv_assert(encodeFrameInfo);
+    vv_assert(m_encoderConfig);
+    vv_assert(encodeFrameInfo->srcEncodeImageResource);
 
     encodeFrameInfo->frameEncodeInputOrderNum = m_encodeInputFrameNum++;
 
@@ -538,7 +537,7 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
                                                                 uint32_t(m_encoderConfig->numFrames - encodeFrameInfo->frameEncodeInputOrderNum));
 
     if (isIdr) {
-        assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
+        vv_assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
     }
     const bool isReference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
 
@@ -556,8 +555,8 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     }
 
     pFrameInfo->encodeInfo.flags = 0;
-    assert(pFrameInfo->encodeInfo.srcPictureResource.codedOffset.x == 0);
-    assert(pFrameInfo->encodeInfo.srcPictureResource.codedOffset.y == 0);
+    vv_assert(pFrameInfo->encodeInfo.srcPictureResource.codedOffset.x == 0);
+    vv_assert(pFrameInfo->encodeInfo.srcPictureResource.codedOffset.y == 0);
     pFrameInfo->encodeInfo.srcPictureResource.codedExtent.width = m_encoderConfig->encodeWidth;
     pFrameInfo->encodeInfo.srcPictureResource.codedExtent.height = m_encoderConfig->encodeHeight;
     VkVideoPictureResourceInfoKHR* pSrcPictureResource = encodeFrameInfo->srcEncodeImageResource->GetPictureResourceInfo();
@@ -595,7 +594,7 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
             stdPictureType = STD_VIDEO_H264_PICTURE_TYPE_B;
             break;
         default:
-            assert(!"Invalid value");
+            vv_assert(!"Invalid value");
             break;
     }
 
@@ -641,7 +640,7 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     // NOTE: dstBuffer resource acquisition can be deferred at the last moment before submit
     VkDeviceSize size = GetBitstreamBuffer(encodeFrameInfo->outputBitstreamBuffer);
-    assert((size > 0) && (encodeFrameInfo->outputBitstreamBuffer != nullptr));
+    vv_assert((size > 0) && (encodeFrameInfo->outputBitstreamBuffer != nullptr));
     if ((size == 0) || (encodeFrameInfo->outputBitstreamBuffer == nullptr)) {
 	return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -666,7 +665,7 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
                 constantQp = encodeFrameInfo->constQp.qpInterB;
                 break;
             default:
-                assert(!"Invalid picture type");
+                vv_assert(!"Invalid picture type");
                 break;
         }
 
