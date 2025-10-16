@@ -34,7 +34,11 @@ public:
                                        const VulkanDeviceContext* vkDevCtx);
 
 private:
-    void* compilerHandle;
+    // Shared compiler instance (singleton with thread safety)
+    static void* GetSharedCompiler();
+    static void ReleaseSharedCompiler();
+
+    void* compilerHandle;  // Per-instance handle (references shared compiler)
 };
 
 #endif /* LIBS_VKCODECUTILS_VULKANSHADERCOMPILER_H_ */
