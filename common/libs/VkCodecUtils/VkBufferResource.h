@@ -23,14 +23,51 @@
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/VulkanDeviceMemoryImpl.h"
 
+/**
+ * @brief Vulkan buffer resource with automatic memory management
+ *
+ * Manages Vulkan buffers with device memory, supporting host-visible and device-local memory.
+ * Provides reference counting, automatic cleanup, and convenient data access methods.
+ */
 class VkBufferResource : public VkVideoRefCountBase
 {
 public:
 
+    /**
+     * @brief Create a Vulkan buffer with device memory
+     *
+     * Parameters:
+     * - vkDevCtx                    - Vulkan device context
+     * - usage                       - Buffer usage flags (VK_BUFFER_USAGE_*)
+     * - memoryPropertyFlags         - Memory property flags (VK_MEMORY_PROPERTY_*)
+     * - bufferSize                  - Buffer size in BYTES
+     * - vkBufferResource            - Output buffer (VkSharedBaseObj reference)
+     * - bufferOffsetAlignment       - [Optional] Offset alignment (default: 1)
+     * - bufferSizeAlignment         - [Optional] Size alignment (default: 1)
+     * - initializeBufferMemorySize  - [Optional] Size of initial data
+     * - pInitializeBufferMemory     - [Optional] Initial data to copy
+     * - queueFamilyCount           - [Optional] Number of queue families
+     * - queueFamilyIndexes         - [Optional] Queue family indices
+     *
+     * Example usage:
+     *   Create(ctx, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+     *          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+     *          bufferSize, buffer);
+     *
+     * Common usage patterns:
+     * - Staging buffer (host→device):
+     *     VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+     * - Readback buffer (device→host):
+     *     VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+     * - Device-only buffer:
+     *     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+     *
+     * @return VK_SUCCESS on success, Vulkan error code otherwise
+     */
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            VkBufferUsageFlags usage, VkMemoryPropertyFlags memoryPropertyFlags,
                            VkDeviceSize bufferSize,
-                           VkSharedBaseObj<VkBufferResource>& vulkanBitstreamBuffer,
+                           VkSharedBaseObj<VkBufferResource>& vkBufferResource,
                            VkDeviceSize bufferOffsetAlignment = 1, VkDeviceSize bufferSizeAlignment = 1,
                            VkDeviceSize initializeBufferMemorySize = 0, const void* pInitializeBufferMemory = nullptr,
                            uint32_t queueFamilyCount = 0, uint32_t* queueFamilyIndexes = nullptr);
@@ -57,34 +94,70 @@ public:
         return m_refCount;
     }
 
+    /** @brief Get maximum buffer size in bytes */
     virtual VkDeviceSize GetMaxSize() const;
+
+    /** @brief Get buffer offset alignment requirement */
     virtual VkDeviceSize GetOffsetAlignment() const;
+
+    /** @brief Get buffer size alignment requirement */
     virtual VkDeviceSize GetSizeAlignment() const;
     virtual VkDeviceSize Resize(VkDeviceSize newSize, VkDeviceSize copySize = 0, VkDeviceSize copyOffset = 0);
     virtual VkDeviceSize Clone(VkDeviceSize newSize, VkDeviceSize copySize, VkDeviceSize copyOffset,
                                VkSharedBaseObj<VkBufferResource>& vulkanBitstreamBuffer);
 
+    /** @brief Fill buffer region with value (CPU memset) */
     virtual int64_t  MemsetData(uint32_t value, VkDeviceSize offset, VkDeviceSize size);
+
+    /** @brief Copy data from this buffer to CPU buffer */
     virtual int64_t  CopyDataToBuffer(uint8_t *dstBuffer, VkDeviceSize dstOffset,
                                       VkDeviceSize srcOffset, VkDeviceSize size) const;
     virtual int64_t  CopyDataToBuffer(VkSharedBaseObj<VkBufferResource>& dstBuffer, VkDeviceSize dstOffset,
                                       VkDeviceSize srcOffset, VkDeviceSize size) const;
+
+    /** @brief Copy data from CPU buffer to this buffer */
     virtual int64_t  CopyDataFromBuffer(const uint8_t *sourceBuffer, VkDeviceSize srcOffset,
                                         VkDeviceSize dstOffset, VkDeviceSize size);
+
+    /** @brief Copy data from another VkBufferResource to this buffer */
     virtual int64_t  CopyDataFromBuffer(const VkSharedBaseObj<VkBufferResource>& sourceBuffer, VkDeviceSize srcOffset,
                                         VkDeviceSize dstOffset, VkDeviceSize size);
+
+    /**
+     * @brief Get writable pointer to buffer data (host-visible memory only)
+     * @param offset Offset in bytes
+     * @param maxSize Output: remaining bytes from offset
+     * @return Pointer to data, or nullptr if not host-visible
+     */
     virtual uint8_t* GetDataPtr(VkDeviceSize offset, VkDeviceSize &maxSize);
+
+    /**
+     * @brief Get read-only pointer to buffer data (host-visible memory only)
+     * @param offset Offset in bytes
+     * @param maxSize Output: remaining bytes from offset
+     * @return Const pointer to data, or nullptr if not host-visible
+     */
     virtual const uint8_t* GetReadOnlyDataPtr(VkDeviceSize offset, VkDeviceSize &maxSize) const;
 
+    /** @brief Flush CPU writes to GPU (for non-coherent memory) */
     virtual void FlushRange(VkDeviceSize offset, VkDeviceSize size) const;
+
+    /** @brief Invalidate GPU writes to CPU (for non-coherent memory) */
     virtual void InvalidateRange(VkDeviceSize offset, VkDeviceSize size) const;
 
+    /** @brief Get underlying VkBuffer handle */
     virtual VkBuffer GetBuffer() const { return m_buffer; }
+
+    /** @brief Get underlying VkDeviceMemory handle */
     virtual VkDeviceMemory GetDeviceMemory() const { return *m_vulkanDeviceMemory; }
 
+    /** @brief Implicit conversion to VkDeviceMemory */
     operator VkDeviceMemory() { return GetDeviceMemory(); }
+
+    /** @brief Check if buffer is valid */
     operator bool() { return m_buffer != VK_NULL_HANDLE; }
 
+    /** @brief Copy data to buffer and return offset */
     VkResult CopyDataToBuffer(const uint8_t* pData, VkDeviceSize size,
                               VkDeviceSize &dstBufferOffset) const;
 
