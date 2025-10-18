@@ -223,6 +223,118 @@ public:
         CmdBufState                              m_cmdBufState;
     };
 
+    /**
+     * @brief RAII wrapper for command buffer recording with automatic lifecycle management
+     *
+     * Automates the common pattern:
+     * 1. Get pool node (if not already acquired)
+     * 2. Reset command buffer
+     * 3. Begin recording
+     * 4. [User records commands]
+     * 5. End recording (via EndCmdBufferRecording() method)
+     * 6. Auto SetCommandBufferSubmitted() on destruction
+     * 7. Auto SyncHostOnCmdBuffComplete() on destruction (optional)
+     *
+     * Usage:
+     *   PoolNodeHandler cmd(pool, nodeRef, "operation", syncOnCpu);
+     *   if (cmd) {
+     *       // Record commands using cmd (implicit VkCommandBuffer conversion)
+     *       cmd.EndCmdBufferRecording();  // Must call before submit
+     *       // Submit command buffer using cmd.GetNode()->...
+     *   }  // Auto cleanup on scope exit
+     */
+    class PoolNodeHandler
+    {
+    public:
+        PoolNodeHandler(VkSharedBaseObj<VulkanCommandBufferPool>& commandBufferPool,
+                        VkSharedBaseObj<PoolNode>& cmdBufferNode,
+                        const char* cmdBufferOperationName,
+                        bool waitOnCpuAfterSubmit = false)
+            : m_cmdBufferNode(cmdBufferNode)
+            , m_cmdBuf(VK_NULL_HANDLE)
+            , m_cmdBufferOperationName(cmdBufferOperationName)
+            , m_waitOnCpuAfterSubmit(waitOnCpuAfterSubmit)
+            , m_commandEnded(false)
+        {
+            // Get command buffer from pool (on-demand)
+            if (!m_cmdBufferNode && commandBufferPool) {
+                commandBufferPool->GetAvailablePoolNode(m_cmdBufferNode);
+            }
+
+            if (m_cmdBufferNode) {
+                // Reset and begin command buffer
+                m_cmdBufferNode->ResetCommandBuffer(true, cmdBufferOperationName);
+
+                // Begin recording with one-time submit flag
+                VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+                beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+                m_cmdBuf = m_cmdBufferNode->BeginCommandBufferRecording(beginInfo);
+            }
+        }
+
+        ~PoolNodeHandler() {
+            // Only auto-submit/sync if End() was called successfully
+            if (m_cmdBufferNode && m_commandEnded) {
+                m_cmdBufferNode->SetCommandBufferSubmitted();
+
+                if (m_waitOnCpuAfterSubmit) {
+                    m_cmdBufferNode->SyncHostOnCmdBuffComplete(false, m_cmdBufferOperationName);
+                }
+            }
+        }
+
+        // End command buffer recording
+        VkResult EndCmdBufferRecording() {
+            if (!m_cmdBufferNode || m_cmdBuf == VK_NULL_HANDLE) {
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+
+            VkResult result = m_cmdBufferNode->EndCommandBufferRecording(m_cmdBuf);
+            if (result == VK_SUCCESS) {
+                m_commandEnded = true;
+            }
+            return result;
+        }
+
+        // Access underlying node for submit operations
+        VkSharedBaseObj<PoolNode>& GetNode() {
+            return m_cmdBufferNode;
+        }
+
+        // Get fence for submission
+        VkFence GetFence() const {
+            return m_cmdBufferNode ? m_cmdBufferNode->GetFence() : VK_NULL_HANDLE;
+        }
+
+        // Get semaphore for submission
+        VkSemaphore GetSemaphore() const {
+            return m_cmdBufferNode ? m_cmdBufferNode->GetSemaphore() : VK_NULL_HANDLE;
+        }
+
+        // Check if handler is valid and ready for recording
+        operator bool() const {
+            return (m_cmdBuf != VK_NULL_HANDLE);
+        }
+
+        // Implicit conversion to VkCommandBuffer for recording APIs
+        operator VkCommandBuffer() const {
+            return m_cmdBuf;
+        }
+
+        // Explicit get for clarity when needed
+        VkCommandBuffer Get() const {
+            return m_cmdBuf;
+        }
+
+    private:
+        VkSharedBaseObj<PoolNode>& m_cmdBufferNode;
+        VkCommandBuffer            m_cmdBuf;
+        const char*                m_cmdBufferOperationName;
+        bool                       m_waitOnCpuAfterSubmit;
+        bool                       m_commandEnded;
+    };
+
     static constexpr size_t maxPoolNodes = 64;
 
     VulkanCommandBufferPool(const VulkanDeviceContext* vkDevCtx)
