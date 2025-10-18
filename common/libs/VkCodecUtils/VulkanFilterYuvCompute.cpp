@@ -383,7 +383,7 @@ static void GenHandleSourcePositionWithReplicate(std::stringstream& shaderStr, b
 {
     if (enableReplicate) {
         shaderStr <<
-        "    ivec2 srcPos = min(pos, ivec2(pushConstants.inputWidth, pushConstants.inputHeight));\n"
+        "    ivec2 srcPos = min(pos, ivec2(pushConstants.inputWidth - 1, pushConstants.inputHeight - 1));\n"
         "\n";
     } else {
         shaderStr <<
