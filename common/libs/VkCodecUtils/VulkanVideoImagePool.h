@@ -17,7 +17,7 @@
 #ifndef _VULKANVIDEOIMAGEPOOL_H_
 #define _VULKANVIDEOIMAGEPOOL_H_
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <stdint.h>
 
 #include "VkCodecUtils/VkVideoRefCountBase.h"
@@ -110,7 +110,7 @@ public:
 
     virtual int32_t GetRefCount()
     {
-        assert(m_refCount > 0);
+        vv_assert(m_refCount > 0);
         return m_refCount;
     }
 
@@ -190,7 +190,7 @@ public:
 
     VulkanVideoImagePoolNode& operator[](unsigned int index)
     {
-        assert(index < m_imageResources.size());
+        vv_assert(index < m_imageResources.size());
         return m_imageResources[index];
     }
 

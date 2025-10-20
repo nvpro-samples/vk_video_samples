@@ -200,7 +200,7 @@ VkResult EncoderConfigAV1::InitDeviceCapabilities(const VulkanDeviceContext* vkD
                                                          intraRefreshCapabilities);
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get video capabilities :" << result << " ***" << std::endl;
-        assert(!"Coult not get Video Capabilities!");
+        vv_assert(!"Coult not get Video Capabilities!");
         return result;
     }
 
@@ -221,7 +221,7 @@ VkResult EncoderConfigAV1::InitDeviceCapabilities(const VulkanDeviceContext* vkD
                                                                                  av1QualityLevelProperties);
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get Video Encode QualityLevel Properties :" << result << " ***" << std::endl;
-        assert(!"Could not get Video Encode QualityLevel Properties");
+        vv_assert(!"Could not get Video Encode QualityLevel Properties");
         return result;
     }
 

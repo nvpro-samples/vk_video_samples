@@ -17,7 +17,7 @@
 #ifndef _VKVIDEOENCODER_VKVIDEOGOPSTRUCTURE_H_
 #define _VKVIDEOENCODER_VKVIDEOGOPSTRUCTURE_H_
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <stdint.h>
 #include <atomic>
 #include <bitset>
@@ -226,7 +226,7 @@ public:
 
             if ((consecutiveBFrameCount + 1U) >= refDelta) {
 
-                assert(refDelta <= (m_consecutiveBFrameCount + 2U));
+                vv_assert(refDelta <= (m_consecutiveBFrameCount + 2U));
                 // This are B frames before the end of the closed GOP, including IDR.
                 // We can't use B frames only here because we can't use the next reference frame
                 // as a forward reference anchor.

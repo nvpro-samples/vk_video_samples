@@ -138,7 +138,7 @@ int main(int argc, const char** argv)
                                                  videoStreamDemuxer);
 
     if (result != VK_SUCCESS) {
-        assert(!"Can't initialize the VideoStreamDemuxer!");
+        vv_assert(!"Can't initialize the VideoStreamDemuxer!");
         return result;
     }
 

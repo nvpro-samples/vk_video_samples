@@ -31,7 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
+#include "vv_assert.h"
 #include <stdint.h>
 
 template <typename planeType>  // T can be uint8_t for 8-bit or uint16_t for 16-bit

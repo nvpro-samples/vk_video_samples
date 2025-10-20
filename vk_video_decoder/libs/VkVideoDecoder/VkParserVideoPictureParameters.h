@@ -18,7 +18,7 @@
 #define _VKVIDEODECODER_VKPARSERVIDEOPICTUREPARAMETERS_H_
 
 #include <bitset>
-#include <assert.h>
+#include "vv_assert.h"
 #include <atomic>
 #include <queue>
 #include <unordered_map>
@@ -49,7 +49,7 @@ public:
         if (m_refClassId == pPictureParameters->m_classId) {
             return pPictureParameters;
         }
-        assert(!"Invalid VkParserVideoPictureParameters from base");
+        vv_assert(!"Invalid VkParserVideoPictureParameters from base");
         return nullptr;
     }
 
@@ -82,12 +82,12 @@ public:
                                            const StdVideoPictureParametersSet* pStdVideoPictureParametersSet);
 
     operator VkVideoSessionParametersKHR() const {
-        assert(m_sessionParameters != VK_NULL_HANDLE);
+        vv_assert(m_sessionParameters != VK_NULL_HANDLE);
         return m_sessionParameters;
     }
 
     VkVideoSessionParametersKHR GetVideoSessionParametersKHR() const {
-        assert(m_sessionParameters != VK_NULL_HANDLE);
+        vv_assert(m_sessionParameters != VK_NULL_HANDLE);
         return m_sessionParameters;
     }
 

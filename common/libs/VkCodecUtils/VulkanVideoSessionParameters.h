@@ -17,7 +17,7 @@
 #ifndef _VULKANVIDEOSESSIONPARAMETERS_H_
 #define _VULKANVIDEOSESSIONPARAMETERS_H_
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <atomic>
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
@@ -42,7 +42,7 @@ public:
                            VkSharedBaseObj<VulkanVideoSessionParameters>& videoPictureParameters);
 
     operator VkVideoSessionParametersKHR() const {
-        assert(m_sessionParameters != VK_NULL_HANDLE);
+        vv_assert(m_sessionParameters != VK_NULL_HANDLE);
         return m_sessionParameters;
     }
 

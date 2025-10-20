@@ -17,7 +17,7 @@
 #ifndef _VULKANCOMMANDBUFFERPOOL_H_
 #define _VULKANCOMMANDBUFFERPOOL_H_
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <stdint.h>
 
 #include "VkCodecUtils/VkVideoRefCountBase.h"
@@ -78,7 +78,7 @@ public:
 
         const VkCommandBuffer* GetCommandBuffer() const {
             if ((m_parent == nullptr) || (m_parentIndex < 0)) {
-                assert(!"Invalid PoolNode state!");
+                vv_assert(!"Invalid PoolNode state!");
                 return nullptr;
             }
             return m_parent->m_commandBuffersSet.GetCommandBuffer(m_parentIndex);
@@ -86,11 +86,11 @@ public:
 
         VkCommandBuffer BeginCommandBufferRecording(const VkCommandBufferBeginInfo& beginInfo) {
             if ((m_parent == nullptr) || (m_parentIndex < 0)) {
-                assert(!"Invalid PoolNode state!");
+                vv_assert(!"Invalid PoolNode state!");
                 return VK_NULL_HANDLE;
             }
             if (m_cmdBufState != CmdBufStateReset) {
-                assert(!"Command buffer is not in a reset state!");
+                vv_assert(!"Command buffer is not in a reset state!");
                 return VK_NULL_HANDLE;
             }
 
@@ -102,32 +102,32 @@ public:
 
         VkResult EndCommandBufferRecording(VkCommandBuffer cmdBuf) {
             if ((m_parent == nullptr) || (m_parentIndex < 0)) {
-                assert(!"Invalid PoolNode state!");
+                vv_assert(!"Invalid PoolNode state!");
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
             if (m_cmdBufState != CmdBufStateRecording) {
-                assert(!"Command buffer is not in recording state!");
+                vv_assert(!"Command buffer is not in recording state!");
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
 
-            assert(cmdBuf == *m_parent->m_commandBuffersSet.GetCommandBuffer(m_parentIndex));
+            vv_assert(cmdBuf == *m_parent->m_commandBuffersSet.GetCommandBuffer(m_parentIndex));
 
             VkResult result = m_vkDevCtx->EndCommandBuffer(cmdBuf);
             if (result == VK_SUCCESS) {
                 m_cmdBufState = CmdBufStateRecorded;
             } else {
-                assert(!"Error in command buffer recording!");
+                vv_assert(!"Error in command buffer recording!");
             }
             return result;
         }
 
         bool SetCommandBufferSubmitted() {
             if ((m_parent == nullptr) || (m_parentIndex < 0)) {
-                assert(!"Invalid PoolNode state!");
+                vv_assert(!"Invalid PoolNode state!");
                 return false;
             }
             if (m_cmdBufState != CmdBufStateRecorded) {
-                assert(!"Command Buffer is not in recorded state!");
+                vv_assert(!"Command Buffer is not in recorded state!");
                 return false;
             }
             m_cmdBufState = CmdBufStateSubmitted;
@@ -136,7 +136,7 @@ public:
 
         VkFence GetFence() const {
             if ((m_parent == nullptr) || (m_parentIndex < 0)) {
-                assert(!"Invalid PoolNode state!");
+                vv_assert(!"Invalid PoolNode state!");
                 return VK_NULL_HANDLE;
             }
             return m_parent->m_fenceSet.GetFence(m_parentIndex);
@@ -154,7 +154,7 @@ public:
             VkFence cmdBufferCompleteFence = GetFence();
 
             if ((m_vkDevCtx == nullptr) || (cmdBufferCompleteFence == VK_NULL_HANDLE)) {
-                assert(!"Invalid PoolNode state!");
+                vv_assert(!"Invalid PoolNode state!");
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
 
@@ -162,7 +162,7 @@ public:
                                                     fenceName, fenceWaitTimeoutNsec, fenceTotalWaitTimeoutNsec);
             if (result != VK_SUCCESS) {
                 fprintf(stderr, "\nERROR: WaitAndResetFence() for %s with result: 0x%x\n", fenceName, result);
-                assert(result == VK_SUCCESS);
+                vv_assert(result == VK_SUCCESS);
             }
 
             return result;
@@ -186,7 +186,7 @@ public:
 
         VkSemaphore GetSemaphore() const {
             if ((m_parent == nullptr) || (m_parentIndex < 0)) {
-                assert(!"Invalid PoolNode state!");
+                vv_assert(!"Invalid PoolNode state!");
                 return VK_NULL_HANDLE;
             }
             return m_parent->m_semaphoreSet.GetSemaphore(m_parentIndex);
@@ -194,7 +194,7 @@ public:
 
         VkQueryPool GetQueryPool(uint32_t& queryIdx) const {
             if ((m_parent == nullptr) || (m_parentIndex < 0)) {
-                assert(!"Invalid PoolNode state!");
+                vv_assert(!"Invalid PoolNode state!");
                 queryIdx = (uint32_t)-1;
                 return VK_NULL_HANDLE;
             }
@@ -204,7 +204,7 @@ public:
 
         uint32_t GetNodePoolIndex() const {
             if ((m_parent == nullptr) || (m_parentIndex < 0)) {
-                assert(!"Invalid PoolNode state!");
+                vv_assert(!"Invalid PoolNode state!");
                 return (uint32_t)-1;
             }
             return m_parentIndex;
@@ -276,7 +276,7 @@ public:
 
     PoolNode& operator[](unsigned int index)
     {
-        assert(index < m_poolNodes.size());
+        vv_assert(index < m_poolNodes.size());
         return m_poolNodes[index];
     }
 

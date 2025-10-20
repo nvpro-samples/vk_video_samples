@@ -140,7 +140,7 @@ VkFormat VulkanVideoDisplayQueue<FrameDataType>::GetFrameImageFormat()  const
     } else if (GetBitDepth() == 12) {
         frameImageFormat = VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16;
     } else {
-        assert(0);
+        vv_assert(0);
     }
 
     return frameImageFormat;

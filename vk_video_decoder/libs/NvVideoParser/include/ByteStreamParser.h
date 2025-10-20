@@ -179,7 +179,7 @@ bool VulkanVideoDecoder::ParseByteStreamSimd(const VkParserBitstreamPacket* pck,
     }
     if (pParsedBytes)
     {
-        assert(curr_data_size < std::numeric_limits<size_t>::max());
+        vv_assert(curr_data_size < std::numeric_limits<size_t>::max());
         *pParsedBytes = pck->nDataLength - (size_t)curr_data_size;
     }
     if (pck->bEOP || pck->bEOS)

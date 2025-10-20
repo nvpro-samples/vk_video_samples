@@ -17,7 +17,7 @@
 #ifndef _NVVIDEOPROFILE_H_
 #define _NVVIDEOPROFILE_H_
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <iostream>
 #include "vk_video/vulkan_video_codecs_common.h"
 #include "vk_video/vulkan_video_codec_h264std.h"
@@ -182,7 +182,7 @@ public:
             }
             m_profile.pNext = &m_av1EncodeProfile;
         } else {
-            assert(!"Unknown codec!");
+            vv_assert(!"Unknown codec!");
             return false;
         }
 
@@ -251,7 +251,7 @@ public:
             case STD_VIDEO_AV1_PROFILE_PROFESSIONAL:
                 break;
             default:
-                assert(false && "Bad profile IDC");
+                vv_assert(false && "Bad profile IDC");
             }
             decodeAV1ProfilesRequest.stdProfile = (StdVideoAV1Profile)videoH26xProfileIdc;
             pVideoProfileExt = (VkBaseInStructure*)&decodeAV1ProfilesRequest;
@@ -291,7 +291,7 @@ public:
                                                        (StdVideoAV1Profile)videoH26xProfileIdc;
             pVideoProfileExt = (VkBaseInStructure*)&encodeAV1ProfilesRequest;
         } else {
-            assert(!"Unknown codec!");
+            vv_assert(!"Unknown codec!");
             return;
         }
 
@@ -528,7 +528,7 @@ public:
                 vkFormat = VK_FORMAT_R12X4_UNORM_PACK16;
                 break;
             default:
-                assert(0);
+                vv_assert(0);
             }
             break;
         case VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR:
@@ -545,7 +545,7 @@ public:
                                         : VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16;
                 break;
             default:
-                assert(0);
+                vv_assert(0);
             }
             break;
         case VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR:
@@ -562,7 +562,7 @@ public:
                                         : VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16;
                 break;
             default:
-                assert(0);
+                vv_assert(0);
             }
             break;
         case VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR:
@@ -579,11 +579,11 @@ public:
                                         : VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16;
                 break;
             default:
-                assert(0);
+                vv_assert(0);
             }
             break;
         default:
-            assert(0);
+            vv_assert(0);
         }
 
         return vkFormat;
@@ -627,7 +627,7 @@ public:
             videoChromaFormat = chroma_format_idc_444;
             break;
         default:
-            assert(0);
+            vv_assert(0);
         }
 
         return videoChromaFormat;
@@ -652,7 +652,7 @@ public:
             return "encode av1";
         default:;
         }
-        assert(!"Unknown codec");
+        vv_assert(!"Unknown codec");
         return "UNKNON";
     }
 

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <assert.h>
+#include "vv_assert.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "NvVideoSession.h"
 
@@ -48,7 +48,7 @@ VkResult NvVideoSession::create(nvvk::MemAllocator* devAlloc,
     createInfo.pStdHeaderVersion = &h264StdExtensionVersion;
 
     VkResult result = vkCreateVideoSessionKHR(dev, &createInfo, NULL, &pNewVideoSession->m_videoSession);
-    assert(result == VK_SUCCESS);
+    vv_assert(result == VK_SUCCESS);
     pNewVideoSession->m_dev = dev;
 
     const uint32_t maxMemReq = 8;
@@ -57,8 +57,8 @@ VkResult NvVideoSession::create(nvvk::MemAllocator* devAlloc,
     // Get the count first
     result = vkGetVideoSessionMemoryRequirementsKHR(dev, pNewVideoSession->m_videoSession,
              &videoSessionMemoryRequirementsCount, NULL);
-    assert(result == VK_SUCCESS);
-    assert(videoSessionMemoryRequirementsCount <= maxMemReq);
+    vv_assert(result == VK_SUCCESS);
+    vv_assert(videoSessionMemoryRequirementsCount <= maxMemReq);
 
     memset(encodeSessionMemoryRequirements, 0x00, sizeof(encodeSessionMemoryRequirements));
     for (uint32_t i = 0; i < videoSessionMemoryRequirementsCount; i++) {
@@ -68,7 +68,7 @@ VkResult NvVideoSession::create(nvvk::MemAllocator* devAlloc,
     result = vkGetVideoSessionMemoryRequirementsKHR(dev, pNewVideoSession->m_videoSession,
              &videoSessionMemoryRequirementsCount,
              encodeSessionMemoryRequirements);
-    assert(result == VK_SUCCESS);
+    vv_assert(result == VK_SUCCESS);
 
     uint32_t encodeSessionBindMemoryCount = videoSessionMemoryRequirementsCount;
     VkBindVideoSessionMemoryInfoKHR encodeSessionBindMemory[8];
@@ -79,7 +79,7 @@ VkResult NvVideoSession::create(nvvk::MemAllocator* devAlloc,
         nvvk::MemAllocateInfo memAllocInfo(encodeSessionMemoryRequirements[memIdx].memoryRequirements, 0);
         nvvk::MemHandle handle = devAlloc->allocMemory(memAllocInfo);
         if(!handle) {
-            assert(0 && "could not allocate buffer\n");
+            vv_assert(0 && "could not allocate buffer\n");
         }
 
         pNewVideoSession->m_boundMemory[memIdx] = handle;
@@ -99,7 +99,7 @@ VkResult NvVideoSession::create(nvvk::MemAllocator* devAlloc,
 
     result = vkBindVideoSessionMemoryKHR(dev, pNewVideoSession->m_videoSession, encodeSessionBindMemoryCount,
                                          encodeSessionBindMemory);
-    assert(result == VK_SUCCESS);
+    vv_assert(result == VK_SUCCESS);
 
     *ppVideoSession = pNewVideoSession;
 
@@ -116,7 +116,7 @@ NvVideoSession::~NvVideoSession()
     m_devAlloc = NULL;
 
     if (m_videoSession) {
-        assert(m_dev != VkDevice());
+        vv_assert(m_dev != VkDevice());
         vkDestroyVideoSessionKHR(m_dev, m_videoSession, NULL);
         m_videoSession = VkVideoSessionKHR();
         m_dev = VkDevice();

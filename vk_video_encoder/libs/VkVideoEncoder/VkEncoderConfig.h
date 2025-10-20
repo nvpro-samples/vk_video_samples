@@ -17,7 +17,7 @@
 #ifndef VKVIDEOENCODER_VKENCODERCONFIG_H_
 #define VKVIDEOENCODER_VKENCODERCONFIG_H_
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <string.h>
 #include <atomic>
 #include "mio/mio.hpp"
@@ -211,14 +211,13 @@ public:
     }
 
     FILE* GetFileHandle() const {
-        assert(m_fileHandle != nullptr);
+        vv_assert(m_fileHandle != nullptr);
         return m_fileHandle;
     }
 
     const uint8_t* GetMappedPtr(size_t frameOffset)
     {
-        assert(m_memMapedFile.is_mapped());
-        assert(frameOffset < (uint64_t)m_memMapedFile.mapped_length());
+        vv_assert(frameOffset < (uint64_t)m_memMapedFile.mapped_length());
 
         return m_memMapedFile.data() + frameOffset;
     }
@@ -439,7 +438,7 @@ beach:
             samplingFactor = 3.0; // Full Y + full U + full V = 3.0
             break;
         default:
-            assert(!"Unknown chroma subsampling");
+            vv_assert(!"Unknown chroma subsampling");
             break;
         }
 
@@ -583,7 +582,7 @@ public:
     }
 
     FILE* GetFileHandle() const {
-        assert(m_fileHandle != nullptr);
+        vv_assert(m_fileHandle != nullptr);
         return m_fileHandle;
     }
 
@@ -660,18 +659,18 @@ public:
     }
 
     FILE* GetFileHandle() const {
-        assert(m_fileHandle != nullptr);
+        vv_assert(m_fileHandle != nullptr);
         return m_fileHandle;
     }
 
     const uint8_t* GetMappedPtr(uint64_t fileOffset)
     {
-        assert(m_memMapedFile.is_mapped());
+        vv_assert(m_memMapedFile.is_mapped());
 
         const uint64_t mappedLength = (uint64_t)m_memMapedFile.mapped_length();
         if (mappedLength < fileOffset) {
             printf("File overflow at fileOffset %llu\n",  (unsigned long long int)fileOffset);
-            assert(!"Input file overflow");
+            vv_assert(!"Input file overflow");
             return nullptr;
         }
         return m_memMapedFile.data() + fileOffset;

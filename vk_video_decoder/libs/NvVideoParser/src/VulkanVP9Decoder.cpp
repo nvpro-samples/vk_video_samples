@@ -76,11 +76,11 @@ bool VulkanVP9Decoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_
     // Use different bitstreamBuffer than the previous frames bitstreamBuffer
     // TODO: Make sure that the bitstreamBuffer is not in use.
     VkSharedBaseObj<VulkanBitstreamBuffer> bitstreamBuffer;
-    assert(m_pClient);
+    vv_assert(m_pClient);
     m_pClient->GetBitstreamBuffer(m_bitstreamDataLen,
                                   m_bufferOffsetAlignment, m_bufferSizeAlignment,
                                   nullptr, 0, bitstreamBuffer);
-    assert(bitstreamBuffer);
+    vv_assert(bitstreamBuffer);
     if (!bitstreamBuffer) {
         return false;
     }
@@ -231,7 +231,7 @@ bool VulkanVP9Decoder::ParseFrameHeader(uint32_t framesize)
     //parse uncompressed header
     if(!ParseUncompressedHeader())
     {
-        assert((!"Error in ParseUncompressedVP9\n"));
+        vv_assert((!"Error in ParseUncompressedVP9\n"));
         return 0;
     }
     if (m_PicData.show_existing_frame == true)  {
@@ -247,7 +247,7 @@ bool VulkanVP9Decoder::ParseFrameHeader(uint32_t framesize)
     }
 
     // handle bitstream start offset alignment (for super frame)
-    assert((m_nalu.start_offset >= 0) && (m_nalu.start_offset <= UINT32_MAX));
+    vv_assert((m_nalu.start_offset >= 0) && (m_nalu.start_offset <= UINT32_MAX));
     uint32_t addOffset = (uint32_t)(m_nalu.start_offset & (m_bufferOffsetAlignment - 1));
     m_PicData.uncompressedHeaderOffset += addOffset;
     m_PicData.compressedHeaderOffset += addOffset;
@@ -261,7 +261,7 @@ bool VulkanVP9Decoder::ParseFrameHeader(uint32_t framesize)
     m_pVkPictureData->bitstreamDataOffset = (size_t)(m_nalu.start_offset & ~((int64_t)m_bufferOffsetAlignment - 1));
 
     if (!BeginPicture(m_pVkPictureData)) {
-        assert(!"BeginPicture failed");
+        vv_assert(!"BeginPicture failed");
         return false;
     }
 
@@ -387,7 +387,7 @@ bool VulkanVP9Decoder::ParseUncompressedHeader()
     pStdPicInfo->profile = (StdVideoVP9Profile)profile;
     if (pStdPicInfo->profile == STD_VIDEO_VP9_PROFILE_3) {
         if (u(1) != 0) {
-            assert(!"Invalid syntax");
+            vv_assert(!"Invalid syntax");
             return false;
         }
     }
@@ -498,7 +498,7 @@ bool VulkanVP9Decoder::ParseUncompressedHeader()
     pPicData->tilesOffset = pPicData->compressedHeaderOffset + pPicData->compressedHeaderSize;
 
     pPicData->ChromaFormat = (pStdColorConfig->subsampling_x == 1) && (pStdColorConfig->subsampling_y == 1) ? 1 : 0;
-    assert(pPicData->ChromaFormat); // TODO: support only YUV420
+    vv_assert(pPicData->ChromaFormat); // TODO: support only YUV420
 
     return true;
 }
@@ -878,14 +878,14 @@ bool VulkanVP9Decoder::BeginPicture(VkParserPictureData* pnvpd)
     }
 
     if (!init_sequence(&nvsi)) {
-        assert(!"init_sequence failed!");
+        vv_assert(!"init_sequence failed!");
         return false;
     }
 
     // Allocate a buffer for the current picture
     if (m_pCurrPic == nullptr) {
         m_pClient->AllocPictureBuffer(&m_pCurrPic);
-        assert(m_pCurrPic);
+        vv_assert(m_pCurrPic);
 
         m_pCurrPic->decodeWidth = width;
         m_pCurrPic->decodeHeight = height;

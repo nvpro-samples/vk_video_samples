@@ -19,7 +19,7 @@
 #endif
 
 #include <cassert>
-#include <assert.h>
+#include "vv_assert.h"
 #include <string.h>
 #include <array>
 #include <iostream>
@@ -42,7 +42,7 @@ PFN_vkGetInstanceProcAddr VulkanDeviceContext::LoadVk(VulkanLibraryHandleType &v
 
     if (pCustomLoader) {
         handle = dlopen(pCustomLoader, RTLD_LAZY);
-        assert(!"ERROR: Could NOT get the custom Vulkan solib!");
+        vv_assert(!"ERROR: Could NOT get the custom Vulkan solib!");
     }
 
     if (handle == nullptr) {
@@ -50,14 +50,14 @@ PFN_vkGetInstanceProcAddr VulkanDeviceContext::LoadVk(VulkanLibraryHandleType &v
     }
 
     if (handle == nullptr) {
-        assert(!"ERROR: Can't get the Vulkan solib!");
+        vv_assert(!"ERROR: Can't get the Vulkan solib!");
         return nullptr;
     }
 
     if (pCustomLoader) {
         symbol = dlsym(handle, "vk_icdGetInstanceProcAddr");
         if (symbol == nullptr) {
-            assert(!"ERROR: Can't get the vk_icdGetInstanceProcAddr symbol!");
+            vv_assert(!"ERROR: Can't get the vk_icdGetInstanceProcAddr symbol!");
         }
     }
 
@@ -68,7 +68,7 @@ PFN_vkGetInstanceProcAddr VulkanDeviceContext::LoadVk(VulkanLibraryHandleType &v
     if (symbol == nullptr) {
 
         dlclose(handle);
-        assert(!"ERROR: Can't get the vk_icdGetInstanceProcAddr or vkGetInstanceProcAddr symbol!");
+        vv_assert(!"ERROR: Can't get the vk_icdGetInstanceProcAddr or vkGetInstanceProcAddr symbol!");
         return nullptr;
     }
 
@@ -86,7 +86,7 @@ PFN_vkGetInstanceProcAddr VulkanDeviceContext::LoadVk(VulkanLibraryHandleType &v
 
     HMODULE libModule = LoadLibrary(filename);
     if (libModule == nullptr) {
-        assert(!"ERROR: Can't get the Vulkan DLL!");
+        vv_assert(!"ERROR: Can't get the Vulkan DLL!");
         return nullptr;
     }
 
@@ -95,7 +95,7 @@ PFN_vkGetInstanceProcAddr VulkanDeviceContext::LoadVk(VulkanLibraryHandleType &v
 
         FreeLibrary(libModule);
 
-        assert(!"ERROR: Can't get the vk_icdGetInstanceProcAddr or vkGetInstanceProcAddr symbol!");
+        vv_assert(!"ERROR: Can't get the vk_icdGetInstanceProcAddr or vkGetInstanceProcAddr symbol!");
 
         return nullptr;
     }
@@ -253,7 +253,7 @@ VkResult VulkanDeviceContext::AddOptDeviceExtensions(const char* const* optional
 
 bool VulkanDeviceContext::HasAllDeviceExtensions(VkPhysicalDevice physDevice, const char* printMissingDeviceExt)
 {
-    assert(physDevice != VK_NULL_HANDLE);
+    vv_assert(physDevice != VK_NULL_HANDLE);
     // enumerate device extensions
     std::vector<VkExtensionProperties> exts;
     vk::enumerate(this, physDevice, nullptr, exts);
@@ -557,7 +557,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const vk::Dev
 
                 m_videoDecodeQueueFlags = queueFamilyFlags;
                 foundQueueTypes |= queueFamilyFlags;
-                // assert(queueFamilyFlags & VK_QUEUE_TRANSFER_BIT);
+                // vv_assert(queueFamilyFlags & VK_QUEUE_TRANSFER_BIT);
                 videoDecodeQueryResultStatus = queryResultStatus[i].queryResultStatusSupport;
             }
 
@@ -585,7 +585,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const vk::Dev
 
                 m_videoEncodeQueueFlags = queueFamilyFlags;
                 foundQueueTypes |= queueFamilyFlags;
-                // assert(queueFamilyFlags & VK_QUEUE_TRANSFER_BIT);
+                // vv_assert(queueFamilyFlags & VK_QUEUE_TRANSFER_BIT);
                 videoEncodeQueryResultStatus = queryResultStatus[i].queryResultStatusSupport;
 
             }
@@ -643,7 +643,7 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const vk::Dev
                 m_transferQueueFamily = (transferQueueFamilyOnly != -1) ? transferQueueFamilyOnly : transferQueueFamily;
                 m_transferNumQueues = transferNumQueues;
 
-                assert(m_physDevice != VK_NULL_HANDLE);
+                vv_assert(m_physDevice != VK_NULL_HANDLE);
                 PopulateDeviceExtensions();
                 if (false) {
                     PrintExtensions(true);
@@ -721,11 +721,11 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         }
 
         const int32_t maxQueueInstances = std::max(numDecodeQueues, numEncodeQueues);
-        assert(maxQueueInstances <= MAX_QUEUE_INSTANCES);
+        vv_assert(maxQueueInstances <= MAX_QUEUE_INSTANCES);
         const std::vector<float> queuePriorities(maxQueueInstances, 0.0f);
         std::array<VkDeviceQueueCreateInfo, MAX_QUEUE_FAMILIES> queueInfo = {};
         const bool isUnique = uniqueQueueFamilies.insert(m_gfxQueueFamily).second;
-        assert(isUnique);
+        vv_assert(isUnique);
         if (!isUnique) {
             return VK_ERROR_INITIALIZATION_FAILED;
         }
@@ -792,12 +792,12 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         VkPhysicalDeviceFeatures2 deviceFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &intraRefreshFeatures};
         GetPhysicalDeviceFeatures2(m_physDevice, &deviceFeatures);
 
-        assert(timelineSemaphoreFeatures.timelineSemaphore);
-        assert(videoMaintenance1Features.videoMaintenance1);
-        assert(synchronization2Features.synchronization2);
-        assert(((videoCodecs & VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) != 0) ==
+        vv_assert(timelineSemaphoreFeatures.timelineSemaphore);
+        vv_assert(videoMaintenance1Features.videoMaintenance1);
+        vv_assert(synchronization2Features.synchronization2);
+        vv_assert(((videoCodecs & VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) != 0) ==
                 (videoEncodeAV1Feature.videoEncodeAV1 != VK_FALSE));
-        assert(((videoCodecs & VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) != 0) ==
+        vv_assert(((videoCodecs & VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) != 0) ==
                 (videoDecodeVP9Feature.videoDecodeVP9 != VK_FALSE));
 
         devInfo.pNext = &deviceFeatures;
@@ -842,7 +842,7 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
             devInfo.queueCreateInfoCount++;
         }
 
-        assert(devInfo.queueCreateInfoCount <= MAX_QUEUE_FAMILIES);
+        vv_assert(devInfo.queueCreateInfoCount <= MAX_QUEUE_FAMILIES);
 
         devInfo.pQueueCreateInfos = queueInfo.data();
 
@@ -880,8 +880,8 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         GetDeviceQueue(m_device, GetTransferQueueFamilyIdx(), 0, &m_trasferQueue);
     }
     if (numDecodeQueues) {
-        assert(GetVideoDecodeQueueFamilyIdx() != -1);
-        assert(GetVideoDecodeNumQueues() > 0);
+        vv_assert(GetVideoDecodeQueueFamilyIdx() != -1);
+        vv_assert(GetVideoDecodeNumQueues() > 0);
         m_videoDecodeQueues.resize(GetVideoDecodeNumQueues());
         // m_videoDecodeQueueMutexes.resize(GetVideoDecodeNumQueues());
         for (uint32_t queueIdx = 0; queueIdx < (uint32_t)numDecodeQueues; queueIdx++) {
@@ -890,8 +890,8 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
     }
 
     if (numEncodeQueues) {
-        assert(GetVideoEncodeQueueFamilyIdx() != -1);
-        assert(GetVideoEncodeNumQueues() > 0);
+        vv_assert(GetVideoEncodeQueueFamilyIdx() != -1);
+        vv_assert(GetVideoEncodeNumQueues() > 0);
         m_videoEncodeQueues.resize(GetVideoEncodeNumQueues());
         // m_videoEncodeQueueMutexes.resize(GetVideoEncodeNumQueues());
         for (uint32_t queueIdx = 0; queueIdx < (uint32_t)numEncodeQueues; queueIdx++) {

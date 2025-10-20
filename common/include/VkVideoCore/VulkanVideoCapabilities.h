@@ -49,11 +49,11 @@ public:
         } else if (videoCodec == VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
             videoDecodeCapabilities.pNext = &vp9Capabilities;
         } else {
-            assert(!"Unsupported codec");
+            vv_assert(!"Unsupported codec");
             return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
         }
         VkResult result = GetVideoCapabilities(vkDevCtx, videoProfile, &videoCapabilities);
-        assert(result == VK_SUCCESS);
+        vv_assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "\nERROR: Input is not supported. GetVideoCapabilities() result: 0x%x\n", result);
         }
@@ -79,7 +79,7 @@ public:
         videoCapabilities       =       VkVideoCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR, &videoEncodeCapabilities };
 
         VkResult result = GetVideoCapabilities(vkDevCtx, videoProfile, &videoCapabilities);
-        assert(result == VK_SUCCESS);
+        vv_assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "\nERROR: Input is not supported. GetVideoCapabilities() result: 0x%x\n", result);
         }
@@ -101,7 +101,7 @@ public:
         qualityLevelProperties = VkVideoEncodeQualityLevelPropertiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_PROPERTIES_KHR, &codecQualityLevelProperties };
         VkResult result = vkDevCtx->GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR(vkDevCtx->getPhysicalDevice(),
                             &qualityLevelInfo, &qualityLevelProperties);
-        assert(result == VK_SUCCESS);
+        vv_assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "\nERROR: GetPhysicalDeviceVideoEncodeQualityLevelProperties() RESULT: 0x%x\n", result);
         }
@@ -135,7 +135,7 @@ public:
                                     VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR,
                                     formatCount, supportedDpbFormats);
 
-            assert(result == VK_SUCCESS);
+            vv_assert(result == VK_SUCCESS);
 
             result = GetVideoFormats(vkDevCtx, videoProfile,
                                     VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR,
@@ -149,13 +149,13 @@ public:
             return VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR;
         }
 
-        assert(result == VK_SUCCESS);
+        vv_assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "\nERROR: GetVideoFormats() result: 0x%x\n", result);
         }
 
-        assert((referencePicturesFormat != VK_FORMAT_UNDEFINED) && (pictureFormat != VK_FORMAT_UNDEFINED));
-        assert(referencePicturesFormat == pictureFormat);
+        vv_assert((referencePicturesFormat != VK_FORMAT_UNDEFINED) && (pictureFormat != VK_FORMAT_UNDEFINED));
+        vv_assert(referencePicturesFormat == pictureFormat);
 
         return result;
     }
@@ -165,18 +165,18 @@ public:
                                          VkVideoCapabilitiesKHR* pVideoCapabilities,
                                          bool dumpData = false)
     {
-        assert(pVideoCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR);
+        vv_assert(pVideoCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR);
         VkVideoDecodeCapabilitiesKHR* pVideoDecodeCapabilities = (VkVideoDecodeCapabilitiesKHR*)pVideoCapabilities->pNext;
         VkVideoEncodeCapabilitiesKHR* pVideoEncodeCapabilities = (VkVideoEncodeCapabilitiesKHR*)pVideoCapabilities->pNext;
-        assert((pVideoDecodeCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_DECODE_CAPABILITIES_KHR) ||
+        vv_assert((pVideoDecodeCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_DECODE_CAPABILITIES_KHR) ||
                (pVideoEncodeCapabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_ENCODE_CAPABILITIES_KHR));
 
         switch((uint32_t)videoProfile.GetCodecType()) {
         case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR:
         {
-            assert(pVideoDecodeCapabilities->pNext);
+            vv_assert(pVideoDecodeCapabilities->pNext);
             const VkVideoDecodeH264CapabilitiesKHR* pH264DecCapabilities = (VkVideoDecodeH264CapabilitiesKHR*)pVideoDecodeCapabilities->pNext;
-            assert(pH264DecCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_KHR);
+            vv_assert(pH264DecCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_KHR);
             if (pH264DecCapabilities->sType != VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_KHR) {
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
@@ -184,9 +184,9 @@ public:
             break;
         case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR:
         {
-            assert(pVideoDecodeCapabilities->pNext);
+            vv_assert(pVideoDecodeCapabilities->pNext);
             const VkVideoDecodeH265CapabilitiesKHR* pH265DecCapabilities = (VkVideoDecodeH265CapabilitiesKHR*)pVideoDecodeCapabilities->pNext;
-            assert(pH265DecCapabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_KHR);
+            vv_assert(pH265DecCapabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_KHR);
             if (pH265DecCapabilities->sType != VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_KHR) {
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
@@ -194,9 +194,9 @@ public:
             break;
         case VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR:
         {
-            assert(pVideoDecodeCapabilities->pNext);
+            vv_assert(pVideoDecodeCapabilities->pNext);
             const VkVideoDecodeAV1CapabilitiesKHR* pAV1Capabilities = (VkVideoDecodeAV1CapabilitiesKHR*)pVideoDecodeCapabilities->pNext;
-            assert(pAV1Capabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_CAPABILITIES_KHR);
+            vv_assert(pAV1Capabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_CAPABILITIES_KHR);
             if (pAV1Capabilities->sType != VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_CAPABILITIES_KHR) {
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
@@ -204,9 +204,9 @@ public:
             break;
         case VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR:
         {
-            assert(pVideoDecodeCapabilities->pNext);
+            vv_assert(pVideoDecodeCapabilities->pNext);
             const VkVideoDecodeVP9CapabilitiesKHR* pVP9Capabilities = (VkVideoDecodeVP9CapabilitiesKHR*)pVideoDecodeCapabilities->pNext;
-            assert(pVP9Capabilities->sType == VK_STRUCTURE_TYPE_VIDEO_DECODE_VP9_CAPABILITIES_KHR);
+            vv_assert(pVP9Capabilities->sType == VK_STRUCTURE_TYPE_VIDEO_DECODE_VP9_CAPABILITIES_KHR);
             if (pVP9Capabilities->sType != VK_STRUCTURE_TYPE_VIDEO_DECODE_VP9_CAPABILITIES_KHR) {
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
@@ -214,9 +214,9 @@ public:
             break;
         case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
         {
-            assert(pVideoEncodeCapabilities->pNext);
+            vv_assert(pVideoEncodeCapabilities->pNext);
             const VkVideoEncodeH264CapabilitiesKHR* pH264EncCapabilities = (VkVideoEncodeH264CapabilitiesKHR*)pVideoEncodeCapabilities->pNext;
-            assert(pH264EncCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_KHR);
+            vv_assert(pH264EncCapabilities->sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_KHR);
             if (pH264EncCapabilities->sType != VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_KHR) {
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
@@ -224,9 +224,9 @@ public:
             break;
         case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR:
         {
-            assert(pVideoEncodeCapabilities->pNext);
+            vv_assert(pVideoEncodeCapabilities->pNext);
             const VkVideoEncodeH265CapabilitiesKHR* pH265EncCapabilities = (VkVideoEncodeH265CapabilitiesKHR*)pVideoEncodeCapabilities->pNext;
-            assert(pH265EncCapabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_CAPABILITIES_KHR);
+            vv_assert(pH265EncCapabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_CAPABILITIES_KHR);
             if (pH265EncCapabilities->sType != VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_CAPABILITIES_KHR) {
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
@@ -234,23 +234,23 @@ public:
             break;
         case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:
         {
-            assert(pVideoEncodeCapabilities->pNext);
+            vv_assert(pVideoEncodeCapabilities->pNext);
             const VkVideoEncodeAV1CapabilitiesKHR* pAV1EncCapabilities = (VkVideoEncodeAV1CapabilitiesKHR*)pVideoEncodeCapabilities->pNext;
-            assert(pAV1EncCapabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_CAPABILITIES_KHR);
+            vv_assert(pAV1EncCapabilities->sType ==  VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_CAPABILITIES_KHR);
             if (pAV1EncCapabilities->sType != VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_CAPABILITIES_KHR) {
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
         }
             break;
         default:
-            assert(!"Unsupported codec");
+            vv_assert(!"Unsupported codec");
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
         }
 
         VkResult result = vkDevCtx->GetPhysicalDeviceVideoCapabilitiesKHR(vkDevCtx->getPhysicalDevice(),
                                                                             videoProfile.GetProfile(),
                                                                             pVideoCapabilities);
-        assert(result == VK_SUCCESS);
+        vv_assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
             return result;
         }
@@ -279,7 +279,7 @@ public:
                         VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME,
                             sizeof (pVideoCapabilities->stdHeaderVersion.extensionName) - 1U) ||
                     (pVideoCapabilities->stdHeaderVersion.specVersion != VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION)) {
-                    assert(!"Unsupported h.264 STD version");
+                    vv_assert(!"Unsupported h.264 STD version");
                     return VK_ERROR_INCOMPATIBLE_DRIVER;
                 }
             } else if (videoProfile.GetCodecType() == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) {
@@ -289,7 +289,7 @@ public:
                         VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME,
                             sizeof (pVideoCapabilities->stdHeaderVersion.extensionName) - 1U) ||
                     (pVideoCapabilities->stdHeaderVersion.specVersion != VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION)) {
-                    assert(!"Unsupported h.265 STD version");
+                    vv_assert(!"Unsupported h.265 STD version");
                     return VK_ERROR_INCOMPATIBLE_DRIVER;
                 }
             } else if (videoProfile.GetCodecType() == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
@@ -299,7 +299,7 @@ public:
                         VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_EXTENSION_NAME,
                             sizeof (pVideoCapabilities->stdHeaderVersion.extensionName) - 1U) ||
                     (pVideoCapabilities->stdHeaderVersion.specVersion != VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_SPEC_VERSION)) {
-                    assert(!"Unsupported AV1 STD version");
+                    vv_assert(!"Unsupported AV1 STD version");
                     return VK_ERROR_INCOMPATIBLE_DRIVER;
                 }
             } else if (videoProfile.GetCodecType() == VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
@@ -309,11 +309,11 @@ public:
                         VK_STD_VULKAN_VIDEO_CODEC_VP9_DECODE_EXTENSION_NAME,
                             sizeof (pVideoCapabilities->stdHeaderVersion.extensionName) - 1U) ||
                     (pVideoCapabilities->stdHeaderVersion.specVersion != VK_STD_VULKAN_VIDEO_CODEC_VP9_DECODE_SPEC_VERSION)) {
-                    assert(!"Unsupported VP9 STD version");
+                    vv_assert(!"Unsupported VP9 STD version");
                     return VK_ERROR_INCOMPATIBLE_DRIVER;
                 }
             } else {
-                assert(!"Unsupported codec");
+                vv_assert(!"Unsupported codec");
             }
         }
 
@@ -336,8 +336,8 @@ public:
 
         uint32_t supportedFormatCount = 0;
         VkResult result = vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(vkDevCtx->getPhysicalDevice(), &videoFormatInfo, &supportedFormatCount, nullptr);
-        assert(result == VK_SUCCESS);
-        assert(supportedFormatCount);
+        vv_assert(result == VK_SUCCESS);
+        vv_assert(supportedFormatCount);
 
         VkVideoFormatPropertiesKHR* pSupportedFormats = new VkVideoFormatPropertiesKHR[supportedFormatCount];
         memset(pSupportedFormats, 0x00, supportedFormatCount * sizeof(VkVideoFormatPropertiesKHR));
@@ -356,7 +356,7 @@ public:
         }
 
         result = vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(vkDevCtx->getPhysicalDevice(), &videoFormatInfo, &supportedFormatCount, pSupportedFormats);
-        assert(result == VK_SUCCESS);
+        vv_assert(result == VK_SUCCESS);
         if (dumpData) {
             std::cout << "\t\t\t" << ((videoProfile.GetCodecType() == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) ? "h264" : "h265") << "decode formats: " << std::endl;
             for (uint32_t fmt = 0; fmt < supportedFormatCount; fmt++) {
@@ -416,7 +416,7 @@ public:
                     *pVideoQueueFamily = (int32_t)queueIndx;
                 }
                 // The video queues may or may not support queryResultStatus
-                // assert(queryResultStatus[queueIndx].queryResultStatusSupport);
+                // vv_assert(queryResultStatus[queueIndx].queryResultStatusSupport);
                 return videoQueue.videoCodecOperations;
             }
         }
@@ -432,7 +432,7 @@ public:
         VkVideoCodecOperationFlagsKHR videoCodecs = GetSupportedCodecs(vkDevCtx, vkDevCtx->getPhysicalDevice(),
                                                                        &videoDecodeQueueFamily);
 
-        assert(videoCodecs != VK_VIDEO_CODEC_OPERATION_NONE_KHR);
+        vv_assert(videoCodecs != VK_VIDEO_CODEC_OPERATION_NONE_KHR);
 
         return videoCodecs;
     }

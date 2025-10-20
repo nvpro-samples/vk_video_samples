@@ -53,14 +53,14 @@ def compile_glsl(filename, tmpfile):
     words = []
     with open(tmpfile, "rb") as f:
         data = f.read()
-        assert(len(data) and len(data) % 4 == 0)
+        vv_assert(len(data) and len(data) % 4 == 0)
 
         # determine endianness
         fmt = ("<" if data[0] == (SPIRV_MAGIC & 0xff) else ">") + "I"
         for i in range(0, len(data), 4):
             words.append(struct.unpack(fmt, data[i:(i + 4)])[0])
 
-        assert(words[0] == SPIRV_MAGIC)
+        vv_assert(words[0] == SPIRV_MAGIC)
 
 
     # remove temp file

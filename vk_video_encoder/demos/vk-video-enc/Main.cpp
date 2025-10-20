@@ -161,7 +161,7 @@ int main(int argc, const char* argv[])
                                                  encoderConfig->encodeHeight);
         result = Shell::Create(&vkDevCtxt, configuration, displayShell);
         if (result != VK_SUCCESS) {
-            assert(!"Can't allocate display shell! Out of memory!");
+            vv_assert(!"Can't allocate display shell! Out of memory!");
             return -1;
         }
 
@@ -178,10 +178,10 @@ int main(int argc, const char* argv[])
                                                VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR));
         if (result != VK_SUCCESS) {
 
-            assert(!"Can't initialize the Vulkan physical device!");
+            vv_assert(!"Can't initialize the Vulkan physical device!");
             return -1;
         }
-        assert(displayShell->PhysDeviceCanPresent(vkDevCtxt.getPhysicalDevice(),
+        vv_assert(displayShell->PhysDeviceCanPresent(vkDevCtxt.getPhysicalDevice(),
                                                    vkDevCtxt.GetPresentQueueFamilyIdx()));
 
         result = vkDevCtxt.CreateVulkanDevice(0, // num decode queues
@@ -195,13 +195,13 @@ int main(int argc, const char* argv[])
                                               );
         if (result != VK_SUCCESS) {
 
-            assert(!"Failed to create Vulkan device!");
+            vv_assert(!"Failed to create Vulkan device!");
             return -1;
         }
 
         result = VkVideoEncoder::CreateVideoEncoder(&vkDevCtxt, encoderConfig, encoder);
         if (result != VK_SUCCESS) {
-            assert(!"Can't initialize the Vulkan physical device!");
+            vv_assert(!"Can't initialize the Vulkan physical device!");
             return -1;
         }
 
@@ -228,7 +228,7 @@ int main(int argc, const char* argv[])
                                               encoderConfig->codec);
         if (result != VK_SUCCESS) {
 
-            assert(!"Can't initialize the Vulkan physical device!");
+            vv_assert(!"Can't initialize the Vulkan physical device!");
             return -1;
         }
 
@@ -246,13 +246,13 @@ int main(int argc, const char* argv[])
                                               );
         if (result != VK_SUCCESS) {
 
-            assert(!"Failed to create Vulkan device!");
+            vv_assert(!"Failed to create Vulkan device!");
             return -1;
         }
 
         result = VkVideoEncoder::CreateVideoEncoder(&vkDevCtxt, encoderConfig, encoder);
         if (result != VK_SUCCESS) {
-            assert(!"Can't initialize the Vulkan physical device!");
+            vv_assert(!"Can't initialize the Vulkan physical device!");
             return -1;
         }
     }
@@ -273,7 +273,7 @@ int main(int argc, const char* argv[])
 
         VkSharedBaseObj<VkVideoEncoder::VkVideoEncodeFrameInfo> encodeFrameInfo;
         encoder->GetAvailablePoolNode(encodeFrameInfo);
-        assert(encodeFrameInfo);
+        vv_assert(encodeFrameInfo);
         // load frame data from the file
         result = encoder->LoadNextFrame(encodeFrameInfo);
         if (result != VK_SUCCESS) {

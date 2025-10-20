@@ -266,8 +266,8 @@ bool VulkanH264Decoder::BeginPicture(VkParserPictureData *pnvpd)
         h264->pic_parameter_set_id = slh->pic_parameter_set_id; // PPS ID
         h264->seq_parameter_set_id = sps->seq_parameter_set_id; // SPS ID
 
-        assert(pps->pic_parameter_set_id == h264->pic_parameter_set_id);
-        assert(pps->seq_parameter_set_id == h264->seq_parameter_set_id);
+        vv_assert(pps->pic_parameter_set_id == h264->pic_parameter_set_id);
+        vv_assert(pps->seq_parameter_set_id == h264->seq_parameter_set_id);
 
         // SPS
         h264->pStdSps = sps;
@@ -334,9 +334,9 @@ bool VulkanH264Decoder::BeginPicture(VkParserPictureData *pnvpd)
         memset(&h264->dpb, 0, sizeof(h264->dpb));
         for (int32_t i = 0; i < MAX_DPB_SIZE; i++) {
             // Check dpb consistency
-            assert((dpb[i].state & 1) || (dpb[i].top_field_marking == 0));
-            assert((dpb[i].state & 2) || (dpb[i].bottom_field_marking == 0));
-            assert((dpb[i].state != 3) || (dpb[i].top_field_marking == 0) || (dpb[i].bottom_field_marking == 0) || (dpb[i].top_field_marking == dpb[i].bottom_field_marking));
+            vv_assert((dpb[i].state & 1) || (dpb[i].top_field_marking == 0));
+            vv_assert((dpb[i].state & 2) || (dpb[i].bottom_field_marking == 0));
+            vv_assert((dpb[i].state != 3) || (dpb[i].top_field_marking == 0) || (dpb[i].bottom_field_marking == 0) || (dpb[i].top_field_marking == dpb[i].bottom_field_marking));
             if (dpb[i].top_field_marking != 0 || dpb[i].bottom_field_marking != 0 || 
                 (dpb[i].inter_view_flag && dpb[i].view_id != m_nhe.mvc.view_id))
             {
@@ -571,7 +571,7 @@ bool VulkanH264Decoder::BeginPicture_SVC(VkParserPictureData *pnvpd)
                     if (!m_ds->dpb_entry[16].pPicBuf)
                     {
                         nvParserLog("%s : Failed to allocate buffer for current picture\n", __FUNCTION__);
-                        assert(0);
+                        vv_assert(0);
                     }
                     // allocate buffer for current base reference frame
                     if (m_dd->slh.store_ref_base_pic_flag && (m_iDQIdMax & 15)) // only if reference base layer and target layer differ
@@ -580,7 +580,7 @@ bool VulkanH264Decoder::BeginPicture_SVC(VkParserPictureData *pnvpd)
                         if (!m_ds->dpb_entry[16].pPicBufRefBase)
                         {
                             nvParserLog("%s : Failed to allocate buffer for ref base picture\n", __FUNCTION__);
-                            assert(0);
+                            vv_assert(0);
                         }
                     }
                 }
@@ -593,7 +593,7 @@ bool VulkanH264Decoder::BeginPicture_SVC(VkParserPictureData *pnvpd)
     const uint32_t* pSliceOffsets = m_pVkPictureData->bitstreamData->GetStreamMarkersPtr(0, maxCount);
     uint32_t TotalSliceCnt = 0;
     uint32_t nNumSlices = m_pVkPictureData->numSlices;
-    assert(maxCount == nNumSlices);
+    vv_assert(maxCount == nNumSlices);
 
     uint32_t PicLayer = 0;
     for(uint32_t layer = 0; layer < 128; layer++)
@@ -756,7 +756,7 @@ bool VulkanH264Decoder::BeginPicture_SVC(VkParserPictureData *pnvpd)
         // increment pic count
         PicLayer++;
     }
-    assert(nNumSlices == TotalSliceCnt);
+    vv_assert(nNumSlices == TotalSliceCnt);
     m_iTargetLayer = PicLayer-1;
 
     return true;
@@ -1423,7 +1423,7 @@ void VulkanH264Decoder::output_picture(int nframe, int)
 
 void VulkanH264Decoder::output_picture_SVC(VkPicIf *pPicBuf, int)
 {
-    //assert(m_ds == &dependency_state[m_iDQIdMax >> 4]);
+    //vv_assert(m_ds == &dependency_state[m_iDQIdMax >> 4]);
     //if (m_ds != &dependency_state[m_iDQIdMax >> 4])
     //    nvParserLog("output of picture that is not in target dependency representation\n");
     display_picture(pPicBuf);    
@@ -1505,7 +1505,7 @@ int32_t VulkanH264Decoder::seq_parameter_set_rbsp(SpsNalUnitTarget spsNalUnitTar
     VkSharedBaseObj<seq_parameter_set_s> sps(spssvc);
     if (spssvc == nullptr) {
         VkResult result = seq_parameter_set_s::Create(0, sps);
-        assert((result == VK_SUCCESS) && sps);
+        vv_assert((result == VK_SUCCESS) && sps);
         if (result != VK_SUCCESS) {
             return false;
         }
@@ -1669,7 +1669,7 @@ int32_t VulkanH264Decoder::seq_parameter_set_rbsp(SpsNalUnitTarget spsNalUnitTar
             sps->SetSequenceCount(m_pParserData->spssClientUpdateCount[sps_id]++);
             VkSharedBaseObj<StdVideoPictureParametersSet> picParamObj(sps);
             bool success = m_pClient->UpdatePictureParameters(picParamObj, sps->client);
-            assert(success);
+            vv_assert(success);
             if (success == false) {
                 nvParserErrorLog("s", "\nError Updating the h.264 SPS parameters\n");
             }
@@ -1686,7 +1686,7 @@ bool VulkanH264Decoder::seq_parameter_set_svc_extension_rbsp()
 
     VkSharedBaseObj<seq_parameter_set_s> spssvc;
     VkResult result = seq_parameter_set_s::Create(0, spssvc);
-    assert((result == VK_SUCCESS) && spssvc);
+    vv_assert((result == VK_SUCCESS) && spssvc);
     if (result != VK_SUCCESS) {
         return false;
     }
@@ -1727,11 +1727,11 @@ bool VulkanH264Decoder::seq_parameter_set_svc_extension_rbsp()
 
     if (m_outOfBandPictureParameters && m_pClient) {
 
-        assert(sps_id == m_last_sps_id);
+        vv_assert(sps_id == m_last_sps_id);
         spssvc->SetSequenceCount(m_pParserData->spssvcsClientUpdateCount[m_last_sps_id]++);
         VkSharedBaseObj<StdVideoPictureParametersSet> picParamObj(spssvc);
         bool success = m_pClient->UpdatePictureParameters(picParamObj, spssvc->client);
-        assert(success);
+        vv_assert(success);
         if (success == false) {
             nvParserErrorLog("s", "\nError Updating the h.264 SPS ID %d SVC parameters\n", sps_id);
         }
@@ -1832,13 +1832,13 @@ bool VulkanH264Decoder::seq_parameter_set_mvc_extension_rbsp(int32_t sps_id)
     m_spsmes[m_last_sps_id] = &(m_pParserData->spsmes[m_last_sps_id]);
 
     if (m_outOfBandPictureParameters && m_pClient) {
-        assert(sps_id == m_last_sps_id);
-        assert(m_spss[sps_id]);
+        vv_assert(sps_id == m_last_sps_id);
+        vv_assert(m_spss[sps_id]);
 
         m_spss[sps_id]->SetSequenceCount(m_pParserData->spsmesClientUpdateCount[sps_id]++);
         VkSharedBaseObj<StdVideoPictureParametersSet> picParamObj(m_spss[sps_id]);
         bool success = m_pClient->UpdatePictureParameters(picParamObj, m_spss[sps_id]->client);
-        assert(success);
+        vv_assert(success);
         if (success == false) {
             nvParserErrorLog("s", "\nError Updating the h.264 SPS MVC parameters\n");
         }
@@ -2034,7 +2034,7 @@ bool VulkanH264Decoder::pic_parameter_set_rbsp()
 
     VkSharedBaseObj<pic_parameter_set_s> pps;
     VkResult result = pic_parameter_set_s::Create(0, pps);
-    assert((result == VK_SUCCESS) && pps);
+    vv_assert((result == VK_SUCCESS) && pps);
     if (result != VK_SUCCESS) {
         return false;
     }
@@ -2157,7 +2157,7 @@ bool VulkanH264Decoder::pic_parameter_set_rbsp()
         pps->SetSequenceCount(m_pParserData->ppssClientUpdateCount[pps_id]++);
         VkSharedBaseObj<StdVideoPictureParametersSet> picParamObj(pps);
         bool success = m_pClient->UpdatePictureParameters(picParamObj, pps->client);
-        assert(success);
+        vv_assert(success);
         if (success == false) {
             nvParserErrorLog("s", "\nError Updating the h.264 PPS parameters\n");
         }
@@ -2705,7 +2705,7 @@ bool VulkanH264Decoder::dpb_sequence_start(slice_header_s *slh)
 
     memset(&nvsi, 0, sizeof(nvsi));
     // m_bUseSVC ? NVCS_H264_SVC : NVCS_H264;
-    assert(!m_bUseSVC);
+    vv_assert(!m_bUseSVC);
     nvsi.isSVC = m_bUseSVC;
     nvsi.eCodec = VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR;
     nvsi.frameRate = NV_FRAME_RATE_UNKNOWN;
@@ -3186,7 +3186,7 @@ void VulkanH264Decoder::picture_order_count(const seq_parameter_set_s *sps, cons
         picture_order_count_type_2(sps, slh);
         break;
     default:
-        assert(!"Unsupported sps->pic_order_cnt_type type");
+        vv_assert(!"Unsupported sps->pic_order_cnt_type type");
 
     }
     // (8-1)
@@ -3384,7 +3384,7 @@ void VulkanH264Decoder::picture_order_count_SVC(dependency_data_s *dd, dependenc
         picture_order_count_type_2_SVC(dd, ds);
         break;
     default:
-        assert(!"Unsupported sps->pic_order_cnt_type type");
+        vv_assert(!"Unsupported sps->pic_order_cnt_type type");
     }
     // (8-1)
     if (!dd->slh.field_pic_flag || ds->dpb_entry[16].complementary_field_pair)
@@ -3983,7 +3983,7 @@ void VulkanH264Decoder::gaps_in_frame_num()
     if (m_slh.IdrPicFlag) // IDR picture
         PrevRefFrameNum = 0;
 
-    assert(m_slh.frame_num < MaxFrameNum);
+    vv_assert(m_slh.frame_num < MaxFrameNum);
     if (m_slh.frame_num != PrevRefFrameNum)
     {
         slice_header_s slhtmp = m_slh;
@@ -4129,7 +4129,7 @@ void VulkanH264Decoder::sliding_window_decoded_reference_picture_marking(uint32_
             }
         }
 
-        // assert(numShortTerm + numLongTerm <= sps->num_ref_frames);
+        // vv_assert(numShortTerm + numLongTerm <= sps->num_ref_frames);
         if (numShortTerm + numLongTerm >= num_ref_frames)
         {
             int32_t minFrameNumWrap = 65536;

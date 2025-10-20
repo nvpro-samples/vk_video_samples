@@ -50,7 +50,7 @@ public:
 
     virtual int32_t GetRefCount()
     {
-        assert(m_refCount > 0);
+        vv_assert(m_refCount > 0);
         return m_refCount;
     }
 

@@ -51,7 +51,7 @@ static void Init4x4ScalingListsH265(uint8_t *scalingFactors, const scaling_list_
 
                 // duplicate
                 int32_t refMatrixId = matrixId - scle->scaling_list_pred_matrix_id_delta;
-                assert(refMatrixId >= 0);
+                vv_assert(refMatrixId >= 0);
                 uint8_t *refScalingFactor = scalingFactors + 4*4*refMatrixId;
                 memcpy(scalingFactor, refScalingFactor, 4*4*sizeof(*scalingFactor));
 
@@ -91,7 +91,7 @@ static void Init8x8ScalingListsH265(uint8_t *scalingFactors, uint8_t *scalingFac
             if (scle->scaling_list_pred_matrix_id_delta != 0) {
                 // duplicate
                 int32_t refMatrixId = matrixId - scle->scaling_list_pred_matrix_id_delta;
-                assert(refMatrixId >= 0);
+                vv_assert(refMatrixId >= 0);
                 uint8_t *refScalingFactor = scalingFactors + 8*8*refMatrixId;
                 memcpy(scalingFactor, refScalingFactor, 8*8*sizeof(*scalingFactor));
                 if (sizeId >= 2)

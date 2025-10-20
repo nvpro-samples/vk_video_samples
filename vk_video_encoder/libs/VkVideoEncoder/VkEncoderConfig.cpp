@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <cctype>
 #include "VkVideoEncoder/VkEncoderConfig.h"
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
@@ -779,13 +780,13 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
         VkSharedBaseObj<EncoderConfigH264> vkEncoderConfigh264(new EncoderConfigH264());
         int ret = vkEncoderConfigh264->ParseArguments(argc, argv);
         if (ret != 0) {
-            assert(!"Invalid arguments");
+            vv_assert(!"Invalid arguments");
             return VK_ERROR_INITIALIZATION_FAILED;
         }
 
         VkResult result = vkEncoderConfigh264->InitializeParameters();
         if (result != VK_SUCCESS) {
-            assert(!"InitializeParameters failed");
+            vv_assert(!"InitializeParameters failed");
             return result;
         }
 
@@ -797,13 +798,13 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
         VkSharedBaseObj<EncoderConfigH265> vkEncoderConfigh265(new EncoderConfigH265());
         int ret = vkEncoderConfigh265->ParseArguments(argc, argv);
         if (ret != 0) {
-            assert(!"Invalid arguments");
+            vv_assert(!"Invalid arguments");
             return VK_ERROR_INITIALIZATION_FAILED;
         }
 
         VkResult result = vkEncoderConfigh265->InitializeParameters();
         if (result != VK_SUCCESS) {
-            assert(!"InitializeParameters failed");
+            vv_assert(!"InitializeParameters failed");
             return result;
         }
 
@@ -815,13 +816,13 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
         VkSharedBaseObj<EncoderConfigAV1> vkEncoderConfigAV1(new EncoderConfigAV1());
         int ret = vkEncoderConfigAV1->ParseArguments(argc, argv);
         if (ret != 0) {
-            assert(!"Invalid arguments");
+            vv_assert(!"Invalid arguments");
             return VK_ERROR_INITIALIZATION_FAILED;
         }
 
         VkResult result = vkEncoderConfigAV1->InitializeParameters();
         if (result != VK_SUCCESS) {
-            assert(!"InitializeParameters failed");
+            vv_assert(!"InitializeParameters failed");
             return result;
         }
 

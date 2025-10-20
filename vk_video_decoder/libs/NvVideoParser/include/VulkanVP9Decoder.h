@@ -35,21 +35,21 @@
 
 #define VP9_CHECK_FRAME_MARKER {    \
   if (u(2) != VP9_FRAME_MARKER) {   \
-    assert(!"Invalid frame marker");\
+    vv_assert(!"Invalid frame marker");\
     return false;                   \
   }                                 \
 }
 
 #define VP9_CHECK_ZERO_BIT {    \
   if (u(1) != 0) {              \
-    assert("!Invalid syntax");  \
+    vv_assert("!Invalid syntax");  \
     return false;               \
   }                             \
 }
 
 #define VP9_CHECK_FRAME_SYNC_CODE   {   \
   if (u(24) != VP9_FRAME_SYNC_CODE) {   \
-    assert("!Invalid frame sync code"); \
+    vv_assert("!Invalid frame sync code"); \
   }                                     \
 }
 

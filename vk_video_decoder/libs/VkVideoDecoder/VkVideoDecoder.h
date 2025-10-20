@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <atomic>
 #include <iostream>
 #include <queue>
@@ -69,7 +69,7 @@ public:
     void deinit() {
 
         if (m_videoCommandPool) {
-            assert(m_vkDevCtx);
+            vv_assert(m_vkDevCtx);
             m_vkDevCtx->FreeCommandBuffers(*m_vkDevCtx, m_videoCommandPool, (uint32_t)m_commandBuffers.size(), &m_commandBuffers[0]);
             m_vkDevCtx->DestroyCommandPool(*m_vkDevCtx, m_videoCommandPool, NULL);
             m_videoCommandPool = VkCommandPool();
@@ -82,7 +82,7 @@ public:
 
     size_t resize(size_t maxDecodeFramesCount) {
 
-        assert(m_vkDevCtx);
+        vv_assert(m_vkDevCtx);
 
         size_t allocatedCommandBuffers = 0;
         if (!m_videoCommandPool) {
@@ -91,7 +91,7 @@ public:
             cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
             cmdPoolInfo.queueFamilyIndex = m_vkDevCtx->GetVideoDecodeQueueFamilyIdx();
             VkResult result = m_vkDevCtx->CreateCommandPool(*m_vkDevCtx, &cmdPoolInfo, nullptr, &m_videoCommandPool);
-            assert(result == VK_SUCCESS);
+            vv_assert(result == VK_SUCCESS);
             if (result != VK_SUCCESS) {
                 fprintf(stderr, "\nERROR: CreateCommandPool() result: 0x%x\n", result);
             }
@@ -104,7 +104,7 @@ public:
 
             m_commandBuffers.resize(maxDecodeFramesCount);
             result = m_vkDevCtx->AllocateCommandBuffers(*m_vkDevCtx, &cmdInfo, &m_commandBuffers[0]);
-            assert(result == VK_SUCCESS);
+            vv_assert(result == VK_SUCCESS);
             if (result != VK_SUCCESS) {
                 fprintf(stderr, "\nERROR: AllocateCommandBuffers() result: 0x%x\n", result);
             } else {
@@ -112,14 +112,14 @@ public:
             }
         } else {
             allocatedCommandBuffers = m_commandBuffers.size();
-            assert(maxDecodeFramesCount <= allocatedCommandBuffers);
+            vv_assert(maxDecodeFramesCount <= allocatedCommandBuffers);
         }
 
         return allocatedCommandBuffers;
     }
 
     VkCommandBuffer GetCommandBuffer(uint32_t slot) {
-        assert(slot < m_commandBuffers.size());
+        vv_assert(slot < m_commandBuffers.size());
         return m_commandBuffers[slot];
     }
 
@@ -173,7 +173,7 @@ public:
      */
     const VkParserDetectedVideoFormat* GetVideoFormatInfo()
     {
-        assert(m_videoFormat.coded_width);
+        vv_assert(m_videoFormat.coded_width);
         return &m_videoFormat;
     }
 
@@ -239,16 +239,16 @@ private:
         , m_filterType(filterType)
     {
 
-        assert(m_vkDevCtx->GetVideoDecodeQueueFamilyIdx() != -1);
-        assert(m_vkDevCtx->GetVideoDecodeNumQueues() > 0);
-        assert(m_vkDevCtx->GetVideoDecodeDefaultQueueIndex() < m_vkDevCtx->GetVideoDecodeNumQueues());
+        vv_assert(m_vkDevCtx->GetVideoDecodeQueueFamilyIdx() != -1);
+        vv_assert(m_vkDevCtx->GetVideoDecodeNumQueues() > 0);
+        vv_assert(m_vkDevCtx->GetVideoDecodeDefaultQueueIndex() < m_vkDevCtx->GetVideoDecodeNumQueues());
 
         if (m_currentVideoQueueIndx < 0) {
             m_currentVideoQueueIndx = m_vkDevCtx->GetVideoDecodeDefaultQueueIndex();
         } else if (m_vkDevCtx->GetVideoDecodeNumQueues() > 1) {
             m_currentVideoQueueIndx %= m_vkDevCtx->GetVideoDecodeNumQueues();
-            assert(m_currentVideoQueueIndx < m_vkDevCtx->GetVideoDecodeNumQueues());
-            assert(m_currentVideoQueueIndx >= 0);
+            vv_assert(m_currentVideoQueueIndx < m_vkDevCtx->GetVideoDecodeNumQueues());
+            vv_assert(m_currentVideoQueueIndx >= 0);
         } else {
             m_currentVideoQueueIndx = 0;
         }

@@ -80,7 +80,7 @@ VkImageResource::VkImageResource(const VulkanDeviceContext* vkDevCtx,
                 m_vkDevCtx->GetImageSubresourceLayout(*vkDevCtx, image, &subResource, &m_layouts[2]);
                 break;
             default:
-                assert(0);
+                vv_assert(0);
         }
 
     } else {
@@ -107,7 +107,7 @@ VkResult VkImageResource::Create(const VulkanDeviceContext* vkDevCtx,
 
         result = vkDevCtx->CreateImage(device, pImageCreateInfo, nullptr, &image);
         if (result != VK_SUCCESS) {
-            assert(!"CreateImage Failed!");
+            vv_assert(!"CreateImage Failed!");
             break;
         }
 
@@ -124,14 +124,14 @@ VkResult VkImageResource::Create(const VulkanDeviceContext* vkDevCtx,
                                                 false,    // clearMemory
                                                 vkDeviceMemory);
         if (result != VK_SUCCESS) {
-            assert(!"Create Memory Failed!");
+            vv_assert(!"Create Memory Failed!");
             break;
         }
 
         VkDeviceSize imageOffset = 0;
         result = vkDevCtx->BindImageMemory(device, image, *vkDeviceMemory, imageOffset);
         if (result != VK_SUCCESS) {
-            assert(!"BindImageMemory Failed!");
+            vv_assert(!"BindImageMemory Failed!");
             break;
         }
 
@@ -161,7 +161,7 @@ VkResult VkImageResource::Create(const VulkanDeviceContext* vkDevCtx,
 
 void VkImageResource::Destroy()
 {
-    assert(m_vkDevCtx != nullptr);
+    vv_assert(m_vkDevCtx != nullptr);
 
     if (m_image != VK_NULL_HANDLE) {
         m_vkDevCtx->DestroyImage(*m_vkDevCtx, m_image, nullptr);

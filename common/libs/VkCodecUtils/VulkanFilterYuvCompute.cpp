@@ -75,16 +75,16 @@ VkResult VulkanFilterYuvCompute::Init(const VkSamplerYcbcrConversionCreateInfo* 
                                                                pSamplerCreateInfo,
                                                                pYcbcrConversionCreateInfo);
          if (result != VK_SUCCESS) {
-             assert(!"ERROR: samplerYcbcrConversion!");
+             vv_assert(!"ERROR: samplerYcbcrConversion!");
              return result;
          }
     }
 
-    assert(m_queue != VK_NULL_HANDLE);
+    vv_assert(m_queue != VK_NULL_HANDLE);
 
     result = InitDescriptorSetLayout(m_maxNumFrames);
     if (result != VK_SUCCESS) {
-        assert(!"ERROR: InitDescriptorSetLayout!");
+        vv_assert(!"ERROR: InitDescriptorSetLayout!");
         return result;
     }
 
@@ -101,10 +101,10 @@ VkResult VulkanFilterYuvCompute::Init(const VkSamplerYcbcrConversionCreateInfo* 
          computeShaderSize = InitYCBCR2RGBA(computeShader);
          break;
      case RGBA2YCBCR:
-         assert(!"TODO RGBA2YCBCR");
+         vv_assert(!"TODO RGBA2YCBCR");
          break;
      default:
-         assert(!"Invalid filter type");
+         vv_assert(!"Invalid filter type");
          break;
     }
 
@@ -197,7 +197,7 @@ static YcbcrBtStandard GetYcbcrPrimariesConstantsId(VkSamplerYcbcrModelConversio
     case VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_2020:
         return YcbcrBtStandardBt709;
     default:
-        ;// assert(0);
+        ;// vv_assert(0);
     }
 
     return YcbcrBtStandardUnknown;
@@ -2252,7 +2252,7 @@ uint32_t VulkanFilterYuvCompute::GetPlaneIndex(VkImageAspectFlagBits planeAspect
     // Returns index 2 for VK_IMAGE_ASPECT_PLANE_2_BIT
 
     // First, verify it's a plane aspect bit
-    assert(planeAspect & validAspects);
+    vv_assert(planeAspect & validAspects);
 
     if (planeAspect & VK_IMAGE_ASPECT_COLOR_BIT) {
         return 0;
@@ -2308,7 +2308,7 @@ uint32_t VulkanFilterYuvCompute::UpdateBufferDescriptorSets(
 
         curImageAspect++;
     }
-    assert(descrIndex <= maxDescriptors);
+    vv_assert(descrIndex <= maxDescriptors);
     return descrIndex;
 }
 
@@ -2334,7 +2334,7 @@ uint32_t VulkanFilterYuvCompute::UpdateImageDescriptorSets(
 
             VkSampler ccSampler = (curImageAspect == 0) ? convSampler : VK_NULL_HANDLE;
             uint32_t planeNum = GetPlaneIndex((VkImageAspectFlagBits)(VK_IMAGE_ASPECT_COLOR_BIT << curImageAspect));
-            assert(planeNum < numPlanes);
+            vv_assert(planeNum < numPlanes);
             uint32_t dstBinding = baseBinding;
             if (curImageAspect > 0) {
                 // the first plane is 1, second plane is 2, the 3rd is 3
@@ -2352,7 +2352,7 @@ uint32_t VulkanFilterYuvCompute::UpdateImageDescriptorSets(
             imageDescriptors[descrIndex].imageView = (curImageAspect == 0) ?
                                                       imageView->GetImageView() :
                                                       imageView->GetPlaneImageView(planeNum);
-            assert(imageDescriptors[descrIndex].imageView);
+            vv_assert(imageDescriptors[descrIndex].imageView);
             imageDescriptors[descrIndex].imageLayout = imageLayout;
             writeDescriptorSets[descrIndex].pImageInfo = &imageDescriptors[descrIndex]; // Y (0) plane
             descrIndex++;
@@ -2361,7 +2361,7 @@ uint32_t VulkanFilterYuvCompute::UpdateImageDescriptorSets(
 
         curImageAspect++;
     }
-    assert(descrIndex <= maxDescriptors);
+    vv_assert(descrIndex <= maxDescriptors);
     return descrIndex;
 }
 
@@ -2374,7 +2374,7 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                                      uint32_t bufferIdx)
 {
 
-    assert(cmdBuf != VK_NULL_HANDLE);
+    vv_assert(cmdBuf != VK_NULL_HANDLE);
 
     m_vkDevCtx->CmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline.getPipeline());
 
@@ -2424,8 +2424,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                       writeDescriptorSets,
                                       maxNumComputeDescr /* max descriptors */);
 
-            assert(descrIndex <= maxNumComputeDescr);
-            assert(descrIndex >= 2);
+            vv_assert(descrIndex <= maxNumComputeDescr);
+            vv_assert(descrIndex >= 2);
 
             if (layoutMode ==  VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR) {
                 m_vkDevCtx->CmdPushDescriptorSetKHR(cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE,
@@ -2526,9 +2526,9 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                                      const VkBufferImageCopy* pBufferImageCopy,
                                                      uint32_t bufferIdx)
 {
-    assert(cmdBuf != VK_NULL_HANDLE);
-    assert(m_inputIsBuffer  == true);
-    assert(m_outputIsBuffer == false);
+    vv_assert(cmdBuf != VK_NULL_HANDLE);
+    vv_assert(m_inputIsBuffer  == true);
+    vv_assert(m_outputIsBuffer == false);
 
     m_vkDevCtx->CmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline.getPipeline());
 
@@ -2578,8 +2578,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                       writeDescriptorSets,
                                       maxNumComputeDescr /* max descriptors */);
 
-            assert(descrIndex <= maxNumComputeDescr);
-            assert(descrIndex >= 2);
+            vv_assert(descrIndex <= maxNumComputeDescr);
+            vv_assert(descrIndex >= 2);
 
             if (layoutMode == VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR) {
                 m_vkDevCtx->CmdPushDescriptorSetKHR(cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE,
@@ -2641,7 +2641,7 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
     uint32_t width, height;
     uint32_t rowPitch;
 
-    assert(pBufferImageCopy);
+    vv_assert(pBufferImageCopy);
     width = pBufferImageCopy->bufferRowLength > 0 ?
             pBufferImageCopy->bufferRowLength :
             pBufferImageCopy->imageExtent.width;
@@ -2696,9 +2696,9 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                                      const VkBufferImageCopy*   pBufferImageCopy,
                                                      uint32_t bufferIdx)
 {
-    assert(cmdBuf != VK_NULL_HANDLE);
-    assert(m_inputIsBuffer  == false);
-    assert(m_outputIsBuffer == true);
+    vv_assert(cmdBuf != VK_NULL_HANDLE);
+    vv_assert(m_inputIsBuffer  == false);
+    vv_assert(m_outputIsBuffer == true);
 
     m_vkDevCtx->CmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline.getPipeline());
 
@@ -2746,8 +2746,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                        writeDescriptorSets,
                                        maxNumComputeDescr);
 
-            assert(descrIndex <= maxNumComputeDescr);
-            assert(descrIndex >= 2);
+            vv_assert(descrIndex <= maxNumComputeDescr);
+            vv_assert(descrIndex >= 2);
 
             if (layoutMode == VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR) {
                 m_vkDevCtx->CmdPushDescriptorSetKHR(cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE,
@@ -2871,9 +2871,9 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                                      const VkExtent3D&          outBufferExtent,
                                                      uint32_t bufferIdx)
 {
-    assert(cmdBuf != VK_NULL_HANDLE);
-    assert(m_inputIsBuffer  == true);
-    assert(m_outputIsBuffer == true);
+    vv_assert(cmdBuf != VK_NULL_HANDLE);
+    vv_assert(m_inputIsBuffer  == true);
+    vv_assert(m_outputIsBuffer == true);
 
     m_vkDevCtx->CmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE, m_computePipeline.getPipeline());
 
@@ -2919,8 +2919,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
                                        writeDescriptorSets,
                                        maxNumComputeDescr);
 
-            assert(descrIndex <= maxNumComputeDescr);
-            assert(descrIndex >= 2);
+            vv_assert(descrIndex <= maxNumComputeDescr);
+            vv_assert(descrIndex >= 2);
 
             if (layoutMode == VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR) {
                 m_vkDevCtx->CmdPushDescriptorSetKHR(cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE,

@@ -33,7 +33,7 @@ VkResult VulkanCommandBuffersSet::CreateCommandBufferPool(const VulkanDeviceCont
      cmdPoolCreateInfo.queueFamilyIndex = queueFamilyIndex;
      VkResult result = m_vkDevCtx->CreateCommandPool(*m_vkDevCtx, &cmdPoolCreateInfo, nullptr, &m_cmdPool);
      if (result != VK_SUCCESS) {
-         assert(!"ERROR: Can't allocate command buffer pool");
+         vv_assert(!"ERROR: Can't allocate command buffer pool");
          return result;
      }
 
@@ -46,7 +46,7 @@ VkResult VulkanCommandBuffersSet::CreateCommandBufferPool(const VulkanDeviceCont
      cmdBufferCreateInfo.commandBufferCount = maxCommandBuffersCount;
      result = m_vkDevCtx->AllocateCommandBuffers(*m_vkDevCtx, &cmdBufferCreateInfo, m_cmdBuffer.data());
      if (result != VK_SUCCESS) {
-         assert(!"ERROR: Can't get command buffer");
+         vv_assert(!"ERROR: Can't get command buffer");
      }
      return result;
 }

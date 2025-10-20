@@ -76,7 +76,7 @@ public:
                     it->VisitNode(m_pool[i], i, true, false);
                 }
             } else if (m_pool[i]) {
-                assert(1 == m_pool[i]->GetRefCount());
+                vv_assert(1 == m_pool[i]->GetRefCount());
                 it->VisitNode(m_pool[i], i, true, false);
             } else {
                 it->VisitNode(m_pool[i], i, m_pool[i], m_poolNodesInUseMask[i]);
@@ -97,7 +97,7 @@ public:
                     numFreeNodes++;
                 }
             } else if (m_pool[i]) {
-                assert(1 == m_pool[i]->GetRefCount());
+                vv_assert(1 == m_pool[i]->GetRefCount());
                 numFreeNodes++;
             }
         }
@@ -109,7 +109,7 @@ public:
         std::lock_guard<std::mutex> lock(m_poolMutex);
         int32_t availableNodeIndx = GetAvailableNodeIndx();
         if (availableNodeIndx >= 0) {
-            assert((uint32_t)availableNodeIndx < m_maxNodes);
+            vv_assert((uint32_t)availableNodeIndx < m_maxNodes);
             availableNodeFromPool = m_pool[availableNodeIndx];
         }
         return availableNodeIndx;
@@ -126,7 +126,7 @@ public:
         std::lock_guard<std::mutex> lock(m_poolMutex);
         int32_t freeNodeSlotIndx = GetFreeNodeSlotIndx();
         if (freeNodeSlotIndx >= 0) {
-            assert((uint32_t)freeNodeSlotIndx < m_maxNodes);
+            vv_assert((uint32_t)freeNodeSlotIndx < m_maxNodes);
             if (setUnavailable) {
                 m_poolNodesInUseMask[freeNodeSlotIndx] = true;
             }
@@ -148,7 +148,7 @@ private:
                     break;
                 }
             } else if (m_pool[i]) {
-                assert(1 == m_pool[i]->GetRefCount());
+                vv_assert(1 == m_pool[i]->GetRefCount());
                 if (setUnavailable) {
                     m_poolNodesInUseMask[i] = true;
                 }

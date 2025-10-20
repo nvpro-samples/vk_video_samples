@@ -54,7 +54,7 @@ StdVideoH264LevelIdc EncoderConfigH264::DetermineLevel(uint8_t dpbSize,
         return levelLimits[idx].level;
     }
 
-    assert(!"Invalid h264_level");
+    vv_assert(!"Invalid h264_level");
     return STD_VIDEO_H264_LEVEL_IDC_INVALID;
 }
 
@@ -97,8 +97,8 @@ void EncoderConfigH264::SetAspectRatio(StdVideoH264SequenceParameterSetVui *vui,
 
     if (vui->aspect_ratio_idc == STD_VIDEO_H264_ASPECT_RATIO_IDC_INVALID) {
         vui->aspect_ratio_idc = STD_VIDEO_H264_ASPECT_RATIO_IDC_EXTENDED_SAR;
-        assert(w <= 0xFFFF);
-        assert(h <= 0xFFFF);
+        vv_assert(w <= 0xFFFF);
+        vv_assert(h <= 0xFFFF);
         vui->sar_width = w & 0xFFFF;
         vui->sar_height = h & 0xFFFF;
     }
@@ -159,16 +159,16 @@ EncoderConfigH264::InitVuiParameters(StdVideoH264SequenceParameterSetVui *vui,
     vui->flags.nal_hrd_parameters_present_flag = false;
 
     if (vui->flags.nal_hrd_parameters_present_flag) {
-        assert(pHrdParameters);
+        vv_assert(pHrdParameters);
         pHrdParameters->cpb_cnt_minus1 = 0;  // one CPB
         pHrdParameters->bit_rate_scale = 0;  // 64 bits units
         pHrdParameters->cpb_size_scale = 0;  // 16 bits units
 
         uint64_t bitrate = (hrdBitrate >> (6 + pHrdParameters->bit_rate_scale)) - 1;
-        assert((bitrate & 0xFFFFFFFF00000000) == 0);
+        vv_assert((bitrate & 0xFFFFFFFF00000000) == 0);
 
         uint64_t cbpsize = (vbvBufferSize >> (4 + pHrdParameters->cpb_size_scale)) - 1;
-        assert((cbpsize & 0xFFFFFFFF00000000) == 0);
+        vv_assert((cbpsize & 0xFFFFFFFF00000000) == 0);
 
         pHrdParameters->bit_rate_value_minus1[0] = (uint32_t)bitrate;
         pHrdParameters->cpb_size_value_minus1[0] = (uint32_t)cbpsize;
@@ -375,7 +375,7 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                  intraRefreshCapabilities);
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
-        assert(!"Could not get Video Capabilities!");
+        vv_assert(!"Could not get Video Capabilities!");
         return result;
     }
 
@@ -397,7 +397,7 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                                  h264QualityLevelProperties);
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get Video Encode QualityLevel Properties :" << result << " ***" << std::endl;
-        assert(!"Could not get Video Encode QualityLevel Properties");
+        vv_assert(!"Could not get Video Encode QualityLevel Properties");
         return result;
     }
 
@@ -463,8 +463,8 @@ int8_t EncoderConfigH264::InitDpbCount()
                                 ? averageBitrate // constrained by avg bitrate
                                 : hrdBitrate;  // constrained by max bitrate
 
-    assert(pic_width_in_mbs > 0);
-    assert(pic_height_in_map_units > 0);
+    vv_assert(pic_width_in_mbs > 0);
+    vv_assert(pic_height_in_map_units > 0);
     uint32_t frameSizeInMbs = pic_width_in_mbs * pic_height_in_map_units;
 
     double frameRate = ((frameRateNumerator > 0) && (frameRateDenominator > 0))

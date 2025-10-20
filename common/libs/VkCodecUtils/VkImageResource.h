@@ -143,7 +143,7 @@ public:
     operator VkImageView() const { return m_imageViews[0]; }
     VkImageView GetImageView() const { return m_imageViews[0]; }
     uint32_t GetNumberOfPlanes() const { return m_numPlanes; }
-    VkImageView GetPlaneImageView(uint32_t planeIndex = 0) const { assert(planeIndex < m_numPlanes);  return m_imageViews[planeIndex + 1]; }
+    VkImageView GetPlaneImageView(uint32_t planeIndex = 0) const { vv_assert(planeIndex < m_numPlanes);  return m_imageViews[planeIndex + 1]; }
     VkDevice GetDevice() const { return *m_vkDevCtx; }
 
     const VkImageSubresourceRange& GetImageSubresourceRange() const

@@ -39,7 +39,7 @@ VkResult CreateVideoEncoderH265(const VulkanDeviceContext* vkDevCtx,
 VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& encoderConfig)
 {
     m_encoderConfig = encoderConfig->GetEncoderConfigh265();
-    assert(m_encoderConfig);
+    vv_assert(m_encoderConfig);
 
     if (m_encoderConfig->codec != VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR) {
         return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
@@ -168,13 +168,13 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
             pFrameInfo->stdPictureInfo.pLongTermRefPics &&
             (pFrameInfo->stdPictureInfo.pLongTermRefPics->num_long_term_sps > 0)) {
         pLongTermRefPicsSps = m_sps.sps.pLongTermRefPicsSps;
-        assert(pLongTermRefPicsSps);
+        vv_assert(pLongTermRefPicsSps);
     }
 
     bool success = m_dpbImagePool->GetAvailableImage(encodeFrameInfo->setupImageResource,
                                                      VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR);
-    assert(success);
-    assert(encodeFrameInfo->setupImageResource != nullptr);
+    vv_assert(success);
+    vv_assert(encodeFrameInfo->setupImageResource != nullptr);
     if (!success || (encodeFrameInfo->setupImageResource == nullptr)) {
 	return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -190,7 +190,7 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
                                                  maxPicOrderCntLsb,
                                                  encodeFrameInfo->inputTimeStamp,
                                                  &refPicSet);
-    assert(targetDpbSlot >= 0);
+    vv_assert(targetDpbSlot >= 0);
 
     if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_P) ||
         (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B)) {
@@ -220,7 +220,7 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     // ***************** Start Update DPB info ************** //
 
     uint32_t numReferenceSlots = 0;
-    assert(pFrameInfo->numDpbImageResources == 0);
+    vv_assert(pFrameInfo->numDpbImageResources == 0);
     if (encodeFrameInfo->setupImageResource != nullptr) { // && pFrameInfo->stdPictureInfo.flags.is_reference
         // setup ref slot index 0
         pFrameInfo->referenceSlotsInfo[numReferenceSlots] = { VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR,
@@ -263,7 +263,7 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
             uint8_t dpbIndex = pFrameInfo->stdReferenceListsInfo.RefPicList0[i];
 
             bool refPicAvailable = m_dpb.GetRefPicture(dpbIndex, pFrameInfo->dpbImageResources[numReferenceSlots]);
-            assert(refPicAvailable);
+            vv_assert(refPicAvailable);
 	    if (!refPicAvailable) {
 		return VK_ERROR_INITIALIZATION_FAILED;
 	    }
@@ -288,7 +288,7 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
                     pFrameInfo->dpbImageResources[numReferenceSlots]->GetPictureResourceInfo();
 
             numReferenceSlots++;
-            assert(numReferenceSlots <= ARRAYSIZE(pFrameInfo->referenceSlotsInfo));
+            vv_assert(numReferenceSlots <= ARRAYSIZE(pFrameInfo->referenceSlotsInfo));
         }
         pFrameInfo->numDpbImageResources = numReferenceSlots;
 
@@ -299,7 +299,7 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
                 uint8_t dpbIndex = pFrameInfo->stdReferenceListsInfo.RefPicList1[i];
 
                 bool refPicAvailable = m_dpb.GetRefPicture(dpbIndex, pFrameInfo->dpbImageResources[numReferenceSlots]);
-                assert(refPicAvailable);
+                vv_assert(refPicAvailable);
                 if (!refPicAvailable) {
                    return VK_ERROR_INITIALIZATION_FAILED;
                 }
@@ -315,7 +315,7 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
                         pFrameInfo->dpbImageResources[numReferenceSlots]->GetPictureResourceInfo();
 
                 numReferenceSlots++;
-                assert(numReferenceSlots <= ARRAYSIZE(pFrameInfo->referenceSlotsInfo));
+                vv_assert(numReferenceSlots <= ARRAYSIZE(pFrameInfo->referenceSlotsInfo));
             }
             pFrameInfo->numDpbImageResources = numReferenceSlots;
         }
@@ -345,10 +345,10 @@ VkResult VkVideoEncoderH265::EncodeVideoSessionParameters(VkSharedBaseObj<VkVide
 {
     VkVideoEncodeFrameInfoH265* pFrameInfo = GetEncodeFrameInfoH265(encodeFrameInfo);
 
-    assert(pFrameInfo->stdPictureInfo.sps_video_parameter_set_id >= 0);
-    assert(pFrameInfo->stdPictureInfo.pps_seq_parameter_set_id >= 0);
-    assert(pFrameInfo->stdPictureInfo.pps_pic_parameter_set_id >= 0);
-    assert(pFrameInfo->videoSessionParameters);
+    vv_assert(pFrameInfo->stdPictureInfo.sps_video_parameter_set_id >= 0);
+    vv_assert(pFrameInfo->stdPictureInfo.pps_seq_parameter_set_id >= 0);
+    vv_assert(pFrameInfo->stdPictureInfo.pps_pic_parameter_set_id >= 0);
+    vv_assert(pFrameInfo->videoSessionParameters);
 
     VkVideoEncodeH265SessionParametersGetInfoKHR sessionParametersGetInfoH265 = {
         VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_PARAMETERS_GET_INFO_KHR,
@@ -408,9 +408,9 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 {
     VkVideoEncodeFrameInfoH265* pFrameInfo = GetEncodeFrameInfoH265(encodeFrameInfo);
 
-    assert(encodeFrameInfo);
-    assert(m_encoderConfig);
-    assert(encodeFrameInfo->srcEncodeImageResource);
+    vv_assert(encodeFrameInfo);
+    vv_assert(m_encoderConfig);
+    vv_assert(encodeFrameInfo->srcEncodeImageResource);
 
     encodeFrameInfo->frameEncodeInputOrderNum = m_encodeInputFrameNum++;
 
@@ -420,7 +420,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
                                                                 uint32_t(m_encoderConfig->numFrames - encodeFrameInfo->frameEncodeInputOrderNum));
 
     if (isIdr) {
-        assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
+        vv_assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
     }
     const bool isReference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
 
@@ -438,8 +438,8 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     }
 
     pFrameInfo->encodeInfo.flags = 0;
-    assert(pFrameInfo->encodeInfo.srcPictureResource.codedOffset.x == 0);
-    assert(pFrameInfo->encodeInfo.srcPictureResource.codedOffset.y == 0);
+    vv_assert(pFrameInfo->encodeInfo.srcPictureResource.codedOffset.x == 0);
+    vv_assert(pFrameInfo->encodeInfo.srcPictureResource.codedOffset.y == 0);
     pFrameInfo->encodeInfo.srcPictureResource.codedExtent.width = m_encoderConfig->encodeWidth;
     pFrameInfo->encodeInfo.srcPictureResource.codedExtent.height = m_encoderConfig->encodeHeight;
     VkVideoPictureResourceInfoKHR* pSrcPictureResource = encodeFrameInfo->srcEncodeImageResource->GetPictureResourceInfo();
@@ -460,7 +460,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
 
     VkDeviceSize size = GetBitstreamBuffer(encodeFrameInfo->outputBitstreamBuffer);
-    assert((size > 0) && (encodeFrameInfo->outputBitstreamBuffer != nullptr));
+    vv_assert((size > 0) && (encodeFrameInfo->outputBitstreamBuffer != nullptr));
     if ((size == 0) || (encodeFrameInfo->outputBitstreamBuffer == nullptr)) {
 	return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -474,7 +474,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
         result = EncodeVideoSessionParameters(encodeFrameInfo);
         if (result != VK_SUCCESS ) {
-            assert(result == VK_SUCCESS);
+            vv_assert(result == VK_SUCCESS);
             return result;
         }
     }
@@ -503,7 +503,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
             sliceType = STD_VIDEO_H265_SLICE_TYPE_I;
             break;
         default:
-            assert(!"Invalid picture type");
+            vv_assert(!"Invalid picture type");
             return VK_ERROR_INITIALIZATION_FAILED;
     }
 
@@ -539,7 +539,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
                 constantQp = encodeFrameInfo->constQp.qpInterB;
                 break;
             default:
-                assert(!"Invalid picture type");
+                vv_assert(!"Invalid picture type");
                 break;
         }
 

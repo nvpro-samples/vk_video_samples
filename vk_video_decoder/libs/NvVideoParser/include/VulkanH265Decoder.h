@@ -222,7 +222,7 @@ struct hevc_seq_param_s : public StdVideoPictureParametersSet, public StdVideoH2
     virtual const char* GetRefClassId() const { return m_refClassId; }
 
     uint64_t SetSequenceCount(uint64_t updateSequenceCount) {
-        assert(updateSequenceCount <= std::numeric_limits<uint32_t>::max());
+        vv_assert(updateSequenceCount <= std::numeric_limits<uint32_t>::max());
         m_updateSequenceCount = (uint32_t)updateSequenceCount;
         return m_updateSequenceCount;
     }
@@ -391,7 +391,7 @@ struct hevc_pic_param_s : public StdVideoPictureParametersSet, public StdVideoH2
     virtual const char* GetRefClassId() const { return m_refClassId; }
 
     uint64_t SetSequenceCount(uint64_t updateSequenceCount) {
-        assert(updateSequenceCount <= std::numeric_limits<uint32_t>::max());
+        vv_assert(updateSequenceCount <= std::numeric_limits<uint32_t>::max());
         m_updateSequenceCount = (uint32_t)updateSequenceCount;
         return m_updateSequenceCount;
     }
@@ -524,7 +524,7 @@ struct hevc_video_param_s : public StdVideoPictureParametersSet, public StdVideo
     virtual const char* GetRefClassId() const { return m_refClassId; }
 
     uint64_t SetSequenceCount(uint64_t updateSequenceCount) {
-        assert(updateSequenceCount <= std::numeric_limits<uint32_t>::max());
+        vv_assert(updateSequenceCount <= std::numeric_limits<uint32_t>::max());
         m_updateSequenceCount = (uint32_t)updateSequenceCount;
         return m_updateSequenceCount;
     }

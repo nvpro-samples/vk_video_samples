@@ -533,7 +533,7 @@ class UniqueObjectsOutputGenerator(OutputGenerator):
                 pnext_proc += '#endif // %s \n' % struct_info[0].feature_protect
             pnext_proc += '\n'
         pnext_proc += '            default:\n'
-        pnext_proc += '                assert(0);\n'
+        pnext_proc += '                vv_assert(0);\n'
         pnext_proc += '        }\n'
         pnext_proc += '    }\n'
         pnext_proc += '}\n'

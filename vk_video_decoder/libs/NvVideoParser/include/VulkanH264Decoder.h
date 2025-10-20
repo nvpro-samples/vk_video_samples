@@ -157,7 +157,7 @@ struct seq_parameter_set_s : public StdVideoPictureParametersSet, public StdVide
     virtual const char* GetRefClassId() const { return m_refClassId; }
 
     uint64_t SetSequenceCount(uint64_t updateSequenceCount) {
-        assert(updateSequenceCount <= std::numeric_limits<uint32_t>::max());
+        vv_assert(updateSequenceCount <= std::numeric_limits<uint32_t>::max());
         m_updateSequenceCount = (uint32_t)updateSequenceCount;
         return m_updateSequenceCount;
     }
@@ -437,7 +437,7 @@ struct pic_parameter_set_s : public StdVideoPictureParametersSet, public StdVide
     virtual const char* GetRefClassId() const { return m_refClassId; }
 
     uint64_t SetSequenceCount(uint64_t updateSequenceCount) {
-        assert(updateSequenceCount <= std::numeric_limits<uint32_t>::max());
+        vv_assert(updateSequenceCount <= std::numeric_limits<uint32_t>::max());
         m_updateSequenceCount = (uint32_t)updateSequenceCount;
         return m_updateSequenceCount;
     }

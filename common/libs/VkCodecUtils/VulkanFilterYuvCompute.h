@@ -96,7 +96,7 @@ public:
                   const VkSamplerCreateInfo* pSamplerCreateInfo);
 
     virtual ~VulkanFilterYuvCompute() {
-        assert(m_vkDevCtx != nullptr);
+        vv_assert(m_vkDevCtx != nullptr);
     }
 
     uint32_t UpdateBufferDescriptorSets(const VkBuffer*            vkBuffers,

@@ -110,11 +110,11 @@ void Shell::CreateContext() {
     m_ctx.currentBackBuffer = 0;
     m_ctx.acquiredFrameId = 0;
 
-    assert(m_ctx.devCtx->GetPresentQueueFamilyIdx() != -1);
-    assert(m_ctx.devCtx->GetGfxQueueFamilyIdx() != -1);
-    assert((m_ctx.devCtx->GetVideoDecodeQueueFamilyIdx() != -1) ||
+    vv_assert(m_ctx.devCtx->GetPresentQueueFamilyIdx() != -1);
+    vv_assert(m_ctx.devCtx->GetGfxQueueFamilyIdx() != -1);
+    vv_assert((m_ctx.devCtx->GetVideoDecodeQueueFamilyIdx() != -1) ||
            (m_ctx.devCtx->GetVideoEncodeQueueFamilyIdx() != -1));
-    assert((m_ctx.devCtx->GetVideoDecodeNumQueues() > 0) ||
+    vv_assert((m_ctx.devCtx->GetVideoDecodeNumQueues() > 0) ||
             m_ctx.devCtx->GetVideoEncodeNumQueues() > 0);
 
     CreateBackBuffers();
@@ -178,7 +178,7 @@ void Shell::DestroyBackBuffers() {
 
 void Shell::CreateSwapchain() {
     m_ctx.surface = CreateSurface(m_ctx.devCtx->getInstance());
-    assert(m_ctx.surface);
+    vv_assert(m_ctx.surface);
 
     VkBool32 supported;
     AssertSuccess(
@@ -186,7 +186,7 @@ void Shell::CreateSwapchain() {
                                                              m_ctx.devCtx->GetPresentQueueFamilyIdx(),
                                                              m_ctx.surface, &supported));
     // this should be guaranteed by the platform-specific PhysDeviceCanPresent() call
-    assert(supported);
+    vv_assert(supported);
 
     std::vector<VkSurfaceFormatKHR> formats;
     vk::get(m_ctx.devCtx, m_ctx.devCtx->getPhysicalDevice(), m_ctx.surface, formats);
@@ -246,9 +246,9 @@ void Shell::ResizeSwapchain(uint32_t width_hint, uint32_t height_hint) {
         image_count = caps.maxImageCount;
     }
 
-    assert(caps.supportedUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
-    assert(caps.supportedTransforms & caps.currentTransform);
-    assert(caps.supportedCompositeAlpha & (VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR | VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR));
+    vv_assert(caps.supportedUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+    vv_assert(caps.supportedTransforms & caps.currentTransform);
+    vv_assert(caps.supportedCompositeAlpha & (VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR | VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR));
     VkCompositeAlphaFlagBitsKHR composite_alpha = (caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR)
                                                       ? VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR
                                                       : VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -315,7 +315,7 @@ void Shell::AcquireBackBuffer(bool) {
 
         AcquireBuffer* acquireBuf = m_ctx.acquireBuffers.front();
 
-        assert(acquireBuf != nullptr);
+        vv_assert(acquireBuf != nullptr);
 
         uint32_t imageIndex = 0;
         AssertSuccess(
@@ -324,7 +324,7 @@ void Shell::AcquireBackBuffer(bool) {
                                               acquireBuf->m_semaphore, acquireBuf->m_fence,
                                               &imageIndex));
 
-        assert(imageIndex < m_ctx.backBuffers.size());
+        vv_assert(imageIndex < m_ctx.backBuffers.size());
         BackBuffer& backBuffer = m_ctx.backBuffers[imageIndex];
 
         // wait until acquire and render semaphores are waited/unsignaled
@@ -379,7 +379,7 @@ void Shell::AcquireBackBuffer(bool) {
 
     } else {
         // If the queue is empty - the is nothing that can be done here.
-        assert(!"Swapchain queue is empty!");
+        vv_assert(!"Swapchain queue is empty!");
         m_ctx.currentBackBuffer = -1;
     }
 }

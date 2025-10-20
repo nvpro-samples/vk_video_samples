@@ -17,7 +17,7 @@
 #ifndef _VKCODECUTILS_VULKANBUFFERPOOL_H_
 #define _VKCODECUTILS_VULKANBUFFERPOOL_H_
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <stdint.h>
 #include <vector>
 #include <atomic>
@@ -93,7 +93,7 @@ public:
 
     PoolNodeType& operator[](unsigned int index)
     {
-        assert(index < m_poolNodes.size());
+        vv_assert(index < m_poolNodes.size());
         return m_poolNodes[index];
     }
 
@@ -144,7 +144,7 @@ public:
     {
         std::lock_guard<std::mutex> lock(m_queueMutex);
 
-        assert(!(m_availablePoolNodes & uint64_t(1ULL << poolNodeIndex)));
+        vv_assert(!(m_availablePoolNodes & uint64_t(1ULL << poolNodeIndex)));
         m_availablePoolNodes |= uint64_t(1ULL << poolNodeIndex);
 
         return true;

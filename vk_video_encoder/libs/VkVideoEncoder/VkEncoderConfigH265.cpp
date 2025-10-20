@@ -99,7 +99,7 @@ VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                  intraRefreshCapabilities);
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
-        assert(!"Could not get Video Capabilities!");
+        vv_assert(!"Could not get Video Capabilities!");
         return result;
     }
 
@@ -121,7 +121,7 @@ VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                                  h265QualityLevelProperties);
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get Video Encode QualityLevel Properties :" << result << " ***" << std::endl;
-        assert(!"Could not get Video Encode QualityLevel Properties");
+        vv_assert(!"Could not get Video Encode QualityLevel Properties");
         return result;
     }
 
@@ -226,11 +226,11 @@ int8_t EncoderConfigH265::VerifyDpbSize()
     if (levelIdxFound != -1) {
         uint32_t maxDpbSize = GetMaxDpbSize(picSize, levelIdxFound);
         if ((uint32_t)dpbCount > maxDpbSize) {
-            assert(!"DpbSize is greater than the maximum supported value.");
+            vv_assert(!"DpbSize is greater than the maximum supported value.");
             return (int8_t)(uint8_t)maxDpbSize;
         }
     } else {
-        assert(!"Invalid level idc");
+        vv_assert(!"Invalid level idc");
         return -1;
     }
 
@@ -305,10 +305,10 @@ EncoderConfigH265::InitVuiParameters(StdVideoH265SequenceParameterSetVui *vuiInf
         pHrdParameters->dpb_output_delay_length_minus1 = 5;    // has to be >= ld(2*(num_b_frames+1)+1)-1
 
         uint64_t bitrate = (hrdBitrate >> (6 + pHrdParameters->bit_rate_scale)) - 1;
-        assert((bitrate & 0xFFFFFFFF00000000) == 0);
+        vv_assert((bitrate & 0xFFFFFFFF00000000) == 0);
 
         uint64_t cbpsize = (vbvBufferSize >> (4 + pHrdParameters->cpb_size_scale)) - 1;
-        assert((cbpsize & 0xFFFFFFFF00000000) == 0);
+        vv_assert((cbpsize & 0xFFFFFFFF00000000) == 0);
 
         pHrdParameters->flags.nal_hrd_parameters_present_flag = 1;
         pHrdParameters->flags.vcl_hrd_parameters_present_flag = 0;
@@ -374,7 +374,7 @@ EncoderConfigH265::InitVuiParameters(StdVideoH265SequenceParameterSetVui *vuiInf
 bool EncoderConfigH265::IsSuitableLevel(uint32_t levelIdx, bool highTier)
 {
     if (levelIdx >= levelLimitsTblSize) {
-        assert(!"The h.265 level index is invalid");
+        vv_assert(!"The h.265 level index is invalid");
         return false;
     }
 
@@ -431,7 +431,7 @@ void EncoderConfigH265::InitializeSpsRefPicSet(SpsH265 *pSps)
     // Set number of backward references
     pSps->shortTermRefPicSet.num_negative_pics = pSps->decPicBufMgr.max_dec_pic_buffering_minus1[0];
     mask = (1 << std::min(pSps->shortTermRefPicSet.num_negative_pics, numRefL0)) - 1;
-    assert((mask & (1 << MAX_NUM_REF_PICS)) == 0); // assert that we're not using more than 15 references.
+    vv_assert((mask & (1 << MAX_NUM_REF_PICS)) == 0); // assert that we're not using more than 15 references.
     pSps->shortTermRefPicSet.used_by_curr_pic_s0_flag = (uint16_t)mask;
 
     // Set number of backward references (0 by default)
@@ -471,7 +471,7 @@ StdVideoH265ProfileTierLevel EncoderConfigH265::GetLevelTier()
     }
 
     if (levelIdx >= levelLimitsTblSize) {
-        assert(!"No suitable level selected");
+        vv_assert(!"No suitable level selected");
     }
 
     return profileTierLevel;
@@ -486,7 +486,7 @@ bool EncoderConfigH265::InitRateControl()
     }
     uint32_t level = profileTierLevel.general_level_idc;
     if (level >= levelLimitsTblSize) {
-        assert(!"The h.265 level index is invalid");
+        vv_assert(!"The h.265 level index is invalid");
         return false;
     }
     uint32_t cpbVclFactor = GetCpbVclFactor();
@@ -586,7 +586,7 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
                                          StdVideoH265SequenceParameterSetVui* vui)
 {
     uint32_t maxSubLayersMinus1 = (gopStructure.GetTemporalLayerCount() > 0) ? (gopStructure.GetTemporalLayerCount() - 1) : 0;
-    assert(maxSubLayersMinus1 == 0);
+    vv_assert(maxSubLayersMinus1 == 0);
 
     for (uint32_t i = 0; i <= maxSubLayersMinus1; i++) {
         spsInfo->decPicBufMgr.max_latency_increase_plus1[i] = 0;

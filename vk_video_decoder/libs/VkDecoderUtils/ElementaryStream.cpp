@@ -75,7 +75,7 @@ public:
         std::error_code error;
         m_inputVideoStreamMmap.map(pFilePath, 0, mio::map_entire_file, error);
         if (error) {
-            assert(!"Can't map the input stream file!");
+            vv_assert(!"Can't map the input stream file!");
         }
 
         m_bitstreamDataSize = m_inputVideoStreamMmap.mapped_length();
@@ -84,7 +84,7 @@ public:
 #endif
         if (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
             // Assume Duck IVF. DKIF.
-            assert(*(const uint32_t*)m_pBitstreamData == DKIF_HEADER_MAGIC);
+            vv_assert(*(const uint32_t*)m_pBitstreamData == DKIF_HEADER_MAGIC);
             const uint32_t firstFrameOffset = (DKIF_FILE_HEADER_SIZE + DKIF_FRAME_CONTAINER_HEADER_SIZE);
             m_pBitstreamData += firstFrameOffset;
             m_bitstreamDataSize -= firstFrameOffset;
@@ -106,7 +106,7 @@ public:
     {
         if (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
             // Assume Duck IVF. DKIF.
-            assert(*(const uint32_t*)pInput == DKIF_HEADER_MAGIC);
+            vv_assert(*(const uint32_t*)pInput == DKIF_HEADER_MAGIC);
             const uint32_t firstFrameOffset = (DKIF_FILE_HEADER_SIZE + DKIF_FRAME_CONTAINER_HEADER_SIZE);
             m_pBitstreamData += firstFrameOffset;
         }
@@ -164,9 +164,9 @@ public:
             return VK_VIDEO_COMPONENT_BIT_DEPTH_12_BIT_KHR;
             break;
         default:
-            assert(!"Unknown Luma Bit Depth!");
+            vv_assert(!"Unknown Luma Bit Depth!");
         }
-        assert(!"Unknown Luma Bit Depth!");
+        vv_assert(!"Unknown Luma Bit Depth!");
         return VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
     }
 
@@ -188,9 +188,9 @@ public:
             return VK_VIDEO_COMPONENT_BIT_DEPTH_12_BIT_KHR;
             break;
         default:
-            assert(!"Unknown Chroma Bit Depth!");
+            vv_assert(!"Unknown Chroma Bit Depth!");
         }
-        assert(!"Unknown Chroma Bit Depth!");
+        vv_assert(!"Unknown Chroma Bit Depth!");
         return VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
     }
     virtual uint32_t GetProfileIdc() const
@@ -203,7 +203,7 @@ public:
         case VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR:
             return STD_VIDEO_AV1_PROFILE_MAIN;
         default:
-            assert(0);
+            vv_assert(0);
         }
         return (uint32_t)(-1);
     }
@@ -216,8 +216,8 @@ public:
     }
     virtual int64_t ReadBitstreamData(const uint8_t **ppVideo, int64_t offset)
     {
-        assert(m_bitstreamDataSize != 0);
-        assert(m_pBitstreamData != nullptr);
+        vv_assert(m_bitstreamDataSize != 0);
+        vv_assert(m_pBitstreamData != nullptr);
 
         // Compute and return the pointer to data at new offset.
         if (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {

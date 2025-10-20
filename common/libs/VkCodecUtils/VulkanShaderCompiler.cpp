@@ -14,7 +14,7 @@
 * limitations under the License.
 */
 
-#include "assert.h"
+#include "vv_assert.h"
 #include <iostream>
 #include <fstream>
 
@@ -88,7 +88,7 @@ VkShaderModule VulkanShaderCompiler::BuildGlslShader(const char *shaderCode, siz
         shaderModuleCreateInfo.pCode = (const uint32_t *)shaderc_result_get_bytes(spvShader);
         shaderModuleCreateInfo.flags = 0;
         VkResult result = vkDevCtx->CreateShaderModule(*vkDevCtx, &shaderModuleCreateInfo, nullptr, &shaderModule);
-        assert(result == VK_SUCCESS);
+        vv_assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
             std::cerr << "Failed to create shader module" << std::endl;
             return VK_NULL_HANDLE;
@@ -120,7 +120,7 @@ VkShaderModule VulkanShaderCompiler::BuildShaderFromFile(const char *fileName,
         is.read(shaderCode, size);
         is.close();
 
-        assert(size > 0);
+        vv_assert(size > 0);
 
         VkShaderModule shaderModule = BuildGlslShader(shaderCode, size, type, vkDevCtx);
 

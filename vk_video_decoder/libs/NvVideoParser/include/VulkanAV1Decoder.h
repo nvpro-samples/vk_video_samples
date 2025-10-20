@@ -179,7 +179,7 @@ struct av1_seq_param_s : public StdVideoPictureParametersSet, public StdVideoAV1
     const char* GetRefClassId() const override { return m_refClassId; }
 
     uint64_t SetSequenceCount(uint64_t updateSequenceCount) {
-        assert(updateSequenceCount <= std::numeric_limits<uint32_t>::max());
+        vv_assert(updateSequenceCount <= std::numeric_limits<uint32_t>::max());
         m_updateSequenceCount = (uint32_t)updateSequenceCount;
         return m_updateSequenceCount;
     }
@@ -400,7 +400,7 @@ class VulkanAV1Decoder : public VulkanVideoDecoder {
             case 4:
                 return read_u32_le(src);
             default:
-                assert(0 && "Invalid size");
+                vv_assert(0 && "Invalid size");
                 return (size_t)(-1);
         }
     }

@@ -14,7 +14,7 @@
 * limitations under the License.
 */
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <iostream>
 #include <mutex>
 #include <queue>
@@ -63,16 +63,16 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     if (vkDevCtx->GetVideoDecodeQueue(videoQueueIndx) == VkQueue()) {
         std::cerr << "videoQueueIndx is out of bounds: " << videoQueueIndx <<
                      " Max decode queues: " << vkDevCtx->GetVideoDecodeNumQueues() << std::endl;
-        assert(!"Invalid Video Queue");
+        vv_assert(!"Invalid Video Queue");
         return -1;
     }
 
     Deinit();
 
-    assert(vkDevCtx);
+    vv_assert(vkDevCtx);
     m_vkDevCtx = vkDevCtx;
 
-    assert(videoStreamDemuxer);
+    vv_assert(videoStreamDemuxer);
     m_videoStreamDemuxer = videoStreamDemuxer;
 
     m_usesStreamDemuxer = m_videoStreamDemuxer->IsStreamDemuxerEnabled();
@@ -83,7 +83,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     }
 
     VkResult result =  VulkanVideoFrameBuffer::Create(vkDevCtx, m_vkVideoFrameBuffer);
-    assert(result == VK_SUCCESS);
+    vv_assert(result == VK_SUCCESS);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "\nERROR: Create VulkanVideoFrameBuffer result: 0x%x\n", result);
     }
@@ -116,7 +116,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                                     numDecodeImagesToPreallocate,
                                     numBitstreamBuffersToPreallocate,
                                     m_vkVideoDecoder);
-    assert(result == VK_SUCCESS);
+    vv_assert(result == VK_SUCCESS);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "\nERROR: Create VkVideoDecoder result: 0x%x\n", result);
     }
@@ -133,7 +133,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                                                        vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                                        m_videoStreamDemuxer->GetVideoCodec())) {
         std::cout << "*** The video codec " << VkVideoCoreProfile::CodecToName(m_videoStreamDemuxer->GetVideoCodec()) << " is not supported! ***" << std::endl;
-        assert(!"The video codec is not supported");
+        vv_assert(!"The video codec is not supported");
         return -1;
     }
 
@@ -145,7 +145,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
 
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
-        assert(!"Could not get Video Capabilities!");
+        vv_assert(!"Could not get Video Capabilities!");
         return -result;
     }
 
@@ -155,7 +155,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                           defaultMinBufferSize,
                           (uint32_t)videoCapabilities.minBitstreamBufferOffsetAlignment,
                           (uint32_t)videoCapabilities.minBitstreamBufferSizeAlignment);
-    assert(result == VK_SUCCESS);
+    vv_assert(result == VK_SUCCESS);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "\nERROR: CreateParser() result: 0x%x\n", result);
     }
@@ -206,7 +206,7 @@ VkFormat VulkanVideoProcessor::GetFrameImageFormat()  const
         } else if (m_videoStreamDemuxer->GetBitDepth() == 12) {
             frameImageFormat = VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16;
         } else {
-            assert(0);
+            vv_assert(0);
         }
     }
 
@@ -281,8 +281,8 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
         nullptr,
         "444",
     };
-    assert(videoFormat->chromaSubsampling < sizeof(nvVideoChromaFormat)/sizeof(nvVideoChromaFormat[0]));
-    assert(nvVideoChromaFormat[videoFormat->chromaSubsampling] != nullptr);
+    vv_assert(videoFormat->chromaSubsampling < sizeof(nvVideoChromaFormat)/sizeof(nvVideoChromaFormat[0]));
+    vv_assert(nvVideoChromaFormat[videoFormat->chromaSubsampling] != nullptr);
     const char* pVideoChromaFormat = nvVideoChromaFormat[videoFormat->chromaSubsampling];
     if (dumpData) {
         std::cout << "VideoChromaFormat : " << pVideoChromaFormat << std::endl;
@@ -300,7 +300,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
         "Reserved6",
         "Reserved7",
     };
-    assert(videoFormat->video_signal_description.video_format < sizeof(VideoFormat)/sizeof(VideoFormat[0]));
+    vv_assert(videoFormat->video_signal_description.video_format < sizeof(VideoFormat)/sizeof(VideoFormat[0]));
     const char* pVideoFormat = VideoFormat[videoFormat->video_signal_description.video_format];
     if (dumpData) {
         std::cout << "VideoFormat : " << pVideoFormat << std::endl;
@@ -320,7 +320,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
         "GenericFilm",
         "BT2020",
     };
-    assert(videoFormat->video_signal_description.color_primaries < sizeof(ColorPrimaries)/sizeof(ColorPrimaries[0]));
+    vv_assert(videoFormat->video_signal_description.color_primaries < sizeof(ColorPrimaries)/sizeof(ColorPrimaries[0]));
     const char* pColorPrimaries = ColorPrimaries[videoFormat->video_signal_description.color_primaries];
     if (dumpData) {
         std::cout << "ColorPrimaries : " << pColorPrimaries << std::endl;
@@ -346,7 +346,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
         "ST2084",
         "ST428_1",
     };
-    assert(videoFormat->video_signal_description.transfer_characteristics < sizeof(TransferCharacteristics)/sizeof(TransferCharacteristics[0]));
+    vv_assert(videoFormat->video_signal_description.transfer_characteristics < sizeof(TransferCharacteristics)/sizeof(TransferCharacteristics[0]));
     const char* pTransferCharacteristics = TransferCharacteristics[videoFormat->video_signal_description.transfer_characteristics];
     if (dumpData) {
         std::cout << "TransferCharacteristics : " << pTransferCharacteristics << std::endl;
@@ -365,7 +365,7 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
         "BT2020_NCL",
         "BT2020_CL",
     };
-    assert(videoFormat->video_signal_description.matrix_coefficients < sizeof(MatrixCoefficients)/sizeof(MatrixCoefficients[0]));
+    vv_assert(videoFormat->video_signal_description.matrix_coefficients < sizeof(MatrixCoefficients)/sizeof(MatrixCoefficients[0]));
     const char* pMatrixCoefficients = MatrixCoefficients[videoFormat->video_signal_description.matrix_coefficients];
     if (dumpData) {
         std::cout << "MatrixCoefficients : " << pMatrixCoefficients << std::endl;
@@ -386,7 +386,7 @@ size_t ConvertFrameToNv12(const VulkanDeviceContext *vkDevCtx, int32_t frameWidt
     VkDeviceSize imageOffset = imageResource->GetImageDeviceMemoryOffset();
     VkDeviceSize maxSize = 0;
     const uint8_t* readImagePtr = srcImageDeviceMemory->GetReadOnlyDataPtr(imageOffset, maxSize);
-    assert(readImagePtr != nullptr);
+    vv_assert(readImagePtr != nullptr);
 
     int32_t secondaryPlaneWidth = frameWidth;
     int32_t secondaryPlaneHeight = frameHeight;
@@ -431,7 +431,7 @@ size_t ConvertFrameToNv12(const VulkanDeviceContext *vkDevCtx, int32_t frameWidt
                 vkDevCtx->GetImageSubresourceLayout(device, srcImage, &subResource, &layouts[2]);
                 break;
             default:
-                assert(0);
+                vv_assert(0);
         }
 
     } else {
@@ -542,7 +542,7 @@ int32_t VulkanVideoProcessor::ParserProcessNextDataChunk()
     bool requiresPartialParsing = false;
     if (m_usesFramePreparser || m_usesStreamDemuxer) {
         bitstreamChunkSize = m_videoStreamDemuxer->DemuxFrame(&pBitstreamData);
-        assert(bitstreamBytesConsumed <= (size_t)std::numeric_limits<int32_t>::max());
+        vv_assert(bitstreamBytesConsumed <= (size_t)std::numeric_limits<int32_t>::max());
         retValue = (int32_t)bitstreamChunkSize;
     } else {
         bitstreamChunkSize = m_videoStreamDemuxer->ReadBitstreamData(&pBitstreamData, m_currentBitstreamOffset);
@@ -550,7 +550,7 @@ int32_t VulkanVideoProcessor::ParserProcessNextDataChunk()
     }
     const bool bitstreamHasMoreData = ((bitstreamChunkSize > 0) && (pBitstreamData != nullptr));
     if (bitstreamHasMoreData) {
-        assert((uint64_t)bitstreamChunkSize < (uint64_t)std::numeric_limits<size_t>::max());
+        vv_assert((uint64_t)bitstreamChunkSize < (uint64_t)std::numeric_limits<size_t>::max());
         VkResult parserStatus = ParseVideoStreamData(pBitstreamData, (size_t)bitstreamChunkSize,
                                                      &bitstreamBytesConsumed,
                                                      requiresPartialParsing);
@@ -561,7 +561,7 @@ int32_t VulkanVideoProcessor::ParserProcessNextDataChunk()
         } else {
             retValue = (int32_t)bitstreamBytesConsumed;
         }
-        assert(bitstreamBytesConsumed <= (size_t)std::numeric_limits<int32_t>::max());
+        vv_assert(bitstreamBytesConsumed <= (size_t)std::numeric_limits<int32_t>::max());
         m_currentBitstreamOffset += bitstreamBytesConsumed;
     } else {
         // Call the parser one last time with zero buffer to flush the display queue.
@@ -664,7 +664,7 @@ VkResult VulkanVideoProcessor::CreateParser(const char*,
     } else if (vkCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
         pStdExtensionVersion = &vp9StdExtensionVersion;
     } else {
-        assert(!"Unsupported Codec Type");
+        vv_assert(!"Unsupported Codec Type");
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
 
@@ -687,7 +687,7 @@ VkResult VulkanVideoProcessor::ParseVideoStreamData(const uint8_t* pData, size_t
                                                     size_t *pnVideoBytes, bool doPartialParsing,
                                                     uint32_t flags, int64_t timestamp) {
     if (!m_vkParser) {
-        assert(!"Parser not initialized!");
+        vv_assert(!"Parser not initialized!");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 

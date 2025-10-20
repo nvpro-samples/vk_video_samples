@@ -14,7 +14,7 @@
 * limitations under the License.
 */
 
-#include <assert.h>
+#include "vv_assert.h"
 #include <string.h>
 #include "vk_video/vulkan_video_codecs_common.h"
 #include "VkCodecUtils/Helpers.h"
@@ -78,7 +78,7 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
         createInfo.pStdHeaderVersion = &av1EncodeStdExtensionVersion;
         break;
     default:
-        assert(0);
+        vv_assert(0);
     }
     VkResult result = vkDevCtx->CreateVideoSessionKHR(*vkDevCtx, &createInfo, NULL, &pNewVideoSession->m_videoSession);
     if (result != VK_SUCCESS) {
@@ -90,8 +90,8 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
     // Get the count first
     result = vkDevCtx->GetVideoSessionMemoryRequirementsKHR(*vkDevCtx, pNewVideoSession->m_videoSession,
         &videoSessionMemoryRequirementsCount, NULL);
-    assert(result == VK_SUCCESS);
-    assert(videoSessionMemoryRequirementsCount <= MAX_BOUND_MEMORY);
+    vv_assert(result == VK_SUCCESS);
+    vv_assert(videoSessionMemoryRequirementsCount <= MAX_BOUND_MEMORY);
 
     memset(decodeSessionMemoryRequirements, 0x00, sizeof(decodeSessionMemoryRequirements));
     for (uint32_t i = 0; i < videoSessionMemoryRequirementsCount; i++) {
@@ -134,7 +134,7 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
             return result;
         }
 
-        assert(result == VK_SUCCESS);
+        vv_assert(result == VK_SUCCESS);
         decodeSessionBindMemory[memIdx].pNext = NULL;
         decodeSessionBindMemory[memIdx].sType = VK_STRUCTURE_TYPE_BIND_VIDEO_SESSION_MEMORY_INFO_KHR;
         decodeSessionBindMemory[memIdx].memory = pNewVideoSession->m_memoryBound[memIdx];
@@ -146,7 +146,7 @@ VkResult VulkanVideoSession::Create(const VulkanDeviceContext* vkDevCtx,
 
     result = vkDevCtx->BindVideoSessionMemoryKHR(*vkDevCtx, pNewVideoSession->m_videoSession, decodeSessionBindMemoryCount,
                                                  decodeSessionBindMemory);
-    assert(result == VK_SUCCESS);
+    vv_assert(result == VK_SUCCESS);
 
     videoSession = pNewVideoSession;
 
