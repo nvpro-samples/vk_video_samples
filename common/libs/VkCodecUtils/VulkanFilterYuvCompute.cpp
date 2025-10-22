@@ -596,7 +596,8 @@ static void GenReadYCbCrBlock(std::stringstream& shaderStr,
 static void GenConvertYCbCrBlock(std::stringstream& shaderStr,
                                  uint32_t chromaHorzRatio,
                                  uint32_t chromaVertRatio,
-                                 bool needsConversion)
+                                 bool needsConversion,
+                                 bool hasChroma = true)
 {
     if (needsConversion) {
         shaderStr << "    // Apply format conversion to block\n";
@@ -606,8 +607,10 @@ static void GenConvertYCbCrBlock(std::stringstream& shaderStr,
                 shaderStr << "    float yOut" << x << y << " = convertYCbCrFormat(vec3(y" << x << y << ", cb, cr)).x;\n";
             }
         }
-        // Convert chroma once
-        shaderStr << "    vec2 cbcrOut = convertYCbCrFormat(vec3(y00, cb, cr)).yz;\n";
+        if (hasChroma) {
+            // Convert chroma once
+            shaderStr << "    vec2 cbcrOut = convertYCbCrFormat(vec3(y00, cb, cr)).yz;\n";
+        }
     } else {
         shaderStr << "    // No conversion needed - direct copy\n";
         for (uint32_t y = 0; y < chromaVertRatio; y++) {
@@ -615,7 +618,9 @@ static void GenConvertYCbCrBlock(std::stringstream& shaderStr,
                 shaderStr << "    float yOut" << x << y << " = y" << x << y << ";\n";
             }
         }
-        shaderStr << "    vec2 cbcrOut = vec2(cb, cr);\n";
+        if (hasChroma) {
+            shaderStr << "    vec2 cbcrOut = vec2(cb, cr);\n";
+        }
     }
 
     shaderStr << "    \n";
@@ -637,7 +642,8 @@ static void GenApplyBlockOutputShift(std::stringstream& shaderStr,
                                      uint32_t chromaHorzRatio,
                                      uint32_t chromaVertRatio,
                                      uint32_t outputBitDepth,
-                                     bool enableShift)
+                                     bool enableShift,
+                                     bool hasChroma = true)
 {
     if (!enableShift) {
         return;
@@ -660,9 +666,10 @@ static void GenApplyBlockOutputShift(std::stringstream& shaderStr,
             shaderStr << "    yOut" << x << y << " *= " << shiftFactor << ";\n";
         }
     }
-
-    // Shift chroma
-    shaderStr << "    cbcrOut *= " << shiftFactor << ";\n";
+    if (hasChroma) {
+        // Shift chroma
+        shaderStr << "    cbcrOut *= " << shiftFactor << ";\n";
+    }
     shaderStr << "    \n";
 }
 
@@ -772,7 +779,7 @@ static void GenComputeAndWriteSubsampledY(std::stringstream& shaderStr,
 
     shaderStr <<
         ") * " << scale << ";\n"
-        "    imageStore(subsampledYImage, ivec3(chromaPos, pushConstants.dstLayer), vec4(subsampledY, 0, 0, 1));\n"
+        "    imageStore(subsampledImageY, ivec3(chromaPos, pushConstants.dstLayer), vec4(subsampledY, 0, 0, 1));\n"
         "    \n";
 }
 
@@ -1925,7 +1932,8 @@ static void GenYCbCrDeNormalizationFuncs(std::stringstream& shaderStr,
               << "\n"
               << "// STEP 1: Denormalize Y component from [0.0, 1.0] back to " << bitDepth << "-bit "
               << (isLimitedRange ? "limited range" : "full range") << " content\n"
-              << "highp float denormalizeY(highp float normalizedY) {\n";
+              << "highp uint denormalizeY(highp float normalizedY) {\n"
+              << "    normalizedY = clamp(normalizedY, 0.0, 1.0);\n";
 
     if (isLimitedRange) {
         // Step 2.1: Limited range needs scaling and black level adjustment
@@ -1940,12 +1948,12 @@ static void GenYCbCrDeNormalizationFuncs(std::stringstream& shaderStr,
 
         shaderStr << "    // Step 1.1: Map from [0.0, 1.0] back to [" << yBlack << ", " << yWhite << "]\n"
                   << "    // Formula: Y = normalizedY * yRange + yBlack\n"
-                  << "    return normalizedY * " << yRangeStr << " + " << yBlackStr << ";\n";
+                  << "    return uint(round(normalizedY * " << yRangeStr << " + " << yBlackStr << "));\n";
     } else {
         // Step 2.2: Full range just needs scaling
         shaderStr << "    // Step 1.1: Map from [0.0, 1.0] back to [0, " << maxValue << "]\n"
                   << "    // Formula: Y = normalizedY * maxValue\n"
-                  << "    return normalizedY * " << maxValue << ";\n";
+                  << "    return uint(round(normalizedY * " << maxValue << "));\n";
     }
     shaderStr << "}\n\n";
 
@@ -1962,7 +1970,8 @@ static void GenYCbCrDeNormalizationFuncs(std::stringstream& shaderStr,
         // ===========================================================================
         shaderStr << "// STEP 3: Denormalize CbCr components from [0.0, 1.0] back to " << bitDepth << "-bit "
                   << (isLimitedRange ? "limited range" : "full range") << " content\n"
-                  << "highp vec2 denormalizeCbCr(highp vec2 normalizedCbCr) {\n";
+                  << "highp uvec2 denormalizeCbCr(highp vec2 normalizedCbCr) {\n"
+                  << "    normalizedCbCr = clamp(normalizedCbCr, 0.0, 1.0);\n";
 
         if (isLimitedRange) {
             // Step 4.1: Limited range needs scaling and zero level adjustment
@@ -1977,12 +1986,12 @@ static void GenYCbCrDeNormalizationFuncs(std::stringstream& shaderStr,
 
             shaderStr << "    // Step 3.1: Map from [0.0, 1.0] back to [" << cZero << ", " << (cZero + cScale) << "]\n"
                       << "    // Formula: CbCr = normalizedCbCr * cScale + cZero\n"
-                      << "    return normalizedCbCr * " << cScaleStr << " + " << cZeroStr << ";\n";
+                      << "    return uvec2(round(normalizedCbCr * " << cScaleStr << " + " << cZeroStr << "));\n";
         } else {
             // Step 4.2: Full range just needs scaling
             shaderStr << "    // Step 3.1: Map from [0.0, 1.0] back to [0, " << maxValue << "]\n"
                       << "    // Formula: CbCr = normalizedCbCr * maxValue\n"
-                      << "    return normalizedCbCr * " << maxValue << ";\n";
+                      << "    return uvec2(round(normalizedCbCr * " << maxValue << "));\n";
         }
         shaderStr << "}\n\n";
 
@@ -1991,26 +2000,26 @@ static void GenYCbCrDeNormalizationFuncs(std::stringstream& shaderStr,
 
         // Step 5.1: Combined unshift and denormalize
         shaderStr << "// STEP 4: Combined function: unshift and denormalize CbCr in one step\n"
-                  << "highp vec2 unshiftAndDenormalizeCbCr(highp vec2 shiftedCbCr) {\n"
+                  << "highp uvec2 unshiftAndDenormalizeCbCr(highp vec2 shiftedCbCr) {\n"
                   << "    // Step 4.1: First unshift from [-0.5, 0.5] to [0.0, 1.0], then denormalize\n"
                   << "    return denormalizeCbCr(unshiftCbCr(shiftedCbCr));\n"
                   << "}\n\n";
 
         // Step 5.2: Full YCbCr denormalization
         shaderStr << "// STEP 5: Combined function to denormalize full YCbCr triplet\n"
-                  << "highp vec3 denormalizeYCbCr(highp vec3 normalizedYCbCr) {\n"
+                  << "highp uvec3 denormalizeYCbCr(highp vec3 normalizedYCbCr) {\n"
                   << "    // Step 5.1: Denormalize Y component\n"
-                  << "    highp float y = denormalizeY(normalizedYCbCr.x);\n"
+                  << "    highp uint y = denormalizeY(normalizedYCbCr.x);\n"
                   << "    // Step 5.2: Unshift and denormalize Cb and Cr components\n"
-                  << "    highp vec2 cbcr = denormalizeCbCr(vec2(normalizedYCbCr.y + 0.5, normalizedYCbCr.z + 0.5));\n"
+                  << "    highp uvec2 cbcr = denormalizeCbCr(vec2(normalizedYCbCr.y + 0.5, normalizedYCbCr.z + 0.5));\n"
                   << "    // Step 5.3: Combine the components into a single vector\n"
-                  << "    return vec3(y, cbcr);\n"
+                  << "    return uvec3(y, cbcr);\n"
                   << "}\n\n";
     }
 
     // STEP 6: Generate bit-depth specific packing helpers for 10/12-bit formats
     // ===========================================================================
-    if (bitDepth == 10) {
+    if (hasChroma && (bitDepth == 10)) {
         shaderStr << "// STEP 6: Special 10-bit format packing functions\n"
                   << "// Pack 10-bit values into 16-bit storage (common for P010, P210, etc.)\n"
                   << "\n"
@@ -2040,7 +2049,7 @@ static void GenYCbCrDeNormalizationFuncs(std::stringstream& shaderStr,
                   << "        pack10BitTo16Bit(denormYuv.z)   // Cr\n"
                   << "    );\n"
                   << "}\n\n";
-    } else if (bitDepth == 12) {
+    } else if (hasChroma && (bitDepth == 12)) {
         shaderStr << "// STEP 6: Special 12-bit format packing functions\n"
                   << "// Pack 12-bit values into 16-bit storage (common for P012, P212, etc.)\n"
                   << "\n"
@@ -2090,17 +2099,33 @@ static void GenConvertYCbCrFormat(std::stringstream& shaderStr,
                                   uint32_t inputBitDepth = 8,
                                   uint32_t outputBitDepth = 8,
                                   bool isInputLimitedRange = true,
-                                  bool isOutputLimitedRange = true)
+                                  bool isOutputLimitedRange = true,
+                                  bool hasInputChroma = true,
+                                  bool hasOutputChroma = true)
 {
     shaderStr <<
         "// Function to handle YCbCr format conversion with proper normalization\n"
         "vec3 convertYCbCrFormat(vec3 YCbCrRawIn) {\n"
         "    // Step 1: Normalize input YCbCr values to [0-1] range\n"
-        "    float normalizedY = normalizeY(YCbCrRawIn.x);\n"
-        "    vec2 normalizedCbCr = normalizeCbCr(vec2(YCbCrRawIn.y, YCbCrRawIn.z));\n\n"
+        "    float normalizedY = normalizeY(YCbCrRawIn.x);\n";
+    if (hasInputChroma) {
+        shaderStr <<
+        "    vec2 normalizedCbCr = normalizeCbCr(vec2(YCbCrRawIn.y, YCbCrRawIn.z));\n\n";
+    } else if (hasOutputChroma) {
+        shaderStr <<
+        "    vec2 normalizedCbCr = vec2(YCbCrRawIn.y, YCbCrRawIn.z);\n\n";
+    }
+    shaderStr <<
         "    // Step 2: Denormalize to output bit depth and range\n"
-        "    float y = denormalizeY(normalizedY);\n"
-        "    vec2 cbcr = denormalizeCbCr(normalizedCbCr);\n\n"
+        "    uint y = denormalizeY(normalizedY);\n";
+    if (hasOutputChroma) {
+        shaderStr <<
+        "    vec2 cbcr = denormalizeCbCr(normalizedCbCr);\n\n";
+    } else {
+        shaderStr <<
+        "    vec2 cbcr = vec2(0.0, 0.0);\n\n";
+    }
+    shaderStr <<
         "    // Return the converted values\n"
         "    return vec3(y, cbcr.x, cbcr.y);\n"
         "}\n\n";
@@ -2180,7 +2205,7 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
             (samplerYcbcrConversionCreateInfo.ycbcrModel == VK_SAMPLER_YCBCR_MODEL_CONVERSION_RGB_IDENTITY) ?
                     YCBCR_COLOR_RANGE_NATURAL : (YCBCR_COLOR_RANGE)samplerYcbcrConversionCreateInfo.ycbcrRange);
     shaderStr <<
-        "vec3 normalizeYCbCr(vec3 yuv) {\n"
+        "vec3 normalizeYCbCr(uvec3 yuv) {\n"
         "    vec3 yuvNorm;\n";
     yCbCrNormalizeColorRange.NormalizeYCbCrString(shaderStr);
     shaderStr <<
@@ -2241,6 +2266,20 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
     return computeShader.size();
 }
 
+static uint32_t GetFormatBitDepth(VkFormat format, uint32_t enableMsbToLsbShift)
+{
+    const VkFormatDesc* pFormatInfo = vkFormatLookUp(format);
+    uint32_t bitDepth = (pFormatInfo != nullptr) ? (8 * pFormatInfo->numberOfBytes / pFormatInfo->numberOfChannels) : 8;
+
+    if (enableMsbToLsbShift != 0) {
+        // The API required shift but the format is not explicitly not specified
+        if (bitDepth == 16) {
+            bitDepth = 10;
+        }
+    }
+    return bitDepth;
+}
+
 size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
 {
     // The compute filter uses two or three input images as separate planes
@@ -2262,8 +2301,8 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
     const VkMpFormatInfo* outputMpInfo = YcbcrVkFormatInfo(m_outputFormat);
 
     // Determine bit depth from the formats
-    const uint32_t inputBitDepth = inputMpInfo ? GetBitsPerChannel(inputMpInfo->planesLayout) : 8;
-    const uint32_t outputBitDepth = outputMpInfo ? GetBitsPerChannel(outputMpInfo->planesLayout) : 8;
+    const uint32_t inputBitDepth = inputMpInfo ? GetBitsPerChannel(inputMpInfo->planesLayout)    : GetFormatBitDepth(m_inputFormat,  m_inputEnableMsbToLsbShift);
+    const uint32_t outputBitDepth = outputMpInfo ? GetBitsPerChannel(outputMpInfo->planesLayout) : GetFormatBitDepth(m_outputFormat, m_outputEnableLsbToMsbShift);
 
     // Get input/output chroma subsampling ratios
     const uint32_t inputChromaHorzRatio = (inputMpInfo != nullptr) ? (1 << inputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 1;
@@ -2283,7 +2322,7 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
     const bool isOutputBuffer = m_outputIsBuffer;
 
     // Check if we need to do any bit depth conversion
-    const bool needsBitDepthConversion = (inputBitDepth != outputBitDepth);
+    const bool needsBitDepthConversion = ((inputMpInfo != nullptr) && (inputBitDepth != outputBitDepth));
 
     // Check if we need to do any range conversion
     const bool needsRangeConversion = (isInputLimitedRange != isOutputLimitedRange);
@@ -2313,15 +2352,15 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
     // Binding 9: Subsampled Y output image (optional, only if enabled)
     if (m_enableYSubsampling) {
         shaderStr << "// Binding 9: Subsampled Y output (2x2 downsampled luma for AQ)\n";
-        const char* subsampleImageFormat = (outputBitDepth > 8) ? "r16" : "r8";
-        GenImageIoBindingLayout(shaderStr,
-                                "subsampledY",         // imageName
-                                "Image",               // imageSubName
-                                subsampleImageFormat,  // imageFormat (r8 or r16)
-                                false,                 // isInput (it's output)
-                                9,                     // binding
-                                0,                     // set
-                                true);                 // imageArray
+        ShaderGenerateImagePlaneDescriptors(shaderStr,
+                                            m_outputImageAspects,
+                                            "subsampledImage",
+                                            (outputBitDepth > 8) ? VK_FORMAT_R16_UNORM : VK_FORMAT_R8_UNORM,
+                                            false,       // isInput
+                                            8,           // startBinding
+                                            0,           // set
+                                            true         // imageArray
+                                            );
     }
 
     shaderStr << "\n";
@@ -2368,7 +2407,9 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
 
     // 8. Helper function for combined normalization and denormalization
     if (needsBitDepthConversion || needsRangeConversion) {
-        GenConvertYCbCrFormat(shaderStr, inputBitDepth, outputBitDepth, isInputLimitedRange, isOutputLimitedRange);
+        GenConvertYCbCrFormat(shaderStr, inputBitDepth, outputBitDepth,
+                                         isInputLimitedRange, isOutputLimitedRange,
+                                         hasInputChroma, hasOutputChroma);
     }
 
     // 9. Main function
@@ -2389,10 +2430,10 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
                       inputChromaHorzRatio, inputChromaVertRatio);
 
     // 12. Convert block (if needed)
-    GenConvertYCbCrBlock(shaderStr, ySubsampleHorzRatio, ySubsampleVertRatio, needsBitDepthConversion || needsRangeConversion);
+    GenConvertYCbCrBlock(shaderStr, ySubsampleHorzRatio, ySubsampleVertRatio, needsBitDepthConversion || needsRangeConversion, hasInputChroma);
 
     // 13. Apply output bit shifts (if needed)
-    GenApplyBlockOutputShift(shaderStr, ySubsampleHorzRatio, ySubsampleVertRatio, outputBitDepth, m_outputEnableLsbToMsbShift);
+    GenApplyBlockOutputShift(shaderStr, ySubsampleHorzRatio, ySubsampleVertRatio, outputBitDepth, m_outputEnableLsbToMsbShift, hasOutputChroma);
 
     // 14. Write YCbCr block (handles both 4:2:0 and 4:4:4 output)
     GenWriteYCbCrBlock(shaderStr, ySubsampleHorzRatio, ySubsampleVertRatio, isOutputTwoPlane, hasOutputChroma, 
