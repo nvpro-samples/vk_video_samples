@@ -181,4 +181,22 @@ target_include_directories(vk-video-enc-test ${includes})
 target_link_libraries(vk-video-enc-test PUBLIC ${libraries})
 add_dependencies(vk-video-enc-test GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB} ${SHADERC_LIB})
 
+# Add NV_AQ_GPU_LIB_SUPPORTED definition and include paths if the library is available
+if(NV_AQ_GPU_LIB_AVAILABLE)
+    target_compile_definitions(vk-video-enc-test PRIVATE NV_AQ_GPU_LIB_SUPPORTED=1)
+
+    # Add all AQ include directories from the centralized list
+    if(NV_AQ_GPU_LIB_INCLUDE_DIRS)
+        target_include_directories(vk-video-enc-test PRIVATE ${NV_AQ_GPU_LIB_INCLUDE_DIRS})
+        message(STATUS "Added AQ include directories to vk-video-enc-test")
+    endif()
+
+    # Link against nvenc_aq_vulkan library
+    if(TARGET ${NV_AQ_GPU_LIB_TARGET})
+        target_link_libraries(vk-video-enc-test PUBLIC ${NV_AQ_GPU_LIB_TARGET})
+        add_dependencies(vk-video-enc-test ${NV_AQ_GPU_LIB_TARGET})
+        message(STATUS "Linking vk-video-enc-test against ${NV_AQ_GPU_LIB_TARGET}")
+    endif()
+endif()
+
 install(TARGETS vk-video-enc-test RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
