@@ -42,6 +42,8 @@ public:
         , m_parent()
         , m_parentIndex(-1)
         , m_recreateImage()
+        , m_timelineSemaphore(VK_NULL_HANDLE)
+        , m_semaphoreSubmitInfo()
     {
     }
 
@@ -115,6 +117,31 @@ public:
         return m_refCount;
     }
 
+    /**
+     * @brief Get the timeline semaphore submit info for this image node
+     * @return VkSemaphoreSubmitInfoKHR structure. If SetTimelineSemaphoreValue() was not called
+     *         or failed, returns an empty structure with sType = VK_STRUCTURE_TYPE_APPLICATION_INFO (0),
+     *         semaphore = VK_NULL_HANDLE, and value = 0.
+     */
+    VkSemaphoreSubmitInfoKHR GetSemaphoreSubmitInfo() const
+    {
+        return m_semaphoreSubmitInfo;
+    }
+
+    /**
+     * @brief Set the timeline semaphore value for when the image processing completes
+     * @param value The timeline semaphore value to signal when processing completes
+     * @param stageMask The pipeline stage at which the image will be processed
+     * @param deviceIndex The device index processing this image (default: 0)
+     * @return VkSemaphoreSubmitInfoKHR structure with the semaphore info if successful.
+     *         On error or when timeline semaphores are not supported, returns an empty structure
+     *         with sType = VK_STRUCTURE_TYPE_APPLICATION_INFO (0), semaphore = VK_NULL_HANDLE,
+     *         and value = 0.
+     */
+    VkSemaphoreSubmitInfoKHR SetTimelineSemaphoreValue(uint64_t value,
+                                                       VkPipelineStageFlags2 stageMask,
+                                                       uint32_t deviceIndex = 0);
+
 private:
     VkResult SetParent(VulkanVideoImagePool* imagePool, int32_t parentIndex);
 
@@ -127,6 +154,8 @@ private:
     VkSharedBaseObj<VulkanVideoImagePool> m_parent;
     int32_t                               m_parentIndex;
     uint32_t                              m_recreateImage : 1;
+    VkSemaphore                           m_timelineSemaphore;
+    VkSemaphoreSubmitInfoKHR              m_semaphoreSubmitInfo;
 };
 
 class VulkanVideoImagePool : public VkVideoRefCountBase {

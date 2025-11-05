@@ -40,6 +40,9 @@
 #include "VkShell/Shell.h"
 #endif // VIDEO_DISPLAY_QUEUE_SUPPORT
 #include "mio/mio.hpp"
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+#include "EncodeAqAnalyzes.h"
+#endif // NV_AQ_GPU_LIB_SUPPORTED
 
 class VkVideoEncoderH264;
 class VkVideoEncoderH265;
@@ -53,6 +56,69 @@ public:
 
     enum { MAX_IMAGE_REF_RESOURCES = 17 }; /* List of reference pictures 16 + 1 for current */
     enum { MAX_BITSTREAM_HEADER_BUFFER_SIZE = 256 };
+
+    // ============================================================================
+    // Timeline Semaphore Synchronization Helpers
+    // ============================================================================
+
+    /**
+     * @brief Synchronization state indices for timeline semaphores and fence sets
+     *
+     * These enum values serve are used for timeline semaphore values
+     * for GPU-side synchronization
+     *
+     * Each processing stage signals its completion by
+     * incrementing timeline semaphore
+     */
+    enum SyncState {
+        SYNC_INPUT_PREPROCESSING_COMPLETE = 1, // Copy linear buffer to optimal, downsample, etc.
+        SYNC_AQ_PROCESSING_COMPLETE,           // AQ processing
+        SYNC_ENCODE_PROCESSING_COMPLETE,       // QP delta generation (temporal)
+        SYNC_ASSEMBLY_PROCESSING_COMPLETE,     // bitstream post processing and assembly
+        SYNC_PROCESSING_STATE_COUNT            // Total number of sync states
+    };
+
+    /**
+     * @brief Shift amount for encoding stage in timeline semaphore value
+     *
+     * We have 4 sync stages (SYNC_PROCESSING_STATE_COUNT = 5), requiring 3 bits (2^3 = 8).
+     * Timeline value = (frameNumber << SEM_SYNC_TYPE_IDX_SHIFT) | stage
+     *
+     */
+    static constexpr uint64_t SEM_SYNC_TYPE_IDX_SHIFT = 3;
+
+    /**
+     * @brief Calculate timeline semaphore value from frame number and stage
+     * @param stage Processing stage preprocess, AQ, encode, assembly
+     * @param frameNumber Frame sequence number (inputSeqNumber)
+     * @return Encoded timeline semaphore value
+     */
+    static inline uint64_t GetSemaphoreValue(SyncState stage, uint64_t frameNumber) {
+        return (frameNumber << SEM_SYNC_TYPE_IDX_SHIFT) | static_cast<uint64_t>(stage);
+    }
+
+    /**
+     * @brief Extract frame number from timeline semaphore value
+     * @param semaphoreValue Encoded timeline value
+     * @return Frame number
+     */
+    static inline uint64_t GetFrameNumberFromSemaphore(uint64_t semaphoreValue) {
+        return semaphoreValue >> SEM_SYNC_TYPE_IDX_SHIFT;
+    }
+
+    /**
+     * @brief Extract stage from timeline semaphore value
+     * @param semaphoreValue Encoded timeline value
+     * @return Processing stage
+     */
+    static inline SyncState GetStageFromSemaphore(uint64_t semaphoreValue) {
+        uint64_t mask = (1ULL << SEM_SYNC_TYPE_IDX_SHIFT) - 1;
+        return static_cast<SyncState>(semaphoreValue & mask);
+    }
+
+    // Static assert: Ensure SYNC_PROCESSING_STATE_COUNT fits within the shift amount
+    static_assert(SYNC_PROCESSING_STATE_COUNT <= (1ULL << SEM_SYNC_TYPE_IDX_SHIFT),
+                  "AQ_SYNC_STATE_COUNT must be <= 1 << SEM_SYNC_TYPE_IDX_SHIFT");
 
     struct VkVideoEncodeFrameInfo : public VkVideoRefCountBase
     {
@@ -168,7 +234,9 @@ public:
         VkSharedBaseObj<VulkanVideoImagePoolNode>          srcQpMapStagingResource;
         VkSharedBaseObj<VulkanVideoImagePoolNode>          srcQpMapImageResource;
         VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> qpMapCmdBuffer;
-
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+        std::shared_ptr<AqProcessor>                       aqProcessorSlot;
+#endif // NV_AQ_GPU_LIB_SUPPORTED
         VkResult SyncHostOnCmdBuffComplete() {
 
             if (inputCmdBuffer) {
@@ -315,7 +383,9 @@ public:
                 inputCmdBuffer = nullptr;
                 qpMapCmdBuffer = nullptr;
                 encodeCmdBuffer = nullptr;
-
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+                aqProcessorSlot = nullptr;
+#endif // NV_AQ_GPU_LIB_SUPPORTED
                 // recurse and free the children frames
                 ReleaseChildrenFrames(dependantFrames);
             }
@@ -784,6 +854,9 @@ protected:
     VkImageTiling                            m_qpMapTiling;
     VkSharedBaseObj<VulkanVideoImagePool>    m_linearQpMapImagePool;
     VkSharedBaseObj<VulkanVideoImagePool>    m_qpMapImagePool;
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+    std::shared_ptr<nvenc_aq::EncodeAqAnalyzes > m_aqAnalyzes;
+#endif // NV_AQ_GPU_LIB_SUPPORTED
 };
 
 VkResult CreateVideoEncoderH264(const VulkanDeviceContext* vkDevCtx,

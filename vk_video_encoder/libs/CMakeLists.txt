@@ -105,11 +105,28 @@ target_link_libraries(${VULKAN_VIDEO_ENCODER_LIB} PUBLIC ${SHADERC_SHARED_LIBRAR
 # Ensure the library depends on the generation of these files
 add_dependencies(${VULKAN_VIDEO_ENCODER_LIB} GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB} ${SHADERC_LIB})
 
+# Link against nvenc_aq_vulkan if available
+if(NV_AQ_GPU_LIB_AVAILABLE AND TARGET ${NV_AQ_GPU_LIB_TARGET})
+    message(STATUS "Linking ${VULKAN_VIDEO_ENCODER_LIB} against ${NV_AQ_GPU_LIB_TARGET}")
+    target_link_libraries(${VULKAN_VIDEO_ENCODER_LIB} PUBLIC ${NV_AQ_GPU_LIB_TARGET})
+    add_dependencies(${VULKAN_VIDEO_ENCODER_LIB} ${NV_AQ_GPU_LIB_TARGET})
+endif()
+
 target_include_directories(${VULKAN_VIDEO_ENCODER_LIB} PUBLIC ${VULKAN_VIDEO_ENCODER_INCLUDE} ${VULKAN_VIDEO_ENCODER_INCLUDE}/../NvVideoParser PRIVATE include)
 target_compile_definitions(${VULKAN_VIDEO_ENCODER_LIB}
     PRIVATE VK_VIDEO_ENCODER_IMPLEMENTATION
     PUBLIC VK_VIDEO_ENCODER_SHAREDLIB
 )
+
+# Add NV_AQ_GPU_LIB_SUPPORTED definition and include paths if the library is available
+if(NV_AQ_GPU_LIB_AVAILABLE)
+    target_compile_definitions(${VULKAN_VIDEO_ENCODER_LIB} PRIVATE NV_AQ_GPU_LIB_SUPPORTED=1)
+    # Add all AQ include directories from the centralized list
+    if(NV_AQ_GPU_LIB_INCLUDE_DIRS)
+        target_include_directories(${VULKAN_VIDEO_ENCODER_LIB} PUBLIC ${NV_AQ_GPU_LIB_INCLUDE_DIRS})
+        message(STATUS "Added AQ include directories to ${VULKAN_VIDEO_ENCODER_LIB}")
+    endif()
+endif()
 
 find_package(Threads)
 
@@ -129,7 +146,24 @@ add_library(${VULKAN_VIDEO_ENCODER_STATIC_LIB} STATIC ${LIBVKVIDEOENCODER_SRC})
 target_link_libraries(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PUBLIC ${SHADERC_SHARED_LIBRARY})
 # Ensure the library depends on the generation of these files
 add_dependencies(${VULKAN_VIDEO_ENCODER_STATIC_LIB} GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB} ${SHADERC_LIB})
+
+# Link against nvenc_aq_vulkan if available
+if(NV_AQ_GPU_LIB_AVAILABLE AND TARGET ${NV_AQ_GPU_LIB_TARGET})
+    message(STATUS "Linking ${VULKAN_VIDEO_ENCODER_STATIC_LIB} against ${NV_AQ_GPU_LIB_TARGET}")
+    target_link_libraries(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PUBLIC ${NV_AQ_GPU_LIB_TARGET})
+    add_dependencies(${VULKAN_VIDEO_ENCODER_STATIC_LIB} ${NV_AQ_GPU_LIB_TARGET})
+endif()
 target_include_directories(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PUBLIC ${VULKAN_VIDEO_ENCODER_INCLUDE} ${VULKAN_VIDEO_ENCODER_INCLUDE}/../NvVideoParser PRIVATE include)
+
+# Add NV_AQ_GPU_LIB_SUPPORTED definition and include paths if the library is available
+if(NV_AQ_GPU_LIB_AVAILABLE)
+    target_compile_definitions(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PRIVATE NV_AQ_GPU_LIB_SUPPORTED=1)
+    # Add all AQ include directories from the centralized list
+    if(NV_AQ_GPU_LIB_INCLUDE_DIRS)
+        target_include_directories(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PUBLIC ${NV_AQ_GPU_LIB_INCLUDE_DIRS})
+        message(STATUS "Added AQ include directories to ${VULKAN_VIDEO_ENCODER_STATIC_LIB}")
+    endif()
+endif()
 
 install(TARGETS ${VULKAN_VIDEO_ENCODER_LIB} ${VULKAN_VIDEO_ENCODER_STATIC_LIB}
                 RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}

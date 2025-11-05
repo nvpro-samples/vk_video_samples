@@ -16,6 +16,7 @@
 
 #include <functional>
 #include <vector>
+#include <cinttypes>  // For PRIu64, PRId64
 #include "VkVideoEncoder/VkVideoEncoder.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
@@ -293,6 +294,104 @@ VkResult VkVideoEncoder::EncodeFrameCommon(VkSharedBaseObj<VkVideoEncodeFrameInf
     encodeFrameInfo->encodeInfo.dstBuffer = encodeFrameInfo->outputBitstreamBuffer->GetBuffer();
     encodeFrameInfo->encodeInfo.dstBufferOffset = 0;
 
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+    if (m_aqAnalyzes) {
+        // Use the interface directly - no need for casting
+        const AqHwConfig* pCtxConfig = static_cast<const AqHwConfig*>(m_aqAnalyzes->GetConfig());
+
+        uint32_t prepareFlags = 0; /* AqProcessor::SLOT_PREPARE_CPU_UPLOAD |
+                                      AqProcessor::SLOT_PREPARE_GPU_PREPROCESS |
+                                      AqProcessor::SLOT_PREPARE_SUBSAMPLING; */
+        if (pCtxConfig->enableTemporalAQ) {
+            prepareFlags |= AqProcessor::SLOT_PREPARE_TEMPORAL;
+
+            // Add reference requirements based on frame type
+            if (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_P) {
+                // P-frame needs previous reference
+                prepareFlags |= AqProcessor::SLOT_PREPARE_NEEDS_PREV_REF;
+            } else if (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B) {
+                // B-frame needs both
+                prepareFlags |= AqProcessor::SLOT_PREPARE_NEEDS_PREV_REF | AqProcessor::SLOT_PREPARE_NEEDS_NEXT_REF;
+            }
+        }
+        if (pCtxConfig->enableSpatialAQ) {
+            prepareFlags |= AqProcessor::SLOT_PREPARE_SPATIAL;
+        }
+
+        // The encoder already keeps a reference to aqPendingTemporalBiDiSlot in the context of the previous frame.
+        std::shared_ptr<AqProcessor> aqPendingTemporalBiDiSlot;
+        // Check if we have a pending slot from a previous frame that needs deferred temporal processing
+        printf("[ProcessFrame] Calling FindFreeBuffer with flags=0x%x\n", prepareFlags);
+        encodeFrameInfo->aqProcessorSlot =
+                m_aqAnalyzes->FindFreeAqProcessorSlot(prepareFlags,
+                                                      pCtxConfig->codecType,
+                                                      pCtxConfig->width,
+                                                      pCtxConfig->height,
+                                                      pCtxConfig->bitDepth,
+                                                      pCtxConfig->chromaFormat,
+                                                      ((m_encoderConfig->numFrames -
+                                                              encodeFrameInfo->frameEncodeInputOrderNum) == 1),
+                                                      aqPendingTemporalBiDiSlot);
+
+        if (encodeFrameInfo->aqProcessorSlot == nullptr) {
+            printf("[ProcessFrame] ERROR: FindFreeBuffer returned nullptr\n");
+            return VK_ERROR_OUT_OF_POOL_MEMORY;
+        }
+        printf("[ProcessFrame] Slot allocated, %p\n", encodeFrameInfo->aqProcessorSlot.get());
+
+        encodeFrameInfo->aqProcessorSlot->UpdateGop(encodeFrameInfo->frameEncodeInputOrderNum, encodeFrameInfo->gopPosition, isIdr);
+
+        VkSharedBaseObj<VulkanVideoImagePoolNode> videoInputImage; // not needed
+        VkSemaphoreSubmitInfoKHR* pWaitSemaphoreInfo = nullptr;
+        uint32_t waitSemaphoreInfoCount = 0;
+        VkSemaphoreSubmitInfoKHR waitSemaphoreInfo;
+        // wait on the input filter
+        if (encodeFrameInfo->inputCmdBuffer) {
+            waitSemaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+            waitSemaphoreInfo.semaphore = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
+            waitSemaphoreInfo.value = 0; // Binary semaphore
+            // Use transfer bit since these semaphores come from transfer operations
+            waitSemaphoreInfo.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+            waitSemaphoreInfo.deviceIndex = 0;
+            waitSemaphoreInfoCount++;
+            pWaitSemaphoreInfo = &waitSemaphoreInfo;
+        }
+
+        if (encodeFrameInfo->srcQpMapImageResource == nullptr) {
+            bool success = m_qpMapImagePool->GetAvailableImage(encodeFrameInfo->srcQpMapImageResource,
+                                                               VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR);
+            assert(success);
+            assert(encodeFrameInfo->srcQpMapImageResource != nullptr);
+            if (!success || encodeFrameInfo->srcQpMapImageResource == nullptr) {
+                assert(!"Can't get get srcQpMapImageResource!");
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+        }
+
+        const VkSemaphoreSubmitInfoKHR* pSignalSemaphoreInfos = nullptr; // not needed
+        uint32_t signalSemaphoreInfosCount = 0; // not needed
+        VkFence* pSignalFence = nullptr; // not needed if no debugging is needed.
+
+        VulkanAqProcessor* pVulkanAqProcessorSlot = (VulkanAqProcessor*)encodeFrameInfo->aqProcessorSlot.get();
+        int ret = pVulkanAqProcessorSlot->ProcessAq(nullptr, // Don't copy the data to srcStagingImageView
+                                                    encodeFrameInfo->frameEncodeInputOrderNum,
+                                                    aqPendingTemporalBiDiSlot,
+                                                    encodeFrameInfo->srcStagingImageView, // for debugging only
+                                                    videoInputImage,
+                                                    encodeFrameInfo->subsampledImageResource,
+                                                    encodeFrameInfo->srcQpMapImageResource,
+                                                    pWaitSemaphoreInfo,
+                                                    waitSemaphoreInfoCount,
+                                                    pSignalSemaphoreInfos,
+                                                    signalSemaphoreInfosCount,
+                                                    pSignalFence);
+        if (ret != 0) {
+            assert(!"Failed ProcessAq()!!!");
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+#endif // NV_AQ_GPU_LIB_SUPPORTED
+
     EnqueueFrame(encodeFrameInfo, isIdr, isReference);
 
     return VK_SUCCESS;
@@ -376,6 +475,9 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
             bool success = m_inputSubsampledImagePool->GetAvailableImage(encodeFrameInfo->subsampledImageResource,
                                                                          VK_IMAGE_LAYOUT_GENERAL);
             assert(success && encodeFrameInfo->subsampledImageResource);
+            if (!success) {
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
         }
 
         if (encodeFrameInfo->subsampledImageResource) {
@@ -594,11 +696,36 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
     cmdBufferInfo.commandBuffer = *pCmdBuf;
     cmdBufferInfo.deviceMask = 0;
 
-    VkSemaphoreSubmitInfoKHR signalSemaphoreInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR };
-    signalSemaphoreInfo.semaphore = frameCompleteSemaphore;
-    signalSemaphoreInfo.value = 0; // Binary semaphore
-    signalSemaphoreInfo.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR; // Signal after transfer operations complete
-    signalSemaphoreInfo.deviceIndex = 0;
+    const uint32_t MAX_SIGNAL_SEMAPHORES = 2;
+    uint32_t signalSemaphoreCount = 0;
+    VkSemaphoreSubmitInfoKHR signalSemaphoreInfos[MAX_SIGNAL_SEMAPHORES]{};
+
+    if (frameCompleteSemaphore != VK_NULL_HANDLE) {
+        assert(signalSemaphoreCount < MAX_SIGNAL_SEMAPHORES);
+        signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        signalSemaphoreInfos[signalSemaphoreCount].semaphore = frameCompleteSemaphore;
+        signalSemaphoreInfos[signalSemaphoreCount].value = 0; // Binary semaphore
+        signalSemaphoreInfos[signalSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR; // Signal after transfer operations complete
+        signalSemaphoreInfos[signalSemaphoreCount].deviceIndex = 0;
+        signalSemaphoreCount++;
+    }
+
+    if (encodeFrameInfo->subsampledImageResource) {
+
+        // Set the semaphore for the output image
+        VkSemaphoreSubmitInfoKHR subsampledImageResourceSem =
+                encodeFrameInfo->subsampledImageResource->SetTimelineSemaphoreValue(
+                        GetSemaphoreValue(SYNC_INPUT_PREPROCESSING_COMPLETE, encodeFrameInfo->frameInputOrderNum),
+                        VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR,
+                        0);
+
+        // Also signal binary semaphore if present (for compatibility)
+        if (subsampledImageResourceSem.semaphore != VK_NULL_HANDLE) {
+            assert(signalSemaphoreCount < MAX_SIGNAL_SEMAPHORES);
+            signalSemaphoreInfos[signalSemaphoreCount] = subsampledImageResourceSem;
+            signalSemaphoreCount++;
+        }
+    }
 
     VkSubmitInfo2KHR submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR, nullptr };
     submitInfo.flags = 0;
@@ -606,8 +733,8 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
     submitInfo.pWaitSemaphoreInfos = nullptr;
     submitInfo.commandBufferInfoCount = 1;
     submitInfo.pCommandBufferInfos = &cmdBufferInfo;
-    submitInfo.signalSemaphoreInfoCount = (frameCompleteSemaphore != VK_NULL_HANDLE) ? 1 : 0;
-    submitInfo.pSignalSemaphoreInfos = (frameCompleteSemaphore != VK_NULL_HANDLE) ? &signalSemaphoreInfo : nullptr;
+    submitInfo.signalSemaphoreInfoCount = signalSemaphoreCount;
+    submitInfo.pSignalSemaphoreInfos = (signalSemaphoreCount > 0) ? signalSemaphoreInfos : nullptr;
 
     VkFence queueCompleteFence = encodeFrameInfo->inputCmdBuffer->GetFence();
     assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, queueCompleteFence));
@@ -953,14 +1080,16 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         m_qpMapTexelSize = supportedQpMapTexelSize[0];
         m_qpMapTiling = supportedQpMapTiling[0];
 
-        uint32_t qpMapFrameCount = encoderConfig->qpMapFileHandler.GetFrameCount(encoderConfig->input.width,
-                                                                                 encoderConfig->input.height,
-                                                                                 m_qpMapTexelSize);
-        if (qpMapFrameCount < encoderConfig->numFrames) {
-            std::cerr << "Number of QP maps (" << qpMapFrameCount << ") in the input QP map file "
-                      << "is less than the number of frames (" << encoderConfig->numFrames
-                      << ") to be encoded." << std::endl;
-            return VK_ERROR_INITIALIZATION_FAILED;
+        if (encoderConfig->enableAQ == VK_FALSE) {
+            uint32_t qpMapFrameCount = encoderConfig->qpMapFileHandler.GetFrameCount(encoderConfig->input.width,
+                                                                                     encoderConfig->input.height,
+                                                                                     m_qpMapTexelSize);
+            if (qpMapFrameCount < encoderConfig->numFrames) {
+                std::cerr << "Number of QP maps (" << qpMapFrameCount << ") in the input QP map file "
+                          << "is less than the number of frames (" << encoderConfig->numFrames
+                          << ") to be encoded." << std::endl;
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
         }
     }
 
@@ -1214,11 +1343,31 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
             (std::max(m_maxCodedExtent.height, encoderConfig->videoCapabilities.minCodedExtent.height) + m_qpMapTexelSize.height - 1) / m_qpMapTexelSize.height
         };
 
-        const VkImageUsageFlags qpMapImageUsage = (((encoderConfig->qpMapMode == EncoderConfig::DELTA_QP_MAP) ?
-                                                    VK_IMAGE_USAGE_VIDEO_ENCODE_QUANTIZATION_DELTA_MAP_BIT_KHR :
-                                                    VK_IMAGE_USAGE_VIDEO_ENCODE_EMPHASIS_MAP_BIT_KHR) |
-                                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+        // Add STORAGE_BIT only when AQ is enabled (required for compute shader writes)
+        VkImageUsageFlags qpMapImageUsage = (((encoderConfig->qpMapMode == EncoderConfig::DELTA_QP_MAP) ?
+                                              VK_IMAGE_USAGE_VIDEO_ENCODE_QUANTIZATION_DELTA_MAP_BIT_KHR :
+                                              VK_IMAGE_USAGE_VIDEO_ENCODE_EMPHASIS_MAP_BIT_KHR) |
+                                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                             VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+        if (encoderConfig->enableAQ) {
+            qpMapImageUsage |= VK_IMAGE_USAGE_STORAGE_BIT;  // Required for compute shader writes (AQ library)
+        }
+
+        // When AQ is enabled, use DEVICE_LOCAL only (no HOST access flags)
+        // When AQ is disabled, use existing logic (DEVICE_LOCAL for optimal, HOST flags for linear)
+        VkMemoryPropertyFlags qpMapMemoryProperties;
+        bool qpMapMemoryUseLinear;
+        if (encoderConfig->enableAQ) {
+            qpMapMemoryProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            qpMapMemoryUseLinear = false;
+        } else {
+            qpMapMemoryProperties = (m_qpMapTiling != VK_IMAGE_TILING_LINEAR) ?
+                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT :
+                                    (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                                     VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
+            qpMapMemoryUseLinear = (m_qpMapTiling == VK_IMAGE_TILING_LINEAR);
+        }
 
         result = m_qpMapImagePool->Configure( m_vkDevCtx,
                                               encoderConfig->numInputImages,
@@ -1226,16 +1375,12 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                               qpMapExtent,
                                               qpMapImageUsage,
                                               m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
-                                              (m_qpMapTiling != VK_IMAGE_TILING_LINEAR) ?
-                                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT :
-                                                    ( VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT  |
-                                                      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-                                                      VK_MEMORY_PROPERTY_HOST_CACHED_BIT),
+                                              qpMapMemoryProperties,
                                               encoderConfig->videoCoreProfile.GetProfile(), // pVideoProfile
                                               VK_IMAGE_ASPECT_COLOR_BIT, // a whole YCbCr or RGBA image
                                               false,   // useImageArray
                                               false,   // useImageViewArray
-                                              m_qpMapTiling == VK_IMAGE_TILING_LINEAR   // useLinear
+                                              qpMapMemoryUseLinear    // useLinear
                                             );
         if(result != VK_SUCCESS) {
             fprintf(stderr, "\nInitEncoder Error: Failed to Configure qpMapImagePool.\n");
@@ -1304,6 +1449,121 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
             }
         }
     }
+
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+    // AQ strength semantics: [-1.0, 1.0] valid, < -1.0 means disabled
+    const bool enableSpatialAQ = (m_encoderConfig->spatialAQStrength >= -1.0f);
+    const bool enableTemporalAQ = (m_encoderConfig->temporalAQStrength >= -1.0f);
+    if (enableSpatialAQ || enableTemporalAQ)
+    {
+        // Create AQ processor using the interface
+        m_aqAnalyzes = CreateVulkanAqAnalyzer( -1,                              // deviceId
+                                               vk::DeviceUuidUtils(),           // deviceUuid
+                                               m_vkDevCtx->getInstance(),       // vkInstance,
+                                               m_vkDevCtx->getPhysicalDevice(), // VkPhysicalDevice vkPhysicalDevice,
+                                               m_vkDevCtx->getDevice(),         // VkDevice vkDevice,
+                                               m_vkDevCtx->GetComputeQueueFamilyIdx(), // queueFamilyIndex
+                                               0 // queueInstanceIdx - always 0 for compute in vkDevCtx
+                                               );
+
+
+        if (!m_aqAnalyzes) {
+            std::cerr << "Failed to create AQ processor (API may not be available in this library)" << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+
+        nvenc_aq::EncodeAqAnalyzes::AQConfig config;
+        // Basic parameters
+        config.width = m_encoderConfig->encodeWidth;
+        config.height = m_encoderConfig->encodeHeight;
+        config.bitDepth = m_encoderConfig->encodeBitDepthLuma;
+
+        config.chromaFormat = 1;  // 4:2:0 (chromaFormatIDC = 1)
+        switch (m_encoderConfig->input.chromaSubsampling) {
+             case VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR:
+                 config.chromaFormat = 0;  // 4:0:0 (chromaFormatIDC = 0)
+                 break;
+             case VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR:
+                 config.chromaFormat = 1;  // 4:2:0 (chromaFormatIDC = 1)
+                 break;
+             case VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR:
+                 config.chromaFormat = 2;  // 4:2:2 (chromaFormatIDC = 2)
+                 break;
+             case VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR:
+                 config.chromaFormat = 3;  // 4:4:4 (chromaFormatIDC = 3)
+                 break;
+             default:
+                 break;
+        }
+
+        // for debugging - allocates linear images that are used to compare the sub-sampling.
+        config.resourceFlags = nvenc_aq::EncodeAqAnalyzes::AQConfig::AQ_RESOURCE_CPU_UPLOAD;
+
+        config.maxQueueSlots = encoderConfig->numInputImages;
+        printf("DEBUG: chromaFormat=%u\n", config.chromaFormat);
+
+        switch (m_encoderConfig->codec) {
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
+            config.codecType = nvenc_aq::EncodeAqAnalyzes::AQConfig::AQ_CODEC_H264;
+            break;
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR:
+            config.codecType = nvenc_aq::EncodeAqAnalyzes::AQConfig::AQ_CODEC_HEVC;
+            break;
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:
+            config.codecType = nvenc_aq::EncodeAqAnalyzes::AQConfig::AQ_CODEC_AV1;
+            break;
+        default:
+            std::cerr << "Unknown codec: " << m_encoderConfig->codec << ", defaulting to H.264" << std::endl;
+            config.codecType = nvenc_aq::EncodeAqAnalyzes::AQConfig::AQ_CODEC_H264;
+            break;
+        }
+
+        // Determine AQ modes - use the enable flags computed from strength values
+        config.enableSpatialAQ = enableSpatialAQ;
+        config.enableTemporalAQ = enableTemporalAQ;
+        // Map normalized strength [-1.0, 1.0] to integer strength [1, 15]
+        // Formula: strength = 8 + 7 * normalized (where 0.0 -> 8, -1.0 -> 1, 1.0 -> 15)
+        if (enableSpatialAQ) {
+            float normStrength = std::max(-1.0f, std::min(1.0f, m_encoderConfig->spatialAQStrength));
+            config.spatialAQStrength = static_cast<uint32_t>(8.0f + 7.0f * normStrength);
+            // Clamp to valid range [1, 15] (0 would mean disabled, which is handled by enableSpatialAQ)
+            config.spatialAQStrength = std::max(1u, std::min(15u, config.spatialAQStrength));
+        } else {
+            config.spatialAQStrength = 0;
+        }
+        config.spatialAQStrengthNorm = m_encoderConfig->spatialAQStrength;
+        config.temporalAQStrengthNorm = m_encoderConfig->temporalAQStrength;
+
+        // Input image format: nvpro encoder's VulkanFilterYuvCompute may left-shift N-bit values
+        // to fill the 16-bit R16_UNORM format when encoderConfig->input.msbShift is set.
+        // The AQ shader needs to know this shift to correctly denormalize the values.
+        // Only set inputBitShift if msbShift is enabled in the input configuration.
+        config.inputBitShift = m_encoderConfig->input.msbShift;
+
+        // GOP parameters
+        config.gopFrameCount = m_encoderConfig->gopStructure.GetGopFrameCount();
+        config.consecutiveBFrameCount = m_encoderConfig->gopStructure.GetConsecutiveBFrameCount();
+        config.idrPeriod = m_encoderConfig->gopStructure.GetIdrPeriod();
+        config.closedGOP = m_encoderConfig->gopStructure.IsClosedGop();
+
+        // for debugging - allocates linear images that are used to compare the sub-sampling.
+        config.resourceFlags = nvenc_aq::EncodeAqAnalyzes::AQConfig::AQ_RESOURCE_CPU_UPLOAD;
+
+        // Dumping
+        config.enableBufferDumping = true;
+        config.enableRawFilesDumping = true;  // Enable raw file dumps when dumping is enabled
+        config.outputDumpDir = m_encoderConfig->aqDumpDir.c_str();
+        // Use input order for dump filenames (nvpro encoder expects input order, not encode order)
+        config.dumpFilenameOrdering = nvenc_aq::EncodeAqAnalyzes::AQConfig::AQ_DUMP_FILENAME_INPUT_ORDER;
+
+        int result = m_aqAnalyzes->Configure(config);
+        if (result != 0) {
+            assert(!"Failed to configure AQ processor!!!");
+            std::cerr << "Failed to configure AQ processor: " << result << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+#endif // NV_AQ_GPU_LIB_SUPPORTED
 
     if (encoderConfig->enablePreprocessComputeFilter) {
 
@@ -1980,7 +2240,7 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     // Create wait semaphore submit infos
     // If we are processing the input staging, wait for it's semaphore
     // to be done before processing the input frame with the encoder.
-    const uint32_t waitSemaphoreMaxCount = 3;
+    const uint32_t waitSemaphoreMaxCount = 4;
     VkSemaphoreSubmitInfoKHR waitSemaphoreInfos[waitSemaphoreMaxCount]{};
 
     const uint32_t signalSemaphoreMaxCount = 1;
@@ -1989,6 +2249,35 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     uint32_t waitSemaphoreCount = 0;
     uint32_t signalSemaphoreCount = 0;
 
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+    if (encodeFrameInfo->aqProcessorSlot) {
+        uint64_t inputSeqNumber = encodeFrameInfo->aqProcessorSlot->GetInputSeqNumber();
+        assert(encodeFrameInfo->frameEncodeInputOrderNum == inputSeqNumber);
+        AqProcessor::SlotState slotState = encodeFrameInfo->aqProcessorSlot->GetState();
+        VkVideoGopStructure::GopPosition gopPosition = encodeFrameInfo->aqProcessorSlot->GetGopPosition();
+        printf("Submitting AQ qpMap inputSeqNumber %" PRIu64 ", type: %s, state: %s\n", inputSeqNumber,
+                VkVideoGopStructure::GetFrameTypeName(gopPosition.pictureType),
+                AqProcessor::GetSlotStateDisplayName(slotState));
+        assert((slotState == AqProcessor::SlotState::GRAPH_COMPLETED) ||
+                (slotState == AqProcessor::SlotState::GRAPH_COMPLETED_SYNCED));
+        if (encodeFrameInfo->srcQpMapImageResource) {
+            // Set the semaphore for the output image
+            VkSemaphoreSubmitInfoKHR qpDeltaImageSem =
+                    encodeFrameInfo->srcQpMapImageResource->GetSemaphoreSubmitInfo();
+            if (qpDeltaImageSem.semaphore != VK_NULL_HANDLE) {
+                assert(waitSemaphoreCount < waitSemaphoreMaxCount);
+                waitSemaphoreInfos[waitSemaphoreCount] = qpDeltaImageSem;
+                assert(waitSemaphoreInfos[waitSemaphoreCount].value != 0);
+                assert(waitSemaphoreInfos[waitSemaphoreCount].semaphore != VK_NULL_HANDLE);
+                waitSemaphoreCount++;
+            } else {
+                assert(!"qpDeltaImageSem must have a valid semaphore");
+            }
+        } else {
+            assert(!"srcQpMapImageResource must have a valid when aqProcessorSlot is valid");
+        }
+    } else
+#else // NV_AQ_GPU_LIB_SUPPORTED
     if (encodeFrameInfo->inputCmdBuffer) {
         waitSemaphoreInfos[waitSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
         waitSemaphoreInfos[waitSemaphoreCount].semaphore = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
@@ -1998,6 +2287,7 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
         waitSemaphoreInfos[waitSemaphoreCount].deviceIndex = 0;
         waitSemaphoreCount++;
     }
+#endif // NV_AQ_GPU_LIB_SUPPORTED
     if (encodeFrameInfo->qpMapCmdBuffer) {
         waitSemaphoreInfos[waitSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
         waitSemaphoreInfos[waitSemaphoreCount].semaphore = encodeFrameInfo->qpMapCmdBuffer->GetSemaphore();
@@ -2241,6 +2531,7 @@ int32_t VkVideoEncoder::DeinitEncoder()
     m_dpbImagePool            = nullptr;
 
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
+    m_aqAnalyzes =  nullptr;
     m_inputSubsampledImagePool = nullptr;
 #endif // NV_AQ_GPU_LIB_SUPPORTED
     m_qpMapImagePool          = nullptr;

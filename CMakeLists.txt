@@ -379,6 +379,102 @@ endif()
 endif()
 ############ VULKAN_VIDEO_DECODER_LIB ######################################
 
+############ NV_AQ_GPU_LIB Integration ######################################
+# Check if NV_AQ_GPU_LIB is set and valid for building aq-vulkan library
+# This must be done BEFORE building encoder library so definitions are available
+if(DEFINED NV_AQ_GPU_LIB)
+    # Ensure it's an absolute path
+    get_filename_component(NV_AQ_GPU_LIB "${NV_AQ_GPU_LIB}" ABSOLUTE)
+
+    if(EXISTS "${NV_AQ_GPU_LIB}" AND EXISTS "${NV_AQ_GPU_LIB}/CMakeLists.txt")
+        message(STATUS "NV_AQ_GPU_LIB is set and valid: ${NV_AQ_GPU_LIB}")
+        message(STATUS "Building aq-vulkan library from: ${NV_AQ_GPU_LIB}")
+
+        # Pass the encoder include directory to the AQ library build
+        # This allows AQ headers to find VkVideoGopStructure.h
+        set(VK_VIDEO_ENCODER_INCLUDE_FOR_AQ "${CMAKE_CURRENT_SOURCE_DIR}/vk_video_encoder/libs/VkVideoEncoder" CACHE PATH "Path to VkVideoEncoder headers for AQ library")
+
+        # Add the aq-vulkan subdirectory
+        add_subdirectory(${NV_AQ_GPU_LIB} ${CMAKE_BINARY_DIR}/aq_vulkan)
+
+        # Set global C define to indicate AQ GPU library support is available
+        add_definitions(-DNV_AQ_GPU_LIB_SUPPORTED=1)
+
+        # Set CMake variable with library location for other targets to use
+        set(NV_AQ_GPU_LIB_AVAILABLE TRUE CACHE BOOL "NV AQ GPU library is available")
+        set(NV_AQ_GPU_LIB_TARGET "nvenc_aq_vulkan" CACHE STRING "Name of the NV AQ GPU library target")
+
+        # Set up all AQ include directories in one place
+        # NV_AQ_GPU_LIB points to aq-vulkan, so aq_common is one level up
+        get_filename_component(AQ_COMMON_DIR "${NV_AQ_GPU_LIB}/../aq_common" ABSOLUTE)
+
+        # Create a list of all required include directories
+        set(NV_AQ_GPU_LIB_INCLUDE_DIRS "")
+
+        # 1. aq_common base directory (for includes like "interface/EncodeAqAnalyzes.h")
+        if(EXISTS "${AQ_COMMON_DIR}/interface/EncodeAqAnalyzes.h")
+            list(APPEND NV_AQ_GPU_LIB_INCLUDE_DIRS "${AQ_COMMON_DIR}")
+            message(STATUS "Found AQ common base directory: ${AQ_COMMON_DIR}")
+        else()
+            message(WARNING "EncodeAqAnalyzes.h not found at ${AQ_COMMON_DIR}/interface/EncodeAqAnalyzes.h")
+        endif()
+
+        # 2. aq_common/interface directory (for direct includes like "EncodeAqAnalyzes.h")
+        if(EXISTS "${AQ_COMMON_DIR}/interface")
+            list(APPEND NV_AQ_GPU_LIB_INCLUDE_DIRS "${AQ_COMMON_DIR}/interface")
+            message(STATUS "Found AQ interface directory: ${AQ_COMMON_DIR}/interface")
+        else()
+            message(WARNING "aq_common/interface directory not found: ${AQ_COMMON_DIR}/interface")
+        endif()
+
+        # 3. aq_common/inc directory (for AqProcessor.h, aq_dump_manager.h, etc.)
+        if(EXISTS "${AQ_COMMON_DIR}/inc")
+            list(APPEND NV_AQ_GPU_LIB_INCLUDE_DIRS "${AQ_COMMON_DIR}/inc")
+            message(STATUS "Found AQ common includes: ${AQ_COMMON_DIR}/inc")
+        else()
+            message(WARNING "aq_common/inc directory not found: ${AQ_COMMON_DIR}/inc")
+        endif()
+
+        # 4. aq-vulkan/inc directory (for VulkanGpuTemporalAQ.h and Vulkan-specific headers)
+        if(EXISTS "${NV_AQ_GPU_LIB}/inc")
+            list(APPEND NV_AQ_GPU_LIB_INCLUDE_DIRS "${NV_AQ_GPU_LIB}/inc")
+            message(STATUS "Found AQ Vulkan includes: ${NV_AQ_GPU_LIB}/inc")
+        else()
+            message(WARNING "aq-vulkan/inc directory not found: ${NV_AQ_GPU_LIB}/inc")
+        endif()
+
+        # 5. VkVideoEncoder directory (for VkVideoGopStructure.h that AQ library needs)
+        set(VK_VIDEO_ENCODER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vk_video_encoder/libs/VkVideoEncoder")
+        if(EXISTS "${VK_VIDEO_ENCODER_DIR}")
+            list(APPEND NV_AQ_GPU_LIB_INCLUDE_DIRS "${VK_VIDEO_ENCODER_DIR}")
+            message(STATUS "Found VkVideoEncoder includes: ${VK_VIDEO_ENCODER_DIR}")
+        else()
+            message(WARNING "VkVideoEncoder directory not found: ${VK_VIDEO_ENCODER_DIR}")
+        endif()
+
+        # 6. Common libs directory (for dependencies of VkVideoGopStructure.h)
+        set(COMMON_LIBS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/common/libs")
+        if(EXISTS "${COMMON_LIBS_DIR}")
+            list(APPEND NV_AQ_GPU_LIB_INCLUDE_DIRS "${COMMON_LIBS_DIR}")
+            message(STATUS "Found common libs includes: ${COMMON_LIBS_DIR}")
+        endif()
+
+        # Cache the include directories list
+        set(NV_AQ_GPU_LIB_INCLUDE_DIRS "${NV_AQ_GPU_LIB_INCLUDE_DIRS}" CACHE STRING "List of all AQ include directories")
+        message(STATUS "NV_AQ_GPU_LIB_INCLUDE_DIRS set to: ${NV_AQ_GPU_LIB_INCLUDE_DIRS}")
+
+        message(STATUS "NV_AQ_GPU_LIB_SUPPORTED define will be set")
+        message(STATUS "NV_AQ_GPU_LIB_TARGET: ${NV_AQ_GPU_LIB_TARGET}")
+    else()
+        message(WARNING "NV_AQ_GPU_LIB is set to '${NV_AQ_GPU_LIB}' but directory or CMakeLists.txt not found. Skipping aq-vulkan integration.")
+        set(NV_AQ_GPU_LIB_AVAILABLE FALSE CACHE BOOL "NV AQ GPU library is available")
+    endif()
+else()
+    message(STATUS "NV_AQ_GPU_LIB not set - aq-vulkan integration disabled")
+    set(NV_AQ_GPU_LIB_AVAILABLE FALSE CACHE BOOL "NV AQ GPU library is available")
+endif()
+############ NV_AQ_GPU_LIB Integration ######################################
+
 ############ VULKAN_VIDEO_ENCODER_LIB ######################################
 if(BUILD_ENCODER)
     if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vk_video_encoder/libs/VkVideoEncoder")
