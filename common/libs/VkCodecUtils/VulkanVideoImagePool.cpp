@@ -130,7 +130,52 @@ void VulkanVideoImagePoolNode::Deinit()
 {
     Release();
     m_imageResourceView = nullptr;
+    if ((m_timelineSemaphore != VK_NULL_HANDLE) && m_vkDevCtx) {
+        m_vkDevCtx->DestroySemaphore(*m_vkDevCtx, m_timelineSemaphore, nullptr);
+        m_timelineSemaphore = VK_NULL_HANDLE;
+    }
+    m_semaphoreSubmitInfo = VkSemaphoreSubmitInfoKHR();
     m_vkDevCtx = nullptr;
+}
+
+VkSemaphoreSubmitInfoKHR VulkanVideoImagePoolNode::SetTimelineSemaphoreValue(uint64_t value,
+                                                                             VkPipelineStageFlags2 stageMask,
+                                                                             uint32_t deviceIndex)
+{
+    // Check if timeline semaphore support is available
+    if (!m_vkDevCtx) {
+        return VkSemaphoreSubmitInfoKHR();
+    }
+
+    // Create timeline semaphore if it doesn't exist
+    if (m_timelineSemaphore == VK_NULL_HANDLE) {
+        VkSemaphoreTypeCreateInfo timelineCreateInfo{};
+        timelineCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+        timelineCreateInfo.pNext = nullptr;
+        timelineCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+        timelineCreateInfo.initialValue = 0;
+
+        VkSemaphoreCreateInfo semaphoreCreateInfo{};
+        semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        semaphoreCreateInfo.pNext = &timelineCreateInfo;
+        semaphoreCreateInfo.flags = 0;
+
+        VkResult result = m_vkDevCtx->CreateSemaphore(*m_vkDevCtx, &semaphoreCreateInfo, nullptr, &m_timelineSemaphore);
+        if (result != VK_SUCCESS) {
+            // Timeline semaphore creation failed - feature not supported
+            return VkSemaphoreSubmitInfoKHR();
+        }
+
+        // Set the semaphore submit info parameters
+        m_semaphoreSubmitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        m_semaphoreSubmitInfo.pNext = nullptr;
+        m_semaphoreSubmitInfo.semaphore = m_timelineSemaphore;
+    }
+    m_semaphoreSubmitInfo.value = value;
+    m_semaphoreSubmitInfo.stageMask = stageMask;
+    m_semaphoreSubmitInfo.deviceIndex = deviceIndex;
+
+    return m_semaphoreSubmitInfo;
 }
 
 
