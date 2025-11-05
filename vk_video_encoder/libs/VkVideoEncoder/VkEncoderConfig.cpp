@@ -18,6 +18,8 @@
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
+#include <algorithm>
+#include <cctype>
 
 static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
 {
@@ -93,7 +95,17 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
                                         cycle will start with an intra-refresh index of `index` and\n\
                                         will run to completion. This will be followed by a full\n\
                                         intra-refresh cycle. This results in a fully intra-refreshed frame\n\
-                                        being available after every `intraRefreshCycleDuration + index` frames.\n");
+                                        being available after every `intraRefreshCycleDuration + index` frames.\n\
+    --spatialAQStrength             <float>   : Spatial AQ strength in range [0.0, 1.0]\n\
+                                        0.0 = disabled (default)\n\
+                                        If > 0, spatial AQ is enabled\n\
+                                        In combined mode, ratio determines mix (larger value = more influence)\n\
+    --temporalAQStrength            <float>   : Temporal AQ strength in range [0.0, 1.0]\n\
+                                        0.0 = disabled (default)\n\
+                                        If > 0, temporal AQ is enabled\n\
+                                        In combined mode, ratio determines mix (larger value = more influence)\n\
+    --aqDumpDir                      <string>  : Directory for AQ dump files\n\
+                                        Default: ./aqDump\n");
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR)) {
         fprintf(stderr, "\nH264 specific arguments:\n\
@@ -598,6 +610,34 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 return -1;
             }
             gopStructure.SetIntraRefreshSkippedStartIndex(intraRefreshSkippedStartIndex);
+        } else if (args[i] == "--spatialAQStrength") {
+            if (++i >= argc || sscanf(args[i].c_str(), "%f", &spatialAQStrength) != 1) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            if ((spatialAQStrength < 0.0f) || (spatialAQStrength > 1.0f)) {
+                fprintf(stderr, "spatialAQStrength must be in range [0.0, 1.0]\n");
+                return -1;
+            }
+            // Enable QP delta map for the temporal mode
+            qpMapMode = DELTA_QP_MAP;
+        } else if (args[i] == "--temporalAQStrength") {
+            if (++i >= argc || sscanf(args[i].c_str(), "%f", &temporalAQStrength) != 1) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            if ((temporalAQStrength < 0.0f) || (temporalAQStrength > 1.0f)) {
+                fprintf(stderr, "temporalAQStrength must be in range [0.0, 1.0]\n");
+                return -1;
+            }
+            // Enable QP delta map for the temporal mode
+            qpMapMode = DELTA_QP_MAP;
+        } else if (args[i] == "--aqDumpDir") {
+            if (++i >= argc) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            aqDumpDir = args[i];
         } else {
             argcount++;
             arglist.push_back(args[i].c_str());

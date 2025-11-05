@@ -843,6 +843,14 @@ public:
 
     VulkanFilterYuvCompute::FilterType filterType;
 
+    // Adaptive Quantization (AQ) parameters
+    // If spatialAQStrength > 0, spatial AQ is enabled
+    // If temporalAQStrength > 0, temporal AQ is enabled
+    // If both > 0, combined mode (ratio determines mix)
+    float spatialAQStrength;  // 0.0 to 1.0 normalized, 0 = disabled
+    float temporalAQStrength; // 0.0 to 1.0 normalized, 0 = disabled
+    std::string aqDumpDir;    // Directory for AQ dump files (default: "./aqDump")
+
     uint32_t validate : 1;
     uint32_t validateVerbose : 1;
     uint32_t verbose : 1;
@@ -944,6 +952,9 @@ public:
     , chroma_sample_loc_type()
     , inputFileHandler()
     , filterType(VulkanFilterYuvCompute::YCBCRCOPY)
+    , spatialAQStrength(0.0f)
+    , temporalAQStrength(0.0f)
+    , aqDumpDir("./aqDump")
     , validate(false)
     , validateVerbose(false)
     , verbose(false)

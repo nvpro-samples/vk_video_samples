@@ -896,6 +896,7 @@ void NvPerFrameDecodeResources::Deinit(const VulkanDeviceContext* vkDevCtx)
     stdPps = nullptr;
     stdSps = nullptr;
     stdVps = nullptr;
+    filterPoolNode = nullptr;
 
     if (vkDevCtx == nullptr) {
         assert ((m_frameCompleteFence == VK_NULL_HANDLE) &&

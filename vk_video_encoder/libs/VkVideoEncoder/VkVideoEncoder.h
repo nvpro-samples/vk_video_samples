@@ -40,6 +40,9 @@
 #include "VkShell/Shell.h"
 #endif // VIDEO_DISPLAY_QUEUE_SUPPORT
 #include "mio/mio.hpp"
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+#include "EncodeAqAnalyzes.h"
+#endif // NV_AQ_GPU_LIB_SUPPORTED
 
 class VkVideoEncoderH264;
 class VkVideoEncoderH265;
@@ -102,6 +105,7 @@ public:
             , srcQpMapStagingResource()
             , srcQpMapImageResource()
             , qpMapCmdBuffer()
+            , aqProcessorSlot()
             , m_refCount(0)
             , m_parent()
             , m_parentIndex(-1)
@@ -166,7 +170,9 @@ public:
         VkSharedBaseObj<VulkanVideoImagePoolNode>          srcQpMapStagingResource;
         VkSharedBaseObj<VulkanVideoImagePoolNode>          srcQpMapImageResource;
         VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> qpMapCmdBuffer;
-
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+        std::shared_ptr<AqProcessor>                       aqProcessorSlot;
+#endif // NV_AQ_GPU_LIB_SUPPORTED
         VkResult SyncHostOnCmdBuffComplete() {
 
             if (inputCmdBuffer) {
@@ -311,7 +317,9 @@ public:
                 inputCmdBuffer = nullptr;
                 qpMapCmdBuffer = nullptr;
                 encodeCmdBuffer = nullptr;
-
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+                aqProcessorSlot = nullptr;
+#endif // NV_AQ_GPU_LIB_SUPPORTED
                 // recurse and free the children frames
                 ReleaseChildrenFrames(dependantFrames);
             }
@@ -774,6 +782,9 @@ protected:
     VkImageTiling                            m_qpMapTiling;
     VkSharedBaseObj<VulkanVideoImagePool>    m_linearQpMapImagePool;
     VkSharedBaseObj<VulkanVideoImagePool>    m_qpMapImagePool;
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+    std::shared_ptr<nvenc_aq::EncodeAqAnalyzes > m_aqAnalyzes;
+#endif // NV_AQ_GPU_LIB_SUPPORTED
 };
 
 VkResult CreateVideoEncoderH264(const VulkanDeviceContext* vkDevCtx,
