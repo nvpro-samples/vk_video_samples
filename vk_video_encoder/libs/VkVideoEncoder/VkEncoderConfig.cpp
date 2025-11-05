@@ -18,6 +18,8 @@
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
+#include <algorithm>
+#include <cctype>
 
 static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
 {
@@ -65,8 +67,9 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
                                         default, highquality, lowlatency, ultralowlatency, lossless \n\
     --rateControlMode               <integer> or <string>: select different rate control modes: \n\
                                         default(0), disabled(1), cbr(2), vbr(4)\n\
-    --averageBitrate                <integer> : Target bitrate for cbr/vbr RC modes\n\
-    --maxBitrate                    <integer> : Peak bitrate for cbr/vbr RC modes\n\
+    --averageBitrate                <integer> : Target bitrate in bits/sec for cbr/vbr RC modes\n\
+                                        (e.g., 5000000 for 5 Mbps, 15000000 for 15 Mbps)\n\
+    --maxBitrate                    <integer> : Peak bitrate in bits/sec for cbr/vbr RC modes\n\
     --vbvBufferSize                 <integer> : Size in bits of the VBV / HRD buffer for cbr/vbr RC modes\n\
     --qpI                           <integer> : QP or QIndex (for AV1) used for I-frames when RC disabled\n\
     --qpP                           <integer> : QP or QIndex (for AV1) used for P-frames when RC disabled\n\
@@ -97,6 +100,24 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
                                         will run to completion. This will be followed by a full\n\
                                         intra-refresh cycle. This results in a fully intra-refreshed frame\n\
                                         being available after every `intraRefreshCycleDuration + index` frames.\n");
+
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+    fprintf(stderr, "\
+    --spatialAQStrength             <float>   : Spatial AQ strength in range [-1.0, 1.0]\n\
+                                        < -1.0 = disabled (default: -2.0)\n\
+                                        0.0 = default/neutral strength\n\
+                                        -1.0 = minimum, 1.0 = maximum\n\
+                                        If >= -1.0, spatial AQ is enabled\n\
+                                        In combined mode, ratio determines mix\n\
+    --temporalAQStrength            <float>   : Temporal AQ strength in range [-1.0, 1.0]\n\
+                                        < -1.0 = disabled (default: -2.0)\n\
+                                        0.0 = default/neutral strength\n\
+                                        -1.0 = minimum, 1.0 = maximum\n\
+                                        If >= -1.0, temporal AQ is enabled\n\
+                                        In combined mode, ratio determines mix\n\
+    --aqDumpDir                      <string>  : Directory for AQ dump files\n\
+                                        Default: ./aqDump\n");
+#endif // NV_AQ_GPU_LIB_SUPPORTED
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR)) {
         fprintf(stderr, "\nH264 specific arguments:\n\
@@ -608,6 +629,46 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 return -1;
             }
             gopStructure.SetIntraRefreshSkippedStartIndex(intraRefreshSkippedStartIndex);
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+        } else if (args[i] == "--spatialAQStrength") {
+            if (++i >= argc || sscanf(args[i].c_str(), "%f", &spatialAQStrength) != 1) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            // Valid range is [-1.0, 1.0], but values < -1.0 mean disabled
+            if (spatialAQStrength > 1.0f) {
+                fprintf(stderr, "spatialAQStrength must be <= 1.0 (use < -1.0 to disable)\n");
+                return -1;
+            }
+            // Only enable if value is in valid range [-1.0, 1.0]
+            if (spatialAQStrength >= -1.0f) {
+                enableAQ = VK_TRUE;
+                enableQpMap = VK_TRUE;
+                qpMapMode = DELTA_QP_MAP;
+            }
+        } else if (args[i] == "--temporalAQStrength") {
+            if (++i >= argc || sscanf(args[i].c_str(), "%f", &temporalAQStrength) != 1) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            // Valid range is [-1.0, 1.0], but values < -1.0 mean disabled
+            if (temporalAQStrength > 1.0f) {
+                fprintf(stderr, "temporalAQStrength must be <= 1.0 (use < -1.0 to disable)\n");
+                return -1;
+            }
+            // Only enable if value is in valid range [-1.0, 1.0]
+            if (temporalAQStrength >= -1.0f) {
+                enableAQ = VK_TRUE;
+                enableQpMap = VK_TRUE;
+                qpMapMode = DELTA_QP_MAP;
+            }
+        } else if (args[i] == "--aqDumpDir") {
+            if (++i >= argc) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            aqDumpDir = args[i];
+#endif // NV_AQ_GPU_LIB_SUPPORTED
         } else {
             argcount++;
             arglist.push_back(args[i].c_str());
@@ -709,7 +770,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
 
     codecBlockAlignment = H264MbSizeAlignment; // H264
 
-    if (enableQpMap && !qpMapFileHandler.HasFileName()) {
+    if (enableQpMap && !qpMapFileHandler.HasFileName() && !enableAQ) {
         fprintf(stderr, "No qpMap file was provided.");
         return -1;
     }
