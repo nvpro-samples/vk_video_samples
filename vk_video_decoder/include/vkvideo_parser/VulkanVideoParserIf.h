@@ -426,6 +426,8 @@ typedef struct VkParserSequenceInfo {
     int32_t nDisplayHeight;                   // Displayed Vertical Size
     int32_t nCodedWidth;                      // Coded Picture Width
     int32_t nCodedHeight;                     // Coded Picture Height
+    int32_t nDisplayOffsetX;                  // Horizontal offset for display area (crop left)
+    int32_t nDisplayOffsetY;                  // Vertical offset for display area (crop top)
     int32_t nMaxWidth;                        // Max width within sequence
     int32_t nMaxHeight;                       // Max height within sequence
     uint8_t nChromaFormat;                    // Chroma Format (0=4:0:0, 1=4:2:0, 2=4:2:2, 3=4:4:4)

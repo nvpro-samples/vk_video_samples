@@ -630,8 +630,16 @@ int VkVideoDecoder::CopyOptimalToLinearImage(VkCommandBuffer& commandBuffer,
     // Copy src buffer to image.
     VkImageCopy copyRegion[3];
     memset(&copyRegion, 0, sizeof(copyRegion));
-    copyRegion[0].extent.width = srcPictureResource.codedExtent.width;
-    copyRegion[0].extent.height = srcPictureResource.codedExtent.height;
+
+    // Use display area to account for frame cropping
+    const int32_t displayWidth = m_videoFormat.display_area.right - m_videoFormat.display_area.left;
+    const int32_t displayHeight = m_videoFormat.display_area.bottom - m_videoFormat.display_area.top;
+
+    // Luma plane (Y)
+    copyRegion[0].srcOffset.x = m_videoFormat.display_area.left;
+    copyRegion[0].srcOffset.y = m_videoFormat.display_area.top;
+    copyRegion[0].extent.width = displayWidth;
+    copyRegion[0].extent.height = displayHeight;
     copyRegion[0].extent.depth = 1;
     copyRegion[0].srcSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
     copyRegion[0].srcSubresource.mipLevel = 0;
@@ -641,16 +649,20 @@ int VkVideoDecoder::CopyOptimalToLinearImage(VkCommandBuffer& commandBuffer,
     copyRegion[0].dstSubresource.mipLevel = 0;
     copyRegion[0].dstSubresource.baseArrayLayer = dstPictureResourceInfo.baseArrayLayer;
     copyRegion[0].dstSubresource.layerCount = 1;
-    copyRegion[1].extent.width = copyRegion[0].extent.width;
+
+    // Chroma plane (UV) with subsampling
+    copyRegion[1].srcOffset.x = m_videoFormat.display_area.left;
+    copyRegion[1].srcOffset.y = m_videoFormat.display_area.top;
+    copyRegion[1].extent.width = displayWidth;
+    copyRegion[1].extent.height = displayHeight;
     if (mpInfo->planesLayout.secondaryPlaneSubsampledX != 0) {
+        copyRegion[1].srcOffset.x = (copyRegion[1].srcOffset.x + 1) / 2;
         copyRegion[1].extent.width = (copyRegion[1].extent.width + 1) / 2;
     }
-
-    copyRegion[1].extent.height = copyRegion[0].extent.height;
     if (mpInfo->planesLayout.secondaryPlaneSubsampledY != 0) {
+        copyRegion[1].srcOffset.y = (copyRegion[1].srcOffset.y + 1) / 2;
         copyRegion[1].extent.height = (copyRegion[1].extent.height + 1) / 2;
     }
-
     copyRegion[1].extent.depth = 1;
     copyRegion[1].srcSubresource.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
     copyRegion[1].srcSubresource.mipLevel = 0;

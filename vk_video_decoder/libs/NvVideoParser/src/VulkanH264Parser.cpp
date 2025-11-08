@@ -397,15 +397,24 @@ bool VulkanH264Decoder::init_sequence_svc(const seq_parameter_set_s* sps)
     nvsi.nCodedHeight = FrameHeightInMbs * 16;
     nvsi.nDisplayWidth = nvsi.nCodedWidth;
     nvsi.nDisplayHeight = nvsi.nCodedHeight;
+    nvsi.nDisplayOffsetX = 0;
+    nvsi.nDisplayOffsetY = 0;
     if (sps->flags.frame_cropping_flag)
     {
-        int crop_right = sps->frame_crop_right_offset*2;
-        int crop_bottom = sps->frame_crop_bottom_offset * 2 * ( 2 - sps->flags.frame_mbs_only_flag);
-        if ((crop_right >= 0) && (crop_right < nvsi.nCodedWidth/2)
-         && (crop_bottom >= 0) && (crop_bottom < nvsi.nCodedHeight/2))
+        const int subWidthC = (sps->chroma_format_idc == 3) || (sps->chroma_format_idc == 0) ? 1 : 2;
+        const int subHeightC = sps->chroma_format_idc == 1 ? 2 : 1;
+        const int crop_left = sps->frame_crop_left_offset * subWidthC;
+        const int crop_right = sps->frame_crop_right_offset * subWidthC;
+        const int crop_top = sps->frame_crop_top_offset * subHeightC * (2 - sps->flags.frame_mbs_only_flag);
+        const int crop_bottom = sps->frame_crop_bottom_offset * subHeightC * (2 - sps->flags.frame_mbs_only_flag);
+        if ((crop_left >= 0) && (crop_right >= 0) && (crop_top >= 0) && (crop_bottom >= 0)
+         && ((crop_left + crop_right) < nvsi.nCodedWidth)
+         && ((crop_top + crop_bottom) < nvsi.nCodedHeight))
         {
-            nvsi.nDisplayWidth -= crop_right;
-            nvsi.nDisplayHeight -= crop_bottom;
+            nvsi.nDisplayOffsetX = crop_left;
+            nvsi.nDisplayOffsetY = crop_top;
+            nvsi.nDisplayWidth = nvsi.nCodedWidth - (crop_left + crop_right);
+            nvsi.nDisplayHeight = nvsi.nCodedHeight - (crop_top + crop_bottom);
         }
     }
     nvsi.nChromaFormat = (uint8_t)sps->chroma_format_idc;
@@ -2714,16 +2723,25 @@ bool VulkanH264Decoder::dpb_sequence_start(slice_header_s *slh)
     nvsi.nCodedHeight = FrameHeightInMbs * 16;
     nvsi.nDisplayWidth = nvsi.nCodedWidth;
     nvsi.nDisplayHeight = nvsi.nCodedHeight;
+    nvsi.nDisplayOffsetX = 0;
+    nvsi.nDisplayOffsetY = 0;
     nvsi.canUseFields  = !sps->flags.frame_mbs_only_flag;
     if (sps->flags.frame_cropping_flag)
     {
-        int crop_right = sps->frame_crop_right_offset * 2;
-        int crop_bottom = sps->frame_crop_bottom_offset * 2 * (2 - sps->flags.frame_mbs_only_flag);
-        if ((crop_right >= 0) && (crop_right < nvsi.nCodedWidth / 2)
-         && (crop_bottom >= 0) && (crop_bottom < nvsi.nCodedHeight / 2))
+        const int subWidthC = (sps->chroma_format_idc == 3) || (sps->chroma_format_idc == 0) ? 1 : 2;
+        const int subHeightC = sps->chroma_format_idc == 1 ? 2 : 1;
+        const int crop_left = sps->frame_crop_left_offset * subWidthC;
+        const int crop_right = sps->frame_crop_right_offset * subWidthC;
+        const int crop_top = sps->frame_crop_top_offset * subHeightC * (2 - sps->flags.frame_mbs_only_flag);
+        const int crop_bottom = sps->frame_crop_bottom_offset * subHeightC * (2 - sps->flags.frame_mbs_only_flag);
+        if ((crop_left >= 0) && (crop_right >= 0) && (crop_top >= 0) && (crop_bottom >= 0)
+         && ((crop_left + crop_right) < nvsi.nCodedWidth)
+         && ((crop_top + crop_bottom) < nvsi.nCodedHeight))
         {
-            nvsi.nDisplayWidth -= crop_right;
-            nvsi.nDisplayHeight -= crop_bottom;
+            nvsi.nDisplayOffsetX = crop_left;
+            nvsi.nDisplayOffsetY = crop_top;
+            nvsi.nDisplayWidth = nvsi.nCodedWidth - (crop_left + crop_right);
+            nvsi.nDisplayHeight = nvsi.nCodedHeight - (crop_top + crop_bottom);
         }
     }
     nvsi.nChromaFormat = (uint8_t)sps->chroma_format_idc;

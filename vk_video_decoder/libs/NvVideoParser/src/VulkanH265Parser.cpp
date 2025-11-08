@@ -2446,8 +2446,29 @@ bool VulkanH265Decoder::dpb_sequence_start(VkSharedBaseObj<hevc_seq_param_s>& sp
     nvsi.nCodedHeight = (pic_height_in_luma_samples + 0xf) & ~0xf;
     Log2SubWidthC = (sps->chroma_format_idc == 1) || (sps->chroma_format_idc == 2);
     Log2SubHeightC = (sps->chroma_format_idc == 1);
-    nvsi.nDisplayWidth = pic_width_in_luma_samples - (sps->conf_win_right_offset << Log2SubWidthC);
-    nvsi.nDisplayHeight = pic_height_in_luma_samples - (sps->conf_win_bottom_offset << Log2SubHeightC);
+
+    // Apply conformance window cropping (H.265 equivalent of H.264 frame cropping)
+    nvsi.nDisplayOffsetX = 0;
+    nvsi.nDisplayOffsetY = 0;
+    nvsi.nDisplayWidth = pic_width_in_luma_samples;
+    nvsi.nDisplayHeight = pic_height_in_luma_samples;
+
+    // conf_win offsets are in chroma sample units, need to convert to luma samples
+    const int crop_left = sps->conf_win_left_offset << Log2SubWidthC;
+    const int crop_right = sps->conf_win_right_offset << Log2SubWidthC;
+    const int crop_top = sps->conf_win_top_offset << Log2SubHeightC;
+    const int crop_bottom = sps->conf_win_bottom_offset << Log2SubHeightC;
+
+    if ((crop_left >= 0) && (crop_right >= 0) && (crop_top >= 0) && (crop_bottom >= 0)
+     && ((crop_left + crop_right) < nvsi.nCodedWidth)
+     && ((crop_top + crop_bottom) < nvsi.nCodedHeight))
+    {
+        nvsi.nDisplayOffsetX = crop_left;
+        nvsi.nDisplayOffsetY = crop_top;
+        nvsi.nDisplayWidth = pic_width_in_luma_samples - (crop_left + crop_right);
+        nvsi.nDisplayHeight = pic_height_in_luma_samples - (crop_top + crop_bottom);
+    }
+
     nvsi.nChromaFormat = sps->chroma_format_idc;
     nvsi.uBitDepthLumaMinus8 = sps->bit_depth_luma_minus8;
     nvsi.uBitDepthChromaMinus8 = sps->bit_depth_chroma_minus8;

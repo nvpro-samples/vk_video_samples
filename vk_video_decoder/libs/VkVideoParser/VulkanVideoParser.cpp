@@ -1193,8 +1193,10 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
         detectedFormat.progressive_sequence = pnvsi->bProgSeq;
         detectedFormat.coded_width = pnvsi->nCodedWidth;
         detectedFormat.coded_height = pnvsi->nCodedHeight;
-        detectedFormat.display_area.right = pnvsi->nDisplayWidth;
-        detectedFormat.display_area.bottom = pnvsi->nDisplayHeight;
+        detectedFormat.display_area.left = pnvsi->nDisplayOffsetX;
+        detectedFormat.display_area.top = pnvsi->nDisplayOffsetY;
+        detectedFormat.display_area.right = pnvsi->nDisplayOffsetX + pnvsi->nDisplayWidth;
+        detectedFormat.display_area.bottom = pnvsi->nDisplayOffsetY + pnvsi->nDisplayHeight;
         detectedFormat.filmGrainUsed = pnvsi->hasFilmGrain;
         detectedFormat.canUseFields  = pnvsi->canUseFields;
 
