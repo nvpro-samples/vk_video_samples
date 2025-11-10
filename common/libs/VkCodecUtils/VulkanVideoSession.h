@@ -22,7 +22,7 @@
 
 class VulkanVideoSession : public VkVideoRefCountBase
 {
-    enum { MAX_BOUND_MEMORY = 8 };
+    enum { MAX_BOUND_MEMORY = 40 };
 public:
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            VkVideoSessionCreateFlagsKHR sessionCreateFlags,
