@@ -455,6 +455,13 @@ int8_t EncoderConfigH264::InitDpbCount()
 {
     dpbCount = 0; // TODO: What is the need for this?
 
+#if (_TRANSCODING)
+    dpbCount = gopStructure.GetConsecutiveBFrameCount();
+    if (dpbCount == 0) {
+        dpbCount = 1;
+        return dpbCount + 1;
+    }
+#endif // !_TRANSCODING
     // spsInfo->level represents the smallest level that we require for the
     // given stream. This level constrains the maximum size (in terms of
     // number of frames) that the DPB can have. levelDpbSize is this maximum
@@ -536,6 +543,21 @@ bool EncoderConfigH264::InitRateControl()
     }
 
     // Use the level limit for the max VBV buffer size, and no more than 8 seconds at peak rate
+#if (_TRANSCODING)
+    double frameRate = ((frameRateNumerator > 0) && (frameRateDenominator > 0))
+                           ? (double)frameRateNumerator / frameRateDenominator
+                           : (double)FRAME_RATE_NUM_DEFAULT / (double)FRAME_RATE_DEN_DEFAULT;
+
+
+    if (encodingProfile == EncoderConfig::LOW_LATENCY_STREAMING)
+    {
+        vbvBufferSize = (uint32_t)(averageBitrate / frameRate * vbvbufratio); // averageBitrate is a uint32_t, no overflow
+    }
+    else if (encodingProfile == EncoderConfig::ARCHIVING)
+    {
+        vbvBufferSize = averageBitrate * vbvbufratio;
+    } else // Tymur: temporarily disable the following feature if encodingProfile is specified (the above code will be used instead)
+#endif // _TRANSCODING
     if (vbvBufferSize == 0) {
         vbvBufferSize = std::min(levelLimits[levelIdc].maxCPB * 1000, 120000000U);
         if (rateControlMode != VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR)

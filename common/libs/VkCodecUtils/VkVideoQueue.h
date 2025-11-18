@@ -19,6 +19,10 @@
 
 #include <stdint.h>
 #include "VkCodecUtils/VkVideoRefCountBase.h"
+#if (_TRANSCODING)
+#include "VkCodecUtils/DecoderConfig.h"
+#include "VkVideoEncoder/VkEncoderConfig.h"
+#endif // _TRANSCODING
 
 /**
  * @class VkVideoQueue
@@ -147,7 +151,11 @@ public:
      * - `-1` if an error occurs or if the end of the stream is reached. In either case, decoding should
      *         be terminated or reset accordingly.
      */
-    virtual int32_t  GetNextFrame(FrameDataType* pNewFrame, bool* endOfStream) = 0;
+    virtual int32_t  GetNextFrame(FrameDataType* pNewFrame, bool* endOfStream
+    #if (_TRANSCODING)
+        , DecoderConfig* programConfig = nullptr, VkSharedBaseObj<EncoderConfig>* encoderConfig = nullptr
+    #endif // _TRANSCODING
+        ) = 0;
 
     /**
      * @brief Release a previously retrieved decoded frame.

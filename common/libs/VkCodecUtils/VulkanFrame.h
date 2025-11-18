@@ -65,6 +65,16 @@ public:
                           uint32_t           signalSemaphoreCount = 0,
                           const VkSemaphore* pSignalSemaphores = nullptr);
 
+#if (_TRANSCODING)
+    virtual bool OnFrameTranscoding(int32_t  renderIndex,
+                          DecoderConfig* programConfig,
+                          VkSharedBaseObj<EncoderConfig>& encoderConfig,
+                          uint32_t           waitSemaphoreCount = 0,
+                          const VkSemaphore* pWaitSemaphores  = nullptr,
+                          uint32_t           signalSemaphoreCount = 0,
+                          const VkSemaphore* pSignalSemaphores = nullptr,
+                          VulkanDecodedFrame* pLastFrameDecoded = nullptr);
+#endif // _TRANSCODING
 
     VkResult DrawFrame( int32_t           renderIndex,
                        uint32_t           waitSemaphoreCount,
