@@ -40,6 +40,13 @@ StdVideoH264LevelIdc EncoderConfigH264::DetermineLevel(uint8_t dpbSize,
                                                        uint32_t _vbvBufferSize,
                                                        double frameRate)
 {
+    uint32_t cpbBrNalFactor = 1200;
+
+    // Adjust cpbBrNalFactor depending on whether the High (or greater) profile
+    // is being used
+    if (profileIdc >= STD_VIDEO_H264_PROFILE_IDC_HIGH) {
+        cpbBrNalFactor = (profileIdc >= STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE) ? 4800 : 1500;
+    }
 
     uint32_t frameSizeInMbs = pic_width_in_mbs * pic_height_in_map_units;
     for (uint32_t idx = 0; idx < levelLimitsSize; idx++) {
@@ -48,8 +55,8 @@ StdVideoH264LevelIdc EncoderConfigH264::DetermineLevel(uint8_t dpbSize,
         if ((frameSizeInMbs) > ((uint32_t)levelLimits[idx].maxFS)) continue;
         if ((frameSizeInMbs * numRefFrames * 384) > levelLimits[idx].maxDPB * 1024) continue;
 
-        if ((bitrate != 0) && (bitrate > ((uint32_t)levelLimits[idx].maxBR * 1200))) continue;
-        if ((_vbvBufferSize != 0) && (_vbvBufferSize > ((uint32_t)levelLimits[idx].maxCPB * 1200))) continue;
+        if ((bitrate != 0) && (bitrate > ((uint32_t)levelLimits[idx].maxBR * cpbBrNalFactor))) continue;
+        if ((_vbvBufferSize != 0) && (_vbvBufferSize > ((uint32_t)levelLimits[idx].maxCPB * cpbBrNalFactor))) continue;
 
         return levelLimits[idx].level;
     }
