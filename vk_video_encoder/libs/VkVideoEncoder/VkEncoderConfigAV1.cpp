@@ -283,7 +283,9 @@ bool EncoderConfigAV1::ValidateLevel(uint32_t lvl, uint32_t lvlTier)
 {
     uint32_t frameRateNum = (frameRateNumerator > 0) ? frameRateNumerator : (uint32_t)FRAME_RATE_NUM_DEFAULT;
     uint32_t frameRateDenom = (frameRateDenominator > 0) ? frameRateDenominator : (uint32_t)FRAME_RATE_DEN_DEFAULT;
-    uint32_t picSize = encodeWidth * encodeHeight;
+    uint32_t hSize = picWidthInSbs * SUPERBLOCK_SIZE;
+    uint32_t vSize = picHeightInSbs * SUPERBLOCK_SIZE;
+    uint32_t picSize = hSize * vSize;
     uint64_t displayRate = ((uint64_t)frameRateNum * picSize) / frameRateDenom;
     uint64_t decodeRate = (((uint64_t)frameRateNum + 0) * picSize) / frameRateDenom;
     uint32_t headerRate = (frameRateNum + 0) / frameRateDenom;
@@ -291,8 +293,8 @@ bool EncoderConfigAV1::ValidateLevel(uint32_t lvl, uint32_t lvlTier)
     if (levelLimits[lvl].level == STD_VIDEO_AV1_LEVEL_INVALID) return false;
 
     if (picSize > levelLimits[lvl].maxPicSize) return false;
-    if (encodeWidth > levelLimits[lvl].maxHSize) return false;
-    if (encodeHeight > levelLimits[lvl].maxVSize) return false;
+    if (hSize > levelLimits[lvl].maxHSize) return false;
+    if (vSize > levelLimits[lvl].maxVSize) return false;
     if (displayRate > levelLimits[lvl].maxDisplayRate) return false;
     if (decodeRate > levelLimits[lvl].maxDecodeRate) return false;
     if (headerRate > levelLimits[lvl].maxHeaderRate) return false;

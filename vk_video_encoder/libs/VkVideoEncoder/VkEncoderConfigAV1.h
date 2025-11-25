@@ -28,6 +28,8 @@
 #define BASE_QIDX_INTER_P 131
 #define BASE_QIDX_INTER_B 147
 
+#define SUPERBLOCK_SIZE 64
+
 struct EncoderConfigAV1 : public EncoderConfig {
 
     enum { FRAME_RATE_NUM_DEFAULT = 30000 };
@@ -98,14 +100,14 @@ struct EncoderConfigAV1 : public EncoderConfig {
         }
 
         hrdBitrate = maxBitrate;
-        pic_width_in_sbs = DivUp<uint32_t>(encodeWidth, 64);
-        pic_height_in_sbs = DivUp<uint32_t>(encodeHeight, 16);
+        picWidthInSbs = DivUp<uint32_t>(encodeWidth, SUPERBLOCK_SIZE);
+        picHeightInSbs = DivUp<uint32_t>(encodeHeight, SUPERBLOCK_SIZE);
 
-        if ((pic_width_in_sbs > 0) && (pic_height_in_sbs > 0)) {
+        if ((picWidthInSbs > 0) && (picHeightInSbs > 0)) {
             return VK_SUCCESS;
         }
 
-        assert(!"Invalid pic_width_in_sbs and pic_height_in_sbs");
+        assert(!"Invalid picWidthInSbs and picHeightInSbs");
         return VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR;
     }
 
@@ -193,8 +195,8 @@ struct EncoderConfigAV1 : public EncoderConfig {
     VkVideoEncodeAV1QuantizationMapCapabilitiesKHR av1QuantizationMapCapabilities { VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_QUANTIZATION_MAP_CAPABILITIES_KHR };
     uint32_t                                vbvBufferSize{};
     uint32_t                                vbvInitialDelay{};
-    uint32_t                                pic_width_in_sbs{};
-    uint32_t                                pic_height_in_sbs{};
+    uint32_t                                picWidthInSbs{};
+    uint32_t                                picHeightInSbs{};
     VkVideoEncodeAV1QIndexKHR               minQIndex{};
     VkVideoEncodeAV1QIndexKHR               maxQIndex{255, 255, 255};
     VkVideoEncodeAV1RateControlInfoKHR      rcInfoAV1{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_INFO_KHR };
