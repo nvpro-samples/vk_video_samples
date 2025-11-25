@@ -147,6 +147,9 @@ struct EncoderConfigH265 : public EncoderConfig {
         if (result != VK_SUCCESS) {
             return result;
         }
+
+        hrdBitrate = maxBitrate;
+
         // TODO: more h.265 parameters init ...
         return VK_SUCCESS;
     }
