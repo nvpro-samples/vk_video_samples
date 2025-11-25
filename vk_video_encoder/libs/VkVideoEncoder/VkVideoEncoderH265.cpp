@@ -522,7 +522,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     pFrameInfo->stdSliceSegmentHeader[0].flags.deblocking_filter_override_flag = 1;
     pFrameInfo->stdSliceSegmentHeader[0].flags.slice_deblocking_filter_disabled_flag = 0;
     pFrameInfo->stdSliceSegmentHeader[0].flags.collocated_from_l0_flag = 0;
-    pFrameInfo->stdSliceSegmentHeader[0].flags.slice_loop_filter_across_slices_enabled_flag = 0;
+    pFrameInfo->stdSliceSegmentHeader[0].flags.slice_loop_filter_across_slices_enabled_flag = 1;
 
     if (m_rateControlInfo.rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR) {
         int32_t constantQp = 0;
