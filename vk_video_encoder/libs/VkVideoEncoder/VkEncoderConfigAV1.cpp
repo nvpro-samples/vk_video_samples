@@ -349,8 +349,7 @@ bool EncoderConfigAV1::InitRateControl()
         averageBitrate = hrdBitrate ? hrdBitrate : levelBitrate;
     }
 
-    // If no HRD bitrate is specified, use 3x average for VBR (without going above level limit) or equal to average bitrate for
-    // CBR
+    // If no HRD bitrate is specified, use 3x average for VBR (without going above level limit) or equal to average bitrate for CBR
     if (hrdBitrate == 0) {
         if ((rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_VBR_BIT_KHR) && (averageBitrate < levelBitrate)) {
             hrdBitrate = std::min(averageBitrate * 3, levelBitrate);
@@ -361,15 +360,6 @@ bool EncoderConfigAV1::InitRateControl()
         } else {
             hrdBitrate = averageBitrate;
         }
-    }
-
-    // avg bitrate must not be higher than max bitrate,
-    if (averageBitrate > hrdBitrate) {
-        averageBitrate = hrdBitrate;
-    }
-
-    if (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_CBR_BIT_KHR) {
-        hrdBitrate = averageBitrate;
     }
 
     // Use the level limit for the max VBV buffer size (1 second at MaxBitrate), and no more than 8 seconds at peak rate
@@ -389,6 +379,16 @@ bool EncoderConfigAV1::InitRateControl()
         vbvInitialDelay = std::max(vbvBufferSize - vbvBufferSize / 10, std::min(vbvBufferSize, hrdBitrate));
     } else if (vbvInitialDelay > vbvBufferSize) {
         vbvInitialDelay = vbvBufferSize;
+    }
+
+    // CBR (make peak bitrate = avg bitrate)
+    if (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_CBR_BIT_KHR) {
+        hrdBitrate = averageBitrate;
+    }
+
+    // avg bitrate must not be higher than max bitrate,
+    if (averageBitrate > hrdBitrate) {
+        averageBitrate = hrdBitrate;
     }
 
     minQIndex.intraQIndex        = av1EncodeCapabilities.minQIndex;
