@@ -412,6 +412,72 @@ void VkEncDpbAV1::ConfigureRefBufUpdate(bool bShownKeyFrameOrSwitch, bool bShowE
     }
 }
 
+void VkEncDpbAV1::InvalidateStaleReferenceFrames(uint32_t pictureIdx, uint32_t curPicOrderCntVal, const StdVideoAV1SequenceHeader *seqHdr)
+{
+    // AV1 specifies "Reference frame marking function" (5.9.4), which sets the refValid flag.
+    // According to the Standard, it depends on RefFrameId and current_frame_id:
+    // if they are too far away to make encoding of delta_frame_id_minus_1 possible,
+    // the reference frame is marked as unusable for reference.
+    //
+    // Another syntax element sensitive to temporal distance is order_hint.
+    // If it wraps around, motion vector prediction will be inaccurate.
+    // While the Standard permits this, we don't want to use such a reference frame,
+    // so mark it as unusable in the same way.
+    if (seqHdr->flags.frame_id_numbers_present_flag || seqHdr->flags.enable_order_hint) {
+        int32_t frameIdLength         = seqHdr->delta_frame_id_length_minus_2 + 2 +
+                                        seqHdr->additional_frame_id_length_minus_1 + 1;
+        int32_t frameIdDiffLength     = seqHdr->delta_frame_id_length_minus_2 + 2;
+        int32_t nextRefFrameId        = (pictureIdx + STD_VIDEO_AV1_NUM_REF_FRAMES) % (1 << frameIdLength);
+        int32_t orderHintLength       = seqHdr->order_hint_bits_minus_1 + 1;
+        int32_t nextRefPicOrderCntVal = (curPicOrderCntVal + STD_VIDEO_AV1_NUM_REF_FRAMES) % (1 << (orderHintLength + 1));
+
+        for (StdVideoAV1ReferenceName ref : refNameList) {
+            int32_t refBufDpbId;
+
+            if (m_refBufUpdateFlag & (1 << ref)) {
+                continue;  // reference type already marked for update
+            }
+
+            refBufDpbId = GetRefFrameDpbId(ref);
+
+            // check if reference frame in DPB associated with this reference type is valid
+            if ((refBufDpbId == INVALID_IDX) || (refBufDpbId >= m_maxDpbSize)) {
+                continue;   // should never happen
+            }
+
+            bool bFrameIdForcedUpdated = false;
+            bool bOrderHintForcedUpdated = false;
+            if (m_DPB[refBufDpbId].refCount > 0) {
+                // Entry is valid
+                if (seqHdr->flags.frame_id_numbers_present_flag) {
+                    // check for stale FrameId numbers
+                    int deltaFrameId = ((nextRefFrameId - m_DPB[refBufDpbId].frameId + (1 << frameIdLength)) % (1 << frameIdLength));
+                    if (deltaFrameId >= (1 << frameIdDiffLength)) {
+                        // stale or invalid FrameId number - Force reference frame type update
+                        bFrameIdForcedUpdated = true;
+                    }
+                }
+
+                if (seqHdr->flags.enable_order_hint) {
+                    // check for stale Order Hint value
+                    int picOrderCntVal = m_DPB[refBufDpbId].picOrderCntVal % (1 << (orderHintLength + 1));
+                    int deltaPicOrderCntVal = ((nextRefPicOrderCntVal - picOrderCntVal + (1 << (orderHintLength + 1))) % (1 << (orderHintLength + 1)));
+                    if (deltaPicOrderCntVal >= (1 << orderHintLength)) {
+                        // stale OrderHint value - Force reference frame type update
+                        bOrderHintForcedUpdated = true;
+                    }
+                }
+
+                if (bFrameIdForcedUpdated || bOrderHintForcedUpdated) {
+                    int refTypeFlag = (1 << ref);
+                    // Stale reference frame - force reference frame type refresh
+                    m_refBufUpdateFlag |= refTypeFlag;
+                    continue;
+                }
+            }
+        }
+    }
+}
 
 VkVideoEncoderAV1PrimaryRefType VkEncDpbAV1::GetPrimaryRefType(StdVideoAV1ReferenceName refName,
                                                                bool bErrorResilientMode, bool bOverlayFrame)

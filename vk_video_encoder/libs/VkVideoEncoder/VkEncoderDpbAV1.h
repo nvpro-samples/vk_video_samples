@@ -149,6 +149,7 @@ public:
                                                         bool bOverlayFrame);
     void ConfigureRefBufUpdate(bool bShownKeyFrameOrSwitch, bool bShowExistingFrame,
                                VkVideoEncoderAV1FrameUpdateType frameUpdateType);
+    void InvalidateStaleReferenceFrames(uint32_t pictureIdx, uint32_t curPicOrderCntVal, const StdVideoAV1SequenceHeader *seqHdr);
     int32_t GetRefreshFrameFlags(bool bShownKeyFrameOrSwitch, bool bShowExistingFrame);
 
     int32_t GetRefFrameDpbId(StdVideoAV1ReferenceName refName);
