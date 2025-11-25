@@ -225,6 +225,7 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
     assert(dpbIndx >= 0);
 
     m_dpbAV1->ConfigureRefBufUpdate(pFrameInfo->bShownKeyFrameOrSwitch, pFrameInfo->bShowExistingFrame, frameUpdateType);
+    m_dpbAV1->InvalidateStaleReferenceFrames(pFrameInfo->frameEncodeEncodeOrderNum, pFrameInfo->picOrderCntVal, &m_stateAV1.m_sequenceHeader);
     pFrameInfo->stdPictureInfo.refresh_frame_flags = (uint8_t)m_dpbAV1->GetRefreshFrameFlags(pFrameInfo->bShownKeyFrameOrSwitch, pFrameInfo->bShowExistingFrame);
 
     if (pFrameInfo->bShowExistingFrame) {
