@@ -45,6 +45,9 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
         return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
     }
 
+    // Initialize the codec profile and level before other encoder configuration
+    m_encoderConfig->InitProfileLevel();
+
     VkResult result = InitEncoder(encoderConfig);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "\nERROR: InitEncoder() failed with ret(%d)\n", result);
