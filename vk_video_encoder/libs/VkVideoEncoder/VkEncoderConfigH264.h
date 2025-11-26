@@ -106,6 +106,9 @@ struct EncoderConfigH264 : public EncoderConfig {
                 {50,       589824,   22080,   41400.0,    135000,    135000,      512,  STD_VIDEO_H264_LEVEL_IDC_5_0},
                 {51,       983040,   36864,   69120.0,    240000,    240000,      512,  STD_VIDEO_H264_LEVEL_IDC_5_1},
                 {52,      2073600,   36864,   69120.0,    240000,    240000,      512,  STD_VIDEO_H264_LEVEL_IDC_5_2},
+                {60,      4177920,  139264,  261120.0,    240000,    240000,     8192,  STD_VIDEO_H264_LEVEL_IDC_6_0},
+                {61,      8355840,  139264,  261120.0,    480000,    480000,     8192,  STD_VIDEO_H264_LEVEL_IDC_6_1},
+                {62,     16711680,  139264,  261120.0,    800000,    800000,     8192,  STD_VIDEO_H264_LEVEL_IDC_6_2},
             };
 
             levelLimits = levelLimitsTbl;
