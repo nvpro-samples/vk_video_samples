@@ -515,6 +515,16 @@ bool EncoderConfigH265::InitRateControl()
         }
     }
 
+    // Average bitrate can't be higher than max bitrate
+    if (averageBitrate > hrdBitrate) {
+        averageBitrate = hrdBitrate;
+    }
+
+    // CBR (make peak bitrate = avg bitrate)
+    if (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_CBR_BIT_KHR) {
+        hrdBitrate = averageBitrate;
+    }
+    
     // Use the main tier level limit for the max VBV buffer size, and no more than 8 seconds at peak rate
     if (vbvBufferSize == 0) {
         vbvBufferSize = std::min(levelLimits[level].maxCPBSizeMainTier * cpbVclFactor, 100000000u);
@@ -530,16 +540,6 @@ bool EncoderConfigH265::InitRateControl()
         vbvInitialDelay = std::max(vbvBufferSize - vbvBufferSize / 10, std::min(vbvBufferSize, hrdBitrate));
     } else if (vbvInitialDelay > vbvBufferSize) {
         vbvInitialDelay = vbvBufferSize;
-    }
-
-    // CBR (make peak bitrate = avg bitrate)
-    if (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_CBR_BIT_KHR) {
-        hrdBitrate = averageBitrate;
-    }
-
-    // Average bitrate can't be higher than max bitrate
-    if (averageBitrate > hrdBitrate) {
-        averageBitrate = hrdBitrate;
     }
 
     return true;
