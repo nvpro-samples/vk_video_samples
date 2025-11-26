@@ -90,23 +90,23 @@ struct EncoderConfigH264 : public EncoderConfig {
     {
             // Level limits (Table A-1)
             static const LevelLimits levelLimitsTbl[] = {
-                // level_idc, maxMBPS, maxFS, maxDPB,  maxBR, maxCPB, maxVmvR, prog, level
-                {10, 1485, 99, 148.5, 64, 175, 64, 1, STD_VIDEO_H264_LEVEL_IDC_1_0},
-                {11, 3000, 396, 337.5, 192, 500, 128, 1, STD_VIDEO_H264_LEVEL_IDC_1_1},
-                {12, 6000, 396, 891.0, 384, 1000, 128, 1, STD_VIDEO_H264_LEVEL_IDC_1_2},
-                {13, 11880, 396, 891.0, 768, 2000, 128, 1, STD_VIDEO_H264_LEVEL_IDC_1_3},
-                {20, 11880, 396, 891.0, 2000, 2000, 128, 1, STD_VIDEO_H264_LEVEL_IDC_2_0},
-                {21, 19800, 792, 1782.0, 4000, 4000, 256, 0, STD_VIDEO_H264_LEVEL_IDC_2_1},
-                {22, 20250, 1620, 3037.5, 4000, 4000, 256, 0, STD_VIDEO_H264_LEVEL_IDC_2_2},
-                {30, 40500, 1620, 3037.5, 10000, 10000, 256, 0, STD_VIDEO_H264_LEVEL_IDC_3_0},
-                {31, 108000, 3600, 6750.0, 14000, 14000, 512, 0, STD_VIDEO_H264_LEVEL_IDC_3_1},
-                {32, 216000, 5120, 7680.0, 20000, 20000, 512, 0, STD_VIDEO_H264_LEVEL_IDC_3_2},
-                {40, 245760, 8192, 12288.0, 20000, 25000, 512, 0, STD_VIDEO_H264_LEVEL_IDC_4_0},
-                {41, 245760, 8192, 12288.0, 50000, 62500, 512, 0, STD_VIDEO_H264_LEVEL_IDC_4_1},
-                {42, 522240, 8704, 13056.0, 50000, 62500, 512, 0, STD_VIDEO_H264_LEVEL_IDC_4_2},
-                {50, 589824, 22080, 41400.0, 135000, 135000, 512, 0, STD_VIDEO_H264_LEVEL_IDC_5_0},
-                {51, 983040, 36864, 69120.0, 240000, 240000, 512, 0, STD_VIDEO_H264_LEVEL_IDC_5_1},
-                {52, 2073600, 36864, 69120.0, 240000, 240000, 512, 0, STD_VIDEO_H264_LEVEL_IDC_5_2},
+            // level_idc, maxMBPS,   maxFS,    maxDPB,     maxBR,    maxCPB,  maxVmvR,  prog,    level
+                {10,         1485,      99,     148.5,        64,       175,       64,     1,    STD_VIDEO_H264_LEVEL_IDC_1_0},
+                {11,         3000,     396,     337.5,       192,       500,      128,     1,    STD_VIDEO_H264_LEVEL_IDC_1_1},
+                {12,         6000,     396,     891.0,       384,      1000,      128,     1,    STD_VIDEO_H264_LEVEL_IDC_1_2},
+                {13,        11880,     396,     891.0,       768,      2000,      128,     1,    STD_VIDEO_H264_LEVEL_IDC_1_3},
+                {20,        11880,     396,     891.0,      2000,      2000,      128,     1,    STD_VIDEO_H264_LEVEL_IDC_2_0},
+                {21,        19800,     792,    1782.0,      4000,      4000,      256,     0,    STD_VIDEO_H264_LEVEL_IDC_2_1},
+                {22,        20250,    1620,    3037.5,      4000,      4000,      256,     0,    STD_VIDEO_H264_LEVEL_IDC_2_2},
+                {30,        40500,    1620,    3037.5,     10000,     10000,      256,     0,    STD_VIDEO_H264_LEVEL_IDC_3_0},
+                {31,       108000,    3600,    6750.0,     14000,     14000,      512,     0,    STD_VIDEO_H264_LEVEL_IDC_3_1},
+                {32,       216000,    5120,    7680.0,     20000,     20000,      512,     0,    STD_VIDEO_H264_LEVEL_IDC_3_2},
+                {40,       245760,    8192,   12288.0,     20000,     25000,      512,     0,    STD_VIDEO_H264_LEVEL_IDC_4_0},
+                {41,       245760,    8192,   12288.0,     50000,     62500,      512,     0,    STD_VIDEO_H264_LEVEL_IDC_4_1},
+                {42,       522240,    8704,   13056.0,     50000,     62500,      512,     0,    STD_VIDEO_H264_LEVEL_IDC_4_2},
+                {50,       589824,   22080,   41400.0,    135000,    135000,      512,     0,    STD_VIDEO_H264_LEVEL_IDC_5_0},
+                {51,       983040,   36864,   69120.0,    240000,    240000,      512,     0,    STD_VIDEO_H264_LEVEL_IDC_5_1},
+                {52,      2073600,   36864,   69120.0,    240000,    240000,      512,     0,    STD_VIDEO_H264_LEVEL_IDC_5_2},
             };
 
             levelLimits = levelLimitsTbl;
