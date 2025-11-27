@@ -412,18 +412,6 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     assert(m_encoderConfig);
     assert(encodeFrameInfo->srcEncodeImageResource);
 
-    encodeFrameInfo->frameEncodeInputOrderNum = m_encodeInputFrameNum++;
-
-    bool isIdr = m_encoderConfig->gopStructure.GetPositionInGOP(m_gopState,
-                                                                encodeFrameInfo->gopPosition,
-                                                                (encodeFrameInfo->frameEncodeInputOrderNum == 0),
-                                                                uint32_t(m_encoderConfig->numFrames - encodeFrameInfo->frameEncodeInputOrderNum));
-
-    if (isIdr) {
-        assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
-    }
-    const bool isReference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
-
     encodeFrameInfo->picOrderCntVal = encodeFrameInfo->gopPosition.inputOrder;
 
     if (m_encoderConfig->verboseFrameStruct) {
@@ -458,7 +446,6 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     VkResult result = VK_SUCCESS;
 
-
     VkDeviceSize size = GetBitstreamBuffer(encodeFrameInfo->outputBitstreamBuffer);
     assert((size > 0) && (encodeFrameInfo->outputBitstreamBuffer != nullptr));
     if ((size == 0) || (encodeFrameInfo->outputBitstreamBuffer == nullptr)) {
@@ -470,7 +457,8 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     // provided offset into the bitstream buffer.
     encodeFrameInfo->encodeInfo.dstBufferOffset = 0; // FIXME: pEncPicParams->bitstreamBufferOffset;
 
-    if (isIdr && (encodeFrameInfo->frameEncodeInputOrderNum == 0 /*|| pEncodeConfigH265->repeatSPSPPS || m_bReconfigForcedIDR*/)) {
+    if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) &&
+            (encodeFrameInfo->frameEncodeInputOrderNum == 0 /*|| pEncodeConfigH265->repeatSPSPPS || m_bReconfigForcedIDR*/)) {
 
         result = EncodeVideoSessionParameters(encodeFrameInfo);
         if (result != VK_SUCCESS ) {
@@ -548,12 +536,13 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         }
     }
 
-    pFrameInfo->stdPictureInfo.flags.is_reference = isReference;
+    pFrameInfo->stdPictureInfo.flags.is_reference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
     pFrameInfo->stdPictureInfo.flags.short_term_ref_pic_set_sps_flag = 1;
     pFrameInfo->stdPictureInfo.flags.IrapPicFlag = ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) ||
                                                     (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_I)) ? 1 : 0;
     pFrameInfo->stdPictureInfo.flags.pic_output_flag = 1;
-    pFrameInfo->stdPictureInfo.flags.no_output_of_prior_pics_flag = (isIdr && (encodeFrameInfo->frameEncodeInputOrderNum != 0)) ? 1 : 0;
+    pFrameInfo->stdPictureInfo.flags.no_output_of_prior_pics_flag = ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) &&
+                                                                     (encodeFrameInfo->frameEncodeInputOrderNum != 0)) ? 1 : 0;
     pFrameInfo->stdPictureInfo.pic_type = stdPictureType;
     pFrameInfo->stdPictureInfo.pps_seq_parameter_set_id = m_sps.sps.sps_seq_parameter_set_id;
     pFrameInfo->stdPictureInfo.pps_pic_parameter_set_id = m_pps.pps_pic_parameter_set_id;
@@ -574,7 +563,6 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         FillIntraRefreshInfo(encodeFrameInfo);
     }
 
-    EnqueueFrame(encodeFrameInfo, isIdr, isReference);
     return result;
 }
 

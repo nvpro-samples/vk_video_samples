@@ -39,7 +39,6 @@ public:
         StdVideoAV1LoopRestoration stdLrInfo;
         bool bShowExistingFrame;
         int32_t frameToShowBufId;
-        bool bIsKeyFrame;
         bool bShownKeyFrameOrSwitch;
         bool bOverlayFrame;
         bool bIsReference;
@@ -59,7 +58,6 @@ public:
             , stdLrInfo{}
             , bShowExistingFrame{}
             , frameToShowBufId{-1}
-            , bIsKeyFrame{}
             , bShownKeyFrameOrSwitch{}
             , bOverlayFrame{}
             , bIsReference{}
