@@ -22,28 +22,28 @@ VkResult
 VkBufferResource::Create(const VulkanDeviceContext* vkDevCtx,
                          VkBufferUsageFlags usage, VkMemoryPropertyFlags memoryPropertyFlags,
                          VkDeviceSize bufferSize,
-                         VkSharedBaseObj<VkBufferResource>& vulkanBitstreamBuffer,
+                         VkSharedBaseObj<VkBufferResource>& vkBufferResource,
                          VkDeviceSize bufferOffsetAlignment, VkDeviceSize bufferSizeAlignment,
                          VkDeviceSize initializeBufferMemorySize, const void* pInitializeBufferMemory,
                          uint32_t queueFamilyCount, uint32_t* queueFamilyIndexes)
 {
-    VkSharedBaseObj<VkBufferResource> vkBitstreamBuffer(new VkBufferResource(vkDevCtx,
+    VkSharedBaseObj<VkBufferResource> bufferResource(new VkBufferResource(vkDevCtx,
                                                                              usage,
                                                                              memoryPropertyFlags,
                                                                              bufferOffsetAlignment,
                                                                              bufferSizeAlignment,
                                                                              queueFamilyCount,
                                                                              queueFamilyIndexes));
-    if (!vkBitstreamBuffer) {
+    if (!bufferResource) {
         assert(!"Out of host memory!");
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
 
-    VkResult result = vkBitstreamBuffer->Initialize(bufferSize,
+    VkResult result = bufferResource->Initialize(bufferSize,
                                                     pInitializeBufferMemory,
                                                     initializeBufferMemorySize);
     if (result == VK_SUCCESS) {
-        vulkanBitstreamBuffer = vkBitstreamBuffer;
+        vkBufferResource = bufferResource;
     } else {
         assert(!"Initialize failed!");
     }

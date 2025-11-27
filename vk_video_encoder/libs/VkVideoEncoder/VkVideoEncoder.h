@@ -96,6 +96,7 @@ public:
             , srcStagingImageView()
             , srcEncodeImageResource()
             , setupImageResource()
+            , subsampledImageResource()
             , outputBitstreamBuffer()
             , dpbImageResources()
             , srcQpMapStagingResource()
@@ -155,6 +156,7 @@ public:
         VkSharedBaseObj<VulkanVideoImagePoolNode>          srcStagingImageView;
         VkSharedBaseObj<VulkanVideoImagePoolNode>          srcEncodeImageResource;
         VkSharedBaseObj<VulkanVideoImagePoolNode>          setupImageResource;
+        VkSharedBaseObj<VulkanVideoImagePoolNode>          subsampledImageResource; // 2x2 subsampled Y for AQ
         VkSharedBaseObj<VulkanBitstreamBuffer>             outputBitstreamBuffer;
         VkSharedBaseObj<VulkanVideoImagePoolNode>          dpbImageResources[MAX_IMAGE_REF_RESOURCES];
         VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> inputCmdBuffer;
@@ -299,6 +301,7 @@ public:
                 srcStagingImageView = nullptr;
                 srcEncodeImageResource = nullptr;
                 setupImageResource = nullptr;
+                subsampledImageResource = nullptr;  // Release subsampled Y image back to pool
                 outputBitstreamBuffer = nullptr;
                 assert(numDpbImageResources <= ARRAYSIZE(dpbImageResources));
                 for (uint32_t i = 0; i < numDpbImageResources; i++) {
@@ -538,6 +541,18 @@ public:
     virtual VkResult EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) = 0; // Must be implemented by the codec
     virtual VkResult HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
 
+    /**
+     * @brief Gets the subsampled Y image pool
+     *
+     * Provides direct access to the subsampled Y image pool for AQ operations.
+     * Encoder manages this pool like other image pools.
+     *
+     * @return Shared pointer to the subsampled Y image pool, or nullptr if not allocated
+     */
+    VkSharedBaseObj<VulkanVideoImagePool> GetSubsampledYImagePool() const {
+        return m_inputSubsampledImagePool;
+    }
+
     virtual VkResult RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                          uint32_t frameIdx, uint32_t ofTotalFrames);
 
@@ -740,6 +755,7 @@ protected:
     VkSharedBaseObj<VulkanVideoImagePool>    m_linearInputImagePool;
     VkSharedBaseObj<VulkanVideoImagePool>    m_inputImagePool;
     VkSharedBaseObj<VulkanVideoImagePool>    m_dpbImagePool;
+    VkSharedBaseObj<VulkanVideoImagePool>    m_inputSubsampledImagePool;
     VkSharedBaseObj<VulkanFilter>            m_inputComputeFilter;
     VkSharedBaseObj<VulkanCommandBufferPool> m_inputCommandBufferPool;
     VkSharedBaseObj<VulkanCommandBufferPool> m_encodeCommandBufferPool;
