@@ -96,7 +96,9 @@ public:
             , srcStagingImageView()
             , srcEncodeImageResource()
             , setupImageResource()
+#if NV_AQ_GPU_LIB_SUPPORTED
             , subsampledImageResource()
+#endif // NV_AQ_GPU_LIB_SUPPORTED
             , outputBitstreamBuffer()
             , dpbImageResources()
             , srcQpMapStagingResource()
@@ -301,7 +303,9 @@ public:
                 srcStagingImageView = nullptr;
                 srcEncodeImageResource = nullptr;
                 setupImageResource = nullptr;
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
                 subsampledImageResource = nullptr;  // Release subsampled Y image back to pool
+#endif // NV_AQ_GPU_LIB_SUPPORTED
                 outputBitstreamBuffer = nullptr;
                 assert(numDpbImageResources <= ARRAYSIZE(dpbImageResources));
                 for (uint32_t i = 0; i < numDpbImageResources; i++) {
@@ -543,6 +547,7 @@ public:
 
     virtual VkResult CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) = 0; // Must be implemented by the codec
 
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
     /**
      * @brief Gets the subsampled Y image pool
      *
@@ -554,6 +559,7 @@ public:
     VkSharedBaseObj<VulkanVideoImagePool> GetSubsampledYImagePool() const {
         return m_inputSubsampledImagePool;
     }
+#endif // NV_AQ_GPU_LIB_SUPPORTED
 
     virtual VkResult RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                          uint32_t frameIdx, uint32_t ofTotalFrames);
@@ -757,7 +763,9 @@ protected:
     VkSharedBaseObj<VulkanVideoImagePool>    m_linearInputImagePool;
     VkSharedBaseObj<VulkanVideoImagePool>    m_inputImagePool;
     VkSharedBaseObj<VulkanVideoImagePool>    m_dpbImagePool;
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
     VkSharedBaseObj<VulkanVideoImagePool>    m_inputSubsampledImagePool;
+#endif // NV_AQ_GPU_LIB_SUPPORTED
     VkSharedBaseObj<VulkanFilter>            m_inputComputeFilter;
     VkSharedBaseObj<VulkanCommandBufferPool> m_inputCommandBufferPool;
     VkSharedBaseObj<VulkanCommandBufferPool> m_encodeCommandBufferPool;
