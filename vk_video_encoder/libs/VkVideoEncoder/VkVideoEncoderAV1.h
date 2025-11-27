@@ -39,10 +39,8 @@ public:
         StdVideoAV1LoopRestoration stdLrInfo;
         bool bShowExistingFrame;
         int32_t frameToShowBufId;
-        bool bIsKeyFrame;
         bool bShownKeyFrameOrSwitch;
         bool bOverlayFrame;
-        bool bIsReference;
         StdVideoEncodeAV1ReferenceInfo stdReferenceInfo[STD_VIDEO_AV1_REFS_PER_FRAME];
         VkVideoEncodeAV1DpbSlotInfoKHR dpbSlotInfo[STD_VIDEO_AV1_REFS_PER_FRAME];
         VkVideoEncodeAV1RateControlInfoKHR rateControlInfoAV1;
@@ -59,10 +57,8 @@ public:
             , stdLrInfo{}
             , bShowExistingFrame{}
             , frameToShowBufId{-1}
-            , bIsKeyFrame{}
             , bShownKeyFrameOrSwitch{}
             , bOverlayFrame{}
-            , bIsReference{}
             , rateControlInfoAV1{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_INFO_KHR }
             , rateControlLayersInfoAV1{{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_LAYER_INFO_KHR }}
         {
@@ -155,8 +151,6 @@ public:
         return success;
     }
 
-    virtual VkResult EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
-    virtual VkResult HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
     virtual VkResult StartOfVideoCodingEncodeOrder(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, uint32_t frameIdx, uint32_t ofTotalFrames);
     virtual VkResult RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                          uint32_t frameIdx, uint32_t ofTotalFrames);
@@ -185,6 +179,9 @@ protected:
         }
     }
 
+    // Must be called from VkVideoEncoder::EncodeFrameCommon only
+    virtual VkResult EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
+    virtual VkResult CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
 private:
     VkVideoEncodeFrameInfoAV1* GetEncodeFrameInfoAV1(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) {
         assert(VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR == encodeFrameInfo->GetType());
