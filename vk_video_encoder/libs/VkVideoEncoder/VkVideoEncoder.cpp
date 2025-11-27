@@ -257,8 +257,35 @@ VkResult VkVideoEncoder::EncodeFrameCommon(VkSharedBaseObj<VkVideoEncodeFrameInf
 {
     encodeFrameInfo->constQp = m_encoderConfig->constQp;
 
+    assert(encodeFrameInfo);
+    assert(m_encoderConfig);
+    assert(encodeFrameInfo->srcEncodeImageResource);
+
+    encodeFrameInfo->videoSession = m_videoSession;
+    encodeFrameInfo->videoSessionParameters = m_videoSessionParameters;
+
+    encodeFrameInfo->frameEncodeInputOrderNum = m_encodeInputFrameNum++;
+
+    // GetPositionInGOP() method returns display position of the picture relative to last key frame picture.
+    const bool isIdr = m_encoderConfig->gopStructure.GetPositionInGOP(m_gopState,
+                                                                encodeFrameInfo->gopPosition,
+                                                                (encodeFrameInfo->frameEncodeInputOrderNum == 0),
+                                                                uint32_t(m_encoderConfig->numFrames - encodeFrameInfo->frameEncodeInputOrderNum));
+    if (isIdr) {
+        assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
+    }
+    const bool isReference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
+
     // and encode the input frame with the encoder next
-    return EncodeFrame(encodeFrameInfo);
+    VkResult result = EncodeFrame(encodeFrameInfo);
+    if (result != VK_SUCCESS) {
+        assert(!"EncodeFrame error!!!");
+        return result;
+    }
+
+    EnqueueFrame(encodeFrameInfo, isIdr, isReference);
+
+    return VK_SUCCESS;
 }
 
 VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
@@ -1177,9 +1204,10 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         return result;
     }
 
-    uint32_t numEncodeImagesInFlight = std::max<uint32_t>(m_holdRefFramesInQueue + m_holdRefFramesInQueue * m_encoderConfig->gopStructure.GetConsecutiveBFrameCount(), 4);
+    const uint32_t numEncodeImagesInFlight = std::max<uint32_t>(m_holdRefFramesInQueue + m_holdRefFramesInQueue * m_encoderConfig->gopStructure.GetConsecutiveBFrameCount(), 4);
+    const uint32_t maxEncodeQueueDepth = std::max<uint32_t>(maxDpbPicturesCount, maxActiveReferencePicturesCount) + numEncodeImagesInFlight;
     result = m_dpbImagePool->Configure(m_vkDevCtx,
-                                       std::max<uint32_t>(maxDpbPicturesCount, maxActiveReferencePicturesCount) + numEncodeImagesInFlight,
+                                       maxEncodeQueueDepth,
                                        m_imageDpbFormat,
                                        imageExtent,
                                        dpbImageUsage,
