@@ -488,7 +488,7 @@ public:
                                                                   (float)m_normalizeScale[cCb] << ", " <<
                                                                   (float)m_normalizeScale[cCr] << ");\n";
 
-        outStr << prependLine << "yuvNorm = ((yuv + normalizeShiftYCbCr) * m_normalizeScaleYCbCr);\n";
+        outStr << prependLine << "yuvNorm = ((vec3(yuv) + normalizeShiftYCbCr) * m_normalizeScaleYCbCr);\n";
     }
 
 private:

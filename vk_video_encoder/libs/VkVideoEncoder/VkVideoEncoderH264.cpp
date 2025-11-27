@@ -533,18 +533,6 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     assert(m_encoderConfig);
     assert(encodeFrameInfo->srcEncodeImageResource);
 
-    encodeFrameInfo->frameEncodeInputOrderNum = m_encodeInputFrameNum++;
-
-    bool isIdr = m_encoderConfig->gopStructure.GetPositionInGOP(m_gopState,
-                                                                encodeFrameInfo->gopPosition,
-                                                                (encodeFrameInfo->frameEncodeInputOrderNum == 0),
-                                                                uint32_t(m_encoderConfig->numFrames - encodeFrameInfo->frameEncodeInputOrderNum));
-
-    if (isIdr) {
-        assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
-    }
-    const bool isReference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
-
     encodeFrameInfo->picOrderCntVal = 2 * encodeFrameInfo->gopPosition.inputOrder;
 
     if (m_encoderConfig->verboseFrameStruct) {
@@ -602,8 +590,8 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
             break;
     }
 
-    pFrameInfo->stdPictureInfo.flags.IdrPicFlag = isIdr;
-    pFrameInfo->stdPictureInfo.flags.is_reference = isReference;
+    pFrameInfo->stdPictureInfo.flags.IdrPicFlag = (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
+    pFrameInfo->stdPictureInfo.flags.is_reference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
     pFrameInfo->stdPictureInfo.flags.long_term_reference_flag = pFrameInfo->islongTermReference;
     pFrameInfo->stdPictureInfo.primary_pic_type = stdPictureType;
     pFrameInfo->stdPictureInfo.flags.no_output_of_prior_pics_flag = false;        // TODO: replace this by a check for the corresponding slh flag
@@ -613,12 +601,13 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
      // FIXME: set cabac_init_idc based on a query
      pFrameInfo->stdSliceHeader[0].cabac_init_idc = STD_VIDEO_H264_CABAC_INIT_IDC_0;
 
-    if (isIdr) {
+    if (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) {
         pFrameInfo->stdPictureInfo.idr_pic_id = m_IDRPicId & 1;
         m_IDRPicId++;
     }
 
-    if (isIdr && (encodeFrameInfo->frameEncodeInputOrderNum == 0)) {
+    if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) &&
+            (encodeFrameInfo->frameEncodeInputOrderNum == 0)) {
         VkResult result = EncodeVideoSessionParameters(encodeFrameInfo);
         if (result != VK_SUCCESS) {
             return result;
@@ -681,8 +670,6 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     if (m_sendControlCmd == true) {
         HandleCtrlCmd(encodeFrameInfo);
     }
-
-    EnqueueFrame(encodeFrameInfo, isIdr, isReference);
 
     return VK_SUCCESS;
 }

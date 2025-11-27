@@ -474,18 +474,7 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     assert(m_encoderConfig);
     assert(encodeFrameInfo->srcEncodeImageResource);
 
-    pFrameInfo->videoSession = m_videoSession;
-    pFrameInfo->videoSessionParameters = m_videoSessionParameters;
-
-    encodeFrameInfo->frameEncodeInputOrderNum = m_encodeInputFrameNum++;
-
-    // GetPositionInGOP() method returns display position of the picture relative to last key frame picture.
-    bool isIdr = m_encoderConfig->gopStructure.GetPositionInGOP(m_gopState,
-                                                                encodeFrameInfo->gopPosition,
-                                                                (encodeFrameInfo->frameEncodeInputOrderNum == 0),
-                                                                uint32_t(m_encoderConfig->numFrames - encodeFrameInfo->frameEncodeInputOrderNum));
-    if (isIdr) {
-        assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
+    if (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) {
         VkResult result = EncodeVideoSessionParameters(encodeFrameInfo);
         if (result != VK_SUCCESS) {
             return result;
@@ -494,14 +483,13 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
 
     encodeFrameInfo->picOrderCntVal = encodeFrameInfo->gopPosition.inputOrder;
 
-    pFrameInfo->bIsKeyFrame = (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
     pFrameInfo->bIsReference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
     pFrameInfo->bShowExistingFrame = false;
     pFrameInfo->bOverlayFrame = false;
     if (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B) {
         m_numBFramesToEncode++;
     }
-    if (pFrameInfo->bIsKeyFrame) {
+    if (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) {
         assert(encodeFrameInfo->picOrderCntVal == 0);
         m_lastKeyFrameOrderHint = encodeFrameInfo->picOrderCntVal;
     }
@@ -576,8 +564,6 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     if (m_encoderConfig->enableIntraRefresh && isIntraRefreshFrame) {
         FillIntraRefreshInfo(encodeFrameInfo);
     }
-
-    EnqueueFrame(encodeFrameInfo, pFrameInfo->bIsKeyFrame, pFrameInfo->bIsReference);
 
     return VK_SUCCESS;
 }

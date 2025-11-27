@@ -54,6 +54,7 @@ VkResult VulkanVideoImagePoolNode::CreateImage( const VulkanDeviceContext* vkDev
                                                 uint32_t                   imageIndex,
                                                 VkSharedBaseObj<VkImageResource>& imageArrayParent,
                                                 VkSharedBaseObj<VkImageResourceView>& imageViewArrayParent,
+                                                VkImageAspectFlags aspectMask,
                                                 bool useLinear)
 {
     VkResult result = VK_SUCCESS;
@@ -78,7 +79,7 @@ VkResult VulkanVideoImagePoolNode::CreateImage( const VulkanDeviceContext* vkDev
 
         uint32_t baseArrayLayer = imageArrayParent ? imageIndex : 0;
         if (!imageViewArrayParent) {
-            VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, baseArrayLayer, 1 };
+            VkImageSubresourceRange subresourceRange = { aspectMask, 0, 1, baseArrayLayer, 1 };
             result = VkImageResourceView::Create(vkDevCtx, imageResource,
                                                  subresourceRange,
                                                  m_imageResourceView);
@@ -129,7 +130,52 @@ void VulkanVideoImagePoolNode::Deinit()
 {
     Release();
     m_imageResourceView = nullptr;
+    if ((m_timelineSemaphore != VK_NULL_HANDLE) && m_vkDevCtx) {
+        m_vkDevCtx->DestroySemaphore(*m_vkDevCtx, m_timelineSemaphore, nullptr);
+        m_timelineSemaphore = VK_NULL_HANDLE;
+    }
+    m_semaphoreSubmitInfo = VkSemaphoreSubmitInfoKHR();
     m_vkDevCtx = nullptr;
+}
+
+VkSemaphoreSubmitInfoKHR VulkanVideoImagePoolNode::SetTimelineSemaphoreValue(uint64_t value,
+                                                                             VkPipelineStageFlags2 stageMask,
+                                                                             uint32_t deviceIndex)
+{
+    // Check if timeline semaphore support is available
+    if (!m_vkDevCtx) {
+        return VkSemaphoreSubmitInfoKHR();
+    }
+
+    // Create timeline semaphore if it doesn't exist
+    if (m_timelineSemaphore == VK_NULL_HANDLE) {
+        VkSemaphoreTypeCreateInfo timelineCreateInfo{};
+        timelineCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+        timelineCreateInfo.pNext = nullptr;
+        timelineCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+        timelineCreateInfo.initialValue = 0;
+
+        VkSemaphoreCreateInfo semaphoreCreateInfo{};
+        semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        semaphoreCreateInfo.pNext = &timelineCreateInfo;
+        semaphoreCreateInfo.flags = 0;
+
+        VkResult result = m_vkDevCtx->CreateSemaphore(*m_vkDevCtx, &semaphoreCreateInfo, nullptr, &m_timelineSemaphore);
+        if (result != VK_SUCCESS) {
+            // Timeline semaphore creation failed - feature not supported
+            return VkSemaphoreSubmitInfoKHR();
+        }
+
+        // Set the semaphore submit info parameters
+        m_semaphoreSubmitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        m_semaphoreSubmitInfo.pNext = nullptr;
+        m_semaphoreSubmitInfo.semaphore = m_timelineSemaphore;
+    }
+    m_semaphoreSubmitInfo.value = value;
+    m_semaphoreSubmitInfo.stageMask = stageMask;
+    m_semaphoreSubmitInfo.deviceIndex = deviceIndex;
+
+    return m_semaphoreSubmitInfo;
 }
 
 
@@ -147,6 +193,7 @@ VkResult VulkanVideoImagePool::GetImageSetNewLayout(uint32_t imageIndex,
                            imageIndex,
                            m_imageArray,
                            m_imageViewArray,
+                           m_aspectMask,
                            m_usesLinearImage);
 
         if (result != VK_SUCCESS) {
@@ -236,6 +283,7 @@ VkResult VulkanVideoImagePool::Configure(const VulkanDeviceContext*   vkDevCtx,
                                          uint32_t                     queueFamilyIndex,
                                          VkMemoryPropertyFlags        requiredMemProps,
                                          const VkVideoProfileInfoKHR* pVideoProfile,
+                                         VkImageAspectFlags           aspectMask,
                                          bool                         useImageArray,
                                          bool                         useImageViewArray,
                                          bool                         useLinearImage)
@@ -302,7 +350,7 @@ VkResult VulkanVideoImagePool::Configure(const VulkanDeviceContext*   vkDevCtx,
         assert(m_imageArray);
         // Create an image view that has the same number of layers as the image.
         // In that scenario, while specifying the resource, the API must specifically choose the image layer.
-        VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, numImages };
+        VkImageSubresourceRange subresourceRange = { aspectMask, 0, 1, 0, numImages };
         VkResult result = VkImageResourceView::Create(vkDevCtx, m_imageArray,
                                                       subresourceRange,
                                                       m_imageViewArray);
@@ -324,12 +372,13 @@ VkResult VulkanVideoImagePool::Configure(const VulkanDeviceContext*   vkDevCtx,
 
             VkResult result =
                      m_imageResources[imageIndex].CreateImage(vkDevCtx,
-                                                                       &m_imageCreateInfo,
-                                                                       m_requiredMemProps,
-                                                                       imageIndex,
-                                                                       m_imageArray,
-                                                                       m_imageViewArray,
-                                                                       useLinearImage);
+                                                              &m_imageCreateInfo,
+                                                              m_requiredMemProps,
+                                                              imageIndex,
+                                                              m_imageArray,
+                                                              m_imageViewArray,
+                                                              aspectMask,
+                                                              useLinearImage);
 
             assert(result == VK_SUCCESS);
             if (result != VK_SUCCESS) {
@@ -342,6 +391,7 @@ VkResult VulkanVideoImagePool::Configure(const VulkanDeviceContext*   vkDevCtx,
     m_poolSize                = numImages;
     m_usesImageArray          = useImageArray;
     m_usesImageViewArray      = useImageViewArray;
+    m_aspectMask              = aspectMask;
     m_usesLinearImage         = useLinearImage;
 
     return VK_SUCCESS;

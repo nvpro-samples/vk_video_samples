@@ -15,6 +15,7 @@
  */
 
 #ifndef _VKCODECUTILS_VULKANFILTER_H_
+#define _VKCODECUTILS_VULKANFILTER_H_
 
 #include <atomic>
 #include <string>
@@ -72,12 +73,16 @@ public:
         }
     }
 
+    // Image input -> Image output + optional subsampled Y output (overload for AQ)
     virtual VkResult RecordCommandBuffer(VkCommandBuffer cmdBuf,
+                                         uint32_t bufferIdx,
                                          const VkImageResourceView* inputImageView,
                                          const VkVideoPictureResourceInfoKHR * inputImageResourceInfo,
                                          const VkImageResourceView* outputImageView,
                                          const VkVideoPictureResourceInfoKHR * outputImageResourceInfo,
-                                         uint32_t bufferIdx) = 0;
+                                         const VkImageResourceView* subsampledImageView = nullptr,
+                                         const VkVideoPictureResourceInfoKHR * subsampledImageResourceInfo = nullptr) = 0;
+
 
     virtual VkResult SubmitCommandBuffer(uint32_t commandBufferCount,
                                          const VkCommandBuffer* pCommandBuffers,
