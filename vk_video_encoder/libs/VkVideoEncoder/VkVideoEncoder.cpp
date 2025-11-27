@@ -382,7 +382,10 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
             // row and column replication is disabled. Don't touch the image padding area.
             dstPictureResourceInfo.codedExtent = copyImageExtent;
         }
-        
+
+        // Get image view for filter (nullptr if no pool)
+        VkSharedBaseObj<VkImageResourceView> subsampledImageView;
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
         // Get subsampled Y image if pool is available (ref-counted in encodeFrameInfo)
         if (m_inputSubsampledImagePool != nullptr) {
             bool success = m_inputSubsampledImagePool->GetAvailableImage(encodeFrameInfo->subsampledImageResource,
@@ -390,11 +393,10 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
             assert(success && encodeFrameInfo->subsampledImageResource);
         }
 
-        // Get image view for filter (nullptr if no pool)
-        VkSharedBaseObj<VkImageResourceView> subsampledImageView;
         if (encodeFrameInfo->subsampledImageResource) {
             encodeFrameInfo->subsampledImageResource->GetImageView(subsampledImageView);
         }
+#endif // NV_AQ_GPU_LIB_SUPPORTED
 
         // Call filter (binding 9 only bound if subsampledYImageView is valid)
         result = m_inputComputeFilter->RecordCommandBuffer(cmdBuf,
@@ -1348,9 +1350,13 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         if (encoderConfig->input.msbShift > 0) {
             filterFlags |= VulkanFilterYuvCompute::FLAG_OUTPUT_LSB_TO_MSB_SHIFT;
         }
-        // Enable Y subsampling for AQ (always enabled in encoder)
-        filterFlags |= VulkanFilterYuvCompute::FLAG_ENABLE_Y_SUBSAMPLING;
-        // Enable row/column replication (previously hardcoded to true)
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+        if (m_aqAnalyzes) {
+            // Enable Y subsampling for AQ if enabled in the encoder
+            filterFlags |= VulkanFilterYuvCompute::FLAG_ENABLE_Y_SUBSAMPLING;
+        }
+#endif // NV_AQ_GPU_LIB_SUPPORTED
+        // Enable row/column replication
         filterFlags |= VulkanFilterYuvCompute::FLAG_ENABLE_ROW_COLUMN_REPLICATION_ALL;
         
         result = VulkanFilterYuvCompute::Create(m_vkDevCtx,
@@ -1371,47 +1377,55 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
         m_inputCommandBufferPool = m_inputComputeFilter;
 
-        // Allocate subsampled image pool for the new filter capability
-        result = VulkanVideoImagePool::Create(m_vkDevCtx, m_inputSubsampledImagePool);
-        if (result != VK_SUCCESS) {
-            fprintf(stderr, "\nInitEncoder Error: Failed to create inputSubsampledImagePool.\n");
-            return result;
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+        if (m_aqAnalyzes) {
+            // Allocate subsampled image pool for the new filter capability
+            result = VulkanVideoImagePool::Create(m_vkDevCtx, m_inputSubsampledImagePool);
+            if (result != VK_SUCCESS) {
+                fprintf(stderr, "\nInitEncoder Error: Failed to create inputSubsampledImagePool.\n");
+                return result;
+            }
+
+            // Subsampled dimensions: half of input dimensions
+            VkExtent2D subsampledExtent {
+                (std::max(m_maxCodedExtent.width, encoderConfig->input.width) + 1) / 2,
+                (std::max(m_maxCodedExtent.height, encoderConfig->input.height) + 1) / 2
+            };
+
+            // Align images, worse cases for AV1
+            const uint32_t subsampledExtentAlign = 32;
+            subsampledExtent.width = vk::alignedSize(subsampledExtent.width, subsampledExtentAlign);
+            subsampledExtent.height = vk::alignedSize(subsampledExtent.height, subsampledExtentAlign);
+
+            // Determine format based on input bit depth
+            const VkMpFormatInfo* inputMpInfo = YcbcrVkFormatInfo(encoderConfig->input.vkFormat);
+            const uint32_t inputBitDepth = inputMpInfo ? GetBitsPerChannel(inputMpInfo->planesLayout) : 8;
+            VkFormat subsampledYFormat = (inputBitDepth > 8) ? VK_FORMAT_R16_UNORM : VK_FORMAT_R8_UNORM;
+
+            result = m_inputSubsampledImagePool->Configure(
+                m_vkDevCtx,
+                encoderConfig->numInputImages + 4,
+                subsampledYFormat, // R8_UNORM or R16_UNORM (single-channel Y)
+                subsampledExtent,
+                VK_IMAGE_USAGE_STORAGE_BIT |           // Write from this filter, read from AQ
+                VK_IMAGE_USAGE_SAMPLED_BIT |           // Texture sampling for AQ
+                VK_IMAGE_USAGE_TRANSFER_SRC_BIT |      // CPU readback for debug
+                VK_IMAGE_USAGE_TRANSFER_DST_BIT,       // Clear/init if needed
+                m_vkDevCtx->GetComputeQueueFamilyIdx(),
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,  // Device-local for max GPU performance
+                nullptr,  // pVideoProfile
+                VK_IMAGE_ASPECT_PLANE_0_BIT, // Y-plane only image
+                false,    // useImageArray
+                false,    // useImageViewArray
+                false     // useLinear - OPTIMAL tiling for GPU performance
+            );
+
+            if (result != VK_SUCCESS) {
+                fprintf(stderr, "\nInitEncoder Error: Failed to Configure inputSubsampledImagePool.\n");
+                return result;
+            }
         }
-
-        // Subsampled dimensions: half of input dimensions
-        VkExtent2D subsampledExtent {
-            (std::max(m_maxCodedExtent.width, encoderConfig->input.width) + 1) / 2,
-            (std::max(m_maxCodedExtent.height, encoderConfig->input.height) + 1) / 2
-        };
-
-        // Determine format based on input bit depth
-        const VkMpFormatInfo* inputMpInfo = YcbcrVkFormatInfo(encoderConfig->input.vkFormat);
-        const uint32_t inputBitDepth = inputMpInfo ? GetBitsPerChannel(inputMpInfo->planesLayout) : 8;
-        VkFormat subsampledYFormat = (inputBitDepth > 8) ? VK_FORMAT_R16_UNORM : VK_FORMAT_R8_UNORM;
-
-        result = m_inputSubsampledImagePool->Configure(
-            m_vkDevCtx,
-            encoderConfig->numInputImages,
-            subsampledYFormat, // R8_UNORM or R16_UNORM (single-channel Y)
-            subsampledExtent,
-            VK_IMAGE_USAGE_STORAGE_BIT |           // Write from this filter, read from AQ
-            VK_IMAGE_USAGE_SAMPLED_BIT |           // Texture sampling for AQ
-            VK_IMAGE_USAGE_TRANSFER_SRC_BIT |      // CPU readback for debug
-            VK_IMAGE_USAGE_TRANSFER_DST_BIT,       // Clear/init if needed
-            m_vkDevCtx->GetComputeQueueFamilyIdx(),
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,  // Device-local for max GPU performance
-            nullptr,  // pVideoProfile
-            VK_IMAGE_ASPECT_PLANE_0_BIT, // Y-plane only image
-            false,    // useImageArray
-            false,    // useImageViewArray  
-            false     // useLinear - OPTIMAL tiling for GPU performance
-        );
-        
-        if (result != VK_SUCCESS) {
-            fprintf(stderr, "\nInitEncoder Error: Failed to Configure inputSubsampledImagePool.\n");
-            return result;
-        }
-
+#endif // NV_AQ_GPU_LIB_SUPPORTED
     } else {
 
         result = VulkanCommandBufferPool::Create(m_vkDevCtx, m_inputCommandBufferPool);
@@ -2231,8 +2245,11 @@ int32_t VkVideoEncoder::DeinitEncoder()
     m_linearInputImagePool    = nullptr;
     m_inputImagePool          = nullptr;
     m_dpbImagePool            = nullptr;
-    m_inputSubsampledImagePool = nullptr;
 
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+    m_inputSubsampledImagePool = nullptr;
+#endif // NV_AQ_GPU_LIB_SUPPORTED
+    m_qpMapImagePool          = nullptr;
     m_inputComputeFilter      = nullptr;
     m_inputCommandBufferPool  = nullptr;
     m_encodeCommandBufferPool = nullptr;
