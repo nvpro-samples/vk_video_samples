@@ -131,9 +131,6 @@ public:
         return success;
     }
 
-    virtual VkResult EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
-    virtual VkResult HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
-
 protected:
     virtual ~VkVideoEncoderH264()
     {
@@ -147,6 +144,10 @@ protected:
             m_dpb264 = NULL;
         }
     }
+
+    // Must be called from VkVideoEncoder::EncodeFrameCommon only
+    virtual VkResult EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
+    virtual VkResult CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
 
 private:
 

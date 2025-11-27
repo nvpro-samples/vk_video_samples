@@ -257,8 +257,60 @@ VkResult VkVideoEncoder::EncodeFrameCommon(VkSharedBaseObj<VkVideoEncodeFrameInf
 {
     encodeFrameInfo->constQp = m_encoderConfig->constQp;
 
+    assert(encodeFrameInfo);
+    assert(m_encoderConfig);
+    assert(encodeFrameInfo->srcEncodeImageResource);
+
+    encodeFrameInfo->videoSession = m_videoSession;
+    encodeFrameInfo->videoSessionParameters = m_videoSessionParameters;
+    encodeFrameInfo->qualityLevel = m_encoderConfig->qualityLevel;
+
+    encodeFrameInfo->frameEncodeInputOrderNum = m_encodeInputFrameNum++;
+
+    // GetPositionInGOP() method returns display position of the picture relative to last key frame picture.
+    const bool isIdr = m_encoderConfig->gopStructure.GetPositionInGOP(m_gopState,
+                                                                encodeFrameInfo->gopPosition,
+                                                                (encodeFrameInfo->frameEncodeInputOrderNum == 0),
+                                                                uint32_t(m_encoderConfig->numFrames - encodeFrameInfo->frameEncodeInputOrderNum));
+    if (isIdr) {
+        assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
+    }
+    const bool isReference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
+
     // and encode the input frame with the encoder next
-    return EncodeFrame(encodeFrameInfo);
+    VkResult result = EncodeFrame(encodeFrameInfo);
+    if (result != VK_SUCCESS) {
+        assert(!"EncodeFrame error!!!");
+        return result;
+    }
+
+    // Handles the generic portion of the control command, if enabled
+    if (HandleCtrlCmd(encodeFrameInfo)) {
+        // Handles the codec-specific rate control command if enabled
+        CodecHandleRateControlCmd(encodeFrameInfo);
+    }
+
+    if (m_encoderConfig->enableQpMap) {
+        ProcessQpMap(encodeFrameInfo);
+    }
+
+    const bool isIntraRefreshFrame = m_encoderConfig->gopStructure.IsIntraRefreshFrame(encodeFrameInfo->gopPosition);
+    if (m_encoderConfig->enableIntraRefresh && isIntraRefreshFrame) {
+        FillIntraRefreshInfo(encodeFrameInfo);
+    }
+
+    // NOTE: dstBuffer resource acquisition can be deferred at the last moment before submit
+    VkDeviceSize size = GetBitstreamBuffer(encodeFrameInfo->outputBitstreamBuffer);
+    assert((size > 0) && (encodeFrameInfo->outputBitstreamBuffer != nullptr));
+    if ((size == 0) || (encodeFrameInfo->outputBitstreamBuffer == nullptr)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    encodeFrameInfo->encodeInfo.dstBuffer = encodeFrameInfo->outputBitstreamBuffer->GetBuffer();
+    encodeFrameInfo->encodeInfo.dstBufferOffset = 0;
+
+    EnqueueFrame(encodeFrameInfo, isIdr, isReference);
+
+    return VK_SUCCESS;
 }
 
 VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
@@ -1177,9 +1229,10 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         return result;
     }
 
-    uint32_t numEncodeImagesInFlight = std::max<uint32_t>(m_holdRefFramesInQueue + m_holdRefFramesInQueue * m_encoderConfig->gopStructure.GetConsecutiveBFrameCount(), 4);
+    const uint32_t numEncodeImagesInFlight = std::max<uint32_t>(m_holdRefFramesInQueue + m_holdRefFramesInQueue * m_encoderConfig->gopStructure.GetConsecutiveBFrameCount(), 4);
+    const uint32_t maxEncodeQueueDepth = std::max<uint32_t>(maxDpbPicturesCount, maxActiveReferencePicturesCount) + numEncodeImagesInFlight;
     result = m_dpbImagePool->Configure(m_vkDevCtx,
-                                       std::max<uint32_t>(maxDpbPicturesCount, maxActiveReferencePicturesCount) + numEncodeImagesInFlight,
+                                       maxEncodeQueueDepth,
                                        m_imageDpbFormat,
                                        imageExtent,
                                        dpbImageUsage,
@@ -1643,8 +1696,11 @@ void VkVideoEncoder::FillIntraRefreshInfo(VkSharedBaseObj<VkVideoEncodeFrameInfo
     vk::ChainNextVkStruct(encodeFrameInfo->encodeInfo, encodeFrameInfo->intraRefreshInfo);
 }
 
-VkResult VkVideoEncoder::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
+bool VkVideoEncoder::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
+    if (m_sendControlCmd == 0) {
+        return false;
+    }
     m_sendControlCmd = false;
     encodeFrameInfo->sendControlCmd = true;
 
@@ -1673,6 +1729,7 @@ VkResult VkVideoEncoder::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
         pNext = (VkBaseInStructure*)&encodeFrameInfo->qualityLevelInfo;
     }
 
+    const bool sendRateControlCmd = m_sendRateControlCmd;
     if (m_sendRateControlCmd == true) {
 
         m_sendRateControlCmd = false;
@@ -1700,7 +1757,7 @@ VkResult VkVideoEncoder::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
 
     encodeFrameInfo->pControlCmdChain = pNext;
 
-    return VK_SUCCESS;
+    return sendRateControlCmd;
 }
 
 VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,

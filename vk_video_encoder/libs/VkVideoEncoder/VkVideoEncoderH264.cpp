@@ -529,22 +529,6 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 {
     VkVideoEncodeFrameInfoH264* pFrameInfo = GetEncodeFrameInfoH264(encodeFrameInfo);
 
-    assert(encodeFrameInfo);
-    assert(m_encoderConfig);
-    assert(encodeFrameInfo->srcEncodeImageResource);
-
-    encodeFrameInfo->frameEncodeInputOrderNum = m_encodeInputFrameNum++;
-
-    bool isIdr = m_encoderConfig->gopStructure.GetPositionInGOP(m_gopState,
-                                                                encodeFrameInfo->gopPosition,
-                                                                (encodeFrameInfo->frameEncodeInputOrderNum == 0),
-                                                                uint32_t(m_encoderConfig->numFrames - encodeFrameInfo->frameEncodeInputOrderNum));
-
-    if (isIdr) {
-        assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
-    }
-    const bool isReference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
-
     encodeFrameInfo->picOrderCntVal = 2 * encodeFrameInfo->gopPosition.inputOrder;
 
     if (m_encoderConfig->verboseFrameStruct) {
@@ -566,10 +550,6 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     VkVideoPictureResourceInfoKHR* pSrcPictureResource = encodeFrameInfo->srcEncodeImageResource->GetPictureResourceInfo();
     encodeFrameInfo->encodeInfo.srcPictureResource.imageViewBinding = pSrcPictureResource->imageViewBinding;
     encodeFrameInfo->encodeInfo.srcPictureResource.baseArrayLayer   = pSrcPictureResource->baseArrayLayer;
-
-    pFrameInfo->qualityLevel = m_encoderConfig->qualityLevel;
-    pFrameInfo->videoSession = m_videoSession;
-    pFrameInfo->videoSessionParameters = m_videoSessionParameters;
 
     pFrameInfo->pictureInfo.naluSliceEntryCount = m_encoderConfig->sliceCount;
 
@@ -602,8 +582,8 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
             break;
     }
 
-    pFrameInfo->stdPictureInfo.flags.IdrPicFlag = isIdr;
-    pFrameInfo->stdPictureInfo.flags.is_reference = isReference;
+    pFrameInfo->stdPictureInfo.flags.IdrPicFlag = (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
+    pFrameInfo->stdPictureInfo.flags.is_reference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
     pFrameInfo->stdPictureInfo.flags.long_term_reference_flag = pFrameInfo->islongTermReference;
     pFrameInfo->stdPictureInfo.primary_pic_type = stdPictureType;
     pFrameInfo->stdPictureInfo.flags.no_output_of_prior_pics_flag = false;        // TODO: replace this by a check for the corresponding slh flag
@@ -613,12 +593,13 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
      // FIXME: set cabac_init_idc based on a query
      pFrameInfo->stdSliceHeader[0].cabac_init_idc = STD_VIDEO_H264_CABAC_INIT_IDC_0;
 
-    if (isIdr) {
+    if (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) {
         pFrameInfo->stdPictureInfo.idr_pic_id = m_IDRPicId & 1;
         m_IDRPicId++;
     }
 
-    if (isIdr && (encodeFrameInfo->frameEncodeInputOrderNum == 0)) {
+    if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) &&
+            (encodeFrameInfo->frameEncodeInputOrderNum == 0)) {
         VkResult result = EncodeVideoSessionParameters(encodeFrameInfo);
         if (result != VK_SUCCESS) {
             return result;
@@ -632,27 +613,6 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     //if (encodeFrameInfo->frameEncodeOrderNum == 0) {
     //    pFrameInfo->encodeInfo.flags |= VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR;
     //}
-
-    if (m_encoderConfig->enableQpMap) {
-        ProcessQpMap(encodeFrameInfo);
-    }
-
-    const bool isIntraRefreshFrame = m_encoderConfig->gopStructure.IsIntraRefreshFrame(encodeFrameInfo->gopPosition);
-    if (m_encoderConfig->enableIntraRefresh && isIntraRefreshFrame) {
-        FillIntraRefreshInfo(encodeFrameInfo);
-    }
-
-    // NOTE: dstBuffer resource acquisition can be deferred at the last moment before submit
-    VkDeviceSize size = GetBitstreamBuffer(encodeFrameInfo->outputBitstreamBuffer);
-    assert((size > 0) && (encodeFrameInfo->outputBitstreamBuffer != nullptr));
-    if ((size == 0) || (encodeFrameInfo->outputBitstreamBuffer == nullptr)) {
-	return VK_ERROR_INITIALIZATION_FAILED;
-    }
-    pFrameInfo->encodeInfo.dstBuffer = encodeFrameInfo->outputBitstreamBuffer->GetBuffer();
-
-    // For the actual (VCL) data, specify its insertion starting from the
-    // provided offset into the bitstream buffer.
-    pFrameInfo->encodeInfo.dstBufferOffset = 0;
 
     if (m_rateControlInfo.rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR) {
         int32_t constantQp = 0;
@@ -678,43 +638,28 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         }
     }
 
-    if (m_sendControlCmd == true) {
-        HandleCtrlCmd(encodeFrameInfo);
-    }
-
-    EnqueueFrame(encodeFrameInfo, isIdr, isReference);
-
     return VK_SUCCESS;
 }
 
-VkResult VkVideoEncoderH264::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
+VkResult VkVideoEncoderH264::CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
     VkVideoEncodeFrameInfoH264* pFrameInfo = GetEncodeFrameInfoH264(encodeFrameInfo);
 
-    // Save the RateControlCmd request.
-    const bool sendRateControlCmd = m_sendRateControlCmd;
-    // Call the base class first to cover the bases
-    VkVideoEncoder::HandleCtrlCmd(encodeFrameInfo);
-
-    // Fill-n the codec-specific parts next
-    if (sendRateControlCmd) {
-
-        for (uint32_t layerIndx = 0; layerIndx < ARRAYSIZE(m_h264.m_rateControlLayersInfoH264); layerIndx++) {
-            pFrameInfo->rateControlLayersInfoH264[layerIndx] = m_h264.m_rateControlLayersInfoH264[layerIndx];
-            pFrameInfo->rateControlLayersInfoH264[layerIndx].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_KHR;
-            pFrameInfo->rateControlLayersInfo[layerIndx].pNext = &pFrameInfo->rateControlLayersInfoH264[layerIndx];
-        }
-
-        pFrameInfo->rateControlInfoH264 = m_h264.m_rateControlInfoH264;
-        pFrameInfo->rateControlInfoH264.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR;
-        pFrameInfo->rateControlInfoH264.temporalLayerCount = m_encoderConfig->gopStructure.GetTemporalLayerCount();
-
-        if (pFrameInfo->pControlCmdChain != nullptr) {
-            pFrameInfo->rateControlInfoH264.pNext = pFrameInfo->pControlCmdChain;
-        }
-
-        pFrameInfo->pControlCmdChain = (VkBaseInStructure*)&pFrameInfo->rateControlInfoH264;
+    for (uint32_t layerIndx = 0; layerIndx < ARRAYSIZE(m_h264.m_rateControlLayersInfoH264); layerIndx++) {
+        pFrameInfo->rateControlLayersInfoH264[layerIndx] = m_h264.m_rateControlLayersInfoH264[layerIndx];
+        pFrameInfo->rateControlLayersInfoH264[layerIndx].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_KHR;
+        pFrameInfo->rateControlLayersInfo[layerIndx].pNext = &pFrameInfo->rateControlLayersInfoH264[layerIndx];
     }
+
+    pFrameInfo->rateControlInfoH264 = m_h264.m_rateControlInfoH264;
+    pFrameInfo->rateControlInfoH264.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR;
+    pFrameInfo->rateControlInfoH264.temporalLayerCount = m_encoderConfig->gopStructure.GetTemporalLayerCount();
+
+    if (pFrameInfo->pControlCmdChain != nullptr) {
+        pFrameInfo->rateControlInfoH264.pNext = pFrameInfo->pControlCmdChain;
+    }
+
+    pFrameInfo->pControlCmdChain = (VkBaseInStructure*)&pFrameInfo->rateControlInfoH264;
 
     return VK_SUCCESS;
 }

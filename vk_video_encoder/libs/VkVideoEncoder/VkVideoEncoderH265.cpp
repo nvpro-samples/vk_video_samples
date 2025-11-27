@@ -408,21 +408,8 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 {
     VkVideoEncodeFrameInfoH265* pFrameInfo = GetEncodeFrameInfoH265(encodeFrameInfo);
 
-    assert(encodeFrameInfo);
-    assert(m_encoderConfig);
-    assert(encodeFrameInfo->srcEncodeImageResource);
-
-    encodeFrameInfo->frameEncodeInputOrderNum = m_encodeInputFrameNum++;
-
-    bool isIdr = m_encoderConfig->gopStructure.GetPositionInGOP(m_gopState,
-                                                                encodeFrameInfo->gopPosition,
-                                                                (encodeFrameInfo->frameEncodeInputOrderNum == 0),
-                                                                uint32_t(m_encoderConfig->numFrames - encodeFrameInfo->frameEncodeInputOrderNum));
-
-    if (isIdr) {
-        assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
-    }
-    const bool isReference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
+    assert(pFrameInfo->videoSession);
+    assert(pFrameInfo->videoSessionParameters);
 
     encodeFrameInfo->picOrderCntVal = encodeFrameInfo->gopPosition.inputOrder;
 
@@ -446,10 +433,6 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     encodeFrameInfo->encodeInfo.srcPictureResource.imageViewBinding = pSrcPictureResource->imageViewBinding;
     encodeFrameInfo->encodeInfo.srcPictureResource.baseArrayLayer = pSrcPictureResource->baseArrayLayer;
 
-    pFrameInfo->qualityLevel = m_encoderConfig->qualityLevel;
-    pFrameInfo->videoSession = m_videoSession;
-    pFrameInfo->videoSessionParameters = m_videoSessionParameters;
-
     pFrameInfo->pictureInfo.naluSliceSegmentEntryCount = m_encoderConfig->sliceCount;
 
     pFrameInfo->stdPictureInfo.sps_video_parameter_set_id = m_vps.vpsInfo.vps_video_parameter_set_id;
@@ -458,19 +441,8 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     VkResult result = VK_SUCCESS;
 
-
-    VkDeviceSize size = GetBitstreamBuffer(encodeFrameInfo->outputBitstreamBuffer);
-    assert((size > 0) && (encodeFrameInfo->outputBitstreamBuffer != nullptr));
-    if ((size == 0) || (encodeFrameInfo->outputBitstreamBuffer == nullptr)) {
-	return VK_ERROR_INITIALIZATION_FAILED;
-    }
-    pFrameInfo->encodeInfo.dstBuffer = encodeFrameInfo->outputBitstreamBuffer->GetBuffer();
-
-    // For the actual (VCL) data, specify its insertion starting from the
-    // provided offset into the bitstream buffer.
-    encodeFrameInfo->encodeInfo.dstBufferOffset = 0; // FIXME: pEncPicParams->bitstreamBufferOffset;
-
-    if (isIdr && (encodeFrameInfo->frameEncodeInputOrderNum == 0 /*|| pEncodeConfigH265->repeatSPSPPS || m_bReconfigForcedIDR*/)) {
+    if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) &&
+            (encodeFrameInfo->frameEncodeInputOrderNum == 0 /*|| pEncodeConfigH265->repeatSPSPPS || m_bReconfigForcedIDR*/)) {
 
         result = EncodeVideoSessionParameters(encodeFrameInfo);
         if (result != VK_SUCCESS ) {
@@ -548,64 +520,41 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         }
     }
 
-    pFrameInfo->stdPictureInfo.flags.is_reference = isReference;
+    pFrameInfo->stdPictureInfo.flags.is_reference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
     pFrameInfo->stdPictureInfo.flags.short_term_ref_pic_set_sps_flag = 1;
     pFrameInfo->stdPictureInfo.flags.IrapPicFlag = ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) ||
                                                     (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_I)) ? 1 : 0;
     pFrameInfo->stdPictureInfo.flags.pic_output_flag = 1;
-    pFrameInfo->stdPictureInfo.flags.no_output_of_prior_pics_flag = (isIdr && (encodeFrameInfo->frameEncodeInputOrderNum != 0)) ? 1 : 0;
+    pFrameInfo->stdPictureInfo.flags.no_output_of_prior_pics_flag = ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) &&
+                                                                     (encodeFrameInfo->frameEncodeInputOrderNum != 0)) ? 1 : 0;
     pFrameInfo->stdPictureInfo.pic_type = stdPictureType;
     pFrameInfo->stdPictureInfo.pps_seq_parameter_set_id = m_sps.sps.sps_seq_parameter_set_id;
     pFrameInfo->stdPictureInfo.pps_pic_parameter_set_id = m_pps.pps_pic_parameter_set_id;
     pFrameInfo->stdPictureInfo.PicOrderCntVal = encodeFrameInfo->picOrderCntVal;
     pFrameInfo->stdPictureInfo.TemporalId = 0;
 
-
-    if (m_sendControlCmd == true) {
-        HandleCtrlCmd(encodeFrameInfo);
-    }
-
-    if (m_encoderConfig->enableQpMap) {
-        ProcessQpMap(encodeFrameInfo);
-    }
-
-    const bool isIntraRefreshFrame = m_encoderConfig->gopStructure.IsIntraRefreshFrame(encodeFrameInfo->gopPosition);
-    if (m_encoderConfig->enableIntraRefresh && isIntraRefreshFrame) {
-        FillIntraRefreshInfo(encodeFrameInfo);
-    }
-
-    EnqueueFrame(encodeFrameInfo, isIdr, isReference);
     return result;
 }
 
-VkResult VkVideoEncoderH265::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
+VkResult VkVideoEncoderH265::CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
     VkVideoEncodeFrameInfoH265* pFrameInfo = GetEncodeFrameInfoH265(encodeFrameInfo);
 
-    // Save the RateControlCmd request.
-    const bool sendRateControlCmd = m_sendRateControlCmd;
-    // Call the base class first to cover the bases
-    VkVideoEncoder::HandleCtrlCmd(encodeFrameInfo);
-
-    // Fill-n the codec-specific parts next
-    if (sendRateControlCmd) {
-
-        for (uint32_t layerIndx = 0; layerIndx < ARRAYSIZE(m_rateControlLayersInfoH265); layerIndx++) {
-            pFrameInfo->rateControlLayersInfoH265[layerIndx] = m_rateControlLayersInfoH265[layerIndx];
-            pFrameInfo->rateControlLayersInfoH265[layerIndx].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR;
-            pFrameInfo->rateControlLayersInfo[layerIndx].pNext = &pFrameInfo->rateControlLayersInfoH265[layerIndx];
-        }
-
-        pFrameInfo->rateControlInfoH265 = m_rateControlInfoH265;
-        pFrameInfo->rateControlInfoH265.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR;
-        pFrameInfo->rateControlInfoH265.subLayerCount = m_encoderConfig->gopStructure.GetTemporalLayerCount();
-
-        if (pFrameInfo->pControlCmdChain != nullptr) {
-            pFrameInfo->rateControlInfoH265.pNext = pFrameInfo->pControlCmdChain;
-        }
-
-        pFrameInfo->pControlCmdChain = (VkBaseInStructure*)&pFrameInfo->rateControlInfoH265;
+    for (uint32_t layerIndx = 0; layerIndx < ARRAYSIZE(m_rateControlLayersInfoH265); layerIndx++) {
+        pFrameInfo->rateControlLayersInfoH265[layerIndx] = m_rateControlLayersInfoH265[layerIndx];
+        pFrameInfo->rateControlLayersInfoH265[layerIndx].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR;
+        pFrameInfo->rateControlLayersInfo[layerIndx].pNext = &pFrameInfo->rateControlLayersInfoH265[layerIndx];
     }
+
+    pFrameInfo->rateControlInfoH265 = m_rateControlInfoH265;
+    pFrameInfo->rateControlInfoH265.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR;
+    pFrameInfo->rateControlInfoH265.subLayerCount = m_encoderConfig->gopStructure.GetTemporalLayerCount();
+
+    if (pFrameInfo->pControlCmdChain != nullptr) {
+        pFrameInfo->rateControlInfoH265.pNext = pFrameInfo->pControlCmdChain;
+    }
+
+    pFrameInfo->pControlCmdChain = (VkBaseInStructure*)&pFrameInfo->rateControlInfoH265;
 
     return VK_SUCCESS;
 }

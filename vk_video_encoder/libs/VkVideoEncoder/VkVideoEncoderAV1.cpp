@@ -204,7 +204,8 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
                             (1 << STD_VIDEO_AV1_REFERENCE_NAME_ALTREF_FRAME));
         }
     }
-    StdVideoAV1ReferenceName refName = m_dpbAV1->AssignReferenceFrameType(pFrameInfo->gopPosition.pictureType, flags, pFrameInfo->bIsReference);
+    const bool isReference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
+    StdVideoAV1ReferenceName refName = m_dpbAV1->AssignReferenceFrameType(pFrameInfo->gopPosition.pictureType, flags, isReference);
     InitializeFrameHeader(&m_stateAV1.m_sequenceHeader, pFrameInfo, refName);
     if (!pFrameInfo->bShowExistingFrame) {
         m_dpbAV1->SetupReferenceFrameGroups(pFrameInfo->gopPosition.pictureType, pFrameInfo->stdPictureInfo.frame_type, pFrameInfo->picOrderCntVal);
@@ -470,22 +471,7 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
 {
     VkVideoEncodeFrameInfoAV1* pFrameInfo = GetEncodeFrameInfoAV1(encodeFrameInfo);
 
-    assert(encodeFrameInfo);
-    assert(m_encoderConfig);
-    assert(encodeFrameInfo->srcEncodeImageResource);
-
-    pFrameInfo->videoSession = m_videoSession;
-    pFrameInfo->videoSessionParameters = m_videoSessionParameters;
-
-    encodeFrameInfo->frameEncodeInputOrderNum = m_encodeInputFrameNum++;
-
-    // GetPositionInGOP() method returns display position of the picture relative to last key frame picture.
-    bool isIdr = m_encoderConfig->gopStructure.GetPositionInGOP(m_gopState,
-                                                                encodeFrameInfo->gopPosition,
-                                                                (encodeFrameInfo->frameEncodeInputOrderNum == 0),
-                                                                uint32_t(m_encoderConfig->numFrames - encodeFrameInfo->frameEncodeInputOrderNum));
-    if (isIdr) {
-        assert(encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
+    if (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) {
         VkResult result = EncodeVideoSessionParameters(encodeFrameInfo);
         if (result != VK_SUCCESS) {
             return result;
@@ -494,14 +480,12 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
 
     encodeFrameInfo->picOrderCntVal = encodeFrameInfo->gopPosition.inputOrder;
 
-    pFrameInfo->bIsKeyFrame = (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR);
-    pFrameInfo->bIsReference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);
     pFrameInfo->bShowExistingFrame = false;
     pFrameInfo->bOverlayFrame = false;
     if (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B) {
         m_numBFramesToEncode++;
     }
-    if (pFrameInfo->bIsKeyFrame) {
+    if (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) {
         assert(encodeFrameInfo->picOrderCntVal == 0);
         m_lastKeyFrameOrderHint = encodeFrameInfo->picOrderCntVal;
     }
@@ -527,20 +511,9 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     pFrameInfo->encodeInfo.srcPictureResource.imageViewBinding = pSrcPictureResource->imageViewBinding;
     pFrameInfo->encodeInfo.srcPictureResource.baseArrayLayer = pSrcPictureResource->baseArrayLayer;
 
-    pFrameInfo->qualityLevel = m_encoderConfig->qualityLevel;
-
     //if (encodeFrameInfo->frameEncodeInputOrderNum == 0) {
     //    pFrameInfo->encodeInfo.flags |= VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR;
     //}
-
-    VkDeviceSize size = GetBitstreamBuffer(encodeFrameInfo->outputBitstreamBuffer);
-    assert((size > 0) && (encodeFrameInfo->outputBitstreamBuffer != nullptr));
-    if ((size == 0) || (encodeFrameInfo->outputBitstreamBuffer == nullptr)) {
-        return VK_ERROR_INITIALIZATION_FAILED;
-    }
-    pFrameInfo->encodeInfo.dstBuffer = encodeFrameInfo->outputBitstreamBuffer->GetBuffer();
-
-    pFrameInfo->encodeInfo.dstBufferOffset = 0;
 
     if (m_rateControlInfo.rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR) {
         switch (encodeFrameInfo->gopPosition.pictureType) {
@@ -564,51 +537,29 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         }
     }
 
-    if (m_sendControlCmd == true) {
-        HandleCtrlCmd(encodeFrameInfo);
-    }
-
-    if (m_encoderConfig->enableQpMap) {
-        ProcessQpMap(encodeFrameInfo);
-    }
-
-    const bool isIntraRefreshFrame = m_encoderConfig->gopStructure.IsIntraRefreshFrame(encodeFrameInfo->gopPosition);
-    if (m_encoderConfig->enableIntraRefresh && isIntraRefreshFrame) {
-        FillIntraRefreshInfo(encodeFrameInfo);
-    }
-
-    EnqueueFrame(encodeFrameInfo, pFrameInfo->bIsKeyFrame, pFrameInfo->bIsReference);
-
     return VK_SUCCESS;
 }
 
-VkResult VkVideoEncoderAV1::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
+VkResult VkVideoEncoderAV1::CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
     VkVideoEncodeFrameInfoAV1* pFrameInfo = GetEncodeFrameInfoAV1(encodeFrameInfo);
 
-    // Save the RateControlCmd request
-    const bool sendRateControlCmd = m_sendRateControlCmd;
-    // Call the base class first to cover the bases
-    VkVideoEncoder::HandleCtrlCmd(encodeFrameInfo);
-
     // Fill-in the codec-specific parts next
-    if (sendRateControlCmd) {
-        for (uint32_t layerIndx = 0; layerIndx < ARRAYSIZE(m_stateAV1.m_rateControlLayersInfoAV1); layerIndx++) {
-            pFrameInfo->rateControlLayersInfoAV1[layerIndx] = m_stateAV1.m_rateControlLayersInfoAV1[layerIndx];
-            pFrameInfo->rateControlLayersInfoAV1[layerIndx].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_LAYER_INFO_KHR;
-            pFrameInfo->rateControlLayersInfo[layerIndx].pNext = &pFrameInfo->rateControlLayersInfoAV1[layerIndx];
-        }
-
-        pFrameInfo->rateControlInfoAV1 = m_stateAV1.m_rateControlInfoAV1;
-        pFrameInfo->rateControlInfoAV1.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_INFO_KHR;
-        pFrameInfo->rateControlInfoAV1.temporalLayerCount = m_encoderConfig->gopStructure.GetTemporalLayerCount();
-
-        if (pFrameInfo->pControlCmdChain != nullptr) {
-            pFrameInfo->rateControlInfoAV1.pNext = pFrameInfo->pControlCmdChain;
-        }
-
-        pFrameInfo->pControlCmdChain = (VkBaseInStructure*)&pFrameInfo->rateControlInfoAV1;
+    for (uint32_t layerIndx = 0; layerIndx < ARRAYSIZE(m_stateAV1.m_rateControlLayersInfoAV1); layerIndx++) {
+        pFrameInfo->rateControlLayersInfoAV1[layerIndx] = m_stateAV1.m_rateControlLayersInfoAV1[layerIndx];
+        pFrameInfo->rateControlLayersInfoAV1[layerIndx].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_LAYER_INFO_KHR;
+        pFrameInfo->rateControlLayersInfo[layerIndx].pNext = &pFrameInfo->rateControlLayersInfoAV1[layerIndx];
     }
+
+    pFrameInfo->rateControlInfoAV1 = m_stateAV1.m_rateControlInfoAV1;
+    pFrameInfo->rateControlInfoAV1.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_INFO_KHR;
+    pFrameInfo->rateControlInfoAV1.temporalLayerCount = m_encoderConfig->gopStructure.GetTemporalLayerCount();
+
+    if (pFrameInfo->pControlCmdChain != nullptr) {
+        pFrameInfo->rateControlInfoAV1.pNext = pFrameInfo->pControlCmdChain;
+    }
+
+    pFrameInfo->pControlCmdChain = (VkBaseInStructure*)&pFrameInfo->rateControlInfoAV1;
 
     return VK_SUCCESS;
 }
