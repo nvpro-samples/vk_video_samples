@@ -917,6 +917,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     VkVideoSessionCreateFlagsKHR sessionCreateFlags{};
     void* sessionCreateInfoChain = nullptr;
 
+    sessionCreateFlags |= VK_VIDEO_SESSION_CREATE_ALLOW_ENCODE_PARAMETER_OPTIMIZATIONS_BIT_KHR;
 #ifdef VK_KHR_video_maintenance1
     m_videoMaintenance1FeaturesSupported = VulkanVideoCapabilities::GetVideoMaintenance1FeatureSupported(m_vkDevCtx);
     if (m_videoMaintenance1FeaturesSupported) {
