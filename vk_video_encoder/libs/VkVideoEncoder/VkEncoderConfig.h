@@ -860,6 +860,7 @@ public:
     // 2: replicate only one row and one column to the padding area;
     uint32_t enablePictureRowColReplication : 2;
     uint32_t enableOutOfOrderRecording : 1; // Testing only - don't use for production!
+    uint32_t disableEncodeParameterOptimizations : 1;
 
     EncoderConfig()
     : refCount(0)
@@ -957,6 +958,7 @@ public:
     , repeatInputFrames(false)
     , enablePictureRowColReplication(1)
     , enableOutOfOrderRecording(false)
+    , disableEncodeParameterOptimizations(false)
     { }
 
     virtual ~EncoderConfig() {}

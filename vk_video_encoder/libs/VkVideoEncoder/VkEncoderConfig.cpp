@@ -70,6 +70,8 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --qpI                           <integer> : QP or QIndex (for AV1) used for I-frames when RC disabled\n\
     --qpP                           <integer> : QP or QIndex (for AV1) used for P-frames when RC disabled\n\
     --qpB                           <integer> : QP or QIndex (for AV1) used for B-frames when RC disabled\n\
+    --disableEncodeParameterOptimizations     : Disables encode parameter optimization flag bit in VkVideoSessionCreateFlagsKHR \n\
+                                                when creating a video session\n\
     --deviceID                      <hexadec> : deviceID to be used, \n\
     --deviceUuid                    <string>  : deviceUuid to be used \n\
     --enableHwLoadBalancing                   : enables HW load balancing using multiple encoder devices when available \n\
@@ -505,6 +507,8 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                     fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                     return -1;
                 }
+        } else if (args[i] == "--disableEncodeParameterOptimizations") {
+            disableEncodeParameterOptimizations = true;
         } else if (args[i] == "--deviceID") {
             if ((++i >= argc) || (sscanf(args[i].c_str(), "%x", &deviceId) != 1)) {
                  fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
