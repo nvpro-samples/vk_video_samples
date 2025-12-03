@@ -72,8 +72,6 @@ struct EncoderConfigH264 : public EncoderConfig {
         , spsId(0)
         , ppsId()
         , numSlicesPerPicture(DEFAULT_NUM_SLICES_PER_PICTURE)
-        , vbvBufferSize(0)
-        , vbvInitialDelay(0)
         , minQp{0, 0, 0}
         , maxQp{0, 0, 0}
         , rcInfoH264{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR }
@@ -140,8 +138,6 @@ struct EncoderConfigH264 : public EncoderConfig {
     uint8_t                                    spsId;                 // Specifies the SPS id of the sequence header
     uint8_t                                    ppsId;                 // Specifies the PPS id of the picture header
     uint32_t                                   numSlicesPerPicture;   // sliceModeData specifies number of slices in the picture.
-    uint32_t                                   vbvBufferSize;         // Specifies the VBV(HRD) buffer size. in bits. Set 0 to use the default VBV  buffer size.
-    uint32_t                                   vbvInitialDelay;       // Specifies the VBV(HRD) initial delay in bits. Set 0 to use the default VBV  initial delay.
     VkVideoEncodeH264QpKHR                     minQp;                 // Specifies the const or minimum or QP used for rate control.
     VkVideoEncodeH264QpKHR                     maxQp;                 // Specifies the maximum QP used for rate control.
     VkVideoEncodeH264RateControlInfoKHR        rcInfoH264;

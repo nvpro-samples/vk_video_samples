@@ -193,8 +193,6 @@ struct EncoderConfigAV1 : public EncoderConfig {
     VkVideoEncodeAV1CapabilitiesKHR         av1EncodeCapabilities{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_CAPABILITIES_KHR };
     VkVideoEncodeAV1QualityLevelPropertiesKHR av1QualityLevelProperties{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_QUALITY_LEVEL_PROPERTIES_KHR };
     VkVideoEncodeAV1QuantizationMapCapabilitiesKHR av1QuantizationMapCapabilities { VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_QUANTIZATION_MAP_CAPABILITIES_KHR };
-    uint32_t                                vbvBufferSize{};
-    uint32_t                                vbvInitialDelay{};
     uint32_t                                picWidthInSbs{};
     uint32_t                                picHeightInSbs{};
     VkVideoEncodeAV1QIndexKHR               minQIndex{};

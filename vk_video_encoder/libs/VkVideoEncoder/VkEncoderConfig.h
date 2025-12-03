@@ -791,6 +791,8 @@ public:
     uint32_t averageBitrate; // kbits/sec
     uint32_t maxBitrate;     // kbits/sec
     uint32_t hrdBitrate;
+    uint32_t vbvBufferSize;     // Specifies the VBV(HRD) buffer size. in bits. Set 0 to use the default VBV buffer size.
+    uint32_t vbvInitialDelay;   // Specifies the VBV(HRD) initial delay in bits. Set 0 to use the default VBV initial delay.
     uint32_t frameRateNumerator;
     uint32_t frameRateDenominator;
 
@@ -901,6 +903,8 @@ public:
     , averageBitrate()
     , maxBitrate()
     , hrdBitrate(maxBitrate)
+    , vbvBufferSize(0)
+    , vbvInitialDelay(0)
     , frameRateNumerator()
     , frameRateDenominator()
     , minQp(-1)
