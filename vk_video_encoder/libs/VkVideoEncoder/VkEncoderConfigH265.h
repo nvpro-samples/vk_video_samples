@@ -74,8 +74,6 @@ struct EncoderConfigH265 : public EncoderConfig {
     CuSize                 cuSize;
     TransformUnitSize      minTransformUnitSize;
     TransformUnitSize      maxTransformUnitSize;
-    uint32_t               vbvBufferSize;         // Specifies the VBV(HRD) buffer size. in bits. Set 0 to use the default VBV  buffer size.
-    uint32_t               vbvInitialDelay;       // Specifies the VBV(HRD) initial delay in bits. Set 0 to use the default VBV  initial delay.
     VkVideoEncodeH265QpKHR minQp;                 // Specifies the const or minimum or QP used for rate control.
     VkVideoEncodeH265QpKHR maxQp;                 // Specifies the maximum QP used for rate control.
     uint32_t               sliceCount;
@@ -96,8 +94,6 @@ struct EncoderConfigH265 : public EncoderConfig {
       , cuSize(CU_SIZE_32x32)               // TODO: adjust based on device capabilities
       , minTransformUnitSize(TU_SIZE_4x4)   // TODO: adjust based on device capabilities
       , maxTransformUnitSize(TU_SIZE_32x32) // TODO: adjust based on device capabilities
-      , vbvBufferSize()
-      , vbvInitialDelay()
       , minQp{}
       , maxQp{}
       , sliceCount(1)
