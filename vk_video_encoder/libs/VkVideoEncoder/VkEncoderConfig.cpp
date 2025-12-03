@@ -67,6 +67,7 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
                                         default(0), disabled(1), cbr(2), vbr(4)\n\
     --averageBitrate                <integer> : Target bitrate for cbr/vbr RC modes\n\
     --maxBitrate                    <integer> : Peak bitrate for cbr/vbr RC modes\n\
+    --vbvBufferSize                 <integer> : Size in bits of the VBV / HRD buffer for cbr/vbr RC modes\n\
     --qpI                           <integer> : QP or QIndex (for AV1) used for I-frames when RC disabled\n\
     --qpP                           <integer> : QP or QIndex (for AV1) used for P-frames when RC disabled\n\
     --qpB                           <integer> : QP or QIndex (for AV1) used for B-frames when RC disabled\n\
@@ -490,6 +491,11 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                     fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                     return -1;
                 }
+        } else if (args[i] == "--vbvBufferSize") {
+            if (++i >= argc || sscanf(args[i].c_str(), "%u", &vbvBufferSize) != 1) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
         } else if (args[i] == "--qpI") {
                 if (++i >= argc || sscanf(args[i].c_str(), "%u", &constQp.qpIntra) != 1) {
                     fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
