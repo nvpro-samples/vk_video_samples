@@ -39,7 +39,6 @@ public:
         StdVideoAV1LoopRestoration stdLrInfo;
         bool bShowExistingFrame;
         int32_t frameToShowBufId;
-        bool bIsKeyFrame;
         bool bShownKeyFrameOrSwitch;
         bool bOverlayFrame;
         bool bIsReference;
@@ -59,7 +58,6 @@ public:
             , stdLrInfo{}
             , bShowExistingFrame{}
             , frameToShowBufId{-1}
-            , bIsKeyFrame{}
             , bShownKeyFrameOrSwitch{}
             , bOverlayFrame{}
             , bIsReference{}
@@ -155,8 +153,6 @@ public:
         return success;
     }
 
-    virtual VkResult EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
-    virtual VkResult HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
     virtual VkResult StartOfVideoCodingEncodeOrder(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, uint32_t frameIdx, uint32_t ofTotalFrames);
     virtual VkResult RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                          uint32_t frameIdx, uint32_t ofTotalFrames);
@@ -185,6 +181,9 @@ protected:
         }
     }
 
+    // Must be called from VkVideoEncoder::EncodeFrameCommon only
+    virtual VkResult EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
+    virtual VkResult CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
 private:
     VkVideoEncodeFrameInfoAV1* GetEncodeFrameInfoAV1(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) {
         assert(VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR == encodeFrameInfo->GetType());
