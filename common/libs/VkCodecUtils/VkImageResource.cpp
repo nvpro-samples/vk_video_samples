@@ -180,6 +180,7 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
     VkDevice device = vkDevCtx->getDevice();
     VkImageView  imageViews[4];
     uint32_t numViews = 0;
+    uint32_t numPlanes = 0;
     VkImageViewCreateInfo viewInfo = VkImageViewCreateInfo();
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.pNext = nullptr;
@@ -197,8 +198,8 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
     numViews++;
 
     const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(viewInfo.format);
-    if (mpInfo) {
-        uint32_t numPlanes = 0;
+    if (mpInfo) { // Is this a YCbCr format
+
         // Create separate image views for Y and CbCr planes
         viewInfo.format = mpInfo->vkPlaneFormat[numPlanes];  // For the Y plane
         viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT << numPlanes;
@@ -230,10 +231,60 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
                 numPlanes++;
             }
         }
+    } else {
+
+        // Is this a plane of YCbCr format
+
+        const VkImageAspectFlags yCbCrAspectMask =
+                imageSubresourceRange.aspectMask & (VK_IMAGE_ASPECT_PLANE_0_BIT |
+                                                    VK_IMAGE_ASPECT_PLANE_1_BIT |
+                                                    VK_IMAGE_ASPECT_PLANE_2_BIT);
+
+        while (yCbCrAspectMask != 0) {
+
+            // possible Single Plane
+            bool possibleSinglePlane = false;
+
+            // Handle the Y only and CbCr only images
+            switch(viewInfo.format) {
+            case VK_FORMAT_R8_UNORM:
+            case VK_FORMAT_R16_UNORM:
+            case VK_FORMAT_R10X6_UNORM_PACK16:
+            case VK_FORMAT_R12X4_UNORM_PACK16:
+            case VK_FORMAT_R8G8_UNORM:
+            case VK_FORMAT_R16G16_UNORM:
+            case VK_FORMAT_R32_UINT:
+            case VK_FORMAT_R8_SINT:
+            case VK_FORMAT_R8G8_SINT:
+                possibleSinglePlane = true;
+                break;
+            default:
+                break;
+            }
+
+            if (!possibleSinglePlane) {
+                break;
+            }
+
+            for (uint32_t planeNum = 0; planeNum < 3; planeNum++) {
+                if (yCbCrAspectMask & (VK_IMAGE_ASPECT_PLANE_0_BIT << planeNum)) {
+                    numPlanes++;
+                }
+            }
+
+            // Is this a single plane?
+            if (numPlanes > 1) {
+                // It is not a single plane.
+                // Reset the plane count to 0.
+                numPlanes = 0;
+            }
+
+            break;
+        }
     }
 
     imageResourceView = new VkImageResourceView(vkDevCtx, imageResource,
-                                                numViews, numViews - 1,
+                                                numViews, numPlanes,
                                                 imageViews, imageSubresourceRange);
 
     return result;
