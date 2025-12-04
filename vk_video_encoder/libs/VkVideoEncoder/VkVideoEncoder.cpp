@@ -24,25 +24,9 @@
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
 #include "VkCodecUtils/YCbCrConvUtilsCpu.h"
-
-static size_t getFormatTexelSize(VkFormat format)
-{
-    switch (format) {
-    case VK_FORMAT_R8_UINT:
-    case VK_FORMAT_R8_SINT:
-    case VK_FORMAT_R8_UNORM:
-        return 1;
-    case VK_FORMAT_R16_UINT:
-    case VK_FORMAT_R16_SINT:
-        return 2;
-    case VK_FORMAT_R32_UINT:
-    case VK_FORMAT_R32_SINT:
-        return 4;
-    default:
-        assert(!"unknown format");
-        return 0;
-    }
-}
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+#include "VulkanAqProcessor.h"
+#endif // NV_AQ_GPU_LIB_SUPPORTED
 
 VkResult VkVideoEncoder::CreateVideoEncoder(const VulkanDeviceContext* vkDevCtx,
                                             VkSharedBaseObj<EncoderConfig>& encoderConfig,
@@ -101,18 +85,19 @@ VkResult VkVideoEncoder::LoadNextQpMapFrameFromFile(VkSharedBaseObj<VkVideoEncod
         uint8_t* writeQpMapImagePtr = srcQpMapImageDeviceMemory->GetDataPtr(qpMapImageOffset, qpMapMaxSize);
         assert(writeQpMapImagePtr != nullptr);
 
-        size_t formatSize = getFormatTexelSize(m_imageQpMapFormat);
+        const VkFormatDesc* pFormatDesc = vkFormatLookUp(m_imageQpMapFormat);
+        size_t formatTexelSize = (pFormatDesc != nullptr) ? pFormatDesc->numberOfBytes : 1;
         uint32_t inputQpMapWidth = (m_encoderConfig->input.width + m_qpMapTexelSize.width - 1) / m_qpMapTexelSize.width;
         uint32_t qpMapWidth = (m_encoderConfig->encodeWidth + m_qpMapTexelSize.width - 1) / m_qpMapTexelSize.width;
         uint32_t qpMapHeight = (m_encoderConfig->encodeHeight + m_qpMapTexelSize.height - 1) / m_qpMapTexelSize.height;
-        uint64_t qpMapFileOffset = qpMapWidth * qpMapHeight * encodeFrameInfo->frameInputOrderNum * formatSize;
+        uint64_t qpMapFileOffset = qpMapWidth * qpMapHeight * encodeFrameInfo->frameInputOrderNum * formatTexelSize;
         const uint8_t* pQpMapData = m_encoderConfig->qpMapFileHandler.GetMappedPtr(qpMapFileOffset);
 
         const VkSubresourceLayout* dstQpMapSubresourceLayout = dstQpMapImageResource->GetSubresourceLayout();
 
         for (uint32_t j = 0; j < qpMapHeight; j++) {
             memcpy(writeQpMapImagePtr + (dstQpMapSubresourceLayout[0].offset + j * dstQpMapSubresourceLayout[0].rowPitch),
-                   pQpMapData + j * inputQpMapWidth * formatSize, qpMapWidth * formatSize);
+                   pQpMapData + j * inputQpMapWidth * formatTexelSize, qpMapWidth * formatTexelSize);
         }
     }
 

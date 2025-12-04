@@ -249,6 +249,8 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
             switch(viewInfo.format) {
             case VK_FORMAT_R8_UNORM:
             case VK_FORMAT_R16_UNORM:
+            case VK_FORMAT_R10X6_UNORM_PACK16:
+            case VK_FORMAT_R12X4_UNORM_PACK16:
             case VK_FORMAT_R8G8_UNORM:
             case VK_FORMAT_R16G16_UNORM:
             case VK_FORMAT_R32_UINT:
