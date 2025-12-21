@@ -141,9 +141,15 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance,
         return VK_NOT_READY;
     }
 
+    const VkVideoCodecOperationFlagsKHR videoCodecOperation =
+            (m_decoderConfig.forceParserType != VK_VIDEO_CODEC_OPERATION_NONE_KHR) ?
+                  m_decoderConfig.forceParserType :
+                ((videoStreamDemuxer != nullptr) ? videoStreamDemuxer->GetVideoCodec() : VK_VIDEO_CODEC_OPERATION_NONE_KHR);
+
     VkResult result = m_vkDevCtxt.InitVulkanDecoderDevice(m_decoderConfig.appName.c_str(),
                                                           vkInstance,
-                                                          !m_decoderConfig.noPresent,
+                                                          videoCodecOperation,
+                                                          m_decoderConfig.noPresent,
                                                           m_decoderConfig.directMode,
                                                           m_decoderConfig.validate,
                                                           m_decoderConfig.validateVerbose,
@@ -170,9 +176,7 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance,
         requestVideoComputeQueueMask = VK_QUEUE_COMPUTE_BIT;
     }
 
-    VkVideoCodecOperationFlagsKHR videoCodecOperation = videoStreamDemuxer->GetVideoCodec();
-
-    const bool supportsShellPresent = ((!m_decoderConfig.noPresent == false) && (pWsiDisplay != nullptr));
+    const bool supportsShellPresent = ((m_decoderConfig.noPresent == false) && (pWsiDisplay != nullptr));
     const bool createGraphicsQueue = supportsShellPresent ? true  : false;
     const bool createDisplayQueue  = supportsShellPresent ? true  : false;
 

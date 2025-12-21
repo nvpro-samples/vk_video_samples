@@ -54,7 +54,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     const int32_t numBitstreamBuffersToPreallocate = std::max(programConfig.numBitstreamBuffersToPreallocate, 4);
     const bool enableHwLoadBalancing = programConfig.enableHwLoadBalancing;
     const bool enablePostProcessFilter = (programConfig.enablePostProcessFilter >= 0);
-    const bool enableDisplayPresent = (programConfig.noPresent == 0);
+    const bool enableDisplayPresent = (programConfig.noPresent == false);
     const  VulkanFilterYuvCompute::FilterType postProcessFilterType = enablePostProcessFilter ?
             (VulkanFilterYuvCompute::FilterType)programConfig.enablePostProcessFilter :
                                                       VulkanFilterYuvCompute::YCBCRCOPY;

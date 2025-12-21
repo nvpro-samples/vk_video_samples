@@ -51,33 +51,40 @@ int main(int argc, const char** argv)
         return -1;
     }
 
+    VkSharedBaseObj<VideoStreamDemuxer> videoStreamDemuxer;
+    VkResult result = VideoStreamDemuxer::Create(decoderConfig.videoFileName.c_str(),
+                                                decoderConfig.forceParserType,
+                                                decoderConfig.enableStreamDemuxing,
+                                                decoderConfig.initialWidth,
+                                                decoderConfig.initialHeight,
+                                                decoderConfig.initialBitdepth,
+                                                videoStreamDemuxer);
+    if (result != VK_SUCCESS) {
+        assert(!"Can't initialize the VideoStreamDemuxer!");
+        return result;
+    }
+
+    const VkVideoCodecOperationFlagsKHR videoCodecOperation =
+            (decoderConfig.forceParserType != VK_VIDEO_CODEC_OPERATION_NONE_KHR) ?
+                 decoderConfig.forceParserType :
+               ((videoStreamDemuxer != nullptr) ? videoStreamDemuxer->GetVideoCodec() : VK_VIDEO_CODEC_OPERATION_NONE_KHR);
+
+
     VulkanDeviceContext vkDevCtxt;
-    VkResult result = vkDevCtxt.InitVulkanDecoderDevice(decoderConfig.appName.c_str(),
-                                                        VK_NULL_HANDLE,
-                                                        !decoderConfig.noPresent,
-                                                        decoderConfig.directMode,
-                                                        decoderConfig.validate,
-                                                        decoderConfig.validateVerbose,
-                                                        decoderConfig.verbose);
+    result = vkDevCtxt.InitVulkanDecoderDevice(decoderConfig.appName.c_str(),
+                                               VK_NULL_HANDLE,
+                                               videoCodecOperation,
+                                               decoderConfig.noPresent,
+                                               decoderConfig.directMode,
+                                               decoderConfig.validate,
+                                               decoderConfig.validateVerbose,
+                                               decoderConfig.verbose);
 
     if (result != VK_SUCCESS) {
         printf("Could not initialize the Vulkan decoder device!\n");
         return -1;
     }
 
-
-    VkSharedBaseObj<VideoStreamDemuxer> videoStreamDemuxer;
-    result = VideoStreamDemuxer::Create(decoderConfig.videoFileName.c_str(),
-                                        decoderConfig.forceParserType,
-                                        decoderConfig.enableStreamDemuxing,
-                                        decoderConfig.initialWidth,
-                                        decoderConfig.initialHeight,
-                                        decoderConfig.initialBitdepth,
-                                        videoStreamDemuxer);
-    if (result != VK_SUCCESS) {
-        assert(!"Can't initialize the VideoStreamDemuxer!");
-        return result;
-    }
 
     const int32_t numDecodeQueues = ((decoderConfig.queueId != 0) ||
                                      (decoderConfig.enableHwLoadBalancing != 0)) ?
@@ -99,7 +106,7 @@ int main(int argc, const char** argv)
                                                         decoderConfig.forceParserType :
                                                         videoStreamDemuxer->GetVideoCodec();
 
-    if (!decoderConfig.noPresent) {
+    if (decoderConfig.noPresent == false) {
 
         VkSharedBaseObj<Shell> displayShell;
         const Shell::Configuration configuration(decoderConfig.appName.c_str(),

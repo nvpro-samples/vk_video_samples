@@ -52,19 +52,20 @@ int main(int argc, const char **argv)
         return -1;
     }
 
-    VkVideoCodecOperationFlagsKHR videoCodecOperation = (decoderConfig.forceParserType != VK_VIDEO_CODEC_OPERATION_NONE_KHR) ?
-                                                                    decoderConfig.forceParserType :
-                                                                    videoStreamDemuxer->GetVideoCodec();
+    const VkVideoCodecOperationFlagsKHR videoCodecOperation =
+        (decoderConfig.forceParserType != VK_VIDEO_CODEC_OPERATION_NONE_KHR) ?
+                decoderConfig.forceParserType :
+                ((videoStreamDemuxer != nullptr) ? videoStreamDemuxer->GetVideoCodec() : VK_VIDEO_CODEC_OPERATION_NONE_KHR);
 
     VulkanDeviceContext vkDevCtxt;
     result = vkDevCtxt.InitVulkanDecoderDevice(decoderConfig.appName.c_str(),
-                                                        VK_NULL_HANDLE,
-                                                        videoCodecOperation,
-                                                        !decoderConfig.noPresent,
-                                                        decoderConfig.directMode,
-                                                        decoderConfig.validate,
-                                                        decoderConfig.validateVerbose,
-                                                        decoderConfig.verbose);
+                                               VK_NULL_HANDLE,
+                                               videoCodecOperation,
+                                               decoderConfig.noPresent,
+                                               decoderConfig.directMode,
+                                               decoderConfig.validate,
+                                               decoderConfig.validateVerbose,
+                                               decoderConfig.verbose);
 
     if (result != VK_SUCCESS) {
         printf("Could not initialize the Vulkan decoder device!\n");
@@ -87,7 +88,7 @@ int main(int argc, const char **argv)
         requestVideoComputeQueueMask = VK_QUEUE_COMPUTE_BIT;
     }
 
-    if (!decoderConfig.noPresent) {
+    if (decoderConfig.noPresent == false) {
 
         VkSharedBaseObj<Shell> displayShell;
         const Shell::Configuration configuration(decoderConfig.appName.c_str(),
