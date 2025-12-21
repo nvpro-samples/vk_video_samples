@@ -1134,7 +1134,13 @@ uint32_t VulkanVideoParser::ResetPicDpbSlots(uint32_t picIndexSlotValidMask)
 
 int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
 {
-    bool sequenceUpdate = ((m_nvsi.nMaxWidth != 0) && (m_nvsi.nMaxHeight != 0)) ? true : false;
+    // "Sequence update" must be detected even when the parser/bitstream does not provide a non-zero
+    // max coded extent (nMaxWidth/nMaxHeight may legitimately be 0 for some bitstreams/codecs).
+    //
+    // Using nMaxWidth/nMaxHeight here can incorrectly treat a second sequence as a first sequence,
+    // which allows shrinking the DPB size and then later freeing stale DPB slot indices that were
+    // allocated under the previous sequence. In release builds this can turn into UB/device loss.
+    bool sequenceUpdate = ((m_nvsi.nCodedWidth != 0) && (m_nvsi.nCodedHeight != 0)) ? true : false;
 
     uint32_t maxDpbSlots =  (pnvsi->eCodec == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) ?
         MAX_DPB_REF_AND_SETUP_SLOTS : MAX_DPB_REF_SLOTS;
@@ -1274,7 +1280,24 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
         assert(!"m_pDecoderHandler is NULL");
     }
 
-    m_maxNumDpbSlots = m_dpb.Init(configDpbSlots, sequenceUpdate /* reconfigure the DPB size if true */);
+    // DPB management:
+    // - Within a sequence, DPB slot indices must stay stable (MV restriction).
+    // - Across a sequence reconfigure (especially coded extent change), the DPB is logically reset (IDR / no refs),
+    //   and we must *not* carry over slot indices into a potentially smaller new session (driver asserts on out-of-range).
+    //
+    // So:
+    // - For "update" that is not a coded-extent reconfigure: keep DPB state and only grow DPB size if needed.
+    // - For first sequence OR coded-extent reconfigure: fully reset DPB state and mapping.
+    const bool dpbReconfigure = sequenceUpdate && !sequenceReconfigureCodedExtent;
+    m_maxNumDpbSlots = m_dpb.Init(configDpbSlots, dpbReconfigure /* reconfigure the DPB size if true */);
+
+    if (!dpbReconfigure) {
+        m_dpbSlotsMask = 0;
+        m_fieldPicFlagMask = 0;
+        for (uint32_t picId = 0; picId < MAX_FRM_CNT; picId++) {
+            m_pictureToDpbSlotMap[picId] = -1;
+        }
+    }
 
     return m_maxNumDecodeSurfaces;
 }
