@@ -175,7 +175,7 @@ struct DecoderConfig {
                 "Runs this program headless without presenting decode result to "
                 "screen",
                 [this](const char **args, const ProgramArgs &a) {
-                    noPresent = true;
+                    noPresent = 1;
                     return true;
                 }},
             {"--enableHwLoadBalancing", nullptr, 0,
