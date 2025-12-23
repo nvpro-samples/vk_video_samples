@@ -197,10 +197,6 @@ struct EncoderConfigAV1 : public EncoderConfig {
     uint32_t                                picHeightInSbs{};
     VkVideoEncodeAV1QIndexKHR               minQIndex{};
     VkVideoEncodeAV1QIndexKHR               maxQIndex{255, 255, 255};
-    VkVideoEncodeAV1RateControlInfoKHR      rcInfoAV1{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_INFO_KHR };
-    VkVideoEncodeAV1RateControlLayerInfoKHR rcLayerInfoAV1{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_LAYER_INFO_KHR };
-    VkVideoEncodeRateControlInfoKHR         rcInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR };
-    VkVideoEncodeRateControlLayerInfoKHR    rcLayerInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR };
     const LevelLimits*                      levelLimits;
     size_t                                  levelLimitsSize;
 
