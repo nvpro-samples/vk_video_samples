@@ -74,10 +74,6 @@ struct EncoderConfigH264 : public EncoderConfig {
         , numSlicesPerPicture(DEFAULT_NUM_SLICES_PER_PICTURE)
         , minQp{0, 0, 0}
         , maxQp{0, 0, 0}
-        , rcInfoH264{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR }
-        , rcLayerInfoH264{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_KHR }
-        , rcInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR, &rcInfoH264 }
-        , rcLayerInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR, &rcLayerInfoH264 }
         , sliceCount(1)
         , disable_deblocking_filter_idc(STD_VIDEO_H264_DISABLE_DEBLOCKING_FILTER_IDC_DISABLED)
         , qpprime_y_zero_transform_bypass_flag(true)
@@ -140,10 +136,6 @@ struct EncoderConfigH264 : public EncoderConfig {
     uint32_t                                   numSlicesPerPicture;   // sliceModeData specifies number of slices in the picture.
     VkVideoEncodeH264QpKHR                     minQp;                 // Specifies the const or minimum or QP used for rate control.
     VkVideoEncodeH264QpKHR                     maxQp;                 // Specifies the maximum QP used for rate control.
-    VkVideoEncodeH264RateControlInfoKHR        rcInfoH264;
-    VkVideoEncodeH264RateControlLayerInfoKHR   rcLayerInfoH264;
-    VkVideoEncodeRateControlInfoKHR            rcInfo;
-    VkVideoEncodeRateControlLayerInfoKHR       rcLayerInfo;
     uint32_t                                   sliceCount;
 
     StdVideoH264DisableDeblockingFilterIdc     disable_deblocking_filter_idc;
