@@ -91,6 +91,23 @@ public:
         return m_pipeline;
     }
 
+    // Setters for manual pipeline creation (bypassing shaderc for pre-compiled SPIR-V)
+    void SetPipeline(VkPipeline pipeline) {
+        m_pipeline = pipeline;
+    }
+
+    void SetShaderModule(VkShaderModule shaderModule) {
+        m_shaderModule = shaderModule;
+    }
+
+    void SetPipelineCache(VkPipelineCache pipelineCache) {
+        m_pipelineCache = pipelineCache;
+    }
+
+    void SetDeviceContext(const VulkanDeviceContext* vkDevCtx) {
+        m_vkDevCtx = vkDevCtx;
+    }
+
 private:
     const VulkanDeviceContext* m_vkDevCtx;
     VkPipelineCache            m_pipelineCache;

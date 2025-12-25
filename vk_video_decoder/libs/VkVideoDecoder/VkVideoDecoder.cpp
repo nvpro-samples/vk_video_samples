@@ -320,6 +320,8 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                    0.0, false, 0.00, false, VK_COMPARE_OP_NEVER, 0.0, 16.0, VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE, false
         };
 
+        uint32_t filterFlags = VulkanFilterYuvCompute::FLAG_NONE;
+        
         result = VulkanFilterYuvCompute::Create(m_vkDevCtx,
                                                 m_vkDevCtx->GetComputeQueueFamilyIdx(),
                                                 0,
@@ -327,8 +329,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                                 numDecodeSurfaces + 1,
                                                 inputFormat,
                                                 outputFormat,
-                                                false, // inputEnableMsbToLsbShift
-                                                false, // outputEnableLsbToMsbShift
+                                                filterFlags,
                                                 &ycbcrConversionCreateInfo,
                                                 &ycbcrPrimariesConstants,
                                                 &samplerInfo,
@@ -1387,9 +1388,11 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         VkCommandBuffer cmdBuf = filterCmdBuffer->BeginCommandBufferRecording(computeBeginInfo);
 
         result = m_yuvFilter->RecordCommandBuffer(cmdBuf,
-                                                  inputImageView, &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource,
-                                                  outputImageView, &outputImageResource,
-                                                  filterCmdBuffer->GetNodePoolIndex());
+                                                  filterCmdBuffer->GetNodePoolIndex(),
+                                                  inputImageView,
+                                                  &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource,
+                                                  outputImageView,
+                                                  &outputImageResource);
 
         assert(result == VK_SUCCESS);
         result = filterCmdBuffer->EndCommandBufferRecording(cmdBuf);
