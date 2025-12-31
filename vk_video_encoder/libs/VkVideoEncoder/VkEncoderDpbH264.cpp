@@ -181,8 +181,9 @@ int8_t VkEncDpbH264::DpbPictureStart(const PicInfoH264 *pPicInfo,
     // - the second field in decoding order is not an IDR picture and
     // - does not include a memory_management_control_operation syntax element equal to 5.
 
-    // TODO: what if there is no current picture?
-    if (((m_DPB[m_currDpbIdx].state == DPB_TOP) || (m_DPB[m_currDpbIdx].state == DPB_BOTTOM)) &&  // contains a single field
+    // Check if there is a current picture (m_currDpbIdx must be valid)
+    if ((m_currDpbIdx >= 0) && (m_currDpbIdx < MAX_DPB_SLOTS) &&
+            ((m_DPB[m_currDpbIdx].state == DPB_TOP) || (m_DPB[m_currDpbIdx].state == DPB_BOTTOM)) &&  // contains a single field
             pPicInfo->field_pic_flag &&                                                      // current is a field
             (((m_DPB[m_currDpbIdx].state == DPB_TOP) && pPicInfo->bottom_field_flag) ||
              ((m_DPB[m_currDpbIdx].state == DPB_BOTTOM) && !pPicInfo->bottom_field_flag)) &&  // opposite parity
