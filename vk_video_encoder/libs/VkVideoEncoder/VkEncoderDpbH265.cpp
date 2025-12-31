@@ -937,5 +937,8 @@ uint32_t VkEncDpbH265::GetDirtyIntraRefreshRegions(int32_t dpb_idx)
 
 void VkEncDpbH265::SetCurDirtyIntraRefreshRegions(uint32_t dirtyIntraRefreshRegions)
 {
-    m_stDpb[m_curDpbIndex].dirtyIntraRefreshRegions = dirtyIntraRefreshRegions;
+    assert((m_curDpbIndex >= 0) && (m_curDpbIndex < m_dpbSize));
+    if ((m_curDpbIndex >= 0) && (m_curDpbIndex < m_dpbSize)) {
+        m_stDpb[m_curDpbIndex].dirtyIntraRefreshRegions = dirtyIntraRefreshRegions;
+    }
 }

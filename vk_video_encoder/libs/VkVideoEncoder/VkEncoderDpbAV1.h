@@ -182,13 +182,30 @@ public:
     }
 
     bool GetDpbPictureResource(int32_t dpbIdx, VkSharedBaseObj<VulkanVideoImagePoolNode>& dpbImageView) {
+        assert((dpbIdx >= 0) && (dpbIdx < m_maxDpbSize));
+        if ((dpbIdx < 0) || (dpbIdx >= m_maxDpbSize)) {
+            dpbImageView = nullptr;
+            return false;
+        }
         dpbImageView = m_DPB[dpbIdx].dpbImageView;
         return (dpbImageView != nullptr) ? true : false;
     }
-    StdVideoAV1FrameType GetFrameType(int32_t dpbIdx) { assert(dpbIdx != INVALID_IDX); return m_DPB[dpbIdx].frameType; }
-    StdVideoAV1ReferenceName GetRefName(int32_t dpbIdx) { assert(dpbIdx != INVALID_IDX); return m_DPB[dpbIdx].refName; }
-    int32_t GetFrameId(int32_t dpbIdx) { assert(dpbIdx != INVALID_IDX); return m_DPB[dpbIdx].frameId; }
-    int32_t GetPicOrderCntVal(int32_t dpbIdx) { assert(dpbIdx != INVALID_IDX); return m_DPB[dpbIdx].picOrderCntVal; }
+    StdVideoAV1FrameType GetFrameType(int32_t dpbIdx) {
+        assert((dpbIdx >= 0) && (dpbIdx < m_maxDpbSize));
+        return m_DPB[dpbIdx].frameType;
+    }
+    StdVideoAV1ReferenceName GetRefName(int32_t dpbIdx) {
+        assert((dpbIdx >= 0) && (dpbIdx < m_maxDpbSize));
+        return m_DPB[dpbIdx].refName;
+    }
+    int32_t GetFrameId(int32_t dpbIdx) {
+        assert((dpbIdx >= 0) && (dpbIdx < m_maxDpbSize));
+        return m_DPB[dpbIdx].frameId;
+    }
+    int32_t GetPicOrderCntVal(int32_t dpbIdx) {
+        assert((dpbIdx >= 0) && (dpbIdx < m_maxDpbSize));
+        return m_DPB[dpbIdx].picOrderCntVal;
+    }
     int32_t GetNumRefsInGroup(int32_t groupId) {
         assert(groupId < 2);
         return (groupId == 0) ? m_numRefFramesInGroup1 : m_numRefFramesInGroup2;
