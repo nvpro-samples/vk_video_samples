@@ -63,6 +63,92 @@ For Vulkan Video Specification please refer to [Vulkan Spec with Video Extension
 
 For deep-dive information on Vulkan Video please refer to the [Deep Dive Slide Deck](https://www.khronos.org/assets/uploads/apis/Vulkan-Video-Deep-Dive-Apr21.pdf).
 
+## Building with AddressSanitizer (Memory Debugging)
+
+To detect memory corruption, buffer overflows, use-after-free, and other memory bugs, build with AddressSanitizer (ASan):
+
+### Encoder Only (without AQ library)
+
+```bash
+cd /data/nvidia/android-extra/video-apps/vulkan-video-samples
+mkdir -p build && cd build
+cmake .. \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer -g" \
+    -DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer -g" \
+    -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address"
+make -j$(nproc)
+```
+
+### Encoder with AQ Library
+
+When building with the AQ library, **both must be built with ASan** for complete memory error detection:
+
+**Step 1: Build AQ library with ASan**
+```bash
+cd /data/nvidia/vulkan/video/algo/aq-vulkan
+mkdir -p build && cd build
+cmake .. \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer -g" \
+    -DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer -g" \
+    -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address"
+make -j$(nproc)
+```
+
+**Step 2: Build encoder with ASan and AQ library**
+```bash
+cd /data/nvidia/android-extra/video-apps/vulkan-video-samples
+mkdir -p build && cd build
+cmake .. \
+    -DNV_AQ_GPU_LIB=/data/nvidia/vulkan/video/algo/aq-vulkan \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer -g" \
+    -DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer -g" \
+    -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address"
+make -j$(nproc)
+```
+
+### Running with ASan
+
+```bash
+# Set library path and run - ASan is automatically active
+cd build
+LD_LIBRARY_PATH=$(pwd)/lib:$LD_LIBRARY_PATH \
+    ./vk_video_encoder/test/vulkan-video-enc-test \
+    -i input.yuv -o output.264 \
+    --inputWidth 1920 --inputHeight 1080 \
+    --codec h264 --numFrames 10
+
+# ASan will detect and report:
+# - Heap buffer overflows (e.g., array out-of-bounds)
+# - Stack buffer overflows
+# - Use-after-free
+# - Double-free
+# - Memory leaks (summary at exit)
+```
+
+### Understanding ASan Output
+
+ASan provides detailed reports including:
+- **Error type** (heap-buffer-overflow, use-after-free, etc.)
+- **Stack trace** showing where the error occurred
+- **Allocation site** showing where the corrupted memory was allocated
+- **Shadow memory** visualization
+
+Example output:
+```
+==12345==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x...
+READ of size 2 at 0x... thread T0
+    #0 0x... in FunctionName file.cpp:123
+    #1 0x... in CallerFunction file.cpp:456
+```
+
+**Note:** ASan builds are 2-5x slower and use 2-3x more memory. Use Release builds for production and performance testing.
+
 ## Enabling Vulkan Validation Layers
 
 The Khronos Valiation Layer can be used for to verify the application correctly use the Vulkan API. There are two options for running the validation layers using the application.
