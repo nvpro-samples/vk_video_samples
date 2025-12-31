@@ -527,7 +527,10 @@ void VkEncDpbH264::DpbBumping(bool alwaysbump)
                 minFoc = i;
             }
         }
-        m_DPB[minFoc].state = DPB_EMPTY;
+        // Only access m_DPB if we found a valid entry
+        if ((minFoc >= 0) && (minFoc < MAX_DPB_SLOTS)) {
+            m_DPB[minFoc].state = DPB_EMPTY;
+        }
     }
 }
 
@@ -1629,7 +1632,10 @@ uint64_t VkEncDpbH264::GetPictureTimestamp(int32_t dpb_idx)
 
 void VkEncDpbH264::SetCurRefFrameTimeStamp(uint64_t refFrameTimeStamp)
 {
-    m_DPB[m_currDpbIdx].refFrameTimeStamp = refFrameTimeStamp;
+    assert((m_currDpbIdx >= 0) && (m_currDpbIdx <= MAX_DPB_SLOTS));
+    if ((m_currDpbIdx >= 0) && (m_currDpbIdx <= MAX_DPB_SLOTS)) {
+        m_DPB[m_currDpbIdx].refFrameTimeStamp = refFrameTimeStamp;
+    }
 }
 
 uint32_t VkEncDpbH264::GetDirtyIntraRefreshRegions(int32_t dpb_idx)
@@ -1642,7 +1648,10 @@ uint32_t VkEncDpbH264::GetDirtyIntraRefreshRegions(int32_t dpb_idx)
 
 void VkEncDpbH264::SetCurDirtyIntraRefreshRegions(uint32_t dirtyIntraRefreshRegions)
 {
-    m_DPB[m_currDpbIdx].dirtyIntraRefreshRegions = dirtyIntraRefreshRegions;
+    assert((m_currDpbIdx >= 0) && (m_currDpbIdx <= MAX_DPB_SLOTS));
+    if ((m_currDpbIdx >= 0) && (m_currDpbIdx <= MAX_DPB_SLOTS)) {
+        m_DPB[m_currDpbIdx].dirtyIntraRefreshRegions = dirtyIntraRefreshRegions;
+    }
 }
 
 // Returns a "view" of the DPB in terms of the entries holding valid reference
