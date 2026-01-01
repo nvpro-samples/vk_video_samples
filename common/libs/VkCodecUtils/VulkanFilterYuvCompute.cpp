@@ -2352,8 +2352,11 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
     // Binding 9: Subsampled Y output image (optional, only if enabled)
     if (m_enableYSubsampling) {
         shaderStr << "// Binding 9: Subsampled Y output (2x2 downsampled luma for AQ)\n";
+        // Use a separate variable for subsampledImage aspects to avoid modifying m_outputImageAspects
+        // ShaderGenerateImagePlaneDescriptors modifies the imageAspects parameter for R8/R16 formats
+        VkImageAspectFlags subsampledImageAspects = VK_IMAGE_ASPECT_PLANE_0_BIT; // Y-only
         ShaderGenerateImagePlaneDescriptors(shaderStr,
-                                            m_outputImageAspects,
+                                            subsampledImageAspects,
                                             "subsampledImage",
                                             (outputBitDepth > 8) ? VK_FORMAT_R16_UNORM : VK_FORMAT_R8_UNORM,
                                             false,       // isInput

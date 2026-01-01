@@ -48,16 +48,20 @@ VkResult VulkanDeviceMemoryImpl::CreateDeviceMemory(const VulkanDeviceContext* v
                                                     VkDeviceMemory& deviceMemory,
                                                     VkDeviceSize&   deviceMemoryOffset)
 {
-    assert(memoryRequirements.size ==
-            ((memoryRequirements.size + (memoryRequirements.alignment - 1)) & ~(memoryRequirements.alignment - 1)));
     deviceMemoryOffset = 0;
+
+    // Align the allocation size to the required alignment.
+    // Vulkan's vkGetImageMemoryRequirements/vkGetBufferMemoryRequirements may return
+    // a size that is not a multiple of alignment, but memory allocations should be aligned.
+    VkDeviceSize alignedSize = (memoryRequirements.size + (memoryRequirements.alignment - 1)) &
+                               ~(memoryRequirements.alignment - 1);
 
     VkMemoryAllocateInfo allocInfo = VkMemoryAllocateInfo();
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.memoryTypeIndex = 0;  // Memory type assigned in the next step
 
     // Assign the proper memory type for that buffer
-    allocInfo.allocationSize = memoryRequirements.size;
+    allocInfo.allocationSize = alignedSize;
     MapMemoryTypeToIndex(vkDevCtx, vkDevCtx->getPhysicalDevice(),
                          memoryRequirements.memoryTypeBits,
                          memoryPropertyFlags,
