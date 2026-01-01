@@ -138,9 +138,10 @@ VkResult VulkanVideoImagePool::GetImageSetNewLayout(uint32_t imageIndex,
                                                     VkImageLayout newImageLayout) {
 
     VkResult result = VK_SUCCESS;
-    bool recreateImage = !m_imageResources[imageIndex].RecreateImage();
+    // RecreateImage() returns true if image doesn't exist or needs recreation
+    bool needsCreation = m_imageResources[imageIndex].RecreateImage();
 
-    if (recreateImage) {
+    if (needsCreation) {
         result = m_imageResources[imageIndex].CreateImage(
                            m_vkDevCtx,
                            &m_imageCreateInfo,

@@ -181,8 +181,9 @@ int8_t VkEncDpbH264::DpbPictureStart(const PicInfoH264 *pPicInfo,
     // - the second field in decoding order is not an IDR picture and
     // - does not include a memory_management_control_operation syntax element equal to 5.
 
-    // TODO: what if there is no current picture?
-    if (((m_DPB[m_currDpbIdx].state == DPB_TOP) || (m_DPB[m_currDpbIdx].state == DPB_BOTTOM)) &&  // contains a single field
+    // Check if there is a current picture (m_currDpbIdx must be valid)
+    if ((m_currDpbIdx >= 0) && (m_currDpbIdx < MAX_DPB_SLOTS) &&
+            ((m_DPB[m_currDpbIdx].state == DPB_TOP) || (m_DPB[m_currDpbIdx].state == DPB_BOTTOM)) &&  // contains a single field
             pPicInfo->field_pic_flag &&                                                      // current is a field
             (((m_DPB[m_currDpbIdx].state == DPB_TOP) && pPicInfo->bottom_field_flag) ||
              ((m_DPB[m_currDpbIdx].state == DPB_BOTTOM) && !pPicInfo->bottom_field_flag)) &&  // opposite parity
@@ -526,7 +527,10 @@ void VkEncDpbH264::DpbBumping(bool alwaysbump)
                 minFoc = i;
             }
         }
-        m_DPB[minFoc].state = DPB_EMPTY;
+        // Only access m_DPB if we found a valid entry
+        if ((minFoc >= 0) && (minFoc < MAX_DPB_SLOTS)) {
+            m_DPB[minFoc].state = DPB_EMPTY;
+        }
     }
 }
 
@@ -1628,7 +1632,10 @@ uint64_t VkEncDpbH264::GetPictureTimestamp(int32_t dpb_idx)
 
 void VkEncDpbH264::SetCurRefFrameTimeStamp(uint64_t refFrameTimeStamp)
 {
-    m_DPB[m_currDpbIdx].refFrameTimeStamp = refFrameTimeStamp;
+    assert((m_currDpbIdx >= 0) && (m_currDpbIdx <= MAX_DPB_SLOTS));
+    if ((m_currDpbIdx >= 0) && (m_currDpbIdx <= MAX_DPB_SLOTS)) {
+        m_DPB[m_currDpbIdx].refFrameTimeStamp = refFrameTimeStamp;
+    }
 }
 
 uint32_t VkEncDpbH264::GetDirtyIntraRefreshRegions(int32_t dpb_idx)
@@ -1641,7 +1648,10 @@ uint32_t VkEncDpbH264::GetDirtyIntraRefreshRegions(int32_t dpb_idx)
 
 void VkEncDpbH264::SetCurDirtyIntraRefreshRegions(uint32_t dirtyIntraRefreshRegions)
 {
-    m_DPB[m_currDpbIdx].dirtyIntraRefreshRegions = dirtyIntraRefreshRegions;
+    assert((m_currDpbIdx >= 0) && (m_currDpbIdx <= MAX_DPB_SLOTS));
+    if ((m_currDpbIdx >= 0) && (m_currDpbIdx <= MAX_DPB_SLOTS)) {
+        m_DPB[m_currDpbIdx].dirtyIntraRefreshRegions = dirtyIntraRefreshRegions;
+    }
 }
 
 // Returns a "view" of the DPB in terms of the entries holding valid reference
