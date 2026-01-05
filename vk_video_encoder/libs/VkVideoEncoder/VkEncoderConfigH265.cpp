@@ -98,8 +98,9 @@ VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                  h265QuantizationMapCapabilities,
                                                                  intraRefreshCapabilities);
     if (result != VK_SUCCESS) {
-        std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
-        assert(!"Could not get Video Capabilities!");
+        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+                  << "Could not get Video Encode Capabilities for HEVC. VkResult: " << result
+                  << " (0x" << std::hex << result << std::dec << ")" << std::endl;
         return result;
     }
 
@@ -120,8 +121,9 @@ VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                                  qualityLevelProperties,
                                                                                  h265QualityLevelProperties);
     if (result != VK_SUCCESS) {
-        std::cout << "*** Could not get Video Encode QualityLevel Properties :" << result << " ***" << std::endl;
-        assert(!"Could not get Video Encode QualityLevel Properties");
+        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+                  << "Could not get Video Encode QualityLevel Properties for HEVC. VkResult: " << result
+                  << " (0x" << std::hex << result << std::dec << "), qualityLevel: " << qualityLevel << std::endl;
         return result;
     }
 

@@ -695,56 +695,121 @@ public:
         }
     }
 
-    static void DumpH264Profiles(VkVideoDecodeH264ProfileInfoKHR* pH264Profiles)
-    {
-        switch (pH264Profiles->stdProfileIdc) {
-        case STD_VIDEO_H264_PROFILE_IDC_BASELINE:
-            std::cout << "BASELINE, ";
-            break;
-        case STD_VIDEO_H264_PROFILE_IDC_MAIN:
-            std::cout << "MAIN, ";
-            break;
-        case STD_VIDEO_H264_PROFILE_IDC_HIGH:
-            std::cout << "HIGH, ";
-            break;
-        case STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE:
-            std::cout << "HIGH_444_PREDICTIVE, ";
-            break;
-        default:
-            std::cout << "UNKNOWN PROFILE, ";
-            break;
-        }
-    }
+    // Comprehensive profile dump for debugging when profile query fails
+    void DumpProfile(std::ostream& os = std::cerr) const {
+        os << "\n=== Video Profile Dump ===" << std::endl;
 
-    static void DumpH265Profiles(VkVideoDecodeH265ProfileInfoKHR* pH265Profiles)
-    {
-        switch (pH265Profiles->stdProfileIdc) {
-        case STD_VIDEO_H265_PROFILE_IDC_MAIN:
-            std::cout << "MAIN, ";
-            break;
-        case STD_VIDEO_H265_PROFILE_IDC_MAIN_10:
-            std::cout << "MAIN_10, ";
-            break;
-        case STD_VIDEO_H265_PROFILE_IDC_MAIN_STILL_PICTURE:
-            std::cout << "MAIN_STILL_PICTURE, ";
-            break;
-        case STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS:
-            std::cout << "FORMAT_RANGE_EXTENSIONS, ";
-            break;
-        case STD_VIDEO_H265_PROFILE_IDC_SCC_EXTENSIONS:
-            std::cout << "SCC_EXTENSIONS, ";
-            break;
-        default:
-            std::cout << "UNKNOWN PROFILE, ";
-            break;
+        // Codec operation
+        os << "  videoCodecOperation: 0x" << std::hex << m_profile.videoCodecOperation << std::dec << " (";
+        switch (m_profile.videoCodecOperation) {
+            case VK_VIDEO_CODEC_OPERATION_NONE_KHR: os << "NONE"; break;
+            case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR: os << "DECODE_H264"; break;
+            case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR: os << "DECODE_H265"; break;
+            case VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR: os << "DECODE_AV1"; break;
+            case VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR: os << "DECODE_VP9"; break;
+            case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR: os << "ENCODE_H264"; break;
+            case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR: os << "ENCODE_H265"; break;
+            case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR: os << "ENCODE_AV1"; break;
+            default: os << "UNKNOWN"; break;
         }
-    }
+        os << ")" << std::endl;
 
-    /*
-    VkComponentMapping               components;
-    VkChromaLocation                 xChromaOffset;
-    VkChromaLocation                 yChromaOffset;
-     */
+        // Chroma subsampling
+        os << "  chromaSubsampling: 0x" << std::hex << m_profile.chromaSubsampling << std::dec << " (";
+        if (m_profile.chromaSubsampling & VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR) os << "MONOCHROME ";
+        if (m_profile.chromaSubsampling & VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR) os << "420 ";
+        if (m_profile.chromaSubsampling & VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR) os << "422 ";
+        if (m_profile.chromaSubsampling & VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR) os << "444 ";
+        os << ")" << std::endl;
+
+        // Luma bit depth
+        os << "  lumaBitDepth: 0x" << std::hex << m_profile.lumaBitDepth << std::dec << " (";
+        if (m_profile.lumaBitDepth & VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR) os << "8-bit ";
+        if (m_profile.lumaBitDepth & VK_VIDEO_COMPONENT_BIT_DEPTH_10_BIT_KHR) os << "10-bit ";
+        if (m_profile.lumaBitDepth & VK_VIDEO_COMPONENT_BIT_DEPTH_12_BIT_KHR) os << "12-bit ";
+        os << ")" << std::endl;
+
+        // Chroma bit depth
+        os << "  chromaBitDepth: 0x" << std::hex << m_profile.chromaBitDepth << std::dec << " (";
+        if (m_profile.chromaBitDepth & VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR) os << "8-bit ";
+        if (m_profile.chromaBitDepth & VK_VIDEO_COMPONENT_BIT_DEPTH_10_BIT_KHR) os << "10-bit ";
+        if (m_profile.chromaBitDepth & VK_VIDEO_COMPONENT_BIT_DEPTH_12_BIT_KHR) os << "12-bit ";
+        os << ")" << std::endl;
+
+        // Codec-specific profile
+        if (m_profile.videoCodecOperation == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR) {
+            os << "  H265 stdProfileIdc: " << m_h265EncodeProfile.stdProfileIdc << " (";
+            switch (m_h265EncodeProfile.stdProfileIdc) {
+                case STD_VIDEO_H265_PROFILE_IDC_MAIN: os << "MAIN"; break;
+                case STD_VIDEO_H265_PROFILE_IDC_MAIN_10: os << "MAIN_10"; break;
+                case STD_VIDEO_H265_PROFILE_IDC_MAIN_STILL_PICTURE: os << "MAIN_STILL_PICTURE"; break;
+                case STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS: os << "FORMAT_RANGE_EXTENSIONS"; break;
+                case STD_VIDEO_H265_PROFILE_IDC_SCC_EXTENSIONS: os << "SCC_EXTENSIONS"; break;
+                default: os << "UNKNOWN/INVALID"; break;
+            }
+            os << ")" << std::endl;
+        } else if (m_profile.videoCodecOperation == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) {
+            os << "  H264 stdProfileIdc: " << m_h264EncodeProfile.stdProfileIdc << " (";
+            switch (m_h264EncodeProfile.stdProfileIdc) {
+                case STD_VIDEO_H264_PROFILE_IDC_BASELINE: os << "BASELINE"; break;
+                case STD_VIDEO_H264_PROFILE_IDC_MAIN: os << "MAIN"; break;
+                case STD_VIDEO_H264_PROFILE_IDC_HIGH: os << "HIGH"; break;
+                case STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE: os << "HIGH_444_PREDICTIVE"; break;
+                default: os << "UNKNOWN/INVALID"; break;
+            }
+            os << ")" << std::endl;
+        } else if (m_profile.videoCodecOperation == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) {
+            os << "  AV1 stdProfile: " << m_av1EncodeProfile.stdProfile << " (";
+            switch (m_av1EncodeProfile.stdProfile) {
+                case STD_VIDEO_AV1_PROFILE_MAIN: os << "MAIN"; break;
+                case STD_VIDEO_AV1_PROFILE_HIGH: os << "HIGH"; break;
+                case STD_VIDEO_AV1_PROFILE_PROFESSIONAL: os << "PROFESSIONAL"; break;
+                default: os << "UNKNOWN"; break;
+            }
+            os << ")" << std::endl;
+        } else if (m_profile.videoCodecOperation == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) {
+            os << "  H265 stdProfileIdc: " << m_h265DecodeProfile.stdProfileIdc << " (";
+            switch (m_h265DecodeProfile.stdProfileIdc) {
+                case STD_VIDEO_H265_PROFILE_IDC_MAIN: os << "MAIN"; break;
+                case STD_VIDEO_H265_PROFILE_IDC_MAIN_10: os << "MAIN_10"; break;
+                case STD_VIDEO_H265_PROFILE_IDC_MAIN_STILL_PICTURE: os << "MAIN_STILL_PICTURE"; break;
+                case STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS: os << "FORMAT_RANGE_EXTENSIONS"; break;
+                case STD_VIDEO_H265_PROFILE_IDC_SCC_EXTENSIONS: os << "SCC_EXTENSIONS"; break;
+                default: os << "UNKNOWN/INVALID"; break;
+            }
+            os << ")" << std::endl;
+        } else if (m_profile.videoCodecOperation == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
+            os << "  H264 stdProfileIdc: " << m_h264DecodeProfile.stdProfileIdc << " (";
+            switch (m_h264DecodeProfile.stdProfileIdc) {
+                case STD_VIDEO_H264_PROFILE_IDC_BASELINE: os << "BASELINE"; break;
+                case STD_VIDEO_H264_PROFILE_IDC_MAIN: os << "MAIN"; break;
+                case STD_VIDEO_H264_PROFILE_IDC_HIGH: os << "HIGH"; break;
+                case STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE: os << "HIGH_444_PREDICTIVE"; break;
+                default: os << "UNKNOWN/INVALID"; break;
+            }
+            os << ")" << std::endl;
+        } else if (m_profile.videoCodecOperation == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
+            os << "  AV1 stdProfile: " << m_av1DecodeProfile.stdProfile << " (";
+            switch (m_av1DecodeProfile.stdProfile) {
+                case STD_VIDEO_AV1_PROFILE_MAIN: os << "MAIN"; break;
+                case STD_VIDEO_AV1_PROFILE_HIGH: os << "HIGH"; break;
+                case STD_VIDEO_AV1_PROFILE_PROFESSIONAL: os << "PROFESSIONAL"; break;
+                default: os << "UNKNOWN"; break;
+            }
+            os << ")" << std::endl;
+        } else if (m_profile.videoCodecOperation == VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
+            os << "  VP9 stdProfile: " << m_vp9DecodeProfile.stdProfile << " (";
+            switch (m_vp9DecodeProfile.stdProfile) {
+                case STD_VIDEO_VP9_PROFILE_0: os << "PROFILE_0"; break;
+                case STD_VIDEO_VP9_PROFILE_1: os << "PROFILE_1"; break;
+                case STD_VIDEO_VP9_PROFILE_2: os << "PROFILE_2"; break;
+                case STD_VIDEO_VP9_PROFILE_3: os << "PROFILE_3"; break;
+                default: os << "UNKNOWN"; break;
+            }
+            os << ")" << std::endl;
+        }
+        os << "==========================" << std::endl;
+    }
 
     static VkSamplerYcbcrRange CodecFullRangeToYCbCrRange(bool video_full_range_flag) {
 

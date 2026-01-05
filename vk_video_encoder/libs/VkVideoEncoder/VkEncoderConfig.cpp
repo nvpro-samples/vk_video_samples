@@ -857,6 +857,12 @@ void EncoderConfig::InitVideoProfile()
         encodeBitDepthChroma = encodeBitDepthLuma;
     }
 
+    // If videoProfileIdc is not explicitly set (default -1), select appropriate profile
+    // based on bit depth and chroma format to ensure correct profile for 10-bit/12-bit content
+    if (videoProfileIdc == (uint32_t)-1) {
+        videoProfileIdc = GetDefaultVideoProfileIdc();
+    }
+
     VkVideoEncodeUsageInfoKHR encodeUsageInfo = {};
     encodeUsageInfo.sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR;
     encodeUsageInfo.pNext = NULL;
@@ -868,8 +874,7 @@ void EncoderConfig::InitVideoProfile()
     videoCoreProfile = VkVideoCoreProfile(codec, encodeChromaSubsampling,
                                           GetComponentBitDepthFlagBits(encodeBitDepthLuma),
                                           GetComponentBitDepthFlagBits(encodeBitDepthChroma),
-                                          (videoProfileIdc != (uint32_t)-1) ? videoProfileIdc :
-                                                  GetDefaultVideoProfileIdc(),
+                                          videoProfileIdc,
                                           VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_PROGRESSIVE_KHR, // interlaced video is not supported with encode
                                           encodeUsageInfo);
 }
