@@ -162,8 +162,9 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
                                             requestVideoEncodeQueueMask,
                                             videoCodecOperation);
     if (result != VK_SUCCESS) {
-
-        assert(!"Can't initialize the Vulkan physical device!");
+        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+                  << "InitVulkanDevice() failed - video codec may not be supported. VkResult: " << result
+                  << " (0x" << std::hex << result << std::dec << ")" << std::endl;
         return result;
     }
 
@@ -185,14 +186,17 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
                                              (m_encoderConfig->enablePreprocessComputeFilter == VK_TRUE))
                                           );
     if (result != VK_SUCCESS) {
-
-        assert(!"Failed to create Vulkan device!");
+        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+                  << "CreateVulkanDevice() failed. VkResult: " << result
+                  << " (0x" << std::hex << result << std::dec << ")" << std::endl;
         return result;
     }
 
     result = VkVideoEncoder::CreateVideoEncoder(&m_vkDevCtxt, m_encoderConfig, m_encoder);
     if (result != VK_SUCCESS) {
-        assert(!"Can't initialize the Vulkan physical device!");
+        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+                  << "CreateVideoEncoder() failed. VkResult: " << result
+                  << " (0x" << std::hex << result << std::dec << ")" << std::endl;
         return result;
     }
 

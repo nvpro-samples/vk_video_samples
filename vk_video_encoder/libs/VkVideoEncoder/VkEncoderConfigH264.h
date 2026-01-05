@@ -179,7 +179,15 @@ struct EncoderConfigH264 : public EncoderConfig {
 
     virtual VkResult InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx) override;
 
-    virtual uint32_t GetDefaultVideoProfileIdc() override { return STD_VIDEO_H264_PROFILE_IDC_HIGH; };
+    virtual uint32_t GetDefaultVideoProfileIdc() override {
+        // H.264 profile selection based on bit depth and chroma format
+        // HIGH_444_PREDICTIVE is required for 10-bit or 444 chroma
+        if (encodeBitDepthLuma > 8 || encodeBitDepthChroma > 8 ||
+            encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR) {
+            return STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE;
+        }
+        return STD_VIDEO_H264_PROFILE_IDC_HIGH;
+    };
 
     // 1. First h.264 determine the number of the Dpb buffers required
     virtual int8_t InitDpbCount() override;

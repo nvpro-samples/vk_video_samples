@@ -351,8 +351,9 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                  h264QuantizationMapCapabilities,
                                                                  intraRefreshCapabilities);
     if (result != VK_SUCCESS) {
-        std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
-        assert(!"Could not get Video Capabilities!");
+        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+                  << "Could not get Video Encode Capabilities for H264. VkResult: " << result
+                  << " (0x" << std::hex << result << std::dec << ")" << std::endl;
         return result;
     }
 
@@ -373,8 +374,9 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                                  qualityLevelProperties,
                                                                                  h264QualityLevelProperties);
     if (result != VK_SUCCESS) {
-        std::cout << "*** Could not get Video Encode QualityLevel Properties :" << result << " ***" << std::endl;
-        assert(!"Could not get Video Encode QualityLevel Properties");
+        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+                  << "Could not get Video Encode QualityLevel Properties for H264. VkResult: " << result
+                  << " (0x" << std::hex << result << std::dec << "), qualityLevel: " << qualityLevel << std::endl;
         return result;
     }
 

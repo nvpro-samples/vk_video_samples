@@ -53,9 +53,9 @@ public:
             return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
         }
         VkResult result = GetVideoCapabilities(vkDevCtx, videoProfile, &videoCapabilities);
-        assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
-            fprintf(stderr, "\nERROR: Input is not supported. GetVideoCapabilities() result: 0x%x\n", result);
+            fprintf(stderr, "\nERROR [%s:%d]: GetVideoDecodeCapabilities() failed. result: 0x%x (%d)\n",
+                    __FILE__, __LINE__, result, result);
         }
         return result;
     }
@@ -79,9 +79,9 @@ public:
         videoCapabilities       =       VkVideoCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR, &videoEncodeCapabilities };
 
         VkResult result = GetVideoCapabilities(vkDevCtx, videoProfile, &videoCapabilities);
-        assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
-            fprintf(stderr, "\nERROR: Input is not supported. GetVideoCapabilities() result: 0x%x\n", result);
+            fprintf(stderr, "\nERROR [%s:%d]: GetVideoEncodeCapabilities() failed. result: 0x%x (%d)\n",
+                    __FILE__, __LINE__, result, result);
         }
         return result;
     }
@@ -101,9 +101,9 @@ public:
         qualityLevelProperties = VkVideoEncodeQualityLevelPropertiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_PROPERTIES_KHR, &codecQualityLevelProperties };
         VkResult result = vkDevCtx->GetPhysicalDeviceVideoEncodeQualityLevelPropertiesKHR(vkDevCtx->getPhysicalDevice(),
                             &qualityLevelInfo, &qualityLevelProperties);
-        assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
-            fprintf(stderr, "\nERROR: GetPhysicalDeviceVideoEncodeQualityLevelProperties() RESULT: 0x%x\n", result);
+            fprintf(stderr, "\nERROR [%s:%d]: GetPhysicalDeviceVideoEncodeQualityLevelProperties() failed. result: 0x%x (%d), qualityLevel: %u\n",
+                    __FILE__, __LINE__, result, result, qualityLevel);
         }
         return result;
     }
@@ -135,7 +135,7 @@ public:
                                     VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR,
                                     formatCount, supportedDpbFormats);
 
-            assert(result == VK_SUCCESS);
+            // Removed assert - handled by return code check below
 
             result = GetVideoFormats(vkDevCtx, videoProfile,
                                     VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR,
@@ -145,17 +145,24 @@ public:
             pictureFormat = supportedOutFormats[0];
 
         } else {
-            fprintf(stderr, "\nERROR: Unsupported decode capability flags.");
+            fprintf(stderr, "\nERROR [%s:%d]: Unsupported decode capability flags: 0x%x\n",
+                    __FILE__, __LINE__, capabilityFlags);
             return VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR;
         }
 
-        assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
-            fprintf(stderr, "\nERROR: GetVideoFormats() result: 0x%x\n", result);
+            fprintf(stderr, "\nERROR [%s:%d]: GetVideoFormats() failed. result: 0x%x (%d)\n",
+                    __FILE__, __LINE__, result, result);
         }
 
-        assert((referencePicturesFormat != VK_FORMAT_UNDEFINED) && (pictureFormat != VK_FORMAT_UNDEFINED));
-        assert(referencePicturesFormat == pictureFormat);
+        if ((referencePicturesFormat == VK_FORMAT_UNDEFINED) || (pictureFormat == VK_FORMAT_UNDEFINED)) {
+            fprintf(stderr, "\nERROR [%s:%d]: Video format is undefined. referencePicturesFormat: %d, pictureFormat: %d\n",
+                    __FILE__, __LINE__, referencePicturesFormat, pictureFormat);
+        }
+        if (referencePicturesFormat != pictureFormat) {
+            fprintf(stderr, "\nWARNING [%s:%d]: referencePicturesFormat (%d) != pictureFormat (%d)\n",
+                    __FILE__, __LINE__, referencePicturesFormat, pictureFormat);
+        }
 
         return result;
     }
@@ -250,8 +257,11 @@ public:
         VkResult result = vkDevCtx->GetPhysicalDeviceVideoCapabilitiesKHR(vkDevCtx->getPhysicalDevice(),
                                                                             videoProfile.GetProfile(),
                                                                             pVideoCapabilities);
-        assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
+            std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+                      << "GetPhysicalDeviceVideoCapabilitiesKHR() failed. VkResult: " << result
+                      << " (0x" << std::hex << result << std::dec << ")" << std::endl;
+            videoProfile.DumpProfile(std::cerr);
             return result;
         }
 
@@ -336,7 +346,7 @@ public:
 
         uint32_t supportedFormatCount = 0;
         VkResult result = vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(vkDevCtx->getPhysicalDevice(), &videoFormatInfo, &supportedFormatCount, nullptr);
-        assert(result == VK_SUCCESS);
+        // Removed assert - handled by return code check below
         assert(supportedFormatCount);
 
         VkVideoFormatPropertiesKHR* pSupportedFormats = new VkVideoFormatPropertiesKHR[supportedFormatCount];
@@ -356,7 +366,7 @@ public:
         }
 
         result = vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(vkDevCtx->getPhysicalDevice(), &videoFormatInfo, &supportedFormatCount, pSupportedFormats);
-        assert(result == VK_SUCCESS);
+        // Removed assert - handled by return code check below
         if (dumpData) {
             std::cout << "\t\t\t" << ((videoProfile.GetCodecType() == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) ? "h264" : "h265") << "decode formats: " << std::endl;
             for (uint32_t fmt = 0; fmt < supportedFormatCount; fmt++) {

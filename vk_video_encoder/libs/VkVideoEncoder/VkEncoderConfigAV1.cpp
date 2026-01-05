@@ -199,8 +199,9 @@ VkResult EncoderConfigAV1::InitDeviceCapabilities(const VulkanDeviceContext* vkD
                                                          av1QuantizationMapCapabilities,
                                                          intraRefreshCapabilities);
     if (result != VK_SUCCESS) {
-        std::cout << "*** Could not get video capabilities :" << result << " ***" << std::endl;
-        assert(!"Coult not get Video Capabilities!");
+        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+                  << "Could not get Video Encode Capabilities for AV1. VkResult: " << result
+                  << " (0x" << std::hex << result << std::dec << ")" << std::endl;
         return result;
     }
 
@@ -220,8 +221,9 @@ VkResult EncoderConfigAV1::InitDeviceCapabilities(const VulkanDeviceContext* vkD
                                                                                  qualityLevelProperties,
                                                                                  av1QualityLevelProperties);
     if (result != VK_SUCCESS) {
-        std::cout << "*** Could not get Video Encode QualityLevel Properties :" << result << " ***" << std::endl;
-        assert(!"Could not get Video Encode QualityLevel Properties");
+        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+                  << "Could not get Video Encode QualityLevel Properties for AV1. VkResult: " << result
+                  << " (0x" << std::hex << result << std::dec << "), qualityLevel: " << qualityLevel << std::endl;
         return result;
     }
 

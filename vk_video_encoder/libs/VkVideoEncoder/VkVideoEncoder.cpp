@@ -752,8 +752,9 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     if (!VulkanVideoCapabilities::IsCodecTypeSupported(m_vkDevCtx,
                                                        m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
                                                        encoderConfig->codec)) {
-        std::cout << "*** The video codec " << VkVideoCoreProfile::CodecToName(encoderConfig->codec) << " is not supported! ***" << std::endl;
-        assert(!"The video codec is not supported");
+        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+                  << "The video codec " << VkVideoCoreProfile::CodecToName(encoderConfig->codec)
+                  << " is not supported!" << std::endl;
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
@@ -762,10 +763,18 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     // Update the video profile
     encoderConfig->InitVideoProfile();
 
-    encoderConfig->InitDeviceCapabilities(m_vkDevCtx);
+    VkResult result = encoderConfig->InitDeviceCapabilities(m_vkDevCtx);
+    if (result != VK_SUCCESS) {
+        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+                  << "InitDeviceCapabilities() failed. VkResult: " << result
+                  << " (0x" << std::hex << result << std::dec << ")"
+                  << " - The video profile/format may not be supported by the driver." << std::endl;
+        return result;
+    }
 
     if (encoderConfig->qualityLevel >= encoderConfig->videoEncodeCapabilities.maxQualityLevels) {
-        std::cerr << "Quality level " << encoderConfig->qualityLevel
+        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+                  << "Quality level " << encoderConfig->qualityLevel
                   << " is greater than the maximum supported quality level "
                   << (encoderConfig->videoEncodeCapabilities.maxQualityLevels - 1) << std::endl;
         return VK_ERROR_INITIALIZATION_FAILED;
@@ -781,14 +790,14 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     if (m_encoderConfig->enableQpMap) {
         if ((m_encoderConfig->qpMapMode == EncoderConfig::DELTA_QP_MAP) &&
             ((m_encoderConfig->videoEncodeCapabilities.flags & VK_VIDEO_ENCODE_CAPABILITY_QUANTIZATION_DELTA_MAP_BIT_KHR) == 0)) {
-                std::cout << "Delta QP Map was requested, but the implementation does not support it!" << std::endl;
-                assert(!"Delta QP Map is not supported");
+                std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+                          << "Delta QP Map was requested, but the implementation does not support it!" << std::endl;
                 return VK_ERROR_INITIALIZATION_FAILED;
         }
         if ((m_encoderConfig->qpMapMode == EncoderConfig::EMPHASIS_MAP) &&
             ((m_encoderConfig->videoEncodeCapabilities.flags & VK_VIDEO_ENCODE_CAPABILITY_EMPHASIS_MAP_BIT_KHR) == 0)) {
-                std::cout << "Emphasis Map was requested, but the implementation does not support it!" << std::endl;
-                assert(!"Emphasis QP Map is not supported");
+                std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+                          << "Emphasis Map was requested, but the implementation does not support it!" << std::endl;
                 return VK_ERROR_INITIALIZATION_FAILED;
         }
     }
@@ -902,9 +911,9 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     VkFormat supportedDpbFormats[8];
     VkFormat supportedInFormats[8];
     uint32_t formatCount = sizeof(supportedDpbFormats) / sizeof(supportedDpbFormats[0]);
-    VkResult result = VulkanVideoCapabilities::GetVideoFormats(m_vkDevCtx, encoderConfig->videoCoreProfile,
-                                                               VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR,
-                                                               formatCount, supportedDpbFormats);
+    result = VulkanVideoCapabilities::GetVideoFormats(m_vkDevCtx, encoderConfig->videoCoreProfile,
+                                                      VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR,
+                                                      formatCount, supportedDpbFormats);
 
     if(result != VK_SUCCESS) {
         fprintf(stderr, "\nInitEncoder Error: Failed to get desired video format for the DPB.\n");
