@@ -2352,8 +2352,11 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
     // Binding 9: Subsampled Y output image (optional, only if enabled)
     if (m_enableYSubsampling) {
         shaderStr << "// Binding 9: Subsampled Y output (2x2 downsampled luma for AQ)\n";
+        // Use a separate variable for subsampledImage aspects to avoid modifying m_outputImageAspects
+        // ShaderGenerateImagePlaneDescriptors modifies the imageAspects parameter for R8/R16 formats
+        VkImageAspectFlags subsampledImageAspects = VK_IMAGE_ASPECT_PLANE_0_BIT; // Y-only
         ShaderGenerateImagePlaneDescriptors(shaderStr,
-                                            m_outputImageAspects,
+                                            subsampledImageAspects,
                                             "subsampledImage",
                                             (outputBitDepth > 8) ? VK_FORMAT_R16_UNORM : VK_FORMAT_R8_UNORM,
                                             false,       // isInput
@@ -2627,14 +2630,13 @@ uint32_t VulkanFilterYuvCompute::UpdateImageDescriptorSets(
 
     validImageAspects &= validAspects;
     uint32_t curImageAspect = 0;
-    const uint32_t numPlanes = imageView->GetNumberOfPlanes();
     while(validImageAspects) {
 
         if (validImageAspects & (VK_IMAGE_ASPECT_COLOR_BIT << curImageAspect) ) {
 
             VkSampler ccSampler = (curImageAspect == 0) ? convSampler : VK_NULL_HANDLE;
             uint32_t planeNum = GetPlaneIndex((VkImageAspectFlagBits)(VK_IMAGE_ASPECT_COLOR_BIT << curImageAspect));
-            assert(planeNum < numPlanes);
+            assert(planeNum < imageView->GetNumberOfPlanes());
             uint32_t dstBinding = baseBinding;
             if (curImageAspect > 0) {
                 // the first plane is 1, second plane is 2, the 3rd is 3
