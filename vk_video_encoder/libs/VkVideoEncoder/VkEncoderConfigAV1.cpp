@@ -15,15 +15,23 @@
 */
 
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
+#include <string>
+#include <charconv>
 
-#define READ_PARAM(i, param, type) {                            \
-    int32_t data = 0;                                           \
-    if ((++i >= argc) || (sscanf(argv[i], "%d", &data) != 1)) { \
-        fprintf(stderr, "invalid parameter");                   \
-        return -1;                                              \
-    } else {                                                    \
-        param = (type)data;                                     \
-    }                                                           \
+#define READ_PARAM(i, param, type) {                                    \
+    if (++i >= argc) {                                                  \
+        fprintf(stderr, "invalid parameter");                           \
+        return -1;                                                      \
+    }                                                                   \
+    const char* _first = argv[i];                                       \
+    const char* _last = _first + strlen(_first);                        \
+    long long _val = 0;                                                 \
+    auto [_ptr, _ec] = std::from_chars(_first, _last, _val);            \
+    if (_ec != std::errc{}) {                                           \
+        fprintf(stderr, "invalid parameter");                           \
+        return -1;                                                      \
+    }                                                                   \
+    param = static_cast<type>(_val);                                    \
 }
 
 int EncoderConfigAV1::DoParseArguments(int argc, const char* argv[])

@@ -20,6 +20,98 @@
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
 #include <algorithm>
 #include <cctype>
+#include <string>
+#include <charconv>
+#include <cmath>
+
+// Helper functions for portable string-to-number conversion
+namespace {
+    template<typename T>
+    inline bool parseUint(const std::string& str, T& value) {
+        const char* first = str.data();
+        const char* last = first + str.size();
+        // Handle hex prefix (0x or 0X)
+        int base = 10;
+        if (str.size() > 2 && str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
+            first += 2;
+            base = 16;
+        } else if (str.size() > 1 && str[0] == '0') {
+            // Handle octal prefix for backwards compatibility
+            base = 8;
+        }
+        unsigned long long result = 0;
+        auto [ptr, ec] = std::from_chars(first, last, result, base);
+        if (ec == std::errc{} && ptr == last) {
+            value = static_cast<T>(result);
+            return true;
+        }
+        return false;
+    }
+
+    template<typename T>
+    inline bool parseInt(const std::string& str, T& value) {
+        const char* first = str.data();
+        const char* last = first + str.size();
+        long long result = 0;
+        auto [ptr, ec] = std::from_chars(first, last, result);
+        if (ec == std::errc{} && ptr == last) {
+            value = static_cast<T>(result);
+            return true;
+        }
+        return false;
+    }
+
+    inline bool parseFloat(const std::string& str, float& value) {
+        // Note: std::from_chars for float may not be available in all compilers
+        // Fall back to manual parsing for portability
+        const char* first = str.data();
+        const char* last = first + str.size();
+#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L
+        // Use from_chars if available
+        auto [ptr, ec] = std::from_chars(first, last, value);
+        if (ec == std::errc{}) {
+            return true;
+        }
+        return false;
+#else
+        // Fallback: manual float parsing to avoid strtof
+        // Parse sign
+        bool negative = false;
+        if (*first == '-') { negative = true; first++; }
+        else if (*first == '+') { first++; }
+
+        double result = 0.0;
+        // Parse integer part
+        while (first < last && *first >= '0' && *first <= '9') {
+            result = result * 10.0 + (*first - '0');
+            first++;
+        }
+        // Parse fractional part
+        if (first < last && *first == '.') {
+            first++;
+            double frac = 0.1;
+            while (first < last && *first >= '0' && *first <= '9') {
+                result += (*first - '0') * frac;
+                frac *= 0.1;
+                first++;
+            }
+        }
+        value = negative ? static_cast<float>(-result) : static_cast<float>(result);
+        return true;
+#endif
+    }
+
+    inline bool parseHex(const std::string& str, uint32_t& value) {
+        const char* first = str.data();
+        const char* last = first + str.size();
+        // Skip 0x prefix if present
+        if (str.size() > 2 && str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
+            first += 2;
+        }
+        auto [ptr, ec] = std::from_chars(first, last, value, 16);
+        return ec == std::errc{};
+    }
+}
 
 static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
 {
@@ -254,17 +346,17 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             }
             i++; // Skip the next argument since it's the dpbMode value
         } else if (args[i] == "--inputWidth") {
-            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &input.width) != 1)) {
+            if ((++i >= argc) || !parseUint(args[i], input.width)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--inputHeight") {
-            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &input.height) != 1)) {
+            if ((++i >= argc) || !parseUint(args[i], input.height)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--inputNumPlanes") {
-            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &input.numPlanes) != 1)) {
+            if ((++i >= argc) || !parseUint(args[i], input.numPlanes)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
@@ -289,77 +381,80 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             }
             i++; // Skip the next argument since it's the chromeSubsampling value
         }  else if (args[i] == "--inputLumaPlanePitch") {
-            if ((++i >= argc) || (sscanf(args[i].c_str(), "%llu",
-                    (long long unsigned int*)&input.planeLayouts[0].rowPitch) != 1)) {
+            uint64_t rowPitch = 0;
+            if ((++i >= argc) || !parseUint(args[i], rowPitch)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
+            input.planeLayouts[0].rowPitch = rowPitch;
         }  else if (args[i] == "--inputBpp") {
-            if ((++i >= argc) || (sscanf(args[i].c_str(), "%hhu", &input.bpp) != 1)) {
+            if ((++i >= argc) || !parseUint(args[i], input.bpp)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         }  else if (args[i] == "--msbShift") {
-            if ((++i >= argc) || (sscanf(args[i].c_str(), "%hhu", &input.msbShift) != 1)) {
+            uint8_t msbShiftVal = 0;
+            if ((++i >= argc) || !parseUint(args[i], msbShiftVal)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
+            input.msbShift = static_cast<int8_t>(msbShiftVal);
         } else if (args[i] == "--startFrame") {
-            if (++i >= argc || sscanf(args[i].c_str(), "%u", &startFrame) != 1) {
+            if (++i >= argc || !parseUint(args[i], startFrame)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--numFrames") {
-            if (++i >= argc || sscanf(args[i].c_str(), "%u", &numFrames) != 1) {
+            if (++i >= argc || !parseUint(args[i], numFrames)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--repeatInputFrames") {
             repeatInputFrames = true;
         } else if (args[i] == "--encodeOffsetX") {
-            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &encodeOffsetX) != 1)) {
+            if ((++i >= argc) || !parseUint(args[i], encodeOffsetX)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--encodeOffsetY") {
-            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &encodeOffsetY) != 1)) {
+            if ((++i >= argc) || !parseUint(args[i], encodeOffsetY)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--encodeWidth") {
-            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &encodeWidth) != 1)) {
+            if ((++i >= argc) || !parseUint(args[i], encodeWidth)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--encodeHeight") {
-            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &encodeHeight) != 1)) {
+            if ((++i >= argc) || !parseUint(args[i], encodeHeight)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--encodeMaxWidth") {
-            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &encodeMaxWidth) != 1)) {
+            if ((++i >= argc) || !parseUint(args[i], encodeMaxWidth)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--encodeMaxHeight") {
-            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &encodeMaxHeight) != 1)) {
+            if ((++i >= argc) || !parseUint(args[i], encodeMaxHeight)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--minQp") {
-            if (++i >= argc || sscanf(args[i].c_str(), "%u", &minQp) != 1) {
+            if (++i >= argc || !parseInt(args[i], minQp)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--maxQp") {
-            if (++i >= argc || sscanf(args[i].c_str(), "%u", &maxQp) != 1) {
+            if (++i >= argc || !parseInt(args[i], maxQp)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         // GOP structure
         } else if (args[i] == "--gopFrameCount") {
             uint8_t gopFrameCount = EncoderConfig::DEFAULT_GOP_FRAME_COUNT;
-            if (++i >= argc || sscanf(args[i].c_str(), "%hhu", &gopFrameCount) != 1) {
+            if (++i >= argc || !parseUint(args[i], gopFrameCount)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
@@ -369,7 +464,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             }
         } else if (args[i] == "--idrPeriod") {
             int32_t idrPeriod = EncoderConfig::DEFAULT_GOP_IDR_PERIOD;
-            if (++i >= argc || sscanf(args[i].c_str(), "%d", &idrPeriod) != 1) {
+            if (++i >= argc || !parseInt(args[i], idrPeriod)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
@@ -379,7 +474,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             }
         } else if (args[i] == "--consecutiveBFrameCount") {
             uint8_t consecutiveBFrameCount = EncoderConfig::DEFAULT_CONSECUTIVE_B_FRAME_COUNT;
-            if (++i >= argc || sscanf(args[i].c_str(), "%hhu", &consecutiveBFrameCount) != 1) {
+            if (++i >= argc || !parseUint(args[i], consecutiveBFrameCount)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
@@ -389,7 +484,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             }
         } else if (args[i] == "--temporalLayerCount") {
             uint8_t temporalLayerCount = EncoderConfig::DEFAULT_TEMPORAL_LAYER_COUNT;
-            if (++i >= argc || sscanf(args[i].c_str(), "%hhu", &temporalLayerCount) != 1) {
+            if (++i >= argc || !parseUint(args[i], temporalLayerCount)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
@@ -419,7 +514,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         } else if (args[i] == "--closedGop") {
             gopStructure.SetClosedGop();
         } else if (args[i] == "--qualityLevel") {
-            if (++i >= argc || sscanf(args[i].c_str(), "%u", &qualityLevel) != 1) {
+            if (++i >= argc || !parseUint(args[i], qualityLevel)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
@@ -505,42 +600,44 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             }
         }
         else if (args[i] == "--averageBitrate") {
-            if (++i >= argc || sscanf(args[i].c_str(), "%u", &averageBitrate) != 1) {
+            if (++i >= argc || !parseUint(args[i], averageBitrate)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--maxBitrate") {
-                if (++i >= argc || sscanf(args[i].c_str(), "%u", &maxBitrate) != 1) {
+                if (++i >= argc || !parseUint(args[i], maxBitrate)) {
                     fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                     return -1;
                 }
         } else if (args[i] == "--vbvBufferSize") {
-            if (++i >= argc || sscanf(args[i].c_str(), "%u", &vbvBufferSize) != 1) {
+            if (++i >= argc || !parseUint(args[i], vbvBufferSize)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--qpI") {
-                if (++i >= argc || sscanf(args[i].c_str(), "%u", &constQp.qpIntra) != 1) {
+                if (++i >= argc || !parseUint(args[i], constQp.qpIntra)) {
                     fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                     return -1;
                 }
         } else if (args[i] == "--qpP") {
-                if (++i >= argc || sscanf(args[i].c_str(), "%u", &constQp.qpInterP) != 1) {
+                if (++i >= argc || !parseUint(args[i], constQp.qpInterP)) {
                     fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                     return -1;
                 }
         } else if (args[i] == "--qpB") {
-                if (++i >= argc || sscanf(args[i].c_str(), "%u", &constQp.qpInterB) != 1) {
+                if (++i >= argc || !parseUint(args[i], constQp.qpInterB)) {
                     fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                     return -1;
                 }
         } else if (args[i] == "--disableEncodeParameterOptimizations") {
             disableEncodeParameterOptimizations = true;
         } else if (args[i] == "--deviceID") {
-            if ((++i >= argc) || (sscanf(args[i].c_str(), "%x", &deviceId) != 1)) {
+            uint32_t deviceIdVal = 0;
+            if ((++i >= argc) || !parseHex(args[i], deviceIdVal)) {
                  fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                  return -1;
              }
+            deviceId = static_cast<int32_t>(deviceIdVal);
         } else if (args[i] == "--deviceUuid") {
             if (++i >= argc) {
                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
@@ -587,7 +684,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             fprintf(stdout, "Warning: %s Enabling the display for testing encoder input frames!\n", args[i].c_str());
             enableFramePresent = true;
         } else if (args[i] == "--intraRefreshCycleDuration") {
-            if (++i >= argc || sscanf(args[i].c_str(), "%u", &intraRefreshCycleDuration) != 1) {
+            if (++i >= argc || !parseUint(args[i], intraRefreshCycleDuration)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
@@ -616,7 +713,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         } else if (args[i] == "--testIntraRefreshMidway") {
             // Testing only - don't use this feature for production!
             fprintf(stdout, "Warning: %s should only be used for testing!\n", args[i].c_str());
-            if (++i >= argc || sscanf(args[i].c_str(), "%u", &intraRefreshCycleRestartIndex) != 1) {
+            if (++i >= argc || !parseUint(args[i], intraRefreshCycleRestartIndex)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
@@ -624,14 +721,14 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         } else if (args[i] == "--testSkipIntraRefreshStart") {
             // Testing only - don't use this feature for production!
             fprintf(stdout, "Warning: %s should only be used for testing!\n", args[i].c_str());
-            if (++i >= argc || sscanf(args[i].c_str(), "%u", &intraRefreshSkippedStartIndex) != 1) {
+            if (++i >= argc || !parseUint(args[i], intraRefreshSkippedStartIndex)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             gopStructure.SetIntraRefreshSkippedStartIndex(intraRefreshSkippedStartIndex);
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
         } else if (args[i] == "--spatialAQStrength") {
-            if (++i >= argc || sscanf(args[i].c_str(), "%f", &spatialAQStrength) != 1) {
+            if (++i >= argc || !parseFloat(args[i], spatialAQStrength)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
@@ -647,7 +744,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 qpMapMode = DELTA_QP_MAP;
             }
         } else if (args[i] == "--temporalAQStrength") {
-            if (++i >= argc || sscanf(args[i].c_str(), "%f", &temporalAQStrength) != 1) {
+            if (++i >= argc || !parseFloat(args[i], temporalAQStrength)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }

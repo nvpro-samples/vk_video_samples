@@ -19,6 +19,8 @@
 
 #include <assert.h>
 #include <string.h>
+#include <string>
+#include <charconv>
 #include <atomic>
 #include "mio/mio.hpp"
 #include "vk_video/vulkan_video_codecs_common.h"
@@ -491,10 +493,6 @@ private:
     static inline bool
     ParseY4mInt (const char * str, uint32_t * out_value_ptr)
     {
-      uint32_t saved_errno;
-      uint32_t value;
-      bool ret;
-
       if (!str) {
         return false;
       }
@@ -503,18 +501,14 @@ private:
         return false;
       }
 
-      saved_errno = errno;
-      errno = 0;
-      value = (uint32_t)strtol (str, NULL, 0);
-      ret = (errno == 0);
-      errno = saved_errno;
-      if ((value > 0) && (value <= UINT32_MAX)) {
-        *out_value_ptr = value;
-      } else {
-        ret = false;
+      const char* last = str + strlen(str);
+      uint32_t value = 0;
+      auto [ptr, ec] = std::from_chars(str, last, value);
+      if (ec != std::errc{} || value == 0) {
+        return false;
       }
-
-      return ret;
+      *out_value_ptr = value;
+      return true;
     }
 
 private:
