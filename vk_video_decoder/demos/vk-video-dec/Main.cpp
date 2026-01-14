@@ -61,7 +61,7 @@ int main(int argc, const char **argv)
     result = vkDevCtxt.InitVulkanDecoderDevice(decoderConfig.appName.c_str(),
                                                VK_NULL_HANDLE,
                                                videoCodecOperation,
-                                               decoderConfig.noPresent,
+                                               !decoderConfig.noPresent,
                                                decoderConfig.directMode,
                                                decoderConfig.validate,
                                                decoderConfig.validateVerbose,
