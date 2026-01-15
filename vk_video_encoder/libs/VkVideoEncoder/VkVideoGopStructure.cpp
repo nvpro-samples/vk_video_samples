@@ -57,20 +57,20 @@ void VkVideoGopStructure::PrintGopStructure(uint64_t numFrames) const
     GopPosition gopPos(gopState.positionInInputOrder);
     for (uint64_t frameNum = 0; frameNum < (numFrames - 1); frameNum++) {
 
-        GetPositionInGOP(gopState, gopPos);
+        GetPositionInGOP(gopState, gopPos, frameNum == 0, numFrames - frameNum);
         std::cout << std::setw(4) << GetFrameTypeName(gopPos.pictureType);
     }
-    GetPositionInGOP(gopState, gopPos, false, true);
+    GetPositionInGOP(gopState, gopPos, false, 1);
     std::cout << std::setw(4) << GetFrameTypeName(gopPos.pictureType);
 
     std::cout << std::endl << "Encode  order: ";
 
     gopState = GopState();
-    for (uint64_t i = 0; i < (numFrames - 1); i++) {
-        GetPositionInGOP(gopState, gopPos);
+    for (uint64_t frameNum = 0; frameNum < (numFrames - 1); frameNum++) {
+        GetPositionInGOP(gopState, gopPos, frameNum == 0, numFrames - frameNum);
         std::cout << std::setw(3) << gopPos.encodeOrder << " ";
     }
-    GetPositionInGOP(gopState, gopPos, false, true);
+    GetPositionInGOP(gopState, gopPos, false, 1);
     std::cout << std::setw(3) << gopPos.encodeOrder << " ";
 
     std::cout << std::endl;
