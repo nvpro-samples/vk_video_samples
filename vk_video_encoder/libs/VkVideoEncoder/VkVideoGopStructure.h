@@ -61,7 +61,7 @@ public:
 
     struct GopPosition {
         uint32_t   inputOrder;  // input order in the IDR sequence
-        uint32_t   encodeOrder; // encode order in the Gop
+        uint32_t   encodeOrder; // encode order in the IDR sequence
         uint32_t   inGop;       // The position in Gop in input order
         int8_t     numBFrames;  // Number of B frames in this part of the Gop, -1 if not a B frame
         int8_t     bFramePos;   // The B position in Gop, -1 if not a B frame
