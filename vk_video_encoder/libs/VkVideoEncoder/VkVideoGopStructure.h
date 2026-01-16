@@ -267,6 +267,17 @@ public:
             }
 
             gopPos.flags |= FLAGS_IS_REF;
+
+            // Edge case fix: When a P-frame naturally falls on the position just before
+            // an IDR boundary (based on the B-frame pattern, not promoted from B-frame),
+            // it should still get FLAGS_CLOSE_GOP. This handles the case where GOP period
+            // aligns with IDR period (e.g., GOP=10, IDR=10).
+            if ((m_idrPeriod > 0) && ((gopState.positionInInputOrder + 1) % m_idrPeriod == 0)) {
+                gopPos.flags |= FLAGS_CLOSE_GOP;
+            } else if (m_closedGop && (gopPos.inGop == (m_gopFrameCount - 1))) {
+                gopPos.flags |= FLAGS_CLOSE_GOP;
+            }
+
             gopState.lastRefInInputOrder  = gopState.positionInInputOrder;
             gopState.lastRefInEncodeOrder = gopPos.encodeOrder;
         }
