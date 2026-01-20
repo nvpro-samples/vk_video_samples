@@ -60,6 +60,7 @@ VulkanVideoDecoder::VulkanVideoDecoder(VkVideoCodecOperationFlagBitsKHR std)
     , m_bDecoderInitFailed()
     , m_lCheckPTS()
     , m_eError(NV_NO_ERROR)
+    , m_NextStartCode()
 {
     if (m_264SvcEnabled) {
         m_pVkPictureData = new VkParserPictureData[128];
