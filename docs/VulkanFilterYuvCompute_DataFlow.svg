@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="1200" height="800">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+    <marker id="arrow-white" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="white"/>
+    </marker>
+    
+    <linearGradient id="rgbaGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#F44336"/>
+      <stop offset="33%" style="stop-color:#4CAF50"/>
+      <stop offset="66%" style="stop-color:#2196F3"/>
+      <stop offset="100%" style="stop-color:#9E9E9E"/>
+    </linearGradient>
+    
+    <linearGradient id="ycbcrGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#FFD54F"/>
+      <stop offset="50%" style="stop-color:#4FC3F7"/>
+      <stop offset="100%" style="stop-color:#F48FB1"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="1200" height="800" fill="#FAFAFA"/>
+  
+  <!-- Title -->
+  <text x="600" y="40" font-family="Arial, sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="#1A237E">
+    VulkanFilterYuvCompute - Data Flow Diagram
+  </text>
+  
+  <!-- ============ INPUT SOURCES ============ -->
+  <g transform="translate(30, 80)">
+    <text x="100" y="20" font-family="Arial" font-size="16" font-weight="bold" text-anchor="middle" fill="#333">INPUT SOURCES</text>
+    
+    <!-- RGBA Image -->
+    <g transform="translate(0, 40)">
+      <rect x="0" y="0" width="200" height="80" rx="8" fill="white" stroke="#F44336" stroke-width="2"/>
+      <rect x="0" y="0" width="200" height="25" rx="8" fill="url(#rgbaGrad)"/>
+      <rect x="0" y="20" width="200" height="5" fill="url(#rgbaGrad)"/>
+      <text x="100" y="18" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle" fill="white">RGBA Image</text>
+      <text x="10" y="45" font-family="monospace" font-size="9" fill="#333">VK_FORMAT_R8G8B8A8_UNORM</text>
+      <text x="10" y="60" font-family="monospace" font-size="9" fill="#333">VK_FORMAT_B8G8R8A8_UNORM</text>
+      <text x="10" y="75" font-family="Arial" font-size="9" fill="#666">Packed RGBA, 4 bytes/pixel</text>
+    </g>
+    
+    <!-- YCbCr NV12 -->
+    <g transform="translate(0, 135)">
+      <rect x="0" y="0" width="200" height="100" rx="8" fill="white" stroke="#FFB300" stroke-width="2"/>
+      <rect x="0" y="0" width="200" height="25" rx="8" fill="url(#ycbcrGrad)"/>
+      <rect x="0" y="20" width="200" height="5" fill="url(#ycbcrGrad)"/>
+      <text x="100" y="18" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle" fill="white">YCbCr NV12 (2-plane)</text>
+      <text x="10" y="42" font-family="monospace" font-size="9" fill="#333">Plane 0: Y (R8, full res)</text>
+      <text x="10" y="56" font-family="monospace" font-size="9" fill="#333">Plane 1: CbCr (RG8, half res)</text>
+      <text x="10" y="73" font-family="Arial" font-size="9" fill="#666">4:2:0 subsampling</text>
+      <text x="10" y="88" font-family="Arial" font-size="9" fill="#666">1.5 bytes/pixel avg</text>
+    </g>
+    
+    <!-- YCbCr I420 -->
+    <g transform="translate(0, 250)">
+      <rect x="0" y="0" width="200" height="110" rx="8" fill="white" stroke="#7B1FA2" stroke-width="2"/>
+      <rect x="0" y="0" width="200" height="25" rx="8" fill="#CE93D8"/>
+      <rect x="0" y="20" width="200" height="5" fill="#CE93D8"/>
+      <text x="100" y="18" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle" fill="white">YCbCr I420 (3-plane)</text>
+      <text x="10" y="42" font-family="monospace" font-size="9" fill="#333">Plane 0: Y (R8, full res)</text>
+      <text x="10" y="56" font-family="monospace" font-size="9" fill="#333">Plane 1: Cb (R8, half res)</text>
+      <text x="10" y="70" font-family="monospace" font-size="9" fill="#333">Plane 2: Cr (R8, half res)</text>
+      <text x="10" y="87" font-family="Arial" font-size="9" fill="#666">4:2:0 subsampling</text>
+      <text x="10" y="102" font-family="Arial" font-size="9" fill="#666">1.5 bytes/pixel avg</text>
+    </g>
+    
+    <!-- Buffer input -->
+    <g transform="translate(0, 375)">
+      <rect x="0" y="0" width="200" height="70" rx="8" fill="white" stroke="#607D8B" stroke-width="2"/>
+      <rect x="0" y="0" width="200" height="25" rx="8" fill="#90A4AE"/>
+      <rect x="0" y="20" width="200" height="5" fill="#90A4AE"/>
+      <text x="100" y="18" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle" fill="white">Linear Buffer</text>
+      <text x="10" y="42" font-family="monospace" font-size="9" fill="#333">VK_BUFFER_USAGE_STORAGE</text>
+      <text x="10" y="57" font-family="Arial" font-size="9" fill="#666">Row-major packed data</text>
+    </g>
+  </g>
+  
+  <!-- ============ INPUT STAGE ============ -->
+  <g transform="translate(270, 80)">
+    <rect x="0" y="0" width="220" height="380" rx="10" fill="#E8F5E9" stroke="#4CAF50" stroke-width="2"/>
+    <text x="110" y="25" font-family="Arial" font-size="14" font-weight="bold" text-anchor="middle" fill="#2E7D32">INPUT STAGE</text>
+    
+    <!-- Fetch -->
+    <g transform="translate(15, 45)">
+      <rect x="0" y="0" width="190" height="80" rx="6" fill="white" stroke="#66BB6A"/>
+      <text x="95" y="18" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle" fill="#2E7D32">fetch()</text>
+      <text x="10" y="38" font-family="Arial" font-size="9" fill="#333">• texelFetch() for images</text>
+      <text x="10" y="52" font-family="Arial" font-size="9" fill="#333">• buffer[idx] for buffers</text>
+      <text x="10" y="66" font-family="Arial" font-size="9" fill="#333">• Handle plane offsets</text>
+    </g>
+    
+    <!-- Unpack -->
+    <g transform="translate(15, 140)">
+      <rect x="0" y="0" width="190" height="100" rx="6" fill="white" stroke="#66BB6A"/>
+      <text x="95" y="18" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle" fill="#2E7D32">unpack()</text>
+      <text x="10" y="38" font-family="Arial" font-size="9" fill="#333">• Extract R,G,B,A components</text>
+      <text x="10" y="52" font-family="Arial" font-size="9" fill="#333">• Extract Y,Cb,Cr planes</text>
+      <text x="10" y="66" font-family="Arial" font-size="9" fill="#333">• Handle packed formats:</text>
+      <text x="15" y="80" font-family="monospace" font-size="8" fill="#666">YUYV, UYVY, NV12, P010</text>
+    </g>
+    
+    <!-- Normalize -->
+    <g transform="translate(15, 255)">
+      <rect x="0" y="0" width="190" height="100" rx="6" fill="white" stroke="#66BB6A"/>
+      <text x="95" y="18" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle" fill="#2E7D32">normalize()</text>
+      <text x="10" y="38" font-family="Arial" font-size="9" fill="#333">• 8-bit: val / 255.0</text>
+      <text x="10" y="52" font-family="Arial" font-size="9" fill="#333">• 10-bit: val / 1023.0</text>
+      <text x="10" y="66" font-family="Arial" font-size="9" fill="#333">• 16-bit: val / 65535.0</text>
+      <text x="10" y="82" font-family="Arial" font-size="9" fill="#666">Limited range adjustment:</text>
+      <text x="15" y="94" font-family="monospace" font-size="8" fill="#666">Y: (val-16)/(235-16)</text>
+    </g>
+  </g>
+  
+  <!-- Arrow to processing -->
+  <g transform="translate(490, 260)">
+    <rect x="0" y="0" width="80" height="50" rx="5" fill="#FFF9C4" stroke="#FBC02D"/>
+    <text x="40" y="22" font-family="Arial" font-size="10" font-weight="bold" text-anchor="middle" fill="#F57F17">vec4</text>
+    <text x="40" y="38" font-family="Arial" font-size="9" text-anchor="middle" fill="#333">[0.0, 1.0]</text>
+    <line x1="-30" y1="25" x2="-5" y2="25" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
+    <line x1="85" y1="25" x2="110" y2="25" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
+  </g>
+  
+  <!-- ============ PROCESSING STAGE ============ -->
+  <g transform="translate(600, 80)">
+    <rect x="0" y="0" width="220" height="380" rx="10" fill="#E3F2FD" stroke="#1976D2" stroke-width="2"/>
+    <text x="110" y="25" font-family="Arial" font-size="14" font-weight="bold" text-anchor="middle" fill="#1565C0">FILTER STAGE</text>
+    
+    <!-- Color Convert -->
+    <g transform="translate(15, 45)">
+      <rect x="0" y="0" width="190" height="100" rx="6" fill="white" stroke="#42A5F5"/>
+      <text x="95" y="18" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle" fill="#1565C0">colorConvert()</text>
+      <text x="10" y="38" font-family="Arial" font-size="9" fill="#333">RGB → YCbCr matrix:</text>
+      <text x="15" y="52" font-family="monospace" font-size="8" fill="#666">Y  = 0.299R + 0.587G + 0.114B</text>
+      <text x="15" y="64" font-family="monospace" font-size="8" fill="#666">Cb = 0.564(B - Y) + 0.5</text>
+      <text x="15" y="76" font-family="monospace" font-size="8" fill="#666">Cr = 0.713(R - Y) + 0.5</text>
+      <text x="10" y="92" font-family="Arial" font-size="9" fill="#888">BT.601 / BT.709 / BT.2020</text>
+    </g>
+    
+    <!-- Downsample -->
+    <g transform="translate(15, 160)">
+      <rect x="0" y="0" width="190" height="100" rx="6" fill="white" stroke="#42A5F5"/>
+      <text x="95" y="18" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle" fill="#1565C0">downsample()</text>
+      <text x="10" y="38" font-family="Arial" font-size="9" fill="#333">Chroma subsampling:</text>
+      <text x="15" y="54" font-family="Arial" font-size="9" fill="#666">4:4:4 → no downsample</text>
+      <text x="15" y="68" font-family="Arial" font-size="9" fill="#666">4:2:2 → horizontal 2x1</text>
+      <text x="15" y="82" font-family="Arial" font-size="9" fill="#666">4:2:0 → box filter 2x2</text>
+    </g>
+    
+    <!-- Custom filter -->
+    <g transform="translate(15, 275)">
+      <rect x="0" y="0" width="190" height="80" rx="6" fill="white" stroke="#42A5F5"/>
+      <text x="95" y="18" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle" fill="#1565C0">filter()</text>
+      <text x="10" y="38" font-family="Arial" font-size="9" fill="#333">• Brightness/Contrast</text>
+      <text x="10" y="52" font-family="Arial" font-size="9" fill="#333">• Saturation adjustment</text>
+      <text x="10" y="66" font-family="Arial" font-size="9" fill="#333">• Custom per-frame ops</text>
+    </g>
+  </g>
+  
+  <!-- Arrow to output -->
+  <g transform="translate(820, 260)">
+    <rect x="0" y="0" width="80" height="50" rx="5" fill="#FFF9C4" stroke="#FBC02D"/>
+    <text x="40" y="22" font-family="Arial" font-size="10" font-weight="bold" text-anchor="middle" fill="#F57F17">vec4</text>
+    <text x="40" y="38" font-family="Arial" font-size="9" text-anchor="middle" fill="#333">[0.0, 1.0]</text>
+    <line x1="-30" y1="25" x2="-5" y2="25" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
+    <line x1="85" y1="25" x2="110" y2="25" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
+  </g>
+  
+  <!-- ============ OUTPUT STAGE ============ -->
+  <g transform="translate(930, 80)">
+    <rect x="0" y="0" width="220" height="380" rx="10" fill="#FFF3E0" stroke="#FF9800" stroke-width="2"/>
+    <text x="110" y="25" font-family="Arial" font-size="14" font-weight="bold" text-anchor="middle" fill="#E65100">OUTPUT STAGE</text>
+    
+    <!-- Denormalize -->
+    <g transform="translate(15, 45)">
+      <rect x="0" y="0" width="190" height="100" rx="6" fill="white" stroke="#FFA726"/>
+      <text x="95" y="18" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle" fill="#E65100">denormalize()</text>
+      <text x="10" y="38" font-family="Arial" font-size="9" fill="#333">• 8-bit: val * 255.0</text>
+      <text x="10" y="52" font-family="Arial" font-size="9" fill="#333">• 10-bit: val * 1023.0</text>
+      <text x="10" y="66" font-family="Arial" font-size="9" fill="#333">• 16-bit: val * 65535.0</text>
+      <text x="10" y="82" font-family="Arial" font-size="9" fill="#666">Limited range reverse:</text>
+      <text x="15" y="94" font-family="monospace" font-size="8" fill="#666">Y: val*(235-16)+16</text>
+    </g>
+    
+    <!-- Pack -->
+    <g transform="translate(15, 160)">
+      <rect x="0" y="0" width="190" height="100" rx="6" fill="white" stroke="#FFA726"/>
+      <text x="95" y="18" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle" fill="#E65100">pack()</text>
+      <text x="10" y="38" font-family="Arial" font-size="9" fill="#333">• Combine components</text>
+      <text x="10" y="52" font-family="Arial" font-size="9" fill="#333">• Pack to target format:</text>
+      <text x="15" y="66" font-family="monospace" font-size="8" fill="#666">NV12: Y→R8, CbCr→RG8</text>
+      <text x="15" y="78" font-family="monospace" font-size="8" fill="#666">P010: Y→R16, CbCr→RG16</text>
+      <text x="15" y="90" font-family="monospace" font-size="8" fill="#666">I420: Y→R8, Cb→R8, Cr→R8</text>
+    </g>
+    
+    <!-- Write -->
+    <g transform="translate(15, 275)">
+      <rect x="0" y="0" width="190" height="80" rx="6" fill="white" stroke="#FFA726"/>
+      <text x="95" y="18" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle" fill="#E65100">write()</text>
+      <text x="10" y="38" font-family="Arial" font-size="9" fill="#333">• imageStore() for images</text>
+      <text x="10" y="52" font-family="Arial" font-size="9" fill="#333">• buffer[idx] = for buffers</text>
+      <text x="10" y="66" font-family="Arial" font-size="9" fill="#333">• Per output slot iteration</text>
+    </g>
+  </g>
+  
+  <!-- ============ OUTPUT DESTINATIONS ============ -->
+  <g transform="translate(30, 490)">
+    <text x="585" y="25" font-family="Arial" font-size="16" font-weight="bold" text-anchor="middle" fill="#333">OUTPUT DESTINATIONS</text>
+    
+    <!-- Multiple outputs diagram -->
+    <g transform="translate(100, 45)">
+      <!-- Central dispatch -->
+      <rect x="350" y="0" width="200" height="60" rx="8" fill="#1976D2" stroke="#0D47A1" stroke-width="2"/>
+      <text x="450" y="25" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle" fill="white">DISPATCH</text>
+      <text x="450" y="42" font-family="monospace" font-size="9" text-anchor="middle" fill="#BBDEFB">gl_GlobalInvocationID</text>
+      
+      <!-- Output 0: Encoder -->
+      <g transform="translate(0, 100)">
+        <rect x="0" y="0" width="250" height="100" rx="8" fill="white" stroke="#FF9800" stroke-width="2"/>
+        <rect x="0" y="0" width="250" height="25" rx="8" fill="#FFA726"/>
+        <rect x="0" y="20" width="250" height="5" fill="#FFA726"/>
+        <text x="125" y="18" font-family="Arial" font-size="11" font-weight="bold" text-anchor="middle" fill="white">output[0] - ENCODER</text>
+        <text x="10" y="42" font-family="Arial" font-size="9" fill="#333">Format: NV12 / P010 / I420</text>
+        <text x="10" y="56" font-family="Arial" font-size="9" fill="#333">Tiling: OPTIMAL</text>
+        <text x="10" y="70" font-family="Arial" font-size="9" fill="#333">Subsample: MatchChroma</text>
+        <text x="10" y="86" font-family="Arial" font-size="9" fill="#2E7D32" font-weight="bold">Usage: HW encoder input</text>
+      </g>
+      
+      <!-- Output 1: Dumper -->
+      <g transform="translate(270, 100)">
+        <rect x="0" y="0" width="250" height="100" rx="8" fill="white" stroke="#FF9800" stroke-width="2"/>
+        <rect x="0" y="0" width="250" height="25" rx="8" fill="#FFB74D"/>
+        <rect x="0" y="20" width="250" height="5" fill="#FFB74D"/>
+        <text x="125" y="18" font-family="Arial" font-size="11" font-weight="bold" text-anchor="middle" fill="white">output[1] - DUMPER</text>
+        <text x="10" y="42" font-family="Arial" font-size="9" fill="#333">Format: Same as output[0]</text>
+        <text x="10" y="56" font-family="Arial" font-size="9" fill="#333">Tiling: LINEAR</text>
+        <text x="10" y="70" font-family="Arial" font-size="9" fill="#333">Subsample: MatchChroma</text>
+        <text x="10" y="86" font-family="Arial" font-size="9" fill="#2E7D32" font-weight="bold">Usage: File dump, CPU read</text>
+      </g>
+      
+      <!-- Output 2: AQ -->
+      <g transform="translate(540, 100)">
+        <rect x="0" y="0" width="250" height="100" rx="8" fill="#FFEBEE" stroke="#F44336" stroke-width="2"/>
+        <rect x="0" y="0" width="250" height="25" rx="8" fill="#EF5350"/>
+        <rect x="0" y="20" width="250" height="5" fill="#EF5350"/>
+        <text x="125" y="18" font-family="Arial" font-size="11" font-weight="bold" text-anchor="middle" fill="white">output[2] - AQ (2x2 Y)</text>
+        <text x="10" y="42" font-family="Arial" font-size="9" fill="#333">Format: R8 / R16 (Y only)</text>
+        <text x="10" y="56" font-family="Arial" font-size="9" fill="#333">Tiling: OPTIMAL</text>
+        <text x="10" y="70" font-family="Arial" font-size="9" fill="#C62828" font-weight="bold">Subsample: Fixed2x2 ALWAYS</text>
+        <text x="10" y="86" font-family="Arial" font-size="9" fill="#2E7D32" font-weight="bold">Usage: AQ/lookahead analysis</text>
+      </g>
+      
+      <!-- Arrows from dispatch -->
+      <line x1="400" y1="60" x2="125" y2="100" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
+      <line x1="450" y1="60" x2="395" y2="100" stroke="#333" stroke-width="2" marker-end="url(#arrow)"/>
+      <line x1="500" y1="60" x2="665" y2="100" stroke="#F44336" stroke-width="2" marker-end="url(#arrow)"/>
+    </g>
+  </g>
+  
+  <!-- Fixed2x2 handling note -->
+  <g transform="translate(700, 720)">
+    <rect x="0" y="0" width="470" height="60" rx="6" fill="#FFEBEE" stroke="#F44336" stroke-width="2"/>
+    <text x="235" y="18" font-family="Arial" font-size="11" font-weight="bold" text-anchor="middle" fill="#C62828">⚠️ Fixed2x2 Output Handling</text>
+    <text x="10" y="38" font-family="Arial" font-size="9" fill="#333">When dispatch ≠ 2x2 (e.g., 4:4:4 output), shader must accumulate 2x2 blocks:</text>
+    <text x="10" y="52" font-family="monospace" font-size="8" fill="#C62828">if ((pos.x % 2 == 1) &amp;&amp; (pos.y % 2 == 1)) imageStore(out2_Y, pos/2, avg);</text>
+  </g>
+  
+  <!-- Version -->
+  <text x="1170" y="790" font-family="Arial" font-size="9" text-anchor="end" fill="#999">Data Flow v1.0</text>
+</svg>

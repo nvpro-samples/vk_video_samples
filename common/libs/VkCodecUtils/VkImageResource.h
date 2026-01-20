@@ -124,6 +124,44 @@ public:
                            VkImageSubresourceRange &imageSubresourceRange,
                            VkSharedBaseObj<VkImageResourceView>& imageResourceView);
 
+    // Overload with optional plane usage override for storage-compatible plane views
+    // When planeUsageOverride is non-zero, plane views will be created with VkImageViewUsageCreateInfo
+    // specifying that usage. This is needed when the base format doesn't support storage but
+    // individual planes (R8, RG8) do via VK_IMAGE_CREATE_EXTENDED_USAGE_BIT.
+    static VkResult Create(const VulkanDeviceContext* vkDevCtx,
+                           VkSharedBaseObj<VkImageResource>& imageResource,
+                           VkImageSubresourceRange &imageSubresourceRange,
+                           VkImageUsageFlags planeUsageOverride,
+                           VkSharedBaseObj<VkImageResourceView>& imageResourceView);
+
+    /**
+     * @brief Create image view with YCbCr sampler conversion support
+     *
+     * Creates both:
+     * 1. A combined YCbCr view with VkSamplerYcbcrConversionInfo attached (for display sampling)
+     * 2. Per-plane views with optional usage override (for compute storage)
+     *
+     * This is needed when an image needs to be both:
+     * - Written by a compute shader (storage views per-plane)
+     * - Sampled with YCbCr conversion for display (combined sampled view)
+     *
+     * @param vkDevCtx              Vulkan device context
+     * @param imageResource         Image resource to create view for
+     * @param imageSubresourceRange Subresource range for the view
+     * @param planeUsageOverride    Usage flags for per-plane views (e.g., VK_IMAGE_USAGE_STORAGE_BIT)
+     * @param ycbcrConversion       YCbCr sampler conversion object (or VK_NULL_HANDLE if none)
+     * @param combinedViewUsage     Usage flags for combined view (e.g., VK_IMAGE_USAGE_SAMPLED_BIT)
+     * @param imageResourceView     Output image resource view
+     * @return VK_SUCCESS on success
+     */
+    static VkResult Create(const VulkanDeviceContext* vkDevCtx,
+                           VkSharedBaseObj<VkImageResource>& imageResource,
+                           VkImageSubresourceRange &imageSubresourceRange,
+                           VkImageUsageFlags planeUsageOverride,
+                           VkSamplerYcbcrConversion ycbcrConversion,
+                           VkImageUsageFlags combinedViewUsage,
+                           VkSharedBaseObj<VkImageResourceView>& imageResourceView);
+
 
     virtual int32_t AddRef()
     {
@@ -140,8 +178,14 @@ public:
         return ret;
     }
 
-    operator VkImageView() const { return m_imageViews[0]; }
-    VkImageView GetImageView() const { return m_imageViews[0]; }
+    operator VkImageView() const {
+        // Fall back to first plane view if combined view is null (storage-only case)
+        return m_imageViews[0] ? m_imageViews[0] : (m_numPlanes > 0 ? m_imageViews[1] : VK_NULL_HANDLE);
+    }
+    VkImageView GetImageView() const {
+        // Fall back to first plane view if combined view is null (storage-only case)
+        return m_imageViews[0] ? m_imageViews[0] : (m_numPlanes > 0 ? m_imageViews[1] : VK_NULL_HANDLE);
+    }
     uint32_t GetNumberOfPlanes() const { return m_numPlanes; }
     VkImageView GetPlaneImageView(uint32_t planeIndex = 0) const {
         if (m_numPlanes == 1) {

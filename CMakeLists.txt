@@ -532,3 +532,14 @@ if(BUILD_ENCODER)
     endif()
 endif()
 ############ VULKAN_VIDEO_ENCODER_LIB ######################################
+
+############ VK_FILTER_TEST - Filter Unit Tests ######################################
+if(BUILD_TESTS AND NOT DEFINED DEQP_TARGET)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/common/libs/tests")
+        message(STATUS "Building VulkanFilterYuvCompute test application")
+        add_subdirectory(common/libs/tests)
+    else()
+        message(STATUS "Filter tests directory not found, skipping...")
+    endif()
+endif()
+############ VK_FILTER_TEST ######################################

@@ -161,7 +161,7 @@ static YcbcrBtStandard GetYcbcrPrimariesConstantsId(VkSamplerYcbcrModelConversio
     case VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601:
         return YcbcrBtStandardBt601Ebu;
     case VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_2020:
-        return YcbcrBtStandardBt709;
+        return YcbcrBtStandardBt2020;  // Fixed: was incorrectly returning BT.709
     default:
         ;// assert(0);
     }

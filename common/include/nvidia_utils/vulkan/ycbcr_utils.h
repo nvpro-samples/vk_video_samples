@@ -214,6 +214,36 @@ static inline YcbcrPrimariesConstants GetYcbcrPrimariesConstants(YcbcrBtStandard
     return YcbcrBtStandardBtUnsupported;
 }
 
+#ifdef VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709
+/**
+ * @brief Convert VkSamplerYcbcrModelConversion to YcbcrBtStandard
+ *
+ * This function provides a centralized mapping from Vulkan YCbCr model conversion
+ * enum values to the internal YcbcrBtStandard enum. Use this function instead of
+ * implementing local switch statements to ensure consistency across the codebase.
+ *
+ * @param modelConversion Vulkan YCbCr model conversion value
+ * @return Corresponding YcbcrBtStandard value, or YcbcrBtStandardUnknown if not supported
+ */
+static inline YcbcrBtStandard VkYcbcrModelToYcbcrBtStandard(VkSamplerYcbcrModelConversion modelConversion)
+{
+    switch (modelConversion) {
+    case VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709:
+        return YcbcrBtStandardBt709;
+    case VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601:
+        return YcbcrBtStandardBt601Ebu;
+    case VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_2020:
+        return YcbcrBtStandardBt2020;
+    case VK_SAMPLER_YCBCR_MODEL_CONVERSION_RGB_IDENTITY:
+    case VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_IDENTITY:
+    default:
+        break;
+    }
+
+    return YcbcrBtStandardUnknown;
+}
+#endif // VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709
+
 //                                                  alpha         beta        gamma     kCoef    reGamma
 #define ITU_BT_GAMMA_COEFFICIENTS()              { 1.0993f,      0.0181f,     0.45f,     4.5f,    true  }
 #define SMPTE170M_GAMMA_COEFFICIENTS()           { 1.0993f,      0.0181f,      2.2f,     4.5f,    false }

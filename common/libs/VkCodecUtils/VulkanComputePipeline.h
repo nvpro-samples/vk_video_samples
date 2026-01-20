@@ -55,7 +55,7 @@ public:
     // Destroy Graphics Pipeline
     void DestroyPipeline()
     {
-        if (m_pipeline) {
+        if (m_pipeline && m_vkDevCtx) {
             m_vkDevCtx->DestroyPipeline(*m_vkDevCtx, m_pipeline, nullptr);
             m_pipeline = VkPipeline(0);
         }
@@ -63,7 +63,7 @@ public:
 
     void DestroyPipelineCache()
     {
-        if (m_pipelineCache) {
+        if (m_pipelineCache && m_vkDevCtx) {
             m_vkDevCtx->DestroyPipelineCache(*m_vkDevCtx, m_pipelineCache, nullptr);
             m_pipelineCache = VkPipelineCache(0);
         }
@@ -71,7 +71,7 @@ public:
 
     void DestroyShaderModule()
     {
-        if (m_shaderModule) {
+        if (m_shaderModule && m_vkDevCtx) {
             m_vkDevCtx->DestroyShaderModule(*m_vkDevCtx, m_shaderModule, nullptr);
             m_shaderModule = VkShaderModule();
         }

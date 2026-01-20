@@ -158,7 +158,6 @@ VkResult VkImageResource::Create(const VulkanDeviceContext* vkDevCtx,
     return result;
 }
 
-
 void VkImageResource::Destroy()
 {
     assert(m_vkDevCtx != nullptr);
@@ -172,9 +171,20 @@ void VkImageResource::Destroy()
     m_vkDevCtx = nullptr;
 }
 
+// Overload without planeUsageOverride - calls the full version with 0
 VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
                                      VkSharedBaseObj<VkImageResource>& imageResource,
                                      VkImageSubresourceRange &imageSubresourceRange,
+                                     VkSharedBaseObj<VkImageResourceView>& imageResourceView)
+{
+    return Create(vkDevCtx, imageResource, imageSubresourceRange, 0, imageResourceView);
+}
+
+// Full version with optional planeUsageOverride for storage-compatible plane views
+VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
+                                     VkSharedBaseObj<VkImageResource>& imageResource,
+                                     VkImageSubresourceRange &imageSubresourceRange,
+                                     VkImageUsageFlags planeUsageOverride,
                                      VkSharedBaseObj<VkImageResourceView>& imageResourceView)
 {
     VkDevice device = vkDevCtx->getDevice();
@@ -191,19 +201,41 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
                             VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY};
     viewInfo.subresourceRange = imageSubresourceRange;
     viewInfo.flags = 0;
-    VkResult result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
-    if (result != VK_SUCCESS) {
-        return result;
-    }
-    numViews++;
 
     const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(viewInfo.format);
+
+    // For multi-planar formats with planeUsageOverride, skip the combined view (index 0)
+    // as the combined format may not support the requested usage (e.g., STORAGE)
+    bool skipCombinedView = (mpInfo != nullptr) && (planeUsageOverride != 0);
+
+    if (!skipCombinedView) {
+        VkResult result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+        numViews++;
+    } else {
+        // Set placeholder for combined view
+        imageViews[numViews] = VK_NULL_HANDLE;
+        numViews++;
+    }
+
+    // Setup VkImageViewUsageCreateInfo for plane views when planeUsageOverride is set
+    VkImageViewUsageCreateInfo usageCreateInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO};
+    usageCreateInfo.usage = planeUsageOverride;
+
     if (mpInfo) { // Is this a YCbCr format
 
         // Create separate image views for Y and CbCr planes
         viewInfo.format = mpInfo->vkPlaneFormat[numPlanes];  // For the Y plane
         viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT << numPlanes;
-        result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
+
+        // Chain usage override if specified
+        if (planeUsageOverride != 0) {
+            viewInfo.pNext = &usageCreateInfo;
+        }
+
+        VkResult result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
         if (result != VK_SUCCESS) {
             return result;
         }
@@ -231,6 +263,9 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
                 numPlanes++;
             }
         }
+
+        // Reset pNext after plane views are created
+        viewInfo.pNext = nullptr;
     } else {
 
         // Is this a plane of YCbCr format
@@ -281,13 +316,140 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
 
             break;
         }
+        
+        // For regular single-plane formats (RGBA, etc.) that didn't match the YCbCr plane
+        // handling above, set numPlanes = 1 since there's effectively one color plane
+        if (numPlanes == 0) {
+            numPlanes = 1;
+        }
     }
 
     imageResourceView = new VkImageResourceView(vkDevCtx, imageResource,
                                                 numViews, numPlanes,
                                                 imageViews, imageSubresourceRange);
 
-    return result;
+    return VK_SUCCESS;
+}
+
+// Full version with YCbCr sampler conversion support
+// Creates both storage-compatible plane views AND a sampled combined view with YCbCr conversion
+VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
+                                     VkSharedBaseObj<VkImageResource>& imageResource,
+                                     VkImageSubresourceRange &imageSubresourceRange,
+                                     VkImageUsageFlags planeUsageOverride,
+                                     VkSamplerYcbcrConversion ycbcrConversion,
+                                     VkImageUsageFlags combinedViewUsage,
+                                     VkSharedBaseObj<VkImageResourceView>& imageResourceView)
+{
+    VkDevice device = vkDevCtx->getDevice();
+    VkImageView  imageViews[4] = {VK_NULL_HANDLE};
+    uint32_t numViews = 0;
+    uint32_t numPlanes = 0;
+    
+    VkImageViewCreateInfo viewInfo = VkImageViewCreateInfo();
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.pNext = nullptr;
+    viewInfo.image = imageResource->GetImage();
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;  // Combined view is always 2D for display
+    viewInfo.format = imageResource->GetImageCreateInfo().format;
+    viewInfo.components = { VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+                            VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY};
+    viewInfo.subresourceRange = imageSubresourceRange;
+    viewInfo.subresourceRange.layerCount = 1;  // Combined view uses single layer
+    viewInfo.flags = 0;
+
+    const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(viewInfo.format);
+
+    // Create combined view with YCbCr conversion for display sampling
+    // Chain: viewInfo -> ycbcrConversionInfo -> usageCreateInfo
+    VkSamplerYcbcrConversionInfo ycbcrConversionInfo{VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO};
+    ycbcrConversionInfo.conversion = ycbcrConversion;
+    ycbcrConversionInfo.pNext = nullptr;
+    
+    VkImageViewUsageCreateInfo combinedUsageInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO};
+    combinedUsageInfo.usage = combinedViewUsage;
+    combinedUsageInfo.pNext = nullptr;
+    
+    // Build pNext chain for combined view
+    if (ycbcrConversion != VK_NULL_HANDLE) {
+        if (combinedViewUsage != 0) {
+            ycbcrConversionInfo.pNext = &combinedUsageInfo;
+        }
+        viewInfo.pNext = &ycbcrConversionInfo;
+    } else if (combinedViewUsage != 0) {
+        viewInfo.pNext = &combinedUsageInfo;
+    }
+    
+    // Create combined view (index 0)
+    VkResult result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+    numViews++;
+    
+    // Now create per-plane views for compute storage
+    if (mpInfo) {
+        // Reset pNext for plane views (use planeUsageOverride instead)
+        viewInfo.pNext = nullptr;
+        viewInfo.viewType = (imageSubresourceRange.layerCount > 1) ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.subresourceRange = imageSubresourceRange;
+        
+        VkImageViewUsageCreateInfo planeUsageInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO};
+        planeUsageInfo.usage = planeUsageOverride;
+        
+        if (planeUsageOverride != 0) {
+            viewInfo.pNext = &planeUsageInfo;
+        }
+        
+        // Create Y plane view
+        viewInfo.format = mpInfo->vkPlaneFormat[numPlanes];
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT << numPlanes;
+        result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
+        if (result != VK_SUCCESS) {
+            // Clean up combined view on failure
+            vkDevCtx->DestroyImageView(device, imageViews[0], nullptr);
+            return result;
+        }
+        numViews++;
+        numPlanes++;
+
+        // Create additional plane views
+        if (mpInfo->planesLayout.numberOfExtraPlanes > 0) {
+            viewInfo.format = mpInfo->vkPlaneFormat[numPlanes];
+            viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT << numPlanes;
+            result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
+            if (result != VK_SUCCESS) {
+                // Clean up on failure
+                for (uint32_t i = 0; i < numViews; i++) {
+                    if (imageViews[i]) vkDevCtx->DestroyImageView(device, imageViews[i], nullptr);
+                }
+                return result;
+            }
+            numViews++;
+            numPlanes++;
+
+            if (mpInfo->planesLayout.numberOfExtraPlanes > 1) {
+                viewInfo.format = mpInfo->vkPlaneFormat[numPlanes];
+                viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT << numPlanes;
+                result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
+                if (result != VK_SUCCESS) {
+                    // Clean up on failure
+                    for (uint32_t i = 0; i < numViews; i++) {
+                        if (imageViews[i]) vkDevCtx->DestroyImageView(device, imageViews[i], nullptr);
+                    }
+                    return result;
+                }
+                numViews++;
+                numPlanes++;
+            }
+        }
+    }
+
+    imageResourceView = new VkImageResourceView(vkDevCtx, imageResource,
+                                                numViews, numPlanes,
+                                                imageViews, imageSubresourceRange);
+
+    return VK_SUCCESS;
 }
 
 VkImageResourceView::~VkImageResourceView()
