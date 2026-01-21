@@ -79,13 +79,11 @@ public:
         };
 
         virtual void Reset(bool releaseResources = true) {
-
-            pictureInfo.pNext = nullptr;
-
             // Reset the base first
             VkVideoEncodeFrameInfo::Reset(releaseResources);
 
             // After resetting the base structure parameters, start building the pNext chain again
+            pictureInfo.pNext = nullptr;
             encodeInfo.pNext = &pictureInfo;
 
             // Clear and check state

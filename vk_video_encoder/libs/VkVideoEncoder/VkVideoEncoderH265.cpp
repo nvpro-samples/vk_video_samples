@@ -264,28 +264,30 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
 
             bool refPicAvailable = m_dpb.GetRefPicture(dpbIndex, pFrameInfo->dpbImageResources[numReferenceSlots]);
             assert(refPicAvailable);
-	    if (!refPicAvailable) {
-		return VK_ERROR_INITIALIZATION_FAILED;
-	    }
+            if (!refPicAvailable) {
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
 
             m_dpb.FillStdReferenceInfo(dpbIndex, &pFrameInfo->stdReferenceInfo[numReferenceSlots]);
 
-            pFrameInfo->stdDpbSlotInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_DPB_SLOT_INFO_KHR;
-            pFrameInfo->stdDpbSlotInfo[numReferenceSlots].pStdReferenceInfo = &pFrameInfo->stdReferenceInfo[numReferenceSlots];
-
-            if (isIntraRefreshFrame) {
-                pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_INTRA_REFRESH_INFO_KHR;
-                pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].dirtyIntraRefreshRegions =
-                    m_dpb.GetDirtyIntraRefreshRegions(dpbIndex);
-
-                pFrameInfo->stdDpbSlotInfo[numReferenceSlots].pNext = &pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots];
-            }
-
             pFrameInfo->referenceSlotsInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].pNext = &pFrameInfo->stdDpbSlotInfo[numReferenceSlots];
+            pFrameInfo->referenceSlotsInfo[numReferenceSlots].pNext = nullptr;
             pFrameInfo->referenceSlotsInfo[numReferenceSlots].slotIndex = dpbIndex;
             pFrameInfo->referenceSlotsInfo[numReferenceSlots].pPictureResource =
                     pFrameInfo->dpbImageResources[numReferenceSlots]->GetPictureResourceInfo();
+
+            pFrameInfo->stdDpbSlotInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_DPB_SLOT_INFO_KHR;
+            pFrameInfo->stdDpbSlotInfo[numReferenceSlots].pNext = nullptr;
+            pFrameInfo->stdDpbSlotInfo[numReferenceSlots].pStdReferenceInfo = &pFrameInfo->stdReferenceInfo[numReferenceSlots];
+            vk::ChainNextVkStruct(pFrameInfo->referenceSlotsInfo[numReferenceSlots], pFrameInfo->stdDpbSlotInfo[numReferenceSlots]);
+
+            if (isIntraRefreshFrame) {
+                pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_INTRA_REFRESH_INFO_KHR;
+                pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].pNext = nullptr;
+                pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].dirtyIntraRefreshRegions =
+                    m_dpb.GetDirtyIntraRefreshRegions(dpbIndex);
+                vk::ChainNextVkStruct(pFrameInfo->referenceSlotsInfo[numReferenceSlots], pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots]);
+            }
 
             numReferenceSlots++;
             assert(numReferenceSlots <= ARRAYSIZE(pFrameInfo->referenceSlotsInfo));
@@ -303,16 +305,19 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
                 if (!refPicAvailable) {
                    return VK_ERROR_INITIALIZATION_FAILED;
                 }
+
                 m_dpb.FillStdReferenceInfo(dpbIndex, &pFrameInfo->stdReferenceInfo[numReferenceSlots]);
 
-                pFrameInfo->stdDpbSlotInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_DPB_SLOT_INFO_KHR;
-                pFrameInfo->stdDpbSlotInfo[numReferenceSlots].pStdReferenceInfo = &pFrameInfo->stdReferenceInfo[numReferenceSlots];
-
                 pFrameInfo->referenceSlotsInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-                pFrameInfo->referenceSlotsInfo[numReferenceSlots].pNext = &pFrameInfo->stdDpbSlotInfo[numReferenceSlots];
+                pFrameInfo->referenceSlotsInfo[numReferenceSlots].pNext = nullptr;
                 pFrameInfo->referenceSlotsInfo[numReferenceSlots].slotIndex = dpbIndex;
                 pFrameInfo->referenceSlotsInfo[numReferenceSlots].pPictureResource =
                         pFrameInfo->dpbImageResources[numReferenceSlots]->GetPictureResourceInfo();
+
+                pFrameInfo->stdDpbSlotInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_DPB_SLOT_INFO_KHR;
+                pFrameInfo->stdDpbSlotInfo[numReferenceSlots].pNext = nullptr;
+                pFrameInfo->stdDpbSlotInfo[numReferenceSlots].pStdReferenceInfo = &pFrameInfo->stdReferenceInfo[numReferenceSlots];
+                vk::ChainNextVkStruct(pFrameInfo->referenceSlotsInfo[numReferenceSlots], pFrameInfo->stdDpbSlotInfo[numReferenceSlots]);
 
                 numReferenceSlots++;
                 assert(numReferenceSlots <= ARRAYSIZE(pFrameInfo->referenceSlotsInfo));

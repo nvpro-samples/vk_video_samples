@@ -255,14 +255,16 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
     if (encodeFrameInfo->setupImageResource != nullptr) {
         assert(setupImageViewPictureResource);
         m_dpbAV1->FillStdReferenceInfo((uint8_t) dpbIndx, &pFrameInfo->stdReferenceInfo[numReferenceSlots]);
+
+        pFrameInfo->referenceSlotsInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+        pFrameInfo->referenceSlotsInfo[numReferenceSlots].pNext = nullptr;
+        pFrameInfo->referenceSlotsInfo[numReferenceSlots].slotIndex = dpbIndx;
+        pFrameInfo->referenceSlotsInfo[numReferenceSlots].pPictureResource = setupImageViewPictureResource;
+
         pFrameInfo->dpbSlotInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_DPB_SLOT_INFO_KHR;
         pFrameInfo->dpbSlotInfo[numReferenceSlots].pNext = nullptr;
         pFrameInfo->dpbSlotInfo[numReferenceSlots].pStdReferenceInfo = &pFrameInfo->stdReferenceInfo[numReferenceSlots];
-
-        pFrameInfo->referenceSlotsInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-        pFrameInfo->referenceSlotsInfo[numReferenceSlots].pNext = &pFrameInfo->dpbSlotInfo[numReferenceSlots];
-        pFrameInfo->referenceSlotsInfo[numReferenceSlots].slotIndex = dpbIndx;
-        pFrameInfo->referenceSlotsInfo[numReferenceSlots].pPictureResource = setupImageViewPictureResource;
+        vk::ChainNextVkStruct(pFrameInfo->referenceSlotsInfo[numReferenceSlots], pFrameInfo->dpbSlotInfo[numReferenceSlots]);
 
         pFrameInfo->setupReferenceSlotInfo = pFrameInfo->referenceSlotsInfo[numReferenceSlots];
         pFrameInfo->encodeInfo.pSetupReferenceSlot = &pFrameInfo->setupReferenceSlotInfo;
@@ -315,25 +317,27 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
             }
 
             m_dpbAV1->FillStdReferenceInfo((uint8_t)dpbIdx, &pFrameInfo->stdReferenceInfo[numReferenceSlots]);
+            
+            pFrameInfo->dpbImageResources[numReferenceSlots] = dpbImageView;
+            
+            pFrameInfo->referenceSlotsInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+            pFrameInfo->referenceSlotsInfo[numReferenceSlots].pNext = nullptr;
+            pFrameInfo->referenceSlotsInfo[numReferenceSlots].slotIndex = dpbIdx;
+            pFrameInfo->referenceSlotsInfo[numReferenceSlots].pPictureResource =
+                    pFrameInfo->dpbImageResources[numReferenceSlots]->GetPictureResourceInfo();
 
             pFrameInfo->dpbSlotInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_DPB_SLOT_INFO_KHR;
             pFrameInfo->dpbSlotInfo[numReferenceSlots].pNext = nullptr;
             pFrameInfo->dpbSlotInfo[numReferenceSlots].pStdReferenceInfo = &pFrameInfo->stdReferenceInfo[numReferenceSlots];
+            vk::ChainNextVkStruct(pFrameInfo->referenceSlotsInfo[numReferenceSlots], pFrameInfo->dpbSlotInfo[numReferenceSlots]);
 
             if (isIntraRefreshFrame) {
                 pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_INTRA_REFRESH_INFO_KHR;
+                pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].pNext = nullptr;
                 pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].dirtyIntraRefreshRegions =
                     m_dpbAV1->GetDirtyIntraRefreshRegions((int8_t)dpbIdx);
-
-                pFrameInfo->dpbSlotInfo[numReferenceSlots].pNext = &pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots];
+                vk::ChainNextVkStruct(pFrameInfo->referenceSlotsInfo[numReferenceSlots], pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots]);
             }
-
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].pNext = &pFrameInfo->dpbSlotInfo[numReferenceSlots];
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].slotIndex = dpbIdx;
-            pFrameInfo->dpbImageResources[numReferenceSlots] = dpbImageView;
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].pPictureResource =
-                    pFrameInfo->dpbImageResources[numReferenceSlots]->GetPictureResourceInfo();
 
             if (refNameMinus1 == pFrameInfo->stdPictureInfo.primary_ref_frame) {
                 primaryRefCdfOnly = false;
@@ -404,17 +408,19 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
         } else {
             // reference itself is not present.  Add it to the referenceSlotInfo and udpate referenceNameSlotIndices
             m_dpbAV1->FillStdReferenceInfo((uint8_t)dpbIdx, &pFrameInfo->stdReferenceInfo[numReferenceSlots]);
+            
+            pFrameInfo->dpbImageResources[numReferenceSlots] = dpbImageView;
+
+            pFrameInfo->referenceSlotsInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
+            pFrameInfo->referenceSlotsInfo[numReferenceSlots].pNext = nullptr;
+            pFrameInfo->referenceSlotsInfo[numReferenceSlots].slotIndex = dpbIdx;
+            pFrameInfo->referenceSlotsInfo[numReferenceSlots].pPictureResource =
+                    pFrameInfo->dpbImageResources[numReferenceSlots]->GetPictureResourceInfo();
 
             pFrameInfo->dpbSlotInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_DPB_SLOT_INFO_KHR;
             pFrameInfo->dpbSlotInfo[numReferenceSlots].pNext = nullptr;
             pFrameInfo->dpbSlotInfo[numReferenceSlots].pStdReferenceInfo = &pFrameInfo->stdReferenceInfo[numReferenceSlots];
-
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].pNext = &pFrameInfo->dpbSlotInfo[numReferenceSlots];
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].slotIndex = dpbIdx;
-            pFrameInfo->dpbImageResources[numReferenceSlots] = dpbImageView;
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].pPictureResource =
-                    pFrameInfo->dpbImageResources[numReferenceSlots]->GetPictureResourceInfo();
+            vk::ChainNextVkStruct(pFrameInfo->referenceSlotsInfo[numReferenceSlots], pFrameInfo->dpbSlotInfo[numReferenceSlots]);
 
             assert(pFrameInfo->pictureInfo.referenceNameSlotIndices[pFrameInfo->stdPictureInfo.primary_ref_frame] == -1);
             pFrameInfo->pictureInfo.referenceNameSlotIndices[pFrameInfo->stdPictureInfo.primary_ref_frame] = dpbIdx;
