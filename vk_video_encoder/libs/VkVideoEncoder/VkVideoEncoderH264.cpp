@@ -379,22 +379,24 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
 
             m_dpb264->FillStdReferenceInfo(slotIndex, &pFrameInfo->stdReferenceInfo[numReferenceSlots]);
 
-            pFrameInfo->stdDpbSlotInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_DPB_SLOT_INFO_KHR;
-            pFrameInfo->stdDpbSlotInfo[numReferenceSlots].pStdReferenceInfo = &pFrameInfo->stdReferenceInfo[numReferenceSlots];
-
-            if (isIntraRefreshFrame) {
-                pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_INTRA_REFRESH_INFO_KHR;
-                pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].dirtyIntraRefreshRegions =
-                    m_dpb264->GetDirtyIntraRefreshRegions(slotIndex);
-
-                pFrameInfo->stdDpbSlotInfo[numReferenceSlots].pNext = &pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots];
-            }
-
             pFrameInfo->referenceSlotsInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
-            pFrameInfo->referenceSlotsInfo[numReferenceSlots].pNext = &pFrameInfo->stdDpbSlotInfo[numReferenceSlots];
+            pFrameInfo->referenceSlotsInfo[numReferenceSlots].pNext = nullptr;
             pFrameInfo->referenceSlotsInfo[numReferenceSlots].slotIndex = slotIndex;
             pFrameInfo->referenceSlotsInfo[numReferenceSlots].pPictureResource =
                         pFrameInfo->dpbImageResources[numReferenceSlots]->GetPictureResourceInfo();
+
+            pFrameInfo->stdDpbSlotInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_DPB_SLOT_INFO_KHR;
+            pFrameInfo->stdDpbSlotInfo[numReferenceSlots].pNext = nullptr;
+            pFrameInfo->stdDpbSlotInfo[numReferenceSlots].pStdReferenceInfo = &pFrameInfo->stdReferenceInfo[numReferenceSlots];
+            vk::ChainNextVkStruct(pFrameInfo->referenceSlotsInfo[numReferenceSlots], pFrameInfo->stdDpbSlotInfo[numReferenceSlots]);
+
+            if (isIntraRefreshFrame) {
+                pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_INTRA_REFRESH_INFO_KHR;
+                pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].pNext = nullptr;
+                pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots].dirtyIntraRefreshRegions =
+                    m_dpb264->GetDirtyIntraRefreshRegions(slotIndex);
+                vk::ChainNextVkStruct(pFrameInfo->referenceSlotsInfo[numReferenceSlots], pFrameInfo->referenceIntraRefreshInfo[numReferenceSlots]);
+            }
 
             numReferenceSlots++;
             assert(numReferenceSlots <= ARRAYSIZE(pFrameInfo->referenceSlotsInfo));
