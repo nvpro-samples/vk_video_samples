@@ -958,13 +958,13 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
         VkSemaphoreCreateInfo semInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, &timelineCreateInfo };
         VkResult result = vkDevCtx->CreateSemaphore(*vkDevCtx, &semInfo, nullptr, &m_frameCompleteSemaphore);
         assert(result == VK_SUCCESS);
-        if (result == VK_SUCCESS) {
+        if (result != VK_SUCCESS) {
             return -1;
         }
 
         result = vkDevCtx->CreateSemaphore(*vkDevCtx, &semInfo, nullptr, &m_consumerCompleteSemaphore);
         assert(result == VK_SUCCESS);
-        if (result == VK_SUCCESS) {
+        if (result != VK_SUCCESS) {
             return -1;
         }
     }
