@@ -21,95 +21,74 @@
 #include <algorithm>
 #include <cctype>
 #include <string>
-#include <charconv>
+#include <cstdlib>
 #include <cmath>
+#include <cerrno>
 
-// Helper functions for portable string-to-number conversion
+// Helper functions for portable string-to-number conversion (C++14 compatible)
 namespace {
     template<typename T>
     inline bool parseUint(const std::string& str, T& value) {
-        const char* first = str.data();
-        const char* last = first + str.size();
-        // Handle hex prefix (0x or 0X)
+        if (str.empty()) return false;
+        const char* first = str.c_str();
+        char* endPtr = nullptr;
+        // Handle hex prefix (0x or 0X) or octal (leading 0)
         int base = 10;
         if (str.size() > 2 && str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
-            first += 2;
             base = 16;
+            first += 2;
         } else if (str.size() > 1 && str[0] == '0') {
-            // Handle octal prefix for backwards compatibility
             base = 8;
         }
-        unsigned long long result = 0;
-        auto [ptr, ec] = std::from_chars(first, last, result, base);
-        if (ec == std::errc{} && ptr == last) {
-            value = static_cast<T>(result);
-            return true;
+        errno = 0;
+        unsigned long long result = std::strtoull(first, &endPtr, base);
+        if (errno != 0 || endPtr != str.c_str() + str.size()) {
+            return false;
         }
-        return false;
+        value = static_cast<T>(result);
+        return true;
     }
 
     template<typename T>
     inline bool parseInt(const std::string& str, T& value) {
-        const char* first = str.data();
-        const char* last = first + str.size();
-        long long result = 0;
-        auto [ptr, ec] = std::from_chars(first, last, result);
-        if (ec == std::errc{} && ptr == last) {
-            value = static_cast<T>(result);
-            return true;
+        if (str.empty()) return false;
+        char* endPtr = nullptr;
+        errno = 0;
+        long long result = std::strtoll(str.c_str(), &endPtr, 10);
+        if (errno != 0 || endPtr != str.c_str() + str.size()) {
+            return false;
         }
-        return false;
+        value = static_cast<T>(result);
+        return true;
     }
 
     inline bool parseFloat(const std::string& str, float& value) {
-        // Note: std::from_chars for float may not be available in all compilers
-        // Fall back to manual parsing for portability
-        const char* first = str.data();
-        const char* last = first + str.size();
-#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L
-        // Use from_chars if available
-        auto [ptr, ec] = std::from_chars(first, last, value);
-        if (ec == std::errc{}) {
-            return true;
+        if (str.empty()) return false;
+        char* endPtr = nullptr;
+        errno = 0;
+        float result = std::strtof(str.c_str(), &endPtr);
+        if (errno != 0 || endPtr == str.c_str()) {
+            return false;
         }
-        return false;
-#else
-        // Fallback: manual float parsing to avoid strtof
-        // Parse sign
-        bool negative = false;
-        if (*first == '-') { negative = true; first++; }
-        else if (*first == '+') { first++; }
-
-        double result = 0.0;
-        // Parse integer part
-        while (first < last && *first >= '0' && *first <= '9') {
-            result = result * 10.0 + (*first - '0');
-            first++;
-        }
-        // Parse fractional part
-        if (first < last && *first == '.') {
-            first++;
-            double frac = 0.1;
-            while (first < last && *first >= '0' && *first <= '9') {
-                result += (*first - '0') * frac;
-                frac *= 0.1;
-                first++;
-            }
-        }
-        value = negative ? static_cast<float>(-result) : static_cast<float>(result);
+        value = result;
         return true;
-#endif
     }
 
     inline bool parseHex(const std::string& str, uint32_t& value) {
-        const char* first = str.data();
-        const char* last = first + str.size();
+        if (str.empty()) return false;
+        const char* first = str.c_str();
+        char* endPtr = nullptr;
         // Skip 0x prefix if present
         if (str.size() > 2 && str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
             first += 2;
         }
-        auto [ptr, ec] = std::from_chars(first, last, value, 16);
-        return ec == std::errc{};
+        errno = 0;
+        unsigned long result = std::strtoul(first, &endPtr, 16);
+        if (errno != 0 || endPtr == first) {
+            return false;
+        }
+        value = static_cast<uint32_t>(result);
+        return true;
     }
 }
 

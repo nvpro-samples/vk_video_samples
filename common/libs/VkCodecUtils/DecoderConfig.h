@@ -28,7 +28,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
-#include <charconv>
+#include <cerrno>
 #include "vulkan_interfaces.h"
 #include "VkCodecUtils/Helpers.h"
 
@@ -256,14 +256,14 @@ struct DecoderConfig {
             {"--deviceID", "-deviceID", 1, "Hex ID of the device to be used",
                 [this](const char **args, const ProgramArgs &a) {
                     const char* first = args[0];
-                    const char* last = first + strlen(first);
                     // Skip 0x prefix if present
                     if (strlen(first) > 2 && first[0] == '0' && (first[1] == 'x' || first[1] == 'X')) {
                         first += 2;
                     }
-                    uint32_t val = 0;
-                    auto [ptr, ec] = std::from_chars(first, last, val, 16);
-                    if (ec != std::errc{}) {
+                    char* endPtr = nullptr;
+                    errno = 0;
+                    unsigned long val = std::strtoul(first, &endPtr, 16);
+                    if (errno != 0 || endPtr == first) {
                         std::cerr << "Invalid deviceID hex value: " << args[0] << std::endl;
                         return false;
                     }

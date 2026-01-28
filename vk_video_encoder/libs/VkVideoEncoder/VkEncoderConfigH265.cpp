@@ -16,7 +16,8 @@
 
 #include <math.h>       /* sqrt */
 #include <string>
-#include <charconv>
+#include <cstdlib>
+#include <cerrno>
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
 
 static void SetupAspectRatio(StdVideoH265SequenceParameterSetVui *vui, uint32_t width, uint32_t height,
@@ -79,13 +80,14 @@ int EncoderConfigH265::DoParseArguments(int argc, const char* argv[])
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
-            const char* first = args[i].data();
-            const char* last = first + args[i].size();
-            auto [ptr, ec] = std::from_chars(first, last, sliceCount);
-            if (ec != std::errc{}) {
+            char* endPtr = nullptr;
+            errno = 0;
+            unsigned long val = std::strtoul(args[i].c_str(), &endPtr, 10);
+            if (errno != 0 || endPtr != args[i].c_str() + args[i].size()) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
+            sliceCount = static_cast<uint32_t>(val);
         } else {
             fprintf(stderr, "Unrecognized option: %s\n", argv[i]);
             return -1;

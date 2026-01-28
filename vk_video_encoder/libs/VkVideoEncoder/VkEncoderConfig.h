@@ -20,7 +20,8 @@
 #include <assert.h>
 #include <string.h>
 #include <string>
-#include <charconv>
+#include <cstdlib>
+#include <cerrno>
 #include <atomic>
 #include "mio/mio.hpp"
 #include "vk_video/vulkan_video_codecs_common.h"
@@ -501,13 +502,13 @@ private:
         return false;
       }
 
-      const char* last = str + strlen(str);
-      uint32_t value = 0;
-      auto [ptr, ec] = std::from_chars(str, last, value);
-      if (ec != std::errc{} || value == 0) {
+      char* endPtr = nullptr;
+      errno = 0;
+      unsigned long value = std::strtoul(str, &endPtr, 10);
+      if (errno != 0 || endPtr == str || value == 0) {
         return false;
       }
-      *out_value_ptr = value;
+      *out_value_ptr = static_cast<uint32_t>(value);
       return true;
     }
 
