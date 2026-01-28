@@ -179,7 +179,7 @@ struct EncoderConfigAV1 : public EncoderConfig {
         double minCRBase = lTier ? levelLimits[lLevel].highCR : levelLimits[lLevel].mainCR;
         double speedAdj = decodeRate / levelLimits[lLevel].maxDisplayRate;
 
-        return std::max(minCRBase * speedAdj, 0.8);
+        return std::max<double>(minCRBase * speedAdj, 0.8);
     }
 
     uint32_t GetLevelBitrate(uint32_t lLevel, uint32_t lTier) {
@@ -195,7 +195,7 @@ struct EncoderConfigAV1 : public EncoderConfig {
     double GetMinCompressRatio(uint32_t lLevel, uint32_t lTier, uint32_t decodeRate) {
         double speedAdj = (double)decodeRate / (double)levelLimits[lLevel].maxDisplayRate;
         double minCompBasis = (lTier == 0) ? levelLimits[lLevel].mainCR : levelLimits[lLevel].highCR;
-        return std::max(0.8, minCompBasis * speedAdj);
+        return std::max<double>(0.8, minCompBasis * speedAdj);
     }
 
     uint32_t GetUncompressedSize() {

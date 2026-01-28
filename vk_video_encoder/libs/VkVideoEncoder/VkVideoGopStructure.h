@@ -246,10 +246,10 @@ public:
                 //   4. The first frame of the min/sub-GOP.
                 uint32_t nextRefDelta = framesLeft - 1;
                 if (m_idrPeriod > 0) {
-                    nextRefDelta = std::min(nextRefDelta, GetPeriodDelta(gopState, m_idrPeriod) - 1);
+                    nextRefDelta = std::min<uint32_t>(nextRefDelta, GetPeriodDelta(gopState, m_idrPeriod) - 1);
                 }
-                nextRefDelta = std::min(nextRefDelta, (GetPeriodDelta(gopState, m_gopFrameCount) - (m_closedGop ? 1 : 0)));
-                nextRefDelta = std::min(nextRefDelta, gopState.lastRefInInputOrder + m_gopFrameCycle - gopPos.inputOrder);
+                nextRefDelta = std::min<uint32_t>(nextRefDelta, (GetPeriodDelta(gopState, m_gopFrameCount) - (m_closedGop ? 1 : 0)));
+                nextRefDelta = std::min<uint32_t>(nextRefDelta, gopState.lastRefInInputOrder + m_gopFrameCycle - gopPos.inputOrder);
 
                 consecutiveBFrameCount = gopPos.bFramePos + nextRefDelta;
                 gopPos.numBFrames = consecutiveBFrameCount;
