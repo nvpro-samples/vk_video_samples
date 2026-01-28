@@ -15,6 +15,7 @@
  */
 
 #include <chrono>
+#include <limits>
 #include "VkVideoEncoder/VkVideoEncoderAV1.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 
@@ -226,7 +227,8 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
     assert(dpbIndx >= 0);
 
     m_dpbAV1->ConfigureRefBufUpdate(pFrameInfo->bShownKeyFrameOrSwitch, pFrameInfo->bShowExistingFrame, frameUpdateType);
-    m_dpbAV1->InvalidateStaleReferenceFrames(pFrameInfo->frameEncodeEncodeOrderNum, pFrameInfo->picOrderCntVal, &m_stateAV1.m_sequenceHeader);
+    assert(pFrameInfo->frameEncodeEncodeOrderNum <= std::numeric_limits<uint32_t>::max());
+    m_dpbAV1->InvalidateStaleReferenceFrames(static_cast<uint32_t>(pFrameInfo->frameEncodeEncodeOrderNum), pFrameInfo->picOrderCntVal, &m_stateAV1.m_sequenceHeader);
     pFrameInfo->stdPictureInfo.refresh_frame_flags = (uint8_t)m_dpbAV1->GetRefreshFrameFlags(pFrameInfo->bShownKeyFrameOrSwitch, pFrameInfo->bShowExistingFrame);
 
     if (pFrameInfo->bShowExistingFrame) {
