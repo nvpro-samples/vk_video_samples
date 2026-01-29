@@ -499,10 +499,8 @@ void VkEncDpbH264::DpbBumping(bool alwaysbump)
         prevOutputIdx = minFoc;
 
         // empty frame buffer
-        if ((!(m_DPB[minFoc].state & DPB_TOP) ||
-                (!m_DPB[minFoc].top_needed_for_output && m_DPB[minFoc].top_field_marking == MARKING_UNUSED)) &&
-                (!(m_DPB[minFoc].state & DPB_BOTTOM) ||
-                 (!m_DPB[minFoc].bottom_needed_for_output && m_DPB[minFoc].bottom_field_marking == MARKING_UNUSED))) {
+        if ((!(m_DPB[minFoc].state & DPB_TOP) || m_DPB[minFoc].top_field_marking == MARKING_UNUSED) &&
+            (!(m_DPB[minFoc].state & DPB_BOTTOM) || m_DPB[minFoc].bottom_field_marking == MARKING_UNUSED)) {
             m_DPB[minFoc].state = DPB_EMPTY;
             ReleaseFrame(m_DPB[minFoc].dpbImageView);
         }
