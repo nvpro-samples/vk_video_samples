@@ -305,9 +305,6 @@ int8_t VkEncDpbH264::DpbPictureEnd(const PicInfoH264 *pPicInfo,
                     int32_t i = 0;
                     // does current have the lowest value of PicOrderCnt?
                     for (; i < MAX_DPB_SLOTS; i++) {
-                        // If we decide to support MVC, the following check must
-                        // be performed only if the view_id of the current DPB
-                        // entry matches the view_id in m_DPB[i].
 
                         assert(m_DPB[i].topFOC >= 0);
                         assert(m_DPB[i].bottomFOC >= 0);
@@ -424,7 +421,7 @@ void VkEncDpbH264::FillFrameNumGaps(const PicInfoH264 *pPicInfo, const StdVideoH
             pCurDPBEntry->not_existing = true;
             // C.4.2
             pCurDPBEntry->top_needed_for_output = pCurDPBEntry->bottom_needed_for_output = false;
-            pCurDPBEntry->state = DPB_FRAME;  // frame
+            pCurDPBEntry->state = DPB_FRAME;
             // this differs from the standard
             // empty frame buffers marked as "not needed for output" and "unused for reference"
             for (int32_t i = 0; i < MAX_DPB_SLOTS; i++) {
@@ -432,7 +429,7 @@ void VkEncDpbH264::FillFrameNumGaps(const PicInfoH264 *pPicInfo, const StdVideoH
                         (!m_DPB[i].top_needed_for_output && m_DPB[i].top_field_marking == MARKING_UNUSED)) &&
                         (!(m_DPB[i].state & DPB_BOTTOM) ||
                          (!m_DPB[i].bottom_needed_for_output && m_DPB[i].bottom_field_marking == MARKING_UNUSED))) {
-                    m_DPB[i].state = DPB_EMPTY;  // empty
+                    m_DPB[i].state = DPB_EMPTY;
                     ReleaseFrame(m_DPB[i].dpbImageView);
                 }
             }
@@ -478,10 +475,6 @@ bool VkEncDpbH264::IsDpbEmpty()
 // C.4.5.3
 void VkEncDpbH264::DpbBumping(bool alwaysbump)
 {
-    // If we decide to implement MVC, we'll need to loop over all the views
-    // configured for this session and perform each check in the for loop
-    // immediately below only if the current DPB entry's view_id matches
-    // that of m_DPB[i].
 
     // select the frame buffer that contains the picture having the smallest value
     // of PicOrderCnt of all pictures in the DPB marked as "needed for output"
@@ -510,7 +503,7 @@ void VkEncDpbH264::DpbBumping(bool alwaysbump)
                 (!m_DPB[minFoc].top_needed_for_output && m_DPB[minFoc].top_field_marking == MARKING_UNUSED)) &&
                 (!(m_DPB[minFoc].state & DPB_BOTTOM) ||
                  (!m_DPB[minFoc].bottom_needed_for_output && m_DPB[minFoc].bottom_field_marking == MARKING_UNUSED))) {
-            m_DPB[minFoc].state = 0;
+            m_DPB[minFoc].state = DPB_EMPTY;
             ReleaseFrame(m_DPB[minFoc].dpbImageView);
         }
     }
@@ -608,10 +601,6 @@ void VkEncDpbH264::SlidingWindowMemoryManagememt(const PicInfoH264 *pPicInfo, co
         int32_t numShortTerm = 0;
         int32_t numLongTerm = 0;
         for (int32_t i = 0; i < MAX_DPB_SLOTS; i++) {
-            // If we decide to implement MVC, the checks in this loop must only be
-            // performed if the view_id from the current DPB entry matches that of
-            // m_DPB[i].
-
             if ((m_DPB[i].top_field_marking == MARKING_SHORT || m_DPB[i].bottom_field_marking == MARKING_SHORT)) {
                 numShortTerm++;
                 if (m_DPB[i].frameNumWrap < minFrameNumWrap) {
@@ -652,10 +641,7 @@ void VkEncDpbH264::AdaptiveMemoryManagement(const PicInfoH264 *pPicInfo, const S
 
             picNumX = currPicNum - (mmco[k].difference_of_pic_nums_minus1 + 1);  // (8-40)
             for (int32_t i = 0; i < MAX_DPB_SLOTS; i++) {
-                // If we decide to implement MVC, the checks in this loop must only be
-                // performed if the view_id from the current DPB entry matches that of
-                // m_DPB[i].
-
+ 
                 if (m_DPB[i].top_field_marking == MARKING_SHORT && m_DPB[i].topPicNum == picNumX)
                     m_DPB[i].top_field_marking = MARKING_UNUSED;
                 if (m_DPB[i].bottom_field_marking == MARKING_SHORT && m_DPB[i].bottomPicNum == picNumX)
@@ -949,7 +935,7 @@ void VkEncDpbH264::FlushDpb()
         if ((!(m_DPB[i].state & DPB_TOP) || (!m_DPB[i].top_needed_for_output && m_DPB[i].top_field_marking == MARKING_UNUSED)) &&
                 (!(m_DPB[i].state & DPB_BOTTOM) ||
                  (!m_DPB[i].bottom_needed_for_output && m_DPB[i].bottom_field_marking == MARKING_UNUSED))) {
-            m_DPB[i].state = DPB_EMPTY;  // empty
+            m_DPB[i].state = DPB_EMPTY;
             ReleaseFrame(m_DPB[i].dpbImageView);
         }
     }
