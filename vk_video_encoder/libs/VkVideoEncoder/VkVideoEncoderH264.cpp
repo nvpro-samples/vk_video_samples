@@ -409,8 +409,8 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     int8_t targetDpbSlot = m_dpb264->DpbPictureEnd(&pictureInfo, encodeFrameInfo->setupImageResource,
                                                    &m_h264.m_spsInfo, &pFrameInfo->stdSliceHeader[0],
                                                    &pFrameInfo->stdReferenceListsInfo, MAX_MEM_MGMNT_CTRL_OPS_COMMANDS);
-    if (targetDpbSlot >= VkEncDpbH264::MAX_DPB_SLOTS) {
-        targetDpbSlot = static_cast<int8_t>((encodeFrameInfo->setupImageResource!=nullptr) + refLists.refPicListCount[0] + refLists.refPicListCount[1] + 1);
+    if ((encodeFrameInfo->setupImageResource != nullptr) && (targetDpbSlot >= m_dpb264->GetMaxDPBSize())) {
+        assert(!"targetDpbSlot is out of bounds");
     }
     if (isReference) {
         assert(targetDpbSlot >= 0);
