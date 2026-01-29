@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <cerrno>
 #include <atomic>
+#include <limits>
 #include "mio/mio.hpp"
 #include "vk_video/vulkan_video_codecs_common.h"
 #include "vk_video/vulkan_video_codec_h264std.h"
@@ -358,7 +359,8 @@ beach:
             offset += SkipY4mFrameHeader(offset);
         }
 
-        return offset;
+        assert(offset <= std::numeric_limits<size_t>::max());
+        return static_cast<size_t>(offset);
     }
 
     // Advances frame pointer with one frame.
@@ -382,7 +384,8 @@ beach:
             }
         }
 
-        m_currFrameOffset = offset;
+        assert(offset <= std::numeric_limits<size_t>::max());
+        m_currFrameOffset = static_cast<size_t>(offset);
 
         return m_currFrameOffset;
     }
@@ -416,7 +419,8 @@ beach:
             return 0;
         }
 
-        m_currFrameOffset = offset;
+        assert(offset <= std::numeric_limits<size_t>::max());
+        m_currFrameOffset = static_cast<size_t>(offset);
 
         return m_currFrameOffset;
     }
