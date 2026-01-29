@@ -31,6 +31,29 @@ public:
                            const void* pInitializeMemory, VkDeviceSize initializeMemorySize, bool clearMemory,
                            VkSharedBaseObj<VulkanDeviceMemoryImpl>& vulkanDeviceMemory);
 
+    /**
+     * @brief Create device memory with optional external memory export support
+     *
+     * This overload accepts a pNext chain that can include VkExportMemoryAllocateInfo
+     * for cross-process sharing via DMA-BUF (Linux) or NT handles (Windows).
+     *
+     * @param vkDevCtx              Vulkan device context
+     * @param memoryRequirements    Memory requirements from vkGetImageMemoryRequirements
+     * @param memoryPropertyFlags   Required memory property flags
+     * @param pAllocateInfoPNext    pNext chain to append to VkMemoryAllocateInfo (e.g., VkExportMemoryAllocateInfo)
+     * @param pInitializeMemory     Optional data to initialize memory with
+     * @param initializeMemorySize  Size of initialization data
+     * @param clearMemory           Whether to clear memory after initialization
+     * @param vulkanDeviceMemory    Output device memory object
+     * @return VK_SUCCESS on success
+     */
+    static VkResult CreateWithExport(const VulkanDeviceContext* vkDevCtx,
+                                     const VkMemoryRequirements& memoryRequirements,
+                                     VkMemoryPropertyFlags& memoryPropertyFlags,
+                                     const void* pAllocateInfoPNext,
+                                     const void* pInitializeMemory, VkDeviceSize initializeMemorySize, bool clearMemory,
+                                     VkSharedBaseObj<VulkanDeviceMemoryImpl>& vulkanDeviceMemory);
+
     virtual int32_t AddRef()
     {
         return ++m_refCount;
@@ -73,6 +96,37 @@ public:
 
     const VkMemoryRequirements& GetMemoryRequirements() const { return m_memoryRequirements; }
 
+    /**
+     * @brief Get the memory type index used for this allocation
+     */
+    uint32_t GetMemoryTypeIndex() const { return m_memoryTypeIndex; }
+
+    /**
+     * @brief Check if this memory was created with export capabilities
+     */
+    bool IsExportable() const { return m_exportHandleTypes != 0; }
+
+    /**
+     * @brief Get the external memory handle types this memory was created with
+     */
+    VkExternalMemoryHandleTypeFlags GetExportHandleTypes() const { return m_exportHandleTypes; }
+
+    /**
+     * @brief Export native handle (DMA-BUF FD on Linux, NT handle on Windows)
+     *
+     * The memory must have been created with CreateWithExport() and appropriate handle types.
+     * The caller is responsible for closing the returned handle when done.
+     *
+     * @param handleType The handle type to export (e.g., VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT)
+     * @param outHandle  Output native handle
+     * @return VK_SUCCESS on success, VK_ERROR_FEATURE_NOT_PRESENT if not exportable
+     */
+#ifdef _WIN32
+    VkResult ExportNativeHandle(VkExternalMemoryHandleTypeFlagBits handleType, void** outHandle) const;
+#else
+    VkResult ExportNativeHandle(VkExternalMemoryHandleTypeFlagBits handleType, int* outHandle) const;
+#endif
+
     VkResult FlushInvalidateMappedMemoryRange(VkDeviceSize offset, VkDeviceSize size, bool flush = true)  const;
 
     VkResult CopyDataToMemory(const uint8_t* pData, VkDeviceSize size,
@@ -85,12 +139,16 @@ private:
     static VkResult CreateDeviceMemory(const VulkanDeviceContext* vkDevCtx,
                                        const VkMemoryRequirements& memoryRequirements,
                                        VkMemoryPropertyFlags& memoryPropertyFlags,
+                                       const void* pAllocateInfoPNext,
                                        VkDeviceMemory& deviceMemory,
-                                       VkDeviceSize&   deviceMemoryOffset);
+                                       VkDeviceSize&   deviceMemoryOffset,
+                                       VkExternalMemoryHandleTypeFlags& outExportHandleTypes,
+                                       uint32_t& outMemoryTypeIndex);
 
 
     VkResult Initialize(const VkMemoryRequirements& memoryRequirements,
                         VkMemoryPropertyFlags& memoryPropertyFlags,
+                        const void* pAllocateInfoPNext,
                         const void* pInitializeMemory,
                         VkDeviceSize initializeMemorySize,
                         bool clearMemory);
@@ -100,6 +158,8 @@ private:
         , m_vkDevCtx(vkDevCtx)
         , m_memoryRequirements()
         , m_memoryPropertyFlags()
+        , m_exportHandleTypes(0)
+        , m_memoryTypeIndex(0)
         , m_deviceMemory()
         , m_deviceMemoryOffset()
         , m_deviceMemoryDataPtr(nullptr) { }
@@ -109,13 +169,15 @@ private:
     virtual ~VulkanDeviceMemoryImpl();
 
 private:
-    std::atomic<int32_t>       m_refCount;
-    const VulkanDeviceContext* m_vkDevCtx;
-    VkMemoryRequirements       m_memoryRequirements;
-    VkMemoryPropertyFlags      m_memoryPropertyFlags;
-    VkDeviceMemory             m_deviceMemory;
-    VkDeviceSize               m_deviceMemoryOffset;
-    uint8_t*                   m_deviceMemoryDataPtr;
+    std::atomic<int32_t>            m_refCount;
+    const VulkanDeviceContext*      m_vkDevCtx;
+    VkMemoryRequirements            m_memoryRequirements;
+    VkMemoryPropertyFlags           m_memoryPropertyFlags;
+    VkExternalMemoryHandleTypeFlags m_exportHandleTypes;   // Handle types this memory was created with
+    uint32_t                        m_memoryTypeIndex;     // Memory type index used for allocation
+    VkDeviceMemory                  m_deviceMemory;
+    VkDeviceSize                    m_deviceMemoryOffset;
+    uint8_t*                        m_deviceMemoryDataPtr;
 };
 
 #endif /* _VULKANDEVICEMEMORYIMPL_H_ */

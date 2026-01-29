@@ -18,12 +18,31 @@
 #include "VkCodecUtils/VulkanDeviceMemoryImpl.h"
 #include "VkCodecUtils/Helpers.h"
 
+#ifdef __linux__
+#include <unistd.h>  // For close()
+#endif
+
 VkResult
 VulkanDeviceMemoryImpl::Create(const VulkanDeviceContext* vkDevCtx,
                                const VkMemoryRequirements& memoryRequirements,
                                VkMemoryPropertyFlags& memoryPropertyFlags,
                                const void* pInitializeMemory, VkDeviceSize initializeMemorySize, bool clearMemory,
                                VkSharedBaseObj<VulkanDeviceMemoryImpl>& vulkanDeviceMemory)
+{
+    // Delegate to CreateWithExport with no export pNext
+    return CreateWithExport(vkDevCtx, memoryRequirements, memoryPropertyFlags,
+                            nullptr,  // No export pNext
+                            pInitializeMemory, initializeMemorySize, clearMemory,
+                            vulkanDeviceMemory);
+}
+
+VkResult
+VulkanDeviceMemoryImpl::CreateWithExport(const VulkanDeviceContext* vkDevCtx,
+                                         const VkMemoryRequirements& memoryRequirements,
+                                         VkMemoryPropertyFlags& memoryPropertyFlags,
+                                         const void* pAllocateInfoPNext,
+                                         const void* pInitializeMemory, VkDeviceSize initializeMemorySize, bool clearMemory,
+                                         VkSharedBaseObj<VulkanDeviceMemoryImpl>& vulkanDeviceMemory)
 {
     VkSharedBaseObj<VulkanDeviceMemoryImpl> vkDeviceMemory(new VulkanDeviceMemoryImpl(vkDevCtx));
     if (!vkDeviceMemory) {
@@ -32,6 +51,7 @@ VulkanDeviceMemoryImpl::Create(const VulkanDeviceContext* vkDevCtx,
     }
 
     VkResult result = vkDeviceMemory->Initialize(memoryRequirements, memoryPropertyFlags,
+                                                 pAllocateInfoPNext,
                                                  pInitializeMemory,
                                                  initializeMemorySize,
                                                  clearMemory);
@@ -45,10 +65,15 @@ VulkanDeviceMemoryImpl::Create(const VulkanDeviceContext* vkDevCtx,
 VkResult VulkanDeviceMemoryImpl::CreateDeviceMemory(const VulkanDeviceContext* vkDevCtx,
                                                     const VkMemoryRequirements& memoryRequirements,
                                                     VkMemoryPropertyFlags& memoryPropertyFlags,
+                                                    const void* pAllocateInfoPNext,
                                                     VkDeviceMemory& deviceMemory,
-                                                    VkDeviceSize&   deviceMemoryOffset)
+                                                    VkDeviceSize&   deviceMemoryOffset,
+                                                    VkExternalMemoryHandleTypeFlags& outExportHandleTypes,
+                                                    uint32_t& outMemoryTypeIndex)
 {
     deviceMemoryOffset = 0;
+    outExportHandleTypes = 0;
+    outMemoryTypeIndex = 0;
 
     // Align the allocation size to the required alignment.
     // Vulkan's vkGetImageMemoryRequirements/vkGetBufferMemoryRequirements may return
@@ -58,7 +83,20 @@ VkResult VulkanDeviceMemoryImpl::CreateDeviceMemory(const VulkanDeviceContext* v
 
     VkMemoryAllocateInfo allocInfo = VkMemoryAllocateInfo();
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.pNext = pAllocateInfoPNext;  // Allow external memory export chain
     allocInfo.memoryTypeIndex = 0;  // Memory type assigned in the next step
+
+    // Extract export handle types from pNext chain if present
+    const VkExportMemoryAllocateInfo* exportInfo = nullptr;
+    const VkBaseInStructure* pNext = static_cast<const VkBaseInStructure*>(pAllocateInfoPNext);
+    while (pNext) {
+        if (pNext->sType == VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO) {
+            exportInfo = reinterpret_cast<const VkExportMemoryAllocateInfo*>(pNext);
+            outExportHandleTypes = exportInfo->handleTypes;
+            break;
+        }
+        pNext = pNext->pNext;
+    }
 
     // Assign the proper memory type for that buffer
     allocInfo.allocationSize = alignedSize;
@@ -66,6 +104,9 @@ VkResult VulkanDeviceMemoryImpl::CreateDeviceMemory(const VulkanDeviceContext* v
                          memoryRequirements.memoryTypeBits,
                          memoryPropertyFlags,
                          &allocInfo.memoryTypeIndex);
+
+    // Output the memory type index for cross-process sharing
+    outMemoryTypeIndex = allocInfo.memoryTypeIndex;
 
     // Allocate memory for the buffer
     VkResult result = vkDevCtx->AllocateMemory(*vkDevCtx, &allocInfo, nullptr, &deviceMemory);
@@ -79,6 +120,7 @@ VkResult VulkanDeviceMemoryImpl::CreateDeviceMemory(const VulkanDeviceContext* v
 
 VkResult VulkanDeviceMemoryImpl::Initialize(const VkMemoryRequirements& memoryRequirements,
                                             VkMemoryPropertyFlags& memoryPropertyFlags,
+                                            const void* pAllocateInfoPNext,
                                             const void* pInitializeMemory,
                                             VkDeviceSize initializeMemorySize,
                                             bool clearMemory)
@@ -99,8 +141,11 @@ VkResult VulkanDeviceMemoryImpl::Initialize(const VkMemoryRequirements& memoryRe
     VkResult result = CreateDeviceMemory(m_vkDevCtx,
                                          memoryRequirements,
                                          memoryPropertyFlags,
+                                         pAllocateInfoPNext,
                                          m_deviceMemory,
-                                         m_deviceMemoryOffset);
+                                         m_deviceMemoryOffset,
+                                         m_exportHandleTypes,
+                                         m_memoryTypeIndex);
 
     if (result != VK_SUCCESS) {
         assert(!"Couldn't CreateDeviceMemory()!");
@@ -228,16 +273,32 @@ VkDeviceSize VulkanDeviceMemoryImpl::Resize(VkDeviceSize newSize, VkDeviceSize c
     VkDeviceMemory  newDeviceMemory = VK_NULL_HANDLE;
     VkDeviceSize    newBufferOffset = 0;
     VkMemoryPropertyFlags newMemoryPropertyFlags = m_memoryPropertyFlags;
+    VkExternalMemoryHandleTypeFlags newExportHandleTypes = 0;
+
+    // Recreate export pNext chain if original memory was exportable
+    VkExportMemoryAllocateInfo exportInfo{VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO};
+    const void* pAllocateInfoPNext = nullptr;
+    if (m_exportHandleTypes != 0) {
+        exportInfo.handleTypes = m_exportHandleTypes;
+        pAllocateInfoPNext = &exportInfo;
+    }
+
+    uint32_t newMemoryTypeIndex = 0;
     VkResult result = CreateDeviceMemory(m_vkDevCtx,
                                          memoryRequirements,
                                          newMemoryPropertyFlags,
+                                         pAllocateInfoPNext,
                                          newDeviceMemory,
-                                         newBufferOffset);
+                                         newBufferOffset,
+                                         newExportHandleTypes,
+                                         newMemoryTypeIndex);
 
     if (result != VK_SUCCESS) {
         assert(!"Couldn't CreateDeviceMemory()!");
         return 0;
     }
+    
+    m_memoryTypeIndex = newMemoryTypeIndex;
 
     uint8_t* newBufferDataPtr = nullptr;
     if (copySize != 0) {
@@ -264,6 +325,7 @@ VkDeviceSize VulkanDeviceMemoryImpl::Resize(VkDeviceSize newSize, VkDeviceSize c
 
     m_memoryRequirements = memoryRequirements;
     m_memoryPropertyFlags = newMemoryPropertyFlags;
+    m_exportHandleTypes = newExportHandleTypes;
     m_deviceMemory = newDeviceMemory;
     m_deviceMemoryOffset = newBufferOffset;
     m_deviceMemoryDataPtr = newBufferDataPtr;
@@ -419,3 +481,65 @@ VulkanDeviceMemoryImpl::~VulkanDeviceMemoryImpl()
 {
     Deinitialize();
 }
+
+//=============================================================================
+// External Memory Handle Export
+//=============================================================================
+
+#ifdef _WIN32
+VkResult VulkanDeviceMemoryImpl::ExportNativeHandle(VkExternalMemoryHandleTypeFlagBits handleType, void** outHandle) const
+{
+    if (outHandle == nullptr) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    *outHandle = nullptr;
+
+    if (!IsExportable()) {
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+
+    if ((m_exportHandleTypes & handleType) == 0) {
+        // This handle type wasn't enabled during creation
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+
+    VkMemoryGetWin32HandleInfoKHR getHandleInfo{VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR};
+    getHandleInfo.memory = m_deviceMemory;
+    getHandleInfo.handleType = handleType;
+
+    HANDLE handle = nullptr;
+    VkResult result = m_vkDevCtx->GetMemoryWin32HandleKHR(*m_vkDevCtx, &getHandleInfo, &handle);
+    if (result == VK_SUCCESS) {
+        *outHandle = handle;
+    }
+    return result;
+}
+#else
+VkResult VulkanDeviceMemoryImpl::ExportNativeHandle(VkExternalMemoryHandleTypeFlagBits handleType, int* outHandle) const
+{
+    if (outHandle == nullptr) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    *outHandle = -1;
+
+    if (!IsExportable()) {
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+
+    if ((m_exportHandleTypes & handleType) == 0) {
+        // This handle type wasn't enabled during creation
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+
+    VkMemoryGetFdInfoKHR getFdInfo{VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR};
+    getFdInfo.memory = m_deviceMemory;
+    getFdInfo.handleType = handleType;
+
+    int fd = -1;
+    VkResult result = m_vkDevCtx->GetMemoryFdKHR(*m_vkDevCtx, &getFdInfo, &fd);
+    if (result == VK_SUCCESS) {
+        *outHandle = fd;
+    }
+    return result;
+}
+#endif
