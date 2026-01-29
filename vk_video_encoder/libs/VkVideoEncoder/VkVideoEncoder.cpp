@@ -20,11 +20,11 @@
 #include "VkVideoEncoder/VkVideoEncoder.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
-#include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
 #include "VkCodecUtils/YCbCrConvUtilsCpu.h"
+#include "crcgenerator.h"
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
 #include "VulkanAqProcessor.h"
 #endif // NV_AQ_GPU_LIB_SUPPORTED
@@ -796,9 +796,8 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
 
     if(encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
-        size_t nonVcl = fwrite(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
-               1, encodeFrameInfo->bitstreamHeaderBufferSize,
-               m_encoderConfig->outputFileHandler.GetFileHandle());
+        size_t nonVcl = WriteDataToFileWithCRC(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
+                                              encodeFrameInfo->bitstreamHeaderBufferSize);
 
         if (m_encoderConfig->verboseFrameStruct) {
             std::cout << "       == Non-Vcl data " << (nonVcl ? "SUCCESS" : "FAIL")
@@ -855,8 +854,8 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     size_t totalBytesWritten = 0;
     while (totalBytesWritten < encodeResult.bitstreamSize) { // handle partial writes
         size_t remainingBytes = encodeResult.bitstreamSize - totalBytesWritten;
-        size_t bytesWritten = fwrite(data + encodeResult.bitstreamStartOffset + totalBytesWritten, 1, remainingBytes,
-                                    m_encoderConfig->outputFileHandler.GetFileHandle());
+        size_t bytesWritten = WriteDataToFileWithCRC(data + encodeResult.bitstreamStartOffset + totalBytesWritten,
+                                                    remainingBytes);
         if (bytesWritten == 0) {
             std::cerr << "Error writing VCL data" << std::endl;
             return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -1746,6 +1745,15 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         m_encoderQueueConsumerThread = std::thread(&VkVideoEncoder::ConsumerThread, this);
     }
 
+    // Initialize CRC values from config following VkVideoFrameToFileImpl pattern
+    if (!encoderConfig->crcInitValue.empty()) {
+        m_crcInitValue = encoderConfig->crcInitValue;
+        m_crcAllocation.resize(m_crcInitValue.size());
+        for (size_t i = 0; i < m_crcInitValue.size(); i += 1) {
+            m_crcAllocation[i] = m_crcInitValue[i];
+        }
+    }
+
     return VK_SUCCESS;
 }
 
@@ -2543,6 +2551,10 @@ int32_t VkVideoEncoder::DeinitEncoder()
     m_videoSessionParameters =  nullptr;
     m_videoSession = nullptr;
 
+    // Clean up CRC storage
+    m_crcInitValue.clear();
+    m_crcAllocation.clear();
+
     m_encoderConfig = nullptr;
 
     return 0;
@@ -2579,4 +2591,40 @@ void VkVideoEncoder::ConsumerThread()
    } while (!m_encoderThreadQueue.ExitQueue());
 
    std::cout << "ConsumerThread is exiting now.\n" << std::endl;
+}
+
+size_t VkVideoEncoder::WriteDataToFileWithCRC(const uint8_t* data, size_t size)
+{
+    if (!data || size == 0) {
+        return 0;
+    }
+
+    // Write data to file
+    size_t bytesWritten = fwrite(data, 1, size, m_encoderConfig->outputFileHandler.GetFileHandle());
+    if (bytesWritten != size) {
+        return bytesWritten;
+    }
+
+    // Generate CRC if enabled
+    if (!m_crcAllocation.empty()) {
+        for (size_t i = 0; i < m_crcAllocation.size(); i += 1) {
+            getCRC(&m_crcAllocation[i], data, size, Crc32Table);
+        }
+    }
+
+    return bytesWritten;
+}
+
+size_t VkVideoEncoder::GetCrcValues(uint32_t* pCrcValues, size_t buffSize) const
+{
+    if (pCrcValues == nullptr) {
+        return 0;
+    }
+
+    size_t numValuesToWrite = std::min(buffSize, m_crcAllocation.size());
+    for (size_t i = 0; i < numValuesToWrite; i++) {
+        pCrcValues[i] = m_crcAllocation[i];
+    }
+
+    return numValuesToWrite;
 }
