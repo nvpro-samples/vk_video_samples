@@ -33,8 +33,15 @@
 *.out
 .cproject
 .project
-build
-build32
+build*/
+_bin*/
+lib/
+misc/
+bin/
+testingAq/
 __pycache__
 vk_video_decoder/bin/libs/ffmpeg/
 .ccls-cache/
+.claude/
+CLAUDE.md
+vk_video_encoder/test/gop_structure_test
