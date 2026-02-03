@@ -2088,8 +2088,16 @@ bool VkVideoEncoder::HandleCtrlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& enco
             encodeFrameInfo->rateControlLayersInfo[layerIndx].sType = VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR;
         }
 
-        encodeFrameInfo->rateControlInfo.pLayers = encodeFrameInfo->rateControlLayersInfo;
-        encodeFrameInfo->rateControlInfo.layerCount = 1;
+        // layerCount must be 0 when rateControlMode is DEFAULT or DISABLED
+        VkVideoEncodeRateControlModeFlagBitsKHR rcMode = encodeFrameInfo->rateControlInfo.rateControlMode;
+        if (rcMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DEFAULT_KHR ||
+            rcMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR) {
+            encodeFrameInfo->rateControlInfo.pLayers = nullptr;
+            encodeFrameInfo->rateControlInfo.layerCount = 0;
+        } else {
+            encodeFrameInfo->rateControlInfo.pLayers = encodeFrameInfo->rateControlLayersInfo;
+            encodeFrameInfo->rateControlInfo.layerCount = 1;
+        }
         m_beginRateControlInfo = encodeFrameInfo->rateControlInfo;
 
         if (pNext != nullptr) {
