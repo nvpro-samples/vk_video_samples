@@ -596,5 +596,12 @@ bool EncoderConfigH264::GetRateControlParameters(VkVideoEncodeRateControlInfoKHR
     pRateControlInfoH264->gopFrameCount = (gopStructure.GetGopFrameCount() > 0) ? gopStructure.GetGopFrameCount() : (uint32_t)GOP_LENGTH_DEFAULT;
     pRateControlInfoH264->idrPeriod = (gopStructure.GetIdrPeriod() > 0) ? gopStructure.GetIdrPeriod() : (uint32_t)IDR_PERIOD_DEFAULT;
 
+    // Validation: If idrPeriod is not 0, it must be >= gopFrameCount
+    // If gopFrameCount is very large (e.g., UINT32_MAX for infinite GOP), set idrPeriod to 0
+    if (pRateControlInfoH264->idrPeriod != 0 &&
+        pRateControlInfoH264->idrPeriod < pRateControlInfoH264->gopFrameCount) {
+        pRateControlInfoH264->idrPeriod = 0;  // Disable IDR period when GOP is larger
+    }
+
     return true;
 }
