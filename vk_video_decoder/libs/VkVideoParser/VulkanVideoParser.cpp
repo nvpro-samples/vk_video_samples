@@ -1274,6 +1274,15 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
         assert(!"m_pDecoderHandler is NULL");
     }
 
+    // When starting a new sequence (not reconfigure), reset the picture-to-DPB slot mapping
+    // to avoid freeing slots from the old, larger DPB after it has been deinitialized.
+    if (!sequenceUpdate) {
+        m_dpbSlotsMask = 0;
+        for (uint32_t picId = 0; picId < MAX_FRM_CNT; picId++) {
+            m_pictureToDpbSlotMap[picId] = -1;
+        }
+    }
+
     m_maxNumDpbSlots = m_dpb.Init(configDpbSlots, sequenceUpdate /* reconfigure the DPB size if true */);
 
     return m_maxNumDecodeSurfaces;
