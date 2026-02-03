@@ -580,17 +580,20 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
     usageCreateInfo.usage = planeUsageOverride;
 
     if (!skipCombinedView) {
-        // For multi-planar formats, combined views cannot have STORAGE_BIT
-        // (multi-planar formats don't support storage - only per-plane views do).
-        // Must use VkImageViewUsageCreateInfo to restrict usage when EXTENDED_USAGE_BIT is set,
-        // or when the image has usages that the multi-planar format doesn't support.
+        // For multi-planar formats, combined views without YCbCr conversion cannot have:
+        // - STORAGE_BIT: multi-planar formats don't support storage (only per-plane views do)
+        // - SAMPLED_BIT: multi-planar formats require YCbCr conversion for sampling
+        // Must use VkImageViewUsageCreateInfo to restrict usage.
         // Reference: https://gitlab.khronos.org/vulkan/vulkan/-/issues/4624
-        if (mpInfo && (imageCreateInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
+        if (mpInfo) {
             VkImageUsageFlags combinedUsage = imageCreateInfo.usage;
-            // Remove STORAGE - not supported by multi-planar base format
-            combinedUsage &= ~VK_IMAGE_USAGE_STORAGE_BIT;
-            usageCreateInfo.usage = combinedUsage;
-            viewInfo.pNext = &usageCreateInfo;
+            // Remove usages not supported by multi-planar base format without YCbCr conversion
+            VkImageUsageFlags unsupportedUsages = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+            if (combinedUsage & unsupportedUsages) {
+                combinedUsage &= ~unsupportedUsages;
+                usageCreateInfo.usage = combinedUsage;
+                viewInfo.pNext = &usageCreateInfo;
+            }
         }
         
         VkResult result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
