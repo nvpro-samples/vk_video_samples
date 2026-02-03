@@ -566,25 +566,48 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
     viewInfo.flags = 0;
 
     const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(viewInfo.format);
+    const VkImageCreateInfo& imageCreateInfo = imageResource->GetImageCreateInfo();
 
     // For multi-planar formats with planeUsageOverride, skip the combined view (index 0)
     // as the combined format may not support the requested usage (e.g., STORAGE)
     bool skipCombinedView = (mpInfo != nullptr) && (planeUsageOverride != 0);
 
+    // Setup VkImageViewUsageCreateInfo - required when using EXTENDED_USAGE_BIT per Khronos issue #4624:
+    // Combined views must restrict usage to what the multi-planar format supports (exclude STORAGE)
+    // Per-plane views must restrict usage to what the plane format supports (exclude VIDEO_ENCODE_SRC)
+    VkImageViewUsageCreateInfo usageCreateInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO};
+    usageCreateInfo.pNext = nullptr;
+    usageCreateInfo.usage = planeUsageOverride;
+
     if (!skipCombinedView) {
+        // For multi-planar formats, combined views cannot have STORAGE_BIT
+        // (multi-planar formats don't support storage - only per-plane views do).
+        // Must use VkImageViewUsageCreateInfo to restrict usage when EXTENDED_USAGE_BIT is set,
+        // or when the image has usages that the multi-planar format doesn't support.
+        // Reference: https://gitlab.khronos.org/vulkan/vulkan/-/issues/4624
+        if (mpInfo && (imageCreateInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
+            VkImageUsageFlags combinedUsage = imageCreateInfo.usage;
+            // Remove STORAGE - not supported by multi-planar base format
+            combinedUsage &= ~VK_IMAGE_USAGE_STORAGE_BIT;
+            usageCreateInfo.usage = combinedUsage;
+            viewInfo.pNext = &usageCreateInfo;
+        }
+        
         VkResult result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
         if (result != VK_SUCCESS) {
             return result;
         }
         numViews++;
+        
+        // Reset pNext for subsequent views
+        viewInfo.pNext = nullptr;
     } else {
         // Set placeholder for combined view
         imageViews[numViews] = VK_NULL_HANDLE;
         numViews++;
     }
 
-    // Setup VkImageViewUsageCreateInfo for plane views when planeUsageOverride is set
-    VkImageViewUsageCreateInfo usageCreateInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO};
+    // Reset usage for plane views
     usageCreateInfo.usage = planeUsageOverride;
 
     if (mpInfo) { // Is this a YCbCr format
