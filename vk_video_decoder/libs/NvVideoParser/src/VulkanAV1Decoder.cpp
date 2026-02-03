@@ -2291,6 +2291,12 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
             skip_bits((uint32_t)(tileSize * 8));
         }
 
+        // Bounds check to prevent buffer overflow into pStdSps and other fields
+        if (m_PicData.khr_info.tileCount >= 64) {
+            nvParserErrorLog("s", "\nError: Tile count exceeds maximum of 64 tiles\n");
+            return false;
+        }
+
         m_PicData.tileSizes[m_PicData.khr_info.tileCount] = (uint32_t)tileSize;
         m_PicData.khr_info.tileCount++;
     }
