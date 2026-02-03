@@ -227,11 +227,12 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
     assert(dpbIndx >= 0);
 
     m_dpbAV1->ConfigureRefBufUpdate(pFrameInfo->bShownKeyFrameOrSwitch, pFrameInfo->bShowExistingFrame, frameUpdateType);
-    assert(pFrameInfo->frameEncodeEncodeOrderNum <= std::numeric_limits<uint32_t>::max());
-    m_dpbAV1->InvalidateStaleReferenceFrames(static_cast<uint32_t>(pFrameInfo->frameEncodeEncodeOrderNum), pFrameInfo->picOrderCntVal, &m_stateAV1.m_sequenceHeader);
-    pFrameInfo->stdPictureInfo.refresh_frame_flags = (uint8_t)m_dpbAV1->GetRefreshFrameFlags(pFrameInfo->bShownKeyFrameOrSwitch, pFrameInfo->bShowExistingFrame);
 
+    // For show existing frame, skip stale reference invalidation and return early.
+    // Show existing frames don't have a valid frameEncodeEncodeOrderNum since they
+    // don't represent a new encoded frame - they just display a previously encoded one.
     if (pFrameInfo->bShowExistingFrame) {
+        pFrameInfo->stdPictureInfo.refresh_frame_flags = (uint8_t)m_dpbAV1->GetRefreshFrameFlags(pFrameInfo->bShownKeyFrameOrSwitch, pFrameInfo->bShowExistingFrame);
         m_dpbAV1->DpbPictureEnd(dpbIndx, encodeFrameInfo->setupImageResource/*nullptr*/, &m_stateAV1.m_sequenceHeader,
                                 pFrameInfo->bShowExistingFrame, pFrameInfo->bShownKeyFrameOrSwitch,
                                 pFrameInfo->stdPictureInfo.flags.error_resilient_mode,
@@ -239,6 +240,10 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
                                 refName, frameUpdateType);
         return VK_SUCCESS;
     }
+
+    assert(pFrameInfo->frameEncodeEncodeOrderNum <= std::numeric_limits<uint32_t>::max());
+    m_dpbAV1->InvalidateStaleReferenceFrames(static_cast<uint32_t>(pFrameInfo->frameEncodeEncodeOrderNum), pFrameInfo->picOrderCntVal, &m_stateAV1.m_sequenceHeader);
+    pFrameInfo->stdPictureInfo.refresh_frame_flags = (uint8_t)m_dpbAV1->GetRefreshFrameFlags(pFrameInfo->bShownKeyFrameOrSwitch, pFrameInfo->bShowExistingFrame);
 
     // setup recon picture (pSetupReferenceSlot)
     bool success = m_dpbImagePool->GetAvailableImage(encodeFrameInfo->setupImageResource,
