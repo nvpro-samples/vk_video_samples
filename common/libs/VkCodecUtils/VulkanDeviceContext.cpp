@@ -795,7 +795,13 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
                                                                                   VK_FALSE
                                                                                 };
 
-        VkPhysicalDeviceFeatures2 deviceFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &intraRefreshFeatures};
+        // Required for creating YCbCr samplers used with multi-planar video formats
+        VkPhysicalDeviceSamplerYcbcrConversionFeatures samplerYcbcrFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES,
+                                                                               &intraRefreshFeatures,
+                                                                               VK_FALSE
+                                                                             };
+
+        VkPhysicalDeviceFeatures2 deviceFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &samplerYcbcrFeatures};
         GetPhysicalDeviceFeatures2(m_physDevice, &deviceFeatures);
 
         assert(timelineSemaphoreFeatures.timelineSemaphore);
