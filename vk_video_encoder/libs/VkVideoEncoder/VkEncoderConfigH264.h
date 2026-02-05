@@ -168,6 +168,8 @@ struct EncoderConfigH264 : public EncoderConfig {
         pic_height_in_map_units = DivUp<uint32_t>(encodeHeight, 16);
 
         if ((pic_width_in_mbs > 0) && (pic_height_in_map_units > 0)) {
+            // Initialize codec profile and level based on encoder configuration
+            InitProfileLevel();
             return VK_SUCCESS;
         }
 
