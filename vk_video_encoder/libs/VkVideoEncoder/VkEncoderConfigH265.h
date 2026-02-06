@@ -208,7 +208,7 @@ struct EncoderConfigH265 : public EncoderConfig {
                           StdVideoH265SequenceParameterSetVui* vui = nullptr);
 
     bool IsSuitableLevel(uint32_t levelIdx, bool highTier);
-    StdVideoH265ProfileTierLevel GetLevelTier();
+    void DetermineLevelTier();
     void InitializeSpsRefPicSet(SpsH265 *pSps);
 
 };
