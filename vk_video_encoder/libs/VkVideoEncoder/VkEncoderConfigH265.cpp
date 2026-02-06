@@ -460,25 +460,24 @@ void EncoderConfigH265::InitializeSpsRefPicSet(SpsH265 *pSps)
     memset(&pSps->longTermRefPicsSps.lt_ref_pic_poc_lsb_sps, 0, sizeof(pSps->longTermRefPicsSps.lt_ref_pic_poc_lsb_sps));
 }
 
-StdVideoH265ProfileTierLevel EncoderConfigH265::GetLevelTier()
+void EncoderConfigH265::DetermineLevelTier()
 {
-    StdVideoH265ProfileTierLevel profileTierLevel{};
-    profileTierLevel.general_profile_idc = STD_VIDEO_H265_PROFILE_IDC_INVALID;
-    profileTierLevel.general_level_idc = STD_VIDEO_H265_LEVEL_IDC_INVALID;
+    levelIdc = STD_VIDEO_H265_LEVEL_IDC_INVALID;
+    general_tier_flag = 0;
     uint32_t levelIdx = 0;
     for (; levelIdx < levelLimitsTblSize; levelIdx++) {
 
         if (IsSuitableLevel(levelIdx, 0)) {
-            profileTierLevel.general_level_idc = levelLimits[levelIdx].stdLevel;
-            profileTierLevel.flags.general_tier_flag = 0; // Main tier
+            levelIdc = levelLimits[levelIdx].stdLevel;
+            general_tier_flag = 0; // Main tier
             break;
         }
 
         if ((levelLimits[levelIdx].levelIdc >= 120) && // level 4.0 and above
             IsSuitableLevel(levelIdx, 1)) {
 
-            profileTierLevel.general_level_idc = levelLimits[levelIdx].stdLevel;
-            profileTierLevel.flags.general_tier_flag = 1; // Main tier
+            levelIdc = levelLimits[levelIdx].stdLevel;
+            general_tier_flag = 1; // High tier
             break;
         }
     }
@@ -486,8 +485,6 @@ StdVideoH265ProfileTierLevel EncoderConfigH265::GetLevelTier()
     if (levelIdx >= levelLimitsTblSize) {
         assert(!"No suitable level selected");
     }
-
-    return profileTierLevel;
 }
 
 void EncoderConfigH265::InitProfileLevel()
@@ -509,9 +506,7 @@ void EncoderConfigH265::InitProfileLevel()
     }
 
     // Determine level and tier based on resolution, bitrate, etc.
-    StdVideoH265ProfileTierLevel profileTierLevel = GetLevelTier();
-    levelIdc = profileTierLevel.general_level_idc;
-    general_tier_flag = profileTierLevel.flags.general_tier_flag;
+    DetermineLevelTier();
 }
 
 bool EncoderConfigH265::InitRateControl()
