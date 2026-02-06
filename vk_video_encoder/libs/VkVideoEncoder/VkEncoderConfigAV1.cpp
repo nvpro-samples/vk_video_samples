@@ -283,6 +283,29 @@ VkResult EncoderConfigAV1::InitDeviceCapabilities(const VulkanDeviceContext* vkD
     return VK_SUCCESS;
 }
 
+void EncoderConfigAV1::InitProfileLevel()
+{
+    // If profile hasn't been specified, determine it based on bit depth and chroma
+    if (profile == STD_VIDEO_AV1_PROFILE_INVALID) {
+        // PROFESSIONAL is required for 12-bit or 422
+        if ((input.bpp > 10) ||
+            (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR)) {
+            profile = STD_VIDEO_AV1_PROFILE_PROFESSIONAL;
+        }
+        // HIGH is required for 444 chroma
+        else if (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR) {
+            profile = STD_VIDEO_AV1_PROFILE_HIGH;
+        }
+        // MAIN supports 8-bit and 10-bit with 420
+        else {
+            profile = STD_VIDEO_AV1_PROFILE_MAIN;
+        }
+    }
+
+    // Determine level and tier based on encoder configuration
+    DetermineLevelTier();
+}
+
 int8_t EncoderConfigAV1::InitDpbCount()
 {
     dpbCount = STD_VIDEO_AV1_NUM_REF_FRAMES + 1; // BUFFER_POOL_MAX_SIZE = Number of frames in buffer pool = 10
@@ -351,8 +374,7 @@ bool EncoderConfigAV1::DetermineLevelTier()
 
 bool EncoderConfigAV1::InitRateControl()
 {
-    DetermineLevelTier();
-
+    // Level and tier are already initialized by InitProfileLevel()
     // use level max values for now. Limit it to 120Mbits/sec
     uint32_t levelBitrate = std::min(GetLevelBitrate(level, tier), 120000000u);
 
