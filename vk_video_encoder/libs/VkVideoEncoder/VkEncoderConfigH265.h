@@ -157,20 +157,10 @@ struct EncoderConfigH265 : public EncoderConfig {
 
     virtual VkResult InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx) override;
 
-    virtual uint32_t GetDefaultVideoProfileIdc() override {
-        // Select profile based on bit depth and chroma format
-        // 12-bit or 444 chroma requires Range Extensions profile
-        if (encodeBitDepthLuma > 10 || encodeBitDepthChroma > 10 ||
-            encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR) {
-            return STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS;
-        }
-        // 10-bit with 420/422 uses Main10 profile
-        if (encodeBitDepthLuma > 8 || encodeBitDepthChroma > 8) {
-            return STD_VIDEO_H265_PROFILE_IDC_MAIN_10;
-        }
-        // 8-bit with 420/422 uses Main profile
-        return STD_VIDEO_H265_PROFILE_IDC_MAIN;
-    };
+    virtual uint32_t GetCodecProfile() override {
+        assert(profile != STD_VIDEO_H265_PROFILE_IDC_INVALID);
+        return static_cast<uint32_t>(profile);
+    }
 
     // 1. First h.265 determine the number of the Dpb buffers required
     virtual int8_t InitDpbCount() override;

@@ -117,23 +117,9 @@ struct EncoderConfigAV1 : public EncoderConfig {
 
     void InitProfileLevel();
 
-    virtual uint32_t GetDefaultVideoProfileIdc() override {
-        // AV1 profile selection based on bit depth and chroma format
-        // AV1 Main Profile: 8-bit and 10-bit 4:2:0
-        // AV1 High Profile: 8-bit and 10-bit 4:2:0 and 4:4:4
-        // AV1 Professional: 8-bit, 10-bit, 12-bit for all chroma formats including 4:2:2
-
-        // PROFESSIONAL is required for 12-bit or 422
-        if (encodeBitDepthLuma > 10 || encodeBitDepthChroma > 10 ||
-            encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR) {
-            return STD_VIDEO_AV1_PROFILE_PROFESSIONAL;
-        }
-        // HIGH is required for 444 chroma
-        if (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR) {
-            return STD_VIDEO_AV1_PROFILE_HIGH;
-        }
-        // MAIN supports 8-bit and 10-bit with 420
-        return STD_VIDEO_AV1_PROFILE_MAIN;
+    virtual uint32_t GetCodecProfile() override {
+        assert(profile != STD_VIDEO_AV1_PROFILE_INVALID);
+        return static_cast<uint32_t>(profile);
     }
 
     virtual int8_t InitDpbCount() override;
