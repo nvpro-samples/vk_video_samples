@@ -75,11 +75,28 @@ VkResult VulkanDeviceMemoryImpl::CreateDeviceMemory(const VulkanDeviceContext* v
     outExportHandleTypes = 0;
     outMemoryTypeIndex = 0;
 
-    // Align the allocation size to the required alignment.
-    // Vulkan's vkGetImageMemoryRequirements/vkGetBufferMemoryRequirements may return
-    // a size that is not a multiple of alignment, but memory allocations should be aligned.
-    VkDeviceSize alignedSize = (memoryRequirements.size + (memoryRequirements.alignment - 1)) &
-                               ~(memoryRequirements.alignment - 1);
+    // Check if this is a dedicated allocation (pNext chain contains VkMemoryDedicatedAllocateInfo)
+    bool isDedicated = false;
+    {
+        const VkBaseInStructure* pNext = static_cast<const VkBaseInStructure*>(pAllocateInfoPNext);
+        while (pNext) {
+            if (pNext->sType == VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO) {
+                isDedicated = true;
+                break;
+            }
+            pNext = pNext->pNext;
+        }
+    }
+
+    // For dedicated allocations, allocationSize MUST equal memoryRequirements.size exactly
+    // (VUID-VkMemoryDedicatedAllocateInfo-image-02964). For non-dedicated, align up.
+    VkDeviceSize allocSize;
+    if (isDedicated) {
+        allocSize = memoryRequirements.size;
+    } else {
+        allocSize = (memoryRequirements.size + (memoryRequirements.alignment - 1)) &
+                    ~(memoryRequirements.alignment - 1);
+    }
 
     VkMemoryAllocateInfo allocInfo = VkMemoryAllocateInfo();
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -99,7 +116,7 @@ VkResult VulkanDeviceMemoryImpl::CreateDeviceMemory(const VulkanDeviceContext* v
     }
 
     // Assign the proper memory type for that buffer
-    allocInfo.allocationSize = alignedSize;
+    allocInfo.allocationSize = allocSize;
     MapMemoryTypeToIndex(vkDevCtx, vkDevCtx->getPhysicalDevice(),
                          memoryRequirements.memoryTypeBits,
                          memoryPropertyFlags,

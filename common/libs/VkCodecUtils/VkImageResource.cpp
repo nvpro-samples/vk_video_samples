@@ -344,8 +344,19 @@ VkResult VkImageResource::CreateExportable(const VulkanDeviceContext* vkDevCtx,
             PFN_vkGetImageDrmFormatModifierPropertiesEXT pfnGetDrmMod =
                 (PFN_vkGetImageDrmFormatModifierPropertiesEXT)vkDevCtx->GetDeviceProcAddr(device, "vkGetImageDrmFormatModifierPropertiesEXT");
             if (pfnGetDrmMod) {
-                pfnGetDrmMod(device, image, &modProps);
-                actualDrmModifier = modProps.drmFormatModifier;
+                VkResult modResult = pfnGetDrmMod(device, image, &modProps);
+                if (modResult == VK_SUCCESS) {
+                    actualDrmModifier = modProps.drmFormatModifier;
+                    // Warn if the driver returns DRM_FORMAT_MOD_INVALID — indicates a driver bug
+                    if (actualDrmModifier == ((1ULL << 56) - 1)) {
+                        std::cerr << "[VkImageResource] WARNING: vkGetImageDrmFormatModifierPropertiesEXT "
+                                  << "returned DRM_FORMAT_MOD_INVALID — using requested modifier 0x"
+                                  << std::hex << drmFormatModifier << std::dec << std::endl;
+                        actualDrmModifier = drmFormatModifier;
+                    }
+                } else {
+                    actualDrmModifier = drmFormatModifier;
+                }
             } else {
                 actualDrmModifier = drmFormatModifier; // Fallback to requested value
             }
@@ -364,6 +375,64 @@ VkResult VkImageResource::CreateExportable(const VulkanDeviceContext* vkDevCtx,
         // Build export memory allocate info
         VkExportMemoryAllocateInfo exportMemInfo{VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO};
         exportMemInfo.handleTypes = exportHandleTypes;
+
+        // Query whether the export handle type requires dedicated allocation
+        // (VUID-VkMemoryAllocateInfo-pNext-00639). DMA-BUF on NVIDIA typically
+        // reports VK_EXTERNAL_MEMORY_FEATURE_DEDICATED_ONLY_BIT.
+        VkMemoryDedicatedAllocateInfo dedicatedInfo{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
+        dedicatedInfo.image = image;
+        if (exportHandleTypes != 0) {
+            VkPhysicalDeviceExternalImageFormatInfo extImageFormatInfo{
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO};
+            extImageFormatInfo.handleType = static_cast<VkExternalMemoryHandleTypeFlagBits>(exportHandleTypes);
+
+            // Per VUID-VkPhysicalDeviceImageFormatInfo2-tiling-02249:
+            // when tiling is VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT, the
+            // pNext chain must include VkPhysicalDeviceImageDrmFormatModifierInfoEXT
+            VkPhysicalDeviceImageDrmFormatModifierInfoEXT drmModInfo{
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT};
+            drmModInfo.drmFormatModifier = actualDrmModifier;
+            drmModInfo.sharingMode = modifiedImageInfo.sharingMode;
+
+            // Per VUID-VkPhysicalDeviceImageFormatInfo2-tiling-02313:
+            // when tiling is DRM_FORMAT_MODIFIER_EXT and MUTABLE_FORMAT_BIT is
+            // set, the chain must also include VkImageFormatListCreateInfo with
+            // non-zero viewFormatCount. Build a separate copy for the query
+            // (the image creation formatList has other structs chained in pNext).
+            VkImageFormatListCreateInfo queryFormatList{VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO};
+            if (modifiedImageInfo.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
+                if ((modifiedImageInfo.flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) &&
+                    viewFormatCount > 0) {
+                    queryFormatList.viewFormatCount = viewFormatCount;
+                    queryFormatList.pViewFormats = viewFormats;
+                    drmModInfo.pNext = &queryFormatList;
+                }
+                extImageFormatInfo.pNext = &drmModInfo;
+            }
+
+            VkPhysicalDeviceImageFormatInfo2 imageFormatQuery{
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2};
+            imageFormatQuery.format = modifiedImageInfo.format;
+            imageFormatQuery.type = modifiedImageInfo.imageType;
+            imageFormatQuery.tiling = modifiedImageInfo.tiling;
+            imageFormatQuery.usage = modifiedImageInfo.usage;
+            imageFormatQuery.flags = modifiedImageInfo.flags;
+            imageFormatQuery.pNext = &extImageFormatInfo;
+
+            VkExternalImageFormatProperties extImageFormatProps{
+                VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES};
+            VkImageFormatProperties2 imageFormatProps{
+                VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2};
+            imageFormatProps.pNext = &extImageFormatProps;
+
+            VkResult queryResult = vkDevCtx->GetPhysicalDeviceImageFormatProperties2(
+                vkDevCtx->getPhysicalDevice(), &imageFormatQuery, &imageFormatProps);
+            if (queryResult == VK_SUCCESS &&
+                (extImageFormatProps.externalMemoryProperties.externalMemoryFeatures &
+                 VK_EXTERNAL_MEMORY_FEATURE_DEDICATED_ONLY_BIT)) {
+                exportMemInfo.pNext = &dedicatedInfo;
+            }
+        }
 
         // Allocate memory with export capabilities
         VkSharedBaseObj<VulkanDeviceMemoryImpl> vkDeviceMemory;
