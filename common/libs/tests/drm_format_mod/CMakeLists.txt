@@ -1,4 +1,4 @@
-# Copyright 2026 NVIDIA Corporation.
+# Copyright 2024-2026 NVIDIA Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,35 +14,37 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-project(vk_filter_test LANGUAGES CXX)
+project(drm_format_mod_test LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Only build on Linux/Unix (DRM modifiers are Linux-specific)
+if(NOT UNIX OR APPLE)
+    message(STATUS "drm_format_mod_test: Skipping (Linux-only)")
+    return()
+endif()
+
 # Test application source files
 set(TEST_SOURCES
     src/main.cpp
-    src/FilterTestApp.cpp
-    src/TestCases.cpp
-    src/ColorConversion.cpp
+    src/DrmFormatModTest.cpp
+    src/DrmFormats.cpp
 )
 
 # Test application header files
 set(TEST_HEADERS
-    inc/FilterTestApp.h
-    inc/TestCases.h
-    inc/ColorConversion.h
+    inc/DrmFormatModTest.h
+    inc/DrmFormats.h
 )
 
 # VkCodecUtils source files (from parent directory)
-set(VKCODECUTILS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../VkCodecUtils")
+set(VKCODECUTILS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../VkCodecUtils")
 set(VKCODECUTILS_SOURCES
     ${VKCODECUTILS_DIR}/VulkanDeviceContext.cpp
     ${VKCODECUTILS_DIR}/VulkanDeviceMemoryImpl.cpp
     ${VKCODECUTILS_DIR}/VkImageResource.cpp
     ${VKCODECUTILS_DIR}/VkBufferResource.cpp
-    ${VKCODECUTILS_DIR}/VulkanFilterYuvCompute.cpp
-    ${VKCODECUTILS_DIR}/VulkanFilter.cpp
     ${VKCODECUTILS_DIR}/VulkanShaderCompiler.cpp
     ${VKCODECUTILS_DIR}/VulkanComputePipeline.cpp
     ${VKCODECUTILS_DIR}/VulkanDescriptorSetLayout.cpp
@@ -66,9 +68,9 @@ add_executable(${PROJECT_NAME}
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/inc
-    ${CMAKE_CURRENT_SOURCE_DIR}/../  # For VkCodecUtils headers
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include  # For vulkan_interfaces.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../..       # For nvidia_utils
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../  # For VkCodecUtils headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../include  # For vulkan_interfaces.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../..       # For nvidia_utils
     ${VULKAN_HEADERS_INCLUDE_DIR}
     ${Vulkan_INCLUDE_DIR}
 )
@@ -82,15 +84,14 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Vulkan::shaderc_combined
 )
 
-# Platform-specific settings
-if(UNIX AND NOT APPLE)
-    target_link_libraries(${PROJECT_NAME} PRIVATE
-        pthread
-        dl
-    )
-    # Ensure unistd.h functions are available
-    target_compile_definitions(${PROJECT_NAME} PRIVATE _POSIX_C_SOURCE=200809L)
-endif()
+# Platform-specific settings (Linux only at this point)
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    pthread
+    dl
+)
+
+# Ensure POSIX functions are available
+target_compile_definitions(${PROJECT_NAME} PRIVATE _POSIX_C_SOURCE=200809L)
 
 # Compile definitions
 target_compile_definitions(${PROJECT_NAME} PRIVATE
@@ -106,14 +107,11 @@ install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION bin
 )
 
-# Add test
+# Add tests
 enable_testing()
-add_test(NAME FilterSmokeTest COMMAND ${PROJECT_NAME} --smoke)
-add_test(NAME FilterAllTests COMMAND ${PROJECT_NAME} --all)
+add_test(NAME DrmFormatModSmokeTest COMMAND ${PROJECT_NAME})
+add_test(NAME DrmFormatModListFormats COMMAND ${PROJECT_NAME} --list-formats)
+add_test(NAME DrmFormatModAllTests COMMAND ${PROJECT_NAME} --all)
 
-# Add DRM Format Modifier test (Linux only)
-if(UNIX AND NOT APPLE)
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/drm_format_mod")
-        add_subdirectory(drm_format_mod)
-    endif()
-endif()
+# Print status
+message(STATUS "drm_format_mod_test: Configured for Linux")
