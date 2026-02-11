@@ -757,12 +757,57 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     assert(pCurrFrameDecParams->bitstreamData->GetMaxSize() >= pCurrFrameDecParams->bitstreamDataLen);
 
     pCurrFrameDecParams->decodeFrameInfo.srcBuffer = pCurrFrameDecParams->bitstreamData->GetBuffer();
-    //assert(pCurrFrameDecParams->bitstreamDataOffset == 0);
     assert(pCurrFrameDecParams->firstSliceIndex == 0);
-    // TODO: Assert if bitstreamDataOffset is aligned to VkVideoCapabilitiesKHR::minBitstreamBufferOffsetAlignment
-    pCurrFrameDecParams->decodeFrameInfo.srcBufferOffset = pCurrFrameDecParams->bitstreamDataOffset;
-    // TODO: Assert if bitstreamDataLen is aligned to VkVideoCapabilitiesKHR::minBitstreamBufferSizeAlignment
-    pCurrFrameDecParams->decodeFrameInfo.srcBufferRange =  pCurrFrameDecParams->bitstreamDataLen;
+
+    // Verify bitstream buffer alignment invariants.
+    // The parser's buffer management (swapBitstreamBuffer / GetBitstreamBuffer) ensures:
+    //   - Buffers are allocated with size rounded up to minBitstreamBufferSizeAlignment
+    //   - Residual data is copied to offset 0 of a new aligned buffer
+    //   - bitstreamDataOffset is 0 for H.264/H.265/AV1 (set in end_of_picture)
+    //   - VP9 aligns offset in the parser (VulkanVP9Decoder.cpp:261)
+    const VkDeviceSize offsetAlignment = pCurrFrameDecParams->bitstreamData->GetOffsetAlignment();
+    const VkDeviceSize sizeAlignment   = pCurrFrameDecParams->bitstreamData->GetSizeAlignment();
+    const VkDeviceSize bufferMaxSize   = pCurrFrameDecParams->bitstreamData->GetMaxSize();
+
+    // srcBufferOffset: must be 0 (H.264/H.265/AV1) or aligned (VP9).
+    // These codecs don't use non-zero offsets in the parser's end_of_picture.
+    VkDeviceSize srcOffset = pCurrFrameDecParams->bitstreamDataOffset;
+    assert((srcOffset & (offsetAlignment - 1)) == 0 &&
+           "bitstreamDataOffset must be aligned to minBitstreamBufferOffsetAlignment");
+    // Safety: force to 0 for codecs that should not have non-zero offset
+    if (m_videoFormat.codec != VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
+        if (srcOffset != 0) {
+            fprintf(stderr, "WARNING: bitstreamDataOffset=%zu is non-zero for non-VP9 codec, forcing to 0\n",
+                    (size_t)srcOffset);
+            srcOffset = 0;
+        }
+    }
+
+    // srcBufferRange alignment to minBitstreamBufferSizeAlignment.
+    // The bytes beyond bitstreamDataLen contain the next frame's residual data
+    // (swapBitstreamBuffer copies it after decode returns), so we cannot zero-fill.
+    //
+    // H.264: NVDEC's NAL scanner uses srcBufferRange to bound its start-code scan.
+    //   Rounding up exposes the next frame's start codes in the residual area,
+    //   causing decode corruption. Pass exact bitstreamDataLen for H.264.
+    // H.265/AV1: Use slice segment offsets / tile sizes exclusively, so rounding
+    //   up is safe -- the residual data is ignored by the HW decoder.
+    // VP9: Already aligned by the parser (VulkanVP9Decoder.cpp:259).
+    VkDeviceSize srcRange = pCurrFrameDecParams->bitstreamDataLen;
+    bool canAlignRange = (m_videoFormat.codec != VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR);
+    VkDeviceSize alignedRange;
+    if (canAlignRange) {
+        alignedRange = (srcRange + (sizeAlignment - 1)) & ~(sizeAlignment - 1);
+        if (srcOffset + alignedRange > bufferMaxSize) {
+            alignedRange = bufferMaxSize - srcOffset;
+        }
+    } else {
+        // H.264: pass exact range; suppress VUID-07139 in g_ignoredValidationMessageIds
+        alignedRange = srcRange;
+    }
+
+    pCurrFrameDecParams->decodeFrameInfo.srcBufferOffset = srcOffset;
+    pCurrFrameDecParams->decodeFrameInfo.srcBufferRange  = alignedRange;
 
     VkVideoBeginCodingInfoKHR decodeBeginInfo = { VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR };
     decodeBeginInfo.pNext = pCurrFrameDecParams->beginCodingInfoPictureParametersExt;
