@@ -147,7 +147,10 @@ struct nvVideoDecodeAV1DpbSlotInfo
     StdVideoDecodeAV1ReferenceInfo stdReferenceInfo;
     const VkVideoDecodeAV1DpbSlotInfoKHR* Init(int8_t slotIndex)
     {
-        assert((slotIndex >= 0) && (slotIndex < (int8_t)TOTAL_REFS_PER_FRAME));
+        // slotIndex must be valid: >= 0 and within MAX_DPB_REF_AND_SETUP_SLOTS.
+        // Note: the setup slot can have any DPB slot index (not bounded by
+        // TOTAL_REFS_PER_FRAME which is the dpbRefList array size).
+        assert((slotIndex >= 0) && (slotIndex < (int8_t)MAX_DPB_REF_AND_SETUP_SLOTS));
         dpbSlotInfo.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_DPB_SLOT_INFO_KHR;
         dpbSlotInfo.pNext = nullptr;
         dpbSlotInfo.pStdReferenceInfo = &stdReferenceInfo;
