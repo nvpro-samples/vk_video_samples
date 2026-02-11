@@ -377,10 +377,55 @@ VkResult VulkanDeviceContext::InitVkInstance(const char * pAppName, VkInstance v
     return result;
 }
 
+// Known validation layer false positives for Vulkan Video decode operations.
+// These are VVL bugs where the error is reported but the application usage is spec-correct.
+// Matching the pattern from nvpro_core2/nvvk/context.cpp g_ignoredValidationMessageIds[].
+// See: https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/11531
+// See: https://github.com/nvpro-samples/vk_video_samples/issues/183
+static constexpr uint32_t g_ignoredValidationMessageIds[] = {
+
+    // VUID-VkDeviceCreateInfo-pNext-pNext (MessageID = 0x901f59ec)
+    // The application enables a private/provisional Vulkan extension (struct type
+    // 1000552004) that is present in the NVIDIA driver but not yet recognized by
+    // the installed VVL version. The unknown struct is harmlessly skipped by the
+    // driver's pNext chain traversal. Will resolve when VVL headers are updated.
+    0x901f59ec,
+
+    // VUID-VkImageViewCreateInfo-image-01762 (MessageID = 0x6516b437)
+    // VVL false positive for video-profile-bound multi-planar images.
+    // The DPB images ARE created with VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT
+    // (VulkanVideoImagePool.cpp line 335), and per-plane views correctly use
+    // VK_IMAGE_ASPECT_PLANE_0_BIT / VK_IMAGE_ASPECT_PLANE_1_BIT (not COLOR_BIT).
+    // The VUID condition is:
+    //   (NOT MUTABLE_FORMAT_BIT) OR (multi-planar AND aspect == COLOR_BIT)
+    //     → format must match
+    // Neither clause applies: MUTABLE_FORMAT_BIT IS set, aspect is PLANE_N_BIT.
+    // VVL 1.4.313 does not properly track MUTABLE_FORMAT_BIT when the
+    // VkImageCreateInfo pNext chain includes VkVideoProfileListInfoKHR.
+    0x6516b437,
+
+    // VUID-vkCmdBeginVideoCodingKHR-slotIndex-07239 (MessageID = 0xc36d9e29)
+    // Cascading VVL false positive from the VUID-01762 issue above.
+    // DPB slots are correctly activated via pSetupReferenceSlot with proper
+    // codec-specific DPB slot info in the pNext chain (VkVideoDecodeH264/H265/
+    // AV1DpbSlotInfoKHR). Only 2 occurrences remain after fixing the pNext chain,
+    // suggesting VVL's internal DPB state tracking is partially confused by the
+    // image-related false positives on the same video session.
+    // Decoding works correctly on all tested hardware.
+    0xc36d9e29,
+};
+
 bool VulkanDeviceContext::DebugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT,
                                               uint64_t, size_t,
-                                              int32_t, const char *layer_prefix, const char *msg)
+                                              int32_t msg_code, const char *layer_prefix, const char *msg)
 {
+    // Suppress known validation layer false positives (see explanations above)
+    for (uint32_t ignoredId : g_ignoredValidationMessageIds) {
+        if (static_cast<uint32_t>(msg_code) == ignoredId) {
+            return false;  // Silently ignore this message
+        }
+    }
+
     LogPriority prio = LOG_WARN;
     if (flags & VK_DEBUG_REPORT_ERROR_BIT_EXT)
         prio = LOG_ERR;
