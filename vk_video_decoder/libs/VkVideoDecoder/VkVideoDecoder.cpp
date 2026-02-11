@@ -178,6 +178,38 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     VkResult result = VulkanVideoCapabilities::GetVideoDecodeCapabilities(m_vkDevCtx, videoProfile,
                                                                           videoCapabilities,
                                                                           videoDecodeCapabilities);
+    if (result != VK_SUCCESS && videoCodec == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) {
+        // The reported H.264 profile may not be supported (e.g., Baseline profile
+        // doesn't support interlaced content). Try upgrading to a higher profile.
+        // High is a strict superset of Baseline and Main, matching NVCUVID/CUVID behavior.
+        static constexpr uint32_t h264ProfileUpgradePath[] = {
+            STD_VIDEO_H264_PROFILE_IDC_MAIN,
+            STD_VIDEO_H264_PROFILE_IDC_HIGH,
+        };
+        for (uint32_t upgradedProfile : h264ProfileUpgradePath) {
+            std::cerr << "WARNING: H.264 profile_idc=" << pVideoFormat->codecProfile
+                      << " capabilities query failed (result=" << result
+                      << "). Retrying with profile_idc=" << upgradedProfile << std::endl;
+
+            videoProfile = VkVideoCoreProfile(videoCodec,
+                                              pVideoFormat->chromaSubsampling,
+                                              pVideoFormat->lumaBitDepth,
+                                              pVideoFormat->chromaBitDepth,
+                                              upgradedProfile,
+                                              pVideoFormat->canUseFields ?
+                                                  VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_INTERLACED_INTERLEAVED_LINES_BIT_KHR :
+                                                  VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_PROGRESSIVE_KHR);
+
+            result = VulkanVideoCapabilities::GetVideoDecodeCapabilities(m_vkDevCtx, videoProfile,
+                                                                         videoCapabilities,
+                                                                         videoDecodeCapabilities);
+            if (result == VK_SUCCESS) {
+                std::cerr << "WARNING: H.264 profile upgraded to profile_idc="
+                          << upgradedProfile << " successfully." << std::endl;
+                break;
+            }
+        }
+    }
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
         assert(!"Could not get Video Capabilities!");
