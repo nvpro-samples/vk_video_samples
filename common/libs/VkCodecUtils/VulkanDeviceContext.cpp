@@ -413,6 +413,13 @@ static constexpr uint32_t g_ignoredValidationMessageIds[] = {
     // image-related false positives on the same video session.
     // Decoding works correctly on all tested hardware.
     0xc36d9e29,
+
+    // VUID-VkVideoCapabilitiesKHR-pNext-pNext (MessageID = 0xc1bea994)
+    // VP9 decode is a provisional extension (VK_KHR_video_decode_vp9).
+    // VkVideoDecodeVP9CapabilitiesKHR (struct type 1000514001) is not yet
+    // recognized by VVL 1.4.313. Same category as the device create pNext
+    // issue above. Harmlessly skipped by the driver.
+    0xc1bea994,
 };
 
 bool VulkanDeviceContext::DebugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT,
