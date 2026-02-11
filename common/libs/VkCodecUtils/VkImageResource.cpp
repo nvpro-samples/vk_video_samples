@@ -580,20 +580,25 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
     usageCreateInfo.usage = planeUsageOverride;
 
     if (!skipCombinedView) {
-        // For multi-planar formats, combined views without YCbCr conversion cannot have:
-        // - STORAGE_BIT: multi-planar formats don't support storage (only per-plane views do)
-        // - SAMPLED_BIT: multi-planar formats require YCbCr conversion for sampling
-        // Must use VkImageViewUsageCreateInfo to restrict usage.
+        // For multi-planar formats, combined views cannot have STORAGE_BIT
+        // (multi-planar formats don't support storage - only per-plane views do).
+        // Must use VkImageViewUsageCreateInfo to restrict usage when the image
+        // has STORAGE_BIT via EXTENDED_USAGE_BIT.
+        //
+        // Note: SAMPLED_BIT must NOT be stripped here. The decoder's display
+        // pipeline uses the combined view with VkSamplerYcbcrConversion for
+        // sampling decoded frames. Stripping SAMPLED_BIT causes blank output.
+        // The VUID-VkImageViewCreateInfo-format-06415 validation error for
+        // SAMPLED_BIT without YCbCr conversion is handled by the caller
+        // creating a YCbCr sampler for the combined view before sampling.
+        //
         // Reference: https://gitlab.khronos.org/vulkan/vulkan/-/issues/4624
-        if (mpInfo) {
+        if (mpInfo && (imageCreateInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
             VkImageUsageFlags combinedUsage = imageCreateInfo.usage;
-            // Remove usages not supported by multi-planar base format without YCbCr conversion
-            VkImageUsageFlags unsupportedUsages = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-            if (combinedUsage & unsupportedUsages) {
-                combinedUsage &= ~unsupportedUsages;
-                usageCreateInfo.usage = combinedUsage;
-                viewInfo.pNext = &usageCreateInfo;
-            }
+            // Remove STORAGE - not supported by multi-planar base format
+            combinedUsage &= ~VK_IMAGE_USAGE_STORAGE_BIT;
+            usageCreateInfo.usage = combinedUsage;
+            viewInfo.pNext = &usageCreateInfo;
         }
         
         VkResult result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
