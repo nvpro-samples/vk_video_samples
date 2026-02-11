@@ -773,12 +773,12 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     const VkBufferMemoryBarrier2KHR bitstreamBufferMemoryBarrier = {
         VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR,
         nullptr,
-        VK_PIPELINE_STAGE_2_NONE_KHR,
+        VK_PIPELINE_STAGE_2_HOST_BIT,          // srcStageMask: HOST_WRITE requires HOST stage (VUID-03917)
         VK_ACCESS_2_HOST_WRITE_BIT_KHR,
         VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR,
         VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR,
-        VK_QUEUE_FAMILY_IGNORED,
-        (uint32_t)m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
+        VK_QUEUE_FAMILY_IGNORED,  // srcQueueFamilyIndex - no ownership transfer
+        VK_QUEUE_FAMILY_IGNORED,  // dstQueueFamilyIndex - no ownership transfer
         pCurrFrameDecParams->decodeFrameInfo.srcBuffer,
         pCurrFrameDecParams->decodeFrameInfo.srcBufferOffset,
         pCurrFrameDecParams->decodeFrameInfo.srcBufferRange
@@ -796,8 +796,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR, // VkAccessFlags   dstAccessMask
             VK_IMAGE_LAYOUT_UNDEFINED, // VkImageLayout   oldLayout
             VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR, // VkImageLayout   newLayout
-            VK_QUEUE_FAMILY_IGNORED, // uint32_t        srcQueueFamilyIndex
-            (uint32_t)m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(), // uint32_t   dstQueueFamilyIndex
+            VK_QUEUE_FAMILY_IGNORED, // uint32_t   srcQueueFamilyIndex - no ownership transfer
+            VK_QUEUE_FAMILY_IGNORED, // uint32_t   dstQueueFamilyIndex - no ownership transfer
             VkImage(), // VkImage         image;
             {
                 // VkImageSubresourceRange   subresourceRange
