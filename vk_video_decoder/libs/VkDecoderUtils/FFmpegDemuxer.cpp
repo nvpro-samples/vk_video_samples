@@ -404,7 +404,12 @@ public:
                     case STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE:
                         break;
                     default:
-                        std::cerr << "\nInvalid h.264 profile: " << profile << std::endl;
+                        // Unknown/invalid H.264 profile from FFmpeg (e.g., profile=0 for
+                        // some streams). Default to High which is a superset of all lower
+                        // profiles and handles Baseline/Main/interlaced content correctly.
+                        std::cerr << "WARNING: Unknown H.264 profile_idc=" << profile
+                                  << " from demuxer, defaulting to HIGH (100)" << std::endl;
+                        return STD_VIDEO_H264_PROFILE_IDC_HIGH;
                 }
             }
             break;
@@ -418,7 +423,11 @@ public:
                     case STD_VIDEO_H265_PROFILE_IDC_SCC_EXTENSIONS:
                         break;
                     default:
-                        std::cerr << "\nInvalid h.265 profile: " << profile << std::endl;
+                        // Unknown/invalid H.265 profile from FFmpeg (e.g., profile=0 for
+                        // raw .265 files without container metadata). Default to Main.
+                        std::cerr << "WARNING: Unknown H.265 profile_idc=" << profile
+                                  << " from demuxer, defaulting to MAIN (1)" << std::endl;
+                        return STD_VIDEO_H265_PROFILE_IDC_MAIN;
                 }
             }
             break;
@@ -430,7 +439,9 @@ public:
                     case STD_VIDEO_AV1_PROFILE_PROFESSIONAL:
                         break;
                     default:
-                        std::cerr << "\nInvalid AV1 profile: " << profile << std::endl;
+                        std::cerr << "WARNING: Unknown AV1 profile=" << profile
+                                  << " from demuxer, defaulting to MAIN (0)" << std::endl;
+                        return STD_VIDEO_AV1_PROFILE_MAIN;
                 }
             }
             break;
