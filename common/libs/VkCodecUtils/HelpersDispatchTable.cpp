@@ -86,6 +86,8 @@ void InitDispatchTableMiddle(VkInstance instance, bool include_bottom, VkInterfa
     pVkFunctions->CreateDebugReportCallbackEXT = reinterpret_cast<PFN_vkCreateDebugReportCallbackEXT>(getInstanceProcAddrFunc(instance, "vkCreateDebugReportCallbackEXT"));
     pVkFunctions->DestroyDebugReportCallbackEXT = reinterpret_cast<PFN_vkDestroyDebugReportCallbackEXT>(getInstanceProcAddrFunc(instance, "vkDestroyDebugReportCallbackEXT"));
     pVkFunctions->DebugReportMessageEXT = reinterpret_cast<PFN_vkDebugReportMessageEXT>(getInstanceProcAddrFunc(instance, "vkDebugReportMessageEXT"));
+    pVkFunctions->CreateDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(getInstanceProcAddrFunc(instance, "vkCreateDebugUtilsMessengerEXT"));
+    pVkFunctions->DestroyDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(getInstanceProcAddrFunc(instance, "vkDestroyDebugUtilsMessengerEXT"));
 #ifdef VK_USE_PLATFORM_IOS_MVK
     pVkFunctions->CreateIOSSurfaceMVK = reinterpret_cast<PFN_vkCreateIOSSurfaceMVK>(getInstanceProcAddrFunc(instance, "vkCreateIOSSurfaceMVK"));
 #endif
