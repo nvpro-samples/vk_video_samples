@@ -210,6 +210,35 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
             }
         }
     }
+    if (result != VK_SUCCESS && videoCodec == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) {
+        // The reported H.265 profile may be invalid (e.g., FFmpeg reports profile=0
+        // for some streams, which maps to an invalid StdVideoH265ProfileIdc).
+        // Try Main and Main10 which cover the vast majority of H.265 content.
+        static constexpr uint32_t h265ProfileUpgradePath[] = {
+            STD_VIDEO_H265_PROFILE_IDC_MAIN,
+            STD_VIDEO_H265_PROFILE_IDC_MAIN_10,
+        };
+        for (uint32_t upgradedProfile : h265ProfileUpgradePath) {
+            std::cerr << "WARNING: H.265 profile_idc=" << pVideoFormat->codecProfile
+                      << " capabilities query failed (result=" << result
+                      << "). Retrying with profile_idc=" << upgradedProfile << std::endl;
+
+            videoProfile = VkVideoCoreProfile(videoCodec,
+                                              pVideoFormat->chromaSubsampling,
+                                              pVideoFormat->lumaBitDepth,
+                                              pVideoFormat->chromaBitDepth,
+                                              upgradedProfile);
+
+            result = VulkanVideoCapabilities::GetVideoDecodeCapabilities(m_vkDevCtx, videoProfile,
+                                                                         videoCapabilities,
+                                                                         videoDecodeCapabilities);
+            if (result == VK_SUCCESS) {
+                std::cerr << "WARNING: H.265 profile upgraded to profile_idc="
+                          << upgradedProfile << " successfully." << std::endl;
+                break;
+            }
+        }
+    }
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
         assert(!"Could not get Video Capabilities!");
@@ -757,12 +786,57 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     assert(pCurrFrameDecParams->bitstreamData->GetMaxSize() >= pCurrFrameDecParams->bitstreamDataLen);
 
     pCurrFrameDecParams->decodeFrameInfo.srcBuffer = pCurrFrameDecParams->bitstreamData->GetBuffer();
-    //assert(pCurrFrameDecParams->bitstreamDataOffset == 0);
     assert(pCurrFrameDecParams->firstSliceIndex == 0);
-    // TODO: Assert if bitstreamDataOffset is aligned to VkVideoCapabilitiesKHR::minBitstreamBufferOffsetAlignment
-    pCurrFrameDecParams->decodeFrameInfo.srcBufferOffset = pCurrFrameDecParams->bitstreamDataOffset;
-    // TODO: Assert if bitstreamDataLen is aligned to VkVideoCapabilitiesKHR::minBitstreamBufferSizeAlignment
-    pCurrFrameDecParams->decodeFrameInfo.srcBufferRange =  pCurrFrameDecParams->bitstreamDataLen;
+
+    // Verify bitstream buffer alignment invariants.
+    // The parser's buffer management (swapBitstreamBuffer / GetBitstreamBuffer) ensures:
+    //   - Buffers are allocated with size rounded up to minBitstreamBufferSizeAlignment
+    //   - Residual data is copied to offset 0 of a new aligned buffer
+    //   - bitstreamDataOffset is 0 for H.264/H.265/AV1 (set in end_of_picture)
+    //   - VP9 aligns offset in the parser (VulkanVP9Decoder.cpp:261)
+    const VkDeviceSize offsetAlignment = pCurrFrameDecParams->bitstreamData->GetOffsetAlignment();
+    const VkDeviceSize sizeAlignment   = pCurrFrameDecParams->bitstreamData->GetSizeAlignment();
+    const VkDeviceSize bufferMaxSize   = pCurrFrameDecParams->bitstreamData->GetMaxSize();
+
+    // srcBufferOffset: must be 0 (H.264/H.265/AV1) or aligned (VP9).
+    // These codecs don't use non-zero offsets in the parser's end_of_picture.
+    VkDeviceSize srcOffset = pCurrFrameDecParams->bitstreamDataOffset;
+    assert((srcOffset & (offsetAlignment - 1)) == 0 &&
+           "bitstreamDataOffset must be aligned to minBitstreamBufferOffsetAlignment");
+    // Safety: force to 0 for codecs that should not have non-zero offset
+    if (m_videoFormat.codec != VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
+        if (srcOffset != 0) {
+            fprintf(stderr, "WARNING: bitstreamDataOffset=%zu is non-zero for non-VP9 codec, forcing to 0\n",
+                    (size_t)srcOffset);
+            srcOffset = 0;
+        }
+    }
+
+    // srcBufferRange alignment to minBitstreamBufferSizeAlignment.
+    // The bytes beyond bitstreamDataLen contain the next frame's residual data
+    // (swapBitstreamBuffer copies it after decode returns), so we cannot zero-fill.
+    //
+    // H.264: NVDEC's NAL scanner uses srcBufferRange to bound its start-code scan.
+    //   Rounding up exposes the next frame's start codes in the residual area,
+    //   causing decode corruption. Pass exact bitstreamDataLen for H.264.
+    // H.265/AV1: Use slice segment offsets / tile sizes exclusively, so rounding
+    //   up is safe -- the residual data is ignored by the HW decoder.
+    // VP9: Already aligned by the parser (VulkanVP9Decoder.cpp:259).
+    VkDeviceSize srcRange = pCurrFrameDecParams->bitstreamDataLen;
+    bool canAlignRange = (m_videoFormat.codec != VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR);
+    VkDeviceSize alignedRange;
+    if (canAlignRange) {
+        alignedRange = (srcRange + (sizeAlignment - 1)) & ~(sizeAlignment - 1);
+        if (srcOffset + alignedRange > bufferMaxSize) {
+            alignedRange = bufferMaxSize - srcOffset;
+        }
+    } else {
+        // H.264: pass exact range; suppress VUID-07139 in g_ignoredValidationMessageIds
+        alignedRange = srcRange;
+    }
+
+    pCurrFrameDecParams->decodeFrameInfo.srcBufferOffset = srcOffset;
+    pCurrFrameDecParams->decodeFrameInfo.srcBufferRange  = alignedRange;
 
     VkVideoBeginCodingInfoKHR decodeBeginInfo = { VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR };
     decodeBeginInfo.pNext = pCurrFrameDecParams->beginCodingInfoPictureParametersExt;
@@ -773,12 +847,12 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     const VkBufferMemoryBarrier2KHR bitstreamBufferMemoryBarrier = {
         VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR,
         nullptr,
-        VK_PIPELINE_STAGE_2_NONE_KHR,
+        VK_PIPELINE_STAGE_2_HOST_BIT,          // srcStageMask: HOST_WRITE requires HOST stage (VUID-03917)
         VK_ACCESS_2_HOST_WRITE_BIT_KHR,
         VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR,
         VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR,
-        VK_QUEUE_FAMILY_IGNORED,
-        (uint32_t)m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
+        VK_QUEUE_FAMILY_IGNORED,  // srcQueueFamilyIndex - no ownership transfer
+        VK_QUEUE_FAMILY_IGNORED,  // dstQueueFamilyIndex - no ownership transfer
         pCurrFrameDecParams->decodeFrameInfo.srcBuffer,
         pCurrFrameDecParams->decodeFrameInfo.srcBufferOffset,
         pCurrFrameDecParams->decodeFrameInfo.srcBufferRange
@@ -796,8 +870,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR, // VkAccessFlags   dstAccessMask
             VK_IMAGE_LAYOUT_UNDEFINED, // VkImageLayout   oldLayout
             VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR, // VkImageLayout   newLayout
-            VK_QUEUE_FAMILY_IGNORED, // uint32_t        srcQueueFamilyIndex
-            (uint32_t)m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(), // uint32_t   dstQueueFamilyIndex
+            VK_QUEUE_FAMILY_IGNORED, // uint32_t   srcQueueFamilyIndex - no ownership transfer
+            VK_QUEUE_FAMILY_IGNORED, // uint32_t   dstQueueFamilyIndex - no ownership transfer
             VkImage(), // VkImage         image;
             {
                 // VkImageSubresourceRange   subresourceRange
