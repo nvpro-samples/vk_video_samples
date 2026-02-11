@@ -222,7 +222,7 @@ VkDeviceSize VulkanBitstreamBufferImpl::GetOffsetAlignment() const
 
 VkDeviceSize VulkanBitstreamBufferImpl::GetSizeAlignment() const
 {
-    return m_vulkanDeviceMemory->GetMemoryRequirements().alignment;
+    return m_bufferSizeAlignment;
 }
 
 VkDeviceSize VulkanBitstreamBufferImpl::Resize(VkDeviceSize newSize, VkDeviceSize copySize, VkDeviceSize copyOffset)

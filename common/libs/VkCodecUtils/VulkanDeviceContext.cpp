@@ -447,6 +447,15 @@ static constexpr uint32_t g_ignoredValidationMessageIds[] = {
     // at all when there's no usage override. TODO: fix in VkImageResource.cpp.
     0x1f778da5,
 
+    // VUID-vkCmdDecodeVideoKHR-pDecodeInfo-07139 (MessageID = 0xe9634196)
+    // H.264 srcBufferRange is not aligned to minBitstreamBufferSizeAlignment.
+    // NVDEC's H.264 NAL scanner uses srcBufferRange to bound its start-code scan.
+    // Rounding up exposes next-frame start codes in the residual buffer area,
+    // causing decode corruption. H.265/AV1/VP9 are properly aligned.
+    // The proper fix is to handle alignment in the H.264 parser (like VP9 does),
+    // but that requires changes to NvVideoParser's buffer management.
+    0xe9634196,
+
     // VUID-vkGetImageSubresourceLayout-tiling-08717 (MessageID = 0x4148a5e9)
     // vkGetImageSubresourceLayout called with VK_IMAGE_ASPECT_COLOR_BIT on
     // multi-planar NV12 images. Should use VK_IMAGE_ASPECT_PLANE_0_BIT /
