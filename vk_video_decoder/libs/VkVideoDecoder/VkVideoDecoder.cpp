@@ -210,6 +210,35 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
             }
         }
     }
+    if (result != VK_SUCCESS && videoCodec == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR) {
+        // The reported H.265 profile may be invalid (e.g., FFmpeg reports profile=0
+        // for some streams, which maps to an invalid StdVideoH265ProfileIdc).
+        // Try Main and Main10 which cover the vast majority of H.265 content.
+        static constexpr uint32_t h265ProfileUpgradePath[] = {
+            STD_VIDEO_H265_PROFILE_IDC_MAIN,
+            STD_VIDEO_H265_PROFILE_IDC_MAIN_10,
+        };
+        for (uint32_t upgradedProfile : h265ProfileUpgradePath) {
+            std::cerr << "WARNING: H.265 profile_idc=" << pVideoFormat->codecProfile
+                      << " capabilities query failed (result=" << result
+                      << "). Retrying with profile_idc=" << upgradedProfile << std::endl;
+
+            videoProfile = VkVideoCoreProfile(videoCodec,
+                                              pVideoFormat->chromaSubsampling,
+                                              pVideoFormat->lumaBitDepth,
+                                              pVideoFormat->chromaBitDepth,
+                                              upgradedProfile);
+
+            result = VulkanVideoCapabilities::GetVideoDecodeCapabilities(m_vkDevCtx, videoProfile,
+                                                                         videoCapabilities,
+                                                                         videoDecodeCapabilities);
+            if (result == VK_SUCCESS) {
+                std::cerr << "WARNING: H.265 profile upgraded to profile_idc="
+                          << upgradedProfile << " successfully." << std::endl;
+                break;
+            }
+        }
+    }
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
         assert(!"Could not get Video Capabilities!");
