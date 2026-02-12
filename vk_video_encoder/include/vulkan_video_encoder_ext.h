@@ -184,15 +184,31 @@ public:
     // The encoder will:
     //   1. Wait on the input frame's wait semaphores
     //   2. If format conversion is needed, run the compute filter
-    //   3. Encode the frame
-    //   4. Signal the input frame's signal semaphores (frame consumed)
+    //   3. Copy the external image to an internal pool image (staging)
+    //   4. Signal the input frame's signal semaphores (staging complete)
+    //   5. Encode from the internal pool image
     //
     // This is non-blocking: the frame is queued for encoding.
     // Call GetEncodedFrame() to retrieve the bitstream.
     //
+    // pStagingCompleteSemaphore [out, optional]: if non-null, receives the
+    //   binary semaphore that is signaled when the staging copy completes.
+    //   This is useful when the caller needs to chain additional GPU work
+    //   (e.g. display blit) that reads the same external image and needs
+    //   to know when the encoder is done reading it. The caller can then
+    //   signal their own release semaphore after both operations complete.
+    //
+    //   If the caller passes signal semaphores in the frame, those are
+    //   signaled at staging completion time (same point as this semaphore).
+    //   If the caller needs the release to happen AFTER additional work
+    //   (e.g. display blit), do NOT pass signal semaphores in the frame;
+    //   instead use pStagingCompleteSemaphore to chain the work, then
+    //   signal the release semaphore from the final submission.
+    //
     // Returns VK_SUCCESS if the frame was accepted for encoding.
     // Returns VK_NOT_READY if the encoder's internal queue is full (try again later).
-    virtual VkResult SubmitExternalFrame(const VkVideoEncodeInputFrame& frame) = 0;
+    virtual VkResult SubmitExternalFrame(const VkVideoEncodeInputFrame& frame,
+                                          VkSemaphore* pStagingCompleteSemaphore = nullptr) = 0;
 
     // === Asynchronous Bitstream Retrieval ===
     //

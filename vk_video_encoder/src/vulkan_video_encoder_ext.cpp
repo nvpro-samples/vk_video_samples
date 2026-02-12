@@ -76,7 +76,8 @@ public:
     // VulkanVideoEncoderExt (extended interface - external frame input)
     //=========================================================================
     VkResult InitializeExt(const VkVideoEncoderConfig& config) override;
-    VkResult SubmitExternalFrame(const VkVideoEncodeInputFrame& frame) override;
+    VkResult SubmitExternalFrame(const VkVideoEncodeInputFrame& frame,
+                                VkSemaphore* pStagingCompleteSemaphore = nullptr) override;
     VkResult PollEncodeComplete(uint64_t frameId) override;
     VkResult GetEncodedFrame(VkVideoEncodeResult& result) override;
     void     ReleaseEncodedFrame(uint64_t frameId) override;
@@ -435,7 +436,8 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
 }
 
 VkResult VulkanVideoEncoderExtImpl::SubmitExternalFrame(
-    const VkVideoEncodeInputFrame& frame)
+    const VkVideoEncodeInputFrame& frame,
+    VkSemaphore* pStagingCompleteSemaphore)
 {
     if (!m_initialized || !m_encoder) {
         return VK_ERROR_NOT_PERMITTED_KHR;
@@ -472,6 +474,18 @@ VkResult VulkanVideoEncoderExtImpl::SubmitExternalFrame(
         frame.pSignalSemaphoreValues);
 
     if (result == VK_SUCCESS) {
+        // Return the staging completion semaphore if requested.
+        // This is the binary semaphore from the inputCmdBuffer that was
+        // signaled by SubmitStagedInputFrame(). The caller can wait on
+        // this before doing additional work (e.g. display blit) that
+        // reads the same external image, then signal their own release
+        // semaphore from that final submission.
+        if (pStagingCompleteSemaphore && encodeFrameInfo->inputCmdBuffer) {
+            *pStagingCompleteSemaphore = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
+        } else if (pStagingCompleteSemaphore) {
+            *pStagingCompleteSemaphore = VK_NULL_HANDLE;
+        }
+
         // Track for async retrieval
         std::lock_guard<std::mutex> lock(m_pendingMutex);
         m_pendingFrames.push_back({frame.frameId, frame.pts, encodeFrameInfo});
