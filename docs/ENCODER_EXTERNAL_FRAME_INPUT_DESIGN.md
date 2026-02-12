@@ -22,26 +22,69 @@ Current (file-based):
        v
   LoadNextFrame()              <-- reads from m_inputFileHandler, copies to srcStagingImageView
        |                           (linear, CPU-accessible, VkImageResource)
+       |                           SIDE-EFFECTS:
+       |                           - Assigns frameInputOrderNum = m_inputFrameNum++
+       |                           - Sets lastFrame flag (is this the final frame?)
+       |                           - Loads QP map from file if enableQpMap && qpMapFileHandler valid
+       |                           - Acquires srcStagingImageView from m_linearInputImagePool
        v
   StageInputFrame()            <-- copies/filters from srcStagingImageView to srcEncodeImageResource
        |                           - If filter enabled: VulkanFilterYuvCompute dispatch
        |                           - If no filter: vkCmdCopyImage (linear -> optimal)
-       |                           - Submits staging command buffer, waits via fence
+       |                           SIDE-EFFECTS:
+       |                           - Acquires srcEncodeImageResource from m_inputImagePool
+       |                           - Acquires inputCmdBuffer from m_inputCommandBufferPool
+       |                           - Resets inputCmdBuffer (waits for its fence if in-flight)
+       |                           - Records image layout transitions
+       |                           - If filter: handles row/col replication padding
+       |                           - If filter + AQ: acquires subsampledImageResource from pool
+       |                           - If enableQpMap + optimal tiling: stages QP map in same cmd buf
+       |                           - Ends command buffer recording
+       |                           - Calls SubmitStagedInputFrame() internally
+       |                           - Then calls EncodeFrameCommon() internally!
        v
-  SubmitStagedInputFrame()     <-- waits for staging fence to complete
-       |
+  SubmitStagedInputFrame()     <-- submits staging command buffer to transfer/encode queue
+       |                           SIDE-EFFECTS:
+       |                           - Signals inputCmdBuffer's binary semaphore
+       |                           - Signals inputCmdBuffer's fence (for CPU sync)
+       |                           - Marks inputCmdBuffer as submitted
+       |                           NOTE: Does NOT wait - non-blocking submit
        v
   EncodeFrameCommon()          <-- GOP position, DPB management, AQ, queue frame
-       |
+       |                           SIDE-EFFECTS:
+       |                           - Sets constQp from config
+       |                           - Asserts srcEncodeImageResource is set
+       |                           - Sets videoSession, videoSessionParameters refs
+       |                           - Sets qualityLevel from config
+       |                           - Assigns frameEncodeInputOrderNum = m_encodeInputFrameNum++
+       |                           - Calls gopStructure.GetPositionInGOP() -> gopPosition
+       |                           - Calls EncodeFrame() (codec-specific: fills DPB slots, refs)
+       |                           - Calls HandleCtrlCmd() + CodecHandleRateControlCmd()
+       |                           - If enableQpMap: ProcessQpMap()
+       |                           - If enableIntraRefresh: FillIntraRefreshInfo()
+       |                           - Acquires outputBitstreamBuffer from pool
+       |                           - Sets encodeInfo.dstBuffer = outputBitstreamBuffer
+       |                           - If AQ: acquires srcQpMapImageResource, runs ProcessAq()
+       |                             with wait semaphore from inputCmdBuffer
+       |                           - Calls EnqueueFrame() (B-frame reorder, thread queue)
        v
   RecordVideoCodingCmd()       <-- records vkCmdEncodeVideoKHR into encodeCmdBuffer
-       |
+       |                           (called from EnqueueFrame or consumer thread)
        v
-  SubmitVideoCodingCmds()      <-- submits to encode queue, signals encode fence
-       |
+  SubmitVideoCodingCmds()      <-- submits to encode queue
+       |                           SIDE-EFFECTS:
+       |                           - Wait: inputCmdBuffer's semaphore (staging complete)
+       |                           - Wait: AQ semaphore (if AQ enabled)
+       |                           - Signal: encodeCmdBuffer's semaphore + fence
        v
-  AssembleBitstreamData()      <-- SYNCHRONOUS: waits for encode fence, reads bitstream,
-                                   writes to file via fwrite()
+  AssembleBitstreamData()      <-- SYNCHRONOUS: blocks on encodeCmdBuffer fence
+       |                           - Resets inputCmdBuffer (waits fence: staging)
+       |                           - Resets qpMapCmdBuffer (waits fence: qp map)
+       |                           - Resets encodeCmdBuffer (waits fence: BLOCKS HERE)
+       |                           - Writes non-VCL header data via fwrite()
+       |                           - Reads bitstream size from query pool
+       |                           - Maps outputBitstreamBuffer, reads data, fwrite()
+       |                           - Returns outputBitstreamBuffer to pool
 ```
 
 ### Key Fields in VkVideoEncodeFrameInfo
@@ -65,6 +108,109 @@ Current (file-based):
 | `m_inputImagePool` | `VulkanVideoImagePool` | Optimal encode input images |
 | `m_dpbImagePool` | `VulkanVideoImagePool` | DPB reference frames |
 | `m_bitstreamBufferPool` | `VulkanBitstreamBufferPool` | Output bitstream VkBuffers |
+
+## Common Operations the New Interface Must Handle
+
+The stages above embed common operations that are **NOT** related to file I/O or staging. These must still be performed in the new external frame interface regardless of which input path is taken:
+
+### From LoadNextFrame() — must replicate:
+
+| Operation | What | When |
+|-----------|------|------|
+| `frameInputOrderNum = m_inputFrameNum++` | Assigns monotonic input sequence number | Always |
+| `lastFrame` flag | Marks the final frame (for flush/EOS) | Always |
+| QP map loading | `LoadNextQpMapFrameFromFile()` | Only if QP map from file; external path provides QP map via IPC instead |
+| Pool acquisition: `srcStagingImageView` | Gets linear image from `m_linearInputImagePool` | Only for Paths B/C (external linear input) |
+
+### From StageInputFrame() — must replicate:
+
+| Operation | What | When |
+|-----------|------|------|
+| Pool acquisition: `srcEncodeImageResource` | Gets optimal image from `m_inputImagePool` | Paths B/C (need internal optimal); Path A skips this |
+| Pool acquisition: `inputCmdBuffer` | Gets command buffer from `m_inputCommandBufferPool` | Paths B/C; Path A needs a different approach (no staging cmd) |
+| Command buffer reset + begin | Waits fence, resets, begins recording | Paths B/C |
+| Image layout transitions | `TransitionImageLayout()` for src and dst | Paths B/C |
+| Row/column replication padding | Via filter `enablePictureRowColReplication` | Only if filter + config enables it |
+| AQ subsampled image acquisition | `m_inputSubsampledImagePool->GetAvailableImage()` | Only if AQ enabled |
+| QP map staging | `StageInputFrameQpMap()` in same cmd buffer | Only if QP map + optimal tiling |
+| Call `SubmitStagedInputFrame()` | Submits staging to queue | Paths B/C |
+| **Call `EncodeFrameCommon()`** | This is called at the end of `StageInputFrame()`! | Always |
+
+**Critical:** `StageInputFrame()` calls `EncodeFrameCommon()` at line 519 — it's not just staging, it also triggers the entire encode pipeline. The new interface must replicate this call sequence.
+
+### From EncodeFrameCommon() — must replicate:
+
+| Operation | What | When |
+|-----------|------|------|
+| `constQp` assignment | From config | Always |
+| `videoSession/Parameters` refs | Set from encoder's session | Always |
+| `qualityLevel` assignment | From config | Always |
+| `frameEncodeInputOrderNum = m_encodeInputFrameNum++` | Encode-order sequence number | Always |
+| `gopStructure.GetPositionInGOP()` | I/P/B frame type decision | Always (but external can override with forceIDR) |
+| `EncodeFrame()` (codec-specific) | Fills DPB slots, reference management | Always |
+| `HandleCtrlCmd()` + `CodecHandleRateControlCmd()` | Rate control commands | Always |
+| `ProcessQpMap()` | Process QP map data | If enableQpMap |
+| `FillIntraRefreshInfo()` | Intra-refresh | If enableIntraRefresh |
+| `GetBitstreamBuffer()` | Acquire output bitstream VkBuffer | Always |
+| AQ processing | `FindFreeAqProcessorSlot()` + `ProcessAq()` | If AQ enabled |
+| `EnqueueFrame()` | B-frame reorder + submit to thread queue | Always |
+
+### From SubmitStagedInputFrame() — must replicate:
+
+| Operation | What | When |
+|-----------|------|------|
+| Binary semaphore signal | `inputCmdBuffer->GetSemaphore()` | Paths B/C |
+| Timeline semaphore signal (if added) | For external frame release | All paths (new) |
+| Fence signal | `inputCmdBuffer->GetFence()` | Paths B/C |
+| Queue submit | `MultiThreadedQueueSubmit()` to encode/transfer queue | Paths B/C |
+| **External wait semaphores** | Must be injected into `VkSubmitInfo2KHR` | All paths (new) |
+| **External signal semaphores** | Must be injected into `VkSubmitInfo2KHR` | All paths (new) |
+
+### Summary: What SetExternalInputFrame Must Do
+
+```cpp
+VkResult SetExternalInputFrame(...) {
+    // 1. Common bookkeeping (from LoadNextFrame)
+    encodeFrameInfo->frameInputOrderNum = m_inputFrameNum++;
+    encodeFrameInfo->lastFrame = isLastFrame;
+    encodeFrameInfo->inputTimeStamp = pts;
+
+    // 2. Store external sync info (new)
+    encodeFrameInfo->inputWaitSemaphores = waitSemaphores;
+    encodeFrameInfo->inputSignalSemaphores = signalSemaphores;
+
+    // 3. Path selection
+    if (isOptimalAndDirectlyEncodable) {
+        // Path A: inject directly, skip pool acquisition for srcEncodeImageResource
+        encodeFrameInfo->srcEncodeImageResource = wrapExternalImage(image);
+        encodeFrameInfo->isExternalInput = true;
+        // Don't need inputCmdBuffer, staging, or filter
+    } else if (isLinearYCbCr) {
+        // Path B: inject into staging, need upload
+        encodeFrameInfo->srcStagingImageView = wrapExternalImage(image);
+        // StageInputFrame() will acquire srcEncodeImageResource + copy
+    } else {
+        // Path C: inject into staging, need filter
+        encodeFrameInfo->srcStagingImageView = wrapExternalImage(image);
+        // StageInputFrame() will acquire srcEncodeImageResource + filter
+    }
+
+    // 4. Handle QP map (from IPC, not file)
+    if (hasExternalQpMap) {
+        stageExternalQpMap(qpMapData);
+    }
+
+    // 5. Either call StageInputFrame() (paths B/C) or EncodeFrameCommon() directly (path A)
+    if (needsStaging) {
+        return StageInputFrame(encodeFrameInfo);
+        // Note: StageInputFrame calls EncodeFrameCommon internally
+    } else {
+        return EncodeFrameCommon(encodeFrameInfo);
+        // For Path A: external wait semaphores must be injected
+        // into SubmitVideoCodingCmds() instead of staging submit
+    }
+}
+```
 
 ## Extended Frame Path Design
 
