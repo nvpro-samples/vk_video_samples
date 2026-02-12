@@ -121,8 +121,8 @@ public:
     operator VkImage() const { return m_image; }
     VkImage GetImage() const { return m_image; }
     VkDevice GetDevice() const { return *m_vkDevCtx; }
-    VkDeviceMemory GetDeviceMemory() const { return *m_vulkanDeviceMemory; }
-    VkDeviceMemory GetImageDeviceMemory() const { return *m_vulkanDeviceMemory; }
+    VkDeviceMemory GetDeviceMemory() const { return m_vulkanDeviceMemory ? (VkDeviceMemory)*m_vulkanDeviceMemory : VK_NULL_HANDLE; }
+    VkDeviceMemory GetImageDeviceMemory() const { return m_vulkanDeviceMemory ? (VkDeviceMemory)*m_vulkanDeviceMemory : VK_NULL_HANDLE; }
 
     VkSharedBaseObj<VulkanDeviceMemoryImpl>& GetMemory() { return m_vulkanDeviceMemory; }
 

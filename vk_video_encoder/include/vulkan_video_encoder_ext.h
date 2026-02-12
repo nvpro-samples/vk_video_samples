@@ -97,6 +97,9 @@ struct VkVideoEncoderConfig {
     int32_t deviceId;
     uint8_t gpuUUID[VK_UUID_SIZE]; // Preferred GPU UUID (all zeros = auto)
 
+    // Bitstream output file path (null or empty = encoder library default, e.g. out.264/out.265/out.ivf)
+    const char* outputPath;
+
     // Debug
     VkBool32 verbose;
     VkBool32 validate;          // Vulkan validation layers

@@ -132,6 +132,10 @@ VkImageResource::VkImageResource(const VulkanDeviceContext* vkDevCtx,
     // Treat all non 8bpp formats as 16bpp for output to prevent any loss.
     m_is16Bit = (mpInfo->planesLayout.bpp != YCBCRA_8BPP);
 
+    // External/non-owning wrapper (CreateFromExternal) has no VulkanDeviceMemoryImpl
+    if (!vulkanDeviceMemory) {
+        return;
+    }
     VkMemoryPropertyFlags memoryPropertyFlags = vulkanDeviceMemory->GetMemoryPropertyFlags();
     if ((memoryPropertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
         return;

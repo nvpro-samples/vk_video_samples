@@ -229,6 +229,12 @@ VkResult VulkanVideoEncoderExtImpl::BuildEncoderConfig(
     argStrings.push_back("--numFrames");
     argStrings.push_back(std::to_string(UINT32_MAX));
 
+    // Output file path (per-encoder isolation; when set, overrides encoder default)
+    if (extConfig.outputPath && extConfig.outputPath[0] != '\0') {
+        argStrings.push_back("--output");
+        argStrings.push_back(extConfig.outputPath);
+    }
+
     // No input file (external frame input)
     // Don't pass --input since we'll use SetExternalInputFrame
 
