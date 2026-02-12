@@ -348,8 +348,10 @@ private:
     mutable std::mutex                                  m_presentQueueMutex;
     mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoDecodeQueueMutexes;
     mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoEncodeQueueMutexes;
-    VkDebugReportCallbackEXT           m_debugReport;
-    VkDebugUtilsMessengerEXT           m_debugUtilsMessenger;
+    VkDebugReportCallbackEXT           m_debugReport = VK_NULL_HANDLE;
+    VkDebugUtilsMessengerEXT           m_debugUtilsMessenger = VK_NULL_HANDLE;
+    PFN_vkCreateDebugUtilsMessengerEXT  m_createDebugUtilsMessengerEXT = nullptr;
+    PFN_vkDestroyDebugUtilsMessengerEXT m_destroyDebugUtilsMessengerEXT = nullptr;
     std::vector<const char *>          m_reqInstanceLayers;
     std::vector<const char *>          m_reqInstanceExtensions;
     std::vector<const char *>          m_requestedDeviceExtensions;

@@ -258,14 +258,10 @@ struct VkInterfaceFunctions {
     PFN_vkGetPhysicalDeviceWin32PresentationSupportKHR GetPhysicalDeviceWin32PresentationSupportKHR;
 #endif
 
-// VK_EXT_debug_report (deprecated, kept for backward compatibility)
+// VK_EXT_debug_report
     PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallbackEXT;
     PFN_vkDestroyDebugReportCallbackEXT DestroyDebugReportCallbackEXT;
     PFN_vkDebugReportMessageEXT DebugReportMessageEXT;
-
-// VK_EXT_debug_utils (preferred over debug_report)
-    PFN_vkCreateDebugUtilsMessengerEXT CreateDebugUtilsMessengerEXT;
-    PFN_vkDestroyDebugUtilsMessengerEXT DestroyDebugUtilsMessengerEXT;
 
 #ifdef VK_USE_PLATFORM_IOS_MVK
 // VK_MVK_ios_surface

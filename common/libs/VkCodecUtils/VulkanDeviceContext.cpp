@@ -537,8 +537,14 @@ VkResult VulkanDeviceContext::InitDebugReport(bool validate, bool validateVerbos
 
     // Prefer VK_EXT_debug_utils over VK_EXT_debug_report.
     // debug_utils provides messageIdNumber for reliable VUID filtering
-    // and is the non-deprecated API.
-    if (CreateDebugUtilsMessengerEXT) {
+    // and is the non-deprecated API. Load extension procs via GetInstanceProcAddr.
+    if (GetInstanceProcAddr) {
+        m_createDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+            GetInstanceProcAddr(m_instance, "vkCreateDebugUtilsMessengerEXT"));
+        m_destroyDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+            GetInstanceProcAddr(m_instance, "vkDestroyDebugUtilsMessengerEXT"));
+    }
+    if (m_createDebugUtilsMessengerEXT) {
         VkDebugUtilsMessengerCreateInfoEXT messengerInfo = {};
         messengerInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
         messengerInfo.messageSeverity =
@@ -556,7 +562,7 @@ VkResult VulkanDeviceContext::InitDebugReport(bool validate, bool validateVerbos
         messengerInfo.pfnUserCallback = DebugUtilsMessengerCallback;
         messengerInfo.pUserData = reinterpret_cast<void*>(this);
 
-        return CreateDebugUtilsMessengerEXT(m_instance, &messengerInfo, nullptr, &m_debugUtilsMessenger);
+        return m_createDebugUtilsMessengerEXT(m_instance, &messengerInfo, nullptr, &m_debugUtilsMessenger);
     }
 
     // Fallback to deprecated VK_EXT_debug_report if debug_utils is unavailable
@@ -1113,8 +1119,16 @@ VulkanDeviceContext::~VulkanDeviceContext() {
         m_device = VkDevice();
     }
 
-    if (m_debugUtilsMessenger) {
-        DestroyDebugUtilsMessengerEXT(m_instance, m_debugUtilsMessenger, nullptr);
+    // Only destroy if we created a valid messenger (InitDebugReport was called with validate=true).
+    // Skip VK_NULL_HANDLE and known invalid sentinels (e.g. 0xdededededededede) to avoid
+    // VUID-vkDestroyDebugUtilsMessengerEXT-messenger-parameter.
+    if (m_debugUtilsMessenger != VK_NULL_HANDLE && m_destroyDebugUtilsMessengerEXT) {
+        const uintptr_t v = reinterpret_cast<uintptr_t>(m_debugUtilsMessenger);
+        constexpr uintptr_t kSentinel64 = 0xdedededededededeULL;
+        constexpr uintptr_t kSentinel32 = 0xdedededeULL;
+        if (v != kSentinel64 && v != kSentinel32 && (v & 0xFFFFFFFFULL) != kSentinel32) {
+            m_destroyDebugUtilsMessengerEXT(m_instance, m_debugUtilsMessenger, nullptr);
+        }
         m_debugUtilsMessenger = VK_NULL_HANDLE;
     }
 
