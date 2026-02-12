@@ -474,16 +474,25 @@ VkResult VulkanVideoEncoderExtImpl::SubmitExternalFrame(
         frame.pSignalSemaphoreValues);
 
     if (result == VK_SUCCESS) {
-        // Return the staging completion semaphore if requested.
-        // This is the binary semaphore from the inputCmdBuffer that was
-        // signaled by SubmitStagedInputFrame(). The caller can wait on
-        // this before doing additional work (e.g. display blit) that
-        // reads the same external image, then signal their own release
-        // semaphore from that final submission.
-        if (pStagingCompleteSemaphore && encodeFrameInfo->inputCmdBuffer) {
-            *pStagingCompleteSemaphore = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
-        } else if (pStagingCompleteSemaphore) {
-            *pStagingCompleteSemaphore = VK_NULL_HANDLE;
+        // Return the semaphore that signals when the encoder is done
+        // reading the external input image. The caller (encoder service)
+        // uses this to chain the display blit after the encode, then
+        // signals the release semaphore from the display submit.
+        //
+        // Path A (direct encode): encodeCmdBuffer's semaphore, signaled
+        //   after vkCmdEncodeVideoKHR reads the input.
+        // Path B/C (staging): inputCmdBuffer's semaphore, signaled
+        //   after the staging copy reads the input.
+        if (pStagingCompleteSemaphore) {
+            if (encodeFrameInfo->inputCmdBuffer) {
+                // Paths B/C: staging copy was done, signal from inputCmdBuffer
+                *pStagingCompleteSemaphore = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
+            } else if (encodeFrameInfo->encodeCmdBuffer) {
+                // Path A: direct encode, signal from encodeCmdBuffer
+                *pStagingCompleteSemaphore = encodeFrameInfo->encodeCmdBuffer->GetSemaphore();
+            } else {
+                *pStagingCompleteSemaphore = VK_NULL_HANDLE;
+            }
         }
 
         // Track for async retrieval

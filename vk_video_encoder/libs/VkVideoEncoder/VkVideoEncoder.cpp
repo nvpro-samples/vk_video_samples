@@ -492,29 +492,68 @@ VkResult VkVideoEncoder::SetExternalInputFrame(
     }
 
     // =============================================
-    // 3. Wrap the external image as a pool node for srcStagingImageView
+    // 3. Determine input path
     // =============================================
-    // All paths go through StageInputFrame() which copies from
-    // srcStagingImageView to srcEncodeImageResource. This ensures
-    // the external image is released immediately after the copy,
-    // regardless of how long the DPB holds the encode image.
-    VkResult result = WrapExternalImage(
-        externalImage, externalMemory,
-        format, width, height, tiling,
-        encodeFrameInfo->srcStagingImageView);
-    if (result != VK_SUCCESS) {
-        return result;
+    // Path A: Optimal YCbCr that's directly encodable → set as
+    //         srcEncodeImageResource, skip staging, go to EncodeFrameCommon.
+    //         The encoder reads the input once via vkCmdEncodeVideoKHR,
+    //         reconstructed DPB frames are separate internal allocations.
+    //         Input is free after encode reads it.
+    //
+    // Path B/C: Linear YCbCr or RGBA → needs staging copy or filter.
+    //           Set as srcStagingImageView, go through StageInputFrame().
+
+    bool isDirectlyEncodable = false;
+    if (tiling == VK_IMAGE_TILING_OPTIMAL) {
+        switch (format) {
+            case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:                       // NV12
+            case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:      // P010
+            case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16:      // P012
+                isDirectlyEncodable = true;
+                break;
+            default:
+                break;
+        }
     }
 
-    // =============================================
-    // 4. Call StageInputFrame() which chains to EncodeFrameCommon()
-    // =============================================
-    // StageInputFrame will:
-    //   - Acquire srcEncodeImageResource from pool
-    //   - Record the copy/filter command buffer
-    //   - Submit with our wait/signal semaphores injected
-    //   - Call EncodeFrameCommon() at the end
-    return StageInputFrame(encodeFrameInfo);
+    if (isDirectlyEncodable) {
+        // =============================================
+        // Path A: Direct encode (zero-copy)
+        // =============================================
+        // Wrap external image and set directly as srcEncodeImageResource.
+        // No staging, no copy, no filter.
+        VkResult result = WrapExternalImage(
+            externalImage, externalMemory,
+            format, width, height, tiling,
+            encodeFrameInfo->srcEncodeImageResource);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+
+        // Go directly to EncodeFrameCommon (skip StageInputFrame).
+        // Wait/signal semaphores will be injected into SubmitVideoCodingCmds
+        // by EncodeFrameCommon's pipeline.
+        return EncodeFrameCommon(encodeFrameInfo);
+
+    } else {
+        // =============================================
+        // Path B/C: Staging required (copy or filter)
+        // =============================================
+        VkResult result = WrapExternalImage(
+            externalImage, externalMemory,
+            format, width, height, tiling,
+            encodeFrameInfo->srcStagingImageView);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+
+        // StageInputFrame will:
+        //   - Acquire srcEncodeImageResource from pool
+        //   - Record the copy/filter command buffer
+        //   - Submit with wait/signal semaphores injected
+        //   - Call EncodeFrameCommon() at the end
+        return StageInputFrame(encodeFrameInfo);
+    }
 }
 
 VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
@@ -2391,8 +2430,11 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
 
     const VkCommandBuffer* pCmdBuf = encodeFrameInfo->encodeCmdBuffer->GetCommandBuffer();
-    // The encode operation complete semaphore is not needed at this point.
-    VkSemaphore frameCompleteSemaphore = VK_NULL_HANDLE; // encodeFrameInfo->encodeCmdBuffer->GetSemaphore();
+    // For external input (direct encode path), enable the encode complete
+    // semaphore so the encoder service can chain the display after it.
+    VkSemaphore frameCompleteSemaphore = (encodeFrameInfo->isExternalInput && !encodeFrameInfo->inputCmdBuffer)
+        ? encodeFrameInfo->encodeCmdBuffer->GetSemaphore()
+        : VK_NULL_HANDLE;
 
     // Create command buffer submit info
     VkCommandBufferSubmitInfoKHR cmdBufferInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR };
@@ -2402,10 +2444,11 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     // Create wait semaphore submit infos
     // If we are processing the input staging, wait for it's semaphore
     // to be done before processing the input frame with the encoder.
-    const uint32_t waitSemaphoreMaxCount = 4;
+    // For external direct input (no staging), inject external wait semaphores here.
+    const uint32_t waitSemaphoreMaxCount = 8;
     VkSemaphoreSubmitInfoKHR waitSemaphoreInfos[waitSemaphoreMaxCount]{};
 
-    const uint32_t signalSemaphoreMaxCount = 1;
+    const uint32_t signalSemaphoreMaxCount = 4;
     VkSemaphoreSubmitInfoKHR signalSemaphoreInfos[signalSemaphoreMaxCount]{};
 
     uint32_t waitSemaphoreCount = 0;
@@ -2460,13 +2503,35 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
         waitSemaphoreCount++;
     }
 
+    // For external direct input (Path A: no staging, image goes directly to encode):
+    // Inject external wait semaphores here. For the staging path (Paths B/C),
+    // these are injected in SubmitStagedInputFrame() instead.
+    if (encodeFrameInfo->isExternalInput && !encodeFrameInfo->inputCmdBuffer) {
+        for (size_t i = 0; i < encodeFrameInfo->inputWaitSemaphores.size() &&
+                           waitSemaphoreCount < waitSemaphoreMaxCount; i++) {
+            waitSemaphoreInfos[waitSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+            waitSemaphoreInfos[waitSemaphoreCount].semaphore = encodeFrameInfo->inputWaitSemaphores[i];
+            waitSemaphoreInfos[waitSemaphoreCount].value =
+                (i < encodeFrameInfo->inputWaitSemaphoreValues.size())
+                    ? encodeFrameInfo->inputWaitSemaphoreValues[i] : 0;
+            waitSemaphoreInfos[waitSemaphoreCount].stageMask =
+                (i < encodeFrameInfo->inputWaitDstStageMasks.size())
+                    ? encodeFrameInfo->inputWaitDstStageMasks[i]
+                    : VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+            waitSemaphoreInfos[waitSemaphoreCount].deviceIndex = 0;
+            waitSemaphoreCount++;
+        }
+    }
+
     // Create signal semaphore submit info if needed
-    VkSemaphoreSubmitInfoKHR signalSemaphoreInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR };
     if (frameCompleteSemaphore != VK_NULL_HANDLE) {
-        signalSemaphoreInfo.semaphore = frameCompleteSemaphore;
-        signalSemaphoreInfo.value = 0; // Binary semaphore
-        signalSemaphoreInfo.stageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
-        signalSemaphoreInfo.deviceIndex = 0;
+        assert(signalSemaphoreCount < signalSemaphoreMaxCount);
+        signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        signalSemaphoreInfos[signalSemaphoreCount].semaphore = frameCompleteSemaphore;
+        signalSemaphoreInfos[signalSemaphoreCount].value = 0; // Binary semaphore
+        signalSemaphoreInfos[signalSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+        signalSemaphoreInfos[signalSemaphoreCount].deviceIndex = 0;
+        signalSemaphoreCount++;
     }
 
     if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
@@ -2501,8 +2566,6 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     submitInfo.pWaitSemaphoreInfos = (waitSemaphoreCount > 0) ? waitSemaphoreInfos : nullptr;
     submitInfo.commandBufferInfoCount = 1;
     submitInfo.pCommandBufferInfos = &cmdBufferInfo;
-    submitInfo.signalSemaphoreInfoCount = (frameCompleteSemaphore != VK_NULL_HANDLE) ? 1 : 0;
-    submitInfo.pSignalSemaphoreInfos = (frameCompleteSemaphore != VK_NULL_HANDLE) ? &signalSemaphoreInfo : nullptr;
     submitInfo.signalSemaphoreInfoCount = signalSemaphoreCount;
     submitInfo.pSignalSemaphoreInfos = (signalSemaphoreCount > 0) ? signalSemaphoreInfos : nullptr;
 

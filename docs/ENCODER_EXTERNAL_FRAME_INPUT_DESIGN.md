@@ -310,17 +310,53 @@ VkResult SetExternalInputFrame(...) {
 }
 ```
 
-### Key Insight: All Paths Go Through StageInputFrame()
+### Key Insight: Path A (Direct Optimal YCbCr) Skips StageInputFrame Entirely
 
-Even for Path A (optimal YCbCr), we still route through `StageInputFrame()` to copy the external image to an internal pool image. This is intentional:
+For Phase 1 (direct optimal YCbCr input), the external image goes directly to
+`srcEncodeImageResource` and we call `EncodeFrameCommon()` without any staging.
+This is correct because:
 
-1. **DPB safety**: The encoder may hold `srcEncodeImageResource` in DPB for multiple frames as a reference. If we set it directly to the external image, the producer can't reuse the frame slot until the DPB releases it (which could be many frames later, especially with B-frames). By copying to an internal image, we release the external image immediately after the copy.
+1. **Input and DPB are separate**: The encoder's DPB (reconstructed reference
+   frames) is managed internally in `dpbImageResources[]` / `setupImageResource`.
+   These are separate allocations. The input image (`srcEncodeImageResource`) is
+   only read once by `vkCmdEncodeVideoKHR` as the source picture, then the HW
+   encoder reconstructs the reference into its own DPB slot. The input is free
+   to reuse after `vkCmdEncodeVideoKHR` completes.
 
-2. **Minimal changes**: `StageInputFrame()` already handles pool acquisition, command buffer management, and the chain to `EncodeFrameCommon()`. We reuse all of that.
+2. **Zero-copy**: No staging copy, no filter. The imported DMA-BUF VkImage goes
+   directly to the encode HW.
 
-3. **Semaphore injection point**: `SubmitStagedInputFrame()` is the single point where we inject external wait/signal semaphores. No need to modify `SubmitVideoCodingCmds()`.
+3. **Semaphore injection**: Wait semaphores (graph) are injected into
+   `SubmitVideoCodingCmds()` for the encode submit. The encode command buffer's
+   binary semaphore signals when the encode HW is done reading the input.
 
-The only modification to existing code is in `SubmitStagedInputFrame()`:
+Paths B and C (linear or RGBA) still go through `StageInputFrame()` because
+they need a copy or filter. But Phase 1 only uses Path A.
+
+### Synchronization for Path A (Direct Encode + Display)
+
+```
+Encoder (encode queue):
+  wait:   graphSemaphore (value = graphWaitValue)  ← renderer done
+  cmd:    vkCmdEncodeVideoKHR (reads imported image as source picture)
+  signal: encodeInputDoneSem (binary)               ← input image free
+
+Display (graphics queue, chained after encode):
+  wait:   encodeInputDoneSem                        ← encoder released input
+  wait:   imageAvailableSem                         ← swapchain
+  cmd:    blit imported image → swapchain
+  signal: releaseSemaphore (value = frameId)        ← consumer done
+  signal: renderFinishedSem                         ← for present
+```
+
+The release semaphore fires from the display submit — after BOTH the encode
+and display are done reading the imported image. The `encodeInputDoneSem` is
+the binary semaphore from `SubmitVideoCodingCmds()` (the encode command
+buffer's semaphore), returned to the encoder service via
+`SubmitExternalFrame(pStagingCompleteSemaphore)`.
+
+For Paths B/C that go through `StageInputFrame()`, the semaphore injection
+is in `SubmitStagedInputFrame()`:
 
 ```cpp
 VkResult VkVideoEncoder::SubmitStagedInputFrame(...) {
