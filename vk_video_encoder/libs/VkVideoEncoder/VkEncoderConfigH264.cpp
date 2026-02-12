@@ -16,8 +16,7 @@
 
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
 #include <string>
-#include <cstdlib>
-#include <cerrno>
+#include <charconv>
 
 int EncoderConfigH264::DoParseArguments(int argc, const char* argv[])
 {
@@ -29,14 +28,13 @@ int EncoderConfigH264::DoParseArguments(int argc, const char* argv[])
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
-            char* endPtr = nullptr;
-            errno = 0;
-            unsigned long val = std::strtoul(args[i].c_str(), &endPtr, 10);
-            if (errno != 0 || endPtr != args[i].c_str() + args[i].size()) {
+            const char* first = args[i].data();
+            const char* last = first + args[i].size();
+            auto [ptr, ec] = std::from_chars(first, last, sliceCount);
+            if (ec != std::errc{}) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
-            sliceCount = static_cast<uint32_t>(val);
         } else {
             fprintf(stderr, "Unrecognized option: %s\n", argv[i]);
             return -1;

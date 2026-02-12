@@ -20,6 +20,7 @@
 #include <assert.h>
 #include <thread>
 #include <atomic>
+#include <vector>
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 #include "VkVideoEncoderDef.h"
 #include "VkVideoEncoder/VkEncoderConfig.h"
@@ -237,6 +238,40 @@ public:
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
         std::shared_ptr<AqProcessor>                       aqProcessorSlot;
 #endif // NV_AQ_GPU_LIB_SUPPORTED
+
+        // === External frame input support ===
+        // When isExternalInput is true, the srcStagingImageView was provided
+        // externally (e.g. from DMA-BUF import) and is wrapped in a non-owning
+        // VulkanVideoImagePoolNode via CreateExternal().
+        // srcExternalImageLayout: actual layout the producer left the image in
+        // (e.g. GENERAL for compute output). Must NOT be UNDEFINED or the
+        // transition will discard image contents and produce scrambled encode.
+
+        bool           isExternalInput{false};
+        VkImageLayout  srcExternalImageLayout{VK_IMAGE_LAYOUT_UNDEFINED};
+
+        // Wait semaphores: the staging/encode command buffer will wait on these
+        // before accessing the external input image. Typically this is the
+        // producer's graph timeline semaphore.
+        std::vector<VkSemaphore>              inputWaitSemaphores;
+        std::vector<uint64_t>                 inputWaitSemaphoreValues;  // 0 for binary
+        std::vector<VkPipelineStageFlags2>    inputWaitDstStageMasks;
+
+        // Signal semaphores: signaled when the staging copy is complete and the
+        // external input image is no longer needed. Typically this is the
+        // consumer's release timeline semaphore.
+        std::vector<VkSemaphore>              inputSignalSemaphores;
+        std::vector<uint64_t>                 inputSignalSemaphoreValues;  // 0 for binary
+
+        void ClearExternalInputSync() {
+            isExternalInput = false;
+            inputWaitSemaphores.clear();
+            inputWaitSemaphoreValues.clear();
+            inputWaitDstStageMasks.clear();
+            inputSignalSemaphores.clear();
+            inputSignalSemaphoreValues.clear();
+        }
+
         VkResult SyncHostOnCmdBuffComplete() {
 
             if (inputCmdBuffer) {
@@ -604,8 +639,51 @@ public:
     virtual bool GetAvailablePoolNode(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) = 0;
 
     virtual VkResult InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& encoderConfig) = 0; // Must be implemented by the codec
+
+    // === File-based input path (existing) ===
     VkResult LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
     VkResult LoadNextQpMapFrameFromFile(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
+
+    // === External frame input path (new) ===
+    // Replaces LoadNextFrame() for externally-provided images.
+    // Sets up the encodeFrameInfo with the external image, bookkeeping fields,
+    // and sync semaphores, then calls StageInputFrame() which chains to
+    // EncodeFrameCommon(). All paths route through StageInputFrame for DPB safety.
+    //
+    // externalImage: VkImage already on the same device (e.g. imported from DMA-BUF)
+    // externalMemory: VkDeviceMemory backing the image (can be VK_NULL_HANDLE for non-owning)
+    // format, width, height: image properties
+    // tiling: VK_IMAGE_TILING_OPTIMAL or VK_IMAGE_TILING_LINEAR
+    // frameId: unique frame identifier (passed through to output)
+    // pts: presentation timestamp
+    // isLastFrame: set true for the final frame (triggers EOS)
+    // waitSemaphore/signalSemaphore arrays: injected into SubmitStagedInputFrame
+    VkResult SetExternalInputFrame(
+        VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+        VkImage externalImage,
+        VkDeviceMemory externalMemory,
+        VkFormat format,
+        uint32_t width, uint32_t height,
+        VkImageTiling tiling,
+        VkImageLayout srcImageCurrentLayout,
+        uint64_t frameId,
+        uint64_t pts,
+        bool isLastFrame,
+        uint32_t waitSemaphoreCount,
+        const VkSemaphore* pWaitSemaphores,
+        const uint64_t* pWaitSemaphoreValues,
+        const VkPipelineStageFlags2* pWaitDstStageMasks,
+        uint32_t signalSemaphoreCount,
+        const VkSemaphore* pSignalSemaphores,
+        const uint64_t* pSignalSemaphoreValues);
+
+    // Helper: wrap an external VkImage as a VulkanVideoImagePoolNode
+    VkResult WrapExternalImage(
+        VkImage image, VkDeviceMemory memory,
+        VkFormat format, uint32_t width, uint32_t height,
+        VkImageTiling tiling,
+        VkSharedBaseObj<VulkanVideoImagePoolNode>& outNode);
+
     VkResult StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
     VkResult StageInputFrameQpMap(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                   VkCommandBuffer cmdBuf = VK_NULL_HANDLE);
@@ -786,6 +864,10 @@ protected:
 
     void DumpStateInfo(const char* stage, uint32_t ident, VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                        int32_t frameIdx = -1, uint32_t ofTotalFrames = 0) const;
+
+    VkResult SelectDrmFormatModifier(VkSharedBaseObj<EncoderConfig>& encoderConfig,
+                                     VkFormat format, VkImageUsageFlags usage,
+                                     const VkExtent2D& imageExtent);
 
     typedef VkThreadSafeQueue<VkSharedBaseObj<VkVideoEncodeFrameInfo>> EncoderFrameQueue;
 private:
