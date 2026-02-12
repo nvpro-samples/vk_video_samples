@@ -166,51 +166,226 @@ The stages above embed common operations that are **NOT** related to file I/O or
 | **External wait semaphores** | Must be injected into `VkSubmitInfo2KHR` | All paths (new) |
 | **External signal semaphores** | Must be injected into `VkSubmitInfo2KHR` | All paths (new) |
 
-### Summary: What SetExternalInputFrame Must Do
+### What the New Interface Must Replicate
+
+`EncodeFrameCommon()` is **not a problem** — it's the common tail that both file-based and external paths converge into unchanged. The problem is the side-effects embedded in `LoadNextFrame()` and `StageInputFrame()` that happen *before* `EncodeFrameCommon()` runs.
+
+The new `SetExternalInputFrame()` must replicate these side-effects, then hand off to the existing `StageInputFrame()` (Paths B/C) or `EncodeFrameCommon()` (Path A).
+
+### Side-effects from LoadNextFrame() that SetExternalInputFrame must replicate:
+
+```cpp
+// These are mandatory bookkeeping that LoadNextFrame() performs.
+// Without them, EncodeFrameCommon() will malfunction.
+
+encodeFrameInfo->frameInputOrderNum = m_inputFrameNum++;   // CRITICAL: GOP uses this
+encodeFrameInfo->lastFrame = isLastFrame;                   // CRITICAL: EOS signaling
+
+// QP map: LoadNextFrame calls LoadNextQpMapFrameFromFile().
+// For external path: QP map comes from IPC, not file.
+// If external QP map provided:
+//   - Acquire srcQpMapStagingResource from m_linearQpMapImagePool
+//   - Copy QP map data into the linear staging image
+//   - (StageInputFrame will handle the staging copy to optimal)
+// If no external QP map: skip (same as file path with no QP map file)
+
+// Pool acquisition: LoadNextFrame acquires srcStagingImageView.
+// For external path:
+//   - Path A (optimal direct): NOT needed (no staging)
+//   - Path B/C (linear or RGBA): srcStagingImageView must be set
+//     to a wrapper around the external image, NOT acquired from pool.
+//     The external image IS the staging source.
+```
+
+### Side-effects from StageInputFrame() that SetExternalInputFrame must handle:
+
+```cpp
+// StageInputFrame does these things BEFORE calling EncodeFrameCommon():
+
+// 1. Acquire srcEncodeImageResource from m_inputImagePool
+//    - Path A: NOT needed — external optimal image IS the encode input
+//    - Path B/C: needed — this is the internal optimal image the encoder reads
+//    StageInputFrame already does this (line 404-413), so for B/C
+//    we can just call StageInputFrame() with our external staging image set.
+
+// 2. Acquire inputCmdBuffer from m_inputCommandBufferPool
+//    - Path A: NOT needed — no staging command buffer
+//    - Path B/C: needed — StageInputFrame already does this (line 415)
+
+// 3. External wait semaphores injection
+//    - Path B/C: must be added to SubmitStagedInputFrame()'s VkSubmitInfo2KHR
+//      as additional wait semaphores (graph semaphore from producer)
+//    - Path A: must be added to SubmitVideoCodingCmds()'s VkSubmitInfo2KHR
+//      since there's no staging submit
+
+// 4. External signal semaphores injection
+//    - All paths: must be signaled when the encoder no longer needs the
+//      external image. For Path B/C this is after the staging copy.
+//      For Path A this is after the encode uses the image (srcEncodeImageResource
+//      is consumed by vkCmdEncodeVideoKHR).
+//    - Path B/C: add to SubmitStagedInputFrame() signal semaphores
+//    - Path A: add to SubmitVideoCodingCmds() signal semaphores
+//      BUT: the encode may reference the image across multiple frames (DPB).
+//      For external input that is NOT a reference frame, signal immediately.
+//      For external input used as reference: signal when DPB slot is released.
+//      SIMPLIFICATION: for now, always copy external to internal encode image
+//      (even Path A) so the external image can be released immediately after copy.
+```
+
+### Summary: SetExternalInputFrame Implementation
 
 ```cpp
 VkResult SetExternalInputFrame(...) {
-    // 1. Common bookkeeping (from LoadNextFrame)
+
+    // =============================================
+    // 1. Replicate LoadNextFrame() bookkeeping
+    // =============================================
     encodeFrameInfo->frameInputOrderNum = m_inputFrameNum++;
     encodeFrameInfo->lastFrame = isLastFrame;
     encodeFrameInfo->inputTimeStamp = pts;
 
-    // 2. Store external sync info (new)
-    encodeFrameInfo->inputWaitSemaphores = waitSemaphores;
-    encodeFrameInfo->inputSignalSemaphores = signalSemaphores;
-
-    // 3. Path selection
-    if (isOptimalAndDirectlyEncodable) {
-        // Path A: inject directly, skip pool acquisition for srcEncodeImageResource
-        encodeFrameInfo->srcEncodeImageResource = wrapExternalImage(image);
-        encodeFrameInfo->isExternalInput = true;
-        // Don't need inputCmdBuffer, staging, or filter
-    } else if (isLinearYCbCr) {
-        // Path B: inject into staging, need upload
-        encodeFrameInfo->srcStagingImageView = wrapExternalImage(image);
-        // StageInputFrame() will acquire srcEncodeImageResource + copy
-    } else {
-        // Path C: inject into staging, need filter
-        encodeFrameInfo->srcStagingImageView = wrapExternalImage(image);
-        // StageInputFrame() will acquire srcEncodeImageResource + filter
-    }
-
-    // 4. Handle QP map (from IPC, not file)
+    // QP map from external source (not file)
     if (hasExternalQpMap) {
-        stageExternalQpMap(qpMapData);
+        acquireAndFillQpMapStaging(encodeFrameInfo, qpMapData, qpMapWidth, qpMapHeight);
     }
 
-    // 5. Either call StageInputFrame() (paths B/C) or EncodeFrameCommon() directly (path A)
-    if (needsStaging) {
-        return StageInputFrame(encodeFrameInfo);
-        // Note: StageInputFrame calls EncodeFrameCommon internally
+    // =============================================
+    // 2. Store external sync info (new fields)
+    // =============================================
+    encodeFrameInfo->inputWaitSemaphores = {waitSemaphores...};
+    encodeFrameInfo->inputWaitSemaphoreValues = {waitValues...};
+    encodeFrameInfo->inputSignalSemaphores = {signalSemaphores...};
+    encodeFrameInfo->inputSignalSemaphoreValues = {signalValues...};
+    encodeFrameInfo->isExternalInput = true;
+
+    // =============================================
+    // 3. Path selection and image injection
+    // =============================================
+    bool needsStaging = false;
+    bool needsFilter = false;
+
+    if (isDirectlyEncodable(format) && tiling == VK_IMAGE_TILING_OPTIMAL) {
+        // Path A: set srcStagingImageView to external image.
+        // StageInputFrame will copy it to srcEncodeImageResource (internal pool).
+        // This ensures the external image is released after the copy,
+        // not held for the duration of DPB reference lifetime.
+        encodeFrameInfo->srcStagingImageView = wrapExternalAsPoolNode(image);
+        needsStaging = true;
+        needsFilter = false;
+        // NOTE: We still go through StageInputFrame for the copy,
+        // but the filter is disabled (format is already encodable).
+    } else if (isYCbCrFormat(format) && tiling == VK_IMAGE_TILING_LINEAR) {
+        // Path B: linear YCbCr -> upload to optimal
+        encodeFrameInfo->srcStagingImageView = wrapExternalAsPoolNode(image);
+        needsStaging = true;
+        needsFilter = false;
     } else {
-        return EncodeFrameCommon(encodeFrameInfo);
-        // For Path A: external wait semaphores must be injected
-        // into SubmitVideoCodingCmds() instead of staging submit
+        // Path C: RGBA or unsupported -> needs filter
+        encodeFrameInfo->srcStagingImageView = wrapExternalAsPoolNode(image);
+        needsStaging = true;
+        needsFilter = true;
+        // Ensure m_inputComputeFilter is initialized for RGBA->YCbCr
     }
+
+    // =============================================
+    // 4. Call StageInputFrame() which chains into EncodeFrameCommon()
+    // =============================================
+    // StageInputFrame() will:
+    //   - Acquire srcEncodeImageResource from pool (internal optimal image)
+    //   - Acquire inputCmdBuffer, record copy/filter, submit
+    //   - Inject our external wait/signal semaphores into the submit
+    //   - Call EncodeFrameCommon() at the end
+    //
+    // The only modification needed to StageInputFrame() is:
+    //   - In SubmitStagedInputFrame(): add encodeFrameInfo->inputWaitSemaphores
+    //     as additional wait semaphores in VkSubmitInfo2KHR
+    //   - In SubmitStagedInputFrame(): add encodeFrameInfo->inputSignalSemaphores
+    //     as additional signal semaphores in VkSubmitInfo2KHR
+    //
+    // This means ALL paths go through StageInputFrame(). Path A just does a
+    // format-matching copy (optimal->optimal of the same format), Path B does
+    // linear->optimal copy, Path C runs the filter.
+
+    return StageInputFrame(encodeFrameInfo);
 }
 ```
+
+### Key Insight: All Paths Go Through StageInputFrame()
+
+Even for Path A (optimal YCbCr), we still route through `StageInputFrame()` to copy the external image to an internal pool image. This is intentional:
+
+1. **DPB safety**: The encoder may hold `srcEncodeImageResource` in DPB for multiple frames as a reference. If we set it directly to the external image, the producer can't reuse the frame slot until the DPB releases it (which could be many frames later, especially with B-frames). By copying to an internal image, we release the external image immediately after the copy.
+
+2. **Minimal changes**: `StageInputFrame()` already handles pool acquisition, command buffer management, and the chain to `EncodeFrameCommon()`. We reuse all of that.
+
+3. **Semaphore injection point**: `SubmitStagedInputFrame()` is the single point where we inject external wait/signal semaphores. No need to modify `SubmitVideoCodingCmds()`.
+
+The only modification to existing code is in `SubmitStagedInputFrame()`:
+
+```cpp
+VkResult VkVideoEncoder::SubmitStagedInputFrame(...) {
+    // ... existing code ...
+
+    // NEW: Add external wait semaphores from the frame info
+    for (auto& sem : encodeFrameInfo->inputWaitSemaphores) {
+        waitSemaphoreInfos[waitCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        waitSemaphoreInfos[waitCount].semaphore = sem;
+        waitSemaphoreInfos[waitCount].value = encodeFrameInfo->inputWaitSemaphoreValues[i];
+        waitSemaphoreInfos[waitCount].stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+        waitCount++;
+    }
+
+    // NEW: Add external signal semaphores
+    for (auto& sem : encodeFrameInfo->inputSignalSemaphores) {
+        signalSemaphoreInfos[signalCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        signalSemaphoreInfos[signalCount].semaphore = sem;
+        signalSemaphoreInfos[signalCount].value = encodeFrameInfo->inputSignalSemaphoreValues[i];
+        signalSemaphoreInfos[signalCount].stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+        signalCount++;
+    }
+
+    // ... rest of existing submit code ...
+}
+```
+
+### Helper: wrapExternalAsPoolNode()
+
+Need a utility to wrap an external `VkImage` + `VkDeviceMemory` in a `VulkanVideoImagePoolNode` so it can be set as `srcStagingImageView`. This wrapper:
+- Creates a `VkImageResource` wrapping the external `VkImage`/`VkDeviceMemory` **without** owning them (no destroy on release)
+- Creates a `VkImageResourceView` for the image
+- Wraps in a `VulkanVideoImagePoolNode` with ref-counting
+- The ref-count keeps the wrapper alive until `StageInputFrame()` completes the copy, then drops naturally
+
+```cpp
+VkSharedBaseObj<VulkanVideoImagePoolNode> VkVideoEncoder::WrapExternalImage(
+    VkImage image, VkDeviceMemory memory, VkImageView view,
+    VkFormat format, uint32_t width, uint32_t height,
+    VkImageTiling tiling)
+{
+    // Create non-owning VkImageResource (doesn't destroy the VkImage on release)
+    VkSharedBaseObj<VkImageResource> imageResource;
+    VkImageResource::CreateFromExternalImage(m_vkDevCtx, image, memory,
+                                              format, {width, height, 1},
+                                              tiling, false /*ownsImage*/,
+                                              imageResource);
+
+    // Create view (may already have one from the caller)
+    VkSharedBaseObj<VkImageResourceView> imageView;
+    if (view != VK_NULL_HANDLE) {
+        VkImageResourceView::CreateFromExternalView(m_vkDevCtx, view, imageResource,
+                                                     false /*ownsView*/, imageView);
+    } else {
+        VkImageResourceView::Create(m_vkDevCtx, imageResource, imageView);
+    }
+
+    // Wrap in pool node (non-owning: doesn't return to any pool on release)
+    VkSharedBaseObj<VulkanVideoImagePoolNode> node;
+    VulkanVideoImagePoolNode::CreateExternal(m_vkDevCtx, imageResource, imageView, node);
+    return node;
+}
+```
+
+**NOTE**: `VkImageResource::CreateFromExternalImage()` and `VulkanVideoImagePoolNode::CreateExternal()` are new methods that need to be added to the VkCodecUtils infrastructure. They create non-owning wrappers around externally-managed resources.
 
 ## Extended Frame Path Design
 
