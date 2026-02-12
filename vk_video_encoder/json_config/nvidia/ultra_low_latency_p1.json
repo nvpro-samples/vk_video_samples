@@ -1,1 +1,1 @@
-{"codec":"h264","outputPath":"","rcMode":"cbr","averageBitrate":3000000,"maxBitrate":3000000,"vbvBufferSize":150000,"gopLength":15,"bFrameCount":0,"idrPeriod":30,"closedGop":false,"frameRateNum":30,"frameRateDen":1,"qualityPreset":1,"verbose":false,"validate":false}
+{"codec":"h264","outputPath":"","rcMode":"cbr","averageBitrate":3000000,"maxBitrate":3000000,"vbvBufferSize":150000,"gopLength":4294967295,"bFrameCount":0,"idrPeriod":4294967295,"closedGop":false,"frameRateNum":30,"frameRateDen":1,"qualityPreset":0,"verbose":false,"validate":false,"tuningMode":"ultralowlatency"}
