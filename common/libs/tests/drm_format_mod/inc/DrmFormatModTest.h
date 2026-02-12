@@ -151,6 +151,9 @@ private:
     VulkanDeviceContext         m_vkDevCtx;
     TestConfig                  m_config;
     
+    // Physical device (for vendor-specific workarounds)
+    uint32_t                    m_vendorID{0};
+
     // Extension support
     bool                        m_drmModifierSupported{false};
     bool                        m_dmaBufSupported{false};

@@ -158,9 +158,10 @@ VkResult DrmFormatModTest::init(const TestConfig& config) {
         return result;
     }
     
-    // Print device info
+    // Print device info and cache vendor for workarounds
     VkPhysicalDeviceProperties props;
     m_vkDevCtx.GetPhysicalDeviceProperties(m_vkDevCtx.getPhysicalDevice(), &props);
+    m_vendorID = props.vendorID;
     std::cout << "[INFO] Physical device: " << props.deviceName << std::endl;
     
     // Check extension support
@@ -588,6 +589,14 @@ TestResult DrmFormatModTest::runExportImportTest(const FormatInfo& format, bool 
         if (!found) {
             result.status = TestStatus::SKIP;
             result.message = "LINEAR modifier not available";
+            return result;
+        }
+        // Intel (vendor 0x8086): single-plane LINEAR DMA-BUF import returns
+        // VK_ERROR_INVALID_EXTERNAL_HANDLE; multi-plane (e.g. NV12, P010) works.
+        const uint32_t planeCount = format.planeCount > 0 ? format.planeCount : 1;
+        if (planeCount == 1 && m_vendorID == 0x8086) {
+            result.status = TestStatus::SKIP;
+            result.message = "Intel: single-plane LINEAR DMA-BUF import returns VK_ERROR_INVALID_EXTERNAL_HANDLE (driver limitation)";
             return result;
         }
     } else if (useCompressed) {
