@@ -48,6 +48,37 @@ int32_t VulkanVideoImagePoolNode::Release()
     return ret;
 }
 
+VkResult VulkanVideoImagePoolNode::CreateExternal(
+    const VulkanDeviceContext* vkDevCtx,
+    VkSharedBaseObj<VkImageResourceView>& imageResourceView,
+    VkImageLayout initialLayout,
+    VkSharedBaseObj<VulkanVideoImagePoolNode>& outNode)
+{
+    VulkanVideoImagePoolNode* pNode = new VulkanVideoImagePoolNode();
+    if (!pNode) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    pNode->m_vkDevCtx = vkDevCtx;
+    pNode->m_imageResourceView = imageResourceView;
+    pNode->m_currentImageLayout = initialLayout;
+    // m_parent stays nullptr (no pool to return to)
+    // m_parentIndex stays -1
+
+    // Fill in VkVideoPictureResourceInfoKHR from the image
+    const VkSharedBaseObj<VkImageResource>& imgRes = imageResourceView->GetImageResource();
+    const VkImageCreateInfo& createInfo = imgRes->GetImageCreateInfo();
+
+    pNode->m_pictureResourceInfo = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR};
+    pNode->m_pictureResourceInfo.codedOffset = {0, 0};
+    pNode->m_pictureResourceInfo.codedExtent = {createInfo.extent.width, createInfo.extent.height};
+    pNode->m_pictureResourceInfo.baseArrayLayer = 0;
+    pNode->m_pictureResourceInfo.imageViewBinding = imageResourceView->GetImageView();
+
+    outNode = pNode;
+    return VK_SUCCESS;
+}
+
 VkResult VulkanVideoImagePoolNode::CreateImage( const VulkanDeviceContext* vkDevCtx,
                                                 const VkImageCreateInfo*   pImageCreateInfo,
                                                 VkMemoryPropertyFlags      requiredMemProps,

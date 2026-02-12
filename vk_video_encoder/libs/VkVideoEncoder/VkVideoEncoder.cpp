@@ -397,6 +397,126 @@ VkResult VkVideoEncoder::EncodeFrameCommon(VkSharedBaseObj<VkVideoEncodeFrameInf
     return VK_SUCCESS;
 }
 
+VkResult VkVideoEncoder::WrapExternalImage(
+    VkImage image, VkDeviceMemory memory,
+    VkFormat format, uint32_t width, uint32_t height,
+    VkImageTiling tiling,
+    VkSharedBaseObj<VulkanVideoImagePoolNode>& outNode)
+{
+    // Create a non-owning VkImageResource wrapper
+    VkImageCreateInfo imageCI{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    imageCI.imageType = VK_IMAGE_TYPE_2D;
+    imageCI.format = format;
+    imageCI.extent = {width, height, 1};
+    imageCI.mipLevels = 1;
+    imageCI.arrayLayers = 1;
+    imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageCI.tiling = tiling;
+    imageCI.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+    VkSharedBaseObj<VkImageResource> imageResource;
+    VkResult result = VkImageResource::CreateFromExternal(m_vkDevCtx, image, memory,
+                                                          &imageCI, imageResource);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+
+    // Create an image view for the external image
+    VkImageSubresourceRange subresRange{};
+    subresRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    subresRange.levelCount = 1;
+    subresRange.layerCount = 1;
+
+    VkSharedBaseObj<VkImageResourceView> imageView;
+    result = VkImageResourceView::Create(m_vkDevCtx, imageResource, subresRange, imageView);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+
+    // Wrap in a non-owning pool node
+    result = VulkanVideoImagePoolNode::CreateExternal(
+        m_vkDevCtx, imageView, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, outNode);
+
+    return result;
+}
+
+VkResult VkVideoEncoder::SetExternalInputFrame(
+    VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+    VkImage externalImage,
+    VkDeviceMemory externalMemory,
+    VkFormat format,
+    uint32_t width, uint32_t height,
+    VkImageTiling tiling,
+    uint64_t frameId,
+    uint64_t pts,
+    bool isLastFrame,
+    uint32_t waitSemaphoreCount,
+    const VkSemaphore* pWaitSemaphores,
+    const uint64_t* pWaitSemaphoreValues,
+    const VkPipelineStageFlags2* pWaitDstStageMasks,
+    uint32_t signalSemaphoreCount,
+    const VkSemaphore* pSignalSemaphores,
+    const uint64_t* pSignalSemaphoreValues)
+{
+    assert(encodeFrameInfo);
+
+    // =============================================
+    // 1. Replicate LoadNextFrame() bookkeeping
+    // =============================================
+    encodeFrameInfo->frameInputOrderNum = m_inputFrameNum++;
+    encodeFrameInfo->lastFrame = isLastFrame;
+    encodeFrameInfo->inputTimeStamp = pts;
+
+    // =============================================
+    // 2. Store external sync info
+    // =============================================
+    encodeFrameInfo->isExternalInput = true;
+
+    encodeFrameInfo->inputWaitSemaphores.clear();
+    encodeFrameInfo->inputWaitSemaphoreValues.clear();
+    encodeFrameInfo->inputWaitDstStageMasks.clear();
+    for (uint32_t i = 0; i < waitSemaphoreCount; i++) {
+        encodeFrameInfo->inputWaitSemaphores.push_back(pWaitSemaphores[i]);
+        encodeFrameInfo->inputWaitSemaphoreValues.push_back(
+            pWaitSemaphoreValues ? pWaitSemaphoreValues[i] : 0);
+        encodeFrameInfo->inputWaitDstStageMasks.push_back(
+            pWaitDstStageMasks ? pWaitDstStageMasks[i] : VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR);
+    }
+
+    encodeFrameInfo->inputSignalSemaphores.clear();
+    encodeFrameInfo->inputSignalSemaphoreValues.clear();
+    for (uint32_t i = 0; i < signalSemaphoreCount; i++) {
+        encodeFrameInfo->inputSignalSemaphores.push_back(pSignalSemaphores[i]);
+        encodeFrameInfo->inputSignalSemaphoreValues.push_back(
+            pSignalSemaphoreValues ? pSignalSemaphoreValues[i] : 0);
+    }
+
+    // =============================================
+    // 3. Wrap the external image as a pool node for srcStagingImageView
+    // =============================================
+    // All paths go through StageInputFrame() which copies from
+    // srcStagingImageView to srcEncodeImageResource. This ensures
+    // the external image is released immediately after the copy,
+    // regardless of how long the DPB holds the encode image.
+    VkResult result = WrapExternalImage(
+        externalImage, externalMemory,
+        format, width, height, tiling,
+        encodeFrameInfo->srcStagingImageView);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+
+    // =============================================
+    // 4. Call StageInputFrame() which chains to EncodeFrameCommon()
+    // =============================================
+    // StageInputFrame will:
+    //   - Acquire srcEncodeImageResource from pool
+    //   - Record the copy/filter command buffer
+    //   - Submit with our wait/signal semaphores injected
+    //   - Call EncodeFrameCommon() at the end
+    return StageInputFrame(encodeFrameInfo);
+}
+
 VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
     assert(encodeFrameInfo);
@@ -727,14 +847,47 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
         }
     }
 
+    // === External frame input: inject wait semaphores ===
+    std::vector<VkSemaphoreSubmitInfoKHR> waitSemaphoreInfos;
+    if (encodeFrameInfo->isExternalInput && !encodeFrameInfo->inputWaitSemaphores.empty()) {
+        for (size_t i = 0; i < encodeFrameInfo->inputWaitSemaphores.size(); i++) {
+            VkSemaphoreSubmitInfoKHR waitInfo = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR};
+            waitInfo.semaphore = encodeFrameInfo->inputWaitSemaphores[i];
+            waitInfo.value = (i < encodeFrameInfo->inputWaitSemaphoreValues.size())
+                                 ? encodeFrameInfo->inputWaitSemaphoreValues[i] : 0;
+            waitInfo.stageMask = (i < encodeFrameInfo->inputWaitDstStageMasks.size())
+                                     ? encodeFrameInfo->inputWaitDstStageMasks[i]
+                                     : VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+            waitInfo.deviceIndex = 0;
+            waitSemaphoreInfos.push_back(waitInfo);
+        }
+    }
+
+    // === External frame input: inject signal semaphores ===
+    // These are appended to the existing signal semaphores (frameCompleteSemaphore, subsampled TL)
+    std::vector<VkSemaphoreSubmitInfoKHR> allSignalSemaphoreInfos(
+        signalSemaphoreInfos, signalSemaphoreInfos + signalSemaphoreCount);
+    if (encodeFrameInfo->isExternalInput && !encodeFrameInfo->inputSignalSemaphores.empty()) {
+        for (size_t i = 0; i < encodeFrameInfo->inputSignalSemaphores.size(); i++) {
+            VkSemaphoreSubmitInfoKHR signalInfo = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR};
+            signalInfo.semaphore = encodeFrameInfo->inputSignalSemaphores[i];
+            signalInfo.value = (i < encodeFrameInfo->inputSignalSemaphoreValues.size())
+                                   ? encodeFrameInfo->inputSignalSemaphoreValues[i] : 0;
+            signalInfo.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+            signalInfo.deviceIndex = 0;
+            allSignalSemaphoreInfos.push_back(signalInfo);
+        }
+    }
+
+    // TODO: Convert to TL semaphore, input -> AQ -> Encode
     VkSubmitInfo2KHR submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR, nullptr };
     submitInfo.flags = 0;
-    submitInfo.waitSemaphoreInfoCount = 0;
-    submitInfo.pWaitSemaphoreInfos = nullptr;
+    submitInfo.waitSemaphoreInfoCount = static_cast<uint32_t>(waitSemaphoreInfos.size());
+    submitInfo.pWaitSemaphoreInfos = waitSemaphoreInfos.empty() ? nullptr : waitSemaphoreInfos.data();
     submitInfo.commandBufferInfoCount = 1;
     submitInfo.pCommandBufferInfos = &cmdBufferInfo;
-    submitInfo.signalSemaphoreInfoCount = signalSemaphoreCount;
-    submitInfo.pSignalSemaphoreInfos = (signalSemaphoreCount > 0) ? signalSemaphoreInfos : nullptr;
+    submitInfo.signalSemaphoreInfoCount = static_cast<uint32_t>(allSignalSemaphoreInfos.size());
+    submitInfo.pSignalSemaphoreInfos = allSignalSemaphoreInfos.empty() ? nullptr : allSignalSemaphoreInfos.data();
 
     VkFence queueCompleteFence = encodeFrameInfo->inputCmdBuffer->GetFence();
     assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, queueCompleteFence));

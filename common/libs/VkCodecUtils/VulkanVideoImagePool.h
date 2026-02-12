@@ -63,6 +63,28 @@ public:
                           VkImageAspectFlags aspectMask,
                           bool useLinear);
 
+    /**
+     * @brief Create a pool node from an externally-provided image resource view.
+     *
+     * This creates a non-owning pool node: the image and view are managed by the caller.
+     * The pool node will NOT return to any pool when its ref-count drops to zero; it
+     * simply releases the VkSharedBaseObj refs to the view (and transitively the image).
+     *
+     * Used by the external frame input path to wrap DMA-BUF-imported images as
+     * VulkanVideoImagePoolNode so they can be set as srcStagingImageView or
+     * srcEncodeImageResource in VkVideoEncodeFrameInfo.
+     *
+     * @param vkDevCtx          Vulkan device context
+     * @param imageResourceView The image resource view to wrap (non-owning ref)
+     * @param initialLayout     The current image layout
+     * @param node              Output pool node
+     * @return VK_SUCCESS on success
+     */
+    static VkResult CreateExternal(const VulkanDeviceContext* vkDevCtx,
+                                   VkSharedBaseObj<VkImageResourceView>& imageResourceView,
+                                   VkImageLayout initialLayout,
+                                   VkSharedBaseObj<VulkanVideoImagePoolNode>& node);
+
     VkResult Init(const VulkanDeviceContext* vkDevCtx);
 
     void Deinit();
