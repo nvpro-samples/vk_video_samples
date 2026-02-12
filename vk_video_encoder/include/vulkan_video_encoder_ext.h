@@ -194,21 +194,51 @@ public:
     // Returns VK_NOT_READY if the encoder's internal queue is full (try again later).
     virtual VkResult SubmitExternalFrame(const VkVideoEncodeInputFrame& frame) = 0;
 
-    // Retrieve the next completed encoded frame.
+    // === Asynchronous Bitstream Retrieval ===
+    //
+    // After SubmitExternalFrame(), the encode happens asynchronously.
+    // Use these methods to retrieve the encoded bitstream without blocking
+    // the encode pipeline.
+
+    // Poll: check if a specific frame's encode has completed.
+    // Returns VK_SUCCESS if the bitstream is ready to read.
+    // Returns VK_NOT_READY if still encoding.
+    virtual VkResult PollEncodeComplete(uint64_t frameId) = 0;
+
+    // Get the next completed encoded frame (FIFO order).
     // Returns VK_SUCCESS and fills 'result' if a frame is ready.
     // Returns VK_NOT_READY if no frames are ready yet.
     //
-    // The pBitstreamData pointer in result is valid until the next call
-    // to GetEncodedFrame() or Flush().
+    // The pBitstreamData pointer in result is valid until ReleaseEncodedFrame()
+    // is called for this frameId. This allows the caller to read the bitstream
+    // at their own pace (write to file, send via IPC, etc.) while encoding
+    // continues on subsequent frames.
     virtual VkResult GetEncodedFrame(VkVideoEncodeResult& result) = 0;
+
+    // Release an encoded frame's bitstream buffer back to the pool.
+    // Must be called after the caller is done reading pBitstreamData.
+    // The bitstream buffer is returned to the pool for reuse.
+    virtual void ReleaseEncodedFrame(uint64_t frameId) = 0;
+
+    // Get the fence associated with a frame's encode completion.
+    // The caller can wait on this fence externally (e.g. in a thread pool)
+    // instead of polling PollEncodeComplete().
+    // Returns VK_NULL_HANDLE if the frame hasn't been submitted yet.
+    virtual VkFence GetEncodeFence(uint64_t frameId) = 0;
+
+    // === Flush and Drain ===
 
     // Flush: encode all pending frames and make their bitstreams available.
     // Blocks until all pending frames are encoded.
     virtual VkResult Flush() = 0;
 
-    // Dynamic reconfiguration (e.g. bitrate change mid-stream).
-    // Only rate control parameters can be changed without session reset.
+    // === Dynamic Reconfiguration ===
+
+    // Change rate control parameters mid-stream without session reset.
+    // Takes effect at the next IDR frame (or immediately if forceIDR).
     virtual VkResult Reconfigure(const VkVideoEncoderConfig& config) = 0;
+
+    // === Capability Query ===
 
     // Query encoder capabilities for the configured codec.
     // Can be called before InitializeExt() to check support.
