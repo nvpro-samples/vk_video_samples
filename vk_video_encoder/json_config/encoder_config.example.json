@@ -1,0 +1,13 @@
+{
+  "codec": "h264",
+  "outputPath": "output.264",
+  "rcMode": "vbr",
+  "averageBitrate": 5000000,
+  "maxBitrate": 6000000,
+  "gopLength": 30,
+  "bFrameCount": 0,
+  "frameRateNum": 30,
+  "frameRateDen": 1,
+  "verbose": false,
+  "validate": false
+}
