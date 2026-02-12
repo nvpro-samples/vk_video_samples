@@ -1013,6 +1013,10 @@ public:
 
     int ParseArguments(int argc, const char *argv[]);
 
+    // Load base config from JSON file (encoder_config.schema.json). JSON is processed first;
+    // command-line args passed to ParseArguments override. Returns 0 on success, -1 on error.
+    int LoadFromJsonFile(const char* path);
+
     virtual int DoParseArguments(int argc, const char *argv[]) {
         if (argc > 0) {
             std::cout << "Invalid paramters: ";

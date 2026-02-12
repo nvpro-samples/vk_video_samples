@@ -18,6 +18,7 @@
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
+#include "json/EncoderConfigJsonLoader.h"
 #include <algorithm>
 #include <cctype>
 #include <string>
@@ -111,6 +112,7 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     -i, --input                     .yuv Input YUV File Name (YUV420p 8bpp only) \n\
     -o, --output                    .264/5,ivf Output H264/5/AV1 File Name \n\
     -c, --codec                     <string> select codec type: avc (h264) or hevc (h265) or av1\n\
+    --encoderConfig                 <path>    : load base config from JSON (CLI overrides); see json_config/encoder_config.schema.json\n\
     --dpbMode                       <string>  : select DPB mode: layered, separate\n\
     --inputWidth                    <integer> : Input Width \n\
     --inputHeight                   <integer> : Input Height \n\
@@ -264,6 +266,11 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
         }
 }
 
+int EncoderConfig::LoadFromJsonFile(const char* path)
+{
+    return LoadEncoderConfigFromJson(path, this);
+}
+
 int EncoderConfig::ParseArguments(int argc, const char *argv[])
 {
     int argcount = 0;
@@ -276,7 +283,16 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
     const auto lambdaToLower = [](unsigned char c) { return std::tolower(c); };
 
     for (int32_t i = 1; i < argc; i++) {
-
+        // --encoderConfig: load JSON first (base config); CLI args below override. Precedence: JSON then CLI.
+        if (args[i] == "--encoderConfig") {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "--encoderConfig requires a path\n");
+                return -1;
+            }
+            if (LoadFromJsonFile(args[i + 1].c_str()) != 0) return -1;
+            i++; // skip path argument (for loop will increment i again)
+            continue;
+        }
         if (args[i] == "-i" || args[i] == "--input") {
             if (++i >= argc) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
