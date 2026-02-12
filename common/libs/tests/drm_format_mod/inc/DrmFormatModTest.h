@@ -128,6 +128,12 @@ public:
     TestResult runImageCreateTest(const FormatInfo& format, bool useLinear);
     TestResult runExportImportTest(const FormatInfo& format, bool useLinear, bool useCompressed = false);
     
+    // Video format query tests (vkGetPhysicalDeviceVideoFormatPropertiesKHR)
+    TestResult runVideoFormatQueryTest(const FormatInfo& format, bool encode);
+    
+    // Plane layout verification: compare export vs import plane layouts
+    TestResult runPlaneLayoutTest(const FormatInfo& format, bool useLinear);
+    
     // Utility functions
     bool isFormatSupported(VkFormat format) const;
     bool isDrmModifierSupported() const { return m_drmModifierSupported; }
@@ -151,6 +157,9 @@ private:
     VulkanDeviceContext         m_vkDevCtx;
     TestConfig                  m_config;
     
+    // Physical device (for vendor-specific workarounds)
+    uint32_t                    m_vendorID{0};
+
     // Extension support
     bool                        m_drmModifierSupported{false};
     bool                        m_dmaBufSupported{false};
@@ -162,6 +171,13 @@ private:
     // Cached video format support
     std::vector<VkFormat>       m_videoDecodeFormats;
     std::vector<VkFormat>       m_videoEncodeFormats;
+    
+    // Tracked imported image handles (CreateFromExternal doesn't own them)
+    struct ImportedHandles {
+        VkImage        image{VK_NULL_HANDLE};
+        VkDeviceMemory memory{VK_NULL_HANDLE};
+    };
+    std::vector<ImportedHandles> m_importedHandles;
     
     // Command pool for transfer operations
     VkCommandPool               m_commandPool{VK_NULL_HANDLE};
@@ -177,6 +193,8 @@ private:
     VkResult exportDmaBufFd(
         const VkSharedBaseObj<VkImageResource>& image,
         int* outFd);
+    
+    void destroyImportedImage(VkSharedBaseObj<VkImageResource>& image);
     
     VkResult importDmaBufImage(
         const FormatInfo& format,
