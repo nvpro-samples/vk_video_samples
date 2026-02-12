@@ -460,14 +460,13 @@ VkResult VulkanVideoEncoderExtImpl::SubmitExternalFrame(
     std::vector<VkPipelineStageFlags2> waitDstStageMasks(frame.waitSemaphoreCount,
                                                           VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR);
 
-    // Submit the external frame through the internal encoder
     VkResult result = m_encoder->SetExternalInputFrame(
         encodeFrameInfo,
         frame.image,
         VK_NULL_HANDLE,  // memory (non-owning, encoder doesn't need it)
         frame.format,
         frame.width, frame.height,
-        VK_IMAGE_TILING_OPTIMAL, // TODO: detect from frame
+        frame.imageTiling,
         frame.frameId,
         frame.pts,
         false,  // isLastFrame (caller controls this externally)

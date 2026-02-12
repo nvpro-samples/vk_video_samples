@@ -120,6 +120,7 @@ struct VkVideoEncodeInputFrame {
     VkFormat format;
     uint32_t width;
     uint32_t height;
+    VkImageTiling imageTiling = VK_IMAGE_TILING_OPTIMAL;  // Must match actual image for path selection
     VkImageLayout currentLayout; // Current layout of the image
 
     // Frame identification
