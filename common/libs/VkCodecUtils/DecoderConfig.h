@@ -28,7 +28,8 @@
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
-#include <cerrno>
+#include <charconv>
+#include <cstring>
 #include "vulkan_interfaces.h"
 #include "VkCodecUtils/Helpers.h"
 
@@ -256,14 +257,13 @@ struct DecoderConfig {
             {"--deviceID", "-deviceID", 1, "Hex ID of the device to be used",
                 [this](const char **args, const ProgramArgs &a) {
                     const char* first = args[0];
-                    // Skip 0x prefix if present
+                    const char* last = first + strlen(first);
                     if (strlen(first) > 2 && first[0] == '0' && (first[1] == 'x' || first[1] == 'X')) {
                         first += 2;
                     }
-                    char* endPtr = nullptr;
-                    errno = 0;
-                    unsigned long val = std::strtoul(first, &endPtr, 16);
-                    if (errno != 0 || endPtr == first) {
+                    uint32_t val = 0;
+                    auto [ptr, ec] = std::from_chars(first, last, val, 16);
+                    if (ec != std::errc{}) {
                         std::cerr << "Invalid deviceID hex value: " << args[0] << std::endl;
                         return false;
                     }
@@ -327,14 +327,15 @@ struct DecoderConfig {
                     std::istringstream stream(args[0]);
                     std::string token;
                     while (std::getline(stream, token, ',')) {
-                        char* endPtr = NULL;
-                        uint32_t initValue = strtoul(token.c_str(), &endPtr, 16);
-                        if ((endPtr == NULL) || (*endPtr != 0)) {
+                        const char* tfirst = token.c_str();
+                        const char* tlast = tfirst + token.size();
+                        uint32_t initValue = 0;
+                        auto [tptr, tec] = std::from_chars(tfirst, tlast, initValue, 16);
+                        if (tec != std::errc{} || tptr != tlast) {
                             std::cerr << "Failed to parse the following initial CRC value:"
                                   << token << std::endl;
                             return false;
                         }
-
                         crcInitValueTemp.push_back(initValue);
                     }
 
