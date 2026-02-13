@@ -9,6 +9,10 @@ These presets are intended to match the NVENC preset+tuning model used by:
 
 Use this README to choose the right preset for your workload and understand what each file is optimizing for.
 
+Current driver note:
+- `qualityPreset` values `5` (P6) and `6` (P7) are not supported yet.
+- Maximum supported `qualityPreset` is currently `4` (P5).
+
 ## 1. Quick Start
 
 1. Pick a use case from the matrix below.
@@ -31,7 +35,7 @@ CLI parameters always override JSON values.
 
 | Use case | Primary goal | Recommended file(s) | Why |
 |---|---|---|---|
-| VOD transcoding / OTT packaging | Quality per bit | `high_quality_p4.json` to `high_quality_p7.json` | More analysis and stronger prediction structure |
+| VOD transcoding / OTT packaging | Quality per bit | `high_quality_p4.json` to `high_quality_p5.json` | More analysis and stronger prediction structure |
 | Fast batch transcode | Throughput | `high_quality_p1.json` to `high_quality_p3.json` | Higher speed at lower compression efficiency |
 | Interactive streaming (gaming, conferencing) | Lower latency with stable bitrate | `low_latency_p1.json` to `low_latency_p3.json` | CBR + low-latency tuning |
 | Very strict latency budgets | Minimal end-to-end delay | `ultra_low_latency_p1.json` | ULL tuning, CBR, no B-frames |
@@ -51,22 +55,26 @@ NVIDIA P presets are **zero-based** in the current Vulkan/NVENC stack:
 
 `P1` is fastest / lowest quality. `P7` is slowest / highest quality.
 
+Driver support status (current):
+- Supported now: `qualityPreset 0..4` (P1..P5)
+- Not supported yet: `qualityPreset 5..6` (P6..P7)
+
 ## 4. Files in This Directory
 
-| File | Tuning intent | Preset |
-|---|---|---|
-| `high_quality_p1.json` | High quality | P1 |
-| `high_quality_p2.json` | High quality | P2 |
-| `high_quality_p3.json` | High quality | P3 |
-| `high_quality_p4.json` | High quality | P4 |
-| `high_quality_p5.json` | High quality | P5 |
-| `high_quality_p6.json` | High quality | P6 |
-| `high_quality_p7.json` | High quality | P7 |
-| `low_latency_p1.json` | Low latency | P1 |
-| `low_latency_p2.json` | Low latency | P2 |
-| `low_latency_p3.json` | Low latency | P3 |
-| `ultra_low_latency_p1.json` | Ultra-low latency | P1 |
-| `lossless.json` | Lossless | P1-style generic |
+| File | Tuning intent | Preset | Current support |
+|---|---|---|---|
+| `high_quality_p1.json` | High quality | P1 | Supported |
+| `high_quality_p2.json` | High quality | P2 | Supported |
+| `high_quality_p3.json` | High quality | P3 | Supported |
+| `high_quality_p4.json` | High quality | P4 | Supported |
+| `high_quality_p5.json` | High quality | P5 | Supported |
+| `high_quality_p6.json` | High quality | P6 | Not supported yet (qualityPreset=5) |
+| `high_quality_p7.json` | High quality | P7 | Not supported yet (qualityPreset=6) |
+| `low_latency_p1.json` | Low latency | P1 | Supported |
+| `low_latency_p2.json` | Low latency | P2 | Supported |
+| `low_latency_p3.json` | Low latency | P3 | Supported |
+| `ultra_low_latency_p1.json` | Ultra-low latency | P1 | Supported |
+| `lossless.json` | Lossless | P1-style generic | Supported |
 
 Also see:
 

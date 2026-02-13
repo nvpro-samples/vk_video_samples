@@ -28,6 +28,7 @@ This document describes the comprehensive test suite for the Vulkan Video decode
 | `run_all_video_tests.py` | Unified test runner - runs both decoder and encoder tests |
 | `run_decoder_tests.py` | Comprehensive decoder tests for all codecs |
 | `run_encoder_tests.py` | Comprehensive encoder tests with AQ support |
+| `run_encoder_profile_tests.py` | Sweep all encoder JSON profiles (NVIDIA preset configs) |
 | `vulkan_video_test.py` | Full-featured test framework with JSON reporting |
 
 ### Legacy Shell Scripts (Linux only)
@@ -37,6 +38,7 @@ This document describes the comprehensive test suite for the Vulkan Video decode
 | `run_all_video_tests.sh` | Shell version of unified test runner |
 | `run_decoder_tests.sh` | Shell version of decoder tests |
 | `run_encoder_tests.sh` | Shell version of encoder tests |
+| `run_encoder_profile_tests.sh` | Shell wrapper for full JSON profile sweep |
 
 ## Usage
 
@@ -91,6 +93,26 @@ python scripts/run_encoder_tests.py --video-dir /data/misc/VideoClips --validate
 
 # Specific codec
 python scripts/run_encoder_tests.py --video-dir /data/misc/VideoClips --codec h264
+```
+
+### Encoder JSON Profile Tests
+
+```bash
+# Run all NVIDIA JSON profiles
+python scripts/run_encoder_profile_tests.py --video-dir /data/misc/VideoClips
+
+# Local run with validation
+python scripts/run_encoder_profile_tests.py --video-dir /data/misc/VideoClips --local --validate
+
+# Filter by codec or profile name
+python scripts/run_encoder_profile_tests.py --video-dir /data/misc/VideoClips --codec h265
+python scripts/run_encoder_profile_tests.py --video-dir /data/misc/VideoClips --profile-filter ull
+
+# Current driver support cap (example: skip qualityPreset > 4)
+python scripts/run_encoder_profile_tests.py --video-dir /data/misc/VideoClips --max-supported-quality-preset 4
+
+# Shell wrapper (same options)
+scripts/run_encoder_profile_tests.sh --video-dir /data/misc/VideoClips --local
 ```
 
 ### Advanced Test Framework (JSON Reports)
@@ -161,6 +183,7 @@ When enabled, validation layers check for:
 python scripts/run_all_video_tests.py --video-dir /data/misc/VideoClips --validate
 python scripts/run_decoder_tests.py --video-dir /data/misc/VideoClips --validate
 python scripts/run_encoder_tests.py --video-dir /data/misc/VideoClips --validate
+python scripts/run_encoder_profile_tests.py --video-dir /data/misc/VideoClips --validate
 ```
 
 The scripts set these environment variables on the remote host:
