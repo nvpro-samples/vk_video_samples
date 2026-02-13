@@ -26,6 +26,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -244,8 +245,68 @@ class EncoderProfileTestRunner:
             ]
         return profiles
 
+    # Regex: {W}x{H}_{subsampling}_{bitdepth}.yuv — same convention as generate_encoder_yuv.sh
+    _YUV_FILENAME_RE = re.compile(
+        r'^(\d+)x(\d+)_(\d{3})_(\d+)le(?:_packed)?\.yuv$'
+    )
+
+    @staticmethod
+    def parse_yuv_filename(filename: str) -> Optional[Tuple[int, int, int, str]]:
+        """Parse YUV filename into (width, height, bpp, chroma) or None.
+
+        Examples:
+            720x480_420_8le.yuv   → (720, 480, 8, "420")
+            1920x1080_420_10le.yuv → (1920, 1080, 10, "420")
+            352x288_444_10le_packed.yuv → (352, 288, 10, "444")
+        """
+        m = EncoderProfileTestRunner._YUV_FILENAME_RE.match(filename)
+        if not m:
+            return None
+        w, h = int(m.group(1)), int(m.group(2))
+        chroma = m.group(3)    # "420", "422", "444"
+        bpp = int(m.group(4))  # 8, 10, 12
+        return w, h, bpp, chroma
+
+    def discover_yuv_files(self) -> List[Tuple[str, int, int, int, str]]:
+        """Discover all YUV files in video_dir by parsing filenames.
+
+        Returns list of (path, width, height, bpp, chroma) sorted by preference:
+        largest resolution first, then 420 before 422/444, then 8-bit before 10-bit.
+        """
+        results = []
+        # List .yuv files — locally or remotely
+        if self.config.run_local:
+            yuv_files = sorted(self.config.video_dir.glob("*.yuv"))
+            for f in yuv_files:
+                parsed = self.parse_yuv_filename(f.name)
+                if parsed:
+                    w, h, bpp, chroma = parsed
+                    results.append((str(f), w, h, bpp, chroma))
+        else:
+            rc, stdout, _ = self.run_command(["ls", str(self.config.video_dir / "*.yuv")])
+            if rc == 0:
+                for line in stdout.strip().split("\n"):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parsed = self.parse_yuv_filename(Path(line).name)
+                    if parsed:
+                        w, h, bpp, chroma = parsed
+                        results.append((line, w, h, bpp, chroma))
+
+        # Sort: prefer larger resolution, then 420, then lower bpp
+        chroma_order = {"420": 0, "422": 1, "444": 2}
+        results.sort(key=lambda x: (-x[1] * x[2], chroma_order.get(x[4], 9), x[3]))
+        return results
+
     def resolve_input_for_codec(self, codec: str) -> Optional[Tuple[str, int, int, int, str]]:
-        """Resolve input YUV file and format for a codec."""
+        """Resolve input YUV file and format for a codec.
+
+        Priority:
+        1. Explicit --input-file (user override)
+        2. Auto-detect from video_dir by parsing filenames
+           - Prefers 720x480 or larger, 420, 8-bit for broadest codec compatibility
+        """
         if self.config.input_file is not None:
             return (
                 str(self.config.input_file),
@@ -255,20 +316,21 @@ class EncoderProfileTestRunner:
                 self.config.input_chroma,
             )
 
-        candidates = [
-            ("720x480_420_8le.yuv", 720, 480, 8, "420"),
-            ("352x288_420_8le.yuv", 352, 288, 8, "420"),
-            ("176x144_420_8le.yuv", 176, 144, 8, "420"),
-        ]
-        for filename, width, height, bpp, chroma in candidates:
-            paths = [
-                self.config.video_dir / "cts" / "video" / filename,
-                self.config.video_dir / filename,
-            ]
-            for candidate in paths:
-                if self.check_file_exists(str(candidate)):
-                    return str(candidate), width, height, bpp, chroma
-        return None
+        if not hasattr(self, '_discovered_yuv'):
+            self._discovered_yuv = self.discover_yuv_files()
+
+        if not self._discovered_yuv:
+            return None
+
+        # For now, pick the best match: prefer 420 8-bit at decent resolution
+        # (broadest codec support — H.264 baseline only supports 420 8-bit)
+        for path, w, h, bpp, chroma in self._discovered_yuv:
+            if chroma == "420" and bpp == 8:
+                return path, w, h, bpp, chroma
+
+        # Fallback: first available file
+        path, w, h, bpp, chroma = self._discovered_yuv[0]
+        return path, w, h, bpp, chroma
 
     def run_profile_test(self, profile_path: Path) -> None:
         """Run one profile test."""
