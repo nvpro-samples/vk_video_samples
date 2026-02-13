@@ -3367,9 +3367,10 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
     // 4:2:0 (NV12, P010, I420): dispatch at (width/2, height/2) - each thread handles 2x2 luma
     // 4:2:2 (NV16, P210): dispatch at (width/2, height) - each thread handles 2x1 luma  
     // 4:4:4 (YUV444): dispatch at (width, height) - each thread handles 1x1 luma
+    // Packed formats (e.g. Y410 / A2B10G10R10): outputMpInfo is null but it's 4:4:4 → ratio 1
     const VkMpFormatInfo* outputMpInfo = YcbcrVkFormatInfo(m_outputFormat);
-    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 2;
-    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 2;
+    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 1;
+    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 1;
     
     const uint32_t dispatchWidth = (pushConstants.outputSize.width + chromaHorzRatio - 1) / chromaHorzRatio;
     const uint32_t dispatchHeight = (pushConstants.outputSize.height + chromaVertRatio - 1) / chromaVertRatio;
@@ -3555,8 +3556,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
     // 4:2:2 (NV16, P210): dispatch at (width/2, height) - each thread handles 2x1 luma  
     // 4:4:4 (YUV444): dispatch at (width, height) - each thread handles 1x1 luma
     const VkMpFormatInfo* outputMpInfo = YcbcrVkFormatInfo(m_outputFormat);
-    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 2;
-    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 2;
+    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 1;
+    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 1;
     
     const uint32_t dispatchWidth = (pushConstants.outputSize.width + chromaHorzRatio - 1) / chromaHorzRatio;
     const uint32_t dispatchHeight = (pushConstants.outputSize.height + chromaVertRatio - 1) / chromaVertRatio;
@@ -3749,8 +3750,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
     // 4:2:2 (NV16, P210): dispatch at (width/2, height) - each thread handles 2x1 luma  
     // 4:4:4 (YUV444): dispatch at (width, height) - each thread handles 1x1 luma
     const VkMpFormatInfo* outputMpInfo = YcbcrVkFormatInfo(m_outputFormat);
-    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 2;
-    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 2;
+    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 1;
+    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 1;
     
     const uint32_t dispatchWidth = (pushConstants.outputSize.width + chromaHorzRatio - 1) / chromaHorzRatio;
     const uint32_t dispatchHeight = (pushConstants.outputSize.height + chromaVertRatio - 1) / chromaVertRatio;
@@ -3929,8 +3930,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
     // 4:2:2 (NV16, P210): dispatch at (width/2, height) - each thread handles 2x1 luma  
     // 4:4:4 (YUV444): dispatch at (width, height) - each thread handles 1x1 luma
     const VkMpFormatInfo* outputMpInfo = YcbcrVkFormatInfo(m_outputFormat);
-    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 2;
-    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 2;
+    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 1;
+    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 1;
     
     const uint32_t dispatchWidth = (pushConstants.outputSize.width + chromaHorzRatio - 1) / chromaHorzRatio;
     const uint32_t dispatchHeight = (pushConstants.outputSize.height + chromaVertRatio - 1) / chromaVertRatio;
