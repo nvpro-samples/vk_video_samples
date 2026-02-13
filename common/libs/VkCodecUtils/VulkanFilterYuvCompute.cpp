@@ -3018,11 +3018,22 @@ size_t VulkanFilterYuvCompute::InitRGBA2YCBCR(std::string& computeShader)
     // 10. Average chroma for downsampling (if needed)
     GenAverageChromaBlock(shaderStr, chromaHorzRatio, chromaVertRatio);
 
-    // 11. Write Y values
-    GenWriteYBlock(shaderStr, chromaHorzRatio, chromaVertRatio);
-
-    // 12. Write chroma values
-    GenWriteChromaBlock(shaderStr, isOutputTwoPlane, chromaHorzRatio, chromaVertRatio);
+    // 11-12. Write output: packed or planar
+    const bool isPackedOutput = (outputMpInfo == nullptr);
+    if (isPackedOutput) {
+        // Packed format (e.g. Y410 = A2B10G10R10_UNORM_PACK32).
+        // Single outputImageRGB binding. Channel mapping per Vulkan YCbCr spec:
+        //   R = Cr, G = Y, B = Cb, A = Alpha
+        // Cb/Cr are shifted from [-0.5, 0.5] to [0, 1] for UNORM storage.
+        shaderStr <<
+            "    // Write packed YCbCr (A2B10G10R10: R=Cr, G=Y, B=Cb, A=1)\n"
+            "    imageStore(outputImageRGB, lumaPos, vec4(ycbcr00.z + 0.5, ycbcr00.x, ycbcr00.y + 0.5, 1.0));\n"
+            "    \n";
+    } else {
+        // Multi-planar output: separate Y and chroma plane writes
+        GenWriteYBlock(shaderStr, chromaHorzRatio, chromaVertRatio);
+        GenWriteChromaBlock(shaderStr, isOutputTwoPlane, chromaHorzRatio, chromaVertRatio);
+    }
 
     // 13. Compute and write subsampled Y (only if enabled for AQ)
     if (m_enableYSubsampling) {
@@ -3133,7 +3144,14 @@ uint32_t VulkanFilterYuvCompute::UpdateImageDescriptorSets(
 
             VkSampler ccSampler = (curImageAspect == 0) ? convSampler : VK_NULL_HANDLE;
             uint32_t planeNum = GetPlaneIndex((VkImageAspectFlagBits)(VK_IMAGE_ASPECT_COLOR_BIT << curImageAspect));
-            assert(planeNum < imageView->GetNumberOfPlanes());
+
+            // For packed formats (e.g. A2B10G10R10 / Y410), curImageAspect==0 uses the
+            // combined view (GetImageView()), so we don't need separate plane views.
+            // Only assert plane count for multi-planar plane access (curImageAspect > 0).
+            if (curImageAspect > 0) {
+                assert(planeNum < imageView->GetNumberOfPlanes());
+            }
+
             uint32_t dstBinding = baseBinding;
             if (curImageAspect > 0) {
                 // the first plane is 1, second plane is 2, the 3rd is 3
