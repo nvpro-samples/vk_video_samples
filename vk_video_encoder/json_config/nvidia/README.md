@@ -456,34 +456,125 @@ vk_video_encoder/json_config/         ← --profile-dir (base)
     └── ...
 ```
 
-### Running profile tests
+### Running profile tests (`run_encoder_profile_tests.py`)
+
+Runs each JSON profile against all 3 codecs (H.264, H.265, AV1). The CLI `-c` flag
+overrides the JSON codec field, so one profile serves as a base config for all codecs.
+Input YUV resolution/bitdepth/chroma are auto-detected from filenames.
 
 ```bash
-# Run ALL profiles (generic + all IHVs) with generated YUV
+# Run ALL profiles × all codecs with auto-detected YUV
 python3 scripts/run_encoder_profile_tests.py \
-    --video-dir /data/misc/VideoClips/ycbcr \
-    --local
+    --video-dir /data/misc/VideoClips/ycbcr --local
 
 # Run only NVIDIA profiles
 python3 scripts/run_encoder_profile_tests.py \
-    --video-dir /data/misc/VideoClips/ycbcr \
-    --profile-filter nvidia --local
+    --video-dir /data/misc/VideoClips/ycbcr --profile-filter nvidia --local
 
-# Run a specific profile, H.265 only
+# Single profile, single codec
 python3 scripts/run_encoder_profile_tests.py \
     --video-dir /data/misc/VideoClips/ycbcr \
     --profile-filter nvidia/high_quality_p4 --codec h265 --local
 
-# Custom profile directory
+# Verbose (show commands + output filenames)
 python3 scripts/run_encoder_profile_tests.py \
-    --video-dir /data/misc/VideoClips/ycbcr \
-    --profile-dir /path/to/json_config --local
+    --video-dir /data/misc/VideoClips/ycbcr --local --verbose
 ```
 
-The `--profile-filter` matches against the relative path including IHV prefix
-(e.g. `nvidia/high_quality`, `nvidia`, `low_latency`, `lossless`).
+| Option | Description |
+|--------|-------------|
+| `--video-dir PATH` | Directory with YUV files (auto-parsed from filenames) |
+| `--profile-dir PATH` | JSON config base dir (default: `vk_video_encoder/json_config`) |
+| `--profile-filter STR` | Match against relative path: `nvidia`, `nvidia/high_quality_p4`, `lossless` |
+| `--codec CODEC` | Run only one codec: `h264`, `h265`, `av1` (default: all 3) |
+| `--max-frames N` | Frames to encode per test (default: 30) |
+| `--local` | Run on local machine (default: SSH to remote) |
+| `--validate` | Enable Vulkan validation layers |
+| `--verbose` | Show full commands and output filenames |
+| `--output-dir PATH` | Where to write bitstreams (default: `/tmp/vulkan_encoder_profile_tests`) |
 
-## 15. References
+**Output filenames:** `{input_base}_{codec}_{ihv}_{profile}{ext}`
+  e.g. `1920x1080_420_8le_h265_nvidia_high_quality_p4.265`
+
+## 15. Decoder Roundtrip Verification
+
+### Decode test (`run_decoder_roundtrip.py`)
+
+Decodes every encoded bitstream in a directory using `vulkan-video-dec-test` to verify
+the encode→decode roundtrip. Auto-discovers `.264`, `.265`, `.ivf` files.
+
+```bash
+# Decode all bitstreams
+DISPLAY=:0 python3 scripts/run_decoder_roundtrip.py /tmp/vulkan_encoder_profile_tests
+
+# Only H.265 files
+DISPLAY=:0 python3 scripts/run_decoder_roundtrip.py /tmp/vulkan_encoder_profile_tests --filter h265
+
+# Only lossless profiles
+DISPLAY=:0 python3 scripts/run_decoder_roundtrip.py /tmp/vulkan_encoder_profile_tests --filter lossless
+
+# Verbose (show decode commands)
+DISPLAY=:0 python3 scripts/run_decoder_roundtrip.py /tmp/vulkan_encoder_profile_tests --verbose
+```
+
+| Option | Description |
+|--------|-------------|
+| `directory` | Directory containing encoded bitstreams |
+| `--filter PAT` | Only decode files matching pattern |
+| `--decoder PATH` | Path to decoder binary (default: auto-detect from project) |
+| `--timeout N` | Seconds per decode (default: 60) |
+| `--verbose` | Show decode commands |
+
+**Note:** The decoder currently requires `DISPLAY` (no headless mode in `vulkan-video-dec-test`).
+
+### Visual playback (`play_encoded_ffplay.py`)
+
+Plays encoded bitstreams with ffplay for visual quality inspection. Press Q to advance,
+Ctrl+C to stop.
+
+```bash
+# Play all bitstreams sequentially
+DISPLAY=:0 python3 scripts/play_encoded_ffplay.py /tmp/vulkan_encoder_profile_tests
+
+# Only AV1 files
+DISPLAY=:0 python3 scripts/play_encoded_ffplay.py /tmp/vulkan_encoder_profile_tests --filter av1
+
+# Play one file (loops)
+DISPLAY=:0 python3 scripts/play_encoded_ffplay.py \
+    --play /tmp/vulkan_encoder_profile_tests/1920x1080_420_8le_h265_nvidia_high_quality_p4.265
+```
+
+| Option | Description |
+|--------|-------------|
+| `directory` | Directory containing encoded bitstreams |
+| `--filter PAT` | Only play files matching pattern |
+| `--play FILE` | Play a single file (loops) |
+
+## 16. Complete Test Workflow
+
+End-to-end workflow from YUV generation through encode, decode, and visual verification:
+
+```bash
+# 1. Generate YUV test content (headless, no display needed)
+cd /data/nvidia/vulkan/samples/ThreadedRenderingVk_Standalone
+./scripts/generate_encoder_yuv.sh --output-dir /data/misc/VideoClips/ycbcr --frames 32 --all
+
+# 2. Verify YUV files
+python3 scripts/verify_yuv_ffmpeg.py /data/misc/VideoClips/ycbcr --frames 32
+
+# 3. Run encoder profiles (all codecs × all profiles)
+cd /data/nvidia/android-extra/video-apps/vulkan-video-samples
+python3 scripts/run_encoder_profile_tests.py \
+    --video-dir /data/misc/VideoClips/ycbcr --local --max-frames 30
+
+# 4. Decode all bitstreams (roundtrip verification)
+DISPLAY=:0 python3 scripts/run_decoder_roundtrip.py /tmp/vulkan_encoder_profile_tests
+
+# 5. Visual playback of encoded output
+DISPLAY=:0 python3 scripts/play_encoded_ffplay.py /tmp/vulkan_encoder_profile_tests
+```
+
+## 17. References
 
 - NVIDIA Video Codec SDK Programming Guide:
   - https://docs.nvidia.com/video-technologies/video-codec-sdk/13.0/nvenc-video-encoder-api-prog-guide/index.html
