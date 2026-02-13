@@ -30,9 +30,12 @@ Usage: run_encoder_profile_tests.sh --video-dir <path> [OPTIONS]
 
 Options (forwarded to run_encoder_profile_tests.py):
   --video-dir PATH      Directory containing YUV test videos (required)
-  --profile-dir PATH    JSON profile directory
+                        Files: {W}x{H}_{subsampling}_{bitdepth}.yuv
+                        Generate with: ThreadedRenderingVk_Standalone/scripts/generate_encoder_yuv.sh
+  --profile-dir PATH    JSON config base directory (default: vk_video_encoder/json_config)
+                        Scans top-level for generic profiles and IHV subdirs (nvidia/, intel/)
+  --profile-filter STR  Run only profiles matching substring (e.g. "nvidia", "nvidia/high_quality_p4")
   --codec CODEC         Filter: h264 | h265 | av1
-  --profile-filter STR  Run only profiles matching substring
   --max-frames N        Frames to encode per profile
   --validate, -v        Enable Vulkan validation layers
   --verbose             Verbose output
@@ -50,8 +53,14 @@ Options (forwarded to run_encoder_profile_tests.py):
                         Max qualityPreset supported by current driver (default: 4)
 
 Examples:
-  ./run_encoder_profile_tests.sh --video-dir /data/misc/VideoClips --local
-  ./run_encoder_profile_tests.sh --video-dir /data/misc/VideoClips --codec av1 --validate
+  # Run all profiles (NVIDIA + generic) with generated YUV
+  ./run_encoder_profile_tests.sh --video-dir /data/misc/VideoClips/ycbcr --local
+
+  # Run only NVIDIA profiles, H.265 codec
+  ./run_encoder_profile_tests.sh --video-dir /data/misc/VideoClips/ycbcr --profile-filter nvidia --codec h265
+
+  # Run a single profile
+  ./run_encoder_profile_tests.sh --video-dir /data/misc/VideoClips/ycbcr --profile-filter nvidia/high_quality_p4 --local
 EOF
     exit 1
 fi

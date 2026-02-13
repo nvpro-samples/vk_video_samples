@@ -401,7 +401,89 @@ Combined AQ:
 - Current `vk_video_encoder` preset JSON path still does not expose direct JSON/CLI controls for `multiPass`, `lowDelayKeyFrameScale`, and lookahead-level tuning; these stay preset/driver-driven unless loader/schema and CLI are extended.
 - Current driver policy to get 2-pass RC in this Vulkan path is to use `ULL + STREAMING` usage hint (no separate user knob).
 
-## 13. References
+## 13. Test Input YUV Generation
+
+The encoder profile tests require raw YUV input files at standard resolutions.
+Use the **ThreadedRenderingVk** renderer's GPU compute filter pipeline to generate them:
+
+```bash
+# Generate ALL formats headless (no display needed) — 5 resolutions × 8 formats
+cd /data/nvidia/vulkan/samples/ThreadedRenderingVk_Standalone
+./scripts/generate_encoder_yuv.sh --output-dir /data/misc/VideoClips/ycbcr --frames 128 --all
+
+# Generate only 4:2:0 (8-bit + 10-bit) — sufficient for most H.264/H.265 profiles
+./scripts/generate_encoder_yuv.sh --output-dir /data/misc/VideoClips/ycbcr --frames 128
+```
+
+**Generated file naming:** `{W}x{H}_{subsampling}_{bitdepth}.yuv`
+
+| Format ID | Name | File suffix | Subsampling | Bits |
+|:---------:|------|-------------|:-----------:|:----:|
+| 0 | NV12 | `_420_8le` | 4:2:0 | 8 |
+| 1 | P010 | `_420_10le` | 4:2:0 | 10 |
+| 2 | P012 | `_420_12le` | 4:2:0 | 12 |
+| 3 | I420 | `_420_8le` | 4:2:0 | 8 |
+| 4 | NV16 | `_422_8le` | 4:2:2 | 8 |
+| 5 | P210 | `_422_10le` | 4:2:2 | 10 |
+| 6 | YUV444_8 | `_444_8le` | 4:4:4 | 8 |
+| 7 | Y410 | `_444_10le_packed` | 4:4:4 | 10 |
+| 8 | YUV444_10 | `_444_10le` | 4:4:4 | 10 |
+
+**Verify with ffplay:**
+
+```bash
+# Size verification + visual playback
+python3 scripts/verify_yuv_ffmpeg.py /data/misc/VideoClips/ycbcr --frames 128 --show
+```
+
+**Resolutions generated:** 176×144, 352×288, 720×480, 1280×720, 1920×1080
+
+## 14. Profile Test Runner
+
+### Directory structure
+
+```
+vk_video_encoder/json_config/         ← --profile-dir (base)
+├── encoder_config.default.json       ← generic profiles
+├── encoder_config.schema.json
+├── nvidia/                           ← IHV: NVIDIA
+│   ├── high_quality_p1.json ... p7
+│   ├── low_latency_p1.json ... p3
+│   ├── ultra_low_latency_p1.json
+│   ├── lossless.json
+│   └── README.md                     ← this file
+└── intel/                            ← IHV: Intel (future)
+    └── ...
+```
+
+### Running profile tests
+
+```bash
+# Run ALL profiles (generic + all IHVs) with generated YUV
+python3 scripts/run_encoder_profile_tests.py \
+    --video-dir /data/misc/VideoClips/ycbcr \
+    --local
+
+# Run only NVIDIA profiles
+python3 scripts/run_encoder_profile_tests.py \
+    --video-dir /data/misc/VideoClips/ycbcr \
+    --profile-filter nvidia --local
+
+# Run a specific profile, H.265 only
+python3 scripts/run_encoder_profile_tests.py \
+    --video-dir /data/misc/VideoClips/ycbcr \
+    --profile-filter nvidia/high_quality_p4 --codec h265 --local
+
+# Custom profile directory
+python3 scripts/run_encoder_profile_tests.py \
+    --video-dir /data/misc/VideoClips/ycbcr \
+    --profile-dir /path/to/json_config --local
+```
+
+The `--profile-filter` matches against the relative path including IHV prefix
+(e.g. `nvidia/high_quality`, `nvidia`, `low_latency`, `lossless`).
+
+## 15. References
 
 - NVIDIA Video Codec SDK Programming Guide:
   - https://docs.nvidia.com/video-technologies/video-codec-sdk/13.0/nvenc-video-encoder-api-prog-guide/index.html

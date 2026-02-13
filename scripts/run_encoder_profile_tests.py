@@ -1,17 +1,26 @@
 #!/usr/bin/env python3
 """
-Vulkan Video Encoder NVIDIA Profile Test Runner
+Vulkan Video Encoder Profile Test Runner
 
-Runs all JSON profiles from vk_video_encoder/json_config/nvidia against vk-video-enc-test.
-The workflow and output format intentionally mirror run_encoder_tests.py.
+Discovers and runs all JSON encoder profiles against vk-video-enc-test.
+Profiles are organized under vk_video_encoder/json_config/:
+  - Generic profiles: json_config/*.json (e.g. encoder_config.default.json)
+  - IHV-specific profiles: json_config/<ihv>/*.json (e.g. nvidia/high_quality_p4.json)
 
-Input YUV: Use --video-dir (with cts/video/ or root YUV files) or --input-file.
-To generate YUV at required resolutions (~128 frames, correct names): use
-ThreadedRenderingVk_Standalone/scripts/generate_encoder_yuv.sh (drives the renderer
-dump pipeline), then pass its output dir as --video-dir.
+Input YUV files follow the naming convention: {W}x{H}_{subsampling}_{bitdepth}.yuv
+  - e.g. 720x480_420_8le.yuv, 1920x1080_420_10le.yuv
+
+To generate YUV test assets at all required resolutions and formats:
+  ThreadedRenderingVk_Standalone/scripts/generate_encoder_yuv.sh --all --output-dir /data/misc/VideoClips/ycbcr
 
 Usage:
-    python run_encoder_profile_tests.py --video-dir /path/to/videos [OPTIONS]
+    python run_encoder_profile_tests.py --video-dir /data/misc/VideoClips/ycbcr [OPTIONS]
+
+    # Run only NVIDIA profiles
+    python run_encoder_profile_tests.py --video-dir /data/misc/VideoClips/ycbcr --profile-filter nvidia
+
+    # Run only a specific profile
+    python run_encoder_profile_tests.py --video-dir /data/misc/VideoClips/ycbcr --profile-filter nvidia/high_quality_p4
 """
 
 import argparse
@@ -198,12 +207,41 @@ class EncoderProfileTestRunner:
         return ""
 
     def discover_profiles(self) -> List[Path]:
-        """Discover profile JSON files."""
+        """Discover profile JSON files.
+
+        Profile directory layout:
+            json_config/                    ← --profile-dir points here
+            ├── encoder_config.default.json ← generic profiles (no IHV prefix)
+            ├── nvidia/                     ← IHV subdirectory
+            │   ├── high_quality_p4.json
+            │   └── ...
+            └── intel/                      ← another IHV (future)
+
+        --profile-filter matches against the relative path including IHV prefix,
+        e.g. "nvidia/high_quality" or "low_latency".
+        """
         if not self.config.profile_dir.is_dir():
             return []
-        profiles = sorted(self.config.profile_dir.glob("*.json"))
+
+        # Collect generic profiles (top-level *.json, excluding schema/example)
+        profiles = []
+        for p in sorted(self.config.profile_dir.glob("*.json")):
+            if p.stem in ("encoder_config.schema", "encoder_config.example"):
+                continue
+            profiles.append(p)
+
+        # Collect IHV subdirectory profiles (e.g. nvidia/*.json, intel/*.json)
+        for subdir in sorted(self.config.profile_dir.iterdir()):
+            if subdir.is_dir() and not subdir.name.startswith("."):
+                profiles.extend(sorted(subdir.glob("*.json")))
+
+        # Apply filter against relative path (e.g. "nvidia/high_quality" or "p4")
         if self.config.profile_filter:
-            profiles = [p for p in profiles if self.config.profile_filter.lower() in p.stem.lower()]
+            filt = self.config.profile_filter.lower()
+            profiles = [
+                p for p in profiles
+                if filt in str(p.relative_to(self.config.profile_dir)).lower()
+            ]
         return profiles
 
     def resolve_input_for_codec(self, codec: str) -> Optional[Tuple[str, int, int, int, str]]:
@@ -234,7 +272,12 @@ class EncoderProfileTestRunner:
 
     def run_profile_test(self, profile_path: Path) -> None:
         """Run one profile test."""
-        profile_name = profile_path.stem
+        # Display name includes IHV prefix: "nvidia/high_quality_p4" or "encoder_config.default"
+        try:
+            rel = profile_path.relative_to(self.config.profile_dir)
+            profile_name = str(rel.with_suffix(""))
+        except ValueError:
+            profile_name = profile_path.stem
 
         try:
             with profile_path.open("r", encoding="utf-8") as fh:
@@ -429,7 +472,8 @@ def main() -> int:
         "--profile-dir",
         type=Path,
         default=None,
-        help="Profile JSON directory (default: vk_video_encoder/json_config/nvidia)",
+        help="JSON config base directory (default: vk_video_encoder/json_config). "
+             "Scans top-level for generic profiles and IHV subdirs (nvidia/, intel/, etc.)",
     )
     parser.add_argument("--validate", "-v", action="store_true", help="Enable Vulkan validation layers")
     parser.add_argument("--verbose", action="store_true", help="Verbose output")
@@ -464,7 +508,7 @@ def main() -> int:
     if args.build_dir is None:
         args.build_dir = project_root / "build"
     if args.profile_dir is None:
-        args.profile_dir = project_root / "vk_video_encoder" / "json_config" / "nvidia"
+        args.profile_dir = project_root / "vk_video_encoder" / "json_config"
 
     filter_codec = EncoderProfileTestRunner.normalize_codec(args.codec) if args.codec else ""
     if args.codec and not filter_codec:
