@@ -332,8 +332,15 @@ class EncoderProfileTestRunner:
         path, w, h, bpp, chroma = self._discovered_yuv[0]
         return path, w, h, bpp, chroma
 
+    # All codecs the encoder supports
+    ALL_CODECS = ["h264", "h265", "av1"]
+
     def run_profile_test(self, profile_path: Path) -> None:
-        """Run one profile test."""
+        """Run one profile against all target codecs.
+
+        CLI args override JSON values, so we use the JSON profile as a base config
+        and override -c (codec) from the command line for each target codec.
+        """
         # Display name includes IHV prefix: "nvidia/high_quality_p4" or "encoder_config.default"
         try:
             rel = profile_path.relative_to(self.config.profile_dir)
@@ -348,13 +355,6 @@ class EncoderProfileTestRunner:
             print(f"  {RED}✗{NC} {profile_name} - Invalid JSON")
             self.failed += 1
             self.results.append(TestResult(profile_name, False, False, 0.0, f"Invalid JSON: {exc}"))
-            return
-
-        codec = self.normalize_codec(str(profile_data.get("codec", "")))
-        if not codec:
-            print(f"  {YELLOW}○{NC} {profile_name} - Missing/unknown codec in JSON")
-            self.skipped += 1
-            self.results.append(TestResult(profile_name, False, True, 0.0, "Missing/unknown codec"))
             return
 
         quality_preset = profile_data.get("qualityPreset")
@@ -381,14 +381,25 @@ class EncoderProfileTestRunner:
             )
             return
 
-        if self.config.filter_codec and self.config.filter_codec != codec:
-            return
+        # Determine which codecs to run: --codec filters to one, otherwise all 3
+        if self.config.filter_codec:
+            target_codecs = [self.config.filter_codec]
+        else:
+            target_codecs = self.ALL_CODECS
+
+        for codec in target_codecs:
+            self._run_profile_for_codec(profile_path, profile_name, profile_data, codec)
+
+    def _run_profile_for_codec(self, profile_path: Path, profile_name: str,
+                                profile_data: dict, codec: str) -> None:
+        """Run one profile + codec combination."""
+        test_name = f"{profile_name}/{codec}"
 
         input_info = self.resolve_input_for_codec(codec)
         if input_info is None:
-            print(f"  {YELLOW}○{NC} {profile_name} - No input YUV found")
+            print(f"  {YELLOW}○{NC} {test_name} - No input YUV found")
             self.skipped += 1
-            self.results.append(TestResult(profile_name, False, True, 0.0, "No input YUV found"))
+            self.results.append(TestResult(test_name, False, True, 0.0, "No input YUV found"))
             return
 
         input_file, width, height, bpp, chroma = input_info
@@ -398,9 +409,9 @@ class EncoderProfileTestRunner:
 
         # Build descriptive output filename:
         #   {input_base}_{codec}_{profile_flat}{ext}
-        # e.g. 720x480_420_8le_h264_nvidia_high_quality_p4.264
-        input_base = Path(input_file).stem  # e.g. "720x480_420_8le"
-        profile_flat = profile_name.replace("/", "_").replace("\\", "_")  # e.g. "nvidia_high_quality_p4"
+        # e.g. 1920x1080_420_8le_h265_nvidia_high_quality_p4.265
+        input_base = Path(input_file).stem
+        profile_flat = profile_name.replace("/", "_").replace("\\", "_")
         ext = ext_map.get(codec, ".bin")
         output_file = self.config.output_dir / f"{input_base}_{codec}_{profile_flat}{ext}"
 
@@ -432,7 +443,7 @@ class EncoderProfileTestRunner:
             env["VK_VALIDATION_VALIDATE_SYNC"] = "true"
 
         if self.config.verbose:
-            print(f"\n  {CYAN}Profile: {profile_name} ({codec}){NC}")
+            print(f"\n  {CYAN}Profile: {test_name}{NC}")
             print(f"  {CYAN}Input:   {input_base} ({width}x{height}, {chroma}, {bpp}-bit){NC}")
             print(f"  {CYAN}Output:  {output_file.name}{NC}")
             print(f"  {CYAN}Command: {' '.join(cmd)}{NC}")
@@ -444,22 +455,22 @@ class EncoderProfileTestRunner:
 
         if returncode == 0:
             if "validation error" in output.lower():
-                print(f"  {RED}✗{NC} {profile_name} - Validation errors ({duration:.2f}s)")
+                print(f"  {RED}✗{NC} {test_name} - Validation errors ({duration:.2f}s)")
                 self.failed += 1
-                self.results.append(TestResult(profile_name, False, False, duration, "Validation errors"))
+                self.results.append(TestResult(test_name, False, False, duration, "Validation errors"))
             elif not self.check_file_nonempty(str(output_file)):
-                print(f"  {RED}✗{NC} {profile_name} - No output bitstream ({duration:.2f}s)")
+                print(f"  {RED}✗{NC} {test_name} - No output bitstream ({duration:.2f}s)")
                 self.failed += 1
-                self.results.append(TestResult(profile_name, False, False, duration, "Output bitstream missing"))
+                self.results.append(TestResult(test_name, False, False, duration, "Output bitstream missing"))
             else:
-                print(f"  {GREEN}✓{NC} {profile_name} ({codec}, {duration:.2f}s)")
+                print(f"  {GREEN}✓{NC} {test_name} ({duration:.2f}s)")
                 self.passed += 1
-                self.results.append(TestResult(profile_name, True, False, duration))
+                self.results.append(TestResult(test_name, True, False, duration))
         else:
-            print(f"  {RED}✗{NC} {profile_name} - Failed ({duration:.2f}s)")
+            print(f"  {RED}✗{NC} {test_name} - Failed ({duration:.2f}s)")
             self.failed += 1
             message = stderr.strip()[:300] if stderr.strip() else output.strip()[:300]
-            self.results.append(TestResult(profile_name, False, False, duration, message or "Unknown error"))
+            self.results.append(TestResult(test_name, False, False, duration, message or "Unknown error"))
             if self.config.verbose and message:
                 print(f"    {message}")
 
