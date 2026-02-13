@@ -333,7 +333,14 @@ class EncoderProfileTestRunner:
         ext_map = {"h264": ".264", "h265": ".265", "av1": ".ivf"}
         codec_arg_map = {"h264": "avc", "h265": "hevc", "av1": "av1"}
         codec_arg = codec_arg_map.get(codec, codec)
-        output_file = self.config.output_dir / f"profile_{profile_name}{ext_map.get(codec, '.bin')}"
+
+        # Build descriptive output filename:
+        #   {input_base}_{codec}_{profile_flat}{ext}
+        # e.g. 720x480_420_8le_h264_nvidia_high_quality_p4.264
+        input_base = Path(input_file).stem  # e.g. "720x480_420_8le"
+        profile_flat = profile_name.replace("/", "_").replace("\\", "_")  # e.g. "nvidia_high_quality_p4"
+        ext = ext_map.get(codec, ".bin")
+        output_file = self.config.output_dir / f"{input_base}_{codec}_{profile_flat}{ext}"
 
         cmd = [
             str(self.encoder),
@@ -364,6 +371,8 @@ class EncoderProfileTestRunner:
 
         if self.config.verbose:
             print(f"\n  {CYAN}Profile: {profile_name} ({codec}){NC}")
+            print(f"  {CYAN}Input:   {input_base} ({width}x{height}, {chroma}, {bpp}-bit){NC}")
+            print(f"  {CYAN}Output:  {output_file.name}{NC}")
             print(f"  {CYAN}Command: {' '.join(cmd)}{NC}")
 
         start_time = time.time()
