@@ -213,14 +213,20 @@ YUV at any resolution and format (e.g. 4:2:0 8-bit, P010 10-bit) can be generate
 **ThreadedRenderingVk** renderer and then used for these tests.
 
 To generate all required YUV files (~128 frames each, correct names for profile tests), use the
-renderer’s script (from the ThreadedRenderingVk_Standalone repo):
+renderer’s scripts (from the ThreadedRenderingVk_Standalone repo):
 
 ```bash
 # From ThreadedRenderingVk_Standalone (build first)
 ./scripts/generate_encoder_yuv.sh --output-dir /path/to/yuv_out --frames 128
+
+# Optional: verify with ffplay (parses filenames for resolution/YCbCr, runs ffplay on each)
+./scripts/verify_yuv_ffplay.sh /path/to/yuv_out --duration 3
+
 # Then run encoder profile tests with that dir
 python scripts/run_encoder_profile_tests.py --video-dir /path/to/yuv_out
 ```
+
+See ThreadedRenderingVk_Standalone `docs/encoder_yuv_generation.md` for full options and the verification script filename convention.
 
 | Resolution | 8-bit | 10-bit |
 |------------|-------|--------|
