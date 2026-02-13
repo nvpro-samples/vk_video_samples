@@ -5,6 +5,11 @@ Vulkan Video Encoder NVIDIA Profile Test Runner
 Runs all JSON profiles from vk_video_encoder/json_config/nvidia against vk-video-enc-test.
 The workflow and output format intentionally mirror run_encoder_tests.py.
 
+Input YUV: Use --video-dir (with cts/video/ or root YUV files) or --input-file.
+To generate YUV at required resolutions (~128 frames, correct names): use
+ThreadedRenderingVk_Standalone/scripts/generate_encoder_yuv.sh (drives the renderer
+dump pipeline), then pass its output dir as --video-dir.
+
 Usage:
     python run_encoder_profile_tests.py --video-dir /path/to/videos [OPTIONS]
 """
@@ -402,7 +407,10 @@ class EncoderProfileTestRunner:
             print(f"{GREEN}{BOLD}All profile tests passed!{NC}")
             return True
 
-        print(f"{RED}{BOLD}Some profile tests failed.{NC}")
+        if self.failed > 0:
+            print(f"{RED}{BOLD}Some profile tests failed.{NC}")
+        else:
+            print(f"{YELLOW}{BOLD}All profiles skipped (no input or unsupported).{NC}")
         return False
 
 
