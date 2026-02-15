@@ -103,6 +103,8 @@ struct TestConfig {
     bool        videoOnly{false};       // Only test Vulkan Video formats
     bool        exportOnly{false};      // Skip import tests
     bool        linearOnly{false};      // Only test LINEAR modifier
+    bool        videoEncode{false};     // Add VIDEO_ENCODE_SRC usage to image creation
+    bool        videoDecode{false};     // Add VIDEO_DECODE_DST usage to image creation
     CompressionMode compression{CompressionMode::Default}; // Compression mode
     std::string specificFormat;         // Test only this format
     std::string reportFile;             // Output report file path

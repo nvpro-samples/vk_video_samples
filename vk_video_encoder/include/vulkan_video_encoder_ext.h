@@ -265,6 +265,15 @@ public:
     virtual VkBool32 SupportsFormat(VkFormat inputFormat) const = 0;
     virtual uint32_t GetMaxWidth() const = 0;
     virtual uint32_t GetMaxHeight() const = 0;
+
+    // === Device Access ===
+
+    // Get the encoder's Vulkan device handles.
+    // Use these for DMA-BUF import, semaphore creation, etc.
+    // The encoder owns these handles — caller must NOT destroy them.
+    virtual VkDevice GetVkDevice() const = 0;
+    virtual VkPhysicalDevice GetVkPhysicalDevice() const = 0;
+    virtual VkInstance GetVkInstance() const = 0;
 };
 
 // Factory function for the extended encoder interface

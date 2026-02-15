@@ -412,7 +412,8 @@ VkResult VkVideoEncoder::WrapExternalImage(
     imageCI.arrayLayers = 1;
     imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
     imageCI.tiling = tiling;
-    imageCI.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageCI.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+                  | VK_IMAGE_USAGE_STORAGE_BIT;
 
     VkSharedBaseObj<VkImageResource> imageResource;
     VkResult result = VkImageResource::CreateFromExternal(m_vkDevCtx, image, memory,
@@ -504,6 +505,10 @@ VkResult VkVideoEncoder::SetExternalInputFrame(
     //           Set as srcStagingImageView, go through StageInputFrame().
 
     bool isDirectlyEncodable = false;
+    // Only OPTIMAL tiling can go through Path A (direct encode).
+    // DRM-modifier images from cross-process DMA-BUF import cannot have
+    // VIDEO_ENCODE_SRC usage (driver limitation), so they must go through
+    // Path B/C staging which copies to an internal encode-ready image.
     if (tiling == VK_IMAGE_TILING_OPTIMAL) {
         switch (format) {
             case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:                       // NV12

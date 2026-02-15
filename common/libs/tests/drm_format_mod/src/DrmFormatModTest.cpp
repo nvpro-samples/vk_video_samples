@@ -117,6 +117,28 @@ VkResult DrmFormatModTest::init(const TestConfig& config) {
         nullptr
     };
     
+    // Video common extensions (shared by encode and decode)
+    static const char* const videoCommonExtensions[] = {
+        VK_KHR_VIDEO_QUEUE_EXTENSION_NAME,
+        VK_KHR_VIDEO_MAINTENANCE_1_EXTENSION_NAME,
+        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
+        VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME,
+        nullptr
+    };
+    
+    // Video encode extensions
+    static const char* const videoEncodeExtensions[] = {
+        VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME,
+        nullptr
+    };
+    
+    // Video decode extensions
+    static const char* const videoDecodeExtensions[] = {
+        VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME,
+        nullptr
+    };
+    
     // Enable validation layers if requested (via --validation or --verbose implies validation)
     bool enableValidation = config.validation || config.verbose;
     
@@ -129,6 +151,21 @@ VkResult DrmFormatModTest::init(const TestConfig& config) {
     
     // Add device extensions
     m_vkDevCtx.AddReqDeviceExtensions(requiredDeviceExtensions, config.verbose);
+    
+    // Add video extensions when testing video usage.
+    // Use AddOptDeviceExtensions so HasAllDeviceExtensions doesn't reject the GPU
+    // if it reports extensions differently when video queues are involved.
+    if (config.videoEncode || config.videoDecode) {
+        m_vkDevCtx.AddOptDeviceExtensions(videoCommonExtensions, config.verbose);
+        if (config.videoEncode) {
+            m_vkDevCtx.AddOptDeviceExtensions(videoEncodeExtensions, config.verbose);
+            std::cout << "[INFO] Video encode extensions requested (--video-encode)" << std::endl;
+        }
+        if (config.videoDecode) {
+            m_vkDevCtx.AddOptDeviceExtensions(videoDecodeExtensions, config.verbose);
+            std::cout << "[INFO] Video decode extensions requested (--video-decode)" << std::endl;
+        }
+    }
     
     // Initialize Vulkan instance
     VkResult result = m_vkDevCtx.InitVulkanDevice("DrmFormatModTest", VK_NULL_HANDLE, config.verbose);
@@ -359,15 +396,24 @@ std::vector<TestResult> DrmFormatModTest::runAllTests() {
         results.push_back(runFormatQueryTest(fmt));
         
         // TC2: Image Creation with LINEAR
-        results.push_back(runImageCreateTest(fmt, true));
+        // Skip LINEAR when video usage is requested — NVDEC/NVENC require tiled memory.
+        if (!(m_config.videoEncode || m_config.videoDecode)) {
+            results.push_back(runImageCreateTest(fmt, true));
+        } else if (m_config.verbose) {
+            std::cout << "[SKIP] TC2_Create_" << fmt.name
+                      << "_LINEAR: NVDEC/NVENC require tiled (not linear)" << std::endl;
+        }
         
-        // TC2: Image Creation with OPTIMAL (if not linear-only)
+        // TC2: Image Creation with OPTIMAL/TILED (if not linear-only)
         if (!m_config.linearOnly) {
             results.push_back(runImageCreateTest(fmt, false));
         }
         
         // TC3: Export/Import with LINEAR
-        results.push_back(runExportImportTest(fmt, true));
+        // Skip LINEAR when video usage is requested — NVDEC/NVENC require tiled memory.
+        if (!(m_config.videoEncode || m_config.videoDecode)) {
+            results.push_back(runExportImportTest(fmt, true));
+        }
         
         // TC3: Export/Import with OPTIMAL (uncompressed block-linear)
         if (!m_config.linearOnly) {
@@ -524,6 +570,12 @@ TestResult DrmFormatModTest::runImageCreateTest(const FormatInfo& format, bool u
             }
         }
         if (targetModifier == DRM_FORMAT_MOD_INVALID) {
+            if (m_config.videoEncode || m_config.videoDecode) {
+                // Video requires tiled — cannot fall back to LINEAR
+                result.status = TestStatus::SKIP;
+                result.message = "No tiled modifier available (video requires tiled)";
+                return result;
+            }
             // Fall back to linear if no tiled modifiers
             targetModifier = DRM_FORMAT_MOD_LINEAR;
         }
@@ -621,6 +673,12 @@ TestResult DrmFormatModTest::runExportImportTest(const FormatInfo& format, bool 
             }
         }
         if (targetModifier == DRM_FORMAT_MOD_INVALID) {
+            if (m_config.videoEncode || m_config.videoDecode) {
+                // Video requires tiled — cannot fall back to LINEAR
+                result.status = TestStatus::SKIP;
+                result.message = "No tiled modifier available (video requires tiled)";
+                return result;
+            }
             targetModifier = DRM_FORMAT_MOD_LINEAR;
         }
     }
@@ -736,6 +794,28 @@ VkResult DrmFormatModTest::createExportableImage(
     // Add sampled usage for non-YCbCr formats
     if (!format.isYcbcr) {
         imageInfo.usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+    }
+    
+    // Add video usage flags when requested.
+    // VIDEO_ENCODE_SRC / VIDEO_DECODE_DST are the usage bits that the video HW needs.
+    // EXTENDED_USAGE + MUTABLE_FORMAT allow per-plane STORAGE views on multi-planar images.
+    // VIDEO_PROFILE_INDEPENDENT avoids needing a VkVideoProfileListInfoKHR at image creation.
+    if (m_config.videoEncode || m_config.videoDecode) {
+        imageInfo.flags |= VK_IMAGE_CREATE_EXTENDED_USAGE_BIT
+                        |  VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT
+                        |  VK_IMAGE_CREATE_VIDEO_PROFILE_INDEPENDENT_BIT_KHR;
+        imageInfo.usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+        if (m_config.videoEncode) {
+            imageInfo.usage |= VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR;
+        }
+        if (m_config.videoDecode) {
+            imageInfo.usage |= VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
+        }
+        
+        if (m_config.verbose) {
+            std::cout << "  [video] usage=0x" << std::hex << imageInfo.usage
+                      << " flags=0x" << imageInfo.flags << std::dec << std::endl;
+        }
     }
     
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;

@@ -88,6 +88,10 @@ public:
     uint32_t GetMaxWidth() const override;
     uint32_t GetMaxHeight() const override;
 
+    VkDevice GetVkDevice() const override { return m_vkDevCtx; }
+    VkPhysicalDevice GetVkPhysicalDevice() const override { return m_vkDevCtx.getPhysicalDevice(); }
+    VkInstance GetVkInstance() const override { return m_vkDevCtx.getInstance(); }
+
 private:
     void Deinitialize();
 
@@ -308,21 +312,25 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
     fprintf(stderr, "[EncoderExt] InitDebugReport OK\n"); fflush(stderr);
 
     VkQueueFlags requestVideoEncodeQueueMask = VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
-    VkQueueFlags requestVideoComputeQueueMask = 0;
-    if (config.enablePreprocessFilter) {
-        requestVideoComputeQueueMask = VK_QUEUE_COMPUTE_BIT;
-    }
 
-    // Use UUID if provided, otherwise auto-select
-    const uint8_t* gpuUUID = nullptr;
+    // Always request compute queue — the encoder's VkVideoEncoder::CreateVideoEncoder
+    // internally creates a VulkanFilter for input format conversion which asserts
+    // m_queue != VK_NULL_HANDLE. This matches the sample app's pattern when
+    // selectVideoWithComputeQueue or enablePreprocessComputeFilter is set.
+    VkQueueFlags requestVideoComputeQueueMask = VK_QUEUE_COMPUTE_BIT;
+
+    // Use UUID if provided, otherwise auto-select.
+    // DeviceUuidUtils default ctor sets m_deviceUuidIsValid=0 → no UUID filtering.
+    // MUST NOT pass nullptr — DeviceUuidUtils(const uint8_t*) does memcpy from pointer!
+    vk::DeviceUuidUtils deviceUuid;
     uint8_t zeroUUID[VK_UUID_SIZE] = {};
     if (memcmp(config.gpuUUID, zeroUUID, VK_UUID_SIZE) != 0) {
-        gpuUUID = config.gpuUUID;
+        deviceUuid = vk::DeviceUuidUtils(config.gpuUUID);
     }
 
     fprintf(stderr, "[EncoderExt] InitPhysicalDevice...\n"); fflush(stderr);
     result = m_vkDevCtx.InitPhysicalDevice(
-        config.deviceId, gpuUUID,
+        config.deviceId, deviceUuid,
         (requestVideoComputeQueueMask | requestVideoEncodeQueueMask | VK_QUEUE_TRANSFER_BIT),
         nullptr, 0,
         VK_VIDEO_CODEC_OPERATION_NONE_KHR,
@@ -335,7 +343,9 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
     fprintf(stderr, "[EncoderExt] InitPhysicalDevice OK\n"); fflush(stderr);
 
     bool needTransferQueue = ((m_vkDevCtx.GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) == 0);
-    bool needComputeQueue = (config.enablePreprocessFilter == VK_TRUE);
+    // Always request compute queue — VkVideoEncoder internally creates
+    // VulkanFilter for input format conversion, which asserts m_queue != NULL.
+    bool needComputeQueue = true;
 
     fprintf(stderr, "[EncoderExt] CreateVulkanDevice...\n"); fflush(stderr);
     result = m_vkDevCtx.CreateVulkanDevice(
