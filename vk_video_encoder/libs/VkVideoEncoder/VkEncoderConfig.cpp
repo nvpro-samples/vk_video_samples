@@ -928,6 +928,14 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         return -1;
     }
 
+    if (argcount > 0) {
+        fprintf(stderr, "[EncoderConfig] Unknown positional args (%d) passed to DoParseArguments:", argcount);
+        for (int a = 0; a < argcount; a++) {
+            fprintf(stderr, " '%s'", arglist[a]);
+        }
+        fprintf(stderr, "\n");
+        fflush(stderr);
+    }
     return DoParseArguments(argcount, arglist.data());
 }
 

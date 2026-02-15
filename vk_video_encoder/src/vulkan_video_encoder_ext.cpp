@@ -159,9 +159,8 @@ VkResult VulkanVideoEncoderExtImpl::BuildEncoderConfig(
         default: break;
     }
 
-    // Dummy input file for ParseArguments (external frames bypass file I/O)
-    argStrings.push_back("-i");
-    argStrings.push_back("/dev/null");
+    // No -i flag: external frame input mode. ParseArguments handles this
+    // by skipping file handler setup when inputFileHandler.HasFileName() is false.
 
     // Resolution
     argStrings.push_back("--inputWidth");
@@ -173,19 +172,15 @@ VkResult VulkanVideoEncoderExtImpl::BuildEncoderConfig(
     argStrings.push_back("--encodeHeight");
     argStrings.push_back(std::to_string(extConfig.encodeHeight));
 
-    // Frame rate
-    argStrings.push_back("--frameRateNum");
-    argStrings.push_back(std::to_string(extConfig.frameRateNum));
-    argStrings.push_back("--frameRateDen");
-    argStrings.push_back(std::to_string(extConfig.frameRateDen));
+    // Frame rate: no CLI arg for this in ParseArguments — set via member directly after config
 
-    // Bitrate
+    // Bitrate (note: lowercase 'r' — --averageBitrate, not --averageBitRate)
     if (extConfig.averageBitrate > 0) {
-        argStrings.push_back("--averageBitRate");
+        argStrings.push_back("--averageBitrate");
         argStrings.push_back(std::to_string(extConfig.averageBitrate));
     }
     if (extConfig.maxBitrate > 0) {
-        argStrings.push_back("--maxBitRate");
+        argStrings.push_back("--maxBitrate");
         argStrings.push_back(std::to_string(extConfig.maxBitrate));
     }
 
