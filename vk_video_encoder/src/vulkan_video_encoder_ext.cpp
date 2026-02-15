@@ -299,10 +299,13 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
         return result;
     }
 
+    fprintf(stderr, "[EncoderExt] InitDebugReport...\n"); fflush(stderr);
     result = m_vkDevCtx.InitDebugReport(config.validate, config.verbose && config.validate);
     if (result != VK_SUCCESS) {
+        fprintf(stderr, "[EncoderExt] InitDebugReport failed: %d\n", (int)result); fflush(stderr);
         return result;
     }
+    fprintf(stderr, "[EncoderExt] InitDebugReport OK\n"); fflush(stderr);
 
     VkQueueFlags requestVideoEncodeQueueMask = VK_QUEUE_VIDEO_ENCODE_BIT_KHR;
     VkQueueFlags requestVideoComputeQueueMask = 0;
@@ -317,6 +320,7 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
         gpuUUID = config.gpuUUID;
     }
 
+    fprintf(stderr, "[EncoderExt] InitPhysicalDevice...\n"); fflush(stderr);
     result = m_vkDevCtx.InitPhysicalDevice(
         config.deviceId, gpuUUID,
         (requestVideoComputeQueueMask | requestVideoEncodeQueueMask | VK_QUEUE_TRANSFER_BIT),
@@ -325,13 +329,15 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
         requestVideoEncodeQueueMask,
         codecOp);
     if (result != VK_SUCCESS) {
-        std::cerr << "[EncoderExt] InitPhysicalDevice failed: " << result << std::endl;
+        fprintf(stderr, "[EncoderExt] InitPhysicalDevice failed: %d\n", (int)result); fflush(stderr);
         return result;
     }
+    fprintf(stderr, "[EncoderExt] InitPhysicalDevice OK\n"); fflush(stderr);
 
     bool needTransferQueue = ((m_vkDevCtx.GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) == 0);
     bool needComputeQueue = (config.enablePreprocessFilter == VK_TRUE);
 
+    fprintf(stderr, "[EncoderExt] CreateVulkanDevice...\n"); fflush(stderr);
     result = m_vkDevCtx.CreateVulkanDevice(
         0,            // numDecodeQueues
         1,            // numEncodeQueues
@@ -414,13 +420,18 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
     fprintf(stderr, "[EncoderExt] Step 1 OK\n"); fflush(stderr);
 
     // Initialize Vulkan device with encode queue
-    fprintf(stderr, "[EncoderExt] Step 2: InitVulkanDevice...\n"); fflush(stderr);
+    fprintf(stderr, "[EncoderExt] Step 2a: InitVulkanDevice...\n"); fflush(stderr);
     result = InitVulkanDevice(codecOp, config);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "[EncoderExt] InitVulkanDevice failed: %d\n", (int)result); fflush(stderr);
         return result;
     }
-    fprintf(stderr, "[EncoderExt] Step 2 OK\n"); fflush(stderr);
+    fprintf(stderr, "[EncoderExt] Step 2a OK\n"); fflush(stderr);
+
+    fprintf(stderr, "[EncoderExt] Step 2b: InitPhysicalDevice...\n"); fflush(stderr);
+    // (InitPhysicalDevice and CreateVulkanDevice are called inside InitVulkanDevice above)
+    // If we got here, the full device init completed.
+    fprintf(stderr, "[EncoderExt] Step 2b: Device initialized with encode queues\n"); fflush(stderr);
 
     // Create the internal encoder
     fprintf(stderr, "[EncoderExt] Step 3: CreateVideoEncoder...\n"); fflush(stderr);

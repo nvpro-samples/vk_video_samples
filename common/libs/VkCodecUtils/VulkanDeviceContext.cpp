@@ -837,18 +837,25 @@ VkResult VulkanDeviceContext::InitVulkanDevice(const char * pAppName,
                                                VkInstance vkInstance,
                                                bool verbose,
                                                const char * pCustomLoader) {
+    fprintf(stderr, "[VulkanDeviceContext] InitVulkanDevice: LoadVk...\n"); fflush(stderr);
     PFN_vkGetInstanceProcAddr getInstanceProcAddrFunc = LoadVk(m_libHandle, pCustomLoader);
     if ((getInstanceProcAddrFunc == nullptr) || m_libHandle == VulkanLibraryHandleType()) {
+        fprintf(stderr, "[VulkanDeviceContext] LoadVk FAILED\n"); fflush(stderr);
         return VK_ERROR_INITIALIZATION_FAILED;
     }
+    fprintf(stderr, "[VulkanDeviceContext] LoadVk OK, InitDispatchTableTop...\n"); fflush(stderr);
     vk::InitDispatchTableTop(getInstanceProcAddrFunc, this);
 
+    fprintf(stderr, "[VulkanDeviceContext] InitVkInstance...\n"); fflush(stderr);
     VkResult result = InitVkInstance(pAppName, vkInstance, verbose);
     if (result != VK_SUCCESS) {
+        fprintf(stderr, "[VulkanDeviceContext] InitVkInstance FAILED: %d\n", (int)result); fflush(stderr);
         return result;
     }
+    fprintf(stderr, "[VulkanDeviceContext] InitVkInstance OK, InitDispatchTableMiddle...\n"); fflush(stderr);
     vk::InitDispatchTableMiddle(m_instance, false, this);
 
+    fprintf(stderr, "[VulkanDeviceContext] InitVulkanDevice complete\n"); fflush(stderr);
     return result;
 }
 
