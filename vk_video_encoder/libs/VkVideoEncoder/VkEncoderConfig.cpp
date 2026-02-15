@@ -778,24 +778,32 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         }
     }
 
+    // External frame input mode (IPC/service): no -i file, width/height come from caller.
+    // The encoder library's InitializeExt path sets numFrames=UINT32_MAX and provides
+    // frames via SetExternalInputFrame/SubmitExternalFrame.
     if (!inputFileHandler.HasFileName()) {
-        fprintf(stderr, "An input file must be specified\n");
-        return -1;
+        if (input.width == 0 || input.height == 0) {
+            fprintf(stderr, "An input file (-i) or --inputWidth/--inputHeight must be specified\n");
+            return -1;
+        }
+        // External frame mode: skip file handler setup, use provided dimensions
+        inputFileHandler.SetFrameGeometry(input.width, input.height, input.bpp, input.chromaSubsampling);
+        // frameCount stays at the value from --numFrames (or default)
+    } else {
+        if (input.width == 0) {
+            fprintf(stderr, "The input width must be specified\n");
+            return -1;
+        }
+
+        if (input.height == 0) {
+            fprintf(stderr, "The input height must specified\n");
+            return -1;
+        }
+
+        inputFileHandler.SetFrameGeometry(input.width, input.height, input.bpp, input.chromaSubsampling);
+
+        frameCount = inputFileHandler.GetMaxFrameCount();
     }
-
-    if (input.width == 0) {
-        fprintf(stderr, "The input width must be specified\n");
-        return -1;
-    }
-
-    if (input.height == 0) {
-        fprintf(stderr, "The input height must specified\n");
-        return -1;
-    }
-
-    inputFileHandler.SetFrameGeometry(input.width, input.height, input.bpp, input.chromaSubsampling);
-
-    frameCount = inputFileHandler.GetMaxFrameCount();
 
     if (startFrame > 0) {
         if (startFrame >= frameCount) {
@@ -808,17 +816,21 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         }
     }
 
-    if ((repeatInputFrames == false) &&
-            ((numFrames == 0) || (numFrames > (frameCount - startFrame)))) {
-        std::cout << "numFrames " << numFrames
-                  <<  " should be different from zero and inferior to input file max frame count of "
-                  << frameCount << ". Using input file frame count." << std::endl;
-        numFrames = frameCount;
-        if (numFrames == 0) {
-            fprintf(stderr, "No frames found in the input file, frame count is zero. Exit.");
-            return -1;
+    if (inputFileHandler.HasFileName()) {
+        // File-based input: clamp numFrames to actual file frame count
+        if ((repeatInputFrames == false) &&
+                ((numFrames == 0) || (numFrames > (frameCount - startFrame)))) {
+            std::cout << "numFrames " << numFrames
+                      <<  " should be different from zero and inferior to input file max frame count of "
+                      << frameCount << ". Using input file frame count." << std::endl;
+            numFrames = frameCount;
+            if (numFrames == 0) {
+                fprintf(stderr, "No frames found in the input file, frame count is zero. Exit.");
+                return -1;
+            }
         }
     }
+    // External frame input: numFrames comes from --numFrames arg (typically UINT32_MAX for streaming)
 
     if (!outputFileHandler.HasFileName()) {
         const char* defaultOutName = (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) ? "out.264" :
@@ -953,7 +965,15 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
         VkSharedBaseObj<EncoderConfigH264> vkEncoderConfigh264(new EncoderConfigH264());
         int ret = vkEncoderConfigh264->ParseArguments(argc, argv);
         if (ret != 0) {
-            assert(!"Invalid arguments");
+            std::string argDump;
+            for (int a = 0; a < argc; a++) {
+                argDump += " ";
+                argDump += argv[a];
+            }
+            fprintf(stderr, "[EncoderConfig] H264 ParseArguments failed (ret=%d). argc=%d. Args:%s\n", ret, argc, argDump.c_str());
+            fflush(stderr);
+            // Don't assert — return error so caller can handle gracefully
+            return VK_ERROR_INITIALIZATION_FAILED;
             return VK_ERROR_INITIALIZATION_FAILED;
         }
 

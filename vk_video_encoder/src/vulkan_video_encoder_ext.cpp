@@ -148,16 +148,20 @@ VkResult VulkanVideoEncoderExtImpl::BuildEncoderConfig(
     std::vector<std::string> argStrings;
     argStrings.push_back("encoder"); // argv[0]
 
-    // Codec
+    // Codec (required by CreateCodecConfig to select H264/H265/AV1 subclass)
     switch ((uint32_t)codecOp) {
         case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
-            argStrings.push_back("--codec"); argStrings.push_back("h264"); break;
+            argStrings.push_back("-c"); argStrings.push_back("h264"); break;
         case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR:
-            argStrings.push_back("--codec"); argStrings.push_back("h265"); break;
+            argStrings.push_back("-c"); argStrings.push_back("h265"); break;
         case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:
-            argStrings.push_back("--codec"); argStrings.push_back("av1"); break;
+            argStrings.push_back("-c"); argStrings.push_back("av1"); break;
         default: break;
     }
+
+    // Dummy input file for ParseArguments (external frames bypass file I/O)
+    argStrings.push_back("-i");
+    argStrings.push_back("/dev/null");
 
     // Resolution
     argStrings.push_back("--inputWidth");
@@ -195,12 +199,12 @@ VkResult VulkanVideoEncoderExtImpl::BuildEncoderConfig(
         argStrings.push_back(std::to_string(extConfig.consecutiveBFrames));
     }
 
-    // QP
-    if (extConfig.constQpI >= 0) {
+    // QP — only pass when explicitly set (> 0); 0 is default/unused
+    if (extConfig.constQpI > 0) {
         argStrings.push_back("--qpI");
         argStrings.push_back(std::to_string(extConfig.constQpI));
     }
-    if (extConfig.constQpP >= 0) {
+    if (extConfig.constQpP > 0) {
         argStrings.push_back("--qpP");
         argStrings.push_back(std::to_string(extConfig.constQpP));
     }
@@ -211,23 +215,15 @@ VkResult VulkanVideoEncoderExtImpl::BuildEncoderConfig(
         argStrings.push_back(std::to_string(extConfig.qualityLevel));
     }
 
-    // Filter
-    if (extConfig.enablePreprocessFilter) {
-        argStrings.push_back("--enablePreprocessFilter");
-        argStrings.push_back("1");
-    }
+    // Verbose / Validate — these flags are not recognized by ParseArguments,
+    // they would fall to the unknown-arg path. Skip for now.
+    // if (extConfig.verbose) argStrings.push_back("--verbose");
+    // if (extConfig.validate) argStrings.push_back("--validate");
 
-    // Verbose
-    if (extConfig.verbose) {
-        argStrings.push_back("--verbose");
-    }
-    if (extConfig.validate) {
-        argStrings.push_back("--validate");
-    }
-
-    // Unlimited frames (streaming mode)
+    // Large frame count for streaming mode (not UINT32_MAX — some code paths overflow)
     argStrings.push_back("--numFrames");
-    argStrings.push_back(std::to_string(UINT32_MAX));
+    argStrings.push_back("1000000");
+    argStrings.push_back("--repeatInputFrames");
 
     // Output file path (per-encoder isolation; when set, overrides encoder default)
     if (extConfig.outputPath && extConfig.outputPath[0] != '\0') {
@@ -242,6 +238,12 @@ VkResult VulkanVideoEncoderExtImpl::BuildEncoderConfig(
     std::vector<const char*> argv;
     for (auto& s : argStrings) {
         argv.push_back(s.c_str());
+    }
+
+    // Debug: dump argv for troubleshooting
+    std::cout << "[VulkanVideoEncoderExt] CreateCodecConfig argv (" << argv.size() << "):\n";
+    for (size_t i = 0; i < argv.size(); i++) {
+        std::cout << "  [" << i << "] " << argv[i] << "\n";
     }
 
     return EncoderConfig::CreateCodecConfig(
