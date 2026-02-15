@@ -405,24 +405,31 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
     }
 
     // Build EncoderConfig from structured config
+    fprintf(stderr, "[EncoderExt] Step 1: BuildEncoderConfig...\n"); fflush(stderr);
     VkResult result = BuildEncoderConfig(config, codecOp, m_encoderConfig);
     if (result != VK_SUCCESS) {
-        std::cerr << "[EncoderExt] BuildEncoderConfig failed: " << result << std::endl;
+        fprintf(stderr, "[EncoderExt] BuildEncoderConfig failed: %d\n", (int)result); fflush(stderr);
         return result;
     }
+    fprintf(stderr, "[EncoderExt] Step 1 OK\n"); fflush(stderr);
 
     // Initialize Vulkan device with encode queue
+    fprintf(stderr, "[EncoderExt] Step 2: InitVulkanDevice...\n"); fflush(stderr);
     result = InitVulkanDevice(codecOp, config);
     if (result != VK_SUCCESS) {
+        fprintf(stderr, "[EncoderExt] InitVulkanDevice failed: %d\n", (int)result); fflush(stderr);
         return result;
     }
+    fprintf(stderr, "[EncoderExt] Step 2 OK\n"); fflush(stderr);
 
     // Create the internal encoder
+    fprintf(stderr, "[EncoderExt] Step 3: CreateVideoEncoder...\n"); fflush(stderr);
     result = VkVideoEncoder::CreateVideoEncoder(&m_vkDevCtx, m_encoderConfig, m_encoder);
     if (result != VK_SUCCESS) {
-        std::cerr << "[EncoderExt] CreateVideoEncoder failed: " << result << std::endl;
+        fprintf(stderr, "[EncoderExt] CreateVideoEncoder failed: %d\n", (int)result); fflush(stderr);
         return result;
     }
+    fprintf(stderr, "[EncoderExt] Step 3 OK\n"); fflush(stderr);
 
     m_initialized = true;
 
