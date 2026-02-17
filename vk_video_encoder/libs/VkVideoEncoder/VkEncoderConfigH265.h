@@ -81,8 +81,8 @@ struct EncoderConfigH265 : public EncoderConfig {
     size_t                 levelLimitsTblSize;
 
     EncoderConfigH265()
-      : profile(STD_VIDEO_H265_PROFILE_IDC_MAIN)
-      , levelIdc(STD_VIDEO_H265_LEVEL_IDC_5_2)
+      : profile(STD_VIDEO_H265_PROFILE_IDC_INVALID)
+      , levelIdc(STD_VIDEO_H265_LEVEL_IDC_INVALID)
       , h265EncodeCapabilities()
       , general_tier_flag(false)
       , numRefL0(1)
@@ -146,26 +146,21 @@ struct EncoderConfigH265 : public EncoderConfig {
 
         hrdBitrate = maxBitrate;
 
+        // Initialize profile, level, and tier based on encoder configuration
+        InitProfileLevel();
+
         // TODO: more h.265 parameters init ...
         return VK_SUCCESS;
     }
 
+    void InitProfileLevel();
+
     virtual VkResult InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx) override;
 
-    virtual uint32_t GetDefaultVideoProfileIdc() override {
-        // Select profile based on bit depth and chroma format
-        // 12-bit or 444 chroma requires Range Extensions profile
-        if (encodeBitDepthLuma > 10 || encodeBitDepthChroma > 10 ||
-            encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR) {
-            return STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS;
-        }
-        // 10-bit with 420/422 uses Main10 profile
-        if (encodeBitDepthLuma > 8 || encodeBitDepthChroma > 8) {
-            return STD_VIDEO_H265_PROFILE_IDC_MAIN_10;
-        }
-        // 8-bit with 420/422 uses Main profile
-        return STD_VIDEO_H265_PROFILE_IDC_MAIN;
-    };
+    virtual uint32_t GetCodecProfile() override {
+        assert(profile != STD_VIDEO_H265_PROFILE_IDC_INVALID);
+        return static_cast<uint32_t>(profile);
+    }
 
     // 1. First h.265 determine the number of the Dpb buffers required
     virtual int8_t InitDpbCount() override;
@@ -203,7 +198,7 @@ struct EncoderConfigH265 : public EncoderConfig {
                           StdVideoH265SequenceParameterSetVui* vui = nullptr);
 
     bool IsSuitableLevel(uint32_t levelIdx, bool highTier);
-    StdVideoH265ProfileTierLevel GetLevelTier();
+    void DetermineLevelTier();
     void InitializeSpsRefPicSet(SpsH265 *pSps);
 
 };

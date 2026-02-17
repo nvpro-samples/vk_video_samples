@@ -464,15 +464,16 @@ void EncoderConfigH264::InitProfileLevel()
     if (profileIdc == STD_VIDEO_H264_PROFILE_IDC_INVALID) {
         profileIdc = STD_VIDEO_H264_PROFILE_IDC_BASELINE;
 
-        if ((GetMaxBFrameCount() > 0) || (entropyCodingMode == ENTROPY_CODING_MODE_CABAC))
+        // Upgrade to MAIN profile if using B-frames or CABAC entropy coding
+        if ((gopStructure.GetConsecutiveBFrameCount() > 0) || (entropyCodingMode == ENTROPY_CODING_MODE_CABAC))
             profileIdc = STD_VIDEO_H264_PROFILE_IDC_MAIN;
 
         if (use8x8Transform) {
             profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH;
         }
 
-        if (((tuningMode == VK_VIDEO_ENCODE_TUNING_MODE_LOSSLESS_KHR) &&
-             (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR)) ||
+        // Upgrade to HIGH_444_PREDICTIVE for lossless encoding or 4:4:4 chroma
+        if ((tuningMode == VK_VIDEO_ENCODE_TUNING_MODE_LOSSLESS_KHR) ||
             (input.chromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR)) {
             profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE;
         }
