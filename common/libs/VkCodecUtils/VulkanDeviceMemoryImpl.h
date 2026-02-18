@@ -134,6 +134,12 @@ public:
 
     uint8_t* CheckAccess(VkDeviceSize offset, VkDeviceSize size);
 
+    // Construct from pre-allocated/imported VkDeviceMemory.
+    // Takes ownership — Deinitialize() will call vkFreeMemory.
+    VulkanDeviceMemoryImpl(const VulkanDeviceContext* vkDevCtx,
+                           VkDeviceMemory importedMemory,
+                           VkDeviceSize size);
+
 private:
 
     static VkResult CreateDeviceMemory(const VulkanDeviceContext* vkDevCtx,

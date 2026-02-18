@@ -174,13 +174,6 @@ private:
     std::vector<VkFormat>       m_videoDecodeFormats;
     std::vector<VkFormat>       m_videoEncodeFormats;
     
-    // Tracked imported image handles (CreateFromExternal doesn't own them)
-    struct ImportedHandles {
-        VkImage        image{VK_NULL_HANDLE};
-        VkDeviceMemory memory{VK_NULL_HANDLE};
-    };
-    std::vector<ImportedHandles> m_importedHandles;
-    
     // Command pool for transfer operations
     VkCommandPool               m_commandPool{VK_NULL_HANDLE};
     VkQueue                     m_queue{VK_NULL_HANDLE};
@@ -195,8 +188,6 @@ private:
     VkResult exportDmaBufFd(
         const VkSharedBaseObj<VkImageResource>& image,
         int* outFd);
-    
-    void destroyImportedImage(VkSharedBaseObj<VkImageResource>& image);
     
     VkResult importDmaBufImage(
         const FormatInfo& format,
