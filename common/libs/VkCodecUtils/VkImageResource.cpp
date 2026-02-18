@@ -557,6 +557,40 @@ VkResult VkImageResource::CreateFromExternal(const VulkanDeviceContext* vkDevCtx
     return VK_SUCCESS;
 }
 
+VkResult VkImageResource::CreateFromImport(const VulkanDeviceContext* vkDevCtx,
+                                            VkImage image,
+                                            VkDeviceMemory memory,
+                                            VkDeviceSize memorySize,
+                                            const VkImageCreateInfo* pImageCreateInfo,
+                                            VkSharedBaseObj<VkImageResource>& imageResource)
+{
+    // Wrap the imported memory in VulkanDeviceMemoryImpl so it gets freed
+    // when the VkImageResource ref-count drops to zero.
+    VkSharedBaseObj<VulkanDeviceMemoryImpl> deviceMemory;
+    if (memory != VK_NULL_HANDLE) {
+        deviceMemory = new VulkanDeviceMemoryImpl(vkDevCtx, memory, memorySize);
+    }
+
+    VkImageResource* pImageResource = new VkImageResource(
+        vkDevCtx, pImageCreateInfo,
+        image,
+        0,           // imageOffset
+        memorySize,
+        deviceMemory,
+        0,           // drmFormatModifier
+        0            // memoryPlaneCount
+    );
+
+    if (pImageResource == nullptr) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    // Owning — Destroy() will call vkDestroyImage and the memory impl will vkFreeMemory
+    pImageResource->m_ownsResources = true;
+
+    imageResource = pImageResource;
+    return VK_SUCCESS;
+}
 
 void VkImageResource::Destroy()
 {

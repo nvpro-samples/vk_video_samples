@@ -84,14 +84,9 @@ DrmFormatModTest::DrmFormatModTest() {
 }
 
 DrmFormatModTest::~DrmFormatModTest() {
-    VkDevice device = m_vkDevCtx.getDevice();
-    if (device != VK_NULL_HANDLE) {
-        for (auto& h : m_importedHandles) {
-            if (h.image != VK_NULL_HANDLE) m_vkDevCtx.DestroyImage(device, h.image, nullptr);
-            if (h.memory != VK_NULL_HANDLE) m_vkDevCtx.FreeMemory(device, h.memory, nullptr);
-        }
-        m_importedHandles.clear();
-        if (m_commandPool != VK_NULL_HANDLE) {
+    if (m_commandPool != VK_NULL_HANDLE) {
+        VkDevice device = m_vkDevCtx.getDevice();
+        if (device != VK_NULL_HANDLE) {
             m_vkDevCtx.DestroyCommandPool(device, m_commandPool, nullptr);
         }
     }
@@ -791,7 +786,6 @@ TestResult DrmFormatModTest::runExportImportTest(const FormatInfo& format, bool 
         modifierToString(actualModifier, modStr, sizeof(modStr));
         result.status = TestStatus::PASS;
         result.message = std::string("Round-trip successful with ") + modStr;
-        destroyImportedImage(importedImage);
     }
     
     if (m_config.verbose || result.status == TestStatus::FAIL) {
@@ -1161,9 +1155,6 @@ TestResult DrmFormatModTest::runPlaneLayoutTest(const FormatInfo& format, bool u
         }
     }
 
-    // Clean up imported image (non-owning wrapper, must destroy raw handles)
-    destroyImportedImage(dstImage);
-
     if (valid) {
         result.status = TestStatus::PASS;
         result.message = std::to_string(planeCount) + " planes verified (export == import)";
@@ -1325,39 +1316,23 @@ VkResult DrmFormatModTest::importDmaBufImage(
         return result;
     }
     
-    // Wrap in VkImageResource. CreateFromExternal is non-owning — it doesn't
-    // store the memory handle. Track raw handles in m_importedHandles for
-    // cleanup via destroyImportedImage().
+    // Wrap in owning VkImageResource — it takes ownership of both the VkImage
+    // and VkDeviceMemory. When the last VkSharedBaseObj ref drops, the handles
+    // are destroyed automatically (ref-counted RAII).
     VkImageCreateInfo wrapCI = imageInfo;
     wrapCI.tiling = isLinear ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
-    result = VkImageResource::CreateFromExternal(&m_vkDevCtx, image, memory,
-                                                  &wrapCI, outImage);
+    result = VkImageResource::CreateFromImport(&m_vkDevCtx, image, memory,
+                                                memReqs.size, &wrapCI, outImage);
     if (result != VK_SUCCESS) {
         m_vkDevCtx.FreeMemory(device, memory, nullptr);
         m_vkDevCtx.DestroyImage(device, image, nullptr);
-    } else {
-        m_importedHandles.push_back({image, memory});
     }
     
     return result;
 }
 
-void DrmFormatModTest::destroyImportedImage(VkSharedBaseObj<VkImageResource>& image) {
-    if (!image) return;
-    VkDevice device = m_vkDevCtx.getDevice();
-    VkImage img = image->GetImage();
-    image = nullptr;  // Release the wrapper first
-    
-    // Find and destroy the raw handles tracked during import
-    for (auto it = m_importedHandles.begin(); it != m_importedHandles.end(); ++it) {
-        if (it->image == img) {
-            m_vkDevCtx.DestroyImage(device, it->image, nullptr);
-            m_vkDevCtx.FreeMemory(device, it->memory, nullptr);
-            m_importedHandles.erase(it);
-            return;
-        }
-    }
-}
+// destroyImportedImage removed — CreateFromImport gives owning VkImageResource,
+// VkSharedBaseObj ref-counting handles cleanup automatically.
 
 //=============================================================================
 // Query Image DRM Modifier
