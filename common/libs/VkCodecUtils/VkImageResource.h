@@ -71,6 +71,21 @@ public:
                                        const VkImageCreateInfo* pImageCreateInfo,
                                        VkSharedBaseObj<VkImageResource>& imageResource);
 
+    /**
+     * @brief Create an owning VkImageResource from imported raw handles.
+     *
+     * Unlike CreateFromExternal (non-owning), this takes ownership of both
+     * the VkImage and VkDeviceMemory. When the last VkSharedBaseObj reference
+     * is released, the handles are destroyed via vkDestroyImage/vkFreeMemory.
+     * Use for DMA-BUF imported images where the test/app created the handles.
+     */
+    static VkResult CreateFromImport(const VulkanDeviceContext* vkDevCtx,
+                                     VkImage image,
+                                     VkDeviceMemory memory,
+                                     VkDeviceSize memorySize,
+                                     const VkImageCreateInfo* pImageCreateInfo,
+                                     VkSharedBaseObj<VkImageResource>& imageResource);
+
     bool IsCompatible ( VkDevice,
                         const VkImageCreateInfo* pImageCreateInfo)
     {
