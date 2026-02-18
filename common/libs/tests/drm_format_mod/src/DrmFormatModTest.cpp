@@ -1101,9 +1101,13 @@ TestResult DrmFormatModTest::runPlaneLayoutTest(const FormatInfo& format, bool u
                                   memTypeBits, exportLayouts, planeCount, dstImage);
     close(dmaBufFd);
 
-    if (vkResult != VK_SUCCESS) {
+    if (vkResult != VK_SUCCESS || !dstImage) {
         result.status = TestStatus::FAIL;
-        result.message = "DMA-BUF import failed: " + std::to_string(vkResult);
+        result.message = "DMA-BUF import failed: vkResult=" + std::to_string(vkResult)
+                       + " dstImage=" + (dstImage ? "valid" : "NULL");
+        if (m_config.verbose) {
+            std::cout << "[FAIL] " << result.testName << ": " << result.message << std::endl;
+        }
         return result;
     }
 
@@ -1312,17 +1316,17 @@ VkResult DrmFormatModTest::importDmaBufImage(
         return result;
     }
     
-    // Create VkImageResource wrapper (simplified - just to prove round-trip works)
-    // In a real implementation, we'd use VkImageResource::CreateFromImport or similar
+    // Wrap in VkImageResource (non-owning for the raw handles)
+    VkImageCreateInfo wrapCI = imageInfo;
+    wrapCI.tiling = isLinear ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
+    result = VkImageResource::CreateFromExternal(&m_vkDevCtx, image, memory,
+                                                  &wrapCI, outImage);
+    if (result != VK_SUCCESS) {
+        m_vkDevCtx.FreeMemory(device, memory, nullptr);
+        m_vkDevCtx.DestroyImage(device, image, nullptr);
+    }
     
-    // For now, just validate and clean up
-    m_vkDevCtx.FreeMemory(device, memory, nullptr);
-    m_vkDevCtx.DestroyImage(device, image, nullptr);
-    
-    // outImage is not populated in this simplified version
-    // The test passes if we got this far without errors
-    
-    return VK_SUCCESS;
+    return result;
 }
 
 //=============================================================================
