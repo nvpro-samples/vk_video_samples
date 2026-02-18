@@ -130,6 +130,12 @@ public:
     TestResult runImageCreateTest(const FormatInfo& format, bool useLinear);
     TestResult runExportImportTest(const FormatInfo& format, bool useLinear, bool useCompressed = false);
     
+    // Video format query tests (vkGetPhysicalDeviceVideoFormatPropertiesKHR)
+    TestResult runVideoFormatQueryTest(const FormatInfo& format, bool encode);
+    
+    // Plane layout verification: compare export vs import plane layouts
+    TestResult runPlaneLayoutTest(const FormatInfo& format, bool useLinear);
+    
     // Utility functions
     bool isFormatSupported(VkFormat format) const;
     bool isDrmModifierSupported() const { return m_drmModifierSupported; }
