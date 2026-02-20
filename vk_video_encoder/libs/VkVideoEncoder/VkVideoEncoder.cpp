@@ -494,7 +494,6 @@ VkResult VkVideoEncoder::WrapExternalImage(
     VkImageTiling tiling,
     VkSharedBaseObj<VulkanVideoImagePoolNode>& outNode)
 {
-    // Create a non-owning VkImageResource wrapper
     VkImageCreateInfo imageCI{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     imageCI.imageType = VK_IMAGE_TYPE_2D;
     imageCI.format = format;
@@ -506,6 +505,12 @@ VkResult VkVideoEncoder::WrapExternalImage(
     imageCI.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
                   | VK_IMAGE_USAGE_STORAGE_BIT;
 
+    const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(format);
+    if (mpInfo) {
+        imageCI.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT
+                      | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
+    }
+
     VkSharedBaseObj<VkImageResource> imageResource;
     VkResult result = VkImageResource::CreateFromExternal(m_vkDevCtx, image, memory,
                                                           &imageCI, imageResource);
@@ -513,19 +518,26 @@ VkResult VkVideoEncoder::WrapExternalImage(
         return result;
     }
 
-    // Create an image view for the external image
     VkImageSubresourceRange subresRange{};
     subresRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     subresRange.levelCount = 1;
     subresRange.layerCount = 1;
 
+    // For multiplanar formats, create per-plane views with STORAGE usage
+    // so the compute filter can access individual Y and CbCr planes.
+    VkImageUsageFlags planeUsageOverride = 0;
+    if (mpInfo) {
+        planeUsageOverride = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+                           | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    }
+
     VkSharedBaseObj<VkImageResourceView> imageView;
-    result = VkImageResourceView::Create(m_vkDevCtx, imageResource, subresRange, imageView);
+    result = VkImageResourceView::Create(m_vkDevCtx, imageResource, subresRange,
+                                         planeUsageOverride, imageView);
     if (result != VK_SUCCESS) {
         return result;
     }
 
-    // Wrap in a non-owning pool node
     result = VulkanVideoImagePoolNode::CreateExternal(
         m_vkDevCtx, imageView, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, outNode);
 
@@ -692,7 +704,11 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     };
 
     VkResult result;
-    if (m_inputComputeFilter == nullptr) {
+    // External input frames (DMA-BUF import) are already in the target format
+    // from the renderer's filter. Skip the encoder's preprocess compute filter
+    // — it would do storage reads on the imported DRM modifier image which the
+    // GPU cannot service on compressed block-linear memory.
+    if (m_inputComputeFilter == nullptr || encodeFrameInfo->isExternalInput) {
         // For external input, use actual layout producer left image in (e.g. GENERAL).
         // UNDEFINED would discard contents and produce scrambled encode.
         VkImageLayout srcOldLayout = encodeFrameInfo->isExternalInput
@@ -750,7 +766,6 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         }
 #endif // NV_AQ_GPU_LIB_SUPPORTED
 
-        // Call filter (binding 9 only bound if subsampledYImageView is valid)
         result = m_inputComputeFilter->RecordCommandBuffer(cmdBuf,
                                                            encodeFrameInfo->inputCmdBuffer->GetNodePoolIndex(),
                                                            linearInputImageView,
@@ -2162,6 +2177,21 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         imageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_GENERAL) && (newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)) {
+        imageBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        imageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_UNDEFINED) && (newLayout == VK_IMAGE_LAYOUT_GENERAL)) {
+        imageBarrier.srcAccessMask = 0;
+        imageBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_GENERAL) && (newLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR)) {
+        imageBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        imageBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
     } else if ((oldLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR) && (newLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR)) {
         imageBarrier.srcAccessMask = VK_ACCESS_2_VIDEO_ENCODE_WRITE_BIT_KHR;
         imageBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;

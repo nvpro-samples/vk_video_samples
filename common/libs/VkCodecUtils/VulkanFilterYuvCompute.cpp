@@ -3137,6 +3137,15 @@ uint32_t VulkanFilterYuvCompute::UpdateImageDescriptorSets(
 {
 
     validImageAspects &= validAspects;
+
+    // Trim plane aspects to match the view's actual plane count.
+    // The default m_inputImageAspects/m_outputImageAspects include all 3 plane bits,
+    // but 2-plane formats (NV12, P010, etc.) only have PLANE_0 and PLANE_1.
+    uint32_t numPlanes = imageView->GetNumberOfPlanes();
+    if (numPlanes < 3) validImageAspects &= ~VK_IMAGE_ASPECT_PLANE_2_BIT;
+    if (numPlanes < 2) validImageAspects &= ~VK_IMAGE_ASPECT_PLANE_1_BIT;
+    if (numPlanes < 1) validImageAspects &= ~VK_IMAGE_ASPECT_PLANE_0_BIT;
+
     uint32_t curImageAspect = 0;
     while(validImageAspects) {
 
@@ -3145,11 +3154,8 @@ uint32_t VulkanFilterYuvCompute::UpdateImageDescriptorSets(
             VkSampler ccSampler = (curImageAspect == 0) ? convSampler : VK_NULL_HANDLE;
             uint32_t planeNum = GetPlaneIndex((VkImageAspectFlagBits)(VK_IMAGE_ASPECT_COLOR_BIT << curImageAspect));
 
-            // For packed formats (e.g. A2B10G10R10 / Y410), curImageAspect==0 uses the
-            // combined view (GetImageView()), so we don't need separate plane views.
-            // Only assert plane count for multi-planar plane access (curImageAspect > 0).
             if (curImageAspect > 0) {
-                assert(planeNum < imageView->GetNumberOfPlanes());
+                assert(planeNum < numPlanes);
             }
 
             uint32_t dstBinding = baseBinding;
