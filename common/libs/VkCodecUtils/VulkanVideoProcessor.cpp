@@ -501,6 +501,11 @@ size_t VulkanVideoProcessor::OutputFrameToFile(VulkanDecodedFrame* pFrame)
         return (size_t)-1;
     }
 
+    const VkParserDetectedVideoFormat* pVideoFormat = m_vkVideoDecoder->GetVideoFormatInfo();
+    if (pVideoFormat && pVideoFormat->frame_rate.numerator != 0 && pVideoFormat->frame_rate.denominator != 0) {
+        m_frameToFile->SetFrameRate(pVideoFormat->frame_rate.numerator, pVideoFormat->frame_rate.denominator);
+    }
+
     return m_frameToFile->OutputFrame(pFrame, m_vkDevCtx);
 }
 
