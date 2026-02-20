@@ -463,7 +463,11 @@ class EncoderProfileTestRunner:
                 self.failed += 1
                 self.results.append(TestResult(test_name, False, False, duration, "Output bitstream missing"))
             else:
-                print(f"  {GREEN}✓{NC} {test_name} ({duration:.2f}s)")
+                n = self.config.max_frames
+                per_frame_ms = (duration / n * 1000) if n > 0 else 0
+                enc_fps = n / duration if duration > 0 else 0
+                print(f"  {GREEN}✓{NC} {test_name} ({duration:.2f}s, "
+                      f"{per_frame_ms:.1f} ms/frame, {enc_fps:.1f} enc-fps)")
                 self.passed += 1
                 self.results.append(TestResult(test_name, True, False, duration))
         else:
@@ -527,6 +531,18 @@ class EncoderProfileTestRunner:
         print(f"  {RED}✗ Failed:{NC}    {self.failed}")
         print(f"  {YELLOW}○ Skipped:{NC}   {self.skipped}")
         print()
+
+        passed_results = [r for r in self.results if r.passed and r.duration > 0]
+        if passed_results:
+            n = self.config.max_frames
+            self.print_header("Encode Timing Report")
+            print(f"{'Profile':<50} {'Total(s)':>9} {'ms/frame':>9} {'enc-fps':>9}")
+            print("-" * 80)
+            for r in passed_results:
+                per_frame = (r.duration / n * 1000) if n > 0 else 0
+                fps = n / r.duration if r.duration > 0 else 0
+                print(f"{r.name:<50} {r.duration:>9.2f} {per_frame:>9.1f} {fps:>9.1f}")
+            print()
 
         if self.failed == 0 and self.passed > 0:
             print(f"{GREEN}{BOLD}All profile tests passed!{NC}")
