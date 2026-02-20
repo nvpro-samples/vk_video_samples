@@ -865,6 +865,10 @@ protected:
     void DumpStateInfo(const char* stage, uint32_t ident, VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                        int32_t frameIdx = -1, uint32_t ofTotalFrames = 0) const;
 
+    VkResult SelectDrmFormatModifier(VkSharedBaseObj<EncoderConfig>& encoderConfig,
+                                     VkFormat format, VkImageUsageFlags usage,
+                                     const VkExtent2D& imageExtent);
+
     typedef VkThreadSafeQueue<VkSharedBaseObj<VkVideoEncodeFrameInfo>> EncoderFrameQueue;
 private:
     std::atomic<int32_t> refCount;

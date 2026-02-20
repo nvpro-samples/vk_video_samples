@@ -872,6 +872,9 @@ public:
     uint32_t enableOutOfOrderRecording : 1; // Testing only - don't use for production!
     uint32_t disableEncodeParameterOptimizations : 1;
 
+    int32_t  drmFormatModifierIndex; // -1 = disabled (OPTIMAL), >= 0 = index into non-linear modifier list
+    uint64_t selectedDrmFormatModifier; // resolved modifier value (set during InitEncoder)
+
     EncoderConfig()
     : refCount(0)
     , appName()
@@ -975,6 +978,8 @@ public:
     , enablePictureRowColReplication(1)
     , enableOutOfOrderRecording(false)
     , disableEncodeParameterOptimizations(false)
+    , drmFormatModifierIndex(-1)
+    , selectedDrmFormatModifier(0)
     { }
 
     virtual ~EncoderConfig() {}

@@ -50,6 +50,97 @@ const uint8_t* VkVideoEncoder::setPlaneOffset(const uint8_t* pFrameData, size_t 
     return buf;
 }
 
+static void PrintNvidiaDrmModifierInfo(uint64_t modifier)
+{
+    if (modifier == 0) {
+        printf("  LINEAR (0x0)\n");
+        return;
+    }
+    uint8_t vendor = static_cast<uint8_t>((modifier >> 56) & 0xFF);
+    if (vendor != 0x03) {
+        printf("  Non-NVIDIA modifier 0x%llx (vendor=0x%02x)\n",
+               (unsigned long long)modifier, vendor);
+        return;
+    }
+    uint32_t h = modifier & 0xF;
+    uint32_t k = (modifier >> 12) & 0xFF;
+    uint32_t g = (modifier >> 20) & 0x3;
+    uint32_t s = (modifier >> 22) & 0x1;
+    uint32_t c = (modifier >> 23) & 0x7;
+
+    printf("  NVIDIA Block-Linear 0x%llx\n", (unsigned long long)modifier);
+    printf("    blockHeight  = %u (log2 GOBs, %u GOBs = %u rows)\n", h, 1u << h, (1u << h) * 8);
+    printf("    pageKind     = 0x%02x\n", k);
+    printf("    gobGen       = %u (%s)\n", g, g == 0 ? "Fermi-Volta" : g == 2 ? "Turing+" : "other");
+    printf("    sectorLayout = %u (%s)\n", s, s ? "Desktop/Xavier+" : "Tegra K1-Parker");
+    printf("    compression  = %u (%s)\n", c, c == 0 ? "none" : "compressed");
+}
+
+VkResult VkVideoEncoder::SelectDrmFormatModifier(
+    VkSharedBaseObj<EncoderConfig>& encoderConfig,
+    VkFormat format, VkImageUsageFlags usage, const VkExtent2D& imageExtent)
+{
+    VkPhysicalDevice physDev = m_vkDevCtx->getPhysicalDevice();
+
+    // Query available DRM format modifiers
+    VkDrmFormatModifierPropertiesListEXT modList{VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT};
+    VkFormatProperties2 fmtProps2{VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
+    fmtProps2.pNext = &modList;
+    m_vkDevCtx->GetPhysicalDeviceFormatProperties2(physDev, format, &fmtProps2);
+
+    if (modList.drmFormatModifierCount == 0) {
+        fprintf(stderr, "No DRM format modifiers available for format %d\n", format);
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
+
+    std::vector<VkDrmFormatModifierPropertiesEXT> modProps(modList.drmFormatModifierCount);
+    modList.pDrmFormatModifierProperties = modProps.data();
+    m_vkDevCtx->GetPhysicalDeviceFormatProperties2(physDev, format, &fmtProps2);
+
+    // Filter: skip LINEAR, require VIDEO_ENCODE_SRC in tilingFeatures
+    std::vector<VkDrmFormatModifierPropertiesEXT> validMods;
+    printf("\n=== DRM Format Modifiers for format %d with VIDEO_ENCODE_SRC ===\n", format);
+    for (uint32_t i = 0; i < modList.drmFormatModifierCount; i++) {
+        const auto& m = modProps[i];
+        bool isLinear = (m.drmFormatModifier == 0);
+        bool hasEncodeSrc = (m.drmFormatModifierTilingFeatures &
+                             VK_FORMAT_FEATURE_VIDEO_ENCODE_INPUT_BIT_KHR) != 0;
+        bool hasTransferDst = (m.drmFormatModifierTilingFeatures &
+                               VK_FORMAT_FEATURE_TRANSFER_DST_BIT) != 0;
+
+        const char* status = isLinear ? "SKIP(linear)" :
+                             !hasEncodeSrc ? "SKIP(no encode)" :
+                             !hasTransferDst ? "SKIP(no xfer dst)" : "OK";
+
+        printf("  [%2u] mod=0x%016llx planes=%u features=0x%08x %s\n",
+               i, (unsigned long long)m.drmFormatModifier,
+               m.drmFormatModifierPlaneCount, m.drmFormatModifierTilingFeatures, status);
+
+        if (!isLinear && hasEncodeSrc && hasTransferDst) {
+            validMods.push_back(m);
+        }
+    }
+
+    if (validMods.empty()) {
+        fprintf(stderr, "No non-linear DRM modifiers support VIDEO_ENCODE_SRC + TRANSFER_DST\n");
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
+
+    int32_t idx = encoderConfig->drmFormatModifierIndex;
+    if (idx < 0 || idx >= (int32_t)validMods.size()) {
+        fprintf(stderr, "DRM modifier index %d out of range [0, %zu)\n", idx, validMods.size());
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    encoderConfig->selectedDrmFormatModifier = validMods[idx].drmFormatModifier;
+    printf("\n=== Selected DRM format modifier (index %d of %zu non-linear) ===\n",
+           idx, validMods.size());
+    PrintNvidiaDrmModifierInfo(encoderConfig->selectedDrmFormatModifier);
+    printf("\n");
+
+    return VK_SUCCESS;
+}
+
 VkResult VkVideoEncoder::LoadNextQpMapFrameFromFile(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
     if ((m_encoderConfig->enableQpMap == VK_FALSE) || (!m_encoderConfig->qpMapFileHandler.HandleIsValid()))  {
@@ -1448,6 +1539,15 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         std::max(m_maxCodedExtent.height, encoderConfig->videoCapabilities.minCodedExtent.height)
     };
 
+    // Query and select DRM format modifier if requested
+    if (encoderConfig->drmFormatModifierIndex >= 0) {
+        result = SelectDrmFormatModifier(encoderConfig, m_imageInFormat, inImageUsage, imageExtent);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nInitEncoder Error: Failed to select DRM format modifier.\n");
+            return result;
+        }
+    }
+
     result = m_inputImagePool->Configure( m_vkDevCtx,
                                           encoderConfig->numInputImages,
                                           m_imageInFormat,
@@ -1455,11 +1555,12 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                           inImageUsage,
                                           m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
                                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                          encoderConfig->videoCoreProfile.GetProfile(), // pVideoProfile
-                                          VK_IMAGE_ASPECT_COLOR_BIT, // a whole YCbCr or RGBA image
+                                          encoderConfig->videoCoreProfile.GetProfile(),
+                                          VK_IMAGE_ASPECT_COLOR_BIT,
                                           false,   // useImageArray
                                           false,   // useImageViewArray
-                                          false    // useLinear
+                                          false,   // useLinear
+                                          encoderConfig->selectedDrmFormatModifier
                                           );
     if(result != VK_SUCCESS) {
         fprintf(stderr, "\nInitEncoder Error: Failed to Configure inputImagePool.\n");

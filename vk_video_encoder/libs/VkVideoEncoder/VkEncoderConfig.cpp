@@ -163,6 +163,9 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --deviceID                      <hexadec> : deviceID to be used, \n\
     --deviceUuid                    <string>  : deviceUuid to be used \n\
     --enableHwLoadBalancing                   : enables HW load balancing using multiple encoder devices when available \n\
+    --drmFormatModifierIndex          <integer> : Use DRM format modifier at given index from non-linear modifier list.\n\
+                                        Queries modifiers with VIDEO_ENCODE_SRC usage, skips LINEAR (mod=0x0).\n\
+                                        -1 = disabled (default OPTIMAL), 0..N = pick by index.\n\
     --enableDebugEncoderInputDisplay  none    : Testing only - enable presenting to the display the frames input to the encoder\n\
     --testOutOfOrderRecording                 : Testing only - enable testing for out-of-order-recording\n\
     --intraRefreshCycleDuration     <integer> : Duration of (number of frames in) an intra-refresh cycle\n\
@@ -637,6 +640,13 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 }
         } else if (args[i] == "--disableEncodeParameterOptimizations") {
             disableEncodeParameterOptimizations = true;
+        } else if (args[i] == "--drmFormatModifierIndex") {
+            int32_t idx = -1;
+            if ((++i >= argc) || !parseUint(args[i], idx)) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            drmFormatModifierIndex = idx;
         } else if (args[i] == "--deviceID") {
             uint32_t deviceIdVal = 0;
             if ((++i >= argc) || !parseHex(args[i], deviceIdVal)) {

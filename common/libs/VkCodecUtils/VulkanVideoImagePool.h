@@ -233,7 +233,8 @@ public:
                        VkImageAspectFlags           aspectMask,
                        bool                         useImageArray,
                        bool                         useImageViewArray,
-                       bool                         useLinear);
+                       bool                         useLinear,
+                       uint64_t                     drmFormatModifier = 0);
 
     void Deinit();
 
