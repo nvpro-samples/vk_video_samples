@@ -59,6 +59,13 @@ public:
     virtual ~VkVideoFrameOutput() = default;
 
     /**
+     * @brief Sets frame rate for Y4M header (call before first OutputFrame if known)
+     * @param frameRateNum Frame rate numerator (e.g. 30)
+     * @param frameRateDen Frame rate denominator (e.g. 1)
+     */
+    virtual void SetFrameRate(uint32_t frameRateNum, uint32_t frameRateDen) {}
+
+    /**
      * @brief Outputs a decoded frame to file
      *
      * @param pFrame Pointer to the decoded frame
