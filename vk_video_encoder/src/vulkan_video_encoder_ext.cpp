@@ -492,6 +492,7 @@ VkResult VulkanVideoEncoderExtImpl::SubmitExternalFrame(
         frame.format,
         frame.width, frame.height,
         frame.imageTiling,
+        frame.currentLayout,  // Producer's layout (e.g. GENERAL for compute output)
         frame.frameId,
         frame.pts,
         false,  // isLastFrame (caller controls this externally)

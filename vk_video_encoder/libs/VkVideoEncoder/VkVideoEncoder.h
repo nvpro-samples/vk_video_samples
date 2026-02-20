@@ -243,8 +243,12 @@ public:
         // When isExternalInput is true, the srcStagingImageView was provided
         // externally (e.g. from DMA-BUF import) and is wrapped in a non-owning
         // VulkanVideoImagePoolNode via CreateExternal().
+        // srcExternalImageLayout: actual layout the producer left the image in
+        // (e.g. GENERAL for compute output). Must NOT be UNDEFINED or the
+        // transition will discard image contents and produce scrambled encode.
 
-        bool     isExternalInput{false};
+        bool           isExternalInput{false};
+        VkImageLayout  srcExternalImageLayout{VK_IMAGE_LAYOUT_UNDEFINED};
 
         // Wait semaphores: the staging/encode command buffer will wait on these
         // before accessing the external input image. Typically this is the
@@ -661,6 +665,7 @@ public:
         VkFormat format,
         uint32_t width, uint32_t height,
         VkImageTiling tiling,
+        VkImageLayout srcImageCurrentLayout,
         uint64_t frameId,
         uint64_t pts,
         bool isLastFrame,

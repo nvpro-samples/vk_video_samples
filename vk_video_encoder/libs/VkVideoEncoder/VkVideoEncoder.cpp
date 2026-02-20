@@ -448,6 +448,7 @@ VkResult VkVideoEncoder::SetExternalInputFrame(
     VkFormat format,
     uint32_t width, uint32_t height,
     VkImageTiling tiling,
+    VkImageLayout srcImageCurrentLayout,
     uint64_t frameId,
     uint64_t pts,
     bool isLastFrame,
@@ -469,9 +470,10 @@ VkResult VkVideoEncoder::SetExternalInputFrame(
     encodeFrameInfo->inputTimeStamp = pts;
 
     // =============================================
-    // 2. Store external sync info
+    // 2. Store external sync info and source layout
     // =============================================
     encodeFrameInfo->isExternalInput = true;
+    encodeFrameInfo->srcExternalImageLayout = srcImageCurrentLayout;
 
     encodeFrameInfo->inputWaitSemaphores.clear();
     encodeFrameInfo->inputWaitSemaphoreValues.clear();
@@ -600,7 +602,15 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     VkResult result;
     if (m_inputComputeFilter == nullptr) {
-        VkImageLayout linearImgNewLayout = TransitionImageLayout(cmdBuf, linearInputImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        // For external input, use actual layout producer left image in (e.g. GENERAL).
+        // UNDEFINED would discard contents and produce scrambled encode.
+        VkImageLayout srcOldLayout = encodeFrameInfo->isExternalInput
+            ? encodeFrameInfo->srcExternalImageLayout
+            : VK_IMAGE_LAYOUT_UNDEFINED;
+        if (srcOldLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
+            srcOldLayout = VK_IMAGE_LAYOUT_GENERAL;  // Fallback for compute output
+        }
+        VkImageLayout linearImgNewLayout = TransitionImageLayout(cmdBuf, linearInputImageView, srcOldLayout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
         VkImageLayout srcImgNewLayout = TransitionImageLayout(cmdBuf, srcEncodeImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
         (void)linearImgNewLayout;
         (void)srcImgNewLayout;
