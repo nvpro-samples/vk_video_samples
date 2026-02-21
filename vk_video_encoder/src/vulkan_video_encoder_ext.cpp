@@ -270,6 +270,8 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
 #if defined(__linux) || defined(__linux__) || defined(linux)
         VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
         VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
 #endif
         VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
         VK_KHR_VIDEO_QUEUE_EXTENSION_NAME,
