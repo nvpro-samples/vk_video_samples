@@ -171,6 +171,15 @@ public:
     virtual int32_t SetPicNumInDisplayOrder(int32_t picId, int32_t picNumInDisplayOrder) = 0;
     virtual uint32_t GetCurrentNumberQueueSlots() const = 0;
 
+    // Register an external consumer's release semaphore for cross-process sync.
+    // Returns consumer index (0..MAX_EXTERNAL_CONSUMERS-1), or -1 on failure.
+    virtual int32_t AddExternalConsumer(VkSemaphore importedReleaseSemaphore,
+                                        DecodeFrameBufferIf::SemSyncTypeIdx consumerType) { return -1; }
+
+    // Export the frame-complete timeline semaphore as an opaque FD for IPC.
+    // Returns FD >= 0 on success, -1 on failure. Caller owns the returned FD.
+    virtual int ExportFrameCompleteSemaphoreFd() { return -1; }
+
     virtual ~VulkanVideoFrameBuffer() { }
 
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,

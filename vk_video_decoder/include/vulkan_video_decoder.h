@@ -46,6 +46,10 @@
 // High-level interface of the video decoder
 class VulkanVideoDecoder : public VkVideoQueue<VulkanDecodedFrame> {
 public:
+    // Access the decoder's Vulkan handles (for external memory export, etc.)
+    virtual VkDevice         GetDevice()         const = 0;
+    virtual VkPhysicalDevice GetPhysicalDevice() const = 0;
+    virtual VkInstance       GetInstance()        const = 0;
     virtual ~VulkanVideoDecoder() {};
 };
 

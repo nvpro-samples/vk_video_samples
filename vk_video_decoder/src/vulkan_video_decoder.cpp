@@ -74,6 +74,18 @@ public:
         return extent;
     }
 
+    virtual VkDevice GetDevice() const override {
+        return m_vkDevCtxt;  // VulkanDeviceContext has operator VkDevice()
+    }
+
+    virtual VkPhysicalDevice GetPhysicalDevice() const override {
+        return m_vkDevCtxt.getPhysicalDevice();
+    }
+
+    virtual VkInstance GetInstance() const override {
+        return m_vkDevCtxt.getInstance();
+    }
+
     VulkanVideoDecoderImpl(const char* programName)
     : m_refCount(0)
     , m_vkDevCtxt()

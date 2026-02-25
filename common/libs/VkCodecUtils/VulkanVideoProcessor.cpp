@@ -55,6 +55,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     const bool enableHwLoadBalancing = programConfig.enableHwLoadBalancing;
     const bool enablePostProcessFilter = (programConfig.enablePostProcessFilter >= 0);
     const bool enableDisplayPresent = (programConfig.noPresent == false);
+    const bool enableExternalConsumerExport = (programConfig.enableExternalConsumerExport != 0);
     const  VulkanFilterYuvCompute::FilterType postProcessFilterType = enablePostProcessFilter ?
             (VulkanFilterYuvCompute::FilterType)programConfig.enablePostProcessFilter :
                                                       VulkanFilterYuvCompute::YCBCRCOPY;
@@ -105,6 +106,10 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
 
     if (enableDisplayPresent) {
         enableDecoderFeatures |= VkVideoDecoder::ENABLE_GRAPHICS_TEXTURE_SAMPLING;
+    }
+
+    if (enableExternalConsumerExport) {
+        enableDecoderFeatures |= VkVideoDecoder::ENABLE_EXTERNAL_CONSUMER_EXPORT;
     }
 
     result = VkVideoDecoder::Create(vkDevCtx,
