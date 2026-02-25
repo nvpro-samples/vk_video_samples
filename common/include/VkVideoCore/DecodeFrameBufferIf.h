@@ -110,7 +110,9 @@ public:
     enum SemSyncTypeIdx : uint64_t  {  SEM_SYNC_TYPE_IDX_DECODE      =  (1ULL << 0), // Decode operation was signaled
                                        SEM_SYNC_TYPE_IDX_DISPLAY     =  (1ULL << 0), // Display operation was signaled
                                        SEM_SYNC_TYPE_IDX_FILTER      =  (1ULL << 1), // Filter operation was signaled
-                                       SEM_SYNC_TYPE_IDX_SHIFT  = 2,                 // Shift semaphore counter value left
+                                       SEM_SYNC_TYPE_IDX_PRESENTER   =  (1ULL << 2), // External presenter consumer
+                                       SEM_SYNC_TYPE_IDX_ENCODER     =  (1ULL << 3), // External encoder consumer
+                                       SEM_SYNC_TYPE_IDX_SHIFT  = 4,                 // Shift semaphore counter value left (4 bits for type)
                                     };
 
     static uint64_t GetSemaphoreValue(SemSyncTypeIdx semSyncType, uint64_t semOrder) {
