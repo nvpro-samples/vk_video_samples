@@ -347,6 +347,7 @@ struct DecoderConfig {
             {"--remotePresent", nullptr, 1, "Stream decoded frames to external presenter",
                 [this](const char **args, const ProgramArgs &a) {
                     remotePresent = args[0];
+                    enableExternalConsumerExport = true;
                     return true;
                 }},
             {"--presenterPath", nullptr, 1, "Path to vk-presenter-instance binary",
