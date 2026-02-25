@@ -469,6 +469,51 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         extraImageUsage |= VK_IMAGE_USAGE_SAMPLED_BIT;
     }
 
+    if (m_enableExternalConsumerExport == VK_TRUE) {
+        // External consumers (presenters, encoders) need SAMPLED_BIT for rendering
+        // and TRANSFER_SRC_BIT for DMA-BUF export
+        extraImageUsage |= VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    }
+
+    // Select DRM modifier for external consumer export (used below when setting image specs)
+    uint64_t exportDrmModifier = 0;
+    VkExternalMemoryHandleTypeFlags exportHandleTypes = 0;
+    if (m_enableExternalConsumerExport == VK_TRUE) {
+        exportHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
+        // Query supported DRM modifiers for the output format
+        VkDrmFormatModifierPropertiesListEXT modList{
+            VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT};
+        VkFormatProperties2 fmtProps{VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
+        fmtProps.pNext = &modList;
+        m_vkDevCtx->GetPhysicalDeviceFormatProperties2(
+            m_vkDevCtx->getPhysicalDevice(), outImageFormat, &fmtProps);
+        if (modList.drmFormatModifierCount > 0) {
+            std::vector<VkDrmFormatModifierPropertiesEXT> mods(modList.drmFormatModifierCount);
+            modList.pDrmFormatModifierProperties = mods.data();
+            m_vkDevCtx->GetPhysicalDeviceFormatProperties2(
+                m_vkDevCtx->getPhysicalDevice(), outImageFormat, &fmtProps);
+            const VkFormatFeatureFlags required =
+                VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+            // Prefer non-linear (block-linear)
+            for (const auto& m : mods) {
+                if (m.drmFormatModifier != 0 &&
+                    (m.drmFormatModifierTilingFeatures & required) == required) {
+                    exportDrmModifier = m.drmFormatModifier;
+                    break;
+                }
+            }
+            // Fallback to any with required features
+            if (exportDrmModifier == 0) {
+                for (const auto& m : mods) {
+                    if ((m.drmFormatModifierTilingFeatures & required) == required) {
+                        exportDrmModifier = m.drmFormatModifier;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     if (m_dpbAndOutputCoincide == VK_TRUE) {
 
         if (!filmGrainEnabled) {
@@ -519,6 +564,11 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     imageSpecDpb.usesImageViewArray = m_useImageViewArray;
 
     imageSpecDpb.memoryProperty = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    // External consumer export: set on DPB in coincide mode (DPB IS the output)
+    if (m_enableExternalConsumerExport == VK_TRUE && m_dpbAndOutputCoincide == VK_TRUE) {
+        imageSpecDpb.exportHandleTypes = exportHandleTypes;
+        imageSpecDpb.exportDrmModifier = exportDrmModifier;
+    }
     assert(imageSpecDpb.imageTypeIdx == m_imageSpecsIndex.decodeDpb);
 
     if ((m_imageSpecsIndex.decodeOut != InvalidImageTypeIdx) && (m_imageSpecsIndex.decodeOut != m_imageSpecsIndex.decodeDpb)) {
@@ -528,7 +578,8 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         imageSpecOut.createInfo.format = outImageFormat;
         imageSpecOut.createInfo.arrayLayers = 1;
         if (filmGrainEnabled) {
-            // FIXME: This may not be true. Some implementations may support linear output as filmGrain
+            // Film grain output: use OPTIMAL tiling (CreateExportable will override
+            // to DRM modifier if export is enabled via imageSpecOut.exportHandleTypes)
             imageSpecOut.createInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
         } else {
             // FIXME: This may not be true. Some implementations may NOT support linear output
@@ -540,6 +591,11 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         }
 
         imageSpecOut.createInfo.usage = outImageUsage;
+        // External consumer export: set on output image (distinct mode + film grain)
+        if (m_enableExternalConsumerExport == VK_TRUE) {
+            imageSpecOut.exportHandleTypes = exportHandleTypes;
+            imageSpecOut.exportDrmModifier = exportDrmModifier;
+        }
         if (m_useSeparateOutputImages == VK_TRUE) {
             // Add one more image for the separate output image used for platforms
             // requiring a separate output image or the output needs to be linear
@@ -794,14 +850,13 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     //   - Residual data is copied to offset 0 of a new aligned buffer
     //   - bitstreamDataOffset is 0 for H.264/H.265/AV1 (set in end_of_picture)
     //   - VP9 aligns offset in the parser (VulkanVP9Decoder.cpp:261)
-    const VkDeviceSize offsetAlignment = pCurrFrameDecParams->bitstreamData->GetOffsetAlignment();
     const VkDeviceSize sizeAlignment   = pCurrFrameDecParams->bitstreamData->GetSizeAlignment();
     const VkDeviceSize bufferMaxSize   = pCurrFrameDecParams->bitstreamData->GetMaxSize();
 
     // srcBufferOffset: must be 0 (H.264/H.265/AV1) or aligned (VP9).
     // These codecs don't use non-zero offsets in the parser's end_of_picture.
     VkDeviceSize srcOffset = pCurrFrameDecParams->bitstreamDataOffset;
-    assert((srcOffset & (offsetAlignment - 1)) == 0 &&
+    assert((srcOffset & (pCurrFrameDecParams->bitstreamData->GetOffsetAlignment() - 1)) == 0 &&
            "bitstreamDataOffset must be aligned to minBitstreamBufferOffsetAlignment");
     // Safety: force to 0 for codecs that should not have non-zero offset
     if (m_videoFormat.codec != VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
