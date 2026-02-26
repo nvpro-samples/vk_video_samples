@@ -81,6 +81,8 @@ struct DecoderConfig {
         outputcrcPerFrame = false;
         outputcrc = false;
         enableExternalConsumerExport = false;
+        exportPreferCompressed = false;
+        exportPreferSmallestBlockHeight = true;
         crcOutputFileName.clear();
         help = false;
     }
@@ -474,6 +476,8 @@ struct DecoderConfig {
     uint32_t outputcrc : 1;
     uint32_t outputcrcPerFrame : 1;
     uint32_t enableExternalConsumerExport : 1;
+    uint32_t exportPreferCompressed : 1;
+    uint32_t exportPreferSmallestBlockHeight : 1;
     // Decoder service extensions
     std::string remotePresent;
     std::string presenterPath;
