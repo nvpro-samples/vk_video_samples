@@ -21,6 +21,7 @@
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 #include "VkVideoDecoder/VkVideoDecoder.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
+#include "VkCodecUtils/VkDrmFormatModifierUtils.h"
 
 #undef max
 #undef min
@@ -479,126 +480,37 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     uint64_t exportDrmModifier = 0;
     VkExternalMemoryHandleTypeFlags exportHandleTypes = 0;
     if (m_enableExternalConsumerExport == VK_TRUE) {
+#ifdef __linux__
         exportHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-        // Query supported DRM modifiers for the output format
-        VkDrmFormatModifierPropertiesListEXT modList{
-            VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT};
-        VkFormatProperties2 fmtProps{VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
-        fmtProps.pNext = &modList;
-        m_vkDevCtx->GetPhysicalDeviceFormatProperties2(
-            m_vkDevCtx->getPhysicalDevice(), outImageFormat, &fmtProps);
-        if (modList.drmFormatModifierCount > 0) {
-            std::vector<VkDrmFormatModifierPropertiesEXT> mods(modList.drmFormatModifierCount);
-            modList.pDrmFormatModifierProperties = mods.data();
-            m_vkDevCtx->GetPhysicalDeviceFormatProperties2(
-                m_vkDevCtx->getPhysicalDevice(), outImageFormat, &fmtProps);
-            const VkFormatFeatureFlags required =
-                VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
 
-            // Decode NVIDIA DRM modifier fields:
-            // DRM_FORMAT_MOD_NVIDIA_BLOCK_LINEAR_2D(c, s, g, k, h)
-            // val = 0x10 | (h & 0xf) | ((k & 0xff) << 12) | ((g & 0x3) << 20) | ((s & 0x1) << 22) | ((c & 0x7) << 23)
-            auto getNvModCompression = [](uint64_t mod) -> uint32_t {
-                uint64_t val = mod & 0x00FFFFFFFFFFFFFF;
-                return (val >> 23) & 0x7;
-            };
-            auto getNvModBlockHeight = [](uint64_t mod) -> uint32_t {
-                uint64_t val = mod & 0x00FFFFFFFFFFFFFF;
-                return val & 0xF;  // log2 GOBs
-            };
+        VkDrmFormatModifierUtils drmUtils(m_vkDevCtx);
+        const VkFormatFeatureFlags required =
+            VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
 
-            // Selection options:
-            //   explicit index: use that modifier unconditionally
-            //   otherwise: preferSmallestBlockHeight + preferCompressed
-            const bool preferSmallestBlockHeight = m_enableExportSmallestBlockHeight;
-            const bool preferCompressed = m_enableExportPreferCompressed;
-            const int32_t explicitIndex = m_exportDrmModifierIndex;
+        drmUtils.DumpAvailableModifiers(outImageFormat, required);
 
-            // Log all available modifiers
-            for (size_t i = 0; i < mods.size(); i++) {
-                uint32_t mc = getNvModCompression(mods[i].drmFormatModifier);
-                uint32_t mh = getNvModBlockHeight(mods[i].drmFormatModifier);
-                std::cout << "  [" << i << "] mod=0x" << std::hex << mods[i].drmFormatModifier
-                          << std::dec << " c=" << mc << " h=" << mh
-                          << " (" << (1 << mh) << " GOBs)"
-                          << " planes=" << mods[i].drmFormatModifierPlaneCount
-                          << " features=0x" << std::hex << mods[i].drmFormatModifierTilingFeatures
-                          << std::dec
-                          << ((mods[i].drmFormatModifier == 0) ? " (LINEAR)" : "")
-                          << std::endl;
-            }
+        const auto blockPref = m_enableExportSmallestBlockHeight
+            ? VkDrmFormatModifierUtils::BlockHeightPref::PreferSmallest
+            : VkDrmFormatModifierUtils::BlockHeightPref::PreferLargest;
+        const auto compPref = m_enableExportPreferCompressed
+            ? VkDrmFormatModifierUtils::CompressionPref::PreferCompressed
+            : VkDrmFormatModifierUtils::CompressionPref::PreferUncompressed;
 
-            // Explicit index: use unconditionally if valid
-            if (explicitIndex >= 0 && (size_t)explicitIndex < mods.size()) {
-                exportDrmModifier = mods[explicitIndex].drmFormatModifier;
-                std::cout << "[VkVideoDecoder] Using explicit DRM modifier index " << explicitIndex
-                          << ": 0x" << std::hex << exportDrmModifier << std::dec << std::endl;
-            }
+        exportDrmModifier = drmUtils.SelectModifier(
+            outImageFormat, required, m_exportDrmModifierIndex,
+            blockPref, compPref, /*allowLinear=*/true);
 
-            // Auto-select: build list of eligible non-linear modifiers with required features
-            if (exportDrmModifier == 0) {
-            // Build list of eligible non-linear modifiers with required features
-            struct ModCandidate {
-                uint64_t modifier;
-                uint32_t compression;
-                uint32_t blockHeightLog2;
-            };
-            std::vector<ModCandidate> candidates;
-            for (const auto& m : mods) {
-                if (m.drmFormatModifier != 0 &&
-                    (m.drmFormatModifierTilingFeatures & required) == required) {
-                    candidates.push_back({
-                        m.drmFormatModifier,
-                        getNvModCompression(m.drmFormatModifier),
-                        getNvModBlockHeight(m.drmFormatModifier)
-                    });
-                }
-            }
-
-            // Sort: smallest block height first, then by compression preference
-            std::sort(candidates.begin(), candidates.end(),
-                [preferSmallestBlockHeight, preferCompressed](const ModCandidate& a, const ModCandidate& b) {
-                    // Block height: smallest first if preferred, otherwise largest first
-                    if (a.blockHeightLog2 != b.blockHeightLog2) {
-                        return preferSmallestBlockHeight
-                            ? (a.blockHeightLog2 < b.blockHeightLog2)
-                            : (a.blockHeightLog2 > b.blockHeightLog2);
-                    }
-                    // Compression: preferred type first
-                    bool aMatch = preferCompressed ? (a.compression > 0) : (a.compression == 0);
-                    bool bMatch = preferCompressed ? (b.compression > 0) : (b.compression == 0);
-                    if (aMatch != bMatch) return aMatch;
-                    return false;
-                });
-
-            if (!candidates.empty()) {
-                exportDrmModifier = candidates[0].modifier;
-            }
-
-            // Fallback: any with required features (including linear)
-            if (exportDrmModifier == 0) {
-                for (const auto& m : mods) {
-                    if ((m.drmFormatModifierTilingFeatures & required) == required) {
-                        exportDrmModifier = m.drmFormatModifier;
-                        break;
-                    }
-                }
-            }
-
-            } // end auto-select (exportDrmModifier == 0)
-
-            // Log selected modifier
-            if (exportDrmModifier != 0) {
-                uint32_t c = getNvModCompression(exportDrmModifier);
-                uint32_t h = getNvModBlockHeight(exportDrmModifier);
-                std::cout << "[VkVideoDecoder] Export DRM modifier: 0x" << std::hex
-                          << exportDrmModifier << std::dec
-                          << " compression=" << c
-                          << " blockHeight=" << (1 << h) << " GOBs"
-                          << (explicitIndex >= 0 ? " (explicit)" : " (auto)")
-                          << " (from " << mods.size() << " available)" << std::endl;
-            }
+        if (exportDrmModifier != 0) {
+            std::cout << "[VkVideoDecoder] Export DRM modifier: 0x" << std::hex
+                      << exportDrmModifier << std::dec
+                      << " compression=" << VkDrmFormatModifierUtils::GetNvCompression(exportDrmModifier)
+                      << " blockHeight=" << (1 << VkDrmFormatModifierUtils::GetNvBlockHeightLog2(exportDrmModifier)) << " GOBs"
+                      << (m_exportDrmModifierIndex >= 0 ? " (explicit)" : " (auto)")
+                      << std::endl;
         }
+#else
+        fprintf(stderr, "[VkVideoDecoder] External consumer export requires Linux (DMA-BUF/DRM)\n");
+#endif
     }
 
     if (m_dpbAndOutputCoincide == VK_TRUE) {
