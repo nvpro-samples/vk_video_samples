@@ -21,6 +21,7 @@
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 #include "VkVideoDecoder/VkVideoDecoder.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
+#include "VkCodecUtils/VkDrmFormatModifierUtils.h"
 
 #undef max
 #undef min
@@ -479,39 +480,37 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     uint64_t exportDrmModifier = 0;
     VkExternalMemoryHandleTypeFlags exportHandleTypes = 0;
     if (m_enableExternalConsumerExport == VK_TRUE) {
+#ifdef __linux__
         exportHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT;
-        // Query supported DRM modifiers for the output format
-        VkDrmFormatModifierPropertiesListEXT modList{
-            VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT};
-        VkFormatProperties2 fmtProps{VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
-        fmtProps.pNext = &modList;
-        m_vkDevCtx->GetPhysicalDeviceFormatProperties2(
-            m_vkDevCtx->getPhysicalDevice(), outImageFormat, &fmtProps);
-        if (modList.drmFormatModifierCount > 0) {
-            std::vector<VkDrmFormatModifierPropertiesEXT> mods(modList.drmFormatModifierCount);
-            modList.pDrmFormatModifierProperties = mods.data();
-            m_vkDevCtx->GetPhysicalDeviceFormatProperties2(
-                m_vkDevCtx->getPhysicalDevice(), outImageFormat, &fmtProps);
-            const VkFormatFeatureFlags required =
-                VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
-            // Prefer non-linear (block-linear)
-            for (const auto& m : mods) {
-                if (m.drmFormatModifier != 0 &&
-                    (m.drmFormatModifierTilingFeatures & required) == required) {
-                    exportDrmModifier = m.drmFormatModifier;
-                    break;
-                }
-            }
-            // Fallback to any with required features
-            if (exportDrmModifier == 0) {
-                for (const auto& m : mods) {
-                    if ((m.drmFormatModifierTilingFeatures & required) == required) {
-                        exportDrmModifier = m.drmFormatModifier;
-                        break;
-                    }
-                }
-            }
+
+        VkDrmFormatModifierUtils drmUtils(m_vkDevCtx);
+        const VkFormatFeatureFlags required =
+            VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+
+        drmUtils.DumpAvailableModifiers(outImageFormat, required);
+
+        const auto blockPref = m_enableExportSmallestBlockHeight
+            ? VkDrmFormatModifierUtils::BlockHeightPref::PreferSmallest
+            : VkDrmFormatModifierUtils::BlockHeightPref::PreferLargest;
+        const auto compPref = m_enableExportPreferCompressed
+            ? VkDrmFormatModifierUtils::CompressionPref::PreferCompressed
+            : VkDrmFormatModifierUtils::CompressionPref::PreferUncompressed;
+
+        exportDrmModifier = drmUtils.SelectModifier(
+            outImageFormat, required, m_exportDrmModifierIndex,
+            blockPref, compPref, /*allowLinear=*/true);
+
+        if (exportDrmModifier != 0) {
+            std::cout << "[VkVideoDecoder] Export DRM modifier: 0x" << std::hex
+                      << exportDrmModifier << std::dec
+                      << " compression=" << VkDrmFormatModifierUtils::GetNvCompression(exportDrmModifier)
+                      << " blockHeight=" << (1 << VkDrmFormatModifierUtils::GetNvBlockHeightLog2(exportDrmModifier)) << " GOBs"
+                      << (m_exportDrmModifierIndex >= 0 ? " (explicit)" : " (auto)")
+                      << std::endl;
         }
+#else
+        fprintf(stderr, "[VkVideoDecoder] External consumer export requires Linux (DMA-BUF/DRM)\n");
+#endif
     }
 
     if (m_dpbAndOutputCoincide == VK_TRUE) {

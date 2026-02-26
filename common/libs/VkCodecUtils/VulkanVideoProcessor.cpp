@@ -112,6 +112,9 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
         enableDecoderFeatures |= VkVideoDecoder::ENABLE_EXTERNAL_CONSUMER_EXPORT;
     }
 
+    const bool exportPreferCompressed = (programConfig.exportPreferCompressed != 0);
+    const bool exportSmallestBlockHeight = (programConfig.exportPreferSmallestBlockHeight != 0);
+
     result = VkVideoDecoder::Create(vkDevCtx,
                                     m_vkVideoFrameBuffer,
                                     videoQueueIndx,
@@ -122,6 +125,9 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                                     numBitstreamBuffersToPreallocate,
                                     m_vkVideoDecoder);
     assert(result == VK_SUCCESS);
+    if (result == VK_SUCCESS && m_vkVideoDecoder) {
+        m_vkVideoDecoder->SetExportPreferences(exportPreferCompressed, exportSmallestBlockHeight);
+    }
     if (result != VK_SUCCESS) {
         fprintf(stderr, "\nERROR: Create VkVideoDecoder result: 0x%x\n", result);
     }
