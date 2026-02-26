@@ -62,7 +62,6 @@ void* VulkanShaderCompiler::GetSharedCompiler() {
             std::cerr << "VulkanShaderCompiler: Failed to initialize shared shaderc compiler!" << std::endl;
             return nullptr;
         }
-        std::cout << "VulkanShaderCompiler: Initialized shared shaderc compiler" << std::endl;
     }
 
     g_compilerRefCount++;
@@ -78,7 +77,6 @@ void VulkanShaderCompiler::ReleaseSharedCompiler() {
         // Last instance - release the shared compiler
         shaderc_compiler_release(g_sharedCompiler);
         g_sharedCompiler = nullptr;
-        std::cout << "VulkanShaderCompiler: Released shared shaderc compiler" << std::endl;
     }
 }
 

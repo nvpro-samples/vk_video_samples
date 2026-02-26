@@ -37,6 +37,8 @@
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 #include "VkCodecUtils/VulkanFilterYuvCompute.h"
 
+#undef max
+
 struct EncoderConfigH264;
 struct EncoderConfigH265;
 struct EncoderConfigAV1;
@@ -871,6 +873,11 @@ public:
     // 2: replicate only one row and one column to the padding area;
     uint32_t enablePictureRowColReplication : 2;
     uint32_t enableOutOfOrderRecording : 1; // Testing only - don't use for production!
+    uint32_t* crcOutput;  // Pointer to CRC output array
+    std::vector<uint32_t> crcInitValue;  // initialize crc values
+    double* psnrOutputY;  // When non-null, PSNR is enabled and average PSNR for Y plane is written here
+    double* psnrOutputU;  // Optional: average PSNR for U plane (-1 if not computed)
+    double* psnrOutputV;  // Optional: average PSNR for V plane (-1 if not computed)
     uint32_t disableEncodeParameterOptimizations : 1;
 
     EncoderConfig()
@@ -975,6 +982,9 @@ public:
     , repeatInputFrames(false)
     , enablePictureRowColReplication(1)
     , enableOutOfOrderRecording(false)
+    , psnrOutputY(nullptr)
+    , psnrOutputU(nullptr)
+    , psnrOutputV(nullptr)
     , disableEncodeParameterOptimizations(false)
     { }
 
@@ -1016,12 +1026,11 @@ public:
 
     virtual int DoParseArguments(int argc, const char *argv[]) {
         if (argc > 0) {
-            std::cout << "Invalid paramters: ";
+            std::cout << "Invalid parameters: ";
             for (int i = 0; i < argc; i++) {
                 std::cout << argv[i] << " ";
             }
             std::cout << std::endl;
-            return -1;
         }
         return 0;
     };
