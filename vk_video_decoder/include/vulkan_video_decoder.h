@@ -50,6 +50,18 @@ public:
     virtual VkDevice         GetDevice()         const = 0;
     virtual VkPhysicalDevice GetPhysicalDevice() const = 0;
     virtual VkInstance       GetInstance()        const = 0;
+
+    // External consumer management (cross-process semaphore sync)
+    // Register an imported release semaphore from an external consumer.
+    // The frame buffer will CPU-wait on this before reusing a decoded frame slot.
+    // Returns consumer index (>=0) on success, -1 on failure.
+    virtual int32_t AddExternalConsumer(VkSemaphore importedReleaseSemaphore,
+                                        uint64_t consumerType) = 0;
+
+    // Export the frame-complete timeline semaphore as an opaque FD.
+    // External consumers wait on this before reading decoded frames.
+    virtual int ExportFrameCompleteSemaphoreFd() = 0;
+
     virtual ~VulkanVideoDecoder() {};
 };
 
