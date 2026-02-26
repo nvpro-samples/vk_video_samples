@@ -138,6 +138,9 @@ public:
         uint32_t              deferCreate        : 1;
         VkImageCreateInfo     createInfo;
         VkMemoryPropertyFlags memoryProperty;
+        // External export (DMA-BUF): set exportHandleTypes != 0 to use CreateExportable()
+        VkExternalMemoryHandleTypeFlags exportHandleTypes{0};
+        uint64_t              exportDrmModifier{0};
         // must be valid if m_usesImageArray is true
         VkSharedBaseObj<VkImageResource>     imageArray;
         // must be valid if m_usesImageViewArray is true

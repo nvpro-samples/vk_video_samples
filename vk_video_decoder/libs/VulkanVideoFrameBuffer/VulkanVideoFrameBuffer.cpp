@@ -891,10 +891,20 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
 
         VkSharedBaseObj<VkImageResource> imageResource;
         if (!imageArrayParent) {
-            result = VkImageResource::Create(vkDevCtx,
-                                             &pImageSpec->createInfo,
-                                             pImageSpec->memoryProperty,
-                                             imageResource);
+            if (pImageSpec->exportHandleTypes != 0) {
+                // External consumer export: create with DRM modifier + export setup
+                result = VkImageResource::CreateExportable(vkDevCtx,
+                                                 &pImageSpec->createInfo,
+                                                 pImageSpec->memoryProperty,
+                                                 pImageSpec->exportHandleTypes,
+                                                 pImageSpec->exportDrmModifier,
+                                                 imageResource);
+            } else {
+                result = VkImageResource::Create(vkDevCtx,
+                                                 &pImageSpec->createInfo,
+                                                 pImageSpec->memoryProperty,
+                                                 imageResource);
+            }
             if (result != VK_SUCCESS) {
                 return result;
             }
