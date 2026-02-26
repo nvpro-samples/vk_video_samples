@@ -241,8 +241,11 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
         return VK_SUCCESS;
     }
 
-    assert(pFrameInfo->frameEncodeEncodeOrderNum <= std::numeric_limits<uint32_t>::max());
-    m_dpbAV1->InvalidateStaleReferenceFrames(static_cast<uint32_t>(pFrameInfo->frameEncodeEncodeOrderNum), pFrameInfo->picOrderCntVal, &m_stateAV1.m_sequenceHeader);
+    if (pFrameInfo->frameEncodeEncodeOrderNum != uint64_t(-1)) {
+        assert(pFrameInfo->frameEncodeEncodeOrderNum <= std::numeric_limits<uint32_t>::max());
+        m_dpbAV1->InvalidateStaleReferenceFrames(static_cast<uint32_t>(pFrameInfo->frameEncodeEncodeOrderNum), pFrameInfo->picOrderCntVal, &m_stateAV1.m_sequenceHeader);
+    }
+
     pFrameInfo->stdPictureInfo.refresh_frame_flags = (uint8_t)m_dpbAV1->GetRefreshFrameFlags(pFrameInfo->bShownKeyFrameOrSwitch, pFrameInfo->bShowExistingFrame);
 
     // setup recon picture (pSetupReferenceSlot)
