@@ -578,7 +578,8 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         imageSpecOut.createInfo.format = outImageFormat;
         imageSpecOut.createInfo.arrayLayers = 1;
         if (filmGrainEnabled) {
-            // FIXME: This may not be true. Some implementations may support linear output as filmGrain
+            // Film grain output: use OPTIMAL tiling (CreateExportable will override
+            // to DRM modifier if export is enabled via imageSpecOut.exportHandleTypes)
             imageSpecOut.createInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
         } else {
             // FIXME: This may not be true. Some implementations may NOT support linear output
