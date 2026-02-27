@@ -81,7 +81,7 @@ struct DecoderConfig {
         outputcrcPerFrame = false;
         outputcrc = false;
         enableExternalConsumerExport = false;
-        exportPreferCompressed = false;
+        exportPreferCompressed = true;   // prefer L2-compressed DRM modifier by default
         exportPreferSmallestBlockHeight = true;
         crcOutputFileName.clear();
         help = false;
