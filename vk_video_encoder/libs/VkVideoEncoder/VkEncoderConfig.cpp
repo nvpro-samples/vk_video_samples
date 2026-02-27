@@ -18,77 +18,89 @@
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
+#include "json/EncoderConfigJsonLoader.h"
 #include <algorithm>
 #include <cctype>
 #include <string>
-#include <cstdlib>
+#include <charconv>
 #include <cmath>
-#include <cerrno>
 
-// Helper functions for portable string-to-number conversion (C++14 compatible)
+// Helper functions using std::from_chars (C++17) to avoid glibc strto*/sscanf
 namespace {
     template<typename T>
     inline bool parseUint(const std::string& str, T& value) {
         if (str.empty()) return false;
-        const char* first = str.c_str();
-        char* endPtr = nullptr;
-        // Handle hex prefix (0x or 0X) or octal (leading 0)
+        const char* first = str.data();
+        const char* last = first + str.size();
         int base = 10;
         if (str.size() > 2 && str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
-            base = 16;
             first += 2;
+            base = 16;
         } else if (str.size() > 1 && str[0] == '0') {
             base = 8;
         }
-        errno = 0;
-        unsigned long long result = std::strtoull(first, &endPtr, base);
-        if (errno != 0 || endPtr != str.c_str() + str.size()) {
-            return false;
+        unsigned long long result = 0;
+        auto [ptr, ec] = std::from_chars(first, last, result, base);
+        if (ec == std::errc{} && ptr == last) {
+            value = static_cast<T>(result);
+            return true;
         }
-        value = static_cast<T>(result);
-        return true;
+        return false;
     }
 
     template<typename T>
     inline bool parseInt(const std::string& str, T& value) {
         if (str.empty()) return false;
-        char* endPtr = nullptr;
-        errno = 0;
-        long long result = std::strtoll(str.c_str(), &endPtr, 10);
-        if (errno != 0 || endPtr != str.c_str() + str.size()) {
-            return false;
+        const char* first = str.data();
+        const char* last = first + str.size();
+        long long result = 0;
+        auto [ptr, ec] = std::from_chars(first, last, result);
+        if (ec == std::errc{} && ptr == last) {
+            value = static_cast<T>(result);
+            return true;
         }
-        value = static_cast<T>(result);
-        return true;
+        return false;
     }
 
     inline bool parseFloat(const std::string& str, float& value) {
         if (str.empty()) return false;
-        char* endPtr = nullptr;
-        errno = 0;
-        float result = std::strtof(str.c_str(), &endPtr);
-        if (errno != 0 || endPtr == str.c_str()) {
-            return false;
+        const char* first = str.data();
+        const char* last = first + str.size();
+#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L
+        auto [ptr, ec] = std::from_chars(first, last, value);
+        return ec == std::errc{};
+#else
+        bool negative = false;
+        if (*first == '-') { negative = true; first++; }
+        else if (*first == '+') { first++; }
+        double result = 0.0;
+        while (first < last && *first >= '0' && *first <= '9') {
+            result = result * 10.0 + (*first - '0');
+            first++;
         }
-        value = result;
+        if (first < last && *first == '.') {
+            first++;
+            double frac = 0.1;
+            while (first < last && *first >= '0' && *first <= '9') {
+                result += (*first - '0') * frac;
+                frac *= 0.1;
+                first++;
+            }
+        }
+        value = negative ? static_cast<float>(-result) : static_cast<float>(result);
         return true;
+#endif
     }
 
     inline bool parseHex(const std::string& str, uint32_t& value) {
         if (str.empty()) return false;
-        const char* first = str.c_str();
-        char* endPtr = nullptr;
-        // Skip 0x prefix if present
+        const char* first = str.data();
+        const char* last = first + str.size();
         if (str.size() > 2 && str[0] == '0' && (str[1] == 'x' || str[1] == 'X')) {
             first += 2;
         }
-        errno = 0;
-        unsigned long result = std::strtoul(first, &endPtr, 16);
-        if (errno != 0 || endPtr == first) {
-            return false;
-        }
-        value = static_cast<uint32_t>(result);
-        return true;
+        auto [ptr, ec] = std::from_chars(first, last, value, 16);
+        return ec == std::errc{};
     }
 }
 
@@ -100,6 +112,7 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     -i, --input                     .yuv Input YUV File Name (YUV420p 8bpp only) \n\
     -o, --output                    .264/5,ivf Output H264/5/AV1 File Name \n\
     -c, --codec                     <string> select codec type: avc (h264) or hevc (h265) or av1\n\
+    --encoderConfig                 <path>    : load base config from JSON (CLI overrides); see json_config/encoder_config.schema.json\n\
     --dpbMode                       <string>  : select DPB mode: layered, separate\n\
     --inputWidth                    <integer> : Input Width \n\
     --inputHeight                   <integer> : Input Height \n\
@@ -150,6 +163,9 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --deviceID                      <hexadec> : deviceID to be used, \n\
     --deviceUuid                    <string>  : deviceUuid to be used \n\
     --enableHwLoadBalancing                   : enables HW load balancing using multiple encoder devices when available \n\
+    --drmFormatModifierIndex          <integer> : Use DRM format modifier at given index from non-linear modifier list.\n\
+                                        Queries modifiers with VIDEO_ENCODE_SRC usage, skips LINEAR (mod=0x0).\n\
+                                        -1 = disabled (default OPTIMAL), 0..N = pick by index.\n\
     --enableDebugEncoderInputDisplay  none    : Testing only - enable presenting to the display the frames input to the encoder\n\
     --testOutOfOrderRecording                 : Testing only - enable testing for out-of-order-recording\n\
     --intraRefreshCycleDuration     <integer> : Duration of (number of frames in) an intra-refresh cycle\n\
@@ -253,6 +269,11 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
         }
 }
 
+int EncoderConfig::LoadFromJsonFile(const char* path)
+{
+    return LoadEncoderConfigFromJson(path, this);
+}
+
 int EncoderConfig::ParseArguments(int argc, const char *argv[])
 {
     int argcount = 0;
@@ -265,7 +286,16 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
     const auto lambdaToLower = [](unsigned char c) { return std::tolower(c); };
 
     for (int32_t i = 1; i < argc; i++) {
-
+        // --encoderConfig: load JSON first (base config); CLI args below override. Precedence: JSON then CLI.
+        if (args[i] == "--encoderConfig") {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "--encoderConfig requires a path\n");
+                return -1;
+            }
+            if (LoadFromJsonFile(args[i + 1].c_str()) != 0) return -1;
+            i++; // skip path argument (for loop will increment i again)
+            continue;
+        }
         if (args[i] == "-i" || args[i] == "--input") {
             if (++i >= argc) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
@@ -610,6 +640,13 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 }
         } else if (args[i] == "--disableEncodeParameterOptimizations") {
             disableEncodeParameterOptimizations = true;
+        } else if (args[i] == "--drmFormatModifierIndex") {
+            int32_t idx = -1;
+            if ((++i >= argc) || !parseUint(args[i], idx)) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            drmFormatModifierIndex = idx;
         } else if (args[i] == "--deviceID") {
             uint32_t deviceIdVal = 0;
             if ((++i >= argc) || !parseHex(args[i], deviceIdVal)) {
@@ -751,24 +788,32 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         }
     }
 
+    // External frame input mode (IPC/service): no -i file, width/height come from caller.
+    // The encoder library's InitializeExt path sets numFrames=UINT32_MAX and provides
+    // frames via SetExternalInputFrame/SubmitExternalFrame.
     if (!inputFileHandler.HasFileName()) {
-        fprintf(stderr, "An input file must be specified\n");
-        return -1;
+        if (input.width == 0 || input.height == 0) {
+            fprintf(stderr, "An input file (-i) or --inputWidth/--inputHeight must be specified\n");
+            return -1;
+        }
+        // External frame mode: skip file handler setup, use provided dimensions
+        inputFileHandler.SetFrameGeometry(input.width, input.height, input.bpp, input.chromaSubsampling);
+        // frameCount stays at the value from --numFrames (or default)
+    } else {
+        if (input.width == 0) {
+            fprintf(stderr, "The input width must be specified\n");
+            return -1;
+        }
+
+        if (input.height == 0) {
+            fprintf(stderr, "The input height must specified\n");
+            return -1;
+        }
+
+        inputFileHandler.SetFrameGeometry(input.width, input.height, input.bpp, input.chromaSubsampling);
+
+        frameCount = inputFileHandler.GetMaxFrameCount();
     }
-
-    if (input.width == 0) {
-        fprintf(stderr, "The input width must be specified\n");
-        return -1;
-    }
-
-    if (input.height == 0) {
-        fprintf(stderr, "The input height must specified\n");
-        return -1;
-    }
-
-    inputFileHandler.SetFrameGeometry(input.width, input.height, input.bpp, input.chromaSubsampling);
-
-    frameCount = inputFileHandler.GetMaxFrameCount();
 
     if (startFrame > 0) {
         if (startFrame >= frameCount) {
@@ -781,17 +826,21 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         }
     }
 
-    if ((repeatInputFrames == false) &&
-            ((numFrames == 0) || (numFrames > (frameCount - startFrame)))) {
-        std::cout << "numFrames " << numFrames
-                  <<  " should be different from zero and inferior to input file max frame count of "
-                  << frameCount << ". Using input file frame count." << std::endl;
-        numFrames = frameCount;
-        if (numFrames == 0) {
-            fprintf(stderr, "No frames found in the input file, frame count is zero. Exit.");
-            return -1;
+    if (inputFileHandler.HasFileName()) {
+        // File-based input: clamp numFrames to actual file frame count
+        if ((repeatInputFrames == false) &&
+                ((numFrames == 0) || (numFrames > (frameCount - startFrame)))) {
+            std::cout << "numFrames " << numFrames
+                      <<  " should be different from zero and inferior to input file max frame count of "
+                      << frameCount << ". Using input file frame count." << std::endl;
+            numFrames = frameCount;
+            if (numFrames == 0) {
+                fprintf(stderr, "No frames found in the input file, frame count is zero. Exit.");
+                return -1;
+            }
         }
     }
+    // External frame input: numFrames comes from --numFrames arg (typically UINT32_MAX for streaming)
 
     if (!outputFileHandler.HasFileName()) {
         const char* defaultOutName = (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) ? "out.264" :
@@ -889,6 +938,14 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         return -1;
     }
 
+    if (argcount > 0) {
+        fprintf(stderr, "[EncoderConfig] Unknown positional args (%d) passed to DoParseArguments:", argcount);
+        for (int a = 0; a < argcount; a++) {
+            fprintf(stderr, " '%s'", arglist[a]);
+        }
+        fprintf(stderr, "\n");
+        fflush(stderr);
+    }
     return DoParseArguments(argcount, arglist.data());
 }
 
@@ -926,7 +983,15 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
         VkSharedBaseObj<EncoderConfigH264> vkEncoderConfigh264(new EncoderConfigH264());
         int ret = vkEncoderConfigh264->ParseArguments(argc, argv);
         if (ret != 0) {
-            assert(!"Invalid arguments");
+            std::string argDump;
+            for (int a = 0; a < argc; a++) {
+                argDump += " ";
+                argDump += argv[a];
+            }
+            fprintf(stderr, "[EncoderConfig] H264 ParseArguments failed (ret=%d). argc=%d. Args:%s\n", ret, argc, argDump.c_str());
+            fflush(stderr);
+            // Don't assert — return error so caller can handle gracefully
+            return VK_ERROR_INITIALIZATION_FAILED;
             return VK_ERROR_INITIALIZATION_FAILED;
         }
 

@@ -133,6 +133,7 @@ struct nvVideoH265PicParameters {
     StdVideoDecodeH265PictureInfo stdPictureInfo;
     VkVideoDecodeH265PictureInfoKHR pictureInfo;
     VkVideoDecodeH265SessionParametersAddInfoKHR pictureParameters;
+    nvVideoDecodeH265DpbSlotInfo currentDpbSlotInfo;
     nvVideoDecodeH265DpbSlotInfo dpbRefList[MAX_REF_PICTURES_LIST_ENTRIES];
 };
 
@@ -146,7 +147,10 @@ struct nvVideoDecodeAV1DpbSlotInfo
     StdVideoDecodeAV1ReferenceInfo stdReferenceInfo;
     const VkVideoDecodeAV1DpbSlotInfoKHR* Init(int8_t slotIndex)
     {
-        assert((slotIndex >= 0) && (slotIndex < (int8_t)TOTAL_REFS_PER_FRAME));
+        // slotIndex must be valid: >= 0 and within MAX_DPB_REF_AND_SETUP_SLOTS.
+        // Note: the setup slot can have any DPB slot index (not bounded by
+        // TOTAL_REFS_PER_FRAME which is the dpbRefList array size).
+        assert((slotIndex >= 0) && (slotIndex < (int8_t)MAX_DPB_REF_AND_SETUP_SLOTS));
         dpbSlotInfo.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_DPB_SLOT_INFO_KHR;
         dpbSlotInfo.pNext = nullptr;
         dpbSlotInfo.pStdReferenceInfo = &stdReferenceInfo;
@@ -170,6 +174,7 @@ struct nvVideoAV1PicParameters {
     StdVideoDecodeAV1PictureInfo stdPictureInfo; // memory for the pointer in pictureInfo
     VkVideoDecodeAV1PictureInfoKHR pictureInfo;
     VkVideoDecodeAV1SessionParametersCreateInfoKHR pictureParameters;
+    nvVideoDecodeAV1DpbSlotInfo currentDpbSlotInfo;
     nvVideoDecodeAV1DpbSlotInfo dpbRefList[nvVideoDecodeAV1DpbSlotInfo::TOTAL_REFS_PER_FRAME + 1];
 };
 
@@ -2307,6 +2312,18 @@ bool VulkanVideoParser::DecodePicture(
         }
         assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
         if (setupReferenceSlot.slotIndex >= 0) {
+            // Wire pNext to VkVideoDecodeH264DpbSlotInfoKHR for the setup slot (VUID-07156)
+            setupReferenceSlot.pNext = h264.currentDpbSlotInfo.Init(setupReferenceSlot.slotIndex);
+            StdVideoDecodeH264ReferenceInfo* pSetupRefInfo = &h264.currentDpbSlotInfo.stdReferenceInfo;
+            pSetupRefInfo->FrameNum = pStdPictureInfo->frame_num;
+            pSetupRefInfo->PicOrderCnt[0] = pStdPictureInfo->PicOrderCnt[0];
+            pSetupRefInfo->PicOrderCnt[1] = pStdPictureInfo->PicOrderCnt[1];
+            pSetupRefInfo->flags = StdVideoDecodeH264ReferenceInfoFlags();
+            pSetupRefInfo->flags.top_field_flag = pd->field_pic_flag ? !pd->bottom_field_flag : 0;
+            pSetupRefInfo->flags.bottom_field_flag = pd->field_pic_flag ? pd->bottom_field_flag : 0;
+            pSetupRefInfo->flags.used_for_long_term_reference = 0;
+            pSetupRefInfo->flags.is_non_existing = 0;
+
             setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
             pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
 
@@ -2422,6 +2439,14 @@ bool VulkanVideoParser::DecodePicture(
 
         assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
         if (setupReferenceSlot.slotIndex >= 0) {
+            // Wire pNext to VkVideoDecodeH265DpbSlotInfoKHR for the setup slot (VUID-07157)
+            setupReferenceSlot.pNext = hevc.currentDpbSlotInfo.Init(setupReferenceSlot.slotIndex);
+            StdVideoDecodeH265ReferenceInfo* pSetupRefInfo = &hevc.currentDpbSlotInfo.stdReferenceInfo;
+            pSetupRefInfo->PicOrderCntVal = pStdPictureInfo->PicOrderCntVal;
+            pSetupRefInfo->flags = StdVideoDecodeH265ReferenceInfoFlags();
+            pSetupRefInfo->flags.used_for_long_term_reference = pStdPictureInfo->flags.IdrPicFlag ? 0 : 0;
+            pSetupRefInfo->flags.unused_for_reference = 0;
+
             setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
             pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
 
@@ -2500,6 +2525,13 @@ bool VulkanVideoParser::DecodePicture(
 
         assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
         if (setupReferenceSlot.slotIndex >= 0) {
+            // Wire pNext to VkVideoDecodeAV1DpbSlotInfoKHR for the setup slot (VUID-07170)
+            setupReferenceSlot.pNext = av1.currentDpbSlotInfo.Init(setupReferenceSlot.slotIndex);
+            StdVideoDecodeAV1ReferenceInfo* pSetupRefInfo = &av1.currentDpbSlotInfo.stdReferenceInfo;
+            memset(pSetupRefInfo, 0, sizeof(*pSetupRefInfo));
+            pSetupRefInfo->frame_type = pin->std_info.frame_type;
+            pSetupRefInfo->OrderHint = pin->std_info.OrderHint;
+
             setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
             pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
 

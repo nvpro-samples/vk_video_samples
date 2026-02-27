@@ -17,6 +17,10 @@
 #include "DrmFormatModTest.h"
 #include "DrmFormats.h"
 
+#include <vk_video/vulkan_video_codec_h264std.h>
+#include <vk_video/vulkan_video_codec_h264std_decode.h>
+#include <vk_video/vulkan_video_codec_h264std_encode.h>
+
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -117,6 +121,28 @@ VkResult DrmFormatModTest::init(const TestConfig& config) {
         nullptr
     };
     
+    // Video common extensions (shared by encode and decode)
+    static const char* const videoCommonExtensions[] = {
+        VK_KHR_VIDEO_QUEUE_EXTENSION_NAME,
+        VK_KHR_VIDEO_MAINTENANCE_1_EXTENSION_NAME,
+        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
+        VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
+        VK_KHR_EXTERNAL_FENCE_FD_EXTENSION_NAME,
+        nullptr
+    };
+    
+    // Video encode extensions
+    static const char* const videoEncodeExtensions[] = {
+        VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME,
+        nullptr
+    };
+    
+    // Video decode extensions
+    static const char* const videoDecodeExtensions[] = {
+        VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME,
+        nullptr
+    };
+    
     // Enable validation layers if requested (via --validation or --verbose implies validation)
     bool enableValidation = config.validation || config.verbose;
     
@@ -129,6 +155,21 @@ VkResult DrmFormatModTest::init(const TestConfig& config) {
     
     // Add device extensions
     m_vkDevCtx.AddReqDeviceExtensions(requiredDeviceExtensions, config.verbose);
+    
+    // Add video extensions when testing video usage.
+    // Use AddOptDeviceExtensions so HasAllDeviceExtensions doesn't reject the GPU
+    // if it reports extensions differently when video queues are involved.
+    if (config.videoEncode || config.videoDecode) {
+        m_vkDevCtx.AddOptDeviceExtensions(videoCommonExtensions, config.verbose);
+        if (config.videoEncode) {
+            m_vkDevCtx.AddOptDeviceExtensions(videoEncodeExtensions, config.verbose);
+            std::cout << "[INFO] Video encode extensions requested (--video-encode)" << std::endl;
+        }
+        if (config.videoDecode) {
+            m_vkDevCtx.AddOptDeviceExtensions(videoDecodeExtensions, config.verbose);
+            std::cout << "[INFO] Video decode extensions requested (--video-decode)" << std::endl;
+        }
+    }
     
     // Initialize Vulkan instance
     VkResult result = m_vkDevCtx.InitVulkanDevice("DrmFormatModTest", VK_NULL_HANDLE, config.verbose);
@@ -158,9 +199,10 @@ VkResult DrmFormatModTest::init(const TestConfig& config) {
         return result;
     }
     
-    // Print device info
+    // Print device info and cache vendor for workarounds
     VkPhysicalDeviceProperties props;
     m_vkDevCtx.GetPhysicalDeviceProperties(m_vkDevCtx.getPhysicalDevice(), &props);
+    m_vendorID = props.vendorID;
     std::cout << "[INFO] Physical device: " << props.deviceName << std::endl;
     
     // Check extension support
@@ -358,15 +400,24 @@ std::vector<TestResult> DrmFormatModTest::runAllTests() {
         results.push_back(runFormatQueryTest(fmt));
         
         // TC2: Image Creation with LINEAR
-        results.push_back(runImageCreateTest(fmt, true));
+        // Skip LINEAR when video usage is requested — NVDEC/NVENC require tiled memory.
+        if (!(m_config.videoEncode || m_config.videoDecode)) {
+            results.push_back(runImageCreateTest(fmt, true));
+        } else if (m_config.verbose) {
+            std::cout << "[SKIP] TC2_Create_" << fmt.name
+                      << "_LINEAR: NVDEC/NVENC require tiled (not linear)" << std::endl;
+        }
         
-        // TC2: Image Creation with OPTIMAL (if not linear-only)
+        // TC2: Image Creation with OPTIMAL/TILED (if not linear-only)
         if (!m_config.linearOnly) {
             results.push_back(runImageCreateTest(fmt, false));
         }
         
         // TC3: Export/Import with LINEAR
-        results.push_back(runExportImportTest(fmt, true));
+        // Skip LINEAR when video usage is requested — NVDEC/NVENC require tiled memory.
+        if (!(m_config.videoEncode || m_config.videoDecode)) {
+            results.push_back(runExportImportTest(fmt, true));
+        }
         
         // TC3: Export/Import with OPTIMAL (uncompressed block-linear)
         if (!m_config.linearOnly) {
@@ -411,6 +462,26 @@ std::vector<TestResult> DrmFormatModTest::runAllTests() {
                           << ": No compressed modifiers advertised"
                           << " (set __GL_CompressedFormatModifiers=0x101 or use --compression enable)"
                           << std::endl;
+            }
+        }
+        
+        // TC5: Video format query (vkGetPhysicalDeviceVideoFormatPropertiesKHR)
+        if (m_config.videoEncode) {
+            results.push_back(runVideoFormatQueryTest(fmt, true));
+        }
+        if (m_config.videoDecode) {
+            results.push_back(runVideoFormatQueryTest(fmt, false));
+        }
+        
+        // TC6: Plane layout verification (export → query layouts → import → compare)
+        if (m_config.videoEncode || m_config.videoDecode) {
+            if (!m_config.linearOnly) {
+                results.push_back(runPlaneLayoutTest(fmt, false));
+            }
+        } else {
+            results.push_back(runPlaneLayoutTest(fmt, true));
+            if (!m_config.linearOnly) {
+                results.push_back(runPlaneLayoutTest(fmt, false));
             }
         }
     }
@@ -523,6 +594,12 @@ TestResult DrmFormatModTest::runImageCreateTest(const FormatInfo& format, bool u
             }
         }
         if (targetModifier == DRM_FORMAT_MOD_INVALID) {
+            if (m_config.videoEncode || m_config.videoDecode) {
+                // Video requires tiled — cannot fall back to LINEAR
+                result.status = TestStatus::SKIP;
+                result.message = "No tiled modifier available (video requires tiled)";
+                return result;
+            }
             // Fall back to linear if no tiled modifiers
             targetModifier = DRM_FORMAT_MOD_LINEAR;
         }
@@ -590,6 +667,14 @@ TestResult DrmFormatModTest::runExportImportTest(const FormatInfo& format, bool 
             result.message = "LINEAR modifier not available";
             return result;
         }
+        // Intel (vendor 0x8086): single-plane LINEAR DMA-BUF import returns
+        // VK_ERROR_INVALID_EXTERNAL_HANDLE; multi-plane (e.g. NV12, P010) works.
+        const uint32_t planeCount = format.planeCount > 0 ? format.planeCount : 1;
+        if (planeCount == 1 && m_vendorID == 0x8086) {
+            result.status = TestStatus::SKIP;
+            result.message = "Intel: single-plane LINEAR DMA-BUF import returns VK_ERROR_INVALID_EXTERNAL_HANDLE (driver limitation)";
+            return result;
+        }
     } else if (useCompressed) {
         // Find first compressed block-linear modifier
         for (const auto& mod : modifiers) {
@@ -612,6 +697,12 @@ TestResult DrmFormatModTest::runExportImportTest(const FormatInfo& format, bool 
             }
         }
         if (targetModifier == DRM_FORMAT_MOD_INVALID) {
+            if (m_config.videoEncode || m_config.videoDecode) {
+                // Video requires tiled — cannot fall back to LINEAR
+                result.status = TestStatus::SKIP;
+                result.message = "No tiled modifier available (video requires tiled)";
+                return result;
+            }
             targetModifier = DRM_FORMAT_MOD_LINEAR;
         }
     }
@@ -729,6 +820,28 @@ VkResult DrmFormatModTest::createExportableImage(
         imageInfo.usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
     }
     
+    // Add video usage flags when requested.
+    // VIDEO_ENCODE_SRC / VIDEO_DECODE_DST are the usage bits that the video HW needs.
+    // EXTENDED_USAGE + MUTABLE_FORMAT allow per-plane STORAGE views on multi-planar images.
+    // VIDEO_PROFILE_INDEPENDENT avoids needing a VkVideoProfileListInfoKHR at image creation.
+    if (m_config.videoEncode || m_config.videoDecode) {
+        imageInfo.flags |= VK_IMAGE_CREATE_EXTENDED_USAGE_BIT
+                        |  VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT
+                        |  VK_IMAGE_CREATE_VIDEO_PROFILE_INDEPENDENT_BIT_KHR;
+        imageInfo.usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+        if (m_config.videoEncode) {
+            imageInfo.usage |= VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR;
+        }
+        if (m_config.videoDecode) {
+            imageInfo.usage |= VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
+        }
+        
+        if (m_config.verbose) {
+            std::cout << "  [video] usage=0x" << std::hex << imageInfo.usage
+                      << " flags=0x" << imageInfo.flags << std::dec << std::endl;
+        }
+    }
+    
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     
@@ -750,6 +863,312 @@ VkResult DrmFormatModTest::createExportableImage(
         drmModifier,
         outImage
     );
+}
+
+//=============================================================================
+// TC5: Video Format Query Test
+// Calls vkGetPhysicalDeviceVideoFormatPropertiesKHR with encode/decode usage
+// to verify which formats/tiling the driver reports for video.
+//=============================================================================
+
+TestResult DrmFormatModTest::runVideoFormatQueryTest(const FormatInfo& format, bool encode) {
+    TestResult result;
+    result.testName = std::string("TC5_VideoFmtQuery_") + format.name +
+                      (encode ? "_ENCODE" : "_DECODE");
+
+    VkImageUsageFlags videoUsage = encode
+        ? VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR
+        : VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
+
+    // Build a dummy H.264 4:2:0 8-bit profile for the query.
+    // We need at least one profile in the list.
+    VkVideoDecodeH264ProfileInfoKHR h264DecProfile{VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PROFILE_INFO_KHR};
+    h264DecProfile.stdProfileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH;
+    h264DecProfile.pictureLayout = VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_PROGRESSIVE_KHR;
+
+    VkVideoEncodeH264ProfileInfoKHR h264EncProfile{VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_KHR};
+    h264EncProfile.stdProfileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH;
+
+    VkVideoProfileInfoKHR profileInfo{VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR};
+    profileInfo.videoCodecOperation = encode
+        ? VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR
+        : VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR;
+    profileInfo.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;
+    profileInfo.lumaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
+    profileInfo.chromaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
+    profileInfo.pNext = encode ? (void*)&h264EncProfile : (void*)&h264DecProfile;
+
+    VkVideoProfileListInfoKHR profileList{VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR};
+    profileList.profileCount = 1;
+    profileList.pProfiles = &profileInfo;
+
+    VkPhysicalDeviceVideoFormatInfoKHR formatInfo{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR};
+    formatInfo.imageUsage = videoUsage;
+    formatInfo.pNext = &profileList;
+
+    // First call: get count
+    uint32_t formatCount = 0;
+    VkResult vkResult = m_vkDevCtx.GetPhysicalDeviceVideoFormatPropertiesKHR(
+        m_vkDevCtx.getPhysicalDevice(), &formatInfo, &formatCount, nullptr);
+
+    if (vkResult != VK_SUCCESS || formatCount == 0) {
+        result.status = TestStatus::SKIP;
+        result.message = "No video format properties returned (result=" +
+                         std::to_string(vkResult) + " count=" + std::to_string(formatCount) + ")";
+        if (m_config.verbose) {
+            std::cout << "[SKIP] " << result.testName << ": " << result.message << std::endl;
+        }
+        return result;
+    }
+
+    // Second call: get properties
+    std::vector<VkVideoFormatPropertiesKHR> formatProps(formatCount);
+    for (auto& fp : formatProps) {
+        fp.sType = VK_STRUCTURE_TYPE_VIDEO_FORMAT_PROPERTIES_KHR;
+        fp.pNext = nullptr;
+    }
+    vkResult = m_vkDevCtx.GetPhysicalDeviceVideoFormatPropertiesKHR(
+        m_vkDevCtx.getPhysicalDevice(), &formatInfo, &formatCount, formatProps.data());
+
+    if (vkResult != VK_SUCCESS) {
+        result.status = TestStatus::FAIL;
+        result.message = "GetPhysicalDeviceVideoFormatPropertiesKHR failed: " +
+                         std::to_string(vkResult);
+        return result;
+    }
+
+    // Check if our target format is in the returned list
+    bool foundFormat = false;
+    std::stringstream details;
+    details << formatCount << " video formats returned:";
+
+    for (uint32_t i = 0; i < formatCount; i++) {
+        const auto& fp = formatProps[i];
+        const char* fmtName = vkFormatToString(fp.format);
+        const char* tilingName = (fp.imageTiling == VK_IMAGE_TILING_OPTIMAL) ? "OPTIMAL" :
+                                 (fp.imageTiling == VK_IMAGE_TILING_LINEAR) ? "LINEAR" : "DRM_MOD";
+
+        if (m_config.verbose) {
+            std::cout << "    [" << i << "] " << fmtName
+                      << " tiling=" << tilingName
+                      << " usage=0x" << std::hex << fp.imageUsageFlags << std::dec
+                      << " flags=0x" << std::hex << fp.imageCreateFlags << std::dec
+                      << std::endl;
+        }
+
+        if (fp.format == format.vkFormat) {
+            foundFormat = true;
+        }
+    }
+
+    if (foundFormat) {
+        result.status = TestStatus::PASS;
+        result.message = details.str() + " (target format found)";
+    } else {
+        result.status = TestStatus::FAIL;
+        result.message = details.str() + " (target format " + format.name + " NOT found)";
+    }
+
+    if (m_config.verbose || result.failed()) {
+        std::cout << "[" << testStatusToString(result.status) << "] "
+                  << result.testName << ": " << result.message << std::endl;
+    }
+
+    return result;
+}
+
+//=============================================================================
+// TC6: Plane Layout Verification Test
+// Creates an exportable image, queries plane layouts (pitch, offset, size),
+// exports as DMA-BUF, imports with same parameters, queries imported layouts,
+// and compares them.
+//=============================================================================
+
+TestResult DrmFormatModTest::runPlaneLayoutTest(const FormatInfo& format, bool useLinear) {
+    TestResult result;
+    result.testName = std::string("TC6_PlaneLayout_") + format.name +
+                      (useLinear ? "_LINEAR" : "_TILED");
+
+    // Find modifier
+    auto modifiers = queryDrmModifiers(format.vkFormat);
+    uint64_t targetModifier = DRM_FORMAT_MOD_INVALID;
+
+    if (useLinear) {
+        for (const auto& mod : modifiers) {
+            if (mod.isLinear()) { targetModifier = mod.modifier; break; }
+        }
+        if (targetModifier == DRM_FORMAT_MOD_INVALID) {
+            result.status = TestStatus::SKIP;
+            result.message = "LINEAR modifier not available";
+            return result;
+        }
+    } else {
+        for (const auto& mod : modifiers) {
+            if (!mod.isLinear() && !mod.isCompressed()) {
+                targetModifier = mod.modifier; break;
+            }
+        }
+        if (targetModifier == DRM_FORMAT_MOD_INVALID) {
+            result.status = TestStatus::SKIP;
+            result.message = "No tiled modifier available";
+            return result;
+        }
+    }
+
+    // Create exportable image
+    VkSharedBaseObj<VkImageResource> srcImage;
+    VkResult vkResult = createExportableImage(format, targetModifier, srcImage);
+    if (vkResult != VK_SUCCESS) {
+        result.status = TestStatus::FAIL;
+        result.message = "Source image creation failed: " + std::to_string(vkResult);
+        return result;
+    }
+
+    // Query actual modifier
+    uint64_t actualModifier = 0;
+    queryImageDrmModifier(srcImage->GetImage(), &actualModifier);
+
+    // Query plane layouts from exported image
+    uint32_t planeCount = format.planeCount > 0 ? format.planeCount : 1;
+    VkSubresourceLayout exportLayouts[4] = {};
+
+    for (uint32_t p = 0; p < planeCount; p++) {
+        VkImageSubresource subres{};
+        subres.aspectMask = (planeCount > 1)
+            ? static_cast<VkImageAspectFlagBits>(VK_IMAGE_ASPECT_PLANE_0_BIT << p)
+            : VK_IMAGE_ASPECT_COLOR_BIT;
+        subres.mipLevel = 0;
+        subres.arrayLayer = 0;
+
+        m_vkDevCtx.GetImageSubresourceLayout(
+            m_vkDevCtx.getDevice(), srcImage->GetImage(), &subres, &exportLayouts[p]);
+    }
+
+    // Print exported layouts
+    if (m_config.verbose) {
+        char modStr[64];
+        modifierToString(actualModifier, modStr, sizeof(modStr));
+        std::cout << "  Export image: modifier=" << modStr
+                  << " planes=" << planeCount << std::endl;
+        for (uint32_t p = 0; p < planeCount; p++) {
+            std::cout << "    Plane " << p
+                      << ": offset=" << exportLayouts[p].offset
+                      << " size=" << exportLayouts[p].size
+                      << " rowPitch=" << exportLayouts[p].rowPitch
+                      << " arrayPitch=" << exportLayouts[p].arrayPitch
+                      << " depthPitch=" << exportLayouts[p].depthPitch
+                      << std::endl;
+        }
+    }
+
+    // Validate exported layouts
+    bool valid = true;
+    std::stringstream issues;
+
+    for (uint32_t p = 0; p < planeCount; p++) {
+        if (exportLayouts[p].rowPitch == 0) {
+            valid = false;
+            issues << "Plane " << p << " rowPitch=0; ";
+        }
+        if (p > 0 && exportLayouts[p].offset == 0 && !useLinear) {
+            // Tiled planes should have non-zero offsets for planes > 0
+            // (unless interleaved, which NV12 is not)
+            valid = false;
+            issues << "Plane " << p << " offset=0 for tiled; ";
+        }
+        if (p > 0 && exportLayouts[p].offset <= exportLayouts[p-1].offset) {
+            valid = false;
+            issues << "Plane " << p << " offset not increasing; ";
+        }
+    }
+
+    // Export DMA-BUF FD
+    int dmaBufFd = -1;
+    vkResult = exportDmaBufFd(srcImage, &dmaBufFd);
+    if (vkResult != VK_SUCCESS || dmaBufFd < 0) {
+        result.status = TestStatus::FAIL;
+        result.message = "DMA-BUF export failed: " + std::to_string(vkResult);
+        return result;
+    }
+
+    // Import with same parameters
+    VkSharedBaseObj<VkImageResource> dstImage;
+    VkDeviceSize allocSize = srcImage->GetImageDeviceMemorySize();
+    uint32_t memTypeBits = 0; // importDmaBufImage queries compatible types
+
+    vkResult = importDmaBufImage(format, dmaBufFd, allocSize, actualModifier,
+                                  memTypeBits, exportLayouts, planeCount, dstImage);
+    close(dmaBufFd);
+
+    if (vkResult != VK_SUCCESS || !dstImage) {
+        result.status = TestStatus::FAIL;
+        result.message = "DMA-BUF import failed: vkResult=" + std::to_string(vkResult)
+                       + " dstImage=" + (dstImage ? "valid" : "NULL");
+        if (m_config.verbose) {
+            std::cout << "[FAIL] " << result.testName << ": " << result.message << std::endl;
+        }
+        return result;
+    }
+
+    // Query imported image layouts
+    VkSubresourceLayout importLayouts[4] = {};
+    for (uint32_t p = 0; p < planeCount; p++) {
+        VkImageSubresource subres{};
+        subres.aspectMask = (planeCount > 1)
+            ? static_cast<VkImageAspectFlagBits>(VK_IMAGE_ASPECT_PLANE_0_BIT << p)
+            : VK_IMAGE_ASPECT_COLOR_BIT;
+        subres.mipLevel = 0;
+        subres.arrayLayer = 0;
+
+        m_vkDevCtx.GetImageSubresourceLayout(
+            m_vkDevCtx.getDevice(), dstImage->GetImage(), &subres, &importLayouts[p]);
+    }
+
+    // Compare export vs import layouts
+    if (m_config.verbose) {
+        std::cout << "  Import image: planes=" << planeCount << std::endl;
+        for (uint32_t p = 0; p < planeCount; p++) {
+            std::cout << "    Plane " << p
+                      << ": offset=" << importLayouts[p].offset
+                      << " size=" << importLayouts[p].size
+                      << " rowPitch=" << importLayouts[p].rowPitch
+                      << std::endl;
+        }
+    }
+
+    for (uint32_t p = 0; p < planeCount; p++) {
+        if (exportLayouts[p].offset != importLayouts[p].offset) {
+            valid = false;
+            issues << "Plane " << p << " offset mismatch: export="
+                   << exportLayouts[p].offset << " import=" << importLayouts[p].offset << "; ";
+        }
+        if (exportLayouts[p].rowPitch != importLayouts[p].rowPitch) {
+            valid = false;
+            issues << "Plane " << p << " rowPitch mismatch: export="
+                   << exportLayouts[p].rowPitch << " import=" << importLayouts[p].rowPitch << "; ";
+        }
+        if (exportLayouts[p].size != importLayouts[p].size) {
+            valid = false;
+            issues << "Plane " << p << " size mismatch: export="
+                   << exportLayouts[p].size << " import=" << importLayouts[p].size << "; ";
+        }
+    }
+
+    if (valid) {
+        result.status = TestStatus::PASS;
+        result.message = std::to_string(planeCount) + " planes verified (export == import)";
+    } else {
+        result.status = TestStatus::FAIL;
+        result.message = issues.str();
+    }
+
+    if (m_config.verbose || result.failed()) {
+        std::cout << "[" << testStatusToString(result.status) << "] "
+                  << result.testName << ": " << result.message << std::endl;
+    }
+
+    return result;
 }
 
 //=============================================================================
@@ -897,18 +1316,23 @@ VkResult DrmFormatModTest::importDmaBufImage(
         return result;
     }
     
-    // Create VkImageResource wrapper (simplified - just to prove round-trip works)
-    // In a real implementation, we'd use VkImageResource::CreateFromImport or similar
+    // Wrap in owning VkImageResource — it takes ownership of both the VkImage
+    // and VkDeviceMemory. When the last VkSharedBaseObj ref drops, the handles
+    // are destroyed automatically (ref-counted RAII).
+    VkImageCreateInfo wrapCI = imageInfo;
+    wrapCI.tiling = isLinear ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
+    result = VkImageResource::CreateFromImport(&m_vkDevCtx, image, memory,
+                                                memReqs.size, &wrapCI, outImage);
+    if (result != VK_SUCCESS) {
+        m_vkDevCtx.FreeMemory(device, memory, nullptr);
+        m_vkDevCtx.DestroyImage(device, image, nullptr);
+    }
     
-    // For now, just validate and clean up
-    m_vkDevCtx.FreeMemory(device, memory, nullptr);
-    m_vkDevCtx.DestroyImage(device, image, nullptr);
-    
-    // outImage is not populated in this simplified version
-    // The test passes if we got this far without errors
-    
-    return VK_SUCCESS;
+    return result;
 }
+
+// destroyImportedImage removed — CreateFromImport gives owning VkImageResource,
+// VkSharedBaseObj ref-counting handles cleanup automatically.
 
 //=============================================================================
 // Query Image DRM Modifier

@@ -146,10 +146,11 @@ public:
 
     static VkSharedBaseObj<VkVideoDecoder> invalidVkDecoder;
 
-    enum DecoderFeatures { ENABLE_LINEAR_OUTPUT       = (1 << 0),
-                           ENABLE_HW_LOAD_BALANCING   = (1 << 1),
-                           ENABLE_POST_PROCESS_FILTER = (1 << 2),
-                           ENABLE_GRAPHICS_TEXTURE_SAMPLING = (1 << 3),
+    enum DecoderFeatures { ENABLE_LINEAR_OUTPUT              = (1 << 0),
+                           ENABLE_HW_LOAD_BALANCING          = (1 << 1),
+                           ENABLE_POST_PROCESS_FILTER        = (1 << 2),
+                           ENABLE_GRAPHICS_TEXTURE_SAMPLING  = (1 << 3),
+                           ENABLE_EXTERNAL_CONSUMER_EXPORT   = (1 << 4),
                          };
 
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
@@ -163,6 +164,12 @@ public:
                            VkSharedBaseObj<VkVideoDecoder>& vkVideoDecoder = invalidVkDecoder);
 
     static const char* GetVideoCodecString(VkVideoCodecOperationFlagBitsKHR codec);
+
+    void SetExportPreferences(bool preferCompressed, bool smallestBlockHeight, int32_t explicitIndex = -1) {
+        m_enableExportPreferCompressed = preferCompressed ? VK_TRUE : VK_FALSE;
+        m_enableExportSmallestBlockHeight = smallestBlockHeight ? VK_TRUE : VK_FALSE;
+        m_exportDrmModifierIndex = explicitIndex;
+    }
     static const char* GetVideoChromaFormatString(VkVideoChromaSubsamplingFlagBitsKHR chromaFormat);
 
     virtual int32_t AddRef();
@@ -223,6 +230,10 @@ private:
         , m_videoMaintenance1FeaturesSupported(VK_FALSE)
         , m_enableDecodeComputeFilter((enableDecoderFeatures & ENABLE_POST_PROCESS_FILTER) != 0)
         , m_enableGraphicsSampleFromDecodeOutput((enableDecoderFeatures & ENABLE_GRAPHICS_TEXTURE_SAMPLING) != 0)
+        , m_enableExternalConsumerExport((enableDecoderFeatures & ENABLE_EXTERNAL_CONSUMER_EXPORT) != 0)
+        , m_enableExportPreferCompressed(VK_TRUE)
+        , m_enableExportSmallestBlockHeight(VK_TRUE)
+        , m_exportDrmModifierIndex(-1)
         , m_useImageArray(VK_FALSE)
         , m_useImageViewArray(VK_FALSE)
         , m_useSeparateOutputImages(VK_FALSE)
@@ -325,6 +336,10 @@ private:
     uint32_t m_videoMaintenance1FeaturesSupported : 1;
     uint32_t m_enableDecodeComputeFilter : 1;
     uint32_t m_enableGraphicsSampleFromDecodeOutput : 1;
+    uint32_t m_enableExternalConsumerExport : 1;
+    uint32_t m_enableExportPreferCompressed : 1;
+    uint32_t m_enableExportSmallestBlockHeight : 1;
+    int32_t  m_exportDrmModifierIndex;  // -1 = auto, >= 0 = force specific index
     uint32_t m_useImageArray : 1;
     uint32_t m_useImageViewArray : 1;
     uint32_t m_useSeparateOutputImages : 1;

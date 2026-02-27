@@ -44,6 +44,12 @@ static void printHelp(const char* programName) {
               << "  --video-only        Test only Vulkan Video formats (8/10/12 bit YCbCr)\n"
               << "  --linear-only       Only test LINEAR modifier\n"
               << "  --export-only       Skip import tests (export only)\n"
+              << "  --video-encode       Add VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR to images\n"
+              << "                        Tests DRM modifier + video encode usage combination.\n"
+              << "                        Enables VK_KHR_video_queue + VK_KHR_video_encode_queue.\n"
+              << "  --video-decode       Add VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR to images\n"
+              << "                        Tests DRM modifier + video decode usage combination.\n"
+              << "                        Enables VK_KHR_video_queue + VK_KHR_video_decode_queue.\n"
               << "  --compression <m>   Compression mode: default, enable, disable\n"
               << "                        default  - use driver defaults (no env var change)\n"
               << "                        enable   - set __GL_CompressedFormatModifiers=0x101\n"
@@ -77,6 +83,10 @@ static void printHelp(const char* programName) {
               << "  " << programName << " --compression disable --all  # Test without compressed modifiers\n"
               << "  " << programName << " --report --verbose           # Generate detailed report\n"
               << "  " << programName << " --video-only --report        # Report on video formats\n"
+              << "  " << programName << " --video-encode --format NV12 -v  # Test NV12 + VIDEO_ENCODE_SRC\n"
+              << "  " << programName << " --video-decode --format NV12 -v  # Test NV12 + VIDEO_DECODE_DST\n"
+              << "  " << programName << " --video-encode --video-decode -v # Both encode + decode usage\n"
+              << "  " << programName << " --video-encode --ycbcr-only -v   # All YCbCr with encode usage\n"
               << std::endl;
 }
 
@@ -132,6 +142,12 @@ static bool parseArgs(int argc, char* argv[], TestConfig& config) {
         }
         else if (strcmp(arg, "--video-only") == 0) {
             config.videoOnly = true;
+        }
+        else if (strcmp(arg, "--video-encode") == 0) {
+            config.videoEncode = true;
+        }
+        else if (strcmp(arg, "--video-decode") == 0) {
+            config.videoDecode = true;
         }
         else if (strcmp(arg, "--report") == 0) {
             config.generateReport = true;

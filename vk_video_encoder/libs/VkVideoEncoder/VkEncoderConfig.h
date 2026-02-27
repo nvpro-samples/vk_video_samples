@@ -20,7 +20,7 @@
 #include <assert.h>
 #include <string.h>
 #include <string>
-#include <cstdlib>
+#include <charconv>
 #include <cerrno>
 #include <atomic>
 #include <limits>
@@ -505,14 +505,13 @@ private:
       if (*str == '\0') {
         return false;
       }
-
-      char* endPtr = nullptr;
-      errno = 0;
-      unsigned long value = std::strtoul(str, &endPtr, 10);
-      if (errno != 0 || endPtr == str || value == 0) {
+      const char* last = str + strlen(str);
+      uint32_t value = 0;
+      auto [ptr, ec] = std::from_chars(str, last, value);
+      if (ec != std::errc{} || value == 0) {
         return false;
       }
-      *out_value_ptr = static_cast<uint32_t>(value);
+      *out_value_ptr = value;
       return true;
     }
 
@@ -873,6 +872,9 @@ public:
     uint32_t enableOutOfOrderRecording : 1; // Testing only - don't use for production!
     uint32_t disableEncodeParameterOptimizations : 1;
 
+    int32_t  drmFormatModifierIndex; // -1 = disabled (OPTIMAL), >= 0 = index into non-linear modifier list
+    uint64_t selectedDrmFormatModifier; // resolved modifier value (set during InitEncoder)
+
     EncoderConfig()
     : refCount(0)
     , appName()
@@ -976,6 +978,8 @@ public:
     , enablePictureRowColReplication(1)
     , enableOutOfOrderRecording(false)
     , disableEncodeParameterOptimizations(false)
+    , drmFormatModifierIndex(-1)
+    , selectedDrmFormatModifier(0)
     { }
 
     virtual ~EncoderConfig() {}
@@ -1013,6 +1017,10 @@ public:
     void InitVideoProfile();
 
     int ParseArguments(int argc, const char *argv[]);
+
+    // Load base config from JSON file (encoder_config.schema.json). JSON is processed first;
+    // command-line args passed to ParseArguments override. Returns 0 on success, -1 on error.
+    int LoadFromJsonFile(const char* path);
 
     virtual int DoParseArguments(int argc, const char *argv[]) {
         if (argc > 0) {

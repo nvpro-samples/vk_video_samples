@@ -55,6 +55,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     const bool enableHwLoadBalancing = programConfig.enableHwLoadBalancing;
     const bool enablePostProcessFilter = (programConfig.enablePostProcessFilter >= 0);
     const bool enableDisplayPresent = (programConfig.noPresent == false);
+    const bool enableExternalConsumerExport = (programConfig.enableExternalConsumerExport != 0);
     const  VulkanFilterYuvCompute::FilterType postProcessFilterType = enablePostProcessFilter ?
             (VulkanFilterYuvCompute::FilterType)programConfig.enablePostProcessFilter :
                                                       VulkanFilterYuvCompute::YCBCRCOPY;
@@ -107,6 +108,13 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
         enableDecoderFeatures |= VkVideoDecoder::ENABLE_GRAPHICS_TEXTURE_SAMPLING;
     }
 
+    if (enableExternalConsumerExport) {
+        enableDecoderFeatures |= VkVideoDecoder::ENABLE_EXTERNAL_CONSUMER_EXPORT;
+    }
+
+    const bool exportPreferCompressed = (programConfig.exportPreferCompressed != 0);
+    const bool exportSmallestBlockHeight = (programConfig.exportPreferSmallestBlockHeight != 0);
+
     result = VkVideoDecoder::Create(vkDevCtx,
                                     m_vkVideoFrameBuffer,
                                     videoQueueIndx,
@@ -117,6 +125,9 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                                     numBitstreamBuffersToPreallocate,
                                     m_vkVideoDecoder);
     assert(result == VK_SUCCESS);
+    if (result == VK_SUCCESS && m_vkVideoDecoder) {
+        m_vkVideoDecoder->SetExportPreferences(exportPreferCompressed, exportSmallestBlockHeight);
+    }
     if (result != VK_SUCCESS) {
         fprintf(stderr, "\nERROR: Create VkVideoDecoder result: 0x%x\n", result);
     }
@@ -499,6 +510,11 @@ size_t VulkanVideoProcessor::OutputFrameToFile(VulkanDecodedFrame* pFrame)
 {
     if (!m_frameToFile) {
         return (size_t)-1;
+    }
+
+    const VkParserDetectedVideoFormat* pVideoFormat = m_vkVideoDecoder->GetVideoFormatInfo();
+    if (pVideoFormat && pVideoFormat->frame_rate.numerator != 0 && pVideoFormat->frame_rate.denominator != 0) {
+        m_frameToFile->SetFrameRate(pVideoFormat->frame_rate.numerator, pVideoFormat->frame_rate.denominator);
     }
 
     return m_frameToFile->OutputFrame(pFrame, m_vkDevCtx);

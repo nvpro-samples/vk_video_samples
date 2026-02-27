@@ -101,8 +101,10 @@ public:
                 m_av1DecodeProfile = *pProfileExt;
             } else {
                 //  Use default ext profile parameters
-                m_av1DecodeProfile.sType      = VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_PROFILE_INFO_KHR;
-                m_av1DecodeProfile.stdProfile = STD_VIDEO_AV1_PROFILE_MAIN;
+                m_av1DecodeProfile = VkVideoDecodeAV1ProfileInfoKHR();
+                m_av1DecodeProfile.sType            = VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_PROFILE_INFO_KHR;
+                m_av1DecodeProfile.stdProfile        = STD_VIDEO_AV1_PROFILE_MAIN;
+                m_av1DecodeProfile.filmGrainSupport = VK_FALSE;
             }
             m_profile.pNext = &m_av1DecodeProfile;
             m_av1DecodeProfile.pNext = NULL;

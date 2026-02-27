@@ -3018,11 +3018,22 @@ size_t VulkanFilterYuvCompute::InitRGBA2YCBCR(std::string& computeShader)
     // 10. Average chroma for downsampling (if needed)
     GenAverageChromaBlock(shaderStr, chromaHorzRatio, chromaVertRatio);
 
-    // 11. Write Y values
-    GenWriteYBlock(shaderStr, chromaHorzRatio, chromaVertRatio);
-
-    // 12. Write chroma values
-    GenWriteChromaBlock(shaderStr, isOutputTwoPlane, chromaHorzRatio, chromaVertRatio);
+    // 11-12. Write output: packed or planar
+    const bool isPackedOutput = (outputMpInfo == nullptr);
+    if (isPackedOutput) {
+        // Packed format (e.g. Y410 = A2B10G10R10_UNORM_PACK32).
+        // Single outputImageRGB binding. Channel mapping per Vulkan YCbCr spec:
+        //   R = Cr, G = Y, B = Cb, A = Alpha
+        // Cb/Cr are shifted from [-0.5, 0.5] to [0, 1] for UNORM storage.
+        shaderStr <<
+            "    // Write packed YCbCr (A2B10G10R10: R=Cr, G=Y, B=Cb, A=1)\n"
+            "    imageStore(outputImageRGB, lumaPos, vec4(ycbcr00.z + 0.5, ycbcr00.x, ycbcr00.y + 0.5, 1.0));\n"
+            "    \n";
+    } else {
+        // Multi-planar output: separate Y and chroma plane writes
+        GenWriteYBlock(shaderStr, chromaHorzRatio, chromaVertRatio);
+        GenWriteChromaBlock(shaderStr, isOutputTwoPlane, chromaHorzRatio, chromaVertRatio);
+    }
 
     // 13. Compute and write subsampled Y (only if enabled for AQ)
     if (m_enableYSubsampling) {
@@ -3126,6 +3137,15 @@ uint32_t VulkanFilterYuvCompute::UpdateImageDescriptorSets(
 {
 
     validImageAspects &= validAspects;
+
+    // Trim plane aspects to match the view's actual plane count.
+    // The default m_inputImageAspects/m_outputImageAspects include all 3 plane bits,
+    // but 2-plane formats (NV12, P010, etc.) only have PLANE_0 and PLANE_1.
+    uint32_t numPlanes = imageView->GetNumberOfPlanes();
+    if (numPlanes < 3) validImageAspects &= ~VK_IMAGE_ASPECT_PLANE_2_BIT;
+    if (numPlanes < 2) validImageAspects &= ~VK_IMAGE_ASPECT_PLANE_1_BIT;
+    if (numPlanes < 1) validImageAspects &= ~VK_IMAGE_ASPECT_PLANE_0_BIT;
+
     uint32_t curImageAspect = 0;
     while(validImageAspects) {
 
@@ -3133,7 +3153,11 @@ uint32_t VulkanFilterYuvCompute::UpdateImageDescriptorSets(
 
             VkSampler ccSampler = (curImageAspect == 0) ? convSampler : VK_NULL_HANDLE;
             uint32_t planeNum = GetPlaneIndex((VkImageAspectFlagBits)(VK_IMAGE_ASPECT_COLOR_BIT << curImageAspect));
-            assert(planeNum < imageView->GetNumberOfPlanes());
+
+            if (curImageAspect > 0) {
+                assert(planeNum < numPlanes);
+            }
+
             uint32_t dstBinding = baseBinding;
             if (curImageAspect > 0) {
                 // the first plane is 1, second plane is 2, the 3rd is 3
@@ -3349,9 +3373,10 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
     // 4:2:0 (NV12, P010, I420): dispatch at (width/2, height/2) - each thread handles 2x2 luma
     // 4:2:2 (NV16, P210): dispatch at (width/2, height) - each thread handles 2x1 luma  
     // 4:4:4 (YUV444): dispatch at (width, height) - each thread handles 1x1 luma
+    // Packed formats (e.g. Y410 / A2B10G10R10): outputMpInfo is null but it's 4:4:4 → ratio 1
     const VkMpFormatInfo* outputMpInfo = YcbcrVkFormatInfo(m_outputFormat);
-    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 2;
-    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 2;
+    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 1;
+    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 1;
     
     const uint32_t dispatchWidth = (pushConstants.outputSize.width + chromaHorzRatio - 1) / chromaHorzRatio;
     const uint32_t dispatchHeight = (pushConstants.outputSize.height + chromaVertRatio - 1) / chromaVertRatio;
@@ -3537,8 +3562,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
     // 4:2:2 (NV16, P210): dispatch at (width/2, height) - each thread handles 2x1 luma  
     // 4:4:4 (YUV444): dispatch at (width, height) - each thread handles 1x1 luma
     const VkMpFormatInfo* outputMpInfo = YcbcrVkFormatInfo(m_outputFormat);
-    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 2;
-    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 2;
+    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 1;
+    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 1;
     
     const uint32_t dispatchWidth = (pushConstants.outputSize.width + chromaHorzRatio - 1) / chromaHorzRatio;
     const uint32_t dispatchHeight = (pushConstants.outputSize.height + chromaVertRatio - 1) / chromaVertRatio;
@@ -3731,8 +3756,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
     // 4:2:2 (NV16, P210): dispatch at (width/2, height) - each thread handles 2x1 luma  
     // 4:4:4 (YUV444): dispatch at (width, height) - each thread handles 1x1 luma
     const VkMpFormatInfo* outputMpInfo = YcbcrVkFormatInfo(m_outputFormat);
-    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 2;
-    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 2;
+    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 1;
+    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 1;
     
     const uint32_t dispatchWidth = (pushConstants.outputSize.width + chromaHorzRatio - 1) / chromaHorzRatio;
     const uint32_t dispatchHeight = (pushConstants.outputSize.height + chromaVertRatio - 1) / chromaVertRatio;
@@ -3911,8 +3936,8 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
     // 4:2:2 (NV16, P210): dispatch at (width/2, height) - each thread handles 2x1 luma  
     // 4:4:4 (YUV444): dispatch at (width, height) - each thread handles 1x1 luma
     const VkMpFormatInfo* outputMpInfo = YcbcrVkFormatInfo(m_outputFormat);
-    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 2;
-    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 2;
+    const uint32_t chromaHorzRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledX) : 1;
+    const uint32_t chromaVertRatio = (outputMpInfo != nullptr) ? (1 << outputMpInfo->planesLayout.secondaryPlaneSubsampledY) : 1;
     
     const uint32_t dispatchWidth = (pushConstants.outputSize.width + chromaHorzRatio - 1) / chromaHorzRatio;
     const uint32_t dispatchHeight = (pushConstants.outputSize.height + chromaVertRatio - 1) / chromaVertRatio;

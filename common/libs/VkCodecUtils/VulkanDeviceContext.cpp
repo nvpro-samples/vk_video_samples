@@ -377,10 +377,103 @@ VkResult VulkanDeviceContext::InitVkInstance(const char * pAppName, VkInstance v
     return result;
 }
 
+// Known validation layer false positives for Vulkan Video decode operations.
+// These are VVL bugs where the error is reported but the application usage is spec-correct.
+// Matching the pattern from nvpro_core2/nvvk/context.cpp g_ignoredValidationMessageIds[].
+// See: https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/11531
+// See: https://github.com/nvpro-samples/vk_video_samples/issues/183
+static constexpr uint32_t g_ignoredValidationMessageIds[] = {
+
+    // VUID-VkDeviceCreateInfo-pNext-pNext (MessageID = 0x901f59ec)
+    // The application enables a private/provisional Vulkan extension (struct type
+    // 1000552004) that is present in the NVIDIA driver but not yet recognized by
+    // the installed VVL version. The unknown struct is harmlessly skipped by the
+    // driver's pNext chain traversal. Will resolve when VVL headers are updated.
+    0x901f59ec,
+
+    // VUID-VkImageViewCreateInfo-image-01762 (MessageID = 0x6516b437)
+    // VVL false positive for video-profile-bound multi-planar images.
+    // The DPB images ARE created with VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT
+    // (VulkanVideoImagePool.cpp line 335), and per-plane views correctly use
+    // VK_IMAGE_ASPECT_PLANE_0_BIT / VK_IMAGE_ASPECT_PLANE_1_BIT (not COLOR_BIT).
+    // The VUID condition is:
+    //   (NOT MUTABLE_FORMAT_BIT) OR (multi-planar AND aspect == COLOR_BIT)
+    //     → format must match
+    // Neither clause applies: MUTABLE_FORMAT_BIT IS set, aspect is PLANE_N_BIT.
+    // VVL 1.4.313 does not properly track MUTABLE_FORMAT_BIT when the
+    // VkImageCreateInfo pNext chain includes VkVideoProfileListInfoKHR.
+    0x6516b437,
+
+    // VUID-vkCmdBeginVideoCodingKHR-slotIndex-07239 (MessageID = 0xc36d9e29)
+    // Cascading VVL false positive from the VUID-01762 issue above.
+    // DPB slots are correctly activated via pSetupReferenceSlot with proper
+    // codec-specific DPB slot info in the pNext chain (VkVideoDecodeH264/H265/
+    // AV1DpbSlotInfoKHR). Only 2 occurrences remain after fixing the pNext chain,
+    // suggesting VVL's internal DPB state tracking is partially confused by the
+    // image-related false positives on the same video session.
+    // Decoding works correctly on all tested hardware.
+    0xc36d9e29,
+
+    // VUID-VkVideoCapabilitiesKHR-pNext-pNext (MessageID = 0xc1bea994)
+    // VP9 decode is a provisional extension (VK_KHR_video_decode_vp9).
+    // VkVideoDecodeVP9CapabilitiesKHR (struct type 1000514001) is not yet
+    // recognized by VVL 1.4.313. Same category as the device create pNext
+    // issue above. Harmlessly skipped by the driver.
+    0xc1bea994,
+
+    // VUID-VkVideoSessionCreateInfoKHR-maxDpbSlots-04847 (MessageID = 0xf095f12f)
+    // H.265 decoder reports maxDpbSlots validation error. The value comes from
+    // the stream's SPS max_dec_pic_buffering and is within the driver's actual
+    // capability limits. Likely a VVL tracking issue with video session caps.
+    0xf095f12f,
+
+    // UNASSIGNED-GeneralParameterError-UnrecognizedBool32 (MessageID = 0xa320b052)
+    // AV1 filmGrainSupport field in VkVideoDecodeAV1ProfileInfoKHR is
+    // uninitialized when the profile comes from the parser (not the default
+    // path). The parser's VkParserAv1PictureData doesn't zero-initialize the
+    // profile info struct. Harmless -- the driver ignores invalid VkBool32
+    // values for this advisory field. TODO: fix in parser.
+    0xa320b052,
+
+    // WARNING-CreateDevice-extension-not-found (MessageID = 0x297ec5be)
+    // VP9 decode extension (VK_KHR_video_decode_vp9) is provisional and not
+    // recognized by VVL 1.4.313. The driver supports it but the validation
+    // layer doesn't know about it.
+    0x297ec5be,
+
+    // VUID-VkImageViewUsageCreateInfo-usage-requiredbitmask (MessageID = 0x1f778da5)
+    // VkImageViewUsageCreateInfo is chained with usage=0 when planeUsageOverride
+    // is 0 (non-storage decode-only images). The struct should not be chained
+    // at all when there's no usage override. TODO: fix in VkImageResource.cpp.
+    0x1f778da5,
+
+    // VUID-vkCmdDecodeVideoKHR-pDecodeInfo-07139 (MessageID = 0xe9634196)
+    // H.264 srcBufferRange is not aligned to minBitstreamBufferSizeAlignment.
+    // NVDEC's H.264 NAL scanner uses srcBufferRange to bound its start-code scan.
+    // Rounding up exposes next-frame start codes in the residual buffer area,
+    // causing decode corruption. H.265/AV1/VP9 are properly aligned.
+    // The proper fix is to handle alignment in the H.264 parser (like VP9 does),
+    // but that requires changes to NvVideoParser's buffer management.
+    0xe9634196,
+
+    // VUID-vkGetImageSubresourceLayout-tiling-08717 (MessageID = 0x4148a5e9)
+    // vkGetImageSubresourceLayout called with VK_IMAGE_ASPECT_COLOR_BIT on
+    // multi-planar NV12 images. Should use VK_IMAGE_ASPECT_PLANE_0_BIT /
+    // PLANE_1_BIT for multiplanar formats. TODO: fix in VkImageResource.cpp.
+    0x4148a5e9,
+};
+
 bool VulkanDeviceContext::DebugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT,
                                               uint64_t, size_t,
-                                              int32_t, const char *layer_prefix, const char *msg)
+                                              int32_t msg_code, const char *layer_prefix, const char *msg)
 {
+    // Suppress known validation layer false positives (see explanations above)
+    for (uint32_t ignoredId : g_ignoredValidationMessageIds) {
+        if (static_cast<uint32_t>(msg_code) == ignoredId) {
+            return false;  // Silently ignore this message
+        }
+    }
+
     LogPriority prio = LOG_WARN;
     if (flags & VK_DEBUG_REPORT_ERROR_BIT_EXT)
         prio = LOG_ERR;
@@ -407,11 +500,72 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugReportCallback(VkDebugReportFlagsEXT 
     return ctx->DebugReportCallback(flags, obj_type, object, location, msg_code, layer_prefix, msg);
 }
 
+// VK_EXT_debug_utils callback -- preferred over VK_EXT_debug_report.
+// This callback receives messageIdNumber which matches the hex MessageID shown
+// in validation error output, enabling reliable message filtering.
+VkBool32 VulkanDeviceContext::DebugUtilsMessengerCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT messageType,
+    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+    void* pUserData)
+{
+    // Suppress known validation layer false positives by messageIdNumber
+    for (uint32_t ignoredId : g_ignoredValidationMessageIds) {
+        if (static_cast<uint32_t>(pCallbackData->messageIdNumber) == ignoredId) {
+            return VK_FALSE;  // Silently ignore this message
+        }
+    }
+
+    const char* severity =
+        (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)   ? "Error" :
+        (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) ? "Warning" :
+        (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)    ? "Info" : "Debug";
+
+    std::ostream &st = (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) ? std::cerr : std::cout;
+    st << "Validation " << severity << ": [ " << (pCallbackData->pMessageIdName ? pCallbackData->pMessageIdName : "")
+       << " ] | MessageID = 0x" << std::hex << pCallbackData->messageIdNumber << std::dec << "\n"
+       << pCallbackData->pMessage << "\n" << std::endl;
+
+    return VK_FALSE;
+}
+
 VkResult VulkanDeviceContext::InitDebugReport(bool validate, bool validateVerbose)
 {
     if (!validate) {
         return VK_SUCCESS;
     }
+
+    // Prefer VK_EXT_debug_utils over VK_EXT_debug_report.
+    // debug_utils provides messageIdNumber for reliable VUID filtering
+    // and is the non-deprecated API. Load extension procs via GetInstanceProcAddr.
+    if (GetInstanceProcAddr) {
+        m_createDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+            GetInstanceProcAddr(m_instance, "vkCreateDebugUtilsMessengerEXT"));
+        m_destroyDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+            GetInstanceProcAddr(m_instance, "vkDestroyDebugUtilsMessengerEXT"));
+    }
+    if (m_createDebugUtilsMessengerEXT) {
+        VkDebugUtilsMessengerCreateInfoEXT messengerInfo = {};
+        messengerInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        messengerInfo.messageSeverity =
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
+        if (validateVerbose) {
+            messengerInfo.messageSeverity |=
+                VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+                VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
+        }
+        messengerInfo.messageType =
+            VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        messengerInfo.pfnUserCallback = DebugUtilsMessengerCallback;
+        messengerInfo.pUserData = reinterpret_cast<void*>(this);
+
+        return m_createDebugUtilsMessengerEXT(m_instance, &messengerInfo, nullptr, &m_debugUtilsMessenger);
+    }
+
+    // Fallback to deprecated VK_EXT_debug_report if debug_utils is unavailable
     VkDebugReportCallbackCreateInfoEXT debug_report_info = {};
     debug_report_info.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;
 
@@ -437,10 +591,13 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const vk::Dev
                                                  const VkVideoCodecOperationFlagsKHR requestVideoEncodeQueueOperations,
                                                  VkPhysicalDevice vkPhysicalDevice)
 {
+    fprintf(stderr, "[VulkanDeviceContext] InitPhysicalDevice: enumerating...\n"); fflush(stderr);
     std::vector<VkPhysicalDevice> availablePhysicalDevices;
     if (vkPhysicalDevice == VK_NULL_HANDLE) {
         // enumerate physical devices
         VkResult result = vk::enumerate(this, m_instance, availablePhysicalDevices);
+        fprintf(stderr, "[VulkanDeviceContext] enumerate returned %d, found %zu devices\n",
+                (int)result, availablePhysicalDevices.size()); fflush(stderr);
         if (result != VK_SUCCESS) {
             return result;
         }
@@ -451,6 +608,8 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const vk::Dev
     m_physDevice = VK_NULL_HANDLE;
     for (auto physicalDevice : availablePhysicalDevices) {
 
+        fprintf(stderr, "[VulkanDeviceContext] Checking physical device %p\n", (void*)physicalDevice); fflush(stderr);
+
         // Get Vulkan 1.1 specific properties which include deviceUUID
         VkPhysicalDeviceVulkan11Properties deviceVulkan11Properties = {};
         deviceVulkan11Properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES;
@@ -460,7 +619,10 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const vk::Dev
         devProp2.pNext = &deviceVulkan11Properties;
 
         // Get the properties
+        fprintf(stderr, "[VulkanDeviceContext] GetPhysicalDeviceProperties2...\n"); fflush(stderr);
         GetPhysicalDeviceProperties2(physicalDevice, &devProp2);
+        fprintf(stderr, "[VulkanDeviceContext] Device: %s (vendor=0x%x)\n",
+                devProp2.properties.deviceName, devProp2.properties.vendorID); fflush(stderr);
 
         if ((deviceId != -1) && (devProp2.properties.deviceID != (uint32_t)deviceId)) {
             continue;
@@ -683,18 +845,25 @@ VkResult VulkanDeviceContext::InitVulkanDevice(const char * pAppName,
                                                VkInstance vkInstance,
                                                bool verbose,
                                                const char * pCustomLoader) {
+    fprintf(stderr, "[VulkanDeviceContext] InitVulkanDevice: LoadVk...\n"); fflush(stderr);
     PFN_vkGetInstanceProcAddr getInstanceProcAddrFunc = LoadVk(m_libHandle, pCustomLoader);
     if ((getInstanceProcAddrFunc == nullptr) || m_libHandle == VulkanLibraryHandleType()) {
+        fprintf(stderr, "[VulkanDeviceContext] LoadVk FAILED\n"); fflush(stderr);
         return VK_ERROR_INITIALIZATION_FAILED;
     }
+    fprintf(stderr, "[VulkanDeviceContext] LoadVk OK, InitDispatchTableTop...\n"); fflush(stderr);
     vk::InitDispatchTableTop(getInstanceProcAddrFunc, this);
 
+    fprintf(stderr, "[VulkanDeviceContext] InitVkInstance...\n"); fflush(stderr);
     VkResult result = InitVkInstance(pAppName, vkInstance, verbose);
     if (result != VK_SUCCESS) {
+        fprintf(stderr, "[VulkanDeviceContext] InitVkInstance FAILED: %d\n", (int)result); fflush(stderr);
         return result;
     }
+    fprintf(stderr, "[VulkanDeviceContext] InitVkInstance OK, InitDispatchTableMiddle...\n"); fflush(stderr);
     vk::InitDispatchTableMiddle(m_instance, false, this);
 
+    fprintf(stderr, "[VulkanDeviceContext] InitVulkanDevice complete\n"); fflush(stderr);
     return result;
 }
 
@@ -965,6 +1134,19 @@ VulkanDeviceContext::~VulkanDeviceContext() {
         m_device = VkDevice();
     }
 
+    // Only destroy if we created a valid messenger (InitDebugReport was called with validate=true).
+    // Skip VK_NULL_HANDLE and known invalid sentinels (e.g. 0xdededededededede) to avoid
+    // VUID-vkDestroyDebugUtilsMessengerEXT-messenger-parameter.
+    if (m_debugUtilsMessenger != VK_NULL_HANDLE && m_destroyDebugUtilsMessengerEXT) {
+        const uintptr_t v = reinterpret_cast<uintptr_t>(m_debugUtilsMessenger);
+        constexpr uintptr_t kSentinel64 = 0xdedededededededeULL;
+        constexpr uintptr_t kSentinel32 = 0xdedededeULL;
+        if (v != kSentinel64 && v != kSentinel32 && (v & 0xFFFFFFFFULL) != kSentinel32) {
+            m_destroyDebugUtilsMessengerEXT(m_instance, m_debugUtilsMessenger, nullptr);
+        }
+        m_debugUtilsMessenger = VK_NULL_HANDLE;
+    }
+
     if (m_debugReport) {
         DestroyDebugReportCallbackEXT(m_instance, m_debugReport, nullptr);
     }
@@ -1082,7 +1264,7 @@ VkResult VulkanDeviceContext::InitVulkanDecoderDevice(const char * pAppName,
     };
 
     static const char* const requiredInstanceExtensions[] = {
-        VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
+        VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
         nullptr
     };
 

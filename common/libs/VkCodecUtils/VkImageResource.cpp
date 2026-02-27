@@ -32,7 +32,8 @@ VkImageResource::VkImageResource(const VulkanDeviceContext* vkDevCtx,
    , m_vulkanDeviceMemory(vulkanDeviceMemory), m_layouts{}, m_memoryPlaneLayouts{}
    , m_drmFormatModifier(drmFormatModifier), m_memoryPlaneCount(memoryPlaneCount)
    , m_isLinearImage(false), m_is16Bit(false), m_isSubsampledX(false), m_isSubsampledY(false)
-   , m_usesDrmFormatModifier(drmFormatModifier != 0 || pImageCreateInfo->tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
+   , m_usesDrmFormatModifier(drmFormatModifier != 0 || pImageCreateInfo->tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT)
+   , m_ownsResources(true) {
 
     // Query memory plane layouts for DRM format modifier images
     // Per Vulkan spec: For VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT, must use
@@ -131,6 +132,10 @@ VkImageResource::VkImageResource(const VulkanDeviceContext* vkDevCtx,
     // Treat all non 8bpp formats as 16bpp for output to prevent any loss.
     m_is16Bit = (mpInfo->planesLayout.bpp != YCBCRA_8BPP);
 
+    // External/non-owning wrapper (CreateFromExternal) has no VulkanDeviceMemoryImpl
+    if (!vulkanDeviceMemory) {
+        return;
+    }
     VkMemoryPropertyFlags memoryPropertyFlags = vulkanDeviceMemory->GetMemoryPropertyFlags();
     if ((memoryPropertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
         return;
@@ -520,15 +525,84 @@ uint32_t VkImageResource::GetMemoryTypeIndex() const
     return m_vulkanDeviceMemory->GetMemoryTypeIndex();
 }
 
+VkResult VkImageResource::CreateFromExternal(const VulkanDeviceContext* vkDevCtx,
+                                              VkImage image,
+                                              VkDeviceMemory memory,
+                                              const VkImageCreateInfo* pImageCreateInfo,
+                                              VkSharedBaseObj<VkImageResource>& imageResource)
+{
+    // Create a non-owning wrapper: the caller owns the VkImage and VkDeviceMemory.
+    // When this VkImageResource is destroyed, it will NOT destroy the VkImage or free the memory.
+
+    VkSharedBaseObj<VulkanDeviceMemoryImpl> nullMemory; // no memory object (non-owning)
+
+    VkImageResource* pImageResource = new VkImageResource(
+        vkDevCtx, pImageCreateInfo,
+        image,
+        0,    // imageOffset
+        0,    // imageSize (not known for external, not needed for non-owning)
+        nullMemory,
+        0,    // drmFormatModifier (not queried for external)
+        0     // memoryPlaneCount (not queried for external)
+    );
+
+    if (pImageResource == nullptr) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    // Mark as non-owning so Destroy() won't call vkDestroyImage
+    pImageResource->m_ownsResources = false;
+
+    imageResource = pImageResource;
+    return VK_SUCCESS;
+}
+
+VkResult VkImageResource::CreateFromImport(const VulkanDeviceContext* vkDevCtx,
+                                            VkImage image,
+                                            VkDeviceMemory memory,
+                                            VkDeviceSize memorySize,
+                                            const VkImageCreateInfo* pImageCreateInfo,
+                                            VkSharedBaseObj<VkImageResource>& imageResource)
+{
+    // Wrap the imported memory in VulkanDeviceMemoryImpl so it gets freed
+    // when the VkImageResource ref-count drops to zero.
+    VkSharedBaseObj<VulkanDeviceMemoryImpl> deviceMemory;
+    if (memory != VK_NULL_HANDLE) {
+        deviceMemory = new VulkanDeviceMemoryImpl(vkDevCtx, memory, memorySize);
+    }
+
+    VkImageResource* pImageResource = new VkImageResource(
+        vkDevCtx, pImageCreateInfo,
+        image,
+        0,           // imageOffset
+        memorySize,
+        deviceMemory,
+        0,           // drmFormatModifier
+        0            // memoryPlaneCount
+    );
+
+    if (pImageResource == nullptr) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    // Owning — Destroy() will call vkDestroyImage and the memory impl will vkFreeMemory
+    pImageResource->m_ownsResources = true;
+
+    imageResource = pImageResource;
+    return VK_SUCCESS;
+}
 
 void VkImageResource::Destroy()
 {
     assert(m_vkDevCtx != nullptr);
 
-    if (m_image != VK_NULL_HANDLE) {
-        m_vkDevCtx->DestroyImage(*m_vkDevCtx, m_image, nullptr);
-        m_image = VK_NULL_HANDLE;
+    if (m_ownsResources) {
+        if (m_image != VK_NULL_HANDLE) {
+            m_vkDevCtx->DestroyImage(*m_vkDevCtx, m_image, nullptr);
+        }
     }
+    // Always clear handles regardless of ownership
+    m_image = VK_NULL_HANDLE;
 
     m_vulkanDeviceMemory = nullptr;
     m_vkDevCtx = nullptr;
