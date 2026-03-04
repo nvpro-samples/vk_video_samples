@@ -151,97 +151,84 @@ else()
     )
     FetchContent_MakeAvailable(spirv-headers)
 
+    # SPIRV-Tools settings (must be set before MakeAvailable)
+    set(SPIRV_SKIP_TESTS ON CACHE BOOL "Disable SPIRV-Tools tests" FORCE)
+    set(SPIRV_SKIP_EXECUTABLES ON CACHE BOOL "Disable SPIRV-Tools executables" FORCE)
+    set(SPIRV_BUILD_SHARED ON CACHE BOOL "Build shared SPIRV-Tools" FORCE)
+    set(SPIRV_USE_STATIC_LIBS OFF CACHE BOOL "Use dynamic CRT for SPIRV-Tools" FORCE)
+    set(SPIRV_TOOLS_INSTALL_EMACS_HELPERS OFF CACHE BOOL "Skip emacs helpers" FORCE)
+    set(SPIRV_TOOLS_BUILD_STATIC OFF CACHE BOOL "Build static SPIRV-Tools" FORCE)
+    set(SPIRV_TOOLS_BUILD_SHARED ON CACHE BOOL "Build shared SPIRV-Tools" FORCE)
+
     # Fetch SPIRV-Tools (required for Shaderc)
     FetchContent_Declare(
         spirv-tools
         GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Tools.git
         GIT_TAG main
+        EXCLUDE_FROM_ALL
     )
-    FetchContent_GetProperties(spirv-tools)
-    if(NOT spirv-tools_POPULATED)
-        FetchContent_Populate(spirv-tools)
-        # SPIRV-Tools settings
-        set(SPIRV_SKIP_TESTS ON CACHE BOOL "Disable SPIRV-Tools tests" FORCE)
-        set(SPIRV_SKIP_EXECUTABLES ON CACHE BOOL "Disable SPIRV-Tools executables" FORCE)
-        set(SPIRV_BUILD_SHARED ON CACHE BOOL "Build shared SPIRV-Tools" FORCE)
-        set(SPIRV_USE_STATIC_LIBS OFF CACHE BOOL "Use dynamic CRT for SPIRV-Tools" FORCE)
-        set(SPIRV_TOOLS_INSTALL_EMACS_HELPERS OFF CACHE BOOL "Skip emacs helpers" FORCE)
-        set(SPIRV_TOOLS_BUILD_STATIC OFF CACHE BOOL "Build static SPIRV-Tools" FORCE)
-        set(SPIRV_TOOLS_BUILD_SHARED ON CACHE BOOL "Build shared SPIRV-Tools" FORCE)
-        add_subdirectory(${spirv-tools_SOURCE_DIR} ${spirv-tools_BINARY_DIR} EXCLUDE_FROM_ALL)
-    endif()
+    FetchContent_MakeAvailable(spirv-tools)
 
 	set(SPIRV_TOOLS_LIBRARY_DIR "${CMAKE_BINARY_DIR}/_deps/spirv-tools-build/lib")
     # Ensure the linker knows where to find these libraries
     link_directories(${SPIRV_TOOLS_LIBRARY_DIR})
+
+    # GLSLang settings (must be set before MakeAvailable)
+    set(ENABLE_GLSLANG_BINARIES ON CACHE BOOL "Disable GLSLang binaries" FORCE)
+    set(ENABLE_SPVREMAPPER ON CACHE BOOL "Disable SPVREMAPPER" FORCE)
+    set(ENABLE_GLSLANG_JS OFF CACHE BOOL "Disable JavaScript" FORCE)
+    set(ENABLE_GLSLANG_WEBMIN OFF CACHE BOOL "Disable WebMin" FORCE)
+    set(ENABLE_GLSLANG_WEB OFF CACHE BOOL "Disable Web" FORCE)
+    set(ENABLE_GLSLANG_WEB_DEVEL OFF CACHE BOOL "Disable Web Development" FORCE)
+    set(ENABLE_HLSL ON CACHE BOOL "Enable HLSL" FORCE)
+
+    # Configure glslang to find SPIRV-Tools
+    set(ENABLE_OPT ON CACHE BOOL "Enable SPIRV-Tools optimizer" FORCE)
+    set(ALLOW_EXTERNAL_SPIRV_TOOLS ON CACHE BOOL "Allow external SPIRV-Tools" FORCE)
 
     # Fetch GLSLang (required for Shaderc)
     FetchContent_Declare(
         glslang
         GIT_REPOSITORY https://github.com/KhronosGroup/glslang.git
         GIT_TAG main
+        EXCLUDE_FROM_ALL
     )
-    FetchContent_GetProperties(glslang)
-    if(NOT glslang_POPULATED)
-        FetchContent_Populate(glslang)
+    FetchContent_MakeAvailable(glslang)
 
-        # GLSLang settings
-        set(ENABLE_GLSLANG_BINARIES ON CACHE BOOL "Disable GLSLang binaries" FORCE)
-        set(ENABLE_SPVREMAPPER ON CACHE BOOL "Disable SPVREMAPPER" FORCE)
-        set(ENABLE_GLSLANG_JS OFF CACHE BOOL "Disable JavaScript" FORCE)
-        set(ENABLE_GLSLANG_WEBMIN OFF CACHE BOOL "Disable WebMin" FORCE)
-        set(ENABLE_GLSLANG_WEB OFF CACHE BOOL "Disable Web" FORCE)
-        set(ENABLE_GLSLANG_WEB_DEVEL OFF CACHE BOOL "Disable Web Development" FORCE)
-        set(ENABLE_HLSL ON CACHE BOOL "Enable HLSL" FORCE)
-
-        # Configure glslang to find SPIRV-Tools
-        set(ENABLE_OPT ON CACHE BOOL "Enable SPIRV-Tools optimizer" FORCE)
-        set(ALLOW_EXTERNAL_SPIRV_TOOLS ON CACHE BOOL "Allow external SPIRV-Tools" FORCE)
-        set(SPIRV_TOOLS_BINARY_ROOT "${spirv-tools_BINARY_DIR}" CACHE PATH "SPIRV-Tools binary root" FORCE)
-        set(SPIRV_TOOLS_OPT_LIBRARY_PATH "${spirv-tools_BINARY_DIR}/source/opt" CACHE PATH "SPIRV-Tools opt library path" FORCE)
-
-        add_subdirectory(${glslang_SOURCE_DIR} ${glslang_BINARY_DIR} EXCLUDE_FROM_ALL)
-    endif()
+    set(SPIRV_TOOLS_BINARY_ROOT "${spirv-tools_BINARY_DIR}" CACHE PATH "SPIRV-Tools binary root" FORCE)
+    set(SPIRV_TOOLS_OPT_LIBRARY_PATH "${spirv-tools_BINARY_DIR}/source/opt" CACHE PATH "SPIRV-Tools opt library path" FORCE)
 
 	set(GLSLANG_LIBRARY_DIR "${CMAKE_BINARY_DIR}/_deps/glslang-build")
     # Ensure the linker knows where to find these libraries
     link_directories(${GLSLANG_LIBRARY_DIR})
 
+    # Shaderc settings (must be set before MakeAvailable)
+    set(SHADERC_SKIP_EXAMPLES ON CACHE BOOL "Skip examples" FORCE)
+    set(SHADERC_SKIP_COPYRIGHT_CHECK ON CACHE BOOL "Disable Shaderc copyright check" FORCE)
+    set(SHADERC_SKIP_TESTS ON CACHE BOOL "Skip tests" FORCE)
+    set(SHADERC_ENABLE_SHARED_CRT ON CACHE BOOL "Use shared CRT" FORCE)
+    set(SHADERC_STATIC_CRT OFF CACHE BOOL "Don't use static CRT" FORCE)
+    set(SHADERC_SKIP_INSTALL OFF CACHE BOOL "Don't skip installation" FORCE)
+    set(SHADERC_ENABLE_GLSLC ON CACHE BOOL "Enable glslc" FORCE)
+    set(SHADERC_ENABLE_INSTALL ON CACHE BOOL "Enable install" FORCE)
+
+    # Point shaderc to our dependencies
+    set(glslang_DIR ${glslang_BINARY_DIR} CACHE PATH "Path to glslang" FORCE)
+    set(SPIRV-Tools_DIR ${spirv-tools_BINARY_DIR} CACHE PATH "Path to SPIRV-Tools" FORCE)
+    set(SHADERC_SPIRV_TOOLS_DIR ${spirv-tools_SOURCE_DIR} CACHE PATH "Source directory for SPIRV-Tools" FORCE)
+    set(SHADERC_GLSLANG_DIR ${glslang_SOURCE_DIR} CACHE PATH "Source directory for glslang" FORCE)
+    set(SHADERC_SKIP_THIRD_PARTY_BUILD ON CACHE BOOL "Skip building third party dependencies" FORCE)
+
     # Fetch shaderc
     FetchContent_Declare(
         shaderc
         GIT_REPOSITORY https://github.com/google/shaderc.git
-        GIT_TAG v2024.4  # Use the latest stable release or specify a particular commit
+        GIT_TAG v2024.4
+        EXCLUDE_FROM_ALL
     )
-    FetchContent_GetProperties(shaderc)
-    if(NOT shaderc_POPULATED)
-        FetchContent_Populate(shaderc)
-        # Ensure shaderc uses our existing glslang and SPIRV-Tools
-        set(SHADERC_SKIP_EXAMPLES ON CACHE BOOL "Skip examples" FORCE)
-        set(SHADERC_SKIP_COPYRIGHT_CHECK ON CACHE BOOL "Disable Shaderc copyright check" FORCE)
-        set(SHADERC_SKIP_TESTS ON CACHE BOOL "Skip tests" FORCE)
-        set(SHADERC_ENABLE_SHARED_CRT ON CACHE BOOL "Use shared CRT" FORCE)
-        set(SHADERC_STATIC_CRT OFF CACHE BOOL "Don't use static CRT" FORCE)
+    FetchContent_MakeAvailable(shaderc)
 
-        # Enable glslc build explicitly
-        set(SHADERC_SKIP_INSTALL OFF CACHE BOOL "Don't skip installation" FORCE)
-        set(SHADERC_ENABLE_GLSLC ON CACHE BOOL "Enable glslc" FORCE)
-        set(SHADERC_ENABLE_INSTALL ON CACHE BOOL "Enable install" FORCE)
-
-        # Point shaderc to our dependencies
-        set(glslang_DIR ${glslang_BINARY_DIR} CACHE PATH "Path to glslang" FORCE)
-        set(SPIRV-Tools_DIR ${spirv-tools_BINARY_DIR} CACHE PATH "Path to SPIRV-Tools" FORCE)
-
-        # Tell shaderc to use the external projects we've already built
-        set(SHADERC_SPIRV_TOOLS_DIR ${spirv-tools_SOURCE_DIR} CACHE PATH "Source directory for SPIRV-Tools" FORCE)
-        set(SHADERC_GLSLANG_DIR ${glslang_SOURCE_DIR} CACHE PATH "Source directory for glslang" FORCE)
-        set(SHADERC_THIRD_PARTY_ROOT_DIR ${shaderc_SOURCE_DIR}/third_party CACHE PATH "Root location of shaderc third party dependencies" FORCE)
-
-        # Disable shaderc's built-in handling of third-party deps
-        set(SHADERC_SKIP_THIRD_PARTY_BUILD ON CACHE BOOL "Skip building third party dependencies" FORCE)
-
-        add_subdirectory(${shaderc_SOURCE_DIR} ${shaderc_BINARY_DIR} EXCLUDE_FROM_ALL)
-    endif()
+    set(SHADERC_THIRD_PARTY_ROOT_DIR ${shaderc_SOURCE_DIR}/third_party CACHE PATH "Root location of shaderc third party dependencies" FORCE)
 
     set(SHADERC_LIBRARY_DIR "${CMAKE_BINARY_DIR}/_deps/shaderc-build/libshaderc")
     # Ensure the linker knows where to find these libraries
