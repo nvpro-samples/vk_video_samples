@@ -16,6 +16,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(vk_filter_test LANGUAGES CXX)
 
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Test application source files
 set(TEST_SOURCES
@@ -71,17 +73,18 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${Vulkan_INCLUDE_DIR}
 )
 
-# Find Vulkan
-find_package(Vulkan REQUIRED)
-
-# Link libraries
-target_link_libraries(${PROJECT_NAME} PRIVATE
-    Vulkan::Vulkan
-)
+# Vulkan is loaded at runtime (VK_NO_PROTOTYPES), so we only need headers.
+# Use Vulkan SDK if available, otherwise fall back to project-fetched headers.
+find_package(Vulkan QUIET)
+if(Vulkan_FOUND AND TARGET Vulkan::Vulkan)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan)
+elseif(TARGET vulkan)
+    target_link_libraries(${PROJECT_NAME} PRIVATE vulkan)
+endif()
 
 if(TARGET shaderc_shared)
     target_link_libraries(${PROJECT_NAME} PRIVATE shaderc_shared)
-elseif(SHADERC_SHARED_LIBRARY)
+elseif(SHADERC_SHARED_LIBRARY AND NOT "${SHADERC_SHARED_LIBRARY}" STREQUAL "")
     target_link_libraries(${PROJECT_NAME} PRIVATE ${SHADERC_SHARED_LIBRARY})
 endif()
 
