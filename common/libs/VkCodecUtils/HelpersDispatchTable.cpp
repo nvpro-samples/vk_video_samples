@@ -253,7 +253,29 @@ void InitDispatchTableMiddle(VkInstance instance, bool include_bottom, VkInterfa
     pVkFunctions->CmdSetDescriptorBufferOffsetsEXT = reinterpret_cast<PFN_vkCmdSetDescriptorBufferOffsetsEXT>(getInstanceProcAddrFunc(instance, "vkCmdSetDescriptorBufferOffsetsEXT"));
     pVkFunctions->GetBufferDeviceAddressKHR = reinterpret_cast<PFN_vkGetBufferDeviceAddressKHR>(getInstanceProcAddrFunc(instance, "vkGetBufferDeviceAddressKHR"));
     pVkFunctions->GetMemoryFdKHR = reinterpret_cast<PFN_vkGetMemoryFdKHR>(getInstanceProcAddrFunc(instance, "vkGetMemoryFdKHR"));
+    pVkFunctions->GetMemoryFdPropertiesKHR = reinterpret_cast<PFN_vkGetMemoryFdPropertiesKHR>(getInstanceProcAddrFunc(instance, "vkGetMemoryFdPropertiesKHR"));
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    pVkFunctions->GetMemoryWin32HandleKHR = reinterpret_cast<PFN_vkGetMemoryWin32HandleKHR>(getInstanceProcAddrFunc(instance, "vkGetMemoryWin32HandleKHR"));
+#endif
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    pVkFunctions->GetMemoryWin32HandlePropertiesKHR = reinterpret_cast<PFN_vkGetMemoryWin32HandlePropertiesKHR>(getInstanceProcAddrFunc(instance, "vkGetMemoryWin32HandlePropertiesKHR"));
+#endif
+    pVkFunctions->ImportSemaphoreFdKHR = reinterpret_cast<PFN_vkImportSemaphoreFdKHR>(getInstanceProcAddrFunc(instance, "vkImportSemaphoreFdKHR"));
+    pVkFunctions->GetSemaphoreFdKHR = reinterpret_cast<PFN_vkGetSemaphoreFdKHR>(getInstanceProcAddrFunc(instance, "vkGetSemaphoreFdKHR"));
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    pVkFunctions->ImportSemaphoreWin32HandleKHR = reinterpret_cast<PFN_vkImportSemaphoreWin32HandleKHR>(getInstanceProcAddrFunc(instance, "vkImportSemaphoreWin32HandleKHR"));
+#endif
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    pVkFunctions->GetSemaphoreWin32HandleKHR = reinterpret_cast<PFN_vkGetSemaphoreWin32HandleKHR>(getInstanceProcAddrFunc(instance, "vkGetSemaphoreWin32HandleKHR"));
+#endif
+    pVkFunctions->ImportFenceFdKHR = reinterpret_cast<PFN_vkImportFenceFdKHR>(getInstanceProcAddrFunc(instance, "vkImportFenceFdKHR"));
     pVkFunctions->GetFenceFdKHR = reinterpret_cast<PFN_vkGetFenceFdKHR>(getInstanceProcAddrFunc(instance, "vkGetFenceFdKHR"));
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    pVkFunctions->ImportFenceWin32HandleKHR = reinterpret_cast<PFN_vkImportFenceWin32HandleKHR>(getInstanceProcAddrFunc(instance, "vkImportFenceWin32HandleKHR"));
+#endif
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    pVkFunctions->GetFenceWin32HandleKHR = reinterpret_cast<PFN_vkGetFenceWin32HandleKHR>(getInstanceProcAddrFunc(instance, "vkGetFenceWin32HandleKHR"));
+#endif
     pVkFunctions->CreateSwapchainKHR = reinterpret_cast<PFN_vkCreateSwapchainKHR>(getInstanceProcAddrFunc(instance, "vkCreateSwapchainKHR"));
     pVkFunctions->DestroySwapchainKHR = reinterpret_cast<PFN_vkDestroySwapchainKHR>(getInstanceProcAddrFunc(instance, "vkDestroySwapchainKHR"));
     pVkFunctions->GetSwapchainImagesKHR = reinterpret_cast<PFN_vkGetSwapchainImagesKHR>(getInstanceProcAddrFunc(instance, "vkGetSwapchainImagesKHR"));
@@ -463,7 +485,29 @@ void InitDispatchTableBottom(VkInstance instance, VkDevice dev, VkInterfaceFunct
     pVkFunctions->CmdSetDescriptorBufferOffsetsEXT = reinterpret_cast<PFN_vkCmdSetDescriptorBufferOffsetsEXT>(getDeviceProcAddrFunc(dev, "vkCmdSetDescriptorBufferOffsetsEXT"));
     pVkFunctions->GetBufferDeviceAddressKHR = reinterpret_cast<PFN_vkGetBufferDeviceAddressKHR>(getDeviceProcAddrFunc(dev, "vkGetBufferDeviceAddressKHR"));
     pVkFunctions->GetMemoryFdKHR = reinterpret_cast<PFN_vkGetMemoryFdKHR>(getDeviceProcAddrFunc(dev, "vkGetMemoryFdKHR"));
+    pVkFunctions->GetMemoryFdPropertiesKHR = reinterpret_cast<PFN_vkGetMemoryFdPropertiesKHR>(getDeviceProcAddrFunc(dev, "vkGetMemoryFdPropertiesKHR"));
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    pVkFunctions->GetMemoryWin32HandleKHR = reinterpret_cast<PFN_vkGetMemoryWin32HandleKHR>(getDeviceProcAddrFunc(dev, "vkGetMemoryWin32HandleKHR"));
+#endif
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    pVkFunctions->GetMemoryWin32HandlePropertiesKHR = reinterpret_cast<PFN_vkGetMemoryWin32HandlePropertiesKHR>(getDeviceProcAddrFunc(dev, "vkGetMemoryWin32HandlePropertiesKHR"));
+#endif
+    pVkFunctions->ImportSemaphoreFdKHR = reinterpret_cast<PFN_vkImportSemaphoreFdKHR>(getDeviceProcAddrFunc(dev, "vkImportSemaphoreFdKHR"));
+    pVkFunctions->GetSemaphoreFdKHR = reinterpret_cast<PFN_vkGetSemaphoreFdKHR>(getDeviceProcAddrFunc(dev, "vkGetSemaphoreFdKHR"));
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    pVkFunctions->ImportSemaphoreWin32HandleKHR = reinterpret_cast<PFN_vkImportSemaphoreWin32HandleKHR>(getDeviceProcAddrFunc(dev, "vkImportSemaphoreWin32HandleKHR"));
+#endif
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    pVkFunctions->GetSemaphoreWin32HandleKHR = reinterpret_cast<PFN_vkGetSemaphoreWin32HandleKHR>(getDeviceProcAddrFunc(dev, "vkGetSemaphoreWin32HandleKHR"));
+#endif
+    pVkFunctions->ImportFenceFdKHR = reinterpret_cast<PFN_vkImportFenceFdKHR>(getDeviceProcAddrFunc(dev, "vkImportFenceFdKHR"));
     pVkFunctions->GetFenceFdKHR = reinterpret_cast<PFN_vkGetFenceFdKHR>(getDeviceProcAddrFunc(dev, "vkGetFenceFdKHR"));
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    pVkFunctions->ImportFenceWin32HandleKHR = reinterpret_cast<PFN_vkImportFenceWin32HandleKHR>(getDeviceProcAddrFunc(dev, "vkImportFenceWin32HandleKHR"));
+#endif
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    pVkFunctions->GetFenceWin32HandleKHR = reinterpret_cast<PFN_vkGetFenceWin32HandleKHR>(getDeviceProcAddrFunc(dev, "vkGetFenceWin32HandleKHR"));
+#endif
     pVkFunctions->CreateSwapchainKHR = reinterpret_cast<PFN_vkCreateSwapchainKHR>(getDeviceProcAddrFunc(dev, "vkCreateSwapchainKHR"));
     pVkFunctions->DestroySwapchainKHR = reinterpret_cast<PFN_vkDestroySwapchainKHR>(getDeviceProcAddrFunc(dev, "vkDestroySwapchainKHR"));
     pVkFunctions->GetSwapchainImagesKHR = reinterpret_cast<PFN_vkGetSwapchainImagesKHR>(getDeviceProcAddrFunc(dev, "vkGetSwapchainImagesKHR"));
