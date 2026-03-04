@@ -279,10 +279,32 @@ vk_khr_buffer_device_address = Extension(name='VK_KHR_buffer_device_address', ve
 
 vk_khr_external_memory_fd = Extension(name='VK_KHR_external_memory_fd', version=1, guard=None, commands=[
     Command(name='GetMemoryFdKHR', dispatch='VkDevice'),
+    Command(name='GetMemoryFdPropertiesKHR', dispatch='VkDevice'),
+])
+
+vk_khr_external_memory_win32 = Extension(name='VK_KHR_external_memory_win32', version=1, guard='VK_USE_PLATFORM_WIN32_KHR', commands=[
+    Command(name='GetMemoryWin32HandleKHR', dispatch='VkDevice'),
+    Command(name='GetMemoryWin32HandlePropertiesKHR', dispatch='VkDevice'),
+])
+
+vk_khr_external_semaphore_fd = Extension(name='VK_KHR_external_semaphore_fd', version=1, guard=None, commands=[
+    Command(name='ImportSemaphoreFdKHR', dispatch='VkDevice'),
+    Command(name='GetSemaphoreFdKHR', dispatch='VkDevice'),
+])
+
+vk_khr_external_semaphore_win32 = Extension(name='VK_KHR_external_semaphore_win32', version=1, guard='VK_USE_PLATFORM_WIN32_KHR', commands=[
+    Command(name='ImportSemaphoreWin32HandleKHR', dispatch='VkDevice'),
+    Command(name='GetSemaphoreWin32HandleKHR', dispatch='VkDevice'),
 ])
 
 vk_khr_external_fence_fd = Extension(name='VK_KHR_external_fence_fd', version=1, guard=None, commands=[
+    Command(name='ImportFenceFdKHR', dispatch='VkDevice'),
     Command(name='GetFenceFdKHR', dispatch='VkDevice'),
+])
+
+vk_khr_external_fence_win32 = Extension(name='VK_KHR_external_fence_win32', version=1, guard='VK_USE_PLATFORM_WIN32_KHR', commands=[
+    Command(name='ImportFenceWin32HandleKHR', dispatch='VkDevice'),
+    Command(name='GetFenceWin32HandleKHR', dispatch='VkDevice'),
 ])
 
 vk_khr_surface = Extension(name='VK_KHR_surface', version=25, guard=None, commands=[
@@ -401,7 +423,11 @@ extensions = [
     vk_ext_descriptor_buffer,
     vk_khr_buffer_device_address,
     vk_khr_external_memory_fd,
+    vk_khr_external_memory_win32,
+    vk_khr_external_semaphore_fd,
+    vk_khr_external_semaphore_win32,
     vk_khr_external_fence_fd,
+    vk_khr_external_fence_win32,
     vk_khr_surface,
     vk_khr_swapchain,
     vk_khr_display,

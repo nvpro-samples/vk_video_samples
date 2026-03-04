@@ -192,9 +192,33 @@ struct VkInterfaceFunctions {
 
 // VK_KHR_external_memory_fd
     PFN_vkGetMemoryFdKHR GetMemoryFdKHR;
+    PFN_vkGetMemoryFdPropertiesKHR GetMemoryFdPropertiesKHR;
+
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+// VK_KHR_external_memory_win32
+    PFN_vkGetMemoryWin32HandleKHR GetMemoryWin32HandleKHR;
+    PFN_vkGetMemoryWin32HandlePropertiesKHR GetMemoryWin32HandlePropertiesKHR;
+#endif
+
+// VK_KHR_external_semaphore_fd
+    PFN_vkImportSemaphoreFdKHR ImportSemaphoreFdKHR;
+    PFN_vkGetSemaphoreFdKHR GetSemaphoreFdKHR;
+
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+// VK_KHR_external_semaphore_win32
+    PFN_vkImportSemaphoreWin32HandleKHR ImportSemaphoreWin32HandleKHR;
+    PFN_vkGetSemaphoreWin32HandleKHR GetSemaphoreWin32HandleKHR;
+#endif
 
 // VK_KHR_external_fence_fd
+    PFN_vkImportFenceFdKHR ImportFenceFdKHR;
     PFN_vkGetFenceFdKHR GetFenceFdKHR;
+
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+// VK_KHR_external_fence_win32
+    PFN_vkImportFenceWin32HandleKHR ImportFenceWin32HandleKHR;
+    PFN_vkGetFenceWin32HandleKHR GetFenceWin32HandleKHR;
+#endif
 
 // VK_KHR_surface
     PFN_vkDestroySurfaceKHR DestroySurfaceKHR;
