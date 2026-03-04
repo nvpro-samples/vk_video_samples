@@ -500,6 +500,21 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
             outImageFormat, required, m_exportDrmModifierIndex,
             blockPref, compPref, /*allowLinear=*/true);
 
+        // Intel ANV: video decode + DMA_BUF export is unsupported in the
+        // experimental Vulkan Video implementation. vkCreateImage fails with
+        // VK_ERROR_FEATURE_NOT_PRESENT for any modifier (including LINEAR)
+        // combined with VIDEO_DECODE_DST + DMA_BUF export. Fall back to opaque
+        // FD export which doesn't require DRM modifiers.
+        VkPhysicalDeviceProperties devProps{};
+        m_vkDevCtx->GetPhysicalDeviceProperties(m_vkDevCtx->getPhysicalDevice(), &devProps);
+        if (devProps.vendorID == 0x8086) {
+            std::cout << "[VkVideoDecoder] Intel GPU detected — using opaque FD export "
+                      << "(ANV video decode doesn't support DMA_BUF export)"
+                      << std::endl;
+            exportDrmModifier = UINT64_MAX;
+            exportHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+        }
+
         if (exportDrmModifier != 0) {
             std::cout << "[VkVideoDecoder] Export DRM modifier: 0x" << std::hex
                       << exportDrmModifier << std::dec

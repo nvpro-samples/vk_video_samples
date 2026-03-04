@@ -336,7 +336,15 @@ VkResult VkImageResource::CreateExportable(const VulkanDeviceContext* vkDevCtx,
     do {
         result = vkDevCtx->CreateImage(device, &modifiedImageInfo, nullptr, &image);
         if (result != VK_SUCCESS) {
-            assert(!"CreateImage Failed!");
+            std::cerr << "[VkImageResource] CreateImage FAILED: result=" << result
+                      << " format=" << modifiedImageInfo.format
+                      << " extent=" << modifiedImageInfo.extent.width << "x" << modifiedImageInfo.extent.height
+                      << " tiling=" << modifiedImageInfo.tiling
+                      << " usage=0x" << std::hex << modifiedImageInfo.usage << std::dec
+                      << " flags=0x" << std::hex << modifiedImageInfo.flags << std::dec
+                      << " drmMod=0x" << std::hex << drmFormatModifier << std::dec
+                      << " exportHandle=0x" << std::hex << exportHandleTypes << std::dec
+                      << std::endl;
             break;
         }
 
