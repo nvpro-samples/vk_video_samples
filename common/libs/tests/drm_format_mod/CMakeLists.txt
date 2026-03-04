@@ -16,8 +16,6 @@ cmake_minimum_required(VERSION 3.20)
 
 project(drm_format_mod_test LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Only build on Linux/Unix (DRM modifiers are Linux-specific)
 if(NOT UNIX OR APPLE)
