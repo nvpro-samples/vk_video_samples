@@ -71,14 +71,19 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${Vulkan_INCLUDE_DIR}
 )
 
-# Find Vulkan with shaderc
-find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
+# Find Vulkan
+find_package(Vulkan REQUIRED)
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE
     Vulkan::Vulkan
-    Vulkan::shaderc_combined
 )
+
+if(TARGET shaderc_shared)
+    target_link_libraries(${PROJECT_NAME} PRIVATE shaderc_shared)
+elseif(SHADERC_SHARED_LIBRARY)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${SHADERC_SHARED_LIBRARY})
+endif()
 
 # Platform-specific settings
 if(UNIX AND NOT APPLE)
