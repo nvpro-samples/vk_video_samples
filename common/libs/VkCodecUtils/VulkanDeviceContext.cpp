@@ -1146,9 +1146,9 @@ VulkanDeviceContext::~VulkanDeviceContext() {
     // Skip VK_NULL_HANDLE and known invalid sentinels (e.g. 0xdededededededede) to avoid
     // VUID-vkDestroyDebugUtilsMessengerEXT-messenger-parameter.
     if (m_debugUtilsMessenger != VK_NULL_HANDLE && m_destroyDebugUtilsMessengerEXT) {
-        const uintptr_t v = reinterpret_cast<uintptr_t>(m_debugUtilsMessenger);
-        constexpr uintptr_t kSentinel64 = 0xdedededededededeULL;
-        constexpr uintptr_t kSentinel32 = 0xdedededeULL;
+        const uint64_t v = (uint64_t)m_debugUtilsMessenger;
+        constexpr uint64_t kSentinel64 = 0xdedededededededeULL;
+        constexpr uint64_t kSentinel32 = 0x00000000dedededeULL;
         if (v != kSentinel64 && v != kSentinel32 && (v & 0xFFFFFFFFULL) != kSentinel32) {
             m_destroyDebugUtilsMessengerEXT(m_instance, m_debugUtilsMessenger, nullptr);
         }
