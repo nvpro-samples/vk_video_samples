@@ -269,6 +269,12 @@ public:
                              uint64_t object, size_t location,
                              int32_t msg_code, const char *layer_prefix, const char *msg);
 
+    static VkBool32 DebugUtilsMessengerCallback(
+        VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+        VkDebugUtilsMessageTypeFlagsEXT messageType,
+        const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+        void* pUserData);
+
     VkResult InitPhysicalDevice(int32_t deviceId, const vk::DeviceUuidUtils& deviceUuid,
                                 const VkQueueFlags requestQueueTypes =  (VK_QUEUE_GRAPHICS_BIT |
                                                                    /*  VK_QUEUE_COMPUTE_BIT |  */
@@ -342,7 +348,10 @@ private:
     mutable std::mutex                                  m_presentQueueMutex;
     mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoDecodeQueueMutexes;
     mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoEncodeQueueMutexes;
-    VkDebugReportCallbackEXT           m_debugReport;
+    VkDebugReportCallbackEXT           m_debugReport = VK_NULL_HANDLE;
+    VkDebugUtilsMessengerEXT           m_debugUtilsMessenger = VK_NULL_HANDLE;
+    PFN_vkCreateDebugUtilsMessengerEXT  m_createDebugUtilsMessengerEXT = nullptr;
+    PFN_vkDestroyDebugUtilsMessengerEXT m_destroyDebugUtilsMessengerEXT = nullptr;
     std::vector<const char *>          m_reqInstanceLayers;
     std::vector<const char *>          m_reqInstanceExtensions;
     std::vector<const char *>          m_requestedDeviceExtensions;

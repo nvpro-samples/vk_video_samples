@@ -1,0 +1,46 @@
+From a5e7ce8a5ed61a7854bb07dbce64bab5fba75646 Mon Sep 17 00:00:00 2001
+From: Tony Zlatinski <tzlatinski@nvidia.com>
+Date: Thu, 5 Feb 2026 20:58:41 -0600
+Subject: [PATCH] state_tracker: Add NULL check for plane_info in
+ UpdateBindImageMemoryState
+
+Add defensive NULL check before dereferencing plane_info when processing
+disjoint image memory binding. While VUID-VkBindImageMemoryInfo-image-07736
+requires VkBindImagePlaneMemoryInfo for disjoint images, if an application
+violates this requirement and the validation check doesn't catch it, the
+state tracker should not crash.
+
+This prevents a segmentation fault when an application incorrectly:
+1. Creates an image with VK_IMAGE_CREATE_DISJOINT_BIT
+2. Calls vkBindImageMemory2 without VkBindImagePlaneMemoryInfo in pNext
+
+The validation error should be caught elsewhere; this is purely defensive
+code to prevent crashes in the state tracker.
+
+Fixes crash observed with multi-planar YCbCr images + DRM format modifiers
+when application incorrectly used DISJOINT_BIT without per-plane binding.
+---
+ layers/state_tracker/state_tracker.cpp | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/layers/state_tracker/state_tracker.cpp b/layers/state_tracker/state_tracker.cpp
+index 56df8d0..da6bb0e 100644
+--- a/layers/state_tracker/state_tracker.cpp
++++ b/layers/state_tracker/state_tracker.cpp
+@@ -3798,7 +3798,12 @@ void DeviceState::UpdateBindImageMemoryState(const VkBindImageMemoryInfo &bind_i
+             VkDeviceSize plane_index = 0u;
+             if (image_state->disjoint && image_state->IsExternalBuffer() == false) {
+                 auto plane_info = vku::FindStructInPNextChain<VkBindImagePlaneMemoryInfo>(bind_info.pNext);
+-                plane_index = vkuGetPlaneIndex(plane_info->planeAspect);
++                // Defensive check: plane_info should never be null for disjoint images
++                // (VUID-VkBindImageMemoryInfo-image-07736 requires it), but if the app
++                // violated the spec and validation didn't catch it, don't crash.
++                if (plane_info) {
++                    plane_index = vkuGetPlaneIndex(plane_info->planeAspect);
++                }
+             }
+             image_state->BindMemory(
+                 image_state.get(), mem_info, bind_info.memoryOffset, plane_index,
+-- 
+2.43.0
+

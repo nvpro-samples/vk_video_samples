@@ -141,6 +141,7 @@ private:
     std::bitset<MAX_PPS_IDS>        m_ppsIdsUsed;
     std::bitset<MAX_SPS_IDS>        m_av1SpsIdsUsed;
     VkSharedBaseObj<VkParserVideoPictureParameters> m_templatePictureParameters; // needed only for the create
+    uint32_t                        m_updateCount{}; // Vulkan session parameters update sequence counter
 
     std::queue<VkSharedBaseObj<StdVideoPictureParametersSet>>  m_pictureParametersQueue;
     VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastPictParamsQueue[StdVideoPictureParametersSet::NUM_OF_TYPES];

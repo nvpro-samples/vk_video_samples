@@ -685,28 +685,26 @@ VkResult VulkanPerDrawContext::RecordCommandBuffer(VkCommandBuffer cmdBuffer,
     if (result != VK_SUCCESS) {
         return result;
     }
-    // transition the buffer into color attachment
-    setImageLayout(m_vkDevCtx, cmdBuffer, displayImage,
-                   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                   VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    // The render pass handles the swapchain image layout transition:
+    //   initialLayout=UNDEFINED → COLOR_ATTACHMENT_OPTIMAL → finalLayout=PRESENT_SRC_KHR
+    // No manual barrier needed for the display image.
 
+    // Transition decoded image from its current layout to SHADER_READ_ONLY for sampling.
+    // Cross-queue sync is handled by the timeline semaphore wait — the barrier here only
+    // needs a layout transition + memory dependency with stages valid on the graphics queue.
+    const VkImageLayout decodeOutputLayout = inputImageToDrawFrom->imageLayout;
     const VkMpFormatInfo * pFormatInfo = YcbcrVkFormatInfo(inputImageToDrawFrom->imageFormat);
     if (pFormatInfo == NULL) {
-        // Non-planar input image.
         setImageLayout(m_vkDevCtx, cmdBuffer, inputImageToDrawFrom->image,
-                       VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                       VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                       decodeOutputLayout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                       VK_PIPELINE_STAGE_2_NONE_KHR, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                        VK_IMAGE_ASPECT_COLOR_BIT);
     } else {
-        // Multi-planar input image.
         for (uint32_t planeIndx = 0; (planeIndx < (uint32_t)pFormatInfo->planesLayout.numberOfExtraPlanes + 1); planeIndx++) {
             setImageLayout(m_vkDevCtx, cmdBuffer, inputImageToDrawFrom->image,
-                       VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                       VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                       decodeOutputLayout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                       VK_PIPELINE_STAGE_2_NONE_KHR, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                        (VK_IMAGE_ASPECT_PLANE_0_BIT_KHR << planeIndx));
-
         }
     }
     // Now we start a renderpass. Any draw command has to be recorded in a renderpass
@@ -814,28 +812,25 @@ VkResult VulkanPerDrawContext::RecordCommandBuffer(VkCommandBuffer cmdBuffer,
 
     m_vkDevCtx->CmdEndRenderPass(cmdBuffer);
 
-    setImageLayout(m_vkDevCtx, cmdBuffer,
-                   displayImage,
-                   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                   VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+    // The render pass finalLayout=PRESENT_SRC_KHR handles the transition automatically.
 
-
-    if (pFormatInfo == NULL) {
-        // Non-planar input image.
-        setImageLayout(m_vkDevCtx, cmdBuffer, inputImageToDrawFrom->image,
-                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR,
-                       VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR,
-                       VK_IMAGE_ASPECT_COLOR_BIT);
-    } else {
-        // Multi-planar input image.
-        for (uint32_t planeIndx = 0; (planeIndx < (uint32_t)pFormatInfo->planesLayout.numberOfExtraPlanes + 1); planeIndx++) {
+    // Transition decoded image back to its decode layout for reuse by the video decoder.
+    // Skip for non-decode images (e.g. test pattern with PREINITIALIZED layout).
+    const bool isDecodeImage = (decodeOutputLayout == VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR ||
+                                decodeOutputLayout == VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR);
+    if (isDecodeImage) {
+        if (pFormatInfo == NULL) {
             setImageLayout(m_vkDevCtx, cmdBuffer, inputImageToDrawFrom->image,
-                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR,
-                       VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR,
-                       (VK_IMAGE_ASPECT_PLANE_0_BIT_KHR << planeIndx));
-
+                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, decodeOutputLayout,
+                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_NONE_KHR,
+                           VK_IMAGE_ASPECT_COLOR_BIT);
+        } else {
+            for (uint32_t planeIndx = 0; (planeIndx < (uint32_t)pFormatInfo->planesLayout.numberOfExtraPlanes + 1); planeIndx++) {
+                setImageLayout(m_vkDevCtx, cmdBuffer, inputImageToDrawFrom->image,
+                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, decodeOutputLayout,
+                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_NONE_KHR,
+                           (VK_IMAGE_ASPECT_PLANE_0_BIT_KHR << planeIndx));
+            }
         }
     }
 
@@ -969,72 +964,65 @@ void setImageLayout(const VulkanDeviceContext* vkDevCtx,
     imageMemoryBarrier.subresourceRange.baseArrayLayer = 0;
     imageMemoryBarrier.subresourceRange.layerCount = 1;
 
-    switch ((uint32_t)oldImageLayout) {
-    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-        imageMemoryBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        break;
-
-    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-        imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        break;
-
-    case VK_IMAGE_LAYOUT_PREINITIALIZED:
-        imageMemoryBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-        break;
-    case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-        imageMemoryBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        break;
-    case VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR:
-        imageMemoryBarrier.srcAccessMask = VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR;
-        break;
-    default:
-        break;
+    // When srcStageMask is NONE, no access mask is needed (cross-queue sync via semaphore)
+    if (srcStages != VK_PIPELINE_STAGE_2_NONE_KHR) {
+        switch ((uint32_t)oldImageLayout) {
+        case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+            imageMemoryBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            break;
+        case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+            imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            break;
+        case VK_IMAGE_LAYOUT_PREINITIALIZED:
+            imageMemoryBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+            break;
+        case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+            imageMemoryBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            break;
+        case VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR:
+            imageMemoryBarrier.srcAccessMask = VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR;
+            break;
+        default:
+            break;
+        }
     }
 
-    switch ((uint32_t)newImageLayout) {
-    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-        imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        break;
-
-    case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-        imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-        break;
-
-    case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-        imageMemoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        break;
-
-    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-        imageMemoryBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        break;
-
-    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-        imageMemoryBarrier.dstAccessMask =
-            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        break;
-
-    case VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR:
-        imageMemoryBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR;
-        break;
-
-    case VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR:
-        imageMemoryBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR;
-        break;
-
-    case VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR:
-        imageMemoryBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
-        break;
-
-    case VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR:
-        imageMemoryBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_WRITE_BIT_KHR | VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
-        break;
-
-    case VK_IMAGE_LAYOUT_GENERAL:
-        imageMemoryBarrier.dstAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-        break;
-
-    default:
-        break;
+    // When dstStageMask is NONE, no access mask is needed (cross-queue sync via semaphore)
+    if (destStages != VK_PIPELINE_STAGE_2_NONE_KHR) {
+        switch ((uint32_t)newImageLayout) {
+        case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+            imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            break;
+        case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+            imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            break;
+        case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+            imageMemoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            break;
+        case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+            imageMemoryBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            break;
+        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+            imageMemoryBarrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            break;
+        case VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR:
+            imageMemoryBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR;
+            break;
+        case VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR:
+            imageMemoryBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR;
+            break;
+        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR:
+            imageMemoryBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
+            break;
+        case VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR:
+            imageMemoryBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_WRITE_BIT_KHR | VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR;
+            break;
+        case VK_IMAGE_LAYOUT_GENERAL:
+            imageMemoryBarrier.dstAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+            break;
+        default:
+            break;
+        }
     }
 
     const VkDependencyInfoKHR dependencyInfo = {

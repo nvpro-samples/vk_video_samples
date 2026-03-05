@@ -51,6 +51,41 @@ public:
                                      uint64_t drmFormatModifier,
                                      VkSharedBaseObj<VkImageResource>& imageResource);
 
+    /**
+     * @brief Create a non-owning wrapper around an externally-managed VkImage
+     *
+     * This is for the external frame input path: the VkImage and VkDeviceMemory
+     * are owned by the caller (e.g. imported from DMA-BUF). This wrapper provides
+     * the VkImageResource interface without destroying the resources on release.
+     *
+     * @param vkDevCtx              Vulkan device context
+     * @param image                 Externally-owned VkImage
+     * @param memory                Externally-owned VkDeviceMemory (can be VK_NULL_HANDLE)
+     * @param pImageCreateInfo      Image creation parameters (for format/extent queries)
+     * @param imageResource         Output non-owning image resource wrapper
+     * @return VK_SUCCESS on success
+     */
+    static VkResult CreateFromExternal(const VulkanDeviceContext* vkDevCtx,
+                                       VkImage image,
+                                       VkDeviceMemory memory,
+                                       const VkImageCreateInfo* pImageCreateInfo,
+                                       VkSharedBaseObj<VkImageResource>& imageResource);
+
+    /**
+     * @brief Create an owning VkImageResource from imported raw handles.
+     *
+     * Unlike CreateFromExternal (non-owning), this takes ownership of both
+     * the VkImage and VkDeviceMemory. When the last VkSharedBaseObj reference
+     * is released, the handles are destroyed via vkDestroyImage/vkFreeMemory.
+     * Use for DMA-BUF imported images where the test/app created the handles.
+     */
+    static VkResult CreateFromImport(const VulkanDeviceContext* vkDevCtx,
+                                     VkImage image,
+                                     VkDeviceMemory memory,
+                                     VkDeviceSize memorySize,
+                                     const VkImageCreateInfo* pImageCreateInfo,
+                                     VkSharedBaseObj<VkImageResource>& imageResource);
+
     bool IsCompatible ( VkDevice,
                         const VkImageCreateInfo* pImageCreateInfo)
     {
@@ -101,8 +136,8 @@ public:
     operator VkImage() const { return m_image; }
     VkImage GetImage() const { return m_image; }
     VkDevice GetDevice() const { return *m_vkDevCtx; }
-    VkDeviceMemory GetDeviceMemory() const { return *m_vulkanDeviceMemory; }
-    VkDeviceMemory GetImageDeviceMemory() const { return *m_vulkanDeviceMemory; }
+    VkDeviceMemory GetDeviceMemory() const { return m_vulkanDeviceMemory ? (VkDeviceMemory)*m_vulkanDeviceMemory : VK_NULL_HANDLE; }
+    VkDeviceMemory GetImageDeviceMemory() const { return m_vulkanDeviceMemory ? (VkDeviceMemory)*m_vulkanDeviceMemory : VK_NULL_HANDLE; }
 
     VkSharedBaseObj<VulkanDeviceMemoryImpl>& GetMemory() { return m_vulkanDeviceMemory; }
 
@@ -224,6 +259,7 @@ private:
     uint32_t                m_isSubsampledX : 1;
     uint32_t                m_isSubsampledY : 1;
     uint32_t                m_usesDrmFormatModifier : 1;
+    uint32_t                m_ownsResources : 1; // false for CreateFromExternal() wrappers
 
     VkImageResource(const VulkanDeviceContext* vkDevCtx,
                     const VkImageCreateInfo* pImageCreateInfo,

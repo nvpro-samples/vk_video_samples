@@ -262,12 +262,19 @@ VkResult VkParserVideoPictureParameters::UpdateParametersObject(const StdVideoPi
             return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    updateInfo.updateSequenceCount = std::max(pStdVideoPictureParametersSet->GetUpdateSequenceCount(), updateInfo.updateSequenceCount);
-
+    // Per Vulkan spec (VUID-vkUpdateVideoSessionParametersKHR-pUpdateInfo-07215):
+    // updateSequenceCount must equal the current update sequence counter of
+    // videoSessionParameters plus one. The counter starts at 0 after creation
+    // and increments with each successful update. Track it with m_updateCount.
+    updateInfo.updateSequenceCount = ++m_updateCount;
 
     VkResult result = m_vkDevCtx->UpdateVideoSessionParametersKHR(*m_vkDevCtx,
                                                                   m_sessionParameters,
                                                                   &updateInfo);
+    if (result != VK_SUCCESS) {
+        // Rollback the counter on failure so the next attempt uses the same value
+        --m_updateCount;
+    }
 
     if (result == VK_SUCCESS) {
 

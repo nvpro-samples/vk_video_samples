@@ -32,7 +32,8 @@ VkImageResource::VkImageResource(const VulkanDeviceContext* vkDevCtx,
    , m_vulkanDeviceMemory(vulkanDeviceMemory), m_layouts{}, m_memoryPlaneLayouts{}
    , m_drmFormatModifier(drmFormatModifier), m_memoryPlaneCount(memoryPlaneCount)
    , m_isLinearImage(false), m_is16Bit(false), m_isSubsampledX(false), m_isSubsampledY(false)
-   , m_usesDrmFormatModifier(drmFormatModifier != 0 || pImageCreateInfo->tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
+   , m_usesDrmFormatModifier(drmFormatModifier != 0 || pImageCreateInfo->tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT)
+   , m_ownsResources(true) {
 
     // Query memory plane layouts for DRM format modifier images
     // Per Vulkan spec: For VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT, must use
@@ -131,6 +132,10 @@ VkImageResource::VkImageResource(const VulkanDeviceContext* vkDevCtx,
     // Treat all non 8bpp formats as 16bpp for output to prevent any loss.
     m_is16Bit = (mpInfo->planesLayout.bpp != YCBCRA_8BPP);
 
+    // External/non-owning wrapper (CreateFromExternal) has no VulkanDeviceMemoryImpl
+    if (!vulkanDeviceMemory) {
+        return;
+    }
     VkMemoryPropertyFlags memoryPropertyFlags = vulkanDeviceMemory->GetMemoryPropertyFlags();
     if ((memoryPropertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0) {
         return;
@@ -331,7 +336,15 @@ VkResult VkImageResource::CreateExportable(const VulkanDeviceContext* vkDevCtx,
     do {
         result = vkDevCtx->CreateImage(device, &modifiedImageInfo, nullptr, &image);
         if (result != VK_SUCCESS) {
-            assert(!"CreateImage Failed!");
+            std::cerr << "[VkImageResource] CreateImage FAILED: result=" << result
+                      << " format=" << modifiedImageInfo.format
+                      << " extent=" << modifiedImageInfo.extent.width << "x" << modifiedImageInfo.extent.height
+                      << " tiling=" << modifiedImageInfo.tiling
+                      << " usage=0x" << std::hex << modifiedImageInfo.usage << std::dec
+                      << " flags=0x" << std::hex << modifiedImageInfo.flags << std::dec
+                      << " drmMod=0x" << std::hex << drmFormatModifier << std::dec
+                      << " exportHandle=0x" << std::hex << exportHandleTypes << std::dec
+                      << std::endl;
             break;
         }
 
@@ -520,15 +533,84 @@ uint32_t VkImageResource::GetMemoryTypeIndex() const
     return m_vulkanDeviceMemory->GetMemoryTypeIndex();
 }
 
+VkResult VkImageResource::CreateFromExternal(const VulkanDeviceContext* vkDevCtx,
+                                              VkImage image,
+                                              VkDeviceMemory memory,
+                                              const VkImageCreateInfo* pImageCreateInfo,
+                                              VkSharedBaseObj<VkImageResource>& imageResource)
+{
+    // Create a non-owning wrapper: the caller owns the VkImage and VkDeviceMemory.
+    // When this VkImageResource is destroyed, it will NOT destroy the VkImage or free the memory.
+
+    VkSharedBaseObj<VulkanDeviceMemoryImpl> nullMemory; // no memory object (non-owning)
+
+    VkImageResource* pImageResource = new VkImageResource(
+        vkDevCtx, pImageCreateInfo,
+        image,
+        0,    // imageOffset
+        0,    // imageSize (not known for external, not needed for non-owning)
+        nullMemory,
+        0,    // drmFormatModifier (not queried for external)
+        0     // memoryPlaneCount (not queried for external)
+    );
+
+    if (pImageResource == nullptr) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    // Mark as non-owning so Destroy() won't call vkDestroyImage
+    pImageResource->m_ownsResources = false;
+
+    imageResource = pImageResource;
+    return VK_SUCCESS;
+}
+
+VkResult VkImageResource::CreateFromImport(const VulkanDeviceContext* vkDevCtx,
+                                            VkImage image,
+                                            VkDeviceMemory memory,
+                                            VkDeviceSize memorySize,
+                                            const VkImageCreateInfo* pImageCreateInfo,
+                                            VkSharedBaseObj<VkImageResource>& imageResource)
+{
+    // Wrap the imported memory in VulkanDeviceMemoryImpl so it gets freed
+    // when the VkImageResource ref-count drops to zero.
+    VkSharedBaseObj<VulkanDeviceMemoryImpl> deviceMemory;
+    if (memory != VK_NULL_HANDLE) {
+        deviceMemory = new VulkanDeviceMemoryImpl(vkDevCtx, memory, memorySize);
+    }
+
+    VkImageResource* pImageResource = new VkImageResource(
+        vkDevCtx, pImageCreateInfo,
+        image,
+        0,           // imageOffset
+        memorySize,
+        deviceMemory,
+        0,           // drmFormatModifier
+        0            // memoryPlaneCount
+    );
+
+    if (pImageResource == nullptr) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    // Owning — Destroy() will call vkDestroyImage and the memory impl will vkFreeMemory
+    pImageResource->m_ownsResources = true;
+
+    imageResource = pImageResource;
+    return VK_SUCCESS;
+}
 
 void VkImageResource::Destroy()
 {
     assert(m_vkDevCtx != nullptr);
 
-    if (m_image != VK_NULL_HANDLE) {
-        m_vkDevCtx->DestroyImage(*m_vkDevCtx, m_image, nullptr);
-        m_image = VK_NULL_HANDLE;
+    if (m_ownsResources) {
+        if (m_image != VK_NULL_HANDLE) {
+            m_vkDevCtx->DestroyImage(*m_vkDevCtx, m_image, nullptr);
+        }
     }
+    // Always clear handles regardless of ownership
+    m_image = VK_NULL_HANDLE;
 
     m_vulkanDeviceMemory = nullptr;
     m_vkDevCtx = nullptr;
@@ -580,34 +662,27 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
     usageCreateInfo.usage = planeUsageOverride;
 
     if (!skipCombinedView) {
-        // For multi-planar formats, combined views cannot have STORAGE_BIT
-        // (multi-planar formats don't support storage - only per-plane views do).
-        // Must use VkImageViewUsageCreateInfo to restrict usage when the image
-        // has STORAGE_BIT via EXTENDED_USAGE_BIT.
-        //
-        // Note: SAMPLED_BIT must NOT be stripped here. The decoder's display
-        // pipeline uses the combined view with VkSamplerYcbcrConversion for
-        // sampling decoded frames. Stripping SAMPLED_BIT causes blank output.
-        // The VUID-VkImageViewCreateInfo-format-06415 validation error for
-        // SAMPLED_BIT without YCbCr conversion is handled by the caller
-        // creating a YCbCr sampler for the combined view before sampling.
-        //
-        // Reference: https://gitlab.khronos.org/vulkan/vulkan/-/issues/4624
-        if (mpInfo && (imageCreateInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
+        // Multi-planar combined views without YCbCr conversion: strip SAMPLED (VUID-06415)
+        // and STORAGE (not supported by multi-planar base format). Callers that need
+        // SAMPLED use the YCbCr overload of Create() instead.
+        if (mpInfo) {
             VkImageUsageFlags combinedUsage = imageCreateInfo.usage;
-            // Remove STORAGE - not supported by multi-planar base format
-            combinedUsage &= ~VK_IMAGE_USAGE_STORAGE_BIT;
-            usageCreateInfo.usage = combinedUsage;
-            viewInfo.pNext = &usageCreateInfo;
+            combinedUsage &= ~(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+            if (combinedUsage == 0) {
+                skipCombinedView = true;
+            } else {
+                usageCreateInfo.usage = combinedUsage;
+                viewInfo.pNext = &usageCreateInfo;
+            }
         }
-        
+    }
+
+    if (!skipCombinedView) {
         VkResult result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
         if (result != VK_SUCCESS) {
             return result;
         }
         numViews++;
-        
-        // Reset pNext for subsequent views
         viewInfo.pNext = nullptr;
     } else {
         // Set placeholder for combined view
@@ -620,14 +695,27 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
 
     if (mpInfo) { // Is this a YCbCr format
 
+        // Per-plane formats (R8, RG8, etc.) don't support video decode/encode format features.
+        // Strip those usage bits for plane views via VkImageViewUsageCreateInfo.
+        VkImageViewUsageCreateInfo planeUsageCreateInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO};
+        if (planeUsageOverride != 0) {
+            planeUsageCreateInfo.usage = planeUsageOverride;
+        } else {
+            VkImageUsageFlags planeUsage = imageCreateInfo.usage;
+            planeUsage &= ~(VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_DECODE_SRC_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_ENCODE_DST_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR);
+            planeUsageCreateInfo.usage = planeUsage;
+        }
+        planeUsageCreateInfo.pNext = nullptr;
+        viewInfo.pNext = &planeUsageCreateInfo;
+
         // Create separate image views for Y and CbCr planes
         viewInfo.format = mpInfo->vkPlaneFormat[numPlanes];  // For the Y plane
         viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT << numPlanes;
-
-        // Chain usage override if specified
-        if (planeUsageOverride != 0) {
-            viewInfo.pNext = &usageCreateInfo;
-        }
 
         VkResult result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
         if (result != VK_SUCCESS) {
@@ -783,17 +871,25 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
     
     // Now create per-plane views for compute storage
     if (mpInfo) {
-        // Reset pNext for plane views (use planeUsageOverride instead)
         viewInfo.pNext = nullptr;
         viewInfo.viewType = (imageSubresourceRange.layerCount > 1) ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
         viewInfo.subresourceRange = imageSubresourceRange;
         
         VkImageViewUsageCreateInfo planeUsageInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO};
-        planeUsageInfo.usage = planeUsageOverride;
-        
         if (planeUsageOverride != 0) {
-            viewInfo.pNext = &planeUsageInfo;
+            planeUsageInfo.usage = planeUsageOverride;
+        } else {
+            VkImageUsageFlags planeUsage = imageResource->GetImageCreateInfo().usage;
+            planeUsage &= ~(VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_DECODE_SRC_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_ENCODE_DST_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR);
+            planeUsageInfo.usage = planeUsage;
         }
+        planeUsageInfo.pNext = nullptr;
+        viewInfo.pNext = &planeUsageInfo;
         
         // Create Y plane view
         viewInfo.format = mpInfo->vkPlaneFormat[numPlanes];

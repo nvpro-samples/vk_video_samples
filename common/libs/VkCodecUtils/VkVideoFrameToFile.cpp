@@ -66,7 +66,9 @@ public:
         , m_outputcrcPerFrame(outputcrcPerFrame)
         , m_crcOutputFile(nullptr)
         , m_crcInitValue(crcInitValue)
-        , m_crcAllocation() {
+        , m_crcAllocation()
+        , m_frameRateNum(30)
+        , m_frameRateDen(1) {
         if (crcOutputFile != nullptr) {
             m_crcOutputFile = fopen(crcOutputFile, "w");
         }
@@ -116,6 +118,13 @@ public:
             delete this;
         }
         return ret;
+    }
+
+    virtual void SetFrameRate(uint32_t frameRateNum, uint32_t frameRateDen) override {
+        if (frameRateNum != 0 && frameRateDen != 0) {
+            m_frameRateNum = frameRateNum;
+            m_frameRateDen = frameRateDen;
+        }
     }
 
     virtual size_t OutputFrame(VulkanDecodedFrame* pFrame, const VulkanDeviceContext* vkDevCtx) override {
@@ -245,7 +254,7 @@ public:
             fprintf(m_outputFile, "W%i H%i ", (int)width, (int)height);
             m_height = height;
             m_width = width;
-            fprintf(m_outputFile, "F24:1 ");
+            fprintf(m_outputFile, "F%u:%u ", (unsigned)m_frameRateNum, (unsigned)m_frameRateDen);
             fprintf(m_outputFile, "Ip ");
             fprintf(m_outputFile, "A1:1 ");
             if (mpInfo->planesLayout.secondaryPlaneSubsampledX == false) {
@@ -270,6 +279,7 @@ public:
         }
 
         fprintf(m_outputFile, "\n");
+
         return WriteDataToFile(offset, size);
     }
 
@@ -463,6 +473,8 @@ private:
     FILE*    m_crcOutputFile;
     std::vector<uint32_t> m_crcInitValue;
     std::vector<uint32_t> m_crcAllocation;
+    uint32_t m_frameRateNum;
+    uint32_t m_frameRateDen;
 };
 
 // Define the static member for invalid instance

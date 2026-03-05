@@ -438,7 +438,7 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
                                m_videoRenderer->m_useTestImage);
 
     VkImageResourceView* pView = inFrame ? imageResourceView : (VkImageResourceView*)nullptr;
-    vulkanVideoUtils::ImageResourceInfo rtImage(pView, VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR);
+    vulkanVideoUtils::ImageResourceInfo rtImage(pView, inFrame ? inFrame->outputImageLayout : VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR);
     const vulkanVideoUtils::ImageResourceInfo* pRtImage = doTestPatternFrame ? &m_videoRenderer->m_testFrameImage : &rtImage;
     VkFence frameConsumerDoneFence = doTestPatternFrame ? VkFence() : inFrame->frameConsumerDoneFence;
     int32_t displayWidth  = doTestPatternFrame ? pRtImage->imageWidth  : inFrame->displayWidth;
@@ -622,9 +622,7 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
         waitSemaphoreInfos[waitSemaphoreCount].pNext = nullptr;
         waitSemaphoreInfos[waitSemaphoreCount].semaphore = inFrame->frameCompleteSemaphore;
         waitSemaphoreInfos[waitSemaphoreCount].value =     inFrame->frameCompleteDoneSemValue;
-        waitSemaphoreInfos[waitSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR |
-                                                           VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR |
-                                                           VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR;
+        waitSemaphoreInfos[waitSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
         waitSemaphoreInfos[waitSemaphoreCount].deviceIndex = 0;
         waitSemaphoreCount++;
 

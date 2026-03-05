@@ -28,7 +28,8 @@
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
-#include <cerrno>
+#include <charconv>
+#include <cstring>
 #include "vulkan_interfaces.h"
 #include "VkCodecUtils/Helpers.h"
 
@@ -79,6 +80,9 @@ struct DecoderConfig {
         outputy4m = true; // by default, use Y4M
         outputcrcPerFrame = false;
         outputcrc = false;
+        enableExternalConsumerExport = false;
+        exportPreferCompressed = true;   // prefer L2-compressed DRM modifier by default
+        exportPreferSmallestBlockHeight = true;
         crcOutputFileName.clear();
         help = false;
     }
@@ -256,14 +260,13 @@ struct DecoderConfig {
             {"--deviceID", "-deviceID", 1, "Hex ID of the device to be used",
                 [this](const char **args, const ProgramArgs &a) {
                     const char* first = args[0];
-                    // Skip 0x prefix if present
+                    const char* last = first + strlen(first);
                     if (strlen(first) > 2 && first[0] == '0' && (first[1] == 'x' || first[1] == 'X')) {
                         first += 2;
                     }
-                    char* endPtr = nullptr;
-                    errno = 0;
-                    unsigned long val = std::strtoul(first, &endPtr, 16);
-                    if (errno != 0 || endPtr == first) {
+                    uint32_t val = 0;
+                    auto [ptr, ec] = std::from_chars(first, last, val, 16);
+                    if (ec != std::errc{}) {
                         std::cerr << "Invalid deviceID hex value: " << args[0] << std::endl;
                         return false;
                     }
@@ -327,18 +330,40 @@ struct DecoderConfig {
                     std::istringstream stream(args[0]);
                     std::string token;
                     while (std::getline(stream, token, ',')) {
-                        char* endPtr = NULL;
-                        uint32_t initValue = strtoul(token.c_str(), &endPtr, 16);
-                        if ((endPtr == NULL) || (*endPtr != 0)) {
+                        const char* tfirst = token.c_str();
+                        const char* tlast = tfirst + token.size();
+                        uint32_t initValue = 0;
+                        auto [tptr, tec] = std::from_chars(tfirst, tlast, initValue, 16);
+                        if (tec != std::errc{} || tptr != tlast) {
                             std::cerr << "Failed to parse the following initial CRC value:"
                                   << token << std::endl;
                             return false;
                         }
-
                         crcInitValueTemp.push_back(initValue);
                     }
 
                     crcInitValue = crcInitValueTemp;
+                    return true;
+                }},
+            // Decoder service extensions (used by vk-decoder-instance)
+            {"--remotePresent", nullptr, 1, "Stream decoded frames to external presenter",
+                [this](const char **args, const ProgramArgs &a) {
+                    remotePresent = args[0];
+                    enableExternalConsumerExport = true;
+                    return true;
+                }},
+            {"--presenterPath", nullptr, 1, "Path to vk-presenter-instance binary",
+                [this](const char **args, const ProgramArgs &a) {
+                    presenterPath = args[0];
+                    return true;
+                }},
+            {"--debug", nullptr, 0, "Per-frame decode info",
+                [this](const char **args, const ProgramArgs &a) {
+                    return true;
+                }},
+            {"--headless", nullptr, 0, "No display window (decoder is always headless)",
+                [this](const char **args, const ProgramArgs &a) {
+                    noPresent = true;
                     return true;
                 }},
         };
@@ -450,6 +475,12 @@ struct DecoderConfig {
     uint32_t outputy4m : 1;
     uint32_t outputcrc : 1;
     uint32_t outputcrcPerFrame : 1;
+    uint32_t enableExternalConsumerExport : 1;
+    uint32_t exportPreferCompressed : 1;
+    uint32_t exportPreferSmallestBlockHeight : 1;
+    // Decoder service extensions
+    std::string remotePresent;
+    std::string presenterPath;
 };
 
 #endif /* _PROGRAMSETTINGS_H_ */

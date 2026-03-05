@@ -146,11 +146,14 @@ public:
         return true;
     }
 
+    static constexpr uint32_t MAX_EXTERNAL_CONSUMERS = 4;
+
     VkParserDecodePictureInfo m_picDispInfo;
     VkFence m_frameCompleteFence;
     VkFence m_frameConsumerDoneFence;
     uint64_t m_frameCompleteTimelineValue;
     uint64_t m_frameConsumerDoneTimelineValue;
+    uint64_t m_externalConsumerDoneValues[MAX_EXTERNAL_CONSUMERS]{};
     DecodeFrameBufferIf::ImageSpecsIndex m_imageSpecsIndex;
     uint32_t m_hasFrameCompleteSignalFence : 1;
     uint32_t m_hasFrameCompleteSignalSemaphore : 1;
@@ -267,6 +270,10 @@ private:
 public:
     VkSemaphore                            m_frameCompleteSemaphore;
     VkSemaphore                            m_consumerCompleteSemaphore;
+    // External consumer semaphores (imported release semaphores from external processes)
+    VkSemaphore                            m_externalConsumerSemaphores[NvPerFrameDecodeResources::MAX_EXTERNAL_CONSUMERS]{};
+    DecodeFrameBufferIf::SemSyncTypeIdx    m_externalConsumerTypes[NvPerFrameDecodeResources::MAX_EXTERNAL_CONSUMERS]{};
+    uint32_t                               m_numExternalConsumers{0};
 private:
     uint32_t                               m_numImages;
     uint32_t                               m_maxNumImageTypeIdx;
@@ -425,13 +432,26 @@ public:
         }
 
         if ((pFrameSynchronizationInfo->syncOnFrameConsumerDoneFence  == 1) &&
-             (m_perFrameDecodeImageSet[picId].m_useConsummerSignalSemaphore == 0) &&
              (m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence == 1) &&
              (m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence != VK_NULL_HANDLE)) {
 
             vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence,
                                   true, "frameConsumerDoneFence");
 
+        }
+
+        // Wait for all external consumers (cross-process) to release this slot
+        for (uint32_t c = 0; c < m_perFrameDecodeImageSet.m_numExternalConsumers; c++) {
+            if (m_perFrameDecodeImageSet.m_externalConsumerSemaphores[c] != VK_NULL_HANDLE) {
+                uint64_t waitValue = m_perFrameDecodeImageSet[picId].m_externalConsumerDoneValues[c];
+                if (waitValue > 0) {
+                    VkSemaphoreWaitInfo waitInfo{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO};
+                    waitInfo.semaphoreCount = 1;
+                    waitInfo.pSemaphores = &m_perFrameDecodeImageSet.m_externalConsumerSemaphores[c];
+                    waitInfo.pValues = &waitValue;
+                    m_vkDevCtx->WaitSemaphores(*m_vkDevCtx, &waitInfo, UINT64_MAX);
+                }
+            }
         }
 
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
@@ -529,6 +549,16 @@ public:
                     pDecodedFrame->imageViews[VulkanDisplayFrame::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY].view = m_perFrameDecodeImageSet[pictureIndex].GetImageView(displayOutImageType);
                     pDecodedFrame->imageViews[VulkanDisplayFrame::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY].singleLevelView = m_perFrameDecodeImageSet[pictureIndex].GetSingleLevelImageView(displayOutImageType);
                     pDecodedFrame->imageViews[VulkanDisplayFrame::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY].inUse = true;
+
+                    VulkanVideoFrameBuffer::PictureResourceInfo displayResInfo{};
+                    m_perFrameDecodeImageSet[pictureIndex].GetImageSetNewLayout(
+                        displayOutImageType, VK_IMAGE_LAYOUT_MAX_ENUM,
+                        nullptr, &displayResInfo);
+                    VkImageLayout trackedLayout = displayResInfo.currentImageLayout;
+                    if (trackedLayout == VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR ||
+                        trackedLayout == VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR) {
+                        pDecodedFrame->outputImageLayout = trackedLayout;
+                    }
                 }
             }
 
@@ -570,6 +600,17 @@ public:
             }
 
             pDecodedFrame->frameConsumerDoneFence = m_perFrameDecodeImageSet[pictureIndex].m_frameConsumerDoneFence;
+
+            // Populate expected external consumer done values for this frame.
+            // The decoder service uses these to know what values consumers will signal.
+            pDecodedFrame->numExternalConsumers = m_perFrameDecodeImageSet.m_numExternalConsumers;
+            for (uint32_t c = 0; c < m_perFrameDecodeImageSet.m_numExternalConsumers; c++) {
+                uint64_t value = DecodeFrameBufferIf::GetSemaphoreValue(
+                    m_perFrameDecodeImageSet.m_externalConsumerTypes[c],
+                    m_perFrameDecodeImageSet[pictureIndex].m_displayOrder);
+                m_perFrameDecodeImageSet[pictureIndex].m_externalConsumerDoneValues[c] = value;
+                pDecodedFrame->externalConsumerDoneValues[c] = value;
+            }
 
             pDecodedFrame->timestamp = m_perFrameDecodeImageSet[pictureIndex].m_timestamp;
             pDecodedFrame->decodeOrder = m_perFrameDecodeImageSet[pictureIndex].m_decodeOrder;
@@ -614,6 +655,37 @@ public:
             }
         }
         return 0;
+    }
+
+    virtual int32_t AddExternalConsumer(VkSemaphore importedReleaseSemaphore,
+                                        DecodeFrameBufferIf::SemSyncTypeIdx consumerType) override
+    {
+        uint32_t idx = m_perFrameDecodeImageSet.m_numExternalConsumers;
+        if (idx >= NvPerFrameDecodeResources::MAX_EXTERNAL_CONSUMERS) {
+            return -1;
+        }
+        m_perFrameDecodeImageSet.m_externalConsumerSemaphores[idx] = importedReleaseSemaphore;
+        m_perFrameDecodeImageSet.m_externalConsumerTypes[idx] = consumerType;
+        m_perFrameDecodeImageSet.m_numExternalConsumers = idx + 1;
+        return static_cast<int32_t>(idx);
+    }
+
+    virtual int ExportFrameCompleteSemaphoreFd() override
+    {
+        if (m_perFrameDecodeImageSet.m_frameCompleteSemaphore == VK_NULL_HANDLE) {
+            return -1;
+        }
+        auto pfnGetSemaphoreFd = (PFN_vkGetSemaphoreFdKHR)
+            m_vkDevCtx->GetDeviceProcAddr(*m_vkDevCtx, "vkGetSemaphoreFdKHR");
+        if (!pfnGetSemaphoreFd) {
+            return -1;
+        }
+        VkSemaphoreGetFdInfoKHR getFdInfo{VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR};
+        getFdInfo.semaphore = m_perFrameDecodeImageSet.m_frameCompleteSemaphore;
+        getFdInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+        int fd = -1;
+        VkResult result = pfnGetSemaphoreFd(*m_vkDevCtx, &getFdInfo, &fd);
+        return (result == VK_SUCCESS) ? fd : -1;
     }
 
     virtual int32_t GetImageResourcesByIndex(uint32_t numResources,
@@ -828,10 +900,20 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
 
         VkSharedBaseObj<VkImageResource> imageResource;
         if (!imageArrayParent) {
-            result = VkImageResource::Create(vkDevCtx,
-                                             &pImageSpec->createInfo,
-                                             pImageSpec->memoryProperty,
-                                             imageResource);
+            if (pImageSpec->exportHandleTypes != 0) {
+                // External consumer export: create with DRM modifier + export setup
+                result = VkImageResource::CreateExportable(vkDevCtx,
+                                                 &pImageSpec->createInfo,
+                                                 pImageSpec->memoryProperty,
+                                                 pImageSpec->exportHandleTypes,
+                                                 pImageSpec->exportDrmModifier,
+                                                 imageResource);
+            } else {
+                result = VkImageResource::Create(vkDevCtx,
+                                                 &pImageSpec->createInfo,
+                                                 pImageSpec->memoryProperty,
+                                                 imageResource);
+            }
             if (result != VK_SUCCESS) {
                 return result;
             }
@@ -844,9 +926,17 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
 
             uint32_t baseArrayLayer = imageArrayParent ? imageIndex : 0;
             VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, baseArrayLayer, 1 };
-            result = VkImageResourceView::Create(vkDevCtx, imageResource,
-                                                 subresourceRange,
-                                                 m_imageViewState[pImageSpec->imageTypeIdx].view);
+            if (pImageSpec->ycbcrConversion != VK_NULL_HANDLE) {
+                result = VkImageResourceView::Create(vkDevCtx, imageResource,
+                                                     subresourceRange, 0,
+                                                     pImageSpec->ycbcrConversion,
+                                                     pImageSpec->createInfo.usage,
+                                                     m_imageViewState[pImageSpec->imageTypeIdx].view);
+            } else {
+                result = VkImageResourceView::Create(vkDevCtx, imageResource,
+                                                     subresourceRange,
+                                                     m_imageViewState[pImageSpec->imageTypeIdx].view);
+            }
 
             if (result != VK_SUCCESS) {
                 return result;
@@ -949,9 +1039,18 @@ int32_t NvPerFrameDecodeImageSet::init(const VulkanDeviceContext* vkDevCtx,
     // Only create if not already created - on reconfigure, we MUST reuse the existing
     // semaphores to avoid corrupting in-flight synchronization.
     if (m_frameCompleteSemaphore == VK_NULL_HANDLE) {
+        VkExportSemaphoreCreateInfo exportInfo = {};
+        exportInfo.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO;
+        exportInfo.pNext = nullptr;
+#ifdef _WIN32
+        exportInfo.handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+#else
+        exportInfo.handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+#endif
+
         VkSemaphoreTypeCreateInfo timelineCreateInfo = {};
         timelineCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-        timelineCreateInfo.pNext = nullptr;
+        timelineCreateInfo.pNext = &exportInfo;
         timelineCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
         timelineCreateInfo.initialValue = 0ULL;
 

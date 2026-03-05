@@ -16,8 +16,18 @@
 cmake_minimum_required(VERSION 3.20.0)
 project(${VULKAN_VIDEO_ENCODER_LIB}, LANGUAGES CXX)
 
+# simdjson (Apache-2.0) for encoder config JSON loading
+include(FetchContent)
+FetchContent_Declare(simdjson
+    GIT_REPOSITORY https://github.com/simdjson/simdjson.git
+    GIT_TAG        v3.6.2
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(simdjson)
+
 set(LIBVKVIDEOENCODER_SRC
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/../src/vulkan_video_encoder.cpp
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/../src/vulkan_video_encoder_ext.cpp
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfigH264.cpp
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfigH264.h
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderDpbH264.cpp
@@ -41,6 +51,7 @@ set(LIBVKVIDEOENCODER_SRC
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoGopStructure.cpp
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoGopStructure.h
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoder.h
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/json/EncoderConfigJsonLoader.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/YCbCrConvUtilsCpu.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/YCbCrConvUtilsCpu.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/Helpers.h
@@ -91,6 +102,7 @@ set(LIBVKVIDEOENCODER_SRC
 )
 
 include_directories(BEFORE "${CMAKE_CURRENT_LIST_DIR}/../")
+include_directories(BEFORE "${CMAKE_CURRENT_LIST_DIR}")
 include_directories(BEFORE ${VULKAN_VIDEO_ENCODER_INCLUDE}/../libs)
 include_directories(BEFORE ${VULKAN_VIDEO_ENCODER_INCLUDE})
 include_directories(BEFORE ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT})
@@ -101,7 +113,7 @@ link_directories(
 
 add_library(${VULKAN_VIDEO_ENCODER_LIB} SHARED ${LIBVKVIDEOENCODER_SRC})
 # Link the libraries
-target_link_libraries(${VULKAN_VIDEO_ENCODER_LIB} PUBLIC ${SHADERC_SHARED_LIBRARY})
+target_link_libraries(${VULKAN_VIDEO_ENCODER_LIB} PUBLIC ${SHADERC_SHARED_LIBRARY} simdjson::simdjson)
 # Ensure the library depends on the generation of these files
 add_dependencies(${VULKAN_VIDEO_ENCODER_LIB} GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB} ${SHADERC_LIB})
 
@@ -143,7 +155,7 @@ endif()
 
 add_library(${VULKAN_VIDEO_ENCODER_STATIC_LIB} STATIC ${LIBVKVIDEOENCODER_SRC})
 # Link the libraries
-target_link_libraries(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PUBLIC ${SHADERC_SHARED_LIBRARY})
+target_link_libraries(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PUBLIC ${SHADERC_SHARED_LIBRARY} simdjson::simdjson)
 # Ensure the library depends on the generation of these files
 add_dependencies(${VULKAN_VIDEO_ENCODER_STATIC_LIB} GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB} ${SHADERC_LIB})
 

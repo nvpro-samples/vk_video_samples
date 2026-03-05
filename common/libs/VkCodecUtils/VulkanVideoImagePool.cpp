@@ -31,6 +31,7 @@
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkCodecUtils/VkImageResource.h"
 #include "VulkanVideoImagePool.h"
+#include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 
 int32_t VulkanVideoImagePoolNode::Release()
 {
@@ -46,6 +47,37 @@ int32_t VulkanVideoImagePoolNode::Release()
         m_imageResourceView  = nullptr;
     }
     return ret;
+}
+
+VkResult VulkanVideoImagePoolNode::CreateExternal(
+    const VulkanDeviceContext* vkDevCtx,
+    VkSharedBaseObj<VkImageResourceView>& imageResourceView,
+    VkImageLayout initialLayout,
+    VkSharedBaseObj<VulkanVideoImagePoolNode>& outNode)
+{
+    VulkanVideoImagePoolNode* pNode = new VulkanVideoImagePoolNode();
+    if (!pNode) {
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
+
+    pNode->m_vkDevCtx = vkDevCtx;
+    pNode->m_imageResourceView = imageResourceView;
+    pNode->m_currentImageLayout = initialLayout;
+    // m_parent stays nullptr (no pool to return to)
+    // m_parentIndex stays -1
+
+    // Fill in VkVideoPictureResourceInfoKHR from the image
+    const VkSharedBaseObj<VkImageResource>& imgRes = imageResourceView->GetImageResource();
+    const VkImageCreateInfo& createInfo = imgRes->GetImageCreateInfo();
+
+    pNode->m_pictureResourceInfo = {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR};
+    pNode->m_pictureResourceInfo.codedOffset = {0, 0};
+    pNode->m_pictureResourceInfo.codedExtent = {createInfo.extent.width, createInfo.extent.height};
+    pNode->m_pictureResourceInfo.baseArrayLayer = 0;
+    pNode->m_pictureResourceInfo.imageViewBinding = imageResourceView->GetImageView();
+
+    outNode = pNode;
+    return VK_SUCCESS;
 }
 
 VkResult VulkanVideoImagePoolNode::CreateImage( const VulkanDeviceContext* vkDevCtx,
@@ -287,7 +319,8 @@ VkResult VulkanVideoImagePool::Configure(const VulkanDeviceContext*   vkDevCtx,
                                          VkImageAspectFlags           aspectMask,
                                          bool                         useImageArray,
                                          bool                         useImageViewArray,
-                                         bool                         useLinearImage)
+                                         bool                         useLinearImage,
+                                         uint64_t                     drmFormatModifier)
 {
     std::lock_guard<std::mutex> lock(m_queueMutex);
     if (numImages > m_imageResources.size()) {
@@ -326,13 +359,49 @@ VkResult VulkanVideoImagePool::Configure(const VulkanDeviceContext*   vkDevCtx,
     m_imageCreateInfo.mipLevels = 1;
     m_imageCreateInfo.arrayLayers = useImageArray ? numImages : 1;
     m_imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    m_imageCreateInfo.tiling = useLinearImage ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
+    if (drmFormatModifier != 0) {
+        m_imageCreateInfo.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
+    } else {
+        m_imageCreateInfo.tiling = useLinearImage ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
+    }
     m_imageCreateInfo.usage = imageUsage;
     m_imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     m_imageCreateInfo.queueFamilyIndexCount = 1;
     m_imageCreateInfo.pQueueFamilyIndices = &m_queueFamilyIndex;
     m_imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     m_imageCreateInfo.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+
+    // DRM format modifier pNext chain (must persist through image creation below)
+    VkImageDrmFormatModifierListCreateInfoEXT drmModListInfo{
+        VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT};
+    VkFormat drmViewFormats[4] = {};
+    uint32_t drmViewFormatCount = 0;
+    VkImageFormatListCreateInfo drmFormatList{VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO};
+
+    if (drmFormatModifier != 0) {
+        drmModListInfo.drmFormatModifierCount = 1;
+        drmModListInfo.pDrmFormatModifiers = &drmFormatModifier;
+
+        // VUID-VkImageCreateInfo-tiling-02353: MUTABLE_FORMAT_BIT + DRM requires format list
+        drmViewFormats[drmViewFormatCount++] = imageFormat;
+        const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(imageFormat);
+        if (mpInfo && mpInfo->planesLayout.numberOfExtraPlanes > 0) {
+            uint32_t numPlanes = 1 + mpInfo->planesLayout.numberOfExtraPlanes;
+            for (uint32_t p = 0; p < numPlanes && p < VK_MAX_NUM_IMAGE_PLANES_EXT; ++p) {
+                if (mpInfo->vkPlaneFormat[p] != VK_FORMAT_UNDEFINED &&
+                    mpInfo->vkPlaneFormat[p] != imageFormat) {
+                    drmViewFormats[drmViewFormatCount++] = mpInfo->vkPlaneFormat[p];
+                }
+            }
+        }
+        drmFormatList.viewFormatCount = drmViewFormatCount;
+        drmFormatList.pViewFormats = drmViewFormats;
+
+        // Chain: formatList -> drmModList -> videoProfile (existing pNext)
+        drmFormatList.pNext = &drmModListInfo;
+        drmModListInfo.pNext = m_imageCreateInfo.pNext;
+        m_imageCreateInfo.pNext = &drmFormatList;
+    }
 
     if (useImageArray) {
         // Create an image that has the same number of layers as the DPB images required.

@@ -24,6 +24,7 @@
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
+#include "VkCodecUtils/VkDrmFormatModifierUtils.h"
 #include "VkCodecUtils/YCbCrConvUtilsCpu.h"
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
 #include "VulkanAqProcessor.h"
@@ -48,6 +49,46 @@ const uint8_t* VkVideoEncoder::setPlaneOffset(const uint8_t* pFrameData, size_t 
     const uint8_t* buf = pFrameData + currentReadOffset;
     currentReadOffset += bufferSize;
     return buf;
+}
+
+VkResult VkVideoEncoder::SelectDrmFormatModifier(
+    VkSharedBaseObj<EncoderConfig>& encoderConfig,
+    VkFormat format, VkImageUsageFlags usage, const VkExtent2D& imageExtent)
+{
+#ifdef __linux__
+    VkDrmFormatModifierUtils drmUtils(m_vkDevCtx);
+
+    const VkFormatFeatureFlags required =
+        VK_FORMAT_FEATURE_VIDEO_ENCODE_INPUT_BIT_KHR | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+    drmUtils.DumpAvailableModifiers(format, required);
+
+    int32_t idx = encoderConfig->drmFormatModifierIndex;
+    uint64_t selected = drmUtils.SelectModifier(
+        format, required, idx,
+        VkDrmFormatModifierUtils::BlockHeightPref::PreferSmallest,
+        VkDrmFormatModifierUtils::CompressionPref::PreferUncompressed);
+
+    if (selected == 0 && idx >= 0) {
+        // Explicit index was requested but no suitable modifier found
+        fprintf(stderr, "DRM modifier index %d: no suitable modifier found\n", idx);
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (selected == 0) {
+        fprintf(stderr, "No non-linear DRM modifiers support VIDEO_ENCODE_SRC + TRANSFER_DST\n");
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
+
+    encoderConfig->selectedDrmFormatModifier = selected;
+    printf("\n=== Selected DRM format modifier ===\n");
+    VkDrmFormatModifierUtils::PrintModifierInfo(selected);
+    printf("\n");
+
+    return VK_SUCCESS;
+#else
+    (void)format; (void)usage; (void)imageExtent;
+    fprintf(stderr, "DRM format modifiers are only supported on Linux\n");
+    return VK_ERROR_FEATURE_NOT_PRESENT;
+#endif
 }
 
 VkResult VkVideoEncoder::LoadNextQpMapFrameFromFile(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
@@ -397,6 +438,184 @@ VkResult VkVideoEncoder::EncodeFrameCommon(VkSharedBaseObj<VkVideoEncodeFrameInf
     return VK_SUCCESS;
 }
 
+VkResult VkVideoEncoder::WrapExternalImage(
+    VkImage image, VkDeviceMemory memory,
+    VkFormat format, uint32_t width, uint32_t height,
+    VkImageTiling tiling,
+    VkSharedBaseObj<VulkanVideoImagePoolNode>& outNode)
+{
+    VkImageCreateInfo imageCI{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    imageCI.imageType = VK_IMAGE_TYPE_2D;
+    imageCI.format = format;
+    imageCI.extent = {width, height, 1};
+    imageCI.mipLevels = 1;
+    imageCI.arrayLayers = 1;
+    imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageCI.tiling = tiling;
+    imageCI.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+                  | VK_IMAGE_USAGE_STORAGE_BIT;
+
+    const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(format);
+    if (mpInfo) {
+        imageCI.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT
+                      | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
+    }
+
+    VkSharedBaseObj<VkImageResource> imageResource;
+    VkResult result = VkImageResource::CreateFromExternal(m_vkDevCtx, image, memory,
+                                                          &imageCI, imageResource);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+
+    VkImageSubresourceRange subresRange{};
+    subresRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    subresRange.levelCount = 1;
+    subresRange.layerCount = 1;
+
+    // For multiplanar formats, create per-plane views with STORAGE usage
+    // so the compute filter can access individual Y and CbCr planes.
+    VkImageUsageFlags planeUsageOverride = 0;
+    if (mpInfo) {
+        planeUsageOverride = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+                           | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    }
+
+    VkSharedBaseObj<VkImageResourceView> imageView;
+    result = VkImageResourceView::Create(m_vkDevCtx, imageResource, subresRange,
+                                         planeUsageOverride, imageView);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+
+    result = VulkanVideoImagePoolNode::CreateExternal(
+        m_vkDevCtx, imageView, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, outNode);
+
+    return result;
+}
+
+VkResult VkVideoEncoder::SetExternalInputFrame(
+    VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+    VkImage externalImage,
+    VkDeviceMemory externalMemory,
+    VkFormat format,
+    uint32_t width, uint32_t height,
+    VkImageTiling tiling,
+    VkImageLayout srcImageCurrentLayout,
+    uint64_t frameId,
+    uint64_t pts,
+    bool isLastFrame,
+    uint32_t waitSemaphoreCount,
+    const VkSemaphore* pWaitSemaphores,
+    const uint64_t* pWaitSemaphoreValues,
+    const VkPipelineStageFlags2* pWaitDstStageMasks,
+    uint32_t signalSemaphoreCount,
+    const VkSemaphore* pSignalSemaphores,
+    const uint64_t* pSignalSemaphoreValues)
+{
+    assert(encodeFrameInfo);
+
+    // =============================================
+    // 1. Replicate LoadNextFrame() bookkeeping
+    // =============================================
+    encodeFrameInfo->frameInputOrderNum = m_inputFrameNum++;
+    encodeFrameInfo->lastFrame = isLastFrame;
+    encodeFrameInfo->inputTimeStamp = pts;
+
+    // =============================================
+    // 2. Store external sync info and source layout
+    // =============================================
+    encodeFrameInfo->isExternalInput = true;
+    encodeFrameInfo->srcExternalImageLayout = srcImageCurrentLayout;
+
+    encodeFrameInfo->inputWaitSemaphores.clear();
+    encodeFrameInfo->inputWaitSemaphoreValues.clear();
+    encodeFrameInfo->inputWaitDstStageMasks.clear();
+    for (uint32_t i = 0; i < waitSemaphoreCount; i++) {
+        encodeFrameInfo->inputWaitSemaphores.push_back(pWaitSemaphores[i]);
+        encodeFrameInfo->inputWaitSemaphoreValues.push_back(
+            pWaitSemaphoreValues ? pWaitSemaphoreValues[i] : 0);
+        encodeFrameInfo->inputWaitDstStageMasks.push_back(
+            pWaitDstStageMasks ? pWaitDstStageMasks[i] : VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR);
+    }
+
+    encodeFrameInfo->inputSignalSemaphores.clear();
+    encodeFrameInfo->inputSignalSemaphoreValues.clear();
+    for (uint32_t i = 0; i < signalSemaphoreCount; i++) {
+        encodeFrameInfo->inputSignalSemaphores.push_back(pSignalSemaphores[i]);
+        encodeFrameInfo->inputSignalSemaphoreValues.push_back(
+            pSignalSemaphoreValues ? pSignalSemaphoreValues[i] : 0);
+    }
+
+    // =============================================
+    // 3. Determine input path
+    // =============================================
+    // Path A: Optimal YCbCr that's directly encodable → set as
+    //         srcEncodeImageResource, skip staging, go to EncodeFrameCommon.
+    //         The encoder reads the input once via vkCmdEncodeVideoKHR,
+    //         reconstructed DPB frames are separate internal allocations.
+    //         Input is free after encode reads it.
+    //
+    // Path B/C: Linear YCbCr or RGBA → needs staging copy or filter.
+    //           Set as srcStagingImageView, go through StageInputFrame().
+
+    bool isDirectlyEncodable = false;
+    // Only OPTIMAL tiling can go through Path A (direct encode).
+    // DRM-modifier images from cross-process DMA-BUF import cannot have
+    // VIDEO_ENCODE_SRC usage (driver limitation), so they must go through
+    // Path B/C staging which copies to an internal encode-ready image.
+    if (tiling == VK_IMAGE_TILING_OPTIMAL) {
+        switch (format) {
+            case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:                       // NV12
+            case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:      // P010
+            case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16:      // P012
+                isDirectlyEncodable = true;
+                break;
+            default:
+                break;
+        }
+    }
+
+    if (isDirectlyEncodable) {
+        // =============================================
+        // Path A: Direct encode (zero-copy)
+        // =============================================
+        // Wrap external image and set directly as srcEncodeImageResource.
+        // No staging, no copy, no filter.
+        VkResult result = WrapExternalImage(
+            externalImage, externalMemory,
+            format, width, height, tiling,
+            encodeFrameInfo->srcEncodeImageResource);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+
+        // Go directly to EncodeFrameCommon (skip StageInputFrame).
+        // Wait/signal semaphores will be injected into SubmitVideoCodingCmds
+        // by EncodeFrameCommon's pipeline.
+        return EncodeFrameCommon(encodeFrameInfo);
+
+    } else {
+        // =============================================
+        // Path B/C: Staging required (copy or filter)
+        // =============================================
+        VkResult result = WrapExternalImage(
+            externalImage, externalMemory,
+            format, width, height, tiling,
+            encodeFrameInfo->srcStagingImageView);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+
+        // StageInputFrame will:
+        //   - Acquire srcEncodeImageResource from pool
+        //   - Record the copy/filter command buffer
+        //   - Submit with wait/signal semaphores injected
+        //   - Call EncodeFrameCommon() at the end
+        return StageInputFrame(encodeFrameInfo);
+    }
+}
+
 VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
     assert(encodeFrameInfo);
@@ -435,8 +654,20 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     };
 
     VkResult result;
-    if (m_inputComputeFilter == nullptr) {
-        VkImageLayout linearImgNewLayout = TransitionImageLayout(cmdBuf, linearInputImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    // External input frames (DMA-BUF import) are already in the target format
+    // from the renderer's filter. Skip the encoder's preprocess compute filter
+    // — it would do storage reads on the imported DRM modifier image which the
+    // GPU cannot service on compressed block-linear memory.
+    if (m_inputComputeFilter == nullptr || encodeFrameInfo->isExternalInput) {
+        // For external input, use actual layout producer left image in (e.g. GENERAL).
+        // UNDEFINED would discard contents and produce scrambled encode.
+        VkImageLayout srcOldLayout = encodeFrameInfo->isExternalInput
+            ? encodeFrameInfo->srcExternalImageLayout
+            : VK_IMAGE_LAYOUT_UNDEFINED;
+        if (srcOldLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
+            srcOldLayout = VK_IMAGE_LAYOUT_GENERAL;  // Fallback for compute output
+        }
+        VkImageLayout linearImgNewLayout = TransitionImageLayout(cmdBuf, linearInputImageView, srcOldLayout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
         VkImageLayout srcImgNewLayout = TransitionImageLayout(cmdBuf, srcEncodeImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
         (void)linearImgNewLayout;
         (void)srcImgNewLayout;
@@ -485,7 +716,6 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         }
 #endif // NV_AQ_GPU_LIB_SUPPORTED
 
-        // Call filter (binding 9 only bound if subsampledYImageView is valid)
         result = m_inputComputeFilter->RecordCommandBuffer(cmdBuf,
                                                            encodeFrameInfo->inputCmdBuffer->GetNodePoolIndex(),
                                                            linearInputImageView,
@@ -727,14 +957,47 @@ VkResult VkVideoEncoder::SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFra
         }
     }
 
+    // === External frame input: inject wait semaphores ===
+    std::vector<VkSemaphoreSubmitInfoKHR> waitSemaphoreInfos;
+    if (encodeFrameInfo->isExternalInput && !encodeFrameInfo->inputWaitSemaphores.empty()) {
+        for (size_t i = 0; i < encodeFrameInfo->inputWaitSemaphores.size(); i++) {
+            VkSemaphoreSubmitInfoKHR waitInfo = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR};
+            waitInfo.semaphore = encodeFrameInfo->inputWaitSemaphores[i];
+            waitInfo.value = (i < encodeFrameInfo->inputWaitSemaphoreValues.size())
+                                 ? encodeFrameInfo->inputWaitSemaphoreValues[i] : 0;
+            waitInfo.stageMask = (i < encodeFrameInfo->inputWaitDstStageMasks.size())
+                                     ? encodeFrameInfo->inputWaitDstStageMasks[i]
+                                     : VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+            waitInfo.deviceIndex = 0;
+            waitSemaphoreInfos.push_back(waitInfo);
+        }
+    }
+
+    // === External frame input: inject signal semaphores ===
+    // These are appended to the existing signal semaphores (frameCompleteSemaphore, subsampled TL)
+    std::vector<VkSemaphoreSubmitInfoKHR> allSignalSemaphoreInfos(
+        signalSemaphoreInfos, signalSemaphoreInfos + signalSemaphoreCount);
+    if (encodeFrameInfo->isExternalInput && !encodeFrameInfo->inputSignalSemaphores.empty()) {
+        for (size_t i = 0; i < encodeFrameInfo->inputSignalSemaphores.size(); i++) {
+            VkSemaphoreSubmitInfoKHR signalInfo = {VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR};
+            signalInfo.semaphore = encodeFrameInfo->inputSignalSemaphores[i];
+            signalInfo.value = (i < encodeFrameInfo->inputSignalSemaphoreValues.size())
+                                   ? encodeFrameInfo->inputSignalSemaphoreValues[i] : 0;
+            signalInfo.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+            signalInfo.deviceIndex = 0;
+            allSignalSemaphoreInfos.push_back(signalInfo);
+        }
+    }
+
+    // TODO: Convert to TL semaphore, input -> AQ -> Encode
     VkSubmitInfo2KHR submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR, nullptr };
     submitInfo.flags = 0;
-    submitInfo.waitSemaphoreInfoCount = 0;
-    submitInfo.pWaitSemaphoreInfos = nullptr;
+    submitInfo.waitSemaphoreInfoCount = static_cast<uint32_t>(waitSemaphoreInfos.size());
+    submitInfo.pWaitSemaphoreInfos = waitSemaphoreInfos.empty() ? nullptr : waitSemaphoreInfos.data();
     submitInfo.commandBufferInfoCount = 1;
     submitInfo.pCommandBufferInfos = &cmdBufferInfo;
-    submitInfo.signalSemaphoreInfoCount = signalSemaphoreCount;
-    submitInfo.pSignalSemaphoreInfos = (signalSemaphoreCount > 0) ? signalSemaphoreInfos : nullptr;
+    submitInfo.signalSemaphoreInfoCount = static_cast<uint32_t>(allSignalSemaphoreInfos.size());
+    submitInfo.pSignalSemaphoreInfos = allSignalSemaphoreInfos.empty() ? nullptr : allSignalSemaphoreInfos.data();
 
     VkFence queueCompleteFence = encodeFrameInfo->inputCmdBuffer->GetFence();
     assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, queueCompleteFence));
@@ -818,10 +1081,13 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     uint32_t querySlotId = (uint32_t)-1;
     VkQueryPool queryPool = encodeFrameInfo->encodeCmdBuffer->GetQueryPool(querySlotId);
 
-    // Since we can use a single command buffer from multiple frames,
-    // we can't just use the querySlotId from the command buffer.
-    // Instead we use the input image index that should be unique for each frame.
-    querySlotId = (uint32_t)encodeFrameInfo->srcEncodeImageResource->GetImageIndex();
+    // Match the slot used in SubmitVideoCodingCmds (pool index or 0 for external)
+    int32_t imgIndex = encodeFrameInfo->srcEncodeImageResource->GetImageIndex();
+    if (imgIndex >= 0) {
+        querySlotId = (uint32_t)imgIndex;
+    } else {
+        querySlotId = 0;
+    }
 
     // get output results
     struct VulkanVideoEncodeStatus {
@@ -1238,6 +1504,15 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         std::max(m_maxCodedExtent.height, encoderConfig->videoCapabilities.minCodedExtent.height)
     };
 
+    // Query and select DRM format modifier if requested
+    if (encoderConfig->drmFormatModifierIndex >= 0) {
+        result = SelectDrmFormatModifier(encoderConfig, m_imageInFormat, inImageUsage, imageExtent);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nInitEncoder Error: Failed to select DRM format modifier.\n");
+            return result;
+        }
+    }
+
     result = m_inputImagePool->Configure( m_vkDevCtx,
                                           encoderConfig->numInputImages,
                                           m_imageInFormat,
@@ -1245,11 +1520,12 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                           inImageUsage,
                                           m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
                                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                          encoderConfig->videoCoreProfile.GetProfile(), // pVideoProfile
-                                          VK_IMAGE_ASPECT_COLOR_BIT, // a whole YCbCr or RGBA image
+                                          encoderConfig->videoCoreProfile.GetProfile(),
+                                          VK_IMAGE_ASPECT_COLOR_BIT,
                                           false,   // useImageArray
                                           false,   // useImageViewArray
-                                          false    // useLinear
+                                          false,   // useLinear
+                                          encoderConfig->selectedDrmFormatModifier
                                           );
     if(result != VK_SUCCESS) {
         fprintf(stderr, "\nInitEncoder Error: Failed to Configure inputImagePool.\n");
@@ -1851,6 +2127,21 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         imageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_GENERAL) && (newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)) {
+        imageBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        imageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_UNDEFINED) && (newLayout == VK_IMAGE_LAYOUT_GENERAL)) {
+        imageBarrier.srcAccessMask = 0;
+        imageBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_GENERAL) && (newLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR)) {
+        imageBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        imageBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
     } else if ((oldLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR) && (newLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR)) {
         imageBarrier.srcAccessMask = VK_ACCESS_2_VIDEO_ENCODE_WRITE_BIT_KHR;
         imageBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
@@ -2158,9 +2449,14 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
     VkQueryPool queryPool = encodeCmdBuffer->GetQueryPool(querySlotId);
 
     // Since we can use a single command buffer from multiple frames,
-    // we can't just use the querySlotId from the command buffer.
-    // Instead we use the input image index that should be unique for each frame.
-    querySlotId = (uint32_t)encodeFrameInfo->srcEncodeImageResource->GetImageIndex();
+    // we use the input image index when it is valid (pool-backed frames).
+    // External frames (CreateExternal node) have GetImageIndex() == -1; use slot 0 to avoid invalid query index.
+    int32_t imgIndex = encodeFrameInfo->srcEncodeImageResource->GetImageIndex();
+    if (imgIndex >= 0) {
+        querySlotId = (uint32_t)imgIndex;
+    } else {
+        querySlotId = 0;  // external image: single query slot for in-flight external frame
+    }
 
     // Clear the query results
     const uint32_t numQuerySamples = 1;
@@ -2238,8 +2534,11 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
 
     const VkCommandBuffer* pCmdBuf = encodeFrameInfo->encodeCmdBuffer->GetCommandBuffer();
-    // The encode operation complete semaphore is not needed at this point.
-    VkSemaphore frameCompleteSemaphore = VK_NULL_HANDLE; // encodeFrameInfo->encodeCmdBuffer->GetSemaphore();
+    // For external input (direct encode path), enable the encode complete
+    // semaphore so the encoder service can chain the display after it.
+    VkSemaphore frameCompleteSemaphore = (encodeFrameInfo->isExternalInput && !encodeFrameInfo->inputCmdBuffer)
+        ? encodeFrameInfo->encodeCmdBuffer->GetSemaphore()
+        : VK_NULL_HANDLE;
 
     // Create command buffer submit info
     VkCommandBufferSubmitInfoKHR cmdBufferInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR };
@@ -2249,10 +2548,11 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     // Create wait semaphore submit infos
     // If we are processing the input staging, wait for it's semaphore
     // to be done before processing the input frame with the encoder.
-    const uint32_t waitSemaphoreMaxCount = 4;
+    // For external direct input (no staging), inject external wait semaphores here.
+    const uint32_t waitSemaphoreMaxCount = 8;
     VkSemaphoreSubmitInfoKHR waitSemaphoreInfos[waitSemaphoreMaxCount]{};
 
-    const uint32_t signalSemaphoreMaxCount = 1;
+    const uint32_t signalSemaphoreMaxCount = 4;
     VkSemaphoreSubmitInfoKHR signalSemaphoreInfos[signalSemaphoreMaxCount]{};
 
     uint32_t waitSemaphoreCount = 0;
@@ -2307,13 +2607,35 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
         waitSemaphoreCount++;
     }
 
+    // For external direct input (Path A: no staging, image goes directly to encode):
+    // Inject external wait semaphores here. For the staging path (Paths B/C),
+    // these are injected in SubmitStagedInputFrame() instead.
+    if (encodeFrameInfo->isExternalInput && !encodeFrameInfo->inputCmdBuffer) {
+        for (size_t i = 0; i < encodeFrameInfo->inputWaitSemaphores.size() &&
+                           waitSemaphoreCount < waitSemaphoreMaxCount; i++) {
+            waitSemaphoreInfos[waitSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+            waitSemaphoreInfos[waitSemaphoreCount].semaphore = encodeFrameInfo->inputWaitSemaphores[i];
+            waitSemaphoreInfos[waitSemaphoreCount].value =
+                (i < encodeFrameInfo->inputWaitSemaphoreValues.size())
+                    ? encodeFrameInfo->inputWaitSemaphoreValues[i] : 0;
+            waitSemaphoreInfos[waitSemaphoreCount].stageMask =
+                (i < encodeFrameInfo->inputWaitDstStageMasks.size())
+                    ? encodeFrameInfo->inputWaitDstStageMasks[i]
+                    : VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+            waitSemaphoreInfos[waitSemaphoreCount].deviceIndex = 0;
+            waitSemaphoreCount++;
+        }
+    }
+
     // Create signal semaphore submit info if needed
-    VkSemaphoreSubmitInfoKHR signalSemaphoreInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR };
     if (frameCompleteSemaphore != VK_NULL_HANDLE) {
-        signalSemaphoreInfo.semaphore = frameCompleteSemaphore;
-        signalSemaphoreInfo.value = 0; // Binary semaphore
-        signalSemaphoreInfo.stageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
-        signalSemaphoreInfo.deviceIndex = 0;
+        assert(signalSemaphoreCount < signalSemaphoreMaxCount);
+        signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+        signalSemaphoreInfos[signalSemaphoreCount].semaphore = frameCompleteSemaphore;
+        signalSemaphoreInfos[signalSemaphoreCount].value = 0; // Binary semaphore
+        signalSemaphoreInfos[signalSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+        signalSemaphoreInfos[signalSemaphoreCount].deviceIndex = 0;
+        signalSemaphoreCount++;
     }
 
     if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
@@ -2348,8 +2670,6 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     submitInfo.pWaitSemaphoreInfos = (waitSemaphoreCount > 0) ? waitSemaphoreInfos : nullptr;
     submitInfo.commandBufferInfoCount = 1;
     submitInfo.pCommandBufferInfos = &cmdBufferInfo;
-    submitInfo.signalSemaphoreInfoCount = (frameCompleteSemaphore != VK_NULL_HANDLE) ? 1 : 0;
-    submitInfo.pSignalSemaphoreInfos = (frameCompleteSemaphore != VK_NULL_HANDLE) ? &signalSemaphoreInfo : nullptr;
     submitInfo.signalSemaphoreInfoCount = signalSemaphoreCount;
     submitInfo.pSignalSemaphoreInfos = (signalSemaphoreCount > 0) ? signalSemaphoreInfos : nullptr;
 
