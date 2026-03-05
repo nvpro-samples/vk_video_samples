@@ -815,18 +815,22 @@ VkResult VulkanPerDrawContext::RecordCommandBuffer(VkCommandBuffer cmdBuffer,
     // The render pass finalLayout=PRESENT_SRC_KHR handles the transition automatically.
 
     // Transition decoded image back to its decode layout for reuse by the video decoder.
-    // srcStage = FRAGMENT_SHADER (we just sampled), dstStage = NONE (sync handled by semaphore).
-    if (pFormatInfo == NULL) {
-        setImageLayout(m_vkDevCtx, cmdBuffer, inputImageToDrawFrom->image,
-                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, decodeOutputLayout,
-                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_NONE_KHR,
-                       VK_IMAGE_ASPECT_COLOR_BIT);
-    } else {
-        for (uint32_t planeIndx = 0; (planeIndx < (uint32_t)pFormatInfo->planesLayout.numberOfExtraPlanes + 1); planeIndx++) {
+    // Skip for non-decode images (e.g. test pattern with PREINITIALIZED layout).
+    const bool isDecodeImage = (decodeOutputLayout == VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR ||
+                                decodeOutputLayout == VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR);
+    if (isDecodeImage) {
+        if (pFormatInfo == NULL) {
             setImageLayout(m_vkDevCtx, cmdBuffer, inputImageToDrawFrom->image,
-                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, decodeOutputLayout,
-                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_NONE_KHR,
-                       (VK_IMAGE_ASPECT_PLANE_0_BIT_KHR << planeIndx));
+                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, decodeOutputLayout,
+                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_NONE_KHR,
+                           VK_IMAGE_ASPECT_COLOR_BIT);
+        } else {
+            for (uint32_t planeIndx = 0; (planeIndx < (uint32_t)pFormatInfo->planesLayout.numberOfExtraPlanes + 1); planeIndx++) {
+                setImageLayout(m_vkDevCtx, cmdBuffer, inputImageToDrawFrom->image,
+                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, decodeOutputLayout,
+                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_2_NONE_KHR,
+                           (VK_IMAGE_ASPECT_PLANE_0_BIT_KHR << planeIndx));
+            }
         }
     }
 
