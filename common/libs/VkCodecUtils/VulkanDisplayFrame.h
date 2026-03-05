@@ -56,6 +56,7 @@ public:
     static constexpr uint32_t MAX_EXTERNAL_CONSUMERS = 4;
     uint32_t numExternalConsumers;
     uint64_t externalConsumerDoneValues[MAX_EXTERNAL_CONSUMERS];
+    VkImageLayout outputImageLayout; // Layout of the decoded output image (DPB in coincide mode, DST in distinct)
 
     void Reset()
     {
@@ -86,6 +87,7 @@ public:
         numExternalConsumers = 0;
         for (uint32_t i = 0; i < MAX_EXTERNAL_CONSUMERS; i++)
             externalConsumerDoneValues[i] = 0;
+        outputImageLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR;
         // For debugging
         decodeOrder = 0;
         displayOrder = 0;
@@ -114,6 +116,7 @@ public:
     , hasConsummerSignalSemaphore()
     , numExternalConsumers(0)
     , externalConsumerDoneValues{}
+    , outputImageLayout(VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR)
     {}
 
     virtual ~VulkanDisplayFrame() {
