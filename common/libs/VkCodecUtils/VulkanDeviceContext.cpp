@@ -461,6 +461,21 @@ static constexpr uint32_t g_ignoredValidationMessageIds[] = {
     // multi-planar NV12 images. Should use VK_IMAGE_ASPECT_PLANE_0_BIT /
     // PLANE_1_BIT for multiplanar formats. TODO: fix in VkImageResource.cpp.
     0x4148a5e9,
+
+    // VUID-vkCmdBeginVideoCodingKHR-pPictureResource-07265 (MessageID = 0xa9049dc2)
+    // VVL false positive: DPB slot re-association during decode.
+    // The validation layer does not track slot activations performed by
+    // CmdDecodeVideoKHR's pSetupReferenceSlot — it only tracks BeginVideoCoding's
+    // pReferenceSlots. This causes false positives when:
+    //   1. A DPB slot is activated for the first time (no prior association exists)
+    //   2. A DPB slot is reused with a different image (parser evicted the old
+    //      reference and reassigned the slot)
+    // Per spec §40.1: "A DPB slot can be activated with a new frame even if it is
+    // already active. All previous associations are replaced with the reconstructed
+    // picture used to activate it." The activation happens during CmdDecodeVideoKHR
+    // via pSetupReferenceSlot, which the validation layer does not track.
+    // See: docs/VK_LAYER_VALIDATION_BUG_REPORT-DPB-SLOT-TRACKING.md
+    0xa9049dc2,
 };
 
 bool VulkanDeviceContext::DebugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT,
