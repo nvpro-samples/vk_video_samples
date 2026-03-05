@@ -355,4 +355,5 @@ private:
     VkDeviceSize   m_maxStreamBufferSize;
     VulkanFilterYuvCompute::FilterType m_filterType;
     VkSharedBaseObj<VulkanFilter> m_yuvFilter;
+    VkSamplerYcbcrConversion m_dpbYcbcrConversion{VK_NULL_HANDLE};
 };

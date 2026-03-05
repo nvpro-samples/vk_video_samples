@@ -662,37 +662,27 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
     usageCreateInfo.usage = planeUsageOverride;
 
     if (!skipCombinedView) {
-        // For multi-planar formats, combined views cannot have STORAGE_BIT
-        // (multi-planar formats don't support storage - only per-plane views do).
-        // Must use VkImageViewUsageCreateInfo to restrict usage when the image
-        // has STORAGE_BIT via EXTENDED_USAGE_BIT.
-        //
-        // Note: SAMPLED_BIT must NOT be stripped here. The decoder's display
-        // pipeline uses the combined view with VkSamplerYcbcrConversion for
-        // sampling decoded frames. Stripping SAMPLED_BIT causes blank output.
-        // The VUID-VkImageViewCreateInfo-format-06415 validation error for
-        // SAMPLED_BIT without YCbCr conversion is handled by the caller
-        // creating a YCbCr sampler for the combined view before sampling.
-        //
-        // Reference: https://gitlab.khronos.org/vulkan/vulkan/-/issues/4624
-        if (mpInfo && (imageCreateInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
+        // Multi-planar combined views without YCbCr conversion: strip SAMPLED (VUID-06415)
+        // and STORAGE (not supported by multi-planar base format). Callers that need
+        // SAMPLED use the YCbCr overload of Create() instead.
+        if (mpInfo) {
             VkImageUsageFlags combinedUsage = imageCreateInfo.usage;
-            // Multi-planar base format doesn't support STORAGE — strip it.
-            // Keep SAMPLED + video decode bits: the decoder needs the combined view
-            // as imageViewBinding for DPB/DST, and the display pipeline will attach
-            // a VkSamplerYcbcrConversion at descriptor update time for sampling.
-            combinedUsage &= ~VK_IMAGE_USAGE_STORAGE_BIT;
-            usageCreateInfo.usage = combinedUsage;
-            viewInfo.pNext = &usageCreateInfo;
+            combinedUsage &= ~(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+            if (combinedUsage == 0) {
+                skipCombinedView = true;
+            } else {
+                usageCreateInfo.usage = combinedUsage;
+                viewInfo.pNext = &usageCreateInfo;
+            }
         }
-        
+    }
+
+    if (!skipCombinedView) {
         VkResult result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
         if (result != VK_SUCCESS) {
             return result;
         }
         numViews++;
-        
-        // Reset pNext for subsequent views
         viewInfo.pNext = nullptr;
     } else {
         // Set placeholder for combined view
@@ -881,17 +871,25 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
     
     // Now create per-plane views for compute storage
     if (mpInfo) {
-        // Reset pNext for plane views (use planeUsageOverride instead)
         viewInfo.pNext = nullptr;
         viewInfo.viewType = (imageSubresourceRange.layerCount > 1) ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
         viewInfo.subresourceRange = imageSubresourceRange;
         
         VkImageViewUsageCreateInfo planeUsageInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO};
-        planeUsageInfo.usage = planeUsageOverride;
-        
         if (planeUsageOverride != 0) {
-            viewInfo.pNext = &planeUsageInfo;
+            planeUsageInfo.usage = planeUsageOverride;
+        } else {
+            VkImageUsageFlags planeUsage = imageResource->GetImageCreateInfo().usage;
+            planeUsage &= ~(VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_DECODE_SRC_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_ENCODE_DST_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR);
+            planeUsageInfo.usage = planeUsage;
         }
+        planeUsageInfo.pNext = nullptr;
+        viewInfo.pNext = &planeUsageInfo;
         
         // Create Y plane view
         viewInfo.format = mpInfo->vkPlaneFormat[numPlanes];
