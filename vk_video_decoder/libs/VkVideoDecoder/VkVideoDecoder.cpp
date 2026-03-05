@@ -1366,9 +1366,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         waitSemaphoreInfos[waitSemaphoreCount].pNext = nullptr;
         waitSemaphoreInfos[waitSemaphoreCount].semaphore = consumerCompleteSemaphore;
         waitSemaphoreInfos[waitSemaphoreCount].value = frameSynchronizationInfo.frameConsumerDoneTimelineValue;
-        waitSemaphoreInfos[waitSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR |
-                                                           VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR |
-                                                           VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+        waitSemaphoreInfos[waitSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
         waitSemaphoreInfos[waitSemaphoreCount].deviceIndex = 0;
         waitSemaphoreCount++;
     }
