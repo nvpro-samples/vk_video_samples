@@ -550,6 +550,12 @@ public:
                     pDecodedFrame->imageViews[VulkanDisplayFrame::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY].view = m_perFrameDecodeImageSet[pictureIndex].GetImageView(displayOutImageType);
                     pDecodedFrame->imageViews[VulkanDisplayFrame::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY].singleLevelView = m_perFrameDecodeImageSet[pictureIndex].GetSingleLevelImageView(displayOutImageType);
                     pDecodedFrame->imageViews[VulkanDisplayFrame::IMAGE_VIEW_TYPE_OPTIMAL_DISPLAY].inUse = true;
+
+                    VulkanVideoFrameBuffer::PictureResourceInfo displayResInfo{};
+                    m_perFrameDecodeImageSet[pictureIndex].GetImageSetNewLayout(
+                        displayOutImageType, VK_IMAGE_LAYOUT_MAX_ENUM,
+                        nullptr, &displayResInfo);
+                    pDecodedFrame->outputImageLayout = displayResInfo.currentImageLayout;
                 }
             }
 

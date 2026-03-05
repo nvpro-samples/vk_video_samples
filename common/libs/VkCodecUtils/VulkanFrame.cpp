@@ -438,7 +438,7 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
                                m_videoRenderer->m_useTestImage);
 
     VkImageResourceView* pView = inFrame ? imageResourceView : (VkImageResourceView*)nullptr;
-    vulkanVideoUtils::ImageResourceInfo rtImage(pView, VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR);
+    vulkanVideoUtils::ImageResourceInfo rtImage(pView, inFrame ? inFrame->outputImageLayout : VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR);
     const vulkanVideoUtils::ImageResourceInfo* pRtImage = doTestPatternFrame ? &m_videoRenderer->m_testFrameImage : &rtImage;
     VkFence frameConsumerDoneFence = doTestPatternFrame ? VkFence() : inFrame->frameConsumerDoneFence;
     int32_t displayWidth  = doTestPatternFrame ? pRtImage->imageWidth  : inFrame->displayWidth;
