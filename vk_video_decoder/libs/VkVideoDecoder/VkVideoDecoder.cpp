@@ -666,6 +666,33 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
 
     assert(imageSpecsIndex < DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES);
 
+    // Create a YCbCr conversion for multi-planar DPB images so the combined view can
+    // be created with VkSamplerYcbcrConversionInfo (required by VUID-06415 for SAMPLED_BIT).
+    if (m_dpbYcbcrConversion != VK_NULL_HANDLE) {
+        m_vkDevCtx->DestroySamplerYcbcrConversion(*m_vkDevCtx, m_dpbYcbcrConversion, nullptr);
+        m_dpbYcbcrConversion = VK_NULL_HANDLE;
+    }
+    const VkMpFormatInfo* dpbMpInfo = YcbcrVkFormatInfo(dpbImageFormat);
+    if (dpbMpInfo != nullptr && (dpbImageUsage & VK_IMAGE_USAGE_SAMPLED_BIT)) {
+        VkSamplerYcbcrConversionCreateInfo convCreateInfo{VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO};
+        convCreateInfo.format = dpbImageFormat;
+        convCreateInfo.ycbcrModel = VkVideoCoreProfile::CodecColorPrimariesToYCbCrModel(
+            pVideoFormat->video_signal_description.color_primaries);
+        convCreateInfo.ycbcrRange = VkVideoCoreProfile::CodecFullRangeToYCbCrRange(
+            pVideoFormat->video_signal_description.video_full_range_flag);
+        convCreateInfo.components = { VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+                                      VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY };
+        convCreateInfo.xChromaOffset = VK_CHROMA_LOCATION_MIDPOINT;
+        convCreateInfo.yChromaOffset = VK_CHROMA_LOCATION_MIDPOINT;
+        convCreateInfo.chromaFilter = VK_FILTER_LINEAR;
+        convCreateInfo.forceExplicitReconstruction = VK_FALSE;
+
+        VkResult convResult = m_vkDevCtx->CreateSamplerYcbcrConversion(*m_vkDevCtx, &convCreateInfo, nullptr, &m_dpbYcbcrConversion);
+        if (convResult == VK_SUCCESS) {
+            imageSpecDpb.ycbcrConversion = m_dpbYcbcrConversion;
+        }
+    }
+
     int32_t ret = m_videoFrameBuffer->InitImagePool(videoProfile.GetProfile(),
                                                     numDecodeSurfaces,
                                                     imageSpecsIndex,
@@ -1721,6 +1748,11 @@ void VkVideoDecoder::Deinitialize()
     if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
         m_vkDevCtx->DestroySemaphore(*m_vkDevCtx, m_hwLoadBalancingTimelineSemaphore, NULL);
         m_hwLoadBalancingTimelineSemaphore = VK_NULL_HANDLE;
+    }
+
+    if (m_dpbYcbcrConversion != VK_NULL_HANDLE) {
+        m_vkDevCtx->DestroySamplerYcbcrConversion(*m_vkDevCtx, m_dpbYcbcrConversion, nullptr);
+        m_dpbYcbcrConversion = VK_NULL_HANDLE;
     }
 
     m_videoFrameBuffer = nullptr;

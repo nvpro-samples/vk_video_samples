@@ -926,9 +926,17 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
 
             uint32_t baseArrayLayer = imageArrayParent ? imageIndex : 0;
             VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, baseArrayLayer, 1 };
-            result = VkImageResourceView::Create(vkDevCtx, imageResource,
-                                                 subresourceRange,
-                                                 m_imageViewState[pImageSpec->imageTypeIdx].view);
+            if (pImageSpec->ycbcrConversion != VK_NULL_HANDLE) {
+                result = VkImageResourceView::Create(vkDevCtx, imageResource,
+                                                     subresourceRange, 0,
+                                                     pImageSpec->ycbcrConversion,
+                                                     pImageSpec->createInfo.usage,
+                                                     m_imageViewState[pImageSpec->imageTypeIdx].view);
+            } else {
+                result = VkImageResourceView::Create(vkDevCtx, imageResource,
+                                                     subresourceRange,
+                                                     m_imageViewState[pImageSpec->imageTypeIdx].view);
+            }
 
             if (result != VK_SUCCESS) {
                 return result;
