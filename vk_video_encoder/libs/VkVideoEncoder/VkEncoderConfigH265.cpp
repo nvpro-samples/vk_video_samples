@@ -460,25 +460,24 @@ void EncoderConfigH265::InitializeSpsRefPicSet(SpsH265 *pSps)
     memset(&pSps->longTermRefPicsSps.lt_ref_pic_poc_lsb_sps, 0, sizeof(pSps->longTermRefPicsSps.lt_ref_pic_poc_lsb_sps));
 }
 
-StdVideoH265ProfileTierLevel EncoderConfigH265::GetLevelTier()
+void EncoderConfigH265::DetermineLevelTier()
 {
-    StdVideoH265ProfileTierLevel profileTierLevel{};
-    profileTierLevel.general_profile_idc = STD_VIDEO_H265_PROFILE_IDC_INVALID;
-    profileTierLevel.general_level_idc = STD_VIDEO_H265_LEVEL_IDC_INVALID;
+    levelIdc = STD_VIDEO_H265_LEVEL_IDC_INVALID;
+    general_tier_flag = 0;
     uint32_t levelIdx = 0;
     for (; levelIdx < levelLimitsTblSize; levelIdx++) {
 
         if (IsSuitableLevel(levelIdx, 0)) {
-            profileTierLevel.general_level_idc = levelLimits[levelIdx].stdLevel;
-            profileTierLevel.flags.general_tier_flag = 0; // Main tier
+            levelIdc = levelLimits[levelIdx].stdLevel;
+            general_tier_flag = 0; // Main tier
             break;
         }
 
         if ((levelLimits[levelIdx].levelIdc >= 120) && // level 4.0 and above
             IsSuitableLevel(levelIdx, 1)) {
 
-            profileTierLevel.general_level_idc = levelLimits[levelIdx].stdLevel;
-            profileTierLevel.flags.general_tier_flag = 1; // Main tier
+            levelIdc = levelLimits[levelIdx].stdLevel;
+            general_tier_flag = 1; // High tier
             break;
         }
     }
@@ -486,19 +485,34 @@ StdVideoH265ProfileTierLevel EncoderConfigH265::GetLevelTier()
     if (levelIdx >= levelLimitsTblSize) {
         assert(!"No suitable level selected");
     }
+}
 
-    return profileTierLevel;
+void EncoderConfigH265::InitProfileLevel()
+{
+    // If profile hasn't been specified, determine it based on bit depth and chroma
+    if (profile == STD_VIDEO_H265_PROFILE_IDC_INVALID) {
+        if (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR) {
+            if (input.bpp == 8) {
+                profile = STD_VIDEO_H265_PROFILE_IDC_MAIN;
+            } else if (input.bpp <= 10) {
+                profile = STD_VIDEO_H265_PROFILE_IDC_MAIN_10;
+            } else {
+                profile = STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS;
+            }
+        } else {
+            // 4:2:2 or 4:4:4 requires Range Extensions profile
+            profile = STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS;
+        }
+    }
+
+    // Determine level and tier based on resolution, bitrate, etc.
+    DetermineLevelTier();
 }
 
 bool EncoderConfigH265::InitRateControl()
 {
-    StdVideoH265ProfileTierLevel profileTierLevel = GetLevelTier();
-    // Assigning default main profile if invalid.
-    if (profileTierLevel.general_profile_idc == STD_VIDEO_H265_PROFILE_IDC_INVALID) {
-        profileTierLevel.general_profile_idc = STD_VIDEO_H265_PROFILE_IDC_MAIN;
-    }
-    uint32_t level = profileTierLevel.general_level_idc;
-    if (level >= levelLimitsTblSize) {
+    // Level is already initialized by InitProfileLevel()
+    if (levelIdc >= levelLimitsTblSize) {
         assert(!"The h.265 level index is invalid");
         return false;
     }
@@ -506,7 +520,7 @@ bool EncoderConfigH265::InitRateControl()
 
     // Safe default maximum bitrate
     uint32_t levelBitRate = std::max(averageBitrate, hrdBitrate);
-    levelBitRate = std::max(levelBitRate, std::min(levelLimits[level].maxBitRateMainTier * 800u, 120000000u));
+    levelBitRate = std::max(levelBitRate, std::min(levelLimits[levelIdc].maxBitRateMainTier * 800u, 120000000u));
 
     // If no bitrate is specified, use the level limit
     if (averageBitrate == 0) {
@@ -540,7 +554,7 @@ bool EncoderConfigH265::InitRateControl()
     
     // Use the main tier level limit for the max VBV buffer size, and no more than 8 seconds at peak rate
     if (vbvBufferSize == 0) {
-        vbvBufferSize = std::min(levelLimits[level].maxCPBSizeMainTier * cpbVclFactor, 100000000u);
+        vbvBufferSize = std::min(levelLimits[levelIdc].maxCPBSizeMainTier * cpbVclFactor, 100000000u);
         if (rateControlMode != VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR) {
             if ((vbvBufferSize >> 3) > hrdBitrate) {
                 vbvBufferSize = hrdBitrate << 3;
@@ -607,7 +621,9 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
         spsInfo->decPicBufMgr.max_num_reorder_pics[i] = gopStructure.GetConsecutiveBFrameCount() ? 1 : 0;
     }
 
-    spsInfo->profileTierLevel = GetLevelTier();
+    // Use pre-initialized profile, level, and tier from InitProfileLevel()
+    spsInfo->profileTierLevel.general_profile_idc = profile;
+    spsInfo->profileTierLevel.general_level_idc = levelIdc;
     spsInfo->profileTierLevel.flags.general_tier_flag = general_tier_flag;
 
     // Always insert profile tier flags assuming frame mode
@@ -616,21 +632,6 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
     spsInfo->profileTierLevel.flags.general_interlaced_source_flag = 0;
     spsInfo->profileTierLevel.flags.general_non_packed_constraint_flag = 0;
     spsInfo->profileTierLevel.flags.general_frame_only_constraint_flag = 1;
-
-    // Assigning default main profile if invalid.
-    if (spsInfo->profileTierLevel.general_profile_idc == STD_VIDEO_H265_PROFILE_IDC_INVALID) {
-        if (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR) {
-            if (input.bpp == 8) {
-                spsInfo->profileTierLevel.general_profile_idc = STD_VIDEO_H265_PROFILE_IDC_MAIN;
-            } else if (input.bpp == 10) {
-                spsInfo->profileTierLevel.general_profile_idc = STD_VIDEO_H265_PROFILE_IDC_MAIN_10;
-            } else {
-                spsInfo->profileTierLevel.general_profile_idc = STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS;
-            }
-        } else {
-            spsInfo->profileTierLevel.general_profile_idc = STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS;
-        }
-    }
 
     const uint32_t ctbLog2SizeY = cuSize + 3;
     const uint32_t minCbLog2SizeY = cuMinSize + 3;
