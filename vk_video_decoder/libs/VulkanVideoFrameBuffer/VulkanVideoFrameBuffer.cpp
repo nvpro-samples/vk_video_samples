@@ -432,7 +432,6 @@ public:
         }
 
         if ((pFrameSynchronizationInfo->syncOnFrameConsumerDoneFence  == 1) &&
-             (m_perFrameDecodeImageSet[picId].m_useConsummerSignalSemaphore == 0) &&
              (m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence == 1) &&
              (m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence != VK_NULL_HANDLE)) {
 
@@ -555,7 +554,11 @@ public:
                     m_perFrameDecodeImageSet[pictureIndex].GetImageSetNewLayout(
                         displayOutImageType, VK_IMAGE_LAYOUT_MAX_ENUM,
                         nullptr, &displayResInfo);
-                    pDecodedFrame->outputImageLayout = displayResInfo.currentImageLayout;
+                    VkImageLayout trackedLayout = displayResInfo.currentImageLayout;
+                    if (trackedLayout == VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR ||
+                        trackedLayout == VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR) {
+                        pDecodedFrame->outputImageLayout = trackedLayout;
+                    }
                 }
             }
 
