@@ -677,7 +677,10 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
         // Reference: https://gitlab.khronos.org/vulkan/vulkan/-/issues/4624
         if (mpInfo && (imageCreateInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
             VkImageUsageFlags combinedUsage = imageCreateInfo.usage;
-            // Remove STORAGE - not supported by multi-planar base format
+            // Multi-planar base format doesn't support STORAGE — strip it.
+            // Keep SAMPLED + video decode bits: the decoder needs the combined view
+            // as imageViewBinding for DPB/DST, and the display pipeline will attach
+            // a VkSamplerYcbcrConversion at descriptor update time for sampling.
             combinedUsage &= ~VK_IMAGE_USAGE_STORAGE_BIT;
             usageCreateInfo.usage = combinedUsage;
             viewInfo.pNext = &usageCreateInfo;
@@ -702,14 +705,27 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
 
     if (mpInfo) { // Is this a YCbCr format
 
+        // Per-plane formats (R8, RG8, etc.) don't support video decode/encode format features.
+        // Strip those usage bits for plane views via VkImageViewUsageCreateInfo.
+        VkImageViewUsageCreateInfo planeUsageCreateInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO};
+        if (planeUsageOverride != 0) {
+            planeUsageCreateInfo.usage = planeUsageOverride;
+        } else {
+            VkImageUsageFlags planeUsage = imageCreateInfo.usage;
+            planeUsage &= ~(VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_DECODE_SRC_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_ENCODE_DST_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR |
+                            VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR);
+            planeUsageCreateInfo.usage = planeUsage;
+        }
+        planeUsageCreateInfo.pNext = nullptr;
+        viewInfo.pNext = &planeUsageCreateInfo;
+
         // Create separate image views for Y and CbCr planes
         viewInfo.format = mpInfo->vkPlaneFormat[numPlanes];  // For the Y plane
         viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT << numPlanes;
-
-        // Chain usage override if specified
-        if (planeUsageOverride != 0) {
-            viewInfo.pNext = &usageCreateInfo;
-        }
 
         VkResult result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
         if (result != VK_SUCCESS) {
