@@ -167,6 +167,7 @@ struct DecoderConfig {
                 "Validate input bitstream and be verbose",
                 [this](const char **args, const ProgramArgs &a) {
                     validate = true;
+                    validateVerbose = true;
                     verbose = true;
                     return true;
                 }},
