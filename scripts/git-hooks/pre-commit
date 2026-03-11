@@ -1,0 +1,45 @@
+#!/bin/bash
+#
+# Pre-commit hook: check clang-format on staged C/C++ files.
+# Rejects the commit if any staged file would be reformatted.
+#
+# Install: scripts/install-hooks.sh
+# Skip:    git commit --no-verify
+
+# Find clang-format
+CLANG_FORMAT="${CLANG_FORMAT:-clang-format}"
+if ! command -v "$CLANG_FORMAT" &>/dev/null; then
+    echo "warning: clang-format not found, skipping format check"
+    exit 0
+fi
+
+# Get staged C/C++ files (added/modified, not deleted)
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM \
+    -- '*.c' '*.cpp' '*.h' '*.hpp' '*.cxx' '*.hxx')
+
+if [ -z "$STAGED_FILES" ]; then
+    exit 0
+fi
+
+FAILED=0
+for file in $STAGED_FILES; do
+    # Check if the staged version differs from clang-format output
+    if ! git show ":$file" | "$CLANG_FORMAT" --style=file --assume-filename="$file" \
+         | diff -q - <(git show ":$file") &>/dev/null; then
+        echo "  $file"
+        FAILED=1
+    fi
+done
+
+if [ "$FAILED" -ne 0 ]; then
+    echo ""
+    echo "The files above need formatting. Run:"
+    echo "  clang-format -i <file>..."
+    echo "  git add <file>..."
+    echo ""
+    echo "Or format all staged files:"
+    echo "  git diff --cached --name-only --diff-filter=ACM -- '*.c' '*.cpp' '*.h' '*.hpp' | xargs clang-format -i"
+    echo ""
+    echo "To skip this check: git commit --no-verify"
+    exit 1
+fi
