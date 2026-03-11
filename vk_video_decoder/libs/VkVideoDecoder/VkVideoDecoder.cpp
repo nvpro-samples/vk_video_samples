@@ -523,8 +523,12 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                       << (m_exportDrmModifierIndex >= 0 ? " (explicit)" : " (auto)")
                       << std::endl;
         }
+#elif defined(_WIN32)
+        exportHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+        exportDrmModifier = UINT64_MAX;
+        std::cout << "[VkVideoDecoder] Win32 opaque handle export enabled for external consumers" << std::endl;
 #else
-        fprintf(stderr, "[VkVideoDecoder] External consumer export requires Linux (DMA-BUF/DRM)\n");
+        fprintf(stderr, "[VkVideoDecoder] External consumer export requires Linux or Windows\n");
 #endif
     }
 
