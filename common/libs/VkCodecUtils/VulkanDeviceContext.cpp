@@ -807,10 +807,12 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         assert(timelineSemaphoreFeatures.timelineSemaphore);
         assert(videoMaintenance1Features.videoMaintenance1);
         assert(synchronization2Features.synchronization2);
-        assert(((videoCodecs & VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) != 0) ==
-                (videoEncodeAV1Feature.videoEncodeAV1 != VK_FALSE));
-        assert(((videoCodecs & VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) != 0) ==
-                (videoDecodeVP9Feature.videoDecodeVP9 != VK_FALSE));
+        if ((videoCodecs & VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) != 0) {
+            assert(videoEncodeAV1Feature.videoEncodeAV1 != VK_FALSE);
+        }
+        if ((videoCodecs & VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) != 0) {
+            assert(videoDecodeVP9Feature.videoDecodeVP9 != VK_FALSE);
+        }
 
         devInfo.pNext = &deviceFeatures;
 
