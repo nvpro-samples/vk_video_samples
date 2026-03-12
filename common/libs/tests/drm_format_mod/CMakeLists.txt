@@ -16,9 +16,6 @@ cmake_minimum_required(VERSION 3.20)
 
 project(drm_format_mod_test LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 # Only build on Linux/Unix (DRM modifiers are Linux-specific)
 if(NOT UNIX OR APPLE)
     message(STATUS "drm_format_mod_test: Skipping (Linux-only)")
@@ -75,14 +72,19 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${Vulkan_INCLUDE_DIR}
 )
 
-# Find Vulkan with shaderc
-find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
+# Vulkan is loaded at runtime (VK_NO_PROTOTYPES), so we only need headers.
+find_package(Vulkan QUIET)
+if(Vulkan_FOUND AND TARGET Vulkan::Vulkan)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan)
+elseif(TARGET vulkan)
+    target_link_libraries(${PROJECT_NAME} PRIVATE vulkan)
+endif()
 
-# Link libraries
-target_link_libraries(${PROJECT_NAME} PRIVATE
-    Vulkan::Vulkan
-    Vulkan::shaderc_combined
-)
+if(TARGET shaderc_shared)
+    target_link_libraries(${PROJECT_NAME} PRIVATE shaderc_shared)
+elseif(SHADERC_SHARED_LIBRARY AND NOT "${SHADERC_SHARED_LIBRARY}" STREQUAL "")
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${SHADERC_SHARED_LIBRARY})
+endif()
 
 # Platform-specific settings (Linux only at this point)
 target_link_libraries(${PROJECT_NAME} PRIVATE

@@ -74,6 +74,22 @@ public:
     size_t OutputFrameToFile(VulkanDecodedFrame* pFrame);
     uint32_t Restart(int64_t& bitstreamOffset);
 
+    // External consumer management (forwarded to frame buffer)
+    int32_t AddExternalConsumer(VkSemaphore importedReleaseSemaphore,
+                                DecodeFrameBufferIf::SemSyncTypeIdx consumerType) {
+        if (m_vkVideoFrameBuffer) {
+            return m_vkVideoFrameBuffer->AddExternalConsumer(importedReleaseSemaphore, consumerType);
+        }
+        return -1;
+    }
+
+    int ExportFrameCompleteSemaphoreFd() {
+        if (m_vkVideoFrameBuffer) {
+            return m_vkVideoFrameBuffer->ExportFrameCompleteSemaphoreFd();
+        }
+        return -1;
+    }
+
 private:
 
     VulkanVideoProcessor(const DecoderConfig& settings, const VulkanDeviceContext* vkDevCtx)

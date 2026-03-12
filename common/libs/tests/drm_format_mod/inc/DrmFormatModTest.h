@@ -103,6 +103,8 @@ struct TestConfig {
     bool        videoOnly{false};       // Only test Vulkan Video formats
     bool        exportOnly{false};      // Skip import tests
     bool        linearOnly{false};      // Only test LINEAR modifier
+    bool        videoEncode{false};     // Add VIDEO_ENCODE_SRC usage to image creation
+    bool        videoDecode{false};     // Add VIDEO_DECODE_DST usage to image creation
     CompressionMode compression{CompressionMode::Default}; // Compression mode
     std::string specificFormat;         // Test only this format
     std::string reportFile;             // Output report file path
@@ -128,6 +130,12 @@ public:
     TestResult runImageCreateTest(const FormatInfo& format, bool useLinear);
     TestResult runExportImportTest(const FormatInfo& format, bool useLinear, bool useCompressed = false);
     
+    // Video format query tests (vkGetPhysicalDeviceVideoFormatPropertiesKHR)
+    TestResult runVideoFormatQueryTest(const FormatInfo& format, bool encode);
+    
+    // Plane layout verification: compare export vs import plane layouts
+    TestResult runPlaneLayoutTest(const FormatInfo& format, bool useLinear);
+    
     // Utility functions
     bool isFormatSupported(VkFormat format) const;
     bool isDrmModifierSupported() const { return m_drmModifierSupported; }
@@ -151,6 +159,9 @@ private:
     VulkanDeviceContext         m_vkDevCtx;
     TestConfig                  m_config;
     
+    // Physical device (for vendor-specific workarounds)
+    uint32_t                    m_vendorID{0};
+
     // Extension support
     bool                        m_drmModifierSupported{false};
     bool                        m_dmaBufSupported{false};

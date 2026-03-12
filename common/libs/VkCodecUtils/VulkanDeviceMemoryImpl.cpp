@@ -187,6 +187,21 @@ VkResult VulkanDeviceMemoryImpl::Initialize(const VkMemoryRequirements& memoryRe
     return result;
 }
 
+VulkanDeviceMemoryImpl::VulkanDeviceMemoryImpl(const VulkanDeviceContext* vkDevCtx,
+                                               VkDeviceMemory importedMemory,
+                                               VkDeviceSize size)
+    : m_refCount(0)
+    , m_vkDevCtx(vkDevCtx)
+    , m_memoryRequirements()
+    , m_memoryPropertyFlags()
+    , m_exportHandleTypes(0)
+    , m_memoryTypeIndex(0)
+    , m_deviceMemory(importedMemory)
+    , m_deviceMemoryOffset(0)
+    , m_deviceMemoryDataPtr(nullptr) {
+    m_memoryRequirements.size = size;
+}
+
 void VulkanDeviceMemoryImpl::Deinitialize()
 {
     if (m_deviceMemoryDataPtr != nullptr) {

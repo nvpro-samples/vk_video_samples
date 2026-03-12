@@ -1,0 +1,1 @@
+{"codec":"h264","outputPath":"","rcMode":"cbr","averageBitrate":4000000,"maxBitrate":4000000,"vbvBufferSize":4000000,"gopLength":4294967295,"bFrameCount":0,"idrPeriod":4294967295,"closedGop":false,"frameRateNum":30,"frameRateDen":1,"qualityPreset":0,"verbose":false,"validate":false,"tuningMode":"lowlatency"}

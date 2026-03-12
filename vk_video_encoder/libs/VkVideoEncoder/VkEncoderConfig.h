@@ -20,7 +20,7 @@
 #include <assert.h>
 #include <string.h>
 #include <string>
-#include <cstdlib>
+#include <charconv>
 #include <cerrno>
 #include <atomic>
 #include <limits>
@@ -507,14 +507,13 @@ private:
       if (*str == '\0') {
         return false;
       }
-
-      char* endPtr = nullptr;
-      errno = 0;
-      unsigned long value = std::strtoul(str, &endPtr, 10);
-      if (errno != 0 || endPtr == str || value == 0) {
+      const char* last = str + strlen(str);
+      uint32_t value = 0;
+      auto [ptr, ec] = std::from_chars(str, last, value);
+      if (ec != std::errc{} || value == 0) {
         return false;
       }
-      *out_value_ptr = static_cast<uint32_t>(value);
+      *out_value_ptr = value;
       return true;
     }
 
@@ -759,7 +758,6 @@ public:
     int32_t  queueId;
     VkVideoCodecOperationFlagBitsKHR codec;
     bool useDpbArray;
-    uint32_t videoProfileIdc;
     uint32_t numInputImages;
     EncoderInputImageParameters input;
     uint8_t  encodeBitDepthLuma;
@@ -880,6 +878,9 @@ public:
     double* psnrOutputV;  // Optional: average PSNR for V plane (-1 if not computed)
     uint32_t disableEncodeParameterOptimizations : 1;
 
+    int32_t  drmFormatModifierIndex; // -1 = disabled (OPTIMAL), >= 0 = index into non-linear modifier list
+    uint64_t selectedDrmFormatModifier; // resolved modifier value (set during InitEncoder)
+
     EncoderConfig()
     : refCount(0)
     , appName()
@@ -887,7 +888,6 @@ public:
     , queueId(0)
     , codec(VK_VIDEO_CODEC_OPERATION_NONE_KHR)
     , useDpbArray(false)
-    , videoProfileIdc((uint32_t)-1)
     , numInputImages(DEFAULT_NUM_INPUT_IMAGES)
     , input()
     , encodeBitDepthLuma(0)
@@ -986,6 +986,8 @@ public:
     , psnrOutputU(nullptr)
     , psnrOutputV(nullptr)
     , disableEncodeParameterOptimizations(false)
+    , drmFormatModifierIndex(-1)
+    , selectedDrmFormatModifier(0)
     { }
 
     virtual ~EncoderConfig() {}
@@ -1023,6 +1025,10 @@ public:
     void InitVideoProfile();
 
     int ParseArguments(int argc, const char *argv[]);
+
+    // Load base config from JSON file (encoder_config.schema.json). JSON is processed first;
+    // command-line args passed to ParseArguments override. Returns 0 on success, -1 on error.
+    int LoadFromJsonFile(const char* path);
 
     virtual int DoParseArguments(int argc, const char *argv[]) {
         if (argc > 0) {
@@ -1079,7 +1085,8 @@ public:
     // These functions should be overwritten from the codec-specific classes
     virtual VkResult InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx) { return VK_ERROR_INITIALIZATION_FAILED; };
 
-    virtual uint32_t GetDefaultVideoProfileIdc() { return 0; };
+    // Returns the codec-specific profile identifier (must be set by InitProfileLevel first)
+    virtual uint32_t GetCodecProfile() = 0;
 
     virtual int8_t InitDpbCount() { return 16; };
 
