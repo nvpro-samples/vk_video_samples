@@ -103,6 +103,12 @@ struct VkVideoEncoderConfig {
     // Debug
     VkBool32 verbose;
     VkBool32 validate;          // Vulkan validation layers
+
+    // External VkInstance (optional)
+    // When non-null, the encoder creates its VkDevice on this instance
+    // instead of creating its own. Required for cross-process import
+    // on Windows where opaque Win32 handles are scoped per-instance.
+    VkInstance externalInstance;
 };
 
 //=============================================================================

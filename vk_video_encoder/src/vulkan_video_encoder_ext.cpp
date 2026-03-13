@@ -303,7 +303,7 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
     m_vkDevCtx.AddOptDeviceExtensions(optionalDeviceExtension);
 
     VkResult result = m_vkDevCtx.InitVulkanDevice("VulkanVideoEncoderExt",
-                                                    VK_NULL_HANDLE,
+                                                    config.externalInstance,
                                                     config.verbose);
     if (result != VK_SUCCESS) {
         std::cerr << "[EncoderExt] InitVulkanDevice failed: " << result << std::endl;
