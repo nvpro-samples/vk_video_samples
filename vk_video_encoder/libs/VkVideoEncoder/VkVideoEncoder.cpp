@@ -453,12 +453,14 @@ VkResult VkVideoEncoder::WrapExternalImage(
     imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
     imageCI.tiling = tiling;
     imageCI.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
-                  | VK_IMAGE_USAGE_STORAGE_BIT;
+                  | VK_IMAGE_USAGE_STORAGE_BIT
+                  | VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR;
 
     const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(format);
     if (mpInfo) {
         imageCI.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT
-                      | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
+                      | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT
+                      | VK_IMAGE_CREATE_VIDEO_PROFILE_INDEPENDENT_BIT_KHR;
     }
 
     VkSharedBaseObj<VkImageResource> imageResource;
@@ -473,17 +475,22 @@ VkResult VkVideoEncoder::WrapExternalImage(
     subresRange.levelCount = 1;
     subresRange.layerCount = 1;
 
-    // For multiplanar formats, create per-plane views with STORAGE usage
-    // so the compute filter can access individual Y and CbCr planes.
-    VkImageUsageFlags planeUsageOverride = 0;
-    if (mpInfo) {
-        planeUsageOverride = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
-                           | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    }
-
     VkSharedBaseObj<VkImageResourceView> imageView;
-    result = VkImageResourceView::Create(m_vkDevCtx, imageResource, subresRange,
-                                         planeUsageOverride, imageView);
+    if (mpInfo) {
+        // Multiplanar: create combined view (VIDEO_ENCODE_SRC + TRANSFER)
+        // AND per-plane views (STORAGE + SAMPLED + TRANSFER) via the YCbCr overload.
+        VkImageUsageFlags planeUsage = VK_IMAGE_USAGE_STORAGE_BIT
+                                     | VK_IMAGE_USAGE_SAMPLED_BIT
+                                     | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        VkImageUsageFlags combinedUsage = VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR
+                                        | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+                                        | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        result = VkImageResourceView::Create(m_vkDevCtx, imageResource, subresRange,
+                                             planeUsage, VK_NULL_HANDLE,
+                                             combinedUsage, imageView);
+    } else {
+        result = VkImageResourceView::Create(m_vkDevCtx, imageResource, subresRange, imageView);
+    }
     if (result != VK_SUCCESS) {
         return result;
     }
@@ -1459,38 +1466,31 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                              VK_IMAGE_USAGE_TRANSFER_DST_BIT);
     const VkImageUsageFlags dpbImageUsage = VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR;
 
-    // NOTE: Create linearInputImage
-    result =  VulkanVideoImagePool::Create(m_vkDevCtx, m_linearInputImagePool);
-    if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nInitEncoder Error: Failed to create linearInputImagePool.\n");
-        return result;
-    }
+    // Linear staging pool — only needed for file-based input (CPU upload).
+    // External input (IPC) provides OPTIMAL images directly.
+    if (!encoderConfig->repeatInputFrames) {
+        result = VulkanVideoImagePool::Create(m_vkDevCtx, m_linearInputImagePool);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nInitEncoder Error: Failed to create linearInputImagePool.\n");
+            return result;
+        }
 
-    VkExtent2D linearInputImageExtent {
-        std::max(m_maxCodedExtent.width,  encoderConfig->input.width),
-        std::max(m_maxCodedExtent.height, encoderConfig->input.height)
-    };
+        VkExtent2D linearInputImageExtent{
+            std::max(m_maxCodedExtent.width, encoderConfig->input.width),
+            std::max(m_maxCodedExtent.height, encoderConfig->input.height)};
 
-    result = m_linearInputImagePool->Configure( m_vkDevCtx,
-                                                encoderConfig->numInputImages,
-                                                encoderConfig->input.vkFormat,
-                                                linearInputImageExtent,
-                                                  ( VK_IMAGE_USAGE_SAMPLED_BIT |
-                                                    VK_IMAGE_USAGE_STORAGE_BIT |
-                                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT),
-                                                m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
-                                                  ( VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT  |
-                                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-                                                    VK_MEMORY_PROPERTY_HOST_CACHED_BIT),
-                                                nullptr, // pVideoProfile
-                                                VK_IMAGE_ASPECT_COLOR_BIT, // a whole YCbCr or RGBA image
-                                                false,   // useImageArray
-                                                false,   // useImageViewArray
-                                                true     // useLinear
-                                              );
-    if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nInitEncoder Error: Failed to Configure linearInputImagePool.\n");
-        return result;
+        result = m_linearInputImagePool->Configure(
+            m_vkDevCtx, encoderConfig->numInputImages, encoderConfig->input.vkFormat,
+            linearInputImageExtent,
+            (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT),
+            m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
+            (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+             VK_MEMORY_PROPERTY_HOST_CACHED_BIT),
+            nullptr, VK_IMAGE_ASPECT_COLOR_BIT, false, false, true);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nInitEncoder Error: Failed to Configure linearInputImagePool.\n");
+            return result;
+        }
     }
 
     result =  VulkanVideoImagePool::Create(m_vkDevCtx, m_inputImagePool);
@@ -1520,7 +1520,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                           inImageUsage,
                                           m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
                                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                          encoderConfig->videoCoreProfile.GetProfile(),
+                                          nullptr,
                                           VK_IMAGE_ASPECT_COLOR_BIT,
                                           false,   // useImageArray
                                           false,   // useImageViewArray

@@ -371,6 +371,15 @@ VkResult VulkanVideoImagePool::Configure(const VulkanDeviceContext*   vkDevCtx,
     m_imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     m_imageCreateInfo.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
 
+    const bool hasVideoUsage = (imageUsage & (VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR |
+                                              VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR |
+                                              VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
+                                              VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR)) != 0;
+    if (hasVideoUsage && !pVideoProfile) {
+        m_imageCreateInfo.flags |= VK_IMAGE_CREATE_EXTENDED_USAGE_BIT
+                                |  VK_IMAGE_CREATE_VIDEO_PROFILE_INDEPENDENT_BIT_KHR;
+    }
+
     // DRM format modifier pNext chain (must persist through image creation below)
     VkImageDrmFormatModifierListCreateInfoEXT drmModListInfo{
         VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT};
