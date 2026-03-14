@@ -651,20 +651,15 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
     const VkImageCreateInfo& imageCreateInfo = imageResource->GetImageCreateInfo();
 
     // For multi-planar formats with planeUsageOverride, skip the combined view (index 0)
-    // as the combined format may not support the requested usage (e.g., STORAGE)
+    // as the combined format may not support the requested usage (e.g., STORAGE).
+    // Use the YCbCr overload of Create() when both combined and plane views are needed.
     bool skipCombinedView = (mpInfo != nullptr) && (planeUsageOverride != 0);
 
-    // Setup VkImageViewUsageCreateInfo - required when using EXTENDED_USAGE_BIT per Khronos issue #4624:
-    // Combined views must restrict usage to what the multi-planar format supports (exclude STORAGE)
-    // Per-plane views must restrict usage to what the plane format supports (exclude VIDEO_ENCODE_SRC)
     VkImageViewUsageCreateInfo usageCreateInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO};
     usageCreateInfo.pNext = nullptr;
     usageCreateInfo.usage = planeUsageOverride;
 
     if (!skipCombinedView) {
-        // Multi-planar combined views without YCbCr conversion: strip SAMPLED (VUID-06415)
-        // and STORAGE (not supported by multi-planar base format). Callers that need
-        // SAMPLED use the YCbCr overload of Create() instead.
         if (mpInfo) {
             VkImageUsageFlags combinedUsage = imageCreateInfo.usage;
             combinedUsage &= ~(VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
@@ -711,31 +706,24 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
             planeUsageCreateInfo.usage = planeUsage;
         }
         planeUsageCreateInfo.pNext = nullptr;
-        viewInfo.pNext = &planeUsageCreateInfo;
 
-        // Create separate image views for Y and CbCr planes
-        viewInfo.format = mpInfo->vkPlaneFormat[numPlanes];  // For the Y plane
-        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT << numPlanes;
+        // Skip per-plane views when usage is zero (video-only images like DPB)
+        if (planeUsageCreateInfo.usage != 0) {
+            viewInfo.pNext = &planeUsageCreateInfo;
 
-        VkResult result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
-        if (result != VK_SUCCESS) {
-            return result;
-        }
-        numViews++;
-        numPlanes++;
-
-        if (mpInfo->planesLayout.numberOfExtraPlanes > 0) {
-            viewInfo.format = mpInfo->vkPlaneFormat[numPlanes];  // For the CbCr plane
+            // Create separate image views for Y and CbCr planes
+            viewInfo.format = mpInfo->vkPlaneFormat[numPlanes];
             viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT << numPlanes;
-            result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
+
+            VkResult result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
             if (result != VK_SUCCESS) {
                 return result;
             }
             numViews++;
             numPlanes++;
 
-            if (mpInfo->planesLayout.numberOfExtraPlanes > 1) {
-                viewInfo.format = mpInfo->vkPlaneFormat[numPlanes];  // For the CbCr plane
+            if (mpInfo->planesLayout.numberOfExtraPlanes > 0) {
+                viewInfo.format = mpInfo->vkPlaneFormat[numPlanes];
                 viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT << numPlanes;
                 result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
                 if (result != VK_SUCCESS) {
@@ -743,9 +731,19 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
                 }
                 numViews++;
                 numPlanes++;
+
+                if (mpInfo->planesLayout.numberOfExtraPlanes > 1) {
+                    viewInfo.format = mpInfo->vkPlaneFormat[numPlanes];
+                    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT << numPlanes;
+                    result = vkDevCtx->CreateImageView(device, &viewInfo, nullptr, &imageViews[numViews]);
+                    if (result != VK_SUCCESS) {
+                        return result;
+                    }
+                    numViews++;
+                    numPlanes++;
+                }
             }
         }
-
         // Reset pNext after plane views are created
         viewInfo.pNext = nullptr;
     } else {
