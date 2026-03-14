@@ -452,7 +452,9 @@ VkResult VkVideoEncoder::WrapExternalImage(
     imageCI.arrayLayers = 1;
     imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
     imageCI.tiling = tiling;
-    imageCI.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+    imageCI.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+                  | VK_IMAGE_USAGE_TRANSFER_DST_BIT
+                  | VK_IMAGE_USAGE_SAMPLED_BIT
                   | VK_IMAGE_USAGE_STORAGE_BIT
                   | VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR;
 
@@ -477,8 +479,9 @@ VkResult VkVideoEncoder::WrapExternalImage(
 
     VkSharedBaseObj<VkImageResourceView> imageView;
     if (mpInfo) {
-        // Multiplanar: create combined view (VIDEO_ENCODE_SRC + TRANSFER)
-        // AND per-plane views (STORAGE + SAMPLED + TRANSFER) via the YCbCr overload.
+        // Multiplanar: the combined NV12 view needs VIDEO_ENCODE_SRC + TRANSFER
+        // (no SAMPLED — that would require a YCbCr conversion).
+        // Per-plane views need STORAGE + SAMPLED + TRANSFER for compute.
         VkImageUsageFlags planeUsage = VK_IMAGE_USAGE_STORAGE_BIT
                                      | VK_IMAGE_USAGE_SAMPLED_BIT
                                      | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
@@ -490,6 +493,10 @@ VkResult VkVideoEncoder::WrapExternalImage(
                                              combinedUsage, imageView);
     } else {
         result = VkImageResourceView::Create(m_vkDevCtx, imageResource, subresRange, imageView);
+    }
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "[WrapExternalImage] VkImageResourceView::Create failed: %d\n", result);
+        return result;
     }
     if (result != VK_SUCCESS) {
         return result;
