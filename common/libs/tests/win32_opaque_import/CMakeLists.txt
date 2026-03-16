@@ -1,4 +1,4 @@
-# Copyright 2026 NVIDIA Corporation.
+# Copyright 2024-2026 NVIDIA Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,35 +14,35 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-project(vk_filter_test LANGUAGES CXX)
+project(win32_opaque_import_test LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+# Only build on Windows (Win32 opaque handles are Windows-specific)
+if(NOT WIN32)
+    message(STATUS "win32_opaque_import_test: Skipping (Windows-only)")
+    return()
+endif()
+
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Test application source files
 set(TEST_SOURCES
     src/main.cpp
-    src/FilterTestApp.cpp
-    src/TestCases.cpp
-    src/ColorConversion.cpp
+    src/Win32OpaqueImportTest.cpp
 )
 
 # Test application header files
 set(TEST_HEADERS
-    inc/FilterTestApp.h
-    inc/TestCases.h
-    inc/ColorConversion.h
+    inc/Win32OpaqueImportTest.h
 )
 
 # VkCodecUtils source files (from parent directory)
-set(VKCODECUTILS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../VkCodecUtils")
+set(VKCODECUTILS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../VkCodecUtils")
 set(VKCODECUTILS_SOURCES
     ${VKCODECUTILS_DIR}/VulkanDeviceContext.cpp
     ${VKCODECUTILS_DIR}/VulkanDeviceMemoryImpl.cpp
     ${VKCODECUTILS_DIR}/VkImageResource.cpp
     ${VKCODECUTILS_DIR}/VkBufferResource.cpp
-    ${VKCODECUTILS_DIR}/VulkanFilterYuvCompute.cpp
-    ${VKCODECUTILS_DIR}/VulkanFilter.cpp
     ${VKCODECUTILS_DIR}/VulkanShaderCompiler.cpp
     ${VKCODECUTILS_DIR}/VulkanComputePipeline.cpp
     ${VKCODECUTILS_DIR}/VulkanDescriptorSetLayout.cpp
@@ -66,15 +66,14 @@ add_executable(${PROJECT_NAME}
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/inc
-    ${CMAKE_CURRENT_SOURCE_DIR}/../  # For VkCodecUtils headers
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include  # For vulkan_interfaces.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../..       # For nvidia_utils
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../  # For VkCodecUtils headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../include  # For vulkan_interfaces.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../..       # For nvidia_utils
     ${VULKAN_HEADERS_INCLUDE_DIR}
     ${Vulkan_INCLUDE_DIR}
 )
 
 # Vulkan is loaded at runtime (VK_NO_PROTOTYPES), so we only need headers.
-# Use Vulkan SDK if available, otherwise fall back to project-fetched headers.
 find_package(Vulkan QUIET)
 if(Vulkan_FOUND AND TARGET Vulkan::Vulkan)
     target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan::Vulkan)
@@ -88,23 +87,16 @@ elseif(SHADERC_SHARED_LIBRARY AND NOT "${SHADERC_SHARED_LIBRARY}" STREQUAL "")
     target_link_libraries(${PROJECT_NAME} PRIVATE ${SHADERC_SHARED_LIBRARY})
 endif()
 
-# Platform-specific settings
-if(UNIX AND NOT APPLE)
-    target_link_libraries(${PROJECT_NAME} PRIVATE
-        pthread
-        dl
-    )
-    # Ensure unistd.h functions are available
-    target_compile_definitions(${PROJECT_NAME} PRIVATE _POSIX_C_SOURCE=200809L)
-endif()
-
 # Compile definitions
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     VK_NO_PROTOTYPES
     VK_ENABLE_BETA_EXTENSIONS
+    VK_USE_PLATFORM_WIN32_KHR
     VK_USE_VIDEO_QUEUE
     VK_USE_VIDEO_DECODE_QUEUE
     VK_USE_VIDEO_ENCODE_QUEUE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
 )
 
 # Installation
@@ -112,21 +104,10 @@ install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION bin
 )
 
-# Add test
+# Add tests
 enable_testing()
-add_test(NAME FilterSmokeTest COMMAND ${PROJECT_NAME} --smoke)
-add_test(NAME FilterAllTests COMMAND ${PROJECT_NAME} --all)
+add_test(NAME Win32OpaqueImportSmokeTest COMMAND ${PROJECT_NAME})
+add_test(NAME Win32OpaqueImportAllTests COMMAND ${PROJECT_NAME} --verbose)
 
-# Add DRM Format Modifier test (Linux only)
-if(UNIX AND NOT APPLE)
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/drm_format_mod")
-        add_subdirectory(drm_format_mod)
-    endif()
-endif()
-
-# Add Win32 Opaque Import test (Windows only)
-if(WIN32)
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/win32_opaque_import")
-        add_subdirectory(win32_opaque_import)
-    endif()
-endif()
+# Print status
+message(STATUS "win32_opaque_import_test: Configured for Windows")
