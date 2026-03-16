@@ -507,10 +507,8 @@ VkResult VulkanVideoEncoderExtImpl::SubmitExternalFrame(
             if (encodeFrameInfo->inputCmdBuffer) {
                 // Paths B/C: staging copy was done, signal from inputCmdBuffer
                 *pStagingCompleteSemaphore = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
-            } else if (encodeFrameInfo->encodeCmdBuffer) {
-                // Path A: direct encode, signal from encodeCmdBuffer
-                *pStagingCompleteSemaphore = encodeFrameInfo->encodeCmdBuffer->GetSemaphore();
             } else {
+                // Path A: no staging, sync is via inputSignalSemaphores (timeline)
                 *pStagingCompleteSemaphore = VK_NULL_HANDLE;
             }
         }

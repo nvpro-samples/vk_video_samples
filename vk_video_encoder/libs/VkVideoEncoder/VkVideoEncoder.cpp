@@ -574,10 +574,13 @@ VkResult VkVideoEncoder::SetExternalInputFrame(
     //           Set as srcStagingImageView, go through StageInputFrame().
 
     bool isDirectlyEncodable = false;
-    // Only OPTIMAL tiling can go through Path A (direct encode).
-    // DRM-modifier images from cross-process DMA-BUF import cannot have
-    // VIDEO_ENCODE_SRC usage (driver limitation), so they must go through
-    // Path B/C staging which copies to an internal encode-ready image.
+    // Path A (direct encode, zero-copy) requires:
+    //   - VK_IMAGE_TILING_OPTIMAL with an encodable YCbCr format
+    //   - NOT VK_IMAGE_TILING_LINEAR (no GPU encode from linear memory)
+    //   - NOT VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT — DRM-modifier images
+    //     cannot carry VIDEO_ENCODE_SRC usage (NVIDIA driver limitation), so
+    //     they must go through Path B/C staging regardless of the actual
+    //     memory layout the modifier describes.
     if (tiling == VK_IMAGE_TILING_OPTIMAL) {
         switch (format) {
             case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:                       // NV12
@@ -2541,11 +2544,12 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
 
     const VkCommandBuffer* pCmdBuf = encodeFrameInfo->encodeCmdBuffer->GetCommandBuffer();
-    // For external input (direct encode path), enable the encode complete
-    // semaphore so the encoder service can chain the display after it.
-    VkSemaphore frameCompleteSemaphore = (encodeFrameInfo->isExternalInput && !encodeFrameInfo->inputCmdBuffer)
-        ? encodeFrameInfo->encodeCmdBuffer->GetSemaphore()
-        : VK_NULL_HANDLE;
+    // The encode command buffer pool's binary semaphore is unused — the
+    // external input caller uses timeline semaphores (releaseSem) for sync,
+    // and ProcessOutputBitstream uses fences. Signaling this binary sem
+    // without a consumer triggers VUID-vkQueueSubmit2-semaphore-03868 on
+    // pool node reuse.
+    VkSemaphore frameCompleteSemaphore = VK_NULL_HANDLE;
 
     // Create command buffer submit info
     VkCommandBufferSubmitInfoKHR cmdBufferInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR };
@@ -2559,7 +2563,7 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     const uint32_t waitSemaphoreMaxCount = 8;
     VkSemaphoreSubmitInfoKHR waitSemaphoreInfos[waitSemaphoreMaxCount]{};
 
-    const uint32_t signalSemaphoreMaxCount = 4;
+    const uint32_t signalSemaphoreMaxCount = 8;
     VkSemaphoreSubmitInfoKHR signalSemaphoreInfos[signalSemaphoreMaxCount]{};
 
     uint32_t waitSemaphoreCount = 0;
@@ -2643,6 +2647,23 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
         signalSemaphoreInfos[signalSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
         signalSemaphoreInfos[signalSemaphoreCount].deviceIndex = 0;
         signalSemaphoreCount++;
+    }
+
+    // Path A (direct encode, no staging): inject external signal semaphores
+    // into the encode submit. For Paths B/C the staging submit handles these.
+    if (encodeFrameInfo->isExternalInput && !encodeFrameInfo->inputCmdBuffer &&
+        !encodeFrameInfo->inputSignalSemaphores.empty()) {
+        for (size_t i = 0; i < encodeFrameInfo->inputSignalSemaphores.size() &&
+                           signalSemaphoreCount < signalSemaphoreMaxCount; i++) {
+            signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+            signalSemaphoreInfos[signalSemaphoreCount].semaphore = encodeFrameInfo->inputSignalSemaphores[i];
+            signalSemaphoreInfos[signalSemaphoreCount].value =
+                (i < encodeFrameInfo->inputSignalSemaphoreValues.size())
+                    ? encodeFrameInfo->inputSignalSemaphoreValues[i] : 0;
+            signalSemaphoreInfos[signalSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+            signalSemaphoreInfos[signalSemaphoreCount].deviceIndex = 0;
+            signalSemaphoreCount++;
+        }
     }
 
     if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
