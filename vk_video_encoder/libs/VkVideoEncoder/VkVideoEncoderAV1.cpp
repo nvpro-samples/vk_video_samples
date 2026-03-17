@@ -816,10 +816,8 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
     uint32_t querySlotId = (uint32_t)-1;
     VkQueryPool queryPool = encodeFrameInfo->encodeCmdBuffer->GetQueryPool(querySlotId);
 
-    // Since we can use a single command buffer from multiple frames,
-    // we can't just use the querySlotId from the command buffer.
-    // Instead we use the input image index that should be unique for each frame.
-    querySlotId = (uint32_t)encodeFrameInfo->srcEncodeImageResource->GetImageIndex();
+    assert(queryPool != VK_NULL_HANDLE);
+    assert(querySlotId != (uint32_t)-1);
 
     // get output results
     struct VulkanVideoEncodeStatus {
