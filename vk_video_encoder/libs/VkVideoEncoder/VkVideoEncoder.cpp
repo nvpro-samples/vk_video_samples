@@ -1097,14 +1097,8 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
 
     uint32_t querySlotId = (uint32_t)-1;
     VkQueryPool queryPool = encodeFrameInfo->encodeCmdBuffer->GetQueryPool(querySlotId);
-
-    // Match the slot used in SubmitVideoCodingCmds (pool index or 0 for external)
-    int32_t imgIndex = encodeFrameInfo->srcEncodeImageResource->GetImageIndex();
-    if (imgIndex >= 0) {
-        querySlotId = (uint32_t)imgIndex;
-    } else {
-        querySlotId = 0;
-    }
+    assert(queryPool != VK_NULL_HANDLE);
+    assert(querySlotId != (uint32_t)-1);
 
     // get output results
     struct VulkanVideoEncodeStatus {
@@ -2454,19 +2448,12 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
 
     const VulkanDeviceContext* vkDevCtx = encodeCmdBuffer->GetDeviceContext();
 
-    // Handle the query indexes
+    // Handle the query indexes — querySlotId comes from the encode command
+    // buffer pool node, set by GetQueryPool(). Unique per in-flight encode.
     uint32_t querySlotId = (uint32_t)-1;
     VkQueryPool queryPool = encodeCmdBuffer->GetQueryPool(querySlotId);
-
-    // Since we can use a single command buffer from multiple frames,
-    // we use the input image index when it is valid (pool-backed frames).
-    // External frames (CreateExternal node) have GetImageIndex() == -1; use slot 0 to avoid invalid query index.
-    int32_t imgIndex = encodeFrameInfo->srcEncodeImageResource->GetImageIndex();
-    if (imgIndex >= 0) {
-        querySlotId = (uint32_t)imgIndex;
-    } else {
-        querySlotId = 0;  // external image: single query slot for in-flight external frame
-    }
+    assert(queryPool != VK_NULL_HANDLE);
+    assert(querySlotId != (uint32_t)-1);
 
     // Clear the query results
     const uint32_t numQuerySamples = 1;

@@ -984,10 +984,16 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         assert(timelineSemaphoreFeatures.timelineSemaphore);
         assert(videoMaintenance1Features.videoMaintenance1);
         assert(synchronization2Features.synchronization2);
-        assert(((videoCodecs & VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) != 0) ==
-                (videoEncodeAV1Feature.videoEncodeAV1 != VK_FALSE));
-        assert(((videoCodecs & VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) != 0) ==
-                (videoDecodeVP9Feature.videoDecodeVP9 != VK_FALSE));
+        if ((videoCodecs & VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) &&
+            !videoEncodeAV1Feature.videoEncodeAV1) {
+            std::cerr << "ERROR: AV1 encode requested but videoEncodeAV1 feature not supported" << std::endl;
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        }
+        if ((videoCodecs & VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) &&
+            !videoDecodeVP9Feature.videoDecodeVP9) {
+            std::cerr << "ERROR: VP9 decode requested but videoDecodeVP9 feature not supported" << std::endl;
+            return VK_ERROR_FEATURE_NOT_PRESENT;
+        }
 
         devInfo.pNext = &deviceFeatures;
 

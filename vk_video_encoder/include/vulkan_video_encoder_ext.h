@@ -140,6 +140,11 @@ struct VkVideoEncodeInputFrame {
     // Per-frame QP override (-1 = use session default)
     int32_t qpOverride;
 
+    // Unique image index for query pool slot mapping and in-flight tracking.
+    // Same concept as the internal image pool index and debug tracking.
+    // Set to -1 to use the internal image pool index (legacy default).
+    int32_t uniqueImageIndex = -1;
+
     // Synchronization: wait semaphores
     // The encoder will wait on these before accessing the image.
     // Typically this is the producer's graph timeline semaphore.
