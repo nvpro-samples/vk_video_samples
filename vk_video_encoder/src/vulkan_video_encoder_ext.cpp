@@ -489,7 +489,7 @@ VkResult VulkanVideoEncoderExtImpl::SubmitExternalFrame(
         frame.currentLayout,  // Producer's layout (e.g. GENERAL for compute output)
         frame.frameId,
         frame.pts,
-        false,  // isLastFrame (caller controls this externally)
+        (frame.isLastFrame == VK_TRUE),
         frame.waitSemaphoreCount,
         frame.pWaitSemaphores,
         frame.pWaitSemaphoreValues,
@@ -617,13 +617,20 @@ VkResult VulkanVideoEncoderExtImpl::Flush()
     m_encoder->WaitForThreadsToComplete();
 
     // Drain the pending queue
-    std::lock_guard<std::mutex> lock(m_pendingMutex);
-    for (auto& pending : m_pendingFrames) {
-        if (pending.encodeFrameInfo && pending.encodeFrameInfo->encodeCmdBuffer) {
-            pending.encodeFrameInfo->encodeCmdBuffer->ResetCommandBuffer(
-                true, "EncoderExtFlush");
+    {
+        std::lock_guard<std::mutex> lock(m_pendingMutex);
+        for (auto& pending : m_pendingFrames) {
+            if (pending.encodeFrameInfo && pending.encodeFrameInfo->encodeCmdBuffer) {
+                pending.encodeFrameInfo->encodeCmdBuffer->ResetCommandBuffer(
+                    true, "EncoderExtFlush");
+            }
         }
     }
+
+    // Release the encoder — the destructor calls DeinitEncoder() which
+    // writes any buffered bitstream (deferred frames from GOP reordering)
+    // and closes the output file.
+    m_encoder = nullptr;
 
     return VK_SUCCESS;
 }

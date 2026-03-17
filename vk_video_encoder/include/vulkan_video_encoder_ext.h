@@ -137,6 +137,11 @@ struct VkVideoEncodeInputFrame {
     VkBool32 forceIDR;
     VkBool32 forceIntra;
 
+    // Set to VK_TRUE for the last frame to properly close the GOP
+    // and write end-of-stream markers. Without this, decoders may
+    // not be able to decode the trailing frames.
+    VkBool32 isLastFrame = VK_FALSE;
+
     // Per-frame QP override (-1 = use session default)
     int32_t qpOverride;
 
