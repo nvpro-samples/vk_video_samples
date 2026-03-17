@@ -47,6 +47,8 @@
 class VkVideoEncoderH264;
 class VkVideoEncoderH265;
 class VkVideoEncoderAV1;
+#include "VkVideoEncoder/VkVideoEncoderPsnr.h"
+#include "VkCodecUtils/VkVideoCrc.h"
 
 class VkVideoEncoder : public VkVideoRefCountBase {
 
@@ -242,6 +244,8 @@ public:
         VkSharedBaseObj<VulkanVideoImagePoolNode>          srcQpMapStagingResource;
         VkSharedBaseObj<VulkanVideoImagePoolNode>          srcQpMapImageResource;
         VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> qpMapCmdBuffer;
+        /** Per-frame PSNR capture/recon data (only used when PSNR is enabled). */
+        VkVideoEncoderPsnr::FrameData                      psnrFrameData;
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
         std::shared_ptr<AqProcessor>                       aqProcessorSlot;
 #endif // NV_AQ_GPU_LIB_SUPPORTED
@@ -604,8 +608,7 @@ public:
         , m_qpMapTiling()
         , m_linearQpMapImagePool()
         , m_qpMapImagePool()
-        , m_crcInitValue()
-        , m_crcAllocation()
+        , m_psnr()
     { }
 
     // Factory Function
@@ -729,15 +732,14 @@ public:
     virtual VkResult AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                            uint32_t frameIdx, uint32_t ofTotalFrames);
 
+    
+    size_t WriteDataToFile(const uint8_t* data, size_t size);
     virtual VkResult ReadbackBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                            BitstreamReadback& readback);
 
     virtual VkResult WriteBitstreamToFile(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                           uint32_t frameIdx, uint32_t ofTotalFrames,
                                           BitstreamReadback& readback);
-
-    // Write data to file with CRC generation
-    size_t WriteDataToFileWithCRC(const uint8_t* data, size_t size);
 
     /**
      * @brief Get the CRC values for the encoded data
@@ -747,6 +749,15 @@ public:
      * @return size_t Number of CRC values written, (size_t)-1 on error
      */
     virtual size_t GetCrcValues(uint32_t* pCrcValues, size_t buffSize) const;
+
+    /**
+     * @brief Get the average PSNR (dB) for the encoded stream (input vs reconstructed frames).
+     * @return Average PSNR in dB, or -1.0 if PSNR was not enabled or no frames were measured.
+     */
+    virtual double GetAveragePsnr() const;
+    /** Average chroma PSNR (dB), or -1.0 if not applicable / disabled. */
+    virtual double GetAveragePsnrU() const;
+    virtual double GetAveragePsnrV() const;
 
     virtual VkResult StartOfVideoCodingEncodeOrder(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, uint32_t frameIdx, uint32_t ofTotalFrames)
     {
@@ -975,10 +986,10 @@ protected:
     VkImageTiling                            m_qpMapTiling;
     VkSharedBaseObj<VulkanVideoImagePool>    m_linearQpMapImagePool;
     VkSharedBaseObj<VulkanVideoImagePool>    m_qpMapImagePool;
+    VkSharedBaseObj<VkVideoEncoderPsnr>       m_psnr;
 
-    // CRC calculation storage
-    std::vector<uint32_t>                    m_crcInitValue;
-    std::vector<uint32_t>                    m_crcAllocation;
+    VkVideoCrc                               m_crc;
+
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
     std::shared_ptr<nvenc_aq::EncodeAqAnalyzes > m_aqAnalyzes;
 #endif // NV_AQ_GPU_LIB_SUPPORTED

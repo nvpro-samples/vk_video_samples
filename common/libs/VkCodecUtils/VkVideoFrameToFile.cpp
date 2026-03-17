@@ -15,6 +15,7 @@
 */
 
 #include <cstring>
+#include <string>
 #include <inttypes.h>
 #include <vulkan/vulkan.h>
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
@@ -24,7 +25,7 @@
 #include "VulkanDecodedFrame.h"
 #include "Helpers.h"
 #include "VkVideoFrameOutput.h"
-#include "crcgenerator.h"
+#include "VkCodecUtils/VkVideoCrc.h"
 
 template<typename T>
 static void CopyPlaneData(const uint8_t* pSrc, uint8_t* pDst,
@@ -63,22 +64,11 @@ public:
         , m_height(0)
         , m_width(0)
         , m_outputy4m(outputy4m)
-        , m_outputcrcPerFrame(outputcrcPerFrame)
-        , m_crcOutputFile(nullptr)
-        , m_crcInitValue(crcInitValue)
-        , m_crcAllocation()
         , m_frameRateNum(30)
-        , m_frameRateDen(1) {
-        if (crcOutputFile != nullptr) {
-            m_crcOutputFile = fopen(crcOutputFile, "w");
-        }
-
-        if (!m_crcInitValue.empty()) {
-            m_crcAllocation.resize(m_crcInitValue.size());
-            for (size_t i = 0; i < m_crcInitValue.size(); i += 1) {
-                m_crcAllocation[i] = m_crcInitValue[i];
-            }
-        }
+        , m_frameRateDen(1)
+        , m_crc() {
+        const std::string crcPath = (crcOutputFile != nullptr) ? std::string(crcOutputFile) : std::string();
+        m_crc.BeginCrcCalculation(crcInitValue, outputcrcPerFrame, crcPath);
     }
 
     virtual ~VkVideoFrameToFileImpl() override {
@@ -92,20 +82,7 @@ public:
             m_outputFile = nullptr;
         }
 
-        if (m_crcOutputFile) {
-            if (!m_crcAllocation.empty()) {
-                fprintf(m_crcOutputFile, "CRC: ");
-                for (size_t i = 0; i < m_crcInitValue.size(); i += 1) {
-                    fprintf(m_crcOutputFile, "0x%08X ", m_crcAllocation[i]);
-                }
-                fprintf(m_crcOutputFile, "\n");
-            }
-
-            if (m_crcOutputFile != stdout) {
-                fclose(m_crcOutputFile);
-            }
-            m_crcOutputFile = nullptr;
-        }
+        m_crc.EndCrcCalculation(true);
     }
 
     virtual int32_t AddRef() override {
@@ -157,23 +134,9 @@ public:
         size_t usedBufferSize = ConvertFrameToNv12(vkDevCtx, pFrame->displayWidth, pFrame->displayHeight,
                                                   imageResource, pOutputBuffer, mpInfo);
 
-        if (m_outputcrcPerFrame && m_crcOutputFile) {
-            fprintf(m_crcOutputFile, "CRC Frame[%lld]:", (long long)pFrame->displayOrder);
-            for (size_t i = 0; i < m_crcInitValue.size(); i += 1) {
-                uint32_t frameCrc = m_crcInitValue[i];
-                getCRC(&frameCrc, pOutputBuffer, usedBufferSize, Crc32Table);
-                fprintf(m_crcOutputFile, "0x%08X ", frameCrc);
-            }
-            fprintf(m_crcOutputFile, "\n");
-            if (m_crcOutputFile != stdout) {
-                fflush(m_crcOutputFile);
-            }
-        }
-
-        if (!m_crcAllocation.empty()) {
-            for (size_t i = 0; i < m_crcAllocation.size(); i += 1) {
-                getCRC(&m_crcAllocation[i], pOutputBuffer, usedBufferSize, Crc32Table);
-            }
+        if (m_crc.Enabled()) {
+            m_crc.UpdateCrc(pOutputBuffer, usedBufferSize);
+            m_crc.SignalFrameEnd(static_cast<uint32_t>(pFrame->displayOrder));
         }
 
         if (m_outputy4m) {
@@ -418,16 +381,7 @@ public:
     }
 
     virtual size_t GetCrcValues(uint32_t* pCrcValues, size_t buffSize) const override {
-        if (pCrcValues == nullptr) {
-            return 0;
-        }
-
-        size_t numValuesToWrite = std::min(buffSize, m_crcAllocation.size());
-        for (size_t i = 0; i < numValuesToWrite; i++) {
-            pCrcValues[i] = m_crcAllocation[i];
-        }
-
-        return numValuesToWrite;
+        return m_crc.GetCrcValues(pCrcValues, buffSize);
     }
 
 private:
@@ -469,12 +423,9 @@ private:
     size_t   m_height;
     size_t   m_width;
     bool     m_outputy4m;
-    bool     m_outputcrcPerFrame;
-    FILE*    m_crcOutputFile;
-    std::vector<uint32_t> m_crcInitValue;
-    std::vector<uint32_t> m_crcAllocation;
     uint32_t m_frameRateNum;
     uint32_t m_frameRateDen;
+    VkVideoCrc m_crc;
 };
 
 // Define the static member for invalid instance

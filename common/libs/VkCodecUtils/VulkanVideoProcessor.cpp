@@ -33,7 +33,6 @@
 #include "VulkanVideoProcessor.h"
 #include "vulkan_interfaces.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
-#include "crcgenerator.h"
 
 size_t ConvertFrameToNv12(const VulkanDeviceContext* vkDevCtx, int32_t frameWidth, int32_t frameHeight,
                          VkSharedBaseObj<VkImageResource>& imageResource,
