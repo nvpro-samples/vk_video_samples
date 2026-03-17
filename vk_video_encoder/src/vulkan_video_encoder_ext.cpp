@@ -176,6 +176,22 @@ VkResult VulkanVideoEncoderExtImpl::BuildEncoderConfig(
     argStrings.push_back("--encodeHeight");
     argStrings.push_back(std::to_string(extConfig.encodeHeight));
 
+    // Bit depth: derive from input format. Without this, the encoder defaults
+    // to 8-bit profile (H.264 High / H.265 Main) even when P010 input is used,
+    // producing scrambled output from the bit-depth mismatch.
+    uint32_t bpp = 8;
+    switch (extConfig.inputFormat) {
+        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:      // P010
+            bpp = 10; break;
+        case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16:      // P012
+            bpp = 12; break;
+        default: break;
+    }
+    if (bpp > 8) {
+        argStrings.push_back("--inputBpp");
+        argStrings.push_back(std::to_string(bpp));
+    }
+
     // Frame rate: no CLI arg for this in ParseArguments — set via member directly after config
 
     // Bitrate (note: lowercase 'r' — --averageBitrate, not --averageBitRate)
