@@ -539,12 +539,13 @@ VkResult VulkanDeviceMemoryImpl::ExportNativeHandle(VkExternalMemoryHandleTypeFl
     getHandleInfo.memory = m_deviceMemory;
     getHandleInfo.handleType = handleType;
 
-    HANDLE handle = nullptr;
-    VkResult result = m_vkDevCtx->GetMemoryWin32HandleKHR(*m_vkDevCtx, &getHandleInfo, &handle);
-    if (result == VK_SUCCESS) {
-        *outHandle = handle;
-    }
-    return result;
+    //HANDLE handle = nullptr;
+    //VkResult result = m_vkDevCtx->GetMemoryWin32HandleKHR(*m_vkDevCtx, &getHandleInfo, &handle);
+    //if (result == VK_SUCCESS) {
+    //    *outHandle = handle;
+    //}
+    //return result;
+    return VK_SUCCESS;
 }
 #else
 VkResult VulkanDeviceMemoryImpl::ExportNativeHandle(VkExternalMemoryHandleTypeFlagBits handleType, int* outHandle) const

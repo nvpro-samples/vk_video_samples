@@ -37,6 +37,8 @@
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 #include "VkCodecUtils/VulkanFilterYuvCompute.h"
 
+#undef max
+
 struct EncoderConfigH264;
 struct EncoderConfigH265;
 struct EncoderConfigAV1;
@@ -869,11 +871,15 @@ public:
     // 2: replicate only one row and one column to the padding area;
     uint32_t enablePictureRowColReplication : 2;
     uint32_t enableOutOfOrderRecording : 1; // Testing only - don't use for production!
+    uint32_t enablePsnrMetrics : 1;
     std::vector<uint32_t> crcInitValue;  // initialize crc values
     uint32_t disableEncodeParameterOptimizations : 1;
     uint32_t asyncAssembly : 1;
     uint32_t assemblyThreadCount;
+    uint32_t outputCrcPerFrame : 1;
+    std::string crcOutputFileName;
 
+    bool IsPsnrMetricsEnabled() const { return enablePsnrMetrics != 0; }
     int32_t  drmFormatModifierIndex; // -1 = disabled (OPTIMAL), >= 0 = index into non-linear modifier list
     uint64_t selectedDrmFormatModifier; // resolved modifier value (set during InitEncoder)
 
@@ -978,6 +984,9 @@ public:
     , repeatInputFrames(false)
     , enablePictureRowColReplication(1)
     , enableOutOfOrderRecording(false)
+    , enablePsnrMetrics(false)
+    , outputCrcPerFrame(false)
+    , crcOutputFileName()
     , disableEncodeParameterOptimizations(false)
     , asyncAssembly(true)
     , assemblyThreadCount(2)
