@@ -575,13 +575,13 @@ VkResult VkVideoEncoder::SetExternalInputFrame(
 
     bool isDirectlyEncodable = false;
     // Path A (direct encode, zero-copy) requires:
-    //   - VK_IMAGE_TILING_OPTIMAL with an encodable YCbCr format
+    //   - OPTIMAL or DRM_FORMAT_MODIFIER tiling with an encodable YCbCr format
     //   - NOT VK_IMAGE_TILING_LINEAR (no GPU encode from linear memory)
-    //   - NOT VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT — DRM-modifier images
-    //     cannot carry VIDEO_ENCODE_SRC usage (NVIDIA driver limitation), so
-    //     they must go through Path B/C staging regardless of the actual
-    //     memory layout the modifier describes.
-    if (tiling == VK_IMAGE_TILING_OPTIMAL) {
+    // DRM modifier block-linear images have the same physical memory layout as
+    // OPTIMAL on NVIDIA. The driver supports VIDEO_ENCODE_SRC on DRM modifier
+    // images (with non-zero block height). LINEAR is the only tiling rejected.
+    if (tiling == VK_IMAGE_TILING_OPTIMAL ||
+        tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
         switch (format) {
             case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:                       // NV12
             case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:      // P010
