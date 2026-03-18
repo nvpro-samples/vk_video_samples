@@ -470,6 +470,10 @@ void EncoderConfigH264::InitProfileLevel()
             profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH;
         }
 
+        if (input.bpp > 8) {
+            profileIdc = static_cast<StdVideoH264ProfileIdc>(110); // High 10
+        }
+
         // Upgrade to HIGH_444_PREDICTIVE for lossless encoding or 4:4:4 chroma
         if ((tuningMode == VK_VIDEO_ENCODE_TUNING_MODE_LOSSLESS_KHR) ||
             (input.chromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR)) {
