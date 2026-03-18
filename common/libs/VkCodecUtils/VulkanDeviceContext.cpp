@@ -606,13 +606,10 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const vk::Dev
                                                  const VkVideoCodecOperationFlagsKHR requestVideoEncodeQueueOperations,
                                                  VkPhysicalDevice vkPhysicalDevice)
 {
-    fprintf(stderr, "[VulkanDeviceContext] InitPhysicalDevice: enumerating...\n"); fflush(stderr);
     std::vector<VkPhysicalDevice> availablePhysicalDevices;
     if (vkPhysicalDevice == VK_NULL_HANDLE) {
         // enumerate physical devices
         VkResult result = vk::enumerate(this, m_instance, availablePhysicalDevices);
-        fprintf(stderr, "[VulkanDeviceContext] enumerate returned %d, found %zu devices\n",
-                (int)result, availablePhysicalDevices.size()); fflush(stderr);
         if (result != VK_SUCCESS) {
             return result;
         }
@@ -623,7 +620,6 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const vk::Dev
     m_physDevice = VK_NULL_HANDLE;
     for (auto physicalDevice : availablePhysicalDevices) {
 
-        fprintf(stderr, "[VulkanDeviceContext] Checking physical device %p\n", (void*)physicalDevice); fflush(stderr);
 
         // Get Vulkan 1.1 specific properties which include deviceUUID
         VkPhysicalDeviceVulkan11Properties deviceVulkan11Properties = {};
@@ -634,7 +630,6 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const vk::Dev
         devProp2.pNext = &deviceVulkan11Properties;
 
         // Get the properties
-        fprintf(stderr, "[VulkanDeviceContext] GetPhysicalDeviceProperties2...\n"); fflush(stderr);
         GetPhysicalDeviceProperties2(physicalDevice, &devProp2);
         fprintf(stderr, "[VulkanDeviceContext] Device: %s (vendor=0x%x)\n",
                 devProp2.properties.deviceName, devProp2.properties.vendorID); fflush(stderr);

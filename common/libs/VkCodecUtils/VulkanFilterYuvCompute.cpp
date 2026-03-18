@@ -2492,9 +2492,6 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
                                    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 
     // Binding 9: Subsampled Y output image (optional, only if enabled)
-    std::cout << "[VulkanFilterYuvCompute] ShaderGen: m_enableYSubsampling=" << m_enableYSubsampling 
-              << " m_filterFlags=" << m_filterFlags 
-              << " (FLAG_ENABLE_Y_SUBSAMPLING=" << FLAG_ENABLE_Y_SUBSAMPLING << ")" << std::endl;
     if (m_enableYSubsampling) {
         std::cout << "[VulkanFilterYuvCompute] Generating binding 9 for subsampledImageY" << std::endl;
         shaderStr << "// Binding 9: Subsampled Y output (2x2 downsampled luma for AQ)\n";
