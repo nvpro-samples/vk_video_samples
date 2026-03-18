@@ -1371,6 +1371,9 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         }
     }
 
+    uint32_t requestedW = encoderConfig->encodeWidth;
+    uint32_t requestedH = encoderConfig->encodeHeight;
+
     encoderConfig->encodeWidth  = std::max(encoderConfig->encodeWidth,  encoderConfig->videoCapabilities.minCodedExtent.width);
     encoderConfig->encodeHeight = std::max(encoderConfig->encodeHeight, encoderConfig->videoCapabilities.minCodedExtent.height);
 
@@ -1382,6 +1385,21 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
     encoderConfig->encodeAlignedWidth  = vk::alignedSize (encoderConfig->encodeWidth, encoderConfig->videoCapabilities.pictureAccessGranularity.width);
     encoderConfig->encodeAlignedHeight = vk::alignedSize (encoderConfig->encodeHeight, encoderConfig->videoCapabilities.pictureAccessGranularity.height);
+
+    fprintf(stderr, "[CAPS] encode=%ux%u range=[%ux%u..%ux%u] granularity=%ux%u",
+            encoderConfig->encodeWidth, encoderConfig->encodeHeight,
+            encoderConfig->videoCapabilities.minCodedExtent.width,
+            encoderConfig->videoCapabilities.minCodedExtent.height,
+            encoderConfig->videoCapabilities.maxCodedExtent.width,
+            encoderConfig->videoCapabilities.maxCodedExtent.height,
+            encoderConfig->videoCapabilities.pictureAccessGranularity.width,
+            encoderConfig->videoCapabilities.pictureAccessGranularity.height);
+    if (encoderConfig->encodeWidth != requestedW || encoderConfig->encodeHeight != requestedH)
+        fprintf(stderr, " (clamped from %ux%u)", requestedW, requestedH);
+    if (encoderConfig->encodeAlignedWidth != encoderConfig->encodeWidth ||
+        encoderConfig->encodeAlignedHeight != encoderConfig->encodeHeight)
+        fprintf(stderr, " (aligned to %ux%u)", encoderConfig->encodeAlignedWidth, encoderConfig->encodeAlignedHeight);
+    fprintf(stderr, "\n");
 
     const uint32_t maxActiveReferencePicturesCount = encoderConfig->videoCapabilities.maxActiveReferencePictures;
     const uint32_t maxDpbPicturesCount = std::min<uint32_t>(m_maxDpbPicturesCount, encoderConfig->videoCapabilities.maxDpbSlots);
