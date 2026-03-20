@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 900 200" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="12">
+  <text x="450" y="20" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">Single Thread with Slow I/O   Assembly Cannot Keep Up</text>
+
+  <text x="10" y="62" fill="#555" font-size="11">Assembly</text>
+  <text x="10" y="74" fill="#555" font-size="11">Thread</text>
+
+  <rect x="90"  y="48" width="50"  height="30" rx="3" fill="#2196f3" opacity="0.8"/>
+  <text x="115" y="67" text-anchor="middle" fill="white" font-size="8">fence F0</text>
+
+  <rect x="142" y="48" width="120" height="30" rx="3" fill="#ff5722" opacity="0.8"/>
+  <text x="202" y="62" text-anchor="middle" fill="white" font-size="8">network send F0</text>
+  <text x="202" y="73" text-anchor="middle" fill="white" font-size="7">~20ms</text>
+
+  <rect x="264" y="48" width="20"  height="30" rx="3" fill="#2196f3" opacity="0.8"/>
+  <text x="274" y="67" text-anchor="middle" fill="white" font-size="7">F1</text>
+
+  <rect x="286" y="48" width="120" height="30" rx="3" fill="#ff5722" opacity="0.8"/>
+  <text x="346" y="62" text-anchor="middle" fill="white" font-size="8">network send F1</text>
+  <text x="346" y="73" text-anchor="middle" fill="white" font-size="7">~20ms</text>
+
+  <rect x="408" y="48" width="20"  height="30" rx="3" fill="#2196f3" opacity="0.8"/>
+  <text x="418" y="67" text-anchor="middle" fill="white" font-size="7">F2</text>
+
+  <rect x="430" y="48" width="120" height="30" rx="3" fill="#ff5722" opacity="0.8"/>
+  <text x="490" y="67" text-anchor="middle" fill="white" font-size="8">network send F2</text>
+
+  <!-- Queue fill indicator -->
+  <text x="10" y="115" fill="#555" font-size="11">Queue</text>
+  <text x="10" y="127" fill="#555" font-size="11">Depth</text>
+
+  <rect x="90"  y="105" width="50"  height="20" rx="3" fill="#4caf50" opacity="0.5"/>
+  <text x="115" y="119" text-anchor="middle" fill="#333" font-size="8">1</text>
+  <rect x="142" y="105" width="120" height="20" rx="3" fill="#ff9800" opacity="0.5"/>
+  <text x="202" y="119" text-anchor="middle" fill="#333" font-size="8">2..3..4..5 (filling up)</text>
+  <rect x="264" y="105" width="286" height="20" rx="3" fill="#f44336" opacity="0.5"/>
+  <text x="407" y="119" text-anchor="middle" fill="white" font-size="8">FULL   encoder backpressured, stalls at Push()</text>
+
+  <!-- Annotation -->
+  <rect x="90" y="150" width="560" height="28" rx="4" fill="#fff3e0" stroke="#e65100"/>
+  <text x="370" y="168" text-anchor="middle" fill="#bf360c" font-size="10" font-weight="bold">At 60 FPS: 16.7ms/frame budget. If network send takes 20ms, queue fills ' encoder stalls.</text>
+</svg>

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 900 220" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="12">
+  <!-- Title -->
+  <text x="450" y="20" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">Original Pipeline   Single Thread, All 5 Stages Serialized</text>
+
+  <!-- Encode Thread timeline -->
+  <text x="10" y="60" fill="#555" font-size="11">Encode</text>
+  <text x="10" y="72" fill="#555" font-size="11">Thread</text>
+
+  <!-- Batch 0 stages -->
+  <rect x="80" y="48" width="50" height="30" rx="3" fill="#4a9eff" opacity="0.8"/>
+  <text x="105" y="67" text-anchor="middle" fill="white" font-size="9">Start</text>
+  <rect x="132" y="48" width="50" height="30" rx="3" fill="#4a9eff" opacity="0.8"/>
+  <text x="157" y="67" text-anchor="middle" fill="white" font-size="9">DPB</text>
+  <rect x="184" y="48" width="50" height="30" rx="3" fill="#4a9eff" opacity="0.8"/>
+  <text x="209" y="67" text-anchor="middle" fill="white" font-size="9">Record</text>
+  <rect x="236" y="48" width="50" height="30" rx="3" fill="#4a9eff" opacity="0.8"/>
+  <text x="261" y="67" text-anchor="middle" fill="white" font-size="9">Submit</text>
+  <rect x="288" y="48" width="140" height="30" rx="3" fill="#e74c3c" opacity="0.9"/>
+  <text x="358" y="62" text-anchor="middle" fill="white" font-size="9">AssembleBitstream</text>
+  <text x="358" y="73" text-anchor="middle" fill="white" font-size="8">(fence wait + fwrite)</text>
+
+  <!-- Gap -->
+  <line x1="428" y1="63" x2="460" y2="63" stroke="#999" stroke-dasharray="4"/>
+
+  <!-- Batch 1 stages -->
+  <rect x="462" y="48" width="50" height="30" rx="3" fill="#4a9eff" opacity="0.8"/>
+  <text x="487" y="67" text-anchor="middle" fill="white" font-size="9">Start</text>
+  <rect x="514" y="48" width="50" height="30" rx="3" fill="#4a9eff" opacity="0.8"/>
+  <text x="539" y="67" text-anchor="middle" fill="white" font-size="9">DPB</text>
+  <rect x="566" y="48" width="50" height="30" rx="3" fill="#4a9eff" opacity="0.8"/>
+  <text x="591" y="67" text-anchor="middle" fill="white" font-size="9">Record</text>
+  <rect x="618" y="48" width="50" height="30" rx="3" fill="#4a9eff" opacity="0.8"/>
+  <text x="643" y="67" text-anchor="middle" fill="white" font-size="9">Submit</text>
+  <rect x="670" y="48" width="140" height="30" rx="3" fill="#e74c3c" opacity="0.9"/>
+  <text x="740" y="62" text-anchor="middle" fill="white" font-size="9">AssembleBitstream</text>
+  <text x="740" y="73" text-anchor="middle" fill="white" font-size="8">(fence wait + fwrite)</text>
+
+  <!-- GPU timeline -->
+  <text x="10" y="120" fill="#555" font-size="11">GPU</text>
+  <text x="10" y="132" fill="#555" font-size="11">Encode</text>
+
+  <rect x="250" y="108" width="120" height="30" rx="3" fill="#2ecc71" opacity="0.8"/>
+  <text x="310" y="127" text-anchor="middle" fill="white" font-size="9">HW Encode Batch 0</text>
+
+  <!-- GPU idle gap -->
+  <rect x="370" y="108" width="260" height="30" rx="3" fill="#bdc3c7" opacity="0.5"/>
+  <text x="500" y="127" text-anchor="middle" fill="#777" font-size="10">GPU IDLE (waiting for CPU)</text>
+
+  <rect x="632" y="108" width="120" height="30" rx="3" fill="#2ecc71" opacity="0.8"/>
+  <text x="692" y="127" text-anchor="middle" fill="white" font-size="9">HW Encode Batch 1</text>
+
+  <!-- Annotations -->
+  <line x1="288" y1="85" x2="288" y2="100" stroke="#e74c3c" stroke-width="1.5"/>
+  <line x1="428" y1="85" x2="428" y2="100" stroke="#e74c3c" stroke-width="1.5"/>
+  <text x="358" y="98" text-anchor="middle" fill="#e74c3c" font-size="9" font-weight="bold">BLOCKED</text>
+
+  <!-- Batch labels -->
+  <text x="240" y="42" fill="#666" font-size="10">Batch 0</text>
+  <text x="620" y="42" fill="#666" font-size="10">Batch 1</text>
+
+  <!-- Legend -->
+  <rect x="80" y="170" width="14" height="14" rx="2" fill="#4a9eff" opacity="0.8"/>
+  <text x="100" y="182" fill="#555" font-size="10">Stages 1 4 (must be single-threaded)</text>
+  <rect x="340" y="170" width="14" height="14" rx="2" fill="#e74c3c" opacity="0.9"/>
+  <text x="360" y="182" fill="#555" font-size="10">Stage 5   Assembly (the bottleneck)</text>
+  <rect x="570" y="170" width="14" height="14" rx="2" fill="#2ecc71" opacity="0.8"/>
+  <text x="590" y="182" fill="#555" font-size="10">GPU HW encode</text>
+  <rect x="720" y="170" width="14" height="14" rx="2" fill="#bdc3c7" opacity="0.5"/>
+  <text x="740" y="182" fill="#555" font-size="10">GPU idle</text>
+</svg>

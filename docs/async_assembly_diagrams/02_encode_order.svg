@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 860 260" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="12">
+  <text x="430" y="20" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">Frame Reordering: Input Order ' Encode Order</text>
+
+  <!-- Input order row -->
+  <text x="10" y="65" fill="#555" font-size="11">Input</text>
+  <text x="10" y="77" fill="#555" font-size="11">Order</text>
+
+  <rect x="80"  y="50" width="70" height="35" rx="4" fill="#e67e22"/>
+  <text x="115" y="72" text-anchor="middle" fill="white" font-size="11" font-weight="bold">F0 (I)</text>
+  <rect x="160" y="50" width="70" height="35" rx="4" fill="#3498db"/>
+  <text x="195" y="72" text-anchor="middle" fill="white" font-size="11" font-weight="bold">F1 (B)</text>
+  <rect x="240" y="50" width="70" height="35" rx="4" fill="#3498db"/>
+  <text x="275" y="72" text-anchor="middle" fill="white" font-size="11" font-weight="bold">F2 (B)</text>
+  <rect x="320" y="50" width="70" height="35" rx="4" fill="#3498db"/>
+  <text x="355" y="72" text-anchor="middle" fill="white" font-size="11" font-weight="bold">F3 (B)</text>
+  <rect x="400" y="50" width="70" height="35" rx="4" fill="#2ecc71"/>
+  <text x="435" y="72" text-anchor="middle" fill="white" font-size="11" font-weight="bold">F4 (P)</text>
+  <rect x="480" y="50" width="70" height="35" rx="4" fill="#3498db"/>
+  <text x="515" y="72" text-anchor="middle" fill="white" font-size="11" font-weight="bold">F5 (B)</text>
+  <rect x="560" y="50" width="70" height="35" rx="4" fill="#3498db"/>
+  <text x="595" y="72" text-anchor="middle" fill="white" font-size="11" font-weight="bold">F6 (B)</text>
+  <rect x="640" y="50" width="70" height="35" rx="4" fill="#3498db"/>
+  <text x="675" y="72" text-anchor="middle" fill="white" font-size="11" font-weight="bold">F7 (B)</text>
+
+  <!-- Arrow -->
+  <text x="430" y="110" text-anchor="middle" fill="#888" font-size="12">InsertOrdered(gopPosition.encodeOrder)</text>
+  <line x1="430" y1="115" x2="430" y2="135" stroke="#888" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <defs><marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+    <polygon points="0 0, 8 3, 0 6" fill="#888"/></marker></defs>
+
+  <!-- Encode order row -->
+  <text x="10" y="165" fill="#555" font-size="11">Encode</text>
+  <text x="10" y="177" fill="#555" font-size="11">Order</text>
+
+  <rect x="80"  y="150" width="70" height="35" rx="4" fill="#e67e22"/>
+  <text x="115" y="172" text-anchor="middle" fill="white" font-size="11" font-weight="bold">F0 (I)</text>
+  <rect x="160" y="150" width="70" height="35" rx="4" fill="#2ecc71"/>
+  <text x="195" y="172" text-anchor="middle" fill="white" font-size="11" font-weight="bold">F4 (P)</text>
+  <rect x="240" y="150" width="70" height="35" rx="4" fill="#3498db"/>
+  <text x="275" y="172" text-anchor="middle" fill="white" font-size="11" font-weight="bold">F1 (B)</text>
+  <rect x="320" y="150" width="70" height="35" rx="4" fill="#3498db"/>
+  <text x="355" y="172" text-anchor="middle" fill="white" font-size="11" font-weight="bold">F2 (B)</text>
+  <rect x="400" y="150" width="70" height="35" rx="4" fill="#3498db"/>
+  <text x="435" y="172" text-anchor="middle" fill="white" font-size="11" font-weight="bold">F3 (B)</text>
+  <text x="480" y="172" fill="#999" font-size="14">...</text>
+
+  <!-- Linked list arrows -->
+  <line x1="150" y1="168" x2="160" y2="168" stroke="#555" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <line x1="230" y1="168" x2="240" y2="168" stroke="#555" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <line x1="310" y1="168" x2="320" y2="168" stroke="#555" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <line x1="390" y1="168" x2="400" y2="168" stroke="#555" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <line x1="470" y1="168" x2="478" y2="168" stroke="#555" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+
+  <text x="115" y="198" text-anchor="middle" fill="#888" font-size="9">enc=0</text>
+  <text x="195" y="198" text-anchor="middle" fill="#888" font-size="9">enc=1</text>
+  <text x="275" y="198" text-anchor="middle" fill="#888" font-size="9">enc=2</text>
+  <text x="355" y="198" text-anchor="middle" fill="#888" font-size="9">enc=3</text>
+  <text x="435" y="198" text-anchor="middle" fill="#888" font-size="9">enc=4</text>
+
+  <!-- Legend -->
+  <rect x="80" y="220" width="14" height="14" rx="2" fill="#e67e22"/>
+  <text x="100" y="232" fill="#555" font-size="10">I-frame (IDR)</text>
+  <rect x="220" y="220" width="14" height="14" rx="2" fill="#2ecc71"/>
+  <text x="240" y="232" fill="#555" font-size="10">P-frame (reference)</text>
+  <rect x="400" y="220" width="14" height="14" rx="2" fill="#3498db"/>
+  <text x="420" y="232" fill="#555" font-size="10">B-frame (bi-predicted)</text>
+  <line x1="570" y1="227" x2="595" y2="227" stroke="#555" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+  <text x="600" y="232" fill="#555" font-size="10">dependantFrames pointer</text>
+</svg>
