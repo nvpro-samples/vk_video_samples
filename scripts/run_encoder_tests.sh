@@ -48,6 +48,8 @@ VERBOSE=""
 FILTER_CODEC=""
 ENABLE_AQ=""
 RUN_LOCAL=""
+SYNC_ASSEMBLY=""
+ASSEMBLY_THREADS=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -67,6 +69,14 @@ while [[ $# -gt 0 ]]; do
         --aq)
             ENABLE_AQ="1"
             shift
+            ;;
+        --syncAssembly)
+            SYNC_ASSEMBLY="1"
+            shift
+            ;;
+        --assemblyThreads)
+            ASSEMBLY_THREADS="$2"
+            shift 2
             ;;
         --local)
             RUN_LOCAL="1"
@@ -90,6 +100,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --verbose         Show detailed output"
             echo "  --aq              Include Adaptive Quantization (AQ) tests"
             echo "  --codec CODEC     Only test specific codec (h264, h265, av1)"
+            echo "  --syncAssembly    Use synchronous assembly (disable async thread pool)"
+            echo "  --assemblyThreads N  Number of async assembly threads (default: 2)"
             echo "  --local           Run locally instead of on remote"
             echo "  --remote HOST     Remote hostname/IP (default: 127.0.0.1)"
             echo ""
@@ -216,6 +228,14 @@ run_encode_test() {
         CMD="$CMD --inputBpp $BPP"
     fi
     
+    if [ -n "$SYNC_ASSEMBLY" ]; then
+        CMD="$CMD --syncAssembly"
+    fi
+    
+    if [ -n "$ASSEMBLY_THREADS" ]; then
+        CMD="$CMD --assemblyThreads $ASSEMBLY_THREADS"
+    fi
+    
     if [ -n "$EXTRA_ARGS" ]; then
         CMD="$CMD $EXTRA_ARGS"
     fi
@@ -275,6 +295,7 @@ echo -e "Output Dir: $OUTPUT_DIR"
 echo -e "Max Frames: $MAX_FRAMES"
 [ -n "$VALIDATE" ] && echo -e "Validation: ${GREEN}Enabled${NC}" || echo -e "Validation: Disabled"
 [ -n "$ENABLE_AQ" ] && echo -e "AQ Tests: ${GREEN}Enabled${NC}" || echo -e "AQ Tests: Disabled"
+[ -n "$SYNC_ASSEMBLY" ] && echo -e "Assembly: ${YELLOW}Synchronous${NC}" || echo -e "Assembly: ${GREEN}Async${NC} (${ASSEMBLY_THREADS:-2} threads)"
 echo ""
 
 # ============================================================================
