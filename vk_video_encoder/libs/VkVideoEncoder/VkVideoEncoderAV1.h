@@ -156,6 +156,13 @@ public:
                                            uint32_t frameIdx, uint32_t ofTotalFrames);
     virtual VkResult AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                            uint32_t frameIdx, uint32_t ofTotalFrames);
+
+    virtual VkResult ReadbackBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                           BitstreamReadback& readback);
+
+    virtual VkResult WriteBitstreamToFile(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                          uint32_t frameIdx, uint32_t ofTotalFrames,
+                                          BitstreamReadback& readback);
     void WriteShowExistingFrameHeader(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
 
     virtual void InsertOrdered(VkSharedBaseObj<VkVideoEncodeFrameInfo>& current,

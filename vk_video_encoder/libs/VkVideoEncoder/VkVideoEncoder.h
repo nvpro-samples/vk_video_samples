@@ -57,6 +57,14 @@ public:
     enum { MAX_IMAGE_REF_RESOURCES = 17 }; /* List of reference pictures 16 + 1 for current */
     enum { MAX_BITSTREAM_HEADER_BUFFER_SIZE = 256 };
 
+    struct BitstreamReadback {
+        uint32_t bitstreamStartOffset{0};
+        uint32_t bitstreamSize{0};
+        VkQueryResultStatusKHR status{VK_QUERY_RESULT_STATUS_NOT_READY_KHR};
+        std::vector<uint8_t> bitstreamCopy;
+        bool readbackDone{false};
+    };
+
     // ============================================================================
     // Timeline Semaphore Synchronization Helpers
     // ============================================================================
@@ -721,6 +729,13 @@ public:
     virtual VkResult AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                            uint32_t frameIdx, uint32_t ofTotalFrames);
 
+    virtual VkResult ReadbackBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                           BitstreamReadback& readback);
+
+    virtual VkResult WriteBitstreamToFile(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                          uint32_t frameIdx, uint32_t ofTotalFrames,
+                                          BitstreamReadback& readback);
+
     // Write data to file with CRC generation
     size_t WriteDataToFileWithCRC(const uint8_t* data, size_t size);
 
@@ -885,6 +900,7 @@ protected:
     struct AssemblyWorkItem {
         VkSharedBaseObj<VkVideoEncodeFrameInfo> frameInfo;
         uint64_t sequenceNumber;
+        BitstreamReadback readback;
     };
     typedef VkThreadSafeQueue<VkSharedBaseObj<VkVideoEncodeFrameInfo>> EncoderFrameQueue;
     typedef VkThreadSafeQueue<AssemblyWorkItem> AssemblyQueue;
