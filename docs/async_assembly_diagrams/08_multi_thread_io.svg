@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 900 220" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="12">
+  <text x="450" y="20" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">Two Threads with Slow I/O   Fence Waits Overlap with Sends</text>
+
+  <text x="10" y="57" fill="#555" font-size="11">Worker 0</text>
+
+  <rect x="90"  y="40" width="50"  height="28" rx="3" fill="#2196f3" opacity="0.8"/>
+  <text x="115" y="58" text-anchor="middle" fill="white" font-size="8">fence F0</text>
+
+  <rect x="142" y="40" width="100" height="28" rx="3" fill="#ff5722" opacity="0.8"/>
+  <text x="192" y="58" text-anchor="middle" fill="white" font-size="8">send F0 ~20ms</text>
+
+  <rect x="255" y="40" width="15"  height="28" rx="3" fill="#2196f3" opacity="0.8"/>
+
+  <rect x="322" y="40" width="100" height="28" rx="3" fill="#ff5722" opacity="0.8"/>
+  <text x="372" y="58" text-anchor="middle" fill="white" font-size="8">send F2 ~20ms</text>
+
+  <rect x="435" y="40" width="15"  height="28" rx="3" fill="#2196f3" opacity="0.8"/>
+
+  <rect x="502" y="40" width="100" height="28" rx="3" fill="#ff5722" opacity="0.8"/>
+  <text x="552" y="58" text-anchor="middle" fill="white" font-size="8">send F4 ~20ms</text>
+
+  <text x="10" y="97" fill="#555" font-size="11">Worker 1</text>
+
+  <rect x="100" y="80" width="50"  height="28" rx="3" fill="#2196f3" opacity="0.8"/>
+  <text x="125" y="98" text-anchor="middle" fill="white" font-size="8">fence F1</text>
+
+  <rect x="242" y="80" width="100" height="28" rx="3" fill="#ff5722" opacity="0.8"/>
+  <text x="292" y="98" text-anchor="middle" fill="white" font-size="8">send F1 ~20ms</text>
+
+  <rect x="355" y="80" width="15"  height="28" rx="3" fill="#2196f3" opacity="0.8"/>
+
+  <rect x="422" y="80" width="100" height="28" rx="3" fill="#ff5722" opacity="0.8"/>
+  <text x="472" y="98" text-anchor="middle" fill="white" font-size="8">send F3 ~20ms</text>
+
+  <rect x="535" y="80" width="15"  height="28" rx="3" fill="#2196f3" opacity="0.8"/>
+
+  <!-- Effective throughput -->
+  <text x="10" y="140" fill="#555" font-size="11">Output</text>
+  <rect x="142" y="128" width="30" height="18" rx="3" fill="#4caf50"/>
+  <text x="157" y="141" text-anchor="middle" fill="white" font-size="7">F0</text>
+  <rect x="242" y="128" width="30" height="18" rx="3" fill="#4caf50"/>
+  <text x="257" y="141" text-anchor="middle" fill="white" font-size="7">F1</text>
+  <rect x="322" y="128" width="30" height="18" rx="3" fill="#4caf50"/>
+  <text x="337" y="141" text-anchor="middle" fill="white" font-size="7">F2</text>
+  <rect x="422" y="128" width="30" height="18" rx="3" fill="#4caf50"/>
+  <text x="437" y="141" text-anchor="middle" fill="white" font-size="7">F3</text>
+  <rect x="502" y="128" width="30" height="18" rx="3" fill="#4caf50"/>
+  <text x="517" y="141" text-anchor="middle" fill="white" font-size="7">F4</text>
+
+  <!-- Annotation -->
+  <rect x="90" y="165" width="520" height="35" rx="4" fill="#e8f5e9" stroke="#2e7d32"/>
+  <text x="350" y="180" text-anchor="middle" fill="#1b5e20" font-size="10" font-weight="bold">Fence waits happen during the other thread's I/O.</text>
+  <text x="350" y="193" text-anchor="middle" fill="#1b5e20" font-size="10">Effective throughput: 1 frame every ~10ms (100 FPS) instead of ~20ms (50 FPS).</text>
+</svg>
