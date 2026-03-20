@@ -692,6 +692,19 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         } else if (args[i] == "--enableHwLoadBalancing") {
             // Enables HW load balancing using multiple encoders devices when available
             enableHwLoadBalancing = true;
+        } else if (args[i] == "--syncAssembly") {
+            asyncAssembly = false;
+        } else if (args[i] == "--assemblyThreads") {
+            if (++i >= argc) {
+                fprintf(stderr, "Invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            uint32_t val = 0;
+            if (!parseUint(args[i], val) || val == 0 || val > 16) {
+                fprintf(stderr, "Invalid value for --assemblyThreads (1..16)\n");
+                return -1;
+            }
+            assemblyThreadCount = val;
         } else if (args[i] == "--testOutOfOrderRecording") {
             // Testing only - don't use this feature for production!
             fprintf(stdout, "Warning: %s should only be used for testing!\n", args[i].c_str());
