@@ -61,10 +61,14 @@ public:
             return TryPopNoLock(node);
         }
 
-        m_condConsumer.wait(lock, [this]{ return ((m_queueIsFlushing == false) && !m_queue.empty()); });
+        m_condConsumer.wait(lock, [this]{ return (m_queueIsFlushing || !m_queue.empty()); });
+
+        if (m_queue.empty()) {
+            return false;
+        }
+
         node = m_queue.front();
         m_queue.pop();
-        // Notify the producer
         m_condProducer.notify_one();
 
         return true;
@@ -86,8 +90,8 @@ public:
 
         m_queueIsFlushing = true;
 
-        m_condProducer.notify_one();
-        m_condConsumer.notify_one();
+        m_condProducer.notify_all();
+        m_condConsumer.notify_all();
     }
 
     bool ExitQueue() {
