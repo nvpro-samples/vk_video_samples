@@ -882,7 +882,17 @@ protected:
                                      VkFormat format, VkImageUsageFlags usage,
                                      const VkExtent2D& imageExtent);
 
+    struct AssemblyWorkItem {
+        VkSharedBaseObj<VkVideoEncodeFrameInfo> frameInfo;
+        uint64_t sequenceNumber;
+    };
     typedef VkThreadSafeQueue<VkSharedBaseObj<VkVideoEncodeFrameInfo>> EncoderFrameQueue;
+    typedef VkThreadSafeQueue<AssemblyWorkItem> AssemblyQueue;
+
+    void AssemblyWorkerThread(int threadId);
+    VkResult QueueFramesForAssembly(VkSharedBaseObj<VkVideoEncodeFrameInfo>& frames, uint32_t numFrames);
+    void ReleaseAssemblyItem(AssemblyWorkItem& item);
+
 private:
     std::atomic<int32_t> refCount;
 protected:
@@ -956,6 +966,15 @@ protected:
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
     std::shared_ptr<nvenc_aq::EncodeAqAnalyzes > m_aqAnalyzes;
 #endif // NV_AQ_GPU_LIB_SUPPORTED
+
+    bool                                     m_asyncAssemblyEnabled{false};
+    AssemblyQueue                            m_assemblyQueue;
+    std::vector<std::thread>                 m_assemblyThreads;
+    std::atomic<uint64_t>                    m_assemblySequenceCounter{0};
+    std::atomic<uint64_t>                    m_nextWriteSequence{0};
+    std::mutex                               m_assemblyFileMutex;
+    std::condition_variable                  m_assemblyOrderCV;
+    std::atomic<uint32_t>                    m_assemblyErrorCount{0};
 };
 
 VkResult CreateVideoEncoderH264(const VulkanDeviceContext* vkDevCtx,

@@ -1149,6 +1149,81 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     return result;
 }
 
+void VkVideoEncoder::AssemblyWorkerThread(int threadId)
+{
+    if (m_encoderConfig->verbose) {
+        std::cout << "[AsyncAssembly] Worker " << threadId << " started" << std::endl;
+    }
+
+    while (true) {
+        AssemblyWorkItem item;
+        bool success = m_assemblyQueue.WaitAndPop(item);
+        if (!success) {
+            if (m_assemblyQueue.ExitQueue()) break;
+            continue;
+        }
+
+        auto& frame = item.frameInfo;
+        assert(frame != nullptr);
+
+        {
+            std::unique_lock<std::mutex> lock(m_assemblyFileMutex);
+            m_assemblyOrderCV.wait(lock, [&] {
+                return item.sequenceNumber == m_nextWriteSequence.load();
+            });
+
+            VkResult result = AssembleBitstreamData(frame,
+                                                     (uint32_t)item.sequenceNumber,
+                                                     (uint32_t)item.sequenceNumber + 1);
+            if (result != VK_SUCCESS) {
+                fprintf(stderr, "[AsyncAssembly] Worker %d: assembly failed (0x%x) "
+                        "seq=%lu\n", threadId, result,
+                        (unsigned long)item.sequenceNumber);
+                m_assemblyErrorCount++;
+            }
+
+            m_nextWriteSequence++;
+            lock.unlock();
+            m_assemblyOrderCV.notify_all();
+        }
+
+        ReleaseAssemblyItem(item);
+    }
+
+    if (m_encoderConfig->verbose) {
+        std::cout << "[AsyncAssembly] Worker " << threadId << " exiting" << std::endl;
+    }
+}
+
+VkResult VkVideoEncoder::QueueFramesForAssembly(
+    VkSharedBaseObj<VkVideoEncodeFrameInfo>& frames, uint32_t numFrames)
+{
+    VkSharedBaseObj<VkVideoEncodeFrameInfo> current = frames;
+    while (current != nullptr) {
+        AssemblyWorkItem item;
+        item.frameInfo = current;
+        item.sequenceNumber = m_assemblySequenceCounter++;
+
+        bool pushed = m_assemblyQueue.Push(item);
+        if (!pushed) {
+            fprintf(stderr, "[AsyncAssembly] Failed to push to assembly queue\n");
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+
+        VkSharedBaseObj<VkVideoEncodeFrameInfo> next = current->dependantFrames;
+        current = next;
+    }
+    return VK_SUCCESS;
+}
+
+void VkVideoEncoder::ReleaseAssemblyItem(AssemblyWorkItem& item)
+{
+    if (item.frameInfo) {
+        item.frameInfo->Reset(true);
+        item.frameInfo = nullptr;
+    }
+}
+
 VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConfig)
 {
 
@@ -1251,6 +1326,10 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
     // Reconfigure the gopStructure structure because the device may not support
     // specific GOP structure. For example it may not support B-frames.
+    if (m_encoderConfig->asyncAssembly) {
+        m_encoderConfig->numInputImages += m_encoderConfig->numBitstreamBuffersToPreallocate;
+    }
+
     // gopStructure.Init() should be called after  encoderConfig->InitDeviceCapabilities().
     m_encoderConfig->gopStructure.Init(m_encoderConfig->numFrames);
     if (encoderConfig->GetMaxBFrameCount() < m_encoderConfig->gopStructure.GetConsecutiveBFrameCount()) {
@@ -1693,7 +1772,8 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     }
 
     const uint32_t numEncodeImagesInFlight = std::max<uint32_t>(m_holdRefFramesInQueue + m_holdRefFramesInQueue * m_encoderConfig->gopStructure.GetConsecutiveBFrameCount(), 4);
-    const uint32_t maxEncodeQueueDepth = std::max<uint32_t>(maxDpbPicturesCount, maxActiveReferencePicturesCount) + numEncodeImagesInFlight;
+    const uint32_t asyncAssemblySlack = m_encoderConfig->asyncAssembly ? m_encoderConfig->numBitstreamBuffersToPreallocate : 0;
+    const uint32_t maxEncodeQueueDepth = std::max<uint32_t>(maxDpbPicturesCount, maxActiveReferencePicturesCount) + numEncodeImagesInFlight + asyncAssemblySlack;
     result = m_dpbImagePool->Configure(m_vkDevCtx,
                                        maxEncodeQueueDepth,
                                        m_imageDpbFormat,
@@ -2050,6 +2130,23 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         for (size_t i = 0; i < m_crcInitValue.size(); i += 1) {
             m_crcAllocation[i] = m_crcInitValue[i];
         }
+    }
+
+    if (m_encoderConfig->asyncAssembly) {
+        m_asyncAssemblyEnabled = true;
+        m_assemblySequenceCounter = 0;
+        m_nextWriteSequence = 0;
+        m_assemblyErrorCount = 0;
+        m_assemblyQueue.SetMaxPendingQueueNodes(
+            encoderConfig->numBitstreamBuffersToPreallocate);
+        for (uint32_t i = 0; i < m_encoderConfig->assemblyThreadCount; i++) {
+            m_assemblyThreads.emplace_back(
+                &VkVideoEncoder::AssemblyWorkerThread, this, (int)i);
+        }
+        std::cout << "[AsyncAssembly] Started " << m_encoderConfig->assemblyThreadCount
+                  << " assembly worker threads (queue capacity="
+                  << (int)encoderConfig->numBitstreamBuffersToPreallocate << ")"
+                  << std::endl;
     }
 
     return VK_SUCCESS;
@@ -2781,8 +2878,12 @@ VkResult VkVideoEncoder::PushOrderedFrames()
                 // Testing only - don't use for production!
                 result = ProcessOutOfOrderFrames(m_lastDeferredFrame, m_numDeferredFrames);
             }
-            VkVideoEncodeFrameInfo::ReleaseChildrenFrames(m_lastDeferredFrame);
-            assert(m_lastDeferredFrame == nullptr);
+            if (m_asyncAssemblyEnabled) {
+                m_lastDeferredFrame = nullptr;
+            } else {
+                VkVideoEncodeFrameInfo::ReleaseChildrenFrames(m_lastDeferredFrame);
+                assert(m_lastDeferredFrame == nullptr);
+            }
         }
         m_numDeferredFrames = 0;
         m_numDeferredRefFrames = 0;
@@ -2792,13 +2893,18 @@ VkResult VkVideoEncoder::PushOrderedFrames()
 
 VkResult VkVideoEncoder::ProcessOrderedFrames(VkSharedBaseObj<VkVideoEncodeFrameInfo>& frames, uint32_t numFrames) {
 
-    const std::vector<std::pair<std::string, std::function<VkResult(VkSharedBaseObj<VkVideoEncodeFrameInfo>&, uint32_t, uint32_t)>>> callbacks = {
+    std::vector<std::pair<std::string, std::function<VkResult(VkSharedBaseObj<VkVideoEncodeFrameInfo>&, uint32_t, uint32_t)>>> callbacks = {
         {"StartOfVideoCodingEncodeOrder",  [this](VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame, uint32_t frameIdx, uint32_t ofTotalFrames) { return StartOfVideoCodingEncodeOrder(frame, frameIdx, ofTotalFrames); }},
         {"ProcessDpb",                     [this](VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame, uint32_t frameIdx, uint32_t ofTotalFrames) { return ProcessDpb(frame, frameIdx, ofTotalFrames); }},
         {"RecordVideoCodingCmd",           [this](VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame, uint32_t frameIdx, uint32_t ofTotalFrames) { return RecordVideoCodingCmd(frame, frameIdx, ofTotalFrames); }},
         {"SubmitVideoCodingCmds",          [this](VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame, uint32_t frameIdx, uint32_t ofTotalFrames) { return SubmitVideoCodingCmds(frame, frameIdx, ofTotalFrames); }},
-        {"AssembleBitstreamData",          [this](VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame, uint32_t frameIdx, uint32_t ofTotalFrames) { return AssembleBitstreamData(frame, frameIdx, ofTotalFrames); }}
     };
+
+    if (!m_asyncAssemblyEnabled) {
+        callbacks.push_back(
+            {"AssembleBitstreamData", [this](VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame, uint32_t frameIdx, uint32_t ofTotalFrames) { return AssembleBitstreamData(frame, frameIdx, ofTotalFrames); }}
+        );
+    }
 
     VkResult result = VK_SUCCESS;
     for (const auto& pair : callbacks) {
@@ -2814,6 +2920,10 @@ VkResult VkVideoEncoder::ProcessOrderedFrames(VkSharedBaseObj<VkVideoEncodeFrame
         if (result != VK_SUCCESS) {
             break;
         }
+    }
+
+    if (result == VK_SUCCESS && m_asyncAssemblyEnabled) {
+        result = QueueFramesForAssembly(frames, numFrames);
     }
 
     return result;
@@ -2876,6 +2986,19 @@ bool VkVideoEncoder::WaitForThreadsToComplete()
         m_encoderThreadQueue.SetFlushAndExit();
         if (m_encoderQueueConsumerThread.joinable()) {
             m_encoderQueueConsumerThread.join();
+        }
+    }
+
+    if (m_asyncAssemblyEnabled) {
+        m_assemblyQueue.SetFlushAndExit();
+        for (auto& t : m_assemblyThreads) {
+            if (t.joinable()) t.join();
+        }
+        m_assemblyThreads.clear();
+        m_asyncAssemblyEnabled = false;
+        if (m_assemblyErrorCount > 0) {
+            fprintf(stderr, "[AsyncAssembly] Completed with %u errors\n",
+                    m_assemblyErrorCount.load());
         }
     }
 
