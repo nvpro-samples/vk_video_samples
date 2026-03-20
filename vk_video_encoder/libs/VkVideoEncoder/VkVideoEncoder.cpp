@@ -1149,6 +1149,85 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     return result;
 }
 
+VkResult VkVideoEncoder::ReadbackBitstreamData(
+    VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+    BitstreamReadback& readback)
+{
+    if (encodeFrameInfo->outputBitstreamBuffer == nullptr ||
+        encodeFrameInfo->encodeCmdBuffer == nullptr) {
+        readback.readbackDone = false;
+        return VK_SUCCESS;
+    }
+
+    VkResult result = encodeFrameInfo->encodeCmdBuffer->SyncHostOnCmdBuffComplete(
+        false, "asyncAssemblyFence");
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "\nAsync assembly: fence wait failed with result 0x%x.\n", result);
+        return result;
+    }
+
+    uint32_t querySlotId = (uint32_t)-1;
+    VkQueryPool queryPool = encodeFrameInfo->encodeCmdBuffer->GetQueryPool(querySlotId);
+
+    struct QueryResult {
+        uint32_t bitstreamStartOffset;
+        uint32_t bitstreamSize;
+        VkQueryResultStatusKHR status;
+    } encodeResult{};
+
+    result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx, queryPool, querySlotId,
+                                             1, sizeof(encodeResult), &encodeResult,
+                                             sizeof(encodeResult),
+                                             VK_QUERY_RESULT_WITH_STATUS_BIT_KHR |
+                                             VK_QUERY_RESULT_WAIT_BIT);
+    if (result != VK_SUCCESS || encodeResult.status != VK_QUERY_RESULT_STATUS_COMPLETE_KHR) {
+        fprintf(stderr, "\nAsync assembly: query failed (0x%x, status=0x%x).\n",
+                result, encodeResult.status);
+        return (result != VK_SUCCESS) ? result : VK_INCOMPLETE;
+    }
+
+    readback.bitstreamStartOffset = encodeResult.bitstreamStartOffset;
+    readback.bitstreamSize = encodeResult.bitstreamSize;
+    readback.status = encodeResult.status;
+    readback.readbackDone = true;
+    return VK_SUCCESS;
+}
+
+VkResult VkVideoEncoder::WriteBitstreamToFile(
+    VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+    uint32_t frameIdx, uint32_t ofTotalFrames,
+    BitstreamReadback& readback)
+{
+    if (encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
+        WriteDataToFileWithCRC(
+            encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
+            encodeFrameInfo->bitstreamHeaderBufferSize);
+    }
+
+    if (readback.readbackDone && readback.bitstreamSize > 0) {
+        const uint8_t* src;
+        if (!readback.bitstreamCopy.empty()) {
+            src = readback.bitstreamCopy.data();
+        } else {
+            VkDeviceSize maxSize;
+            src = encodeFrameInfo->outputBitstreamBuffer->GetDataPtr(0, maxSize)
+                  + readback.bitstreamStartOffset;
+        }
+        size_t totalBytesWritten = 0;
+        while (totalBytesWritten < readback.bitstreamSize) {
+            size_t remaining = readback.bitstreamSize - totalBytesWritten;
+            size_t written = WriteDataToFileWithCRC(src + totalBytesWritten, remaining);
+            if (written == 0) {
+                fprintf(stderr, "[AsyncAssembly] Error writing VCL data\n");
+                return VK_ERROR_OUT_OF_HOST_MEMORY;
+            }
+            totalBytesWritten += written;
+        }
+    }
+
+    return VK_SUCCESS;
+}
+
 void VkVideoEncoder::AssemblyWorkerThread(int threadId)
 {
     if (m_encoderConfig->verbose) {
@@ -1166,26 +1245,41 @@ void VkVideoEncoder::AssemblyWorkerThread(int threadId)
         auto& frame = item.frameInfo;
         assert(frame != nullptr);
 
+        VkResult result = ReadbackBitstreamData(frame, item.readback);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "[AsyncAssembly] Worker %d: readback failed (0x%x) "
+                    "seq=%lu\n", threadId, result,
+                    (unsigned long)item.sequenceNumber);
+            m_assemblyErrorCount++;
+            {
+                std::lock_guard<std::mutex> lock(m_assemblyFileMutex);
+                m_nextWriteSequence++;
+            }
+            m_assemblyOrderCV.notify_all();
+            ReleaseAssemblyItem(item);
+            continue;
+        }
+
         {
             std::unique_lock<std::mutex> lock(m_assemblyFileMutex);
             m_assemblyOrderCV.wait(lock, [&] {
                 return item.sequenceNumber == m_nextWriteSequence.load();
             });
 
-            VkResult result = AssembleBitstreamData(frame,
-                                                     (uint32_t)item.sequenceNumber,
-                                                     (uint32_t)item.sequenceNumber + 1);
+            result = WriteBitstreamToFile(frame,
+                                          (uint32_t)item.sequenceNumber,
+                                          (uint32_t)item.sequenceNumber + 1,
+                                          item.readback);
             if (result != VK_SUCCESS) {
-                fprintf(stderr, "[AsyncAssembly] Worker %d: assembly failed (0x%x) "
+                fprintf(stderr, "[AsyncAssembly] Worker %d: write failed (0x%x) "
                         "seq=%lu\n", threadId, result,
                         (unsigned long)item.sequenceNumber);
                 m_assemblyErrorCount++;
             }
 
             m_nextWriteSequence++;
-            lock.unlock();
-            m_assemblyOrderCV.notify_all();
         }
+        m_assemblyOrderCV.notify_all();
 
         ReleaseAssemblyItem(item);
     }

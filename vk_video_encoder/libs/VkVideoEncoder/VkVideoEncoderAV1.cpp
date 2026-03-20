@@ -972,6 +972,123 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
     return result;
 }
 
+VkResult VkVideoEncoderAV1::ReadbackBitstreamData(
+    VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+    BitstreamReadback& readback)
+{
+    VkVideoEncodeFrameInfoAV1* pFrameInfo = GetEncodeFrameInfoAV1(encodeFrameInfo);
+
+    if (pFrameInfo->bShowExistingFrame) {
+        readback.readbackDone = false;
+        return VK_SUCCESS;
+    }
+
+    VkResult result = VkVideoEncoder::ReadbackBitstreamData(encodeFrameInfo, readback);
+    if (result != VK_SUCCESS) return result;
+
+    if (readback.readbackDone) {
+        VkDeviceSize maxSize;
+        uint8_t* data = encodeFrameInfo->outputBitstreamBuffer->GetDataPtr(0, maxSize);
+        readback.bitstreamCopy.resize(readback.bitstreamSize);
+        memcpy(readback.bitstreamCopy.data(),
+               data + readback.bitstreamStartOffset,
+               readback.bitstreamSize);
+    }
+
+    return VK_SUCCESS;
+}
+
+VkResult VkVideoEncoderAV1::WriteBitstreamToFile(
+    VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+    uint32_t frameIdx, uint32_t ofTotalFrames,
+    BitstreamReadback& readback)
+{
+    VkVideoEncodeFrameInfoAV1* pFrameInfo = GetEncodeFrameInfoAV1(encodeFrameInfo);
+
+    if (pFrameInfo->bShowExistingFrame) {
+        WriteShowExistingFrameHeader(encodeFrameInfo);
+        return VK_SUCCESS;
+    }
+
+    bool flushFrameData = (pFrameInfo->stdPictureInfo.flags.show_frame || pFrameInfo->bShowExistingFrame);
+
+    if (!flushFrameData) {
+        if (!(m_bitstream.size() > frameIdx)) {
+            m_bitstream.resize(frameIdx + 1);
+        }
+        m_bitstream[frameIdx] = std::move(readback.bitstreamCopy);
+    }
+
+    m_batchFramesIndxSetToAssemble.insert(frameIdx);
+
+    if (flushFrameData) {
+        if (encodeFrameInfo->frameInputOrderNum == 0) {
+            uint8_t header[32];
+            mem_put_le32(header     , MAKE_FOURCC('D', 'K', 'I', 'F'));
+            mem_put_le16(header +  4, 0);
+            mem_put_le16(header +  6, 32);
+            mem_put_le32(header +  8, MAKE_FOURCC('A', 'V', '0', '1'));
+            mem_put_le16(header + 12, m_encoderConfig->encodeWidth);
+            mem_put_le16(header + 14, m_encoderConfig->encodeHeight);
+            mem_put_le32(header + 16, m_encoderConfig->frameRateNumerator);
+            mem_put_le32(header + 20, m_encoderConfig->frameRateDenominator);
+            mem_put_le32(header + 24, m_encoderConfig->numFrames);
+            mem_put_le32(header + 28, 0);
+            WriteDataToFileWithCRC(header, sizeof(header));
+        }
+
+        size_t framesSize = 2 + encodeFrameInfo->bitstreamHeaderBufferSize;
+        for (const auto& curIndex : m_batchFramesIndxSetToAssemble) {
+            size_t frameSize = (frameIdx == curIndex)
+                ? readback.bitstreamSize
+                : m_bitstream[curIndex].size();
+            framesSize += frameSize;
+        }
+
+        encodeFrameInfo->inputTimeStamp = encodeFrameInfo->frameInputOrderNum;
+        uint64_t pts = encodeFrameInfo->inputTimeStamp;
+        uint8_t frameHeader[12];
+        mem_put_le32(frameHeader    , (uint32_t)framesSize);
+        mem_put_le32(frameHeader + 4, (uint32_t)(pts & 0xffffffff));
+        mem_put_le32(frameHeader + 8, (uint32_t)(pts >> 32));
+        WriteDataToFileWithCRC(frameHeader, sizeof(frameHeader));
+
+        uint8_t tdObu[2] = { 0x12, 0x00 };
+        WriteDataToFileWithCRC(tdObu, sizeof(tdObu));
+
+        if (encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
+            fwrite(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
+                   1, encodeFrameInfo->bitstreamHeaderBufferSize,
+                   m_encoderConfig->outputFileHandler.GetFileHandle());
+        }
+
+        for (const auto& curIndex : m_batchFramesIndxSetToAssemble) {
+            const uint8_t* writeData;
+            size_t bytesToWrite;
+            if (frameIdx == curIndex) {
+                writeData = readback.bitstreamCopy.data();
+                bytesToWrite = readback.bitstreamSize;
+            } else {
+                writeData = m_bitstream[curIndex].data();
+                bytesToWrite = m_bitstream[curIndex].size();
+            }
+
+            size_t totalBytesWritten = 0;
+            while (totalBytesWritten < bytesToWrite) {
+                size_t remaining = bytesToWrite - totalBytesWritten;
+                size_t written = fwrite(writeData + totalBytesWritten, 1, remaining,
+                                        m_encoderConfig->outputFileHandler.GetFileHandle());
+                if (written == 0) return VK_ERROR_OUT_OF_HOST_MEMORY;
+                totalBytesWritten += written;
+            }
+        }
+        m_batchFramesIndxSetToAssemble.clear();
+    }
+    fflush(m_encoderConfig->outputFileHandler.GetFileHandle());
+
+    return VK_SUCCESS;
+}
+
 void VkVideoEncoderAV1::WriteShowExistingFrameHeader(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
     VkVideoEncodeFrameInfoAV1* pFrameInfo = GetEncodeFrameInfoAV1(encodeFrameInfo);
