@@ -112,6 +112,7 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     -i, --input                     .yuv Input YUV File Name (YUV420p 8bpp only) \n\
     -o, --output                    .264/5,ivf Output H264/5/AV1 File Name \n\
     -c, --codec                     <string> select codec type: avc (h264) or hevc (h265) or av1\n\
+    --verbose                       verbose output\n\
     --encoderConfig                 <path>    : load base config from JSON (CLI overrides); see json_config/encoder_config.schema.json\n\
     --dpbMode                       <string>  : select DPB mode: layered, separate\n\
     --inputWidth                    <integer> : Input Width \n\
@@ -795,6 +796,8 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             }
             aqDumpDir = args[i];
 #endif // NV_AQ_GPU_LIB_SUPPORTED
+        } else if (args[i] == "--verbose") {
+            verbose = true;
         } else {
             argcount++;
             arglist.push_back(args[i].c_str());

@@ -171,6 +171,12 @@ struct DecoderConfig {
                     verbose = true;
                     return true;
                 }},
+            {"--verbose", nullptr, 0,
+                "Be verbose",
+                [this](const char **args, const ProgramArgs &a) {
+                    verbose = true;
+                    return true;
+                }},
             {"--selectVideoWithComputeQueue", nullptr, 0,
                 "Select a video queue that supports compute",
                 [this](const char **args, const ProgramArgs &a) {
