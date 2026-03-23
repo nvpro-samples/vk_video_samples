@@ -1,0 +1,325 @@
+{
+  "samples": [
+    {
+      "name": "h264_default",
+      "codec": "h264",
+      "profile": null,
+      "extra_args": null,
+      "description": "Test H.264 encoding with default settings",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "h264_baseline_profile",
+      "codec": "h264",
+      "profile": "baseline",
+      "extra_args": null,
+      "description": "Test H.264 Baseline profile encoding",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "h264_main_profile",
+      "codec": "h264",
+      "profile": "main",
+      "extra_args": null,
+      "description": "Test H.264 Main profile encoding",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "h264_high_profile",
+      "codec": "h264",
+      "profile": "high",
+      "extra_args": null,
+      "description": "Test H.264 High profile encoding",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "h264_high444_profile",
+      "codec": "h264",
+      "profile": "high444",
+      "extra_args": [
+        "--inputChromaSubsampling",
+        "444"
+      ],
+      "description": "Test H.264 High444 profile encoding",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i444.yuv",
+      "source_checksum": "1887c736739db1e5b8c67a5cc873c6135edb5a4e6930a0b0183813b60f2ad761",
+      "source_filepath": "video/yuv/352x288_15_i444.yuv"
+    },
+    {
+      "name": "h264_ip_gop",
+      "codec": "h264",
+      "profile": "main",
+      "extra_args": [
+        "--consecutiveBFrameCount",
+        "0",
+        "--closedGop"
+      ],
+      "description": "Test H.264 I-P GOP structure (no B-frames) with closed GOP",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "h264_cbr_ratecontrol",
+      "codec": "h264",
+      "profile": "high",
+      "extra_args": [
+        "--rateControlMode",
+        "cbr",
+        "--averageBitrate",
+        "2000000"
+      ],
+      "description": "Test H.264 CBR rate control",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "h264_vbr_ratecontrol",
+      "codec": "h264",
+      "profile": "high",
+      "extra_args": [
+        "--rateControlMode",
+        "vbr",
+        "--averageBitrate",
+        "2000000",
+        "--maxBitrate",
+        "4000000"
+      ],
+      "description": "Test H.264 VBR rate control",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "h264_small_frame",
+      "codec": "h264",
+      "profile": "main",
+      "extra_args": null,
+      "description": "Test H.264 encoding with small frame size",
+      "width": 176,
+      "height": 144,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/176x144_30_i420.yuv",
+      "source_checksum": "235d1727dc8b4d3766fcbb52a8bfc5a87bcb050d3d7a15785bd30fa4a473c8e4",
+      "source_filepath": "video/yuv/176x144_30_i420.yuv"
+    },
+    {
+      "name": "h265_default",
+      "codec": "h265",
+      "profile": null,
+      "extra_args": null,
+      "description": "Test H.265 encoding with default settings",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "h265_main_profile",
+      "codec": "h265",
+      "profile": "main",
+      "extra_args": null,
+      "description": "Test H.265 Main profile encoding",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "h265_main10_profile",
+      "codec": "h265",
+      "profile": "main10",
+      "extra_args": [
+        "--inputBpp",
+        "10"
+      ],
+      "description": "Test H.265 Main10 profile encoding",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_420_10le.yuv",
+      "source_checksum": "cd04579c7115e33d01a874f4167a99ba73e165eb5086b5ffa66a8b018e13efb0",
+      "source_filepath": "video/yuv/352x288_15_i420_10le.yuv"
+    },
+    {
+      "name": "h265_ip_gop",
+      "codec": "h265",
+      "profile": "main",
+      "extra_args": [
+        "--consecutiveBFrameCount",
+        "0",
+        "--closedGop"
+      ],
+      "description": "Test H.265 I-P GOP structure (no B-frames) with closed GOP",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "av1_default",
+      "codec": "av1",
+      "profile": null,
+      "extra_args": null,
+      "description": "Test AV1 encoding with default settings",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "av1_main_profile",
+      "codec": "av1",
+      "profile": "main",
+      "extra_args": null,
+      "description": "Test AV1 Main profile encoding",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "av1_high_profile",
+      "codec": "av1",
+      "profile": "high",
+      "extra_args": null,
+      "description": "Test AV1 High profile encoding",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "av1_professional_profile",
+      "codec": "av1",
+      "profile": "professional",
+      "extra_args": null,
+      "description": "Test AV1 Professional profile encoding",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "av1_ip_gop",
+      "codec": "av1",
+      "profile": "main",
+      "extra_args": [
+        "--consecutiveBFrameCount",
+        "0",
+        "--closedGop"
+      ],
+      "description": "Test AV1 I-P GOP structure (no B-frames) with closed GOP",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "h264_resolution_too_small",
+      "codec": "h264",
+      "profile": null,
+      "extra_args": null,
+      "description": "Test H.264 encoding rejects resolution below hardware minimum",
+      "width": 128,
+      "height": 48,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "h264_resolution_too_large",
+      "codec": "h264",
+      "profile": null,
+      "extra_args": null,
+      "extended": true,
+      "description": "Test H.264 encoding rejects resolution above hardware maximum",
+      "width": 7680,
+      "height": 4320,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/7680x4320_420_8le.yuv",
+      "source_checksum": "0a7799afe89ad34aeb62b293c4c310a9a15c34961e9203a8499027ad775929b0",
+      "source_filepath": "video/yuv/7680x4320_420_8le.yuv"
+    },
+    {
+      "name": "h265_resolution_too_small",
+      "codec": "h265",
+      "profile": null,
+      "extra_args": null,
+      "description": "Test H.265 encoding rejects resolution below hardware minimum",
+      "width": 128,
+      "height": 48,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "h265_resolution_too_large",
+      "codec": "h265",
+      "profile": null,
+      "extra_args": null,
+      "extended": true,
+      "description": "Test H.265 encoding rejects resolution above hardware maximum",
+      "width": 7680,
+      "height": 4320,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/7680x4320_420_8le.yuv",
+      "source_checksum": "0a7799afe89ad34aeb62b293c4c310a9a15c34961e9203a8499027ad775929b0",
+      "source_filepath": "video/yuv/7680x4320_420_8le.yuv"
+    },
+    {
+      "name": "av1_resolution_too_small",
+      "codec": "av1",
+      "profile": null,
+      "extra_args": null,
+      "description": "Test AV1 encoding rejects resolution below hardware minimum",
+      "width": 128,
+      "height": 48,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+    },
+    {
+      "name": "av1_resolution_too_large",
+      "codec": "av1",
+      "profile": null,
+      "extra_args": null,
+      "extended": true,
+      "description": "Test AV1 encoding rejects resolution above hardware maximum",
+      "width": 7680,
+      "height": 4320,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/7680x4320_420_8le.yuv",
+      "source_checksum": "0a7799afe89ad34aeb62b293c4c310a9a15c34961e9203a8499027ad775929b0",
+      "source_filepath": "video/yuv/7680x4320_420_8le.yuv"
+    }
+  ]
+}

@@ -1,0 +1,492 @@
+{
+  "samples": [
+    {
+      "name": "h264_4k_main",
+      "codec": "h264",
+      "description": "Test H.264 decoding with 4K main profile sample",
+      "expected_output_crc": "ce81af28",
+      "expected_output_md5": "716a1a1999bd67ed129b07c749351859",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/4k_26_ibp_main.h264",
+      "source_checksum": "1b6c2fa6ea7cb8fac8064036d8729f668e913ea7cf3860009924789b8edf042f",
+      "source_filepath": "video/avc/4k_26_ibp_main.h264"
+    },
+    {
+      "name": "h264_clip_a",
+      "codec": "h264",
+      "description": "Test H.264 decoding with clip-a sample",
+      "expected_output_md5": "9a629a99a9870197022265fcb1fc4bb2",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-a.h264",
+      "source_checksum": "b119d5d667eb7791613d0e39f375b61f0fa41baa5ee1f216a678e0483c69333c",
+      "source_filepath": "video/avc/clip-a.h264"
+    },
+    {
+      "name": "h264_clip_a_max10frames",
+      "codec": "h264",
+      "description": "Test H.264 decoding with max 10 frames limit",
+      "extra_args": [
+        "--maxFrameCount",
+        "10"
+      ],
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-a.h264",
+      "source_checksum": "b119d5d667eb7791613d0e39f375b61f0fa41baa5ee1f216a678e0483c69333c",
+      "source_filepath": "video/avc/clip-a.h264"
+    },
+    {
+      "name": "h264_clip_a_loop3",
+      "codec": "h264",
+      "description": "Test H.264 decoding with 3 playback loops (stress test)",
+      "extra_args": [
+        "--loop",
+        "3"
+      ],
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-a.h264",
+      "source_checksum": "b119d5d667eb7791613d0e39f375b61f0fa41baa5ee1f216a678e0483c69333c",
+      "source_filepath": "video/avc/clip-a.h264"
+    },
+    {
+      "name": "h264_clip_a_hw_load_balancing",
+      "codec": "h264",
+      "description": "Test H.264 decoding with hardware load balancing",
+      "extra_args": [
+        "--enableHwLoadBalancing"
+      ],
+      "expected_output_md5": "9a629a99a9870197022265fcb1fc4bb2",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-a.h264",
+      "source_checksum": "b119d5d667eb7791613d0e39f375b61f0fa41baa5ee1f216a678e0483c69333c",
+      "source_filepath": "video/avc/clip-a.h264"
+    },
+    {
+      "name": "h264_clip_a_y4m",
+      "codec": "h264",
+      "description": "Test H.264 decoding with Y4M output format",
+      "extra_args": [
+        "--y4m"
+      ],
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-a.h264",
+      "source_checksum": "b119d5d667eb7791613d0e39f375b61f0fa41baa5ee1f216a678e0483c69333c",
+      "source_filepath": "video/avc/clip-a.h264"
+    },
+    {
+      "name": "h264_clip_a_compute_queue",
+      "codec": "h264",
+      "description": "Test H.264 decoding using video queue with compute support",
+      "extra_args": [
+        "--selectVideoWithComputeQueue"
+      ],
+      "expected_output_md5": "9a629a99a9870197022265fcb1fc4bb2",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-a.h264",
+      "source_checksum": "b119d5d667eb7791613d0e39f375b61f0fa41baa5ee1f216a678e0483c69333c",
+      "source_filepath": "video/avc/clip-a.h264"
+    },
+    {
+      "name": "h264_clip_a_filter_ycbcr2rgba",
+      "codec": "h264",
+      "description": "Test H.264 decoding with YCBCR2RGBA post-process filter",
+      "extra_args": [
+        "--enablePostProcessFilter",
+        "2"
+      ],
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-a.h264",
+      "source_checksum": "b119d5d667eb7791613d0e39f375b61f0fa41baa5ee1f216a678e0483c69333c",
+      "source_filepath": "video/avc/clip-a.h264"
+    },
+    {
+      "name": "h264_clip_c",
+      "codec": "h264",
+      "description": "Test H.264 decoding with clip-c sample",
+      "expected_output_md5": "50f69d428c05b69d715d2cc0e7c1db48",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-c.h264",
+      "source_checksum": "fab2665bfffaac4a60c13cf9d082fae6a2042a3926b91889cb06d8dd54d26388",
+      "source_filepath": "video/avc/clip-c.h264"
+    },
+    {
+      "name": "h265_big_buck_bunny_2160p",
+      "codec": "h265",
+      "description": "Test H.265 decoding with Big Buck Bunny 4K sample",
+      "expected_output_crc": "491789f3",
+      "expected_output_md5": "2edc2b32d72d1e590ce73c6bb542b0ec",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/hevc/hevc-big_buck_bunny_2160p.h265",
+      "source_checksum": "ddb1e4f0b0b6be037a81b9c88842b729d3780813ff67f90145305be422becc43",
+      "source_filepath": "video/hevc/hevc-big_buck_bunny_2160p.h265"
+    },
+    {
+      "name": "h265_clip_d",
+      "codec": "h265",
+      "description": "Test H.265 decoding with clip-d sample",
+      "expected_output_crc": "491789f3",
+      "expected_output_md5": "9a629a99a9870197022265fcb1fc4bb2",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/hevc/clip-d.h265",
+      "source_checksum": "d7db8cb323e10c5e30667b141554e88bab3bacf6bc878b544866867b76c3d35a",
+      "source_filepath": "video/hevc/clip-d.h265"
+    },
+    {
+      "name": "h265_itu_slist_a",
+      "codec": "h265",
+      "description": "Test H.265 decoding with ITU slist-a sample",
+      "expected_output_md5": "b00bc5362e6fad1a0e704aad8e69b863",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/hevc/hevc-itu-slist-a.h265",
+      "source_checksum": "be5532289143b068bfe451243b750b8162017c0569046c680931987469f47095",
+      "source_filepath": "video/hevc/hevc-itu-slist-a.h265"
+    },
+    {
+      "name": "h265_itu_slist_b",
+      "codec": "h265",
+      "description": "Test H.265 decoding with ITU slist-b sample",
+      "expected_output_md5": "312b4ebb3e885587d5e12b78aa95977a",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/hevc/hevc-itu-slist-b.h265",
+      "source_checksum": "d37c0a144fc67a10195b2134a1eccc268d8b37add53e91ddb74f26b690c053ec",
+      "source_filepath": "video/hevc/hevc-itu-slist-b.h265"
+    },
+    {
+      "name": "LTRPSPS_A_Qualcomm_1",
+      "codec": "h265",
+      "description": "Test H.265 decoding with long time reference",
+      "expected_output_md5": "e925d467c20180090c09c02d02c3aa25",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/hevc/LTRPSPS_A_Qualcomm_1.bit",
+      "source_checksum": "8f8e50fa408b7e96e76e6936b380fc34c208271efb8c283b15a42cb1f8c78ae7",
+      "source_filepath": "video/hevc/LTRPSPS_A_Qualcomm_1.h265"
+    },
+    {
+      "name": "av1_basic_8bit",
+      "codec": "av1",
+      "description": "Test AV1 decoding with 8-bit basic sample",
+      "expected_output_md5": "29acd067561df7acee5837e5e3359d8c",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-176x144-main-basic-8.ivf",
+      "source_checksum": "798b52f372a95b4da01334ba97c651e8c2e21e887180f6ad401cf9d4e3a15aa7",
+      "source_filepath": "video/av1/av1-176x144-main-basic-8.ivf"
+    },
+    {
+      "name": "av1_basic_10bit",
+      "codec": "av1",
+      "description": "Test AV1 decoding with 10-bit basic sample",
+      "expected_output_md5": "72d2197d338d013aebe4627e9b40b1a6",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-176x144-main-basic-10.ivf",
+      "source_checksum": "1c6bcfdeddd173ddb25074d2433e8cb84628692fb64a2d09d69e394b2b618ce2",
+      "source_filepath": "video/av1/av1-176x144-main-basic-10.ivf"
+    },
+    {
+      "name": "av1_cdef_10bit",
+      "codec": "av1",
+      "description": "Test AV1 decoding with CDEF 10-bit sample",
+      "expected_output_md5": "7d850b3b48ae75cd34dbd1e298ac318b",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-176x144-main-cdef-10.ivf",
+      "source_checksum": "cc2e76d084ab86d53bbc6f93477346c3f97dcfc97b8b328972657ef53a230b6c",
+      "source_filepath": "video/av1/av1-176x144-main-cdef-10.ivf"
+    },
+    {
+      "name": "av1_forward_key_frame_10bit",
+      "codec": "av1",
+      "description": "Test AV1 decoding with forward key frame 10-bit sample",
+      "expected_output_md5": "72d2197d338d013aebe4627e9b40b1a6",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-176x144-main-forward-key-frame-10.ivf",
+      "source_checksum": "1c6bcfdeddd173ddb25074d2433e8cb84628692fb64a2d09d69e394b2b618ce2",
+      "source_filepath": "video/av1/av1-176x144-main-forward-key-frame-10.ivf"
+    },
+    {
+      "name": "av1_globalmotion_8bit",
+      "codec": "av1",
+      "description": "Test AV1 decoding with global motion 8-bit sample",
+      "expected_output_md5": "74f9f9bbca22da5ffdaee2833f7bc1c9",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-176x144-main-globalmotion-8.ivf",
+      "source_checksum": "8670d6bfb76915abb94aa6e3c3650541c1405e6745b244460dd4256cab65701f",
+      "source_filepath": "video/av1/av1-176x144-main-globalmotion-8.ivf"
+    },
+    {
+      "name": "av1_loop_filter_10bit",
+      "codec": "av1",
+      "description": "Test AV1 decoding with loop filter 10-bit sample",
+      "expected_output_md5": "c3ee0aa2b1b30acb4e01baffbcb305d6",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-176x144-main-loop-filter-10.ivf",
+      "source_checksum": "2203334129266193a648ba8ef9fe3a46be6647303826f205cb6403b9c88dd07f",
+      "source_filepath": "video/av1/av1-176x144-main-loop-filter-10.ivf"
+    },
+    {
+      "name": "av1_lossless_10bit",
+      "codec": "av1",
+      "description": "Test AV1 decoding with lossless 10-bit sample",
+      "expected_output_md5": "75848732c787b869e3a98aa3ef08e54c",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-176x144-main-lossless-10.ivf",
+      "source_checksum": "73f45315b2f45026e734fa6a918a482c12bda0a2e771602a99ccee2855720996",
+      "source_filepath": "video/av1/av1-176x144-main-lossless-10.ivf"
+    },
+    {
+      "name": "av1_orderhint_10bit",
+      "codec": "av1",
+      "description": "Test AV1 decoding with order hint 10-bit sample",
+      "expected_output_md5": "5bd41f1f60ab780739bdc42af038bbe3",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-176x144-main-orderhint-10.ivf",
+      "source_checksum": "e54037e32462abbd7e985c97ae60e04e4a976a4b0d2807c076b3cb7a46ffd52e",
+      "source_filepath": "video/av1/av1-176x144-main-orderhint-10.ivf"
+    },
+    {
+      "name": "av1_intrabc_extreme_dv_8bit",
+      "codec": "av1",
+      "description": "Test AV1 decoding with intra BC extreme DV 8-bit sample",
+      "expected_output_md5": "730fe59ae8eece49220654b7b9f1a5c4",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-1920x1080-intrabc-extreme-dv-8.ivf",
+      "source_checksum": "0252716fe7a7c7f1ebb1eb23920a6737f45c10dfba942304bd339ae42b5c576c",
+      "source_filepath": "video/av1/av1-1920x1080-intrabc-extreme-dv-8.ivf"
+    },
+    {
+      "name": "av1_superres_8bit",
+      "codec": "av1",
+      "description": "Test AV1 decoding with super resolution 8-bit sample",
+      "expected_output_md5": "e4581acd6a1071553f4744468cf1e58c",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-1920x1080-main-superres-8.ivf",
+      "source_checksum": "af25538cbae7f31af0f25065ddc01ea908d08389c63ecb51886c3f69223fde23",
+      "source_filepath": "video/av1/av1-1920x1080-main-superres-8.ivf"
+    },
+    {
+      "name": "av1_allintra",
+      "codec": "av1",
+      "description": "Test AV1 decoding with all-intra sample",
+      "expected_output_md5": "4f00f5a1a173a99c1bf0406dea809182",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-352x288-main-allintra-8.ivf",
+      "source_checksum": "5fcd265fd9f9bdd0d3179340b4c4532f1422ca5e5d97741c7481b84cb5dc122f",
+      "source_filepath": "video/av1/av1-352x288-main-allintra-8.ivf"
+    },
+    {
+      "name": "av1_cdfupdate_8bit",
+      "codec": "av1",
+      "description": "Test AV1 decoding with CDF update 8-bit sample",
+      "expected_output_md5": "4e8baa992bc9af05f78c38a54dbab132",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-352x288-main-cdfupdate-8.ivf",
+      "source_checksum": "14a3dbf537b6bf15efc003182d9916d61438c93624a8bd26e6e3ae7eaf33ea82",
+      "source_filepath": "video/av1/av1-352x288-main-cdfupdate-8.ivf"
+    },
+    {
+      "name": "av1_filmgrain_8bit",
+      "codec": "av1",
+      "description": "Test AV1 decoding with film grain 8-bit sample",
+      "expected_output_md5": "392a4adc567fa05b210eebe15bcbb491",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-352x288-main-filmgrain-8.ivf",
+      "source_checksum": "ba3edd82a58414f009e1c821b947ec8de4e0420f33803ca7bfea39af6aeea155",
+      "source_filepath": "video/av1/av1-352x288-main-filmgrain-8.ivf"
+    },
+    {
+      "name": "av1_svc_l1t2_8bit",
+      "codec": "av1",
+      "description": "Test AV1 decoding with SVC L1T2 8-bit sample",
+      "expected_output_md5": "3987b4852874d3fba06999ee9b4d117c",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-640x360-main-svc-L1T2-8.ivf",
+      "source_checksum": "eade696ab60415d476e1d2a489ec2cccd24d5eaaadfa4559c6488b7932274c5e",
+      "source_filepath": "video/av1/av1-640x360-main-svc-L1T2-8.ivf"
+    },
+    {
+      "name": "av1_argon_test1019",
+      "codec": "av1",
+      "description": "Test AV1 decoding with Argon test 1019 sample",
+      "expected_output_md5": "45dad5686d1111b48a05aac90996bb61",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-argon_test1019.obu",
+      "source_checksum": "c11d5f0dcebb5def9d24752bca1594d3182e19661d3bf4b53473b2da935cd7d8",
+      "source_filepath": "video/av1/av1-argon_test1019.obu"
+    },
+    {
+      "name": "av1_argon_test787",
+      "codec": "av1",
+      "description": "Test AV1 decoding with Argon test 787 sample",
+      "expected_output_md5": "1cb4bfcbb7ee85024f983705d077b38e",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-argon_test787.obu",
+      "source_checksum": "3c2df56e296cf387efb0474d7c588d68eca55592e15d4731bb85e2122059d367",
+      "source_filepath": "video/av1/av1-argon_test787.obu"
+    },
+    {
+      "name": "av1_argon_test9354_2",
+      "codec": "av1",
+      "description": "Test AV1 decoding with Argon test 9354_2 sample",
+      "expected_output_md5": "0362854aa2edbb06770569c02d6d9cb9",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-argon_test9354_2.obu",
+      "source_checksum": "23cc663c961262f4417adcd8f25ef6c92ba47f76bdfb3cafe6f1e78c27a03211",
+      "source_filepath": "video/av1/av1-argon_test9354_2.obu"
+    },
+    {
+      "name": "av1_sizeup_fluster",
+      "codec": "av1",
+      "description": "Test AV1 decoding with size up Fluster sample: av1-1-b8-03-sizeup.ivf",
+      "expected_output_md5": "9fc474a2842a5632757e4e0cb7492ad4",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-sizeup-fluster.ivf",
+      "source_checksum": "24b9554460aea54b24aff4adaf154c887fcc14ed114436bc87e8c29d8f4e7113",
+      "source_filepath": "video/av1/av1-sizeup-fluster.ivf"
+    },
+    {
+      "name": "av1_720x480_tile_group",
+      "codec": "av1",
+      "description": "Test AV1 decoding with 720x480 8-bit tile group sample",
+      "expected_output_md5": "3f1955a68341977e6abbd8ef009f0695",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-720x480_420_8le_i_15_tile_group.ivf",
+      "source_checksum": "3fed852a9008a838580a51b3a7f15208d684a1ac6c6a7fde6b377f7f1fe0651b",
+      "source_filepath": "video/av1/av1-720x480_420_8le_i_15_tile_group.ivf"
+    },
+    {
+      "name": "av1_frames_golden",
+      "codec": "av1",
+      "description": "Test AV1 decoding with frames refs short signaling golden sample",
+      "expected_output_md5": "11e09f68996af8b5566a08be68a2caa7",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/av1/av1-frames_refs_short_signaling_golden.ivf",
+      "source_checksum": "d9136e7e427a1ec1423823f1d8cee37ed0aa354d16bb6607feb5413436810918",
+      "source_filepath": "video/av1/av1-frames_refs_short_signaling_golden.ivf"
+    },
+    {
+      "name": "vp9_key_10",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with key frame 10-bit sample",
+      "expected_output_md5": "5f77d8e7eb5f9fec926167988c7e16f4",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-176x144-key-10.ivf",
+      "source_checksum": "c0da2ebe0c2787e5a4ffb23dc3dee31d57c11786e0cf22f1a15196d4428bbdd7",
+      "source_filepath": "video/vp9/vp9-176x144-key-10.ivf"
+    },
+    {
+      "name": "vp9_basic_10",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with basic 10-bit sample",
+      "expected_output_md5": "09da6944d954d6d700d30ba325de58f7",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-512x288-basic-10.ivf",
+      "source_checksum": "28652251b44be3549fcb827c9d0bb1ddcdc203f11792b8c9cd9b8b6c3b0b88ca",
+      "source_filepath": "video/vp9/vp9-512x288-basic-10.ivf"
+    },
+    {
+      "name": "vp9_show_existing_frames",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with show existing frames sample",
+      "expected_output_md5": "5f613ed2ff8fdb1351b23b0076ab2063",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-352x288-show-existing-frames.ivf",
+      "source_checksum": "af01c1466fe5759bad4fee45cf6444bfb6baa027d98d7334a9ef76aea6d33cce",
+      "source_filepath": "video/vp9/vp9-352x288-show-existing-frames.ivf"
+    },
+    {
+      "name": "vp9_basic",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with basic sample",
+      "expected_output_md5": "042a6a229a1020cafbe330622a7e4875",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-351x287-basic.ivf",
+      "source_checksum": "26865fd70915a801a4dc1bc9db71ac33097e6992f2f9119b86b8f3b4f3dfc841",
+      "source_filepath": "video/vp9/vp9-351x287-basic.ivf"
+    },
+    {
+      "name": "vp9_tile_1x2",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with 1x2 tile sample",
+      "expected_output_md5": "570b4a5d5a70d58b5359671668328a16",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-1920x1080-tile-1x2.ivf",
+      "source_checksum": "6d7b071fbae0604b098a09bdea66ab4b0d5e9c273efd52d82be6b3bd4827603f",
+      "source_filepath": "video/vp9/vp9-1920x1080-tile-1x2.ivf"
+    },
+    {
+      "name": "vp9_tile_1x4",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with 1x4 tile sample",
+      "expected_output_md5": "988d86049e884c66909d2d163a09841a",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-1920x1080-tile-1x4.ivf",
+      "source_checksum": "7ebe0ecb21fa7a53264a5ab6b29325520261b80039be279ffc7e8c49b1ada539",
+      "source_filepath": "video/vp9/vp9-1920x1080-tile-1x4.ivf"
+    },
+    {
+      "name": "vp9_tile_1x8",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with 1x8 tile sample",
+      "expected_output_md5": "0941902a52e9092cb010905eab16364c",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-3980x2160-tile-1x8.ivf",
+      "source_checksum": "c2340e53813734331247f860f928eaef3316e08362a163c74aa1efa3fcc4de3b",
+      "source_filepath": "video/vp9/vp9-3980x2160-tile-1x8.ivf"
+    },
+    {
+      "name": "vp9_tile_4x4",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with 4x4 tile sample",
+      "expected_output_md5": "85c2299892460d76e2c600502d52bfe2",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-1920x1080-tile-4x4.ivf",
+      "source_checksum": "aac08edced94e6c5858d48bcaea839679c701133963959e182e1684ea44cfb21",
+      "source_filepath": "video/vp9/vp9-1920x1080-tile-4x4.ivf"
+    },
+    {
+      "name": "vp9_resize",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with dynamic resize sample",
+      "expected_output_md5": "d1c46d62ef713cb7f6fd5024c510f2da",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-resize.ivf",
+      "source_checksum": "84a345546e47e37de87d2959347bf731f9f440f9f2ab32bede3f0e416100c585",
+      "source_filepath": "video/vp9/vp9-resize.ivf"
+    },
+    {
+      "name": "vp9_lf_deltas",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with loop filter deltas sample",
+      "expected_output_md5": "dacb7e056abb35d5fe5e7dfef1f207c1",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-352x240-lf.ivf",
+      "source_checksum": "808e5734610d2f58472d7a3dc2e703e83fbf0e4ab513c2f13dfce902ee41d0b7",
+      "source_filepath": "video/vp9/vp9-352x240-lf.ivf"
+    },
+    {
+      "name": "vp9_320x240_10bits",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with 10-bit sample",
+      "expected_output_md5": "04e15f3ad51351240b0d4584cdd0306f",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-320x240-10bits.ivf",
+      "source_checksum": "0ba93502fa08ace58c84d02c7bc8664ca862cb4ad5cda7642d116956fe53d137",
+      "source_filepath": "video/vp9/vp9-320x240-10bits.ivf"
+    },
+    {
+      "name": "vp9_intra_only",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with intra-only sample",
+      "expected_output_md5": "61554865e7ad3e3ef3e8bc35c6a1c6eb",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-352x288-intra-only.ivf",
+      "source_checksum": "abe164efe985fcc342af82866e1a7998348563c75d95fec3e96e59bd871f2fd5",
+      "source_filepath": "video/vp9/vp9-352x288-intra-only.ivf"
+    },
+    {
+      "name": "vp9_segkey",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with segmentation key sample",
+      "expected_output_md5": "56723549fb468a0031e1c9ee4ab63e9d",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-852x480-segkey.ivf",
+      "source_checksum": "39e9f10473f358fe25bc901157be6fcbd1a62c1bd1b0eefde05de201fd4f5ea7",
+      "source_filepath": "video/vp9/vp9-852x480-segkey.ivf"
+    },
+    {
+      "name": "vp9_quant_00",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with quantizer 0 sample",
+      "expected_output_md5": "e3b792ed5ed3a7c53d17db06bd437ad9",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-352x288-quant-00.ivf",
+      "source_checksum": "0ee879e57f9f705757847c7cf62ea1672c99d7f8b6e5f6764d5b5f25847022bc",
+      "source_filepath": "video/vp9/vp9-352x288-quant-00.ivf"
+    },
+    {
+      "name": "vp9_quant_26",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with quantizer 26 sample",
+      "expected_output_md5": "7b95b0f2ee1b69488a756e4cd7c3f77a",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-352x288-quant-26.ivf",
+      "source_checksum": "8950c0d42d34f9d767d25382a30e08198df8ca18ba8ad9481c66c28e7e6da335",
+      "source_filepath": "video/vp9/vp9-352x288-quant-26.ivf"
+    },
+    {
+      "name": "vp9_quant_59",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with quantizer 59 sample",
+      "expected_output_md5": "2336f3122f67f3c0fcf8e37730e83b63",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-352x288-quant-59.ivf",
+      "source_checksum": "a063b444112d81ca6d3163756bac01e341c79c607dbf52ad7169a2b71b17a460",
+      "source_filepath": "video/vp9/vp9-352x288-quant-59.ivf"
+    },
+    {
+      "name": "vp9_resize_1_2",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with 1/2 resize sample",
+      "expected_output_md5": "6c1d273248b5a41f05269fb38f428333",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-resize-1-2.ivf",
+      "source_checksum": "eb73c5e6a3fe0aa22bda18ed5fbf4c57baa29681ace12aa1a2739b89ab2536bd",
+      "source_filepath": "video/vp9/vp9-resize-1-2.ivf"
+    },
+    {
+      "name": "vp9_svc",
+      "codec": "vp9",
+      "description": "Test VP9 decoding with SVC sample",
+      "expected_output_md5": "b6d457471ee2f7407674d874bc4d2a9d",
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/vp9/vp9-1280x720-svc.ivf",
+      "source_checksum": "8a8dc19ce33eaeb48a1b800fb775a45b358cf8a779ea97face108e2e6ea958f2",
+      "source_filepath": "video/vp9/vp9-1280x720-svc.ivf"
+    }
+  ]
+}
