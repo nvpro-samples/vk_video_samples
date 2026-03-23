@@ -862,6 +862,7 @@ public:
     uint32_t enableFramePresent : 1;
     uint32_t enableFrameDirectModePresent : 1;
     uint32_t enableHwLoadBalancing : 1;
+    uint32_t noDeviceFallback : 1;
     uint32_t selectVideoWithComputeQueue : 1;
     uint32_t enablePreprocessComputeFilter : 1;
     uint32_t repeatInputFrames : 1;
@@ -979,6 +980,7 @@ public:
     , enableFramePresent(false)
     , enableFrameDirectModePresent(false)
     , enableHwLoadBalancing(false)
+    , noDeviceFallback(false)
     , selectVideoWithComputeQueue(false)
     , enablePreprocessComputeFilter(true)
     , repeatInputFrames(false)
