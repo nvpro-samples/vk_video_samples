@@ -365,7 +365,7 @@ TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
     m_vkDevCtx.BeginCommandBuffer(cmdBuffer, &beginInfo);
     
     // Record filter commands
-    VulkanFilterYuvCompute* yuvFilter = static_cast<VulkanFilterYuvCompute*>(filter.Get());
+    auto* yuvFilter = static_cast<VulkanFilterYuvCompute*>(filter.get());
     
     // Set up resource info
     VkVideoPictureResourceInfoKHR inputResourceInfo{VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR};
@@ -383,9 +383,9 @@ TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
         vkResult = yuvFilter->RecordCommandBuffer(
             cmdBuffer,
             0,  // bufferIdx
-            inputImageViews[0].Get(),
+            inputImageViews[0].get(),
             &inputResourceInfo,
-            outputImageViews[0].Get(),
+            outputImageViews[0].get(),
             &outputResourceInfo
         );
     } else {

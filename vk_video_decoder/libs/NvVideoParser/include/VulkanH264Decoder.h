@@ -169,6 +169,7 @@ struct seq_parameter_set_s : public StdVideoPictureParametersSet, public StdVide
         clientObject = client;
         return !!clientObject;
     }
+    void ReleaseClientObject() override { client = nullptr; }
 
     void Reset() {
 
@@ -447,6 +448,7 @@ struct pic_parameter_set_s : public StdVideoPictureParametersSet, public StdVide
         clientObject = client;
         return !!clientObject;
     }
+    void ReleaseClientObject() override { client = nullptr; }
 
     void Reset() {
         StdVideoH264PictureParameterSet::operator=(StdVideoH264PictureParameterSet());
@@ -616,14 +618,17 @@ struct slice_header_s
 
 struct layer_data_s
 {
-    int available;
-    int used;
-    int MaxRefLayerDQId;
-    int dqid_next;
+    int available{};
+    int used{};
+    int MaxRefLayerDQId{};
+    int dqid_next{};
     VkSharedBaseObj<seq_parameter_set_s> sps;
     VkSharedBaseObj<pic_parameter_set_s> pps;
-    slice_header_s      slh;
-    int slice_count;
+    slice_header_s      slh{};
+    int slice_count{};
+
+    layer_data_s() = default;
+    ~layer_data_s() = default;
 };
 
 struct dpb_entry_s
@@ -698,11 +703,14 @@ struct dependency_state_s
 
 struct dependency_data_s
 {
-    int used;
+    int used{};
     VkSharedBaseObj<seq_parameter_set_s> sps;
-    seq_parameter_set_svc_extension_s    sps_svc;
-    slice_header_s   slh;
-    int MaxDpbFrames;
+    seq_parameter_set_svc_extension_s    sps_svc{};
+    slice_header_s   slh{};
+    int MaxDpbFrames{};
+
+    dependency_data_s() = default;
+    ~dependency_data_s() = default;
 };
 
 typedef struct _slice_group_map_s
@@ -837,7 +845,7 @@ private:
     // SVC
     bool prefix_nal_unit_svc(int nal_ref_idc);
     int dec_ref_base_pic_marking(memory_management_base_control_operation_s mmbco[MAX_MMCOS]);
-    void update_layer_info(seq_parameter_set_s *sps, pic_parameter_set_s *pps, slice_header_s *slh);
+    void update_layer_info(const VkSharedBaseObj<seq_parameter_set_s>& sps, const VkSharedBaseObj<pic_parameter_set_s>& pps, slice_header_s *slh);
     bool seq_parameter_set_svc_extension_rbsp();
     bool IsLayerBoundary_SVC(slice_header_s *slhold, slice_header_s *slhnew);
     bool BeginPicture_SVC(VkParserPictureData *pnvpd);

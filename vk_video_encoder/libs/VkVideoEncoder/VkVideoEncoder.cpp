@@ -735,11 +735,11 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
         result = m_inputComputeFilter->RecordCommandBuffer(cmdBuf,
                                                            encodeFrameInfo->inputCmdBuffer->GetNodePoolIndex(),
-                                                           linearInputImageView,
+                                                           linearInputImageView.get(),
                                                            &srcPictureResourceInfo,
-                                                           srcEncodeImageView,
+                                                           srcEncodeImageView.get(),
                                                            &dstPictureResourceInfo,
-                                                           subsampledImageView); // nullptr if no pool
+                                                           subsampledImageView.get()); // nullptr if no pool
 
         if (result != VK_SUCCESS) {
             return result;

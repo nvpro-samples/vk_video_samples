@@ -89,6 +89,8 @@ class EncoderTestRunner:
             self.encoder = config.build_dir / "vk_video_encoder" / "demos" / "vk-video-enc-test.exe"
         else:
             self.encoder = config.build_dir / "vk_video_encoder" / "demos" / "vk-video-enc-test"
+
+        self._encoder_help_output: Optional[str] = None
     
     def get_ssh_target(self) -> str:
         """Get SSH target string."""
@@ -158,6 +160,27 @@ class EncoderTestRunner:
             )
             return result.returncode == 0
     
+    def record_skip(self, name: str, message: str) -> None:
+        """Record a skipped test with consistent reporting."""
+        print(f"  {YELLOW}○{NC} {name} - {message}")
+        self.skipped += 1
+        self.results.append(TestResult(name, False, True, 0, message))
+
+    def get_encoder_help_output(self) -> str:
+        """Return cached encoder --help output."""
+        if self._encoder_help_output is None:
+            returncode, stdout, stderr = self.run_command([str(self.encoder), "--help"])
+            self._encoder_help_output = (stdout or "") + (stderr or "")
+            if returncode != 0 and self.config.verbose:
+                print(f"  {YELLOW}Warning:{NC} failed to query encoder help output; AQ capability detection may be inaccurate.")
+        return self._encoder_help_output
+
+    def supports_aq_cli(self) -> bool:
+        """Detect whether this encoder binary supports AQ CLI controls."""
+        help_output = self.get_encoder_help_output()
+        return ("--spatialAQStrength" in help_output and
+                "--temporalAQStrength" in help_output)
+
     def run_test(self, name: str, codec: str, input_file: str, width: int, height: int,
                  bpp: int = 8, chroma: str = "420", extra_args: List[str] = None) -> None:
         """Run a single encoder test."""
@@ -167,9 +190,7 @@ class EncoderTestRunner:
         
         # Check if file exists
         if not self.check_file_exists(input_file):
-            print(f"  {YELLOW}○{NC} {name} - File not found")
-            self.skipped += 1
-            self.results.append(TestResult(name, False, True, 0, "File not found"))
+            self.record_skip(name, "File not found")
             return
         
         # Determine output extension
@@ -314,14 +335,7 @@ class EncoderTestRunner:
         # AQ Tests
         if self.config.enable_aq:
             self.print_header("Adaptive Quantization (AQ) Tests")
-            
-            aq_input = cts_video_dir / "720x480_420_8le.yuv"
-            if not self.check_file_exists(str(aq_input)):
-                aq_input = cts_video_dir / "352x288_420_8le.yuv"
-                aq_width, aq_height = 352, 288
-            else:
-                aq_width, aq_height = 720, 480
-            
+
             aq_configs = [
                 ("spatial_default", 0.0, -2.0),
                 ("spatial_0.5", 0.5, -2.0),
@@ -333,19 +347,39 @@ class EncoderTestRunner:
                 ("combined_medium", 0.5, 0.5),
                 ("combined_max", 1.0, 1.0),
             ]
-            
-            for codec in ["h264", "h265", "av1"]:
-                if self.config.filter_codec and self.config.filter_codec != codec:
-                    continue
-                print(f"\n  {CYAN}{codec.upper()} AQ Tests:{NC}")
-                for desc, spatial, temporal in aq_configs:
-                    name = f"AQ_{codec}_{desc}"
-                    extra = [
-                        "--spatialAQStrength", str(spatial),
-                        "--temporalAQStrength", str(temporal)
-                    ]
-                    self.run_test(name, codec, str(aq_input), aq_width, aq_height, 8, "420", extra)
-        
+
+            aq_supported = self.supports_aq_cli()
+            if not aq_supported:
+                reason = "AQ CLI not supported by this encoder build"
+                print(f"  {YELLOW}○{NC} Skipping AQ tests: {reason}")
+                print("    Expected flags: --spatialAQStrength, --temporalAQStrength")
+
+                for codec in ["h264", "h265", "av1"]:
+                    if self.config.filter_codec and self.config.filter_codec != codec:
+                        continue
+                    print(f"\n  {CYAN}{codec.upper()} AQ Tests:{NC}")
+                    for desc, _, _ in aq_configs:
+                        self.record_skip(f"AQ_{codec}_{desc}", reason)
+            else:
+                aq_input = cts_video_dir / "720x480_420_8le.yuv"
+                if not self.check_file_exists(str(aq_input)):
+                    aq_input = cts_video_dir / "352x288_420_8le.yuv"
+                    aq_width, aq_height = 352, 288
+                else:
+                    aq_width, aq_height = 720, 480
+
+                for codec in ["h264", "h265", "av1"]:
+                    if self.config.filter_codec and self.config.filter_codec != codec:
+                        continue
+                    print(f"\n  {CYAN}{codec.upper()} AQ Tests:{NC}")
+                    for desc, spatial, temporal in aq_configs:
+                        name = f"AQ_{codec}_{desc}"
+                        extra = [
+                            "--spatialAQStrength", str(spatial),
+                            "--temporalAQStrength", str(temporal)
+                        ]
+                        self.run_test(name, codec, str(aq_input), aq_width, aq_height, 8, "420", extra)
+
         # Summary
         self.print_header("Test Summary")
         total = self.passed + self.failed + self.skipped

@@ -32,21 +32,6 @@ public:
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            VkSharedBaseObj<VulkanFrame>& frameProcessor);
 
-    virtual int32_t AddRef()
-    {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --m_refCount;
-        // Destroy the device if ref-count reaches zero
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
-    }
-
     virtual int AttachQueue(VkSharedBaseObj<VkVideoRefCountBase>& videoQueue);
 
     virtual int AttachShell(const Shell& sh);
@@ -78,10 +63,10 @@ public:
 
 private:
     VulkanFrame(const VulkanDeviceContext* vkDevCtx);
+public:
     virtual ~VulkanFrame();
 
 private:
-    std::atomic<int32_t>                  m_refCount;
     const VulkanDeviceContext*            m_vkDevCtx;
     // Decoder specific members
     VkSharedBaseObj<VkVideoQueue<FrameDataType>> m_videoQueue;

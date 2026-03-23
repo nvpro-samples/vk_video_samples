@@ -29,13 +29,6 @@ class VulkanVideoSessionParameters
 public:
     virtual ~VulkanVideoSessionParameters();
 
-    //! Increment the reference count by 1.
-    virtual int32_t AddRef();
-
-    //! Decrement the reference count by 1. When the reference count
-    //! goes to 0 the object is automatically destroyed.
-    virtual int32_t Release();
-
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            VkSharedBaseObj<VulkanVideoSession>& videoSession,
                            VkVideoSessionParametersKHR& sessionParameters,
@@ -50,7 +43,6 @@ private:
     VulkanVideoSessionParameters(const VulkanDeviceContext* vkDevCtx,
                                  VkVideoSessionParametersKHR sessionParameters);
 private:
-    std::atomic<int32_t>                m_refCount;
     const VulkanDeviceContext*          m_vkDevCtx;
     VkSharedBaseObj<VulkanVideoSession> m_videoSession;
     VkVideoSessionParametersKHR         m_sessionParameters;

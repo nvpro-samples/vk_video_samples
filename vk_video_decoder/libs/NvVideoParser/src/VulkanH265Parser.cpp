@@ -46,6 +46,7 @@ VulkanH265Decoder::VulkanH265Decoder(VkVideoCodecOperationFlagBitsKHR std)
 
 VulkanH265Decoder::~VulkanH265Decoder()
 {
+    Deinitialize();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -122,11 +123,11 @@ bool VulkanH265Decoder::BeginPicture(VkParserPictureData *pnvpd)
     hevc_dpb_entry_s *cur = m_dpb_cur;
     int8_t current_dpb_id = m_current_dpb_id;
     VkParserHevcPictureData * const hevc = &pnvpd->CodecSpecific.hevc;
-    const hevc_seq_param_s * const sps = m_active_sps[m_nuh_layer_id];
+    const hevc_seq_param_s * const sps = m_active_sps[m_nuh_layer_id].get();
     assert(sps);
-    const hevc_pic_param_s * const pps = m_active_pps[m_nuh_layer_id];
+    const hevc_pic_param_s * const pps = m_active_pps[m_nuh_layer_id].get();
     assert(pps);
-    const hevc_video_param_s * const vps = m_active_vps;
+    const hevc_video_param_s * const vps = m_active_vps.get();
     // It is possible VPS not to be available with some malformed video content
     // assert(vps);
 
@@ -402,7 +403,7 @@ void VulkanH265Decoder::seq_parameter_set_rbsp()
     }
 
     sps->sps_video_parameter_set_id = (uint8_t)u(4);
-    const hevc_video_param_s* vps = m_vpss[sps->sps_video_parameter_set_id];
+    const hevc_video_param_s* vps = m_vpss[sps->sps_video_parameter_set_id].get();
 
     if ((m_nuh_layer_id > 0) && (vps == NULL)) {
         return;
@@ -620,7 +621,7 @@ void VulkanH265Decoder::seq_parameter_set_rbsp()
     sps->flags.vui_parameters_present_flag = u(1);
     if (sps->flags.vui_parameters_present_flag) { // vui_parameters_present_flag
 
-        vui_parameters(sps, sps->sps_max_sub_layers_minus1);
+        vui_parameters(sps.get(), sps->sps_max_sub_layers_minus1);
     }
     sps->flags.sps_extension_present_flag = u(1);
     if (sps->flags.sps_extension_present_flag) { // sps_extension_present_flag
@@ -681,13 +682,13 @@ void VulkanH265Decoder::seq_parameter_set_rbsp()
         return;
     }
 
-    if (sps->UpdateStdScalingList(sps, &sps->stdScalingLists)) {
+    if (sps->UpdateStdScalingList(sps.get(), &sps->stdScalingLists)) {
         sps->pScalingLists = &sps->stdScalingLists;
     } else {
         sps->pScalingLists = NULL;
     }
 
-    if (sps->UpdateStdVui(sps, &sps->stdVui)) {
+    if (sps->UpdateStdVui(sps.get(), &sps->stdVui)) {
         sps->pSequenceParameterSetVui = &sps->stdVui;
     } else {
         sps->pSequenceParameterSetVui = NULL;
@@ -729,7 +730,7 @@ void VulkanH265Decoder::pic_parameter_set_rbsp()
     }
     pps->pps_pic_parameter_set_id = (uint8_t)pic_parameter_set_id;
     pps->pps_seq_parameter_set_id = (uint8_t)seq_parameter_set_id;
-    const hevc_seq_param_s* sps = m_spss[pps->pps_seq_parameter_set_id];
+    const hevc_seq_param_s* sps = m_spss[pps->pps_seq_parameter_set_id].get();
 
     // In case we receive pps before sps, m_spss[] will return sps as NULL.
     // Setting the sps_video_parameter_set_id as 0 for this case.
@@ -882,7 +883,7 @@ void VulkanH265Decoder::pic_parameter_set_rbsp()
     }
     // Currently ignoring rbsp_trailing_bits
 
-    if (pps->UpdateStdScalingList(pps, &pps->stdScalingLists)) {
+    if (pps->UpdateStdScalingList(pps.get(), &pps->stdScalingLists)) {
         pps->pScalingLists = &pps->stdScalingLists;
     } else {
         pps->pScalingLists = NULL;
@@ -1064,7 +1065,7 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
             // vps_extension_alignment_bit_equal_to_one
             while (!byte_aligned())
                 u(1); // vps_extension_alignment_bit_equal_to_one
-            video_parameter_set_rbspExtension(vps);
+            video_parameter_set_rbspExtension(vps.get());
         }
     }
 
@@ -2139,19 +2140,19 @@ bool VulkanH265Decoder::slice_header(int nal_unit_type, int nuh_temporal_id_plus
          return false;
      }
 
-    const hevc_pic_param_s *pps = m_ppss[pic_parameter_set_id];
+    const hevc_pic_param_s *pps = m_ppss[pic_parameter_set_id].get();
     if (pps == nullptr) {
         nvParserLog("Invalid PPS slot id in slice header (pps_id=%d)\n", pic_parameter_set_id);
         return false;
     }
 
-    const hevc_seq_param_s* sps = m_spss[pps->pps_seq_parameter_set_id];
+    const hevc_seq_param_s* sps = m_spss[pps->pps_seq_parameter_set_id].get();
     if (sps == nullptr) {
         nvParserLog("Invalid SPS slot id in slice header (pps_id=%d)\n", pic_parameter_set_id);
         return false;
     }
 
-    const hevc_video_param_s* vps = m_vpss[sps->sps_video_parameter_set_id];
+    const hevc_video_param_s* vps = m_vpss[sps->sps_video_parameter_set_id].get();
     if ((m_nuh_layer_id > 0) && (vps == NULL)) {
         nvParserLog("Invalid value of HEVC video parameters\n");
         return false;
@@ -2777,7 +2778,7 @@ void VulkanH265Decoder::dpb_picture_end()
 // 8.3.1 Decoding process for picture order count
 int VulkanH265Decoder::picture_order_count(hevc_slice_header_s *slh)
 {
-    const hevc_seq_param_s *sps = m_active_sps[m_nuh_layer_id];
+    const hevc_seq_param_s *sps = m_active_sps[m_nuh_layer_id].get();
     assert(sps);
     bool isIrapPic = slh->nal_unit_type >= NUT_BLA_W_LP && slh->nal_unit_type <= 23;
     int PicOrderCntMsb;
@@ -2828,9 +2829,9 @@ void VulkanH265Decoder::reference_picture_set(hevc_slice_header_s *slh, int PicO
     int NumPocStFoll, NumPocLtFoll;
     int numActiveRefLayerPics0 = 0, numActiveRefLayerPics1 = 0;
     int CurrDeltaPocMsbPresentFlag[16], FollDeltaPocMsbPresentFlag[16];
-    const hevc_seq_param_s *sps = m_active_sps[m_nuh_layer_id];
+    const hevc_seq_param_s *sps = m_active_sps[m_nuh_layer_id].get();
     assert(sps);
-    const hevc_video_param_s *vps = m_active_vps;
+    const hevc_video_param_s *vps = m_active_vps.get();
     hevc_dpb_entry_s * const dpb = m_dpb;
     int MaxPicOrderCntLsb = 1 << (sps->log2_max_pic_order_cnt_lsb_minus4 + 4);
     bool isIrapPic = slh->nal_unit_type >= NUT_BLA_W_LP && slh->nal_unit_type <= 23;

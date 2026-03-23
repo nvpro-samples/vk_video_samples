@@ -61,6 +61,8 @@ public:
 protected:
 
     VulkanBitstreamBuffer() {}
+
+public:
     virtual ~VulkanBitstreamBuffer() {}
 };
 

@@ -101,6 +101,7 @@ public:
     }
 
 protected:
+public:
     virtual ~FrameProcessor() {}
 
     FrameProcessor(bool verbose = false)

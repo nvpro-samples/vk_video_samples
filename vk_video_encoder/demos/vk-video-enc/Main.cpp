@@ -174,7 +174,7 @@ int main(int argc, const char* argv[])
                                               (VK_QUEUE_GRAPHICS_BIT |
                                               requestVideoComputeQueueMask |
                                               requestVideoEncodeQueueMask),
-                                              displayShell,
+                                              displayShell.get(),
                                               0,
                                               VK_VIDEO_CODEC_OPERATION_NONE_KHR,
                                               requestVideoEncodeQueueMask,

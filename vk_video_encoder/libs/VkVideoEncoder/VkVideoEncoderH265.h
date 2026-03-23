@@ -132,6 +132,7 @@ public:
     }
 
 protected:
+public:
     virtual ~VkVideoEncoderH265() {
 
         m_frameInfoBuffersQueue = nullptr;
@@ -145,7 +146,7 @@ private:
 
     VkVideoEncodeFrameInfoH265* GetEncodeFrameInfoH265(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) {
         assert(VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR == encodeFrameInfo->GetType());
-        VkVideoEncodeFrameInfo* pEncodeFrameInfo = encodeFrameInfo;
+        VkVideoEncodeFrameInfo* pEncodeFrameInfo = encodeFrameInfo.get();
         return (VkVideoEncodeFrameInfoH265*)pEncodeFrameInfo;
     }
 private:

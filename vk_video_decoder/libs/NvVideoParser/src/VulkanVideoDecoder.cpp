@@ -72,6 +72,11 @@ VulkanVideoDecoder::VulkanVideoDecoder(VkVideoCodecOperationFlagBitsKHR std)
 
 VulkanVideoDecoder::~VulkanVideoDecoder()
 {
+    // NOTE: Do NOT call Deinitialize() here — it invokes the pure virtual
+    // FreeContext(). By the time the base destructor runs, the derived
+    // vtable has been unwound. Derived destructors must call Deinitialize()
+    // themselves (while their vtable is still intact).
+
     if (m_264SvcEnabled)
     {
         delete [] m_pVkPictureData;

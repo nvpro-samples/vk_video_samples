@@ -190,8 +190,7 @@ VkResult VulkanDeviceMemoryImpl::Initialize(const VkMemoryRequirements& memoryRe
 VulkanDeviceMemoryImpl::VulkanDeviceMemoryImpl(const VulkanDeviceContext* vkDevCtx,
                                                VkDeviceMemory importedMemory,
                                                VkDeviceSize size)
-    : m_refCount(0)
-    , m_vkDevCtx(vkDevCtx)
+    : m_vkDevCtx(vkDevCtx)
     , m_memoryRequirements()
     , m_memoryPropertyFlags()
     , m_exportHandleTypes(0)

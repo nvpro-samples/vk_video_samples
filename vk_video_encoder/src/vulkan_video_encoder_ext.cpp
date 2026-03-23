@@ -34,8 +34,7 @@
 class VulkanVideoEncoderExtImpl : public VulkanVideoEncoderExt {
 public:
     VulkanVideoEncoderExtImpl()
-        : m_refCount(0)
-        , m_vkDevCtx()
+        : m_vkDevCtx()
         , m_encoderConfig()
         , m_encoder()
         , m_initialized(false)
@@ -46,18 +45,7 @@ public:
         Deinitialize();
     }
 
-    //=========================================================================
-    // VkVideoRefCountBase
-    //=========================================================================
-    int32_t AddRef() override { return ++m_refCount; }
-
-    int32_t Release() override {
-        uint32_t ret = --m_refCount;
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
-    }
+    
 
     //=========================================================================
     // VulkanVideoEncoder (base interface - file-based, backward compatible)
@@ -104,7 +92,6 @@ private:
     VkResult InitVulkanDevice(VkVideoCodecOperationFlagBitsKHR codecOp,
                               const VkVideoEncoderConfig& config);
 
-    std::atomic<int32_t>             m_refCount;
     VulkanDeviceContext              m_vkDevCtx;
     VkSharedBaseObj<EncoderConfig>   m_encoderConfig;
     VkSharedBaseObj<VkVideoEncoder>  m_encoder;

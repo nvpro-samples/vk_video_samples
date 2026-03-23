@@ -286,7 +286,6 @@ public:
 
     VkVideoFrameBuffer(const VulkanDeviceContext* vkDevCtx)
         : m_vkDevCtx(vkDevCtx)
-        , m_refCount(0)
         , m_displayQueueMutex()
         , m_perFrameDecodeImageSet()
         , m_displayFrames()
@@ -298,9 +297,6 @@ public:
         , m_debug()
     {
     }
-
-    virtual int32_t AddRef();
-    virtual int32_t Release();
 
     VkResult CreateVideoQueries(uint32_t numSlots, const VulkanDeviceContext* vkDevCtx, const VkVideoProfileInfoKHR* pDecodeProfile)
     {
@@ -460,11 +456,11 @@ public:
         m_perFrameDecodeImageSet[picId].m_picDispInfo = *pDecodePictureInfo;
         m_perFrameDecodeImageSet[picId].m_inDecodeQueue = true;
         m_perFrameDecodeImageSet[picId].m_imageSpecsIndex = pFrameSynchronizationInfo->imageSpecsIndex;
-        m_perFrameDecodeImageSet[picId].stdPps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdPps);
-        m_perFrameDecodeImageSet[picId].stdSps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdSps);
-        m_perFrameDecodeImageSet[picId].stdVps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdVps);
-        m_perFrameDecodeImageSet[picId].bitstreamData = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pBitstreamData);
-        m_perFrameDecodeImageSet[picId].filterPoolNode = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pFilterPoolNode);
+        m_perFrameDecodeImageSet[picId].stdPps = pReferencedObjectsInfo->stdPps;
+        m_perFrameDecodeImageSet[picId].stdSps = pReferencedObjectsInfo->stdSps;
+        m_perFrameDecodeImageSet[picId].stdVps = pReferencedObjectsInfo->stdVps;
+        m_perFrameDecodeImageSet[picId].bitstreamData = pReferencedObjectsInfo->bitstreamData;
+        m_perFrameDecodeImageSet[picId].filterPoolNode = pReferencedObjectsInfo->filterPoolNode;
 
         if (m_debug) {
             std::cout << "==> Queue Decode Picture picIdx: " << (uint32_t)picId
@@ -838,7 +834,6 @@ public:
 
 private:
     const VulkanDeviceContext* m_vkDevCtx;
-    std::atomic<int32_t>     m_refCount;
     mutable std::mutex       m_displayQueueMutex;
     NvPerFrameDecodeImageSet m_perFrameDecodeImageSet;
     std::queue<uint8_t>      m_displayFrames;
@@ -862,22 +857,6 @@ VkResult VulkanVideoFrameBuffer::Create(const VulkanDeviceContext* vkDevCtx,
         return VK_SUCCESS;
     }
     return VK_ERROR_OUT_OF_HOST_MEMORY;
-}
-
-int32_t VkVideoFrameBuffer::AddRef()
-{
-    return ++m_refCount;
-}
-
-int32_t VkVideoFrameBuffer::Release()
-{
-    uint32_t ret;
-    ret = --m_refCount;
-    // Destroy the device if refcount reaches zero
-    if (ret == 0) {
-        delete this;
-    }
-    return ret;
 }
 
 VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDevCtx,
