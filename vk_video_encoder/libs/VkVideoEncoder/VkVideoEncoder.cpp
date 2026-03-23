@@ -16,8 +16,12 @@
 
 #include <functional>
 #include <vector>
+#include <cmath>
 #include <cinttypes>  // For PRIu64, PRId64
+#include <cstdio>
+#include <fstream>
 #include "VkVideoEncoder/VkVideoEncoder.h"
+#include "VkVideoEncoder/VkVideoEncoderPsnr.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
@@ -25,7 +29,7 @@
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
 #include "VkCodecUtils/VkDrmFormatModifierUtils.h"
 #include "VkCodecUtils/YCbCrConvUtilsCpu.h"
-#include "crcgenerator.h"
+#include "VkCodecUtils/VkVideoCrc.h"
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
 #include "VulkanAqProcessor.h"
 #endif // NV_AQ_GPU_LIB_SUPPORTED
@@ -207,6 +211,10 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
             std::min(m_encoderConfig->encodeHeight, m_encoderConfig->input.height),  // Height
             m_encoderConfig->input.numPlanes,                              // Number of planes
             m_encoderConfig->input.vkFormat);                              // Format for subsampling detection
+
+    if (m_psnr && m_psnr->Enabled()) {
+        m_psnr->CaptureInput(encodeFrameInfo.Get(), pInputFrameData);
+    }
 
     // Now stage the input frame for the encoder video input
     return StageInputFrame(encodeFrameInfo);
@@ -1076,7 +1084,7 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
 
     if(encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
-        size_t nonVcl = WriteDataToFileWithCRC(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
+        size_t nonVcl = WriteDataToFile(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
                                               encodeFrameInfo->bitstreamHeaderBufferSize);
 
         if (m_encoderConfig->verboseFrameStruct) {
@@ -1092,6 +1100,10 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     if(result != VK_SUCCESS) {
         fprintf(stderr, "\nWait on encoder complete fence has failed with result 0x%x.\n", result);
         return result;
+    }
+
+    if (m_psnr && m_psnr->Enabled()) {
+        m_psnr->ComputeFramePsnr(encodeFrameInfo.Get());
     }
 
     uint32_t querySlotId = (uint32_t)-1;
@@ -1131,7 +1143,7 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     size_t totalBytesWritten = 0;
     while (totalBytesWritten < encodeResult.bitstreamSize) { // handle partial writes
         size_t remainingBytes = encodeResult.bitstreamSize - totalBytesWritten;
-        size_t bytesWritten = WriteDataToFileWithCRC(data + encodeResult.bitstreamStartOffset + totalBytesWritten,
+        size_t bytesWritten = WriteDataToFile(data + encodeResult.bitstreamStartOffset + totalBytesWritten,
                                                     remainingBytes);
         if (bytesWritten == 0) {
             std::cerr << "Error writing VCL data" << std::endl;
@@ -1146,6 +1158,8 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
                   << ", Input Order: " << encodeFrameInfo->gopPosition.inputOrder
                   << ", Encode  Order: " << encodeFrameInfo->gopPosition.encodeOrder << std::endl << std::flush;
     }
+    m_crc.SignalFrameEnd((uint32_t)(encodeFrameInfo->gopPosition.inputOrder));
+
     return result;
 }
 
@@ -1199,7 +1213,7 @@ VkResult VkVideoEncoder::WriteBitstreamToFile(
     BitstreamReadback& readback)
 {
     if (encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
-        WriteDataToFileWithCRC(
+        WriteDataToFile(
             encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
             encodeFrameInfo->bitstreamHeaderBufferSize);
     }
@@ -1216,7 +1230,7 @@ VkResult VkVideoEncoder::WriteBitstreamToFile(
         size_t totalBytesWritten = 0;
         while (totalBytesWritten < readback.bitstreamSize) {
             size_t remaining = readback.bitstreamSize - totalBytesWritten;
-            size_t written = WriteDataToFileWithCRC(src + totalBytesWritten, remaining);
+            size_t written = WriteDataToFile(src + totalBytesWritten, remaining);
             if (written == 0) {
                 fprintf(stderr, "[AsyncAssembly] Error writing VCL data\n");
                 return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -1331,6 +1345,10 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     }
 
     m_encoderConfig = encoderConfig;
+
+    m_crc.BeginCrcCalculation(encoderConfig->crcInitValue,
+                              encoderConfig->outputCrcPerFrame,
+                              encoderConfig->crcOutputFileName);
 
     // Update the video profile
     encoderConfig->InitVideoProfile();
@@ -2217,12 +2235,19 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         m_encoderQueueConsumerThread = std::thread(&VkVideoEncoder::ConsumerThread, this);
     }
 
-    // Initialize CRC values from config following VkVideoFrameToFileImpl pattern
-    if (!encoderConfig->crcInitValue.empty()) {
-        m_crcInitValue = encoderConfig->crcInitValue;
-        m_crcAllocation.resize(m_crcInitValue.size());
-        for (size_t i = 0; i < m_crcInitValue.size(); i += 1) {
-            m_crcAllocation[i] = m_crcInitValue[i];
+    if (encoderConfig->IsPsnrMetricsEnabled()) {
+        if (!m_psnr) {
+            result = VkVideoEncoderPsnr::Create(m_psnr);
+            if (result != VK_SUCCESS) {
+                fprintf(stderr, "\nInitEncoder Error: Failed to create PSNR helper.\n");
+                return result;
+            }
+        }
+        result = m_psnr->Configure(m_vkDevCtx, encoderConfig, maxEncodeQueueDepth,
+                                  m_imageDpbFormat, imageExtent,
+                                  m_vkDevCtx->GetVideoEncodeQueueFamilyIdx());
+        if (result != VK_SUCCESS) {
+            return result;
         }
     }
 
@@ -2368,6 +2393,36 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         imageBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR) && (newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)) {
+        imageBarrier.srcAccessMask = VK_ACCESS_2_VIDEO_ENCODE_WRITE_BIT_KHR;
+        imageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) && (newLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR)) {
+        imageBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        imageBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR) && (newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)) {
+        imageBarrier.srcAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
+        imageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) && (newLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR)) {
+        imageBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        imageBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) && (newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL)) {
+        imageBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        imageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) && (newLayout == VK_IMAGE_LAYOUT_UNDEFINED)) {
+        imageBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        imageBarrier.dstAccessMask = 0;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT_KHR;
     } else {
 #ifdef __cpp_exceptions
         throw std::invalid_argument("unsupported layout transition!");
@@ -2727,6 +2782,14 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
 
     VkVideoEndCodingInfoKHR encodeEndInfo { VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR };
     vkDevCtx->CmdEndVideoCodingKHR(cmdBuf, &encodeEndInfo);
+
+    if (m_psnr && m_psnr->Enabled() && (encodeFrameInfo->setupImageResource != nullptr)) {
+        VkSharedBaseObj<VkImageResourceView> setupEncodeImageView;
+        encodeFrameInfo->setupImageResource->GetImageView(setupEncodeImageView);
+        TransitionImageLayout(cmdBuf, setupEncodeImageView, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        m_psnr->CaptureOutput(cmdBuf, encodeFrameInfo.Get());
+        TransitionImageLayout(cmdBuf, setupEncodeImageView, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR);
+    }
 
     // ******* End recording of the video commands *************
 
@@ -3122,6 +3185,9 @@ int32_t VkVideoEncoder::DeinitEncoder()
     m_inputSubsampledImagePool = nullptr;
 #endif // NV_AQ_GPU_LIB_SUPPORTED
     m_qpMapImagePool          = nullptr;
+    if (m_psnr) {
+        m_psnr->Deinit();
+    }
     m_inputComputeFilter      = nullptr;
     m_inputCommandBufferPool  = nullptr;
     m_encodeCommandBufferPool = nullptr;
@@ -3129,9 +3195,7 @@ int32_t VkVideoEncoder::DeinitEncoder()
     m_videoSessionParameters =  nullptr;
     m_videoSession = nullptr;
 
-    // Clean up CRC storage
-    m_crcInitValue.clear();
-    m_crcAllocation.clear();
+    m_crc.Deinit();
 
     m_encoderConfig = nullptr;
 
@@ -3171,38 +3235,35 @@ void VkVideoEncoder::ConsumerThread()
    std::cout << "ConsumerThread is exiting now.\n" << std::endl;
 }
 
-size_t VkVideoEncoder::WriteDataToFileWithCRC(const uint8_t* data, size_t size)
+size_t VkVideoEncoder::WriteDataToFile(const uint8_t* data, size_t size)
 {
     if (!data || size == 0) {
         return 0;
     }
 
-    // Write data to file
+    if (m_crc.Enabled()) {
+        m_crc.UpdateCrc(data, size);
+    }
     size_t bytesWritten = fwrite(data, 1, size, m_encoderConfig->outputFileHandler.GetFileHandle());
-    if (bytesWritten != size) {
-        return bytesWritten;
-    }
-
-    // Generate CRC if enabled
-    if (!m_crcAllocation.empty()) {
-        for (size_t i = 0; i < m_crcAllocation.size(); i += 1) {
-            getCRC(&m_crcAllocation[i], data, size, Crc32Table);
-        }
-    }
-
     return bytesWritten;
 }
 
 size_t VkVideoEncoder::GetCrcValues(uint32_t* pCrcValues, size_t buffSize) const
 {
-    if (pCrcValues == nullptr) {
-        return 0;
-    }
+    return m_crc.GetCrcValues(pCrcValues, buffSize);
+}
 
-    size_t numValuesToWrite = std::min(buffSize, m_crcAllocation.size());
-    for (size_t i = 0; i < numValuesToWrite; i++) {
-        pCrcValues[i] = m_crcAllocation[i];
-    }
+double VkVideoEncoder::GetAveragePsnr() const
+{
+    return (m_psnr && m_psnr->Enabled()) ? m_psnr->GetAveragePsnrY() : -1.0;
+}
 
-    return numValuesToWrite;
+double VkVideoEncoder::GetAveragePsnrU() const
+{
+    return (m_psnr && m_psnr->Enabled()) ? m_psnr->GetAveragePsnrU() : -1.0;
+}
+
+double VkVideoEncoder::GetAveragePsnrV() const
+{
+    return (m_psnr && m_psnr->Enabled()) ? m_psnr->GetAveragePsnrV() : -1.0;
 }
