@@ -86,6 +86,26 @@ int EncoderConfigH265::DoParseArguments(int argc, const char* argv[])
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
+        } else if (args[i] == "--profile") {
+            if (++i >= argc) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            std::string profileStr = args[i];
+            if (profileStr == "main" || profileStr == "0") {
+                profile = STD_VIDEO_H265_PROFILE_IDC_MAIN;
+            } else if (profileStr == "main10" || profileStr == "1") {
+                profile = STD_VIDEO_H265_PROFILE_IDC_MAIN_10;
+            } else if (profileStr == "mainstill" || profileStr == "2") {
+                profile = STD_VIDEO_H265_PROFILE_IDC_MAIN_STILL_PICTURE;
+            } else if (profileStr == "range" || profileStr == "3") {
+                profile = STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS;
+            } else if (profileStr == "scc" || profileStr == "4") {
+                profile = STD_VIDEO_H265_PROFILE_IDC_SCC_EXTENSIONS;
+            } else {
+                fprintf(stderr, "Invalid H.265 profile: %s\n", profileStr.c_str());
+                return -1;
+            }
         } else {
             fprintf(stderr, "Unrecognized option: %s\n", argv[i]);
             return -1;

@@ -35,6 +35,24 @@ int EncoderConfigH264::DoParseArguments(int argc, const char* argv[])
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
+        } else if (args[i] == "--profile") {
+            if (++i >= argc) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            std::string profileStr = args[i];
+            if (profileStr == "baseline" || profileStr == "0") {
+                profileIdc = STD_VIDEO_H264_PROFILE_IDC_BASELINE;
+            } else if (profileStr == "main" || profileStr == "1") {
+                profileIdc = STD_VIDEO_H264_PROFILE_IDC_MAIN;
+            } else if (profileStr == "high" || profileStr == "2") {
+                profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH;
+            } else if (profileStr == "high444" || profileStr == "3") {
+                profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE;
+            } else {
+                fprintf(stderr, "Invalid H.264 profile: %s\n", profileStr.c_str());
+                return -1;
+            }
         } else {
             fprintf(stderr, "Unrecognized option: %s\n", argv[i]);
             return -1;
