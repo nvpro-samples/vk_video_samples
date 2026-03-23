@@ -3181,7 +3181,8 @@ int32_t VkVideoEncoder::DeinitEncoder()
 #endif // VIDEO_DISPLAY_QUEUE_SUPPORT
     m_lastDeferredFrame = nullptr;
 
-    m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::ENCODE, 0);
+    if (m_vkDevCtx)
+        m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::ENCODE, 0);
 
     if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
          m_vkDevCtx->DestroySemaphore(*m_vkDevCtx, m_hwLoadBalancingTimelineSemaphore, NULL);

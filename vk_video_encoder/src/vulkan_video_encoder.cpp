@@ -28,7 +28,12 @@ public:
         return m_encoderConfig->numFrames;
     }
     virtual VkResult EncodeNextFrame(int64_t& frameNumEncoded);
-    virtual VkResult GetBitstream() { return VK_SUCCESS; }
+    virtual VkResult GetBitstream() {
+        if (m_encoder) {
+            m_encoder->WaitForThreadsToComplete();
+        }
+        return VK_SUCCESS;
+    }
 
     VulkanVideoEncoderImpl()
     : m_vkDevCtxt()
