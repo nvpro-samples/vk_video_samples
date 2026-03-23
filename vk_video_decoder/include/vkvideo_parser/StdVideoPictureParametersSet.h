@@ -66,21 +66,6 @@ public:
         return nullptr;
     }
 
-    virtual int32_t AddRef()
-    {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --m_refCount;
-        // Destroy the device if refcount reaches zero
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
-    }
-
     bool IsMyClassId(const char* refClassId) const {
         if (m_classId == refClassId) {
             return true;
@@ -94,18 +79,19 @@ public:
 
     // VkParserVideoPictureParameters
     virtual bool GetClientObject(VkSharedBaseObj<VkVideoRefCountBase>& clientObject) const = 0;
+    virtual void ReleaseClientObject() = 0;
 
 protected:
     StdVideoPictureParametersSet(StdType updateType,
                                  ParameterType itemType, const char* refClassId,
                                  uint64_t updateSequenceCount)
         : m_classId(refClassId)
-        , m_refCount(0)
         , m_stdType(updateType)
         , m_parameterType(itemType)
         , m_updateSequenceCount((uint32_t)updateSequenceCount)
         , m_parent() { }
 
+public:
     virtual ~StdVideoPictureParametersSet()
     {
         m_parent = nullptr;
@@ -113,7 +99,6 @@ protected:
 
 private:
     const char*                                      m_classId;
-    std::atomic<int32_t>                             m_refCount;
     StdType                                          m_stdType;
     ParameterType                                    m_parameterType;
 protected:

@@ -33,21 +33,8 @@
 #include "VulkanVideoImagePool.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 
-int32_t VulkanVideoImagePoolNode::Release()
-{
-    uint32_t ret = --m_refCount;
-    if (ret == 1) {
-        m_parent->ReleaseImageToPool(m_parentIndex);
-        m_parentIndex = -1;
-        m_parent = nullptr;
-    } else if (ret == 0) {
-        // Destroy the image if ref-count reaches zero
-        m_currentImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        m_pictureResourceInfo = VkVideoPictureResourceInfoKHR();
-        m_imageResourceView  = nullptr;
-    }
-    return ret;
-}
+// AddRef/Release are no-ops — lifetime is managed by std::shared_ptr.
+// Pool nodes are returned via the custom deleter in GetAvailableImage().
 
 VkResult VulkanVideoImagePoolNode::CreateExternal(
     const VulkanDeviceContext* vkDevCtx,
@@ -76,7 +63,7 @@ VkResult VulkanVideoImagePoolNode::CreateExternal(
     pNode->m_pictureResourceInfo.baseArrayLayer = 0;
     pNode->m_pictureResourceInfo.imageViewBinding = imageResourceView->GetImageView();
 
-    outNode = pNode;
+    outNode.reset(pNode);
     return VK_SUCCESS;
 }
 
@@ -143,15 +130,14 @@ VkResult VulkanVideoImagePoolNode::CreateImage( const VulkanDeviceContext* vkDev
 
 VkResult VulkanVideoImagePoolNode::Init(const VulkanDeviceContext* vkDevCtx)
 {
-    AddRef();
     m_vkDevCtx = vkDevCtx;
     return VK_SUCCESS;
 }
 
-VkResult VulkanVideoImagePoolNode::SetParent(VulkanVideoImagePool* imagePool, int32_t parentIndex)
+VkResult VulkanVideoImagePoolNode::SetParent(VkSharedBaseObj<VulkanVideoImagePool> imagePool, int32_t parentIndex)
 {
     assert(m_parent == nullptr);
-    m_parent      = imagePool;
+    m_parent      = std::move(imagePool);
     assert(m_parentIndex == -1);
     m_parentIndex = parentIndex;
 
@@ -160,7 +146,6 @@ VkResult VulkanVideoImagePoolNode::SetParent(VulkanVideoImagePool* imagePool, in
 
 void VulkanVideoImagePoolNode::Deinit()
 {
-    Release();
     m_imageResourceView = nullptr;
     if ((m_timelineSemaphore != VK_NULL_HANDLE) && m_vkDevCtx) {
         m_vkDevCtx->DestroySemaphore(*m_vkDevCtx, m_timelineSemaphore, nullptr);
@@ -277,8 +262,19 @@ bool VulkanVideoImagePool::GetAvailableImage(VkSharedBaseObj<VulkanVideoImagePoo
     if (availablePoolNodeIndx != -1) {
         VkResult result = GetImageSetNewLayout(availablePoolNodeIndx, newImageLayout);
         if (result == VK_SUCCESS) {
-            m_imageResources[availablePoolNodeIndx].SetParent(this, availablePoolNodeIndx);
-            imageResource = &m_imageResources[availablePoolNodeIndx];
+            m_imageResources[availablePoolNodeIndx].SetParent(shared_from_this(), availablePoolNodeIndx);
+            uint32_t idx = static_cast<uint32_t>(availablePoolNodeIndx);
+            auto poolWeak = weak_from_this();
+            VulkanVideoImagePool* rawPool = this;
+            imageResource = std::shared_ptr<VulkanVideoImagePoolNode>(
+                &m_imageResources[idx],
+                [poolWeak, rawPool, idx](VulkanVideoImagePoolNode*) {
+                    if (auto pool = poolWeak.lock()) {
+                        rawPool->m_imageResources[idx].m_parentIndex = -1;
+                        rawPool->m_imageResources[idx].m_parent = nullptr;
+                        rawPool->ReleaseImageToPool(idx);
+                    }
+                });
             return true;
         }
     }

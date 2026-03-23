@@ -90,21 +90,6 @@ public:
     }
 
 
-    virtual int32_t AddRef()
-    {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --m_refCount;
-        // Destroy the device if refcount reaches zero
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
-    }
-
     VkVideoSessionKHR GetVideoSession() const { return m_videoSession; }
 
     operator VkVideoSessionKHR() const {
@@ -117,13 +102,14 @@ private:
     VulkanVideoSession(const VulkanDeviceContext* vkDevCtx,
                        VkVideoCoreProfile* pVideoProfile,
                        const void* sessionCreateInfoChain)
-       : m_refCount(0), m_flags(), m_profile(*pVideoProfile), m_vkDevCtx(vkDevCtx),
+       : m_flags(), m_profile(*pVideoProfile), m_vkDevCtx(vkDevCtx),
          m_createInfo{ VK_STRUCTURE_TYPE_VIDEO_SESSION_CREATE_INFO_KHR, sessionCreateInfoChain },
          m_videoSession(VkVideoSessionKHR()), m_memoryBound{}
     {
 
     }
 
+public:
     ~VulkanVideoSession()
     {
         if (m_videoSession) {
@@ -142,7 +128,6 @@ private:
     }
 
 private:
-    std::atomic<int32_t>                   m_refCount;
     VkVideoSessionCreateFlagsKHR           m_flags;
     VkVideoCoreProfile                     m_profile;
     const VulkanDeviceContext*             m_vkDevCtx;

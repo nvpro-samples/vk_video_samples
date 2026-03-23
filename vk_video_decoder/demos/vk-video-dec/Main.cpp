@@ -111,7 +111,7 @@ int main(int argc, const char **argv)
                                               (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT |
                                               requestVideoComputeQueueMask |
                                               requestVideoDecodeQueueMask),
-                                              displayShell,
+                                              displayShell.get(),
                                               requestVideoDecodeQueueMask,
                                               videoCodecOperation,
                                               0,

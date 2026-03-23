@@ -54,21 +54,6 @@ public:
                                      const void* pInitializeMemory, VkDeviceSize initializeMemorySize, bool clearMemory,
                                      VkSharedBaseObj<VulkanDeviceMemoryImpl>& vulkanDeviceMemory);
 
-    virtual int32_t AddRef()
-    {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --m_refCount;
-        // Destroy the buffer if ref-count reaches zero
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
-    }
-
     virtual VkDeviceSize GetMaxSize() const;
     virtual VkDeviceSize GetSizeAlignment() const;
     virtual VkDeviceSize Resize(VkDeviceSize newSize, VkDeviceSize copySize = 0, VkDeviceSize copyOffset = 0);
@@ -160,8 +145,7 @@ private:
                         bool clearMemory);
 
     VulkanDeviceMemoryImpl(const VulkanDeviceContext* vkDevCtx)
-        : m_refCount(0)
-        , m_vkDevCtx(vkDevCtx)
+        : m_vkDevCtx(vkDevCtx)
         , m_memoryRequirements()
         , m_memoryPropertyFlags()
         , m_exportHandleTypes(0)
@@ -172,10 +156,10 @@ private:
 
     void Deinitialize();
 
+public:
     virtual ~VulkanDeviceMemoryImpl();
 
 private:
-    std::atomic<int32_t>            m_refCount;
     const VulkanDeviceContext*      m_vkDevCtx;
     VkMemoryRequirements            m_memoryRequirements;
     VkMemoryPropertyFlags           m_memoryPropertyFlags;

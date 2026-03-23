@@ -56,8 +56,7 @@ public:
                           bool outputcrcPerFrame,
                           const char* crcOutputFile,
                           const std::vector<uint32_t>& crcInitValue)
-        : m_refCount(0)
-        , m_outputFile(nullptr)
+        : m_outputFile(nullptr)
         , m_pLinearMemory(nullptr)
         , m_allocationSize(0)
         , m_firstFrame(true)
@@ -83,18 +82,6 @@ public:
         }
 
         m_crc.EndCrcCalculation(true);
-    }
-
-    virtual int32_t AddRef() override {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release() override {
-        uint32_t ret = --m_refCount;
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
     }
 
     virtual void SetFrameRate(uint32_t frameRateNum, uint32_t frameRateDen) override {
@@ -456,7 +443,6 @@ private:
     }
 
 private:
-    std::atomic<int32_t>    m_refCount;
     FILE*    m_outputFile;
     uint8_t* m_pLinearMemory;
     size_t   m_allocationSize;
@@ -491,6 +477,6 @@ VkResult VkVideoFrameOutput::Create(const char* fileName,
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    frameToFile = newFrameToFile;
+    frameToFile.reset(newFrameToFile);
     return VK_SUCCESS;
 }

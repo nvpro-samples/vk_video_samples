@@ -124,7 +124,7 @@ int main(int argc, const char** argv)
                                               (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT |
                                               requestVideoComputeQueueMask |
                                               requestVideoDecodeQueueMask),
-                                              displayShell,
+                                              displayShell.get(),
                                               requestVideoDecodeQueueMask,
                                               videoCodec,
                                               0,
@@ -167,7 +167,7 @@ int main(int argc, const char** argv)
                                         vkDevCtxt.getDevice(),
                                         videoStreamDemuxer,
                                         frameToFile,
-                                        displayShell,
+                                        displayShell.get(),
                                         argc, argv,
                                         vulkanVideoDecoder);
         if (result != VK_SUCCESS) {

@@ -35,24 +35,16 @@ public:
 
     VulkanVideoImagePoolNode()
         : m_vkDevCtx()
-        , m_refCount()
         , m_currentImageLayout(VK_IMAGE_LAYOUT_UNDEFINED)
         , m_pictureResourceInfo()
         , m_imageResourceView()
-        , m_parent()
+        , m_parent(nullptr)
         , m_parentIndex(-1)
         , m_recreateImage()
         , m_timelineSemaphore(VK_NULL_HANDLE)
         , m_semaphoreSubmitInfo()
     {
     }
-
-    virtual int32_t AddRef()
-    {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release();
 
     VkResult CreateImage( const VulkanDeviceContext* vkDevCtx,
                           const VkImageCreateInfo*   pImageCreateInfo,
@@ -133,12 +125,6 @@ public:
 
     int32_t GetImageIndex() { return m_parentIndex; }
 
-    virtual int32_t GetRefCount()
-    {
-        assert(m_refCount > 0);
-        return m_refCount;
-    }
-
     /**
      * @brief Get the timeline semaphore submit info for this image node
      * @return VkSemaphoreSubmitInfoKHR structure. If SetTimelineSemaphoreValue() was not called
@@ -165,29 +151,28 @@ public:
                                                        uint32_t deviceIndex = 0);
 
 private:
-    VkResult SetParent(VulkanVideoImagePool* imagePool, int32_t parentIndex);
+    VkResult SetParent(VkSharedBaseObj<VulkanVideoImagePool> imagePool, int32_t parentIndex);
 
 private:
     const VulkanDeviceContext*            m_vkDevCtx;
-    std::atomic<int32_t>                  m_refCount;
     VkImageLayout                         m_currentImageLayout;
     VkVideoPictureResourceInfoKHR         m_pictureResourceInfo;
     VkSharedBaseObj<VkImageResourceView>  m_imageResourceView;
-    VkSharedBaseObj<VulkanVideoImagePool> m_parent;
+    VkSharedBaseObj<VulkanVideoImagePool>  m_parent;
     int32_t                               m_parentIndex;
     uint32_t                              m_recreateImage : 1;
     VkSemaphore                           m_timelineSemaphore;
     VkSemaphoreSubmitInfoKHR              m_semaphoreSubmitInfo;
 };
 
-class VulkanVideoImagePool : public VkVideoRefCountBase {
+class VulkanVideoImagePool : public VkVideoRefCountBase,
+                             public std::enable_shared_from_this<VulkanVideoImagePool> {
 public:
 
     static constexpr size_t maxImages = 64;
 
     VulkanVideoImagePool()
         : m_vkDevCtx()
-        , m_refCount()
         , m_queueFamilyIndex((uint32_t)-1)
         , m_imageCreateInfo()
         , m_requiredMemProps(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
@@ -206,21 +191,6 @@ public:
 
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            VkSharedBaseObj<VulkanVideoImagePool>& imagePool);
-
-    virtual int32_t AddRef()
-    {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --m_refCount;
-        // Destroy the device if ref-count reaches zero
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
-    }
 
     VkResult Configure(const VulkanDeviceContext*   vkDevCtx,
                        uint32_t                     numImages,
@@ -265,7 +235,6 @@ private:
 
 private:
     const VulkanDeviceContext*            m_vkDevCtx;
-    std::atomic<int32_t>                  m_refCount;
     std::mutex                            m_queueMutex;
     uint32_t                              m_queueFamilyIndex;
     VkVideoCoreProfile                    m_videoProfile;

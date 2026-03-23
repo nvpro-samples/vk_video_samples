@@ -1253,7 +1253,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             return -1;
         }
         VkParserVideoPictureParameters* pOwnerPictureParameters =
-            VkParserVideoPictureParameters::VideoPictureParametersFromBase(currentVkPictureParameters);
+            VkParserVideoPictureParameters::VideoPictureParametersFromBase(currentVkPictureParameters.get());
 
         assert(pOwnerPictureParameters);
         assert(pOwnerPictureParameters->GetId() <= m_currentPictureParameters->GetId());
@@ -1273,7 +1273,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             return -1;
         }
         VkParserVideoPictureParameters* pOwnerPictureParameters =
-                VkParserVideoPictureParameters::VideoPictureParametersFromBase(currentVkPictureParameters);
+                VkParserVideoPictureParameters::VideoPictureParametersFromBase(currentVkPictureParameters.get());
         assert(pOwnerPictureParameters);
         assert(pOwnerPictureParameters->GetId() <= m_currentPictureParameters->GetId());
         int32_t ret = pOwnerPictureParameters->FlushPictureParametersQueue(m_videoSession);
@@ -1314,11 +1314,12 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         filterCmdBuffer->ResetCommandBuffer(false, "computeFilterPoolNode");
     }
 
-    VulkanVideoFrameBuffer::ReferencedObjectsInfo referencedObjectsInfo(pCurrFrameDecParams->bitstreamData,
-                                                                        pCurrFrameDecParams->pStdPps,
-                                                                        pCurrFrameDecParams->pStdSps,
-                                                                        pCurrFrameDecParams->pStdVps,
-                                                                        filterCmdBuffer);
+    VulkanVideoFrameBuffer::ReferencedObjectsInfo referencedObjectsInfo(
+        pCurrFrameDecParams->bitstreamData,
+        m_currentPictureParameters->FindByRawPtr(pCurrFrameDecParams->pStdPps),
+        m_currentPictureParameters->FindByRawPtr(pCurrFrameDecParams->pStdSps),
+        m_currentPictureParameters->FindByRawPtr(pCurrFrameDecParams->pStdVps),
+        filterCmdBuffer);
     int32_t retVal = m_videoFrameBuffer->QueuePictureForDecode(currPicIdx, pDecodePictureInfo,
                                                                &referencedObjectsInfo,
                                                                &frameSynchronizationInfo);
@@ -1682,9 +1683,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         result = m_yuvFilter->RecordCommandBuffer(cmdBuf,
                                                   filterCmdBuffer->GetNodePoolIndex(),
-                                                  inputImageView,
+                                                  inputImageView.get(),
                                                   &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource,
-                                                  outputImageView,
+                                                  outputImageView.get(),
                                                   &outputImageResource);
 
         assert(result == VK_SUCCESS);
@@ -1929,12 +1930,8 @@ void VkVideoDecoder::Deinitialize()
         return;
     }
 
-    if (m_vkDevCtx->GetVideoDecodeNumQueues() > 1) {
-        for (uint32_t queueId = 0; queueId <  (uint32_t)m_vkDevCtx->GetVideoDecodeNumQueues(); queueId++) {
-            m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::DECODE, queueId);
-        }
-    } else {
-        m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::DECODE, m_currentVideoQueueIndx);
+    if (*m_vkDevCtx) {
+        m_vkDevCtx->DeviceWaitIdle();
     }
 
     if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
@@ -1954,6 +1951,10 @@ void VkVideoDecoder::Deinitialize()
 
     m_videoFrameBuffer = nullptr;
     m_decodeFramesData.deinit();
+    if (m_currentPictureParameters) {
+        m_currentPictureParameters->Reset();
+        m_currentPictureParameters = nullptr;
+    }
     m_videoSession = nullptr;
     m_yuvFilter = nullptr;
     m_vkDevCtx = nullptr;
@@ -1964,18 +1965,3 @@ VkVideoDecoder::~VkVideoDecoder()
     Deinitialize();
 }
 
-int32_t VkVideoDecoder::AddRef()
-{
-    return ++m_refCount;
-}
-
-int32_t VkVideoDecoder::Release()
-{
-    uint32_t ret;
-    ret = --m_refCount;
-    // Destroy the device if refcount reaches zero
-    if (ret == 0) {
-        delete this;
-    }
-    return ret;
-}

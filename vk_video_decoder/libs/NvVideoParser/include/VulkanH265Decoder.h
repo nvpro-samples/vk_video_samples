@@ -232,6 +232,7 @@ struct hevc_seq_param_s : public StdVideoPictureParametersSet, public StdVideoH2
         clientObject = client;
         return !!clientObject;
     }
+    void ReleaseClientObject() override { client = nullptr; }
 
     hevc_seq_param_s(uint64_t updateSequenceCount)
     : StdVideoPictureParametersSet(TYPE_H265_SPS, SPS_TYPE,
@@ -401,6 +402,7 @@ struct hevc_pic_param_s : public StdVideoPictureParametersSet, public StdVideoH2
         clientObject = client;
         return !!clientObject;
     }
+    void ReleaseClientObject() override { client = nullptr; }
 
     void Reset() {
         StdVideoH265PictureParameterSet::operator=(StdVideoH265PictureParameterSet());
@@ -534,6 +536,7 @@ struct hevc_video_param_s : public StdVideoPictureParametersSet, public StdVideo
         clientObject = client;
         return !!clientObject;
     }
+    void ReleaseClientObject() override { client = nullptr; }
 
     void Reset() {
 

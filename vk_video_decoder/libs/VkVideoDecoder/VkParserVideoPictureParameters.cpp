@@ -306,13 +306,36 @@ VkResult VkParserVideoPictureParameters::UpdateParametersObject(const StdVideoPi
     return result;
 }
 
-VkParserVideoPictureParameters::~VkParserVideoPictureParameters()
+void VkParserVideoPictureParameters::Reset()
 {
+    for (auto& sp : m_allRegisteredParams) {
+        if (sp) sp->ReleaseClientObject();
+    }
+    m_allRegisteredParams.clear();
+    while (!m_pictureParametersQueue.empty()) {
+        auto& front = m_pictureParametersQueue.front();
+        if (front) front->ReleaseClientObject();
+        m_pictureParametersQueue.pop();
+    }
+    for (auto& sp : m_lastPictParamsQueue) {
+        if (sp) sp->ReleaseClientObject();
+        sp = nullptr;
+    }
+    if (m_templatePictureParameters) {
+        m_templatePictureParameters->Reset();
+        m_templatePictureParameters = nullptr;
+    }
+
     if (m_sessionParameters) {
         m_vkDevCtx->DestroyVideoSessionParametersKHR(*m_vkDevCtx, m_sessionParameters, nullptr);
         m_sessionParameters = VkVideoSessionParametersKHR();
     }
     m_videoSession = nullptr;
+}
+
+VkParserVideoPictureParameters::~VkParserVideoPictureParameters()
+{
+    Reset();
 }
 
 bool VkParserVideoPictureParameters::UpdatePictureParametersHierarchy(
@@ -394,6 +417,7 @@ bool VkParserVideoPictureParameters::UpdatePictureParametersHierarchy(
 VkResult VkParserVideoPictureParameters::AddPictureParametersToQueue(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet)
 {
     m_pictureParametersQueue.push(pictureParametersSet);
+    m_allRegisteredParams.push_back(pictureParametersSet);
     return VK_SUCCESS;
 }
 
@@ -408,9 +432,10 @@ VkResult VkParserVideoPictureParameters::HandleNewPictureParametersSet(VkSharedB
             m_templatePictureParameters->FlushPictureParametersQueue(videoSession);
         }
         result = CreateParametersObject(m_vkDevCtx, videoSession, pStdVideoPictureParametersSet,
-                                        m_templatePictureParameters);
+                                        m_templatePictureParameters.get());
         assert(result == VK_SUCCESS);
-        m_templatePictureParameters = nullptr; // the template object is not needed anymore
+        // Keep m_templatePictureParameters alive so Reset() can break
+        // the client back-ref cycle during shutdown.
         m_videoSession = videoSession;
 
     } else {
@@ -434,7 +459,7 @@ int32_t VkParserVideoPictureParameters::FlushPictureParametersQueue(VkSharedBase
     while (!m_pictureParametersQueue.empty()) {
         VkSharedBaseObj<StdVideoPictureParametersSet>& stdVideoPictureParametersSet = m_pictureParametersQueue.front();
 
-        VkResult result =  HandleNewPictureParametersSet(videoSession, stdVideoPictureParametersSet);
+        VkResult result =  HandleNewPictureParametersSet(videoSession, stdVideoPictureParametersSet.get());
         if (result != VK_SUCCESS) {
             return -1;
         }
@@ -495,7 +520,7 @@ VkParserVideoPictureParameters::AddPictureParameters(const VulkanDeviceContext* 
     }
 
     if (videoSession) {
-        result = currentVideoPictureParameters->HandleNewPictureParametersSet(videoSession, stdPictureParametersSet);
+        result = currentVideoPictureParameters->HandleNewPictureParametersSet(videoSession, stdPictureParametersSet.get());
     } else {
         result = currentVideoPictureParameters->AddPictureParametersToQueue(stdPictureParametersSet);
     }
@@ -504,18 +529,3 @@ VkParserVideoPictureParameters::AddPictureParameters(const VulkanDeviceContext* 
 }
 
 
-int32_t VkParserVideoPictureParameters::AddRef()
-{
-    return ++m_refCount;
-}
-
-int32_t VkParserVideoPictureParameters::Release()
-{
-    uint32_t ret;
-    ret = --m_refCount;
-    // Destroy the device if refcount reaches zero
-    if (ret == 0) {
-        delete this;
-    }
-    return ret;
-}

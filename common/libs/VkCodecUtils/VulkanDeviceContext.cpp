@@ -1138,6 +1138,7 @@ VulkanDeviceContext::~VulkanDeviceContext() {
 
     if (m_device) {
         if (!m_importedDeviceHandle) {
+            DeviceWaitIdle();
             DestroyDevice(m_device, nullptr);
         }
         m_device = VkDevice();

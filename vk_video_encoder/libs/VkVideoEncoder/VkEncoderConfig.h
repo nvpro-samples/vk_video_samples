@@ -748,9 +748,6 @@ struct EncoderConfig : public VkVideoRefCountBase {
     enum { ZERO_GOP_IDR_PERIOD  = 0 };
     enum { CONSECUTIVE_B_FRAME_COUNT_MAX_VALUE = UINT8_MAX};
 
-private:
-    std::atomic<int32_t> refCount;
-
 public:
     std::string appName;
     vk::DeviceUuidUtils deviceUUID;
@@ -885,8 +882,7 @@ public:
     uint64_t selectedDrmFormatModifier; // resolved modifier value (set during InitEncoder)
 
     EncoderConfig()
-    : refCount(0)
-    , appName()
+    : appName()
     , deviceId(-1)
     , queueId(0)
     , codec(VK_VIDEO_CODEC_OPERATION_NONE_KHR)
@@ -997,21 +993,6 @@ public:
     { }
 
     virtual ~EncoderConfig() {}
-
-    virtual int32_t AddRef()
-    {
-        return ++refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --refCount;
-        // Destroy the device if ref-count reaches zero
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
-    }
 
     virtual EncoderConfigH264* GetEncoderConfigh264() {
         return nullptr;

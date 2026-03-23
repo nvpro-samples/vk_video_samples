@@ -31,7 +31,6 @@
 template<class FrameDataType>
 VulkanFrame<FrameDataType>::VulkanFrame(const VulkanDeviceContext* vkDevCtx)
     : FrameProcessor(false)
-    , m_refCount(0)
     , m_vkDevCtx(vkDevCtx)
     , m_videoQueue()
     , m_samplerYcbcrModelConversion(VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709)
@@ -460,7 +459,7 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
                                 (imageResourceView->GetImageView() == VK_NULL_HANDLE)) ||
                                m_videoRenderer->m_useTestImage);
 
-    VkImageResourceView* pView = inFrame ? imageResourceView : (VkImageResourceView*)nullptr;
+    VkImageResourceView* pView = inFrame ? imageResourceView.get() : (VkImageResourceView*)nullptr;
     vulkanVideoUtils::ImageResourceInfo rtImage(pView, inFrame ? inFrame->outputImageLayout : VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR);
     const vulkanVideoUtils::ImageResourceInfo* pRtImage = doTestPatternFrame ? &m_videoRenderer->m_testFrameImage : &rtImage;
     VkFence frameConsumerDoneFence = doTestPatternFrame ? VkFence() : inFrame->frameConsumerDoneFence;
@@ -775,25 +774,12 @@ VkResult VulkanFrame<FrameDataType>::Create(const VulkanDeviceContext* vkDevCtx,
 
 #include "VulkanDecoderFrameProcessor.h"
 
-VkResult CreateDecoderFrameProcessor(const VulkanDeviceContext* vkDevCtx,
-                                     VkSharedBaseObj<FrameProcessor>& frameProcessor)
-{
-
-    VkSharedBaseObj<VulkanFrame<VulkanDecodedFrame>> vulkanFrame;
-    VkResult result = VulkanFrame<VulkanDecodedFrame>::Create(vkDevCtx, vulkanFrame);
-    if (result != VK_SUCCESS) {
-        return result;
-    }
-
-    frameProcessor = vulkanFrame;
-    return result;
-}
-
 VkResult DecoderFrameProcessorState::Init(const VulkanDeviceContext* vkDevCtx,
                                           VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>>& videoQueue,
                                           int32_t maxNumberOfFrames)
 {
-    VkResult result = CreateDecoderFrameProcessor(vkDevCtx, m_frameProcessor);
+    VkResult result = VulkanFrame<VulkanDecodedFrame>::Create(vkDevCtx, m_vulkanFrame);
+    m_frameProcessor = m_vulkanFrame;
 
     if (result != VK_SUCCESS) {
         return result;
@@ -822,6 +808,8 @@ void DecoderFrameProcessorState::Deinit()
         m_frameProcessor->DestroyFrameData();
         m_maxNumberOfFrames = 0;
     }
+    m_frameProcessor = nullptr;
+    m_vulkanFrame = nullptr;
 }
 
 #include "VkCodecUtils/VulkanEncoderFrameProcessor.h"

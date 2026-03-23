@@ -53,21 +53,6 @@ public:
 
     void Deinit();
 
-    virtual int32_t AddRef()
-    {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --m_refCount;
-        // Destroy the device if ref-count reaches zero
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
-    }
-
     static void DumpVideoFormat(const VkParserDetectedVideoFormat* videoFormat, bool dumpData);
 
     int32_t ParserProcessNextDataChunk();
@@ -96,8 +81,7 @@ public:
 private:
 
     VulkanVideoProcessor(const DecoderConfig& settings, const VulkanDeviceContext* vkDevCtx)
-        : m_refCount(0),
-          m_vkDevCtx(vkDevCtx),
+        : m_vkDevCtx(vkDevCtx),
           m_videoStreamDemuxer()
         , m_vkVideoFrameBuffer()
         , m_vkVideoDecoder()
@@ -115,6 +99,7 @@ private:
     {
     }
 
+public:
     virtual ~VulkanVideoProcessor() { Deinit(); }
 
     VkResult CreateParser(const char* filename,
@@ -131,7 +116,6 @@ private:
     bool StreamCompleted();
 
 private:
-    std::atomic<int32_t>       m_refCount;
     const VulkanDeviceContext* m_vkDevCtx;
     VkSharedBaseObj<VideoStreamDemuxer> m_videoStreamDemuxer;
     VkSharedBaseObj<VulkanVideoFrameBuffer> m_vkVideoFrameBuffer;

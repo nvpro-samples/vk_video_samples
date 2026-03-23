@@ -172,6 +172,7 @@ public:
                                  VkSharedBaseObj<VkVideoEncodeFrameInfo>& node);
 
 protected:
+public:
     virtual ~VkVideoEncoderAV1()
     {
         m_frameInfoBuffersQueue = nullptr;
@@ -190,7 +191,7 @@ protected:
 private:
     VkVideoEncodeFrameInfoAV1* GetEncodeFrameInfoAV1(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) {
         assert(VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR == encodeFrameInfo->GetType());
-        VkVideoEncodeFrameInfo* pEncodeFrameInfo = encodeFrameInfo;
+        VkVideoEncodeFrameInfo* pEncodeFrameInfo = encodeFrameInfo.get();
         return (VkVideoEncodeFrameInfoAV1*)pEncodeFrameInfo;
     }
 

@@ -75,8 +75,9 @@ VkResult CreateVideoEncoderAV1(const VulkanDeviceContext* vkDevCtx,
 
 VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& encoderConfig)
 {
-    m_encoderConfig = encoderConfig->GetEncoderConfigAV1();
-    assert(m_encoderConfig);
+    auto* av1Config = encoderConfig->GetEncoderConfigAV1();
+    assert(av1Config);
+    m_encoderConfig = std::shared_ptr<EncoderConfigAV1>(encoderConfig, av1Config);
 
     if (m_encoderConfig->codec != VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) {
         return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;

@@ -61,7 +61,7 @@ struct ImageResourceInfo {
 
     ImageResourceInfo(VkImageResourceView* pView, VkImageLayout layout) {
         if (pView) {
-            VkImageResource* pImage = pView->GetImageResource();
+            VkImageResource* pImage = pView->GetImageResource().get();
             imageFormat = pImage->GetImageCreateInfo().format;
             imageWidth = pImage->GetImageCreateInfo().extent.width;
             imageHeight = pImage->GetImageCreateInfo().extent.height;

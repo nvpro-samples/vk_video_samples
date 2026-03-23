@@ -96,7 +96,7 @@ VulkanAV1Decoder::VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std, bool an
 // destructor
 VulkanAV1Decoder::~VulkanAV1Decoder()
 {
-
+    Deinitialize();
 }
 
 // initialization
@@ -257,7 +257,7 @@ bool VulkanAV1Decoder::end_of_picture(uint32_t frameSize)
 bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
 {
     VkParserAv1PictureData* const av1 = &pnvpd->CodecSpecific.av1;
-    av1_seq_param_s *const sps = m_sps.Get();
+    av1_seq_param_s *const sps = m_sps.get();
     assert(sps != nullptr);
 
     av1->upscaled_width = upscaled_width;
@@ -348,7 +348,7 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
 
 int VulkanAV1Decoder::GetRelativeDist(int a, int b)
 {
-    auto* sps = m_sps.Get();
+    auto* sps = m_sps.get();
     if (sps->flags.enable_order_hint == false) {
         return 0;
     }
@@ -631,7 +631,7 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
     if (result != VK_SUCCESS)
         return false;
 
-    auto* sps = m_sps.Get();
+    auto* sps = m_sps.get();
 
 	memset(&sps->color_config, 0, sizeof(sps->color_config));
 	memset(&sps->timing_info, 0, sizeof(sps->timing_info));
@@ -868,7 +868,7 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
 
     if (m_bSPSReceived) {
         // @review: this is not correct
-	if (m_sps->isDifferentFrom(prevSps.Get()))
+	if (m_sps->isDifferentFrom(prevSps.get()))
             m_bSPSChanged = true;
     } else {
         m_bSPSChanged = true;
@@ -877,7 +877,7 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
     m_bSPSReceived = true;
 
     VkSharedBaseObj<StdVideoPictureParametersSet> picParamObj(m_sps);
-    m_PicData.pStdSps = picParamObj.Get();
+    m_PicData.pStdSps = picParamObj.get();
     if (m_pClient) { // @review need to make sure this has really changed!
         bool success = m_pClient->UpdatePictureParameters(picParamObj, m_sps->client);
         assert(success);
@@ -899,7 +899,7 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
 
 void VulkanAV1Decoder::SetupFrameSize(int frame_size_override_flag)
 {
-    av1_seq_param_s *const sps = m_sps.Get();
+    av1_seq_param_s *const sps = m_sps.get();
 	StdVideoDecodeAV1PictureInfo *const pStd = &m_PicData.std_info;
 
     if (frame_size_override_flag) {
@@ -942,7 +942,7 @@ void VulkanAV1Decoder::SetupFrameSize(int frame_size_override_flag)
 
 int VulkanAV1Decoder::SetupFrameSizeWithRefs()
 {
-    av1_seq_param_s *const sps = m_sps.Get();
+    av1_seq_param_s *const sps = m_sps.get();
 	StdVideoDecodeAV1PictureInfo *const pStd = &m_PicData.std_info;
 
     uint32_t tmp;
@@ -990,7 +990,7 @@ int VulkanAV1Decoder::SetupFrameSizeWithRefs()
 
 bool VulkanAV1Decoder::ReadFilmGrainParams()
 {
-    av1_seq_param_s *const sps = m_sps.Get();
+    av1_seq_param_s *const sps = m_sps.get();
     VkParserAv1PictureData *const pic_data = &m_PicData;
 	StdVideoDecodeAV1PictureInfo *const pStd = &m_PicData.std_info;
 	StdVideoAV1FilmGrain *const pFilmGrain = &m_PicData.filmGrain;
@@ -1153,7 +1153,7 @@ uint32_t VulkanAV1Decoder::SwGetUniform(uint32_t max_value)
 
 bool VulkanAV1Decoder::DecodeTileInfo()
 {
-    av1_seq_param_s *const sps = m_sps.Get();
+    av1_seq_param_s *const sps = m_sps.get();
     const auto& seq_hdr_flags = sps->flags;
     VkParserAv1PictureData *const pic_data = &m_PicData;
 	StdVideoAV1TileInfo *const pTileInfo = &m_PicData.tileInfo;
@@ -1299,7 +1299,7 @@ inline int VulkanAV1Decoder::ReadDeltaQ(uint32_t bits)
 
 void VulkanAV1Decoder::DecodeQuantizationData()
 {
-    av1_seq_param_s *const sps = m_sps.Get();
+    av1_seq_param_s *const sps = m_sps.get();
     VkParserAv1PictureData *const pic_data = &m_PicData;
 
     pic_data->quantization.base_q_idx = u(8);
@@ -1409,7 +1409,7 @@ static const char lf_ref_delta_default[] = { 1, 0, 0, 0, (char)-1, 0, (char)-1, 
 
 void VulkanAV1Decoder::DecodeLoopFilterdata()
 {
-    av1_seq_param_s *const sps = m_sps.Get();
+    av1_seq_param_s *const sps = m_sps.get();
 	StdVideoDecodeAV1PictureInfo* pStd = &m_PicData.std_info;
 	StdVideoAV1LoopFilter* pLoopFilter = &m_PicData.loopFilter;
 
@@ -1462,7 +1462,7 @@ void VulkanAV1Decoder::DecodeLoopFilterdata()
 
 void VulkanAV1Decoder::DecodeCDEFdata()
 {
-    av1_seq_param_s *const sps = m_sps.Get();
+    av1_seq_param_s *const sps = m_sps.get();
 	StdVideoDecodeAV1PictureInfo *const pStd = &m_PicData.std_info;
 	StdVideoAV1CDEF* pCDEF = &m_PicData.CDEF;
 
@@ -1487,7 +1487,7 @@ void VulkanAV1Decoder::DecodeCDEFdata()
 
 void VulkanAV1Decoder::DecodeLoopRestorationData()
 {
-    av1_seq_param_s *const sps = m_sps.Get();
+    av1_seq_param_s *const sps = m_sps.get();
 	StdVideoDecodeAV1PictureInfo* pStd = &m_PicData.std_info;
 	StdVideoAV1LoopRestoration* pLoopRestoration = &m_PicData.loopRestoration;
 
@@ -1549,7 +1549,7 @@ void VulkanAV1Decoder::DecodeLoopRestorationData()
 
 int VulkanAV1Decoder::GetRelativeDist1(int a, int b)
 {
-    av1_seq_param_s *const sps = m_sps.Get();
+    av1_seq_param_s *const sps = m_sps.get();
     if (!sps->flags.enable_order_hint) {
         return 0;
     }
@@ -1569,7 +1569,7 @@ int VulkanAV1Decoder::GetRelativeDist1(int a, int b)
 //follow spec 7.8
 void VulkanAV1Decoder::SetFrameRefs(int last_frame_idx, int gold_frame_idx)
 {
-    av1_seq_param_s *const sps = m_sps.Get();
+    av1_seq_param_s *const sps = m_sps.get();
 	StdVideoDecodeAV1PictureInfo* pStd = &m_PicData.std_info;
 
 
@@ -1705,7 +1705,7 @@ void VulkanAV1Decoder::SetFrameRefs(int last_frame_idx, int gold_frame_idx)
 
 int VulkanAV1Decoder::IsSkipModeAllowed()
 {
-    av1_seq_param_s *const sps = m_sps.Get();
+    av1_seq_param_s *const sps = m_sps.get();
     StdVideoDecodeAV1PictureInfoFlags* pic_flags = &m_PicData.std_info.flags;
 	StdVideoDecodeAV1PictureInfo* pStd = &m_PicData.std_info;
 
@@ -1770,7 +1770,7 @@ int VulkanAV1Decoder::IsSkipModeAllowed()
 
 bool VulkanAV1Decoder::ParseObuFrameHeader()
 {
-    av1_seq_param_s *const sps = m_sps.Get();
+    av1_seq_param_s *const sps = m_sps.get();
     VkParserAv1PictureData *const pic_info = &m_PicData;
 	StdVideoDecodeAV1PictureInfo *const pStd = &m_PicData.std_info;
 

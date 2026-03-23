@@ -85,21 +85,6 @@ public:
 
     virtual void AttachFrameProcessor(VkSharedBaseObj<FrameProcessor>& frameProcessor);
 
-    virtual int32_t AddRef()
-    {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --m_refCount;
-        // Destroy the device if ref-count reaches zero
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
-    }
-
     typedef enum BACK_BUFFER_STATE { BACK_BUFFER_INIT, BACK_BUFFER_PREPARE, BACK_BUFFER_IN_SWAPCHAIN, BACK_BUFFER_CANCELED } BACK_BUFFER_STATE;
 
     struct AcquireBuffer {
@@ -211,9 +196,9 @@ public:
     virtual void QuitLoop() = 0;
 
 private:
-    std::atomic<int32_t>       m_refCount;
 protected:
     Shell(const VulkanDeviceContext* devCtx, const Configuration& configuration);
+public:
     virtual ~Shell() {}
 
     void CreateContext();

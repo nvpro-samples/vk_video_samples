@@ -36,21 +36,6 @@ public:
 
     static bool CheckFile(const char* szInFilePath);
 
-    virtual int32_t AddRef()
-    {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --m_refCount;
-        // Destroy the device if ref-count reaches zero
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
-    }
-
     virtual VkVideoCodecOperationFlagBitsKHR GetVideoCodec() const = 0;
     virtual VkVideoComponentBitDepthFlagsKHR GetLumaBitDepth() const = 0;
     virtual VkVideoChromaSubsamplingFlagsKHR GetChromaSubsampling() const = 0;
@@ -72,12 +57,11 @@ public:
 
 protected:
 
-    VideoStreamDemuxer()
-        : m_refCount(0) { }
+    VideoStreamDemuxer() { }
 
+public:
     virtual ~VideoStreamDemuxer() { }
 
-    std::atomic<int32_t>    m_refCount;
 };
 
 VkResult ElementaryStreamCreate(const char *pFilePath,

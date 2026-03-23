@@ -21,6 +21,7 @@
 #include <assert.h>
 #include <atomic>
 #include <queue>
+#include <vector>
 #include <unordered_map>
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
@@ -33,13 +34,6 @@ public:
     static const uint32_t MAX_VPS_IDS =  16;
     static const uint32_t MAX_SPS_IDS =  32;
     static const uint32_t MAX_PPS_IDS = 256;
-
-    //! Increment the reference count by 1.
-    virtual int32_t AddRef();
-
-    //! Decrement the reference count by 1. When the reference count
-    //! goes to 0 the object is automatically destroyed.
-    virtual int32_t Release();
 
     static VkParserVideoPictureParameters* VideoPictureParametersFromBase(VkVideoRefCountBase* pBase ) {
         if (!pBase) {
@@ -112,19 +106,29 @@ public:
     bool UpdatePictureParametersHierarchy(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersObject);
 
     VkResult AddPictureParametersToQueue(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet);
+
+    VkSharedBaseObj<StdVideoPictureParametersSet> FindByRawPtr(const StdVideoPictureParametersSet* raw) const {
+        if (!raw) return nullptr;
+        for (const auto& sp : m_allRegisteredParams) {
+            if (sp.get() == raw) return sp;
+        }
+        return nullptr;
+    }
     int32_t FlushPictureParametersQueue(VkSharedBaseObj<VulkanVideoSession>& videoSession);
+
+    void Reset();
 
 protected:
     VkParserVideoPictureParameters(const VulkanDeviceContext* vkDevCtx,
                                    VkSharedBaseObj<VkParserVideoPictureParameters>& templatePictureParameters)
         : m_classId(m_refClassId),
           m_Id(-1),
-          m_refCount(0),
           m_vkDevCtx(vkDevCtx),
           m_videoSession(),
           m_sessionParameters(),
           m_templatePictureParameters(templatePictureParameters) { }
 
+public:
     virtual ~VkParserVideoPictureParameters();
 
 private:
@@ -132,7 +136,6 @@ private:
     static int32_t                  m_currentId;
     const char*                     m_classId;
     int32_t                         m_Id;
-    std::atomic<int32_t>            m_refCount;
     const VulkanDeviceContext*      m_vkDevCtx;
     VkSharedBaseObj<VulkanVideoSession> m_videoSession;
     VkVideoSessionParametersKHR     m_sessionParameters;
@@ -145,6 +148,7 @@ private:
 
     std::queue<VkSharedBaseObj<StdVideoPictureParametersSet>>  m_pictureParametersQueue;
     VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastPictParamsQueue[StdVideoPictureParametersSet::NUM_OF_TYPES];
+    std::vector<VkSharedBaseObj<StdVideoPictureParametersSet>> m_allRegisteredParams;
 };
 
 #endif /* _VKVIDEODECODER_VKPARSERVIDEOPICTUREPARAMETERS_H_ */

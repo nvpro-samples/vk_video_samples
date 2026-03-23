@@ -84,27 +84,22 @@ public:
 
     struct ReferencedObjectsInfo {
 
-        // The bitstream Buffer
-        const VkVideoRefCountBase*     pBitstreamData;
-        // PPS
-        const VkVideoRefCountBase*     pStdPps;
-        // SPS
-        const VkVideoRefCountBase*     pStdSps;
-        // VPS
-        const VkVideoRefCountBase*     pStdVps;
+        VkSharedBaseObj<VkVideoRefCountBase>  bitstreamData;
+        VkSharedBaseObj<VkVideoRefCountBase>  stdPps;
+        VkSharedBaseObj<VkVideoRefCountBase>  stdSps;
+        VkSharedBaseObj<VkVideoRefCountBase>  stdVps;
+        VkSharedBaseObj<VkVideoRefCountBase>  filterPoolNode;
 
-        const VkVideoRefCountBase*     pFilterPoolNode;
-
-        ReferencedObjectsInfo(const VkVideoRefCountBase* pBitstreamDataRef,
-                              const VkVideoRefCountBase* pStdPpsRef,
-                              const VkVideoRefCountBase* pStdSpsRef,
-                              const VkVideoRefCountBase* pStdVpsRef = nullptr,
-                              const VkVideoRefCountBase* pFilterPoolNodeRef = nullptr)
-        : pBitstreamData(pBitstreamDataRef)
-        , pStdPps(pStdPpsRef)
-        , pStdSps(pStdSpsRef)
-        , pStdVps(pStdVpsRef)
-        , pFilterPoolNode(pFilterPoolNodeRef) {}
+        ReferencedObjectsInfo(VkSharedBaseObj<VkVideoRefCountBase> bitstreamDataRef,
+                              VkSharedBaseObj<VkVideoRefCountBase> stdPpsRef,
+                              VkSharedBaseObj<VkVideoRefCountBase> stdSpsRef,
+                              VkSharedBaseObj<VkVideoRefCountBase> stdVpsRef = nullptr,
+                              VkSharedBaseObj<VkVideoRefCountBase> filterPoolNodeRef = nullptr)
+        : bitstreamData(std::move(bitstreamDataRef))
+        , stdPps(std::move(stdPpsRef))
+        , stdSps(std::move(stdSpsRef))
+        , stdVps(std::move(stdVpsRef))
+        , filterPoolNode(std::move(filterPoolNodeRef)) {}
     };
 
     struct PictureResourceInfo {

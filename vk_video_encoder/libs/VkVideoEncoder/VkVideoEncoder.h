@@ -180,8 +180,7 @@ public:
             , srcQpMapStagingResource()
             , srcQpMapImageResource()
             , qpMapCmdBuffer()
-            , m_refCount(0)
-            , m_parent()
+            , m_parent(nullptr)
             , m_parentIndex(-1)
             , m_codec(codec)
         {
@@ -440,48 +439,32 @@ public:
         virtual ~VkVideoEncodeFrameInfo() {
         }
 
-        virtual int32_t AddRef()
-        {
-            return ++m_refCount;
-        }
-
-        virtual int32_t Release()
-        {
-            uint32_t ret = --m_refCount;
-            if (ret == 1) {
-                m_parent->ReleasePoolNodeToPool(m_parentIndex);
-                m_parentIndex = -1;
-                m_parent = nullptr;
-                Reset();
-            } else if (ret == 0) {
-                // Destroy the resources if ref-count reaches zero
-            }
-            return ret;
-        }
-
         void Init() {
-            AddRef();
             Reset();
         }
 
         void Deinit() {
             Reset();
-            Release();
         }
 
-        VkResult SetParent(VulkanBufferPoolIf* buffPool, int32_t parentIndex)
+        VkResult SetParent(VkSharedBaseObj<VulkanBufferPoolIf> buffPool, int32_t parentIndex)
         {
             assert(m_parent == nullptr);
-            m_parent      = buffPool;
+            m_parent      = std::move(buffPool);
             assert(m_parentIndex == -1);
             m_parentIndex = parentIndex;
 
             return VK_SUCCESS;
         }
 
+        void ClearParent()
+        {
+            m_parentIndex = -1;
+            m_parent = nullptr;
+        }
+
     private:
-        std::atomic<int32_t>                m_refCount;
-        VkSharedBaseObj<VulkanBufferPoolIf> m_parent;
+        VkSharedBaseObj<VulkanBufferPoolIf>  m_parent;
         int32_t                             m_parentIndex;
         VkVideoCodecOperationFlagBitsKHR    m_codec;
     };
@@ -552,8 +535,7 @@ public:
 #endif // VIDEO_DISPLAY_QUEUE_SUPPORT
 public:
     VkVideoEncoder(const VulkanDeviceContext* vkDevCtx)
-        : refCount(0)
-        , m_encoderConfig()
+        : m_encoderConfig()
         , m_vkDevCtx(vkDevCtx)
         , m_inputFrameNum(0)
         , m_encodeInputFrameNum(0)
@@ -615,21 +597,6 @@ public:
     static VkResult CreateVideoEncoder(const VulkanDeviceContext* vkDevCtx,
                                        VkSharedBaseObj<EncoderConfig>& encoderConfig,
                                        VkSharedBaseObj<VkVideoEncoder>& encoder);
-
-    virtual int32_t AddRef()
-    {
-        return ++refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --refCount;
-        // Destroy the device if ref-count reaches zero
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
-    }
 
     virtual VkVideoEncoderH264* GetVideoEncoderH264() {
         return nullptr;
@@ -832,6 +799,7 @@ protected:
     virtual VkResult ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                 uint32_t frameIdx, uint32_t ofTotalFrames) = 0;
 
+public:
     virtual ~VkVideoEncoder() {
         DeinitEncoder();
     }
@@ -920,8 +888,6 @@ protected:
     VkResult QueueFramesForAssembly(VkSharedBaseObj<VkVideoEncodeFrameInfo>& frames, uint32_t numFrames);
     void ReleaseAssemblyItem(AssemblyWorkItem& item);
 
-private:
-    std::atomic<int32_t> refCount;
 protected:
     VkSharedBaseObj<EncoderConfig>                m_encoderConfig;
     const VulkanDeviceContext*                    m_vkDevCtx;

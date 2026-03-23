@@ -19,23 +19,8 @@
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkCodecUtils/VulkanCommandBufferPool.h"
 
-int32_t VulkanCommandBufferPool::PoolNode::Release()
-{
-    uint32_t ret = --m_refCount;
-    if (ret == 1) {
-        m_parent->ReleasePoolNodeToPool(m_parentIndex);
-        m_parentIndex = -1;
-        m_parent = nullptr;
-    } else if (ret == 0) {
-        // Destroy the resources if ref-count reaches zero
-    }
-    return ret;
-}
-
-
 VkResult VulkanCommandBufferPool::PoolNode::Init(const VulkanDeviceContext* vkDevCtx)
 {
-    AddRef();
     m_vkDevCtx = vkDevCtx;
     return VK_SUCCESS;
 }
@@ -43,7 +28,7 @@ VkResult VulkanCommandBufferPool::PoolNode::Init(const VulkanDeviceContext* vkDe
 VkResult VulkanCommandBufferPool::PoolNode::SetParent(VulkanCommandBufferPool* cmdBuffPool, int32_t parentIndex)
 {
     assert(m_parent == nullptr);
-    m_parent      = cmdBuffPool;
+    m_parent      = cmdBuffPool->shared_from_this();
     assert(m_parentIndex == -1);
     m_parentIndex = parentIndex;
 
@@ -52,7 +37,7 @@ VkResult VulkanCommandBufferPool::PoolNode::SetParent(VulkanCommandBufferPool* c
 
 void VulkanCommandBufferPool::PoolNode::Deinit()
 {
-    Release();
+    ClearParent();
     m_vkDevCtx = nullptr;
 }
 
@@ -89,7 +74,17 @@ bool VulkanCommandBufferPool::GetAvailablePoolNode(VkSharedBaseObj<PoolNode>& po
     }
     if (availablePoolNodeIndx != -1) {
         m_poolNodes[availablePoolNodeIndx].SetParent(this, availablePoolNodeIndx);
-        poolNode = &m_poolNodes[availablePoolNodeIndx];
+        uint32_t idx = static_cast<uint32_t>(availablePoolNodeIndx);
+        auto poolWeak = weak_from_this();
+        VulkanCommandBufferPool* rawPool = this;
+        poolNode = std::shared_ptr<PoolNode>(
+            &m_poolNodes[idx],
+            [poolWeak, rawPool, idx](PoolNode*) {
+                if (auto pool = poolWeak.lock()) {
+                    rawPool->m_poolNodes[idx].ClearParent();
+                    rawPool->ReleasePoolNodeToPool(idx);
+                }
+            });
         return true;
     }
     return false;

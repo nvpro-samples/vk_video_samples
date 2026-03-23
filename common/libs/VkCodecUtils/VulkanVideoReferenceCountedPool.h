@@ -38,17 +38,17 @@ public:
     : m_poolMutex()
     , m_maxNodes(maxNodes)
     , m_poolNodeSlotsInUseMask()
-    , m_poolNodesInUseMask()
+    , m_poolNodesCheckedOutMask()
     , m_pool(MAX_POOL_ENTRIES) { }
 
     virtual ~VulkanVideoRefCountedPool()
     {
         std::lock_guard<std::mutex> lock(m_poolMutex);
         uint32_t maxNodes = m_maxNodes;
-        m_maxNodes = 0; // make sure no additional nodes are added.
+        m_maxNodes = 0;
         for (uint32_t i = 0; i < maxNodes; i++) {
             m_pool[i] = nullptr;
-            m_poolNodesInUseMask[i] = true;
+            m_poolNodesCheckedOutMask[i] = false;
         }
     }
 
@@ -70,17 +70,9 @@ public:
         std::lock_guard<std::mutex> lock(m_poolMutex);
 
         for (uint32_t i = 0; i < m_maxNodes; i++) {
-            if (m_poolNodesInUseMask[i]) {
-                if (m_pool[i] && (1 == m_pool[i]->GetRefCount())) {
-                    m_poolNodesInUseMask[i] = false;
-                    it->VisitNode(m_pool[i], i, true, false);
-                }
-            } else if (m_pool[i]) {
-                assert(1 == m_pool[i]->GetRefCount());
-                it->VisitNode(m_pool[i], i, true, false);
-            } else {
-                it->VisitNode(m_pool[i], i, m_pool[i], m_poolNodesInUseMask[i]);
-            }
+            bool isValid = (m_pool[i] != nullptr);
+            bool isAvailable = isValid && !m_poolNodesCheckedOutMask[i];
+            it->VisitNode(m_pool[i], i, isValid, isAvailable);
         }
         return m_maxNodes;
     }
@@ -91,13 +83,7 @@ public:
 
         uint32_t numFreeNodes = 0;
         for (uint32_t i = 0; i < m_maxNodes; i++) {
-            if (m_poolNodesInUseMask[i]) {
-                if (m_pool[i] && (1 == m_pool[i]->GetRefCount())) {
-                    m_poolNodesInUseMask[i] = false;
-                    numFreeNodes++;
-                }
-            } else if (m_pool[i]) {
-                assert(1 == m_pool[i]->GetRefCount());
+            if (m_pool[i] && !m_poolNodesCheckedOutMask[i]) {
                 numFreeNodes++;
             }
         }
@@ -107,12 +93,24 @@ public:
     int32_t GetAvailableNodeFromPool(VkSharedBaseObj<RefCountedNodeType>& availableNodeFromPool)
     {
         std::lock_guard<std::mutex> lock(m_poolMutex);
-        int32_t availableNodeIndx = GetAvailableNodeIndx();
-        if (availableNodeIndx >= 0) {
-            assert((uint32_t)availableNodeIndx < m_maxNodes);
-            availableNodeFromPool = m_pool[availableNodeIndx];
+        int32_t idx = GetAvailableNodeIndx();
+        if (idx >= 0) {
+            assert((uint32_t)idx < m_maxNodes);
+            auto* pool = this;
+            uint32_t uidx = static_cast<uint32_t>(idx);
+            struct CheckoutGuard {
+                VkSharedBaseObj<RefCountedNodeType> node;
+                VulkanVideoRefCountedPool* pool;
+                uint32_t idx;
+                ~CheckoutGuard() { if (pool) pool->ReturnNodeToPool(idx); }
+            };
+            auto guard = std::make_shared<CheckoutGuard>();
+            guard->node = m_pool[idx];
+            guard->pool = pool;
+            guard->idx = uidx;
+            availableNodeFromPool = std::shared_ptr<RefCountedNodeType>(guard, guard->node.get());
         }
-        return availableNodeIndx;
+        return idx;
     }
 
     uint32_t GetFreeNodesNumber()
@@ -127,41 +125,36 @@ public:
         int32_t freeNodeSlotIndx = GetFreeNodeSlotIndx();
         if (freeNodeSlotIndx >= 0) {
             assert((uint32_t)freeNodeSlotIndx < m_maxNodes);
-            if (setUnavailable) {
-                m_poolNodesInUseMask[freeNodeSlotIndx] = true;
-            }
+            m_poolNodesCheckedOutMask[freeNodeSlotIndx] = setUnavailable;
             m_pool[freeNodeSlotIndx] = newNodeToPool;
         }
         return freeNodeSlotIndx;
     }
 
 private:
-    // These functions must be called with the m_poolMutex lock obtained unavailable
+    void ReturnNodeToPool(uint32_t idx)
+    {
+        std::lock_guard<std::mutex> lock(m_poolMutex);
+        assert(idx < m_maxNodes);
+        assert(m_poolNodesCheckedOutMask[idx]);
+        m_poolNodesCheckedOutMask[idx] = false;
+    }
+
     int32_t GetAvailableNodeIndx(bool setUnavailable = true) {
-        uint32_t i = 0;
-        for (; i < m_maxNodes; i++) {
-            if (m_poolNodesInUseMask[i]) {
-                if (m_pool[i] && (1 == m_pool[i]->GetRefCount())) {
-                    if (!setUnavailable) {
-                        m_poolNodesInUseMask[i] = false;
-                    }
-                    break;
-                }
-            } else if (m_pool[i]) {
-                assert(1 == m_pool[i]->GetRefCount());
+        for (uint32_t i = 0; i < m_maxNodes; i++) {
+            if (m_pool[i] && !m_poolNodesCheckedOutMask[i]) {
                 if (setUnavailable) {
-                    m_poolNodesInUseMask[i] = true;
+                    m_poolNodesCheckedOutMask[i] = true;
                 }
-                break;
+                return i;
             }
         }
-        return (i == m_maxNodes) ? -1 : i;
+        return -1;
     }
 
     int32_t GetFreeNodeSlotIndx(bool allocate = true) {
 
         if (!(m_poolNodeSlotsInUseMask.count() < m_maxNodes)) {
-            // No more slots are available
             return -1;
         }
 
@@ -180,7 +173,7 @@ private:
     std::mutex                                         m_poolMutex;
     uint32_t                                           m_maxNodes;
     std::bitset<MAX_POOL_ENTRIES>                      m_poolNodeSlotsInUseMask;
-    std::bitset<MAX_POOL_ENTRIES>                      m_poolNodesInUseMask;
+    std::bitset<MAX_POOL_ENTRIES>                      m_poolNodesCheckedOutMask;
     std::vector<VkSharedBaseObj<RefCountedNodeType>>   m_pool;
 };
 
