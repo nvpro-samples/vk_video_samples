@@ -77,6 +77,7 @@ struct DecoderConfig {
         directMode = false;
         enableHwLoadBalancing = false;
         selectVideoWithComputeQueue = false;
+        noDeviceFallback = false;
         outputy4m = true; // by default, use Y4M
         outputcrcPerFrame = false;
         outputcrc = false;
@@ -293,6 +294,11 @@ struct DecoderConfig {
                     }
                     return true;
                 }},
+            {"--noDeviceFallback", nullptr, 0, "Don't try other GPUs if first device doesn't meet requirements",
+                [this](const char **args, const ProgramArgs &a) {
+                    noDeviceFallback = true;
+                    return true;
+                }},
             {"--direct", nullptr, 0, "Direct to display mode",
                 [this](const char **args, const ProgramArgs &a) {
                     directMode = true;
@@ -479,6 +485,7 @@ struct DecoderConfig {
     uint32_t noPresent : 1;
     uint32_t enableHwLoadBalancing : 1;
     uint32_t selectVideoWithComputeQueue : 1;
+    uint32_t noDeviceFallback : 1;
     uint32_t outputy4m : 1;
     uint32_t outputcrc : 1;
     uint32_t outputcrcPerFrame : 1;
