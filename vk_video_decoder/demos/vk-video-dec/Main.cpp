@@ -27,6 +27,7 @@
 #include "VkCodecUtils/VulkanDecoderFrameProcessor.h"
 #include "VkShell/Shell.h"
 #include "VkCodecUtils/VkVideoFrameOutput.h"
+#include "VkVSCommon.h"
 
 int main(int argc, const char **argv)
 {
@@ -36,7 +37,7 @@ int main(int argc, const char **argv)
     if (!configResult && (decoderConfig.help == true)) {
         return 0;
     } else if (!configResult) {
-        return -1;
+        return EXIT_FAILURE;
     }
 
     VkSharedBaseObj<VideoStreamDemuxer> videoStreamDemuxer;
@@ -48,8 +49,9 @@ int main(int argc, const char **argv)
                                         decoderConfig.initialBitdepth,
                                         videoStreamDemuxer);
     if (result != VK_SUCCESS) {
-        assert(!"Can't initialize the VideoStreamDemuxer!");
-        return -1;
+        fprintf(stderr, "Error: Failed to initialize VideoStreamDemuxer for file: %s\n",
+                decoderConfig.videoFileName.c_str());
+        return EXIT_FAILURE;
     }
 
     const VkVideoCodecOperationFlagsKHR videoCodecOperation =
@@ -68,8 +70,12 @@ int main(int argc, const char **argv)
                                                decoderConfig.verbose);
 
     if (result != VK_SUCCESS) {
-        printf("Could not initialize the Vulkan decoder device!\n");
-        return -1;
+        if (IsVideoUnsupportedResult(result)) {
+            fprintf(stderr, "Could not initialize the Vulkan decoder device with an incompatible driver!\n");
+            return VVS_EXIT_UNSUPPORTED;
+        }
+        fprintf(stderr, "Could not initialize the Vulkan decoder device %d!\n", result);
+        return EXIT_FAILURE;
     }
 
     const int32_t numDecodeQueues = ((decoderConfig.queueId != 0) ||
@@ -97,8 +103,8 @@ int main(int argc, const char **argv)
 
         result = Shell::Create(&vkDevCtxt, configuration, displayShell);
         if (result != VK_SUCCESS) {
-            assert(!"Can't allocate display shell! Out of memory!");
-            return -1;
+            fprintf(stderr, "Can't allocate display shell! Out of memory!");
+            return EXIT_FAILURE;
         }
 
         result = vkDevCtxt.InitPhysicalDevice(decoderConfig.deviceId, decoderConfig.deviceUUID,
@@ -111,9 +117,12 @@ int main(int argc, const char **argv)
                                               0,
                                               VK_VIDEO_CODEC_OPERATION_NONE_KHR);
         if (result != VK_SUCCESS) {
-
-            assert(!"Can't initialize the Vulkan physical device!");
-            return -1;
+            if (IsVideoUnsupportedResult(result)) {
+                fprintf(stderr, "Video decode queue family not supported by hardware/driver\n");
+                return VVS_EXIT_UNSUPPORTED;
+            }
+            fprintf(stderr, "Can't initialize the Vulkan physical device! %d\n", result);
+            return EXIT_FAILURE;
         }
         assert(displayShell->PhysDeviceCanPresent(vkDevCtxt.getPhysicalDevice(),
                                                   vkDevCtxt.GetPresentQueueFamilyIdx()));
@@ -130,7 +139,7 @@ int main(int argc, const char **argv)
         VkSharedBaseObj<VulkanVideoProcessor> vulkanVideoProcessor;
         result = VulkanVideoProcessor::Create(decoderConfig, &vkDevCtxt, vulkanVideoProcessor);
         if (result != VK_SUCCESS) {
-            return -1;
+            return EXIT_FAILURE;
         }
 
         VkSharedBaseObj<VkVideoFrameOutput> frameToFile;
@@ -144,7 +153,7 @@ int main(int argc, const char **argv)
                                               frameToFile);
             if (result != VK_SUCCESS) {
                 fprintf(stderr, "Error creating output file %s\n", decoderConfig.outputFileName.c_str());
-                return -1;
+                return EXIT_FAILURE;
             }
         }
 
@@ -166,9 +175,12 @@ int main(int argc, const char **argv)
                                               nullptr,
                                               requestVideoDecodeQueueMask);
         if (result != VK_SUCCESS) {
-
-            assert(!"Can't initialize the Vulkan physical device!");
-            return -1;
+            if (IsVideoUnsupportedResult(result)) {
+                fprintf(stderr, "Video decode queue family not supported by hardware/driver\n");
+                return VVS_EXIT_UNSUPPORTED;
+            }
+            fprintf(stderr, "Can't initialize the Vulkan physical device!\n");
+            return EXIT_FAILURE;
         }
 
 
@@ -184,16 +196,19 @@ int main(int argc, const char **argv)
                                               requestVideoComputeQueueMask != 0   // createComputeQueue
                                               );
         if (result != VK_SUCCESS) {
-
-            assert(!"Failed to create Vulkan device!");
-            return -1;
+            if (IsVideoUnsupportedResult(result)) {
+                fprintf(stderr, "Unable to create vulkan device with unsupported features\n");
+                return VVS_EXIT_UNSUPPORTED;
+            }
+            fprintf(stderr, "Failed to create Vulkan device!\n");
+            return EXIT_FAILURE;
         }
 
         VkSharedBaseObj<VulkanVideoProcessor> vulkanVideoProcessor;
         result = VulkanVideoProcessor::Create(decoderConfig, &vkDevCtxt, vulkanVideoProcessor);
         if (result != VK_SUCCESS) {
             std::cerr << "Error creating the decoder instance: " << result << std::endl;
-            return -1;
+            return EXIT_FAILURE;
         }
 
         VkSharedBaseObj<VkVideoFrameOutput> frameToFile;
@@ -207,7 +222,7 @@ int main(int argc, const char **argv)
                                               frameToFile);
             if (result != VK_SUCCESS) {
                 fprintf(stderr, "Error creating output file %s\n", decoderConfig.outputFileName.c_str());
-                return -1;
+                return EXIT_FAILURE;
             }
         }
 
@@ -222,5 +237,5 @@ int main(int argc, const char **argv)
         } while (continueLoop);
     }
 
-    return 0;
+    return EXIT_SUCCESS;
 }
