@@ -767,6 +767,14 @@ public:
                                    TransferOpType transferType,
                                    VkSharedBaseObj<VulkanFilter>& vulkanFilter);
 
+    /**
+     * @brief Override output format for filter types that produce a different format.
+     *
+     * YCBCR2RGBA converts YCbCr input to RGBA output, so the output format must
+     * be RGBA regardless of what the caller passes.
+     */
+    static VkFormat GetOutputFormat(FilterType filterType, VkFormat inputFormat, VkFormat outputFormat);
+
     VulkanFilterYuvCompute(const VulkanDeviceContext* vkDevCtx,
                            uint32_t queueFamilyIndex,
                            uint32_t queueIndex,
@@ -779,7 +787,7 @@ public:
         : VulkanFilter(vkDevCtx, queueFamilyIndex, queueIndex)
         , m_filterType(filterType)
         , m_inputFormat(inputFormat)
-        , m_outputFormat(outputFormat)
+        , m_outputFormat(GetOutputFormat(filterType, inputFormat, outputFormat))
         , m_workgroupSizeX(16)
         , m_workgroupSizeY(16)
         , m_maxNumFrames(maxNumFrames)
