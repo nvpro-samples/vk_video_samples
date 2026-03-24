@@ -212,6 +212,19 @@ public:
 
         const VulkanDeviceContext* GetDeviceContext() const { return m_vkDevCtx; }
 
+        void ClearParent()
+        {
+            m_parentIndex = -1;
+            m_parent = nullptr;
+            // NOTE: Do NOT reset m_cmdBufState here. The state must persist
+            // across pool release/reacquire so that ResetCommandBuffer() can
+            // properly wait on and reset the fence when the node is reused.
+            // Resetting state to CmdBufStateReset here caused the fence
+            // assertion crash: the fence remained signaled from the previous
+            // submit, but ResetCommandBuffer() skipped the wait+reset because
+            // it saw state == CmdBufStateReset.
+        }
+
     private:
         VkResult SetParent(VulkanCommandBufferPool* cmdBuffPool, int32_t parentIndex);
 

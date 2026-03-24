@@ -383,7 +383,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         };
 
         uint32_t filterFlags = VulkanFilterYuvCompute::FLAG_NONE;
-        
+
         result = VulkanFilterYuvCompute::Create(m_vkDevCtx,
                                                 m_vkDevCtx->GetComputeQueueFamilyIdx(),
                                                 0,
@@ -1480,16 +1480,28 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
     const bool checkDecodeIdleSync = false; // For fence/sync/idle debugging
     if (checkDecodeIdleSync) { // For fence/sync debugging
-        if (videoDecodeCompleteFence == VkFence()) {
-            result = m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::DECODE, m_currentVideoQueueIndx);
+        // Wait on the decode fence (filterCmdBuffer->GetFence() when filter enabled,
+        // or frameCompleteFence when filter disabled)
+        if (videoDecodeCompleteFence != VkFence()) {
+            result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &videoDecodeCompleteFence, true, gFenceTimeout);
             assert(result == VK_SUCCESS);
-        } else {
-            if (videoDecodeCompleteSemaphore == VkSemaphore()) {
-                result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &videoDecodeCompleteFence, true, gFenceTimeout);
-                assert(result == VK_SUCCESS);
-                result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, videoDecodeCompleteFence);
-                assert(result == VK_SUCCESS);
-            }
+            result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, videoDecodeCompleteFence);
+            assert(result == VK_SUCCESS);
+            fprintf(stderr, "[SYNC] Decode fence signaled OK (pic=%d, fence=%p)\n",
+                    currPicIdx, (void*)videoDecodeCompleteFence);
+        }
+        // Also wait on the decode TL semaphore value if available
+        if (videoDecodeCompleteSemaphore != VkSemaphore()) {
+            uint64_t waitValue = frameSynchronizationInfo.decodeCompleteTimelineValue;
+            VkSemaphoreWaitInfo waitInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+                                              nullptr, 0, 1,
+                                              &videoDecodeCompleteSemaphore, &waitValue };
+            result = m_vkDevCtx->WaitSemaphores(*m_vkDevCtx, &waitInfo, gFenceTimeout);
+            assert(result == VK_SUCCESS);
+            uint64_t currentValue = 0;
+            m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, videoDecodeCompleteSemaphore, &currentValue);
+            fprintf(stderr, "[SYNC] Decode TL semaphore OK (pic=%d, expected=%llu, current=%llu)\n",
+                    currPicIdx, (unsigned long long)waitValue, (unsigned long long)currentValue);
         }
     }
 
@@ -1550,6 +1562,17 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     if (m_enableDecodeComputeFilter) {
 
         assert(filterCmdBuffer != nullptr);
+
+        if (m_decodePicCount == 1) {
+            fprintf(stderr, "[FILTER] Compute filter ACTIVE, "
+                    "decode signals filterCmdBuffer fence=%p, "
+                    "filter signals frameCompleteFence=%p, "
+                    "decodeTL=%llu, filterTL=%llu\n",
+                    (void*)filterCmdBuffer->GetFence(),
+                    (void*)frameCompleteFence,
+                    (unsigned long long)frameSynchronizationInfo.decodeCompleteTimelineValue,
+                    (unsigned long long)frameSynchronizationInfo.filterCompleteTimelineValue);
+        }
 
         VkSharedBaseObj<VkImageResourceView> inputImageView;
         VkSharedBaseObj<VkImageResourceView> outputImageView;
@@ -1624,7 +1647,27 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         filterCmdBuffer->SetCommandBufferSubmitted();
         bool syncCpuAfterStaging = false;
         if (syncCpuAfterStaging) {
-            filterCmdBuffer->SyncHostOnCmdBuffComplete(false, "filterFence");
+            // Wait on frameCompleteFence (signaled by filter submit, not decode submit)
+            if (frameCompleteFence != VkFence()) {
+                result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameCompleteFence, true, gFenceTimeout);
+                assert(result == VK_SUCCESS);
+                fprintf(stderr, "[SYNC] Filter fence (frameCompleteFence) signaled OK (pic=%d, fence=%p)\n",
+                        currPicIdx, (void*)frameCompleteFence);
+            }
+            // Also wait on the filter TL semaphore value
+            if (videoDecodeCompleteSemaphore != VkSemaphore()) {
+                VkSemaphoreWaitInfo waitInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+                                                  nullptr, 0, 1,
+                                                  &videoDecodeCompleteSemaphore,
+                                                  &computeCompleteTimelineValue };
+                result = m_vkDevCtx->WaitSemaphores(*m_vkDevCtx, &waitInfo, gFenceTimeout);
+                assert(result == VK_SUCCESS);
+                uint64_t currentValue = 0;
+                m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, videoDecodeCompleteSemaphore, &currentValue);
+                fprintf(stderr, "[SYNC] Filter TL semaphore OK (pic=%d, expected=%llu, current=%llu)\n",
+                        currPicIdx, (unsigned long long)computeCompleteTimelineValue,
+                        (unsigned long long)currentValue);
+            }
         }
     }
 
