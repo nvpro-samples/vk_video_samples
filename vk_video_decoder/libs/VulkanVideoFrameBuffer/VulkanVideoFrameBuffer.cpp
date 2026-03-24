@@ -440,6 +440,11 @@ public:
 
         }
 
+        // NOTE: Consumer TL semaphore wait for slot reuse is not needed in the
+        // single-threaded headless path. The dump now waits on the forward TL
+        // semaphore (not the fence), so the fence reset here is harmless.
+        // For multi-threaded dump (Phase 2), add consumer TL wait here.
+
         // Wait for all external consumers (cross-process) to release this slot
         for (uint32_t c = 0; c < m_perFrameDecodeImageSet.m_numExternalConsumers; c++) {
             if (m_perFrameDecodeImageSet.m_externalConsumerSemaphores[c] != VK_NULL_HANDLE) {
@@ -686,6 +691,10 @@ public:
         int fd = -1;
         VkResult result = pfnGetSemaphoreFd(*m_vkDevCtx, &getFdInfo, &fd);
         return (result == VK_SUCCESS) ? fd : -1;
+    }
+
+    virtual VkSemaphore GetConsumerCompleteSemaphore() const override {
+        return m_perFrameDecodeImageSet.m_consumerCompleteSemaphore;
     }
 
     virtual int32_t GetImageResourcesByIndex(uint32_t numResources,

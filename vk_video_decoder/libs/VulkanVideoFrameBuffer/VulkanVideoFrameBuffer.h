@@ -184,6 +184,9 @@ public:
     // Returns FD >= 0 on success, -1 on failure. Caller owns the returned FD.
     virtual int ExportFrameCompleteSemaphoreFd() { return -1; }
 
+    // Get the consumer-complete timeline semaphore (for external consumer registration)
+    virtual VkSemaphore GetConsumerCompleteSemaphore() const { return VK_NULL_HANDLE; }
+
     virtual ~VulkanVideoFrameBuffer() { }
 
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,

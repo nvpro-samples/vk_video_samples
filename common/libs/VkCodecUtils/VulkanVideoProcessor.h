@@ -22,6 +22,7 @@
 #include "VkVideoDecoder/VkVideoDecoder.h"
 #include "VkCodecUtils/VkVideoQueue.h"
 #include "VkVideoFrameOutput.h"
+#include "VkCodecUtils/VkVideoDumpPool.h"
 
 // Forward declarations
 class VulkanDeviceContext;
@@ -135,6 +136,7 @@ private:
     VkSharedBaseObj<VkVideoDecoder> m_vkVideoDecoder;
     VkSharedBaseObj<IVulkanVideoParser> m_vkParser;
     VkSharedBaseObj<VkVideoFrameOutput> m_frameToFile;
+    VkVideoDumpPool m_dumpPool;
     int64_t  m_currentBitstreamOffset;
     uint32_t m_videoFrameNum;
     uint32_t m_videoStreamsCompleted : 1;
