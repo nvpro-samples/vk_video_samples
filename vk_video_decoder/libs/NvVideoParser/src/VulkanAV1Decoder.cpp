@@ -2261,7 +2261,10 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
 	byte_alignment();
 	// Tile payload
     int consumedBytes = (consumed_bits() + 7) / 8;
-    assert(consumedBytes > 0);
+    // consumedBytes can be 0 when the tile group header has no additional bits
+    // beyond byte_alignment (e.g., single tile OBU_FRAME where tile_start_and_end
+    // is not present). In this case, the entire payload is the tile data.
+    assert(consumedBytes >= 0);
     assert((m_nalu.start_offset <= UINT32_MAX) && (m_nalu.start_offset >= 0));
 	//                                                    offset of obu         number of bytes read getting the tile data
 
