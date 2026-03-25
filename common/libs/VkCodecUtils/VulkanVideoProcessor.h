@@ -77,9 +77,11 @@ public:
 
     // External consumer management (forwarded to frame buffer)
     int32_t AddExternalConsumer(VkSemaphore importedReleaseSemaphore,
-                                DecodeFrameBufferIf::SemSyncTypeIdx consumerType) {
+                                uint64_t consumerType) override {
         if (m_vkVideoFrameBuffer) {
-            return m_vkVideoFrameBuffer->AddExternalConsumer(importedReleaseSemaphore, consumerType);
+            return m_vkVideoFrameBuffer->AddExternalConsumer(
+                importedReleaseSemaphore,
+                static_cast<DecodeFrameBufferIf::SemSyncTypeIdx>(consumerType));
         }
         return -1;
     }

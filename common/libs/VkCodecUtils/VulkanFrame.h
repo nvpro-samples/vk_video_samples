@@ -103,6 +103,13 @@ public:
     VkExtent2D                            m_extent;
     VkViewport                            m_viewport;
     VkRect2D                              m_scissor;
+
+    // Presentation consumer's dedicated TL semaphore, registered as an external
+    // consumer via AddExternalConsumer(). QueuePictureForDecode waits on this
+    // before reusing a DPB slot, ensuring the graphics pipeline has finished
+    // reading the decoded frame. Signaled by the graphics queue submit.
+    VkSemaphore                           m_presenterReleaseSemaphore;
+    int32_t                               m_presenterConsumerIndex;
 };
 
 #endif // _VKCODECUTILS_VULKANFRAME_H_
