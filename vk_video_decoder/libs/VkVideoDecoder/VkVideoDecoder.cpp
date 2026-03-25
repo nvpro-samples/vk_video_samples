@@ -1447,8 +1447,26 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         waitSemaphoreCount++;
     }
 
-    if (videoDecodeCompleteSemaphore != VK_NULL_HANDLE) {
-
+    if (m_enableDecodeComputeFilter && filterCmdBuffer) {
+        // When the compute filter is enabled, use the pool node's BINARY semaphore
+        // for decode→filter synchronization instead of the shared TL semaphore.
+        // This prevents TL backward signals: the decoder can run ahead of the filter,
+        // pushing the shared TL past the filter's next signal value. With a binary
+        // semaphore, each decode/filter pair has its own signal/wait — no ordering
+        // conflict. The filter will be the only one signaling the TL semaphore.
+        VkSemaphore decodeToFilterSemaphore = filterCmdBuffer->GetSemaphore();
+        if (decodeToFilterSemaphore != VK_NULL_HANDLE) {
+            signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+            signalSemaphoreInfos[signalSemaphoreCount].pNext = nullptr;
+            signalSemaphoreInfos[signalSemaphoreCount].semaphore = decodeToFilterSemaphore;
+            signalSemaphoreInfos[signalSemaphoreCount].value = 0; // binary semaphore
+            signalSemaphoreInfos[signalSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
+            signalSemaphoreInfos[signalSemaphoreCount].deviceIndex = 0;
+            signalSemaphoreCount++;
+        }
+    } else if (videoDecodeCompleteSemaphore != VK_NULL_HANDLE) {
+        // Without filter: signal the TL semaphore directly from the decoder.
+        // The decoder is the only signaler, so TL values are monotonically increasing.
         signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
         signalSemaphoreInfos[signalSemaphoreCount].pNext = nullptr;
         signalSemaphoreInfos[signalSemaphoreCount].semaphore = videoDecodeCompleteSemaphore;
@@ -1666,23 +1684,23 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         result = filterCmdBuffer->EndCommandBufferRecording(cmdBuf);
         assert(result == VK_SUCCESS);
 
-        // Wait for the decoder to complete.
+        // Wait on the pool node's binary semaphore (signaled by decode submit).
+        // Signal the TL semaphore @ filterCompleteTimelineValue.
+        // The filter is now the ONLY signaler on the TL semaphore, so values
+        // are monotonically increasing on the compute queue — no backward signals.
+        VkSemaphore decodeToFilterSemaphore = filterCmdBuffer->GetSemaphore();
         const VkPipelineStageFlags2KHR waitDecoderStageMasks = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
-
-        // Signal the compute stage after done.
         const uint64_t computeCompleteTimelineValue = frameSynchronizationInfo.filterCompleteTimelineValue;
         const VkPipelineStageFlags2KHR signalComputeStageMasks = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR;
 
         // The filter signals the FB's frameCompleteFence — this is the fence
         // that QueuePictureForDecode waits on before reusing the DPB slot.
-        // When the filter is enabled, the decoder does NOT signal this fence
-        // (videoDecodeCompleteFence = VK_NULL_HANDLE above). Only the filter
-        // signals it, as the last producer stage.
+        const uint64_t binarySemaphoreValue = 0; // binary semaphore wait value
         result = m_yuvFilter->SubmitCommandBuffer(1, // commandBufferCount
                                                   filterCmdBuffer->GetCommandBuffer(),
                                                   1, // waitSemaphoreCount
-                                                  &videoDecodeCompleteSemaphore,
-                                                  &frameSynchronizationInfo.decodeCompleteTimelineValue,
+                                                  &decodeToFilterSemaphore,
+                                                  &binarySemaphoreValue,
                                                   &waitDecoderStageMasks,
                                                   1, // signalSemaphoreCount
                                                   &videoDecodeCompleteSemaphore,
