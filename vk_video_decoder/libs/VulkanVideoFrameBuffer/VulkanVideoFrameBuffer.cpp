@@ -421,36 +421,24 @@ public:
     {
         assert((uint32_t)picId < m_perFrameDecodeImageSet.size());
 
+        // 1. Producer fence: wait for decode/filter to finish with this slot
         if (pFrameSynchronizationInfo->syncOnFrameCompleteFence == 1) {
-            // Check here that the frame for this entry (for this command buffer) has already completed decoding.
-            // Otherwise we may step over a hot command buffer by starting a new recording.
-            // This fence wait should be NOP in 99.9% of the cases, because the decode queue is deep enough to
-            // ensure the frame has already been completed.
             assert(m_perFrameDecodeImageSet[picId].m_frameCompleteFence != VK_NULL_HANDLE);
 
             vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameCompleteFence,
                                   true, "frameCompleteFence");
         }
 
-        // Only wait on the consumer-done fence if there is an actual graphics
-        // consumer that signals it. The CPU cannot signal fences, so this must
-        // only be set when graphics presentation is active (not --noPresent).
+        // 2. Consumer fence: wait for graphics presentation to finish reading
         if ((m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence == 1) &&
              (m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence != VK_NULL_HANDLE)) {
 
             vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence,
                                   true, "frameConsumerDoneFence");
-
-            // Reset the consumer's hasConsummerSignalFence on each frame
             m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence = false;
         }
 
-        // NOTE: Consumer TL semaphore wait for slot reuse is not needed in the
-        // single-threaded headless path. The dump now waits on the forward TL
-        // semaphore (not the fence), so the fence reset here is harmless.
-        // For multi-threaded dump (Phase 2), add consumer TL wait here.
-
-        // Wait for all external consumers (cross-process) to release this slot
+        // 3. External consumer TL semaphores (dump pool, presenter)
         for (uint32_t c = 0; c < m_perFrameDecodeImageSet.m_numExternalConsumers; c++) {
             if (m_perFrameDecodeImageSet.m_externalConsumerSemaphores[c] != VK_NULL_HANDLE) {
                 uint64_t waitValue = m_perFrameDecodeImageSet[picId].m_externalConsumerDoneValues[c];
@@ -460,6 +448,10 @@ public:
                     waitInfo.pSemaphores = &m_perFrameDecodeImageSet.m_externalConsumerSemaphores[c];
                     waitInfo.pValues = &waitValue;
                     m_vkDevCtx->WaitSemaphores(*m_vkDevCtx, &waitInfo, UINT64_MAX);
+                } else {
+                    fprintf(stderr, " [External consumer %d: value=%llu of sem %llx SKIP]", c,
+                            (unsigned long long)waitValue,
+                            (unsigned long long)m_perFrameDecodeImageSet.m_externalConsumerSemaphores[c]);
                 }
             }
         }
