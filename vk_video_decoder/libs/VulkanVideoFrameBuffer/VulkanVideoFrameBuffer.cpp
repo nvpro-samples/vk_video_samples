@@ -936,8 +936,13 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
             uint32_t baseArrayLayer = imageArrayParent ? imageIndex : 0;
             VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, baseArrayLayer, 1 };
             if (pImageSpec->ycbcrConversion != VK_NULL_HANDLE) {
+                // Pass storage usage as planeUsageOverride so per-plane storage
+                // views are created alongside the combined sampled view.
+                VkImageUsageFlags planeUsage =
+                    (pImageSpec->createInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT)
+                        ? VK_IMAGE_USAGE_STORAGE_BIT : 0;
                 result = VkImageResourceView::Create(vkDevCtx, imageResource,
-                                                     subresourceRange, 0,
+                                                     subresourceRange, planeUsage,
                                                      pImageSpec->ycbcrConversion,
                                                      pImageSpec->createInfo.usage,
                                                      m_imageViewState[pImageSpec->imageTypeIdx].view);

@@ -356,4 +356,5 @@ private:
     VulkanFilterYuvCompute::FilterType m_filterType;
     VkSharedBaseObj<VulkanFilter> m_yuvFilter;
     VkSamplerYcbcrConversion m_dpbYcbcrConversion{VK_NULL_HANDLE};
+    VkSamplerYcbcrConversion m_filterOutYcbcrConversion{VK_NULL_HANDLE};
 };
