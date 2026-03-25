@@ -67,7 +67,6 @@ public:
         VkFence frameCompleteFence;
         VkSemaphore frameCompleteSemaphore;
         VkSemaphore consumerCompleteSemaphore;
-        VkFence frameConsumerDoneFence;
         uint64_t frameConsumerDoneTimelineValue;
         uint64_t decodeCompleteTimelineValue;
         uint64_t filterCompleteTimelineValue;
@@ -81,7 +80,6 @@ public:
         // post processing filter
         uint32_t hasFilterSignalSemaphore : 1;
         uint32_t syncOnFrameCompleteFence : 1;
-        uint32_t syncOnFrameConsumerDoneFence : 1;
     };
 
     struct ReferencedObjectsInfo {
