@@ -666,6 +666,43 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                                                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
         assert(imageSpecFilter.imageTypeIdx == filterOutImageSpecsIndex);
+
+        // Create a YCbCr conversion for the filter output so the image view gets
+        // both a combined sampled view (for display) and per-plane storage views
+        // (for the compute shader). Without this, only a combined view is created
+        // and per-plane writes corrupt the CbCr channel.
+        if (m_enableDecodeComputeFilter == VK_TRUE) {
+            const VkMpFormatInfo* filterMpInfo = YcbcrVkFormatInfo(outImageFormat);
+            if (filterMpInfo != nullptr && (imageSpecFilter.createInfo.usage & VK_IMAGE_USAGE_SAMPLED_BIT)) {
+                if (m_filterOutYcbcrConversion != VK_NULL_HANDLE) {
+                    m_vkDevCtx->DestroySamplerYcbcrConversion(*m_vkDevCtx, m_filterOutYcbcrConversion, nullptr);
+                    m_filterOutYcbcrConversion = VK_NULL_HANDLE;
+                }
+                VkSamplerYcbcrConversionCreateInfo convCreateInfo{VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO};
+                convCreateInfo.format = outImageFormat;
+                convCreateInfo.ycbcrModel = VkVideoCoreProfile::CodecColorPrimariesToYCbCrModel(
+                    pVideoFormat->video_signal_description.color_primaries);
+                convCreateInfo.ycbcrRange = VkVideoCoreProfile::CodecFullRangeToYCbCrRange(
+                    pVideoFormat->video_signal_description.video_full_range_flag);
+                convCreateInfo.components = { VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+                                              VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY };
+                convCreateInfo.xChromaOffset = VK_CHROMA_LOCATION_MIDPOINT;
+                convCreateInfo.yChromaOffset = VK_CHROMA_LOCATION_MIDPOINT;
+                convCreateInfo.chromaFilter = VK_FILTER_LINEAR;
+                convCreateInfo.forceExplicitReconstruction = VK_FALSE;
+
+                VkResult convResult = m_vkDevCtx->CreateSamplerYcbcrConversion(
+                    *m_vkDevCtx, &convCreateInfo, nullptr, &m_filterOutYcbcrConversion);
+                if (convResult == VK_SUCCESS) {
+                    imageSpecFilter.ycbcrConversion = m_filterOutYcbcrConversion;
+                }
+
+                // EXTENDED_USAGE_BIT allows per-plane views with storage usage even though
+                // the base multi-planar format may not support VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT.
+                imageSpecFilter.createInfo.flags |= VK_IMAGE_CREATE_EXTENDED_USAGE_BIT |
+                                                     VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+            }
+        }
     }
 
     assert(imageSpecsIndex < DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES);
@@ -1588,8 +1625,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         assert(m_imageSpecsIndex.filterOut != InvalidImageTypeIdx);
         index = m_videoFrameBuffer->GetCurrentImageResourceByIndex(currPicIdx, m_imageSpecsIndex.filterOut,
                                                                    outputImageView);
-
         assert(index == currPicIdx);
+
         VkVideoPictureResourceInfoKHR outputImageResource {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR};
         index = m_videoFrameBuffer->GetCurrentImageResourceByIndex(currPicIdx, m_imageSpecsIndex.filterOut,
                                                                    &outputImageResource, nullptr,
@@ -1809,6 +1846,11 @@ void VkVideoDecoder::Deinitialize()
     if (m_dpbYcbcrConversion != VK_NULL_HANDLE) {
         m_vkDevCtx->DestroySamplerYcbcrConversion(*m_vkDevCtx, m_dpbYcbcrConversion, nullptr);
         m_dpbYcbcrConversion = VK_NULL_HANDLE;
+    }
+
+    if (m_filterOutYcbcrConversion != VK_NULL_HANDLE) {
+        m_vkDevCtx->DestroySamplerYcbcrConversion(*m_vkDevCtx, m_filterOutYcbcrConversion, nullptr);
+        m_filterOutYcbcrConversion = VK_NULL_HANDLE;
     }
 
     m_videoFrameBuffer = nullptr;
