@@ -1149,6 +1149,10 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         if (pCurrFrameDecParams->currPicIdx != resourceIndexFilter) {
             assert(!"GetImageResourcesByIndex has failed");
         }
+
+        // Track if filter output needs layout transition (used later in filter cmd buf)
+        // Note: don't record the barrier here — the filter runs on the COMPUTE queue,
+        // so the barrier must be in the filter's command buffer, not the decode's.
     }
 
     VulkanVideoFrameBuffer::PictureResourceInfo pictureResourcesInfo[VkParserPerFrameDecodeParameters::MAX_DPB_REF_AND_SETUP_SLOTS];
@@ -1646,6 +1650,36 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         // beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         VkCommandBuffer cmdBuf = filterCmdBuffer->BeginCommandBufferRecording(computeBeginInfo);
 
+        // Transition filter output image from UNDEFINED → GENERAL if needed.
+        // This must be in the filter's command buffer (compute queue), not the
+        // decode command buffer (decode queue).
+        if (pFrameFilterOutResourceInfo &&
+            pFrameFilterOutResourceInfo->currentImageLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
+            VkImageMemoryBarrier2 filterOutBarrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+            filterOutBarrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+            filterOutBarrier.srcAccessMask = 0;
+            filterOutBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            filterOutBarrier.dstAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+            filterOutBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            filterOutBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            filterOutBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            filterOutBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            filterOutBarrier.image = pFrameFilterOutResourceInfo->image;
+            filterOutBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            filterOutBarrier.subresourceRange.baseMipLevel = 0;
+            filterOutBarrier.subresourceRange.levelCount = 1;
+            filterOutBarrier.subresourceRange.baseArrayLayer = 0;
+            filterOutBarrier.subresourceRange.layerCount = 1;
+
+            VkDependencyInfo depInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            depInfo.imageMemoryBarrierCount = 1;
+            depInfo.pImageMemoryBarriers = &filterOutBarrier;
+            m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &depInfo);
+
+            // Update the tracked layout so subsequent code sees GENERAL, not UNDEFINED.
+            pFrameFilterOutResourceInfo->currentImageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        }
+
         result = m_yuvFilter->RecordCommandBuffer(cmdBuf,
                                                   filterCmdBuffer->GetNodePoolIndex(),
                                                   inputImageView,
@@ -1654,6 +1688,45 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
                                                   &outputImageResource);
 
         assert(result == VK_SUCCESS);
+
+        // Post-dispatch image barrier: flush compute shader writes for consumers.
+        // For LINEAR output (dump path): flush to host so CPU-mapped reads see the data.
+        // For OPTIMAL output (display path): make writes visible to graphics sampling.
+        {
+            VkImageMemoryBarrier2 imgBarrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+            imgBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            imgBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+            imgBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+            imgBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            imgBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            imgBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            imgBarrier.image = outputImageView->GetImageResource()->GetImage();
+            imgBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            imgBarrier.subresourceRange.baseMipLevel = 0;
+            imgBarrier.subresourceRange.levelCount = 1;
+            imgBarrier.subresourceRange.baseArrayLayer = 0;
+            imgBarrier.subresourceRange.layerCount = 1;
+
+            VkImageTiling outputTiling = outputImageView->GetImageResource()->GetImageCreateInfo().tiling;
+            if (outputTiling == VK_IMAGE_TILING_LINEAR) {
+                // LINEAR image: dump pool reads via CPU-mapped memory.
+                // HOST_READ_BIT flushes GPU caches so host sees the writes.
+                imgBarrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT |
+                                          VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                imgBarrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT |
+                                           VK_ACCESS_2_MEMORY_READ_BIT;
+            } else {
+                // OPTIMAL image: display reads via graphics sampling.
+                imgBarrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                imgBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+            }
+
+            VkDependencyInfo depInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            depInfo.imageMemoryBarrierCount = 1;
+            depInfo.pImageMemoryBarriers = &imgBarrier;
+            m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &depInfo);
+        }
+
         result = filterCmdBuffer->EndCommandBufferRecording(cmdBuf);
         assert(result == VK_SUCCESS);
 
