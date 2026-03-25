@@ -353,8 +353,9 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
         "GenericFilm",
         "BT2020",
     };
-    assert(videoFormat->video_signal_description.color_primaries < sizeof(ColorPrimaries)/sizeof(ColorPrimaries[0]));
-    const char* pColorPrimaries = ColorPrimaries[videoFormat->video_signal_description.color_primaries];
+    const char* pColorPrimaries = (videoFormat->video_signal_description.color_primaries < sizeof(ColorPrimaries)/sizeof(ColorPrimaries[0]))
+        ? ColorPrimaries[videoFormat->video_signal_description.color_primaries]
+        : "Unknown";
     if (dumpData) {
         std::cout << "ColorPrimaries : " << pColorPrimaries << std::endl;
     }
@@ -379,8 +380,9 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
         "ST2084",
         "ST428_1",
     };
-    assert(videoFormat->video_signal_description.transfer_characteristics < sizeof(TransferCharacteristics)/sizeof(TransferCharacteristics[0]));
-    const char* pTransferCharacteristics = TransferCharacteristics[videoFormat->video_signal_description.transfer_characteristics];
+    const char* pTransferCharacteristics = (videoFormat->video_signal_description.transfer_characteristics < sizeof(TransferCharacteristics)/sizeof(TransferCharacteristics[0]))
+        ? TransferCharacteristics[videoFormat->video_signal_description.transfer_characteristics]
+        : "Unknown";
     if (dumpData) {
         std::cout << "TransferCharacteristics : " << pTransferCharacteristics << std::endl;
     }
@@ -398,8 +400,9 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
         "BT2020_NCL",
         "BT2020_CL",
     };
-    assert(videoFormat->video_signal_description.matrix_coefficients < sizeof(MatrixCoefficients)/sizeof(MatrixCoefficients[0]));
-    const char* pMatrixCoefficients = MatrixCoefficients[videoFormat->video_signal_description.matrix_coefficients];
+    const char* pMatrixCoefficients = (videoFormat->video_signal_description.matrix_coefficients < sizeof(MatrixCoefficients)/sizeof(MatrixCoefficients[0]))
+        ? MatrixCoefficients[videoFormat->video_signal_description.matrix_coefficients]
+        : "Unknown";
     if (dumpData) {
         std::cout << "MatrixCoefficients : " << pMatrixCoefficients << std::endl;
     }
