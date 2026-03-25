@@ -1196,8 +1196,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     frameSynchronizationInfo.hasFrameCompleteSignalSemaphore = true;
     frameSynchronizationInfo.hasFilterSignalSemaphore = m_enableDecodeComputeFilter;
     frameSynchronizationInfo.hasFrameConsumerSignalSemaphore = false;
+    // Always wait on the frame-complete fence before reusing a DPB slot.
+    // This fence is signaled by the producer (decoder, or filter when enabled).
     frameSynchronizationInfo.syncOnFrameCompleteFence = true;
-    frameSynchronizationInfo.syncOnFrameConsumerDoneFence = true;
     frameSynchronizationInfo.imageSpecsIndex = m_imageSpecsIndex;
 
     VkSharedBaseObj<VkVideoRefCountBase> currentVkPictureParameters;
@@ -1267,8 +1268,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         m_yuvFilter->GetAvailablePoolNode(filterCmdBuffer);
         assert(filterCmdBuffer != nullptr);
 
-        // Make sure command buffer is not in use anymore and reset
-        filterCmdBuffer->ResetCommandBuffer(true, "encoderStagedInputFence");
+        // Reset the filter command buffer state. The filter's pool node fence
+        // is not signaled by the decoder, so syncWithHost=false.
+        filterCmdBuffer->ResetCommandBuffer(false, "computeFilterPoolNode");
     }
 
     VulkanVideoFrameBuffer::ReferencedObjectsInfo referencedObjectsInfo(pCurrFrameDecParams->bitstreamData,
@@ -1378,8 +1380,14 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         assert(filterCmdBuffer != nullptr);
 
-        // videoDecodeCompleteFence is the fence that the filter is going to signal on completion when enabled.
-        videoDecodeCompleteFence     = filterCmdBuffer->GetFence();
+        // When the compute filter is enabled, the decoder does NOT signal any fence.
+        // The filter will signal the FB's frameCompleteFence instead.
+        // The decode→filter synchronization is handled by the TL semaphore
+        // (decodeCompleteTimelineValue), not a fence.
+        // The filter's built-in pool node fence (filterCmdBuffer->GetFence()) is
+        // NOT used by the decoder — it is only used by the encoder's
+        // SyncHostOnCmdBuffComplete().
+        videoDecodeCompleteFence = VK_NULL_HANDLE;
     }
 
     const uint32_t waitSemaphoreMaxCount = 3;
@@ -1457,7 +1465,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     submitInfo.signalSemaphoreInfoCount = signalSemaphoreCount;
     submitInfo.pSignalSemaphoreInfos = signalSemaphoreInfos;
 
-    assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, videoDecodeCompleteFence));
+    if (videoDecodeCompleteFence != VK_NULL_HANDLE) {
+        assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, videoDecodeCompleteFence));
+    }
     VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::DECODE,
                                                            m_currentVideoQueueIndx,
                                                            1,
@@ -1523,11 +1533,12 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
        }
     }
 
-    // For fence/sync debugging
-    if (pDecodePictureInfo->flags.fieldPic) {
-        result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &videoDecodeCompleteFence, true, gFenceTimeout);
+    // For fence/sync interlaced content.
+    // Use frameCompleteFence (the FB fence) — videoDecodeCompleteFence may be NULL HANDLE.
+    if (pDecodePictureInfo->flags.fieldPic && (frameCompleteFence != VK_NULL_HANDLE)) {
+        result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameCompleteFence, true, gFenceTimeout);
         assert(result == VK_SUCCESS);
-        result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, videoDecodeCompleteFence);
+        result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameCompleteFence);
         assert(result == VK_SUCCESS);
     }
 
@@ -1563,17 +1574,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         assert(filterCmdBuffer != nullptr);
 
-        if (m_decodePicCount == 1) {
-            fprintf(stderr, "[FILTER] Compute filter ACTIVE, "
-                    "decode signals filterCmdBuffer fence=%p, "
-                    "filter signals frameCompleteFence=%p, "
-                    "decodeTL=%llu, filterTL=%llu\n",
-                    (void*)filterCmdBuffer->GetFence(),
-                    (void*)frameCompleteFence,
-                    (unsigned long long)frameSynchronizationInfo.decodeCompleteTimelineValue,
-                    (unsigned long long)frameSynchronizationInfo.filterCompleteTimelineValue);
-        }
-
         VkSharedBaseObj<VkImageResourceView> inputImageView;
         VkSharedBaseObj<VkImageResourceView> outputImageView;
         assert(m_imageSpecsIndex.filterIn != InvalidImageTypeIdx);
@@ -1606,8 +1606,12 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         assert(filterCmdBuffer != nullptr);
 
-        // Make sure command buffer is not in use anymore and reset
-        filterCmdBuffer->ResetCommandBuffer(true, "computeFilterFence");
+        // Reset the filter command buffer state for new recording.
+        // syncWithHost=false because the filter's pool node fence is NOT used
+        // by the decoder. The pool node lifetime is protected by the shared_ptr
+        // held in the frame slot's filterPoolNode — only released after
+        // QueuePictureForDecode waits on frameCompleteFence (filter done).
+        filterCmdBuffer->ResetCommandBuffer(false, "computeFilterCmdBuf");
 
         // Begin command buffer
         VkCommandBufferBeginInfo computeBeginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr };
@@ -1632,6 +1636,11 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         const uint64_t computeCompleteTimelineValue = frameSynchronizationInfo.filterCompleteTimelineValue;
         const VkPipelineStageFlags2KHR signalComputeStageMasks = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR;
 
+        // The filter signals the FB's frameCompleteFence — this is the fence
+        // that QueuePictureForDecode waits on before reusing the DPB slot.
+        // When the filter is enabled, the decoder does NOT signal this fence
+        // (videoDecodeCompleteFence = VK_NULL_HANDLE above). Only the filter
+        // signals it, as the last producer stage.
         result = m_yuvFilter->SubmitCommandBuffer(1, // commandBufferCount
                                                   filterCmdBuffer->GetCommandBuffer(),
                                                   1, // waitSemaphoreCount
