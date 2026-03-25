@@ -3370,6 +3370,32 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
     const uint32_t workgroupHeight = (dispatchHeight + (m_workgroupSizeY - 1)) / m_workgroupSizeY;
     m_vkDevCtx->CmdDispatch(cmdBuf, workgroupWidth, workgroupHeight, 1);
 
+    // Image barrier: make compute shader writes to the output image visible
+    // to other queues (graphics for display, host for dump).
+    // NOTE: The caller (decoder) may add additional image-specific barriers
+    // (e.g., HOST_READ_BIT for LINEAR images used by CPU dump).
+    {
+        VkImageMemoryBarrier2 imgBarrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+        imgBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        imgBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+        imgBarrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        imgBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+        imgBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        imgBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        imgBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imgBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imgBarrier.image = outImageView->GetImageResource()->GetImage();
+        imgBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imgBarrier.subresourceRange.baseMipLevel = 0;
+        imgBarrier.subresourceRange.levelCount = 1;
+        imgBarrier.subresourceRange.baseArrayLayer = 0;
+        imgBarrier.subresourceRange.layerCount = 1;
+        VkDependencyInfo depInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        depInfo.imageMemoryBarrierCount = 1;
+        depInfo.pImageMemoryBarriers = &imgBarrier;
+        m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &depInfo);
+    }
+
     return VK_SUCCESS;
 }
 
