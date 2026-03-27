@@ -2273,6 +2273,20 @@ static void GenConvertYCbCrFormat(std::stringstream& shaderStr,
         "}\n\n";
 }
 
+VkFormat VulkanFilterYuvCompute::GetOutputFormat(FilterType filterType, VkFormat inputFormat, VkFormat outputFormat)
+{
+    if (filterType == YCBCR2RGBA) {
+        const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(inputFormat);
+        if (mpInfo == nullptr)
+            return VK_FORMAT_UNDEFINED;
+        if (mpInfo->planesLayout.bpp == YCBCRA_8BPP)
+            return VK_FORMAT_R8G8B8A8_UNORM;
+        // 10/12/16-bit YCbCr -> RGBA16
+        return VK_FORMAT_R16G16B16A16_UNORM;
+    }
+    return outputFormat;
+}
+
 size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
 {
     // The compute filter uses two or three input images as separate planes
@@ -2347,7 +2361,7 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
             (samplerYcbcrConversionCreateInfo.ycbcrModel == VK_SAMPLER_YCBCR_MODEL_CONVERSION_RGB_IDENTITY) ?
                     YCBCR_COLOR_RANGE_NATURAL : (YCBCR_COLOR_RANGE)samplerYcbcrConversionCreateInfo.ycbcrRange);
     shaderStr <<
-        "vec3 normalizeYCbCr(uvec3 yuv) {\n"
+        "vec3 normalizeYCbCr(vec3 yuv) {\n"
         "    vec3 yuvNorm;\n";
     yCbCrNormalizeColorRange.NormalizeYCbCrString(shaderStr);
     shaderStr <<
@@ -2355,51 +2369,22 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
         "}\n"
         "\n";
 
-    // 6. Generate function to fetch YCbCr components from images
-    shaderStr <<
-        "vec3 fetchYCbCrFromImage(ivec3 pos) {\n"
-        "    // Fetch from the texture.\n"
-        "    float Y = imageLoad(inputImageY, pos).r;\n"
-        "    // For subsampled formats, divide by 2\n"
-        "    vec2 CbCr = imageLoad(inputImageCbCr, ivec3(pos.xy/2, pos.z)).rg;\n"
-        "    return vec3(Y, CbCr);\n"
-        "}\n"
-        "\n";
-
-    // 7. Generate function to write RGBA to output image
-    shaderStr <<
-        "void writeRgbaToImage(vec4 rgba, ivec3 pos) {\n"
-        "    imageStore(outputImageRGB, pos, rgba);\n"
-        "}\n"
-        "\n";
-
-    // 8. Main function
+    // 6. Main function
     shaderStr <<
         "void main()\n"
         "{\n";
-
-    // 9. Handle position calculation
     GenHandleImagePosition(shaderStr);
-
-    // 10. Calculate source position with replication if enabled
     GenHandleSourcePositionWithReplicate(shaderStr, m_enableRowAndColumnReplication);
-
-    // 11. YCbCr to RGB conversion
     shaderStr <<
-        "    // Calculate position with layer\n"
-        "    ivec3 srcPos3D = ivec3(srcPos, pushConstants.srcLayer);\n"
-        "    ivec3 dstPos3D = ivec3(pos, pushConstants.dstLayer);\n"
+        "    // Fetch from the texture.\n"
+        "    float Y = imageLoad(inputImageY, ivec3(srcPos, pushConstants.srcLayer)).r;\n"
+        "    // TODO: it is /2 only for sub-sampled formats\n"
+        "    vec2 CbCr = imageLoad(inputImageCbCr, ivec3(srcPos/2, pushConstants.srcLayer)).rg;\n"
         "\n"
-        "    // Fetch YCbCr components\n"
-        "    vec3 ycbcr = fetchYCbCrFromImage(srcPos3D);\n"
-        "\n"
-        "    // Process: normalize, shift, and convert to RGB\n"
-        "    ycbcr = shiftCbCr(normalizeYCbCr(ycbcr));\n"
-        "    vec3 rgb = convertYCbCrToRgb(ycbcr);\n"
-        "\n"
-        "    // Write final RGBA result\n"
-        "    vec4 rgba = vec4(rgb, 1.0);\n"
-        "    writeRgbaToImage(rgba, dstPos3D);\n"
+        "    vec3 ycbcr = shiftCbCr(normalizeYCbCr(vec3(Y, CbCr)));\n"
+        "    vec4 rgba = vec4(convertYCbCrToRgb(ycbcr),1.0);\n"
+        "    // Store it back.\n"
+        "    imageStore(outputImageRGB, ivec3(pos, pushConstants.dstLayer), rgba);\n"
         "}\n";
 
     computeShader = shaderStr.str();
@@ -3384,6 +3369,32 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
     const uint32_t workgroupWidth = (dispatchWidth + (m_workgroupSizeX - 1)) / m_workgroupSizeX;
     const uint32_t workgroupHeight = (dispatchHeight + (m_workgroupSizeY - 1)) / m_workgroupSizeY;
     m_vkDevCtx->CmdDispatch(cmdBuf, workgroupWidth, workgroupHeight, 1);
+
+    // Image barrier: make compute shader writes to the output image visible
+    // to other queues (graphics for display, host for dump).
+    // NOTE: The caller (decoder) may add additional image-specific barriers
+    // (e.g., HOST_READ_BIT for LINEAR images used by CPU dump).
+    {
+        VkImageMemoryBarrier2 imgBarrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+        imgBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        imgBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+        imgBarrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        imgBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+        imgBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        imgBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        imgBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imgBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imgBarrier.image = outImageView->GetImageResource()->GetImage();
+        imgBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imgBarrier.subresourceRange.baseMipLevel = 0;
+        imgBarrier.subresourceRange.levelCount = 1;
+        imgBarrier.subresourceRange.baseArrayLayer = 0;
+        imgBarrier.subresourceRange.layerCount = 1;
+        VkDependencyInfo depInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        depInfo.imageMemoryBarrierCount = 1;
+        depInfo.pImageMemoryBarriers = &imgBarrier;
+        m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &depInfo);
+    }
 
     return VK_SUCCESS;
 }

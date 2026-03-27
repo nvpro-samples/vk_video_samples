@@ -55,8 +55,7 @@ public:
                           bool outputcrcPerFrame,
                           const char* crcOutputFile,
                           const std::vector<uint32_t>& crcInitValue)
-        : m_refCount(0)
-        , m_outputFile(nullptr)
+        : m_outputFile(nullptr)
         , m_pLinearMemory(nullptr)
         , m_allocationSize(0)
         , m_firstFrame(true)
@@ -108,18 +107,6 @@ public:
         }
     }
 
-    virtual int32_t AddRef() override {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release() override {
-        uint32_t ret = --m_refCount;
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
-    }
-
     virtual void SetFrameRate(uint32_t frameRateNum, uint32_t frameRateDen) override {
         if (frameRateNum != 0 && frameRateDen != 0) {
             m_frameRateNum = frameRateNum;
@@ -145,12 +132,38 @@ public:
 
         assert((pFrame->displayWidth >= 0) && (pFrame->displayHeight >= 0));
 
-        WaitAndGetStatus(vkDevCtx,
-                        *vkDevCtx,
-                        pFrame->frameCompleteFence,
-                        pFrame->queryPool,
-                        pFrame->startQueryId,
-                        pFrame->pictureIndex, false, "frameCompleteFence");
+        // Wait for decode+filter to complete using timeline semaphore.
+        // The TL semaphore value is stable (tied to decode order, not to a
+        // reusable fence), so it cannot be reset by slot recycling.
+        if (pFrame->frameCompleteSemaphore != VK_NULL_HANDLE &&
+            pFrame->frameCompleteDoneSemValue > 0) {
+            uint64_t preWaitValue = 0;
+            vkDevCtx->GetSemaphoreCounterValue(*vkDevCtx, pFrame->frameCompleteSemaphore, &preWaitValue);
+            VkSemaphoreWaitInfo waitInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+                                             nullptr, 0, 1,
+                                             &pFrame->frameCompleteSemaphore,
+                                             &pFrame->frameCompleteDoneSemValue };
+            VkResult semResult = vkDevCtx->WaitSemaphores(*vkDevCtx, &waitInfo,
+                                                           10ULL * 1000ULL * 1000ULL * 1000ULL /* 10s */);
+            if (semResult != VK_SUCCESS) {
+                uint64_t postWaitValue = 0;
+                vkDevCtx->GetSemaphoreCounterValue(*vkDevCtx, pFrame->frameCompleteSemaphore, &postWaitValue);
+                fprintf(stderr, "ERROR: Timeline semaphore wait for frame %d (displayOrder=%lld) "
+                        "failed with result %d (expected TL=%llu, before=%llu, after=%llu)\n",
+                        pFrame->pictureIndex, (long long)pFrame->displayOrder,
+                        semResult, (unsigned long long)pFrame->frameCompleteDoneSemValue,
+                        (unsigned long long)preWaitValue, (unsigned long long)postWaitValue);
+            }
+        } else if (pFrame->frameCompleteFence != VK_NULL_HANDLE) {
+            // Fallback to fence if no TL semaphore available
+            WaitAndGetStatus(vkDevCtx,
+                            *vkDevCtx,
+                            pFrame->frameCompleteFence,
+                            pFrame->queryPool,
+                            pFrame->startQueryId,
+                            pFrame->pictureIndex, false, "frameCompleteFence");
+        }
+        // else: both semaphore and fence are null — caller (dump pool) already handled sync
 
         VkFormat format = imageResource->GetImageCreateInfo().format;
         const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(format);
@@ -176,11 +189,26 @@ public:
             }
         }
 
+        int64_t writeResult;
         if (m_outputy4m) {
-            return WriteFrameToFileY4M(0, usedBufferSize, pFrame->displayWidth, pFrame->displayHeight, mpInfo);
+            writeResult = WriteFrameToFileY4M(0, usedBufferSize, pFrame->displayWidth, pFrame->displayHeight, mpInfo);
         } else {
-            return WriteDataToFile(0, usedBufferSize);
+            writeResult = WriteDataToFile(0, usedBufferSize);
         }
+
+        // Signal consumer-done timeline semaphore so the decoder knows
+        // this frame slot can be safely reused.
+        if (pFrame->consumerCompleteSemaphore != VK_NULL_HANDLE &&
+            pFrame->frameConsumerDoneSemValue > 0) {
+            VkSemaphoreSignalInfo signalInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO,
+                                                  nullptr,
+                                                  pFrame->consumerCompleteSemaphore,
+                                                  pFrame->frameConsumerDoneSemValue };
+            vkDevCtx->SignalSemaphore(*vkDevCtx, &signalInfo);
+            pFrame->hasConsummerSignalSemaphore = true;
+        }
+
+        return writeResult;
     }
 
     bool hasExtension(const char* fileName, const char* extension) {
@@ -461,7 +489,6 @@ private:
     }
 
 private:
-    std::atomic<int32_t>    m_refCount;
     FILE*    m_outputFile;
     uint8_t* m_pLinearMemory;
     size_t   m_allocationSize;
@@ -499,6 +526,6 @@ VkResult VkVideoFrameOutput::Create(const char* fileName,
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
-    frameToFile = newFrameToFile;
+    frameToFile.reset(newFrameToFile);
     return VK_SUCCESS;
 }

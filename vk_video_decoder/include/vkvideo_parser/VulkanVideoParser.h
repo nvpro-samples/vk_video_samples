@@ -72,7 +72,13 @@ public:
                                     size_t* pParsedBytes,
                                     bool doPartialParsing = false) = 0;
 
+    virtual void Deinitialize() = 0;
+
 protected:
+public:
+    // Do NOT call Deinitialize() here — it's pure virtual and the derived
+    // class is already destroyed by the time the base destructor runs.
+    // Each derived class destructor must call its own Deinitialize().
     virtual ~IVulkanVideoParser() { }
 };
 

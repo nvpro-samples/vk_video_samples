@@ -188,6 +188,7 @@ struct av1_seq_param_s : public StdVideoPictureParametersSet, public StdVideoAV1
         clientObject = client;
         return !!clientObject;
     }
+    void ReleaseClientObject() override { client = nullptr; }
 
     explicit av1_seq_param_s(uint64_t updateSequenceCount)
         : StdVideoPictureParametersSet(TYPE_AV1_SPS, AV1_SPS_TYPE, m_refClassId, updateSequenceCount),

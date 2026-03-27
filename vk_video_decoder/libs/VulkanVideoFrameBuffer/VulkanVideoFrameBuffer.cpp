@@ -286,7 +286,6 @@ public:
 
     VkVideoFrameBuffer(const VulkanDeviceContext* vkDevCtx)
         : m_vkDevCtx(vkDevCtx)
-        , m_refCount(0)
         , m_displayQueueMutex()
         , m_perFrameDecodeImageSet()
         , m_displayFrames()
@@ -298,9 +297,6 @@ public:
         , m_debug()
     {
     }
-
-    virtual int32_t AddRef();
-    virtual int32_t Release();
 
     VkResult CreateVideoQueries(uint32_t numSlots, const VulkanDeviceContext* vkDevCtx, const VkVideoProfileInfoKHR* pDecodeProfile)
     {
@@ -421,26 +417,24 @@ public:
     {
         assert((uint32_t)picId < m_perFrameDecodeImageSet.size());
 
+        // 1. Producer fence: wait for decode/filter to finish with this slot
         if (pFrameSynchronizationInfo->syncOnFrameCompleteFence == 1) {
-            // Check here that the frame for this entry (for this command buffer) has already completed decoding.
-            // Otherwise we may step over a hot command buffer by starting a new recording.
-            // This fence wait should be NOP in 99.9% of the cases, because the decode queue is deep enough to
-            // ensure the frame has already been completed.
             assert(m_perFrameDecodeImageSet[picId].m_frameCompleteFence != VK_NULL_HANDLE);
+
             vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameCompleteFence,
                                   true, "frameCompleteFence");
         }
 
-        if ((pFrameSynchronizationInfo->syncOnFrameConsumerDoneFence  == 1) &&
-             (m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence == 1) &&
+        // 2. Consumer fence: wait for graphics presentation to finish reading
+        if ((m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence == 1) &&
              (m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence != VK_NULL_HANDLE)) {
 
             vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence,
                                   true, "frameConsumerDoneFence");
-
+            m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence = false;
         }
 
-        // Wait for all external consumers (cross-process) to release this slot
+        // 3. External consumer TL semaphores (dump pool, presenter)
         for (uint32_t c = 0; c < m_perFrameDecodeImageSet.m_numExternalConsumers; c++) {
             if (m_perFrameDecodeImageSet.m_externalConsumerSemaphores[c] != VK_NULL_HANDLE) {
                 uint64_t waitValue = m_perFrameDecodeImageSet[picId].m_externalConsumerDoneValues[c];
@@ -450,6 +444,10 @@ public:
                     waitInfo.pSemaphores = &m_perFrameDecodeImageSet.m_externalConsumerSemaphores[c];
                     waitInfo.pValues = &waitValue;
                     m_vkDevCtx->WaitSemaphores(*m_vkDevCtx, &waitInfo, UINT64_MAX);
+                } else {
+                    fprintf(stderr, " [External consumer %d: value=%llu of sem %llx SKIP]", c,
+                            (unsigned long long)waitValue,
+                            (unsigned long long)m_perFrameDecodeImageSet.m_externalConsumerSemaphores[c]);
                 }
             }
         }
@@ -458,11 +456,11 @@ public:
         m_perFrameDecodeImageSet[picId].m_picDispInfo = *pDecodePictureInfo;
         m_perFrameDecodeImageSet[picId].m_inDecodeQueue = true;
         m_perFrameDecodeImageSet[picId].m_imageSpecsIndex = pFrameSynchronizationInfo->imageSpecsIndex;
-        m_perFrameDecodeImageSet[picId].stdPps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdPps);
-        m_perFrameDecodeImageSet[picId].stdSps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdSps);
-        m_perFrameDecodeImageSet[picId].stdVps = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pStdVps);
-        m_perFrameDecodeImageSet[picId].bitstreamData = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pBitstreamData);
-        m_perFrameDecodeImageSet[picId].filterPoolNode = const_cast<VkVideoRefCountBase*>(pReferencedObjectsInfo->pFilterPoolNode);
+        m_perFrameDecodeImageSet[picId].stdPps = pReferencedObjectsInfo->stdPps;
+        m_perFrameDecodeImageSet[picId].stdSps = pReferencedObjectsInfo->stdSps;
+        m_perFrameDecodeImageSet[picId].stdVps = pReferencedObjectsInfo->stdVps;
+        m_perFrameDecodeImageSet[picId].bitstreamData = pReferencedObjectsInfo->bitstreamData;
+        m_perFrameDecodeImageSet[picId].filterPoolNode = pReferencedObjectsInfo->filterPoolNode;
 
         if (m_debug) {
             std::cout << "==> Queue Decode Picture picIdx: " << (uint32_t)picId
@@ -475,11 +473,6 @@ public:
             if (pFrameSynchronizationInfo->frameCompleteFence) {
                 m_perFrameDecodeImageSet[picId].m_hasFrameCompleteSignalFence = true;
             }
-        }
-
-        if (m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence) {
-            pFrameSynchronizationInfo->frameConsumerDoneFence = m_perFrameDecodeImageSet[picId].m_frameConsumerDoneFence;
-            m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence = false;
         }
 
         if (pFrameSynchronizationInfo->hasFrameCompleteSignalSemaphore) {
@@ -688,6 +681,10 @@ public:
         return (result == VK_SUCCESS) ? fd : -1;
     }
 
+    virtual VkSemaphore GetConsumerCompleteSemaphore() const override {
+        return m_perFrameDecodeImageSet.m_consumerCompleteSemaphore;
+    }
+
     virtual int32_t GetImageResourcesByIndex(uint32_t numResources,
                                              const int8_t* referenceSlotIndexes,
                                              uint8_t imageTypeIdx,
@@ -837,7 +834,6 @@ public:
 
 private:
     const VulkanDeviceContext* m_vkDevCtx;
-    std::atomic<int32_t>     m_refCount;
     mutable std::mutex       m_displayQueueMutex;
     NvPerFrameDecodeImageSet m_perFrameDecodeImageSet;
     std::queue<uint8_t>      m_displayFrames;
@@ -861,22 +857,6 @@ VkResult VulkanVideoFrameBuffer::Create(const VulkanDeviceContext* vkDevCtx,
         return VK_SUCCESS;
     }
     return VK_ERROR_OUT_OF_HOST_MEMORY;
-}
-
-int32_t VkVideoFrameBuffer::AddRef()
-{
-    return ++m_refCount;
-}
-
-int32_t VkVideoFrameBuffer::Release()
-{
-    uint32_t ret;
-    ret = --m_refCount;
-    // Destroy the device if refcount reaches zero
-    if (ret == 0) {
-        delete this;
-    }
-    return ret;
 }
 
 VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDevCtx,
@@ -927,8 +907,13 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
             uint32_t baseArrayLayer = imageArrayParent ? imageIndex : 0;
             VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, baseArrayLayer, 1 };
             if (pImageSpec->ycbcrConversion != VK_NULL_HANDLE) {
+                // Pass storage usage as planeUsageOverride so per-plane storage
+                // views are created alongside the combined sampled view.
+                VkImageUsageFlags planeUsage =
+                    (pImageSpec->createInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT)
+                        ? VK_IMAGE_USAGE_STORAGE_BIT : 0;
                 result = VkImageResourceView::Create(vkDevCtx, imageResource,
-                                                     subresourceRange, 0,
+                                                     subresourceRange, planeUsage,
                                                      pImageSpec->ycbcrConversion,
                                                      pImageSpec->createInfo.usage,
                                                      m_imageViewState[pImageSpec->imageTypeIdx].view);

@@ -32,21 +32,6 @@ public:
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            VkSharedBaseObj<VulkanFrame>& frameProcessor);
 
-    virtual int32_t AddRef()
-    {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --m_refCount;
-        // Destroy the device if ref-count reaches zero
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
-    }
-
     virtual int AttachQueue(VkSharedBaseObj<VkVideoRefCountBase>& videoQueue);
 
     virtual int AttachShell(const Shell& sh);
@@ -78,10 +63,10 @@ public:
 
 private:
     VulkanFrame(const VulkanDeviceContext* vkDevCtx);
+public:
     virtual ~VulkanFrame();
 
 private:
-    std::atomic<int32_t>                  m_refCount;
     const VulkanDeviceContext*            m_vkDevCtx;
     // Decoder specific members
     VkSharedBaseObj<VkVideoQueue<FrameDataType>> m_videoQueue;
@@ -103,6 +88,13 @@ public:
     VkExtent2D                            m_extent;
     VkViewport                            m_viewport;
     VkRect2D                              m_scissor;
+
+    // Presentation consumer's dedicated TL semaphore, registered as an external
+    // consumer via AddExternalConsumer(). QueuePictureForDecode waits on this
+    // before reusing a DPB slot, ensuring the graphics pipeline has finished
+    // reading the decoded frame. Signaled by the graphics queue submit.
+    VkSemaphore                           m_presenterReleaseSemaphore;
+    int32_t                               m_presenterConsumerIndex;
 };
 
 #endif // _VKCODECUTILS_VULKANFRAME_H_

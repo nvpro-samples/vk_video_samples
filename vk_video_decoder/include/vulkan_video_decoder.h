@@ -66,30 +66,40 @@ public:
 };
 
 class VkWsiDisplay;
+class VulkanDeviceContext;
 /**
  * @brief Creates an instance of the Vulkan video decoder, returning a reference-counted
  *        VulkanVideoDecoder interface.
  *
  * This function instantiates a video decoder and hands back a reference-counted interface
  * (`VulkanVideoDecoder`) via the `vulkanVideoDecoder` parameter. The video decoder uses Vulkan
- * for video processing. The client may optionally provide existing Vulkan handles for
- * `VkInstance`, `VkPhysicalDevice`, and `VkDevice` to share resources with other parts of the
- * application. If the client does not require sharing, any of these parameters can be passed as
- * `VK_NULL_HANDLE`.
+ * for video processing.
  *
- * @param[in]  vkInstance         Optional Vulkan instance handle. If not required, pass
- *                                `VK_NULL_HANDLE`.
- * @param[in]  vkPhysicalDevice   Optional Vulkan physical device handle. If not required, pass
- *                                `VK_NULL_HANDLE`. If vkPhysicalDevice is not `VK_NULL_HANDLE` then
- *                                vkInstance must be a valid Vulkan instance handle.
- * @param[in]  vkDevice           Optional Vulkan device handle. If not required, pass
- *                                `VK_NULL_HANDLE`. If vkDevice is not `VK_NULL_HANDLE` then
- *                                vkPhysicalDevice must be a valid Vulkan physical device handle.
+ * The caller may optionally provide a fully initialized VulkanDeviceContext via `pVkDevCtxt`.
+ * When provided (non-null), the decoder library uses the caller's device context directly —
+ * sharing the Vulkan loader dispatch table, device, queues, and all state. This avoids creating
+ * a second Vulkan loader instance and the dispatch table mismatch that results from passing raw
+ * handles created through a different loader.
+ *
+ * When `pVkDevCtxt` is null, the library creates its own VulkanDeviceContext internally,
+ * optionally seeded with the provided `vkInstance`, `vkPhysicalDevice`, and `vkDevice` handles.
+ *
+ * @param[in]  pVkDevCtxt         Optional pointer to a caller-owned VulkanDeviceContext. If
+ *                                non-null, the library uses this context directly and the raw
+ *                                handle parameters (vkInstance, vkPhysicalDevice, vkDevice) are
+ *                                ignored. The caller must keep this context alive for the
+ *                                lifetime of the decoder.
+ * @param[in]  vkInstance         Optional Vulkan instance handle (ignored if pVkDevCtxt is set).
+ *                                Pass `VK_NULL_HANDLE` if not required.
+ * @param[in]  vkPhysicalDevice   Optional Vulkan physical device handle (ignored if pVkDevCtxt
+ *                                is set). Pass `VK_NULL_HANDLE` if not required.
+ * @param[in]  vkDevice           Optional Vulkan device handle (ignored if pVkDevCtxt is set).
+ *                                Pass `VK_NULL_HANDLE` if not required.
  * @param[in]  videoStreamDemuxer A stream processor that abstracts elementary streams or container
  *                                formats (e.g., MPEG, Matroska). This object will be used to
  *                                feed data into the decoder.
+ * @param[in]  frameToFile        Optional frame output handler for writing decoded frames to file.
  * @param[in]  pWsiDisplay        The display device context, if display is required, otherwise a nullptr.
- *
  * @param[in]  argc               The number of configuration arguments passed for decoder setup.
  * @param[in]  argv               An array of null-terminated strings, containing the decoder
  *                                configuration options. All possible arguments are documented
@@ -100,12 +110,10 @@ class VkWsiDisplay;
  * @return
  * - `VK_SUCCESS` on success.
  * - Appropriate Vulkan error codes if creation or initialization fails.
- *
- * @note If `vkInstance`, `vkPhysicalDevice`, or `vkDevice` are provided, they must remain valid
- *       for the duration of the decoder's lifetime if resources are shared with them.
  */
-extern "C" VK_VIDEO_DECODER_EXPORT
-VkResult CreateVulkanVideoDecoder(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
+VK_VIDEO_DECODER_EXPORT
+VkResult CreateVulkanVideoDecoder(VulkanDeviceContext* pVkDevCtxt,
+                                  VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
                                   VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
                                   VkSharedBaseObj<VkVideoFrameOutput>& frameToFile,
                                   const VkWsiDisplay* pWsiDisplay,

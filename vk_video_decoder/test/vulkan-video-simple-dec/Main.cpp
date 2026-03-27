@@ -17,6 +17,7 @@
 #include <iostream>
 
 #include "VkCodecUtils/DecoderConfig.h"
+#include "VkVSCommon.h"
 #include "vulkan_video_decoder.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkDecoderUtils/VideoStreamDemuxer.h"
@@ -108,7 +109,7 @@ int main(int argc, const char** argv)
     if (!configResult && (decoderConfig.help == true)) {
         return 0;
     } else if (!configResult) {
-        return -1;
+        return EXIT_FAILURE;
     }
 
     switch (decoderConfig.forceParserType)
@@ -125,7 +126,7 @@ int main(int argc, const char** argv)
             std::cout << "Simple decoder does not support demuxing "
                       << "and the decoder type must be set with --codec <codec type>"
                       << std::endl;
-            return -1;
+            return EXIT_FAILURE;
     }
 
     VkSharedBaseObj<VideoStreamDemuxer> videoStreamDemuxer;
@@ -153,12 +154,13 @@ int main(int argc, const char** argv)
                                           frameToFile);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "Error creating output file %s\n", decoderConfig.outputFileName.c_str());
-            return -1;
+            return EXIT_FAILURE;
         }
     }
 
     VkSharedBaseObj<VulkanVideoDecoder> vulkanVideoDecoder;
-    result = CreateVulkanVideoDecoder(VK_NULL_HANDLE,
+    result = CreateVulkanVideoDecoder(nullptr,
+                                      VK_NULL_HANDLE,
                                       VK_NULL_HANDLE,
                                       VK_NULL_HANDLE,
                                       videoStreamDemuxer,
@@ -168,7 +170,7 @@ int main(int argc, const char** argv)
                                       vulkanVideoDecoder);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "Error creating video decoder\n");
-        return -1;
+        return IsVideoUnsupportedResult(result) ? VVS_EXIT_UNSUPPORTED : EXIT_FAILURE;
     }
 
     DumpDecoderStreamInfo(vulkanVideoDecoder);

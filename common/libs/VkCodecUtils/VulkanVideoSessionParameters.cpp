@@ -16,26 +16,9 @@
 
 #include "VulkanVideoSessionParameters.h"
 
-int32_t VulkanVideoSessionParameters::AddRef()
-{
-    return ++m_refCount;
-}
-
-int32_t VulkanVideoSessionParameters::Release()
-{
-    uint32_t ret;
-    ret = --m_refCount;
-    // Destroy the device if refcount reaches zero
-    if (ret == 0) {
-        delete this;
-    }
-    return ret;
-}
-
 VulkanVideoSessionParameters::VulkanVideoSessionParameters(const VulkanDeviceContext* vkDevCtx,
                                                            VkVideoSessionParametersKHR sessionParameters)
-    :  m_refCount(0)
-    ,  m_vkDevCtx(vkDevCtx)
+    :  m_vkDevCtx(vkDevCtx)
     ,  m_videoSession()
     ,  m_sessionParameters(sessionParameters)
 {

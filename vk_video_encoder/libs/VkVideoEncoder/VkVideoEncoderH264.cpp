@@ -38,8 +38,9 @@ VkResult CreateVideoEncoderH264(const VulkanDeviceContext* vkDevCtx,
 
 VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& encoderConfig)
 {
-    m_encoderConfig = encoderConfig->GetEncoderConfigh264();
-    assert(m_encoderConfig);
+    auto* h264Config = encoderConfig->GetEncoderConfigh264();
+    assert(h264Config);
+    m_encoderConfig = std::shared_ptr<EncoderConfigH264>(encoderConfig, h264Config);
 
     if (m_encoderConfig->codec != VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) {
         return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;

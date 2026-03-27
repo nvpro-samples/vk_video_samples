@@ -175,6 +175,22 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     m_startFrame = startFrame;
     m_maxFrameCount = maxFrameCount;
 
+    // Initialize threaded dump pool if file output is enabled
+    if (!!m_frameToFile && m_vkVideoFrameBuffer) {
+        result = m_dumpPool.init(m_vkDevCtx, *m_vkDevCtx, 4 /* writerThreads */);
+        if (result == VK_SUCCESS) {
+            // Register the dump pool's own TL semaphore as an external consumer
+            // so QueuePictureForDecode waits for the dump to release each frame
+            // before reusing the slot. This is the same pattern used by
+            // cross-process presenters in TRV.
+            VkSemaphore dumpReleaseSem = m_dumpPool.getReleaseSemaphore();
+            if (dumpReleaseSem != VK_NULL_HANDLE) {
+                m_vkVideoFrameBuffer->AddExternalConsumer(
+                    dumpReleaseSem, DecodeFrameBufferIf::SEM_SYNC_TYPE_IDX_DISPLAY);
+            }
+        }
+    }
+
     return 0;
 }
 
@@ -250,6 +266,12 @@ int32_t VulkanVideoProcessor::GetBitDepth()  const
 
 void VulkanVideoProcessor::Deinit()
 {
+    // Flush and shutdown the dump pool before destroying the decoder
+    if (m_dumpPool.isInitialized()) {
+        m_dumpPool.flush();
+        m_dumpPool.shutdown();
+    }
+
     m_vkParser = nullptr;
     m_vkVideoFrameBuffer = nullptr;
     m_vkVideoDecoder = nullptr;
@@ -331,8 +353,9 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
         "GenericFilm",
         "BT2020",
     };
-    assert(videoFormat->video_signal_description.color_primaries < sizeof(ColorPrimaries)/sizeof(ColorPrimaries[0]));
-    const char* pColorPrimaries = ColorPrimaries[videoFormat->video_signal_description.color_primaries];
+    const char* pColorPrimaries = (videoFormat->video_signal_description.color_primaries < sizeof(ColorPrimaries)/sizeof(ColorPrimaries[0]))
+        ? ColorPrimaries[videoFormat->video_signal_description.color_primaries]
+        : "Unknown";
     if (dumpData) {
         std::cout << "ColorPrimaries : " << pColorPrimaries << std::endl;
     }
@@ -357,8 +380,9 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
         "ST2084",
         "ST428_1",
     };
-    assert(videoFormat->video_signal_description.transfer_characteristics < sizeof(TransferCharacteristics)/sizeof(TransferCharacteristics[0]));
-    const char* pTransferCharacteristics = TransferCharacteristics[videoFormat->video_signal_description.transfer_characteristics];
+    const char* pTransferCharacteristics = (videoFormat->video_signal_description.transfer_characteristics < sizeof(TransferCharacteristics)/sizeof(TransferCharacteristics[0]))
+        ? TransferCharacteristics[videoFormat->video_signal_description.transfer_characteristics]
+        : "Unknown";
     if (dumpData) {
         std::cout << "TransferCharacteristics : " << pTransferCharacteristics << std::endl;
     }
@@ -376,8 +400,9 @@ void VulkanVideoProcessor::DumpVideoFormat(const VkParserDetectedVideoFormat* vi
         "BT2020_NCL",
         "BT2020_CL",
     };
-    assert(videoFormat->video_signal_description.matrix_coefficients < sizeof(MatrixCoefficients)/sizeof(MatrixCoefficients[0]));
-    const char* pMatrixCoefficients = MatrixCoefficients[videoFormat->video_signal_description.matrix_coefficients];
+    const char* pMatrixCoefficients = (videoFormat->video_signal_description.matrix_coefficients < sizeof(MatrixCoefficients)/sizeof(MatrixCoefficients[0]))
+        ? MatrixCoefficients[videoFormat->video_signal_description.matrix_coefficients]
+        : "Unknown";
     if (dumpData) {
         std::cout << "MatrixCoefficients : " << pMatrixCoefficients << std::endl;
     }
@@ -517,6 +542,57 @@ size_t VulkanVideoProcessor::OutputFrameToFile(VulkanDecodedFrame* pFrame)
         m_frameToFile->SetFrameRate(pVideoFormat->frame_rate.numerator, pVideoFormat->frame_rate.denominator);
     }
 
+    // If the dump pool is initialized, queue async — return immediately
+    if (m_dumpPool.isInitialized()) {
+
+        VkVideoDumpFrame dumpFrame;
+        dumpFrame.pictureIndex = pFrame->pictureIndex;
+        dumpFrame.displayOrder = pFrame->displayOrder;
+        dumpFrame.decodeOrder = pFrame->decodeOrder;
+        dumpFrame.displayWidth = pFrame->displayWidth;
+        dumpFrame.displayHeight = pFrame->displayHeight;
+        dumpFrame.forwardSemaphore = pFrame->frameCompleteSemaphore;
+        dumpFrame.forwardWaitValue = pFrame->frameCompleteDoneSemValue;
+        dumpFrame.releaseSemaphore = m_dumpPool.getReleaseSemaphore();
+        dumpFrame.releaseSignalValue = DecodeFrameBufferIf::GetSemaphoreValue(
+            DecodeFrameBufferIf::SEM_SYNC_TYPE_IDX_DISPLAY, pFrame->displayOrder);
+        dumpFrame.frameCompleteFence = pFrame->frameCompleteFence;
+        dumpFrame.queryPool = pFrame->queryPool;
+        dumpFrame.startQueryId = pFrame->startQueryId;
+
+        // NOTE: Do NOT set pFrame->hasConsummerSignalSemaphore here.
+        // The dump pool uses its own dedicated release TL semaphore registered
+        // via AddExternalConsumer(), which is waited on in QueuePictureForDecode's
+        // external consumer loop (lines 444-456). Setting hasConsummerSignalSemaphore
+        // would make the decode submit also wait on the shared consumerCompleteSemaphore,
+        // which nobody signals in the dump-only (--noPresent) path, causing deadlock.
+
+        // Capture what the worker thread needs for writing
+        // Use shared_ptr to VkVideoFrameOutput + VulkanDeviceContext
+        VkSharedBaseObj<VkVideoFrameOutput> frameToFile = m_frameToFile;
+        const VulkanDeviceContext* vkDevCtx = m_vkDevCtx;
+
+        // The write callback captures the frame data needed by OutputFrame.
+        // We make a copy of the VulkanDecodedFrame so the worker thread has
+        // its own data independent of the main thread's frame slot.
+        VulkanDecodedFrame frameCopy = *pFrame;
+        // Clear sync primitives on the copy — the pool worker already waited
+        // on the forward TL semaphore and will signal the release semaphore.
+        frameCopy.frameCompleteSemaphore = VK_NULL_HANDLE;
+        frameCopy.frameCompleteDoneSemValue = 0;
+        frameCopy.consumerCompleteSemaphore = VK_NULL_HANDLE;
+        frameCopy.frameConsumerDoneSemValue = 0;
+        frameCopy.frameCompleteFence = VK_NULL_HANDLE;
+
+        dumpFrame.writeCallback = [frameToFile, vkDevCtx, frameCopy](const VkVideoDumpFrame&) mutable -> int64_t {
+            return (int64_t)frameToFile->OutputFrame(&frameCopy, vkDevCtx);
+        };
+
+        m_dumpPool.queueFrame(std::move(dumpFrame));
+        return 0; // Non-blocking, return immediately
+    }
+
+    // Fallback: synchronous output (no dump pool)
     return m_frameToFile->OutputFrame(pFrame, m_vkDevCtx);
 }
 

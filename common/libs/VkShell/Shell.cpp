@@ -26,8 +26,7 @@
 #include "Shell.h"
 
 Shell::Shell(const VulkanDeviceContext* devCtx, const Configuration& configuration)
-    : m_refCount(0)
-    , m_settings(configuration)
+    : m_settings(configuration)
     , m_frameProcessor()
     , m_ctx(devCtx) { }
 
@@ -466,14 +465,14 @@ VkResult Shell::Create(const VulkanDeviceContext* vkDevCtx,
                        VkSharedBaseObj<Shell>& displayShell)
 {
     if (configuration.m_directToDisplayMode) {
-        displayShell = new ShellDirect(vkDevCtx, configuration);
+        displayShell = std::make_shared<ShellDirect>(vkDevCtx, configuration);
     } else {
 #if defined(VK_USE_PLATFORM_XCB_KHR)
-        displayShell = new ShellXcb(vkDevCtx, configuration);
+        displayShell = std::make_shared<ShellXcb>(vkDevCtx, configuration);
 #elif defined(VK_USE_PLATFORM_WAYLAND_KHR)
-        displayShell = new ShellWayland(vkDevCtx, configuration);
+        displayShell = std::make_shared<ShellWayland>(vkDevCtx, configuration);
 #elif defined(VK_USE_PLATFORM_WIN32_KHR)
-        displayShell = new ShellWin32(vkDevCtx, configuration);
+        displayShell = std::make_shared<ShellWin32>(vkDevCtx, configuration);
 #endif
     }
 

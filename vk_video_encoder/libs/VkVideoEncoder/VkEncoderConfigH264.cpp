@@ -35,6 +35,24 @@ int EncoderConfigH264::DoParseArguments(int argc, const char* argv[])
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
+        } else if (args[i] == "--profile") {
+            if (++i >= argc) {
+                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            std::string profileStr = args[i];
+            if (profileStr == "baseline" || profileStr == "0") {
+                profileIdc = STD_VIDEO_H264_PROFILE_IDC_BASELINE;
+            } else if (profileStr == "main" || profileStr == "1") {
+                profileIdc = STD_VIDEO_H264_PROFILE_IDC_MAIN;
+            } else if (profileStr == "high" || profileStr == "2") {
+                profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH;
+            } else if (profileStr == "high444" || profileStr == "3") {
+                profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE;
+            } else {
+                fprintf(stderr, "Invalid H.264 profile: %s\n", profileStr.c_str());
+                return -1;
+            }
         } else {
             fprintf(stderr, "Unrecognized option: %s\n", argv[i]);
             return -1;
@@ -303,16 +321,17 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
         sps->pic_order_cnt_type = STD_VIDEO_H264_POC_TYPE_2;
     }
 
-    if (adaptiveTransformMode == ADAPTIVE_TRANSFORM_ENABLE) {
+    // 8x8 transform is only valid for High profile and above (H.264 spec Table A-2).
+    // Main and Baseline profiles must use 4x4 transform only.
+    if (profileIdc < STD_VIDEO_H264_PROFILE_IDC_HIGH) {
+        pps->flags.transform_8x8_mode_flag = false;
+    } else if (adaptiveTransformMode == ADAPTIVE_TRANSFORM_ENABLE) {
         pps->flags.transform_8x8_mode_flag = true;
     } else if (adaptiveTransformMode == ADAPTIVE_TRANSFORM_DISABLE) {
         pps->flags.transform_8x8_mode_flag = false;
     } else {
-        // Autoselect
-        if (profileIdc >= STD_VIDEO_H264_PROFILE_IDC_HIGH) {
-            // Unconditionally enable 8x8 transform
-            pps->flags.transform_8x8_mode_flag = true;
-        }
+        // Autoselect for High profile and above
+        pps->flags.transform_8x8_mode_flag = true;
     }
 
     if (entropyCodingMode == ENTROPY_CODING_MODE_CABAC) {
@@ -441,19 +460,18 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
 
 void EncoderConfigH264::InitProfileLevel()
 {
-    // FIXME: Check if the HW supports transform_8x8_mode_is_supported
-    // based on capabilities or profiles supported
-    bool use8x8Transform = true;
+    // 8x8 transform is only supported by High profile and above.
+    // Main and Baseline profiles only support 4x4 transform.
+    bool use8x8Transform = false;
 
     if (adaptiveTransformMode == ADAPTIVE_TRANSFORM_ENABLE) {
         use8x8Transform = true;
     } else if (adaptiveTransformMode == ADAPTIVE_TRANSFORM_DISABLE) {
         use8x8Transform = false;
     } else {
-        // Autoselect
+        // Autoselect: enable 8x8 only for High profile and above
         if ((profileIdc == STD_VIDEO_H264_PROFILE_IDC_INVALID) ||
             (profileIdc >= STD_VIDEO_H264_PROFILE_IDC_HIGH)) {
-            // Unconditionally enable 8x8 transform
             use8x8Transform = true;
         }
     }

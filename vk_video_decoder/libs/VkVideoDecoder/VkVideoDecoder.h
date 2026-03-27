@@ -172,9 +172,6 @@ public:
     }
     static const char* GetVideoChromaFormatString(VkVideoChromaSubsamplingFlagBitsKHR chromaFormat);
 
-    virtual int32_t AddRef();
-    virtual int32_t Release();
-
     /**
      *   @brief  This function is used to get information about the video stream (codec, display parameters etc)
      */
@@ -215,7 +212,6 @@ private:
                    int32_t  numBitstreamBuffersToPreallocate = 8)
         : m_vkDevCtx(vkDevCtx)
         , m_currentVideoQueueIndx(videoQueueIndx)
-        , m_refCount(0)
         , m_codedExtent {}
         , m_videoFormat {}
         , m_numDecodeImagesInFlight(numDecodeImagesInFlight)
@@ -293,6 +289,7 @@ private:
 
     }
 
+public:
     virtual ~VkVideoDecoder();
     void Deinitialize();
 
@@ -316,7 +313,6 @@ private:
 private:
     const VulkanDeviceContext*  m_vkDevCtx;
     int32_t                     m_currentVideoQueueIndx;
-    std::atomic<int32_t>        m_refCount;
     // The current decoder coded extent
     VkExtent2D                  m_codedExtent;
     // dimension of the output
@@ -356,4 +352,5 @@ private:
     VulkanFilterYuvCompute::FilterType m_filterType;
     VkSharedBaseObj<VulkanFilter> m_yuvFilter;
     VkSamplerYcbcrConversion m_dpbYcbcrConversion{VK_NULL_HANDLE};
+    VkSamplerYcbcrConversion m_filterOutYcbcrConversion{VK_NULL_HANDLE};
 };

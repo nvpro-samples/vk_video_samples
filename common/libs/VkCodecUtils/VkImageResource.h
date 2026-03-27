@@ -118,21 +118,6 @@ public:
     }
 
 
-    virtual int32_t AddRef()
-    {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --m_refCount;
-        // Destroy the device if ref-count reaches zero
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
-    }
-
     operator VkImage() const { return m_image; }
     VkImage GetImage() const { return m_image; }
     VkDevice GetDevice() const { return *m_vkDevCtx; }
@@ -243,7 +228,6 @@ public:
     uint32_t GetMemoryTypeIndex() const;
 
 private:
-    std::atomic<int32_t>    m_refCount;
     const VkImageCreateInfo m_imageCreateInfo;
     const VulkanDeviceContext* m_vkDevCtx;
     VkImage                 m_image;
@@ -270,6 +254,7 @@ private:
 
     void Destroy();
 
+public:
     virtual ~VkImageResource();
 };
 
@@ -320,21 +305,6 @@ public:
                            VkSharedBaseObj<VkImageResourceView>& imageResourceView);
 
 
-    virtual int32_t AddRef()
-    {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --m_refCount;
-        // Destroy the device if ref-count reaches zero
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
-    }
-
     operator VkImageView() const {
         // Fall back to first plane view if combined view is null (storage-only case)
         return m_imageViews[0] ? m_imageViews[0] : (m_numPlanes > 0 ? m_imageViews[1] : VK_NULL_HANDLE);
@@ -362,7 +332,6 @@ public:
     }
 
 private:
-    std::atomic<int32_t>             m_refCount;
     const VulkanDeviceContext*       m_vkDevCtx;
     VkSharedBaseObj<VkImageResource> m_imageResource;
     VkImageView                      m_imageViews[4];
@@ -375,7 +344,7 @@ private:
                         VkSharedBaseObj<VkImageResource>& imageResource,
                         uint32_t numViews, uint32_t numPlanes,
                         VkImageView imageViews[4], VkImageSubresourceRange &imageSubresourceRange)
-       : m_refCount(0), m_vkDevCtx(vkDevCtx), m_imageResource(imageResource),
+       : m_vkDevCtx(vkDevCtx), m_imageResource(imageResource),
          m_imageViews{VK_NULL_HANDLE}, m_imageSubresourceRange(imageSubresourceRange),
          m_numViews(numViews), m_numPlanes(numPlanes)
     {
@@ -384,5 +353,6 @@ private:
         }
     }
 
+public:
     virtual ~VkImageResourceView();
 };

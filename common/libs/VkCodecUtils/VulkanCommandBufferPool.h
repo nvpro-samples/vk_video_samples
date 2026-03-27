@@ -28,7 +28,8 @@
 #include "VkCodecUtils/VulkanFenceSet.h"
 #include "VkCodecUtils/VulkanQueryPoolSet.h"
 
-class VulkanCommandBufferPool : public VkVideoRefCountBase {
+class VulkanCommandBufferPool : public VkVideoRefCountBase,
+                                public std::enable_shared_from_this<VulkanCommandBufferPool> {
 public:
 
     class PoolNode : public VkVideoRefCountBase {
@@ -36,13 +37,6 @@ public:
 
         // VulkanCommandBufferPool is a friend class to be able to call SetParent()
         friend class VulkanCommandBufferPool;
-
-        virtual int32_t AddRef()
-        {
-            return ++m_refCount;
-        }
-
-        virtual int32_t Release();
 
         VkResult Init(const VulkanDeviceContext* vkDevCtx);
 
@@ -53,7 +47,6 @@ public:
 
         PoolNode()
             : m_vkDevCtx()
-            , m_refCount()
             , m_parent()
             , m_parentIndex(-1)
             , m_cmdBufState(CmdBufStateReset)
@@ -212,12 +205,24 @@ public:
 
         const VulkanDeviceContext* GetDeviceContext() const { return m_vkDevCtx; }
 
+        void ClearParent()
+        {
+            m_parentIndex = -1;
+            m_parent = nullptr;
+            // NOTE: Do NOT reset m_cmdBufState here. The state must persist
+            // across pool release/reacquire so that ResetCommandBuffer() can
+            // properly wait on and reset the fence when the node is reused.
+            // Resetting state to CmdBufStateReset here caused the fence
+            // assertion crash: the fence remained signaled from the previous
+            // submit, but ResetCommandBuffer() skipped the wait+reset because
+            // it saw state == CmdBufStateReset.
+        }
+
     private:
         VkResult SetParent(VulkanCommandBufferPool* cmdBuffPool, int32_t parentIndex);
 
     private:
         const VulkanDeviceContext*               m_vkDevCtx;
-        std::atomic<int32_t>                     m_refCount;
         VkSharedBaseObj<VulkanCommandBufferPool> m_parent;
         int32_t                                  m_parentIndex;
         CmdBufState                              m_cmdBufState;
@@ -339,7 +344,6 @@ public:
 
     VulkanCommandBufferPool(const VulkanDeviceContext* vkDevCtx)
         : m_vkDevCtx(vkDevCtx)
-        , m_refCount()
         , m_queueMutex()
         , m_poolSize(0)
         , m_nextNodeToUse(0)
@@ -355,21 +359,6 @@ public:
 
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            VkSharedBaseObj<VulkanCommandBufferPool>& cmdBuffPool);
-
-    virtual int32_t AddRef()
-    {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --m_refCount;
-        // Destroy the device if ref-count reaches zero
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
-    }
 
     VkResult Configure(const VulkanDeviceContext*   vkDevCtx,
                        uint32_t                     numPoolNodes,
@@ -404,7 +393,6 @@ public:
 protected:
     const VulkanDeviceContext* m_vkDevCtx;
 private:
-    std::atomic<int32_t>       m_refCount;
     std::mutex                 m_queueMutex;
     uint32_t                   m_poolSize;
     uint32_t                   m_nextNodeToUse;

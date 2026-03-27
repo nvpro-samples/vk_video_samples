@@ -72,28 +72,6 @@ public:
                            VkDeviceSize initializeBufferMemorySize = 0, const void* pInitializeBufferMemory = nullptr,
                            uint32_t queueFamilyCount = 0, uint32_t* queueFamilyIndexes = nullptr);
 
-    virtual int32_t AddRef()
-    {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --m_refCount;
-        // Destroy the buffer if ref-count reaches zero
-        if (ret == 0) {
-            // std::cout << "Delete bitstream buffer " << this << " with size " << GetMaxSize() << std::endl;
-            delete this;
-        }
-        return ret;
-    }
-
-    virtual int32_t GetRefCount()
-    {
-        assert(m_refCount > 0);
-        return m_refCount;
-    }
-
     /** @brief Get maximum buffer size in bytes */
     virtual VkDeviceSize GetMaxSize() const;
 
@@ -187,8 +165,7 @@ private:
                      VkDeviceSize bufferSizeAlignment = 1,
                      uint32_t queueFamilyCount = 0,
                      uint32_t* queueFamilyIndexes = nullptr)
-        : m_refCount(0)
-        , m_vkDevCtx(vkDevCtx)
+        : m_vkDevCtx(vkDevCtx)
         , m_usage(usage)
         , m_memoryPropertyFlags(memoryPropertyFlags)
         , m_buffer()
@@ -201,10 +178,10 @@ private:
 
     void Deinitialize();
 
+public:
     virtual ~VkBufferResource() { Deinitialize(); }
 
 private:
-    std::atomic<int32_t>       m_refCount;
     const VulkanDeviceContext* m_vkDevCtx;
     VkBufferUsageFlags         m_usage;
     VkMemoryPropertyFlags      m_memoryPropertyFlags;

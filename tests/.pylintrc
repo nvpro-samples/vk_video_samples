@@ -1,0 +1,15 @@
+[MESSAGES CONTROL]
+# Ignore import errors for test dependencies that may not be installed
+# during static analysis (e.g., pytest on CI)
+ignored-modules=pytest
+
+[MASTER]
+# Use multiple processes for faster analysis
+jobs=1
+
+# Add tests directory to path for imports
+init-hook='import sys, os; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) if "__file__" in dir() else "tests")'
+
+[FORMAT]
+# Maximum number of characters on a single line
+max-line-length=100

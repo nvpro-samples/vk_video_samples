@@ -14,8 +14,9 @@
 * limitations under the License.
 */
 
-#include <sstream>
+#include <cassert>
 #include <fstream>
+#include <sstream>
 #include "VkDecoderUtils/VideoStreamDemuxer.h"
 
 bool VideoStreamDemuxer::CheckFile(const char* szInFilePath)

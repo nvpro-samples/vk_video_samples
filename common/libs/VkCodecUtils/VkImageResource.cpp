@@ -27,7 +27,7 @@ VkImageResource::VkImageResource(const VulkanDeviceContext* vkDevCtx,
                 VkSharedBaseObj<VulkanDeviceMemoryImpl>& vulkanDeviceMemory,
                 uint64_t drmFormatModifier,
                 uint32_t memoryPlaneCount)
-   : m_refCount(0), m_imageCreateInfo(*pImageCreateInfo), m_vkDevCtx(vkDevCtx)
+   : m_imageCreateInfo(*pImageCreateInfo), m_vkDevCtx(vkDevCtx)
    , m_image(image), m_imageOffset(imageOffset), m_imageSize(imageSize)
    , m_vulkanDeviceMemory(vulkanDeviceMemory), m_layouts{}, m_memoryPlaneLayouts{}
    , m_drmFormatModifier(drmFormatModifier), m_memoryPlaneCount(memoryPlaneCount)
@@ -226,12 +226,12 @@ VkResult VkImageResource::Create(const VulkanDeviceContext* vkDevCtx,
             break;
         }
 
-        imageResource = new VkImageResource(vkDevCtx,
+        imageResource = std::shared_ptr<VkImageResource>(new VkImageResource(vkDevCtx,
                                             pImageCreateInfo,
                                             image,
                                             imageOffset,
                                             memoryRequirements.size,
-                                            vkDeviceMemory);
+                                            vkDeviceMemory));
         if (imageResource == nullptr) {
             break;
         }
@@ -469,14 +469,14 @@ VkResult VkImageResource::CreateExportable(const VulkanDeviceContext* vkDevCtx,
             break;
         }
 
-        imageResource = new VkImageResource(vkDevCtx,
+        imageResource = std::shared_ptr<VkImageResource>(new VkImageResource(vkDevCtx,
                                             &modifiedImageInfo,
                                             image,
                                             imageOffset,
                                             memoryRequirements.size,
                                             vkDeviceMemory,
                                             actualDrmModifier,
-                                            memoryPlaneCount);
+                                            memoryPlaneCount));
         if (imageResource == nullptr) {
             break;
         }
@@ -561,7 +561,7 @@ VkResult VkImageResource::CreateFromExternal(const VulkanDeviceContext* vkDevCtx
     // Mark as non-owning so Destroy() won't call vkDestroyImage
     pImageResource->m_ownsResources = false;
 
-    imageResource = pImageResource;
+    imageResource.reset(pImageResource);
     return VK_SUCCESS;
 }
 
@@ -576,7 +576,7 @@ VkResult VkImageResource::CreateFromImport(const VulkanDeviceContext* vkDevCtx,
     // when the VkImageResource ref-count drops to zero.
     VkSharedBaseObj<VulkanDeviceMemoryImpl> deviceMemory;
     if (memory != VK_NULL_HANDLE) {
-        deviceMemory = new VulkanDeviceMemoryImpl(vkDevCtx, memory, memorySize);
+        deviceMemory = std::make_shared<VulkanDeviceMemoryImpl>(vkDevCtx, memory, memorySize);
     }
 
     VkImageResource* pImageResource = new VkImageResource(
@@ -596,7 +596,7 @@ VkResult VkImageResource::CreateFromImport(const VulkanDeviceContext* vkDevCtx,
     // Owning — Destroy() will call vkDestroyImage and the memory impl will vkFreeMemory
     pImageResource->m_ownsResources = true;
 
-    imageResource = pImageResource;
+    imageResource.reset(pImageResource);
     return VK_SUCCESS;
 }
 
@@ -804,9 +804,9 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
         }
     }
 
-    imageResourceView = new VkImageResourceView(vkDevCtx, imageResource,
+    imageResourceView = std::shared_ptr<VkImageResourceView>(new VkImageResourceView(vkDevCtx, imageResource,
                                                 numViews, numPlanes,
-                                                imageViews, imageSubresourceRange);
+                                                imageViews, imageSubresourceRange));
 
     return VK_SUCCESS;
 }
@@ -933,9 +933,9 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
         }
     }
 
-    imageResourceView = new VkImageResourceView(vkDevCtx, imageResource,
+    imageResourceView = std::shared_ptr<VkImageResourceView>(new VkImageResourceView(vkDevCtx, imageResource,
                                                 numViews, numPlanes,
-                                                imageViews, imageSubresourceRange);
+                                                imageViews, imageSubresourceRange));
 
     return VK_SUCCESS;
 }

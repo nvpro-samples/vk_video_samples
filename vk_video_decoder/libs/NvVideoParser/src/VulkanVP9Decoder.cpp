@@ -38,6 +38,7 @@ VulkanVP9Decoder::VulkanVP9Decoder(VkVideoCodecOperationFlagBitsKHR std)
 
 VulkanVP9Decoder::~VulkanVP9Decoder()
 {
+    Deinitialize();
 }
 
 void VulkanVP9Decoder::InitParser()

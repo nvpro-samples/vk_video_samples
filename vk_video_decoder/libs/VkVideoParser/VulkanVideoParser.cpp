@@ -613,9 +613,6 @@ public:
 
     } dpbH264Entry;
 
-    virtual int32_t AddRef();
-    virtual int32_t Release();
-
     // INvVideoDecoderClient
     virtual VkResult ParseVideoData(VkParserSourceDataPacket* pPacket,
                                     size_t* pParsedBytes,
@@ -653,12 +650,12 @@ public:
 
     const IVulkanVideoDecoderHandler* GetDecoderHandler()
     {
-        return m_decoderHandler;
+        return m_decoderHandler.get();
     }
 
     IVulkanVideoFrameBufferParserCb* GetFrameBufferParserCb()
     {
-        return m_videoFrameBufferCb;
+        return m_videoFrameBufferCb.get();
     }
 
     uint32_t GetNumNumDecodeSurfaces() { return m_maxNumDecodeSurfaces; }
@@ -678,6 +675,7 @@ protected:
         uint32_t maxNumDecodeSurfaces, uint32_t maxNumDpbSurfaces,
         uint64_t clockRate);
 
+    public:
     virtual ~VulkanVideoParser() { Deinitialize(); }
 
     bool UpdatePictureParameters(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersObject,
@@ -745,7 +743,6 @@ protected:
     VkSharedBaseObj<VulkanVideoDecodeParser>    m_vkParser;
     VkSharedBaseObj<IVulkanVideoDecoderHandler> m_decoderHandler;
     VkSharedBaseObj<IVulkanVideoFrameBufferParserCb> m_videoFrameBufferCb;
-    std::atomic<int32_t> m_refCount;
     VkVideoCodecOperationFlagBitsKHR m_codecType;
     uint32_t m_maxNumDecodeSurfaces;
     uint32_t m_maxNumDpbSlots;
@@ -909,19 +906,6 @@ VkDeviceSize VulkanVideoParser::GetBitstreamBuffer(VkDeviceSize size,
                                                 bitstreamBuffer);
 }
 
-int32_t VulkanVideoParser::AddRef() { return ++m_refCount; }
-
-int32_t VulkanVideoParser::Release()
-{
-    uint32_t ret;
-    ret = --m_refCount;
-    // Destroy the device if refcount reaches zero
-    if (ret == 0) {
-        delete this;
-    }
-    return ret;
-}
-
 VulkanVideoParser::VulkanVideoParser(VkVideoCodecOperationFlagBitsKHR codecType,
     uint32_t maxNumDecodeSurfaces,
     uint32_t maxNumDpbSurfaces,
@@ -929,7 +913,6 @@ VulkanVideoParser::VulkanVideoParser(VkVideoCodecOperationFlagBitsKHR codecType,
     : m_vkParser()
     , m_decoderHandler()
     , m_videoFrameBufferCb()
-    , m_refCount(0)
     , m_codecType(codecType)
     , m_maxNumDecodeSurfaces(maxNumDecodeSurfaces)
     , m_maxNumDpbSlots(maxNumDpbSurfaces)
@@ -2136,7 +2119,7 @@ bool VulkanVideoParser::UpdatePictureParameters(
         std::cout << "################################################# " << std::endl;
         std::cout << "Update Picture parameters "
                 << PictureParametersTypeToName(pictureParametersObject->GetStdType()) << ": "
-                << pictureParametersObject.Get()
+                << pictureParametersObject.get()
                 << ", count: " << (uint32_t)pictureParametersObject->GetUpdateSequenceCount()
                 << std::endl << std::flush;
         std::cout << "################################################# " << std::endl;

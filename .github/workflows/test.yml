@@ -1,0 +1,85 @@
+name: CI
+run-name: CI by ${{ github.actor }}
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install linters
+        run: |
+          python -m pip install --upgrade pip
+          pip install pylint flake8 pytest
+
+      - name: Run flake8
+        run: |
+          python -m flake8 tests/*.py tests/*/*.py --max-line-length=100 --show-source --statistics
+
+      - name: Run pylint
+        run: |
+          python -m pylint tests/*.py tests/*/*.py --output-format=text
+
+  unit-tests:
+    name: Unit Tests
+    needs: lint
+    runs-on: ubuntu-24.04
+
+    env:
+      BUILD_JOBS: 16
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install --assume-yes --no-install-recommends \
+            ninja-build \
+            cmake \
+            libx11-dev \
+            libwayland-dev \
+            libavformat-dev \
+            libxrandr-dev \
+            libvulkan-dev
+
+      - name: Build release
+        run: |
+          cmake -B BUILD -DCMAKE_BUILD_TYPE=Release
+          cmake --build BUILD --parallel $BUILD_JOBS --config Release
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pytest
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov
+
+      - name: Run unit tests
+        run: |
+          pytest tests/unit_tests/ -v
+
+      - name: Run codec test framework
+        run: |
+          python3 ./tests/vvs_test_runner.py

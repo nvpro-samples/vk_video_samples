@@ -20,12 +20,13 @@
 #include "VkCodecUtils/VulkanVideoEncodeDisplayQueue.h"
 #include "VkCodecUtils/VulkanEncoderFrameProcessor.h"
 #include "VkShell/Shell.h"
+#include "VkVSCommon.h"
 
 int main(int argc, const char* argv[])
 {
     VkSharedBaseObj<EncoderConfig> encoderConfig;
     if (VK_SUCCESS != EncoderConfig::CreateCodecConfig(argc, argv, encoderConfig)) {
-        return -1;
+        return EXIT_FAILURE;
     }
 
     static const char* const requiredInstanceLayers[] = {
@@ -105,14 +106,18 @@ int main(int argc, const char* argv[])
     VkResult result = vkDevCtxt.InitVulkanDevice(encoderConfig->appName.c_str(), VK_NULL_HANDLE,
                                                  encoderConfig->verbose);
     if (result != VK_SUCCESS) {
-        printf("Could not initialize the Vulkan device!\n");
-        return -1;
+        if (IsVideoUnsupportedResult(result)) {
+            fprintf(stderr, "Could not initialize Vulkan device: incompatible driver\n");
+            return VVS_EXIT_UNSUPPORTED;
+        }
+        fprintf(stderr, "Could not initialize the Vulkan device %d!\n", result);
+        return EXIT_FAILURE;
     }
 
     result = vkDevCtxt.InitDebugReport(encoderConfig->validate,
                                        encoderConfig->validateVerbose);
     if (result != VK_SUCCESS) {
-        return -1;
+        return EXIT_FAILURE;
     }
 
     const bool supportsDisplay = true;
@@ -141,13 +146,13 @@ int main(int argc, const char* argv[])
                                                  encoderConfig->input.vkFormat,
                                                  videoDispayQueue);
     if (result != VK_SUCCESS) {
-        return -1;
+        return EXIT_FAILURE;
     }
 
     VkSharedBaseObj<FrameProcessor> frameProcessor;
     result = CreateEncoderFrameProcessor(&vkDevCtxt, frameProcessor);
     if (result != VK_SUCCESS) {
-        return -1;
+        return EXIT_FAILURE;
     }
 
     VkSharedBaseObj<VkVideoEncoder> encoder; // the encoder's instance
@@ -161,15 +166,15 @@ int main(int argc, const char* argv[])
                                                  encoderConfig->encodeHeight);
         result = Shell::Create(&vkDevCtxt, configuration, displayShell);
         if (result != VK_SUCCESS) {
-            assert(!"Can't allocate display shell! Out of memory!");
-            return -1;
+            fprintf(stderr, "Can't allocate display shell! Out of memory!");
+            return EXIT_FAILURE;
         }
 
         result = vkDevCtxt.InitPhysicalDevice(encoderConfig->deviceId, encoderConfig->deviceUUID,
                                               (VK_QUEUE_GRAPHICS_BIT |
                                               requestVideoComputeQueueMask |
                                               requestVideoEncodeQueueMask),
-                                              displayShell,
+                                              displayShell.get(),
                                               0,
                                               VK_VIDEO_CODEC_OPERATION_NONE_KHR,
                                               requestVideoEncodeQueueMask,
@@ -177,9 +182,12 @@ int main(int argc, const char* argv[])
                                                VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR |
                                                VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR));
         if (result != VK_SUCCESS) {
-
-            assert(!"Can't initialize the Vulkan physical device!");
-            return -1;
+            if (IsVideoUnsupportedResult(result)) {
+                fprintf(stderr, "Video encode queue family not supported by hardware/driver\n");
+                return VVS_EXIT_UNSUPPORTED;
+            }
+            fprintf(stderr, "Can't initialize the Vulkan physical device!\n");
+            return EXIT_FAILURE;
         }
         assert(displayShell->PhysDeviceCanPresent(vkDevCtxt.getPhysicalDevice(),
                                                    vkDevCtxt.GetPresentQueueFamilyIdx()));
@@ -194,15 +202,22 @@ int main(int argc, const char* argv[])
                                                (encoderConfig->enablePreprocessComputeFilter == VK_TRUE))
                                               );
         if (result != VK_SUCCESS) {
-
-            assert(!"Failed to create Vulkan device!");
-            return -1;
+            if (IsVideoUnsupportedResult(result)) {
+                fprintf(stderr, "Could not initialize the Vulkan device: unsupported feature!\n");
+                return VVS_EXIT_UNSUPPORTED;
+            }
+            fprintf(stderr, "Failed to create Vulkan device!\n");
+            return EXIT_FAILURE;
         }
 
         result = VkVideoEncoder::CreateVideoEncoder(&vkDevCtxt, encoderConfig, encoder);
         if (result != VK_SUCCESS) {
-            assert(!"Can't initialize the Vulkan physical device!");
-            return -1;
+            if (IsVideoUnsupportedResult(result)) {
+                fprintf(stderr, "Can't create the video encoder: unsupported feature!\n");
+                return VVS_EXIT_UNSUPPORTED;
+            }
+            fprintf(stderr, "Can't create the video encoder!\n");
+            return EXIT_FAILURE;
         }
 
         if (displayShell && videoDispayQueue) {
@@ -227,9 +242,12 @@ int main(int argc, const char* argv[])
                                               requestVideoEncodeQueueMask,
                                               encoderConfig->codec);
         if (result != VK_SUCCESS) {
-
-            assert(!"Can't initialize the Vulkan physical device!");
-            return -1;
+            if (IsVideoUnsupportedResult(result)) {
+                fprintf(stderr, "Video encode queue family not supported by hardware/driver\n");
+                return VVS_EXIT_UNSUPPORTED;
+            }
+            fprintf(stderr, "Can't initialize the Vulkan physical device!\n");
+            return EXIT_FAILURE;
         }
 
         result = vkDevCtxt.CreateVulkanDevice(0, // num decode queues
@@ -245,15 +263,22 @@ int main(int argc, const char* argv[])
                                                (encoderConfig->enablePreprocessComputeFilter == VK_TRUE))
                                               );
         if (result != VK_SUCCESS) {
-
-            assert(!"Failed to create Vulkan device!");
-            return -1;
+            if (IsVideoUnsupportedResult(result)) {
+                fprintf(stderr, "Failed to create Vulkan device: unsupported feature\n");
+                return VVS_EXIT_UNSUPPORTED;
+            }
+            fprintf(stderr, "Failed to create Vulkan device!\n");
+            return EXIT_FAILURE;
         }
 
         result = VkVideoEncoder::CreateVideoEncoder(&vkDevCtxt, encoderConfig, encoder);
         if (result != VK_SUCCESS) {
-            assert(!"Can't initialize the Vulkan physical device!");
-            return -1;
+            if (IsVideoUnsupportedResult(result)) {
+                fprintf(stderr, "Can't create the video encoder: unsupported feature\n");
+                return VVS_EXIT_UNSUPPORTED;
+            }
+            fprintf(stderr, "Can't create the video encoder!\n");
+            return EXIT_FAILURE;
         }
     }
 

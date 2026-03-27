@@ -735,11 +735,11 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
         result = m_inputComputeFilter->RecordCommandBuffer(cmdBuf,
                                                            encodeFrameInfo->inputCmdBuffer->GetNodePoolIndex(),
-                                                           linearInputImageView,
+                                                           linearInputImageView.get(),
                                                            &srcPictureResourceInfo,
-                                                           srcEncodeImageView,
+                                                           srcEncodeImageView.get(),
                                                            &dstPictureResourceInfo,
-                                                           subsampledImageView); // nullptr if no pool
+                                                           subsampledImageView.get()); // nullptr if no pool
 
         if (result != VK_SUCCESS) {
             return result;
@@ -3101,6 +3101,11 @@ bool VkVideoEncoder::WaitForThreadsToComplete()
 
 int32_t VkVideoEncoder::DeinitEncoder()
 {
+    // Join all worker threads before destroying resources.
+    // Without this, the destructor destroys std::vector<std::thread>
+    // with joinable threads → std::terminate.
+    WaitForThreadsToComplete();
+
 #ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
     m_displayQueue.Flush();
 #endif // VIDEO_DISPLAY_QUEUE_SUPPORT

@@ -31,7 +31,6 @@
 template<class FrameDataType>
 VulkanFrame<FrameDataType>::VulkanFrame(const VulkanDeviceContext* vkDevCtx)
     : FrameProcessor(false)
-    , m_refCount(0)
     , m_vkDevCtx(vkDevCtx)
     , m_videoQueue()
     , m_samplerYcbcrModelConversion(VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709)
@@ -43,6 +42,8 @@ VulkanFrame<FrameDataType>::VulkanFrame(const VulkanDeviceContext* vkDevCtx)
     , m_physicalDevProps()
     , m_frameData()
     , m_frameDataIndex()
+    , m_presenterReleaseSemaphore(VK_NULL_HANDLE)
+    , m_presenterConsumerIndex(-1)
 {
 }
 
@@ -50,6 +51,11 @@ template<class FrameDataType>
 VulkanFrame<FrameDataType>::~VulkanFrame()
 {
     DetachShell();
+
+    if (m_presenterReleaseSemaphore != VK_NULL_HANDLE) {
+        m_vkDevCtx->DestroySemaphore(*m_vkDevCtx, m_presenterReleaseSemaphore, nullptr);
+        m_presenterReleaseSemaphore = VK_NULL_HANDLE;
+    }
 }
 
 template<class FrameDataType>
@@ -65,6 +71,22 @@ int VulkanFrame<FrameDataType>::AttachShell(const Shell& sh)
 {
     const Shell::Context& ctx = sh.GetContext();
     m_gfxQueue = ctx.devCtx->GetGfxQueue();
+
+    // Create the presenter's dedicated TL semaphore and register it as an
+    // external consumer. Only done here (not in AttachQueue) because AttachShell
+    // is only called when presentation is enabled. In --noPresent mode,
+    // AttachShell is never called, so the semaphore is never registered and
+    // QueuePictureForDecode won't wait on a semaphore nobody signals.
+    if (m_videoQueue && m_presenterReleaseSemaphore == VK_NULL_HANDLE) {
+        VkSemaphoreTypeCreateInfo timelineInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+                                                    nullptr, VK_SEMAPHORE_TYPE_TIMELINE, 0 };
+        VkSemaphoreCreateInfo semInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, &timelineInfo };
+        VkResult result = m_vkDevCtx->CreateSemaphore(*m_vkDevCtx, &semInfo, nullptr, &m_presenterReleaseSemaphore);
+        if (result == VK_SUCCESS) {
+            m_presenterConsumerIndex = m_videoQueue->AddExternalConsumer(
+                m_presenterReleaseSemaphore, DecodeFrameBufferIf::SEM_SYNC_TYPE_IDX_PRESENTER);
+        }
+    }
 
     m_vkDevCtx->GetPhysicalDeviceProperties(ctx.devCtx->getPhysicalDevice(), &m_physicalDevProps);
 
@@ -437,7 +459,7 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
                                 (imageResourceView->GetImageView() == VK_NULL_HANDLE)) ||
                                m_videoRenderer->m_useTestImage);
 
-    VkImageResourceView* pView = inFrame ? imageResourceView : (VkImageResourceView*)nullptr;
+    VkImageResourceView* pView = inFrame ? imageResourceView.get() : (VkImageResourceView*)nullptr;
     vulkanVideoUtils::ImageResourceInfo rtImage(pView, inFrame ? inFrame->outputImageLayout : VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR);
     const vulkanVideoUtils::ImageResourceInfo* pRtImage = doTestPatternFrame ? &m_videoRenderer->m_testFrameImage : &rtImage;
     VkFence frameConsumerDoneFence = doTestPatternFrame ? VkFence() : inFrame->frameConsumerDoneFence;
@@ -595,7 +617,7 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
     const uint32_t waitSemaphoreMaxCount = 2;
     VkSemaphoreSubmitInfoKHR waitSemaphoreInfos[waitSemaphoreMaxCount]{};
 
-    const uint32_t signalSemaphoreMaxCount = 2;
+    const uint32_t signalSemaphoreMaxCount = 3; // consumer TL + presenter TL + binary
     VkSemaphoreSubmitInfoKHR signalSemaphoreInfos[signalSemaphoreMaxCount]{};
 
     for (uint32_t i = 0; i < waitSemaphoreCount; i++) {
@@ -636,6 +658,20 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
             signalSemaphoreCount++;
 
             inFrame->hasConsummerSignalSemaphore = true;
+        }
+
+        // Signal the presenter's dedicated TL semaphore for external consumer slot reuse.
+        // The value must match what DequeueDecodedPicture stored in externalConsumerDoneValues[]
+        // for this consumer index: GetSemaphoreValue(SEM_SYNC_TYPE_IDX_PRESENTER, displayOrder).
+        if (m_presenterReleaseSemaphore != VK_NULL_HANDLE && m_presenterConsumerIndex >= 0) {
+            uint64_t presenterSignalValue = inFrame->externalConsumerDoneValues[m_presenterConsumerIndex];
+            signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+            signalSemaphoreInfos[signalSemaphoreCount].pNext = nullptr;
+            signalSemaphoreInfos[signalSemaphoreCount].semaphore = m_presenterReleaseSemaphore;
+            signalSemaphoreInfos[signalSemaphoreCount].value = presenterSignalValue;
+            signalSemaphoreInfos[signalSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+            signalSemaphoreInfos[signalSemaphoreCount].deviceIndex = 0;
+            signalSemaphoreCount++;
         }
     }
 
@@ -738,25 +774,12 @@ VkResult VulkanFrame<FrameDataType>::Create(const VulkanDeviceContext* vkDevCtx,
 
 #include "VulkanDecoderFrameProcessor.h"
 
-VkResult CreateDecoderFrameProcessor(const VulkanDeviceContext* vkDevCtx,
-                                     VkSharedBaseObj<FrameProcessor>& frameProcessor)
-{
-
-    VkSharedBaseObj<VulkanFrame<VulkanDecodedFrame>> vulkanFrame;
-    VkResult result = VulkanFrame<VulkanDecodedFrame>::Create(vkDevCtx, vulkanFrame);
-    if (result != VK_SUCCESS) {
-        return result;
-    }
-
-    frameProcessor = vulkanFrame;
-    return result;
-}
-
 VkResult DecoderFrameProcessorState::Init(const VulkanDeviceContext* vkDevCtx,
                                           VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>>& videoQueue,
                                           int32_t maxNumberOfFrames)
 {
-    VkResult result = CreateDecoderFrameProcessor(vkDevCtx, m_frameProcessor);
+    VkResult result = VulkanFrame<VulkanDecodedFrame>::Create(vkDevCtx, m_vulkanFrame);
+    m_frameProcessor = m_vulkanFrame;
 
     if (result != VK_SUCCESS) {
         return result;
@@ -785,6 +808,8 @@ void DecoderFrameProcessorState::Deinit()
         m_frameProcessor->DestroyFrameData();
         m_maxNumberOfFrames = 0;
     }
+    m_frameProcessor = nullptr;
+    m_vulkanFrame = nullptr;
 }
 
 #include "VkCodecUtils/VulkanEncoderFrameProcessor.h"

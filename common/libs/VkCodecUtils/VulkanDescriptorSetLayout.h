@@ -237,7 +237,7 @@ public:
 
 
     bool UsesDescriptorBuffer() const {
-        return m_resourceDescriptorBuffer;
+        return m_resourceDescriptorBuffer != nullptr;
     }
 
     VkDeviceOrHostAddressConstKHR UpdateDescriptorBuffer(uint32_t bufferIdx, uint32_t set,

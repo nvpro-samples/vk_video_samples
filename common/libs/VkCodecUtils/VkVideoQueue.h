@@ -18,6 +18,7 @@
 #define _VKCODECUTILS_VKVIDEOQUEUE_H_
 
 #include <stdint.h>
+#include <vulkan/vulkan.h>
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 
 /**
@@ -172,6 +173,24 @@ public:
      * - A non-zero value indicates an error or special condition (implementation-defined).
      */
     virtual int32_t  ReleaseFrame(FrameDataType* pFrameDone) = 0;
+
+    /**
+     * @brief Register an external consumer's TL semaphore for slot reuse protection.
+     *
+     * QueuePictureForDecode will wait on this semaphore before reusing a DPB slot,
+     * ensuring the consumer (e.g., graphics presentation, file dump) has finished
+     * reading the decoded frame.
+     *
+     * @param importedReleaseSemaphore The TL semaphore owned by the consumer.
+     * @param consumerType The consumer type index for TL value encoding.
+     * @return Consumer index (0..MAX_EXTERNAL_CONSUMERS-1), or -1 on failure.
+     */
+    virtual int32_t AddExternalConsumer(VkSemaphore importedReleaseSemaphore,
+                                        uint64_t consumerType) {
+        (void)importedReleaseSemaphore;
+        (void)consumerType;
+        return -1;
+    }
 
     virtual ~VkVideoQueue() {};
 };

@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <cassert>
 #include <string.h>
 #include <fstream>
 #include "mio/mio.hpp"

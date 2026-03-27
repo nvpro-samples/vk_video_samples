@@ -383,7 +383,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         };
 
         uint32_t filterFlags = VulkanFilterYuvCompute::FLAG_NONE;
-        
+
         result = VulkanFilterYuvCompute::Create(m_vkDevCtx,
                                                 m_vkDevCtx->GetComputeQueueFamilyIdx(),
                                                 0,
@@ -666,6 +666,43 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                                                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
         assert(imageSpecFilter.imageTypeIdx == filterOutImageSpecsIndex);
+
+        // Create a YCbCr conversion for the filter output so the image view gets
+        // both a combined sampled view (for display) and per-plane storage views
+        // (for the compute shader). Without this, only a combined view is created
+        // and per-plane writes corrupt the CbCr channel.
+        if (m_enableDecodeComputeFilter == VK_TRUE) {
+            const VkMpFormatInfo* filterMpInfo = YcbcrVkFormatInfo(outImageFormat);
+            if (filterMpInfo != nullptr && (imageSpecFilter.createInfo.usage & VK_IMAGE_USAGE_SAMPLED_BIT)) {
+                if (m_filterOutYcbcrConversion != VK_NULL_HANDLE) {
+                    m_vkDevCtx->DestroySamplerYcbcrConversion(*m_vkDevCtx, m_filterOutYcbcrConversion, nullptr);
+                    m_filterOutYcbcrConversion = VK_NULL_HANDLE;
+                }
+                VkSamplerYcbcrConversionCreateInfo convCreateInfo{VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO};
+                convCreateInfo.format = outImageFormat;
+                convCreateInfo.ycbcrModel = VkVideoCoreProfile::CodecColorPrimariesToYCbCrModel(
+                    pVideoFormat->video_signal_description.color_primaries);
+                convCreateInfo.ycbcrRange = VkVideoCoreProfile::CodecFullRangeToYCbCrRange(
+                    pVideoFormat->video_signal_description.video_full_range_flag);
+                convCreateInfo.components = { VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+                                              VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY };
+                convCreateInfo.xChromaOffset = VK_CHROMA_LOCATION_MIDPOINT;
+                convCreateInfo.yChromaOffset = VK_CHROMA_LOCATION_MIDPOINT;
+                convCreateInfo.chromaFilter = VK_FILTER_LINEAR;
+                convCreateInfo.forceExplicitReconstruction = VK_FALSE;
+
+                VkResult convResult = m_vkDevCtx->CreateSamplerYcbcrConversion(
+                    *m_vkDevCtx, &convCreateInfo, nullptr, &m_filterOutYcbcrConversion);
+                if (convResult == VK_SUCCESS) {
+                    imageSpecFilter.ycbcrConversion = m_filterOutYcbcrConversion;
+                }
+
+                // EXTENDED_USAGE_BIT allows per-plane views with storage usage even though
+                // the base multi-planar format may not support VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT.
+                imageSpecFilter.createInfo.flags |= VK_IMAGE_CREATE_EXTENDED_USAGE_BIT |
+                                                     VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+            }
+        }
     }
 
     assert(imageSpecsIndex < DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES);
@@ -1112,6 +1149,10 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         if (pCurrFrameDecParams->currPicIdx != resourceIndexFilter) {
             assert(!"GetImageResourcesByIndex has failed");
         }
+
+        // Track if filter output needs layout transition (used later in filter cmd buf)
+        // Note: don't record the barrier here — the filter runs on the COMPUTE queue,
+        // so the barrier must be in the filter's command buffer, not the decode's.
     }
 
     VulkanVideoFrameBuffer::PictureResourceInfo pictureResourcesInfo[VkParserPerFrameDecodeParameters::MAX_DPB_REF_AND_SETUP_SLOTS];
@@ -1196,8 +1237,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     frameSynchronizationInfo.hasFrameCompleteSignalSemaphore = true;
     frameSynchronizationInfo.hasFilterSignalSemaphore = m_enableDecodeComputeFilter;
     frameSynchronizationInfo.hasFrameConsumerSignalSemaphore = false;
+    // Always wait on the frame-complete fence before reusing a DPB slot.
+    // This fence is signaled by the producer (decoder, or filter when enabled).
     frameSynchronizationInfo.syncOnFrameCompleteFence = true;
-    frameSynchronizationInfo.syncOnFrameConsumerDoneFence = true;
     frameSynchronizationInfo.imageSpecsIndex = m_imageSpecsIndex;
 
     VkSharedBaseObj<VkVideoRefCountBase> currentVkPictureParameters;
@@ -1211,7 +1253,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             return -1;
         }
         VkParserVideoPictureParameters* pOwnerPictureParameters =
-            VkParserVideoPictureParameters::VideoPictureParametersFromBase(currentVkPictureParameters);
+            VkParserVideoPictureParameters::VideoPictureParametersFromBase(currentVkPictureParameters.get());
 
         assert(pOwnerPictureParameters);
         assert(pOwnerPictureParameters->GetId() <= m_currentPictureParameters->GetId());
@@ -1231,7 +1273,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             return -1;
         }
         VkParserVideoPictureParameters* pOwnerPictureParameters =
-                VkParserVideoPictureParameters::VideoPictureParametersFromBase(currentVkPictureParameters);
+                VkParserVideoPictureParameters::VideoPictureParametersFromBase(currentVkPictureParameters.get());
         assert(pOwnerPictureParameters);
         assert(pOwnerPictureParameters->GetId() <= m_currentPictureParameters->GetId());
         int32_t ret = pOwnerPictureParameters->FlushPictureParametersQueue(m_videoSession);
@@ -1267,15 +1309,17 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         m_yuvFilter->GetAvailablePoolNode(filterCmdBuffer);
         assert(filterCmdBuffer != nullptr);
 
-        // Make sure command buffer is not in use anymore and reset
-        filterCmdBuffer->ResetCommandBuffer(true, "encoderStagedInputFence");
+        // Reset the filter command buffer state. The filter's pool node fence
+        // is not signaled by the decoder, so syncWithHost=false.
+        filterCmdBuffer->ResetCommandBuffer(false, "computeFilterPoolNode");
     }
 
-    VulkanVideoFrameBuffer::ReferencedObjectsInfo referencedObjectsInfo(pCurrFrameDecParams->bitstreamData,
-                                                                        pCurrFrameDecParams->pStdPps,
-                                                                        pCurrFrameDecParams->pStdSps,
-                                                                        pCurrFrameDecParams->pStdVps,
-                                                                        filterCmdBuffer);
+    VulkanVideoFrameBuffer::ReferencedObjectsInfo referencedObjectsInfo(
+        pCurrFrameDecParams->bitstreamData,
+        m_currentPictureParameters->FindByRawPtr(pCurrFrameDecParams->pStdPps),
+        m_currentPictureParameters->FindByRawPtr(pCurrFrameDecParams->pStdSps),
+        m_currentPictureParameters->FindByRawPtr(pCurrFrameDecParams->pStdVps),
+        filterCmdBuffer);
     int32_t retVal = m_videoFrameBuffer->QueuePictureForDecode(currPicIdx, pDecodePictureInfo,
                                                                &referencedObjectsInfo,
                                                                &frameSynchronizationInfo);
@@ -1378,8 +1422,14 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         assert(filterCmdBuffer != nullptr);
 
-        // videoDecodeCompleteFence is the fence that the filter is going to signal on completion when enabled.
-        videoDecodeCompleteFence     = filterCmdBuffer->GetFence();
+        // When the compute filter is enabled, the decoder does NOT signal any fence.
+        // The filter will signal the FB's frameCompleteFence instead.
+        // The decode→filter synchronization is handled by the TL semaphore
+        // (decodeCompleteTimelineValue), not a fence.
+        // The filter's built-in pool node fence (filterCmdBuffer->GetFence()) is
+        // NOT used by the decoder — it is only used by the encoder's
+        // SyncHostOnCmdBuffComplete().
+        videoDecodeCompleteFence = VK_NULL_HANDLE;
     }
 
     const uint32_t waitSemaphoreMaxCount = 3;
@@ -1402,8 +1452,26 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         waitSemaphoreCount++;
     }
 
-    if (videoDecodeCompleteSemaphore != VK_NULL_HANDLE) {
-
+    if (m_enableDecodeComputeFilter && filterCmdBuffer) {
+        // When the compute filter is enabled, use the pool node's BINARY semaphore
+        // for decode→filter synchronization instead of the shared TL semaphore.
+        // This prevents TL backward signals: the decoder can run ahead of the filter,
+        // pushing the shared TL past the filter's next signal value. With a binary
+        // semaphore, each decode/filter pair has its own signal/wait — no ordering
+        // conflict. The filter will be the only one signaling the TL semaphore.
+        VkSemaphore decodeToFilterSemaphore = filterCmdBuffer->GetSemaphore();
+        if (decodeToFilterSemaphore != VK_NULL_HANDLE) {
+            signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+            signalSemaphoreInfos[signalSemaphoreCount].pNext = nullptr;
+            signalSemaphoreInfos[signalSemaphoreCount].semaphore = decodeToFilterSemaphore;
+            signalSemaphoreInfos[signalSemaphoreCount].value = 0; // binary semaphore
+            signalSemaphoreInfos[signalSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
+            signalSemaphoreInfos[signalSemaphoreCount].deviceIndex = 0;
+            signalSemaphoreCount++;
+        }
+    } else if (videoDecodeCompleteSemaphore != VK_NULL_HANDLE) {
+        // Without filter: signal the TL semaphore directly from the decoder.
+        // The decoder is the only signaler, so TL values are monotonically increasing.
         signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
         signalSemaphoreInfos[signalSemaphoreCount].pNext = nullptr;
         signalSemaphoreInfos[signalSemaphoreCount].semaphore = videoDecodeCompleteSemaphore;
@@ -1457,7 +1525,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     submitInfo.signalSemaphoreInfoCount = signalSemaphoreCount;
     submitInfo.pSignalSemaphoreInfos = signalSemaphoreInfos;
 
-    assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, videoDecodeCompleteFence));
+    if (videoDecodeCompleteFence != VK_NULL_HANDLE) {
+        assert(VK_NOT_READY == m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, videoDecodeCompleteFence));
+    }
     VkResult result = m_vkDevCtx->MultiThreadedQueueSubmit(VulkanDeviceContext::DECODE,
                                                            m_currentVideoQueueIndx,
                                                            1,
@@ -1478,20 +1548,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
                   << pCurrFrameDecParams->decodeFrameInfo.dstPictureResource.imageViewBinding << std::endl;
     }
 
-    const bool checkDecodeIdleSync = false; // For fence/sync/idle debugging
-    if (checkDecodeIdleSync) { // For fence/sync debugging
-        if (videoDecodeCompleteFence == VkFence()) {
-            result = m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::DECODE, m_currentVideoQueueIndx);
-            assert(result == VK_SUCCESS);
-        } else {
-            if (videoDecodeCompleteSemaphore == VkSemaphore()) {
-                result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &videoDecodeCompleteFence, true, gFenceTimeout);
-                assert(result == VK_SUCCESS);
-                result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, videoDecodeCompleteFence);
-                assert(result == VK_SUCCESS);
-            }
-        }
-    }
 
     if (m_dumpDecodeData && (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE)) { // For TL semaphore debug
        uint64_t  currSemValue = 0;
@@ -1511,11 +1567,12 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
        }
     }
 
-    // For fence/sync debugging
-    if (pDecodePictureInfo->flags.fieldPic) {
-        result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &videoDecodeCompleteFence, true, gFenceTimeout);
+    // For fence/sync interlaced content.
+    // Use frameCompleteFence (the FB fence) — videoDecodeCompleteFence may be NULL HANDLE.
+    if (pDecodePictureInfo->flags.fieldPic && (frameCompleteFence != VK_NULL_HANDLE)) {
+        result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameCompleteFence, true, gFenceTimeout);
         assert(result == VK_SUCCESS);
-        result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, videoDecodeCompleteFence);
+        result = m_vkDevCtx->GetFenceStatus(*m_vkDevCtx, frameCompleteFence);
         assert(result == VK_SUCCESS);
     }
 
@@ -1545,7 +1602,6 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         m_currentVideoQueueIndx++;
         m_currentVideoQueueIndx %= m_vkDevCtx->GetVideoDecodeNumQueues();
     }
-    m_decodePicCount++;
 
     if (m_enableDecodeComputeFilter) {
 
@@ -1565,8 +1621,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         assert(m_imageSpecsIndex.filterOut != InvalidImageTypeIdx);
         index = m_videoFrameBuffer->GetCurrentImageResourceByIndex(currPicIdx, m_imageSpecsIndex.filterOut,
                                                                    outputImageView);
-
         assert(index == currPicIdx);
+
         VkVideoPictureResourceInfoKHR outputImageResource {VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR};
         index = m_videoFrameBuffer->GetCurrentImageResourceByIndex(currPicIdx, m_imageSpecsIndex.filterOut,
                                                                    &outputImageResource, nullptr,
@@ -1583,37 +1639,115 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
         assert(filterCmdBuffer != nullptr);
 
-        // Make sure command buffer is not in use anymore and reset
-        filterCmdBuffer->ResetCommandBuffer(true, "computeFilterFence");
+        // Reset the filter command buffer state for new recording.
+        // syncWithHost=false because the filter's pool node fence is NOT used
+        // by the decoder. The pool node lifetime is protected by the shared_ptr
+        // held in the frame slot's filterPoolNode — only released after
+        // QueuePictureForDecode waits on frameCompleteFence (filter done).
+        filterCmdBuffer->ResetCommandBuffer(false, "computeFilterCmdBuf");
 
         // Begin command buffer
         VkCommandBufferBeginInfo computeBeginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr };
         // beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         VkCommandBuffer cmdBuf = filterCmdBuffer->BeginCommandBufferRecording(computeBeginInfo);
 
+        // Transition filter output image from UNDEFINED → GENERAL if needed.
+        // This must be in the filter's command buffer (compute queue), not the
+        // decode command buffer (decode queue).
+        if (pFrameFilterOutResourceInfo &&
+            pFrameFilterOutResourceInfo->currentImageLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
+            VkImageMemoryBarrier2 filterOutBarrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+            filterOutBarrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+            filterOutBarrier.srcAccessMask = 0;
+            filterOutBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            filterOutBarrier.dstAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+            filterOutBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            filterOutBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            filterOutBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            filterOutBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            filterOutBarrier.image = pFrameFilterOutResourceInfo->image;
+            filterOutBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            filterOutBarrier.subresourceRange.baseMipLevel = 0;
+            filterOutBarrier.subresourceRange.levelCount = 1;
+            filterOutBarrier.subresourceRange.baseArrayLayer = 0;
+            filterOutBarrier.subresourceRange.layerCount = 1;
+
+            VkDependencyInfo depInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            depInfo.imageMemoryBarrierCount = 1;
+            depInfo.pImageMemoryBarriers = &filterOutBarrier;
+            m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &depInfo);
+
+            // Update the tracked layout so subsequent code sees GENERAL, not UNDEFINED.
+            pFrameFilterOutResourceInfo->currentImageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        }
+
         result = m_yuvFilter->RecordCommandBuffer(cmdBuf,
                                                   filterCmdBuffer->GetNodePoolIndex(),
-                                                  inputImageView,
+                                                  inputImageView.get(),
                                                   &pCurrFrameDecParams->decodeFrameInfo.dstPictureResource,
-                                                  outputImageView,
+                                                  outputImageView.get(),
                                                   &outputImageResource);
 
         assert(result == VK_SUCCESS);
+
+        // Post-dispatch image barrier: flush compute shader writes for consumers.
+        // For LINEAR output (dump path): flush to host so CPU-mapped reads see the data.
+        // For OPTIMAL output (display path): make writes visible to graphics sampling.
+        {
+            VkImageMemoryBarrier2 imgBarrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+            imgBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            imgBarrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+            imgBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+            imgBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            imgBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            imgBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            imgBarrier.image = outputImageView->GetImageResource()->GetImage();
+            imgBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            imgBarrier.subresourceRange.baseMipLevel = 0;
+            imgBarrier.subresourceRange.levelCount = 1;
+            imgBarrier.subresourceRange.baseArrayLayer = 0;
+            imgBarrier.subresourceRange.layerCount = 1;
+
+            VkImageTiling outputTiling = outputImageView->GetImageResource()->GetImageCreateInfo().tiling;
+            if (outputTiling == VK_IMAGE_TILING_LINEAR) {
+                // LINEAR image: dump pool reads via CPU-mapped memory.
+                // HOST_READ_BIT flushes GPU caches so host sees the writes.
+                imgBarrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT |
+                                          VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                imgBarrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT |
+                                           VK_ACCESS_2_MEMORY_READ_BIT;
+            } else {
+                // OPTIMAL image: display reads via graphics sampling.
+                imgBarrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+                imgBarrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+            }
+
+            VkDependencyInfo depInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            depInfo.imageMemoryBarrierCount = 1;
+            depInfo.pImageMemoryBarriers = &imgBarrier;
+            m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &depInfo);
+        }
+
         result = filterCmdBuffer->EndCommandBufferRecording(cmdBuf);
         assert(result == VK_SUCCESS);
 
-        // Wait for the decoder to complete.
+        // Wait on the pool node's binary semaphore (signaled by decode submit).
+        // Signal the TL semaphore @ filterCompleteTimelineValue.
+        // The filter is now the ONLY signaler on the TL semaphore, so values
+        // are monotonically increasing on the compute queue — no backward signals.
+        VkSemaphore decodeToFilterSemaphore = filterCmdBuffer->GetSemaphore();
         const VkPipelineStageFlags2KHR waitDecoderStageMasks = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
-
-        // Signal the compute stage after done.
         const uint64_t computeCompleteTimelineValue = frameSynchronizationInfo.filterCompleteTimelineValue;
         const VkPipelineStageFlags2KHR signalComputeStageMasks = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR;
 
+        // The filter signals the FB's frameCompleteFence — this is the fence
+        // that QueuePictureForDecode waits on before reusing the DPB slot.
+        const uint64_t binarySemaphoreValue = 0; // binary semaphore wait value
         result = m_yuvFilter->SubmitCommandBuffer(1, // commandBufferCount
                                                   filterCmdBuffer->GetCommandBuffer(),
                                                   1, // waitSemaphoreCount
-                                                  &videoDecodeCompleteSemaphore,
-                                                  &frameSynchronizationInfo.decodeCompleteTimelineValue,
+                                                  &decodeToFilterSemaphore,
+                                                  &binarySemaphoreValue,
                                                   &waitDecoderStageMasks,
                                                   1, // signalSemaphoreCount
                                                   &videoDecodeCompleteSemaphore,
@@ -1624,9 +1758,64 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         filterCmdBuffer->SetCommandBufferSubmitted();
         bool syncCpuAfterStaging = false;
         if (syncCpuAfterStaging) {
-            filterCmdBuffer->SyncHostOnCmdBuffComplete(false, "filterFence");
+            // Wait on frameCompleteFence (signaled by filter submit, not decode submit)
+            if (frameCompleteFence != VkFence()) {
+                result = m_vkDevCtx->WaitForFences(*m_vkDevCtx, 1, &frameCompleteFence, true, gFenceTimeout);
+                if (result != VK_SUCCESS) {
+                    uint64_t currentTL = 0;
+                    m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, videoDecodeCompleteSemaphore, &currentTL);
+                    fprintf(stderr, "[SYNC-FAIL] Filter fence timeout! pic=%d, result=%d, "
+                            "TL current=%llu, filterTL=%llu, decodeTL=%llu, "
+                            "binarySem=%p\n",
+                            currPicIdx, result,
+                            (unsigned long long)currentTL,
+                            (unsigned long long)computeCompleteTimelineValue,
+                            (unsigned long long)frameSynchronizationInfo.decodeCompleteTimelineValue,
+                            (void*)decodeToFilterSemaphore);
+                }
+                assert(result == VK_SUCCESS);
+            }
+            // Also wait on the filter TL semaphore value
+            if (videoDecodeCompleteSemaphore != VkSemaphore()) {
+                VkSemaphoreWaitInfo waitInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+                                                  nullptr, 0, 1,
+                                                  &videoDecodeCompleteSemaphore,
+                                                  &computeCompleteTimelineValue };
+                result = m_vkDevCtx->WaitSemaphores(*m_vkDevCtx, &waitInfo, gFenceTimeout);
+                assert(result == VK_SUCCESS);
+                uint64_t currentValue = 0;
+                m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, videoDecodeCompleteSemaphore, &currentValue);
+                fprintf(stderr, "[SYNC] Filter TL semaphore OK (pic=%d, expected=%llu, current=%llu)\n",
+                        currPicIdx, (unsigned long long)computeCompleteTimelineValue,
+                        (unsigned long long)currentValue);
+            }
         }
     }
+
+    // Sync debug: CPU wait after ALL stages (decode + filter if enabled).
+    // This serializes the pipeline — every frame completes before the next starts.
+    const bool checkIdleSync = false; // For fence/sync/idle debugging
+    if (checkIdleSync) {
+        // Wait on frameCompleteFence — signaled by the last producer
+        // (decoder without filter, filter with filter enabled)
+        if (frameCompleteFence != VkFence()) {
+            vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, frameCompleteFence,
+                                  false, "frameProducerStallDoneFence");
+        }
+        // Wait on the TL semaphore for the last stage
+        if (videoDecodeCompleteSemaphore != VkSemaphore()) {
+            uint64_t waitValue = m_enableDecodeComputeFilter
+                ? frameSynchronizationInfo.filterCompleteTimelineValue
+                : frameSynchronizationInfo.decodeCompleteTimelineValue;
+            VkSemaphoreWaitInfo waitInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+                                              nullptr, 0, 1,
+                                              &videoDecodeCompleteSemaphore, &waitValue };
+            result = m_vkDevCtx->WaitSemaphores(*m_vkDevCtx, &waitInfo, gFenceTimeout);
+            assert(result == VK_SUCCESS);
+        }
+    }
+
+    m_decodePicCount++;
 
     return currPicIdx;
 }
@@ -1741,12 +1930,8 @@ void VkVideoDecoder::Deinitialize()
         return;
     }
 
-    if (m_vkDevCtx->GetVideoDecodeNumQueues() > 1) {
-        for (uint32_t queueId = 0; queueId <  (uint32_t)m_vkDevCtx->GetVideoDecodeNumQueues(); queueId++) {
-            m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::DECODE, queueId);
-        }
-    } else {
-        m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::DECODE, m_currentVideoQueueIndx);
+    if (*m_vkDevCtx) {
+        m_vkDevCtx->DeviceWaitIdle();
     }
 
     if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
@@ -1759,8 +1944,17 @@ void VkVideoDecoder::Deinitialize()
         m_dpbYcbcrConversion = VK_NULL_HANDLE;
     }
 
+    if (m_filterOutYcbcrConversion != VK_NULL_HANDLE) {
+        m_vkDevCtx->DestroySamplerYcbcrConversion(*m_vkDevCtx, m_filterOutYcbcrConversion, nullptr);
+        m_filterOutYcbcrConversion = VK_NULL_HANDLE;
+    }
+
     m_videoFrameBuffer = nullptr;
     m_decodeFramesData.deinit();
+    if (m_currentPictureParameters) {
+        m_currentPictureParameters->Reset();
+        m_currentPictureParameters = nullptr;
+    }
     m_videoSession = nullptr;
     m_yuvFilter = nullptr;
     m_vkDevCtx = nullptr;
@@ -1771,18 +1965,3 @@ VkVideoDecoder::~VkVideoDecoder()
     Deinitialize();
 }
 
-int32_t VkVideoDecoder::AddRef()
-{
-    return ++m_refCount;
-}
-
-int32_t VkVideoDecoder::Release()
-{
-    uint32_t ret;
-    ret = --m_refCount;
-    // Destroy the device if refcount reaches zero
-    if (ret == 0) {
-        delete this;
-    }
-    return ret;
-}

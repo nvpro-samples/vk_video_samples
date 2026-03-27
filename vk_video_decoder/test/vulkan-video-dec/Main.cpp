@@ -18,6 +18,7 @@
 
 #include "VkCodecUtils/DecoderConfig.h"
 #include "vulkan_video_decoder.h"
+#include "VkVSCommon.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkCodecUtils/VulkanFrame.h"
 #include "VkCodecUtils/VulkanDecoderFrameProcessor.h"
@@ -48,7 +49,7 @@ int main(int argc, const char** argv)
     if (!configResult && (decoderConfig.help == true)) {
         return 0;
     } else if (!configResult) {
-        return -1;
+        return EXIT_FAILURE;
     }
 
     VkSharedBaseObj<VideoStreamDemuxer> videoStreamDemuxer;
@@ -81,8 +82,8 @@ int main(int argc, const char** argv)
                                                decoderConfig.verbose);
 
     if (result != VK_SUCCESS) {
-        printf("Could not initialize the Vulkan decoder device!\n");
-        return -1;
+        fprintf(stderr, "Could not initialize the Vulkan decoder device!\n");
+        return IsVideoUnsupportedResult(result) ? VVS_EXIT_UNSUPPORTED : EXIT_FAILURE;
     }
 
 
@@ -115,22 +116,22 @@ int main(int argc, const char** argv)
 
         result = Shell::Create(&vkDevCtxt, configuration, displayShell);
         if (result != VK_SUCCESS) {
-            assert(!"Can't allocate display shell! Out of memory!");
-            return -1;
+            fprintf(stderr, "Can't allocate display shell!\n");
+            return EXIT_FAILURE;
         }
 
         result = vkDevCtxt.InitPhysicalDevice(decoderConfig.deviceId, decoderConfig.deviceUUID,
                                               (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT |
                                               requestVideoComputeQueueMask |
                                               requestVideoDecodeQueueMask),
-                                              displayShell,
+                                              displayShell.get(),
                                               requestVideoDecodeQueueMask,
                                               videoCodec,
                                               0,
                                               VK_VIDEO_CODEC_OPERATION_NONE_KHR);
         if (result != VK_SUCCESS) {
-            assert(!"Can't initialize the Vulkan physical device!");
-            return -1;
+            fprintf(stderr, "Can't initialize the Vulkan physical device!\n");
+            return IsVideoUnsupportedResult(result) ? VVS_EXIT_UNSUPPORTED : EXIT_FAILURE;
         }
         assert(displayShell->PhysDeviceCanPresent(vkDevCtxt.getPhysicalDevice(),
                                                   vkDevCtxt.GetPresentQueueFamilyIdx()));
@@ -156,22 +157,23 @@ int main(int argc, const char** argv)
                                               frameToFile);
             if (result != VK_SUCCESS) {
                 fprintf(stderr, "Error creating output file %s\n", decoderConfig.outputFileName.c_str());
-                return -1;
+                return EXIT_FAILURE;
             }
         }
 
         VkSharedBaseObj<VulkanVideoDecoder> vulkanVideoDecoder;
-        result = CreateVulkanVideoDecoder(vkDevCtxt.getInstance(),
+        result = CreateVulkanVideoDecoder(&vkDevCtxt,
+                                        vkDevCtxt.getInstance(),
                                         vkDevCtxt.getPhysicalDevice(),
                                         vkDevCtxt.getDevice(),
                                         videoStreamDemuxer,
                                         frameToFile,
-                                        displayShell,
+                                        displayShell.get(),
                                         argc, argv,
                                         vulkanVideoDecoder);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "Error creating video decoder\n");
-            return -1;
+            return IsVideoUnsupportedResult(result) ? VVS_EXIT_UNSUPPORTED : EXIT_FAILURE;
         }
 
         DumpDecoderStreamInfo(vulkanVideoDecoder);
@@ -191,8 +193,8 @@ int main(int argc, const char** argv)
                                               nullptr,
                                               requestVideoDecodeQueueMask);
         if (result != VK_SUCCESS) {
-            assert(!"Can't initialize the Vulkan physical device!");
-            return -1;
+            fprintf(stderr, "Can't initialize the Vulkan physical device!\n");
+            return IsVideoUnsupportedResult(result) ? VVS_EXIT_UNSUPPORTED : EXIT_FAILURE;
         }
 
         result = vkDevCtxt.CreateVulkanDevice(numDecodeQueues,
@@ -207,8 +209,8 @@ int main(int argc, const char** argv)
                                               requestVideoComputeQueueMask != 0   // createComputeQueue
                                               );
         if (result != VK_SUCCESS) {
-            assert(!"Failed to create Vulkan device!");
-            return -1;
+            fprintf(stderr, "Failed to create Vulkan device!\n");
+            return IsVideoUnsupportedResult(result) ? VVS_EXIT_UNSUPPORTED : EXIT_FAILURE;
         }
 
         VkSharedBaseObj<VkVideoFrameOutput> frameToFile;
@@ -222,22 +224,23 @@ int main(int argc, const char** argv)
                                               frameToFile);
             if (result != VK_SUCCESS) {
                 fprintf(stderr, "Error creating output file %s\n", decoderConfig.outputFileName.c_str());
-                return -1;
+                return EXIT_FAILURE;
             }
         }
 
         VkSharedBaseObj<VulkanVideoDecoder> vulkanVideoDecoder;
-        result = CreateVulkanVideoDecoder(vkDevCtxt.getInstance(),
-                                        vkDevCtxt.getPhysicalDevice(),
-                                        vkDevCtxt.getDevice(),
-                                        videoStreamDemuxer,
-                                        frameToFile,
-                                        nullptr,
-                                        argc, argv,
-                                        vulkanVideoDecoder);
+        result = CreateVulkanVideoDecoder(&vkDevCtxt,
+                                          vkDevCtxt.getInstance(),
+                                          vkDevCtxt.getPhysicalDevice(),
+                                          vkDevCtxt.getDevice(),
+                                          videoStreamDemuxer,
+                                          frameToFile,
+                                          nullptr,
+                                          argc, argv,
+                                          vulkanVideoDecoder);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "Error creating video decoder\n");
-            return -1;
+            return IsVideoUnsupportedResult(result) ? VVS_EXIT_UNSUPPORTED : EXIT_FAILURE;
         }
 
         DumpDecoderStreamInfo(vulkanVideoDecoder);

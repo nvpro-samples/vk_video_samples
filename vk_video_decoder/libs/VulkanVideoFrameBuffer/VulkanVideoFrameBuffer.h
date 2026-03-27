@@ -67,7 +67,6 @@ public:
         VkFence frameCompleteFence;
         VkSemaphore frameCompleteSemaphore;
         VkSemaphore consumerCompleteSemaphore;
-        VkFence frameConsumerDoneFence;
         uint64_t frameConsumerDoneTimelineValue;
         uint64_t decodeCompleteTimelineValue;
         uint64_t filterCompleteTimelineValue;
@@ -81,32 +80,26 @@ public:
         // post processing filter
         uint32_t hasFilterSignalSemaphore : 1;
         uint32_t syncOnFrameCompleteFence : 1;
-        uint32_t syncOnFrameConsumerDoneFence : 1;
     };
 
     struct ReferencedObjectsInfo {
 
-        // The bitstream Buffer
-        const VkVideoRefCountBase*     pBitstreamData;
-        // PPS
-        const VkVideoRefCountBase*     pStdPps;
-        // SPS
-        const VkVideoRefCountBase*     pStdSps;
-        // VPS
-        const VkVideoRefCountBase*     pStdVps;
+        VkSharedBaseObj<VkVideoRefCountBase>  bitstreamData;
+        VkSharedBaseObj<VkVideoRefCountBase>  stdPps;
+        VkSharedBaseObj<VkVideoRefCountBase>  stdSps;
+        VkSharedBaseObj<VkVideoRefCountBase>  stdVps;
+        VkSharedBaseObj<VkVideoRefCountBase>  filterPoolNode;
 
-        const VkVideoRefCountBase*     pFilterPoolNode;
-
-        ReferencedObjectsInfo(const VkVideoRefCountBase* pBitstreamDataRef,
-                              const VkVideoRefCountBase* pStdPpsRef,
-                              const VkVideoRefCountBase* pStdSpsRef,
-                              const VkVideoRefCountBase* pStdVpsRef = nullptr,
-                              const VkVideoRefCountBase* pFilterPoolNodeRef = nullptr)
-        : pBitstreamData(pBitstreamDataRef)
-        , pStdPps(pStdPpsRef)
-        , pStdSps(pStdSpsRef)
-        , pStdVps(pStdVpsRef)
-        , pFilterPoolNode(pFilterPoolNodeRef) {}
+        ReferencedObjectsInfo(VkSharedBaseObj<VkVideoRefCountBase> bitstreamDataRef,
+                              VkSharedBaseObj<VkVideoRefCountBase> stdPpsRef,
+                              VkSharedBaseObj<VkVideoRefCountBase> stdSpsRef,
+                              VkSharedBaseObj<VkVideoRefCountBase> stdVpsRef = nullptr,
+                              VkSharedBaseObj<VkVideoRefCountBase> filterPoolNodeRef = nullptr)
+        : bitstreamData(std::move(bitstreamDataRef))
+        , stdPps(std::move(stdPpsRef))
+        , stdSps(std::move(stdSpsRef))
+        , stdVps(std::move(stdVpsRef))
+        , filterPoolNode(std::move(filterPoolNodeRef)) {}
     };
 
     struct PictureResourceInfo {
@@ -183,6 +176,9 @@ public:
     // Export the frame-complete timeline semaphore as an opaque FD for IPC.
     // Returns FD >= 0 on success, -1 on failure. Caller owns the returned FD.
     virtual int ExportFrameCompleteSemaphoreFd() { return -1; }
+
+    // Get the consumer-complete timeline semaphore (for external consumer registration)
+    virtual VkSemaphore GetConsumerCompleteSemaphore() const { return VK_NULL_HANDLE; }
 
     virtual ~VulkanVideoFrameBuffer() { }
 

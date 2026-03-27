@@ -1,0 +1,309 @@
+{
+  "version": "1.0",
+  "description": "Test skip list for Vulkan Video Samples test framework",
+  "decode": [
+    {
+      "name": "av1_argon_test1019",
+      "source_filepath": "video/av1/av1-argon_test1019.obu",
+      "format": "vvs",
+      "drivers": [
+        "radv"
+      ],
+      "platforms": [
+        "all"
+      ],
+      "reproduction": "always",
+      "reason": "Argon test - under investigation. Assertion `!(m_ownedByDisplayMask & (1 << pictureIndex))' fails",
+      "bug_url": "https://github.com/KhronosGroup/Vulkan-Video-Samples/issues/138",
+      "date_added": "2025-01-27"
+    },
+    {
+      "name": "av1_argon_test787",
+      "source_filepath": "video/av1/av1-argon_test787.obu",
+      "format": "vvs",
+      "drivers": [
+        "radv"
+      ],
+      "platforms": [
+        "all"
+      ],
+      "reproduction": "always",
+      "reason": "Argon test - needs investigation, OBU frame header parsing issue.",
+      "bug_url": "https://github.com/KhronosGroup/Vulkan-Video-Samples/issues/124",
+      "date_added": "2025-01-27"
+    },
+    {
+      "name": "av1_argon_test9354_2",
+      "source_filepath": "video/av1/av1-argon_test9354_2.obu",
+      "format": "vvs",
+      "drivers": [
+        "radv",
+        "anv"
+      ],
+      "platforms": [
+        "all"
+      ],
+      "reproduction": "always",
+      "reason": "Argon test - needs investigation. Resolution change issue.",
+      "bug_url": "https://github.com/KhronosGroup/Vulkan-Video-Samples/issues/125",
+      "date_added": "2025-01-27"
+    },
+    {
+      "name": "vp9_show_existing_frames",
+      "source_filepath": "video/vp9/vp9-352x288-show-existing-frames.ivf",
+      "format": "vvs",
+      "drivers": [
+        "all"
+      ],
+      "platforms": [
+        "all"
+      ],
+      "reproduction": "always",
+      "reason": "Show existing frames feature not supported",
+      "bug_url": "https://github.com/KhronosGroup/Vulkan-Video-Samples/pull/113",
+      "date_added": "2025-01-27"
+    },
+    {
+      "name": "vp9_intra_only",
+      "format": "vvs",
+      "drivers": [
+        "anv"
+      ],
+      "platforms": [
+        "all"
+      ],
+      "reproduction": "always",
+      "reason": "md5 mismatch",
+      "bug_url": "",
+      "date_added": "2026-01-19"
+    },
+    {
+      "name": "h265_itu_slist_b",
+      "format": "vvs",
+      "drivers": [
+        "intel"
+      ],
+      "platforms": [
+        "windows"
+      ],
+      "reproduction": "always",
+      "reason": "",
+      "bug_url": "",
+      "date_added": "2026-01-20"
+    },
+    {
+      "name": "av1_basic_8bit",
+      "format": "vvs",
+      "drivers": [
+        "nvidia"
+      ],
+      "platforms": [
+        "linux"
+      ],
+      "reproduction": "flaky",
+      "reason": "the fence times out",
+      "bug_url": "https://github.com/KhronosGroup/Vulkan-Video-Samples/issues/149",
+      "date_added": "2026-01-22",
+      "source_filepath": "resources/video/av1/av1-176x144-main-basic-8.ivf"
+    },
+    {
+      "name": "av1_globalmotion_8bit",
+      "format": "vvs",
+      "drivers": [
+        "nvidia"
+      ],
+      "platforms": [
+        "linux"
+      ],
+      "reproduction": "flaky",
+      "reason": "the fence times out",
+      "bug_url": "https://github.com/KhronosGroup/Vulkan-Video-Samples/issues/149",
+      "date_added": "2026-01-22",
+      "source_filepath": "resources/video/av1/av1-176x144-main-globalmotion-8.ivf"
+    }
+  ],
+  "encode": [
+    {
+      "name": "h265_main10_profile",
+      "format": "vvs",
+      "drivers": [
+        "anv"
+      ],
+      "platforms": [
+        "all"
+      ],
+      "reproduction": "always",
+      "reason": "Capabilities issue",
+      "bug_url": "",
+      "date_added": "2026-01-16"
+    },
+    {
+      "name": "h264_cbr_ratecontrol",
+      "format": "vvs",
+      "drivers": [
+        "anv"
+      ],
+      "platforms": [
+        "all"
+      ],
+      "reproduction": "always",
+      "reason": "the driver does not support rate control such as cbr or vbr",
+      "bug_url": "",
+      "date_added": "2026-01-19"
+    },
+    {
+      "name": "h264_vbr_ratecontrol",
+      "format": "vvs",
+      "drivers": [
+        "anv"
+      ],
+      "platforms": [
+        "all"
+      ],
+      "reproduction": "always",
+      "reason": "the driver does not support rate control such as cbr or vbr",
+      "bug_url": "",
+      "date_added": "2026-01-19"
+    },
+    {
+      "name": "h265_default",
+      "format": "vvs",
+      "drivers": [
+        "anv"
+      ],
+      "platforms": [
+        "all"
+      ],
+      "reproduction": "always",
+      "reason": "fence timeout",
+      "bug_url": "https://github.com/KhronosGroup/Vulkan-Video-Samples/issues/151",
+      "date_added": "2026-01-19"
+    },
+    {
+      "name": "h265_main_profile",
+      "format": "vvs",
+      "drivers": [
+        "anv"
+      ],
+      "platforms": [
+        "all"
+      ],
+      "reproduction": "always",
+      "reason": "fence timeout",
+      "bug_url": "https://github.com/KhronosGroup/Vulkan-Video-Samples/issues/151",
+      "date_added": "2026-01-19"
+    },
+    {
+      "name": "h265_main10_profile",
+      "format": "vvs",
+      "drivers": [
+        "radv"
+      ],
+      "platforms": [
+        "all"
+      ],
+      "reproduction": "always",
+      "reason": "VulkanVideoCapabilities assert",
+      "bug_url": "",
+      "date_added": "2026-01-19"
+    },
+    {
+      "name": "h265_ip_gop",
+      "format": "vvs",
+      "drivers": [
+        "anv"
+      ],
+      "platforms": [
+        "all"
+      ],
+      "reproduction": "always",
+      "reason": "fence timeout",
+      "bug_url": "https://github.com/KhronosGroup/Vulkan-Video-Samples/issues/151",
+      "date_added": "2026-01-19"
+    },
+    {
+      "name": "h265_main10_profile",
+      "format": "vvs",
+      "drivers": [
+        "nvidia"
+      ],
+      "platforms": [
+        "all"
+      ],
+      "reproduction": "always",
+      "reason": "VideoCapability issue",
+      "bug_url": "",
+      "date_added": "2026-01-19"
+    },
+    {
+      "name": "h264_baseline_profile",
+      "format": "vvs",
+      "drivers": [
+        "nvidia"
+      ],
+      "platforms": [
+        "all"
+      ],
+      "reproduction": "always",
+      "reason": "the decoder can not validate the result",
+      "bug_url": "",
+      "date_added": "2026-01-19"
+    },
+    {
+      "name": "h265_ip_gop",
+      "format": "vvs",
+      "drivers": [
+        "amd"
+      ],
+      "platforms": [
+        "windows"
+      ],
+      "reproduction": "always",
+      "reason": "strange crash",
+      "bug_url": "",
+      "date_added": "2026-01-20"
+    },
+    {
+      "name": "h265_main_profile",
+      "format": "vvs",
+      "drivers": [
+        "amd"
+      ],
+      "platforms": [
+        "windows"
+      ],
+      "reproduction": "always",
+      "reason": "strange crash",
+      "bug_url": "",
+      "date_added": "2026-01-20"
+    },
+    {
+      "name": "h265_default",
+      "format": "vvs",
+      "drivers": [
+        "amd"
+      ],
+      "platforms": [
+        "windows"
+      ],
+      "reproduction": "always",
+      "reason": "",
+      "bug_url": "",
+      "date_added": "2026-01-20"
+    },
+    {
+      "name": "h264_resolution_too_small",
+      "format": "vvs",
+      "drivers": [
+        "anv"
+      ],
+      "platforms": [
+        "linux"
+      ],
+      "reproduction": "always",
+      "reason": "could not allocate a frame buffer",
+      "bug_url": "",
+      "date_added": "2026-03-06"
+    }
+  ]
+}

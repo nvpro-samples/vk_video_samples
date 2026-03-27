@@ -32,14 +32,14 @@ public:
 };
 
 template <typename PoolNodeType>
-class VulkanBufferPool : public VulkanBufferPoolIf
+class VulkanBufferPool : public VulkanBufferPoolIf,
+                         public std::enable_shared_from_this<VulkanBufferPool<PoolNodeType>>
 {
 public:
     static constexpr size_t maxPoolNodes = 64;
 
     VulkanBufferPool()
-        : m_refCount()
-        , m_queueMutex()
+        : m_queueMutex()
         , m_poolSize(0)
         , m_nextNodeToUse(0)
         , m_availablePoolNodes(0UL)
@@ -74,21 +74,6 @@ public:
     virtual ~VulkanBufferPool()
     {
         Deinit();
-    }
-
-    virtual int32_t AddRef()
-    {
-        return ++m_refCount;
-    }
-
-    virtual int32_t Release()
-    {
-        uint32_t ret = --m_refCount;
-        // Destroy the device if ref-count reaches zero
-        if (ret == 0) {
-            delete this;
-        }
-        return ret;
     }
 
     PoolNodeType& operator[](unsigned int index)
@@ -133,8 +118,18 @@ public:
             } while (retryFirstPoolPartition);
         }
         if (availablePoolNodeIndx != -1) {
-            m_poolNodes[availablePoolNodeIndx].SetParent(this, availablePoolNodeIndx);
-            poolNode = &m_poolNodes[availablePoolNodeIndx];
+            m_poolNodes[availablePoolNodeIndx].SetParent(this->shared_from_this(), availablePoolNodeIndx);
+            uint32_t idx = static_cast<uint32_t>(availablePoolNodeIndx);
+            auto poolWeak = this->weak_from_this();
+            VulkanBufferPool* rawPool = this;
+            poolNode = std::shared_ptr<PoolNodeType>(
+                &m_poolNodes[idx],
+                [poolWeak, rawPool, idx](PoolNodeType*) {
+                    if (auto pool = poolWeak.lock()) {
+                        rawPool->m_poolNodes[idx].ClearParent();
+                        rawPool->ReleasePoolNodeToPool(idx);
+                    }
+                });
             return true;
         }
         return false;
@@ -151,7 +146,6 @@ public:
     }
 
 private:
-    std::atomic<int32_t>       m_refCount;
     std::mutex                 m_queueMutex;
     uint32_t                   m_poolSize;
     uint32_t                   m_nextNodeToUse;
