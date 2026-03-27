@@ -3164,6 +3164,11 @@ bool VkVideoEncoder::WaitForThreadsToComplete()
 
 int32_t VkVideoEncoder::DeinitEncoder()
 {
+    // Join all worker threads before destroying resources.
+    // Without this, the destructor destroys std::vector<std::thread>
+    // with joinable threads → std::terminate.
+    WaitForThreadsToComplete();
+
 #ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
     m_displayQueue.Flush();
 #endif // VIDEO_DISPLAY_QUEUE_SUPPORT
