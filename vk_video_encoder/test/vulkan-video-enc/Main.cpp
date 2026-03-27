@@ -16,6 +16,7 @@
 
 #include <iostream>
 #include "vulkan_video_encoder.h"
+#include "VkVSCommon.h"
 
 int main(int argc, const char** argv)
 {
@@ -26,6 +27,7 @@ int main(int argc, const char** argv)
 
     if (result != VK_SUCCESS) {
         std::cerr << "Error creating the encoder instance: " << result << std::endl;
+        return IsVideoUnsupportedResult(result) ? VVS_EXIT_UNSUPPORTED : EXIT_FAILURE;
     }
 
     int64_t numFrames = vulkanVideoEncoder->GetNumberOfFrames();
