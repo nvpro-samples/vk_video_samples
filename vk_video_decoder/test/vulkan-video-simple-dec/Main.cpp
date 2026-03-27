@@ -159,7 +159,8 @@ int main(int argc, const char** argv)
     }
 
     VkSharedBaseObj<VulkanVideoDecoder> vulkanVideoDecoder;
-    result = CreateVulkanVideoDecoder(VK_NULL_HANDLE,
+    result = CreateVulkanVideoDecoder(nullptr,
+                                      VK_NULL_HANDLE,
                                       VK_NULL_HANDLE,
                                       VK_NULL_HANDLE,
                                       videoStreamDemuxer,

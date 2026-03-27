@@ -16,7 +16,9 @@
 
 #include "vulkan_video_decoder.h"
 
+#include <memory>
 #include "VkCodecUtils/DecoderConfig.h"
+#include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkVideoDecoder/VkVideoDecoder.h"
 #include "VkCodecUtils/VulkanVideoProcessor.h"
 
@@ -74,15 +76,15 @@ public:
     }
 
     virtual VkDevice GetDevice() const override {
-        return m_vkDevCtxt;  // VulkanDeviceContext has operator VkDevice()
+        return *m_pVkDevCtxt;  // VulkanDeviceContext has operator VkDevice()
     }
 
     virtual VkPhysicalDevice GetPhysicalDevice() const override {
-        return m_vkDevCtxt.getPhysicalDevice();
+        return m_pVkDevCtxt->getPhysicalDevice();
     }
 
     virtual VkInstance GetInstance() const override {
-        return m_vkDevCtxt.getInstance();
+        return m_pVkDevCtxt->getInstance();
     }
 
     virtual int32_t AddExternalConsumer(VkSemaphore importedReleaseSemaphore,
@@ -102,12 +104,19 @@ public:
         return -1;
     }
 
-    VulkanVideoDecoderImpl(const char* programName)
-    : m_vkDevCtxt()
+    VulkanVideoDecoderImpl(const char* programName,
+                           VulkanDeviceContext* pVkDevCtxt = nullptr)
+    : m_pVkDevCtxt(pVkDevCtxt)
+    , m_ownDevCtxt()
     , m_decoderConfig(programName)
     , m_decoder()
     , m_vulkanVideoProcessor()
-    { }
+    {
+        if (m_pVkDevCtxt == nullptr) {
+            m_ownDevCtxt.reset(new VulkanDeviceContext());
+            m_pVkDevCtxt = m_ownDevCtxt.get();
+        }
+    }
 
     VkResult Initialize(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
                         VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
@@ -129,7 +138,8 @@ public:
     }
 
 private:
-    VulkanDeviceContext                   m_vkDevCtxt;
+    VulkanDeviceContext*                   m_pVkDevCtxt;
+    std::unique_ptr<VulkanDeviceContext>   m_ownDevCtxt;
     DecoderConfig                         m_decoderConfig;
     VkSharedBaseObj<VkVideoDecoder>       m_decoder;
     VkSharedBaseObj<VulkanVideoProcessor> m_vulkanVideoProcessor;
@@ -155,88 +165,98 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance,
                   m_decoderConfig.forceParserType :
                 ((videoStreamDemuxer != nullptr) ? videoStreamDemuxer->GetVideoCodec() : VK_VIDEO_CODEC_OPERATION_NONE_KHR);
 
-    VkResult result = m_vkDevCtxt.InitVulkanDecoderDevice(m_decoderConfig.appName.c_str(),
-                                                          vkInstance,
-                                                          videoCodecOperation,
-                                                          !m_decoderConfig.noPresent,
-                                                          m_decoderConfig.directMode,
-                                                          m_decoderConfig.validate,
-                                                          m_decoderConfig.validateVerbose,
-                                                          m_decoderConfig.verbose);
+    VkResult result = VK_SUCCESS;
 
+    // If the caller provided an already-initialized device context, skip
+    // device creation entirely — the context already has the loader dispatch
+    // table, device, queues, and all state we need.
+    const bool deviceAlreadyCreated = (m_pVkDevCtxt->getDevice() != VK_NULL_HANDLE);
+
+    if (!deviceAlreadyCreated) {
+
+        result = m_pVkDevCtxt->InitVulkanDecoderDevice(m_decoderConfig.appName.c_str(),
+                                                       vkInstance,
+                                                       videoCodecOperation,
+                                                       !m_decoderConfig.noPresent,
+                                                       m_decoderConfig.directMode,
+                                                       m_decoderConfig.validate,
+                                                       m_decoderConfig.validateVerbose,
+                                                       m_decoderConfig.verbose);
+
+        if (result != VK_SUCCESS) {
+            printf("Could not initialize the Vulkan decoder device!\n");
+            return result;
+        }
+
+        const int32_t numDecodeQueues = ((m_decoderConfig.queueId != 0) ||
+                                         (m_decoderConfig.enableHwLoadBalancing != 0)) ?
+                                         -1 : // all available HW decoders
+                                          1;  // only one HW decoder instance
+
+        VkQueueFlags requestVideoDecodeQueueMask = VK_QUEUE_VIDEO_DECODE_BIT_KHR;
+
+        if (m_decoderConfig.selectVideoWithComputeQueue) {
+            requestVideoDecodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
+        }
+
+        VkQueueFlags requestVideoComputeQueueMask = 0;
+        if (m_decoderConfig.enablePostProcessFilter != -1) {
+            requestVideoComputeQueueMask = VK_QUEUE_COMPUTE_BIT;
+        }
+
+        const bool supportsShellPresent = ((m_decoderConfig.noPresent == false) && (pWsiDisplay != nullptr));
+        const bool createGraphicsQueue = supportsShellPresent ? true  : false;
+        const bool createDisplayQueue  = supportsShellPresent ? true  : false;
+
+        VkQueueFlags requestGraphicsQueueMask = 0;
+        if (createGraphicsQueue) {
+            requestGraphicsQueueMask = VK_QUEUE_GRAPHICS_BIT;
+        }
+
+        result = m_pVkDevCtxt->InitPhysicalDevice(m_decoderConfig.deviceId, m_decoderConfig.deviceUUID,
+                                                ( VK_QUEUE_TRANSFER_BIT |
+                                                  requestGraphicsQueueMask |
+                                                  requestVideoComputeQueueMask |
+                                                  requestVideoDecodeQueueMask),
+                                                pWsiDisplay,
+                                                requestVideoDecodeQueueMask,
+                                                videoCodecOperation,
+                                                  0,
+                                                VK_VIDEO_CODEC_OPERATION_NONE_KHR,
+                                                vkPhysicalDevice);
+
+        if (result != VK_SUCCESS) {
+
+            assert(!"Can't initialize the Vulkan physical device!");
+            return result;
+        }
+
+        result = m_pVkDevCtxt->CreateVulkanDevice(numDecodeQueues,
+                                       0, // num encode queues
+                                       videoCodecOperation,
+                                       // If no graphics or compute queue is requested, only video queues
+                                       // will be created. Not all implementations support transfer on video queues,
+                                       // so request a separate transfer queue for such implementations.
+                                       ((m_pVkDevCtxt->GetVideoDecodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) == 0), //  createTransferQueue
+                                       createGraphicsQueue,
+                                       createDisplayQueue,
+                                       (requestVideoComputeQueueMask != 0),  // createComputeQueue
+                                       vkDevice
+                                       );
+
+        if (result != VK_SUCCESS) {
+
+            assert(!"Failed to create Vulkan device!");
+            return result;
+        }
+    }
+
+    result = VulkanVideoProcessor::Create(m_decoderConfig, m_pVkDevCtxt, m_vulkanVideoProcessor);
     if (result != VK_SUCCESS) {
-        printf("Could not initialize the Vulkan decoder device!\n");
         return result;
     }
 
-    const int32_t numDecodeQueues = ((m_decoderConfig.queueId != 0) ||
-                                     (m_decoderConfig.enableHwLoadBalancing != 0)) ?
-                                     -1 : // all available HW decoders
-                                      1;  // only one HW decoder instance
-
-    VkQueueFlags requestVideoDecodeQueueMask = VK_QUEUE_VIDEO_DECODE_BIT_KHR;
-
-    if (m_decoderConfig.selectVideoWithComputeQueue) {
-        requestVideoDecodeQueueMask |= VK_QUEUE_COMPUTE_BIT;
-    }
-
-    VkQueueFlags requestVideoComputeQueueMask = 0;
-    if (m_decoderConfig.enablePostProcessFilter != -1) {
-        requestVideoComputeQueueMask = VK_QUEUE_COMPUTE_BIT;
-    }
-
-    const bool supportsShellPresent = ((m_decoderConfig.noPresent == false) && (pWsiDisplay != nullptr));
-    const bool createGraphicsQueue = supportsShellPresent ? true  : false;
-    const bool createDisplayQueue  = supportsShellPresent ? true  : false;
-
-    VkQueueFlags requestGraphicsQueueMask = 0;
-    if (createGraphicsQueue) {
-        requestGraphicsQueueMask = VK_QUEUE_GRAPHICS_BIT;
-    }
-
-    result = m_vkDevCtxt.InitPhysicalDevice(m_decoderConfig.deviceId, m_decoderConfig.deviceUUID,
-                                            ( VK_QUEUE_TRANSFER_BIT |
-                                              requestGraphicsQueueMask |
-                                              requestVideoComputeQueueMask |
-                                              requestVideoDecodeQueueMask),
-                                            pWsiDisplay,
-                                            requestVideoDecodeQueueMask,
-                                            videoCodecOperation,
-                                              0,
-                                            VK_VIDEO_CODEC_OPERATION_NONE_KHR,
-                                            vkPhysicalDevice);
-
-    if (result != VK_SUCCESS) {
-
-        assert(!"Can't initialize the Vulkan physical device!");
-        return result;
-    }
-
-    m_vkDevCtxt.CreateVulkanDevice(numDecodeQueues,
-                                   0, // num encode queues
-                                   videoCodecOperation,
-                                   // If no graphics or compute queue is requested, only video queues
-                                   // will be created. Not all implementations support transfer on video queues,
-                                   // so request a separate transfer queue for such implementations.
-                                   ((m_vkDevCtxt.GetVideoDecodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) == 0), //  createTransferQueue
-                                   createGraphicsQueue,
-                                   createDisplayQueue,
-                                   (requestVideoComputeQueueMask != 0),  // createComputeQueue
-                                   vkDevice
-                                   );
-
-    if (result != VK_SUCCESS) {
-
-        assert(!"Failed to create Vulkan device!");
-        return result;
-    }
-
-    result = VulkanVideoProcessor::Create(m_decoderConfig, &m_vkDevCtxt, m_vulkanVideoProcessor);
-    if (result != VK_SUCCESS) {
-        return result;
-    }
-
-    int32_t initStatus = m_vulkanVideoProcessor->Initialize(&m_vkDevCtxt,
+    int32_t initStatus = m_vulkanVideoProcessor->Initialize(m_pVkDevCtxt,
                                                             videoStreamDemuxer,
                                                             frameToFile,
                                                             m_decoderConfig);
@@ -248,7 +268,8 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance,
 }
 
 VK_VIDEO_DECODER_EXPORT
-VkResult CreateVulkanVideoDecoder(VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
+VkResult CreateVulkanVideoDecoder(VulkanDeviceContext* pVkDevCtxt,
+                                  VkInstance vkInstance, VkPhysicalDevice vkPhysicalDevice, VkDevice vkDevice,
                                   VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
                                   VkSharedBaseObj<VkVideoFrameOutput>& frameToFile,
                                   const VkWsiDisplay* pWsiDisplay,
@@ -272,7 +293,8 @@ VkResult CreateVulkanVideoDecoder(VkInstance vkInstance, VkPhysicalDevice vkPhys
         return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
     }
 
-    VkSharedBaseObj<VulkanVideoDecoderImpl> vulkanVideoDecoderObj( new VulkanVideoDecoderImpl(argv[0]));
+    VkSharedBaseObj<VulkanVideoDecoderImpl> vulkanVideoDecoderObj(
+        new VulkanVideoDecoderImpl(argv[0], pVkDevCtxt));
     if (!vulkanVideoDecoderObj) {
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }

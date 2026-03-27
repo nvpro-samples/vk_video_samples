@@ -162,7 +162,8 @@ int main(int argc, const char** argv)
         }
 
         VkSharedBaseObj<VulkanVideoDecoder> vulkanVideoDecoder;
-        result = CreateVulkanVideoDecoder(vkDevCtxt.getInstance(),
+        result = CreateVulkanVideoDecoder(&vkDevCtxt,
+                                        vkDevCtxt.getInstance(),
                                         vkDevCtxt.getPhysicalDevice(),
                                         vkDevCtxt.getDevice(),
                                         videoStreamDemuxer,
@@ -228,14 +229,15 @@ int main(int argc, const char** argv)
         }
 
         VkSharedBaseObj<VulkanVideoDecoder> vulkanVideoDecoder;
-        result = CreateVulkanVideoDecoder(vkDevCtxt.getInstance(),
-                                        vkDevCtxt.getPhysicalDevice(),
-                                        vkDevCtxt.getDevice(),
-                                        videoStreamDemuxer,
-                                        frameToFile,
-                                        nullptr,
-                                        argc, argv,
-                                        vulkanVideoDecoder);
+        result = CreateVulkanVideoDecoder(&vkDevCtxt,
+                                          vkDevCtxt.getInstance(),
+                                          vkDevCtxt.getPhysicalDevice(),
+                                          vkDevCtxt.getDevice(),
+                                          videoStreamDemuxer,
+                                          frameToFile,
+                                          nullptr,
+                                          argc, argv,
+                                          vulkanVideoDecoder);
         if (result != VK_SUCCESS) {
             fprintf(stderr, "Error creating video decoder\n");
             return IsVideoUnsupportedResult(result) ? VVS_EXIT_UNSUPPORTED : EXIT_FAILURE;
