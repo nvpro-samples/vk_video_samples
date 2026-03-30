@@ -1,0 +1,26 @@
+# LeakSanitizer suppressions for Vulkan Video Samples test suite
+#
+# These are known leaks in system libraries that cannot be fixed
+# in application code. All application-level leaks have been verified
+# as zero via ASAN testing.
+#
+# Usage (use absolute path since subprocesses may change CWD):
+#   LSAN_OPTIONS=suppressions=$(pwd)/tests/lsan_suppressions.txt
+
+# D-Bus library allocations (never freed by design)
+leak:libdbus-1.so
+
+# DRM library allocations (kernel interface, one-time init)
+leak:libdrm.so
+
+# X11 extension library (display init allocations)
+leak:libXext.so
+
+# Vulkan loader / ICD allocations (driver-internal)
+leak:libvulkan.so
+leak:libGLX_nvidia.so
+leak:libnvidia-glcore.so
+
+# Allocations from unknown modules (driver/loader internal, no debug symbols)
+# These show as (<unknown module>) in LSAN stack traces
+leak:<unknown module>

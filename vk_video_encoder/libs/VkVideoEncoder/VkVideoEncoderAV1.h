@@ -175,6 +175,11 @@ protected:
 public:
     virtual ~VkVideoEncoderAV1()
     {
+        // Must join worker threads before destroying AV1-specific members.
+        // Base class ~VkVideoEncoder() also calls this, but derived destructor
+        // runs first — threads may still be accessing our std::set, DPB, etc.
+        WaitForThreadsToComplete();
+
         m_frameInfoBuffersQueue = nullptr;
         m_videoSessionParameters = nullptr;
         m_videoSession = nullptr;

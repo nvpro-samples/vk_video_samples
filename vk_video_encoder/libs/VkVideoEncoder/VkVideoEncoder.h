@@ -44,11 +44,12 @@
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
 #include "EncodeAqAnalyzes.h"
 #endif // NV_AQ_GPU_LIB_SUPPORTED
+#include "VkVideoEncoder/VkVideoEncoderPsnr.h"
+#include "VkCodecUtils/VkVideoCrc.h"
+
 class VkVideoEncoderH264;
 class VkVideoEncoderH265;
 class VkVideoEncoderAV1;
-#include "VkVideoEncoder/VkVideoEncoderPsnr.h"
-#include "VkCodecUtils/VkVideoCrc.h"
 
 class VkVideoEncoder : public VkVideoRefCountBase {
 

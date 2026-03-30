@@ -24,6 +24,7 @@
 #include "vulkan/vulkan.h"
 
 class VulkanDeviceContext;
+namespace vkvideoencoder { struct VkVideoEncodeFrameInfo; }
 
 /**
  * PSNR computation for video encoder: owns staging image pool, captures input,
@@ -50,10 +51,8 @@ public:
                        uint32_t encodeQueueFamilyIndex);
 
     void CaptureInput(void* encodeFrameInfo, const uint8_t* pInputFrameData);
-    /** Capture reconstructed frame (DPB to staging). Acquire staging image from pool and record copy. Caller must transition DPB to TRANSFER_SRC and staging as needed before/after. encodeFrameInfo is VkVideoEncoder::VkVideoEncodeFrameInfo*; uses encodeFrameInfo->psnrFrameData. Returns true if copy was recorded. */
     bool CaptureOutput(VkCommandBuffer cmdBuf, void* encodeFrameInfo);
     void ComputeFramePsnr(void* encodeFrameInfo);
-    /** Average PSNR (dB) for luma, or -1.0 if none. Same as GetAveragePsnr(). */
     double GetAveragePsnrY() const;
     double GetAveragePsnrU() const;
     double GetAveragePsnrV() const;
@@ -64,8 +63,9 @@ public:
 public:
     ~VkVideoEncoderPsnr() override;
 
+private:
     const VulkanDeviceContext* m_vkDevCtx = nullptr;
-    EncoderConfig* m_encoderConfig = nullptr;
+    VkSharedBaseObj<EncoderConfig> m_encoderConfig;
     VkResult m_initResult = VK_SUCCESS;
     uint32_t m_maxEncodeQueueDepth = 0;
     VkFormat m_imageDpbFormat = VK_FORMAT_UNDEFINED;
@@ -73,13 +73,10 @@ public:
     uint32_t m_encodeQueueFamilyIndex = 0;
 
     VkSharedBaseObj<VulkanVideoImagePool> m_psnrReconImagePool;
-    double m_psnrSum;
-    double m_psnrSumU;
-    double m_psnrSumV;
-    uint32_t m_psnrFrameCount;
-    std::vector<uint8_t> m_psnrInputY;
-    std::vector<uint8_t> m_psnrInputU;
-    std::vector<uint8_t> m_psnrInputV;
+    double m_psnrSum = 0.0;
+    double m_psnrSumU = 0.0;
+    double m_psnrSumV = 0.0;
+    uint32_t m_psnrFrameCount = 0;
     std::vector<uint8_t> m_psnrReconY;
     std::vector<uint8_t> m_psnrReconU;
     std::vector<uint8_t> m_psnrReconV;

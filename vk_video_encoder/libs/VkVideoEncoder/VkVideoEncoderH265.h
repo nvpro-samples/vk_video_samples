@@ -134,6 +134,8 @@ public:
 protected:
 public:
     virtual ~VkVideoEncoderH265() {
+        // Must join worker threads before destroying H.265-specific members.
+        WaitForThreadsToComplete();
 
         m_frameInfoBuffersQueue = nullptr;
         m_encoderConfig = nullptr;
