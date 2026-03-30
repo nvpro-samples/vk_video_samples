@@ -61,15 +61,8 @@ public:
     double GetAveragePsnr() const;
     void Deinit();
 
-    int32_t AddRef() override;
-    int32_t Release() override;
-    int32_t GetRefCount() override { return m_refCount; }
-
-protected:
+public:
     ~VkVideoEncoderPsnr() override;
-
-private:
-    int32_t m_refCount = 0;
 
     const VulkanDeviceContext* m_vkDevCtx = nullptr;
     EncoderConfig* m_encoderConfig = nullptr;

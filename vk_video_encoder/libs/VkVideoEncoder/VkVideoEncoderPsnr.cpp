@@ -25,23 +25,10 @@
 
 VkResult VkVideoEncoderPsnr::Create(VkSharedBaseObj<VkVideoEncoderPsnr>& psnr)
 {
-    psnr = new VkVideoEncoderPsnr();
+    psnr.reset(new VkVideoEncoderPsnr());
     return (psnr != nullptr) ? VK_SUCCESS : VK_ERROR_OUT_OF_HOST_MEMORY;
 }
 
-int32_t VkVideoEncoderPsnr::AddRef()
-{
-    return ++m_refCount;
-}
-
-int32_t VkVideoEncoderPsnr::Release()
-{
-    int32_t ret = --m_refCount;
-    if (ret == 0) {
-        delete this;
-    }
-    return ret;
-}
 
 VkVideoEncoderPsnr::~VkVideoEncoderPsnr()
 {
@@ -57,7 +44,7 @@ VkResult VkVideoEncoderPsnr::Configure(const VulkanDeviceContext* vkDevCtx,
 {
     if (m_vkDevCtx == nullptr) {
         m_vkDevCtx = vkDevCtx;
-        m_encoderConfig = encoderConfig.Get();
+        m_encoderConfig = encoderConfig.get();
         m_maxEncodeQueueDepth = maxEncodeQueueDepth;
         m_imageDpbFormat = imageDpbFormat;
         m_imageExtent = imageExtent;
