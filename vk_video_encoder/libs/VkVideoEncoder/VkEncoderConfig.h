@@ -983,11 +983,11 @@ public:
     , enablePictureRowColReplication(1)
     , enableOutOfOrderRecording(false)
     , enablePsnrMetrics(false)
-    , outputCrcPerFrame(false)
-    , crcOutputFileName()
     , disableEncodeParameterOptimizations(false)
     , asyncAssembly(true)
     , assemblyThreadCount(2)
+    , outputCrcPerFrame(false)
+    , crcOutputFileName()
     , drmFormatModifierIndex(-1)
     , selectedDrmFormatModifier(0)
     { }

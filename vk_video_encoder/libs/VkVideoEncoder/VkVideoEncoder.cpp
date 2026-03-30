@@ -1158,7 +1158,9 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
                   << ", Input Order: " << encodeFrameInfo->gopPosition.inputOrder
                   << ", Encode  Order: " << encodeFrameInfo->gopPosition.encodeOrder << std::endl << std::flush;
     }
-    m_crc.SignalFrameEnd((uint32_t)(encodeFrameInfo->gopPosition.inputOrder));
+    if (m_crc.Enabled()) {
+        m_crc.SignalFrameEnd((uint32_t)(encodeFrameInfo->gopPosition.inputOrder));
+    }
 
     return result;
 }

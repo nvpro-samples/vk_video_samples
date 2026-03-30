@@ -133,6 +133,8 @@ protected:
 public:
     virtual ~VkVideoEncoderH264()
     {
+        // Must join worker threads before destroying H.264-specific members.
+        WaitForThreadsToComplete();
 
         m_frameInfoBuffersQueue = nullptr;
         m_videoSessionParameters = nullptr;

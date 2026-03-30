@@ -44,7 +44,7 @@ VkResult VkVideoEncoderPsnr::Configure(const VulkanDeviceContext* vkDevCtx,
 {
     if (m_vkDevCtx == nullptr) {
         m_vkDevCtx = vkDevCtx;
-        m_encoderConfig = encoderConfig.get();
+        m_encoderConfig = encoderConfig;
         m_maxEncodeQueueDepth = maxEncodeQueueDepth;
         m_imageDpbFormat = imageDpbFormat;
         m_imageExtent = imageExtent;
@@ -106,34 +106,31 @@ void VkVideoEncoderPsnr::CaptureInput(void* encodeFrameInfoVoid, const uint8_t* 
     const uint32_t numPlanes = m_encoderConfig->input.numPlanes;
 
     if (numPlanes >= 1) {
-        m_psnrInputY.resize(yPlaneSize);
+        encodeFrameInfo.psnrFrameData.psnrInputY.resize(yPlaneSize);
         const VkSubresourceLayout& ly = m_encoderConfig->input.planeLayouts[0];
         for (uint32_t row = 0; row < height; row++) {
-            memcpy(m_psnrInputY.data() + (row * width),
+            memcpy(encodeFrameInfo.psnrFrameData.psnrInputY.data() + (row * width),
                    pInputFrameData + ly.offset + ((size_t)(row) * ly.rowPitch),
                    width);
         }
-        encodeFrameInfo.psnrFrameData.psnrInputY = m_psnrInputY;
     }
     if (numPlanes >= 2) {
-        m_psnrInputU.resize(uPlaneSize);
+        encodeFrameInfo.psnrFrameData.psnrInputU.resize(uPlaneSize);
         const VkSubresourceLayout& lu = m_encoderConfig->input.planeLayouts[1];
         for (uint32_t row = 0; row < chromaH; row++) {
-            memcpy(m_psnrInputU.data() + (row * chromaW),
+            memcpy(encodeFrameInfo.psnrFrameData.psnrInputU.data() + (row * chromaW),
                    pInputFrameData + lu.offset + ((size_t)(row) * lu.rowPitch),
                    chromaW);
         }
-        encodeFrameInfo.psnrFrameData.psnrInputU = m_psnrInputU;
     }
     if (numPlanes >= 3) {
-        m_psnrInputV.resize(uPlaneSize);
+        encodeFrameInfo.psnrFrameData.psnrInputV.resize(uPlaneSize);
         const VkSubresourceLayout& lv = m_encoderConfig->input.planeLayouts[2];
         for (uint32_t row = 0; row < chromaH; row++) {
-            memcpy(m_psnrInputV.data() + (row * chromaW),
+            memcpy(encodeFrameInfo.psnrFrameData.psnrInputV.data() + (row * chromaW),
                    pInputFrameData + lv.offset + ((size_t)(row) * lv.rowPitch),
                    chromaW);
         }
-        encodeFrameInfo.psnrFrameData.psnrInputV = m_psnrInputV;
     }
 }
 
@@ -163,6 +160,25 @@ bool VkVideoEncoderPsnr::CaptureOutput(VkCommandBuffer cmdBuf, void* encodeFrame
     const bool dpbIs2Plane = (m_imageDpbFormat == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM);
     VkImage dpbImage = setupEncodeImageView->GetImageResource()->GetImage();
     VkImage stagingImage = stagingImageView->GetImageResource()->GetImage();
+
+    // Transition staging image from UNDEFINED to TRANSFER_DST before copy
+    VkImageMemoryBarrier2KHR stagingBarrier = {};
+    stagingBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR;
+    stagingBarrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+    stagingBarrier.srcAccessMask = VK_ACCESS_2_NONE;
+    stagingBarrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    stagingBarrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    stagingBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    stagingBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    stagingBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    stagingBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    stagingBarrier.image = stagingImage;
+    stagingBarrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+    VkDependencyInfoKHR depInfo = {};
+    depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR;
+    depInfo.imageMemoryBarrierCount = 1;
+    depInfo.pImageMemoryBarriers = &stagingBarrier;
+    m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &depInfo);
 
     if (dpbIs2Plane) {
         VkImageCopy r0 = { { VK_IMAGE_ASPECT_PLANE_0_BIT, 0, 0, 1 }, { 0, 0, 0 }, { VK_IMAGE_ASPECT_PLANE_0_BIT, 0, 0, 1 }, { 0, 0, 0 }, { w, h, 1 } };
@@ -211,12 +227,15 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
     const size_t uPlaneSizeRecon = (size_t)(encodeChromaW * encodeChromaH);
     const uint32_t numPlanes = std::min(3u, m_encoderConfig->input.numPlanes);
 
-    const uint8_t* inputY = (!encodeFrameInfo.psnrFrameData.psnrInputY.empty()) ? encodeFrameInfo.psnrFrameData.psnrInputY.data() : m_psnrInputY.data();
-    const uint8_t* inputU = (!encodeFrameInfo.psnrFrameData.psnrInputU.empty()) ? encodeFrameInfo.psnrFrameData.psnrInputU.data() : m_psnrInputU.data();
-    const uint8_t* inputV = (!encodeFrameInfo.psnrFrameData.psnrInputV.empty()) ? encodeFrameInfo.psnrFrameData.psnrInputV.data() : m_psnrInputV.data();
-    const size_t inputYSize = (!encodeFrameInfo.psnrFrameData.psnrInputY.empty()) ? encodeFrameInfo.psnrFrameData.psnrInputY.size() : m_psnrInputY.size();
-    const size_t inputUSize = (!encodeFrameInfo.psnrFrameData.psnrInputU.empty()) ? encodeFrameInfo.psnrFrameData.psnrInputU.size() : m_psnrInputU.size();
-    const size_t inputVSize = (!encodeFrameInfo.psnrFrameData.psnrInputV.empty()) ? encodeFrameInfo.psnrFrameData.psnrInputV.size() : m_psnrInputV.size();
+    if (encodeFrameInfo.psnrFrameData.psnrInputY.empty()) {
+        return;
+    }
+    const uint8_t* inputY = encodeFrameInfo.psnrFrameData.psnrInputY.data();
+    const uint8_t* inputU = encodeFrameInfo.psnrFrameData.psnrInputU.data();
+    const uint8_t* inputV = encodeFrameInfo.psnrFrameData.psnrInputV.data();
+    const size_t inputYSize = encodeFrameInfo.psnrFrameData.psnrInputY.size();
+    const size_t inputUSize = encodeFrameInfo.psnrFrameData.psnrInputU.size();
+    const size_t inputVSize = encodeFrameInfo.psnrFrameData.psnrInputV.size();
     if (inputYSize != yPlaneSizeInput) {
         return;
     }
@@ -294,7 +313,7 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
 
     m_vkDevCtx->UnmapMemory(device, mem);
 
-#define VKVENC_DEBUG_DUMP_PSNR_FRAMES 1
+#define VKVENC_DEBUG_DUMP_PSNR_FRAMES 0
 #if VKVENC_DEBUG_DUMP_PSNR_FRAMES
     {
         const uint32_t inputOrder = (uint32_t)encodeFrameInfo.gopPosition.inputOrder;
@@ -397,9 +416,6 @@ void VkVideoEncoderPsnr::Deinit()
 {
     m_psnrReconImagePool = nullptr;
     m_encoderConfig = nullptr;
-    m_psnrInputY.clear();
-    m_psnrInputU.clear();
-    m_psnrInputV.clear();
     m_psnrReconY.clear();
     m_psnrReconU.clear();
     m_psnrReconV.clear();
