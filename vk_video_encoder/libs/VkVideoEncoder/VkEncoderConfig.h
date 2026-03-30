@@ -20,7 +20,7 @@
 #include <assert.h>
 #include <string.h>
 #include <string>
-#include <charconv>
+#include <cstdlib>
 #include <cerrno>
 #include <atomic>
 #include <limits>
@@ -507,10 +507,9 @@ private:
       if (*str == '\0') {
         return false;
       }
-      const char* last = str + strlen(str);
-      uint32_t value = 0;
-      auto [ptr, ec] = std::from_chars(str, last, value);
-      if (ec != std::errc{} || value == 0) {
+      char* end = nullptr;
+      unsigned long value = strtoul(str, &end, 10);
+      if (end == str || value == 0) {
         return false;
       }
       *out_value_ptr = value;

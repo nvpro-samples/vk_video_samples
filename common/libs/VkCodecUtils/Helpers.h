@@ -24,7 +24,7 @@
 #include <iostream>
 #include <cstring>
 #include <iomanip>
-#include <charconv>
+#include <cstdlib>
 #include "HelpersDispatchTable.h"
 
 namespace vk {
@@ -383,13 +383,14 @@ public:
                 continue;
             }
 
-            // Parse two hex characters into a byte (std::from_chars avoids glibc)
-            uint8_t hexByte = 0;
-            auto [ptr, ec] = std::from_chars(uuidStr, uuidStr + 2, hexByte, 16);
-            if (ec != std::errc{}) {
+            char hexStr[3] = { uuidStr[0], uuidStr[1], '\0' };
+            char* end = nullptr;
+            unsigned long hexVal = strtoul(hexStr, &end, 16);
+            if (end != hexStr + 2) {
                 std::cerr << "Error: Invalid hex character in UUID" << std::endl;
                 return numHexDigits;
             }
+            uint8_t hexByte = static_cast<uint8_t>(hexVal);
             m_deviceUUID[numHexDigits] = hexByte;
             uuidStr += 2;
             numHexDigits++;

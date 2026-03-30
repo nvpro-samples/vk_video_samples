@@ -17,18 +17,16 @@
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
 #include <string>
 #include <cstring>
-#include <charconv>
+#include <cstdlib>
 
 #define READ_PARAM(i, param, type) {                                    \
     if (++i >= argc) {                                                  \
         fprintf(stderr, "invalid parameter");                           \
         return -1;                                                      \
     }                                                                   \
-    const char* _first = argv[i];                                       \
-    const char* _last = _first + strlen(_first);                         \
-    long long _val = 0;                                                  \
-    auto [_ptr, _ec] = std::from_chars(_first, _last, _val);             \
-    if (_ec != std::errc{}) {                                           \
+    char* _end = nullptr;                                                \
+    long long _val = strtoll(argv[i], &_end, 10);                        \
+    if (_end == argv[i]) {                                              \
         fprintf(stderr, "invalid parameter");                           \
         return -1;                                                      \
     }                                                                   \
