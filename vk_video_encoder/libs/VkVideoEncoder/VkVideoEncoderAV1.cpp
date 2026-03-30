@@ -818,7 +818,7 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
     }
 
     if (m_psnr && m_psnr->Enabled()) {
-        m_psnr->ComputeFramePsnr(encodeFrameInfo.Get());
+        m_psnr->ComputeFramePsnr(encodeFrameInfo.get());
     }
 
     uint32_t querySlotId = (uint32_t)-1;

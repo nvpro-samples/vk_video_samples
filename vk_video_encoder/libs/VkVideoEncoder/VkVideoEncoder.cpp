@@ -213,7 +213,7 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
             m_encoderConfig->input.vkFormat);                              // Format for subsampling detection
 
     if (m_psnr && m_psnr->Enabled()) {
-        m_psnr->CaptureInput(encodeFrameInfo.Get(), pInputFrameData);
+        m_psnr->CaptureInput(encodeFrameInfo.get(), pInputFrameData);
     }
 
     // Now stage the input frame for the encoder video input
@@ -1103,7 +1103,7 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     }
 
     if (m_psnr && m_psnr->Enabled()) {
-        m_psnr->ComputeFramePsnr(encodeFrameInfo.Get());
+        m_psnr->ComputeFramePsnr(encodeFrameInfo.get());
     }
 
     uint32_t querySlotId = (uint32_t)-1;
@@ -2792,7 +2792,7 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         VkSharedBaseObj<VkImageResourceView> setupEncodeImageView;
         encodeFrameInfo->setupImageResource->GetImageView(setupEncodeImageView);
         TransitionImageLayout(cmdBuf, setupEncodeImageView, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-        m_psnr->CaptureOutput(cmdBuf, encodeFrameInfo.Get());
+        m_psnr->CaptureOutput(cmdBuf, encodeFrameInfo.get());
         TransitionImageLayout(cmdBuf, setupEncodeImageView, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR);
     }
 
