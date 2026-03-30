@@ -28,7 +28,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
-#include <charconv>
+#include <cstdlib>
 #include <cstring>
 #include "vulkan_interfaces.h"
 #include "VkCodecUtils/Helpers.h"
@@ -267,14 +267,9 @@ struct DecoderConfig {
                 }},
             {"--deviceID", "-deviceID", 1, "Hex ID of the device to be used",
                 [this](const char **args, const ProgramArgs &a) {
-                    const char* first = args[0];
-                    const char* last = first + strlen(first);
-                    if (strlen(first) > 2 && first[0] == '0' && (first[1] == 'x' || first[1] == 'X')) {
-                        first += 2;
-                    }
-                    uint32_t val = 0;
-                    auto [ptr, ec] = std::from_chars(first, last, val, 16);
-                    if (ec != std::errc{}) {
+                    char* end = nullptr;
+                    unsigned long val = strtoul(args[0], &end, 16);
+                    if (end == args[0] || *end != '\0') {
                         std::cerr << "Invalid deviceID hex value: " << args[0] << std::endl;
                         return false;
                     }
@@ -343,16 +338,14 @@ struct DecoderConfig {
                     std::istringstream stream(args[0]);
                     std::string token;
                     while (std::getline(stream, token, ',')) {
-                        const char* tfirst = token.c_str();
-                        const char* tlast = tfirst + token.size();
-                        uint32_t initValue = 0;
-                        auto [tptr, tec] = std::from_chars(tfirst, tlast, initValue, 16);
-                        if (tec != std::errc{} || tptr != tlast) {
+                        char* tend = nullptr;
+                        unsigned long initValue = strtoul(token.c_str(), &tend, 16);
+                        if (tend == token.c_str() || *tend != '\0') {
                             std::cerr << "Failed to parse the following initial CRC value:"
                                   << token << std::endl;
                             return false;
                         }
-                        crcInitValueTemp.push_back(initValue);
+                        crcInitValueTemp.push_back(static_cast<uint32_t>(initValue));
                     }
 
                     crcInitValue = crcInitValueTemp;
