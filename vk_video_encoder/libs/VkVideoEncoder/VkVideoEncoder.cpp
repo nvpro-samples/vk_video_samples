@@ -1327,6 +1327,11 @@ VkResult VkVideoEncoder::QueueFramesForAssembly(
 void VkVideoEncoder::ReleaseAssemblyItem(AssemblyWorkItem& item)
 {
     if (item.frameInfo) {
+        // Detach children before Reset — children are queued as independent
+        // work items and may already be freed by another worker thread.
+        // Without this, Reset() calls ReleaseChildrenFrames() which drops
+        // shared_ptr references to already-freed children → UAF.
+        item.frameInfo->dependantFrames = nullptr;
         item.frameInfo->Reset(true);
         item.frameInfo = nullptr;
     }
