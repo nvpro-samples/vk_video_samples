@@ -192,9 +192,13 @@ public:
         }
 
         std::string fileNameWithModExt;
+        // Check if the output file's extension is .out for Fluster use
+        if (hasExtension(fileName, ".out")) {
+            std::cout << std::endl << "The output file's (" << fileName << ") extension is .out";
+                      << std::endl;
         // Check if the file does not have a y4m extension,
         // but y4m format is requested.
-        if (y4mFormat && !hasExtension(fileName, ".y4m")) {
+        } else if (y4mFormat && !hasExtension(fileName, ".y4m")) {
             std::cout << std::endl << "y4m output format is requested, ";
             std::cout << "but the output file's (" << fileName << ") extension isn't .y4m!"
                       << std::endl;
