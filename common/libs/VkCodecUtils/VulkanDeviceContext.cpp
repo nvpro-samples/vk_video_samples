@@ -1183,9 +1183,13 @@ VulkanDeviceContext::~VulkanDeviceContext() {
     m_importedDeviceHandle = false;
 
 #if !defined(VK_USE_PLATFORM_WIN32_KHR)
-    dlclose(m_libHandle);
+    if (m_libHandle) {
+        dlclose(m_libHandle);
+    }
 #else // defined(VK_USE_PLATFORM_WIN32_KHR)
-    FreeLibrary(m_libHandle);
+    if (m_libHandle) {
+        FreeLibrary(m_libHandle);
+    }
 #endif // defined(VK_USE_PLATFORM_WIN32_KHR)
 }
 
