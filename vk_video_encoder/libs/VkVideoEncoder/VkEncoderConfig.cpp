@@ -63,6 +63,36 @@ namespace {
         value = static_cast<uint32_t>(result);
         return true;
     }
+
+    /** Comma-separated uint32 values (decimal or 0x hex). Whitespace around commas is allowed. */
+    bool parseCommaSeparatedUint32s(const std::string& str, std::vector<uint32_t>& out)
+    {
+        out.clear();
+        std::string token;
+        for (size_t i = 0; i <= str.size(); ++i) {
+            if (i == str.size() || str[i] == ',') {
+                size_t start = 0;
+                size_t end = token.size();
+                while (start < end && std::isspace(static_cast<unsigned char>(token[start]))) {
+                    start++;
+                }
+                while (end > start && std::isspace(static_cast<unsigned char>(token[end - 1]))) {
+                    end--;
+                }
+                if (start < end) {
+                    uint32_t v = 0;
+                    if (!parseHex(token.substr(start, end - start), v)) {
+                        return false;
+                    }
+                    out.push_back(v);
+                }
+                token.clear();
+            } else {
+                token += str[i];
+            }
+        }
+        return !out.empty();
+    }
 }
 
 static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
@@ -74,6 +104,8 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     -o, --output                    .264/5,ivf Output H264/5/AV1 File Name \n\
     -c, --codec                     <string> select codec type: avc (h264) or hevc (h265) or av1\n\
     --verbose                       verbose output\n\
+    --psnr                          enable PSNR metrics (input vs reconstructed)\n\
+    --crcInit                       <list> comma-separated CRC32 seed uint32s (decimal or 0x hex), e.g. 0xFFFFFFFF,0\n\
     --noDeviceFallback                        : don't try other GPUs if first device doesn't meet requirements \n\
     --encoderConfig                 <path>    : load base config from JSON (CLI overrides); see json_config/encoder_config.schema.json\n\
     --dpbMode                       <string>  : select DPB mode: layered, separate\n\
@@ -758,6 +790,18 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             }
             aqDumpDir = args[i];
 #endif // NV_AQ_GPU_LIB_SUPPORTED
+        } else if (args[i] == "--psnr") {
+            enablePsnrMetrics = 1;
+        } else if (args[i] == "--crcInit") {
+            if (++i >= argc) {
+                fprintf(stderr, "--crcInit requires a comma-separated list of uint32 values\n");
+                return -1;
+            }
+            if (!parseCommaSeparatedUint32s(args[i], crcInitValue)) {
+                fprintf(stderr, "Invalid --crcInit value (use comma-separated decimal or 0x hex uint32s): %s\n",
+                        args[i].c_str());
+                return -1;
+            }
         } else if (args[i] == "--verbose") {
             verbose = true;
         } else if (args[i] == "--noDeviceFallback") {

@@ -32,6 +32,12 @@
     "matrixCoefficients": { "type": "integer", "minimum": 0, "maximum": 255 },
     "videoFullRange": { "type": "boolean" },
     "verbose": { "type": "boolean" },
-    "validate": { "type": "boolean" }
+    "validate": { "type": "boolean" },
+    "psnr": { "type": "boolean", "description": "PSNR input vs reconstructed (same as CLI --psnr)." },
+    "crcInit": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 },
+      "description": "CRC32 seed uint32s (e.g. 4294967295 and 0 for OGTEST-style); same as CLI --crcInit comma-separated list."
+    }
   }
 }

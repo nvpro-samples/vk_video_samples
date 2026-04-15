@@ -206,5 +206,5 @@ size_t VkVideoCrc::GetCrcValues(uint32_t* pCrcValues, size_t buffSize) const
 
 void VkVideoCrc::Deinit()
 {
-    EndCrcCalculation(false);
+    EndCrcCalculation(true);
 }
