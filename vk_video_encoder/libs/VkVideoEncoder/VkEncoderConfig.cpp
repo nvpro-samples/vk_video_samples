@@ -1049,6 +1049,20 @@ void EncoderConfig::InitVideoProfile()
     encodeUsageInfo.videoContentHints = encodeContentHints;
     encodeUsageInfo.tuningMode = tuningMode;
 
+    if (verbose) fprintf(stderr, "[EncoderConfig] VkVideoEncodeUsageInfoKHR:\n"
+            "  videoUsageHints   = 0x%x%s\n"
+            "  videoContentHints = 0x%x\n"
+            "  tuningMode        = %d (%s)\n",
+            encodeUsageHints,
+            (encodeUsageHints & VK_VIDEO_ENCODE_USAGE_STREAMING_BIT_KHR) ? " (STREAMING)" : "",
+            encodeContentHints,
+            tuningMode,
+            (tuningMode == VK_VIDEO_ENCODE_TUNING_MODE_DEFAULT_KHR)            ? "DEFAULT" :
+            (tuningMode == VK_VIDEO_ENCODE_TUNING_MODE_HIGH_QUALITY_KHR)       ? "HIGH_QUALITY" :
+            (tuningMode == VK_VIDEO_ENCODE_TUNING_MODE_LOW_LATENCY_KHR)        ? "LOW_LATENCY" :
+            (tuningMode == VK_VIDEO_ENCODE_TUNING_MODE_ULTRA_LOW_LATENCY_KHR)  ? "ULTRA_LOW_LATENCY" :
+            (tuningMode == VK_VIDEO_ENCODE_TUNING_MODE_LOSSLESS_KHR)           ? "LOSSLESS" : "UNKNOWN");
+
     // Create video profile with the codec-specific profile
     videoCoreProfile = VkVideoCoreProfile(codec, encodeChromaSubsampling,
                                           GetComponentBitDepthFlagBits(encodeBitDepthLuma),
