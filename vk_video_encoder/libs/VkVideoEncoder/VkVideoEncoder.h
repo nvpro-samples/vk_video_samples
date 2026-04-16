@@ -803,6 +803,12 @@ protected:
 public:
     virtual ~VkVideoEncoder() {
         DeinitEncoder();
+        for (auto& t : m_assemblyThreads) {
+            if (t.joinable()) t.join();
+        }
+        if (m_encoderQueueConsumerThread.joinable()) {
+            m_encoderQueueConsumerThread.join();
+        }
     }
 
     int32_t DeinitEncoder();
