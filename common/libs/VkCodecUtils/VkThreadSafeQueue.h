@@ -84,14 +84,6 @@ public:
         return m_queue.size();
     }
 
-    void Drain()
-    {
-        std::unique_lock<std::mutex> lock(m_mutex);
-        std::queue<QueueNodeType> empty;
-        m_queue.swap(empty);
-        m_condProducer.notify_all();
-    }
-
     void SetFlushAndExit()
     {
         std::unique_lock<std::mutex> lock(m_mutex);
