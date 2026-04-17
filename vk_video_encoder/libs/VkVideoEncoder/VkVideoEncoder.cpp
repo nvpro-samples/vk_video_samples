@@ -1182,6 +1182,11 @@ VkResult VkVideoEncoder::ReadbackBitstreamData(
         return result;
     }
 
+    if (m_psnr && m_psnr->Enabled()) {
+        std::lock_guard<std::mutex> psnrLock(m_assemblyFileMutex);
+        m_psnr->ComputeFramePsnr(encodeFrameInfo.get());
+    }
+
     uint32_t querySlotId = (uint32_t)-1;
     VkQueryPool queryPool = encodeFrameInfo->encodeCmdBuffer->GetQueryPool(querySlotId);
 
@@ -3198,6 +3203,25 @@ int32_t VkVideoEncoder::DeinitEncoder()
     m_inputSubsampledImagePool = nullptr;
 #endif // NV_AQ_GPU_LIB_SUPPORTED
     m_qpMapImagePool          = nullptr;
+    if (m_encoderConfig && m_encoderConfig->IsPsnrMetricsEnabled() && m_psnr) {
+        if (m_psnr->Enabled()) {
+            const double psnrY = m_psnr->GetAveragePsnrY();
+            const double psnrU = m_psnr->GetAveragePsnrU();
+            const double psnrV = m_psnr->GetAveragePsnrV();
+            printf("Average PSNR (dB): Y=%.2f", psnrY);
+            if (psnrU >= 0.0) {
+                printf(" U=%.2f", psnrU);
+            }
+            if (psnrV >= 0.0) {
+                printf(" V=%.2f", psnrV);
+            }
+            printf("\n");
+            fflush(stdout);
+        } else {
+            fprintf(stderr, "PSNR was requested (--psnr) but metrics are unavailable (initialization may have failed).\n");
+            fflush(stderr);
+        }
+    }
     if (m_psnr) {
         m_psnr->Deinit();
     }

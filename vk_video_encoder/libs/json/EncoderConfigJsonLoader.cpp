@@ -136,6 +136,22 @@ int LoadEncoderConfigFromJson(const char* path, void* encoderConfig) {
         } else if (key.is_equal("validate")) {
             bool b;
             if (val.get_bool().get(b) == simdjson::SUCCESS) config->validate = b;
+        } else if (key.is_equal("psnr")) {
+            bool b;
+            if (val.get_bool().get(b) == simdjson::SUCCESS) {
+                config->enablePsnrMetrics = b ? 1u : 0u;
+            }
+        } else if (key.is_equal("crcInit")) {
+            simdjson::ondemand::array arr;
+            if (val.get_array().get(arr) == simdjson::SUCCESS) {
+                config->crcInitValue.clear();
+                for (auto elem : arr) {
+                    int64_t v = 0;
+                    if (elem.get_int64().get(v) == simdjson::SUCCESS) {
+                        config->crcInitValue.push_back(static_cast<uint32_t>(v));
+                    }
+                }
+            }
         }
     }
     return 0;
