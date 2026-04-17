@@ -1182,6 +1182,11 @@ VkResult VkVideoEncoder::ReadbackBitstreamData(
         return result;
     }
 
+    if (m_psnr && m_psnr->Enabled()) {
+        std::lock_guard<std::mutex> psnrLock(m_assemblyFileMutex);
+        m_psnr->ComputeFramePsnr(encodeFrameInfo.get());
+    }
+
     uint32_t querySlotId = (uint32_t)-1;
     VkQueryPool queryPool = encodeFrameInfo->encodeCmdBuffer->GetQueryPool(querySlotId);
 
