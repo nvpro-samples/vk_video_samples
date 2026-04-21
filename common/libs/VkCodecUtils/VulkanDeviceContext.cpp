@@ -631,8 +631,6 @@ VkResult VulkanDeviceContext::InitPhysicalDevice(int32_t deviceId, const vk::Dev
 
         // Get the properties
         GetPhysicalDeviceProperties2(physicalDevice, &devProp2);
-        fprintf(stderr, "[VulkanDeviceContext] Device: %s (vendor=0x%x)\n",
-                devProp2.properties.deviceName, devProp2.properties.vendorID); fflush(stderr);
 
         if ((deviceId != -1) && (devProp2.properties.deviceID != (uint32_t)deviceId)) {
             continue;
