@@ -529,7 +529,7 @@ void EncoderConfigH265::InitProfileLevel()
 bool EncoderConfigH265::InitRateControl()
 {
     // Level is already initialized by InitProfileLevel()
-    if (levelIdc >= levelLimitsTblSize) {
+    if ((size_t)levelIdc >= levelLimitsTblSize) {
         assert(!"The h.265 level index is invalid");
         return false;
     }

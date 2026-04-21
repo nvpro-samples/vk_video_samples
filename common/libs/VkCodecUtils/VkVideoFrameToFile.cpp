@@ -152,7 +152,7 @@ public:
             m_crc.SignalFrameEnd(static_cast<uint32_t>(pFrame->displayOrder));
         }
 
-        int64_t writeResult;
+        size_t writeResult;
         if (m_outputy4m) {
             writeResult = WriteFrameToFileY4M(0, usedBufferSize, pFrame->displayWidth, pFrame->displayHeight, mpInfo);
         } else {

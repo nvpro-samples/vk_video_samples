@@ -269,7 +269,7 @@ public:
                              uint64_t object, size_t location,
                              int32_t msg_code, const char *layer_prefix, const char *msg);
 
-    static VkBool32 DebugUtilsMessengerCallback(
+    static VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsMessengerCallback(
         VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
         VkDebugUtilsMessageTypeFlagsEXT messageType,
         const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
