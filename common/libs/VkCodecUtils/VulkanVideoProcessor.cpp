@@ -263,6 +263,13 @@ int32_t VulkanVideoProcessor::GetBitDepth()  const
     return m_videoStreamDemuxer->GetBitDepth();
 }
 
+void VulkanVideoProcessor::FlushAsyncFrameWrites()
+{
+    if (m_dumpPool.isInitialized()) {
+        m_dumpPool.flush();
+    }
+}
+
 void VulkanVideoProcessor::Deinit()
 {
     // Flush and shutdown the dump pool before destroying the decoder

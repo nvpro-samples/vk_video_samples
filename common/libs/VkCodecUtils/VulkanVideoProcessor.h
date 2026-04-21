@@ -53,6 +53,9 @@ public:
 
     void Deinit();
 
+    /** Wait until async dump-pool writers finish (no-op if sync path). Call before GetCrcValues on frame output. */
+    void FlushAsyncFrameWrites();
+
     static void DumpVideoFormat(const VkParserDetectedVideoFormat* videoFormat, bool dumpData);
 
     int32_t ParserProcessNextDataChunk();
