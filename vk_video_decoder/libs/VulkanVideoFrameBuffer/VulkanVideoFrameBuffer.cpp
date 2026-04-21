@@ -445,9 +445,11 @@ public:
                     waitInfo.pValues = &waitValue;
                     m_vkDevCtx->WaitSemaphores(*m_vkDevCtx, &waitInfo, UINT64_MAX);
                 } else {
+#if 0
                     fprintf(stderr, " [External consumer %d: value=%llu of sem %llx SKIP]", c,
                             (unsigned long long)waitValue,
                             (unsigned long long)m_perFrameDecodeImageSet.m_externalConsumerSemaphores[c]);
+#endif
                 }
             }
         }
