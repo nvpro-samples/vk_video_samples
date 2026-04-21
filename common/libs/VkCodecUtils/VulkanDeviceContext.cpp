@@ -518,7 +518,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugReportCallback(VkDebugReportFlagsEXT 
 // VK_EXT_debug_utils callback -- preferred over VK_EXT_debug_report.
 // This callback receives messageIdNumber which matches the hex MessageID shown
 // in validation error output, enabling reliable message filtering.
-VkBool32 VulkanDeviceContext::DebugUtilsMessengerCallback(
+VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDeviceContext::DebugUtilsMessengerCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
