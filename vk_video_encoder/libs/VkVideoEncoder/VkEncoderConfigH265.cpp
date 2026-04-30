@@ -224,26 +224,26 @@ uint32_t EncoderConfigH265::GetMaxDpbSize(uint32_t pictureSizeInSamplesY, int32_
     return std::min<uint32_t>(maxDpbSize, STD_VIDEO_H265_MAX_DPB_SIZE);
 }
 
-uint32_t EncoderConfigH265::GetCtbAlignedPicSizeInSamples(uint32_t& picWidthInCtbsY, uint32_t& picHeightInCtbsY, bool minCtbsY)
+uint32_t EncoderConfigH265::GetCtbAlignedPicSizeInSamples(uint32_t& alignedPicWidth, uint32_t& alignedPicHeight, bool minCtbsY)
 {
     if (minCtbsY) {
         uint32_t minCbLog2SizeY = cuMinSize + 3;
         uint32_t minCbSizeY = 1 << minCbLog2SizeY;
-        picWidthInCtbsY     = AlignSize(encodeWidth, minCbSizeY);
-        picHeightInCtbsY    = AlignSize(encodeHeight, minCbSizeY);
+        alignedPicWidth     = AlignSize(encodeWidth, minCbSizeY);
+        alignedPicHeight    = AlignSize(encodeHeight, minCbSizeY);
     } else {
         uint32_t ctbLog2SizeY = cuSize + 3;
         uint32_t ctbSizeY     = 1 << ctbLog2SizeY;
-        picWidthInCtbsY       = AlignSize(encodeWidth, ctbSizeY);
-        picHeightInCtbsY      = AlignSize(encodeHeight, ctbSizeY);
+        alignedPicWidth       = AlignSize(encodeWidth, ctbSizeY);
+        alignedPicHeight      = AlignSize(encodeHeight, ctbSizeY);
     }
-    return picWidthInCtbsY * picHeightInCtbsY;
+    return alignedPicWidth * alignedPicHeight;
 }
 
 int8_t EncoderConfigH265::VerifyDpbSize()
 {
-    uint32_t picWidthInCtbsY = 0, picHeightInCtbsY = 0;
-    uint32_t picSize = GetCtbAlignedPicSizeInSamples(picWidthInCtbsY, picHeightInCtbsY);
+    uint32_t widthCtbAligned = 0, heightCtbAligned = 0;
+    uint32_t picSize = GetCtbAlignedPicSizeInSamples(widthCtbAligned, heightCtbAligned);
 
     int32_t levelIdxFound = -1;
     for (size_t i = 0; i < levelLimitsTblSize; i++) {

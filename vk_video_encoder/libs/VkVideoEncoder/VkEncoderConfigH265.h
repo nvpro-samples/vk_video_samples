@@ -133,7 +133,7 @@ struct EncoderConfigH265 : public EncoderConfig {
 
     virtual int DoParseArguments(int argc, const char* argv[]) override;
 
-    uint32_t GetCtbAlignedPicSizeInSamples(uint32_t& picWidthInCtbsY, uint32_t& picHeightInCtbsY, bool minCtbsY = false);
+    uint32_t GetCtbAlignedPicSizeInSamples(uint32_t& alignedPicWidth, uint32_t& alignedPicHeight, bool minCtbsY = false);
 
     uint32_t GetCpbVclFactor();
 
