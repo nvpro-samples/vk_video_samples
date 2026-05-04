@@ -250,6 +250,8 @@ public:
             fprintf(m_outputFile, "A1:1 ");
             if (mpInfo->planesLayout.secondaryPlaneSubsampledX == false) {
                 fprintf(m_outputFile, "C444");
+            } else if (mpInfo->planesLayout.secondaryPlaneSubsampledY == false) {
+                fprintf(m_outputFile, "C422");
             } else {
                 fprintf(m_outputFile, "C420");
             }
