@@ -798,6 +798,123 @@ VkResult VkVideoEncoderAV1::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeF
     return VkVideoEncoder::SubmitVideoCodingCmds(encodeFrameInfo, frameIdx, ofTotalFrames);
 }
 
+void VkVideoEncoderAV1::BuildFrameObuSequence(uint32_t frameIdx,
+                                              const VkVideoEncodeFrameInfo* encodeFrameInfo,
+                                              BitstreamReadback& bitstreamReadback)
+{
+    if (m_bitstream.size() <= frameIdx) {
+        m_bitstream.resize(frameIdx + 1);
+    }
+
+    std::vector<uint8_t>& bitstream = m_bitstream[frameIdx];
+    bitstream.clear();
+
+    // Sequence Header OBU
+    if (encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
+        const uint8_t* seqHdrData = encodeFrameInfo->bitstreamHeaderBuffer
+                                  + encodeFrameInfo->bitstreamHeaderOffset;
+        bitstream.insert(bitstream.end(), seqHdrData, seqHdrData + encodeFrameInfo->bitstreamHeaderBufferSize);
+
+        if (m_encoderConfig->verboseFrameStruct) {
+            std::cout << "       == Non-VCL data SUCCESS"
+                      << " Non-VCL data with size: " << encodeFrameInfo->bitstreamHeaderBufferSize
+                      << ", Input Order: " << (uint32_t)encodeFrameInfo->gopPosition.inputOrder
+                      << ", Encode Order: " << (uint32_t)encodeFrameInfo->gopPosition.encodeOrder
+                      << std::endl << std::flush;
+        }
+    }
+
+    // Frame Header OBU + Tile Group OBU
+    // Encoder outputs a self-contained OBU.  So, just append it.
+    {
+        const uint8_t* frameData = bitstreamReadback.bitstreamCopy.data();
+        const size_t frameSize = bitstreamReadback.bitstreamCopy.size();
+        bitstream.insert(bitstream.end(), frameData, frameData + frameSize);
+
+        if (m_encoderConfig->verboseFrameStruct) {
+            std::cout << "      == Output VCL data SUCCESS for " << frameIdx << " with size: " << frameSize
+                      << ", Input Order: " << (uint32_t)encodeFrameInfo->gopPosition.inputOrder
+                      << ", Encode Order: " << (uint32_t)encodeFrameInfo->gopPosition.encodeOrder
+                      << std::endl << std::flush;
+        }
+    }
+
+}
+
+VkResult VkVideoEncoderAV1::FlushBatchedTemporalUnit(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
+{
+    FILE* outFile = m_encoderConfig->outputFileHandler.GetFileHandle();
+
+    // Write IVF file header - written once at the start of the output file.
+    if (encodeFrameInfo->frameInputOrderNum == 0) {
+        uint8_t ivfFileHdr[32];
+        mem_put_le32(ivfFileHdr     , MAKE_FOURCC('D', 'K', 'I', 'F'));
+        mem_put_le16(ivfFileHdr +  4, 0);
+        mem_put_le16(ivfFileHdr +  6, 32);
+        mem_put_le32(ivfFileHdr +  8, MAKE_FOURCC('A', 'V', '0', '1'));
+        mem_put_le16(ivfFileHdr + 12, m_encoderConfig->encodeWidth);
+        mem_put_le16(ivfFileHdr + 14, m_encoderConfig->encodeHeight);
+        mem_put_le32(ivfFileHdr + 16, m_encoderConfig->frameRateNumerator);
+        mem_put_le32(ivfFileHdr + 20, m_encoderConfig->frameRateDenominator);
+        mem_put_le32(ivfFileHdr + 24, m_encoderConfig->numFrames);
+        mem_put_le32(ivfFileHdr + 28, 0);
+        WriteDataToFile(ivfFileHdr, sizeof(ivfFileHdr));
+    }
+
+    // Calculate IVF frame size
+    size_t tuSize = sizeof(tdObu);
+    for (const auto& curFrameIdx : m_batchFramesIndxSetToAssemble) {
+        tuSize += m_bitstream[curFrameIdx].size();
+
+        if (m_encoderConfig->verboseFrameStruct) {
+            std::cout << ">>>>>> Assembly VCL index " << curFrameIdx << " has size: " << m_bitstream[curFrameIdx].size()
+                      << std::endl << std::flush;
+        }
+    }
+
+    if (m_encoderConfig->verboseFrameStruct) {
+        std::cout << ">>>>>> Assembly total VCL data is: "
+                  << tuSize - sizeof(tdObu)
+                  << std::endl << std::flush;
+    }
+
+    // Write IVF frame header
+    encodeFrameInfo->inputTimeStamp = encodeFrameInfo->frameInputOrderNum;
+    const uint64_t pts = encodeFrameInfo->inputTimeStamp;
+    uint8_t ivfFrameHdr[12];
+    mem_put_le32(ivfFrameHdr    , (uint32_t)tuSize);
+    mem_put_le32(ivfFrameHdr + 4, (uint32_t)(pts & 0xffffffff));
+    mem_put_le32(ivfFrameHdr + 8, (uint32_t)(pts >> 32));
+    WriteDataToFile(ivfFrameHdr, sizeof(ivfFrameHdr));
+
+    // Write Temporal delimiter
+    WriteDataToFile(tdObu, sizeof(tdObu));
+
+    // Write frame OBU sequences
+    for (const auto& curFrameIdx : m_batchFramesIndxSetToAssemble) {
+        const uint8_t* writeData = m_bitstream[curFrameIdx].data();
+        size_t remainingBytes = m_bitstream[curFrameIdx].size();
+
+        while (remainingBytes > 0) {
+            const size_t bytesWritten = fwrite(writeData, 1, remainingBytes, outFile);
+            if (bytesWritten == 0) {
+                std::cerr << "Failed to write bitstream data for frame " << curFrameIdx << std::endl;
+                return VK_ERROR_OUT_OF_HOST_MEMORY;
+            }
+
+            writeData += bytesWritten;
+            remainingBytes -= bytesWritten;
+        }
+
+        std::vector<uint8_t>().swap(m_bitstream[curFrameIdx]);
+    }
+    fflush(outFile);
+
+    m_batchFramesIndxSetToAssemble.clear();
+
+    return VK_SUCCESS;
+}
+
 VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                                   uint32_t frameIdx, uint32_t ofTotalFrames)
 {
@@ -808,176 +925,28 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
         return VK_SUCCESS;
     }
 
-    assert(encodeFrameInfo->outputBitstreamBuffer != nullptr);
-    assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
-
-    VkResult result = encodeFrameInfo->encodeCmdBuffer->SyncHostOnCmdBuffComplete(false, "encoderEncodeFence");
-    if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nWait on encoder complete fence has failed with result 0x%x.\n", result);
+    BitstreamReadback readback{};
+    VkResult result = ReadbackBitstreamData(encodeFrameInfo, readback);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "\nRetrieveData Error: Failed to get vcl query pool results.\n");
+        assert(result == VK_SUCCESS);
         return result;
     }
+
+    BuildFrameObuSequence(frameIdx, encodeFrameInfo.get(), readback);
+
+    m_batchFramesIndxSetToAssemble.insert(frameIdx);
 
     if (m_psnr && m_psnr->Enabled()) {
         m_psnr->ComputeFramePsnr(encodeFrameInfo.get());
     }
 
-    uint32_t querySlotId = (uint32_t)-1;
-    VkQueryPool queryPool = encodeFrameInfo->encodeCmdBuffer->GetQueryPool(querySlotId);
-
-    assert(queryPool != VK_NULL_HANDLE);
-    assert(querySlotId != (uint32_t)-1);
-
-    // get output results
-    struct VulkanVideoEncodeStatus {
-        uint32_t bitstreamStartOffset;
-        uint32_t bitstreamSize;
-        VkQueryResultStatusKHR status;
-    } encodeResult{};
-
-    // Fetch the coded VCL data and its information
-    result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx, queryPool, querySlotId,
-                                             1, sizeof(encodeResult), &encodeResult, sizeof(encodeResult),
-                                             VK_QUERY_RESULT_WITH_STATUS_BIT_KHR | VK_QUERY_RESULT_WAIT_BIT);
-
-    assert(result == VK_SUCCESS);
-    assert(encodeResult.status == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
-
-    if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nRetrieveData Error: Failed to get vcl query pool results.\n");
-        return result;
+    if (!pFrameInfo->stdPictureInfo.flags.show_frame) {
+        return VK_SUCCESS; // more AV1 frames to go in to the current temporal delimiter
     }
 
-    bool flushFrameData = (pFrameInfo->stdPictureInfo.flags.show_frame || pFrameInfo->bShowExistingFrame);
+    return FlushBatchedTemporalUnit(encodeFrameInfo);
 
-    VkDeviceSize maxSize;
-    uint8_t* data = encodeFrameInfo->outputBitstreamBuffer->GetDataPtr(0, maxSize);
-
-    if (!flushFrameData) {
-        if (!(m_bitstream.size() > frameIdx)) {
-            m_bitstream.resize(frameIdx + 1);
-        }
-
-        m_bitstream[frameIdx].resize(encodeResult.bitstreamSize);
-        memcpy(m_bitstream[frameIdx].data(), data + encodeResult.bitstreamStartOffset, encodeResult.bitstreamSize);
-    }
-
-    if (m_encoderConfig->verboseFrameStruct) {
-        std::cout << "       == Output VCL data SUCCESS for " << frameIdx << " with size: " << encodeResult.bitstreamSize
-                  << " and offset: " << encodeResult.bitstreamStartOffset
-                  << ", Input Order: " << (uint32_t)encodeFrameInfo->gopPosition.inputOrder
-                  << ", Encode  Order: " << (uint32_t)encodeFrameInfo->gopPosition.encodeOrder << std::endl << std::flush;
-    }
-
-    m_batchFramesIndxSetToAssemble.insert(frameIdx);
-
-    if (flushFrameData) {
-
-        // IVF header
-        if (encodeFrameInfo->frameInputOrderNum == 0) {
-            uint8_t header[32];
-            mem_put_le32(header     , MAKE_FOURCC('D', 'K', 'I', 'F'));
-            mem_put_le16(header +  4, 0);
-            mem_put_le16(header +  6, 32);
-            mem_put_le32(header +  8, MAKE_FOURCC('A', 'V', '0', '1'));
-            mem_put_le16(header + 12, m_encoderConfig->encodeWidth);
-            mem_put_le16(header + 14, m_encoderConfig->encodeHeight);
-            mem_put_le32(header + 16, m_encoderConfig->frameRateNumerator);
-            mem_put_le32(header + 20, m_encoderConfig->frameRateDenominator);
-            mem_put_le32(header + 24, m_encoderConfig->numFrames);
-            mem_put_le32(header + 28, 0);
-            WriteDataToFile(header, sizeof(header));
-        }
-
-        // IVF frame header
-        size_t framesSize = 2 + encodeFrameInfo->bitstreamHeaderBufferSize; /* 2 is temporal delimiter size */
-        for (const auto& curIndex : m_batchFramesIndxSetToAssemble) {
-
-            size_t frameSize = 0;
-            if (frameIdx == curIndex) {
-                frameSize = encodeResult.bitstreamSize;
-            } else {
-                // Use the accumulated frame size
-                frameSize = m_bitstream[curIndex].size();
-            }
-
-            framesSize += frameSize;
-
-            if (m_encoderConfig->verboseFrameStruct) {
-                std::cout << ">>>>>> Assembly VCL index " << curIndex << " has size: " << frameSize
-                           << std::endl << std::flush;
-            }
-        }
-
-        if (m_encoderConfig->verboseFrameStruct) {
-            std::cout << ">>>>>> Assembly total VCL data at " << frameIdx << " is: "
-                       << framesSize - (2 + encodeFrameInfo->bitstreamHeaderBufferSize)
-                       << std::endl << std::flush;
-        }
-
-        encodeFrameInfo->inputTimeStamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                          std::chrono::high_resolution_clock::now().time_since_epoch())
-                                                  .count();
-
-        encodeFrameInfo->inputTimeStamp = encodeFrameInfo->frameInputOrderNum;
-
-        uint64_t pts = encodeFrameInfo->inputTimeStamp;
-        uint8_t frameHeader[12];
-        mem_put_le32(frameHeader    , (uint32_t)framesSize); // updated with correct size later on
-        mem_put_le32(frameHeader + 4, (uint32_t)(pts & 0xffffffff));
-        mem_put_le32(frameHeader + 8, (uint32_t)(pts >> 32));
-        WriteDataToFile(frameHeader, sizeof(frameHeader));
-
-        // Temporal delimiter
-        uint8_t tdObu[2] = { 0x12, 0x00 };
-        WriteDataToFile(tdObu, sizeof(tdObu));
-
-        // sequence header
-        if(encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
-            size_t nonVcl = fwrite(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
-                        1, encodeFrameInfo->bitstreamHeaderBufferSize,
-                        m_encoderConfig->outputFileHandler.GetFileHandle());
-
-            if (m_encoderConfig->verboseFrameStruct) {
-                std::cout << "       == Non-Vcl data " << (nonVcl ? "SUCCESS" : "FAIL")
-                          << " File Output non-VCL data with size: " << encodeFrameInfo->bitstreamHeaderBufferSize
-                          << ", Input Order: " << (uint32_t)encodeFrameInfo->gopPosition.inputOrder
-                          << ", Encode  Order: " << (uint32_t)encodeFrameInfo->gopPosition.encodeOrder
-                          << std::endl << std::flush;
-            }
-        }
-
-        for (const auto& curIndex : m_batchFramesIndxSetToAssemble) {
-            const uint8_t* writeData = (frameIdx == curIndex) ? (data + encodeResult.bitstreamStartOffset) : m_bitstream[curIndex].data();
-            const size_t bytesToWrite = (frameIdx == curIndex) ? encodeResult.bitstreamSize : m_bitstream[curIndex].size();
-
-            // Write data in chunks to handle partial writes
-            size_t totalBytesWritten = 0;
-            while (totalBytesWritten < bytesToWrite) {
-                const size_t remainingBytes = bytesToWrite - totalBytesWritten;
-                const size_t bytesWritten = fwrite(writeData + totalBytesWritten, 1, 
-                                                 remainingBytes,
-                                                 m_encoderConfig->outputFileHandler.GetFileHandle());
-
-                if (bytesWritten == 0) {
-                    std::cerr << "Failed to write bitstream data" << std::endl;
-                    return VK_ERROR_OUT_OF_HOST_MEMORY;
-                }
-
-                totalBytesWritten += bytesWritten;
-            }
-
-            // Verify complete write
-            if (totalBytesWritten != bytesToWrite) {
-                std::cerr << "Warning: Incomplete write - expected " << bytesToWrite << " bytes but wrote " << totalBytesWritten << " bytes\n";
-                return VK_ERROR_OUT_OF_HOST_MEMORY;
-            }
-        }
-        // reset the batch frames to assemble counter
-        m_batchFramesIndxSetToAssemble.clear();
-    }
-    fflush(m_encoderConfig->outputFileHandler.GetFileHandle());
-
-    return result;
 }
 
 VkResult VkVideoEncoderAV1::ReadbackBitstreamData(
@@ -996,11 +965,10 @@ VkResult VkVideoEncoderAV1::ReadbackBitstreamData(
 
     if (readback.readbackDone) {
         VkDeviceSize maxSize;
-        uint8_t* data = encodeFrameInfo->outputBitstreamBuffer->GetDataPtr(0, maxSize);
+        uint8_t* data = encodeFrameInfo->outputBitstreamBuffer->GetDataPtr(0, maxSize)
+                      + readback.bitstreamStartOffset;
         readback.bitstreamCopy.resize(readback.bitstreamSize);
-        memcpy(readback.bitstreamCopy.data(),
-               data + readback.bitstreamStartOffset,
-               readback.bitstreamSize);
+        memcpy(readback.bitstreamCopy.data(), data, readback.bitstreamSize);
     }
 
     return VK_SUCCESS;
@@ -1018,83 +986,15 @@ VkResult VkVideoEncoderAV1::WriteBitstreamToFile(
         return VK_SUCCESS;
     }
 
-    bool flushFrameData = (pFrameInfo->stdPictureInfo.flags.show_frame || pFrameInfo->bShowExistingFrame);
-
-    if (!flushFrameData) {
-        if (!(m_bitstream.size() > frameIdx)) {
-            m_bitstream.resize(frameIdx + 1);
-        }
-        m_bitstream[frameIdx] = std::move(readback.bitstreamCopy);
-    }
+    BuildFrameObuSequence(frameIdx, encodeFrameInfo.get(), readback);
 
     m_batchFramesIndxSetToAssemble.insert(frameIdx);
 
-    if (flushFrameData) {
-        if (encodeFrameInfo->frameInputOrderNum == 0) {
-            uint8_t header[32];
-            mem_put_le32(header     , MAKE_FOURCC('D', 'K', 'I', 'F'));
-            mem_put_le16(header +  4, 0);
-            mem_put_le16(header +  6, 32);
-            mem_put_le32(header +  8, MAKE_FOURCC('A', 'V', '0', '1'));
-            mem_put_le16(header + 12, m_encoderConfig->encodeWidth);
-            mem_put_le16(header + 14, m_encoderConfig->encodeHeight);
-            mem_put_le32(header + 16, m_encoderConfig->frameRateNumerator);
-            mem_put_le32(header + 20, m_encoderConfig->frameRateDenominator);
-            mem_put_le32(header + 24, m_encoderConfig->numFrames);
-            mem_put_le32(header + 28, 0);
-            WriteDataToFile(header, sizeof(header));
-        }
-
-        size_t framesSize = 2 + encodeFrameInfo->bitstreamHeaderBufferSize;
-        for (const auto& curIndex : m_batchFramesIndxSetToAssemble) {
-            size_t frameSize = (frameIdx == curIndex)
-                ? readback.bitstreamSize
-                : m_bitstream[curIndex].size();
-            framesSize += frameSize;
-        }
-
-        encodeFrameInfo->inputTimeStamp = encodeFrameInfo->frameInputOrderNum;
-        uint64_t pts = encodeFrameInfo->inputTimeStamp;
-        uint8_t frameHeader[12];
-        mem_put_le32(frameHeader    , (uint32_t)framesSize);
-        mem_put_le32(frameHeader + 4, (uint32_t)(pts & 0xffffffff));
-        mem_put_le32(frameHeader + 8, (uint32_t)(pts >> 32));
-        WriteDataToFile(frameHeader, sizeof(frameHeader));
-
-        uint8_t tdObu[2] = { 0x12, 0x00 };
-        WriteDataToFile(tdObu, sizeof(tdObu));
-
-        if (encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
-            fwrite(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
-                   1, encodeFrameInfo->bitstreamHeaderBufferSize,
-                   m_encoderConfig->outputFileHandler.GetFileHandle());
-        }
-
-        for (const auto& curIndex : m_batchFramesIndxSetToAssemble) {
-            const uint8_t* writeData;
-            size_t bytesToWrite;
-            if (frameIdx == curIndex) {
-                writeData = readback.bitstreamCopy.data();
-                bytesToWrite = readback.bitstreamSize;
-            } else {
-                writeData = m_bitstream[curIndex].data();
-                bytesToWrite = m_bitstream[curIndex].size();
-            }
-
-            size_t totalBytesWritten = 0;
-            while (totalBytesWritten < bytesToWrite) {
-                size_t remaining = bytesToWrite - totalBytesWritten;
-                size_t written = fwrite(writeData + totalBytesWritten, 1, remaining,
-                                        m_encoderConfig->outputFileHandler.GetFileHandle());
-                if (written == 0) return VK_ERROR_OUT_OF_HOST_MEMORY;
-                totalBytesWritten += written;
-            }
-        }
-        m_batchFramesIndxSetToAssemble.clear();
+    if (!pFrameInfo->stdPictureInfo.flags.show_frame) {
+        return VK_SUCCESS;
     }
-    fflush(m_encoderConfig->outputFileHandler.GetFileHandle());
 
-    return VK_SUCCESS;
+    return FlushBatchedTemporalUnit(encodeFrameInfo);
 }
 
 void VkVideoEncoderAV1::WriteShowExistingFrameHeader(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
@@ -1141,7 +1041,6 @@ void VkVideoEncoderAV1::WriteShowExistingFrameHeader(VkSharedBaseObj<VkVideoEnco
     WriteDataToFile(frameHeader, sizeof(frameHeader));
 
     // Temporal delimiter
-    uint8_t tdObu[2] = { 0x12, 0x00 };
     WriteDataToFile(tdObu, sizeof(tdObu));
 
     // frame header
