@@ -171,7 +171,6 @@ public:
     void AppendShowExistingFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& prev,
                                  VkSharedBaseObj<VkVideoEncodeFrameInfo>& node);
 
-protected:
 public:
     virtual ~VkVideoEncoderAV1()
     {
@@ -193,6 +192,7 @@ public:
     // Must be called from VkVideoEncoder::EncodeFrameCommon only
     virtual VkResult EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
     virtual VkResult CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
+
 private:
     VkVideoEncodeFrameInfoAV1* GetEncodeFrameInfoAV1(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) {
         assert(VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR == encodeFrameInfo->GetType());
@@ -203,6 +203,12 @@ private:
     void InitializeFrameHeader(StdVideoAV1SequenceHeader* pSequenceHdr, VkVideoEncodeFrameInfoAV1* pFrameInfo,
                                StdVideoAV1ReferenceName& refName);
 
+    void BuildFrameObuSequence(uint32_t frameIdx,
+                               const VkVideoEncodeFrameInfo* encodeFrameInfo,
+                               BitstreamReadback& bitstreamReadback);
+
+    VkResult FlushBatchedTemporalUnit(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
+
     VkSharedBaseObj<EncoderConfigAV1>   m_encoderConfig;
     EncoderAV1State                     m_stateAV1;
     VkEncDpbAV1*                        m_dpbAV1;
@@ -212,6 +218,11 @@ private:
     uint32_t                            m_numBFramesToEncode;
     std::set<uint32_t>                  m_batchFramesIndxSetToAssemble;
     std::vector<std::vector<uint8_t>>   m_bitstream;
+
+    // Temporal Delimiter OBU
+    static constexpr uint8_t TD_OBU_HDR          = 0x12; // forbidden(0)|type(2=0010)|ext_flag(0)|has_size(1)|reserved(0)
+    static constexpr uint8_t TD_OBU_PAYLOAD_SIZE = 0x00; // LEB128(0) — TD OBU carries no payload
+    static constexpr uint8_t tdObu[] = { TD_OBU_HDR, TD_OBU_PAYLOAD_SIZE };
 
 };
 

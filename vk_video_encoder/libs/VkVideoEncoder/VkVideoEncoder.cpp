@@ -1080,25 +1080,20 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
         DumpStateInfo("assemble bitstream", 6, encodeFrameInfo, frameIdx, ofTotalFrames);
     }
 
-    assert(encodeFrameInfo->outputBitstreamBuffer != nullptr);
-    assert(encodeFrameInfo->encodeCmdBuffer != nullptr);
 
-    if(encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
-        size_t nonVcl = WriteDataToFile(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
-                                              encodeFrameInfo->bitstreamHeaderBufferSize);
-
-        if (m_encoderConfig->verboseFrameStruct) {
-            std::cout << "       == Non-Vcl data " << (nonVcl ? "SUCCESS" : "FAIL")
-                      << " File Output non-VCL data with size: " << encodeFrameInfo->bitstreamHeaderBufferSize
-                      << ", Input Order: " << encodeFrameInfo->gopPosition.inputOrder
-                      << ", Encode  Order: " << encodeFrameInfo->gopPosition.encodeOrder
-                      << std::endl << std::flush;
-        }
+    BitstreamReadback readback{};
+    VkResult result = ReadbackBitstreamData(encodeFrameInfo, readback);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "\nRetrieveData Error: Failed to get vcl query pool results.\n");
+        assert(result == VK_SUCCESS);
+        return result;
     }
 
-    VkResult result = encodeFrameInfo->encodeCmdBuffer->SyncHostOnCmdBuffComplete(false, "encoderEncodeFence");
-    if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nWait on encoder complete fence has failed with result 0x%x.\n", result);
+    // VkVideoEncoder uses GPU mapped memory to write to file
+    result = WriteBitstreamToFile(encodeFrameInfo, frameIdx, frameIdx + 1, readback);
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "Error writing bitstream data to file\n");
+        assert(result == VK_SUCCESS);
         return result;
     }
 
@@ -1106,58 +1101,6 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
         m_psnr->ComputeFramePsnr(encodeFrameInfo.get());
     }
 
-    uint32_t querySlotId = (uint32_t)-1;
-    VkQueryPool queryPool = encodeFrameInfo->encodeCmdBuffer->GetQueryPool(querySlotId);
-    assert(queryPool != VK_NULL_HANDLE);
-    assert(querySlotId != (uint32_t)-1);
-
-    // get output results
-    struct VulkanVideoEncodeStatus {
-        uint32_t bitstreamStartOffset;
-        uint32_t bitstreamSize;
-        VkQueryResultStatusKHR status;
-    } encodeResult{};
-
-    // Fetch the coded VCL data and its information
-    result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx, queryPool, querySlotId,
-                                             1, sizeof(encodeResult), &encodeResult, sizeof(encodeResult),
-                                             VK_QUERY_RESULT_WITH_STATUS_BIT_KHR | VK_QUERY_RESULT_WAIT_BIT);
-
-
-    if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nRetrieveData Error: Failed to get vcl query pool results.\n");
-        assert(result == VK_SUCCESS);
-        return result;
-    }
-
-    if (encodeResult.status != VK_QUERY_RESULT_STATUS_COMPLETE_KHR) {
-        fprintf(stderr, "\nencodeResult.status is (0x%x) NOT STATUS_COMPLETE! bitstreamStartOffset %u, bitstreamSize %u\n",
-                encodeResult.status, encodeResult.bitstreamStartOffset, encodeResult.bitstreamSize);
-        assert(encodeResult.status == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
-        return VK_INCOMPLETE;
-    }
-
-    VkDeviceSize maxSize;
-    uint8_t* data = encodeFrameInfo->outputBitstreamBuffer->GetDataPtr(0, maxSize);
-
-    size_t totalBytesWritten = 0;
-    while (totalBytesWritten < encodeResult.bitstreamSize) { // handle partial writes
-        size_t remainingBytes = encodeResult.bitstreamSize - totalBytesWritten;
-        size_t bytesWritten = WriteDataToFile(data + encodeResult.bitstreamStartOffset + totalBytesWritten,
-                                                    remainingBytes);
-        if (bytesWritten == 0) {
-            std::cerr << "Error writing VCL data" << std::endl;
-            return VK_ERROR_OUT_OF_HOST_MEMORY;
-        }
-        totalBytesWritten += bytesWritten;
-    }
-
-    if (m_encoderConfig->verboseFrameStruct) {
-        std::cout << "       == Output VCL data " << ((totalBytesWritten == encodeResult.bitstreamSize) ? "SUCCESS" : "FAIL") << " with size: " << encodeResult.bitstreamSize
-                  << " and offset: " << encodeResult.bitstreamStartOffset
-                  << ", Input Order: " << encodeFrameInfo->gopPosition.inputOrder
-                  << ", Encode  Order: " << encodeFrameInfo->gopPosition.encodeOrder << std::endl << std::flush;
-    }
     if (m_crc.Enabled()) {
         m_crc.SignalFrameEnd((uint32_t)(encodeFrameInfo->gopPosition.inputOrder));
     }
@@ -1214,10 +1157,17 @@ VkResult VkVideoEncoder::WriteBitstreamToFile(
     uint32_t frameIdx, uint32_t ofTotalFrames,
     BitstreamReadback& readback)
 {
-    if (encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
-        WriteDataToFile(
-            encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
-            encodeFrameInfo->bitstreamHeaderBufferSize);
+    if(encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
+        size_t nonVcl = WriteDataToFile(encodeFrameInfo->bitstreamHeaderBuffer + encodeFrameInfo->bitstreamHeaderOffset,
+                                        encodeFrameInfo->bitstreamHeaderBufferSize);
+
+        if (m_encoderConfig->verboseFrameStruct) {
+            std::cout << "       == Non-Vcl data " << (nonVcl ? "SUCCESS" : "FAIL")
+                      << " File Output non-VCL data with size: " << encodeFrameInfo->bitstreamHeaderBufferSize
+                      << ", Input Order: " << encodeFrameInfo->gopPosition.inputOrder
+                      << ", Encode  Order: " << encodeFrameInfo->gopPosition.encodeOrder
+                      << std::endl << std::flush;
+        }
     }
 
     if (readback.readbackDone && readback.bitstreamSize > 0) {
@@ -1227,17 +1177,25 @@ VkResult VkVideoEncoder::WriteBitstreamToFile(
         } else {
             VkDeviceSize maxSize;
             src = encodeFrameInfo->outputBitstreamBuffer->GetDataPtr(0, maxSize)
-                  + readback.bitstreamStartOffset;
+                + readback.bitstreamStartOffset;
         }
+
         size_t totalBytesWritten = 0;
         while (totalBytesWritten < readback.bitstreamSize) {
             size_t remaining = readback.bitstreamSize - totalBytesWritten;
             size_t written = WriteDataToFile(src + totalBytesWritten, remaining);
             if (written == 0) {
-                fprintf(stderr, "[AsyncAssembly] Error writing VCL data\n");
+                fprintf(stderr, "Error writing VCL data\n");
                 return VK_ERROR_OUT_OF_HOST_MEMORY;
             }
             totalBytesWritten += written;
+        }
+
+        if (m_encoderConfig->verboseFrameStruct) {
+            std::cout << "       == Output VCL data " << ((totalBytesWritten == readback.bitstreamSize) ? "SUCCESS" : "FAIL") << " with size: " << readback.bitstreamSize
+                      << " and offset: " << readback.bitstreamStartOffset
+                      << ", Input Order: " << encodeFrameInfo->gopPosition.inputOrder
+                      << ", Encode  Order: " << encodeFrameInfo->gopPosition.encodeOrder << std::endl << std::flush;
         }
     }
 
