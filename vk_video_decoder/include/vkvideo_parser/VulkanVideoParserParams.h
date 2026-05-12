@@ -42,9 +42,6 @@ struct VkParserPerFrameDecodeParameters {
     // PPS
     const StdVideoPictureParametersSet*     pStdPps;
 
-    // inlined picture parameters that should be inserted to VkVideoBeginCodingInfo
-    const void* beginCodingInfoPictureParametersExt;
-    uint32_t useInlinedPictureParameters : 1;
     // Bitstream data
     uint32_t firstSliceIndex;
     uint32_t numSlices;
@@ -56,6 +53,7 @@ struct VkParserPerFrameDecodeParameters {
     int32_t numGopReferenceSlots;
     int8_t pGopReferenceImagesIndexes[MAX_DPB_REF_AND_SETUP_SLOTS];
     VkVideoPictureResourceInfoKHR pictureResources[MAX_DPB_REF_AND_SETUP_SLOTS];
+    uint32_t useInlinedPictureParameters : 1; // maintenance2 inline params on VkVideoDecode*PictureInfoKHR::pNext
 };
 
 struct VkParserFrameSyncinfo {

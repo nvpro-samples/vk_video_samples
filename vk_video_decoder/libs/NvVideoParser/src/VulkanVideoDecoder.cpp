@@ -101,7 +101,7 @@ VkResult VulkanVideoDecoder::Initialize(const VkParserInitDecodeParameters *pPar
     m_defaultMinBufferSize  = pParserPictureData->defaultMinBufferSize;
     m_bufferOffsetAlignment = pParserPictureData->bufferOffsetAlignment;
     m_bufferSizeAlignment   = pParserPictureData->bufferSizeAlignment;
-    m_outOfBandPictureParameters = pParserPictureData->outOfBandPictureParameters;
+    m_outOfBandPictureParameters = pParserPictureData->inlineSessionParameters ? 0 : 1;
     m_lClockRate = (pParserPictureData->referenceClockRate > 0) ? pParserPictureData->referenceClockRate : 10000000; // Use 10Mhz as default clock
     m_lErrorThreshold = pParserPictureData->errorThreshold;
     m_bDiscontinuityReported = false;

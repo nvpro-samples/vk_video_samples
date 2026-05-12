@@ -67,7 +67,8 @@ int main(int argc, const char **argv)
                                                decoderConfig.directMode,
                                                decoderConfig.validate,
                                                decoderConfig.validateVerbose,
-                                               decoderConfig.verbose);
+                                               decoderConfig.verbose,
+                                               decoderConfig.inlineSessionParameters != 0);
 
     if (result != VK_SUCCESS) {
         if (IsVideoUnsupportedResult(result)) {
