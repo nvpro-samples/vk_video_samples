@@ -50,9 +50,28 @@ VkResult VulkanSamplerYcbcrConversion::CreateVulkanSampler(const VulkanDeviceCon
     VkSamplerYcbcrConversionInfo* pSamplerColorConversion = NULL;
     VkSamplerYcbcrConversionInfo samplerColorConversion = VkSamplerYcbcrConversionInfo();
     const VkMpFormatInfo* mpInfo = pSamplerYcbcrConversionCreateInfo ? YcbcrVkFormatInfo(pSamplerYcbcrConversionCreateInfo->format) : nullptr;
-    if (mpInfo) {
 
+    // Always retain the requested conversion create-info so callers that only
+    // need the color-model/range (e.g. the RGBA2YCBCR compute filter, which
+    // writes YCbCr via a storage image and never samples through a conversion)
+    // can read it back via GetSamplerYcbcrConversionCreateInfo(). Previously
+    // this was only stored inside the mpInfo branch, so packed/color output
+    // formats silently fell back to a default (RGB-identity) matrix.
+    if (pSamplerYcbcrConversionCreateInfo) {
         memcpy(&m_samplerYcbcrConversionCreateInfo, pSamplerYcbcrConversionCreateInfo, sizeof(m_samplerYcbcrConversionCreateInfo));
+    }
+
+    // Only create an actual VkSamplerYcbcrConversion object for multi-planar
+    // YCbCr formats that are meant to be *sampled* through the conversion.
+    // Single-plane interleaved 4:2:2 formats (G8B8G8R8_422 / G10X6...422 /
+    // G16B16G16R16_422) are consumed as packed byte blobs (NVCUVID/NVENC input)
+    // and, on NVIDIA, don't advertise COSITED/MIDPOINT chroma sampling features,
+    // so creating a conversion for them fails validation. Skip the object for
+    // those; the stored create-info above still carries the color matrix.
+    const bool isSinglePlaneInterleaved =
+        mpInfo && (mpInfo->planesLayout.layout == YCBCR_SINGLE_PLANE_INTERLEAVED);
+    if (mpInfo && !isSinglePlaneInterleaved) {
+
         result = m_vkDevCtx->CreateSamplerYcbcrConversion(*m_vkDevCtx, &m_samplerYcbcrConversionCreateInfo, NULL, &m_samplerYcbcrConversion);
         if (result != VK_SUCCESS) {
             return result;

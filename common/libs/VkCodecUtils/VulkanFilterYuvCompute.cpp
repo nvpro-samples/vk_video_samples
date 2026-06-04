@@ -3003,14 +3003,41 @@ size_t VulkanFilterYuvCompute::InitRGBA2YCBCR(std::string& computeShader)
     // 11-12. Write output: packed or planar
     const bool isPackedOutput = (outputMpInfo == nullptr);
     if (isPackedOutput) {
-        // Packed format (e.g. Y410 = A2B10G10R10_UNORM_PACK32).
-        // Single outputImageRGB binding. Channel mapping per Vulkan YCbCr spec:
-        //   R = Cr, G = Y, B = Cb, A = Alpha
-        // Cb/Cr are shifted from [-0.5, 0.5] to [0, 1] for UNORM storage.
-        shaderStr <<
-            "    // Write packed YCbCr (A2B10G10R10: R=Cr, G=Y, B=Cb, A=1)\n"
-            "    imageStore(outputImageRGB, lumaPos, vec4(ycbcr00.z + 0.5, ycbcr00.x, ycbcr00.y + 0.5, 1.0));\n"
-            "    \n";
+        // Single-plane packed YCbCr written through one RGBA-typed storage image.
+        // ycbcr00 = (Y, Cb, Cr); Cb/Cr are shifted from [-0.5,0.5] to [0,1] for
+        // UNORM storage. The channel order depends on the *target* packed
+        // format's in-memory byte order (the storage image is a generic RGBA
+        // format whose channels we repurpose):
+        //
+        //   Y410 (A2B10G10R10_PACK32): mem [U,Y,V,A] in bits → R=Cr,G=Y,B=Cb
+        //   AYUV (R8G8B8A8, mem V,U,Y,A / ffmpeg "vuya")     → R=Cr,G=Cb,B=Y
+        //   Y416 (R16G16B16A16, mem U,Y,V,A / DXGI Y416)     → R=Cb,G=Y,B=Cr
+        //
+        // (4:2:2 packed YUY2/Y210/Y216 are handled separately below, since they
+        //  store two luma per texel at half width.)
+        const char* packedWrite = nullptr;
+        switch (m_outputFormat) {
+            case VK_FORMAT_R8G8B8A8_UNORM: // AYUV: V,U,Y,A
+                packedWrite =
+                    "    // Write packed AYUV (mem V,U,Y,A): R=Cr, G=Cb, B=Y, A=1\n"
+                    "    imageStore(outputImageRGB, lumaPos, vec4(ycbcr00.z + 0.5, ycbcr00.y + 0.5, ycbcr00.x, 1.0));\n"
+                    "    \n";
+                break;
+            case VK_FORMAT_R16G16B16A16_UNORM: // Y416: U,Y,V,A
+                packedWrite =
+                    "    // Write packed Y416 (mem U,Y,V,A): R=Cb, G=Y, B=Cr, A=1\n"
+                    "    imageStore(outputImageRGB, lumaPos, vec4(ycbcr00.y + 0.5, ycbcr00.x, ycbcr00.z + 0.5, 1.0));\n"
+                    "    \n";
+                break;
+            case VK_FORMAT_A2B10G10R10_UNORM_PACK32: // Y410
+            default:
+                packedWrite =
+                    "    // Write packed YCbCr (A2B10G10R10/Y410: R=Cr, G=Y, B=Cb, A=1)\n"
+                    "    imageStore(outputImageRGB, lumaPos, vec4(ycbcr00.z + 0.5, ycbcr00.x, ycbcr00.y + 0.5, 1.0));\n"
+                    "    \n";
+                break;
+        }
+        shaderStr << packedWrite;
     } else {
         // Multi-planar output: separate Y and chroma plane writes
         GenWriteYBlock(shaderStr, chromaHorzRatio, chromaVertRatio);
