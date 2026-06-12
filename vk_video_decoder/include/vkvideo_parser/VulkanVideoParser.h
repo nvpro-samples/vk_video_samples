@@ -65,6 +65,7 @@ public:
         uint32_t bufferSizeAlignment,
         uint64_t clockRate,
         uint32_t errorThreshold,
+        bool inlineSessionParameters,
         VkSharedBaseObj<IVulkanVideoParser>& vulkanVideoParser);
 
     // doPartialParsing 0: parse entire packet, 1: parse until next decode/display event
@@ -97,6 +98,7 @@ VkResult vulkanCreateVideoParser(
     uint32_t bufferOffsetAlignment,
     uint32_t bufferSizeAlignment,
     uint64_t clockRate,
+    bool inlineSessionParameters,
     VkSharedBaseObj<IVulkanVideoParser>& vulkanVideoParser);
 
 #endif /* _VULKANVIDEOPARSER_H_ */

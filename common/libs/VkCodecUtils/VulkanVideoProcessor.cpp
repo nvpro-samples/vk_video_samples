@@ -768,6 +768,7 @@ VkResult VulkanVideoProcessor::CreateParser(const char*,
 
     VkSharedBaseObj<IVulkanVideoDecoderHandler> decoderHandler(m_vkVideoDecoder);
     VkSharedBaseObj<IVulkanVideoFrameBufferParserCb> videoFrameBufferCb(m_vkVideoFrameBuffer);
+
     return vulkanCreateVideoParser(decoderHandler,
                                    videoFrameBufferCb,
                                    vkCodecType,
@@ -778,6 +779,7 @@ VkResult VulkanVideoProcessor::CreateParser(const char*,
                                    bufferOffsetAlignment,
                                    bufferSizeAlignment,
                                    0, // clockRate - default 0 = 10Mhz
+                                   m_settings.inlineSessionParameters != 0,
                                    m_vkParser);
 }
 

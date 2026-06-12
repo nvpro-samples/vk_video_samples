@@ -532,6 +532,18 @@ public:
 #endif // VK_KHR_video_maintenance1
     }
 
+    static bool GetVideoMaintenance2FeatureSupported(const VulkanDeviceContext* vkDevCtx)
+    {
+        VkPhysicalDeviceVideoMaintenance2FeaturesKHR videoMaintenance2Features{
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_2_FEATURES_KHR,
+            nullptr,
+            VK_FALSE};
+        VkPhysicalDeviceFeatures2 deviceFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &videoMaintenance2Features};
+        vkDevCtx->GetPhysicalDeviceFeatures2(vkDevCtx->getPhysicalDevice(),
+                                             &deviceFeatures);
+        return (videoMaintenance2Features.videoMaintenance2 == VK_TRUE);
+    }
+
     static bool IsVideoEncodeIntraRefreshSupported(const VulkanDeviceContext* vkDevCtx)
     {
         VkPhysicalDeviceVideoEncodeIntraRefreshFeaturesKHR intraRefreshFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_INTRA_REFRESH_FEATURES_KHR,

@@ -253,6 +253,7 @@ public:
                                      bool enableValidation = false,
                                      bool enableVerboseValidation = false,
                                      bool enbaleVerboseDump = false,
+                                     bool enableInlineSessionParameters = false,
                                      const char * pCustomLoader = nullptr);
 
     VkResult AddReqInstanceLayers(const char* const* requiredInstanceLayers, bool verbose = false);

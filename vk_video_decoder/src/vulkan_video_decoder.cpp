@@ -181,7 +181,8 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance,
                                                        m_decoderConfig.directMode,
                                                        m_decoderConfig.validate,
                                                        m_decoderConfig.validateVerbose,
-                                                       m_decoderConfig.verbose);
+                                                       m_decoderConfig.verbose,
+                                                       m_decoderConfig.inlineSessionParameters != 0);
 
         if (result != VK_SUCCESS) {
             printf("Could not initialize the Vulkan decoder device!\n");
