@@ -27,7 +27,7 @@
 #include <iomanip>
 #include <algorithm>  // for std::min
 
-static const uint32_t MAX_GOP_SIZE = 64;
+static const uint32_t MAX_GOP_SIZE = UINT16_MAX;
 
 class VkVideoGopStructure {
 
@@ -81,7 +81,7 @@ public:
         {}
     };
 
-    VkVideoGopStructure(uint8_t gopFrameCount = 8,
+    VkVideoGopStructure(uint16_t gopFrameCount = 8,
                         int32_t idrPeriod = 60,
                         uint8_t consecutiveBFrameCount = 2,
                         uint8_t temporalLayerCount = 1,

@@ -24,6 +24,10 @@
 #include "VkVideoFrameOutput.h"
 #include "VkCodecUtils/VkVideoDumpPool.h"
 
+#if (_TRANSCODING)
+#include "VkVideoEncoder/VkVideoEncoder.h"
+#include <vector>
+#endif //_TRANSCODING
 // Forward declarations
 class VulkanDeviceContext;
 struct VkMpFormatInfo;
@@ -38,7 +42,18 @@ public:
     virtual uint32_t GetProfileIdc() const;
     virtual VkFormat GetFrameImageFormat()  const;
     virtual VkExtent3D GetVideoExtent() const;
-    virtual int32_t GetNextFrame(VulkanDecodedFrame* pFrame, bool* endOfStream);
+    virtual int32_t GetNextFrame(VulkanDecodedFrame* pFrame, bool* endOfStream
+#if (_TRANSCODING)
+        , DecoderConfig* programConfig = nullptr, VkSharedBaseObj<EncoderConfig>* encoderConfig = nullptr
+    #endif // _TRANSCODING
+);
+#if (_TRANSCODING)
+    virtual int32_t GetCodedWidth()    const;
+    virtual int32_t GetCodedHeight()   const;
+    virtual uint32_t GetFrameRate() const;
+    virtual uint32_t GetFramesCount() const;
+#endif // _TRANSCODING
+
     virtual int32_t ReleaseFrame(VulkanDecodedFrame* pDisplayedFrame);
 
     static VkSharedBaseObj<VulkanVideoProcessor>& invalidVulkanVideoProcessor;
@@ -88,6 +103,9 @@ private:
           m_videoStreamDemuxer()
         , m_vkVideoFrameBuffer()
         , m_vkVideoDecoder()
+#if (_TRANSCODING)
+        , m_vkVideoEncoder()
+#endif // _TRANSCODING
         , m_vkParser()
         , m_frameToFile()
         , m_currentBitstreamOffset(0)
@@ -118,11 +136,21 @@ public:
 
     bool StreamCompleted();
 
+#if (_TRANSCODING)
+public:
+    VkSharedBaseObj<VkVideoEncoder> getEncoder(int imgLayerIdx = 0) const {
+        return m_vkVideoEncoder[imgLayerIdx];
+    };
+#endif // _TRANSCODING
+
 private:
     const VulkanDeviceContext* m_vkDevCtx;
     VkSharedBaseObj<VideoStreamDemuxer> m_videoStreamDemuxer;
     VkSharedBaseObj<VulkanVideoFrameBuffer> m_vkVideoFrameBuffer;
     VkSharedBaseObj<VkVideoDecoder> m_vkVideoDecoder;
+#if (_TRANSCODING)
+    std::vector<VkSharedBaseObj<VkVideoEncoder>> m_vkVideoEncoder;
+#endif // _TRANSCODING
     VkSharedBaseObj<IVulkanVideoParser> m_vkParser;
     VkSharedBaseObj<VkVideoFrameOutput> m_frameToFile;
     VkVideoDumpPool m_dumpPool;

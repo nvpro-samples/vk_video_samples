@@ -78,6 +78,9 @@ struct DecoderConfig {
         enableHwLoadBalancing = false;
         selectVideoWithComputeQueue = false;
         noDeviceFallback = false;
+#if (_TRANSCODING)
+        enableVideoEncoder = true;
+#endif // _TRANSCODING
         outputy4m = true; // by default, use Y4M
         outputcrcPerFrame = false;
         outputcrc = false;
@@ -117,6 +120,9 @@ struct DecoderConfig {
                 [this](const char **argv, const ProgramArgs &a) {
                     showHelp(argv, a);
                     help = true;
+#if (!_TRANSCODING) // transcoding: should print encode info as well
+                    return false;
+#endif // !_TRANSCODING
                     return true;
                 }},
             {"--disableStrDemux", nullptr, 0, "Disable stream demuxing",
@@ -124,7 +130,12 @@ struct DecoderConfig {
                     enableStreamDemuxing = false;
                     return true;
                 }},
-            {"--codec", nullptr, 1, "Codec to use, if no stream auto-detect is in use",
+                {
+#if (!_TRANSCODING) // transcoding: to prevent overlap with encoder's codec option
+            "--codec", nullptr, 1, "Codec to use, if no stream auto-detect is in use",
+#else
+            "--codec-input", nullptr, 1, "Codec to decode",
+#endif // !_TRANSCODING
                 [this](const char **args, const ProgramArgs &a) {
                     if ((strcmp(args[0], "hevc") == 0) ||
                         (strcmp(args[0], "h265") == 0)) {
@@ -387,10 +398,14 @@ struct DecoderConfig {
                 (a.short_flag != nullptr && strcmp(argv[i], a.short_flag) == 0);
             });
             if (flag == spec.end()) {
+#if (!_TRANSCODING) // transcoding: should parse encode info after decode info as well
                 std::cerr << "Unknown argument \"" << argv[i] << "\"" << std::endl;
                 std::cout << std::endl;
                 showHelp(argv, spec);
                 return false;
+#else
+                continue;
+#endif // !_TRANSCODING
             }
 
             if (i + flag->numArgs >= argc) {
@@ -486,6 +501,9 @@ struct DecoderConfig {
     uint32_t enableHwLoadBalancing : 1;
     uint32_t selectVideoWithComputeQueue : 1;
     uint32_t noDeviceFallback : 1;
+#if (_TRANSCODING)
+    uint32_t enableVideoEncoder : 1;
+#endif // _TRANSCODING
     uint32_t outputy4m : 1;
     uint32_t outputcrc : 1;
     uint32_t outputcrcPerFrame : 1;

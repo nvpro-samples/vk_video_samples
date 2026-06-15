@@ -150,6 +150,9 @@ public:
 
     VkParserDecodePictureInfo m_picDispInfo;
     VkFence m_frameCompleteFence;
+#if (_TRANSCODING)
+    VkSemaphore m_frameResizeSemaphore[16];
+#endif //_TRANSCODING
     VkFence m_frameConsumerDoneFence;
     uint64_t m_frameCompleteTimelineValue;
     uint64_t m_frameConsumerDoneTimelineValue;
@@ -500,6 +503,11 @@ public:
 
                 m_perFrameDecodeImageSet[picId].m_hasFrameCompleteSignalSemaphore = true;
             }
+#if (_TRANSCODING)
+            for (int i = 0; i < 16; i++) {
+                pFrameSynchronizationInfo->frameResizeSemaphore[i] = m_perFrameDecodeImageSet[picId].m_frameResizeSemaphore[i];
+            }
+#endif //_TRANSCODING
         }
 
         if (m_perFrameDecodeImageSet[picId].m_useConsummerSignalSemaphore) {
@@ -584,6 +592,11 @@ public:
                 pDecodedFrame->frameCompleteSemaphore = m_perFrameDecodeImageSet.m_frameCompleteSemaphore;
                 pDecodedFrame->frameCompleteDoneSemValue = m_perFrameDecodeImageSet[pictureIndex].m_frameCompleteTimelineValue;
                 m_perFrameDecodeImageSet[pictureIndex].m_hasFrameCompleteSignalSemaphore = false;
+#if (_TRANSCODING)
+                for (int i = 0; i < 16; i++) {
+                    pDecodedFrame->frameResizeSemaphore[i] = m_perFrameDecodeImageSet[pictureIndex].m_frameResizeSemaphore[i];
+                }
+#endif //_TRANSCODING
 
                 pDecodedFrame->consumerCompleteSemaphore = m_perFrameDecodeImageSet.m_consumerCompleteSemaphore;
                 pDecodedFrame->frameConsumerDoneSemValue = DecodeFrameBufferIf::GetSemaphoreValue(
@@ -907,10 +920,8 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
         if (!imageViewArrayParent) {
 
             uint32_t baseArrayLayer = imageArrayParent ? imageIndex : 0;
-            VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, baseArrayLayer, 1 };
+            VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, baseArrayLayer, pImageSpec->createInfo.arrayLayers };
             if (pImageSpec->ycbcrConversion != VK_NULL_HANDLE) {
-                // Pass storage usage as planeUsageOverride so per-plane storage
-                // views are created alongside the combined sampled view.
                 VkImageUsageFlags planeUsage =
                     (pImageSpec->createInfo.usage & VK_IMAGE_USAGE_STORAGE_BIT)
                         ? VK_IMAGE_USAGE_STORAGE_BIT : 0;
@@ -935,7 +946,7 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
 
             m_imageViewState[pImageSpec->imageTypeIdx].view = imageViewArrayParent;
 
-            VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, imageIndex, 1 };
+            VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, imageIndex, pImageSpec->createInfo.arrayLayers };
             result = VkImageResourceView::Create(vkDevCtx, imageResource,
                                                  subresourceRange,
                                                  m_imageViewState[pImageSpec->imageTypeIdx].singleLevelView);
@@ -961,6 +972,13 @@ VkResult NvPerFrameDecodeResources::init(const VulkanDeviceContext* vkDevCtx)
     const VkFenceCreateInfo fenceInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr };
     result = vkDevCtx->CreateFence(*vkDevCtx, &fenceInfo, nullptr, &m_frameConsumerDoneFence);
     assert(result == VK_SUCCESS);
+#if (_TRANSCODING)
+    const VkSemaphoreCreateInfo semInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr };
+    for (int i = 0; i < 16; i++) {
+        result = vkDevCtx->CreateSemaphore(*vkDevCtx, &semInfo, nullptr, &m_frameResizeSemaphore[i]);
+        assert(result == VK_SUCCESS);
+    }
+#endif //_TRANSCODING
 
     Reset();
 
@@ -991,6 +1009,12 @@ void NvPerFrameDecodeResources::Deinit(const VulkanDeviceContext* vkDevCtx)
         m_frameConsumerDoneFence = VkFence();
     }
 
+#if (_TRANSCODING)
+        for (int i = 0; i < 16; i++) {
+            vkDevCtx->DestroySemaphore(*vkDevCtx, m_frameResizeSemaphore[i], nullptr);
+            m_frameResizeSemaphore[i] = VkSemaphore();
+        }
+#endif //_TRANSCODING
     for (uint32_t imageTypeIdx = 0; imageTypeIdx < DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES; imageTypeIdx++) {
 
         m_imageViewState[imageTypeIdx].view = nullptr;
