@@ -256,7 +256,13 @@ def run_encoder(
         cmd.extend(["--contentHints", args.content_hints])
     if args.tuning_mode:
         cmd.extend(["--tuningMode", args.tuning_mode])
-    
+
+    # Device selection (multi-GPU systems)
+    if getattr(args, 'device_id', None):
+        cmd.extend(["--deviceID", args.device_id])
+    if getattr(args, 'device_uuid', None):
+        cmd.extend(["--deviceUuid", args.device_uuid])
+
     # Set AQ dump directory - use explicit aq_dump_dir base if provided, else output_dir
     if hasattr(args, 'aq_dump_dir') and args.aq_dump_dir:
         aq_dump_dir = args.aq_dump_dir / f"aq_dump_{config.name}"
@@ -955,6 +961,14 @@ For more information, see README-AQ.md in the vulkan-video-samples repository.
     bench.add_argument("--temporal-aq-strength", type=float, default=0.0,
                        help="Temporal AQ strength [-1.0 to 1.0] for temporal/combined modes. "
                             "0.0=default strength, positive=stronger, negative=weaker (default: 0.0)")
+    bench.add_argument("--device-id",
+                      help="Vulkan physical device to use, as a hex PCI device ID "
+                           "(e.g. 0x2C02). List devices with 'nvidia-smi --query-gpu="
+                           "index,name,pci.device_id --format=csv'; the device ID is "
+                           "the upper 16 bits of pci.device_id")
+    bench.add_argument("--device-uuid",
+                      help="Vulkan physical device to use, by device UUID string "
+                           "(alternative to --device-id)")
     bench.add_argument("--aq-dump-dir", type=Path,
                        help="Base directory for AQ library dumps. If not specified, uses "
                             "<output-dir>/aq_dump_<config>/ for each configuration")

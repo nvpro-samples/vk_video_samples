@@ -433,6 +433,25 @@ The encoder supports the following AQ-related parameters:
 - **Temporal Only**: Set `--temporalAQStrength` to a value in [-1.0, 1.0] and leave `--spatialAQStrength` as default (< -1.0)
 - **Combined Mode**: Set both `--spatialAQStrength` and `--temporalAQStrength` to values in [-1.0, 1.0]
 
+### GPU Selection on Multi-GPU Systems
+
+On systems with more than one GPU, pin the encoder to a specific device:
+
+- `--deviceID <hex>`: Select the Vulkan physical device by PCI device ID
+  (e.g. `--deviceID 0x2C02`). List the installed GPUs with
+  `nvidia-smi --query-gpu=index,name,pci.device_id --format=csv`; the device
+  ID is the upper 16 bits of `pci.device_id` (e.g. `0x2C0210DE` → `0x2C02`).
+- `--deviceUuid <uuid>`: Select the device by UUID instead (useful when two
+  identical GPU models are installed).
+
+The Python helpers `scripts/run_aq_encoder.py` and
+`scripts/aq_quality_benchmark.py` expose the same selection via
+`--device-id` / `--device-uuid`.
+
+**Note:** Not all codecs are supported by every GPU generation. For example,
+AV1 encode requires Ada (RTX 40 series) or newer; on Ampere and older GPUs,
+AV1 encode tests will report that the codec is not supported.
+
 ## Example Commands
 
 > **Note on Bitrate Units**: The `--averageBitrate` parameter is in **bits per second (bps)**.
