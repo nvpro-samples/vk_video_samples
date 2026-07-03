@@ -179,7 +179,13 @@ def build_command(args):
     # AQ dump directory
     if args.aq_dump_dir:
         cmd.extend(["--aqDumpDir", str(args.aq_dump_dir)])
-    
+
+    # Device selection (multi-GPU systems)
+    if args.device_id:
+        cmd.extend(["--deviceID", args.device_id])
+    if args.device_uuid:
+        cmd.extend(["--deviceUuid", args.device_uuid])
+
     return cmd
 
 
@@ -281,7 +287,21 @@ Examples:
         type=Path,
         help="Directory for AQ dump files (default: ./aqDump)"
     )
-    
+
+    # Device selection (multi-GPU systems)
+    parser.add_argument(
+        "--device-id",
+        help="Vulkan physical device to use, as a hex PCI device ID "
+             "(e.g. 0x2C02). List devices with 'nvidia-smi --query-gpu="
+             "index,name,pci.device_id --format=csv'; the device ID is the "
+             "upper 16 bits of pci.device_id. Default: encoder's default pick"
+    )
+    parser.add_argument(
+        "--device-uuid",
+        help="Vulkan physical device to use, by device UUID string "
+             "(alternative to --device-id)"
+    )
+
     # Frame parameters
     parser.add_argument(
         "--num-frames",
