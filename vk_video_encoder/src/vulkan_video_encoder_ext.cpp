@@ -279,8 +279,15 @@ VkResult VulkanVideoEncoderExtImpl::BuildEncoderConfig(
         std::cout << "  [" << i << "] " << argv[i] << "\n";
     }
 
-    return EncoderConfig::CreateCodecConfig(
+    VkResult ccResult = EncoderConfig::CreateCodecConfig(
         static_cast<int>(argv.size()), argv.data(), outConfig);
+    // DEBUG: enable the encoder's built-in input-vs-reconstructed PSNR so we can
+    // tell whether the ext encode itself is lossy (input vs recon) independent of
+    // the decode/reference roundtrip.
+    if (ccResult == VK_SUCCESS && outConfig && getenv("VKENC_DEBUG_PSNR")) {
+        outConfig->enablePsnrMetrics = 1;
+    }
+    return ccResult;
 }
 
 //=============================================================================
