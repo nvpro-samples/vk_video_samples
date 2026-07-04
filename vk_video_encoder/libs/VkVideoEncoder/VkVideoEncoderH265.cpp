@@ -524,6 +524,15 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         for (uint32_t i = 0; i < pFrameInfo->pictureInfo.naluSliceSegmentEntryCount; i++) {
             pFrameInfo->naluSliceSegmentInfo[i].constantQp = constantQp;
         }
+        if (getenv("VKENC_DEBUG_PSNR")) {
+            fprintf(stderr, "[QPDBG] picType=%d constantQp=%d (qpI=%d qpP=%d qpB=%d) rcMode=%d\n",
+                    (int)encodeFrameInfo->gopPosition.pictureType, constantQp,
+                    encodeFrameInfo->constQp.qpIntra, encodeFrameInfo->constQp.qpInterP,
+                    encodeFrameInfo->constQp.qpInterB, (int)m_rateControlInfo.rateControlMode);
+        }
+    } else if (getenv("VKENC_DEBUG_PSNR")) {
+        fprintf(stderr, "[QPDBG] rcMode=%d NOT DISABLED (picType=%d) -> QP not forced\n",
+                (int)m_rateControlInfo.rateControlMode, (int)encodeFrameInfo->gopPosition.pictureType);
     }
 
     pFrameInfo->stdPictureInfo.flags.is_reference = m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo->gopPosition);

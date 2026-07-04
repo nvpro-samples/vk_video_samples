@@ -1043,6 +1043,9 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
             return result;
         }
 
+        if (getenv("VKENC_DEBUG_PSNR")) {
+            vkEncoderConfigh265->enablePsnrMetrics = 1;
+        }
         encoderConfig = vkEncoderConfigh265;
         return VK_SUCCESS;
 

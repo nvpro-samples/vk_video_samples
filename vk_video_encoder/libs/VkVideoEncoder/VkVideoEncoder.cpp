@@ -1281,6 +1281,12 @@ void VkVideoEncoder::AssemblyWorkerThread(int threadId)
             continue;
         }
 
+        // The threaded (ext streaming) assembly path does not go through
+        // AssembleBitstreamData, so PSNR / recon capture is done here.
+        if (m_psnr && m_psnr->Enabled()) {
+            m_psnr->ComputeFramePsnr(frame.get());
+        }
+
         {
             std::unique_lock<std::mutex> lock(m_assemblyFileMutex);
             m_assemblyOrderCV.wait(lock, [&] {
@@ -2749,6 +2755,13 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
     }
 
     encodeBeginInfo.pNext = &m_beginRateControlInfo;
+
+    if (getenv("VKENC_DEBUG_PSNR")) {
+        fprintf(stderr, "[BEGINRC] picType=%d controlCmd=0x%x beginRCmode=%d\n",
+                (int)encodeFrameInfo->gopPosition.pictureType,
+                (unsigned)encodeFrameInfo->controlCmd,
+                (int)m_beginRateControlInfo.rateControlMode);
+    }
 
     vkDevCtx->CmdBeginVideoCodingKHR(cmdBuf, &encodeBeginInfo);
 

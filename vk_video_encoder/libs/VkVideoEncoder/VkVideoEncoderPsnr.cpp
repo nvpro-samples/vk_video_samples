@@ -227,18 +227,17 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
     const size_t uPlaneSizeRecon = (size_t)(encodeChromaW * encodeChromaH);
     const uint32_t numPlanes = std::min(3u, m_encoderConfig->input.numPlanes);
 
-    if (encodeFrameInfo.psnrFrameData.psnrInputY.empty()) {
-        return;
-    }
     const uint8_t* inputY = encodeFrameInfo.psnrFrameData.psnrInputY.data();
     const uint8_t* inputU = encodeFrameInfo.psnrFrameData.psnrInputU.data();
     const uint8_t* inputV = encodeFrameInfo.psnrFrameData.psnrInputV.data();
     const size_t inputYSize = encodeFrameInfo.psnrFrameData.psnrInputY.size();
     const size_t inputUSize = encodeFrameInfo.psnrFrameData.psnrInputU.size();
     const size_t inputVSize = encodeFrameInfo.psnrFrameData.psnrInputV.size();
-    if (inputYSize != yPlaneSizeInput) {
-        return;
-    }
+    // Ext (SubmitExternalFrame) path never runs CaptureInput (no CPU input buffer),
+    // so psnrInput* is empty. Still read back + dump the reconstructed frame so we can
+    // compare the recon against the reference offline; only skip the input-vs-recon math.
+    const bool haveInput = (!encodeFrameInfo.psnrFrameData.psnrInputY.empty()) &&
+                           (inputYSize == yPlaneSizeInput);
 
     if (encodeFrameInfo.encodeCmdBuffer == nullptr) {
         return;
@@ -313,14 +312,14 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
 
     m_vkDevCtx->UnmapMemory(device, mem);
 
-#define VKVENC_DEBUG_DUMP_PSNR_FRAMES 0
+#define VKVENC_DEBUG_DUMP_PSNR_FRAMES 1
 #if VKVENC_DEBUG_DUMP_PSNR_FRAMES
-    {
+    if (getenv("VKENC_DEBUG_DUMP_FRAMES")) {
         const uint32_t inputOrder = (uint32_t)encodeFrameInfo.gopPosition.inputOrder;
         char filename[256];
         snprintf(filename, sizeof(filename), "input_frame_%05u_%ux%u.yuv", inputOrder, width, height);
-        std::ofstream outInput(filename, std::ios::binary);
-        if (outInput) {
+        std::ofstream outInput(haveInput ? filename : "/dev/null", std::ios::binary);
+        if (haveInput && outInput) {
             outInput.write(reinterpret_cast<const char*>(inputY), yPlaneSizeInput);
             if ((numPlanes >= 2) && (inputUSize >= uPlaneSizeInput)) {
                 outInput.write(reinterpret_cast<const char*>(inputU), uPlaneSizeInput);
@@ -361,23 +360,25 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
         return (mse <= 1e-10) ? 100.0 : (10.0 * log10((255.0 * 255.0) / mse));
     };
 
-    double framePsnrY = computePlanePsnr(inputY, width, m_psnrReconY.data(), encodeW, width, height);
-    if (framePsnrY >= 0.0) {
-        m_psnrSum += framePsnrY;
-    }
-    if ((numPlanes >= 2) && (inputUSize == uPlaneSizeInput) && (m_psnrReconU.size() >= uPlaneSizeInput)) {
-        double framePsnrU = computePlanePsnr(inputU, chromaW, m_psnrReconU.data(), encodeChromaW, chromaW, chromaH);
-        if (framePsnrU >= 0.0) {
-            m_psnrSumU += framePsnrU;
+    if (haveInput) {
+        double framePsnrY = computePlanePsnr(inputY, width, m_psnrReconY.data(), encodeW, width, height);
+        if (framePsnrY >= 0.0) {
+            m_psnrSum += framePsnrY;
         }
-    }
-    if ((numPlanes >= 3) && (inputVSize == uPlaneSizeInput) && (m_psnrReconV.size() >= uPlaneSizeInput)) {
-        double framePsnrV = computePlanePsnr(inputV, chromaW, m_psnrReconV.data(), encodeChromaW, chromaW, chromaH);
-        if (framePsnrV >= 0.0) {
-            m_psnrSumV += framePsnrV;
+        if ((numPlanes >= 2) && (inputUSize == uPlaneSizeInput) && (m_psnrReconU.size() >= uPlaneSizeInput)) {
+            double framePsnrU = computePlanePsnr(inputU, chromaW, m_psnrReconU.data(), encodeChromaW, chromaW, chromaH);
+            if (framePsnrU >= 0.0) {
+                m_psnrSumU += framePsnrU;
+            }
         }
+        if ((numPlanes >= 3) && (inputVSize == uPlaneSizeInput) && (m_psnrReconV.size() >= uPlaneSizeInput)) {
+            double framePsnrV = computePlanePsnr(inputV, chromaW, m_psnrReconV.data(), encodeChromaW, chromaW, chromaH);
+            if (framePsnrV >= 0.0) {
+                m_psnrSumV += framePsnrV;
+            }
+        }
+        m_psnrFrameCount++;
     }
-    m_psnrFrameCount++;
     if (encodeFrameInfo.psnrFrameData.psnrStagingImage) {
         encodeFrameInfo.psnrFrameData.psnrStagingImage = nullptr;
     }
