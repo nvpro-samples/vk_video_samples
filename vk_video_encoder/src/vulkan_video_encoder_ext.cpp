@@ -181,15 +181,47 @@ VkResult VulkanVideoEncoderExtImpl::BuildEncoderConfig(
 
     // Frame rate: no CLI arg for this in ParseArguments — set via member directly after config
 
-    // Bitrate (note: lowercase 'r' — --averageBitrate, not --averageBitRate)
-    if (extConfig.averageBitrate > 0) {
-        argStrings.push_back("--averageBitrate");
-        argStrings.push_back(std::to_string(extConfig.averageBitrate));
+    // Tuning mode (VkVideoEncodeTuningModeKHR). LOSSLESS engages transquant
+    // bypass + QP0 in the codec config.
+    const bool lossless = (extConfig.tuningMode == 4 /* LOSSLESS */);
+    switch (extConfig.tuningMode) {
+        case 1: argStrings.push_back("--tuningMode"); argStrings.push_back("highquality"); break;
+        case 2: argStrings.push_back("--tuningMode"); argStrings.push_back("lowlatency"); break;
+        case 3: argStrings.push_back("--tuningMode"); argStrings.push_back("ultralowlatency"); break;
+        case 4: argStrings.push_back("--tuningMode"); argStrings.push_back("lossless"); break;
+        default: break;
     }
-    if (extConfig.maxBitrate > 0) {
-        argStrings.push_back("--maxBitrate");
-        argStrings.push_back(std::to_string(extConfig.maxBitrate));
+
+    // Rate control. Constant-QP (a.k.a. DISABLED) when explicitly requested or
+    // when lossless. Otherwise forward the selected bitrate mode. Previously the
+    // ext path forwarded ONLY --averageBitrate with no mode, so constant-QP and
+    // lossless could never be requested and QP0 was dropped.
+    const bool constantQp = (extConfig.rateControlMode == 1 /* DISABLED */) || lossless;
+    if (constantQp) {
+        argStrings.push_back("--rateControlMode");
+        argStrings.push_back("disabled");
+        // Forward QP including 0 (lossless). For lossless, default unset QP to 0.
+        int32_t qpI = (extConfig.constQpI >= 0) ? extConfig.constQpI : (lossless ? 0 : 26);
+        int32_t qpP = (extConfig.constQpP >= 0) ? extConfig.constQpP : qpI;
+        int32_t qpB = (extConfig.constQpB >= 0) ? extConfig.constQpB : qpP;
+        argStrings.push_back("--qpI"); argStrings.push_back(std::to_string(qpI));
+        argStrings.push_back("--qpP"); argStrings.push_back(std::to_string(qpP));
+        argStrings.push_back("--qpB"); argStrings.push_back(std::to_string(qpB));
+    } else {
+        // Explicit RC mode selector so behavior is deterministic (2=CBR, 3=VBR).
+        if (extConfig.rateControlMode == 2)      { argStrings.push_back("--rateControlMode"); argStrings.push_back("cbr"); }
+        else if (extConfig.rateControlMode == 3) { argStrings.push_back("--rateControlMode"); argStrings.push_back("vbr"); }
+        if (extConfig.averageBitrate > 0) {
+            argStrings.push_back("--averageBitrate");
+            argStrings.push_back(std::to_string(extConfig.averageBitrate));
+        }
+        if (extConfig.maxBitrate > 0) {
+            argStrings.push_back("--maxBitrate");
+            argStrings.push_back(std::to_string(extConfig.maxBitrate));
+        }
     }
+    if (extConfig.minQp > 0) { argStrings.push_back("--minQp"); argStrings.push_back(std::to_string(extConfig.minQp)); }
+    if (extConfig.maxQp > 0) { argStrings.push_back("--maxQp"); argStrings.push_back(std::to_string(extConfig.maxQp)); }
 
     // GOP
     if (extConfig.gopLength > 0) {
@@ -199,16 +231,6 @@ VkResult VulkanVideoEncoderExtImpl::BuildEncoderConfig(
     if (extConfig.consecutiveBFrames > 0) {
         argStrings.push_back("--consecutiveBFrameCount");
         argStrings.push_back(std::to_string(extConfig.consecutiveBFrames));
-    }
-
-    // QP — only pass when explicitly set (> 0); 0 is default/unused
-    if (extConfig.constQpI > 0) {
-        argStrings.push_back("--qpI");
-        argStrings.push_back(std::to_string(extConfig.constQpI));
-    }
-    if (extConfig.constQpP > 0) {
-        argStrings.push_back("--qpP");
-        argStrings.push_back(std::to_string(extConfig.constQpP));
     }
 
     // Quality

@@ -82,6 +82,13 @@ struct VkVideoEncoderConfig {
     // Quality
     uint32_t qualityLevel;      // 0 = default
 
+    // Tuning mode (VkVideoEncodeTuningModeKHR):
+    //   0 = DEFAULT, 1 = HIGH_QUALITY, 2 = LOW_LATENCY,
+    //   3 = ULTRA_LOW_LATENCY, 4 = LOSSLESS
+    // LOSSLESS engages transquant-bypass + QP0 in the codec config, producing
+    // bit-exact output (per the Vulkan spec). Requires rateControlMode DISABLED.
+    uint32_t tuningMode;
+
     // Color info (VUI)
     uint8_t colourPrimaries;
     uint8_t transferCharacteristics;
