@@ -2759,8 +2759,24 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
                                                           encodeFrameInfo->controlCmd};
         vkDevCtx->CmdControlVideoCodingKHR(cmdBuf, &renderControlInfo);
 
-        m_beginRateControlInfo = *(VkVideoEncodeRateControlInfoKHR*)encodeFrameInfo->pControlCmdChain;
-        const_cast<VkBaseInStructure*>(static_cast<const VkBaseInStructure*>(m_beginRateControlInfo.pNext))->pNext = NULL;
+        // Cache the new session rate-control state for subsequent frames' BeginCoding.
+        // The chain head is the codec-specific RC struct (e.g.
+        // VkVideoEncodeH265RateControlInfoKHR), so walk the chain for the base RC
+        // struct — casting the head read gopFrameCount as rateControlMode.
+        for (const VkBaseInStructure* p =
+                 reinterpret_cast<const VkBaseInStructure*>(encodeFrameInfo->pControlCmdChain);
+             p != nullptr; p = p->pNext) {
+            if (p->sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR) {
+                m_beginRateControlInfo = *reinterpret_cast<const VkVideoEncodeRateControlInfoKHR*>(p);
+                m_beginRateControlInfo.pNext = nullptr;
+                // The frame's rateControlLayersInfo array is pool-recycled; point the
+                // cached copy at the encoder's persistent layer storage instead.
+                if (m_beginRateControlInfo.layerCount > 0) {
+                    m_beginRateControlInfo.pLayers = m_rateControlLayersInfo;
+                }
+                break;
+            }
+        }
     }
 
     if (m_videoMaintenance1FeaturesSupported)
