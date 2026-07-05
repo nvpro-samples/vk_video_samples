@@ -2944,12 +2944,69 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
         signalSemaphoreCount++;
     }
 
-    // Path A (direct encode, no staging): inject external signal semaphores
-    // into the encode submit. For Paths B/C the staging submit handles these.
+    // Path A (direct encode, no staging): signal the producer's input-release
+    // timeline (signal semaphore index 0) at queue flush points. Submits
+    // arrive here in ENCODE order — under B-frame GOPs each ordered batch is
+    // a reference frame followed by the deferred B-frames that precede it in
+    // input order — so signaling each frame's own release value would free
+    // the B inputs while the encode engine still has to read them, with
+    // non-monotonic timeline values. The batch chain tail
+    // (dependantFrames == nullptr) is the flush point: every input received
+    // so far has been encode-submitted, and queue completion is FIFO, so
+    // when this submit retires all of them are consumed. Signal the max
+    // release value submitted so far — one monotonic signal per batch,
+    // correct for any intra-batch order. Single-frame batches degenerate to
+    // per-frame signaling. Values of 0 (binary semantics) and extra signal
+    // semaphores (index 1+) pass through per-frame as before. For Paths B/C
+    // the staging submit consumes the input in input order instead.
     if (encodeFrameInfo->isExternalInput && !encodeFrameInfo->inputCmdBuffer &&
         !encodeFrameInfo->inputSignalSemaphores.empty()) {
-        for (size_t i = 0; i < encodeFrameInfo->inputSignalSemaphores.size() &&
-                           signalSemaphoreCount < signalSemaphoreMaxCount; i++) {
+        size_t firstPassThroughIdx = 0;
+        const uint64_t releaseValue = !encodeFrameInfo->inputSignalSemaphoreValues.empty()
+                                          ? encodeFrameInfo->inputSignalSemaphoreValues[0] : 0;
+        if (releaseValue != 0) {
+            firstPassThroughIdx = 1;
+            if (releaseValue > m_maxSubmittedInputReleaseId) {
+                m_maxSubmittedInputReleaseId = releaseValue;
+            }
+            // Flush point = last EXTERNAL frame of the ordered batch. The
+            // chain may end with codec pseudo-frames that are not external
+            // inputs and read no input image (e.g. the AV1 show-existing
+            // overlay node InsertOrdered appends after the B-frames), so
+            // "dependantFrames == nullptr" alone would miss the tail.
+            bool queueFlushPoint = true;
+            for (const VkVideoEncodeFrameInfo* next = encodeFrameInfo->dependantFrames.get();
+                 next != nullptr; next = next->dependantFrames.get()) {
+                if (next->isExternalInput) {
+                    queueFlushPoint = false;
+                    break;
+                }
+            }
+            static const bool releaseDebug = (getenv("VKENC_RELEASE_DEBUG") != nullptr);
+            if (releaseDebug) {
+                fprintf(stderr, "[RELDBG] submit relVal=%llu max=%llu last=%llu tail=%d inOrd=%llu encOrd=%llu\n",
+                        (unsigned long long)releaseValue,
+                        (unsigned long long)m_maxSubmittedInputReleaseId,
+                        (unsigned long long)m_lastSignaledInputReleaseId,
+                        (int)queueFlushPoint,
+                        (unsigned long long)encodeFrameInfo->gopPosition.inputOrder,
+                        (unsigned long long)encodeFrameInfo->gopPosition.encodeOrder);
+            }
+            if (queueFlushPoint &&
+                (m_maxSubmittedInputReleaseId > m_lastSignaledInputReleaseId) &&
+                (signalSemaphoreCount < signalSemaphoreMaxCount)) {
+                signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+                signalSemaphoreInfos[signalSemaphoreCount].semaphore = encodeFrameInfo->inputSignalSemaphores[0];
+                signalSemaphoreInfos[signalSemaphoreCount].value = m_maxSubmittedInputReleaseId;
+                signalSemaphoreInfos[signalSemaphoreCount].stageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+                signalSemaphoreInfos[signalSemaphoreCount].deviceIndex = 0;
+                signalSemaphoreCount++;
+                m_lastSignaledInputReleaseId = m_maxSubmittedInputReleaseId;
+            }
+        }
+        for (size_t i = firstPassThroughIdx;
+             i < encodeFrameInfo->inputSignalSemaphores.size() &&
+             signalSemaphoreCount < signalSemaphoreMaxCount; i++) {
             signalSemaphoreInfos[signalSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
             signalSemaphoreInfos[signalSemaphoreCount].semaphore = encodeFrameInfo->inputSignalSemaphores[i];
             signalSemaphoreInfos[signalSemaphoreCount].value =

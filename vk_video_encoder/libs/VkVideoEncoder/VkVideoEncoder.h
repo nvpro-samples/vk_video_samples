@@ -401,6 +401,11 @@ public:
             lastFrame = false;
             controlCmd = VkVideoCodingControlFlagsKHR();
             pControlCmdChain = nullptr;
+            // Pool nodes are recycled into non-external roles (e.g. AV1
+            // show-existing pseudo-frames); stale external-input state would
+            // make them inject stale release-semaphore signals and defeat
+            // the flush-point (last-external-frame) detection.
+            ClearExternalInputSync();
             assert(qualityLevelInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR);
             assert(rateControlInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR);
             assert(rateControlLayersInfo[0].sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR);
@@ -572,6 +577,8 @@ public:
         , m_numDeferredFrames()
         , m_numDeferredRefFrames()
         , m_holdRefFramesInQueue(1)
+        , m_maxSubmittedInputReleaseId(0)
+        , m_lastSignaledInputReleaseId(0)
         , m_controlCmd(VK_VIDEO_CODING_CONTROL_RESET_BIT_KHR |
                        VK_VIDEO_CODING_CONTROL_ENCODE_QUALITY_LEVEL_BIT_KHR |
                        VK_VIDEO_CODING_CONTROL_ENCODE_RATE_CONTROL_BIT_KHR)
@@ -934,6 +941,19 @@ protected:
     uint32_t                                 m_numDeferredFrames;
     uint32_t                                 m_numDeferredRefFrames;
     uint32_t                                 m_holdRefFramesInQueue;
+    // External-input release signaling at queue flush points (Path A).
+    // Encode submits arrive in encode order, which under B-frame GOPs
+    // differs from input order, so a frame's own release value must not be
+    // signaled on its submit (a reordered reference would release the B
+    // inputs it precedes while their encodes still have to read them).
+    // The end of each ordered batch (reference frame + its deferred
+    // B-frames) is a natural flush point: every input received so far has
+    // been encode-submitted, so the batch's last submit signals the max
+    // release value seen — one monotonic signal releasing the whole
+    // sequence, valid for any intra-batch order. Single-frame batches
+    // (no B-frames) degenerate to per-frame signaling.
+    uint64_t                                 m_maxSubmittedInputReleaseId;
+    uint64_t                                 m_lastSignaledInputReleaseId;
     VkVideoCodingControlFlagsKHR             m_controlCmd;
     VkSharedBaseObj<VulkanVideoImagePool>    m_linearInputImagePool;
     VkSharedBaseObj<VulkanVideoImagePool>    m_inputImagePool;
