@@ -228,6 +228,15 @@ VkResult VulkanVideoEncoderExtImpl::BuildEncoderConfig(
         argStrings.push_back("--gopFrameCount");
         argStrings.push_back(std::to_string(extConfig.gopLength));
     }
+    // Consecutive-B count: pass through when the caller sets it; otherwise
+    // EncoderConfig adopts the codec's driver-preferred value from the
+    // quality-level caps (5 for AV1 when supported). B-frame GOPs reorder the
+    // encode submissions relative to the input order; the producer's
+    // input-release timeline stays correct because VkVideoEncoder signals
+    // the release at queue flush points (end of each ordered batch) with
+    // the max submitted release value — see SubmitVideoCodingCmds. Note the
+    // producer's frame pool must be deeper than one mini-GOP (B count + 1),
+    // since a mini-GOP's inputs are held until its batch flushes.
     if (extConfig.consecutiveBFrames > 0) {
         argStrings.push_back("--consecutiveBFrameCount");
         argStrings.push_back(std::to_string(extConfig.consecutiveBFrames));
