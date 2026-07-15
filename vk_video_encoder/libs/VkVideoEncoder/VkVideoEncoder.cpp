@@ -1084,9 +1084,18 @@ VkResult VkVideoEncoder::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFram
     BitstreamReadback readback{};
     VkResult result = ReadbackBitstreamData(encodeFrameInfo, readback);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nRetrieveData Error: Failed to get vcl query pool results.\n");
+        fprintf(stderr, "\nAssembleBitstreamData Error: bitstream readback failed with result 0x%x.\n", result);
         assert(result == VK_SUCCESS);
         return result;
+    }
+
+    // On the synchronous path every frame must carry a bitstream buffer;
+    // readbackDone == false here means the frame had no buffer or command
+    // buffer, which would silently drop the frame's coded data.
+    if (!readback.readbackDone) {
+        fprintf(stderr, "\nAssembleBitstreamData Error: no bitstream buffer to read back for frame %u.\n", frameIdx);
+        assert(readback.readbackDone);
+        return VK_ERROR_INITIALIZATION_FAILED;
     }
 
     // VkVideoEncoder uses GPU mapped memory to write to file
@@ -1181,7 +1190,11 @@ VkResult VkVideoEncoder::WriteBitstreamToFile(
             src = readback.bitstreamCopy.data();
         } else {
             VkDeviceSize maxSize;
+            // The feedback query's bitstreamStartOffset is relative to the
+            // bound bitstream buffer range, so honor dstBufferOffset too
+            // (currently always 0, but keep the pointer math spec-correct).
             src = encodeFrameInfo->outputBitstreamBuffer->GetDataPtr(0, maxSize)
+                + encodeFrameInfo->encodeInfo.dstBufferOffset
                 + readback.bitstreamStartOffset;
         }
 

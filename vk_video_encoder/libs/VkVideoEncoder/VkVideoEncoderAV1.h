@@ -203,6 +203,9 @@ private:
     void InitializeFrameHeader(StdVideoAV1SequenceHeader* pSequenceHdr, VkVideoEncodeFrameInfoAV1* pFrameInfo,
                                StdVideoAV1ReferenceName& refName);
 
+    // Stages the frame's sequence-header (if any) and frame OBUs into
+    // m_bitstream[frameIdx].  Consumes bitstreamReadback.bitstreamCopy
+    // (moved into staging when no header needs to be prepended).
     void BuildFrameObuSequence(uint32_t frameIdx,
                                const VkVideoEncodeFrameInfo* encodeFrameInfo,
                                BitstreamReadback& bitstreamReadback);
