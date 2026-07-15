@@ -826,10 +826,16 @@ void VkVideoEncoderAV1::BuildFrameObuSequence(uint32_t frameIdx,
 
     // Frame Header OBU + Tile Group OBU
     // Encoder outputs a self-contained OBU.  So, just append it.
+    // Consumes bitstreamReadback.bitstreamCopy: when no sequence header needs
+    // to be prepended, the frame payload is moved (not copied) into staging.
     {
-        const uint8_t* frameData = bitstreamReadback.bitstreamCopy.data();
         const size_t frameSize = bitstreamReadback.bitstreamCopy.size();
-        bitstream.insert(bitstream.end(), frameData, frameData + frameSize);
+        if (bitstream.empty()) {
+            bitstream = std::move(bitstreamReadback.bitstreamCopy);
+        } else {
+            const uint8_t* frameData = bitstreamReadback.bitstreamCopy.data();
+            bitstream.insert(bitstream.end(), frameData, frameData + frameSize);
+        }
 
         if (m_encoderConfig->verboseFrameStruct) {
             std::cout << "      == Output VCL data SUCCESS for " << frameIdx << " with size: " << frameSize
@@ -843,8 +849,6 @@ void VkVideoEncoderAV1::BuildFrameObuSequence(uint32_t frameIdx,
 
 VkResult VkVideoEncoderAV1::FlushBatchedTemporalUnit(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
-    FILE* outFile = m_encoderConfig->outputFileHandler.GetFileHandle();
-
     // Write IVF file header - written once at the start of the output file.
     if (encodeFrameInfo->frameInputOrderNum == 0) {
         uint8_t ivfFileHdr[32];
@@ -890,13 +894,14 @@ VkResult VkVideoEncoderAV1::FlushBatchedTemporalUnit(VkSharedBaseObj<VkVideoEnco
     // Write Temporal delimiter
     WriteDataToFile(tdObu, sizeof(tdObu));
 
-    // Write frame OBU sequences
+    // Write frame OBU sequences.  Use WriteDataToFile so the coded payload
+    // is included in the CRC calculation (--crc), like the headers above.
     for (const auto& curFrameIdx : m_batchFramesIndxSetToAssemble) {
         const uint8_t* writeData = m_bitstream[curFrameIdx].data();
         size_t remainingBytes = m_bitstream[curFrameIdx].size();
 
         while (remainingBytes > 0) {
-            const size_t bytesWritten = fwrite(writeData, 1, remainingBytes, outFile);
+            const size_t bytesWritten = WriteDataToFile(writeData, remainingBytes);
             if (bytesWritten == 0) {
                 std::cerr << "Failed to write bitstream data for frame " << curFrameIdx << std::endl;
                 return VK_ERROR_OUT_OF_HOST_MEMORY;
@@ -908,7 +913,7 @@ VkResult VkVideoEncoderAV1::FlushBatchedTemporalUnit(VkSharedBaseObj<VkVideoEnco
 
         std::vector<uint8_t>().swap(m_bitstream[curFrameIdx]);
     }
-    fflush(outFile);
+    fflush(m_encoderConfig->outputFileHandler.GetFileHandle());
 
     m_batchFramesIndxSetToAssemble.clear();
 
@@ -928,9 +933,17 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
     BitstreamReadback readback{};
     VkResult result = ReadbackBitstreamData(encodeFrameInfo, readback);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nRetrieveData Error: Failed to get vcl query pool results.\n");
+        fprintf(stderr, "\nAssembleBitstreamData Error: bitstream readback failed with result 0x%x.\n", result);
         assert(result == VK_SUCCESS);
         return result;
+    }
+
+    // Show-existing frames returned above; every remaining frame must have a
+    // bitstream buffer, otherwise its coded data would be silently dropped.
+    if (!readback.readbackDone) {
+        fprintf(stderr, "\nAssembleBitstreamData Error: no bitstream buffer to read back for frame %u.\n", frameIdx);
+        assert(readback.readbackDone);
+        return VK_ERROR_INITIALIZATION_FAILED;
     }
 
     BuildFrameObuSequence(frameIdx, encodeFrameInfo.get(), readback);
@@ -965,7 +978,11 @@ VkResult VkVideoEncoderAV1::ReadbackBitstreamData(
 
     if (readback.readbackDone) {
         VkDeviceSize maxSize;
+        // The feedback query's bitstreamStartOffset is relative to the bound
+        // bitstream buffer range, so honor dstBufferOffset too (currently
+        // always 0, but keep the pointer math spec-correct).
         uint8_t* data = encodeFrameInfo->outputBitstreamBuffer->GetDataPtr(0, maxSize)
+                      + encodeFrameInfo->encodeInfo.dstBufferOffset
                       + readback.bitstreamStartOffset;
         readback.bitstreamCopy.resize(readback.bitstreamSize);
         memcpy(readback.bitstreamCopy.data(), data, readback.bitstreamSize);
