@@ -3107,7 +3107,7 @@ VkResult VkVideoEncoder::PushOrderedFrames()
             if (m_asyncAssemblyEnabled) {
                 m_lastDeferredFrame = nullptr;
             } else {
-                VkVideoEncodeFrameInfo::ReleaseChildrenFrames(m_lastDeferredFrame);
+                VkVideoEncodeFrameInfo::ResetAndReleaseFrames(m_lastDeferredFrame);
                 assert(m_lastDeferredFrame == nullptr);
             }
         }
@@ -3313,7 +3313,12 @@ void VkVideoEncoder::ConsumerThread()
                // Testing only - don't use for production!
                result = ProcessOutOfOrderFrames(encodeFrameInfo, 0);
            }
-           VkVideoEncodeFrameInfo::ReleaseChildrenFrames(encodeFrameInfo);
+           if (m_asyncAssemblyEnabled) {
+               // Frames are owned by the async-assembly queue items now.
+               VkVideoEncodeFrameInfo::ReleaseChildrenFrames(encodeFrameInfo);
+           } else {
+               VkVideoEncodeFrameInfo::ResetAndReleaseFrames(encodeFrameInfo);
+           }
            assert(encodeFrameInfo == nullptr);
            if (result != VK_SUCCESS) {
                std::cout << "Error processing frames from the frame thread!" << std::endl;

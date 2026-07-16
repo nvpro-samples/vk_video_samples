@@ -314,6 +314,26 @@ public:
             dependantFrames = nullptr;
         }
 
+        // Releases a deferred-frame chain when the frames are NOT handed to
+        // the async-assembly queue.  Pool-recycled frame nodes do not run
+        // destructors when their last reference drops, so each frame's
+        // resources (DPB setup image, input image, bitstream buffer, command
+        // buffers) must be dropped explicitly via Reset() - mirroring
+        // ReleaseAssemblyItem on the async path.  ReleaseChildrenFrames alone
+        // leaves those resources pinned inside the pooled nodes and starves
+        // the image/buffer pools (--syncAssembly: DPB image pool exhausted
+        // after ~16 frames, truncating the output).
+        static void ResetAndReleaseFrames(VkSharedBaseObj<VkVideoEncodeFrameInfo>& frames) {
+            VkSharedBaseObj<VkVideoEncodeFrameInfo> frame = frames;
+            frames = nullptr;
+            while (frame != nullptr) {
+                VkSharedBaseObj<VkVideoEncodeFrameInfo> next = frame->dependantFrames;
+                frame->dependantFrames = nullptr;
+                frame->Reset(true);
+                frame = next;
+            }
+        }
+
         template <typename Callback>
         static VkResult ProcessFrames(VkVideoEncoder* encoder,
                                       VkSharedBaseObj<VkVideoEncodeFrameInfo>& frame,
