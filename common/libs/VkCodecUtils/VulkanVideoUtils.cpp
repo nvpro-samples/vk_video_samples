@@ -1015,7 +1015,7 @@ void setImageLayout(const VulkanDeviceContext* vkDevCtx,
             imageMemoryBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
             break;
         case VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR:
-            imageMemoryBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_WRITE_BIT_KHR | VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR;
+            imageMemoryBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_WRITE_BIT_KHR | VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
             break;
         case VK_IMAGE_LAYOUT_GENERAL:
             imageMemoryBarrier.dstAccessMask = VK_ACCESS_HOST_WRITE_BIT;
