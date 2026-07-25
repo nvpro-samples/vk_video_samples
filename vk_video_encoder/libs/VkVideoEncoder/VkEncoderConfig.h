@@ -776,6 +776,10 @@ public:
     VkVideoEncodeUsageFlagsKHR encodeUsageHints;
     VkVideoEncodeContentFlagsKHR encodeContentHints;
     VkVideoEncodeTuningModeKHR tuningMode;
+#if (_TRANSCODING)
+    int numEncoderResizedOutputs;
+    std::vector<VulkanFilterYuvCompute::Rectangle> resizedOutputResolution;
+#endif // _TRANSCODING
     VkVideoCoreProfile videoCoreProfile;
     VkVideoCapabilitiesKHR videoCapabilities;
     VkVideoEncodeCapabilitiesKHR videoEncodeCapabilities;
@@ -836,6 +840,9 @@ public:
 
     EncoderInputFileHandler inputFileHandler;
     EncoderOutputFileHandler outputFileHandler;
+#if (_TRANSCODING)
+    EncoderOutputFileHandler resizedOutputFileHandler[16];
+#endif // _TRANSCODING
     EncoderQpMapFileHandler qpMapFileHandler;
 
     VulkanFilterYuvCompute::FilterType filterType;
@@ -880,6 +887,12 @@ public:
     int32_t  drmFormatModifierIndex; // -1 = disabled (OPTIMAL), >= 0 = index into non-linear modifier list
     uint64_t selectedDrmFormatModifier; // resolved modifier value (set during InitEncoder)
 
+#if (_TRANSCODING)
+    int vbvbufratio;
+    enum ENCODING_PROFILE { LOW_LATENCY_STREAMING = 0, ARCHIVING, SVC, ENUM_MAXVAL_NOTSET };
+    ENCODING_PROFILE encodingProfile;
+#endif // _TRANSCODING
+
     EncoderConfig()
     : appName()
     , deviceId(-1)
@@ -908,6 +921,9 @@ public:
     , encodeUsageHints(VK_VIDEO_ENCODE_USAGE_DEFAULT_KHR)
     , encodeContentHints(VK_VIDEO_ENCODE_CONTENT_DEFAULT_KHR)
     , tuningMode(VK_VIDEO_ENCODE_TUNING_MODE_DEFAULT_KHR)
+#if (_TRANSCODING)
+    , numEncoderResizedOutputs(0)
+#endif // _TRANSCODING
     , videoCoreProfile(codec, encodeChromaSubsampling, encodeBitDepthLuma, encodeBitDepthChroma)
     , videoCapabilities()
     , videoEncodeCapabilities()
@@ -989,6 +1005,10 @@ public:
     , crcOutputFileName()
     , drmFormatModifierIndex(-1)
     , selectedDrmFormatModifier(0)
+#if (_TRANSCODING)
+    , vbvbufratio(1)
+    , encodingProfile(ENUM_MAXVAL_NOTSET)
+#endif // _TRANSCODING
     { }
 
     virtual ~EncoderConfig() {}

@@ -309,9 +309,12 @@ public:
         // Fall back to first plane view if combined view is null (storage-only case)
         return m_imageViews[0] ? m_imageViews[0] : (m_numPlanes > 0 ? m_imageViews[1] : VK_NULL_HANDLE);
     }
-    VkImageView GetImageView() const {
-        // Fall back to first plane view if combined view is null (storage-only case)
-        return m_imageViews[0] ? m_imageViews[0] : (m_numPlanes > 0 ? m_imageViews[1] : VK_NULL_HANDLE);
+    VkImageView GetImageView(int i = 0) const {
+        if (i == 0) {
+            // Fall back to first plane view if combined view is null (storage-only case)
+            return m_imageViews[0] ? m_imageViews[0] : (m_numPlanes > 0 ? m_imageViews[1] : VK_NULL_HANDLE);
+        }
+        return m_imageViews[i];
     }
     uint32_t GetNumberOfPlanes() const { return m_numPlanes; }
     VkImageView GetPlaneImageView(uint32_t planeIndex = 0) const {

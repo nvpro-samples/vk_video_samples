@@ -587,6 +587,12 @@ public:
          * optimal → linear for host access)
          */
         XFER_IMAGE_TO_IMAGE,
+        RESIZE,
+    };
+
+    struct Rectangle {
+        int width = 0;
+        int height = 0;
     };
     
     // =========================================================================
@@ -729,7 +735,11 @@ public:
                            const VkSamplerYcbcrConversionCreateInfo* pYcbcrConversionCreateInfo,
                            const YcbcrPrimariesConstants* pYcbcrPrimariesConstants,
                            const VkSamplerCreateInfo* pSamplerCreateInfo,
-                           VkSharedBaseObj<VulkanFilter>& vulkanFilter);
+                           VkSharedBaseObj<VulkanFilter>& vulkanFilter
+#ifdef _TRANSCODING
+                            , const std::vector<Rectangle>& resizedResolutions = {}
+#endif
+                            );
 
     /**
      * @brief Create a transfer-only filter instance
@@ -783,7 +793,11 @@ public:
                            VkFormat inputFormat,
                            VkFormat outputFormat,
                            uint32_t filterFlags,  // FilterFlags bitmask
-                           const YcbcrPrimariesConstants* pYcbcrPrimariesConstants)
+                           const YcbcrPrimariesConstants* pYcbcrPrimariesConstants
+#if (_TRANSCODING)
+                           , const std::vector<Rectangle>& resizedResolutions = {}
+#endif
+                           )
         : VulkanFilter(vkDevCtx, queueFamilyIndex, queueIndex)
         , m_filterType(filterType)
         , m_inputFormat(inputFormat)
@@ -803,6 +817,9 @@ public:
                                 VK_IMAGE_ASPECT_PLANE_1_BIT |
                                 VK_IMAGE_ASPECT_PLANE_2_BIT)
         , m_filterFlags(filterFlags)
+#if (_TRANSCODING)
+        , m_resizedResolutions(resizedResolutions)
+#endif
         , m_inputEnableMsbToLsbShift((filterFlags & FLAG_INPUT_MSB_TO_LSB_SHIFT) != 0)
         , m_outputEnableLsbToMsbShift((filterFlags & FLAG_OUTPUT_LSB_TO_MSB_SHIFT) != 0)
         , m_enableRowAndColumnReplication((filterFlags & (FLAG_ENABLE_ROW_COLUMN_REPLICATION_ONE | FLAG_ENABLE_ROW_COLUMN_REPLICATION_ALL)) != 0)
@@ -1258,6 +1275,7 @@ protected:
      * @return Size of the generated shader code in bytes
      */
     size_t InitYCBCR2RGBA(std::string& computeShader);
+    size_t InitResize(std::string& computeShader);
 
     /**
      * @brief Initializes GLSL shader for RGBA to YCbCr conversion
@@ -1284,11 +1302,17 @@ protected:
     uint32_t                                 m_maxNumFrames;
     const YcbcrPrimariesConstants            m_ycbcrPrimariesConstants;
     VulkanSamplerYcbcrConversion             m_samplerYcbcrConversion;
+#ifdef _TRANSCODING
+    VulkanSamplerResize                      m_samplerResize;
+#endif
     VulkanDescriptorSetLayout                m_descriptorSetLayout;
     VulkanComputePipeline                    m_computePipeline;
     VkImageAspectFlags                       m_inputImageAspects;
     VkImageAspectFlags                       m_outputImageAspects;
     uint32_t                                 m_filterFlags;  // FilterFlags bitmask
+#if (_TRANSCODING)
+    std::vector<Rectangle>                   m_resizedResolutions;
+#endif
     uint32_t                                 m_inputEnableMsbToLsbShift : 1;
     uint32_t                                 m_outputEnableLsbToMsbShift : 1;
     uint32_t                                 m_enableRowAndColumnReplication : 1;

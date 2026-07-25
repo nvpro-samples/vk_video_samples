@@ -353,4 +353,9 @@ private:
     VkSharedBaseObj<VulkanFilter> m_yuvFilter;
     VkSamplerYcbcrConversion m_dpbYcbcrConversion{VK_NULL_HANDLE};
     VkSamplerYcbcrConversion m_filterOutYcbcrConversion{VK_NULL_HANDLE};
+#if (_TRANSCODING)
+public:
+    int m_numResizes = 0;
+    std::vector<VulkanFilterYuvCompute::Rectangle> m_resizeResolution;
+#endif // _TRANSCODING
 };

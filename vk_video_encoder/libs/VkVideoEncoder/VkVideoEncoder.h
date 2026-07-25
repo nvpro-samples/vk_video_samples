@@ -46,6 +46,9 @@
 #endif // NV_AQ_GPU_LIB_SUPPORTED
 #include "VkVideoEncoder/VkVideoEncoderPsnr.h"
 #include "VkCodecUtils/VkVideoCrc.h"
+#if (_TRANSCODING)
+#include "VkCodecUtils/VulkanDecodedFrame.h"
+#endif // _TRANSCODING
 
 class VkVideoEncoderH264;
 class VkVideoEncoderH265;
@@ -183,6 +186,11 @@ public:
             , qpMapCmdBuffer()
             , m_parent(nullptr)
             , m_parentIndex(-1)
+#if (_TRANSCODING)
+            , m_decodeCompeteSemaphore(nullptr)
+            , m_lastDecodedFrame{nullptr}
+            , currImgLayerIdx(0)
+#endif // _TRANSCODING
             , m_codec(codec)
         {
             assert(ARRAYSIZE(referenceSlotsInfo) == MAX_IMAGE_REF_RESOURCES);
@@ -265,12 +273,12 @@ public:
         // before accessing the external input image. Typically this is the
         // producer's graph timeline semaphore.
         std::vector<VkSemaphore>              inputWaitSemaphores;
-        std::vector<uint64_t>                 inputWaitSemaphoreValues;  // 0 for binary
-        std::vector<VkPipelineStageFlags2>    inputWaitDstStageMasks;
+        std::vector<uint64_t>                 inputWaitSemaphoreValues;
 
         // Signal semaphores: signaled when the staging copy is complete and the
         // external input image is no longer needed. Typically this is the
         // consumer's release timeline semaphore.
+        std::vector<VkPipelineStageFlags2>    inputWaitDstStageMasks;
         std::vector<VkSemaphore>              inputSignalSemaphores;
         std::vector<uint64_t>                 inputSignalSemaphoreValues;  // 0 for binary
 
@@ -283,6 +291,9 @@ public:
             inputSignalSemaphoreValues.clear();
         }
 
+#if (_TRANSCODING)
+        VkSharedBaseObj<VkImageResourceView>               m_ImageViewResource;
+#endif // _TRANSCODING
         VkResult SyncHostOnCmdBuffComplete() {
 
             if (inputCmdBuffer) {
@@ -468,10 +479,31 @@ public:
             m_parentIndex = -1;
             m_parent = nullptr;
         }
+#if (_TRANSCODING)
+    VkSemaphore* getDecodeCompleteSemaphore() const {
+        return m_decodeCompeteSemaphore;
+    }
+
+    void setDecodeCompleteSemaphore(VkSemaphore* inputSemaphore) {
+        m_decodeCompeteSemaphore = inputSemaphore;
+    }
+#endif // _TRANSCODING
 
     private:
         VkSharedBaseObj<VulkanBufferPoolIf>  m_parent;
         int32_t                             m_parentIndex;
+#if (_TRANSCODING)
+        VkSemaphore*                        m_decodeCompeteSemaphore;
+        VulkanDecodedFrame*                 m_lastDecodedFrame;
+    public:
+        int                                 currImgLayerIdx;
+        void setLastDecodedFrame(VulkanDecodedFrame* lastDecodedFrame) {
+            m_lastDecodedFrame = lastDecodedFrame;
+        }
+        VulkanDecodedFrame* getLastDecodedFrame() const {
+            return m_lastDecodedFrame;
+        }
+#endif // _TRANSCODING
         VkVideoCodecOperationFlagBitsKHR    m_codec;
     };
 #ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
@@ -599,6 +631,9 @@ public:
         , m_linearQpMapImagePool()
         , m_qpMapImagePool()
         , m_psnr()
+#if (_TRANSCODING)
+        , m_encodeTimeMicroSec(0)
+#endif  //_TRANSCODING
     { }
 
     // Factory Function
@@ -675,6 +710,12 @@ public:
     VkResult StageInputFrameQpMap(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                   VkCommandBuffer cmdBuf = VK_NULL_HANDLE);
     VkResult SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
+#if (_TRANSCODING)
+    VkResult LoadNextFrameDecoded(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                  VulkanDecodedFrame* vkLastFrameDecoded, int decodedImgLayerIdx);
+    VkResult StageInputFrameDecoded(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, VulkanDecodedFrame* vkLastFrameDecoded);
+    VkResult SubmitStagedInputFrameDecoded(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, VulkanDecodedFrame& vkLastFrameDecoded);
+#endif // _TRANSCODING
     VkResult SubmitStagedQpMap(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
     VkResult EncodeFrameCommon(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
     virtual VkResult EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) = 0; // Must be implemented by the codec
@@ -708,7 +749,11 @@ public:
                                            uint32_t frameIdx, uint32_t ofTotalFrames);
 
     
+#if (_TRANSCODING)
+    size_t WriteDataToFile(const uint8_t* data, size_t size, int imgLayerIdx = 0);
+#else
     size_t WriteDataToFile(const uint8_t* data, size_t size);
+#endif
     virtual VkResult ReadbackBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                            BitstreamReadback& readback);
 
@@ -995,6 +1040,13 @@ protected:
     std::mutex                               m_assemblyFileMutex;
     std::condition_variable                  m_assemblyOrderCV;
     std::atomic<uint32_t>                    m_assemblyErrorCount{0};
+#if (_TRANSCODING)
+    uint64_t                                 m_encodeTimeMicroSec;
+public:
+    uint64_t getFps() const {
+        return m_inputFrameNum * 1000000 / m_encodeTimeMicroSec;
+    }
+#endif // _TRANSCODING
 };
 
 VkResult CreateVideoEncoderH264(const VulkanDeviceContext* vkDevCtx,
