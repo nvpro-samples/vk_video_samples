@@ -29,16 +29,12 @@ public:
     VkShaderModule BuildGlslShader(const char *shaderCode, size_t shaderSize, VkShaderStageFlagBits type,
                                    const VulkanDeviceContext* vkDevCtx);
 
-    // Create VK shader module from given glsl shader file
-    VkShaderModule BuildShaderFromFile(const char *fileName, VkShaderStageFlagBits type,
-                                       const VulkanDeviceContext* vkDevCtx);
-
 private:
     // Shared compiler instance (singleton with thread safety)
     static void* GetSharedCompiler();
     static void ReleaseSharedCompiler();
 
-    void* compilerHandle;  // Per-instance handle (references shared compiler)
+    void* compilerHandle;  // Per-instance handle (references the shared compiler backend)
 };
 
 #endif /* LIBS_VKCODECUTILS_VULKANSHADERCOMPILER_H_ */

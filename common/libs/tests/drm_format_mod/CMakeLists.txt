@@ -43,6 +43,7 @@ set(VKCODECUTILS_SOURCES
     ${VKCODECUTILS_DIR}/VkImageResource.cpp
     ${VKCODECUTILS_DIR}/VkBufferResource.cpp
     ${VKCODECUTILS_DIR}/VulkanShaderCompiler.cpp
+    ${VKCODECUTILS_DIR}/${VK_SHADER_COMPILER_BACKEND_SOURCE}
     ${VKCODECUTILS_DIR}/VulkanComputePipeline.cpp
     ${VKCODECUTILS_DIR}/VulkanDescriptorSetLayout.cpp
     ${VKCODECUTILS_DIR}/VulkanSamplerYcbcrConversion.cpp
@@ -80,11 +81,7 @@ elseif(TARGET vulkan)
     target_link_libraries(${PROJECT_NAME} PRIVATE vulkan)
 endif()
 
-if(TARGET shaderc_shared)
-    target_link_libraries(${PROJECT_NAME} PRIVATE shaderc_shared)
-elseif(SHADERC_SHARED_LIBRARY AND NOT "${SHADERC_SHARED_LIBRARY}" STREQUAL "")
-    target_link_libraries(${PROJECT_NAME} PRIVATE ${SHADERC_SHARED_LIBRARY})
-endif()
+target_link_libraries(${PROJECT_NAME} PRIVATE ${VK_SHADER_COMPILER_LIBS})
 
 # Platform-specific settings (Linux only at this point)
 target_link_libraries(${PROJECT_NAME} PRIVATE

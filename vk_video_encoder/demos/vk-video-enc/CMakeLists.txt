@@ -37,6 +37,7 @@ set(sources
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceContext.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceContext.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/${VK_SHADER_COMPILER_BACKEND_SOURCE}
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceMemoryImpl.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceMemoryImpl.cpp
@@ -131,11 +132,11 @@ link_directories(
     )
 
 if(WIN32)
-    list(APPEND libraries PRIVATE ${AVCODEC_LIB} ${AVFORMAT_LIB} ${AVUTIL_LIB} ${VULKAN_VIDEO_PARSER_LIB} ${SHADERC_SHARED_LIBRARY})
+    list(APPEND libraries PRIVATE ${AVCODEC_LIB} ${AVFORMAT_LIB} ${AVUTIL_LIB} ${VULKAN_VIDEO_PARSER_LIB} ${VK_SHADER_COMPILER_LIBS})
 else()
     list(APPEND libraries PRIVATE -lX11)
     list(APPEND libraries PRIVATE -lavcodec -lavutil -lavformat)
-    list(APPEND libraries PRIVATE ${SHADERC_SHARED_LIBRARY})
+    list(APPEND libraries PRIVATE ${VK_SHADER_COMPILER_LIBS})
     list(APPEND libraries PRIVATE -L${CMAKE_INSTALL_LIBDIR} -l${VULKAN_VIDEO_PARSER_LIB})
     list(APPEND libraries PRIVATE -L${LIBNVPARSER_BINARY_ROOT} -l${VULKAN_VIDEO_PARSER_LIB})
 endif()
@@ -182,7 +183,7 @@ add_executable(vk-video-enc-test ${sources})
 target_compile_definitions(vk-video-enc-test ${definitions})
 target_include_directories(vk-video-enc-test ${includes})
 target_link_libraries(vk-video-enc-test PUBLIC ${libraries} simdjson::simdjson)
-add_dependencies(vk-video-enc-test GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB} ${SHADERC_LIB})
+add_dependencies(vk-video-enc-test GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB})
 
 # Add NV_AQ_GPU_LIB_SUPPORTED definition and include paths if the library is available
 if(NV_AQ_GPU_LIB_AVAILABLE)

@@ -16,56 +16,38 @@
 
 #include "assert.h"
 #include <iostream>
-#include <fstream>
 #include <mutex>
 #include <atomic>
+#include <vector>
 
 #include "VulkanShaderCompiler.h"
-#include <shaderc/shaderc.h>
+#include "VkCodecUtils/VulkanShaderCompilerBackend.h"
 #include "Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 
-// Shared compiler singleton with thread safety
+// The compiler backend is shared: both implementations keep process-global
+// state, so one instance is created on first use and torn down with the last
+// VulkanShaderCompiler. Which backend this is - glslang by default, shaderc
+// when opted in - is decided by which backend translation unit the build
+// compiles; nothing here depends on the choice.
 static std::mutex g_compilerMutex;
-static shaderc_compiler_t g_sharedCompiler = nullptr;
 static std::atomic<int> g_compilerRefCount{0};
-
-// Translate Vulkan Shader Type to shaderc shader type
-static shaderc_shader_kind getShadercShaderType(VkShaderStageFlagBits type)
-{
-    switch (type) {
-    case VK_SHADER_STAGE_VERTEX_BIT:
-        return shaderc_glsl_vertex_shader;
-    case VK_SHADER_STAGE_FRAGMENT_BIT:
-        return shaderc_glsl_fragment_shader;
-    case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT:
-        return shaderc_glsl_tess_control_shader;
-    case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT:
-        return shaderc_glsl_tess_evaluation_shader;
-    case VK_SHADER_STAGE_GEOMETRY_BIT:
-        return shaderc_glsl_geometry_shader;
-    case VK_SHADER_STAGE_COMPUTE_BIT:
-        return shaderc_glsl_compute_shader;
-    default:
-        std::cerr << "VulkanShaderCompiler: " << "invalid VKShaderStageFlagBits" << "type = " <<  type;
-    }
-    return static_cast<shaderc_shader_kind>(-1);
-}
+static VulkanShaderCompilerBackend* g_sharedBackend = nullptr;
 
 void* VulkanShaderCompiler::GetSharedCompiler() {
     std::lock_guard<std::mutex> lock(g_compilerMutex);
 
     if (g_compilerRefCount == 0) {
-        // First instance - create the shared compiler
-        g_sharedCompiler = shaderc_compiler_initialize();
-        if (!g_sharedCompiler) {
-            std::cerr << "VulkanShaderCompiler: Failed to initialize shared shaderc compiler!" << std::endl;
+        // First instance - create the shared backend
+        g_sharedBackend = VulkanShaderCompilerBackend::Create();
+        if (g_sharedBackend == nullptr) {
+            std::cerr << "VulkanShaderCompiler: Failed to initialize the shader compiler backend!" << std::endl;
             return nullptr;
         }
     }
 
     g_compilerRefCount++;
-    return g_sharedCompiler;
+    return g_sharedBackend;
 }
 
 void VulkanShaderCompiler::ReleaseSharedCompiler() {
@@ -73,10 +55,10 @@ void VulkanShaderCompiler::ReleaseSharedCompiler() {
 
     g_compilerRefCount--;
 
-    if (g_compilerRefCount == 0 && g_sharedCompiler) {
-        // Last instance - release the shared compiler
-        shaderc_compiler_release(g_sharedCompiler);
-        g_sharedCompiler = nullptr;
+    if (g_compilerRefCount == 0 && g_sharedBackend != nullptr) {
+        // Last instance - tear down the shared backend
+        VulkanShaderCompilerBackend::Destroy(g_sharedBackend);
+        g_sharedBackend = nullptr;
     }
 }
 
@@ -97,82 +79,34 @@ VkShaderModule VulkanShaderCompiler::BuildGlslShader(const char *shaderCode, siz
                                                      VkShaderStageFlagBits type,
                                                      const VulkanDeviceContext* vkDevCtx)
 {
+    if (compilerHandle == nullptr) {
+        return VK_NULL_HANDLE;
+    }
+
+    VulkanShaderCompilerBackend* backend =
+            reinterpret_cast<VulkanShaderCompilerBackend*>(compilerHandle);
+
+    std::vector<uint32_t> spirv;
+    if (!backend->CompileGlslToSpirv(shaderCode, shaderSize, type, spirv)) {
+        return VK_NULL_HANDLE;
+    }
+
+    // build vulkan shader module. spirv.size() counts 32-bit words, while
+    // codeSize is a byte count.
+    VkShaderModuleCreateInfo shaderModuleCreateInfo = VkShaderModuleCreateInfo();
+    shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    shaderModuleCreateInfo.pNext = nullptr;
+    shaderModuleCreateInfo.codeSize = spirv.size() * sizeof(uint32_t);
+    shaderModuleCreateInfo.pCode = spirv.data();
+    shaderModuleCreateInfo.flags = 0;
+
     VkShaderModule shaderModule = VK_NULL_HANDLE;
-    if (compilerHandle) {
-        shaderc_compiler_t compiler = (shaderc_compiler_t)compilerHandle;
-
-        // Create compile options with explicit Vulkan target
-        shaderc_compile_options_t options = shaderc_compile_options_initialize();
-        shaderc_compile_options_set_target_env(options, shaderc_target_env_vulkan,
-                                               shaderc_env_version_vulkan_1_2);
-        shaderc_compile_options_set_target_spirv(options, shaderc_spirv_version_1_5);
-
-        // Thread-safe compilation using shared compiler
-        std::lock_guard<std::mutex> lock(g_compilerMutex);
-        shaderc_compilation_result_t spvShader = shaderc_compile_into_spv(
-                    compiler, shaderCode, shaderSize, getShadercShaderType(type),
-                    "shaderc_error", "main", options);
-
-        shaderc_compile_options_release(options);
-
-        if (shaderc_result_get_compilation_status(spvShader) !=
-                shaderc_compilation_status_success) {
-
-            std::cerr << "Compilation error: \n" << shaderc_result_get_error_message(spvShader) << std::endl;
-            shaderc_result_release(spvShader);
-            return VK_NULL_HANDLE;
-        }
-
-        // build vulkan shader module
-        VkShaderModuleCreateInfo shaderModuleCreateInfo = VkShaderModuleCreateInfo();
-        shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        shaderModuleCreateInfo.pNext = nullptr;
-        shaderModuleCreateInfo.codeSize = shaderc_result_get_length(spvShader);
-        shaderModuleCreateInfo.pCode = (const uint32_t *)shaderc_result_get_bytes(spvShader);
-        shaderModuleCreateInfo.flags = 0;
-        VkResult result = vkDevCtx->CreateShaderModule(*vkDevCtx, &shaderModuleCreateInfo, nullptr, &shaderModule);
-        assert(result == VK_SUCCESS);
-        if (result != VK_SUCCESS) {
-            std::cerr << "Failed to create shader module" << std::endl;
-            shaderc_result_release(spvShader);
-            return VK_NULL_HANDLE;
-        }
-        shaderc_result_release(spvShader);
+    VkResult result = vkDevCtx->CreateShaderModule(*vkDevCtx, &shaderModuleCreateInfo, nullptr, &shaderModule);
+    assert(result == VK_SUCCESS);
+    if (result != VK_SUCCESS) {
+        std::cerr << "Failed to create shader module" << std::endl;
+        return VK_NULL_HANDLE;
     }
+
     return shaderModule;
-}
-
-// Create VK shader module from given glsl shader file
-VkShaderModule VulkanShaderCompiler::BuildShaderFromFile(const char *fileName,
-                                                         VkShaderStageFlagBits type,
-                                                         const VulkanDeviceContext* vkDevCtx)
-{
-#ifdef seekg
-    // read file from the path
-    std::ifstream is(fileName, std::ios::binary | std::ios::in | std::ios::ate);
-
-    if (is.is_open()) {
-        is.seekg (0, is.end);
-        std::streamoff fileSize = is.tellg();
-        if (fileSize < 0 || static_cast<size_t>(fileSize) > std::numeric_limits<size_t>::max()) {
-            std::cerr << "File size is too large or invalid" << std::endl;
-            return VK_NULL_HANDLE;
-        }
-        size_t size = static_cast<size_t>(fileSize);
-        is.seekg(0, is.beg);
-        char* shaderCode = new char[size];
-        is.read(shaderCode, size);
-        is.close();
-
-        assert(size > 0);
-
-        VkShaderModule shaderModule = BuildGlslShader(shaderCode, size, type, vkDevCtx);
-
-        delete [] shaderCode;
-
-        return shaderModule;
-    }
-#endif
-
-    return VK_NULL_HANDLE;
 }

@@ -62,6 +62,7 @@ set(LIBVKVIDEOENCODER_SRC
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceContext.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceContext.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/${VK_SHADER_COMPILER_BACKEND_SOURCE}
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceMemoryImpl.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceMemoryImpl.cpp
@@ -116,9 +117,9 @@ link_directories(
 
 add_library(${VULKAN_VIDEO_ENCODER_LIB} SHARED ${LIBVKVIDEOENCODER_SRC})
 # Link the libraries
-target_link_libraries(${VULKAN_VIDEO_ENCODER_LIB} PUBLIC ${SHADERC_SHARED_LIBRARY} simdjson::simdjson)
+target_link_libraries(${VULKAN_VIDEO_ENCODER_LIB} PUBLIC ${VK_SHADER_COMPILER_LIBS} simdjson::simdjson)
 # Ensure the library depends on the generation of these files
-add_dependencies(${VULKAN_VIDEO_ENCODER_LIB} GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB} ${SHADERC_LIB})
+add_dependencies(${VULKAN_VIDEO_ENCODER_LIB} GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB})
 
 # Link against nvenc_aq_vulkan if available
 if(NV_AQ_GPU_LIB_AVAILABLE AND TARGET ${NV_AQ_GPU_LIB_TARGET})
@@ -158,9 +159,9 @@ endif()
 
 add_library(${VULKAN_VIDEO_ENCODER_STATIC_LIB} STATIC ${LIBVKVIDEOENCODER_SRC})
 # Link the libraries
-target_link_libraries(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PUBLIC ${SHADERC_SHARED_LIBRARY} simdjson::simdjson)
+target_link_libraries(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PUBLIC ${VK_SHADER_COMPILER_LIBS} simdjson::simdjson)
 # Ensure the library depends on the generation of these files
-add_dependencies(${VULKAN_VIDEO_ENCODER_STATIC_LIB} GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB} ${SHADERC_LIB})
+add_dependencies(${VULKAN_VIDEO_ENCODER_STATIC_LIB} GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB})
 
 # Link against nvenc_aq_vulkan if available
 if(NV_AQ_GPU_LIB_AVAILABLE AND TARGET ${NV_AQ_GPU_LIB_TARGET})
