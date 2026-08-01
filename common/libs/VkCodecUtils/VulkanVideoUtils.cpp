@@ -18,7 +18,6 @@
 #include <iostream>
 #include <vulkan_interfaces.h>
 #include "pattern.h"
-#include <shaderc/shaderc.hpp>
 
 #include "VulkanVideoUtils.h"
 #include <nvidia_utils/vulkan/ycbcrvkinfo.h>
@@ -509,35 +508,20 @@ VkResult VulkanGraphicsPipeline::CreatePipeline(const VulkanDeviceContext* vkDev
     if (false) printf("\nVertex shader output code:\n %s", vss);
     if (false) printf("\nFragment shader output code:\n %s", imageFss.str().c_str());
 
-    const bool loadShadersFromFile = false;
-    if (loadShadersFromFile) {
+    if (m_vertexShaderCache == VkShaderModule(0)) {
+        m_vertexShaderCache = m_vulkanShaderCompiler.BuildGlslShader(vss, strlen(vss),
+                VK_SHADER_STAGE_VERTEX_BIT,
+                m_vkDevCtx);
+    }
 
-        DestroyVertexShaderModule();
-        m_vertexShaderCache = m_vulkanShaderCompiler.BuildShaderFromFile("/sdcard/vulkan_video_demo/shaders/tri.vert",
-                            VK_SHADER_STAGE_VERTEX_BIT,
-                            m_vkDevCtx);
-
+    if (m_fssCache.str() != imageFss.str()) {
         DestroyFragmentShaderModule();
-        m_fragmentShaderCache = m_vulkanShaderCompiler.BuildShaderFromFile("/sdcard/vulkan_video_demo/shaders/tri.frag",
+        m_fragmentShaderCache = m_vulkanShaderCompiler.BuildGlslShader(imageFss.str().c_str(), strlen(imageFss.str().c_str()),
                             VK_SHADER_STAGE_FRAGMENT_BIT,
                             m_vkDevCtx);
-    } else {
 
-        if (m_vertexShaderCache == VkShaderModule(0)) {
-            m_vertexShaderCache = m_vulkanShaderCompiler.BuildGlslShader(vss, strlen(vss),
-                    VK_SHADER_STAGE_VERTEX_BIT,
-                    m_vkDevCtx);
-        }
-
-        if (m_fssCache.str() != imageFss.str()) {
-            DestroyFragmentShaderModule();
-            m_fragmentShaderCache = m_vulkanShaderCompiler.BuildGlslShader(imageFss.str().c_str(), strlen(imageFss.str().c_str()),
-                                VK_SHADER_STAGE_FRAGMENT_BIT,
-                                m_vkDevCtx);
-
-            m_fssCache.swap(imageFss);
-            if (verbose) printf("\nFragment shader cache output code:\n %s", m_fssCache.str().c_str());
-        }
+        m_fssCache.swap(imageFss);
+        if (verbose) printf("\nFragment shader cache output code:\n %s", m_fssCache.str().c_str());
     }
 
     // Specify vertex and fragment shader stages

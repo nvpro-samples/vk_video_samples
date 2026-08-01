@@ -148,6 +148,11 @@ add_definitions(
     -DVK_USE_VIDEO_QUEUE
     -DVK_USE_VIDEO_DECODE_QUEUE
     -DVK_USE_VIDEO_ENCODE_QUEUE
+    # The encoder's preprocess compute filter (VulkanFilterYuvCompute) is built
+    # and enabled by default. Embedders that gate it - the Chromium vendored
+    # copy does - key off this macro, so define it here to keep the standalone
+    # build and those consumers in agreement.
+    -DVK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     -DAPI_NAME="${API_NAME}"
 )
 

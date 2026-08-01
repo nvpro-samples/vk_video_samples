@@ -9,6 +9,7 @@ set(LIBVKVIDEODECODER_SRC
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceContext.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceContext.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/${VK_SHADER_COMPILER_BACKEND_SOURCE}
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceMemoryImpl.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceMemoryImpl.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.h
@@ -82,9 +83,9 @@ link_directories(
     )
 
 if(WIN32)
-    list(APPEND libraries PRIVATE ${VULKAN_VIDEO_PARSER_LIB} ${SHADERC_SHARED_LIBRARY})
+    list(APPEND libraries PRIVATE ${VULKAN_VIDEO_PARSER_LIB} ${VK_SHADER_COMPILER_LIBS})
 else()
-    list(APPEND libraries PRIVATE ${SHADERC_SHARED_LIBRARY})
+    list(APPEND libraries PRIVATE ${VK_SHADER_COMPILER_LIBS})
     list(APPEND libraries PRIVATE -L${CMAKE_INSTALL_LIBDIR} -l${VULKAN_VIDEO_PARSER_LIB})
     list(APPEND libraries PRIVATE -L${LIBNVPARSER_BINARY_ROOT} -l${VULKAN_VIDEO_PARSER_LIB})
 endif()
@@ -112,7 +113,7 @@ add_library(${VULKAN_VIDEO_DECODER_LIB} SHARED ${LIBVKVIDEODECODER_SRC})
 # Link the libraries
 target_link_libraries(${VULKAN_VIDEO_DECODER_LIB} PUBLIC ${libraries})
 # Ensure the library depends on the generation of these files
-add_dependencies(${VULKAN_VIDEO_DECODER_LIB} GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB} ${SHADERC_LIB})
+add_dependencies(${VULKAN_VIDEO_DECODER_LIB} GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB})
 target_compile_definitions(${VULKAN_VIDEO_DECODER_LIB} ${definitions})
 
 target_include_directories(${VULKAN_VIDEO_DECODER_LIB} PUBLIC ${includes} ${VULKAN_VIDEO_DECODER_INCLUDE} ${VULKAN_VIDEO_DECODER_INCLUDE}/../NvVideoParser PRIVATE include)
@@ -138,7 +139,7 @@ add_library(${VULKAN_VIDEO_DECODER_STATIC_LIB} STATIC ${LIBVKVIDEODECODER_SRC})
 # Link the libraries
 target_link_libraries(${VULKAN_VIDEO_DECODER_STATIC_LIB} PUBLIC ${libraries})
 # Ensure the library depends on the generation of these files
-add_dependencies(${VULKAN_VIDEO_DECODER_STATIC_LIB} GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB} ${SHADERC_LIB})
+add_dependencies(${VULKAN_VIDEO_DECODER_STATIC_LIB} GenerateDispatchTables ${VULKAN_VIDEO_PARSER_LIB})
 target_include_directories(${VULKAN_VIDEO_DECODER_STATIC_LIB} PUBLIC ${includes} ${VULKAN_VIDEO_DECODER_INCLUDE} ${VULKAN_VIDEO_DECODER_INCLUDE}/../NvVideoParser PRIVATE include)
 target_compile_definitions(${VULKAN_VIDEO_DECODER_STATIC_LIB} ${definitions})
 
