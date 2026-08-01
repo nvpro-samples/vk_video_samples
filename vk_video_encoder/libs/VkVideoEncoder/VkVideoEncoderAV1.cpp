@@ -15,6 +15,7 @@
  */
 
 #include <chrono>
+#include <cstring>
 #include <limits>
 #include "VkVideoEncoder/VkVideoEncoderAV1.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
@@ -832,9 +833,19 @@ void VkVideoEncoderAV1::BuildFrameObuSequence(uint32_t frameIdx,
         const size_t frameSize = bitstreamReadback.bitstreamCopy.size();
         if (bitstream.empty()) {
             bitstream = std::move(bitstreamReadback.bitstreamCopy);
-        } else {
-            const uint8_t* frameData = bitstreamReadback.bitstreamCopy.data();
-            bitstream.insert(bitstream.end(), frameData, frameData + frameSize);
+        } else if (frameSize > 0) {
+            // Grow first, then copy into the known-sized tail, rather than
+            // vector::insert(end(), first, last). GCC's -Wstringop-overflow
+            // cannot bound the element count through insert's reallocate-and-
+            // copy path and reports a bogus "writing between 2 and SIZE_MAX
+            // bytes into a region of size 0" against the memmove inside
+            // std::copy. After resize() the destination extent is explicit, so
+            // the check has something to verify against. Same result, same
+            // number of copies.
+            const size_t offset = bitstream.size();
+            bitstream.resize(offset + frameSize);
+            std::memcpy(bitstream.data() + offset,
+                        bitstreamReadback.bitstreamCopy.data(), frameSize);
         }
 
         if (m_encoderConfig->verboseFrameStruct) {
