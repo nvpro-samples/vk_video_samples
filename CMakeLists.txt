@@ -227,24 +227,10 @@ run_vk_xml_generate(helper_file_generator.py vk_object_types.h)
 run_vk_xml_generate(helper_file_generator.py vk_extension_helper.h)
 run_vk_xml_generate(helper_file_generator.py vk_typemap_helper.h)
 
-# Add before the build components section
-# Common dispatch table generation macro
-macro(generate_dispatch_table out)
-    add_custom_command(OUTPUT ${out}
-        COMMAND ${Python3_EXECUTABLE} ${SCRIPTS_DIR}/generate-dispatch-table.py ${out}
-        DEPENDS ${SCRIPTS_DIR}/generate-dispatch-table.py
-    )
-endmacro()
-
-# Generate the dispatch table files
-generate_dispatch_table(${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.h)
-generate_dispatch_table(${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.cpp)
-
-add_custom_target(GenerateDispatchTables
-    DEPENDS
-        ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.h
-        ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/HelpersDispatchTable.cpp
-)
+# Generate the dispatch table into the build tree. Shared with the external
+# projects that embed VkCodecUtils sources, so they generate it the same way;
+# exports VK_DISPATCH_TABLE_SOURCE and adds the include directory.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/VulkanDispatchTable.cmake)
 
 # Layer Utils Library
 # For Windows, we use a static lib because the Windows loader has a fairly restrictive loader search

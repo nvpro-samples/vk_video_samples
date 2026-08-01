@@ -53,7 +53,7 @@ set(VKCODECUTILS_SOURCES
     ${VKCODECUTILS_DIR}/VulkanSemaphoreSet.cpp
     ${VKCODECUTILS_DIR}/VulkanFenceSet.cpp
     ${VKCODECUTILS_DIR}/Helpers.cpp
-    ${VKCODECUTILS_DIR}/HelpersDispatchTable.cpp
+    ${VK_DISPATCH_TABLE_SOURCE}
     ${VKCODECUTILS_DIR}/nvVkFormats.cpp
 )
 

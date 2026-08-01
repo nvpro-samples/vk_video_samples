@@ -48,3 +48,7 @@ vk_video_encoder/test/gop_structure_test
 BUILD*
 tests/resources/
 tests/results/
+
+# Generated into the build tree by cmake/VulkanDispatchTable.cmake
+common/libs/VkCodecUtils/HelpersDispatchTable.h
+common/libs/VkCodecUtils/HelpersDispatchTable.cpp
