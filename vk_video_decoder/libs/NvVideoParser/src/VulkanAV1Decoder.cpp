@@ -2455,14 +2455,27 @@ bool VulkanAV1Decoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_
         uint32_t frame_size = 0;
         frame_size = datasize;
 
-        if (frame_size > (uint32_t)m_bitstreamDataLen) {
-            if (!resizeBitstreamBuffer(frame_size - (m_bitstreamDataLen))) {
-                // Error: Failed to resize bitstream buffer
+        if (datasize > 0) {
+            // Per-frame bitstream buffer (same pattern as VP9 ParseByteStream /
+            // H.264 swapBitstreamBuffer). end_of_picture keeps a shared_ptr to
+            // the previous buffer for in-flight vkCmdDecodeVideoKHR
+            // VIDEO_DECODE_READ; memcpy onto that live buffer is a host WAR and
+            // emptied AV1 OPTIMAL under async multi-frame dump.
+            VkDeviceSize needSize = std::max(m_bitstreamDataLen, (VkDeviceSize)frame_size);
+            VkSharedBaseObj<VulkanBitstreamBuffer> bitstreamBuffer;
+            assert(m_pClient);
+            m_pClient->GetBitstreamBuffer(needSize,
+                                          m_bufferOffsetAlignment, m_bufferSizeAlignment,
+                                          nullptr, 0, bitstreamBuffer);
+            if (!bitstreamBuffer) {
                 return false;
             }
-        }
+            m_bitstreamDataLen = m_bitstreamData.SetBitstreamBuffer(bitstreamBuffer);
+            if (m_bitstreamData.GetBitstreamPtr() == nullptr ||
+                m_bitstreamDataLen < (VkDeviceSize)frame_size) {
+                return false;
+            }
 
-        if (datasize > 0) {
             m_nalu.start_offset = 0;
             m_nalu.end_offset = frame_size;
             memcpy(m_bitstreamData.GetBitstreamPtr(), pdataStart, frame_size);
