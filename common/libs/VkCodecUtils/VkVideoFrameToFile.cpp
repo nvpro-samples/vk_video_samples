@@ -191,21 +191,16 @@ public:
             m_outputFile = nullptr;
         }
 
-        std::string fileNameWithModExt;
         // Check if the file does not have a y4m extension,
         // but y4m format is requested.
         if (y4mFormat && !hasExtension(fileName, ".y4m")) {
             std::cout << std::endl << "y4m output format is requested, ";
             std::cout << "but the output file's (" << fileName << ") extension isn't .y4m!"
                       << std::endl;
-            fileNameWithModExt = fileName + std::string(".y4m");
-            fileName = fileNameWithModExt.c_str();
         } else if ((y4mFormat == false) && !hasExtension(fileName, ".yuv")) {
             std::cout << std::endl << "Raw yuv output format is requested, ";
             std::cout << "but the output file's (" << fileName << ") extension isn't .yuv!"
                       << std::endl;
-            fileNameWithModExt = fileName + std::string(".yuv");
-            fileName = fileNameWithModExt.c_str();
         }
 
         if (fileName != nullptr) {
