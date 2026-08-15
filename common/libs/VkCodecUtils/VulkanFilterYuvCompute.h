@@ -340,7 +340,16 @@ struct TransferOp {
 struct FilterIOSlot {
     /// Primary resource used by the compute shader (must be an image for compute)
     TransferResource    primary;
-    
+
+    /// View of the primary resource, required whenever the compute stage runs.
+    ///
+    /// A TransferResource carries a raw VkImage, which is enough for vkCmdCopy* but not
+    /// for the compute descriptors -- those bind image views, and for multi-planar
+    /// formats a per-plane view set. Leaving this null is an error, not a way to ask for
+    /// the transfers alone: RecordComputeDispatch() refuses it rather than reporting
+    /// success over a filter execution that never happened.
+    const VkImageResourceView* primaryView{nullptr};
+
     /// Optional pre-transfer: source data to stage into primary before compute
     /// The operation copies: preTransferSource → primary
     TransferResource    preTransferSource;
@@ -808,6 +817,10 @@ public:
         , m_enableRowAndColumnReplication((filterFlags & (FLAG_ENABLE_ROW_COLUMN_REPLICATION_ONE | FLAG_ENABLE_ROW_COLUMN_REPLICATION_ALL)) != 0)
         , m_inputIsBuffer(false)
         , m_outputIsBuffer(false)
+        , m_inputPackedYcbcr(nullptr)
+        , m_outputPackedYcbcr(nullptr)
+        , m_blockHorzRatio(2)
+        , m_blockVertRatio(2)
         , m_enableYSubsampling((filterFlags & FLAG_ENABLE_Y_SUBSAMPLING) != 0)
         , m_skipCompute((filterFlags & FLAG_SKIP_COMPUTE) != 0 || 
                         filterType == XFER_IMAGE_TO_BUFFER ||
@@ -1282,6 +1295,25 @@ protected:
     uint32_t                                 m_workgroupSizeX; // usually 16
     uint32_t                                 m_workgroupSizeY; // usually 16
     uint32_t                                 m_maxNumFrames;
+    // Non-null when THIS SIDE of the filter is a packed (single-plane) YCbCr surface
+    // carried on an RGBA-typed VkFormat -- AYUV on R8G8B8A8_UNORM, Y410 on
+    // A2B10G10R10_UNORM_PACK32. Resolved once in Init() from the filter type plus the
+    // format (see PackedYcbcrSideInfo in the .cpp): the enum alone cannot say whether the
+    // samples are RGB or YCbCr, because the same enum is genuine RGBA on the other side
+    // of an RGBA<->YCbCr filter. Read by BOTH the shader declaration generator and every
+    // reference generator, so the two cannot disagree.
+    // struct tag is VkPackedYcbcrFormatDesc (nvidia_utils/vulkan/ycbcrvkinfo.h); the
+    // .cpp aliases it as VkPackedYcbcrFormatInfo. Named by tag here so this stays a
+    // plain incomplete-pointer declaration without pulling the header in.
+    const struct VkPackedYcbcrFormatDesc*    m_inputPackedYcbcr;
+    const struct VkPackedYcbcrFormatDesc*    m_outputPackedYcbcr;
+    // Luma pixels each shader invocation handles, in x and y. The generated shader
+    // and the host-side CmdDispatch() MUST agree on this or the output is partly
+    // unwritten: the dispatch is ceil(size / blockRatio), so a shader that assumes a
+    // larger block writes past what was dispatched, and one that assumes a smaller
+    // block leaves the tail of each plane untouched. Set in InitYCBCRCOPY().
+    uint32_t                                 m_blockHorzRatio;
+    uint32_t                                 m_blockVertRatio;
     const YcbcrPrimariesConstants            m_ycbcrPrimariesConstants;
     VulkanSamplerYcbcrConversion             m_samplerYcbcrConversion;
     VulkanDescriptorSetLayout                m_descriptorSetLayout;
