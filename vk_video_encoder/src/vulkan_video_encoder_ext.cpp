@@ -23,6 +23,9 @@
 #include "vulkan_video_encoder_ext.h"
 #include "VkVideoEncoder/VkEncoderConfig.h"
 #include "VkVideoEncoder/VkVideoEncoder.h"
+// YcbcrVkFormatInfo() / GetBitsPerChannel() -- used to derive the input bit depth,
+// chroma subsampling and plane count from VkVideoEncoderConfig::inputFormat.
+#include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 
 //=============================================================================
 // VulkanVideoEncoderExtImpl - Concrete implementation of VulkanVideoEncoderExt
@@ -163,21 +166,48 @@ VkResult VulkanVideoEncoderExtImpl::BuildEncoderConfig(
     argStrings.push_back("--encodeHeight");
     argStrings.push_back(std::to_string(extConfig.encodeHeight));
 
-    // Bit depth: derive from input format. Without this, the encoder defaults
-    // to 8-bit profile (H.264 High / H.265 Main) even when P010 input is used,
-    // producing scrambled output from the bit-depth mismatch.
-    uint32_t bpp = 8;
-    switch (extConfig.inputFormat) {
-        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:      // P010
-            bpp = 10; break;
-        case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16:      // P012
-            bpp = 12; break;
-        default: break;
+    // Input geometry: derive bit depth, chroma subsampling AND plane count from
+    // the VkFormat.
+    //
+    // This is the only consumer of VkVideoEncoderConfig::inputFormat, so all three
+    // properties have to be read off it here. A derivation that sets only --inputBpp
+    // leaves chromaSubsampling and numPlanes at their 4:2:0 defaults and pins every
+    // caller of this library to 4:2:0 regardless of the format it asked for.
+    //
+    // Nothing else needs to change for that: EncoderConfig parses
+    // --inputChromaSubsampling and --inputNumPlanes, and CodecGetVkFormat covers 422/444
+    // at 8/10/12-bit, so the encode side is generic once the geometry arrives correct.
+    const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(extConfig.inputFormat);
+    if (mpInfo != nullptr) {
+        const uint32_t bpp = GetBitsPerChannel(mpInfo->planesLayout);
+        if (bpp > 8) {
+            argStrings.push_back("--inputBpp");
+            argStrings.push_back(std::to_string(bpp));
+        }
+
+        // secondaryPlaneSubsampledX/Y are 1-bit flags: 0 = full rate, 1 = halved.
+        //   4:2:0 -> X=1, Y=1     4:2:2 -> X=1, Y=0     4:4:4 -> X=0, Y=0
+        const bool subX = (mpInfo->planesLayout.secondaryPlaneSubsampledX != 0);
+        const bool subY = (mpInfo->planesLayout.secondaryPlaneSubsampledY != 0);
+        const char* chroma = (!subX && !subY) ? "444" : (subX && !subY) ? "422" : "420";
+        argStrings.push_back("--inputChromaSubsampling");
+        argStrings.push_back(chroma);
+
+        // numberOfExtraPlanes: 1 for semi-planar (2-plane), 2 for 3-plane planar.
+        const uint32_t numPlanes = mpInfo->planesLayout.numberOfExtraPlanes + 1u;
+        if ((numPlanes == 2) || (numPlanes == 3)) {
+            argStrings.push_back("--inputNumPlanes");
+            argStrings.push_back(std::to_string(numPlanes));
+        }
     }
-    if (bpp > 8) {
-        argStrings.push_back("--inputBpp");
-        argStrings.push_back(std::to_string(bpp));
-    }
+    // else: not a YCbCr VkFormat. Either genuine RGB input destined for the
+    // RGBA->YCbCr filter, or one of the packed 4:4:4 aliases (AYUV on
+    // R8G8B8A8_UNORM, Y410 on A2B10G10R10_UNORM_PACK32) which have no YCbCr
+    // VkFormat of their own. These two cases are INDISTINGUISHABLE from the format
+    // alone -- separating them requires an explicit input colour model
+    // (VkSamplerYcbcrModelConversion: RGB_IDENTITY vs YCBCR_601/709/2020), which
+    // VkVideoEncoderConfig does not yet carry. Until it does, leave the geometry at
+    // its defaults rather than guessing.
 
     // Frame rate: no CLI arg for this in ParseArguments — set via member directly after config
 

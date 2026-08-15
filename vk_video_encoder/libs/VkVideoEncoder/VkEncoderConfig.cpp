@@ -115,7 +115,15 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --inputChromaSubsampling        <string>  : Chromat subsapling to use, default 420 \n\
     --inputLumaPlanePitch           <integer> : Pitch for Luma plane \n\
     --inputBpp                      <integer> : Bits per pixel, default 8 \n\
-    --msbShift                      <integer> : Shift the input plane pixels to the left when bpp > 8, default: 16 - inputBpp  \n\
+    --msbShift                      <integer> : Shift the input plane pixels to the left when bpp > 8. Default is detected \n\
+                                                from the data: right-aligned samples (yuv420p10le) get 16 - inputBpp, \n\
+                                                already-left-aligned samples (P010/P210/P410) get 0. \n\
+    --preferPackedYcbcr                none :   Prefer the packed 4:4:4 encode-source format (AYUV / Y410) when the driver \n\
+                                                advertises both it and the 2-plane form for the profile. The driver lists \n\
+                                                the 2-plane form first, so without this packed 4:4:4 is only reachable by \n\
+                                                feeding an already-packed input file. The compute filter converts from any \n\
+                                                input format and plane layout, so this works with any source. Ignored on \n\
+                                                profiles with no packed form (4:2:0, 4:2:2). \n\
     --startFrame                    <integer> : Start Frame Number to be Encoded \n\
     --numFrames                     <integer> : End Frame Number to be Encoded \n\
     --repeatInputFrames                none :   Repeat the input file frame'ss sequence by reseting the the stream to the beginning \n\
@@ -364,9 +372,14 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
-            if ((input.numPlanes < 2) || (input.numPlanes > 3)) {
+            // 1 = packed/interleaved single plane (AYUV, Y410 -- 4:4:4 only),
+            // 2 = semi-planar, 3 = planar.
+            if ((input.numPlanes < 1) || (input.numPlanes > 3)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
-                fprintf(stderr, "Currently supported number of planes are 2 or 3\n");
+                fprintf(stderr, "Supported number of planes are 1 (packed 4:4:4), 2 or 3\n");
+                // Reject rather than merely diagnose: an out-of-range plane count that
+                // reaches VerifyInputs indexes planeLayouts[] past its end.
+                return -1;
             }
         } else if (args[i] == "--inputChromaSubsampling") {
             std::string chromeSubsampling = args[i + 1];
@@ -403,6 +416,8 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 return -1;
             }
             input.msbShift = static_cast<int8_t>(msbShiftVal);
+        } else if (args[i] == "--preferPackedYcbcr") {
+            preferPackedYcbcr = true;
         } else if (args[i] == "--startFrame") {
             if (++i >= argc || !parseUint(args[i], startFrame)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
