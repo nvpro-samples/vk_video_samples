@@ -393,62 +393,87 @@ void convertNV12toRGBA(const uint8_t* yPlane,
     }
 }
 
+// One implementation for every 16-bit-container semi-planar format. This avoids
+// requiring near-identical and duplicated code for processing P010, P012 and P210
+// which differ only in bit depth and chroma subsampling.
+//
+// Output samples are MSB-aligned by rgbToYCbCr16(), matching the Vulkan X6/X4 formats.
+static void convertRGBAtoSemiPlanar16(const uint8_t* rgba,
+                                      uint32_t width, uint32_t height,
+                                      uint32_t bitDepth, uint32_t subX, uint32_t subY,
+                                      ColorPrimaries primaries, ColorRange range,
+                                      std::vector<uint16_t>& yPlane,
+                                      std::vector<uint16_t>& uvPlane)
+{
+    const uint32_t uvWidth  = width  / subX;
+    const uint32_t uvHeight = height / subY;
+    const uint32_t maxVal   = (1u << bitDepth) - 1u;
+
+    yPlane.resize((size_t)width * height);
+    uvPlane.resize((size_t)uvWidth * uvHeight * 2);
+
+    auto sampleAt = [&](uint32_t x, uint32_t y, uint16_t& yv, uint16_t& cb, uint16_t& cr) {
+        const uint8_t* pixel = rgba + ((size_t)y * width + x) * 4;
+        const uint16_t r = (uint16_t)((uint32_t)pixel[0] * maxVal / 255u);
+        const uint16_t g = (uint16_t)((uint32_t)pixel[1] * maxVal / 255u);
+        const uint16_t b = (uint16_t)((uint32_t)pixel[2] * maxVal / 255u);
+        rgbToYCbCr16(r, g, b, bitDepth, primaries, range, yv, cb, cr);
+    };
+
+    for (uint32_t y = 0; y < height; y++) {
+        for (uint32_t x = 0; x < width; x++) {
+            uint16_t yv, cb, cr;
+            sampleAt(x, y, yv, cb, cr);
+            yPlane[(size_t)y * width + x] = yv;
+        }
+    }
+
+    const uint32_t blockSamples = subX * subY;
+    for (uint32_t uy = 0; uy < uvHeight; uy++) {
+        for (uint32_t ux = 0; ux < uvWidth; ux++) {
+            uint32_t cbSum = 0;
+            uint32_t crSum = 0;
+            for (uint32_t dy = 0; dy < subY; dy++) {
+                for (uint32_t dx = 0; dx < subX; dx++) {
+                    uint16_t yv, cb, cr;
+                    sampleAt(ux * subX + dx, uy * subY + dy, yv, cb, cr);
+                    cbSum += cb;
+                    crSum += cr;
+                }
+            }
+            const size_t uvOffset = ((size_t)uy * uvWidth + ux) * 2;
+            uvPlane[uvOffset + 0] = (uint16_t)(cbSum / blockSamples);
+            uvPlane[uvOffset + 1] = (uint16_t)(crSum / blockSamples);
+        }
+    }
+}
+
 void convertRGBAtoP010(const uint8_t* rgba,
                        uint32_t width, uint32_t height,
                        ColorPrimaries primaries, ColorRange range,
                        std::vector<uint16_t>& yPlane,
                        std::vector<uint16_t>& uvPlane)
 {
-    uint32_t uvWidth = width / 2;
-    uint32_t uvHeight = height / 2;
-    
-    yPlane.resize(width * height);
-    uvPlane.resize(uvWidth * uvHeight * 2);
-    
-    // Convert 8-bit input to 10-bit output
-    for (uint32_t y = 0; y < height; y++) {
-        for (uint32_t x = 0; x < width; x++) {
-            const uint8_t* pixel = rgba + (y * width + x) * 4;
-            
-            // Scale 8-bit to 10-bit
-            uint16_t r10 = (static_cast<uint16_t>(pixel[0]) * 1023) / 255;
-            uint16_t g10 = (static_cast<uint16_t>(pixel[1]) * 1023) / 255;
-            uint16_t b10 = (static_cast<uint16_t>(pixel[2]) * 1023) / 255;
-            
-            uint16_t yVal, cbVal, crVal;
-            rgbToYCbCr16(r10, g10, b10, 10, primaries, range, yVal, cbVal, crVal);
-            yPlane[y * width + x] = yVal;
-        }
-    }
-    
-    // Subsample chroma
-    for (uint32_t uy = 0; uy < uvHeight; uy++) {
-        for (uint32_t ux = 0; ux < uvWidth; ux++) {
-            uint32_t cbSum = 0;
-            uint32_t crSum = 0;
-            
-            for (int dy = 0; dy < 2; dy++) {
-                for (int dx = 0; dx < 2; dx++) {
-                    uint32_t px = ux * 2 + dx;
-                    uint32_t py = uy * 2 + dy;
-                    const uint8_t* pixel = rgba + (py * width + px) * 4;
-                    
-                    uint16_t r10 = (static_cast<uint16_t>(pixel[0]) * 1023) / 255;
-                    uint16_t g10 = (static_cast<uint16_t>(pixel[1]) * 1023) / 255;
-                    uint16_t b10 = (static_cast<uint16_t>(pixel[2]) * 1023) / 255;
-                    
-                    uint16_t yVal, cbVal, crVal;
-                    rgbToYCbCr16(r10, g10, b10, 10, primaries, range, yVal, cbVal, crVal);
-                    cbSum += cbVal;
-                    crSum += crVal;
-                }
-            }
-            
-            uint32_t uvOffset = (uy * uvWidth + ux) * 2;
-            uvPlane[uvOffset + 0] = static_cast<uint16_t>(cbSum / 4);
-            uvPlane[uvOffset + 1] = static_cast<uint16_t>(crSum / 4);
-        }
-    }
+    convertRGBAtoSemiPlanar16(rgba, width, height, 10, 2, 2, primaries, range, yPlane, uvPlane);
+}
+
+void convertRGBAtoP012(const uint8_t* rgba,
+                       uint32_t width, uint32_t height,
+                       ColorPrimaries primaries, ColorRange range,
+                       std::vector<uint16_t>& yPlane,
+                       std::vector<uint16_t>& uvPlane)
+{
+    convertRGBAtoSemiPlanar16(rgba, width, height, 12, 2, 2, primaries, range, yPlane, uvPlane);
+}
+
+void convertRGBAtoP210(const uint8_t* rgba,
+                       uint32_t width, uint32_t height,
+                       ColorPrimaries primaries, ColorRange range,
+                       std::vector<uint16_t>& yPlane,
+                       std::vector<uint16_t>& uvPlane)
+{
+    // 4:2:2 -- chroma is half width and FULL height.
+    convertRGBAtoSemiPlanar16(rgba, width, height, 10, 2, 1, primaries, range, yPlane, uvPlane);
 }
 
 void convertRGBAtoI420(const uint8_t* rgba,

@@ -56,6 +56,9 @@ void printUsage(const char* programName) {
     std::cout << "  --primaries      Run color primaries tests (BT.601/709/2020)" << std::endl;
     std::cout << "  --test <name>    Run specific test by name" << std::endl;
     std::cout << "  --list           List all available tests" << std::endl;
+    std::cout << "  --deviceUuid <uuid>  Select the GPU by UUID (see vulkaninfo), not by index." << std::endl;
+    std::cout << "                       Without it the first enumerated device wins, which on a" << std::endl;
+    std::cout << "                       multi-GPU box is rarely the one under test." << std::endl;
     std::cout << std::endl;
 }
 
@@ -102,6 +105,7 @@ int main(int argc, char* argv[]) {
     bool runRegression = false;
     bool runPrimaries = false;
     std::string specificTest;
+    std::string deviceUuid;
     
     // Parse command-line arguments
     for (int i = 1; i < argc; i++) {
@@ -123,6 +127,8 @@ int main(int argc, char* argv[]) {
         } else if (strcmp(argv[i], "--test") == 0 && i + 1 < argc) {
             specificTest = argv[++i];
             runAll = false;
+        } else if (strcmp(argv[i], "--deviceUuid") == 0 && i + 1 < argc) {
+            deviceUuid = argv[++i];
         } else if (strcmp(argv[i], "--list") == 0) {
             listTests();
             return 0;
@@ -141,7 +147,7 @@ int main(int argc, char* argv[]) {
     FilterTestApp app;
     
     // Initialize Vulkan
-    VkResult result = app.init(verbose);
+    VkResult result = app.init(verbose, deviceUuid.empty() ? nullptr : deviceUuid.c_str());
     if (result != VK_SUCCESS) {
         std::cerr << "Failed to initialize test application: " << result << std::endl;
         return 1;
@@ -200,13 +206,25 @@ int main(int argc, char* argv[]) {
     // Run tests
     auto results = app.runAllTests();
     
-    // Count failures
+    // Count real failures. A case the harness could not check at all (optimal-tiled
+    // resources, no CPU reference model) is reported separately and does not fail the
+    // run -- but a run in which NOTHING was validated does, because a suite that
+    // validates nothing must not exit zero.
     int failures = 0;
+    int validated = 0;
     for (const auto& result : results) {
-        if (!result.passed) {
+        if (result.passed) {
+            validated++;
+        } else if (!result.unvalidated) {
             failures++;
         }
     }
-    
+
+    if ((failures == 0) && (validated == 0) && !results.empty()) {
+        fprintf(stderr, "vk_filter_test: no case validated its output; refusing to "
+                        "report success.\n");
+        return 1;
+    }
+
     return failures > 0 ? 1 : 0;
 }

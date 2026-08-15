@@ -131,6 +131,12 @@ struct TestCaseConfig {
 struct TestResult {
     std::string     testName;
     bool            passed{false};
+    // Distinct from passed==false. A case is "unvalidated" when the harness could not
+    // check its pixels at all (e.g. optimal-tiled resources, whose upload and readback
+    // are not implemented), as opposed to having checked and found them wrong. Such
+    // cases are their own category and must be reported separately for the test suite
+    // to provide meaningful results.
+    bool            unvalidated{false};
     std::string     errorMessage;
     double          psnrY{0.0};     // PSNR for Y plane (YCbCr) or R channel (RGBA)
     double          psnrCb{0.0};    // PSNR for Cb plane
@@ -154,7 +160,7 @@ public:
      * @param verbose Enable verbose logging
      * @return VK_SUCCESS on success
      */
-    VkResult init(bool verbose = false);
+    VkResult init(bool verbose = false, const char* deviceUuidStr = nullptr);
     
     /**
      * @brief Run a single test case
@@ -218,17 +224,25 @@ private:
                              VkSharedBaseObj<VkBufferResource>& outBuffer);
     
     /**
-     * @brief Create staging buffer for readback
+     * @brief Create a host-visible staging buffer
+     *
+     * @param size   Buffer size in bytes
+     * @param usage  TRANSFER_SRC for upload staging, TRANSFER_DST for readback staging
      */
     VkResult createStagingBuffer(size_t size,
-                                VkSharedBaseObj<VkBufferResource>& outBuffer);
+                                VkSharedBaseObj<VkBufferResource>& outBuffer,
+                                VkBufferUsageFlags usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     
     /**
      * @brief Generate test pattern in image/buffer
      */
+    // pOutPatternData, when non-null, receives the exact bytes written into the input
+    // resource. The reference model must be derived from those bytes and not from a
+    // second, independently generated pattern, or the comparison silently tests nothing.
     VkResult generateTestPattern(const TestIOSlot& slot,
                                 VkSharedBaseObj<VkImageResource>& image,
-                                VkSharedBaseObj<VkBufferResource>& buffer);
+                                VkSharedBaseObj<VkBufferResource>& buffer,
+                                std::vector<uint8_t>* pOutPatternData = nullptr);
     
     /**
      * @brief Validate output against expected result
@@ -255,6 +269,13 @@ private:
      * @brief Calculate PSNR between two buffers
      */
     double calculatePSNR(const uint8_t* data1, const uint8_t* data2, size_t size);
+
+    /**
+     * @brief PSNR over 16-bit samples, for the 10/12-bit formats
+     *
+     * @param sizeBytes Byte count (halved internally to a sample count)
+     */
+    double calculatePSNR16(const uint8_t* data1, const uint8_t* data2, size_t sizeBytes);
 };
 
 /**

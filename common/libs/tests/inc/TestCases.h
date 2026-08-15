@@ -172,7 +172,7 @@ TestCaseConfig TC091_Triple_Output_with_Subsampled();
 // =============================================================================
 
 TestCaseConfig TC100_Small_Resolution_64x64();
-TestCaseConfig TC101_Odd_Resolution_1921x1081();
+TestCaseConfig TC101_Unaligned_Resolution_1922x1082();
 TestCaseConfig TC102_4K_Resolution_3840x2160();
 TestCaseConfig TC103_8K_Resolution_7680x4320();
 TestCaseConfig TC104_Minimum_Resolution_2x2();

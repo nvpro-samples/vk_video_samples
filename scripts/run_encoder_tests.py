@@ -85,10 +85,15 @@ class EncoderTestRunner:
         self.skipped = 0
         
         # Determine encoder path
+        # MSVC is a multi-config generator: the binary lands in demos/Release/, not demos/.
+        # Probing both keeps single-config (Ninja/Make) and multi-config builds working.
         if sys.platform == "win32":
-            self.encoder = config.build_dir / "vk_video_encoder" / "demos" / "vk-video-enc-test.exe"
+            cands = [config.build_dir / "vk_video_encoder" / "demos" / "Release" / "vk-video-enc-test.exe",
+                     config.build_dir / "vk_video_encoder" / "demos" / "Debug" / "vk-video-enc-test.exe",
+                     config.build_dir / "vk_video_encoder" / "demos" / "vk-video-enc-test.exe"]
         else:
-            self.encoder = config.build_dir / "vk_video_encoder" / "demos" / "vk-video-enc-test"
+            cands = [config.build_dir / "vk_video_encoder" / "demos" / "vk-video-enc-test"]
+        self.encoder = next((c for c in cands if c.exists()), cands[0])
 
         self._encoder_help_output: Optional[str] = None
     
@@ -398,14 +403,227 @@ class EncoderTestRunner:
             return False
 
 
+# ---------------------------------------------------------------------------
+# Encode format matrix (Suite A of
+# design/Blackwell_Encode_Format_Verification_Procedure_2026-08-15.md)
+#
+# 20 cells: 19 PASS + p010_badshift XFAIL(ok). Any other outcome is a failure.
+#
+# THE GATE IS CONTENT, NOT EXIT CODE. rc == 0 and a correct pix_fmt are both passed
+# by a completely wrong picture - a staging copy that fills a quarter of each scanline,
+# or a 10-bit path that saturates every sample to white, still produces a decodable
+# stream of the right size and pixel format. Each cell therefore compares the decoded
+# luma average against the same statistic measured on the source, within 2%.
+#
+# cell = (name, src_pixfmt, subsampling, planes, bpp, want_pixfmt, extra_args,
+#         expect_src, expect_profile, xfail, codec)
+# ---------------------------------------------------------------------------
+FORMAT_CELLS = [
+    # A1 - packed 4:4:4 (new on Blackwell)
+    ("ayuv",           "vuya",        444, 1,  8, "yuv444p",     [], "", "", False, "hevc"),
+    ("y410",           "xv30le",      444, 1, 10, "yuv444p10le", [], "", "", False, "hevc"),
+    # A2 - 8-bit planar / semi-planar regression
+    ("nv12",           "nv12",        420, 2,  8, "yuv420p",     [], "", "", False, "hevc"),
+    ("nv24",           "nv24",        444, 2,  8, "yuv444p",     [], "", "", False, "hevc"),
+    ("yuv444p",        "yuv444p",     444, 3,  8, "yuv444p",     [], "", "", False, "hevc"),
+    # A3 - 4:2:2 semi-planar (new)
+    ("nv16",           "nv16",        422, 2,  8, "yuv422p",     [], "", "", False, "hevc"),
+    ("p210",           "p210le",      422, 2, 10, "yuv422p10le", [], "", "", False, "hevc"),
+    # A4 - which encode-source format was chosen. A packed and a 2-plane 4:4:4 source
+    # both yield a yuv444p bitstream with identical luma, so the content gate ALONE
+    # cannot tell a working --preferPackedYcbcr from one that silently did nothing.
+    ("p444_planar_8",  "nv24",        444, 2,  8, "yuv444p",     [],
+     "planar/semi-planar", "", False, "hevc"),
+    ("p444_packed_8",  "nv24",        444, 2,  8, "yuv444p",     ["--preferPackedYcbcr"],
+     "AYUV", "", False, "hevc"),
+    ("p444_planar_10", "p410le",      444, 2, 10, "yuv444p10le", [],
+     "planar/semi-planar", "", False, "hevc"),
+    ("p444_packed_10", "p410le",      444, 2, 10, "yuv444p10le", ["--preferPackedYcbcr"],
+     "Y410", "", False, "hevc"),
+    # A5 - H.264 coded profile. H.264 cannot code chroma_format_idc == 2 below High
+    # 4:2:2, so the profile IDC has to change with the chroma format; a downgrade to
+    # High would still produce a decodable stream. NOTE: profile 122 covers 4:2:2 at
+    # BOTH 8 and 10 bit - there is no separate 10-bit 4:2:2 IDC, so h264_422_10 also
+    # expects "High 4:2:2". For that cell pix_fmt is the load-bearing check.
+    ("h264_420",       "nv12",        420, 2,  8, "yuv420p",     [], "", "High", False, "h264"),
+    ("h264_422",       "nv16",        422, 2,  8, "yuv422p",     [], "", "High 4:2:2", False, "h264"),
+    ("h264_444",       "nv24",        444, 2,  8, "yuv444p",     [], "", "High 4:4:4 Predictive", False, "h264"),
+    ("h264_420_10",    "p010le",      420, 2, 10, "yuv420p10le", [], "", "High 10", False, "h264"),
+    ("h264_422_10",    "p210le",      422, 2, 10, "yuv422p10le", [], "", "High 4:2:2", False, "h264"),
+    # A6 - 10-bit sample alignment, probed from the data (DetectInputMsbShift):
+    # right-aligned yuv420p10le needs shift 6, left-aligned p010le needs 0, and
+    # neither caller says so.
+    ("yuv420p10",      "yuv420p10le", 420, 3, 10, "yuv420p10le", [], "", "", False, "hevc"),
+    ("p010_auto",      "p010le",      420, 2, 10, "yuv420p10le", [], "", "", False, "hevc"),
+    ("p010_s0",        "p010le",      420, 2, 10, "yuv420p10le", ["--msbShift", "0"], "", "", False, "hevc"),
+    # NEGATIVE CONTROL: force the wrong shift on left-aligned data; it must saturate
+    # and FAIL the content gate. This is the only cell proving the gate can still
+    # bite - if it ever XPASSes, every PASS above is worthless.
+    ("p010_badshift",  "p010le",      420, 2, 10, "yuv420p10le", ["--msbShift", "6"], "", "", True, "hevc"),
+]
+
+
+class FormatMatrixRunner:
+    """Suite A - encode format matrix. Identical cells on Linux and Windows."""
+
+    WIDTH, HEIGHT = 352, 288
+
+    def __init__(self, config: "TestConfig", encoder: Path, device_uuid: str = ""):
+        self.config = config
+        self.encoder = encoder
+        self.device_uuid = device_uuid
+        self.results: List[TestResult] = []
+        self.ffmpeg, self.ffprobe = self._resolve_ffmpeg()
+
+    def _resolve_ffmpeg(self) -> Tuple[str, str]:
+        """ffmpeg/ffprobe are on PATH on Linux. On Windows they are NOT - they ship
+        beside the runtime DLLs, and that directory must also be ON PATH or the
+        encoder cannot resolve avutil-*.dll."""
+        if sys.platform != "win32":
+            return "ffmpeg", "ffprobe"
+        root = Path(__file__).resolve().parent.parent
+        bundled = root / "vk_video_decoder" / "bin" / "libs" / "ffmpeg" / "win64" / "bin"
+        if (bundled / "ffmpeg.exe").exists():
+            os.environ["PATH"] = str(bundled) + os.pathsep + os.environ.get("PATH", "")
+            return str(bundled / "ffmpeg.exe"), str(bundled / "ffprobe.exe")
+        return "ffmpeg", "ffprobe"
+
+    def _yavg(self, args: List[str]) -> Optional[float]:
+        """Mean luma via ffmpeg signalstats.
+
+        Deliberately NOT ffprobe's movie= filter: movie= needs the drive-letter colon
+        escaped on Windows, and that escaping does not survive shell quoting - it
+        reports "Failed to avformat_open_input 'C'" and yields an empty value on EVERY
+        cell, which reads as total failure and is pure harness.
+
+        Takes the FIRST YAVG line only: metadata=mode=print emits one per frame, and
+        keeping them all turns the value into a multi-line string that silently fails
+        every downstream comparison.
+        """
+        cmd = [self.ffmpeg, "-v", "error"] + args + [
+            "-vf", "signalstats,metadata=mode=print:file=-", "-f", "null", "-"]
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=180).stdout
+        except (subprocess.SubprocessError, OSError):
+            return None
+        for line in out.splitlines():
+            if "YAVG" in line:
+                try:
+                    return float(line.rsplit("=", 1)[1].strip())
+                except (ValueError, IndexError):
+                    return None
+        return None
+
+    def _probe(self, path: Path, entry: str) -> str:
+        cmd = [self.ffprobe, "-v", "error", "-select_streams", "v:0",
+               "-show_entries", f"stream={entry}", "-of", "csv=p=0", str(path)]
+        try:
+            return subprocess.run(cmd, capture_output=True, text=True,
+                                  timeout=120).stdout.strip()
+        except (subprocess.SubprocessError, OSError):
+            return ""
+
+    def run_cell(self, cell) -> TestResult:
+        (name, src_fmt, sub, planes, bpp, want, extra,
+         expect_src, expect_profile, xfail, codec) = cell
+        outdir = Path(self.config.output_dir) / "formats"
+        outdir.mkdir(parents=True, exist_ok=True)
+        raw, out = outdir / f"in_{name}.raw", outdir / f"out_{name}.265"
+        log = outdir / f"log_{name}.txt"
+        for f in (raw, out):
+            f.unlink(missing_ok=True)
+        t0 = time.time()
+
+        gen = [self.ffmpeg, "-v", "error", "-f", "lavfi", "-i",
+               f"testsrc=size={self.WIDTH}x{self.HEIGHT}:rate=1:duration=4",
+               "-pix_fmt", src_fmt, "-f", "rawvideo", str(raw), "-y"]
+        subprocess.run(gen, capture_output=True, timeout=180)
+        if not raw.exists() or raw.stat().st_size == 0:
+            return TestResult(name, False, False, time.time() - t0, "no source generated")
+
+        srcavg = self._yavg(["-f", "rawvideo", "-pix_fmt", src_fmt,
+                             "-s", f"{self.WIDTH}x{self.HEIGHT}", "-i", str(raw),
+                             "-frames:v", "1"])
+
+        cmd = [str(self.encoder), "-i", str(raw),
+               "--inputWidth", str(self.WIDTH), "--inputHeight", str(self.HEIGHT),
+               "--inputChromaSubsampling", str(sub), "--inputNumPlanes", str(planes),
+               "--inputBpp", str(bpp), "--verbose", "-c", codec,
+               "--numFrames", "2", "-o", str(out)] + list(extra)
+        # These formats are Blackwell-only: a run that lands on a non-Blackwell GPU
+        # fabricates "not supported". The bare 36-char UUID is required - parseUuid
+        # rejects the G/P/U of nvidia-smi's "GPU-" prefix.
+        if self.device_uuid:
+            cmd += ["--deviceUuid", self.device_uuid]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            rc, blob = proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+        except subprocess.SubprocessError as exc:
+            rc, blob = 1, str(exc)
+        log.write_text(blob, errors="replace")
+
+        size = out.stat().st_size if out.exists() else 0
+        got = self._probe(out, "pix_fmt") if size else "none"
+        encavg = self._yavg(["-i", str(out)]) if size else None
+
+        reasons = []
+        if rc != 0:
+            reasons.append(f"rc={rc}")
+        if size == 0:
+            reasons.append("empty bitstream")
+        if got != want:
+            reasons.append(f"pix_fmt={got or 'none'} want {want}")
+        if srcavg and encavg:
+            ratio = encavg / srcavg
+            if not 0.98 < ratio < 1.02:
+                reasons.append(f"content {encavg:.3f} vs src {srcavg:.3f}")
+        else:
+            reasons.append("no luma statistic")
+        if expect_src and f"({expect_src})" not in blob:
+            reasons.append(f"encode-source != {expect_src}")
+        if expect_profile:
+            prof = self._probe(out, "profile") if size else ""
+            if prof != expect_profile:
+                reasons.append(f"profile={prof or 'none'} want {expect_profile}")
+
+        failed = bool(reasons)
+        dur = time.time() - t0
+        if xfail:
+            # An XFAIL that fails for the WRONG reason proves nothing, so record why.
+            if failed:
+                return TestResult(name, True, False, dur, "XFAIL(ok): " + "; ".join(reasons))
+            return TestResult(name, False, False, dur, "XPASS(gate-broken!)")
+        return TestResult(name, not failed, False, dur, "; ".join(reasons))
+
+    def run_all(self) -> bool:
+        print(f"\n{BOLD}Encode format matrix - {len(FORMAT_CELLS)} cells{NC}")
+        print(f"  encoder: {self.encoder}")
+        print(f"  ffmpeg : {self.ffmpeg}")
+        ok = True
+        for cell in FORMAT_CELLS:
+            res = self.run_cell(cell)
+            self.results.append(res)
+            tag = f"{GREEN}PASS{NC}" if res.passed else f"{RED}FAIL{NC}"
+            if res.passed and res.message.startswith("XFAIL"):
+                tag = f"{YELLOW}XFAIL{NC}"
+            print(f"  {res.name:<16} {tag}  {res.message}")
+            ok &= res.passed
+        n_pass = sum(1 for r in self.results if r.passed and not r.message.startswith("XFAIL"))
+        n_xfail = sum(1 for r in self.results if r.passed and r.message.startswith("XFAIL"))
+        n_fail = sum(1 for r in self.results if not r.passed)
+        print(f"\n  TOTAL: PASS={n_pass} XFAIL={n_xfail} FAIL={n_fail}"
+              f"   (expected 19 / 1 / 0)")
+        return ok
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Vulkan Video Encoder Test Runner",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
-    parser.add_argument("--video-dir", type=Path, required=True,
-                        help="Directory containing test video files (REQUIRED)")
+    parser.add_argument("--video-dir", type=Path, default=None,
+                        help="Directory containing test video files (required unless --formats)")
     parser.add_argument("--validate", "-v", action="store_true",
                         help="Enable Vulkan validation layers")
     parser.add_argument("--verbose", action="store_true",
@@ -426,6 +644,13 @@ def main():
                         help="Build directory (default: auto-detect)")
     parser.add_argument("--output-dir", type=Path, default=Path("/tmp/vulkan_encoder_tests"),
                         help="Output directory for test artifacts")
+    parser.add_argument("--formats", action="store_true",
+                        help="Run the 20-cell encode FORMAT matrix (packed 4:4:4, 4:2:2, "
+                             "10-bit alignment, H.264 profiles). Content-gated; needs no --video-dir.")
+    parser.add_argument("--device-uuid", type=str, default="",
+                        help="Pin the GPU by UUID. BARE 36-char form, no 'GPU-' prefix. "
+                             "Required for the format matrix: those formats are Blackwell-only, "
+                             "so landing on an older GPU fabricates 'not supported'.")
     
     args = parser.parse_args()
     
@@ -435,8 +660,13 @@ def main():
         project_root = script_dir.parent
         args.build_dir = project_root / "build"
     
-    # Validate video directory
-    if not args.video_dir.exists():
+    # Validate video directory (the format matrix makes its own sources)
+    if not args.formats and args.video_dir is None:
+        print(f"{RED}Error: --video-dir is required (or use --formats){NC}")
+        return 1
+    if args.formats and args.video_dir is None:
+        args.video_dir = args.output_dir
+    if not args.video_dir.exists() and not args.formats:
         print(f"{RED}Error: Video directory does not exist: {args.video_dir}{NC}")
         return 1
     
@@ -457,6 +687,19 @@ def main():
         max_frames=args.max_frames
     )
     
+    # The format matrix generates its own sources with ffmpeg and always runs LOCALLY
+    # against the installed/loaded driver, so it must short-circuit before the remote
+    # connectivity probe below (which would otherwise try to ssh to 127.0.0.1).
+    if args.formats:
+        fm = FormatMatrixRunner(config, EncoderTestRunner(config).encoder, args.device_uuid)
+        if not fm.encoder.exists():
+            print(f"{RED}Error: encoder not found: {fm.encoder}{NC}")
+            return 1
+        if not args.device_uuid:
+            print(f"{YELLOW}Warning:{NC} no --device-uuid; the matrix may run on the wrong GPU "
+                  f"and report 'not supported' for Blackwell-only formats.")
+        return 0 if fm.run_all() else 1
+
     # Check remote connectivity if not local
     if not config.run_local:
         runner = EncoderTestRunner(config)
@@ -466,8 +709,9 @@ def main():
             return 1
     
     runner = EncoderTestRunner(config)
+
     success = runner.run_all_tests()
-    
+
     return 0 if success else 1
 
 
