@@ -24,7 +24,9 @@
 #include <cerrno>
 #include <atomic>
 #include <limits>
+#include <algorithm>   // std::min, for the input sample-alignment probe
 #include "mio/mio.hpp"
+#include "nvidia_utils/vulkan/ycbcrvkinfo.h"   // PackedYcbcrFormatDesc()
 #include "vk_video/vulkan_video_codecs_common.h"
 #include "vk_video/vulkan_video_codec_h264std.h"
 #include "vk_video/vulkan_video_codec_h265std.h"
@@ -95,8 +97,20 @@ public:
             return false;
         }
 
-        uint32_t bytesPerPixel = (bpp + 7) / 8;
-        if ((bytesPerPixel < 1) || (bytesPerPixel > 2)) {
+        // Packed 4:4:4 (AYUV / Y410) is SINGLE-plane and interleaved: one 32-bit texel
+        // carries A,Y,Cb,Cr for one pixel, so the whole pixel is 4 bytes regardless of
+        // whether the components are 8-bit (AYUV) or 10-bit (Y410, packed 10-in-32).
+        // The per-component (bpp+7)/8 arithmetic below is wrong for it in both directions.
+        const bool isPackedSinglePlane = (numPlanes == 1);
+        if (isPackedSinglePlane &&
+            (chromaSubsampling != VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR)) {
+            fprintf(stderr, "Single-plane (packed) input requires --inputChromaSubsampling 444; "
+                            "packed 4:2:2 is not supported here.\n");
+            return false;
+        }
+
+        uint32_t bytesPerPixel = isPackedSinglePlane ? 4u : ((bpp + 7) / 8);
+        if (!isPackedSinglePlane && ((bytesPerPixel < 1) || (bytesPerPixel > 2))) {
             fprintf(stderr, "Invalid input bpp (%d) parameter!", bpp);
             return false;
         }
@@ -145,7 +159,7 @@ public:
 
         vkFormat = VkVideoCoreProfile::CodecGetVkFormat(chromaSubsampling,
                                                         GetComponentBitDepthFlagBits(bpp),
-                                                        (numPlanes == 2));
+                                                        VkVideoCoreProfile::PlaneLayoutFromPlaneCount(numPlanes));
 
         if (vkFormat == VK_FORMAT_UNDEFINED) {
             fprintf(stderr, "Invalid input parameters!");
@@ -459,6 +473,12 @@ beach:
         return m_frameSize;
     }
 
+     // Public: callers outside this class need the mapped size to bound a read of the
+     // file -- EncoderConfig's input sample-alignment probe reads a prefix of frame 0.
+     size_t GetFileSize() const {
+         return m_memMapedFile.length();
+     }
+
     uint32_t GetMaxFrameCount() const
     {
         if(m_frameSize) {
@@ -490,10 +510,6 @@ private:
             printf("Input file size is: %zd\n", m_memMapedFile.length());
         }
 
-        return m_memMapedFile.length();
-    }
-
-    size_t GetFileSize() const {
         return m_memMapedFile.length();
     }
 
@@ -759,6 +775,18 @@ public:
     uint8_t  encodeBitDepthLuma;
     uint8_t  encodeBitDepthChroma;
     uint8_t  encodeNumPlanes;
+    // Prefer the packed 4:4:4 encode-source format (AYUV / Y410) when the driver
+    // advertises both representations for the profile.
+    //
+    // For a 4:4:4 profile the driver lists BOTH the 2-plane form and the packed form,
+    // and the listing order is not guaranteed, so anything that takes the driver's
+    // first entry -- or that matches only against the input FILE's layout -- can never
+    // reach packed.
+    // This makes the choice explicit and independent of the input: the encoder's compute
+    // filter converts from whatever the source format and plane layout are to the
+    // selected encode-source format, so packed 4:4:4 becomes reachable from any input.
+    // Ignored on profiles that have no packed representation (4:2:0, 4:2:2).
+    bool     preferPackedYcbcr;
     uint8_t  numBitstreamBuffersToPreallocate;
     VkVideoChromaSubsamplingFlagBitsKHR  encodeChromaSubsampling;
     uint32_t encodeOffsetX;
@@ -891,6 +919,7 @@ public:
     , encodeBitDepthLuma(0)
     , encodeBitDepthChroma(0)
     , encodeNumPlanes(2)
+    , preferPackedYcbcr(false)
     , numBitstreamBuffersToPreallocate(8)
     , encodeChromaSubsampling(VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR)
     , encodeOffsetX(0)
@@ -1027,6 +1056,70 @@ public:
         return 0;
     };
 
+    // Returns the left-shift needed to move the input file's 10/12-bit samples into the
+    // high bits of a 16-bit word, by inspecting the file rather than assuming a
+    // convention. Returns the documented default (16 - bpp) when the data cannot
+    // distinguish the two, so behaviour is unchanged for anything this cannot read.
+    int8_t DetectInputMsbShift()
+    {
+        const int8_t defaultShift = (int8_t)(16 - input.bpp);
+
+        if (!inputFileHandler.HasFileName() || (inputFileHandler.GetFileSize() < 2)) {
+            return defaultShift;
+        }
+
+        // Luma is the first plane in every layout this applies to, so a prefix of the
+        // file is luma regardless of plane count. Cap the scan: alignment is a property
+        // of the encoding, so a prefix settles it.
+        const size_t lumaSamples = (size_t)input.width * input.height;
+        const size_t maxSamples  = (lumaSamples > 0) ? lumaSamples : (64u * 1024u);
+        size_t numSamples = std::min(maxSamples, inputFileHandler.GetFileSize() / 2);
+        if (numSamples == 0) {
+            return defaultShift;
+        }
+
+        const uint8_t* pBytes = inputFileHandler.GetMappedPtr(0);
+        if (pBytes == nullptr) {
+            return defaultShift;
+        }
+
+        const uint16_t lowMask  = (uint16_t)((1u << (16 - input.bpp)) - 1u); // bottom spare bits
+        const uint16_t highMask = (uint16_t)~((1u << input.bpp) - 1u);       // top spare bits
+
+        bool allLowBitsClear  = true;   // => samples already left-aligned (P010-style)
+        bool allHighBitsClear = true;   // => samples right-aligned  (yuv420p10le-style)
+
+        for (size_t i = 0; i < numSamples; i++) {
+            // Little-endian 16-bit sample; both conventions are LE in practice.
+            const uint16_t sample = (uint16_t)(pBytes[2 * i] | (pBytes[2 * i + 1] << 8));
+            if (sample & lowMask)  { allLowBitsClear  = false; }
+            if (sample & highMask) { allHighBitsClear = false; }
+            if (!allLowBitsClear && !allHighBitsClear) {
+                break;  // neither convention fits; stop early
+            }
+        }
+
+        if (allLowBitsClear && !allHighBitsClear) {
+            if (verbose) {
+                printf("Input: %d-bit samples are already MSB-aligned (P010-style); msbShift=0\n",
+                       input.bpp);
+            }
+            return 0;
+        }
+
+        if (allHighBitsClear && !allLowBitsClear) {
+            if (verbose) {
+                printf("Input: %d-bit samples are LSB-aligned; msbShift=%d\n",
+                       input.bpp, defaultShift);
+            }
+            return defaultShift;
+        }
+
+        // Ambiguous: all-zero data, or samples that are multiples of 2^(16-bpp) inside
+        // the low range. Keep the documented default; --msbShift overrides either way.
+        return defaultShift;
+    }
+
     virtual VkResult InitializeParameters()
     {
         if (!input.VerifyInputs()) {
@@ -1036,16 +1129,41 @@ public:
         // Deal with the input shift values, if not explicitly set.
         if (input.msbShift == -1) {
 
-            if (input.bpp > 8) {
+            if (PackedYcbcrFormatDesc(input.vkFormat) != nullptr) {
+
+                // Packed 4:4:4 (AYUV / Y410 / Y416) stores each component in its own
+                // bit-field of one word -- Y410 puts 10-bit U, Y and V at [9:0], [19:10]
+                // and [29:20] of a 32-bit pixel. There is no 16-bit container with spare
+                // low bits to left-align into, and VK_FORMAT_A2B10G10R10_UNORM_PACK32
+                // already normalises each field over its full 10-bit range. Applying the
+                // 16-bit MSB shift here saturates every sample to white, so a packed
+                // format always takes a shift of zero.
+                input.msbShift = 0;
+
+            } else if (input.bpp > 8) {
 
                 // Only apply the shift for higher bit-depth formats (10/12-bit)
                 assert ((input.bpp == 10) || (input.bpp == 12));
 
-                // Calculate shift amount based on bit depth
-                // We shift the content to the MSB of the word if it is a 16-bit container
-                input.msbShift = 16 - input.bpp;
+                // The destination VkFormat (G10X6.../G12X4...) always carries its samples
+                // in the HIGH bits of a 16-bit word, so the shift is entirely a property
+                // of how the SOURCE file stores them, and both conventions are in wide use:
+                //
+                //   yuv420p10le & friends : values 0..1023 right-aligned  -> shift 16-bpp
+                //   P010 / P210 / P410    : values left-aligned already   -> shift 0
+                //
+                // The two layouts are byte-identical in size and plane count, so the file
+                // name and geometry cannot tell them apart. Assuming right-aligned and
+                // shifting anyway turns a P010 file into a flat white frame.
+                //
+                // But it does not have to be guessed: the two are mutually exclusive in the
+                // bits. Right-aligned data has the top (16-bpp) bits clear on every sample;
+                // left-aligned data has the bottom (16-bpp) bits clear on every sample. Both
+                // hold only for all-zero data. So detect it, and fall back to the documented
+                // default when the answer is ambiguous.
+                input.msbShift = DetectInputMsbShift();
 
-                assert ((input.msbShift == 6) || (input.msbShift == 4));
+                assert ((input.msbShift == 0) || (input.msbShift == 6) || (input.msbShift == 4));
 
             } else {
 

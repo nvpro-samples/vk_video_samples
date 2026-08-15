@@ -46,6 +46,8 @@ int EncoderConfigH264::DoParseArguments(int argc, const char* argv[])
                 profileIdc = STD_VIDEO_H264_PROFILE_IDC_MAIN;
             } else if (profileStr == "high" || profileStr == "2") {
                 profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH;
+            } else if (profileStr == "high422" || profileStr == "4") {
+                profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_422;
             } else if (profileStr == "high444" || profileStr == "3") {
                 profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE;
             } else {
@@ -253,11 +255,28 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
         sps->frame_crop_right_offset = (16 * (pic_width_in_mbs) - encodeWidth);
         sps->frame_crop_bottom_offset = (16 * (sps->pic_height_in_map_units_minus1 + 1) - encodeHeight);
 
-        if (sps->chroma_format_idc == STD_VIDEO_H264_CHROMA_FORMAT_IDC_420) {
-            sps->frame_crop_right_offset >>= 1;
-            sps->frame_crop_bottom_offset >>= 1;
-        }
+        // ITU-T H.264 7.4.2.1.1: the crop offsets are in units of CropUnitX = SubWidthC
+        // and CropUnitY = SubHeightC * (2 - frame_mbs_only_flag). Per Table 6-1
+        // SubWidthC/SubHeightC are (2,2) for 4:2:0, (2,1) for 4:2:2 and (1,1) for 4:4:4 --
+        // they differ from each other ONLY for 4:2:2, so the two axes have to be scaled
+        // independently. One shared factor gives 4:2:2 an unscaled horizontal offset and
+        // therefore a crop twice as wide as intended. frame_mbs_only_flag is set true
+        // just above, so CropUnitY == SubHeightC.
+        const uint32_t subWidthC  =
+            (sps->chroma_format_idc == STD_VIDEO_H264_CHROMA_FORMAT_IDC_444) ? 1 : 2;
+        const uint32_t subHeightC =
+            (sps->chroma_format_idc == STD_VIDEO_H264_CHROMA_FORMAT_IDC_420) ? 2 : 1;
+
+        sps->frame_crop_right_offset  /= subWidthC;
+        sps->frame_crop_bottom_offset /= subHeightC;
     }
+
+    // The SPS has to carry the real sample depth. Left at zero it claims 8-bit whatever
+    // the input is, so a 10-bit encode emits a valid, decodable, silently 8-bit stream,
+    // and the driver refuses H.264 High 10 and 10-bit 4:2:2 for want of the signalled
+    // depth. The HEVC config signals the same pair in VkEncoderConfigH265.cpp.
+    sps->bit_depth_luma_minus8   = (uint8_t)(encodeBitDepthLuma - 8);
+    sps->bit_depth_chroma_minus8 = (uint8_t)(encodeBitDepthChroma - 8);
 
     if (!!qpprime_y_zero_transform_bypass_flag &&
         (tuningMode == VK_VIDEO_ENCODE_TUNING_MODE_LOSSLESS_KHR)) {
@@ -488,7 +507,14 @@ void EncoderConfigH264::InitProfileLevel()
         }
 
         if (input.bpp > 8) {
-            profileIdc = static_cast<StdVideoH264ProfileIdc>(110); // High 10
+            profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_10;
+        }
+
+        // 4:2:2 needs High 4:2:2 (122). High (100) and below cannot code
+        // chroma_format_idc == 2 at all, so without this a 4:2:2 request is refused by
+        // the driver's profile query rather than silently downgraded.
+        if (input.chromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR) {
+            profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_422;
         }
 
         // Upgrade to HIGH_444_PREDICTIVE for lossless encoding or 4:4:4 chroma

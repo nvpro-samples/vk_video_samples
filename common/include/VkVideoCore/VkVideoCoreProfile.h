@@ -512,10 +512,50 @@ public:
         return !!GetLumaBitDepthMinus8() || !!GetChromaBitDepthMinus8();
     }
 
+    // How the samples are laid out in memory. A boolean cannot express this: it names
+    // only 2-plane versus 3-plane, and a packed (single-plane, interleaved) format is a
+    // third layout that has to be nameable here.
+    enum PlaneLayout {
+        PLANE_LAYOUT_PLANAR_3     = 0,  // Y, Cb, Cr in three separate planes
+        PLANE_LAYOUT_SEMIPLANAR_2 = 1,  // Y plane + interleaved CbCr plane
+        PLANE_LAYOUT_PACKED_1     = 2,  // single interleaved plane (AYUV / Y410)
+    };
+
+    static PlaneLayout PlaneLayoutFromPlaneCount(uint32_t numPlanes)
+    {
+        switch (numPlanes) {
+            case 1:  return PLANE_LAYOUT_PACKED_1;
+            case 2:  return PLANE_LAYOUT_SEMIPLANAR_2;
+            default: return PLANE_LAYOUT_PLANAR_3;
+        }
+    }
+
     static VkFormat CodecGetVkFormat(VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling,
                                      VkVideoComponentBitDepthFlagBitsKHR lumaBitDepth,
-                                     bool isSemiPlanar)
+                                     PlaneLayout planeLayout)
     {
+        const bool isSemiPlanar = (planeLayout == PLANE_LAYOUT_SEMIPLANAR_2);
+
+        // Packed (single-plane) is only defined for 4:4:4 here. Vulkan has no packed
+        // 4:4:4 YCbCr format, so AYUV and Y410 ride the matching RGBA-layout enums; the
+        // driver advertises them for VIDEO_ENCODE_SRC and states the channel order via
+        // VkVideoFormatPropertiesKHR::componentMapping. Packed 4:2:2 (YUY2/Y210/Y216) is
+        // deliberately NOT handled here: those are real YCbCr VkFormats with a different
+        // shape (two pixels per texel) and must not be folded into this path.
+        if (planeLayout == PLANE_LAYOUT_PACKED_1) {
+            if (chromaSubsampling != VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR) {
+                return VK_FORMAT_UNDEFINED;
+            }
+            switch (lumaBitDepth) {
+                case VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR:
+                    return VK_FORMAT_R8G8B8A8_UNORM;            // AYUV
+                case VK_VIDEO_COMPONENT_BIT_DEPTH_10_BIT_KHR:
+                    return VK_FORMAT_A2B10G10R10_UNORM_PACK32;  // Y410
+                default:
+                    return VK_FORMAT_UNDEFINED;                 // no 12-bit packed target
+            }
+        }
+
         VkFormat vkFormat = VK_FORMAT_UNDEFINED;
         switch (chromaSubsampling) {
         case VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR:

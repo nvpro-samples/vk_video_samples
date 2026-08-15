@@ -593,9 +593,36 @@ VkResult VkVideoEncoder::SetExternalInputFrame(
         switch (format) {
             case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:                       // NV12
             case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:      // P010
-            case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16:      // P012
+            // 2-plane (semi-planar) 4:4:4 -- NV24 / S410. Already advertised by
+            // the NVIDIA driver for VIDEO_ENCODE_SRC and native NVENC on every
+            // chip for H.264/HEVC, so an externally-imported OPTIMAL or
+            // DRM-modifier image in either format is directly encodable with no
+            // driver change.
+            case VK_FORMAT_G8_B8R8_2PLANE_444_UNORM:                       // NV24
+            case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16:      // S410
                 isDirectlyEncodable = true;
                 break;
+            // Packed 4:4:4 (AYUV / Y410) on their RGBA aliases. Gate on the SESSION
+            // format, not on the enum: these same VkFormats are also genuine RGBA input
+            // destined for the RGBA->YCbCr filter. m_imageInFormat was matched against
+            // the caller's requested input.vkFormat, which is only the packed alias when
+            // the colour model said YCbCr -- so an RGBA session keeps m_imageInFormat at
+            // NV12 and correctly still goes to staging.
+            //
+            // Without this the packed frame falls to default: -> Path B/C -> StageInputFrame
+            // -> CopyLinearToOptimalImage, which fetches YcbcrVkFormatInfo() (NULL for
+            // these formats) and dereferences it with no NULL check.
+            case VK_FORMAT_R8G8B8A8_UNORM:                                 // AYUV
+            case VK_FORMAT_A2B10G10R10_UNORM_PACK32:                       // Y410
+                isDirectlyEncodable = (format == m_imageInFormat);
+                break;
+            // P012 is absent on purpose: the driver does not advertise it for encode.
+            // Naming a format here that the runtime check below then refuses turns an
+            // early, clear rejection into a late, opaque one.
+            //
+            // 2-plane 4:2:2 (NV16 / P210) is deliberately absent until the driver
+            // advertises 4:2:2 for encode; the runtime check below against the
+            // formats actually returned by GetVideoFormats is what gates it.
             default:
                 break;
         }
@@ -851,9 +878,18 @@ void VkVideoEncoder::CopyYCbCrPlanesDirectCPU(
     // Get format information
     const VkMpFormatInfo* formatInfo = YcbcrVkFormatInfo(format);
 
+    // Packed 4:4:4 (AYUV / Y410 / Y416) has no multi-planar descriptor, so formatInfo is
+    // NULL for it. Falling through to the 8-bit default below would set bytesPerPixel to
+    // 1 for what is a 4-byte container and copy only width*1 of each width*4 row --
+    // exactly one quarter of every scanline, leaving the rest of the staging image
+    // with stale data.
+    const VkPackedYcbcrFormatDesc* packedDesc = PackedYcbcrFormatDesc(format);
+
     // Determine bit depth and bytes per pixel from format
-    const uint32_t bitDepth = (formatInfo != nullptr) ? GetBitsPerChannel(formatInfo->planesLayout) : 8; // Default to 8-bit
-    const uint32_t bytesPerPixel = (bitDepth > 8) ? 2 : 1;
+    const uint32_t bitDepth = (packedDesc != nullptr) ? packedDesc->bitDepth :
+                              (formatInfo != nullptr) ? GetBitsPerChannel(formatInfo->planesLayout) : 8; // Default to 8-bit
+    const uint32_t bytesPerPixel = (packedDesc != nullptr) ? packedDesc->bytesPerPixel :
+                                   (bitDepth > 8) ? 2 : 1;
 
     // Determine chroma subsampling ratios
     const uint32_t chromaHorzRatio = (formatInfo != nullptr) ? (1 << formatInfo->planesLayout.secondaryPlaneSubsampledX) : 1;
@@ -1504,6 +1540,15 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         return result;
     }
 
+    // Re-arm the capacity before the next query. GetVideoFormats takes formatCount by
+    // REFERENCE and overwrites it with min(supportedFormatCount, formatCount)
+    // (VulkanVideoCapabilities.h:377), so the DPB query above shrinks it to the DPB list
+    // length and every later query silently inherits that as its cap. With the DPB list
+    // shorter than the SRC list -- which is the normal case now that SRC advertises both
+    // the semi-planar and the packed 4:4:4 form while the DPB is currently only
+    // semi-planar -- the trailing SRC entries become invisible and the packed format can
+    // never be selected.
+    formatCount = sizeof(supportedInFormats) / sizeof(supportedInFormats[0]);
     result = VulkanVideoCapabilities::GetVideoFormats(m_vkDevCtx, encoderConfig->videoCoreProfile,
                                                       VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR,
                                                       formatCount, supportedInFormats);
@@ -1514,7 +1559,81 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     }
 
     m_imageDpbFormat = supportedDpbFormats[0];
-    m_imageInFormat = supportedInFormats[0];
+
+    // Select the encode-source format that MATCHES the request, rather than taking
+    // whatever the driver happened to list first.
+    //
+    // The driver returns every format compatible with the profile, and both the set and
+    // the listing order are its choice. A 4:4:4 profile can advertise the semi-planar
+    // and the packed form together (packed 4:4:4 rides an RGBA alias and is never a DPB
+    // format), and nothing says which of them comes first, so element [0] can be either.
+    // Even among the semi-planar formats [0] is only correct by luck -- the profile
+    // filter narrows by chroma and bit depth, but nothing guarantees a unique survivor.
+    m_imageInFormat = VK_FORMAT_UNDEFINED;
+    const VkFormat requestedInFormat = encoderConfig->input.vkFormat;
+
+    // --preferPackedYcbcr asks for the packed 4:4:4 encode source (AYUV / Y410) whenever
+    // the driver offers one. It deliberately outranks the input-format match below: the
+    // input format describes the FILE, and the compute filter converts from any source
+    // layout to the encode source, so honouring the preference only when the file already
+    // happened to be packed would make the option almost useless. Matching against the
+    // advertised list (rather than naming a format) keeps this correct for profiles that
+    // have no packed form -- 4:2:0 and 4:2:2 simply find nothing and fall through.
+    if (encoderConfig->preferPackedYcbcr) {
+        for (uint32_t fmtIdx = 0; fmtIdx < formatCount; fmtIdx++) {
+            if (PackedYcbcrFormatDesc(supportedInFormats[fmtIdx]) != nullptr) {
+                m_imageInFormat = supportedInFormats[fmtIdx];
+                break;
+            }
+        }
+        if ((m_imageInFormat == VK_FORMAT_UNDEFINED) && encoderConfig->verbose) {
+            printf("--preferPackedYcbcr: no packed format advertised for this profile; "
+                   "using the normal selection.\n");
+        }
+    }
+
+    if (m_imageInFormat == VK_FORMAT_UNDEFINED) {
+        for (uint32_t fmtIdx = 0; fmtIdx < formatCount; fmtIdx++) {
+            if (supportedInFormats[fmtIdx] == requestedInFormat) {
+                m_imageInFormat = supportedInFormats[fmtIdx];
+                break;
+            }
+        }
+    }
+    if (m_imageInFormat == VK_FORMAT_UNDEFINED) {
+        // Fall back to the driver's first choice so existing callers that never set
+        // input.vkFormat keep working, but say so -- a silent substitution here is
+        // how a 4:4:4 request ends up encoded as 4:2:0.
+        m_imageInFormat = supportedInFormats[0];
+        if (requestedInFormat != VK_FORMAT_UNDEFINED) {
+            fprintf(stderr,
+                    "\nInitEncoder Warning: requested encode-source format %d is not "
+                    "advertised by the driver for this profile; falling back to %d. "
+                    "The encoded chroma format will NOT match the request.\n",
+                    (int)requestedInFormat, (int)m_imageInFormat);
+            // Dump what the driver DOES offer. Without this the fallback tells you only
+            // that your request was refused, not what to ask for instead -- and the set
+            // is profile-dependent, so it cannot be inferred from a static table.
+            fprintf(stderr, "InitEncoder: driver advertises %u encode-source format(s) "
+                            "for this profile:", formatCount);
+            for (uint32_t fmtIdx = 0; fmtIdx < formatCount; fmtIdx++) {
+                fprintf(stderr, " %d", (int)supportedInFormats[fmtIdx]);
+            }
+            fprintf(stderr, "\n");
+        }
+    }
+
+    // State the encode-source format that was actually chosen. Without this the choice is
+    // unobservable from outside: a packed and a 2-plane 4:4:4 source both produce a
+    // yuv444p bitstream, so a --preferPackedYcbcr that silently did nothing would look
+    // exactly like one that worked.
+    if (encoderConfig->verbose) {
+        const VkPackedYcbcrFormatDesc* pPacked = PackedYcbcrFormatDesc(m_imageInFormat);
+        printf("InitEncoder: encode-source format %d (%s)%s\n",
+               (int)m_imageInFormat,
+               (pPacked != nullptr) ? pPacked->debugName : "planar/semi-planar",
+               encoderConfig->preferPackedYcbcr ? " [--preferPackedYcbcr]" : "");
+    }
 
     if (encoderConfig->enableQpMap) {
         VkFormat supportedQpMapFormats[8];
