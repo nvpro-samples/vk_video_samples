@@ -409,6 +409,28 @@ void convertRGBAtoP010(const uint8_t* rgba,
                        std::vector<uint16_t>& uvPlane);
 
 /**
+ * @brief Convert RGBA buffer to P012 (12-bit 4:2:0)
+ */
+void convertRGBAtoP012(const uint8_t* rgba,
+                       uint32_t width, uint32_t height,
+                       ColorPrimaries primaries, ColorRange range,
+                       std::vector<uint16_t>& yPlane,
+                       std::vector<uint16_t>& uvPlane);
+
+/**
+ * @brief Convert RGBA buffer to P210 (10-bit 4:2:2)
+ *
+ * Same as P010 except chroma is averaged horizontally only, so the chroma plane keeps
+ * full height. Both planes carry right-aligned 10-bit codes; MSB alignment for the
+ * Vulkan X6 formats is applied by the caller.
+ */
+void convertRGBAtoP210(const uint8_t* rgba,
+                       uint32_t width, uint32_t height,
+                       ColorPrimaries primaries, ColorRange range,
+                       std::vector<uint16_t>& yPlane,
+                       std::vector<uint16_t>& uvPlane);
+
+/**
  * @brief Convert RGBA buffer to I420 (3-plane)
  */
 void convertRGBAtoI420(const uint8_t* rgba,
