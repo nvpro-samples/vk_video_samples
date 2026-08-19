@@ -133,6 +133,13 @@ TestCaseConfig TC062_NV12_to_NV16();        // 4:2:0 to 4:2:2
 TestCaseConfig TC063_NV12_to_YUV444();      // 4:2:0 to 4:4:4
 TestCaseConfig TC064_P010_to_NV12();        // 10-bit to 8-bit
 TestCaseConfig TC065_NV12_to_P010();        // 8-bit to 10-bit
+TestCaseConfig TC066_NV12_to_P012();        // 8-bit to 12-bit (4:2:0)
+TestCaseConfig TC067_P012_to_NV12();        // 12-bit to 8-bit (4:2:0)
+TestCaseConfig TC068_RGBA_to_P012();        // RGBA to 12-bit 4:2:0
+TestCaseConfig TC006b_RGBA_to_P212();       // RGBA to 12-bit 4:2:2 (P212)
+TestCaseConfig TC015b_P212_to_RGBA();       // 12-bit 4:2:2 (P212) to RGBA
+TestCaseConfig TC084_RGBA_to_P212_Linear(); // 12-bit 4:2:2 LINEAR (TRV repro shape)
+TestCaseConfig TC085_RGBA_to_P210_Linear(); // 10-bit 4:2:2 LINEAR (control)
 
 // =============================================================================
 // Buffer I/O Tests

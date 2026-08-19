@@ -476,6 +476,16 @@ void convertRGBAtoP210(const uint8_t* rgba,
     convertRGBAtoSemiPlanar16(rgba, width, height, 10, 2, 1, primaries, range, yPlane, uvPlane);
 }
 
+void convertRGBAtoP212(const uint8_t* rgba,
+                       uint32_t width, uint32_t height,
+                       ColorPrimaries primaries, ColorRange range,
+                       std::vector<uint16_t>& yPlane,
+                       std::vector<uint16_t>& uvPlane)
+{
+    // 12-bit 4:2:2 -- chroma half width, FULL height (as P210, at 12 bits).
+    convertRGBAtoSemiPlanar16(rgba, width, height, 12, 2, 1, primaries, range, yPlane, uvPlane);
+}
+
 void convertRGBAtoI420(const uint8_t* rgba,
                        uint32_t width, uint32_t height,
                        ColorPrimaries primaries, ColorRange range,
