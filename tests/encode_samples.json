@@ -56,12 +56,13 @@
         "--inputChromaSubsampling",
         "444"
       ],
-      "description": "Test H.264 High444 profile encoding",
+      "description": "Test H.264 High444 profile encoding Decoder round-trip validation is DISABLED for this sample: NVDEC has no H.264 4:4:4 decode, so the decode capability query correctly returns VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR and the round-trip can never succeed. The ENCODE itself is still exercised and checked; only the decode-back step is skipped. Validate the bitstream with a software decoder if stronger checking is wanted.",
       "width": 352,
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i444.yuv",
       "source_checksum": "1887c736739db1e5b8c67a5cc873c6135edb5a4e6930a0b0183813b60f2ad761",
-      "source_filepath": "video/yuv/352x288_15_i444.yuv"
+      "source_filepath": "video/yuv/352x288_15_i444.yuv",
+      "validate_with_decoder": false
     },
     {
       "name": "h264_ip_gop",
@@ -211,7 +212,9 @@
       "codec": "av1",
       "profile": "high",
       "extra_args": null,
-      "description": "Test AV1 High profile encoding",
+      "description": "NEGATIVE CELL. AV1 High profile (stdProfile 1). NVENC encodes AV1 Main (profile 0) only -- High requires 4:4:4 and Professional 4:2:2/12-bit, neither of which the AV1 encoder implements on any shipping chip -- so the capability query must reject it. Scoring the cell as a plain N/S instead would be a soft outcome: an N/S and a silently-accepted profile are both non-failures, so a driver that started accepting AV1 High would turn the cell green rather than red. PORTABILITY: this cell asserts NVIDIA hardware behaviour. On an implementation that genuinely supports this profile the cell will fail; that failure is the correct signal to look, and the fix is a skip-list entry scoped to that driver, not deleting the cell.",
+      "expected_result": "unsupported",
+      "expected_vk_result": "VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR",
       "width": 352,
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
@@ -223,7 +226,9 @@
       "codec": "av1",
       "profile": "professional",
       "extra_args": null,
-      "description": "Test AV1 Professional profile encoding",
+      "description": "NEGATIVE CELL. AV1 Professional profile (stdProfile 2). Same reasoning as av1_high_profile: NVENC encodes AV1 Main only, so the capability query must reject this. A plain N/S cannot distinguish a correct rejection from a profile the driver has started accepting, which is why this cell asserts the rejection itself. PORTABILITY: this cell asserts NVIDIA hardware behaviour. On an implementation that genuinely supports this profile the cell will fail; that failure is the correct signal to look, and the fix is a skip-list entry scoped to that driver, not deleting the cell.",
+      "expected_result": "unsupported",
+      "expected_vk_result": "VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR",
       "width": 352,
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
@@ -320,6 +325,23 @@
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/7680x4320_420_8le.yuv",
       "source_checksum": "0a7799afe89ad34aeb62b293c4c310a9a15c34961e9203a8499027ad775929b0",
       "source_filepath": "video/yuv/7680x4320_420_8le.yuv"
+    },
+    {
+      "name": "h265_12bit_unsupported",
+      "codec": "h265",
+      "profile": null,
+      "extra_args": [
+        "--inputBpp",
+        "12"
+      ],
+      "description": "NEGATIVE CELL. HEVC 12-bit 4:2:0 encode. The driver advertises 12-bit under __VK_VIDEO_DECODE_USAGE_MASK only -- NVENC has no 12-bit encode on any shipping chip -- so vkGetPhysicalDeviceVideoCapabilitiesKHR must reject the profile. Decode at 12-bit is supported and covered by four positive cells in decode_samples.json; this cell keeps the encode half of that asymmetry measured, so 12-bit encode quietly starting to 'work' (and producing garbage, or silently downshifting to 10-bit) is a test failure and not a silence. The cell drives an ENCODE_H265 / 420 / 12-bit / FORMAT_RANGE_EXTENSIONS profile and passes only when the query returns VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR and the app exits 69. SOURCE: scripts/gen_negative_test_content.sh. PORTABILITY: this cell asserts NVIDIA hardware behaviour. On an implementation that genuinely supports this profile the cell will fail; that failure is the correct signal to look, and the fix is a skip-list entry scoped to that driver, not deleting the cell. Integrity is enforced by the generator's own gates (exact byte count, an ffprobe profile/pix_fmt check, and for the 12-bit input a peak sample above the 10-bit range) rather than by source_checksum: the artifact is re-encoded locally, so its bytes depend on the ffmpeg/x264 build and a hash would fail on a version difference while saying nothing about whether the format is right.",
+      "expected_result": "unsupported",
+      "expected_vk_result": "VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR",
+      "width": 352,
+      "height": 288,
+      "source_url": "",
+      "source_checksum": "",
+      "source_filepath": "video/negative/352x288_15_i420_12le.yuv"
     }
   ]
 }
