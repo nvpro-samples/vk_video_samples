@@ -22,6 +22,7 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavformat/avio.h>
 #include <libavcodec/avcodec.h>
+#include <libavutil/pixdesc.h>
 #ifndef FF_API_OLD_BSF
 #include <libavcodec/bsf.h>
 #endif
@@ -73,14 +74,20 @@ private:
         codedWidth = fmtc->streams[videoStream]->codecpar->width;
         codedHeight = fmtc->streams[videoStream]->codecpar->height;
         format = (AVPixelFormat)fmtc->streams[videoStream]->codecpar->format;
+        // Component depth comes from ffmpeg's pixel-format descriptor, not a hand-written
+        // AV_PIX_FMT_* list. Such a list has to name every high-bit-depth format there
+        // is -- yuv422p10le/12le, yuv444p10le/12le, p010le, gbrp12le -- and whatever it
+        // misses falls through to the 8-bit initializer, which is not an error but a
+        // plausible wrong number that travels on into the video profile. comp[].depth is
+        // defined for every pixel format ffmpeg knows.
         codedLumaBitDepth = 8;
         codedChromaBitDepth = 8;
-        if (fmtc->streams[videoStream]->codecpar->format == AV_PIX_FMT_YUV420P10LE) {
-            codedLumaBitDepth = 10;
-            codedChromaBitDepth = 10;
-        } else if (fmtc->streams[videoStream]->codecpar->format == AV_PIX_FMT_YUV420P12LE) {
-            codedLumaBitDepth = 12;
-            codedChromaBitDepth = 12;
+        const AVPixFmtDescriptor* pixDesc = av_pix_fmt_desc_get(format);
+        if (pixDesc != nullptr) {
+            codedLumaBitDepth = pixDesc->comp[0].depth;
+            // Monochrome has no chroma plane; mirror luma so the profile stays coherent.
+            codedChromaBitDepth = (pixDesc->nb_components > 1) ? pixDesc->comp[1].depth
+                                                              : codedLumaBitDepth;
         }
         isStreamDemuxer = (!strcmp(fmtc->iformat->long_name, "QuickTime / MOV") ||
                  !strcmp(fmtc->iformat->long_name, "FLV (Flash Video)") ||
@@ -161,7 +168,10 @@ private:
             codedHeight = defaultHeight;
         }
         if (fmtc->streams[videoStream]->codecpar->format == -1) {
+            // No pixel format in the container: fall back to the caller's default for
+            // both components, so the profile does not end up with mismatched depths.
             codedLumaBitDepth = defaultBitDepth;
+            codedChromaBitDepth = defaultBitDepth;
         }
 
         return 0;
@@ -340,7 +350,11 @@ public:
             return VK_VIDEO_COMPONENT_BIT_DEPTH_12_BIT_KHR;
             break;
         default:
-            assert(!"Unknown Luma Bit Depth!");
+            // 9, 14, 16 bits and friends are real formats with no
+            // VkVideoComponentBitDepthFlagBitsKHR to name them. Report INVALID and let
+            // the capability query reject the profile -- not an assert, which aborts a
+            // debug build on a legitimate input and disappears entirely under NDEBUG.
+            std::cerr << "\nUnsupported luma bit depth: " << codedLumaBitDepth << std::endl;
         }
         return VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
     }
@@ -358,40 +372,54 @@ public:
             return VK_VIDEO_COMPONENT_BIT_DEPTH_12_BIT_KHR;
             break;
         default:
-            assert(!"Unknown Chroma Bit Depth!");
+            // 9, 14, 16 bits and friends are real formats with no
+            // VkVideoComponentBitDepthFlagBitsKHR to name them. Report INVALID and let
+            // the capability query reject the profile -- not an assert, which aborts a
+            // debug build on a legitimate input and disappears entirely under NDEBUG.
+            std::cerr << "\nUnsupported chroma bit depth: " << codedChromaBitDepth << std::endl;
         }
         return VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
     }
 
     virtual VkVideoChromaSubsamplingFlagsKHR GetChromaSubsampling() const
     {
-        switch (format) {
-        case AV_PIX_FMT_YUVJ420P:    ///< planar YUV 4:2:0, 12bpp, full scale (JPEG), deprecated in favor of AV_PIX_FMT_YUV420P and setting color_range
-        case AV_PIX_FMT_YUV420P:     ///< planar YUV 4:2:0, 12bpp, (1 Cr & Cb sample per 2x2 Y samples)
-        case AV_PIX_FMT_YUV420P10LE: ///< planar YUV 4:2:0, 15bpp, (1 Cr & Cb sample per 2x2 Y samples), little-endian
-        case AV_PIX_FMT_YUV420P12LE: ///< planar YUV 4:2:0, 12bpp, (1 Cr & Cb sample per 2x2 Y samples), little-endian
-        case AV_PIX_FMT_YUV420P16LE: ///< planar YUV 4:2:0, 24bpp, (1 Cr & Cb sample per 2x2 Y samples), little-endian
-        case AV_PIX_FMT_YUV420P16BE: ///< planar YUV 4:2:0, 24bpp, (1 Cr & Cb sample per 2x2 Y samples), big-endian
-            return VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;
-        case AV_PIX_FMT_YUYV422:     ///< packed YUV 4:2:2, 16bpp, Y0 Cb Y1 Cr
-        case AV_PIX_FMT_YUV422P:     ///< planar YUV 4:2:2, 16bpp, (1 Cr & Cb sample per 2x1 Y samples)
-        case AV_PIX_FMT_YUV422P16LE: ///< planar YUV 4:2:2, 32bpp, (1 Cr & Cb sample per 2x1 Y samples), little-endian
-        case AV_PIX_FMT_YUV422P16BE: ///< planar YUV 4:2:2, 32bpp, (1 Cr & Cb sample per 2x1 Y samples), big-endian
-            return VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR;
-        case AV_PIX_FMT_YUV444P:     ///< planar YUV 4:4:4, 24bpp, (1 Cr & Cb sample per 1x1 Y samples)
-        case AV_PIX_FMT_YUV444P10BE: ///< planar YUV 4:4:4, 30bpp, (1 Cr & Cb sample per 1x1 Y samples), big-endian
-        case AV_PIX_FMT_YUV444P10LE: ///< planar YUV 4:4:4, 30bpp, (1 Cr & Cb sample per 1x1 Y samples), little-endian
-        case AV_PIX_FMT_YUV444P12BE: ///< planar YUV 4:4:4,36bpp, (1 Cr & Cb sample per 1x1 Y samples), big-endian
-        case AV_PIX_FMT_YUV444P12LE: ///< planar YUV 4:4:4,36bpp, (1 Cr & Cb sample per 1x1 Y samples), little-endian
-        case AV_PIX_FMT_YUV444P16LE: ///< planar YUV 4:4:4, 48bpp, (1 Cr & Cb sample per 1x1 Y samples), little-endian
-        case AV_PIX_FMT_YUV444P16BE: ///< planar YUV 4:4:4, 48bpp, (1 Cr & Cb sample per 1x1 Y samples), big-endian
-            return VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
-        default:
-            break;
+        // Derived from ffmpeg's own pixel-format descriptor rather than a hand-written
+        // AV_PIX_FMT_* list. Such a list is one missing entry away from a wrong answer:
+        // an unlisted 4:2:2 high-bit-depth format (AV_PIX_FMT_YUV422P10LE, YUV422P12LE)
+        // falls through to a default that returns some other subsampling entirely, and
+        // that wrong-but-plausible answer propagates into the video profile and the
+        // display format. log2_chroma_w/h are defined for every pixel format ffmpeg
+        // knows, so this cannot go stale as formats are added.
+        const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(format);
+        if (desc == nullptr) {
+            std::cerr << "\nUnknown pixel format: " << format << std::endl;
+            return VK_VIDEO_CHROMA_SUBSAMPLING_INVALID_KHR;
         }
-        // assert(!"Unknown CHROMA_SUBSAMPLING!");
-        std::cerr << "\nUnknown CHROMA_SUBSAMPLING from format: " << format << std::endl;
-        return VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
+
+        if (desc->nb_components < 3) {
+            return VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR;
+        }
+
+        // Planar RGB (e.g. AV_PIX_FMT_GBRP12LE, which HEVC RExt 4:4:4 decodes to) reports
+        // log2_chroma_w/h of 0/0 and so lands on 4:4:4 here -- the same treatment the
+        // Codec SDK's demuxer gives it.
+        if ((desc->log2_chroma_w == 1) && (desc->log2_chroma_h == 1)) {
+            return VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;
+        }
+        if ((desc->log2_chroma_w == 1) && (desc->log2_chroma_h == 0)) {
+            return VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR;
+        }
+        if ((desc->log2_chroma_w == 0) && (desc->log2_chroma_h == 0)) {
+            return VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
+        }
+
+        // 4:1:1 / 4:1:0 and friends: real, but no VkVideoChromaSubsamplingFlagBitsKHR
+        // for them. Report INVALID so the profile query fails loudly rather than
+        // proceeding under a chroma geometry we made up.
+        std::cerr << "\nUnsupported chroma subsampling (log2 chroma w=" << (int)desc->log2_chroma_w
+                  << " h=" << (int)desc->log2_chroma_h << ") for pixel format "
+                  << format << " (" << desc->name << ")" << std::endl;
+        return VK_VIDEO_CHROMA_SUBSAMPLING_INVALID_KHR;
     }
 
     virtual uint32_t GetProfileIdc() const

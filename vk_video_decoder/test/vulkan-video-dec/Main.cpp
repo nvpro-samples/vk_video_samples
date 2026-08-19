@@ -59,6 +59,7 @@ int main(int argc, const char** argv)
                                                 decoderConfig.initialWidth,
                                                 decoderConfig.initialHeight,
                                                 decoderConfig.initialBitdepth,
+                                                decoderConfig.initialChroma,
                                                 videoStreamDemuxer);
     if (result != VK_SUCCESS) {
         assert(!"Can't initialize the VideoStreamDemuxer!");

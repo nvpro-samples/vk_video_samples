@@ -46,10 +46,14 @@ public:
     static VkResult Create(const DecoderConfig& settings, const VulkanDeviceContext* vkDevCtx,
                            VkSharedBaseObj<VulkanVideoProcessor>& vulkanVideoProcessor = invalidVulkanVideoProcessor);
 
-    int32_t Initialize(const VulkanDeviceContext* vkDevCtx,
-                       VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
-                       VkSharedBaseObj<VkVideoFrameOutput>& frameToFile,
-                       DecoderConfig& programConfig);
+    // Returns VK_SUCCESS, or the VkResult that made initialization impossible.
+    // A profile the device cannot decode reports the driver's own rejection
+    // (typically VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR) so the caller
+    // can tell "this hardware does not do that" apart from "something broke".
+    VkResult Initialize(const VulkanDeviceContext* vkDevCtx,
+                        VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
+                        VkSharedBaseObj<VkVideoFrameOutput>& frameToFile,
+                        DecoderConfig& programConfig);
 
     void Deinit();
 

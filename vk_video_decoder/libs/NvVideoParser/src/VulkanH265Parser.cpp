@@ -2511,10 +2511,22 @@ bool VulkanH265Decoder::dpb_sequence_start(VkSharedBaseObj<hevc_seq_param_s>& sp
     // zero in bitstream. The general_profile_idc = 0 means that the bitstream
     // conforms to one of the valid profiles as per H.265 standard.
     if (sps->pProfileTierLevel->general_profile_idc == 0) {
-        if (sps->bit_depth_luma_minus8 == 0) {
-            nvsi.codecProfile = STD_VIDEO_H265_PROFILE_IDC_MAIN;
-        } else if (sps->bit_depth_luma_minus8 == 2 || sps->bit_depth_luma_minus8 == 4) {
+        // 12-bit and any non-4:2:0 chroma are Range Extensions (Annex A.3.5), NOT Main 10:
+        // Main 10 is 4:2:0 at 8 or 10 bits only, so folding a bit_depth_luma_minus8 of 4
+        // (12-bit) into MAIN_10 names a profile that cannot describe the stream and that
+        // the driver rejects. Every 12-bit format is bound to Range Extensions, which is
+        // also what x265 signals (general_profile_idc = 4).
+        const bool isRangeExtensions =
+                (sps->bit_depth_luma_minus8   > 2) ||
+                (sps->bit_depth_chroma_minus8 > 2) ||
+                (sps->chroma_format_idc != STD_VIDEO_H265_CHROMA_FORMAT_IDC_420);
+
+        if (isRangeExtensions) {
+            nvsi.codecProfile = STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS;
+        } else if ((sps->bit_depth_luma_minus8 == 2) || (sps->bit_depth_chroma_minus8 == 2)) {
             nvsi.codecProfile = STD_VIDEO_H265_PROFILE_IDC_MAIN_10;
+        } else {
+            nvsi.codecProfile = STD_VIDEO_H265_PROFILE_IDC_MAIN;
         }
     }
 

@@ -38,10 +38,10 @@ size_t ConvertFrameToNv12(const VulkanDeviceContext* vkDevCtx, int32_t frameWidt
                          VkSharedBaseObj<VkImageResource>& imageResource,
                          uint8_t* pOutBuffer, const VkMpFormatInfo* mpInfo);
 
-int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
-                                         VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
-                                         VkSharedBaseObj<VkVideoFrameOutput>& frameToFile,
-                                         DecoderConfig& programConfig)
+VkResult VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
+                                          VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
+                                          VkSharedBaseObj<VkVideoFrameOutput>& frameToFile,
+                                          DecoderConfig& programConfig)
 {
 
     int32_t videoQueueIndx =  programConfig.queueId;
@@ -64,7 +64,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
         std::cerr << "videoQueueIndx is out of bounds: " << videoQueueIndx <<
                      " Max decode queues: " << vkDevCtx->GetVideoDecodeNumQueues() << std::endl;
         assert(!"Invalid Video Queue");
-        return -1;
+        return VK_ERROR_INITIALIZATION_FAILED;
     }
 
     Deinit();
@@ -86,6 +86,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     assert(result == VK_SUCCESS);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "\nERROR: Create VulkanVideoFrameBuffer result: 0x%x\n", result);
+        return result;
     }
 
     m_frameToFile = frameToFile;
@@ -129,6 +130,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     }
     if (result != VK_SUCCESS) {
         fprintf(stderr, "\nERROR: Create VkVideoDecoder result: 0x%x\n", result);
+        return result;
     }
 
     VkVideoCoreProfile videoProfile ({
@@ -143,8 +145,9 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                                                        vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                                        m_videoStreamDemuxer->GetVideoCodec())) {
         std::cout << "*** The video codec " << VkVideoCoreProfile::CodecToName(m_videoStreamDemuxer->GetVideoCodec()) << " is not supported! ***" << std::endl;
-        assert(!"The video codec is not supported");
-        return -1;
+        // A codec this device does not implement is a legitimate runtime answer,
+        // not a programming error -- report it and let the caller exit cleanly.
+        return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
     }
 
     VkVideoCapabilitiesKHR videoCapabilities;
@@ -155,8 +158,12 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
 
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
-        assert(!"Could not get Video Capabilities!");
-        return -result;
+        // Chroma/bit-depth combinations the hardware does not decode land here
+        // (VP9 Profile 3, H.264 4:4:4, ...). The driver's rejection is the answer,
+        // so hand it back verbatim instead of asserting -- an assert() aborts the
+        // debug build on a legitimate input and vanishes under NDEBUG, leaving
+        // execution to continue into a decoder that was never initialized.
+        return result;
     }
 
     const uint32_t defaultMinBufferSize = 2 * 1024 * 1024; // 2MB
@@ -168,6 +175,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
     assert(result == VK_SUCCESS);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "\nERROR: CreateParser() result: 0x%x\n", result);
+        return result;
     }
 
     m_loopCount = loopCount;
@@ -190,7 +198,7 @@ int32_t VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
         }
     }
 
-    return 0;
+    return VK_SUCCESS;
 }
 
 VkResult VulkanVideoProcessor::Create(const DecoderConfig& settings, const VulkanDeviceContext* vkDevCtx,
@@ -225,15 +233,21 @@ VkFormat VulkanVideoProcessor::GetFrameImageFormat()  const
 {
     VkFormat frameImageFormat = VK_FORMAT_UNDEFINED;
     if (m_videoStreamDemuxer) {
-        if (m_videoStreamDemuxer->GetBitDepth() == 8) {
-            frameImageFormat = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
-        } else if (m_videoStreamDemuxer->GetBitDepth() == 10) {
-            frameImageFormat = VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16;
-        } else if (m_videoStreamDemuxer->GetBitDepth() == 12) {
-            frameImageFormat = VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16;
-        } else {
-            assert(0);
-        }
+        // This seeds the display path (the swapchain's test image and the initial
+        // VkSamplerYcbcrConversion), so it must name the format the decoder will
+        // actually produce -- the CHROMA GEOMETRY as much as the depth. Deriving it
+        // from bit depth alone names a 4:2:0 format for every stream and hands the
+        // sampler the wrong geometry for all 4:2:2 and 4:4:4 content.
+        //
+        // Semi-planar is what the driver currently advertises as its decode output for
+        // 4:2:0, 4:2:2 and 4:4:4 alike at 8, 10 and 12 bits
+        // (nvVkVideoPhysicalDevice.cpp outputFormats* tables), mirroring NVDEC's
+        // P016BL / P216BL / Y16_U16V16_444BL render targets.
+        frameImageFormat = VkVideoCoreProfile::CodecGetVkFormat(
+                (VkVideoChromaSubsamplingFlagBitsKHR)m_videoStreamDemuxer->GetChromaSubsampling(),
+                (VkVideoComponentBitDepthFlagBitsKHR)m_videoStreamDemuxer->GetLumaBitDepth(),
+                VkVideoCoreProfile::PLANE_LAYOUT_SEMIPLANAR_2);
+        assert(frameImageFormat != VK_FORMAT_UNDEFINED);
     }
 
     return frameImageFormat;
