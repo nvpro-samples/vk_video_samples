@@ -52,6 +52,34 @@ class VideoTestStatus(Enum):
     SKIPPED = "skipped"  # Test in skip list for detected driver
 
 
+class ExpectedResult(Enum):
+    """What a test cell is asserting.
+
+    SUCCESS  -- the normal case: the operation must complete.
+    UNSUPPORTED -- a negative cell. The device is known not to implement this
+        profile (VP9 Profile 3, H.264 4:4:4 decode, 12-bit encode, ...), so the
+        correct behaviour is a clean capability rejection. Without this value a
+        correct rejection and an untested cell are indistinguishable: such a
+        cell can only be left red forever or skipped, and a skipped cell stops
+        proving anything the day the driver starts silently accepting the
+        profile and producing garbage.
+    """
+    SUCCESS = "success"
+    UNSUPPORTED = "unsupported"
+
+
+# VkResult values a negative cell may assert on. The apps print both the signed
+# decimal and the hex form of the result, so either spelling is searched for.
+VK_RESULT_CODES = {
+    "VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR": -1000023001,
+    "VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR": -1000023003,
+    "VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR": -1000023004,
+    "VK_ERROR_VIDEO_STD_VERSION_NOT_SUPPORTED_KHR": -1000023005,
+    "VK_ERROR_FORMAT_NOT_SUPPORTED": -11,
+    "VK_ERROR_FEATURE_NOT_PRESENT": -8,
+}
+
+
 class SkipFilter(Enum):
     """Enumeration for filtering skipped tests"""
     ENABLED = "enabled"      # Only non-skipped tests (default)
@@ -243,10 +271,21 @@ class BaseTestConfig:  # pylint: disable=too-many-instance-attributes
     source_checksum: str = ""
     source_filepath: str = ""
     extended: bool = False
+    # Negative cells: see ExpectedResult. expected_vk_result names the specific
+    # VkResult the rejection must carry, so "rejected for the right reason" is
+    # distinguishable from "rejected because the file was missing".
+    expected_result: ExpectedResult = ExpectedResult.SUCCESS
+    expected_vk_result: str = ""
 
     @staticmethod
     def _parse_base_fields(data: dict) -> dict:
         """Extract base config fields from a dictionary."""
+        expected_vk_result = data.get("expected_vk_result", "")
+        if expected_vk_result and expected_vk_result not in VK_RESULT_CODES:
+            raise ValueError(
+                f"unknown expected_vk_result {expected_vk_result!r}; "
+                f"known values: {sorted(VK_RESULT_CODES)}"
+            )
         return {
             "name": data["name"],
             "codec": CodecType(data["codec"]),
@@ -257,6 +296,10 @@ class BaseTestConfig:  # pylint: disable=too-many-instance-attributes
             "source_checksum": data["source_checksum"],
             "source_filepath": data["source_filepath"],
             "extended": data.get("extended", False),
+            "expected_result": ExpectedResult(
+                data.get("expected_result", "success")
+            ),
+            "expected_vk_result": expected_vk_result,
         }
 
 
@@ -375,6 +418,39 @@ def create_error_result(config: BaseTestConfig, error_message: str,
     )
 
 
+# Reason a test is skipped when its content is absent and unfetchable. Defined
+# here, beside create_skipped_result(), so the decode and encode frameworks share
+# one wording instead of each carrying a copy.
+SKIP_REASON_NO_CONTENT = (
+    "Sample content is not present and the cell has no source_url to fetch "
+    "it from -- it is generated locally. See the sample description for the "
+    "script that regenerates it."
+)
+
+
+def _sample_has_url(sample) -> bool:
+    """Whether a sample declares somewhere to download its content from."""
+    if getattr(sample, 'url', None):
+        return True
+    if getattr(sample, 'download_url', None):
+        return True
+    if not hasattr(sample, 'to_fetchable_resource'):
+        return False
+    try:
+        resource = sample.to_fetchable_resource()
+    except (AttributeError, TypeError):
+        return False
+    return bool(getattr(resource, 'url', None))
+
+
+def _sample_exists(sample) -> bool:
+    """Best-effort existence probe that works for samples and their adapters."""
+    try:
+        return bool(sample.exists())
+    except (AttributeError, OSError):
+        return False
+
+
 def check_sample_resources(samples, sample_type: str = "resource",
                            auto_download: bool = True) -> bool:
     """
@@ -422,6 +498,26 @@ def check_sample_resources(samples, sample_type: str = "resource",
     return True
 
 
+def create_skipped_result(config: BaseTestConfig, reason: str) -> TestResult:
+    """Create a TestResult for a test that could not be attempted.
+
+    Distinct from create_error_result(): the test did not fail, it never ran.
+    Used when a sample's content is absent AND the cell has no source_url to
+    fetch it from, which means the content is generated locally and this machine
+    does not have it. Reporting that as a failure would make every checkout
+    without the generated content look broken.
+    """
+    return TestResult(
+        config=config,
+        returncode=0,
+        stdout="",
+        stderr="",
+        execution_time=0,
+        status=VideoTestStatus.SKIPPED,
+        error_message=f"Skipped: {reason}",
+    )
+
+
 def download_sample_assets(samples, asset_type: str = "test") -> bool:
     """
     Download sample assets using integrated fetch system
@@ -435,29 +531,31 @@ def download_sample_assets(samples, asset_type: str = "test") -> bool:
     """
     print(f"📥 Downloading {asset_type} assets...")
 
-    # Convert samples to fetchable resources (skip samples with no URL)
+    # Convert samples to fetchable resources. A sample with no source_url is
+    # generated locally rather than downloaded (see the script named in its
+    # description), so it is not an error here -- but it must not be dropped
+    # silently either: reporting success for the samples that DO have a URL while
+    # saying nothing about the rest tells the caller every resource is present,
+    # and leaves the tests to fail one by one on a missing file.
     fetchable_resources = []
+    unfetchable_missing = []
     for sample in samples:
-        # Check if sample has URL directly or via to_fetchable_resource()
-        has_url = False
-        if hasattr(sample, 'url') and sample.url:
-            has_url = True
-        elif hasattr(sample, 'download_url') and sample.download_url:
-            has_url = True
-        elif hasattr(sample, 'to_fetchable_resource'):
-            # For adapter classes, check the fetchable resource
-            try:
-                resource = sample.to_fetchable_resource()
-                if hasattr(resource, 'url') and resource.url:
-                    has_url = True
-            except (AttributeError, TypeError):
-                pass
-
-        if has_url:
+        if _sample_has_url(sample):
             fetchable_resources.append(sample.to_fetchable_resource())
+        elif not _sample_exists(sample):
+            unfetchable_missing.append(str(getattr(sample, 'full_path', '?')))
+
+    if unfetchable_missing:
+        print(f"ℹ️  {len(unfetchable_missing)} {asset_type} file(s) have no "
+              "source_url and are generated locally, not downloaded:")
+        for path in sorted(unfetchable_missing):
+            print(f"    {path}")
+        print("    Regenerate with the script named in each sample's "
+              "description. Tests needing them are SKIPPED, not failed.")
 
     if not fetchable_resources:
-        print(f"✓ No {asset_type} assets to download")
+        if not unfetchable_missing:
+            print(f"✓ No {asset_type} assets to download")
         return True
 
     fetcher = SampleFetcher(fetchable_resources)

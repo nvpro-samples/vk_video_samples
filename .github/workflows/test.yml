@@ -55,6 +55,7 @@ jobs:
           sudo apt install --assume-yes --no-install-recommends \
             ninja-build \
             cmake \
+            ffmpeg \
             libx11-dev \
             libwayland-dev \
             libavformat-dev \
@@ -79,6 +80,17 @@ jobs:
       - name: Run unit tests
         run: |
           pytest tests/unit_tests/ -v
+
+      # Content for the negative cells is generated, not downloaded: it is derived
+      # from the public YUVs the suite already fetches. Building it here is cheap and
+      # lets those cells run instead of being skipped for absent content. The script
+      # gates every artifact it writes (exact byte count, ffprobe profile/pix_fmt, and
+      # a peak sample above the 10-bit range for the 12-bit input), so a wrong-format
+      # result fails here rather than becoming a test that passes for the wrong
+      # reason.
+      - name: Generate negative-cell test content
+        run: |
+          OUT=tests/resources/video/negative bash ./scripts/gen_negative_test_content.sh
 
       - name: Run codec test framework
         run: |

@@ -71,9 +71,15 @@ def print_detailed_results(results: List[TestResult]) -> None:
         test_name = (config.display_name
                      if hasattr(config, 'display_name')
                      else config.name)
+        # A negative cell passes by being rejected -- say so, otherwise a bare
+        # PASS reads as "this profile decoded fine", the opposite of the truth.
+        note = ""
+        if result.meta.get("expected_rejection"):
+            note = "  [negative cell: " + result.meta.get(
+                "rejection_note", "expected rejection") + "]"
         print(
             f"{status_symbol} {config.codec.value:4} {test_name:35} - "
-            f"{status:5} ({result.execution_time:.2f}s)"
+            f"{status:5} ({result.execution_time:.2f}s){note}"
         )
 
 

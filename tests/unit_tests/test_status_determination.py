@@ -22,28 +22,8 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.libs.video_test_config_base import VideoTestStatus, SkipFilter
-from tests.libs.video_test_framework_base import VulkanVideoTestFrameworkBase
-
-
-class MockFramework(VulkanVideoTestFrameworkBase):
-    """Mock framework for testing determine_test_status"""
-
-    def __init__(self):
-        super().__init__(executable_path=None)
-        self._skip_rules = []
-        self._options['skip_filter'] = SkipFilter.ENABLED
-
-    def check_resources(self, _auto_download=True, _test_configs=None):
-        """Check resources - mock implementation always returns True."""
-        return True
-
-    def create_test_suite(self):
-        """Create test suite - mock implementation returns empty list."""
-        return []
-
-    def run_single_test(self, _config):
-        """Run single test - mock implementation does nothing."""
+from tests.libs.video_test_config_base import VideoTestStatus
+from tests.unit_tests.mock_framework import MockFramework
 
 
 class TestDetermineVideoTestStatus:
