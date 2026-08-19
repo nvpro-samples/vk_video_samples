@@ -7,46 +7,48 @@
       "source_filepath": "video/av1/av1-argon_test1019.obu",
       "format": "vvs",
       "drivers": [
-        "radv"
+        "all"
       ],
       "platforms": [
         "all"
       ],
       "reproduction": "always",
-      "reason": "Argon test - under investigation. Assertion `!(m_ownedByDisplayMask & (1 << pictureIndex))' fails",
+      "reason": "TEST ISSUE plus no usable reference. Multi-resolution Argon vector; additionally dav1d fails on the stream ('Unknown Metadata OBU type 0') and writes 0 bytes, so ffmpeg cannot arbitrate correctness either. The assertion failure `!(m_ownedByDisplayMask & (1 << pictureIndex))' is a separate symptom worth fixing on its own; a single flat raw-YUV md5 cannot validate this stream in any case.",
       "bug_url": "https://github.com/KhronosGroup/Vulkan-Video-Samples/issues/138",
-      "date_added": "2025-01-27"
+      "date_added": "2025-01-27",
+      "date_updated": "2026-08-18"
     },
     {
       "name": "av1_argon_test787",
       "source_filepath": "video/av1/av1-argon_test787.obu",
       "format": "vvs",
       "drivers": [
-        "radv"
+        "all"
       ],
       "platforms": [
         "all"
       ],
       "reproduction": "always",
-      "reason": "Argon test - needs investigation, OBU frame header parsing issue.",
+      "reason": "TEST ISSUE, not a decode defect. This is a MULTI-RESOLUTION stream: 6 frames across 5 geometries (39x223, 59x82, 105x89 x2, 192x189, 35x32), as ffprobe -show_frames reports. expected_output_md5 is the md5 of ONE flat raw-YUV file, which carries ONE geometry, so no correct decoder can satisfy it -- the hash would depend entirely on which geometry was written and how the other frames were fitted. A W39 H90 vs W105 H89 disagreement reads like an OBU frame header parsing issue but is not a pixel error: there simply is no single resolution (we report the first frame's width, ffmpeg's stream probe reports the modal one). Needs per-frame validation to be testable at all.",
       "bug_url": "https://github.com/KhronosGroup/Vulkan-Video-Samples/issues/124",
-      "date_added": "2025-01-27"
+      "date_added": "2025-01-27",
+      "date_updated": "2026-08-18"
     },
     {
       "name": "av1_argon_test9354_2",
       "source_filepath": "video/av1/av1-argon_test9354_2.obu",
       "format": "vvs",
       "drivers": [
-        "radv",
-        "anv"
+        "all"
       ],
       "platforms": [
         "all"
       ],
       "reproduction": "always",
-      "reason": "Argon test - needs investigation. Resolution change issue.",
+      "reason": "TEST ISSUE, not a decode defect. MULTI-RESOLUTION stream: 14 frames across 8 geometries (16x323 x4, 21x202, 22x924, 23x744, 357x18, 417x20, 802x17 x5). The resolution changes are a property of the STREAM, which changes resolution by design -- that is the conformance feature under test, not a decoder fault. expected_output_md5 (one flat raw-YUV file, one geometry) cannot express it. Needs per-frame validation.",
       "bug_url": "https://github.com/KhronosGroup/Vulkan-Video-Samples/issues/125",
-      "date_added": "2025-01-27"
+      "date_added": "2025-01-27",
+      "date_updated": "2026-08-18"
     },
     {
       "name": "vp9_show_existing_frames",

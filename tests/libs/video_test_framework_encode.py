@@ -29,6 +29,8 @@ from tests.libs.video_test_config_base import (
     VideoTestStatus,
     check_sample_resources,
     create_error_result,
+    create_skipped_result,
+    SKIP_REASON_NO_CONTENT,
     load_samples_from_json,
 )
 from tests.libs.video_test_framework_base import (
@@ -235,6 +237,13 @@ class VulkanVideoEncodeTestFramework(VulkanVideoTestFrameworkBase):
 
         # Use the YUV file specified in the test configuration
         yuv_file = config.full_yuv_path
+        if not yuv_file.exists():
+            # Same rule as the decoder: content with no source_url is generated
+            # locally, so its absence is a skip, not a failure.
+            if not config.source_url:
+                return create_skipped_result(config, SKIP_REASON_NO_CONTENT)
+            return create_error_result(
+                config, f"Input YUV file not found: {yuv_file}")
 
         # Base command
         cmd = [

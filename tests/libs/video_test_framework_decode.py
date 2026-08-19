@@ -28,6 +28,8 @@ from tests.libs.video_test_config_base import (
     VideoTestStatus,
     check_sample_resources,
     create_error_result,
+    create_skipped_result,
+    SKIP_REASON_NO_CONTENT,
     load_samples_from_json,
 )
 from tests.libs.video_test_framework_base import (
@@ -158,6 +160,12 @@ class VulkanVideoDecodeTestFramework(VulkanVideoTestFrameworkBase):
         input_file = config.full_path
 
         if not input_file.exists():
+            # No source_url means the content is generated locally rather than
+            # downloaded, so its absence is "this machine does not have it",
+            # not "the decoder is broken". Failing here would paint every
+            # checkout without the generated content red.
+            if not config.source_url:
+                return create_skipped_result(config, SKIP_REASON_NO_CONTENT)
             return create_error_result(
                 config,
                 f"Input file not found: {input_file}",
