@@ -14,6 +14,7 @@
 * limitations under the License.
 */
 
+#include <iostream>
 #include <stdio.h>
 #include <string.h>
 #include "VulkanComputePipeline.h"
@@ -52,6 +53,19 @@ VkResult VulkanComputePipeline::CreatePipeline(const VulkanDeviceContext* vkDevC
                                                     shaderSize,
                                                     VK_SHADER_STAGE_COMPUTE_BIT,
                                                     m_vkDevCtx);
+    if (m_shaderModule == VK_NULL_HANDLE) {
+        // BuildGlslShader() returns VK_NULL_HANDLE when the GLSL fails to compile. A null
+        // module must never reach VkComputePipelineCreateInfo::stage.module: pipeline
+        // creation dereferences it and the process dies there, which destroys the compiler
+        // diagnostics printed just above and gives no hint which shader was at fault. A
+        // generator that emits invalid GLSL is a bug worth seeing, so it has to surface as
+        // an error. This guard covers every compute filter, not only the generators known
+        // to be able to emit invalid GLSL.
+        std::cerr << "VulkanComputePipeline: shader failed to compile; "
+                     "see the compiler diagnostics above. Pipeline not created."
+                  << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
 
     // Create the pipeline
     VkComputePipelineCreateInfo computePipelineCreateInfo {};
