@@ -257,12 +257,14 @@ VkResult VulkanVideoDecoderImpl::Initialize(VkInstance vkInstance,
         return result;
     }
 
-    int32_t initStatus = m_vulkanVideoProcessor->Initialize(m_pVkDevCtxt,
-                                                            videoStreamDemuxer,
-                                                            frameToFile,
-                                                            m_decoderConfig);
-    if (initStatus != 0) {
-        return VK_ERROR_INITIALIZATION_FAILED;
+    result = m_vulkanVideoProcessor->Initialize(m_pVkDevCtxt,
+                                                videoStreamDemuxer,
+                                                frameToFile,
+                                                m_decoderConfig);
+    if (result != VK_SUCCESS) {
+        // Propagate the driver's own verdict -- callers distinguish "this profile
+        // is not supported here" from a genuine initialization failure.
+        return result;
     }
 
     return result;

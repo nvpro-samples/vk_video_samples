@@ -32,6 +32,7 @@ public:
                            int32_t defaultWidth = 1920,
                            int32_t defaultHeight = 1080,
                            int32_t defaultBitDepth = 12,
+                           int32_t defaultChroma = 420,
                            VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer = invalidDemuxer);
 
     static bool CheckFile(const char* szInFilePath);
@@ -69,6 +70,7 @@ VkResult ElementaryStreamCreate(const char *pFilePath,
                                 int32_t defaultWidth,
                                 int32_t defaultHeight,
                                 int32_t defaultBitDepth,
+                                int32_t defaultChroma,
                                 VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer);
 
 #ifdef FFMPEG_DEMUXER_SUPPORT

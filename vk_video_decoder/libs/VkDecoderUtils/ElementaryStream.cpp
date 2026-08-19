@@ -30,11 +30,13 @@ public:
                      VkVideoCodecOperationFlagBitsKHR forceParserType,
                      int32_t defaultWidth,
                      int32_t defaultHeight,
-                     int32_t defaultBitDepth)
+                     int32_t defaultBitDepth,
+                     int32_t defaultChroma)
         : VideoStreamDemuxer(),
           m_width(defaultWidth)
         , m_height(defaultHeight)
         , m_bitDepth(defaultBitDepth)
+        , m_chroma(defaultChroma)
         , m_videoCodecType(forceParserType)
 #ifndef USE_SIMPLE_MALLOC
         , m_inputVideoStreamMmap()
@@ -97,6 +99,7 @@ public:
         : m_width(176)
         , m_height(144)
         , m_bitDepth(8)
+        , m_chroma(420)
         , m_videoCodecType(codecType)
 #ifndef USE_SIMPLE_MALLOC
         , m_inputVideoStreamMmap()
@@ -120,12 +123,14 @@ public:
                            int32_t defaultWidth,
                            int32_t defaultHeight,
                            int32_t defaultBitDepth,
+                           int32_t defaultChroma,
                            VkSharedBaseObj<ElementaryStream>& elementaryStream)
     {
         VkSharedBaseObj<ElementaryStream> newElementaryStream(new ElementaryStream(pFilePath, codecType,
                                                                                    defaultWidth,
                                                                                    defaultHeight,
-                                                                                   defaultBitDepth));
+                                                                                   defaultBitDepth,
+                                                                                   defaultChroma));
 
          if ((newElementaryStream) && (newElementaryStream->Initialize() >= 0)) {
              elementaryStream = newElementaryStream;
@@ -173,7 +178,19 @@ public:
 
     virtual VkVideoChromaSubsamplingFlagsKHR GetChromaSubsampling() const
     {
-        return VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;
+        // A raw elementary stream has no container to read this from, so it comes from
+        // --initialChroma. A fixed answer here silently builds a {4:2:0, N-bit} profile
+        // for a 4:2:2 or 4:4:4 stream; the driver then rejects that profile with nothing
+        // to indicate that the chroma format was the cause.
+        switch (m_chroma) {
+        case 400: return VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR;
+        case 420: return VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;
+        case 422: return VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR;
+        case 444: return VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
+        default:
+            assert(!"Unknown chroma subsampling!");
+        }
+        return VK_VIDEO_CHROMA_SUBSAMPLING_INVALID_KHR;
     }
 
     virtual VkVideoComponentBitDepthFlagsKHR GetChromaBitDepth() const
@@ -196,12 +213,36 @@ public:
     }
     virtual uint32_t GetProfileIdc() const
     {
+        // Derived from the configured bit depth and chroma. A 12-bit or 4:2:2/4:4:4
+        // stream is not MAIN in any codec, and announcing MAIN for one builds a profile
+        // the driver rejects -- for HEVC in particular, every 12-bit format is bound to
+        // Range Extensions (x265 signals 12-bit via general_profile_idc=4), so MAIN
+        // cannot match.
         switch (m_videoCodecType) {
         case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR:
+            if (m_chroma == 444) {
+                return STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE;
+            } else if (m_chroma == 422) {
+                return STD_VIDEO_H264_PROFILE_IDC_HIGH_422;
+            } else if (m_bitDepth > 8) {
+                return STD_VIDEO_H264_PROFILE_IDC_HIGH_10;
+            }
             return STD_VIDEO_H264_PROFILE_IDC_MAIN;
         case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR:
+            if ((m_bitDepth > 10) || (m_chroma == 422) || (m_chroma == 444)) {
+                return STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS;
+            } else if (m_bitDepth > 8) {
+                return STD_VIDEO_H265_PROFILE_IDC_MAIN_10;
+            }
             return STD_VIDEO_H265_PROFILE_IDC_MAIN;
         case VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR:
+            // AV1 Main covers 8/10-bit 4:2:0 and monochrome; 4:2:2 is Professional and
+            // 4:4:4 is High.
+            if (m_chroma == 422) {
+                return STD_VIDEO_AV1_PROFILE_PROFESSIONAL;
+            } else if (m_chroma == 444) {
+                return STD_VIDEO_AV1_PROFILE_HIGH;
+            }
             return STD_VIDEO_AV1_PROFILE_MAIN;
         default:
             assert(0);
@@ -240,6 +281,7 @@ public:
 
 private:
     int32_t    m_width, m_height, m_bitDepth;
+    int32_t    m_chroma;   // 400 | 420 | 422 | 444
     VkVideoCodecOperationFlagBitsKHR m_videoCodecType;
 #ifndef USE_SIMPLE_MALLOC
     mio::basic_mmap<mio::access_mode::read, uint8_t> m_inputVideoStreamMmap;
@@ -254,6 +296,7 @@ VkResult ElementaryStreamCreate(const char *pFilePath,
                                 int32_t defaultWidth,
                                 int32_t defaultHeight,
                                 int32_t defaultBitDepth,
+                                int32_t defaultChroma,
                                 VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer)
 {
     VkSharedBaseObj<ElementaryStream> elementaryStream;
@@ -262,6 +305,7 @@ VkResult ElementaryStreamCreate(const char *pFilePath,
                                                defaultWidth,
                                                defaultHeight,
                                                defaultBitDepth,
+                                               defaultChroma,
                                                elementaryStream);
     if (result == VK_SUCCESS) {
         videoStreamDemuxer = elementaryStream;

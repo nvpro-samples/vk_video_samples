@@ -47,6 +47,7 @@ int main(int argc, const char **argv)
                                         decoderConfig.initialWidth,
                                         decoderConfig.initialHeight,
                                         decoderConfig.initialBitdepth,
+                                        decoderConfig.initialChroma,
                                         videoStreamDemuxer);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "Error: Failed to initialize VideoStreamDemuxer for file: %s\n",
@@ -158,7 +159,14 @@ int main(int argc, const char **argv)
             }
         }
 
-        vulkanVideoProcessor->Initialize(&vkDevCtxt, videoStreamDemuxer, frameToFile, decoderConfig);
+        result = vulkanVideoProcessor->Initialize(&vkDevCtxt, videoStreamDemuxer, frameToFile, decoderConfig);
+        if (result != VK_SUCCESS) {
+            // Includes the profile the device simply cannot decode, which must
+            // exit VVS_EXIT_UNSUPPORTED (69) rather than fall through to a
+            // decode loop over an uninitialized decoder and then report success.
+            fprintf(stderr, "Could not initialize the video processor: %d\n", result);
+            return ExitCodeFromVkResult(result);
+        }
 
         VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>> videoQueue(vulkanVideoProcessor);
         DecoderFrameProcessorState frameProcessor(&vkDevCtxt, videoQueue, 0);
@@ -227,7 +235,14 @@ int main(int argc, const char **argv)
             }
         }
 
-        vulkanVideoProcessor->Initialize(&vkDevCtxt, videoStreamDemuxer, frameToFile, decoderConfig);
+        result = vulkanVideoProcessor->Initialize(&vkDevCtxt, videoStreamDemuxer, frameToFile, decoderConfig);
+        if (result != VK_SUCCESS) {
+            // Includes the profile the device simply cannot decode, which must
+            // exit VVS_EXIT_UNSUPPORTED (69) rather than fall through to a
+            // decode loop over an uninitialized decoder and then report success.
+            fprintf(stderr, "Could not initialize the video processor: %d\n", result);
+            return ExitCodeFromVkResult(result);
+        }
 
         VkSharedBaseObj<VkVideoQueue<VulkanDecodedFrame>> videoQueue(vulkanVideoProcessor);
         DecoderFrameProcessorState frameProcessor(&vkDevCtxt, videoQueue, decoderConfig.decoderQueueSize);

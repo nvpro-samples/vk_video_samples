@@ -38,6 +38,7 @@ VkResult VideoStreamDemuxer::Create(const char *pFilePath,
                                     int32_t defaultWidth,
                                     int32_t defaultHeight,
                                     int32_t defaultBitDepth,
+                                    int32_t defaultChroma,
                                     VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer)
 {
     VideoStreamDemuxer::CheckFile(pFilePath);
@@ -58,11 +59,14 @@ VkResult VideoStreamDemuxer::Create(const char *pFilePath,
         assert(defaultWidth > 0);
         assert(defaultHeight > 0);
         assert((defaultBitDepth == 8) || (defaultBitDepth == 10) || (defaultBitDepth == 12));
+        assert((defaultChroma == 400) || (defaultChroma == 420) ||
+               (defaultChroma == 422) || (defaultChroma == 444));
         return ElementaryStreamCreate(pFilePath,
                                       codecType,
                                       defaultWidth,
                                       defaultHeight,
                                       defaultBitDepth,
+                                      defaultChroma,
                                       videoStreamDemuxer);
     }
 }

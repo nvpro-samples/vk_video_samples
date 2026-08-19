@@ -217,7 +217,11 @@ int VulkanFrame<FrameDataType>::AttachSwapchain(const Shell& sh)
 
     // Create per a frame draw context num == mSwapchainNumBufs.
 
-    const static VkSamplerYcbcrConversionCreateInfo defaultSamplerYcbcrConversionCreateInfo = {
+    // NOT static: every field after the first is a runtime value (imageFormat and the
+    // ycbcr model/range members). A function-local static is initialised once, on first
+    // entry, so a later stream with a different format would silently keep reusing the
+    // first stream's conversion.
+    const VkSamplerYcbcrConversionCreateInfo defaultSamplerYcbcrConversionCreateInfo = {
         VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO,
         NULL,
         imageFormat,
@@ -469,7 +473,14 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
 
     if (pPerDrawContext->samplerYcbcrConversion.GetSamplerYcbcrConversionCreateInfo().format != imageFormat) {
 
-        const static VkSamplerYcbcrConversionCreateInfo newSamplerYcbcrConversionCreateInfo = {
+        // NOT static. The guard above only enters when the conversion's format differs
+        // from the incoming image's, and a function-local static captures imageFormat on
+        // the FIRST entry and never updates -- so the guard would fire on every
+        // subsequent frame while handing UpdatePerDrawContexts the stale format forever.
+        // That bites as soon as two formats appear in one session, e.g. the 8-bit
+        // test-pattern frame followed by real 12-bit decoded frames, which is exactly
+        // the 12-bit display path.
+        const VkSamplerYcbcrConversionCreateInfo newSamplerYcbcrConversionCreateInfo = {
             VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO,
             NULL,
             imageFormat,

@@ -48,6 +48,7 @@ struct DecoderConfig {
         initialWidth = 1920;
         initialHeight = 1080;
         initialBitdepth = 8;
+        initialChroma = 420;
         videoWidth = 0;
         videoHeight = 0;
         queueCount = 1;
@@ -158,6 +159,32 @@ struct DecoderConfig {
             {"--initialHeight", "-h", 1, "Initial height of the video",
                 [this](const char **args, const ProgramArgs &a) {
                     initialHeight = std::atoi(args[0]);
+                    return true;
+                }},
+            {"--initialBitdepth", nullptr, 1,
+                "Initial bit depth of the video: 8, 10 or 12. Only consulted on the raw "
+                "elementary-stream path (--disableStrDemux), where there is no container "
+                "to read it from; the ffmpeg demuxer derives it from the stream instead.",
+                [this](const char **args, const ProgramArgs &a) {
+                    const int bitDepth = std::atoi(args[0]);
+                    if ((bitDepth != 8) && (bitDepth != 10) && (bitDepth != 12)) {
+                        fprintf(stderr, "Invalid --initialBitdepth %d: must be 8, 10 or 12\n", bitDepth);
+                        return false;
+                    }
+                    initialBitdepth = bitDepth;
+                    return true;
+                }},
+            {"--initialChroma", nullptr, 1,
+                "Initial chroma subsampling of the video: 400, 420, 422 or 444. Same scope "
+                "as --initialBitdepth -- raw elementary streams only. Getting this wrong "
+                "builds a video profile the driver will reject, so it must match the stream.",
+                [this](const char **args, const ProgramArgs &a) {
+                    const int chroma = std::atoi(args[0]);
+                    if ((chroma != 400) && (chroma != 420) && (chroma != 422) && (chroma != 444)) {
+                        fprintf(stderr, "Invalid --initialChroma %d: must be 400, 420, 422 or 444\n", chroma);
+                        return false;
+                    }
+                    initialChroma = chroma;
                     return true;
                 }},
             {"--validate", "-v", 0, "Validate input bitstream",
@@ -455,6 +482,7 @@ struct DecoderConfig {
     int initialWidth;
     int initialHeight;
     int initialBitdepth;
+    int initialChroma;      // 400 | 420 | 422 | 444
     int videoWidth;
     int videoHeight;
     int queueCount;
