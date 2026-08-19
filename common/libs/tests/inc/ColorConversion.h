@@ -431,6 +431,19 @@ void convertRGBAtoP210(const uint8_t* rgba,
                        std::vector<uint16_t>& uvPlane);
 
 /**
+ * @brief Convert RGBA buffer to P212 (12-bit 4:2:2)
+ *
+ * The 12-bit sibling of P210 / the 4:2:2 sibling of P012: chroma is averaged
+ * horizontally only, so the chroma plane keeps full height. Samples are right-aligned
+ * 12-bit codes; MSB alignment for the Vulkan X4 formats is applied by the caller.
+ */
+void convertRGBAtoP212(const uint8_t* rgba,
+                       uint32_t width, uint32_t height,
+                       ColorPrimaries primaries, ColorRange range,
+                       std::vector<uint16_t>& yPlane,
+                       std::vector<uint16_t>& uvPlane);
+
+/**
  * @brief Convert RGBA buffer to I420 (3-plane)
  */
 void convertRGBAtoI420(const uint8_t* rgba,

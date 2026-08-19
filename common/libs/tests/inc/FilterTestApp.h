@@ -60,6 +60,7 @@ enum class TestFormat {
     // 4:2:2 YCbCr formats
     NV16,       // VK_FORMAT_G8_B8R8_2PLANE_422_UNORM (8-bit, 2-plane)
     P210,       // VK_FORMAT_G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16 (10-bit, 2-plane)
+    P212,       // VK_FORMAT_G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16 (12-bit, 2-plane)
     
     // 4:4:4 YCbCr formats
     YUV444,     // VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM (8-bit, 3-plane)

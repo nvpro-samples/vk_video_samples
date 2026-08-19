@@ -273,6 +273,16 @@ TestCaseConfig TC006_RGBA_to_P210() {
     return createRGBA2YCbCr("TC006_RGBA_to_P210", TestFormat::P210);
 }
 
+// P212 is the exact 12-bit counterpart of TC006/TC015's P210: same 2-plane 4:2:2 layout,
+// same 16-bit container, same R16/R16G16 plane views -- only the X4-vs-X6 padding differs.
+// It is here because requesting this format as a compute-filter output HANGS the GPU in TRV
+// (task #19). Running it in this harness is safe: isFormatSupported() does a per-plane
+// feature check AND an image-level vkGetPhysicalDeviceImageFormatProperties for the exact
+// image, and reports the case "unvalidated" rather than submitting work that wedges the GPU.
+TestCaseConfig TC006b_RGBA_to_P212() {
+    return createRGBA2YCbCr("TC006b_RGBA_to_P212", TestFormat::P212);
+}
+
 // 4:4:4 formats
 TestCaseConfig TC007_RGBA_to_YUV444() {
     return createRGBA2YCbCr("TC007_RGBA_to_YUV444", TestFormat::YUV444);
@@ -310,6 +320,10 @@ TestCaseConfig TC014_NV16_to_RGBA() {
 
 TestCaseConfig TC015_P210_to_RGBA() {
     return createYCbCr2RGBA("TC015_P210_to_RGBA", TestFormat::P210);
+}
+
+TestCaseConfig TC015b_P212_to_RGBA() {
+    return createYCbCr2RGBA("TC015b_P212_to_RGBA", TestFormat::P212);
 }
 
 // 4:4:4 formats
@@ -543,6 +557,87 @@ TestCaseConfig TC064_P010_to_NV12() {
     return config;
 }
 
+// Additional P012 (12-bit 4:2:0) coverage. TC003_RGBA_to_P012 covers the RGBA->12-bit
+// direction; these add the YCbCr<->YCbCr round trip (NV12->P012->NV12), so a 12-bit
+// regression cannot hide behind the colour-conversion path. They run in the guarded
+// harness, which refuses an unsupported format cleanly via isFormatSupported() rather than
+// submitting work that hangs the GPU.
+//
+// Together with the 4:2:2 cases below they separate "12-bit is broken" from "one 12-bit
+// format is broken": if these validate and a 12-bit 4:2:2 case does not, the fault is
+// specific to that format and not to 12-bit support in general.
+TestCaseConfig TC066_NV12_to_P012() {
+    TestCaseConfig config;
+    config.name = "TC066_NV12_to_P012";
+    config.filterType = VulkanFilterYuvCompute::YCBCRCOPY;
+    config.ycbcrModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
+    config.ycbcrRange = VK_SAMPLER_YCBCR_RANGE_ITU_FULL;
+
+    config.inputs.push_back({
+        .format = TestFormat::NV12,
+        .resourceType = ResourceType::Image,
+        .tiling = TilingMode::Optimal,
+        .width = 1920, .height = 1080,
+        .generateTestPattern = true, .validateOutput = false
+    });
+    config.outputs.push_back({
+        .format = TestFormat::P012,
+        .resourceType = ResourceType::Image,
+        .tiling = TilingMode::Optimal,
+        .width = 1920, .height = 1080,
+        .generateTestPattern = false, .validateOutput = true
+    });
+    return config;
+}
+
+TestCaseConfig TC067_P012_to_NV12() {
+    TestCaseConfig config;
+    config.name = "TC067_P012_to_NV12";
+    config.filterType = VulkanFilterYuvCompute::YCBCRCOPY;
+    config.ycbcrModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
+    config.ycbcrRange = VK_SAMPLER_YCBCR_RANGE_ITU_FULL;
+
+    config.inputs.push_back({
+        .format = TestFormat::P012,
+        .resourceType = ResourceType::Image,
+        .tiling = TilingMode::Optimal,
+        .width = 1920, .height = 1080,
+        .generateTestPattern = true, .validateOutput = false
+    });
+    config.outputs.push_back({
+        .format = TestFormat::NV12,
+        .resourceType = ResourceType::Image,
+        .tiling = TilingMode::Optimal,
+        .width = 1920, .height = 1080,
+        .generateTestPattern = false, .validateOutput = true
+    });
+    return config;
+}
+
+TestCaseConfig TC068_RGBA_to_P012() {
+    TestCaseConfig config;
+    config.name = "TC068_RGBA_to_P012";
+    config.filterType = VulkanFilterYuvCompute::RGBA2YCBCR;
+    config.ycbcrModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
+    config.ycbcrRange = VK_SAMPLER_YCBCR_RANGE_ITU_FULL;
+
+    config.inputs.push_back({
+        .format = TestFormat::RGBA8,
+        .resourceType = ResourceType::Image,
+        .tiling = TilingMode::Optimal,
+        .width = 1920, .height = 1080,
+        .generateTestPattern = true, .validateOutput = false
+    });
+    config.outputs.push_back({
+        .format = TestFormat::P012,
+        .resourceType = ResourceType::Image,
+        .tiling = TilingMode::Optimal,
+        .width = 1920, .height = 1080,
+        .generateTestPattern = false, .validateOutput = true
+    });
+    return config;
+}
+
 TestCaseConfig TC065_NV12_to_P010() {
     TestCaseConfig config;
     config.name = "TC065_NV12_to_P010";
@@ -751,6 +846,24 @@ TestCaseConfig TC080_RGBA_to_NV12_Linear() {
 
 TestCaseConfig TC081_RGBA_to_P010_Linear() {
     TestCaseConfig config = createRGBA2YCbCr("TC081_RGBA_to_P010_Linear", TestFormat::P010);
+    config.outputs[0].tiling = TilingMode::Linear;
+    return config;
+}
+
+// The exact shape of the TRV repro that hangs the GPU: a 12-bit 4:2:2 compute-filter
+// output in LINEAR tiling (TRV --postFilterFormat 14 --postFilterLinear 1). TC006b covers
+// the same format in OPTIMAL tiling, so a linear-specific defect shows up as a difference
+// between the two -- and here it is caught by isFormatSupported() instead of wedging the GPU.
+TestCaseConfig TC084_RGBA_to_P212_Linear() {
+    TestCaseConfig config = createRGBA2YCbCr("TC084_RGBA_to_P212_Linear", TestFormat::P212);
+    config.outputs[0].tiling = TilingMode::Linear;
+    return config;
+}
+
+// Control: the 10-bit 4:2:2 twin, same linear tiling. P210 works in TRV, so this pins
+// whether any difference is about 12-bit or about 4:2:2-in-linear generally.
+TestCaseConfig TC085_RGBA_to_P210_Linear() {
+    TestCaseConfig config = createRGBA2YCbCr("TC085_RGBA_to_P210_Linear", TestFormat::P210);
     config.outputs[0].tiling = TilingMode::Linear;
     return config;
 }
@@ -1112,7 +1225,19 @@ std::vector<TestCaseConfig> getAllStandardTests() {
         TC007_RGBA_to_YUV444(),
         // TC008_RGBA_to_Y410(),  // Disabled: Y410 is packed format, needs special shader
         
-        // YCbCr to RGBA (disabled: shader generation bug in YCBCR2RGBA)
+        // YCbCr to RGBA -- DISABLED. YCBCR2RGBA has several independent shader-generation
+        // defects; dump the generated GLSL with VK_FILTER_DUMP_SHADERS=1 to see them:
+        //   1. main() hardcodes a 2-plane fetch (`inputImageCbCr`), so a 3-plane input
+        //      (I420, 3-plane 4:4:4) generates GLSL that does not compile --
+        //      "ERROR: 2 compilation errors. No code generated." -- and CreatePipeline()
+        //      fails with VK_ERROR_INITIALIZATION_FAILED.
+        //   2. The output storage-image qualifier is emitted as `rgba16` even when the
+        //      output image is VK_FORMAT_R8G8B8A8_UNORM.
+        //   3. TC010/TC011/TC012 (2-plane 4:2:0, which the format-derived chroma ratios do
+        //      not affect) disagree with the CPU model, cause not yet isolated.
+        // Nothing in the encode, decode, TRV post-filter or display paths uses YCBCR2RGBA
+        // -- it is referenced only by this test file -- so this is a latent capability gap,
+        // not a shipping defect. Re-enable each case as the defect behind it is fixed.
         // TC010_NV12_to_RGBA(),
         // TC011_P010_to_RGBA(),
         // TC012_P012_to_RGBA(),
@@ -1154,8 +1279,20 @@ std::vector<TestCaseConfig> getAllStandardTests() {
         TC063_NV12_to_YUV444(),
         TC064_P010_to_NV12(),
         TC065_NV12_to_P010(),
+        TC006b_RGBA_to_P212(),
+        // TC015b_P212_to_RGBA(),   // same broken family -- see the block above
+        TC084_RGBA_to_P212_Linear(),
+        TC085_RGBA_to_P210_Linear(),
+        TC066_NV12_to_P012(),
+        TC067_P012_to_NV12(),
+        TC068_RGBA_to_P012(),
         
-        // Buffer I/O (disabled: not yet implemented in filter execution)
+        // Buffer I/O -- disabled because the TEST HARNESS does not implement it
+        // ("Buffer I/O not yet implemented in test", createTestInput/readback for
+        // ResourceType::Buffer). The gap is test-side, NOT a filter limitation --
+        // VulkanFilterYuvCompute has the XFER_IMAGE_TO_BUFFER / XFER_BUFFER_TO_IMAGE
+        // modes and the buffer RecordCommandBuffer overloads. Implementing the harness
+        // side would give real coverage of those modes.
         // TC070_RGBABuffer_to_NV12Image(),
         // TC071_RGBAImage_to_NV12Buffer(),
         // TC072_RGBABuffer_to_NV12Buffer(),
@@ -1170,15 +1307,16 @@ std::vector<TestCaseConfig> getAllStandardTests() {
         TC082_Linear_NV12_to_Optimal_NV12(),
         TC083_Optimal_NV12_to_Linear_NV12(),
         
-        // Multi-output (future)
-        // TC090_Dual_Output_Optimal_Linear(),
-        // TC091_Triple_Output_with_Subsampled(),
+        // Multi-output: one filter invocation writes several destination images,
+        // including a subsampled one. Both cases run and validate their output.
+        TC090_Dual_Output_Optimal_Linear(),
+        TC091_Triple_Output_with_Subsampled(),
         
         // Edge cases
         TC100_Small_Resolution_64x64(),
         TC101_Unaligned_Resolution_1922x1082(),
         TC102_4K_Resolution_3840x2160(),
-        // TC103_8K_Resolution_7680x4320(),  // May exceed GPU memory
+        TC103_8K_Resolution_7680x4320(),  // May exceed GPU memory
         TC104_Minimum_Resolution_2x2(),
     };
 }

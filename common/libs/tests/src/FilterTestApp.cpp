@@ -42,6 +42,7 @@ VkFormat toVkFormat(TestFormat format) {
         case TestFormat::I420:   return VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM;
         case TestFormat::NV16:   return VK_FORMAT_G8_B8R8_2PLANE_422_UNORM;
         case TestFormat::P210:   return VK_FORMAT_G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16;
+        case TestFormat::P212:   return VK_FORMAT_G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16;
         case TestFormat::YUV444: return VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM;
         case TestFormat::Y410:   return VK_FORMAT_A2B10G10R10_UNORM_PACK32;  // Packed AVYU 4:4:4
         default:                 return VK_FORMAT_UNDEFINED;
@@ -58,6 +59,7 @@ const char* testFormatName(TestFormat format) {
         case TestFormat::I420:   return "I420 (8-bit 4:2:0 3-plane)";
         case TestFormat::NV16:   return "NV16 (8-bit 4:2:2)";
         case TestFormat::P210:   return "P210 (10-bit 4:2:2)";
+        case TestFormat::P212:   return "P212 (12-bit 4:2:2)";
         case TestFormat::YUV444: return "YUV444 (8-bit 4:4:4)";
         case TestFormat::Y410:   return "Y410 (10-bit 4:4:4 packed)";
         default:                 return "Unknown";
@@ -138,7 +140,8 @@ static void appendSamples16(std::vector<uint8_t>& bytes, const std::vector<uint1
 static bool formatIs16BitSamples(TestFormat format) {
     return (format == TestFormat::P010) ||
            (format == TestFormat::P012) ||
-           (format == TestFormat::P210);
+           (format == TestFormat::P210) ||
+           (format == TestFormat::P212);
 }
 
 static size_t calculateImageSize(TestFormat format, uint32_t width, uint32_t height);
@@ -1122,7 +1125,8 @@ VkResult FilterTestApp::generateTestPattern(const TestIOSlot& slot,
         
         case TestFormat::P010:
         case TestFormat::P012:
-        case TestFormat::P210: {
+        case TestFormat::P210:
+        case TestFormat::P212: {
             // For 10/12-bit formats, generate 16-bit data
             std::vector<uint8_t> rgbaData;
             generateRGBATestPattern(TestPatternType::ColorBars,
@@ -1132,6 +1136,10 @@ VkResult FilterTestApp::generateTestPattern(const TestIOSlot& slot,
             std::vector<uint16_t> uvPlane16;
             if (slot.format == TestFormat::P210) {
                 convertRGBAtoP210(rgbaData.data(), slot.width, slot.height,
+                                  ColorPrimaries::BT709, ColorRange::Full,
+                                  yPlane16, uvPlane16);
+            } else if (slot.format == TestFormat::P212) {
+                convertRGBAtoP212(rgbaData.data(), slot.width, slot.height,
                                   ColorPrimaries::BT709, ColorRange::Full,
                                   yPlane16, uvPlane16);
             } else if (slot.format == TestFormat::P012) {
@@ -1382,10 +1390,14 @@ std::vector<uint8_t> FilterTestApp::generateReferenceOutput(const TestCaseConfig
                     
                     case TestFormat::P010:
                     case TestFormat::P012:
-                    case TestFormat::P210: {
+                    case TestFormat::P210:
+                    case TestFormat::P212: {
                         std::vector<uint16_t> yPlane16, uvPlane16;
                         if (output.format == TestFormat::P210) {
                             convertRGBAtoP210(inputData.data(), input.width, input.height,
+                                              primaries, range, yPlane16, uvPlane16);
+                        } else if (output.format == TestFormat::P212) {
+                            convertRGBAtoP212(inputData.data(), input.width, input.height,
                                               primaries, range, yPlane16, uvPlane16);
                         } else if (output.format == TestFormat::P012) {
                             convertRGBAtoP012(inputData.data(), input.width, input.height,
@@ -1423,8 +1435,34 @@ std::vector<uint8_t> FilterTestApp::generateReferenceOutput(const TestCaseConfig
                         break;
                     }
                     
-                    default:
+                    default: {
+                        // Generic model for any planar/semi-planar YCbCr input. The shader
+                        // fetches chroma with imageLoad at srcPos/ratio -- nearest
+                        // neighbour, no filtering -- so the reference replicates chroma the
+                        // same way via the canonical frame, which uses the same x/subX,
+                        // y/subY indexing.
+                        if (range != ColorRange::Full) {
+                            break;   // limited range not modelled; stays honestly unvalidated
+                        }
+                        CanonicalFrame frame;
+                        if (!unpackToCanonical(inputData, input.format,
+                                               input.width, input.height, frame)) {
+                            break;
+                        }
+                        referenceData.resize((size_t)input.width * input.height * 4);
+                        for (size_t i = 0; i < (size_t)input.width * input.height; i++) {
+                            YCbCrPixel ycbcr;
+                            ycbcr.y  = frame.plane[0][i];
+                            ycbcr.cb = frame.plane[1][i] - 0.5f;
+                            ycbcr.cr = frame.plane[2][i] - 0.5f;
+                            const RGBPixel rgb = ycbcrToRgb(ycbcr, primaries);
+                            referenceData[i * 4 + 0] = (uint8_t)(rgb.r * 255.0f + 0.5f);
+                            referenceData[i * 4 + 1] = (uint8_t)(rgb.g * 255.0f + 0.5f);
+                            referenceData[i * 4 + 2] = (uint8_t)(rgb.b * 255.0f + 0.5f);
+                            referenceData[i * 4 + 3] = 255;
+                        }
                         break;
+                    }
                 }
             }
             break;
