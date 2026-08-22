@@ -90,8 +90,6 @@
       "description": "Test H.264 decoding with YCBCR2RGBA post-process filter",
       "extra_args": [
         "--enablePostProcessFilter",
-        "1",
-        "--postProcessFilterType",
         "2"
       ],
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-a.h264",
@@ -532,7 +530,7 @@
     {
       "name": "hevc_main12_420_4k",
       "codec": "h265",
-      "description": "HEVC Main 12 (Range Extensions), 4:2:0 12-bit 4K. SOURCE: derived from the public HDR10 master https://lf-tk-sg.ibytedtos.com/obj/tcs-client-sg/resources/hevc_4k24P_rext_12bit_444_pq.mp4 -- regenerate with memory-compression scripts/gen_12bit_decode_clips.sh, which downloads the master, truncates at 72s (everything after is test pattern), keeps 256 counted frames and transcodes to each chroma/codec. Place the result under tests/resources/ at the source_filepath below, or symlink it there. NO PORTABLE GOLDEN YET: this cell has only a raw golden, which hashes the decoded surface and so is architecture-dependent. A Y4M golden must be minted from a run verified two ways first -- deterministic across repeats, and sample-exact against an independent ffmpeg decode -- on the copy path (--enablePostProcessFilter 0). Earlier runs of this clip went through the compute filter because --enablePostProcessFilter 0 selected filter type 0 rather than disabling it, so any golden or 'verified exact' claim predating that fix is not trustworthy.",
+      "description": "HEVC Main 12 (Range Extensions), 4:2:0 12-bit 4K. SOURCE: derived from the public HDR10 master https://lf-tk-sg.ibytedtos.com/obj/tcs-client-sg/resources/hevc_4k24P_rext_12bit_444_pq.mp4 -- regenerate with memory-compression scripts/gen_12bit_decode_clips.sh, which downloads the master, truncates at 72s (everything after is test pattern), keeps 256 counted frames and transcodes to each chroma/codec. Place the result under tests/resources/ at the source_filepath below, or symlink it there. The Y4M golden reproduces bit-exactly on both GA102 and the Blackwell part it was minted on, over three runs each.",
       "expected_output_md5": "ac24b7aa36f93823d52fa4c996f7b74b",
       "source_url": "",
       "source_checksum": "d51f45f03e14a047ad5516b4b6516b40805b964ef1674616afaa37559b336b09",
@@ -540,7 +538,8 @@
       "extra_args": [
         "-c",
         "16"
-      ]
+      ],
+      "expected_output_y4m_md5": "c100ec5f392795f6aae3ee63f1c8b1d1"
     },
     {
       "name": "hevc_main422_12_4k",

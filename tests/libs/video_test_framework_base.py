@@ -618,11 +618,13 @@ class VulkanVideoTestFrameworkBase:
             "-i", str(input_file),
             "--verbose",
         ]
-        has_filter_arg = (extra_decoder_args
-                          and "--enablePostProcessFilter"
-                          in extra_decoder_args)
-        if not has_filter_arg:
-            cmd.extend(["--enablePostProcessFilter", "0"])
+        # --enablePostProcessFilter takes a filter TYPE, not a boolean. The decoder's
+        # default is -1, which disables the post-process pass; 0 is a legacy value that
+        # selects the first filter. Do not pass "0" here to mean "off": it routes every
+        # decode that did not ask for a filter through a compute shader, so a decode
+        # cell validates decode + filter and a filter defect reads as a decoder defect.
+        # Omit the option to get the default: the argument parser rejects "-1" because
+        # it starts with a dash.
 
         if output_file:
             cmd.extend(["-o", str(output_file)])
