@@ -870,7 +870,14 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
     // Now create per-plane views for compute storage
     if (mpInfo) {
         viewInfo.pNext = nullptr;
-        viewInfo.viewType = (imageSubresourceRange.layerCount > 1) ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
+        // These views are bound as storage images to the YCbCr compute filter, whose
+        // generated GLSL declares them as image2DArray and addresses them with
+        // ivec3(pos, layer). A view's type must match the Dim/Arrayed operands of the
+        // shader's OpTypeImage (VUID-vkCmdDispatch-viewType-07752), so a single-layer
+        // view has to be an ARRAY view of one layer rather than a plain 2D view. The
+        // mismatch makes the access undefined whatever layer the shader addresses; a
+        // layer index that is currently always 0 does not make a 2D view safe.
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
         viewInfo.subresourceRange = imageSubresourceRange;
         
         VkImageViewUsageCreateInfo planeUsageInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO};
