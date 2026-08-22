@@ -34,6 +34,7 @@ python3 tests/vvs_test_runner.py --test "h264_4k_main"
 - [Configuration Reference](#configuration-reference)
   - [Decode Samples Format](#decode-samples-format)
   - [Encode Samples Format](#encode-samples-format)
+  - [Goldens](#goldens)
   - [Negative Cells](#negative-cells)
   - [Test Skip List](#test-skip-list)
 - [Advanced Topics](#advanced-topics)
@@ -116,7 +117,8 @@ The `decode_samples.json` file defines decoder test cases:
 | `name` | Yes | Unique test identifier (used with `--test` option) |
 | `codec` | Yes | Codec type: `h264`, `h265`, `av1`, `vp9` |
 | `description` | No | Human-readable test description |
-| `expected_output_md5` | No | MD5 hash of expected decoded YUV output for verification |
+| `expected_output_md5` | No | MD5 of the RAW decoded surface. Layout-dependent — see [Goldens](#goldens) |
+| `expected_output_y4m_md5` | No | MD5 of Y4M output. Portable across GPUs — prefer this |
 | `expected_result` | No | `success` (default) or `unsupported` — see [Negative Cells](#negative-cells) |
 | `expected_vk_result` | No | For a negative cell, the exact `VkResult` the rejection must carry |
 | `source_url` | Yes | URL to download the test sample |
@@ -318,6 +320,44 @@ To add a new encode test sample to `encode_samples.json`:
 - Supported codecs for encoding are: `h264`, `h265`, `av1` (VP9 encoding is not supported)
 - Common profiles: `baseline`, `main`, `high` (H.264), `main`, `main10` (H.265/AV1)
 - **Validation:** By default, the encoder test framework runs a decode pass on the encoded output to verify the bitstream is valid and decodable. This can be disabled with `--no-validate-with-decoder`
+
+### Goldens
+
+`expected_output_md5` hashes the **raw decoded surface**. Its byte layout follows
+the decode output image, so a GPU that returns a different plane arrangement
+produces a different hash for pixel-identical output. A raw golden is therefore
+only meaningful on the architecture that minted it: the HEVC Main 12 4:2:0 raw
+golden is an RTX 5080 hash, and an RTX 3080 Ti does not reproduce it even though
+it decodes that clip sample-exactly against an independent ffmpeg reference.
+
+Two mechanisms, in order of preference:
+
+**1. `expected_output_y4m_md5` — the portable golden.** The decoder is run with
+`--y4m`, and Y4M is always planar and carries its geometry and sample layout in
+the header, so identical pixels hash identically on any architecture. Use this
+for anything above 8-bit, where surface layouts vary most. When present it takes
+precedence over the raw golden.
+
+**2. Per-GPU maps — for values that legitimately differ.** Either golden may be
+an object keyed by a GPU-name fragment instead of a string:
+
+```json
+"expected_output_md5": {
+  "RTX 50": "ac24b7aa36f93823d52fa4c996f7b74b",
+  "RTX 30": "5af6903636807c4c2ed4c431cfc8023f",
+  "default": "..."
+}
+```
+
+Matching is case-insensitive against the detected GPU name, and the longest
+matching fragment wins, so `RTX 3080 Ti` overrides a broader `RTX 30`. A GPU that
+matches nothing and has no `default` gets **no check** rather than someone else's
+hash — silence is better than failing correct pixels against a foreign layout.
+
+**Minting.** Confirm the output against an independent decoder *in the same run
+that records the hash*. Re-recording whatever the decoder emitted turns a golden
+into a tautology: it will agree with a regression as readily as with a fix. The
+12-bit cells were each verified pixel-exact against ffmpeg at mint time.
 
 ### Negative Cells
 
