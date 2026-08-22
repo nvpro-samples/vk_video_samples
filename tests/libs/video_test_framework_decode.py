@@ -40,15 +40,54 @@ from tests.libs.video_test_utils import (
 )
 
 
+def resolve_expected_md5(expected, gpu_name: str) -> str:
+    """Pick the golden that applies to the GPU under test.
+
+    A golden may be a plain string, or a mapping from a GPU-name fragment to a
+    hash for the cases where the value legitimately differs by architecture:
+
+        "expected_output_md5": {
+            "RTX 50": "ac24...",     matched case-insensitively against the
+            "RTX 30": "5af6...",     detected GPU name
+            "default": "..."         used when nothing else matches
+        }
+
+    Longest fragment wins, so "RTX 3080 Ti" can override a broader "RTX 30".
+    """
+    if not isinstance(expected, dict):
+        return expected or ""
+    name = (gpu_name or "").lower()
+    best = ""
+    for key in expected:
+        if key == "default":
+            continue
+        if key.lower() in name and len(key) > len(best):
+            best = key
+    if best:
+        return expected[best]
+    return expected.get("default", "")
+
+
 @dataclass(init=False)
 class DecodeTestSample(BaseTestConfig):
     """Configuration for decoder test cases with download capability"""
-    expected_output_md5: str = ""  # Expected MD5 of decoded YUV output
+    # Golden over the RAW decoded surface. Layout-dependent: the byte order of
+    # the dump follows the decode output image, so a chip that returns a
+    # different plane arrangement produces a different hash for identical
+    # pixels. Prefer expected_output_y4m_md5 for anything above 8-bit.
+    expected_output_md5: str = ""
+    # Golden over Y4M output. Y4M is always PLANAR and carries its geometry and
+    # sample layout in the header, so the same pixels hash the same on any GPU
+    # regardless of the surface layout the driver hands back. This is the
+    # portable check.
+    expected_output_y4m_md5: str = ""
 
-    def __init__(self, expected_output_md5: str = "", **kwargs):
+    def __init__(self, expected_output_md5: str = "",
+                 expected_output_y4m_md5: str = "", **kwargs):
         """Initialize DecodeTestSample with all fields from base and child"""
         super().__init__(**kwargs)
         self.expected_output_md5 = expected_output_md5
+        self.expected_output_y4m_md5 = expected_output_y4m_md5
 
     @classmethod
     def from_dict(cls, data: dict) -> 'DecodeTestSample':
@@ -56,6 +95,7 @@ class DecodeTestSample(BaseTestConfig):
         return cls(
             **cls._parse_base_fields(data),
             expected_output_md5=data.get("expected_output_md5", ""),
+            expected_output_y4m_md5=data.get("expected_output_y4m_md5", ""),
         )
 
     @property
@@ -150,6 +190,20 @@ class VulkanVideoDecodeTestFramework(VulkanVideoTestFrameworkBase):
                                       "decoder resource",
                                       auto_download)
 
+    def _resolve_goldens(self, config: DecodeTestSample) -> tuple:
+        """Pick the golden for this GPU, preferring the portable one.
+
+        A Y4M golden compares the decoded pixels in a canonical planar layout; a
+        raw golden compares the surface bytes and is therefore only valid on the
+        architecture that minted it. Returns (expected_md5, use_y4m).
+        """
+        gpu = self.system_info.gpu_name
+        y4m_md5 = resolve_expected_md5(
+            config.expected_output_y4m_md5, gpu).strip()
+        if y4m_md5:
+            return y4m_md5, True
+        return resolve_expected_md5(config.expected_output_md5, gpu).strip(), False
+
     def _run_decoder_test(self, config: DecodeTestSample) -> TestResult:
         """Run decoder test for specified codec"""
         if not self.decoder_path:
@@ -171,22 +225,24 @@ class VulkanVideoDecodeTestFramework(VulkanVideoTestFrameworkBase):
                 f"Input file not found: {input_file}",
             )
 
-        # Determine output file for MD5 verification
+        expected_md5, use_y4m = self._resolve_goldens(config)
+
         output_file = None
-        should_verify_md5 = (
-            self.verify_md5
-            and config.expected_output_md5
-            and config.expected_output_md5.strip()
-        )
+        should_verify_md5 = bool(self.verify_md5 and expected_md5)
+        decoder_args = list(config.extra_args or [])
         if should_verify_md5:
-            output_file = self.results_dir / f"decoded_{config.name}.yuv"
+            suffix = "y4m" if use_y4m else "yuv"
+            output_file = (self.results_dir /
+                           f"decoded_{config.name}.{suffix}")
+            if use_y4m:
+                decoder_args.append("--y4m")
 
         # Build decoder command using shared method
         cmd = self.build_decoder_command(
             decoder_path=self.decoder_path,
             input_file=input_file,
             output_file=output_file,
-            extra_decoder_args=config.extra_args,
+            extra_decoder_args=decoder_args,
             no_display=not self.display,
         )
 
@@ -199,19 +255,24 @@ class VulkanVideoDecodeTestFramework(VulkanVideoTestFrameworkBase):
         # Verify MD5 if enabled and test succeeded
         if (should_verify_md5 and output_file and output_file.exists() and
                 result.status == VideoTestStatus.SUCCESS):
+            kind = "Y4M" if use_y4m else "raw"
             actual_md5 = calculate_file_hash(output_file, 'md5')
             if actual_md5:
-                if actual_md5.lower() == config.expected_output_md5.lower():
-                    print(f"✓ MD5 verification passed: {actual_md5}")
+                if actual_md5.lower() == expected_md5.lower():
+                    print(f"✓ {kind} MD5 verification passed: {actual_md5}")
                 else:
                     # MD5 mismatch should fail the test
                     result.status = VideoTestStatus.ERROR
+                    hint = "" if use_y4m else (
+                        " (raw goldens are layout-dependent; if the pixels are "
+                        "correct on this GPU, mint an expected_output_y4m_md5 "
+                        "or add a per-GPU entry)")
                     result.error_message = (
-                        "MD5 mismatch: expected "
-                        f"{config.expected_output_md5}, got {actual_md5}"
+                        f"{kind} MD5 mismatch: expected "
+                        f"{expected_md5}, got {actual_md5}{hint}"
                     )
-                    print(f"✗ MD5 verification failed: expected "
-                          f"{config.expected_output_md5}, got {actual_md5}")
+                    print(f"✗ {kind} MD5 verification failed: expected "
+                          f"{expected_md5}, got {actual_md5}")
 
         # Clean up output file unless keep_files is set
         if (
