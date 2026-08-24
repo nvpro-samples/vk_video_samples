@@ -3561,7 +3561,14 @@ uint32_t VulkanFilterYuvCompute::UpdateImageDescriptorSets(
                                                       imageView->GetImageView() :
                                                       imageView->GetPlaneImageView(planeNum);
             assert(imageDescriptors[descrIndex].imageView);
-            imageDescriptors[descrIndex].imageLayout = imageLayout;
+            // A storage-image descriptor is only valid in VK_IMAGE_LAYOUT_GENERAL
+            // (VUID-VkDescriptorImageInfo-imageView-06711). The caller passes ONE layout
+            // for the whole side of the filter, and for a YCbCr input that layout is the
+            // sampled-image layout -- which would silently be applied to the per-plane
+            // storage descriptors as well. Decide per descriptor instead.
+            imageDescriptors[descrIndex].imageLayout =
+                (writeDescriptorSets[descrIndex].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) ?
+                    VK_IMAGE_LAYOUT_GENERAL : imageLayout;
             writeDescriptorSets[descrIndex].pImageInfo = &imageDescriptors[descrIndex]; // Y (0) plane
             descrIndex++;
             validImageAspects &= ~(VK_IMAGE_ASPECT_COLOR_BIT << curImageAspect);
@@ -3622,9 +3629,14 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
             // which is what a storage image requires.
             VkSampler inputSampler = ((m_filterType == RGBA2YCBCR) || (m_inputPackedYcbcr != nullptr))
                                          ? VK_NULL_HANDLE : m_samplerYcbcrConversion.GetSampler();
-            // Storage images require GENERAL layout, sampled images use SHADER_READ_ONLY_OPTIMAL
-            VkImageLayout inputLayout = (inputSampler == VK_NULL_HANDLE) ? 
-                VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            // GENERAL is valid for both sampled and storage reads, the filter never
+            // transitions its input to SHADER_READ_ONLY_OPTIMAL itself, and no caller hands
+            // it an input in that layout: the decoder hands over a VIDEO_DECODE_DPB_KHR image
+            // that it moves to GENERAL, and the encoder hands over a GENERAL/TRANSFER_SRC
+            // linear staging image. Declaring SHADER_READ_ONLY_OPTIMAL here would not
+            // match either of them.
+            const VkImageLayout inputLayout = VK_IMAGE_LAYOUT_GENERAL;
+            (void)inputSampler;
             UpdateImageDescriptorSets(inImageView,
                                       m_inputImageAspects,
                                       inputSampler,
@@ -4039,9 +4051,14 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
             // which is what a storage image requires.
             VkSampler inputSampler = ((m_filterType == RGBA2YCBCR) || (m_inputPackedYcbcr != nullptr))
                                          ? VK_NULL_HANDLE : m_samplerYcbcrConversion.GetSampler();
-            // Storage images require GENERAL layout, sampled images use SHADER_READ_ONLY_OPTIMAL
-            VkImageLayout inputLayout = (inputSampler == VK_NULL_HANDLE) ? 
-                VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            // GENERAL is valid for both sampled and storage reads, the filter never
+            // transitions its input to SHADER_READ_ONLY_OPTIMAL itself, and no caller hands
+            // it an input in that layout: the decoder hands over a VIDEO_DECODE_DPB_KHR image
+            // that it moves to GENERAL, and the encoder hands over a GENERAL/TRANSFER_SRC
+            // linear staging image. Declaring SHADER_READ_ONLY_OPTIMAL here would not
+            // match either of them.
+            const VkImageLayout inputLayout = VK_IMAGE_LAYOUT_GENERAL;
+            (void)inputSampler;
             UpdateImageDescriptorSets(inImageView,
                                       m_inputImageAspects,
                                       inputSampler,
