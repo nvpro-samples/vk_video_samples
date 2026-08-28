@@ -420,6 +420,41 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
         return result;
     }
 
+    // The per-codec encode extension is requested as OPTIONAL, so a device that
+    // lacks it, should't select it.
+    {
+        const char* requiredExt = nullptr;
+        switch (codecOp) {
+            case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
+                requiredExt = VK_KHR_VIDEO_ENCODE_H264_EXTENSION_NAME; break;
+            case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR:
+                requiredExt = VK_KHR_VIDEO_ENCODE_H265_EXTENSION_NAME; break;
+            case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:
+                requiredExt = VK_KHR_VIDEO_ENCODE_AV1_EXTENSION_NAME; break;
+            default: break;
+        }
+        if (requiredExt != nullptr) {
+            uint32_t extCount = 0;
+            m_vkDevCtx.EnumerateDeviceExtensionProperties(m_vkDevCtx.getPhysicalDevice(),
+                                                          nullptr, &extCount, nullptr);
+            std::vector<VkExtensionProperties> exts(extCount);
+            if (extCount) {
+                m_vkDevCtx.EnumerateDeviceExtensionProperties(m_vkDevCtx.getPhysicalDevice(),
+                                                              nullptr, &extCount, exts.data());
+            }
+            bool found = false;
+            for (const auto& e : exts) {
+                if (strcmp(e.extensionName, requiredExt) == 0) { found = true; break; }
+            }
+            if (!found) {
+                std::cerr << "[EncoderExt] ERROR: this device does not support "
+                          << requiredExt << "; cannot encode the requested codec"
+                          << std::endl;
+                return VK_ERROR_EXTENSION_NOT_PRESENT;
+            }
+        }
+    }
+
     bool needTransferQueue = ((m_vkDevCtx.GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) == 0);
     // Always request compute queue — VkVideoEncoder internally creates
     // VulkanFilter for input format conversion, which asserts m_queue != NULL.
