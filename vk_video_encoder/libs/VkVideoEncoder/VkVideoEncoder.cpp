@@ -1678,6 +1678,33 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     encoderConfig->encodeWidth  = std::min(encoderConfig->encodeWidth,  encoderConfig->videoCapabilities.maxCodedExtent.width);
     encoderConfig->encodeHeight = std::min(encoderConfig->encodeHeight, encoderConfig->videoCapabilities.maxCodedExtent.height);
 
+    // Refuse an extent the device cannot encode, rather than quietly encoding a
+    // cropped picture. The min-clamp above is benign padding, but clamping down
+    // to maxCodedExtent changes what the caller asked for: it gets a smaller
+    // picture than it requested with nothing to say so, and comparing that
+    // against a reference at the requested size reads as a quality failure with
+    // no cause. maxCodedExtent varies by device and by profile, so the request
+    // is checked against the reported capability rather than a fixed limit.
+    if ((requestedW > encoderConfig->videoCapabilities.maxCodedExtent.width) ||
+        (requestedH > encoderConfig->videoCapabilities.maxCodedExtent.height)) {
+        fprintf(stderr, "[CAPS] ERROR: requested %ux%u exceeds this profile's maximum "
+                        "coded extent %ux%u; refusing to encode a cropped picture\n",
+                requestedW, requestedH,
+                encoderConfig->videoCapabilities.maxCodedExtent.width,
+                encoderConfig->videoCapabilities.maxCodedExtent.height);
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
+
+    // Keep the session's maximum in step with the clamped extent. These are what
+    // VideoSession/DPB creation is sized from, and a session asked for more than
+    // the device's maxCodedExtent is not rejected cleanly -- the encoder faults
+    // with an access violation instead of failing validation -- so they must
+    // never exceed the capability either.
+    encoderConfig->encodeMaxWidth  = std::min(encoderConfig->encodeMaxWidth,
+                                              encoderConfig->videoCapabilities.maxCodedExtent.width);
+    encoderConfig->encodeMaxHeight = std::min(encoderConfig->encodeMaxHeight,
+                                              encoderConfig->videoCapabilities.maxCodedExtent.height);
+
     m_maxCodedExtent = { encoderConfig->encodeMaxWidth, encoderConfig->encodeMaxHeight }; // max coded size
     m_streamBufferSize = std::max(m_minStreamBufferSize, (size_t)encoderConfig->input.fullImageSize); // use worst case size
 
