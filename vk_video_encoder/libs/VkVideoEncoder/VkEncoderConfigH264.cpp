@@ -18,6 +18,22 @@
 #include <string>
 #include <cstdlib>
 
+// Vulkan-Headers >= 1.4.360 added the High 10 and High 4:2:2 enumerators to
+// StdVideoH264ProfileIdc. Older SDKs (e.g. the 1.4.341 Windows SDK) stop at
+// HIGH_444_PREDICTIVE, so an unguarded reference would restrict this file to a
+// header at 1.4.360 or newer: the Linux build fetches such a copy, an installed
+// Windows SDK need not be that new. Defining the enumerators when they are
+// absent keeps both builds compiling; where the header defines them the shim is
+// inert. The values are the H.264 profile_idc numbers themselves, fixed by the
+// codec spec.
+#ifndef STD_VIDEO_H264_PROFILE_IDC_HIGH_10
+#define STD_VIDEO_H264_PROFILE_IDC_HIGH_10  ((StdVideoH264ProfileIdc)110)
+#endif
+#ifndef STD_VIDEO_H264_PROFILE_IDC_HIGH_422
+#define STD_VIDEO_H264_PROFILE_IDC_HIGH_422 ((StdVideoH264ProfileIdc)122)
+#endif
+
+
 int EncoderConfigH264::DoParseArguments(int argc, const char* argv[])
 {
     std::vector<std::string> args(argv, argv + argc);
