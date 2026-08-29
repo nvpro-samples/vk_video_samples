@@ -2869,6 +2869,7 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
     if (encodeFrameInfo->controlCmd != VkVideoCodingControlFlagsKHR())
     {
         m_beginRateControlInfo = {VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR, NULL};
+        m_beginCodecRateControlInfoValid = false;
     }
 
     encodeBeginInfo.pNext = &m_beginRateControlInfo;
@@ -2896,6 +2897,34 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         for (const VkBaseInStructure* p =
                  reinterpret_cast<const VkBaseInStructure*>(encodeFrameInfo->pControlCmdChain);
              p != nullptr; p = p->pNext) {
+            // Capture the codec-specific RC struct too: the BeginCoding chain has to
+            // match the session state that this CmdControlVideoCodingKHR establishes,
+            // or vkCmdBeginVideoCodingKHR reports VUID-...-pBeginInfo-08254. The walk
+            // stops at the base struct, so a codec-specific struct is picked up only
+            // when it precedes the base one -- which is how the codec encoders build
+            // the chain.
+            if ((p->sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR) ||
+                (p->sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR) ||
+                (p->sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_INFO_KHR)) {
+                switch (p->sType) {
+                    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR:
+                        m_beginCodecRateControlInfo.h264 =
+                            *reinterpret_cast<const VkVideoEncodeH264RateControlInfoKHR*>(p);
+                        break;
+                    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR:
+                        m_beginCodecRateControlInfo.h265 =
+                            *reinterpret_cast<const VkVideoEncodeH265RateControlInfoKHR*>(p);
+                        break;
+                    default:
+                        m_beginCodecRateControlInfo.av1 =
+                            *reinterpret_cast<const VkVideoEncodeAV1RateControlInfoKHR*>(p);
+                        break;
+                }
+                m_beginCodecRateControlInfo.base.pNext = nullptr;
+                m_beginCodecRateControlInfoValid = true;
+                continue;
+            }
+
             if (p->sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR) {
                 m_beginRateControlInfo = *reinterpret_cast<const VkVideoEncodeRateControlInfoKHR*>(p);
                 m_beginRateControlInfo.pNext = nullptr;
@@ -2906,6 +2935,12 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
                 }
                 break;
             }
+        }
+
+        // Re-link after the walk: both halves are encoder-owned storage, so the chain
+        // stays valid for every later frame that reuses the cached state.
+        if (m_beginCodecRateControlInfoValid) {
+            m_beginRateControlInfo.pNext = &m_beginCodecRateControlInfo;
         }
     }
 
