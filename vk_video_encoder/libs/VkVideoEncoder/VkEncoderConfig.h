@@ -1099,14 +1099,19 @@ public:
             }
         }
 
-        if (allLowBitsClear && !allHighBitsClear) {
-            if (verbose) {
-                printf("Input: %d-bit samples are already MSB-aligned (P010-style); msbShift=0\n",
-                       input.bpp);
-            }
-            return 0;
-        }
-
+        // Only ONE of these two is a reliable signal, and the asymmetry matters.
+        //
+        // "All high bits clear" proves the data is right-aligned: no sample uses a bit
+        // above the bit depth, so left-shifting is safe and necessary.
+        //
+        // "All low bits clear" does NOT have to hold for left-aligned data. In P010 the
+        // bottom (16 - bpp) bits are explicitly UNDEFINED, and real P010 surfaces carry
+        // whatever the hardware left there -- a renderer dump of a 10-bit surface spans
+        // the full 16-bit range with noise in the low 6 bits. Requiring them to be clear
+        // would therefore make genuine P010 match NEITHER convention and fall through to
+        // the default shift, which multiplies every sample by 64 and saturates the frame
+        // to white: a structurally valid bitstream of flat, near-constant content that
+        // no PSNR comparison against the source can pass.
         if (allHighBitsClear && !allLowBitsClear) {
             if (verbose) {
                 printf("Input: %d-bit samples are LSB-aligned; msbShift=%d\n",
@@ -1115,8 +1120,19 @@ public:
             return defaultShift;
         }
 
-        // Ambiguous: all-zero data, or samples that are multiples of 2^(16-bpp) inside
-        // the low range. Keep the documented default; --msbShift overrides either way.
+        if (!allHighBitsClear) {
+            // Some sample sets a bit above the bit depth, so the data cannot be
+            // right-aligned -- whether or not the spare low bits happen to be clear.
+            // Shifting could only overflow, so do not.
+            if (verbose) {
+                printf("Input: %d-bit samples already occupy the high bits "
+                       "(P010-style, low bits undefined); msbShift=0\n", input.bpp);
+            }
+            return 0;
+        }
+
+        // Both clear: degenerate (all-zero) data that carries no evidence either way.
+        // Keep the documented default; --msbShift overrides it.
         return defaultShift;
     }
 
