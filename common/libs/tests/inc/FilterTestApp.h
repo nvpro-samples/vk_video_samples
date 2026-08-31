@@ -161,7 +161,8 @@ public:
      * @param verbose Enable verbose logging
      * @return VK_SUCCESS on success
      */
-    VkResult init(bool verbose = false, const char* deviceUuidStr = nullptr);
+    VkResult init(bool verbose,
+                  bool validate = false, const char* deviceUuidStr = nullptr);
     
     /**
      * @brief Run a single test case
