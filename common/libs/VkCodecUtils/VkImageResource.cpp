@@ -711,6 +711,20 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
         if (planeUsageCreateInfo.usage != 0) {
             viewInfo.pNext = &planeUsageCreateInfo;
 
+            // Per-plane views are bound as storage images to the YCbCr compute filter,
+            // whose generated GLSL declares them image2DArray and addresses them with
+            // ivec3(pos, layer). A view's type must match the Dim/Arrayed operands of
+            // the shader's OpTypeImage (VUID-vkCmdDispatch-viewType-07752), so a
+            // single-layer plane view has to be an ARRAY view of one layer.
+            //
+            // The 7-argument overload of this function sets the same type on its
+            // per-plane views, for the same reason (see the matching comment there).
+            //
+            // The combined view above is a separate case: its type follows layerCount,
+            // because it is also consumed as a sampled image by the presentation and
+            // decoder paths, where a 2D view is what is wanted.
+            viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+
             // Create separate image views for Y and CbCr planes
             viewInfo.format = mpInfo->vkPlaneFormat[numPlanes];
             viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT << numPlanes;
