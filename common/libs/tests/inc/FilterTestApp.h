@@ -65,7 +65,13 @@ enum class TestFormat {
     // 4:4:4 YCbCr formats
     YUV444,     // VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM (8-bit, 3-plane)
     Y410,       // VK_FORMAT_A2B10G10R10_UNORM_PACK32 (10-bit, packed AVYU)
-    
+
+    // Single-plane luma. This is what the AQ path allocates for the subsampled-Y
+    // target (VkVideoEncoder configures that pool as R8_UNORM), so a test that wants a
+    // subsampled output names this format: a multi-planar format is bound through a
+    // per-plane view, which is not what the subsampled binding declares.
+    R8,         // VK_FORMAT_R8_UNORM (8-bit, single-plane)
+
     COUNT       // Number of formats
 };
 

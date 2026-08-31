@@ -927,9 +927,14 @@ TestCaseConfig TC091_Triple_Output_with_Subsampled() {
     config.name = "TC091_Triple_Output_with_Subsampled";
     config.filterFlags = VulkanFilterYuvCompute::FLAG_ENABLE_Y_SUBSAMPLING;
     
-    // Output 2: 2x2 subsampled Y for AQ
+    // Output 2: 2x2 subsampled Y for AQ.
+    // R8 is required here, not a multi-planar format: the filter binds this image's
+    // combined view, and a multi-planar format gets a per-plane view of type
+    // VK_IMAGE_VIEW_TYPE_2D_ARRAY while the generated shader declares subsampledImageY
+    // as a plain image2D -- which is VUID-vkCmdDispatch-viewType-07752. R8_UNORM is
+    // also what the real AQ path allocates for this target.
     config.outputs.push_back({
-        .format = TestFormat::NV12,  // Placeholder - actually R8
+        .format = TestFormat::R8,
         .resourceType = ResourceType::Image,
         .tiling = TilingMode::Optimal,
         .width = 960, .height = 540,  // Half resolution
