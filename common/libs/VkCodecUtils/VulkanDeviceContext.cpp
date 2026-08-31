@@ -898,7 +898,9 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
 
         const int32_t maxQueueInstances = std::max(numDecodeQueues, numEncodeQueues);
         assert(maxQueueInstances <= MAX_QUEUE_INSTANCES);
-        const std::vector<float> queuePriorities(maxQueueInstances, 0.0f);
+        // At least one entry, always. The graphics/present/compute/transfer entries below
+        // each ask for queueCount = 1 regardless of how many VIDEO queues were requested.
+        const std::vector<float> queuePriorities(std::max(1, (int)maxQueueInstances), 0.0f);
         std::array<VkDeviceQueueCreateInfo, MAX_QUEUE_FAMILIES> queueInfo = {};
         const bool isUnique = uniqueQueueFamilies.insert(m_gfxQueueFamily).second;
         assert(isUnique);
@@ -965,9 +967,19 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
                                                                                   VK_FALSE
                                                                                 };
 
+        // A feature struct may only be chained when its extension is actually enabled
+        // (VUID-VkDeviceCreateInfo-pNext-pNext). VK_KHR_video_encode_intra_refresh is
+        // requested by the encoder path alone, so every other client -- the filter tests,
+        // the decoder -- creates a device without it and must not chain its feature
+        // struct. The queried value is never used, so skipping the struct costs nothing.
+        void* const pAfterYcbcr =
+            (FindRequiredDeviceExtension(VK_KHR_VIDEO_ENCODE_INTRA_REFRESH_EXTENSION_NAME) != nullptr)
+                ? static_cast<void*>(&intraRefreshFeatures)
+                : static_cast<void*>(&synchronization2Features);
+
         // Required for creating YCbCr samplers used with multi-planar video formats
         VkPhysicalDeviceSamplerYcbcrConversionFeatures samplerYcbcrFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES,
-                                                                               &intraRefreshFeatures,
+                                                                               pAfterYcbcr,
                                                                                VK_FALSE
                                                                              };
 
