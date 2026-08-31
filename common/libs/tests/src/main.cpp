@@ -38,6 +38,7 @@
 #include <vector>
 #include <cstring>
 
+#include "VkCodecUtils/VulkanDeviceContext.h"
 #include "FilterTestApp.h"
 #include "TestCases.h"
 
@@ -49,6 +50,7 @@ void printUsage(const char* programName) {
     std::cout << "Options:" << std::endl;
     std::cout << "  --help, -h       Show this help message" << std::endl;
     std::cout << "  --verbose, -v    Enable verbose output" << std::endl;
+    std::cout << "  --validate       Enable Vulkan validation layers; any error fails the run" << std::endl;
     std::cout << "  --smoke          Run only smoke tests (quick validation)" << std::endl;
     std::cout << "  --all            Run all standard tests" << std::endl;
     std::cout << "  --production     Run production validation tests" << std::endl;
@@ -100,6 +102,7 @@ void listTests() {
 
 int main(int argc, char* argv[]) {
     bool verbose = false;
+    bool validate = false;
     bool runAll = false;
     bool runProduction = false;
     bool runRegression = false;
@@ -114,6 +117,11 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (strcmp(argv[i], "--verbose") == 0 || strcmp(argv[i], "-v") == 0) {
             verbose = true;
+        } else if (strcmp(argv[i], "--validate") == 0) {
+            // Validation WITHOUT the verbose log firehose, so the gate is usable in
+            // CI: the layers are on, and any ERROR-severity message that survives the
+            // suppressed-id list fails the run at exit.
+            validate = true;
         } else if (strcmp(argv[i], "--smoke") == 0) {
             runAll = false;
         } else if (strcmp(argv[i], "--all") == 0) {
@@ -147,7 +155,7 @@ int main(int argc, char* argv[]) {
     FilterTestApp app;
     
     // Initialize Vulkan
-    VkResult result = app.init(verbose, deviceUuid.empty() ? nullptr : deviceUuid.c_str());
+    VkResult result = app.init(verbose, validate, deviceUuid.empty() ? nullptr : deviceUuid.c_str());
     if (result != VK_SUCCESS) {
         std::cerr << "Failed to initialize test application: " << result << std::endl;
         return 1;
@@ -224,6 +232,19 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "vk_filter_test: no case validated its output; refusing to "
                         "report success.\n");
         return 1;
+    }
+
+    // A validation error is a failure, not a log line: a suite that only prints VUIDs
+    // is not a gate, so a nonzero count fails the run even when every case passed its
+    // own checks.
+    const uint32_t vErrors = VulkanDeviceContext::GetValidationErrorCount();
+    if (vErrors != 0) {
+        fprintf(stderr, "vk_filter_test: %u Vulkan validation error(s) during the run; "
+                        "failing.\n", vErrors);
+        return 1;
+    }
+    if (validate) {
+        fprintf(stdout, "vk_filter_test: validation layers enabled, 0 errors.\n");
     }
 
     return failures > 0 ? 1 : 0;

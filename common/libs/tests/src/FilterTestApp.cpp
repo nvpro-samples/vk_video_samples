@@ -338,7 +338,7 @@ FilterTestApp::~FilterTestApp() {
     }
 }
 
-VkResult FilterTestApp::init(bool verbose, const char* deviceUuidStr) {
+VkResult FilterTestApp::init(bool verbose, bool validate, const char* deviceUuidStr) {
     
     // Required instance layers and extensions for validation (if verbose)
     static const char* const requiredInstanceLayers[] = {
@@ -366,8 +366,11 @@ VkResult FilterTestApp::init(bool verbose, const char* deviceUuidStr) {
         nullptr
     };
     
-    // Add validation layers and debug extensions if verbose
-    if (verbose) {
+    // Enable the validation layers for --validate as well as --verbose. --validate is
+    // the CI-usable form: it turns the layers on without the verbose log firehose, so
+    // running with validation does not depend on also wanting the extra logging.
+    const bool enableValidation = (verbose || validate);
+    if (enableValidation) {
         m_vkDevCtx.AddReqInstanceLayers(requiredInstanceLayers);
         m_vkDevCtx.AddReqInstanceExtensions(requiredInstanceExtensions);
     }
@@ -384,7 +387,7 @@ VkResult FilterTestApp::init(bool verbose, const char* deviceUuidStr) {
     }
     
     // Initialize debug report (only if validation is enabled)
-    result = m_vkDevCtx.InitDebugReport(verbose, verbose);
+    result = m_vkDevCtx.InitDebugReport(enableValidation, verbose);
     if (result != VK_SUCCESS && verbose) {
         std::cerr << "[FilterTestApp] Warning: Failed to initialize debug report: " << result << std::endl;
         // Non-fatal - continue without debug

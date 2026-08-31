@@ -28,6 +28,7 @@
 #include <set>
 #include <unordered_set>
 #include <algorithm>    // std::find_if
+#include <atomic>       // validation-error counter
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
 #include "VkShell/Shell.h"
@@ -478,6 +479,11 @@ static constexpr uint32_t g_ignoredValidationMessageIds[] = {
     0xa9049dc2,
 };
 
+static std::atomic<uint32_t> g_validationErrorCount{0};
+
+uint32_t VulkanDeviceContext::GetValidationErrorCount() { return g_validationErrorCount.load(); }
+void     VulkanDeviceContext::ResetValidationErrorCount() { g_validationErrorCount.store(0); }
+
 bool VulkanDeviceContext::DebugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT,
                                               uint64_t, size_t,
                                               int32_t msg_code, const char *layer_prefix, const char *msg)
@@ -487,6 +493,10 @@ bool VulkanDeviceContext::DebugReportCallback(VkDebugReportFlagsEXT flags, VkDeb
         if (static_cast<uint32_t>(msg_code) == ignoredId) {
             return false;  // Silently ignore this message
         }
+    }
+
+    if (flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) {
+        g_validationErrorCount.fetch_add(1);
     }
 
     LogPriority prio = LOG_WARN;
@@ -529,6 +539,10 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDeviceContext::DebugUtilsMessengerCallback(
         if (static_cast<uint32_t>(pCallbackData->messageIdNumber) == ignoredId) {
             return VK_FALSE;  // Silently ignore this message
         }
+    }
+
+    if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+        g_validationErrorCount.fetch_add(1);
     }
 
     const char* severity =
