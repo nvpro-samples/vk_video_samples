@@ -71,8 +71,16 @@ public:
                                                VkVideoEncodeCodecQuantizationMapCapabilitiesKHR& codecQuantizationMapCapabilities,
                                                VkVideoEncodeIntraRefreshCapabilitiesKHR& intraRefreshCapabilities) {
 
+        // Only chain the intra-refresh capabilities when the physical device actually
+        // exposes VK_KHR_video_encode_intra_refresh. Chaining a struct whose extension the
+        // device does not support is VUID-VkVideoCapabilitiesKHR-pNext-pNext. Unchained,
+        // the struct stays zero-initialised, which is the correct "no intra-refresh
+        // support" answer for the callers that read it.
+        //
         intraRefreshCapabilities = VkVideoEncodeIntraRefreshCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_INTRA_REFRESH_CAPABILITIES_KHR, nullptr };
-        codecQuantizationMapCapabilities = VkVideoEncodeCodecQuantizationMapCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_QUANTIZATION_MAP_CAPABILITIES_KHR, &intraRefreshCapabilities };
+        const bool hasIntraRefresh =
+            (vkDevCtx->FindDeviceExtension(VK_KHR_VIDEO_ENCODE_INTRA_REFRESH_EXTENSION_NAME) != nullptr);
+        codecQuantizationMapCapabilities = VkVideoEncodeCodecQuantizationMapCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_QUANTIZATION_MAP_CAPABILITIES_KHR, hasIntraRefresh ? &intraRefreshCapabilities : nullptr };
         quantizationMapCapabilities = VkVideoEncodeQuantizationMapCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUANTIZATION_MAP_CAPABILITIES_KHR, &codecQuantizationMapCapabilities };
         videoCodecCapabilities  = VkVideoEncodeCodecCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CODEC_CAPABILITIES_KHR, &quantizationMapCapabilities };
         videoEncodeCapabilities = VkVideoEncodeCapabilitiesKHR { VK_STRUCTURE_TYPE_VIDEO_ENCODE_CAPABILITIES_KHR, &videoCodecCapabilities };
