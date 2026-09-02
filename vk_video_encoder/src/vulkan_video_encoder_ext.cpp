@@ -969,7 +969,7 @@ static_assert(sizeof(VkVideoEncoderConfig) == 208,
               "VkVideoEncoderConfig changed size -- a field was added, removed "
               "or reordered. Bind it in BuildEncoderConfig before updating "
               "this number.");
-#endif  // sizeof moves with pointer width
+#endif  // 64-bit: sizeof moves with pointer width
 
 
 // Declared here rather than in the internal header: its signature names
@@ -2898,13 +2898,29 @@ VkResult VulkanVideoEncoderExtImpl::EncodeNextFrame(int64_t& frameNumEncoded)
 //=============================================================================
 // Layout pins for the public structs. (VkVideoEncoderConfig has its own pin
 // beside the config binder, where the number carries a second meaning:
-// binder completeness.) The ONLY legal way to extend one of these structs
-// is a new pNext-chained struct with a new sType -- the header's versioning
-// rules -- because an in-place field append changes the layout under an
-// UNCHANGED sType: a consumer built against the older header still passes
-// the structure-type gate and is then read with a shifted layout, silently.
-// These pins turn that mistake into a build break. Tripping one means: move
-// the new field into a chained extension struct; do not update the number.
+// binder completeness.)
+//
+// WHAT A PIN IS. Each number is the size this build computes for one public
+// struct, written down. An in-place field append changes the layout under an
+// UNCHANGED sType, so a consumer built against the older header still passes
+// the structure-type gate and is then read with a shifted layout, silently --
+// no diagnostic at either end. The pin turns that into a build break in this
+// file.
+//
+// THE RULE THE PINS ENFORCE. The only legal way to extend a struct in this
+// API is a new pNext-chained struct with a new sType. Appending a field to an
+// existing struct is an ABI break and requires a new sType. sType values are
+// numbered from a private base and are never reused or renumbered, and the
+// library refuses an sType it does not know rather than guessing -- which is
+// what turns version skew into an error at the boundary instead of silent
+// misbehaviour.
+//
+// WHAT TRIPPING ONE MEANS. A pin trips only once a public struct has already
+// changed shape, so the assert is not a step in a procedure to be worked
+// through: it is where the change stops and its author has to decide what
+// this API does about an ABI break. What defeats the pin is answering it
+// without that decision -- relaxing the assert, or leaving a number stale. A
+// size nobody had to think about records nothing.
 //=============================================================================
 // PINNED ON 64-BIT ONLY (LP64/LLP64). Every pin is a byte size or a byte
 // offset, and both move with pointer width: a 32-bit build puts pNext at 4
@@ -2962,9 +2978,11 @@ VK_ENC_PIN_LAYOUT(VkVideoEncoderDeviceIdentity, 312);
 // is sound only while the prefix sits at the same offsets in every
 // chainable struct, so pin the prefix too: a reorder becomes a build break
 // here instead of a payload value dereferenced as a pointer. The 8 is as
-// 64-bit-specific as the sizeof numbers above. VkVideoEncoderPlaneLayout
-// is deliberately absent: a pointer-free POD with no {sType, pNext}
-// prefix, and it rides no chain.
+// 64-bit-specific as the sizeof numbers above. VkVideoEncoderPlaneLayout and
+// VkVideoEncoderInputFormatProperties are deliberately absent: both are
+// pointer-free PODs with no {sType, pNext} prefix, and neither rides a chain.
+// Those two are the only absences -- every other struct the sizeof pins above
+// cover is pinned here, which is what makes this list readable as a set.
 #if defined(__LP64__) || defined(_LP64) || defined(_WIN64)
 #define VK_ENC_PIN_CHAIN_PREFIX(T)                                          \
     static_assert((offsetof(T, sType) == 0) && (offsetof(T, pNext) == 8),   \
@@ -2986,6 +3004,7 @@ VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderCompletionInfo);
 VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderDiagnosticInfo);
 VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderFilterInfo);
 VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderInputResidencyInfo);
+VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderStagedSubmitInfo);
 VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncodeInputFrame);
 VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncodeResult);
 VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderRuntimeInfo);
@@ -3000,6 +3019,241 @@ VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderCapabilities);
 VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderContextCreateInfo);
 VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderDeviceIdentity);
 #undef VK_ENC_PIN_CHAIN_PREFIX
+
+// Neither pin above can see the INTERIOR of a struct. A member removed from
+// a run of members that ends where a coarser alignment begins -- the next
+// member's, or the struct's own round-up at the end -- need not shrink the
+// struct at all: the compiler reclaims exactly the bytes that went as
+// padding at the close of the run, so sizeof is unchanged, the prefix is
+// unchanged, and every member between the removal and that boundary shifts
+// down under an UNCHANGED sType. It holds at every width. A byte-wide
+// member in a run closing at a 4-aligned one, a 4-byte member in a run
+// closing at an 8-aligned one, and a trailing bool in a run that reaches
+// only the struct's own tail padding are the same event. A consumer that
+// never named the removed field gets no compile error, and there is no
+// diagnostic at either end -- the same silence the sizeof pins exist to
+// break, one level further in.
+//
+// Worse than a lost field, where the survivors are the same width as the
+// member that went: the consumer does not read a field that is missing, it
+// reads a DIFFERENT field's value under the name it asked for, and reports it
+// as the answer. A run of same-width members closing at a padding boundary
+// is where that happens.
+//
+// So, in each public struct that HAS such a run, pin the member that CLOSES
+// it -- the one immediately before the next member of coarser alignment, and
+// the last member of the struct. That member is the one every removal within
+// the run displaces, whichever member the removal takes and whether or not
+// the run carries a hole today; removing the pinned member itself instead
+// deletes a name this file asserts on. One number per run therefore covers
+// every REMOVAL inside the run: it either moves that number or fails to
+// compile here.
+//
+// IT DOES NOT COVER EVERY REORDER, which is worth stating because a reorder
+// produces the same misread this whole block exists to stop. Transposing two
+// members of EQUAL WIDTH changes no size, no chain prefix and no offset but
+// those two, so a closing-member pin sees it only when the pinned member is
+// one of the pair. In a run of two members it always is. In a longer run of
+// equal-width members it need not be, and the two public structs that are
+// one such run end to end -- VkVideoEncoderPlaneLayout and
+// VkVideoEncoderInputFormatProperties -- are pinned member by member at the
+// end of this block for that reason.
+//
+// INSERTION IS THE SAME HAZARD AND IS WHY THE COVERAGE BELOW IS EXHAUSTIVE.
+// A run that ends in padding swallows a field small enough to fit there: the
+// size pin above does not move, the members past the padding do not move, and
+// the members of the run between the insertion and that padding all slide.
+// VkVideoEncoderConfig carries such a run in the shipped layout -- its
+// byte-wide colour description ends one byte short of the 4-aligned member
+// behind it -- and a consumer built against the older header would go on
+// writing a field some bytes from where the library reads it, with nothing
+// here objecting. Every run that can absorb a field therefore carries the pin
+// that closes it, derived from measured offsets rather than from reading the
+// declarations.
+//
+// THESE PINS ARE THE ONLY LAYOUT ENFORCEMENT THIS API HAS.
+// VK_VIDEO_ENCODER_EXT_API_VERSION is 1 and stays 1 -- it is not bumped for
+// layout or vtable changes -- so there is no version a consumer can compare
+// to discover that a struct moved underneath it. Nothing else in the build
+// notices. A pin removed as redundant is enforcement deleted, not tidied.
+//
+// THE ONE CASE THESE DO NOT COVER, stated so it is not mistaken for one they
+// do: a field dropped INTO a padding hole, displacing nothing. The four bytes
+// between sType and the 8-aligned pNext are such a hole in every chainable
+// struct here, and so are the bytes after the closing member of a trailing
+// run. A field placed there moves no member and changes no size, so nothing
+// fires -- not these pins, not the size pin, not the {sType, pNext} prefix
+// pin. That was measured rather than assumed. Nothing existing is MISREAD in
+// that case: every offset a consumer already knows is still correct. What it
+// costs is that the library reads bytes an older consumer never wrote, which
+// is the field table's business rather than this one's.
+//
+// Deliberately not every member, and deliberately not every struct. A struct
+// whose every removal changes its size is already answered by the size pin
+// above and takes nothing here -- a pin that cannot fail independently of
+// the two above records nothing. What this one is for is that a change
+// landing in padding trips something, not that every field is frozen.
+//
+// VkVideoEncoderExternalImageDescriptor carries the most of them because it
+// is the one pointer-free POD in this API that IS the IPC payload: a
+// producer in another process fills it by field copy, so its member offsets
+// are the wire format rather than a property of this build. It is also long
+// enough that a change to one end of it is read nowhere near the other.
+#if defined(__LP64__) || defined(_LP64) || defined(_WIN64)
+#define VK_ENC_PIN_MEMBER(T, m, N)                                          \
+    static_assert(offsetof(T, m) == (N),                                    \
+                  #T "::" #m " moved -- a member removed or reordered into" \
+                     " padding leaves sizeof unchanged and shifts the rest" \
+                     " of its run under an unchanged sType")
+#else
+#define VK_ENC_PIN_MEMBER(T, m, N)
+#endif
+VK_ENC_PIN_MEMBER(VkVideoEncoderExternalImageDescriptor,
+                  hasDrmFormatModifier, 64);
+VK_ENC_PIN_MEMBER(VkVideoEncoderExternalImageDescriptor,
+                  planeCount, 80);
+VK_ENC_PIN_MEMBER(VkVideoEncoderExternalImageDescriptor,
+                  residency, 312);
+VK_ENC_PIN_MEMBER(VkVideoEncoderExternalImageDescriptor,
+                  colorModel, 332);
+// VkVideoEncoderCapabilities has two such runs: the level, DPB and quality
+// scalars closing at the 8-aligned maxBitrate, and the four trailing
+// availability flags, which live entirely in the struct's tail padding.
+VK_ENC_PIN_MEMBER(VkVideoEncoderCapabilities,
+                  maxQualityLevels, 36);
+VK_ENC_PIN_MEMBER(VkVideoEncoderCapabilities,
+                  supportsResizeWithoutIdr, 83);
+// VkVideoEncoderImageSupport is the smallest case of the same shape: its two
+// payload members are one run, and both of them sit in the round-up to the
+// alignment the pNext pointer imposes.
+VK_ENC_PIN_MEMBER(VkVideoEncoderImageSupport,
+                  status, 20);
+// VkVideoEncoderStagedSubmitInfo has that shape too: the submitted queue
+// flag and the family index it resolves to are one run, sitting entirely in
+// the round-up the pNext pointer imposes, so dropping either leaves the size
+// at 24 and slides the survivor onto the other one's offset.
+VK_ENC_PIN_MEMBER(VkVideoEncoderStagedSubmitInfo,
+                  queueFamilyIndex, 20);
+// The narrow-integer runs of the HDR10 metadata: the two white-point
+// chromaticity coordinates, and the two content light levels that close the
+// struct.
+VK_ENC_PIN_MEMBER(VkVideoEncoderHdrMetadataInfo,
+                  whitePointY, 34);
+VK_ENC_PIN_MEMBER(VkVideoEncoderHdrMetadataInfo,
+                  maxFrameAverageLightLevel, 50);
+// VkVideoEncoderConfig has three: the byte-wide colour description, the
+// diagnostic switches closing at the 8-aligned external-handle block, and
+// the two external queue family indices that close the struct. Its size pin
+// lives beside the config binder, where it also serves as the
+// binder-completeness check, and cannot see any of these.
+VK_ENC_PIN_MEMBER(VkVideoEncoderConfig,
+                  matrixCoefficients, 118);
+VK_ENC_PIN_MEMBER(VkVideoEncoderConfig,
+                  silenceStdio, 172);
+VK_ENC_PIN_MEMBER(VkVideoEncoderConfig,
+                  externalComputeQueueFamilyIndex, 204);
+// The per-frame scalars between the presentation timestamp and the wait
+// semaphore array.
+VK_ENC_PIN_MEMBER(VkVideoEncodeInputFrame,
+                  waitSemaphoreCount, 84);
+// The two PCI identifiers that close the device identity, after the fixed
+// UUID and name arrays.
+VK_ENC_PIN_MEMBER(VkVideoEncoderDeviceIdentity,
+                  deviceID, 308);
+// VkVideoEncoderValidationInfo: the flag word closes the struct on its own,
+// in the round-up behind the single pNext pointer.
+VK_ENC_PIN_MEMBER(VkVideoEncoderValidationInfo,
+                  flags, 16);
+// VkVideoEncoderFrameFenceDescriptor: the acquire fd closes the 4-byte run
+// before the 8-aligned release pointer.
+VK_ENC_PIN_MEMBER(VkVideoEncoderFrameFenceDescriptor,
+                  acquireFenceFd, 16);
+// VkVideoEncoderFrameSubmitInfo: two counts, each closing a run before an
+// 8-aligned array pointer.
+VK_ENC_PIN_MEMBER(VkVideoEncoderFrameSubmitInfo,
+                  waitSemaphoreCount, 56);
+VK_ENC_PIN_MEMBER(VkVideoEncoderFrameSubmitInfo,
+                  signalSemaphoreCount, 80);
+// VkVideoEncoderCompletionInfo: the acquired-frame count closes the struct
+VK_ENC_PIN_MEMBER(VkVideoEncoderCompletionInfo,
+                  framesAcquired, 56);
+// VkVideoEncodeInputFrame: the declared layout closes the run before the
+// 8-aligned handle block; the
+// signal count closes the run before its array pointer
+VK_ENC_PIN_MEMBER(VkVideoEncodeInputFrame,
+                  currentLayout, 40);
+VK_ENC_PIN_MEMBER(VkVideoEncodeInputFrame,
+                  signalSemaphoreCount, 104);
+// VkVideoEncodeResult: the status closes the struct
+VK_ENC_PIN_MEMBER(VkVideoEncodeResult,
+                  status, 64);
+// VkVideoEncoderRuntimeInfo: the trailing simulcast flag closes the struct
+VK_ENC_PIN_MEMBER(VkVideoEncoderRuntimeInfo,
+                  applyAlignmentToAllSimulcastLayers, 112);
+// VkVideoEncoderSemaphoreDescriptor: the ownership mode closes the struct
+VK_ENC_PIN_MEMBER(VkVideoEncoderSemaphoreDescriptor,
+                  ownership, 24);
+// VkVideoEncoderFrameSyncDescriptor: two counts, each closing a run before
+// an 8-aligned array pointer.
+VK_ENC_PIN_MEMBER(VkVideoEncoderFrameSyncDescriptor,
+                  waitCount, 16);
+VK_ENC_PIN_MEMBER(VkVideoEncoderFrameSyncDescriptor,
+                  signalCount, 40);
+// VkVideoEncoderImageSupportDetails: the modifier count closes the run
+// before the 8-aligned modifier array.
+VK_ENC_PIN_MEMBER(VkVideoEncoderImageSupportDetails,
+                  directModifierCount, 16);
+// VkVideoEncoderStatus: the consumed-handle flag closes the struct
+VK_ENC_PIN_MEMBER(VkVideoEncoderStatus,
+                  handlesConsumed, 16);
+// VkVideoEncoderImportGuardInfo: the errno closes the struct
+VK_ENC_PIN_MEMBER(VkVideoEncoderImportGuardInfo,
+                  failureErrno, 32);
+// VkVideoEncoderContextCreateInfo: the mode closes the run before the
+// 8-aligned Vulkan handles; silenceStdio
+// closes the struct
+VK_ENC_PIN_MEMBER(VkVideoEncoderContextCreateInfo,
+                  mode, 16);
+VK_ENC_PIN_MEMBER(VkVideoEncoderContextCreateInfo,
+                  silenceStdio, 56);
+// VkVideoEncoderConfig: the GPU UUID closes the run that carries the colour
+// description, the
+// input transfer function and the device selector -- the run a 4-byte
+// insertion slides whole
+VK_ENC_PIN_MEMBER(VkVideoEncoderConfig,
+                  gpuUUID, 132);
+#undef VK_ENC_PIN_MEMBER
+
+// THE TWO STRUCTS A CLOSING-MEMBER PIN CANNOT SPEAK FOR, pinned member by
+// member instead. VkVideoEncoderPlaneLayout is five uint64_t and
+// VkVideoEncoderInputFormatProperties opens with two VkFormat, so each is one
+// run of equal-width members end to end: transposing a pair inside either
+// leaves the size, every other member's offset and every other assertion in
+// this file untouched, and the consumer reads one member's value under the
+// other's name. Neither carries {sType, pNext} and neither rides a chain, so
+// the prefix pins have nothing to say about them either.
+//
+// The FIRST member of each is deliberately left unpinned, so no assertion
+// here is offsetof(T, m) == 0. Nothing is lost: a transposition moves two
+// members, at most one of which can be the first, so the other one's offset
+// has to move and is pinned below.
+#if defined(__LP64__) || defined(_LP64) || defined(_WIN64)
+#define VK_ENC_PIN_ORDER(T, m, N)                                           \
+    static_assert(offsetof(T, m) == (N),                                    \
+                  #T "::" #m " moved -- every member of this structure is"  \
+                     " the same width, so a transposition changes no size"  \
+                     " and no other offset, and is read as the wrong"       \
+                     " field's value")
+#else
+#define VK_ENC_PIN_ORDER(T, m, N)
+#endif
+VK_ENC_PIN_ORDER(VkVideoEncoderPlaneLayout, size, 8);
+VK_ENC_PIN_ORDER(VkVideoEncoderPlaneLayout, rowPitch, 16);
+VK_ENC_PIN_ORDER(VkVideoEncoderPlaneLayout, arrayPitch, 24);
+VK_ENC_PIN_ORDER(VkVideoEncoderPlaneLayout, depthPitch, 32);
+VK_ENC_PIN_ORDER(VkVideoEncoderInputFormatProperties, encodeFormat, 4);
+VK_ENC_PIN_ORDER(VkVideoEncoderInputFormatProperties, optimality, 8);
+#undef VK_ENC_PIN_ORDER
 
 //=============================================================================
 // VkVideoEncoderContentProbe::State is a PRIVATE MIRROR of

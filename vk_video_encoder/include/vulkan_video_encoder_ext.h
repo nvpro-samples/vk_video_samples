@@ -36,7 +36,6 @@
 // covers the C++ interface below, where adding, removing or reordering a
 // virtual method breaks the ABI exactly as a struct change does.
 //
-//
 // Every public struct that rides a pNext chain opens with sType/pNext. Two
 // structures carry no such prefix and chain nowhere: VkVideoEncoderPlaneLayout,
 // an element of a fixed array inside another structure, and
@@ -50,12 +49,19 @@
 //     because nothing checks the version at runtime.
 //   * sType values are never reused or renumbered.
 //   * The library REJECTS a struct whose sType it does not recognize
-//     (VK_ERROR_INITIALIZATION_FAILED) rather than guessing -- version skew
-//     across the boundary fails loudly instead of silently misbehaving.
+//     rather than guessing -- VK_ERROR_INITIALIZATION_FAILED from the
+//     entry points that return a VkResult,
+//     VK_VIDEO_ENCODER_STATUS_ERROR_STRUCTURE_TYPE_UNKNOWN from those
+//     that return a typed status.
 //   * That rejection applies at EVERY public pNext position, entry and
 //     result structs alike -- not only to each call's primary struct. An
 //     unknown sType anywhere in a chain is a typed error, never a skip,
-//     and a struct with no defined extension structs refuses ANY chain.
+//     and a struct for which no extension struct is defined refuses ANY
+//     chain. Where a call DOES define more than one optional link, the
+//     walk is flat and order-independent in Vulkan's own manner: each
+//     link is classified by its sType and not by its position, so a
+//     known link is accepted wherever in that chain it sits, and a
+//     repeated one is refused like an unknown one.
 //   * There is deliberately NO size field: a size field invites reading
 //     fewer bytes than the caller wrote -- silent field loss, the exact
 //     defect class structure typing exists to prevent.
@@ -75,7 +81,7 @@
 #define VK_VIDEO_ENCODER_B_FRAMES_DRIVER_PREFERRED 0xFFFFFFFFu
 
 // Maximum planes in an imported image descriptor. Four covers every format
-// this encoder accepts and keeps the descriptor a fixed-size POD.
+// this encoder accepts.
 #define VK_VIDEO_ENCODER_MAX_PLANES 4
 
 
@@ -97,8 +103,7 @@ typedef enum VkVideoEncoderStructureType {
     // Chained onto VkVideoEncoderImageSupport::pNext: the renegotiation
     // modifier list (see the struct).
     VK_VIDEO_ENCODER_STRUCTURE_TYPE_IMAGE_SUPPORT_DETAILS     = 0x5645000B,
-    // The registration status echo: part of the
-    // registry surface, so it takes the first value of the reserved band.
+    // The registration status echo.
     VK_VIDEO_ENCODER_STRUCTURE_TYPE_STATUS                    = 0x5645000C,
     VK_VIDEO_ENCODER_STRUCTURE_TYPE_COMPLETION_INFO = 0x56450012,
     VK_VIDEO_ENCODER_STRUCTURE_TYPE_FRAME_DEADLINE_INFO = 0x56450013,
@@ -140,10 +145,7 @@ typedef enum VkVideoEncoderStructureType {
     // the other.
     VK_VIDEO_ENCODER_STRUCTURE_TYPE_IMPORT_CONTENT_INFO = 0x5645001D,
     // HDR10 static metadata; see VkVideoEncoderHdrMetadataInfo. Chained onto
-    // VkVideoEncoderConfig::pNext. A struct rather than fields on the config
-    // for the reason the rules above give and for one more: the config's
-    // sizeof is PINNED by two separate static_asserts, one of which doubles
-    // as the binder-completeness check.
+    // VkVideoEncoderConfig::pNext.
     VK_VIDEO_ENCODER_STRUCTURE_TYPE_HDR_METADATA_INFO = 0x5645001E,
     // How the caller's OWN samples are coded; see
     // VkVideoEncoderInputColourInfo. Chained onto VkVideoEncoderConfig::pNext.
@@ -983,8 +985,9 @@ typedef void (*PFN_vkVideoEncoderUserDataRelease)(void* pUserData)
 //
 // Chainable onto pNext: VkVideoEncoderDiagnosticInfo,
 // VkVideoEncoderFilterInfo, VkVideoEncoderInputResidencyInfo,
-// VkVideoEncoderStagedSubmitInfo and VkVideoEncoderImportGuardInfo.
-// Unknown or repeated sTypes are refused, not ignored.
+// VkVideoEncoderStagedSubmitInfo, VkVideoEncoderImportGuardInfo and
+// VkVideoEncoderImportContentInfo. Unknown or repeated sTypes are refused,
+// not ignored.
 struct VkVideoEncoderCompletionInfo {
     VkVideoEncoderStructureType sType =
         VK_VIDEO_ENCODER_STRUCTURE_TYPE_COMPLETION_INFO;
@@ -1487,7 +1490,9 @@ struct VkVideoEncoderConfig {
     // collapses onto unset BY DESIGN -- QP 0 is the codec floor, so
     // "clamp at 0" and "no lower clamp" admit the same QP range. A maxQp
     // of 0 (force every frame to QP 0) is NOT expressible through these
-    // fields; expressing it needs new fields and a version bump. AV1 rate
+    // fields; expressing it would take a pNext-chained struct with a new
+    // sType, per the ABI rules at the top of this header -- not a wider field
+    // here, and not a version bump, which nothing reads. AV1 rate
     // control is quantizer-index based (0..255, a different unit): a
     // non-zero value on an AV1 session is REJECTED at InitializeExt
     // rather than reinterpreted or ignored. Values are validated against
@@ -2185,7 +2190,9 @@ typedef struct VkVideoEncoderImageSupportDetails {
 // A constant of (platform, handle type, mode) -- deliberately not of the
 // call's outcome, which is the whole point.
 //
-// pNext accepts at most one VkVideoEncoderImportGuardInfo and at most one
+// pNext CARRIES A CHAIN ONLY WHERE THERE IS A VERDICT TO DELIVER, which is
+// RegisterImageResource. There it accepts at most one
+// VkVideoEncoderImportGuardInfo and at most one
 // VkVideoEncoderImportContentInfo (both below), in either order; an unknown
 // link, or a REPEATED link of either known type, is refused as version skew,
 // with the ownership rule still applied to the handle on that exit. Two
@@ -2193,6 +2200,12 @@ typedef struct VkVideoEncoderImageSupportDetails {
 // extension the library does not understand means the caller asked for
 // something it is not getting, and silently ignoring it is the one outcome
 // this gate exists to prevent.
+//
+// On RegisterSemaphore the echo takes NO chain. Both verdict structs report
+// on a dma-buf IMAGE import, and a semaphore registration performs none, so
+// any non-null pNext there is version skew and is refused -- with the
+// ownership rule applied on that exit like every other, which under
+// TRANSFER means the fd is consumed by the refusal.
 //=============================================================================
 struct VkVideoEncoderStatus {
     VkVideoEncoderStructureType sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_STATUS;
@@ -3002,7 +3015,10 @@ public:
     // |descriptor.ownership| selects the mode (TRANSFER by default: an fd
     // is consumed on every exit path including failure; BORROW: the caller
     // keeps it on every exit path); a Win32 handle is never closed by the
-    // library in either mode. |pStatus| is the same optional echo.
+    // library in either mode. |pStatus| is the same optional echo, with one
+    // difference: it carries no chain here. See the note on
+    // VkVideoEncoderStatus for why, and for what the refusal costs an fd
+    // presented under TRANSFER.
     //
     // CROSS-PROCESS ON WINDOWS: |osHandle| must already be valid in the
     // encoder's process. A Win32 handle is process-local, and this interface

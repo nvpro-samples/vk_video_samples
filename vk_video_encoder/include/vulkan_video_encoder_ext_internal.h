@@ -9,14 +9,32 @@
  * Layer 1 is the field table below. Every field of VkVideoEncoderConfig
  * appears exactly once with a disposition saying what happens to it. Each
  * entry carries an offsetof assertion, so renaming or removing a field fails
- * the build here. An ADDED field is caught elsewhere: the sizeof assertion on
- * the struct fails when the addition changes the size, and the closing-member
- * pins beside that assertion fail when it lands in padding and slides the
- * rest of a run. Both are PROMPTS rather than proofs -- they fail where the
- * pin is, not at this table, and this table is a hand-maintained list that
- * nothing ties to the struct declaration, so a field whose pin was updated
- * and whose row was not written still compiles. Classifying a new field is a
- * decision an author makes; the pins are what put the question in front of
+ * the build here, and each carries the SIZE and the ALIGNMENT of the field it
+ * names so that the rows can be checked against the struct as a whole and not
+ * only against one another.
+ *
+ * A FIELD WITH NO ROW is the case the offsetof assertions cannot see: those
+ * assertions are taken FROM rows, so a field nobody wrote a row for is never
+ * named by one. The sizeof assertion on the struct, and the closing-member
+ * pins beside it, fail when an addition changes the size or slides a run --
+ * but both are PROMPTS rather than proofs. They fail where the pin is, not at
+ * this table, and a field whose pin was updated and whose row was not written
+ * still compiles. That is how inputColorModel reached this struct with no row
+ * here, and nothing failed.
+ *
+ * WHAT CLOSES IT is the tiling check, which lives in this tree rather than in
+ * a consumer: vk_video_encoder/test/encoder-ext-filter, run by ctest as
+ * EncoderExtInputFormatTaxonomy. Sorted by offset, the rows must lie end to
+ * end across VkVideoEncoderConfig -- no row starting inside its predecessor, a
+ * gap before a row legal only while it is STRICTLY narrower than that row's
+ * alignment, the last row closing the struct, and the gaps totalling
+ * kVkEncCfgPaddingBytes. Between them those fail for the removal of ANY row in
+ * this table.
+ *
+ * THE ONE CASE NONE OF THEM SEES is a field added into padding that already
+ * exists: it moves neither the struct's size nor any offset, so there is
+ * nothing for an arithmetic check to count. Classifying a new field remains a
+ * decision an author makes; these checks are what put the question in front of
  * them.
  *
  * Layer 3 is the binder conformance suite, which drives
@@ -25,10 +43,13 @@
  * projection: its binding is a conditional file-open, and a consumer that
  * captures in memory nulls the field. Those assertions are written by hand;
  * no test walks this table pairing dispositions with effects, so a new
- * BOUND field is covered only once its author adds the assertion. The one
- * test that does iterate the table (FieldTableIsExhaustiveAndClassified)
- * checks its shape -- exactly-once classification, in-struct offsets -- not
- * field effect. The binder is exposed as a free function because it touches
+ * BOUND field is covered only once its author adds the assertion. The tests
+ * that DO iterate the table are the field-table cases of the taxonomy suite
+ * named above; they check its SHAPE -- exactly-once classification, in-struct
+ * offsets, and the tiling -- not field effect. A consumer of this header may
+ * carry a test of that shape too, but a guarantee this header states has to
+ * be one this library can run, so the in-tree cases are what it cites.
+ * The binder is exposed as a free function because it touches
  * no member state, so the suite drives it with no Vulkan device at all.
  */
 
@@ -156,7 +177,8 @@ enum VkVideoEncoderConfigFieldDisposition {
 
 // Stable index per field. No test iterates by these indices today; the one
 // live consumer is kVkEncCfgFieldCount, which pins the table length (the
-// static_assert below, re-checked by FieldTableIsExhaustiveAndClassified).
+// static_assert below, re-checked at run time by the field-table cases in
+// vk_video_encoder/test/encoder-ext-filter).
 #define VK_ENC_FIELD_ENUM(field, disposition, note) kVkEncCfgField_##field,
 enum VkVideoEncoderConfigFieldId {
     VK_VIDEO_ENCODER_CONFIG_FIELDS(VK_ENC_FIELD_ENUM)
@@ -169,13 +191,25 @@ struct VkVideoEncoderConfigFieldInfo {
     VkVideoEncoderConfigFieldDisposition    disposition;
     const char*                             note;
     size_t                                  offset;
+    // The EXTENT of the field this row names. An offset alone says where a row
+    // starts and nothing about what it covers, so offsets alone can be checked
+    // only against each other; with the extent, the rows can be laid end to
+    // end and compared against the struct they claim to describe.
+    //
+    // DERIVED from the member, never written down beside it: a hand-copied
+    // width is one more thing that can go stale, and a stale one would make
+    // the tiling check agree with a layout the compiler does not have.
+    size_t                                  size;
+    size_t                                  align;
 };
 
 // Every field's existence is asserted by taking its offset: a rename or a
 // removal stops compiling here, which is the point.
 #define VK_ENC_FIELD_INFO(field, disposition, note)                            \
     {#field, VK_ENC_FIELD_##disposition, note,                                 \
-     offsetof(VkVideoEncoderConfig, field)},
+     offsetof(VkVideoEncoderConfig, field),                                    \
+     sizeof(VkVideoEncoderConfig::field),                                      \
+     alignof(decltype(VkVideoEncoderConfig::field))},
 static const VkVideoEncoderConfigFieldInfo kVkVideoEncoderConfigFields[] = {
     VK_VIDEO_ENCODER_CONFIG_FIELDS(VK_ENC_FIELD_INFO)
 };
@@ -185,6 +219,24 @@ static_assert(sizeof(kVkVideoEncoderConfigFields) /
                       sizeof(kVkVideoEncoderConfigFields[0]) ==
                   (size_t)kVkEncCfgFieldCount,
               "field table and field enum disagree");
+
+// The bytes of VkVideoEncoderConfig that no field occupies: alignment padding
+// between the rows above, once they are laid out in offset order. Four gaps
+// carry all of it today -- 4 before pNext, 1 before videoFullRange, 3 before
+// deviceId, 4 before outputPath.
+//
+// WHY A WRITTEN-DOWN NUMBER, as the struct's size is. The per-gap rule on its
+// own -- a gap is legal while it is narrower than the alignment of the member
+// that follows it -- still passes when the removed row sat in front of a
+// WIDELY aligned successor, because the bytes it freed fit inside slack that
+// successor already had. Two rows in this table are of exactly that shape:
+// silenceStdio, four bytes ahead of an eight-aligned pointer, and
+// matrixCoefficients, one byte ahead of a four-aligned VkBool32. Pinning the
+// total is what catches those two -- the freed bytes have to surface
+// somewhere, and once the total is pinned, here is where they surface.
+//
+// Move it only alongside the layout change that made it true.
+constexpr size_t kVkEncCfgPaddingBytes = 12;
 
 // A flat projection of everything the binder is supposed to have written.
 // The binder suite asserts on this rather than on EncoderConfig, so the
