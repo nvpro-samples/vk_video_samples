@@ -253,6 +253,38 @@ EncoderConfigH264::InitVuiParameters(StdVideoH264SequenceParameterSetVui *vui,
     }
 }
 
+// H.264 Annex A: entropy_coding_mode_flag is not available in the Baseline
+// profile. profile_idc 66 covers Baseline AND Constrained Baseline -- they are
+// the same profile_idc, narrowed by constraint_set1_flag, which
+// InitSpsPpsParameters() sets for 66 -- and neither admits CABAC. Main (77)
+// and every High profile do admit it.
+//
+// The file already asserts this rule itself, one branch away, in
+// InitProfileLevel(): "Upgrade to MAIN profile if using B-frames or CABAC
+// entropy coding". That upgrade only ever runs when NO profile was requested,
+// so it never sees an explicit --profile baseline, which is how a Baseline
+// session could reach the PPS writer with CABAC still set.
+//
+// Clamping the TOOL and keeping the requested PROFILE is the same shape the
+// file already uses for the other per-profile tool restriction it enforces,
+// transform_8x8_mode_flag below (High and above only). It is the right way
+// round here too: the profile is the caller's explicit request, and is what
+// the level and the DPB were sized against, whereas the entropy coder is not
+// requested by anyone -- there is no command-line switch for it, it is taken
+// from the device's preferredStdEntropyCodingModeFlag. The resulting
+// parameter sets then describe honestly what was emitted: profile_idc 66,
+// constraint_set0_flag/constraint_set1_flag set, entropy_coding_mode_flag 0.
+EncoderConfigH264::EntropyCodingMode
+EncoderConfigH264::ConformantEntropyCodingMode(StdVideoH264ProfileIdc profile,
+                                               EntropyCodingMode requested)
+{
+    if ((profile == STD_VIDEO_H264_PROFILE_IDC_BASELINE) &&
+        (requested == ENTROPY_CODING_MODE_CABAC)) {
+        return ENTROPY_CODING_MODE_CAVLC;
+    }
+    return requested;
+}
+
 bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *sps,
                                              StdVideoH264PictureParameterSet *pps,
                                              StdVideoH264SequenceParameterSetVui* vui)
@@ -368,11 +400,13 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
         pps->flags.transform_8x8_mode_flag = true;
     }
 
-    if (entropyCodingMode == ENTROPY_CODING_MODE_CABAC) {
-        pps->flags.entropy_coding_mode_flag = true;
-    } else {
-        pps->flags.entropy_coding_mode_flag = false;
-    }
+    // Derive the emitted flag through the profile rule rather than from
+    // |entropyCodingMode| directly, so that the PPS is conformant with the
+    // sps->profile_idc written below on EVERY path reaching this writer,
+    // including one that never ran InitDeviceCapabilities().
+    pps->flags.entropy_coding_mode_flag =
+        (ConformantEntropyCodingMode(profileIdc, entropyCodingMode) ==
+         ENTROPY_CODING_MODE_CABAC);
 
     // Always write out deblocking_filter_control_present_flag
     pps->flags.deblocking_filter_control_present_flag = true;
@@ -525,7 +559,44 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
     numRefL0 = h264QualityLevelProperties.preferredMaxL0ReferenceCount;
     numRefL1 = h264QualityLevelProperties.preferredMaxL1ReferenceCount;
     numRefFrames = numRefL0 + numRefL1;
-    entropyCodingMode = h264QualityLevelProperties.preferredStdEntropyCodingModeFlag == VK_TRUE ? ENTROPY_CODING_MODE_CABAC : ENTROPY_CODING_MODE_CAVLC;
+    // The device's preferred entropy coder, clamped to what the selected
+    // profile permits.
+    //
+    // This assignment is the LAST unconditional writer of |entropyCodingMode|,
+    // which is why the clamp belongs here. InitProfileLevel() has already run
+    // by the time InitDeviceCapabilities() is called -- InitializeParameters()
+    // calls it at config-construction time, this runs later, from
+    // VkVideoEncoder::InitEncoder() -- so a clamp placed alongside the profile
+    // decision would be overwritten by this line and would be inert.
+    const EntropyCodingMode devicePreferred =
+        (h264QualityLevelProperties.preferredStdEntropyCodingModeFlag == VK_TRUE)
+            ? ENTROPY_CODING_MODE_CABAC
+            : ENTROPY_CODING_MODE_CAVLC;
+    entropyCodingMode = ConformantEntropyCodingMode(profileIdc, devicePreferred);
+
+    if (entropyCodingMode != devicePreferred) {
+        VkEncOut() << "[EncoderConfigH264] H.264 Baseline (profile_idc "
+                   << static_cast<uint32_t>(profileIdc)
+                   << ") does not permit CABAC; encoding with CAVLC instead of "
+                      "the device's preferred entropy coder, so that the "
+                      "bitstream conforms to the requested profile."
+                   << std::endl;
+
+        // The one case where the clamp itself may not be expressible: a device
+        // that cannot emit entropy_coding_mode_flag = 0 cannot produce a
+        // conformant Baseline stream at all. Reported, not refused --
+        // stdSyntaxFlags is advisory and unevenly populated across drivers,
+        // and turning a working session into a hard initialisation failure on
+        // an unverified capability bit is the larger risk. If it is real, the
+        // encode fails downstream carrying the driver's own error.
+        if ((h264EncodeCapabilities.stdSyntaxFlags &
+             VK_VIDEO_ENCODE_H264_STD_ENTROPY_CODING_MODE_FLAG_UNSET_BIT_KHR) == 0) {
+            VkEncErr() << "[EncoderConfigH264] the device does not advertise "
+                          "ENTROPY_CODING_MODE_FLAG_UNSET; CAVLC may be "
+                          "unsupported here, in which case Baseline is not "
+                          "encodable on this device." << std::endl;
+        }
+    }
 
     return VK_SUCCESS;
 }

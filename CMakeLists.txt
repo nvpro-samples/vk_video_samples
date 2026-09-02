@@ -604,7 +604,7 @@ if(BUILD_ENCODER)
         # their arguments; what the filter then DOES with the pixels needs a
         # GPU and lives in vk_filter_test.
         add_subdirectory(vk_video_encoder/test/encoder-ext-filter)
-        # Real-device REGRESSION test for a defect that is now FIXED:
+        # Real-device REGRESSION test for a defect this guards against:
         # DrainPendingFrames() permanently disabled async assembly, and the
         # synchronous fallback publishes no completion record, so every frame
         # submitted after that call was encoded and then never became
@@ -619,7 +619,7 @@ if(BUILD_ENCODER)
         # path -- publishes NO completion record, in either output mode. Seven
         # sites in the tree are built on that premise, including the guard in
         # ProcessOrderedFrames and the WriteDataToFile contract comment, and
-        # until this entry existed NOTHING executed the function: the ext
+        # this entry is the ONLY thing that executes the function: the ext
         # surface cannot reach it (asyncAssembly is pinned on, a subscriber is
         # always registered, and ProcessOrderedFrames refuses the sync
         # fallback whenever one exists) and the file-based CLI that can reach
@@ -643,7 +643,7 @@ if(BUILD_ENCODER)
         # LIBRARY creates its own VkDevice on them and encodes. That
         # combination -- externalInstance + externalPhysicalDevice with
         # externalDevice left NULL -- is the supported embedding shape,
-        # and until this suite existed nothing in the tree exercised
+        # and this suite is the only thing in the tree that exercises
         # externalInstance, externalPhysicalDevice or externalDevice at
         # all: the only caller was the out-of-tree Chromium embedder.
         # Four entries: the ADOPT subject, an OWN control that makes a
@@ -653,7 +653,7 @@ if(BUILD_ENCODER)
         # GPU.
         add_subdirectory(vk_video_encoder/test/encoder-ext-adopt-device)
         # Real-device coverage of INPUT RESIDENCY on an OS-HANDLE
-        # registration. Before this suite every handleType under
+        # registration. Every other handleType under
         # vk_video_encoder/test was ..._VK_IMAGE -- eight registration sites,
         # zero OPAQUE_FD -- so the entire OS-handle import path, and every
         # rule the ext layer applies ONLY to an OS handle, had no test of any
@@ -791,6 +791,78 @@ if(BUILD_ENCODER)
         # (Y=16, U=V=128) is asserted CLEAN because that is the false positive
         # that would reroute working buffers.
         add_subdirectory(vk_video_encoder/test/encoder-ext-import-content)
+
+        # H.264 Baseline must not emit CABAC. profile_idc 66 covers Baseline
+        # and Constrained Baseline alike and neither admits CABAC:
+        # entropy_coding_mode_flag must be 0 there. Device-free.
+        #
+        # The entropy coder is chosen by nobody: there is no command-line
+        # switch for it, it is taken from the device
+        # preferredStdEntropyCodingModeFlag, which is CABAC on this vendor
+        # hardware. So an explicit --profile baseline emitted profile_idc 66
+        # with entropy_coding_mode_flag 1 -- a non-conformant bitstream, and
+        # reachable from the WebRTC default profile.
+        #
+        # Three parts: the rule over the whole profile x entropy matrix, the
+        # emitted SPS/PPS pair, and the composition with the profile
+        # auto-upgrade in InitProfileLevel(). The third is the one worth
+        # having. That upgrade does NOT cover this case -- it is guarded by
+        # profileIdc == INVALID and so never runs on an explicit request --
+        # and the suite fails if someone later widens it to fire on requests
+        # and assumes it subsumes the clamp.
+        add_subdirectory(vk_video_encoder/test/encoder-h264-baseline-entropy)
+
+        # GOP sequencing, device-free. The GOP machine decides encode order,
+        # B-frame counts and B-frame positions before any picture exists, and
+        # nothing else in this tree asserts those tables -- the sibling suites
+        # set gopLength and then encode, which cannot tell a correct sequence
+        # from a plausible one. Carried as its own subdirectory because it
+        # compiles VkVideoGopStructure.cpp directly and links nothing else.
+        add_subdirectory(vk_video_encoder/test/gop-structure)
+
+        # Encoder quality round trip: encode, decode with ffmpeg, and compare
+        # per-frame PSNR against the source. This is the only round-trip
+        # quality measurement in the tree -- the encoder's own --psnr option
+        # compares input against RECONSTRUCTED, inside the encoder, and so
+        # cannot see a stream that decodes wrongly.
+        #
+        # gpu-labelled, and it needs ffmpeg and ffprobe besides. It exits 77
+        # when the encoder binary or either tool is missing, which is the skip
+        # this label requires, so a host that cannot run it reports SKIPPED
+        # rather than red.
+        #
+        # --encoder is passed explicitly rather than letting the script derive
+        # it from --samples-root: that derivation spells the build directory
+        # in lower case and this tree builds into BUILD.
+        add_test(NAME EncoderAv1QualityRoundTrip
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/vk_video_encoder/test/av1_encoder_quality_test.py
+                         --encoder $<TARGET_FILE:vulkan-video-enc-test>
+                         --output-dir ${CMAKE_CURRENT_BINARY_DIR}/av1-quality
+                         --num-frames 30
+                         --codecs av1)
+        set_tests_properties(EncoderAv1QualityRoundTrip PROPERTIES
+                             SKIP_RETURN_CODE 77 LABELS "gpu")
+
+        # The gate's own classification, device-free. The round trip above can
+        # only exercise these decisions on a host that has an encoder, ffmpeg
+        # and content -- and both of them are about reporting a run as
+        # something it was not, so the hosts that cannot run it are exactly
+        # the ones where a misclassification would go unnoticed.
+        #
+        # device-free, and with no SKIP_RETURN_CODE: there is nothing here to
+        # skip for, and a skip is the failure mode under test.
+        #
+        # THE LABEL IS NOT OPTIONAL, and "not gpu" is not a label. Every
+        # registered test must carry 'device-free' or 'gpu': those two name the
+        # CI sets, and run_ctest_ci.sh audits the registry against them, so a
+        # test with neither is in no set, gates nothing, and fails the audit
+        # rather than quietly running nowhere.
+        add_test(NAME EncoderAv1QualityGateClassification
+                 COMMAND ${Python3_EXECUTABLE}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/vk_video_encoder/test/test_av1_quality_gate.py)
+        set_tests_properties(EncoderAv1QualityGateClassification PROPERTIES
+                             LABELS "device-free")
     endif()
 
     if(BUILD_DEMOS AND NOT DEFINED DEQP_TARGET)
