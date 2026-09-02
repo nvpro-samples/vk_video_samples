@@ -62,7 +62,7 @@ public:
     // FILTER-DISPATCH OBSERVABLE
     //
     // What ACTUALLY ran, readable from outside the library. Everything the
-    // ext layer could see before this was the CONFIG
+    // ext layer can otherwise see is the CONFIG
     // (enablePreprocessFilter): a request, not an outcome. The two diverge
     // in both directions -- a session can configure the filter and then
     // route every frame down the staging copy (StageInputFrame's
@@ -391,8 +391,8 @@ public:
         // Did the CALLER state srcExternalImageLayout for THIS FRAME, or is
         // it the registration-time default standing in?
         //
-        // The public contract makes the distinction and the encoder core
-        // could not previously see it: VkVideoEncoderFrameSubmitInfo::
+        // The public contract makes the distinction, and the encoder core
+        // cannot see it unaided: VkVideoEncoderFrameSubmitInfo::
         // currentLayout is documented as "the layout the producer left the
         // image in. VK_IMAGE_LAYOUT_UNDEFINED means 'as declared at
         // registration'", and the ext layer collapses both cases into one
@@ -942,6 +942,19 @@ public:
     // the enqueue the queue can only drain; the check is conservative.
     bool CanAcceptNewInputFrame() const;
 
+    // Upper bound on the number of items ONE EnqueueFrame() can push into
+    // m_assemblyQueue. The chain at rest is a run of non-reference frames
+    // (postFlushQueue fires on every reference frame, and both counters reset
+    // on every flush), so the bound is that run plus the reference frame whose
+    // insertion flushes it. Reads the generator's sub-GOP CYCLE, not the
+    // configured B count: the two can disagree, and the cycle is what places
+    // reference frames.
+    virtual size_t GetMaxAssemblyBurst() const {
+        if (!m_encoderConfig) { return 1u; }
+        const uint8_t cycle = m_encoderConfig->gopStructure.GetGopFrameCycle();
+        return (size_t)((cycle > 0) ? cycle : 1u);
+    }
+
     // Create the completion timeline semaphore (ext currency 3; idempotent).
     // Called by the ext layer at initialization, on the session-serial
     // thread, before any submit. Exportability is a physical-device
@@ -1231,6 +1244,14 @@ public:
         uint32_t numPlanes,
         VkFormat format);
 
+    // Drain the pipeline and join every worker. Returns true when the
+    // session completed everything it was given, and FALSE when it did not --
+    // a frame the encoder thread could not process, a bitstream the assembly
+    // workers could not read back or write, or a deferred frame that could
+    // not be pushed. The threads report each failure as it happens, but a
+    // process that only ever sees the end of the run has no other place to
+    // learn that one occurred, and a bitstream is not evidence: a session
+    // that failed on its first frame leaves a file of zero bytes behind.
     bool WaitForThreadsToComplete();
     // Queue a mid-stream rate-control update. Thread-safe
     // producer; applied on the encoder thread at the next frame boundary.
@@ -1349,8 +1370,8 @@ protected:
     // have been left in PREINITIALIZED by any legal barrier, so there is no
     // behaviour it could have relied on -- and GENERAL is strictly better for
     // the only thing such a caller does between frames, which is host-write a
-    // LINEAR image through a persistent mapping. TRANSFER_SRC_OPTIMAL, where
-    // the copy arm used to abandon it, does not permit that at all.
+    // LINEAR image through a persistent mapping, which
+    // TRANSFER_SRC_OPTIMAL does not permit at all.
     //
     // NO LAYOUT TRACKING THROUGH m_currentImageLayout. |residualLayout| is
     // still a LITERAL supplied by whichever arm recorded the work -- the same
@@ -1454,12 +1475,24 @@ public:
         return (m_onBitstreamCaptured != nullptr);
     }
 
-    bool EnqueueFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
-                      bool isIdrFrame, bool isReferenceFrame) {
+    // Record this frame into the deferred-GOP queue and flush that queue
+    // around it. Returns VK_SUCCESS when every flush this call made
+    // succeeded, and otherwise the first failure one reported.
+    //
+    // A flush is where a frame is recorded and submitted, so a frame whose
+    // commands could not be recorded or whose submit was refused fails HERE,
+    // on the caller thread. This return is the route by which that failure
+    // reaches the caller's own status; the drain at the end of the session
+    // reports it too, but only once every remaining frame has been given
+    // away.
+    VkResult EnqueueFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                          bool isIdrFrame, bool isReferenceFrame) {
+
+        VkResult result = VK_SUCCESS;
 
         const bool preFlushQueue = isIdrFrame;
         if (preFlushQueue) {
-            PushOrderedFrames();
+            result = PushOrderedFrames();
         }
 
         InsertOrdered(encodeFrameInfo, isReferenceFrame);
@@ -1479,9 +1512,16 @@ public:
                                         noReorderingNeeded ||
                                         (isReferenceFrame && (m_numDeferredRefFrames == m_holdRefFramesInQueue)));
         if (postFlushQueue) {
-            PushOrderedFrames();
+            // Both flushes are made whatever the first reported: this frame
+            // is in the queue by now, and the queue must not be left holding
+            // it because an earlier frame failed. The FIRST failure is the
+            // one returned -- it is the one with a cause behind it.
+            const VkResult postResult = PushOrderedFrames();
+            if (result == VK_SUCCESS) {
+                result = postResult;
+            }
         }
-        return true;
+        return result;
     }
 
     void ConsumerThread();
@@ -1836,6 +1876,14 @@ protected:
     std::mutex                               m_assemblyFileMutex;
     std::condition_variable                  m_assemblyOrderCV;
     std::atomic<uint32_t>                    m_assemblyErrorCount{0};
+    // Frames that could not be processed. The assembly counter above speaks
+    // only for the async-assembly workers; a failure raised while the frame
+    // was being recorded or submitted happens in PushOrderedFrames, which
+    // counts it there. That is what lets the drain speak for the frames
+    // already pushed and released during the run, and not only for the last
+    // one. Both counters are monotonic for the life of the session and are
+    // zeroed with the rest of the per-session counters.
+    std::atomic<uint32_t>                    m_frameProcessingErrorCount{0};
 };
 
 VkResult CreateVideoEncoderH264(const VulkanDeviceContext* vkDevCtx,

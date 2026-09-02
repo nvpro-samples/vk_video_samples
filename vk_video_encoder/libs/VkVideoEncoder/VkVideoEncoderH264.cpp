@@ -357,19 +357,43 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         }
     }
 
-    // It's not entirely correct to have two separate loops below, one for L0
-    // and the other for L1. In each loop, elements are added to referenceSlotsInfo[]
-    // without checking for duplication. Duplication could occur if the same
-    // picture appears in both L0 and L1; AFAIK, we don't have a situation
-    // today like that so the two loops work fine.
-    // TODO: create a set out of the ref lists and then iterate over that to
-    // build referenceSlotsInfo[].
+    // L0 AND L1 ARE LISTS; referenceSlotsInfo[] IS A SET. The same picture may
+    // hold a position in both reference lists, and on a B frame whose DPB
+    // carries a single reference picture it always does: that one picture is
+    // L0[0] and L1[0] alike. referenceSlotsInfo[] is not a reference list --
+    // it is the set of DPB slots the recorded commands BIND -- and Vulkan
+    // requires each picture resource named in it to be unique
+    // (VUID-VkVideoBeginCodingInfoKHR-pPictureResource-07238,
+    // VUID-vkCmdEncodeVideoKHR-pPictureResource-08220) and each DPB frame to
+    // be used at most once across it and the setup slot
+    // (VUID-vkCmdEncodeVideoKHR-dpbFrameUseCount-08221). So both lists are
+    // walked and each slot is admitted at most once.
+    //
+    // This does not touch the Std reference lists. Those name DPB slots by
+    // index, carry their own ordering, and a slot appearing in both of them
+    // is what the bitstream describes.
+    const uint32_t firstReferenceSlot = numReferenceSlots;
 
     for (uint32_t listNum = 0; listNum < 2; listNum++) {
 
         for (uint32_t i = 0; i < refLists.refPicListCount[listNum]; i++) {
 
             int8_t slotIndex = refLists.refPicList[listNum][i];
+
+            // The scan starts at the first entry these loops filled:
+            // referenceSlotsInfo[0] is reserved for the setup slot and its
+            // slotIndex is not written until after them.
+            bool slotAlreadyBound = false;
+            for (uint32_t bound = firstReferenceSlot; bound < numReferenceSlots; bound++) {
+                if (pFrameInfo->referenceSlotsInfo[bound].slotIndex == slotIndex) {
+                    slotAlreadyBound = true;
+                    break;
+                }
+            }
+            if (slotAlreadyBound) {
+                continue;
+            }
+
             bool refPicAvailable = m_dpb264->GetRefPicture(slotIndex, pFrameInfo->dpbImageResources[numReferenceSlots]);
             assert(refPicAvailable);
             if (!refPicAvailable) {

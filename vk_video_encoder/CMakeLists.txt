@@ -615,7 +615,7 @@ endif()
 # needs no GPU; what the filter then DOES with the pixels needs one and lives
 # in vk_filter_test.
 add_subdirectory(test/encoder-ext-filter)
-# Real-device REGRESSION test for a defect that is now FIXED:
+# Real-device REGRESSION test for a defect this guards against:
 # DrainPendingFrames() permanently disabled async assembly, and the synchronous
 # fallback publishes no completion record, so every frame submitted after that
 # call was encoded and then never became acquirable. DrainAndRestartThreads()
@@ -630,8 +630,8 @@ endif()
 # VkVideoEncoder::AssembleBitstreamData -- the synchronous assembly path --
 # publishes NO completion record, in either output mode. Seven sites in the
 # tree are built on that premise, including the guard in ProcessOrderedFrames
-# and the WriteDataToFile contract comment, and until this entry existed
-# NOTHING executed the function: the ext surface cannot reach it (asyncAssembly
+# and the WriteDataToFile contract comment. This entry is the ONLY thing that
+# executes the function: the ext surface cannot reach it (asyncAssembly
 # is pinned on, a subscriber is always registered, and ProcessOrderedFrames
 # refuses the sync fallback whenever one exists) and the file-based CLI that
 # can reach it exposes no VkVideoEncoder to observe. Subclasses the encoder
@@ -654,7 +654,7 @@ endif()
 # VkInstance and names the VkPhysicalDevice, and the LIBRARY creates its own
 # VkDevice on them and encodes. That combination -- externalInstance +
 # externalPhysicalDevice with externalDevice left NULL -- is the supported
-# embedding shape, and until this suite existed nothing in the tree exercised
+# and this suite is the only thing in the tree that exercises
 # externalInstance, externalPhysicalDevice or externalDevice at all: the only
 # caller was the out-of-tree Chromium embedder.
 # Four entries: the ADOPT subject, an OWN control that makes a red
@@ -779,6 +779,24 @@ add_subdirectory(test/encoder-ext-import-guard)
 # conclusion on this defect twice, and a fully legal black frame is asserted
 # CLEAN because that is the false positive that would reroute working buffers.
 add_subdirectory(test/encoder-ext-import-content)
+
+# H.264 Baseline must not emit CABAC. profile_idc 66 covers Baseline and
+# Constrained Baseline alike and neither admits CABAC: entropy_coding_mode_flag
+# must be 0 there. Device-free.
+#
+# The entropy coder is chosen by nobody: there is no command-line switch for it,
+# it is taken from the device preferredStdEntropyCodingModeFlag, which is CABAC
+# on this vendor hardware. So an explicit --profile baseline emitted profile_idc
+# 66 with entropy_coding_mode_flag 1 -- a non-conformant bitstream, and
+# reachable from the WebRTC default profile.
+#
+# Three parts: the rule over the whole profile x entropy matrix, the emitted
+# SPS/PPS pair, and the composition with the profile auto-upgrade in
+# InitProfileLevel(). The third is the one worth having. That upgrade does NOT
+# cover this case -- it is guarded by profileIdc == INVALID and so never runs on
+# an explicit request -- and the suite fails if someone later widens it to fire
+# on requests and assumes it subsumes the clamp.
+add_subdirectory(test/encoder-h264-baseline-entropy)
 
 if(BUILD_DEMOS AND NOT DEFINED DEQP_TARGET)
     add_subdirectory(demos)

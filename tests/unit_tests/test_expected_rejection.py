@@ -40,10 +40,9 @@ from tests.libs.video_test_config_base import (
     BaseTestConfig,
     CodecType,
     ExpectedResult,
-    TestResult,
     VideoTestStatus,
 )
-from tests.unit_tests.mock_framework import MockFramework
+from tests.unit_tests.mock_framework import MockFramework, make_result
 
 # What the apps actually print when the query rejects a profile, copied from a
 # real run on an RTX 5080. Both spellings of the result appear.
@@ -66,18 +65,6 @@ def make_config(expected_result=ExpectedResult.UNSUPPORTED,
         codec=CodecType.VP9,
         expected_result=expected_result,
         expected_vk_result=expected_vk_result,
-    )
-
-
-def make_result(config, returncode, status, stdout="", stderr=""):
-    """Build a TestResult as execute_test_command would."""
-    return TestResult(
-        config=config,
-        returncode=returncode,
-        execution_time=0.0,
-        status=status,
-        stdout=stdout,
-        stderr=stderr,
     )
 
 

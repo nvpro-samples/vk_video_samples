@@ -147,8 +147,26 @@ public:
     uint32_t GetIdrPeriod() const { return m_idrPeriod; }
 
     // consecutiveBFrameCount is the number of consecutive B frames between I and/or P frames within the GOP.
-    void SetConsecutiveBFrameCount(uint8_t consecutiveBFrameCount) { m_consecutiveBFrameCount = consecutiveBFrameCount; }
+    // m_gopFrameCycle is what actually PLACES reference frames (see the
+    // `(gopPos.inGop % m_gopFrameCycle) == 0` sub-GOP test below), so it has
+    // to move with the count, and not only from Init(): Init() runs BEFORE the
+    // GetMaxBFrameCount() clamp in VkVideoEncoder::InitEncoder, so a cycle
+    // written only there leaves that clamp INERT -- the generator emits runs of
+    // the REQUESTED length while GetConsecutiveBFrameCount() reports the clamped
+    // one. UINT8_MAX is the "driver preferred" sentinel and a cycle of 0 would
+    // make the modulo a division by zero, so hold the cycle until the sentinel
+    // is resolved by InitDeviceCapabilities().
+    void SetConsecutiveBFrameCount(uint8_t consecutiveBFrameCount) {
+        m_consecutiveBFrameCount = consecutiveBFrameCount;
+        if (consecutiveBFrameCount != UINT8_MAX) {
+            m_gopFrameCycle = (uint8_t)(consecutiveBFrameCount + 1);
+        }
+    }
     uint8_t GetConsecutiveBFrameCount() const { return m_consecutiveBFrameCount; }
+    // The generator's real sub-GOP period. Equals GetConsecutiveBFrameCount()+1
+    // once Init() or the setter has run; read THIS, not the count, when you
+    // need to bound the longest run of non-reference frames.
+    uint8_t GetGopFrameCycle() const { return m_gopFrameCycle; }
 
     void SetIntraRefreshCycleDuration(uint32_t intraRefreshCycleDuration) { m_intraRefreshCycleDuration = intraRefreshCycleDuration; }
 

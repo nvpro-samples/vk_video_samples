@@ -134,10 +134,46 @@ set_tests_properties(EncoderExtDirectWaitArrayCapacityStagedControl PROPERTIES
 #   8 waits  -- exactly full, legal input, must still be accepted AND
 #               complete.
 # ---------------------------------------------------------------------------
-add_test(NAME EncoderExtLegacySubmitWaitArrayCapacity
-         COMMAND ${PROJECT_NAME} --legacy)
+#
+# GATED ON VALIDATION, because this arm and its H.265 sibling below are the
+# only arms in the tree that code a B frame. consecutiveBFrames is 2 on the
+# legacy arms and 0 everywhere else, so the encoder builds a bidirectional
+# reference list here and nowhere else, and a spec violation on that path is
+# reported by nothing unless these entries read the layer.
+#
+# THE CEILING BELOW NAMES A DEFECT, IT DOES NOT EXCUSE IT:
+#
+#   VUID-VkImageCreateInfo-pNext-06811
+#       the direct input image is created with MUTABLE_FORMAT|EXTENDED_USAGE
+#       and the full usage set the direct path may view it under, and the
+#       driver reports no video format properties for that combination under
+#       this profile. It is raised once, at the single vkCreateImage this
+#       arm performs.
+vvs_add_validation_gated_test(EncoderExtLegacySubmitWaitArrayCapacity
+    TARGET ${PROJECT_NAME}
+    ARGS   --legacy
+    EXPECT VUID-VkImageCreateInfo-pNext-06811=1)
 set_tests_properties(EncoderExtLegacySubmitWaitArrayCapacity PROPERTIES
-                     SKIP_RETURN_CODE 77
+                     LABELS "gpu"
+                     TIMEOUT 900)
+
+# ---------------------------------------------------------------------------
+# THE SAME ARM UNDER H.265, BECAUSE THE REFERENCE LISTS ARE ASSEMBLED PER
+# CODEC.
+#
+# VkVideoEncoderH264 and VkVideoEncoderH265 each fill referenceSlotsInfo[]
+# from their own L0 and L1 walks, in separate files. A B frame exercised
+# through one of them leaves the other's walk unread, so the codec is a
+# parameter of this arm rather than a constant: --h265 selects an H.265
+# session and chains VkVideoEncodeH265ProfileInfoKHR on the input image's
+# profile, and everything else about the arm is unchanged.
+#
+# The ceiling is the same one, for the same reason, and names the same defect.
+vvs_add_validation_gated_test(EncoderExtLegacySubmitWaitArrayCapacityH265
+    TARGET ${PROJECT_NAME}
+    ARGS   --legacy --h265
+    EXPECT VUID-VkImageCreateInfo-pNext-06811=1)
+set_tests_properties(EncoderExtLegacySubmitWaitArrayCapacityH265 PROPERTIES
                      LABELS "gpu"
                      TIMEOUT 900)
 

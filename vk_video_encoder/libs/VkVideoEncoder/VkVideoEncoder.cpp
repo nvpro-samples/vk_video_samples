@@ -93,12 +93,16 @@ static constexpr size_t kMaxUnclaimedCapturedBitstreams = 64;
 bool VkVideoEncoder::CanAcceptNewInputFrame() const
 {
     if (m_asyncAssemblyEnabled && (m_assemblyQueueCapacity > 0)) {
-        // One submit can flush up to (consecutive B-frames + 1) reordered
-        // frames into the assembly queue; leave room for the whole burst so
-        // the producer-side Push never reaches its condition-variable wait.
-        const size_t burst = m_encoderConfig
-            ? (size_t)(m_encoderConfig->gopStructure.GetConsecutiveBFrameCount() + 1u)
-            : (size_t)1u;
+        // One submit can flush a whole reordered run into the assembly queue;
+        // leave room for the burst so the producer-side Push never reaches its
+        // condition-variable wait. NOTE the qualifier: that promise holds for
+        // the EXT path, which gates on this function. The CLI/file path calls
+        // EnqueueFrame directly with no admission check and can still block in
+        // VkThreadSafeQueue's producer wait -- it has no non-blocking contract.
+        //
+        // GetMaxAssemblyBurst() is virtual because AV1 splices an extra
+        // show_existing_frame node per reordered insert.
+        const size_t burst = GetMaxAssemblyBurst();
         if ((m_assemblyQueue.Size() + burst) > m_assemblyQueueCapacity) {
             return false;
         }
@@ -589,9 +593,11 @@ VkResult VkVideoEncoder::EncodeFrameCommon(VkSharedBaseObj<VkVideoEncodeFrameInf
     }
 #endif // NV_AQ_GPU_LIB_SUPPORTED
 
-    EnqueueFrame(encodeFrameInfo, isIdr, isReference);
-
-    return VK_SUCCESS;
+    // The frame is recorded and submitted inside this call whenever the
+    // enqueue flushes, so the enqueue's result is this function's result.
+    // Answering VK_SUCCESS regardless would leave a frame that never became
+    // bitstream indistinguishable from one that did.
+    return EnqueueFrame(encodeFrameInfo, isIdr, isReference);
 }
 
 VkResult VkVideoEncoder::WrapExternalImage(
@@ -1170,12 +1176,12 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         }
     } else {
         // THE FILE-INPUT LANE, which has no caller and therefore no
-        // declaration. It used to fall into the remap above and come out
-        // GENERAL -- a value whose comment said "fallback for compute output"
-        // and which described nothing about this image at all: on frame 1 the
-        // pool image has never been in GENERAL, and on the filter arm no
-        // barrier was recorded at all, so the dispatch sampled an image the
-        // spec still considers UNDEFINED.
+        // declaration. It must not fall into the remap above, which would name
+        // it GENERAL -- the "fallback for compute output" value, which
+        // describes nothing about this image: on frame 1 the pool image has
+        // never been in GENERAL, and on the filter arm no barrier is recorded
+        // at all, so a dispatch reading it that way samples an image the spec
+        // still considers UNDEFINED.
         //
         // PREINITIALIZED is the true statement, and it is true because
         // m_linearInputImagePool is now CREATED that way (see
@@ -1296,8 +1302,10 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         encodeFrameInfo->srcStagingImageView->HasStagedInputResidualLayout()) {
         const VkImageLayout residual =
             encodeFrameInfo->srcStagingImageView->GetStagedInputResidualLayout();
-        if (getenv("VKENC_DEBUG_LAYOUT") && (residual != srcOldLayout)) {
-            fprintf(stderr, "[LAYOUT-RESIDUAL] img=%p declared=%d -> "
+        static const bool kDebugLayout =
+            (getenv("VKENC_DEBUG_LAYOUT") != nullptr);
+        if (kDebugLayout && (residual != srcOldLayout)) {
+            VkEncPrintfErr("[LAYOUT-RESIDUAL] img=%p declared=%d -> "
                             "library-recorded=%d\n",
                     (void*)linearInputImageView->GetImageResource()->GetImage(),
                     (int)srcOldLayout, (int)residual);
@@ -1483,24 +1491,22 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         // read once, so a same-family session records neither and the pair can
         // never go unbalanced.
         //
-        // TWO SENTENCES THAT USED TO END THIS PARAGRAPH ARE NOW FALSE, and
-        // deleting them silently would leave the next attempt working from a
-        // stale recipe:
+        // TWO FACTS THE RELEASE ABOVE DEPENDS ON, stated so that a future
+        // attempt does not have to infer either:
         //
-        //   * "oldLayout = the layout the arm left it in, WHICH DIFFERS PER
-        //     ARM". It no longer differs. Both arms now hand the image over in
-        //     VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR (the CF-02a/CF-02b fix
-        //     below and on the filter arm), and encodeFrameInfo->
+        //   * THE OLD LAYOUT DOES NOT DIFFER PER ARM. Both arms hand the image
+        //     over in VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR (the CF-02a/CF-02b
+        //     handling below and on the filter arm), and encodeFrameInfo->
         //     srcEncodeImageStagedLayout states that as a fact rather than as
-        //     an inference from which branch ran. A future release can name
-        //     that field and be right on both arms.
+        //     an inference from which branch ran, so a release can name that
+        //     field and be right on both arms.
         //
-        //   * "TransitionImageLayout's table has no (TRANSFER_DST_OPTIMAL ->
-        //     VIDEO_ENCODE_SRC_KHR) arm; it needs adding". It was added, with
-        //     TRANSFER/TRANSFER_WRITE -> ALL_COMMANDS/MEMORY_READ. Note the
-        //     second scope: a release would additionally need the ownership
-        //     arguments, and the ALL_COMMANDS destination is what keeps the arm
-        //     legal on the compute family this branch can be recorded on.
+        //   * TransitionImageLayout's table HAS a (TRANSFER_DST_OPTIMAL ->
+        //     VIDEO_ENCODE_SRC_KHR) arm, with TRANSFER/TRANSFER_WRITE ->
+        //     ALL_COMMANDS/MEMORY_READ. Note the second scope: a release
+        //     additionally needs the ownership arguments, and the ALL_COMMANDS
+        //     destination is what keeps the arm legal on the compute family
+        //     this branch can be recorded on.
         // THE RETURN VALUE IS KEPT, and that is the whole shape of this. Discarding
         // it -- `(void)srcImgNewLayout;` -- throws away the library's own statement
         // of where it just put the image, so
@@ -1560,8 +1566,8 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         //
         // vkCmdEncodeVideoKHR requires its source picture to be in
         // VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR at the time the encode
-        // executes (VUID-vkCmdEncodeVideoKHR-pEncodeInfo-10811). Until this
-        // barrier existed the only VIDEO_ENCODE_SRC_KHR transition in the
+        // executes (VUID-vkCmdEncodeVideoKHR-pEncodeInfo-10811). Without this
+        // barrier the only VIDEO_ENCODE_SRC_KHR transition in the
         // whole encoder was the Path-A FOREIGN acquire in
         // RecordVideoCodingCmd, gated on srcEncodeImageIsExternal &&
         // externalInputResidency == FOREIGN -- a predicate no staged frame
@@ -1701,12 +1707,11 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
             // structural version of the claim that a frame which never
             // acquired can never release.
             //
-            // NO LONGER GATED ON isExternalInput, and the reason the gate was
-            // there no longer holds. It said the file-input lane "owns its
-            // linear pool image outright and declares nothing", so a restore
-            // "would be a barrier recorded where none was before, for a caller
-            // that cannot observe the difference". Since the pool is created
-            // PREINITIALIZED and srcOldLayout above states that fact, the
+            // NOT GATED ON isExternalInput. The file-input lane owns its linear
+            // pool image outright and declares nothing, which would argue for
+            // skipping the restore as a barrier no caller can observe. It does
+            // not, because the pool is created PREINITIALIZED and srcOldLayout
+            // above states that fact, so the
             // library DOES have something to record: without this handback the
             // node's residual is never written, so frame 2 would name
             // PREINITIALIZED about an image its own frame-1 acquire had already
@@ -1757,12 +1762,12 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         // NO LONGER GATED ON isExternalInput. That gate was written on the
         // reading that external input "is the only kind of frame that arrives
         // owned by another queue family or in a layout this encoder did not
-        // choose". The first half is still true and is why the FAMILY indices
-        // below are still conditional. The second half was wrong about the
-        // library's own file-input frames: the linear pool image arrives in
-        // whatever the previous frame left it in, or PREINITIALIZED on first
-        // use, and NEITHER of those is the GENERAL that
-        // VulkanFilterYuvCompute's STORAGE_IMAGE descriptors demand.
+        // choose". The FAMILY half holds, and is why the family indices below
+        // are conditional. The LAYOUT half does not hold for the library's own
+        // file-input frames: the linear pool image arrives in whatever the
+        // previous frame left it in, or PREINITIALIZED on first use, and
+        // NEITHER of those is the GENERAL that VulkanFilterYuvCompute's
+        // STORAGE_IMAGE descriptors demand.
         //
         // With the gate in place the dispatch reads an image the validation
         // layer reports as UNDEFINED where GENERAL is required
@@ -1884,8 +1889,8 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         // VUID-vkCmdEncodeVideoKHR-pEncodeInfo-10811 only when the
         // unifiedImageLayoutsVideo feature is enabled. It is enabled nowhere
         // -- zero occurrences across this library, media/gpu/, gpu/vulkan/
-        // and the DEPS-pinned submodule -- so before this barrier the filter
-        // arm encoded out of GENERAL in violation of the spec.
+        // and the DEPS-pinned submodule -- so without this barrier the filter arm
+        // encodes out of GENERAL, in violation of the spec.
         //
         // AFTER THE RECORD, NOT INSIDE THE BLOCK ABOVE: the dispatch is what
         // fills the image, so a transition placed with the acquire would
@@ -3079,7 +3084,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     // Defense-in-depth cap. At H.264 Level >= 5.0 the legacy level-max
     // sizing in InitDpbCount() returned 17 Vulkan slots (16 refs + 1 setup;
     // the driver's maxDpbSlots=17 / maxActiveReferencePictures=16
-    // advertisement is spec-correct). A 17 here previously broke the H.264
+    // advertisement is spec-correct). A 17 here breaks the H.264
     // DPB manager's eviction accounting (VkEncDpbH264::IsDpbFull counts 16
     // entries against a threshold of 17 -> eviction never runs -> the
     // reference set freezes -> progressive drift). The root fixes are the
@@ -3411,9 +3416,33 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                              sessionCreateInfoChain,
                                              m_videoSession);
 
+        // RELEASE-VISIBLE, and it has to be. Chromium builds this library
+        // with NDEBUG, where the assert below compiles to nothing -- so without
+        // this check a failed vkCreateVideoSessionKHR is not merely
+        // unhandled, it was never examined, and InitEncoder ran on to report
+        // VK_SUCCESS. VulkanVideoSession::Create leaves its out-parameter
+        // untouched on every one of its early error returns, so m_videoSession
+        // keeps its PREVIOUS value: null on a first init, which
+        // InitEncoderCodec then dereferences as *m_videoSession while building
+        // the session parameters; or, when this branch was entered because
+        // IsCompatible() said no, the stale incompatible session, which is
+        // worse, because it encodes against a profile the caller never
+        // negotiated.
+        //
+        // The assert is kept alongside the check on purpose: in a debug build
+        // a failure here should still be fatal at the point of failure.
+        if (result != VK_SUCCESS) {
+            VkEncPrintfErr("\nInitEncoder Error: Failed to create the video session (0x%x).\n", result);
+            assert(result == VK_SUCCESS);
+            return result;
+        }
+
         // after creating a new video session, we need a codec reset.
+        // Success path only: this records that a NEW session needs a codec
+        // reset, and after a failed Create there is no new session. The flag
+        // is write-only in this tree today -- nothing reads it -- so the
+        // placement is currently inert and is correct for when a reader lands.
         m_resetEncoder = true;
-        assert(result == VK_SUCCESS);
     }
 
 
@@ -4205,7 +4234,9 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     // MECHANISM-C shares the PSNR helper's pool machinery but is gated on its own
     // env var, so the encoder-input capture can run WITHOUT the PSNR path's
     // per-frame host sync.
-    if (encoderConfig->IsPsnrMetricsEnabled() || (getenv("VKENC_DEBUG_DUMP_SRC") != nullptr)) {
+    static const bool kDebugDumpSrc =
+        (getenv("VKENC_DEBUG_DUMP_SRC") != nullptr);
+    if (encoderConfig->IsPsnrMetricsEnabled() || kDebugDumpSrc) {
         if (!m_psnr) {
             result = VkVideoEncoderPsnr::Create(m_psnr);
             if (result != VK_SUCCESS) {
@@ -4228,6 +4259,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     m_assemblySequenceCounter = 0;
     m_nextWriteSequence = 0;
     m_assemblyErrorCount = 0;
+    m_frameProcessingErrorCount = 0;
     // A false return here means asyncAssembly is off (--syncAssembly), which
     // is a configuration and not a failure. The synchronous fallback's own
     // guard in ProcessOrderedFrames covers the case where that configuration
@@ -4272,17 +4304,40 @@ bool VkVideoEncoder::StartAssemblyThreads()
                 "queue is not drained\n");
         return false;
     }
-    m_assemblyQueue.SetMaxPendingQueueNodes(
-        m_encoderConfig->numBitstreamBuffersToPreallocate);
-    m_assemblyQueueCapacity = m_encoderConfig->numBitstreamBuffersToPreallocate;
+    // THE CAPACITY SIDE OF THE INEQUALITY, WHICH MUST NOT BE IGNORED.
+    // CanAcceptNewInputFrame() refuses while (Size() + burst) > capacity. With
+    // capacity pinned to numBitstreamBuffersToPreallocate (default 8) any burst
+    // above 8 makes that test false FOREVER -- Size() 0 does not help -- so the
+    // ext session answers VK_NOT_READY on every frame and never makes
+    // progress. That is a hang, not backpressure, and the header permits
+    // 1..254 consecutive B frames. Take the max so the queue can always hold
+    // one full burst.
+    //
+    // Only the QUEUE capacity moves. numBitstreamBuffersToPreallocate is left
+    // alone deliberately: it also feeds numInputImages, the async-assembly
+    // slack and the preallocation check, and growing those would cost real
+    // image memory for a problem that lives in this queue.
+    const uint32_t assemblyCapacity =
+        std::max<uint32_t>(m_encoderConfig->numBitstreamBuffersToPreallocate,
+                           (uint32_t)GetMaxAssemblyBurst());
+    m_assemblyQueue.SetMaxPendingQueueNodes(assemblyCapacity);
+    m_assemblyQueueCapacity = assemblyCapacity;
+    // THE INVARIANT, stated where it can be checked: at the instant
+    // CanAcceptNewInputFrame() returns true, one EnqueueFrame() must not be
+    // able to push more than (capacity - Size()) items. Checkable at init as
+    // capacity >= burst. It holds by construction after the max() above --
+    // m_assemblyQueueCapacity is uint32_t and the burst tops out at 257 -- so
+    // this asserts the construction, not the configuration.
+    assert(m_assemblyQueueCapacity >= GetMaxAssemblyBurst());
     m_asyncAssemblyEnabled = true;
     for (uint32_t i = 0; i < m_encoderConfig->assemblyThreadCount; i++) {
         m_assemblyThreads.emplace_back(
             &VkVideoEncoder::AssemblyWorkerThread, this, (int)i);
     }
-    std::cout << "[AsyncAssembly] Started " << m_encoderConfig->assemblyThreadCount
+    VkEncOut() << "[AsyncAssembly] Started " << m_encoderConfig->assemblyThreadCount
               << " assembly worker threads (queue capacity="
-              << (int)m_encoderConfig->numBitstreamBuffersToPreallocate << ")"
+              << (int)assemblyCapacity << ", burst="
+              << (int)GetMaxAssemblyBurst() << ")"
               << std::endl;
     return true;
 }
@@ -4531,11 +4586,11 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR;
     } else if ((oldLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) && (newLayout == VK_IMAGE_LAYOUT_GENERAL)) {
         // Same acquire, for a producer that hands the image over after a
-        // transfer read. It no longer describes the library's own staged
-        // input: since the staging release began handing the image back in
-        // the layout the next acquire declares, a reused registration is left
-        // in srcOldLayout rather than TRANSFER_SRC_OPTIMAL. Kept because an
-        // external producer may still hand over in TRANSFER_SRC_OPTIMAL.
+        // transfer read. It does not describe the library's own staged input:
+        // the staging release hands the image back in the layout the next
+        // acquire declares, so a reused registration is left in srcOldLayout
+        // rather than TRANSFER_SRC_OPTIMAL. Kept because an external producer
+        // may still hand over in TRANSFER_SRC_OPTIMAL.
         imageBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
         imageBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
@@ -4569,9 +4624,8 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         // VkVideoEncoderExternalImageDescriptor::defaultLayout alone is
         // GENERAL. So the Path-A acquire lands on THIS pair, not on the
         // FOREIGN-guarded (VIDEO_ENCODE_SRC_KHR -> VIDEO_ENCODE_SRC_KHR) arm
-        // below, and until this arm existed it fell into the non-acquire arm
-        // that follows and went out carrying that arm's compute-producer first
-        // scope.
+        // below. Without this arm it falls into the non-acquire arm that follows
+        // and goes out carrying that arm's compute-producer first scope.
         //
         // Shared with the non-acquire arm, the Path-A acquire went out
         // naming VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT and
@@ -4943,8 +4997,10 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
     // memory dependency has no other way to see it: no public observable
     // reports a barrier's masks, and a COUNT of barriers cannot distinguish a
     // right one from a wrong one.
-    if (getenv("VKENC_DEBUG_LAYOUT")) {
-        fprintf(stderr, "[LAYOUT-BARRIER] img=%p old=%d new=%d srcQF=%d "
+    static const bool kDebugLayout =
+        (getenv("VKENC_DEBUG_LAYOUT") != nullptr);
+    if (kDebugLayout) {
+        VkEncPrintfErr("[LAYOUT-BARRIER] img=%p old=%d new=%d srcQF=%d "
                         "dstQF=%d srcStage=0x%llx srcAccess=0x%llx "
                         "dstStage=0x%llx dstAccess=0x%llx\n",
                 (void*)imageView->GetImageResource()->GetImage(),
@@ -5057,7 +5113,9 @@ void VkVideoEncoder::ReleaseImageToForeignQueue(VkCommandBuffer cmdBuf,
     // layers -- that is exactly why it survived -- so counting is the only way
     // to prove it ran, and to prove it does NOT run on the lanes that never
     // acquired.
-    if (getenv("VKENC_DEBUG_QFOT")) {
+    static const bool kDebugQfot =
+        (getenv("VKENC_DEBUG_QFOT") != nullptr);
+    if (kDebugQfot) {
         // Both layouts: oldLayout is the one VUID-...-oldLayout-01197
         // constrains, and printing only one makes the copy and filter lanes
         // indistinguishable in a log when they agree on it.
@@ -5101,8 +5159,10 @@ VkImageLayout VkVideoEncoder::RestoreStagedInputLayout(VkCommandBuffer cmdBuf,
     if ((declaredLayout == VK_IMAGE_LAYOUT_UNDEFINED) ||
         (declaredLayout == VK_IMAGE_LAYOUT_PREINITIALIZED)) {
         targetLayout = VK_IMAGE_LAYOUT_GENERAL;
-        if (getenv("VKENC_DEBUG_LAYOUT")) {
-            fprintf(stderr, "[LAYOUT-RESTORE] SUBSTITUTED img=%p residual=%d "
+        static const bool kDebugLayout =
+            (getenv("VKENC_DEBUG_LAYOUT") != nullptr);
+        if (kDebugLayout) {
+            VkEncPrintfErr("[LAYOUT-RESTORE] SUBSTITUTED img=%p residual=%d "
                             "declared=%d -> GENERAL (declared layout is not a "
                             "legal barrier destination; the library records "
                             "GENERAL and names it on the next acquire)\n",
@@ -5187,8 +5247,10 @@ VkImageLayout VkVideoEncoder::RestoreStagedInputLayout(VkCommandBuffer cmdBuf,
     };
     m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &dependencyInfo);
 
-    if (getenv("VKENC_DEBUG_LAYOUT")) {
-        fprintf(stderr, "[LAYOUT-RESTORE] img=%p old=%d new=%d "
+    static const bool kDebugLayout =
+        (getenv("VKENC_DEBUG_LAYOUT") != nullptr);
+    if (kDebugLayout) {
+        VkEncPrintfErr("[LAYOUT-RESTORE] img=%p old=%d new=%d "
                         "srcStage=0x%llx srcAccess=0x%llx\n",
                 (void*)imageView->GetImageResource()->GetImage(),
                 (int)residualLayout, (int)targetLayout,
@@ -5574,8 +5636,10 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
 
     encodeBeginInfo.pNext = &m_beginRateControlInfo;
 
-    if (getenv("VKENC_DEBUG_PSNR")) {
-        fprintf(stderr, "[BEGINRC] picType=%d controlCmd=0x%x beginRCmode=%d\n",
+    static const bool kDebugPsnr =
+        (getenv("VKENC_DEBUG_PSNR") != nullptr);
+    if (kDebugPsnr) {
+        VkEncPrintfErr("[BEGINRC] picType=%d controlCmd=0x%x beginRCmode=%d\n",
                 (int)encodeFrameInfo->gopPosition.pictureType,
                 (unsigned)encodeFrameInfo->controlCmd,
                 (int)m_beginRateControlInfo.rateControlMode);
@@ -5971,7 +6035,7 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
     // Refusing is the honest answer, and it is checked HERE -- before a
     // single entry is placed -- so the refusal is total rather than a
     // half-filled array handed to the queue. The per-site bounds below are
-    // left in place as belt-and-braces; with this check they can no longer
+    // left in place as belt-and-braces; with this check they cannot
     // truncate anything.
     //
     // Note this deliberately does NOT mirror kMaxCallerSignalsForReleaseFence
@@ -6391,6 +6455,14 @@ VkResult VkVideoEncoder::PushOrderedFrames()
                 // Testing only - don't use for production!
                 result = ProcessOutOfOrderFrames(m_lastDeferredFrame, m_numDeferredFrames);
             }
+            if (result != VK_SUCCESS) {
+                // The frames are given away immediately below whether the
+                // push succeeded or not, so this counter is the trace the
+                // drain reads afterwards. Counted here because every push --
+                // the per-frame ones the enqueue makes and the final one the
+                // drain makes -- arrives through this single path.
+                m_frameProcessingErrorCount++;
+            }
             if (m_asyncAssemblyEnabled) {
                 m_lastDeferredFrame = nullptr;
             } else {
@@ -6479,8 +6551,7 @@ VkResult VkVideoEncoder::ProcessOutOfOrderFrames(VkSharedBaseObj<VkVideoEncodeFr
     // in the ext layer ever writes. So the file-based CLI reaches this today,
     // while the ext path -- the only one that registers a completion
     // subscriber -- cannot. consecutiveBFrames does not appear in this
-    // decision at any point; a previous version of this comment claimed it
-    // did, and that claim was wrong.
+    // decision at any point.
     //
     // Because it only ever assembles synchronously, this function must refuse
     // BOTH shapes in which a frame would be encoded and never reported: async
@@ -6500,13 +6571,13 @@ VkResult VkVideoEncoder::ProcessOutOfOrderFrames(VkSharedBaseObj<VkVideoEncodeFr
     // The mirror of ProcessOrderedFrames' subscriber guard, and the reason it
     // is needed HERE only became true when AssembleBitstreamData stopped
     // publishing: before that, a synchronous out-of-order assembly with a
-    // subscriber attached published a record too EARLY -- ahead of the
+    // subscriber attached would publish a record too EARLY -- ahead of the
     // EnqueuePendingFrame() that creates its PendingFrame -- so
-    // DrainCapturesLocked() discarded it and counted it in m_lateCaptures.
-    // That was wrong but LOUD. With the publish correctly removed from the
-    // synchronous path, the same configuration now encodes every frame and
-    // reports none of them, silently, which is strictly harder to diagnose
-    // and is exactly the class ProcessOrderedFrames refuses.
+    // DrainCapturesLocked() would discard it and count it in
+    // m_lateCaptures: wrong, but LOUD. With the publish correctly absent
+    // from the synchronous path, that same configuration encodes every
+    // frame and reports none of them SILENTLY, which is strictly harder to
+    // diagnose and is exactly the class ProcessOrderedFrames refuses.
     //
     // Unreachable from any CLI or ext configuration today, because the
     // subscriber and enableOutOfOrderRecording come from surfaces that never
@@ -6580,7 +6651,10 @@ void VkVideoEncoder::DumpStateInfo(const char* stageName, uint32_t ident,
 
 bool VkVideoEncoder::WaitForThreadsToComplete()
 {
-    PushOrderedFrames();
+    // The last deferred frame is encoded here, so its result belongs to this
+    // drain as much as the workers do -- on a synchronous session it is the
+    // only place a frame is processed at all.
+    const VkResult pushResult = PushOrderedFrames();
 
     if (m_enableEncoderThreadQueue) {
         m_encoderThreadQueue.SetFlushAndExit();
@@ -6602,7 +6676,12 @@ bool VkVideoEncoder::WaitForThreadsToComplete()
         }
     }
 
-    return true;
+    // The verdict on the whole session, and the only one a caller that
+    // watched none of the run can reach. Every arm is a frame that did not
+    // become bitstream.
+    return (pushResult == VK_SUCCESS) &&
+           (m_assemblyErrorCount.load() == 0) &&
+           (m_frameProcessingErrorCount.load() == 0);
 }
 
 // The NON-TERMINAL drain. See the header for why this exists separately from
@@ -6793,17 +6872,18 @@ void VkVideoEncoder::ConsumerThread()
            VkVideoEncodeFrameInfo::ResetAndReleaseFrames(encodeFrameInfo);
            assert(encodeFrameInfo == nullptr);
            if (result != VK_SUCCESS) {
-               std::cout << "Error processing frames from the frame thread!" << std::endl;
+               VkEncOut() << "Error processing frames from the frame thread!" << std::endl;
+               m_frameProcessingErrorCount++;
                m_encoderThreadQueue.SetFlushAndExit();
            }
 
        } else {
            bool shouldExit = m_encoderThreadQueue.ExitQueue();
-           std::cout << "Thread should exit: " << (shouldExit ? "Yes" : "No") << std::endl;
+           VkEncOut() << "Thread should exit: " << (shouldExit ? "Yes" : "No") << std::endl;
        }
    } while (!m_encoderThreadQueue.ExitQueue());
 
-   std::cout << "ConsumerThread is exiting now.\n" << std::endl;
+   VkEncOut() << "ConsumerThread is exiting now.\n" << std::endl;
 }
 
 size_t VkVideoEncoder::WriteDataToFile(const uint8_t* data, size_t size)

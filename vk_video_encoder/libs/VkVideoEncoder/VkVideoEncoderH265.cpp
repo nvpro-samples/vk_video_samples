@@ -15,7 +15,26 @@
  */
 
 #include "VkVideoEncoder/VkVideoEncoderH265.h"
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
+
+namespace {
+
+// Whether |dpbIndex| already occupies one of the entries |slots|[|first|,
+// |end|) holds. Both reference-list walks admit a slot through this, so a
+// picture that L0 and L1 both name is bound once.
+bool SlotAlreadyBound(const VkVideoReferenceSlotInfoKHR* slots,
+                      uint32_t first, uint32_t end, uint8_t dpbIndex)
+{
+    for (uint32_t bound = first; bound < end; bound++) {
+        if (slots[bound].slotIndex == (int32_t)dpbIndex) {
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
 
 VkResult CreateVideoEncoderH265(const VulkanDeviceContext* vkDevCtx,
                                 VkSharedBaseObj<EncoderConfig>& encoderConfig,
@@ -256,12 +275,39 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         }
     }
 
+    // L0 AND L1 ARE LISTS; referenceSlotsInfo[] IS A SET. The same picture may
+    // hold a position in both reference lists, and on a B frame whose DPB
+    // carries a single reference picture it always does: that one picture is
+    // L0[0] and L1[0] alike. referenceSlotsInfo[] is not a reference list --
+    // it is the set of DPB slots the recorded commands BIND -- and Vulkan
+    // requires each picture resource named in it to be unique
+    // (VUID-VkVideoBeginCodingInfoKHR-pPictureResource-07238,
+    // VUID-vkCmdEncodeVideoKHR-pPictureResource-08220) and each DPB frame to
+    // be used at most once across it and the setup slot
+    // (VUID-vkCmdEncodeVideoKHR-dpbFrameUseCount-08221). So both lists are
+    // walked and each slot is admitted at most once.
+    //
+    // This does not touch the Std reference lists. Those name DPB slots by
+    // index, carry their own ordering, and a slot appearing in both of them
+    // is what the bitstream describes.
+    const uint32_t firstReferenceSlot = numReferenceSlots;
+
     if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_P) ||
             (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B)) {
 
         for (uint32_t i = 0; i <= pFrameInfo->stdReferenceListsInfo.num_ref_idx_l0_active_minus1; i++) {
 
             uint8_t dpbIndex = pFrameInfo->stdReferenceListsInfo.RefPicList0[i];
+
+            // The scan spans only the entries these two loops filled.
+            // referenceSlotsInfo[0] holds the setup slot, whose slotIndex is
+            // the slot the CURRENT picture reconstructs into and is replaced
+            // by -1 once both loops have run; it is not a reference and is
+            // not a candidate for a duplicate.
+            if (SlotAlreadyBound(pFrameInfo->referenceSlotsInfo, firstReferenceSlot,
+                                 numReferenceSlots, dpbIndex)) {
+                continue;
+            }
 
             bool refPicAvailable = m_dpb.GetRefPicture(dpbIndex, pFrameInfo->dpbImageResources[numReferenceSlots]);
             assert(refPicAvailable);
@@ -295,11 +341,15 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         }
         pFrameInfo->numDpbImageResources = numReferenceSlots;
 
-        // TODO: iterate over L1 when coding B-frames
         if (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B) {
             for (uint32_t i = 0; i <= pFrameInfo->stdReferenceListsInfo.num_ref_idx_l1_active_minus1; i++) {
 
                 uint8_t dpbIndex = pFrameInfo->stdReferenceListsInfo.RefPicList1[i];
+
+                if (SlotAlreadyBound(pFrameInfo->referenceSlotsInfo, firstReferenceSlot,
+                                 numReferenceSlots, dpbIndex)) {
+                    continue;
+                }
 
                 bool refPicAvailable = m_dpb.GetRefPicture(dpbIndex, pFrameInfo->dpbImageResources[numReferenceSlots]);
                 assert(refPicAvailable);

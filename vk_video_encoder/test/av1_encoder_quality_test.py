@@ -668,15 +668,20 @@ Examples:
             parser.error("either --encoder or --samples-root must be specified")
         encoder_bin = os.path.join(args.samples_root, ENCODER_REL_PATH)
 
+    # A missing prerequisite is a SKIP, not a usage error and not a failure.
+    # Exit 77 is what this tree's gpu-labelled tests use for "this host cannot
+    # run me", declared as SKIP_RETURN_CODE where the test is registered. A
+    # host without ffmpeg, or without the encoder built, has not disproved
+    # anything, so reporting red here would be a false negative.
     if not args.remote_host and not os.path.isfile(encoder_bin):
-        parser.error(f"encoder binary not found: {encoder_bin}\n"
-                     f"  Pass --encoder PATH or --samples-root DIR (must contain "
-                     f"{ENCODER_REL_PATH}). Use --remote-host to skip the local "
-                     f"existence check.")
+        print(f"SKIP: encoder binary not found: {encoder_bin}", file=sys.stderr)
+        return 77
 
     for tool in ("ffmpeg", "ffprobe"):
         if shutil.which(tool) is None:
-            parser.error(f"{tool} not found on PATH (required for encode/decode/PSNR)")
+            print(f"SKIP: {tool} not found on PATH "
+                  f"(required for encode/decode/PSNR)", file=sys.stderr)
+            return 77
 
     os.makedirs(args.output_dir, exist_ok=True)
     if args.report is None:
@@ -846,17 +851,22 @@ Examples:
         for r in av1_results:
             frames = per_frame_data.get(("av1", r.gop), [])
             if not frames:
+                print(f"FAIL: GOP={r.gop}: no per-frame PSNR to judge")
+                failed = True
                 continue
             min_psnr = min(f["psnr_avg"] for f in frames)
             max_psnr = max(f["psnr_avg"] for f in frames)
             spread = max_psnr - min_psnr
-            if spread > 10:
-                print(f"  ⚠ GOP={r.gop}: PSNR spread {spread:.1f} dB "
-                      f"(min={min_psnr:.1f}, max={max_psnr:.1f}) — quality collapse detected")
+            if spread > PSNR_SPREAD_LIMIT_DB:
+                print(f"  FAIL GOP={r.gop}: PSNR spread {spread:.1f} dB "
+                      f"(min={min_psnr:.1f}, max={max_psnr:.1f}) "
+                      f"— quality collapse detected")
+                failed = True
             else:
-                print(f"  ✓ GOP={r.gop}: PSNR spread {spread:.1f} dB — acceptable")
+                print(f"  ok   GOP={r.gop}: PSNR spread {spread:.1f} dB "
+                      f"— within {PSNR_SPREAD_LIMIT_DB:g} dB")
 
-    return 0
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

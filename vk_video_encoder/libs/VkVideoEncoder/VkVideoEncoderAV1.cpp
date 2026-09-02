@@ -1183,8 +1183,17 @@ void VkVideoEncoderAV1::InsertOrdered(VkSharedBaseObj<VkVideoEncodeFrameInfo>& c
         // For out of order frames, insert display-frameheader in display order
         if (node->dependantFrames != nullptr) {
             VkSharedBaseObj<VkVideoEncodeFrameInfo> showExistingFrameInfo;
-            GetAvailablePoolNode(showExistingFrameInfo);
-            assert(showExistingFrameInfo);
+            // CHECKED, not asserted. This is the SECOND pool node this insert
+            // needs -- the ext layer reserves exactly one per admitted input
+            // frame -- so a miss is reachable, and assert() compiles out. In a
+            // release build the miss left the handle null and the
+            // GetEncodeFrameInfoAV1() below dereferenced it.
+            if (!GetAvailablePoolNode(showExistingFrameInfo) ||
+                !showExistingFrameInfo) {
+                VkEncPrintfErr("[EncoderAV1] no pool node for the show_existing_frame "
+                        "companion; emitting the reordered frame without it\n");
+                return;
+            }
 
             VkVideoEncodeFrameInfoAV1* pCurrentFrameInfo = GetEncodeFrameInfoAV1(showExistingFrameInfo);
             pCurrentFrameInfo->bOverlayFrame = true;

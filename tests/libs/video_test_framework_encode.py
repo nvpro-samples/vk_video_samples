@@ -297,7 +297,8 @@ class VulkanVideoEncodeTestFramework(VulkanVideoTestFrameworkBase):
         # Use base class to execute (handles subprocess details)
         run_cwd = self._default_run_cwd()
         result = self.execute_test_command(
-            cmd, config, timeout=self.timeout, cwd=run_cwd
+            cmd, config, timeout=self.timeout, cwd=run_cwd,
+            output_file=output_file
         )
 
         # Analyze output

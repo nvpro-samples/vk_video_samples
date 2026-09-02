@@ -80,6 +80,7 @@
 #include "vulkan_video_encoder_ext.h"
 
 #include "vk_video/vulkan_video_codec_h264std.h"
+#include "vk_video/vulkan_video_codec_h265std.h"
 
 #include <dlfcn.h>
 #include <poll.h>
@@ -216,7 +217,8 @@ struct InputImage {
 // TRANSFER_SRC is the control that routes STAGED. Copied in shape from the
 // sibling release-fence test, which measures the same two routings.
 bool CreateInputImage(const DeviceFns& fns, VkPhysicalDevice phys,
-                      VkDevice device, InputImage* out, bool direct)
+                      VkDevice device, InputImage* out, bool direct,
+                      bool h265)
 {
     // THE CODEC-SPECIFIC PROFILE STRUCT IS PART OF THE PROFILE, not an
     // optional decoration on it. A VkVideoProfileInfoKHR naming an H.264
@@ -238,9 +240,18 @@ bool CreateInputImage(const DeviceFns& fns, VkPhysicalDevice phys,
     VkVideoEncodeH264ProfileInfoKHR h264Profile{
         VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_KHR};
     h264Profile.stdProfileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH;
+    // MAIN for the reason HIGH is named above: it is the profile the SESSION
+    // uses. The config leaves |profile| at VK_VIDEO_ENCODER_PROFILE_DEFAULT
+    // and the library derives general_profile_idc Main for 8-bit 4:2:0 input.
+    VkVideoEncodeH265ProfileInfoKHR h265Profile{
+        VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_INFO_KHR};
+    h265Profile.stdProfileIdc = STD_VIDEO_H265_PROFILE_IDC_MAIN;
     VkVideoProfileInfoKHR profile{VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR};
-    profile.pNext               = &h264Profile;
-    profile.videoCodecOperation = VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR;
+    profile.pNext               = h265 ? (const void*)&h265Profile
+                                       : (const void*)&h264Profile;
+    profile.videoCodecOperation =
+        h265 ? VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR
+             : VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR;
     profile.chromaSubsampling   = VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;
     profile.lumaBitDepth        = VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
     profile.chromaBitDepth      = VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
@@ -1027,18 +1038,27 @@ int main(int argc, char** argv)
 {
     bool direct = true;
     bool legacy = false;
+    // THE CODEC IS A PARAMETER OF THE LEGACY ARM ONLY. That arm is the one
+    // that codes B frames, and the bidirectional reference list a B frame
+    // needs is assembled by per-codec code: H.264 and H.265 fill
+    // referenceSlotsInfo[] in separate files, so an arm that exercises one of
+    // them leaves the other unread.
+    bool h265   = false;
     for (int i = 1; i < argc; i++) {
         if (std::strcmp(argv[i], "--staged") == 0) {
             direct = false;
         } else if (std::strcmp(argv[i], "--legacy") == 0) {
             legacy = true;
+        } else if (std::strcmp(argv[i], "--h265") == 0) {
+            h265 = true;
         }
     }
 
     std::printf("Encoder-ext DIRECT wait-array capacity (real device) -- %s "
-                "arm\n",
+                "arm, %s\n",
                 legacy ? "LEGACY SubmitExternalFrame"
-                       : (direct ? "DIRECT" : "STAGED CONTROL"));
+                       : (direct ? "DIRECT" : "STAGED CONTROL"),
+                h265 ? "H.265" : "H.264");
     std::printf("------------------------------------------------\n");
 
     if ((CreateVulkanVideoEncoderExt(g_encoder) != VK_SUCCESS) || !g_encoder) {
@@ -1048,7 +1068,9 @@ int main(int argc, char** argv)
 
     VkVideoEncoderConfig config = {};
     config.sType              = VK_VIDEO_ENCODER_STRUCTURE_TYPE_CONFIG;
-    config.codec              = VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR;
+    config.codec              =
+        h265 ? VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR
+             : VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR;
     config.encodeWidth        = kWidth;
     config.encodeHeight       = kHeight;
     config.inputFormat        = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
@@ -1099,7 +1121,7 @@ int main(int argc, char** argv)
                 props.deviceName, props.vendorID, props.driverVersion);
 
     InputImage input;
-    if (!CreateInputImage(g_fns, phys, device, &input, direct)) {
+    if (!CreateInputImage(g_fns, phys, device, &input, direct, h265)) {
         std::printf("SKIP: could not create the input image\n");
         return 77;
     }

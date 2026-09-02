@@ -134,13 +134,13 @@ public:
         , m_numBFramesToEncode()
     { }
 
-    virtual VkResult InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& encoderConfig);
-    virtual VkResult InitRateControl(VkCommandBuffer cmdBuf, uint32_t qp);
+    virtual VkResult InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& encoderConfig) override;
+    virtual VkResult InitRateControl(VkCommandBuffer cmdBuf, uint32_t qp) override;
     virtual VkResult EncodeVideoSessionParameters(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
     virtual VkResult ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
-                                uint32_t frameIdx, uint32_t ofTotalframes);
-    virtual VkResult CreateFrameInfoBuffersQueue(uint32_t numPoolNodes);
-    virtual bool GetAvailablePoolNode(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) {
+                                uint32_t frameIdx, uint32_t ofTotalframes) override;
+    virtual VkResult CreateFrameInfoBuffersQueue(uint32_t numPoolNodes) override;
+    virtual bool GetAvailablePoolNode(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) override{
         VkSharedBaseObj<VkVideoEncodeFrameInfoAV1> encodeFrameInfoAV1;
         bool success = m_frameInfoBuffersQueue->GetAvailablePoolNode(encodeFrameInfoAV1);
         if (success) {
@@ -149,20 +149,20 @@ public:
         return success;
     }
 
-    virtual VkResult StartOfVideoCodingEncodeOrder(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, uint32_t frameIdx, uint32_t ofTotalFrames);
+    virtual VkResult StartOfVideoCodingEncodeOrder(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo, uint32_t frameIdx, uint32_t ofTotalFrames) override;
     virtual VkResult RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
-                                         uint32_t frameIdx, uint32_t ofTotalFrames);
+                                         uint32_t frameIdx, uint32_t ofTotalFrames) override;
     virtual VkResult SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
-                                           uint32_t frameIdx, uint32_t ofTotalFrames);
+                                           uint32_t frameIdx, uint32_t ofTotalFrames) override;
     virtual VkResult AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
-                                           uint32_t frameIdx, uint32_t ofTotalFrames);
+                                           uint32_t frameIdx, uint32_t ofTotalFrames) override;
 
     virtual VkResult ReadbackBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
-                                           BitstreamReadback& readback);
+                                           BitstreamReadback& readback) override;
 
     virtual VkResult WriteBitstreamToFile(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                           uint32_t frameIdx, uint32_t ofTotalFrames,
-                                          BitstreamReadback& readback);
+                                          BitstreamReadback& readback) override;
     void WriteShowExistingFrameHeader(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
 
 private:
@@ -177,7 +177,22 @@ public:
 
     virtual void InsertOrdered(VkSharedBaseObj<VkVideoEncodeFrameInfo>& current,
                                VkSharedBaseObj<VkVideoEncodeFrameInfo>& prev,
-                               VkSharedBaseObj<VkVideoEncodeFrameInfo>& node);
+                               VkSharedBaseObj<VkVideoEncodeFrameInfo>& node) override;
+
+    // InsertOrdered() splices ONE show_existing_frame node into the chain per
+    // reordered insert and counts it, and QueueFramesForAssembly walks it like
+    // any other node -- so an AV1 burst is one larger than the base. Exactly
+    // one per mini-GOP: only the reference-frame insert lands ahead of
+    // existing nodes.
+    //
+    // `override` IS REQUIRED. This header omits it elsewhere by house style,
+    // and CanAcceptNewInputFrame() is const: a cv-qualifier or signature
+    // mismatch here would SILENTLY SHADOW rather than override, the base
+    // version would be called through the base pointer, and the AV1 +1 would
+    // be lost with no compile error at all.
+    virtual size_t GetMaxAssemblyBurst() const override {
+        return VkVideoEncoder::GetMaxAssemblyBurst() + 1u;
+    }
     void AppendShowExistingFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& prev,
                                  VkSharedBaseObj<VkVideoEncodeFrameInfo>& node);
 
@@ -200,8 +215,8 @@ public:
     }
 
     // Must be called from VkVideoEncoder::EncodeFrameCommon only
-    virtual VkResult EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
-    virtual VkResult CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
+    virtual VkResult EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) override;
+    virtual VkResult CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) override;
 
 private:
     VkVideoEncodeFrameInfoAV1* GetEncodeFrameInfoAV1(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) {

@@ -21,7 +21,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from tests.libs.video_test_config_base import SkipFilter
+from tests.libs.video_test_config_base import (
+    SkipFilter,
+    TestResult,
+    VideoTestStatus,
+)
 from tests.libs.video_test_framework_base import VulkanVideoTestFrameworkBase
 
 
@@ -47,3 +51,24 @@ class MockFramework(VulkanVideoTestFrameworkBase):
 
     def run_single_test(self, _config):
         """Nothing is executed; the tests call the scoring methods directly."""
+
+
+def make_result(config, returncode=0, status=VideoTestStatus.SUCCESS,
+                stdout="", stderr=""):
+    """Build a TestResult the way execute_test_command would.
+
+    Shared for the same reason MockFramework is: two test modules built an
+    identical one, which is a copy waiting to drift rather than two facts.
+
+    The defaults describe an ORDINARY PASSING RUN, so a test that cares about
+    one field states that field and nothing else. Callers exercising a failure
+    pass the status, the return code, or both.
+    """
+    return TestResult(
+        config=config,
+        returncode=returncode,
+        execution_time=0.0,
+        status=status,
+        stdout=stdout,
+        stderr=stderr,
+    )

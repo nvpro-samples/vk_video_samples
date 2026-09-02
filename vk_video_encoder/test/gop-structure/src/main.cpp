@@ -105,7 +105,10 @@ void printGopTable(uint32_t gopFrameCount, uint32_t idrPeriod, uint32_t consecut
     std::cout << "\n";
 }
 
-void verifyExpectedValues() {
+// Returns false if any expectation missed, so main() can carry it to the
+// exit code. Returning void and only printing the result would make every
+// expectation below unable to fail anything.
+bool verifyExpectedValues() {
     std::cout << "\n=== Verifying Expected Values ===\n";
     
     VkVideoGopStructure gop(11, 25, 3, 1, 
@@ -176,6 +179,7 @@ void verifyExpectedValues() {
     } else {
         std::cout << "\n=== SOME TESTS FAILED ===\n";
     }
+    return allPassed;
 }
 
 void testEdgeCases() {
@@ -203,10 +207,13 @@ int main() {
     std::cout << "Testing: GOP=11, IDR=25, B=3, Open GOP\n";
     
     printGopTable(11, 25, 3, 30);
-    
-    verifyExpectedValues();
-    
+
+    const bool passed = verifyExpectedValues();
+
     testEdgeCases();
-    
-    return 0;
+
+    // CTest semantics, as the sibling suites use them: 0 every expectation
+    // held, 1 an expectation missed. printGopTable and testEdgeCases print
+    // only and assert nothing, so verifyExpectedValues is the whole gate.
+    return passed ? 0 : 1;
 }
