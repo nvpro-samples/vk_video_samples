@@ -2870,22 +2870,35 @@ void VkVideoEncoder::ReleaseAssemblyItem(AssemblyWorkItem& item)
 // there with the XFER_* transfer modes, which "must have matching plane
 // counts". A 3-plane I420 source and a 2-plane NV12 destination is exactly
 // that contrast, so it is YCBCRCOPY and not a transfer.
-static VulkanFilterYuvCompute::FilterType VkEncDeriveFilterType(
-    VkFormat filterInputFormat, VkFormat encodeSourceFormat)
+// Map the RESOLVED sampler model to the primaries-constant selector.
+//
+// FILE-LOCAL, AND THAT IS A FINDING RATHER THAN A PREFERENCE.
+// nvidia_utils/vulkan/ycbcr_utils.h ships exactly this mapping as
+// VkYcbcrModelToYcbcrBtStandard() and its own comment says "Use this function
+// instead of implementing local switch statements to ensure consistency" --
+// but the function sits behind `#ifdef
+// VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709`, which names an ENUMERATOR and
+// never a macro, so the block has never been compiled in any translation unit.
+// The two existing users both carry their own copy for the same reason
+// (common/libs/VkCodecUtils/pattern.cpp and VulkanFilterYuvCompute.cpp, both
+// spelled GetYcbcrPrimariesConstantsId). Un-gating the header is not done here
+// because ycbcr_utils.h deliberately includes no Vulkan header, so making that
+// block live would impose one on every includer; it is recorded instead.
+//
+// The input is the model this file already RESOLVED, never
+// matrix_coefficients, so the constants and the model cannot name different
+// matrices.
+static YcbcrBtStandard VkEncModelToBtStandard(
+    VkSamplerYcbcrModelConversion modelConversion)
 {
-    const bool inputIsYcbcr  = (YcbcrVkFormatInfo(filterInputFormat)  != nullptr);
-    const bool outputIsYcbcr = (YcbcrVkFormatInfo(encodeSourceFormat) != nullptr);
-    if (!inputIsYcbcr && outputIsYcbcr) {
-        return VulkanFilterYuvCompute::RGBA2YCBCR;
+    switch (modelConversion) {
+    case VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601:  return YcbcrBtStandardBt601Ebu;
+    case VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_2020: return YcbcrBtStandardBt2020;
+    case VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709:  return YcbcrBtStandardBt709;
+    default: break;
     }
-    if (inputIsYcbcr && !outputIsYcbcr) {
-        return VulkanFilterYuvCompute::YCBCR2RGBA;
-    }
-    // YCbCr -> YCbCr, including the identity. YCBCRCOPY is a compute pass
-    // either way; the plane-count and bit-depth handling it carries is what
-    // the 3-plane -> 2-plane case needs, and the identity case is what the
-    // file-input path has always used.
-    return VulkanFilterYuvCompute::YCBCRCOPY;
+    // Unreachable: ResolveRgbToYcbcrMatrix only ever emits the three above.
+    return YcbcrBtStandardBt709;
 }
 #endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
 
@@ -3134,14 +3147,53 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     // Select the encode-source format that MATCHES the request, rather than taking
     // whatever the driver happened to list first.
     //
-    // The driver returns every format compatible with the profile, and both the set and
-    // the listing order are its choice. A 4:4:4 profile can advertise the semi-planar
-    // and the packed form together (packed 4:4:4 rides an RGBA alias and is never a DPB
-    // format), and nothing says which of them comes first, so element [0] can be either.
-    // Even among the semi-planar formats [0] is only correct by luck -- the profile
-    // filter narrows by chroma and bit depth, but nothing guarantees a unique survivor.
+    // The driver returns every format compatible with the profile, and the order is
+    // its choice. UNVERIFIED ON THE CURRENT DRIVER: every CAPS_OK (codec, profile)
+    // pair this project has measured returns exactly ONE encode-source format, so the
+    // two-entry ordering below has not been observed here. It is stated as the
+    // assumption the selection is built against rather than rewritten into a
+    // one-format claim, which would be a per-driver fact and no more of a contract.
+    // For 4:4:4 it advertises the semi-planar form first and the packed
+    // form second (packed 4:4:4 rides an RGBA alias and can never be a DPB format),
+    // so taking element [0] makes a packed input unreachable by construction. Even
+    // for the semi-planar formats [0] is only correct by luck -- the profile filter
+    // narrows by chroma and bit depth, but nothing guarantees a unique survivor.
     m_imageInFormat = VK_FORMAT_UNDEFINED;
-    const VkFormat requestedInFormat = encoderConfig->input.vkFormat;
+    // THE REQUEST IS AN ENCODE-SOURCE REQUEST ONLY ON THE DIRECT LANE.
+    //
+    // On the filter lane input.vkFormat describes the FILTER's input -- a
+    // 3-plane I420, a depth-converted P010 source, an RGBA surface -- and no
+    // driver advertises those as encode sources, nor ever will: they are
+    // precisely the formats that exist to be converted. Matching against them
+    // therefore fails by construction and every healthy filtered session
+    // announced a chroma mismatch about a chroma that matched.
+    //
+    // The old gate tested input.colorSpace == kRGB, which caught only the RGB
+    // half of the filter lane and let the Y'CbCr half -- 3-plane and
+    // depth-converted -- fall through and print. The FILTER FLAG is the right
+    // gate on both halves.
+    //
+    // AND THE ARGV PATH IS THE PART THAT NEEDS SAYING, because it looks wrong
+    // and is not: EncoderConfig constructs enablePreprocessComputeFilter TRUE
+    // and only the ext binder ever writes it down, so on the argv path this
+    // reads true always. That is correct there, because an argv session is a
+    // file session and a file input is converted on every frame whatever its
+    // format (see the preprocessFilterWritesEncodeSource comment below). Do
+    // not "fix" this by conjoining a colorSpace test: that is what put the
+    // Y'CbCr filter lane back on the wrong side of the gate.
+    //
+    // The packed 4:4:4 encode sources ride RGBA format enums (AYUV on
+    // R8G8B8A8_UNORM, Y410 on A2B10G10R10_UNORM_PACK32), which are also the
+    // enums a genuine RGBA session declares. Matching those by enum alone
+    // would give an RGBA session a packed encode source, and
+    // SetExternalInputFrame would then find the format in its
+    // directly-encodable switch and hand the encoder the caller's red, green
+    // and blue bytes as if they were luma and chroma. An RGBA session is on
+    // the filter lane, so the gate below excludes it too.
+    const VkFormat requestedInFormat =
+        encoderConfig->IsPreprocessComputeFilterEnabled()
+            ? VK_FORMAT_UNDEFINED
+            : encoderConfig->input.vkFormat;
 
     // --preferPackedYcbcr asks for the packed 4:4:4 encode source (AYUV / Y410) whenever
     // the driver offers one. It deliberately outranks the input-format match below: the
@@ -3177,10 +3229,20 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         // how a 4:4:4 request ends up encoded as 4:2:0.
         m_imageInFormat = supportedInFormats[0];
         if (requestedInFormat != VK_FORMAT_UNDEFINED) {
-            fprintf(stderr,
-                    "\nInitEncoder Warning: requested encode-source format %d is not "
-                    "advertised by the driver for this profile; falling back to %d. "
-                    "The encoded chroma format will NOT match the request.\n",
+            // LOUDER, NOT QUIETER. Narrowing the gate above removed the only
+            // signal a real mismatch had, so the case that survives it has to
+            // say what actually happens rather than make a chroma claim it
+            // cannot support. The surviving case is the DIRECT lane: no
+            // conversion is configured, so SetExternalInputFrame hands the
+            // encoder the caller's bytes as they lie, and the encoder reads
+            // them under the substituted layout. That is a correctness
+            // problem, not a quality one, and the chroma may well match.
+            VkEncPrintfErr("\nInitEncoder Error(non-fatal): this session declared "
+                    "encode-source format %d on the DIRECT lane -- no "
+                    "conversion is configured -- and the driver does not "
+                    "advertise it for this profile. Substituting %d. The "
+                    "encoder will read the caller's bytes under a DIFFERENT "
+                    "layout than the one declared.\n",
                     (int)requestedInFormat, (int)m_imageInFormat);
             // Dump what the driver DOES offer. Without this the fallback tells you only
             // that your request was refused, not what to ask for instead -- and the set
@@ -3909,6 +3971,26 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 #ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     if (encoderConfig->enablePreprocessComputeFilter) {
 
+        // THE CONVERSION KIND IS DECIDED FIRST, because the colour
+        // parameters below are meaningful for exactly one of them.
+        //
+        // The mechanism choice belongs inside the library, where the device
+        // capabilities are known, rather than in the embedder
+        // (CONTEXT_DESIGN:594-598). m_imageInFormat is not assumed here: it
+        // was read out of vkGetPhysicalDeviceVideoFormatPropertiesKHR above,
+        // so a future device that accepts something other than NV12 as an
+        // encode source changes this derivation without changing a line.
+        //
+        // MOVED UP from immediately above the Create() call, and it had to
+        // be: the matrix contract below REFUSES some code points, and
+        // refusing them on a YCbCr->YCbCr copy -- which applies no matrix at
+        // all -- would reject configurations that are entirely correct.
+        encoderConfig->filterType =
+            VkEncDeriveFilterType(encoderConfig->input.colorSpace,
+                                  m_imageInFormat);
+        const bool filterAppliesRgbToYcbcrMatrix =
+            (encoderConfig->filterType == VulkanFilterYuvCompute::RGBA2YCBCR);
+
         // Colour conversion parameters for the RGBA->YCbCr preprocess filter,
         // derived from the VUI the caller asked for.
         //
@@ -3927,51 +4009,37 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         // the bitstream will advertise: deriving from them makes the conversion
         // and the advertisement agree by construction rather than by luck.
         //
-        // FALLBACK, and why it is not "just a default": matrix_coefficients
-        // values that name no matrix this filter can express -- 0 (Identity/
-        // GBR), 2 (Unspecified), 7 (SMPTE 240M), and anything outside the three
-        // VkSamplerYcbcrModelConversion values below -- must not be passed
-        // through. VkSamplerYcbcrModelConversion has no encoding for them, so
-        // the filter would resolve them to YcbcrBtStandardUnknown, whose
-        // {kb,kr} = {0,0} is not a refusal but a matrix whose luma is a copy of
-        // the green channel. Falling back to BT.709 keeps the output sane and
-        // matches both the ext layer's documented default and what the Chromium
-        // builder sets when no colour space is supplied. It is announced,
-        // because silently substituting a matrix is how this class of bug is
-        // born.
-        VkSamplerYcbcrModelConversion ycbcrModelConversion;
-        YcbcrBtStandard ycbcrBtStandard;
-        switch (encoderConfig->matrix_coefficients) {
-            case 5:  // BT.601-7 625 (PAL/SECAM)
-            case 6:  // BT.601-7 525 (NTSC) -- same matrix
-                ycbcrModelConversion = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601;
-                ycbcrBtStandard      = YcbcrBtStandardBt601Ebu;
-                break;
-            case 9:  // BT.2020 non-constant luminance
-            case 10: // BT.2020 constant luminance
-                ycbcrModelConversion = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_2020;
-                ycbcrBtStandard      = YcbcrBtStandardBt2020;
-                break;
-            case 1:  // BT.709
-                ycbcrModelConversion = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
-                ycbcrBtStandard      = YcbcrBtStandardBt709;
-                break;
-            default:
-                fprintf(stderr,
-                        "\nInitEncoder: preprocess filter: VUI matrix_coefficients %u "
-                        "names no matrix the RGBA->YCbCr filter can express; "
-                        "converting as BT.709.\n",
-                        (unsigned)encoderConfig->matrix_coefficients);
-                ycbcrModelConversion = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
-                ycbcrBtStandard      = YcbcrBtStandardBt709;
-                break;
+        // WHAT REPLACED THE FALLBACK. The paragraph that used to sit here
+        // argued that unexpressible matrix values should fall back to BT.709
+        // "announced, because silently substituting a matrix is how this
+        // class of bug is born". Announcing it was not enough: the
+        // substitution applied to the FILTER only and left
+        // matrix_coefficients naming the matrix that was NOT applied, on the
+        // success path. EncoderConfig::ResolveRgbToYcbcrMatrix() decides now,
+        // and it either honours the label, DERIVES one when none was
+        // named, or refuses -- never diverges. The per-code-point contract
+        // (CC-1) and its reasons live with that function.
+        VkSamplerYcbcrModelConversion ycbcrModelConversion =
+            VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
+        if (filterAppliesRgbToYcbcrMatrix) {
+            if (!encoderConfig->ResolveRgbToYcbcrMatrix(&ycbcrModelConversion)) {
+                // The reason is printed by the resolver, which is the only
+                // place that knows which refusal class fired.
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            // Describe the siting this conversion produces, in the same
+            // branch that decides the matrix, so the two cannot be applied
+            // to different sessions.
+            encoderConfig->ApplyPreprocessFilterChromaSiting();
         }
 
         const VkSamplerYcbcrRange ycbcrRange = encoderConfig->video_full_range_flag ?
                                                    VK_SAMPLER_YCBCR_RANGE_ITU_FULL :
                                                    VK_SAMPLER_YCBCR_RANGE_ITU_NARROW;
-        // From the RESOLVED standard, not from matrix_coefficients again, so
-        // the constants and the model can never name different matrices.
+        // From the RESOLVED model, not from matrix_coefficients again, so the
+        // constants and the model can never name different matrices.
+        const YcbcrBtStandard ycbcrBtStandard =
+            VkEncModelToBtStandard(ycbcrModelConversion);
         const YcbcrPrimariesConstants ycbcrPrimariesConstants =
             GetYcbcrPrimariesConstants(ycbcrBtStandard);
 
@@ -3986,8 +4054,25 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                      VK_COMPONENT_SWIZZLE_IDENTITY,
                      VK_COMPONENT_SWIZZLE_IDENTITY
                    },
-                   VK_CHROMA_LOCATION_MIDPOINT, // FIXME
-                   VK_CHROMA_LOCATION_MIDPOINT, // FIXME
+                   // CHROMA SITING, and these are no longer FIXMEs.
+                   //
+                   // MIDPOINT/MIDPOINT (the config default these now read)
+                   // is not a placeholder: it is what the shader produces.
+                   // InitRGBA2YCBCR dispatches one thread per output chroma
+                   // sample and calls GenAverageChromaBlock, a 2x2 box
+                   // average, so the written sample sits at the centre of the
+                   // 2x2 luma block in both axes -- MPEG-1 / JPEG siting.
+                   //
+                   // Nothing on the RGBA arm READS these two: the input is
+                   // fetched with texelFetch through a SAMPLED_IMAGE that
+                   // binds no sampler, and InitRGBA2YCBCR takes only
+                   // ycbcrModel and ycbcrRange back out of this struct. They
+                   // are a DECLARATION. What makes the declaration
+                   // load-bearing is that the same two values now drive
+                   // EncoderConfig::ApplyPreprocessFilterChromaSiting(),
+                   // which puts the siting in the H.26x VUI.
+                   encoderConfig->xChromaOffset,
+                   encoderConfig->yChromaOffset,
                    VK_FILTER_LINEAR,
                    false
                    };
@@ -4037,10 +4122,9 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         // (CONTEXT_DESIGN:594-598). m_imageInFormat is not assumed here: it
         // was read out of vkGetPhysicalDeviceVideoFormatPropertiesKHR above,
         // so a future device that accepts something other than NV12 as an
-        // encode source changes this derivation without changing a line.
-        encoderConfig->filterType =
-            VkEncDeriveFilterType(encoderConfig->input.vkFormat,
-                                  m_imageInFormat);
+        // (encoderConfig->filterType is derived at the top of this block,
+        // ahead of the colour parameters: the matrix contract there is scoped
+        // to RGBA2YCBCR and needs the answer before it can be applied.)
 
         result = VulkanFilterYuvCompute::Create(m_vkDevCtx,
                                                 m_vkDevCtx->GetComputeQueueFamilyIdx(),

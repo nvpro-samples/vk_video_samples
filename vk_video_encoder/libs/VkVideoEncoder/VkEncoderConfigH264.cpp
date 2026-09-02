@@ -183,6 +183,13 @@ EncoderConfigH264::InitVuiParameters(StdVideoH264SequenceParameterSetVui *vui,
     }
 
     vui->flags.chroma_loc_info_present_flag = chroma_loc_info_present_flag;
+    if (!!chroma_loc_info_present_flag) {
+        // BOTH FIELDS, and the same value in both -- see the identical note
+        // in EncoderConfigH265::InitVuiParameters. The flag was plumbed and
+        // the type was not, so the flag could only ever advertise 0.
+        vui->chroma_sample_loc_type_top_field    = chroma_sample_loc_type;
+        vui->chroma_sample_loc_type_bottom_field = chroma_sample_loc_type;
+    }
 
     if ((frameRateNumerator > 0) && (frameRateDenominator > 0)) {
         double frameRate = (double)frameRateNumerator / frameRateDenominator;
@@ -605,6 +612,17 @@ void EncoderConfigH264::InitProfileLevel()
 {
     // 8x8 transform is only supported by High profile and above.
     // Main and Baseline profiles only support 4x4 transform.
+    //
+    // adaptiveTransformMode HAS NO SETTER ON ANY SURFACE, and the narration
+    // below describes a configuration that cannot occur because of it. The
+    // field has exactly one write -- its ENABLE constructor default in
+    // VkEncoderConfigH264.h -- so the first branch is always taken,
+    // use8x8Transform is always true, and the derivation below can never
+    // reach BASELINE or MAIN: the 8x8 clause overwrites whatever the
+    // B-frame / CABAC clause chose. The narration is kept rather than
+    // deleted because it states the INTENT, and deleting it would delete the
+    // record that the intent is unreachable. Giving the field a setter is
+    // what would make it reachable; that is a decision, not a cleanup.
     bool use8x8Transform = false;
 
     if (adaptiveTransformMode == ADAPTIVE_TRANSFORM_ENABLE) {
@@ -635,6 +653,18 @@ void EncoderConfigH264::InitProfileLevel()
             profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_10;
         }
 
+        // A LATENT HAZARD, NOTED AND DELIBERATELY NOT FIXED. This derivation
+        // reads input.chromaSubsampling while the SPS writes chroma_format_idc
+        // from encodeChromaSubsampling, and the H.265 and AV1 derivations read
+        // the ENCODE value throughout. Today the two are always equal: there is
+        // one writer, EncoderConfig::InitializeParameters copies input to
+        // encode before any derivation runs. The day something makes them
+        // differ, H.264 alone will pick its PROFILE from the input and write
+        // its CHROMA FORMAT from the encode value -- a profile and a chroma
+        // format that disagree inside one SPS, with nothing to catch it.
+        // The rule is to fix the READS and never the fields, and not
+        // speculatively: this note is the record, not the change.
+        //
         // 4:2:2 needs High 4:2:2 (122). High (100) and below cannot code
         // chroma_format_idc == 2 at all, so without this a 4:2:2 request is refused by
         // the driver's profile query rather than silently downgraded.

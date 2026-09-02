@@ -444,6 +444,51 @@ VkResult VkVideoEncoderH265::EncodeVideoSessionParameters(VkSharedBaseObj<VkVide
     }
     encodeFrameInfo->bitstreamHeaderBufferSize = bufferSize;
 
+    // HDR10 STATIC METADATA, appended to the parameter sets the driver just
+    // wrote.
+    //
+    // HERE, and not on the per-frame path, for two reasons. The access-unit
+    // order a decoder requires is VPS, SPS, PPS, prefix SEI, slice -- so the
+    // bytes belong immediately after what this function produced. And this
+    // function runs for EVERY IDR (see the note in
+    // VkVideoEncoder::EncodeFrame about bitstreamHeaderBufferSize), so the
+    // colour volume repeats at every random-access point instead of once at
+    // the head of the stream where a seek or a mid-stream join would miss it.
+    //
+    // Vulkan Video has no std structure for either payload and
+    // GetEncodedVideoSessionParametersKHR writes parameter sets only, so the
+    // NAL is built by hand -- see VkVideoEncoderHdrMetadata.cpp.
+    if (m_encoderConfig->hdrMetadata.Any()) {
+        bool truncated = false;
+        const size_t used = encodeFrameInfo->bitstreamHeaderOffset +
+                            encodeFrameInfo->bitstreamHeaderBufferSize;
+        const size_t seiBytes = VkEncBuildH265HdrSeiNal(
+            m_encoderConfig->hdrMetadata,
+            encodeFrameInfo->bitstreamHeaderBuffer + used,
+            sizeof(encodeFrameInfo->bitstreamHeaderBuffer) - used,
+            &truncated);
+        if (truncated) {
+            // FATAL. A caller that asked for HDR10 and got a stream without
+            // it has no way to notice: every counter, every completion edge
+            // and every byte count is identical. Refusing is the only signal
+            // this failure has.
+            VkEncPrintfErr("\nEncodeVideoSessionParameters Error: the HDR10 SEI does "
+                    "not fit in the %zu-byte non-VCL header buffer after %zu "
+                    "bytes of parameter sets.\n",
+                    sizeof(encodeFrameInfo->bitstreamHeaderBuffer), used);
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        // AND THE RATE CONTROLLER IS TOLD. bitstreamHeaderBufferSize is
+        // what VkVideoEncoder::EncodeFrameCommon reserves via
+        // dstBufferOffset and reports as precedingExternallyEncodedBytes,
+        // and it runs AFTER this function (the codec arm fills the buffer
+        // first). So growing the count here debits the SEI's bytes from the
+        // IDR's frame budget exactly as the parameter sets' bytes already
+        // were -- rather than leaving the RC to overshoot by another ~47
+        // bytes on every IDR.
+        encodeFrameInfo->bitstreamHeaderBufferSize += seiBytes;
+    }
+
     return result;
 }
 

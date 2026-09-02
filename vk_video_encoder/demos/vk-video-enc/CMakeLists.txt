@@ -20,6 +20,16 @@ set(sources
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderAV1.h
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfig.cpp
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoder.cpp
+    # THIS LIST IS A DUPLICATE OF libs/CMakeLists.txt's, and that is the
+    # defect it just caused: the demo compiles the encoder sources itself
+    # instead of linking libvkvideo-encoder-static, so every file added there
+    # has to be added here too, with nothing to enforce it. HdrMetadata was
+    # added to libs/ and not here, and the demo has not linked since --
+    # undefined reference to VkEncBuildH265HdrSeiNal and
+    # VkEncBuildAv1HdrMetadataObus. It is invisible in a -DBUILD_DEMOS=OFF
+    # configure and in ctest, which is why it survived.
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderHdrMetadata.cpp
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderHdrMetadata.h
     # Same seam, same selection rule as vk_video_encoder/libs/CMakeLists.txt.
     $<$<PLATFORM_ID:Linux>:${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderOsAdapterLinux.cpp>
     $<$<PLATFORM_ID:Windows>:${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderOsAdapterWindows.cpp>

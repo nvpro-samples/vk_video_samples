@@ -47,22 +47,36 @@
  *   - bytes alone prove nothing about colour. Colour is judged by an
  *     INDEPENDENT DECODER -- ffmpeg, a separate process reading the written
  *     file -- and this program never decodes its own bitstream in-process.
- *     What it does do, since the assertion was wired up, is RUN that decoder
- *     and grade the four quadrant centres it returns; the promise used to
- *     stop at "is judged out of process" with nothing anywhere that judged.
+ *     What it does do is RUN that decoder and grade the four quadrant centres
+ *     it returns; the promise used to stop at "is judged out of process" with
+ *     nothing anywhere that judged.
+ *
+ *     WHAT "COLOUR IS JUDGED" MEANT UNTIL CC-1 W8, because the unqualified
+ *     claim was broader than the gate. The decode was to rgb24 at tolerance
+ *     24, and in the RGB domain that gate judged FILTER LIVENESS and CHANNEL
+ *     ORDER -- both of which move a flat primary by 177 or more -- and NOT
+ *     the conversion matrix. Measured: it passed THREE of the five
+ *     applied/declared matrix confusions, including `applied 709 / declared
+ *     601` at 23 against a tolerance of 24, i.e. by one code value. The gate
+ *     now decodes to yuv444p and compares in the Y'CbCr domain against the
+ *     matrix the row DECLARED, at tolerance 4, and the LABEL is checked
+ *     explicitly rather than implicitly. See kQuadTolerance for the full
+ *     before/after measurement.
  *
  * SAFETY -- multi-planar staging is a GPU HANG on this hardware
  * (VK_ERROR_DEVICE_LOST, 0-byte bitstream). A 3-plane row whose
  * slot does not resolve to FILTER is ABANDONED BEFORE ANY SUBMIT rather than
  * encoded, and says so. The guard is unconditional and is not a diagnostic.
  *
- * THE BAR, IN FULL. Three numbers. The second was missing when this file was
+ * THE BAR, IN FULL. Four numbers. The second was missing when this file was
  * written; the third was missing until the decode assertion below was wired
- * into the default verdict chain, and it is the only one of the three that
- * can see the compute filter stop executing:
+ * into the default verdict chain, and it is the only one of the first three
+ * that can see the compute filter stop executing; the fourth arrived with the
+ * HDR10 row, which takes a different gate and therefore needs its own count:
  *
- *   sessions=8 encoded=8 abandoned=0 failures=0   (default and --declare-tso)
+ *   sessions=9 encoded=9 abandoned=0 failures=0   (default and --declare-tso)
  *   decodeGated=8 decodeFailed=0                  (default and --declare-tso)
+ *   hdrGated=1 hdrFailed=0                        (default and --declare-tso)
  *   0 "The Vulkan spec states" under --validate   (default and --declare-tso)
  *
  * That is the bar, at exit 0.
@@ -74,10 +88,11 @@
  *
  * THE THIRD LINE IS NOT REDUNDANT WITH THE FIRST. Delete the four
  * m_vkDevCtx->CmdDispatch calls in VulkanFilterYuvCompute.cpp and the first
- * line is UNCHANGED -- sessions=8 encoded=8 abandoned=0 failures=0, exit 0,
- * dispatch=12 on every FILTER row -- while all five filter-routed rows decode
- * to a flat (0,76,0) in every quadrant. See kQuadTolerance below for the
- * measurement and for why the threshold is what it is.
+ * line is UNCHANGED -- measured as sessions=8 encoded=8 abandoned=0
+ * failures=0 when this table had 14 rows and no HDR row, exit 0, dispatch=12
+ * on every FILTER row -- while all five filter-routed rows decode to a flat
+ * (0,76,0) in every quadrant. See kQuadTolerance below for the measurement
+ * and for why the threshold is what it is.
  *
  * The validation half is stated because leaving it out cost this suite seven
  * real messages. `--validate` emitted 7 x
@@ -99,18 +114,26 @@
  * contribute nothing but a deviceLimited count. The full summary line, as
  * The full summary line on such a device is:
  *
- *   sessions=8 encoded=8 abandoned=0 failures=0
+ *   sessions=9 encoded=9 abandoned=0 failures=0
  *   decodeGated=8 decodeFailed=0 deviceLimited=6 av1Unverified=0
  *   hdrGated=1 hdrFailed=0
  *
  * The eighth session is the HEVC Main 8-bit row and the ninth is the HDR10
  * row.
  *
- * THE EIGHTH SESSION IS THE HEVC MAIN 8-BIT ROW AND ITS NUMBER IS PREDICTED,
- * NOT MEASURED -- see the comment on that row in kRows. Every other number in
- * this block was measured on an RTX A4000 at driver 615.06; that host is now
- * on 620.18, so the whole block is due a re-measure and a difference is not
- * automatically ours. Treat 8 as the expectation to confirm, not a result.
+ * AV1 IS THE ONE ARM THE REFERENCE HOST CANNOT JUDGE, and the HDR feature
+ * inherits that ON THAT HOST: the AV1 metadata OBUs are built and appended by
+ * the library, and their BYTES are pinned device-free in
+ * test/encoder-ext-filter against values ffprobe read back out of a real AV1
+ * stream.
+ *
+ * NO LONGER PREDICTED. On an RTX 5070 all four AV1 rows encode and are
+ * decode-gated, and TWO AV1 HDR ROWS ARE NOW IN THE TRACKED MATRIX -- their
+ * mastering-display and content-light payloads are read back field by field
+ * by ffprobe on every run. What had kept them out was not the encoder: it was
+ * CheckHdrSignalling() string-matching H.265's ST 2086 units, against which a
+ * correct AV1 stream reported ten MISSING lines. The gate parses and compares
+ * numerically now, so one assertion serves both codecs.
  *
  * deviceLimited counts P012 and I420-12 (no 12-bit profile on this device)
  * plus the AV1 rows. On hardware that HAS AV1 encode those rows join the
@@ -397,14 +420,38 @@ RGB QuadAt(uint32_t x, uint32_t y)
     return right ? kQuadBR : kQuadBL;
 }
 
-// BT.709, LIMITED (studio) range -- the pair the session is configured with
-// below (matrixCoefficients = 1, videoFullRange = VK_FALSE). Writing the
-// YCbCr arms with the same matrix the RGBA arm's filter is told to use is
-// what lets ONE out-of-process comparison judge every row.
+// LIMITED (studio) range, for ANY declared matrix. Writing the YCbCr arms
+// with the same matrix the RGBA arm's filter is told to use is what lets ONE
+// out-of-process comparison judge every row.
+//
+// CC-1 W8 GENERALISED THIS FROM A HARDCODED BT.709. The pattern WRITER still
+// uses BT.709 -- the uploaded picture is BT.709 by construction and must not
+// move -- but the quadrant GATE now compares in the Y'CbCr domain against the
+// matrix the row DECLARED, so it needs the other two. Today every tracked row
+// declares 1, so this is a generalisation with one live caller value; the
+// point is that the gate stops being silently BT.709-only the day a row does
+// not.
 struct YUV { double y, cb, cr; };
-YUV RgbToYuv709Limited(const RGB& c)
+
+struct KrKb { double kr, kb; };
+KrKb MatrixConstants(uint8_t matrix)
 {
-    const double Kr = 0.2126, Kb = 0.0722;
+    switch (matrix) {
+    case 5:   // BT.470BG
+    case 6:   // SMPTE 170M -- the same matrix
+        return { 0.299,  0.114  };
+    case 9:   // BT.2020 NCL
+    case 10:  // BT.2020 CL -- approximated as NCL, exactly as the filter does
+        return { 0.2627, 0.0593 };
+    default:  // 1 (BT.709), and any unnamed matrix, which resolves to BT.709
+        return { 0.2126, 0.0722 };
+    }
+}
+
+YUV RgbToYuvLimited(const RGB& c, uint8_t matrix)
+{
+    const KrKb k = MatrixConstants(matrix);
+    const double Kr = k.kr, Kb = k.kb;
     const double R = c.r, G = c.g, B = c.b;
     const double Yf = Kr * R + (1.0 - Kr - Kb) * G + Kb * B;   // 0..255
     YUV o;
@@ -412,6 +459,14 @@ YUV RgbToYuv709Limited(const RGB& c)
     o.cb = 128.0 + 224.0 * (B - Yf) / (2.0 * (1.0 - Kb) * 255.0);
     o.cr = 128.0 + 224.0 * (R - Yf) / (2.0 * (1.0 - Kr) * 255.0);
     return o;
+}
+
+// The BT.709 spelling the pattern writer uses. Kept as a named wrapper rather
+// than open-coded at its dozen call sites, so "what the uploader writes" stays
+// one decision.
+YUV RgbToYuv709Limited(const RGB& c)
+{
+    return RgbToYuvLimited(c, 1);
 }
 
 uint8_t Clamp8(double v)
@@ -501,8 +556,8 @@ bool LoadDeviceFns(VkInstance instance, VkDevice device, DeviceFns* fns)
 // rather than from the frame format its embedder asked for, because
 // VideoEncodeAcceleratorAdapter pins that to NV12 before any frame exists and a
 // session declared NV12 has no filter at all. The consequence is that an
-// ordinary NV12 stream now runs on a session whose enablePreprocessFilter is
-// VK_TRUE -- and GetStagedInputSubmitType() returns COMPUTE for exactly such a
+// ordinary NV12 stream now runs on a session that HAS a preprocess filter --
+// and GetStagedInputSubmitType() returns COMPUTE for exactly such a
 // session, so every staged NV12 frame moves off the encode/transfer family onto
 // the compute family. That is a correct consequence of
 // VUID-vkQueueSubmit2-commandBuffer-03874, and it is still a behaviour change
@@ -581,6 +636,26 @@ bool g_companionForeign = false;
 enum Arm { ARM_DIRECT, ARM_FILTER_YCBCR, ARM_FILTER_RGBA };
 enum Group { G_8BIT = 0, G_10BIT = 1, G_12BIT = 2 };
 
+// A row's COLOUR DECLARATION, when it is not the suite's pinned default.
+//
+// Every row before the HDR one declares BT.709 studio range, which is the
+// pair the four-quadrant pattern is generated with, so the decoded picture
+// can be compared against the primaries the harness wrote. An HDR row cannot
+// take that gate -- the same YCbCr samples inverted through the BT.2020
+// matrix are different RGB -- so it carries its own colour AND its own
+// verdict. See CheckHdrSignalling().
+struct RowColour {
+    uint8_t  primaries;         // ISO/IEC 23091-4 code points
+    uint8_t  transfer;
+    uint8_t  matrix;
+    VkBool32 fullRange;
+    bool     hdr10;             // also chain VkVideoEncoderHdrMetadataInfo
+};
+
+// BT.2020 primaries (9), PQ / SMPTE ST 2084 transfer (16), BT.2020
+// non-constant-luminance matrix (9), studio range -- HDR10's colour volume.
+const RowColour kColourBt2020Pq = {9, 16, 9, VK_FALSE, true};
+
 struct Row {
     const char* name;
     const char* shortName;
@@ -589,6 +664,9 @@ struct Row {
     Group       group;
     VkVideoCodecOperationFlagBitsKHR codec;
     const char* ext;
+    // nullptr means the pinned BT.709 studio pair; every pre-HDR row leaves
+    // it unwritten and aggregate initialization supplies the null.
+    const RowColour* colour;
 };
 
 #define H264 VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR, "264"
@@ -641,7 +719,7 @@ struct Row {
 const Row kRows[] = {
     {"NV12    G8_B8R8_2PLANE_420_UNORM",       "nv12",    VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,                   ARM_DIRECT,       G_8BIT,  H264},
     {"P010    G10X6_B10X6R10X6_2PLANE_420",    "p010",    VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,  ARM_DIRECT,       G_10BIT, H265},
-    {"P012    G12X4_B12X4R12X4_2PLANE_420",    "p012",    VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16,  ARM_DIRECT,       G_12BIT, H265},
+    {"P012    G12X4_B12X4R12X4_2PLANE_420",    "p012",    VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16,  ARM_FILTER_YCBCR, G_12BIT, H265},
     {"I420    G8_B8_R8_3PLANE_420_UNORM",      "i420",    VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM,                  ARM_FILTER_YCBCR, G_8BIT,  H264},
     {"I420-10 G10X6_B10X6_R10X6_3PLANE_420",   "i420p10", VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16, ARM_FILTER_YCBCR, G_10BIT, H265},
     {"I420-12 G12X4_B12X4_R12X4_3PLANE_420",   "i420p12", VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16, ARM_FILTER_YCBCR, G_12BIT, H265},
@@ -663,7 +741,7 @@ const Row kRows[] = {
     // ---- AV1. THIS CODEC HAS NEVER EXECUTED ANYWHERE IN THIS TREE. -------
     //
     // WHICH ROWS, AND WHY EXACTLY THESE FOUR. The input-format taxonomy
-    // (VkEncClassifyInputFormat) is CODEC-INDEPENDENT -- it takes a VkFormat
+    // (VkEncClassifyInput) is CODEC-INDEPENDENT -- it takes a VkFormat
     // and nothing else -- so AV1 inherits the same nine-format ladder the
     // rows above walk. What narrows it is the PROFILE, and the library states
     // the constraint itself: AV1 Main is 8/10-bit 4:2:0 only, and 12-bit
@@ -677,9 +755,12 @@ const Row kRows[] = {
     //   * NV12 (8-bit) and P010 (10-bit) are the whole ENCODABLE_DIRECT arm
     //     AV1 Main admits, and both are here. 10-bit is not redundant: the
     //     AV1 sequence header carries its own colour config, whose BitDepth
-    //     and colour fields are built by AV1-only code (the av1BitDepth /
-    //     av1ColorRange probe fields in vulkan_video_encoder_ext.cpp:931-951
-    //     exist precisely because nothing else reads them).
+    //     and colour fields are built by AV1-only code (the av1BitDepth and
+    //     av1ColorRange fields ON VkEncBoundConfigProbe exist precisely
+    //     because nothing else reads them). Named by SYMBOL and not by line:
+    //     the previous citation pointed at a range that no longer holds
+    //     either the write site or the declarations, which is what a line
+    //     number in a comment eventually does.
     //   * I420 is the ENCODABLE_VIA_FILTER *YCbCr* arm -- three planes into
     //     two, through the compute filter's per-plane storage-view read.
     //   * RGBA8 is the ENCODABLE_VIA_FILTER *RGBA* arm -- one plane, read
@@ -695,10 +776,43 @@ const Row kRows[] = {
     // sub-arms of FILTER -- which is the whole point: the AV1 encoder, the
     // seven ext-layer AV1 sites and VkVideoEncoderAV1.cpp have never seen a
     // frame from any of them.
+    // ---- HDR10. THE ONLY ROW IN THIS SUITE THAT LOOKS AT A SEI. ----------
+    //
+    // Same VkFormat, same DIRECT path and same codec as the P010 row above,
+    // ON PURPOSE: the input path is already proven there, so the only
+    // variables this row adds are the colour volume and the two SEI messages
+    // -- which is what makes its verdict readable.
+    //
+    // It takes the HDR gate instead of the four-quadrant gate, and that is a
+    // deliberate narrowing rather than a hole. The harness writes its pattern
+    // as BT.709 limited-range YCbCr; declaring BT.2020/PQ tells the decoder
+    // to invert a DIFFERENT matrix, so the RGB it produces is legitimately
+    // not the RGB the pattern started from. Comparing it against the BT.709
+    // expectations would fail for a correct encode. What the HDR gate asserts
+    // instead is stronger where it matters here: the four VUI code points, a
+    // full frame actually decoded, four quadrant centres that are not all the
+    // same value (a flat picture is still caught), and both SEI payloads read
+    // back field by field by ffprobe.
+    {"HDR10-P010 BT.2020 PQ + ST2086 + MaxCLL", "hdr10", VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16, ARM_DIRECT,       G_10BIT, H265, &kColourBt2020Pq},
     {"AV1-NV12  G8_B8R8_2PLANE_420_UNORM",     "av1nv12", VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,                   ARM_DIRECT,       G_8BIT,  AV1},
     {"AV1-P010  G10X6_B10X6R10X6_2PLANE_420",  "av1p010", VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,  ARM_DIRECT,       G_10BIT, AV1},
     {"AV1-I420  G8_B8_R8_3PLANE_420_UNORM",    "av1i420", VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM,                  ARM_FILTER_YCBCR, G_8BIT,  AV1},
     {"AV1-RGBA8 R8G8B8A8_UNORM",               "av1rgba", VK_FORMAT_R8G8B8A8_UNORM,                             ARM_FILTER_RGBA,  G_8BIT,  AV1},
+    // ---- AV1 HDR10, BOTH DEPTHS. Added once CheckHdrSignalling() stopped
+    // string-matching H.265's ST 2086 units, which is what had kept these two
+    // out: AV1's metadata_hdr_mdcv carries the same physical values in
+    // different fixed point, so a correct AV1 HDR stream reported ten MISSING
+    // lines against the old table while the H.265 control passed in the same
+    // run. The gate parses and compares numerically now, so the same
+    // assertion serves both codecs.
+    //
+    // BOTH DEPTHS, and 8-bit is not redundant. AV1 Main admits 8 and 10 bits,
+    // the metadata OBU is emitted by the same code either way, and the
+    // BitDepth in the sequence header's colour config comes from a DIFFERENT
+    // field -- so an 8-bit HDR row is the one that would catch the metadata
+    // being made conditional on depth.
+    {"HDR10-AV1-NV12 BT.2020 PQ + ST2086 + MaxCLL",  "hdr10av1nv12", VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,                   ARM_DIRECT, G_8BIT,  AV1, &kColourBt2020Pq},
+    {"HDR10-AV1-P010 BT.2020 PQ + ST2086 + MaxCLL",  "hdr10av1p010", VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,  ARM_DIRECT, G_10BIT, AV1, &kColourBt2020Pq},
 };
 const size_t kNumRows = sizeof(kRows) / sizeof(kRows[0]);
 
@@ -1327,10 +1441,11 @@ bool UploadPattern(VkImageUsageFlags declaredUsage,
     // point) and VkVideoEncoder::TransitionImageLayout records exclusively
     // through vkCmdPipelineBarrier2. It was this helper all along.
     //
-    // WHY IT WAS INVISIBLE. This suite's stated bar is
-    // `sessions=8 encoded=8 failures=0`, which carries no validation count, so
-    // seven real messages sat under a green bar. The bar now includes
-    // "0 spec-states under --validate"; see the file header.
+    // WHY IT WAS INVISIBLE. This suite's stated bar was
+    // `sessions=8 encoded=8 failures=0` at the time -- an earlier row set, and
+    // with no validation count in it -- so seven real messages sat under a
+    // green bar. The bar now includes "0 spec-states under --validate"; see the file
+    // header for the current line in full.
     //
     // MEMORY_READ is a strict superset of the two flags it replaces and is
     // supported by every pipeline stage, so it is legal on every family this
@@ -1378,6 +1493,11 @@ struct EncResult {
     uint32_t submitted = 0, retrieved = 0;
     uint64_t bytes = 0;
     int      lastSubmitStatus = 0;
+    // G-07: what the SAME format does on the UNREGISTERED submit lane. The
+    // advertised list qualifies SUBOPTIMAL entries as registered-lane only,
+    // and this is where that qualification is measured rather than restated.
+    bool     unregisteredSubmitTried = false;
+    VkResult unregisteredSubmit = VK_SUCCESS;
     bool     deviceLost = false;
     // The filter observable is read TWICE and both readings are reported. The
     // first run of this harness read it only after Flush() and got
@@ -1502,39 +1622,53 @@ EncResult RunRow(const Row& row, const char* outDir)
     // THE FILTER-ENABLE DERIVATION, AND WHY IT IS NOT AN UNCONDITIONAL VK_TRUE
     // UNDER --nv12-staged-companion.
     //
-    // This suite pins VK_TRUE on every row so that the routing gate, not the
-    // flag, is what decides each row's path -- deliberate, and right for the
-    // format matrix. It is WRONG for the staged-companion A/B, and the first
-    // run of that mode caught it: with VK_TRUE pinned, the NV12-DECLARED row
-    // also builds a filter object, so GetStagedInputSubmitType() answered
-    // COMPUTE there too and the "control" measured the same value as the
-    // subject. A control that cannot differ from its subject measures nothing.
-    //
-    // Chromium does NOT pin it. VulkanVideoEncoderConfigBuilder::Build sets
-    //   enablePreprocessFilter =
-    //       EncodesOnlyViaPreprocessFilter(inputFormat) ? VK_TRUE : VK_FALSE
-    // so an NV12-declared session has NO filter and an RGBA- or I420-declared
-    // one does. Reproducing that derivation is the whole content of the A/B:
-    // the question is what DECLARING A WIDER SESSION FORMAT costs the NV12
-    // frames riding on it, and that cost only exists if the narrow session is
-    // measured without a filter.
-    //
-    // ARM_DIRECT rows are exactly the semi-planar (ENCODABLE_DIRECT) formats,
-    // which is the complement of EncodesOnlyViaPreprocessFilter, so this
-    // one-line mapping IS Chromium's predicate on this row set.
-    config.enablePreprocessFilter =
-        (g_stagedCompanion && row.arm == ARM_DIRECT) ? VK_FALSE : VK_TRUE;
+    // No filter request exists to make: the library builds the preprocess
+    // filter for the formats that need one and for no others, derived from
+    // inputFormat alone. An NV12-declared session therefore has no filter and
+    // an RGBA- or I420-declared one does, which is exactly the split the
+    // staged-companion A/B needs -- the question that mode asks is what
+    // DECLARING A WIDER SESSION FORMAT costs the NV12 frames riding on it, and
+    // that cost only exists if the narrow session is measured without a
+    // filter.
     // Colour is PINNED, not defaulted. matrixCoefficients 1 = BT.709 and
     // videoFullRange FALSE = studio range are the same pair the YCbCr rows'
     // pattern is generated with, so the VUI the bitstream advertises and the
-    // numbers actually written agree by construction. Leaving this at 0 makes
-    // the library log "names no matrix ... converting as BT.709" and encode
-    // BT.709 pixels under an unspecified VUI -- which is precisely the
-    // contamination this matrix must not inherit.
+    // numbers actually written agree by construction. Leaving this at 0 no
+    // longer converts silently -- the library refuses an unexpressible matrix
+    // and signals Unspecified as BT.709 -- but the pin stays, because a row
+    // whose colour depends on a library default is a row that measures the
+    // default.
     config.matrixCoefficients = 1;
     config.videoFullRange     = VK_FALSE;
     config.colourPrimaries    = 1;
     config.transferCharacteristics = 1;
+    // A row may override all four, and an HDR10 row also chains the static
+    // metadata. hdrInfo must outlive InitializeExt, which reads the chain and
+    // keeps nothing; this scope covers that.
+    VkVideoEncoderHdrMetadataInfo hdrInfo{};
+    if (row.colour != nullptr) {
+        config.colourPrimaries         = row.colour->primaries;
+        config.transferCharacteristics = row.colour->transfer;
+        config.matrixCoefficients      = row.colour->matrix;
+        config.videoFullRange          = row.colour->fullRange;
+        if (row.colour->hdr10) {
+            hdrInfo.sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_HDR_METADATA_INFO;
+            hdrInfo.masteringDisplayPresent = VK_TRUE;
+            // BT.2020 mastering display, ST 2086 units and ST 2086 order
+            // (green, blue, red). 1000 cd/m^2 peak, 0.0001 cd/m^2 floor.
+            hdrInfo.displayPrimaryX[0] = 8500;  hdrInfo.displayPrimaryY[0] = 39850;
+            hdrInfo.displayPrimaryX[1] = 6550;  hdrInfo.displayPrimaryY[1] = 2300;
+            hdrInfo.displayPrimaryX[2] = 35400; hdrInfo.displayPrimaryY[2] = 14600;
+            hdrInfo.whitePointX = 15635;
+            hdrInfo.whitePointY = 16450;
+            hdrInfo.maxDisplayMasteringLuminance = 10000000;
+            hdrInfo.minDisplayMasteringLuminance = 1;
+            hdrInfo.contentLightLevelPresent = VK_TRUE;
+            hdrInfo.maxContentLightLevel      = 1000;
+            hdrInfo.maxFrameAverageLightLevel = 400;
+            config.pNext = &hdrInfo;
+        }
+    }
 
     res.initResult = enc->InitializeExt(config);
     if (res.initResult != VK_SUCCESS) return res;
@@ -1596,6 +1730,40 @@ EncResult RunRow(const Row& row, const char* outDir)
         DestroyImg(fns, device, &img); return res;
     }
     res.registered = true;
+
+    // ---- G-07: THE UNREGISTERED LANE, ON THE SAME SESSION AND THE SAME
+    // ---- FORMAT, AS A PAIR.
+    //
+    // A SUBOPTIMAL (ENCODABLE_VIA_FILTER) format encodes only through the
+    // preprocess filter, which reads per-plane views that exist only on a
+    // REGISTERED resource. SubmitExternalFrame therefore refuses it with
+    // VK_ERROR_FORMAT_NOT_SUPPORTED, and the header says so; this is what
+    // holds the two together.
+    //
+    // NO IMAGE IS SUPPLIED, DELIBERATELY. The format/route refusal sits ABOVE
+    // the handle gate on purpose -- the library states that a null image must
+    // not be able to change the format answer -- so a bare frame reaches the
+    // gate under test and nothing below it. That also makes the DIRECT rows a
+    // free control: they get PAST the format gate and fail on the missing
+    // image instead, with a different code. A build that refused every
+    // unregistered submit would satisfy the filter rows and fail the direct
+    // ones.
+    {
+        VkVideoEncodeInputFrame ext{};
+        ext.sType         = VK_VIDEO_ENCODER_STRUCTURE_TYPE_INPUT_FRAME;
+        ext.pNext         = nullptr;
+        ext.image         = VK_NULL_HANDLE;
+        ext.format        = row.format;
+        ext.width         = kWidth;
+        ext.height        = kHeight;
+        ext.currentLayout = VK_IMAGE_LAYOUT_GENERAL;
+        ext.frameId       = 0;
+        ext.pts           = 0;
+        ext.forceIDR      = VK_FALSE;
+        ext.qpOverride    = -1;
+        res.unregisteredSubmit      = enc->SubmitExternalFrame(ext, nullptr);
+        res.unregisteredSubmitTried = true;
+    }
     VkEncResourceProbe probe;
     if (VkEncProbeResource(enc.get(), resource, &probe) == VK_VIDEO_ENCODER_STATUS_SUCCESS) {
         res.path = probe.inputPath;
@@ -1926,12 +2094,70 @@ EncResult RunRow(const Row& row, const char* outDir)
 //     TR (green) and BR (white) are invariant under that swap, which is
 //     exactly why the assertion is per-quadrant and not an aggregate.
 //
-// kQuadTolerance = 24 is 12x the largest deviation a healthy encode has ever
-// produced here, and 7.4x below the smallest deviation any failure mode in
-// scope produces. Rate-control drift, rounding changes and swscale version
-// differences live in the first gap; a dead filter and a colour swap live in
-// the second. There is no legitimate encoder change that moves a flat primary
-// by 24/255 and is still the same picture.
+// CC-1 W8: THE GATE MOVED FROM THE RGB DOMAIN TO THE Y'CbCr DOMAIN, AND THE
+// TOLERANCE MOVED WITH IT. Everything below the "WHAT THE OLD NUMBER WAS"
+// heading is history kept on purpose; read the new bar first.
+//
+// WHAT IS COMPARED NOW. The decoder is asked for `-pix_fmt yuv444p`, which
+// performs NO colour conversion and NO inverse matrix and does NO clamping of
+// an out-of-gamut RGB triple -- it only un-subsamples chroma. The four
+// quadrant centres are then compared, per channel, against
+// RgbToYuvLimited(QuadAt(pt), <the row's DECLARED matrix>). So the gate asks
+// the question it always claimed to ask -- "are the samples the matrix this
+// stream declares?" -- instead of asking it through a lossy round trip.
+//
+// WHY THE OLD DOMAIN COULD NOT ANSWER IT, measured rather than argued. At
+// 1920x1080 with the gate's own pinned decoder invocation, the RGB gate at
+// tolerance 24 caught 2 of the 5 applied/declared mismatch directions. It
+// missed `applied 709 / declared 601` at 23 against a tolerance of 24 -- it
+// passed BY ONE CODE VALUE -- and it missed both directions of the 709/2020
+// confusion. Three structural reasons, none of which a tolerance change
+// fixes:
+//   * the BR (white) quadrant is a mathematical no-op under every matrix;
+//   * the round trip through the inverse matrix partially CANCELS the error;
+//   * Clamp8 eats the residual asymmetrically -- 601->709 gives 40 while
+//     709->601 gives 23 for the SAME physical error, which is pure clamp
+//     artefact and not physics.
+// A whole-cube search puts a hard physical ceiling of 13.2 on any RGB
+// round-trip gate for a 709/2020 confusion, so the TOLERANCE, not the
+// palette, was the binding constraint and no palette rescues the domain.
+//
+// THE NEW BAR. Measured worst |dY'CbCr| across the four quadrant centres,
+// 1920x1080, real encode, decoded to yuv444p:
+//
+//   applied / declared     worst |dY'CbCr|
+//   709 / 709 (healthy)          0.5
+//   2020 / 709                  10.8      <- the weakest failure
+//   709 / 2020                  11.1
+//   601 / 2020                  19.3
+//   601 / 709                   27.4
+//   709 / 601                   27.5
+//
+// kQuadTolerance = 4 sits 8x above the healthy figure and 2.7x below the
+// WEAKEST failure, and -- unlike the number it replaces -- it is SYMMETRIC,
+// as the physics requires. The old gate's 40-versus-23 asymmetry for one
+// physical error was the clamp, and it is gone with the domain.
+//
+// WHAT LIVES IN THE 0.5-TO-4 GAP: rate-control drift, rounding, and decoder
+// version differences in the chroma UPSAMPLE (the only conversion yuv444p
+// still performs). What lives above 4: every matrix confusion, a dead filter,
+// and a channel swap.
+//
+// L1 WAS THE OTHER OPTION AND IS NOT TAKEN. Keeping the RGB domain and
+// retuning 24 -> 6 gives only 3x/2x separation instead of 8x/2.7x, and it does
+// not remove the clamp asymmetry or the matrix-invariant white quadrant.
+// Retained only as a one-line fallback if the yuv444p decode proves
+// unavailable on some host -- and it would need its own rationale, because 6
+// does not survive the paragraphs below either.
+//
+// THE ONE THING THE OLD DOMAIN GAVE FOR FREE AND THIS DOES NOT. `-pix_fmt
+// rgb24` consulted the stream's VUI to choose its inverse matrix, so the old
+// gate checked the LABEL implicitly: a stream that signalled the wrong matrix
+// decoded to different pixels. `yuv444p` does not consult the VUI at all. The
+// label check is therefore now EXPLICIT -- see CheckColourLabel(), which
+// ffprobes color_space and color_range and compares them to the row's
+// configuration. Losing an implicit check and not replacing it would have
+// been a straight downgrade.
 //
 // EXPECTED VALUES COME FROM QuadAt(), NOT FROM A TABLE OF DECODED NUMBERS.
 // Tying the assertion to the pattern the uploader actually writes means the
@@ -2021,7 +2247,98 @@ int AbsDiff(int a, int b) { return (a > b) ? (a - b) : (b - a); }
 
 struct QuadPoint { const char* name; uint32_t x, y; };
 
-QuadStatus CheckQuadrants(const std::string& file, std::string* detail)
+// CC-1 W8: the LABEL check, which the rgb24 decode used to make implicitly.
+// yuv444p does not consult the VUI, so a stream that signalled the wrong
+// matrix would decode to the SAME samples and the quadrant comparison could
+// not see it. This asks ffprobe directly.
+//
+// SCOPED TO THE NON-HDR ROWS by its caller: the HDR rows are judged by
+// CheckHdrSignalling(), which reads the same two fields plus the static
+// metadata, and running both would double-count the row.
+bool CheckColourLabel(const std::string& file,
+                      uint8_t matrix,
+                      bool fullRange,
+                      std::string* detail)
+{
+    if (file.find('\'') != std::string::npos) {
+        *detail = "the output path contains a single quote";
+        return false;
+    }
+    char cmd[1024];
+    const int need = std::snprintf(
+        cmd, sizeof(cmd),
+        "ffprobe -v error -select_streams v:0 -show_entries "
+        "stream=color_space,color_range -of default=nw=1 '%s'",
+        file.c_str());
+    if (need < 0 || (size_t)need >= sizeof(cmd)) {
+        *detail = "the ffprobe command line does not fit";
+        return false;
+    }
+    FILE* p = popen(cmd, "r");
+    if (p == nullptr) {
+        *detail = "popen(ffprobe) failed";
+        return false;
+    }
+    std::string out;
+    char buf[512];
+    while (std::fgets(buf, sizeof(buf), p) != nullptr) out += buf;
+    const int rc = pclose(p);
+    if (rc != 0) {
+        *detail = "ffprobe failed on a file this suite reported as ENCODED";
+        return false;
+    }
+
+    // ffprobe's spelling of each code point. Only the values this suite can
+    // configure are listed; anything else is reported verbatim and fails,
+    // rather than being silently accepted.
+    const char* wantSpace =
+        (matrix == 1) ? "bt709" :
+        (matrix == 5 || matrix == 6) ? "smpte170m" :
+        (matrix == 9) ? "bt2020nc" : nullptr;
+    const char* wantRange = fullRange ? "pc" : "tv";
+
+    std::string gotSpace = "<absent>", gotRange = "<absent>";
+    size_t pos = 0;
+    while (pos < out.size()) {
+        const size_t eol = out.find('\n', pos);
+        const std::string line = out.substr(pos, (eol == std::string::npos) ? std::string::npos : eol - pos);
+        const size_t eq = line.find('=');
+        if (eq != std::string::npos) {
+            const std::string k = line.substr(0, eq), v = line.substr(eq + 1);
+            if (k == "color_space") gotSpace = v;
+            if (k == "color_range") gotRange = v;
+        }
+        if (eol == std::string::npos) break;
+        pos = eol + 1;
+    }
+
+    if (wantSpace == nullptr) {
+        char m[256];
+        std::snprintf(m, sizeof(m),
+                      "this gate has no ffprobe spelling for matrix_coefficients %u; "
+                      "add one rather than skipping the label check",
+                      (unsigned)matrix);
+        *detail = m;
+        return false;
+    }
+    if (gotSpace != wantSpace || gotRange != wantRange) {
+        char m[320];
+        std::snprintf(m, sizeof(m),
+                      "the stream LABEL disagrees with the configuration: "
+                      "ffprobe says color_space=%s color_range=%s, the session "
+                      "declared matrix_coefficients %u (%s) and %s range",
+                      gotSpace.c_str(), gotRange.c_str(), (unsigned)matrix,
+                      wantSpace, wantRange);
+        *detail = m;
+        return false;
+    }
+    return true;
+}
+
+QuadStatus CheckQuadrants(const std::string& file,
+                          uint8_t matrix,
+                          bool fullRange,
+                          std::string* detail)
 {
     if (!HaveDecoder()) {
         *detail = "ffmpeg is not on PATH";
@@ -2038,7 +2355,7 @@ QuadStatus CheckQuadrants(const std::string& file, std::string* detail)
     char cmd[1024];
     const int need = std::snprintf(
         cmd, sizeof(cmd),
-        "ffmpeg -v error -i '%s' -frames:v 1 -pix_fmt rgb24 -f rawvideo -",
+        "ffmpeg -v error -i '%s' -frames:v 1 -pix_fmt yuv444p -f rawvideo -",
         file.c_str());
     // A silently truncated command line would name a DIFFERENT file, and the
     // decode would fail for a reason that has nothing to do with the picture.
@@ -2054,6 +2371,10 @@ QuadStatus CheckQuadrants(const std::string& file, std::string* detail)
         return QUAD_DECODE_FAILED;
     }
 
+    // yuv444p is THREE FULL-SIZE PLANES: Y, then Cb, then Cr. Same total size
+    // as the packed rgb24 buffer this replaces, but the layout is planar, so
+    // a sample is at plane*kWidth*kHeight + y*kWidth + x rather than at
+    // (y*kWidth + x)*3 + channel.
     std::vector<uint8_t> rgb((size_t)kWidth * (size_t)kHeight * 3);
     size_t got = 0;
     while (got < rgb.size()) {
@@ -2081,22 +2402,34 @@ QuadStatus CheckQuadrants(const std::string& file, std::string* detail)
         {"BR", 3 * kWidth / 4,   3 * kHeight / 4},
     };
 
+    const size_t kPlane = (size_t)kWidth * (size_t)kHeight;
     std::string seen;
     std::string bad;
     int worst = 0;
     int nBad  = 0;
     for (int q = 0; q < 4; q++) {
-        const size_t o = ((size_t)pts[q].y * (size_t)kWidth + (size_t)pts[q].x) * 3;
-        const int gr = (int)rgb[o], gg = (int)rgb[o + 1], gb = (int)rgb[o + 2];
-        const RGB want = QuadAt(pts[q].x, pts[q].y);
-        const int dr = AbsDiff(gr, (int)want.r);
-        const int dg = AbsDiff(gg, (int)want.g);
-        const int db = AbsDiff(gb, (int)want.b);
-        const int dmax = (dr > dg) ? ((dr > db) ? dr : db) : ((dg > db) ? dg : db);
+        const size_t o = (size_t)pts[q].y * (size_t)kWidth + (size_t)pts[q].x;
+        const int gy = (int)rgb[o];
+        const int gu = (int)rgb[kPlane + o];
+        const int gv = (int)rgb[2 * kPlane + o];
+        // THE EXPECTATION IS BUILT WITH THE MATRIX THE ROW DECLARED, which is
+        // the whole of CC-1 W8: a stream whose samples were converted with a
+        // DIFFERENT matrix from the one it declares now lands outside the
+        // tolerance instead of being partially cancelled by an inverse matrix
+        // and then clamped.
+        const YUV want = RgbToYuvLimited(QuadAt(pts[q].x, pts[q].y), matrix);
+        const int wy = (int)Clamp8(want.y);
+        const int wu = (int)Clamp8(want.cb);
+        const int wv = (int)Clamp8(want.cr);
+        const int dy = AbsDiff(gy, wy);
+        const int du = AbsDiff(gu, wu);
+        const int dv = AbsDiff(gv, wv);
+        const int dmax = (dy > du) ? ((dy > dv) ? dy : dv) : ((du > dv) ? du : dv);
         if (dmax > worst) worst = dmax;
 
         char one[64];
-        std::snprintf(one, sizeof(one), " %s(%d,%d,%d)", pts[q].name, gr, gg, gb);
+        std::snprintf(one, sizeof(one), " %s Y'CbCr(%d,%d,%d)",
+                      pts[q].name, gy, gu, gv);
         seen += one;
 
         if (dmax > kQuadTolerance) {
@@ -2105,14 +2438,16 @@ QuadStatus CheckQuadrants(const std::string& file, std::string* detail)
             // wrong" is undebuggable from a CI log, and which quadrants moved
             // is the diagnosis: all four flat means the filter is not running,
             // TL and BL swapped with TR and BR intact means red and blue are
-            // crossed.
-            const char* ch = (dmax == dr) ? "R" : ((dmax == dg) ? "G" : "B");
-            char m[320];
+            // crossed, and a uniform CHROMA offset with Y' intact is a matrix
+            // confusion.
+            const char* ch = (dmax == dy) ? "Y'" : ((dmax == du) ? "Cb" : "Cr");
+            char m[360];
             std::snprintf(m, sizeof(m),
-                          "\n        %s centre (%u,%u): got (%d,%d,%d) want (%d,%d,%d) "
-                          "delta (%d,%d,%d) -- worst channel %s off by %d, tolerance %d",
-                          pts[q].name, pts[q].x, pts[q].y, gr, gg, gb,
-                          (int)want.r, (int)want.g, (int)want.b, dr, dg, db,
+                          "\n        %s centre (%u,%u): got Y'CbCr(%d,%d,%d) "
+                          "want (%d,%d,%d) for matrix %u -- delta (%d,%d,%d), "
+                          "worst channel %s off by %d, tolerance %d",
+                          pts[q].name, pts[q].x, pts[q].y, gy, gu, gv,
+                          wy, wu, wv, (unsigned)matrix, dy, du, dv,
                           ch, dmax, kQuadTolerance);
             bad += m;
         }
@@ -2127,10 +2462,272 @@ QuadStatus CheckQuadrants(const std::string& file, std::string* detail)
         return QUAD_MISMATCH;
     }
 
-    char ok[320];
-    std::snprintf(ok, sizeof(ok), "%s  worst channel delta %d (tolerance %d)",
-                  seen.c_str(), worst, kQuadTolerance);
+    // THE LABEL, CHECKED LAST AND CHECKED SEPARATELY. The samples being right
+    // and the stream saying so are two claims, and after the move to yuv444p
+    // this gate can no longer conflate them.
+    std::string labelDetail;
+    if (!CheckColourLabel(file, matrix, fullRange, &labelDetail)) {
+        *detail = "the samples match matrix " + std::to_string((unsigned)matrix) +
+                  " but " + labelDetail;
+        return QUAD_MISMATCH;
+    }
+
+    char ok[360];
+    std::snprintf(ok, sizeof(ok),
+                  "%s  worst channel delta %d (tolerance %d, matrix %u, "
+                  "label verified)",
+                  seen.c_str(), worst, kQuadTolerance, (unsigned)matrix);
     *detail = ok;
+    return QUAD_PASS;
+}
+
+//=============================================================================
+// THE HDR GATE. Out of process, like the quadrant gate beside it, and for the
+// same reason: nothing inside this binary can tell whether the bytes it wrote
+// mean what it thinks they mean.
+//
+// It reads three things, and each one is a separate way for the HDR feature
+// to be broken while every counter stays green:
+//
+//   1. the four VUI code points (-show_streams). A colour description that
+//      never reached the SPS looks identical from here to one that did.
+//   2. a full decoded frame whose four quadrant centres are not all equal.
+//      Weaker than the BT.709 quadrant comparison, deliberately -- see the
+//      note on the HDR row in kRows -- but it still catches a stream that
+//      decodes to nothing, or to a flat picture.
+//   3. both SEI payloads, field by field (-show_frames side_data_list). This
+//      is the half that did not exist: before this change the encoder emitted
+//      NO SEI OF ANY KIND, and the only mentions of SEI in the tree were two
+//      inert TODOs next to nal_hrd_parameters_present_flag.
+//
+// The primary values are asserted individually rather than as a set, because
+// the failure worth catching is a PERMUTED one: ST 2086 orders the primaries
+// green, blue, red and it is the easiest thing in this feature to get wrong.
+// red_x=35400 and green_y=39850 cannot both hold under a permutation.
+int g_hdrGated  = 0;
+int g_hdrFailed = 0;
+
+bool RunProbe(const char* cmd, std::string* out)
+{
+    FILE* p = popen(cmd, "r");
+    if (p == nullptr) return false;
+    char buf[4096];
+    out->clear();
+    size_t n;
+    while ((n = std::fread(buf, 1, sizeof(buf), p)) != 0) {
+        out->append(buf, n);
+    }
+    return pclose(p) == 0;
+}
+
+QuadStatus CheckHdrSignalling(const std::string& file, std::string* detail)
+{
+    if (!HaveDecoder()) {
+        *detail = "ffmpeg/ffprobe is not on PATH";
+        return QUAD_NO_DECODER;
+    }
+    if (file.find('\'') != std::string::npos) {
+        *detail = "the output path contains a single quote and cannot be handed to the prober";
+        return QUAD_DECODE_FAILED;
+    }
+
+    char cmd[1024];
+    std::string streams;
+    std::snprintf(cmd, sizeof(cmd),
+                  "ffprobe -v error -select_streams v:0 -show_entries "
+                  "stream=color_range,color_space,color_transfer,color_primaries "
+                  "-of default=nw=1 '%s'", file.c_str());
+    if (!RunProbe(cmd, &streams)) {
+        *detail = "ffprobe -show_streams failed";
+        return QUAD_DECODE_FAILED;
+    }
+
+    std::string frames;
+    std::snprintf(cmd, sizeof(cmd),
+                  "ffprobe -v error -select_streams v:0 -read_intervals '%%+#1' "
+                  "-show_frames -show_entries frame=side_data_list "
+                  "-of default=nw=1 '%s'", file.c_str());
+    if (!RunProbe(cmd, &frames)) {
+        *detail = "ffprobe -show_frames failed";
+        return QUAD_DECODE_FAILED;
+    }
+
+    // PRESENCE, matched as strings, because these have no numeric value: the
+    // payload is either in the stream or it is not.
+    struct Want { const char* what; const char* needle; const std::string* in; };
+    const Want wants[] = {
+        {"color_primaries bt2020",  "color_primaries=bt2020",  &streams},
+        {"color_transfer smpte2084","color_transfer=smpte2084", &streams},
+        {"color_space bt2020nc",    "color_space=bt2020nc",    &streams},
+        {"color_range tv",          "color_range=tv",          &streams},
+        {"mastering display SEI",   "Mastering display metadata", &frames},
+        {"content light SEI",       "Content light level metadata", &frames},
+    };
+
+    // CC-1 W9: THE NUMBERS ARE PARSED AND COMPARED, NOT STRING-MATCHED, AND
+    // THAT IS WHAT MAKES THIS GATE CODEC-INDEPENDENT.
+    //
+    // The sixteen entries this replaces were exact strings like
+    // "red_x=35400/50000", which is H.265's ST 2086 SEI in its own units
+    // (chromaticity in 1/50000, max luminance in 1/10000). AV1's
+    // metadata_hdr_mdcv carries THE SAME PHYSICAL VALUES in DIFFERENT fixed
+    // point -- 0.16 for chromaticity (/65536), 24.8 for max luminance (/256),
+    // 18.14 for min luminance (/16384) -- so ffprobe prints
+    // "red_x=46399/65536" and "max_luminance=256000/256". Those AGREE
+    // numerically (46399/65536 = 0.707993 against 35400/50000 = 0.70800;
+    // 256000/256 = 1000 exactly against 10000000/10000 = 1000) and a string
+    // match cannot see it. Measured before this change: both AV1 HDR rows
+    // reported HDR GATE: FAIL with ten MISSING lines while the H.265 control
+    // passed in the same run.
+    //
+    // THE TOLERANCES ARE QUANTISATION STEPS, NOT SLACK. Each is one step of
+    // the COARSER of the two representations, so a real disagreement of one
+    // step still fails:
+    //   chromaticity   1/16384 -- AV1's 0.16 field is finer (1/65536) and
+    //                  H.265's is 1/50000; 1/16384 = 6.1e-5 bounds both with
+    //                  room for the rounding, and the values differ by 0.7
+    //                  in every direction if a primary is actually wrong.
+    //   max luminance  1 cd/m2 out of 1000 -- AV1's step is 1/256.
+    //   min luminance  1/16384 -- this is the one that genuinely differs:
+    //                  0.0001 cd/m2 cannot be represented in 18.14 and AV1
+    //                  emits 2/16384 = 0.000122. That is AV1's coarser
+    //                  quantisation, not an error, and encoding it as a
+    //                  tolerance is the only honest way to assert it.
+    //   MaxCLL/MaxFALL exact -- both codecs carry plain integers.
+    struct WantNum { const char* what; const char* key; double value; double tol; };
+    const double kChromaTol = 1.0 / 16384.0;
+    const WantNum nums[] = {
+        {"red primary x",   "red_x",         0.708,   kChromaTol},
+        {"red primary y",   "red_y",         0.292,   kChromaTol},
+        {"green primary x", "green_x",       0.170,   kChromaTol},
+        {"green primary y", "green_y",       0.797,   kChromaTol},
+        {"blue primary x",  "blue_x",        0.131,   kChromaTol},
+        {"blue primary y",  "blue_y",        0.046,   kChromaTol},
+        {"white point x",   "white_point_x", 0.3127,  kChromaTol},
+        {"white point y",   "white_point_y", 0.3290,  kChromaTol},
+        {"max luminance",   "max_luminance", 1000.0,  1.0},
+        {"min luminance",   "min_luminance", 0.0001,  1.0 / 16384.0},
+        {"MaxCLL",          "max_content",   1000.0,  0.0},
+        {"MaxFALL",         "max_average",   400.0,   0.0},
+    };
+
+    std::string missing;
+    for (const Want& w : wants) {
+        if (w.in->find(w.needle) == std::string::npos) {
+            missing += std::string("\n        MISSING ") + w.what + " (" +
+                       w.needle + ")";
+        }
+    }
+    for (const WantNum& w : nums) {
+        // "<key>=" anchored at a line start, so red_x cannot match inside
+        // some other key and a value cannot be found in a neighbouring field.
+        const std::string needle = std::string(w.key) + "=";
+        size_t at = std::string::npos;
+        for (size_t p = 0; p + needle.size() <= frames.size(); ++p) {
+            if ((p == 0 || frames[p - 1] == '\n') &&
+                frames.compare(p, needle.size(), needle) == 0) {
+                at = p + needle.size();
+                break;
+            }
+        }
+        if (at == std::string::npos) {
+            missing += std::string("\n        MISSING ") + w.what + " (no " +
+                       w.key + " in the decoded side data at all)";
+            continue;
+        }
+        const size_t eol = frames.find('\n', at);
+        const std::string raw =
+            frames.substr(at, (eol == std::string::npos) ? std::string::npos : eol - at);
+        // ffprobe prints these as "num/den" for the fixed-point fields and as
+        // a plain integer for MaxCLL/MaxFALL. Accept both.
+        double got = 0.0;
+        const size_t slash = raw.find('/');
+        bool parsed = false;
+        if (slash != std::string::npos) {
+            const double num = std::atof(raw.substr(0, slash).c_str());
+            const double den = std::atof(raw.substr(slash + 1).c_str());
+            if (den != 0.0) { got = num / den; parsed = true; }
+        } else if (!raw.empty()) {
+            got = std::atof(raw.c_str());
+            parsed = true;
+        }
+        if (!parsed) {
+            missing += std::string("\n        UNPARSEABLE ") + w.what + " (" +
+                       w.key + "=" + raw + ")";
+            continue;
+        }
+        const double d = (got > w.value) ? (got - w.value) : (w.value - got);
+        if (d > w.tol) {
+            char m[256];
+            std::snprintf(m, sizeof(m),
+                          "\n        WRONG %s: %s=%s parses to %.6f, wanted "
+                          "%.6f +/- %.6f",
+                          w.what, w.key, raw.c_str(), got, w.value, w.tol);
+            missing += m;
+        }
+    }
+    if (!missing.empty()) {
+        *detail = "the stream does not carry the HDR10 signalling it was "
+                  "configured with:" + missing +
+                  "\n        --- ffprobe -show_streams ---\n" + streams +
+                  "        --- ffprobe -show_frames ---\n" + frames;
+        return QUAD_MISMATCH;
+    }
+
+    // And it must still be a picture. A header-only gate would pass on a
+    // stream that carries perfect metadata and decodes to nothing.
+    std::snprintf(cmd, sizeof(cmd),
+                  "ffmpeg -v error -i '%s' -frames:v 1 -pix_fmt rgb24 "
+                  "-f rawvideo -", file.c_str());
+    FILE* p = popen(cmd, "r");
+    if (p == nullptr) {
+        *detail = "popen(ffmpeg) failed";
+        return QUAD_DECODE_FAILED;
+    }
+    std::vector<uint8_t> rgb((size_t)kWidth * (size_t)kHeight * 3);
+    size_t got = 0;
+    while (got < rgb.size()) {
+        const size_t n = std::fread(rgb.data() + got, 1, rgb.size() - got, p);
+        if (n == 0) break;
+        got += n;
+    }
+    DrainToEof(p);
+    const int rc = pclose(p);
+    if ((rc != 0) || (got != rgb.size())) {
+        char msg[256];
+        std::snprintf(msg, sizeof(msg),
+                      "the decoder produced %zu of %zu bytes for frame 0 "
+                      "(ffmpeg exit status %d)", got, rgb.size(), rc);
+        *detail = msg;
+        return QUAD_DECODE_FAILED;
+    }
+    const QuadPoint pts[4] = {
+        {"TL", kWidth / 4,       kHeight / 4},
+        {"TR", 3 * kWidth / 4,   kHeight / 4},
+        {"BL", kWidth / 4,       3 * kHeight / 4},
+        {"BR", 3 * kWidth / 4,   3 * kHeight / 4},
+    };
+    std::string seen;
+    bool allSame = true;
+    int first[3] = {0, 0, 0};
+    for (int q = 0; q < 4; q++) {
+        const size_t o = ((size_t)pts[q].y * (size_t)kWidth + (size_t)pts[q].x) * 3;
+        const int r = (int)rgb[o], g = (int)rgb[o + 1], b = (int)rgb[o + 2];
+        if (q == 0) { first[0] = r; first[1] = g; first[2] = b; }
+        else if ((r != first[0]) || (g != first[1]) || (b != first[2])) {
+            allSame = false;
+        }
+        char one[64];
+        std::snprintf(one, sizeof(one), " %s(%d,%d,%d)", pts[q].name, r, g, b);
+        seen += one;
+    }
+    if (allSame) {
+        *detail = "all four quadrant centres decoded to the same value" + seen +
+                  " -- the metadata is right and the picture is not";
+        return QUAD_MISMATCH;
+    }
+    *detail = "VUI bt2020/smpte2084/bt2020nc/tv, ST 2086 + MaxCLL/MaxFALL "
+              "read back by ffprobe, picture" + seen;
     return QUAD_PASS;
 }
 
@@ -2301,6 +2898,38 @@ int main(int argc, char** argv)
         std::printf("      filter POST-flush: created=%d dispatch=%llu stagedCopies=%llu\n",
                     (int)r.filterCreatedPost, (unsigned long long)r.filterDispatchPost,
                     (unsigned long long)r.stagedCopiesPost);
+
+        // G-07: THE ADVERTISED LIST'S LANE QUALIFICATION, AS A PAIR.
+        //
+        // The header says a SUBOPTIMAL entry is taken only through
+        // RegisterImageResource + SubmitRegisteredFrame. The registered half
+        // is this row's own encode, above. This is the other half, and it is
+        // the DIRECT rows that make it mean anything: they take the same
+        // unregistered call, get past the same format gate, and fail on the
+        // missing image with a DIFFERENT code. A build that refused every
+        // unregistered submit would satisfy the filter rows alone.
+        if (r.unregisteredSubmitTried) {
+            const bool viaFilter =
+                (r.path == VK_VIDEO_EXTERNAL_INPUT_PATH_FILTER);
+            const bool refusedOnFormat =
+                (r.unregisteredSubmit == VK_ERROR_FORMAT_NOT_SUPPORTED);
+            if (viaFilter != refusedOnFormat) {
+                g_failures++;
+                std::printf("      VERDICT: FAIL -- unregistered submit of "
+                            "this row's own format returned %d; a %s row "
+                            "must%s be refused with "
+                            "VK_ERROR_FORMAT_NOT_SUPPORTED\n",
+                            (int)r.unregisteredSubmit, PathName(r.path),
+                            viaFilter ? "" : " NOT");
+            } else {
+                std::printf("      unregistered lane: %s route -> %d (%s)\n",
+                            PathName(r.path), (int)r.unregisteredSubmit,
+                            viaFilter
+                                ? "refused on format, as the registered-lane "
+                                  "qualification states"
+                                : "past the format gate, refused below it");
+            }
+        }
         if (r.contentChained) {
             std::printf("      CONTENT PROBE: armEcho=%s(gen=%u) final=%s "
                         "probed=%u damaged=%u armedOutstanding=%u "
@@ -2535,22 +3164,38 @@ int main(int argc, char** argv)
             // dispatches and never executing them -- is green on every other
             // observable this suite has, so an opt-in gate would simply not be
             // opted into on the run that mattered.
+            const bool hdrRow = (row.colour != nullptr) && row.colour->hdr10;
             std::string qdetail;
-            const QuadStatus qs = CheckQuadrants(r.file, &qdetail);
+            // The DECLARED matrix and range, which the gate now needs because
+            // it compares in the Y'CbCr domain. Every tracked row pins 1 and
+            // studio range (see the "Colour is PINNED" block), and a row that
+            // overrides them is honoured here rather than silently judged as
+            // BT.709.
+            const uint8_t rowMatrix =
+                (row.colour != nullptr) ? row.colour->matrix : (uint8_t)1;
+            const bool rowFullRange =
+                (row.colour != nullptr) && (row.colour->fullRange == VK_TRUE);
+            const QuadStatus qs =
+                hdrRow ? CheckHdrSignalling(r.file, &qdetail)
+                       : CheckQuadrants(r.file, rowMatrix, rowFullRange,
+                                        &qdetail);
+            const char* gateName = hdrRow ? "HDR GATE" : "DECODE GATE";
+            int* gated  = hdrRow ? &g_hdrGated  : &g_quadChecked;
+            int* failed = hdrRow ? &g_hdrFailed : &g_quadFailed;
             if (qs == QUAD_PASS) {
-                g_quadChecked++;
-                std::printf("      DECODE GATE: PASS --%s\n\n", qdetail.c_str());
+                (*gated)++;
+                std::printf("      %s: PASS --%s\n\n", gateName, qdetail.c_str());
             } else if (qs == QUAD_NO_DECODER) {
                 // NOT A PASS AND NOT SILENT. The run is downgraded to SKIPPED
                 // at exit; see the bottom of main().
                 g_quadNoDecoder = true;
-                std::printf("      DECODE GATE: NOT RUN -- %s. This row's colour "
-                            "is UNJUDGED.\n\n", qdetail.c_str());
+                std::printf("      %s: NOT RUN -- %s. This row's colour "
+                            "is UNJUDGED.\n\n", gateName, qdetail.c_str());
             } else {
-                g_quadChecked++;
-                g_quadFailed++;
+                (*gated)++;
+                (*failed)++;
                 g_failures++;
-                std::printf("      DECODE GATE: FAIL -- %s\n\n", qdetail.c_str());
+                std::printf("      %s: FAIL -- %s\n\n", gateName, qdetail.c_str());
             }
         } else {
             g_failures++;
@@ -2569,11 +3214,19 @@ int main(int argc, char** argv)
     // arm was refused by the device is not the same run as one in which it
     // encoded, and without the number on this line the two are
     // indistinguishable from a log.
+    // hdrGated / hdrFailed are APPENDED for the same reason deviceLimited and
+    // av1Unverified were: every CI line that greps the first eight fields
+    // still matches, and a run in which the HDR row's SEI was not read back
+    // is not the same run as one in which it was. decodeGated does NOT count
+    // the HDR row -- it takes a different gate, and folding two different
+    // assertions into one counter is how "8 of 9 rows were judged" would read
+    // as green.
     std::printf("sessions=%zu encoded=%zu abandoned=%zu failures=%d "
                 "decodeGated=%d decodeFailed=%d deviceLimited=%zu "
-                "av1Unverified=%zu\n",
+                "av1Unverified=%zu hdrGated=%d hdrFailed=%d\n",
                 nSession, nEncoded, nAbandoned, g_failures,
-                g_quadChecked, g_quadFailed, nDeviceLimited, nAv1Unverified);
+                g_quadChecked, g_quadFailed, nDeviceLimited, nAv1Unverified,
+                g_hdrGated, g_hdrFailed);
     if (!g_av1ProbeDetail.empty()) {
         std::printf("av1 capability probe: %s\n", g_av1ProbeDetail.c_str());
     }
@@ -2597,11 +3250,11 @@ int main(int argc, char** argv)
     // GPU-less host": it is also "the library refused every session", and the
     // two are trivially confusable. Configure with
     // -DBUILD_ENCODER_COMPUTE_FILTER=OFF -- a supported option -- and
-    // InitializeExt hard-refuses every row because this file sets
-    // enablePreprocessFilter unconditionally; nSession is 0 on a box with a
-    // working GPU, and a compute-shader regression, which is the single thing
-    // this suite exists to catch, would have reported SKIPPED and left CI
-    // green. Replacing "cannot fail" with "can be silenced" is not progress.
+    // InitializeExt hard-refuses every row whose format needs a conversion;
+    // nSession collapses on a box with a working GPU, and a compute-shader
+    // regression, which is the single thing this suite exists to catch, would
+    // have reported SKIPPED and left CI green. Replacing "cannot fail" with
+    // "can be silenced" is not progress.
     //
     // VK_ERROR_INCOMPATIBLE_DRIVER is the loader's answer when no usable
     // driver is present -- it is what this binary returns for every row on a
@@ -2681,9 +3334,10 @@ int main(int argc, char** argv)
 
     // Belt and braces: rows encoded but nothing graded means the wiring above
     // was bypassed, which is the failure this whole change exists to remove.
-    if (nEncoded != 0 && g_quadChecked == 0) {
-        std::printf("FAILED: %zu row(s) encoded and the four-quadrant decode "
-                    "assertion ran on none of them\n", nEncoded);
+    if (nEncoded != 0 && (g_quadChecked + g_hdrGated) == 0) {
+        std::printf("FAILED: %zu row(s) encoded and neither the four-quadrant "
+                    "decode assertion nor the HDR gate ran on any of them\n",
+                    nEncoded);
         return 1;
     }
     return 0;

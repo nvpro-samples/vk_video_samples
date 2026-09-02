@@ -35,6 +35,7 @@
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 #include "VkVideoEncoder/VkVideoEncoderDef.h"
 #include "VkVideoEncoder/VkVideoGopStructure.h"
+#include "VkVideoEncoder/VkVideoEncoderHdrMetadata.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 #ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
@@ -67,6 +68,70 @@ static VkVideoComponentBitDepthFlagBitsKHR GetComponentBitDepthFlagBits(uint32_t
     return VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
 };
 
+// The colour model the input samples are in. An enum rather than a boolean
+// because it is one of several models and a new one is a new enumerator, not
+// a second flag.
+enum class VkEncColorSpace : uint32_t {
+    kYCbCr = 0,
+    kRGB   = 1,
+};
+
+#ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+// Which conversion the preprocess compute filter has to perform: the colour
+// model the input samples are DECLARED to carry, against the format the device
+// accepts as an encode source.
+//
+// The mechanism choice is the library's -- query the device first, use
+// hardware if it exists, compute if it does not.
+// This is its second half: once the answer is "compute", this says WHICH
+// compute.
+//
+// EACH SIDE IS ANSWERED BY WHAT THE SURFACE MEANS, not by which format table
+// happens to place its enumerant. The packed 4:4:4 Y'CbCr layouts have no
+// Vulkan format of their own and ride RGBA ones (PackedYcbcrFormatDesc names
+// them), so the enumerant alone cannot tell one of them from an ordinary
+// R'G'B' image -- on either side:
+//
+//   - the INPUT side reads the declared colour model. That declaration is the
+//     only thing that separates a packed Y'CbCr frame from an R'G'B' one, and
+//     carrying it is what EncoderInputImageParameters::colorSpace is for.
+//   - the ENCODE SOURCE carries no declaration -- it is a format the device
+//     named -- so it is read from both Y'CbCr format tables, the multi-planar
+//     one and the packed 4:4:4 one. Asking only the first calls a packed
+//     encode source R'G'B' and routes a Y'CbCr input through the inverse
+//     matrix, which writes R, G and B into the channels the encoder reads as
+//     Cr, Cb and Y. That produces a full-frame wrong picture and no error at
+//     all, because the inverse conversion's own output format is the same
+//     enumerant the packed encode source is spelled with.
+//
+// YCBCRCOPY for a YCbCr->YCbCr pair is the filter's own contract, from
+// VulkanFilterYuvCompute.h: YCBCRCOPY is the compute-based copy that performs
+// format, plane-count and bit-depth conversion between two YCbCr formats,
+// explicitly contrasted there with the XFER_* transfer modes, which "must
+// have matching plane counts". A 3-plane I420 source into a 2-plane NV12
+// destination is exactly that contrast, so it is YCBCRCOPY and not a
+// transfer.
+static inline VulkanFilterYuvCompute::FilterType VkEncDeriveFilterType(
+    VkEncColorSpace inputColorSpace, VkFormat encodeSourceFormat)
+{
+    const bool inputIsYcbcr  = (inputColorSpace == VkEncColorSpace::kYCbCr);
+    const bool outputIsYcbcr =
+        (YcbcrVkFormatInfo(encodeSourceFormat) != nullptr) ||
+        (PackedYcbcrFormatDesc(encodeSourceFormat) != nullptr);
+    if (!inputIsYcbcr && outputIsYcbcr) {
+        return VulkanFilterYuvCompute::RGBA2YCBCR;
+    }
+    if (inputIsYcbcr && !outputIsYcbcr) {
+        return VulkanFilterYuvCompute::YCBCR2RGBA;
+    }
+    // YCbCr -> YCbCr, including the identity. YCBCRCOPY is a compute pass
+    // either way; the plane-count and bit-depth handling it carries is what
+    // the 3-plane -> 2-plane case needs, and the identity is what a file
+    // input whose layout the device already accepts takes.
+    return VulkanFilterYuvCompute::YCBCRCOPY;
+}
+#endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+
 struct EncoderInputImageParameters
 {
     EncoderInputImageParameters()
@@ -79,7 +144,7 @@ struct EncoderInputImageParameters
     , planeLayouts{}
     , fullImageSize(0)
     , vkFormat(VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM)
-    , isRgba(false)
+    , colorSpace(VkEncColorSpace::kYCbCr)
     {}
 
 public:
@@ -94,25 +159,17 @@ public:
     VkFormat vkFormat;
 
     /**
-     * @brief The input is RGBA: |vkFormat| is AUTHORITATIVE and must not be
-     *        re-derived, and the geometry is one 4-byte-per-pixel plane.
+     * @brief The colour model of the input samples.
      *
-     * WHY THIS FLAG HAS TO EXIST. VerifyInputs() normally RECONSTRUCTS
-     * vkFormat from (chromaSubsampling, bit depth, numPlanes == 2) via
-     * VkVideoCoreProfile::CodecGetVkFormat(), which can only ever produce a
-     * YCbCr format -- there is no combination of those three inputs that
-     * spells B8G8R8A8_UNORM. So an RGBA session that merely SET vkFormat
-     * would have it silently overwritten with I420 before anything read it,
-     * and the compute filter (which is built from input.vkFormat) would be
-     * constructed to convert YCbCr->YCbCr for an RGBA source.
+     * kRGB means |vkFormat| is AUTHORITATIVE: VerifyInputs() carries it
+     * through rather than re-deriving it, and lays the image out as one
+     * 4-byte-per-pixel plane. kYCbCr means |vkFormat| is DERIVED, from
+     * chroma subsampling, bit depth and plane count.
      *
-     * It is a flag on the struct rather than a format test inside
-     * VerifyInputs() so that this header keeps knowing nothing about the
-     * input-format taxonomy. The ext binder owns that taxonomy
-     * (VkEncIsRgbaInputFormat) and writes the conclusion down here; the config
-     * only carries it.
+     * The caller of this struct decides which; this header knows nothing of
+     * the input-format taxonomy and only carries the conclusion.
      */
-    bool isRgba;
+    VkEncColorSpace colorSpace;
 
     bool VerifyInputs()
     {
@@ -128,7 +185,7 @@ public:
         // RGBA image. It must therefore be reached before the single-plane
         // arm below, which reads |chromaSubsampling| and would refuse an RGBA
         // image for carrying the default 4:2:0 value it never uses.
-        if (isRgba) {
+        if (colorSpace == VkEncColorSpace::kRGB) {
             if (vkFormat == VK_FORMAT_UNDEFINED) {
                 fprintf(stderr, "Input marked RGBA but vkFormat is UNDEFINED!");
                 return false;
@@ -829,6 +886,14 @@ public:
     // Prefer the packed 4:4:4 encode-source format (AYUV / Y410) when the driver
     // advertises both representations for the profile.
     //
+    // THE PREMISE IS UNVERIFIED ON THE CURRENT DRIVER, and saying so is the point:
+    // it may have been true of an older one. On every driver this project has
+    // measured, each CAPS_OK (codec, profile) pair returns EXACTLY ONE encode-source
+    // format, so the "lists BOTH" case below has not been observed and the ordering
+    // claim with it. It is left standing rather than rewritten into "the driver lists
+    // one format", because THAT is a per-driver fact and not a contract either -- and
+    // the option has to keep working on a driver that does list both.
+    //
     // For a 4:4:4 profile the driver lists BOTH the 2-plane form and the packed form,
     // and the listing order is not guaranteed, so anything that takes the driver's
     // first entry -- or that matches only against the input FILE's layout -- can never
@@ -926,6 +991,31 @@ public:
     uint8_t  max_dec_frame_buffering;
     uint8_t  chroma_sample_loc_type;
 
+    // THE INPUT SIDE. The VuiParameters block above states what the BITSTREAM
+    // advertises; these state what the caller's own samples carry, as bound
+    // from the chained VkVideoEncoderInputColourInfo. They are separate
+    // members rather than a reinterpretation of the block above because they
+    // answer a different question: the RGBA->Y'CbCr filter's matrix is a
+    // function of the INPUT's primaries, and only the absence of any primaries
+    // conversion in this library made reading the output field's value give
+    // the same answer.
+    //
+    // inputColourChainPresent is what distinguishes "absent" from "present and
+    // zero"; no value field can, because 0 is UNDECLARED on every axis.
+    uint8_t  inputColourPrimaries;
+    uint8_t  inputTransferCharacteristics;
+    uint8_t  inputMatrixCoefficients;
+    // VkVideoEncoderRangeDeclaration, carried as a plain integer so this
+    // header takes no dependency on the ext one.
+    uint8_t  inputRange;
+    uint32_t inputColourChainPresent : 1;
+
+    // HDR10 static metadata. Zero-initialized by its own member
+    // initializers, so a config that never touches it emits no SEI and no
+    // metadata OBU -- absence is the default and it is a real absence, not a
+    // mastering display of all zeros.
+    EncoderHdrStaticMetadata hdrMetadata;
+
     EncoderInputFileHandler inputFileHandler;
     EncoderOutputFileHandler outputFileHandler;
     EncoderQpMapFileHandler qpMapFileHandler;
@@ -933,7 +1023,7 @@ public:
 #ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     // WHICH conversion the preprocess compute filter performs. Owned by the
     // LIBRARY, not by any caller: VkVideoEncoder::InitEncoder overwrites it
-    // from input.vkFormat and the encode-source format the device reported,
+    // from input.colorSpace and the encode-source format the device reported,
     // immediately before creating the filter (VkEncDeriveFilterType). No CLI
     // flag, no JSON key and no embeddable-API field reaches it, deliberately:
     // the mechanism choice belongs inside the library, where the device
@@ -985,6 +1075,41 @@ public:
     std::string crcOutputFileName;
 
     bool IsPsnrMetricsEnabled() const { return enablePsnrMetrics != 0; }
+
+    // ---- Colour contract for the RGBA->YCbCr preprocess filter ------------
+    //
+    // Both are defined in VkEncoderConfig.cpp, both are IDEMPOTENT, and both
+    // are deliberately reachable from two layers: the ext config binder,
+    // which has no device and can therefore refuse before the caller has
+    // allocated a frame pool, and VkVideoEncoder::InitEncoder, which is the
+    // only gate the argv/JSON path passes through. ONE implementation, so the
+    // two layers cannot answer differently.
+
+    // Resolve matrix_coefficients to the sampler-conversion model the filter
+    // reads its matrix out of. Returns false when the DECLARED code point
+    // names a matrix this filter cannot produce, having printed the reason;
+    // the caller must then fail initialization. May REWRITE
+    // matrix_coefficients when the declared code point NAMES NO MATRIX
+    // (2 = Unspecified): it derives one from colour_primaries, applies that,
+    // and writes it back, so the label the bitstream carries matches the
+    // pixels that were written. It never rewrites a matrix the caller DID
+    // name -- that is honoured or refused.
+    //
+    // Call ONLY when the filter will actually apply an RGB->YCbCr matrix. A
+    // YCbCr->YCbCr copy applies no matrix at all, so refusing a code point
+    // there would reject a configuration that is entirely correct.
+    bool ResolveRgbToYcbcrMatrix(VkSamplerYcbcrModelConversion* outModel);
+
+    // CC-1: the matrix an UNNAMED colour description resolves to, derived
+    // from the declared primaries. Static and public so the ext-filter suite
+    // can walk it as a table against the Chromium side's copy of the same
+    // rule. See the CC-1 block above ResolveRgbToYcbcrMatrix.
+    static uint8_t DeriveMatrixFromPrimaries(uint8_t primaries);
+
+    // Signal the chroma siting the filter's 2x2 box average actually
+    // produces, so the H.26x VUI describes the samples that were written
+    // rather than the decoder's default. Same call-only-for-the-RGB-arm rule.
+    void ApplyPreprocessFilterChromaSiting();
 
     // Compile-safe accessor for the build-gated preprocess-filter flag:
     // callers can branch on it without carrying the gate macro themselves
@@ -1084,6 +1209,11 @@ public:
     , max_num_reorder_frames()
     , max_dec_frame_buffering()
     , chroma_sample_loc_type()
+    , inputColourPrimaries()
+    , inputTransferCharacteristics()
+    , inputMatrixCoefficients()
+    , inputRange()
+    , inputColourChainPresent()
     , inputFileHandler()
 #ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     // Placeholder only -- InitEncoder derives the real value from the input

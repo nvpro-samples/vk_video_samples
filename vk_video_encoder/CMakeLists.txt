@@ -610,10 +610,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_subdirectory(test/encoder-ext-acquire-fd)
 endif()
 # Device-free coverage of the input-format taxonomy (which rung of the
-# adaptation ladder a format needs) and of the config binder's disposition of
-# enablePreprocessFilter. Both are pure functions of their arguments, so this
-# needs no GPU; what the filter then DOES with the pixels needs one and lives
-# in vk_filter_test.
+# adaptation ladder a format needs), of the preprocess-conversion decision the
+# binder derives from it, and of the transfer-function declaration. All are
+# pure functions of their arguments, so this needs no GPU; what the filter then
+# DOES with the pixels needs one and lives in vk_filter_test.
 add_subdirectory(test/encoder-ext-filter)
 # Real-device REGRESSION test for a defect this guards against:
 # DrainPendingFrames() permanently disabled async assembly, and the synchronous

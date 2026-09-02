@@ -21,6 +21,7 @@
 #include "json/EncoderConfigJsonLoader.h"
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <string>
 #include <cstdlib>
 #include <cmath>
@@ -1334,4 +1335,311 @@ bool EncoderConfig::InitRateControl()
     }
 
     return true;
+}
+
+
+// ===========================================================================
+// Colour contract for the RGBA->YCbCr preprocess filter.  ==  CC-1  ==
+// ===========================================================================
+//
+// THIS TABLE IS DUPLICATED, DELIBERATELY, IN
+//   chromium/media/gpu/vulkan/vulkan_video_encode_accelerator.cc
+// beside ValidateConfig's matrix guardrail. Code cannot be shared across the
+// two repositories, so the RULE is written out in both and each names the
+// other. IF YOU CHANGE ONE, CHANGE BOTH. Each side also has a table-shaped
+// test that walks every code point, so a drift shows up as a test diff in a
+// review rather than as a behaviour difference on a GPU
+// (library: test/encoder-ext-filter, CaseMatrixDispositionTable;
+//  Chromium: VulkanVeaMatrixTableTest).
+//
+// THE RULE, in one sentence: an unnamed matrix is a DESCRIPTION, not a
+// request -- derive it, apply it, and signal the matrix actually applied; a
+// NAMED matrix we cannot apply is refused.
+//
+//   H.273  name                 disposition on the FILTER lane   signalled
+//   -----  -------------------  ------------------------------   ---------
+//   absent no colour descr.     BT.709 model, write nothing      nothing
+//   0      Identity / GBR       UNNAMED (see note)               derived
+//   1      BT.709               honour                           1
+//   2      Unspecified          UNNAMED -> derive from primaries derived
+//   3      reserved             refuse                           --
+//   4      FCC                  refuse                           --
+//   5      BT.470BG             honour (YCBCR_601)               5
+//   6      SMPTE 170M           honour (YCBCR_601)               6
+//   7      SMPTE 240M           refuse                           --
+//   8      YCoCg                refuse                           --
+//   9      BT.2020 NCL          honour (YCBCR_2020)              9
+//   10     BT.2020 CL           honour, approximated as NCL      10
+//   11     SMPTE 2085           refuse                           --
+//   12-14  chroma-derived/ICtCp refuse                           --
+//   255    unknown / INVALID    refuse                           --
+//
+// NOTE ON 0, and it is the one row where the two surfaces differ in what
+// they can even be ASKED. On Chromium's surface
+// VideoColorSpace::MatrixID::RGB == 0 is a real code point with a real
+// producer -- gfx::ColorSpace::MatrixID::RGB maps to it, and every sRGB
+// canvas / WebGL / WebCodecs RGBA frame carries it. On THIS library's ext
+// surface 0 is definitionally "not supplied" and is rewritten to 2 before it
+// reaches anything (vulkan_video_encoder_ext.cpp, grep
+// `0 IS "NOT SUPPLIED" ON THIS SURFACE`). So the `case 0` arm below cannot be
+// reached by any producer in this tree, and code point 0 arriving on the
+// public field behaves as UNNAMED -- which is the same disposition the table
+// gives it. The arm is kept as defence for a future producer, not deleted,
+// because a rule with a hole in it is how the two implementations drifted the
+// first time.
+//
+// THE DIRECT LANE (NV12 / P010 / I420) IS NOT SUBJECT TO ANY OF THIS. The
+// caller's Y'CbCr passes through untouched, the VUI describes the caller's own
+// data, and the matrix is the caller's business -- see
+// CaseYcbcrSessionKeepsAMatrixTheFilterCannotProduce.
+
+// The derivation for an UNNAMED matrix. Its ORIGIN is the in-tree hardware
+// precedent this contract was reconciled against -- Chromium's
+// media/gpu/windows/format_utils.cc, grep
+// GetEncoderOutputColorSpaceFromInputColorSpace, which is what the D3D12
+// video encoder does PER FRAME when a frame's matrix is RGB:
+//
+//     PrimaryID::SMPTE170M -> MatrixID::SMPTE170M   (6 -> 6)
+//     PrimaryID::BT2020    -> MatrixID::BT2020_NCL  (9 -> 9)
+//     everything else      -> MatrixID::BT709       (-> 1)
+//
+// TWO ROWS BELOW ARE EXTENSIONS, NOT THE PRECEDENT, and they are marked
+// because "taken verbatim" was written here first and was false:
+//
+//   * primaries 5 (BT.470BG) also derives 6. 5 and 6 are the 625-line and
+//     525-line spellings of the same BT.601 family and share one matrix
+//     (this file's own `case 5: case 6:` arm maps both to YCBCR_601), so
+//     sending 5 to BT.709 would be the one arm of the family that disagrees
+//     with the other. D3D12 does not hit this because gfx::ColorSpace's
+//     PrimaryID::BT470BG is not what its RGB producers carry.
+//   * primaries 7 (SMPTE 240M) also derives 6. The 240M and 170M PRIMARIES
+//     are the same chromaticities; only the transfer differs. Deriving 6 is
+//     truthful because 6 is the matrix the filter will actually build --
+//     matrix 7 is REFUSED by this contract, so it is not an option to derive.
+//
+// H.273 PRIMARIES CODE POINT 10 IS DELIBERATELY NOT IN THE BT.2020 ARM. It is
+// SMPTE ST 428-1 (CIE 1931 XYZ), not BT.2020 -- Chromium's own enum agrees
+// (VideoColorSpace::PrimaryID::SMPTEST428_1 = 10). Only MATRIX 10 is BT.2020
+// (constant luminance). Anything with XYZ primaries and no named matrix falls
+// to BT.709 with the rest of the "we were not told" set.
+//
+// PRIMARIES AND TRANSFER ARE NOT TOUCHED by the caller of this: the filter
+// performs no primaries conversion and applies no transfer function
+// ("This filter applies the colour MATRIX ONLY", VulkanFilterYuvCompute.cpp).
+// RANGE IS NOT TOUCHED EITHER, and this does NOT diverge from the D3D12
+// precedent, which preserves it: the caller's video_full_range_flag is carried
+// through to the filter unchanged. VkVideoEncoder.cpp turns it into the
+// conversion's ycbcrRange (ITU_FULL when set, ITU_NARROW when clear);
+// VulkanFilterYuvCompute::InitRGBA2YCBCR reads that field back out as
+// isLimitedRange and passes it to GenRgbToYCbCrConversion, which folds the
+// narrow-range scale and offset into the conversion ONLY when narrow was asked
+// for and emits nothing for full range. The filter can therefore be asked for
+// full range, and what it emits is what the VUI advertises. Range is simply
+// not this function's business: the derivation decides the MATRIX and nothing
+// else.
+uint8_t EncoderConfig::DeriveMatrixFromPrimaries(uint8_t primaries)
+{
+    switch (primaries) {
+    case 9:   // BT.2020
+        return 9;
+    case 5:   // BT.470BG      -- extension, see above
+    case 6:   // SMPTE 170M    -- the precedent's own row
+    case 7:   // SMPTE 240M    -- extension, see above
+        return 6;
+    default:
+        return 1;
+    }
+}
+
+bool EncoderConfig::ResolveRgbToYcbcrMatrix(
+    VkSamplerYcbcrModelConversion* outModel)
+{
+    // WHAT THIS REPLACED, because the replacement only makes sense against
+    // it: the RGBA filter's setup used to run a switch over
+    // matrix_coefficients whose default arm logged "names no matrix the
+    // RGBA->YCbCr filter can express; converting as BT.709", substituted
+    // BT.709 FOR THE FILTER ONLY, left matrix_coefficients untouched and
+    // returned success. A caller declaring 2 (Unspecified) or 7 (SMPTE 240M)
+    // therefore got BT.709 pixels under a non-BT.709 label, on the SUCCESS
+    // path, with nothing between it and a conforming decoder mis-colouring
+    // the result but a line on stderr. "Warn and diverge" is not a contract.
+    //
+    // Every arm below either makes the label TRUE or REFUSES.
+    //
+    //   NOT DECLARED (color_description_present_flag == 0)
+    //     Nothing is advertised, so nothing can disagree. Convert as BT.709,
+    //     which is the practical default for HD content and therefore the
+    //     matrix an undeclared input is overwhelmingly likely to want.
+    //
+    //     NOT because a decoder infers it. The SPEC inference for an absent
+    //     colour description is 2, Unspecified -- H.264 E.2.1 and H.265 E.3.1
+    //     say so, and AV1's colour config left undeclared means the same --
+    //     so "what an H.26x decoder assumes" was a de facto convention
+    //     described as a normative rule. The CHOICE is unchanged and is
+    //     right; only its justification was wrong.
+    //     matrix_coefficients is deliberately NOT written: raising it without
+    //     the presence flag would put a value in the config that no bitstream
+    //     ever carries, and the ext probe would then report a colour the
+    //     stream does not have.
+    //
+    //   1, 5, 6, 9, 10  EXPRESSIBLE. Use it; the label is already true.
+    //     (5 and 6 are the same matrix; 9 and 10 both map to the BT.2020
+    //     model this filter has -- see the note on 10 below.)
+    //
+    //   2 (Unspecified), declared
+    //     DERIVE the matrix from the declared PRIMARIES, apply it, and
+    //     signal what was applied. The caller declined to NAME a matrix, so
+    //     there is no request here to ignore -- but there IS information, and
+    //     this arm used to throw it away by coercing to BT.709 unconditionally.
+    //     A caller supplying colourPrimaries 9 and transferCharacteristics 16
+    //     -- exactly what an HDR caller supplies, and the case this arm was
+    //     written for -- got BT.709 chroma under BT.2020 primaries. Now it
+    //     gets a consistent BT.2020 NCL declaration and BT.2020 pixels.
+    //     See DeriveMatrixFromPrimaries for the mapping, which rows come from
+    //     the D3D12 precedent and which two are extensions.
+    //
+    //   0 (Identity/GBR)
+    //     REFUSE, and UNREACHABLE THROUGH EVERY PRODUCER IN THIS TREE. 0
+    //     asserts the samples ARE RGB, which is the one thing a filter whose
+    //     entire job is to make them not-RGB cannot deliver -- so the refusal
+    //     is right. It is also defence rather than enforcement: the ext
+    //     binder maps a 0 on its public field to "not supplied" and writes 2,
+    //     and EncoderConfigJsonLoader.cpp never raises
+    //     color_description_present_flag at all, so nothing in this tree can
+    //     present 0 WITH the presence flag up. Kept anyway; see the CC-1
+    //     block above for why an unreachable arm is not deleted.
+    //
+    //   7 (SMPTE 240M), 3, 4, 8, 11..14 and everything else
+    //     REFUSE. They name a real, DIFFERENT matrix that was asked for and
+    //     cannot be produced: honouring it is impossible and overriding it is
+    //     accepted-and-ignored. A contradiction rather than an omission, so
+    //     it ends initialization with a reason.
+    if (outModel == nullptr) {
+        return false;
+    }
+
+    if (!color_description_present_flag) {
+        // NOTHING WAS DECLARED ABOUT THE BITSTREAM -- but the caller may still
+        // have declared its INPUT, and the input's primaries are what the
+        // matrix is a function of. Deriving from them is strictly better
+        // informed than the BT.709 default, and it is the same derivation the
+        // declared-description arm runs.
+        if (inputColourPrimaries != 0) {
+            const uint8_t derived =
+                DeriveMatrixFromPrimaries(inputColourPrimaries);
+            *outModel = (derived == 9)
+                            ? VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_2020
+                            : (derived == 6)
+                                  ? VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601
+                                  : VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
+            return true;
+        }
+        // A GENUINELY UNDECLARED INPUT still falls to BT.709, and that
+        // fallback is the regression control for the arm above: a caller that
+        // chains nothing gets exactly what it got before.
+        *outModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
+        return true;
+    }
+
+    switch (matrix_coefficients) {
+    case 5:   // BT.601-7 625 (PAL/SECAM)
+    case 6:   // BT.601-7 525 (NTSC) -- the same matrix
+        *outModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601;
+        return true;
+    case 9:   // BT.2020 non-constant luminance
+    case 10:  // BT.2020 constant luminance
+        // 10 is ACCEPTED AND APPROXIMATED, and that is stated rather than
+        // hidden: VkSamplerYcbcrModelConversion has one BT.2020 value and it
+        // is the non-constant-luminance matrix. Constant luminance is a
+        // different derivation, not a different set of constants, and no
+        // Vulkan sampler model expresses it. It is not refused because the
+        // primaries, the transfer function and the range -- everything else
+        // the label carries -- are unaffected, and because the encoder that
+        // consumes this has no constant-luminance path to steer a caller to.
+        *outModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_2020;
+        return true;
+    case 1:   // BT.709
+        *outModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
+        return true;
+    case 0:   // Identity/GBR -- see the CC-1 block; unreachable here.
+        VkEncPrintfErr("\nEncoderConfig: matrix_coefficients 0 (Identity/GBR) "
+                "asserts the samples ARE R'G'B'. The RGBA->YCbCr preprocess "
+                "filter exists to make them not-R'G'B', so this cannot be "
+                "honoured and must not be silently overridden. NOTE: no "
+                "producer in this tree can reach this arm -- the ext binder "
+                "maps 0 on its public field to \"not supplied\" -- so if you "
+                "are reading this, a NEW producer has appeared.\n");
+        return false;
+    case 2: { // Unspecified -- derive from primaries, signal what was applied.
+        // THE INPUT'S PRIMARIES WHEN THEY WERE DECLARED; THE BITSTREAM'S
+        // OTHERWISE. The matrix is a property of the samples being converted,
+        // so the input side is the right side to read. The fallback to the
+        // output field is sound only because this library implements no
+        // primaries conversion, which makes the two necessarily equal; it is
+        // written this way so that identity is documented rather than implicit,
+        // and so the day a primaries conversion exists the wrong reading is not
+        // already in place.
+        const uint8_t sourcePrimaries = (inputColourPrimaries != 0)
+                                            ? inputColourPrimaries
+                                            : colour_primaries;
+        const uint8_t derived = DeriveMatrixFromPrimaries(sourcePrimaries);
+        *outModel = (derived == 9)
+                        ? VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_2020
+                        : (derived == 6)
+                              ? VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601
+                              : VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
+        matrix_coefficients = derived;
+        VkEncPrintfErr("\nEncoderConfig: matrix_coefficients 2 (Unspecified) was "
+                "declared with a colour description and the RGBA->YCbCr "
+                "filter must pick a matrix; DERIVED %u from the %s primaries "
+                "%u, converting with it and SIGNALLING it so the bitstream "
+                "describes the samples it carries.\n",
+                (unsigned)derived,
+                (inputColourPrimaries != 0) ? "INPUT's" : "bitstream's",
+                (unsigned)sourcePrimaries);
+        return true;
+    }
+    default:
+        VkEncPrintfErr("\nEncoderConfig: matrix_coefficients %u names no matrix the "
+                "RGBA->YCbCr preprocess filter can produce. Refusing rather "
+                "than converting as BT.709 under this label: that would put "
+                "BT.709 pixels in a stream that claims otherwise. Declare 1 "
+                "(BT.709), 5/6 (BT.601), 9/10 (BT.2020), or 2 (Unspecified, "
+                "which is DERIVED from colour_primaries and signalled as the "
+                "matrix actually applied), or submit YCbCr input that needs "
+                "no colour conversion.\n",
+                (unsigned)matrix_coefficients);
+        return false;
+    }
+}
+
+void EncoderConfig::ApplyPreprocessFilterChromaSiting()
+{
+    // The filter dispatches one thread per OUTPUT chroma sample and derives
+    // that sample with VulkanFilterYuvCompute::GenAverageChromaBlock, a 2x2
+    // box average of the block's Cb and Cr. The result therefore sits at the
+    // CENTRE of the 2x2 luma block in both axes -- MPEG-1 / JPEG siting,
+    // which is MIDPOINT horizontally and MIDPOINT vertically, and which is
+    // exactly what xChromaOffset / yChromaOffset already default to.
+    //
+    // Only two of the four (x, y) combinations name an H.26x code point:
+    //   MIDPOINT / MIDPOINT      -> chroma_sample_loc_type 1 (centre)
+    //   COSITED_EVEN / MIDPOINT  -> chroma_sample_loc_type 0 (left, MPEG-2)
+    // Anything else is left UNSIGNALLED on purpose. An unsignalled H.26x
+    // stream defaults to type 0, and a wrong signal is worse than an absent
+    // one: it is the same "declared colour that is not the colour written"
+    // failure this whole change exists to remove.
+    //
+    // This encoder emits frame pictures only, never fields, so the top and
+    // bottom field types describe the same sample position -- see
+    // EncoderConfigH264/H265::InitVuiParameters, which write both.
+    if ((xChromaOffset == VK_CHROMA_LOCATION_MIDPOINT) &&
+        (yChromaOffset == VK_CHROMA_LOCATION_MIDPOINT)) {
+        chroma_loc_info_present_flag = 1;
+        chroma_sample_loc_type       = 1;
+    } else if ((xChromaOffset == VK_CHROMA_LOCATION_COSITED_EVEN) &&
+               (yChromaOffset == VK_CHROMA_LOCATION_MIDPOINT)) {
+        chroma_loc_info_present_flag = 1;
+        chroma_sample_loc_type       = 0;
+    }
 }

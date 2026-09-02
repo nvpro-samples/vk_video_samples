@@ -189,6 +189,104 @@ bool EncoderConfigAV1::InitSequenceHeader(StdVideoAV1SequenceHeader *seqHdr,
     seqHdr->flags.enable_cdef = enableCdef ? 1 : 0;
     seqHdr->flags.enable_restoration = enableLr ? 1 : 0;
 
+    // A1 colour wiring, AV1 arm: emit the sequence header's color_config --
+    // AV1's counterpart of the H.26x VUI colour description. AV1 uses the
+    // same ISO/IEC 23091-4 code points as the H.26x VUI fields, so the
+    // colour half is a copy, not a conversion.
+    //
+    // ALWAYS SUPPLIED. A gate on color_description_present_flag -- or on that
+    // OR video_signal_type_present_flag -- would be the wrong SHAPE, because
+    // color_config is not a colour-description struct that happens to carry
+    // some other members. It is a STRUCTURAL struct -- BitDepth,
+    // subsampling_x/y, mono_chrome, chroma_sample_position and color_range
+    // are all members of it, none of them is conditioned on
+    // color_description_present_flag in the AV1 syntax, and color_range has
+    // no absent state at all. Every one of those is a property of the SESSION
+    // that this config knows and the driver would otherwise have to supply.
+    //
+    // WHAT DELEGATION MEANT IN PRACTICE. With pColorConfig null the driver
+    // writes its own color_config from the session, and on the one driver
+    // this was measured against it wrote high_bitdepth and mono_chrome
+    // correctly (a 10-bit AV1 session read back as pix_fmt=yuv420p10le with
+    // colour unknown/unknown/unknown). That is a fact about that driver, not
+    // a requirement of the Vulkan specification, and it is not a basis for
+    // surrendering fields we know. Supplying the struct unconditionally makes
+    // the structural fields OURS on every driver while leaving the colour
+    // description genuinely absent -- which is the combination a
+    // non-declaring caller asked for, and the only one that is
+    // driver-independent.
+    //
+    // color_range IS WRITTEN EVEN WHEN NOTHING WAS DECLARED, and that is not
+    // a fabrication: color_range is unconditional AV1 syntax with no "absent"
+    // encoding, so SOME value is in every AV1 bitstream whether we write it
+    // or the driver does. video_full_range_flag is 0 unless a caller raised
+    // it, and 0 is studio range, which is what this encoder produces.
+    av1ColorConfig = {};
+    av1ColorConfig.flags.color_range = video_full_range_flag;
+    if (color_description_present_flag) {
+        av1ColorConfig.flags.color_description_present_flag = 1;
+        av1ColorConfig.color_primaries =
+            (StdVideoAV1ColorPrimaries)colour_primaries;
+        av1ColorConfig.transfer_characteristics =
+            (StdVideoAV1TransferCharacteristics)transfer_characteristics;
+        av1ColorConfig.matrix_coefficients =
+            (StdVideoAV1MatrixCoefficients)matrix_coefficients;
+    } else {
+        // color_description_present_flag == 0 does NOT mean "leave the
+        // three fields zero": zero is CP_BT_709 / TC_BT_709 / MC_IDENTITY
+        // in AV1's enums, and MC_IDENTITY additionally asserts the
+        // samples are RGB. The AV1 specification's own default for an
+        // absent description is UNSPECIFIED (2) in all three, so write
+        // that.
+        //
+        // UNTESTABLE BY DESIGN, said here so nobody builds a gate for it:
+        // with color_description_present_flag == 0 the AV1 bitstream OMITS
+        // all three fields, so no decoder and no bitstream analyser can tell
+        // 0/0/0 from 2/2/2 in this struct. The assertion is a struct-level
+        // one or it is nothing.
+        av1ColorConfig.color_primaries =
+            STD_VIDEO_AV1_COLOR_PRIMARIES_BT_UNSPECIFIED;
+        av1ColorConfig.transfer_characteristics =
+            STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_UNSPECIFIED;
+        av1ColorConfig.matrix_coefficients =
+            STD_VIDEO_AV1_MATRIX_COEFFICIENTS_UNSPECIFIED;
+    }
+    // The non-colour members are structural and must match the session: the
+    // SESSION's chroma subsampling, at the configured bit depth.
+    //
+    // HARDCODING 4:2:0 HERE CONTRADICTED InitProfileLevel BELOW, which derives
+    // seq_profile 1 from 4:4:4 input and 2 from 4:2:2 -- and AV1 6.4.1 gives
+    // seq_profile 1 subsampling_x == subsampling_y == 0 and seq_profile 2 at
+    // ten bits or fewer subsampling_x == 1, subsampling_y == 0. The pair was an
+    // invalid sequence header. The derivation is the codec-correct side, so the
+    // comment that called 4:2:0 "the only chroma format this encoder admits"
+    // was the stale one: the input taxonomy routes 4:2:2 and 4:4:4 and the
+    // profile derivation names their seq_profiles.
+    //
+    // 4:2:0 -> (1, 1), 4:2:2 -> (1, 0), 4:4:4 -> (0, 0), which is AV1 5.5.2's
+    // mapping. mono_chrome keeps its zeroed value from the `= {}` above --
+    // there is no monochrome input path -- and is named here because it is one
+    // of the fields that used to be the driver's.
+    av1ColorConfig.BitDepth = input.bpp;
+    av1ColorConfig.subsampling_x =
+        (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR)
+            ? 0 : 1;
+    av1ColorConfig.subsampling_y =
+        (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR)
+            ? 1 : 0;
+    // UNKNOWN, and it is not a gap that can be closed. The RGBA
+    // preprocess filter sites its chroma at the CENTRE of the 2x2 luma
+    // block (a box average), which H.26x expresses as
+    // chroma_sample_loc_type 1 and which AV1 CANNOT express at all: its
+    // chroma_sample_position offers UNKNOWN, VERTICAL (co-sited
+    // horizontally, between rows -- MPEG-2) and COLOCATED (top-left)
+    // only. Signalling VERTICAL to look decisive would assert a siting
+    // half a chroma sample away from the one written. For DIRECT input
+    // the siting is the caller's content's and this library never learns
+    // it, so UNKNOWN is right there too.
+    av1ColorConfig.chroma_sample_position =
+        STD_VIDEO_AV1_CHROMA_SAMPLE_POSITION_UNKNOWN;
+    seqHdr->pColorConfig = &av1ColorConfig;
 
     opInfo->seq_level_idx = level;
     opInfo->seq_tier = tier;
