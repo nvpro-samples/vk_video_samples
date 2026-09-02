@@ -15,6 +15,7 @@
  */
 
 #include <chrono>
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <cstring>
 #include <limits>
 #include "VkVideoEncoder/VkVideoEncoderAV1.h"
@@ -86,7 +87,7 @@ VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& enc
 
     VkResult result = InitEncoder(encoderConfig);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nERROR: InitEncoder() failed with ret(%d)\n", result);
+        VkEncPrintfErr("\nERROR: InitEncoder() failed with ret(%d)\n", result);
         return result;
     }
 
@@ -95,7 +96,7 @@ VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& enc
         encodeCaps.maxSingleReferenceCount < 2 &&
         encodeCaps.maxUnidirectionalCompoundReferenceCount == 0 &&
         encodeCaps.maxBidirectionalCompoundReferenceCount == 0) {
-        std::cout << "B-frames were requested but the implementation does not support multiple reference frames!" << std::endl;
+        VkEncOut() << "B-frames were requested but the implementation does not support multiple reference frames!" << std::endl;
         assert(!"B-frames not supported");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -121,14 +122,14 @@ VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& enc
                                                          nullptr,
                                                          &sessionParameters);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nEncodeFrame Error: Failed to get create video session parameters.\n");
+        VkEncPrintfErr("\nEncodeFrame Error: Failed to get create video session parameters.\n");
         return result;
     }
 
     result = VulkanVideoSessionParameters::Create(m_vkDevCtx, m_videoSession,
                                                   sessionParameters, m_videoSessionParameters);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nEncodeFrame Error: Failed to get create video session object.\n");
+        VkEncPrintfErr("\nEncodeFrame Error: Failed to get create video session object.\n");
         return result;
     }
 
@@ -513,7 +514,7 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         DumpStateInfo("input", 1, encodeFrameInfo);
 
         if (encodeFrameInfo->lastFrame) {
-            std::cout << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
+            VkEncOut() << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
                       << " of type " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
                       << " ###"
                       << std::endl << std::flush;
@@ -651,7 +652,11 @@ void VkVideoEncoderAV1::InitializeFrameHeader(StdVideoAV1SequenceHeader* pSequen
             for (uint32_t bufIdx = 0; bufIdx < STD_VIDEO_AV1_NUM_REF_FRAMES; bufIdx++) {
                 int32_t dpbIdx = m_dpbAV1->GetRefBufDpbId(bufIdx);
                 assert(dpbIdx != VkEncDpbAV1::INVALID_IDX);
-                pStdPictureInfo->ref_order_hint[bufIdx] = (uint8_t)m_dpbAV1->GetPicOrderCntVal(dpbIdx);
+                // Masked by the advertised width rather than by the cast, so
+                // this holds for whatever width the sequence header states.
+                pStdPictureInfo->ref_order_hint[bufIdx] =
+                    (uint8_t)(m_dpbAV1->GetPicOrderCntVal(dpbIdx) %
+                              (1 << ORDER_HINT_BITS));
             }
         }
     }
@@ -817,7 +822,7 @@ void VkVideoEncoderAV1::BuildFrameObuSequence(uint32_t frameIdx,
         bitstream.insert(bitstream.end(), seqHdrData, seqHdrData + encodeFrameInfo->bitstreamHeaderBufferSize);
 
         if (m_encoderConfig->verboseFrameStruct) {
-            std::cout << "       == Non-VCL data SUCCESS"
+            VkEncOut() << "       == Non-VCL data SUCCESS"
                       << " Non-VCL data with size: " << encodeFrameInfo->bitstreamHeaderBufferSize
                       << ", Input Order: " << (uint32_t)encodeFrameInfo->gopPosition.inputOrder
                       << ", Encode Order: " << (uint32_t)encodeFrameInfo->gopPosition.encodeOrder
@@ -849,7 +854,7 @@ void VkVideoEncoderAV1::BuildFrameObuSequence(uint32_t frameIdx,
         }
 
         if (m_encoderConfig->verboseFrameStruct) {
-            std::cout << "      == Output VCL data SUCCESS for " << frameIdx << " with size: " << frameSize
+            VkEncOut() << "      == Output VCL data SUCCESS for " << frameIdx << " with size: " << frameSize
                       << ", Input Order: " << (uint32_t)encodeFrameInfo->gopPosition.inputOrder
                       << ", Encode Order: " << (uint32_t)encodeFrameInfo->gopPosition.encodeOrder
                       << std::endl << std::flush;
@@ -882,13 +887,13 @@ VkResult VkVideoEncoderAV1::FlushBatchedTemporalUnit(VkSharedBaseObj<VkVideoEnco
         tuSize += m_bitstream[curFrameIdx].size();
 
         if (m_encoderConfig->verboseFrameStruct) {
-            std::cout << ">>>>>> Assembly VCL index " << curFrameIdx << " has size: " << m_bitstream[curFrameIdx].size()
+            VkEncOut() << ">>>>>> Assembly VCL index " << curFrameIdx << " has size: " << m_bitstream[curFrameIdx].size()
                       << std::endl << std::flush;
         }
     }
 
     if (m_encoderConfig->verboseFrameStruct) {
-        std::cout << ">>>>>> Assembly total VCL data is: "
+        VkEncOut() << ">>>>>> Assembly total VCL data is: "
                   << tuSize - sizeof(tdObu)
                   << std::endl << std::flush;
     }
@@ -914,7 +919,7 @@ VkResult VkVideoEncoderAV1::FlushBatchedTemporalUnit(VkSharedBaseObj<VkVideoEnco
         while (remainingBytes > 0) {
             const size_t bytesWritten = WriteDataToFile(writeData, remainingBytes);
             if (bytesWritten == 0) {
-                std::cerr << "Failed to write bitstream data for frame " << curFrameIdx << std::endl;
+                VkEncErr() << "Failed to write bitstream data for frame " << curFrameIdx << std::endl;
                 return VK_ERROR_OUT_OF_HOST_MEMORY;
             }
 
@@ -944,7 +949,7 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
     BitstreamReadback readback{};
     VkResult result = ReadbackBitstreamData(encodeFrameInfo, readback);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nAssembleBitstreamData Error: bitstream readback failed with result 0x%x.\n", result);
+        VkEncPrintfErr("\nAssembleBitstreamData Error: bitstream readback failed with result 0x%x.\n", result);
         assert(result == VK_SUCCESS);
         return result;
     }
@@ -952,7 +957,7 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
     // Show-existing frames returned above; every remaining frame must have a
     // bitstream buffer, otherwise its coded data would be silently dropped.
     if (!readback.readbackDone) {
-        fprintf(stderr, "\nAssembleBitstreamData Error: no bitstream buffer to read back for frame %u.\n", frameIdx);
+        VkEncPrintfErr("\nAssembleBitstreamData Error: no bitstream buffer to read back for frame %u.\n", frameIdx);
         assert(readback.readbackDone);
         return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -1006,6 +1011,66 @@ VkResult VkVideoEncoderAV1::WriteBitstreamToFile(
     VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
     uint32_t frameIdx, uint32_t ofTotalFrames,
     BitstreamReadback& readback)
+{
+    // Every frame that reaches assembly publishes exactly one completion
+    // record, in both output modes -- including deferred (non-shown) frames
+    // and show-existing calls, which are per-frame calls like any other. In
+    // file-output mode a deferred frame's record carries its own assembly
+    // turn's result even though its bytes reach the file at the batch
+    // flush: the edge means the frame was committed to the output channel,
+    // matching the per-frame pairing the pending-frame model requires.
+    CapturedBitstream cap;
+    cap.frameId = (encodeFrameInfo->externalFrameId != uint64_t(-1))
+                      ? encodeFrameInfo->externalFrameId
+                      : encodeFrameInfo->frameEncodeInputOrderNum;
+    cap.isIdr = (encodeFrameInfo->gopPosition.pictureType ==
+                 VkVideoGopStructure::FRAME_TYPE_IDR);
+    cap.pictureType = static_cast<uint32_t>(
+        encodeFrameInfo->gopPosition.pictureType);
+
+    VkResult result = VK_SUCCESS;
+    // Browser (in-memory) path. Capture the AV1 temporal
+    // unit into the completion record (the FIFO the VEA drains) rather than
+    // muxing IVF to a file. Empirically the NVIDIA driver does NOT emit the
+    // leading Temporal-Delimiter OBU, so prepend it -- as the standalone
+    // IVF writer does -- else the OBU stream cannot be split into temporal
+    // units by a decoder.
+    if (m_encoderConfig && m_encoderConfig->disableFileOutput) {
+        static const uint8_t kAv1TdObu[2] = { 0x12, 0x00 };
+        cap.bytes.insert(cap.bytes.end(), kAv1TdObu, kAv1TdObu + 2);
+        if (encodeFrameInfo->bitstreamHeaderBufferSize > 0) {
+            const uint8_t* hdr = encodeFrameInfo->bitstreamHeaderBuffer +
+                                 encodeFrameInfo->bitstreamHeaderOffset;
+            cap.bytes.insert(cap.bytes.end(), hdr,
+                             hdr + encodeFrameInfo->bitstreamHeaderBufferSize);
+        }
+        if (readback.readbackDone && readback.bitstreamSize > 0) {
+            const uint8_t* src;
+            if (!readback.bitstreamCopy.empty()) {
+                src = readback.bitstreamCopy.data();
+            } else {
+                VkDeviceSize maxSize;
+                src = encodeFrameInfo->outputBitstreamBuffer->GetDataPtr(0, maxSize) +
+                      readback.bitstreamStartOffset;
+            }
+            cap.bytes.insert(cap.bytes.end(), src, src + readback.bitstreamSize);
+        }
+    } else {
+        result = WriteBitstreamToFileOutput(encodeFrameInfo, frameIdx, readback);
+        cap.status = result;  // VK_SUCCESS, or the file-write failure code
+    }
+    PushCapturedBitstream(std::move(cap));
+    return result;
+}
+
+// File-output arm of the AV1 override: the show-existing header write, the
+// per-frame OBU staging (BuildFrameObuSequence) and deferred (non-shown) frame
+// batching, then the flush of the completed temporal unit. The IVF mux itself
+// lives in FlushBatchedTemporalUnit(). Private and non-virtual: it must never
+// grow a second completion publish.
+VkResult VkVideoEncoderAV1::WriteBitstreamToFileOutput(
+    VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+    uint32_t frameIdx, BitstreamReadback& readback)
 {
     VkVideoEncodeFrameInfoAV1* pFrameInfo = GetEncodeFrameInfoAV1(encodeFrameInfo);
 

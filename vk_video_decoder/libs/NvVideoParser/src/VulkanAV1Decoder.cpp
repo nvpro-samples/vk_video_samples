@@ -299,6 +299,51 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
         m_pClient->AllocPictureBuffer(&m_pCurrPic);
     }
 
+    // PUBLISH THIS PICTURE'S DIMENSIONS FOR LATER FRAMES THAT REFERENCE IT.
+    //
+    // AV1 frame_size_with_refs() has the current frame INHERIT its size from a
+    // reference: UpscaledWidth = RefUpscaledWidth[i], FrameHeight =
+    // RefFrameHeight[i]. SetupFrameSizeWithRefs() duly reads them back out of
+    // the referenced VkPicIf -- and until now NOTHING ANYWHERE WROTE THEM ON
+    // THE AV1 PATH. decodeSuperResWidth had 0 writers among its 2 occurrences
+    // in the tree, and `git log -S` finds no commit that ever added one: the
+    // field has been read-only since it was introduced. decodeWidth and
+    // decodeHeight had exactly one writer each and both are in the VP9 parser,
+    // so on a pure-AV1 stream all three were read while indeterminate --
+    // vkPicBuffBase's constructor does not name its VkPicIf base, so they are
+    // not even zero.
+    //
+    // The wider exposure is not frame_size_with_refs at all: VulkanVideoParser
+    // builds the Vulkan reference VkVideoPictureResourceInfoKHR::codedExtent
+    // from decodeWidth/decodeHeight for EVERY AV1 reference slot on EVERY
+    // frame that has references, with no frame_size_override_flag gate. The
+    // narrow branch is where the garbage becomes visible; this is where it is
+    // consumed.
+    //
+    // WRITTEN HERE, AND DELIBERATELY NOT IN UpdateFramePointers(). That is the
+    // function that publishes the picture into the reference slots and looks
+    // like the natural home, but it is ALSO called on the show_existing_frame
+    // + reset_decoder_state path with a PREVIOUSLY DECODED picture, while the
+    // decoder's frame_width/frame_height/upscaled_width members still hold the
+    // last real frame's values. Writing there would overwrite a correct stored
+    // dimension with an unrelated one every time a show_existing_frame
+    // refreshes the slots -- turning a read-of-garbage bug into a
+    // corrupt-good-data bug. BeginPicture is reached from end_of_picture only
+    // after the whole frame header is parsed, so all three values are final.
+    //
+    // OUTSIDE the allocation guard above, not inside it. The VP9 writer this
+    // mirrors sits inside its own `if (m_pCurrPic == nullptr)`, so a retained
+    // picture keeps a stale size; that flaw is not worth copying.
+    //
+    // decodeWidth carries frame_width (the POST-superres, coded width) rather
+    // than upscaled_width, because that is what the reference codedExtent
+    // needs -- Vulkan wants the decoded extent, not the display extent.
+    if (m_pCurrPic != nullptr) {
+        m_pCurrPic->decodeSuperResWidth = upscaled_width;  // RefUpscaledWidth
+        m_pCurrPic->decodeWidth         = frame_width;     // coded, post-superres
+        m_pCurrPic->decodeHeight        = frame_height;    // RefFrameHeight
+    }
+
     pnvpd->PicWidthInMbs    = nvsi.nCodedWidth >> 4;
     pnvpd->FrameHeightInMbs = nvsi.nCodedHeight >> 4;
     pnvpd->pCurrPic         = m_pCurrPic;

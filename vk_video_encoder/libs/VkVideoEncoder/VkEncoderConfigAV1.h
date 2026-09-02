@@ -22,7 +22,13 @@
 
 #define FRAME_ID_BITS 15
 #define DELTA_FRAME_ID_BITS 14
-#define ORDER_HINT_BITS 7
+// 8, not 7. The reference-order-hint writer casts to uint8_t (an 8-bit mask)
+// while the DPB writer masks by this value, so at 7 the two disagree and a
+// ref_order_hint of >= 128 can be emitted for a field that cannot hold it.
+// 8 is also what stream consumers that mask order hints with 0xFF expect --
+// with 7, order_hint wraps at frame 128 and such a consumer rejects every
+// frame from there on.
+#define ORDER_HINT_BITS 8
 
 #define BASE_QIDX_INTRA 114
 #define BASE_QIDX_INTER_P 131
