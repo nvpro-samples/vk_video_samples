@@ -588,6 +588,12 @@ if(BUILD_ENCODER)
         # Device-free coverage of the ext API's chained-descriptor walk. Links
         # the static encoder archive for the internal header's test seams.
         add_subdirectory(vk_video_encoder/test/encoder-ext-sync)
+        # Device-free coverage of which VkVideoEncoderConfig members
+        # Reconfigure carries, which it refuses, and which it still
+        # ignores on purpose. Links the static encoder archive for the
+        # internal header's null-backend and capture-push seams, which
+        # are what let a Reconfigure call be reached without a device.
+        add_subdirectory(vk_video_encoder/test/encoder-ext-reconfigure)
         # Real-device coverage of the per-frame RELEASE fence export. Skips
         # (CTest SKIP, exit 77) on a host with no encode-capable GPU.
         add_subdirectory(vk_video_encoder/test/encoder-ext-release-fence)

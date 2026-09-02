@@ -39,7 +39,12 @@
 VkResult VkVideoEncoder::RequestRateControlUpdate(uint64_t averageBitrate,
                                                   uint64_t maxBitrate,
                                                   uint32_t frameRateNumerator,
-                                                  uint32_t frameRateDenominator)
+                                                  uint32_t frameRateDenominator,
+                                                  int32_t constQpIntra,
+                                                  int32_t constQpInterP,
+                                                  int32_t constQpInterB,
+                                                  int32_t minQp,
+                                                  int32_t maxQp)
 {
     // Producer side of Reconfigure: callable from any thread (the ext
     // Reconfigure entry runs on the caller's sequence). Values are folded
@@ -47,13 +52,114 @@ VkResult VkVideoEncoder::RequestRateControlUpdate(uint64_t averageBitrate,
     if (averageBitrate == 0) {
         return VK_ERROR_NOT_PERMITTED_KHR;
     }
+    // THE DEVICE QP WINDOW, checked HERE and not on the encoder thread,
+    // because this is the last point that can still answer the caller. A
+    // clamp folded in and then found unusable could only be dropped
+    // silently, which is the accepted-and-ignored shape this whole line of
+    // work exists to remove. The init path refuses an out-of-window clamp
+    // (EncoderConfigH26x::InitDeviceCapabilities) and so does this.
+    //
+    // Only a CARRIED clamp is checked. Zero is carried and means "no
+    // clamp", so it is exempt: no value reaches the driver, and a device
+    // window that excluded zero would otherwise make the clamp
+    // unclearable.
+    if (m_deviceQpWindowMax != 0) {
+        if ((minQp > 0) && ((minQp < m_deviceQpWindowMin) ||
+                            (minQp > m_deviceQpWindowMax))) {
+            VkEncErr() << "[VkVideoEncoder] mid-stream minQp " << minQp
+                       << " is outside the device QP window ["
+                       << m_deviceQpWindowMin << ", " << m_deviceQpWindowMax
+                       << "]" << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        if ((maxQp > 0) && ((maxQp < m_deviceQpWindowMin) ||
+                            (maxQp > m_deviceQpWindowMax))) {
+            VkEncErr() << "[VkVideoEncoder] mid-stream maxQp " << maxQp
+                       << " is outside the device QP window ["
+                       << m_deviceQpWindowMin << ", " << m_deviceQpWindowMax
+                       << "]" << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
     std::lock_guard<std::mutex> lock(m_pendingRateControlMutex);
     m_pendingRateControlUpdate.averageBitrate = averageBitrate;
     m_pendingRateControlUpdate.maxBitrate =
         (maxBitrate != 0) ? maxBitrate : averageBitrate;
     m_pendingRateControlUpdate.frameRateNumerator = frameRateNumerator;
     m_pendingRateControlUpdate.frameRateDenominator = frameRateDenominator;
+    // MERGED, not overwritten: a second update that names no quantizer
+    // must not erase one an earlier update armed but the encoder thread
+    // has not consumed yet.
+    if (constQpIntra >= 0) {
+        m_pendingRateControlUpdate.constQpIntra = constQpIntra;
+    }
+    if (constQpInterP >= 0) {
+        m_pendingRateControlUpdate.constQpInterP = constQpInterP;
+    }
+    if (constQpInterB >= 0) {
+        m_pendingRateControlUpdate.constQpInterB = constQpInterB;
+    }
+    // Merged on the same rule as the quantizers, for the same reason: a
+    // later update that carries no clamp must not erase one an earlier
+    // update armed and the encoder thread has not consumed yet.
+    if (minQp >= 0) {
+        m_pendingRateControlUpdate.minQp = minQp;
+    }
+    if (maxQp >= 0) {
+        m_pendingRateControlUpdate.maxQp = maxQp;
+    }
     m_pendingRateControlArmed = true;
+    return VK_SUCCESS;
+}
+
+VkResult VkVideoEncoder::ApplyAndGetConstQpForTest(int32_t* pQpIntra,
+                                                   int32_t* pQpInterP,
+                                                   int32_t* pQpInterB)
+{
+    ApplyPendingRateControlUpdate();
+    if (!m_encoderConfig) {
+        return VK_ERROR_NOT_PERMITTED_KHR;
+    }
+    *pQpIntra  = (int32_t)m_encoderConfig->constQp.qpIntra;
+    *pQpInterP = (int32_t)m_encoderConfig->constQp.qpInterP;
+    *pQpInterB = (int32_t)m_encoderConfig->constQp.qpInterB;
+    return VK_SUCCESS;
+}
+
+VkResult VkVideoEncoder::ApplyAndGetRateControlForTest(
+    RateControlObservation* pOut)
+{
+    if (pOut == nullptr) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    ApplyPendingRateControlUpdate();
+    if (!m_encoderConfig) {
+        return VK_ERROR_NOT_PERMITTED_KHR;
+    }
+    *pOut = {};
+    // THE LIVE LAYER, not the request. HandleCtrlCmd copies exactly these
+    // members into the next control command, so this is where a coerced
+    // maxBitrate and a frame rate that was left alone are visible as the
+    // numbers the session is actually running on.
+    pOut->layerAverageBitrate        = m_rateControlLayersInfo[0].averageBitrate;
+    pOut->layerMaxBitrate            = m_rateControlLayersInfo[0].maxBitrate;
+    pOut->layerFrameRateNumerator    =
+        m_rateControlLayersInfo[0].frameRateNumerator;
+    pOut->layerFrameRateDenominator  =
+        m_rateControlLayersInfo[0].frameRateDenominator;
+    pOut->constQpIntra   = (int32_t)m_encoderConfig->constQp.qpIntra;
+    pOut->constQpInterP  = (int32_t)m_encoderConfig->constQp.qpInterP;
+    pOut->constQpInterB  = (int32_t)m_encoderConfig->constQp.qpInterB;
+    pOut->configMinQp    = m_encoderConfig->minQp;
+    pOut->configMaxQp    = m_encoderConfig->maxQp;
+    pOut->configMinQpSet = m_encoderConfig->minQpSet ? 1u : 0u;
+    pOut->configMaxQpSet = m_encoderConfig->maxQpSet ? 1u : 0u;
+    // The far end of the chain this class owns: what the codec fill
+    // resolved the clamp to. A config field that moved while this did not
+    // would be a clamp that never reaches a command.
+    GetResolvedQpClampForTest(&pOut->resolvedUseMinQp, &pOut->resolvedMinQpI,
+                              &pOut->resolvedUseMaxQp, &pOut->resolvedMaxQpI);
+    pOut->codecRefreshCount = m_codecRateControlRefreshCount;
     return VK_SUCCESS;
 }
 
@@ -67,7 +173,82 @@ void VkVideoEncoder::ApplyPendingRateControlUpdate()
         }
         update = m_pendingRateControlUpdate;
         m_pendingRateControlArmed = false;
+        // Consumed: clear the quantizers and the clamps so a later update
+        // that names none does not re-apply these.
+        m_pendingRateControlUpdate.constQpIntra  = -1;
+        m_pendingRateControlUpdate.constQpInterP = -1;
+        m_pendingRateControlUpdate.constQpInterB = -1;
+        m_pendingRateControlUpdate.minQp         = -1;
+        m_pendingRateControlUpdate.maxQp         = -1;
     }
+    // The CONSTANT-QP defaults do not ride a control command at all --
+    // they are read per frame out of the encoder config. Writing them
+    // here is what makes a constant-QP session reconfigurable: this runs
+    // on the ENCODER THREAD, the same thread EncodeFrameCommon copies
+    // them on, so the write needs no further synchronisation and no
+    // frame can observe a half-updated triple.
+    if (m_encoderConfig) {
+        if (update.constQpIntra >= 0) {
+            m_encoderConfig->constQp.qpIntra = (uint32_t)update.constQpIntra;
+        }
+        if (update.constQpInterP >= 0) {
+            m_encoderConfig->constQp.qpInterP = (uint32_t)update.constQpInterP;
+        }
+        if (update.constQpInterB >= 0) {
+            m_encoderConfig->constQp.qpInterB = (uint32_t)update.constQpInterB;
+        }
+        // THE QP CLAMPS NEED A SECOND STEP, and this is the difference
+        // between them and the triple above. Writing minQp/minQpSet moves
+        // only the REQUEST; what a command carries is the codec
+        // rate-control layer struct, filled from that request once, at
+        // codec-init, by EncoderConfig::GetRateControlParameters. Without
+        // re-invoking that fill the write here would be a config field
+        // read by nobody -- a change that returns VK_SUCCESS and alters
+        // nothing, which is the exact defect being removed.
+        //
+        // ZERO CLEARS THE CLAMP rather than requesting QP 0. That is the
+        // reading InitializeExt gives an explicit zero, and the ext
+        // refuses a clamp change on the one mode where the fill would
+        // ignore it (DISABLED, which sources its clamp from the
+        // quality-level constant QP instead) and on the one codec that
+        // has no QP-unit clamp at all (AV1).
+        const bool clampChanged = (update.minQp >= 0) || (update.maxQp >= 0);
+        if (update.minQp >= 0) {
+            m_encoderConfig->minQp    = (update.minQp > 0) ? update.minQp : -1;
+            m_encoderConfig->minQpSet = (update.minQp > 0) ? 1u : 0u;
+        }
+        if (update.maxQp >= 0) {
+            m_encoderConfig->maxQp    = (update.maxQp > 0) ? update.maxQp : -1;
+            m_encoderConfig->maxQpSet = (update.maxQp > 0) ? 1u : 0u;
+        }
+        if (clampChanged) {
+            // THE FILL IS NOT SIDE-EFFECT FREE on the live layer: it
+            // rewrites layer[0] bitrate and frame rate from the CONFIG,
+            // which still holds the values the session was built with.
+            // Left alone that would silently revert every bitrate and
+            // frame-rate change a previous Reconfigure had already put in
+            // force -- and the frame rate would not even be repaired by
+            // the loop below, which leaves the frame rate alone when the
+            // update names none. Snapshot and restore, so the refresh can
+            // only affect what it is here for.
+            const uint64_t liveAverageBitrate =
+                m_rateControlLayersInfo[0].averageBitrate;
+            const uint64_t liveMaxBitrate =
+                m_rateControlLayersInfo[0].maxBitrate;
+            const uint32_t liveFrameRateNum =
+                m_rateControlLayersInfo[0].frameRateNumerator;
+            const uint32_t liveFrameRateDen =
+                m_rateControlLayersInfo[0].frameRateDenominator;
+            RefreshCodecRateControlParameters();
+            m_codecRateControlRefreshCount++;
+            m_rateControlLayersInfo[0].averageBitrate = liveAverageBitrate;
+            m_rateControlLayersInfo[0].maxBitrate = liveMaxBitrate;
+            m_rateControlLayersInfo[0].frameRateNumerator = liveFrameRateNum;
+            m_rateControlLayersInfo[0].frameRateDenominator = liveFrameRateDen;
+        }
+    }
+    // AFTER the refresh, so the values this update carries are the last
+    // word on the layer whatever the fill recomputed.
     for (uint32_t i = 0; i < ARRAYSIZE(m_rateControlLayersInfo); i++) {
         m_rateControlLayersInfo[i].averageBitrate = update.averageBitrate;
         m_rateControlLayersInfo[i].maxBitrate = update.maxBitrate;
@@ -81,7 +262,10 @@ void VkVideoEncoder::ApplyPendingRateControlUpdate()
         }
     }
     // The next frame-record emits VK_VIDEO_CODING_CONTROL_ENCODE_RATE_CONTROL
-    // with the refreshed values (the consume immediately follows this call).
+    // with the refreshed values. From the HandleCtrlCmd call site the consume
+    // immediately follows this call; from the EncodeFrameCommon call site it
+    // is the SAME frame's record, reached further down the same function.
+    // Either way the flag is a member, so nothing is lost in between.
     m_sendRateControlCmd = true;
 }
 
@@ -353,6 +537,22 @@ VkResult VkVideoEncoder::StageInputFrameQpMap(VkSharedBaseObj<VkVideoEncodeFrame
 
 VkResult VkVideoEncoder::EncodeFrameCommon(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
 {
+    // BEFORE THE COPY BELOW, and that ordering is the whole point of
+    // this call site. The constant-QP triple does not ride a control
+    // command: the codec reads the per-frame copy taken on the next
+    // line, and EncodeFrame() has already run by the time HandleCtrlCmd()
+    // folds a queued update further down. Folding only there left
+    // constQpI/P/B landing one frame LATE while the six other fields
+    // Reconfigure carries landed on the frame it preceded -- the
+    // interface promises the NEXT ENCODED FRAME for all seven.
+    //
+    // The fold in HandleCtrlCmd stays rather than moving here. One armed
+    // flag must keep ONE consumer: ApplyPendingRateControlUpdate()
+    // early-returns when nothing is armed, so this call is a no-op for
+    // every frame that has no update waiting, and splitting the fold
+    // into conditional halves would break the merge-and-clear invariant
+    // RequestRateControlUpdate() depends on.
+    ApplyPendingRateControlUpdate();
     encodeFrameInfo->constQp = m_encoderConfig->constQp;
 
     // A per-frame quantizer replaces the session's constant QP for this frame
@@ -2848,42 +3048,16 @@ void VkVideoEncoder::ReleaseAssemblyItem(AssemblyWorkItem& item)
 }
 
 #ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
-// Which conversion the preprocess compute filter has to perform, derived from
-// the two formats the filter sits between: the format frames ARRIVE in and
-// the format the device accepts as an encode source.
-//
-// CONTEXT_DESIGN:594-598 makes the mechanism choice the LIBRARY's -- "query
-// the device first, use hardware if it exists, compute if it does not" -- and
-// this is the second half of that: once the answer is "compute", something
-// still has to say WHICH compute. Until now nothing did.
-// EncoderConfig::filterType was initialised to YCBCRCOPY and assigned nowhere
-// outside TestCases.cpp (DEVICE_INDEPENDENCE_PLAN:253-256), which is why
-// enabling the filter without plumbing it yields a copy rather than a
-// conversion.
-//
-// NOTE, honestly: no document in the corpus states this mapping. The values
-// are enumerated (GLSLANG:384) and the obligation to assign one is stated,
-// but which value belongs to which format pair is a choice made here. The
-// reasoning is the filter's own contract, from VulkanFilterYuvCompute.h:
-// YCBCRCOPY is the compute-based copy that performs format, plane-count and
-// bit-depth conversion between two YCbCr formats -- explicitly contrasted
-// there with the XFER_* transfer modes, which "must have matching plane
-// counts". A 3-plane I420 source and a 2-plane NV12 destination is exactly
-// that contrast, so it is YCBCRCOPY and not a transfer.
 // Map the RESOLVED sampler model to the primaries-constant selector.
 //
-// FILE-LOCAL, AND THAT IS A FINDING RATHER THAN A PREFERENCE.
-// nvidia_utils/vulkan/ycbcr_utils.h ships exactly this mapping as
-// VkYcbcrModelToYcbcrBtStandard() and its own comment says "Use this function
-// instead of implementing local switch statements to ensure consistency" --
-// but the function sits behind `#ifdef
+// File-local. nvidia_utils/vulkan/ycbcr_utils.h ships this mapping as
+// VkYcbcrModelToYcbcrBtStandard(), but that function sits behind `#ifdef
 // VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709`, which names an ENUMERATOR and
-// never a macro, so the block has never been compiled in any translation unit.
-// The two existing users both carry their own copy for the same reason
+// never a macro, so the block compiles in no translation unit. The other
+// users carry their own copy for the same reason
 // (common/libs/VkCodecUtils/pattern.cpp and VulkanFilterYuvCompute.cpp, both
-// spelled GetYcbcrPrimariesConstantsId). Un-gating the header is not done here
-// because ycbcr_utils.h deliberately includes no Vulkan header, so making that
-// block live would impose one on every includer; it is recorded instead.
+// spelled GetYcbcrPrimariesConstantsId). Un-gating the header would impose a
+// Vulkan header on every includer, which ycbcr_utils.h deliberately avoids.
 //
 // The input is the model this file already RESOLVED, never
 // matrix_coefficients, so the constants and the model cannot name different
@@ -2900,6 +3074,7 @@ static YcbcrBtStandard VkEncModelToBtStandard(
     // Unreachable: ResolveRgbToYcbcrMatrix only ever emits the three above.
     return YcbcrBtStandardBt709;
 }
+
 #endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
 
 VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConfig)
@@ -3975,14 +4150,14 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         // parameters below are meaningful for exactly one of them.
         //
         // The mechanism choice belongs inside the library, where the device
-        // capabilities are known, rather than in the embedder
-        // (CONTEXT_DESIGN:594-598). m_imageInFormat is not assumed here: it
+        // capabilities are known, rather than in the embedder.
+        // m_imageInFormat is not assumed here: it
         // was read out of vkGetPhysicalDeviceVideoFormatPropertiesKHR above,
         // so a future device that accepts something other than NV12 as an
         // encode source changes this derivation without changing a line.
         //
-        // MOVED UP from immediately above the Create() call, and it had to
-        // be: the matrix contract below REFUSES some code points, and
+        // It is decided here rather than at the Create() call below because
+        // the matrix contract in between REFUSES some code points, and
         // refusing them on a YCbCr->YCbCr copy -- which applies no matrix at
         // all -- would reject configurations that are entirely correct.
         encoderConfig->filterType =
@@ -4009,13 +4184,12 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         // the bitstream will advertise: deriving from them makes the conversion
         // and the advertisement agree by construction rather than by luck.
         //
-        // WHAT REPLACED THE FALLBACK. The paragraph that used to sit here
-        // argued that unexpressible matrix values should fall back to BT.709
-        // "announced, because silently substituting a matrix is how this
-        // class of bug is born". Announcing it was not enough: the
-        // substitution applied to the FILTER only and left
-        // matrix_coefficients naming the matrix that was NOT applied, on the
-        // success path. EncoderConfig::ResolveRgbToYcbcrMatrix() decides now,
+        // WHY THERE IS NO FALLBACK. Falling back to BT.709 for an unexpressible
+        // matrix value, even announced -- on the argument that silently substituting
+        // a matrix is how this class of bug is born -- is not enough: the
+        // substitution applies to the FILTER only and leaves matrix_coefficients
+        // naming the matrix that was NOT applied, on the
+        // success path. EncoderConfig::ResolveRgbToYcbcrMatrix() decides instead,
         // and it either honours the label, DERIVES one when none was
         // named, or refuses -- never diverges. The per-code-point contract
         // (CC-1) and its reasons live with that function.
@@ -4117,14 +4291,9 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         // Enable row/column replication
         filterFlags |= VulkanFilterYuvCompute::FLAG_ENABLE_ROW_COLUMN_REPLICATION_ALL;
 
-        // The mechanism choice belongs inside the library, where the device
-        // capabilities are known, rather than in the embedder
-        // (CONTEXT_DESIGN:594-598). m_imageInFormat is not assumed here: it
-        // was read out of vkGetPhysicalDeviceVideoFormatPropertiesKHR above,
-        // so a future device that accepts something other than NV12 as an
-        // (encoderConfig->filterType is derived at the top of this block,
+        // encoderConfig->filterType is derived at the top of this block,
         // ahead of the colour parameters: the matrix contract there is scoped
-        // to RGBA2YCBCR and needs the answer before it can be applied.)
+        // to RGBA2YCBCR and needs the answer before it can be applied.
 
         result = VulkanFilterYuvCompute::Create(m_vkDevCtx,
                                                 m_vkDevCtx->GetComputeQueueFamilyIdx(),
@@ -6540,19 +6709,29 @@ VkResult VkVideoEncoder::PushOrderedFrames()
                 result = ProcessOutOfOrderFrames(m_lastDeferredFrame, m_numDeferredFrames);
             }
             if (result != VK_SUCCESS) {
-                // The frames are given away immediately below whether the
-                // push succeeded or not, so this counter is the trace the
-                // drain reads afterwards. Counted here because every push --
-                // the per-frame ones the enqueue makes and the final one the
-                // drain makes -- arrives through this single path.
+                // The deferred chain is emptied immediately below whether
+                // the push succeeded or not -- released there when the frames
+                // never reached the assembly workers, and by the worker that
+                // finishes each frame when they did -- so no part of the
+                // failure survives in the frames themselves and this counter
+                // is the trace the drain reads afterwards. Counted here
+                // because every push -- the per-frame ones the enqueue makes
+                // and the final one the drain makes -- arrives through this
+                // single path.
                 m_frameProcessingErrorCount++;
             }
-            if (m_asyncAssemblyEnabled) {
-                m_lastDeferredFrame = nullptr;
-            } else {
-                VkVideoEncodeFrameInfo::ResetAndReleaseFrames(m_lastDeferredFrame);
-                assert(m_lastDeferredFrame == nullptr);
-            }
+            // Whatever is still on the deferred chain is still the
+            // encoder's: QueueFramesForAssembly removes the frames it hands
+            // to the assembly workers, and each of those is released by the
+            // worker that finishes it. What is left never reached the workers
+            // -- a record or submit failure fails ahead of the hand-off, and
+            // the synchronous path does not hand over at all -- and is still
+            // holding its images, bitstream buffer and command buffers. Frame
+            // nodes come from a pool and run no destructor when the last
+            // reference to one drops, so releasing those resources has to be
+            // explicit or they stay pinned inside the pooled node.
+            VkVideoEncodeFrameInfo::ResetAndReleaseFrames(m_lastDeferredFrame);
+            assert(m_lastDeferredFrame == nullptr);
         }
         m_numDeferredFrames = 0;
         m_numDeferredRefFrames = 0;

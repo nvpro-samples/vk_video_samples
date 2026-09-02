@@ -79,6 +79,12 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
                   << ", numRefL1: "    << (uint32_t)m_encoderConfig->numRefL1 << std::endl;
     }
 
+    // The device QP window; see the H.264 counterpart. InitEncoder above
+    // is what runs EncoderConfigH265::InitDeviceCapabilities, so the
+    // capabilities are populated by here.
+    m_deviceQpWindowMin = m_encoderConfig->h265EncodeCapabilities.minQp;
+    m_deviceQpWindowMax = m_encoderConfig->h265EncodeCapabilities.maxQp;
+
     m_encoderConfig->GetRateControlParameters(&m_rateControlInfo, m_rateControlLayersInfo, &m_rateControlInfoH265, m_rateControlLayersInfoH265);
 
     m_encoderConfig->InitParamameters(&m_vps, &m_sps, &m_pps,
@@ -651,6 +657,48 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     pFrameInfo->stdPictureInfo.TemporalId = 0;
 
     return result;
+}
+
+void VkVideoEncoderH265::RefreshCodecRateControlParameters()
+{
+    // Through the base config pointer, for the reason spelled out on the
+    // H.264 counterpart: that is the pointer
+    // ApplyPendingRateControlUpdate just wrote the clamp on.
+    if (!VkVideoEncoder::m_encoderConfig) {
+        return;
+    }
+    EncoderConfigH265* config =
+        VkVideoEncoder::m_encoderConfig->GetEncoderConfigh265();
+    if (config == nullptr) {
+        return;
+    }
+    // Reset to the codec-init state first; see the H.264 counterpart. The
+    // fill raises useMinQp/useMaxQp and never lowers them, so re-invoking
+    // it in place could not clear a clamp that had once been set.
+    for (uint32_t layerIndx = 0;
+         layerIndx < ARRAYSIZE(m_rateControlLayersInfoH265);
+         layerIndx++) {
+        m_rateControlLayersInfoH265[layerIndx] =
+            VkVideoEncodeH265RateControlLayerInfoKHR{
+                VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR};
+    }
+    config->GetRateControlParameters(&m_rateControlInfo,
+                                     m_rateControlLayersInfo,
+                                     &m_rateControlInfoH265,
+                                     m_rateControlLayersInfoH265);
+}
+
+void VkVideoEncoderH265::GetResolvedQpClampForTest(uint32_t* pUseMinQp,
+                                                   int32_t*  pMinQpI,
+                                                   uint32_t* pUseMaxQp,
+                                                   int32_t*  pMaxQpI) const
+{
+    const VkVideoEncodeH265RateControlLayerInfoKHR& layer =
+        m_rateControlLayersInfoH265[0];
+    *pUseMinQp = (layer.useMinQp == VK_TRUE) ? 1u : 0u;
+    *pMinQpI   = layer.minQp.qpI;
+    *pUseMaxQp = (layer.useMaxQp == VK_TRUE) ? 1u : 0u;
+    *pMaxQpI   = layer.maxQp.qpI;
 }
 
 VkResult VkVideoEncoderH265::CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)

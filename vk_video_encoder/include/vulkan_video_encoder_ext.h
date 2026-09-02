@@ -796,6 +796,16 @@ typedef struct VkVideoEncoderExternalImageDescriptor {
     // VkVideoEncoderFrameSubmitInfo::currentLayout, rather than infer it from
     // what was declared here.
     //
+    // TO SEE WHAT THE LIBRARY ACTUALLY NAMED, set VKENC_DEBUG_LAYOUT in the
+    // environment and the library traces the layouts it puts in its
+    // barriers. DIAGNOSTIC ONLY, and deliberately so: it is the only way to
+    // observe the two answers this contract has just declined to specify --
+    // which layout is substituted for UNDEFINED, and where the image is
+    // left between frames -- and observing them does not turn either into a
+    // promise. Do not branch on what it reports. It writes to stderr
+    // directly, so unlike the library's other diagnostics it is NOT
+    // suppressed by silenceStdio.
+    //
     // WHEN THIS FIELD STOPS BEING READ. On the STAGED path the library moved
     // the image itself, so from the second frame on it names its own record
     // instead: a declaration that was true once does not have to be kept true
@@ -1481,7 +1491,26 @@ struct VkVideoEncoderConfig {
     uint32_t maxBitrate;        // bits/sec (VBR)
     uint32_t vbvBufferSize;     // bits (0 = default)
 
-    // Constant QP (when rateControlMode == DISABLED)
+    // Constant quantizer for I, P and B pictures, applied when
+    // rateControlMode is DISABLED. -1 means "this config does not name that
+    // quantizer" and leaves it to the library, which resolves P from I and B
+    // from P.
+    //
+    // UNITS ARE THE CODEC'S OWN, AND THE RANGE FOLLOWS THE UNIT:
+    //
+    //     H.264 / H.265   a QP,               0 .. 51
+    //     AV1             a quantizer index,  0 .. 255
+    //
+    // A value ABOVE the codec's maximum is REFUSED, with
+    // VK_ERROR_INITIALIZATION_FAILED and a message on the error stream
+    // naming the field, the value and the range. It is not clamped, not
+    // reinterpreted and not truncated. Both entry points enforce this:
+    // InitializeExt() and Reconfigure(). 52 is therefore a legal AV1
+    // quantizer index and a refused H.26x QP -- one range does not serve
+    // both codecs, and a caller that computes these values has to know which
+    // codec it is configuring.
+    //
+    // 0 is legal on every codec and is carried as given.
     int32_t constQpI;
     int32_t constQpP;
     int32_t constQpB;
@@ -2498,15 +2527,13 @@ public:
     //     library's own first, and the release point is the completion of
     //     that staging copy, which is earlier than the encode.
     //
-    // THIS CALL IS NOT ASYNCHRONOUS. The whole CPU-side encode pipeline
-    // (GOP/DPB bookkeeping, command-buffer recording and the queue
-    // submission) runs INLINE on the calling thread before it returns:
-    // budget for a full CPU-side encode issue, not an enqueue. It does not
-    // block on capacity -- a full queue is refused up front as VK_NOT_READY,
-    // before any state changes, never a condition-variable wait. What IS
-    // asynchronous is completion: GPU execution and bitstream capture finish
-    // after the call returns, and the bitstream is retrieved with
-    // AcquireNextEncodedFrame (or GetEncodedFrame). Threading: class (b).
+    // THIS CALL IS NOT ASYNCHRONOUS: the whole CPU-side encode pipeline runs
+    // INLINE on the calling thread before it returns, so budget for a full
+    // CPU-side encode issue rather than an enqueue. It does not block on
+    // capacity -- a full queue is refused up front as VK_NOT_READY, before
+    // any state changes. What IS asynchronous is completion: the bitstream is
+    // retrieved with AcquireNextEncodedFrame (or GetEncodedFrame).
+    // Threading: class (b), below.
     //
     // pStagingCompleteSemaphore [out, optional]: if non-null, receives the
     //   binary semaphore signaled when the staging copy completes. Useful
@@ -2541,14 +2568,13 @@ public:
     // THREADING CONTRACT (whole interface):
     //   (a) session-serial -- one thread, never concurrent with each
     //       other: InitializeExt, Flush, DrainPendingFrames,
-    //       Reconfigure, SetCompletionCallback. ENFORCED from inside
-    //       the completion callback, not just documented: each returns
-    //       VK_ERROR_NOT_PERMITTED_KHR there, because this class
-    //       reaches the worker join and would join the very thread
-    //       invoking the callback. Teardown belongs to the same class
-    //       and has no way to return an error: dropping the LAST
-    //       encoder reference from inside the callback is a diagnosed
-    //       abort rather than a silent self-join or use-after-free.
+    //       Reconfigure, SetCompletionCallback. ENFORCED, not merely
+    //       documented: each returns VK_ERROR_NOT_PERMITTED_KHR when
+    //       called from inside the completion callback. Teardown is in
+    //       the same class and has no way to return an error, so
+    //       dropping the LAST encoder reference from inside the
+    //       callback is a diagnosed abort rather than a silent
+    //       self-join or use-after-free.
     //   (b) submit-thread-affine -- the same thread for the whole session:
     //       SubmitExternalFrame, RegisterImageResource,
     //       SubmitRegisteredFrame, UnregisterImageResource,
@@ -2579,9 +2605,9 @@ public:
     // then ACQUIRED and pBitstreamData stays valid until
     // ReleaseEncodedFrame() for that frameId -- the ONE lifetime rule.
     // Its single carve-out is encoder teardown: the final release of
-    // the encoder object invalidates every outstanding pBitstreamData
-    // (the teardown log names the count still held), so release
-    // delivered frames before dropping the last encoder reference.
+    // the encoder object invalidates every outstanding pBitstreamData,
+    // so release delivered frames before dropping the last encoder
+    // reference.
     // Flush() does NOT invalidate them; nothing else does either.
     // Returns VK_NOT_READY while no undelivered frame has either a capture
     // or an expired deadline.
@@ -2652,10 +2678,9 @@ public:
     // C function pointer -- which is every out-of-process consumer.
     //
     // Returns a handle the caller waits on. The handle is the platform's
-    // own: on Linux, an eventfd. Exactly one platform adapter is compiled
-    // per build, and a platform with no adapter stops the build rather than
-    // shipping a handle nothing signals, so a caller never has to branch on
-    // a handle that exists but is never raised.
+    // own: on Linux, an eventfd. No build ships a handle nothing signals, so
+    // a caller never has to branch on a handle that exists but is never
+    // raised.
     //
     // VK_VIDEO_ENCODER_STATUS_SUCCESS with |*outHandle| set on success;
     // ERROR_HANDLE_TYPE_UNSUPPORTED when the adapter could not create one
@@ -2688,10 +2713,9 @@ public:
     // queue. Its counter reaching (frameId + 1) means the encode GPU work
     // of every external frame submitted with an id <= frameId has retired
     // on the device: the bitstream and reconstruction writes are visible to
-    // device work that waits on it. Signals are coalesced at queue flush
-    // points with the running max, exactly like the input-release timeline
-    // and for the same reason: encode order is not input order under
-    // B-frames, and a timeline may not signal non-monotonically. The +1
+    // device work that waits on it. Signals are COALESCED with the
+    // running maximum, because encode order is not input order under
+    // B-frames and a timeline may not signal non-monotonically. The +1
     // exists because a timeline's initial value is 0 and frame ids may
     // legally start at 0. Consumers of this currency MUST submit
     // monotonically increasing frameIds.
@@ -2830,10 +2854,95 @@ public:
 
     // === Dynamic Reconfiguration ===
 
-    // Change rate control parameters mid-stream without session reset.
-    // Takes effect at the NEXT ENCODED FRAME, not at an IDR boundary: the
-    // update is folded in by HandleCtrlCmd and rides that frame's
-    // ENCODE_RATE_CONTROL command.
+    // Change rate control mid-stream without a session reset. Takes effect at
+    // the NEXT ENCODED FRAME, not at an IDR boundary.
+    //
+    // WHAT IT CHANGES: averageBitrate, maxBitrate, frameRateNum,
+    // frameRateDen, the constant-QP defaults constQpI/constQpP/constQpB,
+    // and the quantizer clamps minQp/maxQp. pNext must be NULL -- a chain
+    // is refused (VK_ERROR_INITIALIZATION_FAILED) -- so a caller that
+    // shares one VkVideoEncoderConfig with InitializeExt must clear pNext
+    // first.
+    //
+    // ZERO IS NOT "LEAVE THIS ALONE" ON THREE OF THOSE FOUR:
+    //   * averageBitrate of 0 FAILS THE WHOLE CALL with
+    //     VK_ERROR_NOT_PERMITTED_KHR, before any of the four is applied, so
+    //     a caller moving only the frame rate must still restate the
+    //     bitrate already in force.
+    //   * maxBitrate of 0 is COERCED TO averageBitrate rather than meaning
+    //     "no cap": a session reconfigured with a zero here comes back
+    //     capped at its own average.
+    //   * frameRateDen of 0 is coerced to 1 when frameRateNum is non-zero.
+    //   * frameRateNum of 0 is the one that does mean "unchanged": the
+    //     frame rate is left as it was and the call still succeeds.
+    //
+    // WHAT IS IMMUTABLE FOR THE LIFE OF THE SESSION, and is REFUSED rather
+    // than ignored when it differs from what InitializeExt was given: codec,
+    // profile, encodeWidth, encodeHeight, inputFormat, inputColorModel,
+    // rateControlMode, colourPrimaries, transferCharacteristics,
+    // inputTransferCharacteristics, matrixCoefficients and videoFullRange.
+    // Each is settled either in the sequence header written once at
+    // InitializeExt or in the input routing the session was built around, so
+    // changing one needs a session re-init. inputColorModel is compared AS IT
+    // RESOLVES against inputFormat: re-spelling the model a format already
+    // carries is accepted, while a declaration resolving to the other model
+    // is not.
+    //
+    // WHAT IS ALSO REFUSED ON A CHANGE -- the encoding parameters this call
+    // cannot carry. Each one is settled at InitializeExt and can reach the
+    // bitstream, so answering VK_SUCCESS to a change would leave the
+    // session encoding one way while the caller believed another:
+    //
+    //   inputWidth and inputHeight -- what the session input conversion was
+    //   built around, the other half of a declaration whose format and
+    //   colour model are refused above.
+    //
+    //   vbvBufferSize -- what a command carries is a VBV duration in
+    //   milliseconds computed from this AND from an initial delay derived
+    //   from the buffer size at init, both against the bitrate at init.
+    //   Moving one of the three alone describes a buffer nobody has.
+    //
+    //   gopLength, consecutiveBFrames, idrPeriod, closedGop -- these drive
+    //   the structure that sequences frame types and DPB references as well
+    //   as rate control, so a half-applied change would tell the driver one
+    //   GOP while the encoder sequenced another.
+    //
+    //   qualityLevel and tuningMode -- baked into the video session
+    //   parameters at creation and into the profile respectively.
+    //
+    // MINQP AND MAXQP ARE APPLIED, with three exceptions that are REFUSED
+    // rather than ignored, because on each of them the value would reach
+    // nothing: on an AV1 session (AV1 rate control is quantizer-index based
+    // and consumes no QP-unit clamp), on a constant-QP session (that mode
+    // takes its quantizer from constQpI/P/B, which this call does carry),
+    // and for a value outside the H.26x range 0..51, an inverted window, or
+    // a value outside the QP window the device reports. A clamp of 0 means
+    // "no clamp", the same reading InitializeExt gives it, so a clamp set
+    // through this call can also be cleared through it.
+    //
+    // WHAT IS NEITHER APPLIED NOR REFUSED. The init-time plumbing and the
+    // diagnostics, which are READ BY NOTHING HERE and answered VK_SUCCESS
+    // whatever they hold:
+    //
+    //   deviceId, gpuUUID, outputPath, verbose, validate, disableFileOutput,
+    //   silenceStdio, externalInstance, externalPhysicalDevice,
+    //   externalDevice, externalEncodeQueueFamilyIndex,
+    //   externalComputeQueueFamilyIndex.
+    //
+    // Not one of them can change an encoded bit, so not one can misdescribe
+    // the stream. Refusing them would buy no correctness and would break a
+    // caller that builds a fresh minimal config for the reconfigure rather
+    // than copying its stored one.
+    //
+    // A CONSTANT-QP SESSION HAS EXACTLY ONE SESSION-LEVEL LEVER HERE, and it
+    // is the constant-QP triple. rateControlMode is immutable, so a session
+    // initialized VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR stays
+    // constant-QP, and the four rate fields land in per-layer state such a
+    // session does not carry -- that mode commands layerCount 0. constQpI,
+    // constQpP and constQpB are applied instead: a NEGATIVE member means the
+    // config names no quantizer and that one is left alone, while 0 is a
+    // valid (lossless) QP and is applied as one. Per-frame,
+    // VkVideoEncoderFrameSubmitInfo::qpOverride still moves the rate as well.
     virtual VkResult Reconfigure(const VkVideoEncoderConfig& config) = 0;
 
     // === Capability Query ===
@@ -2851,19 +2960,15 @@ public:
     // that VK_TRUE says the library routes the format unconverted and does
     // not say this device has an encode profile at that subsampling; the
     // session refuses with the driver's reason when it does not. The rest of
-    // the accepted set -- 12-bit
-    // semi-planar 4:2:0, the 3-plane 4:2:0 set, the 8-bit UNORM RGBA
-    // family, and the packed 4:4:4 layouts AYUV and Y410 under a Y'CbCr
-    // declaration -- is encodable only after the preprocess compute filter
-    // converts it, so those answer VK_TRUE only when THIS SESSION was
-    // configured with that exact input PAIR -- i.e. VK_FALSE before
-    // InitializeExt(), and VK_FALSE on a session declared in some other
-    // format, or in the same format under the other colour model. That
-    // last case is not a corner: AYUV and an ordinary R'G'B' image share
-    // R8G8B8A8_UNORM, and a filter built for one converts nothing for the
-    // other. That is deliberate rather than conservative: a VK_TRUE this
-    // session could not honour would cost the producer the frame pool it
-    // allocated on the strength of it.
+    // the accepted set -- 12-bit semi-planar 4:2:0, the 3-plane 4:2:0 set,
+    // the 8-bit UNORM RGBA family, and the packed 4:4:4 layouts AYUV and Y410
+    // under a Y'CbCr declaration -- is encodable only after conversion, so
+    // those answer VK_TRUE only when THIS SESSION was configured with that
+    // exact input PAIR: VK_FALSE before InitializeExt(), and VK_FALSE on a
+    // session declared in some other format, or in the same format under the
+    // other colour model. That last case is not a corner -- AYUV and an
+    // ordinary R'G'B' image share R8G8B8A8_UNORM, and a session built for one
+    // converts nothing for the other.
     //
     // Consequence for callers: the ANSWER FOR A 3-PLANE FORMAT CHANGES ACROSS
     // InitializeExt(). Query it after initializing the session you intend to
@@ -2902,9 +3007,7 @@ public:
     //
     // So the rule is not "use ours when yours is missing", it is "on a
     // library-owned device, ours is the only entry point with a defined
-    // lifetime": it was dlsym'd out of the handle this context holds open
-    // (see RetainLoaderHandle), so it stays valid exactly as long as the
-    // encoder does.
+    // lifetime": it stays valid exactly as long as the encoder does.
     //
     // Returns nullptr before the device context is brought up. The library
     // owns this; the caller must not unload the loader behind it.
@@ -2923,11 +3026,8 @@ public:
 
     // === Handle exchange ===
 
-    // Import |descriptor| once and return an id naming the result.
-    // Registration IS the cache: the vkCreateImage + vkAllocateMemory(import)
-    // + vkBindImageMemory -- and the view and pool-wrapper creation -- all
-    // happen here, not on the submit path, which is the cost this design
-    // exists to remove.
+    // Import |descriptor| once and return an id naming the result. The import
+    // and every allocation it needs happen here, not on the submit path.
     //
     // The caller owns the key -> id map. The library deliberately does NOT
     // register-if-absent, because that puts allocation back on submit.
@@ -2977,14 +3077,12 @@ public:
         VkVideoEncoderResource* outResource,
         VkVideoEncoderStatus* pStatus = nullptr) = 0;
 
-    // Retire a registration. Deferred and REFCOUNTED, not timeline-driven:
-    // the underlying image is freed only once no submitted frame can still
-    // read it. A timeline-driven eviction either stalls on a device wait --
-    // which this design exists to avoid -- or frees an image the GPU is still
-    // reading, which is the Xid 31 signature.
+    // Retire a registration. Deferred and REFCOUNTED: the underlying image is
+    // freed only once no submitted frame can still read it, and the call does
+    // not stall on a device wait to establish that.
     //
-    // The id is invalid immediately on return; any later use is rejected by
-    // its generation counter rather than dereferenced.
+    // The id is invalid immediately on return; any later use is rejected
+    // rather than dereferenced.
     virtual VkVideoEncoderStatusCode UnregisterImageResource(
         VkVideoEncoderResource resource) = 0;
 
@@ -2993,9 +3091,8 @@ public:
     // allocates, rather than discovering the answer per frame, mid-stream,
     // as a driver error.
     //
-    // This runs the SAME predicate RegisterImageResource runs. A query that
-    // can disagree with the answer is worse than no query, so the two share
-    // one implementation by construction.
+    // It runs the SAME predicate RegisterImageResource runs, so the query and
+    // the registration cannot disagree.
     //
     // |supported| VK_FALSE is never the end of the story: |status| names the
     // reason, and the renegotiable ones (MODIFIER_UNSUPPORTED,
@@ -3049,18 +3146,14 @@ public:
     virtual VkVideoEncoderStatusCode UnregisterSemaphore(
         VkVideoEncoderResource resource) = 0;
 
-    // Submit a frame against a registration. The INPUT costs nothing on this
-    // path: the image, its memory, its view and its pool wrapper were
-    // created once at registration, so this call performs no image import
-    // and allocates no per-input wrapper. (The frame-info node comes from a
-    // bounded, reused pool, and registered semaphores named by id are
-    // resolved, never imported.)
+    // Submit a frame against a registration. This call performs no image
+    // import and allocates nothing for the input: the image, its memory, its
+    // view and its wrapper were created once at registration, and registered
+    // semaphores named by id are resolved rather than imported.
     //
-    // The per-frame fence descriptor is the exception, and only when a
-    // caller chains one: an armed acquireFenceFd is imported into a
-    // library-owned binary semaphore, and a requested release fd creates
-    // one. Both are per-frame Vulkan objects, and both retire with the
-    // frame.
+    // A chained per-frame fence descriptor is the exception: an armed
+    // acquireFenceFd and a requested release fd are per-frame Vulkan objects,
+    // and both retire with the frame.
     //
     // The registration is reference-counted for the lifetime of the submitted
     // frame, so an Unregister racing an in-flight frame defers rather than
@@ -3086,10 +3179,6 @@ public:
     // registration that is not zero-copy, whose wait list is not bounded
     // here. The refusal consumes an acquireFenceFd like
     // every other exit.
-    //
-    // ON REACHABILITY. An embedder whose direct-path wait list is the
-    // acquire fence alone has a wait count of one and never reaches the
-    // bound; one that supplies its own wait list can.
     virtual VkVideoEncoderStatusCode SubmitRegisteredFrame(
         const VkVideoEncoderFrameSubmitInfo& info,
         VkSemaphore* pStagingCompleteSemaphore) = 0;

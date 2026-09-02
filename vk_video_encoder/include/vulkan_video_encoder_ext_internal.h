@@ -1069,6 +1069,114 @@ VkResult VkEncPushCapture(VulkanVideoEncoderExt* encoder,
                           uint64_t frameId,
                           VkResult status);
 
+// MID-STREAM CONSTANT-QP OBSERVATION SEAM.
+//
+// Folds any armed rate-control update and hands back the session
+// CONSTANT-QP defaults that result -- the values EncodeFrameCommon copies
+// into the next frame it processes.
+//
+// WHY THIS IS THE RIGHT OBSERVABLE. A DISABLED-mode session has no other
+// session-level rate lever: the per-layer bitrates a rate-control command
+// carries are dropped outright on such a session, because that mode
+// commands layerCount 0. So the only way to tell a real constant-QP
+// reconfigure from one that merely returned VK_SUCCESS is to read the
+// value the next frame would be encoded with, which is what this reports.
+//
+// Null-backend sessions only (VK_ERROR_NOT_PERMITTED_KHR otherwise), and
+// only once VkEncPushCapture has installed the device-free encoder behind
+// the session. What this CANNOT assert is that the driver then honours the
+// value -- that needs a GPU and a decoded comparison.
+VkResult VkEncApplyAndGetSessionConstQp(VulkanVideoEncoderExt* encoder,
+                                        int32_t* pQpIntra,
+                                        int32_t* pQpInterP,
+                                        int32_t* pQpInterB);
+
+// MID-STREAM RATE-CONTROL OBSERVATION SEAM.
+//
+// Folds any armed update and reports what is IN FORCE afterwards, at the
+// three depths a rate-control change has to survive:
+//
+//   * layer*      -- the live VkVideoEncodeRateControlLayerInfoKHR that
+//                    HandleCtrlCmd copies verbatim into the next control
+//                    command. This is where a maxBitrate of 0 shows up as
+//                    the averageBitrate it was coerced to, and where a
+//                    frameRateNum of 0 shows up as the frame rate that was
+//                    left alone -- the values a caller-visible record of
+//                    the configuration has to agree with.
+//   * config*     -- the session config, where a QP clamp REQUEST lands.
+//   * resolved*   -- the codec rate-control layer struct that request
+//                    resolves to. This is the far end of the library-side
+//                    chain and the struct CodecHandleRateControlCmd chains
+//                    onto the command, so a configMinQp that moved while
+//                    resolvedMinQpI did not is a clamp reaching nothing.
+//
+// codecRefreshCount counts re-invocations of the codec rate-control fill.
+// It separates a real refresh from one that recomputed the same numbers,
+// and it is what lets a test assert the NEGATIVE case: a bitrate-only
+// update must not cause one.
+//
+// Null-backend sessions only (VK_ERROR_NOT_PERMITTED_KHR otherwise), and
+// only once VkEncPushCapture has installed the device-free encoder behind
+// the session. What this CANNOT assert is that the driver then honours any
+// of it -- that needs a GPU and a decoded comparison.
+typedef struct VkEncRateControlObservation {
+    uint64_t layerAverageBitrate;
+    uint64_t layerMaxBitrate;
+    uint32_t layerFrameRateNumerator;
+    uint32_t layerFrameRateDenominator;
+    int32_t  constQpIntra;
+    int32_t  constQpInterP;
+    int32_t  constQpInterB;
+    int32_t  configMinQp;
+    int32_t  configMaxQp;
+    uint32_t configMinQpSet;
+    uint32_t configMaxQpSet;
+    uint32_t resolvedUseMinQp;
+    uint32_t resolvedUseMaxQp;
+    int32_t  resolvedMinQpI;
+    int32_t  resolvedMaxQpI;
+    uint32_t codecRefreshCount;
+} VkEncRateControlObservation;
+
+VkResult VkEncApplyAndGetRateControl(VulkanVideoEncoderExt* encoder,
+                                     VkEncRateControlObservation* pOut);
+
+// THE RECORD Reconfigure COMPARES AGAINST, read back.
+//
+// Reconfigure keeps a copy of the configuration in force and refuses a
+// later call that changes an immutable field, by comparing against this.
+// The copy is also the session's own statement of what it is running,
+// which is only worth anything if it agrees with the live rate-control
+// state above -- and for a coerced maxBitrate or a dropped frame rate it
+// did not. Reading both and comparing them is what makes that assertable
+// rather than a matter of inspection.
+//
+// Null-backend sessions only.
+VkResult VkEncGetRecordedConfig(VulkanVideoEncoderExt* encoder,
+                                VkVideoEncoderConfig* pOut);
+
+// Seed that record directly.
+//
+// A device-free session never runs InitializeExt, so its record is a
+// default-constructed config: codec NONE, rate-control mode DEFAULT.
+// Several of Reconfigure's refusals are keyed on what the session WAS
+// initialized as -- a QP clamp change is refused on an AV1 session and on
+// a constant-QP one -- and without this those branches could only be read,
+// not run. Null-backend sessions only; pNext is cleared, as InitializeExt
+// clears it.
+VkResult VkEncSeedRecordedConfig(VulkanVideoEncoderExt* encoder,
+                                 const VkVideoEncoderConfig* pConfig);
+
+// Declare the device QP window the mid-stream clamp check reads.
+//
+// A real session records it from the codec capabilities in
+// InitEncoderCodec. A device-free one has no capabilities to record, so
+// the window would sit at "not established" and the check would be inert
+// -- untestable rather than merely unexercised. Null-backend sessions
+// only.
+VkResult VkEncSetDeviceQpWindow(VulkanVideoEncoderExt* encoder,
+                                int32_t minQp, int32_t maxQp);
+
 // ---------------------------------------------------------------------------
 // Sync-resolution observation seam.
 //

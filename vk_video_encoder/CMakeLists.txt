@@ -586,6 +586,7 @@ add_subdirectory(test/vulkan-video-enc)
 # Device-free coverage of the ext API's chained-descriptor walk. Links the
 # static encoder archive for the internal header's test seams.
 add_subdirectory(test/encoder-ext-sync)
+add_subdirectory(test/encoder-ext-reconfigure)
 # Real-device coverage of the per-frame RELEASE fence export. Skips (CTest
 # SKIP, exit 77) on a host with no encode-capable GPU.
 # LINUX-ONLY TESTS, guarded individually below.
