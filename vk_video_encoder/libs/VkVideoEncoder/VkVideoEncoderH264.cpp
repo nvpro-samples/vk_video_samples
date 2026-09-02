@@ -58,6 +58,14 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     assert(m_dpb264);
     m_dpb264->DpbSequenceStart(m_maxDpbPicturesCount);
 
+    // The device QP window, recorded where the capabilities are known to
+    // be populated -- InitEncoder above is what runs
+    // EncoderConfigH264::InitDeviceCapabilities. A mid-stream clamp is
+    // checked against this on the caller thread, which cannot safely
+    // reach the config.
+    m_deviceQpWindowMin = m_encoderConfig->h264EncodeCapabilities.minQp;
+    m_deviceQpWindowMax = m_encoderConfig->h264EncodeCapabilities.maxQp;
+
     m_encoderConfig->GetRateControlParameters(&m_rateControlInfo, m_rateControlLayersInfo, &m_h264.m_rateControlInfoH264, m_h264.m_rateControlLayersInfoH264);
 
     m_encoderConfig->InitSpsPpsParameters(&m_h264.m_spsInfo, &m_h264.m_ppsInfo,
@@ -671,6 +679,61 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     }
 
     return VK_SUCCESS;
+}
+
+void VkVideoEncoderH264::RefreshCodecRateControlParameters()
+{
+    // READ THROUGH THE BASE CONFIG POINTER, not the H.264 member. This
+    // runs from VkVideoEncoder::ApplyPendingRateControlUpdate, which just
+    // wrote the new clamp on VkVideoEncoder::m_encoderConfig; reading the
+    // same pointer is what guarantees the fill sees that write. In a
+    // device-initialized session the two name one object anyway --
+    // InitEncoderCodec builds the H.264 member as an aliasing handle on
+    // the very config InitEncoder stores -- so this is the same object by
+    // a route that also holds for a session that never ran
+    // InitEncoderCodec.
+    if (!VkVideoEncoder::m_encoderConfig) {
+        return;
+    }
+    EncoderConfigH264* config =
+        VkVideoEncoder::m_encoderConfig->GetEncoderConfigh264();
+    if (config == nullptr) {
+        return;
+    }
+    // RESET THE LAYER STRUCT TO ITS CODEC-INIT STATE FIRST, because the
+    // fill only ever RAISES useMinQp/useMaxQp -- it has no else branch that
+    // lowers them. At codec-init that is harmless: the struct arrives
+    // zero-initialised but for its sType, so an unset clamp leaves the flag
+    // down. Re-invoked in place it is not: a clamp that was set once and is
+    // then cleared would keep its flag raised and go on clamping at a value
+    // the caller withdrew, which is the accepted-and-ignored shape in
+    // reverse and worse. The brace-init below is the state the constructor
+    // gives this member, and the fill plus CodecHandleRateControlCmd are
+    // its only other writers, so nothing else is lost by rebuilding it.
+    for (uint32_t layerIndx = 0;
+         layerIndx < ARRAYSIZE(m_h264.m_rateControlLayersInfoH264);
+         layerIndx++) {
+        m_h264.m_rateControlLayersInfoH264[layerIndx] =
+            VkVideoEncodeH264RateControlLayerInfoKHR{
+                VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_KHR};
+    }
+    config->GetRateControlParameters(&m_rateControlInfo,
+                                     m_rateControlLayersInfo,
+                                     &m_h264.m_rateControlInfoH264,
+                                     m_h264.m_rateControlLayersInfoH264);
+}
+
+void VkVideoEncoderH264::GetResolvedQpClampForTest(uint32_t* pUseMinQp,
+                                                   int32_t*  pMinQpI,
+                                                   uint32_t* pUseMaxQp,
+                                                   int32_t*  pMaxQpI) const
+{
+    const VkVideoEncodeH264RateControlLayerInfoKHR& layer =
+        m_h264.m_rateControlLayersInfoH264[0];
+    *pUseMinQp = (layer.useMinQp == VK_TRUE) ? 1u : 0u;
+    *pMinQpI   = layer.minQp.qpI;
+    *pUseMaxQp = (layer.useMaxQp == VK_TRUE) ? 1u : 0u;
+    *pMaxQpI   = layer.maxQp.qpI;
 }
 
 VkResult VkVideoEncoderH264::CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)

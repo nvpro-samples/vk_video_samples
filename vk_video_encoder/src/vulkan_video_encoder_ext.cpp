@@ -64,6 +64,11 @@ VK_USE_PLATFORM_WIN32_KHR."
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
 #include "VkVideoEncoder/VkVideoEncoder.h"
+// The device-free capture backend below stands in for a real session
+// by BEING one of the codec encoders rather than imitating it, so the
+// H.264 arm of the mid-stream rate-control refresh is the code a test
+// drives, not a second copy of it.
+#include "VkVideoEncoder/VkVideoEncoderH264.h"
 // YcbcrVkFormatInfo() / GetBitsPerChannel() -- used to derive the input bit depth,
 // chroma subsampling and plane count from VkVideoEncoderConfig::inputFormat.
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
@@ -281,6 +286,17 @@ public:
                                                        VkEncResourceProbe*);
     friend VkBool32 VkEncSessionInitialized(VulkanVideoEncoderExt*);
     friend void VkEncFireCompletionEdge(VulkanVideoEncoderExt*, uint64_t);
+    friend VkResult VkEncApplyAndGetSessionConstQp(VulkanVideoEncoderExt*,
+                                                   int32_t*, int32_t*,
+                                                   int32_t*);
+    friend VkResult VkEncApplyAndGetRateControl(
+        VulkanVideoEncoderExt*, VkEncRateControlObservation*);
+    friend VkResult VkEncGetRecordedConfig(VulkanVideoEncoderExt*,
+                                           VkVideoEncoderConfig*);
+    friend VkResult VkEncSeedRecordedConfig(VulkanVideoEncoderExt*,
+                                            const VkVideoEncoderConfig*);
+    friend VkResult VkEncSetDeviceQpWindow(VulkanVideoEncoderExt*,
+                                           int32_t, int32_t);
     friend VkResult VkEncPushCapture(VulkanVideoEncoderExt*, uint64_t,
                                      VkResult);
     friend VkResult VkEncInstallTestSemaphore(VulkanVideoEncoderExt*,
@@ -983,6 +999,76 @@ VkResult VkEncBuildEncoderConfig(const VkVideoEncoderConfig& extConfig,
                                  VkSharedBaseObj<EncoderConfig>& outConfig,
                                  uint32_t requestedEncodeBitDepth = 0);
 
+// The quantizer range |codecOp| admits, in the units the caller states
+// constQpI/P/B in.
+//
+// CODEC-DEPENDENT BECAUSE THE UNIT IS. H.264 and H.265 carry a QP on 0..51.
+// AV1 has no QP at all: it carries a quantizer INDEX on 0..255. 52 is a
+// legal AV1 quantizer index and an illegal H.26x QP, so one range applied to
+// both would either refuse three quarters of the AV1 scale or admit an H.26x
+// value the codec has no syntax for.
+static int32_t VkEncMaxConstQpForCodec(VkVideoCodecOperationFlagBitsKHR codecOp)
+{
+    return (codecOp == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) ? 255 : 51;
+}
+
+// Refuse a constant quantizer the codec cannot express, instead of letting it
+// wrap.
+//
+// WHY THE REFUSAL IS HERE AND NOT WHERE THE VALUE BREAKS. Nothing between
+// this boundary and the bitstream narrows it: the ext fields are int32_t,
+// ConstQpSettings holds uint32_t (VkVideoEncoderDef.h), and the single
+// narrowing is the (uint8_t) cast in VkVideoEncoderAV1::EncodeFrame that
+// writes pictureInfo.constantQIndex and, from it, stdQuantInfo.base_q_idx.
+// So an out-of-range value was refused nowhere -- it was TRUNCATED there,
+// modulo 256, with VK_SUCCESS answered to the caller and no diagnostic
+// anywhere: constQpI 300 encoded at quantizer index 44. A value silently
+// accepted and altered is the same defect as a VK_SUCCESS that changes
+// nothing, and it is worse for being invisible at the call that caused it.
+//
+// NEGATIVE IS NOT OUT OF RANGE. It is this API's spelling of "this config
+// names no quantizer", read that way on both entry paths, so it is left to
+// them; only an upper bound is enforced here.
+//
+// THE DEVICE'S OWN QUANTIZER WINDOW IS NOT CONSULTED, and reusing the one
+// this library already records would not have covered the defect. That
+// window (VkVideoEncoder::m_deviceQpWindowMin/Max, checked in
+// RequestRateControlUpdate) is written only by the H.264 and H.265 arms at
+// codec init, from h26xEncodeCapabilities.minQp/maxQp. The AV1 arm never
+// writes it, so it reads 0 and the guard keyed on it is inert on exactly the
+// codec whose scale wraps. AV1 device limits do exist, but in the other unit
+// and on another object (EncoderConfigAV1::minQIndex/maxQIndex). This is the
+// SYNTACTIC range, refused device-free; the device window stays the later
+// and separate gate it already was.
+static VkResult VkEncValidateConstQpRange(
+    int32_t constQpI, int32_t constQpP, int32_t constQpB,
+    VkVideoCodecOperationFlagBitsKHR codecOp, const char* where)
+{
+    const int32_t maxQuantizer = VkEncMaxConstQpForCodec(codecOp);
+    const struct {
+        const char* name;
+        int32_t     value;
+    } named[] = {
+        {"constQpI", constQpI},
+        {"constQpP", constQpP},
+        {"constQpB", constQpB},
+    };
+    for (const auto& quantizer : named) {
+        if (quantizer.value > maxQuantizer) {
+            VkEncErr() << "[EncoderExt] " << where << quantizer.name << " "
+                       << quantizer.value << " is outside the "
+                       << ((codecOp ==
+                            VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR)
+                               ? "AV1 quantizer-index range 0..255"
+                               : "H.26x QP range 0..51")
+                       << ". The unit is the codec's own, and the value is "
+                          "refused rather than truncated." << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+    return VK_SUCCESS;
+}
+
 VkResult VulkanVideoEncoderExtImpl::BuildEncoderConfig(
     const VkVideoEncoderConfig& extConfig,
     VkVideoCodecOperationFlagBitsKHR codecOp,
@@ -1638,6 +1724,20 @@ VkResult VkEncBuildEncoderConfig(
                        << (uint32_t)extConfig.tuningMode << std::endl;
             return VK_ERROR_INITIALIZATION_FAILED;
     }
+    // THE CONSTANT QUANTIZERS, RANGE-CHECKED BEFORE ANYTHING READS THEM.
+    //
+    // Checked on every session and not only a constant-QP one. The three
+    // fields are the caller's statement in the codec's own units whatever
+    // the rate-control mode; Reconfigure records and applies them whatever
+    // the mode; and a rule that held only under DISABLED would be a second
+    // contract for the same three fields, which the header would then have
+    // to state twice.
+    result = VkEncValidateConstQpRange(extConfig.constQpI, extConfig.constQpP,
+                                       extConfig.constQpB, codecOp, "");
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+
     // Constant-QP (DISABLED) when requested explicitly or when lossless.
     const bool lossless   =
         (extConfig.tuningMode == VK_VIDEO_ENCODE_TUNING_MODE_LOSSLESS_KHR);
@@ -1649,21 +1749,51 @@ VkResult VkEncBuildEncoderConfig(
         cfg->rateControlMode = VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR;
         // THE DEFAULT IS CODEC-DEPENDENT because the UNIT is. For H.264/H.265
         // this field is a QP on 0..51 and 26 is mid-range. AV1 has no QP: the
-        // value lands in base_q_idx verbatim (VkVideoEncoderAV1.cpp:539,
-        // :553) on a 0..255 quantizer-index scale, where 26 is libaom
-        // quantizer 7 of 63 -- near-lossless, and a bitrate to match.
+        // value lands in base_q_idx verbatim -- VkVideoEncoderAV1::EncodeFrame
+        // writes pictureInfo.constantQIndex from the resolved constQp and
+        // stdQuantInfo.base_q_idx from that -- on a 0..255 quantizer-index
+        // scale, where 26 is libaom quantizer 7 of 63: near-lossless, and a
+        // bitrate to match.
+        //
+        // CITED BY FUNCTION AND SYMBOL, not by line. Line references here drift --
+        // onto picOrderCntVal arithmetic and srcPictureResource setup, in the two
+        // cases this paragraph would otherwise carry -- so a reader who follows one
+        // finds no quantizer at all and concludes the value never reaches the
+        // bitstream. A symbol survives the edits a line number does not.
         //
         // So when the caller specified NOTHING for an AV1 session, leave the
-        // qindices unset rather than inventing one here. VkEncoderConfigAV1
-        // then substitutes the driver's own preferredConstantQIndex triple
-        // (VkEncoderConfigAV1.cpp:304-311) -- the only AV1-aware default
-        // available at this layer. That substitution is precisely what
-        // constQpSet suppresses, so this arm must NOT set it.
+        // qindices unset rather than inventing one here.
+        // EncoderConfigAV1::InitDeviceCapabilities then substitutes the
+        // driver's own preferredConstantQIndex triple -- the only AV1-aware
+        // default available at this layer. That substitution is guarded on
+        // constQpSet, which is precisely what this arm must NOT set.
         //
-        // Every other case keeps the established semantics: an explicit QP is
-        // honoured including 0, lossless resolves to 0, P inherits I, B
-        // inherits P, and constQpSet marks the result fully resolved so the
-        // driver substitution stays out.
+        // Every other case keeps the established semantics: an explicit
+        // quantizer is RESOLVED AND CARRIED including 0, lossless resolves to
+        // 0, P inherits I, B inherits P, and constQpSet marks the result
+        // fully resolved so the substitution above stays out.
+        //
+        // THAT IS A LIBRARY GUARANTEE AND IT STOPS AT THE DRIVER. What this
+        // arm promises is that the quantizer the caller named is the one the
+        // library resolves, records and hands down -- NOT that it is the one
+        // the bitstream comes back carrying. On AV1 with driver 620.18 the
+        // two part company at exactly one value: an explicit 0 reads back
+        // base_q_idx 114 on KEY and 131 on INTER, which is the same pair a
+        // session that named nothing at all receives. The driver is treating
+        // base_q_idx 0 as unspecified and substituting its own preference; 1
+        // is honoured exactly.
+        //
+        // 0 IS NEITHER NORMALISED NOR REFUSED HERE. It is a legal AV1
+        // quantizer index -- the lossless one -- it is what the LOSSLESS
+        // tuning mode resolves to a few lines below, and a consumer already
+        // asserts it survives this binder unchanged. Rewriting it to suit a
+        // driver that does not honour it would be the silent alteration the
+        // range check above exists to remove, and would ratify the driver
+        // behaviour in the library's own contract. The consequence worth
+        // knowing is that AV1 lossless requested this way does not come back
+        // lossless on that driver. That is a driver-side deviation, and not
+        // one this layer can correct by sending a value other than the one it
+        // was given.
         const bool isAv1 =
             (extConfig.codec == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR);
         const bool av1QIndexUnspecified =
@@ -5516,6 +5646,8 @@ VkResult VulkanVideoEncoderExtImpl::Reconfigure(const VkVideoEncoderConfig& conf
         {"encodeHeight",    config.encodeHeight != m_initConfig.encodeHeight},
         {"inputFormat",     config.inputFormat != m_initConfig.inputFormat},
         {"inputColorModel", newColorModel != initColorModel},
+        {"inputWidth",      config.inputWidth != m_initConfig.inputWidth},
+        {"inputHeight",     config.inputHeight != m_initConfig.inputHeight},
         {"rateControlMode", config.rateControlMode != m_initConfig.rateControlMode},
         {"colourPrimaries",
          config.colourPrimaries != m_initConfig.colourPrimaries},
@@ -5540,18 +5672,261 @@ VkResult VulkanVideoEncoderExtImpl::Reconfigure(const VkVideoEncoderConfig& conf
         }
     }
 
+    // THE ENCODING LEVERS -- the same contract, applied to the fields that
+    // reach the BITSTREAM rather than the sequence header. Each one below is
+    // settled at InitializeExt and can change how the stream is encoded: the
+    // rate-control levers (vbvBufferSize, minQp, maxQp),
+    // the GOP structure the session sequences to (gopLength,
+    // consecutiveBFrames, idrPeriod, closedGop) and the encode-quality
+    // controls (qualityLevel, tuningMode). NONE of them is carried by the
+    // ENCODE_RATE_CONTROL command this call emits -- that command carries
+    // averageBitrate, maxBitrate and the frame rate, and nothing else -- so
+    // answering VK_SUCCESS to a change would leave the encoder using the
+    // value it was built with while the caller believed otherwise. That is
+    // the stream-encoded-one-way-and-described-another shape the comment
+    // above forbids, so they are REFUSED.
+    //
+    // Compared against the init config and refused only on a CHANGE, exactly
+    // as the group above is. That is what keeps a caller working when it hands
+    // back a WHOLE config rather than a minimal one -- whether it retains a
+    // baseline and edits the rate fields in place, or copies the init config
+    // and edits a couple. Neither shape touches a field below, so neither
+    // sees a new refusal.
+    //
+    // constQpI/P/B ARE NOT HERE, because they are APPLIED rather than
+    // refused -- see the RequestRateControlUpdate call below. They are the
+    // one lever a DISABLED (constant-QP) session actually has: the four
+    // fields this call already carried land in m_rateControlLayersInfo, which
+    // VkVideoEncoder drops entirely (pLayers null, layerCount 0) whenever the
+    // mode is DISABLED, and the mode is itself immutable -- so before that
+    // change Reconfigure answered VK_SUCCESS while changing nothing whatever
+    // on exactly the sessions with the least other recourse. Applying is
+    // cheap because the per-frame path already exists: EncodeFrameCommon
+    // copies m_encoderConfig->constQp into every frame unconditionally, so
+    // updating the config on the encoder thread is the whole of it.
+    //
+    // minQp AND maxQp ARE NOT HERE EITHER, for a reason that corrects the
+    // note this replaces. They do reach the driver only through the
+    // CODEC-SPECIFIC rate-control structs; what is not true is that those
+    // structs are welded to session-parameter creation. The fill that
+    // produces them, EncoderConfig::GetRateControlParameters, is a pure
+    // function of config state -- VkEncBuildAndProbeConfig in this same file
+    // already calls it a second time, on a fresh config, with no device
+    // anywhere -- and CodecHandleRateControlCmd copies its output into the
+    // frame and chains it onto EVERY ENCODE_RATE_CONTROL command, not just
+    // the first. So the fill can be re-invoked on the encoder thread and the
+    // result rides the very command this call already causes. That
+    // re-invocation is VkVideoEncoder::RefreshCodecRateControlParameters,
+    // and the three cases where it would carry nothing are refused below
+    // rather than answered VK_SUCCESS.
+    //
+    // WHY vbvBufferSize IS STILL REFUSED, which is not the same reason. It
+    // is not an independent input to that fill. What the command carries is
+    // virtualBufferSizeInMs, computed as vbvBufferSize * 1000 / hrdBitrate
+    // and paired with initialVirtualBufferSizeInMs, computed the same way
+    // from vbvInitialDelay -- and vbvInitialDelay is DERIVED FROM THE OLD
+    // vbvBufferSize, once, inside the codec InitRateControl finalize step
+    // that this call does not re-run. Both divide by the config hrdBitrate,
+    // which a bitrate change deliberately does not update: the new bitrate
+    // lands on the rate-control LAYER, leaving the config holding the
+    // bitrate the session was built with. Applying vbvBufferSize alone
+    // would therefore emit a CPB whose initial fullness was computed for a
+    // different buffer size, against a bitrate the session is no longer
+    // using -- and on a shrink it can put the initial fullness ABOVE the
+    // buffer size, which is not a state to hand a driver. Making it correct
+    // means folding the bitrate into the config and re-running the codec
+    // finalize, which changes the semantics of the already-shipped bitrate
+    // path. That is the separate change; refusing is the honest answer
+    // until it is made.
+    //
+    // gopLength, idrPeriod and consecutiveBFrames additionally drive
+    // gopStructure, which sequences frame types and DPB references --
+    // updating the rate-control copy alone would tell the driver one GOP
+    // while the encoder sequenced another, which is worse than refusing.
+    // The refresh above would in fact carry them, which is exactly why they
+    // must not become mutable without the sequencing half of the change.
+    // qualityLevel is baked into the video session parameters at creation:
+    // Vulkan does have a coding-control bit for it
+    // (VK_VIDEO_CODING_CONTROL_ENCODE_QUALITY_LEVEL_BIT_KHR, which
+    // HandleCtrlCmd already emits at session start), but the session
+    // parameters are CREATED against a quality level, so moving it
+    // mid-stream means recreating them as well -- noted, not attempted.
+    //
+    // WHAT IS DELIBERATELY NOT IN EITHER GROUP. The session-creation inputs
+    // (deviceId, gpuUUID, externalInstance, externalPhysicalDevice,
+    // externalDevice and the two external queue-family indices) and the
+    // diagnostic ones (outputPath, verbose, validate, disableFileOutput,
+    // silenceStdio) remain accepted and unread. Not one of them can change
+    // an encoded bit, so not one can misdescribe the stream -- the rationale
+    // above does not reach them. Refusing them would gain no correctness and
+    // would break a caller that builds a fresh minimal config for the
+    // reconfigure instead of copying its stored one.
+    const Immutable levers[] = {
+        {"vbvBufferSize",   config.vbvBufferSize != m_initConfig.vbvBufferSize},
+        {"gopLength",       config.gopLength != m_initConfig.gopLength},
+        {"consecutiveBFrames",
+         config.consecutiveBFrames != m_initConfig.consecutiveBFrames},
+        {"idrPeriod",       config.idrPeriod != m_initConfig.idrPeriod},
+        {"closedGop",       config.closedGop != m_initConfig.closedGop},
+        {"qualityLevel",    config.qualityLevel != m_initConfig.qualityLevel},
+        {"tuningMode",      config.tuningMode != m_initConfig.tuningMode},
+    };
+    for (const auto& field : levers) {
+        if (field.changed) {
+            VkEncErr() << "[EncoderExt] Reconfigure cannot change '"
+                       << field.name << "' mid-stream: this call carries "
+                          "averageBitrate, maxBitrate, frameRateNum, "
+                          "frameRateDen and the constQp defaults, and "
+                          "nothing else, so the encoder would go on using "
+                          "the value it was initialized with. Re-initialize "
+                          "the session instead." << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+
+    // THE CONSTANT QUANTIZERS, on the same range rule and for the same reason
+    // InitializeExt applies it -- so a value refused at init cannot arrive
+    // here instead. A refusal that guarded only one of the two entry points
+    // would be worse than none, because it would teach the caller that the
+    // value is validated.
+    //
+    // Judged against the codec the SESSION WAS INITIALIZED AS. config.codec
+    // is refused above on a change, so on every call that reaches this line
+    // the two agree; the record is the one that stays right if that ever
+    // stops being true.
+    //
+    // Checked on the value as PASSED and not on a change, unlike the clamps
+    // below: a negative member is "not named" and is skipped by the range
+    // check exactly as it is skipped by the application below, and every
+    // non-negative one is applied whether or not it equals the record.
+    const VkResult constQpRangeResult = VkEncValidateConstQpRange(
+        config.constQpI, config.constQpP, config.constQpB, m_initConfig.codec,
+        "Reconfigure ");
+    if (constQpRangeResult != VK_SUCCESS) {
+        return constQpRangeResult;
+    }
+
+    // THE THREE PLACES A QP CLAMP CHANGE STILL HAS TO BE REFUSED, because
+    // on each of them the codec fill would run and carry nothing -- which
+    // is the accepted-and-ignored shape the contract at the top of this
+    // function forbids, not a lesser version of it.
+    //
+    // Only checked ON A CHANGE, exactly as every group above is, so a
+    // caller handing back its stored config is unaffected. The clamps are
+    // carried LITERALLY: a zero means "no clamp", which is the reading
+    // InitializeExt already gives an explicit zero, so a clamp set here can
+    // also be cleared here. Anything else would be a second contract for
+    // the same two fields.
+    const bool qpClampChanged = (config.minQp != m_initConfig.minQp) ||
+                                (config.maxQp != m_initConfig.maxQp);
+    if (qpClampChanged) {
+        if (m_initConfig.codec ==
+            VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) {
+            // EncoderConfigAV1::GetRateControlParameters reads minQIndex
+            // and maxQIndex -- derived from the DEVICE capability limits --
+            // and never reads these QP-unit fields at all. InitializeExt
+            // rejects a non-zero clamp on an AV1 session rather than
+            // ignoring it; this is that rule, at the same strength, on the
+            // mid-stream path.
+            VkEncErr() << "[EncoderExt] Reconfigure cannot change "
+                          "minQp/maxQp on an AV1 session: these are H.26x "
+                          "QP-unit clamps and AV1 rate control is "
+                          "quantizer-index based, so the value would reach "
+                          "nothing. Leave both as they were." << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        if (m_initConfig.rateControlMode ==
+            VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR) {
+            // The DISABLED arm of the H.26x fill sets the codec clamp from
+            // the quality-level constant QP and ignores the caller request
+            // entirely, so a clamp change on a constant-QP session is
+            // ignored BY CONSTRUCTION however the update is delivered.
+            // constQpI/P/B are that session's lever, and they are applied.
+            VkEncErr() << "[EncoderExt] Reconfigure cannot change "
+                          "minQp/maxQp on a constant-QP (DISABLED) session: "
+                          "that mode takes its quantizer from constQpI/P/B, "
+                          "which this call does carry, and ignores the "
+                          "clamps. Change the constQp values instead."
+                       << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        // The same syntactic range and the same inverted-window rule
+        // InitializeExt applies, so a value refused at init cannot arrive
+        // here instead. The DEVICE QP window is checked one layer down, in
+        // RequestRateControlUpdate, which is where the window this session
+        // recorded at codec-init lives.
+        if ((config.minQp < 0) || (config.minQp > 51) ||
+            (config.maxQp < 0) || (config.maxQp > 51)) {
+            VkEncErr() << "[EncoderExt] Reconfigure minQp/maxQp outside the "
+                          "H.26x QP range 0..51 (minQp=" << config.minQp
+                       << ", maxQp=" << config.maxQp << ")" << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        if ((config.minQp > 0) && (config.maxQp > 0) &&
+            (config.minQp > config.maxQp)) {
+            VkEncErr() << "[EncoderExt] Reconfigure minQp " << config.minQp
+                       << " > maxQp " << config.maxQp
+                       << " -- inverted clamp window" << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+
     const uint64_t averageBitrate = config.averageBitrate;
     const uint64_t maxBitrate =
         (config.maxBitrate != 0) ? config.maxBitrate : config.averageBitrate;
+    // The constant-QP defaults ride the same armed update, so a session
+    // that changes both changes them together. A NEGATIVE member means
+    // "not specified" -- the same reading InitializeExt gives it -- and
+    // leaves that quantizer alone, so a caller copying a config it built
+    // for a non-CQP session, where all three sit at -1, rewrites nothing.
+    //
+    // The clamps ride it too, but they are carried ONLY ON A CHANGE. A
+    // negative there means the update carries no clamp, which is what
+    // keeps a bitrate-only reconfigure from re-invoking the codec fill it
+    // has no reason to run.
     const VkResult result = m_encoder->RequestRateControlUpdate(
-        averageBitrate, maxBitrate, config.frameRateNum, config.frameRateDen);
+        averageBitrate, maxBitrate, config.frameRateNum, config.frameRateDen,
+        config.constQpI, config.constQpP, config.constQpB,
+        qpClampChanged ? config.minQp : -1,
+        qpClampChanged ? config.maxQp : -1);
     if (result == VK_SUCCESS) {
         // Keep the record current so a later Reconfigure compares against
-        // what is actually in force.
-        m_initConfig.averageBitrate = config.averageBitrate;
-        m_initConfig.maxBitrate = config.maxBitrate;
-        m_initConfig.frameRateNum = config.frameRateNum;
-        m_initConfig.frameRateDen = config.frameRateDen;
+        // what is actually IN FORCE -- which is not always what was passed.
+        // Two of these members are coerced on the way in and a third can be
+        // dropped outright, and recording the raw config made the record
+        // disagree with the session on exactly those:
+        //
+        //   * a zero maxBitrate means "track averageBitrate", and the
+        //     session then runs at averageBitrate. The record said 0.
+        //   * a zero frameRateNum leaves the frame rate ALONE -- both
+        //     halves of it keep the values already in force. The record
+        //     said 0, and stored whatever denominator came beside it.
+        //   * a zero frameRateDen beside a non-zero numerator becomes 1.
+        //     The record said 0.
+        //
+        // NOTHING COMPARED ABOVE READS THESE MEMBERS. The set written here
+        // -- the two bitrates, the two frame-rate halves, the constant-QP
+        // triple and the two clamps -- is disjoint from the set the
+        // immutables and the levers compare, so recording the applied value
+        // instead of the raw one cannot alter a single refusal decision.
+        // What it changes is the record telling the truth about the
+        // session, which is the only thing the record is for.
+        m_initConfig.averageBitrate = (uint32_t)averageBitrate;
+        m_initConfig.maxBitrate = (uint32_t)maxBitrate;
+        if (config.frameRateNum != 0) {
+            m_initConfig.frameRateNum = config.frameRateNum;
+            m_initConfig.frameRateDen =
+                (config.frameRateDen != 0) ? config.frameRateDen : 1;
+        }
+        // Only the quantizers actually named; an unnamed one keeps
+        // whatever the record already held.
+        if (config.constQpI >= 0) { m_initConfig.constQpI = config.constQpI; }
+        if (config.constQpP >= 0) { m_initConfig.constQpP = config.constQpP; }
+        if (config.constQpB >= 0) { m_initConfig.constQpB = config.constQpB; }
+        // Carried literally, so applied and passed are the same value; the
+        // assignment is a no-op when the clamp did not change.
+        m_initConfig.minQp = config.minQp;
+        m_initConfig.maxQp = config.maxQp;
     }
     return result;
 }
@@ -10656,9 +11031,34 @@ namespace {
 // class's constructor (pure member-init) and destructor path (DeinitEncoder
 // guards the missing device; no threads were started) both tolerate -- the
 // same shape the capture-funnel unit tests rely on.
-class VkEncNullBackendCaptureSource : public VkVideoEncoder {
+// AN H.264 ENCODER, NOT AN IMITATION OF ONE. The device-free capture
+// backend derives from VkVideoEncoderH264 and holds a real
+// EncoderConfigH264 so that the codec arm a test drives is the SHIPPED
+// one: VkVideoEncoderH264::RefreshCodecRateControlParameters runs the
+// real GetRateControlParameters into the real
+// m_h264.m_rateControlLayersInfoH264, which is the struct
+// CodecHandleRateControlCmd chains onto a control command. A stand-in
+// that reimplemented that one line would prove only that the stand-in
+// worked.
+//
+// NONE OF IT NEEDS A DEVICE. VkVideoEncoderH264 constructs from a null
+// device context by pure member-init; its destructor joins threads that
+// were never started and releases handles that were never created; and
+// EncoderConfigH264 default-constructs and its rate-control fill reads
+// config state only. The one thing InitEncoderCodec would have done that
+// matters here is record the device QP window, so this declares one --
+// [0, 51], the window a real H.264 device reports.
+class VkEncNullBackendCaptureSource : public VkVideoEncoderH264 {
 public:
-    VkEncNullBackendCaptureSource() : VkVideoEncoder(nullptr) {}
+    VkEncNullBackendCaptureSource() : VkVideoEncoderH264(nullptr) {
+        // Qualified: VkVideoEncoderH264 declares a private member of the
+        // same name that aliases this one in a device-initialized session.
+        // The base pointer is the one ApplyPendingRateControlUpdate writes
+        // and the one the refresh reads, so it is the one to stand up.
+        VkVideoEncoder::m_encoderConfig =
+            VkSharedBaseObj<EncoderConfig>(new EncoderConfigH264());
+        SetDeviceQpWindowForTest(0, 51);
+    }
 
     void PushCaptureRecord(uint64_t frameId, VkResult status) {
         CapturedBitstream cap;
@@ -10733,6 +11133,129 @@ VkResult VkEncPushCapture(VulkanVideoEncoderExt* encoder,
     // null-backend session, and only null-backend sessions get here.
     static_cast<VkEncNullBackendCaptureSource*>(source.get())
         ->PushCaptureRecord(frameId, status);
+    return VK_SUCCESS;
+}
+
+VkResult VkEncApplyAndGetSessionConstQp(VulkanVideoEncoderExt* encoder,
+                                        int32_t* pQpIntra,
+                                        int32_t* pQpInterP,
+                                        int32_t* pQpInterB)
+{
+    if ((encoder == nullptr) || (pQpIntra == nullptr) ||
+        (pQpInterP == nullptr) || (pQpInterB == nullptr)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VulkanVideoEncoderExtImpl* impl =
+        static_cast<VulkanVideoEncoderExtImpl*>(encoder);
+    if (impl->m_nullBackend == nullptr) {
+        return VK_ERROR_NOT_PERMITTED_KHR;
+    }
+    VkSharedBaseObj<VkVideoEncoder> source;
+    {
+        std::lock_guard<std::mutex> lock(impl->m_pendingMutex);
+        source = impl->m_encoder;
+    }
+    if (!source) {
+        return VK_ERROR_NOT_PERMITTED_KHR;
+    }
+    return source->ApplyAndGetConstQpForTest(pQpIntra, pQpInterP, pQpInterB);
+}
+
+VkResult VkEncApplyAndGetRateControl(VulkanVideoEncoderExt* encoder,
+                                     VkEncRateControlObservation* pOut)
+{
+    if ((encoder == nullptr) || (pOut == nullptr)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VulkanVideoEncoderExtImpl* impl =
+        static_cast<VulkanVideoEncoderExtImpl*>(encoder);
+    if (impl->m_nullBackend == nullptr) {
+        return VK_ERROR_NOT_PERMITTED_KHR;
+    }
+    VkSharedBaseObj<VkVideoEncoder> source;
+    {
+        std::lock_guard<std::mutex> lock(impl->m_pendingMutex);
+        source = impl->m_encoder;
+    }
+    if (!source) {
+        return VK_ERROR_NOT_PERMITTED_KHR;
+    }
+    VkVideoEncoder::RateControlObservation observed{};
+    const VkResult result = source->ApplyAndGetRateControlForTest(&observed);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+    *pOut = {};
+    pOut->layerAverageBitrate       = observed.layerAverageBitrate;
+    pOut->layerMaxBitrate           = observed.layerMaxBitrate;
+    pOut->layerFrameRateNumerator   = observed.layerFrameRateNumerator;
+    pOut->layerFrameRateDenominator = observed.layerFrameRateDenominator;
+    pOut->constQpIntra              = observed.constQpIntra;
+    pOut->constQpInterP             = observed.constQpInterP;
+    pOut->constQpInterB             = observed.constQpInterB;
+    pOut->configMinQp               = observed.configMinQp;
+    pOut->configMaxQp               = observed.configMaxQp;
+    pOut->configMinQpSet            = observed.configMinQpSet;
+    pOut->configMaxQpSet            = observed.configMaxQpSet;
+    pOut->resolvedUseMinQp          = observed.resolvedUseMinQp;
+    pOut->resolvedUseMaxQp          = observed.resolvedUseMaxQp;
+    pOut->resolvedMinQpI            = observed.resolvedMinQpI;
+    pOut->resolvedMaxQpI            = observed.resolvedMaxQpI;
+    pOut->codecRefreshCount         = observed.codecRefreshCount;
+    return VK_SUCCESS;
+}
+
+VkResult VkEncGetRecordedConfig(VulkanVideoEncoderExt* encoder,
+                                VkVideoEncoderConfig* pOut)
+{
+    if ((encoder == nullptr) || (pOut == nullptr)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VulkanVideoEncoderExtImpl* impl =
+        static_cast<VulkanVideoEncoderExtImpl*>(encoder);
+    if (impl->m_nullBackend == nullptr) {
+        return VK_ERROR_NOT_PERMITTED_KHR;
+    }
+    *pOut = impl->m_initConfig;
+    return VK_SUCCESS;
+}
+
+VkResult VkEncSeedRecordedConfig(VulkanVideoEncoderExt* encoder,
+                                 const VkVideoEncoderConfig* pConfig)
+{
+    if ((encoder == nullptr) || (pConfig == nullptr)) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VulkanVideoEncoderExtImpl* impl =
+        static_cast<VulkanVideoEncoderExtImpl*>(encoder);
+    if (impl->m_nullBackend == nullptr) {
+        return VK_ERROR_NOT_PERMITTED_KHR;
+    }
+    impl->m_initConfig = *pConfig;
+    impl->m_initConfig.pNext = nullptr;
+    return VK_SUCCESS;
+}
+
+VkResult VkEncSetDeviceQpWindow(VulkanVideoEncoderExt* encoder,
+                                int32_t minQp, int32_t maxQp)
+{
+    if (encoder == nullptr) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VulkanVideoEncoderExtImpl* impl =
+        static_cast<VulkanVideoEncoderExtImpl*>(encoder);
+    if (impl->m_nullBackend == nullptr) {
+        return VK_ERROR_NOT_PERMITTED_KHR;
+    }
+    VkSharedBaseObj<VkVideoEncoder> source;
+    {
+        std::lock_guard<std::mutex> lock(impl->m_pendingMutex);
+        source = impl->m_encoder;
+    }
+    if (!source) {
+        return VK_ERROR_NOT_PERMITTED_KHR;
+    }
+    source->SetDeviceQpWindowForTest(minQp, maxQp);
     return VK_SUCCESS;
 }
 

@@ -113,13 +113,18 @@ public:
         , m_dpb264()
     { }
 
-    virtual VkResult InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& encoderConfig);
-    virtual VkResult InitRateControl(VkCommandBuffer cmdBuf, uint32_t qp);
+    virtual VkResult InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& encoderConfig) override;
+    virtual VkResult InitRateControl(VkCommandBuffer cmdBuf, uint32_t qp) override;
+    // DECLARES rather than overrides -- there is no base-class
+    // EncodeVideoSessionParameters -- so it is the one virtual here that
+    // correctly carries no 'override', and marking it would not compile.
     virtual VkResult EncodeVideoSessionParameters(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
     virtual VkResult ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
-                                uint32_t frameIdx, uint32_t ofTotalFrames);
-    virtual VkResult CreateFrameInfoBuffersQueue(uint32_t numPoolNodes);
-    virtual bool GetAvailablePoolNode(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
+                                uint32_t frameIdx,
+                                uint32_t ofTotalFrames) override;
+    virtual VkResult CreateFrameInfoBuffersQueue(uint32_t numPoolNodes) override;
+    virtual bool GetAvailablePoolNode(
+        VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) override
     {
         VkSharedBaseObj<VkVideoEncodeFrameInfoH264> encodeFrameInfoH264;
         bool success = m_frameInfoBuffersQueue->GetAvailablePoolNode(encodeFrameInfoH264);
@@ -147,8 +152,19 @@ public:
     }
 
     // Must be called from VkVideoEncoder::EncodeFrameCommon only
-    virtual VkResult EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
-    virtual VkResult CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
+    virtual VkResult EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) override;
+    virtual VkResult CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo) override;
+
+    // The H.264 arm of the mid-stream rate-control refresh: the same fill
+    // InitEncoderCodec runs once, re-run against the current config so a
+    // QP clamp changed by Reconfigure reaches
+    // m_h264.m_rateControlLayersInfoH264 -- which is the struct
+    // CodecHandleRateControlCmd above chains onto the next command.
+    virtual void RefreshCodecRateControlParameters() override;
+    virtual void GetResolvedQpClampForTest(uint32_t* pUseMinQp,
+                                           int32_t*  pMinQpI,
+                                           uint32_t* pUseMaxQp,
+                                           int32_t*  pMaxQpI) const override;
 
 private:
 

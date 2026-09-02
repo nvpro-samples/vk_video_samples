@@ -1260,12 +1260,126 @@ public:
     // learn that one occurred, and a bitstream is not evidence: a session
     // that failed on its first frame leaves a file of zero bytes behind.
     bool WaitForThreadsToComplete();
-    // Queue a mid-stream rate-control update. Thread-safe
-    // producer; applied on the encoder thread at the next frame boundary.
+    // Queue a mid-stream rate-control update. Thread-safe producer;
+    // applied on the encoder thread by the fold at the TOP of
+    // EncodeFrameCommon, so every field this call carries is in force for
+    // the next frame the encoder processes -- the frame the caller placed
+    // this call in front of, not the one after it.
+    //
+    // THE CONSTANT-QP TRIPLE IS CARRIED HERE TOO, and it is the only rate
+    // lever a DISABLED-mode session has: on such a session the per-layer
+    // bitrates above are dropped outright, because that mode commands
+    // layerCount 0. A NEGATIVE member means the caller did not name that
+    // quantizer and it is left alone -- never 0, which is a valid
+    // (lossless) QP. The values land on m_encoderConfig->constQp, from
+    // where EncodeFrameCommon takes a PER-FRAME COPY. That copy is
+    // unconditional, and it is the first thing the function does, so the
+    // fold has to precede it in the same function -- which is why
+    // EncodeFrameCommon folds before it copies. A fold that ran only
+    // later, at the control-command point, would leave this triple
+    // landing one frame after the six fields around it.
+    //
+    // THE QP CLAMPS TRAVEL DIFFERENTLY FROM THE CONSTANT-QP TRIPLE, and
+    // that difference is the whole reason they need their own arguments.
+    // constQp reaches a frame as that per-frame copy, so writing the
+    // config is the whole of the update -- provided the write lands
+    // before the copy is taken. minQp/maxQp are read once, by the
+    // codec-specific EncoderConfig::GetRateControlParameters, into the
+    // codec rate-control layer struct that CodecHandleRateControlCmd
+    // chains onto the next ENCODE_RATE_CONTROL command -- so writing the
+    // config alone changes nothing until that fill is RE-INVOKED. The
+    // re-invocation is RefreshCodecRateControlParameters() below, and it
+    // is why these two arguments exist rather than a caller simply
+    // editing the config.
+    //
+    // NEGATIVE means the update carries no clamp. Zero and above are
+    // carried LITERALLY, and zero means "no clamp", exactly as it does at
+    // InitializeExt. Deliberate: a clamp that could be set but never
+    // cleared would be a different contract from the one the config field
+    // already documents.
+    //
+    // REFUSES the update (VK_ERROR_INITIALIZATION_FAILED) when a carried
+    // clamp falls outside the device QP window this session recorded at
+    // codec-init. With useMinQp/useMaxQp raised the spec requires the
+    // value to lie inside that window, and the init path already refuses
+    // one that does not; an unchecked mid-stream write would be a hole
+    // straight past that check.
     VkResult RequestRateControlUpdate(uint64_t averageBitrate,
                                       uint64_t maxBitrate,
                                       uint32_t frameRateNumerator,
-                                      uint32_t frameRateDenominator);
+                                      uint32_t frameRateDenominator,
+                                      int32_t constQpIntra  = -1,
+                                      int32_t constQpInterP = -1,
+                                      int32_t constQpInterB = -1,
+                                      int32_t minQp         = -1,
+                                      int32_t maxQp         = -1);
+
+    // Test observation seam. Folds any armed update, then reports the
+    // session CONSTANT-QP defaults -- the exact members EncodeFrameCommon
+    // copies into the next frame it processes. Reporting the value that
+    // frame would be encoded with is the point: a mid-stream update that
+    // only returned VK_SUCCESS would be the defect this seam exists to
+    // catch. VK_ERROR_NOT_PERMITTED_KHR when the session has no config.
+    //
+    // WHAT IT STRUCTURALLY CANNOT SEE is WHEN the fold happens relative to
+    // that copy, because it forces a fold itself and then reads the
+    // config rather than a frame. An ordering regression -- the fold
+    // moving back after the copy -- leaves this seam reading the new
+    // value and every assertion built on it green. Only a device leg that
+    // reads the quantizer out of an encoded picture can witness that.
+    VkResult ApplyAndGetConstQpForTest(int32_t* pQpIntra,
+                                       int32_t* pQpInterP,
+                                       int32_t* pQpInterB);
+
+    // What a mid-stream rate-control update actually PUT IN FORCE, as
+    // opposed to what the caller passed. Three layers of it, because a
+    // change is only real if it survives all three:
+    //
+    //   * the LIVE rate-control layer, which HandleCtrlCmd copies verbatim
+    //     into the next control command. This is where a coerced maxBitrate
+    //     and a frame rate left alone become visible as the numbers the
+    //     session is running on -- which is what a caller-visible record of
+    //     the configuration has to agree with, and did not;
+    //   * the session config, where the QP clamp request lands; and
+    //   * the RESOLVED codec rate-control layer struct, the end of the
+    //     chain this class owns and the struct CodecHandleRateControlCmd
+    //     chains onto the command.
+    //
+    // codecRefreshCount counts re-invocations of the codec fill, so a test
+    // can tell a real refresh from one that happened to recompute the same
+    // numbers, and can assert that a bitrate-only update does NOT cause
+    // one.
+    //
+    // WHAT THIS CANNOT SHOW is whether the driver then honours any of it.
+    // That needs a device and a decoded comparison.
+    struct RateControlObservation {
+        uint64_t layerAverageBitrate;
+        uint64_t layerMaxBitrate;
+        uint32_t layerFrameRateNumerator;
+        uint32_t layerFrameRateDenominator;
+        int32_t  constQpIntra;
+        int32_t  constQpInterP;
+        int32_t  constQpInterB;
+        int32_t  configMinQp;
+        int32_t  configMaxQp;
+        uint32_t configMinQpSet;
+        uint32_t configMaxQpSet;
+        uint32_t resolvedUseMinQp;
+        uint32_t resolvedUseMaxQp;
+        int32_t  resolvedMinQpI;
+        int32_t  resolvedMaxQpI;
+        uint32_t codecRefreshCount;
+    };
+    VkResult ApplyAndGetRateControlForTest(RateControlObservation* pOut);
+
+    // Declare the device QP window directly. Test-only: a device-free
+    // session never runs InitEncoderCodec, so it has no other way to
+    // stand up the window the clamp check reads, and without one that
+    // check would be untestable rather than merely inert.
+    void SetDeviceQpWindowForTest(int32_t minQp, int32_t maxQp) {
+        m_deviceQpWindowMin = minQp;
+        m_deviceQpWindowMax = maxQp;
+    }
 
 protected:
 
@@ -1633,17 +1747,90 @@ protected:
     // Pending mid-stream rate-control update. Produced by any
     // thread via RequestRateControlUpdate() (the ext Reconfigure entry);
     // applied ON THE ENCODER THREAD by ApplyPendingRateControlUpdate(),
-    // which runs immediately before the m_sendRateControlCmd consume in the
-    // frame-record path -- the refreshed values ride the next
-    // VK_VIDEO_CODING_CONTROL_ENCODE_RATE_CONTROL command. Both fields are
-    // guarded by m_pendingRateControlMutex.
+    // which runs at the TOP of EncodeFrameCommon, before that frame takes
+    // its copy of the constant-QP triple and before HandleCtrlCmd builds
+    // the frame record -- so the refreshed values ride THAT frame's
+    // VK_VIDEO_CODING_CONTROL_ENCODE_RATE_CONTROL command, not the one
+    // after it. HandleCtrlCmd keeps a fold of its own, which is a no-op
+    // whenever EncodeFrameCommon has already consumed the arm. Both
+    // fields are guarded by m_pendingRateControlMutex.
     struct PendingRateControlUpdate {
         uint64_t averageBitrate;
         uint64_t maxBitrate;
         uint32_t frameRateNumerator;
         uint32_t frameRateDenominator;
+        // The constant-QP defaults this update carries. NEGATIVE means
+        // the update does not name that quantizer, and it MUST be the
+        // default: 0 is a valid lossless QP, so a zero-initialized
+        // pending update would silently rewrite the session to lossless
+        // the first time any rate change was armed.
+        int32_t  constQpIntra  = -1;
+        int32_t  constQpInterP = -1;
+        int32_t  constQpInterB = -1;
+        // The QP clamps this update carries. NEGATIVE means it carries
+        // none. Zero is NOT that: at InitializeExt zero already means "no
+        // clamp reaches the driver", so zero has to keep meaning the same
+        // thing here, or a clamp would become settable and not clearable.
+        int32_t  minQp         = -1;
+        int32_t  maxQp         = -1;
     };
     void ApplyPendingRateControlUpdate();
+
+    // Re-run the codec-specific EncoderConfig::GetRateControlParameters
+    // fill against the CURRENT config, refreshing the codec rate-control
+    // structs that CodecHandleRateControlCmd chains onto the next
+    // ENCODE_RATE_CONTROL command. Runs ON THE ENCODER THREAD, from
+    // ApplyPendingRateControlUpdate, and only when the update actually
+    // changed something the fill reads.
+    //
+    // THE BASE IS A NO-OP ON PURPOSE, and AV1 keeps it. This fill is the
+    // only route a QP clamp has to the driver, and AV1 rate control is
+    // quantizer-index based: EncoderConfigAV1::GetRateControlParameters
+    // reads its own minQIndex/maxQIndex, which are derived from the
+    // DEVICE capability limits and never from the QP-unit clamps. There
+    // is nothing on AV1 for a refresh to carry, which is why the ext
+    // refuses a QP-unit clamp on an AV1 session rather than calling this
+    // and changing nothing.
+    //
+    // NOT A GENERAL REFRESH-EVERYTHING HOOK. The fill also recomputes the
+    // GOP counts and the virtual buffer size out of the config. Those are
+    // only safe to recompute because the config fields behind them are
+    // held immutable across Reconfigure, so the recomputation lands on
+    // the values already in force. Making one of them mutable means
+    // revisiting this, not just adding a call site.
+    virtual void RefreshCodecRateControlParameters() {}
+
+    // The QP clamp as the codec rate-control layer struct now resolves
+    // it. Test observation only; the base reports "no clamp", which is
+    // the truth for an arm that carries none.
+    virtual void GetResolvedQpClampForTest(uint32_t* pUseMinQp,
+                                           int32_t*  pMinQpI,
+                                           uint32_t* pUseMaxQp,
+                                           int32_t*  pMaxQpI) const
+    {
+        *pUseMinQp = 0;
+        *pMinQpI   = 0;
+        *pUseMaxQp = 0;
+        *pMaxQpI   = 0;
+    }
+
+    // The device QP window the codec arm records at codec-init, so the
+    // caller-thread clamp check can read it without touching
+    // m_encoderConfig -- whose lifetime is only guaranteed on the encoder
+    // thread, and dereferencing which off that thread is the hazard the
+    // note on m_computeFilterActive in the ext exists to forbid. Written
+    // once, before any Reconfigure can run.
+    //
+    // A MAXIMUM OF ZERO MEANS NOT ESTABLISHED, and the check is skipped.
+    // No H.26x device reports a maximum QP of zero: the syntactic range
+    // is 0..51 and a device admitting only QP 0 could encode nothing but
+    // lossless. So zero is unambiguous, and it is exactly what an arm
+    // that never recorded a window leaves behind.
+    int32_t  m_deviceQpWindowMin = 0;
+    int32_t  m_deviceQpWindowMax = 0;
+    // Counts RefreshCodecRateControlParameters() invocations. Read by the
+    // test observation seam only.
+    uint32_t m_codecRateControlRefreshCount = 0;
     std::mutex               m_pendingRateControlMutex;
     bool                     m_pendingRateControlArmed = false;
     PendingRateControlUpdate m_pendingRateControlUpdate = {};
