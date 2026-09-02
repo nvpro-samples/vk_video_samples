@@ -61,14 +61,13 @@ public:
     // ------------------------------------------------------------------
     // FILTER-DISPATCH OBSERVABLE
     //
-    // What ACTUALLY ran, readable from outside the library. Everything the
-    // ext layer can otherwise see is the CONFIG
-    // (enablePreprocessFilter): a request, not an outcome. The two diverge
-    // in both directions -- a session can configure the filter and then
-    // route every frame down the staging copy (StageInputFrame's
-    // `useComputeFilter` is a PER-FRAME predicate, not a session property),
+    // What ACTUALLY ran, readable from outside the library. The session's
+    // input format says whether a filter was BUILT; it does not say what
+    // happened to any given frame. A session that has a filter can still
+    // route every frame down the staging copy -- StageInputFrame's
+    // `useComputeFilter` is a PER-FRAME predicate, not a session property --
     // and the copy arm is exactly the arm that hangs the GPU on a 3-plane
-    // source -- so "did the filter run" cannot be inferred from the flag.
+    // source, so "did the filter run" cannot be inferred from the config.
     //
     // Counted at the RECORD SITE, immediately after
     // VulkanFilter::RecordCommandBuffer() returns VK_SUCCESS, which is the
@@ -167,7 +166,15 @@ public:
     using VulkanBitstreamBufferPool = VulkanVideoRefCountedPool<VulkanBitstreamBufferImpl, 64>;
 
     enum { MAX_IMAGE_REF_RESOURCES = 17 }; /* List of reference pictures 16 + 1 for current */
-    enum { MAX_BITSTREAM_HEADER_BUFFER_SIZE = 256 };
+    // 256 held VPS/SPS/PPS with room to spare and nothing else was ever
+    // appended. The HDR10 SEI NAL is up to 47 bytes (4 start code + 2 NAL
+    // header + 26 mastering display + 6 content light + 1 trailing, plus
+    // emulation-prevention bytes), and the AV1 metadata OBU pair is 36. The
+    // headroom is doubled rather than computed exactly because the driver
+    // owns the parameter-set half of this buffer and its size is not ours to
+    // predict; the appenders check the remaining capacity and FAIL rather
+    // than silently dropping a payload.
+    enum { MAX_BITSTREAM_HEADER_BUFFER_SIZE = 512 };
 
     // Queue-family ownership of an external input image. Internal
     // mirror of the public VkVideoEncoderInputResidency (the Ext API maps

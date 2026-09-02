@@ -234,6 +234,12 @@ struct EncoderConfigAV1 : public EncoderConfig {
     bool                                    enableLr{};
     bool                                    customLrConfig{};
     StdVideoAV1LoopRestoration              lrConfig{};
+    // Sequence-header colour description, populated by InitSequenceHeader()
+    // from the base-class colour fields. StdVideoAV1SequenceHeader carries
+    // colour BY POINTER (pColorConfig), so the storage must outlive the
+    // sequence header; it lives here, on the config that owns the values and
+    // outlives the encoder session.
+    StdVideoAV1ColorConfig                  av1ColorConfig{};
 };
 
 #endif /* VKVIDEOENCODER_VKENCODERCONFIG_AV1_H_ */

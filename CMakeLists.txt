@@ -599,10 +599,11 @@ if(BUILD_ENCODER)
         # Skips (CTest SKIP, exit 77) without one.
         add_subdirectory(vk_video_encoder/test/encoder-ext-acquire-fd)
         # Device-free coverage of the input-format taxonomy (which rung of the
-        # adaptation ladder a given format needs) and of the config binder's
-        # disposition of enablePreprocessFilter. Both are pure functions of
-        # their arguments; what the filter then DOES with the pixels needs a
-        # GPU and lives in vk_filter_test.
+        # adaptation ladder a given format needs), of the preprocess-conversion
+        # decision the binder derives from it, and of the transfer-function
+        # declaration. All are pure functions of their arguments; what the
+        # filter then DOES with the pixels needs a GPU and lives in
+        # vk_filter_test.
         add_subdirectory(vk_video_encoder/test/encoder-ext-filter)
         # Real-device REGRESSION test for a defect this guards against:
         # DrainPendingFrames() permanently disabled async assembly, and the

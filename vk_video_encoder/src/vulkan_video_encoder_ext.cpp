@@ -196,12 +196,27 @@ public:
     VkResult DrainPendingFrames() override;
     VkResult Reconfigure(const VkVideoEncoderConfig& config) override;
     VkBool32 SupportsFormat(VkFormat inputFormat) const override;
+    // The same question asked of a DECLARED colour model rather than of the
+    // session's. A descriptor states the model its samples carry, and the
+    // packed 4:4:4 layouts make that statement load-bearing: they ride RGBA
+    // format enumerants, so the format alone cannot say which of the two a
+    // surface is. VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT declares nothing
+    // and falls back to the session's model, which is what the one-argument
+    // form above passes.
+    VkBool32 SupportsFormat(VkFormat inputFormat,
+                            VkVideoEncoderColorModel declaredColorModel) const;
     // Whether THIS session can perform the compute-tier conversion: the
     // filter compiled in and the caller having asked for it. The rung-2
     // half of the adaptation ladder's "query the device first" rule.
     bool ComputeFilterActive() const;
     // Stricter: does this session's filter take THIS format as its input?
     bool ComputeFilterTakesFormat(VkFormat inputFormat) const;
+    // The colour model to read |inputFormat| under, from this session's point
+    // of view: the caller's declaration for the session's OWN input format,
+    // and the format's own answer for anything else. A session declares one
+    // input; a question about some other format is not covered by that
+    // declaration and must not silently borrow it.
+    VkVideoEncoderColorModel SessionColorModel(VkFormat inputFormat) const;
     // Whether the DEVICE could STORAGE-READ an image with this descriptor's
     // format and tiling -- exactly the fact
     // VkVideoEncoderImageSupportDetails::filterCapable reports, and the fact
@@ -451,6 +466,11 @@ private:
     // producer that then allocates a pool RegisterImageResource refuses.
     std::atomic<bool>                m_computeFilterActive{false};
     std::atomic<VkFormat>            m_computeFilterInputFormat{VK_FORMAT_UNDEFINED};
+    // The session's own input declaration -- the format and the colour model
+    // the caller stated for it -- snapshotted for the same lock-free readers.
+    std::atomic<VkFormat>            m_sessionInputFormat{VK_FORMAT_UNDEFINED};
+    std::atomic<VkVideoEncoderColorModel> m_sessionInputColorModel{
+        VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT};
     // What the session was initialized with, so Reconfigure can tell a
     // change it can carry from one it can only pretend to.
     VkVideoEncoderConfig             m_initConfig{};
@@ -948,7 +968,7 @@ static_assert((uint32_t)VK_VIDEO_ENCODER_PROFILE_AV1_MAIN ==
               "AV1 profile constants must be seq_profile");
 
 #if defined(__LP64__) || defined(_LP64) || defined(_WIN64)
-static_assert(sizeof(VkVideoEncoderConfig) == 200,
+static_assert(sizeof(VkVideoEncoderConfig) == 208,
               "VkVideoEncoderConfig changed size -- a field was added, removed "
               "or reordered. Bind it in BuildEncoderConfig before updating "
               "this number.");
@@ -1018,19 +1038,44 @@ VkResult VkEncBuildAndProbeConfig(const VkVideoEncoderConfig& extConfig,
     outProbe->videoFullRangeFlag      = cfg->video_full_range_flag;
     outProbe->colorDescriptionPresent = cfg->color_description_present_flag;
     outProbe->videoSignalTypePresent  = cfg->video_signal_type_present_flag;
+    outProbe->chromaLocInfoPresent    = cfg->chroma_loc_info_present_flag;
+    outProbe->chromaSampleLocType     = cfg->chroma_sample_loc_type;
+    outProbe->inputColourChainPresent = cfg->inputColourChainPresent;
+    outProbe->inputColourPrimaries    = cfg->inputColourPrimaries;
+    outProbe->inputTransferCharacteristics =
+        cfg->inputTransferCharacteristics;
+    outProbe->inputMatrixCoefficients = cfg->inputMatrixCoefficients;
+    outProbe->inputRange              = cfg->inputRange;
+    outProbe->hdrMasteringPresent     = cfg->hdrMetadata.masteringDisplayPresent;
+    outProbe->hdrContentLightPresent  = cfg->hdrMetadata.contentLightLevelPresent;
+    outProbe->hdrMaxDisplayMasteringLuminance =
+        cfg->hdrMetadata.maxDisplayMasteringLuminance;
+    outProbe->hdrMinDisplayMasteringLuminance =
+        cfg->hdrMetadata.minDisplayMasteringLuminance;
+    outProbe->hdrMaxContentLightLevel = cfg->hdrMetadata.maxContentLightLevel;
+    outProbe->hdrMaxFrameAverageLightLevel =
+        cfg->hdrMetadata.maxFrameAverageLightLevel;
+    outProbe->hdrGreenPrimaryX        = cfg->hdrMetadata.displayPrimaryX[0];
+    outProbe->hdrGreenPrimaryY        = cfg->hdrMetadata.displayPrimaryY[0];
     outProbe->verbose           = cfg->verbose ? 1u : 0u;
     outProbe->validate          = cfg->validate ? 1u : 0u;
     outProbe->disableFileOutput = cfg->disableFileOutput ? 1u : 0u;
-    // Not a public config field: it is where enablePreprocessFilter LANDS.
-    // Read through the compile-safe accessor so the projection exists under
-    // both build gates -- and so a build without the filter honestly reports
-    // 0 for a caller that asked for it, which is the same build whose binder
-    // refuses the request outright.
+    // Not a public config field: it is where the library's own
+    // preprocess-conversion decision lands. Read through the compile-safe
+    // accessor so the projection exists under both build gates -- and so a
+    // build without the filter honestly reports 0 for an input that would
+    // have needed one, which is the same build whose binder refuses that
+    // input outright.
     outProbe->preprocessComputeFilter =
         cfg->IsPreprocessComputeFilterEnabled() ? 1u : 0u;
     // The only observable trace of inputFormat's plane layout: EncoderConfig
     // derives input.vkFormat from this rather than storing the format.
     outProbe->inputNumPlanes = cfg->input.numPlanes;
+    // The other half of that derivation, and what the encode profile is
+    // picked from: a 4:4:4 input must have moved this off the 4:2:0 default.
+    outProbe->inputChromaSubsampling =
+        (uint32_t)cfg->input.chromaSubsampling;
+    outProbe->inputVkFormat = (uint32_t)cfg->input.vkFormat;
     // Per arm through virtual dispatch: the profile the session-creation
     // path consumes (EncoderConfig::InitVideoProfile reads GetCodecProfile).
     // Never INVALID here -- the binder either wrote the caller's profile or
@@ -1055,6 +1100,16 @@ VkResult VkEncBuildAndProbeConfig(const VkVideoEncoderConfig& extConfig,
                 outProbe->rcUseMaxQp = (rcLayerH264.useMaxQp == VK_TRUE) ? 1u : 0u;
                 outProbe->rcMinQpI   = rcLayerH264.minQp.qpI;
                 outProbe->rcMaxQpI   = rcLayerH264.maxQp.qpI;
+
+                StdVideoH264SequenceParameterSetVui vui{};
+                StdVideoH264HrdParameters hrd{};
+                h264->InitVuiParameters(&vui, &hrd);
+                outProbe->vuiChromaLocInfoPresent =
+                    vui.flags.chroma_loc_info_present_flag;
+                outProbe->vuiChromaSampleLocTypeTop =
+                    vui.chroma_sample_loc_type_top_field;
+                outProbe->vuiChromaSampleLocTypeBottom =
+                    vui.chroma_sample_loc_type_bottom_field;
             }
         } break;
         case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR: {
@@ -1070,6 +1125,20 @@ VkResult VkEncBuildAndProbeConfig(const VkVideoEncoderConfig& extConfig,
                 outProbe->rcUseMaxQp = (rcLayerH265.useMaxQp == VK_TRUE) ? 1u : 0u;
                 outProbe->rcMinQpI   = rcLayerH265.minQp.qpI;
                 outProbe->rcMaxQpI   = rcLayerH265.maxQp.qpI;
+                outProbe->h265CpbVclFactor = h265->GetCpbVclFactor();
+                outProbe->h265LevelIdc     = (uint32_t)h265->levelIdc;
+                outProbe->h265GeneralTierFlag = h265->general_tier_flag;
+
+                StdVideoH265SequenceParameterSetVui vui{};
+                StdVideoH265HrdParameters hrd{};
+                StdVideoH265SubLayerHrdParameters subHrd{};
+                h265->InitVuiParameters(&vui, &hrd, &subHrd);
+                outProbe->vuiChromaLocInfoPresent =
+                    vui.flags.chroma_loc_info_present_flag;
+                outProbe->vuiChromaSampleLocTypeTop =
+                    vui.chroma_sample_loc_type_top_field;
+                outProbe->vuiChromaSampleLocTypeBottom =
+                    vui.chroma_sample_loc_type_bottom_field;
             }
         } break;
         case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR: {
@@ -1078,6 +1147,8 @@ VkResult VkEncBuildAndProbeConfig(const VkVideoEncoderConfig& extConfig,
                 StdVideoAV1SequenceHeader seqHdr{};
                 StdVideoEncodeAV1OperatingPointInfo opInfo{};
                 av1->InitSequenceHeader(&seqHdr, &opInfo);
+                outProbe->av1ColorConfigPresent =
+                    (seqHdr.pColorConfig != nullptr) ? 1u : 0u;
                 if (seqHdr.pColorConfig != nullptr) {
                     outProbe->av1ColorDescriptionPresent =
                         seqHdr.pColorConfig->flags.color_description_present_flag;
@@ -1090,6 +1161,12 @@ VkResult VkEncBuildAndProbeConfig(const VkVideoEncoderConfig& extConfig,
                     outProbe->av1ColorRange =
                         seqHdr.pColorConfig->flags.color_range;
                     outProbe->av1BitDepth = seqHdr.pColorConfig->BitDepth;
+                    outProbe->av1ChromaSamplePosition =
+                        (uint32_t)seqHdr.pColorConfig->chroma_sample_position;
+                    outProbe->av1SubsamplingX =
+                        seqHdr.pColorConfig->subsampling_x;
+                    outProbe->av1SubsamplingY =
+                        seqHdr.pColorConfig->subsampling_y;
                 }
             }
         } break;
@@ -1129,13 +1206,51 @@ VkResult VkEncBuildEncoderConfig(
     // producer has allocated an entire frame pool in a format this encoder
     // will never take. Init is the last point at which it can still choose
     // differently, which is why the finding asked for both.
+    //
+    // The colour-model DECLARATION is judged first, and separately, because
+    // the two refusals are about different fields. VkEncResolveColorModel
+    // answers VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT for a
+    // (format, colorModel) pair that cannot be reconciled -- RGB declared
+    // over a Y'CbCr format, Y'CbCr declared over an RGBA layout that carries
+    // no packed 4:4:4 reading, or a value the enumeration does not define --
+    // and there is no route to choose from an answer that means "the caller
+    // stated two things that cannot both be true". This is the same
+    // predicate, and the same refusal, the registration gate applies to a
+    // descriptor, so one contradiction is answered once.
+    //
+    // Separated from the format refusal below because the FORMAT in such a
+    // pair is usually the half that is not wrong: NV12 declared RGB reaches
+    // here and NV12 is directly encodable, and the format message would
+    // answer it by naming the submitted format among the ones it accepts.
+    // The field the caller has to change is inputColorModel, and the
+    // refusal says so.
+    //
+    // FROM_FORMAT -- what a zero-initialised config declares, and the
+    // ordinary case -- reads the model off the format and passes wherever
+    // the format does, as does a declaration that agrees with its format.
+    if (VkEncResolveColorModel(extConfig.inputFormat,
+                               extConfig.inputColorModel) ==
+        VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) {
+        VkEncErr() << "[EncoderExt] declared inputColorModel "
+                   << (uint32_t)extConfig.inputColorModel
+                   << " contradicts inputFormat "
+                   << (uint32_t)extConfig.inputFormat
+                   << "; the two cannot both be true and nothing here can "
+                      "know which was meant. Declare the colour model the "
+                      "format carries, or leave the field "
+                      "VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT to read it "
+                      "off the format." << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
     const VkEncInputFormatClass inputFormatClass =
-        VkEncClassifyInputFormat(extConfig.inputFormat);
+        VkEncClassifyInput(extConfig.inputFormat, extConfig.inputColorModel);
     if (inputFormatClass == VK_ENC_INPUT_FORMAT_UNSUPPORTED) {
         VkEncErr() << "[EncoderExt] inputFormat "
                    << (uint32_t)extConfig.inputFormat
-                   << " is not encodable. This encoder takes: NV12, P010 and "
-                      "P012 directly; I420 and its 10/12-bit siblings, and "
+                   << " is not encodable. This encoder takes the 8- and "
+                      "10-bit semi-planar formats NV12, P010, NV24 and S410 "
+                      "directly; P012, I420 and its 10/12-bit siblings, and "
                       "8-bit RGBA (R8G8B8A8_UNORM, B8G8R8A8_UNORM, "
                       "A8B8G8R8_UNORM_PACK32), through the preprocess compute "
                       "filter. Convert before submitting. Note that the _SRGB "
@@ -1147,71 +1262,38 @@ VkResult VkEncBuildEncoderConfig(
                    << std::endl;
         return VK_ERROR_INITIALIZATION_FAILED;
     }
-    // A format that is encodable only THROUGH the filter needs the filter.
-    // Accepting it without one would leave the frame to the transfer copy,
-    // which for a plane-count mismatch is not a slower path but a GPU hang
-    // (DEVICE_INDEPENDENCE_PLAN section 8.1: DEVICE_LOST, 0-byte bitstream,
-    // 3 runs of 3). Refuse at INIT, which is the last point at which the
-    // producer can still allocate its pool in a different format.
-    if ((inputFormatClass == VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER) &&
-        (extConfig.enablePreprocessFilter != VK_TRUE)) {
+    // THE FILTER DECISION, AND IT IS THE LIBRARY'S. A format that is
+    // encodable only THROUGH the preprocess compute filter gets the filter; a
+    // directly encodable one does not. Nothing the caller sets takes part:
+    // the class is a pure function of inputFormat, which is why this is
+    // decided here, in a binder with no device, and is answerable on the
+    // query surface before a producer allocates a frame pool.
+    const bool needsPreprocessFilter =
+        (inputFormatClass == VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER);
+
+    // Refusing rather than dropping the conversion: without the filter the
+    // frames that needed converting would fall to the staging copy, and for a
+    // plane-count or colour-model mismatch that copy does not encode slowly,
+    // it encodes wrongly -- from a three-plane source it hangs the GPU. So
+    // the answer to an input that needs converting is a conversion or an
+    // error, never a quiet no.
+    //
+    // This is the half a device-free binder CAN check: that the filter is
+    // compiled into this build. The session-level half -- that the device has
+    // a compute queue to run it on, which under a caller-supplied VkDevice
+    // cannot be assumed -- is checked in InitializeExt, after the device
+    // exists. Both halves must hold.
+#ifndef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+    if (needsPreprocessFilter) {
         VkEncErr() << "[EncoderExt] inputFormat "
                    << (uint32_t)extConfig.inputFormat
                    << " is encodable only through the preprocess compute "
-                      "filter, which this configuration did not request; set "
-                      "enablePreprocessFilter, or submit a semi-planar 4:2:0 "
-                      "format." << std::endl;
-        return VK_ERROR_INITIALIZATION_FAILED;
-    }
-
-    // enablePreprocessFilter: a CAPABILITY CHECK now, not an unconditional
-    // refusal.
-    //
-    // The refusal was right when it was written and it is worth saying why,
-    // because the reason is the thing that changed rather than the policy.
-    // RC2_REVIEW:181-183: "Silently accepting it would encode unconverted
-    // input as if converted. Hard-fail with a reason is correct." Read the
-    // whole sentence -- the objection is to accepting a flag that does
-    // nothing, and it evaporates exactly when the conversion becomes real.
-    // ARCH_REVIEW:115 states the same rule as a binary: every public field
-    // must either be FORWARDED or REJECTED, and "accepted and ignored" is the
-    // worst option. This moves the field from the second state to the first,
-    // and only where forwarding it means something.
-    //
-    // The prerequisites API_V2:627 lists for this landing, and where each one
-    // now is:
-    //   (a) sampled-read primary -- NOT DONE, and this is what keeps RGBA
-    //       UNSUPPORTED in the format taxonomy. The filter still reads via
-    //       imageLoad from a STORAGE_IMAGE with a hardcoded rgba8 qualifier.
-    //       What this change enables is the YCbCr-to-YCbCr conversion, which
-    //       the storage-read path serves: per-plane STORAGE views on an
-    //       imported dma-buf are measured working on this stack with
-    //       MUTABLE_FORMAT | EXTENDED_USAGE and a view-format list.
-    //   (b) blit fallback -- not needed on this arm: a caller whose
-    //       descriptor cannot carry the filter's views is refused at
-    //       registration with CONVERSION_REQUIRED, before it allocates,
-    //       rather than being silently degraded to a copy that would hang.
-    //   (c) the isExternalInput bypass replaced by a capability predicate --
-    //       DONE, as per-frame routing off the registration's resolved path.
-    //   (e) the filter branch's missing acquire barriers -- DONE.
-    //   (f) the submit queue agreeing with the branch's barriers -- DONE, as
-    //       one queue fact read by both.
-    //
-    // What is checked here is only what a device-free binder CAN check: that
-    // the filter is compiled into this build. The session-level half -- that
-    // the device actually has a compute queue to run it on, which under a
-    // caller's device is not guaranteed (DEVICE_INDEPENDENCE_PLAN section 4.2) --
-    // is checked in InitializeExt, after the device exists. Both halves must
-    // hold; either one failing is an init failure with a reason, never a
-    // quietly-dropped flag.
-#ifndef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
-    if (extConfig.enablePreprocessFilter == VK_TRUE) {
-        VkEncErr() << "[EncoderExt] enablePreprocessFilter requested, but the "
-                      "preprocess compute filter is not compiled into this "
-                      "build (VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED is "
+                      "filter, which is not compiled into this build "
+                      "(VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED is "
                       "undefined; the CMake option is "
                       "BUILD_ENCODER_COMPUTE_FILTER). Convert before "
-                      "submitting." << std::endl;
+                      "submitting, or submit a semi-planar 4:2:0 format."
+                   << std::endl;
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 #endif
@@ -1264,13 +1346,24 @@ VkResult VkEncBuildEncoderConfig(
     // RGBA is the one input family whose format cannot be RECONSTRUCTED from
     // (subsampling, bit depth, plane count) -- CodecGetVkFormat() only spells
     // Y'CbCr. So for RGBA the format has to be carried through literally, and
-    // input.isRgba is what tells VerifyInputs() to carry rather than re-derive
-    // it (and to lay the image out as one 4-byte-per-pixel plane). Writing
-    // vkFormat unconditionally would be pointless for the Y'CbCr families --
+    // input.colorSpace is what tells VerifyInputs() to carry rather than
+    // re-derive it (and to lay the image out as one 4-byte-per-pixel plane).
+    // Writing vkFormat unconditionally would be pointless for the Y'CbCr families --
     // VerifyInputs() overwrites it there by design, which is how a semi-planar
     // session still gets the format its subsampling and bit depth imply. The
     // plane count is set here for the same reason: the derivation above speaks
     // only for Y'CbCr formats, and the compute filter is built from this field.
+    //
+    // The pair is known resolvable by the time it reaches here -- an
+    // unresolvable one was refused at the top of this function -- so this
+    // reads as the two-way choice it is written as, and not as a fall to
+    // Y'CbCr for an answer that meant neither.
+    cfg->input.colorSpace =
+        (VkEncResolveColorModel(extConfig.inputFormat,
+                                extConfig.inputColorModel) ==
+         VK_VIDEO_ENCODER_COLOR_MODEL_RGB)
+            ? VkEncColorSpace::kRGB
+            : VkEncColorSpace::kYCbCr;
     // A caller-supplied image carries its samples where its VkFormat says they
     // are, so the alignment is declared here rather than detected.
     // DetectInputMsbShift exists to sniff an input FILE's content; with no file
@@ -1280,8 +1373,7 @@ VkResult VkEncBuildEncoderConfig(
     // high bits, and msbShift == 0 is how that is spelled.
     cfg->input.msbShift = 0;
 
-    cfg->input.isRgba = (VkEncIsRgbaInputFormat(extConfig.inputFormat) == VK_TRUE);
-    if (cfg->input.isRgba) {
+    if (cfg->input.colorSpace == VkEncColorSpace::kRGB) {
         cfg->input.numPlanes = VkEncInputFormatPlaneCount(extConfig.inputFormat);
         cfg->input.vkFormat  = extConfig.inputFormat;
     }
@@ -1390,9 +1482,9 @@ VkResult VkEncBuildEncoderConfig(
             // (0..51). AV1 rate control is quantizer-index based (0..255)
             // and the AV1 config consumes no QP-unit clamp, so a non-zero
             // value here was accepted-and-ignored on every AV1 session.
-            // Reject loudly, the enablePreprocessFilter pattern; qIndex
-            // clamp fields are a versioned addition for when a consumer
-            // needs them.
+            // Reject loudly rather than accept and ignore; qIndex clamp
+            // fields are a versioned addition for when a consumer needs
+            // them.
             VkEncErr() << "[EncoderExt] minQp/maxQp are H.26x-unit QP "
                           "clamps (0..51); AV1 rate control uses quantizer "
                           "indices (0..255) and this config version has no "
@@ -1514,30 +1606,88 @@ VkResult VkEncBuildEncoderConfig(
         cfg->frameRateDenominator = extConfig.frameRateDen;
     }
 
+    // ---- Transfer function ----
+    //
+    // This library converts the colour MODEL and implements no transfer
+    // function, so the transfer function the input arrives in and the one the
+    // bitstream advertises have to be the same one. A DECLARED mismatch is
+    // refused here rather than converted: an unapplied transfer function
+    // produces pixels that are close enough to look plausible and wrong
+    // everywhere.
+    //
+    // 0 on inputTransferCharacteristics declares nothing and asserts nothing;
+    // the input is taken to be in transferCharacteristics already.
+    if ((extConfig.inputTransferCharacteristics != 0) &&
+        (extConfig.inputTransferCharacteristics !=
+         extConfig.transferCharacteristics)) {
+        VkEncErr() << "[EncoderExt] inputTransferCharacteristics "
+                   << (uint32_t)extConfig.inputTransferCharacteristics
+                   << " differs from transferCharacteristics "
+                   << (uint32_t)extConfig.transferCharacteristics
+                   << ". This encoder applies no transfer function, so the "
+                      "submitted frames and the encoded bitstream must "
+                      "declare the same one. Convert before submitting, or "
+                      "declare the transfer function the input carries."
+                   << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
     // ---- Colour description (VUI) ----
-    // The SPS/VUI writers only emit the colour description when BOTH
-    // presence flags are raised, so bind the values AND the flags together.
+    //
+    // PER FIELD, NOT ALL-OR-NOTHING. The gate here used to be
+    //
+    //     if (colourPrimaries || transferCharacteristics ||
+    //         matrixCoefficients || videoFullRange)
+    //
+    // and then copied ALL FOUR values. So a caller that supplied only
+    // transferCharacteristics = 16 (PQ) -- which is exactly what an HDR
+    // caller supplies, and often the only thing it knows -- also emitted
+    // colour_primaries = 0 (Reserved) and matrix_coefficients = 0
+    // (Identity/GBR, i.e. "these samples are RGB"). Two fabricated
+    // declarations, both wrong, both on the HDR path, from one honest one.
+    //
+    // 0 IS "NOT SUPPLIED" ON THIS SURFACE, and that is now a stated property
+    // rather than an accident of the gate. It costs the ability to REQUEST
+    // code point 0: Identity/GBR primaries/matrix cannot be asked for
+    // through these fields. That is deliberate and cheap here -- this
+    // encoder converts to YCbCr and has no Identity path to offer -- and if
+    // it ever needs to be requestable it takes a new chained struct, per the
+    // versioning rules at the top of the public header.
+    //
+    // WHAT AN UNSUPPLIED FIELD BECOMES: 2, "Unspecified" in ISO/IEC 23091-4,
+    // which H.264, H.265 and AV1 all share. It is the code point that MEANS
+    // "not stated", so a partially-supplied declaration stays truthful in
+    // every field instead of asserting Reserved/Identity by omission.
+    //
     // video_format 5 = "unspecified" (Rec. ITU-T H.264 Table E-2), the
     // correct value when the caller communicates colorimetry only.
-    if ((extConfig.colourPrimaries != 0) ||
-        (extConfig.transferCharacteristics != 0) ||
-        (extConfig.matrixCoefficients != 0) ||
-        (extConfig.videoFullRange == VK_TRUE)) {
-        cfg->colour_primaries         = extConfig.colourPrimaries;
-        cfg->transfer_characteristics = extConfig.transferCharacteristics;
-        cfg->matrix_coefficients      = extConfig.matrixCoefficients;
-        cfg->video_full_range_flag    = (extConfig.videoFullRange == VK_TRUE) ? 1 : 0;
-        cfg->video_format             = 5;
-        cfg->video_signal_type_present_flag  = 1;
-        // Raise the colour description only when there is one. With all three
-        // idc values at 0 this emits Reserved primaries/transfer and
-        // matrix_coefficients 0 (Identity/GBR) -- telling the decoder the
-        // samples are RGB. video_signal_type/full_range still travel alone.
-        if ((extConfig.colourPrimaries != 0) ||
-            (extConfig.transferCharacteristics != 0) ||
-            (extConfig.matrixCoefficients != 0)) {
-            cfg->color_description_present_flag = 1;
-        }
+    const bool anyColourIdcSupplied = (extConfig.colourPrimaries != 0) ||
+                                      (extConfig.transferCharacteristics != 0) ||
+                                      (extConfig.matrixCoefficients != 0);
+    const uint8_t kColourIdcUnspecified = 2;
+    if (anyColourIdcSupplied || (extConfig.videoFullRange == VK_TRUE)) {
+        // video_signal_type carries video_format and the range flag; it
+        // travels alone when only the range was declared.
+        cfg->video_format                   = 5;
+        cfg->video_signal_type_present_flag = 1;
+        cfg->video_full_range_flag = (extConfig.videoFullRange == VK_TRUE) ? 1 : 0;
+    }
+    if (anyColourIdcSupplied) {
+        // Raise the colour description only when there IS one, and fill each
+        // of its three fields from the caller or from Unspecified --
+        // independently. With all three at 0 this used to emit Reserved
+        // primaries/transfer and matrix 0 (the samples are RGB).
+        cfg->colour_primaries = (extConfig.colourPrimaries != 0)
+                                    ? extConfig.colourPrimaries
+                                    : kColourIdcUnspecified;
+        cfg->transfer_characteristics =
+            (extConfig.transferCharacteristics != 0)
+                ? extConfig.transferCharacteristics
+                : kColourIdcUnspecified;
+        cfg->matrix_coefficients = (extConfig.matrixCoefficients != 0)
+                                       ? extConfig.matrixCoefficients
+                                       : kColourIdcUnspecified;
+        cfg->color_description_present_flag = 1;
     }
 
     // ---- Quality / profile ----
@@ -1686,31 +1836,279 @@ VkResult VkEncBuildEncoderConfig(
     // reaching it would be an error and not another silent stall.
     cfg->asyncAssembly = 1;
 #ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
-    // Unconditional, both ways -- and that is the point, not a style
-    // preference. EncoderConfig defaults this member to TRUE
-    // (VkEncoderConfig.h), so writing it only on VK_TRUE would leave an ext
-    // caller that passed VK_FALSE with the filter CREATED: InitEncoder swaps
+    // Written unconditionally, both ways -- and that is the point, not a
+    // style preference. EncoderConfig defaults this member to TRUE
+    // (VkEncoderConfig.h), so writing it only in the true case would leave a
+    // directly encodable session with the filter CREATED: InitEncoder swaps
     // m_inputCommandBufferPool for the filter's compute-family pool and every
-    // staged frame moves to the COMPUTE queue -- which the barrier sites now
-    // agree with, but which is still a queue and a pipeline the caller did
-    // not ask for.
+    // staged frame moves to the COMPUTE queue -- a queue and a pipeline that
+    // session has no use for.
     //
-    // This is where the caller's single public boolean fans out. API_V2:543
-    // describes exactly this shape: enablePreprocessFilter is dropped in
-    // favour of enablePreprocessComputeFilter + filterType. This site writes
-    // the first; VkVideoEncoder::InitEncoder derives the second, because
-    // WHICH conversion to run is a device-dependent question the binder has
-    // no device to answer.
-    //
-    // It can now land 1, which it never could while the flag above was
-    // refused outright. That is the whole of the behaviour change in this
-    // commit, and it is what the binder conformance suite has to be told
-    // about: VkEncBoundConfigProbe::preprocessComputeFilter reports BOUND and
-    // the field table says BOUND, so a suite pinning REJECTED will
-    // fail here rather than silently.
-    cfg->enablePreprocessComputeFilter =
-        (extConfig.enablePreprocessFilter == VK_TRUE) ? 1 : 0;
+    // WHICH conversion to run is a separate question, and a device-dependent
+    // one: VkVideoEncoder::InitEncoder derives the filter type from the input
+    // and encode-source formats. The binder has no device and decides only
+    // WHETHER.
+    cfg->enablePreprocessComputeFilter = needsPreprocessFilter ? 1 : 0;
 #endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+    // ---- HDR10 static metadata (pNext-chained) ----
+    //
+    // THE BINDER WALKS THE CHAIN, not InitializeExt, and that is the whole
+    // reason this is assertable without a device: VkEncBuildAndProbeConfig
+    // calls this function and nothing else, so a device-free test can drive
+    // the chain end to end. InitializeExt's own walk ACCEPTS this sType and
+    // consumes nothing, with a comment saying so -- the two walks must not
+    // both try to own it.
+    //
+    // An unknown sType anywhere in the chain is still rejected, by that other
+    // walk. This one only looks for the link it owns and ignores the rest,
+    // because rejecting here would duplicate a gate whose complete list lives
+    // there.
+    for (const void* link = extConfig.pNext; link != nullptr;) {
+        const auto* base =
+            reinterpret_cast<const VkVideoEncoderHdrMetadataInfo*>(link);
+        if (base->sType == VK_VIDEO_ENCODER_STRUCTURE_TYPE_HDR_METADATA_INFO) {
+            // H.264 HAS NO SUCH SEI. There is no standard H.264
+            // mastering-display or content-light message, so an H.264 session
+            // could only accept this and drop it -- the accepted-and-ignored
+            // class this API refuses everywhere else. Say no, with the reason.
+            if (codecOp == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) {
+                VkEncErr() << "[EncoderExt] HDR10 static metadata was chained "
+                              "onto an H.264 session. H.264 defines no "
+                              "mastering-display or content-light-level SEI, "
+                              "so this metadata cannot be carried; select "
+                              "H.265 or AV1, or drop the chain."
+                           << std::endl;
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            EncoderHdrStaticMetadata& md = cfg->hdrMetadata;
+            md.masteringDisplayPresent =
+                (base->masteringDisplayPresent == VK_TRUE) ? 1u : 0u;
+            md.contentLightLevelPresent =
+                (base->contentLightLevelPresent == VK_TRUE) ? 1u : 0u;
+            for (int c = 0; c < 3; c++) {
+                md.displayPrimaryX[c] = base->displayPrimaryX[c];
+                md.displayPrimaryY[c] = base->displayPrimaryY[c];
+            }
+            md.whitePointX = base->whitePointX;
+            md.whitePointY = base->whitePointY;
+            md.maxDisplayMasteringLuminance =
+                base->maxDisplayMasteringLuminance;
+            md.minDisplayMasteringLuminance =
+                base->minDisplayMasteringLuminance;
+            md.maxContentLightLevel      = base->maxContentLightLevel;
+            md.maxFrameAverageLightLevel = base->maxFrameAverageLightLevel;
+        } else if (base->sType ==
+                   VK_VIDEO_ENCODER_STRUCTURE_TYPE_INPUT_COLOUR_INFO) {
+            const auto* inputColour =
+                reinterpret_cast<const VkVideoEncoderInputColourInfo*>(link);
+            if (inputColour->reserved != 0) {
+                VkEncErr() << "[EncoderExt] VkVideoEncoderInputColourInfo::"
+                              "reserved must be 0."
+                           << std::endl;
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            // THE CALLER DECLARES WHAT ITS BUFFER IS. Recorded here, and the
+            // presence flag with it -- 0 is UNDECLARED on every axis, so no
+            // value field can tell "absent" from "present and zero".
+            cfg->inputColourChainPresent      = 1;
+            cfg->inputColourPrimaries         = inputColour->inputColourPrimaries;
+            cfg->inputTransferCharacteristics =
+                inputColour->inputTransferCharacteristics;
+            cfg->inputMatrixCoefficients      = inputColour->inputMatrixCoefficients;
+            cfg->inputRange                   = (uint8_t)inputColour->inputRange;
+        }
+        link = base->pNext;
+    }
+
+    // ---- What the input declares against what the bitstream declares ----
+    //
+    // REFUSED ON THE AXES THIS LIBRARY CANNOT CONVERT, which is the rule
+    // inputTransferCharacteristics already applies to the transfer axis
+    // (above): the filter performs no primaries conversion and applies no
+    // transfer function, so an input and an output that name different
+    // primaries, or different matrices, describe a conversion that does not
+    // happen. Accepting the pair would produce pixels that are close enough to
+    // look plausible and wrong everywhere.
+    //
+    // ONLY WHEN BOTH SIDES ARE DECLARED, AND BOTH SIDES ARE READ FROM THE
+    // CALLER. The comparison is against extConfig and not against cfg on
+    // purpose: the binder above rewrites an unsupplied output field to 2
+    // (Unspecified) so a partial declaration stays truthful, and comparing
+    // against that substitution would read the LIBRARY's fill as a caller
+    // declaration and refuse a config the caller never contradicted.
+    //
+    // 0 IS UNDECLARED AND 2 IS "UNSPECIFIED" -- neither asserts anything a
+    // declaration on the other side can contradict, so both are skipped.
+    //
+    // RANGE IS NOT ON THIS LIST because its rule is not this rule. The three
+    // axes here are compared on every lane and applied on none. The range is
+    // APPLIED on the Y'CbCr lane -- where the library converts nothing, so
+    // the input's range is the stream's -- and compared on the RGB lane,
+    // where the filter produces it. Both halves are below, after the axes
+    // that have one rule for both lanes.
+    if (cfg->inputColourChainPresent != 0) {
+        struct InputColourAxis {
+            uint8_t     input;
+            uint8_t     output;
+            const char* name;
+            const char* why;
+        };
+        const InputColourAxis axes[] = {
+            { cfg->inputColourPrimaries, extConfig.colourPrimaries,
+              "colour primaries",
+              "this library performs no primaries conversion, so the input's "
+              "primaries and the bitstream's are necessarily the same" },
+            { cfg->inputMatrixCoefficients, extConfig.matrixCoefficients,
+              "matrix coefficients",
+              "the only matrix this library applies is the RGBA->Y'CbCr "
+              "filter's, and it produces the matrix the bitstream declares" },
+            { cfg->inputTransferCharacteristics,
+              extConfig.transferCharacteristics,
+              "transfer characteristics",
+              "this library applies no transfer function: the code values it "
+              "writes are the code values it read" },
+        };
+        for (const InputColourAxis& axis : axes) {
+            if ((axis.input == 0) || (axis.input == 2) ||
+                (axis.output == 0) || (axis.output == 2) ||
+                (axis.input == axis.output)) {
+                continue;
+            }
+            VkEncErr() << "[EncoderExt] the input declares "
+                       << axis.name << " " << (uint32_t)axis.input
+                       << " and the bitstream declares "
+                       << (uint32_t)axis.output
+                       << ". They must agree: " << axis.why
+                       << ". Declare the same value on both, or leave the "
+                          "input side 0, which asserts nothing."
+                       << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        // The chained transfer value and the flat config field are the same
+        // declaration spelled twice; supplying both is allowed and they must
+        // agree, because a caller that contradicts itself has not said what it
+        // means.
+        if ((extConfig.inputTransferCharacteristics != 0) &&
+            (cfg->inputTransferCharacteristics != 0) &&
+            (extConfig.inputTransferCharacteristics !=
+             cfg->inputTransferCharacteristics)) {
+            VkEncErr() << "[EncoderExt] inputTransferCharacteristics was "
+                          "declared as "
+                       << (uint32_t)extConfig.inputTransferCharacteristics
+                       << " on the config and as "
+                       << (uint32_t)cfg->inputTransferCharacteristics
+                       << " on the chained VkVideoEncoderInputColourInfo. "
+                          "They are the same declaration and must agree."
+                       << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+
+    // ---- The declared input RANGE ----
+    //
+    // ONE VARIABLE, TWO CONSUMERS. EncoderConfig::video_full_range_flag is
+    // both the VUI bit the bitstream carries and, through
+    // VkVideoEncoder::InitEncoder, the VkSamplerYcbcrRange the preprocess
+    // filter is built with. They are the same decision and are deliberately
+    // not two fields; what a declaration does is decide which value that one
+    // variable takes on the lane where nothing else can.
+    //
+    // THE Y'CbCr LANE APPLIES NO RANGE MAPPING, so the declaration is
+    // APPLIED. The samples that arrive are the samples that are coded: there
+    // is no scaler between them, and the Y'CbCr copy filter takes its output
+    // range from its input range, so a copy stays a copy whatever this flag
+    // says. The input's range therefore IS the stream's range, and a caller
+    // that states it is stating a fact about the bitstream. Writing it is the
+    // only way that fact can survive; leaving it to videoFullRange alone
+    // means a producer of full-range Y'CbCr has to know that a zero it never
+    // wrote is an assertion, which is the shape of the bug this declaration
+    // exists to end.
+    //
+    // AND IT IS SIGNALLED, not merely recorded. video_full_range_flag is
+    // nested inside video_signal_type_present_flag, and an absent
+    // video_signal_type is inferred as studio swing by H.264 E.2.1 and H.265
+    // E.3.1 while decoders report it as unknown at their API boundary. A
+    // caller that declared a range and got silence would be exactly as badly
+    // served as one that declared nothing, so a declaration raises the
+    // presence flag, with video_format 5 (Unspecified) beside it -- the same
+    // value the colour binder above writes when a caller communicates
+    // colorimetry only.
+    //
+    // THE RGB LANE APPLIES ONE, so the declaration is COMPARED. There the
+    // filter PRODUCES the Y'CbCr range from this same flag, and the caller's
+    // declaration is about its RGB buffer: two different quantities, and a
+    // declaration about the first must not silently retarget the second. The
+    // filter reads its RGB over the full range and performs no input
+    // expansion, so an RGB input declared LIMITED describes a conversion that
+    // does not happen -- refused with the reason, exactly as the primaries,
+    // matrix and transfer axes are. An RGB input declared FULL agrees with
+    // what the filter reads and says nothing about the output, which stays
+    // the bitstream request's to state.
+    //
+    // ONLY THE RAISED DIRECTION OF videoFullRange CAN BE CONTRADICTED. It is
+    // a VkBool32 with no undeclared state, so VK_FALSE is indistinguishable
+    // from silence and reading it as a positive claim of limited range would
+    // refuse every caller that simply did not fill it in. VK_TRUE against a
+    // LIMITED input is a real contradiction and is refused.
+    if ((cfg->inputColourChainPresent != 0) && (cfg->inputRange != 0)) {
+        const bool inputIsFullRange =
+            (cfg->inputRange == (uint8_t)VK_VIDEO_ENCODER_RANGE_FULL);
+        if (cfg->input.colorSpace == VkEncColorSpace::kRGB) {
+            if (!inputIsFullRange) {
+                VkEncErr()
+                    << "[EncoderExt] the input declares limited-range RGB, "
+                       "which this library cannot read: the RGBA->Y'CbCr "
+                       "filter samples its input over the full range and "
+                       "performs no input expansion, so the conversion the "
+                       "declaration describes does not happen. Supply "
+                       "full-range RGB and declare it, or leave inputRange "
+                       "UNDECLARED, which asserts nothing. The range the "
+                       "BITSTREAM carries is stated on "
+                       "VkVideoEncoderConfig::videoFullRange and is a "
+                       "separate question."
+                    << std::endl;
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+        } else {
+            if ((extConfig.videoFullRange == VK_TRUE) && !inputIsFullRange) {
+                VkEncErr()
+                    << "[EncoderExt] the input declares limited range and the "
+                       "bitstream is requested as full range. This library "
+                       "applies no range scaling to Y'CbCr input, so the two "
+                       "cannot differ: the samples that arrive are the "
+                       "samples that are coded. Declare the same range on "
+                       "both, or leave inputRange UNDECLARED."
+                    << std::endl;
+                return VK_ERROR_INITIALIZATION_FAILED;
+            }
+            cfg->video_format                   = 5;
+            cfg->video_signal_type_present_flag = 1;
+            cfg->video_full_range_flag          = inputIsFullRange ? 1 : 0;
+        }
+    }
+
+    // ---- The RGBA->YCbCr matrix contract, settled WITHOUT A DEVICE ----
+    //
+    // An RGBA input necessarily builds the RGBA2YCBCR filter -- every encode
+    // source this library can select is YCbCr, so VkEncDeriveFilterType has
+    // exactly one answer for a non-YCbCr input -- which means the matrix
+    // question can be settled here, before an instance or a device exists,
+    // instead of only at InitEncoder. That matters twice: the caller hears
+    // "no" before it allocates a frame pool, and the refusal is reachable
+    // from a device-free test through VkEncBuildAndProbeConfig.
+    //
+    // It is the SAME function InitEncoder calls, and it is idempotent, so the
+    // later call is a no-op and the two layers cannot answer differently.
+    if ((cfg->input.colorSpace == VkEncColorSpace::kRGB) &&
+        cfg->IsPreprocessComputeFilterEnabled()) {
+        VkSamplerYcbcrModelConversion filterModel =
+            VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
+        if (!cfg->ResolveRgbToYcbcrMatrix(&filterModel)) {
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        cfg->ApplyPreprocessFilterChromaSiting();
+    }
+
     // DEBUG: enable the encoder's built-in input-vs-reconstructed PSNR so the
     // encode itself can be judged independent of the decode roundtrip.
     if (getenv("VKENC_DEBUG_PSNR")) {
@@ -1721,7 +2119,100 @@ VkResult VkEncBuildEncoderConfig(
     if (cfg->FinalizeConfig() != 0) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
-    return outConfig->InitializeParameters();
+    const VkResult paramsResult = outConfig->InitializeParameters();
+    if (paramsResult != VK_SUCCESS) {
+        return paramsResult;
+    }
+
+    // THE TWO DERIVATIONS OF THE INPUT'S IDENTITY MUST AGREE, AND THIS IS
+    // WHERE THAT IS SAID.
+    //
+    // This function derives (chroma subsampling, bit depth, plane count) FROM
+    // the caller's VkFormat, above. EncoderInputImageParameters::VerifyInputs()
+    // -- which InitializeParameters just ran -- reconstructs a VkFormat FROM
+    // those same three. Two derivations of one quantity in opposite directions,
+    // and nothing has ever said they had to agree: whatever the second one
+    // produced is what the session was configured with, and what the compute
+    // filter was built from.
+    //
+    // THE REVERSE ONE CANNOT SIMPLY BE DELETED, which is why this is an
+    // assertion. The packed-alias arm above leaves input.vkFormat unwritten ON
+    // PURPOSE so the reconstruction supplies it: CodecGetVkFormat(4:4:4, depth,
+    // PLANE_LAYOUT_PACKED_1) spells AYUV at eight bits and Y410 at ten, and
+    // that is the only route by which either format is nameable. Removing the
+    // reverse derivation removes two capabilities.
+    //
+    // IT COVERS BOTH LANES WITH ONE COMPARISON. On the RGBA lane VerifyInputs
+    // carries the caller's format through rather than reconstructing it --
+    // CodecGetVkFormat spells no RGB layout -- so the equality asserted here is
+    // a carry-through there and a round trip on the Y'CbCr lanes. The
+    // proposition is the same either way: the config's idea of the input format
+    // is the caller's.
+    //
+    // A DISAGREEMENT IS A REFUSAL AND NOT A REPAIR. Overwriting one side with
+    // the other would pick a winner between two derivations without knowing
+    // which was wrong, and the wrong choice is a session configured for a
+    // picture the caller is not sending -- which is exactly the failure that
+    // is invisible until the filter is built from it.
+    if (cfg->input.vkFormat != extConfig.inputFormat) {
+        VkEncErr() << "[EncoderExt] internal inconsistency: inputFormat "
+                   << (uint32_t)extConfig.inputFormat
+                   << " was bound as (chroma subsampling "
+                   << (uint32_t)cfg->input.chromaSubsampling << ", "
+                   << (uint32_t)cfg->input.bpp << "-bit, "
+                   << cfg->input.numPlanes
+                   << "-plane), and that geometry describes format "
+                   << (uint32_t)cfg->input.vkFormat
+                   << " instead. The session would be configured for a picture "
+                      "the caller is not sending, so it is refused rather than "
+                      "reconciled." << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return VK_SUCCESS;
+}
+
+// Byte-exact projection of the HDR10 payload builders -- see the declaration
+// in the internal header for why it exists. A thin translation from the
+// public struct to the library's POD and back out as bytes: no config, no
+// device, no session.
+uint32_t VkEncBuildHdrMetadataPayload(const VkVideoEncoderHdrMetadataInfo* info,
+                                      VkVideoCodecOperationFlagBitsKHR codecOp,
+                                      uint8_t* out, uint32_t capacity)
+{
+    if ((info == nullptr) || (out == nullptr)) {
+        return 0;
+    }
+    EncoderHdrStaticMetadata md;
+    md.masteringDisplayPresent =
+        (info->masteringDisplayPresent == VK_TRUE) ? 1u : 0u;
+    md.contentLightLevelPresent =
+        (info->contentLightLevelPresent == VK_TRUE) ? 1u : 0u;
+    for (int c = 0; c < 3; c++) {
+        md.displayPrimaryX[c] = info->displayPrimaryX[c];
+        md.displayPrimaryY[c] = info->displayPrimaryY[c];
+    }
+    md.whitePointX = info->whitePointX;
+    md.whitePointY = info->whitePointY;
+    md.maxDisplayMasteringLuminance = info->maxDisplayMasteringLuminance;
+    md.minDisplayMasteringLuminance = info->minDisplayMasteringLuminance;
+    md.maxContentLightLevel         = info->maxContentLightLevel;
+    md.maxFrameAverageLightLevel    = info->maxFrameAverageLightLevel;
+
+    bool truncated = false;
+    size_t written = 0;
+    switch ((uint32_t)codecOp) {
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR:
+            written = VkEncBuildH265HdrSeiNal(md, out, capacity, &truncated);
+            break;
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:
+            written = VkEncBuildAv1HdrMetadataObus(md, out, capacity,
+                                                   &truncated);
+            break;
+        default:
+            // H.264 carries neither payload; the binder refuses the chain.
+            return 0;
+    }
+    return truncated ? 0u : (uint32_t)written;
 }
 
 //=============================================================================
@@ -2140,6 +2631,8 @@ VkResult VulkanVideoEncoderExtImpl::EncodeNextFrame(int64_t& frameNumEncoded)
 #endif
 VK_ENC_PIN_LAYOUT(VkVideoEncoderFrameDeadlineInfo, 24);
 VK_ENC_PIN_LAYOUT(VkVideoEncoderValidationInfo, 24);
+VK_ENC_PIN_LAYOUT(VkVideoEncoderHdrMetadataInfo, 56);
+VK_ENC_PIN_LAYOUT(VkVideoEncoderInputColourInfo, 24);
 VK_ENC_PIN_LAYOUT(VkVideoEncoderFrameFenceDescriptor, 32);
 VK_ENC_PIN_LAYOUT(VkVideoEncoderPlaneLayout, 40);
 VK_ENC_PIN_LAYOUT(VkVideoEncoderExternalImageDescriptor, 336);
@@ -2186,6 +2679,8 @@ VK_ENC_PIN_LAYOUT(VkVideoEncoderDeviceIdentity, 312);
 VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderConfig);
 VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderFrameDeadlineInfo);
 VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderValidationInfo);
+VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderHdrMetadataInfo);
+VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderInputColourInfo);
 VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderFrameFenceDescriptor);
 VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderExternalImageDescriptor);
 VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderFrameSubmitInfo);
@@ -2267,6 +2762,14 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
         switch (base->sType) {
             case VK_VIDEO_ENCODER_STRUCTURE_TYPE_FRAME_DEADLINE_INFO:
                 requestedFrameTimeoutNs = base->frameCompletionTimeoutNs;
+                break;
+            case VK_VIDEO_ENCODER_STRUCTURE_TYPE_HDR_METADATA_INFO:
+            case VK_VIDEO_ENCODER_STRUCTURE_TYPE_INPUT_COLOUR_INFO:
+                // Recognized here so the gate below does not reject it, and
+                // CONSUMED NOWHERE IN THIS FUNCTION: VkEncBuildEncoderConfig
+                // walks the same chain and binds it. Two walks, one owner --
+                // and the binder is the owner because it is the half a
+                // device-free test can drive.
                 break;
             case VK_VIDEO_ENCODER_STRUCTURE_TYPE_VALIDATION_INFO: {
                 const auto* validation =
@@ -2369,24 +2872,25 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
         }
     }
 
-    // The session-level half of the enablePreprocessFilter capability check
+    // The session-level half of the preprocess-conversion capability check
     // (the build-level half is in the binder, which has no device). The
     // filter runs on a COMPUTE queue and the staging copy on a TRANSFER
-    // queue, and they are distinct (CONTEXT_DESIGN:602-606). Under a
-    // borrowed device the compute queue is a queue the EMBEDDER had to
-    // create, so the queue contract is unenforceable and must be VERIFIED
-    // rather than assumed (DEVICE_INDEPENDENCE_PLAN section 4.2).
+    // queue, and they are distinct. Under a caller-supplied VkDevice the
+    // compute queue is the embedder's, so the queue contract is
+    // unenforceable and has to be VERIFIED rather than assumed.
     //
-    // Failing here rather than dropping the flag: with no compute queue the
-    // filter object cannot be created, the frames that needed converting
-    // would fall to the copy, and for a 3-plane input that copy is a GPU
+    // Failing here rather than dropping the conversion: with no compute queue
+    // the filter object cannot be created, the frames that needed converting
+    // would fall to the copy, and for a 3-plane source that copy is a GPU
     // hang, not a slower path.
-    if ((config.enablePreprocessFilter == VK_TRUE) &&
+    if ((VkEncClassifyInput(config.inputFormat, config.inputColorModel) ==
+         VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER) &&
         (m_vkDevCtx.GetComputeQueueFamilyIdx() < 0)) {
-        VkEncErr() << "[EncoderExt] enablePreprocessFilter requested, but "
-                      "this device exposes no compute queue family for the "
-                      "session to run the preprocess filter on"
-                   << std::endl;
+        VkEncErr() << "[EncoderExt] inputFormat "
+                   << (uint32_t)config.inputFormat
+                   << " is encodable only through the preprocess compute "
+                      "filter, but this device exposes no compute queue "
+                      "family for the session to run it on" << std::endl;
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
@@ -2399,6 +2903,12 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
 
     SnapshotCaps();
     m_initConfig = config;
+    // The session's input declaration, snapshotted for the lock-free readers
+    // for the same reason as the compute-filter state: SupportsFormat takes no
+    // lock, and m_initConfig is written here under one.
+    m_sessionInputFormat.store(config.inputFormat, std::memory_order_relaxed);
+    m_sessionInputColorModel.store(config.inputColorModel,
+                                   std::memory_order_relaxed);
     // The chain was consumed above and points at caller stack storage;
     // a retained copy must not carry a pointer about to dangle.
     m_initConfig.pNext = nullptr;
@@ -2622,7 +3132,7 @@ VkResult VulkanVideoEncoderExtImpl::SubmitExternalFrameCommon(
     // legacy arm by construction, so this keeps that arm at its documented
     // byte-for-byte pre-registration behaviour: the 3-plane family is refused
     // outright.
-    if ((VkEncClassifyInputFormat(frame.format) ==
+    if ((VkEncClassifyInput(frame.format, SessionColorModel(frame.format)) ==
          VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER) && !routeViaFilter) {
         VkEncErr() << "[EncoderExt] submit: inputFormat "
                    << (uint32_t)frame.format
@@ -4302,7 +4812,27 @@ VkResult VulkanVideoEncoderExtImpl::Reconfigure(const VkVideoEncoderConfig& conf
     // up encoded one way and described another -- for colour, that is an HDR
     // frame signalled with the previous VUI, which nothing downstream can
     // detect. The sequence header is written once at init; changing any of
-    // these needs a re-init until Reconfigure can rewrite it.
+    // these needs a re-init until Reconfigure can rewrite it. The input
+    // declaration is refused for a different reason: it is not in the
+    // sequence header at all, it is what the session's conversion was built
+    // around, and it is equally unable to change under a live encoder.
+    //
+    // inputColorModel is the OTHER half of that declaration, and it is
+    // compared AS IT RESOLVES against the format rather than as it is
+    // spelled. FROM_FORMAT and the model the format already carries name the
+    // same input and route identically, and the session keeps no record of
+    // which spelling arrived, so refusing a re-spelling would refuse a call
+    // that changes nothing. What the resolved comparison catches is the
+    // re-declaration an enumerant can absorb: R8G8B8A8_UNORM resolves to
+    // R'G'B' undeclared and to Y'CbCr -- AYUV -- under
+    // VK_VIDEO_ENCODER_COLOR_MODEL_YCBCR, and those take opposite arms of the
+    // preprocess filter. Accepting that would answer VK_SUCCESS while the
+    // session went on converting as it was built to, which is the wrong
+    // picture in every pixel ComputeFilterTakesFormat exists to prevent.
+    const VkVideoEncoderColorModel initColorModel = VkEncResolveColorModel(
+        m_initConfig.inputFormat, m_initConfig.inputColorModel);
+    const VkVideoEncoderColorModel newColorModel =
+        VkEncResolveColorModel(config.inputFormat, config.inputColorModel);
     struct Immutable {
         const char* name;
         bool        changed;
@@ -4313,11 +4843,15 @@ VkResult VulkanVideoEncoderExtImpl::Reconfigure(const VkVideoEncoderConfig& conf
         {"encodeWidth",     config.encodeWidth != m_initConfig.encodeWidth},
         {"encodeHeight",    config.encodeHeight != m_initConfig.encodeHeight},
         {"inputFormat",     config.inputFormat != m_initConfig.inputFormat},
+        {"inputColorModel", newColorModel != initColorModel},
         {"rateControlMode", config.rateControlMode != m_initConfig.rateControlMode},
         {"colourPrimaries",
          config.colourPrimaries != m_initConfig.colourPrimaries},
         {"transferCharacteristics",
          config.transferCharacteristics != m_initConfig.transferCharacteristics},
+        {"inputTransferCharacteristics",
+         config.inputTransferCharacteristics !=
+             m_initConfig.inputTransferCharacteristics},
         {"matrixCoefficients",
          config.matrixCoefficients != m_initConfig.matrixCoefficients},
         {"videoFullRange",  config.videoFullRange != m_initConfig.videoFullRange},
@@ -4325,10 +4859,11 @@ VkResult VulkanVideoEncoderExtImpl::Reconfigure(const VkVideoEncoderConfig& conf
     for (const auto& field : immutables) {
         if (field.changed) {
             VkEncErr() << "[EncoderExt] Reconfigure cannot change '"
-                       << field.name << "' mid-stream: it is fixed in the "
-                          "sequence header, which is written once at "
-                          "InitializeExt. Re-initialize the session instead."
-                       << std::endl;
+                       << field.name << "' mid-stream: it is settled at "
+                          "InitializeExt -- in the sequence header written "
+                          "once there, or in the input routing the session "
+                          "was built around. Re-initialize the session "
+                          "instead." << std::endl;
             return VK_ERROR_INITIALIZATION_FAILED;
         }
     }
@@ -4354,8 +4889,8 @@ bool VulkanVideoEncoderExtImpl::ComputeFilterActive() const
     // The session's own answer to "can this encoder convert?", as opposed to
     // the format taxonomy's "would conversion help?". Both halves matter: the
     // filter has to be compiled in (IsPreprocessComputeFilterEnabled is false
-    // outright when it is not) and the caller has to have asked for it, which
-    // is the flag the binder writes down from enablePreprocessFilter.
+    // outright when it is not), and the session's declared input format has
+    // to be one the binder built a filter for.
     //
     // Answered from the INIT-TIME SNAPSHOT, not from m_encoderConfig. This is
     // reached from SupportsFormat, which the header lists as class (c) --
@@ -4384,26 +4919,59 @@ bool VulkanVideoEncoderExtImpl::ComputeFilterTakesFormat(
             inputFormat);
 }
 
+VkVideoEncoderColorModel VulkanVideoEncoderExtImpl::SessionColorModel(
+    VkFormat inputFormat) const
+{
+    return (inputFormat == m_sessionInputFormat.load(std::memory_order_relaxed))
+               ? m_sessionInputColorModel.load(std::memory_order_relaxed)
+               : VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT;
+}
+
 VkBool32 VulkanVideoEncoderExtImpl::SupportsFormat(VkFormat inputFormat) const
 {
+    // No declaration: the model is the session's. This is the public query,
+    // which is handed a format and nothing else.
+    return SupportsFormat(inputFormat,
+                          VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT);
+}
+
+VkBool32 VulkanVideoEncoderExtImpl::SupportsFormat(
+    VkFormat inputFormat, VkVideoEncoderColorModel declaredColorModel) const
+{
+    // THE MODEL THE CLASS QUESTION IS ASKED UNDER. A declaration is a
+    // statement about the samples that only their producer can make, so it
+    // outranks the session's model wherever one is given; and it has to,
+    // because the packed 4:4:4 layouts (AYUV, Y410, Y416) ride RGBA format
+    // enumerants and are otherwise indistinguishable from an ordinary R'G'B'
+    // image. Classifying a declared surface under someone else's model
+    // answers a question the caller did not ask, and answers it about a
+    // different picture.
+    //
+    // FROM_FORMAT declares nothing -- it is what a zero-initialised
+    // descriptor and the public query both say -- and falls back to the
+    // session's model, which is the model this session negotiated for the
+    // format it was initialized with and FROM_FORMAT for every other.
+    const VkVideoEncoderColorModel colorModel =
+        (declaredColorModel == VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT)
+            ? SessionColorModel(inputFormat)
+            : declaredColorModel;
+
     // The SESSION's answer, which is why this is a member and the taxonomy is
     // not. A format that is only encodable after a conversion is supported
     // exactly when this session can perform that conversion; answering VK_TRUE
-    // without one would be the "accepted and ignored" shape ARCH_REVIEW:115
-    // names the worst option -- and for the 3-plane family it is worse than
-    // that, because the copy the frame would fall back to hangs the GPU
-    // (DEVICE_INDEPENDENCE_PLAN section 8.1).
-    switch (VkEncClassifyInputFormat(inputFormat)) {
+    // without one would be the "accepted and ignored" shape, which is the
+    // worst of the options -- and for the 3-plane family it is worse than
+    // that, because the copy the frame would fall back to hangs the GPU.
+    switch (VkEncClassifyInput(inputFormat, colorModel)) {
         case VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT:
             return VK_TRUE;
         case VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER:
             // Not merely "a filter exists" -- "the filter takes THIS format".
-            // A session configured with a semi-planar inputFormat and
-            // enablePreprocessFilter has a filter whose input format IS the
-            // encode format, so it converts nothing for a 3-plane descriptor;
-            // ValidateImageDescriptor refuses that descriptor with
-            // FORMAT_UNSUPPORTED, and a VK_TRUE here would have been the
-            // over-promise that cost the producer its pool allocation.
+            // A session declared in a different format has a filter built for
+            // that format, so it converts nothing for this descriptor;
+            // ValidateImageDescriptor refuses the descriptor with
+            // FORMAT_UNSUPPORTED, and a VK_TRUE here would be the over-promise
+            // that costs the producer its pool allocation.
             return ComputeFilterTakesFormat(inputFormat) ? VK_TRUE : VK_FALSE;
         case VK_ENC_INPUT_FORMAT_UNSUPPORTED:
         default:
@@ -4411,27 +4979,51 @@ VkBool32 VulkanVideoEncoderExtImpl::SupportsFormat(VkFormat inputFormat) const
     }
 }
 
-VkEncInputFormatClass VkEncClassifyInputFormat(VkFormat inputFormat)
+VkVideoEncoderColorModel VkEncResolveColorModel(
+    VkFormat inputFormat, VkVideoEncoderColorModel declared)
 {
-    switch (inputFormat) {
-        // Rung 1. What vkGetPhysicalDeviceVideoFormatPropertiesKHR reports as
-        // an encode source on contemporary hardware is the semi-planar 4:2:0
-        // set and nothing else (CONTEXT_DESIGN:363-373), so these are the
-        // formats that need no adaptation at all.
-        case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:                    // NV12
-        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:   // P010
-        case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16:   // P012
-            return VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT;
-        // Rung 2. Same subsampling and same bit depth as the encode format;
-        // the mismatch is the PLANE COUNT, three against two. The ladder's
-        // own table assigns subsampling and plane-layout conversion to the
-        // compute tier and restricts the transfer tier to "pure tiling
-        // mismatches" (CONTEXT_DESIGN:586-598), and section 8.1 measured what
-        // happens when a plane-count mismatch takes the copy anyway.
-        case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:                   // I420
-        case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16:  // I420 10b
-        case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16:  // I420 12b
-            return VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER;
+    // What the FORMAT says. A Y'CbCr VkFormat is one the multi-planar table
+    // places; everything else names an RGB layout. This answer is what
+    // EncoderInputImageParameters::colorSpace is written from, and that field
+    // is what VkEncDeriveFilterType reads to pick a filter arm, so the
+    // taxonomy and the filter cannot answer differently: one feeds the other.
+    const VkVideoEncoderColorModel fromFormat =
+        (YcbcrVkFormatInfo(inputFormat) != nullptr)
+            ? VK_VIDEO_ENCODER_COLOR_MODEL_YCBCR
+            : VK_VIDEO_ENCODER_COLOR_MODEL_RGB;
+
+    if (declared == VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) {
+        return fromFormat;
+    }
+    if (declared == fromFormat) {
+        return declared;
+    }
+    // The declaration disagrees with the format. Exactly one disagreement is
+    // real rather than a caller error: the packed 4:4:4 Y'CbCr layouts have no
+    // Vulkan enumerant of their own and ride the RGBA ones, so Y'CbCr declared
+    // over one of those is the ONLY thing that tells AYUV, Y410 and Y416 from
+    // an ordinary RGBA image. PackedYcbcrFormatDesc is the single table that
+    // names them, and asking it here is what keeps this from becoming a second
+    // copy of that one.
+    if ((declared == VK_VIDEO_ENCODER_COLOR_MODEL_YCBCR) &&
+        (PackedYcbcrFormatDesc(inputFormat) != nullptr)) {
+        return VK_VIDEO_ENCODER_COLOR_MODEL_YCBCR;
+    }
+    // Every other disagreement is unresolvable, and the caller hears so. RGB
+    // declared over a Y'CbCr format, or Y'CbCr declared over an RGBA layout
+    // that carries no packed reading, cannot be reconciled: nothing here can
+    // know which of the two the caller meant, and choosing one produces a
+    // picture that is plausible and wrong everywhere.
+    return VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT;
+}
+
+VkEncInputFormatClass VkEncClassifyInput(VkFormat inputFormat,
+                                         VkVideoEncoderColorModel colorModel)
+{
+    const VkVideoEncoderColorModel model =
+        VkEncResolveColorModel(inputFormat, colorModel);
+
+    if (model == VK_VIDEO_ENCODER_COLOR_MODEL_RGB) {
         // Rung 2, RGBA half. VulkanFilterYuvCompute binds the RGBA source
         // as a VK_DESCRIPTOR_TYPE_STORAGE_IMAGE over one combined view and
         // reads it with imageLoad, so what an RGBA input must grant is
@@ -4453,73 +5045,140 @@ VkEncInputFormatClass VkEncClassifyInputFormat(VkFormat inputFormat)
         //     an EOTF the library does not implement. Chromium maps its RGBA
         //     families to _UNORM and never emits VK_FORMAT_*_SRGB, so nothing
         //     is lost by refusing them.
-        //   A2B10G10R10_UNORM_PACK32, R16G16B16A16_UNORM -- EXCLUDED, and NOT
-        //     merely for bit depth: VulkanFilterYuvCompute already uses these
-        //     exact VkFormats to mean PACKED YCbCr on its output side (Y410
-        //     and Y416 respectively). Claiming them as RGBA inputs would make
-        //     the same enumerant mean two different colour models in one
-        //     filter, which is a trap rather than a feature.
+        //   A2B10G10R10_UNORM_PACK32, R16G16B16A16_UNORM -- EXCLUDED as RGBA
+        //     inputs, and not merely for bit depth: those two enumerants are
+        //     also how Y410 and Y416 are spelled, and a Y'CbCr declaration
+        //     over them means exactly that. Claiming them as RGBA as well
+        //     would make one enumerant carry two colour models on one path.
         //   R16G16B16A16_SFLOAT -- EXCLUDED. scRGB is linear and unbounded;
         //     both the transfer function and the out-of-[0,1] range are
         //     unhandled here.
         //
-        // These three are single-plane, so VkEncInputFormatPlaneCount can no
-        // longer answer from the class alone -- see the note there.
-        case VK_FORMAT_R8G8B8A8_UNORM:                              // RGBA8
-        case VK_FORMAT_B8G8R8A8_UNORM:                              // BGRA8
-        case VK_FORMAT_A8B8G8R8_UNORM_PACK32:                       // packed RGBA8
+        // These are single-plane, so VkEncInputFormatPlaneCount cannot answer
+        // from the class alone -- see the note there.
+        switch (inputFormat) {
+            case VK_FORMAT_R8G8B8A8_UNORM:                          // RGBA8
+            case VK_FORMAT_B8G8R8A8_UNORM:                          // BGRA8
+            case VK_FORMAT_A8B8G8R8_UNORM_PACK32:                   // packed RGBA8
+                return VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER;
+            default:
+                return VK_ENC_INPUT_FORMAT_UNSUPPORTED;
+        }
+    }
+
+    if (model != VK_VIDEO_ENCODER_COLOR_MODEL_YCBCR) {
+        // The declaration and the format cannot both be true -- see
+        // VkEncResolveColorModel. Refused rather than reconciled.
+        return VK_ENC_INPUT_FORMAT_UNSUPPORTED;
+    }
+
+    switch (inputFormat) {
+        // Rung 1. What vkGetPhysicalDeviceVideoFormatPropertiesKHR reports
+        // as an encode source is the 8- and 10-bit semi-planar set, at both
+        // 4:2:0 and 4:4:4: no driver table carries a 12-bit encode-input row,
+        // so 12-bit semi-planar is rung 2 even though its plane layout
+        // already matches.
+        //
+        // THE SUBSAMPLING IS NOT FIXED AT 4:2:0. A 4:4:4 semi-planar input is
+        // the encoder input of a 4:4:4 profile -- H.264 High 4:4:4 Predictive
+        // and H.265 Range Extensions -- and the codec config derives that
+        // profile from the input's own chroma subsampling, so nothing else
+        // has to be asked for. What this function answers is whether the
+        // LIBRARY routes the input unconverted; whether THIS device exposes
+        // an encode profile at that subsampling is a device question, and it
+        // is answered where the session is created rather than guessed here.
+        case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:                    // NV12
+        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:   // P010
+        case VK_FORMAT_G8_B8R8_2PLANE_444_UNORM:                    // NV24
+        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16:   // S410
+            return VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT;
+        // Rung 2. Same subsampling and same bit depth as the encode format;
+        // the mismatch is the PLANE COUNT, three against two. The ladder's
+        // own table assigns subsampling and plane-layout conversion to the
+        // compute tier and restricts the transfer tier to "pure tiling
+        // mismatches" (CONTEXT_DESIGN:586-598), and section 8.1 measured what
+        // happens when a plane-count mismatch takes the copy anyway.
+        case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:                   // I420
+        case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16:  // I420 10b
+        case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16:  // I420 12b
+        // Rung 2, bit-depth half. P012 has the encode format's plane layout
+        // and subsampling; what the device cannot take is the 12-bit depth,
+        // and depth conversion is the compute tier's work.
+        case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16:   // P012
             return VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER;
         default:
             return VK_ENC_INPUT_FORMAT_UNSUPPORTED;
     }
 }
 
-VkBool32 VkEncIsRgbaInputFormat(VkFormat inputFormat)
+uint32_t VkEncFilterAdvertisedInputFormats(const VkFormat* deviceFormats,
+                                           uint32_t deviceFormatCount,
+                                           VkFormat* outFormats,
+                                           uint32_t outCapacity)
 {
-    // The RGBA arm of the taxonomy, as its own predicate.
-    //
-    // Kept beside VkEncClassifyInputFormat and written as the same list so the
-    // two cannot drift: everything answering VK_TRUE here must appear in the
-    // ENCODABLE_VIA_FILTER arm above. The callers that need this are the ones
-    // for which "encodable via the filter" is not a fine enough answer --
-    // plane count, and the input geometry EncoderConfig derives -- because the
-    // YCbCr and RGBA halves of that class differ on both.
-    switch (inputFormat) {
-        case VK_FORMAT_R8G8B8A8_UNORM:
-        case VK_FORMAT_B8G8R8A8_UNORM:
-        case VK_FORMAT_A8B8G8R8_UNORM_PACK32:
-            return VK_TRUE;
-        default:
-            return VK_FALSE;
+    if ((deviceFormats == nullptr) || (outFormats == nullptr)) {
+        return 0;
     }
+    uint32_t written = 0;
+    for (uint32_t i = 0; (i < deviceFormatCount) && (written < outCapacity);
+         i++) {
+        const VkFormat format = deviceFormats[i];
+        if (VkEncClassifyInput(format,
+                               VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) ==
+            VK_ENC_INPUT_FORMAT_UNSUPPORTED) {
+            continue;
+        }
+        bool alreadyWritten = false;
+        for (uint32_t j = 0; j < written; j++) {
+            if (outFormats[j] == format) {
+                alreadyWritten = true;
+                break;
+            }
+        }
+        if (alreadyWritten) {
+            continue;
+        }
+        outFormats[written++] = format;
+    }
+    return written;
 }
 
-VkBool32 VkEncSupportsInputFormat(VkFormat inputFormat)
+VkBool32 VkEncSupportsInput(VkFormat inputFormat,
+                            VkVideoEncoderColorModel colorModel)
 {
-    return (VkEncClassifyInputFormat(inputFormat) !=
+    return (VkEncClassifyInput(inputFormat, colorModel) !=
             VK_ENC_INPUT_FORMAT_UNSUPPORTED) ? VK_TRUE : VK_FALSE;
 }
 
 uint32_t VkEncInputFormatPlaneCount(VkFormat inputFormat)
 {
-    // ENCODABLE_VIA_FILTER no longer implies a plane count. It used to: the
-    // class had exactly one member family, 3-plane I420 and its 10/12-bit
-    // siblings, so "via the filter" and "three planes" were the same fact and
-    // answering from the class was safe. Admitting RGBA to the class broke
-    // that -- RGBA is a SINGLE plane -- and this function is what
-    // EncoderConfig::input.numPlanes is written from, which in turn drives the
-    // input geometry and the staging pool's shape. Answering 3 for a BGRA8
-    // session would describe a two-plane phantom that does not exist and size
-    // its allocations from it.
-    if (VkEncIsRgbaInputFormat(inputFormat)) {
+    // The plane count is a property of the LAYOUT, and no class implies it.
+    // RGBA is a single plane and sits in the same class as 3-plane I420;
+    // 2-plane P012 sits there too, because what puts it on the filter is its
+    // bit depth and not its layout. This function is what
+    // EncoderConfig::input.numPlanes is written from, which drives the input
+    // geometry and the staging pool shape, so answering from the class would
+    // describe planes that do not exist and size allocations from them.
+    //
+    // A layout this library does not route has no plane count to give, and
+    // that test comes FIRST: an sRGB or scRGB surface is an RGB layout the
+    // library refuses, so asking "is it RGB" before "is it routed" would
+    // answer 1 for an input no allocation is ever sized for.
+    if (VkEncClassifyInput(inputFormat,
+                           VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) ==
+        VK_ENC_INPUT_FORMAT_UNSUPPORTED) {
+        return 0;
+    }
+    if (VkEncResolveColorModel(inputFormat,
+                               VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) ==
+        VK_VIDEO_ENCODER_COLOR_MODEL_RGB) {
         return 1;
     }
-    switch (VkEncClassifyInputFormat(inputFormat)) {
-        case VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT:      return 2;
-        case VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER:  return 3;
-        case VK_ENC_INPUT_FORMAT_UNSUPPORTED:
-        default:                                        return 0;
+    const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(inputFormat);
+    if (mpInfo == nullptr) {
+        return 0;
     }
+    return mpInfo->planesLayout.numberOfExtraPlanes + 1u;
 }
 
 void VkEncSelectImportMemoryType(const VkEncImportMemoryTypeRequest& request,
@@ -4888,6 +5547,9 @@ void VulkanVideoEncoderExtImpl::Deinitialize()
     m_computeFilterActive.store(false, std::memory_order_relaxed);
     m_computeFilterInputFormat.store(VK_FORMAT_UNDEFINED,
                                      std::memory_order_relaxed);
+    m_sessionInputFormat.store(VK_FORMAT_UNDEFINED, std::memory_order_relaxed);
+    m_sessionInputColorModel.store(VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT,
+                                   std::memory_order_relaxed);
     m_importMemTypeHeuristicSelections.store(0, std::memory_order_relaxed);
     m_importMemTypeExporterOverrides.store(0, std::memory_order_relaxed);
 }
@@ -4981,7 +5643,8 @@ static bool VkEncDescriptorPermitsStorageRead(
     VkImageUsageFlags resolvedUsage,
     bool deviceCanStorageRead)
 {
-    return (VkEncIsRgbaInputFormat(desc.format) == VK_TRUE) &&
+    return (VkEncResolveColorModel(desc.format, desc.colorModel) ==
+            VK_VIDEO_ENCODER_COLOR_MODEL_RGB) &&
            ((resolvedUsage & VK_IMAGE_USAGE_STORAGE_BIT) != 0) &&
            deviceCanStorageRead;
 }
@@ -5953,7 +6616,7 @@ static bool VkEncRegistrationIsDirectlyEncodable(
 {
     // The taxonomy's first rung, read from the one classifier so "encodable as
     // it stands" cannot drift from "encodable after a conversion".
-    return (VkEncClassifyInputFormat(desc.format) ==
+    return (VkEncClassifyInput(desc.format, desc.colorModel) ==
             VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT) &&
            (desc.tiling != VK_IMAGE_TILING_LINEAR) &&
            ((VkEncResolveRegistrationUsage(desc) &
@@ -6150,7 +6813,8 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::BuildRegisteredViewLocked(
         slot.imageView &&
         (slot.imageView->GetImageView() != VK_NULL_HANDLE) &&
         (slot.imageView->GetNumberOfPlanes() == 1) &&
-        (VkEncIsRgbaInputFormat(desc.format) == VK_TRUE) &&
+        (VkEncResolveColorModel(desc.format, desc.colorModel) ==
+         VK_VIDEO_ENCODER_COLOR_MODEL_RGB) &&
         ((usage & VK_IMAGE_USAGE_STORAGE_BIT) != 0);
 
     const VkImageLayout initialLayout =
@@ -6431,6 +7095,44 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
         return VK_VIDEO_ENCODER_STATUS_ERROR_SHARING_MODE_UNSUPPORTED;
     }
 
+    // A colour-model DECLARATION must be readable against the format before
+    // anything is read from it. VkEncResolveColorModel answers
+    // VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT for a (format, colorModel)
+    // pair that cannot be reconciled -- RGB declared over a Y'CbCr format, or
+    // Y'CbCr declared over an RGBA layout that carries no packed 4:4:4
+    // reading -- and there is no route to choose from an answer that means
+    // "the caller stated two things that cannot both be true".
+    //
+    // Judged HERE, from the descriptor alone, because that is what it is: the
+    // question needs no session, no device and no negotiated encode format,
+    // so QueryImageSupport and RegisterImageResource answer it identically,
+    // and on every session the same descriptor is offered to. Deferring it to
+    // the point where the route is picked is what lets a contradictory
+    // declaration REGISTER and then quietly take the staging copy -- an
+    // accepted registration that costs a copy the caller never asked for and
+    // has no way to see. A negotiation interface exists to make exactly that
+    // answerable before the allocation is committed.
+    //
+    // A declaration that AGREES with its format resolves to itself and
+    // passes. FROM_FORMAT -- what a zero-initialised descriptor says, and the
+    // ordinary case -- reads the model off the format and passes for every
+    // format the taxonomy places.
+    if (VkEncResolveColorModel(descriptor.format, descriptor.colorModel) ==
+        VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) {
+        VkEncErr() << "[EncoderExt] register: declared colorModel "
+                   << (uint32_t)descriptor.colorModel
+                   << " contradicts format " << (uint32_t)descriptor.format
+                   << "; the two cannot both be true and nothing here can "
+                      "know which was meant. Declare the colour model the "
+                      "format carries, or leave the field "
+                      "VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT to read it "
+                      "off the format." << std::endl;
+        // The DECLARATION is what is refused. The format itself may be
+        // perfectly encodable -- NV12 declared RGB reaches here -- so the
+        // code names the field the caller has to change.
+        return VK_VIDEO_ENCODER_STATUS_ERROR_COLOR_MODEL_UNSUPPORTED;
+    }
+
     // An RGBA input is not "unsupported" -- it is convertible, and the
     // distinction is what lets a client fix it rather than give up.
     //
@@ -6440,7 +7142,15 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
     // answer here is still CONVERSION_REQUIRED -- and it must be, because the
     // gates below this one are what keep a 3-plane frame away from the
     // transfer copy that hangs the GPU on it.
-    if (SupportsFormat(descriptor.format) != VK_TRUE) {
+    //
+    // Asked under the model the DESCRIPTOR declares. The gate above
+    // established that the declaration can be read against the format; this
+    // one is what reads it. A descriptor is judged as what it says it is, so
+    // that the answer a producer negotiates is an answer about the frames it
+    // intends to hand in -- and the packed 4:4:4 layouts are why that has to
+    // be said, because they ride RGBA format enumerants and the format alone
+    // cannot separate them from an R'G'B' image.
+    if (SupportsFormat(descriptor.format, descriptor.colorModel) != VK_TRUE) {
         return VK_VIDEO_ENCODER_STATUS_ERROR_CONVERSION_REQUIRED;
     }
 
@@ -6743,7 +7453,9 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
         // producer re-export with the right declaration instead of
         // discovering at submit that its frames convert to nothing.
         if (descriptor.format != sessionEncodeFormat) {
-            if (VkEncIsRgbaInputFormat(descriptor.format) == VK_TRUE) {
+            if (VkEncResolveColorModel(descriptor.format,
+                                       descriptor.colorModel) ==
+                VK_VIDEO_ENCODER_COLOR_MODEL_RGB) {
                 // Single plane, storage read: usage + device capability, no
                 // create flags. Computed once -- the DRM arm of this walks
                 // the modifier list.
@@ -7242,7 +7954,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::RegisterImageResource(
     // measured device loss.
     const bool routesViaFilter =
         !slot.encodeCapable &&
-        (VkEncClassifyInputFormat(descriptor.format) ==
+        (VkEncClassifyInput(descriptor.format, descriptor.colorModel) ==
          VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER) &&
         ComputeFilterActive() &&
         (slot.planeStorageViews || slot.storageReadView);
@@ -9169,15 +9881,23 @@ static VkResult QueryEncoderCapsInternal(const VulkanDeviceContext& ctx,
     outCaps->supportsResizeWithoutIdr = false;
 
     // --- Supported input (VIDEO_ENCODE_SRC) formats. ---
-    // GetVideoFormats takes the count in/out and clamps to the capacity, so
-    // the struct's inline array is filled directly.
+    // The device is asked first and the LIBRARY answers. Copying the device's
+    // list through would advertise, in the same struct a producer sizes its
+    // pool from, formats the registration gate then refuses -- and would
+    // spend slots of a fixed-capacity list on a format the device reports
+    // once per tiling.
+    VkFormat deviceFormats[VK_VIDEO_ENCODER_MAX_INPUT_FORMATS] = {};
     uint32_t formatCount = VK_VIDEO_ENCODER_MAX_INPUT_FORMATS;
     VkResult fmtResult = VulkanVideoCapabilities::GetVideoFormats(
         &ctx, coreProfile,
         VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR,
-        formatCount, outCaps->supportedInputFormats);
+        formatCount, deviceFormats);
     outCaps->supportedInputFormatCount =
-        (fmtResult == VK_SUCCESS) ? formatCount : 0u;
+        (fmtResult == VK_SUCCESS)
+            ? VkEncFilterAdvertisedInputFormats(
+                  deviceFormats, formatCount, outCaps->supportedInputFormats,
+                  VK_VIDEO_ENCODER_MAX_INPUT_FORMATS)
+            : 0u;
 
     return VK_SUCCESS;
 }

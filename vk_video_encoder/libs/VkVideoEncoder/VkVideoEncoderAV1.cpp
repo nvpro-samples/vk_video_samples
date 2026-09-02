@@ -170,6 +170,35 @@ VkResult VkVideoEncoderAV1::EncodeVideoSessionParameters(VkSharedBaseObj<VkVideo
     }
     encodeFrameInfo->bitstreamHeaderBufferSize = bufferSize;
 
+    // HDR10 STATIC METADATA, appended to the sequence header OBU.
+    //
+    // Both output arms consume this buffer and both put it in the right
+    // place: BuildFrameObuSequence (file arm) copies it in first, and the
+    // capture arm of WriteBitstreamToFile inserts it after the temporal
+    // delimiter and before the frame OBU. So the temporal unit reads
+    // TD, sequence header, metadata, frame -- which is the order a decoder
+    // needs and the order that makes the metadata apply to the frames that
+    // follow it.
+    //
+    if (m_encoderConfig->hdrMetadata.Any()) {
+        bool truncated = false;
+        const size_t used = encodeFrameInfo->bitstreamHeaderOffset +
+                            encodeFrameInfo->bitstreamHeaderBufferSize;
+        const size_t obuBytes = VkEncBuildAv1HdrMetadataObus(
+            m_encoderConfig->hdrMetadata,
+            encodeFrameInfo->bitstreamHeaderBuffer + used,
+            sizeof(encodeFrameInfo->bitstreamHeaderBuffer) - used,
+            &truncated);
+        if (truncated) {
+            VkEncPrintfErr("\nEncodeVideoSessionParameters Error: the HDR10 metadata "
+                    "OBUs do not fit in the %zu-byte non-VCL header buffer "
+                    "after %zu bytes of sequence header.\n",
+                    sizeof(encodeFrameInfo->bitstreamHeaderBuffer), used);
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        encodeFrameInfo->bitstreamHeaderBufferSize += obuBytes;
+    }
+
     return result;
 
 }

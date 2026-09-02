@@ -9,10 +9,15 @@
  * Layer 1 is the field table below. Every field of VkVideoEncoderConfig
  * appears exactly once with a disposition saying what happens to it. Each
  * entry carries an offsetof assertion, so renaming or removing a field fails
- * the build here; and the sizeof assertion on the struct fails the build when
- * a field is ADDED, forcing the author to this table to classify it. The two
- * together mean a new field cannot reach a release without someone deciding,
- * in writing, what it does.
+ * the build here. An ADDED field is caught elsewhere: the sizeof assertion on
+ * the struct fails when the addition changes the size, and the closing-member
+ * pins beside that assertion fail when it lands in padding and slides the
+ * rest of a run. Both are PROMPTS rather than proofs -- they fail where the
+ * pin is, not at this table, and this table is a hand-maintained list that
+ * nothing ties to the struct declaration, so a field whose pin was updated
+ * and whose row was not written still compiles. Classifying a new field is a
+ * decision an author makes; the pins are what put the question in front of
+ * them.
  *
  * Layer 3 is the binder conformance suite, which drives
  * VkEncBuildAndProbeConfig per codec arm and asserts effect or explicit
@@ -50,14 +55,24 @@
 //               stdio silencing, codec dispatch). Never reaches EncoderConfig,
 //               and must not: it shapes the session, not the encode.
 //   ABI_GATE -- consumed by the versioning gate before anything else runs.
-//   REJECTED -- a non-default value is refused at init, because honouring it
-//               is impossible in this build. Silently ignoring it is the
-//               defect; the rejection is the fix.
+//   VALIDATED-- read as a DECLARATION and checked against the rest of the
+//               config; refused at init when it cannot be honoured. Reaches
+//               EncoderConfig nowhere, because there is nothing to forward:
+//               the field states a requirement, it does not set a knob.
 enum VkVideoEncoderConfigFieldDisposition {
     VK_ENC_FIELD_BOUND = 0,
     VK_ENC_FIELD_SESSION,
     VK_ENC_FIELD_ABI_GATE,
-    VK_ENC_FIELD_REJECTED,
+    // NO "REJECTED" DISPOSITION, AND ITS ABSENCE IS THE DECISION. There was
+    // one, with a single definition and no row anywhere in the table below:
+    // it advertised a class -- "a non-default value is refused at init because
+    // honouring it is impossible in THIS BUILD" -- that this config surface
+    // does not contain. Every refusal the surface makes is either a VALIDATED
+    // declaration that cannot be honoured or an ABI_GATE, and both are
+    // properties of the config rather than of the build. Deleted rather than
+    // given a row: inventing a member to justify an enumerant is how a table
+    // stops describing the thing it tables.
+    VK_ENC_FIELD_VALIDATED,
 };
 
 // X(field, disposition, note)
@@ -71,7 +86,20 @@ enum VkVideoEncoderConfigFieldDisposition {
                                           "depth does not admit, is refused") \
     X(encodeWidth,              BOUND,    "cfg->encodeWidth")                  \
     X(encodeHeight,             BOUND,    "cfg->encodeHeight")                 \
-    X(inputFormat,              BOUND,    "validated, then cfg->input.bpp")    \
+    X(inputFormat,              BOUND,    "validated, then cfg->input.bpp, " \
+                                          "cfg->input.chromaSubsampling "    \
+                                          "and cfg->input.numPlanes -- the " \
+                                          "subsampling is what makes a "     \
+                                          "4:4:4 or 4:2:2 encode profile "   \
+                                          "reachable at all")                \
+    X(inputColorModel,          BOUND,    "with inputFormat, the pair a "      \
+                                          "session is declared in; "           \
+                                          "resolved to "                       \
+                                          "cfg->input.colorSpace, which "      \
+                                          "selects the input plane count "     \
+                                          "and subsampling. A "                \
+                                          "declaration the format cannot "     \
+                                          "carry is refused at init")          \
     X(inputWidth,               BOUND,    "cfg->input.width")                  \
     X(inputHeight,              BOUND,    "cfg->input.height")                 \
     X(rateControlMode,          BOUND,    "cfg->rateControlMode")              \
@@ -100,31 +128,12 @@ enum VkVideoEncoderConfigFieldDisposition {
     X(transferCharacteristics,  BOUND,    "cfg->transfer_characteristics")     \
     X(matrixCoefficients,       BOUND,    "cfg->matrix_coefficients")          \
     X(videoFullRange,           BOUND,    "cfg->video_full_range_flag")        \
-    X(enablePreprocessFilter,   BOUND,    "cfg->enablePreprocessComputeFilter"\
-                                          "; WAS REJECTED. The refusal was "  \
-                                          "right while nothing converted: "   \
-                                          "accepting it then would have "     \
-                                          "encoded unconverted input as if "  \
-                                          "converted. The conversion is now " \
-                                          "real for YCbCr plane-count "       \
-                                          "mismatches -- per-plane storage "  \
-                                          "views on the import, per-frame "   \
-                                          "routing instead of the "           \
-                                          "isExternalInput bypass, the "      \
-                                          "filter branch's acquire barriers, "\
-                                          "and one queue fact shared by the " \
-                                          "barriers and the submit -- so the "\
-                                          "field is FORWARDED. Refused, with "\
-                                          "a reason, where it cannot be "     \
-                                          "honoured: no filter compiled in, " \
-                                          "or no compute queue on the "       \
-                                          "session's device. RGBA input "     \
-                                          "remains unsupported: it needs the "\
-                                          "sampled-read arm this does not "   \
-                                          "deliver. filterType is NOT bound " \
-                                          "from any public field -- the "     \
-                                          "library derives it from the input "\
-                                          "and encode-source formats")        \
+    X(inputTransferCharacteristics, VALIDATED,                                 \
+                                "checked against transferCharacteristics; a "  \
+                                "declared mismatch is refused at init. "       \
+                                "Reaches EncoderConfig nowhere: this library " \
+                                "applies no transfer function, so there is "   \
+                                "nothing to forward")                          \
     X(deviceId,                 SESSION,  "physical-device selection")         \
     X(gpuUUID,                  SESSION,  "physical-device selection")         \
     X(outputPath,              BOUND,    "cfg->outputFileHandler")             \
@@ -208,30 +217,76 @@ struct VkEncBoundConfigProbe {
     uint32_t videoFullRangeFlag;
     uint32_t colorDescriptionPresent;
     uint32_t videoSignalTypePresent;
+    // Chroma siting, as the H.26x VUI will carry it. Projected because it is
+    // the ONLY observable of the preprocess filter's 2x2 box average outside
+    // a decoded picture: the flag was plumbed to the VUI long before anything
+    // set it, so "present" and "type" have to be readable separately or a
+    // raised flag advertising type 0 looks identical to no signal at all.
+    uint32_t chromaLocInfoPresent;
+    uint32_t chromaSampleLocType;
+    // The INPUT side, as the chained VkVideoEncoderInputColourInfo landed in
+    // EncoderConfig. It reaches the config through a pNext walk rather than a
+    // config field, so nothing in the flat field table above can see whether
+    // it bound. inputColourChainPresent is separate from the value fields for
+    // the same reason av1ColorConfigPresent is separate from
+    // av1ColorDescriptionPresent: 0 is UNDECLARED on every axis, so no value
+    // field can tell "absent" from "present and zero".
+    uint32_t inputColourChainPresent;
+    uint32_t inputColourPrimaries;
+    uint32_t inputTransferCharacteristics;
+    uint32_t inputMatrixCoefficients;
+    uint32_t inputRange;
     uint32_t verbose;
     uint32_t validate;
     uint32_t disableFileOutput;
     // EncoderConfig::enablePreprocessComputeFilter, not a public config
-    // field. This is where enablePreprocessFilter LANDS, and the projection
-    // is what makes its disposition assertable in both directions: VK_FALSE
-    // must write 0 here rather than inheriting EncoderConfig's default of
-    // true (nothing else in the probe would notice a filter object created
-    // behind the caller's back), and VK_TRUE must now write 1 rather than
-    // being refused at init.
-    //
-    // CONTRACT CHANGE, called out because the binder conformance suite pins
-    // it: this field could previously only ever read 0, because the binder
-    // rejected enablePreprocessFilter == VK_TRUE outright. A suite asserting
-    // "init fails when enablePreprocessFilter is set" now fails, and should:
-    // the field moved from REJECTED to BOUND in the table above.
+    // field: it is where the library's own preprocess-conversion decision
+    // lands. Projected so that decision is assertable in BOTH directions --
+    // a directly encodable input must write 0 here rather than inheriting
+    // EncoderConfig's default of true (nothing else in the probe would
+    // notice a filter object created behind the caller's back), and an input
+    // that is encodable only after a conversion must write 1.
     uint32_t preprocessComputeFilter;
-    // EncoderConfig::input.numPlanes. Projected because EncoderConfig does
-    // not store the input format at all -- it reconstructs input.vkFormat
-    // from subsampling, bit depth and this count -- so "inputFormat was
-    // bound" is only assertable through the plane count it implies. Left
-    // unwritten it inherits EncoderConfig's default of 3, which would
-    // describe every session's input as 3-plane I420.
+    // EncoderConfig::input.numPlanes. EncoderConfig does not store the input
+    // format: it RECONSTRUCTS input.vkFormat from subsampling, bit depth and
+    // this count. Left unwritten the count inherits EncoderConfig's default of
+    // 3, which would describe every session's input as 3-plane I420.
+    //
+    // THIS USED TO BE THE ONLY ROUTE TO "inputFormat WAS BOUND", and it is not
+    // any more -- inputVkFormat below projects the reconstruction itself. The
+    // count is still projected, and separately, because the two answer
+    // different questions: this one is an INPUT to the reverse derivation and
+    // that one is its OUTPUT, and a test that reads only the output cannot say
+    // which of the three terms was wrong when it disagrees.
     uint32_t inputNumPlanes;
+    // EncoderConfig::input.chromaSubsampling, the other half of what
+    // inputFormat is read for. Projected for the same reason as the plane
+    // count: the format is not stored, so the derivation is only assertable
+    // through what it wrote. It is the field a 4:4:4 or 4:2:2 input has to
+    // change -- left at its 4:2:0 default, a 4:4:4 request encodes as 4:2:0
+    // and reports success -- and it is what the codec arm derives the encode
+    // profile from. Carries the VkVideoChromaSubsamplingFlagBitsKHR value.
+    uint32_t inputChromaSubsampling;
+    // EncoderConfig::input.vkFormat AS IT STANDS AFTER InitializeParameters,
+    // which is the OUTPUT of the reverse derivation and the one quantity that
+    // says whether the library's two derivations of the input's identity
+    // agree.
+    //
+    // THERE ARE TWO OF THEM, IN OPPOSITE DIRECTIONS. The binder derives
+    // (chroma subsampling, bit depth, plane count) from the caller's
+    // VkFormat; EncoderInputImageParameters::VerifyInputs() reconstructs a
+    // VkFormat from those same three. The reverse one is LOAD-BEARING and
+    // cannot be deleted: the packed-alias arm deliberately leaves vkFormat
+    // unwritten so the reconstruction supplies it, which is the only route by
+    // which AYUV and Y410 are nameable at all. So the two have to agree, and
+    // this is what a test reads to say that they did.
+    //
+    // ON THE RGBA LANE THE REVERSE DERIVATION DOES NOT RUN -- VerifyInputs
+    // carries the caller's format through, because CodecGetVkFormat spells no
+    // RGB layout -- so this field projects the carry-through there. It is the
+    // same proposition either way: the config's idea of the input format is
+    // the caller's.
+    uint32_t inputVkFormat;
 
     // Per-codec-arm effect projections, run PER CODEC ARM. A projection
     // that stops at the shared EncoderConfig members cannot see
@@ -242,10 +297,52 @@ struct VkEncBoundConfigProbe {
     //
     // H.26x: the rate-control layer info the codec arm builds. useMinQp /
     // useMaxQp are what make the clamp values legally visible to the driver.
+    // What the arm's InitVuiParameters() ACTUALLY produced, as opposed to
+    // what the shared EncoderConfig holds. These two exist because the gap
+    // between those is not hypothetical: EncoderConfigH265::InitVuiParameters
+    // wrote chroma_sample_loc_type from the config and then, two hundred
+    // lines later, unconditionally re-zeroed it. The config-level projection
+    // could not see that and neither could any encode row, because every
+    // H.265 row in the matrix takes a path that signals no siting.
+    uint32_t vuiChromaLocInfoPresent;
+    uint32_t vuiChromaSampleLocTypeTop;
+    uint32_t vuiChromaSampleLocTypeBottom;
     uint32_t rcUseMinQp;
     uint32_t rcUseMaxQp;
     int32_t  rcMinQpI;
     int32_t  rcMaxQpI;
+    // H.265 only: EncoderConfigH265::GetCpbVclFactor()'s result, the quantity
+    // ITU-T H.265 Table A.8 states. Projected because it is what a chroma-flag
+    // / chroma_format_idc confusion silently gets wrong, and because every
+    // downstream observable of it is ALSO a function of the level or tier, so
+    // none of them reads the factor on its own.
+    //
+    // READ IN THE BINDER'S STATE, which is the state InitProfileLevel used --
+    // after InitializeParameters and before InitVideoProfile. That distinction
+    // is load-bearing rather than incidental: the function's depth term reads
+    // encodeBitDepthLuma / encodeBitDepthChroma, and those are derived from
+    // input.bpp in InitVideoProfile, so at the level-selection call site they
+    // are still zero and the depth term contributes nothing. Zero on the other
+    // arms.
+    uint32_t h265CpbVclFactor;
+    // H.265 only: EncoderConfigH265::levelIdc as InitProfileLevel() selected
+    // it, which is 30 x the level number. The factor's one DEVICE-FREE
+    // downstream observable -- the default vbvBufferSize is not, because the
+    // probe reads the config field and InitRateControl, which computes the
+    // default from the factor, runs later and needs a session. A too-high
+    // level is a legal level, which is why nothing caught the factor being
+    // wrong; pinning it is what makes the correction visible downstream of the
+    // arithmetic rather than only inside it. Zero on the other arms.
+    uint32_t h265LevelIdc;
+    // H.265 only: EncoderConfigH265::general_tier_flag, the OTHER half of what
+    // DetermineLevelTier() picked. It is the term that actually moves with the
+    // factor at 1080p: when main tier's bitrate ceiling (maxBitRateMainTier x
+    // cpbVclFactor) is exceeded the selection does not climb to the next
+    // level, it takes HIGH TIER at the same one -- so a level-only projection
+    // reads the same number on a right and a wrong factor. Zero on the other
+    // arms, which is also main tier, so this field is read together with
+    // h265LevelIdc and not alone.
+    uint32_t h265GeneralTierFlag;
     // AV1: the sequence-header colour config the arm attaches (AV1's
     // counterpart of the H.26x VUI colour description).
     uint32_t av1ColorDescriptionPresent;
@@ -254,6 +351,41 @@ struct VkEncBoundConfigProbe {
     uint32_t av1MatrixCoefficients;
     uint32_t av1ColorRange;
     uint32_t av1BitDepth;
+    // Whether the arm attached a colour config AT ALL (pColorConfig !=
+    // nullptr). Distinct from av1ColorDescriptionPresent, and the distinction
+    // is the defect: AV1's color_config carries color_range, BitDepth and
+    // subsampling as well as the colour description, so a caller that
+    // declared only full range needs the STRUCT even though the description
+    // flag stays 0. With the whole struct behind that flag its range reached
+    // H.264 and H.265 and nothing at all reached AV1, and no field below
+    // could tell the difference between "absent" and "present and zero".
+    uint32_t av1ColorConfigPresent;
+    uint32_t av1ChromaSamplePosition;
+    // The sequence header's STRUCTURAL subsampling, as the arm wrote it.
+    // Projected because its correctness is decided by a DIFFERENT function
+    // (InitProfileLevel, which picks seq_profile from the same input) than the
+    // one that writes it, and no device this project can obtain reaches the arm
+    // where the two disagree: AV1 High and Professional are absent from every
+    // driver available here, so a 4:4:4 or 4:2:2 AV1 session dies at the
+    // capability query before a sequence header exists. Device-free is the only
+    // place this fact is assertable at all.
+    uint32_t av1SubsamplingX;
+    uint32_t av1SubsamplingY;
+    // HDR10 static metadata, as the chained VkVideoEncoderHdrMetadataInfo
+    // landed in EncoderConfig. It reaches the config through a pNext walk
+    // rather than a config field, so nothing in the flat field table above
+    // can see whether it bound.
+    uint32_t hdrMasteringPresent;
+    uint32_t hdrContentLightPresent;
+    uint32_t hdrMaxDisplayMasteringLuminance;
+    uint32_t hdrMinDisplayMasteringLuminance;
+    uint32_t hdrMaxContentLightLevel;
+    uint32_t hdrMaxFrameAverageLightLevel;
+    // displayPrimaryX[0] / displayPrimaryY[0], i.e. ST 2086's GREEN. One
+    // pair is enough to catch a permuted or dropped array and keeps the
+    // projection from turning into a second copy of the struct.
+    uint32_t hdrGreenPrimaryX;
+    uint32_t hdrGreenPrimaryY;
     // All arms: the codec-typed config's profile, read through the same
     // virtual accessor session creation consumes (GetCodecProfile, read by
     // EncoderConfig::InitVideoProfile), so this projects the profile the
@@ -272,79 +404,117 @@ VkResult VkEncBuildAndProbeConfig(const VkVideoEncoderConfig& extConfig,
                                   VkVideoCodecOperationFlagBitsKHR codecOp,
                                   VkEncBoundConfigProbe* outProbe);
 
+// Byte-exact projection of the HDR10 payload builders.
+//
+// The two builders live below the ext layer (VkVideoEncoderHdrMetadata.h,
+// which this header deliberately does not name -- the same rule that keeps
+// EncoderConfig out of it), and the only production caller is inside a codec
+// arm that needs a device and a driver-written parameter-set buffer. This
+// wrapper takes the PUBLIC struct and hands back the bytes, so the payload
+// can be pinned from a device-free test.
+//
+// That matters most for AV1: the reference host has no AV1 encode, so the
+// end-to-end AV1 path cannot be exercised at all here. The OBU bytes can be,
+// and were -- spliced into a working AV1 stream and read back with ffprobe.
+//
+// |codecOp| selects H.265 (a prefix SEI NAL, start code included) or AV1
+// (metadata OBUs). Returns the byte count, or 0 if there was nothing to
+// build or it did not fit.
+uint32_t VkEncBuildHdrMetadataPayload(const VkVideoEncoderHdrMetadataInfo* info,
+                                      VkVideoCodecOperationFlagBitsKHR codecOp,
+                                      uint8_t* out, uint32_t capacity);
+
 // ---------------------------------------------------------------------------
-// Input-format taxonomy.
+// Input taxonomy.
 //
-// One VkBool32 used to answer two different questions, and collapsing them is
-// what made CONTEXT_DESIGN 3.4.1's adaptation ladder look like a single step.
-// The ladder has three rungs -- hardware conversion, compute filter, transfer
-// copy -- and the FORMAT decides which rungs are even candidates:
+// Adapting a caller's input to what the device encodes has three rungs --
+// hardware conversion, the compute filter, a transfer copy -- and the input's
+// DECLARATION decides which of them are candidates:
 //
-//   ENCODABLE_DIRECT     the device takes this format as an encode source as
-//                        it stands (semi-planar 4:2:0). Rung 1.
-//   ENCODABLE_VIA_FILTER encodable only after a conversion the compute filter
-//                        performs. TWO families, and they differ in more than
-//                        degree:
-//                          - the 3-plane 4:2:0 family, whose mismatch against
-//                            the semi-planar encode format is a PLANE-COUNT
-//                            mismatch; and
-//                          - the 8-bit RGBA family (R8G8B8A8_UNORM,
-//                            B8G8R8A8_UNORM, A8B8G8R8_UNORM_PACK32), a
-//                            COLOUR-MODEL mismatch, converted by the filter's
-//                            sampled-read arm. Single-plane, which is why
-//                            VkEncInputFormatPlaneCount can no longer answer
-//                            from the class alone.
-//                        Rung 2, and rung 2 ONLY: the transfer copy cannot
-//                        substitute for either. CopyLinearToOptimal-
-//                        Image asserts the source has no third plane and, in a
-//                        build with that assert compiled out, copies two of
-//                        three planes -- which is the shape
-//                        DEVICE_INDEPENDENCE_PLAN section 8.1 measured on this
-//                        hardware as VK_ERROR_DEVICE_LOST, a GPU hang and a
-//                        0-byte bitstream, 3 runs of 3. A copy cannot perform
-//                        a colour-space conversion at all.
+//   ENCODABLE_DIRECT     the device takes this input as an encode source as
+//                        it stands. Rung 1.
+//   ENCODABLE_VIA_FILTER rung 2, and rung 2 ONLY -- a transfer copy is not a
+//                        substitute. The 3-plane family differs from the
+//                        semi-planar encode format by PLANE COUNT, and a copy
+//                        cannot drop or merge a plane; the 8-bit RGBA family
+//                        (R8G8B8A8_UNORM, B8G8R8A8_UNORM,
+//                        A8B8G8R8_UNORM_PACK32) differs by COLOUR MODEL, and
+//                        a copy cannot convert colour at all. RGBA is
+//                        single-plane, so plane count does not follow from
+//                        the class.
 //   UNSUPPORTED          neither, in this build.
 //
-// This is a property of the FORMAT alone, so it is a free function and a test
-// can drive every arm with no device. Whether a given SESSION can actually
-// take an ENCODABLE_VIA_FILTER input is a second question with a second
-// answer -- it needs the compute filter to be compiled in AND enabled AND
-// able to read the specific image -- and it is answered by
-// VulkanVideoEncoderExtImpl::SupportsFormat / ValidateImageDescriptor, which
-// have the session state this function deliberately does not.
+// THE DECLARATION, NOT THE FORMAT. A VkFormat names a component layout, and
+// the packed 4:4:4 Y'CbCr layouts share their enumerants with RGBA, so the
+// format alone cannot place them. VkVideoEncoderColorModel is what the caller
+// states and what this function reads; VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT
+// asks for the format's own answer and is what every caller that has no packed
+// input passes. A declaration the format cannot carry is UNSUPPORTED, never
+// silently reconciled.
+//
+// A property of the DECLARATION alone, so this is a free function and a test
+// can drive every arm with no device. Whether a given SESSION can take an
+// ENCODABLE_VIA_FILTER input is a second question -- the compute filter has
+// to be compiled in, enabled, and able to read the specific image -- and it
+// is answered by VulkanVideoEncoderExtImpl::SupportsFormat /
+// ValidateImageDescriptor, which hold the session state this function
+// deliberately does not.
 enum VkEncInputFormatClass {
     VK_ENC_INPUT_FORMAT_UNSUPPORTED = 0,
     VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT,
     VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER,
 };
-VkEncInputFormatClass VkEncClassifyInputFormat(VkFormat inputFormat);
+VkEncInputFormatClass VkEncClassifyInput(VkFormat inputFormat,
+                                         VkVideoEncoderColorModel colorModel);
 
-// "Could this library take this format on SOME path?" -- i.e. classified as
+// "Could this library take this input on SOME path?" -- i.e. classified as
 // anything but UNSUPPORTED.
 //
-// Kept, and kept deliberately UNUSED inside the library, which is worth
-// stating rather than leaving to be discovered: every gate needs a finer
-// answer than it gives. The binder needs to know whether a format
-// requires the filter, and VulkanVideoEncoderExtImpl::SupportsFormat needs
-// to know whether THIS session has one. A predicate that answers "some path
-// exists somewhere" is exactly the collapse this taxonomy was introduced to
-// undo, so nothing in the library should reach for it again; it remains as
-// the coarse question an out-of-tree consumer may still legitimately ask.
-VkBool32 VkEncSupportsInputFormat(VkFormat inputFormat);
+// Not used inside the library: every gate here needs the finer answer, which
+// is the class itself. It remains for an out-of-tree consumer that has the
+// coarse question to ask.
+VkBool32 VkEncSupportsInput(VkFormat inputFormat,
+                            VkVideoEncoderColorModel colorModel);
 
 // The number of planes |inputFormat| is laid out in, which EncoderConfig
 // needs in order to reconstruct input.vkFormat at all: it does not store the
 // input format, it DERIVES it from chroma subsampling, bit depth and
-// numPlanes (API_V2:541). 0 for a format this library does not classify.
+// numPlanes. 0 for a format this library does not classify.
+//
+// Takes no colour model, and that is a property of the question rather than
+// an omission: plane count is a fact about the LAYOUT, and the packed 4:4:4
+// layouts are one plane whichever model is declared over them.
 uint32_t VkEncInputFormatPlaneCount(VkFormat inputFormat);
 
-// Is this one of the RGBA-family inputs the compute filter converts?
+// Reduce a device's VIDEO_ENCODE_SRC format list to the formats this library
+// will route, writing at most |outCapacity| entries and returning how many
+// were written.
 //
-// A strict subset of ENCODABLE_VIA_FILTER, exposed because that class now
-// spans two families that disagree about plane count and about how the input
-// geometry is derived. Answers VK_FALSE for every YCbCr format and for every
-// format outside the taxonomy.
-VkBool32 VkEncIsRgbaInputFormat(VkFormat inputFormat);
+// Two reductions, and they are the whole function: a format the device would
+// take but the taxonomy does not classify is DROPPED, because advertising it
+// invites a caller to allocate a pool the registration gate then refuses; and
+// a format reported more than once -- the device may report one format at
+// more than one tiling -- is written ONCE, because tiling is a property of an
+// image and not of a format, and a repeated entry would spend a slot of a
+// fixed-capacity list saying nothing new.
+//
+// Order is the device's own, so the entry a device lists first stays first.
+// A pure function of its arguments, so a test drives it with no device.
+uint32_t VkEncFilterAdvertisedInputFormats(const VkFormat* deviceFormats,
+                                           uint32_t deviceFormatCount,
+                                           VkFormat* outFormats,
+                                           uint32_t outCapacity);
+
+// The colour model these samples are ACTUALLY in: the caller's declaration
+// when one was made, and what the format says otherwise.
+//
+// The single point at which FROM_FORMAT is resolved, so no other site has to
+// know which formats name their own model. Returns
+// VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT -- never a guess -- for a format
+// this library does not place at all, and for a declaration the format cannot
+// carry; both are UNSUPPORTED to VkEncClassifyInput.
+VkVideoEncoderColorModel VkEncResolveColorModel(
+    VkFormat inputFormat, VkVideoEncoderColorModel declared);
 
 // Import memory-type selection.
 //

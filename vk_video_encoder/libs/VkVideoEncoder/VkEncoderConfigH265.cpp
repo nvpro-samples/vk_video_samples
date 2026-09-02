@@ -62,7 +62,14 @@ static void SetupAspectRatio(StdVideoH265SequenceParameterSetVui *vui, uint32_t 
 // From Table A.8
 uint32_t EncoderConfigH265::GetCpbVclFactor()
 {
-    uint32_t chroma_format_idc = encodeChromaSubsampling;
+    // encodeChromaSubsampling is a VkVideoChromaSubsamplingFlagBitsKHR -- 0x2
+    // for 4:2:0, 0x4 for 4:2:2, 0x8 for 4:4:4 -- and the test below is against
+    // a chroma_format_idc, which is 1, 2 and 3. Assigning the flag straight
+    // into the variable made the 4:4:4 arm unreachable for every real input.
+    // This is the conversion the rest of this file already uses to write
+    // sps.chroma_format_idc.
+    uint32_t chroma_format_idc =
+        FastIntLog2<uint32_t>(encodeChromaSubsampling) - 1u;
     uint32_t bit_depth = std::max(encodeBitDepthLuma, encodeBitDepthChroma);
     uint32_t baseFactor = (chroma_format_idc == 3) ? (bit_depth >= 10) ? 2500 : 2000 : 1000; // NOTE: Assumes chroma_format_idc is either 1 or 3
     uint32_t depthFactor = (bit_depth >= 10) ? ((bit_depth - 10) >> 1) * 500 : 0;    // +500 for 12-bit, +1000 for 14-bit, +1500 for 16-bit
@@ -330,6 +337,16 @@ EncoderConfigH265::InitVuiParameters(StdVideoH265SequenceParameterSetVui *vuiInf
     }
 
     vuiInfo->flags.chroma_loc_info_present_flag = chroma_loc_info_present_flag;
+    if (!!chroma_loc_info_present_flag) {
+        // BOTH FIELDS, and the same value in both. The flag was plumbed here
+        // and chroma_sample_loc_type was not, so raising the flag advertised
+        // a siting of 0 (left / MPEG-2) whatever the config said -- and 0 is
+        // precisely the wrong answer for the centre-sited chroma the RGBA
+        // preprocess filter produces. This encoder emits frame pictures only,
+        // so the top and bottom field types describe one sample position.
+        vuiInfo->chroma_sample_loc_type_top_field    = chroma_sample_loc_type;
+        vuiInfo->chroma_sample_loc_type_bottom_field = chroma_sample_loc_type;
+    }
 
     vuiInfo->flags.neutral_chroma_indication_flag = 0;
     vuiInfo->flags.field_seq_flag = 0;
@@ -390,9 +407,18 @@ EncoderConfigH265::InitVuiParameters(StdVideoH265SequenceParameterSetVui *vuiInf
         vuiInfo->pHrdParameters = pHrdParameters;
     }
 
-    // FIXME: chroma_sample_loc_type_top_field to be configured from settings.
-    vuiInfo->chroma_sample_loc_type_top_field = 0;
-    vuiInfo->chroma_sample_loc_type_bottom_field = 0;
+    // (chroma_sample_loc_type_top_field / _bottom_field are written above,
+    // beside chroma_loc_info_present_flag. THIS IS WHERE THEY USED TO BE
+    // RE-ZEROED -- an unconditional `= 0` under a FIXME saying they were "to
+    // be configured from settings", two hundred lines below the flag that
+    // decides whether anyone reads them. It survived the first version of the
+    // chroma-siting fix: the config carried type 1, the write above put 1 in
+    // the VUI, and this line put it back to 0 before the SPS was built. It
+    // was invisible because every H.265 row in the encode matrix takes the
+    // DIRECT or YCbCr-copy path, which signals no siting at all, and because
+    // the device-free assertion read the CONFIG rather than the VUI. Both
+    // gaps are closed: VkEncBoundConfigProbe now projects what
+    // InitVuiParameters actually produced.)
     // display_window_flag
     vuiInfo->def_disp_win_left_offset = 0;
     vuiInfo->def_disp_win_right_offset = 0;

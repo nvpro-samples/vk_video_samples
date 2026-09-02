@@ -93,7 +93,23 @@ install(TARGETS ${PROJECT_NAME}
 # VulkanFilterYuvCompute.cpp and this test still reported
 # `sessions=8 encoded=8 abandoned=0 failures=0` and exit 0, with dispatch=12 on
 # every filter row, while all five filter-routed rows decoded to a flat
-# (0,76,0). See kQuadTolerance in src/main.cpp for the measurements.
+# (0,76,0). See kQuadTolerance in src/main.cpp for the measurements. (Those
+# counts are the 14-row table of the day; the current bar is in the
+# src/main.cpp header.)
+#
+# ONE ROW DOES NOT TAKE THE QUADRANT GATE, and it is not an exemption. The
+# HDR10 row declares BT.2020/PQ, so a decoder inverting the BT.2020 matrix
+# legitimately produces different RGB from the BT.709 pattern the harness
+# wrote; comparing it against the BT.709 expectations would fail a CORRECT
+# encode. CheckHdrSignalling() judges it instead -- the four VUI code points,
+# a full decoded frame whose quadrant centres are not all identical, and both
+# HDR10 SEI payloads read back field by field by ffprobe -- and it is counted
+# in its own summary fields, hdrGated / hdrFailed, so a row judged by neither
+# gate cannot hide inside decodeGated.
+#
+# MEASURED on RTX A4000 / NVIDIA 620.18 / ffmpeg 6.1.1:
+#   sessions=9 encoded=9 abandoned=0 failures=0 decodeGated=8 decodeFailed=0
+#   deviceLimited=6 av1Unverified=0 hdrGated=1 hdrFailed=0     (exit 0)
 #
 # A 3-plane row that does not resolve to FILTER is ABANDONED before any submit
 # (staging one is a measured GPU hang) and is neither encoded nor failed here;

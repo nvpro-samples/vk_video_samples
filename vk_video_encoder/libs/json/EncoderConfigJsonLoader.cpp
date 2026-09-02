@@ -154,5 +154,67 @@ int LoadEncoderConfigFromJson(const char* path, void* encoderConfig) {
             }
         }
     }
+
+    // ---- Colour description: RAISE THE PRESENCE FLAGS -------------------
+    //
+    // WHAT THIS FIXES, and it is an A1-doctrine violation rather than a
+    // missing feature: the four keys above wrote colour_primaries,
+    // transfer_characteristics, matrix_coefficients and video_full_range_flag
+    // and NOTHING ELSE. Every VUI writer in this library gates on the
+    // PRESENCE flags -- VkEncoderConfigH264.cpp and VkEncoderConfigH265.cpp
+    // both open their colour block with `if (!!color_description_present_flag)`
+    // and their range block with video_signal_type_present_flag, and
+    // EncoderConfigAV1 keys its own description on the same flag -- so a JSON
+    // config that declared BT.2020 was ACCEPTED AND SILENTLY IGNORED. The CLI
+    // reported success and the bitstream carried no colour description at all.
+    //
+    // It is also the only route by which matrix_coefficients could ever have
+    // been non-zero WITHOUT the presence flag, which is the one state
+    // EncoderConfig::ResolveRgbToYcbcrMatrix's `case 0` arm is written to
+    // defend against. Closing it here is what makes that arm's "unreachable
+    // through every producer in this tree" comment true.
+    //
+    // THE RULE IS THE EXT BINDER'S, DELIBERATELY, so the two entry points
+    // cannot disagree about what a JSON file and a chained struct mean by the
+    // same numbers (vulkan_video_encoder_ext.cpp, grep
+    // `0 IS "NOT SUPPLIED" ON THIS SURFACE`):
+    //   * 0 in any of the three idc fields means NOT SUPPLIED, not
+    //     Reserved/Identity. It costs the ability to REQUEST code point 0
+    //     through JSON, which is deliberate: this encoder has no Identity
+    //     path to offer.
+    //   * an unsupplied field becomes 2 (Unspecified) -- the code point that
+    //     MEANS "not stated" in H.264, H.265 and AV1 alike -- so a partially
+    //     supplied declaration stays truthful in every field instead of
+    //     asserting Reserved by omission.
+    //   * video_signal_type travels ALONE when only the range was declared,
+    //     because on H.26x the range lives under a different presence flag.
+    //   * video_format 5 = "unspecified" (Rec. ITU-T H.264 Table E-2), the
+    //     correct value when a caller communicates colorimetry only.
+    //
+    // AFTER THE KEY LOOP, not inside it, because "was anything supplied" is a
+    // question about the whole object and the keys may arrive in any order.
+    {
+        const bool anyColourIdcSupplied = (config->colour_primaries != 0) ||
+                                          (config->transfer_characteristics != 0) ||
+                                          (config->matrix_coefficients != 0);
+        const uint8_t kColourIdcUnspecified = 2;
+        if (anyColourIdcSupplied || (config->video_full_range_flag != 0)) {
+            config->video_format                   = 5;
+            config->video_signal_type_present_flag = 1;
+        }
+        if (anyColourIdcSupplied) {
+            if (config->colour_primaries == 0) {
+                config->colour_primaries = kColourIdcUnspecified;
+            }
+            if (config->transfer_characteristics == 0) {
+                config->transfer_characteristics = kColourIdcUnspecified;
+            }
+            if (config->matrix_coefficients == 0) {
+                config->matrix_coefficients = kColourIdcUnspecified;
+            }
+            config->color_description_present_flag = 1;
+        }
+    }
+
     return 0;
 }

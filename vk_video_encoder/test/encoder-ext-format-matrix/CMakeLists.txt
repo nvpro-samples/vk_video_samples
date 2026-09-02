@@ -77,11 +77,27 @@ install(TARGETS ${PROJECT_NAME}
 # device-free half of the taxonomy is already covered by
 # EncoderExtInputFormatTaxonomy next door.
 enable_testing()
+#
+# The matrix is walked by PROFILE FAMILY, one invocation each, because a row
+# costs a whole encoder session and a process cannot hold an unbounded number
+# of them. Splitting is not a convenience: past that limit a row reports "this
+# device has no such encode profile" for a profile the device does support,
+# and the suite would go green over a wrong finding.
 add_test(NAME EncoderExtInputFormatMatrix
          COMMAND ${PROJECT_NAME})
 # LABELS: this is the CI gating set. See the top-level CMakeLists.txt note.
 set_tests_properties(EncoderExtInputFormatMatrix PROPERTIES
                      LABELS "gpu"
                      TIMEOUT 900)
+
+# Semi-planar 4:4:4, which belongs to a different profile in both codecs
+# (H.264 High 4:4:4 Predictive, H.265 Range Extensions) and so to a different
+# family. Carries the same two controls, so a refusal is observed on the same
+# engine that ran the 4:4:4 rows.
+add_test(NAME EncoderExtInputFormatMatrix444
+         COMMAND ${PROJECT_NAME} --444)
+set_tests_properties(EncoderExtInputFormatMatrix444 PROPERTIES
+                     SKIP_RETURN_CODE 77
+                     LABELS "gpu")
 
 message(STATUS "encoder_ext_format_matrix_test: Configured")
