@@ -165,6 +165,16 @@ public:
                                           BitstreamReadback& readback);
     void WriteShowExistingFrameHeader(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
 
+private:
+    // File-output arm of the AV1 WriteBitstreamToFile override: show-existing
+    // header write, per-frame OBU staging and deferred-frame batching, then the
+    // temporal-unit flush. Private and non-virtual: it must never grow a second
+    // completion publish.
+    VkResult WriteBitstreamToFileOutput(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                        uint32_t frameIdx, BitstreamReadback& readback);
+
+public:
+
     virtual void InsertOrdered(VkSharedBaseObj<VkVideoEncodeFrameInfo>& current,
                                VkSharedBaseObj<VkVideoEncodeFrameInfo>& prev,
                                VkSharedBaseObj<VkVideoEncodeFrameInfo>& node);
