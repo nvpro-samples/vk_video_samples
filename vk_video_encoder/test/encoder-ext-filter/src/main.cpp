@@ -307,12 +307,14 @@ void CaseSrgbAndJunkAreUnsupported()
     g_currentCase = "sRGB, wide/deep RGB and unrelated formats are UNSUPPORTED";
     // Each of these is a POSITIVE refusal, not a gap.
     //
-    //  *_SRGB: the filter applies the colour matrix only, with no transfer
-    //    function, which is correct exactly because Y'CbCr is defined on
-    //    gamma-encoded R'G'B'. A sampled read of an _SRGB view is linearised
-    //    by the implementation before the shader sees it, so accepting these
-    //    would feed linear RGB to a matrix expecting R'G'B' -- output that
-    //    looks almost right, which is the kind that survives review.
+    //  *_SRGB: the filter binds its RGBA source as a storage image and
+    //    reads it with imageLoad, and no *_SRGB format carries the
+    //    storage-image format feature -- sRGB is a sampled-image feature --
+    //    so an sRGB view can never be the descriptor the filter binds.
+    //    Answering here puts the refusal where a producer can still act on
+    //    it. The _UNORM spellings are the ones taken because the filter
+    //    applies the colour matrix only, with no transfer function, which is
+    //    correct exactly because Y'CbCr is defined on gamma-encoded R'G'B'.
     //  A2B10G10R10 / R16G16B16A16_UNORM: these same enumerants are how Y410
     //    and Y416 are spelled. Undeclared they read as RGB, and as RGB the
     //    library does not route them; a Y'CbCr declaration over them says
@@ -2084,10 +2086,11 @@ void CaseUnsupportedFormatStillRefused()
 {
     g_currentCase = "an sRGB RGBA input is refused";
     // The 8-bit UNORM RGBA family is convertible; the _SRGB spellings of the
-    // same formats are not. The conversion is matrix-only and an sRGB view is
-    // linearised by the sampler before the shader reads it, which is an input
-    // transfer function this library cannot honour -- so accepting these would
-    // be the silent, plausible-looking wrongness that is worse than a refusal.
+    // same formats are not. The filter reads its RGBA source as a storage
+    // image, and no *_SRGB format carries the storage-image format feature,
+    // so an sRGB view can never be the descriptor the filter binds. The
+    // refusal lands at init, where the caller can still allocate a _UNORM
+    // view instead.
     VkVideoEncoderConfig cfg = BaseConfig();
     cfg.inputFormat = VK_FORMAT_B8G8R8A8_SRGB;
     VkEncBoundConfigProbe probe{};
@@ -4174,6 +4177,152 @@ void CaseFieldTableClassifiesEveryField()
               "field offset is inside VkVideoEncoderConfig",
               std::string(f.name) + " at " + U32((uint32_t)f.offset));
     }
+
+    // "Exactly once" asserted rather than implied. The length check above
+    // pairs the table against an enum expanded from the SAME macro, so the two
+    // move together and can never disagree about a repeat; only comparing the
+    // names can see one. Tallied and asserted once rather than per pair, so
+    // the check count stays a count of facts and not of comparisons.
+    size_t nDuplicates   = 0;
+    size_t nMissingNotes = 0;
+    const char* firstDuplicate = "";
+    for (size_t i = 0; i < (size_t)kVkEncCfgFieldCount; ++i) {
+        if (kVkVideoEncoderConfigFields[i].note == nullptr) {
+            nMissingNotes++;
+        }
+        for (size_t j = i + 1; j < (size_t)kVkEncCfgFieldCount; ++j) {
+            if (std::strcmp(kVkVideoEncoderConfigFields[i].name,
+                            kVkVideoEncoderConfigFields[j].name) == 0) {
+                if (nDuplicates == 0) {
+                    firstDuplicate = kVkVideoEncoderConfigFields[i].name;
+                }
+                nDuplicates++;
+            }
+        }
+    }
+    Check(nMissingNotes == 0, "every row says what happens to its field",
+          U32((uint32_t)nMissingNotes) + " rows carry no note");
+    Check(nDuplicates == 0, "no field is listed twice",
+          std::string("first repeat: ") + firstDuplicate);
+}
+
+
+//=============================================================================
+// 3b. The direction the checks above cannot look: a struct field with NO row.
+//
+// Everything in the case above walks table -> struct. Each check reads a row
+// and asks something about it, so a field with NO row is never read and never
+// asked about: the table can be one row short and every check above still
+// passes. A test that walks the same direction cannot see it either, wherever
+// it lives, which is why the direction below is the one that matters.
+//
+// This case walks the other way -- by arithmetic, since C++ offers no
+// reflection to enumerate the struct with. Each row now carries the size and
+// the alignment of the field it names, so the rows sorted by offset can be
+// laid end to end and measured against the struct they claim to describe:
+//
+//   * no row may start inside the row before it;
+//   * a gap before a row is alignment padding, and is legal only while it is
+//     STRICTLY narrower than that row's alignment -- a gap the successor's
+//     alignment did not force is a field whose row was never written;
+//   * the last row must close the struct;
+//   * the gaps must total the pinned padding budget.
+//
+// Between them these fail for the removal of ANY row in the table, including
+// the last. What none of them can see is a field added into padding that
+// already exists: such a field moves neither the size nor any offset, so no
+// arithmetic over sizes and offsets has anything to count. That case is
+// stated as uncovered in the header rather than papered over here.
+//=============================================================================
+
+void CaseFieldTableTilesTheStruct()
+{
+    g_currentCase = "the field table tiles VkVideoEncoderConfig";
+
+    // Offset order, not declaration order. The table is hand-maintained and
+    // the argument below is about the LAYOUT, so the rows are sorted instead
+    // of being assumed to already be in layout order -- assuming it would put
+    // the assumption under test rather than the layout. Insertion sort over
+    // pointers: the table is small, and this keeps the case free of any
+    // dependency it would otherwise have to bring in.
+    const VkVideoEncoderConfigFieldInfo* byOffset[kVkEncCfgFieldCount];
+    for (size_t i = 0; i < (size_t)kVkEncCfgFieldCount; ++i) {
+        byOffset[i] = &kVkVideoEncoderConfigFields[i];
+    }
+    for (size_t i = 1; i < (size_t)kVkEncCfgFieldCount; ++i) {
+        const VkVideoEncoderConfigFieldInfo* key = byOffset[i];
+        size_t j = i;
+        while (j > 0 && byOffset[j - 1]->offset > key->offset) {
+            byOffset[j] = byOffset[j - 1];
+            --j;
+        }
+        byOffset[j] = key;
+    }
+
+    size_t cursor   = 0;   // first byte no row has claimed yet
+    size_t gapTotal = 0;   // bytes no row claims at all
+    size_t covered  = 0;   // bytes the rows do claim
+    for (size_t i = 0; i < (size_t)kVkEncCfgFieldCount; ++i) {
+        const VkVideoEncoderConfigFieldInfo& f = *byOffset[i];
+        covered += f.size;
+
+        Check(f.offset >= cursor,
+              "no row starts inside the row before it",
+              std::string(f.name) + " starts at " + U32((uint32_t)f.offset) +
+                  ", the row before it ends at " + U32((uint32_t)cursor));
+        if (f.offset < cursor) {
+            cursor = f.offset + f.size;
+            continue;
+        }
+
+        // THE MISSING-ROW RULE. Bytes between two rows are padding, and
+        // padding exists for exactly one reason: the member that follows has
+        // to begin on its own alignment. A gap AT LEAST as wide as that
+        // alignment is therefore not padding -- the compiler would never have
+        // inserted it -- and what is sitting in it is a field whose row was
+        // never written.
+        const size_t gap = f.offset - cursor;
+        gapTotal += gap;
+        Check(gap < f.align,
+              "the gap before a row is no wider than alignment forces",
+              U32((uint32_t)gap) + " unclaimed bytes at offset " +
+                  U32((uint32_t)cursor) + " precede " + f.name +
+                  ", which needs only " + U32((uint32_t)f.align) +
+                  "-byte alignment: a field with no row lives there");
+        cursor = f.offset + f.size;
+    }
+
+    // THE END OF THE STRUCT, asserted on its own because it is the one place
+    // the rule above has nothing to measure against: the last row has no
+    // successor to take an alignment from, so a missing FINAL row would read
+    // as trailing padding and pass. It is caught here instead -- and only
+    // because this struct happens to end on its own alignment and so has no
+    // trailing padding for a row to hide in. Should it ever acquire some, THIS
+    // assertion is what says so, and the end of the table stops being covered
+    // until it is pinned another way.
+    Check(cursor == sizeof(VkVideoEncoderConfig),
+          "the last row closes VkVideoEncoderConfig",
+          "the rows end at " + U32((uint32_t)cursor) + ", sizeof is " +
+              U32((uint32_t)sizeof(VkVideoEncoderConfig)));
+
+    // THE BUDGET. The per-gap rule passes for a row removed from in front of a
+    // widely aligned successor, because the bytes it freed fit inside slack
+    // that successor already had; silenceStdio and matrixCoefficients are both
+    // of that shape. Pinning the TOTAL is what catches those: the freed bytes
+    // have to surface somewhere, and this is where.
+    Check(gapTotal == kVkEncCfgPaddingBytes,
+          "the gaps total the pinned padding budget",
+          U32((uint32_t)gapTotal) + " bytes of padding, pinned at " +
+              U32((uint32_t)kVkEncCfgPaddingBytes));
+
+    // The same fact reached from the other side, so the two cannot drift:
+    // every byte of the struct is either claimed by a row or is pinned
+    // padding, and there is no third kind.
+    Check(covered + kVkEncCfgPaddingBytes == sizeof(VkVideoEncoderConfig),
+          "the rows and the pinned padding account for every byte",
+          "rows claim " + U32((uint32_t)covered) + " bytes + " +
+              U32((uint32_t)kVkEncCfgPaddingBytes) + " padding, sizeof is " +
+              U32((uint32_t)sizeof(VkVideoEncoderConfig)));
 }
 
 
@@ -5197,6 +5346,26 @@ int main(int argc, char** argv)
     CaseAgreeingOtfDeclarationsAreAccepted();
     CaseMismatchedOtfDeclarationIsRefused();
 
+    CaseProfileNumbersReachTheCodecConfigUnchanged();
+    CaseProfileDefaultIsDerivedPerCodec();
+    CaseProfileNumbersAreReadAgainstTheCodec();
+    CaseProfileMustAdmitTheInputDepth();
+    CaseProfileMustAdmitTheInputSubsampling();
+    CaseWidenedBindSetStillRunsTheLimitsGuard();
+    CaseNamedProfileConstantsAreExactlyTheBoundSet();
+    CaseH265CpbVclFactorFollowsTheChromaFormat();
+    CaseAv1SubsamplingMatchesTheDerivedSeqProfile();
+    CaseCodecArmsDeriveTheProfileFromTheEncodeGeometry();
+    CaseInputColourChainBindsEachAxis();
+    CaseAbsentInputColourChainChangesNothing();
+    CaseInputColourDisagreementIsRefused();
+    CaseDeclaredInputRangeDecidesTheStreamsRange();
+    CaseInputColourPrimariesDriveTheDerivedMatrix();
+
+    CaseProbeNamesAv1MainAtBothDepths();
+    CaseProbeRefusesDepthsItHasNoEvidenceFor();
+    CaseSnapshotCarriesBothAv1Depths();
+
     CasePartialColourSupplyDoesNotFabricateTheRest();
     CaseFullRangeOnlyDeclaresRangeAndNoColour();
     CaseAv1SignalsRangeWithoutAColourDescription();
@@ -5235,6 +5404,7 @@ int main(int argc, char** argv)
     CaseCodecArmsDeriveTheProfileFromTheEncodeGeometry();
 
     CaseFieldTableClassifiesEveryField();
+    CaseFieldTableTilesTheStruct();
 
     std::printf("-------------------------------------------------------\n");
     std::printf("checks: %d, failures: %d\n", g_checks, g_failures);
