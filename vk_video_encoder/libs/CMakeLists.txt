@@ -25,9 +25,45 @@ FetchContent_Declare(simdjson
 )
 FetchContent_MakeAvailable(simdjson)
 
+# THE ENCODER'S OS SEAM, selected here and nowhere else. Two translation
+# units carry everything the encoder needs from the host OS -- thread naming
+# and DRM format modifier selection, and the waitable completion handle -- and
+# each has one implementation per platform, chosen by this block. Every
+# implementation begins with an #error guarding its own platform, so a unit
+# selected for the wrong target fails at its first line rather than at a
+# missing symbol during the link.
+#
+# An unsupported target is refused HERE, at configure time, with the port
+# named: a platform with no seam cannot build the encoder, and saying so at
+# configure is cheaper than a preprocessor error partway through.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(VK_VIDEO_ENCODER_OS_ADAPTER_SOURCE
+        ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderOsAdapterLinux.cpp)
+    set(VK_VIDEO_ENCODER_OS_EVENT_SOURCE
+        ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/../src/vulkan_video_encoder_os_event_linux.cpp)
+elseif(WIN32)
+    set(VK_VIDEO_ENCODER_OS_ADAPTER_SOURCE
+        ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderOsAdapterWindows.cpp)
+    set(VK_VIDEO_ENCODER_OS_EVENT_SOURCE
+        ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/../src/vulkan_video_encoder_os_event_windows.cpp)
+else()
+    message(FATAL_ERROR
+        "The Vulkan video encoder library has no OS seam implementation for "
+        "${CMAKE_SYSTEM_NAME}. Two translation units implement the seam; a "
+        "port supplies a sibling of each and selects it in this file:\n"
+        "    VkVideoEncoder/VkVideoEncoderOsAdapter<Os>.cpp -- thread naming "
+        "and DRM format modifier selection\n"
+        "    src/vulkan_video_encoder_os_event_<os>.cpp -- the waitable "
+        "completion handle\n"
+        "Configure with -DBUILD_ENCODER=OFF to build the rest of the tree "
+        "without the encoder.")
+endif()
+
 set(LIBVKVIDEOENCODER_SRC
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/../src/vulkan_video_encoder.cpp
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/../src/vulkan_video_encoder_ext.cpp
+    ${VK_VIDEO_ENCODER_OS_EVENT_SOURCE}
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/../src/vulkan_video_encoder_os_event_linux.h
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfigH264.cpp
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfigH264.h
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderDpbH264.cpp
@@ -48,6 +84,8 @@ set(LIBVKVIDEOENCODER_SRC
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderAV1.h
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfig.cpp
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoder.cpp
+    ${VK_VIDEO_ENCODER_OS_ADAPTER_SOURCE}
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderOsAdapterLinux.h
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoGopStructure.cpp
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoGopStructure.h
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoder.h
@@ -56,9 +94,16 @@ set(LIBVKVIDEOENCODER_SRC
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/json/EncoderConfigJsonLoader.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/YCbCrConvUtilsCpu.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/YCbCrConvUtilsCpu.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/Helpers.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/Helpers.h
     ${VK_DISPATCH_TABLE_SOURCE}
     ${VK_DISPATCH_TABLE_HEADER}
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VkThreadSafeQueue.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VkThreadSafeQueue.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanBufferPool.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanBufferPool.h
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanEncoderInputFrame.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanEncoderInputFrame.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceContext.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceContext.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.cpp
@@ -105,6 +150,11 @@ set(LIBVKVIDEOENCODER_SRC
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VkVideoCrc.cpp
 )
 
+# The internal ext header includes the public header by its tree-rooted
+# path (third_party/vulkan_video_samples/src/...). The GN build resolves
+# that via the Chromium source root on the include path; mirror it here
+# with the directory five levels up (the parent of third_party/).
+include_directories(BEFORE "${CMAKE_CURRENT_LIST_DIR}/../../../../..")
 include_directories(BEFORE "${CMAKE_CURRENT_LIST_DIR}/../")
 include_directories(BEFORE "${CMAKE_CURRENT_LIST_DIR}")
 include_directories(BEFORE ${VULKAN_VIDEO_ENCODER_INCLUDE}/../libs)

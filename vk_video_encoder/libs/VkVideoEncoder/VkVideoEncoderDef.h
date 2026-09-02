@@ -23,6 +23,9 @@
 #include "vk_video/vulkan_video_codec_h264std_encode.h"
 #include "vk_video/vulkan_video_codec_h265std.h"
 #include "vk_video/vulkan_video_codec_h265std_encode.h"
+#include <ostream>
+#include <streambuf>
+#include <iostream>
 
 #if !defined(VK_USE_PLATFORM_WIN32_KHR)
 #ifndef ARRAYSIZE
@@ -98,5 +101,12 @@ struct ConstQpSettings
     uint32_t qpInterB;
     uint32_t qpIntra;
 };
+
+
+// Process-wide stdio-silence gate: relocated to VkCodecUtils so common-
+// library code (VulkanDeviceContext) can use it without a layering
+// dependency on vk_video_encoder include paths. Included here so every
+// existing VkEncOut()/VkEncErr() call site keeps compiling unchanged.
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 
 #endif /* _VKVIDEOENCODERDEF_H_ */

@@ -44,19 +44,30 @@ public:
                         task = std::move(this->tasks.front());
                         this->tasks.pop();
                     }
+#if defined(__cpp_exceptions)
+                    // Exceptions-enabled consumers (the CLI apps): log and
+                    // keep the worker alive; an escaping exception would
+                    // otherwise terminate the process from a detached
+                    // worker thread with no actionable context.
                     try {
                         task();
                     } catch (const std::exception& e) {
-                        std::cerr << "Task threw an exception: " << e.what() << std::endl;
+                        std::cerr << "VkThreadPool task threw: " << e.what()
+                                  << std::endl;
                     }
+#else
+                    // Chromium builds with -fno-exceptions: nothing can be
+                    // caught here; an escaping exception is process-fatal.
+                    task();
+#endif
                 }
             });
     }
 
     template<class F, class... Args>
     auto enqueue(F&& f, Args&&... args)
-        -> std::future<typename std::result_of<F(Args...)>::type> {
-        using return_type = typename std::result_of<F(Args...)>::type;
+        -> std::future<typename std::invoke_result<F, Args...>::type> {
+        using return_type = typename std::invoke_result<F, Args...>::type;
 
         auto task = std::make_shared< std::packaged_task<return_type()> >(
             std::bind(std::forward<F>(f), std::forward<Args>(args)...)

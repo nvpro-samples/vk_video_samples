@@ -25,6 +25,27 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 set(SCRIPTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 
+# CTest aggregation. Every add_test() in this tree lives in a subdirectory,
+# and CMake writes a CTestTestfile.cmake at the build ROOT only when testing is
+# enabled HERE -- so without this line `cd build && ctest` reports
+# "Total Tests: 0" and exits 0 having run nothing, which is a CI step that can
+# never fail. The subdirectories' own enable_testing() calls make them
+# runnable when configured standalone; this one makes them runnable from the
+# top, which is how CI configures the project.
+#
+# LABEL CONTRACT -- every add_test() in this tree MUST carry exactly one of:
+#
+#   device-free  Needs no Vulkan device. Runs and must pass on any host,
+#                including the GPU-less GitHub runner. This is the gating set.
+#   gpu          Needs a real GPU. MUST also declare a SKIP_RETURN_CODE and
+#                exit with it when no device is available, so that a GPU-less
+#                host reports SKIPPED and never FAILED. A CI job that is red on
+#                arrival is a job people learn to ignore.
+#
+# scripts/run_ctest_ci.sh enforces the contract: it fails if any registered
+# test is in neither set, and CI calls it. Add a test, add its label.
+enable_testing()
+
 # Common options
 option(BUILD_VIDEO_PARSER "Build the video parser" ON)
 option(BUILD_DECODER "Build the video decoder" ON)
@@ -148,13 +169,42 @@ add_definitions(
     -DVK_USE_VIDEO_QUEUE
     -DVK_USE_VIDEO_DECODE_QUEUE
     -DVK_USE_VIDEO_ENCODE_QUEUE
-    # The encoder's preprocess compute filter (VulkanFilterYuvCompute) is built
-    # and enabled by default. Embedders that gate it - the Chromium vendored
-    # copy does - key off this macro, so define it here to keep the standalone
-    # build and those consumers in agreement.
-    -DVK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     -DAPI_NAME="${API_NAME}"
 )
+
+# Encoder preprocess compute filter (VulkanFilterYuvCompute).
+#
+# ON by default because upstream has no gate at all: the filter path there is
+# unconditional and EncoderConfig::enablePreprocessComputeFilter defaults to
+# true. Leaving the guard undefined silently drops the filter from
+# vk-video-enc-test too, which is not what the guard is for.
+#
+# The guard is for embedders that cannot supply a GLSL compiler, which the
+# filter needs to compile its generated GLSL at runtime
+# (VulkanShaderCompiler.cpp). No such embedder remains: standalone builds get a
+# backend from cmake/VulkanShaderCompilerBackend.cmake (glslang by default,
+# shaderc via -DVK_VIDEO_SAMPLES_SHADER_BACKEND=shaderc), and Chromium defines
+# the macro too, in third_party/vulkan_video_samples/BUILD.gn
+# config("private_includes").
+#
+# THIS OPTION CHANGES NOTHING. No source file in the tree reads
+# VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED -- grep returns this file and
+# Chromium's BUILD.gn and nothing else -- so OFF removes a -D that no #ifdef
+# consults, and the filter is compiled and used either way.
+#
+# The control that works is the RUNTIME flag
+# EncoderConfig::enablePreprocessComputeFilter (default true), which
+# VkVideoEncoder::InitEncoder branches on. Nothing in-tree clears it and no CLI
+# or ext-API exposes it.
+#
+# The option is kept rather than deleted because wiring the macro up is a real
+# choice: it would let an embedder with no GLSL compiler drop the filter's code
+# entirely. Until some #ifdef reads it, this is documentation, not a switch.
+option(BUILD_ENCODER_COMPUTE_FILTER
+       "Build the encoder's preprocess compute filter (requires a GLSL compiler backend)" ON)
+if(BUILD_ENCODER_COMPUTE_FILTER)
+    add_definitions(-DVK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED=1)
+endif()
 
 # Common include directories
 include_directories(
@@ -236,7 +286,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/VulkanDispatchTable.cmake)
 # For Windows, we use a static lib because the Windows loader has a fairly restrictive loader search
 # path that can't be easily modified to point it to the same directory that contains the layers.
 set(VKVIDEO_UTILS_VLF_SOURCES
-    ../common/layers/vk_format_utils.cpp
+    common/layers/vk_format_utils.cpp
     )
 
 if (WIN32)
