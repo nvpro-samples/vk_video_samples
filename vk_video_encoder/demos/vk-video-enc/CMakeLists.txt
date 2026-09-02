@@ -20,6 +20,9 @@ set(sources
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderAV1.h
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkEncoderConfig.cpp
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoder.cpp
+    # Same seam, same selection rule as vk_video_encoder/libs/CMakeLists.txt.
+    $<$<PLATFORM_ID:Linux>:${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderOsAdapterLinux.cpp>
+    $<$<PLATFORM_ID:Windows>:${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderOsAdapterWindows.cpp>
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderPsnr.cpp
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderPsnr.h
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/json/EncoderConfigJsonLoader.cpp
@@ -27,6 +30,7 @@ set(sources
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoGopStructure.h
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoder.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/YCbCrConvUtilsCpu.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VkEncoderStdioLatch.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/YCbCrConvUtilsCpu.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkShell/Shell.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkShell/ShellDirect.cpp

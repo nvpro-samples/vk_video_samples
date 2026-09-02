@@ -3,6 +3,10 @@ run-name: Native build by ${{ github.actor }}
 on:
   workflow_dispatch:
   workflow_call:
+
+  # Runs on pushes to the default branch and on pull requests targeting it.
+  # A topic branch is gated through its pull request, so nothing beyond the
+  # default branch is enumerated here.
   pull_request:
     branches:
       - main

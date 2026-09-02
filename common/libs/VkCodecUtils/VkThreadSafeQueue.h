@@ -17,6 +17,8 @@
 #ifndef _VKCODECUTILS_VKTHREADSAFEQUEUE_H_
 #define _VKCODECUTILS_VKTHREADSAFEQUEUE_H_
 
+#include <cstdint>  // chromium: needed for uint32_t under -fmodules
+
 #include <queue>
 #include <atomic>
 #include <condition_variable>
@@ -40,8 +42,15 @@ public:
             return false;
         }
 
-        // Wait for the consumer to consume the previous node item(s)
-        m_condProducer.wait(lock, [this]{ return (!m_queueIsFlushing && (m_queue.size() < m_maxPendingQueueNodes)); });
+        // Wait for the consumer to consume the previous node item(s). The
+        // predicate must also wake on the flush latch: it is sticky and never
+        // resets, so a producer waiting only for space would block forever if
+        // the flush lands mid-wait -- the entry check above cannot see a latch
+        // raised after it ran.
+        m_condProducer.wait(lock, [this]{ return (m_queueIsFlushing || (m_queue.size() < m_maxPendingQueueNodes)); });
+        if (m_queueIsFlushing) {
+            return false;
+        }
 
         m_queue.push(node);
         m_condConsumer.notify_one();
@@ -79,7 +88,7 @@ public:
         return m_queue.empty();
     }
 
-    bool Size() const {
+    size_t Size() const {
         std::lock_guard<std::mutex> lock(m_mutex);
         return m_queue.size();
     }
@@ -97,6 +106,32 @@ public:
     bool ExitQueue() {
         std::unique_lock<std::mutex> lock(m_mutex);
         return ((m_queueIsFlushing == true) && m_queue.empty());
+    }
+
+    // Clear the flush latch so a DRAINED queue can be used again.
+    //
+    // SetFlushAndExit() is deliberately sticky -- every consumer above treats
+    // it as "this queue is dead" -- which makes it correct for teardown and
+    // wrong for a NON-TERMINAL drain, where the whole point is that the
+    // session continues. This is the only way back, and it is guarded:
+    //
+    //   * REFUSES on a non-empty queue. Un-latching with items still in
+    //     flight would let a producer push behind items no consumer is
+    //     committed to draining.
+    //   * The caller must have JOINED every consumer first. That cannot be
+    //     checked here -- the queue does not own the threads -- so it is
+    //     stated: clearing the latch under a live consumer re-arms its
+    //     WaitAndPop against a queue whose ordering counters the caller is
+    //     about to touch.
+    //
+    // Returns false, changing nothing, when the queue is not drained.
+    bool ClearFlushAndReuse() {
+        std::unique_lock<std::mutex> lock(m_mutex);
+        if (!m_queue.empty()) {
+            return false;
+        }
+        m_queueIsFlushing = false;
+        return true;
     }
 
 private:
