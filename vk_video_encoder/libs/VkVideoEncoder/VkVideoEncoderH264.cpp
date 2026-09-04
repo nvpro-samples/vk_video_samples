@@ -15,6 +15,7 @@
  */
 
 #include "VkVideoEncoder/VkVideoEncoderH264.h"
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 
 VkResult CreateVideoEncoderH264(const VulkanDeviceContext* vkDevCtx,
@@ -48,7 +49,7 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
 
     VkResult result = InitEncoder(encoderConfig);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nERROR: InitEncoder() failed with ret(%d)\n", result);
+        VkEncPrintfErr("\nERROR: InitEncoder() failed with ret(%d)\n", result);
         return result;
     }
 
@@ -79,14 +80,14 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
                                                          nullptr,
                                                          &sessionParameters);
     if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nEncodeFrame Error: Failed to get create video session parameters.\n");
+        VkEncPrintfErr("\nEncodeFrame Error: Failed to get create video session parameters.\n");
         return result;
     }
 
     result = VulkanVideoSessionParameters::Create(m_vkDevCtx, m_videoSession,
                                                   sessionParameters, m_videoSessionParameters);
     if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nEncodeFrame Error: Failed to get create video session object.\n");
+        VkEncPrintfErr("\nEncodeFrame Error: Failed to get create video session object.\n");
         return result;
     }
 
@@ -535,7 +536,7 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         DumpStateInfo("input", 1, encodeFrameInfo);
 
         if (encodeFrameInfo->lastFrame) {
-            std::cout << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
+            VkEncOut() << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
                       << " of type " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
                       << " ###"
                       << std::endl << std::flush;
@@ -598,8 +599,15 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         m_IDRPicId++;
     }
 
+    // In capture mode (disableFileOutput -- the Chromium in-memory
+    // bitstream path) EVERY IDR chunk must be independently decodable: the
+    // VEA hands keyframe chunks to consumers (WebCodecs, muxers,
+    // validators) that expect in-band SPS/PPS on each keyframe, including
+    // mid-stream forced IDRs. The file-based sample keeps the original
+    // headers-once-at-stream-start behavior.
     if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) &&
-            (encodeFrameInfo->frameEncodeInputOrderNum == 0)) {
+            ((encodeFrameInfo->frameEncodeInputOrderNum == 0) ||
+             (m_encoderConfig->disableFileOutput != 0))) {
         VkResult result = EncodeVideoSessionParameters(encodeFrameInfo);
         if (result != VK_SUCCESS) {
             return result;

@@ -48,7 +48,7 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
 
     VkResult result = InitEncoder(encoderConfig);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nERROR: InitEncoder() failed with ret(%d)\n", result);
+        VkEncPrintfErr("\nERROR: InitEncoder() failed with ret(%d)\n", result);
         return result;
     }
 
@@ -56,7 +56,7 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     m_dpb.DpbSequenceStart(m_maxDpbPicturesCount, (m_encoderConfig->numRefL0 > 0) || (m_encoderConfig->numRefL1 > 0));
 
     if (m_encoderConfig->verbose) {
-        std::cout << ", numRefL0: "    << (uint32_t)m_encoderConfig->numRefL0
+        VkEncOut() << ", numRefL0: "    << (uint32_t)m_encoderConfig->numRefL0
                   << ", numRefL1: "    << (uint32_t)m_encoderConfig->numRefL1 << std::endl;
     }
 
@@ -100,14 +100,14 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
                                                          nullptr,
                                                          &sessionParameters);
     if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nEncodeFrame Error: Failed to get create video session parameters.\n");
+        VkEncPrintfErr("\nEncodeFrame Error: Failed to get create video session parameters.\n");
         return result;
     }
 
     result = VulkanVideoSessionParameters::Create(m_vkDevCtx, m_videoSession,
                                                   sessionParameters, m_videoSessionParameters);
     if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nEncodeFrame Error: Failed to get create video session object.\n");
+        VkEncPrintfErr("\nEncodeFrame Error: Failed to get create video session object.\n");
         return result;
     }
 
@@ -423,7 +423,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         DumpStateInfo("input", 1, encodeFrameInfo);
 
         if (encodeFrameInfo->lastFrame) {
-            std::cout << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
+            VkEncOut() << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
                       << " of type " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
                       << " ###"
                       << std::endl << std::flush;
@@ -447,8 +447,15 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     VkResult result = VK_SUCCESS;
 
+    // In capture mode (disableFileOutput -- the Chromium in-memory
+    // bitstream path) EVERY IDR chunk must be independently decodable: the
+    // VEA hands keyframe chunks to consumers that expect in-band VPS/SPS/PPS
+    // on each keyframe, including mid-stream forced IDRs. The file-based
+    // sample keeps the original headers-once-at-stream-start behavior.
     if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) &&
-            (encodeFrameInfo->frameEncodeInputOrderNum == 0 /*|| pEncodeConfigH265->repeatSPSPPS || m_bReconfigForcedIDR*/)) {
+            ((encodeFrameInfo->frameEncodeInputOrderNum == 0) ||
+             (m_encoderConfig->disableFileOutput != 0)
+             /*|| pEncodeConfigH265->repeatSPSPPS || m_bReconfigForcedIDR*/)) {
 
         result = EncodeVideoSessionParameters(encodeFrameInfo);
         if (result != VK_SUCCESS ) {
@@ -525,13 +532,13 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
             pFrameInfo->naluSliceSegmentInfo[i].constantQp = constantQp;
         }
         if (getenv("VKENC_DEBUG_PSNR")) {
-            fprintf(stderr, "[QPDBG] picType=%d constantQp=%d (qpI=%d qpP=%d qpB=%d) rcMode=%d\n",
+            VkEncPrintfErr("[QPDBG] picType=%d constantQp=%d (qpI=%d qpP=%d qpB=%d) rcMode=%d\n",
                     (int)encodeFrameInfo->gopPosition.pictureType, constantQp,
                     encodeFrameInfo->constQp.qpIntra, encodeFrameInfo->constQp.qpInterP,
                     encodeFrameInfo->constQp.qpInterB, (int)m_rateControlInfo.rateControlMode);
         }
     } else if (getenv("VKENC_DEBUG_PSNR")) {
-        fprintf(stderr, "[QPDBG] rcMode=%d NOT DISABLED (picType=%d) -> QP not forced\n",
+        VkEncPrintfErr("[QPDBG] rcMode=%d NOT DISABLED (picType=%d) -> QP not forced\n",
                 (int)m_rateControlInfo.rateControlMode, (int)encodeFrameInfo->gopPosition.pictureType);
     }
 

@@ -23,7 +23,9 @@ set(sources
     # Same seam, same selection rule as vk_video_encoder/libs/CMakeLists.txt.
     $<$<PLATFORM_ID:Linux>:${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderOsAdapterLinux.cpp>
     $<$<PLATFORM_ID:Windows>:${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderOsAdapterWindows.cpp>
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderOsAdapterLinux.h
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderPsnr.cpp
+    ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderContentProbe.cpp
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoEncoderPsnr.h
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/json/EncoderConfigJsonLoader.cpp
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}/VkVideoEncoder/VkVideoGopStructure.cpp
@@ -135,11 +137,25 @@ link_directories(
     ${VULKAN_LIB_DIR}
     )
 
+# FFmpeg is a DEMUXER-ONLY dependency here, so the link flags must carry the
+# same if(FFMPEG_AVAILABLE) guard the sources and the -DFFMPEG_DEMUXER_SUPPORT
+# define already carry above. Without it the demuxer is compiled out but
+# -lavformat still reaches the linker, and the target fails to link on any host
+# whose libavformat is missing -- which is what happened here: FindFFmpeg found
+# libavcodec and libavutil in /usr/lib but no libavformat, FFMPEG_AVAILABLE went
+# OFF, and this target stopped linking while nothing in it referenced a single
+# avformat_* symbol. Same guard, same reason, as
+# vk_video_decoder/test/vulkan-video-dec/CMakeLists.txt.
 if(WIN32)
-    list(APPEND libraries PRIVATE ${AVCODEC_LIB} ${AVFORMAT_LIB} ${AVUTIL_LIB} ${VULKAN_VIDEO_PARSER_LIB} ${VK_SHADER_COMPILER_LIBS})
+    if(FFMPEG_AVAILABLE)
+        list(APPEND libraries PRIVATE ${AVCODEC_LIB} ${AVFORMAT_LIB} ${AVUTIL_LIB})
+    endif()
+    list(APPEND libraries PRIVATE ${VULKAN_VIDEO_PARSER_LIB} ${VK_SHADER_COMPILER_LIBS})
 else()
     list(APPEND libraries PRIVATE -lX11)
-    list(APPEND libraries PRIVATE -lavcodec -lavutil -lavformat)
+    if(FFMPEG_AVAILABLE)
+        list(APPEND libraries PRIVATE -lavcodec -lavutil -lavformat)
+    endif()
     list(APPEND libraries PRIVATE ${VK_SHADER_COMPILER_LIBS})
     list(APPEND libraries PRIVATE -L${CMAKE_INSTALL_LIBDIR} -l${VULKAN_VIDEO_PARSER_LIB})
     list(APPEND libraries PRIVATE -L${LIBNVPARSER_BINARY_ROOT} -l${VULKAN_VIDEO_PARSER_LIB})

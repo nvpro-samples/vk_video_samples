@@ -134,7 +134,7 @@ int main(int argc, const char* argv[])
     }
 
     VkQueueFlags requestVideoComputeQueueMask = 0;
-    if (encoderConfig->enablePreprocessComputeFilter == VK_TRUE) {
+    if (encoderConfig->IsPreprocessComputeFilterEnabled()) {
         requestVideoComputeQueueMask = VK_QUEUE_COMPUTE_BIT;
     }
 
@@ -199,7 +199,7 @@ int main(int argc, const char* argv[])
                                               true,              // createGraphicsQueue
                                               true,              // createDisplayQueue
                                               ((encoderConfig->selectVideoWithComputeQueue == 1) ||  // createComputeQueue
-                                               (encoderConfig->enablePreprocessComputeFilter == VK_TRUE))
+                                               encoderConfig->IsPreprocessComputeFilterEnabled())
                                               );
         if (result != VK_SUCCESS) {
             if (IsVideoUnsupportedResult(result)) {
@@ -260,7 +260,7 @@ int main(int argc, const char* argv[])
                                               false, // createGraphicsQueue
                                               false, // createDisplayQueue
                                               ((encoderConfig->selectVideoWithComputeQueue == 1) ||  // createComputeQueue
-                                               (encoderConfig->enablePreprocessComputeFilter == VK_TRUE))
+                                               encoderConfig->IsPreprocessComputeFilterEnabled())
                                               );
         if (result != VK_SUCCESS) {
             if (IsVideoUnsupportedResult(result)) {
