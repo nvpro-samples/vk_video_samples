@@ -10,7 +10,7 @@ Tests the `VulkanFilterYuvCompute` class directly, independent of any applicatio
 
 **Build:**
 ```bash
-cd <repository root>
+cd <vulkan-video-samples>
 mkdir -p build && cd build
 cmake .. -DBUILD_TESTS=ON
 make -j$(nproc) vk_filter_test
@@ -41,7 +41,7 @@ Tests the filter as integrated into the `ThreadedRenderingVk` application, inclu
 
 **Run:**
 ```bash
-cd <ThreadedRenderingVk_Standalone checkout>
+cd <ThreadedRenderingVk>
 ./scripts/test_dump_formats.sh
 ```
 
@@ -106,7 +106,10 @@ The `YCBCR2RGBA` filter mode has shader generation issues:
 
 ### Y410 Packed Format
 
-Y410 is a packed format requiring special shader handling not yet implemented.
+Packed 4:4:4 handling is implemented on the `YCBCRCOPY` arm, in both
+directions: a packed input is bound as a single storage image and read with
+`imageLoad()`, and a packed output is written the same way. That is the arm the
+encoder builds, so Y410 is not unimplemented in general.
 
 It is **not** implemented on either of the two arms these tests exercise, and
 both are shader-generation defects rather than missing features:

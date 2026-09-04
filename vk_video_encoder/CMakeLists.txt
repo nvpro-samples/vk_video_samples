@@ -583,6 +583,202 @@ else()
 endif()
 
 add_subdirectory(test/vulkan-video-enc)
+# Device-free coverage of the ext API's chained-descriptor walk. Links the
+# static encoder archive for the internal header's test seams.
+add_subdirectory(test/encoder-ext-sync)
+# Real-device coverage of the per-frame RELEASE fence export. Skips (CTest
+# SKIP, exit 77) on a host with no encode-capable GPU.
+# LINUX-ONLY TESTS, guarded individually below.
+#
+# Each reads a POSIX facility as the SUBJECT of the test, not as a
+# convenience: dlopen for loader adoption, /proc fd enumeration and dirent for
+# dma-buf fd ownership, unistd for the fd lifetime assertions. There is no
+# Windows equivalent to assert about, so they are Linux-only by construction
+# rather than merely unported -- porting them would mean inventing a different
+# test, not translating this one.
+#
+# The library itself builds on Windows; only these tests do not.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_subdirectory(test/encoder-ext-release-fence)
+endif()
+# Real-device coverage of the per-frame ACQUIRE fence's fd OWNERSHIP -- that
+# every refusal exit consumes the caller's sync_fd, and that the success path
+# still consumes it exactly once. Needs a GPU for the same reason its sibling
+# does: a real sync_fd needs a real queue signal to export from, and the
+# success case needs a real import. Skips (CTest SKIP, exit 77) without one.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_subdirectory(test/encoder-ext-acquire-fd)
+endif()
+# Device-free coverage of the input-format taxonomy (which rung of the
+# adaptation ladder a format needs) and of the config binder's disposition of
+# enablePreprocessFilter. Both are pure functions of their arguments, so this
+# needs no GPU; what the filter then DOES with the pixels needs one and lives
+# in vk_filter_test.
+add_subdirectory(test/encoder-ext-filter)
+# Real-device REGRESSION test for a defect that is now FIXED:
+# DrainPendingFrames() permanently disabled async assembly, and the synchronous
+# fallback publishes no completion record, so every frame submitted after that
+# call was encoded and then never became acquirable. DrainAndRestartThreads()
+# closed it. This is a plain gating test -- it exits 0 and carries NO
+# WILL_FAIL; see the note in the test's own CMakeLists.txt for why leaving
+# WILL_FAIL on would have reported the working fix as a failure. Skips
+# (CTest SKIP, exit 77) without a GPU.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_subdirectory(test/encoder-ext-drain-assembly)
+endif()
+# Device-free coverage of the CONTRACT the test above rests on: that
+# VkVideoEncoder::AssembleBitstreamData -- the synchronous assembly path --
+# publishes NO completion record, in either output mode. Seven sites in the
+# tree are built on that premise, including the guard in ProcessOrderedFrames
+# and the WriteDataToFile contract comment, and until this entry existed
+# NOTHING executed the function: the ext surface cannot reach it (asyncAssembly
+# is pinned on, a subscriber is always registered, and ProcessOrderedFrames
+# refuses the sync fallback whenever one exists) and the file-based CLI that
+# can reach it exposes no VkVideoEncoder to observe. Subclasses the encoder
+# with a null device context, so there is no GPU, driver or display dependence
+# and nothing to skip.
+add_subdirectory(test/encoder-sync-assembly)
+# Real-device coverage of the DIRECT submit's FIXED 8-slot wait array. The
+# direct-encode path assembles waits into VkSemaphoreSubmitInfoKHR[8] and its
+# fill loop is bounded by the capacity, so surplus waits were DISCARDED with no
+# log, no assert and a SUCCESS status -- and because the ext layer appends the
+# imported acquire-fence semaphore LAST, that producer fence is the first
+# casualty. Registers two entries: the DIRECT subject and a STAGED control that
+# runs the identical case against the non-truncating vector assembly, which is
+# what makes a green subject arm distinguishable from a test that cannot fail.
+# Skips (CTest SKIP, exit 77) without an encode-capable GPU.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_subdirectory(test/encoder-ext-direct-wait-capacity)
+endif()
+# Real-device coverage of the ADOPT-mode SESSION: the embedder owns the
+# VkInstance and names the VkPhysicalDevice, and the LIBRARY creates its own
+# VkDevice on them and encodes. That combination -- externalInstance +
+# externalPhysicalDevice with externalDevice left NULL -- is the supported
+# embedding shape, and until this suite existed nothing in the tree exercised
+# externalInstance, externalPhysicalDevice or externalDevice at all: the only
+# caller was the out-of-tree Chromium embedder.
+# Four entries: the ADOPT subject, an OWN control that makes a red
+# subject attributable to the adopted handles rather than to the host, the
+# physical-device pin, and config.validate over a borrowed instance.
+# Skips (CTest SKIP, exit 77) without an encode-capable GPU.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_subdirectory(test/encoder-ext-adopt-device)
+endif()
+# Real-device coverage of INPUT RESIDENCY on an OS-HANDLE registration. Before
+# this suite every handleType in vk_video_encoder/test was
+# ..._VK_IMAGE -- eight registration sites, zero OPAQUE_FD -- so the whole
+# OS-handle import path, and every rule the ext layer applies only to it, had
+# no test of any kind. The residency read in SubmitRegisteredFrame is exactly
+# such a rule, and a suite that only registers VK_IMAGE takes its other arm
+# every time.
+#
+# The registration is a SELF-IMPORT: the test exports OPAQUE_FD from the
+# LIBRARY's own VkDevice and hands the fd straight back, which is what
+# Chromium's shipping CPU staging tier does and which no in-tree test did.
+#
+# Asserts on a library-side counter (VkVideoEncoderInputResidencyInfo), NOT on
+# a validation-error count, and that is forced rather than preferred: the two
+# barrier programs the residency decision selects between are both spec-clean
+# and both leave the image in the same layout, so a layer-based assertion here
+# would be green either way -- a test that cannot fail. Five entries: the
+# OPAQUE_FD + explicit-LOCAL subject, a VK_IMAGE control over the IDENTICAL
+# image that makes a red subject attributable to handleType alone, an explicit
+# FOREIGN and an AUTO pin that together stop the fix degenerating into "never
+# acquire", and a mirror of the Chromium tier-3 layout declaration which
+# PASSES -- the design registered it WILL_FAIL and the hardware disagreed, so
+# the registration was corrected rather than the measurement explained away;
+# the suite's own CMakeLists records the reasoning.
+# Skips (CTest SKIP, exit 77) without an encode-capable GPU.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_subdirectory(test/encoder-ext-input-residency)
+endif()
+# Real-device INPUT FORMAT MATRIX. VkEncClassifyInputFormat names nine formats;
+# whether one REGISTERS, and onto which input path, is a fact about a device, a
+# session and a descriptor that the taxonomy table cannot see. This walks all
+# nine plus two excluded controls against the library-owned device and asserts
+# both halves per arm -- registration status AND the slot's resolved inputPath,
+# read from VkEncProbeResource rather than inferred from the config flag, which
+# is true of a registration that resolved to STAGED as well. Each arm also runs
+# a NEGATIVE control with its own declaration withheld, so a fix that merely
+# deleted a refusal fails here. Skips (CTest SKIP, exit 77) without an
+# encode-capable GPU.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_subdirectory(test/encoder-ext-format-matrix)
+endif()
+
+# The ENCODE half of the same matrix: known primaries pattern in, real frames
+# submitted, bitstream written out for an INDEPENDENT decoder. A 3-plane row
+# that does not resolve to FILTER is abandoned before any submit.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_subdirectory(test/encoder-ext-format-encode)
+endif()
+
+# Real-device coverage of the dma-buf IMPORT-ORDINAL
+# GUARD, which shipped with a coverage floor of exactly zero: no
+# test, CMake entry or CI file referenced it, and
+# VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_DMA_BUF reached
+# VkEncImportExternalImage from NO encoder-ext test at all -- every
+# registration in the tree was VK_IMAGE or OPAQUE_FD, on both of
+# which the guard returns at its second line. The suite was green
+# with the workaround deleted.
+#
+# This exports a REAL dma-buf from a real NVIDIA VkDevice and imports
+# it, with counting thunks in the device dispatch table, so what the
+# guard did is read off the driver rather than off a log line.
+#
+# THE GUARD IS DISABLED BY DEFAULT (kVkEncImportOrdinalGuardCount = 0):
+# it shifts the PHASE of the driver's import-damage pattern and does
+# not reduce it, the damage rate being the same for every K, so the
+# shipped build takes no sacrificial import at all.
+# The default entry therefore asserts INERTNESS: one image for one
+# caller import, nothing retained, nothing released, verdict DISABLED.
+# The ARMED behaviour has not lost its coverage; the same binary takes
+# --guard-count=N and asserts all of it against a library rebuilt with
+# that N, which is the only way a build constant can be tested. Two
+# ctest entries: the retired subject and the kill switch. Skips (exit
+# 77) with no GPU, no dma-buf export, or a non-NVIDIA GPU, where the
+# guard refuses to run by design.
+add_subdirectory(test/encoder-ext-import-ordinal-guard)
+
+# The same guard's REPORTING CHANNEL, device-free. The suite above asks what
+# the guard did on real hardware; this one asks whether anything OUTSIDE the
+# library can find out, and pins the build count the library ships. The guard used to answer only on
+# stderr, which the shipping Chromium configuration discards wholesale
+# (silenceStdio), so both of its failure paths were silent in the one
+# deployment it exists for. This gates the carrier that replaced that
+# narration: VkVideoEncoderImportGuardInfo, chainable onto the registration
+# status echo and onto the completion snapshot. It covers the CARRIER only --
+# COMPLETE, INCOMPLETE and DISABLED-on-a-real-import need a real dma-buf
+# import on an NVIDIA device and belong to the suite above and to hardware.
+# Note the carrier got harder to test, not easier, when the guard was retired:
+# the build count is 0, so every field of an honest verdict is now 0 too, and
+# these cases have to poison the caller's struct to prove the library wrote it
+# at all.
+add_subdirectory(test/encoder-ext-import-guard)
+
+# The dma-buf import CONTENT probe -- what the DRIVER actually put in the
+# buffer, as opposed to what the (retired) ordinal guard did about it. The
+# suite above gates a workaround's REPORT; this one gates a DETECTOR, and the
+# distinction matters for what a green means.
+#
+# It covers the decision and the carrier, device-free: the predicate over
+# every (Y,U,V) liveness quadrant, the scorer over synthetic NV12 buffers laid
+# out with the plane offsets, padded row pitch and skipped rows a real
+# HOST_VISIBLE LINEAR image has, the once-per-REGISTRATION latch, the
+# oldest-damaged-first report ordering, the drain on retirement, and the
+# VkVideoEncoderImportContentInfo chain on both of its two chain points.
+#
+# It does NOT cover whether the probe fires on a buffer the driver really
+# poisoned. That needs a driver that exhibits the defect and a real GBM
+# dma-buf import, and is
+# proven on hardware or not at all. What this buys is that the DECISION --
+# the part that would otherwise be exercised only on the one host with the
+# broken driver -- is regression-tested everywhere, including the GPU-less CI
+# runner. The predicate is asserted quadrant by quadrant rather than
+# spot-checked because the CHROMA-ONLY version of it has produced a wrong
+# conclusion on this defect twice, and a fully legal black frame is asserted
+# CLEAN because that is the false positive that would reroute working buffers.
+add_subdirectory(test/encoder-ext-import-content)
 
 if(BUILD_DEMOS AND NOT DEFINED DEQP_TARGET)
     add_subdirectory(demos)
