@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<!--
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-FileCopyrightText: 2026 The Khronos Group, Inc.
+SPDX-License-Identifier: Apache-2.0
+
+Generated from the Markdown source by build_blog.py — edit the .md, not this file.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The dma-buf import content probe</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-card: #1a2332;
+            --accent-vulkan: #ac2d2d;
+            --accent-vulkan-bright: #e05252;
+            --accent-chrome: #5b9bff;
+            --accent-nvidia: #8bd90a;
+            --accent-firefox: #ff9d3d;
+            --text-primary: #eef2f8;
+            --text-body: #d3dce8;
+            --text-secondary: #b3c0d1;
+            --text-muted: #8a97a8;
+            --border: #2d3a4f;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Outfit', system-ui, sans-serif; font-weight: 400;
+            background: var(--bg-primary); color: var(--text-body);
+            line-height: 1.75; font-size: 17px;
+        }
+        .bg-pattern {
+            position: fixed; inset: 0; z-index: -1;
+            background:
+                radial-gradient(ellipse at 20% 10%, rgba(172, 45, 45, 0.10) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 90%, rgba(66, 133, 244, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 60% 40%, rgba(118, 185, 0, 0.05) 0%, transparent 60%);
+        }
+        .container { max-width: 980px; margin: 0 auto; padding: 0 1.5rem; }
+        header.hero { padding: 4rem 0 2.5rem; text-align: center; }
+        .logo-strip {
+            display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;
+            margin-bottom: 2rem; font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.15em;
+        }
+        .logo-strip span { padding: 0.4rem 0.8rem; border-radius: 4px; border: 1px solid var(--border); }
+        .logo-strip .vulkan { color: var(--accent-vulkan-bright); border-color: var(--accent-vulkan); }
+        .logo-strip .nvidia { color: var(--accent-nvidia); border-color: var(--accent-nvidia); }
+        .logo-strip .ff { color: var(--accent-firefox); border-color: var(--accent-firefox); }
+        .logo-strip .chrome { color: var(--accent-chrome); border-color: var(--accent-chrome); }
+        .hero-banner {
+            display: block; width: 100%; height: auto;
+            border-radius: 12px; margin-bottom: 2rem;
+        }
+        h1 {
+            font-size: 2.7rem; font-weight: 700; line-height: 1.15; margin-bottom: 1rem;
+            color: var(--text-primary);
+        }
+        .hero .dek { font-size: 1.2rem; color: var(--text-secondary); max-width: 760px; margin: 0 auto; }
+        .byline { margin-top: 1.5rem; font-size: 0.9rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+        article { padding-bottom: 5rem; }
+        h2 {
+            font-size: 1.7rem; font-weight: 700; margin: 3.2rem 0 1.1rem; color: var(--text-primary);
+            padding-left: 0.9rem; border-left: 4px solid var(--accent-nvidia);
+        }
+        h2.ff { border-left-color: var(--accent-firefox); }
+        h2.cr { border-left-color: var(--accent-chrome); }
+        h2.vk { border-left-color: var(--accent-vulkan-bright); }
+        h3 { font-size: 1.2rem; font-weight: 600; margin: 2rem 0 0.7rem; color: var(--text-primary); }
+        p { margin-bottom: 1.1rem; color: var(--text-body); }
+        p strong, li strong { color: var(--text-primary); }
+        em { color: var(--text-primary); font-style: italic; }
+        ul, ol { margin: 0 0 1.1rem 1.5rem; color: var(--text-body); }
+        li { margin-bottom: 0.5rem; }
+        a { color: var(--accent-chrome); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        code {
+            font-family: 'JetBrains Mono', monospace; font-size: 0.83em;
+            background: var(--bg-card); border: 1px solid var(--border);
+            padding: 0.1rem 0.35rem; border-radius: 4px; color: #a8ecb2;
+        }
+        figure.diagram {
+            margin: 1.8rem 0; padding: 1rem; background: #ffffff;
+            border: 1px solid var(--border); border-radius: 12px; text-align: center;
+        }
+        figure.diagram img, figure.diagram object { max-width: 100%; height: auto; }
+        figure.diagram figcaption { margin-top: 0.6rem; font-size: 0.85rem; color: #475569; font-style: italic; }
+        blockquote.pull {
+            border-left: 4px solid var(--accent-vulkan-bright);
+            background: var(--bg-card); border-radius: 0 10px 10px 0;
+            padding: 1.1rem 1.4rem; margin: 1.6rem 0;
+            font-size: 1.03rem; color: var(--text-primary);
+        }
+        blockquote.pull p { color: var(--text-primary); margin: 0; }
+        table.doc {
+            width: 100%; border-collapse: collapse; margin: 1.8rem 0;
+            font-size: 0.95rem; background: var(--bg-card);
+            border: 1px solid var(--border); border-radius: 10px;
+            overflow: hidden; display: table;
+        }
+        table.doc th, table.doc td {
+            padding: 0.68rem 0.9rem; text-align: left; vertical-align: top;
+            border-bottom: 1px solid var(--border);
+        }
+        table.doc thead th {
+            background: rgba(118, 185, 0, 0.10);
+            color: var(--text-primary); font-weight: 650;
+            border-bottom: 2px solid var(--accent-vulkan-bright);
+            white-space: nowrap;
+        }
+        table.doc tbody tr:last-child td { border-bottom: none; }
+        table.doc tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
+        table.doc code { white-space: nowrap; }
+        @media (max-width: 720px) {
+            table.doc { display: block; overflow-x: auto; }
+        }
+        aside.takeaways {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-left: 4px solid var(--accent-vulkan-bright);
+            border-radius: 0 12px 12px 0; padding: 1.4rem 1.7rem;
+            margin: 2.2rem 0 2.6rem;
+        }
+        aside.takeaways h2 {
+            font-size: 0.95rem; margin: 0 0 0.9rem; padding: 0; border-left: none;
+            font-family: 'JetBrains Mono', monospace; text-transform: uppercase;
+            letter-spacing: 0.12em; color: var(--accent-vulkan-bright);
+        }
+        aside.takeaways ul { margin: 0 0 0 1.2rem; }
+        aside.takeaways li:last-child { margin-bottom: 0; }
+        hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+        footer {
+            border-top: 1px solid var(--border); padding: 2rem 0 3.5rem;
+            color: var(--text-muted); font-size: 0.88rem; text-align: center;
+        }
+        @media (max-width: 700px) {
+            h1 { font-size: 1.9rem; }
+            /* Keep the Key Takeaways panel readable on a phone: the box and
+               list indents eat a lot of a 390px viewport at desktop padding. */
+            aside.takeaways { padding: 1.1rem 1.15rem; border-radius: 0 8px 8px 0; }
+            aside.takeaways ul { margin-left: 1rem; }
+            figure.diagram { padding: 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+<div class="bg-pattern"></div>
+
+<header class="hero">
+    <div class="container">
+        <div class="logo-strip">
+
+        </div>
+        <h1>The dma-buf import content probe</h1>
+        <p class="dek"><strong>Status:</strong> internal mechanism. It is not part of the public encoder interface, and this document does not propose making it one.</p>
+        <div class="byline"></div>
+    </div>
+</header>
+
+<article>
+<div class="container">
+
+<hr>
+
+<h2>1. The failure it exists to catch</h2>
+
+<p>A dma-buf import can succeed at every level the API can report on — <code>vkAllocateMemory</code>, <code>vkBindImageMemory</code>, image view creation, all <code>VK_SUCCESS</code> — and still bind an image to memory the producer's writes never reach. The encoder then encodes that image faithfully and emits a structurally valid bitstream of a dead or green frame.</p>
+
+<p>Nothing else in the library can see this. Every layer above works from handles and descriptors, and those are all correct; the damage is only visible in the pixels. The probe is the only place that reads imported pixels on the host, so it is the only place that can hold an opinion.</p>
+
+<h2>2. The shape of the answer</h2>
+
+<p>The verdict is latched <strong>per registration</strong>, not per frame.</p>
+
+<p>The defect is a property of the import: it is permanent for the life of that buffer, a damaged import is not recoverable, re-importing at the next ordinal rescues it in 0 of 8 attempts, and 100% of the frames backed by a damaged buffer carry the damage. A second look therefore costs a readback and can learn nothing. A 5125-frame session with 5 registered buffers performs 5 probes, not 5125.</p>
+
+<h2>3. The sequence</h2>
+
+<figure class="diagram">
+  <img src="ENCODER_IMPORT_CONTENT_PROBE.svg" alt="Arm, capture, score, echo" loading="lazy">
+  <figcaption>Arm, capture, score, echo</figcaption>
+</figure>
+
+<table class="doc">
+<thead>
+  <tr>
+    <th>#</th>
+    <th>When</th>
+    <th>Call</th>
+    <th>What happens</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td>1</td>
+    <td>Encoder initialisation</td>
+    <td><code>Configure()</code></td>
+    <td>Pool depth is the encode queue depth <strong>+ 2</strong>: a node is held from the record site until the post-fence score, so the in-flight set can briefly exceed the queue depth</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>The host registers an external buffer</td>
+    <td><code>ArmRegistration(resource, captureSite)</code></td>
+    <td>State becomes <code>ARMED</code>, or <code>NOT_APPLICABLE</code> when the readback cannot ride this registration. Latched here rather than discovered per frame, so the answer travels back in the registration echo</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td>First frame that uses the registration</td>
+    <td><code>NeedsCapture()</code> gates <code>RecordCapture()</code></td>
+    <td>Two <code>vkCmdCopyImage</code> — Y and UV — appended to the staging command buffer that already exists, one command after <code>CopyLinearToOptimalImage</code> has read the same image in the same layout. No extra submit, fence or queue; the image is already in <code>TRANSFER_SRC_OPTIMAL</code></td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td>After that command buffer's fence is waited</td>
+    <td><code>ScoreCapture()</code></td>
+    <td>Host-side strided plane means off a <code>HOST_VISIBLE｜HOST_COHERENT</code> LINEAR pool image, from the same two post-fence sites the PSNR readback uses</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td>Any later call</td>
+    <td>chained <code>VkVideoEncoderImportContentInfo</code></td>
+    <td>The caller reads <code>state</code>, <code>meanY/U/V</code> and the session totals</td>
+  </tr>
+  <tr>
+    <td>—</td>
+    <td>Unregistration</td>
+    <td><code>ForgetRegistration()</code></td>
+    <td>Per-registration state is erased. Session totals are deliberately <strong>not</strong> decremented</td>
+  </tr>
+</tbody>
+</table>
+
+<p><code>ScoreCapture()</code> must run only after the fence has been waited. The capture is recorded into the caller's command buffer; the score reads host memory that is only valid once that submission has completed.</p>
+
+<h2>4. The predicate</h2>
+
+<p>A plane is dead when its mean is <strong>strictly below 2.0/255</strong>, expressed in Q8 as <code>kDeadPlaneMeanQ8 = 512</code>. The public constant <code>VK_VIDEO_ENCODER_IMPORT_CONTENT_DEAD_PLANE_MEAN_Q8</code> must equal it, and a <code>static_assert</code> pins the two together.</p>
+
+<table class="doc">
+<thead>
+  <tr>
+    <th>State</th>
+    <th>Meaning</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td><code>NOT_EVALUATED</code></td>
+    <td>No verdict. The registration was never armed, or has been forgotten</td>
+  </tr>
+  <tr>
+    <td><code>NOT_APPLICABLE</code></td>
+    <td>The readback cannot ride this registration, so no verdict is possible</td>
+  </tr>
+  <tr>
+    <td><code>ARMED</code></td>
+    <td>A verdict was promised and has not arrived yet</td>
+  </tr>
+  <tr>
+    <td><code>CLEAN</code></td>
+    <td>Scored, and no plane is dead</td>
+  </tr>
+  <tr>
+    <td><code>DAMAGED_CHROMA</code></td>
+    <td>The chroma planes are dead, luma is not</td>
+  </tr>
+  <tr>
+    <td><code>DAMAGED_ALL</code></td>
+    <td>Every plane is dead</td>
+  </tr>
+</tbody>
+</table>
+
+<p>Only <code>VK_FORMAT_G8_B8R8_2PLANE_420_UNORM</code> is probeable. The predicate is stated over Y, U and V plane means, so a format with no chroma planes to score has no verdict to give, and a 10- or 12-bit packed format stores its samples in the high bits of 16-bit words — a byte-wise mean would be reading the wrong half. Widening this means teaching the scorer the word layout, not adding a case to the predicate, and <code>NOT_APPLICABLE</code> is the honest answer until someone does.</p>
+
+<p>Only every 8th row of each plane is read (<code>kRowStride</code>). That is a requirement rather than a micro-optimisation: a byte-wise walk of the same 3.1 MB of <code>HOST_VISIBLE</code> memory costs <code>VkVideoEncoderPsnr</code> the difference between ~200 fps and 3.6 fps. A strided mean is ample for "is this plane dead", which is the only question asked.</p>
+
+<h2>5. Read <code>armedRegistrationCount</code> before believing anything else</h2>
+
+<p><code>probedRegistrationCount == 0 &amp;&amp; damagedRegistrationCount == 0</code> is <strong>ambiguous</strong>. It is what a session reports when every buffer was probed and every one was clean, and it is equally what a session reports when no capture ever ran.</p>
+
+<p><code>armedRegistrationCount</code> is what tells them apart: it counts registrations that were promised a verdict and have not reached one.</p>
+
+<ul>
+  <li>Non-zero <strong>transiently</strong> is expected and correct — a registration is armed at import and scored</li>
+</ul>
+
+<p>a frame or two later, so a mid-session poll legitimately catches buffers in flight.</p>
+
+<ul>
+  <li>Non-zero <strong>at the end of a session</strong>, or in a long-running session where it never falls, means</li>
+</ul>
+
+<p>the capture site is not being reached. The absence of damage reports is then an absence of <em>measurement</em>, not an absence of damage.</p>
+
+<p>A consumer that reports "no damage" without checking this field cannot distinguish a healthy session from a probe that never ran.</p>
+
+<p><code>probeGeneration</code> is a non-zero build constant stamped on every path, including the paths that produce no verdict. It is the writer proof: a zeroed structure means nothing filled it in.</p>
+
+<h2>6. What it deliberately does not do</h2>
+
+<p><strong>It does not write to stderr.</strong> A host that silences stdio, or that runs the encoder in a child process whose stderr it never reads, would lose every finding — and a diagnostic whose only signal can be discarded by the caller it exists for tells that caller nothing. Every answer leaves through the chained structure, which the caller must read.</p>
+
+<p><strong>It does not decrement session totals on unregistration.</strong> "Three of the buffers this session imported were damaged" stays true after those three are retired, and a consumer watching a falling total would conclude the damage went away.</p>
+
+<p><strong>It does not re-probe.</strong> See §2.</p>
+
+<h2>7. Reachability</h2>
+
+<p>The probe is internal, and the structures that carry its verdict — <code>VkVideoEncoderImportContentInfo</code>, <code>VkVideoEncoderImportContentState</code> and the companion <code>VkVideoEncoderImportGuardInfo</code> — are declared in the descriptor API's internal header, which is not on any consumer's include path.</p>
+
+<p>Its consumers are the library's own white-box tests: <code>encoder-ext-import-content</code>, <code>encoder-ext-import-guard</code> and <code>encoder-ext-format-encode --content-probe</code>. Those tests name the internal directory explicitly in their build, which is the point — a test that reaches past the public surface should have to say so.</p>
+
+<p>The public C++ encoder interface does not expose the probe and is not intended to. A host that needs import verification today gets it by running those tests against its own configuration, not by chaining a structure at runtime.</p>
+
+</div>
+</article>
+
+<footer>
+    <div class="container">
+        <p></p>
+    </div>
+</footer>
+</body>
+</html>
