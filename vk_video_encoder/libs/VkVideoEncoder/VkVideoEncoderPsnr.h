@@ -17,6 +17,7 @@
 #ifndef _VKVIDEOENCODER_VKVIDEOENCODERPSNR_H_
 #define _VKVIDEOENCODER_VKVIDEOENCODERPSNR_H_
 
+#include <atomic>
 #include <vector>
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 #include "VkCodecUtils/VulkanVideoImagePool.h"
@@ -38,6 +39,15 @@ public:
         std::vector<uint8_t>                               psnrInputU;
         std::vector<uint8_t>                               psnrInputV;
         VkSharedBaseObj<VulkanVideoImagePoolNode>          psnrStagingImage;
+        // MECHANISM-C: host-visible LINEAR copy of the ENCODER INPUT image,
+        // recorded in the encode command buffer just before the coding scope.
+        VkSharedBaseObj<VulkanVideoImagePoolNode>          capSrcImage;
+        // MECHANISM-C part 2: host-visible LINEAR copy of the IMPORTED image
+        // (the producer's dma-buf), recorded in the STAGING command buffer.
+        VkSharedBaseObj<VulkanVideoImagePoolNode>          capImpImage;
+        uint64_t                                          capSeq = 0;      // 1-based, monotonic
+        uint64_t                                          capImpImageId = 0;  // VkImage of the import
+        uint64_t                                          capImpMemId = 0;    // VkDeviceMemory of the import
     };
 
     static VkResult Create(VkSharedBaseObj<VkVideoEncoderPsnr>& psnr);
@@ -48,9 +58,19 @@ public:
                        uint32_t maxEncodeQueueDepth,
                        VkFormat imageDpbFormat,
                        const VkExtent2D& imageExtent,
-                       uint32_t encodeQueueFamilyIndex);
+                       uint32_t encodeQueueFamilyIndex,
+                       VkFormat imageInFormat = VK_FORMAT_UNDEFINED);
 
     void CaptureInput(void* encodeFrameInfo, const uint8_t* pInputFrameData);
+    // MECHANISM-C. Records (encode-source image -> host-visible LINEAR image)
+    // into the ENCODE command buffer, ahead of vkCmdBeginVideoCodingKHR, so the
+    // capture observes the image through the same submission and the same
+    // dependency chain the encode itself does. Returns false when disabled.
+    bool CaptureSource(VkCommandBuffer cmdBuf, void* encodeFrameInfo);
+    bool SrcCaptureEnabled() const { return m_capSrcEnabled; }
+    // Records (imported linear image -> host-visible LINEAR image) into the
+    // STAGING command buffer. linearImageViewVoid is a VkImageResourceView*.
+    bool CaptureImported(VkCommandBuffer cmdBuf, void* encodeFrameInfo, void* linearImageViewVoid);
     bool CaptureOutput(VkCommandBuffer cmdBuf, void* encodeFrameInfo);
     void ComputeFramePsnr(void* encodeFrameInfo);
     double GetAveragePsnrY() const;
@@ -73,6 +93,25 @@ private:
     uint32_t m_encodeQueueFamilyIndex = 0;
 
     VkSharedBaseObj<VulkanVideoImagePool> m_psnrReconImagePool;
+    // MECHANISM-C state.
+    VkSharedBaseObj<VulkanVideoImagePool> m_capSrcImagePool;
+    VkSharedBaseObj<VulkanVideoImagePool> m_capImpImagePool;
+    bool m_capSrcEnabled = false;
+    VkFormat m_capImpFormat = VK_FORMAT_UNDEFINED;
+    VkExtent2D m_capImpExtent = {};
+    uint32_t m_capImpMissCount = 0;
+    uint32_t m_capStride = 8;
+    std::atomic<uint64_t> m_capSeq{0};
+    std::vector<uint8_t> m_capScratch;
+    void DumpCapturedNode(VkSharedBaseObj<VulkanVideoImagePoolNode>& node,
+                          const char* tag, uint32_t frameIdx,
+                          uint32_t w, uint32_t h, bool writeFile,
+                          uint64_t seq, uint64_t imgId);
+    VkFormat m_imageInFormat = VK_FORMAT_UNDEFINED;
+    uint32_t m_capSrcMissCount = 0;
+    uint32_t m_capSrcFilesWritten = 0;
+    uint32_t m_capSrcMaxFiles = 0;
+    void DumpCapturedSource(void* encodeFrameInfoVoid);
     double m_psnrSum = 0.0;
     double m_psnrSumU = 0.0;
     double m_psnrSumV = 0.0;
