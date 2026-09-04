@@ -34,6 +34,12 @@ typedef struct VkMpFormatInfo {
     VkFormat              vkPlaneFormat[VK_MAX_NUM_IMAGE_PLANES_EXT]; // VkFormats for the corresponding plane.
 } VkMpFormatInfo;
 
+// How many rows vkMpFormatInfo[] has. A compile-time bound, so an array sized
+// from a walk of the table can be sized at compile time too. nvVkFormats.cpp
+// static_asserts it against the table itself, which is where the table is
+// visible -- so this cannot drift from it without failing the build.
+#define YCBCR_VK_FORMAT_INFO_TABLE_SIZE 38
+
 typedef struct VkFormatDesc {
     VkFormat    format;
     uint8_t     numberOfChannels;
@@ -103,6 +109,23 @@ extern "C" {
  * @retval pointer to VkMpFormatInfo structure describing the ycbcr format.
  */
 const VkMpFormatInfo * YcbcrVkFormatInfo(const VkFormat format);
+
+/**
+ * @brief YcbcrVkFormatInfoByIndex WALKS the multi-planar table.
+ *
+ * YcbcrVkFormatInfo() answers about a format a caller already holds, which is
+ * the only question this table could previously be asked. A caller that wants
+ * to know WHICH formats it describes -- to derive a routable set, a conversion
+ * target or a capability list from the table rather than restate it beside one
+ * -- had no way to enumerate it: the table is file-static in ycbcrinfotbl.h,
+ * and its two dense VkFormat ranges are spelled only in macros that header
+ * does not export.
+ *
+ * @param index  0 .. YCBCR_VK_FORMAT_INFO_TABLE_SIZE - 1, in table order.
+ * @retval pointer to the row, or NULL once |index| is past the end -- so a
+ *         walk terminates on the return value and needs no size of its own.
+ */
+const VkMpFormatInfo * YcbcrVkFormatInfoByIndex(uint32_t index);
 
 #ifdef __cplusplus
 }

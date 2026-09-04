@@ -666,8 +666,12 @@ void EncoderConfigH264::InitProfileLevel()
         // speculatively: this note is the record, not the change.
         //
         // 4:2:2 needs High 4:2:2 (122). High (100) and below cannot code
-        // chroma_format_idc == 2 at all, so without this a 4:2:2 request is refused by
-        // the driver's profile query rather than silently downgraded.
+        // chroma_format_idc == 2 at all, so without this a 4:2:2 request would be
+        // silently downgraded. With it the request carries 122 into the device
+        // question, and on a device with no 4:2:2 encode profile InitializeExt
+        // refuses it there -- naming the format, its subsampling and this
+        // profile -- rather than letting it reach the driver's own capability
+        // query, which would refuse it while naming none of the three.
         if (input.chromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR) {
             profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_422;
         }

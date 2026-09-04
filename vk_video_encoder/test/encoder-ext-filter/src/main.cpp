@@ -227,9 +227,9 @@ void CaseRgbaIsViaFilterAndSinglePlane()
         Check(VkEncResolveColorModel(f, VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) ==
                   VK_VIDEO_ENCODER_COLOR_MODEL_RGB,
               "identified as RGBA", "format " + U32((uint32_t)f));
-        // PLANE COUNT COMES FROM THE FORMAT, NOT FROM ITS CLASS. Answering it
-        // from the class gives every VIA_FILTER format 3, because the class
-        // holds only the 3-plane family. RGBA
+        // PLANE COUNT COMES FROM THE FORMAT, NOT FROM ITS CLASS. Answering it from
+        // the class gives every VIA_FILTER format 3, because the 3-plane family
+        // dominates it. RGBA
         // is ONE plane, and this number is what EncoderConfig::input.numPlanes
         // -- and therefore the input geometry -- is written from.
         Check(VkEncInputFormatPlaneCount(f) == 1,
@@ -318,24 +318,41 @@ void CaseSrgbAndJunkAreUnsupported()
     //    library does not route them; a Y'CbCr declaration over them says
     //    something else entirely and is judged separately.
     //  R16G16B16A16_SFLOAT: scRGB -- linear, and not confined to [0,1].
-    const VkFormat unsupported[] = {
-        VK_FORMAT_R8G8B8A8_SRGB,
-        VK_FORMAT_B8G8R8A8_SRGB,
-        VK_FORMAT_A8B8G8R8_SRGB_PACK32,
-        VK_FORMAT_A2B10G10R10_UNORM_PACK32,
-        VK_FORMAT_R16G16B16A16_UNORM,
-        VK_FORMAT_R16G16B16A16_SFLOAT,
-        VK_FORMAT_R8G8B8_UNORM,            // 3-component, no alpha
-        VK_FORMAT_G8B8G8R8_422_UNORM,      // 4:2:2, not 4:2:0
-        VK_FORMAT_UNDEFINED,
+    //
+    // |planes| is carried per row rather than asserted as a constant zero,
+    // because plane count is NOT the same question. It is a fact about the
+    // LAYOUT and carries no colour model: Y410 is one interleaved plane
+    // whichever model is declared over it, and this library does route it
+    // under a Y'CbCr declaration, so 0 there would describe an input no
+    // allocation could be sized from. Everything else here is routed under no
+    // declaration at all and has no plane count to give.
+    struct Row { VkFormat format; uint32_t planes; };
+    const Row unsupported[] = {
+        { VK_FORMAT_R8G8B8A8_SRGB,            0 },
+        { VK_FORMAT_B8G8R8A8_SRGB,            0 },
+        { VK_FORMAT_A8B8G8R8_SRGB_PACK32,     0 },
+        { VK_FORMAT_A2B10G10R10_UNORM_PACK32, 1 },   // Y410's enumerant
+        { VK_FORMAT_R16G16B16A16_UNORM,       0 },   // Y416's, and unrouted
+        { VK_FORMAT_R16G16B16A16_SFLOAT,      0 },
+        { VK_FORMAT_R8G8B8_UNORM,             0 },   // 3-component, no alpha
+        // YUY2. Refused on its LAYOUT, not its subsampling: it is one
+        // interleaved plane the generator would read as two. Semi-planar
+        // 4:2:2 at the same subsampling IS routed --
+        // CaseSinglePlaneInterleavedIsRefused drives both halves.
+        { VK_FORMAT_G8B8G8R8_422_UNORM,       0 },
+        { VK_FORMAT_UNDEFINED,                0 },
     };
-    for (VkFormat f : unsupported) {
+    for (const Row& row : unsupported) {
+        const VkFormat f = row.format;
         Check(VkEncClassifyInput(f, VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) == VK_ENC_INPUT_FORMAT_UNSUPPORTED,
               "classified UNSUPPORTED", "format " + U32((uint32_t)f));
         Check(VkEncSupportsInput(f, VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) == VK_FALSE,
               "not supported", "format " + U32((uint32_t)f));
-        Check(VkEncInputFormatPlaneCount(f) == 0,
-              "plane count 0", "format " + U32((uint32_t)f));
+        Check(VkEncInputFormatPlaneCount(f) == row.planes,
+              "plane count as the layout has it",
+              "format " + U32((uint32_t)f) + " gave " +
+                  U32(VkEncInputFormatPlaneCount(f)) + ", want " +
+                  U32(row.planes));
         // Declaring the model does not widen the set. Naming RGB over an sRGB
         // or scRGB layout states what the layout already says and is still
         // refused; naming it over a Y'CbCr format is a contradiction and is
@@ -348,54 +365,257 @@ void CaseSrgbAndJunkAreUnsupported()
     }
 }
 
-// The advertised input-format list, which is the DEVICE's list reduced to the
-// library's answer. Driven with a synthetic device list because the reduction
-// is a pure function and the interesting inputs -- a format the library
-// refuses, one format reported twice -- are not what every device reports.
+// The advertised input-format list: every format this library can route to an
+// encoder input the DEVICE accepts for the profile, each naming what it is
+// encoded as. Driven with synthetic device lists because the advertisement is
+// a pure function of one, and the interesting lists -- a format the library
+// refuses, one format reported twice, a device with no reachable target for a
+// routable input -- are not what any one device reports.
+//
+// NV12 is spelled out per case rather than hoisted, so a case that changes
+// the device list changes it visibly.
+
+// A named format, for assertion text. Not a public mapping: the advertisement
+// carries enumerants and this only makes a failure readable.
+const char* AdvName(VkFormat f)
+{
+    switch (f) {
+        case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:                   return "NV12";
+        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:  return "P010";
+        case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16:  return "P012";
+        case VK_FORMAT_G8_B8R8_2PLANE_444_UNORM:                   return "NV24";
+        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16:  return "S410";
+        case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:                  return "I420";
+        case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16: return "I420-10";
+        case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16: return "I420-12";
+        case VK_FORMAT_G8_B8R8_2PLANE_422_UNORM:                   return "NV16";
+        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16:  return "P210";
+        case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16:  return "P212";
+        case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_444_UNORM_3PACK16:  return "S412";
+        case VK_FORMAT_G8_B8_R8_3PLANE_422_UNORM:                  return "I422";
+        case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16: return "I422-10";
+        case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16: return "I422-12";
+        case VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM:                  return "I444";
+        case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16: return "I444-10";
+        case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16: return "I444-12";
+        case VK_FORMAT_R8G8B8A8_UNORM:                             return "RGBA8";
+        case VK_FORMAT_B8G8R8A8_UNORM:                             return "BGRA8";
+        case VK_FORMAT_A8B8G8R8_UNORM_PACK32:                      return "ABGR8";
+        default:                                                   return "?";
+    }
+}
+
+// Check() takes a C string and the labels below are built per entry, so the
+// built label has to outlive the argument list.
+const char* Lbl(const std::string& text)
+{
+    static std::string held;
+    held = text;
+    return held.c_str();
+}
+
+// THE SYNTHETIC ADMISSION, and what it is for.
+//
+// VkEncAdvertiseInputFormats takes an admission callback rather than a device
+// list, because the production caller is a LIVE per-candidate resolve against a
+// real driver -- the same one the point query answers from, which is what stops
+// the two surfaces drifting. The cases below are device-free, so they supply
+// this instead: the rule the function used to contain, stated once here rather
+// than twelve times in twelve lambdas.
+//
+// It reproduces exactly what the old device-list form did:
+//   - ENCODABLE_DIRECT and on the device list  -> OPTIMAL, naming itself;
+//   - ENCODABLE_VIA_FILTER with a conversion target the device list carries
+//     -> SUBOPTIMAL, naming the target;
+//   - anything else                            -> not advertised.
+//
+// WHAT IS UNDER TEST HERE IS EVERYTHING BUT THIS RULE: the ordering, the
+// uniqueness, the capacity stop and the compute-filter build gate all live
+// inside VkEncAdvertiseInputFormats and are exercised through this admission,
+// so the assertions in the cases below are unchanged from when the rule was
+// inside the function.
+struct SyntheticDeviceList {
+    const VkFormat* formats;
+    uint32_t        count;
+};
+
+bool DeviceListHas(const VkFormat* formats, uint32_t count, VkFormat format)
+{
+    for (uint32_t i = 0; i < count; i++) {
+        if (formats[i] == format) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool AdmitFromSyntheticDeviceList(
+    void* userData, VkFormat candidate,
+    VkVideoEncoderInputFormatProperties* outEntry)
+{
+    const SyntheticDeviceList* const dev =
+        static_cast<const SyntheticDeviceList*>(userData);
+    const VkEncInputFormatClass cls =
+        VkEncClassifyInput(candidate, VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT);
+    if (cls == VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT) {
+        if (!DeviceListHas(dev->formats, dev->count, candidate)) {
+            return false;
+        }
+        outEntry->format       = candidate;
+        outEntry->encodeFormat = candidate;
+        outEntry->optimality   = VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL;
+        return true;
+    }
+    if (cls == VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER) {
+        const VkFormat target =
+            VkEncConversionTargetFormat(candidate, dev->formats, dev->count);
+        if (target == VK_FORMAT_UNDEFINED) {
+            return false;
+        }
+        if (!DeviceListHas(dev->formats, dev->count, target)) {
+            return false;
+        }
+        outEntry->format       = candidate;
+        outEntry->encodeFormat = target;
+        outEntry->optimality   = VK_VIDEO_ENCODER_INPUT_FORMAT_SUBOPTIMAL;
+        return true;
+    }
+    return false;
+}
+
+uint32_t AdvertiseFromDeviceList(
+    const VkFormat* deviceFormats, uint32_t deviceFormatCount,
+    VkVideoEncoderInputFormatProperties* outEntries, uint32_t outCapacity)
+{
+    SyntheticDeviceList dev = { deviceFormats, deviceFormatCount };
+    return VkEncAdvertiseInputFormats(&AdmitFromSyntheticDeviceList, &dev,
+                                      outEntries, outCapacity);
+}
+
+// Index of |format| in the advertised list, or -1.
+int32_t AdvIndexOf(const VkVideoEncoderInputFormatProperties* entries,
+                   uint32_t count, VkFormat format)
+{
+    for (uint32_t i = 0; i < count; i++) {
+        if (entries[i].format == format) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
 void CaseAdvertisedListDropsWhatTheLibraryRefuses()
 {
     g_currentCase = "the advertised list drops what the library refuses";
     const VkFormat deviceList[] = {
-        VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,     // routed
+        VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,     // routed, direct
         VK_FORMAT_G8B8G8R8_422_UNORM,           // packed 4:2:2, refused
-        VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,     // routed
+        VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,     // routed, direct
         VK_FORMAT_R16G16B16A16_SFLOAT,          // refused
     };
-    VkFormat out[VK_VIDEO_ENCODER_MAX_INPUT_FORMATS] = {};
-    const uint32_t n = VkEncFilterAdvertisedInputFormats(
-        deviceList, 4, out, VK_VIDEO_ENCODER_MAX_INPUT_FORMATS);
-    Check(n == 2, "two of four survive", "got " + U32(n));
-    Check((n > 0) && (out[0] == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM),
-          "and the device order is kept", "first entry");
-    Check((n > 1) && (out[1] == VK_FORMAT_G8_B8R8_2PLANE_444_UNORM),
-          "and the device order is kept", "second entry");
-    // The refusals are the point: neither may appear anywhere in the answer.
+    VkVideoEncoderInputFormatProperties out[VK_ENC_MAX_ROUTABLE_INPUT_FORMATS] = {};
+    const uint32_t n = AdvertiseFromDeviceList(
+        deviceList, 4, out, VK_ENC_MAX_ROUTABLE_INPUT_FORMATS);
+
+    // The refusals are the point: neither may appear anywhere in the answer,
+    // as an input format or as a conversion target.
     for (uint32_t i = 0; i < n; i++) {
-        Check((out[i] != VK_FORMAT_G8B8G8R8_422_UNORM) &&
-                  (out[i] != VK_FORMAT_R16G16B16A16_SFLOAT),
-              "and no refused format is advertised",
-              "entry " + U32(i) + " = " + U32((uint32_t)out[i]));
+        Check((out[i].format != VK_FORMAT_G8B8G8R8_422_UNORM) &&
+                  (out[i].format != VK_FORMAT_R16G16B16A16_SFLOAT) &&
+                  (out[i].encodeFormat != VK_FORMAT_G8B8G8R8_422_UNORM) &&
+                  (out[i].encodeFormat != VK_FORMAT_R16G16B16A16_SFLOAT),
+              "no refused format is advertised, on either side of an entry",
+              "entry " + U32(i) + " = " + U32((uint32_t)out[i].format) + " -> " +
+                  U32((uint32_t)out[i].encodeFormat));
     }
+    // And the two the device DOES offer that the library routes unconverted
+    // are still there, in the device's order -- without which a function that
+    // answered nothing would pass the loop above.
+    Check((n >= 2) && (out[0].format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM) &&
+              (out[0].encodeFormat == out[0].format),
+          "the first device format the library routes is direct and first",
+          "got " + U32(n) + " entries");
+    Check((n >= 2) && (out[1].format == VK_FORMAT_G8_B8R8_2PLANE_444_UNORM) &&
+              (out[1].encodeFormat == out[1].format),
+          "the second is direct and second -- the device order is kept",
+          "got " + U32(n) + " entries");
 }
 
 void CaseAdvertisedListPassesWhatTheLibraryRoutes()
 {
     g_currentCase = "the advertised list keeps every format the library routes";
-    // The positive control for the case above: a reduction that answered
-    // nothing would pass it just as well.
+    // The positive control for the case above: an advertisement that answered
+    // nothing would pass it just as well. Four direct formats, and every
+    // converted entry whose target is among them.
     const VkFormat deviceList[] = {
         VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
         VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
         VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,
         VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16,
     };
-    VkFormat out[VK_VIDEO_ENCODER_MAX_INPUT_FORMATS] = {};
-    const uint32_t n = VkEncFilterAdvertisedInputFormats(
-        deviceList, 4, out, VK_VIDEO_ENCODER_MAX_INPUT_FORMATS);
-    Check(n == 4, "all four survive", "got " + U32(n));
+    VkVideoEncoderInputFormatProperties out[VK_ENC_MAX_ROUTABLE_INPUT_FORMATS] = {};
+    const uint32_t n = AdvertiseFromDeviceList(
+        deviceList, 4, out, VK_ENC_MAX_ROUTABLE_INPUT_FORMATS);
+    // Four direct entries always; the seven converted ones only where the
+    // filter is compiled in, because the advertisement is gated on it.
+    Check(n == (kFilterCompiledIn ? 11u : 4u),
+          "four direct entries, and seven filtered ones where the build has "
+          "the filter to honour them",
+          "got " + U32(n));
     for (uint32_t i = 0; (i < n) && (i < 4); i++) {
-        Check(out[i] == deviceList[i], "unchanged, in order",
+        Check((out[i].format == deviceList[i]) &&
+                  (out[i].encodeFormat == deviceList[i]) &&
+                  (out[i].optimality ==
+                   VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL),
+              "the direct entries come first, in the device's order",
               "entry " + U32(i));
+    }
+    // Each 3-plane input converts into the semi-planar sibling at its own
+    // subsampling and depth, and this device list carries all four of those
+    // siblings; the three RGBA spellings convert into the device's first
+    // choice. THE 4:4:4 PAIR IS HERE BECAUSE THE DEVICE LIST CARRIES NV24 AND
+    // S410 -- take those two out of the list and both entries go with them,
+    // which is what the 4:2:0 case below asserts.
+    struct Expect { VkFormat in; VkFormat out; };
+    const Expect converted[] = {
+        { VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM,
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM },
+        { VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM,
+          VK_FORMAT_G8_B8R8_2PLANE_444_UNORM },
+        { VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16,
+          VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16 },
+        { VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16,
+          VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16 },
+        { VK_FORMAT_R8G8B8A8_UNORM,      VK_FORMAT_G8_B8R8_2PLANE_420_UNORM },
+        { VK_FORMAT_B8G8R8A8_UNORM,      VK_FORMAT_G8_B8R8_2PLANE_420_UNORM },
+        { VK_FORMAT_A8B8G8R8_UNORM_PACK32,
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM },
+    };
+    for (const Expect& e : converted) {
+        const int32_t at = AdvIndexOf(out, n, e.in);
+        if (!kFilterCompiledIn) {
+            // The build cannot convert, so the session would refuse each of
+            // these. Advertising them would be the advertise-then-refuse
+            // case the gate exists to prevent, so absence IS the assertion.
+            Check(at < 0,
+                  Lbl(std::string(AdvName(e.in)) +
+                      " is NOT advertised without the filter"),
+                  "index " + U32((uint32_t)(at + 1)));
+            continue;
+        }
+        Check(at >= 0, Lbl(std::string(AdvName(e.in)) + " is advertised"),
+              "not in the list");
+        if (at >= 0) {
+            Check(out[at].encodeFormat == e.out,
+                  Lbl(std::string(AdvName(e.in)) + " names " +
+                      AdvName(e.out) + " as what it is encoded as"),
+                  "names " + U32((uint32_t)out[at].encodeFormat));
+            Check(out[at].optimality ==
+                      VK_VIDEO_ENCODER_INPUT_FORMAT_SUBOPTIMAL,
+                  Lbl(std::string(AdvName(e.in)) +
+                      " is advertised as filtered"),
+                  "optimality " + U32((uint32_t)out[at].optimality));
+        }
     }
 }
 
@@ -408,14 +628,22 @@ void CaseAdvertisedListReportsOneFormatOnce()
         VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
         VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
     };
-    VkFormat out[VK_VIDEO_ENCODER_MAX_INPUT_FORMATS] = {};
-    const uint32_t n = VkEncFilterAdvertisedInputFormats(
-        deviceList, 4, out, VK_VIDEO_ENCODER_MAX_INPUT_FORMATS);
-    Check(n == 2, "two distinct formats", "got " + U32(n));
-    Check((n > 1) && (out[0] == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM) &&
-              (out[1] ==
+    VkVideoEncoderInputFormatProperties out[VK_ENC_MAX_ROUTABLE_INPUT_FORMATS] = {};
+    const uint32_t n = AdvertiseFromDeviceList(
+        deviceList, 4, out, VK_ENC_MAX_ROUTABLE_INPUT_FORMATS);
+    uint32_t nv12Entries = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        if (out[i].format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM) {
+            nv12Entries++;
+        }
+    }
+    Check(nv12Entries == 1,
+          "a format the device reports three times is advertised once",
+          "appears " + U32(nv12Entries) + " times");
+    Check((n >= 2) && (out[0].format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM) &&
+              (out[1].format ==
                VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16),
-          "and the surviving entries are the distinct ones", "");
+          "and the distinct direct entries keep the device's order", "");
 }
 
 void CaseAdvertisedListStopsAtCapacity()
@@ -426,12 +654,815 @@ void CaseAdvertisedListStopsAtCapacity()
         VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
         VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,
     };
-    VkFormat out[4] = { VK_FORMAT_UNDEFINED, VK_FORMAT_UNDEFINED,
-                        VK_FORMAT_UNDEFINED, VK_FORMAT_UNDEFINED };
-    const uint32_t n = VkEncFilterAdvertisedInputFormats(deviceList, 3, out, 2);
+    VkVideoEncoderInputFormatProperties out[4] = {};
+    const uint32_t n = AdvertiseFromDeviceList(deviceList, 3, out, 2);
     Check(n == 2, "clamped to the capacity given", "got " + U32(n));
-    Check(out[2] == VK_FORMAT_UNDEFINED, "and wrote nothing past it",
-          "slot 2 = " + U32((uint32_t)out[2]));
+    Check((out[2].format == VK_FORMAT_UNDEFINED) &&
+              (out[2].encodeFormat == VK_FORMAT_UNDEFINED) &&
+              (out[2].optimality == VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL),
+          "and wrote nothing past it",
+          "slot 2 = " + U32((uint32_t)out[2].format));
+}
+
+// THE MEMBERSHIP RULE THAT KEEPS A PRODUCER OUT OF A REFUSED SESSION.
+//
+// Two of the formats the taxonomy routes -- 12-bit I420 and P012 -- convert
+// into P012. Where P012 is an encode source on no profile the device exposes,
+// advertising either would put an entry a producer can size a pool from in
+// front of a caller the session then refuses, so neither is advertised. Where
+// the device DOES take P012, both are, and the difference is read from the
+// device list rather than from a table in this library.
+void CaseAdvertisedListDropsAnUnreachableConversionTarget()
+{
+    g_currentCase = "an entry whose conversion target the device will not "
+                    "take is not advertised";
+    const VkFormat deviceList[] = {
+        VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+        VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
+    };
+    VkVideoEncoderInputFormatProperties out[VK_ENC_MAX_ROUTABLE_INPUT_FORMATS] = {};
+    const uint32_t n = AdvertiseFromDeviceList(
+        deviceList, 2, out, VK_ENC_MAX_ROUTABLE_INPUT_FORMATS);
+    Check(AdvIndexOf(out, n,
+                     VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16) < 0,
+          "I420-12 is not advertised: it converts into P012, which this "
+          "device list does not carry",
+          "it is in the list");
+    Check(AdvIndexOf(out, n,
+                     VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16) < 0,
+          "P012 is not advertised: it converts into P012, which this device "
+          "list does not carry either",
+          "it is in the list");
+
+    // THE POSITIVE CONTROL, on the same function and the same shape: add P012
+    // to what the device takes and BOTH entries that route into it appear.
+    // P012 is one of them -- its route is the filter and its target is
+    // itself, which the entry states in its optimality rather than leaving to
+    // be inferred from two equal formats.
+    const VkFormat twelveBitDevice[] = {
+        VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+        VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
+        VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16,
+    };
+    VkVideoEncoderInputFormatProperties wide[VK_ENC_MAX_ROUTABLE_INPUT_FORMATS] = {};
+    const uint32_t wn = AdvertiseFromDeviceList(
+        twelveBitDevice, 3, wide, VK_ENC_MAX_ROUTABLE_INPUT_FORMATS);
+    const int32_t at = AdvIndexOf(
+        wide, wn, VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16);
+    // Only meaningful where converted entries are advertised at all; without
+    // the filter the answer is the build's, not the device's, and the case
+    // above already asserts that.
+    Check(kFilterCompiledIn ? (at >= 0) : (at < 0),
+          "on a device that DOES take P012, I420-12 is advertised -- the "
+          "exclusion is the device's answer, not a hardcoded one (and it is "
+          "absent altogether in a build without the filter)",
+          "index " + U32((uint32_t)(at + 1)));
+    if (at >= 0) {
+        Check(wide[at].encodeFormat ==
+                  VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16,
+              "and it names P012 as what it is encoded as",
+              "names " + U32((uint32_t)wide[at].encodeFormat));
+        Check(wide[at].optimality == VK_VIDEO_ENCODER_INPUT_FORMAT_SUBOPTIMAL,
+              "and it is filtered", "optimality " +
+                  U32((uint32_t)wide[at].optimality));
+    }
+    const int32_t p012 = AdvIndexOf(
+        wide, wn, VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16);
+    // Same shape as the row above: P012 is a converted entry, so whether the
+    // device takes its target only decides the answer in a build that can
+    // convert at all.
+    Check(kFilterCompiledIn ? (p012 >= 0) : (p012 < 0),
+          "P012 is advertised there too: the device takes its conversion "
+          "target, so it is a route -- and it is absent altogether where the "
+          "build has no filter",
+          "index " + U32((uint32_t)(p012 + 1)));
+    if (p012 >= 0) {
+        Check(wide[p012].encodeFormat == wide[p012].format,
+              "P012 names itself as what it is encoded as",
+              "names " + U32((uint32_t)wide[p012].encodeFormat));
+        Check(wide[p012].optimality == VK_VIDEO_ENCODER_INPUT_FORMAT_SUBOPTIMAL,
+              "and it is FILTERED, which is what the two equal formats "
+              "cannot say",
+              "optimality " + U32((uint32_t)wide[p012].optimality));
+    }
+}
+
+// WHY THIS EXISTS. NV24 and S410 are the two strongest claims the taxonomy
+// makes -- ENCODABLE_DIRECT, and on the routable list -- and nothing in this
+// tree has ever encoded either. This case records exactly what stands between
+// them and a caller, so the answer is measured rather than re-derived, and so
+// a change to any of the three gates shows up here.
+//
+// The three gates, and which one actually blocks them:
+//   1. the converted arm requires ENCODABLE_VIA_FILTER and they are DIRECT,
+//      so that arm skips them and their routable-list entries are inert;
+//   2. VkEncConversionTargetFormat names no target for them, so even a
+//      VIA_FILTER classification would not hand them a route;
+//   3. the OPTIMAL arm is the device list -- which is the ONLY way either can
+//      be advertised, and so is where the block actually lives.
+//
+// CALIBRATION. The same call is driven with two device lists differing only
+// in whether they carry 4:4:4, and it must answer differently: absent on the
+// first, present on the second. A check that passed both would be asserting
+// nothing about reachability at all.
+void CaseFourFourFourReachesTheListOnlyFromTheDevice()
+{
+    g_currentCase = "4:4:4 is advertised only where the device reports it, "
+                    "and never off the routable list";
+
+    const VkFormat nv24 = VK_FORMAT_G8_B8R8_2PLANE_444_UNORM;
+    const VkFormat s410 = VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16;
+
+    // Gate 1: DIRECT, so the converted arm's VIA_FILTER test skips them.
+    Check(VkEncClassifyInput(nv24, VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) ==
+              VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT,
+          "NV24 classifies DIRECT, so the converted arm cannot emit it",
+          "class " + U32((uint32_t)VkEncClassifyInput(
+              nv24, VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT)));
+    Check(VkEncClassifyInput(s410, VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) ==
+              VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT,
+          "S410 classifies DIRECT, likewise",
+          "class " + U32((uint32_t)VkEncClassifyInput(
+              s410, VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT)));
+
+    // Gate 2: and no conversion produces them either.
+    const VkFormat narrow[] = { VK_FORMAT_G8_B8R8_2PLANE_420_UNORM };
+    Check(VkEncConversionTargetFormat(nv24, narrow, 1) == VK_FORMAT_UNDEFINED,
+          "NV24 names no conversion target, so it has no filter route",
+          "target " + U32((uint32_t)VkEncConversionTargetFormat(nv24, narrow, 1)));
+    Check(VkEncConversionTargetFormat(s410, narrow, 1) == VK_FORMAT_UNDEFINED,
+          "S410 names no conversion target either",
+          "target " + U32((uint32_t)VkEncConversionTargetFormat(s410, narrow, 1)));
+
+    // Gate 3, ABSENT HALF. A device reporting no 4:4:4 gets no 4:4:4 entry,
+    // although both formats are on the routable list this walk covers.
+    VkVideoEncoderInputFormatProperties without[VK_ENC_MAX_ROUTABLE_INPUT_FORMATS] = {};
+    const uint32_t wn = AdvertiseFromDeviceList(
+        narrow, 1, without, VK_ENC_MAX_ROUTABLE_INPUT_FORMATS);
+    Check(wn > 0, "the 4:2:0-only device still advertises something, so the "
+                  "absence below is a filter and not an empty list",
+          "got " + U32(wn));
+    uint32_t found444 = 0;
+    for (uint32_t i = 0; i < wn; i++) {
+        if ((without[i].format == nv24) || (without[i].format == s410)) {
+            found444++;
+        }
+    }
+    Check(found444 == 0,
+          "no 4:4:4 entry is advertised when the device reports none",
+          "found " + U32(found444));
+
+    // Gate 3, PRESENT HALF. The same call on a device that does report them
+    // advertises both, so the advertisement is not what withholds them.
+    const VkFormat wide444[] = { VK_FORMAT_G8_B8R8_2PLANE_420_UNORM, nv24, s410 };
+    VkVideoEncoderInputFormatProperties withList[VK_ENC_MAX_ROUTABLE_INPUT_FORMATS] = {};
+    const uint32_t gn = AdvertiseFromDeviceList(
+        wide444, 3, withList, VK_ENC_MAX_ROUTABLE_INPUT_FORMATS);
+    int nv24At = -1;
+    int s410At = -1;
+    for (uint32_t i = 0; i < gn; i++) {
+        if (withList[i].format == nv24) { nv24At = (int)i; }
+        if (withList[i].format == s410) { s410At = (int)i; }
+    }
+    Check(nv24At >= 0, "NV24 IS advertised once the device reports it",
+          "index " + U32((uint32_t)(nv24At + 1)));
+    Check(s410At >= 0, "S410 IS advertised once the device reports it",
+          "index " + U32((uint32_t)(s410At + 1)));
+    if (nv24At >= 0) {
+        Check(withList[nv24At].optimality ==
+                  VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL,
+              "and it is OPTIMAL, read off the device rather than the list",
+              "optimality " + U32((uint32_t)withList[nv24At].optimality));
+        Check(withList[nv24At].encodeFormat == nv24,
+              "naming itself, because nothing converted it",
+              "names " + U32((uint32_t)withList[nv24At].encodeFormat));
+    }
+    if (s410At >= 0) {
+        Check(withList[s410At].optimality ==
+                  VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL,
+              "S410 likewise OPTIMAL",
+              "optimality " + U32((uint32_t)withList[s410At].optimality));
+    }
+}
+
+// WHY THIS EXISTS. Every SUBOPTIMAL entry is ENCODABLE_VIA_FILTER, and
+// InitializeExt refuses exactly that class when the preprocess filter is not
+// compiled in. Advertising them in such a build would hand a caller a format
+// and then refuse the session declaring it -- the single failure this list is
+// supposed to make impossible. The advertisement is gated on the same build
+// condition, and this is what holds the two together.
+//
+// CALIBRATION, AND IT IS A TWO-BUILD ONE. This case is deliberately NOT
+// compiled out with the filter: it runs in both configurations and branches
+// on kFilterCompiledIn, so the configuration that matters -- the one without
+// the filter -- is the one where it still asserts. A check that vanished
+// alongside the feature would prove nothing about the build it was written
+// for.
+//
+// The OPTIMAL expectation is stated as an absolute and is NOT conditioned on
+// kFilterCompiledIn. That is the point of it: those entries are
+// ENCODABLE_DIRECT and involve no filter, so the same four must appear in
+// both builds. Conditioning it would let the gate quietly take the direct arm
+// with it and still pass.
+void CaseFilterlessBuildAdvertisesNoConvertedEntry()
+{
+    g_currentCase = "a build without the preprocess filter advertises no "
+                    "converted entry, and the same direct ones";
+
+    // All four DIRECT formats, so the OPTIMAL arm is fully exercised, and
+    // NV12/P010 present so several converted entries resolve.
+    const VkFormat deviceList[] = {
+        VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,                    // NV12
+        VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,   // P010
+        VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,                    // NV24
+        VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16,   // S410
+    };
+    VkVideoEncoderInputFormatProperties out[VK_ENC_MAX_ROUTABLE_INPUT_FORMATS] = {};
+    const uint32_t n = AdvertiseFromDeviceList(
+        deviceList, 4, out, VK_ENC_MAX_ROUTABLE_INPUT_FORMATS);
+
+    uint32_t optimalCount = 0;
+    uint32_t suboptimalCount = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        if (out[i].optimality == VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL) {
+            optimalCount++;
+        } else {
+            suboptimalCount++;
+        }
+    }
+
+    // UNCONDITIONAL. Four DIRECT formats on the device list, four OPTIMAL
+    // entries, in both builds.
+    Check(optimalCount == 4,
+          "the direct arm advertises all four device formats, whether or not "
+          "the filter is compiled in",
+          "optimal " + U32(optimalCount));
+    for (uint32_t j = 0; j < 4; j++) {
+        bool present = false;
+        for (uint32_t i = 0; i < n; i++) {
+            present = present ||
+                      ((out[i].format == deviceList[j]) &&
+                       (out[i].optimality ==
+                        VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL));
+        }
+        Check(present,
+              Lbl(std::string(AdvName(deviceList[j])) +
+                  ": advertised OPTIMAL in either build"),
+              "device entry " + U32(j));
+    }
+
+    // CONDITIONAL, and this is the gate itself.
+    if (kFilterCompiledIn) {
+        Check(suboptimalCount == 7,
+              "with the filter, the converted entries this device can reach "
+              "are advertised -- the four 3-plane inputs whose semi-planar "
+              "sibling is on this list, and the three RGBA spellings",
+              "suboptimal " + U32(suboptimalCount));
+    } else {
+        Check(suboptimalCount == 0,
+              "without the filter, no converted entry is advertised -- the "
+              "session would refuse every one of them",
+              "suboptimal " + U32(suboptimalCount));
+    }
+
+    // And the totals follow from the two above, stated so a drift in either
+    // shows up as a count rather than only as a membership failure.
+    Check(n == (kFilterCompiledIn ? 11u : 4u),
+          "the advertised total is the direct set plus the converted set the "
+          "build can actually honour",
+          "total " + U32(n));
+}
+// The route is stated per entry, so a caller never has to infer it -- and the
+// inference it would otherwise make is wrong on exactly the entry whose
+// conversion target is its own format.
+void CaseOptimalityNamesTheEncodersOwnFormat()
+{
+    g_currentCase = "optimality names the encoder-read set, on "
+                    "every entry of every list";
+    const VkFormat deviceList[] = {
+        VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+        VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
+        VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,
+        VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16,
+    };
+    VkVideoEncoderInputFormatProperties out[VK_ENC_MAX_ROUTABLE_INPUT_FORMATS] = {};
+    const uint32_t n = AdvertiseFromDeviceList(
+        deviceList, 4, out, VK_ENC_MAX_ROUTABLE_INPUT_FORMATS);
+    Check(n > 0, "the list is non-empty, so the loop below measures something",
+          "got " + U32(n));
+    uint32_t equalButFiltered = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        bool inDeviceList = false;
+        for (uint32_t j = 0; j < 4; j++) {
+            inDeviceList = inDeviceList || (deviceList[j] == out[i].format);
+        }
+        const bool routedUnconverted =
+            inDeviceList &&
+            (VkEncClassifyInput(out[i].format,
+                                VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) ==
+             VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT);
+        Check((out[i].optimality == VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL) ==
+                  routedUnconverted,
+              Lbl(std::string(AdvName(out[i].format)) +
+                  ": optimality is OPTIMAL exactly where the device takes it "
+                  "unconverted"),
+              "entry " + U32(i) + " optimality " +
+                  U32((uint32_t)out[i].optimality));
+        // An OPTIMAL entry always names itself; a SUBOPTIMAL one may too.
+        if (out[i].optimality == VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL) {
+            Check(out[i].format == out[i].encodeFormat,
+                  Lbl(std::string(AdvName(out[i].format)) +
+                      ": a direct entry names itself"),
+                  "names " + U32((uint32_t)out[i].encodeFormat));
+        } else if (out[i].format == out[i].encodeFormat) {
+            equalButFiltered++;
+        }
+        // Every advertised target must be something the device takes,
+        // whichever route the entry takes to it.
+        bool targetInDeviceList = false;
+        for (uint32_t j = 0; j < 4; j++) {
+            targetInDeviceList =
+                targetInDeviceList || (deviceList[j] == out[i].encodeFormat);
+        }
+        Check(targetInDeviceList,
+              Lbl(std::string(AdvName(out[i].format)) +
+                  ": what it is encoded as is a format the device accepts"),
+              "target " + U32((uint32_t)out[i].encodeFormat));
+    }
+    // THE COLLISION, DRIVEN. P012 is on this device list and is advertised
+    // with encodeFormat == format, so a caller reading the equality alone
+    // would call it direct. Exactly one entry is in that position, and it is
+    // FILTERED.
+    // The collision needs a converted entry to exist, so it is a claim about
+    // a build that has the filter. Without one there is no filtered entry at
+    // all, which the count below states rather than skips.
+    Check(equalButFiltered == (kFilterCompiledIn ? 1u : 0u),
+          "one advertised entry names its own format and is still filtered, "
+          "which is the case the equality cannot answer -- and none at all "
+          "where no converted entry is advertised",
+          "found " + U32(equalButFiltered));
+}
+
+// The conversion target is DERIVED, and this is the derivation stated as a
+// property rather than as a table: the filter's Y'CbCr arm changes plane
+// layout and packing and resamples neither chroma nor bit depth, so the
+// target must agree with its input on both and must be semi-planar.
+void CaseConversionTargetPreservesSubsamplingAndDepth()
+{
+    g_currentCase = "a Y'CbCr conversion target keeps the subsampling and "
+                    "the bit depth of its input";
+    uint32_t routableCount = 0;
+    const VkFormat* routable = VkEncRoutableInputFormats(routableCount);
+    uint32_t checked = 0;
+    for (uint32_t i = 0; i < routableCount; i++) {
+        const VkFormat in = routable[i];
+        const VkMpFormatInfo* inInfo = YcbcrVkFormatInfo(in);
+        if (inInfo == nullptr) {
+            continue;   // the RGB half; its target is the device's choice
+        }
+        // Asked with a device list that carries every semi-planar target, so
+        // the derivation is exercised rather than the membership rule.
+        const VkFormat targets[] = {
+            VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+            VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
+            VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16,
+            VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,
+            VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16,
+        };
+        const VkFormat target = VkEncConversionTargetFormat(in, targets, 5);
+        if (target == VK_FORMAT_UNDEFINED) {
+            // Direct inputs convert into nothing, which is the honest answer.
+            Check(VkEncClassifyInput(
+                      in, VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) ==
+                      VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT,
+                  Lbl(std::string(AdvName(in)) +
+                      ": only a directly encodable input has no target"),
+                  "no target for a converted input");
+            continue;
+        }
+        const VkMpFormatInfo* outInfo = YcbcrVkFormatInfo(target);
+        Check(outInfo != nullptr,
+              Lbl(std::string(AdvName(in)) + ": its target is a Y'CbCr format"),
+              "target " + U32((uint32_t)target));
+        if (outInfo == nullptr) {
+            continue;
+        }
+        Check(outInfo->planesLayout.bpp == inInfo->planesLayout.bpp,
+              Lbl(std::string(AdvName(in)) + ": the target keeps the bit depth"),
+              "in " + U32(inInfo->planesLayout.bpp) + ", out " +
+                  U32(outInfo->planesLayout.bpp));
+        Check((outInfo->planesLayout.secondaryPlaneSubsampledX ==
+               inInfo->planesLayout.secondaryPlaneSubsampledX) &&
+                  (outInfo->planesLayout.secondaryPlaneSubsampledY ==
+                   inInfo->planesLayout.secondaryPlaneSubsampledY),
+              Lbl(std::string(AdvName(in)) + ": the target keeps the subsampling"),
+              "");
+        Check(outInfo->planesLayout.numberOfExtraPlanes == 1u,
+              Lbl(std::string(AdvName(in)) + ": the target is semi-planar"),
+              "extra planes " +
+                  U32(outInfo->planesLayout.numberOfExtraPlanes));
+        checked++;
+    }
+    // Twelve: the 3-plane family at three subsamplings and three depths,
+    // plus the three semi-planar 12-bit rows whose target is themselves. The
+    // number is stated so that a derivation that quietly stopped naming
+    // targets shows up as a count rather than only as a silent pass over an
+    // empty loop.
+    Check(checked == 12,
+          "twelve Y'CbCr inputs have a conversion target",
+          "checked " + U32(checked));
+}
+
+// The routable list and the classifier are two statements of one set, and a
+// change to either that does not change the other is what this catches.
+void CaseRoutableListAgreesWithTheClassifier()
+{
+    g_currentCase = "the routable list and the classifier name the same set";
+    uint32_t routableCount = 0;
+    const VkFormat* routable = VkEncRoutableInputFormats(routableCount);
+    for (uint32_t i = 0; i < routableCount; i++) {
+        Check(VkEncClassifyInput(routable[i],
+                                 VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) !=
+                  VK_ENC_INPUT_FORMAT_UNSUPPORTED,
+              Lbl(std::string(AdvName(routable[i])) +
+                  " is on the routable list and the classifier routes it"),
+              "the classifier says UNSUPPORTED");
+    }
+    // The other direction, over the formats this suite reaches: nothing the
+    // classifier routes may be missing from the list, or the advertisement
+    // would silently never offer it. Population: 22 candidates. This is the
+    // SPOT check; CaseRoutableSetIsDerivedFromTheFormatTables walks the whole
+    // table in both directions and is what actually holds the predicate.
+    const VkFormat candidates[] = {
+        VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+        VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
+        VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,
+        VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16,
+        VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM,
+        VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16,
+        VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16,
+        VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16,
+        VK_FORMAT_R8G8B8A8_UNORM,
+        VK_FORMAT_B8G8R8A8_UNORM,
+        VK_FORMAT_A8B8G8R8_UNORM_PACK32,
+        // The neighbours. Some are refused for a stated reason elsewhere in
+        // this file -- the two sRGB spellings, the two packed 4:4:4 aliases,
+        // scRGB, packed 4:2:2, and the 16-bit rows -- and some are ROUTED,
+        // which is the half of this loop that matters: a routed format that
+        // is off the list fails here. Semi-planar and 3-plane 4:2:2 and
+        // 3-plane 4:4:4 are in the second group since the set was derived.
+        VK_FORMAT_R8G8B8A8_SRGB,
+        VK_FORMAT_B8G8R8A8_SRGB,
+        VK_FORMAT_A2B10G10R10_UNORM_PACK32,
+        VK_FORMAT_R16G16B16A16_UNORM,
+        VK_FORMAT_R16G16B16A16_SFLOAT,
+        VK_FORMAT_G8B8G8R8_422_UNORM,
+        VK_FORMAT_G8_B8R8_2PLANE_422_UNORM,
+        VK_FORMAT_G8_B8_R8_3PLANE_422_UNORM,
+        VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM,
+        VK_FORMAT_G16_B16R16_2PLANE_420_UNORM,
+        VK_FORMAT_G16_B16_R16_3PLANE_420_UNORM,
+    };
+    uint32_t routedOffList = 0;
+    for (VkFormat f : candidates) {
+        if (VkEncClassifyInput(f, VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) ==
+            VK_ENC_INPUT_FORMAT_UNSUPPORTED) {
+            continue;
+        }
+        bool onList = false;
+        for (uint32_t i = 0; i < routableCount; i++) {
+            onList = onList || (routable[i] == f);
+        }
+        if (!onList) {
+            routedOffList++;
+            Check(false,
+                  "a format the classifier routes is on the routable list",
+                  "format " + U32((uint32_t)f) + " is routed but not listed");
+        }
+    }
+    Check(routedOffList == 0,
+          "0 of 22 candidate formats are routed without being on the list",
+          U32(routedOffList) + " were");
+}
+
+// THE DERIVATION, PINNED. The routable set is COMPUTED from the multi-planar
+// Y'CbCr format table rather than listed, so what a test can hold it to is the
+// PREDICATE. Asserting a copy of the answer would only move the literal this
+// replaced into the test file.
+//
+// Walked over the whole table in BOTH directions -- every row the predicate
+// admits is on the list, every row it refuses is off it -- which is what makes
+// this a test of the rule rather than a spot check of six formats.
+//
+// The predicate is restated here from the two table fields it reads, and
+// deliberately NOT by calling the library's own helpers: a test that asked the
+// implementation what the implementation does would agree with any answer.
+void CaseRoutableSetIsDerivedFromTheFormatTables()
+{
+    g_currentCase = "the routable set is the format table filtered by the "
+                    "predicate, in both directions";
+    uint32_t routableCount = 0;
+    const VkFormat* routable = VkEncRoutableInputFormats(routableCount);
+
+    uint32_t rows = 0;
+    uint32_t admitted = 0;
+    uint32_t refused = 0;
+    for (uint32_t i = 0;; i++) {
+        const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfoByIndex(i);
+        if (mpInfo == nullptr) {
+            break;
+        }
+        rows++;
+        const uint32_t layout = mpInfo->planesLayout.layout;
+        const uint32_t bits   = GetBitsPerChannel(mpInfo->planesLayout);
+        const bool modelledLayout =
+            (layout == YCBCR_SEMI_PLANAR_CBCR_INTERLEAVED) ||
+            (layout == YCBCR_PLANAR_STRIDE_PADDED);
+        const bool encodableDepth =
+            (bits == 8u) || (bits == 10u) || (bits == 12u);
+        const bool direct = (layout == YCBCR_SEMI_PLANAR_CBCR_INTERLEAVED) &&
+                            ((bits == 8u) || (bits == 10u));
+        // A converted row is routed only where the table names a semi-planar
+        // sibling at its own depth and subsampling to convert into. Asked of
+        // the table here too, so the target rule is pinned alongside the
+        // membership rule rather than assumed.
+        bool hasSibling = false;
+        for (uint32_t j = 0;; j++) {
+            const VkMpFormatInfo* other = YcbcrVkFormatInfoByIndex(j);
+            if (other == nullptr) {
+                break;
+            }
+            hasSibling = hasSibling ||
+                ((other->planesLayout.layout ==
+                  YCBCR_SEMI_PLANAR_CBCR_INTERLEAVED) &&
+                 (GetBitsPerChannel(other->planesLayout) == bits) &&
+                 (other->planesLayout.secondaryPlaneSubsampledX ==
+                  mpInfo->planesLayout.secondaryPlaneSubsampledX) &&
+                 (other->planesLayout.secondaryPlaneSubsampledY ==
+                  mpInfo->planesLayout.secondaryPlaneSubsampledY));
+        }
+        const bool expectRouted =
+            modelledLayout && encodableDepth && (direct || hasSibling);
+
+        bool onList = false;
+        for (uint32_t k = 0; k < routableCount; k++) {
+            onList = onList || (routable[k] == mpInfo->vkFormat);
+        }
+        Check(onList == expectRouted,
+              Lbl("table row " + U32(i) + " (format " +
+                  U32((uint32_t)mpInfo->vkFormat) + ", " +
+                  AdvName(mpInfo->vkFormat) +
+                  ") is on the routable list exactly when the predicate "
+                  "admits it"),
+              std::string(onList ? "listed" : "absent") + ", predicate says " +
+                  (expectRouted ? "route" : "refuse"));
+        // And the classifier has to agree with the list, since both are the
+        // same derivation read twice.
+        Check((VkEncClassifyInput(mpInfo->vkFormat,
+                                  VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) !=
+               VK_ENC_INPUT_FORMAT_UNSUPPORTED) == expectRouted,
+              Lbl(std::string("row ") + U32(i) +
+                  ": the classifier answers the same predicate"),
+              "class " + U32((uint32_t)VkEncClassifyInput(
+                  mpInfo->vkFormat, VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT)));
+        if (expectRouted) {
+            admitted++;
+        } else {
+            refused++;
+        }
+    }
+
+    // CALIBRATION. The walk has to see BOTH answers, or the loop above would
+    // be asserting one of them over an empty population and would pass for a
+    // derivation that routed everything, or nothing.
+    Check(rows == (uint32_t)YCBCR_VK_FORMAT_INFO_TABLE_SIZE,
+          "the walk visits every row of the multi-planar table",
+          U32(rows) + " rows");
+    Check(admitted > 0, "the predicate admits some rows", U32(admitted));
+    Check(refused > 0, "and refuses others", U32(refused));
+
+    // The RGB spellings are the rest of the list, and they are not in this
+    // table at all: an RGB layout is precisely what it does not describe.
+    Check(routableCount == (admitted + 3u),
+          "the list is the admitted table rows plus the three RGB spellings",
+          U32(routableCount) + " listed, " + U32(admitted) + " admitted");
+
+    for (uint32_t i = 0; i < routableCount; i++) {
+        uint32_t seen = 0;
+        for (uint32_t j = 0; j < routableCount; j++) {
+            if (routable[j] == routable[i]) {
+                seen++;
+            }
+        }
+        Check(seen == 1, "each routable format appears exactly once",
+              "format " + U32((uint32_t)routable[i]) + " appears " +
+                  U32(seen));
+    }
+}
+
+// THE PACKED 4:2:2 FAMILY IS REFUSED, AND ON ITS LAYOUT. Singled out because
+// it is the one exclusion that is about the shader generator being WRONG
+// rather than about a Vulkan or codec limit: those rows are ONE plane and the
+// table gives them numberOfExtraPlanes = 1, so the generator declares a
+// two-plane read over a single-plane image and its luma addressing assumes one
+// sample per texel on a format carrying two. The shader compiles either way,
+// so nothing downstream would catch it -- a widening that dropped the layout
+// predicate would admit them silently and produce a plausible wrong picture.
+void CaseSinglePlaneInterleavedIsRefused()
+{
+    g_currentCase = "the packed 4:2:2 family is refused, at every depth";
+    const VkFormat packed422[] = {
+        VK_FORMAT_G8B8G8R8_422_UNORM,                       // YUY2
+        VK_FORMAT_B8G8R8G8_422_UNORM,                       // UYVY
+        VK_FORMAT_G10X6B10X6G10X6R10X6_422_UNORM_4PACK16,   // Y210
+        VK_FORMAT_G12X4B12X4G12X4R12X4_422_UNORM_4PACK16,   // Y212
+        VK_FORMAT_G16B16G16R16_422_UNORM,                   // Y216
+    };
+    for (VkFormat f : packed422) {
+        // The row EXISTS in the table, so the refusal is the predicate's and
+        // not a lookup miss. That distinction is the whole point: a format the
+        // table does not describe is refused by accident.
+        Check(YcbcrVkFormatInfo(f) != nullptr,
+              "the format table describes it, so the refusal is a decision",
+              "format " + U32((uint32_t)f));
+        Check(VkEncClassifyInput(f, VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) ==
+                  VK_ENC_INPUT_FORMAT_UNSUPPORTED,
+              "classified UNSUPPORTED", "format " + U32((uint32_t)f));
+        Check(VkEncConversionTargetFormat(f, nullptr, 0) ==
+                  VK_FORMAT_UNDEFINED,
+              "and names no conversion target", "format " +
+                  U32((uint32_t)f));
+    }
+    // CALIBRATION, and it is the one that matters: the SEMI-PLANAR row at the
+    // same 4:2:2 subsampling IS routed. Without it this case would pass just
+    // as well for a library that refused 4:2:2 outright, which is a different
+    // and weaker claim.
+    Check(VkEncClassifyInput(VK_FORMAT_G8_B8R8_2PLANE_422_UNORM,
+                             VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) !=
+              VK_ENC_INPUT_FORMAT_UNSUPPORTED,
+          "semi-planar 4:2:2 at the same subsampling IS routed, so the "
+          "refusals above are the layout's and not the subsampling's",
+          "NV16 was refused too");
+}
+
+// WHAT A 4:2:0 DEVICE SEES, AND THAT NEITHER DERIVING THE ROUTABLE SET NOR
+// PARAMETERISING THE ADMISSION MOVED IT.
+//
+// The device lists below are 4:2:0 and are supplied by this file, not read off
+// a driver: what they record is the advertised answer as it stood before the
+// routable set was derived -- not re-derived here, which would let the record
+// and the code move together. They are still the right record after the
+// admission became a callback, because a 4:2:0 candidate resolves at a 4:2:0
+// profile and this synthetic admission answers exactly what the device-list
+// form used to answer.
+//
+// The rows are the whole answer, in order, so a change that ADDED an entry
+// fails as loudly as one that dropped it.
+void CaseFourTwoZeroDeviceAdvertisesTheHistoricalSet()
+{
+    g_currentCase = "a 4:2:0 device list advertises exactly what it did "
+                    "before the routable set was derived";
+    struct Row { VkFormat in; VkFormat out; bool optimal; };
+    struct Scenario {
+        const char*   name;
+        const VkFormat* device;
+        uint32_t      deviceCount;
+        const Row*    expected;
+        uint32_t      expectedCount;
+    };
+
+    static const VkFormat kNv12[] = { VK_FORMAT_G8_B8R8_2PLANE_420_UNORM };
+    static const Row kNv12Expected[] = {
+        { VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,  true  },
+        { VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM,
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,  false },
+        { VK_FORMAT_R8G8B8A8_UNORM,
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,  false },
+        { VK_FORMAT_B8G8R8A8_UNORM,
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,  false },
+        { VK_FORMAT_A8B8G8R8_UNORM_PACK32,
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,  false },
+    };
+
+    static const VkFormat k420Full[] = {
+        VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+        VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
+        VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16,
+    };
+    static const Row k420FullExpected[] = {
+        { VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,  true  },
+        { VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
+          VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16, true },
+        { VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM,
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,  false },
+        { VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16,
+          VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16, false },
+        { VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16,
+          VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16, false },
+        { VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16,
+          VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16, false },
+        { VK_FORMAT_R8G8B8A8_UNORM,
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,  false },
+        { VK_FORMAT_B8G8R8A8_UNORM,
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,  false },
+        { VK_FORMAT_A8B8G8R8_UNORM_PACK32,
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,  false },
+    };
+
+    // P010 alone, which is not a hypothetical: it is what an NVIDIA RTX A4000
+    // (0x10DE:0x24B0, driver 620.72.0) reports as the encode source for
+    // H.265 Main 10 at 4:2:0 / 10 bits, measured with
+    // vkGetPhysicalDeviceVideoFormatPropertiesKHR. Every RGB entry names P010
+    // here because an RGB session takes the device's FIRST choice and that is
+    // the only choice.
+    static const VkFormat kP010Only[] = {
+        VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
+    };
+    static const Row kP010OnlyExpected[] = {
+        { VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,
+          VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16, true  },
+        { VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16,
+          VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16, false },
+        { VK_FORMAT_R8G8B8A8_UNORM,
+          VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16, false },
+        { VK_FORMAT_B8G8R8A8_UNORM,
+          VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16, false },
+        { VK_FORMAT_A8B8G8R8_UNORM_PACK32,
+          VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16, false },
+    };
+
+    const Scenario scenarios[] = {
+        // NV12 alone is what the same A4000 reports for H.264 Baseline, Main
+        // and High and for H.265 Main, all at 8 bits -- one format per
+        // profile, which is also the only figure the corpus had from any
+        // other device.
+        { "NV12 only", kNv12, 1, kNv12Expected, 5 },
+        { "P010 only (A4000, H.265 Main 10)", kP010Only, 1,
+          kP010OnlyExpected, 5 },
+        { "every 4:2:0 semi-planar depth", k420Full, 3, k420FullExpected, 9 },
+    };
+
+    for (const Scenario& sc : scenarios) {
+        VkVideoEncoderInputFormatProperties out[
+            VK_ENC_MAX_ROUTABLE_INPUT_FORMATS] = {};
+        const uint32_t n = AdvertiseFromDeviceList(
+            sc.device, sc.deviceCount, out,
+            VK_ENC_MAX_ROUTABLE_INPUT_FORMATS);
+        // Without the filter the converted half is not advertised at all, so
+        // the record is the OPTIMAL prefix of it. Stated rather than skipped,
+        // because that build is the one this list's gate exists for.
+        uint32_t wanted = 0;
+        for (uint32_t i = 0; i < sc.expectedCount; i++) {
+            if (kFilterCompiledIn || sc.expected[i].optimal) {
+                wanted++;
+            }
+        }
+        Check(n == wanted,
+              Lbl(std::string(sc.name) + ": the advertised count is what it "
+                  "was before the set was derived"),
+              "got " + U32(n) + ", want " + U32(wanted));
+        uint32_t at = 0;
+        for (uint32_t i = 0; (i < sc.expectedCount) && (at < n); i++) {
+            if (!kFilterCompiledIn && !sc.expected[i].optimal) {
+                continue;
+            }
+            Check((out[at].format == sc.expected[i].in) &&
+                      (out[at].encodeFormat == sc.expected[i].out) &&
+                      ((out[at].optimality ==
+                        VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL) ==
+                       sc.expected[i].optimal),
+                  Lbl(std::string(sc.name) + " entry " + U32(at) + ": " +
+                      AdvName(sc.expected[i].in) + " -> " +
+                      AdvName(sc.expected[i].out)),
+                  "got " + U32((uint32_t)out[at].format) + " -> " +
+                      U32((uint32_t)out[at].encodeFormat) + " opt " +
+                      U32((uint32_t)out[at].optimality));
+            at++;
+        }
+    }
+
+    // CALIBRATION: the same function on a device list that DOES carry a 4:4:4
+    // encode source answers differently, so the two records above are a
+    // measurement and not a function that ignores its argument.
+    const VkFormat with444[] = {
+        VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+        VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,
+    };
+    VkVideoEncoderInputFormatProperties wide[
+        VK_ENC_MAX_ROUTABLE_INPUT_FORMATS] = {};
+    const uint32_t wn = AdvertiseFromDeviceList(
+        with444, 2, wide, VK_ENC_MAX_ROUTABLE_INPUT_FORMATS);
+    Check(AdvIndexOf(wide, wn, VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM) >=
+              (kFilterCompiledIn ? 0 : -1) &&
+              ((AdvIndexOf(wide, wn, VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM) >= 0)
+               == kFilterCompiledIn),
+          "3-plane 4:4:4 IS advertised once the device reports NV24, and is "
+          "absent from every 4:2:0 list above -- the device is what decides "
+          "it, not this library",
+          "index " + U32((uint32_t)(AdvIndexOf(
+              wide, wn, VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM) + 1)));
 }
 
 void CaseYcbcrIsNeverClaimedAsRgba()
@@ -644,6 +1675,104 @@ void CaseAgreeingColorModelStillBinds()
     }
 }
 
+// THE TWO DERIVATIONS OF THE INPUT'S IDENTITY, AND THE ASSERTION THAT THEY
+// AGREE.
+//
+// The binder derives (chroma subsampling, bit depth, plane count) FROM the
+// caller's VkFormat. EncoderInputImageParameters::VerifyInputs() reconstructs a
+// VkFormat FROM those same three. Two derivations of one quantity in opposite
+// directions, and until now nothing said they had to agree -- the config that
+// reached the encoder simply carried whatever the second one produced.
+//
+// THE REVERSE ONE CANNOT BE DELETED, which is why this is an assertion and not
+// a removal. The packed-alias arm of the binder leaves input.vkFormat unwritten
+// ON PURPOSE so the reconstruction supplies it: CodecGetVkFormat(4:4:4, depth,
+// PACKED_1) spells AYUV at eight bits and Y410 at ten, and that is the only
+// route by which either is nameable. Deleting the reverse derivation deletes
+// two capabilities.
+//
+// WHAT THIS CASE READS. probe.inputVkFormat is the reconstruction's OUTPUT --
+// input.vkFormat as it stands after InitializeParameters -- and the assertion
+// is that it is the format the caller declared. Every routable candidate is
+// swept, plus the two packed aliases, which the routable list cannot carry
+// because it has no colour-model column.
+//
+// AND WHY THE PLANE COUNT IS STILL READ BESIDE IT. inputVkFormat is one value
+// standing for three, so a disagreement says THAT the round trip broke and not
+// WHICH term broke it. The triple is printed with every row for that reason.
+//
+// H.265 IS THE CODEC FOR EVERY ROW ON PURPOSE. Range Extensions is the one
+// profile in this tree whose limits admit 4:2:0, 4:2:2 and 4:4:4 at 8, 10 and
+// 12 bits together, so a refusal anywhere in this sweep is about the round trip
+// and not about a profile that could not carry the input.
+void CaseInputFormatSurvivesTheRoundTripThroughGeometry()
+{
+    g_currentCase = "the input format the binder derives geometry from is the "
+                    "format that geometry reconstructs";
+
+    struct Row {
+        VkFormat                 format;
+        VkVideoEncoderColorModel declared;
+        const char*              what;
+    };
+    // The packed 4:4:4 aliases are named by hand: they ride RGBA enumerants and
+    // are reached only through a Y'CbCr declaration, so the routable list --
+    // which carries no colour model -- cannot name them.
+    static const Row kPacked[] = {
+        { VK_FORMAT_R8G8B8A8_UNORM, VK_VIDEO_ENCODER_COLOR_MODEL_YCBCR,
+          "AYUV (R8G8B8A8_UNORM declared Y'CbCr)" },
+        { VK_FORMAT_A2B10G10R10_UNORM_PACK32,
+          VK_VIDEO_ENCODER_COLOR_MODEL_YCBCR,
+          "Y410 (A2B10G10R10_UNORM_PACK32 declared Y'CbCr)" },
+    };
+    const uint32_t kPackedCount = (uint32_t)(sizeof(kPacked) / sizeof(kPacked[0]));
+
+    uint32_t routableCount = 0;
+    const VkFormat* const routable = VkEncRoutableInputFormats(routableCount);
+    Check(routableCount >= 10u, "the routable set is worth sweeping",
+          "count " + U32(routableCount));
+
+    uint32_t swept = 0;
+    for (uint32_t i = 0; i < routableCount + kPackedCount; i++) {
+        const bool packed = (i >= routableCount);
+        const VkFormat format =
+            packed ? kPacked[i - routableCount].format : routable[i];
+        const VkVideoEncoderColorModel declared =
+            packed ? kPacked[i - routableCount].declared
+                   : VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT;
+        const std::string what =
+            packed ? std::string(kPacked[i - routableCount].what)
+                   : ("routable enumerant " + U32((uint32_t)format));
+
+        VkVideoEncoderConfig cfg = BaseConfig();
+        cfg.codec           = VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR;
+        cfg.inputFormat     = format;
+        cfg.inputColorModel = declared;
+        VkEncBoundConfigProbe probe{};
+        const VkResult r = VkEncBuildAndProbeConfig(
+            cfg, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR, &probe);
+        Check(r == VK_SUCCESS,
+              ("the binder accepts it: " + what).c_str(),
+              "VkResult " + U32((uint32_t)r));
+        if (r != VK_SUCCESS) {
+            continue;
+        }
+        swept++;
+        Check(probe.inputVkFormat == (uint32_t)format,
+              ("and the geometry it derived reconstructs the same format: " +
+                  what).c_str(),
+              "declared " + U32((uint32_t)format) + ", reconstructed " +
+                  U32(probe.inputVkFormat) + " from (subsampling " +
+                  U32(probe.inputChromaSubsampling) + ", " +
+                  U32(probe.inputBpp) + "-bit, " + U32(probe.inputNumPlanes) +
+                  " planes)");
+    }
+    Check(swept == routableCount + kPackedCount,
+          "every candidate bound, so no row was skipped into agreement",
+          "bound " + U32(swept) + " of " +
+              U32(routableCount + kPackedCount));
+}
+
 void CaseSemiPlanarBindsTwoPlanes()
 {
     g_currentCase = "an NV12 session describes its input as 2-plane";
@@ -736,6 +1865,23 @@ void CaseFourTwoZeroStillBindsFourTwoZero()
         VkEncBoundConfigProbe probe{};
         const VkResult r = VkEncBuildAndProbeConfig(
             cfg, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR, &probe);
+        // I420 is the one row here that needs converting, so a build without
+        // the filter refuses it -- and refusing is correct, since the staging
+        // copy cannot change plane count. The other two are read directly and
+        // are accepted in either build. This row asserted acceptance
+        // unconditionally and so could only ever have been run with the
+        // filter present.
+        const bool needsFilter =
+            (VkEncClassifyInput(f, VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) ==
+             VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER);
+        if (needsFilter && !kFilterCompiledIn) {
+            Check(r == VK_ERROR_INITIALIZATION_FAILED,
+                  "a converted 4:2:0 input is refused, not bound, when the "
+                  "build has no filter to convert it",
+                  "format " + U32((uint32_t)f) + " VkResult " +
+                      U32((uint32_t)r));
+            continue;
+        }
         Check(r == VK_SUCCESS, "binder accepted the config",
               "format " + U32((uint32_t)f) + " VkResult " + U32((uint32_t)r));
         Check(probe.inputChromaSubsampling ==
@@ -824,6 +1970,113 @@ void CaseRgbaGetsAFilterWithoutAsking()
         Check(r != VK_SUCCESS,
               "a build without the filter refuses a format only it could take",
               "VkResult " + U32((uint32_t)r));
+    }
+}
+
+void CasePackedYcbcrIsRoutedWhereItIsDeclared()
+{
+    g_currentCase = "the packed 4:4:4 aliases are routed where they are declared";
+    // WHAT THE COLOUR-MODEL DECLARATION BUYS. AYUV and Y410 are Y'CbCr 4:4:4
+    // carried one interleaved texel per pixel. They have no Vulkan enumerant
+    // of their own and ride R8G8B8A8_UNORM and A2B10G10R10_UNORM_PACK32,
+    // which are also how an ordinary R'G'B' frame is spelled, so the
+    // declaration is the only thing that can say which of the two a surface
+    // is -- and the taxonomy has to ROUTE what the declaration names, or
+    // stating the truth about the pixels is what refuses them.
+    struct Row {
+        const char*              name;
+        VkFormat                 format;
+        VkVideoEncoderColorModel declared;
+        VkEncInputFormatClass    wantClass;
+        uint32_t                 wantPlanes;
+        uint32_t                 wantBpp;      // 0 when the class is UNSUPPORTED
+        const char*              why;
+    };
+    static const Row rows[] = {
+        { "AYUV", VK_FORMAT_R8G8B8A8_UNORM,
+          VK_VIDEO_ENCODER_COLOR_MODEL_YCBCR,
+          VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER, 1, 8,
+          "AYUV declared Y'CbCr is routed through the filter" },
+        { "Y410", VK_FORMAT_A2B10G10R10_UNORM_PACK32,
+          VK_VIDEO_ENCODER_COLOR_MODEL_YCBCR,
+          VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER, 1, 10,
+          "Y410 declared Y'CbCr is routed through the filter" },
+        // Y416 is the one the packed table names and the taxonomy does not
+        // take. 16 bits per component is not a
+        // VkVideoComponentBitDepthFlagBitsKHR, so no input geometry can carry
+        // it; the refusal is early and clear rather than an opaque one raised
+        // after the caller has built a frame pool.
+        { "Y416", VK_FORMAT_R16G16B16A16_UNORM,
+          VK_VIDEO_ENCODER_COLOR_MODEL_YCBCR,
+          VK_ENC_INPUT_FORMAT_UNSUPPORTED, 0, 0,
+          "Y416 declared Y'CbCr is refused for its bit depth" },
+        // THE CONTROL, and it is the whole point of the case: the SAME
+        // enumerant as the first row, declaring nothing. It must still be an
+        // ordinary 8-bit R'G'B' image bound at 4:2:0, so a change that made
+        // the packed rows pass by widening the R'G'B' arm would fail here.
+        { "RGBA8", VK_FORMAT_R8G8B8A8_UNORM,
+          VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT,
+          VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER, 1, 8,
+          "the same enumerant undeclared is still R'G'B'" },
+    };
+    for (const Row& row : rows) {
+        Check(VkEncClassifyInput(row.format, row.declared) == row.wantClass,
+              row.why,
+              std::string(row.name) + " classified " +
+                  U32((uint32_t)VkEncClassifyInput(row.format, row.declared)));
+        Check(VkEncInputFormatPlaneCount(row.format) == row.wantPlanes,
+              "and its layout is one plane, or none if it is not routed",
+              std::string(row.name) + " planes " +
+                  U32(VkEncInputFormatPlaneCount(row.format)));
+    }
+
+    // WHAT THE BINDER THEN WRITES. A class answer that no session geometry
+    // follows would be an acceptance in name only: EncoderConfig does not
+    // store the input format, it RECONSTRUCTS it from subsampling, bit depth
+    // and plane count, so a packed input left at the 3-plane 4:2:0 default
+    // would configure the session as I420 while the caller declared AYUV.
+    // The probe reads exactly those three values back.
+    if (!kFilterCompiledIn) {
+        Check(true, "no preprocess filter is compiled into this build", "");
+        return;
+    }
+    for (const Row& row : rows) {
+        VkVideoEncoderConfig cfg = BaseConfig();
+        cfg.inputFormat     = row.format;
+        cfg.inputColorModel = row.declared;
+        VkEncBoundConfigProbe probe{};
+        const VkResult r = VkEncBuildAndProbeConfig(
+            cfg, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR, &probe);
+        if (row.wantClass == VK_ENC_INPUT_FORMAT_UNSUPPORTED) {
+            Check(r != VK_SUCCESS, "the binder refuses it too",
+                  std::string(row.name) + " VkResult " + U32((uint32_t)r));
+            continue;
+        }
+        Check(r == VK_SUCCESS, "the binder accepts it",
+              std::string(row.name) + " VkResult " + U32((uint32_t)r));
+        Check(probe.preprocessComputeFilter == 1,
+              "and builds the filter without being asked",
+              std::string(row.name) + " got " +
+                  U32(probe.preprocessComputeFilter));
+        Check(probe.inputNumPlanes == row.wantPlanes,
+              "and describes the input as single-plane",
+              std::string(row.name) + " got " + U32(probe.inputNumPlanes));
+        Check(probe.inputBpp == row.wantBpp,
+              "and at the component depth the layout carries",
+              std::string(row.name) + " got " + U32(probe.inputBpp));
+        // The subsampling is where the control separates from the packed
+        // rows: a packed 4:4:4 input must move it off the 4:2:0 default,
+        // and the same enumerant read as R'G'B' must not -- an R'G'B'
+        // session's subsampling is the encode profile's, not the input's.
+        const uint32_t wantSubsampling =
+            (row.declared == VK_VIDEO_ENCODER_COLOR_MODEL_YCBCR)
+                ? (uint32_t)VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR
+                : (uint32_t)VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;
+        Check(probe.inputChromaSubsampling == wantSubsampling,
+              "and at the subsampling the declaration implies",
+              std::string(row.name) + " got " +
+                  U32(probe.inputChromaSubsampling) + ", want " +
+                  U32(wantSubsampling));
     }
 }
 
@@ -1126,6 +2379,14 @@ void CaseProfileNumbersAreReadAgainstTheCodec()
     // REFUSED, not bound and not ignored -- binding it would emit a bitstream
     // declaring a profile the caller never asked for, and ignoring it would
     // emit the library's default under the caller's label.
+    //
+    // THE UNBINDABLE ROWS NAME NUMBERS THE STANDARD'S LIMITS TABLE DOES NOT
+    // STATE, so they must not name 122, H.265 4 or AV1 1 -- the library binds
+    // those. Worse, AV1 High over this case's 4:2:0 input is refused by the
+    // SUBSAMPLING guard rather than by unbindability, so such a row keeps
+    // passing while asserting something that has stopped
+    // being true. A refusal row is only evidence when nothing else produces the
+    // same code.
     struct Row { VkVideoCodecOperationFlagBitsKHR codec; uint32_t profile;
                  const char* why; };
     static const Row rows[] = {
@@ -1135,12 +2396,13 @@ void CaseProfileNumbersAreReadAgainstTheCodec()
         { VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR,
           VK_VIDEO_ENCODER_PROFILE_H264_HIGH,
           "H.264 High (100) on an H.265 session" },
-        { VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR, 122,
-          "H.264 High 4:2:2 (122), which this library does not bind" },
-        { VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR, 4,
-          "H.265 Range Extensions (4), which this library does not bind" },
-        { VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR, 1,
-          "AV1 High (1), which this library does not bind" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR, 44,
+          "H.264 CAVLC 4:4:4 Intra (44), an assigned profile_idc the limits "
+          "table does not state and this library does not bind" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR, 5,
+          "H.265 High Throughput (5), likewise unstated and unbound" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR, 3,
+          "AV1 seq_profile 3, which the format does not define at all" },
     };
     for (const Row& row : rows) {
         VkVideoEncoderConfig cfg = BaseConfig();
@@ -1203,6 +2465,1246 @@ void CaseProfileMustAdmitTheInputDepth()
     Check(okProbe.codecProfile == VK_VIDEO_ENCODER_PROFILE_H265_MAIN10,
           "and binds general_profile_idc 2",
           "got " + U32(okProbe.codecProfile));
+}
+
+
+void CaseProfileMustAdmitTheInputSubsampling()
+{
+    g_currentCase = "a profile the input subsampling does not admit is refused";
+    // THE OTHER HALF OF THE STANDARD'S RULE. A guard reading the input bit depth
+    // and nothing else lets an
+    // explicitly named H.264 High (100) over 4:4:4 input passed the 8-bit
+    // check, bound profile_idc 100, and OVERRODE the derivation that reads
+    // input.chromaSubsampling and would have chosen High 4:4:4 Predictive
+    // (244). The result declared 4:2:0 in the SPS while the session carried
+    // 4:4:4 content -- a bitstream describing something the caller never
+    // asked for, which is the exact failure the profile guard exists to
+    // prevent on the depth axis.
+    //
+    // These rows are DEVICE-FREE: VkEncBuildAndProbeConfig binds a config and
+    // reads it back without an encode-capable device, so what they measure is
+    // the library's rule and not a driver's answer. The device half of the
+    // same fact is measured separately, where a device exists.
+    struct Row { VkVideoCodecOperationFlagBitsKHR codec; uint32_t profile;
+                 VkFormat fmt; const char* why; };
+    static const Row rows[] = {
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+          VK_VIDEO_ENCODER_PROFILE_H264_HIGH,
+          VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,
+          "H.264 High (100) over 4:4:4 (NV24) input" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+          VK_VIDEO_ENCODER_PROFILE_H264_MAIN,
+          VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,
+          "H.264 Main (77) over 4:4:4 (NV24) input" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+          VK_VIDEO_ENCODER_PROFILE_H264_BASELINE,
+          VK_FORMAT_G8_B8R8_2PLANE_422_UNORM,
+          "H.264 Baseline (66) over 4:2:2 input" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR,
+          VK_VIDEO_ENCODER_PROFILE_H265_MAIN,
+          VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,
+          "H.265 Main (1) over 4:4:4 (NV24) input" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR,
+          VK_VIDEO_ENCODER_PROFILE_H265_MAIN10,
+          VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16,
+          "H.265 Main 10 (2) over 10-bit 4:4:4 (S410) input" },
+    };
+    for (const Row& row : rows) {
+        VkVideoEncoderConfig cfg = BaseConfig();
+        cfg.codec       = row.codec;
+        cfg.profile     = row.profile;
+        cfg.inputFormat = row.fmt;
+        VkEncBoundConfigProbe probe{};
+        const VkResult r = VkEncBuildAndProbeConfig(cfg, row.codec, &probe);
+        Check(r == VK_ERROR_INITIALIZATION_FAILED,
+              (std::string("refused: ") + row.why).c_str(),
+              "VkResult " + U32((uint32_t)r));
+    }
+
+    // CONTROL 1 -- THE SAME PROFILE AT ITS OWN SUBSAMPLING IS STILL ACCEPTED.
+    // A guard that refused everything would pass every row above. These say
+    // the rows measure the profile/subsampling PAIR and not the presence of an
+    // explicit profile, and not the format.
+    struct OkRow { VkVideoCodecOperationFlagBitsKHR codec; uint32_t profile;
+                   VkFormat fmt; uint32_t expectBound; const char* what; };
+    static const OkRow okRows[] = {
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+          VK_VIDEO_ENCODER_PROFILE_H264_HIGH,
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+          VK_VIDEO_ENCODER_PROFILE_H264_HIGH,
+          "H.264 High (100) over 4:2:0 (NV12) input" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+          VK_VIDEO_ENCODER_PROFILE_H264_BASELINE,
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+          VK_VIDEO_ENCODER_PROFILE_H264_BASELINE,
+          "H.264 Baseline (66) over 4:2:0 (NV12) input" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR,
+          VK_VIDEO_ENCODER_PROFILE_H265_MAIN,
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+          VK_VIDEO_ENCODER_PROFILE_H265_MAIN,
+          "H.265 Main (1) over 4:2:0 (NV12) input" },
+    };
+    for (const OkRow& row : okRows) {
+        VkVideoEncoderConfig cfg = BaseConfig();
+        cfg.codec       = row.codec;
+        cfg.profile     = row.profile;
+        cfg.inputFormat = row.fmt;
+        VkEncBoundConfigProbe probe{};
+        const VkResult r = VkEncBuildAndProbeConfig(cfg, row.codec, &probe);
+        Check(r == VK_SUCCESS,
+              (std::string("accepted: ") + row.what).c_str(),
+              "VkResult " + U32((uint32_t)r));
+        Check(probe.codecProfile == row.expectBound,
+              (std::string("and binds it unchanged: ") + row.what).c_str(),
+              "got " + U32(probe.codecProfile));
+    }
+
+    // CONTROL 2 -- AND THE DERIVATION THE REFUSAL POINTS AT ACTUALLY EXISTS.
+    // Every refusal above tells the caller to use DEFAULT instead. That advice
+    // is only worth giving if DEFAULT reaches a profile that CAN carry the
+    // input, so the same 4:4:4 formats are put through DEFAULT here and the
+    // derived number is read back. Without this the refusals would be a dead
+    // end dressed as a remedy.
+    struct DerRow { VkVideoCodecOperationFlagBitsKHR codec; VkFormat fmt;
+                    uint32_t expect; const char* what; };
+    static const DerRow derRows[] = {
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+          VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,
+          STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE,
+          "H.264 DEFAULT over 4:4:4 derives High 4:4:4 Predictive (244)" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+          VK_FORMAT_G8_B8R8_2PLANE_422_UNORM,
+          STD_VIDEO_H264_PROFILE_IDC_HIGH_422,
+          "H.264 DEFAULT over 4:2:2 derives High 4:2:2 (122)" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR,
+          VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,
+          STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS,
+          "H.265 DEFAULT over 4:4:4 derives Range Extensions (4)" },
+    };
+    for (const DerRow& row : derRows) {
+        VkVideoEncoderConfig cfg = BaseConfig();
+        cfg.codec       = row.codec;
+        cfg.profile     = VK_VIDEO_ENCODER_PROFILE_DEFAULT;
+        cfg.inputFormat = row.fmt;
+        VkEncBoundConfigProbe probe{};
+        const VkResult r = VkEncBuildAndProbeConfig(cfg, row.codec, &probe);
+        Check(r == VK_SUCCESS,
+              (std::string("accepted: ") + row.what).c_str(),
+              "VkResult " + U32((uint32_t)r));
+        Check(probe.codecProfile == row.expect,
+              row.what, "got " + U32(probe.codecProfile));
+    }
+}
+
+//=============================================================================
+// VkVideoEncoderInputColourInfo -- what the caller's OWN samples carry.
+//
+// The config's colour fields say what the BITSTREAM should advertise. This
+// chain says what the INPUT is. Before it, the RGBA->Y'CbCr filter derived its
+// matrix from colourPrimaries -- an output field -- which is sound only because
+// this library performs no primaries conversion, and nothing said so.
+//
+// Every case here is device-free: VkEncBuildAndProbeConfig walks pNext and the
+// derivation runs inside the binder.
+//=============================================================================
+
+VkVideoEncoderInputColourInfo InputColour(uint8_t primaries, uint8_t transfer,
+                                          uint8_t matrix,
+                                          VkVideoEncoderRangeDeclaration range)
+{
+    VkVideoEncoderInputColourInfo ic{};
+    ic.sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_INPUT_COLOUR_INFO;
+    ic.pNext = nullptr;
+    ic.inputColourPrimaries         = primaries;
+    ic.inputTransferCharacteristics = transfer;
+    ic.inputMatrixCoefficients      = matrix;
+    ic.reserved                     = 0;
+    ic.inputRange                   = range;
+    return ic;
+}
+
+void CaseInputColourChainBindsEachAxis()
+{
+    g_currentCase = "the chained input-colour struct reaches the encoder "
+                    "config on every axis";
+    // An RGBA session, because that is the lane the declaration steers, and
+    // BT.2020 on both sides so the axes AGREE and the refusal below is not
+    // what is being measured here.
+    VkVideoEncoderInputColourInfo ic =
+        InputColour(9, 14, 9, VK_VIDEO_ENCODER_RANGE_FULL);
+    VkVideoEncoderConfig cfg = BaseConfig();
+    cfg.codec           = VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR;
+    cfg.inputFormat     = VK_FORMAT_R8G8B8A8_UNORM;
+    cfg.inputColorModel = VK_VIDEO_ENCODER_COLOR_MODEL_RGB;
+    cfg.colourPrimaries         = 9;
+    cfg.transferCharacteristics = 14;
+    cfg.matrixCoefficients      = 9;
+    cfg.pNext = &ic;
+    VkEncBoundConfigProbe probe{};
+    const VkResult r = VkEncBuildAndProbeConfig(
+        cfg, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR, &probe);
+    Check(r == VK_SUCCESS, "the binder accepted the chained input-colour "
+                           "struct",
+          "VkResult " + U32((uint32_t)r));
+    Check(probe.inputColourChainPresent == 1u,
+          "the chain is recorded as PRESENT, which no value field could say",
+          "got " + U32(probe.inputColourChainPresent));
+    Check(probe.inputColourPrimaries == 9u,
+          "inputColourPrimaries bound", "got " + U32(probe.inputColourPrimaries));
+    Check(probe.inputTransferCharacteristics == 14u,
+          "inputTransferCharacteristics bound",
+          "got " + U32(probe.inputTransferCharacteristics));
+    Check(probe.inputMatrixCoefficients == 9u,
+          "inputMatrixCoefficients bound",
+          "got " + U32(probe.inputMatrixCoefficients));
+    Check(probe.inputRange == (uint32_t)VK_VIDEO_ENCODER_RANGE_FULL,
+          "inputRange bound", "got " + U32(probe.inputRange));
+}
+
+void CaseAbsentInputColourChainChangesNothing()
+{
+    g_currentCase = "an absent input-colour chain leaves every projected "
+                    "field where it was";
+    // THE DEVICE-FREE HALF OF THE REGRESSION CONTROL, and the one assertion
+    // that protects every existing caller: a config with no chain must build
+    // exactly what it built before. An ALL-ZERO chain is compared alongside
+    // it, because "absent" and "present and all zero" must differ in exactly
+    // one projected field -- the presence flag -- and in nothing else.
+    VkVideoEncoderConfig plain = BaseConfig();
+    plain.codec           = VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR;
+    plain.inputFormat     = VK_FORMAT_R8G8B8A8_UNORM;
+    plain.inputColorModel = VK_VIDEO_ENCODER_COLOR_MODEL_RGB;
+    VkEncBoundConfigProbe noChain{};
+    Check(VkEncBuildAndProbeConfig(
+              plain, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR, &noChain) ==
+              VK_SUCCESS,
+          "an unchained RGBA config builds", "init failed");
+    Check((noChain.inputColourChainPresent == 0u) &&
+              (noChain.inputColourPrimaries == 0u) &&
+              (noChain.inputTransferCharacteristics == 0u) &&
+              (noChain.inputMatrixCoefficients == 0u) &&
+              (noChain.inputRange == 0u),
+          "an unchained config declares nothing about its input's colour",
+          "present " + U32(noChain.inputColourChainPresent));
+    // THE BT.709 FALLBACK SURVIVES for a genuinely undeclared input. This is
+    // the regression the derivation change could have caused and did not.
+    Check(noChain.matrixCoefficients == 0u,
+          "and the binder writes no matrix for it, exactly as before",
+          "got " + U32(noChain.matrixCoefficients));
+
+    VkVideoEncoderInputColourInfo zero =
+        InputColour(0, 0, 0, VK_VIDEO_ENCODER_RANGE_UNDECLARED);
+    VkVideoEncoderConfig chained = plain;
+    chained.pNext = &zero;
+    VkEncBoundConfigProbe zeroChain{};
+    Check(VkEncBuildAndProbeConfig(
+              chained, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR,
+              &zeroChain) == VK_SUCCESS,
+          "an all-zero chain is accepted", "init failed");
+    Check(zeroChain.inputColourChainPresent == 1u,
+          "an all-zero chain is PRESENT, which is the distinction no value "
+          "field carries",
+          "got " + U32(zeroChain.inputColourChainPresent));
+    Check((zeroChain.inputColourPrimaries == 0u) &&
+              (zeroChain.matrixCoefficients == noChain.matrixCoefficients) &&
+              (zeroChain.colourPrimaries == noChain.colourPrimaries) &&
+              (zeroChain.transferCharacteristics ==
+               noChain.transferCharacteristics) &&
+              (zeroChain.videoFullRangeFlag == noChain.videoFullRangeFlag) &&
+              (zeroChain.colorDescriptionPresent ==
+               noChain.colorDescriptionPresent) &&
+              (zeroChain.videoSignalTypePresent ==
+               noChain.videoSignalTypePresent),
+          "and it changes nothing else -- undeclared is undeclared however it "
+          "is spelled", "a projected colour field moved");
+}
+
+void CaseInputColourDisagreementIsRefused()
+{
+    g_currentCase = "an input colour that contradicts the bitstream's is "
+                    "refused";
+    // A MATCHED PAIR, AND THE CONTROL RUNS FIRST. There is no distinct error
+    // code available -- every binder refusal is
+    // VK_ERROR_INITIALIZATION_FAILED, and the sibling transfer-axis refusal
+    // returns exactly that -- so an expectation on the code alone would also
+    // match a refusal from somewhere else entirely and would assert nothing.
+    // Two configs differing on ONE FIELD, one of which must succeed, is what
+    // attributes the refusal to the axis under test.
+    struct Pair {
+        uint8_t     outputPrimaries;
+        uint8_t     inputPrimaries;
+        const char* what;
+    };
+    VkVideoEncoderConfig base = BaseConfig();
+    base.codec           = VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR;
+    base.inputFormat     = VK_FORMAT_R8G8B8A8_UNORM;
+    base.inputColorModel = VK_VIDEO_ENCODER_COLOR_MODEL_RGB;
+    base.colourPrimaries = 9;
+
+    VkVideoEncoderInputColourInfo agree =
+        InputColour(9, 0, 0, VK_VIDEO_ENCODER_RANGE_UNDECLARED);
+    VkVideoEncoderConfig cfgA = base;
+    cfgA.pNext = &agree;
+    VkEncBoundConfigProbe probeA{};
+    const VkResult rA = VkEncBuildAndProbeConfig(
+        cfgA, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR, &probeA);
+    Check(rA == VK_SUCCESS,
+          "CONTROL: input primaries 9 with bitstream primaries 9 is accepted",
+          "VkResult " + U32((uint32_t)rA));
+    if (rA != VK_SUCCESS) {
+        // The pair is measuring a broken fixture; B's refusal would mean
+        // nothing, so do not read it.
+        return;
+    }
+
+    VkVideoEncoderInputColourInfo disagree =
+        InputColour(1, 0, 0, VK_VIDEO_ENCODER_RANGE_UNDECLARED);
+    VkVideoEncoderConfig cfgB = base;
+    cfgB.pNext = &disagree;
+    VkEncBoundConfigProbe probeB{};
+    const VkResult rB = VkEncBuildAndProbeConfig(
+        cfgB, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR, &probeB);
+    Check(rB == VK_ERROR_INITIALIZATION_FAILED,
+          "and input primaries 1 with the SAME bitstream primaries 9 is "
+          "refused -- one field apart, so the refusal is that field's",
+          "VkResult " + U32((uint32_t)rB));
+
+    // THE SAME SHAPE ON THE MATRIX AXIS, so "refused" is a property of the
+    // rule and not of the primaries field alone.
+    VkVideoEncoderConfig mBase = base;
+    mBase.matrixCoefficients = 9;
+    VkVideoEncoderInputColourInfo mAgree =
+        InputColour(0, 0, 9, VK_VIDEO_ENCODER_RANGE_UNDECLARED);
+    VkVideoEncoderConfig mA = mBase;
+    mA.pNext = &mAgree;
+    VkEncBoundConfigProbe mProbeA{};
+    Check(VkEncBuildAndProbeConfig(
+              mA, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR, &mProbeA) ==
+              VK_SUCCESS,
+          "CONTROL: input matrix 9 with bitstream matrix 9 is accepted",
+          "init failed");
+    VkVideoEncoderInputColourInfo mDisagree =
+        InputColour(0, 0, 1, VK_VIDEO_ENCODER_RANGE_UNDECLARED);
+    VkVideoEncoderConfig mB = mBase;
+    mB.pNext = &mDisagree;
+    VkEncBoundConfigProbe mProbeB{};
+    Check(VkEncBuildAndProbeConfig(
+              mB, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR, &mProbeB) ==
+              VK_ERROR_INITIALIZATION_FAILED,
+          "and input matrix 1 against bitstream matrix 9 is refused",
+          "it was accepted");
+
+    // AND A HALF-DECLARED PAIR IS NOT A DISAGREEMENT. 0 is UNDECLARED, so a
+    // caller that states one side asserts nothing about the other. Without
+    // this the refusal could be "any chain with a value in it".
+    VkVideoEncoderInputColourInfo halfA =
+        InputColour(1, 0, 0, VK_VIDEO_ENCODER_RANGE_UNDECLARED);
+    VkVideoEncoderConfig half = BaseConfig();
+    half.codec           = VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR;
+    half.inputFormat     = VK_FORMAT_R8G8B8A8_UNORM;
+    half.inputColorModel = VK_VIDEO_ENCODER_COLOR_MODEL_RGB;
+    half.pNext           = &halfA;
+    VkEncBoundConfigProbe halfProbe{};
+    Check(VkEncBuildAndProbeConfig(
+              half, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR,
+              &halfProbe) == VK_SUCCESS,
+          "an input primaries declaration against an UNDECLARED bitstream is "
+          "accepted -- 0 asserts nothing to contradict",
+          "it was refused");
+}
+
+// A DECLARED INPUT RANGE DECIDES THE STREAM'S RANGE ON THE LANE THAT APPLIES
+// NOTHING, AND IS COMPARED ON THE LANE THAT APPLIES SOMETHING.
+//
+// EncoderConfig::video_full_range_flag is one variable with two consumers:
+// the VUI bit the bitstream carries, and the VkSamplerYcbcrRange the
+// preprocess filter is built with. They are one decision and the cases below
+// read the projection of that one variable, so a change that moved only the
+// VUI or only the filter would show up as a disagreement rather than as a
+// pass.
+//
+// WHY THE TWO LANES DIFFER. On the Y'CbCr lane the library applies no range
+// mapping -- the copy filter's own shader takes its output range from its
+// input range, so a copy stays a copy -- and therefore the samples that
+// arrive are the samples that are coded. The input's range IS the stream's
+// range and a declaration of it is a fact about the stream. On the RGB lane
+// the filter PRODUCES the Y'CbCr range, from this same flag, and the caller's
+// declaration is about its RGB buffer; the two are different quantities, so
+// the declaration is compared against what the filter can read and never
+// silently retargets the output.
+//
+// THE REFUSAL ROWS COME IN PAIRS, one field apart. VK_ERROR_INITIALIZATION_
+// FAILED is the binder's only refusal code, so a row that merely fails could
+// be failing for any reason; each refusal below sits beside an otherwise
+// identical config that succeeds, which is what makes the refusal that
+// field's.
+void CaseDeclaredInputRangeDecidesTheStreamsRange()
+{
+    g_currentCase = "a declared input range decides what the stream says";
+
+    // CALIBRATION, BEFORE ANY DECLARATION IS READ. The two projected fields
+    // this case turns on have to be shown to move at all, or a run in which
+    // they were stuck at zero would read as "the declaration did nothing" and
+    // as "the declaration is undeclared" identically.
+    VkVideoEncoderConfig calFull = BaseConfig();
+    calFull.videoFullRange = VK_TRUE;
+    VkEncBoundConfigProbe calFullProbe{};
+    Check(VkEncBuildAndProbeConfig(
+              calFull, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+              &calFullProbe) == VK_SUCCESS,
+          "calibration: videoFullRange = VK_TRUE builds", "init failed");
+    Check((calFullProbe.videoFullRangeFlag == 1u) &&
+              (calFullProbe.videoSignalTypePresent == 1u),
+          "calibration: the two fields this case reads DO move -- "
+          "videoFullRange raises both",
+          "flag " + U32(calFullProbe.videoFullRangeFlag) + ", present " +
+              U32(calFullProbe.videoSignalTypePresent));
+    VkVideoEncoderConfig calBare = BaseConfig();
+    VkEncBoundConfigProbe calBareProbe{};
+    Check(VkEncBuildAndProbeConfig(
+              calBare, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+              &calBareProbe) == VK_SUCCESS,
+          "calibration: an undeclared config builds", "init failed");
+    Check((calBareProbe.videoFullRangeFlag == 0u) &&
+              (calBareProbe.videoSignalTypePresent == 0u),
+          "calibration: and they are BOTH ZERO when nothing is declared, so "
+          "the instrument reads two states and not one",
+          "flag " + U32(calBareProbe.videoFullRangeFlag) + ", present " +
+              U32(calBareProbe.videoSignalTypePresent));
+
+    // ---- The Y'CbCr lane: the declaration is applied ----
+    struct DirectRow {
+        VkVideoEncoderRangeDeclaration   declared;
+        uint32_t                         wantFlag;
+        const char*                      what;
+    };
+    static const DirectRow directRows[] = {
+        { VK_VIDEO_ENCODER_RANGE_FULL, 1u,
+          "a Y'CbCr input declared FULL is coded as full range" },
+        { VK_VIDEO_ENCODER_RANGE_LIMITED, 0u,
+          "a Y'CbCr input declared LIMITED is coded as limited range" },
+    };
+    for (const DirectRow& row : directRows) {
+        VkVideoEncoderInputColourInfo ic = InputColour(0, 0, 0, row.declared);
+        VkVideoEncoderConfig cfg = BaseConfig();
+        cfg.inputFormat = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+        cfg.pNext       = &ic;
+        VkEncBoundConfigProbe probe{};
+        const VkResult r = VkEncBuildAndProbeConfig(
+            cfg, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR, &probe);
+        Check(r == VK_SUCCESS, Lbl(std::string("accepted: ") + row.what),
+              "VkResult " + U32((uint32_t)r));
+        Check(probe.videoFullRangeFlag == row.wantFlag, Lbl(row.what),
+              "video_full_range_flag " + U32(probe.videoFullRangeFlag) +
+                  ", wanted " + U32(row.wantFlag));
+        // AND IT IS SIGNALLED. An unsignalled range is inferred by the
+        // standards and reported as unknown by decoders at their API
+        // boundary, so a caller that declared one and got silence is no
+        // better off than one that declared nothing.
+        Check(probe.videoSignalTypePresent == 1u,
+              Lbl(std::string("and it is SIGNALLED: ") + row.what),
+              "video_signal_type_present_flag " +
+                  U32(probe.videoSignalTypePresent));
+    }
+
+    // A DECLARED LIMITED IS NOT THE SAME AS SILENCE, and this is the pair
+    // that says so: the same config without the chain signals nothing.
+    VkVideoEncoderConfig unchained = BaseConfig();
+    unchained.inputFormat = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+    VkEncBoundConfigProbe unchainedProbe{};
+    Check(VkEncBuildAndProbeConfig(
+              unchained, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+              &unchainedProbe) == VK_SUCCESS,
+          "CONTROL: the same Y'CbCr config with no chain builds",
+          "init failed");
+    Check((unchainedProbe.videoSignalTypePresent == 0u) &&
+              (unchainedProbe.videoFullRangeFlag == 0u),
+          "CONTROL: and it declares nothing -- an absent chain is not a "
+          "declaration of limited range",
+          "present " + U32(unchainedProbe.videoSignalTypePresent) + ", flag " +
+              U32(unchainedProbe.videoFullRangeFlag));
+
+    // ---- The Y'CbCr lane: a contradiction is refused ----
+    //
+    // videoFullRange has no undeclared state -- it is a VkBool32 whose zero
+    // is indistinguishable from silence -- so only the raised direction can
+    // be contradicted, and only that direction is refused.
+    VkVideoEncoderInputColourInfo limited =
+        InputColour(0, 0, 0, VK_VIDEO_ENCODER_RANGE_LIMITED);
+    VkVideoEncoderConfig clash = BaseConfig();
+    clash.inputFormat    = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+    clash.videoFullRange = VK_TRUE;
+    clash.pNext          = &limited;
+    VkEncBoundConfigProbe clashProbe{};
+    Check(VkEncBuildAndProbeConfig(
+              clash, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+              &clashProbe) == VK_ERROR_INITIALIZATION_FAILED,
+          "a LIMITED input under a full-range bitstream request is refused -- "
+          "the library scales nothing",
+          "it was accepted");
+
+    VkVideoEncoderInputColourInfo full =
+        InputColour(0, 0, 0, VK_VIDEO_ENCODER_RANGE_FULL);
+    VkVideoEncoderConfig agree = BaseConfig();
+    agree.inputFormat    = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+    agree.videoFullRange = VK_TRUE;
+    agree.pNext          = &full;
+    VkEncBoundConfigProbe agreeProbe{};
+    Check(VkEncBuildAndProbeConfig(
+              agree, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+              &agreeProbe) == VK_SUCCESS,
+          "PAIR: the same config with the input declared FULL is accepted -- "
+          "one field apart, so the refusal above is that field's",
+          "it was refused");
+    Check(agreeProbe.videoFullRangeFlag == 1u,
+          "and both sides agreeing on full range still codes full range",
+          "flag " + U32(agreeProbe.videoFullRangeFlag));
+
+    // ---- The RGB lane: the declaration is compared, not applied ----
+    VkVideoEncoderInputColourInfo rgbLimited =
+        InputColour(0, 0, 0, VK_VIDEO_ENCODER_RANGE_LIMITED);
+    VkVideoEncoderConfig rgbBad = BaseConfig();
+    rgbBad.inputFormat     = VK_FORMAT_R8G8B8A8_UNORM;
+    rgbBad.inputColorModel = VK_VIDEO_ENCODER_COLOR_MODEL_RGB;
+    rgbBad.pNext           = &rgbLimited;
+    VkEncBoundConfigProbe rgbBadProbe{};
+    Check(VkEncBuildAndProbeConfig(
+              rgbBad, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+              &rgbBadProbe) == VK_ERROR_INITIALIZATION_FAILED,
+          "an RGB input declared LIMITED is refused -- the filter reads its "
+          "RGB over the full range and performs no input expansion",
+          "it was accepted");
+
+    VkVideoEncoderInputColourInfo rgbFull =
+        InputColour(0, 0, 0, VK_VIDEO_ENCODER_RANGE_FULL);
+    VkVideoEncoderConfig rgbOk = BaseConfig();
+    rgbOk.inputFormat     = VK_FORMAT_R8G8B8A8_UNORM;
+    rgbOk.inputColorModel = VK_VIDEO_ENCODER_COLOR_MODEL_RGB;
+    rgbOk.pNext           = &rgbFull;
+    VkEncBoundConfigProbe rgbOkProbe{};
+    Check(VkEncBuildAndProbeConfig(
+              rgbOk, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+              &rgbOkProbe) == VK_SUCCESS,
+          "PAIR: the same RGB config declared FULL is accepted -- one field "
+          "apart",
+          "it was refused");
+    // AND IT DOES NOT RETARGET THE OUTPUT. The RGB buffer's range and the
+    // Y'CbCr the filter emits are different quantities; the second is the
+    // bitstream request's to state.
+    VkVideoEncoderConfig rgbBare = BaseConfig();
+    rgbBare.inputFormat     = VK_FORMAT_R8G8B8A8_UNORM;
+    rgbBare.inputColorModel = VK_VIDEO_ENCODER_COLOR_MODEL_RGB;
+    VkEncBoundConfigProbe rgbBareProbe{};
+    Check(VkEncBuildAndProbeConfig(
+              rgbBare, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+              &rgbBareProbe) == VK_SUCCESS,
+          "CONTROL: the same RGB config with no chain builds", "init failed");
+    Check((rgbOkProbe.videoFullRangeFlag ==
+           rgbBareProbe.videoFullRangeFlag) &&
+              (rgbOkProbe.videoSignalTypePresent ==
+               rgbBareProbe.videoSignalTypePresent),
+          "and a FULL declaration on the RGB lane leaves the bitstream's "
+          "range where the caller put it",
+          "flag " + U32(rgbOkProbe.videoFullRangeFlag) + " against " +
+              U32(rgbBareProbe.videoFullRangeFlag));
+
+    // ---- AV1, whose range syntax is unconditional ----
+    //
+    // color_range is a mandatory bit in every AV1 sequence header, so the
+    // question there is never "is it signalled" but "which value" -- and
+    // before a declaration existed the answer was always 0.
+    VkVideoEncoderInputColourInfo av1Full =
+        InputColour(0, 0, 0, VK_VIDEO_ENCODER_RANGE_FULL);
+    VkVideoEncoderConfig av1 = BaseConfig();
+    av1.codec       = VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR;
+    av1.inputFormat = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+    av1.pNext       = &av1Full;
+    VkEncBoundConfigProbe av1Probe{};
+    Check(VkEncBuildAndProbeConfig(
+              av1, VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR, &av1Probe) ==
+              VK_SUCCESS,
+          "an AV1 session accepts a declared input range", "init failed");
+    Check(av1Probe.videoFullRangeFlag == 1u,
+          "and an AV1 input declared FULL writes color_range 1 rather than "
+          "the unconditional 0 it wrote before",
+          "flag " + U32(av1Probe.videoFullRangeFlag));
+}
+
+void CaseInputColourPrimariesDriveTheDerivedMatrix()
+{
+    g_currentCase = "the filter's matrix is derived from the INPUT's "
+                    "primaries when they are declared";
+    // matrixCoefficients 2 (Unspecified) is the arm that derives, and the
+    // derived value is SIGNALLED back, so the probe reads what the filter will
+    // actually apply. Declaring the primaries on the INPUT side and leaving
+    // the bitstream's undeclared is the configuration that could only ever
+    // have come out BT.709 before.
+    struct Row {
+        uint8_t     inputPrimaries;
+        uint32_t    wantMatrix;
+        const char* what;
+    };
+    static const Row rows[] = {
+        { 9u, 9u, "input primaries 9 (BT.2020) derive matrix 9" },
+        { 6u, 6u, "input primaries 6 (SMPTE 170M) derive matrix 6" },
+        { 1u, 1u, "input primaries 1 (BT.709) derive matrix 1" },
+    };
+    for (const Row& row : rows) {
+        VkVideoEncoderInputColourInfo ic =
+            InputColour(row.inputPrimaries, 0, 0,
+                        VK_VIDEO_ENCODER_RANGE_UNDECLARED);
+        VkVideoEncoderConfig cfg = BaseConfig();
+        cfg.codec              = VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR;
+        cfg.inputFormat        = VK_FORMAT_R8G8B8A8_UNORM;
+        cfg.inputColorModel    = VK_VIDEO_ENCODER_COLOR_MODEL_RGB;
+        cfg.matrixCoefficients = 2u;   // Unspecified: derive and signal
+        cfg.pNext              = &ic;
+        VkEncBoundConfigProbe probe{};
+        const VkResult r = VkEncBuildAndProbeConfig(
+            cfg, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR, &probe);
+        Check(r == VK_SUCCESS, Lbl(std::string("bound: ") + row.what),
+              "VkResult " + U32((uint32_t)r));
+        if (r != VK_SUCCESS) {
+            continue;
+        }
+        Check(probe.matrixCoefficients == row.wantMatrix, Lbl(row.what),
+              "got " + U32(probe.matrixCoefficients) + ", want " +
+                  U32(row.wantMatrix));
+    }
+    // THE CONTROL. With no chain the SAME config derives from the bitstream's
+    // primaries, which is what it did before -- so the rows above measure
+    // where the derivation READS and not that it derives at all.
+    VkVideoEncoderConfig ctl = BaseConfig();
+    ctl.codec              = VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR;
+    ctl.inputFormat        = VK_FORMAT_R8G8B8A8_UNORM;
+    ctl.inputColorModel    = VK_VIDEO_ENCODER_COLOR_MODEL_RGB;
+    ctl.matrixCoefficients = 2u;
+    ctl.colourPrimaries    = 9u;
+    VkEncBoundConfigProbe ctlProbe{};
+    Check(VkEncBuildAndProbeConfig(
+              ctl, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR, &ctlProbe) ==
+              VK_SUCCESS,
+          "CONTROL: the unchained config still builds", "init failed");
+    Check(ctlProbe.matrixCoefficients == 9u,
+          "and with no chain the derivation still reads the bitstream's "
+          "primaries",
+          "got " + U32(ctlProbe.matrixCoefficients));
+}
+
+// THE AV1 SEQUENCE HEADER'S SUBSAMPLING AGAINST THE seq_profile IT DERIVED.
+//
+// InitSequenceHeader hardcoded subsampling_x = subsampling_y = 1 under a
+// comment calling 4:2:0 the only chroma format this encoder admits, while
+// InitProfileLevel a hundred lines below picks seq_profile 1 from 4:4:4 input
+// and 2 from 4:2:2. AV1 6.4.1 gives seq_profile 1 subsampling_x ==
+// subsampling_y == 0, so the pair was an invalid sequence header: the two
+// halves of one structure decided by two functions that disagreed.
+//
+// DEVICE-FREE IS THE ONLY PLACE THIS IS ASSERTABLE. AV1 High and Professional
+// are absent from every driver this project can reach, so a 4:4:4 or 4:2:2 AV1
+// session dies at the capability query before a sequence header is built.
+// InitSequenceHeader needs no device, and the probe calls it and reads the
+// colour config back -- the same mechanism the HDR payload projection uses.
+// Passing this asserts that the header the library BUILDS is self-consistent.
+// It asserts nothing about any driver accepting it.
+//
+// THE 4:2:0 ROWS ARE THE CONTROL AND THEY RUN FIRST: they read (1, 1) before
+// this change and after it. A change that wrote (0, 0) unconditionally would
+// satisfy every 4:4:4 row and fail these.
+//
+// (internal.h warns that STD_VIDEO_AV1_PROFILE_MAIN == 0, so a codecProfile of
+// 0 on the AV1 arm is a real value rather than "arm not exercised". The 4:4:4
+// and 4:2:2 rows read a non-zero profile, which removes that ambiguity where it
+// would matter.)
+void CaseAv1SubsamplingMatchesTheDerivedSeqProfile()
+{
+    g_currentCase = "the AV1 sequence header's subsampling matches the "
+                    "seq_profile the derivation chose";
+    struct Row {
+        VkFormat    fmt;
+        uint32_t    wantProfile;   // StdVideoAV1Profile
+        uint32_t    wantX;
+        uint32_t    wantY;
+        const char* what;
+    };
+    static const Row rows[] = {
+        { VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,                  0u, 1u, 1u,
+          "NV12 is Main (0) at (1, 1)" },
+        { VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16, 0u, 1u, 1u,
+          "P010 is Main (0) at (1, 1) -- ten bits does not change seq_profile" },
+        { VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,                  1u, 0u, 0u,
+          "NV24 is High (1), which REQUIRES (0, 0)" },
+        { VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16, 1u, 0u, 0u,
+          "S410 is High (1) at (0, 0)" },
+        { VK_FORMAT_G8_B8R8_2PLANE_422_UNORM,                  2u, 1u, 0u,
+          "NV16 is Professional (2), which at ten bits or fewer is (1, 0)" },
+    };
+    for (const Row& row : rows) {
+        VkVideoEncoderConfig cfg = BaseConfig();
+        cfg.codec       = VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR;
+        cfg.inputFormat = row.fmt;
+        VkEncBoundConfigProbe probe{};
+        const VkResult r = VkEncBuildAndProbeConfig(
+            cfg, VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR, &probe);
+        Check(r == VK_SUCCESS, Lbl(std::string("bound: ") + row.what),
+              "VkResult " + U32((uint32_t)r));
+        if (r != VK_SUCCESS) {
+            continue;
+        }
+        Check(probe.av1ColorConfigPresent == 1u,
+              Lbl(std::string("a colour config was attached: ") + row.what),
+              "av1ColorConfigPresent " + U32(probe.av1ColorConfigPresent));
+        Check(probe.codecProfile == row.wantProfile,
+              Lbl(std::string("the derivation picked its seq_profile: ") +
+                  row.what),
+              "got " + U32(probe.codecProfile) + ", want " +
+                  U32(row.wantProfile));
+        Check((probe.av1SubsamplingX == row.wantX) &&
+                  (probe.av1SubsamplingY == row.wantY),
+              Lbl(row.what),
+              "got (" + U32(probe.av1SubsamplingX) + ", " +
+                  U32(probe.av1SubsamplingY) + "), want (" + U32(row.wantX) +
+                  ", " + U32(row.wantY) + ")");
+    }
+}
+
+// ITU-T H.265 TABLE A.8, WHICH THE 4:4:4 ARM COULD NOT REACH.
+//
+// GetCpbVclFactor() assigned encodeChromaSubsampling -- a
+// VkVideoChromaSubsamplingFlagBitsKHR, 0x2 / 0x4 / 0x8 -- into a variable
+// called chroma_format_idc and then tested it against the VALUE 3. No real
+// input makes 0x2, 0x4 or 0x8 equal 3, so every stream took the 4:2:0 factor
+// of 1000, including the 4:4:4 ones that Table A.8 gives 2000 at eight bits
+// and 2500 at ten.
+//
+// THE FACTOR IS READ DIRECTLY, and that is the point of projecting it. A
+// too-high level is still a LEGAL level, which is why nothing caught this, so
+// the level alone would be a weak instrument; and the plan's other candidate,
+// the default vbvBufferSize, is not readable device-free at all -- the probe
+// projects the CONFIG field, and InitRateControl, which is what computes the
+// default from the factor, runs later and needs a session. It reads 0 here
+// under the broken factor and under the fixed one alike.
+//
+// THE LEVEL AND TIER ARE STILL READ, at a bitrate that makes them BITE.
+// IsSuitableLevel tests averageBitrate against maxBitRateMainTier x cpbFactor,
+// and when main tier will not carry the bitrate DetermineLevelTier does not
+// climb to the next level -- it takes HIGH TIER at the same one. So at 16
+// Mbit/s on 1080p a 4:4:4 session sits at level 4.0 MAIN tier under the correct
+// factor (12000 x 2000 = 24 Mbit/s) and at level 4.0 HIGH tier under the broken
+// one (12000 x 1000 = 12 Mbit/s). The LEVEL is 4.0 either way, which is exactly
+// why it is read together with the tier and never alone.
+//
+// At the default 4 Mbit/s neither ceiling binds and both terms are
+// picture-size-bound, which is why the rows below carry two bitrates: one where
+// the selection cannot move and one where it must.
+void CaseH265CpbVclFactorFollowsTheChromaFormat()
+{
+    g_currentCase = "the H.265 CPB VCL factor is Table A.8's, per chroma "
+                    "format and depth";
+    // wantLevel is StdVideoH265LevelIdc: 5 is 4.0. wantTier is
+    // general_tier_flag: 0 main, 1 high.
+    struct Row {
+        VkFormat    fmt;
+        uint32_t    bitrate;
+        uint32_t    wantFactor;
+        uint32_t    wantLevel;
+        uint32_t    wantTier;
+        const char* what;
+    };
+    static const Row rows[] = {
+        // THE CONTROLS, AND THEY RUN FIRST. 4:2:0 reads 1000 and makes the
+        // same selection at BOTH bitrates.
+        // Without them, "fixed the 4:4:4 arm" is indistinguishable from
+        // "changed the factor everywhere".
+        { VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,                   4000000u,
+          1000u, 5u, 0u, "8-bit 4:2:0 is 1000, at level 4.0 main tier" },
+        { VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,  4000000u,
+          1000u, 5u, 0u,
+          "10-bit 4:2:0 is 1000 -- Table A.8's depth term is +500 per two bits "
+          "ABOVE ten, so ten bits adds nothing" },
+        { VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,                  16000000u,
+          1000u, 5u, 1u,
+          "8-bit 4:2:0 at 16 Mbit/s needs HIGH tier, which the factor does not "
+          "change" },
+        // THE ROWS UNDER TEST.
+        { VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,                   4000000u,
+          2000u, 5u, 0u, "8-bit 4:4:4 (NV24) is 2000" },
+        // A RECORD, NOT A CONTRACT. Table A.8 gives 10-bit 4:4:4 2500, and
+        // this reads 2000 -- because GetCpbVclFactor's DEPTH term reads
+        // encodeBitDepthLuma / encodeBitDepthChroma, and EncoderConfig derives
+        // those from input.bpp in InitVideoProfile(), which runs LATER than
+        // both of this function's call sites reach it here: InitProfileLevel
+        // calls it from InitializeParameters, before the depth exists, so the
+        // depth term is zero and the base factor is the 8-bit one. That is a
+        // SECOND defect on the same function and it is not this change's --
+        // fixing it moves the selected level for 10-bit 4:4:4 streams, which
+        // is a behaviour change of its own. The row is here so the value is
+        // recorded rather than discovered again.
+        { VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16,  4000000u,
+          2000u, 5u, 0u,
+          "10-bit 4:4:4 (S410) reads 2000 at the level-selection call site, "
+          "where the input depth has not been derived yet -- Table A.8's "
+          "value for it is 2500" },
+        // AND THE ONE THAT MOVES DOWNSTREAM. 2000 buys main tier at level 4.0
+        // the headroom 1000 did not, so the stream stops declaring high tier.
+        { VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,                  16000000u,
+          2000u, 5u, 0u,
+          "8-bit 4:4:4 at 16 Mbit/s fits level 4.0 MAIN tier on the right "
+          "factor" },
+    };
+    for (const Row& row : rows) {
+        VkVideoEncoderConfig cfg = BaseConfig();
+        cfg.codec          = VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR;
+        cfg.inputFormat    = row.fmt;
+        cfg.averageBitrate = row.bitrate;
+        VkEncBoundConfigProbe probe{};
+        const VkResult r = VkEncBuildAndProbeConfig(
+            cfg, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR, &probe);
+        Check(r == VK_SUCCESS, Lbl(std::string("bound: ") + row.what),
+              "VkResult " + U32((uint32_t)r));
+        if (r != VK_SUCCESS) {
+            continue;
+        }
+        Check(probe.h265CpbVclFactor == row.wantFactor, Lbl(row.what),
+              "got " + U32(probe.h265CpbVclFactor) + ", want " +
+                  U32(row.wantFactor));
+        Check((probe.h265LevelIdc == row.wantLevel) &&
+                  (probe.h265GeneralTierFlag == row.wantTier),
+              Lbl(std::string("and the level and tier it selects: ") +
+                  row.what),
+              "got StdVideoH265LevelIdc " + U32(probe.h265LevelIdc) +
+                  " tier " + U32(probe.h265GeneralTierFlag) + ", want " +
+                  U32(row.wantLevel) + " tier " + U32(row.wantTier));
+    }
+}
+
+// THE BIND SET IS THE STANDARD'S LIMITS TABLE, AND THIS IS THE REACH CHECK.
+//
+// The derivation already selects H.264 High 4:4:4 Predictive, H.265 Range
+// Extensions and AV1 High from 4:4:4 input, and the library emits those
+// streams, so naming the same number explicitly must not be refused as
+// "unbindable". The bind set covers every number the limits table states,
+// and the standard's own limits refuse what the standard forbids.
+//
+// WHY A PAIR AND NOT AN ACCEPTANCE. VkEncBuildAndProbeConfig returns
+// VK_ERROR_INITIALIZATION_FAILED for BOTH the old unbindable refusal and the
+// limits refusal, so a bare "it is refused" assertion cannot say which line
+// produced it. Each row below is therefore two configs on ONE profile whose
+// limits row is NARROW: one input the profile admits, one it does not. Only an
+// arm that both binds the number AND calls the limits guard makes both true.
+//
+// NOT 244, AND NOT H.265 4. Both admit 4:2:0 as well as 4:4:4, so no input
+// format makes either refuse on subsampling and the pair would collapse into a
+// single assertion. AV1 High is 4:4:4 ONLY and H.264 High 10 is 4:2:0 ONLY,
+// which is what makes them discriminating.
+void CaseWidenedBindSetStillRunsTheLimitsGuard()
+{
+    g_currentCase = "a newly bindable profile still refuses what the standard "
+                    "denies it";
+    struct Pair {
+        VkVideoCodecOperationFlagBitsKHR codec;
+        uint32_t                         profile;
+        VkFormat                         admitted;
+        const char*                      admittedWhy;
+        VkFormat                         denied;
+        const char*                      deniedWhy;
+    };
+    static const Pair pairs[] = {
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR,
+          STD_VIDEO_AV1_PROFILE_HIGH,
+          VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,
+          "AV1 High (1) over 4:4:4 (NV24) binds seq_profile 1",
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+          "AV1 High (1) over 4:2:0 (NV12) is refused -- High is 4:4:4 only" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+          STD_VIDEO_H264_PROFILE_IDC_HIGH_10,
+          VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
+          "H.264 High 10 (110) over 4:2:0 (NV12) binds profile_idc 110",
+          VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,
+          "H.264 High 10 (110) over 4:4:4 (NV24) is refused -- 110 is 4:2:0 "
+          "only" },
+    };
+    for (const Pair& p : pairs) {
+        VkVideoEncoderConfig okCfg = BaseConfig();
+        okCfg.codec       = p.codec;
+        okCfg.profile     = p.profile;
+        okCfg.inputFormat = p.admitted;
+        VkEncBoundConfigProbe okProbe{};
+        const VkResult okR =
+            VkEncBuildAndProbeConfig(okCfg, p.codec, &okProbe);
+        Check(okR == VK_SUCCESS, Lbl(std::string("accepted: ") + p.admittedWhy),
+              "VkResult " + U32((uint32_t)okR));
+        Check(okProbe.codecProfile == p.profile,
+              Lbl(std::string("and binds the number it was given: ") +
+                  p.admittedWhy),
+              "got " + U32(okProbe.codecProfile));
+
+        VkVideoEncoderConfig badCfg = BaseConfig();
+        badCfg.codec       = p.codec;
+        badCfg.profile     = p.profile;
+        badCfg.inputFormat = p.denied;
+        VkEncBoundConfigProbe badProbe{};
+        const VkResult badR =
+            VkEncBuildAndProbeConfig(badCfg, p.codec, &badProbe);
+        Check(badR == VK_ERROR_INITIALIZATION_FAILED,
+              Lbl(std::string("refused: ") + p.deniedWhy),
+              "VkResult " + U32((uint32_t)badR));
+    }
+
+    // THE MIRROR CONTROL. A change that widened the LIMITS table rather than
+    // the bind set, or that stopped refusing altogether, would pass everything
+    // above. H.265 Main (1) is 4:2:0 only and must still refuse 4:4:4, and it
+    // is bindable.
+    VkVideoEncoderConfig mainCfg = BaseConfig();
+    mainCfg.codec       = VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR;
+    mainCfg.profile     = VK_VIDEO_ENCODER_PROFILE_H265_MAIN;
+    mainCfg.inputFormat = VK_FORMAT_G8_B8R8_2PLANE_444_UNORM;
+    VkEncBoundConfigProbe mainProbe{};
+    const VkResult mainR = VkEncBuildAndProbeConfig(
+        mainCfg, VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR, &mainProbe);
+    Check(mainR == VK_ERROR_INITIALIZATION_FAILED,
+          "H.265 Main (1) over 4:4:4 is STILL refused -- the bind set widened, "
+          "the standard's limits did not",
+          "VkResult " + U32((uint32_t)mainR));
+
+    // AND A NUMBER THE TABLE STATES NOTHING ABOUT IS STILL UNBINDABLE, so
+    // "widened" is not "opened". 88 is not an H.264 profile_idc.
+    VkVideoEncoderConfig junkCfg = BaseConfig();
+    junkCfg.codec       = VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR;
+    junkCfg.profile     = 88u;
+    junkCfg.inputFormat = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+    VkEncBoundConfigProbe junkProbe{};
+    const VkResult junkR = VkEncBuildAndProbeConfig(
+        junkCfg, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR, &junkProbe);
+    Check(junkR == VK_ERROR_INITIALIZATION_FAILED,
+          "an H.264 profile_idc the standard's table does not state is still "
+          "unbindable",
+          "VkResult " + U32((uint32_t)junkR));
+}
+
+// EVERY PROFILE THE BINDER BINDS IS ONE THE PUBLIC HEADER NAMES, AND THE
+// CONVERSE.
+//
+// The header's profile block says of its constants that "they are what this
+// library binds today", and the sentence beside VkVideoEncoderConfig::profile
+// routes a caller there "for the numbering and for what this library binds".
+// Those were enumeration claims that nothing enforced: the bind set widened
+// from six numbers to fourteen and the block did not move, so the header
+// advertised a NARROWER set than the library accepted and the only way to ask
+// for the difference was a bare integer. The tree's own point-query row for
+// High 4:4:4 Predictive wrote 244u for exactly that reason. This case is what
+// enforces them now, in both directions.
+//
+// SWEPT, NOT LISTED. A table of the fourteen checked against a table of the
+// fourteen would agree with itself. This walks the whole value space each
+// codec's syntax element can carry -- profile_idc and general_profile_idc are
+// u(8), seq_profile is f(3) -- and asks the binder about every number in it,
+// so a value added to the switch and not to the header fails here on the first
+// run rather than on the first consumer.
+//
+// BINDABILITY IS "SOME INPUT ADMITS IT", because the second half of the
+// binder's rule is the standard's limits table and most numbers are refused by
+// it on 4:2:0 8-bit input. Six inputs span that table's whole domain: 8, 10
+// and 12 bits at 4:2:0, and 4:2:2 and 4:4:4. A number no input admits is not a
+// number a caller can use.
+//
+// THE OVERLAP IS STATED, NOT WORKED AROUND. On AV1, 0 is seq_profile Main and
+// is also VK_VIDEO_ENCODER_PROFILE_DEFAULT, so the binder never sees it and
+// the derivation produces it; the sweep reads it as bound because a caller
+// that writes 0 does get seq_profile 0, which is what the constant promises.
+// On H.264 and H.265, 0 is DEFAULT alone and the derivation lands elsewhere,
+// so it reads as unbound there.
+struct NamedProfile {
+    uint32_t    value;
+    const char* spelling;
+};
+
+// The public header's own enumeration, transcribed. This table is the header's
+// claim; the sweep below is the code's answer.
+const NamedProfile kNamedH264[] = {
+    { VK_VIDEO_ENCODER_PROFILE_H264_BASELINE,
+      "VK_VIDEO_ENCODER_PROFILE_H264_BASELINE" },
+    { VK_VIDEO_ENCODER_PROFILE_H264_MAIN,
+      "VK_VIDEO_ENCODER_PROFILE_H264_MAIN" },
+    { VK_VIDEO_ENCODER_PROFILE_H264_HIGH,
+      "VK_VIDEO_ENCODER_PROFILE_H264_HIGH" },
+    { VK_VIDEO_ENCODER_PROFILE_H264_HIGH_10,
+      "VK_VIDEO_ENCODER_PROFILE_H264_HIGH_10" },
+    { VK_VIDEO_ENCODER_PROFILE_H264_HIGH_422,
+      "VK_VIDEO_ENCODER_PROFILE_H264_HIGH_422" },
+    { VK_VIDEO_ENCODER_PROFILE_H264_HIGH_444_PREDICTIVE,
+      "VK_VIDEO_ENCODER_PROFILE_H264_HIGH_444_PREDICTIVE" },
+};
+const NamedProfile kNamedH265[] = {
+    { VK_VIDEO_ENCODER_PROFILE_H265_MAIN,
+      "VK_VIDEO_ENCODER_PROFILE_H265_MAIN" },
+    { VK_VIDEO_ENCODER_PROFILE_H265_MAIN10,
+      "VK_VIDEO_ENCODER_PROFILE_H265_MAIN10" },
+    { VK_VIDEO_ENCODER_PROFILE_H265_MAIN_STILL_PICTURE,
+      "VK_VIDEO_ENCODER_PROFILE_H265_MAIN_STILL_PICTURE" },
+    { VK_VIDEO_ENCODER_PROFILE_H265_FORMAT_RANGE_EXTENSIONS,
+      "VK_VIDEO_ENCODER_PROFILE_H265_FORMAT_RANGE_EXTENSIONS" },
+    { VK_VIDEO_ENCODER_PROFILE_H265_SCC_EXTENSIONS,
+      "VK_VIDEO_ENCODER_PROFILE_H265_SCC_EXTENSIONS" },
+};
+const NamedProfile kNamedAv1[] = {
+    { VK_VIDEO_ENCODER_PROFILE_AV1_MAIN,
+      "VK_VIDEO_ENCODER_PROFILE_AV1_MAIN" },
+    { VK_VIDEO_ENCODER_PROFILE_AV1_HIGH,
+      "VK_VIDEO_ENCODER_PROFILE_AV1_HIGH" },
+    { VK_VIDEO_ENCODER_PROFILE_AV1_PROFESSIONAL,
+      "VK_VIDEO_ENCODER_PROFILE_AV1_PROFESSIONAL" },
+};
+
+// Does |profile| bind on |codec| for at least one input the standard's limits
+// table admits?
+bool ProfileBindsOnSomeInput(VkVideoCodecOperationFlagBitsKHR codec,
+                             uint32_t                         profile)
+{
+    static const VkFormat kSpan[] = {
+        VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,                   // 8-bit 4:2:0
+        VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16,  // 10-bit 4:2:0
+        VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16,  // 12-bit 4:2:0
+        VK_FORMAT_G8_B8R8_2PLANE_422_UNORM,                   // 8-bit 4:2:2
+        VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,                   // 8-bit 4:4:4
+        VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16,  // 10-bit 4:4:4
+    };
+    for (VkFormat fmt : kSpan) {
+        VkVideoEncoderConfig cfg = BaseConfig();
+        cfg.codec       = codec;
+        cfg.profile     = profile;
+        cfg.inputFormat = fmt;
+        VkEncBoundConfigProbe probe{};
+        if (VkEncBuildAndProbeConfig(cfg, codec, &probe) != VK_SUCCESS) {
+            continue;
+        }
+        if (probe.codecProfile == profile) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void SweepOneCodecsProfileSpace(VkVideoCodecOperationFlagBitsKHR codec,
+                                const char*                      codecName,
+                                const NamedProfile*              named,
+                                size_t                           namedCount,
+                                uint32_t                         valueSpace)
+{
+    // Half one: every constant the header names must bind. A name for a value
+    // the library refuses is the same defect pointing the other way.
+    for (size_t i = 0; i < namedCount; i++) {
+        Check(ProfileBindsOnSomeInput(codec, named[i].value),
+              Lbl(std::string(named[i].spelling) + " (" +
+                  U32(named[i].value) + ") is a profile this library binds"),
+              "no input in the span bound it");
+    }
+
+    // Half two: nothing outside the named set binds.
+    std::string unnamed;
+    uint32_t    unnamedCount = 0;
+    for (uint32_t v = 0; v < valueSpace; v++) {
+        bool isNamed = false;
+        for (size_t i = 0; i < namedCount; i++) {
+            if (named[i].value == v) {
+                isNamed = true;
+                break;
+            }
+        }
+        if (isNamed || !ProfileBindsOnSomeInput(codec, v)) {
+            continue;
+        }
+        unnamedCount++;
+        if (!unnamed.empty()) {
+            unnamed += ", ";
+        }
+        unnamed += U32(v);
+    }
+    Check(unnamedCount == 0,
+          Lbl(std::string(codecName) +
+              ": the header names every profile the binder binds"),
+          "bindable and unnamed: " + unnamed);
+}
+
+void CaseNamedProfileConstantsAreExactlyTheBoundSet()
+{
+    g_currentCase = "the named profile constants are exactly what the binder "
+                    "binds";
+
+    // CALIBRATION, BEFORE THE SWEEP READS ANYTHING. The sweep's verdict is a
+    // membership test, and a membership test that answered the same for every
+    // input would report a clean set-equality no matter what the binder did.
+    // One number known to bind and one known not to, through the same
+    // function, on the same inputs.
+    Check(ProfileBindsOnSomeInput(
+              VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+              VK_VIDEO_ENCODER_PROFILE_H264_HIGH),
+          "calibration: the sweep reads H.264 High (100) as BOUND",
+          "the instrument cannot see a bound profile");
+    Check(!ProfileBindsOnSomeInput(
+              VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR, 88u),
+          "calibration: the sweep reads 88, which is no profile_idc, as "
+          "UNBOUND",
+          "the instrument reports everything bound");
+
+    // profile_idc and general_profile_idc are u(8); seq_profile is f(3).
+    SweepOneCodecsProfileSpace(VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+                               "H.264", kNamedH264,
+                               sizeof(kNamedH264) / sizeof(kNamedH264[0]),
+                               256u);
+    SweepOneCodecsProfileSpace(VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR,
+                               "H.265", kNamedH265,
+                               sizeof(kNamedH265) / sizeof(kNamedH265[0]),
+                               256u);
+    SweepOneCodecsProfileSpace(VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR,
+                               "AV1", kNamedAv1,
+                               sizeof(kNamedAv1) / sizeof(kNamedAv1[0]),
+                               8u);
+}
+
+//=============================================================================
+// 2b. What the capability probe can ASK a driver
+//
+// The probe is keyed on (codec, profile, bit depth). These assert the KEY, not
+// a device answer: this runner has no encode-capable device, so no capability
+// entry point can answer anything but "not present", and a claim about what a
+// driver reports would be unfounded.
+//=============================================================================
+
+void CaseProbeNamesAv1MainAtBothDepths()
+{
+    g_currentCase = "the probe can name AV1 Main at 8 AND at 10 bits";
+    // AV1 seq_profile 0 carries 8 or 10 bits at 4:2:0 (AV1 A.2). One profile,
+    // two VkVideoProfileInfoKHR values, so both have to be nameable or the
+    // 10-bit half of a profile that encodes on hardware today cannot be asked
+    // about at all.
+    Check(VkEncProbeNamesProfileBitDepth(
+              VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR,
+              VK_VIDEO_ENCODER_PROFILE_AV1_MAIN, 8),
+          "AV1 Main at 8 bits", "not named");
+    Check(VkEncProbeNamesProfileBitDepth(
+              VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR,
+              VK_VIDEO_ENCODER_PROFILE_AV1_MAIN, 10),
+          "AV1 Main at 10 bits", "not named");
+    // The control that makes the two above measure the DEPTH term rather than
+    // a table that says yes to everything: a depth no arm carries.
+    Check(!VkEncProbeNamesProfileBitDepth(
+              VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR,
+              VK_VIDEO_ENCODER_PROFILE_AV1_MAIN, 12),
+          "AV1 Main at 12 bits is NOT named", "unexpectedly named");
+}
+
+void CaseProbeRefusesDepthsItHasNoEvidenceFor()
+{
+    g_currentCase = "a profile is probed only at the depth it is probed at";
+    struct Row { VkVideoCodecOperationFlagBitsKHR codec; uint32_t profile;
+                 uint32_t depth; bool named; const char* why; };
+    static const Row rows[] = {
+        // H.264 Baseline, Main and High are 8-bit (H.264 A.2).
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+          VK_VIDEO_ENCODER_PROFILE_H264_HIGH, 8, true,
+          "H.264 High at 8 bits" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+          VK_VIDEO_ENCODER_PROFILE_H264_HIGH, 10, false,
+          "H.264 High at 10 bits" },
+        // High 10 (profile_idc 110) is a row at 10 bits only. That is
+        // narrower than H.264 A.2.5 allows -- 110 admits 8-bit as well --
+        // and is deliberate, the same choice the H.265 Main 10 rows below
+        // make: 8-bit input has High, so the 8-bit 110 pairing is not a row.
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR, 110, 10, true,
+          "H.264 High 10 at 10 bits" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR, 110, 8, false,
+          "H.264 High 10 at 8 bits" },
+        // H.265 Main is 8-bit 4:2:0 (A.3.2); Main 10 is probed at 10 only,
+        // which is narrower than A.3.3 allows and is deliberate.
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR,
+          VK_VIDEO_ENCODER_PROFILE_H265_MAIN, 8, true,
+          "H.265 Main at 8 bits" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR,
+          VK_VIDEO_ENCODER_PROFILE_H265_MAIN, 10, false,
+          "H.265 Main at 10 bits" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR,
+          VK_VIDEO_ENCODER_PROFILE_H265_MAIN10, 10, true,
+          "H.265 Main 10 at 10 bits" },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR,
+          VK_VIDEO_ENCODER_PROFILE_H265_MAIN10, 8, false,
+          "H.265 Main 10 at 8 bits" },
+        // The codec arm still disambiguates a repeated number: 1 is H.265
+        // Main and is not an H.264 profile_idc.
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+          VK_VIDEO_ENCODER_PROFILE_H265_MAIN, 8, false,
+          "H.265 Main number on the H.264 arm" },
+    };
+    for (const Row& row : rows) {
+        const bool named = VkEncProbeNamesProfileBitDepth(
+            row.codec, row.profile, row.depth);
+        Check(named == row.named,
+              (std::string(row.named ? "named: " : "not named: ") +
+               row.why).c_str(),
+              named ? "named" : "not named");
+    }
+}
+
+void CaseSnapshotCarriesBothAv1Depths()
+{
+    g_currentCase = "the context snapshot holds a row per probed depth";
+    // The rows are what a context build issues one driver query each for, so
+    // this is what decides whether the AV1 10-bit question ever reaches a
+    // driver at all.
+    uint32_t av1Rows = VkEncProbeSnapshotRowCount(
+        VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR);
+    Check(av1Rows == 2, "AV1 has two probe rows", "got " + U32(av1Rows));
+
+    bool sawEight = false;
+    bool sawTen   = false;
+    uint32_t firstProfile = 0;
+    uint32_t firstDepth   = 0;
+    for (uint32_t slot = 0; slot < av1Rows; slot++) {
+        uint32_t profile = 0;
+        uint32_t depth   = 0;
+        if (!VkEncProbeSnapshotRowAt(
+                VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR, slot,
+                &profile, &depth)) {
+            Check(false, "row readable", "slot " + U32(slot));
+            continue;
+        }
+        Check(profile == VK_VIDEO_ENCODER_PROFILE_AV1_MAIN,
+              "every AV1 row is seq_profile 0", "got " + U32(profile));
+        if (slot == 0) {
+            firstProfile = profile;
+            firstDepth   = depth;
+        }
+        sawEight = sawEight || (depth == 8);
+        sawTen   = sawTen   || (depth == 10);
+    }
+    Check(sawEight, "an 8-bit AV1 Main row", "absent");
+    Check(sawTen,   "a 10-bit AV1 Main row", "absent");
+    // Order is load-bearing: the public lookup resolves a profile number to
+    // the FIRST row carrying it, so the 8-bit row has to be first or every
+    // published AV1 answer would silently become the 10-bit one.
+    Check((firstProfile == VK_VIDEO_ENCODER_PROFILE_AV1_MAIN) &&
+              (firstDepth == 8),
+          "the 8-bit row is first, so published answers are unchanged",
+          "profile " + U32(firstProfile) + " depth " + U32(firstDepth));
+
+    // The other two codecs are pinned by count as well, so a row that
+    // appears or vanishes fails here rather than silently changing what the
+    // library probes a driver for.
+    const uint32_t h264Rows = VkEncProbeSnapshotRowCount(
+        VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR);
+    const uint32_t h265Rows = VkEncProbeSnapshotRowCount(
+        VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR);
+    Check(h264Rows == 5, "H.264 has five rows", "got " + U32(h264Rows));
+    Check(h265Rows == 3, "H.265 still has three rows", "got " + U32(h265Rows));
+    // A codec with no rows answers zero rather than reading off the end.
+    const uint32_t noneRows =
+        VkEncProbeSnapshotRowCount(VK_VIDEO_CODEC_OPERATION_NONE_KHR);
+    Check(noneRows == 0, "an unprobed codec has no rows",
+          "got " + U32(noneRows));
+    Check(!VkEncProbeSnapshotRowAt(
+              VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR, av1Rows,
+              nullptr, nullptr),
+          "one past the last AV1 row is refused", "accepted");
 }
 
 //=============================================================================
@@ -1494,7 +3996,7 @@ void CaseUnspecifiedMatrixIsDerivedFromPrimaries()
     // piece of information the caller DID supply -- the primaries -- and it
     // did so on precisely the caller that has them and nothing else. The
     // BT.2020 sub-case below is the same configuration an HDR caller
-    // produces, and it used to emit BT.709 chroma under BT.2020 primaries.
+    // produces, and it must not emit BT.709 chroma under BT.2020 primaries.
     struct Row { uint8_t primaries; uint8_t expectMatrix; const char* why; };
     static const Row rows[] = {
         { kCpBt709,  kMcBt709,     "BT.709 primaries -> BT.709 matrix" },
@@ -2246,6 +4748,7 @@ int main(int argc, char** argv)
     if (WantsRegistrationGroup(argc, argv)) {
         return RunRegistrationGroup();
     }
+
     std::printf("Encoder-ext input-format taxonomy, preprocess decision,\n");
     std::printf("transfer-function declaration and colour description\n");
     std::printf("-------------------------------------------------------\n");
@@ -2262,12 +4765,22 @@ int main(int argc, char** argv)
     CaseAdvertisedListPassesWhatTheLibraryRoutes();
     CaseAdvertisedListReportsOneFormatOnce();
     CaseAdvertisedListStopsAtCapacity();
+    CaseAdvertisedListDropsAnUnreachableConversionTarget();
+    CaseOptimalityNamesTheEncodersOwnFormat();
+    CaseFourFourFourReachesTheListOnlyFromTheDevice();
+    CaseFilterlessBuildAdvertisesNoConvertedEntry();
+    CaseConversionTargetPreservesSubsamplingAndDepth();
+    CaseRoutableListAgreesWithTheClassifier();
+    CaseRoutableSetIsDerivedFromTheFormatTables();
+    CaseSinglePlaneInterleavedIsRefused();
+    CaseFourTwoZeroDeviceAdvertisesTheHistoricalSet();
     CaseYcbcrIsNeverClaimedAsRgba();
     CaseRgbaSessionSurvivesTheSinglePlaneGate();
 
     CaseContradictoryColorModelIsRefusedByTheBinder();
     CaseAgreeingColorModelStillBinds();
     CaseSemiPlanarBindsTwoPlanes();
+    CaseInputFormatSurvivesTheRoundTripThroughGeometry();
     CaseTenBitBindsBitDepthAndPlanes();
     CaseFourFourFourBindsItsOwnSubsampling();
     CaseFourTwoZeroStillBindsFourTwoZero();
@@ -2275,6 +4788,7 @@ int main(int argc, char** argv)
     CaseThreePlaneGetsAFilterWithoutAsking();
     CaseRgbaGetsAFilterWithoutAsking();
     CaseUnsupportedFormatStillRefused();
+    CasePackedYcbcrIsRoutedWhereItIsDeclared();
     CaseFilterArmReadsTheDeclaredColourModel();
 
     CaseUndeclaredInputOtfAssertsNothing();
@@ -2302,6 +4816,19 @@ int main(int argc, char** argv)
     CaseProfileDefaultIsDerivedPerCodec();
     CaseProfileNumbersAreReadAgainstTheCodec();
     CaseProfileMustAdmitTheInputDepth();
+    CaseProfileMustAdmitTheInputSubsampling();
+    CaseNamedProfileConstantsAreExactlyTheBoundSet();
+    CaseInputColourChainBindsEachAxis();
+    CaseAbsentInputColourChainChangesNothing();
+    CaseInputColourDisagreementIsRefused();
+    CaseDeclaredInputRangeDecidesTheStreamsRange();
+    CaseInputColourPrimariesDriveTheDerivedMatrix();
+    CaseAv1SubsamplingMatchesTheDerivedSeqProfile();
+    CaseH265CpbVclFactorFollowsTheChromaFormat();
+    CaseWidenedBindSetStillRunsTheLimitsGuard();
+    CaseProbeNamesAv1MainAtBothDepths();
+    CaseProbeRefusesDepthsItHasNoEvidenceFor();
+    CaseSnapshotCarriesBothAv1Depths();
 
     CaseFieldTableClassifiesEveryField();
 

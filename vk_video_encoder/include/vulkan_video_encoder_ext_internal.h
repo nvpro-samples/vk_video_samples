@@ -127,7 +127,12 @@ enum VkVideoEncoderConfigFieldDisposition {
     X(colourPrimaries,          BOUND,    "cfg->colour_primaries (VUI)")       \
     X(transferCharacteristics,  BOUND,    "cfg->transfer_characteristics")     \
     X(matrixCoefficients,       BOUND,    "cfg->matrix_coefficients")          \
-    X(videoFullRange,           BOUND,    "cfg->video_full_range_flag")        \
+    X(videoFullRange,           BOUND,    "cfg->video_full_range_flag; also "  \
+                                "VALIDATED against a chained "                 \
+                                "VkVideoEncoderInputColourInfo::inputRange -- " \
+                                "VK_TRUE over a LIMITED Y'CbCr input is a "     \
+                                "range conversion this library does not "       \
+                                "perform and is refused at init")               \
     X(inputTransferCharacteristics, VALIDATED,                                 \
                                 "checked against transferCharacteristics; a "  \
                                 "declared mismatch is refused at init. "       \
@@ -252,8 +257,8 @@ struct VkEncBoundConfigProbe {
     // this count. Left unwritten the count inherits EncoderConfig's default of
     // 3, which would describe every session's input as 3-plane I420.
     //
-    // THIS USED TO BE THE ONLY ROUTE TO "inputFormat WAS BOUND", and it is not
-    // any more -- inputVkFormat below projects the reconstruction itself. The
+    // THIS IS NOT THE ONLY ROUTE TO "inputFormat WAS BOUND": inputVkFormat below
+    // projects the reconstruction itself. The
     // count is still projected, and separately, because the two answer
     // different questions: this one is an INPUT to the reverse derivation and
     // that one is its OUTPUT, and a test that reads only the output cannot say
@@ -436,12 +441,15 @@ uint32_t VkEncBuildHdrMetadataPayload(const VkVideoEncoderHdrMetadataInfo* info,
 //   ENCODABLE_VIA_FILTER rung 2, and rung 2 ONLY -- a transfer copy is not a
 //                        substitute. The 3-plane family differs from the
 //                        semi-planar encode format by PLANE COUNT, and a copy
-//                        cannot drop or merge a plane; the 8-bit RGBA family
+//                        cannot drop or merge a plane; the packed 4:4:4
+//                        Y'CbCr layouts declared as such (AYUV, Y410) differ
+//                        by plane count the other way, one interleaved plane
+//                        against two; the 8-bit RGBA family
 //                        (R8G8B8A8_UNORM, B8G8R8A8_UNORM,
 //                        A8B8G8R8_UNORM_PACK32) differs by COLOUR MODEL, and
-//                        a copy cannot convert colour at all. RGBA is
-//                        single-plane, so plane count does not follow from
-//                        the class.
+//                        a copy cannot convert colour at all. Both the RGBA
+//                        family and the packed layouts are single-plane, so
+//                        plane count does not follow from the class.
 //   UNSUPPORTED          neither, in this build.
 //
 // THE DECLARATION, NOT THE FORMAT. A VkFormat names a component layout, and
@@ -486,24 +494,124 @@ VkBool32 VkEncSupportsInput(VkFormat inputFormat,
 // layouts are one plane whichever model is declared over them.
 uint32_t VkEncInputFormatPlaneCount(VkFormat inputFormat);
 
-// Reduce a device's VIDEO_ENCODE_SRC format list to the formats this library
-// will route, writing at most |outCapacity| entries and returning how many
-// were written.
+// Every input format this library routes, in a fixed order. The
+// advertisement walks this list; the classifier answers what each one is.
 //
-// Two reductions, and they are the whole function: a format the device would
-// take but the taxonomy does not classify is DROPPED, because advertising it
-// invites a caller to allocate a pool the registration gate then refuses; and
-// a format reported more than once -- the device may report one format at
-// more than one tiling -- is written ONCE, because tiling is a property of an
-// image and not of a format, and a repeated entry would spend a slot of a
-// fixed-capacity list saying nothing new.
+// DERIVED, NOT LISTED. The set is computed from the multi-planar Y'CbCr
+// format table and the packed 4:4:4 table -- the same two tables the compute
+// filter's shader generator reads -- so the list and the classifier cannot
+// disagree: both are the same predicate over the same rows. |outCount| is
+// therefore the derived count and is not a constant of this header;
+// VK_ENC_MAX_ROUTABLE_INPUT_FORMATS bounds it.
 //
-// Order is the device's own, so the entry a device lists first stays first.
-// A pure function of its arguments, so a test drives it with no device.
-uint32_t VkEncFilterAdvertisedInputFormats(const VkFormat* deviceFormats,
-                                           uint32_t deviceFormatCount,
-                                           VkFormat* outFormats,
-                                           uint32_t outCapacity);
+// Built once, on first call, and immutable afterwards.
+const VkFormat* VkEncRoutableInputFormats(uint32_t& outCount);
+
+// The encoder-input format |inputFormat| is converted INTO, given the
+// formats the device accepts for the profile in question.
+//
+// For a Y'CbCr input the answer preserves the input's own chroma subsampling
+// and bit depth and names the two-plane semi-planar form: the compute filter
+// converts plane layout and packing, and resamples neither chroma nor depth,
+// so a target that changed either would describe a conversion that does not
+// happen.
+//
+// For an RGB input the answer is the device's FIRST advertised
+// encode-source format, which is the same one the session takes: an RGB
+// session states no encode-source request, precisely so that a packed 4:4:4
+// alias cannot be matched by enum against a genuine RGBA input.
+//
+// VK_FORMAT_UNDEFINED for an input this library does not convert, and for an
+// empty device list.
+VkFormat VkEncConversionTargetFormat(VkFormat inputFormat,
+                                     const VkFormat* deviceFormats,
+                                     uint32_t deviceFormatCount);
+
+// Decides whether ONE candidate input format is advertisable and, if so, what
+// it is encoded as and by which route. Writes |outEntry| only when it returns
+// true; |outEntry->format| is pre-set to the candidate, so an admission that
+// only fills in encodeFormat and optimality is complete.
+//
+// THE PARAMETER IS THE WHOLE POINT. The production caller supplies the LIVE
+// per-candidate resolver -- the same one the point query answers from, so the
+// two surfaces cannot drift -- and the device-free tests supply a synthetic
+// one built from a static device list. What is being tested through the
+// synthetic one is everything BUT the admission rule: the ordering, the
+// de-duplication, the capacity stop, and the build gate.
+typedef bool (*VkEncInputFormatAdmitFn)(
+    void* userData, VkFormat candidate,
+    VkVideoEncoderInputFormatProperties* outEntry);
+
+// The advertised input-format list for one profile: every format this library
+// can route to an encoder input the device accepts, each naming what it is
+// encoded as. Writes at most |outCapacity| entries and returns how many were
+// written.
+//
+// EVERY CANDIDATE COMES FROM THE ROUTABLE LIST and is offered to |admit|
+// exactly once. The admission decides membership and optimality; this function
+// decides order, uniqueness and capacity.
+//
+// OPTIMAL entries come first, then SUBOPTIMAL ones, each group in the ROUTABLE
+// list's order. It is not the device's order any more, and it cannot be: each
+// candidate is now resolved at the profile its own binding derives, so there is
+// no single device list to order by. Each format is written once however many
+// tilings a device reports it at, because tiling is a property of an image and
+// not of a format.
+//
+// NOT ADVERTISED AT ALL WHEN THE FILTER IS NOT COMPILED IN: every SUBOPTIMAL
+// entry is ENCODABLE_VIA_FILTER and InitializeExt refuses exactly that class in
+// such a build, so advertising one would name a format the library then
+// refuses. The gate is the build's, not the admission's, and it is applied here
+// so that no admission can bypass it.
+//
+// |outCapacity| is the caller's array length; the advertised list can never
+// be longer than the routable list, so an array sized from that list holds
+// every answer this function can give.
+//
+// A pure function of |admit|, so a test drives it with no device.
+uint32_t VkEncAdvertiseInputFormats(
+    VkEncInputFormatAdmitFn admit, void* userData,
+    VkVideoEncoderInputFormatProperties* outEntries, uint32_t outCapacity);
+
+// The buffer the library hands the DRIVER when it asks for a profile's
+// VIDEO_ENCODE_SRC formats. A device list, not an advertised one.
+enum { VK_ENC_MAX_DEVICE_INPUT_FORMATS = 16 };
+
+// An upper bound on how many input formats this library can route, and so on
+// how long an advertised list can be: every advertised entry names a distinct
+// routable format.
+//
+// A BOUND, NOT A COUNT. The routable set is derived from the multi-planar
+// Y'CbCr format table plus the three RGB spellings, so its size is a property
+// of that table and moves when the table does. What this constant has to be
+// is large enough to hold the derivation's answer, which the .cpp
+// static_asserts against the table's own length rather than against a number
+// written twice.
+enum { VK_ENC_MAX_ROUTABLE_INPUT_FORMATS = 41 };
+
+// Everything one (codec, profile) probe answers about a physical device: the
+// scalar capabilities the public structure carries, and the std-syntax flag
+// list, which is answered through its own two-call entry point.
+//
+// The list is held beside the scalars rather than inside them because a list in
+// a public structure has to pick a capacity, and the capacity belongs to the
+// caller. Inside the library the capacity is a private constant, sized from
+// what the probe can actually produce.
+//
+// NO INPUT-FORMAT LIST. The probe issues one device format query per (codec,
+// profile) at a fixed 4:2:0 envelope, which is the right envelope for the
+// scalars and the wrong one for a format list -- a caller asking which formats
+// it may feed the encoder is asking about the profile its own input derives,
+// not about the one the probe happened to key on. The enumerator therefore
+// resolves each candidate live, through the same function the point query
+// answers from, and holds no list here to go stale against it.
+enum { VK_ENC_MAX_STD_FLAG_ENTRIES = 4 };
+
+struct VkEncProfileCapabilitySnapshot {
+    VkVideoEncoderCapabilities caps;
+    uint32_t                   stdFlagCount;
+    VkVideoEncoderStdFlags     stdFlags[VK_ENC_MAX_STD_FLAG_ENTRIES];
+};
 
 // The colour model these samples are ACTUALLY in: the caller's declaration
 // when one was made, and what the format says otherwise.
@@ -781,6 +889,30 @@ VkResult VkEncInjectImportContentMeasurement(VulkanVideoEncoderExt* encoder,
                                              uint32_t meanUQ8,
                                              uint32_t meanVQ8);
 
+// Which route a registered external image takes to the encoder.
+//
+//   DIRECT  the encoder reads the caller's image as it stands. The
+//           registration's format, colour model, tiling and usage together
+//           satisfy the direct predicate, and no copy and no conversion is
+//           built.
+//   STAGED  the image is copied into the library's own input pool. This is
+//           the route for a registration that is not directly encodable and
+//           needs no conversion either -- a pure tiling mismatch, say.
+//   FILTER  the frame goes through the preprocess compute filter. Chosen
+//           when the input classifies ENCODABLE_VIA_FILTER, this session
+//           built the filter for that input, and the views the filter reads
+//           were created on this image.
+//
+// An implementation choice and not a contract, which is why it is declared
+// here: a caller negotiates what it may hand in, and the library decides
+// what it does with what it is handed. Nothing on the public surface names
+// this type or its values.
+typedef enum VkVideoEncoderExternalInputPath {
+    VK_VIDEO_EXTERNAL_INPUT_PATH_DIRECT = 0,
+    VK_VIDEO_EXTERNAL_INPUT_PATH_STAGED = 1,
+    VK_VIDEO_EXTERNAL_INPUT_PATH_FILTER = 2,
+} VkVideoEncoderExternalInputPath;
+
 // The registration-slot facts the R-2 tests assert on. A dropped (or
 // stranded) in-flight reference is observable only here: the public surface
 // deliberately answers a stale id with RESOURCE_UNKNOWN whether the slot is
@@ -909,5 +1041,39 @@ struct VkEncSubmitSyncProbe {
 
 VkVideoEncoderStatusCode VkEncProbeLastSubmitSync(
     VulkanVideoEncoderExt* encoder, VkEncSubmitSyncProbe* outProbe);
+
+// ---------------------------------------------------------------------------
+// CAPABILITY-PROBE KEY OBSERVATION SEAM.
+//
+// The capability probe is keyed on (codec, profile, bit depth), because a
+// Vulkan capability query is per VkVideoProfileInfoKHR and the depth is part
+// of that structure. The public entry points name a profile by the codec
+// standard number ALONE, which is enough for H.264 and H.265 -- there the
+// number decides the depth -- and is NOT enough for AV1, whose seq_profile 0
+// (Main) carries 8 or 10 bits. These read the probe tables directly so that
+// the set of combinations the library can put to a driver is asserted on a
+// runner with no encode-capable device, where no capability entry point can
+// answer anything but "not present".
+//
+// They report what the library CAN ASK, never what a device answers. A device
+// answer is measured on hardware or not at all.
+
+// Is (codec, profile, bitDepth) a combination this library probes? bitDepth
+// is in bits (8 or 10); any other value is false for every codec.
+bool VkEncProbeNamesProfileBitDepth(VkVideoCodecOperationFlagBitsKHR codec,
+                                    uint32_t profile,
+                                    uint32_t bitDepth);
+
+// How many probe rows the context snapshot carries for |codec|. Rows are what
+// a context build issues one driver query each for; two rows may carry the
+// same profile number at different depths.
+uint32_t VkEncProbeSnapshotRowCount(VkVideoCodecOperationFlagBitsKHR codec);
+
+// The (profile, bit depth) of snapshot row |slot| for |codec|. False when the
+// codec has no such row. Either out pointer may be null.
+bool VkEncProbeSnapshotRowAt(VkVideoCodecOperationFlagBitsKHR codec,
+                             uint32_t slot,
+                             uint32_t* outProfile,
+                             uint32_t* outBitDepth);
 
 #endif  // VULKAN_VIDEO_ENCODER_EXT_INTERNAL_H_

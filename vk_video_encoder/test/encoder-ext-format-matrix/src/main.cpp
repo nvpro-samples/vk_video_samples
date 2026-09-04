@@ -17,15 +17,40 @@
 /*
  * INPUT-FORMAT MATRIX, on the LIBRARY-OWNED device.
  *
- * WHAT THIS ANSWERS. VkEncClassifyInput names eleven inputs: four
- * ENCODABLE_DIRECT (NV12, P010), four ENCODABLE_VIA_FILTER YCbCr (P012 and
- * I420 8/10/12-bit) and three ENCODABLE_VIA_FILTER RGBA (R8G8B8A8_UNORM,
- * B8G8R8A8_UNORM, A8B8G8R8_UNORM_PACK32). "Claims to support" is a statement
- * about that table. Whether a format REGISTERS, and onto WHICH INPUT PATH, is
- * a statement about a device, a session and a descriptor -- three things the
- * table does not see. This walks all nine against a real device and reports
- * both, with the denominator, so a format that does NOT encode is a recorded
- * result rather than a missing row.
+ * WHAT THIS ANSWERS. VkEncClassifyInput is keyed on a PAIR -- a format and a
+ * colour model -- and the set of accepted pairs is DERIVED from the
+ * multi-planar Y'CbCr format table rather than listed, so it is described here
+ * by its rule and not copied: semi-planar at 8 or 10 bits is
+ * ENCODABLE_DIRECT; 3-plane, and semi-planar at 12 bits, is
+ * ENCODABLE_VIA_FILTER wherever the table names a semi-planar sibling at the
+ * same depth and subsampling to convert into; the packed 4:4:4 layouts AYUV
+ * and Y410 are ENCODABLE_VIA_FILTER when declared
+ * VK_VIDEO_ENCODER_COLOR_MODEL_YCBCR; and three RGB spellings
+ * (R8G8B8A8_UNORM, B8G8R8A8_UNORM, A8B8G8R8_UNORM_PACK32) are
+ * ENCODABLE_VIA_FILTER. At the table this tree carries that is 23 pairs over
+ * 22 distinct enumerants -- a count stated as a measurement of today's table
+ * and not as a contract, since the derivation moves with the table. The pair
+ * count exceeds the enumerant count because R8G8B8A8_UNORM carries two
+ * accepted readings, AYUV and RGBA, and only the declared colour model
+ * separates them.
+ * "Claims to support" is a statement about that rule. Whether a format
+ * REGISTERS, and onto WHICH INPUT PATH, is a statement about a device, a
+ * session and a descriptor -- three things the rule does not see. NOTHING HERE
+ * WALKS A 4:2:2 OR A 3-PLANE 4:4:4 ROW: the derived set admits them and no row
+ * below encodes one, so this file is not evidence about them.
+ *
+ * This walks eleven rows against a real device and reports both, with the
+ * denominator, so a format that does NOT encode is a recorded result rather
+ * than a missing row: by default the nine 4:2:0-and-RGB rows plus the two
+ * controls, and under --444 the two 4:4:4 rows plus the same two controls.
+ * No ROW here carries a packed Y'CbCr reading: every row is a session input
+ * format, R8G8B8A8_UNORM appears once and under its RGB reading, and
+ * A2B10G10R10_UNORM_PACK32 is not a row at all. The file does vary the
+ * declared colour model -- at registration, and across Reconfigure, including
+ * the AYUV reading of R8G8B8A8_UNORM -- but it varies it to check what is
+ * REFUSED and how, not to encode from it. So no packed reading is exercised as
+ * an input format by this matrix, which is the narrower thing the rows above
+ * can be read for.
  *
  * WHAT IT CAN FAIL ON -- stated up front, because a suite whose assertions
  * cannot discriminate has shipped on this project before:
@@ -631,8 +656,9 @@ RowResult RunRow(const Row& row, bool verbose)
     }
 
     // Device format features, reported for BOTH tilings. This is the raw
-    // material filterCapable is derived from, printed beside it so a VK_FALSE
-    // can be attributed to the device rather than to the library.
+    // material the registration gate derives its single-plane arm from,
+    // printed beside the verdict so a refusal can be attributed to the device
+    // rather than to the library.
     VkFormatProperties fp{};
     fns.GetPhysicalDeviceFormatProperties(phys, row.format, &fp);
     res.filterCapableOptimal =

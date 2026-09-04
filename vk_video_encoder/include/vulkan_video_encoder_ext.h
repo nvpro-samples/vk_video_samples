@@ -68,7 +68,6 @@
 // runtime version query and no version negotiation.
 #define VK_VIDEO_ENCODER_EXT_API_VERSION 1
 
-// Fixed capacities for the inline arrays in VkVideoEncoderCapabilities.
 // Maximum planes in an imported image descriptor. Four covers every format
 // this encoder accepts and keeps the descriptor a fixed-size POD.
 // consecutiveBFrames: ask the driver for its preferred count instead of
@@ -79,8 +78,6 @@
 // this encoder accepts and keeps the descriptor a fixed-size POD.
 #define VK_VIDEO_ENCODER_MAX_PLANES 4
 
-#define VK_VIDEO_ENCODER_MAX_STD_FLAG_ENTRIES 4
-#define VK_VIDEO_ENCODER_MAX_INPUT_FORMATS    16
 
 typedef enum VkVideoEncoderStructureType {
     VK_VIDEO_ENCODER_STRUCTURE_TYPE_UNDEFINED     = 0,
@@ -97,8 +94,8 @@ typedef enum VkVideoEncoderStructureType {
     VK_VIDEO_ENCODER_STRUCTURE_TYPE_FRAME_PARAMS              = 0x56450008,
     VK_VIDEO_ENCODER_STRUCTURE_TYPE_IMAGE_SUPPORT             = 0x56450009,
     VK_VIDEO_ENCODER_STRUCTURE_TYPE_SEMAPHORE_DESCRIPTOR      = 0x5645000A,
-    // Chained onto VkVideoEncoderImageSupport::pNext: the filter
-    // predicate and the renegotiation modifier list (see the struct).
+    // Chained onto VkVideoEncoderImageSupport::pNext: the renegotiation
+    // modifier list (see the struct).
     VK_VIDEO_ENCODER_STRUCTURE_TYPE_IMAGE_SUPPORT_DETAILS     = 0x5645000B,
     // The registration status echo: part of the
     // registry surface, so it takes the first value of the reserved band.
@@ -468,37 +465,6 @@ enum VkVideoEncoderInputResidency {
 };
 
 //=============================================================================
-// Input routing of a registered external image (design section 6).
-//
-// DIRECT is the zero-copy path: the registration-time predicate found the
-// image directly encodable (encodable format, non-LINEAR tiling, encode
-// usage). STAGED is everything else: the library stages the input through
-// its internal pool.
-//
-// FILTER IS LIVE. This comment went on describing it as reserved
-// pre-wiring long after it stopped being so. RegisterImageResource assigns
-// FILTER when the image is not directly encodable, its format classifies
-// as ENCODABLE_VIA_FILTER, this session compiled in and was asked for the
-// preprocess compute filter, and the per-plane views that filter reads
-// were actually built on this image; SubmitRegisteredFrame reads that
-// stored decision back and routes the frame through the filter. Both
-// halves of the old sentence -- "no registration returns it" and "no
-// submit path consumes it" -- were false.
-//
-// What shipped is also not the shape this comment promised. The conversion
-// is 3-PLANE to SEMI-PLANAR: an I420-class input read through per-plane
-// STORAGE views and written as the session encode format. It is not
-// RGBA -> NV12 by way of a library-owned OPTIMAL scratch image. The
-// scratch-image fields on the registration slot do remain reserved and are
-// still never populated -- the filter arm that shipped does not use them.
-//=============================================================================
-typedef enum VkVideoEncoderExternalInputPath {
-    VK_VIDEO_EXTERNAL_INPUT_PATH_DIRECT = 0,
-    VK_VIDEO_EXTERNAL_INPUT_PATH_STAGED = 1,
-    VK_VIDEO_EXTERNAL_INPUT_PATH_FILTER = 2,  // reserved for A2 (section 6)
-} VkVideoEncoderExternalInputPath;
-
-//=============================================================================
 // Handle exchange (design section 2)
 //
 // The library imports external memory itself. A consumer describes what it
@@ -810,10 +776,8 @@ typedef struct VkVideoEncoderExternalImageDescriptor {
     // see below.
     //
     // WHEN THE LIBRARY STOPS ASKING. On the STAGED path it moved the image
-    // itself -- the staging acquire, the copy or filter, and the handback are
-    // all barriers it recorded -- so from the second frame on it KNOWS the
-    // layout and names its own record
-    // (VulkanVideoImagePoolNode::m_stagedInputResidualLayout) rather than this
+    // itself, so from the second frame on it KNOWS the layout and names its
+    // own record rather than this
     // field. There, a declaration that was true once does not have to be kept
     // true across frames the caller never touched the image on. That record is
     // not written on every path, and where it is absent this field is re-read
@@ -1295,9 +1259,23 @@ struct VkVideoEncoderStagedSubmitInfo {
 //
 // The constants below carry the same values as StdVideoH264ProfileIdc /
 // StdVideoH265ProfileIdc / StdVideoAV1Profile, spelled out so this header
-// puts no <vk_video/...> dependency onto a consumer. They are what this
-// library binds today, and the set grows by a library change rather than a
-// change to this header.
+// puts no <vk_video/...> dependency onto a consumer. THEY ENUMERATE EVERY
+// PROFILE THIS LIBRARY BINDS, and that is a checked property rather than a
+// promise: the taxonomy test sweeps the whole value space of each codec's
+// profile syntax element through the binder and fails when a number binds
+// that no constant here names, and when a constant here names a number the
+// binder refuses. A library change that widens the bind set therefore fails
+// until this block is widened with it.
+//
+// NAMING THEM IS WHAT KEEPS THE HEADER SELF-SUFFICIENT. Without a name a
+// caller that wants High 4:4:4 Predictive -- which is what the DEFAULT
+// derivation itself selects from 4:4:4 input -- must either write the bare
+// integer 244 or include <vk_video/vulkan_video_codec_h264std.h>, which is
+// exactly the dependency this block exists to spare it.
+//
+// THE VALUES ARE THE STANDARD'S, NOT A LIBRARY NUMBERING, so a profile added
+// to a standard is expressible here on the day it is assigned, and the only
+// thing a library change adds is the ability to BIND it.
 //
 // VK_VIDEO_ENCODER_PROFILE_DEFAULT (0) asks the library to derive the profile
 // from the input's bit depth and chroma subsampling. It is 0 so that a
@@ -1314,27 +1292,45 @@ struct VkVideoEncoderStagedSubmitInfo {
 // carries the overlap.
 #define VK_VIDEO_ENCODER_PROFILE_DEFAULT 0u
 
-// H.264 profile_idc. These admit 8-bit input only (H.264 A.2); a request
-// against deeper input is refused at InitializeExt rather than emitted
-// out-of-spec.
+// H.264 profile_idc. WHAT EACH ONE ADMITS IS THE STANDARD'S RULE, on both
+// axes, and a request against input the profile cannot carry is refused at
+// InitializeExt rather than emitted out-of-spec. Per ITU-T H.264 Annex A,
+// Table A-1: Baseline, Main and High are 8-bit 4:2:0; High 10 reaches ten
+// bits at 4:2:0; High 4:2:2 reaches ten bits and 4:2:2; High 4:4:4
+// Predictive reaches fourteen bits and 4:4:4.
 enum VkVideoEncoderProfileH264 {
-    VK_VIDEO_ENCODER_PROFILE_H264_BASELINE = 66,
-    VK_VIDEO_ENCODER_PROFILE_H264_MAIN     = 77,
-    VK_VIDEO_ENCODER_PROFILE_H264_HIGH     = 100,
+    VK_VIDEO_ENCODER_PROFILE_H264_BASELINE            = 66,
+    VK_VIDEO_ENCODER_PROFILE_H264_MAIN                = 77,
+    VK_VIDEO_ENCODER_PROFILE_H264_HIGH                = 100,
+    VK_VIDEO_ENCODER_PROFILE_H264_HIGH_10             = 110,
+    VK_VIDEO_ENCODER_PROFILE_H264_HIGH_422            = 122,
+    VK_VIDEO_ENCODER_PROFILE_H264_HIGH_444_PREDICTIVE = 244,
 };
 
-// H.265 general_profile_idc. Main is 8-bit 4:2:0 (H.265 A.3.2) and Main 10 is
-// 8/10-bit (A.3.3); deeper input is refused. DEFAULT derives a profile the
-// input depth admits.
+// H.265 general_profile_idc. Main is 8-bit 4:2:0 (H.265 A.3.2), Main Still
+// Picture is Main's single-picture form (A.3.4) and admits the same input,
+// Main 10 reaches ten bits at 4:2:0 (A.3.3), and Range Extensions and Screen
+// Content Coding Extensions reach 4:2:2, 4:4:4 and sixteen bits (A.3.5,
+// A.3.7). Input a named profile cannot carry is refused; DEFAULT derives a
+// profile that admits the input on both axes.
 enum VkVideoEncoderProfileH265 {
-    VK_VIDEO_ENCODER_PROFILE_H265_MAIN   = 1,
-    VK_VIDEO_ENCODER_PROFILE_H265_MAIN10 = 2,
+    VK_VIDEO_ENCODER_PROFILE_H265_MAIN                    = 1,
+    VK_VIDEO_ENCODER_PROFILE_H265_MAIN10                  = 2,
+    VK_VIDEO_ENCODER_PROFILE_H265_MAIN_STILL_PICTURE      = 3,
+    VK_VIDEO_ENCODER_PROFILE_H265_FORMAT_RANGE_EXTENSIONS = 4,
+    VK_VIDEO_ENCODER_PROFILE_H265_SCC_EXTENSIONS          = 9,
 };
 
-// AV1 seq_profile. Main is 8/10-bit 4:2:0 (AV1 A.2). Note the overlap above:
-// this value is also VK_VIDEO_ENCODER_PROFILE_DEFAULT.
+// AV1 seq_profile. Main is 8/10-bit 4:2:0, High is 8/10-bit 4:4:4, and
+// Professional is the one that reaches 4:2:2 and twelve bits (AV1 6.4.1,
+// A.2). Note the overlap above: Main's value is also
+// VK_VIDEO_ENCODER_PROFILE_DEFAULT, so it is the one profile a caller cannot
+// name distinctly from the derivation -- which costs nothing, because on
+// 4:2:0 input at 8 or 10 bits the derivation selects it.
 enum VkVideoEncoderProfileAV1 {
-    VK_VIDEO_ENCODER_PROFILE_AV1_MAIN = 0,
+    VK_VIDEO_ENCODER_PROFILE_AV1_MAIN         = 0,
+    VK_VIDEO_ENCODER_PROFILE_AV1_HIGH         = 1,
+    VK_VIDEO_ENCODER_PROFILE_AV1_PROFESSIONAL = 2,
 };
 
 // The capability enumeration answers per (codec, profile) pair, so a profile
@@ -1353,8 +1349,9 @@ struct VkVideoEncoderConfig {
     VkVideoCodecOperationFlagBitsKHR codec;
 
     // Encode profile within the selected codec: the codec standard's own
-    // profile number, read against |codec| above. See the profile constants
-    // for the numbering and for what this library binds.
+    // profile number, read against |codec| above. The profile constants above
+    // name every number this library binds -- checked, not asserted -- and
+    // state what input each one admits.
     // VK_VIDEO_ENCODER_PROFILE_DEFAULT (0) derives the profile from the input.
     uint32_t profile = VK_VIDEO_ENCODER_PROFILE_DEFAULT;
 
@@ -1367,25 +1364,63 @@ struct VkVideoEncoderConfig {
     // about the preprocess conversion is made from.
     //
     // THE LIBRARY DECIDES WHETHER A CONVERSION RUNS. The caller does not ask
-    // for one, and there is no flag to set. Three classes of input, and the
-    // class is a property of the format and the declared colour model:
+    // for one, and there is no flag to set.
     //
-    //   * directly encodable -- 8- and 10-bit semi-planar Y'CbCr, at 4:2:0
-    //     (NV12, P010) and at 4:4:4 (NV24, S410). No conversion runs and
-    //     none is built. The chroma subsampling of the input is also what
-    //     the encode profile is derived from, so a 4:4:4 input encodes as
-    //     4:4:4 without anything further being asked for.
-    //   * encodable only after a conversion -- 12-bit semi-planar 4:2:0,
-    //     3-plane 4:2:0, and the 8-bit UNORM RGBA family. The library builds
-    //     its preprocess compute filter for this session and routes the
-    //     frames through it.
-    //   * not encodable at all -- refused at InitializeExt with the reason.
+    // WHETHER A FORMAT IS ACCEPTED is decided by the declared pair -- this
+    // field and |inputColorModel| -- TOGETHER WITH the codec, the profile and
+    // the device, and InitializeExt settles both halves before it creates a
+    // session.
+    //
+    //   * The LIBRARY half is settled with no device involved: a pair this
+    //     library does not route, or one the named profile cannot carry, is
+    //     refused with the reason and is not renegotiable by trying another
+    //     GPU.
+    //   * The DEVICE half is settled against the profile the configuration
+    //     derives: a pair this device will not encode is refused NAMING the
+    //     format, its chroma subsampling and its bit depth, rather than
+    //     surviving to the driver's own refusal at video-session creation --
+    //     which arrives later and names neither.
+    //
+    // VkEncEnumerateInputFormats IS THAT ANSWER, ASKED BEFORE THE CALL. It
+    // lists the formats this library can route to an encoder input that a
+    // given device accepts for a given (codec, profile), each flagged OPTIMAL
+    // or SUBOPTIMAL -- and it is computed by the same function InitializeExt
+    // gates on. So for a (codec, profile) the advertised set IS the accepted
+    // set: a format on the list initialises, and a format the list omits is
+    // refused. There is one surface to consult, not two.
+    //
+    // THE ONE AXIS THE LIST CANNOT CARRY IS THE COLOUR MODEL, and it is why
+    // VkEncQueryInputFormatSupport takes one and the list does not. The packed
+    // 4:4:4 Y'CbCr layouts AYUV and Y410 have no Vulkan enumerant of their own
+    // and ride the RGBA ones, so they are accepted only where
+    // |inputColorModel| declares them; undeclared, the same enumerant is an
+    // ordinary RGBA image. A list keyed on formats alone can show neither of
+    // them as itself -- AYUV's enumerant appears there under its RGB reading,
+    // and Y410's enumerant does not appear at all -- so on THAT axis, and only
+    // that one, absence from the list is not a refusal. The point query is
+    // where a caller holding AYUV or Y410 frames gets the answer, and it gives
+    // the same verdict this call will.
+    //
+    // TWO CONSEQUENCES OF THE SAME RULE, spelled out because they decide what
+    // a caller allocates:
+    //
+    //   * Y416 (VK_FORMAT_R16G16B16A16_UNORM) is not accepted under any
+    //     declaration: 16 bits per component is not an encode component bit
+    //     depth. It is on no list and is refused under every colour model,
+    //     so the two agree about it as they do about every other format.
+    //   * On a Y'CbCr input the chroma subsampling OF THE FORMAT is what the
+    //     encode profile is derived from, so a 4:4:4 Y'CbCr input encodes as
+    //     4:4:4 without anything further being asked for. An RGBA input
+    //     carries no subsampling to read and selects no profile this way:
+    //     what its bitstream is coded at is the encodeFormat of its
+    //     advertised entry, per VkVideoEncoderInputFormatProperties.
+    //
+    // A format this library does not accept -- under either reading, where
+    // the enumerant carries two -- is refused at InitializeExt with the
+    // reason.
     //
     // A conversion this build or this device cannot perform is an init
-    // failure with a reason, never a quiet acceptance: with no filter the
-    // frames that needed converting would fall to the staging copy, and for a
-    // plane-count or colour-model mismatch that copy does not encode slowly,
-    // it encodes wrongly -- from a three-plane source it hangs the GPU. The
+    // failure with a reason, never a quiet acceptance. The
     // two ways the conversion can be unavailable are the filter not being
     // compiled into the build (CMake BUILD_ENCODER_COMPUTE_FILTER) and the
     // session's device exposing no compute queue family to run it on.
@@ -1524,8 +1559,8 @@ struct VkVideoEncoderConfig {
     // description at all, which a decoder reads as Unspecified -- not as a
     // declaration of BT.709, and not as RGB.
     //
-    // MATRIX AND THE PREPROCESS FILTER: when the library converts RGBA
-    // input, matrixCoefficients selects the matrix that is APPLIED, so the
+    // MATRIX, AND WHAT IT SELECTS: on an RGBA input,
+    // matrixCoefficients selects the matrix that is APPLIED, so the
     // label the bitstream carries describes the pixels it carries. 1, 5, 6
     // and 9 are taken as named. 2 (Unspecified) is accepted and the matrix
     // is DERIVED FROM colourPrimaries -- 9 from primaries 9, 6 from
@@ -1818,9 +1853,8 @@ struct VkVideoEncodeInputFrame {
     // The encoder will wait on these before accessing the image.
     // Typically this is the producer's graph timeline semaphore.
     //
-    // BOUNDED on the DIRECT (zero-copy) submit path, which assembles its
-    // waits into a fixed eight-entry array; the STAGED path assembles into a
-    // growable vector and carries no such bound.
+    // BOUNDED at eight on the zero-copy submit path. The other path carries
+    // no such bound.
     //
     // A frame this entry point routes DIRECT whose wait list exceeds eight
     // entries is REFUSED with VK_ERROR_TOO_MANY_OBJECTS, returned by the call
@@ -2050,8 +2084,8 @@ typedef struct VkVideoEncoderFrameFenceDescriptor {
     // checked, so it is counted. Above eight, SubmitRegisteredFrame REFUSES
     // the frame with VK_VIDEO_ENCODER_STATUS_ERROR_RESOURCE_LIMIT instead
     // of dropping the surplus. Seven caller waits plus this fence is eight
-    // and fits. A STAGED registration assembles into a growable vector and
-    // carries no such bound, so this is a property of the direct arm alone.
+    // and fits. A registration that is not zero-copy carries no such bound,
+    // so this is a property of the direct arm alone.
     //
     // The refusal does NOT hand this fd back: it is imported before the
     // count is checked, so it is consumed on that exit exactly as on every
@@ -2060,8 +2094,7 @@ typedef struct VkVideoEncoderFrameFenceDescriptor {
 
     // [out, optional] A binary SYNC_FD fence signalled when the encoder has
     // finished READING the input image. That is the submission which CONSUMES
-    // the input -- the staging copy on Paths B/C, vkCmdEncodeVideoKHR on Path
-    // A -- and NOT the encode's completion: the bitstream becoming
+    // the input, and NOT the encode's completion: the bitstream becoming
     // retrievable is a different event on a different resource, and the two
     // must not be conflated.
     //
@@ -2097,8 +2130,8 @@ typedef struct VkVideoEncoderFrameFenceDescriptor {
 
 //=============================================================================
 // Answer to QueryImageSupport. Chain a VkVideoEncoderImageSupportDetails
-// (below) onto pNext for the filter predicate and the renegotiation
-// modifiers; unknown chained sTypes are rejected.
+// (below) onto pNext for the renegotiation modifiers; unknown chained sTypes
+// are rejected.
 //=============================================================================
 typedef struct VkVideoEncoderImageSupport {
     VkVideoEncoderStructureType sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_IMAGE_SUPPORT;
@@ -2121,52 +2154,6 @@ typedef struct VkVideoEncoderImageSupport {
 // Optional extension of VkVideoEncoderImageSupport: chain onto its pNext to
 // receive, alongside the verdict:
 //
-//   * filterCapable -- describes the SINGLE-PLANE arm of the preprocess
-//     filter, which is the arm an RGBA input takes.
-//
-//     IT IS NOT A SUFFICIENT CONDITION, AND WHICH HALF IS MISSING DEPENDS ON
-//     THE FORMAT. filterCapable reads only the DEVICE's format features; it
-//     reads nothing of the descriptor's create flags or usage. The
-//     registration gate is NOT keyed on a plane count: it asks whether the
-//     format is one of the RGBA-family inputs, and everything else takes the
-//     per-plane arm.
-//
-//       - RGBA (one combined view, storage read): registration additionally
-//         requires VK_IMAGE_USAGE_STORAGE_BIT in |imageUsage|, because the
-//         filter binds one combined view as a VK_DESCRIPTOR_TYPE_STORAGE_-
-//         IMAGE and a descriptor may not name a view whose image lacks that
-//         usage. No CREATE FLAGS are required on this arm.
-//       - any other YCbCr format the multi-planar format tables describe
-//         (per-plane STORAGE views): filterCapable is not consulted at all.
-//         That arm needs VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT and
-//         VK_IMAGE_CREATE_EXTENDED_USAGE_BIT declared plus
-//         VK_IMAGE_USAGE_STORAGE_BIT granted, and two descriptors identical
-//         but for those fields get the SAME filterCapable and OPPOSITE
-//         registration verdicts. The create flags are what per-plane views
-//         cost; the plane count is a property of the format and is not
-//         fixed at three.
-//
-//     Which formats the library ACCEPTS is the narrower question, and
-//     SupportsFormat answers it: semi-planar 4:2:0 directly, 3-plane 4:2:0
-//     and 8-bit RGBA UNORM through the filter. Anything else -- including a
-//     single-plane packed YCbCr -- is refused before it reaches this gate.
-//
-//     So the signal a producer should allocate against remains
-//     QueryImageSupport's |status|: CONVERSION_REQUIRED names exactly what
-//     THIS descriptor is missing, in the error log, BEFORE the pool is
-//     allocated -- and VK_FALSE from SupportsFormat() for the format itself.
-//     Do not read filterCapable alone as "the library can convert this".
-//
-//     VK_TRUE when a filter could STORAGE-READ an
-//     image with this descriptor's format and tiling on this device. For
-//     DRM-modifier tiling it derives from that SPECIFIC modifier's
-//     drmFormatModifierTilingFeatures -- never from optimalTilingFeatures,
-//     which is simply wrong for DRM-tiled images. Filled even when
-//     |supported| is VK_FALSE (an RGBA descriptor answers
-//     CONVERSION_REQUIRED *and* whether the conversion path could read it),
-//     and VK_FALSE whenever the session is not initialized or the answer is
-//     unknowable (e.g. DRM tiling with no modifier supplied).
-//
 //   * directModifiers -- when the descriptor names an OS-handle import, the
 //     DRM format modifiers with which this exact descriptor (same format,
 //     usage, flags, extent; modifier swapped) WOULD register. This is the
@@ -2183,7 +2170,6 @@ typedef struct VkVideoEncoderImageSupportDetails {
         VK_VIDEO_ENCODER_STRUCTURE_TYPE_IMAGE_SUPPORT_DETAILS;
     const void*                 pNext = nullptr;  // MUST be NULL
 
-    VkBool32 filterCapable = VK_FALSE;                                    // OUT
     uint32_t directModifierCount = 0;                                     // OUT
     uint64_t directModifiers[VK_VIDEO_ENCODER_MAX_DIRECT_MODIFIERS] = {}; // OUT
 } VkVideoEncoderImageSupportDetails;
@@ -2485,8 +2471,10 @@ public:
     // WHEN THE FRAME'S SEMAPHORES FIRE. The encoder waits on the frame's
     // wait semaphores before it reads the input image, and signals the
     // frame's signal semaphores once it has FINISHED READING that image.
-    // That is the RELEASE POINT, and it is not when the bitstream is ready:
-    // that is a separate event on a separate resource, retrieved separately.
+    // That is the RELEASE POINT. It is not the same event as the bitstream
+    // becoming retrievable, which is collected separately; on the DIRECT
+    // path below both are produced by the one encode submission, so a
+    // release carries no implication that the bitstream is not yet ready.
     //
     // Two input paths, chosen by the library from the frame's format and
     // tiling and not something the caller asks for. They differ in one thing
@@ -2851,15 +2839,18 @@ public:
     // not say this device has an encode profile at that subsampling; the
     // session refuses with the driver's reason when it does not. The rest of
     // the accepted set -- 12-bit
-    // semi-planar 4:2:0, the 3-plane 4:2:0 set, and the 8-bit UNORM RGBA
-    // family -- is encodable only after the preprocess compute filter
+    // semi-planar 4:2:0, the 3-plane 4:2:0 set, the 8-bit UNORM RGBA
+    // family, and the packed 4:4:4 layouts AYUV and Y410 under a Y'CbCr
+    // declaration -- is encodable only after the preprocess compute filter
     // converts it, so those answer VK_TRUE only when THIS SESSION was
-    // configured with that exact inputFormat -- i.e. VK_FALSE before
+    // configured with that exact input PAIR -- i.e. VK_FALSE before
     // InitializeExt(), and VK_FALSE on a session declared in some other
-    // format. That is deliberate rather than conservative: a VK_TRUE the
-    // session could not honour would route the frame to the staging copy,
-    // and that copy cannot stand in for a conversion -- from a three-plane
-    // source its two-region copy is a GPU hang, not a slower path.
+    // format, or in the same format under the other colour model. That
+    // last case is not a corner: AYUV and an ordinary R'G'B' image share
+    // R8G8B8A8_UNORM, and a filter built for one converts nothing for the
+    // other. That is deliberate rather than conservative: a VK_TRUE this
+    // session could not honour would cost the producer the frame pool it
+    // allocated on the strength of it.
     //
     // Consequence for callers: the ANSWER FOR A 3-PLANE FORMAT CHANGES ACROSS
     // InitializeExt(). Query it after initializing the session you intend to
@@ -3076,8 +3067,8 @@ public:
     // returns VK_VIDEO_ENCODER_STATUS_ERROR_RESOURCE_LIMIT and encodes
     // nothing, rather than discarding the surplus waits.
     // Retrying unchanged cannot succeed: present fewer waits, or use a
-    // registration that routes STAGED, whose wait list is a growable vector
-    // and is not bounded here. The refusal consumes an acquireFenceFd like
+    // registration that is not zero-copy, whose wait list is not bounded
+    // here. The refusal consumes an acquireFenceFd like
     // every other exit.
     //
     // ON REACHABILITY. An embedder whose direct-path wait list is the
@@ -3101,16 +3092,80 @@ VkResult CreateVulkanVideoEncoderExt(
 // startup -- before any encoder session exists -- so that it can advertise
 // them to a capability query or a codec negotiation. There is no
 // VulkanVideoEncoderExt instance at that point, so this capability query
-// must be a free function that does NOT create a full encode session. It
-// queries the driver via vkGetPhysicalDeviceVideoCapabilitiesKHR /
-// vkGetPhysicalDeviceVideoFormatPropertiesKHR only.
+// must be a free function that does NOT create a VkDevice or an encode
+// session. The capability answer itself comes from
+// vkGetPhysicalDeviceVideoCapabilitiesKHR and
+// vkGetPhysicalDeviceVideoFormatPropertiesKHR; physical-device properties,
+// device extensions and queue-family video properties are read alongside
+// them, because which probes are issued at all depends on those.
 //
-// The media/gpu/vulkan enumerator
-// (vulkan_video_encode_capability_enumerator.cc) is intended to become a thin
+// A media/gpu/vulkan capability enumerator is intended to become a thin
 // wrapper over these functions: it probes a fixed candidate set of codecs and
-// reads back min/max coded extent, supported input formats, and rate-control
-// modes -- all of which are surfaced in VkVideoEncoderCapabilities below.
+// reads back min/max coded extent and rate-control modes, which are the
+// scalars VkVideoEncoderCapabilities below carries. The accepted input
+// formats are a LIST and are read from VkEncEnumerateInputFormats on a
+// context, so that the capacity is the caller's rather than a constant this
+// header has to pick. A caller holding no Vulkan handles builds an OWN-mode
+// context with a zero gpuUUID, which is the same bring-up the ephemeral entry
+// point performs for itself.
 //=============================================================================
+// Whether an advertised input format is the one the encoder wants.
+//
+// STATED, and not derivable from the entry's two formats: a format the
+// encoder does not read can still name ITSELF as its encode format, so
+// format == encodeFormat holds for some SUBOPTIMAL entries exactly as it does
+// for every OPTIMAL one.
+//
+// A property of the FORMAT, under this codec, profile and device. Whether one
+// particular IMAGE is taken as it lies is a property of that allocation --
+// its tiling and its modifier -- and QueryImageSupport is what answers it,
+// per allocation.
+typedef enum VkVideoEncoderInputFormatOptimality {
+    // The encoder's own input format here: a frame supplied in it is what the
+    // encoder reads.
+    VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL    = 0,
+    // Not the format the encoder reads. Accepted, and coded correctly,
+    // because the library converts it into encodeFormat first. That
+    // conversion is what the entry costs over an OPTIMAL one, so prefer an
+    // OPTIMAL entry wherever the producer can supply one.
+    //
+    // There is no knob here: which formats can be converted is what this list
+    // reports. A build that can perform no conversion advertises no
+    // SUBOPTIMAL entry at all, rather than advertising one and refusing the
+    // session that declares it; its OPTIMAL entries are unaffected.
+    VK_VIDEO_ENCODER_INPUT_FORMAT_SUBOPTIMAL = 1,
+} VkVideoEncoderInputFormatOptimality;
+
+// One input format this encoder accepts: the format itself, the format the
+// bitstream is coded from, and whether the encoder wants it.
+//
+// encodeFormat is what the encoder is given, so encodeFormat -- not format --
+// is what decides the chroma subsampling and bit depth of the bitstream. A
+// caller that hands over an RGBA frame reads from encodeFormat that the
+// bitstream is coded from a Y'CbCr one.
+//
+// Read optimality for which entry to prefer and encodeFormat for what the
+// bitstream carries; neither answers the other's question.
+//
+// Deliberately without sType/pNext. This is an array element the library
+// WRITES, not a parameter structure a caller fills, and a pointer inside an
+// array element is what stops that array being marshalled as one block.
+struct VkVideoEncoderInputFormatProperties {
+    VkFormat                            format;
+    VkFormat                            encodeFormat;
+    VkVideoEncoderInputFormatOptimality optimality;
+};
+
+// A Std syntax-flag bitmask, as reported by the driver for one
+// (codec, profile) pair.
+//
+// Interpret an entry against the codec the query named:
+// VkVideoEncodeH264StdFlagsKHR, VkVideoEncodeH265StdFlagsKHR or
+// VkVideoEncodeAV1StdFlagsKHR. All three are VkFlags and a query names
+// exactly one codec, so one list carries whichever applies rather than three
+// lists of which two are always empty.
+typedef VkFlags VkVideoEncoderStdFlags;
+
 struct VkVideoEncoderCapabilities {
     VkVideoEncoderStructureType sType =
         VK_VIDEO_ENCODER_STRUCTURE_TYPE_CAPABILITIES;
@@ -3118,9 +3173,10 @@ struct VkVideoEncoderCapabilities {
 
     VkVideoCodecOperationFlagBitsKHR codec;
 
-    // Level range. maxLevelIdc is the codec-specific StdVideo*LevelIdc reported
-    // by the driver (numeric value); minLevelIdc is 0 when the driver does not
-    // expose a floor (Vulkan has no min-level cap today).
+    // Level range. maxLevelIdc is the numeric value of the codec-specific
+    // Std level the driver reports -- StdVideoH264LevelIdc,
+    // StdVideoH265LevelIdc or StdVideoAV1Level; minLevelIdc is 0 when the
+    // driver does not expose a floor (Vulkan has no min-level cap today).
     uint32_t  minLevelIdc;
     uint32_t  maxLevelIdc;
 
@@ -3143,94 +3199,56 @@ struct VkVideoEncoderCapabilities {
     VkExtent2D minCodedExtent;
     VkExtent2D maxCodedExtent;
 
-    // Per-codec Std syntax-flag bitmask reported by the driver. Only the
-    // array matching `codec` is populated (a single entry today: the
-    // driver's stdSyntaxFlags for the probed profile); the other two stay
-    // at count 0. Fixed-capacity inline arrays keep this struct trivially
-    // copyable (IPC/ABI-safe); counts never exceed the capacity constants.
-    uint32_t h264StdFlagsCount;
-    uint32_t h265StdFlagsCount;
-    uint32_t av1StdFlagsCount;
-    VkVideoEncodeH264StdFlagsKHR h264StdFlags[VK_VIDEO_ENCODER_MAX_STD_FLAG_ENTRIES];
-    VkVideoEncodeH265StdFlagsKHR h265StdFlags[VK_VIDEO_ENCODER_MAX_STD_FLAG_ENTRIES];
-    VkVideoEncodeAV1StdFlagsKHR  av1StdFlags[VK_VIDEO_ENCODER_MAX_STD_FLAG_ENTRIES];
+    // The driver's Std syntax flags and the input formats this encoder
+    // accepts are NOT here. Each is a LIST, and a list is answered by its own
+    // two-call entry point -- VkEncEnumerateStdFlags and
+    // VkEncEnumerateInputFormats -- so that the capacity is the caller's
+    // rather than a constant this header has to pick, and the membership
+    // rules are stated where the answer is given. What is left in this
+    // structure is scalars only, which is what keeps it pointer-free,
+    // trivially copyable and 1:1 IPC-shaped.
 
-    // The input formats this encoder accepts for this codec and profile:
-    // the device's VIDEO_ENCODE_SRC list, reduced to the formats the library
-    // will route, in the device's own order and with each format appearing
-    // once.
-    //
-    // REDUCED, because a format the device would take but the library will
-    // not route is refused at registration, and a producer that sized a pool
-    // from this list has already paid by then. DE-DUPLICATED, because a
-    // device may report one format more than once, at more than one tiling;
-    // tiling is a property of an image rather than of a format, and
-    // QueryImageSupport is what answers it for a specific allocation.
-    uint32_t supportedInputFormatCount;
-    VkFormat supportedInputFormats[VK_VIDEO_ENCODER_MAX_INPUT_FORMATS];
-
-    // Optional-feature availability (device-extension presence + feature bits).
+    // Optional-feature availability. supportsMaintenance1 and
+    // supportsQuantizationMap are device-extension presence;
+    // supportsIntraRefresh additionally requires the device to report at
+    // least one intra-refresh mode. supportsResizeWithoutIdr is false: no
+    // Vulkan capability expresses it, so a resize forces an IDR.
     bool  supportsQuantizationMap;
     bool  supportsIntraRefresh;
     bool  supportsMaintenance1;
     bool  supportsResizeWithoutIdr;   // for caller-choice IDR-on-resize
 };
 
-// PRIMARY: the caller supplies the Vulkan handles. Use
-// when the caller has already initialized its VkInstance / VkPhysicalDevice
-// (e.g. Chromium's gpu::VulkanImplementation). The library wraps the supplied
-// handles in an internal device context, enumerates the codec's capabilities
-// WITHOUT creating a VkDevice or an encode session, and does NOT destroy the
-// caller's handles.
-//
-// Returns VK_SUCCESS and fills *outCaps on success;
-// VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR for an unsupported codec op;
-// the driver's VkResult (e.g. VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR)
-// when the physical device does not support encode for `codec` -- callers map
-// that to "no profiles", not a hard error.
-extern "C" VK_VIDEO_ENCODER_EXPORT
-VkResult EnumerateVulkanVideoEncoderCapabilities(
-    VkInstance                       instance,        // caller-supplied
-    VkPhysicalDevice                 physicalDevice,  // caller-supplied
-    VkVideoCodecOperationFlagBitsKHR codec,
-    VkVideoEncoderCapabilities*      outCaps);
-
-// FALLBACK: no caller-supplied handles. Use for callers that have not
-// initialized Vulkan yet (e.g. very early GPU-process startup, before
-// gpu::VulkanImplementation is built). Same output struct.
-//
-// "Ephemeral" names the API contract -- the caller supplies no handles and
-// gets none back -- and no longer the implementation. Under the hood this
-// builds an OWN-mode VulkanVideoEncoderContext, which is created once and
-// then floor-referenced for the process lifetime, so the Nth call costs a
-// table read rather than an Nth loader load and vkCreateInstance. That
-// amortisation is the point of the context; the instance is deliberately NOT
-// torn down, because re-creating one after a sandbox has locked down is a
-// device loss (see the context's lifetime rules).
-//
-// deviceId: -1 selects the library's default (first capable) device.
-extern "C" VK_VIDEO_ENCODER_EXPORT
-VkResult EnumerateVulkanVideoEncoderCapabilitiesEphemeral(
-    int32_t                          deviceId,        // -1 = first capable
-    VkVideoCodecOperationFlagBitsKHR codec,
-    VkVideoEncoderCapabilities*      outCaps);
-
 //=============================================================================
-// Per-profile capability probing.
+// Capability probing, per codec AND profile.
 //
-// The two functions above probe ONE fixed representative profile per codec
-// (H.264 High, HEVC Main, AV1 Main -- all 8-bit).
-// vkGetPhysicalDeviceVideoCapabilitiesKHR is per-VkVideoProfileInfoKHR, so a
-// caller that wants to ADVERTISE H.264 Baseline/Main or HEVC Main-10 must
-// probe those exact (profile-idc, bit-depth) combinations rather than copy a
-// sibling profile's result. These variants take the target profile
-// explicitly; VK_VIDEO_ENCODER_PROFILE_DEFAULT reproduces the representative
-// probe (the two legacy functions now delegate here with DEFAULT).
+// vkGetPhysicalDeviceVideoCapabilitiesKHR answers per VkVideoProfileInfoKHR,
+// so a caller advertising H.264 Baseline/Main or H.265 Main-10 must probe
+// those exact (profile, bit-depth) combinations rather than copy a sibling
+// profile's result. VK_VIDEO_ENCODER_PROFILE_DEFAULT probes the codec's
+// representative profile -- H.264 High, H.265 Main, AV1 Main, all 8-bit --
+// which is the whole of what a caller with no particular profile in mind
+// needs to ask.
 //
-// Returns, in addition to the legacy functions' results,
-// VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR when `profile` does not
-// belong to `codec` (e.g. H264_BASELINE with the H.265 codec op) -- callers
-// treat any non-VK_SUCCESS as "do not advertise this profile".
+// Both return VK_SUCCESS and fill *outCaps on success, and
+// VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR when `profile` is not
+// one this library probes for `codec` -- including a profile number that
+// belongs to a different codec. They differ in how they say "not this
+// device". The caller-handles variant is GIVEN the device, so a codec op it
+// does not probe is VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR and a
+// device that does not support encode for `codec` is
+// VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR. The ephemeral variant
+// SELECTS the device first, so everything that leaves it with no candidate
+// -- an unmatched deviceId, a device lacking the video extensions, or no
+// device offering encode for `codec` -- is VK_ERROR_FEATURE_NOT_PRESENT.
+// A caller treats any non-VK_SUCCESS as "do not advertise
+// this profile" rather than as a hard error.
+//=============================================================================
+
+// The caller supplies the Vulkan handles. Use this when the caller has
+// already initialized its VkInstance and VkPhysicalDevice. The library wraps
+// them in an internal device context, probes WITHOUT creating a VkDevice or
+// an encode session, and does not destroy the caller's handles.
 extern "C" VK_VIDEO_ENCODER_EXPORT
 VkResult EnumerateVulkanVideoEncoderProfileCapabilities(
     VkInstance                       instance,        // caller-supplied
@@ -3239,6 +3257,14 @@ VkResult EnumerateVulkanVideoEncoderProfileCapabilities(
     uint32_t                         profile,
     VkVideoEncoderCapabilities*      outCaps);
 
+// No caller-supplied handles. Use this from a caller that has not
+// initialized Vulkan yet, and pass -1 for the library's default (first
+// capable) device.
+//
+// "Ephemeral" names the API contract -- the caller supplies no handles and
+// gets none back. It does NOT mean Vulkan is torn down between calls: an
+// instance created here is held for the process lifetime, because re-creating
+// one after a sandbox has locked down is a device loss.
 extern "C" VK_VIDEO_ENCODER_EXPORT
 VkResult EnumerateVulkanVideoEncoderProfileCapabilitiesEphemeral(
     int32_t                          deviceId,        // -1 = first capable
@@ -3252,35 +3278,42 @@ VkResult EnumerateVulkanVideoEncoderProfileCapabilitiesEphemeral(
 // A refcounted object holding a live VkInstance and the enumerated physical
 // devices, so capabilities -- codecs, profiles, input formats, DRM modifiers,
 // rate-control modes -- can be answered WITHOUT creating and destroying a
-// loader, an instance or a device per query. It is phases 1+2 of the
-// library's Vulkan bring-up (dlopen + vkCreateInstance, then physical-device
-// enumeration and per-device extension population); an encode session is
-// phases 3+4 (VkDevice + queues).
+// loader, an instance or a device per query. A context creates no VkDevice;
+// a session created on one creates its own.
 //
-// IMMUTABLE AFTER CONSTRUCTION. Every capability the accessors below return
-// is snapshotted inside the constructor, under the construction lock, and is
-// read-only afterwards. That -- not refcounting -- is what lets unrelated
-// sequences share one context with no synchronisation of their own, and it is
-// why there is no refresh entry point: a new generation of capability truth
-// is a new context.
+// IMMUTABLE AFTER CONSTRUCTION. The device list, the identities and the
+// per-(codec, profile) capability snapshot are all filled during construction
+// and are read-only afterwards. That is what lets unrelated sequences SHARE
+// ONE CONTEXT WITH NO SYNCHRONISATION OF THEIR OWN, and it is why there is no
+// refresh entry point: a new generation of capability truth is a new context.
+// TWO ACCESSORS READ THE DRIVER RATHER THAN THE SNAPSHOT, and both do so
+// because their answer depends on something not known at construction. The
+// DRM-modifier query is keyed on (format, usage). VkEncEnumerateInputFormats
+// is keyed on (codec, profile) and resolves every candidate live through the
+// same resolver the point query and InitializeExt use -- which is what makes
+// the advertised set and the accepted set one set rather than two that can
+// drift, and is therefore the reason it cannot be served from a snapshot
+// probed at a fixed envelope. NEITHER TOUCHES CONTEXT STATE, so the
+// immutability above is exactly what it says: the context is not written
+// after construction, by these or by anything else.
 //
 // Lifetime rules, each from a specific hazard:
 //
 //  1. THE LOADER HANDLE IS NEVER UNLOADED. An embedder resolves its own
-//     Vulkan entry points out of the same libvulkan.so.1 / vulkan-1.dll.
-//     Unloading it when a
-//     context goes away invalidates pointers the embedder still holds. The
-//     context retains it for the process lifetime, in BOTH modes, including
-//     for a context created and released inside a single call.
+//     Vulkan entry points out of the same libvulkan.so.1 / vulkan-1.dll, and
+//     unloading it when a context goes away would invalidate pointers the
+//     embedder still holds. The context retains it for the process lifetime,
+//     in BOTH modes, including for a context created and released inside a
+//     single call.
 //
-//  2. AN OWN-MODE CONTEXT IS NEVER DESTROYED. Letting its refcount reach zero
-//     and re-creating it re-issues vkCreateInstance -- and after a sandbox has
-//     locked down that means ICD-manifest re-reads, device-node re-opens and
-//     sysfs reads, where one broker denial is a device loss rather than a slow
-//     path. The library holds a floor reference to every OWN-mode context it
-//     builds, keyed by the create-info's gpuUUID, so a second create returns
-//     the SAME context instead of standing up a second instance. Callers layer
-//     their own references on top and may drop them freely.
+//  2. A SUCCESSFULLY BUILT OWN-MODE CONTEXT IS NEVER DESTROYED. Re-issuing
+//     vkCreateInstance after a sandbox has locked down is a device loss
+//     rather than a slow path, so the library holds a floor reference to
+//     every OWN-mode context it builds, keyed by the create-info's gpuUUID:
+//     a second create returns the SAME context instead of standing up a
+//     second instance. A create whose bring-up FAILS is not registered, so a
+//     later create with the same key builds again. Callers layer their own
+//     references on top and may drop them freely.
 //
 //  3. ADOPT MODE NEVER DESTROYS. The VkInstance and VkPhysicalDevice belong to
 //     the embedder; release is a no-op on both. ADOPT contexts are
@@ -3370,12 +3403,10 @@ VkResult CreateVulkanVideoEncoderContext(
 // link, and it is how a session is meant to obtain a borrowed instance and
 // physical device.
 //
-// The phase split is the one stated at the head of this section: the context
-// is phases 1+2 (VkInstance + VkPhysicalDevice), and the session returned
-// here is phases 3+4 (VkDevice + queues). The session creates its own
-// VkDevice on the context's |deviceIndex| physical device -- a context
-// creates none, in either mode -- so two sessions on one context are two
-// devices on one instance, not a shared device.
+// The session creates its own VkDevice on the context's |deviceIndex|
+// physical device -- a context creates none, in either mode -- so two
+// sessions on one context are two devices on one instance, not a shared
+// device.
 //
 // The session holds a reference to |context| for its whole life. That keeps
 // the CONTEXT OBJECT -- and the capability snapshot the caller selected from --
@@ -3389,42 +3420,21 @@ VkResult CreateVulkanVideoEncoderContext(
 // HAS A USE-AFTER-FREE, on this path exactly as on the config path. That
 // hazard is the embedder's to avoid.
 //
-// WHAT THIS SUPERSEDES. VkVideoEncoderConfig::externalInstance +
-// externalPhysicalDevice express the same borrowing, per session. Expressing
-// it here instead buys four things:
-//   * Adoption travels as the object that owns it, so an embedder stops
-//     copying raw Vulkan handles onto a per-session config struct.
-//   * |deviceIndex| is validated against a real enumeration, so a wrong index
-//     is a typed error and not a silent selection of device 0.
-//   * The same call shape is intended to work in OWN mode, where there is no
-//     embedder instance to copy from at all. Stated as intent rather than as
-//     a verified capability.
-//   * The session pins the context object, so the capability snapshot the
-//     caller chose from is still alive and addressable while the session runs.
-//
-// WHAT IT DOES NOT YET DELIVER, stated because the obvious assumption is the
-// wrong one: THE SESSION DOES NOT CONSUME THE CONTEXT'S CAPABILITY SNAPSHOT.
-// It reads the instance and the physical device out of the context and nothing
-// else, then re-probes queue families, device extensions and encode
-// capabilities for itself by way of InitPhysicalDevice and CreateVideoEncoder.
-// N sessions on one context therefore run N+1 capability sweeps rather than
-// one. Sharing the snapshot is the next step; it needs the session's own probe
-// to be able to accept a pre-computed answer, and nothing in this signature
-// has to change for it. The loader handle is likewise NOT a benefit of this
-// path -- every session retains it unconditionally, on both paths.
+// THE SESSION DOES NOT CONSUME THE CONTEXT'S CAPABILITY SNAPSHOT, which is
+// the assumption to avoid making. It reads the instance and the physical
+// device out of the context and nothing else, then re-probes queue families,
+// device extensions and encode capabilities for itself, so N sessions on one
+// context run N+1 capability sweeps rather than one.
 //
 // A CONFIG THAT ALSO SELECTS A DEVICE IS REFUSED with
 // VK_ERROR_INITIALIZATION_FAILED, not resolved: externalInstance,
 // externalPhysicalDevice, a deviceId other than -1, and a non-zero gpuUUID all
-// name a device the context has already chosen. (Note the config ADOPT path
-// answers VK_ERROR_FEATURE_NOT_PRESENT for the same user error, from deeper
-// in the physical-device probe. Two codes for "you named the device twice";
-// this path's is the typed one.) Honouring
-// one of the two would be a guess -- and a stale config field outranking the
-// context would send the session to a different GPU than the one whose
-// capabilities the caller just read, which on a single-GPU host is entirely
-// invisible. This mirrors CreateVulkanVideoEncoderContext, which refuses a
-// non-zero gpuUUID in ADOPT mode for exactly that reason.
+// name a device the context has already chosen. (The config ADOPT path
+// answers VK_ERROR_FEATURE_NOT_PRESENT for the same user error; two codes for
+// "you named the device twice", and this path's is the typed one.) A stale
+// config field outranking the context would send the session to a different
+// GPU than the one whose capabilities the caller just read, which on a
+// single-GPU host is entirely invisible.
 //
 // config.externalDevice is refused for a different reason: a context owns
 // the instance and the physical device and creates no VkDevice (context
@@ -3472,13 +3482,139 @@ VkResult VkEncGetEncodeCapabilities(
     uint32_t                         profile,
     VkVideoEncoderCapabilities*      pOut);
 
+// The Std syntax flags the driver reports for (|codec|, |profile|) on
+// |deviceIndex|.
+//
+// Two-call idiom: pFlags == nullptr writes the number of entries to *pCount;
+// otherwise at most *pCount entries are written, *pCount is set to the number
+// written, and VK_INCOMPLETE is returned if any entry was dropped.
+//
+// *pCount IS ALWAYS WRITTEN, and this rule is shared by all three list
+// enumerators -- this one, VkEncEnumerateInputFormats and
+// VkEncEnumerateDrmModifiers. A null pCount is the single exception, being
+// the one failure that leaves nowhere to write to; on every other return,
+// success or failure, the caller is left a defined count: the number of
+// entries written on VK_SUCCESS and VK_INCOMPLETE, and 0 on every error.
+// One wrapper can therefore cover all three and read *pCount without
+// first having to ask which of them it called.
+//
+// The count is a property of the context's snapshot, which is immutable after
+// construction, so the counting call and the fetching call cannot disagree.
+// VK_INCOMPLETE here means the caller passed a smaller *pCount than it was
+// told, and never that the answer moved underneath it.
+//
+// A (codec, profile) pair this library does not probe, or one the driver
+// refused, propagates the same result VkEncGetEncodeCapabilities gives for
+// that pair and writes a count of 0.
+extern "C" VK_VIDEO_ENCODER_EXPORT
+VkResult VkEncEnumerateStdFlags(
+    VulkanVideoEncoderContext*       ctx,
+    uint32_t                         deviceIndex,
+    VkVideoCodecOperationFlagBitsKHR codec,
+    uint32_t                         profile,
+    uint32_t*                        pCount,
+    VkVideoEncoderStdFlags*          pFlags);
+
+// The input formats this encoder accepts for (|codec|, |profile|) on
+// |deviceIndex|, what each one is encoded as, and how it gets there.
+//
+// MEMBERSHIP. An entry is present when this library can encode that format on
+// THIS device for THIS (codec, profile). Two rules, and they are the whole
+// contract:
+//
+//   * a format the encoder itself reads is advertised as
+//     VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL, with encodeFormat == format;
+//   * a format the encoder does not read, but that the preprocess compute
+//     filter converts into one it does, is advertised as
+//     VK_VIDEO_ENCODER_INPUT_FORMAT_SUBOPTIMAL, with encodeFormat naming the
+//     conversion's output and so what its bitstream is coded from -- and only
+//     when the device accepts that output as an encode input. A conversion
+//     whose result this device would not take is not a route, so it is not
+//     advertised.
+//
+// WHAT THE LIST IS FOR. It is the set of formats a caller may DECLARE as a
+// session's input format and then hand in -- the WHOLE set, and not a
+// preference inside a wider one. InitializeExt gates acceptance on this same
+// answer, so for this (codec, profile) a format on the list initialises and a
+// format the list omits is refused, with the format and its subsampling named.
+// The one axis on which absence is not a refusal is the colour model, which
+// this list cannot carry: see the paragraph on the packed 4:4:4 layouts below,
+// and VkEncQueryInputFormatSupport, which takes one.
+//
+// A session is narrower than the profile: an OPTIMAL entry is taken by any
+// session on this profile, but a SUBOPTIMAL entry is taken only by a session
+// that DECLARED that format, because the conversion is built for the one input
+// format the session was given. Sizing a producer pool from this list is safe
+// precisely because the declaration comes first.
+//
+// AND A SUBOPTIMAL ENTRY IS TAKEN ONLY ON THE REGISTERED LANE. The conversion
+// runs against a REGISTERED resource, so a SUBOPTIMAL format must be handed in
+// through RegisterImageResource() followed by SubmitRegisteredFrame().
+// SubmitExternalFrame() refuses it with VK_ERROR_FORMAT_NOT_SUPPORTED: that
+// path has no registration to attach a conversion to. An OPTIMAL entry is
+// accepted on either lane. This is a qualification of the sentence above, not
+// an exception to it -- the format is still one the session may declare; what
+// is restricted is which submit carries it.
+//
+// The list carries no tiling and no modifier: tiling is a property of an
+// image rather than of a format, and QueryImageSupport is what answers it for
+// a specific allocation. It carries no colour model either -- the packed
+// 4:4:4 Y'CbCr layouts have no Vulkan enumerant and ride the RGBA ones -- so
+// an aliased enumerant that IS advertised appears here under its RGB reading,
+// and its Y'CbCr reading is reached only by declaring it. An enumerant whose
+// only accepted reading is the Y'CbCr one does not appear in this list at
+// all, so ON THE COLOUR-MODEL AXIS absence from it is not a refusal. That is
+// the single exception to "the list is what InitializeExt takes", it exists
+// because a list of formats cannot express a declaration about samples, and
+// VkEncQueryInputFormatSupport is the surface that closes it.
+//
+// ORDER AND MULTIPLICITY. Each format appears once, however many tilings the
+// device reports it at; the OPTIMAL entries come first and the SUBOPTIMAL ones
+// follow, each group in this library's own routable order.
+//
+// NOT IN THE DEVICE'S ORDER, and there is no longer such an order to give.
+// Every candidate is resolved at the profile ITS OWN binding derives -- a
+// 4:4:4 input at a 4:4:4 profile, a 10-bit one at a 10-bit profile -- so the
+// entries of one list are answered against as many device queries as there are
+// distinct derivations, and no single device list orders them. Do not read
+// position as preference beyond the OPTIMAL/SUBOPTIMAL split, which is stated
+// per entry and is the part that means something.
+//
+// Two-call idiom and the *pCount rule exactly as VkEncEnumerateStdFlags
+// states them: pFormats == nullptr writes the number of entries to *pCount;
+// otherwise at most *pCount entries are written, *pCount is set to the number
+// written, and VK_INCOMPLETE is returned if any entry was dropped. A pair
+// this library does not probe, or one the driver refused, propagates the
+// result VkEncGetEncodeCapabilities gives for it and writes a count of 0.
+//
+// THE STABILITY RULE IS THE SAME AND ITS REASON IS NOT. The counting call and
+// the fetching call cannot disagree, so VK_INCOMPLETE here means the caller
+// passed a smaller *pCount than it was told and never that the answer moved
+// underneath it -- but this list is NOT read out of the context's snapshot.
+// It is recomputed live on every call, per candidate, against the device.
+// What makes the two calls agree is that the resolve is a deterministic
+// function of (context, device, codec, profile) and a context's devices do
+// not change for its lifetime, which is the same premise the snapshot itself
+// rests on rather than the snapshot itself.
+extern "C" VK_VIDEO_ENCODER_EXPORT
+VkResult VkEncEnumerateInputFormats(
+    VulkanVideoEncoderContext*           ctx,
+    uint32_t                             deviceIndex,
+    VkVideoCodecOperationFlagBitsKHR     codec,
+    uint32_t                             profile,
+    uint32_t*                            pCount,
+    VkVideoEncoderInputFormatProperties* pFormats);
+
 // DRM modifiers for |format| that carry the format features |usage| implies.
 // Answerable WITHOUT a session -- required, because the producer picks a
 // modifier at allocation time, long before any encoder exists.
 //
 // Two-call idiom: pModifiers == nullptr writes the matching count to *pCount;
 // otherwise at most *pCount entries are written, *pCount is set to the number
-// written, and VK_INCOMPLETE is returned if any match was dropped.
+// written, and VK_INCOMPLETE is returned if any match was dropped. *pCount is
+// written on every return but a null pCount, as VkEncEnumerateStdFlags
+// states for all three enumerators -- so both error returns described below
+// leave a count of 0, and so does an unrecognised deviceIndex.
 //
 // usage == 0 means "no feature filter" and returns every modifier the device
 // reports for the format. A usage bit this function has no format-feature
@@ -3510,6 +3646,87 @@ VkResult VkEncEnumerateDrmModifiers(
     VkImageUsageFlags          usage,
     uint32_t*                  pCount,
     uint64_t*                  pModifiers);
+
+
+// Whether this library will take |format|, declared in |colorModel|, as the
+// input of a session on (|codec|, |profile|) on |deviceIndex| -- and what the
+// bitstream would then be coded from.
+//
+// A POINT QUESTION, ASKED BEFORE A SESSION EXISTS, which is what separates it
+// from everything else here. QueryImageSupport answers for a whole image
+// descriptor, but it is a session method: it cannot be reached until a session
+// has already been built in the very pair being asked about. This is the
+// question a producer has EARLIER than that -- before it allocates a frame
+// pool, while changing its mind is still free.
+//
+// NOT AN ENUMERATOR. No pCount, no two-call idiom, no VK_INCOMPLETE. It
+// answers the one pair the caller names and enumerates nothing, and that is
+// precisely why it can carry a colour model at all: a declaration is the
+// caller's statement about its own samples, so a LIST carrying one would be a
+// cross-product of formats and declarations rather than a list of formats.
+//
+// WHY THE COLOUR MODEL IS A PARAMETER HERE AND AN OMISSION THERE.
+// VkEncEnumerateInputFormats says of itself that an enumerant whose only
+// accepted reading is the Y'CbCr one "does not appear in this list at all, so
+// absence from it is not a refusal". The packed 4:4:4 layouts AYUV and Y410
+// have no Vulkan enumerant of their own and ride the RGBA ones, so that list
+// can show neither of them as itself. This is where a caller holding AYUV or
+// Y410 frames finds out.
+//
+// IT ANSWERS WHAT InitializeExt WILL ANSWER, AND BY THE SAME ROUTE, IN BOTH
+// HALVES. The library half of the verdict is produced by running the binder
+// InitializeExt runs, not by restating its rules -- so a pair reported here as
+// supported is a pair that binds, and the profile rules (which profile admits
+// which bit depth and which chroma subsampling) are applied in one place only.
+// The device half is a live format query against |deviceIndex|, at the chroma
+// subsampling and bit depth the input itself implies, and it is the SAME call
+// InitializeExt makes before it creates a session. A pair refused here is
+// refused there, with the format and its subsampling named.
+//
+// ONE RESOLVER, THREE SURFACES. VkEncEnumerateInputFormats answers the same
+// question for the whole routable set at once, by running this function over
+// every candidate; InitializeExt asks it about the one pair a session
+// declared. So no two of them can disagree: a format on the advertised list is
+// a format this entry point accepts and a format a session initialises with,
+// naming the same encodeFormat and the same optimality. Use the list to
+// discover, this to ask about one pair -- including one the list cannot carry,
+// because the list has no colour-model argument and this does -- and expect
+// initialisation to say exactly what they said.
+//
+// |profile| is the codec standard's own number, and
+// VK_VIDEO_ENCODER_PROFILE_DEFAULT means "derive it from the input" exactly as
+// VkVideoEncoderConfig::profile does. DEFAULT is the interesting value for a
+// 4:4:4 input, because the derivation is what reaches a 4:4:4 profile: a
+// profile number this library does not bind is refused here as it is at
+// InitializeExt, so naming one is not a way round that.
+//
+// RETURNS
+//   VK_SUCCESS
+//       accepted, and this device encodes it. *pProperties is written.
+//   VK_ERROR_FORMAT_NOT_SUPPORTED
+//       the library will not take the pair on this (codec, profile), or this
+//       device does not encode what the pair would be coded from.
+//   VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR
+//       |codec| is not an encode codec this library carries.
+//   VK_ERROR_INITIALIZATION_FAILED
+//       |ctx| is null, or |deviceIndex| names no device.
+//
+// |pProperties| may be NULL when only the verdict is wanted. It is written
+// ONLY on VK_SUCCESS, and never partially.
+//
+// A REFUSAL EXPLAINS ITSELF ON THE LIBRARY'S STDERR, as InitializeExt's does
+// and for the same reason -- it is the same binder. A caller sweeping formats
+// to size a pool should expect that output; silenceStdio is a session-level
+// control and does not reach this call.
+extern "C" VK_VIDEO_ENCODER_EXPORT
+VkResult VkEncQueryInputFormatSupport(
+    VulkanVideoEncoderContext*           ctx,
+    uint32_t                             deviceIndex,
+    VkVideoCodecOperationFlagBitsKHR     codec,
+    uint32_t                             profile,
+    VkFormat                             format,
+    VkVideoEncoderColorModel             colorModel,
+    VkVideoEncoderInputFormatProperties* pProperties);
 
 
 #endif /* _VULKAN_VIDEO_ENCODER_EXT_H_ */
