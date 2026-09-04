@@ -329,9 +329,9 @@ bool g_validate = false;
 // them changed the outcome:
 //   * NOT the release/acquire layout disagreement. Path A's release used to
 //     hardcode VIDEO_ENCODE_SRC_KHR as its newLayout while the next acquire
-//     declared GENERAL; that is now fixed (VkVideoEncoder::RecordVideoCodingCmd,
-//     pathAProducerLayout) and confirmed via the [QFOT-REL] record, and the
-//     DEVICE_LOST is identical before and after.
+//     declares GENERAL. That is handled in VkVideoEncoder::RecordVideoCodingCmd
+//     (pathAProducerLayout) and confirmed via the [QFOT-REL] record; the
+//     DEVICE_LOST is unaffected either way.
 //   * NOT missing external memory. Backing the DIRECT images with
 //     VkExternalMemoryImageCreateInfo + VkExportMemoryAllocateInfo (OPAQUE_FD)
 //     changed nothing. That experiment was reverted rather than kept, because
@@ -857,6 +857,16 @@ const char* CodecName(VkVideoCodecOperationFlagBitsKHR c)
 // refusal in BuildEncoderConfig returns -- is the LIBRARY saying no with a
 // driver in hand, which is a verdict and not an environment fact. That is the
 // sentence CMakeLists.txt already applies to nSession == 0, one level finer.
+//
+// ONE OF THESE CODES NOW ALSO ARRIVES FROM THE EXT LAYER, and the
+// classification is still right. InitializeExt asks the device whether it
+// encodes the profile the input derives BEFORE it creates a session, and
+// answers VK_ERROR_FORMAT_NOT_SUPPORTED when it does not -- the same code
+// VkEncQueryInputFormatSupport gives that verdict. It is the library RELAYING
+// the device's answer with the format and its subsampling named, not a library
+// rule, so it belongs on this list; what changed for P012 and I420-12 is only
+// that the refusal now arrives before the session instead of out of
+// vkGetPhysicalDeviceVideoCapabilitiesKHR after it.
 bool IsDeviceLimitedInit(VkResult r)
 {
     switch ((int)r) {
@@ -2496,9 +2506,8 @@ QuadStatus CheckQuadrants(const std::string& file,
 //      note on the HDR row in kRows -- but it still catches a stream that
 //      decodes to nothing, or to a flat picture.
 //   3. both SEI payloads, field by field (-show_frames side_data_list). This
-//      is the half that did not exist: before this change the encoder emitted
-//      NO SEI OF ANY KIND, and the only mentions of SEI in the tree were two
-//      inert TODOs next to nal_hrd_parameters_present_flag.
+//      is the half that needs a real decoder to judge: a SEI the encoder does
+//      not emit is invisible to every other check in this suite.
 //
 // The primary values are asserted individually rather than as a set, because
 // the failure worth catching is a PERMUTED one: ST 2086 orders the primaries
@@ -2576,9 +2585,8 @@ QuadStatus CheckHdrSignalling(const std::string& file, std::string* detail)
     // "red_x=46399/65536" and "max_luminance=256000/256". Those AGREE
     // numerically (46399/65536 = 0.707993 against 35400/50000 = 0.70800;
     // 256000/256 = 1000 exactly against 10000000/10000 = 1000) and a string
-    // match cannot see it. Measured before this change: both AV1 HDR rows
-    // reported HDR GATE: FAIL with ten MISSING lines while the H.265 control
-    // passed in the same run.
+    // match cannot see it. Without this, both AV1 HDR rows report HDR GATE: FAIL
+    // with ten MISSING lines while the H.265 control passes in the same run.
     //
     // THE TOLERANCES ARE QUANTISATION STEPS, NOT SLACK. Each is one step of
     // the COARSER of the two representations, so a real disagreement of one

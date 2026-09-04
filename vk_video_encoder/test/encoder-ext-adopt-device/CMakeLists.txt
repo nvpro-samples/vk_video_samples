@@ -144,9 +144,9 @@ endfunction()
 # ---------------------------------------------------------------------------
 # THE SUBJECT. An ADOPT-mode session: the embedder owns the VkInstance and
 # names the VkPhysicalDevice, the library creates its own VkDevice on them and
-# encodes. This is the recommended embedding shape, and until this file
-# existed no test in the tree touched externalInstance /
-# externalPhysicalDevice / externalDevice at all.
+# encodes. This is the recommended embedding shape, and this file is the only
+# test in the tree that touches externalInstance / externalPhysicalDevice /
+# externalDevice.
 # ---------------------------------------------------------------------------
 vvs_add_gated_test(EncoderExtAdoptInstanceAndPhysicalDevice)
 
@@ -219,5 +219,26 @@ vvs_add_gated_test(EncoderExtAdoptValidateOverBorrowedInstance --validate)
 # so it could not skip on the machine it guards.
 # ---------------------------------------------------------------------------
 vvs_add_gated_test(EncoderExtAdoptValidateOwnInstanceControl --own-validate)
+
+# ---------------------------------------------------------------------------
+# THE TWO-CALL LIST QUERIES. VkVideoEncoderCapabilities carries scalars; every
+# list is answered by its own pCount/pArray entry point, so the capacity
+# belongs to the caller instead of to a constant in the header. This arm
+# drives every branch of that idiom against a real snapshot: the counting
+# call, the fetching call, the sentinel tail, the count's stability across the
+# pair, VK_INCOMPLETE on a short buffer, and the refusal codes with a zero
+# count.
+#
+# It also drives the input-format list against what the driver reports for two
+# profiles of different bit depth, asserted as invariants of any answer rather
+# than as this host's format list: each format once, direct entries first, at
+# least one direct entry, the filtered entries present with the format each
+# becomes, and the 12-bit pair advertised together or not at all.
+#
+# It builds a context and nothing else -- no session, no encode -- because the
+# answers come from the construction-time snapshot. That is also what makes it
+# cheap enough to run on every commit.
+# ---------------------------------------------------------------------------
+vvs_add_gated_test(EncoderExtContextEnumeratesLists --enumerate)
 
 message(STATUS "encoder_ext_adopt_device_test: Configured")

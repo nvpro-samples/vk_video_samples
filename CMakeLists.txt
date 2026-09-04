@@ -695,6 +695,7 @@ if(BUILD_ENCODER)
         # its own declaration withheld, so a fix that merely deleted a
         # refusal fails here. Skips (exit 77) without an encode-capable GPU.
         add_subdirectory(vk_video_encoder/test/encoder-ext-format-matrix)
+        add_subdirectory(vk_video_encoder/test/encoder-ext-input-format-query)
 
         # The ENCODE half of the same matrix. The routing test above proves a
         # descriptor registers and a slot resolves; it contains no encode call

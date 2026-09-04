@@ -117,7 +117,7 @@
  * encode-capable Vulkan device -- same contract as the sibling suites.
  */
 
-#include "vulkan_video_encoder_ext.h"
+#include "vulkan_video_encoder_ext_internal.h"
 
 // The public header reaches the Xlib platform headers, whose macros collide
 // with ordinary identifiers. Same scrub, same reason, as the sibling tests.

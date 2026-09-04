@@ -209,8 +209,10 @@ public:
     // filter compiled in and the caller having asked for it. The rung-2
     // half of the adaptation ladder's "query the device first" rule.
     bool ComputeFilterActive() const;
-    // Stricter: does this session's filter take THIS format as its input?
-    bool ComputeFilterTakesFormat(VkFormat inputFormat) const;
+    // Stricter: does this session's filter take THIS DECLARED PAIR --
+    // format and colour model -- as its input?
+    bool ComputeFilterTakesFormat(VkFormat inputFormat,
+                                  VkVideoEncoderColorModel colorModel) const;
     // The colour model to read |inputFormat| under, from this session's point
     // of view: the caller's declaration for the session's OWN input format,
     // and the format's own answer for anything else. A session declares one
@@ -218,12 +220,8 @@ public:
     // declaration and must not silently borrow it.
     VkVideoEncoderColorModel SessionColorModel(VkFormat inputFormat) const;
     // Whether the DEVICE could STORAGE-READ an image with this descriptor's
-    // format and tiling -- exactly the fact
-    // VkVideoEncoderImageSupportDetails::filterCapable reports, and the fact
-    // the registration gate consults for the single-plane arm. One
-    // derivation, two readers: the header promises QueryImageSupport "runs
-    // the SAME predicate RegisterImageResource runs", and a second copy of
-    // this is how that promise gets broken.
+    // format and tiling -- the fact the registration gate consults for the
+    // single-plane arm of the preprocess filter.
     bool DeviceCanStorageRead(
         const VkVideoEncoderExternalImageDescriptor& desc) const;
     uint32_t GetMaxWidth() const override;
@@ -835,9 +833,8 @@ private:
     bool ModifierWouldRegister(
         const VkVideoEncoderExternalImageDescriptor& desc,
         uint64_t modifier) const;
-    // Fill a chained VkVideoEncoderImageSupportDetails (filterCapable +
-    // directModifiers). Best-effort: leaves the zeroed defaults wherever
-    // the answer is unknowable.
+    // Fill a chained VkVideoEncoderImageSupportDetails. Best-effort: leaves
+    // the zeroed defaults wherever the answer is unknowable.
     void FillImageSupportDetails(
         const VkVideoEncoderExternalImageDescriptor& desc,
         VkVideoEncoderImageSupportDetails* details) const;
@@ -1176,6 +1173,182 @@ VkResult VkEncBuildAndProbeConfig(const VkVideoEncoderConfig& extConfig,
     return VK_SUCCESS;
 }
 
+// The chroma subsamplings and the maximum component bit depth a codec profile
+// admits, per the codec standard.
+//
+// THE STANDARD'S RULE AND ONLY THE STANDARD'S. Not this device's: a device may
+// refuse H.264 High 4:4:4 Predictive above 8 bits while H.264 Table A-1 admits
+// up to 14, and which of the two a caller has hit is answered by a device query
+// and not from here. Not this library's binding set either -- but every row is
+// now reachable through it: the guard below binds 66, 77, 100, 110, 122 and 244
+// for H.264, 1, 2, 3, 4 and 9 for H.265, and 0, 1 and 2 for AV1, which is every
+// number this table states.
+//
+// TWO CALLERS, ONE TABLE, and that is why it is a table rather than a pair of
+// literals at the two sites. The explicit-profile guard below refuses a named
+// profile that cannot carry the declared input; VkEncQueryInputFormatSupport
+// answers the same question before a session exists. Stated separately the two
+// could drift, and the shape of that drift is a query that promises what
+// InitializeExt then refuses -- the accepted-then-refused failure the input
+// taxonomy exists to prevent.
+//
+// SUBSAMPLING IS STATED OVER {4:2:0, 4:2:2, 4:4:4} AND NOTHING ELSE.
+// Monochrome is a chroma_format_idc that H.264 100/110/122/244 and H.265 4
+// all admit, and its absence is deliberate rather than an oversight:
+// EncoderConfig::input.chromaSubsampling is DERIVED from the input VkFormat
+// further down this file and that derivation has no monochrome arm, so a
+// monochrome bit here would be a claim nothing can put to it.
+struct VkEncProfileInputLimits {
+    uint32_t                         maxBpp;
+    VkVideoChromaSubsamplingFlagsKHR subsamplings;
+};
+
+// False when |profile| is not a number this table states for |codec|. That is
+// NOT "the standard does not define it": it means nothing about the number
+// should be inferred from here, and each caller decides what the silence
+// means -- the guard falls through to its own bindability refusal, and the
+// point query reports that it cannot answer.
+static bool VkEncGetProfileInputLimits(VkVideoCodecOperationFlagBitsKHR codec,
+                                       uint32_t                        profile,
+                                       VkEncProfileInputLimits&        out)
+{
+    const VkVideoChromaSubsamplingFlagsKHR only420 =
+        VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;
+    const VkVideoChromaSubsamplingFlagsKHR upTo422 =
+        only420 | VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR;
+    const VkVideoChromaSubsamplingFlagsKHR upTo444 =
+        upTo422 | VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
+
+    switch ((uint32_t)codec) {
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
+            // ITU-T H.264 Annex A, Table A-1.
+            switch (profile) {
+                case STD_VIDEO_H264_PROFILE_IDC_BASELINE:
+                case STD_VIDEO_H264_PROFILE_IDC_MAIN:
+                case STD_VIDEO_H264_PROFILE_IDC_HIGH:
+                    out.maxBpp = 8;  out.subsamplings = only420; return true;
+                case STD_VIDEO_H264_PROFILE_IDC_HIGH_10:
+                    out.maxBpp = 10; out.subsamplings = only420; return true;
+                case STD_VIDEO_H264_PROFILE_IDC_HIGH_422:
+                    out.maxBpp = 10; out.subsamplings = upTo422; return true;
+                case STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE:
+                    out.maxBpp = 14; out.subsamplings = upTo444; return true;
+                default:
+                    return false;
+            }
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR:
+            // ITU-T H.265 Annex A.3.
+            switch (profile) {
+                case STD_VIDEO_H265_PROFILE_IDC_MAIN:
+                case STD_VIDEO_H265_PROFILE_IDC_MAIN_STILL_PICTURE:
+                    out.maxBpp = 8;  out.subsamplings = only420; return true;
+                case STD_VIDEO_H265_PROFILE_IDC_MAIN_10:
+                    out.maxBpp = 10; out.subsamplings = only420; return true;
+                case STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS:
+                case STD_VIDEO_H265_PROFILE_IDC_SCC_EXTENSIONS:
+                    out.maxBpp = 16; out.subsamplings = upTo444; return true;
+                default:
+                    return false;
+            }
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:
+            // AV1 6.4.1 and A.2. Main is 4:2:0 at 8 or 10 bits, High is 4:4:4
+            // at the same two, and Professional is the one that reaches 12.
+            switch (profile) {
+                case STD_VIDEO_AV1_PROFILE_MAIN:
+                    out.maxBpp = 10; out.subsamplings = only420; return true;
+                case STD_VIDEO_AV1_PROFILE_HIGH:
+                    out.maxBpp = 10;
+                    out.subsamplings = VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
+                    return true;
+                case STD_VIDEO_AV1_PROFILE_PROFESSIONAL:
+                    out.maxBpp = 12; out.subsamplings = upTo444; return true;
+                default:
+                    return false;
+            }
+        default:
+            return false;
+    }
+}
+
+// The subsampling a refusal names, so a caller reads back what it declared
+// rather than a flag value. The three the input derivation can produce, and a
+// fallback that derivation cannot reach.
+static const char* VkEncChromaSubsamplingName(
+    VkVideoChromaSubsamplingFlagBitsKHR subsampling)
+{
+    switch ((uint32_t)subsampling) {
+        case VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR: return "4:2:0";
+        case VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR: return "4:2:2";
+        case VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR: return "4:4:4";
+        default:                                      return "its";
+    }
+}
+
+// VK_SUCCESS when |profile| can carry an input at |bpp| bits and
+// |subsampling|, and otherwise the refusal, having already reported WHICH
+// term of the standard's rule it failed and what to do instead.
+//
+// CALLED ONLY FROM THE ARMS THAT CAN BIND THE NUMBER, and the ordering is the
+// point. A profile this library cannot bind at all -- AV1 High (1), say --
+// must be refused as unbindable, because that is the caller's actual problem;
+// telling it instead that AV1 High does not admit 4:2:0 is true, and useless,
+// since no input format would make the request succeed. So bindability is
+// settled first and this runs inside the arms that survived it.
+//
+// |bpp| is taken as uint32_t deliberately: EncoderConfig::input.bpp is a
+// uint8_t and streams as a CHARACTER, which silently emptied the number out
+// of this diagnostic when it was written against the field's own type.
+static VkResult VkEncRefuseIfProfileCannotCarryInput(
+    VkVideoCodecOperationFlagBitsKHR    codec,
+    uint32_t                            profile,
+    uint32_t                            bpp,
+    VkVideoChromaSubsamplingFlagBitsKHR subsampling)
+{
+    VkEncProfileInputLimits limits = {};
+    if (!VkEncGetProfileInputLimits(codec, profile, limits)) {
+        // The table states nothing about this number. It is not this
+        // function's place to invent a constraint, and the arm that called it
+        // has already decided the number is bindable.
+        return VK_SUCCESS;
+    }
+    if (bpp > limits.maxBpp) {
+        VkEncErr() << "[EncoderExt] profile " << profile
+                   << " does not admit " << bpp
+                   << "-bit input: the codec standard gives it at most "
+                   << limits.maxBpp
+                   << " bits per component. Submit frames at a depth it "
+                      "admits, or use VK_VIDEO_ENCODER_PROFILE_DEFAULT, which "
+                      "derives the profile from the input."
+                   << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if ((limits.subsamplings & subsampling) == 0) {
+        VkEncErr() << "[EncoderExt] profile " << profile
+                   << " does not admit "
+                   << VkEncChromaSubsamplingName(subsampling)
+                   << " input: the codec standard gives it"
+                   << (((limits.subsamplings &
+                         VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR) != 0)
+                           ? " 4:2:0" : "")
+                   << (((limits.subsamplings &
+                         VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR) != 0)
+                           ? " 4:2:2" : "")
+                   << (((limits.subsamplings &
+                         VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR) != 0)
+                           ? " 4:4:4" : "")
+                   << " only. The subsampling is read off the input format, so "
+                      "submit frames at an admitted one, or use "
+                      "VK_VIDEO_ENCODER_PROFILE_DEFAULT, which derives the "
+                      "profile from the input's own subsampling -- 4:2:2 "
+                      "derives H.264 High 4:2:2 (122) and 4:4:4 derives H.264 "
+                      "High 4:4:4 Predictive (244) or H.265 Range Extensions "
+                      "(4)."
+                   << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return VK_SUCCESS;
+}
+
 // Free function: reads only its arguments, so a test can drive it with no
 // device and no encoder -- VkEncBuildAndProbeConfig above is that entry.
 // The layer-3 binder suite (VulkanVideoEncoderConfigBinderTest in Chromium's
@@ -1246,14 +1419,34 @@ VkResult VkEncBuildEncoderConfig(
     const VkEncInputFormatClass inputFormatClass =
         VkEncClassifyInput(extConfig.inputFormat, extConfig.inputColorModel);
     if (inputFormatClass == VK_ENC_INPUT_FORMAT_UNSUPPORTED) {
+        // THE SET IS WALKED, NOT NAMED. A sentence listing the accepted
+        // formats is a third statement of the routable set, beside the
+        // classifier and the enumeration, and it is the one nothing tests:
+        // this message named "NV12, P010, NV24 and S410 ... P012, I420 and
+        // its 10/12-bit siblings" and was already narrower than the set the
+        // classifier answered for. Printing the derived list cannot go stale.
+        uint32_t routableCount = 0;
+        const VkFormat* const routable =
+            VkEncRoutableInputFormats(routableCount);
+        std::ostringstream routableText;
+        for (uint32_t i = 0; i < routableCount; i++) {
+            routableText << ((i == 0) ? "" : ", ") << (uint32_t)routable[i];
+        }
         VkEncErr() << "[EncoderExt] inputFormat "
                    << (uint32_t)extConfig.inputFormat
-                   << " is not encodable. This encoder takes the 8- and "
-                      "10-bit semi-planar formats NV12, P010, NV24 and S410 "
-                      "directly; P012, I420 and its 10/12-bit siblings, and "
-                      "8-bit RGBA (R8G8B8A8_UNORM, B8G8R8A8_UNORM, "
-                      "A8B8G8R8_UNORM_PACK32), through the preprocess compute "
-                      "filter. Convert before submitting. Note that the _SRGB "
+                   << " is not encodable. The VkFormat values this library "
+                      "routes, directly or through the preprocess compute "
+                      "filter, are: "
+                   << routableText.str()
+                   << ". Two more are reached only by DECLARING "
+                      "VK_VIDEO_ENCODER_COLOR_MODEL_YCBCR over an RGBA "
+                      "enumerant -- the packed 4:4:4 layouts AYUV "
+                      "(R8G8B8A8_UNORM) and Y410 (A2B10G10R10_UNORM_PACK32) "
+                      "-- so they are not on that list and their absence "
+                      "from it is not a refusal. Convert before submitting. "
+                      "Note that Y416 (R16G16B16A16_UNORM) is not taken: 16 "
+                      "bits per component is not an encode component bit "
+                      "depth. Note also that the _SRGB "
                       "spellings are deliberately NOT accepted -- the filter "
                       "binds its RGBA input as a storage image, and no _SRGB "
                       "format carries VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT, so "
@@ -1339,8 +1532,8 @@ VkResult VkEncBuildEncoderConfig(
     // RGBA->Y'CbCr preprocess filter, or one of the packed 4:4:4 aliases (AYUV
     // on R8G8B8A8_UNORM, Y410 on A2B10G10R10_UNORM_PACK32) which have no Y'CbCr
     // VkFormat of their own. The two are indistinguishable from the VkFormat
-    // alone, so the input-format taxonomy is what separates them: the RGBA arm
-    // immediately below reads it. A format the taxonomy does not place keeps the
+    // alone, so the input-format taxonomy is what separates them: the two arms
+    // immediately below read it. A format the taxonomy does not place keeps the
     // default geometry rather than a guess.
 
     // RGBA is the one input family whose format cannot be RECONSTRUCTED from
@@ -1376,6 +1569,30 @@ VkResult VkEncBuildEncoderConfig(
     if (cfg->input.colorSpace == VkEncColorSpace::kRGB) {
         cfg->input.numPlanes = VkEncInputFormatPlaneCount(extConfig.inputFormat);
         cfg->input.vkFormat  = extConfig.inputFormat;
+    } else if (mpInfo == nullptr) {
+        // A Y'CbCr input the multi-planar table does not place is a packed
+        // 4:4:4 alias declared as such -- nothing else resolves to Y'CbCr and
+        // survives the class gate above. Its geometry has to be written here
+        // for the same reason the RGBA arm's does: the derivation above
+        // speaks only for formats that table holds, and left alone the input
+        // would keep EncoderConfig's 3-plane 4:2:0 default and the session
+        // would be configured as I420 while the caller declared AYUV.
+        //
+        // vkFormat is DELIBERATELY not written, unlike the RGBA arm.
+        // VerifyInputs() reconstructs it from exactly these three values --
+        // CodecGetVkFormat(4:4:4, bitDepth, PLANE_LAYOUT_PACKED_1) spells
+        // AYUV at 8 bits and Y410 at 10 -- so writing it would be a second
+        // statement of the same fact, and the round trip is what makes the
+        // geometry below sufficient rather than merely plausible.
+        const VkPackedYcbcrFormatDesc* packed =
+            PackedYcbcrFormatDesc(extConfig.inputFormat);
+        if (packed != nullptr) {
+            cfg->input.bpp = packed->bitDepth;
+            cfg->input.chromaSubsampling =
+                VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
+            cfg->input.numPlanes =
+                VkEncInputFormatPlaneCount(extConfig.inputFormat);
+        }
     }
 
     // ---- Tuning / rate control ----
@@ -1634,7 +1851,7 @@ VkResult VkEncBuildEncoderConfig(
 
     // ---- Colour description (VUI) ----
     //
-    // PER FIELD, NOT ALL-OR-NOTHING. The gate here used to be
+    // PER FIELD, NOT ALL-OR-NOTHING. An all-or-nothing gate here would read
     //
     //     if (colourPrimaries || transferCharacteristics ||
     //         matrixCoefficients || videoFullRange)
@@ -1675,8 +1892,9 @@ VkResult VkEncBuildEncoderConfig(
     if (anyColourIdcSupplied) {
         // Raise the colour description only when there IS one, and fill each
         // of its three fields from the caller or from Unspecified --
-        // independently. With all three at 0 this used to emit Reserved
-        // primaries/transfer and matrix 0 (the samples are RGB).
+        // independently. Taking all three verbatim at 0 emits Reserved
+        // primaries/transfer and matrix 0 (the samples are RGB), which is why each
+        // falls back to Unspecified on its own.
         cfg->colour_primaries = (extConfig.colourPrimaries != 0)
                                     ? extConfig.colourPrimaries
                                     : kColourIdcUnspecified;
@@ -1703,16 +1921,31 @@ VkResult VkEncBuildEncoderConfig(
     // request produces a bitstream describing something the caller did not ask
     // for.
     //
-    // Which profiles admit which input bit depths is the standard's rule and
-    // is enforced here. Honouring an 8-bit-only profile over deeper input
-    // would emit an out-of-spec bitstream, and quietly substituting a deeper
-    // profile would be the same ignored request in the other direction.
+    // Which profiles admit which input BIT DEPTHS AND WHICH CHROMA
+    // SUBSAMPLINGS is the standard's rule and is enforced here, both terms of
+    // it. Honouring an 8-bit-only profile over deeper input would emit an
+    // out-of-spec bitstream, and quietly substituting a deeper profile would
+    // be the same ignored request in the other direction. The subsampling term
+    // is that same argument on the other axis: H.264 High is 4:2:0 only, so
+    // binding it over 4:4:4 input would declare 4:2:0 while carrying 4:4:4 --
+    // and it would do so by OVERRIDING a derivation that reads the input's own
+    // subsampling and would have chosen High 4:4:4 Predictive (244).
+    //
+    // Both terms are read off cfg->input, which the input-geometry derivation
+    // above has already written from the caller's inputFormat, so this runs
+    // after it and not before.
     //
     // VK_VIDEO_ENCODER_PROFILE_DEFAULT binds nothing and leaves the codec
     // config's own derivation in effect, which reads the input depth. On AV1
     // it is also seq_profile 0; see the profile constants in the public
     // header for what that overlap does and does not cost.
     if (extConfig.profile != VK_VIDEO_ENCODER_PROFILE_DEFAULT) {
+        // TWO QUESTIONS, IN THIS ORDER. First, is the number one this library
+        // can bind for this codec? Then, and only for the numbers that
+        // survive, does the standard let that profile carry the declared
+        // input? Reversing them answers the second question about a profile
+        // the caller can never have, which reads as advice to change the
+        // input format when no input format would help.
         const char* unbindable = nullptr;
         switch ((uint32_t)codecOp) {
             case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR: {
@@ -1721,23 +1954,40 @@ VkResult VkEncBuildEncoderConfig(
                     case VK_VIDEO_ENCODER_PROFILE_H264_BASELINE:
                     case VK_VIDEO_ENCODER_PROFILE_H264_MAIN:
                     case VK_VIDEO_ENCODER_PROFILE_H264_HIGH:
-                        if (cfg->input.bpp > 8) {
-                            VkEncErr()
-                                << "[EncoderExt] H.264 profile_idc "
-                                << extConfig.profile
-                                << " does not admit 10/12-bit input: "
-                                   "Baseline, Main and High are 8-bit "
-                                   "profiles. Submit 8-bit frames, select "
-                                   "H.265 or AV1, or use profile DEFAULT."
-                                << std::endl;
-                            return VK_ERROR_INITIALIZATION_FAILED;
+                    case STD_VIDEO_H264_PROFILE_IDC_HIGH_10:
+                    case STD_VIDEO_H264_PROFILE_IDC_HIGH_422:
+                    case STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE: {
+                        // ONE ARM, because the work is identical: the
+                        // standard's own limits decide what each number can
+                        // carry, and the table beside them states all six.
+                        // BOTH terms are checked -- the depth check alone let
+                        // an explicit High (100) bind over 4:4:4 input and
+                        // override the derivation that would have chosen High
+                        // 4:4:4 Predictive (244).
+                        //
+                        // 110, 122 and 244 are here because the DEFAULT
+                        // derivation already selects them from the input's own
+                        // depth and subsampling and this library emits those
+                        // streams; refusing the same numbers when a caller
+                        // names them was this library's rule and not the
+                        // standard's. What the DEVICE can encode is a separate
+                        // question, asked where the session is created and
+                        // answerable beforehand through the input-format query.
+                        const VkResult admits =
+                            VkEncRefuseIfProfileCannotCarryInput(
+                                codecOp, extConfig.profile, cfg->input.bpp,
+                                cfg->input.chromaSubsampling);
+                        if (admits != VK_SUCCESS) {
+                            return admits;
                         }
                         h264->profileIdc =
                             (StdVideoH264ProfileIdc)extConfig.profile;
-                        break;
+                    } break;
                     default:
                         unbindable = "H.264 profile_idc; this library binds "
-                                     "66 (Baseline), 77 (Main) and 100 (High)";
+                                     "66 (Baseline), 77 (Main), 100 (High), "
+                                     "110 (High 10), 122 (High 4:2:2) and "
+                                     "244 (High 4:4:4 Predictive)";
                         break;
                 }
             } break;
@@ -1745,47 +1995,69 @@ VkResult VkEncBuildEncoderConfig(
                 EncoderConfigH265* h265 = static_cast<EncoderConfigH265*>(cfg);
                 switch (extConfig.profile) {
                     case VK_VIDEO_ENCODER_PROFILE_H265_MAIN:
-                        // H.265 Main is 8-bit 4:2:0 (H.265 A.3.2).
-                        if (cfg->input.bpp > 8) {
-                            VkEncErr()
-                                << "[EncoderExt] H.265 general_profile_idc 1 "
-                                   "(Main) does not admit 10/12-bit input: "
-                                   "Main is 8-bit 4:2:0. Use 2 (Main 10) for "
-                                   "10-bit input, or profile DEFAULT."
-                                << std::endl;
-                            return VK_ERROR_INITIALIZATION_FAILED;
-                        }
-                        h265->profile =
-                            (StdVideoH265ProfileIdc)extConfig.profile;
-                        break;
                     case VK_VIDEO_ENCODER_PROFILE_H265_MAIN10:
-                        // Main 10 is 8/10-bit (H.265 A.3.3); 12-bit needs the
-                        // Range Extensions profile, which DEFAULT derives.
-                        if (cfg->input.bpp > 10) {
-                            VkEncErr()
-                                << "[EncoderExt] H.265 general_profile_idc 2 "
-                                   "(Main 10) does not admit 12-bit input: "
-                                   "Main 10 is 8/10-bit. Use profile DEFAULT "
-                                   "to derive the profile from the input, or "
-                                   "submit 8/10-bit frames."
-                                << std::endl;
-                            return VK_ERROR_INITIALIZATION_FAILED;
+                    case STD_VIDEO_H265_PROFILE_IDC_MAIN_STILL_PICTURE:
+                    case STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS:
+                    case STD_VIDEO_H265_PROFILE_IDC_SCC_EXTENSIONS: {
+                        // Main is 8-bit 4:2:0 (H.265 A.3.2), Main 10 is 8/10
+                        // bit 4:2:0 (A.3.3), Main Still Picture is Main's
+                        // single-picture form, and Range Extensions and SCC
+                        // Extensions reach 4:2:2, 4:4:4 and sixteen bits
+                        // (A.3.5, A.3.7). The table states all five and the
+                        // guard reads it, so the arms are one.
+                        //
+                        // 4 is here because the DEFAULT derivation reaches it
+                        // from 4:4:4 or 12-bit input already; naming it was
+                        // refused only because this switch did not list it.
+                        const VkResult admits =
+                            VkEncRefuseIfProfileCannotCarryInput(
+                                codecOp, extConfig.profile, cfg->input.bpp,
+                                cfg->input.chromaSubsampling);
+                        if (admits != VK_SUCCESS) {
+                            return admits;
                         }
                         h265->profile =
                             (StdVideoH265ProfileIdc)extConfig.profile;
-                        break;
+                    } break;
                     default:
                         unbindable = "H.265 general_profile_idc; this library "
-                                     "binds 1 (Main) and 2 (Main 10)";
+                                     "binds 1 (Main), 2 (Main 10), 3 (Main "
+                                     "Still Picture), 4 (Range Extensions) "
+                                     "and 9 (SCC Extensions)";
                         break;
                 }
             } break;
-            case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:
-                // Every value this library binds on AV1 is seq_profile 0,
-                // which is DEFAULT and is therefore already handled above.
-                unbindable = "AV1 seq_profile; this library binds 0 (Main), "
-                             "which is also VK_VIDEO_ENCODER_PROFILE_DEFAULT";
-                break;
+            case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR: {
+                EncoderConfigAV1* av1 = cfg->GetEncoderConfigAV1();
+                switch (extConfig.profile) {
+                    // seq_profile 0 is Main AND is
+                    // VK_VIDEO_ENCODER_PROFILE_DEFAULT, so it never reaches
+                    // this switch: the DEFAULT test above took it, and the
+                    // codec config's own derivation is in effect for it.
+                    case STD_VIDEO_AV1_PROFILE_HIGH:
+                    case STD_VIDEO_AV1_PROFILE_PROFESSIONAL: {
+                        // High is 4:4:4 at 8 or 10 bits and Professional
+                        // reaches 4:2:2 and twelve (AV1 6.4.1, A.2), which is
+                        // exactly what InitProfileLevel derives from the input
+                        // when nothing is named. The library emitted those
+                        // seq_profiles already; only naming one was refused.
+                        const VkResult admits =
+                            VkEncRefuseIfProfileCannotCarryInput(
+                                codecOp, extConfig.profile, cfg->input.bpp,
+                                cfg->input.chromaSubsampling);
+                        if (admits != VK_SUCCESS) {
+                            return admits;
+                        }
+                        av1->profile = (StdVideoAV1Profile)extConfig.profile;
+                    } break;
+                    default:
+                        unbindable = "AV1 seq_profile; this library binds 0 "
+                                     "(Main), which is also "
+                                     "VK_VIDEO_ENCODER_PROFILE_DEFAULT, 1 "
+                                     "(High) and 2 (Professional)";
+                        break;
+                }
+            } break;
             default:
                 unbindable = "the selected codec";
                 break;
@@ -2652,7 +2924,8 @@ VK_ENC_PIN_LAYOUT(VkVideoEncoderImageSupportDetails, 280);
 VK_ENC_PIN_LAYOUT(VkVideoEncoderStatus, 24);
 VK_ENC_PIN_LAYOUT(VkVideoEncoderImportGuardInfo, 40);
 VK_ENC_PIN_LAYOUT(VkVideoEncoderImportContentInfo, 56);
-VK_ENC_PIN_LAYOUT(VkVideoEncoderCapabilities, 216);
+VK_ENC_PIN_LAYOUT(VkVideoEncoderCapabilities, 88);
+VK_ENC_PIN_LAYOUT(VkVideoEncoderInputFormatProperties, 12);
 VK_ENC_PIN_LAYOUT(VkVideoEncoderContextCreateInfo, 64);
 VK_ENC_PIN_LAYOUT(VkVideoEncoderDeviceIdentity, 312);
 #undef VK_ENC_PIN_LAYOUT
@@ -2741,6 +3014,76 @@ static inline VkVideoEncoderImportContentState VkEncMapContentState(
 //=============================================================================
 // VulkanVideoEncoderExt interface (external frame input)
 //=============================================================================
+
+enum VkEncDeviceFormatVerdict {
+    VK_ENC_DEVICE_FORMAT_ACCEPTED = 0,
+    // The bit depth is not a VkVideoComponentBitDepthFlagBitsKHR, so no video
+    // profile can be spelled for it at all. Device-free, and reached before
+    // the device is asked anything.
+    VK_ENC_DEVICE_FORMAT_DEPTH_NOT_ENCODABLE,
+    // The device exposes no encode capability at this (codec, profile,
+    // subsampling, depth). This is the 4:2:2 and 12-bit answer on both
+    // measured architectures.
+    VK_ENC_DEVICE_FORMAT_PROFILE_ABSENT,
+    // A conversion is needed and no target exists that this device would take.
+    VK_ENC_DEVICE_FORMAT_NO_CONVERSION_TARGET,
+    // The device has the profile and does not list the format the encoder
+    // would be handed as an encode source for it.
+    VK_ENC_DEVICE_FORMAT_NOT_AN_ENCODE_SOURCE,
+};
+
+// The reason, in the words a caller can act on. Kept beside the enum so a new
+// verdict cannot be added without a sentence.
+static const char* VkEncDeviceFormatReason(VkEncDeviceFormatVerdict verdict)
+{
+    switch (verdict) {
+        case VK_ENC_DEVICE_FORMAT_DEPTH_NOT_ENCODABLE:
+            return "that component bit depth is not a video encode bit depth, "
+                   "so no profile can carry it on any device";
+        case VK_ENC_DEVICE_FORMAT_PROFILE_ABSENT:
+            return "this device exposes no encode capability at that chroma "
+                   "subsampling and bit depth";
+        case VK_ENC_DEVICE_FORMAT_NO_CONVERSION_TARGET:
+            return "the conversion this input needs has no output format this "
+                   "device accepts as an encode source";
+        case VK_ENC_DEVICE_FORMAT_NOT_AN_ENCODE_SOURCE:
+            return "this device has that profile and does not list the format "
+                   "the encoder would be handed as an encode source for it";
+        case VK_ENC_DEVICE_FORMAT_ACCEPTED:
+        default:
+            return "accepted";
+    }
+}
+
+// Chroma subsampling in the words the standards use, for the refusal message.
+// A refusal that names the format enumerant and not its subsampling is the one
+// the driver already gives.
+static const char* VkEncChromaSubsamplingName(uint32_t chromaSubsampling)
+{
+    switch (chromaSubsampling) {
+        case VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR:
+            return "monochrome";
+        case VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR: return "4:2:0";
+        case VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR: return "4:2:2";
+        case VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR: return "4:4:4";
+        default:                                      return "unknown chroma";
+    }
+}
+
+// DECLARED HERE, DEFINED BESIDE THE DEVICE QUERY IT CALLS. The vocabulary
+// above needs nothing, so it lives where its first reader is; the resolver
+// needs VkEncQueryDeviceEncodeSrcFormats and the routable-format helpers, and
+// lives with those.
+static VkEncDeviceFormatVerdict VkEncResolveDeviceEncodeFormat(
+    const VulkanDeviceContext&       devCtx,
+    VkPhysicalDevice                 physDevice,
+    VkVideoCodecOperationFlagBitsKHR codec,
+    uint32_t                         codecProfile,
+    uint32_t                         chromaSubsampling,
+    uint32_t                         bitDepth,
+    VkFormat                         inputFormat,
+    bool                             viaFilter,
+    VkFormat&                        outEncodeFormat);
 
 VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& config)
 {
@@ -2892,6 +3235,64 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
                       "filter, but this device exposes no compute queue "
                       "family for the session to run it on" << std::endl;
         return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    // ACCEPTANCE IS THE ADVERTISED SET, AND THIS IS WHERE THEY ARE MADE ONE.
+    //
+    // The library half of acceptance -- is this a pair this library routes at
+    // all, and can the named profile carry it -- was settled by
+    // BuildEncoderConfig above, device-free, and a format that failed there
+    // never reached this line. What is settled HERE is the half that needs a
+    // device: whether this device encodes the profile the binder derived, and
+    // whether it takes the format the encoder would actually be handed.
+    //
+    // IT IS THE SAME CALL VkEncQueryInputFormatSupport AND
+    // VkEncEnumerateInputFormats MAKE, on purpose. Those two advertise what a
+    // caller may declare; this refuses what they do not advertise. Three
+    // surfaces, one function, so "consult the list, then find out at init"
+    // stops being two answers.
+    //
+    // WHY BEFORE CreateVideoEncoder AND NOT INSIDE IT. The driver refuses the
+    // same configuration one call later, and its refusal is the reason this
+    // gate exists rather than an argument against it: it arrives from
+    // vkGetPhysicalDeviceVideoCapabilitiesKHR as
+    // VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR with the library
+    // reporting only "CreateVideoEncoder failed: <number>" -- naming neither
+    // the format nor its subsampling, which are the two things a caller would
+    // change.
+    //
+    // THE CODE IS THE POINT QUERY'S. VK_ERROR_FORMAT_NOT_SUPPORTED is what
+    // VkEncQueryInputFormatSupport returns for exactly this verdict, and one
+    // verdict with two spellings would put the caller back to asking which
+    // surface it was talking to.
+    {
+        VkFormat encodeFormat = VK_FORMAT_UNDEFINED;
+        const VkEncDeviceFormatVerdict verdict = VkEncResolveDeviceEncodeFormat(
+            m_vkDevCtx, m_vkDevCtx.getPhysicalDevice(), codecOp,
+            m_encoderConfig->GetCodecProfile(),
+            (uint32_t)m_encoderConfig->input.chromaSubsampling,
+            (uint32_t)m_encoderConfig->input.bpp,
+            config.inputFormat,
+            m_encoderConfig->IsPreprocessComputeFilterEnabled(),
+            encodeFormat);
+        if (verdict != VK_ENC_DEVICE_FORMAT_ACCEPTED) {
+            VkEncErr() << "[EncoderExt] inputFormat "
+                       << (uint32_t)config.inputFormat << " ("
+                       << VkEncChromaSubsamplingName(
+                              (uint32_t)m_encoderConfig->input.chromaSubsampling)
+                       << ", " << (uint32_t)m_encoderConfig->input.bpp
+                       << "-bit, " << m_encoderConfig->input.numPlanes
+                       << "-plane) cannot be encoded on this device at the "
+                          "profile it derives ("
+                       << m_encoderConfig->GetCodecProfile() << "): "
+                       << VkEncDeviceFormatReason(verdict)
+                       << ". VkEncEnumerateInputFormats lists what this device "
+                          "does take for this codec and profile, and "
+                          "VkEncQueryInputFormatSupport answers for one pair; "
+                          "this refusal and those two answers are one function."
+                       << std::endl;
+            return VK_ERROR_FORMAT_NOT_SUPPORTED;
+        }
     }
 
     // Create the internal encoder
@@ -4905,18 +5306,32 @@ bool VulkanVideoEncoderExtImpl::ComputeFilterActive() const
     return m_computeFilterActive.load(std::memory_order_relaxed);
 }
 
-// Whether this session's filter takes |inputFormat| as its input. A stricter
-// question than ComputeFilterActive(), and the one the registration gate
-// actually asks: ValidateImageDescriptor admits a non-encode-format descriptor
-// only when it equals m_encoderConfig->input.vkFormat. Answering the loose
-// question on the query surface and the strict one at registration is how a
-// producer ends up allocating a whole pool on a VK_TRUE it is then refused.
+// Whether this session's filter takes |inputFormat| under |colorModel| as its
+// input. A stricter question than ComputeFilterActive(), and the one the
+// registration gate actually asks: ValidateImageDescriptor admits a
+// non-encode-format descriptor only when it equals
+// m_encoderConfig->input.vkFormat. Answering the loose question on the query
+// surface and the strict one at registration is how a producer ends up
+// allocating a whole pool on a VK_TRUE it is then refused.
+//
+// THE COLOUR MODEL IS HALF OF THE MATCH. A filter is built for ONE declared
+// pair -- VkEncDeriveFilterType reads the model the config declares and the
+// format the device takes as an encode source -- and the packed 4:4:4 layouts
+// put two pairs on one enumerant with OPPOSITE arms: R8G8B8A8_UNORM declared
+// R'G'B' builds the forward matrix, and the same enumerant declared Y'CbCr is
+// AYUV and builds the copy. Matching on the format alone would hand an AYUV
+// frame to a filter that applies the R'G'B'-to-Y'CbCr matrix to samples that
+// are already luma and chroma -- no error anywhere, and a wrong picture in
+// every pixel.
 bool VulkanVideoEncoderExtImpl::ComputeFilterTakesFormat(
-    VkFormat inputFormat) const
+    VkFormat inputFormat, VkVideoEncoderColorModel colorModel) const
 {
     return m_computeFilterActive.load(std::memory_order_relaxed) &&
            (m_computeFilterInputFormat.load(std::memory_order_relaxed) ==
-            inputFormat);
+            inputFormat) &&
+           (VkEncResolveColorModel(inputFormat, colorModel) ==
+            VkEncResolveColorModel(inputFormat,
+                                   SessionColorModel(inputFormat)));
 }
 
 VkVideoEncoderColorModel VulkanVideoEncoderExtImpl::SessionColorModel(
@@ -4966,13 +5381,15 @@ VkBool32 VulkanVideoEncoderExtImpl::SupportsFormat(
         case VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT:
             return VK_TRUE;
         case VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER:
-            // Not merely "a filter exists" -- "the filter takes THIS format".
-            // A session declared in a different format has a filter built for
-            // that format, so it converts nothing for this descriptor;
+            // Not merely "a filter exists" -- "the filter takes THIS declared
+            // pair". A session declared in a different format, or in the same
+            // format under the other colour model, has a filter built for
+            // that pair, so it converts nothing for this descriptor;
             // ValidateImageDescriptor refuses the descriptor with
             // FORMAT_UNSUPPORTED, and a VK_TRUE here would be the over-promise
             // that costs the producer its pool allocation.
-            return ComputeFilterTakesFormat(inputFormat) ? VK_TRUE : VK_FALSE;
+            return ComputeFilterTakesFormat(inputFormat, colorModel)
+                       ? VK_TRUE : VK_FALSE;
         case VK_ENC_INPUT_FORMAT_UNSUPPORTED:
         default:
             return VK_FALSE;
@@ -5017,6 +5434,264 @@ VkVideoEncoderColorModel VkEncResolveColorModel(
     return VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT;
 }
 
+// ---------------------------------------------------------------------------
+// WHAT THIS LIBRARY ROUTES, READ OFF THE FORMAT TABLES RATHER THAN LISTED
+// ---------------------------------------------------------------------------
+//
+// The compute filter's Y'CbCr arm is GENERATED, not written per format:
+// InitYCBCRCOPY takes its bit depth from GetBitsPerChannel(planesLayout), its
+// chroma block from planesLayout.secondaryPlaneSubsampledX/Y, its plane count
+// from the image's aspects -- which are numberOfExtraPlanes + 1 -- and, for
+// the packed 4:4:4 aliases, the channel each of Y', Cb and Cr sits in from
+// PackedYcbcrFormatDesc. Every one of those is a FIELD of a table this file
+// can read.
+//
+// So the routable set is DERIVED from those tables, and what is written here
+// is the POLICY: three predicates, each carrying the reason it is one. Which
+// formats satisfy them, what each converts into and how many there are is read
+// out of the tables. A format the tables gain is routed with no edit here,
+// which is the point of deriving it: a list kept beside the tables is a second
+// statement of the same set, and what a list holds is what somebody remembered
+// to type.
+//
+// WHAT THE LIST THIS REPLACES HELD. Eleven entries, 4:2:0 throughout on its
+// converted arm, while the direct arm beside it already carried 4:4:4. Nothing
+// in the filter, in these tables or in the codec layer makes 4:2:0 the
+// boundary -- CodecGetVkFormat spells 4:2:2 and 4:4:4 at all three depths, and
+// the generator is parameterised over subsampling on both sides -- so the
+// restriction was the list's and not the library's. The derivation does not
+// reproduce it.
+//
+// WHAT IT WIDENS IS BOTH WHAT IS ACCEPTED AND WHAT IS ADVERTISED. A converted
+// entry still has to name a target the DEVICE reports before
+// VkEncAdvertiseInputFormats will write it -- but that question is now put at
+// the profile the entry's own binding derives, so a 4:4:4 target is asked
+// about at a 4:4:4 profile and reaches the advertised list wherever the device
+// takes it. For a caller that DECLARES one of these formats the class question
+// is still the library question, "does this library route this input", with
+// the device question asked separately where the session is created; the
+// difference is that the same pair of questions is now answerable before a
+// session exists.
+
+// The plane layouts the filter's generator MODELS.
+//
+// YCBCR_SEMI_PLANAR_CBCR_INTERLEAVED and YCBCR_PLANAR_STRIDE_PADDED are the
+// two its read and write paths are parameterised over: both take their
+// per-plane bindings from numberOfExtraPlanes and their chroma addressing from
+// the subsampling bits, so neither has a per-format arm that could be missing.
+//
+// YCBCR_SINGLE_PLANE_INTERLEAVED -- the packed 4:2:2 family, YUY2 and UYVY and
+// their 10-, 12- and 16-bit spellings -- is REFUSED, and this is the one
+// exclusion that is about the generator being WRONG rather than about a limit
+// elsewhere. The table gives those rows numberOfExtraPlanes = 1 although they
+// are one plane, so the generator declares a two-plane read over a
+// single-plane image; and the block coordinates emit one luma sample per texel
+// for a format that carries two, which no field parameterises. The shader
+// COMPILES either way, so admitting them would buy a plausible wrong picture
+// instead of an error -- which is why the refusal is here, early, rather than
+// left to be discovered.
+//
+// YCBCR_SINGLE_PLANE_UNNORMALIZED -- the R10X6 / R12X4 rows -- describes a
+// PLANE's component format rather than an image a caller hands in, and carries
+// neither subsampling nor a plane count to convert.
+static bool VkEncFilterModelsLayout(const VkMpFormatInfo& mpInfo)
+{
+    switch (mpInfo.planesLayout.layout) {
+        case YCBCR_SEMI_PLANAR_CBCR_INTERLEAVED:
+        case YCBCR_PLANAR_STRIDE_PADDED:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// The component depths an encode input can be SPELLED at.
+// VkVideoComponentBitDepthFlagBitsKHR names 8, 10 and 12 and nothing else, so
+// a 14- or 16-bit surface has no encode input geometry to be described by and
+// CodecGetVkFormat spells no target for one. This is the refusal Y416 gets and
+// the reason it gets it; stating it once covers the packed half and the
+// multi-planar half together.
+static bool VkEncEncodableComponentDepth(uint32_t bitsPerChannel)
+{
+    return (bitsPerChannel == 8u) || (bitsPerChannel == 10u) ||
+           (bitsPerChannel == 12u);
+}
+
+// Rung 1's depth. What vkGetPhysicalDeviceVideoFormatPropertiesKHR reports as
+// an encode source is the 8- and 10-bit set: no driver table carries a 12-bit
+// encode-input row, so a 12-bit semi-planar input has the encode format's
+// plane layout AND its subsampling and is still rung 2, on its depth alone.
+static bool VkEncDeviceReadsDepthUnconverted(uint32_t bitsPerChannel)
+{
+    return (bitsPerChannel == 8u) || (bitsPerChannel == 10u);
+}
+
+// The RGB spellings this library routes. The one part of the set still written
+// out, and it has to be: an RGB layout is exactly what the Y'CbCr table does
+// not describe, so there is no table to read here. It is READ twice -- by the
+// classifier's RGB arm and by the routable enumeration -- rather than stated
+// twice, which is what keeps those two from naming different sets.
+//
+// THE SET IS DELIBERATELY THE 8-BIT UNORM FAMILY AND NOTHING ELSE. A false
+// ENCODABLE is worse than a clean refusal, so each exclusion is a positive
+// decision, not an oversight:
+//
+//   *_SRGB (R8G8B8A8_SRGB, B8G8R8A8_SRGB, A8B8G8R8_SRGB_PACK32) -- EXCLUDED,
+//     and the storage read is what decides it. VulkanFilterYuvCompute binds
+//     the RGBA source as a VK_DESCRIPTOR_TYPE_STORAGE_IMAGE over one combined
+//     view and reads it with imageLoad, so what an RGBA input must grant is
+//     VK_IMAGE_USAGE_STORAGE_BIT -- not the sampled usage a texture read would
+//     need, and no create flags at all. An *_SRGB format does not carry
+//     VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT -- sRGB is a sampled-image feature
+//     -- and a view whose usage includes VK_IMAGE_USAGE_STORAGE_BIT must carry
+//     that feature itself (VUID-VkImageViewCreateInfo-usage-02275). An sRGB
+//     view can therefore never be the STORAGE_IMAGE this filter binds, so
+//     admitting the format would only move the refusal to view creation, past
+//     the point where the producer can still allocate differently.
+//     Independently of the access form: the filter applies the colour MATRIX
+//     ONLY, with no transfer function, and that is correct precisely because
+//     Rec.601/709/2020 Y'CbCr is defined on GAMMA-ENCODED R'G'B'. That is what
+//     makes the _UNORM spelling of each format the one to take -- it hands the
+//     stored code values to the matrix untouched.
+//   A2B10G10R10_UNORM_PACK32, R16G16B16A16_UNORM -- EXCLUDED as RGBA inputs,
+//     and not merely for bit depth: those two enumerants are also how Y410 and
+//     Y416 are spelled, and a Y'CbCr declaration over them means exactly that.
+//     Claiming them as RGBA as well would make one enumerant carry two colour
+//     models on one path.
+//   R16G16B16A16_SFLOAT -- EXCLUDED. scRGB is linear and unbounded; both the
+//     transfer function and the out-of-[0,1] range are unhandled here.
+static const VkFormat kVkEncRoutableRgbFormats[] = {
+    VK_FORMAT_R8G8B8A8_UNORM,                               // RGBA8
+    VK_FORMAT_B8G8R8A8_UNORM,                               // BGRA8
+    VK_FORMAT_A8B8G8R8_UNORM_PACK32,                        // packed RGBA8
+};
+
+// The two-plane semi-planar Y'CbCr format at |bitsPerChannel| and this
+// subsampling, or VK_FORMAT_UNDEFINED where the table names none.
+//
+// This IS the conversion-target derivation. The filter's Y'CbCr arm changes
+// plane layout and packing and resamples neither chroma nor bit depth, so the
+// target is the semi-planar row that agrees with the input on both -- a
+// question for the table, rather than a list of input/target pairs kept beside
+// it that could name a row the filter would not produce.
+static VkFormat VkEncSemiPlanarFormatAt(uint32_t bitsPerChannel,
+                                        uint32_t subsampledX,
+                                        uint32_t subsampledY)
+{
+    for (uint32_t i = 0;; i++) {
+        const VkMpFormatInfo* const mpInfo = YcbcrVkFormatInfoByIndex(i);
+        if (mpInfo == nullptr) {
+            break;
+        }
+        if ((mpInfo->planesLayout.layout !=
+             YCBCR_SEMI_PLANAR_CBCR_INTERLEAVED) ||
+            (GetBitsPerChannel(mpInfo->planesLayout) != bitsPerChannel) ||
+            (mpInfo->planesLayout.secondaryPlaneSubsampledX != subsampledX) ||
+            (mpInfo->planesLayout.secondaryPlaneSubsampledY != subsampledY)) {
+            continue;
+        }
+        return mpInfo->vkFormat;
+    }
+    return VK_FORMAT_UNDEFINED;
+}
+
+// How a Y'CbCr input reaches the encoder: which rung of the adaptation ladder
+// it is on, and what it is converted into if it is converted at all. ONE
+// function, because those are one decision -- a class that says a filter runs
+// and a target that says no conversion exists describe different libraries.
+struct VkEncYcbcrRoute {
+    VkEncInputFormatClass inputClass;
+    VkFormat              target;  // UNDEFINED unless the class is VIA_FILTER
+};
+
+static VkEncYcbcrRoute VkEncDeriveYcbcrRoute(VkFormat inputFormat)
+{
+    VkEncYcbcrRoute route = { VK_ENC_INPUT_FORMAT_UNSUPPORTED,
+                              VK_FORMAT_UNDEFINED };
+
+    // Rung 2, packed half, and the arm the colour-model declaration exists
+    // for. AYUV and Y410 are Y'CbCr 4:4:4 carried one interleaved texel per
+    // pixel; they have no Vulkan enumerant of their own and ride the RGBA
+    // ones, so reaching this arm at all took the Y'CbCr declaration resolved
+    // by the caller -- undeclared, the same enumerants are an ordinary R'G'B'
+    // image and are answered by the RGB arm.
+    //
+    // What the filter converts for them is the PLANE COUNT, one against the
+    // encode source's two, which is the mismatch the 3-plane family has and is
+    // equally beyond a transfer copy. It reads them natively: the packed table
+    // gives the component depth and the channel each of Y', Cb and Cr sits in,
+    // and the single texel plane binds as ONE storage image rather than as
+    // per-plane views.
+    //
+    // Y416 (R16G16B16A16_UNORM) is refused by the depth predicate although the
+    // same packed table names it, and that is a decision rather than an
+    // oversight: 16 bits per component is not a
+    // VkVideoComponentBitDepthFlagBitsKHR, so no encode input geometry can
+    // carry it and CodecGetVkFormat spells no packed 16-bit target. Admitting
+    // it would replace this early, clear refusal with an opaque one raised
+    // after the caller had already built a frame pool.
+    //
+    // NO TARGET IS NAMED on this arm, and that is not an omission either:
+    // VkEncConversionTargetFormat takes no colour model and these enumerants
+    // resolve to R'G'B' without one, so it never reaches here. A target
+    // written here would be a claim nothing reads.
+    const VkPackedYcbcrFormatDesc* const packed =
+        PackedYcbcrFormatDesc(inputFormat);
+    if (packed != nullptr) {
+        if (VkEncEncodableComponentDepth(packed->bitDepth)) {
+            route.inputClass = VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER;
+        }
+        return route;
+    }
+
+    const VkMpFormatInfo* const mpInfo = YcbcrVkFormatInfo(inputFormat);
+    if ((mpInfo == nullptr) || !VkEncFilterModelsLayout(*mpInfo)) {
+        return route;
+    }
+    const uint32_t bitsPerChannel = GetBitsPerChannel(mpInfo->planesLayout);
+    if (!VkEncEncodableComponentDepth(bitsPerChannel)) {
+        return route;
+    }
+
+    // Rung 1. The input already has the encode source's layout and the device
+    // is handed it as it lies.
+    //
+    // THE SUBSAMPLING IS NOT FIXED AT 4:2:0. A 4:4:4 or 4:2:2 semi-planar
+    // input is the encoder input of a profile at that subsampling -- H.264
+    // High 4:4:4 Predictive, H.265 Range Extensions -- and the codec config
+    // derives that profile from the input's own chroma subsampling, so nothing
+    // else has to be asked for. What this answers is whether the LIBRARY
+    // routes the input unconverted; whether THIS device exposes an encode
+    // profile at that subsampling is a device question, and it is answered
+    // where the session is created rather than guessed here.
+    if ((mpInfo->planesLayout.layout ==
+         YCBCR_SEMI_PLANAR_CBCR_INTERLEAVED) &&
+        VkEncDeviceReadsDepthUnconverted(bitsPerChannel)) {
+        route.inputClass = VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT;
+        return route;
+    }
+
+    // Rung 2. Either the PLANE COUNT is the mismatch -- three against the
+    // encode source's two -- or, for a semi-planar input that reached here,
+    // the bit depth is. The ladder's own table assigns subsampling and
+    // plane-layout conversion to the compute tier and restricts the transfer
+    // tier to "pure tiling mismatches", and a plane-count mismatch that takes
+    // the copy anyway hangs the GPU.
+    //
+    // A row with no semi-planar sibling at its own depth and subsampling has
+    // no route and stays UNSUPPORTED: the filter would have nothing to write
+    // into, and saying otherwise is the accepted-then-refused shape this
+    // taxonomy exists to prevent.
+    route.target = VkEncSemiPlanarFormatAt(
+        bitsPerChannel, mpInfo->planesLayout.secondaryPlaneSubsampledX,
+        mpInfo->planesLayout.secondaryPlaneSubsampledY);
+    if (route.target != VK_FORMAT_UNDEFINED) {
+        route.inputClass = VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER;
+    }
+    return route;
+}
+
+
 VkEncInputFormatClass VkEncClassifyInput(VkFormat inputFormat,
                                          VkVideoEncoderColorModel colorModel)
 {
@@ -5024,46 +5699,20 @@ VkEncInputFormatClass VkEncClassifyInput(VkFormat inputFormat,
         VkEncResolveColorModel(inputFormat, colorModel);
 
     if (model == VK_VIDEO_ENCODER_COLOR_MODEL_RGB) {
-        // Rung 2, RGBA half. VulkanFilterYuvCompute binds the RGBA source
-        // as a VK_DESCRIPTOR_TYPE_STORAGE_IMAGE over one combined view and
-        // reads it with imageLoad, so what an RGBA input must grant is
-        // VK_IMAGE_USAGE_STORAGE_BIT -- not the sampled usage a texture read
-        // would need, and no create flags at all.
-        //
-        // THE SET IS DELIBERATELY THE 8-BIT UNORM FAMILY AND NOTHING ELSE. A
-        // false ENCODABLE is worse than a clean refusal, so each exclusion is
-        // a positive decision, not an oversight:
-        //
-        //   *_SRGB (R8G8B8A8_SRGB, B8G8R8A8_SRGB) -- EXCLUDED. The filter
-        //     applies the colour MATRIX ONLY, with no transfer function, and
-        //     that is correct precisely because Rec.601/709/2020 Y'CbCr is
-        //     defined on GAMMA-ENCODED R'G'B'. Sampling an _SRGB view makes
-        //     the implementation linearise before the shader sees the texel,
-        //     which would feed linear RGB into a matrix expecting R'G'B'. The
-        //     result is not obviously broken -- it is uniformly, plausibly
-        //     wrong, which is the worst kind. Accepting these would require
-        //     an EOTF the library does not implement. Chromium maps its RGBA
-        //     families to _UNORM and never emits VK_FORMAT_*_SRGB, so nothing
-        //     is lost by refusing them.
-        //   A2B10G10R10_UNORM_PACK32, R16G16B16A16_UNORM -- EXCLUDED as RGBA
-        //     inputs, and not merely for bit depth: those two enumerants are
-        //     also how Y410 and Y416 are spelled, and a Y'CbCr declaration
-        //     over them means exactly that. Claiming them as RGBA as well
-        //     would make one enumerant carry two colour models on one path.
-        //   R16G16B16A16_SFLOAT -- EXCLUDED. scRGB is linear and unbounded;
-        //     both the transfer function and the out-of-[0,1] range are
-        //     unhandled here.
+        // Rung 2, RGBA half. The set is kVkEncRoutableRgbFormats, which is
+        // READ here rather than restated: the routable enumeration reads the
+        // same array, so the classifier and the advertisement cannot name
+        // different RGB sets. Every exclusion, and the storage-image reason
+        // that decides them, is stated where that array is declared.
         //
         // These are single-plane, so VkEncInputFormatPlaneCount cannot answer
         // from the class alone -- see the note there.
-        switch (inputFormat) {
-            case VK_FORMAT_R8G8B8A8_UNORM:                          // RGBA8
-            case VK_FORMAT_B8G8R8A8_UNORM:                          // BGRA8
-            case VK_FORMAT_A8B8G8R8_UNORM_PACK32:                   // packed RGBA8
+        for (const VkFormat routed : kVkEncRoutableRgbFormats) {
+            if (routed == inputFormat) {
                 return VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER;
-            default:
-                return VK_ENC_INPUT_FORMAT_UNSUPPORTED;
+            }
         }
+        return VK_ENC_INPUT_FORMAT_UNSUPPORTED;
     }
 
     if (model != VK_VIDEO_ENCODER_COLOR_MODEL_YCBCR) {
@@ -5072,73 +5721,225 @@ VkEncInputFormatClass VkEncClassifyInput(VkFormat inputFormat,
         return VK_ENC_INPUT_FORMAT_UNSUPPORTED;
     }
 
-    switch (inputFormat) {
-        // Rung 1. What vkGetPhysicalDeviceVideoFormatPropertiesKHR reports
-        // as an encode source is the 8- and 10-bit semi-planar set, at both
-        // 4:2:0 and 4:4:4: no driver table carries a 12-bit encode-input row,
-        // so 12-bit semi-planar is rung 2 even though its plane layout
-        // already matches.
-        //
-        // THE SUBSAMPLING IS NOT FIXED AT 4:2:0. A 4:4:4 semi-planar input is
-        // the encoder input of a 4:4:4 profile -- H.264 High 4:4:4 Predictive
-        // and H.265 Range Extensions -- and the codec config derives that
-        // profile from the input's own chroma subsampling, so nothing else
-        // has to be asked for. What this function answers is whether the
-        // LIBRARY routes the input unconverted; whether THIS device exposes
-        // an encode profile at that subsampling is a device question, and it
-        // is answered where the session is created rather than guessed here.
-        case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:                    // NV12
-        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:   // P010
-        case VK_FORMAT_G8_B8R8_2PLANE_444_UNORM:                    // NV24
-        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16:   // S410
-            return VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT;
-        // Rung 2. Same subsampling and same bit depth as the encode format;
-        // the mismatch is the PLANE COUNT, three against two. The ladder's
-        // own table assigns subsampling and plane-layout conversion to the
-        // compute tier and restricts the transfer tier to "pure tiling
-        // mismatches" (CONTEXT_DESIGN:586-598), and section 8.1 measured what
-        // happens when a plane-count mismatch takes the copy anyway.
-        case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:                   // I420
-        case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16:  // I420 10b
-        case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16:  // I420 12b
-        // Rung 2, bit-depth half. P012 has the encode format's plane layout
-        // and subsampling; what the device cannot take is the 12-bit depth,
-        // and depth conversion is the compute tier's work.
-        case VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16:   // P012
-            return VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER;
-        default:
-            return VK_ENC_INPUT_FORMAT_UNSUPPORTED;
-    }
+    // Y'CbCr, and the whole of the answer is derived -- see
+    // VkEncDeriveYcbcrRoute, which is also what names the conversion target,
+    // so a format's rung and its target are one decision rather than two.
+    return VkEncDeriveYcbcrRoute(inputFormat).inputClass;
 }
 
-uint32_t VkEncFilterAdvertisedInputFormats(const VkFormat* deviceFormats,
-                                           uint32_t deviceFormatCount,
-                                           VkFormat* outFormats,
-                                           uint32_t outCapacity)
-{
-    if ((deviceFormats == nullptr) || (outFormats == nullptr)) {
-        return 0;
-    }
-    uint32_t written = 0;
-    for (uint32_t i = 0; (i < deviceFormatCount) && (written < outCapacity);
-         i++) {
-        const VkFormat format = deviceFormats[i];
-        if (VkEncClassifyInput(format,
-                               VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) ==
-            VK_ENC_INPUT_FORMAT_UNSUPPORTED) {
-            continue;
+// The routable list, in the order the advertisement emits converted entries:
+// the direct rung first, then the converted rung, then RGB.
+//
+// DERIVED FROM THE SAME TABLES THE CLASSIFIER READS, so the list and the
+// classifier are one predicate rather than two statements of one set. The
+// eleven-entry literal this replaces had to be held against the classifier by
+// a test, because nothing else held them together.
+//
+// Within each rung the order is the FORMAT TABLE's own, which groups by depth
+// and then by subsampling. That keeps the 4:2:0 entries -- the only ones a
+// 4:2:0 device list can reach -- in the relative order they have always been
+// advertised in.
+//
+// THE PACKED 4:4:4 ALIASES ARE NOT HERE, and their absence is the decision the
+// public header states rather than an omission: this list carries no colour
+// model, so an enumerant whose only accepted reading is the Y'CbCr one cannot
+// appear as itself. AYUV's enumerant is on the list under its RGB reading;
+// Y410's is not on it at all, and absence from the list is not a refusal.
+namespace {
+
+struct VkEncRoutableFormatSet {
+    VkFormat formats[VK_ENC_MAX_ROUTABLE_INPUT_FORMATS];
+    uint32_t count;
+
+    VkEncRoutableFormatSet() : formats{}, count(0)
+    {
+        AppendYcbcrRung(VK_ENC_INPUT_FORMAT_ENCODABLE_DIRECT);
+        AppendYcbcrRung(VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER);
+        for (const VkFormat rgb : kVkEncRoutableRgbFormats) {
+            Append(rgb);
         }
-        bool alreadyWritten = false;
-        for (uint32_t j = 0; j < written; j++) {
-            if (outFormats[j] == format) {
-                alreadyWritten = true;
+    }
+
+    void AppendYcbcrRung(VkEncInputFormatClass rung)
+    {
+        for (uint32_t i = 0;; i++) {
+            const VkMpFormatInfo* const mpInfo = YcbcrVkFormatInfoByIndex(i);
+            if (mpInfo == nullptr) {
                 break;
             }
+            if (VkEncDeriveYcbcrRoute(mpInfo->vkFormat).inputClass == rung) {
+                Append(mpInfo->vkFormat);
+            }
         }
-        if (alreadyWritten) {
+    }
+
+    void Append(VkFormat format)
+    {
+        for (uint32_t i = 0; i < count; i++) {
+            if (formats[i] == format) {
+                return;
+            }
+        }
+        // Dropping an entry would make the advertisement quietly narrower than
+        // the taxonomy, which is the one failure a derived list could still
+        // introduce. The bound is static_asserted against the table's own
+        // length below, so this cannot fire.
+        assert(count < VK_ENC_MAX_ROUTABLE_INPUT_FORMATS);
+        if (count < VK_ENC_MAX_ROUTABLE_INPUT_FORMATS) {
+            formats[count++] = format;
+        }
+    }
+};
+
+}  // anonymous namespace
+
+static_assert(VK_ENC_MAX_ROUTABLE_INPUT_FORMATS >=
+                  (YCBCR_VK_FORMAT_INFO_TABLE_SIZE +
+                   (sizeof(kVkEncRoutableRgbFormats) / sizeof(VkFormat))),
+              "the routable set is at most every row of the multi-planar "
+              "table plus the RGB spellings, so a bound below that could drop "
+              "a format the classifier routes");
+const VkFormat* VkEncRoutableInputFormats(uint32_t& outCount)
+{
+    // Built on the first call and immutable afterwards; the initialisation is
+    // thread-safe by the language, which is what lets the derivation run once
+    // rather than on every classification.
+    static const VkEncRoutableFormatSet kRoutable;
+    outCount = kRoutable.count;
+    return kRoutable.formats;
+}
+
+VkFormat VkEncConversionTargetFormat(VkFormat inputFormat,
+                                     const VkFormat* deviceFormats,
+                                     uint32_t deviceFormatCount)
+{
+    if (VkEncResolveColorModel(inputFormat,
+                               VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) ==
+        VK_VIDEO_ENCODER_COLOR_MODEL_RGB) {
+        // The encode source an RGB session ends up with. InitEncoder passes
+        // VK_FORMAT_UNDEFINED as the encode-source request for an RGB
+        // session and takes the driver's first choice, so naming the same
+        // entry here makes the advertisement and the session agree by
+        // construction rather than by luck.
+        return ((deviceFormats != nullptr) && (deviceFormatCount > 0))
+                   ? deviceFormats[0]
+                   : VK_FORMAT_UNDEFINED;
+    }
+
+    // Y'CbCr. Same subsampling, same bit depth, two planes -- which is what
+    // the filter's Y'CbCr arm produces and the whole of what it changes.
+    //
+    // DERIVED, and by the same call that classified the input, so a format's
+    // rung and the target it converts into are ONE decision, not two switches
+    // side by side: a second statement of the same set drifts, and the target's
+    // switch naming four inputs where the classifier's names six is exactly that
+    // drift.
+    //
+    // VK_FORMAT_UNDEFINED for a directly encodable input, which converts into
+    // nothing, and for one this library does not route at all.
+    return VkEncDeriveYcbcrRoute(inputFormat).target;
+}
+
+namespace {
+
+bool VkEncFormatListContains(const VkFormat* formats, uint32_t count,
+                             VkFormat format)
+{
+    for (uint32_t i = 0; i < count; i++) {
+        if (formats[i] == format) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool VkEncEntryListContains(const VkVideoEncoderInputFormatProperties* entries,
+                            uint32_t count, VkFormat format)
+{
+    for (uint32_t i = 0; i < count; i++) {
+        if (entries[i].format == format) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // anonymous namespace
+
+uint32_t VkEncAdvertiseInputFormats(
+    VkEncInputFormatAdmitFn admit, void* userData,
+    VkVideoEncoderInputFormatProperties* outEntries, uint32_t outCapacity)
+{
+    if ((admit == nullptr) || (outEntries == nullptr)) {
+        return 0;
+    }
+
+    // ONE CANDIDATE SET, OFFERED ONCE EACH. The routable list is what this
+    // library can route at all; whether a given device and profile will take
+    // any particular one of them is the admission's question, asked here and
+    // answered nowhere else in this function. Walking the routable list rather
+    // than a device list is what lets the admission be a live per-candidate
+    // resolve: a candidate is bound at ITS OWN derived profile, and different
+    // candidates therefore see different device answers.
+    uint32_t routableCount = 0;
+    const VkFormat* const routable = VkEncRoutableInputFormats(routableCount);
+
+    VkVideoEncoderInputFormatProperties admitted[
+        VK_ENC_MAX_ROUTABLE_INPUT_FORMATS] = {};
+    uint32_t admittedCount = 0;
+    for (uint32_t i = 0; (i < routableCount) &&
+                         (admittedCount < VK_ENC_MAX_ROUTABLE_INPUT_FORMATS);
+         i++) {
+        const VkFormat format = routable[i];
+        // Each format is written once however many times a device reports it,
+        // because tiling is a property of an image and not of a format. The
+        // routable list is already unique, so this catches only an admission
+        // that answered about a format it was not asked about.
+        if (VkEncEntryListContains(admitted, admittedCount, format)) {
             continue;
         }
-        outFormats[written++] = format;
+        VkVideoEncoderInputFormatProperties entry = {};
+        entry.format = format;
+        if (!admit(userData, format, &entry)) {
+            continue;
+        }
+#ifndef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+        // NOT ADVERTISED AT ALL WHEN THE FILTER IS NOT COMPILED IN. Every
+        // SUBOPTIMAL entry is ENCODABLE_VIA_FILTER, and InitializeExt refuses
+        // exactly that class with VK_ERROR_INITIALIZATION_FAILED when
+        // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED is undefined -- the two
+        // test the same predicate, so the correspondence is exact rather than
+        // approximate. Advertising them in such a build would name formats the
+        // library then refuses, which is the one failure this list exists to
+        // prevent. The condition is the BUILD's, not the device's and not the
+        // admission's, so it is applied here where no admission can bypass it.
+        //
+        // The OPTIMAL entries are deliberately outside this: they are
+        // ENCODABLE_DIRECT, the encoder reads them as they lie, and no filter
+        // is involved. A build without the filter advertises exactly the same
+        // OPTIMAL set as one with it.
+        if (entry.optimality != VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL) {
+            continue;
+        }
+#endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+        admitted[admittedCount++] = entry;
+    }
+
+    // OPTIMAL first, then SUBOPTIMAL, each group in the routable list's order.
+    // A caller reading the list top-down meets the entries the encoder takes as
+    // they lie before any that cost a conversion.
+    uint32_t written = 0;
+    for (uint32_t pass = 0; (pass < 2u) && (written < outCapacity); pass++) {
+        const VkVideoEncoderInputFormatOptimality wanted =
+            (pass == 0u) ? VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL
+                         : VK_VIDEO_ENCODER_INPUT_FORMAT_SUBOPTIMAL;
+        for (uint32_t i = 0; (i < admittedCount) && (written < outCapacity);
+             i++) {
+            if (admitted[i].optimality != wanted) {
+                continue;
+            }
+            outEntries[written++] = admitted[i];
+        }
     }
     return written;
 }
@@ -5164,10 +5965,27 @@ uint32_t VkEncInputFormatPlaneCount(VkFormat inputFormat)
     // that test comes FIRST: an sRGB or scRGB surface is an RGB layout the
     // library refuses, so asking "is it RGB" before "is it routed" would
     // answer 1 for an input no allocation is ever sized for.
-    if (VkEncClassifyInput(inputFormat,
-                           VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) ==
-        VK_ENC_INPUT_FORMAT_UNSUPPORTED) {
+    //
+    // "Routed" is asked under BOTH readings an enumerant can carry, because a
+    // packed 4:4:4 alias is routed only under a Y'CbCr declaration --
+    // undeclared it reads as R'G'B', and as R'G'B' this library routes only
+    // the 8-bit set. Asking under FROM_FORMAT alone answers 0 for Y410, a
+    // layout this library does route and does size allocations for.
+    if ((VkEncClassifyInput(inputFormat,
+                            VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) ==
+         VK_ENC_INPUT_FORMAT_UNSUPPORTED) &&
+        (VkEncClassifyInput(inputFormat,
+                            VK_VIDEO_ENCODER_COLOR_MODEL_YCBCR) ==
+         VK_ENC_INPUT_FORMAT_UNSUPPORTED)) {
         return 0;
+    }
+    // The packed 4:4:4 layouts are ONE interleaved plane. Asking the packed
+    // table before the colour model is what makes this answer the same under
+    // either declaration, which is what the declaration-free signature
+    // promises: AYUV and the R'G'B' image it shares an enumerant with are
+    // both one plane, and Y410 is one plane whether or not it was declared.
+    if (PackedYcbcrFormatDesc(inputFormat) != nullptr) {
+        return 1;
     }
     if (VkEncResolveColorModel(inputFormat,
                                VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) ==
@@ -5621,18 +6439,21 @@ static bool VkEncDescriptorPermitsPlaneStorageViews(
 // (VUID-VkImageViewCreateInfo-image-01762), and that cost belongs to the
 // per-plane views, not to the format's colour model.
 //
-// The RGBA arm binds ONE descriptor over the COMBINED view:
+// The SINGLE-PLANE arm binds ONE descriptor over the COMBINED view:
 // VulkanFilterYuvCompute sets m_inputImageAspects =
-// VK_IMAGE_ASPECT_COLOR_BIT for RGBA2YCBCR, and UpdateImageDescriptorSets
-// binds aspect 0 through GetImageView(). What this gate requires of a
-// descriptor is exactly two things:
+// VK_IMAGE_ASPECT_COLOR_BIT for every input the multi-planar table does not
+// place -- an R'G'B' image and, equally, a packed 4:4:4 Y'CbCr surface on an
+// RGBA-typed enumerant -- and UpdateImageDescriptorSets binds aspect 0
+// through GetImageView(). So the arm is chosen by PLANE COUNT rather than by
+// colour model: AYUV needs this arm and no create flags, exactly as R'G'B'
+// does. What this gate requires of a descriptor is exactly two things:
 //
 //   * the image must GRANT VK_IMAGE_USAGE_STORAGE_BIT. A STORAGE_IMAGE
 //     descriptor may only name a view whose image carries it
 //     (VUID-VkWriteDescriptorSet-descriptorType-00339), and this library
 //     never invents a usage the exporter did not grant; and
 //   * the DEVICE must support a storage read of that format on that tiling
-//     -- |deviceCanStorageRead|, i.e. filterCapable.
+//     -- |deviceCanStorageRead|.
 //
 // It needs NO create flags. Nothing on this arm reinterprets the format, so
 // MUTABLE_FORMAT buys nothing here, and requiring it would refuse the shipped
@@ -5643,8 +6464,7 @@ static bool VkEncDescriptorPermitsStorageRead(
     VkImageUsageFlags resolvedUsage,
     bool deviceCanStorageRead)
 {
-    return (VkEncResolveColorModel(desc.format, desc.colorModel) ==
-            VK_VIDEO_ENCODER_COLOR_MODEL_RGB) &&
+    return (VkEncInputFormatPlaneCount(desc.format) == 1u) &&
            ((resolvedUsage & VK_IMAGE_USAGE_STORAGE_BIT) != 0) &&
            deviceCanStorageRead;
 }
@@ -6813,8 +7633,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::BuildRegisteredViewLocked(
         slot.imageView &&
         (slot.imageView->GetImageView() != VK_NULL_HANDLE) &&
         (slot.imageView->GetNumberOfPlanes() == 1) &&
-        (VkEncResolveColorModel(desc.format, desc.colorModel) ==
-         VK_VIDEO_ENCODER_COLOR_MODEL_RGB) &&
+        (VkEncInputFormatPlaneCount(desc.format) == 1u) &&
         ((usage & VK_IMAGE_USAGE_STORAGE_BIT) != 0);
 
     const VkImageLayout initialLayout =
@@ -6949,9 +7768,9 @@ bool VulkanVideoEncoderExtImpl::ModifierWouldRegister(
 // by VK_EXT_image_drm_format_modifier itself answers without a
 // VK_KHR_format_feature_flags2 dependency.
 //
-// This is the derivation behind the public |filterCapable| AND the
-// registration predicate for the single-plane arm: two readers, one body, so
-// the query and the gate cannot answer differently.
+// This is the registration predicate for the single-plane arm. One body, so
+// the query -- which runs the same gate -- and the gate cannot answer
+// differently.
 bool VulkanVideoEncoderExtImpl::DeviceCanStorageRead(
     const VkVideoEncoderExternalImageDescriptor& desc) const
 {
@@ -6966,8 +7785,7 @@ bool VulkanVideoEncoderExtImpl::DeviceCanStorageRead(
     if (desc.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
         // Unknowable without a modifier, and "unknowable" must answer FALSE
         // on a gate: a true here would admit a registration on a modifier
-        // that may carry no STORAGE at all. This is the same VK_FALSE the
-        // header already documents for filterCapable in this case.
+        // that may carry no STORAGE at all.
         if (desc.hasDrmFormatModifier != VK_TRUE) {
             return false;
         }
@@ -6994,7 +7812,6 @@ void VulkanVideoEncoderExtImpl::FillImageSupportDetails(
     const VkVideoEncoderExternalImageDescriptor& desc,
     VkVideoEncoderImageSupportDetails* details) const
 {
-    details->filterCapable = VK_FALSE;
     details->directModifierCount = 0;
     // getPhysicalDevice() as well as m_initialized: a null-backend session
     // (internal header) reports initialized with no device, and both detail
@@ -7007,8 +7824,6 @@ void VulkanVideoEncoderExtImpl::FillImageSupportDetails(
         (desc.width == 0) || (desc.height == 0)) {
         return;
     }
-
-    details->filterCapable = DeviceCanStorageRead(desc) ? VK_TRUE : VK_FALSE;
 
     // directModifiers: the renegotiation list, meaningful only for an
     // OS-handle import (VK_IMAGE never re-imports; the Win32 arms are
@@ -7446,16 +8261,17 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
         // A filter-input registration needs the views the filter reads --
         // and the filter's TWO arms bind different VIEWS of the image, which
         // is what this split says: per-plane views for a multi-planar input,
-        // one combined view for RGBA. Both are bound as
+        // one combined view for a single-plane one. Both are bound as
         // VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, so both require STORAGE; only the
         // per-plane arm additionally requires the create flags a plane view
-        // costs. Refusing here, at the negotiation point, is what lets a
-        // producer re-export with the right declaration instead of
-        // discovering at submit that its frames convert to nothing.
+        // costs. The split is by PLANE COUNT and not by colour model,
+        // because a packed 4:4:4 Y'CbCr surface is one interleaved plane and
+        // the filter binds it exactly as it binds R'G'B'. Refusing here, at
+        // the negotiation point, is what lets a producer re-export with the
+        // right declaration instead of discovering at submit that its frames
+        // convert to nothing.
         if (descriptor.format != sessionEncodeFormat) {
-            if (VkEncResolveColorModel(descriptor.format,
-                                       descriptor.colorModel) ==
-                VK_VIDEO_ENCODER_COLOR_MODEL_RGB) {
+            if (VkEncInputFormatPlaneCount(descriptor.format) == 1u) {
                 // Single plane, storage read: usage + device capability, no
                 // create flags. Computed once -- the DRM arm of this walks
                 // the modifier list.
@@ -7475,7 +8291,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
                         << (uint32_t)descriptor.imageUsage
                         << ") and the device must report "
                            "VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT for this "
-                           "format on this tiling (filterCapable: "
+                           "format on this tiling (device storage read: "
                         << (deviceCanStorageRead ? 1u : 0u)
                         << "). No create flags are required on this arm"
                         << std::endl;
@@ -7560,10 +8376,9 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::QueryImageSupport(
     outSupport->supported =
         (status == VK_VIDEO_ENCODER_STATUS_SUCCESS) ? VK_TRUE : VK_FALSE;
 
-    // Filled INDEPENDENTLY of the verdict: an RGBA descriptor answers
-    // CONVERSION_REQUIRED *and* whether the conversion path could read it
-    // (filterCapable), and a MODIFIER_UNSUPPORTED answer carries the
-    // modifiers that WOULD work -- renegotiation in one round trip.
+    // Filled INDEPENDENTLY of the verdict: a MODIFIER_UNSUPPORTED answer
+    // carries the modifiers that WOULD work, which is renegotiation in one
+    // round trip, and a caller that never reads the verdict still gets it.
     if (details != nullptr) {
         FillImageSupportDetails(descriptor, details);
     }
@@ -7897,8 +8712,8 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::RegisterImageResource(
     // null-backend fork below. These two are written here rather than only inside
     // BuildRegisteredViewLocked, which that fork skips -- so on a device-free
     // session the routing decision and everything derived from it (inputPath,
-    // and until this rework the content probe's arm decision) silently read a
-    // default. Neither needs a device to compute.
+    // and the content probe's arm decision) would silently read a default.
+    // Neither needs a device to compute.
     slot.imageUsage    = VkEncResolveRegistrationUsage(descriptor);
     slot.encodeCapable = VkEncRegistrationIsDirectlyEncodable(descriptor);
 
@@ -8804,11 +9619,9 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::SubmitRegisteredFrame(
         encodeCapable = slot->encodeCapable;
         // Read from the resolved path, not recomputed: the registration
         // already answered which rung this image takes. That answer is
-        // INTERNAL: no public accessor returns it, and the
-        // There is no GetResourceInputPath in this library. Do not substitute
-        // VkVideoEncoderImageSupportDetails::filterCapable for it either --
-        // that field deliberately answers a different question, as its own
-        // note in the header says at length.
+        // INTERNAL: no public accessor returns it. The route is the
+        // library's choice, not a contract, and the type that names it is
+        // declared in the internal header for that reason.
         routeViaFilter =
             (slot->inputPath == VK_VIDEO_EXTERNAL_INPUT_PATH_FILTER);
         // RESIDENCY: HONOURED WHEREVER IT WAS DECLARED, DERIVED ONLY WHERE
@@ -9666,15 +10479,34 @@ VkResult VkEncPushCapture(VulkanVideoEncoderExt* encoder,
 
 namespace {
 
-// (codec, profile) -> probe parameters. The probe is
+// (codec, profile, bit depth) -> probe parameters. The probe is
 // per-VkVideoProfileInfoKHR, so each advertised (profile-idc, bit-depth)
 // combination must be queried literally. VK_VIDEO_ENCODER_PROFILE_DEFAULT
 // probes the representative profile per codec (H.264 High, H.265 Main, AV1
 // Main -- all 8-bit); a named profile probes exactly itself.
+//
+// THE BIT DEPTH IS PART OF THE KEY AND IS NOT DERIVED FROM THE PROFILE
+// NUMBER. For H.264 and H.265 the number does decide the depth -- Baseline,
+// Main and High are 8-bit, Main 10 is the 10-bit one -- so those arms accept
+// exactly the depth their profile carries and refuse every other, which is
+// the answer they already gave. AV1 IS NOT LIKE THAT: seq_profile 0 (Main)
+// carries 8 OR 10 bits at 4:2:0 (AV1 A.2), one profile at two depths. A key
+// that was only a profile number could not name the 10-bit half at all, so it
+// was the one combination this probe could not put to a driver -- while a
+// 10-bit AV1 session is built and encoded on hardware today.
+//
+// H.264 High 10 (profile_idc 110) is deliberately NOT a row here. It has
+// never been probed on any device in this tree, and a row is an
+// advertisement: adding one would claim a capability with no evidence behind
+// it. The same reasoning keeps H.265 Main 10 at 10 bits only, although the
+// standard admits 8-bit input under it (H.265 A.3.3) -- that pairing has
+// never been probed either. Widening either is a row with a visible diff,
+// which is the point of putting the depth in the key.
 struct ProbeProfile {
     uint32_t                          profileIdc;
     VkVideoComponentBitDepthFlagBitsKHR lumaBits;
     VkVideoComponentBitDepthFlagBitsKHR chromaBits;
+    VkVideoChromaSubsamplingFlagBitsKHR chromaSubsampling;
 };
 
 // Returns false when `profile` is not a value this library probes for `codec`
@@ -9683,22 +10515,86 @@ struct ProbeProfile {
 // 1 is H.265 Main and is not an H.264 profile_idc at all. The codec arm is
 // what disambiguates, and a number that belongs to another codec falls through
 // to the refusal rather than answering with that codec's capabilities.
+// The Vulkan component-bit-depth flag for |bitDepth|, or false for a depth
+// this probe cannot spell. NOT a default: silently probing 8 bits for a
+// caller that asked about 12 would answer a question nobody put.
+static bool MapProbeBitDepth(uint32_t bitDepth,
+                             VkVideoComponentBitDepthFlagBitsKHR& out)
+{
+    switch (bitDepth) {
+        case 8:
+            out = VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;  return true;
+        case 10:
+            out = VK_VIDEO_COMPONENT_BIT_DEPTH_10_BIT_KHR; return true;
+        default:
+            return false;
+    }
+}
+
 static bool MapProbeProfile(VkVideoCodecOperationFlagBitsKHR codec,
                             uint32_t profile,
+                            uint32_t bitDepth,
                             ProbeProfile& out)
 {
-    out.lumaBits   = VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
-    out.chromaBits = VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
+    VkVideoComponentBitDepthFlagBitsKHR depthFlag =
+        VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR;
+    if (!MapProbeBitDepth(bitDepth, depthFlag)) {
+        return false;
+    }
+    out.lumaBits   = depthFlag;
+    out.chromaBits = depthFlag;
+    // THE PROBE ENVELOPE, and it is narrower than the taxonomy it serves.
+    //
+    // Every profile below is 4:2:0, so every capability query THIS PROBE
+    // issues asks the device about a 4:2:0 profile.
+    //
+    // THAT IS THE RIGHT ENVELOPE FOR WHAT THE PROBE STILL ANSWERS -- the
+    // capability SCALARS: coded extent, bitrate ceiling, DPB slots, rate
+    // control modes, quality levels, std syntax flags. It was the wrong one
+    // for a format list, and a format list is no longer built from it:
+    // VkEncEnumerateInputFormats resolves each candidate live, at the profile
+    // that candidate's own binding derives, so a 4:4:4 input asks the device
+    // about a 4:4:4 profile whichever entry point put the question.
+    //
+    // Widening the envelope is still not a matter of changing the value below.
+    // A 4:4:4 encode profile IS a different profile -- H.264 High 4:4:4
+    // Predictive, H.265 Range Extensions -- so it needs a row of its own here
+    // to be probed at all, and what a driver then answers is a device fact to
+    // be measured rather than assumed. The field exists so that widening is a
+    // row in this table with a visible diff, rather than a literal buried in
+    // the call below.
+    out.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;
+    const bool eightBit = (bitDepth == 8);
+    const bool tenBit   = (bitDepth == 10);
     switch ((uint32_t)codec) {
         case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
+            // Depth is gated per profile, not once for the codec: the
+            // admissible depth is a property of the profile, not of H.264.
+            // Baseline, Main and High admit 8-bit input only (H.264 A.2);
+            // High 10 admits 10-bit. Gating the codec as a whole would
+            // refuse a pairing before its profile is read.
             switch (profile) {
                 case VK_VIDEO_ENCODER_PROFILE_DEFAULT:
                 case VK_VIDEO_ENCODER_PROFILE_H264_HIGH:
+                    if (!eightBit) {
+                        return false;
+                    }
                     out.profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH;     return true;
                 case VK_VIDEO_ENCODER_PROFILE_H264_BASELINE:
+                    if (!eightBit) {
+                        return false;
+                    }
                     out.profileIdc = STD_VIDEO_H264_PROFILE_IDC_BASELINE; return true;
                 case VK_VIDEO_ENCODER_PROFILE_H264_MAIN:
+                    if (!eightBit) {
+                        return false;
+                    }
                     out.profileIdc = STD_VIDEO_H264_PROFILE_IDC_MAIN;     return true;
+                case VK_VIDEO_ENCODER_PROFILE_H264_HIGH_10:
+                    if (!tenBit) {
+                        return false;
+                    }
+                    out.profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_10;  return true;
                 default:
                     return false;
             }
@@ -9706,19 +10602,32 @@ static bool MapProbeProfile(VkVideoCodecOperationFlagBitsKHR codec,
             switch (profile) {
                 case VK_VIDEO_ENCODER_PROFILE_DEFAULT:
                 case VK_VIDEO_ENCODER_PROFILE_H265_MAIN:
+                    // Main is 8-bit 4:2:0 (H.265 A.3.2).
+                    if (!eightBit) {
+                        return false;
+                    }
                     out.profileIdc = STD_VIDEO_H265_PROFILE_IDC_MAIN;     return true;
                 case VK_VIDEO_ENCODER_PROFILE_H265_MAIN10:
-                    out.profileIdc = STD_VIDEO_H265_PROFILE_IDC_MAIN_10;
-                    out.lumaBits   = VK_VIDEO_COMPONENT_BIT_DEPTH_10_BIT_KHR;
-                    out.chromaBits = VK_VIDEO_COMPONENT_BIT_DEPTH_10_BIT_KHR;
-                    return true;
+                    // 10 bits only, which is NARROWER than H.265 A.3.3
+                    // allows. See the note on the struct above for why the
+                    // 8-bit Main 10 pairing is not a row.
+                    if (!tenBit) {
+                        return false;
+                    }
+                    out.profileIdc = STD_VIDEO_H265_PROFILE_IDC_MAIN_10;  return true;
                 default:
                     return false;
             }
         case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:
             switch (profile) {
                 // seq_profile 0 IS Main and IS DEFAULT: one case, not two.
+                // BOTH DEPTHS, because Main is one profile at two of them and
+                // the depth is a separate term of this key. This is the row
+                // the table could not previously express.
                 case VK_VIDEO_ENCODER_PROFILE_AV1_MAIN:
+                    if (!eightBit && !tenBit) {
+                        return false;
+                    }
                     out.profileIdc = STD_VIDEO_AV1_PROFILE_MAIN;          return true;
                 default:
                     return false;
@@ -9748,14 +10657,19 @@ static bool DeviceHasExtension(const VulkanDeviceContext& ctx,
     return ctx.FindDeviceExtension(extName) != nullptr;
 }
 
-// Query caps for (`codec`, `profile`) against the (already
+// Query caps for (`codec`, `profile`, `bitDepth`) against the (already
 // instance+physical-device initialized) device context. No VkDevice /
 // session is created.
 static VkResult QueryEncoderCapsInternal(const VulkanDeviceContext& ctx,
                                          VkVideoCodecOperationFlagBitsKHR codec,
                                          uint32_t profile,
-                                         VkVideoEncoderCapabilities* outCaps)
+                                         uint32_t bitDepth,
+                                         VkEncProfileCapabilitySnapshot* outSnapshot)
 {
+    if (outSnapshot == nullptr) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkVideoEncoderCapabilities* const outCaps = &outSnapshot->caps;
     switch ((uint32_t)codec) {
         case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
         case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR:
@@ -9766,13 +10680,15 @@ static VkResult QueryEncoderCapsInternal(const VulkanDeviceContext& ctx,
     }
 
     ProbeProfile pp;
-    if (!MapProbeProfile(codec, profile, pp)) {
-        // Valid codec, but `profile` does not belong to it.
+    if (!MapProbeProfile(codec, profile, bitDepth, pp)) {
+        // Valid codec, but (`profile`, `bitDepth`) is not a pairing this
+        // library probes for it -- either the profile belongs to another
+        // codec, or the depth is not one this profile is probed at.
         return VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR;
     }
 
     VkVideoCoreProfile coreProfile(codec,
-                                   VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR,
+                                   pp.chromaSubsampling,
                                    pp.lumaBits, pp.chromaBits,
                                    pp.profileIdc);
 
@@ -9782,12 +10698,11 @@ static VkResult QueryEncoderCapsInternal(const VulkanDeviceContext& ctx,
     VkVideoEncodeIntraRefreshCapabilitiesKHR     intraRefreshCaps{};
 
     VkResult result = VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
-    if ((outCaps == nullptr) ||
-        (outCaps->sType != VK_VIDEO_ENCODER_STRUCTURE_TYPE_CAPABILITIES) ||
+    if ((outCaps->sType != VK_VIDEO_ENCODER_STRUCTURE_TYPE_CAPABILITIES) ||
         (outCaps->pNext != nullptr)) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
-    *outCaps = {};
+    *outSnapshot = {};
     outCaps->codec = codec;
 
     // Per-codec caps query (reuses the library's chaining template).
@@ -9804,7 +10719,7 @@ static VkResult QueryEncoderCapsInternal(const VulkanDeviceContext& ctx,
                             qpMapCaps, h264QpMap, intraRefreshCaps);
             if (result == VK_SUCCESS) {
                 outCaps->maxLevelIdc = (uint32_t)h264Caps.maxLevelIdc;
-                outCaps->h264StdFlags[outCaps->h264StdFlagsCount++] =
+                outSnapshot->stdFlags[outSnapshot->stdFlagCount++] =
                     h264Caps.stdSyntaxFlags;
             }
             break;
@@ -9821,7 +10736,7 @@ static VkResult QueryEncoderCapsInternal(const VulkanDeviceContext& ctx,
                             qpMapCaps, h265QpMap, intraRefreshCaps);
             if (result == VK_SUCCESS) {
                 outCaps->maxLevelIdc = (uint32_t)h265Caps.maxLevelIdc;
-                outCaps->h265StdFlags[outCaps->h265StdFlagsCount++] =
+                outSnapshot->stdFlags[outSnapshot->stdFlagCount++] =
                     h265Caps.stdSyntaxFlags;
             }
             break;
@@ -9838,7 +10753,7 @@ static VkResult QueryEncoderCapsInternal(const VulkanDeviceContext& ctx,
                             qpMapCaps, av1QpMap, intraRefreshCaps);
             if (result == VK_SUCCESS) {
                 outCaps->maxLevelIdc = (uint32_t)av1Caps.maxLevel;
-                outCaps->av1StdFlags[outCaps->av1StdFlagsCount++] =
+                outSnapshot->stdFlags[outSnapshot->stdFlagCount++] =
                     av1Caps.stdSyntaxFlags;
             }
             break;
@@ -9880,25 +10795,13 @@ static VkResult QueryEncoderCapsInternal(const VulkanDeviceContext& ctx,
     // later exposes an explicit capability we can map here).
     outCaps->supportsResizeWithoutIdr = false;
 
-    // --- Supported input (VIDEO_ENCODE_SRC) formats. ---
-    // The device is asked first and the LIBRARY answers. Copying the device's
-    // list through would advertise, in the same struct a producer sizes its
-    // pool from, formats the registration gate then refuses -- and would
-    // spend slots of a fixed-capacity list on a format the device reports
-    // once per tiling.
-    VkFormat deviceFormats[VK_VIDEO_ENCODER_MAX_INPUT_FORMATS] = {};
-    uint32_t formatCount = VK_VIDEO_ENCODER_MAX_INPUT_FORMATS;
-    VkResult fmtResult = VulkanVideoCapabilities::GetVideoFormats(
-        &ctx, coreProfile,
-        VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR,
-        formatCount, deviceFormats);
-    outCaps->supportedInputFormatCount =
-        (fmtResult == VK_SUCCESS)
-            ? VkEncFilterAdvertisedInputFormats(
-                  deviceFormats, formatCount, outCaps->supportedInputFormats,
-                  VK_VIDEO_ENCODER_MAX_INPUT_FORMATS)
-            : 0u;
-
+    // NO INPUT-FORMAT LIST IS BUILT HERE. Building one from a device format
+    // query issued at this probe's own 4:2:0 envelope is the right
+    // envelope for the scalars above and the wrong one for a format list. A
+    // caller asking which formats it may feed the encoder is asking about the
+    // profile ITS OWN input derives, and no fixed envelope answers that for
+    // every input. VkEncEnumerateInputFormats now resolves each candidate live,
+    // through the same function the point query answers from.
     return VK_SUCCESS;
 }
 
@@ -9953,49 +10856,80 @@ enum {
     VK_ENC_CTX_CODEC_COUNT = 3,
 };
 
-const uint32_t kVkEncCtxProfilesH264[] = {
-    VK_VIDEO_ENCODER_PROFILE_DEFAULT,
-    VK_VIDEO_ENCODER_PROFILE_H264_BASELINE,
-    VK_VIDEO_ENCODER_PROFILE_H264_MAIN,
-    VK_VIDEO_ENCODER_PROFILE_H264_HIGH,
+// One row of the snapshot: the profile number AND the bit depth it is probed
+// at, because the probe is per-VkVideoProfileInfoKHR and the depth is part of
+// that structure. Two rows may carry the SAME profile number at different
+// depths -- see the AV1 list -- which is exactly what a profile number alone
+// could not express.
+struct VkEncCtxProbeEntry {
+    uint32_t profile;
+    uint32_t bitDepth;
 };
-const uint32_t kVkEncCtxProfilesH265[] = {
-    VK_VIDEO_ENCODER_PROFILE_DEFAULT,
-    VK_VIDEO_ENCODER_PROFILE_H265_MAIN,
-    VK_VIDEO_ENCODER_PROFILE_H265_MAIN10,
+
+const VkEncCtxProbeEntry kVkEncCtxProfilesH264[] = {
+    { VK_VIDEO_ENCODER_PROFILE_DEFAULT,       8 },
+    { VK_VIDEO_ENCODER_PROFILE_H264_BASELINE, 8 },
+    { VK_VIDEO_ENCODER_PROFILE_H264_MAIN,     8 },
+    { VK_VIDEO_ENCODER_PROFILE_H264_HIGH,     8 },
+    { VK_VIDEO_ENCODER_PROFILE_H264_HIGH_10, 10 },
 };
-// AV1 seq_profile 0 IS Main and IS DEFAULT, so the codec has one slot and not
-// two. A second slot holding the same number would probe the same profile
-// twice and report it under two names.
-const uint32_t kVkEncCtxProfilesAV1[] = {
-    VK_VIDEO_ENCODER_PROFILE_AV1_MAIN,
+const VkEncCtxProbeEntry kVkEncCtxProfilesH265[] = {
+    { VK_VIDEO_ENCODER_PROFILE_DEFAULT,      8 },
+    { VK_VIDEO_ENCODER_PROFILE_H265_MAIN,    8 },
+    { VK_VIDEO_ENCODER_PROFILE_H265_MAIN10, 10 },
+};
+// AV1 seq_profile 0 IS Main and IS DEFAULT, so the codec has one PROFILE
+// NUMBER and not two: a second row holding a DIFFERENT number would report
+// the same profile under two names. It has TWO ROWS all the same, because
+// Main carries 8 or 10 bits (AV1 A.2) and the row key is (profile, depth).
+// Those are two different VkVideoProfileInfoKHR values and a driver answers
+// them separately, so one row could only ever describe half the profile.
+//
+// THE 8-BIT ROW IS FIRST, AND THAT ORDER IS LOAD-BEARING. The public lookup
+// below resolves a profile number to the FIRST row carrying it, so every
+// published answer for AV1 Main is the 8-bit one, byte for byte what it was.
+//
+// THE 10-BIT ROW IS PROBED AND STORED BUT NOT PUBLISHED, deliberately and not
+// by oversight. There is no public key for it: every capability entry point
+// names a profile by the codec standard number alone, and AV1 has one number
+// for both depths. Publishing it needs either a depth argument on those entry
+// points -- a public-header change this library does not make on its own -- or
+// a rule for folding two rows into one answer. Folding is not free: the
+// scalars (coded extent, bitrate ceiling, rate-control modes, quality levels)
+// may differ between the depths, and an advertisement assembled from the wider
+// of two rows would outrun what a session at the other depth accepts. Neither
+// is decided here. What IS decided here is that the question now reaches the
+// driver, so whichever route is chosen has an answer to publish.
+const VkEncCtxProbeEntry kVkEncCtxProfilesAV1[] = {
+    { VK_VIDEO_ENCODER_PROFILE_AV1_MAIN,  8 },
+    { VK_VIDEO_ENCODER_PROFILE_AV1_MAIN, 10 },
 };
 
 // The widest per-codec list. Sized from the lists so a list that grows past
 // the array fails the build here instead of truncating the snapshot.
-enum { VK_ENC_CTX_PROFILE_SLOTS = 4 };
-static_assert(sizeof(kVkEncCtxProfilesH264) / sizeof(uint32_t) <=
+enum { VK_ENC_CTX_PROFILE_SLOTS = 5 };
+static_assert(sizeof(kVkEncCtxProfilesH264) / sizeof(VkEncCtxProbeEntry) <=
                       VK_ENC_CTX_PROFILE_SLOTS &&
-                  sizeof(kVkEncCtxProfilesH265) / sizeof(uint32_t) <=
+                  sizeof(kVkEncCtxProfilesH265) / sizeof(VkEncCtxProbeEntry) <=
                       VK_ENC_CTX_PROFILE_SLOTS &&
-                  sizeof(kVkEncCtxProfilesAV1) / sizeof(uint32_t) <=
+                  sizeof(kVkEncCtxProfilesAV1) / sizeof(VkEncCtxProbeEntry) <=
                       VK_ENC_CTX_PROFILE_SLOTS,
-              "a per-codec profile list outgrew the snapshot's profile axis");
+              "a per-codec probe list outgrew the snapshot's profile axis");
 
 // The probe list for |codec|, or nullptr with a zero count for a codec the
 // snapshot does not cover.
-const uint32_t* VkEncCtxProfileList(VkVideoCodecOperationFlagBitsKHR codec,
-                                    uint32_t& outCount)
+const VkEncCtxProbeEntry* VkEncCtxProfileList(
+    VkVideoCodecOperationFlagBitsKHR codec, uint32_t& outCount)
 {
     switch ((uint32_t)codec) {
         case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
-            outCount = sizeof(kVkEncCtxProfilesH264) / sizeof(uint32_t);
+            outCount = sizeof(kVkEncCtxProfilesH264) / sizeof(VkEncCtxProbeEntry);
             return kVkEncCtxProfilesH264;
         case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR:
-            outCount = sizeof(kVkEncCtxProfilesH265) / sizeof(uint32_t);
+            outCount = sizeof(kVkEncCtxProfilesH265) / sizeof(VkEncCtxProbeEntry);
             return kVkEncCtxProfilesH265;
         case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:
-            outCount = sizeof(kVkEncCtxProfilesAV1) / sizeof(uint32_t);
+            outCount = sizeof(kVkEncCtxProfilesAV1) / sizeof(VkEncCtxProbeEntry);
             return kVkEncCtxProfilesAV1;
         default:
             outCount = 0;
@@ -10003,29 +10937,35 @@ const uint32_t* VkEncCtxProfileList(VkVideoCodecOperationFlagBitsKHR codec,
     }
 }
 
-// Profile number at |slot| for |codec|. False when the codec has no such slot.
-bool VkEncCtxProfileAtSlot(VkVideoCodecOperationFlagBitsKHR codec,
-                           uint32_t slot, uint32_t& outProfile)
+// The probe row at |slot| for |codec|. False when the codec has no such slot.
+bool VkEncCtxProbeAtSlot(VkVideoCodecOperationFlagBitsKHR codec,
+                         uint32_t slot, VkEncCtxProbeEntry& outEntry)
 {
     uint32_t count = 0;
-    const uint32_t* list = VkEncCtxProfileList(codec, count);
+    const VkEncCtxProbeEntry* list = VkEncCtxProfileList(codec, count);
     if ((list == nullptr) || (slot >= count)) {
         return false;
     }
-    outProfile = list[slot];
+    outEntry = list[slot];
     return true;
 }
 
 // Slot holding |profile| for |codec|, or -1 when this library does not probe
 // that pair. A number belonging to a different codec lands here, which is what
 // keeps a cross-codec request from reading another codec's row.
+//
+// FIRST MATCH ON THE PROFILE NUMBER, and the depth is not part of the lookup
+// because it is not part of the public key -- an entry point names a profile
+// by the standard number alone. Where a codec has two rows under one number
+// (AV1 Main, at 8 and 10 bits) this therefore resolves to the first, which the
+// list orders as the 8-bit one so that every published answer is unchanged.
 int32_t VkEncCtxProfileSlotIndex(VkVideoCodecOperationFlagBitsKHR codec,
                                  uint32_t profile)
 {
     uint32_t count = 0;
-    const uint32_t* list = VkEncCtxProfileList(codec, count);
+    const VkEncCtxProbeEntry* list = VkEncCtxProfileList(codec, count);
     for (uint32_t slot = 0; slot < count; slot++) {
-        if (list[slot] == profile) {
+        if (list[slot].profile == profile) {
             return (int32_t)slot;
         }
     }
@@ -10119,6 +11059,57 @@ bool VkEncCtxUsageToFormatFeatures(VkImageUsageFlags usage,
 
 } // anonymous namespace
 
+//=============================================================================
+// CAPABILITY-PROBE KEY OBSERVATION SEAM (internal; device-free).
+//
+// What the probe CAN ask a driver is a build-time fact of the two tables
+// above, and it is invisible from the public surface on the only host where
+// it matters: a machine with no encode-capable device enumerates no device,
+// so every capability entry point answers "not present" whatever the tables
+// say. These three read the tables directly, so the shape is regression-tested
+// on a GPU-less runner and a row that disappears fails a test rather than an
+// advertisement.
+//
+// What they CANNOT say is whether a driver answers yes to any of it. That is a
+// device fact and is measured on hardware or not at all.
+//=============================================================================
+
+// Is (codec, profile, bitDepth) a combination this library probes?
+bool VkEncProbeNamesProfileBitDepth(VkVideoCodecOperationFlagBitsKHR codec,
+                                    uint32_t profile,
+                                    uint32_t bitDepth)
+{
+    ProbeProfile pp;
+    return MapProbeProfile(codec, profile, bitDepth, pp);
+}
+
+// How many probe rows the context snapshot carries for |codec|.
+uint32_t VkEncProbeSnapshotRowCount(VkVideoCodecOperationFlagBitsKHR codec)
+{
+    uint32_t count = 0;
+    (void)VkEncCtxProfileList(codec, count);
+    return count;
+}
+
+// The (profile, bit depth) of snapshot row |slot| for |codec|.
+bool VkEncProbeSnapshotRowAt(VkVideoCodecOperationFlagBitsKHR codec,
+                             uint32_t slot,
+                             uint32_t* outProfile,
+                             uint32_t* outBitDepth)
+{
+    VkEncCtxProbeEntry entry = {};
+    if (!VkEncCtxProbeAtSlot(codec, slot, entry)) {
+        return false;
+    }
+    if (outProfile != nullptr) {
+        *outProfile = entry.profile;
+    }
+    if (outBitDepth != nullptr) {
+        *outBitDepth = entry.bitDepth;
+    }
+    return true;
+}
+
 class VulkanVideoEncoderContext : public VkVideoRefCountBase {
 public:
     // One enumerated physical device and everything the context knows about
@@ -10146,10 +11137,10 @@ public:
         // not be handed out.
         bool                       probed[VK_ENC_CTX_CODEC_COUNT]
                                          [VK_ENC_CTX_PROFILE_SLOTS];
-        VkResult                   capsResult[VK_ENC_CTX_CODEC_COUNT]
-                                             [VK_ENC_CTX_PROFILE_SLOTS];
-        VkVideoEncoderCapabilities caps[VK_ENC_CTX_CODEC_COUNT]
-                                       [VK_ENC_CTX_PROFILE_SLOTS];
+        VkResult                       capsResult[VK_ENC_CTX_CODEC_COUNT]
+                                                 [VK_ENC_CTX_PROFILE_SLOTS];
+        VkEncProfileCapabilitySnapshot snapshot[VK_ENC_CTX_CODEC_COUNT]
+                                               [VK_ENC_CTX_PROFILE_SLOTS];
     };
 
     static VkResult Create(const VkVideoEncoderContextCreateInfo& createInfo,
@@ -10353,15 +11344,15 @@ VkResult VulkanVideoEncoderContext::Build(
             const VkVideoCodecOperationFlagBitsKHR codec =
                 VkEncCtxCodecAtIndex(c);
             for (uint32_t p = 0; p < VK_ENC_CTX_PROFILE_SLOTS; p++) {
-                entry.caps[c][p]       = {};
+                entry.snapshot[c][p]   = {};
                 entry.probed[c][p]     = false;
                 entry.capsResult[c][p] = VK_ERROR_EXTENSION_NOT_PRESENT;
 
                 // A slot this codec does not have. The array is rectangular
                 // and the lists are not, so the surplus rows exist and must
                 // say why they hold nothing.
-                uint32_t slotProfile = 0;
-                if (!VkEncCtxProfileAtSlot(codec, p, slotProfile)) {
+                VkEncCtxProbeEntry slotProbe = {};
+                if (!VkEncCtxProbeAtSlot(codec, p, slotProbe)) {
                     entry.capsResult[c][p] =
                         VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR;
                     continue;
@@ -10378,9 +11369,10 @@ VkResult VulkanVideoEncoderContext::Build(
                     continue;
                 }
 
-                VkVideoEncoderCapabilities probeCaps = {};
+                VkEncProfileCapabilitySnapshot probeSnapshot = {};
                 const VkResult probeResult = QueryEncoderCapsInternal(
-                    *m_devCtx, codec, slotProfile, &probeCaps);
+                    *m_devCtx, codec, slotProbe.profile, slotProbe.bitDepth,
+                    &probeSnapshot);
                 entry.capsResult[c][p] = probeResult;
                 // QueryEncoderCapsInternal leaves *out untouched when it
                 // rejects the (codec, profile) pair before probing; only a
@@ -10388,14 +11380,14 @@ VkResult VulkanVideoEncoderContext::Build(
                 // worth handing back.
                 if ((probeResult != VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR) &&
                     (probeResult != VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR)) {
-                    entry.probed[c][p] = true;
-                    entry.caps[c][p]   = probeCaps;
-                } else if (probeCaps.codec == codec) {
+                    entry.probed[c][p]   = true;
+                    entry.snapshot[c][p] = probeSnapshot;
+                } else if (probeSnapshot.caps.codec == codec) {
                     // The driver, not the pair check, returned that code:
                     // QueryEncoderCapsInternal had already stamped the codec
                     // into the out-struct, so there IS a result to hand back.
-                    entry.probed[c][p] = true;
-                    entry.caps[c][p]   = probeCaps;
+                    entry.probed[c][p]   = true;
+                    entry.snapshot[c][p] = probeSnapshot;
                 }
             }
         }
@@ -10633,8 +11625,446 @@ VkResult VkEncGetEncodeCapabilities(VulkanVideoEncoderContext*       ctx,
         // pre-context entry point did when it rejected a pair before probing.
         return entry->capsResult[codecIndex][profileSlot];
     }
-    *pOut = entry->caps[codecIndex][profileSlot];
+    *pOut = entry->snapshot[codecIndex][profileSlot].caps;
     return entry->capsResult[codecIndex][profileSlot];
+}
+
+// The one place the snapshot row for a (codec, profile) pair is resolved.
+// Returns nullptr and leaves |outResult| holding the code the caller must
+// propagate when there is no row to read.
+static const VkEncProfileCapabilitySnapshot* VkEncCtxSnapshotRow(
+    VulkanVideoEncoderContext*       ctx,
+    uint32_t                         deviceIndex,
+    VkVideoCodecOperationFlagBitsKHR codec,
+    uint32_t                         profile,
+    VkResult&                        outResult)
+{
+    outResult = VK_ERROR_INITIALIZATION_FAILED;
+    if (ctx == nullptr) {
+        return nullptr;
+    }
+    const VulkanVideoEncoderContext::DeviceEntry* entry =
+        ctx->GetDeviceEntry(deviceIndex);
+    if (entry == nullptr) {
+        return nullptr;
+    }
+    const int32_t codecIndex = VkEncCtxCodecIndex(codec);
+    if (codecIndex < 0) {
+        outResult = VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
+        return nullptr;
+    }
+    const int32_t profileSlot = VkEncCtxProfileSlotIndex(codec, profile);
+    if (profileSlot < 0) {
+        outResult = VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR;
+        return nullptr;
+    }
+    outResult = entry->capsResult[codecIndex][profileSlot];
+    if (!entry->probed[codecIndex][profileSlot]) {
+        return nullptr;
+    }
+    return &entry->snapshot[codecIndex][profileSlot];
+}
+
+// The two-call write shared by every list this context answers: copy at most
+// |capacity| entries, report how many were written, and say VK_INCOMPLETE
+// when the caller's buffer could not hold the answer.
+//
+// A null |pArray| is the counting call and is not an error: *pCount receives
+// the full number and nothing is written.
+template <typename T>
+static VkResult VkEncCtxWriteList(const T* entries, uint32_t entryCount,
+                                  uint32_t* pCount, T* pArray)
+{
+    if (pArray == nullptr) {
+        *pCount = entryCount;
+        return VK_SUCCESS;
+    }
+    const uint32_t capacity = *pCount;
+    const uint32_t written  = (capacity < entryCount) ? capacity : entryCount;
+    for (uint32_t i = 0; i < written; i++) {
+        pArray[i] = entries[i];
+    }
+    *pCount = written;
+    return (written < entryCount) ? VK_INCOMPLETE : VK_SUCCESS;
+}
+
+// The device's encode-source format list for |coreProfile| on |physDevice|.
+//
+// vkGetPhysicalDeviceVideoFormatPropertiesKHR is reached DIRECTLY rather than
+// through VulkanVideoCapabilities::GetVideoFormats, and that is not a
+// shortcut. GetVideoFormats reads the device context's CURRENT physical
+// device; a context holds one entry per device and this query names WHICH, so
+// routing through the context's current handle would answer about whichever
+// device happened to be adopted last during construction. Re-adopting to fix
+// that would mutate the very state the capability snapshot was built against,
+// from a query documented as not moving anything.
+static VkResult VkEncQueryDeviceEncodeSrcFormats(
+    const VulkanDeviceContext& devCtx,
+    VkPhysicalDevice           physDevice,
+    const VkVideoCoreProfile&  coreProfile,
+    VkFormat*                  outFormats,
+    uint32_t&                  ioCount)
+{
+    const VkVideoProfileListInfoKHR profileList = {
+        VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR, nullptr, 1,
+        coreProfile.GetProfile() };
+    const VkPhysicalDeviceVideoFormatInfoKHR formatInfo = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR,
+        const_cast<VkVideoProfileListInfoKHR*>(&profileList),
+        VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR };
+
+    const uint32_t capacity = ioCount;
+    ioCount = 0;
+
+    uint32_t count = 0;
+    VkResult result = devCtx.GetPhysicalDeviceVideoFormatPropertiesKHR(
+        physDevice, &formatInfo, &count, nullptr);
+    if (result != VK_SUCCESS) {
+        // A profile this device has no encode support for answers here, with
+        // the driver's own reason. That is the answer, not an error to hide.
+        return result;
+    }
+    if (count == 0) {
+        return VK_SUCCESS;
+    }
+    if (count > capacity) {
+        count = capacity;
+    }
+    VkVideoFormatPropertiesKHR props[VK_ENC_MAX_DEVICE_INPUT_FORMATS] = {};
+    for (uint32_t i = 0; i < count; i++) {
+        props[i].sType = VK_STRUCTURE_TYPE_VIDEO_FORMAT_PROPERTIES_KHR;
+    }
+    result = devCtx.GetPhysicalDeviceVideoFormatPropertiesKHR(
+        physDevice, &formatInfo, &count, props);
+    // VK_INCOMPLETE means the clamp above dropped entries, which is a short
+    // buffer and not a failed query: what was written is still true.
+    if ((result != VK_SUCCESS) && (result != VK_INCOMPLETE)) {
+        return result;
+    }
+    for (uint32_t i = 0; i < count; i++) {
+        outFormats[i] = props[i].format;
+    }
+    ioCount = count;
+    return VK_SUCCESS;
+}
+
+// WHAT THIS DEVICE WILL TAKE, ASKED ONCE AND ANSWERED FOR THREE SURFACES.
+//
+// The enumerator, the point query and InitializeExt all have to give the same
+// answer to "will this device encode this input for this profile", and until
+// this function existed only the first two shared one. InitializeExt asked
+// nothing: it built the config, created the session, and let the DRIVER refuse
+// at vkGetPhysicalDeviceVideoCapabilitiesKHR -- past the point where a caller
+// could still choose differently, with a message naming neither the format nor
+// its subsampling. The advertised set was therefore narrower than the accepted
+// set, and a caller had to consult two surfaces to learn what it could hand in.
+//
+// EXTRACTED RATHER THAN RESTATED, for the reason the resolver below states
+// about its own halves: a second statement of this rule is what produced two
+// surfaces that disagreed for identical arguments in the first place.
+//
+// THE VERDICT IS AN ENUM AND NOT A VkResult, and that is the whole point of
+// the extraction. Every one of these is VK_ERROR_FORMAT_NOT_SUPPORTED to the
+// caller of a query -- which is the right answer for a query, since the
+// question was "yes or no". At an INITIALISATION boundary the same yes-or-no
+// is a refusal a caller has to act on, and "no" without WHICH of these is what
+// the driver already said.
+static VkEncDeviceFormatVerdict VkEncResolveDeviceEncodeFormat(
+    const VulkanDeviceContext&       devCtx,
+    VkPhysicalDevice                 physDevice,
+    VkVideoCodecOperationFlagBitsKHR codec,
+    uint32_t                         codecProfile,
+    uint32_t                         chromaSubsampling,
+    uint32_t                         bitDepth,
+    VkFormat                         inputFormat,
+    bool                             viaFilter,
+    VkFormat&                        outEncodeFormat)
+{
+    // Written only on ACCEPTED, and never partially, for the same reason the
+    // resolver states about its own out-parameter: a half-answer a caller
+    // cannot tell from a whole one.
+    outEncodeFormat = VK_FORMAT_UNDEFINED;
+
+    const VkVideoComponentBitDepthFlagBitsKHR depthFlag =
+        GetComponentBitDepthFlagBits(bitDepth);
+    if (depthFlag == VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR) {
+        return VK_ENC_DEVICE_FORMAT_DEPTH_NOT_ENCODABLE;
+    }
+
+    // A LIVE QUERY, AT THE INPUT'S OWN GEOMETRY. Not the context's capability
+    // snapshot: that probes every profile at 4:2:0 (MapProbeProfile), so
+    // reading it here would answer "no" for every 4:4:4 input on every device.
+    // The profile asked about is the one the binder ACTUALLY derived or bound,
+    // and the subsampling and depth are the input's own.
+    VkVideoCoreProfile coreProfile(
+        codec, (VkVideoChromaSubsamplingFlagBitsKHR)chromaSubsampling,
+        depthFlag, depthFlag, codecProfile);
+
+    VkFormat deviceFormats[VK_ENC_MAX_DEVICE_INPUT_FORMATS] = {};
+    uint32_t deviceFormatCount = VK_ENC_MAX_DEVICE_INPUT_FORMATS;
+    if (VkEncQueryDeviceEncodeSrcFormats(devCtx, physDevice, coreProfile,
+                                         deviceFormats,
+                                         deviceFormatCount) != VK_SUCCESS) {
+        return VK_ENC_DEVICE_FORMAT_PROFILE_ABSENT;
+    }
+    if (deviceFormatCount == 0) {
+        // The query succeeded and named nothing, which is the same fact as a
+        // failed query and is worth reporting as the same reason: this device
+        // has no encode source for that profile.
+        return VK_ENC_DEVICE_FORMAT_PROFILE_ABSENT;
+    }
+
+    // WHAT THE ENCODER IS HANDED is what the device has to accept, and for a
+    // converted input that is the conversion's OUTPUT and not the caller's
+    // format. Asking the device about the caller's format would refuse every
+    // RGBA and packed-Y'CbCr input on a device that encodes them perfectly
+    // well through the filter.
+    const VkFormat encodeFormat =
+        viaFilter ? VkEncConversionTargetFormat(inputFormat, deviceFormats,
+                                                deviceFormatCount)
+                  : inputFormat;
+    if (encodeFormat == VK_FORMAT_UNDEFINED) {
+        return VK_ENC_DEVICE_FORMAT_NO_CONVERSION_TARGET;
+    }
+    if (!VkEncFormatListContains(deviceFormats, deviceFormatCount,
+                                 encodeFormat)) {
+        return VK_ENC_DEVICE_FORMAT_NOT_AN_ENCODE_SOURCE;
+    }
+
+    outEncodeFormat = encodeFormat;
+    return VK_ENC_DEVICE_FORMAT_ACCEPTED;
+}
+
+// THE ONE ANSWER BOTH THE POINT QUERY AND THE ENUMERATOR GIVE.
+//
+// Extracted rather than restated. Two statements of this rule is exactly what
+// made an advertised encodeFormat and a queried one disagree for identical
+// arguments on the same device in the same process: the enumerator read a
+// capability snapshot probed at a fixed 4:2:0 envelope, the point query bound
+// the caller's own configuration and asked the device at the profile that
+// binding derived. Only one of those describes the session a caller would get.
+//
+// Writes |outProps| only on VK_SUCCESS, and never partially: a caller reading
+// the struct after a refusal would be reading a half-answer it cannot tell from
+// a whole one.
+//
+// Defined ABOVE the enumerator on purpose -- the enumerator is now one of its
+// two callers.
+static VkResult VkEncResolveInputFormatSupport(
+    VulkanVideoEncoderContext*                    ctx,
+    const VulkanVideoEncoderContext::DeviceEntry* entry,
+    VkVideoCodecOperationFlagBitsKHR              codec,
+    uint32_t                                      profile,
+    VkFormat                                      format,
+    VkVideoEncoderColorModel                      colorModel,
+    VkVideoEncoderInputFormatProperties*          outProps)
+{
+    // ---- The library half, answered BY the binder rather than beside it. ----
+    //
+    // Running VkEncBuildAndProbeConfig is what makes this query and
+    // InitializeExt one answer instead of two. Every rule that decides
+    // acceptance -- the input taxonomy, the colour-model declaration, and the
+    // profile's own bit-depth and chroma-subsampling limits -- is applied
+    // there, once. A reimplementation here would be a second statement of the
+    // same rules, and what that eventually produces is a query promising what
+    // init refuses.
+    VkVideoEncoderConfig probeConfig = {};
+    probeConfig.sType           = VK_VIDEO_ENCODER_STRUCTURE_TYPE_CONFIG;
+    probeConfig.codec           = codec;
+    probeConfig.profile         = profile;
+    probeConfig.inputFormat     = format;
+    probeConfig.inputColorModel = colorModel;
+    // Geometry the binder needs to produce a config at all, and that no part
+    // of this answer depends on: a format's routing and its encode profile are
+    // both independent of the frame size. It is stated here rather than taken
+    // from the caller for exactly that reason -- an extent parameter on this
+    // entry point would be a knob with no effect on what it returns.
+    probeConfig.encodeWidth     = 1920;
+    probeConfig.encodeHeight    = 1080;
+    probeConfig.inputWidth      = 1920;
+    probeConfig.inputHeight     = 1080;
+    probeConfig.rateControlMode = VK_VIDEO_ENCODE_RATE_CONTROL_MODE_CBR_BIT_KHR;
+    probeConfig.averageBitrate  = 4000000;
+    probeConfig.frameRateNum    = 30;
+    probeConfig.frameRateDen    = 1;
+    probeConfig.gopLength       = 30;
+    // No file is opened for a query: the binder opens one only when an
+    // outputPath is set AND file output is wanted, and neither is, here.
+    probeConfig.disableFileOutput = VK_TRUE;
+
+    VkEncBoundConfigProbe probe = {};
+    if (VkEncBuildAndProbeConfig(probeConfig, codec, &probe) != VK_SUCCESS) {
+        // The binder refused: either the pair is not an input this library
+        // routes, or the named profile cannot carry it, or it is a profile
+        // number this library does not bind. All three are "you cannot feed me
+        // this on this profile", which is the question that was asked.
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
+
+    // ---- The device half, and it is the SAME CALL InitializeExt makes. ----
+    //
+    // VkEncResolveDeviceEncodeFormat above holds it, so a query that says yes
+    // and a session that refuses cannot be written without changing one
+    // function. The subsampling, depth and profile handed to it are the ones
+    // the binder ACTUALLY derived, read back off the probe rather than
+    // assumed, which is what makes a 4:4:4 input asked about at a 4:4:4
+    // profile.
+    //
+    // THE REASON IS DISCARDED HERE, deliberately. A point query answers yes or
+    // no; the reason is what an initialisation boundary owes its caller, and
+    // that is where it is spent.
+    const bool viaFilter = (probe.preprocessComputeFilter != 0);
+    VkFormat encodeFormat = VK_FORMAT_UNDEFINED;
+    if (VkEncResolveDeviceEncodeFormat(
+            ctx->GetDeviceContext(), entry->physDevice, codec,
+            probe.codecProfile, probe.inputChromaSubsampling, probe.inputBpp,
+            format, viaFilter, encodeFormat) !=
+        VK_ENC_DEVICE_FORMAT_ACCEPTED) {
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
+
+    if (outProps != nullptr) {
+        outProps->format       = format;
+        outProps->encodeFormat = encodeFormat;
+        outProps->optimality =
+            viaFilter ? VK_VIDEO_ENCODER_INPUT_FORMAT_SUBOPTIMAL
+                      : VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL;
+    }
+    return VK_SUCCESS;
+}
+
+// The enumerator's admission: one live resolve per candidate. |userData| is a
+// VkEncLiveAdmitContext naming the device and the key being enumerated.
+struct VkEncLiveAdmitContext {
+    VulkanVideoEncoderContext*                    ctx;
+    const VulkanVideoEncoderContext::DeviceEntry* entry;
+    VkVideoCodecOperationFlagBitsKHR              codec;
+    uint32_t                                      profile;
+};
+
+static bool VkEncAdmitByLiveResolve(
+    void* userData, VkFormat candidate,
+    VkVideoEncoderInputFormatProperties* outEntry)
+{
+    VkEncLiveAdmitContext* const live =
+        static_cast<VkEncLiveAdmitContext*>(userData);
+    return VkEncResolveInputFormatSupport(
+               live->ctx, live->entry, live->codec, live->profile, candidate,
+               VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT, outEntry) ==
+           VK_SUCCESS;
+}
+
+VK_VIDEO_ENCODER_EXPORT
+VkResult VkEncEnumerateStdFlags(VulkanVideoEncoderContext*       ctx,
+                                uint32_t                         deviceIndex,
+                                VkVideoCodecOperationFlagBitsKHR codec,
+                                uint32_t                         profile,
+                                uint32_t*                        pCount,
+                                VkVideoEncoderStdFlags*          pFlags)
+{
+    if (pCount == nullptr) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    VkResult rowResult = VK_ERROR_INITIALIZATION_FAILED;
+    const VkEncProfileCapabilitySnapshot* row =
+        VkEncCtxSnapshotRow(ctx, deviceIndex, codec, profile, rowResult);
+    if (row == nullptr) {
+        // No row to read. The count is still answered, because a caller that
+        // treats a refused profile as "advertise nothing" needs a zero rather
+        // than a stale number.
+        *pCount = 0;
+        return rowResult;
+    }
+    const VkResult writeResult =
+        VkEncCtxWriteList(row->stdFlags, row->stdFlagCount, pCount, pFlags);
+    // A short buffer outranks the probe's own result: the caller must know it
+    // did not receive everything before it acts on what it did receive.
+    const VkResult result =
+        (writeResult == VK_SUCCESS) ? rowResult : writeResult;
+    if ((result != VK_SUCCESS) && (result != VK_INCOMPLETE)) {
+        // An entry can be probed and still carry a refusal. A list read out of
+        // one is not an answer, so it is reported as the count every other
+        // error reports.
+        *pCount = 0;
+    }
+    return result;
+}
+
+VK_VIDEO_ENCODER_EXPORT
+VkResult VkEncEnumerateInputFormats(
+    VulkanVideoEncoderContext*           ctx,
+    uint32_t                             deviceIndex,
+    VkVideoCodecOperationFlagBitsKHR     codec,
+    uint32_t                             profile,
+    uint32_t*                            pCount,
+    VkVideoEncoderInputFormatProperties* pFormats)
+{
+    if (pCount == nullptr) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    // THE SNAPSHOT IS THE KEY GATE AND NOTHING ELSE. It is what returns
+    // VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR for a profile number
+    // this context does not carry, and what carries the probe's own capsResult
+    // for a pair the driver refused. It is NOT where the list comes from: the
+    // probe keys every profile at a fixed 4:2:0 envelope, and a list built from
+    // that describes a session no caller asked for.
+    VkResult rowResult = VK_ERROR_INITIALIZATION_FAILED;
+    const VkEncProfileCapabilitySnapshot* row =
+        VkEncCtxSnapshotRow(ctx, deviceIndex, codec, profile, rowResult);
+    if (row == nullptr) {
+        *pCount = 0;
+        return rowResult;
+    }
+    const VulkanVideoEncoderContext::DeviceEntry* const entry =
+        ctx->GetDeviceEntry(deviceIndex);
+    if (entry == nullptr) {
+        // Unreachable while the snapshot row exists -- the row was resolved
+        // through the same entry -- and stated rather than assumed, because
+        // what follows dereferences it.
+        *pCount = 0;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    // BUILT LIVE, per candidate, through the SAME resolver the point query
+    // answers from. The cost is one binder run and one device format query per
+    // routable candidate, which is what the point query already pays per call;
+    // what it buys is that the two surfaces cannot disagree, because there is
+    // only one of them.
+    VkEncLiveAdmitContext live = { ctx, entry, codec, profile };
+    VkVideoEncoderInputFormatProperties entries[
+        VK_ENC_MAX_ROUTABLE_INPUT_FORMATS] = {};
+
+    // A REFUSED CANDIDATE IS THE ANSWER HERE, NOT AN ERROR. The binder explains
+    // every refusal on the gated error stream, which is right for a caller that
+    // declared one configuration and wrong for a sweep that deliberately offers
+    // every routable format to a profile most of them cannot reach. An
+    // enumeration that printed twenty refusals per successful call would be
+    // unusable in the sandboxed process the latch exists for, and would say
+    // nothing a caller could act on.
+    //
+    // Saved and restored rather than set: a caller that had already silenced
+    // the streams stays silenced, and one that had not is unaffected the moment
+    // this returns.
+    // A scoped request rather than a read/save/restore. The restore could
+    // write back a value another thread had changed while the enumeration
+    // ran, un-silencing an owner that still needed silence. A token adds this
+    // query's request and removes exactly that one.
+    uint32_t entryCount = 0;
+    {
+        const VkEncoderStdioSilenceScope quietQuery(true);
+        entryCount = VkEncAdvertiseInputFormats(
+            &VkEncAdmitByLiveResolve, &live, entries,
+            VK_ENC_MAX_ROUTABLE_INPUT_FORMATS);
+    }
+
+    const VkResult writeResult =
+        VkEncCtxWriteList(entries, entryCount, pCount, pFormats);
+    const VkResult result =
+        (writeResult == VK_SUCCESS) ? rowResult : writeResult;
+    if ((result != VK_SUCCESS) && (result != VK_INCOMPLETE)) {
+        *pCount = 0;
+    }
+    return result;
 }
 
 VK_VIDEO_ENCODER_EXPORT
@@ -10645,17 +12075,25 @@ VkResult VkEncEnumerateDrmModifiers(VulkanVideoEncoderContext* ctx,
                                     uint32_t*                  pCount,
                                     uint64_t*                  pModifiers)
 {
-    if ((ctx == nullptr) || (pCount == nullptr)) {
+    // A null pCount is the one failure with nowhere to put the count. Every
+    // other return below leaves one behind.
+    if (pCount == nullptr) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (ctx == nullptr) {
+        *pCount = 0;
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     const VulkanVideoEncoderContext::DeviceEntry* entry =
         ctx->GetDeviceEntry(deviceIndex);
     if (entry == nullptr) {
+        *pCount = 0;
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
     VkFormatFeatureFlags2 requiredFeatures = 0;
     if (!VkEncCtxUsageToFormatFeatures(usage, requiredFeatures)) {
+        *pCount = 0;
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
@@ -10669,6 +12107,7 @@ VkResult VkEncEnumerateDrmModifiers(VulkanVideoEncoderContext* ctx,
         // The 32-bit modifier list cannot express VIDEO_ENCODE_INPUT, the one
         // feature this entry point exists to filter on, so an answer built
         // from it would be wrong rather than partial.
+        *pCount = 0;
         return VK_ERROR_EXTENSION_NOT_PRESENT;
     }
 
@@ -10718,6 +12157,40 @@ VkResult VkEncEnumerateDrmModifiers(VulkanVideoEncoderContext* ctx,
     return (written < matched) ? VK_INCOMPLETE : VK_SUCCESS;
 }
 
+
+VK_VIDEO_ENCODER_EXPORT
+VkResult VkEncQueryInputFormatSupport(
+    VulkanVideoEncoderContext*           ctx,
+    uint32_t                             deviceIndex,
+    VkVideoCodecOperationFlagBitsKHR     codec,
+    uint32_t                             profile,
+    VkFormat                             format,
+    VkVideoEncoderColorModel             colorModel,
+    VkVideoEncoderInputFormatProperties* pProperties)
+{
+    // Same gate, same order, same reason as the enumerators above -- except
+    // that pProperties is OPTIONAL here, because a caller that wants only the
+    // verdict should not have to supply somewhere to put an answer it will not
+    // read.
+    if (ctx == nullptr) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    const VulkanVideoEncoderContext::DeviceEntry* entry =
+        ctx->GetDeviceEntry(deviceIndex);
+    if (entry == nullptr) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (VkEncCtxCodecIndex(codec) < 0) {
+        return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
+    }
+
+    // Everything below the argument gate is the shared resolver, which the
+    // enumerator next door runs over every routable candidate. This entry point
+    // is that resolver applied to one.
+    return VkEncResolveInputFormatSupport(ctx, entry, codec, profile, format,
+                                          colorModel, pProperties);
+}
+
 //=============================================================================
 // The four pre-context capability entry points are thin wrappers over a
 // context they build and throw away, so that a caller holding no Vulkan
@@ -10728,30 +12201,6 @@ VkResult VkEncEnumerateDrmModifiers(VulkanVideoEncoderContext* ctx,
 // candidate profile, and every one of those calls now goes through
 // CreateVulkanVideoEncoderContext.
 //=============================================================================
-
-// Legacy per-codec entry points: delegate to the per-profile variants with
-// the codec's representative profile.
-VK_VIDEO_ENCODER_EXPORT
-VkResult EnumerateVulkanVideoEncoderCapabilities(
-    VkInstance                       instance,
-    VkPhysicalDevice                 physicalDevice,
-    VkVideoCodecOperationFlagBitsKHR codec,
-    VkVideoEncoderCapabilities*      outCaps)
-{
-    return EnumerateVulkanVideoEncoderProfileCapabilities(
-        instance, physicalDevice, codec,
-        VK_VIDEO_ENCODER_PROFILE_DEFAULT, outCaps);
-}
-
-VK_VIDEO_ENCODER_EXPORT
-VkResult EnumerateVulkanVideoEncoderCapabilitiesEphemeral(
-    int32_t                          deviceId,
-    VkVideoCodecOperationFlagBitsKHR codec,
-    VkVideoEncoderCapabilities*      outCaps)
-{
-    return EnumerateVulkanVideoEncoderProfileCapabilitiesEphemeral(
-        deviceId, codec, VK_VIDEO_ENCODER_PROFILE_DEFAULT, outCaps);
-}
 
 VK_VIDEO_ENCODER_EXPORT
 VkResult EnumerateVulkanVideoEncoderProfileCapabilities(

@@ -705,6 +705,7 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_subdirectory(test/encoder-ext-format-matrix)
 endif()
+add_subdirectory(test/encoder-ext-input-format-query)
 
 # The ENCODE half of the same matrix: known primaries pattern in, real frames
 # submitted, bitstream written out for an INDEPENDENT decoder. A 3-plane row

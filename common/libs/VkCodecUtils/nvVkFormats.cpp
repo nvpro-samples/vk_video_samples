@@ -90,6 +90,20 @@ const VkFormatDesc* vkFormatLookUp(VkFormat format)
     return pVkFormatDesc;
 }
 
+static_assert((sizeof(vkMpFormatInfo) / sizeof(vkMpFormatInfo[0])) ==
+                  YCBCR_VK_FORMAT_INFO_TABLE_SIZE,
+              "YCBCR_VK_FORMAT_INFO_TABLE_SIZE is what a caller walking this "
+              "table sizes its array from, so it has to be this table's own "
+              "length rather than a number kept beside it");
+
+const VkMpFormatInfo* YcbcrVkFormatInfoByIndex(uint32_t index)
+{
+    if (index >= (sizeof(vkMpFormatInfo) / sizeof(vkMpFormatInfo[0]))) {
+        return NULL;
+    }
+    return &vkMpFormatInfo[index];
+}
+
 const VkMpFormatInfo* YcbcrVkFormatInfo(const VkFormat format)
 {
     return __ycbcrVkFormatInfo(format);

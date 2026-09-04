@@ -699,6 +699,327 @@ bool EncodeAndDrain(VkSharedBaseObj<VulkanVideoEncoderExt>& encoder,
 
 }  // namespace
 
+
+// ---------------------------------------------------------------------------
+// THE TWO-CALL LIST QUERIES ON A CONTEXT.
+//
+// A list capability is answered by its own entry point rather than by a
+// fixed-capacity member of VkVideoEncoderCapabilities, so the capacity is the
+// caller's. What has to hold for that to be usable is asserted here: the
+// counting call answers without writing, the fetching call writes exactly what
+// it was told it could, a caller that asks for less is TOLD it got less, and a
+// pair the library does not probe answers a code with a count of zero rather
+// than a stale number.
+//
+// THE SNAPSHOT IS WHAT MAKES THE IDIOM SAFE HERE, and it is asserted rather
+// than assumed: a context is immutable after construction, so the counting
+// call and the fetching call cannot disagree. The re-count below is that
+// claim; without it the pair of calls would carry the usual Vulkan
+// retry-until-complete obligation.
+//
+// THE ADVERTISED INPUT FORMATS, against a real driver answer.
+//
+// The device-free suite drives the advertisement's membership rule with
+// synthetic device lists. What only a device can supply is that the rule is
+// applied to what the driver actually reports for a profile, and that the
+// result is self-consistent -- so the assertions here are stated as
+// invariants of ANY answer rather than as a format list this one host
+// produces.
+void CheckInputFormatEnumerator(VulkanVideoEncoderContext* ctx,
+                                VkVideoCodecOperationFlagBitsKHR codec,
+                                uint32_t profile, const char* label)
+{
+    // THE COUNTING CALL. A null array is not an error; it is the question.
+    uint32_t counted = 0xFFFFFFFFu;
+    VkResult r = VkEncEnumerateInputFormats(ctx, 0u, codec, profile, &counted,
+                                            nullptr);
+    if (r != VK_SUCCESS) {
+        // A profile this device does not expose is not a failure of the
+        // enumerator; it is the device's answer, and the count still has to
+        // be written.
+        Check(counted == 0u,
+              "a profile the device refuses reports a count of zero",
+              std::string(label) + " counted " + I64((long long)counted));
+        std::printf("  %s: not advertised (%lld)\n", label, (long long)r);
+        return;
+    }
+    Check(counted > 0u,
+          "an advertised profile advertises at least one input format",
+          std::string(label) + " counted 0");
+
+    // THE FETCHING CALL, over a buffer of the caller's choosing. The sentinel
+    // tail is what proves the library wrote what it said and not one entry
+    // more.
+    const uint32_t kCapacity = 32u;
+    VkVideoEncoderInputFormatProperties entries[kCapacity];
+    for (uint32_t i = 0; i < kCapacity; i++) {
+        entries[i].format       = VK_FORMAT_UNDEFINED;
+        entries[i].encodeFormat = VK_FORMAT_UNDEFINED;
+        entries[i].optimality   = VK_VIDEO_ENCODER_INPUT_FORMAT_SUBOPTIMAL;
+    }
+    uint32_t fetched = kCapacity;
+    r = VkEncEnumerateInputFormats(ctx, 0u, codec, profile, &fetched, entries);
+    Check((r == VK_SUCCESS) && (fetched == counted),
+          "the fetching call writes what the counting call promised",
+          std::string(label) + ": counted " + I64((long long)counted) +
+              ", wrote " + I64((long long)fetched));
+    if (fetched > kCapacity) {
+        return;
+    }
+    if (fetched < kCapacity) {
+        Check(entries[fetched].format == VK_FORMAT_UNDEFINED,
+              "nothing is written past the reported count",
+              std::string(label) + ": the entry after the last one was "
+                                   "written");
+    }
+
+    // THE SNAPSHOT CLAIM. The count cannot move between the two calls,
+    // because the answer was computed before either of them.
+    uint32_t recounted = 0xFFFFFFFFu;
+    r = VkEncEnumerateInputFormats(ctx, 0u, codec, profile, &recounted,
+                                   nullptr);
+    Check((r == VK_SUCCESS) && (recounted == counted),
+          "the count is stable across calls -- the snapshot cannot move",
+          std::string(label) + ": first " + I64((long long)counted) +
+              ", then " + I64((long long)recounted));
+
+    std::printf("  %s advertises %u input format(s):\n", label, fetched);
+    uint32_t direct = 0;
+    uint32_t converted = 0;
+    bool orderHeld = true;
+    for (uint32_t i = 0; i < fetched; i++) {
+        const VkVideoEncoderInputFormatProperties& e = entries[i];
+        const bool isDirect =
+            (e.optimality == VK_VIDEO_ENCODER_INPUT_FORMAT_OPTIMAL);
+        std::printf("    %d -> %d%s\n", (int)e.format, (int)e.encodeFormat,
+                    isDirect ? "  (direct)" : "  (filtered)");
+        Check(!isDirect || (e.format == e.encodeFormat),
+              "a direct entry names itself as what it is encoded as",
+              std::string(label) + ": format " + I64((long long)e.format) +
+                  " names " + I64((long long)e.encodeFormat));
+        if (isDirect) {
+            direct++;
+            // Ordering contract: every entry the device takes unconverted
+            // precedes every filtered one, so a caller reading top-down sees
+            // the free tier first.
+            orderHeld = orderHeld && (converted == 0);
+        } else {
+            converted++;
+        }
+        for (uint32_t j = 0; j < i; j++) {
+            Check(entries[j].format != e.format,
+                  "each format is advertised once, however many tilings the "
+                  "device reports it at",
+                  std::string(label) + ": format " +
+                      I64((long long)e.format) + " twice");
+        }
+    }
+    Check(orderHeld, "the direct entries come before the filtered ones",
+          std::string(label) + ": a direct entry follows a filtered one");
+    Check(direct > 0u,
+          "at least one advertised format is taken by the device unconverted",
+          std::string(label) + ": no direct entry");
+
+    // THE SUBSTANCE OF THE ADVERTISEMENT. A list that were the device's own
+    // VIDEO_ENCODE_SRC set reduced to what the library routes would carry
+    // direct entries only -- no driver reports an RGBA encode source. An RGB
+    // producer learns from this list that it may hand RGBA over, and what
+    // that becomes.
+    bool rgbaAdvertised = false;
+    for (uint32_t i = 0; i < fetched; i++) {
+        const VkVideoEncoderInputFormatProperties& e = entries[i];
+        if (e.format == VK_FORMAT_R8G8B8A8_UNORM) {
+            rgbaAdvertised = true;
+            Check((e.optimality == VK_VIDEO_ENCODER_INPUT_FORMAT_SUBOPTIMAL) &&
+                      (e.encodeFormat != VK_FORMAT_R8G8B8A8_UNORM),
+                  "RGBA8 is advertised as FILTERED, and names what it becomes",
+                  std::string(label) + ": it claims to be direct");
+        }
+    }
+    Check(rgbaAdvertised && (converted > 0u),
+          "the list carries the formats the library CONVERTS, not only the "
+          "ones the device takes",
+          std::string(label) + ": " + I64((long long)converted) +
+              " filtered entries, RGBA8 " +
+              (rgbaAdvertised ? "present" : "absent"));
+
+    // THE 12-BIT PAIR, stated as an implication rather than as a fact about
+    // this host. I420-12 and P012 both convert into P012, so either both are
+    // advertised -- where the device takes P012 as an encode source -- or
+    // neither is.
+    bool i420_12 = false;
+    bool p012 = false;
+    for (uint32_t i = 0; i < fetched; i++) {
+        const VkFormat fmt = entries[i].format;
+        i420_12 = i420_12 ||
+                  (fmt == VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16);
+        p012 = p012 ||
+               (fmt == VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16);
+    }
+    Check(i420_12 == p012,
+          "I420-12 and P012 are advertised together: they share a conversion "
+          "target, so one device answer decides both",
+          std::string(label) + ": I420-12 " + (i420_12 ? "in" : "out") +
+              ", P012 " + (p012 ? "in" : "out"));
+
+    // A SHORT BUFFER IS REPORTED, NOT SILENTLY TRUNCATED. This is the whole
+    // difference between a two-call query and a fixed-capacity member: the
+    // caller has to be able to tell a complete answer from a clipped one.
+    uint32_t shortCount = 1u;
+    r = VkEncEnumerateInputFormats(ctx, 0u, codec, profile, &shortCount,
+                                   entries);
+    Check((counted <= 1u) || (r == VK_INCOMPLETE),
+          "a buffer too small answers VK_INCOMPLETE",
+          std::string(label) + ": returned " + I64((long long)r));
+    Check(shortCount == ((counted < 1u) ? counted : 1u),
+          "a truncated answer reports how many entries were written",
+          std::string(label) + ": reported " + I64((long long)shortCount));
+
+    // THE COUNT IS THE ONE OUTPUT THAT IS NEVER OPTIONAL.
+    r = VkEncEnumerateInputFormats(ctx, 0u, codec, profile, nullptr, entries);
+    Check(r == VK_ERROR_INITIALIZATION_FAILED, "a null count is refused",
+          std::string(label) + ": returned " + I64((long long)r));
+
+    r = VkEncEnumerateInputFormats(nullptr, 0u, codec, profile, &counted,
+                                   nullptr);
+    Check(r == VK_ERROR_INITIALIZATION_FAILED, "a null context is refused",
+          std::string(label) + ": returned " + I64((long long)r));
+}
+
+// THE Std SYNTAX FLAGS, against a real driver answer.
+//
+// One entry point with a codec selector answers all three codecs, so the
+// codec the query named is what an entry is read as. A pair the library does
+// not probe answers a code and a count of zero.
+void CheckStdFlagEnumerator(VulkanVideoEncoderContext* ctx)
+{
+    const VkVideoCodecOperationFlagBitsKHR kCodec =
+        VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR;
+    const uint32_t kProfile = VK_VIDEO_ENCODER_PROFILE_DEFAULT;
+
+    // THE COUNTING CALL. A null array is not an error; it is the question.
+    uint32_t counted = 0xFFFFFFFFu;
+    VkResult r = VkEncEnumerateStdFlags(ctx, 0u, kCodec, kProfile, &counted,
+                                        nullptr);
+    Check(r == VK_SUCCESS, "the counting call succeeds",
+          "returned " + I64((long long)r));
+    Check(counted == 1u,
+          "one Std syntax-flag entry is reported for the probed profile",
+          "counted " + I64((long long)counted));
+
+    // THE FETCHING CALL, at exactly the size the counting call asked for.
+    // The sentinel tail is what proves the library wrote what it said and not
+    // one entry more.
+    VkVideoEncoderStdFlags entries[4];
+    for (uint32_t i = 0; i < 4u; i++) {
+        entries[i] = 0xDEADBEEFu;
+    }
+    uint32_t fetched = 4u;
+    r = VkEncEnumerateStdFlags(ctx, 0u, kCodec, kProfile, &fetched, entries);
+    Check(r == VK_SUCCESS, "the fetching call succeeds",
+          "returned " + I64((long long)r));
+    Check(fetched == counted,
+          "the fetching call writes as many entries as the counting call "
+          "promised",
+          "counted " + I64((long long)counted) + ", wrote " +
+              I64((long long)fetched));
+    Check(entries[counted] == 0xDEADBEEFu,
+          "nothing is written past the reported count",
+          "the entry after the last one was overwritten");
+
+    // THE SNAPSHOT CLAIM. The count cannot move between the two calls,
+    // because the answer was computed before either of them.
+    uint32_t recounted = 0xFFFFFFFFu;
+    r = VkEncEnumerateStdFlags(ctx, 0u, kCodec, kProfile, &recounted, nullptr);
+    Check((r == VK_SUCCESS) && (recounted == counted),
+          "the count is stable across calls -- the snapshot cannot move",
+          "first " + I64((long long)counted) + ", then " +
+              I64((long long)recounted));
+
+    // THE ANSWER IS READ AGAINST THE CODEC THE QUERY NAMED. A second codec
+    // this device also encodes answers its own list through the same entry
+    // point, which is what the codec selector is for.
+    uint32_t h265Count = 0xFFFFFFFFu;
+    r = VkEncEnumerateStdFlags(ctx, 0u,
+                               VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR,
+                               VK_VIDEO_ENCODER_PROFILE_H265_MAIN, &h265Count,
+                               nullptr);
+    Check((r != VK_SUCCESS) || (h265Count == 1u),
+          "the codec selector picks the list, so a second codec answers its "
+          "own",
+          "returned " + I64((long long)r) + " with " +
+              I64((long long)h265Count));
+
+    // A SHORT BUFFER IS REPORTED, NOT SILENTLY TRUNCATED. This is the whole
+    // difference between a two-call query and a fixed-capacity member: the
+    // caller has to be able to tell a complete answer from a clipped one.
+    uint32_t shortCount = 0u;
+    r = VkEncEnumerateStdFlags(ctx, 0u, kCodec, kProfile, &shortCount,
+                               entries);
+    Check(r == VK_INCOMPLETE, "a buffer too small answers VK_INCOMPLETE",
+          "returned " + I64((long long)r));
+    Check(shortCount == 0u,
+          "a truncated answer reports how many entries were written",
+          "reported " + I64((long long)shortCount));
+
+    // THE COUNT IS THE ONE OUTPUT THAT IS NEVER OPTIONAL.
+    r = VkEncEnumerateStdFlags(ctx, 0u, kCodec, kProfile, nullptr, entries);
+    Check(r == VK_ERROR_INITIALIZATION_FAILED, "a null count is refused",
+          "returned " + I64((long long)r));
+
+    r = VkEncEnumerateStdFlags(nullptr, 0u, kCodec, kProfile, &counted,
+                               nullptr);
+    Check(r == VK_ERROR_INITIALIZATION_FAILED, "a null context is refused",
+          "returned " + I64((long long)r));
+
+    // A PAIR THE LIBRARY DOES NOT PROBE ANSWERS ZERO, NOT A STALE NUMBER.
+    // A caller that treats a refused profile as "advertise nothing" reads the
+    // count, so it has to be written even on the refusal path.
+    uint32_t decodeCount = 0xFFFFFFFFu;
+    r = VkEncEnumerateStdFlags(ctx, 0u,
+                               VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR,
+                               kProfile, &decodeCount, nullptr);
+    Check(r == VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR,
+          "a codec this library does not encode is refused by code",
+          "returned " + I64((long long)r));
+    Check(decodeCount == 0u, "a refused codec reports a count of zero",
+          "reported " + I64((long long)decodeCount));
+
+    uint32_t strayCount = 0xFFFFFFFFu;
+    r = VkEncEnumerateStdFlags(ctx, 0u, kCodec, /*profile*/ 199u, &strayCount,
+                               nullptr);
+    Check(r == VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR,
+          "a profile number this codec does not have is refused by code",
+          "returned " + I64((long long)r));
+    Check(strayCount == 0u, "a refused profile reports a count of zero",
+          "reported " + I64((long long)strayCount));
+
+    // THE SCALAR ANSWER STILL NAMES ITS CODEC, and a refused pair still
+    // leaves the caller's structure alone.
+    VkVideoEncoderCapabilities caps = {};
+    r = VkEncGetEncodeCapabilities(ctx, 0u, kCodec, kProfile, &caps);
+    Check(r == VK_SUCCESS, "the H.264 default profile is probed",
+          "returned " + I64((long long)r));
+    Check(caps.codec == kCodec,
+          "the answer names the codec it was asked about",
+          "names " + I64((long long)caps.codec));
+
+    VkVideoEncoderCapabilities untouched = {};
+    r = VkEncGetEncodeCapabilities(ctx, 0u,
+                                   VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR,
+                                   kProfile, &untouched);
+    Check(r == VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR,
+          "a codec this library does not encode is refused by code",
+          "returned " + I64((long long)r));
+    Check(untouched.codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR,
+          "a refused codec leaves the caller's structure unwritten",
+          "names " + I64((long long)untouched.codec));
+
+    r = VkEncGetEncodeCapabilities(nullptr, 0u, kCodec, kProfile, &caps);
+    Check(r == VK_ERROR_INITIALIZATION_FAILED, "a null context is refused",
+          "returned " + I64((long long)r));
+}
+
 int main(int argc, const char** argv)
 {
     // --own-validate is the NEGATIVE CONTROL for the --validate arm. The
@@ -725,8 +1046,13 @@ int main(int argc, const char** argv)
     // typed error rather than one of the two silently winning.
     const bool contextConflict =
         (argc > 1) && (std::strcmp(argv[1], "--context-conflict") == 0);
+    // THE LIST QUERIES. A context, and nothing built on it: the two-call
+    // enumerators answer from the construction-time snapshot, so this arm
+    // needs no session and no encode to drive every branch of the idiom.
+    const bool enumerate =
+        (argc > 1) && (std::strcmp(argv[1], "--enumerate") == 0);
     const bool useContext =
-        contextConflict ||
+        contextConflict || enumerate ||
         ((argc > 1) && (std::strcmp(argv[1], "--context") == 0));
 
     std::printf("Encoder-ext ADOPT-mode session (%s)\n",
@@ -831,6 +1157,33 @@ int main(int argc, const char** argv)
                   "an ADOPT context enumerates exactly the adopted device",
                   "count is " + I64((long long)VkEncGetPhysicalDeviceCount(
                                         context.get())));
+
+            if (enumerate) {
+                CheckStdFlagEnumerator(context.get());
+                // Two profiles, because the list is derived per profile: an
+                // 8-bit one and a 10-bit one take different encode sources,
+                // so a list that were profile-independent would show up here.
+                CheckInputFormatEnumerator(
+                    context.get(),
+                    VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR,
+                    VK_VIDEO_ENCODER_PROFILE_DEFAULT, "H.264 default");
+                CheckInputFormatEnumerator(
+                    context.get(),
+                    VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR,
+                    VK_VIDEO_ENCODER_PROFILE_H265_MAIN10, "H.265 Main 10");
+                const int listRc = (g_failures == 0) ? 0 : 1;
+                // The context is released before the borrowed instance is
+                // destroyed, for the ordering reason stated at the end of
+                // main().
+                context.reset();
+                TearDownEmbedder(&emb);
+                std::printf("--------------------------------------------"
+                            "----\n");
+                std::printf("%s : %d checks, %d failures\n",
+                            (listRc == 0) ? "PASSED" : "FAILED", g_checks,
+                            g_failures);
+                return listRc;
+            }
 
             // Out of range must be REFUSED, not clamped. A clamp would make
             // every wrong index quietly encode on device 0, which on a
