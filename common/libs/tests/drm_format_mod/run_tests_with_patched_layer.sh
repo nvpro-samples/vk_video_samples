@@ -20,7 +20,7 @@
 #   ./run_tests_with_patched_layer.sh --ycbcr-only
 #   ./run_tests_with_patched_layer.sh --report
 #   ./run_tests_with_patched_layer.sh --gdb --ycbcr-only
-#   ./run_tests_with_patched_layer.sh --ssh-remote tzlatinski@192.168.122.216 --ycbcr-only
+#   ./run_tests_with_patched_layer.sh --ssh-remote user@host.example --ycbcr-only
 #
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -50,7 +50,7 @@ while [[ $# -gt 0 ]]; do
         --ssh-remote)
             if [[ -z "$2" || "$2" == --* ]]; then
                 echo "ERROR: --ssh-remote requires a user@host argument"
-                echo "Example: --ssh-remote tzlatinski@192.168.122.216"
+                echo "Example: --ssh-remote user@host.example"
                 exit 1
             fi
             SSH_REMOTE="$2"
@@ -89,13 +89,15 @@ fi
 
 # Source the driver development environment (sets up driver build paths)
 # Redirect output to /dev/null to avoid cluttering test output
-DEV_ENV_SCRIPT="/data/nvidia-linux/dev_a/set_dev_env-dev.sh"
+# Developer-tree locations. Both are machine-specific: override in the
+# environment rather than editing this file.
+DEV_ENV_SCRIPT="${DEV_ENV_SCRIPT:-<driver-tree>/set_dev_env-dev.sh}"
 if [[ "$SKIP_DEV_ENV" -eq 0 ]] && [[ -f "$DEV_ENV_SCRIPT" ]]; then
     source "$DEV_ENV_SCRIPT" > /dev/null 2>&1
 fi
 
 # Path to the patched validation layer build
-PATCHED_LAYER_PATH="/data/nvidia/vulkan/validation-layers-build/Vulkan-ValidationLayers/build-vm/layers"
+PATCHED_LAYER_PATH="${PATCHED_LAYER_PATH:-<validation-layers-build>/layers}"
 
 # Path to the test binary (check both possible locations)
 if [[ -x "$REPO_ROOT/build/bin/drm_format_mod_test" ]]; then

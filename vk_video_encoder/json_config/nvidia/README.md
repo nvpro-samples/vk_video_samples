@@ -408,11 +408,11 @@ Use the **ThreadedRenderingVk** renderer's GPU compute filter pipeline to genera
 
 ```bash
 # Generate ALL formats headless (no display needed) — 5 resolutions × 8 formats
-cd /data/nvidia/vulkan/samples/ThreadedRenderingVk_Standalone
-./scripts/generate_encoder_yuv.sh --output-dir /data/misc/VideoClips/ycbcr --frames 128 --all
+cd <ThreadedRenderingVk>
+./scripts/generate_encoder_yuv.sh --output-dir <video-clips>/ycbcr --frames 128 --all
 
 # Generate only 4:2:0 (8-bit + 10-bit) — sufficient for most H.264/H.265 profiles
-./scripts/generate_encoder_yuv.sh --output-dir /data/misc/VideoClips/ycbcr --frames 128
+./scripts/generate_encoder_yuv.sh --output-dir <video-clips>/ycbcr --frames 128
 ```
 
 **Generated file naming:** `{W}x{H}_{subsampling}_{bitdepth}.yuv`
@@ -433,7 +433,7 @@ cd /data/nvidia/vulkan/samples/ThreadedRenderingVk_Standalone
 
 ```bash
 # Size verification + visual playback
-python3 scripts/verify_yuv_ffmpeg.py /data/misc/VideoClips/ycbcr --frames 128 --show
+python3 scripts/verify_yuv_ffmpeg.py <video-clips>/ycbcr --frames 128 --show
 ```
 
 **Resolutions generated:** 176×144, 352×288, 720×480, 1280×720, 1920×1080
@@ -465,20 +465,20 @@ Input YUV resolution/bitdepth/chroma are auto-detected from filenames.
 ```bash
 # Run ALL profiles × all codecs with auto-detected YUV
 python3 scripts/run_encoder_profile_tests.py \
-    --video-dir /data/misc/VideoClips/ycbcr --local
+    --video-dir <video-clips>/ycbcr --local
 
 # Run only NVIDIA profiles
 python3 scripts/run_encoder_profile_tests.py \
-    --video-dir /data/misc/VideoClips/ycbcr --profile-filter nvidia --local
+    --video-dir <video-clips>/ycbcr --profile-filter nvidia --local
 
 # Single profile, single codec
 python3 scripts/run_encoder_profile_tests.py \
-    --video-dir /data/misc/VideoClips/ycbcr \
+    --video-dir <video-clips>/ycbcr \
     --profile-filter nvidia/high_quality_p4 --codec h265 --local
 
 # Verbose (show commands + output filenames)
 python3 scripts/run_encoder_profile_tests.py \
-    --video-dir /data/misc/VideoClips/ycbcr --local --verbose
+    --video-dir <video-clips>/ycbcr --local --verbose
 ```
 
 | Option | Description |
@@ -556,16 +556,16 @@ End-to-end workflow from YUV generation through encode, decode, and visual verif
 
 ```bash
 # 1. Generate YUV test content (headless, no display needed)
-cd /data/nvidia/vulkan/samples/ThreadedRenderingVk_Standalone
-./scripts/generate_encoder_yuv.sh --output-dir /data/misc/VideoClips/ycbcr --frames 32 --all
+cd <ThreadedRenderingVk>
+./scripts/generate_encoder_yuv.sh --output-dir <video-clips>/ycbcr --frames 32 --all
 
 # 2. Verify YUV files
-python3 scripts/verify_yuv_ffmpeg.py /data/misc/VideoClips/ycbcr --frames 32
+python3 scripts/verify_yuv_ffmpeg.py <video-clips>/ycbcr --frames 32
 
 # 3. Run encoder profiles (all codecs × all profiles)
-cd /data/nvidia/android-extra/video-apps/vulkan-video-samples
+cd <vulkan-video-samples>
 python3 scripts/run_encoder_profile_tests.py \
-    --video-dir /data/misc/VideoClips/ycbcr --local --max-frames 30
+    --video-dir <video-clips>/ycbcr --local --max-frames 30
 
 # 4. Decode all bitstreams (roundtrip verification)
 DISPLAY=:0 python3 scripts/run_decoder_roundtrip.py /tmp/vulkan_encoder_profile_tests

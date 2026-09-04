@@ -276,7 +276,7 @@ TestCaseConfig TC006_RGBA_to_P210() {
 // P212 is the exact 12-bit counterpart of TC006/TC015's P210: same 2-plane 4:2:2 layout,
 // same 16-bit container, same R16/R16G16 plane views -- only the X4-vs-X6 padding differs.
 // It is here because requesting this format as a compute-filter output HANGS the GPU in TRV
-// (task #19). Running it in this harness is safe: isFormatSupported() does a per-plane
+// Running it in this harness is safe: isFormatSupported() does a per-plane
 // feature check AND an image-level vkGetPhysicalDeviceImageFormatProperties for the exact
 // image, and reports the case "unvalidated" rather than submitting work that wedges the GPU.
 TestCaseConfig TC006b_RGBA_to_P212() {

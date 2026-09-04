@@ -61,7 +61,7 @@ does not appear to handle this split correctly.
 How to reproduce
 ----------------
 Build:
-  cd /data/nvidia/android-extra/video-apps/vulkan-video-samples/build
+  cd <vulkan-video-samples>/build
   cmake --build . -j4 -- drm_format_mod_test
 
 Run (VIDEO_ENCODE_SRC):
@@ -118,7 +118,7 @@ Debugging with GDB
 -------------------
 Break on the vkCreateImage failure:
 
-  cd /data/nvidia/android-extra/video-apps/vulkan-video-samples/build
+  cd <vulkan-video-samples>/build
   gdb --args ./bin/drm_format_mod_test --video-encode --format NV12 -v
 
   (gdb) break vkCreateImage

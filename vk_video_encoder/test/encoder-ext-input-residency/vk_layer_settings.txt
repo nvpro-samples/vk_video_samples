@@ -1,0 +1,27 @@
+# Layer settings for the encoder-ext-adopt-device suite.
+#
+# duplicate_message_limit = 0 means "print forever".
+#
+# WHY IT IS PINNED, and this is a real cap, not a theoretical one. With no
+# settings file reachable the layer applies its documented default of 10
+# messages; with this file in effect the run reports every message; with a
+# small explicit limit it reports that many plus the layer's own "reported N
+# times ... last time" notice.
+#
+# The cap is keyed on the VUID string alone, with no per-object component, so a
+# single repeated VUID truncates and the run silently understates itself.
+#
+# METHOD WARNING. The layer also searches the CURRENT WORKING DIRECTORY for
+# vk_layer_settings.txt. A control run that merely unsets
+# VK_LAYER_SETTINGS_PATH while sitting in a directory that holds this file is
+# NOT uncapped, and will report the full count while appearing to prove the cap
+# does not apply. Run controls from a clean directory.
+#
+# WHAT THIS FILE DOES NOT BUY: portability of the count across LAYER BUILDS.
+# Different validation-layer builds report different totals and different sets
+# of distinct VUIDs for the same binary on the same host. One of them reports
+# VUID-vkCmdEncodeVideoKHR-pEncodeInfo-08206 -- an ENCODE-specific VUID, the
+# class this suite exists to catch -- which another never emits. So no single
+# count is canonical, and the lower one must not be read as the answer. Which
+# layer runs is controlled by VVS_VALIDATION_LAYER_PATH in CMakeLists.txt.
+khronos_validation.duplicate_message_limit = 0

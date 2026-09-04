@@ -50,14 +50,13 @@
 // --import-no-video-usage (or the raw --import-usage/--import-flags) to hold
 // the exporter fixed and move only that half.
 //
-// MEASURED, NVIDIA RTX A4000, driver 615.06 / Vulkan 1.4.347, NV12 1920x1080,
-// 3/3 deterministic (2026-08-05):
+// WHAT THIS TEST IS LOOKING FOR, on an NV12 buffer:
 //
-//   modifier 0x0300000000606015 imported WITHOUT
-//   VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR loses the ENTIRE chroma plane.
-//   Luma compares clean and the first bad byte is offset 2073600 == 1920*1080;
-//   CbCr reads back all zeros. Every Vulkan call returns VK_SUCCESS, so only a
-//   content compare catches it.
+//   a block-linear modifier imported WITHOUT
+//   VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR can lose the ENTIRE chroma
+//   plane. Luma compares clean, the first bad byte is at the chroma plane
+//   offset, and CbCr reads back all zeros. Every Vulkan call returns
+//   VK_SUCCESS, so only a content compare catches it.
 //
 //   It is the IMPORT image's usage that decides, and one bit of it. Holding the
 //   modifier and the plane layouts fixed:
@@ -69,15 +68,15 @@
 //     0x0007 (no encode)  0x4001 (encode)                 PASS
 //     0x0007 (no encode)  0x0007 (no encode)              CHROMA LOST
 //
-//   The create flags are not implicated: import flags 0x100108, 0x100000,
-//   0x108, 0x8, 0x100 and 0x0 all give the same verdict for a given usage.
-//   Modifiers ...011 through ...014 are clean with or without the bit, and
-//   LINEAR is clean without it (it cannot carry it -- vkCreateImage returns
-//   VK_ERROR_FORMAT_NOT_SUPPORTED for LINEAR NV12 + VIDEO_ENCODE_SRC).
+//   The create flags are not implicated: every import-flag combination
+//   gives the same verdict for a given usage. Not every modifier is
+//   affected, and LINEAR is clean without the bit -- it cannot carry it,
+//   since vkCreateImage returns VK_ERROR_FORMAT_NOT_SUPPORTED for LINEAR
+//   NV12 + VIDEO_ENCODE_SRC.
 //
 // Deliberately NOT covered:
-//   - 3-plane I420 (VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM). The plan's section
-//     8.1 reports that path hanging the GPU on hardware; this test must not
+//   - 3-plane I420 (VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM). That path hangs
+//     the GPU on hardware; this test must not
 //     be the thing that wedges a test machine.
 //   - Cross-PHYSICAL-device import. The plan (section 3.2) says that is a
 //     hard refusal by design (DEVICE_MISMATCH), so there is no claim to test.

@@ -311,8 +311,6 @@ VkResult VulkanFilterYuvCompute::Init(const VkSamplerYcbcrConversionCreateInfo* 
                                             "main",
                                             m_workgroupSizeX, m_workgroupSizeY,
                                             &m_descriptorSetLayout);
-
-    return VK_ERROR_LAYER_NOT_PRESENT;
 }
 
 VkResult VulkanFilterYuvCompute::InitDescriptorSetLayout(uint32_t maxNumFrames)

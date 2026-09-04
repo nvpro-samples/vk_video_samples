@@ -112,15 +112,46 @@ install(TARGETS ${PROJECT_NAME}
 
 # Add test
 enable_testing()
-add_test(NAME FilterSmokeTest COMMAND ${PROJECT_NAME} --smoke)
-add_test(NAME FilterAllTests COMMAND ${PROJECT_NAME} --all)
-# Both of the above dispatch compute shaders and therefore need a real device.
-# main() now exits 77 when Vulkan init fails for a device-availability reason,
-# so a GPU-less host reports SKIPPED rather than FAILED. Every other init
-# failure still exits 1, so a genuine regression cannot hide in the skip arm.
+
+# Both arms dispatch compute shaders and therefore need a real device. main()
+# exits 77 when Vulkan init fails for a device-availability reason, so a
+# GPU-less host reports SKIPPED rather than FAILED; every other init failure
+# exits 1, so a genuine regression cannot hide in the skip arm.
+#
+# GATED ON VALIDATION. These arms build every image, view, descriptor and
+# barrier the compute filter consumes, which is the widest Vulkan surface in
+# the tree; and the binary asks for the validation layer only under its
+# verbose flag, so under CTest it runs with no layer at all and its exit code
+# is the whole verdict. vvs_add_validation_gated_test() forces the layer on,
+# witnesses that the loader inserted it, and fails the arm that produced a
+# message.
+#
+# THE CEILINGS BELOW NAME DEFECTS, THEY DO NOT EXCUSE THEM. Each is a
+# violation this suite reports today, held at exactly the count it reports so
+# that it cannot grow and nothing new can hide behind it:
+#
+#   VUID-VkDeviceQueueCreateInfo-pQueuePriorities-parameter
+#       vkCreateDevice is called with pQueueCreateInfos[0].pQueuePriorities
+#       NULL. It is raised once per device creation, by every binary in the
+#       tree that stands up a device through VulkanDeviceContext directly.
+#   VUID-vkCmdDispatch-None-08114
+#       the triple-output case dispatches with binding 9, the subsampled Y
+#       output, never written by vkUpdateDescriptorSets.
+set(_filter_gate_expect
+    VUID-VkDeviceQueueCreateInfo-pQueuePriorities-parameter=1)
+
+vvs_add_validation_gated_test(FilterSmokeTest
+    TARGET ${PROJECT_NAME}
+    ARGS   --smoke
+    EXPECT ${_filter_gate_expect})
+vvs_add_validation_gated_test(FilterAllTests
+    TARGET ${PROJECT_NAME}
+    ARGS   --all
+    EXPECT ${_filter_gate_expect}
+           VUID-vkCmdDispatch-None-08114=1)
 set_tests_properties(FilterSmokeTest FilterAllTests PROPERTIES
-                     SKIP_RETURN_CODE 77
-                     LABELS "gpu")
+                     LABELS "gpu"
+                     TIMEOUT 900)
 
 # --list touches no Vulkan entry point at all: it builds the standard test
 # table and prints it, and returns before app.init(). That makes it the one
