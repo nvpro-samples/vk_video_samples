@@ -292,6 +292,20 @@ struct VkEncBoundConfigProbe {
     // same proposition either way: the config's idea of the input format is
     // the caller's.
     uint32_t inputVkFormat;
+    // THE OTHER SIDE OF THE SAME BOUNDARY: EncoderConfig's encode-side
+    // geometry, which describes the BITSTREAM where the input fields above
+    // describe the caller's buffer.
+    //
+    // WHY BOTH SIDES ARE PROJECTED WHEN ONE WRITER MAKES THEM EQUAL. They are
+    // separate fields precisely so that the encode value can differ from the
+    // input value -- a chroma resampler or a device-driven depth downgrade is
+    // what would make them -- and every codec arm's profile derivation and
+    // every syntax element that states the coded format is a function of THIS
+    // side. A test that could see only one side could not say which side an
+    // arm had read, which is how three arms came to read different ones.
+    uint32_t encodeChromaSubsampling;
+    uint32_t encodeBitDepthLuma;
+    uint32_t encodeBitDepthChroma;
 
     // Per-codec-arm effect projections, run PER CODEC ARM. A projection
     // that stops at the shared EncoderConfig members cannot see
@@ -322,13 +336,15 @@ struct VkEncBoundConfigProbe {
     // downstream observable of it is ALSO a function of the level or tier, so
     // none of them reads the factor on its own.
     //
-    // READ IN THE BINDER'S STATE, which is the state InitProfileLevel used --
-    // after InitializeParameters and before InitVideoProfile. That distinction
-    // is load-bearing rather than incidental: the function's depth term reads
-    // encodeBitDepthLuma / encodeBitDepthChroma, and those are derived from
-    // input.bpp in InitVideoProfile, so at the level-selection call site they
-    // are still zero and the depth term contributes nothing. Zero on the other
-    // arms.
+    // READ IN THE BINDER'S STATE, which is the state InitProfileLevel reads --
+    // after InitializeParameters and before InitVideoProfile. The reading point
+    // matters: the depth term reads encodeBitDepthLuma / encodeBitDepthChroma, and
+    // deriving those in InitVideoProfile puts the derivation at session creation,
+    // AFTER level selection -- so the level-selection call site would read zero
+    // while InitRateControl read the real depth, from one function inside one
+    // configuration. The derivation belongs in InitializeParameters, beside
+    // encodeChromaSubsampling, so both call sites read the same value and this
+    // projection reads it too. Zero on the other arms.
     uint32_t h265CpbVclFactor;
     // H.265 only: EncoderConfigH265::levelIdc as InitProfileLevel() selected
     // it, which is 30 x the level number. The factor's one DEVICE-FREE
@@ -405,9 +421,32 @@ struct VkEncBoundConfigProbe {
 // Run the binder and project the result. Reads only its arguments: no device,
 // no instance, no encoder -- which is what lets the binder suite assert every
 // BOUND field but outputPath from a plain gtest process.
+//
+// |requestedEncodeBitDepth| IS WHAT MAKES THE TWO GEOMETRIES SEPARABLE, and
+// it exists for one reason. EncoderConfig::InitializeParameters derives the
+// encode side from the input side under a zero-means-unset guard, and states
+// beside that guard that "an explicit encode depth, if one is ever set before
+// this runs, is a request and not a default". Until this parameter there was
+// no way to set one, so the guard had a rationale and no mechanism -- and,
+// more to the point, the encode and input sides were EQUAL ON EVERY REACHABLE
+// STATE. A test written against equal values cannot say which of them a codec
+// arm read: every assertion it makes is satisfied identically either way, so
+// it is a guard against a wrong DERIVATION and no guard at all against a
+// wrong SIDE. That is exactly the shape three arms regressed into once.
+//
+// Non-zero, it writes encodeBitDepthLuma before InitializeParameters runs, so
+// the guard leaves it alone and the encode side differs from the input side
+// on the depth axis. The profile a codec arm then derives says which side it
+// read. Zero -- the default -- is the ordinary path and changes nothing, so
+// every existing caller of the three-argument form is unaffected.
+//
+// IT IS NOT A BACK DOOR ONTO THE PUBLIC SURFACE. VkVideoEncoderConfig has no
+// encode-depth field and this parameter reaches no public entry point; it is
+// this header's, and this header is the internal one.
 VkResult VkEncBuildAndProbeConfig(const VkVideoEncoderConfig& extConfig,
                                   VkVideoCodecOperationFlagBitsKHR codecOp,
-                                  VkEncBoundConfigProbe* outProbe);
+                                  VkEncBoundConfigProbe* outProbe,
+                                  uint32_t requestedEncodeBitDepth = 0);
 
 // Byte-exact projection of the HDR10 payload builders.
 //

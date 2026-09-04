@@ -3116,6 +3116,373 @@ void CaseInputColourPrimariesDriveTheDerivedMatrix()
 // 0 on the AV1 arm is a real value rather than "arm not exercised". The 4:4:4
 // and 4:2:2 rows read a non-zero profile, which removes that ambiguity where it
 // would matter.)
+// WHICH SIDE OF THE INPUT/ENCODE BOUNDARY EACH CODEC ARM READS.
+//
+// EncoderConfig carries the input's geometry and the ENCODE's geometry in
+// separate fields, and they exist separately so that the encode value can
+// differ from the input value -- a chroma resampler or a device-driven depth
+// downgrade is what would make them differ. Today one writer sets the encode
+// side from the input side and nothing else touches either, so the two are
+// always equal and a read of the wrong one costs nothing.
+//
+// WHAT THE ARMS MUST READ, AND IT IS NOT A PREFERENCE. A codec profile is
+// defined by the standard over the values CARRIED IN THE BITSTREAM: H.264
+// Annex A Table A-1 constrains profile_idc against the SPS's chroma_format_idc
+// and bit_depth_*_minus8; H.265 Annex A does the same for
+// general_profile_idc; AV1 6.4.1 defines seq_profile over the sequence
+// header's BitDepth, mono_chrome and subsampling_x/y. Every one of those
+// syntax elements is written in this tree from the ENCODE fields. So a
+// derivation that picks the profile from the INPUT side selects a profile for
+// a picture that is not the one the syntax describes.
+//
+// WHAT THIS CASE ASSERTS is exactly that rule and nothing weaker: the profile
+// the arm derived is the profile the ENCODE geometry implies, with the encode
+// geometry read off the probe rather than assumed to equal the input's. The
+// three tables below restate the standards' rule; they are a second statement
+// of the derivation, deliberately, because a test that recomputed it by
+// calling the derivation would agree with itself whichever side it read.
+//
+// IT IS SWEPT OVER EVERY ROUTABLE FORMAT AND ALL THREE CODECS, at
+// VK_VIDEO_ENCODER_PROFILE_DEFAULT, which is the only profile value that
+// reaches the derivations at all.
+// IS THE ORACLE'S OWN ANSWER LEGAL AT THAT GEOMETRY?
+//
+// An expectation table can be wrong in a way no comparison against the code
+// catches: if the code and the table make the same mistake the row passes and
+// ratifies it. This is the second reading, from the standards' limits and not
+// from the derivations -- H.264 Table A-1, H.265 A.3, AV1 6.4.1 and A.2 --
+// and every row the sweep asserts is put through it first.
+//
+// IT IS NOT THE LIBRARY'S OWN LIMITS TABLE. VkEncGetProfileInputLimits states
+// the same rule inside the library; calling it here would make the check
+// agree with whatever that table says, which is exactly the shape of
+// self-agreement this exists to break.
+bool ProfileAdmitsGeometry(VkVideoCodecOperationFlagBitsKHR codec,
+                           uint32_t profile, uint32_t subsampling,
+                           uint32_t bpp)
+{
+    const bool is420 = (subsampling == VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR);
+    const bool is422 = (subsampling == VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR);
+    const bool is444 = (subsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR);
+    switch ((uint32_t)codec) {
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
+            switch (profile) {
+                case STD_VIDEO_H264_PROFILE_IDC_BASELINE:
+                case STD_VIDEO_H264_PROFILE_IDC_MAIN:
+                case STD_VIDEO_H264_PROFILE_IDC_HIGH:
+                    return is420 && (bpp == 8);
+                case STD_VIDEO_H264_PROFILE_IDC_HIGH_10:
+                    return is420 && (bpp <= 10);
+                case STD_VIDEO_H264_PROFILE_IDC_HIGH_422:
+                    return (is420 || is422) && (bpp <= 10);
+                case STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE:
+                    return (is420 || is422 || is444) && (bpp <= 14);
+                default: return false;
+            }
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR:
+            switch (profile) {
+                case STD_VIDEO_H265_PROFILE_IDC_MAIN:
+                case STD_VIDEO_H265_PROFILE_IDC_MAIN_STILL_PICTURE:
+                    return is420 && (bpp == 8);
+                case STD_VIDEO_H265_PROFILE_IDC_MAIN_10:
+                    return is420 && (bpp <= 10);
+                case STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS:
+                case STD_VIDEO_H265_PROFILE_IDC_SCC_EXTENSIONS:
+                    return (is420 || is422 || is444) && (bpp <= 16);
+                default: return false;
+            }
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:
+            switch (profile) {
+                case STD_VIDEO_AV1_PROFILE_MAIN:      return is420 && (bpp <= 10);
+                case STD_VIDEO_AV1_PROFILE_HIGH:      return is444 && (bpp <= 10);
+                case STD_VIDEO_AV1_PROFILE_PROFESSIONAL:
+                    return (is420 || is422 || is444) && (bpp <= 12);
+                default: return false;
+            }
+        default: return false;
+    }
+}
+
+// "THE STANDARD ADMITS NO ANSWER THIS LIBRARY DERIVES." Returned instead of a
+// profile for a geometry whose only in-spec H.264 answer the derivation does
+// not produce; the sweep excludes those rows loudly rather than writing a
+// forbidden profile into an expectation.
+const uint32_t kNoAdmissibleProfile = 0xFFFFFFFFu;
+
+uint32_t WantH264Profile(uint32_t subsampling, uint32_t bpp)
+{
+    // adaptiveTransformMode has no setter, so use8x8Transform is always true
+    // and the Baseline/Main seeds are unreachable -- the derivation starts at
+    // High and is only widened from there.
+    if (subsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR) {
+        // 244 admits 8 to 14 bits at every chroma format, so this arm is
+        // in-spec at every depth the library can reach.
+        return STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE;
+    }
+    // TODO: H.264 above ten bits at 4:2:0 or 4:2:2 HAS NO IN-SPEC ANSWER FROM
+    // THIS DERIVATION, and the defect is EncoderConfigH264::InitProfileLevel's,
+    // not this table's. ITU-T H.264 Table A-1 admits High 10 (110) and High
+    // 4:2:2 (122) to ten bits; the derivation selects them from any depth
+    // above eight, so a twelve-bit 4:2:0 input derives 110 and a twelve-bit
+    // 4:2:2 input derives 122, both out of spec. The in-spec answer at those
+    // geometries is High 4:4:4 Predictive (244), which admits chroma formats
+    // 0 to 3 and fourteen bits.
+    //
+    // Fixing the derivation is out of this change's scope -- no device here
+    // encodes H.264 above eight bits, so the arm is unreachable in practice
+    // and correcting it needs hardware nobody has -- but WRITING 110 INTO AN
+    // ORACLE AS THE EXPECTED ANSWER IS NOT. That documents the defect as
+    // correct, which is the one thing a test must not do. The rows are
+    // excluded, counted and named instead, so the exclusion is visible on
+    // every run rather than being a silently missing assertion.
+    if (bpp > 10) {
+        return kNoAdmissibleProfile;
+    }
+    if (subsampling == VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR) {
+        return STD_VIDEO_H264_PROFILE_IDC_HIGH_422;
+    }
+    return (bpp > 8) ? (uint32_t)STD_VIDEO_H264_PROFILE_IDC_HIGH_10
+                     : (uint32_t)STD_VIDEO_H264_PROFILE_IDC_HIGH;
+}
+
+uint32_t WantH265Profile(uint32_t subsampling, uint32_t bpp)
+{
+    if (subsampling != VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR) {
+        return STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS;
+    }
+    if (bpp == 8) {
+        return STD_VIDEO_H265_PROFILE_IDC_MAIN;
+    }
+    if (bpp <= 10) {
+        return STD_VIDEO_H265_PROFILE_IDC_MAIN_10;
+    }
+    return STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS;
+}
+
+uint32_t WantAv1Profile(uint32_t subsampling, uint32_t bpp)
+{
+    if ((bpp > 10) ||
+        (subsampling == VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR)) {
+        return STD_VIDEO_AV1_PROFILE_PROFESSIONAL;
+    }
+    if (subsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR) {
+        return STD_VIDEO_AV1_PROFILE_HIGH;
+    }
+    return STD_VIDEO_AV1_PROFILE_MAIN;
+}
+
+void CaseCodecArmsDeriveTheProfileFromTheEncodeGeometry()
+{
+    g_currentCase = "the profile each codec arm derives is the one the ENCODE "
+                    "geometry implies";
+
+    struct CodecRow {
+        VkVideoCodecOperationFlagBitsKHR codec;
+        const char*                      name;
+        uint32_t (*want)(uint32_t, uint32_t);
+    };
+    // Indexed as well as iterated below, so the per-codec divergence counters
+    // in the second pass line up with the arms they count.
+    static const CodecRow kCodecs[] = {
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR, "H.264",
+          &WantH264Profile },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR, "H.265",
+          &WantH265Profile },
+        { VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR,  "AV1",
+          &WantAv1Profile },
+    };
+
+    uint32_t routableCount = 0;
+    const VkFormat* const routable = VkEncRoutableInputFormats(routableCount);
+    uint32_t rows     = 0;
+    uint32_t asserted = 0;
+    uint32_t excluded = 0;
+    for (const CodecRow& c : kCodecs) {
+        for (uint32_t i = 0; i < routableCount; i++) {
+            VkVideoEncoderConfig cfg = BaseConfig();
+            cfg.codec       = c.codec;
+            cfg.profile     = VK_VIDEO_ENCODER_PROFILE_DEFAULT;
+            cfg.inputFormat = routable[i];
+            VkEncBoundConfigProbe probe{};
+            const VkResult r =
+                VkEncBuildAndProbeConfig(cfg, c.codec, &probe);
+            if (r != VK_SUCCESS) {
+                continue;
+            }
+            rows++;
+            const uint32_t want = c.want(probe.encodeChromaSubsampling,
+                                         probe.encodeBitDepthLuma);
+            if (want == kNoAdmissibleProfile) {
+                excluded++;
+                std::printf("  EXCLUDED [%s] %s enumerant %u: encode geometry "
+                            "(subsampling %u, %u-bit) has no in-spec profile "
+                            "this derivation produces; the arm derived %u. "
+                            "See the TODO on WantH264Profile.\n",
+                            g_currentCase, c.name, (uint32_t)routable[i],
+                            probe.encodeChromaSubsampling,
+                            probe.encodeBitDepthLuma, probe.codecProfile);
+                continue;
+            }
+            asserted++;
+            // THE EXPECTATION IS CHECKED BEFORE IT IS USED. A table that
+            // names a profile the standard does not admit at that geometry is
+            // documenting a defect as the right answer, whatever the code
+            // then does.
+            Check(ProfileAdmitsGeometry(c.codec, want,
+                                        probe.encodeChromaSubsampling,
+                                        probe.encodeBitDepthLuma),
+                  (std::string(c.name) + " enumerant " +
+                   U32((uint32_t)routable[i]) +
+                   ": the profile this case EXPECTS is one the standard "
+                   "admits at that geometry").c_str(),
+                  "expects profile " + U32(want) + " at (subsampling " +
+                      U32(probe.encodeChromaSubsampling) + ", " +
+                      U32(probe.encodeBitDepthLuma) + "-bit)");
+            Check(probe.codecProfile == want,
+                  (std::string(c.name) + " enumerant " +
+                   U32((uint32_t)routable[i]) +
+                   ": the profile follows the ENCODE geometry").c_str(),
+                  "encode geometry is (subsampling " +
+                      U32(probe.encodeChromaSubsampling) + ", " +
+                      U32(probe.encodeBitDepthLuma) +
+                      "-bit) which implies profile " + U32(want) +
+                      ", the arm derived " + U32(probe.codecProfile) +
+                      "; the input side was (subsampling " +
+                      U32(probe.inputChromaSubsampling) + ", " +
+                      U32(probe.inputBpp) + "-bit)");
+        }
+    }
+    Check(rows >= 40u,
+          "the sweep bound enough rows across the three arms to be read",
+          "bound " + U32(rows));
+    // THE EXCLUSION CANNOT HOLLOW THE CASE OUT. Counted separately from the
+    // bound rows so that a widening of the excluded geometry shows up here as
+    // a falling assertion count rather than as a still-green run.
+    Check(asserted >= 40u,
+          "and enough of them carried an in-spec expectation to assert",
+          "asserted " + U32(asserted) + " of " + U32(rows) + ", excluded " +
+              U32(excluded));
+
+    // ---- SECOND PASS: THE TWO SIDES MADE TO DIFFER ----
+    //
+    // WHAT THE PASS ABOVE CANNOT SAY. One writer sets the encode side from
+    // the input side and nothing else touches either, so on every state the
+    // pass above can reach the two are EQUAL -- and an assertion over equal
+    // values is satisfied identically whichever side an arm reads. Revert all
+    // three arms to input.bpp and every row above still passes, with the same
+    // check count. It is a guard against a wrong derivation and no guard at
+    // all against a wrong side, which is the regression it was written for.
+    //
+    // WHAT MAKES THE DIFFERENCE REACHABLE. EncoderConfig::InitializeParameters
+    // derives the encode depth under a zero-means-unset guard whose own
+    // comment calls an explicit encode depth "a request and not a default".
+    // VkEncBuildAndProbeConfig's fourth argument states one, so the encode
+    // side becomes the request and the input side stays the caller's format's.
+    // The two now disagree, and the profile an arm derives says which it
+    // read: nothing else in the configuration moved.
+    //
+    // THE REQUEST IS THE FAR END OF THE DEPTH RANGE from the input, because a
+    // near one implies the same profile on most rows and a row where both
+    // sides imply the same answer asserts nothing. How many rows actually
+    // diverged is COUNTED PER CODEC and asserted non-zero below -- without
+    // that this pass could go green having compared every row against itself.
+    uint32_t divergent[3] = {0u, 0u, 0u};
+    uint32_t requested    = 0u;
+    for (uint32_t ci = 0; ci < 3u; ci++) {
+        const CodecRow& c = kCodecs[ci];
+        for (uint32_t i = 0; i < routableCount; i++) {
+            VkVideoEncoderConfig cfg = BaseConfig();
+            cfg.codec       = c.codec;
+            cfg.profile     = VK_VIDEO_ENCODER_PROFILE_DEFAULT;
+            cfg.inputFormat = routable[i];
+
+            VkEncBoundConfigProbe derived{};
+            if (VkEncBuildAndProbeConfig(cfg, c.codec, &derived) !=
+                VK_SUCCESS) {
+                continue;
+            }
+            const uint32_t request = (derived.inputBpp <= 10u) ? 12u : 8u;
+
+            VkEncBoundConfigProbe stated{};
+            if (VkEncBuildAndProbeConfig(cfg, c.codec, &stated, request) !=
+                VK_SUCCESS) {
+                continue;
+            }
+            // THE FIXTURE IS ASSERTED BEFORE THE PROPOSITION. If the request
+            // did not land, or if it moved the input side too, the row below
+            // would be measuring a broken instrument rather than an arm.
+            const bool fixtureOk = (stated.encodeBitDepthLuma == request) &&
+                                   (stated.inputBpp == derived.inputBpp) &&
+                                   (stated.encodeChromaSubsampling ==
+                                    derived.encodeChromaSubsampling);
+            Check(fixtureOk,
+                  Lbl(std::string(c.name) + " enumerant " +
+                      U32((uint32_t)routable[i]) +
+                      ": the stated encode depth landed on the ENCODE side "
+                      "alone"),
+                  "encode " + U32(stated.encodeBitDepthLuma) + " (asked " +
+                      U32(request) + "), input " + U32(stated.inputBpp) +
+                      " (was " + U32(derived.inputBpp) + ")");
+            if (!fixtureOk) {
+                continue;
+            }
+
+            const uint32_t wantEncode =
+                c.want(stated.encodeChromaSubsampling, request);
+            const uint32_t wantInput =
+                c.want(stated.encodeChromaSubsampling, stated.inputBpp);
+            if (wantEncode == kNoAdmissibleProfile) {
+                excluded++;
+                continue;
+            }
+            requested++;
+            if (wantEncode != wantInput) {
+                divergent[ci]++;
+            }
+            Check(ProfileAdmitsGeometry(c.codec, wantEncode,
+                                        stated.encodeChromaSubsampling,
+                                        request),
+                  Lbl(std::string(c.name) + " enumerant " +
+                      U32((uint32_t)routable[i]) +
+                      ": the stated-depth expectation is in spec too"),
+                  "expects " + U32(wantEncode) + " at " + U32(request) +
+                      "-bit");
+            Check(stated.codecProfile == wantEncode,
+                  Lbl(std::string(c.name) + " enumerant " +
+                      U32((uint32_t)routable[i]) +
+                      ": with the two sides DIFFERENT, the arm follows the "
+                      "ENCODE side"),
+                  "encode side is (subsampling " +
+                      U32(stated.encodeChromaSubsampling) + ", " +
+                      U32(request) + "-bit) implying profile " +
+                      U32(wantEncode) + "; the INPUT side is " +
+                      U32(stated.inputBpp) + "-bit implying " +
+                      ((wantInput == kNoAdmissibleProfile)
+                           ? std::string("no in-spec profile")
+                           : U32(wantInput)) +
+                      "; the arm derived " + U32(stated.codecProfile));
+        }
+    }
+    std::printf("  STATED-DEPTH PASS [%s]: %u rows asserted, divergent per "
+                "arm H.264=%u H.265=%u AV1=%u\n",
+                g_currentCase, requested, divergent[0], divergent[1],
+                divergent[2]);
+    Check(requested >= 20u,
+          "the stated-depth pass bound enough rows to be read",
+          "asserted " + U32(requested));
+    for (uint32_t ci = 0; ci < 3u; ci++) {
+        // THE ANTI-TAUTOLOGY ASSERTION. Without this the pass above could be
+        // green because the two sides never once implied different profiles,
+        // which is precisely the condition that made the first pass a
+        // non-guard.
+        Check(divergent[ci] > 0u,
+              Lbl(std::string(kCodecs[ci].name) +
+                  ": the stated-depth pass contained rows where the two sides "
+                  "imply DIFFERENT profiles, so it can discriminate"),
+              "divergent rows " + U32(divergent[ci]));
+    }
+}
+
 void CaseAv1SubsamplingMatchesTheDerivedSeqProfile()
 {
     g_currentCase = "the AV1 sequence header's subsampling matches the "
@@ -3195,8 +3562,33 @@ void CaseAv1SubsamplingMatchesTheDerivedSeqProfile()
 // why it is read together with the tier and never alone.
 //
 // At the default 4 Mbit/s neither ceiling binds and both terms are
-// picture-size-bound, which is why the rows below carry two bitrates: one where
-// the selection cannot move and one where it must.
+// picture-size-bound, which is why the rows below carry three bitrates: one
+// where the selection cannot move, and two where it must.
+//
+// THE DEPTH TERM IS NOW LIVE AT THIS CALL SITE TOO, and the rows read it at two
+// chroma formats so that "the depth term works" is distinguishable from "the
+// 4:4:4 cell was edited". Table A.8, for the formats this tree can reach:
+//
+//     4:2:0  8-bit  Main            1000
+//     4:2:0 10-bit  Main 10         1000
+//     4:2:0 12-bit  Main 12         1500
+//     4:4:4  8-bit  Main 4:4:4      2000
+//     4:4:4 10-bit  Main 4:4:4 10   2500
+//
+// TWO PAIRS OF ROWS ISOLATE IT AT A FIXED BITRATE AND A FIXED CHROMA. At 16
+// Mbit/s a 4:2:0 stream sits at level 4.0 HIGH tier at eight bits (12000 x 1000
+// = 12 Mbit/s, exceeded) and at level 4.0 MAIN tier at twelve (12000 x 1500 =
+// 18 Mbit/s, not exceeded). At 28 Mbit/s a 4:4:4 stream sits at HIGH tier at
+// eight bits (12000 x 2000 = 24 Mbit/s, exceeded) and at MAIN tier at ten
+// (12000 x 2500 = 30 Mbit/s, not exceeded). In each pair the only variable is
+// the depth, so a factor that ignored the depth would read the same tier for
+// both members and a factor that had simply been raised everywhere would move
+// the eight-bit member too.
+//
+// MAIN TIER IS THE CORRECT ANSWER WHERE IT IS ASSERTED, not merely a different
+// one. H.265 Annex A selects the lowest tier and level whose limits the stream
+// satisfies; high tier at level 4.0 is also conformant for these streams and is
+// a stricter claim on the decoder than the bitstream needs.
 void CaseH265CpbVclFactorFollowsTheChromaFormat()
 {
     g_currentCase = "the H.265 CPB VCL factor is Table A.8's, per chroma "
@@ -3226,31 +3618,41 @@ void CaseH265CpbVclFactorFollowsTheChromaFormat()
           1000u, 5u, 1u,
           "8-bit 4:2:0 at 16 Mbit/s needs HIGH tier, which the factor does not "
           "change" },
-        // THE ROWS UNDER TEST.
+        // THE CHROMA ARM.
         { VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,                   4000000u,
           2000u, 5u, 0u, "8-bit 4:4:4 (NV24) is 2000" },
-        // A RECORD, NOT A CONTRACT. Table A.8 gives 10-bit 4:4:4 2500, and
-        // this reads 2000 -- because GetCpbVclFactor's DEPTH term reads
-        // encodeBitDepthLuma / encodeBitDepthChroma, and EncoderConfig derives
-        // those from input.bpp in InitVideoProfile(), which runs LATER than
-        // both of this function's call sites reach it here: InitProfileLevel
-        // calls it from InitializeParameters, before the depth exists, so the
-        // depth term is zero and the base factor is the 8-bit one. That is a
-        // SECOND defect on the same function and it is not this change's --
-        // fixing it moves the selected level for 10-bit 4:4:4 streams, which
-        // is a behaviour change of its own. The row is here so the value is
-        // recorded rather than discovered again.
-        { VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16,  4000000u,
-          2000u, 5u, 0u,
-          "10-bit 4:4:4 (S410) reads 2000 at the level-selection call site, "
-          "where the input depth has not been derived yet -- Table A.8's "
-          "value for it is 2500" },
-        // AND THE ONE THAT MOVES DOWNSTREAM. 2000 buys main tier at level 4.0
-        // the headroom 1000 did not, so the stream stops declaring high tier.
         { VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,                  16000000u,
           2000u, 5u, 0u,
           "8-bit 4:4:4 at 16 Mbit/s fits level 4.0 MAIN tier on the right "
-          "factor" },
+          "chroma factor" },
+        // THE DEPTH ARM, AT 4:2:0. Table A.8 gives Main 12 the factor 1500,
+        // which is the base 1000 plus one +500 step for the two bits above
+        // ten. The pair at 16 Mbit/s is where it bites: the eight-bit row
+        // three above takes HIGH tier at the same bitrate and this one does
+        // not, and the depth is the only difference between them.
+        { VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16,  4000000u,
+          1500u, 5u, 0u, "12-bit 4:2:0 (P012) is 1500" },
+        { VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16, 16000000u,
+          1500u, 5u, 0u,
+          "12-bit 4:2:0 at 16 Mbit/s fits level 4.0 MAIN tier, where 8-bit "
+          "4:2:0 at the same bitrate does not" },
+        // THE DEPTH ARM, AT 4:4:4, where the base factor moves as well as the
+        // step: Table A.8 gives Main 4:4:4 10 the factor 2500 against Main
+        // 4:4:4's 2000.
+        { VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16,  4000000u,
+          2500u, 5u, 0u, "10-bit 4:4:4 (S410) is 2500" },
+        // AND THE PAIR THAT MOVES THE TIER. 28 Mbit/s is above main tier's
+        // ceiling at 2000 (24 Mbit/s) and below it at 2500 (30 Mbit/s), so the
+        // eight-bit member must still take HIGH tier and the ten-bit member
+        // must not. Read together they say the depth term moved the selection;
+        // read alone either would only say the selection is bitrate-sensitive.
+        { VK_FORMAT_G8_B8R8_2PLANE_444_UNORM,                  28000000u,
+          2000u, 5u, 1u,
+          "8-bit 4:4:4 at 28 Mbit/s still needs HIGH tier at level 4.0" },
+        { VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16, 28000000u,
+          2500u, 5u, 0u,
+          "10-bit 4:4:4 at 28 Mbit/s fits level 4.0 MAIN tier, where 8-bit "
+          "4:4:4 at the same bitrate does not" },
     };
     for (const Row& row : rows) {
         VkVideoEncoderConfig cfg = BaseConfig();
@@ -4829,6 +5231,8 @@ int main(int argc, char** argv)
     CaseProbeNamesAv1MainAtBothDepths();
     CaseProbeRefusesDepthsItHasNoEvidenceFor();
     CaseSnapshotCarriesBothAv1Depths();
+
+    CaseCodecArmsDeriveTheProfileFromTheEncodeGeometry();
 
     CaseFieldTableClassifiesEveryField();
 

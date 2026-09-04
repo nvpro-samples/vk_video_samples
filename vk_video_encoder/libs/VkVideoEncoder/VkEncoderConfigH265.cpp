@@ -408,17 +408,15 @@ EncoderConfigH265::InitVuiParameters(StdVideoH265SequenceParameterSetVui *vuiInf
     }
 
     // (chroma_sample_loc_type_top_field / _bottom_field are written above,
-    // beside chroma_loc_info_present_flag. THIS IS WHERE THEY USED TO BE
-    // RE-ZEROED -- an unconditional `= 0` under a FIXME saying they were "to
-    // be configured from settings", two hundred lines below the flag that
-    // decides whether anyone reads them. It survived the first version of the
-    // chroma-siting fix: the config carried type 1, the write above put 1 in
-    // the VUI, and this line put it back to 0 before the SPS was built. It
-    // was invisible because every H.265 row in the encode matrix takes the
-    // DIRECT or YCbCr-copy path, which signals no siting at all, and because
-    // the device-free assertion read the CONFIG rather than the VUI. Both
-    // gaps are closed: VkEncBoundConfigProbe now projects what
-    // InitVuiParameters actually produced.)
+    // beside chroma_loc_info_present_flag. DO NOT RE-ZERO THEM HERE. An
+    // unconditional `= 0` at this point sits two hundred lines below the flag
+    // that decides whether anyone reads them, so a config carrying type 1 and a
+    // write above putting 1 in the VUI would be undone before the SPS is built.
+    // Such a defect is close to invisible: every H.265 row in the encode matrix
+    // takes the DIRECT or YCbCr-copy path, which signals no siting at all, and a
+    // device-free assertion that reads the CONFIG rather than the VUI cannot see
+    // it either. VkEncBoundConfigProbe projects what InitVuiParameters actually
+    // produces, which closes the second gap.)
     // display_window_flag
     vuiInfo->def_disp_win_left_offset = 0;
     vuiInfo->def_disp_win_right_offset = 0;
@@ -566,11 +564,19 @@ void EncoderConfigH265::DetermineLevelTier()
 void EncoderConfigH265::InitProfileLevel()
 {
     // If profile hasn't been specified, determine it based on bit depth and chroma
+    //
+    // BOTH TERMS READ THE ENCODE SIDE. ITU-T H.265 Annex A defines
+    // general_profile_idc over what the bitstream carries, and this file
+    // writes sps.chroma_format_idc and sps.bit_depth_*_minus8 from
+    // encodeChromaSubsampling and encodeBitDepthLuma/Chroma. The chroma term
+    // already read the encode value; the depth term read input.bpp, so the
+    // two halves of one derivation sat on opposite sides of a boundary that
+    // exists to let them differ.
     if (profile == STD_VIDEO_H265_PROFILE_IDC_INVALID) {
         if (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR) {
-            if (input.bpp == 8) {
+            if (encodeBitDepthLuma == 8) {
                 profile = STD_VIDEO_H265_PROFILE_IDC_MAIN;
-            } else if (input.bpp <= 10) {
+            } else if (encodeBitDepthLuma <= 10) {
                 profile = STD_VIDEO_H265_PROFILE_IDC_MAIN_10;
             } else {
                 profile = STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS;

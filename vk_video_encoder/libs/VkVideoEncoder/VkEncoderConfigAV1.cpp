@@ -194,8 +194,9 @@ bool EncoderConfigAV1::InitSequenceHeader(StdVideoAV1SequenceHeader *seqHdr,
     // same ISO/IEC 23091-4 code points as the H.26x VUI fields, so the
     // colour half is a copy, not a conversion.
     //
-    // ALWAYS SUPPLIED. A gate on color_description_present_flag -- or on that
-    // OR video_signal_type_present_flag -- would be the wrong SHAPE, because
+    // ALWAYS SUPPLIED, never conditional. Gating it on
+    // color_description_present_flag alone, or on that OR
+    // video_signal_type_present_flag, is the wrong SHAPE, because
     // color_config is not a colour-description struct that happens to carry
     // some other members. It is a STRUCTURAL struct -- BitDepth,
     // subsampling_x/y, mono_chrome, chroma_sample_position and color_range
@@ -266,8 +267,14 @@ bool EncoderConfigAV1::InitSequenceHeader(StdVideoAV1SequenceHeader *seqHdr,
     // 4:2:0 -> (1, 1), 4:2:2 -> (1, 0), 4:4:4 -> (0, 0), which is AV1 5.5.2's
     // mapping. mono_chrome keeps its zeroed value from the `= {}` above --
     // there is no monochrome input path -- and is named here because it is one
-    // of the fields that used to be the driver's.
-    av1ColorConfig.BitDepth = input.bpp;
+    // of the fields this config owns rather than the driver.
+    // THE SEQUENCE HEADER'S OWN BitDepth SYNTAX ELEMENT, so it reads the
+    // encode side like the subsampling two lines below it. Reading
+    // input.bpp here would put two members of ONE struct on opposite sides of the
+    // input/encode boundary -- and seq_profile, which AV1 6.4.1 defines
+    // against this very field, is derived from the encode side in
+    // InitProfileLevel.
+    av1ColorConfig.BitDepth = encodeBitDepthLuma;
     av1ColorConfig.subsampling_x =
         (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR)
             ? 0 : 1;
@@ -404,9 +411,16 @@ VkResult EncoderConfigAV1::InitDeviceCapabilities(const VulkanDeviceContext* vkD
 void EncoderConfigAV1::InitProfileLevel()
 {
     // If profile hasn't been specified, determine it based on bit depth and chroma
+    //
+    // BOTH TERMS READ THE ENCODE SIDE. AV1 6.4.1 defines seq_profile over the
+    // SEQUENCE HEADER's BitDepth, mono_chrome and subsampling_x/y, and
+    // InitSequenceHeader writes all of those from the encode fields. The
+    // chroma term already read the encode value; the depth term read
+    // input.bpp, so seq_profile and the BitDepth it is defined against came
+    // from opposite sides of the boundary.
     if (profile == STD_VIDEO_AV1_PROFILE_INVALID) {
         // PROFESSIONAL is required for 12-bit or 422
-        if ((input.bpp > 10) ||
+        if ((encodeBitDepthLuma > 10) ||
             (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR)) {
             profile = STD_VIDEO_AV1_PROFILE_PROFESSIONAL;
         }

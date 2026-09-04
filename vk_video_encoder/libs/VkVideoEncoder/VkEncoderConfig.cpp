@@ -1262,13 +1262,13 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
 
 void EncoderConfig::InitVideoProfile()
 {
-    if (encodeBitDepthLuma == 0) {
-        encodeBitDepthLuma = input.bpp;
-    }
-
-    if (encodeBitDepthChroma == 0) {
-        encodeBitDepthChroma = encodeBitDepthLuma;
-    }
+    // THE ENCODE BIT DEPTHS ARE ALREADY SET, and deriving them here was the
+    // defect. This function runs at session creation; InitProfileLevel() runs
+    // from InitializeParameters(), well before it, and reads the same two
+    // fields through EncoderConfigH265::GetCpbVclFactor(). Defaulting them
+    // here meant that read saw zero. They are derived from the input in
+    // InitializeParameters() now, beside encodeChromaSubsampling, which is the
+    // only ordering under which every reader sees the same value.
 
     // Get the codec-specific profile (already set by InitProfileLevel)
     uint32_t codecProfile = GetCodecProfile();
@@ -1454,15 +1454,14 @@ uint8_t EncoderConfig::DeriveMatrixFromPrimaries(uint8_t primaries)
 bool EncoderConfig::ResolveRgbToYcbcrMatrix(
     VkSamplerYcbcrModelConversion* outModel)
 {
-    // WHAT THIS REPLACED, because the replacement only makes sense against
-    // it: the RGBA filter's setup used to run a switch over
-    // matrix_coefficients whose default arm logged "names no matrix the
-    // RGBA->YCbCr filter can express; converting as BT.709", substituted
-    // BT.709 FOR THE FILTER ONLY, left matrix_coefficients untouched and
-    // returned success. A caller declaring 2 (Unspecified) or 7 (SMPTE 240M)
-    // therefore got BT.709 pixels under a non-BT.709 label, on the SUCCESS
-    // path, with nothing between it and a conforming decoder mis-colouring
-    // the result but a line on stderr. "Warn and diverge" is not a contract.
+    // WHY A SWITCH WITH A DEFAULT ARM IS THE WRONG SHAPE HERE. Such an arm logs
+    // that the caller "names no matrix the RGBA->YCbCr filter can express;
+    // converting as BT.709", substitutes BT.709 FOR THE FILTER ONLY, leaves
+    // matrix_coefficients untouched and returns success. A caller declaring 2
+    // (Unspecified) or 7 (SMPTE 240M) then gets BT.709 pixels under a non-BT.709
+    // label, on the SUCCESS path, with nothing between it and a conforming
+    // decoder mis-colouring the result but a line on stderr. "Warn and diverge"
+    // is not a contract.
     //
     // Every arm below either makes the label TRUE or REFUSES.
     //

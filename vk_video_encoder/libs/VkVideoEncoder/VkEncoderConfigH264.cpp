@@ -649,36 +649,39 @@ void EncoderConfigH264::InitProfileLevel()
             profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH;
         }
 
-        if (input.bpp > 8) {
+        // THE ENCODE SIDE, ON BOTH AXES, AND THAT IS WHAT A PROFILE IS
+        // DEFINED OVER. ITU-T H.264 Annex A Table A-1 constrains profile_idc
+        // against the values the BITSTREAM carries -- the SPS's
+        // chroma_format_idc and bit_depth_luma_minus8 -- and this file writes
+        // both of those from encodeChromaSubsampling and encodeBitDepthLuma
+        // (InitializeSpsRefPicSet's caller, sps->chroma_format_idc and
+        // sps->bit_depth_*_minus8). A derivation that read the INPUT side
+        // would select the profile for a picture that is not the one the
+        // syntax describes: on the first change that makes input and encode
+        // differ -- a chroma resampler, a device-driven depth downgrade --
+        // this arm would pick 244 from a 4:4:4 input and write
+        // chroma_format_idc 1 from the encode value, inside one SPS.
+        //
+        // The fields are separate PRECISELY so the two can differ, so the
+        // reads are what is fixed and never the fields.
+        if (encodeBitDepthLuma > 8) {
             profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_10;
         }
 
-        // A LATENT HAZARD, NOTED AND DELIBERATELY NOT FIXED. This derivation
-        // reads input.chromaSubsampling while the SPS writes chroma_format_idc
-        // from encodeChromaSubsampling, and the H.265 and AV1 derivations read
-        // the ENCODE value throughout. Today the two are always equal: there is
-        // one writer, EncoderConfig::InitializeParameters copies input to
-        // encode before any derivation runs. The day something makes them
-        // differ, H.264 alone will pick its PROFILE from the input and write
-        // its CHROMA FORMAT from the encode value -- a profile and a chroma
-        // format that disagree inside one SPS, with nothing to catch it.
-        // The rule is to fix the READS and never the fields, and not
-        // speculatively: this note is the record, not the change.
-        //
         // 4:2:2 needs High 4:2:2 (122). High (100) and below cannot code
-        // chroma_format_idc == 2 at all, so without this a 4:2:2 request would be
+        // chroma_format_idc == 2 at all, so without this a 4:2:2 stream would be
         // silently downgraded. With it the request carries 122 into the device
         // question, and on a device with no 4:2:2 encode profile InitializeExt
         // refuses it there -- naming the format, its subsampling and this
         // profile -- rather than letting it reach the driver's own capability
         // query, which would refuse it while naming none of the three.
-        if (input.chromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR) {
+        if (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR) {
             profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_422;
         }
 
         // Upgrade to HIGH_444_PREDICTIVE for lossless encoding or 4:4:4 chroma
         if ((tuningMode == VK_VIDEO_ENCODE_TUNING_MODE_LOSSLESS_KHR) ||
-            (input.chromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR)) {
+            (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR)) {
             profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE;
         }
     }
