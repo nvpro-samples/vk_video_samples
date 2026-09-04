@@ -14,6 +14,9 @@
 * limitations under the License.
 */
 
+#include <cstdio>
+#include <cstdlib>
+#include <string>
 #include "FilterTestApp.h"
 #include "TestCases.h"
 #include "ColorConversion.h"
@@ -22,6 +25,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <vector>
 
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 #include "VkCodecUtils/Helpers.h"  // For vk::DeviceUuidUtils
@@ -461,12 +465,72 @@ void FilterTestApp::registerTest(const TestCaseConfig& config) {
     m_testCases.push_back(config);
 }
 
+namespace {
+// -----------------------------------------------------------------------
+// Registry of cases whose output is genuinely read back, genuinely compared,
+// and genuinely DISAGREES -- because of a defect in the FILTER, not in this
+// harness.
+//
+// Entries are pinned here rather than silenced, because the two ways of
+// making the suite green again are both worse: dropping the comparison
+// rebuilds the exact check-that-cannot-fail this harness exists to remove,
+// and letting the suite go red on arrival gets the whole job ignored. So a
+// listed case that FAILS is reported XFAIL and does not sink the run -- and a
+// listed case that PASSES is a hard FAILURE, so a fix cannot land without
+// this list being updated.
+//
+// The list is EMPTY. It held two entries, both removed when the single filter
+// defect behind them was fixed:
+//
+//   TC043_YCbCrCopy_NV16   -- YCBCRCOPY to 4:2:2 wrote only the top half of
+//                             the chroma plane (rows 540..1079 all zero,
+//                             1032750 of 2073600 chroma bytes wrong).
+//   TC044_YCbCrCopy_YUV444 -- YCBCRCOPY to 4:4:4 decimated chroma 2x2 (Cb
+//                             read 72,72,106,106,... for an input stepping
+//                             by 17, row 1 a duplicate of row 0; all 2073600
+//                             Cb bytes wrong).
+//
+// One cause, two faces: InitYCBCRCOPY() hardcoded the shader's luma block to
+// 2x2 while the host dispatch was already sized from the OUTPUT format's
+// chroma subsampling, so shader and dispatch disagreed for every non-4:2:0
+// output. See the comment at that call site in VulkanFilterYuvCompute.cpp.
+// Both planes are now byte-exact against the CPU reference on an A4000
+// (maxdiff=0, psnr=100), and the XPASS arm below is what forced this list to
+// be updated in the same change.
+//
+// Keep the mechanism: the next real filter defect belongs in here, not in a
+// deleted assertion.
+// -----------------------------------------------------------------------
+struct KnownFilterDefect {
+    const char* testName;
+    const char* reason;
+};
+
+// std::vector, not a C array: a zero-length array is not standard C++, and
+// the whole point of this list is that it is allowed to be empty.
+const std::vector<KnownFilterDefect> kKnownFilterDefects = {
+};
+
+const KnownFilterDefect* FindKnownFilterDefect(const std::string& name) {
+    for (const auto& entry : kKnownFilterDefects) {
+        if (name == entry.testName) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+}  // namespace
+
 TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
     TestResult result;
     result.testName = config.name;
     
     auto startTime = std::chrono::high_resolution_clock::now();
-    
+
+    // VkImage handles are recycled once the previous test released its
+    // resources, so a stale entry here would alias an unrelated image.
+    m_hostUploadedOptimal.clear();
+
     std::cout << "[Test] Running: " << config.name << std::endl;
     
     // Validate configuration
@@ -543,10 +607,8 @@ TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
     std::vector<VkSharedBaseObj<VkImageResource>> inputImages;
     std::vector<VkSharedBaseObj<VkImageResourceView>> inputImageViews;
     std::vector<VkSharedBaseObj<VkBufferResource>> inputBuffers;
-    
-    // Bytes actually written into input slot 0, kept so the CPU reference model can be
-    // computed from the same data the shader reads.
     std::vector<uint8_t> firstInputPattern;
+    std::vector<uint8_t> firstInputReference;
 
     for (const auto& inputSlot : config.inputs) {
         VkSharedBaseObj<VkImageResource> image;
@@ -564,11 +626,14 @@ TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
         inputImageViews.push_back(imageView);
         inputBuffers.push_back(buffer);
         
-        // Generate test pattern
+        // Generate test pattern. Capture the first input twice: the staged bytes,
+        // which are uploaded verbatim, and the same picture in logical component
+        // order, which is what the CPU reference conversion is computed from.
         if (inputSlot.generateTestPattern) {
+            const bool isFirstInput = (&inputSlot == &config.inputs[0]);
             vkResult = generateTestPattern(inputSlot, image, buffer,
-                                           (&inputSlot == &config.inputs[0]) ? &firstInputPattern
-                                                                             : nullptr);
+                                           isFirstInput ? &firstInputPattern   : nullptr,
+                                           isFirstInput ? &firstInputReference : nullptr);
             if (vkResult != VK_SUCCESS) {
                 result.errorMessage = "Failed to generate test pattern";
                 result.passed = false;
@@ -651,6 +716,60 @@ TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
     VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     m_vkDevCtx.BeginCommandBuffer(cmdBuffer, &beginInfo);
+
+    // ---- Put every filter image into VK_IMAGE_LAYOUT_GENERAL. ----
+    //
+    // This harness recorded NO layout transition at all, so every image
+    // reached vkCmdDispatch in the layout it was created in, while the
+    // filter's descriptors -- correctly -- declare GENERAL, the only layout a
+    // VK_DESCRIPTOR_TYPE_STORAGE_IMAGE descriptor admits
+    // (VUID-VkDescriptorImageInfo-imageLayout-00344). That is
+    // VUID-vkCmdDraw-None-09600, 501 per --all run, and it is a defect in the
+    // TEST, not in the filter: the filter is handed images by its caller and
+    // cannot know what layout they are in. The encoder's caller
+    // (VkVideoEncoder::StageInputFrame) records exactly these two barriers.
+    //
+    // oldLayout is read from the create info rather than assumed, so the
+    // PREINITIALIZED (host-written LINEAR) and UNDEFINED (device-local
+    // OPTIMAL) cases each name the layout the image is actually in. Naming
+    // UNDEFINED for a PREINITIALIZED image would validate, and would discard
+    // the test pattern -- the failure this exists to avoid, not to trade for.
+    {
+        std::vector<VkImageMemoryBarrier> toGeneral;
+        auto addBarrier = [&toGeneral, this](const VkSharedBaseObj<VkImageResource>& img) {
+            if (img == nullptr) {
+                return;
+            }
+            VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            b.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+            b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            b.oldLayout = img->GetImageCreateInfo().initialLayout;
+            b.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            b.image = img->GetImage();
+            // COLOR_BIT covers every plane of a multi-planar image, which is
+            // what the per-plane storage views are built over.
+            b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            toGeneral.push_back(b);
+        };
+        for (const auto& img : inputImages) {
+            addBarrier(img);
+        }
+        for (const auto& img : outputImages) {
+            addBarrier(img);
+        }
+        if (!toGeneral.empty()) {
+            m_vkDevCtx.CmdPipelineBarrier(cmdBuffer,
+                                          VK_PIPELINE_STAGE_HOST_BIT,
+                                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                          0,
+                                          0, nullptr,
+                                          0, nullptr,
+                                          (uint32_t)toGeneral.size(),
+                                          toGeneral.data());
+        }
+    }
     
     // Record filter commands
     auto* yuvFilter = static_cast<VulkanFilterYuvCompute*>(filter.get());
@@ -852,9 +971,9 @@ TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
             // get any bytes back", which a filter that writes garbage -- or writes only
             // part of the frame -- passes just as happily as a correct one.
             std::vector<uint8_t> referenceData =
-                generateReferenceOutput(config, firstInputPattern);
+                generateReferenceOutput(config, firstInputReference);
 
-            if (referenceData.empty() && !firstInputPattern.empty()) {
+            if (referenceData.empty() && !firstInputReference.empty()) {
                 // No CPU model for this conversion yet. Say so instead of reporting a
                 // pass: an unvalidated case must not look like a validated one.
                 result.passed = false;
@@ -893,13 +1012,57 @@ TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
         result.passed = true;
     }
     
+    // A case that is REQUIRED to disagree with the reference. See
+    // TestCaseConfig::expectReferenceMismatch. Applied before the
+    // known-defect registry because it is a property of the configuration,
+    // not a defect awaiting a fix.
+    if (config.expectReferenceMismatch) {
+        if (result.passed) {
+            std::cout << "[UNEXPECTED-MATCH] " << config.name
+                      << ": this configuration cannot be colour-correct, yet it "
+                         "matched the reference." << std::endl;
+            result.errorMessage =
+                "Expected a reference MISMATCH (the configuration under test "
+                "cannot reproduce the source colours) but the output matched. "
+                "Re-derive the premise before trusting this.";
+            result.passed = false;
+        } else {
+            std::cout << "[EXPECTED-MISMATCH] " << config.name
+                      << ": disagreed with the reference, as required (observed: "
+                      << result.errorMessage << ")" << std::endl;
+            result.errorMessage =
+                "Expected mismatch confirmed: " + result.errorMessage;
+            result.passed = true;
+        }
+    }
+
+    // Known filter defects: XFAIL is tolerated, XPASS is not. See
+    // kKnownFilterDefects above for why this is a registry and not a mute.
+    const KnownFilterDefect* known = FindKnownFilterDefect(config.name);
+    if (known != nullptr) {
+        if (!result.passed) {
+            std::cout << "[XFAIL] " << config.name << ": known filter defect -- "
+                      << known->reason << " (observed: " << result.errorMessage << ")"
+                      << std::endl;
+            result.errorMessage = "XFAIL (known filter defect): " + std::string(known->reason);
+            result.passed = true;
+        } else {
+            std::cout << "[XPASS] " << config.name
+                      << ": listed in kKnownFilterDefects but PASSED." << std::endl;
+            result.errorMessage =
+                "XPASS: this case is listed in kKnownFilterDefects but now passes. "
+                "If the filter was fixed, delete its entry from that list.";
+            result.passed = false;
+        }
+    }
+
     auto endTime = std::chrono::high_resolution_clock::now();
     result.executionTimeMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
     
     std::cout << "[Test] " << config.name << ": " 
               << (result.passed ? "PASSED" : (result.unvalidated ? "UNVALIDATED" : "FAILED"))
               << " (" << result.executionTimeMs << " ms)" << std::endl;
-    
+
     return result;
 }
 
@@ -946,9 +1109,9 @@ void FilterTestApp::printSummary(const std::vector<TestResult>& results) {
               << ", Failed: " << failed
               << ", Unvalidated: " << unvalidated << std::endl;
     if (passed == 0) {
-        // A run with nothing validated is not a green run, whatever the failure count
-        // says: a suite that checks no pixels at all reports the same totals as one that
-        // checks them and finds them right. Call it out.
+        // A run with nothing validated is not a green run, whatever the failure
+        // count says: a suite can report every case passing while checking no
+        // pixels at all. Call it out.
         std::cout << "WARNING: no case in this run validated its output pixels."
                   << std::endl;
     }
@@ -1068,8 +1231,17 @@ VkResult FilterTestApp::createTestInput(const TestIOSlot& slot,
         subresRange.baseArrayLayer = 0;
         subresRange.layerCount = 1;
         
-        result = VkImageResourceView::Create(&m_vkDevCtx, outImage, subresRange, 
-                                             VK_IMAGE_USAGE_STORAGE_BIT, outImageView);
+        // The compute filter binds every image slot it is handed -- the
+        // single-plane combined view and the per-plane YCbCr views alike --
+        // as a VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, so storage is the only
+        // access form the views have to carry. The usage a view requests must
+        // be a subset of the usage its image was created with
+        // (VUID-VkImageViewCreateInfo-pNext-02662), which is what ties this
+        // to |kTestImageUsage|: the two are one declaration expressed twice
+        // and must be read together.
+        result = VkImageResourceView::Create(&m_vkDevCtx, outImage, subresRange,
+                                             VK_IMAGE_USAGE_STORAGE_BIT,
+                                             outImageView);
         if (result != VK_SUCCESS) {
             return result;
         }
@@ -1113,22 +1285,78 @@ VkResult FilterTestApp::createStagingBuffer(size_t size,
     );
 }
 
+// Per-plane description of the packed host pattern buffer. Mirrors exactly
+// the layout generateTestPattern() produces and calculateImageSize()
+// measures: planes back to back, each tightly packed, no padding.
+namespace {
+struct PlaneCopyDesc {
+    VkImageAspectFlagBits aspect;
+    uint32_t              width;       // plane width, in plane texels
+    uint32_t              height;      // plane height, in plane texels
+    uint32_t              texelBytes;  // bytes per plane texel
+};
+
+uint32_t describePlanes(TestFormat format, uint32_t width, uint32_t height,
+                        PlaneCopyDesc planes[3]) {
+    switch (format) {
+        case TestFormat::RGBA8:
+        case TestFormat::BGRA8:
+        case TestFormat::Y410:   // packed 4:4:4, single plane
+            planes[0] = {VK_IMAGE_ASPECT_COLOR_BIT, width, height, 4};
+            return 1;
+        case TestFormat::NV12:
+            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 1};
+            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width / 2, height / 2, 2};
+            return 2;
+        case TestFormat::P010:
+        case TestFormat::P012:
+            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 2};
+            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width / 2, height / 2, 4};
+            return 2;
+        case TestFormat::I420:
+            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 1};
+            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width / 2, height / 2, 1};
+            planes[2] = {VK_IMAGE_ASPECT_PLANE_2_BIT, width / 2, height / 2, 1};
+            return 3;
+        case TestFormat::NV16:
+            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 1};
+            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width / 2, height, 2};
+            return 2;
+        case TestFormat::P210:
+            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 2};
+            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width / 2, height, 4};
+            return 2;
+        case TestFormat::YUV444:
+            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 1};
+            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width, height, 1};
+            planes[2] = {VK_IMAGE_ASPECT_PLANE_2_BIT, width, height, 1};
+            return 3;
+        default:
+            return 0;
+    }
+}
+}  // namespace
+
 VkResult FilterTestApp::generateTestPattern(const TestIOSlot& slot,
                                            VkSharedBaseObj<VkImageResource>& image,
                                            VkSharedBaseObj<VkBufferResource>& buffer,
-                                           std::vector<uint8_t>* pOutPatternData) {
+                                           std::vector<uint8_t>* pOutPatternData,
+                                           std::vector<uint8_t>* pOutReferencePattern) {
     std::vector<uint8_t> patternData;
     
     // Generate test pattern based on input format
     switch (slot.format) {
         case TestFormat::RGBA8:
         case TestFormat::BGRA8: {
-            // Generate RGBA color bars pattern
-            generateRGBATestPattern(TestPatternType::ColorBars, 
+            // Generate the pattern in LOGICAL R,G,B,A byte order for BOTH
+            // formats. The BGRA staging swap happens below, after
+            // |outPatternData| has been handed the logical bytes -- see the
+            // comment there for why the two must differ.
+            generateRGBATestPattern(slot.pattern,
                                    slot.width, slot.height, patternData);
             break;
         }
-        
+
         case TestFormat::NV12:
         case TestFormat::I420: {
             // Generate NV12 test pattern by converting from RGBA
@@ -1196,6 +1424,34 @@ VkResult FilterTestApp::generateTestPattern(const TestIOSlot& slot,
         }
     }
     
+    // BGRA8: stage the SAME PICTURE, written the way that format spells it.
+    //
+    // This is the whole point of the BGRA cases, so it is worth being exact
+    // about what is being asserted. The pattern above is in logical R,G,B,A
+    // byte order. A VK_FORMAT_B8G8R8A8_UNORM image spells the identical colour
+    // with bytes 0 and 2 exchanged. So:
+    //
+    //   * |patternData| (swapped below) is uploaded -- the bytes a real BGRA
+    //     producer would hand us.
+    //   * |outPatternData| keeps the LOGICAL RGBA bytes, and the CPU reference
+    //     is computed from those.
+    //
+    // Consequence, and this is the test: a correct implementation must produce
+    // BYTE-IDENTICAL YCbCr for the RGBA8 and BGRA8 cases, because they are the
+    // same picture. An implementation that reads BGRA memory as if it were
+    // RGBA -- exactly what a `rgba8` storage qualifier on a BGRA view does --
+    // produces the red/blue-swapped picture and fails against the shared
+    // reference. Feeding the swapped bytes to a swapped reference would cancel
+    // the two errors out and assert nothing at all.
+    const bool stageAsBgra = (slot.format == TestFormat::BGRA8) && slot.bgraStageSwap;
+    std::vector<uint8_t> logicalRgbaPattern;
+    if (stageAsBgra && !patternData.empty()) {
+        logicalRgbaPattern = patternData;
+        for (size_t i = 0; (i + 3) < patternData.size(); i += 4) {
+            std::swap(patternData[i + 0], patternData[i + 2]);
+        }
+    }
+
     // Upload pattern data to resource
     if (buffer && !patternData.empty()) {
         VkDeviceSize maxSize;
@@ -1209,19 +1465,35 @@ VkResult FilterTestApp::generateTestPattern(const TestIOSlot& slot,
     // Optimal-tiled images cannot be written from the host at all. Their upload is a
     // staging buffer plus a vkCmdCopyBufferToImage, which runTest() sets up as the
     // filter's pre-transfer -- the staging buffer has to outlive this function, and the
-    // copy has to be in the same submission as the compute dispatch. Neither is possible
-    // from here, which is why this function only produces the bytes: a staging buffer
-    // filled and dropped on return feeds the shader uninitialised memory, and the case
-    // still reports success.
+    // copy has to be in the same submission as the compute dispatch. A staging
+    // buffer filled and then dropped on return, with the copy left undone, feeds
+    // the shader uninitialised memory while the case still reports success --
+    // which is why the buffer's lifetime and the submission are arranged here
+    // rather than locally.
 
     // Note: linear images are NOT written through their host mapping here. See the
     // staging path in runTest() -- a direct memcpy assumes the planes are tightly packed,
     // which is not true on every driver.
 
-    // Hand back exactly what was written, so the reference model is computed from the
-    // same bytes the shader will read rather than from a regenerated pattern.
+    // Two answers, and they differ for exactly one slot format. Handing back a single
+    // vector for both jobs is wrong for BGRA8 in whichever direction it is resolved.
+    //
+    //   |pOutPatternData|      the bytes AS STAGED. The upload copies these into the
+    //                          image, so this is the picture the shader really reads,
+    //                          spelled the way the slot's VkFormat spells it.
+    //   |pOutReferencePattern| the same picture in LOGICAL R,G,B,A order. The reference
+    //                          generators read pixel[0] as red, so giving them the
+    //                          exchanged bytes would describe the byte order instead of
+    //                          the picture -- and the exchange would cancel against
+    //                          itself, leaving the comparison asserting nothing.
+    //
+    // They coincide for every format that stages its bytes in logical order, which is
+    // every format except a BGRA8 slot with bgraStageSwap set.
     if (pOutPatternData != nullptr) {
         *pOutPatternData = patternData;
+    }
+    if (pOutReferencePattern != nullptr) {
+        *pOutReferencePattern = stageAsBgra ? logicalRgbaPattern : patternData;
     }
 
     return VK_SUCCESS;
@@ -1252,6 +1524,81 @@ TestResult FilterTestApp::validateOutput(const TestCaseConfig& config,
     // packed. Everything arrives through the readback staging buffer instead.
     (void)outputImage;
     
+    // --- Readback fingerprint -------------------------------------------
+    // The reference-comparison arm below is only reached when a caller
+    // supplies reference bytes, and runTest() passes an empty vector, so a
+    // PASS from this function says "some data came back", never "the right
+    // data came back". That is not enough to tell a working descriptor arm
+    // from one that binds a never-written descriptor set, nor a BT.709
+    // matrix from a BT.2020 one -- both still produce a full buffer.
+    //
+    // So emit a checksum of the raw readback unconditionally, and dump the
+    // bytes when VKFT_DUMP names a directory. An A/B that must change (a
+    // matrix or range fix) and an A/B that must NOT change (swapping the
+    // descriptor arm) are then both decidable from the same output.
+    if (!actualData.empty()) {
+        unsigned long long sum = 0;
+        unsigned int fnv = 2166136261u;
+        for (size_t i = 0; i < actualData.size(); i++) {
+            sum += actualData[i];
+            fnv = (fnv ^ actualData[i]) * 16777619u;
+        }
+        std::cout << "[CHECKSUM] " << config.name
+                  << " bytes=" << actualData.size()
+                  << " sum=" << sum
+                  << " fnv1a=" << fnv << std::endl;
+
+        const char* dumpDir = getenv("VKFT_DUMP");
+        if (dumpDir && dumpDir[0]) {
+            std::string path = std::string(dumpDir) + "/" + config.name + ".bin";
+            FILE* f = fopen(path.c_str(), "wb");
+            if (f) {
+                fwrite(actualData.data(), 1, actualData.size(), f);
+                fclose(f);
+                std::cout << "[DUMP] " << path << std::endl;
+            } else {
+                std::cerr << "[DUMP] FAILED to open " << path << std::endl;
+            }
+        }
+    }
+
+    // Report the raw agreement between GPU output and CPU reference before
+    // any tolerance is applied, so a threshold argument can be had against
+    // numbers rather than against a bare PASS/FAIL.
+    if (!referenceData.empty() && !actualData.empty()) {
+        // Report in the format's OWN sample units. Reporting a 16-bit-per-
+        // sample format byte-wise made this line disagree with the verdict it
+        // is supposed to explain: TC002_RGBA_to_P010 printed "maxdiff=255
+        // psnr=10.26" and then PASSED, because a 107/65535 disagreement lands
+        // almost entirely in the low byte and reads as a 255-unit byte error.
+        // A diagnostic that contradicts the gate is worse than none.
+        const bool is16Bit = formatIs16BitSamples(outputSlot.format);
+        const size_t bytes = std::min(actualData.size(), referenceData.size());
+        const size_t n = is16Bit ? (bytes / 2) : bytes;
+        const uint8_t* ab = actualData.data();
+        const uint8_t* rb = referenceData.data();
+        uint32_t maxDiff = 0;
+        double sumSq = 0.0;
+        for (size_t i = 0; i < n; i++) {
+            const int av = is16Bit ? (ab[2 * i] | (ab[2 * i + 1] << 8)) : (int)ab[i];
+            const int rv = is16Bit ? (rb[2 * i] | (rb[2 * i + 1] << 8)) : (int)rb[i];
+            const int d = av - rv;
+            const uint32_t ad = (uint32_t)(d < 0 ? -d : d);
+            if (ad > maxDiff) {
+                maxDiff = ad;
+            }
+            sumSq += (double)d * (double)d;
+        }
+        const double peak = is16Bit ? 65535.0 : 255.0;
+        const double mse = (n != 0) ? (sumSq / (double)n) : 0.0;
+        const double psnr = (mse == 0.0) ? 100.0 : 10.0 * std::log10((peak * peak) / mse);
+        std::cout << "[REFCMP] " << config.name
+                  << " unit=" << (is16Bit ? "u16" : "u8")
+                  << " n=" << n
+                  << " maxdiff=" << maxDiff
+                  << " psnr=" << psnr << std::endl;
+    }
+
     // If we have reference data, compare
     if (!referenceData.empty() && !actualData.empty()) {
         // Determine comparison method based on output format
@@ -1529,9 +1876,27 @@ std::vector<uint8_t> FilterTestApp::generateReferenceOutput(const TestCaseConfig
             // For clear, generate expected cleared values
             size_t size = calculateImageSize(output.format, output.width, output.height);
             referenceData.resize(size);
-            
-            // Initialize with 50% gray for Y/R=0.5, and neutral for CbCr=0.5 (128 for 8-bit)
-            std::fill(referenceData.begin(), referenceData.end(), 128);
+
+            if (formatIs16BitSamples(output.format)) {
+                // The CLEAR shader does imageStore(..., vec4(0.5, ...)) into a
+                // plane view whose storage is 16 bits per sample, so the value
+                // that lands is round(0.5 * 65535) = 32767 -- measured 32767
+                // on an A4000 for every luma AND chroma sample of TC051.
+                // Filling BYTES with 128 made the reference 0x8080 = 32896,
+                // which is not 50% of anything; it is the same units mistake
+                // convertRGBAtoP010() makes, in the other direction. The
+                // 16-bit comparison arm above tolerates the +-1 LSB that
+                // another driver's rounding could produce (a 1/65535 error is
+                // ~96 dB, far above the 30 dB gate).
+                const uint16_t mid = 32767;
+                for (size_t i = 0; i + 1 < size; i += 2) {
+                    referenceData[i]     = (uint8_t)(mid & 0xFF);
+                    referenceData[i + 1] = (uint8_t)((mid >> 8) & 0xFF);
+                }
+            } else {
+                // 50% gray for Y=0.5 and neutral CbCr=0.5, i.e. 128 for 8-bit.
+                std::fill(referenceData.begin(), referenceData.end(), 128);
+            }
             break;
         }
         
@@ -1542,10 +1907,177 @@ std::vector<uint8_t> FilterTestApp::generateReferenceOutput(const TestCaseConfig
     return referenceData;
 }
 
-VkResult FilterTestApp::copyImageToStagingBuffer(VkSharedBaseObj<VkImageResource>& image,
+// ---------------------------------------------------------------------------
+// Read an OPTIMAL-tiled image back into a host-visible staging buffer.
+//
+// This was a `return VK_SUCCESS;` stub with no callers at all, and runTest()
+// took that as licence to short-circuit every optimal-tiled OUTPUT to
+// passed = true WITHOUT READING A BYTE -- 46 of the 54 --all cases. The 8
+// linear-output cases were the only ones validating anything. A green that
+// cannot go red is the same defect the input side had, pointing the other
+// way.
+//
+// Two things the input-side fix paid for, applied here rather than
+// rediscovered:
+//
+//  1. oldLayout is VK_IMAGE_LAYOUT_GENERAL, NOT the create-info
+//     VK_IMAGE_LAYOUT_UNDEFINED. runTest()'s barrier puts every filter image
+//     into GENERAL before the dispatch, and the filter's own trailing
+//     barrier (VulkanFilterYuvCompute::RecordCommandBuffer, the
+//     GENERAL->GENERAL / SHADER_WRITE->MEMORY_READ one) leaves the output
+//     there. Naming the create-info UNDEFINED would validate cleanly and
+//     would be free to DISCARD the very pixels this function exists to read
+//     -- the symmetric twin of the hazard that nearly ate the input pattern.
+//
+//  2. The DESTINATION packing is ours to pick, so pick tight:
+//     bufferRowLength / bufferImageHeight = 0 means "tightly packed to
+//     imageExtent". A copy-to-buffer does not inherit the image's row
+//     padding, so this sidesteps the trap the LINEAR readback had to solve
+//     with GetPlaneLayout() -- there, luma was padded 2073600 -> 2 MiB and a
+//     flat read put the whole chroma plane 23552 bytes out. Here the result
+//     is byte-for-byte what calculateImageSize() measures.
+// ---------------------------------------------------------------------------
+VkResult FilterTestApp::copyImageToStagingBuffer(const TestIOSlot& slot,
+                                                 VkSharedBaseObj<VkImageResource>& image,
                                                  VkSharedBaseObj<VkBufferResource>& stagingBuffer) {
-    // TODO: Implement image-to-buffer copy for optimal tiled images
-    // For now, this is a stub that returns success since we're mainly using linear images
+    if (image == nullptr) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    PlaneCopyDesc planes[3];
+    const uint32_t numPlanes = describePlanes(slot.format, slot.width, slot.height, planes);
+    if (numPlanes == 0) {
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
+
+    // Each region's bufferOffset must be a multiple of the PLANE's texel
+    // size (VUID-vkCmdCopyImageToBuffer-srcImage-07976), and tight packing of
+    // the earlier planes does not guarantee that: TC101 is 1921x1081, so the
+    // NV12 luma plane is 2076601 bytes and plane 1's texel size is 2. So the
+    // copy is recorded at ALIGNED offsets and the planes are compacted down
+    // to tight packing on the host once the fence signals -- the caller still
+    // gets the tightly packed buffer it expects, and the copy stays legal.
+    VkDeviceSize alignedOffset[3] = {0, 0, 0};
+    VkDeviceSize tightOffset[3] = {0, 0, 0};
+    VkDeviceSize planeBytes[3] = {0, 0, 0};
+    VkDeviceSize alignedCursor = 0;
+    VkDeviceSize tightCursor = 0;
+    for (uint32_t i = 0; i < numPlanes; i++) {
+        const VkDeviceSize align = (planes[i].texelBytes != 0) ? planes[i].texelBytes : 1;
+        alignedCursor = ((alignedCursor + align - 1) / align) * align;
+        alignedOffset[i] = alignedCursor;
+        tightOffset[i] = tightCursor;
+        planeBytes[i] = (VkDeviceSize)planes[i].width * planes[i].height * planes[i].texelBytes;
+        alignedCursor += planeBytes[i];
+        tightCursor += planeBytes[i];
+    }
+    if (tightCursor == 0) {
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
+
+    VkResult result = createStagingBuffer((size_t)alignedCursor, stagingBuffer);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+
+    VkCommandBufferAllocateInfo allocInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    allocInfo.commandPool = m_commandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer cmdBuffer = VK_NULL_HANDLE;
+    result = m_vkDevCtx.AllocateCommandBuffers(m_vkDevCtx.getDevice(), &allocInfo, &cmdBuffer);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+
+    VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    m_vkDevCtx.BeginCommandBuffer(cmdBuffer, &beginInfo);
+
+    // GENERAL, not the create-info UNDEFINED -- see (1) in the block above.
+    VkImageMemoryBarrier toTransferSrc{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    toTransferSrc.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    toTransferSrc.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    toTransferSrc.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    toTransferSrc.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    toTransferSrc.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransferSrc.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransferSrc.image = image->GetImage();
+    // COLOR_BIT covers every plane of a multi-planar image.
+    toTransferSrc.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    m_vkDevCtx.CmdPipelineBarrier(cmdBuffer,
+                                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                  VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                  0, 0, nullptr, 0, nullptr, 1, &toTransferSrc);
+
+    VkBufferImageCopy regions[3]{};
+    for (uint32_t i = 0; i < numPlanes; i++) {
+        regions[i].bufferOffset = alignedOffset[i];
+        regions[i].bufferRowLength = 0;      // tightly packed -- see (2) above
+        regions[i].bufferImageHeight = 0;
+        regions[i].imageSubresource.aspectMask = planes[i].aspect;
+        regions[i].imageSubresource.mipLevel = 0;
+        regions[i].imageSubresource.baseArrayLayer = 0;
+        regions[i].imageSubresource.layerCount = 1;
+        regions[i].imageOffset = {0, 0, 0};
+        regions[i].imageExtent = {planes[i].width, planes[i].height, 1};
+    }
+
+    m_vkDevCtx.CmdCopyImageToBuffer(cmdBuffer,
+                                    image->GetImage(),
+                                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                    stagingBuffer->GetBuffer(),
+                                    numPlanes, regions);
+
+    // HOST_COHERENT memory needs no cache maintenance, but the transfer write
+    // still has to be made AVAILABLE to the host domain. A fence wait alone
+    // does not do that.
+    VkMemoryBarrier toHost{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    toHost.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    toHost.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    m_vkDevCtx.CmdPipelineBarrier(cmdBuffer,
+                                  VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                  VK_PIPELINE_STAGE_HOST_BIT,
+                                  0, 1, &toHost, 0, nullptr, 0, nullptr);
+
+    m_vkDevCtx.EndCommandBuffer(cmdBuffer);
+
+    VkFence fence = VK_NULL_HANDLE;
+    VkFenceCreateInfo fenceInfo{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    m_vkDevCtx.CreateFence(m_vkDevCtx.getDevice(), &fenceInfo, nullptr, &fence);
+
+    VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmdBuffer;
+
+    result = m_vkDevCtx.QueueSubmit(m_vkDevCtx.GetComputeQueue(), 1, &submitInfo, fence);
+    if (result == VK_SUCCESS) {
+        result = m_vkDevCtx.WaitForFences(m_vkDevCtx.getDevice(), 1, &fence, VK_TRUE, UINT64_MAX);
+    }
+
+    m_vkDevCtx.DestroyFence(m_vkDevCtx.getDevice(), fence, nullptr);
+    m_vkDevCtx.FreeCommandBuffers(m_vkDevCtx.getDevice(), m_commandPool, 1, &cmdBuffer);
+
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+
+    // Compact the aligned plane layout down to tight packing. Only ever moves
+    // bytes DOWNWARD, and only when an alignment gap was actually inserted,
+    // so for every even-dimensioned case this is a no-op.
+    VkDeviceSize mappedSize = 0;
+    uint8_t* mapped = stagingBuffer->GetDataPtr(0, mappedSize);
+    if ((mapped == nullptr) || (mappedSize < alignedCursor)) {
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+    for (uint32_t i = 1; i < numPlanes; i++) {
+        if (alignedOffset[i] != tightOffset[i]) {
+            memmove(mapped + tightOffset[i], mapped + alignedOffset[i],
+                    (size_t)planeBytes[i]);
+        }
+    }
+
     return VK_SUCCESS;
 }
 

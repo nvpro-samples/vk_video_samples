@@ -21,12 +21,17 @@
 #include <vector>
 #include <memory>
 #include <functional>
+#include <set>
 
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/VkImageResource.h"
 #include "VkCodecUtils/VkBufferResource.h"
 #include "VkCodecUtils/VulkanFilterYuvCompute.h"
 #include "VkCodecUtils/VulkanCommandBufferPool.h"
+
+// TestIOSlot::pattern is a TestPatternType, which this header therefore has to
+// see rather than forward-declare (it is a scoped enum used by value).
+#include "ColorConversion.h"
 
 namespace vkfilter_test {
 
@@ -111,6 +116,29 @@ struct TestIOSlot {
     uint32_t        width{1920};
     uint32_t        height{1080};
     
+    /// Which pattern to fill an INPUT slot with. Only consulted for the RGBA
+    /// family today; the YCbCr generators still synthesize from colour bars.
+    /// Defaults to ColorBars so every pre-existing case is unchanged.
+    TestPatternType pattern{TestPatternType::ColorBars};
+
+    /**
+     * @brief BGRA8 slots only: write the pattern in B,G,R,A byte order (true,
+     *        the default) or leave it in logical R,G,B,A order (false).
+     *
+     * THIS EXISTS TO BE SET FALSE ONCE, as the control that proves the BGRA
+     * cases are testing anything at all.
+     *
+     * The BGRA cases stage byte-swapped pixels and validate against a
+     * reference built from the logical colours, so they PASS when the pipeline
+     * honours the VkFormat. But they would also pass if the swap never
+     * happened AND the format were ignored -- two mistakes cancelling. Setting
+     * this false breaks the symmetry deliberately: a BGRA image holding
+     * unswapped RGBA bytes MUST come out red/blue-exchanged, so the case must
+     * FAIL against the reference. If it passes, the format is not reaching the
+     * GPU and every other BGRA result here is vacuous.
+     */
+    bool            bgraStageSwap{true};
+
     // For validation
     bool            generateTestPattern{true};  // Generate test pattern for inputs
     bool            validateOutput{true};       // Validate output against reference
@@ -130,6 +158,25 @@ struct TestCaseConfig {
     
     float                       tolerance{0.02f};  // Validation tolerance (0.0-1.0)
     uint32_t                    filterFlags{0};    // VulkanFilterYuvCompute::FilterFlags
+
+    /**
+     * @brief The output is REQUIRED to disagree with the reference.
+     *
+     * Distinct from kKnownFilterDefects, which records a defect somebody
+     * intends to fix. This records a property that is correct and permanent:
+     * a configuration that CANNOT be right, asserted to be wrong so that the
+     * claim is checked by the machine instead of resting in a comment.
+     *
+     * The case it exists for: a BGRA8 source whose bytes are staged in logical
+     * R,G,B,A order rather than in the B,G,R,A order the format names (see
+     * TestIOSlot::bgraStageSwap). The picture in memory is then red/blue
+     * exchanged relative to the reference, so a pipeline that honours the
+     * VkFormat cannot reproduce it. If that case ever MATCHES the reference,
+     * the format is not reaching the GPU and every other component-order
+     * result is vacuous -- which is exactly when a silent pass would be most
+     * misleading.
+     */
+    bool                        expectReferenceMismatch{false};
 };
 
 /**
@@ -214,6 +261,16 @@ private:
     
     // Command buffer pool for test execution
     VkCommandPool                            m_commandPool{VK_NULL_HANDLE};
+
+    // Optimal-tiled images this run has host-uploaded a pattern into, via
+    // uploadPatternToOptimalImage(). Those images are left in
+    // VK_IMAGE_LAYOUT_GENERAL with their contents live, so runTest()'s
+    // to-GENERAL barrier must name GENERAL as oldLayout for them -- naming
+    // the create-info UNDEFINED would be legal and would DISCARD the pattern
+    // that was just uploaded. Cleared per test: VkImage handles are
+    // recycled once a test's resources are released, so a stale handle here
+    // would alias an unrelated image in a later test.
+    std::set<VkImage>                        m_hostUploadedOptimal;
     
     /**
      * @brief Create test input resource
@@ -242,15 +299,24 @@ private:
                                 VkBufferUsageFlags usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     
     /**
-     * @brief Generate test pattern in image/buffer
+     * @brief Generate a test pattern in an image or buffer.
+     *
+     * Both out-parameters describe the picture this call staged, never a second
+     * independently generated one: a reference built from a regenerated pattern
+     * silently tests nothing.
+     *
+     * @param pOutPatternData      Receives the bytes AS STAGED, which is what the
+     *                             upload path copies into the resource.
+     * @param pOutReferencePattern Receives the same picture in logical R,G,B,A order,
+     *                             which is what the CPU reference generators expect.
+     *                             The two differ only for a BGRA8 slot that stages its
+     *                             bytes in the format's own order.
      */
-    // pOutPatternData, when non-null, receives the exact bytes written into the input
-    // resource. The reference model must be derived from those bytes and not from a
-    // second, independently generated pattern, or the comparison silently tests nothing.
     VkResult generateTestPattern(const TestIOSlot& slot,
                                 VkSharedBaseObj<VkImageResource>& image,
                                 VkSharedBaseObj<VkBufferResource>& buffer,
-                                std::vector<uint8_t>* pOutPatternData = nullptr);
+                                std::vector<uint8_t>* pOutPatternData = nullptr,
+                                std::vector<uint8_t>* pOutReferencePattern = nullptr);
     
     /**
      * @brief Validate output against expected result
@@ -262,9 +328,16 @@ private:
                              const std::vector<uint8_t>& referenceData);
     
     /**
-     * @brief Copy image to staging buffer for CPU readback
+     * @brief Read an OPTIMAL-tiled image back into a host-visible buffer.
+     *
+     * Takes the slot because the copy needs the format's plane geometry;
+     * the image itself does not carry it in a form this harness can use.
+     * The buffer comes back TIGHTLY PACKED -- plane after plane, no row
+     * padding -- so it lines up with calculateImageSize() and with the CPU
+     * reference without any further repacking.
      */
-    VkResult copyImageToStagingBuffer(VkSharedBaseObj<VkImageResource>& image,
+    VkResult copyImageToStagingBuffer(const TestIOSlot& slot,
+                                     VkSharedBaseObj<VkImageResource>& image,
                                      VkSharedBaseObj<VkBufferResource>& stagingBuffer);
     
     /**

@@ -196,6 +196,32 @@ static bool parseArgs(int argc, char* argv[], TestConfig& config) {
 // Main
 //=============================================================================
 
+
+// ---------------------------------------------------------------------------
+// CTest skip semantics.
+//
+// A host with no usable Vulkan device has proved nothing about this test's
+// subject, so it must report SKIPPED (CTest's conventional 77), not a pass and
+// not a failure. Only device-AVAILABILITY results map to 77. Every other
+// VkResult -- VK_ERROR_DEVICE_LOST, VK_ERROR_OUT_OF_*_MEMORY, anything else --
+// stays a hard exit 1, so a real regression inside init() cannot hide behind
+// this arm and get itself reported as "skipped".
+// ---------------------------------------------------------------------------
+static const int kCTestSkipExitCode = 77;
+
+static bool IsNoUsableDeviceResult(VkResult result) {
+    switch (result) {
+        case VK_ERROR_INCOMPATIBLE_DRIVER:    // -9: no ICD the loader can use
+        case VK_ERROR_INITIALIZATION_FAILED:  // -3: loader/ICD refused to come up
+        case VK_ERROR_EXTENSION_NOT_PRESENT:  // -7: no device offers what we need
+        case VK_ERROR_LAYER_NOT_PRESENT:      // -6
+        case VK_ERROR_FEATURE_NOT_PRESENT:    // -8: device lacks a required feature
+            return true;
+        default:
+            return false;
+    }
+}
+
 int main(int argc, char* argv[]) {
     std::cout << "======================================" << std::endl;
     std::cout << " DRM Format Modifier Test Suite" << std::endl;
@@ -238,6 +264,12 @@ int main(int argc, char* argv[]) {
     VkResult result = testApp.init(config);
     if (result != VK_SUCCESS) {
         std::cerr << "Failed to initialize test application: " << result << std::endl;
+        if (IsNoUsableDeviceResult(result)) {
+            std::cerr << "No usable Vulkan device on this host: reporting SKIPPED ("
+                      << kCTestSkipExitCode << "). Nothing was proved either way."
+                      << std::endl;
+            return kCTestSkipExitCode;
+        }
         return 1;
     }
     

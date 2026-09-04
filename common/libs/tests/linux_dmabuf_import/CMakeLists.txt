@@ -14,11 +14,11 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-project(win32_opaque_import_test LANGUAGES CXX)
+project(linux_dmabuf_import_test LANGUAGES CXX)
 
-# Only build on Windows (Win32 opaque handles are Windows-specific)
-if(NOT WIN32)
-    message(STATUS "win32_opaque_import_test: Skipping (Windows-only)")
+# Only build on Linux/Unix (dma-buf is a Linux kernel object)
+if(NOT UNIX OR APPLE)
+    message(STATUS "linux_dmabuf_import_test: Skipping (Linux-only)")
     return()
 endif()
 
@@ -28,15 +28,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Test application source files
 set(TEST_SOURCES
     src/main.cpp
-    src/Win32OpaqueImportTest.cpp
+    src/LinuxDmaBufImportTest.cpp
 )
 
 # Test application header files
 set(TEST_HEADERS
-    inc/Win32OpaqueImportTest.h
+    inc/LinuxDmaBufImportTest.h
 )
 
-# VkCodecUtils source files (from parent directory)
+# VkCodecUtils source files (from parent directory) - same set the sibling
+# drm_format_mod and win32_opaque_import tests link, so VulkanDeviceContext's
+# dependencies are satisfied identically.
 set(VKCODECUTILS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../VkCodecUtils")
 set(VKCODECUTILS_SOURCES
     ${VKCODECUTILS_DIR}/VulkanDeviceContext.cpp
@@ -55,6 +57,7 @@ set(VKCODECUTILS_SOURCES
     ${VKCODECUTILS_DIR}/VulkanFenceSet.cpp
     ${VKCODECUTILS_DIR}/Helpers.cpp
     ${VK_DISPATCH_TABLE_SOURCE}
+    ${VK_DISPATCH_TABLE_HEADER}
     ${VKCODECUTILS_DIR}/nvVkFormats.cpp
 )
 
@@ -64,6 +67,13 @@ add_executable(${PROJECT_NAME}
     ${TEST_HEADERS}
     ${VKCODECUTILS_SOURCES}
 )
+
+# The dispatch table is generated into the build tree, not checked in.
+# Listing the generated source gives THIS .cpp a file-level dependency,
+# but every other TU here reaches the generated HEADER through
+# inc/LinuxDmaBufImportTest.h -> VkCodecUtils/VulkanDeviceContext.h, and
+# nothing orders those objects after the generator without this.
+add_dependencies(${PROJECT_NAME} GenerateDispatchTables)
 
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -85,16 +95,22 @@ endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE ${VK_SHADER_COMPILER_LIBS})
 
+# Platform-specific settings (Linux only at this point)
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    pthread
+    dl
+)
+
+# Ensure POSIX functions are available (dup/close)
+target_compile_definitions(${PROJECT_NAME} PRIVATE _POSIX_C_SOURCE=200809L)
+
 # Compile definitions
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     VK_NO_PROTOTYPES
     VK_ENABLE_BETA_EXTENSIONS
-    VK_USE_PLATFORM_WIN32_KHR
     VK_USE_VIDEO_QUEUE
     VK_USE_VIDEO_DECODE_QUEUE
     VK_USE_VIDEO_ENCODE_QUEUE
-    WIN32_LEAN_AND_MEAN
-    NOMINMAX
 )
 
 # Installation
@@ -102,16 +118,32 @@ install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION bin
 )
 
-# Add tests
+# Add tests.
+#
+# NOTE ON CTest SEMANTICS: this executable returns 0 only when the
+# second-device import AND the content round-trip both succeeded. Exit code 2
+# means "could not run" (no GPU, missing extension, nothing proved) and is
+# deliberately a CTest FAILURE, not a skip - a host that cannot run this test
+# must not report the device-independence claim as verified.
 enable_testing()
-add_test(NAME Win32OpaqueImportSmokeTest COMMAND ${PROJECT_NAME})
-add_test(NAME Win32OpaqueImportAllTests COMMAND ${PROJECT_NAME} --verbose)
-# Labelled for the same CI split as the Linux tests. No SKIP_RETURN_CODE is
-# claimed here because this arm is Windows-only and was NOT run or verified
-# when the labels were added -- do not assume it skips cleanly without a GPU.
-set_tests_properties(Win32OpaqueImportSmokeTest
-                     Win32OpaqueImportAllTests PROPERTIES
+add_test(NAME LinuxDmaBufSecondDeviceImport
+         COMMAND ${PROJECT_NAME})
+add_test(NAME LinuxDmaBufSecondDeviceImportLinear
+         COMMAND ${PROJECT_NAME} --linear-only --verbose)
+add_test(NAME LinuxDmaBufSecondDeviceImportRGBA
+         COMMAND ${PROJECT_NAME} --format rgba8 --no-video-usage)
+
+# Exit 2 ("COULD NOT RUN - THIS IS NOT A PASS") is mapped to CTest SKIP rather
+# than to FAIL. That does not weaken the note above: a CTest SKIP is not a
+# pass, so the device-independence claim is still not reported as verified on
+# a host that cannot run this. It only stops a GPU-less CI runner from being
+# permanently red, which is the state that teaches people to ignore the job.
+# Exit 1 -- the import ran and the round-trip did not hold -- remains a FAIL.
+set_tests_properties(LinuxDmaBufSecondDeviceImport
+                     LinuxDmaBufSecondDeviceImportLinear
+                     LinuxDmaBufSecondDeviceImportRGBA PROPERTIES
+                     SKIP_RETURN_CODE 2
                      LABELS "gpu")
 
 # Print status
-message(STATUS "win32_opaque_import_test: Configured for Windows")
+message(STATUS "linux_dmabuf_import_test: Configured for Linux")
