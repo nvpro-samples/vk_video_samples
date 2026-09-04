@@ -20,6 +20,7 @@
 // dependency without changing what compiles the shaders.
 
 #include <iostream>
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <mutex>
 
 // The SPIRV headers are included WITHOUT a glslang/ prefix on purpose. An
@@ -57,7 +58,7 @@ EShLanguage getGlslangShaderStage(VkShaderStageFlagBits type)
     case VK_SHADER_STAGE_COMPUTE_BIT:
         return EShLangCompute;
     default:
-        std::cerr << "VulkanShaderCompiler: invalid VkShaderStageFlagBits type = "
+        VkEncErr() << "VulkanShaderCompiler: invalid VkShaderStageFlagBits type = "
                   << type << std::endl;
     }
     return EShLangCount;
@@ -112,7 +113,7 @@ public:
         if (!shader.parse(GetDefaultResources(), 450, ENoProfile,
                           false /* forceDefaultVersionAndProfile */,
                           false /* forwardCompatible */, messages)) {
-            std::cerr << "Compilation error: \n"
+            VkEncErr() << "Compilation error: \n"
                       << shader.getInfoLog() << "\n"
                       << shader.getInfoDebugLog() << std::endl;
             return false;
@@ -121,7 +122,7 @@ public:
         glslang::TProgram program;
         program.addShader(&shader);
         if (!program.link(messages)) {
-            std::cerr << "Link error: \n" << program.getInfoLog() << std::endl;
+            VkEncErr() << "Link error: \n" << program.getInfoLog() << std::endl;
             return false;
         }
 
@@ -137,11 +138,11 @@ public:
 
         const std::string spvMessages = logger.getAllMessages();
         if (!spvMessages.empty()) {
-            std::cerr << "SPIR-V generation: " << spvMessages << std::endl;
+            VkEncErr() << "SPIR-V generation: " << spvMessages << std::endl;
         }
 
         if (spirv.empty()) {
-            std::cerr << "SPIR-V generation produced no code" << std::endl;
+            VkEncErr() << "SPIR-V generation produced no code" << std::endl;
             return false;
         }
 
@@ -159,7 +160,7 @@ VulkanShaderCompilerBackend* VulkanShaderCompilerBackend::Create()
 {
     // Process-global; must be balanced by FinalizeProcess() in Destroy().
     if (!glslang::InitializeProcess()) {
-        std::cerr << "VulkanShaderCompiler: glslang::InitializeProcess() failed!" << std::endl;
+        VkEncErr() << "VulkanShaderCompiler: glslang::InitializeProcess() failed!" << std::endl;
         return nullptr;
     }
 

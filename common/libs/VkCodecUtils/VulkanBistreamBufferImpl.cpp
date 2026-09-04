@@ -15,6 +15,7 @@
 */
 
 #include <string.h>
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include "VkCodecUtils/VulkanBistreamBufferImpl.h"
 #include "VkCodecUtils/Helpers.h"
 
@@ -231,7 +232,7 @@ VkDeviceSize VulkanBitstreamBufferImpl::Resize(VkDeviceSize newSize, VkDeviceSiz
         return m_bufferSize;
     }
 
-    std::cout << " ======= Req resize old " << m_bufferSize << " -> new " << newSize << " ====== " << std::endl;
+    VkEncOut() << " ======= Req resize old " << m_bufferSize << " -> new " << newSize << " ====== " << std::endl;
 
     VkBuffer        newBuffer = VK_NULL_HANDLE;
     VkDeviceSize    newBufferOffset = 0;

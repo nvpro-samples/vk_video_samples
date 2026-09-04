@@ -127,6 +127,22 @@ public:
             return true;
         }
 
+        // Has this node's command buffer been handed to vkQueueSubmit yet?
+        //
+        // Read by the encoder ext layer's per-frame release fence. Exporting
+        // a SYNC_FD requires the semaphore to be signalled or to have a
+        // signal operation PENDING EXECUTION, so the export is only legal
+        // once the batch carrying that signal has been submitted -- and the
+        // encode submit is NOT always issued inline with the frame that
+        // produced it: under B-frame reordering the frame sits in the
+        // deferred queue and its submit happens on a later call. Asking the
+        // node is the only answer that cannot drift from that scheduling
+        // decision, which is why this is a query and not a config-derived
+        // prediction.
+        bool IsCommandBufferSubmitted() const {
+            return (m_cmdBufState == CmdBufStateSubmitted);
+        }
+
         VkFence GetFence() const {
             if ((m_parent == nullptr) || (m_parentIndex < 0)) {
                 assert(!"Invalid PoolNode state!");

@@ -15,6 +15,7 @@
 */
 
 #include "assert.h"
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <iostream>
 #include <mutex>
 #include <atomic>
@@ -41,7 +42,7 @@ void* VulkanShaderCompiler::GetSharedCompiler() {
         // First instance - create the shared backend
         g_sharedBackend = VulkanShaderCompilerBackend::Create();
         if (g_sharedBackend == nullptr) {
-            std::cerr << "VulkanShaderCompiler: Failed to initialize the shader compiler backend!" << std::endl;
+            VkEncErr() << "VulkanShaderCompiler: Failed to initialize the shader compiler backend!" << std::endl;
             return nullptr;
         }
     }
@@ -104,7 +105,7 @@ VkShaderModule VulkanShaderCompiler::BuildGlslShader(const char *shaderCode, siz
     VkResult result = vkDevCtx->CreateShaderModule(*vkDevCtx, &shaderModuleCreateInfo, nullptr, &shaderModule);
     assert(result == VK_SUCCESS);
     if (result != VK_SUCCESS) {
-        std::cerr << "Failed to create shader module" << std::endl;
+        VkEncErr() << "Failed to create shader module" << std::endl;
         return VK_NULL_HANDLE;
     }
 
