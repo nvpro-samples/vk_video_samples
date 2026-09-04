@@ -15,6 +15,7 @@
 */
 
 #include "VulkanFilterYuvCompute.h"
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 
 #include <cstdlib>
@@ -193,9 +194,10 @@ VkResult VulkanFilterYuvCompute::Create(const VulkanDeviceContext* vkDevCtx,
 //
 // Channel indices are into the vec4 returned by imageLoad: 0=r 1=g 2=b 3=a.
 // The packed 4:4:4 descriptor lives in nvidia_utils/vulkan/ycbcrvkinfo.h so that the
-// filter, the encoder's staging copy and the format-selection code all read one table.
-// Keep it that way: a channel order written out by hand at each site is how the sites
-// drift apart, and a transposed Cb/Cr is a plausible picture rather than an error.
+// filter, the encoder's staging copy and the format-selection code all read ONE table.
+// A hand-written per-format switch here is what transposes Cb and Cr on one format
+// while leaving its siblings correct, which is why the channel order is looked up
+// rather than spelled out.
 typedef VkPackedYcbcrFormatDesc VkPackedYcbcrFormatInfo;
 
 static const VkPackedYcbcrFormatInfo* PackedYcbcrFormatInfo(VkFormat format)
@@ -259,6 +261,12 @@ VkResult VulkanFilterYuvCompute::Init(const VkSamplerYcbcrConversionCreateInfo* 
                                  true,     // createSemaphores
                                  true      // createFences
                                 );
+    // Configure()'s result was dropped here: the next statement overwrote
+    // |result| unconditionally, so a failed pool/queue/semaphore setup was
+    // reported as whatever the sampler creation happened to return.
+    if (result != VK_SUCCESS) {
+        return result;
+    }
 
     if (pYcbcrConversionCreateInfo) {
          result = m_samplerYcbcrConversion.CreateVulkanSampler(m_vkDevCtx,
@@ -393,13 +401,37 @@ VkResult VulkanFilterYuvCompute::InitDescriptorSetLayout(uint32_t maxNumFrames)
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(PushConstants); // Size matches the actual PushConstants struct
 
+    // autoSelect (last argument) rather than pinning push descriptors.
+    //
+    // The flags argument below is only a preference now: with autoSelect set,
+    // CreateDescriptorSet picks push descriptors when VK_KHR_push_descriptor is
+    // enabled, VK_EXT_descriptor_buffer when it is not and that one is, and
+    // plain descriptor sets when neither is. Pinning
+    // PUSH_DESCRIPTOR_BIT unconditionally discarded a descriptor-buffer arm
+    // that is fully implemented on both sides -- the layout/buffer half in
+    // VulkanDescriptorSetLayout and the bind half in this file's
+    // RecordCommandBuffer switch -- and that produces byte-identical output to
+    // the push-descriptor arm on hardware that has both.
+    //
+    // WHAT THIS DOES NOT FIX, recorded so the next reader does not re-derive
+    // it: this does not make the filter work on a device that enables neither
+    // extension. The third arm is a stub -- nothing in this file ever calls
+    // VulkanDescriptorSetLayout::WriteDescriptorSet, and the pool it allocates
+    // is typed COMBINED_IMAGE_SAMPLER while these bindings are storage
+    // images/buffers -- so it fails at Create with VK_ERROR_OUT_OF_POOL_MEMORY.
+    // That is a loud failure the encoder already treats as fatal, not silent
+    // corruption, but it is still a failure. In particular a caller-supplied
+    // VkDevice lands there twice over: VulkanDeviceContext's imported path
+    // never populates m_reqDeviceExtensions, so FindRequiredDeviceExtension
+    // answers "no" for every extension regardless of what the embedder actually
+    // enabled.
     return m_descriptorSetLayout.CreateDescriptorSet(m_vkDevCtx,
                                                      setLayoutBindings,
                                                      VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR,
                                                      1, &pushConstantRange,
                                                      &m_samplerYcbcrConversion,
                                                      maxNumFrames,
-                                                     false);
+                                                     true);
 }
 
 static YcbcrBtStandard GetYcbcrPrimariesConstantsId(VkSamplerYcbcrModelConversion modelConversion)
@@ -490,6 +522,31 @@ static void GenHeaderAndPushConst(std::stringstream& shaderStr)
  * @param set Descriptor set number
  * @param imageArray Whether the image should be declared as image2DArray instead of image2D
  */
+// The GLSL image-format qualifier to declare a binding of |format| with.
+//
+// vkFormatLookUp() answers nullptr for a format its table does not hold, so
+// no caller below may dereference that answer for ->name. The table is not
+// exhaustive over VkFormat and cannot be, so a routing change that brings a
+// new single-plane format into shader generation must fail diagnosably here
+// rather than on a null pointer -- the plane arms are safe only because every
+// per-plane format the multi-planar table names is held, which is a property
+// of two tables agreeing and not a guarantee.
+//
+// A format with no qualifier yields one that cannot compile, deliberately.
+// CreatePipeline() already reports VK_ERROR_INITIALIZATION_FAILED when
+// BuildGlslShader() rejects the generated GLSL, so an unknown format now
+// fails at Init(), through the path a shader that will not compile already
+// takes, and with a status the caller can act on.
+static const char* GlslImageFormatQualifier(VkFormat format)
+{
+    const VkFormatDesc* formatDesc = vkFormatLookUp(format);
+    if ((formatDesc != nullptr) && (formatDesc->name != nullptr)) {
+        return formatDesc->name;
+    }
+    assert(!"no GLSL image format qualifier for this VkFormat");
+    return "NO_GLSL_IMAGE_FORMAT_QUALIFIER_FOR_THIS_VKFORMAT";
+}
+
 static void GenImageIoBindingLayout(std::stringstream& shaderStr,
                                     const char *imageName,
                                     const char *imageSubName,
@@ -618,6 +675,9 @@ static void GenHandleSourcePositionWithReplicate(std::stringstream& shaderStr, b
  * @param chromaHorzRatio Horizontal chroma subsampling (1, 2, or 4)
  * @param chromaVertRatio Vertical chroma subsampling (1 or 2)
  * @param enableReplication Whether to enable edge pixel replication
+ * @param inputChromaHorzRatio Horizontal chroma subsampling of the INPUT, or 0
+ *                             for "same as the block" (same-subsampling copy)
+ * @param inputChromaVertRatio Vertical chroma subsampling of the INPUT, or 0
  */
 static void GenBlockCoordinates(std::stringstream& shaderStr,
                                 uint32_t chromaHorzRatio,
@@ -742,13 +802,19 @@ static void GenReadYCbCrBlock(std::stringstream& shaderStr,
                   << "    float cr = 0.0;\n";
         for (uint32_t y = 0; y < chromaVertRatio; y++) {
             for (uint32_t x = 0; x < chromaHorzRatio; x++) {
-                shaderStr << "    vec4 pk" << x << y << " = imageLoad(inputImageRGB, ivec3(";
+                // ivec2, not ivec3: inputImageRGB is the single COLOR_BIT
+                // binding, which ShaderGenerateImagePlaneDescriptors declares
+                // image2D because it is bound from the combined
+                // VK_IMAGE_VIEW_TYPE_2D view. pushConstants.srcLayer has nothing
+                // to select -- a 2D view carries the one layer, which is the
+                // layer the ivec3 form was reading anyway.
+                shaderStr << "    vec4 pk" << x << y << " = imageLoad(inputImageRGB, ";
                 if (enableReplication) {
                     shaderStr << "min(lumaPos + ivec2(" << x << ", " << y << "), inputLumaMax)";
                 } else {
                     shaderStr << "lumaPos + ivec2(" << x << ", " << y << ")";
                 }
-                shaderStr << ", pushConstants.srcLayer));\n"
+                shaderStr << ");\n"
                           << "    float y" << x << y << " = pk" << x << y << "."
                           << PackedChan(packedInput->yChannel) << ";\n"
                           << "    cb += pk" << x << y << "." << PackedChan(packedInput->cbChannel) << ";\n"
@@ -802,9 +868,12 @@ static void GenReadYCbCrBlock(std::stringstream& shaderStr,
                         shaderStr << "    cr += cbcr" << x << y << ".g;\n";
                     }
                 }
-                float scale = 1.0f / (chromaHorzRatio * chromaVertRatio);
-                shaderStr << "    cb *= " << scale << ";\n";
-                shaderStr << "    cr *= " << scale << ";\n";
+                // A 1x1 block is one sample, not an average.
+                if ((chromaHorzRatio * chromaVertRatio) > 1) {
+                    float scale = 1.0f / (chromaHorzRatio * chromaVertRatio);
+                    shaderStr << "    cb *= " << scale << ";\n";
+                    shaderStr << "    cr *= " << scale << ";\n";
+                }
             } else {
                 // 3-plane format: average all Cb and Cr samples
                 shaderStr << "    float cb = 0.0;\n"
@@ -829,9 +898,13 @@ static void GenReadYCbCrBlock(std::stringstream& shaderStr,
                         shaderStr << "    cr += cr" << x << y << ";\n";
                     }
                 }
-                float scale = 1.0f / (chromaHorzRatio * chromaVertRatio);
-                shaderStr << "    cb *= " << scale << ";\n";
-                shaderStr << "    cr *= " << scale << ";\n";
+                // A 1x1 block is one sample, not an average -- emitting
+                // "cb *= 1" there would be noise in the generated shader.
+                if ((chromaHorzRatio * chromaVertRatio) > 1) {
+                    float scale = 1.0f / (chromaHorzRatio * chromaVertRatio);
+                    shaderStr << "    cb *= " << scale << ";\n";
+                    shaderStr << "    cr *= " << scale << ";\n";
+                }
             }
         } else {
             // Subsampled input (4:2:0, 4:2:2). The block covers this many input chroma
@@ -933,6 +1006,71 @@ static void GenConvertYCbCrBlock(std::stringstream& shaderStr,
 }
 
 /**
+ * @brief Generates code to apply MSB-to-LSB bit shift for block INPUT
+ *
+ * The mirror of GenApplyBlockOutputShift, and the reason that one is safe.
+ *
+ * The block path reads its samples with imageLoad through per-plane
+ * VK_FORMAT_R16_UNORM views. An X6/X4-packed source stores a 10/12-bit sample
+ * MSB-aligned in a 16-bit word, so that load already returns a correctly
+ * normalized value -- (pixel << 6) / 65535 ~= pixel / 1023 at 10-bit. The
+ * output stage then multiplies by the same factor to re-align for the write.
+ * With only the output half present the sample is scaled by 64 (or 16) with
+ * nothing undoing it, and every channel saturates.
+
+ *
+ * Applied immediately after the read and before any conversion, so the
+ * conversion stage sees LSB-aligned values, which is what its normalization
+ * helpers assume.
+ *
+ * @param shaderStr Output stringstream
+ * @param chromaHorzRatio Horizontal block size
+ * @param chromaVertRatio Vertical block size
+ * @param inputBitDepth Input bit depth (8, 10, 12, or 16)
+ * @param enableShift Whether MSB-to-LSB shift is enabled
+ * @param hasChroma Whether the input carries chroma
+ */
+static void GenApplyBlockInputShift(std::stringstream& shaderStr,
+                                    uint32_t chromaHorzRatio,
+                                    uint32_t chromaVertRatio,
+                                    uint32_t inputBitDepth,
+                                    bool enableShift,
+                                    bool hasChroma = true)
+{
+    if (!enableShift) {
+        return;
+    }
+
+    // Exact reciprocals of the output stage's factors: both are powers of two,
+    // so the round trip is an identity in float rather than an approximation.
+    float shiftRecip = 0.0f;
+    if (inputBitDepth == 10) {
+        shiftRecip = 1.0f / 64.0f;   // 1 >> (16 - 10)
+    } else if (inputBitDepth == 12) {
+        shiftRecip = 1.0f / 16.0f;   // 1 >> (16 - 12)
+    } else {
+        return;  // No shift for 8 or 16-bit
+    }
+
+    shaderStr << "    // Apply MSB-to-LSB shift for " << inputBitDepth << "-bit input\n";
+
+    for (uint32_t y = 0; y < chromaVertRatio; y++) {
+        for (uint32_t x = 0; x < chromaHorzRatio; x++) {
+            shaderStr << "    y" << x << y << " *= " << shiftRecip << ";\n";
+        }
+    }
+    if (hasChroma) {
+        // cb/cr are already the averaged samples where the input needed
+        // averaging; scaling is linear, so applying it here is equivalent to
+        // scaling each contributor before the sum.
+        shaderStr << "    cb *= " << shiftRecip << ";\n";
+        shaderStr << "    cr *= " << shiftRecip << ";\n";
+    }
+
+    shaderStr << "    \n";
+}
+
+/**
  * @brief Generates code to apply LSB-to-MSB bit shift for block output
  *
  * For 10/12-bit output, shifts values from LSB-aligned to MSB-aligned format.
@@ -991,14 +1129,25 @@ static void GenApplyBlockOutputShift(std::stringstream& shaderStr,
  * @param isOutputTwoPlane Whether output is 2-plane or 3-plane
  * @param hasOutputChroma Whether output has chroma planes
  */
+// The index an OUTPUT imageStore takes: ivec2 for an image2D binding, and
+// ivec3(..., dstLayer) for an image2DArray one. Emitting the wrong one is
+// VUID-vkCmdDispatch-viewType-07752 in one direction, or a shader that does not
+// compile in the other, so every output store derives its form from the same
+// predicate -- VulkanFilterYuvCompute::OutputDescriptorIsArray().
+static std::string OutStoreIndex(const std::string& xy, bool isArray)
+{
+    return isArray ? ("ivec3(" + xy + ", pushConstants.dstLayer)") : xy;
+}
+
 static void GenWriteYCbCrBlock(std::stringstream& shaderStr,
-                               uint32_t lumaBlockHorzRatio,
-                               uint32_t lumaBlockVertRatio,
+                               uint32_t ySubsampleHorzRatio,
+                               uint32_t ySubsampleVertRatio,
                                bool isOutputTwoPlane,
                                bool hasOutputChroma,
                                uint32_t outputChromaHorzSubsampling = 2,
                                uint32_t outputChromaVertSubsampling = 2,
-                               const VkPackedYcbcrFormatInfo* packedOutput = nullptr)
+                               const VkPackedYcbcrFormatInfo* packedOutput = nullptr,
+                               bool outputIsArray = false)
 {
     // Packed (single-plane) output: one imageStore per luma pixel into the single
     // COLOR_BIT image declared as <name>RGB, with Y/Cb/Cr placed in the channels the
@@ -1006,10 +1155,10 @@ static void GenWriteYCbCrBlock(std::stringstream& shaderStr,
     // chroma sample per pixel. Mirrors the packed read arm in GenReadYCbCrBlock; without
     // it the same 'undeclared identifier' fires on outputImageY.
     if (packedOutput != nullptr) {
-        shaderStr << "    // Write " << lumaBlockHorzRatio << "x" << lumaBlockVertRatio
+        shaderStr << "    // Write " << ySubsampleHorzRatio << "x" << ySubsampleVertRatio
                   << " packed " << packedOutput->debugName << " pixels\n";
-        for (uint32_t y = 0; y < lumaBlockVertRatio; y++) {
-            for (uint32_t x = 0; x < lumaBlockHorzRatio; x++) {
+        for (uint32_t y = 0; y < ySubsampleVertRatio; y++) {
+            for (uint32_t x = 0; x < ySubsampleHorzRatio; x++) {
                 // Build the vec4 by channel index so the order comes from the table, not
                 // from a per-format hand-written store.
                 const char* comp[4] = { "0.0", "0.0", "0.0", "1.0" };
@@ -1017,8 +1166,14 @@ static void GenWriteYCbCrBlock(std::stringstream& shaderStr,
                 comp[packedOutput->yChannel & 3]  = yExpr.c_str();
                 comp[packedOutput->cbChannel & 3] = hasOutputChroma ? "cbcrOut.x" : "0.5";
                 comp[packedOutput->crChannel & 3] = hasOutputChroma ? "cbcrOut.y" : "0.5";
-                shaderStr << "    imageStore(outputImageRGB, ivec3(lumaPos + ivec2("
-                          << x << ", " << y << "), pushConstants.dstLayer), vec4("
+                // ivec2, not ivec3 -- the mirror of the packed read arm's
+                // index form, and for the same reason: outputImageRGB is the
+                // combined VK_IMAGE_VIEW_TYPE_2D view's binding, declared
+                // image2D.
+                shaderStr << "    imageStore(outputImageRGB, "
+                          << OutStoreIndex("lumaPos + ivec2(" + std::to_string(x) + ", " +
+                                           std::to_string(y) + ")", outputIsArray)
+                          << ", vec4("
                           << comp[0] << ", " << comp[1] << ", " << comp[2] << ", " << comp[3] << "));\n";
             }
         }
@@ -1026,11 +1181,11 @@ static void GenWriteYCbCrBlock(std::stringstream& shaderStr,
         return;
     }
 
-    shaderStr << "    // Write " << lumaBlockHorzRatio << "x" << lumaBlockVertRatio << " Y pixels\n";
+    shaderStr << "    // Write " << ySubsampleHorzRatio << "x" << ySubsampleVertRatio << " Y pixels\n";
 
     // Write all Y pixels
-    for (uint32_t y = 0; y < lumaBlockVertRatio; y++) {
-        for (uint32_t x = 0; x < lumaBlockHorzRatio; x++) {
+    for (uint32_t y = 0; y < ySubsampleVertRatio; y++) {
+        for (uint32_t x = 0; x < ySubsampleHorzRatio; x++) {
             shaderStr <<
                 "    imageStore(outputImageY, ivec3(lumaPos + ivec2(" << x << ", " << y << "), pushConstants.dstLayer), "
                 "vec4(yOut" << x << y << ", 0, 0, 1));\n";
@@ -1049,9 +1204,9 @@ static void GenWriteYCbCrBlock(std::stringstream& shaderStr,
     
     if (isOutput444) {
         // Write chroma at each Y pixel position
-        shaderStr << "    // Write " << lumaBlockHorzRatio << "x" << lumaBlockVertRatio << " chroma pixels (4:4:4 format)\n";
-        for (uint32_t y = 0; y < lumaBlockVertRatio; y++) {
-            for (uint32_t x = 0; x < lumaBlockHorzRatio; x++) {
+        shaderStr << "    // Write " << ySubsampleHorzRatio << "x" << ySubsampleVertRatio << " chroma pixels (4:4:4 format)\n";
+        for (uint32_t y = 0; y < ySubsampleVertRatio; y++) {
+            for (uint32_t x = 0; x < ySubsampleHorzRatio; x++) {
                 if (isOutputTwoPlane) {
                     shaderStr <<
                         "    imageStore(outputImageCbCr, ivec3(lumaPos + ivec2(" << x << ", " << y << "), pushConstants.dstLayer), "
@@ -1756,7 +1911,7 @@ uint32_t VulkanFilterYuvCompute::ShaderGenerateImagePlaneDescriptors(std::string
         imageAspects = VK_IMAGE_ASPECT_PLANE_0_BIT;
 
         GenImageIoBindingLayout(shaderStr, imageName, "Y",
-                                       vkFormatLookUp(imageFormat)->name,
+                                       GlslImageFormatQualifier(imageFormat),
                                        isInput,
                                        ++startBinding,
                                        set,
@@ -1769,7 +1924,7 @@ uint32_t VulkanFilterYuvCompute::ShaderGenerateImagePlaneDescriptors(std::string
         imageAspects = VK_IMAGE_ASPECT_PLANE_1_BIT | VK_IMAGE_ASPECT_PLANE_2_BIT;
 
         GenImageIoBindingLayout(shaderStr, imageName, "CbCr",
-                                vkFormatLookUp(imageFormat)->name,
+                                GlslImageFormatQualifier(imageFormat),
                                 isInput,
                                 ++startBinding,
                                 set,
@@ -1791,7 +1946,7 @@ uint32_t VulkanFilterYuvCompute::ShaderGenerateImagePlaneDescriptors(std::string
     if (inputMpInfo) {
 
         GenImageIoBindingLayout(shaderStr, imageName, "Y",
-                                vkFormatLookUp(inputMpInfo->vkPlaneFormat[0])->name,
+                                GlslImageFormatQualifier(inputMpInfo->vkPlaneFormat[0]),
                                 isInput,
                                 ++startBinding,
                                 set,
@@ -1802,7 +1957,7 @@ uint32_t VulkanFilterYuvCompute::ShaderGenerateImagePlaneDescriptors(std::string
             imageAspects = VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT;
 
             GenImageIoBindingLayout(shaderStr, imageName, "CbCr",
-                                    vkFormatLookUp(inputMpInfo->vkPlaneFormat[1])->name,
+                                    GlslImageFormatQualifier(inputMpInfo->vkPlaneFormat[1]),
                                     isInput,
                                     ++startBinding,
                                     set,
@@ -1814,14 +1969,14 @@ uint32_t VulkanFilterYuvCompute::ShaderGenerateImagePlaneDescriptors(std::string
                                                          VK_IMAGE_ASPECT_PLANE_2_BIT;
 
             GenImageIoBindingLayout(shaderStr, imageName, "Cb",
-                                    vkFormatLookUp(inputMpInfo->vkPlaneFormat[1])->name,
+                                    GlslImageFormatQualifier(inputMpInfo->vkPlaneFormat[1]),
                                     isInput,
                                     ++startBinding,
                                     set,
                                     imageArray);
 
             GenImageIoBindingLayout(shaderStr, imageName, "Cr",
-                                    vkFormatLookUp(inputMpInfo->vkPlaneFormat[2])->name,
+                                    GlslImageFormatQualifier(inputMpInfo->vkPlaneFormat[2]),
                                     isInput,
                                     ++startBinding,
                                     set,
@@ -1831,12 +1986,40 @@ uint32_t VulkanFilterYuvCompute::ShaderGenerateImagePlaneDescriptors(std::string
 
         imageAspects = VK_IMAGE_ASPECT_COLOR_BIT;
 
+        // NOT |imageArray|, and this is the one arm where a per-call answer
+        // cannot be right. A COLOR_BIT binding is the SINGLE-PLANE arm, and
+        // UpdateImageDescriptorSets binds every COLOR_BIT descriptor from
+        // GetImageView() -- the COMBINED view, which follows the image's own
+        // layerCount. Declaring image2DArray over a VK_IMAGE_VIEW_TYPE_2D view
+        // is VUID-vkCmdDispatch-viewType-07752 and the access is UNDEFINED;
+        // this driver returns layer 0, which is why the picture was right and
+        // the fault survived. The plane arms above keep the caller's request,
+        // and must: they bind GetPlaneImageView(), which Create() declares
+        // VK_IMAGE_VIEW_TYPE_2D_ARRAY unconditionally.
+        //
+        // Deciding it HERE rather than at each call site is the point. This
+        // function chooses the arm, so only it knows which one was taken; a
+        // caller can only re-derive that from the format, and two places
+        // answering the same question independently is what went wrong --
+        // InitYCBCRCOPY asked for an array on both of its sides, which is right
+        // for a planar side and wrong for a packed one.
+        //
+        // OutputDescriptorIsArray() IS THAT ONE PLACE, and the OUTPUT side must
+        // use it rather than a constant: every output imageStore already
+        // derives its index form from it through OutStoreIndex(). Hardcoding
+        // false here meant that a caller passing FLAG_OUTPUT_IMAGE_ARRAY got
+        // ivec3 stores against an image2D declaration -- GLSL that does not
+        // compile. With the flag unset the predicate is false and this arm
+        // declares image2D exactly as before, which is every caller in tree.
+        //
+        // The INPUT side keeps ivec2: there is no input-side flag, so its
+        // combined view is single-layer by construction.
         GenImageIoBindingLayout(shaderStr, imageName, "RGB",
-                                vkFormatLookUp(imageFormat)->name,
+                                GlslImageFormatQualifier(imageFormat),
                                 isInput,
                                 startBinding++,
                                 set,
-                                imageArray);
+                                isInput ? false : OutputDescriptorIsArray());
     }
 
     return startBinding;
@@ -1980,6 +2163,49 @@ uint32_t VulkanFilterYuvCompute::ShaderGeneratePlaneDescriptors(std::stringstrea
  * @param isLimitedRange Whether values are limited range (true) or full range (false)
  * @param hasChroma Whether to include chroma normalization functions
  */
+/**
+ * @brief The ITU-R code levels a normalized [0,1] Y'CbCr value maps onto
+ *
+ * One definition shared by everything that has to agree on what "narrow range" means.
+ * The limited-range levels are the 8-bit ITU-R definition (Y[16,235], Cb/Cr[16,240])
+ * scaled by 2^(bitDepth-8), which reproduces the published constants exactly:
+ * 10-bit Y[64,940] C[64,960], 12-bit Y[256,3760] C[256,3840], 16-bit Y[4096,60160].
+ */
+struct YCbCrRangeLevels {
+    double maxValue;   // full-scale code value for the bit depth
+    double yBlack;     // luma code for black
+    double yWhite;     // luma code for white
+    double cZero;      // chroma code at the bottom of the chroma excursion
+    double cScale;     // chroma excursion, i.e. (cMax - cZero)
+};
+
+static YCbCrRangeLevels GetYCbCrRangeLevels(uint32_t bitDepth, bool isLimitedRange)
+{
+    YCbCrRangeLevels levels = {};
+    levels.maxValue = (double)((1ULL << bitDepth) - 1ULL);
+
+    if (!isLimitedRange) {
+        levels.yBlack = 0.0;
+        levels.yWhite = levels.maxValue;
+        levels.cZero  = 0.0;
+        levels.cScale = levels.maxValue;
+        return levels;
+    }
+
+    // Only 8/10/12/16 are real Y'CbCr depths; anything else falls back to the 8-bit
+    // levels rather than shifting by a negative amount.
+    const bool depthIsSupported = (bitDepth == 8) || (bitDepth == 10) ||
+                                  (bitDepth == 12) || (bitDepth == 16);
+    assert(depthIsSupported);
+    const double scale = depthIsSupported ? (double)(1ULL << (bitDepth - 8)) : 1.0;
+
+    levels.yBlack =  16.0 * scale;
+    levels.yWhite = 235.0 * scale;
+    levels.cZero  =  16.0 * scale;
+    levels.cScale = 224.0 * scale;
+    return levels;
+}
+
 static void GenYCbCrNormalizationFuncs(std::stringstream& shaderStr,
                                        uint32_t bitDepth = 8,
                                        bool isLimitedRange = true,
@@ -1988,53 +2214,15 @@ static void GenYCbCrNormalizationFuncs(std::stringstream& shaderStr,
     // STEP 1: Calculate normalization parameters based on bit depth and range
     // ===========================================================================
 
-    // Use double precision for calculations to maintain precision
-    double maxValue = (1ULL << bitDepth) - 1.0;  // Max value for the given bit depth
-
-    // Limited range values for different bit depths
-    double yBlack, yWhite, cZero, cScale;
-
-    if (isLimitedRange) {
-        // Step 1.1: Calculate limited range (aka TV/Video range) values
-        // Use standard-compliant values for different bit depths
-        switch (bitDepth) {
-            case 10:
-                // 10-bit limited range: Y[64,940], C[64,960]
-                yBlack = 64.0;
-                yWhite = 940.0;
-                cZero = 64.0;
-                cScale = 896.0;  // 960 - 64
-                break;
-            case 12:
-                // 12-bit limited range: Y[256,3760], C[256,3840]
-                yBlack = 256.0;
-                yWhite = 3760.0;
-                cZero = 256.0;
-                cScale = 3584.0;  // 3840 - 256
-                break;
-            case 16:
-                // 16-bit limited range: scale 8-bit values by 2^8
-                yBlack = 16.0 * 256.0;
-                yWhite = 235.0 * 256.0;
-                cZero = 16.0 * 256.0;
-                cScale = 224.0 * 256.0;
-                break;
-            case 8:
-            default:
-                // 8-bit limited range: Y[16,235], C[16,240]
-                yBlack = 16.0;
-                yWhite = 235.0;
-                cZero = 16.0;
-                cScale = 224.0;
-                break;
-        }
-    } else {
-        // Step 1.2: Calculate full range values (same for all bit depths, just scaled)
-        yBlack = 0.0;
-        yWhite = maxValue;
-        cZero = 0.0;
-        cScale = maxValue;
-    }
+    // Use double precision for calculations to maintain precision.
+    // Values come from the shared table so the generators and the RGBA->YCbCr
+    // range mapping cannot disagree.
+    const YCbCrRangeLevels rangeC = GetYCbCrRangeLevels(bitDepth, isLimitedRange);
+    const double maxValue = rangeC.maxValue;
+    const double yBlack   = rangeC.yBlack;
+    const double yWhite   = rangeC.yWhite;
+    const double cZero    = rangeC.cZero;
+    const double cScale   = rangeC.cScale;
 
     // Step 1.3: Calculate normalization factors with double precision
     double yRange = yWhite - yBlack;
@@ -2188,48 +2376,6 @@ static void GenYCbCrNormalizationFuncs(std::stringstream& shaderStr,
     }
 }
 
-/**
- * @brief The ITU-R code levels a normalized [0,1] Y'CbCr value maps onto
- *
- * One definition shared by everything that has to agree on what "narrow range" means.
- * The limited-range levels are the 8-bit ITU-R definition (Y[16,235], Cb/Cr[16,240])
- * scaled by 2^(bitDepth-8), which reproduces the published constants exactly:
- * 10-bit Y[64,940] C[64,960], 12-bit Y[256,3760] C[256,3840], 16-bit Y[4096,60160].
- */
-struct YCbCrRangeLevels {
-    double maxValue;   // full-scale code value for the bit depth
-    double yBlack;     // luma code for black
-    double yWhite;     // luma code for white
-    double cZero;      // chroma code at the bottom of the chroma excursion
-    double cScale;     // chroma excursion, i.e. (cMax - cZero)
-};
-
-static YCbCrRangeLevels GetYCbCrRangeLevels(uint32_t bitDepth, bool isLimitedRange)
-{
-    YCbCrRangeLevels levels = {};
-    levels.maxValue = (double)((1ULL << bitDepth) - 1ULL);
-
-    if (!isLimitedRange) {
-        levels.yBlack = 0.0;
-        levels.yWhite = levels.maxValue;
-        levels.cZero  = 0.0;
-        levels.cScale = levels.maxValue;
-        return levels;
-    }
-
-    // Only 8/10/12/16 are real Y'CbCr depths; anything else falls back to the 8-bit
-    // levels rather than shifting by a negative amount.
-    const bool depthIsSupported = (bitDepth == 8) || (bitDepth == 10) ||
-                                  (bitDepth == 12) || (bitDepth == 16);
-    assert(depthIsSupported);
-    const double scale = depthIsSupported ? (double)(1ULL << (bitDepth - 8)) : 1.0;
-
-    levels.yBlack =  16.0 * scale;
-    levels.yWhite = 235.0 * scale;
-    levels.cZero  =  16.0 * scale;
-    levels.cScale = 224.0 * scale;
-    return levels;
-}
 
 /**
  * @brief Generates convertYCbCrFormat() for the image->image path, in normalized space
@@ -2557,10 +2703,26 @@ VkFormat VulkanFilterYuvCompute::GetOutputFormat(FilterType filterType, VkFormat
 }
 
 // DEPRECATED -- see the YCBCR2RGBA note in VulkanFilterYuvCompute.h. No production path
-// uses this generator and its test family is disabled. It assumes a 2-plane input: a
-// 3-plane format emits GLSL that does not compile. Deriving the chroma ratios from the
-// input format, below, is necessary for a correct conversion but is not on its own enough
-// to make this path usable.
+// uses this generator, its test family is disabled, and it still assumes a 2-plane input
+// (a 3-plane format emits GLSL that does not compile). The chroma-ratio fix below is
+// correct as far as it goes but does not make the path usable on its own.
+bool VulkanFilterYuvCompute::OutputDescriptorIsArray() const
+{
+    // A MULTI-PLANAR output binds per-plane views. VkImageResourceView::Create
+    // types those VK_IMAGE_VIEW_TYPE_2D_ARRAY unconditionally, in both of its
+    // overloads, so the declaration is an array image whatever the layer count.
+    //
+    // A SINGLE-PLANE output -- packed YCbCr (AYUV, Y410) or RGBA -- has no
+    // per-plane view to bind, so it binds the COMBINED view, and that one
+    // follows the image's layerCount. The caller declares it with
+    // FLAG_OUTPUT_IMAGE_ARRAY, because the shader is generated before any image
+    // is bound and the format alone cannot answer it.
+    const VkMpFormatInfo* mpOutputInfo = YcbcrVkFormatInfo(m_outputFormat);
+    const bool bindsPerPlaneViews =
+        (mpOutputInfo != nullptr) && (m_outputPackedYcbcr == nullptr);
+    return bindsPerPlaneViews ? true : (m_outputImageArray != 0);
+}
+
 size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
 {
     // The compute filter uses two or three input images as separate planes
@@ -2584,6 +2746,15 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
                                    true, // isInput
                                    0,    // startBinding
                                    0,    // set
+                                   // imageArray: TRUE, and CORRECT -- do not
+                                   // "fix" this one to match the output below.
+                                   // The input is YCbCr by construction here
+                                   // (GetOutputFormat returns UNDEFINED
+                                   // otherwise), so it binds PLANE views, and
+                                   // VkImageResourceView::Create declares plane
+                                   // views VK_IMAGE_VIEW_TYPE_2D_ARRAY
+                                   // unconditionally. The loads below index them
+                                   // with ivec3 to match.
                                    true,
                                    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 
@@ -2593,7 +2764,24 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
                                    false, // isInput
                                    4,     // startBinding
                                    0,     // set
-                                   true,  // imageArray
+                                   // GetOutputFormat forces this filter's output
+                                   // to R8G8B8A8_UNORM or R16G16B16A16_UNORM, so
+                                   // YcbcrVkFormatInfo is null here and
+                                   // ShaderGenerateImagePlaneDescriptors always
+                                   // takes the PACKED arm: one COLOR binding,
+                                   // bound from GetImageView(). That view is
+                                   // VK_IMAGE_VIEW_TYPE_2D for a single-layer
+                                   // image and VK_IMAGE_VIEW_TYPE_2D_ARRAY for a
+                                   // layered one, so it follows layerCount via
+                                   // the caller's FLAG_OUTPUT_IMAGE_ARRAY rather
+                                   // than being hardcoded either way -- this
+                                   // filter is selectable by VkEncDeriveFilterType
+                                   // and is LIVE.
+                                   //
+                                   // Passing it is belt and braces: the packed
+                                   // arm reads OutputDescriptorIsArray() itself,
+                                   // because it has to agree with the stores.
+                                   OutputDescriptorIsArray(),
                                    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 
     // Get format information to determine bit depth
@@ -2611,7 +2799,24 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
     GenYCbCrNormalizationFuncs(shaderStr, bitDepth, isLimitedRange, true);
 
     // 4. Generate YCbCr to RGB conversion function
-    const unsigned int bpp = (8 + mpInfo->planesLayout.bpp * 2);
+    //
+    // mpInfo is NULL for any format the multi-planar table does not hold, and
+    // this arm is reachable with one: GetOutputFormat() answers
+    // VK_FORMAT_UNDEFINED for exactly that case, but nothing reads that answer
+    // to refuse construction -- it is stored into m_outputFormat and never
+    // compared -- so a packed 4:4:4 input such as Y410 arrives here with a
+    // null mpInfo and used to dereference it. The line two above already
+    // guards the same pointer for bitDepth; this one did not.
+    //
+    // Falling back to 8 matches that guard rather than inventing a second
+    // answer. It does not make this arm serve a packed input: generation
+    // continues and emits the planar identifiers inputImageY/inputImageCbCr,
+    // which a packed side never declares, so the shader fails to compile and
+    // CreatePipeline reports VK_ERROR_INITIALIZATION_FAILED. That is the
+    // arm's real limitation, and it is now what a caller meets instead of a
+    // segmentation fault inside shader generation.
+    const unsigned int bpp =
+        (mpInfo != nullptr) ? (8 + mpInfo->planesLayout.bpp * 2) : 8;
 
     const YcbcrBtStandard btStandard = GetYcbcrPrimariesConstantsId(samplerYcbcrConversionCreateInfo.ycbcrModel);
     const YcbcrPrimariesConstants primariesConstants = GetYcbcrPrimariesConstants(btStandard);
@@ -2649,13 +2854,14 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
         "{\n";
     GenHandleImagePosition(shaderStr);
     GenHandleSourcePositionWithReplicate(shaderStr, m_enableRowAndColumnReplication);
-    // Chroma is fetched at the INPUT format's real subsampling ratios. A fixed `srcPos/2`
-    // halves BOTH axes: right for 4:2:0, but wrong for 4:2:2 (chroma is full height, only
-    // the x axis is halved) and wrong for 4:4:4 (no subsampling at all). Reading chroma
-    // from the wrong rows is a large, chroma-dominated error that leaves luma nearly
-    // intact, which reads as a colour problem rather than an indexing one. The ratios come
-    // from the same YcbcrVkFormatInfo the rest of the plane maths uses, so they cannot
-    // drift from the descriptors that were generated above.
+    // Chroma is fetched at the INPUT format's real subsampling ratios, NOT at a
+    // hardcoded `srcPos/2`. Halving both axes is right only for 4:2:0: 4:2:2 chroma
+    // is full height and only the x axis is halved, and 4:4:4 is not subsampled at
+    // all, so a fixed /2 reads chroma from the wrong rows -- a large,
+    // chroma-dominated error that leaves luma nearly intact and so reads as a vague
+    // "shader generation bug" rather than as a subsampling one. The ratios come from
+    // the same YcbcrVkFormatInfo the rest of the plane maths uses, so they cannot
+    // drift from the descriptors generated above.
     const uint32_t chromaHorzRatio =
             (mpInfo != nullptr) ? (1u << mpInfo->planesLayout.secondaryPlaneSubsampledX) : 1u;
     const uint32_t chromaVertRatio =
@@ -2673,12 +2879,15 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
         "    vec3 ycbcr = shiftCbCr(normalizeYCbCr(vec3(Y, CbCr)));\n"
         "    vec4 rgba = vec4(convertYCbCrToRgb(ycbcr),1.0);\n"
         "    // Store it back.\n"
-        "    imageStore(outputImageRGB, ivec3(pos, pushConstants.dstLayer), rgba);\n"
+        "    // The index form follows the binding declared above.\n";
+    shaderStr <<
+        "    imageStore(outputImageRGB, "
+            << OutStoreIndex("pos", OutputDescriptorIsArray()) << ", rgba);\n"
         "}\n";
 
     computeShader = shaderStr.str();
     if (dumpShaders)
-        std::cout << "\nCompute Shader:\n" << computeShader;
+        VkEncOut() << "\nCompute Shader:\n" << computeShader;
     return computeShader.size();
 }
 
@@ -2761,12 +2970,24 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
     GenHeaderAndPushConst(shaderStr);
 
     // 2. Generate IO bindings
+    //
+    // imageArray is TRUE on both sides here and reads as unconditional, but it
+    // is a request about the PLANE bindings only: either side of this filter
+    // may be packed single-plane (AYUV / Y410), and
+    // ShaderGenerateImagePlaneDescriptors ignores this argument on that arm.
+    // The input side is image2D by construction; the output side comes from
+    // OutputDescriptorIsArray(), which is false here because this generator's
+    // callers do not set FLAG_OUTPUT_IMAGE_ARRAY -- so the arm still declares
+    // image2D, matching the combined VK_IMAGE_VIEW_TYPE_2D view it binds.
+    // Do not re-derive packed-ness here to pass a different flag -- that
+    // duplicate is what let the declaration and the binding disagree.
+    //
     // Input Descriptors
     ShaderGeneratePlaneDescriptors(shaderStr,
                                    true, // isInput
                                    0,    // startBinding
                                    0,    // set
-                                   true,
+                                   true, // imageArray (plane bindings)
                                    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 
     // Output Descriptors
@@ -2774,12 +2995,12 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
                                    false, // isInput
                                    4,     // startBinding
                                    0,     // set
-                                   true,  // imageArray
+                                   true,  // imageArray (plane bindings)
                                    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 
     // Binding 9: Subsampled Y output image (optional, only if enabled)
     if (m_enableYSubsampling) {
-        std::cout << "[VulkanFilterYuvCompute] Generating binding 9 for subsampledImageY" << std::endl;
+        VkEncOut() << "[VulkanFilterYuvCompute] Generating binding 9 for subsampledImageY" << std::endl;
         shaderStr << "// Binding 9: Subsampled Y output (2x2 downsampled luma for AQ)\n";
         // Use a separate variable for subsampledImage aspects to avoid modifying m_outputImageAspects
         // ShaderGenerateImagePlaneDescriptors modifies the imageAspects parameter for R8/R16 formats
@@ -2892,6 +3113,11 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
     GenReadYCbCrBlock(shaderStr, ySubsampleHorzRatio, ySubsampleVertRatio, isInputTwoPlane, hasInputChroma, m_enableRowAndColumnReplication,
                       inputChromaHorzRatio, inputChromaVertRatio, m_inputPackedYcbcr);
 
+    // 11b. Undo the source's MSB alignment BEFORE anything reads the values.
+    //      Pairs with step 13; see GenApplyBlockInputShift for why the output
+    //      half alone saturates an X6/X4-packed source.
+    GenApplyBlockInputShift(shaderStr, ySubsampleHorzRatio, ySubsampleVertRatio, inputBitDepth, m_inputEnableMsbToLsbShift, hasInputChroma);
+
     // 12. Convert block (if needed)
     // cbcrOut is DECLARED here but REFERENCED by GenWriteYCbCrBlock, which gates on
     // hasOutputChroma. Gating the declaration on hasInputChroma alone leaves it undeclared
@@ -2904,9 +3130,14 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
 
     // 14. Write YCbCr block (handles both 4:2:0 and 4:4:4 output)
     GenWriteYCbCrBlock(shaderStr, ySubsampleHorzRatio, ySubsampleVertRatio, isOutputTwoPlane, hasOutputChroma,
-                       outputChromaHorzRatio, outputChromaVertRatio, m_outputPackedYcbcr);
+                       outputChromaHorzRatio, outputChromaVertRatio, m_outputPackedYcbcr, OutputDescriptorIsArray());
 
-    // 15. Compute and write subsampled Y (only if enabled for AQ)
+    // 15. Compute and write subsampled Y (only if enabled for AQ).
+    // The box filter spans the invocation's luma block, which is 2x2 for the
+    // 4:2:0 output that is the only configuration enabling this: the encoder
+    // sets FLAG_ENABLE_Y_SUBSAMPLING only alongside its NV12 encode input
+    // (VkVideoEncoder.cpp). A non-4:2:0 output would size the "subsampled" Y
+    // differently; that combination has no caller and is not addressed here.
     if (m_enableYSubsampling) {
         GenComputeAndWriteSubsampledY(shaderStr, ySubsampleHorzRatio, ySubsampleVertRatio);
     }
@@ -2916,7 +3147,7 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
 
     computeShader = shaderStr.str();
     if (dumpShaders)
-        std::cout << "\nCompute Shader:\n" << computeShader;
+        VkEncOut() << "\nCompute Shader:\n" << computeShader;
     return computeShader.size();
 }
 
@@ -3008,7 +3239,7 @@ size_t VulkanFilterYuvCompute::InitYCBCRCLEAR(std::string& computeShader)
 
     computeShader = shaderStr.str();
     if (dumpShaders)
-        std::cout << "\nCompute Shader:\n" << computeShader;
+        VkEncOut() << "\nCompute Shader:\n" << computeShader;
     return computeShader.size();
 }
 
@@ -3107,11 +3338,19 @@ static void GenReadRgbBlock(std::stringstream& shaderStr,
                             uint32_t chromaVertRatio,
                             bool enableReplication)
 {
-    shaderStr << "    // Read " << chromaHorzRatio << "x" << chromaVertRatio << " RGB block\n";
+    shaderStr << "    // Read " << chromaHorzRatio << "x" << chromaVertRatio
+              << " RGB block (imageLoad, STORAGE_IMAGE)\n";
 
     for (uint32_t y = 0; y < chromaVertRatio; y++) {
         for (uint32_t x = 0; x < chromaHorzRatio; x++) {
-            shaderStr << "    vec3 rgb" << x << y << " = imageLoad(inputImageRGBA, ";
+            // imageLoad returns the vec4 in RGBA order regardless of the byte
+            // order the VkFormat names -- that is a property of the format, not
+            // of the access -- so .rgb is the correct swizzle. The declared
+            // `rgba8` qualifier is what the storage form is told the layout is,
+            // and it is the only 8-bit four-component qualifier GLSL has.
+            shaderStr << "    vec3 rgb" << x << y << " = "
+                      << "imageLoad"
+                      << "(inputImageRGBA, ";
             if (enableReplication) {
                 shaderStr << "min(lumaPos + ivec2(" << x << ", " << y << "), inputLumaMax)";
             } else {
@@ -3304,6 +3543,40 @@ size_t VulkanFilterYuvCompute::InitRGBA2YCBCR(std::string& computeShader)
     GenHeaderAndPushConst(shaderStr);
 
     // 2. Input RGBA image binding (binding 0)
+    //
+    // THE COLOUR CONTRACT, stated here because it is decided by the pair
+    // (view format, access form) and by nothing else:
+    //
+    //   * The view must be a _UNORM view, never a *_SRGB one, and two
+    //     independent facts say so.
+    //
+    //     WHY _UNORM. This filter applies the colour MATRIX ONLY --
+    //     GenRgbToYCbCrConversion emits the Rec.601/709/2020 matrix and an
+    //     optional range compression, and no transfer function anywhere
+    //     (see also ycbcr_utils.h, "No gamma correction yet"). That is
+    //     CORRECT, because Rec.709/601 Y'CbCr is defined on GAMMA-ENCODED
+    //     R'G'B'. The _UNORM view hands the stored code values over
+    //     untouched, which is what the matrix wants.
+    //
+    //     WHY A *_SRGB VIEW CANNOT REACH THIS BINDING AT ALL. The binding
+    //     declared below is a VK_DESCRIPTOR_TYPE_STORAGE_IMAGE read with
+    //     imageLoad, and no *_SRGB format carries
+    //     VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT -- sRGB is a sampled-image
+    //     feature. A view whose usage includes VK_IMAGE_USAGE_STORAGE_BIT
+    //     must carry that feature itself
+    //     (VUID-VkImageViewCreateInfo-usage-02275), so an sRGB view can
+    //     never become this descriptor. A storage read applies no transfer
+    //     function of its own either, which is why the requirement above is
+    //     about the CODE VALUES the view holds and not about the fetch.
+    //   * This is a property of the VIEW, so it is the caller's to honour;
+    //     what is guaranteed here is that nothing on this path introduces a
+    //     transfer function of its own. A _UNORM view in gives R'G'B' in.
+    //
+    // The component order is a property of the VIEW. The declaration below
+    // names the `rgba8` qualifier because GLSL offers no other for an 8-bit
+    // four-component storage image -- there is no `bgra8` -- so a
+    // B8G8R8A8_UNORM view is read through a declaration that does not spell
+    // its layout, and the order it yields is the implementation's to decide.
     shaderStr << " // Input RGBA image binding\n";
     GenImageIoBindingLayout(shaderStr, "inputImage", "RGBA", "rgba8", true, 0, 0, false);
 
@@ -3320,12 +3593,13 @@ size_t VulkanFilterYuvCompute::InitRGBA2YCBCR(std::string& computeShader)
                                    //   packed        -> SINGLE-plane, so there is no per-plane
                                    //                   view; it binds the combined view, which
                                    //                   follows layerCount and is 2D -> image2D
-                                   // Both directions are real errors, so this cannot be a
-                                   // constant: an ivec2 store into an image2DArray does not
-                                   // compile, and an image2DArray declaration against the
-                                   // packed combined view trips the same VUID the other way
-                                   // ("view is 2D but OpTypeImage Arrayed = 1").
-                                   (m_outputPackedYcbcr == nullptr),
+                                   // Hardcoding true breaks every packed 4:4:4 format (AYUV, Y410): the
+                                   // generated store then fails to compile, and forcing that store to ivec3
+                                   // instead trips the VUID from the other direction -- "view is 2D but
+                                   // OpTypeImage Arrayed = 1". (m_outputPackedYcbcr == nullptr) gets the
+                                   // planar/packed half of that right but assumes the packed arm is
+                                   // single-layer; OutputDescriptorIsArray() carries both halves.
+                                   OutputDescriptorIsArray(),
                                    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 
     // 3b. Binding 9: Subsampled Y output image (optional, only if enabled)
@@ -3393,7 +3667,8 @@ size_t VulkanFilterYuvCompute::InitRGBA2YCBCR(std::string& computeShader)
     }
 
     // 8. Read RGB block
-    GenReadRgbBlock(shaderStr, chromaHorzRatio, chromaVertRatio, m_enableRowAndColumnReplication);
+    GenReadRgbBlock(shaderStr, chromaHorzRatio, chromaVertRatio,
+                    m_enableRowAndColumnReplication);
 
     // 9. Convert RGB to YCbCr
     GenConvertRgbBlockToYCbCr(shaderStr, chromaHorzRatio, chromaVertRatio);
@@ -3439,7 +3714,8 @@ size_t VulkanFilterYuvCompute::InitRGBA2YCBCR(std::string& computeShader)
                   // which follows layerCount and is VK_IMAGE_VIEW_TYPE_2D -- hence the
                   // matching image2D declaration in InitRGBA2YCBCR. The planar branch
                   // below is the one that needs dstLayer.
-                  << "    imageStore(outputImageRGB, lumaPos, vec4("
+                  << "    imageStore(outputImageRGB, "
+                  << OutStoreIndex("lumaPos", OutputDescriptorIsArray()) << ", vec4("
                   << component[0] << ", " << component[1] << ", "
                   << component[2] << ", " << component[3] << "));\n"
                   << "    \n";
@@ -3466,7 +3742,7 @@ size_t VulkanFilterYuvCompute::InitRGBA2YCBCR(std::string& computeShader)
 
     computeShader = shaderStr.str();
     if (dumpShaders)
-        std::cout << "\nRGBA2YCBCR Compute Shader:\n" << computeShader;
+        VkEncOut() << "\nRGBA2YCBCR Compute Shader:\n" << computeShader;
     return computeShader.size();
 }
 
@@ -3585,9 +3861,11 @@ uint32_t VulkanFilterYuvCompute::UpdateImageDescriptorSets(
             writeDescriptorSets[descrIndex].dstSet = VK_NULL_HANDLE;
             writeDescriptorSets[descrIndex].dstBinding = dstBinding;
             writeDescriptorSets[descrIndex].descriptorCount = 1;
-            writeDescriptorSets[descrIndex].descriptorType = (ccSampler != VK_NULL_HANDLE) ?
-                                                              VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER :
-                                                              descriptorType;
+            const VkDescriptorType effectiveDescriptorType =
+                (ccSampler != VK_NULL_HANDLE) ?
+                    VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER :
+                    descriptorType;
+            writeDescriptorSets[descrIndex].descriptorType = effectiveDescriptorType;
             imageDescriptors[descrIndex].sampler = ccSampler;
             imageDescriptors[descrIndex].imageView = (curImageAspect == 0) ?
                                                       imageView->GetImageView() :
@@ -4822,9 +5100,10 @@ VkResult VulkanFilterYuvCompute::RecordComputeDispatch(VkCommandBuffer cmdBuf,
                                                        uint32_t bufferIdx,
                                                        const FilterExecutionDesc& execDesc) {
     // Delegate to the image->image overload, which owns the descriptor binding and the
-    // dispatch. Nothing here may report VK_SUCCESS without recording a dispatch: that
-    // turns RecordCommandBuffer(execDesc) into a transfers-only path that still reports
-    // success, handing the caller its staging copies and an output image nothing wrote.
+    // dispatch. Returning VK_SUCCESS here without recording anything would make
+    // RecordCommandBuffer(execDesc) a transfers-only path that still reports
+    // success: the caller gets its staging copies and an output image nothing
+    // ever wrote. Refuse instead.
     if (execDesc.numInputs == 0 || execDesc.numOutputs == 0) {
         return VK_ERROR_INVALID_EXTERNAL_HANDLE;
     }
