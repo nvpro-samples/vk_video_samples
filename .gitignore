@@ -66,3 +66,9 @@ tests/results/
 # Generated into the build tree by cmake/VulkanDispatchTable.cmake
 common/libs/VkCodecUtils/HelpersDispatchTable.h
 common/libs/VkCodecUtils/HelpersDispatchTable.cpp
+
+# IDE / editor project state. Machine-local and not part of the source.
+.settings/
+.vscode/
+.idea/
+*.code-workspace
