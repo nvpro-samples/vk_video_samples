@@ -1459,8 +1459,36 @@ public:
             }
         }
 
-        // Copy chroma subsampling from input to encoder config
+        // THE ENCODE-SIDE GEOMETRY, DERIVED IN ONE PLACE AND BEFORE ANYTHING
+        // READS IT.
+        //
+        // encodeChromaSubsampling and encodeBitDepthLuma/Chroma describe the
+        // BITSTREAM, and the input fields describe the caller's buffer. They
+        // are separate fields so that the two can differ -- a chroma
+        // resampler or a device-driven depth downgrade is what would make
+        // them -- and today the encode side is simply derived from the input
+        // side, here.
+        //
+        // THE DEPTH MUST NOT BE DERIVED IN InitVideoProfile(), which runs at
+        // session creation, LATER than the codec arms' InitProfileLevel() --
+        // and InitProfileLevel is where the level and tier are selected. So
+        // EncoderConfigH265::GetCpbVclFactor(), which reads
+        // encodeBitDepthLuma/Chroma for ITU-T H.265 Table A.8's depth term,
+        // read zero at the level-selection call site and the real depth at
+        // the InitRateControl() call site: one function, two answers, inside
+        // one configuration. A 10-bit 4:4:4 stream selected its level with
+        // the 8-bit factor 2000 and then sized its default CPB with 2500.
+        //
+        // The zero-means-unset guards are kept: an explicit encode depth, if
+        // one is ever set before this runs, is a request and not a default.
         encodeChromaSubsampling = input.chromaSubsampling;
+
+        if (encodeBitDepthLuma == 0) {
+            encodeBitDepthLuma = input.bpp;
+        }
+        if (encodeBitDepthChroma == 0) {
+            encodeBitDepthChroma = encodeBitDepthLuma;
+        }
 
         if ((encodeWidth == 0) || (encodeWidth > input.width)) {
             encodeWidth = input.width;

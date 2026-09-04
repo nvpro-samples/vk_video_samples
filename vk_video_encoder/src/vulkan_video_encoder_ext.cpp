@@ -975,9 +975,13 @@ static_assert(sizeof(VkVideoEncoderConfig) == 208,
 // Declared here rather than in the internal header: its signature names
 // EncoderConfig, and that header deliberately stays clear of the library's
 // private types so a test can include it without them.
+// |requestedEncodeBitDepth| is the encode side stated rather than derived; see
+// the internal header's note on VkEncBuildAndProbeConfig for why anything
+// needs to state it. Zero is the ordinary path.
 VkResult VkEncBuildEncoderConfig(const VkVideoEncoderConfig& extConfig,
                                  VkVideoCodecOperationFlagBitsKHR codecOp,
-                                 VkSharedBaseObj<EncoderConfig>& outConfig);
+                                 VkSharedBaseObj<EncoderConfig>& outConfig,
+                                 uint32_t requestedEncodeBitDepth = 0);
 
 VkResult VulkanVideoEncoderExtImpl::BuildEncoderConfig(
     const VkVideoEncoderConfig& extConfig,
@@ -992,13 +996,15 @@ VkResult VulkanVideoEncoderExtImpl::BuildEncoderConfig(
 // that binds it, and the conformance test then has something to assert on.
 VkResult VkEncBuildAndProbeConfig(const VkVideoEncoderConfig& extConfig,
                                   VkVideoCodecOperationFlagBitsKHR codecOp,
-                                  VkEncBoundConfigProbe* outProbe)
+                                  VkEncBoundConfigProbe* outProbe,
+                                  uint32_t requestedEncodeBitDepth)
 {
     if (outProbe == nullptr) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     VkSharedBaseObj<EncoderConfig> cfg;
-    const VkResult result = VkEncBuildEncoderConfig(extConfig, codecOp, cfg);
+    const VkResult result = VkEncBuildEncoderConfig(extConfig, codecOp, cfg,
+                                                    requestedEncodeBitDepth);
     if ((result != VK_SUCCESS) || !cfg) {
         return (result != VK_SUCCESS) ? result : VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -1073,6 +1079,10 @@ VkResult VkEncBuildAndProbeConfig(const VkVideoEncoderConfig& extConfig,
     outProbe->inputChromaSubsampling =
         (uint32_t)cfg->input.chromaSubsampling;
     outProbe->inputVkFormat = (uint32_t)cfg->input.vkFormat;
+    outProbe->encodeChromaSubsampling =
+        (uint32_t)cfg->encodeChromaSubsampling;
+    outProbe->encodeBitDepthLuma   = cfg->encodeBitDepthLuma;
+    outProbe->encodeBitDepthChroma = cfg->encodeBitDepthChroma;
     // Per arm through virtual dispatch: the profile the session-creation
     // path consumes (EncoderConfig::InitVideoProfile reads GetCodecProfile).
     // Never INVALID here -- the binder either wrote the caller's profile or
@@ -1280,7 +1290,12 @@ static const char* VkEncChromaSubsamplingName(
         case VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR: return "4:2:0";
         case VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR: return "4:2:2";
         case VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR: return "4:4:4";
-        default:                                      return "its";
+        // Unreachable from the input derivation, which produces only the three
+        // above -- and named rather than left as a pronoun because this
+        // function has two callers now and one of them prints it beside the
+        // depth, where "its" would read as a missing word rather than a
+        // fallback.
+        default: return "an unnamed chroma subsampling";
     }
 }
 
@@ -1361,7 +1376,8 @@ static VkResult VkEncRefuseIfProfileCannotCarryInput(
 VkResult VkEncBuildEncoderConfig(
     const VkVideoEncoderConfig& extConfig,
     VkVideoCodecOperationFlagBitsKHR codecOp,
-    VkSharedBaseObj<EncoderConfig>& outConfig)
+    VkSharedBaseObj<EncoderConfig>& outConfig,
+    uint32_t requestedEncodeBitDepth)
 {
     // Direct binder: create the codec-typed config, assign the fields on it,
     // then run the same derived tail (FinalizeConfig) + InitializeParameters
@@ -1373,6 +1389,15 @@ VkResult VkEncBuildEncoderConfig(
         return (result != VK_SUCCESS) ? result : VK_ERROR_INITIALIZATION_FAILED;
     }
     EncoderConfig* cfg = outConfig.get();
+
+    // THE ENCODE DEPTH, WHEN IT IS STATED RATHER THAN DERIVED. Written here,
+    // before InitializeParameters, because that is where its zero-means-unset
+    // guard reads it: set, the derivation from input.bpp does not run and the
+    // encode side is the request. Zero leaves the derivation in charge, which
+    // is every caller but the internal probe.
+    if (requestedEncodeBitDepth != 0) {
+        cfg->encodeBitDepthLuma = (uint8_t)requestedEncodeBitDepth;
+    }
 
     // A2 clause 2: reject an unencodable input format at INIT, not only
     // per frame. SubmitExternalFrame already rejects it -- but only after the
@@ -3055,21 +3080,6 @@ static const char* VkEncDeviceFormatReason(VkEncDeviceFormatVerdict verdict)
     }
 }
 
-// Chroma subsampling in the words the standards use, for the refusal message.
-// A refusal that names the format enumerant and not its subsampling is the one
-// the driver already gives.
-static const char* VkEncChromaSubsamplingName(uint32_t chromaSubsampling)
-{
-    switch (chromaSubsampling) {
-        case VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR:
-            return "monochrome";
-        case VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR: return "4:2:0";
-        case VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR: return "4:2:2";
-        case VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR: return "4:4:4";
-        default:                                      return "unknown chroma";
-    }
-}
-
 // DECLARED HERE, DEFINED BESIDE THE DEVICE QUERY IT CALLS. The vocabulary
 // above needs nothing, so it lives where its first reader is; the resolver
 // needs VkEncQueryDeviceEncodeSrcFormats and the routable-format helpers, and
@@ -3266,25 +3276,32 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
     // verdict with two spellings would put the caller back to asking which
     // surface it was talking to.
     {
+        // THE ENCODE GEOMETRY, NOT THE INPUT'S. The video profile the session
+        // is about to create is built from encodeChromaSubsampling and
+        // encodeBitDepthLuma (EncoderConfig::InitVideoProfile), so a gate that
+        // asked the device about the INPUT's geometry would be predicting a
+        // different session than the one it is guarding -- the moment a chroma
+        // resampler or a depth downgrade makes the two differ.
         VkFormat encodeFormat = VK_FORMAT_UNDEFINED;
         const VkEncDeviceFormatVerdict verdict = VkEncResolveDeviceEncodeFormat(
             m_vkDevCtx, m_vkDevCtx.getPhysicalDevice(), codecOp,
             m_encoderConfig->GetCodecProfile(),
-            (uint32_t)m_encoderConfig->input.chromaSubsampling,
-            (uint32_t)m_encoderConfig->input.bpp,
+            (uint32_t)m_encoderConfig->encodeChromaSubsampling,
+            (uint32_t)m_encoderConfig->encodeBitDepthLuma,
             config.inputFormat,
             m_encoderConfig->IsPreprocessComputeFilterEnabled(),
             encodeFormat);
         if (verdict != VK_ENC_DEVICE_FORMAT_ACCEPTED) {
             VkEncErr() << "[EncoderExt] inputFormat "
                        << (uint32_t)config.inputFormat << " ("
+                       << m_encoderConfig->input.numPlanes
+                       << "-plane) cannot be encoded on this device: the "
+                          "stream it derives is "
                        << VkEncChromaSubsamplingName(
-                              (uint32_t)m_encoderConfig->input.chromaSubsampling)
-                       << ", " << (uint32_t)m_encoderConfig->input.bpp
-                       << "-bit, " << m_encoderConfig->input.numPlanes
-                       << "-plane) cannot be encoded on this device at the "
-                          "profile it derives ("
-                       << m_encoderConfig->GetCodecProfile() << "): "
+                              m_encoderConfig->encodeChromaSubsampling)
+                       << " at " << (uint32_t)m_encoderConfig->encodeBitDepthLuma
+                       << " bits, profile "
+                       << m_encoderConfig->GetCodecProfile() << ", and "
                        << VkEncDeviceFormatReason(verdict)
                        << ". VkEncEnumerateInputFormats lists what this device "
                           "does take for this codec and profile, and "
@@ -11905,10 +11922,11 @@ static VkResult VkEncResolveInputFormatSupport(
     //
     // VkEncResolveDeviceEncodeFormat above holds it, so a query that says yes
     // and a session that refuses cannot be written without changing one
-    // function. The subsampling, depth and profile handed to it are the ones
-    // the binder ACTUALLY derived, read back off the probe rather than
-    // assumed, which is what makes a 4:4:4 input asked about at a 4:4:4
-    // profile.
+    // function. The profile handed to it is the one the binder ACTUALLY
+    // derived, and the subsampling and depth are the ENCODE side's -- the
+    // geometry the video profile is built from at session creation, which is
+    // what makes this query predict that session rather than a different one.
+    // Both are read back off the probe rather than assumed.
     //
     // THE REASON IS DISCARDED HERE, deliberately. A point query answers yes or
     // no; the reason is what an initialisation boundary owes its caller, and
@@ -11917,7 +11935,8 @@ static VkResult VkEncResolveInputFormatSupport(
     VkFormat encodeFormat = VK_FORMAT_UNDEFINED;
     if (VkEncResolveDeviceEncodeFormat(
             ctx->GetDeviceContext(), entry->physDevice, codec,
-            probe.codecProfile, probe.inputChromaSubsampling, probe.inputBpp,
+            probe.codecProfile, probe.encodeChromaSubsampling,
+            probe.encodeBitDepthLuma,
             format, viaFilter, encodeFormat) !=
         VK_ENC_DEVICE_FORMAT_ACCEPTED) {
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
