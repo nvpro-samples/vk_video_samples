@@ -39,6 +39,7 @@ set(TEST_HEADERS
 set(VKCODECUTILS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../VkCodecUtils")
 set(VKCODECUTILS_SOURCES
     ${VKCODECUTILS_DIR}/VulkanDeviceContext.cpp
+    ${VKCODECUTILS_DIR}/VkEncoderStdioLatch.cpp
     ${VKCODECUTILS_DIR}/VulkanDeviceMemoryImpl.cpp
     ${VKCODECUTILS_DIR}/VkImageResource.cpp
     ${VKCODECUTILS_DIR}/VkBufferResource.cpp
@@ -111,6 +112,15 @@ enable_testing()
 add_test(NAME DrmFormatModSmokeTest COMMAND ${PROJECT_NAME})
 add_test(NAME DrmFormatModListFormats COMMAND ${PROJECT_NAME} --list-formats)
 add_test(NAME DrmFormatModAllTests COMMAND ${PROJECT_NAME} --all)
+# All three enumerate real driver-reported DRM modifiers, so all three need a
+# device -- including --list-formats, which queries the physical device. main()
+# exits 77 when Vulkan init fails for a device-availability reason; any other
+# init failure still exits 1.
+set_tests_properties(DrmFormatModSmokeTest
+                     DrmFormatModListFormats
+                     DrmFormatModAllTests PROPERTIES
+                     SKIP_RETURN_CODE 77
+                     LABELS "gpu")
 
 # Print status
 message(STATUS "drm_format_mod_test: Configured for Linux")

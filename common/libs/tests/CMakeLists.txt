@@ -38,6 +38,7 @@ set(TEST_HEADERS
 set(VKCODECUTILS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../VkCodecUtils")
 set(VKCODECUTILS_SOURCES
     ${VKCODECUTILS_DIR}/VulkanDeviceContext.cpp
+    ${VKCODECUTILS_DIR}/VkEncoderStdioLatch.cpp
     ${VKCODECUTILS_DIR}/VulkanDeviceMemoryImpl.cpp
     ${VKCODECUTILS_DIR}/VkImageResource.cpp
     ${VKCODECUTILS_DIR}/VkBufferResource.cpp
@@ -113,11 +114,35 @@ install(TARGETS ${PROJECT_NAME}
 enable_testing()
 add_test(NAME FilterSmokeTest COMMAND ${PROJECT_NAME} --smoke)
 add_test(NAME FilterAllTests COMMAND ${PROJECT_NAME} --all)
+# Both of the above dispatch compute shaders and therefore need a real device.
+# main() now exits 77 when Vulkan init fails for a device-availability reason,
+# so a GPU-less host reports SKIPPED rather than FAILED. Every other init
+# failure still exits 1, so a genuine regression cannot hide in the skip arm.
+set_tests_properties(FilterSmokeTest FilterAllTests PROPERTIES
+                     SKIP_RETURN_CODE 77
+                     LABELS "gpu")
+
+# --list touches no Vulkan entry point at all: it builds the standard test
+# table and prints it, and returns before app.init(). That makes it the one
+# arm of this binary that belongs in the gating device-free set -- it proves
+# the test-case table still constructs on every push.
+add_test(NAME FilterListTests COMMAND ${PROJECT_NAME} --list)
+set_tests_properties(FilterListTests PROPERTIES
+                     LABELS "device-free")
 
 # Add DRM Format Modifier test (Linux only)
 if(UNIX AND NOT APPLE)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/drm_format_mod")
         add_subdirectory(drm_format_mod)
+    endif()
+endif()
+
+# Add Linux dma-buf SECOND-DEVICE import test (Linux only).
+# The counterpart of win32_opaque_import: it proves an image exported by one
+# VkDevice can be imported AND USED by a different VkDevice on the same GPU.
+if(UNIX AND NOT APPLE)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/linux_dmabuf_import")
+        add_subdirectory(linux_dmabuf_import)
     endif()
 endif()
 

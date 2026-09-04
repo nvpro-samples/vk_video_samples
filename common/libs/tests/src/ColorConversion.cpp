@@ -271,6 +271,38 @@ void generateRGBATestPattern(TestPatternType type,
             break;
         }
         
+        case TestPatternType::PurePrimaryQuadrants: {
+            // TL = red, TR = green, BL = blue, BR = white. Fully saturated:
+            // 255 and 0, no intermediate values anywhere, so every quadrant
+            // has an unambiguous (Cb, Cr) signature and a component or plane
+            // swap relocates it to a value nothing else in the frame produces.
+            //
+            // The quadrant split uses the SAME rounding for both axes as the
+            // 4:2:0 chroma subsample (halves at width/2, height/2), so no
+            // 2x2 chroma block ever straddles two quadrants on an
+            // even-dimensioned image and the expected chroma is exact rather
+            // than a boundary average.
+            const uint32_t halfW = width  / 2;
+            const uint32_t halfH = height / 2;
+            for (uint32_t y = 0; y < height; y++) {
+                for (uint32_t x = 0; x < width; x++) {
+                    const bool right  = (x >= halfW);
+                    const bool bottom = (y >= halfH);
+                    uint8_t r, g, b;
+                    if (!bottom && !right)      { r = 255; g = 0;   b = 0;   } // TL red
+                    else if (!bottom && right)  { r = 0;   g = 255; b = 0;   } // TR green
+                    else if (bottom && !right)  { r = 0;   g = 0;   b = 255; } // BL blue
+                    else                        { r = 255; g = 255; b = 255; } // BR white
+                    const uint32_t offset = (y * width + x) * 4;
+                    data[offset + 0] = r;
+                    data[offset + 1] = g;
+                    data[offset + 2] = b;
+                    data[offset + 3] = 255;
+                }
+            }
+            break;
+        }
+
         case TestPatternType::Random: {
             uint32_t seed = 12345;
             for (size_t i = 0; i < data.size(); i += 4) {

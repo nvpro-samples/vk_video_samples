@@ -334,6 +334,30 @@ enum class TestPatternType {
     Ramp,           // Full ramp (all values)
     Solid,          // Solid color (for specific color testing)
     Random,         // Pseudo-random pattern
+    /**
+     * @brief Four pure-primary quadrants: R, G / B, white.
+     *
+     * THE PATTERN FOR COLOUR BUGS, and the reason it is not a gradient or a
+     * random field. The two failures that matter on an RGB->YCbCr path are
+     * both invisible to the obvious checks:
+     *
+     *   - A RED/BLUE component swap (the exact failure a `rgba8` storage
+     *     qualifier on a BGRA view produces) PERMUTES pixels between
+     *     quadrants. It leaves the byte HISTOGRAM of the image unchanged, so
+     *     no checksum, no size check and no histogram test can see it.
+     *   - A Cb/Cr (U/V) plane swap likewise conserves the histogram.
+     *
+     * Saturated primaries separate these: red and blue sit at opposite
+     * extremes of BOTH chroma axes, so either swap moves a quadrant's (Cb,Cr)
+     * pair to a value no correct conversion could produce there. A grey ramp
+     * or a checkerboard has Cb = Cr = neutral everywhere and would pass
+     * happily under both faults.
+     *
+     * White is the fourth quadrant rather than black because black is what a
+     * dead conversion produces, and a quadrant that is CORRECT when zeroed
+     * cannot witness that failure.
+     */
+    PurePrimaryQuadrants,
 };
 
 /**
