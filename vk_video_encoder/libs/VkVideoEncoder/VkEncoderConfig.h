@@ -37,7 +37,9 @@
 #include "VkVideoEncoder/VkVideoGopStructure.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
+#ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
 #include "VkCodecUtils/VulkanFilterYuvCompute.h"
+#endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
 
 #undef max
 
@@ -77,6 +79,7 @@ struct EncoderInputImageParameters
     , planeLayouts{}
     , fullImageSize(0)
     , vkFormat(VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM)
+    , isRgba(false)
     {}
 
 public:
@@ -90,11 +93,59 @@ public:
     uint64_t fullImageSize;
     VkFormat vkFormat;
 
+    /**
+     * @brief The input is RGBA: |vkFormat| is AUTHORITATIVE and must not be
+     *        re-derived, and the geometry is one 4-byte-per-pixel plane.
+     *
+     * WHY THIS FLAG HAS TO EXIST. VerifyInputs() normally RECONSTRUCTS
+     * vkFormat from (chromaSubsampling, bit depth, numPlanes == 2) via
+     * VkVideoCoreProfile::CodecGetVkFormat(), which can only ever produce a
+     * YCbCr format -- there is no combination of those three inputs that
+     * spells B8G8R8A8_UNORM. So an RGBA session that merely SET vkFormat
+     * would have it silently overwritten with I420 before anything read it,
+     * and the compute filter (which is built from input.vkFormat) would be
+     * constructed to convert YCbCr->YCbCr for an RGBA source.
+     *
+     * It is a flag on the struct rather than a format test inside
+     * VerifyInputs() so that this header keeps knowing nothing about the
+     * input-format taxonomy. The ext binder owns that taxonomy
+     * (VkEncIsRgbaInputFormat) and writes the conclusion down here; the config
+     * only carries it.
+     */
+    bool isRgba;
+
     bool VerifyInputs()
     {
         if ((width == 0) || (height == 0)) {
             fprintf(stderr, "Invalid input width (%d) and/or height(%d) parameters!", width, height);
             return false;
+        }
+
+        // RGBA: one interleaved plane of 4 bytes per pixel, and a vkFormat the
+        // caller already chose. Everything below this block describes a Y'CbCr
+        // image -- planar, semi-planar or packed, with the chroma planes
+        // subsampled by |chromaSubsampling| -- and none of that describes an
+        // RGBA image. It must therefore be reached before the single-plane
+        // arm below, which reads |chromaSubsampling| and would refuse an RGBA
+        // image for carrying the default 4:2:0 value it never uses.
+        if (isRgba) {
+            if (vkFormat == VK_FORMAT_UNDEFINED) {
+                fprintf(stderr, "Input marked RGBA but vkFormat is UNDEFINED!");
+                return false;
+            }
+            numPlanes = 1;
+            const uint32_t rgbaRowPitch = 4 * width;
+            if (planeLayouts[0].rowPitch < rgbaRowPitch) {
+                planeLayouts[0].rowPitch = rgbaRowPitch;
+            }
+            if (planeLayouts[0].size < (planeLayouts[0].rowPitch * height)) {
+                planeLayouts[0].size = planeLayouts[0].rowPitch * height;
+            }
+            planeLayouts[1] = VkSubresourceLayout{};
+            planeLayouts[2] = VkSubresourceLayout{};
+            fullImageSize = (uint64_t)planeLayouts[0].size;
+            // vkFormat is DELIBERATELY left alone -- see the field comment.
+            return true;
         }
 
         // Packed 4:4:4 (AYUV / Y410) is SINGLE-plane and interleaved: one 32-bit texel
@@ -821,6 +872,19 @@ public:
 
     int32_t  minQp;
     int32_t  maxQp;
+    // Caller-provided markers for the two fields above, set by the direct
+    // binder and the --minQp/--maxQp args. The codec configs' derived
+    // VkVideoEncode*QpKHR members are what rate control actually reads;
+    // InitDeviceCapabilities uses these markers to tell a requested clamp
+    // from the -1 sentinel / default-20 fallback.
+    uint32_t minQpSet : 1;
+    uint32_t maxQpSet : 1;
+    // The same marker for constQp, set only by the direct binder, which
+    // resolves all three QPs before handing the config over: there an
+    // explicit 0 is a lossless request, not an unset field, and
+    // InitDeviceCapabilities must not substitute preferredConstantQp for
+    // it. The argv path leaves this down, keeping 0-means-unset semantics.
+    uint32_t constQpSet : 1;
     ConstQpSettings constQp;
 
     uint32_t enableQpMap : 1;
@@ -866,7 +930,17 @@ public:
     EncoderOutputFileHandler outputFileHandler;
     EncoderQpMapFileHandler qpMapFileHandler;
 
+#ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+    // WHICH conversion the preprocess compute filter performs. Owned by the
+    // LIBRARY, not by any caller: VkVideoEncoder::InitEncoder overwrites it
+    // from input.vkFormat and the encode-source format the device reported,
+    // immediately before creating the filter (VkEncDeriveFilterType). No CLI
+    // flag, no JSON key and no embeddable-API field reaches it, deliberately:
+    // the mechanism choice belongs inside the library, where the device
+    // capabilities are known. The initialiser below is only
+    // what an uninitialised config reads as.
     VulkanFilterYuvCompute::FilterType filterType;
+#endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
 
     // Adaptive Quantization (AQ) parameters
     // Range: [-1.0, 1.0] valid, 0.0 = default/midpoint, < -1.0 (e.g., -2.0) = disabled
@@ -888,7 +962,13 @@ public:
     uint32_t enableHwLoadBalancing : 1;
     uint32_t noDeviceFallback : 1;
     uint32_t selectVideoWithComputeQueue : 1;
+    // Skip fwrite to outputFileHandler when set; the
+    // encoder captures bitstream bytes in m_capturedBitstreams
+    // for the Ext API to drain via TryPopCapturedBitstream().
+    uint32_t disableFileOutput : 1;
+#ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     uint32_t enablePreprocessComputeFilter : 1;
+#endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     uint32_t repeatInputFrames : 1;
     // enablePictureRowColReplication
     // 0: row and column replication is disabled;
@@ -905,6 +985,17 @@ public:
     std::string crcOutputFileName;
 
     bool IsPsnrMetricsEnabled() const { return enablePsnrMetrics != 0; }
+
+    // Compile-safe accessor for the build-gated preprocess-filter flag:
+    // callers can branch on it without carrying the gate macro themselves
+    // (the member only exists when the compute filter is compiled in).
+    bool IsPreprocessComputeFilterEnabled() const {
+#ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+        return enablePreprocessComputeFilter != 0;
+#else
+        return false;
+#endif
+    }
     int32_t  drmFormatModifierIndex; // -1 = disabled (OPTIMAL), >= 0 = index into non-linear modifier list
     uint64_t selectedDrmFormatModifier; // resolved modifier value (set during InitEncoder)
 
@@ -952,6 +1043,9 @@ public:
     , frameRateDenominator()
     , minQp(-1)
     , maxQp(-1)
+    , minQpSet(0)
+    , maxQpSet(0)
+    , constQpSet(0)
     , constQp()
     , enableQpMap(false)
     , qpMapMode(DELTA_QP_MAP)
@@ -991,7 +1085,11 @@ public:
     , max_dec_frame_buffering()
     , chroma_sample_loc_type()
     , inputFileHandler()
+#ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+    // Placeholder only -- InitEncoder derives the real value from the input
+    // and encode-source formats. See the member's declaration.
     , filterType(VulkanFilterYuvCompute::YCBCRCOPY)
+#endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     , enableAQ(VK_FALSE)
     , spatialAQStrength(-2.0f)   // < -1.0 means disabled
     , temporalAQStrength(-2.0f)  // < -1.0 means disabled
@@ -1006,7 +1104,10 @@ public:
     , enableHwLoadBalancing(false)
     , noDeviceFallback(false)
     , selectVideoWithComputeQueue(false)
+    , disableFileOutput(false)
+#ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     , enablePreprocessComputeFilter(true)
+#endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     , repeatInputFrames(false)
     , enablePictureRowColReplication(1)
     , enableOutOfOrderRecording(false)
@@ -1040,6 +1141,46 @@ public:
     void InitVideoProfile();
 
     int ParseArguments(int argc, const char *argv[]);
+
+    // What only a device can answer, for the decisions in FinalizeConfig() that
+    // are properties of the hardware rather than of the command line.
+    //
+    // Passed as a POINTER that may be null, because FinalizeConfig() runs on two
+    // paths: argv parsing, which happens before any device exists, and the
+    // embedding host, which has already probed one. Null means "no device yet"
+    // -- every field below keeps its command-line answer, which is the behaviour
+    // the demo has. A caller that HAS probed supplies this and the same function
+    // reaches a device-correct answer, so there is one tail rather than a second
+    // one that callers must remember to run.
+    struct DeviceCapabilities {
+        // VkPhysicalDeviceVideoEncodeIntraRefreshFeaturesKHR::videoEncodeIntraRefresh.
+        // Intra refresh is a per-device feature, so a configuration that asks for
+        // it on a device that lacks it is refused here rather than at the point
+        // the session is created.
+        //
+        // Defaulted, because this structure is filled field by field by a
+        // caller that has probed a device: a member left out of that
+        // assignment must read as "the device does not have it", not as
+        // whatever the stack held.
+        bool     intraRefreshSupported = false;
+    };
+
+    // Derived-defaults / validation tail shared by ParseArguments and the
+    // direct-binding (no-argv) configuration path: input-geometry checks,
+    // default-output handling, encode-size clamps and defaults, minQp
+    // default, block alignment, qpMap / intra-refresh validation.
+    //
+    // |deviceCaps| is optional; see DeviceCapabilities for what changes when it
+    // is supplied. Returns 0 on success, -1 on a validation failure.
+    int FinalizeConfig(const DeviceCapabilities* deviceCaps = nullptr);
+
+    // Codec-typed factory WITHOUT argv parsing: creates the codec subclass
+    // and sets |codec|. The caller assigns fields directly, then runs
+    // FinalizeConfig() + InitializeParameters() -- the same pipeline
+    // CreateCodecConfig drives after ParseArguments.
+    static VkResult CreateCodecConfigDirect(
+        VkVideoCodecOperationFlagBitsKHR codecOperation,
+        VkSharedBaseObj<EncoderConfig>& encoderConfig);
 
     // Load base config from JSON file (encoder_config.schema.json). JSON is processed first;
     // command-line args passed to ParseArguments override. Returns 0 on success, -1 on error.

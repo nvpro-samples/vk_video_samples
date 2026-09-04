@@ -274,7 +274,17 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
 
 int EncoderConfig::LoadFromJsonFile(const char* path)
 {
+#if defined(VK_VIDEO_ENCODER_SKIP_JSON_CONFIG)
+    // JSON-config support is compiled out by this build (it
+    // avoids pulling in simdjson + EncoderConfigJsonLoader.cpp
+    // for a feature only the command line uses). Callers go
+    // through ParseArguments, which checks the return value, so
+    // -1 surfaces as a clean parse failure.
+    (void)path;
+    return -1;
+#else
     return LoadEncoderConfigFromJson(path, this);
+#endif
 }
 
 int EncoderConfig::ParseArguments(int argc, const char *argv[])
@@ -282,7 +292,6 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
     int argcount = 0;
     std::vector<const char*> arglist;
     std::vector<std::string> args(argv, argv + argc);
-    uint32_t frameCount = 0;
 
     appName = args[0];
 
@@ -322,6 +331,24 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             if (fileSize <= 0) {
                 return (int)fileSize;
             }
+        } else if (args[i] == "--disableFileOutput") {
+            // In-memory bitstream capture: the encoded bytes are returned to
+            // the caller and NO bitstream file is written, including the
+            // default out.264 / out.265 / out.ivf. This is the command-line
+            // spelling of EncoderConfig::disableFileOutput; an embedding host
+            // sets the field instead. Either way FinalizeConfig() reads it
+            // before deciding whether to open the default output, so the two
+            // routes reach the same answer.
+            //
+            // Not a flush and not a completion signal: which frames are ready
+            // is reported the same way in both modes. This decides only where
+            // the bytes go -- to the caller, or additionally to a file.
+            //
+            // Combining it with -o still writes no file: capture wins. A
+            // process that cannot touch the filesystem, such as the Chromium
+            // GPU process under sandbox, needs a mode in which no path is
+            // opened at all rather than one it must remember not to name.
+            disableFileOutput = true;
         } else if (args[i] == "-h" || args[i] == "--help") {
             printHelp(codec);
             return -1;
@@ -420,59 +447,71 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             preferPackedYcbcr = true;
         } else if (args[i] == "--startFrame") {
             if (++i >= argc || !parseUint(args[i], startFrame)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--numFrames") {
             if (++i >= argc || !parseUint(args[i], numFrames)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--repeatInputFrames") {
             repeatInputFrames = true;
         } else if (args[i] == "--encodeOffsetX") {
             if ((++i >= argc) || !parseUint(args[i], encodeOffsetX)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--encodeOffsetY") {
             if ((++i >= argc) || !parseUint(args[i], encodeOffsetY)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--encodeWidth") {
             if ((++i >= argc) || !parseUint(args[i], encodeWidth)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--encodeHeight") {
             if ((++i >= argc) || !parseUint(args[i], encodeHeight)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--encodeMaxWidth") {
             if ((++i >= argc) || !parseUint(args[i], encodeMaxWidth)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--encodeMaxHeight") {
             if ((++i >= argc) || !parseUint(args[i], encodeMaxHeight)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--minQp") {
             if (++i >= argc || !parseInt(args[i], minQp)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
+            minQpSet = 1;
         } else if (args[i] == "--maxQp") {
             if (++i >= argc || !parseInt(args[i], maxQp)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
+            maxQpSet = 1;
         // GOP structure
         } else if (args[i] == "--gopFrameCount") {
-            uint8_t gopFrameCount = EncoderConfig::DEFAULT_GOP_FRAME_COUNT;
+            // Parsed at the width the GOP structure stores it. parseUint
+            // casts without a range check, so a narrower local truncates
+            // silently while still reporting success: 300 arrives as 44, and
+            // 256 as 0 -- which the codec configs read as
+            // ZERO_GOP_FRAME_COUNT and replace with the device's preferred
+            // count. Both give the caller a GOP it did not ask for and is
+            // never told about.
+            //
+            // Zero stays legal here: it IS that sentinel, and asking for the
+            // device's preference is a request like any other.
+            uint32_t gopFrameCount = EncoderConfig::DEFAULT_GOP_FRAME_COUNT;
             if (++i >= argc || !parseUint(args[i], gopFrameCount)) {
                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
@@ -827,12 +866,31 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         }
     }
 
+    {
+        // Derived defaults + validation, shared with the direct-binding path.
+        const int finalizeResult = FinalizeConfig();
+        if (finalizeResult != 0) {
+            return finalizeResult;
+        }
+    }
+
+    return DoParseArguments(argcount, arglist.data());
+}
+
+int EncoderConfig::FinalizeConfig(const EncoderConfig::DeviceCapabilities* deviceCaps)
+{
+    // Extracted ParseArguments tail: runs identically after argv parsing and
+    // after direct field binding (CreateCodecConfigDirect path).
+    uint32_t frameCount = 0;
+
     // External frame input mode (IPC/service): no -i file, width/height come from caller.
-    // The encoder library's InitializeExt path sets numFrames=UINT32_MAX and provides
-    // frames via SetExternalInputFrame/SubmitExternalFrame.
+    // The encoder library's InitializeExt path sets a large finite numFrames
+    // (see the ext streaming config) and provides frames via
+    // SetExternalInputFrame/SubmitExternalFrame -- there is no UINT32_MAX
+    // sentinel on this path.
     if (!inputFileHandler.HasFileName()) {
         if (input.width == 0 || input.height == 0) {
-            fprintf(stderr, "An input file (-i) or --inputWidth/--inputHeight must be specified\n");
+            VkEncPrintfErr("An input file (-i) or --inputWidth/--inputHeight must be specified\n");
             return -1;
         }
         // External frame mode: skip file handler setup, use provided dimensions
@@ -879,9 +937,15 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             }
         }
     }
-    // External frame input: numFrames comes from --numFrames arg (typically UINT32_MAX for streaming)
+    // External frame input: numFrames comes from the --numFrames arg; the ext
+    // streaming path passes a large finite count rather than a sentinel.
 
-    if (!outputFileHandler.HasFileName()) {
+    // No default output file in capture mode. SetFileName() fopen()s
+    // immediately, so the guard belongs here, during parsing, rather than
+    // after CreateCodecConfig returns: otherwise a host that writes no file
+    // still gets a 0-byte out.264/.265/.ivf in its working directory, which
+    // a process confined to a sandbox may not be permitted to create at all.
+    if (!disableFileOutput && !outputFileHandler.HasFileName()) {
         const char* defaultOutName = (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) ? "out.264" :
                                      (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR) ? "out.265" : "out.ivf";
         if (verbose) {
@@ -927,57 +991,107 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
 
     if (minQp == -1) {
         if (verbose) {
-            fprintf(stdout, "No QP was provided. Using default value: 20.\n");
+            VkEncPrintfOut("No QP was provided. Using default value: 20.\n");
         }
         minQp = 20;
+        // NOT PUSHED INTO RATE CONTROL, and deliberately so. Every consumer of
+        // this field reads it only under minQpSet -- which stays clear on this
+        // path, because nobody asked for a QP -- so an unset minQp reaches the
+        // driver as "no clamp" rather than as 20. Validating or clamping the
+        // value here against the device would therefore decide nothing: the
+        // number is a documented default, not a request. A caller that wants a
+        // QP clamp sets one, and the codec configs check THAT against the
+        // device window and refuse it rather than narrowing it silently.
     }
 
-    codecBlockAlignment = H264MbSizeAlignment; // H264
+    // Carried, not consumed: nothing in the tree reads codecBlockAlignment. It
+    // holds the H.264 macroblock size for every codec, which is wrong for H.265
+    // CTBs and AV1 superblocks, so a reader would have to derive it from the
+    // device's VkVideoCapabilitiesKHR::pictureAccessGranularity rather than trust
+    // this. Left as it stands rather than given a per-codec value that nothing
+    // would check.
+    codecBlockAlignment = H264MbSizeAlignment;
 
     if (enableQpMap && !qpMapFileHandler.HasFileName() && !enableAQ) {
-        fprintf(stderr, "No qpMap file was provided.");
+        VkEncPrintfErr("No qpMap file was provided.");
         return -1;
     }
 
     if ((intraRefreshMode == REFRESH_NONE && intraRefreshCycleDuration > 0) ||
         (intraRefreshMode != REFRESH_NONE && intraRefreshCycleDuration == 0)) {
 
-        fprintf(stderr, "Both --intraRefreshMode and --intraRefreshCycleDuration must be "
+        VkEncPrintfErr("Both --intraRefreshMode and --intraRefreshCycleDuration must be "
                         "specified to enable intra-refresh.\n");
         return -1;
     }
 
     enableIntraRefresh = (intraRefreshMode != REFRESH_NONE) && (intraRefreshCycleDuration > 0);
 
+    // Intra refresh is a device FEATURE, not a command-line one. Asking for it on
+    // a device that does not expose it is refused here, where the request is
+    // still attributable, rather than inside session creation. Without a device
+    // to ask, the request stands and the session decides.
+    if (enableIntraRefresh && (deviceCaps != nullptr) && !deviceCaps->intraRefreshSupported) {
+        VkEncPrintfErr("Intra refresh was requested, but this device does not expose "
+                "VkPhysicalDeviceVideoEncodeIntraRefreshFeaturesKHR::videoEncodeIntraRefresh.\n");
+        return -1;
+    }
+
     if (!enableIntraRefresh && intraRefreshCycleRestartIndex > 0) {
-        fprintf(stderr, "Intra-refresh must be enabled when using --testIntraRefreshMidway\n");
+        VkEncPrintfErr("Intra-refresh must be enabled when using --testIntraRefreshMidway\n");
         return -1;
     }
 
     if (enableIntraRefresh && intraRefreshCycleRestartIndex >= intraRefreshCycleDuration) {
-        fprintf(stderr, "The value specified for --testIntraRefreshMidway must be in "
+        VkEncPrintfErr("The value specified for --testIntraRefreshMidway must be in "
                         "the range [0, intraRefreshCycleDuration-1]\n");
         return -1;
     }
 
     if (!enableIntraRefresh && intraRefreshSkippedStartIndex > 0) {
-        fprintf(stderr, "Intra-refresh must be enabled when using --testSkipIntraRefreshStart\n");
+        VkEncPrintfErr("Intra-refresh must be enabled when using --testSkipIntraRefreshStart\n");
         return -1;
     }
 
     if (enableIntraRefresh && intraRefreshSkippedStartIndex >= intraRefreshCycleDuration) {
-        fprintf(stderr, "The value specified for --testSkipIntraRefreshStart must be in "
+        VkEncPrintfErr("The value specified for --testSkipIntraRefreshStart must be in "
                         "the range [0, intraRefreshCycleDuration-1]\n");
         return -1;
     }
 
     if (intraRefreshCycleRestartIndex > 0 && intraRefreshSkippedStartIndex > 0) {
-        fprintf(stderr, "Combining --testIntraRefreshMidway with --testSkipIntraRefreshStart "
+        VkEncPrintfErr("Combining --testIntraRefreshMidway with --testSkipIntraRefreshStart "
                         "is not supported\n");
         return -1;
     }
 
-    return DoParseArguments(argcount, arglist.data());
+    return 0;
+}
+
+VkResult EncoderConfig::CreateCodecConfigDirect(
+    VkVideoCodecOperationFlagBitsKHR codecOperation,
+    VkSharedBaseObj<EncoderConfig>& encoderConfig)
+{
+    switch ((uint32_t)codecOperation) {
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR: {
+            VkSharedBaseObj<EncoderConfigH264> config(new EncoderConfigH264());
+            encoderConfig = config;
+        } break;
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR: {
+            VkSharedBaseObj<EncoderConfigH265> config(new EncoderConfigH265());
+            encoderConfig = config;
+        } break;
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR: {
+            VkSharedBaseObj<EncoderConfigAV1> config(new EncoderConfigAV1());
+            encoderConfig = config;
+        } break;
+        default:
+            VkEncPrintfErr("[EncoderConfig] CreateCodecConfigDirect: unsupported codec 0x%x\n",
+                    (unsigned)codecOperation);
+            return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
+    }
+    encoderConfig->codec = codecOperation;
+    return VK_SUCCESS;
 }
 
 VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],

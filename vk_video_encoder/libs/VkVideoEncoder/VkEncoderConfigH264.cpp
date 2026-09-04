@@ -471,18 +471,56 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
     if (gopStructure.GetConsecutiveBFrameCount() == CONSECUTIVE_B_FRAME_COUNT_MAX_VALUE) {
         gopStructure.SetConsecutiveBFrameCount(h264QualityLevelProperties.preferredConsecutiveBFrameCount);
     }
-    if (constQp.qpIntra == 0) {
+    // The direct binder resolves all three QPs and marks constQpSet: an
+    // explicit 0 there is lossless, not unset, and must keep its value.
+    if (!constQpSet && (constQp.qpIntra == 0)) {
         constQp.qpIntra = h264QualityLevelProperties.preferredConstantQp.qpI;
     }
-    if (constQp.qpInterP == 0) {
+    if (!constQpSet && (constQp.qpInterP == 0)) {
         constQp.qpInterP = h264QualityLevelProperties.preferredConstantQp.qpP;
     }
-    if (constQp.qpInterB == 0) {
+    if (!constQpSet && (constQp.qpInterB == 0)) {
         constQp.qpInterB = h264QualityLevelProperties.preferredConstantQp.qpB;
     }
     if (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR) {
         minQp = h264QualityLevelProperties.preferredConstantQp;
         maxQp = h264QualityLevelProperties.preferredConstantQp;
+    }
+    // Caller-requested QP clamps override the quality-level defaults. The
+    // base-class ints carry the request (marked by minQpSet/maxQpSet); these
+    // derived VkVideoEncodeH264QpKHR members are what GetRateControlParameters
+    // reads -- without this hop a caller's minQp/maxQp never reached rate
+    // control at all.
+    if (minQpSet) {
+        minQp.qpI = minQp.qpP = minQp.qpB = EncoderConfig::minQp;
+    }
+    if (maxQpSet) {
+        maxQp.qpI = maxQp.qpP = maxQp.qpB = EncoderConfig::maxQp;
+    }
+    // Device QP window check for caller clamps (the binder already enforced
+    // the syntactic 0..51 range): with the use flags raised, the spec
+    // requires the clamp values inside the device's [minQp, maxQp]
+    // capability window. Reject rather than silently narrow the caller's
+    // request.
+    if (minQpSet &&
+        ((EncoderConfig::minQp < h264EncodeCapabilities.minQp) ||
+         (EncoderConfig::minQp > h264EncodeCapabilities.maxQp))) {
+        VkEncErr() << "[EncoderConfigH264] requested minQp "
+                   << EncoderConfig::minQp
+                   << " is outside the device QP window ["
+                   << h264EncodeCapabilities.minQp << ", "
+                   << h264EncodeCapabilities.maxQp << "]" << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (maxQpSet &&
+        ((EncoderConfig::maxQp < h264EncodeCapabilities.minQp) ||
+         (EncoderConfig::maxQp > h264EncodeCapabilities.maxQp))) {
+        VkEncErr() << "[EncoderConfigH264] requested maxQp "
+                   << EncoderConfig::maxQp
+                   << " is outside the device QP window ["
+                   << h264EncodeCapabilities.minQp << ", "
+                   << h264EncodeCapabilities.maxQp << "]" << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
     }
     numRefL0 = h264QualityLevelProperties.preferredMaxL0ReferenceCount;
     numRefL1 = h264QualityLevelProperties.preferredMaxL1ReferenceCount;
@@ -557,7 +595,15 @@ void EncoderConfigH264::InitProfileLevel()
 
 int8_t EncoderConfigH264::InitDpbCount()
 {
-    dpbCount = 0; // TODO: What is the need for this?
+    // Need-based DPB sizing: size the DPB by the references this encoder
+    // will actually use (numRefFrames = numRefL0 + numRefL1, populated from
+    // the driver's preferred quality-level properties) instead of leaving
+    // dpbCount at 0, which selected the LEVEL-MAX DPB below -- 16+1 slots at
+    // Level >= 5.0 for a sliding-window encode that uses ~3 references,
+    // wasting ~12 full-resolution DPB images. If the quality-level query has
+    // not populated numRefFrames yet (0), fall through to the legacy
+    // level-max sizing, which the DpbSequenceStart() clamp keeps safe.
+    dpbCount = (numRefFrames > 0) ? numRefFrames : 0;
 
     uint8_t levelDpbSize = (uint8_t)(((1024 * levelLimits[levelIdc].maxDPB)) /
                             ((pic_width_in_mbs * pic_height_in_map_units) * 384));
@@ -643,6 +689,26 @@ bool EncoderConfigH264::GetRateControlParameters(VkVideoEncodeRateControlInfoKHR
     } else {
         pRateControlLayerInfoH264->minQp = minQp;
         pRateControlLayerInfoH264->maxQp = maxQp;
+        // A caller's QP clamp is only visible to the driver when the
+        // matching use flag is raised: useMinQp/useMaxQp default to
+        // VK_FALSE and the spec lets a conformant implementation ignore
+        // the values entirely without them. The only code that ever
+        // raised these flags was InitRateControl(VkCommandBuffer,
+        // uint32_t), which has no caller. Source the values from the
+        // base-class request directly, so the flag and the value travel
+        // together on every path, device-initialized or not.
+        if (minQpSet) {
+            pRateControlLayerInfoH264->useMinQp = VK_TRUE;
+            pRateControlLayerInfoH264->minQp.qpI = EncoderConfig::minQp;
+            pRateControlLayerInfoH264->minQp.qpP = EncoderConfig::minQp;
+            pRateControlLayerInfoH264->minQp.qpB = EncoderConfig::minQp;
+        }
+        if (maxQpSet) {
+            pRateControlLayerInfoH264->useMaxQp = VK_TRUE;
+            pRateControlLayerInfoH264->maxQp.qpI = EncoderConfig::maxQp;
+            pRateControlLayerInfoH264->maxQp.qpP = EncoderConfig::maxQp;
+            pRateControlLayerInfoH264->maxQp.qpB = EncoderConfig::maxQp;
+        }
     }
 
     pRateControlLayersInfo->averageBitrate = averageBitrate;

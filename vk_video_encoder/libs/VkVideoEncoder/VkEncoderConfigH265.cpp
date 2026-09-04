@@ -183,17 +183,50 @@ VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vk
     if (gopStructure.GetConsecutiveBFrameCount() == CONSECUTIVE_B_FRAME_COUNT_MAX_VALUE) {
         gopStructure.SetConsecutiveBFrameCount(h265QualityLevelProperties.preferredConsecutiveBFrameCount);
     }
-    if (constQp.qpIntra == 0) {
+    // The direct binder resolves all three QPs and marks constQpSet: an
+    // explicit 0 there is lossless, not unset, and must keep its value.
+    if (!constQpSet && (constQp.qpIntra == 0)) {
         constQp.qpIntra = h265QualityLevelProperties.preferredConstantQp.qpI;
     }
-    if (constQp.qpInterP == 0) {
+    if (!constQpSet && (constQp.qpInterP == 0)) {
         constQp.qpInterP = h265QualityLevelProperties.preferredConstantQp.qpP;
     }
-    if (constQp.qpInterB == 0) {
+    if (!constQpSet && (constQp.qpInterB == 0)) {
         constQp.qpInterB = h265QualityLevelProperties.preferredConstantQp.qpB;
     }
     numRefL0 = h265QualityLevelProperties.preferredMaxL0ReferenceCount;
     numRefL1 = h265QualityLevelProperties.preferredMaxL1ReferenceCount;
+
+    // Caller-requested QP clamps (see the H.264 counterpart): the derived
+    // VkVideoEncodeH265QpKHR members feed GetRateControlParameters; the base
+    // ints only carry the request.
+    if (minQpSet) {
+        minQp.qpI = minQp.qpP = minQp.qpB = EncoderConfig::minQp;
+    }
+    if (maxQpSet) {
+        maxQp.qpI = maxQp.qpP = maxQp.qpB = EncoderConfig::maxQp;
+    }
+    // Device QP window check for caller clamps -- see the H.264 counterpart.
+    if (minQpSet &&
+        ((EncoderConfig::minQp < h265EncodeCapabilities.minQp) ||
+         (EncoderConfig::minQp > h265EncodeCapabilities.maxQp))) {
+        VkEncErr() << "[EncoderConfigH265] requested minQp "
+                   << EncoderConfig::minQp
+                   << " is outside the device QP window ["
+                   << h265EncodeCapabilities.minQp << ", "
+                   << h265EncodeCapabilities.maxQp << "]" << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (maxQpSet &&
+        ((EncoderConfig::maxQp < h265EncodeCapabilities.minQp) ||
+         (EncoderConfig::maxQp > h265EncodeCapabilities.maxQp))) {
+        VkEncErr() << "[EncoderConfigH265] requested maxQp "
+                   << EncoderConfig::maxQp
+                   << " is outside the device QP window ["
+                   << h265EncodeCapabilities.minQp << ", "
+                   << h265EncodeCapabilities.maxQp << "]" << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
 
     return VK_SUCCESS;
 }
@@ -620,6 +653,22 @@ bool EncoderConfigH265::GetRateControlParameters(VkVideoEncodeRateControlInfoKHR
     } else {
         rcLayerInfoH265->minQp = minQp;
         rcLayerInfoH265->maxQp = maxQp;
+        // See the H.264 counterpart: without useMinQp/useMaxQp the driver
+        // is entitled to ignore the clamp values, and the only setter of
+        // these flags was dead code. Values come from the base-class
+        // request so flag and value travel together on every path.
+        if (minQpSet) {
+            rcLayerInfoH265->useMinQp = VK_TRUE;
+            rcLayerInfoH265->minQp.qpI = EncoderConfig::minQp;
+            rcLayerInfoH265->minQp.qpP = EncoderConfig::minQp;
+            rcLayerInfoH265->minQp.qpB = EncoderConfig::minQp;
+        }
+        if (maxQpSet) {
+            rcLayerInfoH265->useMaxQp = VK_TRUE;
+            rcLayerInfoH265->maxQp.qpI = EncoderConfig::maxQp;
+            rcLayerInfoH265->maxQp.qpP = EncoderConfig::maxQp;
+            rcLayerInfoH265->maxQp.qpB = EncoderConfig::maxQp;
+        }
     }
 
     return true;

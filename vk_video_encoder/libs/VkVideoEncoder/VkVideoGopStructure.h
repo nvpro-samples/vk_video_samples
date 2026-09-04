@@ -81,7 +81,7 @@ public:
         {}
     };
 
-    VkVideoGopStructure(uint8_t gopFrameCount = 8,
+    VkVideoGopStructure(uint32_t gopFrameCount = 8,
                         int32_t idrPeriod = 60,
                         uint8_t consecutiveBFrameCount = 2,
                         uint8_t temporalLayerCount = 1,
