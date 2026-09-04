@@ -24,6 +24,15 @@ const VkFormatDesc vkFormatInfo[] = {
     { VK_FORMAT_R8G8_UNORM,                     2,   2,        "rg8",               },
     { VK_FORMAT_R8G8B8_UNORM,                   3,   3,        "rgb8",              },
     { VK_FORMAT_R8G8B8A8_UNORM,                 4,   4,        "rgba8",             },
+    // The same texel class as R8G8B8A8_UNORM, and both carried here for the
+    // same reason: the encoder accepts all three 8-bit RGBA spellings as
+    // filter inputs, so all three can reach shader generation, and a format
+    // this table does not hold has no image-format qualifier to declare its
+    // binding with. GLSL spells the qualifier by texel class rather than by
+    // component order -- there is no "bgra8" -- so the qualifier is "rgba8"
+    // for each, and the component order stays a property of the view.
+    { VK_FORMAT_B8G8R8A8_UNORM,                 4,   4,        "rgba8",             },
+    { VK_FORMAT_A8B8G8R8_UNORM_PACK32,          4,   4,        "rgba8",             },
     { VK_FORMAT_R32G32B32A32_SFLOAT,            4,  16,       "rgba32f",            },
     { VK_FORMAT_R16G16B16A16_SFLOAT,            4,   8,        "rgba16f",           },
     { VK_FORMAT_R32G32_SFLOAT,                  2,   8,        "rg32f",             },

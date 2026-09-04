@@ -316,8 +316,36 @@ VkResult VulkanVideoImagePool::Configure(const VulkanDeviceContext*   vkDevCtx,
                                          bool                         useImageArray,
                                          bool                         useImageViewArray,
                                          bool                         useLinearImage,
-                                         uint64_t                     drmFormatModifier)
+                                         uint64_t                     drmFormatModifier,
+                                         VkImageLayout                initialLayout)
 {
+    // One family is the ordinary case and stays EXCLUSIVE.
+    return Configure(vkDevCtx, numImages, imageFormat, maxImageExtent,
+                     imageUsage, std::vector<uint32_t>{queueFamilyIndex},
+                     requiredMemProps, pVideoProfile, aspectMask,
+                     useImageArray, useImageViewArray, useLinearImage,
+                     drmFormatModifier, initialLayout);
+}
+
+VkResult VulkanVideoImagePool::Configure(const VulkanDeviceContext*        vkDevCtx,
+                                         uint32_t                          numImages,
+                                         VkFormat                          imageFormat,
+                                         const VkExtent2D&                 maxImageExtent,
+                                         VkImageUsageFlags                 imageUsage,
+                                         const std::vector<uint32_t>&      queueFamilyIndices,
+                                         VkMemoryPropertyFlags             requiredMemProps,
+                                         const VkVideoProfileInfoKHR*      pVideoProfile,
+                                         VkImageAspectFlags                aspectMask,
+                                         bool                              useImageArray,
+                                         bool                              useImageViewArray,
+                                         bool                              useLinearImage,
+                                         uint64_t                          drmFormatModifier,
+                                         VkImageLayout                     initialLayout)
+{
+    if (queueFamilyIndices.empty()) {
+        assert(!"A pool needs at least one queue family");
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
     std::lock_guard<std::mutex> lock(m_queueMutex);
     if (numImages > m_imageResources.size()) {
         assert(!"Number of requested images exceeds the max size of the image array");
@@ -343,7 +371,17 @@ VkResult VulkanVideoImagePool::Configure(const VulkanDeviceContext*   vkDevCtx,
         m_videoProfile.InitFromProfile(pVideoProfile);
     }
 
-    m_queueFamilyIndex = queueFamilyIndex;
+    // Copy and deduplicate. The create info points into this vector, so it
+    // has to outlive the call, and a duplicate entry in a CONCURRENT list is
+    // VUID-VkImageCreateInfo-sharingMode-01420.
+    m_queueFamilyIndices.clear();
+    for (uint32_t family : queueFamilyIndices) {
+        if (std::find(m_queueFamilyIndices.begin(), m_queueFamilyIndices.end(),
+                      family) == m_queueFamilyIndices.end()) {
+            m_queueFamilyIndices.push_back(family);
+        }
+    }
+    m_queueFamilyIndex = m_queueFamilyIndices[0];
     m_requiredMemProps = requiredMemProps;
 
     // Image create info for the images
@@ -361,10 +399,19 @@ VkResult VulkanVideoImagePool::Configure(const VulkanDeviceContext*   vkDevCtx,
         m_imageCreateInfo.tiling = useLinearImage ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
     }
     m_imageCreateInfo.usage = imageUsage;
-    m_imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    m_imageCreateInfo.queueFamilyIndexCount = 1;
-    m_imageCreateInfo.pQueueFamilyIndices = &m_queueFamilyIndex;
-    m_imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    if (m_queueFamilyIndices.size() > 1) {
+        // Written by one family and read by another. CONCURRENT is what makes
+        // that legal without the release/acquire pair no caller issues here.
+        m_imageCreateInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
+        m_imageCreateInfo.queueFamilyIndexCount =
+            (uint32_t)m_queueFamilyIndices.size();
+        m_imageCreateInfo.pQueueFamilyIndices = m_queueFamilyIndices.data();
+    } else {
+        m_imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        m_imageCreateInfo.queueFamilyIndexCount = 1;
+        m_imageCreateInfo.pQueueFamilyIndices = &m_queueFamilyIndex;
+    }
+    m_imageCreateInfo.initialLayout = initialLayout;
     m_imageCreateInfo.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
 
     const bool hasVideoUsage = (imageUsage & (VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR |
@@ -374,6 +421,37 @@ VkResult VulkanVideoImagePool::Configure(const VulkanDeviceContext*   vkDevCtx,
     if (hasVideoUsage && !pVideoProfile) {
         m_imageCreateInfo.flags |= VK_IMAGE_CREATE_EXTENDED_USAGE_BIT
                                 |  VK_IMAGE_CREATE_VIDEO_PROFILE_INDEPENDENT_BIT_KHR;
+    }
+
+    // STORAGE ON A MULTI-PLANAR FORMAT IS A PER-PLANE-VIEW USAGE, so it has to
+    // be validated against the PLANE format and not against the YCbCr format.
+    //
+    // Neither VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM nor
+    // VK_FORMAT_G8_B8R8_2PLANE_420_UNORM advertises
+    // VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT in either linear or optimal
+    // tiling, while the plane formats VK_FORMAT_R8_UNORM and
+    // VK_FORMAT_R8G8_UNORM advertise it in both. So a create that names
+    // VK_IMAGE_USAGE_STORAGE_BIT on the YCbCr format without
+    // VK_IMAGE_CREATE_EXTENDED_USAGE_BIT is checked against the image format,
+    // vkGetPhysicalDeviceImageFormatProperties2 answers
+    // VK_ERROR_FORMAT_NOT_SUPPORTED, and vkCreateImage is
+    // VUID-VkImageCreateInfo-imageCreateMaxMipLevels-02251.
+    //
+    // WHY ONLY ONE POOL EVER TRIPPED IT. Every pool with a video usage bit
+    // already gets EXTENDED_USAGE from the branch above. The odd one out is
+    // VkVideoEncoder::InitEncoder's LINEAR STAGING pool
+    // (m_linearInputImagePool), which asks for SAMPLED|STORAGE|TRANSFER_SRC and
+    // no video usage at all -- so it got MUTABLE_FORMAT alone and raised 02251
+    // once per pool image at session init (24 per session on the file-input
+    // lane, in both the 2-plane and the 3-plane shape).
+    //
+    // MUTABLE_FORMAT, unconditional above, is the other half this needs:
+    // EXTENDED_USAGE relaxes the usage check to the VIEW format, and it is
+    // MUTABLE_FORMAT that makes an R8/R8G8 per-plane view of a YCbCr image
+    // legal to create at all (VUID-VkImageViewCreateInfo-image-01762).
+    if ((YcbcrVkFormatInfo(imageFormat) != nullptr) &&
+        ((imageUsage & VK_IMAGE_USAGE_STORAGE_BIT) != 0)) {
+        m_imageCreateInfo.flags |= VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
     }
 
     // DRM format modifier pNext chain (must persist through image creation below)
