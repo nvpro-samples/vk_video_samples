@@ -54,6 +54,7 @@ set(VKCODECUTILS_SOURCES
     ${VKCODECUTILS_DIR}/VulkanFenceSet.cpp
     ${VKCODECUTILS_DIR}/Helpers.cpp
     ${VK_DISPATCH_TABLE_SOURCE}
+    ${VK_DISPATCH_TABLE_HEADER}
     ${VKCODECUTILS_DIR}/nvVkFormats.cpp
 )
 
