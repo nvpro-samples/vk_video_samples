@@ -187,19 +187,31 @@ add_definitions(
 # the macro too, in third_party/vulkan_video_samples/BUILD.gn
 # config("private_includes").
 #
-# THIS OPTION CHANGES NOTHING. No source file in the tree reads
-# VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED -- grep returns this file and
-# Chromium's BUILD.gn and nothing else -- so OFF removes a -D that no #ifdef
-# consults, and the filter is compiled and used either way.
+# A COMPILE-TIME switch, and a real one. VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+# is consulted by guards in VkEncoderConfig.h, VkVideoEncoder.{h,cpp},
+# vulkan_video_encoder_ext.cpp and the encoder-ext filter test. OFF drops the
+# preprocess compute filter's code, and with it the EncoderConfig fields
+# filterType and enablePreprocessComputeFilter -- which is what lets an embedder
+# with no GLSL compiler backend build the encoder at all.
 #
-# The control that works is the RUNTIME flag
+# Separately there is a RUNTIME flag of the same name,
 # EncoderConfig::enablePreprocessComputeFilter (default true), which
-# VkVideoEncoder::InitEncoder branches on. Nothing in-tree clears it and no CLI
-# or ext-API exposes it.
+# VkVideoEncoder::InitEncoder branches on. It exists only in an ON build;
+# nothing in-tree clears it and no CLI or ext-API exposes it.
 #
-# The option is kept rather than deleted because wiring the macro up is a real
-# choice: it would let an embedder with no GLSL compiler drop the filter's code
-# entirely. Until some #ifdef reads it, this is documentation, not a switch.
+# Running without the filter is a supported configuration: the input image is
+# then the encode source, so InitEncoder refuses any input format the driver does
+# not advertise for the profile, with VK_ERROR_FORMAT_NOT_SUPPORTED. That refusal
+# is unconditional in an OFF build and gated on the runtime flag in an ON one.
+# Nothing that would need converting is accepted, which includes the default
+# EncoderConfig::input.vkFormat.
+#
+# The four encoder-ext tests that require the filter define the macro on their
+# own targets, so this option does not reach them.
+#
+# OFF IS NOT EXERCISED BY THE DEFAULT BUILD. It was broken -- one use of the
+# runtime flag sat outside the guard declaring it -- until that was fixed and
+# both settings were built. Configure it explicitly after touching filter code.
 option(BUILD_ENCODER_COMPUTE_FILTER
        "Build the encoder's preprocess compute filter (requires a GLSL compiler backend)" ON)
 if(BUILD_ENCODER_COMPUTE_FILTER)

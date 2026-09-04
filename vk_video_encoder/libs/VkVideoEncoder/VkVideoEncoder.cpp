@@ -1623,6 +1623,51 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         }
     }
 
+    // Without the preprocess filter the input image IS the encode source, so ANY
+    // requested format the driver does not advertise for this profile cannot be
+    // encoded -- there is nothing left to convert it. Which formats those are is a
+    // property of the driver and the profile, not of a particular layout or
+    // subsampling; the filter is what makes the rest reachable. Refuse here, where
+    // the caller can still be told why and what to ask for instead.
+    //
+    // Without this check the fallback above substitutes the driver's first
+    // advertised format while frames keep arriving in the requested one, and the
+    // mismatch costs the device rather than the call: VK_ERROR_DEVICE_LOST and a
+    // 0-byte bitstream, several hundred lines from its cause.
+    //
+    // Reachable by default rather than only on an unusual request, which is why it
+    // is checked here at all: EncoderConfig::input.vkFormat defaults to a format no
+    // driver advertises as an encode source.
+    //
+    // Not supporting a format is a legitimate configuration; losing the device
+    // over it is not.
+#ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+    const bool preprocessFilterAvailable =
+        (encoderConfig->enablePreprocessComputeFilter != 0);
+#else
+    // Filter compiled out: EncoderConfig has no enablePreprocessComputeFilter
+    // field to read and there is no filter to turn on, so the refusal below
+    // is unconditional.
+    const bool preprocessFilterAvailable = false;
+#endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+
+    if (!preprocessFilterAvailable &&
+        (requestedInFormat != VK_FORMAT_UNDEFINED) &&
+        (requestedInFormat != m_imageInFormat)) {
+        VkEncPrintfErr("\nInitEncoder Error: encode-source format %d was requested with the "
+                "preprocess compute filter disabled, but the driver does not advertise "
+                "it for this profile. Without the filter the input image is the encode "
+                "source, so no conversion is possible. Either enable the filter "
+                "(EncoderConfig::enablePreprocessComputeFilter) or supply one of the "
+                "%u advertised format(s):",
+                (int)requestedInFormat, formatCount);
+        for (uint32_t fmtIdx = 0; fmtIdx < formatCount; fmtIdx++) {
+            VkEncPrintfErr(" %d", (int)supportedInFormats[fmtIdx]);
+        }
+        VkEncPrintfErr("\n");
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
+
     // State the encode-source format that was actually chosen. Without this the choice is
     // unobservable from outside: a packed and a 2-plane 4:4:4 source both produce a
     // yuv444p bitstream, so a --preferPackedYcbcr that silently did nothing would look
