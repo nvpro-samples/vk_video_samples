@@ -17,7 +17,7 @@
 #include "VkVideoGopStructure.h"
 #include <limits>
 
-VkVideoGopStructure::VkVideoGopStructure(uint8_t gopFrameCount,
+VkVideoGopStructure::VkVideoGopStructure(uint32_t gopFrameCount,
                                          int32_t idrPeriod,
                                          uint8_t consecutiveBFrameCount,
                                          uint8_t temporalLayerCount,

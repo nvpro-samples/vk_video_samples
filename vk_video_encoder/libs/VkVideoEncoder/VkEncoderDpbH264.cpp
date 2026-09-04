@@ -147,7 +147,19 @@ int32_t VkEncDpbH264::DpbSequenceStart(int32_t userDpbSize)
 
     DpbDeinit();
 
-    m_max_dpb_size = userDpbSize;
+    // Clamp to the manager's structural capacity: m_DPB[MAX_DPB_SLOTS + 1]
+    // holds 16 countable entries plus the current-picture scratch entry.
+    // Callers pass the Vulkan session slot count, which at H.264 Level >= 5.0
+    // is 17 (16 refs + 1 setup). Storing 17 unclamped makes IsDpbFull() --
+    // which counts occupancy over i < MAX_DPB_SLOTS -- compare 16 countable
+    // entries against a threshold of 17: the DPB never reports full, H.264
+    // Annex-C eviction never runs, and the short-term reference set freezes at
+    // the first 16 pictures, so emitted streams predict from pictures a
+    // conforming decoder's sliding window has already evicted (progressive
+    // drift, recon-clean and decode-corrupt). Mirrors the H.265 path
+    // (VkEncDpbH265::DpbSequenceStart), which clamps to
+    // STD_VIDEO_H265_MAX_DPB_SIZE.
+    m_max_dpb_size = (userDpbSize > MAX_DPB_SLOTS) ? MAX_DPB_SLOTS : userDpbSize;
 
     for (i = 0; i < MAX_DPB_SLOTS + 1; i++) {
         m_DPB[i] = DpbEntryH264();
