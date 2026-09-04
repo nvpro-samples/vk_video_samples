@@ -15,6 +15,7 @@
 */
 
 #include <atomic>
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include "VkCodecUtils/HelpersDispatchTable.h"
 #include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
@@ -336,7 +337,7 @@ VkResult VkImageResource::CreateExportable(const VulkanDeviceContext* vkDevCtx,
     do {
         result = vkDevCtx->CreateImage(device, &modifiedImageInfo, nullptr, &image);
         if (result != VK_SUCCESS) {
-            std::cerr << "[VkImageResource] CreateImage FAILED: result=" << result
+            VkEncErr() << "[VkImageResource] CreateImage FAILED: result=" << result
                       << " format=" << modifiedImageInfo.format
                       << " extent=" << modifiedImageInfo.extent.width << "x" << modifiedImageInfo.extent.height
                       << " tiling=" << modifiedImageInfo.tiling
@@ -362,7 +363,7 @@ VkResult VkImageResource::CreateExportable(const VulkanDeviceContext* vkDevCtx,
                     actualDrmModifier = modProps.drmFormatModifier;
                     // Warn if the driver returns DRM_FORMAT_MOD_INVALID — indicates a driver bug
                     if (actualDrmModifier == ((1ULL << 56) - 1)) {
-                        std::cerr << "[VkImageResource] WARNING: vkGetImageDrmFormatModifierPropertiesEXT "
+                        VkEncErr() << "[VkImageResource] WARNING: vkGetImageDrmFormatModifierPropertiesEXT "
                                   << "returned DRM_FORMAT_MOD_INVALID — using requested modifier 0x"
                                   << std::hex << drmFormatModifier << std::dec << std::endl;
                         actualDrmModifier = drmFormatModifier;
@@ -659,6 +660,28 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
     usageCreateInfo.pNext = nullptr;
     usageCreateInfo.usage = planeUsageOverride;
 
+    // A view may only be created over an image whose usage includes at least
+    // one view-compatible bit (VUID-VkImageViewCreateInfo-image-04441).
+    // TRANSFER_SRC/DST are NOT among them, so a transfer-only image -- e.g. a
+    // staging copy source supplied by a caller, consumed solely through its
+    // raw VkImage by vkCmdCopyImage and barriers -- gets no view at all
+    // rather than an invalid one. Images this library allocates itself always
+    // carry a view-compatible usage, which is why this never fired before
+    // callers began handing in externally created images.
+    static const VkImageUsageFlags kViewCompatibleUsage =
+        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+        VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT |
+        VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT |
+        VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
+        VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR |
+        VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR |
+        VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR;
+    if ((imageCreateInfo.usage & kViewCompatibleUsage) == 0) {
+        skipCombinedView = true;
+    }
+
     if (!skipCombinedView) {
         if (mpInfo) {
             VkImageUsageFlags combinedUsage = imageCreateInfo.usage;
@@ -707,8 +730,19 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
         }
         planeUsageCreateInfo.pNext = nullptr;
 
+        // A per-plane view reinterprets the image as a different format
+        // (R8, R8G8, ...), which the image must have been created mutable to
+        // permit (VUID-VkImageViewCreateInfo-image-01762). For an image this
+        // library allocated that always holds; for one handed in by a caller
+        // -- a dma_buf import, where the EXPORTER chose the create flags --
+        // it usually does not, and requesting plane views would be invalid.
+        // Skip them and keep the combined view, which is all the encode path
+        // reads anyway.
+        const bool planeViewsPermitted =
+            (imageCreateInfo.flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) != 0;
+
         // Skip per-plane views when usage is zero (video-only images like DPB)
-        if (planeUsageCreateInfo.usage != 0) {
+        if ((planeUsageCreateInfo.usage != 0) && planeViewsPermitted) {
             viewInfo.pNext = &planeUsageCreateInfo;
 
             // Per-plane views are bound as storage images to the YCbCr compute filter,
@@ -881,8 +915,21 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
     }
     numViews++;
     
-    // Now create per-plane views for compute storage
-    if (mpInfo) {
+    // Now create per-plane views for compute storage.
+    //
+    // A per-plane view reinterprets the image as a different format (R8,
+    // R8G8, ...), which the image must have been created MUTABLE_FORMAT to
+    // permit (VUID-VkImageViewCreateInfo-image-01762). For an image this
+    // library allocated that always holds; for one handed in by a caller --
+    // a dma_buf import, where the EXPORTER chose the create flags -- it may
+    // not, and this overload used to assume it did. Test the flag, exactly
+    // as the planeUsageOverride overload above already does: the rule
+    // belongs in Create(), where it holds for every caller, rather than in
+    // a private entry point each caller has to remember to pick.
+    const bool planeViewsPermitted =
+        (imageResource->GetImageCreateInfo().flags &
+         VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) != 0;
+    if (mpInfo && planeViewsPermitted) {
         viewInfo.pNext = nullptr;
         // These views are bound as storage images to the YCbCr compute filter, whose
         // generated GLSL declares them as image2DArray and addresses them with

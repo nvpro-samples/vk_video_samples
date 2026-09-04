@@ -41,6 +41,15 @@ class NvPerFrameDecodeResources : public vkPicBuffBase {
 
     struct ImageViewState {
         VkImageLayout                         currentLayerLayout;
+        // The image itself, tracked separately from the view. A view is not
+        // creatable over every image this pool allocates: a transfer-only
+        // linear output image carries just VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        // which is not view-compatible (VUID-VkImageViewCreateInfo-image-04441),
+        // so VkImageResourceView::Create legitimately produces no view for it.
+        // Such an image is still perfectly usable -- vkCmdCopyImage and image
+        // barriers take the raw VkImage -- so existence must be keyed on the
+        // IMAGE, not on the view, or the resource can never be handed out.
+        VkSharedBaseObj<VkImageResource>      imageResource;
         VkSharedBaseObj<VkImageResourceView>  view;
         VkSharedBaseObj<VkImageResourceView>  singleLevelView;
         uint32_t                              recreateImage : 1;
@@ -106,7 +115,8 @@ public:
             return false;
         }
 
-        return (!!m_imageViewState[imageTypeIdx].view && (m_imageViewState[imageTypeIdx].view->GetImageView() != VK_NULL_HANDLE));
+        return (!!m_imageViewState[imageTypeIdx].imageResource &&
+                (m_imageViewState[imageTypeIdx].imageResource->GetImage() != VK_NULL_HANDLE));
     }
 
     void InvalidateImageLayout(uint8_t imageTypeIdx) {
@@ -129,10 +139,12 @@ public:
         }
 
         if (pPictureResourceInfo) {
-            pPictureResourceInfo->image = m_imageViewState[imageTypeIdx].view->GetImageResource()->GetImage();
-            pPictureResourceInfo->imageFormat = m_imageViewState[imageTypeIdx].view->GetImageResource()->GetImageCreateInfo().format;
+            pPictureResourceInfo->image = m_imageViewState[imageTypeIdx].imageResource->GetImage();
+            pPictureResourceInfo->imageFormat = m_imageViewState[imageTypeIdx].imageResource->GetImageCreateInfo().format;
             pPictureResourceInfo->currentImageLayout = m_imageViewState[imageTypeIdx].currentLayerLayout;
-            pPictureResourceInfo->baseArrayLayer = m_imageViewState[imageTypeIdx].view->GetImageSubresourceRange().baseArrayLayer;
+            // A viewless image is single-layer by construction; layer 0 is the only one.
+            pPictureResourceInfo->baseArrayLayer = m_imageViewState[imageTypeIdx].view ?
+                    m_imageViewState[imageTypeIdx].view->GetImageSubresourceRange().baseArrayLayer : 0;
         }
 
         if (VK_IMAGE_LAYOUT_MAX_ENUM != newImageLayout) {
@@ -140,7 +152,10 @@ public:
         }
 
         if (pPictureResource) {
-            pPictureResource->imageViewBinding = m_imageViewState[imageTypeIdx].view->GetImageView();
+            // No view for a transfer-only image; the binding stays null and the
+            // resource is consumed through its raw VkImage.
+            pPictureResource->imageViewBinding = m_imageViewState[imageTypeIdx].view ?
+                    m_imageViewState[imageTypeIdx].view->GetImageView() : VK_NULL_HANDLE;
         }
 
         return true;
@@ -904,6 +919,11 @@ VkResult NvPerFrameDecodeResources::CreateImage( const VulkanDeviceContext* vkDe
             imageResource = imageArrayParent;
         }
 
+        // Record the image before any view is attempted. The view is optional
+        // (see ImageViewState::imageResource); the image is what makes the
+        // resource exist.
+        m_imageViewState[pImageSpec->imageTypeIdx].imageResource = imageResource;
+
         if (!imageViewArrayParent) {
 
             uint32_t baseArrayLayer = imageArrayParent ? imageIndex : 0;
@@ -994,6 +1014,7 @@ void NvPerFrameDecodeResources::Deinit(const VulkanDeviceContext* vkDevCtx)
     for (uint32_t imageTypeIdx = 0; imageTypeIdx < DecodeFrameBufferIf::MAX_PER_FRAME_IMAGE_TYPES; imageTypeIdx++) {
 
         m_imageViewState[imageTypeIdx].view = nullptr;
+        m_imageViewState[imageTypeIdx].imageResource = nullptr;
         m_imageViewState[imageTypeIdx].singleLevelView = nullptr;
     }
 
