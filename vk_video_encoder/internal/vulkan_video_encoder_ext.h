@@ -17,7 +17,7 @@
 #ifndef _VULKAN_VIDEO_ENCODER_EXT_H_
 #define _VULKAN_VIDEO_ENCODER_EXT_H_
 
-#include "vulkan_video_encoder.h"
+#include "vulkan_video_encoder_argv.h"
 #include <vulkan/vulkan.h>
 
 //=============================================================================
