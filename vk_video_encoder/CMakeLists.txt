@@ -599,7 +599,7 @@ add_subdirectory(test/encoder-ext-reconfigure)
 # SKIP, exit 77) on a host with no encode-capable GPU.
 # LINUX-ONLY TESTS, guarded individually below.
 #
-# Each reads a POSIX facility as the SUBJECT of the test, not as a
+# Each of these reads a POSIX facility as the SUBJECT of the test, not as a
 # convenience: dlopen for loader adoption, /proc fd enumeration and dirent for
 # dma-buf fd ownership, unistd for the fd lifetime assertions. There is no
 # Windows equivalent to assert about, so they are Linux-only by construction
@@ -715,6 +715,19 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_subdirectory(test/encoder-ext-format-matrix)
 endif()
 add_subdirectory(test/encoder-ext-input-format-query)
+# The v3 interface, driven the way a host drives it: Result and Expected
+# semantics, role discovery, the aliasing reference that keeps a session alive
+# behind a role, and the two configuration rules the library owns -- which
+# input path a format resolves to, and which codecs carry HDR metadata. The
+# checks that need no device always run; the rest report SKIP without an
+# encode-capable GPU rather than passing vacuously.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_subdirectory(test/encoder-interface)
+endif()
+add_subdirectory(test/encoder-drain)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_subdirectory(test/encoder-release-fence)
+endif()
 
 # The ENCODE half of the same matrix: known primaries pattern in, real frames
 # submitted, bitstream written out for an INDEPENDENT decoder. A 3-plane row

@@ -604,14 +604,30 @@ if(BUILD_ENCODER)
         add_subdirectory(vk_video_encoder/test/encoder-ext-reconfigure)
         # Real-device coverage of the per-frame RELEASE fence export. Skips
         # (CTest SKIP, exit 77) on a host with no encode-capable GPU.
-        add_subdirectory(vk_video_encoder/test/encoder-ext-release-fence)
+        # LINUX-ONLY TESTS, guarded individually below.
+        #
+        # Each reads a POSIX facility as the SUBJECT of the test, not as a
+        # convenience: dlopen for loader adoption, /proc fd enumeration and
+        # dirent for dma-buf fd ownership, unistd for the fd lifetime
+        # assertions. There is no Windows equivalent to assert about, so they
+        # are Linux-only by construction rather than merely unported.
+        #
+        # THE SAME LIST IS GUARDED IN vk_video_encoder/CMakeLists.txt. Both
+        # files register these directories -- this one is what a top-level
+        # configure uses -- so a guard added to only one of them is no guard
+        # at all.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_encoder/test/encoder-ext-release-fence)
+        endif()
         # Real-device coverage of the per-frame ACQUIRE fence's fd OWNERSHIP:
         # that every refusal exit consumes the caller's sync_fd, and that the
         # success path still consumes it exactly once. Needs a GPU for the
         # same reason its sibling does -- a real sync_fd needs a real queue
         # signal to export from, and the success case needs a real import.
         # Skips (CTest SKIP, exit 77) without one.
-        add_subdirectory(vk_video_encoder/test/encoder-ext-acquire-fd)
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_encoder/test/encoder-ext-acquire-fd)
+        endif()
         # Device-free coverage of the input-format taxonomy (which rung of the
         # adaptation ladder a given format needs), of the preprocess-conversion
         # decision the binder derives from it, and of the transfer-function
@@ -628,7 +644,9 @@ if(BUILD_ENCODER)
         # the test's own CMakeLists.txt for why leaving WILL_FAIL on would
         # have reported the working fix as a failure. Skips (CTest SKIP,
         # exit 77) without a GPU.
-        add_subdirectory(vk_video_encoder/test/encoder-ext-drain-assembly)
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_encoder/test/encoder-ext-drain-assembly)
+        endif()
         # Device-free coverage of the CONTRACT the test above rests on: that
         # VkVideoEncoder::AssembleBitstreamData -- the synchronous assembly
         # path -- publishes NO completion record, in either output mode. Seven
@@ -652,7 +670,9 @@ if(BUILD_ENCODER)
         # runs the identical case against the non-truncating vector assembly,
         # which is what makes a green subject arm distinguishable from a test
         # that cannot fail. Skips (exit 77) without an encode-capable GPU.
-        add_subdirectory(vk_video_encoder/test/encoder-ext-direct-wait-capacity)
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_encoder/test/encoder-ext-direct-wait-capacity)
+        endif()
         # Real-device coverage of the ADOPT-mode SESSION: the embedder
         # owns the VkInstance and names the VkPhysicalDevice, and the
         # LIBRARY creates its own VkDevice on them and encodes. That
@@ -666,7 +686,9 @@ if(BUILD_ENCODER)
         # the host, the physical-device pin, and config.validate over a
         # borrowed instance. Skips (exit 77) without an encode-capable
         # GPU.
-        add_subdirectory(vk_video_encoder/test/encoder-ext-adopt-device)
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_encoder/test/encoder-ext-adopt-device)
+        endif()
         # Real-device coverage of INPUT RESIDENCY on an OS-HANDLE
         # registration. Every other handleType under
         # vk_video_encoder/test was ..._VK_IMAGE -- eight registration sites,
@@ -696,7 +718,9 @@ if(BUILD_ENCODER)
         # disagreed, so the registration was corrected rather than the
         # measurement explained away; the suite's own CMakeLists records the
         # reasoning. Skips (exit 77) without an encode-capable GPU.
-        add_subdirectory(vk_video_encoder/test/encoder-ext-input-residency)
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_encoder/test/encoder-ext-input-residency)
+        endif()
         # Real-device INPUT FORMAT MATRIX. VkEncClassifyInputFormat names
         # nine formats; whether one REGISTERS, and onto which input path,
         # is a fact about a device, a session and a descriptor that the
@@ -708,8 +732,23 @@ if(BUILD_ENCODER)
         # resolved to STAGED. Each arm also runs a NEGATIVE control with
         # its own declaration withheld, so a fix that merely deleted a
         # refusal fails here. Skips (exit 77) without an encode-capable GPU.
-        add_subdirectory(vk_video_encoder/test/encoder-ext-format-matrix)
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_encoder/test/encoder-ext-format-matrix)
+        endif()
         add_subdirectory(vk_video_encoder/test/encoder-ext-input-format-query)
+        # The v3 interface, driven the way a host drives it: Result and Expected
+        # semantics, role discovery, the aliasing reference that keeps a session alive
+        # behind a role, and the two configuration rules the library owns -- which
+        # input path a format resolves to, and which codecs carry HDR metadata. The
+        # checks that need no device always run; the rest report SKIP without an
+        # encode-capable GPU rather than passing vacuously.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_encoder/test/encoder-interface)
+        endif()
+        add_subdirectory(vk_video_encoder/test/encoder-drain)
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_encoder/test/encoder-release-fence)
+        endif()
 
         # The ENCODE half of the same matrix. The routing test above proves a
         # descriptor registers and a slot resolves; it contains no encode call
@@ -717,7 +756,9 @@ if(BUILD_ENCODER)
         # submits real frames and writes the bitstream out for an INDEPENDENT
         # decoder to judge -- and abandons a 3-plane row that does not resolve
         # to FILTER before submitting, because staging one is a measured hang.
-        add_subdirectory(vk_video_encoder/test/encoder-ext-format-encode)
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_encoder/test/encoder-ext-format-encode)
+        endif()
 
         # Real-device coverage of the NVIDIA 615.06 dma-buf IMPORT-ORDINAL
         # GUARD, which shipped with a coverage floor of exactly zero: no
