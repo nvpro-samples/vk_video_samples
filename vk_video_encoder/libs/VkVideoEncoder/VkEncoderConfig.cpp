@@ -15,6 +15,7 @@
  */
 
 #include "VkVideoEncoder/VkEncoderConfig.h"
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
@@ -144,8 +145,7 @@ namespace {
 
 static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
 {
-    fprintf(stderr,
-    "Usage : EncodeApp \n\
+    VkEncPrintfErr("Usage : EncodeApp \n\
     -h, --help                      provides help\n\
     -i, --input                     .yuv Input YUV File Name (YUV420p 8bpp only) \n\
     -o, --output                    .264/5,ivf Output H264/5/AV1 File Name \n\
@@ -246,7 +246,7 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
                                         being available after every `intraRefreshCycleDuration + index` frames.\n");
 
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
-    fprintf(stderr, "\
+    VkEncPrintfErr("\
     --spatialAQStrength             <float>   : Spatial AQ strength in range [-1.0, 1.0]\n\
                                         < -1.0 = disabled (default: -2.0)\n\
                                         0.0 = default/neutral strength\n\
@@ -264,18 +264,17 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
 #endif // NV_AQ_GPU_LIB_SUPPORTED
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR)) {
-        fprintf(stderr, "\nH264 specific arguments:\n\
+        VkEncPrintfErr("\nH264 specific arguments:\n\
         --slices                        <integer> : Number of slices to divide the picture into\n");
     }
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR)) {
-        fprintf(stderr, "\nH265 specific arguments:\n\
+        VkEncPrintfErr("\nH265 specific arguments:\n\
         --slices                        <integer> : Number of slices to divide the picture into\n");
     }
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR)) {
-        fprintf(stderr,
-                "\nAV1 specific arguments:\n\
+        VkEncPrintfErr("\nAV1 specific arguments:\n\
         --tiles                         Enable tile configuration\n\
         --params                        Enable custom tile configuration when followed by --tiles option\n\
                                         Otherwise default tile configuration will be used\n\
@@ -355,7 +354,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         // --encoderConfig: load JSON first (base config); CLI args below override. Precedence: JSON then CLI.
         if (args[i] == "--encoderConfig") {
             if (i + 1 >= argc) {
-                fprintf(stderr, "--encoderConfig requires a path\n");
+                VkEncPrintfErr("--encoderConfig requires a path\n");
                 return -1;
             }
             if (LoadFromJsonFile(args[i + 1].c_str()) != 0) return -1;
@@ -364,7 +363,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         }
         if (args[i] == "-i" || args[i] == "--input") {
             if (++i >= argc) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             size_t fileSize = inputFileHandler.SetFileName(args[i].c_str());
@@ -373,12 +372,12 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             }
             if (inputFileHandler.ParseY4mHeader(&input.width, &input.height, &frameRateNumerator, &frameRateDenominator)) {
                 if (verbose) {
-                    printf("Y4M file detected: width %d height %d\n", input.width, input.height);
+                    VkEncPrintfOut("Y4M file detected: width %d height %d\n", input.width, input.height);
                 }
             }
         } else if (args[i] == "-o" || args[i] == "--output") {
             if (++i >= argc) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             size_t fileSize = outputFileHandler.SetFileName(args[i].c_str());
@@ -416,11 +415,11 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 codec = VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR;
             } else {
                 // Invalid codec
-                fprintf(stderr, "Invalid codec: %s\n", codec_.c_str());
+                VkEncPrintfErr("Invalid codec: %s\n", codec_.c_str());
                 return -1;
             }
             if (verbose) {
-                printf("Selected codec: %s\n", codec_.c_str());
+                VkEncPrintfOut("Selected codec: %s\n", codec_.c_str());
             }
             i++; // Skip the next argument since it's the codec value
         } else if (args[i] == "--dpbMode") {
@@ -431,33 +430,33 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 useDpbArray = true;
             } else {
                 // Invalid codec
-                fprintf(stderr, "Invalid DPB mode: %s\n", dpbMode.c_str());
+                VkEncPrintfErr("Invalid DPB mode: %s\n", dpbMode.c_str());
                 return -1;
             }
             if (verbose) {
-                printf("Selected DPB mode: %s\n", dpbMode.c_str());
+                VkEncPrintfOut("Selected DPB mode: %s\n", dpbMode.c_str());
             }
             i++; // Skip the next argument since it's the dpbMode value
         } else if (args[i] == "--inputWidth") {
             if ((++i >= argc) || !parseUint(args[i], input.width)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--inputHeight") {
             if ((++i >= argc) || !parseUint(args[i], input.height)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--inputNumPlanes") {
             if ((++i >= argc) || !parseUint(args[i], input.numPlanes)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             // 1 = packed/interleaved single plane (AYUV, Y410 -- 4:4:4 only),
             // 2 = semi-planar, 3 = planar.
             if ((input.numPlanes < 1) || (input.numPlanes > 3)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
-                fprintf(stderr, "Supported number of planes are 1 (packed 4:4:4), 2 or 3\n");
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("Supported number of planes are 1 (packed 4:4:4), 2 or 3\n");
                 // Reject rather than merely diagnose: an out-of-range plane count that
                 // reaches VerifyInputs indexes planeLayouts[] past its end.
                 return -1;
@@ -474,26 +473,26 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 input.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
             } else {
                 // Invalid chromeSubsampling
-                fprintf(stderr, "Invalid chromeSubsampling: %s\nValid string values are 400, 420, 422, 444 \n", chromeSubsampling.c_str());
+                VkEncPrintfErr("Invalid chromeSubsampling: %s\nValid string values are 400, 420, 422, 444 \n", chromeSubsampling.c_str());
                 return -1;
             }
             i++; // Skip the next argument since it's the chromeSubsampling value
         }  else if (args[i] == "--inputLumaPlanePitch") {
             uint64_t rowPitch = 0;
             if ((++i >= argc) || !parseUint(args[i], rowPitch)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             input.planeLayouts[0].rowPitch = rowPitch;
         }  else if (args[i] == "--inputBpp") {
             if ((++i >= argc) || !parseUint(args[i], input.bpp)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         }  else if (args[i] == "--msbShift") {
             uint8_t msbShiftVal = 0;
             if ((++i >= argc) || !parseUint(args[i], msbShiftVal)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             input.msbShift = static_cast<int8_t>(msbShiftVal);
@@ -624,24 +623,24 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 lastFrameType = VkVideoGopStructure::FRAME_TYPE_I;
             } else {
                 // Invalid frameTypeName
-                fprintf(stderr, "Invalid frameTypeName: %s\n", frameTypeName.c_str());
+                VkEncPrintfErr("Invalid frameTypeName: %s\n", frameTypeName.c_str());
                 return -1;
             }
             i++; // Skip the next argument since it's the frameTypeName value
             gopStructure.SetLastFrameType(lastFrameType);
             if (verbose) {
-                printf("Selected frameTypeName: %s\n", gopStructure.GetFrameTypeName(lastFrameType));
+                VkEncPrintfOut("Selected frameTypeName: %s\n", gopStructure.GetFrameTypeName(lastFrameType));
             }
         } else if (args[i] == "--closedGop") {
             gopStructure.SetClosedGop();
         } else if (args[i] == "--qualityLevel") {
             if (++i >= argc || !parseUint(args[i], qualityLevel)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--usageHints") {
             if (++i >= argc) {
-                fprintf(stderr, "Invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("Invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             std::string encodeUsageStr = argv[i];
@@ -657,12 +656,12 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             } else if (encodeUsageStr == "conferencing") {
                 encodeUsageHints = VK_VIDEO_ENCODE_USAGE_CONFERENCING_BIT_KHR;
             } else {
-                fprintf(stderr, "Invalid encodeUsage: %s\n", encodeUsageStr.c_str());
+                VkEncPrintfErr("Invalid encodeUsage: %s\n", encodeUsageStr.c_str());
                 return -1;
             }
         } else if (args[i] == "--contentHints") {
             if (++i >= argc) {
-                fprintf(stderr, "Invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("Invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             std::string encodeContentStr = argv[i];
@@ -676,12 +675,12 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             } else if (encodeContentStr == "rendered") {
                 encodeContentHints = VK_VIDEO_ENCODE_CONTENT_RENDERED_BIT_KHR;
             } else {
-                fprintf(stderr, "Invalid encodeContent: %s\n", encodeContentStr.c_str());
+                VkEncPrintfErr("Invalid encodeContent: %s\n", encodeContentStr.c_str());
                 return -1;
             }
         } else if (args[i] == "--tuningMode") {
             if (++i >= argc) {
-                fprintf(stderr, "Invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("Invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             std::string tuningModeStr = argv[i];
@@ -697,12 +696,12 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             } else if (tuningModeStr == "lossless") {
                  tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_LOSSLESS_KHR;
             } else {
-                fprintf(stderr, "Invalid tuningMode: %s\n", tuningModeStr.c_str());
+                VkEncPrintfErr("Invalid tuningMode: %s\n", tuningModeStr.c_str());
                 return -1;
             }
         } else if (args[i] == "--rateControlMode") {
             if (++i >= argc) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i-1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i-1].c_str());
                 return -1;
             }
             std::string rc = args[i];
@@ -716,38 +715,38 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 rateControlMode = VK_VIDEO_ENCODE_RATE_CONTROL_MODE_VBR_BIT_KHR;
             } else {
                 // Invalid rateControlMode
-                fprintf(stderr, "Invalid rateControlMode: %s\n", rc.c_str());
+                VkEncPrintfErr("Invalid rateControlMode: %s\n", rc.c_str());
                 return -1;
             }
         }
         else if (args[i] == "--averageBitrate") {
             if (++i >= argc || !parseUint(args[i], averageBitrate)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--maxBitrate") {
                 if (++i >= argc || !parseUint(args[i], maxBitrate)) {
-                    fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                    VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                     return -1;
                 }
         } else if (args[i] == "--vbvBufferSize") {
             if (++i >= argc || !parseUint(args[i], vbvBufferSize)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--qpI") {
                 if (++i >= argc || !parseUint(args[i], constQp.qpIntra)) {
-                    fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                    VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                     return -1;
                 }
         } else if (args[i] == "--qpP") {
                 if (++i >= argc || !parseUint(args[i], constQp.qpInterP)) {
-                    fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                    VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                     return -1;
                 }
         } else if (args[i] == "--qpB") {
                 if (++i >= argc || !parseUint(args[i], constQp.qpInterB)) {
-                    fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                    VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                     return -1;
                 }
         } else if (args[i] == "--disableEncodeParameterOptimizations") {
@@ -755,31 +754,31 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         } else if (args[i] == "--drmFormatModifierIndex") {
             int32_t idx = -1;
             if ((++i >= argc) || !parseUint(args[i], idx)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             drmFormatModifierIndex = idx;
         } else if (args[i] == "--deviceID") {
             uint32_t deviceIdVal = 0;
             if ((++i >= argc) || !parseHex(args[i], deviceIdVal)) {
-                 fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                 VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                  return -1;
              }
             deviceId = static_cast<int32_t>(deviceIdVal);
         } else if (args[i] == "--deviceUuid") {
             if (++i >= argc) {
-               fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+               VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                return -1;
             }
             size_t size = deviceUUID.StringToUUID(args[i].c_str());
             if (size != VK_UUID_SIZE) {
-                fprintf(stderr,"Invalid deviceUuid format used: %s with size: %zu."
+                VkEncPrintfErr("Invalid deviceUuid format used: %s with size: %zu."
                                "deviceUuid must be represented by 16 hex (32 bytes) values.", args[i].c_str(), args[i].length());
                 return -1;
             }
         } else if (args[i] == "--qpMap") {
             if (++i >= argc) {
-                fprintf(stderr, "Invalid paramter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("Invalid paramter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             if (args[i] == "deltaQpMap") {
@@ -787,13 +786,13 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             } else if (args[i] == "emphasisMap") {
                 qpMapMode = EMPHASIS_MAP;
             } else {
-                fprintf(stderr, "Invalid quntization map mode %s\n", args[i].c_str());
+                VkEncPrintfErr("Invalid quntization map mode %s\n", args[i].c_str());
                 return -1;
             }
             enableQpMap = true;
         } else if (args[i] == "--qpMapFileName") {
             if (++i >= argc) {
-                fprintf(stderr, "Invaid paramter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("Invaid paramter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             size_t fileSize = qpMapFileHandler.SetFileName(args[i].c_str());
@@ -808,34 +807,34 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             asyncAssembly = false;
         } else if (args[i] == "--assemblyThreads") {
             if (++i >= argc) {
-                fprintf(stderr, "Invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("Invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             uint32_t val = 0;
             if (!parseUint(args[i], val) || val == 0 || val > 16) {
-                fprintf(stderr, "Invalid value for --assemblyThreads (1..16)\n");
+                VkEncPrintfErr("Invalid value for --assemblyThreads (1..16)\n");
                 return -1;
             }
             assemblyThreadCount = val;
         } else if (args[i] == "--testOutOfOrderRecording") {
             // Testing only - don't use this feature for production!
-            fprintf(stdout, "Warning: %s should only be used for testing!\n", args[i].c_str());
+            VkEncPrintfOut("Warning: %s should only be used for testing!\n", args[i].c_str());
             enableOutOfOrderRecording = true;
         } else if (args[i] == "--enableDebugEncoderInputDisplay") {
-            fprintf(stdout, "Warning: %s Enabling the display for testing encoder input frames!\n", args[i].c_str());
+            VkEncPrintfOut("Warning: %s Enabling the display for testing encoder input frames!\n", args[i].c_str());
             enableFramePresent = true;
         } else if (args[i] == "--intraRefreshCycleDuration") {
             if (++i >= argc || !parseUint(args[i], intraRefreshCycleDuration)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             gopStructure.SetIntraRefreshCycleDuration(intraRefreshCycleDuration);
             if (verbose) {
-                printf("Selected intraRefreshCycleDuration: %d\n", intraRefreshCycleDuration);
+                VkEncPrintfOut("Selected intraRefreshCycleDuration: %d\n", intraRefreshCycleDuration);
             }
         } else if (args[i] == "--intraRefreshMode") {
             if (++i >= argc) {
-                fprintf(stderr, "Invalid paramter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("Invalid paramter for %s\n", args[i - 1].c_str());
                 return -1;
             }
 
@@ -848,34 +847,34 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             } else if (args[i] == "blocks") {
                 intraRefreshMode = REFRESH_BLOCKS;
             } else {
-                fprintf(stderr, "Invalid intra-refresh mode %s\n", args[i].c_str());
+                VkEncPrintfErr("Invalid intra-refresh mode %s\n", args[i].c_str());
                 return -1;
             }
         } else if (args[i] == "--testIntraRefreshMidway") {
             // Testing only - don't use this feature for production!
-            fprintf(stdout, "Warning: %s should only be used for testing!\n", args[i].c_str());
+            VkEncPrintfOut("Warning: %s should only be used for testing!\n", args[i].c_str());
             if (++i >= argc || !parseUint(args[i], intraRefreshCycleRestartIndex)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             gopStructure.SetIntraRefreshCycleRestartIndex(intraRefreshCycleRestartIndex);
         } else if (args[i] == "--testSkipIntraRefreshStart") {
             // Testing only - don't use this feature for production!
-            fprintf(stdout, "Warning: %s should only be used for testing!\n", args[i].c_str());
+            VkEncPrintfOut("Warning: %s should only be used for testing!\n", args[i].c_str());
             if (++i >= argc || !parseUint(args[i], intraRefreshSkippedStartIndex)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             gopStructure.SetIntraRefreshSkippedStartIndex(intraRefreshSkippedStartIndex);
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
         } else if (args[i] == "--spatialAQStrength") {
             if (++i >= argc || !parseFloat(args[i], spatialAQStrength)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             // Valid range is [-1.0, 1.0], but values < -1.0 mean disabled
             if (spatialAQStrength > 1.0f) {
-                fprintf(stderr, "spatialAQStrength must be <= 1.0 (use < -1.0 to disable)\n");
+                VkEncPrintfErr("spatialAQStrength must be <= 1.0 (use < -1.0 to disable)\n");
                 return -1;
             }
             // Only enable if value is in valid range [-1.0, 1.0]
@@ -886,12 +885,12 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             }
         } else if (args[i] == "--temporalAQStrength") {
             if (++i >= argc || !parseFloat(args[i], temporalAQStrength)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             // Valid range is [-1.0, 1.0], but values < -1.0 mean disabled
             if (temporalAQStrength > 1.0f) {
-                fprintf(stderr, "temporalAQStrength must be <= 1.0 (use < -1.0 to disable)\n");
+                VkEncPrintfErr("temporalAQStrength must be <= 1.0 (use < -1.0 to disable)\n");
                 return -1;
             }
             // Only enable if value is in valid range [-1.0, 1.0]
@@ -902,7 +901,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             }
         } else if (args[i] == "--aqDumpDir") {
             if (++i >= argc) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             aqDumpDir = args[i];
@@ -911,11 +910,11 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             enablePsnrMetrics = 1;
         } else if (args[i] == "--crcInit") {
             if (++i >= argc) {
-                fprintf(stderr, "--crcInit requires a comma-separated list of uint32 values\n");
+                VkEncPrintfErr("--crcInit requires a comma-separated list of uint32 values\n");
                 return -1;
             }
             if (!parseCommaSeparatedUint32s(args[i], crcInitValue)) {
-                fprintf(stderr, "Invalid --crcInit value (use comma-separated decimal or 0x hex uint32s): %s\n",
+                VkEncPrintfErr("Invalid --crcInit value (use comma-separated decimal or 0x hex uint32s): %s\n",
                         args[i].c_str());
                 return -1;
             }
@@ -961,12 +960,12 @@ int EncoderConfig::FinalizeConfig(const EncoderConfig::DeviceCapabilities* devic
         // frameCount stays at the value from --numFrames (or default)
     } else {
         if (input.width == 0) {
-            fprintf(stderr, "The input width must be specified\n");
+            VkEncPrintfErr("The input width must be specified\n");
             return -1;
         }
 
         if (input.height == 0) {
-            fprintf(stderr, "The input height must specified\n");
+            VkEncPrintfErr("The input height must specified\n");
             return -1;
         }
 
@@ -977,7 +976,7 @@ int EncoderConfig::FinalizeConfig(const EncoderConfig::DeviceCapabilities* devic
 
     if (startFrame > 0) {
         if (startFrame >= frameCount) {
-            std::cout << "startFrame " << startFrame
+            VkEncOut() << "startFrame " << startFrame
                       <<  " must be inferior to input file max frame count of "
                       << frameCount << ". Reseting startFrame to 0." << std::endl;
             startFrame = 0;
@@ -990,12 +989,12 @@ int EncoderConfig::FinalizeConfig(const EncoderConfig::DeviceCapabilities* devic
         // File-based input: clamp numFrames to actual file frame count
         if ((repeatInputFrames == false) &&
                 ((numFrames == 0) || (numFrames > (frameCount - startFrame)))) {
-            std::cout << "numFrames " << numFrames
+            VkEncOut() << "numFrames " << numFrames
                       <<  " should be different from zero and inferior to input file max frame count of "
                       << frameCount << ". Using input file frame count." << std::endl;
             numFrames = frameCount;
             if (numFrames == 0) {
-                fprintf(stderr, "No frames found in the input file, frame count is zero. Exit.");
+                VkEncPrintfErr("No frames found in the input file, frame count is zero. Exit.");
                 return -1;
             }
         }
@@ -1012,7 +1011,7 @@ int EncoderConfig::FinalizeConfig(const EncoderConfig::DeviceCapabilities* devic
         const char* defaultOutName = (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) ? "out.264" :
                                      (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR) ? "out.265" : "out.ivf";
         if (verbose) {
-            fprintf(stdout, "No output file name provided. Using %s.\n", defaultOutName);
+            VkEncPrintfOut("No output file name provided. Using %s.\n", defaultOutName);
         }
         size_t fileSize = outputFileHandler.SetFileName(defaultOutName);
         if (fileSize <= 0) {
@@ -1176,8 +1175,8 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
                 codec = VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR;
             } else {
                 // Invalid codec
-                fprintf(stderr, "Invalid codec: %s\n", codecStr.c_str());
-                fprintf(stderr, "Supported codecs are: avc, hevc and av1\n");
+                VkEncPrintfErr("Invalid codec: %s\n", codecStr.c_str());
+                VkEncPrintfErr("Supported codecs are: avc, hevc and av1\n");
                 return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
             }
         } else if (args[i] == "--help" || args[i] == "-h") {
@@ -1196,7 +1195,7 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
                 argDump += " ";
                 argDump += argv[a];
             }
-            fprintf(stderr, "[EncoderConfig] H264 ParseArguments failed (ret=%d). argc=%d. Args:%s\n", ret, argc, argDump.c_str());
+            VkEncPrintfErr("[EncoderConfig] H264 ParseArguments failed (ret=%d). argc=%d. Args:%s\n", ret, argc, argDump.c_str());
             fflush(stderr);
             // Don't assert — return error so caller can handle gracefully
             return VK_ERROR_INITIALIZATION_FAILED;
@@ -1252,7 +1251,7 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
         return VK_SUCCESS;
 
     } else {
-        fprintf(stderr, "Codec type is not selected\n. Please select it with --codec <avc or hevc or av1> parameters\n");
+        VkEncPrintfErr("Codec type is not selected\n. Please select it with --codec <avc or hevc or av1> parameters\n");
         printHelp(codec);
         return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
     }
@@ -1280,7 +1279,7 @@ void EncoderConfig::InitVideoProfile()
     encodeUsageInfo.videoContentHints = encodeContentHints;
     encodeUsageInfo.tuningMode = tuningMode;
 
-    if (verbose) fprintf(stderr, "[EncoderConfig] VkVideoEncodeUsageInfoKHR:\n"
+    if (verbose) VkEncPrintfErr("[EncoderConfig] VkVideoEncodeUsageInfoKHR:\n"
             "  videoUsageHints   = 0x%x%s\n"
             "  videoContentHints = 0x%x\n"
             "  tuningMode        = %d (%s)\n",
