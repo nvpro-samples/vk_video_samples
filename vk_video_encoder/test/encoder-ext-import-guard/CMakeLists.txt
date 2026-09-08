@@ -30,6 +30,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${VULKAN_VIDEO_ENCODER_INCLUDE}
+    # This test includes vulkan_video_encoder_ext_internal.h, which is not on
+    # the library target's interface. Naming the directory here is what a
+    # legitimate internal consumer does, and what a client cannot.
+    ${VULKAN_VIDEO_ENCODER_INTERNAL_INCLUDE}
     # The public encoder header reaches VkCodecUtils/VkVideoRefCountBase.h,
     # which lives under the shared common-libs root.
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}

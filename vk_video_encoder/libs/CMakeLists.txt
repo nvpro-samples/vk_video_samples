@@ -154,11 +154,6 @@ set(LIBVKVIDEOENCODER_SRC
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VkVideoCrc.cpp
 )
 
-# The internal ext header includes the public header by its tree-rooted
-# path (third_party/vulkan_video_samples/src/...). The GN build resolves
-# that via the Chromium source root on the include path; mirror it here
-# with the directory five levels up (the parent of third_party/).
-include_directories(BEFORE "${CMAKE_CURRENT_LIST_DIR}/../../../../..")
 include_directories(BEFORE "${CMAKE_CURRENT_LIST_DIR}/../")
 include_directories(BEFORE "${CMAKE_CURRENT_LIST_DIR}")
 include_directories(BEFORE ${VULKAN_VIDEO_ENCODER_INCLUDE}/../libs)
@@ -182,7 +177,7 @@ if(NV_AQ_GPU_LIB_AVAILABLE AND TARGET ${NV_AQ_GPU_LIB_TARGET})
     add_dependencies(${VULKAN_VIDEO_ENCODER_LIB} ${NV_AQ_GPU_LIB_TARGET})
 endif()
 
-target_include_directories(${VULKAN_VIDEO_ENCODER_LIB} PUBLIC ${VULKAN_VIDEO_ENCODER_INCLUDE} ${VULKAN_VIDEO_ENCODER_INCLUDE}/../NvVideoParser PRIVATE include)
+target_include_directories(${VULKAN_VIDEO_ENCODER_LIB} PUBLIC ${VULKAN_VIDEO_ENCODER_INCLUDE} PRIVATE include ${VULKAN_VIDEO_ENCODER_INTERNAL_INCLUDE})
 target_compile_definitions(${VULKAN_VIDEO_ENCODER_LIB}
     PRIVATE VK_VIDEO_ENCODER_IMPLEMENTATION
     PUBLIC VK_VIDEO_ENCODER_SHAREDLIB
@@ -223,7 +218,7 @@ if(NV_AQ_GPU_LIB_AVAILABLE AND TARGET ${NV_AQ_GPU_LIB_TARGET})
     target_link_libraries(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PUBLIC ${NV_AQ_GPU_LIB_TARGET})
     add_dependencies(${VULKAN_VIDEO_ENCODER_STATIC_LIB} ${NV_AQ_GPU_LIB_TARGET})
 endif()
-target_include_directories(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PUBLIC ${VULKAN_VIDEO_ENCODER_INCLUDE} ${VULKAN_VIDEO_ENCODER_INCLUDE}/../NvVideoParser PRIVATE include)
+target_include_directories(${VULKAN_VIDEO_ENCODER_STATIC_LIB} PUBLIC ${VULKAN_VIDEO_ENCODER_INCLUDE} PRIVATE include ${VULKAN_VIDEO_ENCODER_INTERNAL_INCLUDE})
 
 # Add NV_AQ_GPU_LIB_SUPPORTED definition and include paths if the library is available
 if(NV_AQ_GPU_LIB_AVAILABLE)
@@ -239,6 +234,35 @@ install(TARGETS ${VULKAN_VIDEO_ENCODER_LIB} ${VULKAN_VIDEO_ENCODER_STATIC_LIB}
                 RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}
                 ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
                 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        )
+
+# The encoder's PUBLIC headers, named one by one. A directory install would
+# ship whatever the directory happens to hold; naming them is what makes
+# adding a header to the shipped surface a decision someone writes down.
+# vulkan_video_encoder_ext.h is not among them: it lives in internal/, which is
+# on no consumer's include path, so shipping it would export a surface the
+# library does not offer.
+install(FILES
+            ${VULKAN_VIDEO_ENCODER_INCLUDE}/vulkan_video_encoder.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        )
+
+# AND WHAT IT INCLUDES. vulkan_video_encoder.h opens with vulkan_interfaces.h
+# and VkCodecUtils/VkVideoRefCountBase.h -- so a prefix carrying only the
+# header above is a prefix in which it does not compile.
+# Both are declaration-only and self-contained: one turns the beta extensions
+# on and includes vulkan/vulkan.h, the other declares the base class and the
+# shared-pointer alias the interface hands back. Shipping them adds no source
+# file and no dependency the consumer did not already have in the Vulkan
+# headers. VkCodecUtils/ is reproduced as a subdirectory because that is the
+# spelling vulkan_video_encoder.h uses to reach it.
+install(FILES
+            ${VULKAN_VIDEO_APIS_INCLUDE}/vulkan_interfaces.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        )
+install(FILES
+            ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VkVideoRefCountBase.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/VkCodecUtils
         )
 
 if(WIN32)

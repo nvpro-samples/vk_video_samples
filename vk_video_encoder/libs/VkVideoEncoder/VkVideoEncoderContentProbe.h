@@ -75,10 +75,11 @@ class VulkanDeviceContext;
 // Every answer leaves through the chained struct, which the caller must read.
 class VkVideoEncoderContentProbe : public VkVideoRefCountBase {
 public:
-    // Mirrors VkVideoEncoderImportContentState in the public header. Kept as
-    // a separate enum because this class sits BELOW the ext layer and must not
-    // depend on it; vulkan_video_encoder_ext.cpp maps one onto the other, and
-    // a static_assert there pins the mapping.
+    // Mirrors VkVideoEncoderImportContentState, in
+    // vulkan_video_encoder_ext_internal.h. Kept as a separate enum because
+    // this class sits BELOW the ext layer and must not depend on it;
+    // vulkan_video_encoder_ext.cpp maps one onto the other, and a
+    // static_assert there pins the mapping.
     enum State {
         STATE_NOT_EVALUATED  = 0,
         STATE_NOT_APPLICABLE = 1,
@@ -246,9 +247,10 @@ public:
     // ---- Reporting, from any thread -----------------------------------
     //
     // Reports the OLDEST STILL-REGISTERED damaged verdict when there is one,
-    // and otherwise the most recent CLEAN verdict. See the public header for
-    // why that ordering, and not "most recent", is the one a caller can act
-    // on without losing a verdict between two polls.
+    // and otherwise the most recent CLEAN verdict. See
+    // VkVideoEncoderImportContentInfo, in vulkan_video_encoder_ext_internal.h,
+    // for why that ordering, and not "most recent", is the one a caller can
+    // act on without losing a verdict between two polls.
     //
     // |outArmedCount| is THE ANSWER TO "DID ANY OF THIS ACTUALLY RUN", and it
     // exists because without it this probe had the same disguised-inertness

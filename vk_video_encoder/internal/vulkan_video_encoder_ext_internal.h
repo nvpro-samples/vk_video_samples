@@ -1,6 +1,15 @@
 /*
  * Internal to the encoder library and its tests. NOT part of the public ABI:
- * nothing here may be relied on by a consumer, and it carries no sType.
+ * nothing here may be relied on by a consumer. The observation structs below
+ * carry a structure type because they ride the public pNext chains; that
+ * type is an internal detail like the rest of this header.
+ *
+ * THAT IS A BUILD FACT, NOT A REQUEST. This file lives outside the include
+ * directory the encoder library exports, and it is not installed. A consumer
+ * that links the library, or that builds against an install prefix, does not
+ * have this header on its include path and cannot include it by name. The
+ * library and the in-tree tests that need it name this directory explicitly;
+ * that naming is what distinguishes an internal consumer from a client.
  *
  * Two layers of machinery, described below, that make
  * "accepted and ignored" structurally detectable rather than a thing anyone
@@ -59,13 +68,426 @@
 #include <cstddef>
 #include <cstdint>
 
-// Sibling header, same directory. A quoted include resolves against the
-// including file's own directory before any -I, so this needs no shared -I set
-// between the library target and a consumer's test target -- and, unlike a
-// src-root-relative path, it assumes no particular checkout layout.
-// Deliberately does NOT reach into the library's private headers -- see
-// VkEncBoundConfigProbe.
+// The public header, which every target allowed to include THIS header
+// already has on its include path: the public directory is what the library
+// target exports, and this directory is named only by the library and by the
+// in-tree tests that reach in here. Deliberately does NOT reach into the
+// library's private headers -- see VkEncBoundConfigProbe.
 #include "vulkan_video_encoder_ext.h"
+
+// ---------------------------------------------------------------------------
+// INTERNAL OBSERVATION STRUCTS
+//
+// What the library did with a frame, and what a dma-buf import produced.
+// None of it is part of the client contract: a caller encodes without naming
+// any of these types, and the routing decisions and driver mitigations they
+// report are implementation choices the library is free to change.
+//
+// They ride the public pNext chains -- VkVideoEncoderCompletionInfo::pNext on
+// GetCompletionInfo, and VkVideoEncoderStatus::pNext on
+// RegisterImageResource -- so each carries a structure type, taken from a
+// band of the public numbering that is assigned to these and never reused.
+// The public chain rules apply unchanged: value-initialize the struct so it
+// self-stamps, chain at most one link of each type, and expect an unknown or
+// repeated link to be refused rather than ignored.
+// ---------------------------------------------------------------------------
+
+constexpr VkVideoEncoderStructureType
+    VK_VIDEO_ENCODER_STRUCTURE_TYPE_FILTER_INFO =
+        (VkVideoEncoderStructureType)0x56450019;
+constexpr VkVideoEncoderStructureType
+    VK_VIDEO_ENCODER_STRUCTURE_TYPE_INPUT_RESIDENCY_INFO =
+        (VkVideoEncoderStructureType)0x5645001A;
+constexpr VkVideoEncoderStructureType
+    VK_VIDEO_ENCODER_STRUCTURE_TYPE_STAGED_SUBMIT_INFO =
+        (VkVideoEncoderStructureType)0x5645001B;
+constexpr VkVideoEncoderStructureType
+    VK_VIDEO_ENCODER_STRUCTURE_TYPE_IMPORT_GUARD_INFO =
+        (VkVideoEncoderStructureType)0x5645001C;
+constexpr VkVideoEncoderStructureType
+    VK_VIDEO_ENCODER_STRUCTURE_TYPE_IMPORT_CONTENT_INFO =
+        (VkVideoEncoderStructureType)0x5645001D;
+
+// Which preprocess conversion the library built for a session.
+enum VkVideoEncoderFilterType {
+    VK_VIDEO_ENCODER_FILTER_TYPE_NONE = 0,
+    // Any YCbCr -> YCbCr conversion, including 3-plane I420 -> 2-plane NV12
+    // (plane-count and bit-depth conversion) and the identity copy.
+    VK_VIDEO_ENCODER_FILTER_TYPE_YCBCR_COPY = 1,
+    VK_VIDEO_ENCODER_FILTER_TYPE_RGBA_TO_YCBCR = 2,
+    VK_VIDEO_ENCODER_FILTER_TYPE_YCBCR_TO_RGBA = 3,
+};
+
+// Filter dispatch: chain onto VkVideoEncoderCompletionInfo::pNext.
+//
+// Whether a preprocess conversion ran, and how much of the session took it.
+// The session's input format decides whether a filter is BUILT; the route is
+// chosen per frame, so a session that has one can still send some or all
+// frames down the staging copy.
+//
+// filterDispatchCount and stagedCopyCount are the two arms of one per-frame
+// decision and never both count the same frame, so they are read directly
+// rather than by subtracting from a total:
+//
+//   filterCreated == VK_FALSE          no filter on this session
+//   created, dispatch == 0, copy > 0   configured; every frame copied
+//   created, dispatch > 0, copy == 0   the filter is the path
+//   dispatch == 0 && copy == 0         nothing reached staging -- a
+//                                      zero-copy route bypasses it -- or
+//                                      there is no snapshot to take
+//
+// All four fields are filled only while the session still holds an encoder.
+// Read them before Flush() and before the last reference to the encoder goes;
+// after either, the snapshot is filterCreated = VK_FALSE with both counts 0,
+// which is the last row of the table and is honest but indistinguishable from
+// a session that has no filter and never staged a frame.
+//
+// Counts are cumulative for the life of the encoder and never reset.
+struct VkVideoEncoderFilterInfo {
+    VkVideoEncoderStructureType sType =
+        VK_VIDEO_ENCODER_STRUCTURE_TYPE_FILTER_INFO;
+    const void*                 pNext = nullptr;
+
+    VkBool32                 filterCreated;  // a filter OBJECT exists
+    VkVideoEncoderFilterType filterType;     // which conversion was built
+    uint64_t filterDispatchCount;  // filter command buffers RECORDED
+    uint64_t stagedCopyCount;      // frames that took the staging copy arm
+};
+
+// Staging acquire program: chain onto VkVideoEncoderCompletionInfo::pNext.
+//
+// Which of the two staging-acquire programs a registered external frame took
+// -- the VK_QUEUE_FAMILY_FOREIGN_EXT ownership acquire, or the local
+// HOST|TRANSFER availability barrier. The library picks one from the declared
+// residency and layout. Both are self-consistent, both leave the image in the
+// same layout, and neither violates a core VUID, so the counts are what tells
+// them apart.
+//
+// The two counts are the two arms of one per-frame decision and never both
+// count the same frame:
+//
+//   foreign > 0, local == 0    every staged frame took the FOREIGN acquire
+//   foreign == 0, local > 0    every staged frame took the local restore
+//   both 0                     nothing reached the staging tier -- a direct
+//                              zero-copy registration bypasses it -- or
+//                              there is no snapshot to take
+//
+// COUNTED AT THE ROUTING DECISION, NOT AT THE BARRIER: once for each frame
+// whose staging barrier program was chosen and recorded, on either arm. A
+// count taken inside the two arms' own release and handback pairs would
+// undercount a session that mixes filtered and copied frames, and a superset
+// counter can make a live tier read as dead.
+//
+// EXTERNAL INPUT ONLY. The library's file-input lane declares no residency
+// and is not counted here; counting it would make localAcquireCount equal the
+// frame count on a session that registered nothing.
+//
+// Filled only while the session still holds an encoder, so read before
+// Flush() and before the last encoder reference goes. DrainPendingFrames()
+// does not clear it and is the right place to read after: it joins the
+// encoder threads, so every submitted frame has been routed by the time it
+// returns.
+//
+// Counts are cumulative for the life of the encoder and never reset.
+struct VkVideoEncoderInputResidencyInfo {
+    VkVideoEncoderStructureType sType =
+        VK_VIDEO_ENCODER_STRUCTURE_TYPE_INPUT_RESIDENCY_INFO;
+    const void*                 pNext = nullptr;
+
+    // Frames whose staging acquire named VK_QUEUE_FAMILY_FOREIGN_EXT as its
+    // source family (an external allocator or queue family owns the memory).
+    uint64_t foreignAcquireCount;
+    // Frames whose staging acquire was a same-family availability barrier
+    // and whose handback RESTORED the layout instead of releasing ownership.
+    // Its scopes follow the arm that ran -- transfer for the staging copy,
+    // compute for the filter.
+    uint64_t localAcquireCount;
+};
+
+// Staged-input submit engine: chain onto VkVideoEncoderCompletionInfo::pNext.
+//
+// Which queue family the staged input work is recorded and submitted on --
+// the acquire, the copy or filter dispatch, the release and the submit alike.
+// Both arms of the staging path take their command buffer from one pool, the
+// pool is created on the compute family whenever the session has a preprocess
+// filter, and a command buffer may only be submitted to a queue of its pool's
+// family (VUID-vkQueueSubmit2-commandBuffer-03874). So a frame that
+// dispatches no filter still stages on the compute family the moment the
+// session has one, without that frame's own format having changed.
+//
+// The family is more than scheduling. A driver may lose the device executing
+// a queue-family RELEASE to VK_QUEUE_FAMILY_FOREIGN_EXT of an image created
+// with VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR or ..._DPB_BIT_KHR when the
+// barrier is recorded off the graphics or optical-flow families; the usage
+// bit is the gate there, not the family alone. The staged copy arm releases
+// the CALLER's imported image, whose usage the caller declared, so safety is
+// a joint property of this family and that usage and both have to be read.
+// Neither family is a validation error, so reporting is the only way to see
+// which one ran.
+//
+// SESSION-CONSTANT, and filled from the same accessors the staging and submit
+// sites read rather than re-derived, so a barrier site and a submit site that
+// name different families are observable here. Valid before any frame stages.
+//
+// Filled only while the session still holds an encoder; afterwards it reports
+// submitTypeQueueFlags 0 and VK_QUEUE_FAMILY_IGNORED.
+struct VkVideoEncoderStagedSubmitInfo {
+    VkVideoEncoderStructureType sType =
+        VK_VIDEO_ENCODER_STRUCTURE_TYPE_STAGED_SUBMIT_INFO;
+    const void*                 pNext = nullptr;
+
+    // The raw VK_QUEUE_* bit the staged-input batch is submitted with
+    // (VK_QUEUE_COMPUTE_BIT 0x2, VK_QUEUE_TRANSFER_BIT 0x4,
+    // VK_QUEUE_VIDEO_ENCODE_BIT_KHR 0x40). Reported as the flag rather than as
+    // a library enum so no translation table can drift from the submitted
+    // value. 0 means there is no session.
+    uint32_t submitTypeQueueFlags;
+    // The queue-family index that flag resolves to on this device, i.e. the
+    // family named as the DESTINATION of the staged FOREIGN acquire and as the
+    // SOURCE of the staged FOREIGN release. VK_QUEUE_FAMILY_IGNORED means
+    // there is no session.
+    uint32_t queueFamilyIndex;
+};
+
+// ---------------------------------------------------------------------------
+// The dma-buf import-ordinal guard, and how to read its report.
+//
+// The guard mitigates a class of dma-buf import defect in which the imported
+// image is bound to memory the exported buffer's contents never reach. It
+// holds a fixed number of sacrificial imports on the device ahead of any
+// caller-visible one, so caller imports land at later live-positions. That is
+// a change of POSITION, not a repair: an import that lands damaged is still
+// damaged, and what the buffer actually holds is the question
+// VkVideoEncoderImportContentInfo below answers.
+//
+// THE GUARD IS DISABLED BY DEFAULT: a stock build retains nothing and
+// reports DISABLED for every dma-buf import inside the guard's scope. Outside
+// that scope the out-of-scope verdict is reported instead, so read |state|
+// rather than assuming DISABLED. VK_VIDEO_ENCODER_NO_IMPORT_ORDINAL_GUARD in
+// the environment disables the guard in a build that enables it.
+//
+// WHERE TO CHAIN VkVideoEncoderImportGuardInfo.
+//
+//   * VkVideoEncoderStatus::pNext on RegisterImageResource -- the verdict for
+//     THAT registration, delivered by the call that ran the guard. This is
+//     the one to assert on.
+//   * VkVideoEncoderCompletionInfo::pNext on GetCompletionInfo -- the most
+//     recent verdict from a registration the guard evaluated, readable at any
+//     time. A registration outside the guard's scope leaves this snapshot
+//     unchanged, so it cannot erase the answer a dma-buf registration
+//     established. It reads NOT_EVALUATED before the first evaluated one.
+//
+// THE STATES. |state| is the verdict; requestedCount and retainedCount are
+// the arithmetic behind it. requestedCount is a BUILD CONSTANT, filled on
+// every path, so a reader compares against it rather than hard-coding it.
+//
+//   STATE            MEANING                        WHAT TO DO
+//   ---------------  -----------------------------  ---------------------
+//   NOT_EVALUATED    The guard did not run: a       Nothing to read. Also
+//                    VK_IMAGE registration, or      the zero value.
+//                    one refused before the
+//                    import.
+//   NOT_APPLICABLE   Out of the guard's scope:      Nothing to read.
+//                    not a DMA_BUF handle, or no
+//                    device to hold a position on.
+//   NOT_NVIDIA       Not a device the guard         Nothing to read.
+//                    applies to.
+//   DISABLED         Off deliberately: this build   Nothing to read. The
+//                    retains 0, or the kill         stock build's answer.
+//                    switch is set.
+//   COMPLETE         retainedCount ==               Caller imports land at
+//                    requestedCount, on a build     live-position
+//                    that asked for a non-zero      requestedCount + 1 or
+//                    count.                         later.
+//   INCOMPLETE       retainedCount <                Read failureStatus and
+//                    requestedCount: the shift      failureErrno; also in
+//                    asked for did not happen.      the diagnostic channel.
+// ---------------------------------------------------------------------------
+typedef enum VkVideoEncoderImportGuardState {
+    VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_NOT_EVALUATED  = 0,
+    VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_NOT_APPLICABLE = 1,
+    VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_NOT_NVIDIA     = 2,
+    VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_DISABLED       = 3,
+    VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_COMPLETE       = 4,
+    VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_INCOMPLETE     = 5,
+} VkVideoEncoderImportGuardState;
+
+typedef struct VkVideoEncoderImportGuardInfo {
+    VkVideoEncoderStructureType sType =
+        VK_VIDEO_ENCODER_STRUCTURE_TYPE_IMPORT_GUARD_INFO;
+    const void*                 pNext = nullptr;  // MUST be NULL
+
+    VkVideoEncoderImportGuardState state =
+        VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_NOT_EVALUATED;          // OUT
+    // Sacrificial imports this build retains where the guard applies.
+    // A build constant, filled on every path. 0 in a stock build: the
+    // guard is disabled by default.
+    uint32_t requestedCount = 0;                                    // OUT
+    // Sacrificial imports actually live on the device right now.
+    uint32_t retainedCount  = 0;                                    // OUT
+    // INCOMPLETE only: what refused the sacrificial import.
+    // ERROR_IMPORT_FAILED with a non-zero failureErrno means dup(2)
+    // failed; any other value is the import's own status.
+    VkVideoEncoderStatusCode failureStatus =
+        VK_VIDEO_ENCODER_STATUS_SUCCESS;                            // OUT
+    int32_t failureErrno = 0;                                       // OUT
+} VkVideoEncoderImportGuardInfo;
+
+// ---------------------------------------------------------------------------
+// The imported-buffer content probe, and how to read its verdict.
+//
+// A dma-buf import can come back bound to memory the producer's writes never
+// reach. VkVideoEncoderImportGuardInfo above reports what a mitigation did;
+// this reports what the imported buffer actually CONTAINS.
+//
+// It is a content observation of the FIRST frame each registration serves,
+// taken at the staged copy. A registration that would otherwise encode
+// directly sends that one frame through the staged path and every later
+// frame direct, so the cost is one detoured frame per registration. It is
+// not a repair and not a prediction, and it cannot see a buffer that has not
+// yet carried a frame. The reaction to a damaged verdict is to stop using
+// that registration.
+//
+// THE PREDICATE. Let meanY, meanU and meanV be the plane means of the
+// imported frame, in 0..255:
+//
+//   DAMAGED_ALL     <=  (meanY < 2) && (meanU < 2) && (meanV < 2)
+//   DAMAGED_CHROMA  <=  (meanY >= 2) && ((meanU < 2) || (meanV < 2))
+//   CLEAN           <=  neither
+//
+// Luma and chroma are scored together rather than chroma alone, so an
+// all-zero buffer and a chroma-zeroed one stay distinguishable.
+//
+// ZEROED IS NOT BLACK, which is what makes the test sound: legal black in
+// NV12 is Y=16 (0 in full range) with U=V=128, so a zero chroma plane is a
+// value no correct encoder input carries. The false-positive budget is a
+// frame that is deliberately all-zero in every plane, which from inside the
+// library is indistinguishable from the defect; the cost is one frame per
+// registration, and the reaction to it is not destructive.
+//
+// WHEN THE VERDICT EXISTS. Not at registration -- the producer has written
+// nothing yet, so there is nothing to score. The registration echo reports
+// ARMED or NOT_APPLICABLE; the verdict arrives on a later GetCompletionInfo
+// snapshot, once the first frame of that registration has been submitted and
+// its fence waited. Frames submitted in the meantime encode against the
+// buffer and cannot be recalled, because the library does not recall
+// submitted GPU work (see CancelFrame): roughly one pipeline depth of frames
+// is the price of scoring content that only exists once it is written.
+//
+// WHERE TO CHAIN IT. Exactly where VkVideoEncoderImportGuardInfo chains, and
+// the two are independent -- either, both, or neither.
+//
+//   * VkVideoEncoderStatus::pNext on RegisterImageResource. CHAINING IT HERE
+//     IS THE OPT-IN: a registration whose status carries this struct arms the
+//     probe; one that does not is never probed and pays nothing. There is no
+//     environment variable and no build flag. The value read back on a
+//     successful registration is ARMED or NOT_APPLICABLE, and
+//     NOT_EVALUATED on a registration this call refused -- never a verdict.
+//   * VkVideoEncoderCompletionInfo::pNext on GetCompletionInfo -- the verdict
+//     channel, readable at any time from any thread. It reports the OLDEST
+//     still-registered DAMAGED_* registration, so retiring that one exposes
+//     the next on the following poll and not reacting re-reports the same
+//     one: idempotent either way, and no verdict is lost between polls. With
+//     none damaged it reports the most recent CLEAN verdict, or NOT_EVALUATED
+//     before the first frame is scored.
+//
+// THE STATES.
+//
+//   STATE            MEANING                        WHAT TO DO
+//   ---------------  -----------------------------  ---------------------
+//   NOT_EVALUATED    No verdict yet: nothing        Poll again later. Also
+//                    armed, or nothing armed has    the zero value.
+//                    completed a frame.
+//   NOT_APPLICABLE   This registration cannot be    No verdict will come.
+//                    scored.
+//   ARMED            Set up, waiting for a frame.   Expect a verdict on a
+//                    A registration echo reports    later snapshot.
+//   CLEAN            Scored; the predicate did      Keep using the
+//                    not fire.                      registration.
+//   DAMAGED_CHROMA   Scored: chroma dead, luma      Stop using the
+//                    alive.                         registration.
+//   DAMAGED_ALL      Scored: every plane dead.      Stop using it.
+//
+// NOT_APPLICABLE is usually decided at registration and arrives in the echo:
+// the registration is FILTER-routed, which is a storage read and never a
+// copy; the import carries no TRANSFER_SRC, so no copy may legally be
+// recorded out of it; or the format is not 8-bit 2-plane 420, which the
+// predicate needs in order to have a Y, a U and a V to score. It can also
+// be latched on the first capture attempt -- the extent is degenerate, or
+// the capture pool cannot serve that format and extent. An ARMED echo is
+// therefore a verdict PENDING and not a verdict promised;
+// armedRegistrationCount tells one still in flight from one that will never
+// arrive.
+//
+// probeGeneration is a non-zero BUILD CONSTANT
+// (VK_VIDEO_ENCODER_IMPORT_CONTENT_PROBE_GENERATION) stamped on every path,
+// so probeGeneration != 0 is proof the library wrote the struct.
+//
+// meanY / meanU / meanV are the plane means in Q8 FIXED POINT -- the 0..255
+// mean times 256, so 128.0 reads as 32768 and the predicate's "< 2" is
+// "< 512". Integers rather than floats because this struct crosses a process
+// boundary. They are filled on CLEAN and DAMAGED_* alike, so a reader can
+// log why.
+// ---------------------------------------------------------------------------
+
+// Non-zero by contract: a non-zero probeGeneration is what proves the
+// library wrote the struct at all. Bump it if the predicate or the sampling
+// changes in a way that makes old and new verdicts non-comparable.
+#define VK_VIDEO_ENCODER_IMPORT_CONTENT_PROBE_GENERATION 1u
+
+// The predicate's threshold, in the Q8 units meanY/meanU/meanV carry: a plane
+// mean strictly below 2.0/255. Named rather than open-coded because the
+// library's scorer and every assertion on it have to agree.
+#define VK_VIDEO_ENCODER_IMPORT_CONTENT_DEAD_PLANE_MEAN_Q8 512u
+
+typedef enum VkVideoEncoderImportContentState {
+    VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_NOT_EVALUATED  = 0,
+    VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_NOT_APPLICABLE = 1,
+    VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_ARMED          = 2,
+    VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_CLEAN          = 3,
+    VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_DAMAGED_CHROMA = 4,
+    VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_DAMAGED_ALL    = 5,
+} VkVideoEncoderImportContentState;
+
+typedef struct VkVideoEncoderImportContentInfo {
+    VkVideoEncoderStructureType sType =
+        VK_VIDEO_ENCODER_STRUCTURE_TYPE_IMPORT_CONTENT_INFO;
+    const void*                 pNext = nullptr;  // MUST be NULL
+
+    // Which registration this verdict belongs to.
+    // VK_VIDEO_ENCODER_RESOURCE_NULL when there is no verdict
+    // (NOT_EVALUATED), and on the registration echo, where the resource id is
+    // the call's own return value.
+    VkVideoEncoderResource resource = VK_VIDEO_ENCODER_RESOURCE_NULL;   // OUT
+    VkVideoEncoderImportContentState state =
+        VK_VIDEO_ENCODER_IMPORT_CONTENT_STATE_NOT_EVALUATED;            // OUT
+    // Non-zero build constant, stamped on every path. The writer proof.
+    uint32_t probeGeneration = 0;                                       // OUT
+    // Q8 fixed point: the 0..255 plane mean times 256.
+    uint32_t meanY = 0;                                                 // OUT
+    uint32_t meanU = 0;                                                 // OUT
+    uint32_t meanV = 0;                                                 // OUT
+    // Session totals: registrations that reached a CLEAN or DAMAGED_*
+    // verdict, and how many of those were DAMAGED_*.
+    uint32_t probedRegistrationCount = 0;                               // OUT
+    uint32_t damagedRegistrationCount = 0;                              // OUT
+    // REGISTRATIONS STILL WAITING FOR A VERDICT -- armed, not yet scored.
+    //
+    // READ THIS BEFORE BELIEVING damagedRegistrationCount == 0. The two
+    // counts above cannot distinguish "every buffer was probed and every one
+    // was clean" from "nothing was ever probed", because both report
+    // probed=0 damaged=0 when no capture ever ran. This field is what tells
+    // them apart: non-zero at the end of a session means that many buffers
+    // were promised a verdict and never got one, so the absence of damage
+    // reports is an absence of MEASUREMENT, not an absence of damage.
+    //
+    // Expected to be non-zero TRANSIENTLY -- a registration is armed at
+    // import and scored a frame or two later, so a mid-session poll legit-
+    // imately catches buffers in flight. It is a session that ENDS with this
+    // non-zero, or a long-running session where it never falls, that means
+    // the capture site is not being reached.
+    uint32_t armedRegistrationCount = 0;                                // OUT
+} VkVideoEncoderImportContentInfo;
 
 // Disposition of a public config field.
 //
@@ -166,7 +588,7 @@ enum VkVideoEncoderConfigFieldDisposition {
     X(verbose,                  BOUND,    "cfg->verbose")                      \
     X(validate,                 BOUND,    "cfg->validate")                     \
     X(disableFileOutput,        BOUND,    "cfg->disableFileOutput")            \
-    X(silenceStdio,             SESSION,  "SetVkEncoderStdioSilenced")         \
+    X(silenceStdio,             SESSION,  "VkEncoderStdioSilenceScope")        \
     X(externalInstance,         SESSION,  "caller-supplied instance")          \
     X(externalPhysicalDevice,   SESSION,  "caller-supplied physical device")   \
     X(externalDevice,           SESSION,  "caller-supplied logical device")    \
@@ -276,9 +698,9 @@ struct VkEncBoundConfigProbe {
     uint32_t videoSignalTypePresent;
     // Chroma siting, as the H.26x VUI will carry it. Projected because it is
     // the ONLY observable of the preprocess filter's 2x2 box average outside
-    // a decoded picture: the flag was plumbed to the VUI long before anything
-    // set it, so "present" and "type" have to be readable separately or a
-    // raised flag advertising type 0 looks identical to no signal at all.
+    // a decoded picture. "Present" and "type" have to be readable
+    // separately, or a raised flag advertising type 0 looks identical to no
+    // signal at all.
     uint32_t chromaLocInfoPresent;
     uint32_t chromaSampleLocType;
     // The INPUT side, as the chained VkVideoEncoderInputColourInfo landed in
@@ -369,12 +791,10 @@ struct VkEncBoundConfigProbe {
     // H.26x: the rate-control layer info the codec arm builds. useMinQp /
     // useMaxQp are what make the clamp values legally visible to the driver.
     // What the arm's InitVuiParameters() ACTUALLY produced, as opposed to
-    // what the shared EncoderConfig holds. These two exist because the gap
-    // between those is not hypothetical: EncoderConfigH265::InitVuiParameters
-    // wrote chroma_sample_loc_type from the config and then, two hundred
-    // lines later, unconditionally re-zeroed it. The config-level projection
-    // could not see that and neither could any encode row, because every
-    // H.265 row in the matrix takes a path that signals no siting.
+    // what the shared EncoderConfig holds. An arm may write a VUI field from
+    // the config and then overwrite it before the parameter set is built,
+    // which a config-level projection cannot see and no encode row that
+    // signals no siting would catch.
     uint32_t vuiChromaLocInfoPresent;
     uint32_t vuiChromaSampleLocTypeTop;
     uint32_t vuiChromaSampleLocTypeBottom;
@@ -429,9 +849,9 @@ struct VkEncBoundConfigProbe {
     // is the defect: AV1's color_config carries color_range, BitDepth and
     // subsampling as well as the colour description, so a caller that
     // declared only full range needs the STRUCT even though the description
-    // flag stays 0. With the whole struct behind that flag its range reached
-    // H.264 and H.265 and nothing at all reached AV1, and no field below
-    // could tell the difference between "absent" and "present and zero".
+    // flag stays 0. Gating the whole struct on that flag would drop the
+    // range on AV1 alone, and no field below can tell "absent" from
+    // "present and zero".
     uint32_t av1ColorConfigPresent;
     uint32_t av1ChromaSamplePosition;
     // The sequence header's STRUCTURAL subsampling, as the arm wrote it.
@@ -509,9 +929,8 @@ VkResult VkEncBuildAndProbeConfig(const VkVideoEncoderConfig& extConfig,
 // wrapper takes the PUBLIC struct and hands back the bytes, so the payload
 // can be pinned from a device-free test.
 //
-// That matters most for AV1: the reference host has no AV1 encode, so the
-// end-to-end AV1 path cannot be exercised at all here. The OBU bytes can be,
-// and were -- spliced into a working AV1 stream and read back with ffprobe.
+// That matters most for AV1, whose end-to-end path needs a device with AV1
+// encode; the OBU bytes can be pinned without one.
 //
 // |codecOp| selects H.265 (a prefix SEI NAL, start code included) or AV1
 // (metadata OBUs). Returns the byte count, or 0 if there was nothing to
@@ -844,9 +1263,9 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
 // ---------------------------------------------------------------------------
 // The dma-buf import-ordinal guard's verdict, carried from the guard (which
 // runs deep inside the import) out to RegisterImageResource, which is the
-// only place that can hand it to a caller. The public carrier is
-// VkVideoEncoderImportGuardInfo; this is the internal hop, kept off the
-// public surface because it has no sType and is not ABI.
+// only place that can hand it to a caller. The carrier a caller chains is
+// VkVideoEncoderImportGuardInfo, declared earlier in this header; this is the
+// internal hop behind it, which has no sType and is not ABI.
 //
 // THREAD-LOCAL, deliberately. The guard writes it on the thread running the
 // import and RegisterImageResource reads it back on that same thread (class
@@ -1004,10 +1423,10 @@ typedef enum VkVideoEncoderExternalInputPath {
     VK_VIDEO_EXTERNAL_INPUT_PATH_FILTER = 2,
 } VkVideoEncoderExternalInputPath;
 
-// The registration-slot facts the R-2 tests assert on. A dropped (or
-// stranded) in-flight reference is observable only here: the public surface
-// deliberately answers a stale id with RESOURCE_UNKNOWN whether the slot is
-// retired, pinned, or gone.
+// The registration-slot facts the release-obligation tests assert on. A
+// dropped (or stranded) in-flight reference is observable only here: the
+// public surface deliberately answers a stale id with RESOURCE_UNKNOWN
+// whether the slot is retired, pinned, or gone.
 struct VkEncResourceProbe {
     uint32_t inFlight = 0;
     VkBool32 live     = VK_FALSE;

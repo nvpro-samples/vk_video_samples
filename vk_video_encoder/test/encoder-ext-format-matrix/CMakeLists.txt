@@ -31,6 +31,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${VULKAN_VIDEO_ENCODER_INCLUDE}
+    # This test includes vulkan_video_encoder_ext_internal.h, which is not on
+    # the library target's interface. Naming the directory here is what a
+    # legitimate internal consumer does, and what a client cannot.
+    ${VULKAN_VIDEO_ENCODER_INTERNAL_INCLUDE}
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}
     ${VULKAN_VIDEO_APIS_INCLUDE}
     ${VULKAN_HEADERS_INCLUDE_DIR}
@@ -83,8 +87,14 @@ enable_testing()
 # of them. Splitting is not a convenience: past that limit a row reports "this
 # device has no such encode profile" for a profile the device does support,
 # and the suite would go green over a wrong finding.
-add_test(NAME EncoderExtInputFormatMatrix
-         COMMAND ${PROJECT_NAME})
+#
+# GATED ON VALIDATION. Walking the matrix creates a session, an image pool and
+# an encode per row, so a spec violation introduced anywhere on the input path
+# surfaces here first. vvs_add_validation_gated_test() forces the validation
+# layer on and fails the arm that produced a message; no ceiling is declared,
+# so any message at all is a failure.
+vvs_add_validation_gated_test(EncoderExtInputFormatMatrix
+    TARGET ${PROJECT_NAME})
 # LABELS: this is the CI gating set. See the top-level CMakeLists.txt note.
 set_tests_properties(EncoderExtInputFormatMatrix PROPERTIES
                      LABELS "gpu"
@@ -94,10 +104,11 @@ set_tests_properties(EncoderExtInputFormatMatrix PROPERTIES
 # (H.264 High 4:4:4 Predictive, H.265 Range Extensions) and so to a different
 # family. Carries the same two controls, so a refusal is observed on the same
 # engine that ran the 4:4:4 rows.
-add_test(NAME EncoderExtInputFormatMatrix444
-         COMMAND ${PROJECT_NAME} --444)
+vvs_add_validation_gated_test(EncoderExtInputFormatMatrix444
+    TARGET ${PROJECT_NAME}
+    ARGS   --444)
 set_tests_properties(EncoderExtInputFormatMatrix444 PROPERTIES
-                     SKIP_RETURN_CODE 77
-                     LABELS "gpu")
+                     LABELS "gpu"
+                     TIMEOUT 900)
 
 message(STATUS "encoder_ext_format_matrix_test: Configured")

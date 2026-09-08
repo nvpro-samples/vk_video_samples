@@ -31,6 +31,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${VULKAN_VIDEO_ENCODER_INCLUDE}
+    # This test includes vulkan_video_encoder_ext_internal.h, which is not on
+    # the library target's interface. Naming the directory here is what a
+    # legitimate internal consumer does, and what a client cannot.
+    ${VULKAN_VIDEO_ENCODER_INTERNAL_INCLUDE}
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}
     ${VULKAN_VIDEO_APIS_INCLUDE}
     ${VULKAN_HEADERS_INCLUDE_DIR}
@@ -107,7 +111,7 @@ install(TARGETS ${PROJECT_NAME}
 # in its own summary fields, hdrGated / hdrFailed, so a row judged by neither
 # gate cannot hide inside decodeGated.
 #
-# MEASURED on RTX A4000 / NVIDIA 620.18 / ffmpeg 6.1.1:
+# The reference bar is:
 #   sessions=9 encoded=9 abandoned=0 failures=0 decodeGated=8 decodeFailed=0
 #   deviceLimited=6 av1Unverified=0 hdrGated=1 hdrFailed=0     (exit 0)
 #

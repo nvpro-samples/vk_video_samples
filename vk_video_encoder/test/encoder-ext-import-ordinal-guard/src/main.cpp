@@ -1022,8 +1022,9 @@ int Harness::Run(bool expectDisabled)
     // the count is consulted, and a build count of 0 returns just after the
     // vendor probe with the same verdict. COMPLETE is reserved for a build
     // that actually retained something. 0 == 0 must never report COMPLETE --
-    // the public header defines that verdict as caller imports landing past a
-    // position they did not, at 0, move to, and a workaround that reports
+    // vulkan_video_encoder_ext_internal.h defines that verdict as caller
+    // imports landing past a position they did not, at 0, move to, and a
+    // workaround that reports
     // success on a build which removed it is worse than one that reports
     // nothing.
     const VkVideoEncoderImportGuardState expectedState =
