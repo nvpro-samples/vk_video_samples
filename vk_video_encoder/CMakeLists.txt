@@ -115,6 +115,14 @@ else()
     MESSAGE(STATUS "VULKAN_VIDEO_ENCODER_INCLUDE path is not set. Setting the default path location to ${CMAKE_CURRENT_SOURCE_DIR}/include")
     set(VULKAN_VIDEO_ENCODER_INCLUDE  "${CMAKE_CURRENT_SOURCE_DIR}/include" CACHE PATH "Path to Vulkan Video Encoder include directory" FORCE)
 endif()
+
+# The internal header set. NOT exported by any target and NOT installed: it is
+# reachable from the encoder library and from the in-tree tests that include it,
+# and from nothing a consumer links or installs. Keeping it out of
+# VULKAN_VIDEO_ENCODER_INCLUDE is what makes "internal" a build fact rather than
+# a filename convention.
+set(VULKAN_VIDEO_ENCODER_INTERNAL_INCLUDE
+    "${CMAKE_CURRENT_SOURCE_DIR}/internal")
 ############ VULKAN_VIDEO_ENCODER_INCLUDE ######################################
 
 ############ VULKAN_VIDEO_ENCODER_LIB_PATH ######################################

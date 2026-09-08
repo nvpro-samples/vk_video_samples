@@ -483,11 +483,10 @@ void DestroyImg(const DeviceFns& fns, VkDevice device, Img* img)
 }
 
 // One row of the matrix. Everything is per-session because the format is a
-// SESSION property: SupportsFormat, the filter's input format and the
-// registration gate all read m_encoderConfig.
+// SESSION property: the filter's input format and the registration gate
+// both read m_encoderConfig.
 struct RowResult {
     bool sessionInit      = false;
-    bool supportsFormat   = false;
     bool imageCreated     = false;
     VkBool32 filterCapableOptimal = VK_FALSE;
     VkBool32 filterCapableLinear  = VK_FALSE;
@@ -645,7 +644,6 @@ RowResult RunRow(const Row& row, bool verbose)
         return res;
     }
     res.sessionInit    = true;
-    res.supportsFormat = (enc->SupportsFormat(row.format) == VK_TRUE);
 
     VkInstance       instance = enc->GetVkInstance();
     VkDevice         device   = enc->GetVkDevice();
@@ -989,7 +987,7 @@ int main(int argc, char** argv)
     std::printf("walking the %s rows: %zu of %zu\n",
                 only444 ? "4:4:4" : "4:2:0", nSelected, kNumRows);
 
-    size_t nSessions = 0, nSupports = 0, nRegistered = 0, nFilter = 0;
+    size_t nSessions = 0, nRegistered = 0, nFilter = 0;
     size_t nDirect = 0, nStaged = 0, nDeviceLimited = 0;
 
     // PASS 1 -- run every row. A group's DIRECT control has to be known
@@ -1024,9 +1022,8 @@ int main(int argc, char** argv)
 
         const RowResult r = results[i];
 
-        std::printf("      session=%d  SupportsFormat=%d  image=%d\n",
-                    (int)r.sessionInit, (int)r.supportsFormat,
-                    (int)r.imageCreated);
+        std::printf("      session=%d  image=%d\n",
+                    (int)r.sessionInit, (int)r.imageCreated);
         std::printf("      STORAGE_IMAGE feature: optimal=%d linear=%d\n",
                     (int)r.filterCapableOptimal, (int)r.filterCapableLinear);
         std::printf("      query: supported=%d status=%d | "
@@ -1055,7 +1052,6 @@ int main(int argc, char** argv)
         }
 
         if (r.sessionInit)    nSessions++;
-        if (r.supportsFormat) nSupports++;
         if (r.regStatus == VK_VIDEO_ENCODER_STATUS_SUCCESS) {
             nRegistered++;
             if (r.path == VK_VIDEO_EXTERNAL_INPUT_PATH_FILTER) nFilter++;
@@ -1157,8 +1153,6 @@ int main(int argc, char** argv)
                 break;
             case ARM_FILTER_RGBA:
                 Check(row.name, r.sessionInit, "session initializes", "");
-                Check(row.name, r.supportsFormat,
-                      "SupportsFormat is VK_TRUE", "");
                 Check(row.name,
                       r.regStatus == VK_VIDEO_ENCODER_STATUS_SUCCESS,
                       "registers with STORAGE and NO create flags",
@@ -1256,8 +1250,6 @@ int main(int argc, char** argv)
             default:
                 Check(row.name, cls == VK_ENC_INPUT_FORMAT_UNSUPPORTED,
                       "taxonomy says UNSUPPORTED", ClassName(cls));
-                Check(row.name, !r.sessionInit || !r.supportsFormat,
-                      "and the session does not claim it", "");
                 Check(row.name,
                       r.regStatus != VK_VIDEO_ENCODER_STATUS_SUCCESS,
                       "and it does not register",
@@ -1271,7 +1263,6 @@ int main(int argc, char** argv)
     std::printf("DENOMINATOR: %zu formats walked (%zu claimed by the "
                 "taxonomy + 2 controls)\n", nSelected, nSelected - 2);
     std::printf("  sessions initialized : %zu of %zu\n", nSessions, nSelected);
-    std::printf("  SupportsFormat TRUE  : %zu of %zu\n", nSupports, nSelected);
     std::printf("  registered           : %zu of %zu\n", nRegistered, nSelected);
     std::printf("  routed DIRECT/FILTER/STAGED : %zu / %zu / %zu\n",
                 nDirect, nFilter, nStaged);

@@ -124,9 +124,9 @@ public:
         ConfigureContentProbe();
     }
     // The two sides of the staging ACQUIRE decision, reported through
-    // VkVideoEncoderInputResidencyInfo. See the header for why a validation
-    // count cannot substitute for these: both barrier programs are
-    // spec-clean and leave the image in the same layout.
+    // VkVideoEncoderInputResidencyInfo in vulkan_video_encoder_ext_internal.h.
+    // See it for why a validation count cannot substitute for these: both
+    // barrier programs are spec-clean and leave the image in the same layout.
     uint64_t GetForeignAcquireCount() const {
         return m_foreignAcquireCount.load(std::memory_order_relaxed);
     }
@@ -135,7 +135,8 @@ public:
     }
 
     // THE STAGED-INPUT SUBMIT FAMILY, reported through
-    // VkVideoEncoderInputResidencyInfo. Public wrappers over the two
+    // VkVideoEncoderInputResidencyInfo in vulkan_video_encoder_ext_internal.h.
+    // Public wrappers over the two
     // protected accessors declared further down (GetStagedInputSubmitType /
     // GetStagedInputQueueFamilyIdx) so an out-of-library caller can read the
     // fact those two exist to keep in agreement, WITHOUT re-deriving it.

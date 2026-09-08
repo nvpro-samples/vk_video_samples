@@ -32,6 +32,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${VULKAN_VIDEO_ENCODER_INCLUDE}
+    # This test includes vulkan_video_encoder_ext_internal.h, which is not on
+    # the library target's interface. Naming the directory here is what a
+    # legitimate internal consumer does, and what a client cannot.
+    ${VULKAN_VIDEO_ENCODER_INTERNAL_INCLUDE}
     # EncoderInputImageParameters::VerifyInputs() is header-only and is the
     # subject of the single-plane-gate case.
     ${VK_VIDEO_ENCODER_LIBS_SOURCE_ROOT}

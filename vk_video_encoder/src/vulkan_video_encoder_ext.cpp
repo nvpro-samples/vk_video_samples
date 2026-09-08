@@ -187,9 +187,7 @@ public:
     VkVideoEncoderStatusCode ExportCompletionSemaphoreHandle(
         VkVideoEncoderExternalHandleType handleType,
         uint64_t* outHandle) override;
-    VkResult SetFrameDeadline(uint32_t deadlineMs) override;
     VkResult CancelFrame(uint64_t frameId) override;
-    VkResult CancelAllPendingFrames(uint32_t* pCancelledCount) override;
     VkResult AbandonAllFrames(uint32_t* pAbandonedCount) override;
     VkResult AcquireNextEncodedFrame(VkVideoEncodeResult& result) override;
     VkResult AcquireEncodedFrame(uint64_t frameId,
@@ -198,16 +196,21 @@ public:
     VkResult GetEncodedFrame(VkVideoEncodeResult& result) override;
     void     ReleaseEncodedFrame(uint64_t frameId) override;
     VkResult Flush() override;
+    void     GetShutdownInfo(VkVideoEncoderShutdownInfo* pInfo) const override;
+    // Records a device loss wherever it is first observed; returns |result|
+    // unchanged so it can wrap a return expression.
+    VkResult NoteDeviceResult(VkResult result);
+    VkVideoEncoderShutdownDisposition ClassifyShutdownLocked() const;
+    VkResult WaitWholeDeviceLocked();
     VkResult DrainPendingFrames() override;
     VkResult Reconfigure(const VkVideoEncoderConfig& config) override;
-    VkBool32 SupportsFormat(VkFormat inputFormat) const override;
-    // The same question asked of a DECLARED colour model rather than of the
-    // session's. A descriptor states the model its samples carry, and the
+    // The library-internal format predicate, asked of a DECLARED colour
+    // model. A descriptor states the model its samples carry, and the
     // packed 4:4:4 layouts make that statement load-bearing: they ride RGBA
     // format enumerants, so the format alone cannot say which of the two a
     // surface is. VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT declares nothing
-    // and falls back to the session's model, which is what the one-argument
-    // form above passes.
+    // and falls back to the session's model, which is what the callers with
+    // no declaration of their own to pass hand in.
     VkBool32 SupportsFormat(VkFormat inputFormat,
                             VkVideoEncoderColorModel declaredColorModel) const;
     // Whether THIS session can perform the compute-tier conversion: the
@@ -229,8 +232,6 @@ public:
     // single-plane arm of the preprocess filter.
     bool DeviceCanStorageRead(
         const VkVideoEncoderExternalImageDescriptor& desc) const;
-    uint32_t GetMaxWidth() const override;
-    uint32_t GetMaxHeight() const override;
     VkResult GetRuntimeInfo(VkVideoEncoderRuntimeInfo* outInfo) const override;
 
     // One predicate, shared by RegisterImageResource and QueryImageSupport.
@@ -461,16 +462,11 @@ private:
     // trustedRateController without reaching into EncoderConfig internals.
     // The rate-control MODE is session-fixed; Reconfigure() updates rates only.
     std::atomic<VkVideoEncodeRateControlModeFlagBitsKHR> m_rateControlMode;
-    // Capability scalars reported by the lock-free query methods. Snapshotted
-    // at init so those methods never dereference m_encoderConfig, which
-    // Deinitialize can null concurrently.
-    std::atomic<uint32_t>            m_capsMaxWidth{0};
-    std::atomic<uint32_t>            m_capsMaxHeight{0};
-    // The preprocess compute filter's session state, snapshotted for the same
-    // reason and under the same rule as the scalars above: ComputeFilterActive
-    // is reached from SupportsFormat, which the header lists as class (c) --
-    // callable from ANY thread, taking no lock -- while Deinitialize nulls and
-    // then destroys m_encoderConfig under m_pendingMutex. Reading the
+    // The preprocess compute filter's session state, snapshotted so the
+    // lock-free readers never dereference m_encoderConfig: ComputeFilterActive
+    // is reached from SupportsFormat, which ValidateImageDescriptor calls
+    // WITHOUT taking m_pendingMutex -- while Deinitialize nulls and
+    // then destroys m_encoderConfig under that mutex. Reading the
     // shared_ptr there is both a use-after-free window and an unsynchronised
     // read of a shared_ptr instance another thread is storing to.
     //
@@ -1568,10 +1564,12 @@ VkResult VkEncBuildEncoderConfig(
     }
     // THE FILTER DECISION, AND IT IS THE LIBRARY'S. A format that is
     // encodable only THROUGH the preprocess compute filter gets the filter; a
-    // directly encodable one does not. Nothing the caller sets takes part:
-    // the class is a pure function of inputFormat, which is why this is
-    // decided here, in a binder with no device, and is answerable on the
-    // query surface before a producer allocates a frame pool.
+    // directly encodable one does not. There is no request to honour: the
+    // class is a pure function of the declared input pair, inputFormat and
+    // inputColorModel, both of which state what the frames ARE rather than
+    // ask for a conversion. That pair is why this is decided here, in a
+    // binder with no device, and is answerable on the query surface before a
+    // producer allocates a frame pool.
     const bool needsPreprocessFilter =
         (inputFormatClass == VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER);
 
@@ -3225,9 +3223,11 @@ VK_ENC_PIN_CHAIN_PREFIX(VkVideoEncoderDeviceIdentity);
 // landing in padding trips something, not that every field is frozen.
 //
 // VkVideoEncoderExternalImageDescriptor carries the most of them because it
-// is the one pointer-free POD in this API that IS the IPC payload: a
-// producer in another process fills it by field copy, so its member offsets
-// are the wire format rather than a property of this build. It is also long
+// is the one structure in this API that IS the IPC payload: a producer in
+// another process fills it by field copy, so its member offsets are the wire
+// format rather than a property of this build. Its two non-data members --
+// pNext, refused non-NULL, and existingImage, read only on the same-process
+// VK_IMAGE arm -- cross no such boundary. It is also long
 // enough that a change to one end of it is read nowhere near the other.
 #if defined(__LP64__) || defined(_LP64) || defined(_WIN64)
 #define VK_ENC_PIN_MEMBER(T, m, N)                                          \
@@ -3706,8 +3706,9 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
     SnapshotCaps();
     m_initConfig = config;
     // The session's input declaration, snapshotted for the lock-free readers
-    // for the same reason as the compute-filter state: SupportsFormat takes no
-    // lock, and m_initConfig is written here under one.
+    // for the same reason as the compute-filter state: SupportsFormat is
+    // reached from ValidateImageDescriptor without a lock, and m_initConfig
+    // is written here under one.
     m_sessionInputFormat.store(config.inputFormat, std::memory_order_relaxed);
     m_sessionInputColorModel.store(config.inputColorModel,
                                    std::memory_order_relaxed);
@@ -3908,7 +3909,8 @@ VkResult VulkanVideoEncoderExtImpl::SubmitExternalFrameCommon(
 
     // Typed rejection replacing a latent null-deref (see SupportsFormat):
     // a non-YCbCr frame accepted here would crash in the staging copy.
-    if (SupportsFormat(frame.format) != VK_TRUE) {
+    if (SupportsFormat(frame.format,
+                       VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) != VK_TRUE) {
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
 
@@ -4441,8 +4443,6 @@ void VulkanVideoEncoderExtImpl::SnapshotCaps()
         return;
     }
     const auto& caps = m_encoderConfig->videoCapabilities;
-    m_capsMaxWidth.store(caps.maxCodedExtent.width, std::memory_order_relaxed);
-    m_capsMaxHeight.store(caps.maxCodedExtent.height, std::memory_order_relaxed);
     m_capsGranularityW.store(caps.pictureAccessGranularity.width,
                              std::memory_order_relaxed);
     m_capsGranularityH.store(caps.pictureAccessGranularity.height,
@@ -4720,36 +4720,6 @@ VkResult VulkanVideoEncoderExtImpl::SetCompletionCallback(
 uint64_t VulkanVideoEncoderExtImpl::GetCompletionCounter()
 {
     return m_completionCounter.load(std::memory_order_acquire);
-}
-
-VkResult VulkanVideoEncoderExtImpl::SetFrameDeadline(uint32_t deadlineMs)
-{
-    // 6 s is the same floor InitializeExt applies: the encoder's internal
-    // fence wait caps at 5 s, and a deadline at or under that would expire
-    // on the encoder's own worst-case normal latency -- turning healthy
-    // frames into timed-out drops, which is worse than no deadline at all.
-    static const uint64_t kMinDeadlineNs = 6000000000ull;
-    static const uint64_t kDefaultNs     = 8000000000ull;
-
-    uint64_t requestedNs = (deadlineMs == 0)
-        ? kDefaultNs
-        : ((uint64_t)deadlineMs * 1000000ull);
-    if (requestedNs < kMinDeadlineNs) {
-        VkEncErr() << "[EncoderExt] SetFrameDeadline(" << deadlineMs
-                   << " ms) is at or below the internal 5 s fence wait; "
-                      "clamped to 6000 ms so normal encode latency is not "
-                      "reported as a timeout." << std::endl;
-        requestedNs = kMinDeadlineNs;
-    }
-    // Class (c): the deadline is read on the locked acquire path
-    // (SynthesizeTimeoutLocked); write it under the same lock instead of
-    // racing those readers. The InitializeExt write needs no lock -- it
-    // happens before any other thread can hold a session.
-    {
-        std::lock_guard<std::mutex> lock(m_pendingMutex);
-        m_frameTimeoutNs = requestedNs;
-    }
-    return VK_SUCCESS;
 }
 
 VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::GetCompletionEventHandle(
@@ -5157,23 +5127,6 @@ VkResult VulkanVideoEncoderExtImpl::AbandonAllFrames(
     }
     if (pAbandonedCount != nullptr) {
         *pAbandonedCount = abandoned;
-    }
-    return VK_SUCCESS;
-}
-
-VkResult VulkanVideoEncoderExtImpl::CancelAllPendingFrames(
-    uint32_t* pCancelledCount)
-{
-    std::lock_guard<std::mutex> lock(m_pendingMutex);
-    uint32_t cancelled = 0;
-    for (auto& p : m_pendingFrames) {
-        if (!p.acquired) {
-            CancelFrameLocked(p);
-            cancelled++;
-        }
-    }
-    if (pCancelledCount != nullptr) {
-        *pCancelledCount = cancelled;
     }
     return VK_SUCCESS;
 }
@@ -5940,11 +5893,11 @@ bool VulkanVideoEncoderExtImpl::ComputeFilterActive() const
     // to be one the binder built a filter for.
     //
     // Answered from the INIT-TIME SNAPSHOT, not from m_encoderConfig. This is
-    // reached from SupportsFormat, which the header lists as class (c) --
-    // any thread, no lock -- and Deinitialize nulls and then destroys
+    // reached from SupportsFormat, which ValidateImageDescriptor calls
+    // without taking any lock -- and Deinitialize nulls and then destroys
     // m_encoderConfig under m_pendingMutex, which this path does not take.
-    // Dereferencing it here is the exact hazard the two comments at the
-    // m_capsMaxWidth declaration and in GetMaxWidth exist to forbid, and it
+    // Dereferencing it here is the exact hazard the comment at the
+    // m_computeFilterActive declaration exists to forbid, and it
     // is a data race on the shared_ptr itself independently of the free.
     //
     // Still VK_FALSE before InitializeExt has bound a session, which is the
@@ -5986,14 +5939,6 @@ VkVideoEncoderColorModel VulkanVideoEncoderExtImpl::SessionColorModel(
     return (inputFormat == m_sessionInputFormat.load(std::memory_order_relaxed))
                ? m_sessionInputColorModel.load(std::memory_order_relaxed)
                : VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT;
-}
-
-VkBool32 VulkanVideoEncoderExtImpl::SupportsFormat(VkFormat inputFormat) const
-{
-    // No declaration: the model is the session's. This is the public query,
-    // which is handed a format and nothing else.
-    return SupportsFormat(inputFormat,
-                          VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT);
 }
 
 VkBool32 VulkanVideoEncoderExtImpl::SupportsFormat(
@@ -6747,23 +6692,6 @@ VkBool32 VkEncDescriptorWithinCreationLimits(
     return VK_TRUE;
 }
 
-uint32_t VulkanVideoEncoderExtImpl::GetMaxWidth() const
-{
-    // Pre-init this is not knowable: no device has been probed, so any
-    // number here is a guess the caller cannot tell apart from a measurement.
-    // 8192 was that guess, and a producer sizing a pool from it before
-    // InitializeExt was being told this encoder supports a resolution nothing
-    // had verified. Answer 0 -- "unknown" -- and report the probed capability
-    // once one exists. Read from the init-time snapshot, not m_encoderConfig:
-    // this method takes no lock and Deinitialize can null that concurrently.
-    return m_capsMaxWidth.load(std::memory_order_relaxed);
-}
-
-uint32_t VulkanVideoEncoderExtImpl::GetMaxHeight() const
-{
-    return m_capsMaxHeight.load(std::memory_order_relaxed);
-}
-
 VkResult VulkanVideoEncoderExtImpl::GetRuntimeInfo(
     VkVideoEncoderRuntimeInfo* outInfo) const
 {
@@ -7004,8 +6932,6 @@ void VulkanVideoEncoderExtImpl::Deinitialize()
 
     m_initialized = false;
     m_rateControlMode = VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DEFAULT_KHR;
-    m_capsMaxWidth.store(0, std::memory_order_relaxed);
-    m_capsMaxHeight.store(0, std::memory_order_relaxed);
     m_capsGranularityW.store(0, std::memory_order_relaxed);
     m_capsGranularityH.store(0, std::memory_order_relaxed);
     m_computeFilterActive.store(false, std::memory_order_relaxed);
@@ -7491,9 +7417,10 @@ static void VkEncEnsureImportOrdinalGuard(
         // THE RETIRED DEFAULT, and DISABLED is the verdict on purpose.
         //
         // Falling through would reach the already-satisfied early return
-        // below, whose 0 >= 0 is true, and report COMPLETE -- which the
-        // public header defines as "retainedCount == requestedCount, caller
-        // imports land at live-position requestedCount+1 or later". The
+        // below, whose 0 >= 0 is true, and report COMPLETE -- which
+        // VkVideoEncoderImportGuardState, in vulkan_video_encoder_ext_internal.h,
+        // defines as "retainedCount == requestedCount, caller imports land at
+        // live-position requestedCount+1 or later". The
         // arithmetic holds at 0 == 0 and the claim does not: nothing was
         // moved anywhere. A verdict that says a workaround ran on a build
         // that removed it is the exact failure this reporting channel was

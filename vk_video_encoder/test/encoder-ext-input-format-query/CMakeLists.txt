@@ -29,6 +29,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${VULKAN_VIDEO_ENCODER_INCLUDE}
+    # The descriptor API is an internal header: the public surface of this
+    # library is the encoder interface, and a test that drives the layer
+    # beneath it names the internal directory to say so.
+    ${VULKAN_VIDEO_ENCODER_INTERNAL_INCLUDE}
     # The public encoder header reaches VkCodecUtils/VkVideoRefCountBase.h,
     # which lives under the shared common-libs root.
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}
