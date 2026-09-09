@@ -841,6 +841,10 @@ public:
         , m_workgroupSizeX(16)
         , m_workgroupSizeY(16)
         , m_maxNumFrames(maxNumFrames)
+        , m_inputPackedYcbcr(nullptr)
+        , m_outputPackedYcbcr(nullptr)
+        , m_blockHorzRatio(2)
+        , m_blockVertRatio(2)
         , m_ycbcrPrimariesConstants (pYcbcrPrimariesConstants ?
                                         *pYcbcrPrimariesConstants :
                                         YcbcrPrimariesConstants{0.0, 0.0})
@@ -858,10 +862,6 @@ public:
         , m_enableRowAndColumnReplication((filterFlags & (FLAG_ENABLE_ROW_COLUMN_REPLICATION_ONE | FLAG_ENABLE_ROW_COLUMN_REPLICATION_ALL)) != 0)
         , m_inputIsBuffer(false)
         , m_outputIsBuffer(false)
-        , m_inputPackedYcbcr(nullptr)
-        , m_outputPackedYcbcr(nullptr)
-        , m_blockHorzRatio(2)
-        , m_blockVertRatio(2)
         , m_outputImageArray((filterFlags & FLAG_OUTPUT_IMAGE_ARRAY) != 0)
         , m_enableYSubsampling((filterFlags & FLAG_ENABLE_Y_SUBSAMPLING) != 0)
         , m_skipCompute((filterFlags & FLAG_SKIP_COMPUTE) != 0 || 
