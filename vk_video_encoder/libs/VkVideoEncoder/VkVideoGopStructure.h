@@ -117,12 +117,32 @@ public:
     // If it is set to 0, the rate control algorithm may assume an
     // implementation-dependent GOP length. If it is set to UINT32_MAX,
     // the GOP length is treated as infinite.
+    //
+    // UINT32_MAX is the Video Codec SDK's infinite-GOP value, and the two
+    // spellings a caller reaches it by are worth naming together: the command
+    // line takes -1, and the JSON configuration takes 4294967295. An infinite
+    // GOP is also what EncoderConfigH264::GetRateControlParameters keys on
+    // when it drops idrPeriod to 0 -- an IDR interval shorter than the GOP is
+    // not expressible, so a GOP that never closes leaves no period to state.
     void SetGopFrameCount(uint32_t gopFrameCount) { m_gopFrameCount = gopFrameCount; }
     uint32_t GetGopFrameCount() const { return m_gopFrameCount; }
 
-    // idrPeriod is the interval, in terms of number of frames, between two IDR frames (see IDR period).
-    // If it is set to 0, the rate control algorithm may assume an implementation-dependent IDR period.
-    // If it is set to UINT8_MAX, the IDR period is treated as infinite.
+    // idrPeriod is the interval, in terms of number of frames, between two IDR
+    // frames (see IDR period).
+    //
+    // 0 MEANS A DIFFERENT THING AT EACH LAYER, and both are reachable:
+    //   * To EncoderConfig it is the "unset" sentinel -- EncoderConfigH264,
+    //     H265 and AV1 each replace a 0 with the device's preferred IDR
+    //     period before this structure is configured.
+    //   * To this structure it applies no IDR-period bound at all, so nothing
+    //     forces a periodic IDR. A caller that sets this directly, past the
+    //     codec config, gets that second meaning.
+    //
+    // UINT32_MAX makes the period infinite explicitly, and is not rewritten by
+    // the codec configs the way 0 is: it says "never emit a periodic IDR"
+    // rather than "choose one for me". It is the same all-bits-set convention
+    // gopFrameCount uses, and the command line spells it -1 for a field of any
+    // width -- 255 into a uint8_t field, 4294967295 into a uint32_t one.
     void SetIdrPeriod(uint32_t idrPeriod) { m_idrPeriod = idrPeriod; }
     uint32_t GetIdrPeriod() const { return m_idrPeriod; }
 
@@ -363,7 +383,9 @@ private:
     uint8_t               m_consecutiveBFrameCount;
     uint8_t               m_gopFrameCycle;
     uint8_t               m_temporalLayerCount;
-    uint32_t              m_idrPeriod; // 0 means unlimited GOP with no IDRs.
+    // 0 here applies no IDR-period bound; see SetIdrPeriod for why that is
+    // not the same as 0 in EncoderConfig.
+    uint32_t              m_idrPeriod;
     FrameType             m_lastFrameType;
     FrameType             m_preClosedGopAnchorFrameType;
     uint32_t              m_closedGop : 1;
