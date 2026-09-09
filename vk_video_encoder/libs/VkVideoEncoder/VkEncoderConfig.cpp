@@ -24,25 +24,71 @@
 #include <string>
 #include <cstdlib>
 #include <cmath>
+#include <cerrno>
 
 namespace {
+    // A PARSE THAT CANNOT SILENTLY CHANGE THE NUMBER IT WAS GIVEN.
+    //
+    // Three ways the value the caller typed can differ from the value the
+    // encoder runs with, all of which report success:
+    //
+    //   * NARROWING. static_cast<T> of a value too large for T keeps the low
+    //     bits. Into a uint8_t, 256 is 0 and 300 is 44 -- and 0 is a sentinel
+    //     in more than one of these fields, so the truncation does not even
+    //     land on an obviously wrong number.
+    //   * A NEGATIVE INTO AN UNSIGNED. strtoull accepts a leading '-' and
+    //     wraps, so "-1" arrives as the largest value T can hold rather than
+    //     as an error.
+    //   * OVERFLOW. Past the range of the accumulator, strtoull/strtoll
+    //     saturate and set ERANGE, which nothing was reading.
+    //
+    // Each is refused here instead. The check that the value survives its own
+    // narrowing is what lets a caller keep parsing straight into a uint8_t
+    // field: out-of-range input is rejected rather than folded.
     template<typename T>
     inline bool parseUint(const std::string& str, T& value) {
         if (str.empty()) return false;
+        // "-1" IS AN ACCEPTED SPELLING, and means all bits set.
+        //
+        // It is the Video Codec SDK convention these fields inherit: an
+        // infinite GOP length is UINT32_MAX -- see the json_config README and
+        // the idrPeriod derivation in EncoderConfigH264 -- and -1 is how a
+        // caller writes it without counting the f's. It yields the maximum
+        // value of T, which is what the unchecked wrap produced, so every
+        // command line that already used it means the same thing.
+        //
+        // NO OTHER NEGATIVE IS. Those are typos, and wrapping one silently is
+        // how a mistyped bound becomes a four-billion-frame GOP that the
+        // encoder honours without comment.
+        if (str == "-1") {
+            value = static_cast<T>(~0ull);
+            return true;
+        }
+        // A '-' anywhere else is malformed for an unsigned field, including
+        // one behind leading whitespace that strtoull would skip past.
+        if (str.find('-') != std::string::npos) return false;
+        errno = 0;
         char* end = nullptr;
         unsigned long long result = strtoull(str.c_str(), &end, 0);
         if (end != str.c_str() + str.size()) return false;
-        value = static_cast<T>(result);
+        if (errno == ERANGE) return false;
+        const T narrowed = static_cast<T>(result);
+        if (static_cast<unsigned long long>(narrowed) != result) return false;
+        value = narrowed;
         return true;
     }
 
     template<typename T>
     inline bool parseInt(const std::string& str, T& value) {
         if (str.empty()) return false;
+        errno = 0;
         char* end = nullptr;
         long long result = strtoll(str.c_str(), &end, 10);
         if (end != str.c_str() + str.size()) return false;
-        value = static_cast<T>(result);
+        if (errno == ERANGE) return false;
+        const T narrowed = static_cast<T>(result);
+        if (static_cast<long long>(narrowed) != result) return false;
+        value = narrowed;
         return true;
     }
 
@@ -139,8 +185,15 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --maxQp                         <integer> : Maximum QP value in the range [0, 51] \n\
     --qpMap                         <string>  : select quantization map type : deltaQpMap or emaphasisMap \n\
     --qpMapFileName                 <string>  : quantization map file name \n\
-    --gopFrameCount                 <integer> : Number of frame in the GOP, default 16\n\
-    --idrPeriod                     <integer> : Number of frame between 2 IDR frame, default 60\n\
+    --gopFrameCount                 <integer> : Number of frame in the GOP, default 16.\n\
+                                                -1 requests an INFINITE GOP: the count is set to\n\
+                                                UINT32_MAX, so the sequence opens with an IDR and\n\
+                                                no second one is emitted. 0 leaves the length to\n\
+                                                the device's preferred value.\n\
+    --idrPeriod                     <integer> : Number of frame between 2 IDR frame, default 60.\n\
+                                                -1 requests an INFINITE IDR period (UINT32_MAX):\n\
+                                                no periodic IDR is emitted after the first. 0 leaves\n\
+                                                the period to the device's preferred value.\n\
     --consecutiveBFrameCount        <integer> : Number of consecutive B frame count in a GOP \n\
     --temporalLayerCount            <integer> : Count of temporal layer \n\
     --lastFrameType                 <integer> : Last frame type \n\
@@ -513,42 +566,51 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             // device's preference is a request like any other.
             uint32_t gopFrameCount = EncoderConfig::DEFAULT_GOP_FRAME_COUNT;
             if (++i >= argc || !parseUint(args[i], gopFrameCount)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             gopStructure.SetGopFrameCount(gopFrameCount);
             if (verbose) {
-                printf("Selected gopFrameCount: %d\n", gopFrameCount);
+                VkEncPrintfOut("Selected gopFrameCount: %u\n", gopFrameCount);
             }
         } else if (args[i] == "--idrPeriod") {
-            int32_t idrPeriod = EncoderConfig::DEFAULT_GOP_IDR_PERIOD;
-            if (++i >= argc || !parseInt(args[i], idrPeriod)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+            // Unsigned, because SetIdrPeriod stores it unsigned. Read as a
+            // signed value it took every negative, and the conversion at the
+            // setter turned each one into a period so large that no periodic
+            // IDR is ever emitted -- so a mistyped -5 asked for an infinite
+            // IDR period and got it. Parsed here at the width and signedness
+            // the field actually has, -1 keeps its meaning (all bits set,
+            // infinite) and other negatives are refused.
+            uint32_t idrPeriod = EncoderConfig::DEFAULT_GOP_IDR_PERIOD;
+            if (++i >= argc || !parseUint(args[i], idrPeriod)) {
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             gopStructure.SetIdrPeriod(idrPeriod);
             if (verbose) {
-                printf("Selected idrPeriod: %d\n", idrPeriod);
+                VkEncPrintfOut("Selected idrPeriod: %u\n", idrPeriod);
             }
         } else if (args[i] == "--consecutiveBFrameCount") {
             uint8_t consecutiveBFrameCount = EncoderConfig::DEFAULT_CONSECUTIVE_B_FRAME_COUNT;
             if (++i >= argc || !parseUint(args[i], consecutiveBFrameCount)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             gopStructure.SetConsecutiveBFrameCount(consecutiveBFrameCount);
             if (verbose) {
-                printf("Selected consecutiveBFrameCount: %d\n", consecutiveBFrameCount);
+                VkEncPrintfOut("Selected consecutiveBFrameCount: %u\n",
+                       (unsigned)consecutiveBFrameCount);
             }
         } else if (args[i] == "--temporalLayerCount") {
             uint8_t temporalLayerCount = EncoderConfig::DEFAULT_TEMPORAL_LAYER_COUNT;
             if (++i >= argc || !parseUint(args[i], temporalLayerCount)) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             gopStructure.SetTemporalLayerCount(temporalLayerCount);
             if (verbose) {
-                printf("Selected temporalLayerCount: %d\n", temporalLayerCount);
+                VkEncPrintfOut("Selected temporalLayerCount: %u\n",
+                       (unsigned)temporalLayerCount);
             }
         } else if (args[i] == "--lastFrameType") {
             VkVideoGopStructure::FrameType lastFrameType = VkVideoGopStructure::FRAME_TYPE_P;
