@@ -2975,13 +2975,22 @@ struct VkVideoEncoderDeviceIdentity {
 };
 
 // Build a context. See the lifetime rules above: in OWN mode this may return
-// an existing context rather than a new one, and the returned context is
-// never destroyed. In ADOPT mode a fresh context is built every time and
-// destroying it destroys nothing of the caller's.
+// an existing context rather than a new one, and the returned context outlives
+// every reference the caller drops -- only VkEncRetireOwnContexts() releases
+// it. In ADOPT mode a fresh context is built every time and destroying it
+// destroys nothing of the caller's.
 extern "C" VK_VIDEO_ENCODER_EXPORT
 VkResult CreateVulkanVideoEncoderContext(
     const VkVideoEncoderContextCreateInfo*      pCreateInfo,
     VkSharedBaseObj<VulkanVideoEncoderContext>& outContext);
+
+// Release every cached OWN-mode context, destroying the VkInstance each holds,
+// and returns how many were released. Reached publicly as IPlatformLifetime.
+//
+// Retirement is permanent: an OWN-mode create after this call is refused
+// rather than allowed to issue a second vkCreateInstance. Call it while the
+// process can still reach the driver -- not from a static destructor.
+uint32_t VkEncRetireOwnContexts();
 
 // Create an encode session ON a context. This is the session-to-context
 // link, and it is how a session is meant to obtain a borrowed instance and

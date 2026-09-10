@@ -1129,6 +1129,31 @@ public:
 // PLATFORM
 //=============================================================================
 
+// Releasing the process-wide Vulkan instance the encoder stands up.
+//
+// An OWN-mode platform caches its VkInstance for the process lifetime so that
+// repeated create/destroy cycles reuse one instance rather than issuing a
+// second vkCreateInstance -- which a sandboxed process may no longer be
+// permitted to do. Dropping every Ref therefore does NOT destroy the instance,
+// and a process that exits without calling Retire() leaves it standing. Under
+// a driver that audits allocations at exit, that is reported as a leak.
+//
+// Retire() is how a caller that owns the process lifetime releases it at a
+// moment of its choosing: late enough that no encoding remains, early enough
+// that calling the driver is still allowed. It is permanent -- after it, every
+// CreateSession and every VkEncCreatePlatform for this device fails rather
+// than standing a second instance up -- and idempotent.
+//
+// A caller that simply runs to process exit need not call it at all.
+class IPlatformLifetime : public IObject {
+public:
+    static constexpr std::string_view kId = "vk.video.enc.IPlatformLifetime/1";
+
+    // Returns the number of cached device contexts released; zero if the
+    // instance was already retired.
+    virtual uint32_t Retire() = 0;
+};
+
 // The root object: a device the encoder can run on. Everything else is
 // created from here.
 class IEncoderPlatform : public IObject {
