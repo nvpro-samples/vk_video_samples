@@ -663,8 +663,18 @@ public:
         m_config.disableFileOutput = VK_TRUE;
         m_config.outputPath        = nullptr;
 
-        m_config.externalInstance                = platform.instance;
-        m_config.externalPhysicalDevice          = platform.physicalDevice;
+        // externalInstance and externalPhysicalDevice ARE DELIBERATELY NOT SET
+        // from |platform|, even when the caller supplied them. Every session
+        // this interface creates is created ON the platform's context, and a
+        // context already carries the instance and the physical device it was
+        // built against. Naming them a second time here is a contradiction the
+        // encoder refuses outright ("the context already supplies both"),
+        // which would make an adopted-instance platform unable to create any
+        // session at all.
+        //
+        // externalDevice and the queue families below are a different case and
+        // do pass through: a context never creates a VkDevice, so a caller
+        // supplying one is adding something the context does not have.
         m_config.externalDevice                  = platform.device;
         m_config.externalEncodeQueueFamilyIndex  = platform.encodeQueueFamilyIndex;
         m_config.externalComputeQueueFamilyIndex = platform.computeQueueFamilyIndex;
