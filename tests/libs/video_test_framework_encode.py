@@ -29,6 +29,8 @@ from tests.libs.video_test_config_base import (
     VideoTestStatus,
     check_sample_resources,
     create_error_result,
+    create_skipped_result,
+    SKIP_REASON_NO_CONTENT,
     load_samples_from_json,
 )
 from tests.libs.video_test_framework_base import (
@@ -47,6 +49,7 @@ class EncodeTestSample(BaseTestConfig):
     source_format: str = "yuv"  # "yuv" or "y4m"
     width: int = 0
     height: int = 0
+    validate_with_decoder: bool = True
 
     def __init__(
         self,
@@ -54,6 +57,7 @@ class EncodeTestSample(BaseTestConfig):
         source_format: str = "yuv",
         width: int = 0,
         height: int = 0,
+        validate_with_decoder: bool = True,
         **kwargs,
     ):
         """Initialize EncodeTestSample with all fields from base and child"""
@@ -62,6 +66,7 @@ class EncodeTestSample(BaseTestConfig):
         self.source_format = source_format
         self.width = width
         self.height = height
+        self.validate_with_decoder = validate_with_decoder
 
     @classmethod
     def from_dict(cls, data: dict) -> 'EncodeTestSample':
@@ -70,6 +75,14 @@ class EncodeTestSample(BaseTestConfig):
             **cls._parse_base_fields(data),
             profile=data.get("profile"),
             source_format=data.get("source_format", "yuv"),
+            # Per-sample opt-out of the decode round-trip. Some profiles are legal to
+            # ENCODE but cannot be DECODED by the same hardware -- H.264 High 4:4:4
+            # Predictive is encodable here but NVDEC has no H.264 4:4:4 decode, so the
+            # capability query correctly returns
+            # VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR and the round-trip can never
+            # succeed. Without a per-sample flag such a cell can only fail forever or be
+            # skipped entirely, and skipping throws away the encode coverage as well.
+            validate_with_decoder=data.get("validate_with_decoder", True),
             width=data.get("width", 0),
             height=data.get("height", 0),
         )
@@ -235,6 +248,13 @@ class VulkanVideoEncodeTestFramework(VulkanVideoTestFrameworkBase):
 
         # Use the YUV file specified in the test configuration
         yuv_file = config.full_yuv_path
+        if not yuv_file.exists():
+            # Same rule as the decoder: content with no source_url is generated
+            # locally, so its absence is a skip, not a failure.
+            if not config.source_url:
+                return create_skipped_result(config, SKIP_REASON_NO_CONTENT)
+            return create_error_result(
+                config, f"Input YUV file not found: {yuv_file}")
 
         # Base command
         cmd = [
@@ -285,8 +305,9 @@ class VulkanVideoEncodeTestFramework(VulkanVideoTestFrameworkBase):
             result.stderr, config
         )
 
-        # Validate encoded output with decoder if enabled
+        # Validate encoded output with decoder if enabled, globally AND for this sample.
         if (self.validate_with_decoder and
+                getattr(config, "validate_with_decoder", True) and
                 output_file.exists() and
                 result.status == VideoTestStatus.SUCCESS):
             validation_success, validation_output = (

@@ -1689,6 +1689,36 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             pFrameFilterOutResourceInfo->currentImageLayout = VK_IMAGE_LAYOUT_GENERAL;
         }
 
+        // The filter's INPUT is the DPB layer the decode just wrote, and the compute shader
+        // reads it as a storage image -- which is only defined in VK_IMAGE_LAYOUT_GENERAL.
+        // Nothing else moves it out of VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR: the decoder
+        // transitions a layer exactly once, from UNDEFINED, on its first use. Without this
+        // transition the descriptor's declared layout does not match the image's actual
+        // layout.
+        //
+        // Transition it here and put it back before the command buffer ends, so the decoder's
+        // own layout tracking -- which still believes the layer is in VIDEO_DECODE_DPB_KHR --
+        // stays true and later frames can keep referencing the layer without a transition.
+        const uint32_t inLayer = inputImageView->GetImageSubresourceRange().baseArrayLayer;
+        const VkImage  inImage = inputImageView->GetImageResource()->GetImage();
+        {
+            VkImageMemoryBarrier2 inB{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+            inB.srcStageMask  = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+            inB.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT;
+            inB.dstStageMask  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            inB.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+            inB.oldLayout     = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR;
+            inB.newLayout     = VK_IMAGE_LAYOUT_GENERAL;
+            inB.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            inB.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            inB.image = inImage;
+            inB.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, inLayer, 1 };
+            VkDependencyInfo di{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            di.imageMemoryBarrierCount = 1;
+            di.pImageMemoryBarriers = &inB;
+            m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &di);
+        }
+
         result = m_yuvFilter->RecordCommandBuffer(cmdBuf,
                                                   filterCmdBuffer->GetNodePoolIndex(),
                                                   inputImageView.get(),
@@ -1697,6 +1727,27 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
                                                   &outputImageResource);
 
         assert(result == VK_SUCCESS);
+
+        {
+            // Put the DPB layer back the way the decoder's layout tracking believes it is,
+            // or the next frame that references this slot is decoded from an image in the
+            // wrong layout.
+            VkImageMemoryBarrier2 outB{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+            outB.srcStageMask  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            outB.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+            outB.dstStageMask  = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+            outB.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+            outB.oldLayout     = VK_IMAGE_LAYOUT_GENERAL;
+            outB.newLayout     = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR;
+            outB.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            outB.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            outB.image = inImage;
+            outB.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, inLayer, 1 };
+            VkDependencyInfo di{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            di.imageMemoryBarrierCount = 1;
+            di.pImageMemoryBarriers = &outB;
+            m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &di);
+        }
 
         // Post-dispatch image barrier: flush compute shader writes for consumers.
         // For LINEAR output (dump path): flush to host so CPU-mapped reads see the data.
@@ -1744,7 +1795,16 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         // The filter is now the ONLY signaler on the TL semaphore, so values
         // are monotonically increasing on the compute queue — no backward signals.
         VkSemaphore decodeToFilterSemaphore = filterCmdBuffer->GetSemaphore();
-        const VkPipelineStageFlags2KHR waitDecoderStageMasks = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
+        // This submit goes to the COMPUTE queue, so the wait stage mask may only name
+        // stages that queue family supports
+        // (VUID-VkSemaphoreSubmitInfo-stageMask-03929). A compute family that does
+        // not also carry video-decode support has no video-decode stage, so
+        // VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR cannot be named here even though
+        // the semaphore it waits on is signalled by the decode submit. ALL_COMMANDS
+        // is legal on every queue and covers the whole command buffer -- the dispatch
+        // plus the layout transition that precedes it, which is a transfer-class
+        // operation -- so it does not have to be revisited as the recording grows.
+        const VkPipelineStageFlags2KHR waitDecoderStageMasks = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
         const uint64_t computeCompleteTimelineValue = frameSynchronizationInfo.filterCompleteTimelineValue;
         const VkPipelineStageFlags2KHR signalComputeStageMasks = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT_KHR;
 

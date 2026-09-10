@@ -45,6 +45,7 @@ VkFormat toVkFormat(TestFormat format) {
         case TestFormat::P212:   return VK_FORMAT_G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16;
         case TestFormat::YUV444: return VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM;
         case TestFormat::Y410:   return VK_FORMAT_A2B10G10R10_UNORM_PACK32;  // Packed AVYU 4:4:4
+        case TestFormat::R8:     return VK_FORMAT_R8_UNORM;
         default:                 return VK_FORMAT_UNDEFINED;
     }
 }
@@ -62,6 +63,7 @@ const char* testFormatName(TestFormat format) {
         case TestFormat::P212:   return "P212 (12-bit 4:2:2)";
         case TestFormat::YUV444: return "YUV444 (8-bit 4:4:4)";
         case TestFormat::Y410:   return "Y410 (10-bit 4:4:4 packed)";
+        case TestFormat::R8:     return "R8 (8-bit single-plane)";
         default:                 return "Unknown";
     }
 }
@@ -338,7 +340,7 @@ FilterTestApp::~FilterTestApp() {
     }
 }
 
-VkResult FilterTestApp::init(bool verbose, const char* deviceUuidStr) {
+VkResult FilterTestApp::init(bool verbose, bool validate, const char* deviceUuidStr) {
     
     // Required instance layers and extensions for validation (if verbose)
     static const char* const requiredInstanceLayers[] = {
@@ -366,8 +368,11 @@ VkResult FilterTestApp::init(bool verbose, const char* deviceUuidStr) {
         nullptr
     };
     
-    // Add validation layers and debug extensions if verbose
-    if (verbose) {
+    // Enable the validation layers for --validate as well as --verbose. --validate is
+    // the CI-usable form: it turns the layers on without the verbose log firehose, so
+    // running with validation does not depend on also wanting the extra logging.
+    const bool enableValidation = (verbose || validate);
+    if (enableValidation) {
         m_vkDevCtx.AddReqInstanceLayers(requiredInstanceLayers);
         m_vkDevCtx.AddReqInstanceExtensions(requiredInstanceExtensions);
     }
@@ -384,7 +389,7 @@ VkResult FilterTestApp::init(bool verbose, const char* deviceUuidStr) {
     }
     
     // Initialize debug report (only if validation is enabled)
-    result = m_vkDevCtx.InitDebugReport(verbose, verbose);
+    result = m_vkDevCtx.InitDebugReport(enableValidation, verbose);
     if (result != VK_SUCCESS && verbose) {
         std::cerr << "[FilterTestApp] Warning: Failed to initialize debug report: " << result << std::endl;
         // Non-fatal - continue without debug
@@ -700,6 +705,28 @@ TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
             execDesc.outputs[0].primary =
                 TransferResource::fromImageResource(*outputImages[0], VK_IMAGE_LAYOUT_UNDEFINED);
             execDesc.outputs[0].primaryView = outputImageViews[0].get();
+
+            // Bind the subsampled-Y target when the filter was built with Y subsampling.
+            //
+            // FLAG_ENABLE_Y_SUBSAMPLING makes the generated shader declare and statically
+            // use binding 9 (subsampledImageY). The filter reads that image from
+            // execDesc.outputs[1] -- see RecordComputeDispatch. numOutputs must therefore
+            // be 2 whenever the flag is set: dispatching with binding 9 unwritten is
+            // VUID-vkCmdDispatch-None-08114, and the case still reports PASS on its own
+            // checks, because writes to an unbound descriptor are discarded.
+            //
+            // The subsampled image is the LAST configured output (TC091 appends it to the
+            // dual-output config), while the filter wants it in slot 1, so map explicitly
+            // rather than by position.
+            if ((config.filterFlags & VulkanFilterYuvCompute::FLAG_ENABLE_Y_SUBSAMPLING) &&
+                (outputImages.size() > 1)) {
+                const size_t subIdx = outputImages.size() - 1;
+                execDesc.numOutputs = 2;
+                execDesc.outputs[1].primary =
+                    TransferResource::fromImageResource(*outputImages[subIdx],
+                                                        VK_IMAGE_LAYOUT_UNDEFINED);
+                execDesc.outputs[1].primaryView = outputImageViews[subIdx].get();
+            }
 
             if (needsInputUpload) {
                 vkResult = createStagingBuffer(firstInputPattern.size(), inputStagingBuffer,

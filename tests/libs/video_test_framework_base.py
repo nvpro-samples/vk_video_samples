@@ -27,6 +27,7 @@ from typing import Dict, List, Optional
 
 from tests.libs.video_test_config_base import (
     BaseTestConfig,
+    ExpectedResult,
     SkipFilter,
     SkipRule,
     TestResult,
@@ -36,6 +37,9 @@ from tests.libs.video_test_config_base import (
     load_skip_list,
 )
 
+from tests.libs.video_test_expected_result import (
+    score_expected_rejection,
+)
 from tests.libs.video_test_platform_utils import PlatformUtils
 from tests.libs.video_test_driver_detect import (
     parse_driver_from_output, parse_system_info_from_output, SystemInfo,
@@ -420,6 +424,11 @@ class VulkanVideoTestFrameworkBase:
             "description": result.config.description,
             "status": result.status.value,
             "success": result.success,
+            "expected_result": getattr(
+                result.config, "expected_result",
+                ExpectedResult.SUCCESS).value,
+            "expected_vk_result": getattr(
+                result.config, "expected_vk_result", ""),
             "returncode": result.returncode,
             "execution_time_ms": round(
                 result.execution_time * 1000, 2
@@ -518,6 +527,18 @@ class VulkanVideoTestFrameworkBase:
         """Validate test result against expectations."""
         config = result.config
 
+        expected = getattr(config, "expected_result", ExpectedResult.SUCCESS)
+        if expected == ExpectedResult.UNSUPPORTED:
+            # A cell that never ran cannot be scored either way. Without this a
+            # negative cell whose content is absent would be reported as
+            # "expected a rejection, got skipped" -- a failure invented by the
+            # scoring, not observed from the device.
+            if result.status != VideoTestStatus.SKIPPED:
+                score_expected_rejection(result)
+            if result.warning_found and self.verbose:
+                print(f"  ⚠️  Warning detected in {config.name}")
+            return
+
         if result.status == VideoTestStatus.ERROR:
             if not result.error_message:
                 result.error_message = (
@@ -597,14 +618,27 @@ class VulkanVideoTestFrameworkBase:
             "-i", str(input_file),
             "--verbose",
         ]
-        has_filter_arg = (extra_decoder_args
-                          and "--enablePostProcessFilter"
-                          in extra_decoder_args)
-        if not has_filter_arg:
-            cmd.extend(["--enablePostProcessFilter", "0"])
+        # --enablePostProcessFilter takes a filter TYPE, not a boolean. The decoder's
+        # default is -1, which disables the post-process pass; 0 is a legacy value that
+        # selects the first filter. Do not pass "0" here to mean "off": it routes every
+        # decode that did not ask for a filter through a compute shader, so a decode
+        # cell validates decode + filter and a filter defect reads as a decoder defect.
+        # Omit the option to get the default: the argument parser rejects "-1" because
+        # it starts with a dash.
 
         if output_file:
             cmd.extend(["-o", str(output_file)])
+            # Ask for RAW output explicitly. The decoder defaults to a Y4M container and,
+            # when the -o path does not end in .y4m, silently writes to "<path>.y4m"
+            # instead. The harness names its output decoded_<name>.yuv, so without this
+            # flag nothing exists at the path the MD5 check reads: the check finds no file,
+            # skips itself, and the cell is scored on the decoder's exit code alone -- a
+            # suite that reports green while verifying nothing about the decoded pixels.
+            # expected_output_md5 is the md5 of RAW YUV, so the container has to be raw for
+            # the comparison to mean anything; the same pixels in Y4M hash differently.
+            format_flags = {"--yuv", "--y4m"}
+            if not (extra_decoder_args and format_flags.intersection(extra_decoder_args)):
+                cmd.append("--yuv")
         if no_display:
             cmd.append("--noPresent")
         if self.device_id is not None:

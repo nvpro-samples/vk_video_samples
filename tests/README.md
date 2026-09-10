@@ -34,6 +34,8 @@ python3 tests/vvs_test_runner.py --test "h264_4k_main"
 - [Configuration Reference](#configuration-reference)
   - [Decode Samples Format](#decode-samples-format)
   - [Encode Samples Format](#encode-samples-format)
+  - [Goldens](#goldens)
+  - [Negative Cells](#negative-cells)
   - [Test Skip List](#test-skip-list)
 - [Advanced Topics](#advanced-topics)
   - [Fluster Test Suite Compatibility](#fluster-test-suite-compatibility)
@@ -115,7 +117,10 @@ The `decode_samples.json` file defines decoder test cases:
 | `name` | Yes | Unique test identifier (used with `--test` option) |
 | `codec` | Yes | Codec type: `h264`, `h265`, `av1`, `vp9` |
 | `description` | No | Human-readable test description |
-| `expected_output_md5` | No | MD5 hash of expected decoded YUV output for verification |
+| `expected_output_md5` | No | MD5 of the RAW decoded surface. Layout-dependent — see [Goldens](#goldens) |
+| `expected_output_y4m_md5` | No | MD5 of Y4M output. Portable across GPUs — prefer this |
+| `expected_result` | No | `success` (default) or `unsupported` — see [Negative Cells](#negative-cells) |
+| `expected_vk_result` | No | For a negative cell, the exact `VkResult` the rejection must carry |
 | `source_url` | Yes | URL to download the test sample |
 | `source_checksum` | Yes | SHA256 checksum of the source file |
 | `source_filepath` | Yes | Relative path where the file is stored in `resources/` |
@@ -219,6 +224,9 @@ The `encode_samples.json` file defines encoder test cases:
 | `profile` | No | Encoding profile (e.g., `baseline`, `main`, `high`, `high444`, `main10`) |
 | `extra_args` | No | Array of extra command-line arguments for the encoder |
 | `description` | No | Human-readable test description |
+| `validate_with_decoder` | No | `true` (default). Set `false` when the profile is encodable but not decodable on the same hardware |
+| `expected_result` | No | `success` (default) or `unsupported` — see [Negative Cells](#negative-cells) |
+| `expected_vk_result` | No | For a negative cell, the exact `VkResult` the rejection must carry |
 | `width` | Yes | Input video width in pixels |
 | `height` | Yes | Input video height in pixels |
 | `source_url` | Yes | URL to download the YUV input file |
@@ -312,6 +320,93 @@ To add a new encode test sample to `encode_samples.json`:
 - Supported codecs for encoding are: `h264`, `h265`, `av1` (VP9 encoding is not supported)
 - Common profiles: `baseline`, `main`, `high` (H.264), `main`, `main10` (H.265/AV1)
 - **Validation:** By default, the encoder test framework runs a decode pass on the encoded output to verify the bitstream is valid and decodable. This can be disabled with `--no-validate-with-decoder`
+
+### Goldens
+
+`expected_output_md5` hashes the **raw decoded surface**. Its byte layout follows
+the decode output image, so a GPU that returns a different plane arrangement
+produces a different hash for pixel-identical output. A raw golden is therefore
+only meaningful on the architecture that minted it: the HEVC Main 12 4:2:0 raw
+golden is an RTX 5080 hash, and an RTX 3080 Ti does not reproduce it even though
+it decodes that clip sample-exactly against an independent ffmpeg reference.
+
+Two mechanisms, in order of preference:
+
+**1. `expected_output_y4m_md5` — the portable golden.** The decoder is run with
+`--y4m`, and Y4M is always planar and carries its geometry and sample layout in
+the header, so identical pixels hash identically on any architecture. Use this
+for anything above 8-bit, where surface layouts vary most. When present it takes
+precedence over the raw golden.
+
+**2. Per-GPU maps — for values that legitimately differ.** Either golden may be
+an object keyed by a GPU-name fragment instead of a string:
+
+```json
+"expected_output_md5": {
+  "RTX 50": "ac24b7aa36f93823d52fa4c996f7b74b",
+  "RTX 30": "5af6903636807c4c2ed4c431cfc8023f",
+  "default": "..."
+}
+```
+
+Matching is case-insensitive against the detected GPU name, and the longest
+matching fragment wins, so `RTX 3080 Ti` overrides a broader `RTX 30`. A GPU that
+matches nothing and has no `default` gets **no check** rather than someone else's
+hash — silence is better than failing correct pixels against a foreign layout.
+
+**Minting.** Confirm the output against an independent decoder *in the same run
+that records the hash*. Re-recording whatever the decoder emitted turns a golden
+into a tautology: it will agree with a regression as readily as with a fix. The
+12-bit cells were each verified pixel-exact against ffmpeg at mint time.
+
+### Negative Cells
+
+Some profiles are ones the hardware genuinely cannot do. On NVIDIA: VP9 Profile 3
+(4:2:2 at any bit depth), H.264 4:4:4 **decode**, 12-bit **encode**, AV1 High and
+Professional **encode**. The correct behaviour is a clean capability rejection, and a
+negative cell is how a suite says so — without one the choice is to leave the cell red
+forever or to skip it, and both make a correct rejection indistinguishable from an
+untested one.
+
+A negative cell inverts the pass condition:
+
+```json
+{
+  "name": "vp9_profile3_12_422_4k_unsupported",
+  "codec": "vp9",
+  "expected_result": "unsupported",
+  "expected_vk_result": "VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR",
+  "source_url": "",
+  "source_checksum": "3f1af89f...",
+  "source_filepath": "video/vp9-12/vp9_profile3_12_422_4k.ivf"
+}
+```
+
+It passes only when the app exits `EX_UNAVAILABLE` (69) **and** the named `VkResult`
+appears in the output. Three things fail it, each for a different reason:
+
+| Outcome | Verdict | Why it matters |
+|---------|---------|----------------|
+| Rejected with the named `VkResult` | **PASS** | The hardware limit is real and reported properly |
+| Ran successfully | **FAIL** | The driver started accepting a profile it cannot do. No positive cell can catch this — there is no positive cell for an unsupported profile |
+| Rejected, different `VkResult` | **FAIL** | Something else failed: a missing file, an unrelated capability. Without the check, either would score as "correctly unsupported" |
+| Crashed / errored | **FAIL** | An abort is not a clean rejection |
+
+`expected_vk_result` is optional; omit it and exit 69 alone suffices. Valid names are
+listed in `VK_RESULT_CODES` in `libs/video_test_config_base.py`, and an unrecognised
+name is an error rather than a check that silently does nothing.
+
+**Portability.** These cells assert *NVIDIA hardware* behaviour. On an implementation
+that genuinely supports one of these profiles the cell will fail — which is the correct
+signal to look. Resolve it with a skip-list entry scoped to that driver, not by deleting
+the cell.
+
+**Generating the inputs.** `scripts/gen_negative_test_content.sh` builds the H.264 4:4:4
+stream and the 12-bit raw input from the public YUVs the suite already downloads, and
+gates each artifact afterwards (a 4:4:4 stream that is quietly 4:2:0 would make the
+rejection an accident). The VP9 Profile 3 clip comes from the memory-compression repo's
+`scripts/gen_12bit_decode_clips.sh`, alongside the positive 12-bit clips, so all the
+12-bit artifacts share one master and differ only by format.
 
 ### Test Skip List
 

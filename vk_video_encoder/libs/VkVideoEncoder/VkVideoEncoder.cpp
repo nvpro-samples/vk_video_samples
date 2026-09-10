@@ -1678,6 +1678,33 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     encoderConfig->encodeWidth  = std::min(encoderConfig->encodeWidth,  encoderConfig->videoCapabilities.maxCodedExtent.width);
     encoderConfig->encodeHeight = std::min(encoderConfig->encodeHeight, encoderConfig->videoCapabilities.maxCodedExtent.height);
 
+    // Refuse an extent the device cannot encode, rather than quietly encoding a
+    // cropped picture. The min-clamp above is benign padding, but clamping down
+    // to maxCodedExtent changes what the caller asked for: it gets a smaller
+    // picture than it requested with nothing to say so, and comparing that
+    // against a reference at the requested size reads as a quality failure with
+    // no cause. maxCodedExtent varies by device and by profile, so the request
+    // is checked against the reported capability rather than a fixed limit.
+    if ((requestedW > encoderConfig->videoCapabilities.maxCodedExtent.width) ||
+        (requestedH > encoderConfig->videoCapabilities.maxCodedExtent.height)) {
+        fprintf(stderr, "[CAPS] ERROR: requested %ux%u exceeds this profile's maximum "
+                        "coded extent %ux%u; refusing to encode a cropped picture\n",
+                requestedW, requestedH,
+                encoderConfig->videoCapabilities.maxCodedExtent.width,
+                encoderConfig->videoCapabilities.maxCodedExtent.height);
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
+
+    // Keep the session's maximum in step with the clamped extent. These are what
+    // VideoSession/DPB creation is sized from, and a session asked for more than
+    // the device's maxCodedExtent is not rejected cleanly -- the encoder faults
+    // with an access violation instead of failing validation -- so they must
+    // never exceed the capability either.
+    encoderConfig->encodeMaxWidth  = std::min(encoderConfig->encodeMaxWidth,
+                                              encoderConfig->videoCapabilities.maxCodedExtent.width);
+    encoderConfig->encodeMaxHeight = std::min(encoderConfig->encodeMaxHeight,
+                                              encoderConfig->videoCapabilities.maxCodedExtent.height);
+
     m_maxCodedExtent = { encoderConfig->encodeMaxWidth, encoderConfig->encodeMaxHeight }; // max coded size
     m_streamBufferSize = std::max(m_minStreamBufferSize, (size_t)encoderConfig->input.fullImageSize); // use worst case size
 
@@ -2842,6 +2869,7 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
     if (encodeFrameInfo->controlCmd != VkVideoCodingControlFlagsKHR())
     {
         m_beginRateControlInfo = {VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR, NULL};
+        m_beginCodecRateControlInfoValid = false;
     }
 
     encodeBeginInfo.pNext = &m_beginRateControlInfo;
@@ -2869,6 +2897,34 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         for (const VkBaseInStructure* p =
                  reinterpret_cast<const VkBaseInStructure*>(encodeFrameInfo->pControlCmdChain);
              p != nullptr; p = p->pNext) {
+            // Capture the codec-specific RC struct too: the BeginCoding chain has to
+            // match the session state that this CmdControlVideoCodingKHR establishes,
+            // or vkCmdBeginVideoCodingKHR reports VUID-...-pBeginInfo-08254. The walk
+            // stops at the base struct, so a codec-specific struct is picked up only
+            // when it precedes the base one -- which is how the codec encoders build
+            // the chain.
+            if ((p->sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR) ||
+                (p->sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR) ||
+                (p->sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_INFO_KHR)) {
+                switch (p->sType) {
+                    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR:
+                        m_beginCodecRateControlInfo.h264 =
+                            *reinterpret_cast<const VkVideoEncodeH264RateControlInfoKHR*>(p);
+                        break;
+                    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR:
+                        m_beginCodecRateControlInfo.h265 =
+                            *reinterpret_cast<const VkVideoEncodeH265RateControlInfoKHR*>(p);
+                        break;
+                    default:
+                        m_beginCodecRateControlInfo.av1 =
+                            *reinterpret_cast<const VkVideoEncodeAV1RateControlInfoKHR*>(p);
+                        break;
+                }
+                m_beginCodecRateControlInfo.base.pNext = nullptr;
+                m_beginCodecRateControlInfoValid = true;
+                continue;
+            }
+
             if (p->sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR) {
                 m_beginRateControlInfo = *reinterpret_cast<const VkVideoEncodeRateControlInfoKHR*>(p);
                 m_beginRateControlInfo.pNext = nullptr;
@@ -2879,6 +2935,12 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
                 }
                 break;
             }
+        }
+
+        // Re-link after the walk: both halves are encoder-owned storage, so the chain
+        // stays valid for every later frame that reuses the cached state.
+        if (m_beginCodecRateControlInfoValid) {
+            m_beginRateControlInfo.pNext = &m_beginCodecRateControlInfo;
         }
     }
 

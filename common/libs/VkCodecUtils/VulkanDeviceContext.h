@@ -302,6 +302,17 @@ public:
                                 bool createComputeQueue = false,
                                 VkDevice vkDevice = VK_NULL_HANDLE);
     VkResult InitDebugReport(bool validate = false, bool validateVerbose = false);
+
+    // Validation-error accounting.
+    //
+    // Printing is not a gate: a test can emit a VUID on every dispatch and still report
+    // success, because the debug callbacks only log. Counting the errors is what lets a
+    // harness fail the run on them -- vk_filter_test exits nonzero on a nonzero count.
+    //
+    // Counts only ERROR-severity messages, and only those not in the suppressed-id
+    // list. Zero unless the validation layers are enabled.
+    static uint32_t GetValidationErrorCount();
+    static void     ResetValidationErrorCount();
 private:
 
     static PFN_vkGetInstanceProcAddr LoadVk(VulkanLibraryHandleType &vulkanLibHandle,

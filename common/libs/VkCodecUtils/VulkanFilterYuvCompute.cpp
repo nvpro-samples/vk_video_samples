@@ -1731,6 +1731,21 @@ uint32_t VulkanFilterYuvCompute::ShaderGenerateImagePlaneDescriptors(std::string
                                                                      uint32_t set,
                                                                      bool imageArray)
 {
+
+    // The caller must pass imageArray matching the VIEW its descriptor will bind:
+    //
+    //   input/output PLANE bindings  -> VkImageResourceView::GetPlaneImageView()
+    //        -> per-plane storage views, always VK_IMAGE_VIEW_TYPE_2D_ARRAY
+    //           (VkImageResource.cpp, both Create() overloads) -> imageArray = true
+    //   the subsampled-Y binding      -> VkImageResourceView::GetImageView()
+    //        -> the combined view, which follows layerCount   -> imageArray = false
+    //   color/RGB bindings            -> GetImageView() as well -> follows layerCount
+    //
+    // A view's type must match the Dim/Arrayed operands of the shader's OpTypeImage
+    // (VUID-vkCmdDispatch-viewType-07752). Note the subsampled binding is declared
+    // through this same PLANE_0 path but is bound from the combined view, so "plane
+    // aspect" alone does not imply an array view.
+
     shaderStr << " // The " << (isInput ? "input" : "output") << " image binding\n";
 
     // Handle the Y only and CbCr only images
@@ -3191,8 +3206,8 @@ static void GenWriteYBlock(std::stringstream& shaderStr,
         for (uint32_t x = 0; x < chromaHorzRatio; x++) {
             // Y value is in [0, 1], no need to add 0.5
             shaderStr <<
-                "    imageStore(outputImageY, lumaPos + ivec2(" << x << ", " << y
-                << "), vec4(ycbcr" << x << y << ".x, 0, 0, 1));\n";
+                "    imageStore(outputImageY, ivec3(lumaPos + ivec2(" << x << ", " << y
+                << "), pushConstants.dstLayer), vec4(ycbcr" << x << y << ".x, 0, 0, 1));\n";
         }
     }
     shaderStr << "    \n";
@@ -3223,14 +3238,14 @@ static void GenWriteChromaBlock(std::stringstream& shaderStr,
         if (isOutputTwoPlane) {
             shaderStr << "    // Write CbCr at luma position (4:4:4, 2-plane format)\n"
                       << "    // Shift CbCr from [-0.5, 0.5] to [0, 1] for storage\n"
-                      << "    imageStore(outputImageCbCr, lumaPos, "
+                      << "    imageStore(outputImageCbCr, ivec3(lumaPos, pushConstants.dstLayer), "
                       << "vec4(ycbcr00.y + 0.5, ycbcr00.z + 0.5, 0, 1));\n";
         } else {
             shaderStr << "    // Write Cb and Cr at luma position (4:4:4, 3-plane format)\n"
                       << "    // Shift CbCr from [-0.5, 0.5] to [0, 1] for storage\n"
-                      << "    imageStore(outputImageCb, lumaPos, "
+                      << "    imageStore(outputImageCb, ivec3(lumaPos, pushConstants.dstLayer), "
                       << "vec4(ycbcr00.y + 0.5, 0, 0, 1));\n"
-                      << "    imageStore(outputImageCr, lumaPos, "
+                      << "    imageStore(outputImageCr, ivec3(lumaPos, pushConstants.dstLayer), "
                       << "vec4(ycbcr00.z + 0.5, 0, 0, 1));\n";
         }
     } else {
@@ -3238,14 +3253,14 @@ static void GenWriteChromaBlock(std::stringstream& shaderStr,
         if (isOutputTwoPlane) {
             shaderStr << "    // Write CbCr (2-plane format)\n"
                       << "    // Shift CbCr from [-0.5, 0.5] to [0, 1] for storage\n"
-                      << "    imageStore(outputImageCbCr, chromaPos, "
+                      << "    imageStore(outputImageCbCr, ivec3(chromaPos, pushConstants.dstLayer), "
                       << "vec4(avgCbCr.x + 0.5, avgCbCr.y + 0.5, 0, 1));\n";
         } else {
             shaderStr << "    // Write Cb and Cr (3-plane format)\n"
                       << "    // Shift CbCr from [-0.5, 0.5] to [0, 1] for storage\n"
-                      << "    imageStore(outputImageCb, chromaPos, "
+                      << "    imageStore(outputImageCb, ivec3(chromaPos, pushConstants.dstLayer), "
                       << "vec4(avgCbCr.x + 0.5, 0, 0, 1));\n"
-                      << "    imageStore(outputImageCr, chromaPos, "
+                      << "    imageStore(outputImageCr, ivec3(chromaPos, pushConstants.dstLayer), "
                       << "vec4(avgCbCr.y + 0.5, 0, 0, 1));\n";
         }
     }
@@ -3298,7 +3313,19 @@ size_t VulkanFilterYuvCompute::InitRGBA2YCBCR(std::string& computeShader)
                                    false, // isInput
                                    4,     // startBinding
                                    0,     // set
-                                   false, // imageArray - use image2D for single-layer images
+                                   // imageArray follows the OUTPUT IMAGE TYPE, which is what
+                                   // decides which view the descriptor binds:
+                                   //   multi-planar -> per-plane views, always
+                                   //                   VK_IMAGE_VIEW_TYPE_2D_ARRAY -> image2DArray
+                                   //   packed        -> SINGLE-plane, so there is no per-plane
+                                   //                   view; it binds the combined view, which
+                                   //                   follows layerCount and is 2D -> image2D
+                                   // Both directions are real errors, so this cannot be a
+                                   // constant: an ivec2 store into an image2DArray does not
+                                   // compile, and an image2DArray declaration against the
+                                   // packed combined view trips the same VUID the other way
+                                   // ("view is 2D but OpTypeImage Arrayed = 1").
+                                   (m_outputPackedYcbcr == nullptr),
                                    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 
     // 3b. Binding 9: Subsampled Y output image (optional, only if enabled)
@@ -3407,6 +3434,11 @@ size_t VulkanFilterYuvCompute::InitRGBA2YCBCR(std::string& computeShader)
                   << " (Y=." << PackedChan(m_outputPackedYcbcr->yChannel)
                   << " Cb=."  << PackedChan(m_outputPackedYcbcr->cbChannel)
                   << " Cr=."  << PackedChan(m_outputPackedYcbcr->crChannel) << ", A=1)\n"
+                  // 2-component on purpose: a packed format is SINGLE-plane, so this
+                  // binding is not a per-plane view. It is bound from the combined view,
+                  // which follows layerCount and is VK_IMAGE_VIEW_TYPE_2D -- hence the
+                  // matching image2D declaration in InitRGBA2YCBCR. The planar branch
+                  // below is the one that needs dstLayer.
                   << "    imageStore(outputImageRGB, lumaPos, vec4("
                   << component[0] << ", " << component[1] << ", "
                   << component[2] << ", " << component[3] << "));\n"
@@ -3561,7 +3593,14 @@ uint32_t VulkanFilterYuvCompute::UpdateImageDescriptorSets(
                                                       imageView->GetImageView() :
                                                       imageView->GetPlaneImageView(planeNum);
             assert(imageDescriptors[descrIndex].imageView);
-            imageDescriptors[descrIndex].imageLayout = imageLayout;
+            // A storage-image descriptor is only valid in VK_IMAGE_LAYOUT_GENERAL
+            // (VUID-VkDescriptorImageInfo-imageView-06711). The caller passes ONE layout
+            // for the whole side of the filter, and for a YCbCr input that layout is the
+            // sampled-image layout -- which would silently be applied to the per-plane
+            // storage descriptors as well. Decide per descriptor instead.
+            imageDescriptors[descrIndex].imageLayout =
+                (writeDescriptorSets[descrIndex].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) ?
+                    VK_IMAGE_LAYOUT_GENERAL : imageLayout;
             writeDescriptorSets[descrIndex].pImageInfo = &imageDescriptors[descrIndex]; // Y (0) plane
             descrIndex++;
             validImageAspects &= ~(VK_IMAGE_ASPECT_COLOR_BIT << curImageAspect);
@@ -3622,9 +3661,14 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
             // which is what a storage image requires.
             VkSampler inputSampler = ((m_filterType == RGBA2YCBCR) || (m_inputPackedYcbcr != nullptr))
                                          ? VK_NULL_HANDLE : m_samplerYcbcrConversion.GetSampler();
-            // Storage images require GENERAL layout, sampled images use SHADER_READ_ONLY_OPTIMAL
-            VkImageLayout inputLayout = (inputSampler == VK_NULL_HANDLE) ? 
-                VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            // GENERAL is valid for both sampled and storage reads, the filter never
+            // transitions its input to SHADER_READ_ONLY_OPTIMAL itself, and no caller hands
+            // it an input in that layout: the decoder hands over a VIDEO_DECODE_DPB_KHR image
+            // that it moves to GENERAL, and the encoder hands over a GENERAL/TRANSFER_SRC
+            // linear staging image. Declaring SHADER_READ_ONLY_OPTIMAL here would not
+            // match either of them.
+            const VkImageLayout inputLayout = VK_IMAGE_LAYOUT_GENERAL;
+            (void)inputSampler;
             UpdateImageDescriptorSets(inImageView,
                                       m_inputImageAspects,
                                       inputSampler,
@@ -4039,9 +4083,14 @@ VkResult VulkanFilterYuvCompute::RecordCommandBuffer(VkCommandBuffer cmdBuf,
             // which is what a storage image requires.
             VkSampler inputSampler = ((m_filterType == RGBA2YCBCR) || (m_inputPackedYcbcr != nullptr))
                                          ? VK_NULL_HANDLE : m_samplerYcbcrConversion.GetSampler();
-            // Storage images require GENERAL layout, sampled images use SHADER_READ_ONLY_OPTIMAL
-            VkImageLayout inputLayout = (inputSampler == VK_NULL_HANDLE) ? 
-                VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            // GENERAL is valid for both sampled and storage reads, the filter never
+            // transitions its input to SHADER_READ_ONLY_OPTIMAL itself, and no caller hands
+            // it an input in that layout: the decoder hands over a VIDEO_DECODE_DPB_KHR image
+            // that it moves to GENERAL, and the encoder hands over a GENERAL/TRANSFER_SRC
+            // linear staging image. Declaring SHADER_READ_ONLY_OPTIMAL here would not
+            // match either of them.
+            const VkImageLayout inputLayout = VK_IMAGE_LAYOUT_GENERAL;
+            (void)inputSampler;
             UpdateImageDescriptorSets(inImageView,
                                       m_inputImageAspects,
                                       inputSampler,

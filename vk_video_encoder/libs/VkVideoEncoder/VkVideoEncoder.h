@@ -575,6 +575,8 @@ public:
         , m_minStreamBufferSize(2 * 1024 * 1024)
         , m_streamBufferSize(m_minStreamBufferSize)
         , m_rateControlInfo{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR }
+        , m_beginCodecRateControlInfo{}
+        , m_beginCodecRateControlInfoValid(false)
         , m_rateControlLayersInfo{{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR }}
         , m_picIdxToDpb{}
         , m_gopState()
@@ -939,6 +941,23 @@ protected:
     VkVideoEncodeQualityLevelInfoKHR      m_qualityLevelInfo;
     VkVideoEncodeRateControlInfoKHR       m_rateControlInfo;
     VkVideoEncodeRateControlInfoKHR       m_beginRateControlInfo;
+    // The codec-specific rate-control info that goes with m_beginRateControlInfo.
+    //
+    // vkCmdBeginVideoCodingKHR's rate-control chain must MATCH the state configured on
+    // the session (VUID-vkCmdBeginVideoCodingKHR-pBeginInfo-08254). That state is set by
+    // CmdControlVideoCodingKHR with the codec-specific struct chained on, so a chain
+    // that carries only the base struct disagrees with the session on every member the
+    // codec-specific struct sets -- gopFrameCount among them. Both halves are cached and
+    // re-linked, so every frame that reuses the cached state matches the session.
+    // Cache it codec-agnostically -- the base class does not know which codec it is.
+    union CodecRateControlInfo {
+        VkBaseInStructure                   base;
+        VkVideoEncodeH264RateControlInfoKHR h264;
+        VkVideoEncodeH265RateControlInfoKHR h265;
+        VkVideoEncodeAV1RateControlInfoKHR  av1;
+    };
+    CodecRateControlInfo                  m_beginCodecRateControlInfo;
+    bool                                  m_beginCodecRateControlInfoValid;
     VkVideoEncodeRateControlLayerInfoKHR  m_rateControlLayersInfo[1];
     int8_t   m_picIdxToDpb[17]; // MAX_DPB_SLOTS + 1
     VkVideoGopStructure::GopState         m_gopState;
