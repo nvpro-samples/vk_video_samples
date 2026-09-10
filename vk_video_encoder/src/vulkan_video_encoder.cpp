@@ -1780,7 +1780,8 @@ private:
 // PLATFORM
 //=============================================================================
 
-class PlatformImpl final : public IEncoderPlatform {
+class PlatformImpl final : public IEncoderPlatform,
+                          public IPlatformLifetime {
 public:
     PlatformImpl(const PlatformCreateInfo&                        info,
                  const VkSharedBaseObj<VulkanVideoEncoderContext>& context)
@@ -1797,8 +1798,17 @@ public:
         if (id == IEncoderPlatform::kId) {
             return static_cast<IEncoderPlatform*>(this);
         }
+        if (id == IPlatformLifetime::kId) {
+            return static_cast<IPlatformLifetime*>(this);
+        }
         return nullptr;
     }
+
+    // Releases the process-wide floor reference, not this platform: the
+    // instance being destroyed is shared by every platform built for this
+    // device, which is why retiring it is a request a caller has to make
+    // rather than something a single platform's destructor may do.
+    uint32_t Retire() override { return VkEncRetireOwnContexts(); }
 
     Ref<IEncoderCaps>   Caps() const override          { return m_caps; }
     Ref<IDeviceBinding> DeviceBinding() const override { return m_binding; }

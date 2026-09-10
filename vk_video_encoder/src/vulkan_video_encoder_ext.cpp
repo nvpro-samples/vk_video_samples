@@ -11877,7 +11877,8 @@ public:
     VkVideoEncoderContextMode GetMode() const { return m_mode; }
 
     virtual ~VulkanVideoEncoderContext() {
-        // Nothing Vulkan is destroyed here, in either mode.
+        // Nothing Vulkan is destroyed by this body. What the members do on
+        // the way out differs by mode.
         //
         // ADOPT (rule 3): the instance is flagged imported inside
         // VulkanDeviceContext, so its destructor leaves it alone, and the
@@ -11885,10 +11886,13 @@ public:
         // handle was retained in Build() before anything could fail, so the
         // destructor below does not unload it either.
         //
-        // OWN (rule 2): an OWN-mode context never reaches this destructor at
-        // all -- the process-wide floor reference holds its refcount above
-        // zero for the process lifetime, precisely so a later create cannot
-        // re-issue vkCreateInstance after a sandbox has locked down.
+        // OWN (rule 2): reached only from VkEncRetireOwnContexts(), which is
+        // the sole release of the floor reference that otherwise holds an
+        // OWN-mode context above zero. ~VulkanDeviceContext then destroys the
+        // instance -- so the destruction this comment says does not happen
+        // here happens one member below, at a moment the caller picked. A
+        // later create cannot re-issue vkCreateInstance because retirement is
+        // latched, not because nothing was ever destroyed.
     }
 
 private:
@@ -11912,19 +11916,36 @@ struct VkEncOwnContextEntry {
     VkSharedBaseObj<VulkanVideoEncoderContext> context;
 };
 
-// The floor reference (design 3.1 rule 2), deliberately leaked.
+// The floor reference (design 3.1 rule 2).
 //
-// Destroying this vector at static-destruction time would release the last
-// reference to every OWN-mode context and run vkDestroyInstance on the way
-// out of main -- and, far worse, would let a create that happens afterwards
-// stand up a second instance. Never destroyed means never re-created. The
-// pointer is a function-local static, so there is also no static-init order
+// An OWN-mode context is cached here for the process lifetime so that repeated
+// create/destroy cycles reuse one VkInstance. The rule this enforces is NOT
+// "never destroyed" but "never re-created": a second vkCreateInstance must not
+// be issued after the first, because by then a sandbox may have locked the
+// process down and the create would fail where a reuse would have worked.
+//
+// Those two are separable, and VkEncRetireOwnContexts() separates them. The
+// registry is released only through that call, which latches
+// VkEncOwnContextsRetired() on the way so no later create can stand a second
+// instance up. Release at an arbitrary static-destruction time is what must
+// not happen -- the driver is called from an exit path with no ordering
+// guarantee against the loader -- so nothing here has a destructor: the
+// pointer is a function-local static, which also leaves no static-init order
 // to get wrong.
 std::vector<VkEncOwnContextEntry>& VkEncOwnContextRegistry()
 {
     static std::vector<VkEncOwnContextEntry>* const registry =
         new std::vector<VkEncOwnContextEntry>();
     return *registry;
+}
+
+// Latched by VkEncRetireOwnContexts() and never cleared. Read under
+// VkEncContextConstructionMutex(), which is also what makes retire-vs-create
+// a decided order rather than a race.
+bool& VkEncOwnContextsRetired()
+{
+    static bool* const retired = new bool(false);
+    return *retired;
 }
 
 // The construction lock. Guards the floor registry AND the snapshot build, so
@@ -12133,11 +12154,22 @@ VkResult VulkanVideoEncoderContext::Create(
     // Latched before any output can be produced, including the device-
     // selection chatter inside VulkanDeviceContext. Only VK_TRUE acts: see
     // the header for why VK_FALSE must not un-silence.
-    if (createInfo.silenceStdio == VK_TRUE) {
-        SetVkEncoderStdioSilenced(true);
-    }
+    // Taken before any output can be produced, including the device-selection
+    // chatter inside VulkanDeviceContext, and held for the life of the
+    // context. VK_FALSE takes no token rather than clearing one: a context
+    // that wants output does not get to silence-off another owner.
+    VkEncoderStdioSilenceScope contextSilence(
+        createInfo.silenceStdio == VK_TRUE);
 
     if (createInfo.mode == VK_VIDEO_ENCODER_CONTEXT_MODE_OWN) {
+        if (VkEncOwnContextsRetired()) {
+            // The instance this process was entitled to has already been
+            // destroyed. Standing up a second one is the thing the floor
+            // reference exists to prevent, so refuse rather than try: after a
+            // sandbox has locked down the create would fail anyway, and here
+            // it fails with a reason instead of a driver error.
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
         std::vector<VkEncOwnContextEntry>& registry = VkEncOwnContextRegistry();
         for (size_t i = 0; i < registry.size(); i++) {
             if (memcmp(registry[i].gpuUUID, createInfo.gpuUUID,
@@ -12171,6 +12203,36 @@ VkResult VulkanVideoEncoderContext::Create(
 
     outContext = context;
     return VK_SUCCESS;
+}
+
+// Release the floor reference, destroying every OWN-mode context and with it
+// the VkInstance each holds.
+//
+// CALLED AT A POINT THE CALLER CHOOSES, which is the whole reason this is a
+// function and not a destructor. It runs vkDestroyInstance, so it has to
+// happen while the process can still call the driver -- before a sandbox
+// tightens, and well before static destruction, where the ordering against
+// the loader is not defined.
+//
+// Retirement is permanent and is latched BEFORE the release, so a create that
+// races this call is refused rather than served a context that is about to
+// die, and a create that follows it cannot re-issue vkCreateInstance.
+//
+// Idempotent: a second call has nothing to release and says so by returning
+// zero.
+uint32_t VkEncRetireOwnContexts()
+{
+    std::lock_guard<std::mutex> lock(VkEncContextConstructionMutex());
+
+    VkEncOwnContextsRetired() = true;
+
+    std::vector<VkEncOwnContextEntry>& registry = VkEncOwnContextRegistry();
+    const uint32_t retired = (uint32_t)registry.size();
+    // clear() drops each VkSharedBaseObj reference; the context whose refcount
+    // reaches zero destroys its VulkanDeviceContext and, in OWN mode, its
+    // instance with it.
+    registry.clear();
+    return retired;
 }
 
 VK_VIDEO_ENCODER_EXPORT
