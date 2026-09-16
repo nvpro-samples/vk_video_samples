@@ -864,7 +864,7 @@ public:
         , m_outputIsBuffer(false)
         , m_outputImageArray((filterFlags & FLAG_OUTPUT_IMAGE_ARRAY) != 0)
         , m_enableYSubsampling((filterFlags & FLAG_ENABLE_Y_SUBSAMPLING) != 0)
-        , m_skipCompute((filterFlags & FLAG_SKIP_COMPUTE) != 0 || 
+        , m_skipCompute((filterFlags & FLAG_SKIP_COMPUTE) != 0 ||
                         filterType == XFER_IMAGE_TO_BUFFER ||
                         filterType == XFER_BUFFER_TO_IMAGE ||
                         filterType == XFER_IMAGE_TO_IMAGE)
