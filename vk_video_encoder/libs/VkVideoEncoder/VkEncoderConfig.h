@@ -43,6 +43,7 @@
 #endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
 
 #undef max
+#undef min
 
 struct EncoderConfigH264;
 struct EncoderConfigH265;
