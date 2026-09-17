@@ -40,6 +40,7 @@
 #include "VkCodecUtils/VulkanFilterYuvCompute.h"
 
 #undef max
+#undef min
 
 struct EncoderConfigH264;
 struct EncoderConfigH265;
