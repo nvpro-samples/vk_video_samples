@@ -38,6 +38,7 @@ set(TEST_HEADERS
 set(VKCODECUTILS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../VkCodecUtils")
 set(VKCODECUTILS_SOURCES
     ${VKCODECUTILS_DIR}/VulkanDeviceContext.cpp
+    ${VKCODECUTILS_DIR}/VkEncoderStdioLatch.cpp
     ${VKCODECUTILS_DIR}/VulkanDeviceMemoryImpl.cpp
     ${VKCODECUTILS_DIR}/VkImageResource.cpp
     ${VKCODECUTILS_DIR}/VkBufferResource.cpp
@@ -54,6 +55,7 @@ set(VKCODECUTILS_SOURCES
     ${VKCODECUTILS_DIR}/VulkanFenceSet.cpp
     ${VKCODECUTILS_DIR}/Helpers.cpp
     ${VK_DISPATCH_TABLE_SOURCE}
+    ${VK_DISPATCH_TABLE_HEADER}
     ${VKCODECUTILS_DIR}/nvVkFormats.cpp
 )
 
@@ -111,13 +113,68 @@ install(TARGETS ${PROJECT_NAME}
 
 # Add test
 enable_testing()
-add_test(NAME FilterSmokeTest COMMAND ${PROJECT_NAME} --smoke)
-add_test(NAME FilterAllTests COMMAND ${PROJECT_NAME} --all)
+
+# Both arms dispatch compute shaders and therefore need a real device. main()
+# exits 77 when Vulkan init fails for a device-availability reason, so a
+# GPU-less host reports SKIPPED rather than FAILED; every other init failure
+# exits 1, so a genuine regression cannot hide in the skip arm.
+#
+# GATED ON VALIDATION. These arms build every image, view, descriptor and
+# barrier the compute filter consumes, which is the widest Vulkan surface in
+# the tree; and the binary asks for the validation layer only under its
+# verbose flag, so under CTest it runs with no layer at all and its exit code
+# is the whole verdict. vvs_add_validation_gated_test() forces the layer on,
+# witnesses that the loader inserted it, and fails the arm that produced a
+# message.
+#
+# THE CEILINGS BELOW NAME DEFECTS, THEY DO NOT EXCUSE THEM. Each is a
+# violation this suite reports today, held at exactly the count it reports so
+# that it cannot grow and nothing new can hide behind it:
+#
+#   VUID-VkDeviceQueueCreateInfo-pQueuePriorities-parameter
+#       vkCreateDevice is called with pQueueCreateInfos[0].pQueuePriorities
+#       NULL. It is raised once per device creation, by every binary in the
+#       tree that stands up a device through VulkanDeviceContext directly.
+#   VUID-vkCmdDispatch-None-08114
+#       the triple-output case dispatches with binding 9, the subsampled Y
+#       output, never written by vkUpdateDescriptorSets.
+set(_filter_gate_expect
+    VUID-VkDeviceQueueCreateInfo-pQueuePriorities-parameter=1)
+
+vvs_add_validation_gated_test(FilterSmokeTest
+    TARGET ${PROJECT_NAME}
+    ARGS   --smoke
+    EXPECT ${_filter_gate_expect})
+vvs_add_validation_gated_test(FilterAllTests
+    TARGET ${PROJECT_NAME}
+    ARGS   --all
+    EXPECT ${_filter_gate_expect}
+           VUID-vkCmdDispatch-None-08114=1)
+set_tests_properties(FilterSmokeTest FilterAllTests PROPERTIES
+                     LABELS "gpu"
+                     TIMEOUT 900)
+
+# --list touches no Vulkan entry point at all: it builds the standard test
+# table and prints it, and returns before app.init(). That makes it the one
+# arm of this binary that belongs in the gating device-free set -- it proves
+# the test-case table still constructs on every push.
+add_test(NAME FilterListTests COMMAND ${PROJECT_NAME} --list)
+set_tests_properties(FilterListTests PROPERTIES
+                     LABELS "device-free")
 
 # Add DRM Format Modifier test (Linux only)
 if(UNIX AND NOT APPLE)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/drm_format_mod")
         add_subdirectory(drm_format_mod)
+    endif()
+endif()
+
+# Add Linux dma-buf SECOND-DEVICE import test (Linux only).
+# The counterpart of win32_opaque_import: it proves an image exported by one
+# VkDevice can be imported AND USED by a different VkDevice on the same GPU.
+if(UNIX AND NOT APPLE)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/linux_dmabuf_import")
+        add_subdirectory(linux_dmabuf_import)
     endif()
 endif()
 

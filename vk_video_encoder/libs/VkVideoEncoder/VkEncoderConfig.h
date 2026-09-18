@@ -35,9 +35,12 @@
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 #include "VkVideoEncoder/VkVideoEncoderDef.h"
 #include "VkVideoEncoder/VkVideoGopStructure.h"
+#include "VkVideoEncoder/VkVideoEncoderHdrMetadata.h"
 #include "VkVideoCore/VkVideoCoreProfile.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
+#ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
 #include "VkCodecUtils/VulkanFilterYuvCompute.h"
+#endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
 
 #undef max
 
@@ -65,6 +68,70 @@ static VkVideoComponentBitDepthFlagBitsKHR GetComponentBitDepthFlagBits(uint32_t
     return VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
 };
 
+// The colour model the input samples are in. An enum rather than a boolean
+// because it is one of several models and a new one is a new enumerator, not
+// a second flag.
+enum class VkEncColorSpace : uint32_t {
+    kYCbCr = 0,
+    kRGB   = 1,
+};
+
+#ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+// Which conversion the preprocess compute filter has to perform: the colour
+// model the input samples are DECLARED to carry, against the format the device
+// accepts as an encode source.
+//
+// The mechanism choice is the library's -- query the device first, use
+// hardware if it exists, compute if it does not.
+// This is its second half: once the answer is "compute", this says WHICH
+// compute.
+//
+// EACH SIDE IS ANSWERED BY WHAT THE SURFACE MEANS, not by which format table
+// happens to place its enumerant. The packed 4:4:4 Y'CbCr layouts have no
+// Vulkan format of their own and ride RGBA ones (PackedYcbcrFormatDesc names
+// them), so the enumerant alone cannot tell one of them from an ordinary
+// R'G'B' image -- on either side:
+//
+//   - the INPUT side reads the declared colour model. That declaration is the
+//     only thing that separates a packed Y'CbCr frame from an R'G'B' one, and
+//     carrying it is what EncoderInputImageParameters::colorSpace is for.
+//   - the ENCODE SOURCE carries no declaration -- it is a format the device
+//     named -- so it is read from both Y'CbCr format tables, the multi-planar
+//     one and the packed 4:4:4 one. Asking only the first calls a packed
+//     encode source R'G'B' and routes a Y'CbCr input through the inverse
+//     matrix, which writes R, G and B into the channels the encoder reads as
+//     Cr, Cb and Y. That produces a full-frame wrong picture and no error at
+//     all, because the inverse conversion's own output format is the same
+//     enumerant the packed encode source is spelled with.
+//
+// YCBCRCOPY for a YCbCr->YCbCr pair is the filter's own contract, from
+// VulkanFilterYuvCompute.h: YCBCRCOPY is the compute-based copy that performs
+// format, plane-count and bit-depth conversion between two YCbCr formats,
+// explicitly contrasted there with the XFER_* transfer modes, which "must
+// have matching plane counts". A 3-plane I420 source into a 2-plane NV12
+// destination is exactly that contrast, so it is YCBCRCOPY and not a
+// transfer.
+static inline VulkanFilterYuvCompute::FilterType VkEncDeriveFilterType(
+    VkEncColorSpace inputColorSpace, VkFormat encodeSourceFormat)
+{
+    const bool inputIsYcbcr  = (inputColorSpace == VkEncColorSpace::kYCbCr);
+    const bool outputIsYcbcr =
+        (YcbcrVkFormatInfo(encodeSourceFormat) != nullptr) ||
+        (PackedYcbcrFormatDesc(encodeSourceFormat) != nullptr);
+    if (!inputIsYcbcr && outputIsYcbcr) {
+        return VulkanFilterYuvCompute::RGBA2YCBCR;
+    }
+    if (inputIsYcbcr && !outputIsYcbcr) {
+        return VulkanFilterYuvCompute::YCBCR2RGBA;
+    }
+    // YCbCr -> YCbCr, including the identity. YCBCRCOPY is a compute pass
+    // either way; the plane-count and bit-depth handling it carries is what
+    // the 3-plane -> 2-plane case needs, and the identity is what a file
+    // input whose layout the device already accepts takes.
+    return VulkanFilterYuvCompute::YCBCRCOPY;
+}
+#endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+
 struct EncoderInputImageParameters
 {
     EncoderInputImageParameters()
@@ -77,6 +144,7 @@ struct EncoderInputImageParameters
     , planeLayouts{}
     , fullImageSize(0)
     , vkFormat(VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM)
+    , colorSpace(VkEncColorSpace::kYCbCr)
     {}
 
 public:
@@ -90,11 +158,51 @@ public:
     uint64_t fullImageSize;
     VkFormat vkFormat;
 
+    /**
+     * @brief The colour model of the input samples.
+     *
+     * kRGB means |vkFormat| is AUTHORITATIVE: VerifyInputs() carries it
+     * through rather than re-deriving it, and lays the image out as one
+     * 4-byte-per-pixel plane. kYCbCr means |vkFormat| is DERIVED, from
+     * chroma subsampling, bit depth and plane count.
+     *
+     * The caller of this struct decides which; this header knows nothing of
+     * the input-format taxonomy and only carries the conclusion.
+     */
+    VkEncColorSpace colorSpace;
+
     bool VerifyInputs()
     {
         if ((width == 0) || (height == 0)) {
             fprintf(stderr, "Invalid input width (%d) and/or height(%d) parameters!", width, height);
             return false;
+        }
+
+        // RGBA: one interleaved plane of 4 bytes per pixel, and a vkFormat the
+        // caller already chose. Everything below this block describes a Y'CbCr
+        // image -- planar, semi-planar or packed, with the chroma planes
+        // subsampled by |chromaSubsampling| -- and none of that describes an
+        // RGBA image. It must therefore be reached before the single-plane
+        // arm below, which reads |chromaSubsampling| and would refuse an RGBA
+        // image for carrying the default 4:2:0 value it never uses.
+        if (colorSpace == VkEncColorSpace::kRGB) {
+            if (vkFormat == VK_FORMAT_UNDEFINED) {
+                fprintf(stderr, "Input marked RGBA but vkFormat is UNDEFINED!");
+                return false;
+            }
+            numPlanes = 1;
+            const uint32_t rgbaRowPitch = 4 * width;
+            if (planeLayouts[0].rowPitch < rgbaRowPitch) {
+                planeLayouts[0].rowPitch = rgbaRowPitch;
+            }
+            if (planeLayouts[0].size < (planeLayouts[0].rowPitch * height)) {
+                planeLayouts[0].size = planeLayouts[0].rowPitch * height;
+            }
+            planeLayouts[1] = VkSubresourceLayout{};
+            planeLayouts[2] = VkSubresourceLayout{};
+            fullImageSize = (uint64_t)planeLayouts[0].size;
+            // vkFormat is DELIBERATELY left alone -- see the field comment.
+            return true;
         }
 
         // Packed 4:4:4 (AYUV / Y410) is SINGLE-plane and interleaved: one 32-bit texel
@@ -778,6 +886,14 @@ public:
     // Prefer the packed 4:4:4 encode-source format (AYUV / Y410) when the driver
     // advertises both representations for the profile.
     //
+    // THE PREMISE IS UNVERIFIED ON THE CURRENT DRIVER, and saying so is the point:
+    // it may have been true of an older one. On every driver this project has
+    // measured, each CAPS_OK (codec, profile) pair returns EXACTLY ONE encode-source
+    // format, so the "lists BOTH" case below has not been observed and the ordering
+    // claim with it. It is left standing rather than rewritten into "the driver lists
+    // one format", because THAT is a per-driver fact and not a contract either -- and
+    // the option has to keep working on a driver that does list both.
+    //
     // For a 4:4:4 profile the driver lists BOTH the 2-plane form and the packed form,
     // and the listing order is not guaranteed, so anything that takes the driver's
     // first entry -- or that matches only against the input FILE's layout -- can never
@@ -821,6 +937,19 @@ public:
 
     int32_t  minQp;
     int32_t  maxQp;
+    // Caller-provided markers for the two fields above, set by the direct
+    // binder and the --minQp/--maxQp args. The codec configs' derived
+    // VkVideoEncode*QpKHR members are what rate control actually reads;
+    // InitDeviceCapabilities uses these markers to tell a requested clamp
+    // from the -1 sentinel / default-20 fallback.
+    uint32_t minQpSet : 1;
+    uint32_t maxQpSet : 1;
+    // The same marker for constQp, set only by the direct binder, which
+    // resolves all three QPs before handing the config over: there an
+    // explicit 0 is a lossless request, not an unset field, and
+    // InitDeviceCapabilities must not substitute preferredConstantQp for
+    // it. The argv path leaves this down, keeping 0-means-unset semantics.
+    uint32_t constQpSet : 1;
     ConstQpSettings constQp;
 
     uint32_t enableQpMap : 1;
@@ -862,11 +991,46 @@ public:
     uint8_t  max_dec_frame_buffering;
     uint8_t  chroma_sample_loc_type;
 
+    // THE INPUT SIDE. The VuiParameters block above states what the BITSTREAM
+    // advertises; these state what the caller's own samples carry, as bound
+    // from the chained VkVideoEncoderInputColourInfo. They are separate
+    // members rather than a reinterpretation of the block above because they
+    // answer a different question: the RGBA->Y'CbCr filter's matrix is a
+    // function of the INPUT's primaries, and only the absence of any primaries
+    // conversion in this library made reading the output field's value give
+    // the same answer.
+    //
+    // inputColourChainPresent is what distinguishes "absent" from "present and
+    // zero"; no value field can, because 0 is UNDECLARED on every axis.
+    uint8_t  inputColourPrimaries;
+    uint8_t  inputTransferCharacteristics;
+    uint8_t  inputMatrixCoefficients;
+    // VkVideoEncoderRangeDeclaration, carried as a plain integer so this
+    // header takes no dependency on the ext one.
+    uint8_t  inputRange;
+    uint32_t inputColourChainPresent : 1;
+
+    // HDR10 static metadata. Zero-initialized by its own member
+    // initializers, so a config that never touches it emits no SEI and no
+    // metadata OBU -- absence is the default and it is a real absence, not a
+    // mastering display of all zeros.
+    EncoderHdrStaticMetadata hdrMetadata;
+
     EncoderInputFileHandler inputFileHandler;
     EncoderOutputFileHandler outputFileHandler;
     EncoderQpMapFileHandler qpMapFileHandler;
 
+#ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+    // WHICH conversion the preprocess compute filter performs. Owned by the
+    // LIBRARY, not by any caller: VkVideoEncoder::InitEncoder overwrites it
+    // from input.colorSpace and the encode-source format the device reported,
+    // immediately before creating the filter (VkEncDeriveFilterType). No CLI
+    // flag, no JSON key and no embeddable-API field reaches it, deliberately:
+    // the mechanism choice belongs inside the library, where the device
+    // capabilities are known. The initialiser below is only
+    // what an uninitialised config reads as.
     VulkanFilterYuvCompute::FilterType filterType;
+#endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
 
     // Adaptive Quantization (AQ) parameters
     // Range: [-1.0, 1.0] valid, 0.0 = default/midpoint, < -1.0 (e.g., -2.0) = disabled
@@ -888,7 +1052,13 @@ public:
     uint32_t enableHwLoadBalancing : 1;
     uint32_t noDeviceFallback : 1;
     uint32_t selectVideoWithComputeQueue : 1;
+    // Skip fwrite to outputFileHandler when set; the
+    // encoder captures bitstream bytes in m_capturedBitstreams
+    // for the Ext API to drain via TryPopCapturedBitstream().
+    uint32_t disableFileOutput : 1;
+#ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     uint32_t enablePreprocessComputeFilter : 1;
+#endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     uint32_t repeatInputFrames : 1;
     // enablePictureRowColReplication
     // 0: row and column replication is disabled;
@@ -905,6 +1075,52 @@ public:
     std::string crcOutputFileName;
 
     bool IsPsnrMetricsEnabled() const { return enablePsnrMetrics != 0; }
+
+    // ---- Colour contract for the RGBA->YCbCr preprocess filter ------------
+    //
+    // Both are defined in VkEncoderConfig.cpp, both are IDEMPOTENT, and both
+    // are deliberately reachable from two layers: the ext config binder,
+    // which has no device and can therefore refuse before the caller has
+    // allocated a frame pool, and VkVideoEncoder::InitEncoder, which is the
+    // only gate the argv/JSON path passes through. ONE implementation, so the
+    // two layers cannot answer differently.
+
+    // Resolve matrix_coefficients to the sampler-conversion model the filter
+    // reads its matrix out of. Returns false when the DECLARED code point
+    // names a matrix this filter cannot produce, having printed the reason;
+    // the caller must then fail initialization. May REWRITE
+    // matrix_coefficients when the declared code point NAMES NO MATRIX
+    // (2 = Unspecified): it derives one from colour_primaries, applies that,
+    // and writes it back, so the label the bitstream carries matches the
+    // pixels that were written. It never rewrites a matrix the caller DID
+    // name -- that is honoured or refused.
+    //
+    // Call ONLY when the filter will actually apply an RGB->YCbCr matrix. A
+    // YCbCr->YCbCr copy applies no matrix at all, so refusing a code point
+    // there would reject a configuration that is entirely correct.
+    bool ResolveRgbToYcbcrMatrix(VkSamplerYcbcrModelConversion* outModel);
+
+    // CC-1: the matrix an UNNAMED colour description resolves to, derived
+    // from the declared primaries. Static and public so the ext-filter suite
+    // can walk it as a table against the Chromium side's copy of the same
+    // rule. See the CC-1 block above ResolveRgbToYcbcrMatrix.
+    static uint8_t DeriveMatrixFromPrimaries(uint8_t primaries);
+
+    // Signal the chroma siting the filter's 2x2 box average actually
+    // produces, so the H.26x VUI describes the samples that were written
+    // rather than the decoder's default. Same call-only-for-the-RGB-arm rule.
+    void ApplyPreprocessFilterChromaSiting();
+
+    // Compile-safe accessor for the build-gated preprocess-filter flag:
+    // callers can branch on it without carrying the gate macro themselves
+    // (the member only exists when the compute filter is compiled in).
+    bool IsPreprocessComputeFilterEnabled() const {
+#ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+        return enablePreprocessComputeFilter != 0;
+#else
+        return false;
+#endif
+    }
     int32_t  drmFormatModifierIndex; // -1 = disabled (OPTIMAL), >= 0 = index into non-linear modifier list
     uint64_t selectedDrmFormatModifier; // resolved modifier value (set during InitEncoder)
 
@@ -952,6 +1168,9 @@ public:
     , frameRateDenominator()
     , minQp(-1)
     , maxQp(-1)
+    , minQpSet(0)
+    , maxQpSet(0)
+    , constQpSet(0)
     , constQp()
     , enableQpMap(false)
     , qpMapMode(DELTA_QP_MAP)
@@ -990,8 +1209,17 @@ public:
     , max_num_reorder_frames()
     , max_dec_frame_buffering()
     , chroma_sample_loc_type()
+    , inputColourPrimaries()
+    , inputTransferCharacteristics()
+    , inputMatrixCoefficients()
+    , inputRange()
+    , inputColourChainPresent()
     , inputFileHandler()
+#ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+    // Placeholder only -- InitEncoder derives the real value from the input
+    // and encode-source formats. See the member's declaration.
     , filterType(VulkanFilterYuvCompute::YCBCRCOPY)
+#endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     , enableAQ(VK_FALSE)
     , spatialAQStrength(-2.0f)   // < -1.0 means disabled
     , temporalAQStrength(-2.0f)  // < -1.0 means disabled
@@ -1006,7 +1234,10 @@ public:
     , enableHwLoadBalancing(false)
     , noDeviceFallback(false)
     , selectVideoWithComputeQueue(false)
+    , disableFileOutput(false)
+#ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     , enablePreprocessComputeFilter(true)
+#endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     , repeatInputFrames(false)
     , enablePictureRowColReplication(1)
     , enableOutOfOrderRecording(false)
@@ -1040,6 +1271,46 @@ public:
     void InitVideoProfile();
 
     int ParseArguments(int argc, const char *argv[]);
+
+    // What only a device can answer, for the decisions in FinalizeConfig() that
+    // are properties of the hardware rather than of the command line.
+    //
+    // Passed as a POINTER that may be null, because FinalizeConfig() runs on two
+    // paths: argv parsing, which happens before any device exists, and the
+    // embedding host, which has already probed one. Null means "no device yet"
+    // -- every field below keeps its command-line answer, which is the behaviour
+    // the demo has. A caller that HAS probed supplies this and the same function
+    // reaches a device-correct answer, so there is one tail rather than a second
+    // one that callers must remember to run.
+    struct DeviceCapabilities {
+        // VkPhysicalDeviceVideoEncodeIntraRefreshFeaturesKHR::videoEncodeIntraRefresh.
+        // Intra refresh is a per-device feature, so a configuration that asks for
+        // it on a device that lacks it is refused here rather than at the point
+        // the session is created.
+        //
+        // Defaulted, because this structure is filled field by field by a
+        // caller that has probed a device: a member left out of that
+        // assignment must read as "the device does not have it", not as
+        // whatever the stack held.
+        bool     intraRefreshSupported = false;
+    };
+
+    // Derived-defaults / validation tail shared by ParseArguments and the
+    // direct-binding (no-argv) configuration path: input-geometry checks,
+    // default-output handling, encode-size clamps and defaults, minQp
+    // default, block alignment, qpMap / intra-refresh validation.
+    //
+    // |deviceCaps| is optional; see DeviceCapabilities for what changes when it
+    // is supplied. Returns 0 on success, -1 on a validation failure.
+    int FinalizeConfig(const DeviceCapabilities* deviceCaps = nullptr);
+
+    // Codec-typed factory WITHOUT argv parsing: creates the codec subclass
+    // and sets |codec|. The caller assigns fields directly, then runs
+    // FinalizeConfig() + InitializeParameters() -- the same pipeline
+    // CreateCodecConfig drives after ParseArguments.
+    static VkResult CreateCodecConfigDirect(
+        VkVideoCodecOperationFlagBitsKHR codecOperation,
+        VkSharedBaseObj<EncoderConfig>& encoderConfig);
 
     // Load base config from JSON file (encoder_config.schema.json). JSON is processed first;
     // command-line args passed to ParseArguments override. Returns 0 on success, -1 on error.
@@ -1188,8 +1459,36 @@ public:
             }
         }
 
-        // Copy chroma subsampling from input to encoder config
+        // THE ENCODE-SIDE GEOMETRY, DERIVED IN ONE PLACE AND BEFORE ANYTHING
+        // READS IT.
+        //
+        // encodeChromaSubsampling and encodeBitDepthLuma/Chroma describe the
+        // BITSTREAM, and the input fields describe the caller's buffer. They
+        // are separate fields so that the two can differ -- a chroma
+        // resampler or a device-driven depth downgrade is what would make
+        // them -- and today the encode side is simply derived from the input
+        // side, here.
+        //
+        // THE DEPTH MUST NOT BE DERIVED IN InitVideoProfile(), which runs at
+        // session creation, LATER than the codec arms' InitProfileLevel() --
+        // and InitProfileLevel is where the level and tier are selected. So
+        // EncoderConfigH265::GetCpbVclFactor(), which reads
+        // encodeBitDepthLuma/Chroma for ITU-T H.265 Table A.8's depth term,
+        // read zero at the level-selection call site and the real depth at
+        // the InitRateControl() call site: one function, two answers, inside
+        // one configuration. A 10-bit 4:4:4 stream selected its level with
+        // the 8-bit factor 2000 and then sized its default CPB with 2500.
+        //
+        // The zero-means-unset guards are kept: an explicit encode depth, if
+        // one is ever set before this runs, is a request and not a default.
         encodeChromaSubsampling = input.chromaSubsampling;
+
+        if (encodeBitDepthLuma == 0) {
+            encodeBitDepthLuma = input.bpp;
+        }
+        if (encodeBitDepthChroma == 0) {
+            encodeBitDepthChroma = encodeBitDepthLuma;
+        }
 
         if ((encodeWidth == 0) || (encodeWidth > input.width)) {
             encodeWidth = input.width;

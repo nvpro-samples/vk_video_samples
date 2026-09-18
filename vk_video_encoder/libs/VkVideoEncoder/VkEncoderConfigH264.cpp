@@ -15,6 +15,7 @@
 */
 
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <string>
 #include <cstdlib>
 
@@ -41,18 +42,18 @@ int EncoderConfigH264::DoParseArguments(int argc, const char* argv[])
     for (int32_t i = 0; i < argc; i++) {
         if (args[i] == "--slices") {
             if (++i >= argc) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             char* end = nullptr;
             sliceCount = static_cast<int32_t>(strtol(args[i].c_str(), &end, 10));
             if (end == args[i].c_str()) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--profile") {
             if (++i >= argc) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             std::string profileStr = args[i];
@@ -67,11 +68,11 @@ int EncoderConfigH264::DoParseArguments(int argc, const char* argv[])
             } else if (profileStr == "high444" || profileStr == "3") {
                 profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE;
             } else {
-                fprintf(stderr, "Invalid H.264 profile: %s\n", profileStr.c_str());
+                VkEncPrintfErr("Invalid H.264 profile: %s\n", profileStr.c_str());
                 return -1;
             }
         } else {
-            fprintf(stderr, "Unrecognized option: %s\n", argv[i]);
+            VkEncPrintfErr("Unrecognized option: %s\n", argv[i]);
             return -1;
         }
     }
@@ -183,6 +184,13 @@ EncoderConfigH264::InitVuiParameters(StdVideoH264SequenceParameterSetVui *vui,
     }
 
     vui->flags.chroma_loc_info_present_flag = chroma_loc_info_present_flag;
+    if (!!chroma_loc_info_present_flag) {
+        // BOTH FIELDS, and the same value in both -- see the identical note
+        // in EncoderConfigH265::InitVuiParameters. The flag was plumbed and
+        // the type was not, so the flag could only ever advertise 0.
+        vui->chroma_sample_loc_type_top_field    = chroma_sample_loc_type;
+        vui->chroma_sample_loc_type_bottom_field = chroma_sample_loc_type;
+    }
 
     if ((frameRateNumerator > 0) && (frameRateDenominator > 0)) {
         double frameRate = (double)frameRateNumerator / frameRateDenominator;
@@ -251,6 +259,38 @@ EncoderConfigH264::InitVuiParameters(StdVideoH264SequenceParameterSetVui *vui,
     } else {
         return nullptr;
     }
+}
+
+// H.264 Annex A: entropy_coding_mode_flag is not available in the Baseline
+// profile. profile_idc 66 covers Baseline AND Constrained Baseline -- they are
+// the same profile_idc, narrowed by constraint_set1_flag, which
+// InitSpsPpsParameters() sets for 66 -- and neither admits CABAC. Main (77)
+// and every High profile do admit it.
+//
+// The file already asserts this rule itself, one branch away, in
+// InitProfileLevel(): "Upgrade to MAIN profile if using B-frames or CABAC
+// entropy coding". That upgrade only ever runs when NO profile was requested,
+// so it never sees an explicit --profile baseline, which is how a Baseline
+// session could reach the PPS writer with CABAC still set.
+//
+// Clamping the TOOL and keeping the requested PROFILE is the same shape the
+// file already uses for the other per-profile tool restriction it enforces,
+// transform_8x8_mode_flag below (High and above only). It is the right way
+// round here too: the profile is the caller's explicit request, and is what
+// the level and the DPB were sized against, whereas the entropy coder is not
+// requested by anyone -- there is no command-line switch for it, it is taken
+// from the device's preferredStdEntropyCodingModeFlag. The resulting
+// parameter sets then describe honestly what was emitted: profile_idc 66,
+// constraint_set0_flag/constraint_set1_flag set, entropy_coding_mode_flag 0.
+EncoderConfigH264::EntropyCodingMode
+EncoderConfigH264::ConformantEntropyCodingMode(StdVideoH264ProfileIdc profile,
+                                               EntropyCodingMode requested)
+{
+    if ((profile == STD_VIDEO_H264_PROFILE_IDC_BASELINE) &&
+        (requested == ENTROPY_CODING_MODE_CABAC)) {
+        return ENTROPY_CODING_MODE_CAVLC;
+    }
+    return requested;
 }
 
 bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *sps,
@@ -368,11 +408,13 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
         pps->flags.transform_8x8_mode_flag = true;
     }
 
-    if (entropyCodingMode == ENTROPY_CODING_MODE_CABAC) {
-        pps->flags.entropy_coding_mode_flag = true;
-    } else {
-        pps->flags.entropy_coding_mode_flag = false;
-    }
+    // Derive the emitted flag through the profile rule rather than from
+    // |entropyCodingMode| directly, so that the PPS is conformant with the
+    // sps->profile_idc written below on EVERY path reaching this writer,
+    // including one that never ran InitDeviceCapabilities().
+    pps->flags.entropy_coding_mode_flag =
+        (ConformantEntropyCodingMode(profileIdc, entropyCodingMode) ==
+         ENTROPY_CODING_MODE_CABAC);
 
     // Always write out deblocking_filter_control_present_flag
     pps->flags.deblocking_filter_control_present_flag = true;
@@ -413,22 +455,22 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                  h264QuantizationMapCapabilities,
                                                                  intraRefreshCapabilities);
     if (result != VK_SUCCESS) {
-        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+        VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
                   << "Could not get Video Encode Capabilities for H264. VkResult: " << result
                   << " (0x" << std::hex << result << std::dec << ")" << std::endl;
         return result;
     }
 
     if (verboseMsg) {
-        std::cout << "\t\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode capabilities: " << std::endl;
-        std::cout << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << videoCapabilities.minBitstreamBufferOffsetAlignment << std::endl;
-        std::cout << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << videoCapabilities.minBitstreamBufferSizeAlignment << std::endl;
-        std::cout << "\t\t\t" << "pictureAccessGranularity: " << videoCapabilities.pictureAccessGranularity.width << " x " << videoCapabilities.pictureAccessGranularity.height << std::endl;
-        std::cout << "\t\t\t" << "minExtent: " << videoCapabilities.minCodedExtent.width << " x " << videoCapabilities.minCodedExtent.height << std::endl;
-        std::cout << "\t\t\t" << "maxExtent: " << videoCapabilities.maxCodedExtent.width  << " x " << videoCapabilities.maxCodedExtent.height << std::endl;
-        std::cout << "\t\t\t" << "maxDpbSlots: " << videoCapabilities.maxDpbSlots << std::endl;
-        std::cout << "\t\t\t" << "maxActiveReferencePictures: " << videoCapabilities.maxActiveReferencePictures << std::endl;
-        std::cout << "\t\t\t" << "maxBPictureL0ReferenceCount: " << h264EncodeCapabilities.maxBPictureL0ReferenceCount << std::endl;
+        VkEncOut() << "\t\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode capabilities: " << std::endl;
+        VkEncOut() << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << videoCapabilities.minBitstreamBufferOffsetAlignment << std::endl;
+        VkEncOut() << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << videoCapabilities.minBitstreamBufferSizeAlignment << std::endl;
+        VkEncOut() << "\t\t\t" << "pictureAccessGranularity: " << videoCapabilities.pictureAccessGranularity.width << " x " << videoCapabilities.pictureAccessGranularity.height << std::endl;
+        VkEncOut() << "\t\t\t" << "minExtent: " << videoCapabilities.minCodedExtent.width << " x " << videoCapabilities.minCodedExtent.height << std::endl;
+        VkEncOut() << "\t\t\t" << "maxExtent: " << videoCapabilities.maxCodedExtent.width  << " x " << videoCapabilities.maxCodedExtent.height << std::endl;
+        VkEncOut() << "\t\t\t" << "maxDpbSlots: " << videoCapabilities.maxDpbSlots << std::endl;
+        VkEncOut() << "\t\t\t" << "maxActiveReferencePictures: " << videoCapabilities.maxActiveReferencePictures << std::endl;
+        VkEncOut() << "\t\t\t" << "maxBPictureL0ReferenceCount: " << h264EncodeCapabilities.maxBPictureL0ReferenceCount << std::endl;
     }
 
     result = VulkanVideoCapabilities::GetPhysicalDeviceVideoEncodeQualityLevelProperties<VkVideoEncodeH264QualityLevelPropertiesKHR, VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_QUALITY_LEVEL_PROPERTIES_KHR>
@@ -436,27 +478,27 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                                  qualityLevelProperties,
                                                                                  h264QualityLevelProperties);
     if (result != VK_SUCCESS) {
-        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+        VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
                   << "Could not get Video Encode QualityLevel Properties for H264. VkResult: " << result
                   << " (0x" << std::hex << result << std::dec << "), qualityLevel: " << qualityLevel << std::endl;
         return result;
     }
 
     if (verboseMsg) {
-        std::cout << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode quality level properties: " << std::endl;
-        std::cout << "\t\t\t" << "preferredRateControlMode : " << qualityLevelProperties.preferredRateControlMode << std::endl;
-        std::cout << "\t\t\t" << "preferredRateControlLayerCount : " << qualityLevelProperties.preferredRateControlLayerCount << std::endl;
-        std::cout << "\t\t\t" << "preferredRateControlFlags : " << h264QualityLevelProperties.preferredRateControlFlags << std::endl;
-        std::cout << "\t\t\t" << "preferredGopFrameCount : " << h264QualityLevelProperties.preferredGopFrameCount << std::endl;
-        std::cout << "\t\t\t" << "preferredIdrPeriod : " << h264QualityLevelProperties.preferredIdrPeriod << std::endl;
-        std::cout << "\t\t\t" << "preferredConsecutiveBFrameCount : " << h264QualityLevelProperties.preferredConsecutiveBFrameCount << std::endl;
-        std::cout << "\t\t\t" << "preferredTemporalLayerCount : " << h264QualityLevelProperties.preferredTemporalLayerCount << std::endl;
-        std::cout << "\t\t\t" << "preferredConstantQp.qpI : " << h264QualityLevelProperties.preferredConstantQp.qpI << std::endl;
-        std::cout << "\t\t\t" << "preferredConstantQp.qpP : " << h264QualityLevelProperties.preferredConstantQp.qpP << std::endl;
-        std::cout << "\t\t\t" << "preferredConstantQp.qpB : " << h264QualityLevelProperties.preferredConstantQp.qpB << std::endl;
-        std::cout << "\t\t\t" << "preferredMaxL0ReferenceCount : " << h264QualityLevelProperties.preferredMaxL0ReferenceCount << std::endl;
-        std::cout << "\t\t\t" << "preferredMaxL1ReferenceCount : " << h264QualityLevelProperties.preferredMaxL1ReferenceCount << std::endl;
-        std::cout << "\t\t\t" << "preferredStdEntropyCodingModeFlag : " << h264QualityLevelProperties.preferredStdEntropyCodingModeFlag << std::endl;
+        VkEncOut() << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode quality level properties: " << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredRateControlMode : " << qualityLevelProperties.preferredRateControlMode << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredRateControlLayerCount : " << qualityLevelProperties.preferredRateControlLayerCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredRateControlFlags : " << h264QualityLevelProperties.preferredRateControlFlags << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredGopFrameCount : " << h264QualityLevelProperties.preferredGopFrameCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredIdrPeriod : " << h264QualityLevelProperties.preferredIdrPeriod << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredConsecutiveBFrameCount : " << h264QualityLevelProperties.preferredConsecutiveBFrameCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredTemporalLayerCount : " << h264QualityLevelProperties.preferredTemporalLayerCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredConstantQp.qpI : " << h264QualityLevelProperties.preferredConstantQp.qpI << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredConstantQp.qpP : " << h264QualityLevelProperties.preferredConstantQp.qpP << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredConstantQp.qpB : " << h264QualityLevelProperties.preferredConstantQp.qpB << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredMaxL0ReferenceCount : " << h264QualityLevelProperties.preferredMaxL0ReferenceCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredMaxL1ReferenceCount : " << h264QualityLevelProperties.preferredMaxL1ReferenceCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredStdEntropyCodingModeFlag : " << h264QualityLevelProperties.preferredStdEntropyCodingModeFlag << std::endl;
     }
 
     if (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_FLAG_BITS_MAX_ENUM_KHR) {
@@ -471,23 +513,98 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
     if (gopStructure.GetConsecutiveBFrameCount() == CONSECUTIVE_B_FRAME_COUNT_MAX_VALUE) {
         gopStructure.SetConsecutiveBFrameCount(h264QualityLevelProperties.preferredConsecutiveBFrameCount);
     }
-    if (constQp.qpIntra == 0) {
+    // The direct binder resolves all three QPs and marks constQpSet: an
+    // explicit 0 there is lossless, not unset, and must keep its value.
+    if (!constQpSet && (constQp.qpIntra == 0)) {
         constQp.qpIntra = h264QualityLevelProperties.preferredConstantQp.qpI;
     }
-    if (constQp.qpInterP == 0) {
+    if (!constQpSet && (constQp.qpInterP == 0)) {
         constQp.qpInterP = h264QualityLevelProperties.preferredConstantQp.qpP;
     }
-    if (constQp.qpInterB == 0) {
+    if (!constQpSet && (constQp.qpInterB == 0)) {
         constQp.qpInterB = h264QualityLevelProperties.preferredConstantQp.qpB;
     }
     if (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_DISABLED_BIT_KHR) {
         minQp = h264QualityLevelProperties.preferredConstantQp;
         maxQp = h264QualityLevelProperties.preferredConstantQp;
     }
+    // Caller-requested QP clamps override the quality-level defaults. The
+    // base-class ints carry the request (marked by minQpSet/maxQpSet); these
+    // derived VkVideoEncodeH264QpKHR members are what GetRateControlParameters
+    // reads -- without this hop a caller's minQp/maxQp never reached rate
+    // control at all.
+    if (minQpSet) {
+        minQp.qpI = minQp.qpP = minQp.qpB = EncoderConfig::minQp;
+    }
+    if (maxQpSet) {
+        maxQp.qpI = maxQp.qpP = maxQp.qpB = EncoderConfig::maxQp;
+    }
+    // Device QP window check for caller clamps (the binder already enforced
+    // the syntactic 0..51 range): with the use flags raised, the spec
+    // requires the clamp values inside the device's [minQp, maxQp]
+    // capability window. Reject rather than silently narrow the caller's
+    // request.
+    if (minQpSet &&
+        ((EncoderConfig::minQp < h264EncodeCapabilities.minQp) ||
+         (EncoderConfig::minQp > h264EncodeCapabilities.maxQp))) {
+        VkEncErr() << "[EncoderConfigH264] requested minQp "
+                   << EncoderConfig::minQp
+                   << " is outside the device QP window ["
+                   << h264EncodeCapabilities.minQp << ", "
+                   << h264EncodeCapabilities.maxQp << "]" << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (maxQpSet &&
+        ((EncoderConfig::maxQp < h264EncodeCapabilities.minQp) ||
+         (EncoderConfig::maxQp > h264EncodeCapabilities.maxQp))) {
+        VkEncErr() << "[EncoderConfigH264] requested maxQp "
+                   << EncoderConfig::maxQp
+                   << " is outside the device QP window ["
+                   << h264EncodeCapabilities.minQp << ", "
+                   << h264EncodeCapabilities.maxQp << "]" << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
     numRefL0 = h264QualityLevelProperties.preferredMaxL0ReferenceCount;
     numRefL1 = h264QualityLevelProperties.preferredMaxL1ReferenceCount;
     numRefFrames = numRefL0 + numRefL1;
-    entropyCodingMode = h264QualityLevelProperties.preferredStdEntropyCodingModeFlag == VK_TRUE ? ENTROPY_CODING_MODE_CABAC : ENTROPY_CODING_MODE_CAVLC;
+    // The device's preferred entropy coder, clamped to what the selected
+    // profile permits.
+    //
+    // This assignment is the LAST unconditional writer of |entropyCodingMode|,
+    // which is why the clamp belongs here. InitProfileLevel() has already run
+    // by the time InitDeviceCapabilities() is called -- InitializeParameters()
+    // calls it at config-construction time, this runs later, from
+    // VkVideoEncoder::InitEncoder() -- so a clamp placed alongside the profile
+    // decision would be overwritten by this line and would be inert.
+    const EntropyCodingMode devicePreferred =
+        (h264QualityLevelProperties.preferredStdEntropyCodingModeFlag == VK_TRUE)
+            ? ENTROPY_CODING_MODE_CABAC
+            : ENTROPY_CODING_MODE_CAVLC;
+    entropyCodingMode = ConformantEntropyCodingMode(profileIdc, devicePreferred);
+
+    if (entropyCodingMode != devicePreferred) {
+        VkEncOut() << "[EncoderConfigH264] H.264 Baseline (profile_idc "
+                   << static_cast<uint32_t>(profileIdc)
+                   << ") does not permit CABAC; encoding with CAVLC instead of "
+                      "the device's preferred entropy coder, so that the "
+                      "bitstream conforms to the requested profile."
+                   << std::endl;
+
+        // The one case where the clamp itself may not be expressible: a device
+        // that cannot emit entropy_coding_mode_flag = 0 cannot produce a
+        // conformant Baseline stream at all. Reported, not refused --
+        // stdSyntaxFlags is advisory and unevenly populated across drivers,
+        // and turning a working session into a hard initialisation failure on
+        // an unverified capability bit is the larger risk. If it is real, the
+        // encode fails downstream carrying the driver's own error.
+        if ((h264EncodeCapabilities.stdSyntaxFlags &
+             VK_VIDEO_ENCODE_H264_STD_ENTROPY_CODING_MODE_FLAG_UNSET_BIT_KHR) == 0) {
+            VkEncErr() << "[EncoderConfigH264] the device does not advertise "
+                          "ENTROPY_CODING_MODE_FLAG_UNSET; CAVLC may be "
+                          "unsupported here, in which case Baseline is not "
+                          "encodable on this device." << std::endl;
+        }
+    }
 
     return VK_SUCCESS;
 }
@@ -496,6 +613,17 @@ void EncoderConfigH264::InitProfileLevel()
 {
     // 8x8 transform is only supported by High profile and above.
     // Main and Baseline profiles only support 4x4 transform.
+    //
+    // adaptiveTransformMode HAS NO SETTER ON ANY SURFACE, and the narration
+    // below describes a configuration that cannot occur because of it. The
+    // field has exactly one write -- its ENABLE constructor default in
+    // VkEncoderConfigH264.h -- so the first branch is always taken,
+    // use8x8Transform is always true, and the derivation below can never
+    // reach BASELINE or MAIN: the 8x8 clause overwrites whatever the
+    // B-frame / CABAC clause chose. The narration is kept rather than
+    // deleted because it states the INTENT, and deleting it would delete the
+    // record that the intent is unreachable. Giving the field a setter is
+    // what would make it reachable; that is a decision, not a cleanup.
     bool use8x8Transform = false;
 
     if (adaptiveTransformMode == ADAPTIVE_TRANSFORM_ENABLE) {
@@ -522,20 +650,39 @@ void EncoderConfigH264::InitProfileLevel()
             profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH;
         }
 
-        if (input.bpp > 8) {
+        // THE ENCODE SIDE, ON BOTH AXES, AND THAT IS WHAT A PROFILE IS
+        // DEFINED OVER. ITU-T H.264 Annex A Table A-1 constrains profile_idc
+        // against the values the BITSTREAM carries -- the SPS's
+        // chroma_format_idc and bit_depth_luma_minus8 -- and this file writes
+        // both of those from encodeChromaSubsampling and encodeBitDepthLuma
+        // (InitializeSpsRefPicSet's caller, sps->chroma_format_idc and
+        // sps->bit_depth_*_minus8). A derivation that read the INPUT side
+        // would select the profile for a picture that is not the one the
+        // syntax describes: on the first change that makes input and encode
+        // differ -- a chroma resampler, a device-driven depth downgrade --
+        // this arm would pick 244 from a 4:4:4 input and write
+        // chroma_format_idc 1 from the encode value, inside one SPS.
+        //
+        // The fields are separate PRECISELY so the two can differ, so the
+        // reads are what is fixed and never the fields.
+        if (encodeBitDepthLuma > 8) {
             profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_10;
         }
 
         // 4:2:2 needs High 4:2:2 (122). High (100) and below cannot code
-        // chroma_format_idc == 2 at all, so without this a 4:2:2 request is refused by
-        // the driver's profile query rather than silently downgraded.
-        if (input.chromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR) {
+        // chroma_format_idc == 2 at all, so without this a 4:2:2 stream would be
+        // silently downgraded. With it the request carries 122 into the device
+        // question, and on a device with no 4:2:2 encode profile InitializeExt
+        // refuses it there -- naming the format, its subsampling and this
+        // profile -- rather than letting it reach the driver's own capability
+        // query, which would refuse it while naming none of the three.
+        if (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR) {
             profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_422;
         }
 
         // Upgrade to HIGH_444_PREDICTIVE for lossless encoding or 4:4:4 chroma
         if ((tuningMode == VK_VIDEO_ENCODE_TUNING_MODE_LOSSLESS_KHR) ||
-            (input.chromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR)) {
+            (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR)) {
             profileIdc = STD_VIDEO_H264_PROFILE_IDC_HIGH_444_PREDICTIVE;
         }
     }
@@ -557,7 +704,15 @@ void EncoderConfigH264::InitProfileLevel()
 
 int8_t EncoderConfigH264::InitDpbCount()
 {
-    dpbCount = 0; // TODO: What is the need for this?
+    // Need-based DPB sizing: size the DPB by the references this encoder
+    // will actually use (numRefFrames = numRefL0 + numRefL1, populated from
+    // the driver's preferred quality-level properties) instead of leaving
+    // dpbCount at 0, which selected the LEVEL-MAX DPB below -- 16+1 slots at
+    // Level >= 5.0 for a sliding-window encode that uses ~3 references,
+    // wasting ~12 full-resolution DPB images. If the quality-level query has
+    // not populated numRefFrames yet (0), fall through to the legacy
+    // level-max sizing, which the DpbSequenceStart() clamp keeps safe.
+    dpbCount = (numRefFrames > 0) ? numRefFrames : 0;
 
     uint8_t levelDpbSize = (uint8_t)(((1024 * levelLimits[levelIdc].maxDPB)) /
                             ((pic_width_in_mbs * pic_height_in_map_units) * 384));
@@ -643,6 +798,26 @@ bool EncoderConfigH264::GetRateControlParameters(VkVideoEncodeRateControlInfoKHR
     } else {
         pRateControlLayerInfoH264->minQp = minQp;
         pRateControlLayerInfoH264->maxQp = maxQp;
+        // A caller's QP clamp is only visible to the driver when the
+        // matching use flag is raised: useMinQp/useMaxQp default to
+        // VK_FALSE and the spec lets a conformant implementation ignore
+        // the values entirely without them. The only code that ever
+        // raised these flags was InitRateControl(VkCommandBuffer,
+        // uint32_t), which has no caller. Source the values from the
+        // base-class request directly, so the flag and the value travel
+        // together on every path, device-initialized or not.
+        if (minQpSet) {
+            pRateControlLayerInfoH264->useMinQp = VK_TRUE;
+            pRateControlLayerInfoH264->minQp.qpI = EncoderConfig::minQp;
+            pRateControlLayerInfoH264->minQp.qpP = EncoderConfig::minQp;
+            pRateControlLayerInfoH264->minQp.qpB = EncoderConfig::minQp;
+        }
+        if (maxQpSet) {
+            pRateControlLayerInfoH264->useMaxQp = VK_TRUE;
+            pRateControlLayerInfoH264->maxQp.qpI = EncoderConfig::maxQp;
+            pRateControlLayerInfoH264->maxQp.qpP = EncoderConfig::maxQp;
+            pRateControlLayerInfoH264->maxQp.qpB = EncoderConfig::maxQp;
+        }
     }
 
     pRateControlLayersInfo->averageBitrate = averageBitrate;

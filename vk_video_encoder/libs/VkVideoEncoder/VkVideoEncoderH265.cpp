@@ -15,7 +15,26 @@
  */
 
 #include "VkVideoEncoder/VkVideoEncoderH265.h"
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
+
+namespace {
+
+// Whether |dpbIndex| already occupies one of the entries |slots|[|first|,
+// |end|) holds. Both reference-list walks admit a slot through this, so a
+// picture that L0 and L1 both name is bound once.
+bool SlotAlreadyBound(const VkVideoReferenceSlotInfoKHR* slots,
+                      uint32_t first, uint32_t end, uint8_t dpbIndex)
+{
+    for (uint32_t bound = first; bound < end; bound++) {
+        if (slots[bound].slotIndex == (int32_t)dpbIndex) {
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
 
 VkResult CreateVideoEncoderH265(const VulkanDeviceContext* vkDevCtx,
                                 VkSharedBaseObj<EncoderConfig>& encoderConfig,
@@ -48,7 +67,7 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
 
     VkResult result = InitEncoder(encoderConfig);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nERROR: InitEncoder() failed with ret(%d)\n", result);
+        VkEncPrintfErr("\nERROR: InitEncoder() failed with ret(%d)\n", result);
         return result;
     }
 
@@ -56,9 +75,15 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     m_dpb.DpbSequenceStart(m_maxDpbPicturesCount, (m_encoderConfig->numRefL0 > 0) || (m_encoderConfig->numRefL1 > 0));
 
     if (m_encoderConfig->verbose) {
-        std::cout << ", numRefL0: "    << (uint32_t)m_encoderConfig->numRefL0
+        VkEncOut() << ", numRefL0: "    << (uint32_t)m_encoderConfig->numRefL0
                   << ", numRefL1: "    << (uint32_t)m_encoderConfig->numRefL1 << std::endl;
     }
+
+    // The device QP window; see the H.264 counterpart. InitEncoder above
+    // is what runs EncoderConfigH265::InitDeviceCapabilities, so the
+    // capabilities are populated by here.
+    m_deviceQpWindowMin = m_encoderConfig->h265EncodeCapabilities.minQp;
+    m_deviceQpWindowMax = m_encoderConfig->h265EncodeCapabilities.maxQp;
 
     m_encoderConfig->GetRateControlParameters(&m_rateControlInfo, m_rateControlLayersInfo, &m_rateControlInfoH265, m_rateControlLayersInfoH265);
 
@@ -100,14 +125,14 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
                                                          nullptr,
                                                          &sessionParameters);
     if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nEncodeFrame Error: Failed to get create video session parameters.\n");
+        VkEncPrintfErr("\nEncodeFrame Error: Failed to get create video session parameters.\n");
         return result;
     }
 
     result = VulkanVideoSessionParameters::Create(m_vkDevCtx, m_videoSession,
                                                   sessionParameters, m_videoSessionParameters);
     if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nEncodeFrame Error: Failed to get create video session object.\n");
+        VkEncPrintfErr("\nEncodeFrame Error: Failed to get create video session object.\n");
         return result;
     }
 
@@ -256,12 +281,39 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         }
     }
 
+    // L0 AND L1 ARE LISTS; referenceSlotsInfo[] IS A SET. The same picture may
+    // hold a position in both reference lists, and on a B frame whose DPB
+    // carries a single reference picture it always does: that one picture is
+    // L0[0] and L1[0] alike. referenceSlotsInfo[] is not a reference list --
+    // it is the set of DPB slots the recorded commands BIND -- and Vulkan
+    // requires each picture resource named in it to be unique
+    // (VUID-VkVideoBeginCodingInfoKHR-pPictureResource-07238,
+    // VUID-vkCmdEncodeVideoKHR-pPictureResource-08220) and each DPB frame to
+    // be used at most once across it and the setup slot
+    // (VUID-vkCmdEncodeVideoKHR-dpbFrameUseCount-08221). So both lists are
+    // walked and each slot is admitted at most once.
+    //
+    // This does not touch the Std reference lists. Those name DPB slots by
+    // index, carry their own ordering, and a slot appearing in both of them
+    // is what the bitstream describes.
+    const uint32_t firstReferenceSlot = numReferenceSlots;
+
     if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_P) ||
             (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B)) {
 
         for (uint32_t i = 0; i <= pFrameInfo->stdReferenceListsInfo.num_ref_idx_l0_active_minus1; i++) {
 
             uint8_t dpbIndex = pFrameInfo->stdReferenceListsInfo.RefPicList0[i];
+
+            // The scan spans only the entries these two loops filled.
+            // referenceSlotsInfo[0] holds the setup slot, whose slotIndex is
+            // the slot the CURRENT picture reconstructs into and is replaced
+            // by -1 once both loops have run; it is not a reference and is
+            // not a candidate for a duplicate.
+            if (SlotAlreadyBound(pFrameInfo->referenceSlotsInfo, firstReferenceSlot,
+                                 numReferenceSlots, dpbIndex)) {
+                continue;
+            }
 
             bool refPicAvailable = m_dpb.GetRefPicture(dpbIndex, pFrameInfo->dpbImageResources[numReferenceSlots]);
             assert(refPicAvailable);
@@ -295,11 +347,15 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         }
         pFrameInfo->numDpbImageResources = numReferenceSlots;
 
-        // TODO: iterate over L1 when coding B-frames
         if (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B) {
             for (uint32_t i = 0; i <= pFrameInfo->stdReferenceListsInfo.num_ref_idx_l1_active_minus1; i++) {
 
                 uint8_t dpbIndex = pFrameInfo->stdReferenceListsInfo.RefPicList1[i];
+
+                if (SlotAlreadyBound(pFrameInfo->referenceSlotsInfo, firstReferenceSlot,
+                                 numReferenceSlots, dpbIndex)) {
+                    continue;
+                }
 
                 bool refPicAvailable = m_dpb.GetRefPicture(dpbIndex, pFrameInfo->dpbImageResources[numReferenceSlots]);
                 assert(refPicAvailable);
@@ -394,6 +450,51 @@ VkResult VkVideoEncoderH265::EncodeVideoSessionParameters(VkSharedBaseObj<VkVide
     }
     encodeFrameInfo->bitstreamHeaderBufferSize = bufferSize;
 
+    // HDR10 STATIC METADATA, appended to the parameter sets the driver just
+    // wrote.
+    //
+    // HERE, and not on the per-frame path, for two reasons. The access-unit
+    // order a decoder requires is VPS, SPS, PPS, prefix SEI, slice -- so the
+    // bytes belong immediately after what this function produced. And this
+    // function runs for EVERY IDR (see the note in
+    // VkVideoEncoder::EncodeFrame about bitstreamHeaderBufferSize), so the
+    // colour volume repeats at every random-access point instead of once at
+    // the head of the stream where a seek or a mid-stream join would miss it.
+    //
+    // Vulkan Video has no std structure for either payload and
+    // GetEncodedVideoSessionParametersKHR writes parameter sets only, so the
+    // NAL is built by hand -- see VkVideoEncoderHdrMetadata.cpp.
+    if (m_encoderConfig->hdrMetadata.Any()) {
+        bool truncated = false;
+        const size_t used = encodeFrameInfo->bitstreamHeaderOffset +
+                            encodeFrameInfo->bitstreamHeaderBufferSize;
+        const size_t seiBytes = VkEncBuildH265HdrSeiNal(
+            m_encoderConfig->hdrMetadata,
+            encodeFrameInfo->bitstreamHeaderBuffer + used,
+            sizeof(encodeFrameInfo->bitstreamHeaderBuffer) - used,
+            &truncated);
+        if (truncated) {
+            // FATAL. A caller that asked for HDR10 and got a stream without
+            // it has no way to notice: every counter, every completion edge
+            // and every byte count is identical. Refusing is the only signal
+            // this failure has.
+            VkEncPrintfErr("\nEncodeVideoSessionParameters Error: the HDR10 SEI does "
+                    "not fit in the %zu-byte non-VCL header buffer after %zu "
+                    "bytes of parameter sets.\n",
+                    sizeof(encodeFrameInfo->bitstreamHeaderBuffer), used);
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        // AND THE RATE CONTROLLER IS TOLD. bitstreamHeaderBufferSize is
+        // what VkVideoEncoder::EncodeFrameCommon reserves via
+        // dstBufferOffset and reports as precedingExternallyEncodedBytes,
+        // and it runs AFTER this function (the codec arm fills the buffer
+        // first). So growing the count here debits the SEI's bytes from the
+        // IDR's frame budget exactly as the parameter sets' bytes already
+        // were -- rather than leaving the RC to overshoot by another ~47
+        // bytes on every IDR.
+        encodeFrameInfo->bitstreamHeaderBufferSize += seiBytes;
+    }
+
     return result;
 }
 
@@ -423,7 +524,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         DumpStateInfo("input", 1, encodeFrameInfo);
 
         if (encodeFrameInfo->lastFrame) {
-            std::cout << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
+            VkEncOut() << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
                       << " of type " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
                       << " ###"
                       << std::endl << std::flush;
@@ -447,8 +548,15 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
 
     VkResult result = VK_SUCCESS;
 
+    // In capture mode (disableFileOutput -- the Chromium in-memory
+    // bitstream path) EVERY IDR chunk must be independently decodable: the
+    // VEA hands keyframe chunks to consumers that expect in-band VPS/SPS/PPS
+    // on each keyframe, including mid-stream forced IDRs. The file-based
+    // sample keeps the original headers-once-at-stream-start behavior.
     if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) &&
-            (encodeFrameInfo->frameEncodeInputOrderNum == 0 /*|| pEncodeConfigH265->repeatSPSPPS || m_bReconfigForcedIDR*/)) {
+            ((encodeFrameInfo->frameEncodeInputOrderNum == 0) ||
+             (m_encoderConfig->disableFileOutput != 0)
+             /*|| pEncodeConfigH265->repeatSPSPPS || m_bReconfigForcedIDR*/)) {
 
         result = EncodeVideoSessionParameters(encodeFrameInfo);
         if (result != VK_SUCCESS ) {
@@ -525,13 +633,13 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
             pFrameInfo->naluSliceSegmentInfo[i].constantQp = constantQp;
         }
         if (getenv("VKENC_DEBUG_PSNR")) {
-            fprintf(stderr, "[QPDBG] picType=%d constantQp=%d (qpI=%d qpP=%d qpB=%d) rcMode=%d\n",
+            VkEncPrintfErr("[QPDBG] picType=%d constantQp=%d (qpI=%d qpP=%d qpB=%d) rcMode=%d\n",
                     (int)encodeFrameInfo->gopPosition.pictureType, constantQp,
                     encodeFrameInfo->constQp.qpIntra, encodeFrameInfo->constQp.qpInterP,
                     encodeFrameInfo->constQp.qpInterB, (int)m_rateControlInfo.rateControlMode);
         }
     } else if (getenv("VKENC_DEBUG_PSNR")) {
-        fprintf(stderr, "[QPDBG] rcMode=%d NOT DISABLED (picType=%d) -> QP not forced\n",
+        VkEncPrintfErr("[QPDBG] rcMode=%d NOT DISABLED (picType=%d) -> QP not forced\n",
                 (int)m_rateControlInfo.rateControlMode, (int)encodeFrameInfo->gopPosition.pictureType);
     }
 
@@ -549,6 +657,48 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     pFrameInfo->stdPictureInfo.TemporalId = 0;
 
     return result;
+}
+
+void VkVideoEncoderH265::RefreshCodecRateControlParameters()
+{
+    // Through the base config pointer, for the reason spelled out on the
+    // H.264 counterpart: that is the pointer
+    // ApplyPendingRateControlUpdate just wrote the clamp on.
+    if (!VkVideoEncoder::m_encoderConfig) {
+        return;
+    }
+    EncoderConfigH265* config =
+        VkVideoEncoder::m_encoderConfig->GetEncoderConfigh265();
+    if (config == nullptr) {
+        return;
+    }
+    // Reset to the codec-init state first; see the H.264 counterpart. The
+    // fill raises useMinQp/useMaxQp and never lowers them, so re-invoking
+    // it in place could not clear a clamp that had once been set.
+    for (uint32_t layerIndx = 0;
+         layerIndx < ARRAYSIZE(m_rateControlLayersInfoH265);
+         layerIndx++) {
+        m_rateControlLayersInfoH265[layerIndx] =
+            VkVideoEncodeH265RateControlLayerInfoKHR{
+                VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR};
+    }
+    config->GetRateControlParameters(&m_rateControlInfo,
+                                     m_rateControlLayersInfo,
+                                     &m_rateControlInfoH265,
+                                     m_rateControlLayersInfoH265);
+}
+
+void VkVideoEncoderH265::GetResolvedQpClampForTest(uint32_t* pUseMinQp,
+                                                   int32_t*  pMinQpI,
+                                                   uint32_t* pUseMaxQp,
+                                                   int32_t*  pMaxQpI) const
+{
+    const VkVideoEncodeH265RateControlLayerInfoKHR& layer =
+        m_rateControlLayersInfoH265[0];
+    *pUseMinQp = (layer.useMinQp == VK_TRUE) ? 1u : 0u;
+    *pMinQpI   = layer.minQp.qpI;
+    *pUseMaxQp = (layer.useMaxQp == VK_TRUE) ? 1u : 0u;
+    *pMaxQpI   = layer.maxQp.qpI;
 }
 
 VkResult VkVideoEncoderH265::CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)

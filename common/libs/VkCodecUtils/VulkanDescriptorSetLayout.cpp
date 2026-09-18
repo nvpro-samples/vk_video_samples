@@ -15,6 +15,7 @@
 */
 
 #include "VulkanDescriptorSetLayout.h"
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include "VkCodecUtils/Helpers.h" // for alignedSize
 
 VkResult VulkanDescriptorSetLayout::CreateFragmentShaderLayouts(const uint32_t* setIds, uint32_t numSets, std::stringstream& imageFss)
@@ -58,7 +59,7 @@ VkResult VulkanDescriptorSetLayout::CreateFragmentShaderLayouts(const uint32_t* 
             }
         }
     }
-    // printf("\nFragment shader layout code:\n %s", imageFss.str().c_str());
+    // VkEncPrintfOut("\nFragment shader layout code:\n %s", imageFss.str().c_str());
 
     return VK_SUCCESS;
 }
@@ -215,7 +216,7 @@ VkResult VulkanDescriptorSetLayout::CreateFragmentShaderOutput(VkDescriptorType 
         break;
     }
 
-    // printf("\nFragment shader output code:\n %s", imageFss.str().c_str());
+    // VkEncPrintfOut("\nFragment shader output code:\n %s", imageFss.str().c_str());
 
     return VK_SUCCESS;
 }

@@ -214,7 +214,11 @@ public:
 
     operator VkDevice() const { return m_device; }
 
-    void DeviceWaitIdle() const;
+    // Returns the driver's verdict rather than discarding it. A wait that
+    // does not return VK_SUCCESS has not proved the device is idle, and a
+    // shutdown that treats it as if it had lets a caller reclaim memory the
+    // GPU is still reading.
+    VkResult DeviceWaitIdle() const;
 
     ~VulkanDeviceContext();
 
@@ -233,6 +237,24 @@ public:
     const char * FindRequiredDeviceExtension(const char* name) const;
 
     void PrintExtensions(bool deviceExt = false) const;
+
+    // Keep the Vulkan loader (libvulkan.so.1 / vulkan-1.dll) mapped for
+    // the process lifetime: this context's destructor will NOT
+    // dlclose()/FreeLibrary() it.
+    //
+    // Closing it is right for a standalone sample that owns its process.
+    // It is wrong wherever anything ELSE in the process has resolved
+    // Vulkan entry points out of the same shared object -- Chromium's
+    // gpu::VulkanFunctionPointers are bound to exactly this library --
+    // because the unload invalidates their function pointers while they
+    // still hold them. The encoder context sets this in both of its
+    // modes, including for a context it creates and releases inside one
+    // call; nothing else in the tree does.
+    //
+    // One-way: there is deliberately no way to un-retain. A second owner
+    // asking for retention must not be able to have it revoked by the
+    // first.
+    void RetainLoaderHandle() { m_retainedLibHandle = true; }
 
 #if !defined(VK_USE_PLATFORM_WIN32_KHR)
     typedef void* VulkanLibraryHandleType;
@@ -276,6 +298,23 @@ public:
         const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
         void* pUserData);
 
+    // Adopt a caller-supplied physical device WITHOUT queue selection.
+    //
+    // For capability probing on an ADOPT-mode context. The queries
+    // it enables -- vkGetPhysicalDeviceVideoCapabilitiesKHR and
+    // vkGetPhysicalDeviceVideoFormatPropertiesKHR -- are physical-device-level
+    // and need no queue family and no VkDevice, so running the full candidate
+    // scan is both unnecessary and wrong here: the caller has already chosen
+    // the device, and asking InitPhysicalDevice to re-derive it forces a queue
+    // request the probe has no use for.
+    //
+    // Populates the device-extension list, so callers do not have to re-query
+    // it themselves the way the capability path used to.
+    //
+    // Does NOT set any queue family. Anything that creates a VkDevice must go
+    // through InitPhysicalDevice() instead.
+    VkResult AdoptPhysicalDevice(VkPhysicalDevice physicalDevice);
+
     VkResult InitPhysicalDevice(int32_t deviceId, const vk::DeviceUuidUtils& deviceUuid,
                                 const VkQueueFlags requestQueueTypes =  (VK_QUEUE_GRAPHICS_BIT |
                                                                    /*  VK_QUEUE_COMPUTE_BIT |  */
@@ -301,6 +340,27 @@ public:
                                 bool createPresentQueue = false,
                                 bool createComputeQueue = false,
                                 VkDevice vkDevice = VK_NULL_HANDLE);
+
+    // Imported-device support: override the queue families the
+    // internal InitPhysicalDevice() probe selected with the families the
+    // CALLER created queues for on its imported VkDevice. Must be called
+    // after InitPhysicalDevice() and before CreateVulkanDevice(). Passing
+    // UINT32_MAX for an index keeps the probed family (no override).
+    //
+    // Rationale: for an imported VkDevice the library never creates queues;
+    // it only vkGetDeviceQueue()s them. The probe picks families purely from
+    // the physical device's properties, which may legally differ from the
+    // families the caller's vkCreateDevice actually requested queues on --
+    // and vkGetDeviceQueue on a family the device was not created with is
+    // undefined behavior. The override is validated against the physical
+    // device: the family index must exist, the encode family must expose
+    // VK_QUEUE_VIDEO_ENCODE_BIT_KHR and support videoEncodeQueueOperations,
+    // and the compute family must expose VK_QUEUE_COMPUTE_BIT.
+    VkResult OverrideImportedQueueFamilies(
+        uint32_t videoEncodeQueueFamilyIndex,
+        VkVideoCodecOperationFlagsKHR videoEncodeQueueOperations,
+        uint32_t computeQueueFamilyIndex);
+
     VkResult InitDebugReport(bool validate = false, bool validateVerbose = false);
 
     // Validation-error accounting.
@@ -344,6 +404,8 @@ private:
     VkQueueFlags m_videoDecodeQueueFlags;
     VkQueueFlags m_videoEncodeQueueFlags;
     uint32_t m_importedInstanceHandle : 1;
+    // See RetainLoaderHandle(): suppresses the destructor's unload.
+    uint32_t m_retainedLibHandle : 1;
     uint32_t m_importedDeviceHandle : 1;
     uint32_t m_videoDecodeQueryResultStatusSupport : 1;
     uint32_t m_videoEncodeQueryResultStatusSupport : 1;

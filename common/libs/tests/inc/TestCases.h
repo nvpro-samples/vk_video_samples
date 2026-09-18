@@ -55,6 +55,7 @@ namespace TestCases {
 
 // 4:2:0 formats
 TestCaseConfig TC001_RGBA_to_NV12();        // 8-bit 4:2:0 2-plane
+
 TestCaseConfig TC002_RGBA_to_P010();        // 10-bit 4:2:0 2-plane
 TestCaseConfig TC003_RGBA_to_P012();        // 12-bit 4:2:0 2-plane
 TestCaseConfig TC004_RGBA_to_I420();        // 8-bit 4:2:0 3-plane
@@ -142,6 +143,20 @@ TestCaseConfig TC084_RGBA_to_P212_Linear(); // 12-bit 4:2:2 LINEAR (TRV repro sh
 TestCaseConfig TC085_RGBA_to_P210_Linear(); // 10-bit 4:2:2 LINEAR (control)
 
 // =============================================================================
+// RGBA/BGRA component-order tests
+// =============================================================================
+//
+// One picture of saturated primaries, staged in each format's own byte order and
+// validated against one shared reference built from the logical colours. TC133 is
+// the control that licenses reading the other two as results. See the block
+// comment in TestCases.cpp.
+
+TestCaseConfig TC130_RGBA_to_NV12_PurePrimaries_Storage();  // must MATCH
+TestCaseConfig TC132_BGRA_to_NV12_PurePrimaries_Storage();  // must MATCH
+TestCaseConfig TC133_BGRA_NoSwapControl_MustDiffer();       // must DIFFER
+
+
+// =============================================================================
 // Buffer I/O Tests
 // =============================================================================
 
@@ -163,6 +178,13 @@ TestCaseConfig TC076_P010Buffer_to_RGBABuffer();
 // =============================================================================
 
 TestCaseConfig TC080_RGBA_to_NV12_Linear();
+// Linear-tiled colour variants. Linear so the output can actually be read
+// back and compared -- the optimal-tiled TC02x/TC03x cases cannot be.
+TestCaseConfig TC092_RGBA_to_NV12_Linear_LimitedRange();
+TestCaseConfig TC093_RGBA_to_NV12_Linear_BT601();
+TestCaseConfig TC094_RGBA_to_NV12_Linear_BT2020();
+TestCaseConfig TC095_RGBA_to_P010_Linear_LimitedRange();
+TestCaseConfig TC096_RGBA_to_NV12_Linear_BT709_FullRange();
 TestCaseConfig TC081_RGBA_to_P010_Linear();
 TestCaseConfig TC082_Linear_NV12_to_Optimal_NV12();
 TestCaseConfig TC083_Optimal_NV12_to_Linear_NV12();
@@ -183,6 +205,8 @@ TestCaseConfig TC101_Unaligned_Resolution_1922x1082();
 TestCaseConfig TC102_4K_Resolution_3840x2160();
 TestCaseConfig TC103_8K_Resolution_7680x4320();
 TestCaseConfig TC104_Minimum_Resolution_2x2();
+TestCaseConfig TC105_Odd_Resolution_65x33_YUV444();
+TestCaseConfig TC106_Odd_Height_66x33_NV16();
 
 // =============================================================================
 // Transfer Operation Tests (Pre/Post Transfer scenarios)

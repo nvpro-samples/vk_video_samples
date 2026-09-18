@@ -512,6 +512,11 @@ VkResult VulkanGraphicsPipeline::CreatePipeline(const VulkanDeviceContext* vkDev
         m_vertexShaderCache = m_vulkanShaderCompiler.BuildGlslShader(vss, strlen(vss),
                 VK_SHADER_STAGE_VERTEX_BIT,
                 m_vkDevCtx);
+        // Same unchecked producer as the compute twin: an unguarded
+        // VK_NULL_HANDLE would reach VkPipelineShaderStageCreateInfo::module.
+        if (m_vertexShaderCache == VK_NULL_HANDLE) {
+            return VK_ERROR_INVALID_SHADER_NV;
+        }
     }
 
     if (m_fssCache.str() != imageFss.str()) {
@@ -519,6 +524,14 @@ VkResult VulkanGraphicsPipeline::CreatePipeline(const VulkanDeviceContext* vkDev
         m_fragmentShaderCache = m_vulkanShaderCompiler.BuildGlslShader(imageFss.str().c_str(), strlen(imageFss.str().c_str()),
                             VK_SHADER_STAGE_FRAGMENT_BIT,
                             m_vkDevCtx);
+        if (m_fragmentShaderCache == VK_NULL_HANDLE) {
+            // BEFORE the swap, deliberately. Caching the source that just
+            // failed to compile would make this the "current" fragment shader
+            // and the `m_fssCache.str() != imageFss.str()` test above would
+            // then skip the rebuild forever -- one bad compile would be
+            // permanent for the life of the object.
+            return VK_ERROR_INVALID_SHADER_NV;
+        }
 
         m_fssCache.swap(imageFss);
         if (verbose) printf("\nFragment shader cache output code:\n %s", m_fssCache.str().c_str());

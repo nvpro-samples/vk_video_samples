@@ -3,6 +3,10 @@ run-name: CI by ${{ github.actor }}
 
 on:
   workflow_dispatch:
+
+  # Runs on pushes to the default branch and on pull requests targeting it.
+  # A topic branch is gated through its pull request, so nothing beyond the
+  # default branch is enumerated here.
   pull_request:
     branches:
       - main
@@ -66,6 +70,21 @@ jobs:
         run: |
           cmake -B BUILD -DCMAKE_BUILD_TYPE=Release
           cmake --build BUILD --parallel $BUILD_JOBS --config Release
+
+      # The C++ suite. This is the only `ctest` invocation under
+      # .github/workflows/, so it is what makes the tree's add_test()
+      # registrations gate anything.
+      #
+      # This runner (ubuntu-24.04, GitHub-hosted) has NO NVIDIA GPU, so the
+      # tests are split by label: the device-free set must be green here and
+      # is the real gate, and the gpu set reports SKIPPED rather than FAILED
+      # when there is no device -- so it is green here too, and becomes a
+      # genuine gate the day this job moves to a GPU runner. The script also
+      # fails if any registered test carries neither label, and fails if a
+      # label selects zero tests, so the gate cannot quietly become a no-op.
+      - name: Run CTest suite
+        run: |
+          ./scripts/run_ctest_ci.sh BUILD
 
       - name: Set up Python
         uses: actions/setup-python@v5

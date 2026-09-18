@@ -61,7 +61,22 @@ public:
     }
 
     vkPicBuffBase()
-        : m_refCount(0)
+        // NAMING THE BASE IS LOAD-BEARING. VkPicIf carries decodeWidth,
+        // decodeHeight, decodeSuperResWidth and reserved[] as raw int32_t with
+        // no initializers. Leaving it out of this list DEFAULT-initializes the
+        // base subobject, so those fields hold indeterminate values rather
+        // than zero -- and nothing else zeroes them: the pool stores these in
+        // a std::vector, whose value-initialization degenerates to calling
+        // this user-provided constructor, and Reset() clears only m_refCount,
+        // so the fields also survive pool recycling untouched.
+        //
+        // With the AV1 parser now writing all three before they are read, this
+        // is belt-and-braces rather than the primary fix -- but it is what
+        // makes a MISSING write read as 0 instead of as a recycled
+        // allocation's contents, which is the difference between a bug that
+        // reproduces and one that only shows up under memory pressure.
+        : VkPicIf()
+        , m_refCount(0)
         , m_picIdx(-1)
         , m_displayOrder((uint32_t)-1)
         , m_decodeOrder(0)

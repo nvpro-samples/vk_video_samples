@@ -17,7 +17,7 @@
 #include "VkVideoGopStructure.h"
 #include <limits>
 
-VkVideoGopStructure::VkVideoGopStructure(uint8_t gopFrameCount,
+VkVideoGopStructure::VkVideoGopStructure(uint32_t gopFrameCount,
                                          int32_t idrPeriod,
                                          uint8_t consecutiveBFrameCount,
                                          uint8_t temporalLayerCount,
@@ -42,7 +42,12 @@ VkVideoGopStructure::VkVideoGopStructure(uint8_t gopFrameCount,
 
 bool VkVideoGopStructure::Init(uint64_t maxNumFrames)
 {
-    m_gopFrameCycle = (uint8_t)(m_consecutiveBFrameCount + 1);
+    // Same sentinel guard as SetConsecutiveBFrameCount(): while the count is
+    // still UINT8_MAX ("driver preferred", unresolved) a +1 would wrap to 0 and
+    // the sub-GOP modulo would divide by zero.
+    m_gopFrameCycle = (m_consecutiveBFrameCount == UINT8_MAX)
+                          ? m_gopFrameCycle
+                          : (uint8_t)(m_consecutiveBFrameCount + 1);
     return true;
 }
 

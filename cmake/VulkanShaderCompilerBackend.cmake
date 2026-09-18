@@ -73,17 +73,23 @@ if(VK_VIDEO_SAMPLES_SHADER_BACKEND STREQUAL "glslang")
             find_library(GLSLANG_LIBRARY_DEBUG NAMES glslangd HINTS ${GLSLANG_SDK_LIB_HINTS})
             find_library(GLSLANG_RESOURCE_LIMITS_LIBRARY_DEBUG NAMES glslang-default-resource-limitsd
                          HINTS ${GLSLANG_SDK_LIB_HINTS})
-
-            # The SDK's glslang is a static library built with ENABLE_OPT=ON, so
-            # it carries unresolved SPIRV-Tools references (spvContextCreate,
-            # spvValidatorOptions*) that the linker must satisfy even though we
-            # never enable the optimizer. The Linux shared library resolves them
-            # internally and needs none of this.
-            find_library(SPIRV_TOOLS_LIBRARY NAMES SPIRV-Tools HINTS ${GLSLANG_SDK_LIB_HINTS})
-            find_library(SPIRV_TOOLS_OPT_LIBRARY NAMES SPIRV-Tools-opt HINTS ${GLSLANG_SDK_LIB_HINTS})
             find_library(SPIRV_TOOLS_LIBRARY_DEBUG NAMES SPIRV-Toolsd HINTS ${GLSLANG_SDK_LIB_HINTS})
             find_library(SPIRV_TOOLS_OPT_LIBRARY_DEBUG NAMES SPIRV-Tools-optd HINTS ${GLSLANG_SDK_LIB_HINTS})
         endif()
+
+        # A glslang built with ENABLE_OPT=ON carries unresolved SPIRV-Tools
+        # references (spvContextCreate, spvValidatorOptions*, and the
+        # spvtools::Create*Pass factories) that the linker must satisfy even
+        # though we never enable the optimizer. This is NOT MSVC-specific: it
+        # applies whenever the glslang we found is a static archive, which is
+        # what Debian/Ubuntu's libglslang-dev ships. Leaving them unresolved
+        # still links a shared library, but dlopen() of it then fails with
+        #   undefined symbol: _ZN8spvtools29CreateLocalMultiStoreElimPassEv
+        # so the search has to run on every platform. Where glslang is a shared
+        # library that resolves them internally, these archives contribute
+        # nothing and are simply not pulled in.
+        find_library(SPIRV_TOOLS_LIBRARY NAMES SPIRV-Tools HINTS ${GLSLANG_SDK_LIB_HINTS})
+        find_library(SPIRV_TOOLS_OPT_LIBRARY NAMES SPIRV-Tools-opt HINTS ${GLSLANG_SDK_LIB_HINTS})
     endif()
 
     if(GLSLANG_LIBRARY AND GLSLANG_RESOURCE_LIMITS_LIBRARY AND GLSLANG_INCLUDE_DIR)
@@ -108,6 +114,11 @@ if(VK_VIDEO_SAMPLES_SHADER_BACKEND STREQUAL "glslang")
             message(STATUS "Found glslang: ${GLSLANG_LIBRARY} (debug: ${GLSLANG_LIBRARY_DEBUG})")
         else()
             set(VK_SHADER_COMPILER_LIBS ${GLSLANG_LIBRARY} ${GLSLANG_RESOURCE_LIMITS_LIBRARY})
+            if(SPIRV_TOOLS_LIBRARY AND SPIRV_TOOLS_OPT_LIBRARY)
+                list(APPEND VK_SHADER_COMPILER_LIBS
+                     ${SPIRV_TOOLS_OPT_LIBRARY} ${SPIRV_TOOLS_LIBRARY})
+                message(STATUS "Found SPIRV-Tools for static glslang: ${SPIRV_TOOLS_LIBRARY}")
+            endif()
             message(STATUS "Found glslang: ${GLSLANG_LIBRARY}")
         endif()
         # Both the include root and its glslang/ subdirectory: the sources spell

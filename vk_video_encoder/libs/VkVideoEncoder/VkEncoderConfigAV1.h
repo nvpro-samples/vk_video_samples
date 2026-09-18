@@ -22,7 +22,13 @@
 
 #define FRAME_ID_BITS 15
 #define DELTA_FRAME_ID_BITS 14
-#define ORDER_HINT_BITS 7
+// 8, not 7. The reference-order-hint writer casts to uint8_t (an 8-bit mask)
+// while the DPB writer masks by this value, so at 7 the two disagree and a
+// ref_order_hint of >= 128 can be emitted for a field that cannot hold it.
+// 8 is also what stream consumers that mask order hints with 0xFF expect --
+// with 7, order_hint wraps at frame 128 and such a consumer rejects every
+// frame from there on.
+#define ORDER_HINT_BITS 8
 
 #define BASE_QIDX_INTRA 114
 #define BASE_QIDX_INTER_P 131
@@ -228,6 +234,12 @@ struct EncoderConfigAV1 : public EncoderConfig {
     bool                                    enableLr{};
     bool                                    customLrConfig{};
     StdVideoAV1LoopRestoration              lrConfig{};
+    // Sequence-header colour description, populated by InitSequenceHeader()
+    // from the base-class colour fields. StdVideoAV1SequenceHeader carries
+    // colour BY POINTER (pColorConfig), so the storage must outlive the
+    // sequence header; it lives here, on the config that owns the values and
+    // outlives the encoder session.
+    StdVideoAV1ColorConfig                  av1ColorConfig{};
 };
 
 #endif /* VKVIDEOENCODER_VKENCODERCONFIG_AV1_H_ */

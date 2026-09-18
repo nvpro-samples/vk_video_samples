@@ -40,6 +40,7 @@ set(TEST_HEADERS
 set(VKCODECUTILS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../VkCodecUtils")
 set(VKCODECUTILS_SOURCES
     ${VKCODECUTILS_DIR}/VulkanDeviceContext.cpp
+    ${VKCODECUTILS_DIR}/VkEncoderStdioLatch.cpp
     ${VKCODECUTILS_DIR}/VulkanDeviceMemoryImpl.cpp
     ${VKCODECUTILS_DIR}/VkImageResource.cpp
     ${VKCODECUTILS_DIR}/VkBufferResource.cpp
@@ -54,6 +55,7 @@ set(VKCODECUTILS_SOURCES
     ${VKCODECUTILS_DIR}/VulkanFenceSet.cpp
     ${VKCODECUTILS_DIR}/Helpers.cpp
     ${VK_DISPATCH_TABLE_SOURCE}
+    ${VK_DISPATCH_TABLE_HEADER}
     ${VKCODECUTILS_DIR}/nvVkFormats.cpp
 )
 
@@ -105,6 +107,12 @@ install(TARGETS ${PROJECT_NAME}
 enable_testing()
 add_test(NAME Win32OpaqueImportSmokeTest COMMAND ${PROJECT_NAME})
 add_test(NAME Win32OpaqueImportAllTests COMMAND ${PROJECT_NAME} --verbose)
+# Labelled for the same CI split as the Linux tests. No SKIP_RETURN_CODE is
+# claimed here because this arm is Windows-only and was NOT run or verified
+# when the labels were added -- do not assume it skips cleanly without a GPU.
+set_tests_properties(Win32OpaqueImportSmokeTest
+                     Win32OpaqueImportAllTests PROPERTIES
+                     LABELS "gpu")
 
 # Print status
 message(STATUS "win32_opaque_import_test: Configured for Windows")

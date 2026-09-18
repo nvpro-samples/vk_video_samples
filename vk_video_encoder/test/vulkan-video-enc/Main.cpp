@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
+#include <cstdlib>
 #include <iostream>
-#include "vulkan_video_encoder.h"
+#include "vulkan_video_encoder_argv.h"
 #include "VkVSCommon.h"
 
 int main(int argc, const char** argv)
@@ -27,26 +28,60 @@ int main(int argc, const char** argv)
 
     if (result != VK_SUCCESS) {
         std::cerr << "Error creating the encoder instance: " << result << std::endl;
+        // 69 is reserved for a device that cannot do this, and for nothing
+        // else. Every other creation failure -- out of memory, initialization,
+        // device loss, unknown -- is an ordinary failure, because a harness
+        // that reads 69 as "skip" would otherwise skip a real defect.
         return IsVideoUnsupportedResult(result) ? VVS_EXIT_UNSUPPORTED : EXIT_FAILURE;
     }
 
-    int64_t numFrames = vulkanVideoEncoder->GetNumberOfFrames();
+    // A VK_SUCCESS that hands back nothing usable is still a failure, and one
+    // that would be invisible below: the frame loop simply would not run and
+    // the process would exit zero having encoded nothing.
+    if (!vulkanVideoEncoder) {
+        std::cerr << "Error: encoder creation reported success but produced no "
+                     "encoder" << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    const int64_t numFrames = vulkanVideoEncoder->GetNumberOfFrames();
+    if (numFrames < 0) {
+        std::cerr << "Error: invalid frame count " << numFrames << std::endl;
+        return EXIT_FAILURE;
+    }
     std::cout << "Number of frames to encode: " << numFrames << std::endl;
+
+    // THE FIRST ERROR IS KEPT. Nothing below may overwrite it -- not a later
+    // frame that happens to succeed, and not a completion that succeeds.
+    VkResult firstError = VK_SUCCESS;
 
     for (int64_t frameNum = 0; frameNum < numFrames; frameNum++) {
         int64_t frameNumEncoded = -1;
         result = vulkanVideoEncoder->EncodeNextFrame(frameNumEncoded);
         if (result != VK_SUCCESS) {
             std::cerr << "Error encoding frame: "  << frameNum  << ", error: " << result << std::endl;
+            firstError = result;
+            // Stop asking. Continuing past a failed frame produces a stream
+            // with a hole in it and a longer log that says the same thing.
+            break;
         }
     }
 
+    // Called once for an initialized session even after a frame failed: the
+    // work already accepted has to be completed and the output closed.
     result = vulkanVideoEncoder->GetBitstream();
     if (result != VK_SUCCESS) {
         std::cerr << "Error obtaining the encoded bitstream file: " << result << std::endl;
+        if (firstError == VK_SUCCESS) {
+            firstError = result;
+        }
     }
 
     std::cout << "Exit encoder test" << std::endl;
+    // EXPLICIT. Falling off the end of main returns zero, which is how a run
+    // that printed a failure for every frame was still read as a pass. A
+    // post-initialization failure is EXIT_FAILURE even when its VkResult looks
+    // like a capability answer -- the device was already known to be capable,
+    // or creation would have returned 69.
+    return (firstError == VK_SUCCESS) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
-
-

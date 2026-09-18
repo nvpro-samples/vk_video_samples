@@ -14,9 +14,13 @@
  * limitations under the License.
  */
 
+#include <atomic>
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include "VkVideoEncoder/VkVideoEncoder.h"
 #include "VkVideoEncoder/VkVideoEncoderPsnr.h"
@@ -40,9 +44,11 @@ VkResult VkVideoEncoderPsnr::Configure(const VulkanDeviceContext* vkDevCtx,
                                        uint32_t maxEncodeQueueDepth,
                                        VkFormat imageDpbFormat,
                                        const VkExtent2D& imageExtent,
-                                       uint32_t encodeQueueFamilyIndex)
+                                       uint32_t encodeQueueFamilyIndex,
+                                       VkFormat imageInFormat)
 {
     if (m_vkDevCtx == nullptr) {
+        m_imageInFormat = (imageInFormat != VK_FORMAT_UNDEFINED) ? imageInFormat : imageDpbFormat;
         m_vkDevCtx = vkDevCtx;
         m_encoderConfig = encoderConfig;
         m_maxEncodeQueueDepth = maxEncodeQueueDepth;
@@ -70,13 +76,48 @@ VkResult VkVideoEncoderPsnr::Configure(const VulkanDeviceContext* vkDevCtx,
                                                        false,
                                                        true);
                 if (result != VK_SUCCESS) {
-                    fprintf(stderr, "\nVkVideoEncoderPsnr: Failed to Configure psnrReconImagePool.\n");
+                    VkEncPrintfErr("\nVkVideoEncoderPsnr: Failed to Configure psnrReconImagePool.\n");
                     m_psnrReconImagePool = nullptr;
                     m_initResult = result;
                 } else {
                     m_initResult = VK_SUCCESS;
                 }
             }
+        }
+    }
+
+    // ===== MECHANISM-C: encoder-INPUT capture pool =====
+    // Independent of IsPsnrMetricsEnabled() on purpose: the PSNR path forces a
+    // per-frame host wait on the encode fence, which is exactly the kind of
+    // serialisation that can hide a submission-ordering race.
+    if ((m_capSrcImagePool == nullptr) && (getenv("VKENC_DEBUG_DUMP_SRC") != nullptr)) {
+        const char* maxFilesEnv = getenv("VKENC_DEBUG_DUMP_SRC_FILES");
+        m_capSrcMaxFiles = (maxFilesEnv != nullptr) ? (uint32_t)atoi(maxFilesEnv) : 0;
+        const char* strideEnv = getenv("VKENC_DEBUG_DUMP_SRC_STRIDE");
+        m_capStride = (strideEnv != nullptr) ? (uint32_t)std::max(1, atoi(strideEnv)) : 8u;
+        m_capSrcEnabled = true;
+        VkResult capRes = VulkanVideoImagePool::Create(m_vkDevCtx, m_capSrcImagePool);
+        if (capRes == VK_SUCCESS) {
+            capRes = m_capSrcImagePool->Configure(m_vkDevCtx,
+                                                 m_maxEncodeQueueDepth + 2,
+                                                 m_imageInFormat,
+                                                 m_imageExtent,
+                                                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                                                 m_encodeQueueFamilyIndex,
+                                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                                 nullptr,
+                                                 VK_IMAGE_ASPECT_COLOR_BIT,
+                                                 false,
+                                                 false,
+                                                 true);
+        }
+        if (capRes != VK_SUCCESS) {
+            VkEncPrintfErr("[CAPSRC] pool configure FAILED (0x%x); capture disabled\n", capRes);
+            m_capSrcImagePool = nullptr;
+        } else {
+            VkEncPrintfErr("[CAPSRC] enabled: fmt=%d %ux%u nodes=%u maxFiles=%u\n",
+                    (int)m_imageInFormat, m_imageExtent.width, m_imageExtent.height,
+                    m_maxEncodeQueueDepth + 2, m_capSrcMaxFiles);
         }
     }
 
@@ -132,6 +173,341 @@ void VkVideoEncoderPsnr::CaptureInput(void* encodeFrameInfoVoid, const uint8_t* 
                    chromaW);
         }
     }
+}
+
+
+// ===================== MECHANISM-C: ENCODER-INPUT CAPTURE =====================
+//
+// WHAT IT MEASURES. The pixels of encodeFrameInfo->srcEncodeImageResource -- the
+// image named as pSrcPictureResource of vkCmdEncodeVideoKHR -- read out of the
+// ENCODE command buffer, one command before vkCmdBeginVideoCodingKHR. That places
+// the copy in the same submission, on the same queue, behind the same (or absent)
+// cross-queue dependency as the encode's own read. A capture that shows zero
+// chroma therefore says the encode read zero chroma too; the corruption is at or
+// before the encode's input, not inside the encode.
+//
+// WHY THE BARRIERS CANNOT LAUNDER THE ANSWER. Both barriers below name
+// VK_QUEUE_FAMILY_IGNORED and scope their source at ALL_COMMANDS *within this
+// command buffer's submission*. A pipeline barrier cannot create a dependency on
+// work submitted to a different queue, and cannot substitute for a semaphore
+// between submissions. So if the staged copy has not landed when the encode runs,
+// it has not landed when this capture runs either.
+bool VkVideoEncoderPsnr::CaptureSource(VkCommandBuffer cmdBuf, void* encodeFrameInfoVoid)
+{
+    if ((encodeFrameInfoVoid == nullptr) || (m_capSrcImagePool == nullptr) || (m_vkDevCtx == nullptr)) {
+        return false;
+    }
+    VkVideoEncoder::VkVideoEncodeFrameInfo& encodeFrameInfo =
+        *static_cast<VkVideoEncoder::VkVideoEncodeFrameInfo*>(encodeFrameInfoVoid);
+    if (encodeFrameInfo.srcEncodeImageResource == nullptr) {
+        return false;
+    }
+    const bool srcIs2Plane = (m_imageInFormat == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM);
+    if (!srcIs2Plane) {
+        // Once per process, and once has to be true rather than likely --
+        // see the equivalent claims in the encoder core. Debug capture is
+        // opt-in, but two sessions that opt in reach this together.
+        static std::atomic<bool> warned{false};
+        if (!warned.exchange(true, std::memory_order_relaxed)) {
+            VkEncPrintfErr("[CAPSRC] input format %d is not 2-plane NV12; capture skipped\n",
+                    (int)m_imageInFormat);
+        }
+        return false;
+    }
+    if (!m_capSrcImagePool->GetAvailableImage(encodeFrameInfo.psnrFrameData.capSrcImage,
+                                              VK_IMAGE_LAYOUT_UNDEFINED)) {
+        m_capSrcMissCount++;
+        return false;
+    }
+    VkSharedBaseObj<VkImageResourceView> srcView;
+    encodeFrameInfo.srcEncodeImageResource->GetImageView(srcView);
+    VkSharedBaseObj<VkImageResourceView> dstView;
+    encodeFrameInfo.psnrFrameData.capSrcImage->GetImageView(dstView);
+    if (!srcView || !dstView) {
+        encodeFrameInfo.psnrFrameData.capSrcImage = nullptr;
+        return false;
+    }
+    VkImage srcImage = srcView->GetImageResource()->GetImage();
+    VkImage dstImage = dstView->GetImageResource()->GetImage();
+
+    // The layout the staging arm recorded, or the spec-required encode layout when
+    // the frame was never staged (Path A / RESIDENCY_LOCAL).
+    const VkImageLayout srcLayout =
+        (encodeFrameInfo.srcEncodeImageStagedLayout != VK_IMAGE_LAYOUT_MAX_ENUM)
+            ? encodeFrameInfo.srcEncodeImageStagedLayout
+            : VK_IMAGE_LAYOUT_VIDEO_ENCODE_SRC_KHR;
+
+    VkImageMemoryBarrier2KHR bars[2] = {};
+    bars[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR;
+    bars[0].srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    bars[0].srcAccessMask = VK_ACCESS_2_NONE;
+    bars[0].dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    bars[0].dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+    bars[0].oldLayout = srcLayout;
+    bars[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    bars[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    bars[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    bars[0].image = srcImage;
+    bars[0].subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+    bars[1] = bars[0];
+    bars[1].srcAccessMask = VK_ACCESS_2_NONE;
+    bars[1].dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    bars[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    bars[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    bars[1].image = dstImage;
+
+    VkDependencyInfoKHR depInfo = {};
+    depInfo.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR;
+    depInfo.imageMemoryBarrierCount = 2;
+    depInfo.pImageMemoryBarriers = bars;
+    m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &depInfo);
+
+    const uint32_t w = m_encoderConfig->encodeWidth;
+    const uint32_t h = m_encoderConfig->encodeHeight;
+    VkImageCopy r0 = { { VK_IMAGE_ASPECT_PLANE_0_BIT, 0, 0, 1 }, { 0, 0, 0 },
+                       { VK_IMAGE_ASPECT_PLANE_0_BIT, 0, 0, 1 }, { 0, 0, 0 }, { w, h, 1 } };
+    m_vkDevCtx->CmdCopyImage(cmdBuf, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                             dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &r0);
+    VkImageCopy r1 = { { VK_IMAGE_ASPECT_PLANE_1_BIT, 0, 0, 1 }, { 0, 0, 0 },
+                       { VK_IMAGE_ASPECT_PLANE_1_BIT, 0, 0, 1 }, { 0, 0, 0 },
+                       { (w + 1) / 2, (h + 1) / 2, 1 } };
+    m_vkDevCtx->CmdCopyImage(cmdBuf, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                             dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &r1);
+
+    // Hand the encode source back in exactly the layout it was handed to us in,
+    // so the encode's own VUID-vkCmdEncodeVideoKHR-pEncodeInfo-10811 still holds.
+    VkImageMemoryBarrier2KHR back = bars[0];
+    back.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    back.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+    back.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+    back.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR;
+    back.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    back.newLayout = srcLayout;
+    depInfo.imageMemoryBarrierCount = 1;
+    depInfo.pImageMemoryBarriers = &back;
+    m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &depInfo);
+    return true;
+}
+
+// Records (imported linear image -> host-visible LINEAR image) into the STAGING
+// command buffer, immediately after CopyLinearToOptimalImage has read the same
+// image. This is the pixels the PRODUCER handed us, before the library's own
+// copy can be blamed for them. Pool is configured lazily because the imported
+// image's format and extent are not known until the first frame arrives.
+bool VkVideoEncoderPsnr::CaptureImported(VkCommandBuffer cmdBuf, void* encodeFrameInfoVoid,
+                                        void* linearImageViewVoid)
+{
+    if (!m_capSrcEnabled || (encodeFrameInfoVoid == nullptr) ||
+        (linearImageViewVoid == nullptr) || (m_vkDevCtx == nullptr)) {
+        return false;
+    }
+    VkVideoEncoder::VkVideoEncodeFrameInfo& encodeFrameInfo =
+        *static_cast<VkVideoEncoder::VkVideoEncodeFrameInfo*>(encodeFrameInfoVoid);
+    VkImageResourceView* linearView = static_cast<VkImageResourceView*>(linearImageViewVoid);
+    const VkSharedBaseObj<VkImageResource>& srcRes = linearView->GetImageResource();
+    const VkImageCreateInfo& ci = srcRes->GetImageCreateInfo();
+
+    if (m_capImpImagePool == nullptr) {
+        if (ci.format != VK_FORMAT_G8_B8R8_2PLANE_420_UNORM) {
+            // As for the capture-source claim above.
+            static std::atomic<bool> warned{false};
+            if (!warned.exchange(true, std::memory_order_relaxed)) {
+                VkEncPrintfErr("[CAPIMP] imported format %d is not 2-plane NV12; capture disabled\n",
+                        (int)ci.format);
+            }
+            return false;
+        }
+        m_capImpFormat = ci.format;
+        m_capImpExtent.width = ci.extent.width;
+        m_capImpExtent.height = ci.extent.height;
+        VkResult r = VulkanVideoImagePool::Create(m_vkDevCtx, m_capImpImagePool);
+        if (r == VK_SUCCESS) {
+            r = m_capImpImagePool->Configure(m_vkDevCtx, m_maxEncodeQueueDepth + 2,
+                                             m_capImpFormat, m_capImpExtent,
+                                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                                             m_encodeQueueFamilyIndex,
+                                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                             nullptr, VK_IMAGE_ASPECT_COLOR_BIT,
+                                             false, false, true);
+        }
+        if (r != VK_SUCCESS) {
+            VkEncPrintfErr("[CAPIMP] pool configure FAILED (0x%x); capture disabled\n", r);
+            m_capImpImagePool = nullptr;
+            return false;
+        }
+        VkEncPrintfErr("[CAPIMP] enabled: fmt=%d %ux%u tiling=%d\n",
+                (int)m_capImpFormat, m_capImpExtent.width, m_capImpExtent.height, (int)ci.tiling);
+    }
+    if (!m_capImpImagePool->GetAvailableImage(encodeFrameInfo.psnrFrameData.capImpImage,
+                                              VK_IMAGE_LAYOUT_UNDEFINED)) {
+        m_capImpMissCount++;
+        return false;
+    }
+    VkSharedBaseObj<VkImageResourceView> dstView;
+    encodeFrameInfo.psnrFrameData.capImpImage->GetImageView(dstView);
+    if (!dstView) {
+        encodeFrameInfo.psnrFrameData.capImpImage = nullptr;
+        return false;
+    }
+    VkImage srcImage = srcRes->GetImage();
+    VkImage dstImage = dstView->GetImageResource()->GetImage();
+    encodeFrameInfo.psnrFrameData.capSeq = m_capSeq.fetch_add(1) + 1;
+    encodeFrameInfo.psnrFrameData.capImpImageId = (uint64_t)srcImage;
+    encodeFrameInfo.psnrFrameData.capImpMemId = (uint64_t)srcRes->GetDeviceMemory();
+
+    // The imported image is already in TRANSFER_SRC_OPTIMAL here -- the staging
+    // arm put it there and CopyLinearToOptimalImage just read it -- so only the
+    // destination needs a barrier, plus a TRANSFER->TRANSFER execution dependency
+    // so this copy is ordered after the library's own.
+    VkImageMemoryBarrier2KHR bar = {};
+    bar.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR;
+    bar.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    bar.srcAccessMask = VK_ACCESS_2_NONE;
+    bar.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+    bar.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+    bar.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    bar.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    bar.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    bar.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    bar.image = dstImage;
+    bar.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+    VkDependencyInfoKHR dep = {};
+    dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR;
+    dep.imageMemoryBarrierCount = 1;
+    dep.pImageMemoryBarriers = &bar;
+    m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &dep);
+
+    const uint32_t w = std::min(m_capImpExtent.width, m_encoderConfig->encodeWidth);
+    const uint32_t h = std::min(m_capImpExtent.height, m_encoderConfig->encodeHeight);
+    VkImageCopy r0 = { { VK_IMAGE_ASPECT_PLANE_0_BIT, 0, 0, 1 }, { 0, 0, 0 },
+                       { VK_IMAGE_ASPECT_PLANE_0_BIT, 0, 0, 1 }, { 0, 0, 0 }, { w, h, 1 } };
+    m_vkDevCtx->CmdCopyImage(cmdBuf, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                             dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &r0);
+    VkImageCopy r1 = { { VK_IMAGE_ASPECT_PLANE_1_BIT, 0, 0, 1 }, { 0, 0, 0 },
+                       { VK_IMAGE_ASPECT_PLANE_1_BIT, 0, 0, 1 }, { 0, 0, 0 },
+                       { (w + 1) / 2, (h + 1) / 2, 1 } };
+    m_vkDevCtx->CmdCopyImage(cmdBuf, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                             dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &r1);
+    return true;
+}
+
+// Host-side reader, shared by both captures. Must be called only after the
+// ENCODE command buffer's fence has been waited on.
+//
+// COST DISCIPLINE: v1 of this walked the whole 3.1 MB of HOST_VISIBLE image
+// memory byte-wise and dropped the pipeline from ~200 fps to 3.6 fps. Rows are
+// now bulk-memcpy'd into cached scratch and only every m_capStride-th row is
+// touched, which is ample for "is this plane all zeros".
+void VkVideoEncoderPsnr::DumpCapturedNode(VkSharedBaseObj<VulkanVideoImagePoolNode>& node,
+                                          const char* tag, uint32_t frameIdx,
+                                          uint32_t w, uint32_t h, bool writeFile,
+                                          uint64_t seq, uint64_t imgId)
+{
+    if (node == nullptr) {
+        return;
+    }
+    VkSharedBaseObj<VkImageResourceView> view;
+    node->GetImageView(view);
+    if (!view) { node = nullptr; return; }
+    const VkSharedBaseObj<VkImageResource>& res = view->GetImageResource();
+    VkDevice device = m_vkDevCtx->getDevice();
+    void* mapped = nullptr;
+    if ((m_vkDevCtx->MapMemory(device, res->GetDeviceMemory(),
+                               res->GetImageDeviceMemoryOffset(),
+                               res->GetImageDeviceMemorySize(), 0, &mapped) != VK_SUCCESS) ||
+        (mapped == nullptr)) {
+        node = nullptr;
+        return;
+    }
+    const uint8_t* base = static_cast<const uint8_t*>(mapped);
+    const uint32_t cw = (w + 1) / 2;
+    const uint32_t ch = (h + 1) / 2;
+    const uint32_t stride = writeFile ? 1u : m_capStride;
+    VkImage img = res->GetImage();
+    VkImageSubresource sub = {};
+    VkSubresourceLayout ly = {};
+    VkSubresourceLayout lc = {};
+    sub.aspectMask = VK_IMAGE_ASPECT_PLANE_0_BIT;
+    m_vkDevCtx->GetImageSubresourceLayout(device, img, &sub, &ly);
+    sub.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
+    m_vkDevCtx->GetImageSubresourceLayout(device, img, &sub, &lc);
+
+    m_capScratch.resize((size_t)std::max(w, 2u * cw) + 64);
+    uint8_t* row = m_capScratch.data();
+
+    uint64_t sumY = 0; uint64_t nY = 0;
+    for (uint32_t y = 0; y < h; y += stride) {
+        memcpy(row, base + ly.offset + ((size_t)y * ly.rowPitch), w);
+        for (uint32_t x = 0; x < w; x++) { sumY += row[x]; }
+        nY += w;
+    }
+    uint64_t sumU = 0, sumV = 0, nC = 0, zeroUV = 0;
+    for (uint32_t y = 0; y < ch; y += stride) {
+        memcpy(row, base + lc.offset + ((size_t)y * lc.rowPitch), (size_t)2 * cw);
+        for (uint32_t x = 0; x < cw; x++) {
+            const uint8_t u = row[(2 * x) + 0];
+            const uint8_t v = row[(2 * x) + 1];
+            sumU += u; sumV += v;
+            if ((u == 0) && (v == 0)) { zeroUV++; }
+        }
+        nC += cw;
+    }
+
+    if (writeFile) {
+        char filename[256];
+        snprintf(filename, sizeof(filename), "%s_frame_%05u_%ux%u.yuv", tag, frameIdx, w, h);
+        std::ofstream out(filename, std::ios::binary);
+        if (out) {
+            std::vector<uint8_t> line(w);
+            for (uint32_t y = 0; y < h; y++) {
+                memcpy(line.data(), base + ly.offset + ((size_t)y * ly.rowPitch), w);
+                out.write(reinterpret_cast<const char*>(line.data()), w);
+            }
+            std::vector<uint8_t> up(cw), vp(cw), pair((size_t)2 * cw);
+            for (uint32_t pl = 0; pl < 2; pl++) {
+                for (uint32_t y = 0; y < ch; y++) {
+                    memcpy(pair.data(), base + lc.offset + ((size_t)y * lc.rowPitch), (size_t)2 * cw);
+                    for (uint32_t x = 0; x < cw; x++) { up[x] = pair[(2 * x) + pl]; }
+                    out.write(reinterpret_cast<const char*>(up.data()), cw);
+                }
+            }
+            (void)vp;
+        }
+    }
+    m_vkDevCtx->UnmapMemory(device, res->GetDeviceMemory());
+
+    VkEncPrintfErr("[%s] seq=%llu gopf=%u img=0x%llx Ymean=%.3f Umean=%.3f Vmean=%.3f zeroUVpct=%.2f\n",
+            tag, (unsigned long long)seq, frameIdx, (unsigned long long)imgId,
+            nY ? (double)sumY / (double)nY : -1.0,
+            nC ? (double)sumU / (double)nC : -1.0,
+            nC ? (double)sumV / (double)nC : -1.0,
+            nC ? 100.0 * (double)zeroUV / (double)nC : -1.0);
+    node = nullptr;
+}
+
+void VkVideoEncoderPsnr::DumpCapturedSource(void* encodeFrameInfoVoid)
+{
+    VkVideoEncoder::VkVideoEncodeFrameInfo& encodeFrameInfo =
+        *static_cast<VkVideoEncoder::VkVideoEncodeFrameInfo*>(encodeFrameInfoVoid);
+    const uint32_t inputOrder = (uint32_t)encodeFrameInfo.gopPosition.inputOrder;
+    const bool writeFile = (m_capSrcFilesWritten < m_capSrcMaxFiles);
+    if (encodeFrameInfo.psnrFrameData.capImpImage != nullptr) {
+        DumpCapturedNode(encodeFrameInfo.psnrFrameData.capImpImage, "CAPIMP", inputOrder,
+                         std::min(m_capImpExtent.width, m_encoderConfig->encodeWidth),
+                         std::min(m_capImpExtent.height, m_encoderConfig->encodeHeight),
+                         writeFile,
+                         encodeFrameInfo.psnrFrameData.capSeq,
+                         encodeFrameInfo.psnrFrameData.capImpImageId);
+    }
+    if (encodeFrameInfo.psnrFrameData.capSrcImage != nullptr) {
+        DumpCapturedNode(encodeFrameInfo.psnrFrameData.capSrcImage, "CAPSRC", inputOrder,
+                         m_encoderConfig->encodeWidth, m_encoderConfig->encodeHeight,
+                         writeFile,
+                         encodeFrameInfo.psnrFrameData.capSeq,
+                         encodeFrameInfo.psnrFrameData.capImpMemId);
+        if (writeFile) { m_capSrcFilesWritten++; }
+    }
+    fflush(stderr);
 }
 
 bool VkVideoEncoderPsnr::CaptureOutput(VkCommandBuffer cmdBuf, void* encodeFrameInfoVoid)
@@ -206,10 +582,13 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
         return;
     }
     VkVideoEncoder::VkVideoEncodeFrameInfo& encodeFrameInfo = *static_cast<VkVideoEncoder::VkVideoEncodeFrameInfo*>(encodeFrameInfoVoid);
-    if (encodeFrameInfo.psnrFrameData.psnrStagingImage == nullptr) {
-        return;
-    }
-    if (encodeFrameInfo.setupImageResource == nullptr) {
+    // MECHANISM-C runs without the PSNR pool, so a frame carrying only a source
+    // capture must not be turned away by the PSNR preconditions.
+    const bool haveSrcCapture = (encodeFrameInfo.psnrFrameData.capSrcImage != nullptr) ||
+                                (encodeFrameInfo.psnrFrameData.capImpImage != nullptr);
+    const bool havePsnrCapture = (encodeFrameInfo.psnrFrameData.psnrStagingImage != nullptr) &&
+                                 (encodeFrameInfo.setupImageResource != nullptr);
+    if (!haveSrcCapture && !havePsnrCapture) {
         return;
     }
     const uint32_t width = std::min(m_encoderConfig->encodeWidth, m_encoderConfig->input.width);
@@ -244,7 +623,16 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
     }
     VkResult syncResult = encodeFrameInfo.encodeCmdBuffer->SyncHostOnCmdBuffComplete(false, "encoderEncodeFence");
     if (syncResult != VK_SUCCESS) {
-        fprintf(stderr, "\nPSNR: wait on encoder fence failed (0x%x), skipping frame PSNR.\n", syncResult);
+        VkEncPrintfErr("\nPSNR: wait on encoder fence failed (0x%x), skipping frame PSNR.\n", syncResult);
+        return;
+    }
+
+    // MECHANISM-C readback. The encode fence is signalled, so the capture copy
+    // recorded ahead of the coding scope in this same command buffer is done.
+    if (haveSrcCapture) {
+        DumpCapturedSource(encodeFrameInfoVoid);
+    }
+    if (!havePsnrCapture) {
         return;
     }
 

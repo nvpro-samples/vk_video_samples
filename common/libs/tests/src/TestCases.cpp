@@ -176,13 +176,13 @@ TestCaseConfig TC001_RGBA_to_NV12() {
 // case actually exercises the shader: input pattern in, filter runs, output compared
 // against convertRGBAtoNV12() to within the configured tolerance.
 //
-// Keep at least one linear case in every suite. A suite with no validated case reports
-// only that submission did not error, which is a green run over a filter that could be
-// writing anything at all.
-// Linear 4:2:2 control. This is the case that pins the shader's luma block ratio to the
-// dispatch grid: a block size that disagrees with the grid leaves part of the 4:2:2
-// chroma plane unwritten, which a PSNR comparison against convertRGBAtoNV16() catches
-// and a "did it submit" check does not.
+// Keep at least one linear case in every suite. Without one, a suite of
+// optimal-tiled cases reports only that submission did not error, which is
+// indistinguishable from a suite that checks nothing.
+// Linear 4:2:2 control. This is the case that verifies the block ratio and the
+// dispatch: a hard-wired 2x2 block against a (w/2, h) dispatch leaves the
+// bottom half of the 4:2:2 chroma plane unwritten, which a PSNR comparison
+// against convertRGBAtoNV16() catches and a "did it submit" check does not.
 TestCaseConfig TC005L_RGBA_to_NV16_Linear() {
     TestCaseConfig config = createRGBA2YCbCr("TC005L_RGBA_to_NV16_Linear",
                                              TestFormat::NV16,
@@ -276,7 +276,7 @@ TestCaseConfig TC006_RGBA_to_P210() {
 // P212 is the exact 12-bit counterpart of TC006/TC015's P210: same 2-plane 4:2:2 layout,
 // same 16-bit container, same R16/R16G16 plane views -- only the X4-vs-X6 padding differs.
 // It is here because requesting this format as a compute-filter output HANGS the GPU in TRV
-// (task #19). Running it in this harness is safe: isFormatSupported() does a per-plane
+// Running it in this harness is safe: isFormatSupported() does a per-plane
 // feature check AND an image-level vkGetPhysicalDeviceImageFormatProperties for the exact
 // image, and reports the case "unvalidated" rather than submitting work that wedges the GPU.
 TestCaseConfig TC006b_RGBA_to_P212() {
@@ -844,6 +844,64 @@ TestCaseConfig TC080_RGBA_to_NV12_Linear() {
     return config;
 }
 
+TestCaseConfig TC092_RGBA_to_NV12_Linear_LimitedRange() {
+    TestCaseConfig config = createRGBA2YCbCr("TC092_RGBA_to_NV12_Linear_LimitedRange",
+                                             TestFormat::NV12,
+                                             VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709,
+                                             VK_SAMPLER_YCBCR_RANGE_ITU_NARROW);
+    // Linear INPUT too: the optimal-tiled upload path is a documented TODO
+    // (FilterTestApp.cpp), so an optimal RGBA input arrives as all-zero black
+    // -- and black converts identically under every matrix, which is exactly
+    // the case a colour-matrix test must not be.
+    config.inputs[0].tiling = TilingMode::Linear;
+    config.outputs[0].tiling = TilingMode::Linear;
+    return config;
+}
+
+TestCaseConfig TC096_RGBA_to_NV12_Linear_BT709_FullRange() {
+    // The matched baseline for TC092/TC093/TC094: same linear input, same
+    // linear output, BT.709 full range. Holding everything but one variable
+    // is what makes those three decidable -- TC080 cannot serve, because its
+    // optimal-tiled input arrives black.
+    TestCaseConfig config = createRGBA2YCbCr("TC096_RGBA_to_NV12_Linear_BT709_FullRange",
+                                             TestFormat::NV12,
+                                             VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709,
+                                             VK_SAMPLER_YCBCR_RANGE_ITU_FULL);
+    config.inputs[0].tiling = TilingMode::Linear;
+    config.outputs[0].tiling = TilingMode::Linear;
+    return config;
+}
+
+TestCaseConfig TC093_RGBA_to_NV12_Linear_BT601() {
+    TestCaseConfig config = createRGBA2YCbCr("TC093_RGBA_to_NV12_Linear_BT601",
+                                             TestFormat::NV12,
+                                             VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601,
+                                             VK_SAMPLER_YCBCR_RANGE_ITU_FULL);
+    config.inputs[0].tiling = TilingMode::Linear;
+    config.outputs[0].tiling = TilingMode::Linear;
+    return config;
+}
+
+TestCaseConfig TC094_RGBA_to_NV12_Linear_BT2020() {
+    TestCaseConfig config = createRGBA2YCbCr("TC094_RGBA_to_NV12_Linear_BT2020",
+                                             TestFormat::NV12,
+                                             VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_2020,
+                                             VK_SAMPLER_YCBCR_RANGE_ITU_FULL);
+    config.inputs[0].tiling = TilingMode::Linear;
+    config.outputs[0].tiling = TilingMode::Linear;
+    return config;
+}
+
+TestCaseConfig TC095_RGBA_to_P010_Linear_LimitedRange() {
+    TestCaseConfig config = createRGBA2YCbCr("TC095_RGBA_to_P010_Linear_LimitedRange",
+                                             TestFormat::P010,
+                                             VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709,
+                                             VK_SAMPLER_YCBCR_RANGE_ITU_NARROW);
+    config.inputs[0].tiling = TilingMode::Linear;
+    config.outputs[0].tiling = TilingMode::Linear;
+    return config;
+}
+
 TestCaseConfig TC081_RGBA_to_P010_Linear() {
     TestCaseConfig config = createRGBA2YCbCr("TC081_RGBA_to_P010_Linear", TestFormat::P010);
     config.outputs[0].tiling = TilingMode::Linear;
@@ -1209,6 +1267,116 @@ TestCaseConfig TC104_Minimum_Resolution_2x2() {
                             VK_SAMPLER_YCBCR_RANGE_ITU_FULL, 2, 2);
 }
 
+// ODD extents, which no 4:2:0 case can carry: Vulkan requires each dimension to be a
+// multiple of that axis's chroma subsampling, so an odd extent has to be carried by a
+// format that does not subsample that axis. 4:4:4 subsamples neither, 4:2:2 subsamples
+// width only, and between them the two cases below put an odd extent on both axes.
+//
+// An odd extent is the one shape in which the dispatch grid cannot be derived by
+// halving: the last column and the last row are covered by a partial block and a
+// partial workgroup, so a grid or a bounds check that rounds the wrong way drops them
+// entirely rather than merely mis-sizing the work.
+//
+// SMALL ON PURPOSE. The verdict for these formats is a frame-average PSNR against a
+// 30 dB threshold, and an average dilutes an edge: one dropped column out of 1921 is
+// 40 dB and passes, while the same defect on 65 is 19 dB and fails. The extents are
+// therefore the smallest that are still odd and still not a multiple of the workgroup
+// or block size, so the edge is a large enough fraction of the frame for the gate to
+// resolve it. Large unaligned extents are covered by the 4:2:0 case above.
+TestCaseConfig TC105_Odd_Resolution_65x33_YUV444() {
+    return createRGBA2YCbCr("TC105_Odd_Resolution_65x33_YUV444", TestFormat::YUV444,
+                            VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709,
+                            VK_SAMPLER_YCBCR_RANGE_ITU_FULL, 65, 33);
+}
+
+TestCaseConfig TC106_Odd_Height_66x33_NV16() {
+    return createRGBA2YCbCr("TC106_Odd_Height_66x33_NV16", TestFormat::NV16,
+                            VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709,
+                            VK_SAMPLER_YCBCR_RANGE_ITU_FULL, 66, 33);
+}
+
+// =============================================================================
+// RGBA/BGRA component-order tests
+// =============================================================================
+//
+// WHAT THESE CASES ESTABLISH, and why colour bars cannot.
+//
+// The filter binds an RGBA input as one VK_DESCRIPTOR_TYPE_STORAGE_IMAGE and reads
+// it with imageLoad(). GLSL offers exactly one 8-bit four-component storage format
+// qualifier, `rgba8`, so a VK_FORMAT_B8G8R8A8_UNORM view is necessarily declared
+// `rgba8`: the declaration cannot name the view's component order. The contract is
+// that this does not matter -- component order is a property of the format, not of
+// the access, so imageLoad() returns logical R,G,B,A for either format. BGRA8 is
+// what a compositor most often produces, so that contract carries real traffic.
+//
+// All three cases stage THE SAME PICTURE -- four saturated quadrants: red, green,
+// blue, white -- and are validated against ONE reference computed from the logical
+// RGB values. A BGRA8 slot writes that picture the way its own format spells it,
+// bytes 0 and 2 exchanged (TestIOSlot::bgraStageSwap):
+//
+//   TC130  RGBA8, bytes in the format's order  : must MATCH  (the baseline)
+//   TC132  BGRA8, bytes in the format's order  : must MATCH  (the deliverable:
+//                                                             component order
+//                                                             resolved from the
+//                                                             VkFormat)
+//   TC133  BGRA8, bytes NOT exchanged          : must DIFFER (the control)
+//
+// WHY TC133 IS WHAT MAKES THE OTHER TWO MEAN ANYTHING. TC130 and TC132 both passing
+// is also exactly what would be observed if the BGRA staging exchange never happened
+// AND the VkFormat were ignored -- two errors cancelling. TC133 keeps the format and
+// removes the exchange, so the picture in memory really is red/blue exchanged and the
+// output MUST disagree with the reference.
+//
+// A red/blue exchange conserves the byte histogram exactly, so it is invisible to any
+// checksum, size or histogram test of the image alone. Saturated primaries are what
+// make it visible: red and blue sit at opposite ends of both chroma axes, so the error
+// lands in Cb/Cr where the PSNR comparison reports it.
+
+static TestCaseConfig createRgbaComponentOrderCase(const char* name,
+                                                   TestFormat inputFormat,
+                                                   bool expectMismatch) {
+    // 256x256 rather than 1920x1080: the quadrant split lands on the 4:2:0 chroma
+    // grid, so no chroma sample straddles a colour boundary and the expected chroma
+    // is exact rather than a boundary average; and the frame is small enough to read
+    // back and compare without dominating the suite's run time.
+    TestCaseConfig config = createRGBA2YCbCr(name, TestFormat::NV12,
+                                             VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709,
+                                             VK_SAMPLER_YCBCR_RANGE_ITU_FULL,
+                                             256, 256);
+    config.inputs[0].format  = inputFormat;
+    config.inputs[0].pattern = TestPatternType::PurePrimaryQuadrants;
+    config.expectReferenceMismatch = expectMismatch;
+    return config;
+}
+
+TestCaseConfig TC130_RGBA_to_NV12_PurePrimaries_Storage() {
+    return createRgbaComponentOrderCase("TC130_RGBA_to_NV12_PurePrimaries_Storage",
+                                        TestFormat::RGBA8,
+                                        /*expectMismatch*/ false);
+}
+
+TestCaseConfig TC132_BGRA_to_NV12_PurePrimaries_Storage() {
+    // The required result is the YCbCr TC130 produces: the two cases are the same
+    // picture, written the two ways the two formats spell it.
+    return createRgbaComponentOrderCase("TC132_BGRA_to_NV12_PurePrimaries_Storage",
+                                        TestFormat::BGRA8,
+                                        /*expectMismatch*/ false);
+}
+
+TestCaseConfig TC133_BGRA_NoSwapControl_MustDiffer() {
+    // THE CONTROL. A BGRA8 image deliberately loaded with UNEXCHANGED (logical
+    // R,G,B,A) bytes. The picture in memory is therefore red/blue exchanged relative
+    // to the reference, and a pipeline that honours the VkFormat must produce output
+    // that DISAGREES with it. A pass here is what licenses reading TC130 and TC132 as
+    // results rather than as a coincidence.
+    TestCaseConfig config =
+        createRgbaComponentOrderCase("TC133_BGRA_NoSwapControl_MustDiffer",
+                                     TestFormat::BGRA8,
+                                     /*expectMismatch*/ true);
+    config.inputs[0].bgraStageSwap = false;
+    return config;
+}
+
 // =============================================================================
 // Test Set Getters
 // =============================================================================
@@ -1228,7 +1396,21 @@ std::vector<TestCaseConfig> getAllStandardTests() {
         TC005_RGBA_to_NV16(),
         TC006_RGBA_to_P210(),
         TC007_RGBA_to_YUV444(),
-        // TC008_RGBA_to_Y410(),  // Disabled: Y410 is packed format, needs special shader
+        // TC008_RGBA_to_Y410(),  // Still disabled, but NO LONGER for the
+        // reason recorded here before, which was a real defect and is now
+        // fixed. The RGBA2YCBCR packed-output arm used to declare
+        // outputImageRGB an image2DArray while storing into it with an ivec2,
+        // so its GLSL did not compile ("imageStore: no matching overloaded
+        // function found"). ShaderGenerateImagePlaneDescriptors now declares
+        // the single-plane arm image2D unconditionally -- what the combined
+        // VK_IMAGE_VIEW_TYPE_2D view it binds required all along -- and the
+        // two index forms agree.
+        //
+        // Measured after that change: the case builds its pipeline, dispatches,
+        // and stops at UNVALIDATED -- "no CPU reference model for this format
+        // pair". That is the remaining work, and it is in
+        // generateReferenceOutput, not in the shader generator. Enabling the
+        // case before then would add a row that cannot judge its own pixels.
         
         // YCbCr to RGBA -- DISABLED. YCBCR2RGBA has several independent shader-generation
         // defects; dump the generated GLSL with VK_FILTER_DUMP_SHADERS=1 to see them:
@@ -1250,7 +1432,12 @@ std::vector<TestCaseConfig> getAllStandardTests() {
         // TC014_NV16_to_RGBA(),
         // TC015_P210_to_RGBA(),
         // TC016_YUV444_to_RGBA(),
-        // TC017_Y410_to_RGBA(),
+        // TC017_Y410_to_RGBA(),  // Disabled, and not stale. Two faults, in
+        // this order: the arm derives a bit depth through YcbcrVkFormatInfo,
+        // which answers NULL for A2B10G10R10_UNORM_PACK32 -- that dereference
+        // used to crash and is now guarded -- and only then emits
+        // inputImageY/inputImageCbCr, which a packed input never declares, so
+        // the shader does not compile. The arm is deprecated besides.
         
         // Color primaries (BT.601, BT.709, BT.2020)
         TC020_RGBA_to_NV12_BT601(),
@@ -1309,6 +1496,11 @@ std::vector<TestCaseConfig> getAllStandardTests() {
         // Linear tiling
         TC080_RGBA_to_NV12_Linear(),
         TC081_RGBA_to_P010_Linear(),
+        TC092_RGBA_to_NV12_Linear_LimitedRange(),
+        TC093_RGBA_to_NV12_Linear_BT601(),
+        TC094_RGBA_to_NV12_Linear_BT2020(),
+        TC095_RGBA_to_P010_Linear_LimitedRange(),
+        TC096_RGBA_to_NV12_Linear_BT709_FullRange(),
         TC082_Linear_NV12_to_Optimal_NV12(),
         TC083_Optimal_NV12_to_Linear_NV12(),
         
@@ -1317,12 +1509,19 @@ std::vector<TestCaseConfig> getAllStandardTests() {
         TC090_Dual_Output_Optimal_Linear(),
         TC091_Triple_Output_with_Subsampled(),
         
+        // Component order
+        TC130_RGBA_to_NV12_PurePrimaries_Storage(),
+        TC132_BGRA_to_NV12_PurePrimaries_Storage(),
+        TC133_BGRA_NoSwapControl_MustDiffer(),
+
         // Edge cases
         TC100_Small_Resolution_64x64(),
         TC101_Unaligned_Resolution_1922x1082(),
         TC102_4K_Resolution_3840x2160(),
         TC103_8K_Resolution_7680x4320(),  // May exceed GPU memory
         TC104_Minimum_Resolution_2x2(),
+        TC105_Odd_Resolution_65x33_YUV444(),
+        TC106_Odd_Height_66x33_NV16(),
     };
 }
 

@@ -304,6 +304,37 @@ public:
                            VkImageUsageFlags combinedViewUsage,
                            VkSharedBaseObj<VkImageResourceView>& imageResourceView);
 
+    /**
+     * @brief Per-plane views are a PROPERTY OF THE IMAGE, not of the caller.
+     *
+     * Both Create() overloads that can build per-plane views test
+     * VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT on the image's own create info
+     * first, and build none without it: a per-plane view reinterprets the
+     * image as R8 / R8G8 / ..., which only a mutable-format image permits
+     * (VUID-VkImageViewCreateInfo-image-01762). For an image this library
+     * allocated the flag is always set; for a registered EXTERNAL image the
+     * EXPORTER chose the create flags, so the answer is whatever the
+     * descriptor declared -- which is exactly why the encoder's registration
+     * path may ask for plane views without having to know, per registration,
+     * whether they are legal.
+     *
+     * When the flag is absent the wrapper still carries its combined view and
+     * reports GetNumberOfPlanes() == 0. That is NOT a graceful degradation for
+     * every consumer, and the difference matters to callers: VulkanFilter-
+     * YuvCompute trims its plane bindings by that count
+     * (UpdateImageDescriptorSets), but for a MULTI-PLANAR input it has no
+     * combined-view binding to fall back to -- ShaderGenerateImagePlane-
+     * Descriptors overwrites m_inputImageAspects with the PLANE bits and
+     * clears VK_IMAGE_ASPECT_COLOR_BIT -- so trimming to zero planes writes
+     * ZERO input descriptors and the dispatch reads unbound STORAGE_IMAGE
+     * bindings. Bad handles are what this avoids; a consumer that needs plane
+     * views must CHECK GetNumberOfPlanes() and refuse, which is what
+     * VkVideoEncoder::StageInputFrame does for external input.
+     *
+     * |combinedViewUsage| must be a non-zero subset of the image's usage; for
+     * a multi-planar format it must not include STORAGE or SAMPLED
+     * (VUID-VkImageViewCreateInfo-pNext-02662 / -usage-06415).
+     */
 
     operator VkImageView() const {
         // Fall back to first plane view if combined view is null (storage-only case)

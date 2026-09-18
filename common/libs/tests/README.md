@@ -10,7 +10,7 @@ Tests the `VulkanFilterYuvCompute` class directly, independent of any applicatio
 
 **Build:**
 ```bash
-cd /data/nvidia/android-extra/video-apps/vulkan-video-samples
+cd <vulkan-video-samples>
 mkdir -p build && cd build
 cmake .. -DBUILD_TESTS=ON
 make -j$(nproc) vk_filter_test
@@ -41,7 +41,7 @@ Tests the filter as integrated into the `ThreadedRenderingVk` application, inclu
 
 **Run:**
 ```bash
-cd /data/nvidia/vulkan/samples/ThreadedRenderingVk_Standalone
+cd <ThreadedRenderingVk>
 ./scripts/test_dump_formats.sh
 ```
 
@@ -106,9 +106,31 @@ The `YCBCR2RGBA` filter mode has shader generation issues:
 
 ### Y410 Packed Format
 
-Y410 is a packed format requiring special shader handling not yet implemented.
+Packed 4:4:4 handling is implemented on the `YCBCRCOPY` arm, in both
+directions: a packed input is bound as a single storage image and read with
+`imageLoad()`, and a packed output is written the same way. That is the arm the
+encoder builds, so Y410 is not unimplemented in general.
 
-**Workaround:** Tests `TC008_RGBA_to_Y410` and `TC017_Y410_to_RGBA` are disabled.
+It is **not** implemented on either of the two arms these tests exercise, and
+both are shader-generation defects rather than missing features:
+
+- `RGBA2YCBCR` with a packed **output** declares `outputImageRGB` as an
+  `image2DArray` but stores into it with an `ivec2`, so the generated GLSL does
+  not compile. This is `TC008_RGBA_to_Y410`'s path.
+- `YCBCR2RGBA` has two faults, and the ORDER matters to anyone fixing it.
+  Generation reaches neither GLSL statement first: it derives a bit depth from
+  `YcbcrVkFormatInfo(...)`, which answers NULL for `A2B10G10R10_UNORM_PACK32`
+  because that enumerant is outside both ranges the multi-planar table covers.
+  That dereference was unguarded and crashed the process; it is now guarded, so
+  the arm reaches its second fault -- it names `inputImageY` and
+  `inputImageCbCr` unconditionally, and a packed input declares neither, so the
+  shader does not compile. This is `TC017_Y410_to_RGBA`'s path. Fixing only the
+  identifier emission would not have made the case run. The arm is also marked
+  deprecated.
+
+**Workaround:** Tests `TC008_RGBA_to_Y410` and `TC017_Y410_to_RGBA` remain
+disabled. Re-enabling either needs its arm fixed first -- the disable records a
+live defect and is not stale.
 
 ### Buffer I/O
 

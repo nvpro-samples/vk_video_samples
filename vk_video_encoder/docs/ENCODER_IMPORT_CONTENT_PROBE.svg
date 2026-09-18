@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 660" font-family="Segoe UI,Helvetica,Arial,sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5a6b7d"/></marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2f6f4f"/></marker>
+  </defs>
+
+  <text x="24" y="34" font-size="19" font-weight="600" fill="#1b2b3a">dma-buf import content probe — arm once, capture once, score once</text>
+  <text x="24" y="56" font-size="13" fill="#5a6b7d">A verdict is latched per REGISTRATION, not per frame. The capture rides the staging command buffer that already exists.</text>
+
+  <g stroke="#d8e0e8" fill="#f7f9fb">
+    <rect x="24" y="76"  width="952" height="62" rx="5"/>
+    <rect x="24" y="146" width="952" height="62" rx="5"/>
+    <rect x="24" y="216" width="952" height="62" rx="5"/>
+    <rect x="24" y="286" width="952" height="62" rx="5"/>
+  </g>
+  <g font-size="12" font-weight="600" fill="#3d5163">
+    <text x="34" y="100">Host</text>
+    <text x="34" y="170">Descriptor API layer</text>
+    <text x="34" y="240">Encoder core</text>
+    <text x="34" y="310">Content probe</text>
+  </g>
+
+  <g font-size="11" fill="#8a97a5" text-anchor="middle">
+    <text x="300" y="72">register</text>
+    <text x="520" y="72">first frame that uses it</text>
+    <text x="720" y="72">after the staging fence</text>
+    <text x="890" y="72">any later call</text>
+  </g>
+
+  <g fill="#fff" stroke="#5a6b7d" stroke-width="1.2">
+    <rect x="212" y="88" width="176" height="38" rx="4"/>
+    <rect x="812" y="88" width="152" height="38" rx="4"/>
+  </g>
+  <g font-size="11.5" fill="#1b2b3a" text-anchor="middle">
+    <text x="300" y="105">register external image</text>
+    <text x="300" y="119" font-size="10.5" fill="#5a6b7d">+ chained ContentInfo</text>
+    <text x="888" y="105">read the echo</text>
+    <text x="888" y="119" font-size="10.5" fill="#5a6b7d">state + means + totals</text>
+  </g>
+
+  <g fill="#fff" stroke="#5a6b7d" stroke-width="1.2">
+    <rect x="212" y="158" width="176" height="38" rx="4"/>
+    <rect x="812" y="158" width="152" height="38" rx="4"/>
+  </g>
+  <g font-size="11.5" fill="#1b2b3a" text-anchor="middle">
+    <text x="300" y="176">ArmRegistration</text>
+    <text x="300" y="190" font-size="10.5" fill="#5a6b7d">(resource, captureSite)</text>
+    <text x="888" y="176">fill ContentInfo</text>
+    <text x="888" y="190" font-size="10.5" fill="#5a6b7d">from probe state</text>
+  </g>
+
+  <g fill="#fff" stroke="#5a6b7d" stroke-width="1.2">
+    <rect x="432" y="228" width="176" height="38" rx="4"/>
+    <rect x="640" y="228" width="160" height="38" rx="4"/>
+  </g>
+  <g font-size="11.5" fill="#1b2b3a" text-anchor="middle">
+    <text x="520" y="246">StageInputFrame</text>
+    <text x="520" y="260" font-size="10.5" fill="#5a6b7d">image already TRANSFER_SRC</text>
+    <text x="720" y="246">post-fence sites</text>
+    <text x="720" y="260" font-size="10.5" fill="#5a6b7d">same two the PSNR path uses</text>
+  </g>
+
+  <g fill="#fff" stroke="#5a6b7d" stroke-width="1.2">
+    <rect x="212" y="298" width="176" height="38" rx="4"/>
+    <rect x="432" y="298" width="176" height="38" rx="4"/>
+    <rect x="640" y="298" width="160" height="38" rx="4"/>
+  </g>
+  <g font-size="11.5" fill="#1b2b3a" text-anchor="middle">
+    <text x="300" y="316">latch ARMED</text>
+    <text x="300" y="330" font-size="10.5" fill="#5a6b7d">or NOT_APPLICABLE</text>
+    <text x="520" y="316">RecordCapture</text>
+    <text x="520" y="330" font-size="10.5" fill="#5a6b7d">2x vkCmdCopyImage to LINEAR</text>
+    <text x="720" y="316">ScoreCapture</text>
+    <text x="720" y="330" font-size="10.5" fill="#5a6b7d">strided plane means</text>
+  </g>
+
+  <g stroke="#5a6b7d" stroke-width="1.4" fill="none" marker-end="url(#a)">
+    <path d="M300,126 L300,158"/>
+    <path d="M300,196 L300,298"/>
+    <path d="M520,266 L520,298"/>
+    <path d="M608,247 L640,247"/>
+    <path d="M720,266 L720,298"/>
+    <path d="M888,158 L888,126"/>
+  </g>
+  <g stroke="#2f6f4f" stroke-width="1.4" fill="none" marker-end="url(#ag)" stroke-dasharray="4 3">
+    <path d="M800,317 C860,317 888,260 888,196"/>
+  </g>
+  <text x="600" y="284" font-size="10.5" fill="#5a6b7d">NeedsCapture() gates this — once per registration</text>
+
+  <text x="24" y="392" font-size="15" font-weight="600" fill="#1b2b3a">The verdict states</text>
+  <g fill="#fff" stroke="#5a6b7d" stroke-width="1.2">
+    <rect x="24"  y="410" width="150" height="40" rx="4"/>
+    <rect x="222" y="410" width="150" height="40" rx="4"/>
+  </g>
+  <rect x="222" y="470" width="150" height="40" rx="4" fill="#fff" stroke="#8a97a5" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <rect x="440" y="410" width="150" height="40" rx="4" fill="#eef6f1" stroke="#2f6f4f" stroke-width="1.4"/>
+  <rect x="440" y="470" width="150" height="40" rx="4" fill="#fbeeee" stroke="#a33" stroke-width="1.4"/>
+  <rect x="440" y="530" width="150" height="40" rx="4" fill="#fbeeee" stroke="#a33" stroke-width="1.4"/>
+  <g font-size="12" text-anchor="middle" fill="#1b2b3a">
+    <text x="99"  y="435">NOT_EVALUATED</text>
+    <text x="297" y="435">ARMED</text>
+    <text x="297" y="495" fill="#5a6b7d">NOT_APPLICABLE</text>
+    <text x="515" y="435" fill="#2f6f4f">CLEAN</text>
+    <text x="515" y="495" fill="#a33">DAMAGED_CHROMA</text>
+    <text x="515" y="555" fill="#a33">DAMAGED_ALL</text>
+  </g>
+  <g stroke="#5a6b7d" stroke-width="1.3" fill="none" marker-end="url(#a)">
+    <path d="M174,430 L222,430"/>
+    <path d="M174,436 C196,436 200,490 222,490"/>
+    <path d="M372,430 L440,430"/>
+    <path d="M372,436 C406,436 410,490 440,490"/>
+    <path d="M372,440 C400,440 404,550 440,550"/>
+  </g>
+  <g font-size="10.5" fill="#5a6b7d">
+    <text x="180" y="424">arm</text>
+    <text x="180" y="516">format not probeable</text>
+    <text x="380" y="424">score</text>
+  </g>
+
+  <rect x="640" y="410" width="336" height="160" rx="5" fill="#fffdf2" stroke="#d9c38a"/>
+  <text x="656" y="432" font-size="12.5" font-weight="600" fill="#7a5c12">Read armedRegistrationCount FIRST</text>
+  <g font-size="11.5" fill="#5a5142">
+    <text x="656" y="456">probed=0 damaged=0 is ambiguous. It is what</text>
+    <text x="656" y="474">a session reports when every buffer was clean,</text>
+    <text x="656" y="492">and equally what one reports when nothing was</text>
+    <text x="656" y="510">ever measured.</text>
+    <text x="656" y="536" font-weight="600">armed &gt; 0 at session end = buffers were</text>
+    <text x="656" y="554" font-weight="600">promised a verdict and never got one.</text>
+  </g>
+
+  <text x="24" y="604" font-size="11" fill="#8a97a5">Once per registration: the defect is a property of the IMPORT, permanent for that buffer, and carried by every frame it backs.</text>
+  <text x="24" y="624" font-size="11" fill="#8a97a5">A 5125-frame session with 5 registered buffers performs 5 probes, not 5125.</text>
+  <text x="24" y="648" font-size="10.5" fill="#a8b3bf">Internal mechanism — not exposed through the public encoder interface.</text>
+</svg>

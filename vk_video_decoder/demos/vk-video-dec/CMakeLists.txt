@@ -7,6 +7,7 @@ set(sources
     ${VK_DISPATCH_TABLE_SOURCE}
     ${VK_DISPATCH_TABLE_HEADER}
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceContext.cpp
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VkEncoderStdioLatch.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanDeviceContext.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanShaderCompiler.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/${VK_SHADER_COMPILER_BACKEND_SOURCE}
@@ -52,7 +53,11 @@ set(sources
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VulkanCommandBufferPool.h
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VkVideoFrameToFile.cpp
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}/VkCodecUtils/VkVideoCrc.cpp
-    ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/FFmpegDemuxer.cpp
+    # NO unconditional FFmpegDemuxer.cpp here. Listing it here as well as
+    # under the if(FFMPEG_AVAILABLE) below defeats the guard: the file then
+    # compiles even with FFMPEG_AVAILABLE OFF, and it fails on
+    # <libavformat/avformat.h> the moment the headers are absent. The
+    # conditional append below is the only place it belongs.
     ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/VideoStreamDemuxer.cpp
     ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/VideoStreamDemuxer.h
     ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkDecoderUtils/ElementaryStream.cpp
@@ -98,11 +103,25 @@ link_directories(
     ${VULKAN_LIB_DIR}
     )
 
+# FFmpeg is a DEMUXER-ONLY dependency here, so the link flags must carry the
+# same if(FFMPEG_AVAILABLE) guard the sources and the -DFFMPEG_DEMUXER_SUPPORT
+# define already carry above. Without it the demuxer is compiled out but
+# -lavformat still reaches the linker, and the target fails to link on any host
+# whose libavformat is missing -- which is what happened here: FindFFmpeg found
+# libavcodec and libavutil in /usr/lib but no libavformat, FFMPEG_AVAILABLE went
+# OFF, and this target stopped linking while nothing in it referenced a single
+# avformat_* symbol. Same guard, same reason, as
+# vk_video_decoder/test/vulkan-video-dec/CMakeLists.txt.
 if(WIN32)
-    list(APPEND libraries PUBLIC ${AVCODEC_LIB} ${AVFORMAT_LIB} ${AVUTIL_LIB} ${VULKAN_VIDEO_PARSER_LIB} ${VK_SHADER_COMPILER_LIBS})
+    if(FFMPEG_AVAILABLE)
+        list(APPEND libraries PUBLIC ${AVCODEC_LIB} ${AVFORMAT_LIB} ${AVUTIL_LIB})
+    endif()
+    list(APPEND libraries PUBLIC ${VULKAN_VIDEO_PARSER_LIB} ${VK_SHADER_COMPILER_LIBS})
 else()
     list(APPEND libraries PRIVATE -lX11)
-    list(APPEND libraries PRIVATE -lavcodec -lavutil -lavformat)
+    if(FFMPEG_AVAILABLE)
+        list(APPEND libraries PRIVATE -lavcodec -lavutil -lavformat)
+    endif()
     list(APPEND libraries PRIVATE ${VK_SHADER_COMPILER_LIBS})
     list(APPEND libraries PRIVATE -L${CMAKE_INSTALL_LIBDIR} -l${VULKAN_VIDEO_PARSER_LIB})
     list(APPEND libraries PRIVATE -L${LIBNVPARSER_BINARY_ROOT} -l${VULKAN_VIDEO_PARSER_LIB})

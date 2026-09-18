@@ -15,6 +15,7 @@
  */
 
 #include <math.h>       /* sqrt */
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <string>
 #include <cstdlib>
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
@@ -62,7 +63,14 @@ static void SetupAspectRatio(StdVideoH265SequenceParameterSetVui *vui, uint32_t 
 // From Table A.8
 uint32_t EncoderConfigH265::GetCpbVclFactor()
 {
-    uint32_t chroma_format_idc = encodeChromaSubsampling;
+    // encodeChromaSubsampling is a VkVideoChromaSubsamplingFlagBitsKHR -- 0x2
+    // for 4:2:0, 0x4 for 4:2:2, 0x8 for 4:4:4 -- and the test below is against
+    // a chroma_format_idc, which is 1, 2 and 3. Assigning the flag straight
+    // into the variable made the 4:4:4 arm unreachable for every real input.
+    // This is the conversion the rest of this file already uses to write
+    // sps.chroma_format_idc.
+    uint32_t chroma_format_idc =
+        FastIntLog2<uint32_t>(encodeChromaSubsampling) - 1u;
     uint32_t bit_depth = std::max(encodeBitDepthLuma, encodeBitDepthChroma);
     uint32_t baseFactor = (chroma_format_idc == 3) ? (bit_depth >= 10) ? 2500 : 2000 : 1000; // NOTE: Assumes chroma_format_idc is either 1 or 3
     uint32_t depthFactor = (bit_depth >= 10) ? ((bit_depth - 10) >> 1) * 500 : 0;    // +500 for 12-bit, +1000 for 14-bit, +1500 for 16-bit
@@ -76,18 +84,18 @@ int EncoderConfigH265::DoParseArguments(int argc, const char* argv[])
     for (int32_t i = 0; i < argc; i++) {
         if (args[i] == "--slices") {
             if (++i >= argc) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             char* end = nullptr;
             sliceCount = static_cast<int32_t>(strtol(args[i].c_str(), &end, 10));
             if (end == args[i].c_str()) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--profile") {
             if (++i >= argc) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i - 1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             std::string profileStr = args[i];
@@ -102,11 +110,11 @@ int EncoderConfigH265::DoParseArguments(int argc, const char* argv[])
             } else if (profileStr == "scc" || profileStr == "4") {
                 profile = STD_VIDEO_H265_PROFILE_IDC_SCC_EXTENSIONS;
             } else {
-                fprintf(stderr, "Invalid H.265 profile: %s\n", profileStr.c_str());
+                VkEncPrintfErr("Invalid H.265 profile: %s\n", profileStr.c_str());
                 return -1;
             }
         } else {
-            fprintf(stderr, "Unrecognized option: %s\n", argv[i]);
+            VkEncPrintfErr("Unrecognized option: %s\n", argv[i]);
             return -1;
         }
     }
@@ -126,22 +134,22 @@ VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                  h265QuantizationMapCapabilities,
                                                                  intraRefreshCapabilities);
     if (result != VK_SUCCESS) {
-        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+        VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
                   << "Could not get Video Encode Capabilities for HEVC. VkResult: " << result
                   << " (0x" << std::hex << result << std::dec << ")" << std::endl;
         return result;
     }
 
     if (verboseMsg) {
-        std::cout << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode capabilities: " << std::endl;
-        std::cout << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << videoCapabilities.minBitstreamBufferOffsetAlignment << std::endl;
-        std::cout << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << videoCapabilities.minBitstreamBufferSizeAlignment << std::endl;
-        std::cout << "\t\t\t" << "pictureAccessGranularity: " << videoCapabilities.pictureAccessGranularity.width << " x " << videoCapabilities.pictureAccessGranularity.height << std::endl;
-        std::cout << "\t\t\t" << "minExtent: " << videoCapabilities.minCodedExtent.width << " x " << videoCapabilities.minCodedExtent.height << std::endl;
-        std::cout << "\t\t\t" << "maxExtent: " << videoCapabilities.maxCodedExtent.width  << " x " << videoCapabilities.maxCodedExtent.height << std::endl;
-        std::cout << "\t\t\t" << "maxDpbSlots: " << videoCapabilities.maxDpbSlots << std::endl;
-        std::cout << "\t\t\t" << "maxActiveReferencePictures: " << videoCapabilities.maxActiveReferencePictures << std::endl;
-        std::cout << "\t\t\t" << "maxBPictureL0ReferenceCount: " << h265EncodeCapabilities.maxBPictureL0ReferenceCount << std::endl;
+        VkEncOut() << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode capabilities: " << std::endl;
+        VkEncOut() << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << videoCapabilities.minBitstreamBufferOffsetAlignment << std::endl;
+        VkEncOut() << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << videoCapabilities.minBitstreamBufferSizeAlignment << std::endl;
+        VkEncOut() << "\t\t\t" << "pictureAccessGranularity: " << videoCapabilities.pictureAccessGranularity.width << " x " << videoCapabilities.pictureAccessGranularity.height << std::endl;
+        VkEncOut() << "\t\t\t" << "minExtent: " << videoCapabilities.minCodedExtent.width << " x " << videoCapabilities.minCodedExtent.height << std::endl;
+        VkEncOut() << "\t\t\t" << "maxExtent: " << videoCapabilities.maxCodedExtent.width  << " x " << videoCapabilities.maxCodedExtent.height << std::endl;
+        VkEncOut() << "\t\t\t" << "maxDpbSlots: " << videoCapabilities.maxDpbSlots << std::endl;
+        VkEncOut() << "\t\t\t" << "maxActiveReferencePictures: " << videoCapabilities.maxActiveReferencePictures << std::endl;
+        VkEncOut() << "\t\t\t" << "maxBPictureL0ReferenceCount: " << h265EncodeCapabilities.maxBPictureL0ReferenceCount << std::endl;
     }
 
     result = VulkanVideoCapabilities::GetPhysicalDeviceVideoEncodeQualityLevelProperties<VkVideoEncodeH265QualityLevelPropertiesKHR, VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_QUALITY_LEVEL_PROPERTIES_KHR>
@@ -149,26 +157,26 @@ VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                                  qualityLevelProperties,
                                                                                  h265QualityLevelProperties);
     if (result != VK_SUCCESS) {
-        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+        VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
                   << "Could not get Video Encode QualityLevel Properties for HEVC. VkResult: " << result
                   << " (0x" << std::hex << result << std::dec << "), qualityLevel: " << qualityLevel << std::endl;
         return result;
     }
 
     if (verboseMsg) {
-        std::cout << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode quality level properties: " << std::endl;
-        std::cout << "\t\t\t" << "preferredRateControlMode : " << qualityLevelProperties.preferredRateControlMode << std::endl;
-        std::cout << "\t\t\t" << "preferredRateControlLayerCount : " << qualityLevelProperties.preferredRateControlLayerCount << std::endl;
-        std::cout << "\t\t\t" << "preferredRateControlFlags : " << h265QualityLevelProperties.preferredRateControlFlags << std::endl;
-        std::cout << "\t\t\t" << "preferredGopFrameCount : " << h265QualityLevelProperties.preferredGopFrameCount << std::endl;
-        std::cout << "\t\t\t" << "preferredIdrPeriod : " << h265QualityLevelProperties.preferredIdrPeriod << std::endl;
-        std::cout << "\t\t\t" << "preferredConsecutiveBFrameCount : " << h265QualityLevelProperties.preferredConsecutiveBFrameCount << std::endl;
-        std::cout << "\t\t\t" << "preferredSubLayerCount : " << h265QualityLevelProperties.preferredSubLayerCount << std::endl;
-        std::cout << "\t\t\t" << "preferredConstantQp.qpI : " << h265QualityLevelProperties.preferredConstantQp.qpI << std::endl;
-        std::cout << "\t\t\t" << "preferredConstantQp.qpP : " << h265QualityLevelProperties.preferredConstantQp.qpP << std::endl;
-        std::cout << "\t\t\t" << "preferredConstantQp.qpB : " << h265QualityLevelProperties.preferredConstantQp.qpB << std::endl;
-        std::cout << "\t\t\t" << "preferredMaxL0ReferenceCount : " << h265QualityLevelProperties.preferredMaxL0ReferenceCount << std::endl;
-        std::cout << "\t\t\t" << "preferredMaxL1ReferenceCount : " << h265QualityLevelProperties.preferredMaxL1ReferenceCount << std::endl;
+        VkEncOut() << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode quality level properties: " << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredRateControlMode : " << qualityLevelProperties.preferredRateControlMode << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredRateControlLayerCount : " << qualityLevelProperties.preferredRateControlLayerCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredRateControlFlags : " << h265QualityLevelProperties.preferredRateControlFlags << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredGopFrameCount : " << h265QualityLevelProperties.preferredGopFrameCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredIdrPeriod : " << h265QualityLevelProperties.preferredIdrPeriod << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredConsecutiveBFrameCount : " << h265QualityLevelProperties.preferredConsecutiveBFrameCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredSubLayerCount : " << h265QualityLevelProperties.preferredSubLayerCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredConstantQp.qpI : " << h265QualityLevelProperties.preferredConstantQp.qpI << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredConstantQp.qpP : " << h265QualityLevelProperties.preferredConstantQp.qpP << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredConstantQp.qpB : " << h265QualityLevelProperties.preferredConstantQp.qpB << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredMaxL0ReferenceCount : " << h265QualityLevelProperties.preferredMaxL0ReferenceCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredMaxL1ReferenceCount : " << h265QualityLevelProperties.preferredMaxL1ReferenceCount << std::endl;
     }
 
     if (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_FLAG_BITS_MAX_ENUM_KHR) {
@@ -183,17 +191,50 @@ VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vk
     if (gopStructure.GetConsecutiveBFrameCount() == CONSECUTIVE_B_FRAME_COUNT_MAX_VALUE) {
         gopStructure.SetConsecutiveBFrameCount(h265QualityLevelProperties.preferredConsecutiveBFrameCount);
     }
-    if (constQp.qpIntra == 0) {
+    // The direct binder resolves all three QPs and marks constQpSet: an
+    // explicit 0 there is lossless, not unset, and must keep its value.
+    if (!constQpSet && (constQp.qpIntra == 0)) {
         constQp.qpIntra = h265QualityLevelProperties.preferredConstantQp.qpI;
     }
-    if (constQp.qpInterP == 0) {
+    if (!constQpSet && (constQp.qpInterP == 0)) {
         constQp.qpInterP = h265QualityLevelProperties.preferredConstantQp.qpP;
     }
-    if (constQp.qpInterB == 0) {
+    if (!constQpSet && (constQp.qpInterB == 0)) {
         constQp.qpInterB = h265QualityLevelProperties.preferredConstantQp.qpB;
     }
     numRefL0 = h265QualityLevelProperties.preferredMaxL0ReferenceCount;
     numRefL1 = h265QualityLevelProperties.preferredMaxL1ReferenceCount;
+
+    // Caller-requested QP clamps (see the H.264 counterpart): the derived
+    // VkVideoEncodeH265QpKHR members feed GetRateControlParameters; the base
+    // ints only carry the request.
+    if (minQpSet) {
+        minQp.qpI = minQp.qpP = minQp.qpB = EncoderConfig::minQp;
+    }
+    if (maxQpSet) {
+        maxQp.qpI = maxQp.qpP = maxQp.qpB = EncoderConfig::maxQp;
+    }
+    // Device QP window check for caller clamps -- see the H.264 counterpart.
+    if (minQpSet &&
+        ((EncoderConfig::minQp < h265EncodeCapabilities.minQp) ||
+         (EncoderConfig::minQp > h265EncodeCapabilities.maxQp))) {
+        VkEncErr() << "[EncoderConfigH265] requested minQp "
+                   << EncoderConfig::minQp
+                   << " is outside the device QP window ["
+                   << h265EncodeCapabilities.minQp << ", "
+                   << h265EncodeCapabilities.maxQp << "]" << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    if (maxQpSet &&
+        ((EncoderConfig::maxQp < h265EncodeCapabilities.minQp) ||
+         (EncoderConfig::maxQp > h265EncodeCapabilities.maxQp))) {
+        VkEncErr() << "[EncoderConfigH265] requested maxQp "
+                   << EncoderConfig::maxQp
+                   << " is outside the device QP window ["
+                   << h265EncodeCapabilities.minQp << ", "
+                   << h265EncodeCapabilities.maxQp << "]" << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
 
     return VK_SUCCESS;
 }
@@ -297,6 +338,16 @@ EncoderConfigH265::InitVuiParameters(StdVideoH265SequenceParameterSetVui *vuiInf
     }
 
     vuiInfo->flags.chroma_loc_info_present_flag = chroma_loc_info_present_flag;
+    if (!!chroma_loc_info_present_flag) {
+        // BOTH FIELDS, and the same value in both. The flag was plumbed here
+        // and chroma_sample_loc_type was not, so raising the flag advertised
+        // a siting of 0 (left / MPEG-2) whatever the config said -- and 0 is
+        // precisely the wrong answer for the centre-sited chroma the RGBA
+        // preprocess filter produces. This encoder emits frame pictures only,
+        // so the top and bottom field types describe one sample position.
+        vuiInfo->chroma_sample_loc_type_top_field    = chroma_sample_loc_type;
+        vuiInfo->chroma_sample_loc_type_bottom_field = chroma_sample_loc_type;
+    }
 
     vuiInfo->flags.neutral_chroma_indication_flag = 0;
     vuiInfo->flags.field_seq_flag = 0;
@@ -357,9 +408,16 @@ EncoderConfigH265::InitVuiParameters(StdVideoH265SequenceParameterSetVui *vuiInf
         vuiInfo->pHrdParameters = pHrdParameters;
     }
 
-    // FIXME: chroma_sample_loc_type_top_field to be configured from settings.
-    vuiInfo->chroma_sample_loc_type_top_field = 0;
-    vuiInfo->chroma_sample_loc_type_bottom_field = 0;
+    // (chroma_sample_loc_type_top_field / _bottom_field are written above,
+    // beside chroma_loc_info_present_flag. DO NOT RE-ZERO THEM HERE. An
+    // unconditional `= 0` at this point sits two hundred lines below the flag
+    // that decides whether anyone reads them, so a config carrying type 1 and a
+    // write above putting 1 in the VUI would be undone before the SPS is built.
+    // Such a defect is close to invisible: every H.265 row in the encode matrix
+    // takes the DIRECT or YCbCr-copy path, which signals no siting at all, and a
+    // device-free assertion that reads the CONFIG rather than the VUI cannot see
+    // it either. VkEncBoundConfigProbe projects what InitVuiParameters actually
+    // produces, which closes the second gap.)
     // display_window_flag
     vuiInfo->def_disp_win_left_offset = 0;
     vuiInfo->def_disp_win_right_offset = 0;
@@ -507,11 +565,19 @@ void EncoderConfigH265::DetermineLevelTier()
 void EncoderConfigH265::InitProfileLevel()
 {
     // If profile hasn't been specified, determine it based on bit depth and chroma
+    //
+    // BOTH TERMS READ THE ENCODE SIDE. ITU-T H.265 Annex A defines
+    // general_profile_idc over what the bitstream carries, and this file
+    // writes sps.chroma_format_idc and sps.bit_depth_*_minus8 from
+    // encodeChromaSubsampling and encodeBitDepthLuma/Chroma. The chroma term
+    // already read the encode value; the depth term read input.bpp, so the
+    // two halves of one derivation sat on opposite sides of a boundary that
+    // exists to let them differ.
     if (profile == STD_VIDEO_H265_PROFILE_IDC_INVALID) {
         if (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR) {
-            if (input.bpp == 8) {
+            if (encodeBitDepthLuma == 8) {
                 profile = STD_VIDEO_H265_PROFILE_IDC_MAIN;
-            } else if (input.bpp <= 10) {
+            } else if (encodeBitDepthLuma <= 10) {
                 profile = STD_VIDEO_H265_PROFILE_IDC_MAIN_10;
             } else {
                 profile = STD_VIDEO_H265_PROFILE_IDC_FORMAT_RANGE_EXTENSIONS;
@@ -620,6 +686,22 @@ bool EncoderConfigH265::GetRateControlParameters(VkVideoEncodeRateControlInfoKHR
     } else {
         rcLayerInfoH265->minQp = minQp;
         rcLayerInfoH265->maxQp = maxQp;
+        // See the H.264 counterpart: without useMinQp/useMaxQp the driver
+        // is entitled to ignore the clamp values, and the only setter of
+        // these flags was dead code. Values come from the base-class
+        // request so flag and value travel together on every path.
+        if (minQpSet) {
+            rcLayerInfoH265->useMinQp = VK_TRUE;
+            rcLayerInfoH265->minQp.qpI = EncoderConfig::minQp;
+            rcLayerInfoH265->minQp.qpP = EncoderConfig::minQp;
+            rcLayerInfoH265->minQp.qpB = EncoderConfig::minQp;
+        }
+        if (maxQpSet) {
+            rcLayerInfoH265->useMaxQp = VK_TRUE;
+            rcLayerInfoH265->maxQp.qpI = EncoderConfig::maxQp;
+            rcLayerInfoH265->maxQp.qpP = EncoderConfig::maxQp;
+            rcLayerInfoH265->maxQp.qpB = EncoderConfig::maxQp;
+        }
     }
 
     return true;
@@ -697,7 +779,7 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
     spsInfo->sps.pic_height_in_luma_samples = picHeightAlignedToMinCbsY;
 
     if (verbose) {
-        std::cout << "sps.pic_width_in_luma_samples: " << spsInfo->sps.pic_width_in_luma_samples
+        VkEncOut() << "sps.pic_width_in_luma_samples: " << spsInfo->sps.pic_width_in_luma_samples
                   << ", sps.pic_height_in_luma_samples: " << spsInfo->sps.pic_height_in_luma_samples
                   << ", cuSize: " << (uint32_t)cuSize << ", cuMinSize: " << (uint32_t)cuMinSize << std::endl;
     }
@@ -720,7 +802,7 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
     spsInfo->sps.log2_diff_max_min_pcm_luma_coding_block_size = (uint8_t)(ctbLog2SizeY - minCbLog2SizeY);
 
     if (verbose) {
-        std::cout << "sps.log2_min_luma_coding_block_size_minus3: "         << (uint32_t)spsInfo->sps.log2_min_luma_coding_block_size_minus3
+        VkEncOut() << "sps.log2_min_luma_coding_block_size_minus3: "         << (uint32_t)spsInfo->sps.log2_min_luma_coding_block_size_minus3
                   << ", sps.log2_diff_max_min_luma_coding_block_size: "     << (uint32_t)spsInfo->sps.log2_diff_max_min_luma_coding_block_size
                   << ", sps.log2_min_luma_transform_block_size_minus2: "    << (uint32_t)spsInfo->sps.log2_min_luma_transform_block_size_minus2
                   << ", sps.log2_diff_max_min_luma_transform_block_size: "  << (uint32_t)spsInfo->sps.log2_diff_max_min_luma_transform_block_size
@@ -742,7 +824,7 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
                                                       (spsInfo->sps.conf_win_bottom_offset != 0));
 
     if (verbose) {
-        std::cout << "sps.conf_win_left_offset: "     << spsInfo->sps.conf_win_left_offset
+        VkEncOut() << "sps.conf_win_left_offset: "     << spsInfo->sps.conf_win_left_offset
                   << ", sps.conf_win_right_offset: "  << spsInfo->sps.conf_win_right_offset
                   << ", sps.conf_win_top_offset: "    << spsInfo->sps.conf_win_top_offset
                   << ", sps.conf_win_bottom_offset: " << spsInfo->sps.conf_win_bottom_offset

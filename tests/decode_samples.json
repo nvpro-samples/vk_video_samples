@@ -95,7 +95,7 @@
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-a.h264",
       "source_checksum": "b119d5d667eb7791613d0e39f375b61f0fa41baa5ee1f216a678e0483c69333c",
       "source_filepath": "video/avc/clip-a.h264",
-      "expected_output_y4m_md5": "472dc5dbe403441861340a5f64946155"
+      "expected_output_y4m_md5": "83c30cbef96f357bbf7556a3621857a4"
     },
     {
       "name": "h264_clip_c",

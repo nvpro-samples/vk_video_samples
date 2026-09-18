@@ -15,6 +15,7 @@
  */
 
 #include "VkVideoEncoder/VkVideoEncoderH264.h"
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
 
 VkResult CreateVideoEncoderH264(const VulkanDeviceContext* vkDevCtx,
@@ -48,7 +49,7 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
 
     VkResult result = InitEncoder(encoderConfig);
     if (result != VK_SUCCESS) {
-        fprintf(stderr, "\nERROR: InitEncoder() failed with ret(%d)\n", result);
+        VkEncPrintfErr("\nERROR: InitEncoder() failed with ret(%d)\n", result);
         return result;
     }
 
@@ -56,6 +57,14 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     m_dpb264 = VkEncDpbH264::CreateInstance();
     assert(m_dpb264);
     m_dpb264->DpbSequenceStart(m_maxDpbPicturesCount);
+
+    // The device QP window, recorded where the capabilities are known to
+    // be populated -- InitEncoder above is what runs
+    // EncoderConfigH264::InitDeviceCapabilities. A mid-stream clamp is
+    // checked against this on the caller thread, which cannot safely
+    // reach the config.
+    m_deviceQpWindowMin = m_encoderConfig->h264EncodeCapabilities.minQp;
+    m_deviceQpWindowMax = m_encoderConfig->h264EncodeCapabilities.maxQp;
 
     m_encoderConfig->GetRateControlParameters(&m_rateControlInfo, m_rateControlLayersInfo, &m_h264.m_rateControlInfoH264, m_h264.m_rateControlLayersInfoH264);
 
@@ -79,14 +88,14 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
                                                          nullptr,
                                                          &sessionParameters);
     if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nEncodeFrame Error: Failed to get create video session parameters.\n");
+        VkEncPrintfErr("\nEncodeFrame Error: Failed to get create video session parameters.\n");
         return result;
     }
 
     result = VulkanVideoSessionParameters::Create(m_vkDevCtx, m_videoSession,
                                                   sessionParameters, m_videoSessionParameters);
     if(result != VK_SUCCESS) {
-        fprintf(stderr, "\nEncodeFrame Error: Failed to get create video session object.\n");
+        VkEncPrintfErr("\nEncodeFrame Error: Failed to get create video session object.\n");
         return result;
     }
 
@@ -356,19 +365,43 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         }
     }
 
-    // It's not entirely correct to have two separate loops below, one for L0
-    // and the other for L1. In each loop, elements are added to referenceSlotsInfo[]
-    // without checking for duplication. Duplication could occur if the same
-    // picture appears in both L0 and L1; AFAIK, we don't have a situation
-    // today like that so the two loops work fine.
-    // TODO: create a set out of the ref lists and then iterate over that to
-    // build referenceSlotsInfo[].
+    // L0 AND L1 ARE LISTS; referenceSlotsInfo[] IS A SET. The same picture may
+    // hold a position in both reference lists, and on a B frame whose DPB
+    // carries a single reference picture it always does: that one picture is
+    // L0[0] and L1[0] alike. referenceSlotsInfo[] is not a reference list --
+    // it is the set of DPB slots the recorded commands BIND -- and Vulkan
+    // requires each picture resource named in it to be unique
+    // (VUID-VkVideoBeginCodingInfoKHR-pPictureResource-07238,
+    // VUID-vkCmdEncodeVideoKHR-pPictureResource-08220) and each DPB frame to
+    // be used at most once across it and the setup slot
+    // (VUID-vkCmdEncodeVideoKHR-dpbFrameUseCount-08221). So both lists are
+    // walked and each slot is admitted at most once.
+    //
+    // This does not touch the Std reference lists. Those name DPB slots by
+    // index, carry their own ordering, and a slot appearing in both of them
+    // is what the bitstream describes.
+    const uint32_t firstReferenceSlot = numReferenceSlots;
 
     for (uint32_t listNum = 0; listNum < 2; listNum++) {
 
         for (uint32_t i = 0; i < refLists.refPicListCount[listNum]; i++) {
 
             int8_t slotIndex = refLists.refPicList[listNum][i];
+
+            // The scan starts at the first entry these loops filled:
+            // referenceSlotsInfo[0] is reserved for the setup slot and its
+            // slotIndex is not written until after them.
+            bool slotAlreadyBound = false;
+            for (uint32_t bound = firstReferenceSlot; bound < numReferenceSlots; bound++) {
+                if (pFrameInfo->referenceSlotsInfo[bound].slotIndex == slotIndex) {
+                    slotAlreadyBound = true;
+                    break;
+                }
+            }
+            if (slotAlreadyBound) {
+                continue;
+            }
+
             bool refPicAvailable = m_dpb264->GetRefPicture(slotIndex, pFrameInfo->dpbImageResources[numReferenceSlots]);
             assert(refPicAvailable);
             if (!refPicAvailable) {
@@ -535,7 +568,7 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         DumpStateInfo("input", 1, encodeFrameInfo);
 
         if (encodeFrameInfo->lastFrame) {
-            std::cout << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
+            VkEncOut() << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
                       << " of type " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
                       << " ###"
                       << std::endl << std::flush;
@@ -598,8 +631,15 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         m_IDRPicId++;
     }
 
+    // In capture mode (disableFileOutput -- the Chromium in-memory
+    // bitstream path) EVERY IDR chunk must be independently decodable: the
+    // VEA hands keyframe chunks to consumers (WebCodecs, muxers,
+    // validators) that expect in-band SPS/PPS on each keyframe, including
+    // mid-stream forced IDRs. The file-based sample keeps the original
+    // headers-once-at-stream-start behavior.
     if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) &&
-            (encodeFrameInfo->frameEncodeInputOrderNum == 0)) {
+            ((encodeFrameInfo->frameEncodeInputOrderNum == 0) ||
+             (m_encoderConfig->disableFileOutput != 0))) {
         VkResult result = EncodeVideoSessionParameters(encodeFrameInfo);
         if (result != VK_SUCCESS) {
             return result;
@@ -639,6 +679,61 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     }
 
     return VK_SUCCESS;
+}
+
+void VkVideoEncoderH264::RefreshCodecRateControlParameters()
+{
+    // READ THROUGH THE BASE CONFIG POINTER, not the H.264 member. This
+    // runs from VkVideoEncoder::ApplyPendingRateControlUpdate, which just
+    // wrote the new clamp on VkVideoEncoder::m_encoderConfig; reading the
+    // same pointer is what guarantees the fill sees that write. In a
+    // device-initialized session the two name one object anyway --
+    // InitEncoderCodec builds the H.264 member as an aliasing handle on
+    // the very config InitEncoder stores -- so this is the same object by
+    // a route that also holds for a session that never ran
+    // InitEncoderCodec.
+    if (!VkVideoEncoder::m_encoderConfig) {
+        return;
+    }
+    EncoderConfigH264* config =
+        VkVideoEncoder::m_encoderConfig->GetEncoderConfigh264();
+    if (config == nullptr) {
+        return;
+    }
+    // RESET THE LAYER STRUCT TO ITS CODEC-INIT STATE FIRST, because the
+    // fill only ever RAISES useMinQp/useMaxQp -- it has no else branch that
+    // lowers them. At codec-init that is harmless: the struct arrives
+    // zero-initialised but for its sType, so an unset clamp leaves the flag
+    // down. Re-invoked in place it is not: a clamp that was set once and is
+    // then cleared would keep its flag raised and go on clamping at a value
+    // the caller withdrew, which is the accepted-and-ignored shape in
+    // reverse and worse. The brace-init below is the state the constructor
+    // gives this member, and the fill plus CodecHandleRateControlCmd are
+    // its only other writers, so nothing else is lost by rebuilding it.
+    for (uint32_t layerIndx = 0;
+         layerIndx < ARRAYSIZE(m_h264.m_rateControlLayersInfoH264);
+         layerIndx++) {
+        m_h264.m_rateControlLayersInfoH264[layerIndx] =
+            VkVideoEncodeH264RateControlLayerInfoKHR{
+                VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_KHR};
+    }
+    config->GetRateControlParameters(&m_rateControlInfo,
+                                     m_rateControlLayersInfo,
+                                     &m_h264.m_rateControlInfoH264,
+                                     m_h264.m_rateControlLayersInfoH264);
+}
+
+void VkVideoEncoderH264::GetResolvedQpClampForTest(uint32_t* pUseMinQp,
+                                                   int32_t*  pMinQpI,
+                                                   uint32_t* pUseMaxQp,
+                                                   int32_t*  pMaxQpI) const
+{
+    const VkVideoEncodeH264RateControlLayerInfoKHR& layer =
+        m_h264.m_rateControlLayersInfoH264[0];
+    *pUseMinQp = (layer.useMinQp == VK_TRUE) ? 1u : 0u;
+    *pMinQpI   = layer.minQp.qpI;
+    *pUseMaxQp = (layer.useMaxQp == VK_TRUE) ? 1u : 0u;
+    *pMaxQpI   = layer.maxQp.qpI;
 }
 
 VkResult VkVideoEncoderH264::CodecHandleRateControlCmd(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)

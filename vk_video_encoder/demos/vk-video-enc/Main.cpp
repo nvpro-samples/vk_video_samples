@@ -134,7 +134,7 @@ int main(int argc, const char* argv[])
     }
 
     VkQueueFlags requestVideoComputeQueueMask = 0;
-    if (encoderConfig->enablePreprocessComputeFilter == VK_TRUE) {
+    if (encoderConfig->IsPreprocessComputeFilterEnabled()) {
         requestVideoComputeQueueMask = VK_QUEUE_COMPUTE_BIT;
     }
 
@@ -199,7 +199,7 @@ int main(int argc, const char* argv[])
                                               true,              // createGraphicsQueue
                                               true,              // createDisplayQueue
                                               ((encoderConfig->selectVideoWithComputeQueue == 1) ||  // createComputeQueue
-                                               (encoderConfig->enablePreprocessComputeFilter == VK_TRUE))
+                                               encoderConfig->IsPreprocessComputeFilterEnabled())
                                               );
         if (result != VK_SUCCESS) {
             if (IsVideoUnsupportedResult(result)) {
@@ -260,7 +260,7 @@ int main(int argc, const char* argv[])
                                               false, // createGraphicsQueue
                                               false, // createDisplayQueue
                                               ((encoderConfig->selectVideoWithComputeQueue == 1) ||  // createComputeQueue
-                                               (encoderConfig->enablePreprocessComputeFilter == VK_TRUE))
+                                               encoderConfig->IsPreprocessComputeFilterEnabled())
                                               );
         if (result != VK_SUCCESS) {
             if (IsVideoUnsupportedResult(result)) {
@@ -311,10 +311,31 @@ int main(int argc, const char* argv[])
         }
     }
 
-    encoder->WaitForThreadsToComplete();
+    // The drain carries the verdict from the encoder and assembly threads;
+    // |result| carries the frame loop's own. Both are collected before
+    // anything is reported, so the summary below describes the run that
+    // actually happened.
+    const bool completed = encoder->WaitForThreadsToComplete();
 
     std::cout << "Done processing " << curFrameIndex << " input frames!" << std::endl
               << "Encoded file's location is at " << encoderConfig->outputFileHandler.GetFileName()
               << std::endl;
+
+    // THE EXIT STATUS IS THE ONLY THING A HARNESS READS. An encode that
+    // stopped early leaves a bitstream behind either way -- a short one, or
+    // an empty one when it stopped on the first frame -- so the file cannot
+    // distinguish a finished run from an abandoned one and the status has to.
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "Encoding stopped at input frame %u: the frame could "
+                "not be read, staged, recorded or submitted (0x%x)\n",
+                curFrameIndex, result);
+        return EXIT_FAILURE;
+    }
+    if (!completed) {
+        fprintf(stderr, "Encoding did not complete: the encoder reported a "
+                "failure on one or more of the %u frames it was given\n",
+                curFrameIndex);
+        return EXIT_FAILURE;
+    }
     return 0;
 }

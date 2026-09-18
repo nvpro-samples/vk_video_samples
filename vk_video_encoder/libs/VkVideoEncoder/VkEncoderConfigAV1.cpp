@@ -15,19 +15,20 @@
 */
 
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
+#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <string>
 #include <cstring>
 #include <cstdlib>
 
 #define READ_PARAM(i, param, type) {                                    \
     if (++i >= argc) {                                                  \
-        fprintf(stderr, "invalid parameter");                           \
+        VkEncPrintfErr("invalid parameter");                           \
         return -1;                                                      \
     }                                                                   \
     char* _end = nullptr;                                                \
     long long _val = strtoll(argv[i], &_end, 10);                        \
     if (_end == argv[i]) {                                              \
-        fprintf(stderr, "invalid parameter");                           \
+        VkEncPrintfErr("invalid parameter");                           \
         return -1;                                                      \
     }                                                                   \
     param = static_cast<type>(_val);                                    \
@@ -147,7 +148,7 @@ int EncoderConfigAV1::DoParseArguments(int argc, const char* argv[])
             }
         } else if (args[i] == "--profile"){
             if (++i >= argc) {
-                fprintf(stderr, "invalid parameter for %s\n", args[i-1].c_str());
+                VkEncPrintfErr("invalid parameter for %s\n", args[i-1].c_str());
                 return -1;
             }
             std::string prfl = args[i];
@@ -159,11 +160,11 @@ int EncoderConfigAV1::DoParseArguments(int argc, const char* argv[])
                 profile = STD_VIDEO_AV1_PROFILE_PROFESSIONAL;
             } else {
                 // Invalid profile
-                fprintf(stderr, "Invalid profile: %s\n", prfl.c_str());
+                VkEncPrintfErr("Invalid profile: %s\n", prfl.c_str());
                 return -1;
             }
         } else {
-            fprintf(stderr, "Unrecognized option: %s\n", argv[i]);
+            VkEncPrintfErr("Unrecognized option: %s\n", argv[i]);
             //printAV1Help();
             return -1;
         }
@@ -188,6 +189,112 @@ bool EncoderConfigAV1::InitSequenceHeader(StdVideoAV1SequenceHeader *seqHdr,
     seqHdr->flags.enable_cdef = enableCdef ? 1 : 0;
     seqHdr->flags.enable_restoration = enableLr ? 1 : 0;
 
+    // A1 colour wiring, AV1 arm: emit the sequence header's color_config --
+    // AV1's counterpart of the H.26x VUI colour description. AV1 uses the
+    // same ISO/IEC 23091-4 code points as the H.26x VUI fields, so the
+    // colour half is a copy, not a conversion.
+    //
+    // ALWAYS SUPPLIED, never conditional. Gating it on
+    // color_description_present_flag alone, or on that OR
+    // video_signal_type_present_flag, is the wrong SHAPE, because
+    // color_config is not a colour-description struct that happens to carry
+    // some other members. It is a STRUCTURAL struct -- BitDepth,
+    // subsampling_x/y, mono_chrome, chroma_sample_position and color_range
+    // are all members of it, none of them is conditioned on
+    // color_description_present_flag in the AV1 syntax, and color_range has
+    // no absent state at all. Every one of those is a property of the SESSION
+    // that this config knows and the driver would otherwise have to supply.
+    //
+    // WHAT DELEGATION MEANT IN PRACTICE. With pColorConfig null the driver
+    // writes its own color_config from the session, and on the one driver
+    // this was measured against it wrote high_bitdepth and mono_chrome
+    // correctly (a 10-bit AV1 session read back as pix_fmt=yuv420p10le with
+    // colour unknown/unknown/unknown). That is a fact about that driver, not
+    // a requirement of the Vulkan specification, and it is not a basis for
+    // surrendering fields we know. Supplying the struct unconditionally makes
+    // the structural fields OURS on every driver while leaving the colour
+    // description genuinely absent -- which is the combination a
+    // non-declaring caller asked for, and the only one that is
+    // driver-independent.
+    //
+    // color_range IS WRITTEN EVEN WHEN NOTHING WAS DECLARED, and that is not
+    // a fabrication: color_range is unconditional AV1 syntax with no "absent"
+    // encoding, so SOME value is in every AV1 bitstream whether we write it
+    // or the driver does. video_full_range_flag is 0 unless a caller raised
+    // it, and 0 is studio range, which is what this encoder produces.
+    av1ColorConfig = {};
+    av1ColorConfig.flags.color_range = video_full_range_flag;
+    if (color_description_present_flag) {
+        av1ColorConfig.flags.color_description_present_flag = 1;
+        av1ColorConfig.color_primaries =
+            (StdVideoAV1ColorPrimaries)colour_primaries;
+        av1ColorConfig.transfer_characteristics =
+            (StdVideoAV1TransferCharacteristics)transfer_characteristics;
+        av1ColorConfig.matrix_coefficients =
+            (StdVideoAV1MatrixCoefficients)matrix_coefficients;
+    } else {
+        // color_description_present_flag == 0 does NOT mean "leave the
+        // three fields zero": zero is CP_BT_709 / TC_BT_709 / MC_IDENTITY
+        // in AV1's enums, and MC_IDENTITY additionally asserts the
+        // samples are RGB. The AV1 specification's own default for an
+        // absent description is UNSPECIFIED (2) in all three, so write
+        // that.
+        //
+        // UNTESTABLE BY DESIGN, said here so nobody builds a gate for it:
+        // with color_description_present_flag == 0 the AV1 bitstream OMITS
+        // all three fields, so no decoder and no bitstream analyser can tell
+        // 0/0/0 from 2/2/2 in this struct. The assertion is a struct-level
+        // one or it is nothing.
+        av1ColorConfig.color_primaries =
+            STD_VIDEO_AV1_COLOR_PRIMARIES_BT_UNSPECIFIED;
+        av1ColorConfig.transfer_characteristics =
+            STD_VIDEO_AV1_TRANSFER_CHARACTERISTICS_UNSPECIFIED;
+        av1ColorConfig.matrix_coefficients =
+            STD_VIDEO_AV1_MATRIX_COEFFICIENTS_UNSPECIFIED;
+    }
+    // The non-colour members are structural and must match the session: the
+    // SESSION's chroma subsampling, at the configured bit depth.
+    //
+    // HARDCODING 4:2:0 HERE CONTRADICTED InitProfileLevel BELOW, which derives
+    // seq_profile 1 from 4:4:4 input and 2 from 4:2:2 -- and AV1 6.4.1 gives
+    // seq_profile 1 subsampling_x == subsampling_y == 0 and seq_profile 2 at
+    // ten bits or fewer subsampling_x == 1, subsampling_y == 0. The pair was an
+    // invalid sequence header. The derivation is the codec-correct side, so the
+    // comment that called 4:2:0 "the only chroma format this encoder admits"
+    // was the stale one: the input taxonomy routes 4:2:2 and 4:4:4 and the
+    // profile derivation names their seq_profiles.
+    //
+    // 4:2:0 -> (1, 1), 4:2:2 -> (1, 0), 4:4:4 -> (0, 0), which is AV1 5.5.2's
+    // mapping. mono_chrome keeps its zeroed value from the `= {}` above --
+    // there is no monochrome input path -- and is named here because it is one
+    // of the fields this config owns rather than the driver.
+    // THE SEQUENCE HEADER'S OWN BitDepth SYNTAX ELEMENT, so it reads the
+    // encode side like the subsampling two lines below it. Reading
+    // input.bpp here would put two members of ONE struct on opposite sides of the
+    // input/encode boundary -- and seq_profile, which AV1 6.4.1 defines
+    // against this very field, is derived from the encode side in
+    // InitProfileLevel.
+    av1ColorConfig.BitDepth = encodeBitDepthLuma;
+    av1ColorConfig.subsampling_x =
+        (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR)
+            ? 0 : 1;
+    av1ColorConfig.subsampling_y =
+        (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR)
+            ? 1 : 0;
+    // UNKNOWN, and it is not a gap that can be closed. The RGBA
+    // preprocess filter sites its chroma at the CENTRE of the 2x2 luma
+    // block (a box average), which H.26x expresses as
+    // chroma_sample_loc_type 1 and which AV1 CANNOT express at all: its
+    // chroma_sample_position offers UNKNOWN, VERTICAL (co-sited
+    // horizontally, between rows -- MPEG-2) and COLOCATED (top-left)
+    // only. Signalling VERTICAL to look decisive would assert a siting
+    // half a chroma sample away from the one written. For DIRECT input
+    // the siting is the caller's content's and this library never learns
+    // it, so UNKNOWN is right there too.
+    av1ColorConfig.chroma_sample_position =
+        STD_VIDEO_AV1_CHROMA_SAMPLE_POSITION_UNKNOWN;
+    seqHdr->pColorConfig = &av1ColorConfig;
+
     opInfo->seq_level_idx = level;
     opInfo->seq_tier = tier;
 
@@ -206,21 +313,21 @@ VkResult EncoderConfigAV1::InitDeviceCapabilities(const VulkanDeviceContext* vkD
                                                          av1QuantizationMapCapabilities,
                                                          intraRefreshCapabilities);
     if (result != VK_SUCCESS) {
-        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+        VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
                   << "Could not get Video Encode Capabilities for AV1. VkResult: " << result
                   << " (0x" << std::hex << result << std::dec << ")" << std::endl;
         return result;
     }
 
     if (verboseMsg) {
-        std::cout << "\t\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode capabilities: " << std::endl;
-        std::cout << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << videoCapabilities.minBitstreamBufferOffsetAlignment << std::endl;
-        std::cout << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << videoCapabilities.minBitstreamBufferSizeAlignment << std::endl;
-        std::cout << "\t\t\t" << "pictureAccessGranularity: " << videoCapabilities.pictureAccessGranularity.width << " x " << videoCapabilities.pictureAccessGranularity.height << std::endl;
-        std::cout << "\t\t\t" << "minExtent: " << videoCapabilities.minCodedExtent.width << " x " << videoCapabilities.minCodedExtent.height << std::endl;
-        std::cout << "\t\t\t" << "maxExtent: " << videoCapabilities.maxCodedExtent.width  << " x " << videoCapabilities.maxCodedExtent.height << std::endl;
-        std::cout << "\t\t\t" << "maxDpbSlots: " << videoCapabilities.maxDpbSlots << std::endl;
-        std::cout << "\t\t\t" << "maxActiveReferencePictures: " << videoCapabilities.maxActiveReferencePictures << std::endl;
+        VkEncOut() << "\t\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode capabilities: " << std::endl;
+        VkEncOut() << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << videoCapabilities.minBitstreamBufferOffsetAlignment << std::endl;
+        VkEncOut() << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << videoCapabilities.minBitstreamBufferSizeAlignment << std::endl;
+        VkEncOut() << "\t\t\t" << "pictureAccessGranularity: " << videoCapabilities.pictureAccessGranularity.width << " x " << videoCapabilities.pictureAccessGranularity.height << std::endl;
+        VkEncOut() << "\t\t\t" << "minExtent: " << videoCapabilities.minCodedExtent.width << " x " << videoCapabilities.minCodedExtent.height << std::endl;
+        VkEncOut() << "\t\t\t" << "maxExtent: " << videoCapabilities.maxCodedExtent.width  << " x " << videoCapabilities.maxCodedExtent.height << std::endl;
+        VkEncOut() << "\t\t\t" << "maxDpbSlots: " << videoCapabilities.maxDpbSlots << std::endl;
+        VkEncOut() << "\t\t\t" << "maxActiveReferencePictures: " << videoCapabilities.maxActiveReferencePictures << std::endl;
     }
 
     result = VulkanVideoCapabilities::GetPhysicalDeviceVideoEncodeQualityLevelProperties<VkVideoEncodeAV1QualityLevelPropertiesKHR, VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_QUALITY_LEVEL_PROPERTIES_KHR>
@@ -228,33 +335,33 @@ VkResult EncoderConfigAV1::InitDeviceCapabilities(const VulkanDeviceContext* vkD
                                                                                  qualityLevelProperties,
                                                                                  av1QualityLevelProperties);
     if (result != VK_SUCCESS) {
-        std::cerr << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+        VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
                   << "Could not get Video Encode QualityLevel Properties for AV1. VkResult: " << result
                   << " (0x" << std::hex << result << std::dec << "), qualityLevel: " << qualityLevel << std::endl;
         return result;
     }
 
     if (verboseMsg) {
-        std::cout << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode quality level properties: " << std::endl;
-        std::cout << "\t\t\t" << "preferredRateControlMode : " << qualityLevelProperties.preferredRateControlMode << std::endl;
-        std::cout << "\t\t\t" << "preferredRateControlLayerCount : " << qualityLevelProperties.preferredRateControlLayerCount << std::endl;
-        std::cout << "\t\t\t" << "preferredRateControlFlags : " << av1QualityLevelProperties.preferredRateControlFlags << std::endl;
-        std::cout << "\t\t\t" << "preferredGopFrameCount : " << av1QualityLevelProperties.preferredGopFrameCount << std::endl;
-        std::cout << "\t\t\t" << "preferredKeyFramePeriod : " << av1QualityLevelProperties.preferredKeyFramePeriod << std::endl;
-        std::cout << "\t\t\t" << "preferredConsecutiveBipredictiveFrameCount : " << av1QualityLevelProperties.preferredConsecutiveBipredictiveFrameCount << std::endl;
-        std::cout << "\t\t\t" << "preferredTemporalLayerCount : " << av1QualityLevelProperties.preferredTemporalLayerCount << std::endl;
-        std::cout << "\t\t\t" << "preferredConstantQIndex.intraQIndex : " << av1QualityLevelProperties.preferredConstantQIndex.intraQIndex << std::endl;
-        std::cout << "\t\t\t" << "preferredConstantQIndex.predictiveQIndex : " << av1QualityLevelProperties.preferredConstantQIndex.predictiveQIndex << std::endl;
-        std::cout << "\t\t\t" << "preferredConstantQIndex.bipredictiveQIndex : " << av1QualityLevelProperties.preferredConstantQIndex.bipredictiveQIndex << std::endl;
-        std::cout << "\t\t\t" << "preferredMaxSingleReferenceCount : " << av1QualityLevelProperties.preferredMaxSingleReferenceCount << std::endl;
-        std::cout << "\t\t\t" << "preferredSingleReferenceNameMask : " << av1QualityLevelProperties.preferredSingleReferenceNameMask << std::endl;
-        std::cout << "\t\t\t" << "preferredMaxUnidirectionalCompoundReferenceCount : " << av1QualityLevelProperties.preferredMaxUnidirectionalCompoundReferenceCount << std::endl;
-        std::cout << "\t\t\t" << "preferredMaxUnidirectionalCompoundGroup1ReferenceCount : " << av1QualityLevelProperties.preferredMaxUnidirectionalCompoundGroup1ReferenceCount << std::endl;
-        std::cout << "\t\t\t" << "preferredUnidirectionalCompoundReferenceNameMask : " << av1QualityLevelProperties.preferredUnidirectionalCompoundReferenceNameMask << std::endl;
-        std::cout << "\t\t\t" << "preferredMaxBidirectionalCompoundReferenceCount : " << av1QualityLevelProperties.preferredMaxBidirectionalCompoundReferenceCount << std::endl;
-        std::cout << "\t\t\t" << "preferredMaxBidirectionalCompoundGroup1ReferenceCount : " << av1QualityLevelProperties.preferredMaxBidirectionalCompoundGroup1ReferenceCount << std::endl;
-        std::cout << "\t\t\t" << "preferredMaxBidirectionalCompoundGroup2ReferenceCount : " << av1QualityLevelProperties.preferredMaxBidirectionalCompoundGroup2ReferenceCount << std::endl;
-        std::cout << "\t\t\t" << "preferredBidirectionalCompoundReferenceNameMask : " << av1QualityLevelProperties.preferredBidirectionalCompoundReferenceNameMask << std::endl;
+        VkEncOut() << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode quality level properties: " << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredRateControlMode : " << qualityLevelProperties.preferredRateControlMode << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredRateControlLayerCount : " << qualityLevelProperties.preferredRateControlLayerCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredRateControlFlags : " << av1QualityLevelProperties.preferredRateControlFlags << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredGopFrameCount : " << av1QualityLevelProperties.preferredGopFrameCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredKeyFramePeriod : " << av1QualityLevelProperties.preferredKeyFramePeriod << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredConsecutiveBipredictiveFrameCount : " << av1QualityLevelProperties.preferredConsecutiveBipredictiveFrameCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredTemporalLayerCount : " << av1QualityLevelProperties.preferredTemporalLayerCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredConstantQIndex.intraQIndex : " << av1QualityLevelProperties.preferredConstantQIndex.intraQIndex << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredConstantQIndex.predictiveQIndex : " << av1QualityLevelProperties.preferredConstantQIndex.predictiveQIndex << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredConstantQIndex.bipredictiveQIndex : " << av1QualityLevelProperties.preferredConstantQIndex.bipredictiveQIndex << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredMaxSingleReferenceCount : " << av1QualityLevelProperties.preferredMaxSingleReferenceCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredSingleReferenceNameMask : " << av1QualityLevelProperties.preferredSingleReferenceNameMask << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredMaxUnidirectionalCompoundReferenceCount : " << av1QualityLevelProperties.preferredMaxUnidirectionalCompoundReferenceCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredMaxUnidirectionalCompoundGroup1ReferenceCount : " << av1QualityLevelProperties.preferredMaxUnidirectionalCompoundGroup1ReferenceCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredUnidirectionalCompoundReferenceNameMask : " << av1QualityLevelProperties.preferredUnidirectionalCompoundReferenceNameMask << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredMaxBidirectionalCompoundReferenceCount : " << av1QualityLevelProperties.preferredMaxBidirectionalCompoundReferenceCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredMaxBidirectionalCompoundGroup1ReferenceCount : " << av1QualityLevelProperties.preferredMaxBidirectionalCompoundGroup1ReferenceCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredMaxBidirectionalCompoundGroup2ReferenceCount : " << av1QualityLevelProperties.preferredMaxBidirectionalCompoundGroup2ReferenceCount << std::endl;
+        VkEncOut() << "\t\t\t" << "preferredBidirectionalCompoundReferenceNameMask : " << av1QualityLevelProperties.preferredBidirectionalCompoundReferenceNameMask << std::endl;
     }
 
     if (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_FLAG_BITS_MAX_ENUM_KHR) {
@@ -269,14 +376,33 @@ VkResult EncoderConfigAV1::InitDeviceCapabilities(const VulkanDeviceContext* vkD
     if (gopStructure.GetConsecutiveBFrameCount() == CONSECUTIVE_B_FRAME_COUNT_MAX_VALUE) {
         gopStructure.SetConsecutiveBFrameCount(av1QualityLevelProperties.preferredConsecutiveBipredictiveFrameCount);
     }
-    if (constQp.qpIntra == 0) {
+    // The direct binder resolves all three qindices and marks constQpSet:
+    // an explicit 0 there is lossless, not unset, and must keep its value.
+    if (!constQpSet && (constQp.qpIntra == 0)) {
         constQp.qpIntra = av1QualityLevelProperties.preferredConstantQIndex.intraQIndex;
     }
-    if (constQp.qpInterP == 0) {
+    if (!constQpSet && (constQp.qpInterP == 0)) {
         constQp.qpInterP = av1QualityLevelProperties.preferredConstantQIndex.predictiveQIndex;
     }
-    if (constQp.qpInterB == 0) {
+    if (!constQpSet && (constQp.qpInterB == 0)) {
         constQp.qpInterB = av1QualityLevelProperties.preferredConstantQIndex.bipredictiveQIndex;
+    }
+
+    // A driver that reports NO preference leaves these at 0, and 0 is not a
+    // neutral default here -- it is the lowest quantizer index, i.e. very
+    // nearly lossless, with the bitrate that implies. Floor an unexpressed
+    // preference to the mid-range index instead. 128 is derived, not picked:
+    // it is the qindex that maps to libaom quantizer 32 of 63 (the midpoint),
+    // which is what QP 26 is for H.26x on 0..51.
+    //
+    // Only reachable when constQpSet is clear, i.e. the caller specified
+    // nothing -- an explicit qindex, 0 for lossless included, sets constQpSet
+    // and never arrives here.
+    if (!constQpSet) {
+        static const uint32_t kMidRangeQIndex = 128;
+        if (constQp.qpIntra  == 0) constQp.qpIntra  = kMidRangeQIndex;
+        if (constQp.qpInterP == 0) constQp.qpInterP = kMidRangeQIndex;
+        if (constQp.qpInterB == 0) constQp.qpInterB = kMidRangeQIndex;
     }
 
     return VK_SUCCESS;
@@ -285,9 +411,16 @@ VkResult EncoderConfigAV1::InitDeviceCapabilities(const VulkanDeviceContext* vkD
 void EncoderConfigAV1::InitProfileLevel()
 {
     // If profile hasn't been specified, determine it based on bit depth and chroma
+    //
+    // BOTH TERMS READ THE ENCODE SIDE. AV1 6.4.1 defines seq_profile over the
+    // SEQUENCE HEADER's BitDepth, mono_chrome and subsampling_x/y, and
+    // InitSequenceHeader writes all of those from the encode fields. The
+    // chroma term already read the encode value; the depth term read
+    // input.bpp, so seq_profile and the BitDepth it is defined against came
+    // from opposite sides of the boundary.
     if (profile == STD_VIDEO_AV1_PROFILE_INVALID) {
         // PROFESSIONAL is required for 12-bit or 422
-        if ((input.bpp > 10) ||
+        if ((encodeBitDepthLuma > 10) ||
             (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR)) {
             profile = STD_VIDEO_AV1_PROFILE_PROFESSIONAL;
         }

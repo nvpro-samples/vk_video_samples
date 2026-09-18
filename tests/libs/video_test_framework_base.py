@@ -25,6 +25,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from tests.libs.video_test_output_check import check_declared_output
 from tests.libs.video_test_config_base import (
     BaseTestConfig,
     ExpectedResult,
@@ -559,8 +560,14 @@ class VulkanVideoTestFrameworkBase:
         config: BaseTestConfig,
         timeout: int = DEFAULT_TEST_TIMEOUT,
         cwd: Optional[Path] = None,
+        output_file: Optional[Path] = None,
     ) -> TestResult:
-        """Execute a test command and return result."""
+        """Execute a test command and return result.
+
+        |output_file| names the artifact this command was asked to produce,
+        when it was asked to produce one. A run that names an output and
+        exits successfully has to have written it; see _check_declared_output.
+        """
         command_line = ' '.join(cmd)
 
         if self.verbose:
@@ -586,7 +593,7 @@ class VulkanVideoTestFrameworkBase:
             result = subprocess.run(cmd, check=False, **subprocess_kwargs)
             self._detect_driver_from_output(result.stdout, result.stderr)
 
-            return TestResult(
+            test_result = TestResult(
                 config=config,
                 returncode=result.returncode,
                 stdout=result.stdout,
@@ -596,6 +603,9 @@ class VulkanVideoTestFrameworkBase:
                     result.returncode, result.stderr),
                 command_line=command_line
             )
+            check_declared_output(test_result, config, output_file,
+                                  cmd)
+            return test_result
 
         except subprocess.TimeoutExpired:
             return create_error_result(
@@ -620,11 +630,11 @@ class VulkanVideoTestFrameworkBase:
         ]
         # --enablePostProcessFilter takes a filter TYPE, not a boolean. The decoder's
         # default is -1, which disables the post-process pass; 0 is a legacy value that
-        # selects the first filter. Do not pass "0" here to mean "off": it routes every
-        # decode that did not ask for a filter through a compute shader, so a decode
-        # cell validates decode + filter and a filter defect reads as a decoder defect.
-        # Omit the option to get the default: the argument parser rejects "-1" because
-        # it starts with a dash.
+        # selects the first filter. Passing "0" to mean "off" silently routes every
+        # decode that did not ask for a filter through a compute shader -- decode cells
+        # then validate decode + filter, and a filter defect reads as a decoder defect.
+        # Omit the option to get the default: the argument parser
+        # rejects "-1" because it starts with a dash.
 
         if output_file:
             cmd.extend(["-o", str(output_file)])

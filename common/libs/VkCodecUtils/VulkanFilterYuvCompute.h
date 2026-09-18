@@ -345,9 +345,10 @@ struct FilterIOSlot {
     ///
     /// A TransferResource carries a raw VkImage, which is enough for vkCmdCopy* but not
     /// for the compute descriptors -- those bind image views, and for multi-planar
-    /// formats a per-plane view set. Leaving this null is an error, not a way to ask for
-    /// the transfers alone: RecordComputeDispatch() refuses it rather than reporting
-    /// success over a filter execution that never happened.
+    /// formats a per-plane view set. Leaving it null is refused rather than
+    /// tolerated: RecordComputeDispatch() returns VK_ERROR_INVALID_EXTERNAL_HANDLE,
+    /// because dispatching nothing and reporting success hands the caller its pre-
+    /// and post-transfers plus an output image the filter never wrote.
     const VkImageResourceView* primaryView{nullptr};
 
     /// Optional pre-transfer: source data to stage into primary before compute
@@ -720,7 +721,22 @@ public:
         
         /// Replicate edge pixels for all out-of-bounds reads
         FLAG_ENABLE_ROW_COLUMN_REPLICATION_ALL  = (1 << 4),
-        
+
+        /// The OUTPUT image the caller will bind is layered (layerCount > 1).
+        ///
+        /// A single-plane output -- packed YCbCr or RGBA -- is bound from the
+        /// COMBINED view, and VkImageResourceView::Create types that view
+        /// VK_IMAGE_VIEW_TYPE_2D_ARRAY when layerCount > 1 and
+        /// VK_IMAGE_VIEW_TYPE_2D otherwise. The shader's OpTypeImage Arrayed
+        /// operand must match the view it is bound with
+        /// (VUID-vkCmdDispatch-viewType-07752), and the shader is generated at
+        /// Create() time, before any image is bound -- so the caller has to say.
+        ///
+        /// Default (unset) means single-layer, which is what every current
+        /// caller uses. A MULTI-PLANAR output is unaffected: it binds per-plane
+        /// views, which are always array views regardless of this flag.
+        FLAG_OUTPUT_IMAGE_ARRAY                 = (1 << 5),
+
         // Transfer operation flags
         FLAG_PRE_TRANSFER_ENABLED               = (1 << 8),  ///< Enable pre-transfer stage
         FLAG_POST_TRANSFER_ENABLED              = (1 << 9),  ///< Enable post-transfer stage
@@ -731,6 +747,17 @@ public:
         FLAG_POST_TRANSFER                      = FLAG_POST_TRANSFER_ENABLED,
     };
     
+    // Whether the OUTPUT descriptor must be declared as an array image.
+    //
+    // It follows the VIEW the descriptor binds, which is decided by the output
+    // format, not by a constant:
+    //   multi-planar output -> per-plane views, always VK_IMAGE_VIEW_TYPE_2D_ARRAY
+    //   single-plane output -> the combined view, which follows layerCount
+    // Hardcoding either answer has broken this filter in both directions --
+    // once as a packed 4:4:4 store that would not compile, once as a stray
+    // layer index on a 2D view.
+    bool OutputDescriptorIsArray() const;
+
     static constexpr uint32_t maxNumComputeDescr = 10;
 
     static constexpr VkImageAspectFlags validPlaneAspects = VK_IMAGE_ASPECT_PLANE_0_BIT |
@@ -814,6 +841,10 @@ public:
         , m_workgroupSizeX(16)
         , m_workgroupSizeY(16)
         , m_maxNumFrames(maxNumFrames)
+        , m_inputPackedYcbcr(nullptr)
+        , m_outputPackedYcbcr(nullptr)
+        , m_blockHorzRatio(2)
+        , m_blockVertRatio(2)
         , m_ycbcrPrimariesConstants (pYcbcrPrimariesConstants ?
                                         *pYcbcrPrimariesConstants :
                                         YcbcrPrimariesConstants{0.0, 0.0})
@@ -831,10 +862,7 @@ public:
         , m_enableRowAndColumnReplication((filterFlags & (FLAG_ENABLE_ROW_COLUMN_REPLICATION_ONE | FLAG_ENABLE_ROW_COLUMN_REPLICATION_ALL)) != 0)
         , m_inputIsBuffer(false)
         , m_outputIsBuffer(false)
-        , m_inputPackedYcbcr(nullptr)
-        , m_outputPackedYcbcr(nullptr)
-        , m_blockHorzRatio(2)
-        , m_blockVertRatio(2)
+        , m_outputImageArray((filterFlags & FLAG_OUTPUT_IMAGE_ARRAY) != 0)
         , m_enableYSubsampling((filterFlags & FLAG_ENABLE_Y_SUBSAMPLING) != 0)
         , m_skipCompute((filterFlags & FLAG_SKIP_COMPUTE) != 0 || 
                         filterType == XFER_IMAGE_TO_BUFFER ||
@@ -1171,7 +1199,10 @@ private:
      * @param isInput Whether this is an input or output resource
      * @param startBinding Starting binding number in the descriptor set
      * @param set Descriptor set number
-     * @param imageArray Whether to use image2DArray or image2D
+     * @param imageArray Whether the PLANE bindings use image2DArray or
+     *        image2D. It does not reach the single-plane (COLOR_BIT) arm,
+     *        which is always image2D because it is bound from the combined
+     *        VK_IMAGE_VIEW_TYPE_2D view; see that arm for why.
      * @return The next available binding number after all descriptors are created
      */
     uint32_t ShaderGenerateImagePlaneDescriptors(std::stringstream& computeShader,
@@ -1218,7 +1249,8 @@ private:
      * @param isInput Whether this is an input or output resource
      * @param startBinding Starting binding number in the descriptor set
      * @param set Descriptor set number
-     * @param imageArray Whether to use image2DArray or image2D (for image resources)
+     * @param imageArray Whether the PLANE bindings use image2DArray or image2D
+     *        (image resources only; the single-plane arm is always image2D)
      * @param bufferType The Vulkan descriptor type to use for buffer resources
      * @return The next available binding number after all descriptors are created
      */
@@ -1340,6 +1372,7 @@ protected:
     uint32_t                                 m_enableRowAndColumnReplication : 1;
     uint32_t                                 m_inputIsBuffer : 1;
     uint32_t                                 m_outputIsBuffer : 1;
+    uint32_t                                 m_outputImageArray : 1;   // FLAG_OUTPUT_IMAGE_ARRAY
     uint32_t                                 m_enableYSubsampling : 1; // Enable 2x2 Y subsampling output
     uint32_t                                 m_skipCompute : 1;        // Skip compute (transfer-only mode)
 

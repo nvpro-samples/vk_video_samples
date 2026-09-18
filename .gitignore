@@ -49,6 +49,26 @@ BUILD*
 tests/resources/
 tests/results/
 
+# Encoder bitstream output. A run that supplies no output path gets the
+# encoder's default name -- out.264, out.265 or out.ivf by codec -- in the
+# directory it was run from, so a binary invoked by hand from the tree root
+# leaves one here. Test binaries run under CTest do not: each runs in its own
+# directory inside the build tree, which BUILD* above already covers.
+#
+# The three default names, anchored to the root, and NOT the extensions: an
+# elementary stream in these formats is also the shape a reference or golden
+# bitstream takes, and one added under docs/ or tests/ is content the
+# repository is meant to carry rather than an artifact of a build.
+/out.264
+/out.265
+/out.ivf
+
 # Generated into the build tree by cmake/VulkanDispatchTable.cmake
 common/libs/VkCodecUtils/HelpersDispatchTable.h
 common/libs/VkCodecUtils/HelpersDispatchTable.cpp
+
+# IDE / editor project state. Machine-local and not part of the source.
+.settings/
+.vscode/
+.idea/
+*.code-workspace

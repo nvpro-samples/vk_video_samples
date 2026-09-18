@@ -1,0 +1,17 @@
+# Layer settings shared by every test registered through vvs_add_gated_test().
+#
+# duplicate_message_limit = 0 means "report every message". The layer default
+# is 10, and the cap is keyed on the VUID string alone with no per-object
+# component, so a single repeated VUID truncates and a run understates itself
+# -- a gate built on a truncated count cannot tell a shrinking defect from a
+# capped one.
+#
+# The layer also searches the CURRENT WORKING DIRECTORY for a file of this
+# name, so a run that merely unsets VK_LAYER_SETTINGS_PATH while sitting in a
+# directory that holds one is still uncapped.
+#
+# This pins HOW MANY messages print. It does not pin WHICH: different
+# validation-layer builds report different totals and different sets of
+# distinct VUIDs for the same binary on the same host, so a count is only
+# comparable against another count taken with the same layer.
+khronos_validation.duplicate_message_limit = 0

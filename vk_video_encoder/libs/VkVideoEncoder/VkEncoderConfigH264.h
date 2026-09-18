@@ -156,6 +156,13 @@ struct EncoderConfigH264 : public EncoderConfig {
     static void SetAspectRatio(StdVideoH264SequenceParameterSetVui *vui, int32_t width, int32_t height,
                                int32_t darWidth, int32_t darHeight);
 
+    // H.264 Baseline (profile_idc 66) has no CABAC -- entropy_coding_mode_flag
+    // must be 0 there. Returns |requested| clamped to what |profile| permits.
+    // Pure, static and public so the conformance rule has exactly one
+    // definition and can be tested without a device.
+    static EntropyCodingMode ConformantEntropyCodingMode(StdVideoH264ProfileIdc profile,
+                                                         EntropyCodingMode requested);
+
     virtual VkResult InitializeParameters() override
     {
         VkResult result = EncoderConfig::InitializeParameters();

@@ -41,6 +41,27 @@ PIX_FMT_FOR_BPP = {8: "yuv420p", 10: "yuv420p10le"}
 
 ENCODER_REL_PATH = "build/vk_video_encoder/test/vulkan-video-enc-test"
 
+# The gate. A GOP whose per-frame PSNR spans more than this has collapsed
+# somewhere inside it, which is the defect this script was written to find.
+PSNR_SPREAD_LIMIT_DB = 10.0
+
+# What the encoder prints when it cannot stand up a device at all. Matched
+# as a substring of its stderr, so the VkResult that follows may vary.
+# The encoder's own exit status. 69 (VVS_EXIT_UNSUPPORTED) is reserved for a
+# VkResult that says the device cannot do this; every other nonzero status is
+# an ordinary failure. Classify on this, never on the stderr text -- the
+# encoder prints "Error creating the encoder instance" before all of them.
+ENCODER_EXIT_UNSUPPORTED = 69
+
+# Lines the encoder prints only for a failure it has already judged fatal.
+# Used to catch a zero exit that contradicts the process's own output.
+ENCODER_FATAL_MARKERS = (
+    "Error creating the encoder instance:",
+    "Error encoding frame:",
+    "Error obtaining the encoded bitstream file:",
+    "Error: encoder creation reported success but produced no",
+)
+
 CODECS = {
     "h264": {"flag": "h264", "ext": "264", "label": "H.264"},
     "h265": {"flag": "h265", "ext": "265", "label": "H.265"},
@@ -72,12 +93,44 @@ class EncodeResult:
     encode_ok: bool = True
     decode_ok: bool = True
     error_msg: str = ""
+    # The encoder process's exit status, and how many frames actually came
+    # back out of the decoder. Both are needed to tell a skip from a failure
+    # and a complete stream from a readable prefix.
+    exit_code: Optional[int] = None
+    frames_decoded: Optional[int] = None
+
+
+def is_unsupported_run(results):
+    """True when EVERY row failed with the encoder's unsupported status.
+
+    This is the whole skip condition. One row that got far enough to be judged
+    means the host has a device, so the run is a result and not a skip -- a
+    device that encodes BADLY must still be able to fail this script.
+    """
+    return bool(results) and all(
+        not r.encode_ok and r.exit_code == ENCODER_EXIT_UNSUPPORTED
+        for r in results)
+
+
+def short_rows(results, requested_frames):
+    """Rows that encoded and decoded but returned fewer frames than asked.
+
+    A row whose frame count is unknown is short: the count is the evidence,
+    and its absence is not evidence of completeness.
+    """
+    short = []
+    for r in results:
+        if not r.encode_ok or not r.decode_ok:
+            continue
+        if r.frames_decoded is None or r.frames_decoded < requested_frames:
+            short.append(r)
+    return short
 
 
 def run_cmd(cmd, description="", timeout=120, remote_host=None):
     """Run a command, return (returncode, stdout, stderr).
 
-    If remote_host is set (e.g. "user@192.168.122.216" or "192.168.122.216"),
+    If remote_host is set (e.g. "user@host" or a bare host name),
     the command is wrapped with ssh and executed on the remote host. Paths
     are assumed to be valid on the remote (typically via NFS-shared mounts).
     """
@@ -145,10 +198,17 @@ def encode(yuv_path, out_path, codec, width, height, num_frames, gop, qp,
     rc, out, err = run_cmd(cmd, f"Encoding {CODECS[codec]['label']} GOP={gop}",
                            remote_host=remote_host)
     if rc != 0:
-        return False, f"Encoder returned {rc}: {err[-500:]}"
+        return False, f"Encoder returned {rc}: {err[-500:]}", rc
+    # A ZERO EXIT THAT PRINTED A FATAL DIAGNOSTIC IS STILL A FAILURE. The
+    # encoder is expected to propagate these into its status; trusting the
+    # status alone means a regression in that propagation arrives here as a
+    # quality pass over a truncated stream, which is what this guards.
+    for marker in ENCODER_FATAL_MARKERS:
+        if marker in err:
+            return False, f"Encoder exited 0 after reporting: {marker}", rc
     if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
-        return False, "Output file missing or empty"
-    return True, ""
+        return False, "Output file missing or empty", rc
+    return True, "", rc
 
 
 def decode_to_yuv(encoded_path, decoded_yuv_path, codec, bpp=8):
@@ -572,8 +632,8 @@ Examples:
   %(prog)s --samples-root /path/to/vulkan-video-samples
 
   # Remote run on GPU VM (NFS-shared paths)
-  %(prog)s --samples-root /data/.../vulkan-video-samples \\
-           --remote-host tzlatinski@192.168.122.216
+  %(prog)s --samples-root /path/to/vulkan-video-samples \\
+           --remote-host user@host.example
 """)
     parser.add_argument("--width", type=int, default=DEFAULT_WIDTH)
     parser.add_argument("--height", type=int, default=DEFAULT_HEIGHT)
@@ -597,7 +657,7 @@ Examples:
                              "(overrides --samples-root derivation).")
     parser.add_argument("--remote-host", type=str, default=None,
                         help="Run encoder on remote host via ssh "
-                             "(e.g. user@192.168.122.216 or 192.168.122.216). "
+                             "(e.g. user@host.example). "
                              "Default: run locally. Encoder paths must be "
                              "reachable on the remote (NFS-shared).")
     args = parser.parse_args()
@@ -608,15 +668,20 @@ Examples:
             parser.error("either --encoder or --samples-root must be specified")
         encoder_bin = os.path.join(args.samples_root, ENCODER_REL_PATH)
 
+    # A missing prerequisite is a SKIP, not a usage error and not a failure.
+    # Exit 77 is what this tree's gpu-labelled tests use for "this host cannot
+    # run me", declared as SKIP_RETURN_CODE where the test is registered. A
+    # host without ffmpeg, or without the encoder built, has not disproved
+    # anything, so reporting red here would be a false negative.
     if not args.remote_host and not os.path.isfile(encoder_bin):
-        parser.error(f"encoder binary not found: {encoder_bin}\n"
-                     f"  Pass --encoder PATH or --samples-root DIR (must contain "
-                     f"{ENCODER_REL_PATH}). Use --remote-host to skip the local "
-                     f"existence check.")
+        print(f"SKIP: encoder binary not found: {encoder_bin}", file=sys.stderr)
+        return 77
 
     for tool in ("ffmpeg", "ffprobe"):
         if shutil.which(tool) is None:
-            parser.error(f"{tool} not found on PATH (required for encode/decode/PSNR)")
+            print(f"SKIP: {tool} not found on PATH "
+                  f"(required for encode/decode/PSNR)", file=sys.stderr)
+            return 77
 
     os.makedirs(args.output_dir, exist_ok=True)
     if args.report is None:
@@ -667,10 +732,11 @@ Examples:
             result = EncodeResult(codec=codec_key, gop=gop, file_size=0)
 
             # Encode
-            ok, err = encode(yuv_path, encoded_path, codec_key,
+            ok, err, enc_rc = encode(yuv_path, encoded_path, codec_key,
                              args.width, args.height, args.num_frames, gop, args.qp,
                              encoder_bin=encoder_bin, remote_host=args.remote_host,
                              bpp=args.bpp)
+            result.exit_code = enc_rc
             if not ok:
                 result.encode_ok = False
                 result.error_msg = err
@@ -701,6 +767,7 @@ Examples:
                                                   args.width, args.height, psnr_log,
                                                   bpp=args.bpp)
             per_frame_data[(codec_key, gop)] = frames_psnr
+            result.frames_decoded = len(frames_psnr)
 
             # Per-frame sizes
             if codec_key == "av1":
@@ -737,23 +804,69 @@ Examples:
     print()
 
     # Flag AV1 issues
+    # WHAT THIS GATES. A detected quality collapse, and an encode that did
+    # not produce a comparable stream. Both must turn this script RED:
+    # printing them and returning 0 with everything else would mean the
+    # collapse this script exists to find cannot fail it.
+    failed = False
+
+    # NO ENCODE-CAPABLE DEVICE IS A SKIP, NOT A FAILURE, and this is the only
+    # test in the gpu suite written in Python -- every C++ sibling reports the
+    # same condition by returning 77 (ctest SKIP_RETURN_CODE). Returning 1
+    # instead makes a GPU-less runner, which is what CI uses, look like a
+    # quality regression.
+    #
+    # THE SIGNAL IS THE EXIT STATUS, NOT THE STDERR TEXT. The encoder exits 69
+    # only when the VkResult says the device cannot do this, and EXIT_FAILURE
+    # for out of memory, initialization, device loss and unknown alike. This
+    # used to match "Error creating the encoder instance" instead, which the
+    # encoder prints before every one of those -- so each of them skipped.
+    if is_unsupported_run(results):
+        print(f"SKIP: no encode-capable device "
+              f"({results[0].error_msg.strip()})")
+        return 77
+
+    if not results:
+        print("FAIL: no encode produced a result")
+        failed = True
+    for r in results:
+        if not r.encode_ok:
+            print(f"FAIL: encode did not complete: codec={r.codec} GOP={r.gop}"
+                  f" (exit {r.exit_code}): {r.error_msg}")
+            failed = True
+
+    # A SHORT STREAM IS NOT A PASS. An encode that stops early still leaves a
+    # file the decoder reads happily, and PSNR over the frames that survived
+    # says nothing about the ones that did not. The requested count is the
+    # only number that makes the comparison below mean what it claims.
+    for r in short_rows(results, args.num_frames):
+        got = "no" if r.frames_decoded is None else str(r.frames_decoded)
+        print(f"FAIL: codec={r.codec} GOP={r.gop} decoded {got} frame(s) of "
+              f"{args.num_frames} requested")
+        failed = True
+
     av1_results = [r for r in results if r.codec == "av1" and r.encode_ok]
     if av1_results:
         print("AV1 Quality Analysis:")
         for r in av1_results:
             frames = per_frame_data.get(("av1", r.gop), [])
             if not frames:
+                print(f"FAIL: GOP={r.gop}: no per-frame PSNR to judge")
+                failed = True
                 continue
             min_psnr = min(f["psnr_avg"] for f in frames)
             max_psnr = max(f["psnr_avg"] for f in frames)
             spread = max_psnr - min_psnr
-            if spread > 10:
-                print(f"  ⚠ GOP={r.gop}: PSNR spread {spread:.1f} dB "
-                      f"(min={min_psnr:.1f}, max={max_psnr:.1f}) — quality collapse detected")
+            if spread > PSNR_SPREAD_LIMIT_DB:
+                print(f"  FAIL GOP={r.gop}: PSNR spread {spread:.1f} dB "
+                      f"(min={min_psnr:.1f}, max={max_psnr:.1f}) "
+                      f"— quality collapse detected")
+                failed = True
             else:
-                print(f"  ✓ GOP={r.gop}: PSNR spread {spread:.1f} dB — acceptable")
+                print(f"  ok   GOP={r.gop}: PSNR spread {spread:.1f} dB "
+                      f"— within {PSNR_SPREAD_LIMIT_DB:g} dB")
 
-    return 0
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
