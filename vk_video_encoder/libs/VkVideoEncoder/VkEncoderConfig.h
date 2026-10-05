@@ -1061,7 +1061,7 @@ public:
     uint32_t enablePreprocessComputeFilter : 1;
 #endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     uint32_t repeatInputFrames : 1;
-    // enablePictureRowColReplication
+    // --pictureRowColReplication: how the filter fills the input picture past its coded extent.
     // 0: row and column replication is disabled;
     // 1: (default) replicate the last row and column to the padding area;
     // 2: replicate only one row and one column to the padding area;
