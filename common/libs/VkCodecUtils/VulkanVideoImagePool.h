@@ -237,6 +237,12 @@ public:
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
                            VkSharedBaseObj<VulkanVideoImagePool>& imagePool);
 
+    // The extent the pool's images are created with, set by Configure().
+    VkExtent2D GetImageExtent() const
+    {
+        return { m_imageCreateInfo.extent.width, m_imageCreateInfo.extent.height };
+    }
+
     // For a pool whose images are written on one queue family and read on
     // another.
     //
