@@ -39,6 +39,10 @@ from tests.libs.video_test_framework_base import (
 from tests.libs.video_test_fetch_sample import (
     FetchableResource,
 )
+from tests.libs.video_test_rate_control import (
+    RateControlCheck,
+    check_stream,
+)
 
 
 @dataclass(init=False)
@@ -50,14 +54,16 @@ class EncodeTestSample(BaseTestConfig):
     width: int = 0
     height: int = 0
     validate_with_decoder: bool = True
+    rate_control_check: Optional[RateControlCheck] = None
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         profile: Optional[str] = None,
         source_format: str = "yuv",
         width: int = 0,
         height: int = 0,
         validate_with_decoder: bool = True,
+        rate_control_check: Optional[RateControlCheck] = None,
         **kwargs,
     ):
         """Initialize EncodeTestSample with all fields from base and child"""
@@ -67,6 +73,7 @@ class EncodeTestSample(BaseTestConfig):
         self.width = width
         self.height = height
         self.validate_with_decoder = validate_with_decoder
+        self.rate_control_check = rate_control_check
 
     @classmethod
     def from_dict(cls, data: dict) -> 'EncodeTestSample':
@@ -85,6 +92,13 @@ class EncodeTestSample(BaseTestConfig):
             validate_with_decoder=data.get("validate_with_decoder", True),
             width=data.get("width", 0),
             height=data.get("height", 0),
+            # Optional measurement of the stream against its rate-control
+            # target (tests/libs/video_test_rate_control.py). A malformed
+            # object raises here, at load time, rather than silently
+            # disabling the check.
+            rate_control_check=(
+                RateControlCheck.from_dict(data["rate_control_check"])
+                if data.get("rate_control_check") else None),
         )
 
     @property
@@ -320,6 +334,21 @@ class VulkanVideoEncodeTestFramework(VulkanVideoTestFrameworkBase):
                 result.error_message = "Decoder validation failed"
                 # Store validation output for display after test result
                 result.meta["decoder_validation_output"] = validation_output
+
+        # Measure the stream against the sample's rate-control target. It runs
+        # only on a stream that encoded and decoded, and a stream that cannot
+        # be measured fails the check.
+        if (config.rate_control_check is not None and
+                output_file.exists() and
+                result.status == VideoTestStatus.SUCCESS):
+            report = check_stream(output_file, config.rate_control_check)
+            result.meta["rate_control"] = report.to_dict()
+            result.meta["rate_control_summary"] = report.summary()
+            if not report.passed:
+                result.status = VideoTestStatus.ERROR
+                result.error_message = (
+                    "Rate control check failed: " +
+                    "; ".join(report.failures))
 
         # Clean up output file only if test succeeded and keep_files is False
         if (output_file.exists() and
