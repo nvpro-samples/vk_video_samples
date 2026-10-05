@@ -32,7 +32,8 @@ set_tests_properties(${TEST_NAME} PROPERTIES
 # the floor; this compiles the header alone, at exactly -std=c++17, and fails
 # the build if it needs anything newer.
 #
-# Syntax-only: there is nothing to link and nothing to run.
+# Syntax-only: there is nothing to link and nothing to run. It reads the Vulkan
+# headers the build uses (VULKAN_HEADERS_INCLUDE_DIR), not whatever the system has.
 set(V3_FLOOR_PROBE ${CMAKE_CURRENT_BINARY_DIR}/v3_cxx17_floor_probe.cpp)
 file(WRITE ${V3_FLOOR_PROBE}
      "#include \"vulkan_video_encoder.h\"\nint main() { return 0; }\n")
@@ -42,6 +43,7 @@ add_test(NAME vk-video-enc-header-cxx17-floor
                  -std=c++17 -fsyntax-only
                  -Wall -Wextra -Werror
                  -I${CMAKE_CURRENT_SOURCE_DIR}/../../include
+                 -I${VULKAN_HEADERS_INCLUDE_DIR}
                  -I${VULKAN_VIDEO_APIS_INCLUDE}
                  -I${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}
                  -DVK_USE_PLATFORM_XLIB_KHR
