@@ -197,6 +197,7 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
                                                 no periodic IDR is emitted after the first. 0 leaves\n\
                                                 the period to the device's preferred value.\n\
     --consecutiveBFrameCount        <integer> : Number of consecutive B frame count in a GOP \n\
+    --nonReferencePFramePeriod      <integer> : Without B frames, make every Nth P frame of a GOP a non-reference picture (0: none) \n\
     --pictureRowColReplication      <0|1|2>   : Padding of the input picture past its coded extent: 1 (default)\n\
                                                 replicates the last row and column into it, 2 one row and\n\
                                                 column, 0 leaves it\n\
@@ -612,6 +613,13 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 return -1;
             }
             enablePictureRowColReplication = replication;
+        } else if (args[i] == "--nonReferencePFramePeriod") {
+            uint32_t nonReferencePFramePeriod = 0;
+            if (++i >= argc || !parseUint(args[i], nonReferencePFramePeriod)) {
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            gopStructure.SetNonReferencePFramePeriod(nonReferencePFramePeriod);
         } else if (args[i] == "--temporalLayerCount") {
             uint8_t temporalLayerCount = EncoderConfig::DEFAULT_TEMPORAL_LAYER_COUNT;
             if (++i >= argc || !parseUint(args[i], temporalLayerCount)) {
