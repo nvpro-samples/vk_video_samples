@@ -179,6 +179,12 @@ public:
     uint8_t GetTemporalLayerCount() const { return m_temporalLayerCount; }
 
     void SetClosedGop() { m_closedGop = true; }
+
+    // Every nonReferencePFramePeriod-th P frame of a GOP (by its position in the GOP) is
+    // not a reference picture; 0 makes every P frame a reference. Applies only without
+    // B frames, where no later picture in input order depends on a P frame's position.
+    void SetNonReferencePFramePeriod(uint32_t nonReferencePFramePeriod) { m_nonReferencePFramePeriod = nonReferencePFramePeriod; }
+    uint32_t GetNonReferencePFramePeriod() const { return m_nonReferencePFramePeriod; }
     bool IsClosedGop() { return m_closedGop; }
 
     // lastFrameType is the type of frame that will be used for the last frame in the stream.
@@ -304,7 +310,12 @@ public:
                 gopPos.encodeOrder = gopState.positionInInputOrder;
             }
 
-            gopPos.flags |= FLAGS_IS_REF;
+            const bool nonReferenceP = (gopPos.pictureType == FRAME_TYPE_P) &&
+                                       (m_nonReferencePFramePeriod > 0) && (m_gopFrameCycle == 1) &&
+                                       ((gopPos.inGop % m_nonReferencePFramePeriod) == 0);
+            if (!nonReferenceP) {
+                gopPos.flags |= FLAGS_IS_REF;
+            }
 
             // Edge case fix: When a P-frame naturally falls on the position just before
             // an IDR boundary (based on the B-frame pattern, not promoted from B-frame),
@@ -410,5 +421,6 @@ private:
     uint32_t              m_intraRefreshCycleDuration;
     uint32_t              m_intraRefreshCycleRestartIndex;
     uint32_t              m_intraRefreshSkippedStartIndex;
+    uint32_t              m_nonReferencePFramePeriod;
 };
 #endif /* _VKVIDEOENCODER_VKVIDEOGOPSTRUCTURE_H_ */

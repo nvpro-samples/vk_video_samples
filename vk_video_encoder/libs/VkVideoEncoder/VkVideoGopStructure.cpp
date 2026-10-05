@@ -36,6 +36,7 @@ VkVideoGopStructure::VkVideoGopStructure(uint32_t gopFrameCount,
     , m_intraRefreshCycleDuration(intraRefreshCycleDuration)
     , m_intraRefreshCycleRestartIndex(0)
     , m_intraRefreshSkippedStartIndex(0)
+    , m_nonReferencePFramePeriod(0)
 {
     Init(uint64_t(-1));
 }
