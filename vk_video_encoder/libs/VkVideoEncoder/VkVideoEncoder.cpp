@@ -2042,6 +2042,10 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
             // row and column replication is disabled. Don't touch the image padding area.
             dstPictureResourceInfo.codedExtent = copyImageExtent;
         }
+        // The filter writes only inside the input image.
+        const VkExtent2D inputImageExtent = m_inputImagePool->GetImageExtent();
+        dstPictureResourceInfo.codedExtent.width  = std::min(dstPictureResourceInfo.codedExtent.width,  inputImageExtent.width);
+        dstPictureResourceInfo.codedExtent.height = std::min(dstPictureResourceInfo.codedExtent.height, inputImageExtent.height);
 
         // Get image view for filter (nullptr if no pool)
         VkSharedBaseObj<VkImageResourceView> subsampledImageView;
@@ -3789,9 +3793,21 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         std::max(m_maxCodedExtent.height, encoderConfig->videoCapabilities.minCodedExtent.height)
     };
 
+    // The input images extend to pictureAccessGranularity, the area the encoder may read: the
+    // filter replicates the last row and column into it (enablePictureRowColReplication), and
+    // texels outside an image are not part of it, so they must lie inside the image.
+    const VkExtent2D inputImageExtent {
+        std::max(vk::alignedSize(m_maxCodedExtent.width,
+                                 std::max(encoderConfig->videoCapabilities.pictureAccessGranularity.width, 1u)),
+                 encoderConfig->videoCapabilities.minCodedExtent.width),
+        std::max(vk::alignedSize(m_maxCodedExtent.height,
+                                 std::max(encoderConfig->videoCapabilities.pictureAccessGranularity.height, 1u)),
+                 encoderConfig->videoCapabilities.minCodedExtent.height)
+    };
+
     // Query and select DRM format modifier if requested
     if (encoderConfig->drmFormatModifierIndex >= 0) {
-        result = SelectDrmFormatModifier(encoderConfig, m_imageInFormat, inImageUsage, imageExtent);
+        result = SelectDrmFormatModifier(encoderConfig, m_imageInFormat, inImageUsage, inputImageExtent);
         if (result != VK_SUCCESS) {
             VkEncPrintfErr("\nInitEncoder Error: Failed to select DRM format modifier.\n");
             return result;
@@ -3823,7 +3839,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     result = m_inputImagePool->Configure( m_vkDevCtx,
                                           encoderConfig->numInputImages,
                                           m_imageInFormat,
-                                          imageExtent,
+                                          inputImageExtent,
                                           inImageUsage,
                                           inputPoolQueueFamilies,
                                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
