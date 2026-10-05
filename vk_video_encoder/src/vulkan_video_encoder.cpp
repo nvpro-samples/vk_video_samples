@@ -679,14 +679,14 @@ public:
         m_config.externalEncodeQueueFamilyIndex  = platform.encodeQueueFamilyIndex;
         m_config.externalComputeQueueFamilyIndex = platform.computeQueueFamilyIndex;
 
-        m_config.deviceId    = platform.deviceIndex;
+        // deviceId and gpuUUID stay at their "no selection" values for the same
+        // reason. The platform's device selectors act on its context: gpuUuid
+        // pins the context to one device (VkEncCreatePlatform) and deviceIndex
+        // picks the context's device entry (CreateSession). A session created
+        // on the context refuses either selector in its configuration.
         m_config.validate    = platform.enableValidation ? VK_TRUE : VK_FALSE;
         m_config.silenceStdio = platform.silenceStdio ? VK_TRUE : VK_FALSE;
         m_config.verbose     = VK_FALSE;
-        if (platform.gpuUuidValid) {
-            std::copy(std::begin(platform.gpuUuid), std::end(platform.gpuUuid),
-                      std::begin(m_config.gpuUUID));
-        }
 
         // The three bitstream code points default to "unspecified" (2) rather
         // than to a guess about the caller's content.
