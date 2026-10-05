@@ -406,6 +406,12 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
 {
     assert(encodeFrameInfo);
 
+    // Frames are read from the input file through the linear staging pool, which InitEncoder
+    // creates only when there is an input file; an encoder fed external frames has neither.
+    if (!m_linearInputImagePool) {
+        return VK_ERROR_NOT_PERMITTED_KHR;
+    }
+
     encodeFrameInfo->frameInputOrderNum = m_inputFrameNum++;
     encodeFrameInfo->lastFrame = !(encodeFrameInfo->frameInputOrderNum < (m_encoderConfig->numFrames - 1));
 
@@ -3731,8 +3737,9 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     const VkImageUsageFlags dpbImageUsage = VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR;
 
     // Linear staging pool — only needed for file-based input (CPU upload).
-    // External input (IPC) provides OPTIMAL images directly.
-    if (!encoderConfig->repeatInputFrames) {
+    // External input (IPC) provides OPTIMAL images directly. Keyed on the input
+    // file, not on repeatInputFrames: a file encoded in a loop is still staged.
+    if (encoderConfig->inputFileHandler.HasFileName()) {
         result = VulkanVideoImagePool::Create(m_vkDevCtx, m_linearInputImagePool);
         if (result != VK_SUCCESS) {
             VkEncPrintfErr("\nInitEncoder Error: Failed to create linearInputImagePool.\n");
