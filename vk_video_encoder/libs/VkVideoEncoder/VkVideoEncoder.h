@@ -1392,11 +1392,13 @@ protected:
     // Local patch; not in upstream vk_video_samples. Optional queue-family-
     // ownership transfer for imported (VK_QUEUE_FAMILY_FOREIGN_EXT)
     // external images.
+    // baseArrayLayer: the one array layer of the view's image the barrier covers.
     VkImageLayout TransitionImageLayout(VkCommandBuffer cmdBuf,
                                         VkSharedBaseObj<VkImageResourceView>& imageView,
                                         VkImageLayout oldLayout, VkImageLayout newLayout,
                                         uint32_t srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                                        uint32_t dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED);
+                                        uint32_t dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                        uint32_t baseArrayLayer = 0);
 
     // Local patch; not in upstream vk_video_samples.
     //
