@@ -1343,14 +1343,21 @@ public:
         // Luma is the first plane in every layout this applies to, so a prefix of the
         // file is luma regardless of plane count. Cap the scan: alignment is a property
         // of the encoding, so a prefix settles it.
+        // The scan starts at the first frame's samples: a Y4M file opens with a text header
+        // and a FRAME line, whose ASCII bytes set bits above the bit depth and would read as
+        // left-aligned data.
+        const size_t dataOffset = inputFileHandler.GetCurrFrameOffset();
+        if (dataOffset >= inputFileHandler.GetFileSize()) {
+            return defaultShift;
+        }
         const size_t lumaSamples = (size_t)input.width * input.height;
         const size_t maxSamples  = (lumaSamples > 0) ? lumaSamples : (64u * 1024u);
-        size_t numSamples = std::min(maxSamples, inputFileHandler.GetFileSize() / 2);
+        size_t numSamples = std::min(maxSamples, (inputFileHandler.GetFileSize() - dataOffset) / 2);
         if (numSamples == 0) {
             return defaultShift;
         }
 
-        const uint8_t* pBytes = inputFileHandler.GetMappedPtr(0);
+        const uint8_t* pBytes = inputFileHandler.GetMappedPtr(dataOffset);
         if (pBytes == nullptr) {
             return defaultShift;
         }
