@@ -438,6 +438,8 @@ class VulkanVideoTestFrameworkBase:
             "error_message": result.error_message,
             "command_line": result.command_line
         }
+        if result.meta.get("rate_control") is not None:
+            result_dict["rate_control"] = result.meta["rate_control"]
 
         if hasattr(result.config, 'full_path'):
             result_dict["input_file"] = str(result.config.full_path)
@@ -930,6 +932,10 @@ class VulkanVideoTestFrameworkBase:
             print_command_output(result)
         elif self.verbose and (result.stdout or result.stderr):
             print_command_output(result)
+
+        rate_control_summary = result.meta.get("rate_control_summary")
+        if rate_control_summary:
+            print(f"   Rate control: {rate_control_summary}")
 
         decoder_output = result.meta.get("decoder_validation_output")
         if decoder_output and result.status == VideoTestStatus.ERROR:

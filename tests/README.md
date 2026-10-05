@@ -232,6 +232,33 @@ The `encode_samples.json` file defines encoder test cases:
 | `source_url` | Yes | URL to download the YUV input file |
 | `source_checksum` | Yes | SHA256 checksum of the source file |
 | `source_filepath` | Yes | Relative path where the file is stored in `resources/` |
+| `rate_control_check` | No | Measure the encoded stream against its rate-control target — see [Rate Control Checks](#rate-control-checks) |
+
+#### Rate Control Checks
+
+A sample with a `rate_control_check` object is measured after it encodes and decodes: ffprobe lists
+the size of every frame (no decoding) and counts the decoded frames, and
+`libs/video_test_rate_control.py` compares them with the target. The result line prints the
+measurements, and the JSON results carry them under `rate_control`.
+
+| Key | Required | Meaning |
+|-----|----------|---------|
+| `target_bitrate` | Yes | The `--averageBitrate` of the sample, in bits per second |
+| `frame_rate` | No | Frames per second; defaults to the encoder's 30000/1001 |
+| `vbv_buffer_size` | No | The `--vbvBufferSize`, in bits; enables the VBV overflow count |
+| `expected_frames` | No | Limit: the stream and the decoded output must both have this many frames |
+| `max_bitrate_error` | No | Limit: largest allowed average-bitrate error, as a fraction (0.35 = ±35%) |
+| `max_frame_ratio` | No | Limit: largest allowed frame size, as a multiple of the per-frame budget |
+| `max_vbv_overflows` | No | Limit: largest allowed number of frames that overflow the VBV model |
+
+Limits that are absent are measured and reported but not enforced. A stream that cannot be
+measured (no ffprobe on `PATH`, an unreadable stream) fails the check. Unknown keys are rejected
+when the samples load, so a misspelled limit cannot disable itself.
+
+The `*_ll_cbr_svbv` and `*_ull_cbr_svbv` cells, one pair per codec, target NVIDIA's
+ultra-low-latency (ULL) tuning profile: the same 90-frame stream at CBR 300 kbps with a single-frame
+VBV, encoded with the low-latency tuning (the control) and with the ULL tuning. Compare their
+rate-control lines.
 
 #### Extra Arguments Example
 
