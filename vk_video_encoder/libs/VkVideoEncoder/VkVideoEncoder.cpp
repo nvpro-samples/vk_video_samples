@@ -4670,9 +4670,9 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
                                                     VkSharedBaseObj<VkImageResourceView>& imageView,
                                                     VkImageLayout oldLayout, VkImageLayout newLayout,
                                                     uint32_t srcQueueFamilyIndex,
-                                                    uint32_t dstQueueFamilyIndex)
+                                                    uint32_t dstQueueFamilyIndex,
+                                                    uint32_t baseArrayLayer)
 {
-    uint32_t baseArrayLayer = 0;
     VkImageMemoryBarrier2KHR imageBarrier = {
 
             VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR, // VkStructureType sType
@@ -6215,9 +6215,15 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
     if (m_psnr && m_psnr->Enabled() && (encodeFrameInfo->setupImageResource != nullptr)) {
         VkSharedBaseObj<VkImageResourceView> setupEncodeImageView;
         encodeFrameInfo->setupImageResource->GetImageView(setupEncodeImageView);
-        TransitionImageLayout(cmdBuf, setupEncodeImageView, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        // The copy reads the reconstructed picture's layer of the DPB image (with a layered DPB
+        // every picture is a layer of one image): that layer is the one to transition.
+        const uint32_t setupLayer = setupEncodeImageView->GetImageSubresourceRange().baseArrayLayer +
+                                    encodeFrameInfo->setupImageResource->GetPictureResourceInfo()->baseArrayLayer;
+        TransitionImageLayout(cmdBuf, setupEncodeImageView, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                              VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, setupLayer);
         m_psnr->CaptureOutput(cmdBuf, encodeFrameInfo.get());
-        TransitionImageLayout(cmdBuf, setupEncodeImageView, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR);
+        TransitionImageLayout(cmdBuf, setupEncodeImageView, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR,
+                              VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, setupLayer);
     }
 
     // ******* End recording of the video commands *************

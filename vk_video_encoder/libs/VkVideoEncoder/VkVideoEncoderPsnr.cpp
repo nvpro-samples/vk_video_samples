@@ -536,6 +536,10 @@ bool VkVideoEncoderPsnr::CaptureOutput(VkCommandBuffer cmdBuf, void* encodeFrame
     const bool dpbIs2Plane = (m_imageDpbFormat == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM);
     VkImage dpbImage = setupEncodeImageView->GetImageResource()->GetImage();
     VkImage stagingImage = stagingImageView->GetImageResource()->GetImage();
+    // The reconstructed picture's layer of the DPB image: with a layered DPB every picture
+    // resource shares one image.
+    const uint32_t dpbLayer = setupEncodeImageView->GetImageSubresourceRange().baseArrayLayer +
+                              encodeFrameInfo.setupImageResource->GetPictureResourceInfo()->baseArrayLayer;
 
     // Transition staging image from UNDEFINED to TRANSFER_DST before copy
     VkImageMemoryBarrier2KHR stagingBarrier = {};
@@ -557,16 +561,16 @@ bool VkVideoEncoderPsnr::CaptureOutput(VkCommandBuffer cmdBuf, void* encodeFrame
     m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &depInfo);
 
     if (dpbIs2Plane) {
-        VkImageCopy r0 = { { VK_IMAGE_ASPECT_PLANE_0_BIT, 0, 0, 1 }, { 0, 0, 0 }, { VK_IMAGE_ASPECT_PLANE_0_BIT, 0, 0, 1 }, { 0, 0, 0 }, { w, h, 1 } };
+        VkImageCopy r0 = { { VK_IMAGE_ASPECT_PLANE_0_BIT, 0, dpbLayer, 1 }, { 0, 0, 0 }, { VK_IMAGE_ASPECT_PLANE_0_BIT, 0, 0, 1 }, { 0, 0, 0 }, { w, h, 1 } };
         m_vkDevCtx->CmdCopyImage(cmdBuf, dpbImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &r0);
-        VkImageCopy r1 = { { VK_IMAGE_ASPECT_PLANE_1_BIT, 0, 0, 1 }, { 0, 0, 0 }, { VK_IMAGE_ASPECT_PLANE_1_BIT, 0, 0, 1 }, { 0, 0, 0 }, { chromaW, chromaH, 1 } };
+        VkImageCopy r1 = { { VK_IMAGE_ASPECT_PLANE_1_BIT, 0, dpbLayer, 1 }, { 0, 0, 0 }, { VK_IMAGE_ASPECT_PLANE_1_BIT, 0, 0, 1 }, { 0, 0, 0 }, { chromaW, chromaH, 1 } };
         m_vkDevCtx->CmdCopyImage(cmdBuf, dpbImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, stagingImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &r1);
     } else {
         for (uint32_t p = 0; p < numInputPlanes; p++) {
             const uint32_t pw = (p == 0) ? w : chromaW;
             const uint32_t ph = (p == 0) ? h : chromaH;
             VkImageCopy region = {
-                { (VkImageAspectFlags)(VK_IMAGE_ASPECT_PLANE_0_BIT << p), 0, 0, 1 }, { 0, 0, 0 },
+                { (VkImageAspectFlags)(VK_IMAGE_ASPECT_PLANE_0_BIT << p), 0, dpbLayer, 1 }, { 0, 0, 0 },
                 { (VkImageAspectFlags)(VK_IMAGE_ASPECT_PLANE_0_BIT << p), 0, 0, 1 }, { 0, 0, 0 },
                 { pw, ph, 1 }
             };
