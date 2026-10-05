@@ -267,6 +267,18 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     uint32_t alignHeight = videoCapabilities.pictureAccessGranularity.height - 1;
     imageExtent.height = ((imageExtent.height + alignHeight) & ~alignHeight);
 
+    // Whole chroma samples too, which a granularity of 1 does not give at the odd coded extent an
+    // AV1 or VP9 picture can have: an image of a 4:2:0 format has an even width and height, one of
+    // a 4:2:2 format an even width (VUID-VkImageCreateInfo-format-04712,
+    // VUID-VkImageCreateInfo-format-04713). The DPB, output and filter images share this extent.
+    const VkMpFormatInfo* dpbFormatInfo = YcbcrVkFormatInfo(dpbImageFormat);
+    if ((dpbFormatInfo != nullptr) && dpbFormatInfo->planesLayout.secondaryPlaneSubsampledX) {
+        imageExtent.width = vk::alignedSize(imageExtent.width, 2u);
+    }
+    if ((dpbFormatInfo != nullptr) && dpbFormatInfo->planesLayout.secondaryPlaneSubsampledY) {
+        imageExtent.height = vk::alignedSize(imageExtent.height, 2u);
+    }
+
     VkVideoSessionCreateFlagsKHR sessionCreateFlags{};
 
 #ifdef VK_KHR_video_maintenance1
