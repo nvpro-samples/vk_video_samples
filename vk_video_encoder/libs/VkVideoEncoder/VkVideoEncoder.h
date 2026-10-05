@@ -1106,6 +1106,9 @@ public:
         VkSharedBaseObj<VulkanVideoImagePoolNode>& outNode);
 
     VkResult StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
+    VkResult InitEncodeTiming(uint32_t numEncodeCmdBuffers);
+    void ReadEncodeTiming(uint32_t firstQuery);
+    void ReportEncodeTiming();
     VkResult StageInputFrameQpMap(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                   VkCommandBuffer cmdBuf = VK_NULL_HANDLE);
     VkResult SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
@@ -1881,6 +1884,13 @@ protected:
 #ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     VkSharedBaseObj<VulkanFilter>            m_inputComputeFilter;
 #endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+    // --gpuEncodeTiming: two timestamps per encode command buffer, around the video
+    // coding scope, and the per-frame durations read back with the bitstream.
+    VkQueryPool                              m_encodeTimestampPool = VK_NULL_HANDLE;
+    double                                   m_timestampPeriodNs = 1.0;
+    uint64_t                                 m_timestampMask = ~0ULL;
+    std::mutex                               m_encodeTimingMutex;
+    std::vector<double>                      m_encodeGpuTimesMs;
     // Filter-dispatch observable; see the accessors at the top of the class.
     // Declared OUTSIDE the compute-filter ifdef so the member layout of this
     // class does not depend on that macro -- the counters simply stay 0 in a

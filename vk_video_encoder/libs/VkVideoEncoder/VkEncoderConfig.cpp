@@ -152,6 +152,7 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     -c, --codec                     <string> select codec type: avc (h264) or hevc (h265) or av1\n\
     --verbose                       verbose output\n\
     --psnr                          enable PSNR metrics (input vs reconstructed)\n\
+    --gpuEncodeTiming               time each encode on the GPU (encode-queue timestamps)\n\
     --crcInit                       <list> comma-separated CRC32 seed uint32s (decimal or 0x hex), e.g. 0xFFFFFFFF,0\n\
     --noDeviceFallback                        : don't try other GPUs if first device doesn't meet requirements \n\
     --encoderConfig                 <path>    : load base config from JSON (CLI overrides); see json_config/encoder_config.schema.json\n\
@@ -918,6 +919,8 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
 #endif // NV_AQ_GPU_LIB_SUPPORTED
         } else if (args[i] == "--psnr") {
             enablePsnrMetrics = 1;
+        } else if (args[i] == "--gpuEncodeTiming") {
+            gpuEncodeTiming = 1;
         } else if (args[i] == "--crcInit") {
             if (++i >= argc) {
                 VkEncPrintfErr("--crcInit requires a comma-separated list of uint32 values\n");

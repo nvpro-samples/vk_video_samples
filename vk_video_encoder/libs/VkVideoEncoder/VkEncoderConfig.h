@@ -1068,6 +1068,9 @@ public:
     uint32_t enablePictureRowColReplication : 2;
     uint32_t enableOutOfOrderRecording : 1; // Testing only - don't use for production!
     uint32_t enablePsnrMetrics : 1;
+    // --gpuEncodeTiming: time each frame's video coding scope with GPU timestamps on the
+    // encode queue, and print the distribution when the encoder is torn down.
+    uint32_t gpuEncodeTiming : 1;
     std::vector<uint32_t> crcInitValue;  // initialize crc values
     uint32_t disableEncodeParameterOptimizations : 1;
     uint32_t asyncAssembly : 1;
@@ -1243,6 +1246,7 @@ public:
     , enablePictureRowColReplication(1)
     , enableOutOfOrderRecording(false)
     , enablePsnrMetrics(false)
+    , gpuEncodeTiming(false)
     , disableEncodeParameterOptimizations(false)
     , asyncAssembly(true)
     , assemblyThreadCount(2)

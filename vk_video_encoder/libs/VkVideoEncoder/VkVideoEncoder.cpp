@@ -2784,7 +2784,70 @@ VkResult VkVideoEncoder::ReadbackBitstreamData(
     readback.bitstreamSize = encodeResult.bitstreamSize;
     readback.status = encodeResult.status;
     readback.readbackDone = true;
+
+    if (m_encodeTimestampPool != VK_NULL_HANDLE) {
+        ReadEncodeTiming(2 * encodeFrameInfo->encodeCmdBuffer->GetNodePoolIndex());
+    }
     return VK_SUCCESS;
+}
+
+VkResult VkVideoEncoder::InitEncodeTiming(uint32_t numEncodeCmdBuffers)
+{
+    VkPhysicalDeviceProperties properties{};
+    m_vkDevCtx->GetPhysicalDeviceProperties(m_vkDevCtx->getPhysicalDevice(), &properties);
+    m_timestampPeriodNs = properties.limits.timestampPeriod;
+
+    std::vector<VkQueueFamilyProperties> families;
+    uint32_t familyCount = 0;
+    m_vkDevCtx->GetPhysicalDeviceQueueFamilyProperties(m_vkDevCtx->getPhysicalDevice(), &familyCount, nullptr);
+    families.resize(familyCount);
+    m_vkDevCtx->GetPhysicalDeviceQueueFamilyProperties(m_vkDevCtx->getPhysicalDevice(), &familyCount, families.data());
+    const uint32_t validBits = families[m_vkDevCtx->GetVideoEncodeQueueFamilyIdx()].timestampValidBits;
+    if (validBits == 0) {
+        VkEncPrintfErr("\nInitEncoder Error: the encode queue family has no timestamps; --gpuEncodeTiming is unavailable.\n");
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+    m_timestampMask = (validBits >= 64) ? ~0ULL : ((1ULL << validBits) - 1ULL);
+
+    VkQueryPoolCreateInfo createInfo { VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
+    createInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    createInfo.queryCount = 2 * numEncodeCmdBuffers;
+    return m_vkDevCtx->CreateQueryPool(*m_vkDevCtx, &createInfo, nullptr, &m_encodeTimestampPool);
+}
+
+void VkVideoEncoder::ReadEncodeTiming(uint32_t firstQuery)
+{
+    uint64_t timestamps[2] = {};
+    VkResult result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx, m_encodeTimestampPool, firstQuery, 2,
+                                                      sizeof(timestamps), timestamps, sizeof(timestamps[0]),
+                                                      VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+    if (result != VK_SUCCESS) {
+        return;
+    }
+    // The counter is timestampValidBits wide and may wrap between the two writes.
+    const uint64_t ticks = (timestamps[1] - timestamps[0]) & m_timestampMask;
+    std::lock_guard<std::mutex> lock(m_encodeTimingMutex);
+    m_encodeGpuTimesMs.push_back(ticks * m_timestampPeriodNs * 1e-6);
+}
+
+void VkVideoEncoder::ReportEncodeTiming()
+{
+    std::lock_guard<std::mutex> lock(m_encodeTimingMutex);
+    if (m_encodeGpuTimesMs.empty()) {
+        return;
+    }
+    std::vector<double> sorted = m_encodeGpuTimesMs;
+    std::sort(sorted.begin(), sorted.end());
+    double total = 0.0;
+    for (double t : sorted) {
+        total += t;
+    }
+    const size_t n = sorted.size();
+    VkEncPrintfOut("GPU encode time: frames=%zu mean=%.3f ms median=%.3f ms p95=%.3f ms min=%.3f ms max=%.3f ms "
+                   "total=%.1f ms (%.1f fps of encode-queue time)\n",
+                   n, total / n, sorted[n / 2], sorted[std::min(n - 1, (n * 95) / 100)], sorted.front(), sorted.back(),
+                   total, (total > 0.0) ? (1000.0 * n / total) : 0.0);
+    m_encodeGpuTimesMs.clear();
 }
 
 VkResult VkVideoEncoder::WriteBitstreamToFile(
@@ -4500,6 +4563,13 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         return result;
     }
 
+    if (encoderConfig->gpuEncodeTiming) {
+        result = InitEncodeTiming(encoderConfig->numInputImages);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+    }
+
     result = CreateFrameInfoBuffersQueue(encoderConfig->numInputImages);
     if(result != VK_SUCCESS) {
         VkEncPrintfErr("\nInitEncoder Error: Failed to create FrameInfoBuffersQueue.\n");
@@ -6038,6 +6108,12 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         m_psnr->CaptureSource(cmdBuf, encodeFrameInfo.get());
     }
 
+    const uint32_t timingIndex = 2 * encodeCmdBuffer->GetNodePoolIndex();
+    if (m_encodeTimestampPool != VK_NULL_HANDLE) {
+        vkDevCtx->CmdResetQueryPool(cmdBuf, m_encodeTimestampPool, timingIndex, 2);
+        vkDevCtx->CmdWriteTimestamp(cmdBuf, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_encodeTimestampPool, timingIndex);
+    }
+
     vkDevCtx->CmdBeginVideoCodingKHR(cmdBuf, &encodeBeginInfo);
 
     if (encodeFrameInfo->controlCmd != VkVideoCodingControlFlagsKHR()) {
@@ -6175,6 +6251,10 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
 
     VkVideoEndCodingInfoKHR encodeEndInfo { VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR };
     vkDevCtx->CmdEndVideoCodingKHR(cmdBuf, &encodeEndInfo);
+
+    if (m_encodeTimestampPool != VK_NULL_HANDLE) {
+        vkDevCtx->CmdWriteTimestamp(cmdBuf, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_encodeTimestampPool, timingIndex + 1);
+    }
 
     // Queue-family RELEASE -- the missing half of the Path-A acquire made
     // just before CmdBeginVideoCodingKHR. Placed immediately after the coding
@@ -7086,6 +7166,12 @@ int32_t VkVideoEncoder::DeinitEncoder()
 
     if (m_vkDevCtx)
         m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::ENCODE, 0);
+
+    ReportEncodeTiming();
+    if (m_encodeTimestampPool != VK_NULL_HANDLE) {
+        m_vkDevCtx->DestroyQueryPool(*m_vkDevCtx, m_encodeTimestampPool, nullptr);
+        m_encodeTimestampPool = VK_NULL_HANDLE;
+    }
 
     if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
          m_vkDevCtx->DestroySemaphore(*m_vkDevCtx, m_hwLoadBalancingTimelineSemaphore, NULL);
