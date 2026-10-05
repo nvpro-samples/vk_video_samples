@@ -3087,6 +3087,18 @@ static YcbcrBtStandard VkEncModelToBtStandard(
 
 #endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
 
+// The extent rounded up to whole chroma samples of the format: an image of a 4:2:0 format has an
+// even width and height, one of a 4:2:2 format an even width (VUID-VkImageCreateInfo-format-04712,
+// VUID-VkImageCreateInfo-format-04713). Other formats keep the extent.
+static VkExtent2D ChromaAlignedExtent(VkFormat format, const VkExtent2D& extent)
+{
+    const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(format);
+    const bool subsampledX = (mpInfo != nullptr) && mpInfo->planesLayout.secondaryPlaneSubsampledX;
+    const bool subsampledY = (mpInfo != nullptr) && mpInfo->planesLayout.secondaryPlaneSubsampledY;
+    return { subsampledX ? vk::alignedSize(extent.width,  2u) : extent.width,
+             subsampledY ? vk::alignedSize(extent.height, 2u) : extent.height };
+}
+
 VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConfig)
 {
 
@@ -3750,9 +3762,9 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
             return result;
         }
 
-        VkExtent2D linearInputImageExtent{
+        const VkExtent2D linearInputImageExtent = ChromaAlignedExtent(encoderConfig->input.vkFormat, {
             std::max(m_maxCodedExtent.width, encoderConfig->input.width),
-            std::max(m_maxCodedExtent.height, encoderConfig->input.height)};
+            std::max(m_maxCodedExtent.height, encoderConfig->input.height)});
 
         result = m_linearInputImagePool->Configure(
             m_vkDevCtx, encoderConfig->numInputImages, encoderConfig->input.vkFormat,
@@ -3788,22 +3800,26 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         return result;
     }
 
-    VkExtent2D imageExtent {
+    // The DPB images, and the PSNR read-back images that receive copies of DPB pictures, cover the
+    // maximum coded extent rounded up to whole chroma samples: at an odd coded extent the coded
+    // extent half covers the last chroma column or row, and the images hold it.
+    VkExtent2D imageExtent = ChromaAlignedExtent(m_imageDpbFormat, {
         std::max(m_maxCodedExtent.width, encoderConfig->videoCapabilities.minCodedExtent.width),
         std::max(m_maxCodedExtent.height, encoderConfig->videoCapabilities.minCodedExtent.height)
-    };
+    });
 
     // The input images extend to pictureAccessGranularity, the area the encoder may read: the
     // filter replicates the last row and column into it (enablePictureRowColReplication), and
-    // texels outside an image are not part of it, so they must lie inside the image.
-    const VkExtent2D inputImageExtent {
+    // texels outside an image are not part of it, so they must lie inside the image. They also
+    // hold whole chroma samples where the granularity does not provide them.
+    const VkExtent2D inputImageExtent = ChromaAlignedExtent(m_imageInFormat, {
         std::max(vk::alignedSize(m_maxCodedExtent.width,
                                  std::max(encoderConfig->videoCapabilities.pictureAccessGranularity.width, 1u)),
                  encoderConfig->videoCapabilities.minCodedExtent.width),
         std::max(vk::alignedSize(m_maxCodedExtent.height,
                                  std::max(encoderConfig->videoCapabilities.pictureAccessGranularity.height, 1u)),
                  encoderConfig->videoCapabilities.minCodedExtent.height)
-    };
+    });
 
     // Query and select DRM format modifier if requested
     if (encoderConfig->drmFormatModifierIndex >= 0) {
