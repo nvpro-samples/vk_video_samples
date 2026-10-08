@@ -677,7 +677,9 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
         VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
         VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR |
         VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR |
-        VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR;
+        VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR |
+        VK_IMAGE_USAGE_VIDEO_ENCODE_QUANTIZATION_DELTA_MAP_BIT_KHR |
+        VK_IMAGE_USAGE_VIDEO_ENCODE_EMPHASIS_MAP_BIT_KHR;
     if ((imageCreateInfo.usage & kViewCompatibleUsage) == 0) {
         skipCombinedView = true;
     }

@@ -638,6 +638,20 @@ VkResult VkVideoEncoder::EncodeFrameCommon(VkSharedBaseObj<VkVideoEncodeFrameInf
         CodecHandleRateControlCmd(encodeFrameInfo);
     }
 
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+    // The NVIDIA AQ map library writes this frame's map into an image of the map pool (see the
+    // library's block below). The image is taken here, before ProcessQpMap chains the map, so
+    // every encode carries the map the library computes for it, the first one included.
+    if (m_aqAnalyzes && (encodeFrameInfo->srcQpMapImageResource == nullptr)) {
+        bool success = m_qpMapImagePool->GetAvailableImage(encodeFrameInfo->srcQpMapImageResource,
+                                                           VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR);
+        if (!success || (encodeFrameInfo->srcQpMapImageResource == nullptr)) {
+            assert(!"Can't get get srcQpMapImageResource!");
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+#endif // NV_AQ_GPU_LIB_SUPPORTED
+
     if (m_encoderConfig->enableQpMap) {
         ProcessQpMap(encodeFrameInfo);
     }
@@ -4048,8 +4062,13 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
             qpMapMemoryUseLinear = (m_qpMapTiling == VK_IMAGE_TILING_LINEAR);
         }
 
+        // A frame holds its map image until the frame information is recycled. The NVIDIA AQ map
+        // library also keeps the map of each frame it analyzes until it reuses that slot (one
+        // slot per input image), so it needs as many images again.
+        const uint32_t numQpMapImages = encoderConfig->enableAQ ? (2 * encoderConfig->numInputImages + 4)
+                                                                : encoderConfig->numInputImages;
         result = m_qpMapImagePool->Configure( m_vkDevCtx,
-                                              encoderConfig->numInputImages,
+                                              std::min<uint32_t>(numQpMapImages, (uint32_t)VulkanVideoImagePool::maxImages),
                                               m_imageQpMapFormat,
                                               qpMapExtent,
                                               qpMapImageUsage,

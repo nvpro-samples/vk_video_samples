@@ -738,6 +738,10 @@ public:
                 srcStagingImageView = nullptr;
                 srcEncodeImageResource = nullptr;
                 setupImageResource = nullptr;
+                // A frame's quantization map belongs to that frame: a recycled node takes
+                // (and fills) a new one, from the map file or from the NVIDIA AQ map library.
+                srcQpMapStagingResource = nullptr;
+                srcQpMapImageResource = nullptr;
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
                 subsampledImageResource = nullptr;  // Release subsampled Y image back to pool
 #endif // NV_AQ_GPU_LIB_SUPPORTED
