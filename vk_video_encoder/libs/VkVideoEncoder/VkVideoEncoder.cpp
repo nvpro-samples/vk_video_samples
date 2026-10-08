@@ -6448,11 +6448,10 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
         if (encodeFrameInfo->aqProcessorSlot) {
             requiredWaits++;
         } else
-#else
+#endif // NV_AQ_GPU_LIB_SUPPORTED
         if (encodeFrameInfo->inputCmdBuffer) {
             requiredWaits++;
         }
-#endif // NV_AQ_GPU_LIB_SUPPORTED
         if (encodeFrameInfo->qpMapCmdBuffer) {
             requiredWaits++;
         }
@@ -6534,7 +6533,9 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
             assert(!"srcQpMapImageResource must have a valid when aqProcessorSlot is valid");
         }
     } else
-#else // NV_AQ_GPU_LIB_SUPPORTED
+#endif // NV_AQ_GPU_LIB_SUPPORTED
+    // Without a map from the NVIDIA AQ map library (whose analysis waits for the staged
+    // input itself), the encode waits for the staged input.
     if (encodeFrameInfo->inputCmdBuffer) {
         waitSemaphoreInfos[waitSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
         waitSemaphoreInfos[waitSemaphoreCount].semaphore = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
@@ -6554,7 +6555,6 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
         waitSemaphoreInfos[waitSemaphoreCount].deviceIndex = 0;
         waitSemaphoreCount++;
     }
-#endif // NV_AQ_GPU_LIB_SUPPORTED
     if (encodeFrameInfo->qpMapCmdBuffer) {
         waitSemaphoreInfos[waitSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
         waitSemaphoreInfos[waitSemaphoreCount].semaphore = encodeFrameInfo->qpMapCmdBuffer->GetSemaphore();
