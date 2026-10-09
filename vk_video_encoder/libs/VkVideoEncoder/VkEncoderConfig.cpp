@@ -185,6 +185,7 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --crcInit                       <list> comma-separated CRC32 seed uint32s (decimal or 0x hex), e.g. 0xFFFFFFFF,0\n\
     --noDeviceFallback                        : don't try other GPUs if first device doesn't meet requirements \n\
     --encoderConfig                 <path>    : load base config from JSON (CLI overrides; its codec selects the codec without --codec); see json_config/encoder_config.schema.json\n\
+    -l, --logLevel                  <integer> : select the log level: 0 none, 1 error, 2 warning, 3 info (default), 4 debug\n\
     --dpbMode                       <string>  : select DPB mode: layered, separate\n\
     --inputWidth                    <integer> : Input Width \n\
     --inputHeight                   <integer> : Input Height \n\
@@ -426,6 +427,18 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
 
     appName = args[0];
 
+    // Double argument list handling to have the log level ready during the argument parsing.
+    for (int32_t i = 1; i < argc; i++) {
+        if (args[i] == "-l" || args[i] == "--logLevel") {
+            uint32_t logLevel = 0;
+            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &logLevel) != 1)) {
+                LOG_ERROR_CONFIG ( "invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            Logger::instance().setLogLevel(logLevel);
+        }
+    }
+
     const auto lambdaToLower = [](unsigned char c) { return std::tolower(c); };
 
     // --encoderConfig gives the base configuration, which every other option overrides wherever it
@@ -507,6 +520,13 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 VkEncPrintfOut("Selected codec: %s\n", codec_.c_str());
             }
             i++; // Skip the next argument since it's the codec value
+        } else if (args[i] == "-l" || args[i] == "--logLevel") {
+            uint32_t logLevel = 0;
+            if ((++i >= argc) || (sscanf(args[i].c_str(), "%u", &logLevel) != 1)) {
+                LOG_ERROR_CONFIG("invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            Logger::instance().setLogLevel(logLevel);
         } else if (args[i] == "--dpbMode") {
             std::string dpbMode = args[i + 1];
             if (dpbMode == "separate") {

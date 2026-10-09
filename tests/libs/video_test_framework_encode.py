@@ -376,6 +376,7 @@ class VulkanVideoEncodeTestFramework(VulkanVideoTestFrameworkBase):
             cmd.extend(["--inputNumPlanes", "3"])
 
         cmd.append("--verbose")
+        cmd.extend(["--logLevel", "4"])
 
         # Add profile if specified
         if config.profile:
