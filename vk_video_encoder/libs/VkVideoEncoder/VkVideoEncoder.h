@@ -299,9 +299,7 @@ public:
             , srcStagingImageView()
             , srcEncodeImageResource()
             , setupImageResource()
-#if NV_AQ_GPU_LIB_SUPPORTED
             , subsampledImageResource()
-#endif // NV_AQ_GPU_LIB_SUPPORTED
             , outputBitstreamBuffer()
             , dpbImageResources()
             , srcQpMapStagingResource()
@@ -742,9 +740,7 @@ public:
                 // (and fills) a new one, from the map file or from the NVIDIA AQ map library.
                 srcQpMapStagingResource = nullptr;
                 srcQpMapImageResource = nullptr;
-#ifdef NV_AQ_GPU_LIB_SUPPORTED
                 subsampledImageResource = nullptr;  // Release subsampled Y image back to pool
-#endif // NV_AQ_GPU_LIB_SUPPORTED
                 outputBitstreamBuffer = nullptr;
                 assert(numDpbImageResources <= ARRAYSIZE(dpbImageResources));
                 for (uint32_t i = 0; i < numDpbImageResources; i++) {
