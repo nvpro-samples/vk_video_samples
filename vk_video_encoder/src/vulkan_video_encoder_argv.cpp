@@ -127,6 +127,15 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
 
     m_vkDevCtxt.AddReqDeviceExtensions(requiredDeviceExtension);
     m_vkDevCtxt.AddOptDeviceExtensions(optinalDeviceExtension);
+    // A session with a quantization map (--qpMap, or the NVIDIA AQ map library) needs
+    // VK_KHR_video_encode_quantization_map and its feature on the device.
+    if (m_encoderConfig->enableQpMap) {
+        static const char* const quantizationMapExtension[] = {
+            VK_KHR_VIDEO_ENCODE_QUANTIZATION_MAP_EXTENSION_NAME,
+            nullptr
+        };
+        m_vkDevCtxt.AddOptDeviceExtensions(quantizationMapExtension);
+    }
 
     result = m_vkDevCtxt.InitVulkanDevice(m_encoderConfig->appName.c_str(), VK_NULL_HANDLE,
                                           m_encoderConfig->verbose);
