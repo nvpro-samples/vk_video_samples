@@ -43,6 +43,13 @@ namespace {
         "The NVIDIA AQ map library (--spatialAQStrength / --temporalAQStrength) computes every "
         "frame's quantization map; it cannot be combined with --qpMapFileName\n";
 
+    // The NVIDIA AQ map library analyzes the 2x2 subsampled luma the input compute filter
+    // writes, on the filter's compute queue; a session without the filter has nothing to analyze.
+    const char* const kAqNoComputeFilterError =
+        "The NVIDIA AQ map library (--spatialAQStrength / --temporalAQStrength) analyzes the "
+        "input compute filter's subsampled luma; this session has no input compute filter (a "
+        "build with BUILD_ENCODER_COMPUTE_FILTER=OFF has none)\n";
+
 #ifndef NV_AQ_GPU_LIB_SUPPORTED
     // The options of the NVIDIA AQ map library are recognized in every build, so that a build
     // without the library refuses them by name instead of passing them on as unknown options.
@@ -970,6 +977,10 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
     // order of the options.
     enableAQ = ((spatialAQStrength >= -1.0f) || (temporalAQStrength >= -1.0f)) ? VK_TRUE : VK_FALSE;
     if (enableAQ) {
+        if (!IsPreprocessComputeFilterEnabled()) {
+            VkEncPrintfErr("%s", kAqNoComputeFilterError);
+            return -1;
+        }
         if (enableQpMap && (qpMapMode == EMPHASIS_MAP)) {
             VkEncPrintfErr("%s", kAqEmphasisMapError);
             return -1;

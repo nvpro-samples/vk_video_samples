@@ -4161,6 +4161,16 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     const bool enableTemporalAQ = (m_encoderConfig->temporalAQStrength >= -1.0f);
     if (enableSpatialAQ || enableTemporalAQ)
     {
+        // The NVIDIA AQ map library analyzes the 2x2 subsampled luma the input compute filter
+        // writes, and runs on the filter's compute queue. ParseArguments refuses the library
+        // without the filter; this covers a configuration built without ParseArguments.
+        if (!encoderConfig->IsPreprocessComputeFilterEnabled()) {
+            VkEncPrintfErr("\nInitEncoder Error: the NVIDIA AQ map library analyzes the input "
+                           "compute filter's subsampled luma, and this session has no input "
+                           "compute filter.\n");
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+
         // Create AQ processor using the interface
         m_aqAnalyzes = CreateVulkanAqAnalyzer( -1,                              // deviceId
                                                vk::DeviceUuidUtils(),           // deviceUuid
