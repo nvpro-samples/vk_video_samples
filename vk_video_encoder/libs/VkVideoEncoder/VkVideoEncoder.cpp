@@ -2256,8 +2256,10 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     }
 #endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
 
-    // Stage QPMap if it needs staging. Reuse the same command buffer used for staging of the input image
-    if (m_encoderConfig->enableQpMap && (m_qpMapTiling != VK_IMAGE_TILING_LINEAR)) {
+    // Stage QPMap if it needs staging. Reuse the same command buffer used for staging of the input image.
+    // Only a map file is staged: LoadNextQpMapFrameFromFile fills the linear staging image, while the
+    // NVIDIA AQ map library writes its maps on the device, into the map image itself.
+    if (m_encoderConfig->enableQpMap && !m_encoderConfig->enableAQ && (m_qpMapTiling != VK_IMAGE_TILING_LINEAR)) {
         result = StageInputFrameQpMap(encodeFrameInfo, cmdBuf);
         if (result != VK_SUCCESS) {
             return result;
