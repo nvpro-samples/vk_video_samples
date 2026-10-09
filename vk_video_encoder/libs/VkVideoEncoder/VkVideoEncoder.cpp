@@ -4048,21 +4048,17 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
             qpMapImageUsage |= VK_IMAGE_USAGE_STORAGE_BIT;  // Required for compute shader writes (AQ library)
         }
 
-        // When AQ is enabled, use DEVICE_LOCAL only (no HOST access flags)
-        // When AQ is disabled, use existing logic (DEVICE_LOCAL for optimal, HOST flags for linear)
-        VkMemoryPropertyFlags qpMapMemoryProperties;
-        bool qpMapMemoryUseLinear;
-        if (encoderConfig->enableAQ) {
-            qpMapMemoryProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            qpMapMemoryUseLinear = false;
-        } else {
-            qpMapMemoryProperties = (m_qpMapTiling != VK_IMAGE_TILING_LINEAR) ?
-                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT :
-                                    (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-                                     VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
-            qpMapMemoryUseLinear = (m_qpMapTiling == VK_IMAGE_TILING_LINEAR);
-        }
+        // The map images have the tiling the video format query reports for the map usage
+        // (m_qpMapTiling): an implementation reads a map only in a tiling it reports. With the
+        // NVIDIA AQ map library the compute queue writes the maps, so their memory is DEVICE_LOCAL
+        // only; maps from a file in a LINEAR image are written by the host.
+        const bool qpMapMemoryUseLinear = (m_qpMapTiling == VK_IMAGE_TILING_LINEAR);
+        const VkMemoryPropertyFlags qpMapMemoryProperties =
+            (encoderConfig->enableAQ || !qpMapMemoryUseLinear) ?
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT :
+                (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                 VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
 
         // A frame holds its map image until the frame information is recycled. The NVIDIA AQ map
         // library also keeps the map of each frame it analyzes until it reuses that slot (one
