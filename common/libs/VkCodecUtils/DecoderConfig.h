@@ -127,6 +127,19 @@ struct DecoderConfig {
                     help = true;
                     return true;
                 }},
+            {"--logLevel", "-l", 1, "Set the log level: 0 none, 1 error, 2 warning, 3 info (default), 4 debug",
+                [](const char **args, const ProgramArgs &a) {
+                    char* end = nullptr;
+                    const long level = strtol(args[0], &end, 10);
+                    if ((end == args[0]) || (*end != '\0') ||
+                        (level < static_cast<long>(LogLevel::LOG_NONE)) ||
+                        (level > static_cast<long>(LogLevel::LOG_DEBUG))) {
+                        std::cerr << "Invalid log level \"" << args[0] << "\"" << std::endl;
+                        return false;
+                    }
+                    Logger::instance().setLogLevel(static_cast<int>(level));
+                    return true;
+                }},
             {"--disableStrDemux", nullptr, 0, "Disable stream demuxing",
                 [this](const char **, const ProgramArgs &a) {
                     enableStreamDemuxing = false;
