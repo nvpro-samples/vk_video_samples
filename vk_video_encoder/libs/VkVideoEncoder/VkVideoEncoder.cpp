@@ -4067,12 +4067,20 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         // slot per input image), so it needs as many images again.
         const uint32_t numQpMapImages = encoderConfig->enableAQ ? (2 * encoderConfig->numInputImages + 4)
                                                                 : encoderConfig->numInputImages;
+        // The NVIDIA AQ map library writes the maps on the compute queue and the encode reads them
+        // on the video encode queue: its map images are shared by both families (CONCURRENT), as
+        // the input images the compute filter writes are. Maps from a file are written by the host
+        // and read by the encode alone.
+        std::vector<uint32_t> qpMapQueueFamilies { (uint32_t)m_vkDevCtx->GetVideoEncodeQueueFamilyIdx() };
+        if (encoderConfig->enableAQ && (m_vkDevCtx->GetComputeQueueFamilyIdx() >= 0)) {
+            qpMapQueueFamilies.push_back((uint32_t)m_vkDevCtx->GetComputeQueueFamilyIdx());
+        }
         result = m_qpMapImagePool->Configure( m_vkDevCtx,
                                               std::min<uint32_t>(numQpMapImages, (uint32_t)VulkanVideoImagePool::maxImages),
                                               m_imageQpMapFormat,
                                               qpMapExtent,
                                               qpMapImageUsage,
-                                              m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
+                                              qpMapQueueFamilies,
                                               qpMapMemoryProperties,
                                               encoderConfig->videoCoreProfile.GetProfile(), // pVideoProfile
                                               VK_IMAGE_ASPECT_COLOR_BIT, // a whole YCbCr or RGBA image
