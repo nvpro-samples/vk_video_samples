@@ -1223,10 +1223,21 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         // requested by the encoder path alone, so every other client -- the filter tests,
         // the decoder -- creates a device without it and must not chain its feature
         // struct. The queried value is never used, so skipping the struct costs nothing.
-        void* const pAfterYcbcr =
+        void* pAfterYcbcr =
             (FindRequiredDeviceExtension(VK_KHR_VIDEO_ENCODE_INTRA_REFRESH_EXTENSION_NAME) != nullptr)
                 ? static_cast<void*>(&intraRefreshFeatures)
                 : static_cast<void*>(&synchronization2Features);
+
+        // VK_KHR_video_encode_quantization_map follows the same rule. Its feature,
+        // videoEncodeQuantizationMap, is what lets a session create map images and encode
+        // with maps (VUID-VkImageCreateInfo-usage-10251); querying it here enables it.
+        VkPhysicalDeviceVideoEncodeQuantizationMapFeaturesKHR quantizationMapFeatures {
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_QUANTIZATION_MAP_FEATURES_KHR,
+            pAfterYcbcr,
+            VK_FALSE };
+        if (FindRequiredDeviceExtension(VK_KHR_VIDEO_ENCODE_QUANTIZATION_MAP_EXTENSION_NAME) != nullptr) {
+            pAfterYcbcr = &quantizationMapFeatures;
+        }
 
         // Required for creating YCbCr samplers used with multi-planar video formats
         VkPhysicalDeviceSamplerYcbcrConversionFeatures samplerYcbcrFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES,

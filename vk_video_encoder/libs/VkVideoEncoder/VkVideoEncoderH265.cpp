@@ -119,6 +119,15 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     encodeSessionParametersCreateInfo.videoSession = *m_videoSession;
     encodeSessionParametersCreateInfo.flags = 0;
 
+    // Encodes with a quantization map need parameters created map-compatible, for the map
+    // texel size the session uses (VUID-vkCmdEncodeVideoKHR-pNext-10315).
+    VkVideoEncodeQuantizationMapSessionParametersCreateInfoKHR quantizationMapSessionParametersCreateInfo {
+        VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUANTIZATION_MAP_SESSION_PARAMETERS_CREATE_INFO_KHR, nullptr, m_qpMapTexelSize };
+    if (encoderConfig->enableQpMap) {
+        qualityLevelInfo.pNext = &quantizationMapSessionParametersCreateInfo;
+        encodeSessionParametersCreateInfo.flags = VK_VIDEO_SESSION_PARAMETERS_CREATE_QUANTIZATION_MAP_COMPATIBLE_BIT_KHR;
+    }
+
     VkVideoSessionParametersKHR sessionParameters;
     result = m_vkDevCtx->CreateVideoSessionParametersKHR(*m_vkDevCtx,
                                                          &encodeSessionParametersCreateInfo,
