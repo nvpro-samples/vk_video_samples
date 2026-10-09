@@ -732,6 +732,17 @@ class TestRunner:
         self.results.extend(results)
         return results
     
+    def encoder_supports_aq(self) -> bool:
+        """Whether the encoder is built with the NVIDIA Adaptive Quantization map library.
+
+        A build without the library (no -DNV_AQ_GPU_LIB) refuses the library's options and
+        does not name them in its --help output.
+        """
+        result = self._run_command([str(self.config.get_encoder_path()), "--help"])
+        help_output = (result.stdout or "") + (result.stderr or "")
+        return ("--spatialAQStrength" in help_output and
+                "--temporalAQStrength" in help_output)
+
     def run_encoder_tests(self, include_aq: bool = False) -> List[TestResult_]:
         """Run all encoder tests."""
         print("\n" + "=" * 70)
@@ -739,8 +750,14 @@ class TestRunner:
         print("=" * 70)
         
         test_cases = get_encoder_test_cases(self.config)
+        aq_skipped: List[TestCase] = []
         if include_aq:
-            test_cases.extend(get_aq_test_cases(self.config))
+            if self.encoder_supports_aq():
+                test_cases.extend(get_aq_test_cases(self.config))
+            else:
+                aq_skipped = get_aq_test_cases(self.config)
+                print("Skipping the NVIDIA AQ map library tests: the encoder is built "
+                      "without the library (-DNV_AQ_GPU_LIB)")
         
         print(f"Found {len(test_cases)} encoder test cases\n")
         
@@ -754,6 +771,16 @@ class TestRunner:
                     result = self.run_test(tc, "encoder")
                     results.append(result)
         
+        for tc in aq_skipped:
+            print(f"  Skipped: {tc.name} [○]")
+            results.append(TestResult_(
+                test_case=tc,
+                status=TestResult.SKIPPED,
+                duration=0.0,
+                output="",
+                error="encoder built without the NVIDIA AQ map library"
+            ))
+
         self.results.extend(results)
         return results
     

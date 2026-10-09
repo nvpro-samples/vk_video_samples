@@ -146,6 +146,31 @@ def get_file_extension(codec: str) -> str:
     return ext_map.get(codec.lower(), ".bin")
 
 
+def encoder_environment(lib_path: Path) -> dict:
+    """The environment the encoder runs in: the build's libraries ahead of the system's."""
+    env = os.environ.copy()
+    if detect_platform() == "windows":
+        env["PATH"] = f"{lib_path};{env.get('PATH', '')}"
+    else:
+        env["LD_LIBRARY_PATH"] = f"{lib_path}:{env.get('LD_LIBRARY_PATH', '')}"
+    return env
+
+
+def encoder_supports_aq(exe_path: Path, lib_path: Path) -> bool:
+    """Whether the encoder is built with the NVIDIA Adaptive Quantization map library.
+
+    A build without the library (no -DNV_AQ_GPU_LIB) refuses the library's options and does
+    not name them in its --help output.
+    """
+    try:
+        proc = subprocess.run([str(exe_path), "--help"], env=encoder_environment(lib_path),
+                              capture_output=True, text=True, timeout=60, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    help_output = (proc.stdout or "") + (proc.stderr or "")
+    return "--spatialAQStrength" in help_output and "--temporalAQStrength" in help_output
+
+
 class AQConfiguration:
     """Represents an AQ configuration to test."""
     
@@ -154,6 +179,11 @@ class AQConfiguration:
         self.spatial_aq = spatial_aq
         self.temporal_aq = temporal_aq
         self.description = description
+
+    @property
+    def enables_aq(self) -> bool:
+        """A strength in [-1.0, 1.0] enables the library's maps; below -1.0 disables them."""
+        return self.spatial_aq >= -1.0 or self.temporal_aq >= -1.0
     
     def __repr__(self):
         return f"AQConfig({self.name}, spatial={self.spatial_aq}, temporal={self.temporal_aq})"
@@ -225,9 +255,14 @@ def run_encoder(
         "--inputHeight", str(args.height),
         "--encodeWidth", str(args.encode_width or args.width),
         "--encodeHeight", str(args.encode_height or args.height),
-        "--spatialAQStrength", str(config.spatial_aq),
-        "--temporalAQStrength", str(config.temporal_aq),
     ]
+    # The baseline runs without the options of the NVIDIA AQ map library, as an encode
+    # without the library's maps.
+    if config.enables_aq:
+        cmd.extend([
+            "--spatialAQStrength", str(config.spatial_aq),
+            "--temporalAQStrength", str(config.temporal_aq),
+        ])
     
     # Add optional parameters
     if args.num_frames:
@@ -264,21 +299,17 @@ def run_encoder(
         cmd.extend(["--deviceUuid", args.device_uuid])
 
     # Set AQ dump directory - use explicit aq_dump_dir base if provided, else output_dir
-    if hasattr(args, 'aq_dump_dir') and args.aq_dump_dir:
-        aq_dump_dir = args.aq_dump_dir / f"aq_dump_{config.name}"
-    else:
-        aq_dump_dir = output_dir / f"aq_dump_{config.name}"
-    aq_dump_dir.mkdir(parents=True, exist_ok=True)
-    cmd.extend(["--aqDumpDir", str(aq_dump_dir)])
-    result.aq_dump_dir = aq_dump_dir
+    if config.enables_aq:
+        if hasattr(args, 'aq_dump_dir') and args.aq_dump_dir:
+            aq_dump_dir = args.aq_dump_dir / f"aq_dump_{config.name}"
+        else:
+            aq_dump_dir = output_dir / f"aq_dump_{config.name}"
+        aq_dump_dir.mkdir(parents=True, exist_ok=True)
+        cmd.extend(["--aqDumpDir", str(aq_dump_dir)])
+        result.aq_dump_dir = aq_dump_dir
     
     # Setup environment
-    env = os.environ.copy()
-    system = detect_platform()
-    if system == "windows":
-        env["PATH"] = f"{lib_path};{env.get('PATH', '')}"
-    else:
-        env["LD_LIBRARY_PATH"] = f"{lib_path}:{env.get('LD_LIBRARY_PATH', '')}"
+    env = encoder_environment(lib_path)
     
     # Store the command line
     result.encode_command = ' '.join(cmd)
@@ -984,6 +1015,15 @@ For more information, see README-AQ.md in the vulkan-video-samples repository.
     # Validate input
     if not args.input.exists():
         print(f"Error: Input file not found: {args.input}", file=sys.stderr)
+        return 1
+
+    # Three of the four configurations need an encoder built with the NVIDIA Adaptive
+    # Quantization map library.
+    exe_path = get_executable_path(args.vulkan_samples_root, args.build_type)
+    if exe_path.exists() and not encoder_supports_aq(
+            exe_path, get_library_path(args.vulkan_samples_root, args.build_type)):
+        print(f"Error: the encoder {exe_path} is built without the NVIDIA AQ map library "
+              "(configure with -DNV_AQ_GPU_LIB=<aq-vulkan source directory>)", file=sys.stderr)
         return 1
     
     # Create output directory
