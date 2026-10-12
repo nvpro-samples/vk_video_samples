@@ -648,18 +648,19 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
         return;
     }
     const VkSharedBaseObj<VkImageResource>& imageResourceRef = stagingImageView->GetImageResource();
-    VkDeviceMemory mem = imageResourceRef->GetDeviceMemory();
     VkDeviceSize memOffset = imageResourceRef->GetImageDeviceMemoryOffset();
-    VkDeviceSize memSize = imageResourceRef->GetImageDeviceMemorySize();
     VkImage vkImage = imageResourceRef->GetImage();
     VkDevice device = m_vkDevCtx->getDevice();
 
-    void* mapped = nullptr;
-    VkResult mapResult = m_vkDevCtx->MapMemory(device, mem, memOffset, memSize, 0, &mapped);
-    if ((mapResult != VK_SUCCESS) || (mapped == nullptr)) {
+    // The staging image's host-visible memory stays mapped by its memory object for the
+    // image's lifetime; mapping it here again would map a memory object twice
+    // (VUID-vkMapMemory-memory-00678).
+    VkSharedBaseObj<VulkanDeviceMemoryImpl>& stagingMemory = imageResourceRef->GetMemory();
+    VkDeviceSize mappedSize = 0;
+    const uint8_t* basePtr = stagingMemory ? stagingMemory->GetReadOnlyDataPtr(memOffset, mappedSize) : nullptr;
+    if ((basePtr == nullptr) || (mappedSize < imageResourceRef->GetImageDeviceMemorySize())) {
         return;
     }
-    const uint8_t* basePtr = static_cast<const uint8_t*>(mapped);
 
     VkImageSubresource subres = {};
     subres.mipLevel = 0;
@@ -701,8 +702,6 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
             }
         }
     }
-
-    m_vkDevCtx->UnmapMemory(device, mem);
 
 #define VKVENC_DEBUG_DUMP_PSNR_FRAMES 1
 #if VKVENC_DEBUG_DUMP_PSNR_FRAMES
