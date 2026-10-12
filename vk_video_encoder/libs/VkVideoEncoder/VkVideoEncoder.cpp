@@ -3388,16 +3388,29 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
     encoderConfig->InitRateControl();
 
+    // --psnr copies each reconstructed picture out of its DPB image, so the DPB images then also
+    // need TRANSFER_SRC. The DPB images carry the session's profile, so that usage has to be one
+    // the format query reports for it (VUID-VkImageCreateInfo-pNext-06811): query with the
+    // usage the images are created with.
+    const VkImageUsageFlags dpbImageUsage = VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR |
+        (encoderConfig->IsPsnrMetricsEnabled() ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0);
     VkFormat supportedDpbFormats[8];
     VkFormat supportedInFormats[8];
     uint32_t formatCount = sizeof(supportedDpbFormats) / sizeof(supportedDpbFormats[0]);
     result = VulkanVideoCapabilities::GetVideoFormats(m_vkDevCtx, encoderConfig->videoCoreProfile,
-                                                      VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR,
+                                                      dpbImageUsage,
                                                       formatCount, supportedDpbFormats);
 
-    if(result != VK_SUCCESS) {
-        VkEncPrintfErr("\nInitEncoder Error: Failed to get desired video format for the DPB.\n");
-        return result;
+    if ((result != VK_SUCCESS) ||
+        (encoderConfig->IsPsnrMetricsEnabled() && (supportedDpbFormats[0] == VK_FORMAT_UNDEFINED))) {
+        if (encoderConfig->IsPsnrMetricsEnabled()) {
+            VkEncPrintfErr("\nInitEncoder Error: --psnr reads the reconstructed pictures back from the DPB, "
+                           "and no DPB format of this profile supports VK_IMAGE_USAGE_TRANSFER_SRC_BIT "
+                           "(result %d). Encode without --psnr.\n", result);
+        } else {
+            VkEncPrintfErr("\nInitEncoder Error: Failed to get desired video format for the DPB.\n");
+        }
+        return (result != VK_SUCCESS) ? result : VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
 
     // Re-arm the capacity before the next query. GetVideoFormats takes formatCount by
@@ -3829,7 +3842,6 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                              (preprocessFilterWritesEncodeSource
                                                   ? VK_IMAGE_USAGE_STORAGE_BIT
                                                   : 0) );
-    const VkImageUsageFlags dpbImageUsage = VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR;
 
     // Linear staging pool — only needed for file-based input (CPU upload).
     // External input (IPC) provides OPTIMAL images directly. Keyed on the input
