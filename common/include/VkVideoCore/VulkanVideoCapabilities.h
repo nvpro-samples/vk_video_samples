@@ -354,8 +354,13 @@ public:
 
         uint32_t supportedFormatCount = 0;
         VkResult result = vkDevCtx->GetPhysicalDeviceVideoFormatPropertiesKHR(vkDevCtx->getPhysicalDevice(), &videoFormatInfo, &supportedFormatCount, nullptr);
-        // Removed assert - handled by return code check below
-        assert(supportedFormatCount);
+        // A usage the profile does not support reports no format
+        // (VK_ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR): every format stays VK_FORMAT_UNDEFINED and
+        // the caller decides.
+        if ((result != VK_SUCCESS) || (supportedFormatCount == 0)) {
+            formatCount = 0;
+            return result;
+        }
 
         VkVideoFormatPropertiesKHR* pSupportedFormats = new VkVideoFormatPropertiesKHR[supportedFormatCount];
         memset(pSupportedFormats, 0x00, supportedFormatCount * sizeof(VkVideoFormatPropertiesKHR));
