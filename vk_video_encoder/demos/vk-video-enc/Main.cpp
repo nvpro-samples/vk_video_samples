@@ -85,6 +85,15 @@ int main(int argc, const char* argv[])
     // Add the Vulkan video required device extensions
     vkDevCtxt.AddReqDeviceExtensions(requiredDeviceExtension);
     vkDevCtxt.AddOptDeviceExtensions(optinalDeviceExtension);
+    // A session with a quantization map (--qpMap, or the NVIDIA AQ map library) needs
+    // VK_KHR_video_encode_quantization_map and its feature on the device.
+    if (encoderConfig->enableQpMap) {
+        static const char* const quantizationMapExtension[] = {
+            VK_KHR_VIDEO_ENCODE_QUANTIZATION_MAP_EXTENSION_NAME,
+            nullptr
+        };
+        vkDevCtxt.AddOptDeviceExtensions(quantizationMapExtension);
+    }
 
     /********** Start WSI instance extensions support *******************************************/
     if (encoderConfig->enableFramePresent) {

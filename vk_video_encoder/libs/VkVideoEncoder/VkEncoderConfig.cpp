@@ -29,6 +29,35 @@
 #include <cerrno>
 
 namespace {
+    // The NVIDIA Adaptive Quantization map library (NVIDIA AQ map library) writes the map as
+    // signed QP deltas, which only a delta map carries; an emphasis map holds unsigned
+    // relative-importance values. The two cannot be combined, in either order of the options.
+    const char* const kAqEmphasisMapError =
+        "The NVIDIA AQ map library (--spatialAQStrength / --temporalAQStrength) writes signed QP "
+        "deltas, which only a delta map carries; it cannot be combined with --qpMap emphasisMap, "
+        "whose map holds unsigned importance values\n";
+
+    // The NVIDIA AQ map library computes every frame's quantization map; a map file
+    // (--qpMapFileName) would be a second source of the same map.
+    const char* const kAqMapFileError =
+        "The NVIDIA AQ map library (--spatialAQStrength / --temporalAQStrength) computes every "
+        "frame's quantization map; it cannot be combined with --qpMapFileName\n";
+
+    // The NVIDIA AQ map library analyzes the 2x2 subsampled luma the input compute filter
+    // writes, on the filter's compute queue; a session without the filter has nothing to analyze.
+    const char* const kAqNoComputeFilterError =
+        "The NVIDIA AQ map library (--spatialAQStrength / --temporalAQStrength) analyzes the "
+        "input compute filter's subsampled luma; this session has no input compute filter (a "
+        "build with BUILD_ENCODER_COMPUTE_FILTER=OFF has none)\n";
+
+#ifndef NV_AQ_GPU_LIB_SUPPORTED
+    // The options of the NVIDIA AQ map library are recognized in every build, so that a build
+    // without the library refuses them by name instead of passing them on as unknown options.
+    const char* const kAqNotBuiltErrorFormat =
+        "%s: this encoder is built without the NVIDIA Adaptive Quantization map library; "
+        "its maps need a build with -DNV_AQ_GPU_LIB=<aq-vulkan source directory>\n";
+#endif // !NV_AQ_GPU_LIB_SUPPORTED
+
     // A PARSE THAT CANNOT SILENTLY CHANGE THE NUMBER IT WAS GIVEN.
     //
     // Three ways the value the caller typed can differ from the value the
@@ -152,6 +181,7 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     -c, --codec                     <string> select codec type: avc (h264) or hevc (h265) or av1\n\
     --verbose                       verbose output\n\
     --psnr                          enable PSNR metrics (input vs reconstructed)\n\
+    --gpuEncodeTiming               time each encode on the GPU (encode-queue timestamps)\n\
     --crcInit                       <list> comma-separated CRC32 seed uint32s (decimal or 0x hex), e.g. 0xFFFFFFFF,0\n\
     --noDeviceFallback                        : don't try other GPUs if first device doesn't meet requirements \n\
     --encoderConfig                 <path>    : load base config from JSON (CLI overrides); see json_config/encoder_config.schema.json\n\
@@ -184,7 +214,7 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --encodeMaxHeight               <integer> : Encoded max height - the maximum content height supported. Used with content resize. \n\
     --minQp                         <integer> : Minimum QP value in the range [0, 51] \n\
     --maxQp                         <integer> : Maximum QP value in the range [0, 51] \n\
-    --qpMap                         <string>  : select quantization map type : deltaQpMap or emaphasisMap \n\
+    --qpMap                         <string>  : select quantization map type : deltaQpMap or emphasisMap \n\
     --qpMapFileName                 <string>  : quantization map file name \n\
     --gopFrameCount                 <integer> : Number of frame in the GOP, default 16.\n\
                                                 -1 requests an INFINITE GOP: the count is set to\n\
@@ -196,6 +226,10 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
                                                 no periodic IDR is emitted after the first. 0 leaves\n\
                                                 the period to the device's preferred value.\n\
     --consecutiveBFrameCount        <integer> : Number of consecutive B frame count in a GOP \n\
+    --nonReferencePFramePeriod      <integer> : Without B frames, make every Nth P frame of a GOP a non-reference picture (0: none) \n\
+    --pictureRowColReplication      <0|1|2>   : Padding of the input picture past its coded extent: 1 (default)\n\
+                                                replicates the last row and column into it, 2 one row and\n\
+                                                column, 0 leaves it\n\
     --temporalLayerCount            <integer> : Count of temporal layer \n\
     --lastFrameType                 <integer> : Last frame type \n\
     --closedGop                       none    : Close the Gop, default open\n\
@@ -261,6 +295,12 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
                                         In combined mode, ratio determines mix\n\
     --aqDumpDir                      <string>  : Directory for AQ dump files\n\
                                         Default: ./aqDump\n");
+#else // NV_AQ_GPU_LIB_SUPPORTED
+    // The option names are left out: test scripts detect a build with the library by finding
+    // them in this text.
+    VkEncPrintfErr("\
+    The options of the NVIDIA Adaptive Quantization map library are not available: this encoder\n\
+    is built without the library (-DNV_AQ_GPU_LIB=<aq-vulkan source directory>).\n");
 #endif // NV_AQ_GPU_LIB_SUPPORTED
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR)) {
@@ -601,6 +641,20 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 VkEncPrintfOut("Selected consecutiveBFrameCount: %u\n",
                        (unsigned)consecutiveBFrameCount);
             }
+        } else if (args[i] == "--pictureRowColReplication") {
+            uint32_t replication = 1;
+            if ((++i >= argc) || !parseUint(args[i], replication) || (replication > 2)) {
+                VkEncPrintfErr("invalid parameter for %s: expected 0, 1 or 2\n", args[i - 1].c_str());
+                return -1;
+            }
+            enablePictureRowColReplication = replication;
+        } else if (args[i] == "--nonReferencePFramePeriod") {
+            uint32_t nonReferencePFramePeriod = 0;
+            if (++i >= argc || !parseUint(args[i], nonReferencePFramePeriod)) {
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            gopStructure.SetNonReferencePFramePeriod(nonReferencePFramePeriod);
         } else if (args[i] == "--temporalLayerCount") {
             uint8_t temporalLayerCount = EncoderConfig::DEFAULT_TEMPORAL_LAYER_COUNT;
             if (++i >= argc || !parseUint(args[i], temporalLayerCount)) {
@@ -866,48 +920,37 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 return -1;
             }
             gopStructure.SetIntraRefreshSkippedStartIndex(intraRefreshSkippedStartIndex);
-#ifdef NV_AQ_GPU_LIB_SUPPORTED
-        } else if (args[i] == "--spatialAQStrength") {
-            if (++i >= argc || !parseFloat(args[i], spatialAQStrength)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
-                return -1;
-            }
-            // Valid range is [-1.0, 1.0], but values < -1.0 mean disabled
-            if (spatialAQStrength > 1.0f) {
-                VkEncPrintfErr("spatialAQStrength must be <= 1.0 (use < -1.0 to disable)\n");
-                return -1;
-            }
-            // Only enable if value is in valid range [-1.0, 1.0]
-            if (spatialAQStrength >= -1.0f) {
-                enableAQ = VK_TRUE;
-                enableQpMap = VK_TRUE;
-                qpMapMode = DELTA_QP_MAP;
-            }
-        } else if (args[i] == "--temporalAQStrength") {
-            if (++i >= argc || !parseFloat(args[i], temporalAQStrength)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
-                return -1;
-            }
-            // Valid range is [-1.0, 1.0], but values < -1.0 mean disabled
-            if (temporalAQStrength > 1.0f) {
-                VkEncPrintfErr("temporalAQStrength must be <= 1.0 (use < -1.0 to disable)\n");
-                return -1;
-            }
-            // Only enable if value is in valid range [-1.0, 1.0]
-            if (temporalAQStrength >= -1.0f) {
-                enableAQ = VK_TRUE;
-                enableQpMap = VK_TRUE;
-                qpMapMode = DELTA_QP_MAP;
-            }
-        } else if (args[i] == "--aqDumpDir") {
+        } else if ((args[i] == "--spatialAQStrength") || (args[i] == "--temporalAQStrength") ||
+                   (args[i] == "--aqDumpDir")) {
+#ifndef NV_AQ_GPU_LIB_SUPPORTED
+            VkEncPrintfErr(kAqNotBuiltErrorFormat, args[i].c_str());
+            return -1;
+#else // !NV_AQ_GPU_LIB_SUPPORTED
             if (++i >= argc) {
                 VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
-            aqDumpDir = args[i];
-#endif // NV_AQ_GPU_LIB_SUPPORTED
+            if (args[i - 1] == "--aqDumpDir") {
+                aqDumpDir = args[i];
+                continue;
+            }
+            const bool spatial = (args[i - 1] == "--spatialAQStrength");
+            float& strength = spatial ? spatialAQStrength : temporalAQStrength;
+            if (!parseFloat(args[i], strength)) {
+                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                return -1;
+            }
+            // Valid range is [-1.0, 1.0], but values < -1.0 mean disabled
+            if (strength > 1.0f) {
+                VkEncPrintfErr("%s must be <= 1.0 (use < -1.0 to disable)\n",
+                               spatial ? "spatialAQStrength" : "temporalAQStrength");
+                return -1;
+            }
+#endif // !NV_AQ_GPU_LIB_SUPPORTED
         } else if (args[i] == "--psnr") {
             enablePsnrMetrics = 1;
+        } else if (args[i] == "--gpuEncodeTiming") {
+            gpuEncodeTiming = 1;
         } else if (args[i] == "--crcInit") {
             if (++i >= argc) {
                 VkEncPrintfErr("--crcInit requires a comma-separated list of uint32 values\n");
@@ -926,6 +969,28 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             argcount++;
             arglist.push_back(args[i].c_str());
         }
+    }
+
+    // The maps of the NVIDIA AQ map library follow the final strengths: a strength in
+    // [-1.0, 1.0] enables them, and a later option may disable a strength set earlier. They are
+    // delta maps from the library, so they exclude an emphasis map and a map file in either
+    // order of the options.
+    enableAQ = ((spatialAQStrength >= -1.0f) || (temporalAQStrength >= -1.0f)) ? VK_TRUE : VK_FALSE;
+    if (enableAQ) {
+        if (!IsPreprocessComputeFilterEnabled()) {
+            VkEncPrintfErr("%s", kAqNoComputeFilterError);
+            return -1;
+        }
+        if (enableQpMap && (qpMapMode == EMPHASIS_MAP)) {
+            VkEncPrintfErr("%s", kAqEmphasisMapError);
+            return -1;
+        }
+        if (qpMapFileHandler.HasFileName()) {
+            VkEncPrintfErr("%s", kAqMapFileError);
+            return -1;
+        }
+        enableQpMap = true;
+        qpMapMode = DELTA_QP_MAP;
     }
 
     {
@@ -1216,7 +1281,8 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
         VkSharedBaseObj<EncoderConfigH265> vkEncoderConfigh265(new EncoderConfigH265());
         int ret = vkEncoderConfigh265->ParseArguments(argc, argv);
         if (ret != 0) {
-            assert(!"Invalid arguments");
+            // ParseArguments has printed the reason; an invalid command line is the user's
+            // input, not an internal error.
             return VK_ERROR_INITIALIZATION_FAILED;
         }
 
@@ -1237,7 +1303,8 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
         VkSharedBaseObj<EncoderConfigAV1> vkEncoderConfigAV1(new EncoderConfigAV1());
         int ret = vkEncoderConfigAV1->ParseArguments(argc, argv);
         if (ret != 0) {
-            assert(!"Invalid arguments");
+            // ParseArguments has printed the reason; an invalid command line is the user's
+            // input, not an internal error.
             return VK_ERROR_INITIALIZATION_FAILED;
         }
 

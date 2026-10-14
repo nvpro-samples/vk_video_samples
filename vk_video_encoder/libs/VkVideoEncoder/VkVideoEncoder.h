@@ -299,9 +299,7 @@ public:
             , srcStagingImageView()
             , srcEncodeImageResource()
             , setupImageResource()
-#if NV_AQ_GPU_LIB_SUPPORTED
             , subsampledImageResource()
-#endif // NV_AQ_GPU_LIB_SUPPORTED
             , outputBitstreamBuffer()
             , dpbImageResources()
             , srcQpMapStagingResource()
@@ -738,9 +736,11 @@ public:
                 srcStagingImageView = nullptr;
                 srcEncodeImageResource = nullptr;
                 setupImageResource = nullptr;
-#ifdef NV_AQ_GPU_LIB_SUPPORTED
+                // A frame's quantization map belongs to that frame: a recycled node takes
+                // (and fills) a new one, from the map file or from the NVIDIA AQ map library.
+                srcQpMapStagingResource = nullptr;
+                srcQpMapImageResource = nullptr;
                 subsampledImageResource = nullptr;  // Release subsampled Y image back to pool
-#endif // NV_AQ_GPU_LIB_SUPPORTED
                 outputBitstreamBuffer = nullptr;
                 assert(numDpbImageResources <= ARRAYSIZE(dpbImageResources));
                 for (uint32_t i = 0; i < numDpbImageResources; i++) {
@@ -1106,6 +1106,9 @@ public:
         VkSharedBaseObj<VulkanVideoImagePoolNode>& outNode);
 
     VkResult StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
+    VkResult InitEncodeTiming(uint32_t numEncodeCmdBuffers);
+    void ReadEncodeTiming(uint32_t firstQuery);
+    void ReportEncodeTiming();
     VkResult StageInputFrameQpMap(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                   VkCommandBuffer cmdBuf = VK_NULL_HANDLE);
     VkResult SubmitStagedInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
@@ -1392,11 +1395,13 @@ protected:
     // Local patch; not in upstream vk_video_samples. Optional queue-family-
     // ownership transfer for imported (VK_QUEUE_FAMILY_FOREIGN_EXT)
     // external images.
+    // baseArrayLayer: the one array layer of the view's image the barrier covers.
     VkImageLayout TransitionImageLayout(VkCommandBuffer cmdBuf,
                                         VkSharedBaseObj<VkImageResourceView>& imageView,
                                         VkImageLayout oldLayout, VkImageLayout newLayout,
                                         uint32_t srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                                        uint32_t dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED);
+                                        uint32_t dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                        uint32_t baseArrayLayer = 0);
 
     // Local patch; not in upstream vk_video_samples.
     //
@@ -1879,6 +1884,13 @@ protected:
 #ifdef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     VkSharedBaseObj<VulkanFilter>            m_inputComputeFilter;
 #endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
+    // --gpuEncodeTiming: two timestamps per encode command buffer, around the video
+    // coding scope, and the per-frame durations read back with the bitstream.
+    VkQueryPool                              m_encodeTimestampPool = VK_NULL_HANDLE;
+    double                                   m_timestampPeriodNs = 1.0;
+    uint64_t                                 m_timestampMask = ~0ULL;
+    std::mutex                               m_encodeTimingMutex;
+    std::vector<double>                      m_encodeGpuTimesMs;
     // Filter-dispatch observable; see the accessors at the top of the class.
     // Declared OUTSIDE the compute-filter ifdef so the member layout of this
     // class does not depend on that macro -- the counters simply stay 0 in a

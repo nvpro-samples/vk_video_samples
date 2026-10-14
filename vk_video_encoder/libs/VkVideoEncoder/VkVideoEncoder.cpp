@@ -406,6 +406,12 @@ VkResult VkVideoEncoder::LoadNextFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
 {
     assert(encodeFrameInfo);
 
+    // Frames are read from the input file through the linear staging pool, which InitEncoder
+    // creates only when there is an input file; an encoder fed external frames has neither.
+    if (!m_linearInputImagePool) {
+        return VK_ERROR_NOT_PERMITTED_KHR;
+    }
+
     encodeFrameInfo->frameInputOrderNum = m_inputFrameNum++;
     encodeFrameInfo->lastFrame = !(encodeFrameInfo->frameInputOrderNum < (m_encoderConfig->numFrames - 1));
 
@@ -631,6 +637,20 @@ VkResult VkVideoEncoder::EncodeFrameCommon(VkSharedBaseObj<VkVideoEncodeFrameInf
         // Handles the codec-specific rate control command if enabled
         CodecHandleRateControlCmd(encodeFrameInfo);
     }
+
+#ifdef NV_AQ_GPU_LIB_SUPPORTED
+    // The NVIDIA AQ map library writes this frame's map into an image of the map pool (see the
+    // library's block below). The image is taken here, before ProcessQpMap chains the map, so
+    // every encode carries the map the library computes for it, the first one included.
+    if (m_aqAnalyzes && (encodeFrameInfo->srcQpMapImageResource == nullptr)) {
+        bool success = m_qpMapImagePool->GetAvailableImage(encodeFrameInfo->srcQpMapImageResource,
+                                                           VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR);
+        if (!success || (encodeFrameInfo->srcQpMapImageResource == nullptr)) {
+            assert(!"Can't get get srcQpMapImageResource!");
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+    }
+#endif // NV_AQ_GPU_LIB_SUPPORTED
 
     if (m_encoderConfig->enableQpMap) {
         ProcessQpMap(encodeFrameInfo);
@@ -2036,6 +2056,10 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
             // row and column replication is disabled. Don't touch the image padding area.
             dstPictureResourceInfo.codedExtent = copyImageExtent;
         }
+        // The filter writes only inside the input image.
+        const VkExtent2D inputImageExtent = m_inputImagePool->GetImageExtent();
+        dstPictureResourceInfo.codedExtent.width  = std::min(dstPictureResourceInfo.codedExtent.width,  inputImageExtent.width);
+        dstPictureResourceInfo.codedExtent.height = std::min(dstPictureResourceInfo.codedExtent.height, inputImageExtent.height);
 
         // Get image view for filter (nullptr if no pool)
         VkSharedBaseObj<VkImageResourceView> subsampledImageView;
@@ -2232,8 +2256,10 @@ VkResult VkVideoEncoder::StageInputFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     }
 #endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
 
-    // Stage QPMap if it needs staging. Reuse the same command buffer used for staging of the input image
-    if (m_encoderConfig->enableQpMap && (m_qpMapTiling != VK_IMAGE_TILING_LINEAR)) {
+    // Stage QPMap if it needs staging. Reuse the same command buffer used for staging of the input image.
+    // Only a map file is staged: LoadNextQpMapFrameFromFile fills the linear staging image, while the
+    // NVIDIA AQ map library writes its maps on the device, into the map image itself.
+    if (m_encoderConfig->enableQpMap && !m_encoderConfig->enableAQ && (m_qpMapTiling != VK_IMAGE_TILING_LINEAR)) {
         result = StageInputFrameQpMap(encodeFrameInfo, cmdBuf);
         if (result != VK_SUCCESS) {
             return result;
@@ -2774,7 +2800,70 @@ VkResult VkVideoEncoder::ReadbackBitstreamData(
     readback.bitstreamSize = encodeResult.bitstreamSize;
     readback.status = encodeResult.status;
     readback.readbackDone = true;
+
+    if (m_encodeTimestampPool != VK_NULL_HANDLE) {
+        ReadEncodeTiming(2 * encodeFrameInfo->encodeCmdBuffer->GetNodePoolIndex());
+    }
     return VK_SUCCESS;
+}
+
+VkResult VkVideoEncoder::InitEncodeTiming(uint32_t numEncodeCmdBuffers)
+{
+    VkPhysicalDeviceProperties properties{};
+    m_vkDevCtx->GetPhysicalDeviceProperties(m_vkDevCtx->getPhysicalDevice(), &properties);
+    m_timestampPeriodNs = properties.limits.timestampPeriod;
+
+    std::vector<VkQueueFamilyProperties> families;
+    uint32_t familyCount = 0;
+    m_vkDevCtx->GetPhysicalDeviceQueueFamilyProperties(m_vkDevCtx->getPhysicalDevice(), &familyCount, nullptr);
+    families.resize(familyCount);
+    m_vkDevCtx->GetPhysicalDeviceQueueFamilyProperties(m_vkDevCtx->getPhysicalDevice(), &familyCount, families.data());
+    const uint32_t validBits = families[m_vkDevCtx->GetVideoEncodeQueueFamilyIdx()].timestampValidBits;
+    if (validBits == 0) {
+        VkEncPrintfErr("\nInitEncoder Error: the encode queue family has no timestamps; --gpuEncodeTiming is unavailable.\n");
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+    m_timestampMask = (validBits >= 64) ? ~0ULL : ((1ULL << validBits) - 1ULL);
+
+    VkQueryPoolCreateInfo createInfo { VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
+    createInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    createInfo.queryCount = 2 * numEncodeCmdBuffers;
+    return m_vkDevCtx->CreateQueryPool(*m_vkDevCtx, &createInfo, nullptr, &m_encodeTimestampPool);
+}
+
+void VkVideoEncoder::ReadEncodeTiming(uint32_t firstQuery)
+{
+    uint64_t timestamps[2] = {};
+    VkResult result = m_vkDevCtx->GetQueryPoolResults(*m_vkDevCtx, m_encodeTimestampPool, firstQuery, 2,
+                                                      sizeof(timestamps), timestamps, sizeof(timestamps[0]),
+                                                      VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+    if (result != VK_SUCCESS) {
+        return;
+    }
+    // The counter is timestampValidBits wide and may wrap between the two writes.
+    const uint64_t ticks = (timestamps[1] - timestamps[0]) & m_timestampMask;
+    std::lock_guard<std::mutex> lock(m_encodeTimingMutex);
+    m_encodeGpuTimesMs.push_back(ticks * m_timestampPeriodNs * 1e-6);
+}
+
+void VkVideoEncoder::ReportEncodeTiming()
+{
+    std::lock_guard<std::mutex> lock(m_encodeTimingMutex);
+    if (m_encodeGpuTimesMs.empty()) {
+        return;
+    }
+    std::vector<double> sorted = m_encodeGpuTimesMs;
+    std::sort(sorted.begin(), sorted.end());
+    double total = 0.0;
+    for (double t : sorted) {
+        total += t;
+    }
+    const size_t n = sorted.size();
+    VkEncPrintfOut("GPU encode time: frames=%zu mean=%.3f ms median=%.3f ms p95=%.3f ms min=%.3f ms max=%.3f ms "
+                   "total=%.1f ms (%.1f fps of encode-queue time)\n",
+                   n, total / n, sorted[n / 2], sorted[std::min(n - 1, (n * 95) / 100)], sorted.front(), sorted.back(),
+                   total, (total > 0.0) ? (1000.0 * n / total) : 0.0);
+    m_encodeGpuTimesMs.clear();
 }
 
 VkResult VkVideoEncoder::WriteBitstreamToFile(
@@ -3077,6 +3166,18 @@ static YcbcrBtStandard VkEncModelToBtStandard(
 
 #endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
 
+// The extent rounded up to whole chroma samples of the format: an image of a 4:2:0 format has an
+// even width and height, one of a 4:2:2 format an even width (VUID-VkImageCreateInfo-format-04712,
+// VUID-VkImageCreateInfo-format-04713). Other formats keep the extent.
+static VkExtent2D ChromaAlignedExtent(VkFormat format, const VkExtent2D& extent)
+{
+    const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(format);
+    const bool subsampledX = (mpInfo != nullptr) && mpInfo->planesLayout.secondaryPlaneSubsampledX;
+    const bool subsampledY = (mpInfo != nullptr) && mpInfo->planesLayout.secondaryPlaneSubsampledY;
+    return { subsampledX ? vk::alignedSize(extent.width,  2u) : extent.width,
+             subsampledY ? vk::alignedSize(extent.height, 2u) : extent.height };
+}
+
 VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConfig)
 {
 
@@ -3287,16 +3388,29 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
     encoderConfig->InitRateControl();
 
+    // --psnr copies each reconstructed picture out of its DPB image, so the DPB images then also
+    // need TRANSFER_SRC. The DPB images carry the session's profile, so that usage has to be one
+    // the format query reports for it (VUID-VkImageCreateInfo-pNext-06811): query with the
+    // usage the images are created with.
+    const VkImageUsageFlags dpbImageUsage = VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR |
+        (encoderConfig->IsPsnrMetricsEnabled() ? VK_IMAGE_USAGE_TRANSFER_SRC_BIT : 0);
     VkFormat supportedDpbFormats[8];
     VkFormat supportedInFormats[8];
     uint32_t formatCount = sizeof(supportedDpbFormats) / sizeof(supportedDpbFormats[0]);
     result = VulkanVideoCapabilities::GetVideoFormats(m_vkDevCtx, encoderConfig->videoCoreProfile,
-                                                      VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR,
+                                                      dpbImageUsage,
                                                       formatCount, supportedDpbFormats);
 
-    if(result != VK_SUCCESS) {
-        VkEncPrintfErr("\nInitEncoder Error: Failed to get desired video format for the DPB.\n");
-        return result;
+    if ((result != VK_SUCCESS) ||
+        (encoderConfig->IsPsnrMetricsEnabled() && (supportedDpbFormats[0] == VK_FORMAT_UNDEFINED))) {
+        if (encoderConfig->IsPsnrMetricsEnabled()) {
+            VkEncPrintfErr("\nInitEncoder Error: --psnr reads the reconstructed pictures back from the DPB, "
+                           "and no DPB format of this profile supports VK_IMAGE_USAGE_TRANSFER_SRC_BIT "
+                           "(result %d). Encode without --psnr.\n", result);
+        } else {
+            VkEncPrintfErr("\nInitEncoder Error: Failed to get desired video format for the DPB.\n");
+        }
+        return (result != VK_SUCCESS) ? result : VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
 
     // Re-arm the capacity before the next query. GetVideoFormats takes formatCount by
@@ -3728,20 +3842,20 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                                              (preprocessFilterWritesEncodeSource
                                                   ? VK_IMAGE_USAGE_STORAGE_BIT
                                                   : 0) );
-    const VkImageUsageFlags dpbImageUsage = VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR;
 
     // Linear staging pool — only needed for file-based input (CPU upload).
-    // External input (IPC) provides OPTIMAL images directly.
-    if (!encoderConfig->repeatInputFrames) {
+    // External input (IPC) provides OPTIMAL images directly. Keyed on the input
+    // file, not on repeatInputFrames: a file encoded in a loop is still staged.
+    if (encoderConfig->inputFileHandler.HasFileName()) {
         result = VulkanVideoImagePool::Create(m_vkDevCtx, m_linearInputImagePool);
         if (result != VK_SUCCESS) {
             VkEncPrintfErr("\nInitEncoder Error: Failed to create linearInputImagePool.\n");
             return result;
         }
 
-        VkExtent2D linearInputImageExtent{
+        const VkExtent2D linearInputImageExtent = ChromaAlignedExtent(encoderConfig->input.vkFormat, {
             std::max(m_maxCodedExtent.width, encoderConfig->input.width),
-            std::max(m_maxCodedExtent.height, encoderConfig->input.height)};
+            std::max(m_maxCodedExtent.height, encoderConfig->input.height)});
 
         result = m_linearInputImagePool->Configure(
             m_vkDevCtx, encoderConfig->numInputImages, encoderConfig->input.vkFormat,
@@ -3777,14 +3891,30 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         return result;
     }
 
-    VkExtent2D imageExtent {
+    // The DPB images, and the PSNR read-back images that receive copies of DPB pictures, cover the
+    // maximum coded extent rounded up to whole chroma samples: at an odd coded extent the coded
+    // extent half covers the last chroma column or row, and the images hold it.
+    VkExtent2D imageExtent = ChromaAlignedExtent(m_imageDpbFormat, {
         std::max(m_maxCodedExtent.width, encoderConfig->videoCapabilities.minCodedExtent.width),
         std::max(m_maxCodedExtent.height, encoderConfig->videoCapabilities.minCodedExtent.height)
-    };
+    });
+
+    // The input images extend to pictureAccessGranularity, the area the encoder may read: the
+    // filter replicates the last row and column into it (enablePictureRowColReplication), and
+    // texels outside an image are not part of it, so they must lie inside the image. They also
+    // hold whole chroma samples where the granularity does not provide them.
+    const VkExtent2D inputImageExtent = ChromaAlignedExtent(m_imageInFormat, {
+        std::max(vk::alignedSize(m_maxCodedExtent.width,
+                                 std::max(encoderConfig->videoCapabilities.pictureAccessGranularity.width, 1u)),
+                 encoderConfig->videoCapabilities.minCodedExtent.width),
+        std::max(vk::alignedSize(m_maxCodedExtent.height,
+                                 std::max(encoderConfig->videoCapabilities.pictureAccessGranularity.height, 1u)),
+                 encoderConfig->videoCapabilities.minCodedExtent.height)
+    });
 
     // Query and select DRM format modifier if requested
     if (encoderConfig->drmFormatModifierIndex >= 0) {
-        result = SelectDrmFormatModifier(encoderConfig, m_imageInFormat, inImageUsage, imageExtent);
+        result = SelectDrmFormatModifier(encoderConfig, m_imageInFormat, inImageUsage, inputImageExtent);
         if (result != VK_SUCCESS) {
             VkEncPrintfErr("\nInitEncoder Error: Failed to select DRM format modifier.\n");
             return result;
@@ -3816,7 +3946,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     result = m_inputImagePool->Configure( m_vkDevCtx,
                                           encoderConfig->numInputImages,
                                           m_imageInFormat,
-                                          imageExtent,
+                                          inputImageExtent,
                                           inImageUsage,
                                           inputPoolQueueFamilies,
                                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -3930,28 +4060,37 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
             qpMapImageUsage |= VK_IMAGE_USAGE_STORAGE_BIT;  // Required for compute shader writes (AQ library)
         }
 
-        // When AQ is enabled, use DEVICE_LOCAL only (no HOST access flags)
-        // When AQ is disabled, use existing logic (DEVICE_LOCAL for optimal, HOST flags for linear)
-        VkMemoryPropertyFlags qpMapMemoryProperties;
-        bool qpMapMemoryUseLinear;
-        if (encoderConfig->enableAQ) {
-            qpMapMemoryProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            qpMapMemoryUseLinear = false;
-        } else {
-            qpMapMemoryProperties = (m_qpMapTiling != VK_IMAGE_TILING_LINEAR) ?
-                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT :
-                                    (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-                                     VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
-            qpMapMemoryUseLinear = (m_qpMapTiling == VK_IMAGE_TILING_LINEAR);
-        }
+        // The map images have the tiling the video format query reports for the map usage
+        // (m_qpMapTiling): an implementation reads a map only in a tiling it reports. With the
+        // NVIDIA AQ map library the compute queue writes the maps, so their memory is DEVICE_LOCAL
+        // only; maps from a file in a LINEAR image are written by the host.
+        const bool qpMapMemoryUseLinear = (m_qpMapTiling == VK_IMAGE_TILING_LINEAR);
+        const VkMemoryPropertyFlags qpMapMemoryProperties =
+            (encoderConfig->enableAQ || !qpMapMemoryUseLinear) ?
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT :
+                (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                 VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
 
+        // A frame holds its map image until the frame information is recycled. The NVIDIA AQ map
+        // library also keeps the map of each frame it analyzes until it reuses that slot (one
+        // slot per input image), so it needs as many images again.
+        const uint32_t numQpMapImages = encoderConfig->enableAQ ? (2 * encoderConfig->numInputImages + 4)
+                                                                : encoderConfig->numInputImages;
+        // The NVIDIA AQ map library writes the maps on the compute queue and the encode reads them
+        // on the video encode queue: its map images are shared by both families (CONCURRENT), as
+        // the input images the compute filter writes are. Maps from a file are written by the host
+        // and read by the encode alone.
+        std::vector<uint32_t> qpMapQueueFamilies { (uint32_t)m_vkDevCtx->GetVideoEncodeQueueFamilyIdx() };
+        if (encoderConfig->enableAQ && (m_vkDevCtx->GetComputeQueueFamilyIdx() >= 0)) {
+            qpMapQueueFamilies.push_back((uint32_t)m_vkDevCtx->GetComputeQueueFamilyIdx());
+        }
         result = m_qpMapImagePool->Configure( m_vkDevCtx,
-                                              encoderConfig->numInputImages,
+                                              std::min<uint32_t>(numQpMapImages, (uint32_t)VulkanVideoImagePool::maxImages),
                                               m_imageQpMapFormat,
                                               qpMapExtent,
                                               qpMapImageUsage,
-                                              m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
+                                              qpMapQueueFamilies,
                                               qpMapMemoryProperties,
                                               encoderConfig->videoCoreProfile.GetProfile(), // pVideoProfile
                                               VK_IMAGE_ASPECT_COLOR_BIT, // a whole YCbCr or RGBA image
@@ -4034,6 +4173,16 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     const bool enableTemporalAQ = (m_encoderConfig->temporalAQStrength >= -1.0f);
     if (enableSpatialAQ || enableTemporalAQ)
     {
+        // The NVIDIA AQ map library analyzes the 2x2 subsampled luma the input compute filter
+        // writes, and runs on the filter's compute queue. ParseArguments refuses the library
+        // without the filter; this covers a configuration built without ParseArguments.
+        if (!encoderConfig->IsPreprocessComputeFilterEnabled()) {
+            VkEncPrintfErr("\nInitEncoder Error: the NVIDIA AQ map library analyzes the input "
+                           "compute filter's subsampled luma, and this session has no input "
+                           "compute filter.\n");
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+
         // Create AQ processor using the interface
         m_aqAnalyzes = CreateVulkanAqAnalyzer( -1,                              // deviceId
                                                vk::DeviceUuidUtils(),           // deviceUuid
@@ -4461,6 +4610,13 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         return result;
     }
 
+    if (encoderConfig->gpuEncodeTiming) {
+        result = InitEncodeTiming(encoderConfig->numInputImages);
+        if (result != VK_SUCCESS) {
+            return result;
+        }
+    }
+
     result = CreateFrameInfoBuffersQueue(encoderConfig->numInputImages);
     if(result != VK_SUCCESS) {
         VkEncPrintfErr("\nInitEncoder Error: Failed to create FrameInfoBuffersQueue.\n");
@@ -4663,9 +4819,9 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
                                                     VkSharedBaseObj<VkImageResourceView>& imageView,
                                                     VkImageLayout oldLayout, VkImageLayout newLayout,
                                                     uint32_t srcQueueFamilyIndex,
-                                                    uint32_t dstQueueFamilyIndex)
+                                                    uint32_t dstQueueFamilyIndex,
+                                                    uint32_t baseArrayLayer)
 {
-    uint32_t baseArrayLayer = 0;
     VkImageMemoryBarrier2KHR imageBarrier = {
 
             VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR, // VkStructureType sType
@@ -5999,6 +6155,12 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         m_psnr->CaptureSource(cmdBuf, encodeFrameInfo.get());
     }
 
+    const uint32_t timingIndex = 2 * encodeCmdBuffer->GetNodePoolIndex();
+    if (m_encodeTimestampPool != VK_NULL_HANDLE) {
+        vkDevCtx->CmdResetQueryPool(cmdBuf, m_encodeTimestampPool, timingIndex, 2);
+        vkDevCtx->CmdWriteTimestamp(cmdBuf, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_encodeTimestampPool, timingIndex);
+    }
+
     vkDevCtx->CmdBeginVideoCodingKHR(cmdBuf, &encodeBeginInfo);
 
     if (encodeFrameInfo->controlCmd != VkVideoCodingControlFlagsKHR()) {
@@ -6137,6 +6299,10 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
     VkVideoEndCodingInfoKHR encodeEndInfo { VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR };
     vkDevCtx->CmdEndVideoCodingKHR(cmdBuf, &encodeEndInfo);
 
+    if (m_encodeTimestampPool != VK_NULL_HANDLE) {
+        vkDevCtx->CmdWriteTimestamp(cmdBuf, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_encodeTimestampPool, timingIndex + 1);
+    }
+
     // Queue-family RELEASE -- the missing half of the Path-A acquire made
     // just before CmdBeginVideoCodingKHR. Placed immediately after the coding
     // scope closes, mirroring the acquire's placement immediately before it
@@ -6208,9 +6374,15 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
     if (m_psnr && m_psnr->Enabled() && (encodeFrameInfo->setupImageResource != nullptr)) {
         VkSharedBaseObj<VkImageResourceView> setupEncodeImageView;
         encodeFrameInfo->setupImageResource->GetImageView(setupEncodeImageView);
-        TransitionImageLayout(cmdBuf, setupEncodeImageView, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+        // The copy reads the reconstructed picture's layer of the DPB image (with a layered DPB
+        // every picture is a layer of one image): that layer is the one to transition.
+        const uint32_t setupLayer = setupEncodeImageView->GetImageSubresourceRange().baseArrayLayer +
+                                    encodeFrameInfo->setupImageResource->GetPictureResourceInfo()->baseArrayLayer;
+        TransitionImageLayout(cmdBuf, setupEncodeImageView, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                              VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, setupLayer);
         m_psnr->CaptureOutput(cmdBuf, encodeFrameInfo.get());
-        TransitionImageLayout(cmdBuf, setupEncodeImageView, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR);
+        TransitionImageLayout(cmdBuf, setupEncodeImageView, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR,
+                              VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, setupLayer);
     }
 
     // ******* End recording of the video commands *************
@@ -6304,11 +6476,10 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
         if (encodeFrameInfo->aqProcessorSlot) {
             requiredWaits++;
         } else
-#else
+#endif // NV_AQ_GPU_LIB_SUPPORTED
         if (encodeFrameInfo->inputCmdBuffer) {
             requiredWaits++;
         }
-#endif // NV_AQ_GPU_LIB_SUPPORTED
         if (encodeFrameInfo->qpMapCmdBuffer) {
             requiredWaits++;
         }
@@ -6390,7 +6561,9 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
             assert(!"srcQpMapImageResource must have a valid when aqProcessorSlot is valid");
         }
     } else
-#else // NV_AQ_GPU_LIB_SUPPORTED
+#endif // NV_AQ_GPU_LIB_SUPPORTED
+    // Without a map from the NVIDIA AQ map library (whose analysis waits for the staged
+    // input itself), the encode waits for the staged input.
     if (encodeFrameInfo->inputCmdBuffer) {
         waitSemaphoreInfos[waitSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
         waitSemaphoreInfos[waitSemaphoreCount].semaphore = encodeFrameInfo->inputCmdBuffer->GetSemaphore();
@@ -6410,7 +6583,6 @@ VkResult VkVideoEncoder::SubmitVideoCodingCmds(VkSharedBaseObj<VkVideoEncodeFram
         waitSemaphoreInfos[waitSemaphoreCount].deviceIndex = 0;
         waitSemaphoreCount++;
     }
-#endif // NV_AQ_GPU_LIB_SUPPORTED
     if (encodeFrameInfo->qpMapCmdBuffer) {
         waitSemaphoreInfos[waitSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
         waitSemaphoreInfos[waitSemaphoreCount].semaphore = encodeFrameInfo->qpMapCmdBuffer->GetSemaphore();
@@ -7041,6 +7213,12 @@ int32_t VkVideoEncoder::DeinitEncoder()
 
     if (m_vkDevCtx)
         m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::ENCODE, 0);
+
+    ReportEncodeTiming();
+    if (m_encodeTimestampPool != VK_NULL_HANDLE) {
+        m_vkDevCtx->DestroyQueryPool(*m_vkDevCtx, m_encodeTimestampPool, nullptr);
+        m_encodeTimestampPool = VK_NULL_HANDLE;
+    }
 
     if (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE) {
          m_vkDevCtx->DestroySemaphore(*m_vkDevCtx, m_hwLoadBalancingTimelineSemaphore, NULL);

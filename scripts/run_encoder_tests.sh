@@ -456,9 +456,33 @@ run_encode_test "AV1_rc_vbr" "av1" \
 # AQ (Adaptive Quantization) Tests
 # ============================================================================
 
+AQ_SUPPORTED=""
 if [ -n "$ENABLE_AQ" ]; then
     print_header "Adaptive Quantization (AQ) Tests"
-    
+
+    # These cells need an encoder built with the NVIDIA Adaptive Quantization map library
+    # (-DNV_AQ_GPU_LIB); a build without it refuses the options and does not name them in
+    # its --help output.
+    AQ_HELP=$(run_cmd "'$ENCODER' --help 2>&1" 2>/dev/null || true)
+    if grep -q -- '--spatialAQStrength' <<< "$AQ_HELP" && grep -q -- '--temporalAQStrength' <<< "$AQ_HELP"; then
+        AQ_SUPPORTED="1"
+    else
+        echo -e "  ${YELLOW}○${NC} Skipping the NVIDIA AQ map library tests: the encoder is built without the library"
+        for CODEC in h264 h265 av1; do
+            if [ -n "$FILTER_CODEC" ] && [ "$FILTER_CODEC" != "$CODEC" ]; then
+                continue
+            fi
+            for DESC in spatial_default spatial_0.5 spatial_max temporal_default temporal_0.5 \
+                        temporal_max combined_default combined_medium combined_max; do
+                ((TOTAL++)) || true
+                ((SKIPPED++)) || true
+                echo -e "  ${YELLOW}○${NC} AQ_${CODEC}_${DESC} - built without the NVIDIA AQ map library"
+            done
+        done
+    fi
+fi
+
+if [ -n "$ENABLE_AQ" ] && [ -n "$AQ_SUPPORTED" ]; then
     AQ_INPUT="$VIDEO_DIR/cts/video/720x480_420_8le.yuv"
     if [ ! -f "$AQ_INPUT" ]; then
         AQ_INPUT="$VIDEO_DIR/cts/video/352x288_420_8le.yuv"

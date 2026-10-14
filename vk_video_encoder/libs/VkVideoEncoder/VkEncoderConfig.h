@@ -1061,13 +1061,16 @@ public:
     uint32_t enablePreprocessComputeFilter : 1;
 #endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     uint32_t repeatInputFrames : 1;
-    // enablePictureRowColReplication
+    // --pictureRowColReplication: how the filter fills the input picture past its coded extent.
     // 0: row and column replication is disabled;
     // 1: (default) replicate the last row and column to the padding area;
     // 2: replicate only one row and one column to the padding area;
     uint32_t enablePictureRowColReplication : 2;
     uint32_t enableOutOfOrderRecording : 1; // Testing only - don't use for production!
     uint32_t enablePsnrMetrics : 1;
+    // --gpuEncodeTiming: time each frame's video coding scope with GPU timestamps on the
+    // encode queue, and print the distribution when the encoder is torn down.
+    uint32_t gpuEncodeTiming : 1;
     std::vector<uint32_t> crcInitValue;  // initialize crc values
     uint32_t disableEncodeParameterOptimizations : 1;
     uint32_t asyncAssembly : 1;
@@ -1243,6 +1246,7 @@ public:
     , enablePictureRowColReplication(1)
     , enableOutOfOrderRecording(false)
     , enablePsnrMetrics(false)
+    , gpuEncodeTiming(false)
     , disableEncodeParameterOptimizations(false)
     , asyncAssembly(true)
     , assemblyThreadCount(2)
@@ -1343,14 +1347,21 @@ public:
         // Luma is the first plane in every layout this applies to, so a prefix of the
         // file is luma regardless of plane count. Cap the scan: alignment is a property
         // of the encoding, so a prefix settles it.
+        // The scan starts at the first frame's samples: a Y4M file opens with a text header
+        // and a FRAME line, whose ASCII bytes set bits above the bit depth and would read as
+        // left-aligned data.
+        const size_t dataOffset = inputFileHandler.GetCurrFrameOffset();
+        if (dataOffset >= inputFileHandler.GetFileSize()) {
+            return defaultShift;
+        }
         const size_t lumaSamples = (size_t)input.width * input.height;
         const size_t maxSamples  = (lumaSamples > 0) ? lumaSamples : (64u * 1024u);
-        size_t numSamples = std::min(maxSamples, inputFileHandler.GetFileSize() / 2);
+        size_t numSamples = std::min(maxSamples, (inputFileHandler.GetFileSize() - dataOffset) / 2);
         if (numSamples == 0) {
             return defaultShift;
         }
 
-        const uint8_t* pBytes = inputFileHandler.GetMappedPtr(0);
+        const uint8_t* pBytes = inputFileHandler.GetMappedPtr(dataOffset);
         if (pBytes == nullptr) {
             return defaultShift;
         }

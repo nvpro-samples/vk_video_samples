@@ -460,9 +460,12 @@ if(DEFINED NV_AQ_GPU_LIB)
         # Set global C define to indicate AQ GPU library support is available
         add_definitions(-DNV_AQ_GPU_LIB_SUPPORTED=1)
 
-        # Set CMake variable with library location for other targets to use
-        set(NV_AQ_GPU_LIB_AVAILABLE TRUE CACHE BOOL "NV AQ GPU library is available")
-        set(NV_AQ_GPU_LIB_TARGET "nvenc_aq_vulkan" CACHE STRING "Name of the NV AQ GPU library target")
+        # Set CMake variable with library location for other targets to use. These entries are
+        # INTERNAL (always overwritten): every configure decides them from NV_AQ_GPU_LIB, as it
+        # decides the global NV_AQ_GPU_LIB_SUPPORTED define above, so a reused build directory
+        # follows the library being added or removed.
+        set(NV_AQ_GPU_LIB_AVAILABLE TRUE CACHE INTERNAL "NV AQ GPU library is available")
+        set(NV_AQ_GPU_LIB_TARGET "nvenc_aq_vulkan" CACHE INTERNAL "Name of the NV AQ GPU library target")
 
         # Set up all AQ include directories in one place
         # NV_AQ_GPU_LIB points to aq-vulkan, so aq_common is one level up
@@ -520,18 +523,18 @@ if(DEFINED NV_AQ_GPU_LIB)
         endif()
 
         # Cache the include directories list
-        set(NV_AQ_GPU_LIB_INCLUDE_DIRS "${NV_AQ_GPU_LIB_INCLUDE_DIRS}" CACHE STRING "List of all AQ include directories")
+        set(NV_AQ_GPU_LIB_INCLUDE_DIRS "${NV_AQ_GPU_LIB_INCLUDE_DIRS}" CACHE INTERNAL "List of all AQ include directories")
         message(STATUS "NV_AQ_GPU_LIB_INCLUDE_DIRS set to: ${NV_AQ_GPU_LIB_INCLUDE_DIRS}")
 
         message(STATUS "NV_AQ_GPU_LIB_SUPPORTED define will be set")
         message(STATUS "NV_AQ_GPU_LIB_TARGET: ${NV_AQ_GPU_LIB_TARGET}")
     else()
         message(WARNING "NV_AQ_GPU_LIB is set to '${NV_AQ_GPU_LIB}' but directory or CMakeLists.txt not found. Skipping aq-vulkan integration.")
-        set(NV_AQ_GPU_LIB_AVAILABLE FALSE CACHE BOOL "NV AQ GPU library is available")
+        set(NV_AQ_GPU_LIB_AVAILABLE FALSE CACHE INTERNAL "NV AQ GPU library is available")
     endif()
 else()
     message(STATUS "NV_AQ_GPU_LIB not set - aq-vulkan integration disabled")
-    set(NV_AQ_GPU_LIB_AVAILABLE FALSE CACHE BOOL "NV AQ GPU library is available")
+    set(NV_AQ_GPU_LIB_AVAILABLE FALSE CACHE INTERNAL "NV AQ GPU library is available")
 endif()
 ############ NV_AQ_GPU_LIB Integration ######################################
 

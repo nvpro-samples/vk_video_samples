@@ -2229,8 +2229,7 @@ VkResult VkEncBuildEncoderConfig(
     // ---- Session / runtime knobs ----
     cfg->numFrames = 1000000;        // streaming mode (not UINT32_MAX -- some
                                      // code paths overflow on it)
-    cfg->repeatInputFrames = true;   // external input: also gates skipping the
-                                     // host-visible linear staging pool
+    cfg->repeatInputFrames = true;   // external input has no end of file
     cfg->verbose  = (extConfig.verbose == VK_TRUE) ? 1 : 0;
     cfg->validate = (extConfig.validate == VK_TRUE) ? 1 : 0;
     cfg->disableFileOutput = (extConfig.disableFileOutput == VK_TRUE) ? 1 : 0;

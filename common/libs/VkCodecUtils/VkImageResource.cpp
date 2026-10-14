@@ -663,11 +663,11 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
     // A view may only be created over an image whose usage includes at least
     // one view-compatible bit (VUID-VkImageViewCreateInfo-image-04441).
     // TRANSFER_SRC/DST are NOT among them, so a transfer-only image -- e.g. a
-    // staging copy source supplied by a caller, consumed solely through its
-    // raw VkImage by vkCmdCopyImage and barriers -- gets no view at all
-    // rather than an invalid one. Images this library allocates itself always
-    // carry a view-compatible usage, which is why this never fired before
-    // callers began handing in externally created images.
+    // staging copy source supplied by a caller, or a host-visible read-back
+    // target such as the encoder's --psnr reconstruction copy, consumed
+    // solely through its raw VkImage by vkCmdCopyImage and barriers -- gets
+    // no view at all, neither the combined view nor the plane views below,
+    // rather than an invalid one.
     static const VkImageUsageFlags kViewCompatibleUsage =
         VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
@@ -677,8 +677,11 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
         VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
         VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR |
         VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR |
-        VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR;
-    if ((imageCreateInfo.usage & kViewCompatibleUsage) == 0) {
+        VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR |
+        VK_IMAGE_USAGE_VIDEO_ENCODE_QUANTIZATION_DELTA_MAP_BIT_KHR |
+        VK_IMAGE_USAGE_VIDEO_ENCODE_EMPHASIS_MAP_BIT_KHR;
+    const bool imageHasViewUsage = ((imageCreateInfo.usage & kViewCompatibleUsage) != 0);
+    if (!imageHasViewUsage) {
         skipCombinedView = true;
     }
 
@@ -742,7 +745,8 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
             (imageCreateInfo.flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) != 0;
 
         // Skip per-plane views when usage is zero (video-only images like DPB)
-        if ((planeUsageCreateInfo.usage != 0) && planeViewsPermitted) {
+        // or the image is transfer-only (see kViewCompatibleUsage above)
+        if ((planeUsageCreateInfo.usage != 0) && planeViewsPermitted && imageHasViewUsage) {
             viewInfo.pNext = &planeUsageCreateInfo;
 
             // Per-plane views are bound as storage images to the YCbCr compute filter,
