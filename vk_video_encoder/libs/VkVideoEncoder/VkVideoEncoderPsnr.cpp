@@ -26,6 +26,26 @@
 #include "VkVideoEncoder/VkVideoEncoderPsnr.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/VkImageResource.h"
+#include "nvidia_utils/vulkan/ycbcrvkinfo.h"
+
+// A two-plane format (Y, then interleaved CbCr) at any chroma subsampling.
+static bool IsTwoPlaneFormat(VkFormat format)
+{
+    const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(format);
+    return (mpInfo != nullptr) && (mpInfo->planesLayout.layout == YCBCR_SEMI_PLANAR_CBCR_INTERLEAVED);
+}
+
+static uint32_t ChromaWidth(VkVideoChromaSubsamplingFlagsKHR chromaSubsampling, uint32_t width)
+{
+    const VkVideoChromaSubsamplingFlagsKHR halfWidth = VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR |
+                                                       VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR;
+    return ((chromaSubsampling & halfWidth) != 0) ? ((width + 1) / 2) : width;
+}
+
+static uint32_t ChromaHeight(VkVideoChromaSubsamplingFlagsKHR chromaSubsampling, uint32_t height)
+{
+    return ((chromaSubsampling & VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR) != 0) ? ((height + 1) / 2) : height;
+}
 
 VkResult VkVideoEncoderPsnr::Create(VkSharedBaseObj<VkVideoEncoderPsnr>& psnr)
 {
@@ -139,9 +159,9 @@ void VkVideoEncoderPsnr::CaptureInput(void* encodeFrameInfoVoid, const uint8_t* 
     VkVideoEncoder::VkVideoEncodeFrameInfo& encodeFrameInfo = *static_cast<VkVideoEncoder::VkVideoEncodeFrameInfo*>(encodeFrameInfoVoid);
     const uint32_t width = std::min(m_encoderConfig->encodeWidth, m_encoderConfig->input.width);
     const uint32_t height = std::min(m_encoderConfig->encodeHeight, m_encoderConfig->input.height);
-    const bool chroma420 = (m_encoderConfig->input.chromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR);
-    const uint32_t chromaW = chroma420 ? ((width + 1) / 2) : width;
-    const uint32_t chromaH = chroma420 ? ((height + 1) / 2) : height;
+    const VkVideoChromaSubsamplingFlagsKHR chromaSubsampling = m_encoderConfig->input.chromaSubsampling;
+    const uint32_t chromaW = ChromaWidth(chromaSubsampling, width);
+    const uint32_t chromaH = ChromaHeight(chromaSubsampling, height);
     const size_t yPlaneSize = (size_t)(width * height);
     const size_t uPlaneSize = (size_t)(chromaW * chromaH);
     const uint32_t numPlanes = m_encoderConfig->input.numPlanes;
@@ -519,6 +539,12 @@ bool VkVideoEncoderPsnr::CaptureOutput(VkCommandBuffer cmdBuf, void* encodeFrame
     if (encodeFrameInfo.setupImageResource == nullptr) {
         return false;
     }
+    // The reconstructed picture is written only when the encode requests reference
+    // picture setup (is_reference for H.264 and H.265, a reference frame for AV1);
+    // otherwise its contents are undefined. Only reference pictures are measured.
+    if (!m_encoderConfig->gopStructure.IsFrameReference(encodeFrameInfo.gopPosition)) {
+        return false;
+    }
     if (!m_psnrReconImagePool->GetAvailableImage(encodeFrameInfo.psnrFrameData.psnrStagingImage, VK_IMAGE_LAYOUT_UNDEFINED)) {
         return false;
     }
@@ -529,11 +555,11 @@ bool VkVideoEncoderPsnr::CaptureOutput(VkCommandBuffer cmdBuf, void* encodeFrame
 
     const uint32_t w = m_encoderConfig->encodeWidth;
     const uint32_t h = m_encoderConfig->encodeHeight;
-    const bool chroma420 = (m_encoderConfig->input.chromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR);
-    const uint32_t chromaW = chroma420 ? ((w + 1) / 2) : w;
-    const uint32_t chromaH = chroma420 ? ((h + 1) / 2) : h;
+    const VkVideoChromaSubsamplingFlagsKHR chromaSubsampling = m_encoderConfig->input.chromaSubsampling;
+    const uint32_t chromaW = ChromaWidth(chromaSubsampling, w);
+    const uint32_t chromaH = ChromaHeight(chromaSubsampling, h);
     const uint32_t numInputPlanes = std::min(3u, m_encoderConfig->input.numPlanes);
-    const bool dpbIs2Plane = (m_imageDpbFormat == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM);
+    const bool dpbIs2Plane = IsTwoPlaneFormat(m_imageDpbFormat);
     VkImage dpbImage = setupEncodeImageView->GetImageResource()->GetImage();
     VkImage stagingImage = stagingImageView->GetImageResource()->GetImage();
     // The reconstructed picture's layer of the DPB image: with a layered DPB every picture
@@ -599,11 +625,11 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
     const uint32_t height = std::min(m_encoderConfig->encodeHeight, m_encoderConfig->input.height);
     const uint32_t encodeW = m_encoderConfig->encodeWidth;
     const uint32_t encodeH = m_encoderConfig->encodeHeight;
-    const bool chroma420 = (m_encoderConfig->input.chromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR);
-    const uint32_t chromaW = chroma420 ? ((width + 1) / 2) : width;
-    const uint32_t chromaH = chroma420 ? ((height + 1) / 2) : height;
-    const uint32_t encodeChromaW = chroma420 ? ((encodeW + 1) / 2) : encodeW;
-    const uint32_t encodeChromaH = chroma420 ? ((encodeH + 1) / 2) : encodeH;
+    const VkVideoChromaSubsamplingFlagsKHR chromaSubsampling = m_encoderConfig->input.chromaSubsampling;
+    const uint32_t chromaW = ChromaWidth(chromaSubsampling, width);
+    const uint32_t chromaH = ChromaHeight(chromaSubsampling, height);
+    const uint32_t encodeChromaW = ChromaWidth(chromaSubsampling, encodeW);
+    const uint32_t encodeChromaH = ChromaHeight(chromaSubsampling, encodeH);
     const size_t yPlaneSizeInput = (size_t)(width * height);
     const size_t uPlaneSizeInput = (size_t)(chromaW * chromaH);
     const size_t yPlaneSizeRecon = (size_t)(encodeW * encodeH);
@@ -640,7 +666,7 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
         return;
     }
 
-    const bool dpbIs2Plane = (m_imageDpbFormat == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM);
+    const bool dpbIs2Plane = IsTwoPlaneFormat(m_imageDpbFormat);
 
     VkSharedBaseObj<VkImageResourceView> stagingImageView;
     encodeFrameInfo.psnrFrameData.psnrStagingImage->GetImageView(stagingImageView);
