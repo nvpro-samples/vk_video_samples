@@ -184,6 +184,7 @@ private:
             }
 
             // 1. Wait for GPU completion (forward TL semaphore)
+            bool gpuDone = true;
             if (frame.forwardSemaphore != VK_NULL_HANDLE && frame.forwardWaitValue > 0) {
                 auto t0 = std::chrono::high_resolution_clock::now();
 
@@ -207,12 +208,10 @@ private:
                             (unsigned long long)frame.forwardWaitValue,
                             (unsigned long long)currentValue,
                             semResult, waitMs);
-                    // Signal release even on failure to prevent deadlock
-                    signalRelease(frame);
-                    if (frame.releaseCallback) frame.releaseCallback(frame);
-                    m_framesWritten++;
-                    m_flushCV.notify_all();
-                    continue;
+                    // The frame is not written, but it still takes its turn below and
+                    // signals its release, so that neither this frame's slot nor the
+                    // frames after it in display order wait forever.
+                    gpuDone = false;
                 }
             }
 
@@ -225,24 +224,25 @@ private:
             }
 
             // 3. Call the write callback (reads mapped memory, writes to file)
-            if (frame.writeCallback) {
+            if (gpuDone && frame.writeCallback) {
                 int64_t bytesWritten = frame.writeCallback(frame);
                 if (bytesWritten <= 0LL) {
                     printf("frame.writeCallback return invalid value %lld\n", (long long int)bytesWritten);
                 }
             }
 
-            // 4. Advance the write order and notify other waiting threads
+            // 4. Signal consumer-done (backward TL semaphore), then advance the write
+            //    order. All workers signal the one release semaphore, and a timeline
+            //    semaphore may only be signaled with increasing values, so the signal
+            //    is made while this frame still holds its turn in display order.
             {
                 std::lock_guard<std::mutex> orderLock(m_orderMutex);
+                signalRelease(frame);
                 m_nextWriteOrder = frame.displayOrder + 1;
             }
             m_orderCV.notify_all();
 
-            // 3. Signal consumer-done (backward TL semaphore)
-            signalRelease(frame);
-
-            // 4. Release frame back to decoder
+            // 5. Release frame back to decoder
             if (frame.releaseCallback) {
                 frame.releaseCallback(frame);
             }
