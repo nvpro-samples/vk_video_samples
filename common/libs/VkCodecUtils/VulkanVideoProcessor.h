@@ -59,6 +59,10 @@ public:
 
     /** Wait until async dump-pool writers finish (no-op if sync path). Call before GetCrcValues on frame output. */
     void FlushAsyncFrameWrites();
+    // Output frames that were not written because their GPU wait failed.
+    uint64_t GetDumpFramesNotWritten() const { return m_dumpPool.getFramesNotWritten(); }
+    // Output frame releases that would have signaled a value not above the previous one.
+    uint64_t GetDumpReleaseOrderErrors() const { return m_dumpPool.getReleaseOrderErrors(); }
 
     static void DumpVideoFormat(const VkParserDetectedVideoFormat* videoFormat, bool dumpData);
 

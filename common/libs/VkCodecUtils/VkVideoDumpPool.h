@@ -57,6 +57,18 @@ struct VkVideoDumpFrame {
 };
 
 /**
+ * @brief Faults a test can inject into the dump pool. Everything is off by default.
+ */
+struct VkVideoDumpPoolTestOptions {
+    // Sleep this long just before a frame with an odd display order signals its release.
+    // The next frame does not sleep, so with more than one writer thread it overtakes any
+    // release that the write order does not keep in order.
+    uint32_t releaseDelayUs{0};
+    // Treat the GPU wait of the frame with this display order as failed; -1 for none.
+    int64_t  failWaitDisplayOrder{-1};
+};
+
+/**
  * @brief Thread pool for async frame dumping.
  *
  * Frames are queued from the decode/display loop (non-blocking) and written
@@ -76,15 +88,21 @@ public:
      * @param vkIf Vulkan function table
      * @param device Vulkan device
      * @param numThreads Number of writer threads (default 4)
+     * @param testOptions Faults to inject, for tests of the pool
      */
-    VkResult init(const VulkanDeviceContext* vkDevCtx, VkDevice device, uint32_t numThreads = 4) {
+    VkResult init(const VulkanDeviceContext* vkDevCtx, VkDevice device, uint32_t numThreads = 4,
+                  const VkVideoDumpPoolTestOptions& testOptions = VkVideoDumpPoolTestOptions()) {
         if (m_initialized) return VK_SUCCESS;
 
         m_vkDevCtx = vkDevCtx;
         m_device = device;
+        m_testOptions = testOptions;
         m_shutdown = false;
         m_framesQueued = 0;
         m_framesWritten = 0;
+        m_framesNotWritten = 0;
+        m_lastReleaseValue = 0;
+        m_releaseOrderErrors = 0;
 
         // Create a dedicated timeline semaphore for the dump consumer
         VkSemaphoreTypeCreateInfo timelineInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
@@ -159,6 +177,10 @@ public:
 
     uint64_t getFramesWritten() const { return m_framesWritten.load(); }
     uint64_t getFramesQueued() const { return m_framesQueued.load(); }
+    // Frames whose GPU wait failed: they took their turn but were not written.
+    uint64_t getFramesNotWritten() const { return m_framesNotWritten.load(); }
+    // Release signals that were not above the previous one, and so were not made.
+    uint64_t getReleaseOrderErrors() const { return m_releaseOrderErrors.load(); }
     bool isInitialized() const { return m_initialized; }
 
 private:
@@ -185,7 +207,12 @@ private:
 
             // 1. Wait for GPU completion (forward TL semaphore)
             bool gpuDone = true;
-            if (frame.forwardSemaphore != VK_NULL_HANDLE && frame.forwardWaitValue > 0) {
+            if (frame.displayOrder == m_testOptions.failWaitDisplayOrder) {
+                fprintf(stderr, "[DumpPool] T%d: test: failing the TL semaphore wait for pic=%d "
+                        "(displayOrder=%lld)\n",
+                        threadId, frame.pictureIndex, (long long)frame.displayOrder);
+                gpuDone = false;
+            } else if (frame.forwardSemaphore != VK_NULL_HANDLE && frame.forwardWaitValue > 0) {
                 auto t0 = std::chrono::high_resolution_clock::now();
 
                 VkSemaphoreWaitInfo waitInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
@@ -224,7 +251,9 @@ private:
             }
 
             // 3. Call the write callback (reads mapped memory, writes to file)
-            if (gpuDone && frame.writeCallback) {
+            if (!gpuDone) {
+                m_framesNotWritten++;
+            } else if (frame.writeCallback) {
                 int64_t bytesWritten = frame.writeCallback(frame);
                 if (bytesWritten <= 0LL) {
                     printf("frame.writeCallback return invalid value %lld\n", (long long int)bytesWritten);
@@ -237,6 +266,9 @@ private:
             //    is made while this frame still holds its turn in display order.
             {
                 std::lock_guard<std::mutex> orderLock(m_orderMutex);
+                if ((m_testOptions.releaseDelayUs != 0) && ((frame.displayOrder & 1) != 0)) {
+                    std::this_thread::sleep_for(std::chrono::microseconds(m_testOptions.releaseDelayUs));
+                }
                 signalRelease(frame);
                 m_nextWriteOrder = frame.displayOrder + 1;
             }
@@ -252,8 +284,22 @@ private:
         }
     }
 
+    // A timeline semaphore may only be signaled with a value above its current one
+    // (VUID-VkSemaphoreSignalInfo-value-03258). A value that is not above the last one
+    // signaled is reported and counted instead; the semaphore is already past it.
     void signalRelease(const VkVideoDumpFrame& frame) {
         if (frame.releaseSemaphore != VK_NULL_HANDLE && frame.releaseSignalValue > 0) {
+            std::lock_guard<std::mutex> releaseLock(m_releaseMutex);
+            if (frame.releaseSignalValue <= m_lastReleaseValue) {
+                fprintf(stderr, "[DumpPool] release signal %llu for displayOrder=%lld is not above "
+                        "the last one, %llu\n",
+                        (unsigned long long)frame.releaseSignalValue,
+                        (long long)frame.displayOrder,
+                        (unsigned long long)m_lastReleaseValue);
+                m_releaseOrderErrors++;
+                return;
+            }
+            m_lastReleaseValue = frame.releaseSignalValue;
             VkSemaphoreSignalInfo signalInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO,
                                                   nullptr,
                                                   frame.releaseSemaphore,
@@ -269,6 +315,13 @@ private:
     std::atomic<bool>           m_shutdown{false};
     std::atomic<uint64_t>       m_framesQueued{0};
     std::atomic<uint64_t>       m_framesWritten{0};
+    std::atomic<uint64_t>       m_framesNotWritten{0};
+    VkVideoDumpPoolTestOptions  m_testOptions;
+
+    // The last release value signaled, and the signals that were not above it
+    std::mutex                  m_releaseMutex;
+    uint64_t                    m_lastReleaseValue{0};
+    std::atomic<uint64_t>       m_releaseOrderErrors{0};
 
     std::vector<std::thread>    m_threads;
     std::queue<VkVideoDumpFrame> m_frameQueue;
