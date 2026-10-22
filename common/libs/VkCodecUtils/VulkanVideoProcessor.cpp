@@ -184,7 +184,10 @@ VkResult VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
 
     // Initialize threaded dump pool if file output is enabled
     if (!!m_frameToFile && m_vkVideoFrameBuffer) {
-        result = m_dumpPool.init(m_vkDevCtx, *m_vkDevCtx, 4 /* writerThreads */);
+        VkVideoDumpPoolTestOptions dumpTestOptions;
+        dumpTestOptions.releaseDelayUs = programConfig.dumpTestReleaseDelayUs;
+        dumpTestOptions.failWaitDisplayOrder = programConfig.dumpTestFailWaitDisplayOrder;
+        result = m_dumpPool.init(m_vkDevCtx, *m_vkDevCtx, 4 /* writerThreads */, dumpTestOptions);
         if (result == VK_SUCCESS) {
             // Register the dump pool's own TL semaphore as an external consumer
             // so QueuePictureForDecode waits for the dump to release each frame
@@ -290,6 +293,10 @@ void VulkanVideoProcessor::Deinit()
     if (m_dumpPool.isInitialized()) {
         m_dumpPool.flush();
         m_dumpPool.shutdown();
+        if (m_dumpPool.getReleaseOrderErrors() != 0) {
+            fprintf(stderr, "ERROR: %llu output frame releases were out of display order\n",
+                    (unsigned long long)m_dumpPool.getReleaseOrderErrors());
+        }
     }
 
     m_vkParser = nullptr;
