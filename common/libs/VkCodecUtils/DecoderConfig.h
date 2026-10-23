@@ -72,6 +72,8 @@ struct DecoderConfig {
         gpuIndex = -1;
         forceParserType = VK_VIDEO_CODEC_OPERATION_NONE_KHR;
         decoderQueueSize = 5;
+        dumpTestReleaseDelayUs = 0;
+        dumpTestFailWaitDisplayOrder = -1;
         enablePostProcessFilter = -1,
         enableStreamDemuxing = true;
         deviceId = (uint32_t)-1;
@@ -247,6 +249,20 @@ struct DecoderConfig {
                 "result - only used with --noDisplay (when no presentation is enabled)",
                 [this](const char **args, const ProgramArgs &a) {
                     decoderQueueSize = std::atoi(args[0]);
+                    return true;
+                }},
+            {"--dumpTestReleaseDelayUs", nullptr, 1,
+                "Test only: delay the release of each output frame with an odd display order "
+                "by this many microseconds, so that a release out of display order shows up",
+                [this](const char **args, const ProgramArgs &a) {
+                    dumpTestReleaseDelayUs = std::atoi(args[0]);
+                    return true;
+                }},
+            {"--dumpTestFailWait", nullptr, 1,
+                "Test only: fail the GPU wait of the output frame with this display order, "
+                "which is then not written",
+                [this](const char **args, const ProgramArgs &a) {
+                    dumpTestFailWaitDisplayOrder = std::atoll(args[0]);
                     return true;
                 }},
             {"--decodeImagesInFlight", nullptr, 1,
@@ -503,6 +519,8 @@ struct DecoderConfig {
     std::vector<uint32_t> crcInitValue;
     uint32_t deviceId;
     uint32_t decoderQueueSize;
+    uint32_t dumpTestReleaseDelayUs;
+    int64_t dumpTestFailWaitDisplayOrder;
     int32_t enablePostProcessFilter;
     uint32_t enableStreamDemuxing : 1;
     uint32_t directMode : 1;
