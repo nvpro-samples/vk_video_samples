@@ -18,7 +18,12 @@ show_frame 1
 disable_cdf_update 0
 order_hint 0
 disable_frame_end_update_cdf 0
+base_q_idx 15
 segmentation_enabled 0
+loop_filter_level[0] 0
+loop_filter_level[1] 0
+tx_mode 2
+reduced_tx_set 0
 == Packet
 == Frame Header
 show_existing_frame 0
@@ -37,8 +42,17 @@ ref_frame_idx[3] 0
 ref_frame_idx[4] 0
 ref_frame_idx[5] 0
 ref_frame_idx[6] 0
+allow_high_precision_mv 1
+is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+base_q_idx 81
 segmentation_enabled 0
+loop_filter_level[0] 0
+loop_filter_level[1] 0
+tx_mode 2
+reference_select 0
+allow_warped_motion 1
+reduced_tx_set 0
 == Packet
 == Frame Header
 show_existing_frame 0
@@ -57,8 +71,17 @@ ref_frame_idx[3] 1
 ref_frame_idx[4] 0
 ref_frame_idx[5] 0
 ref_frame_idx[6] 0
+allow_high_precision_mv 1
+is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+base_q_idx 80
 segmentation_enabled 0
+loop_filter_level[0] 0
+loop_filter_level[1] 0
+tx_mode 1
+reference_select 0
+allow_warped_motion 1
+reduced_tx_set 0
 == Packet
 == Frame Header
 show_existing_frame 0
@@ -77,11 +100,29 @@ ref_frame_idx[3] 2
 ref_frame_idx[4] 0
 ref_frame_idx[5] 0
 ref_frame_idx[6] 0
+allow_high_precision_mv 1
+is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+base_q_idx 80
 segmentation_enabled 0
+loop_filter_level[0] 4
+loop_filter_level[1] 4
+loop_filter_level[2] 0
+loop_filter_level[3] 0
+tx_mode 1
+reference_select 0
+allow_warped_motion 1
+reduced_tx_set 0
 == Packet
 == Sequence Header
 reduced_still_picture_header 1
 == Frame Header
 disable_cdf_update 0
+base_q_idx 128
 segmentation_enabled 0
+loop_filter_level[0] 4
+loop_filter_level[1] 4
+loop_filter_level[2] 13
+loop_filter_level[3] 6
+tx_mode 2
+reduced_tx_set 0

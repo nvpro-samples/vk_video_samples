@@ -91,6 +91,7 @@ compact dump the committed streams carry.
 | Categories | Compared |
 |---|---|
 | `hdr-*` | `frame_type`, `OrderHint`, `primary_ref_frame`, `refresh_frame_flags`, `ref_frame_idx` (including frame_refs_short_signaling, 7.8), `OrderHints`, `error_resilient_mode`, `disable_cdf_update`, `disable_frame_end_update_cdf` |
+| `hdr-quant`, `hdr-loop-filter`, `hdr-tx-mode`, `hdr-mode-flags`, `hdr-film-grain` | syntax read after the segmentation parameters, against ffmpeg's reading of it: `base_q_idx` and the `DeltaQ` values, `loop_filter_level`, `TxMode`, `reference_select`, `skip_mode_present`, `reduced_tx_set`, `allow_warped_motion` (with `is_motion_mode_switchable` and `allow_high_precision_mv` for inter frames), and `apply_grain`, `grain_seed` and `point_y_value`. A misread earlier in the header that shifts the bits shows here |
 | `seg-*` | the segmentation flags, and the effective `FeatureEnabled` and `FeatureData` after load_previous() and segmentation_params() |
 | `setup-*` | the picture's own `StdVideoDecodeAV1ReferenceInfo` |
 | `ref-*` | the `StdVideoDecodeAV1ReferenceInfo` of every buffer the picture references, which Vulkan defines as the information of the frame stored there |

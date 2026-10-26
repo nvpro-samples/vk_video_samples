@@ -34,7 +34,9 @@ frame loading). Vulkan defines each StdVideoDecodeAV1ReferenceInfo member by the
 information of the frame stored in that buffer.
 
 Every decoded picture of the trace is compared with the model. Mismatches are counted per category:
-  hdr-*      the picture's own header fields
+  hdr-*      the picture's own header fields; hdr-quant, hdr-loop-filter, hdr-tx-mode, hdr-mode-flags and
+             hdr-film-grain compare syntax read late in the header with ffmpeg's reading of it, so a
+             misread earlier in the header that shifts the bits shows there
   seg-*      the picture's segmentation flags and its effective FeatureEnabled and FeatureData
   setup-*    StdVideoDecodeAV1ReferenceInfo of the picture itself (the setup slot)
   ref-*      StdVideoDecodeAV1ReferenceInfo of each buffer the picture references
@@ -74,8 +76,13 @@ MODEL_FIELDS = {
     "disable_cdf_update", "order_hint", "primary_ref_frame", "refresh_frame_flags", "frame_refs_short_signaling",
     "last_frame_idx", "golden_frame_idx", "disable_frame_end_update_cdf", "segmentation_enabled",
     "segmentation_update_map", "segmentation_temporal_update", "segmentation_update_data",
+    "base_q_idx", "diff_uv_delta", "delta_q_y_dc.delta_q", "delta_q_u_dc.delta_q",
+    "delta_q_u_ac.delta_q", "delta_q_v_dc.delta_q", "delta_q_v_ac.delta_q", "tx_mode", "reference_select",
+    "skip_mode_present", "reduced_tx_set", "allow_warped_motion", "is_motion_mode_switchable",
+    "allow_high_precision_mv", "apply_grain", "grain_seed", "update_grain", "num_y_points",
 }
-MODEL_FIELD_ARRAYS = ("ref_order_hint[", "ref_frame_idx[", "feature_enabled[", "feature_value[")
+MODEL_FIELD_ARRAYS = ("ref_order_hint[", "ref_frame_idx[", "feature_enabled[", "feature_value[", "loop_filter_level[",
+                      "point_y_value[")
 
 
 def clip3(lo, hi, value):
@@ -354,6 +361,7 @@ class Model:
             "sign_bias": sign_bias,
             "references": {},
         }
+        expected.update(self.header_tail(f, intra))
         if not intra:
             for idx in sorted(set(ref_frame_idx)):
                 expected["references"][idx] = self.buffers[idx]
@@ -375,6 +383,37 @@ class Model:
                 self.buffers[i] = stored.copy()
                 self.ref_order_hint[i] = order_hint
         return expected
+
+
+    def header_tail(self, f, intra):
+        """Syntax read after the segmentation parameters, as ffmpeg read it. An element the header does
+        not code takes the value the specification infers for it."""
+        y_dc = f.get("delta_q_y_dc.delta_q", 0)
+        u_dc = f.get("delta_q_u_dc.delta_q", 0)
+        u_ac = f.get("delta_q_u_ac.delta_q", 0)
+        if f.get("diff_uv_delta", 0):
+            v_dc, v_ac = f.get("delta_q_v_dc.delta_q", 0), f.get("delta_q_v_ac.delta_q", 0)
+        else:
+            v_dc, v_ac = u_dc, u_ac
+        tail = {
+            "quant": [f.get("base_q_idx", 0), y_dc, u_dc, u_ac, v_dc, v_ac],
+            # read_tx_mode: ffmpeg codes TX_MODE_LARGEST 1 and TX_MODE_SELECT 2, and infers ONLY_4X4 0 for a
+            # CodedLossless frame, which codes neither loop filter levels nor tx_mode_select.
+            "TxMode": f.get("tx_mode", 0),
+            "loop_filter_level": [f.get(f"loop_filter_level[{i}]", 0) for i in range(4)],
+            "mode_flags": {name: f.get(name, 0) for name in
+                           ("reference_select", "skip_mode_present", "reduced_tx_set", "allow_warped_motion")},
+            "apply_grain": f.get("apply_grain", 0),
+            "grain_seed": f.get("grain_seed"),
+            "point_y_value": None,
+        }
+        if not intra:
+            # Coded for inter frames only.
+            for name in ("is_motion_mode_switchable", "allow_high_precision_mv"):
+                tail["mode_flags"][name] = f.get(name, 0)
+        if "num_y_points" in f:
+            tail["point_y_value"] = [f.get(f"point_y_value[{i}]", 0) for i in range(f["num_y_points"])]
+        return tail
 
 
 def model_frames(lines):
@@ -487,6 +526,24 @@ def compare(frames, pictures, verbose):
             report.check("hdr-ref-frame-idx", key, "ref_frame_idx", exp["ref_frame_idx"], av1["ref_frame_idx"])
             if exp["refs_known"]:
                 report.check("hdr-order-hints", key, "OrderHints[1..7]", exp["OrderHints"][1:], std["OrderHints"][1:])
+
+        quant = pic["quant"]
+        report.check("hdr-quant", key, "base_q_idx and DeltaQ", exp["quant"],
+                     [quant[name] for name in ("base_q_idx", "DeltaQYDc", "DeltaQUDc", "DeltaQUAc", "DeltaQVDc",
+                                               "DeltaQVAc")])
+        report.check("hdr-loop-filter", key, "loop_filter_level", exp["loop_filter_level"],
+                     pic["lf"]["loop_filter_level"])
+        report.check("hdr-tx-mode", key, "TxMode", exp["TxMode"], std["TxMode"])
+        for name, value in exp["mode_flags"].items():
+            report.check("hdr-mode-flags", key, name, value, int(name in flags))
+        report.check("hdr-film-grain", key, "apply_grain", exp["apply_grain"], int("apply_grain" in flags))
+        if exp["apply_grain"]:
+            report.check("hdr-film-grain", key, "grain_seed", exp["grain_seed"], pic["fg"]["grain_seed"])
+            if exp["point_y_value"] is not None:
+                n = len(exp["point_y_value"])
+                report.check("hdr-film-grain", key, "point_y_value", exp["point_y_value"],
+                             pic["fg"]["point_y_value"][:n] if pic["fg"]["num_y_points"] == n else
+                             f"num_y_points {pic['fg']['num_y_points']}")
 
         report.check("seg-flags", key, "segmentation_enabled", exp["segmentation_enabled"],
                      int("segmentation_enabled" in flags))

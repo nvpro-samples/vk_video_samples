@@ -7,4 +7,11 @@ reduced_still_picture_header 1
 reduced_still_picture_header 1
 == Frame Header
 disable_cdf_update 0
+base_q_idx 255
 segmentation_enabled 0
+loop_filter_level[0] 9
+loop_filter_level[1] 9
+loop_filter_level[2] 8
+loop_filter_level[3] 23
+tx_mode 2
+reduced_tx_set 0
