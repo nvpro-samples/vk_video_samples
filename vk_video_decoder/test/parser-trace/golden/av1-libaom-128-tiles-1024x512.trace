@@ -1,0 +1,6 @@
+trace version=1 codec=av1 format=ivf packets=2 offsetAlignment=256 sizeAlignment=256 pool=32
+pkt index=0 bytes=2164 pts=0
+sps index=0 codec=av1 seq_profile=0 frame_width_bits_minus_1=9 frame_height_bits_minus_1=8 max_frame_width_minus_1=1023 max_frame_height_minus_1=511 delta_frame_id_length_minus_2=0 additional_frame_id_length_minus_1=0 order_hint_bits_minus_1=6 seq_force_integer_mv=2 seq_force_screen_content_tools=2 flags=enable_filter_intra|enable_intra_edge_filter|enable_masked_compound|enable_warped_motion|enable_order_hint|enable_ref_frame_mvs|enable_cdef
+  color BitDepth=8 subsampling_x=1 subsampling_y=1 color_primaries=2 transfer_characteristics=2 matrix_coefficients=2 chroma_sample_position=0 flags=-
+pkt index=1 bytes=455 pts=1
+eos pictures=0 displayed=0

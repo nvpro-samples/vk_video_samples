@@ -30,7 +30,7 @@ correctly.
 | `scripts/av1_reference_model.py` | the AV1 model and the comparison |
 | `scripts/parser_trace_suite.py` | the suite runner CTest calls |
 | `suites/av1.json` | the streams, their goldens, header dumps and known categories, and the defects table |
-| `streams/*.ivf` | seven streams of 2 to 8 KB: six 64x64 streams and a 1920x1080 still picture |
+| `streams/*.ivf` | nine streams of 2 to 8 KB: six 64x64 streams, a 1920x1080 still picture and two streams with many tiles |
 | `streams/*.headers.txt` | their compact header dumps, so the model check needs no ffmpeg |
 | `golden/*.trace` | their recorded traces |
 
@@ -92,6 +92,8 @@ compact dump the committed streams carry.
 |---|---|
 | `hdr-*` | `frame_type`, `OrderHint`, `primary_ref_frame`, `refresh_frame_flags`, `ref_frame_idx` (including frame_refs_short_signaling, 7.8), `OrderHints`, `error_resilient_mode`, `disable_cdf_update`, `disable_frame_end_update_cdf` |
 | `hdr-quant`, `hdr-loop-filter`, `hdr-tx-mode`, `hdr-mode-flags`, `hdr-film-grain` | syntax read after the segmentation parameters, against ffmpeg's reading of it: `base_q_idx` and the `DeltaQ` values, `loop_filter_level`, `TxMode`, `reference_select`, `skip_mode_present`, `reduced_tx_set`, `allow_warped_motion` (with `is_motion_mode_switchable` and `allow_high_precision_mv` for inter frames), and `apply_grain`, `grain_seed` and `point_y_value`. A misread earlier in the header that shifts the bits shows here |
+| `hdr-frame-size` | `UpscaledWidth`, `FrameWidth` and `FrameHeight`, from frame_size(), superres_params() and frame_size_with_refs(), which takes a size from a reference |
+| `tile-*` | `TileCols`, `TileRows` and `tileCount`; `width_in_sbs_minus_1` and `height_in_sbs_minus_1`; `MiColStarts` and `MiRowStarts` in mode info units, as Vulkan's `pMiColStarts` and `pMiRowStarts` take them; `context_update_tile_id` and `tile_size_bytes_minus_1`; and that every tile offset and size lies inside the picture's data, after the tile before it |
 | `seg-*` | the segmentation flags, and the effective `FeatureEnabled` and `FeatureData` after load_previous() and segmentation_params() |
 | `setup-*` | the picture's own `StdVideoDecodeAV1ReferenceInfo` |
 | `ref-*` | the `StdVideoDecodeAV1ReferenceInfo` of every buffer the picture references, which Vulkan defines as the information of the frame stored there |
@@ -127,4 +129,6 @@ size the table gives:
 | `av1-libaom-key-frames-64x64.ivf` | `-frames:v 12 -c:v libaom-av1 -cpu-used 8 -lag-in-frames 0 -g 4 -keyint_min 4` | shown key frames after inter frames, which reset `OrderHints` |
 | `av1-libaom-still-after-inter-64x64.ivf` | `-frames:v 4 -c:v libaom-av1 -cpu-used 8 -lag-in-frames 0`, followed by `-frames:v 1 -c:v libaom-av1 -cpu-used 8 -still-picture 1`, joined with `-f concat -i <list> -c copy` | a reduced still picture header after frames with order hints |
 | `av1-libaom-film-grain-64x64.ivf` | `-frames:v 17 -c:v libaom-av1 -cpu-used 6 -lag-in-frames 16 -auto-alt-ref 1 -g 17 -denoise-noise-level 25` | film grain on every shown frame, and one frame with show_frame and showable_frame 0, which codes no film grain parameters |
+| `av1-libaom-64-tile-rows-64x4096.ivf` | 64x4096 from `testsrc2` blurred with `gblur=sigma=20`, `-frames:v 2 -c:v libaom-av1 -cpu-used 8 -crf 63 -lag-in-frames 0 -tile-rows 6 -aom-params sb-size=64` | 64 tile rows of one superblock |
+| `av1-libaom-128-tiles-1024x512.ivf` | 1024x512 from `testsrc2` blurred with `gblur=sigma=20`, `-frames:v 2 -c:v libaom-av1 -cpu-used 8 -crf 63 -lag-in-frames 0 -tile-columns 4 -tile-rows 3 -aom-params sb-size=64` | 16 by 8 tiles, 128 in all |
 | `av1-libaom-still-picture-1080p.ivf` | 1920x1080, `-frames:v 1 -c:v libaom-av1 -cpu-used 8 -crf 63 -still-picture 1` | a reduced still picture header with `seq_level_idx` 8, level 4.0 |

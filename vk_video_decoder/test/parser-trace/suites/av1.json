@@ -1,6 +1,10 @@
 {
   "codec": "av1",
-  "defects": {},
+  "defects": {
+    "picture-count": "the parser drops a frame with more than 64 tiles",
+    "tile-sizes": "with 64 tile rows, MiRowStarts[64] is written past its array, over width_in_sbs_minus_1[0]",
+    "tile-starts": "MiColStarts and MiRowStarts are in superblocks, not in mode info units"
+  },
   "streams": [
     {
       "name": "av1-rav1e-segmentation-64x64",
@@ -57,6 +61,22 @@
       "golden": "../golden/av1-libaom-film-grain-64x64.trace",
       "headers": "../streams/av1-libaom-film-grain-64x64.headers.txt",
       "known": []
+    },
+    {
+      "name": "av1-libaom-64-tile-rows-64x4096",
+      "path": "../streams/av1-libaom-64-tile-rows-64x4096.ivf",
+      "format": "ivf",
+      "golden": "../golden/av1-libaom-64-tile-rows-64x4096.trace",
+      "headers": "../streams/av1-libaom-64-tile-rows-64x4096.headers.txt",
+      "known": ["tile-sizes", "tile-starts"]
+    },
+    {
+      "name": "av1-libaom-128-tiles-1024x512",
+      "path": "../streams/av1-libaom-128-tiles-1024x512.ivf",
+      "format": "ivf",
+      "golden": "../golden/av1-libaom-128-tiles-1024x512.trace",
+      "headers": "../streams/av1-libaom-128-tiles-1024x512.headers.txt",
+      "known": ["picture-count"]
     },
     {
       "name": "basketball-1080p-rav1e",

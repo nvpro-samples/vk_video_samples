@@ -37,6 +37,9 @@ Every decoded picture of the trace is compared with the model. Mismatches are co
   hdr-*      the picture's own header fields; hdr-quant, hdr-loop-filter, hdr-tx-mode, hdr-mode-flags and
              hdr-film-grain compare syntax read late in the header with ffmpeg's reading of it, so a
              misread earlier in the header that shifts the bits shows there
+  hdr-frame-size  UpscaledWidth, FrameWidth and FrameHeight (5.9.5 to 5.9.8, with frame_size_with_refs)
+  tile-*     the tile information Vulkan's StdVideoAV1TileInfo carries (5.9.15, 6.8.14), and the tile
+             offsets and sizes: every tile lies inside the picture's data
   seg-*      the picture's segmentation flags and its effective FeatureEnabled and FeatureData
   setup-*    StdVideoDecodeAV1ReferenceInfo of the picture itself (the setup slot)
   ref-*      StdVideoDecodeAV1ReferenceInfo of each buffer the picture references
@@ -80,9 +83,14 @@ MODEL_FIELDS = {
     "delta_q_u_ac.delta_q", "delta_q_v_dc.delta_q", "delta_q_v_ac.delta_q", "tx_mode", "reference_select",
     "skip_mode_present", "reduced_tx_set", "allow_warped_motion", "is_motion_mode_switchable",
     "allow_high_precision_mv", "apply_grain", "grain_seed", "update_grain", "num_y_points",
+    "max_frame_width_minus_1", "max_frame_height_minus_1", "enable_superres", "use_128x128_superblock",
+    "frame_size_override_flag", "frame_width_minus_1", "frame_height_minus_1", "use_superres", "coded_denom",
+    "uniform_tile_spacing_flag", "tile_cols_log2", "tile_rows_log2", "context_update_tile_id",
+    "tile_size_bytes_minus1",
 }
 MODEL_FIELD_ARRAYS = ("ref_order_hint[", "ref_frame_idx[", "feature_enabled[", "feature_value[", "loop_filter_level[",
-                      "point_y_value[")
+                      "point_y_value[", "found_ref[", "width_in_sbs_minus_1[", "height_in_sbs_minus_1[")
+SUPERRES_NUM, SUPERRES_DENOM_MIN = 8, 9
 
 
 def clip3(lo, hi, value):
@@ -160,6 +168,8 @@ class Buffer:
         self.feature_enabled = [[0] * 8 for _ in range(8)]
         self.feature_data = [[0] * 8 for _ in range(8)]
         self.written = False       # a frame has been stored here
+        self.upscaled_width = 0    # RefUpscaledWidth
+        self.frame_height = 0      # RefFrameHeight
 
     def copy(self):
         return copy.deepcopy(self)
@@ -300,6 +310,9 @@ class Model:
                     sign_bias |= 1 << (LAST_FRAME + i)
                 refs_known = refs_known and self.buffers[ref_frame_idx[i]].known
 
+        upscaled_width, frame_width, frame_height = self.frame_size(f, reduced, frame_type, error_resilient_mode,
+                                                                    ref_frame_idx)
+
         if reduced or disable_cdf_update:
             disable_frame_end_update_cdf = 1
         else:
@@ -362,6 +375,8 @@ class Model:
             "references": {},
         }
         expected.update(self.header_tail(f, intra))
+        expected["frame_size"] = [upscaled_width, frame_width, frame_height]
+        expected["tiles"] = self.tile_info(f, frame_width, frame_height)
         if not intra:
             for idx in sorted(set(ref_frame_idx)):
                 expected["references"][idx] = self.buffers[idx]
@@ -378,12 +393,80 @@ class Model:
         stored.feature_enabled = fe
         stored.feature_data = fd
         stored.written = True
+        stored.upscaled_width = upscaled_width
+        stored.frame_height = frame_height
         for i in range(NUM_REF_FRAMES):
             if refresh & (1 << i):
                 self.buffers[i] = stored.copy()
                 self.ref_order_hint[i] = order_hint
         return expected
 
+
+    def frame_size(self, f, reduced, frame_type, error_resilient_mode, ref_frame_idx):
+        """Returns (UpscaledWidth, FrameWidth, FrameHeight): frame_size_with_refs() (5.9.7) for an inter
+        frame that overrides its size outside error resilient mode, frame_size() (5.9.5) otherwise, then
+        superres_params() (5.9.8)."""
+        seq = self.seq
+        if reduced:
+            override = 0
+        elif frame_type == SWITCH_FRAME:
+            override = 1
+        else:
+            override = f.get("frame_size_override_flag", 0)
+        upscaled = height = None
+        if ref_frame_idx is not None and override and not error_resilient_mode:
+            for i in range(REFS_PER_FRAME):
+                if f.get(f"found_ref[{i}]", 0):
+                    buf = self.buffers[ref_frame_idx[i]]
+                    upscaled, height = buf.upscaled_width, buf.frame_height
+                    break
+        if upscaled is None:
+            if override:
+                upscaled, height = f.get("frame_width_minus_1", 0) + 1, f.get("frame_height_minus_1", 0) + 1
+            else:
+                upscaled = seq.get("max_frame_width_minus_1", 0) + 1
+                height = seq.get("max_frame_height_minus_1", 0) + 1
+        denom = SUPERRES_NUM
+        if seq.get("enable_superres", 0) and f.get("use_superres", 0):
+            denom = f.get("coded_denom", 0) + SUPERRES_DENOM_MIN
+        return upscaled, (upscaled * SUPERRES_NUM + denom // 2) // denom, height
+
+    def tile_info(self, f, frame_width, frame_height):
+        """tile_info() (5.9.15): the tile layout in superblocks, and MiColStarts and MiRowStarts in mode
+        info units (6.8.14), the units Vulkan's pMiColStarts and pMiRowStarts take."""
+        mi_cols = 2 * ((frame_width + 7) >> 3)
+        mi_rows = 2 * ((frame_height + 7) >> 3)
+        sb_shift = 5 if self.seq.get("use_128x128_superblock", 0) else 4
+        sb_cols = (mi_cols + (1 << sb_shift) - 1) >> sb_shift
+        sb_rows = (mi_rows + (1 << sb_shift) - 1) >> sb_shift
+
+        def starts(log2_name, sizes_name, sb_count):
+            if f.get("uniform_tile_spacing_flag", 0):
+                log2 = f.get(log2_name, 0)
+                size = (sb_count + (1 << log2) - 1) >> log2
+                return list(range(0, sb_count, size)), log2
+            # A size coded as ns(1), one superblock left, takes no bits and is 0; ffmpeg prints nothing.
+            result, start = [], 0
+            while start < sb_count:
+                start_count = len(result)
+                result.append(start)
+                start += f.get(f"{sizes_name}[{start_count}]", 0) + 1
+            return result, (len(result) - 1).bit_length()     # tile_log2(1, count)
+
+        col_starts, cols_log2 = starts("tile_cols_log2", "width_in_sbs_minus_1", sb_cols)
+        row_starts, rows_log2 = starts("tile_rows_log2", "height_in_sbs_minus_1", sb_rows)
+        coded = cols_log2 + rows_log2 > 0
+        return {
+            "TileCols": len(col_starts),
+            "TileRows": len(row_starts),
+            "MiColStarts": [start << sb_shift for start in col_starts],
+            "MiRowStarts": [start << sb_shift for start in row_starts],
+            "width_in_sbs_minus_1": [end - start - 1 for start, end in zip(col_starts, col_starts[1:] + [sb_cols])],
+            "height_in_sbs_minus_1": [end - start - 1 for start, end in zip(row_starts, row_starts[1:] + [sb_rows])],
+            "context_update_tile_id": f.get("context_update_tile_id", 0) if coded else 0,
+            # Coded only with more than one tile; a single-tile frame leaves it undefined.
+            "tile_size_bytes_minus_1": f.get("tile_size_bytes_minus1") if coded else None,
+        }
 
     def header_tail(self, f, intra):
         """Syntax read after the segmentation parameters, as ffmpeg read it. An element the header does
@@ -502,6 +585,32 @@ class Report:
             print(f"  packet {key[0]} picture {key[1]} {category}: {field} expected {expected} got {actual}")
 
 
+def compare_tiles(report, key, exp, pic):
+    tiles = pic["tiles"]
+    cols, rows = exp["TileCols"], exp["TileRows"]
+    report.check("tile-count", key, "TileCols, TileRows", [cols, rows], [tiles["TileCols"], tiles["TileRows"]])
+    report.check("tile-count", key, "tileCount", cols * rows, pic["av1"]["tileCount"])
+    report.check("tile-sizes", key, "width_in_sbs_minus_1", exp["width_in_sbs_minus_1"],
+                 tiles["width_in_sbs_minus_1"][:cols])
+    report.check("tile-sizes", key, "height_in_sbs_minus_1", exp["height_in_sbs_minus_1"],
+                 tiles["height_in_sbs_minus_1"][:rows])
+    report.check("tile-starts", key, "MiColStarts", exp["MiColStarts"], tiles["MiColStarts"][:cols])
+    report.check("tile-starts", key, "MiRowStarts", exp["MiRowStarts"], tiles["MiRowStarts"][:rows])
+    report.check("tile-context", key, "context_update_tile_id", exp["context_update_tile_id"],
+                 tiles["context_update_tile_id"])
+    if exp["tile_size_bytes_minus_1"] is not None:
+        report.check("tile-context", key, "tile_size_bytes_minus_1", exp["tile_size_bytes_minus_1"],
+                     tiles["tile_size_bytes_minus_1"])
+    # Every tile the parser hands over lies inside the picture's data, after the one before it.
+    end = 0
+    for i, (offset, size) in enumerate(zip(pic["av1"]["tileOffsets"], pic["av1"]["tileSizes"])):
+        if offset < end or offset + size > pic["pic"]["bitstreamDataLen"]:
+            report.check("tile-bounds", key, f"tile {i} [offset, size]", f"within [{end}, {pic['pic']['bitstreamDataLen']}]",
+                         [offset, size])
+            break
+        end = offset + size
+
+
 def compare(frames, pictures, verbose):
     report = Report(verbose)
     for key in sorted(set(frames) | set(pictures)):
@@ -544,6 +653,10 @@ def compare(frames, pictures, verbose):
                 report.check("hdr-film-grain", key, "point_y_value", exp["point_y_value"],
                              pic["fg"]["point_y_value"][:n] if pic["fg"]["num_y_points"] == n else
                              f"num_y_points {pic['fg']['num_y_points']}")
+
+        report.check("hdr-frame-size", key, "UpscaledWidth, FrameWidth, FrameHeight", exp["frame_size"],
+                     [av1["upscaled_width"], av1["frame_width"], av1["frame_height"]])
+        compare_tiles(report, key, exp["tiles"], pic)
 
         report.check("seg-flags", key, "segmentation_enabled", exp["segmentation_enabled"],
                      int("segmentation_enabled" in flags))

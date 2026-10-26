@@ -2,11 +2,22 @@
 # (ffmpeg -f ivf -i <ivf> -c copy -copyinkf -bsf:v trace_headers -f null -)
 == Sequence Header
 reduced_still_picture_header 1
+max_frame_width_minus_1 1919
+max_frame_height_minus_1 1079
+use_128x128_superblock 0
+enable_superres 0
 == Packet
 == Sequence Header
 reduced_still_picture_header 1
+max_frame_width_minus_1 1919
+max_frame_height_minus_1 1079
+use_128x128_superblock 0
+enable_superres 0
 == Frame Header
 disable_cdf_update 0
+uniform_tile_spacing_flag 1
+tile_cols_log2 0
+tile_rows_log2 0
 base_q_idx 255
 segmentation_enabled 0
 loop_filter_level[0] 9

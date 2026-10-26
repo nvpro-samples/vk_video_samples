@@ -3,21 +3,31 @@
 == Sequence Header
 reduced_still_picture_header 0
 operating_points_cnt_minus_1 0
+max_frame_width_minus_1 63
+max_frame_height_minus_1 63
+use_128x128_superblock 0
 enable_order_hint 1
 order_hint_bits_minus_1 6
+enable_superres 0
 == Packet
 == Sequence Header
 reduced_still_picture_header 0
 operating_points_cnt_minus_1 0
+max_frame_width_minus_1 63
+max_frame_height_minus_1 63
+use_128x128_superblock 0
 enable_order_hint 1
 order_hint_bits_minus_1 6
+enable_superres 0
 == Frame Header
 show_existing_frame 0
 frame_type 0
 show_frame 1
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 0
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 90
 segmentation_enabled 0
 loop_filter_level[0] 6
@@ -46,6 +56,7 @@ frame_type 1
 show_frame 0
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 11
 primary_ref_frame 7
 refresh_frame_flags 2
@@ -60,6 +71,7 @@ ref_frame_idx[6] 0
 allow_high_precision_mv 1
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 108
 segmentation_enabled 0
 loop_filter_level[0] 10
@@ -90,6 +102,7 @@ frame_type 1
 show_frame 0
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 5
 primary_ref_frame 7
 refresh_frame_flags 4
@@ -104,6 +117,7 @@ ref_frame_idx[6] 1
 allow_high_precision_mv 1
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 109
 segmentation_enabled 0
 loop_filter_level[0] 10
@@ -135,6 +149,7 @@ frame_type 1
 show_frame 0
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 2
 primary_ref_frame 4
 refresh_frame_flags 8
@@ -149,6 +164,7 @@ ref_frame_idx[6] 1
 allow_high_precision_mv 1
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 118
 segmentation_enabled 0
 loop_filter_level[0] 6
@@ -180,6 +196,7 @@ frame_type 1
 show_frame 1
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 1
 primary_ref_frame 7
 refresh_frame_flags 16
@@ -194,6 +211,7 @@ ref_frame_idx[6] 1
 allow_high_precision_mv 0
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 128
 segmentation_enabled 0
 loop_filter_level[0] 6
@@ -231,6 +249,7 @@ frame_type 1
 show_frame 1
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 3
 primary_ref_frame 1
 refresh_frame_flags 32
@@ -245,6 +264,7 @@ ref_frame_idx[6] 1
 allow_high_precision_mv 1
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 127
 segmentation_enabled 0
 loop_filter_level[0] 14
@@ -277,6 +297,7 @@ frame_type 1
 show_frame 1
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 4
 primary_ref_frame 0
 refresh_frame_flags 64
@@ -291,6 +312,7 @@ ref_frame_idx[6] 1
 allow_high_precision_mv 0
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 128
 segmentation_enabled 0
 loop_filter_level[0] 14
@@ -327,6 +349,7 @@ frame_type 1
 show_frame 0
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 8
 primary_ref_frame 4
 refresh_frame_flags 128
@@ -341,6 +364,7 @@ ref_frame_idx[6] 1
 allow_high_precision_mv 1
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 112
 segmentation_enabled 0
 loop_filter_level[0] 14
@@ -372,6 +396,7 @@ frame_type 1
 show_frame 1
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 6
 primary_ref_frame 1
 refresh_frame_flags 16
@@ -386,6 +411,7 @@ ref_frame_idx[6] 1
 allow_high_precision_mv 1
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 127
 segmentation_enabled 0
 loop_filter_level[0] 6
@@ -418,6 +444,7 @@ frame_type 1
 show_frame 1
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 7
 primary_ref_frame 0
 refresh_frame_flags 8
@@ -432,6 +459,7 @@ ref_frame_idx[6] 1
 allow_high_precision_mv 0
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 128
 segmentation_enabled 0
 loop_filter_level[0] 14
@@ -468,6 +496,7 @@ frame_type 1
 show_frame 1
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 9
 primary_ref_frame 1
 refresh_frame_flags 32
@@ -482,6 +511,7 @@ ref_frame_idx[6] 1
 allow_high_precision_mv 1
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 122
 segmentation_enabled 0
 loop_filter_level[0] 10
@@ -514,6 +544,7 @@ frame_type 1
 show_frame 1
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 10
 primary_ref_frame 0
 refresh_frame_flags 64
@@ -528,6 +559,7 @@ ref_frame_idx[6] 1
 allow_high_precision_mv 0
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 128
 segmentation_enabled 0
 loop_filter_level[0] 18
@@ -564,6 +596,7 @@ frame_type 1
 show_frame 0
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 16
 primary_ref_frame 3
 refresh_frame_flags 4
@@ -578,6 +611,7 @@ ref_frame_idx[6] 4
 allow_high_precision_mv 1
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 109
 segmentation_enabled 0
 loop_filter_level[0] 10
@@ -594,6 +628,7 @@ frame_type 1
 show_frame 0
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 13
 primary_ref_frame 2
 refresh_frame_flags 16
@@ -608,6 +643,7 @@ ref_frame_idx[6] 2
 allow_high_precision_mv 1
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 118
 segmentation_enabled 0
 loop_filter_level[0] 10
@@ -639,6 +675,7 @@ frame_type 1
 show_frame 1
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 12
 primary_ref_frame 0
 refresh_frame_flags 8
@@ -653,6 +690,7 @@ ref_frame_idx[6] 2
 allow_high_precision_mv 0
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 128
 segmentation_enabled 0
 loop_filter_level[0] 18
@@ -689,6 +727,7 @@ frame_type 1
 show_frame 1
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 14
 primary_ref_frame 1
 refresh_frame_flags 128
@@ -703,6 +742,7 @@ ref_frame_idx[6] 2
 allow_high_precision_mv 1
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 124
 segmentation_enabled 0
 loop_filter_level[0] 14
@@ -735,6 +775,7 @@ frame_type 1
 show_frame 1
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 15
 primary_ref_frame 0
 refresh_frame_flags 32
@@ -749,6 +790,7 @@ ref_frame_idx[6] 2
 allow_high_precision_mv 0
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 128
 segmentation_enabled 0
 loop_filter_level[0] 10
@@ -781,6 +823,7 @@ frame_type 1
 show_frame 1
 error_resilient_mode 0
 disable_cdf_update 0
+frame_size_override_flag 0
 order_hint 16
 primary_ref_frame 0
 refresh_frame_flags 0
@@ -795,6 +838,7 @@ ref_frame_idx[6] 2
 allow_high_precision_mv 0
 is_motion_mode_switchable 1
 disable_frame_end_update_cdf 0
+uniform_tile_spacing_flag 1
 base_q_idx 128
 segmentation_enabled 0
 loop_filter_level[0] 6
