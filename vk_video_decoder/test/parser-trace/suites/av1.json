@@ -4,9 +4,7 @@
     "setup-saved-order-hints-intra": "a shown key frame keeps the previous frame's OrderHints",
     "ref-saved-order-hints-intra": "a shown key frame keeps the previous frame's OrderHints",
     "hdr-order-hint": "a frame with reduced_still_picture_header keeps the previous frame's OrderHint",
-    "setup-order-hint": "a frame with reduced_still_picture_header keeps the previous frame's OrderHint",
-    "seg-flags": "a reduced still picture header with seq_level_idx above 3.3 is rejected, and the frame is parsed against the partial sequence header",
-    "setup-segmentation-enabled": "a reduced still picture header with seq_level_idx above 3.3 is rejected, and the frame is parsed against the partial sequence header"
+    "setup-order-hint": "a frame with reduced_still_picture_header keeps the previous frame's OrderHint"
   },
   "streams": [
     {
@@ -55,7 +53,7 @@
       "format": "ivf",
       "golden": "../golden/av1-libaom-still-picture-1080p.trace",
       "headers": "../streams/av1-libaom-still-picture-1080p.headers.txt",
-      "known": ["seg-flags", "setup-segmentation-enabled"]
+      "known": []
     },
     {
       "name": "basketball-1080p-rav1e",

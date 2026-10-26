@@ -703,7 +703,7 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
         sps->operating_points_cnt_minus_1 = 0;
         sps->operating_point_idc[0] = 0;
         sps->level[0] = (StdVideoAV1Level)u(5);
-        if (sps->level[0] > STD_VIDEO_AV1_LEVEL_3_3) {
+        if (!(sps->level[0] <= STD_VIDEO_AV1_LEVEL_7_3 || sps->level[0] == 31 /* LEVEL_MAX */)) {
             return false;
         }
 
