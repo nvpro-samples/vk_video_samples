@@ -445,6 +445,7 @@ void VulkanAV1Decoder::UpdateFramePointers(VkPicIf* currentPicture)
             // segmentation
             memcpy(&m_pBuffers[ref_index].seg.FeatureEnabled, pic_data->segmentation.FeatureEnabled, ARRAY_SIZE(pic_data->segmentation.FeatureEnabled));
             memcpy(&m_pBuffers[ref_index].seg.FeatureData, pic_data->segmentation.FeatureData, sizeof(m_pBuffers[ref_index].seg.FeatureData));
+            m_pBuffers[ref_index].segmentation_enabled = pStd->flags.segmentation_enabled;
             m_pBuffers[ref_index].primary_ref_frame = m_PicData.std_info.primary_ref_frame;
             m_pBuffers[ref_index].base_q_index = pic_data->quantization.base_q_idx;
             m_pBuffers[ref_index].disable_frame_end_update_cdf = pStd->flags.disable_frame_end_update_cdf;
@@ -1878,6 +1879,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
                 memcpy(pic_info->segmentation.FeatureEnabled, m_pBuffers[show_existing_frame_index].seg.FeatureEnabled, STD_VIDEO_AV1_MAX_SEGMENTS * sizeof(pic_info->segmentation.FeatureEnabled[0]));
                 memcpy(pic_info->segmentation.FeatureData, m_pBuffers[show_existing_frame_index].seg.FeatureData, STD_VIDEO_AV1_MAX_SEGMENTS * STD_VIDEO_AV1_SEG_LVL_MAX * sizeof(pic_info->segmentation.FeatureData[0][0]));
                 pStd->OrderHint = RefOrderHint[show_existing_frame_index];
+                pStd->flags.segmentation_enabled = m_pBuffers[show_existing_frame_index].segmentation_enabled;
                 UpdateFramePointers(m_pBuffers[show_existing_frame_index].buffer);
             } else {
                 pStd->refresh_frame_flags = 0;
