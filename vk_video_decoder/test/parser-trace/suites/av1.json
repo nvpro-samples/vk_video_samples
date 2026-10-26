@@ -1,9 +1,6 @@
 {
   "codec": "av1",
-  "defects": {
-    "setup-saved-order-hints-intra": "a shown key frame keeps the previous frame's OrderHints",
-    "ref-saved-order-hints-intra": "a shown key frame keeps the previous frame's OrderHints"
-  },
+  "defects": {},
   "streams": [
     {
       "name": "av1-rav1e-segmentation-64x64",
@@ -35,7 +32,7 @@
       "format": "ivf",
       "golden": "../golden/av1-libaom-key-frames-64x64.trace",
       "headers": "../streams/av1-libaom-key-frames-64x64.headers.txt",
-      "known": ["ref-saved-order-hints-intra", "setup-saved-order-hints-intra"]
+      "known": []
     },
     {
       "name": "av1-libaom-still-after-inter-64x64",
@@ -43,7 +40,7 @@
       "format": "ivf",
       "golden": "../golden/av1-libaom-still-after-inter-64x64.trace",
       "headers": "../streams/av1-libaom-still-after-inter-64x64.headers.txt",
-      "known": ["setup-saved-order-hints-intra"]
+      "known": []
     },
     {
       "name": "av1-libaom-still-picture-1080p",

@@ -1915,6 +1915,9 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
             RefValid[i] = 0;
             RefOrderHint[i] = 0;
         }
+        for (uint32_t i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
+            pStd->OrderHints[STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME + i] = 0;
+        }
     }
 
     pic_flags->disable_cdf_update = u(1);
