@@ -153,15 +153,14 @@ bool VulkanAV1Decoder::AddBuffertoOutputQueue(VkPicIf* pDispPic, bool bShowableF
             pDispPic->Release();
         }
     } else {
-        assert(m_numOutFrames == 0 || m_numOutFrames == 1);
-
-        if (m_numOutFrames > 0) {
+        // One entry: a temporal unit outputs its last shown frame, the one of its highest spatial layer.
+        if ((m_numOutFrames > 0) && (m_pOutFrame[0] != nullptr)) {
             m_pOutFrame[0]->Release();
         }
 
         m_pOutFrame[0] = pDispPic;
         m_showableFrame[0] = bShowableFrame;
-        m_numOutFrames++;
+        m_numOutFrames = 1;
     }
     return true;
 }
