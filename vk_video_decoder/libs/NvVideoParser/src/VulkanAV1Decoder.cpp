@@ -444,7 +444,7 @@ void VulkanAV1Decoder::UpdateFramePointers(VkPicIf* currentPicture)
             memcpy(&m_pBuffers[ref_index].lf_mode_delta, m_PicData.loopFilter.loop_filter_mode_deltas, ARRAY_SIZE(m_PicData.loopFilter.loop_filter_mode_deltas));
             // segmentation
             memcpy(&m_pBuffers[ref_index].seg.FeatureEnabled, pic_data->segmentation.FeatureEnabled, ARRAY_SIZE(pic_data->segmentation.FeatureEnabled));
-            memcpy(&m_pBuffers[ref_index].seg.FeatureData, pic_data->segmentation.FeatureData, ARRAY_SIZE(pic_data->segmentation.FeatureData));
+            memcpy(&m_pBuffers[ref_index].seg.FeatureData, pic_data->segmentation.FeatureData, sizeof(m_pBuffers[ref_index].seg.FeatureData));
             m_pBuffers[ref_index].primary_ref_frame = m_PicData.std_info.primary_ref_frame;
             m_pBuffers[ref_index].base_q_index = pic_data->quantization.base_q_idx;
             m_pBuffers[ref_index].disable_frame_end_update_cdf = pStd->flags.disable_frame_end_update_cdf;

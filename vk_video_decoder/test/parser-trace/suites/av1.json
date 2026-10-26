@@ -1,7 +1,6 @@
 {
   "codec": "av1",
   "defects": {
-    "seg-feature-data": "the per-reference save copies 8 of the 128 bytes of FeatureData",
     "ref-segmentation-enabled": "segmentation_enabled is not saved per reference",
     "setup-sign-bias": "the setup slot's RefFrameSignBias comes from buffer 0 with bit 0 set, in the current-minus-reference sense",
     "ref-sign-bias": "a reference's RefFrameSignBias is set for equal order hints and when order hints are off",
@@ -18,7 +17,7 @@
       "format": "ivf",
       "golden": "../golden/av1-rav1e-segmentation-64x64.trace",
       "headers": "../streams/av1-rav1e-segmentation-64x64.headers.txt",
-      "known": ["ref-segmentation-enabled", "seg-feature-data", "setup-frame-type", "setup-sign-bias"]
+      "known": ["ref-segmentation-enabled", "setup-frame-type", "setup-sign-bias"]
     },
     {
       "name": "av1-libaom-no-order-hint-64x64",
@@ -41,7 +40,7 @@
       "root": "VVS_AV1_SEGMENTATION_STREAMS",
       "path": "rav1e/basketball_1080p_rav1e_60f.ivf",
       "format": "ivf",
-      "known": ["ref-segmentation-enabled", "seg-feature-data", "setup-frame-type", "setup-sign-bias"]
+      "known": ["ref-segmentation-enabled", "setup-frame-type", "setup-sign-bias"]
     },
     {
       "name": "basketball-1080p-libaom-variance-aq",
