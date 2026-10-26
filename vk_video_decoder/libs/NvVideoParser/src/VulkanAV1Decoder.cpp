@@ -2063,11 +2063,10 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
         for (uint32_t buf_idx = 0; buf_idx < STD_VIDEO_AV1_NUM_REF_FRAMES; buf_idx++) {
             // ref_order_hint[i]
             int offset = u(sps->order_hint_bits_minus_1 + 1);
-            // assert(buf_idx < FRAME_BUFFERS);
-            if ((buf_idx == (uint32_t)-1) || (offset != RefOrderHint[buf_idx])) {
-                //RefValid[buf_idx] = 0;
-                //RefOrderHint[buf_idx] = frame_offset;
-                assert(0);
+            if (offset != RefOrderHint[buf_idx]) {
+                // AV1 5.9.2 invalidates the buffer. Annex C, as libaom does, gives it the expected order hint.
+                RefValid[buf_idx] = 0;
+                RefOrderHint[buf_idx] = offset;
             }
         }
     }
