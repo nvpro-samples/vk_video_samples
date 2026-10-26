@@ -2346,6 +2346,11 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
         size_t tileSize = 0;
         if (lastTile)
         {
+            // The last tile takes the rest of the OBU, which the tiles before it must not overrun.
+            if ((uint32_t)consumedBytes > hdr.payload_size) {
+                nvParserErrorLog("s", "\nError: Tile sizes exceed the tile group\n");
+                return false;
+            }
             tileSize = hdr.payload_size - consumedBytes;
             m_PicData.tileOffsets[m_PicData.khr_info.tileCount] = (uint32_t)m_nalu.start_offset + (uint32_t)consumedBytes;
         }
@@ -2355,9 +2360,10 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
             consumedBytes += tile_size_bytes_minus_1 + 1;
             m_PicData.tileOffsets[m_PicData.khr_info.tileCount] = (uint32_t)m_nalu.start_offset + (uint32_t)consumedBytes;
 
-            // Add bounds checking and safe conversion
-            if (tile_size_minus_1 > (SIZE_MAX - 1)) {
-                return false; // Tile size too large
+            // The tile has to fit in what is left of the OBU.
+            if (((uint32_t)consumedBytes > hdr.payload_size) || (tile_size_minus_1 >= hdr.payload_size - (uint32_t)consumedBytes)) {
+                nvParserErrorLog("s", "\nError: Tile sizes exceed the tile group\n");
+                return false;
             }
             tileSize = (size_t)(tile_size_minus_1 + 1);
             consumedBytes += (uint32_t)tileSize;
