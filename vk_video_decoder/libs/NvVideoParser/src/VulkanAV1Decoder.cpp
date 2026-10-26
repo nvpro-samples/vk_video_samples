@@ -354,6 +354,7 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
 
     // Setup slot information
     av1->setupSlot.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_DPB_SLOT_INFO_KHR;
+    av1->setupSlotInfo.frame_type = m_PicData.std_info.frame_type;
     av1->setupSlotInfo.OrderHint = m_PicData.std_info.OrderHint;
     memcpy(&av1->setupSlotInfo.SavedOrderHints, m_PicData.std_info.OrderHints, STD_VIDEO_AV1_NUM_REF_FRAMES);
     av1->setupSlotInfo.RefFrameSignBias = m_RefFrameSignBias;

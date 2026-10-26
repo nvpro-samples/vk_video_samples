@@ -36,7 +36,7 @@ pic index=1 curr=1 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pi
   lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
   gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
   fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
-  setup frame_type=0 OrderHint=1 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
+  setup frame_type=1 OrderHint=1 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=1 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=2 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
@@ -58,7 +58,7 @@ pic index=2 curr=2 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pi
   lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
   gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
   fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
-  setup frame_type=0 OrderHint=2 RefFrameSignBias=0x0 SavedOrderHints=[0,1,0,0,0,0,0,0] flags=segmentation_enabled
+  setup frame_type=1 OrderHint=2 RefFrameSignBias=0x0 SavedOrderHints=[0,1,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=1 pic=1 frame_type=1 OrderHint=1 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=2 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
@@ -80,7 +80,7 @@ pic index=3 curr=3 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pi
   lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
   gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
   fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
-  setup frame_type=0 OrderHint=3 RefFrameSignBias=0x0 SavedOrderHints=[0,2,1,0,0,0,0,0] flags=segmentation_enabled
+  setup frame_type=1 OrderHint=3 RefFrameSignBias=0x0 SavedOrderHints=[0,2,1,0,0,0,0,0] flags=segmentation_enabled
   slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=1 pic=1 frame_type=1 OrderHint=1 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=2 pic=2 frame_type=1 OrderHint=2 RefFrameSignBias=0x0 SavedOrderHints=[0,1,0,0,0,0,0,0] flags=segmentation_enabled
@@ -102,7 +102,7 @@ pic index=4 curr=4 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pi
   lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
   gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
   fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
-  setup frame_type=0 OrderHint=4 RefFrameSignBias=0x0 SavedOrderHints=[0,3,2,1,0,0,0,0] flags=segmentation_enabled
+  setup frame_type=1 OrderHint=4 RefFrameSignBias=0x0 SavedOrderHints=[0,3,2,1,0,0,0,0] flags=segmentation_enabled
   slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=1 pic=1 frame_type=1 OrderHint=1 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=2 pic=2 frame_type=1 OrderHint=2 RefFrameSignBias=0x0 SavedOrderHints=[0,1,0,0,0,0,0,0] flags=segmentation_enabled
@@ -124,7 +124,7 @@ pic index=5 curr=5 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pi
   lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
   gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
   fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
-  setup frame_type=0 OrderHint=5 RefFrameSignBias=0x0 SavedOrderHints=[0,4,3,2,0,1,0,0] flags=segmentation_enabled
+  setup frame_type=1 OrderHint=5 RefFrameSignBias=0x0 SavedOrderHints=[0,4,3,2,0,1,0,0] flags=segmentation_enabled
   slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=1 pic=1 frame_type=1 OrderHint=1 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=2 pic=2 frame_type=1 OrderHint=2 RefFrameSignBias=0x0 SavedOrderHints=[0,1,0,0,0,0,0,0] flags=segmentation_enabled
@@ -146,7 +146,7 @@ pic index=6 curr=6 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pi
   lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
   gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
   fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
-  setup frame_type=0 OrderHint=6 RefFrameSignBias=0x0 SavedOrderHints=[0,5,4,3,0,2,1,0] flags=segmentation_enabled
+  setup frame_type=1 OrderHint=6 RefFrameSignBias=0x0 SavedOrderHints=[0,5,4,3,0,2,1,0] flags=segmentation_enabled
   slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=1 pic=1 frame_type=1 OrderHint=1 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=2 pic=2 frame_type=1 OrderHint=2 RefFrameSignBias=0x0 SavedOrderHints=[0,1,0,0,0,0,0,0] flags=segmentation_enabled
@@ -168,7 +168,7 @@ pic index=7 curr=7 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pi
   lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
   gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
   fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
-  setup frame_type=0 OrderHint=7 RefFrameSignBias=0x0 SavedOrderHints=[0,6,5,4,0,3,2,1] flags=segmentation_enabled
+  setup frame_type=1 OrderHint=7 RefFrameSignBias=0x0 SavedOrderHints=[0,6,5,4,0,3,2,1] flags=segmentation_enabled
   slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=1 pic=1 frame_type=1 OrderHint=1 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=2 pic=2 frame_type=1 OrderHint=2 RefFrameSignBias=0x0 SavedOrderHints=[0,1,0,0,0,0,0,0] flags=segmentation_enabled
@@ -190,7 +190,7 @@ pic index=8 curr=8 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pi
   lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
   gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
   fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
-  setup frame_type=0 OrderHint=8 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,0,4,3,2] flags=segmentation_enabled
+  setup frame_type=1 OrderHint=8 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,0,4,3,2] flags=segmentation_enabled
   slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=1 pic=1 frame_type=1 OrderHint=1 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=2 pic=2 frame_type=1 OrderHint=2 RefFrameSignBias=0x0 SavedOrderHints=[0,1,0,0,0,0,0,0] flags=segmentation_enabled
@@ -212,7 +212,7 @@ pic index=9 curr=1 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pi
   lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
   gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
   fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
-  setup frame_type=0 OrderHint=9 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,8,0,4,3] flags=segmentation_enabled
+  setup frame_type=1 OrderHint=9 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,8,0,4,3] flags=segmentation_enabled
   slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=1 pic=8 frame_type=1 OrderHint=8 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,0,4,3,2] flags=segmentation_enabled
   slot i=2 pic=2 frame_type=1 OrderHint=2 RefFrameSignBias=0x0 SavedOrderHints=[0,1,0,0,0,0,0,0] flags=segmentation_enabled
@@ -234,7 +234,7 @@ pic index=10 curr=2 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_p
   lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
   gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
   fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
-  setup frame_type=0 OrderHint=10 RefFrameSignBias=0x0 SavedOrderHints=[0,9,7,6,8,0,5,4] flags=segmentation_enabled
+  setup frame_type=1 OrderHint=10 RefFrameSignBias=0x0 SavedOrderHints=[0,9,7,6,8,0,5,4] flags=segmentation_enabled
   slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=1 pic=8 frame_type=1 OrderHint=8 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,0,4,3,2] flags=segmentation_enabled
   slot i=2 pic=1 frame_type=1 OrderHint=9 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,8,0,4,3] flags=segmentation_enabled
@@ -256,7 +256,7 @@ pic index=11 curr=3 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_p
   lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
   gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
   fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
-  setup frame_type=0 OrderHint=11 RefFrameSignBias=0x0 SavedOrderHints=[0,10,9,7,8,0,6,5] flags=segmentation_enabled
+  setup frame_type=1 OrderHint=11 RefFrameSignBias=0x0 SavedOrderHints=[0,10,9,7,8,0,6,5] flags=segmentation_enabled
   slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=1 pic=8 frame_type=1 OrderHint=8 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,0,4,3,2] flags=segmentation_enabled
   slot i=2 pic=1 frame_type=1 OrderHint=9 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,8,0,4,3] flags=segmentation_enabled
@@ -278,7 +278,7 @@ pic index=12 curr=4 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_p
   lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
   gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
   fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
-  setup frame_type=0 OrderHint=12 RefFrameSignBias=0x0 SavedOrderHints=[0,11,10,9,8,0,7,6] flags=segmentation_enabled
+  setup frame_type=1 OrderHint=12 RefFrameSignBias=0x0 SavedOrderHints=[0,11,10,9,8,0,7,6] flags=segmentation_enabled
   slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=1 pic=8 frame_type=1 OrderHint=8 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,0,4,3,2] flags=segmentation_enabled
   slot i=2 pic=1 frame_type=1 OrderHint=9 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,8,0,4,3] flags=segmentation_enabled
@@ -300,7 +300,7 @@ pic index=13 curr=5 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_p
   lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
   gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
   fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
-  setup frame_type=0 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,8,0,9,7] flags=segmentation_enabled
+  setup frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,8,0,9,7] flags=segmentation_enabled
   slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=1 pic=8 frame_type=1 OrderHint=8 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,0,4,3,2] flags=segmentation_enabled
   slot i=2 pic=1 frame_type=1 OrderHint=9 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,8,0,4,3] flags=segmentation_enabled
@@ -322,7 +322,7 @@ pic index=14 curr=6 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_p
   lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
   gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
   fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
-  setup frame_type=0 OrderHint=14 RefFrameSignBias=0x0 SavedOrderHints=[0,13,12,11,8,0,10,9] flags=segmentation_enabled
+  setup frame_type=1 OrderHint=14 RefFrameSignBias=0x0 SavedOrderHints=[0,13,12,11,8,0,10,9] flags=segmentation_enabled
   slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=1 pic=8 frame_type=1 OrderHint=8 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,0,4,3,2] flags=segmentation_enabled
   slot i=2 pic=1 frame_type=1 OrderHint=9 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,8,0,4,3] flags=segmentation_enabled
@@ -344,7 +344,7 @@ pic index=15 curr=7 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_p
   lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
   gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
   fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
-  setup frame_type=0 OrderHint=15 RefFrameSignBias=0x0 SavedOrderHints=[0,14,13,12,8,0,11,10] flags=segmentation_enabled
+  setup frame_type=1 OrderHint=15 RefFrameSignBias=0x0 SavedOrderHints=[0,14,13,12,8,0,11,10] flags=segmentation_enabled
   slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=1 pic=8 frame_type=1 OrderHint=8 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,0,4,3,2] flags=segmentation_enabled
   slot i=2 pic=1 frame_type=1 OrderHint=9 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,8,0,4,3] flags=segmentation_enabled
@@ -366,7 +366,7 @@ pic index=16 curr=1 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_p
   lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
   gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
   fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
-  setup frame_type=0 OrderHint=16 RefFrameSignBias=0x0 SavedOrderHints=[0,15,14,13,8,0,12,11] flags=segmentation_enabled
+  setup frame_type=1 OrderHint=16 RefFrameSignBias=0x0 SavedOrderHints=[0,15,14,13,8,0,12,11] flags=segmentation_enabled
   slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=segmentation_enabled
   slot i=1 pic=8 frame_type=1 OrderHint=8 RefFrameSignBias=0x0 SavedOrderHints=[0,7,6,5,0,4,3,2] flags=segmentation_enabled
   slot i=2 pic=7 frame_type=1 OrderHint=15 RefFrameSignBias=0x0 SavedOrderHints=[0,14,13,12,8,0,11,10] flags=segmentation_enabled
