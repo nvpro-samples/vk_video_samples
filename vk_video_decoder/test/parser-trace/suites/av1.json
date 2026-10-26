@@ -1,8 +1,6 @@
 {
   "codec": "av1",
-  "defects": {
-    "picture-count": "the parser drops a frame with more than 64 tiles"
-  },
+  "defects": {},
   "streams": [
     {
       "name": "av1-rav1e-segmentation-64x64",
@@ -74,7 +72,7 @@
       "format": "ivf",
       "golden": "../golden/av1-libaom-128-tiles-1024x512.trace",
       "headers": "../streams/av1-libaom-128-tiles-1024x512.headers.txt",
-      "known": ["picture-count"]
+      "known": []
     },
     {
       "name": "basketball-1080p-rav1e",

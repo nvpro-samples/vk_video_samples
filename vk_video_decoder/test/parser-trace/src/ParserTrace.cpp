@@ -344,7 +344,7 @@ void TraceAv1Picture(FILE* out, const VkParserPictureData& pd) {
     const VkParserAv1PictureData& av1 = pd.CodecSpecific.av1;
     const StdVideoDecodeAV1PictureInfo& info = av1.std_info;
     const StdVideoDecodeAV1PictureInfoFlags& f = info.flags;
-    const uint32_t tileCount = std::min<uint32_t>(av1.khr_info.tileCount, 64);
+    const uint32_t tileCount = std::min<uint32_t>(av1.khr_info.tileCount, std::size(av1.tileOffsets));
 
     Line("  av1")
         .Num("showFrame", av1.showFrame)
