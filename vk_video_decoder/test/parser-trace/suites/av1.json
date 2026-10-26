@@ -1,8 +1,7 @@
 {
   "codec": "av1",
   "defects": {
-    "picture-count": "the parser drops a frame with more than 64 tiles",
-    "tile-starts": "MiColStarts and MiRowStarts are in superblocks, not in mode info units"
+    "picture-count": "the parser drops a frame with more than 64 tiles"
   },
   "streams": [
     {
@@ -67,7 +66,7 @@
       "format": "ivf",
       "golden": "../golden/av1-libaom-64-tile-rows-64x4096.trace",
       "headers": "../streams/av1-libaom-64-tile-rows-64x4096.headers.txt",
-      "known": ["tile-starts"]
+      "known": []
     },
     {
       "name": "av1-libaom-128-tiles-1024x512",

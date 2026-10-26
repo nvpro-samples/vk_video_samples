@@ -1240,9 +1240,6 @@ bool VulkanAV1Decoder::DecodeTileInfo()
         }
 
         tile_width_sb = (sb_cols + (1 << log2_tile_cols) - 1) >> log2_tile_cols;
-        for (uint32_t off = 0, i = 0; off < sb_cols; off += tile_width_sb)
-            pic_data->MiColStarts[i++] = off;
-
         pic_data->tileInfo.TileCols = (sb_cols + tile_width_sb - 1) / tile_width_sb;
 
         min_log2_tile_rows = std::max(int(min_log2_tiles - log2_tile_cols), 0);
@@ -1254,9 +1251,6 @@ bool VulkanAV1Decoder::DecodeTileInfo()
         }
 
         tile_height_sb = (sb_rows + (1 << log2_tile_rows) - 1) >> log2_tile_rows;
-        for (uint32_t off = 0, i = 0; off < sb_rows; off += tile_height_sb)
-            pic_data->MiRowStarts[i++] = off;
-
         pic_data->tileInfo.TileRows = (sb_rows + tile_height_sb - 1) / tile_height_sb;
 
         // Derive tile_width_in_sbs_minus_1 and tile_height_in_sbs_minus_1
@@ -1270,19 +1264,19 @@ bool VulkanAV1Decoder::DecodeTileInfo()
             pic_data->height_in_sbs_minus_1[tile_row] = tile_height_sb - 1;
         pic_data->height_in_sbs_minus_1[tile_row] = sb_rows - (pic_data->tileInfo.TileRows - 1) * tile_height_sb - 1;
 
-        // Derivce superblock column / row start positions
+        // MiColStarts and MiRowStarts are in mode info units (AV1 6.8.14), as Vulkan takes them.
         uint32_t i, start_sb;
         for (i = 0, start_sb = 0; start_sb < sb_cols; i++) {
-            pic_data->MiColStarts[i] = start_sb;
+            pic_data->MiColStarts[i] = start_sb << sb_shift;
             start_sb += tile_width_sb;
         }
-        pic_data->MiColStarts[i] = sb_cols;
+        pic_data->MiColStarts[i] = mi_cols;
 
         for (i = 0, start_sb = 0; start_sb < sb_rows; i++) {
-            pic_data->MiRowStarts[i] = start_sb;
+            pic_data->MiRowStarts[i] = start_sb << sb_shift;
             start_sb += tile_height_sb;
         }
-        pic_data->MiRowStarts[i] = sb_rows;
+        pic_data->MiRowStarts[i] = mi_rows;
     } else {
         uint32_t i, widest_tile_sb, start_sb, size_sb, max_width, max_height;
         widest_tile_sb = 0;
@@ -1290,13 +1284,14 @@ bool VulkanAV1Decoder::DecodeTileInfo()
 
         start_sb = 0;
         for (i = 0; start_sb < sb_cols && i < STD_VIDEO_AV1_MAX_TILE_COLS; i++) {
-            pic_data->MiColStarts[i] = start_sb;
+            pic_data->MiColStarts[i] = start_sb << sb_shift;
             max_width = std::min(sb_cols - start_sb, max_tile_width_sb);
             pic_data->width_in_sbs_minus_1[i] = (max_width > 1) ? SwGetUniform(max_width) : 0;
             size_sb = pic_data->width_in_sbs_minus_1[i] + 1;
             widest_tile_sb = std::max(size_sb, widest_tile_sb);
             start_sb += size_sb;
         }
+        pic_data->MiColStarts[i] = mi_cols;
         log2_tile_cols = tile_log2(1, i);
         pic_data->tileInfo.TileCols = i;
 
@@ -1308,12 +1303,13 @@ bool VulkanAV1Decoder::DecodeTileInfo()
 
         start_sb = 0;
         for (i = 0; start_sb < sb_rows && i < STD_VIDEO_AV1_MAX_TILE_ROWS; i++) {
-            pic_data->MiRowStarts[i] = start_sb;
+            pic_data->MiRowStarts[i] = start_sb << sb_shift;
             max_height = std::min(sb_rows - start_sb, max_tile_height_sb);
             pic_data->height_in_sbs_minus_1[i] = (max_height > 1) ? SwGetUniform(max_height) : 0;
             size_sb = pic_data->height_in_sbs_minus_1[i] + 1;
             start_sb += size_sb;
         }
+        pic_data->MiRowStarts[i] = mi_rows;
         log2_tile_rows = tile_log2(1, i);
         pic_data->tileInfo.TileRows = i;
     }
