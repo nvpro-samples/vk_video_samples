@@ -1156,6 +1156,8 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
         pFilmGrain->flags.overlap_flag = u(1);
         pFilmGrain->flags.clip_to_restricted_range = u(1);
     } else {
+        // reset_grain_params(): apply_grain is one of the film grain syntax elements it clears.
+        pStd->flags.apply_grain = 0;
         memset(pFilmGrain, 0, sizeof(StdVideoAV1FilmGrain));
     }
 

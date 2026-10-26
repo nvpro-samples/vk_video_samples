@@ -269,7 +269,7 @@ disp index=11 pic=1 pts=1
 pkt index=12 bytes=1023 pts=12
 pic index=12 curr=6 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=1023 crc32=0xf5eae431
   av1 showFrame=0 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[6,5,7,1,0,3,4] pic_idx=[0,1,2,4,8,3,5,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[21] tileSizes=[376]
-  std frame_type=1 current_frame_id=0 OrderHint=16 primary_ref_frame=3 refresh_frame_flags=0x4 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,10,9,8,11,0,7,6] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|apply_grain
+  std frame_type=1 current_frame_id=0 OrderHint=16 primary_ref_frame=3 refresh_frame_flags=0x4 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,10,9,8,11,0,7,6] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion
   tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,1] MiRowStarts=[0,1] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
   quant base_q_idx=109 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
   seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]

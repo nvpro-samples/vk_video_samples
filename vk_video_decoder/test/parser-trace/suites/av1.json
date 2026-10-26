@@ -1,8 +1,6 @@
 {
   "codec": "av1",
-  "defects": {
-    "hdr-film-grain": "a frame without film grain parameters (show_frame and showable_frame 0) keeps the previous frame's apply_grain"
-  },
+  "defects": {},
   "streams": [
     {
       "name": "av1-rav1e-segmentation-64x64",
@@ -58,7 +56,7 @@
       "format": "ivf",
       "golden": "../golden/av1-libaom-film-grain-64x64.trace",
       "headers": "../streams/av1-libaom-film-grain-64x64.headers.txt",
-      "known": ["hdr-film-grain"]
+      "known": []
     },
     {
       "name": "basketball-1080p-rav1e",
