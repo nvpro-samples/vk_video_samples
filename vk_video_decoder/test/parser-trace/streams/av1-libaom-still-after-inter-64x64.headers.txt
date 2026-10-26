@@ -1,0 +1,87 @@
+# AV1 syntax elements read by av1_reference_model.py, from ffmpeg's trace_headers dump
+# (ffmpeg -f ivf -i <ivf> -c copy -copyinkf -bsf:v trace_headers -f null -)
+== Sequence Header
+reduced_still_picture_header 0
+operating_points_cnt_minus_1 0
+enable_order_hint 1
+order_hint_bits_minus_1 6
+== Packet
+== Sequence Header
+reduced_still_picture_header 0
+operating_points_cnt_minus_1 0
+enable_order_hint 1
+order_hint_bits_minus_1 6
+== Frame Header
+show_existing_frame 0
+frame_type 0
+show_frame 1
+disable_cdf_update 0
+order_hint 0
+disable_frame_end_update_cdf 0
+segmentation_enabled 0
+== Packet
+== Frame Header
+show_existing_frame 0
+frame_type 1
+show_frame 1
+error_resilient_mode 0
+disable_cdf_update 0
+order_hint 1
+primary_ref_frame 6
+refresh_frame_flags 2
+frame_refs_short_signaling 0
+ref_frame_idx[0] 0
+ref_frame_idx[1] 0
+ref_frame_idx[2] 0
+ref_frame_idx[3] 0
+ref_frame_idx[4] 0
+ref_frame_idx[5] 0
+ref_frame_idx[6] 0
+disable_frame_end_update_cdf 0
+segmentation_enabled 0
+== Packet
+== Frame Header
+show_existing_frame 0
+frame_type 1
+show_frame 1
+error_resilient_mode 0
+disable_cdf_update 0
+order_hint 2
+primary_ref_frame 3
+refresh_frame_flags 4
+frame_refs_short_signaling 0
+ref_frame_idx[0] 0
+ref_frame_idx[1] 0
+ref_frame_idx[2] 0
+ref_frame_idx[3] 1
+ref_frame_idx[4] 0
+ref_frame_idx[5] 0
+ref_frame_idx[6] 0
+disable_frame_end_update_cdf 0
+segmentation_enabled 0
+== Packet
+== Frame Header
+show_existing_frame 0
+frame_type 1
+show_frame 1
+error_resilient_mode 0
+disable_cdf_update 0
+order_hint 3
+primary_ref_frame 3
+refresh_frame_flags 8
+frame_refs_short_signaling 0
+ref_frame_idx[0] 1
+ref_frame_idx[1] 0
+ref_frame_idx[2] 0
+ref_frame_idx[3] 2
+ref_frame_idx[4] 0
+ref_frame_idx[5] 0
+ref_frame_idx[6] 0
+disable_frame_end_update_cdf 0
+segmentation_enabled 0
+== Packet
+== Sequence Header
+reduced_still_picture_header 1
+== Frame Header
+disable_cdf_update 0
+segmentation_enabled 0

@@ -30,7 +30,7 @@ correctly.
 | `scripts/av1_reference_model.py` | the AV1 model and the comparison |
 | `scripts/parser_trace_suite.py` | the suite runner CTest calls |
 | `suites/av1.json` | the streams, their goldens, header dumps and known categories, and the defects table |
-| `streams/*.ivf` | three 64x64 streams, about 4 KB each |
+| `streams/*.ivf` | six streams of 2 to 6 KB: five 64x64 streams and a 1920x1080 still picture |
 | `streams/*.headers.txt` | their compact header dumps, so the model check needs no ffmpeg |
 | `golden/*.trace` | their recorded traces |
 
@@ -115,10 +115,14 @@ updates `known` to match.
 
 ## The committed streams
 
-Encoded with ffmpeg 6.1.1, rav1e 0.7.1 and libaom 3.8.2 from `testsrc2=size=64x64:rate=30`:
+Encoded with ffmpeg 6.1.1, rav1e 0.7.1 and libaom 3.8.2 from `testsrc2=size=64x64:rate=30`, or the
+size the table gives:
 
 | Stream | Encoder settings | Reaches |
 |---|---|---|
 | `av1-rav1e-segmentation-64x64.ivf` | `-frames:v 12 -c:v librav1e -speed 8 -qp 100 -g 12` | per-segment quantizer deltas inherited by later frames, references with segmentation |
 | `av1-libaom-no-order-hint-64x64.ivf` | `-frames:v 12 -c:v libaom-av1 -cpu-used 8 -lag-in-frames 0 -g 12 -aom-params enable-order-hint=0` | reference sign bias with order hints off |
 | `av1-libaom-altref-aq-64x64.ivf` | `-frames:v 17 -c:v libaom-av1 -cpu-used 6 -lag-in-frames 16 -auto-alt-ref 1 -arnr-strength 5 -arnr-max-frames 7 -aq-mode 1 -g 17` | hidden alternate reference frames, show_existing_frame, references with segmentation |
+| `av1-libaom-key-frames-64x64.ivf` | `-frames:v 12 -c:v libaom-av1 -cpu-used 8 -lag-in-frames 0 -g 4 -keyint_min 4` | shown key frames after inter frames, which reset `OrderHints` |
+| `av1-libaom-still-after-inter-64x64.ivf` | `-frames:v 4 -c:v libaom-av1 -cpu-used 8 -lag-in-frames 0`, followed by `-frames:v 1 -c:v libaom-av1 -cpu-used 8 -still-picture 1`, joined with `-f concat -i <list> -c copy` | a reduced still picture header after frames with order hints |
+| `av1-libaom-still-picture-1080p.ivf` | 1920x1080, `-frames:v 1 -c:v libaom-av1 -cpu-used 8 -crf 63 -still-picture 1` | a reduced still picture header with `seq_level_idx` 8, level 4.0 |

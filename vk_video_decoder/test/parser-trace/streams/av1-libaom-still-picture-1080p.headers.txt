@@ -1,0 +1,10 @@
+# AV1 syntax elements read by av1_reference_model.py, from ffmpeg's trace_headers dump
+# (ffmpeg -f ivf -i <ivf> -c copy -copyinkf -bsf:v trace_headers -f null -)
+== Sequence Header
+reduced_still_picture_header 1
+== Packet
+== Sequence Header
+reduced_still_picture_header 1
+== Frame Header
+disable_cdf_update 0
+segmentation_enabled 0
