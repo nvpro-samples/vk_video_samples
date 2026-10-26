@@ -28,6 +28,7 @@
 #include <cstdio>
 #include <cstring>
 #include <initializer_list>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <utility>
@@ -405,15 +406,15 @@ void TraceAv1Picture(FILE* out, const VkParserPictureData& pd) {
         .Emit(out);
 
     const StdVideoAV1TileInfo& tiles = av1.tileInfo;
-    const uint32_t tileCols = std::min<uint32_t>(tiles.TileCols, 64);
-    const uint32_t tileRows = std::min<uint32_t>(tiles.TileRows, 64);
+    const uint32_t tileCols = std::min<uint32_t>(tiles.TileCols, std::size(av1.width_in_sbs_minus_1));
+    const uint32_t tileRows = std::min<uint32_t>(tiles.TileRows, std::size(av1.height_in_sbs_minus_1));
     Line("  tiles")
         .Num("TileCols", tiles.TileCols)
         .Num("TileRows", tiles.TileRows)
         .Num("context_update_tile_id", tiles.context_update_tile_id)
         .Num("tile_size_bytes_minus_1", tiles.tile_size_bytes_minus_1)
-        .Array("MiColStarts", av1.MiColStarts, std::min<uint32_t>(tileCols + 1, 64))
-        .Array("MiRowStarts", av1.MiRowStarts, std::min<uint32_t>(tileRows + 1, 64))
+        .Array("MiColStarts", av1.MiColStarts, tileCols + 1)
+        .Array("MiRowStarts", av1.MiRowStarts, tileRows + 1)
         .Array("width_in_sbs_minus_1", av1.width_in_sbs_minus_1, tileCols)
         .Array("height_in_sbs_minus_1", av1.height_in_sbs_minus_1, tileRows)
         .Flags("flags", {{"uniform_tile_spacing_flag", tiles.flags.uniform_tile_spacing_flag}})

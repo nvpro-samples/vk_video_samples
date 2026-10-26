@@ -282,10 +282,11 @@ struct VkParserAv1PictureData {
 
     StdVideoAV1TileInfo tileInfo;
     // --- The following fields are referred to by pointer from tileInfo ---
-    uint16_t MiColStarts[64];
-    uint16_t MiRowStarts[64];
-    uint16_t width_in_sbs_minus_1[64];
-    uint16_t height_in_sbs_minus_1[64];
+    // MiColStarts and MiRowStarts end with one entry past the last tile: the frame's MiCols and MiRows (AV1 5.9.15).
+    uint16_t MiColStarts[STD_VIDEO_AV1_MAX_TILE_COLS + 1];
+    uint16_t MiRowStarts[STD_VIDEO_AV1_MAX_TILE_ROWS + 1];
+    uint16_t width_in_sbs_minus_1[STD_VIDEO_AV1_MAX_TILE_COLS];
+    uint16_t height_in_sbs_minus_1[STD_VIDEO_AV1_MAX_TILE_ROWS];
     // --- End of tileInfo data ---
 
     StdVideoAV1Quantization quantization;
