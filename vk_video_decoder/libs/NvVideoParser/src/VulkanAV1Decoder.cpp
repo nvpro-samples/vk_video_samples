@@ -70,6 +70,7 @@ VulkanAV1Decoder::VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std, bool an
     , RefValid{}
     , ref_frame_idx{}
     , RefOrderHint{}
+    , m_RefFrameSignBias(0)
     , m_pBuffers{}
     , m_pCurrPic(nullptr)
     , m_bOutputAllLayers()
@@ -355,9 +356,7 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
     av1->setupSlot.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_DPB_SLOT_INFO_KHR;
     av1->setupSlotInfo.OrderHint = m_PicData.std_info.OrderHint;
     memcpy(&av1->setupSlotInfo.SavedOrderHints, m_PicData.std_info.OrderHints, STD_VIDEO_AV1_NUM_REF_FRAMES);
-    for (size_t av1name = 0; av1name < STD_VIDEO_AV1_NUM_REF_FRAMES; av1name += 1) {
-        av1->setupSlotInfo.RefFrameSignBias |= (m_pBuffers[0].RefFrameSignBias[av1name] <= 0) << av1name;
-    }
+    av1->setupSlotInfo.RefFrameSignBias = m_RefFrameSignBias;
     av1->setupSlotInfo.flags.disable_frame_end_update_cdf = m_PicData.std_info.flags.disable_frame_end_update_cdf;
     av1->setupSlotInfo.flags.segmentation_enabled = m_PicData.std_info.flags.segmentation_enabled;
 
@@ -369,8 +368,8 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
         av1->dpbSlotInfos[i].flags.segmentation_enabled = m_pBuffers[i].segmentation_enabled;
         av1->dpbSlotInfos[i].frame_type = m_pBuffers[i].frame_type;
         av1->dpbSlotInfos[i].OrderHint = m_pBuffers[i].order_hint;
+        av1->dpbSlotInfos[i].RefFrameSignBias = m_pBuffers[i].RefFrameSignBias;
         for (size_t av1name = STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME; av1name < STD_VIDEO_AV1_NUM_REF_FRAMES; av1name += 1) {
-            av1->dpbSlotInfos[i].RefFrameSignBias |= (m_pBuffers[i].RefFrameSignBias[av1name] <= 0) << av1name;
             av1->dpbSlotInfos[i].SavedOrderHints[av1name] = m_pBuffers[i].SavedOrderHints[av1name];
         }
     }
@@ -430,10 +429,9 @@ void VulkanAV1Decoder::UpdateFramePointers(VkPicIf* currentPicture)
             m_pBuffers[ref_index].frame_type = pStd->frame_type;
             m_pBuffers[ref_index].order_hint = pStd->OrderHint;
             for (uint8_t refName = STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME; refName < STD_VIDEO_AV1_NUM_REF_FRAMES; refName ++) {
-                uint8_t ref_order_hint = pStd->OrderHints[refName];
-                m_pBuffers[ref_index].SavedOrderHints[refName] = ref_order_hint;
-                m_pBuffers[ref_index].RefFrameSignBias[refName] = GetRelativeDist(pStd->OrderHint, ref_order_hint);
+                m_pBuffers[ref_index].SavedOrderHints[refName] = pStd->OrderHints[refName];
             }
+            m_pBuffers[ref_index].RefFrameSignBias = m_RefFrameSignBias;
 
             // film grain
             memcpy(&m_pBuffers[ref_index].film_grain_params, &m_PicData.filmGrain, sizeof(StdVideoAV1FilmGrain));
@@ -1880,6 +1878,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
                 memcpy(pic_info->segmentation.FeatureData, m_pBuffers[show_existing_frame_index].seg.FeatureData, STD_VIDEO_AV1_MAX_SEGMENTS * STD_VIDEO_AV1_SEG_LVL_MAX * sizeof(pic_info->segmentation.FeatureData[0][0]));
                 pStd->OrderHint = RefOrderHint[show_existing_frame_index];
                 pStd->flags.segmentation_enabled = m_pBuffers[show_existing_frame_index].segmentation_enabled;
+                m_RefFrameSignBias = m_pBuffers[show_existing_frame_index].RefFrameSignBias;
                 UpdateFramePointers(m_pBuffers[show_existing_frame_index].buffer);
             } else {
                 pStd->refresh_frame_flags = 0;
@@ -1942,6 +1941,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
     pic_flags->frame_refs_short_signaling = 0;
     pic_flags->allow_intrabc = 0;
     pStd->primary_ref_frame = STD_VIDEO_AV1_PRIMARY_REF_NONE;
+    m_RefFrameSignBias = 0;
     pic_flags->frame_size_override_flag = 0;
 
     if (!sps->flags.reduced_still_picture_header) {
@@ -2153,6 +2153,12 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
             }
 
             pStd->OrderHints[i + STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME] = RefOrderHint[ref_frame_idx[i]];
+
+            // RefFrameSignBias[LAST_FRAME + i] = get_relative_dist(hint, OrderHint) > 0; GetRelativeDist
+            // returns 0 when enable_order_hint is 0, which makes the bias 0 as the spec requires.
+            if (GetRelativeDist(RefOrderHint[ref_frame_idx[i]], pStd->OrderHint) > 0) {
+                m_RefFrameSignBias |= 1 << (i + STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME);
+            }
          }
 
         /*      for (int i = 0; i < REFS_PER_FRAME; ++i)
