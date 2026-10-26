@@ -2002,6 +2002,10 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
         if (!pic_flags->error_resilient_mode && !(IsFrameIntra())) {
             pStd->primary_ref_frame = u(3);
         }
+    } else {
+        // frame_id_numbers_present_flag and enable_order_hint are 0 in a reduced still picture header.
+        pStd->current_frame_id = 0;
+        pStd->OrderHint = 0;
     }
 
     if (sps->decoder_model_info_present) {

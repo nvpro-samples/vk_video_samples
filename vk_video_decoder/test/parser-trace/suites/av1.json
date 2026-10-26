@@ -2,9 +2,7 @@
   "codec": "av1",
   "defects": {
     "setup-saved-order-hints-intra": "a shown key frame keeps the previous frame's OrderHints",
-    "ref-saved-order-hints-intra": "a shown key frame keeps the previous frame's OrderHints",
-    "hdr-order-hint": "a frame with reduced_still_picture_header keeps the previous frame's OrderHint",
-    "setup-order-hint": "a frame with reduced_still_picture_header keeps the previous frame's OrderHint"
+    "ref-saved-order-hints-intra": "a shown key frame keeps the previous frame's OrderHints"
   },
   "streams": [
     {
@@ -45,7 +43,7 @@
       "format": "ivf",
       "golden": "../golden/av1-libaom-still-after-inter-64x64.trace",
       "headers": "../streams/av1-libaom-still-after-inter-64x64.headers.txt",
-      "known": ["hdr-order-hint", "setup-order-hint", "setup-saved-order-hints-intra"]
+      "known": ["setup-saved-order-hints-intra"]
     },
     {
       "name": "av1-libaom-still-picture-1080p",
