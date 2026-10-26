@@ -1878,6 +1878,9 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
                 memcpy(pic_info->segmentation.FeatureEnabled, m_pBuffers[show_existing_frame_index].seg.FeatureEnabled, STD_VIDEO_AV1_MAX_SEGMENTS * sizeof(pic_info->segmentation.FeatureEnabled[0]));
                 memcpy(pic_info->segmentation.FeatureData, m_pBuffers[show_existing_frame_index].seg.FeatureData, STD_VIDEO_AV1_MAX_SEGMENTS * STD_VIDEO_AV1_SEG_LVL_MAX * sizeof(pic_info->segmentation.FeatureData[0][0]));
                 pStd->OrderHint = RefOrderHint[show_existing_frame_index];
+                for (uint8_t refName = STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME; refName < STD_VIDEO_AV1_NUM_REF_FRAMES; refName++) {
+                    pStd->OrderHints[refName] = m_pBuffers[show_existing_frame_index].SavedOrderHints[refName];
+                }
                 pStd->flags.segmentation_enabled = m_pBuffers[show_existing_frame_index].segmentation_enabled;
                 m_RefFrameSignBias = m_pBuffers[show_existing_frame_index].RefFrameSignBias;
                 UpdateFramePointers(m_pBuffers[show_existing_frame_index].buffer);
