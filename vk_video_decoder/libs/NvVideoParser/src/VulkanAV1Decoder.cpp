@@ -2223,7 +2223,8 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
     }
 
     for (uint32_t i = 0; i < STD_VIDEO_AV1_MAX_SEGMENTS; ++i) {
-        int qindex = pic_flags->segmentation_enabled && (pic_info->segmentation.FeatureEnabled[i] & 0)
+        // get_qindex(1, i) (AV1 7.12.2): bit 0 of FeatureEnabled is SEG_LVL_ALT_Q.
+        int qindex = pic_flags->segmentation_enabled && (pic_info->segmentation.FeatureEnabled[i] & 1)
             ? pic_info->segmentation.FeatureData[i][0] + pic_info->quantization.base_q_idx : pic_info->quantization.base_q_idx;
         qindex = CLAMP(qindex, 0, 255);
         lossless[i] = qindex == 0 && pic_info->quantization.DeltaQYDc == 0 &&
