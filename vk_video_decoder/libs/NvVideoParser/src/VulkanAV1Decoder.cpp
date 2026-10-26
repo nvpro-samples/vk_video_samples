@@ -2336,6 +2336,12 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
 	// Compute the tile group size
     for (int TileNum = tg_start; TileNum <= tg_end; TileNum++)
     {
+        // Check before writing: pStdSps and the other fields follow the tile arrays.
+        if (m_PicData.khr_info.tileCount >= ARRAY_SIZE(m_PicData.tileOffsets)) {
+            nvParserErrorLog("s", "\nError: Tile count exceeds the size of the tile arrays\n");
+            return false;
+        }
+
         int lastTile = TileNum == tg_end;
         size_t tileSize = 0;
         if (lastTile)
@@ -2357,12 +2363,6 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
             consumedBytes += (uint32_t)tileSize;
 
             skip_bits((uint32_t)(tileSize * 8));
-        }
-
-        // Bounds check to prevent buffer overflow into pStdSps and other fields
-        if (m_PicData.khr_info.tileCount >= 64) {
-            nvParserErrorLog("s", "\nError: Tile count exceeds maximum of 64 tiles\n");
-            return false;
         }
 
         m_PicData.tileSizes[m_PicData.khr_info.tileCount] = (uint32_t)tileSize;
