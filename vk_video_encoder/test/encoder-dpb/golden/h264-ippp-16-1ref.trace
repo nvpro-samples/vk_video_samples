@@ -1,0 +1,347 @@
+encoder-dpb-trace version=1 codec=h264 frames=24 gop=60 idr=60 bframes=0 closed=0 refs_l0=16 refs_l1=1 level_dpb=16
+config codec=h264 dpbSize=16 max_num_ref_frames=17 pic_order_cnt_type=2 log2_max_frame_num=8 log2_max_pic_order_cnt_lsb=8 num_ref_idx_l0_default=16 num_ref_idx_l1_default=1
+pic index=0 input=0 type=IDR poc=0 ref=1
+  h264 frame_num=0 PicOrderCnt=0 idr_pic_id=0 start=16
+  lists l0=[] l1=[]
+  setup slot=0
+pic index=1 input=1 type=P poc=2 ref=1
+  h264 frame_num=1 PicOrderCnt=2 idr_pic_id=0 start=16
+  lists l0=[0] l1=[]
+  ref slot=0 pic=0 FrameNum=0 PicOrderCnt=0 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=1
+pic index=2 input=2 type=P poc=4 ref=1
+  h264 frame_num=2 PicOrderCnt=4 idr_pic_id=0 start=16
+  lists l0=[1,0] l1=[]
+  ref slot=1 pic=1 FrameNum=0 PicOrderCnt=2 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=0 FrameNum=0 PicOrderCnt=0 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=2
+pic index=3 input=3 type=P poc=6 ref=1
+  h264 frame_num=3 PicOrderCnt=6 idr_pic_id=0 start=16
+  lists l0=[2,1,0] l1=[]
+  ref slot=2 pic=2 FrameNum=0 PicOrderCnt=4 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=1 FrameNum=0 PicOrderCnt=2 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=0 FrameNum=0 PicOrderCnt=0 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=3
+pic index=4 input=4 type=P poc=8 ref=1
+  h264 frame_num=4 PicOrderCnt=8 idr_pic_id=0 start=16
+  lists l0=[3,2,1,0] l1=[]
+  ref slot=3 pic=3 FrameNum=0 PicOrderCnt=6 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=2 FrameNum=0 PicOrderCnt=4 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=1 FrameNum=0 PicOrderCnt=2 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=0 FrameNum=0 PicOrderCnt=0 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=4
+pic index=5 input=5 type=P poc=10 ref=1
+  h264 frame_num=5 PicOrderCnt=10 idr_pic_id=0 start=16
+  lists l0=[4,3,2,1,0] l1=[]
+  ref slot=4 pic=4 FrameNum=0 PicOrderCnt=8 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=3 FrameNum=0 PicOrderCnt=6 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=2 FrameNum=0 PicOrderCnt=4 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=1 FrameNum=0 PicOrderCnt=2 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=0 FrameNum=0 PicOrderCnt=0 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=5
+pic index=6 input=6 type=P poc=12 ref=1
+  h264 frame_num=6 PicOrderCnt=12 idr_pic_id=0 start=16
+  lists l0=[5,4,3,2,1,0] l1=[]
+  ref slot=5 pic=5 FrameNum=0 PicOrderCnt=10 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=4 FrameNum=0 PicOrderCnt=8 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=3 FrameNum=0 PicOrderCnt=6 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=2 FrameNum=0 PicOrderCnt=4 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=1 FrameNum=0 PicOrderCnt=2 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=0 FrameNum=0 PicOrderCnt=0 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=6
+pic index=7 input=7 type=P poc=14 ref=1
+  h264 frame_num=7 PicOrderCnt=14 idr_pic_id=0 start=16
+  lists l0=[6,5,4,3,2,1,0] l1=[]
+  ref slot=6 pic=6 FrameNum=0 PicOrderCnt=12 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=5 pic=5 FrameNum=0 PicOrderCnt=10 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=4 FrameNum=0 PicOrderCnt=8 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=3 FrameNum=0 PicOrderCnt=6 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=2 FrameNum=0 PicOrderCnt=4 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=1 FrameNum=0 PicOrderCnt=2 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=0 FrameNum=0 PicOrderCnt=0 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=7
+pic index=8 input=8 type=P poc=16 ref=1
+  h264 frame_num=8 PicOrderCnt=16 idr_pic_id=0 start=16
+  lists l0=[7,6,5,4,3,2,1,0] l1=[]
+  ref slot=7 pic=7 FrameNum=0 PicOrderCnt=14 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=6 pic=6 FrameNum=0 PicOrderCnt=12 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=5 pic=5 FrameNum=0 PicOrderCnt=10 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=4 FrameNum=0 PicOrderCnt=8 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=3 FrameNum=0 PicOrderCnt=6 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=2 FrameNum=0 PicOrderCnt=4 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=1 FrameNum=0 PicOrderCnt=2 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=0 FrameNum=0 PicOrderCnt=0 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=8
+pic index=9 input=9 type=P poc=18 ref=1
+  h264 frame_num=9 PicOrderCnt=18 idr_pic_id=0 start=16
+  lists l0=[8,7,6,5,4,3,2,1,0] l1=[]
+  ref slot=8 pic=8 FrameNum=0 PicOrderCnt=16 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=7 pic=7 FrameNum=0 PicOrderCnt=14 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=6 pic=6 FrameNum=0 PicOrderCnt=12 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=5 pic=5 FrameNum=0 PicOrderCnt=10 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=4 FrameNum=0 PicOrderCnt=8 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=3 FrameNum=0 PicOrderCnt=6 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=2 FrameNum=0 PicOrderCnt=4 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=1 FrameNum=0 PicOrderCnt=2 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=0 FrameNum=0 PicOrderCnt=0 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=9
+pic index=10 input=10 type=P poc=20 ref=1
+  h264 frame_num=10 PicOrderCnt=20 idr_pic_id=0 start=16
+  lists l0=[9,8,7,6,5,4,3,2,1,0] l1=[]
+  ref slot=9 pic=9 FrameNum=0 PicOrderCnt=18 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=8 pic=8 FrameNum=0 PicOrderCnt=16 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=7 pic=7 FrameNum=0 PicOrderCnt=14 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=6 pic=6 FrameNum=0 PicOrderCnt=12 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=5 pic=5 FrameNum=0 PicOrderCnt=10 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=4 FrameNum=0 PicOrderCnt=8 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=3 FrameNum=0 PicOrderCnt=6 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=2 FrameNum=0 PicOrderCnt=4 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=1 FrameNum=0 PicOrderCnt=2 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=0 FrameNum=0 PicOrderCnt=0 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=10
+pic index=11 input=11 type=P poc=22 ref=1
+  h264 frame_num=11 PicOrderCnt=22 idr_pic_id=0 start=16
+  lists l0=[10,9,8,7,6,5,4,3,2,1,0] l1=[]
+  ref slot=10 pic=10 FrameNum=0 PicOrderCnt=20 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=9 pic=9 FrameNum=0 PicOrderCnt=18 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=8 pic=8 FrameNum=0 PicOrderCnt=16 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=7 pic=7 FrameNum=0 PicOrderCnt=14 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=6 pic=6 FrameNum=0 PicOrderCnt=12 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=5 pic=5 FrameNum=0 PicOrderCnt=10 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=4 FrameNum=0 PicOrderCnt=8 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=3 FrameNum=0 PicOrderCnt=6 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=2 FrameNum=0 PicOrderCnt=4 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=1 FrameNum=0 PicOrderCnt=2 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=0 FrameNum=0 PicOrderCnt=0 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=11
+pic index=12 input=12 type=P poc=24 ref=1
+  h264 frame_num=12 PicOrderCnt=24 idr_pic_id=0 start=16
+  lists l0=[11,10,9,8,7,6,5,4,3,2,1,0] l1=[]
+  ref slot=11 pic=11 FrameNum=0 PicOrderCnt=22 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=10 pic=10 FrameNum=0 PicOrderCnt=20 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=9 pic=9 FrameNum=0 PicOrderCnt=18 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=8 pic=8 FrameNum=0 PicOrderCnt=16 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=7 pic=7 FrameNum=0 PicOrderCnt=14 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=6 pic=6 FrameNum=0 PicOrderCnt=12 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=5 pic=5 FrameNum=0 PicOrderCnt=10 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=4 FrameNum=0 PicOrderCnt=8 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=3 FrameNum=0 PicOrderCnt=6 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=2 FrameNum=0 PicOrderCnt=4 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=1 FrameNum=0 PicOrderCnt=2 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=0 FrameNum=0 PicOrderCnt=0 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=12
+pic index=13 input=13 type=P poc=26 ref=1
+  h264 frame_num=13 PicOrderCnt=26 idr_pic_id=0 start=16
+  lists l0=[12,11,10,9,8,7,6,5,4,3,2,1,0] l1=[]
+  ref slot=12 pic=12 FrameNum=0 PicOrderCnt=24 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=11 pic=11 FrameNum=0 PicOrderCnt=22 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=10 pic=10 FrameNum=0 PicOrderCnt=20 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=9 pic=9 FrameNum=0 PicOrderCnt=18 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=8 pic=8 FrameNum=0 PicOrderCnt=16 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=7 pic=7 FrameNum=0 PicOrderCnt=14 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=6 pic=6 FrameNum=0 PicOrderCnt=12 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=5 pic=5 FrameNum=0 PicOrderCnt=10 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=4 FrameNum=0 PicOrderCnt=8 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=3 FrameNum=0 PicOrderCnt=6 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=2 FrameNum=0 PicOrderCnt=4 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=1 FrameNum=0 PicOrderCnt=2 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=0 FrameNum=0 PicOrderCnt=0 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=13
+pic index=14 input=14 type=P poc=28 ref=1
+  h264 frame_num=14 PicOrderCnt=28 idr_pic_id=0 start=16
+  lists l0=[13,12,11,10,9,8,7,6,5,4,3,2,1,0] l1=[]
+  ref slot=13 pic=13 FrameNum=0 PicOrderCnt=26 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=12 pic=12 FrameNum=0 PicOrderCnt=24 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=11 pic=11 FrameNum=0 PicOrderCnt=22 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=10 pic=10 FrameNum=0 PicOrderCnt=20 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=9 pic=9 FrameNum=0 PicOrderCnt=18 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=8 pic=8 FrameNum=0 PicOrderCnt=16 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=7 pic=7 FrameNum=0 PicOrderCnt=14 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=6 pic=6 FrameNum=0 PicOrderCnt=12 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=5 pic=5 FrameNum=0 PicOrderCnt=10 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=4 FrameNum=0 PicOrderCnt=8 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=3 FrameNum=0 PicOrderCnt=6 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=2 FrameNum=0 PicOrderCnt=4 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=1 FrameNum=0 PicOrderCnt=2 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=0 FrameNum=0 PicOrderCnt=0 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=14
+pic index=15 input=15 type=P poc=30 ref=1
+  h264 frame_num=15 PicOrderCnt=30 idr_pic_id=0 start=16
+  lists l0=[14,13,12,11,10,9,8,7,6,5,4,3,2,1,0] l1=[]
+  ref slot=14 pic=14 FrameNum=0 PicOrderCnt=28 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=13 pic=13 FrameNum=0 PicOrderCnt=26 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=12 pic=12 FrameNum=0 PicOrderCnt=24 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=11 pic=11 FrameNum=0 PicOrderCnt=22 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=10 pic=10 FrameNum=0 PicOrderCnt=20 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=9 pic=9 FrameNum=0 PicOrderCnt=18 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=8 pic=8 FrameNum=0 PicOrderCnt=16 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=7 pic=7 FrameNum=0 PicOrderCnt=14 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=6 pic=6 FrameNum=0 PicOrderCnt=12 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=5 pic=5 FrameNum=0 PicOrderCnt=10 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=4 FrameNum=0 PicOrderCnt=8 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=3 FrameNum=0 PicOrderCnt=6 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=2 FrameNum=0 PicOrderCnt=4 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=1 FrameNum=0 PicOrderCnt=2 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=0 FrameNum=0 PicOrderCnt=0 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=15
+pic index=16 input=16 type=P poc=32 ref=1
+  h264 frame_num=16 PicOrderCnt=32 idr_pic_id=0 start=16
+  lists l0=[15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0] l1=[]
+  ref slot=15 pic=15 FrameNum=0 PicOrderCnt=30 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=14 pic=14 FrameNum=0 PicOrderCnt=28 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=13 pic=13 FrameNum=0 PicOrderCnt=26 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=12 pic=12 FrameNum=0 PicOrderCnt=24 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=11 pic=11 FrameNum=0 PicOrderCnt=22 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=10 pic=10 FrameNum=0 PicOrderCnt=20 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=9 pic=9 FrameNum=0 PicOrderCnt=18 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=8 pic=8 FrameNum=0 PicOrderCnt=16 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=7 pic=7 FrameNum=0 PicOrderCnt=14 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=6 pic=6 FrameNum=0 PicOrderCnt=12 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=5 pic=5 FrameNum=0 PicOrderCnt=10 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=4 FrameNum=0 PicOrderCnt=8 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=3 FrameNum=0 PicOrderCnt=6 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=2 FrameNum=0 PicOrderCnt=4 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=1 FrameNum=0 PicOrderCnt=2 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=0 FrameNum=0 PicOrderCnt=0 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=0
+pic index=17 input=17 type=P poc=34 ref=1
+  h264 frame_num=17 PicOrderCnt=34 idr_pic_id=0 start=16
+  lists l0=[0,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1] l1=[]
+  ref slot=0 pic=16 FrameNum=0 PicOrderCnt=32 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=15 pic=15 FrameNum=0 PicOrderCnt=30 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=14 pic=14 FrameNum=0 PicOrderCnt=28 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=13 pic=13 FrameNum=0 PicOrderCnt=26 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=12 pic=12 FrameNum=0 PicOrderCnt=24 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=11 pic=11 FrameNum=0 PicOrderCnt=22 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=10 pic=10 FrameNum=0 PicOrderCnt=20 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=9 pic=9 FrameNum=0 PicOrderCnt=18 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=8 pic=8 FrameNum=0 PicOrderCnt=16 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=7 pic=7 FrameNum=0 PicOrderCnt=14 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=6 pic=6 FrameNum=0 PicOrderCnt=12 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=5 pic=5 FrameNum=0 PicOrderCnt=10 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=4 FrameNum=0 PicOrderCnt=8 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=3 FrameNum=0 PicOrderCnt=6 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=2 FrameNum=0 PicOrderCnt=4 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=1 FrameNum=0 PicOrderCnt=2 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=1
+pic index=18 input=18 type=P poc=36 ref=1
+  h264 frame_num=18 PicOrderCnt=36 idr_pic_id=0 start=16
+  lists l0=[1,0,15,14,13,12,11,10,9,8,7,6,5,4,3,2] l1=[]
+  ref slot=1 pic=17 FrameNum=0 PicOrderCnt=34 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=16 FrameNum=0 PicOrderCnt=32 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=15 pic=15 FrameNum=0 PicOrderCnt=30 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=14 pic=14 FrameNum=0 PicOrderCnt=28 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=13 pic=13 FrameNum=0 PicOrderCnt=26 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=12 pic=12 FrameNum=0 PicOrderCnt=24 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=11 pic=11 FrameNum=0 PicOrderCnt=22 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=10 pic=10 FrameNum=0 PicOrderCnt=20 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=9 pic=9 FrameNum=0 PicOrderCnt=18 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=8 pic=8 FrameNum=0 PicOrderCnt=16 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=7 pic=7 FrameNum=0 PicOrderCnt=14 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=6 pic=6 FrameNum=0 PicOrderCnt=12 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=5 pic=5 FrameNum=0 PicOrderCnt=10 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=4 FrameNum=0 PicOrderCnt=8 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=3 FrameNum=0 PicOrderCnt=6 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=2 FrameNum=0 PicOrderCnt=4 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=2
+pic index=19 input=19 type=P poc=38 ref=1
+  h264 frame_num=19 PicOrderCnt=38 idr_pic_id=0 start=16
+  lists l0=[2,1,0,15,14,13,12,11,10,9,8,7,6,5,4,3] l1=[]
+  ref slot=2 pic=18 FrameNum=0 PicOrderCnt=36 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=17 FrameNum=0 PicOrderCnt=34 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=16 FrameNum=0 PicOrderCnt=32 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=15 pic=15 FrameNum=0 PicOrderCnt=30 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=14 pic=14 FrameNum=0 PicOrderCnt=28 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=13 pic=13 FrameNum=0 PicOrderCnt=26 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=12 pic=12 FrameNum=0 PicOrderCnt=24 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=11 pic=11 FrameNum=0 PicOrderCnt=22 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=10 pic=10 FrameNum=0 PicOrderCnt=20 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=9 pic=9 FrameNum=0 PicOrderCnt=18 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=8 pic=8 FrameNum=0 PicOrderCnt=16 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=7 pic=7 FrameNum=0 PicOrderCnt=14 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=6 pic=6 FrameNum=0 PicOrderCnt=12 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=5 pic=5 FrameNum=0 PicOrderCnt=10 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=4 FrameNum=0 PicOrderCnt=8 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=3 FrameNum=0 PicOrderCnt=6 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=3
+pic index=20 input=20 type=P poc=40 ref=1
+  h264 frame_num=20 PicOrderCnt=40 idr_pic_id=0 start=16
+  lists l0=[3,2,1,0,15,14,13,12,11,10,9,8,7,6,5,4] l1=[]
+  ref slot=3 pic=19 FrameNum=0 PicOrderCnt=38 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=18 FrameNum=0 PicOrderCnt=36 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=17 FrameNum=0 PicOrderCnt=34 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=16 FrameNum=0 PicOrderCnt=32 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=15 pic=15 FrameNum=0 PicOrderCnt=30 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=14 pic=14 FrameNum=0 PicOrderCnt=28 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=13 pic=13 FrameNum=0 PicOrderCnt=26 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=12 pic=12 FrameNum=0 PicOrderCnt=24 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=11 pic=11 FrameNum=0 PicOrderCnt=22 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=10 pic=10 FrameNum=0 PicOrderCnt=20 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=9 pic=9 FrameNum=0 PicOrderCnt=18 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=8 pic=8 FrameNum=0 PicOrderCnt=16 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=7 pic=7 FrameNum=0 PicOrderCnt=14 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=6 pic=6 FrameNum=0 PicOrderCnt=12 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=5 pic=5 FrameNum=0 PicOrderCnt=10 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=4 FrameNum=0 PicOrderCnt=8 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=4
+pic index=21 input=21 type=P poc=42 ref=1
+  h264 frame_num=21 PicOrderCnt=42 idr_pic_id=0 start=16
+  lists l0=[4,3,2,1,0,15,14,13,12,11,10,9,8,7,6,5] l1=[]
+  ref slot=4 pic=20 FrameNum=0 PicOrderCnt=40 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=19 FrameNum=0 PicOrderCnt=38 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=18 FrameNum=0 PicOrderCnt=36 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=17 FrameNum=0 PicOrderCnt=34 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=16 FrameNum=0 PicOrderCnt=32 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=15 pic=15 FrameNum=0 PicOrderCnt=30 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=14 pic=14 FrameNum=0 PicOrderCnt=28 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=13 pic=13 FrameNum=0 PicOrderCnt=26 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=12 pic=12 FrameNum=0 PicOrderCnt=24 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=11 pic=11 FrameNum=0 PicOrderCnt=22 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=10 pic=10 FrameNum=0 PicOrderCnt=20 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=9 pic=9 FrameNum=0 PicOrderCnt=18 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=8 pic=8 FrameNum=0 PicOrderCnt=16 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=7 pic=7 FrameNum=0 PicOrderCnt=14 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=6 pic=6 FrameNum=0 PicOrderCnt=12 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=5 pic=5 FrameNum=0 PicOrderCnt=10 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=5
+pic index=22 input=22 type=P poc=44 ref=1
+  h264 frame_num=22 PicOrderCnt=44 idr_pic_id=0 start=16
+  lists l0=[5,4,3,2,1,0,15,14,13,12,11,10,9,8,7,6] l1=[]
+  ref slot=5 pic=21 FrameNum=0 PicOrderCnt=42 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=20 FrameNum=0 PicOrderCnt=40 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=19 FrameNum=0 PicOrderCnt=38 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=18 FrameNum=0 PicOrderCnt=36 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=17 FrameNum=0 PicOrderCnt=34 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=16 FrameNum=0 PicOrderCnt=32 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=15 pic=15 FrameNum=0 PicOrderCnt=30 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=14 pic=14 FrameNum=0 PicOrderCnt=28 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=13 pic=13 FrameNum=0 PicOrderCnt=26 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=12 pic=12 FrameNum=0 PicOrderCnt=24 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=11 pic=11 FrameNum=0 PicOrderCnt=22 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=10 pic=10 FrameNum=0 PicOrderCnt=20 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=9 pic=9 FrameNum=0 PicOrderCnt=18 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=8 pic=8 FrameNum=0 PicOrderCnt=16 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=7 pic=7 FrameNum=0 PicOrderCnt=14 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=6 pic=6 FrameNum=0 PicOrderCnt=12 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=6
+pic index=23 input=23 type=P poc=46 ref=1
+  h264 frame_num=23 PicOrderCnt=46 idr_pic_id=0 start=16
+  lists l0=[6,5,4,3,2,1,0,15,14,13,12,11,10,9,8,7] l1=[]
+  ref slot=6 pic=22 FrameNum=0 PicOrderCnt=44 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=5 pic=21 FrameNum=0 PicOrderCnt=42 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=4 pic=20 FrameNum=0 PicOrderCnt=40 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=3 pic=19 FrameNum=0 PicOrderCnt=38 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=2 pic=18 FrameNum=0 PicOrderCnt=36 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=1 pic=17 FrameNum=0 PicOrderCnt=34 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=0 pic=16 FrameNum=0 PicOrderCnt=32 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=15 pic=15 FrameNum=0 PicOrderCnt=30 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=14 pic=14 FrameNum=0 PicOrderCnt=28 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=13 pic=13 FrameNum=0 PicOrderCnt=26 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=12 pic=12 FrameNum=0 PicOrderCnt=24 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=11 pic=11 FrameNum=0 PicOrderCnt=22 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=10 pic=10 FrameNum=0 PicOrderCnt=20 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=9 pic=9 FrameNum=0 PicOrderCnt=18 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=8 pic=8 FrameNum=0 PicOrderCnt=16 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  ref slot=7 pic=7 FrameNum=0 PicOrderCnt=14 long_term_frame_idx=65535 primary_pic_type=0 flags=-
+  setup slot=7
+end pictures=24

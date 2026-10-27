@@ -1,0 +1,568 @@
+encoder-dpb-trace version=1 codec=h265 frames=64 gop=32 idr=60 bframes=7 closed=0 refs_l0=4 refs_l1=1 level_dpb=16
+config codec=h265 dpbSize=5 log2_max_pic_order_cnt_lsb=8 num_ref_idx_l0_default=4 num_ref_idx_l1_default=1
+  sps-rps num_negative_pics=4 num_positive_pics=0 delta_poc_s0_minus1=[0,0,0,0] delta_poc_s1_minus1=[] used_s0=15 used_s1=0 flags=-
+pic index=0 input=0 type=IDR poc=0 ref=1
+  h265 PicOrderCntVal=0 flags=irap short_term_ref_pic_set_idx=0
+  rps num_negative_pics=0 num_positive_pics=0 delta_poc_s0_minus1=[] delta_poc_s1_minus1=[] used_s0=0 used_s1=0 flags=-
+  rps-slots stCurrBefore=[] stCurrAfter=[] ltCurr=[] stFoll=[] ltFoll=[]
+  setup slot=0
+pic index=1 input=8 type=P poc=8 ref=1
+  h265 PicOrderCntVal=8 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=0 delta_poc_s0_minus1=[7] delta_poc_s1_minus1=[] used_s0=1 used_s1=0 flags=-
+  rps-slots stCurrBefore=[0] stCurrAfter=[] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[0] l1=[]
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  setup slot=1
+pic index=2 input=1 type=B poc=1 ref=0
+  h265 PicOrderCntVal=1 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=1 delta_poc_s0_minus1=[0] delta_poc_s1_minus1=[6] used_s0=1 used_s1=1 flags=-
+  rps-slots stCurrBefore=[0] stCurrAfter=[1] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[0] l1=[1]
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  setup slot=2
+pic index=3 input=2 type=B poc=2 ref=0
+  h265 PicOrderCntVal=2 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=1 delta_poc_s0_minus1=[1] delta_poc_s1_minus1=[5] used_s0=1 used_s1=1 flags=-
+  rps-slots stCurrBefore=[0] stCurrAfter=[1] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[0] l1=[1]
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  setup slot=3
+pic index=4 input=3 type=B poc=3 ref=0
+  h265 PicOrderCntVal=3 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=1 delta_poc_s0_minus1=[2] delta_poc_s1_minus1=[4] used_s0=1 used_s1=1 flags=-
+  rps-slots stCurrBefore=[0] stCurrAfter=[1] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[0] l1=[1]
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  setup slot=4
+pic index=5 input=4 type=B poc=4 ref=0
+  h265 PicOrderCntVal=4 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=1 delta_poc_s0_minus1=[3] delta_poc_s1_minus1=[3] used_s0=1 used_s1=1 flags=-
+  rps-slots stCurrBefore=[0] stCurrAfter=[1] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[0] l1=[1]
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  setup slot=2
+pic index=6 input=5 type=B poc=5 ref=0
+  h265 PicOrderCntVal=5 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=1 delta_poc_s0_minus1=[4] delta_poc_s1_minus1=[2] used_s0=1 used_s1=1 flags=-
+  rps-slots stCurrBefore=[0] stCurrAfter=[1] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[0] l1=[1]
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  setup slot=3
+pic index=7 input=6 type=B poc=6 ref=0
+  h265 PicOrderCntVal=6 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=1 delta_poc_s0_minus1=[5] delta_poc_s1_minus1=[1] used_s0=1 used_s1=1 flags=-
+  rps-slots stCurrBefore=[0] stCurrAfter=[1] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[0] l1=[1]
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  setup slot=4
+pic index=8 input=7 type=B poc=7 ref=0
+  h265 PicOrderCntVal=7 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=1 delta_poc_s0_minus1=[6] delta_poc_s1_minus1=[0] used_s0=1 used_s1=1 flags=-
+  rps-slots stCurrBefore=[0] stCurrAfter=[1] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[0] l1=[1]
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  setup slot=2
+pic index=9 input=16 type=P poc=16 ref=1
+  h265 PicOrderCntVal=16 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=2 num_positive_pics=0 delta_poc_s0_minus1=[7,7] delta_poc_s1_minus1=[] used_s0=3 used_s1=0 flags=-
+  rps-slots stCurrBefore=[1,0] stCurrAfter=[] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[1,0] l1=[]
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  setup slot=3
+pic index=10 input=9 type=B poc=9 ref=0
+  h265 PicOrderCntVal=9 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=2 num_positive_pics=1 delta_poc_s0_minus1=[0,7] delta_poc_s1_minus1=[6] used_s0=3 used_s1=1 flags=-
+  rps-slots stCurrBefore=[1,0] stCurrAfter=[3] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[1,0] l1=[3]
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  setup slot=4
+pic index=11 input=10 type=B poc=10 ref=0
+  h265 PicOrderCntVal=10 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=2 num_positive_pics=1 delta_poc_s0_minus1=[1,7] delta_poc_s1_minus1=[5] used_s0=3 used_s1=1 flags=-
+  rps-slots stCurrBefore=[1,0] stCurrAfter=[3] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[1,0] l1=[3]
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  setup slot=2
+pic index=12 input=11 type=B poc=11 ref=0
+  h265 PicOrderCntVal=11 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=2 num_positive_pics=1 delta_poc_s0_minus1=[2,7] delta_poc_s1_minus1=[4] used_s0=3 used_s1=1 flags=-
+  rps-slots stCurrBefore=[1,0] stCurrAfter=[3] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[1,0] l1=[3]
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  setup slot=4
+pic index=13 input=12 type=B poc=12 ref=0
+  h265 PicOrderCntVal=12 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=2 num_positive_pics=1 delta_poc_s0_minus1=[3,7] delta_poc_s1_minus1=[3] used_s0=3 used_s1=1 flags=-
+  rps-slots stCurrBefore=[1,0] stCurrAfter=[3] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[1,0] l1=[3]
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  setup slot=2
+pic index=14 input=13 type=B poc=13 ref=0
+  h265 PicOrderCntVal=13 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=2 num_positive_pics=1 delta_poc_s0_minus1=[4,7] delta_poc_s1_minus1=[2] used_s0=3 used_s1=1 flags=-
+  rps-slots stCurrBefore=[1,0] stCurrAfter=[3] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[1,0] l1=[3]
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  setup slot=4
+pic index=15 input=14 type=B poc=14 ref=0
+  h265 PicOrderCntVal=14 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=2 num_positive_pics=1 delta_poc_s0_minus1=[5,7] delta_poc_s1_minus1=[1] used_s0=3 used_s1=1 flags=-
+  rps-slots stCurrBefore=[1,0] stCurrAfter=[3] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[1,0] l1=[3]
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  setup slot=2
+pic index=16 input=15 type=B poc=15 ref=0
+  h265 PicOrderCntVal=15 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=2 num_positive_pics=1 delta_poc_s0_minus1=[6,7] delta_poc_s1_minus1=[0] used_s0=3 used_s1=1 flags=-
+  rps-slots stCurrBefore=[1,0] stCurrAfter=[3] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[1,0] l1=[3]
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  setup slot=4
+pic index=17 input=24 type=P poc=24 ref=1
+  h265 PicOrderCntVal=24 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=0 delta_poc_s0_minus1=[7,7,7] delta_poc_s1_minus1=[] used_s0=7 used_s1=0 flags=-
+  rps-slots stCurrBefore=[3,1,0] stCurrAfter=[] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[3,1,0] l1=[]
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  setup slot=2
+pic index=18 input=17 type=B poc=17 ref=0
+  h265 PicOrderCntVal=17 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[0,7,7] delta_poc_s1_minus1=[6] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[3,1,0] stCurrAfter=[2] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[3,1,0] l1=[2]
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=2 pic=24 PicOrderCntVal=24 pic_type=0 flags=-
+  setup slot=4
+pic index=19 input=18 type=B poc=18 ref=0
+  h265 PicOrderCntVal=18 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[1,7,7] delta_poc_s1_minus1=[5] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[3,1,0] stCurrAfter=[2] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[3,1,0] l1=[2]
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=2 pic=24 PicOrderCntVal=24 pic_type=0 flags=-
+  setup slot=4
+pic index=20 input=19 type=B poc=19 ref=0
+  h265 PicOrderCntVal=19 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[2,7,7] delta_poc_s1_minus1=[4] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[3,1,0] stCurrAfter=[2] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[3,1,0] l1=[2]
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=2 pic=24 PicOrderCntVal=24 pic_type=0 flags=-
+  setup slot=4
+pic index=21 input=20 type=B poc=20 ref=0
+  h265 PicOrderCntVal=20 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[3,7,7] delta_poc_s1_minus1=[3] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[3,1,0] stCurrAfter=[2] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[3,1,0] l1=[2]
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=2 pic=24 PicOrderCntVal=24 pic_type=0 flags=-
+  setup slot=4
+pic index=22 input=21 type=B poc=21 ref=0
+  h265 PicOrderCntVal=21 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[4,7,7] delta_poc_s1_minus1=[2] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[3,1,0] stCurrAfter=[2] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[3,1,0] l1=[2]
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=2 pic=24 PicOrderCntVal=24 pic_type=0 flags=-
+  setup slot=4
+pic index=23 input=22 type=B poc=22 ref=0
+  h265 PicOrderCntVal=22 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[5,7,7] delta_poc_s1_minus1=[1] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[3,1,0] stCurrAfter=[2] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[3,1,0] l1=[2]
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=2 pic=24 PicOrderCntVal=24 pic_type=0 flags=-
+  setup slot=4
+pic index=24 input=23 type=B poc=23 ref=0
+  h265 PicOrderCntVal=23 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[6,7,7] delta_poc_s1_minus1=[0] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[3,1,0] stCurrAfter=[2] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[3,1,0] l1=[2]
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=0 pic=0 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=2 pic=24 PicOrderCntVal=24 pic_type=0 flags=-
+  setup slot=4
+pic index=25 input=32 type=I poc=32 ref=1
+  h265 PicOrderCntVal=32 flags=irap short_term_ref_pic_set_idx=0
+  rps num_negative_pics=4 num_positive_pics=0 delta_poc_s0_minus1=[7,7,7,7] delta_poc_s1_minus1=[] used_s0=0 used_s1=0 flags=-
+  rps-slots stCurrBefore=[] stCurrAfter=[] ltCurr=[] stFoll=[2,3,1,0] ltFoll=[]
+  setup slot=4
+pic index=26 input=25 type=B poc=25 ref=0
+  h265 PicOrderCntVal=25 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[0,7,7] delta_poc_s1_minus1=[6] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[2,3,1] stCurrAfter=[4] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[2,3,1] l1=[4]
+  ref slot=2 pic=24 PicOrderCntVal=24 pic_type=0 flags=-
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  setup slot=0
+pic index=27 input=26 type=B poc=26 ref=0
+  h265 PicOrderCntVal=26 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[1,7,7] delta_poc_s1_minus1=[5] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[2,3,1] stCurrAfter=[4] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[2,3,1] l1=[4]
+  ref slot=2 pic=24 PicOrderCntVal=24 pic_type=0 flags=-
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  setup slot=0
+pic index=28 input=27 type=B poc=27 ref=0
+  h265 PicOrderCntVal=27 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[2,7,7] delta_poc_s1_minus1=[4] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[2,3,1] stCurrAfter=[4] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[2,3,1] l1=[4]
+  ref slot=2 pic=24 PicOrderCntVal=24 pic_type=0 flags=-
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  setup slot=0
+pic index=29 input=28 type=B poc=28 ref=0
+  h265 PicOrderCntVal=28 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[3,7,7] delta_poc_s1_minus1=[3] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[2,3,1] stCurrAfter=[4] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[2,3,1] l1=[4]
+  ref slot=2 pic=24 PicOrderCntVal=24 pic_type=0 flags=-
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  setup slot=0
+pic index=30 input=29 type=B poc=29 ref=0
+  h265 PicOrderCntVal=29 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[4,7,7] delta_poc_s1_minus1=[2] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[2,3,1] stCurrAfter=[4] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[2,3,1] l1=[4]
+  ref slot=2 pic=24 PicOrderCntVal=24 pic_type=0 flags=-
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  setup slot=0
+pic index=31 input=30 type=B poc=30 ref=0
+  h265 PicOrderCntVal=30 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[5,7,7] delta_poc_s1_minus1=[1] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[2,3,1] stCurrAfter=[4] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[2,3,1] l1=[4]
+  ref slot=2 pic=24 PicOrderCntVal=24 pic_type=0 flags=-
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  setup slot=0
+pic index=32 input=31 type=B poc=31 ref=0
+  h265 PicOrderCntVal=31 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[6,7,7] delta_poc_s1_minus1=[0] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[2,3,1] stCurrAfter=[4] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[2,3,1] l1=[4]
+  ref slot=2 pic=24 PicOrderCntVal=24 pic_type=0 flags=-
+  ref slot=3 pic=16 PicOrderCntVal=16 pic_type=0 flags=-
+  ref slot=1 pic=8 PicOrderCntVal=8 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  setup slot=0
+pic index=33 input=40 type=P poc=40 ref=1
+  h265 PicOrderCntVal=40 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=0 delta_poc_s0_minus1=[7] delta_poc_s1_minus1=[] used_s0=1 used_s1=0 flags=-
+  rps-slots stCurrBefore=[4] stCurrAfter=[] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[4] l1=[]
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  setup slot=1
+pic index=34 input=33 type=B poc=33 ref=0
+  h265 PicOrderCntVal=33 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=1 delta_poc_s0_minus1=[0] delta_poc_s1_minus1=[6] used_s0=1 used_s1=1 flags=-
+  rps-slots stCurrBefore=[4] stCurrAfter=[1] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[4] l1=[1]
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  setup slot=2
+pic index=35 input=34 type=B poc=34 ref=0
+  h265 PicOrderCntVal=34 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=1 delta_poc_s0_minus1=[1] delta_poc_s1_minus1=[5] used_s0=1 used_s1=1 flags=-
+  rps-slots stCurrBefore=[4] stCurrAfter=[1] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[4] l1=[1]
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  setup slot=3
+pic index=36 input=35 type=B poc=35 ref=0
+  h265 PicOrderCntVal=35 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=1 delta_poc_s0_minus1=[2] delta_poc_s1_minus1=[4] used_s0=1 used_s1=1 flags=-
+  rps-slots stCurrBefore=[4] stCurrAfter=[1] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[4] l1=[1]
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  setup slot=0
+pic index=37 input=36 type=B poc=36 ref=0
+  h265 PicOrderCntVal=36 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=1 delta_poc_s0_minus1=[3] delta_poc_s1_minus1=[3] used_s0=1 used_s1=1 flags=-
+  rps-slots stCurrBefore=[4] stCurrAfter=[1] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[4] l1=[1]
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  setup slot=2
+pic index=38 input=37 type=B poc=37 ref=0
+  h265 PicOrderCntVal=37 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=1 delta_poc_s0_minus1=[4] delta_poc_s1_minus1=[2] used_s0=1 used_s1=1 flags=-
+  rps-slots stCurrBefore=[4] stCurrAfter=[1] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[4] l1=[1]
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  setup slot=3
+pic index=39 input=38 type=B poc=38 ref=0
+  h265 PicOrderCntVal=38 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=1 delta_poc_s0_minus1=[5] delta_poc_s1_minus1=[1] used_s0=1 used_s1=1 flags=-
+  rps-slots stCurrBefore=[4] stCurrAfter=[1] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[4] l1=[1]
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  setup slot=0
+pic index=40 input=39 type=B poc=39 ref=0
+  h265 PicOrderCntVal=39 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=1 delta_poc_s0_minus1=[6] delta_poc_s1_minus1=[0] used_s0=1 used_s1=1 flags=-
+  rps-slots stCurrBefore=[4] stCurrAfter=[1] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[4] l1=[1]
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  setup slot=2
+pic index=41 input=48 type=P poc=48 ref=1
+  h265 PicOrderCntVal=48 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=2 num_positive_pics=0 delta_poc_s0_minus1=[7,7] delta_poc_s1_minus1=[] used_s0=3 used_s1=0 flags=-
+  rps-slots stCurrBefore=[1,4] stCurrAfter=[] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[1,4] l1=[]
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  setup slot=3
+pic index=42 input=41 type=B poc=41 ref=0
+  h265 PicOrderCntVal=41 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=2 num_positive_pics=1 delta_poc_s0_minus1=[0,7] delta_poc_s1_minus1=[6] used_s0=3 used_s1=1 flags=-
+  rps-slots stCurrBefore=[1,4] stCurrAfter=[3] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[1,4] l1=[3]
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  setup slot=0
+pic index=43 input=42 type=B poc=42 ref=0
+  h265 PicOrderCntVal=42 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=2 num_positive_pics=1 delta_poc_s0_minus1=[1,7] delta_poc_s1_minus1=[5] used_s0=3 used_s1=1 flags=-
+  rps-slots stCurrBefore=[1,4] stCurrAfter=[3] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[1,4] l1=[3]
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  setup slot=2
+pic index=44 input=43 type=B poc=43 ref=0
+  h265 PicOrderCntVal=43 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=2 num_positive_pics=1 delta_poc_s0_minus1=[2,7] delta_poc_s1_minus1=[4] used_s0=3 used_s1=1 flags=-
+  rps-slots stCurrBefore=[1,4] stCurrAfter=[3] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[1,4] l1=[3]
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  setup slot=0
+pic index=45 input=44 type=B poc=44 ref=0
+  h265 PicOrderCntVal=44 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=2 num_positive_pics=1 delta_poc_s0_minus1=[3,7] delta_poc_s1_minus1=[3] used_s0=3 used_s1=1 flags=-
+  rps-slots stCurrBefore=[1,4] stCurrAfter=[3] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[1,4] l1=[3]
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  setup slot=2
+pic index=46 input=45 type=B poc=45 ref=0
+  h265 PicOrderCntVal=45 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=2 num_positive_pics=1 delta_poc_s0_minus1=[4,7] delta_poc_s1_minus1=[2] used_s0=3 used_s1=1 flags=-
+  rps-slots stCurrBefore=[1,4] stCurrAfter=[3] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[1,4] l1=[3]
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  setup slot=0
+pic index=47 input=46 type=B poc=46 ref=0
+  h265 PicOrderCntVal=46 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=2 num_positive_pics=1 delta_poc_s0_minus1=[5,7] delta_poc_s1_minus1=[1] used_s0=3 used_s1=1 flags=-
+  rps-slots stCurrBefore=[1,4] stCurrAfter=[3] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[1,4] l1=[3]
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  setup slot=2
+pic index=48 input=47 type=B poc=47 ref=0
+  h265 PicOrderCntVal=47 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=2 num_positive_pics=1 delta_poc_s0_minus1=[6,7] delta_poc_s1_minus1=[0] used_s0=3 used_s1=1 flags=-
+  rps-slots stCurrBefore=[1,4] stCurrAfter=[3] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[1,4] l1=[3]
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  setup slot=0
+pic index=49 input=56 type=P poc=56 ref=1
+  h265 PicOrderCntVal=56 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=0 delta_poc_s0_minus1=[7,7,7] delta_poc_s1_minus1=[] used_s0=7 used_s1=0 flags=-
+  rps-slots stCurrBefore=[3,1,4] stCurrAfter=[] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[3,1,4] l1=[]
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  setup slot=2
+pic index=50 input=49 type=B poc=49 ref=0
+  h265 PicOrderCntVal=49 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[0,7,7] delta_poc_s1_minus1=[6] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[3,1,4] stCurrAfter=[2] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[3,1,4] l1=[2]
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=2 pic=56 PicOrderCntVal=56 pic_type=0 flags=-
+  setup slot=0
+pic index=51 input=50 type=B poc=50 ref=0
+  h265 PicOrderCntVal=50 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[1,7,7] delta_poc_s1_minus1=[5] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[3,1,4] stCurrAfter=[2] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[3,1,4] l1=[2]
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=2 pic=56 PicOrderCntVal=56 pic_type=0 flags=-
+  setup slot=0
+pic index=52 input=51 type=B poc=51 ref=0
+  h265 PicOrderCntVal=51 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[2,7,7] delta_poc_s1_minus1=[4] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[3,1,4] stCurrAfter=[2] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[3,1,4] l1=[2]
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=2 pic=56 PicOrderCntVal=56 pic_type=0 flags=-
+  setup slot=0
+pic index=53 input=52 type=B poc=52 ref=0
+  h265 PicOrderCntVal=52 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[3,7,7] delta_poc_s1_minus1=[3] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[3,1,4] stCurrAfter=[2] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[3,1,4] l1=[2]
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=2 pic=56 PicOrderCntVal=56 pic_type=0 flags=-
+  setup slot=0
+pic index=54 input=53 type=B poc=53 ref=0
+  h265 PicOrderCntVal=53 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[4,7,7] delta_poc_s1_minus1=[2] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[3,1,4] stCurrAfter=[2] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[3,1,4] l1=[2]
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=2 pic=56 PicOrderCntVal=56 pic_type=0 flags=-
+  setup slot=0
+pic index=55 input=54 type=B poc=54 ref=0
+  h265 PicOrderCntVal=54 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[5,7,7] delta_poc_s1_minus1=[1] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[3,1,4] stCurrAfter=[2] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[3,1,4] l1=[2]
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=2 pic=56 PicOrderCntVal=56 pic_type=0 flags=-
+  setup slot=0
+pic index=56 input=55 type=B poc=55 ref=0
+  h265 PicOrderCntVal=55 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[6,7,7] delta_poc_s1_minus1=[0] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[3,1,4] stCurrAfter=[2] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[3,1,4] l1=[2]
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  ref slot=2 pic=56 PicOrderCntVal=56 pic_type=0 flags=-
+  setup slot=0
+pic index=57 input=59 type=P poc=59 ref=1
+  h265 PicOrderCntVal=59 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=4 num_positive_pics=0 delta_poc_s0_minus1=[2,7,7,7] delta_poc_s1_minus1=[] used_s0=15 used_s1=0 flags=-
+  rps-slots stCurrBefore=[2,3,1,4] stCurrAfter=[] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[2,3,1,4] l1=[]
+  ref slot=2 pic=56 PicOrderCntVal=56 pic_type=0 flags=-
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=4 pic=32 PicOrderCntVal=32 pic_type=0 flags=-
+  setup slot=0
+pic index=58 input=57 type=B poc=57 ref=0
+  h265 PicOrderCntVal=57 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[0,7,7] delta_poc_s1_minus1=[1] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[2,3,1] stCurrAfter=[0] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[2,3,1] l1=[0]
+  ref slot=2 pic=56 PicOrderCntVal=56 pic_type=0 flags=-
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=0 pic=59 PicOrderCntVal=59 pic_type=0 flags=-
+  setup slot=4
+pic index=59 input=58 type=B poc=58 ref=0
+  h265 PicOrderCntVal=58 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=3 num_positive_pics=1 delta_poc_s0_minus1=[1,7,7] delta_poc_s1_minus1=[0] used_s0=7 used_s1=1 flags=-
+  rps-slots stCurrBefore=[2,3,1] stCurrAfter=[0] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[2,3,1] l1=[0]
+  ref slot=2 pic=56 PicOrderCntVal=56 pic_type=0 flags=-
+  ref slot=3 pic=48 PicOrderCntVal=48 pic_type=0 flags=-
+  ref slot=1 pic=40 PicOrderCntVal=40 pic_type=0 flags=-
+  ref slot=0 pic=59 PicOrderCntVal=59 pic_type=0 flags=-
+  setup slot=4
+pic index=60 input=60 type=IDR poc=0 ref=1
+  h265 PicOrderCntVal=0 flags=irap|no_output_of_prior_pics|sps_rps short_term_ref_pic_set_idx=0
+  rps num_negative_pics=4 num_positive_pics=0 delta_poc_s0_minus1=[0,0,0,0] delta_poc_s1_minus1=[] used_s0=15 used_s1=0 flags=-
+  rps-slots stCurrBefore=[] stCurrAfter=[] ltCurr=[] stFoll=[] ltFoll=[]
+  setup slot=0
+pic index=61 input=63 type=P poc=3 ref=1
+  h265 PicOrderCntVal=3 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=0 delta_poc_s0_minus1=[2] delta_poc_s1_minus1=[] used_s0=1 used_s1=0 flags=-
+  rps-slots stCurrBefore=[0] stCurrAfter=[] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[0] l1=[]
+  ref slot=0 pic=60 PicOrderCntVal=0 pic_type=0 flags=-
+  setup slot=1
+pic index=62 input=61 type=B poc=1 ref=0
+  h265 PicOrderCntVal=1 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=1 delta_poc_s0_minus1=[0] delta_poc_s1_minus1=[1] used_s0=1 used_s1=1 flags=-
+  rps-slots stCurrBefore=[0] stCurrAfter=[1] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[0] l1=[1]
+  ref slot=0 pic=60 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=1 pic=63 PicOrderCntVal=3 pic_type=0 flags=-
+  setup slot=2
+pic index=63 input=62 type=B poc=2 ref=0
+  h265 PicOrderCntVal=2 flags=- short_term_ref_pic_set_idx=0
+  rps num_negative_pics=1 num_positive_pics=1 delta_poc_s0_minus1=[1] delta_poc_s1_minus1=[0] used_s0=1 used_s1=1 flags=-
+  rps-slots stCurrBefore=[0] stCurrAfter=[1] ltCurr=[] stFoll=[] ltFoll=[]
+  lists l0=[0] l1=[1]
+  ref slot=0 pic=60 PicOrderCntVal=0 pic_type=0 flags=-
+  ref slot=1 pic=63 PicOrderCntVal=3 pic_type=0 flags=-
+  setup slot=3
+end pictures=64

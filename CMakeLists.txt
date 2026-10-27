@@ -883,6 +883,11 @@ if(BUILD_ENCODER)
         # compiles VkVideoGopStructure.cpp directly and links nothing else.
         add_subdirectory(vk_video_encoder/test/gop-structure)
 
+        # The encoder's DPB decisions, device-free: the DPB classes driven through GOP
+        # sequences as the encoder drives them, the trace checked against the H.264 and H.265
+        # reference picture rules and recorded goldens.
+        add_subdirectory(vk_video_encoder/test/encoder-dpb)
+
         # Encoder quality round trip: encode, decode with ffmpeg, and compare
         # per-frame PSNR against the source. This is the only round-trip
         # quality measurement in the tree -- the encoder's own --psnr option
