@@ -762,6 +762,7 @@ VkResult CreateVulkanVideoDecodeParser(VkVideoCodecOperationFlagBitsKHR videoCod
         break;
     default:
         nvParserErrorLog("Unsupported codec type!!!\n");
+        return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
     }
     VkResult result = nvVideoDecodeParser->Initialize(pParserPictureData);
     if (result != VK_SUCCESS) {

@@ -586,6 +586,23 @@ struct CraftedCase {
 
 const std::vector<CraftedCase>& Cases() {
     static const std::vector<CraftedCase> cases = {
+        // a codec operation that no parser decodes is refused before a parser exists to initialize.
+        {"ParserUnsupportedCodec",
+         [](CaseContext&) {
+             VkParserInitDecodeParameters params = {};
+             params.interfaceVersion = NV_VULKAN_VIDEO_PARSER_API_VERSION;
+             VkSharedBaseObj<VulkanVideoDecodeParser> parser;
+             const VkResult result = CreateVulkanVideoDecodeParser(VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR, nullptr, ParserLog,
+                                                                   0, &params, parser);
+             std::vector<std::string> failures;
+             if (result == VK_SUCCESS) {
+                 failures.push_back("an encode operation's parser was created");
+             }
+             if (parser) {
+                 failures.push_back("the failed call returned a parser");
+             }
+             return failures;
+         }},
         // Proves the H.264 builders: one SPS, one PPS and an IDR picture that the parser takes.
         {"H264CraftedStream",
          [](CaseContext& stream) {
