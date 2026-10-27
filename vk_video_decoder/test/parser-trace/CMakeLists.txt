@@ -145,6 +145,7 @@ set(PARSER_CRAFTED_CASES
     Av1UvlcTruncated
     Av1FilmGrainPointCount
     Vp9CraftedKeyFrame
+    Vp9PicturePoolExhausted
 )
 foreach(crafted ${PARSER_CRAFTED_CASES})
     add_test(NAME ParserCrafted.${crafted} COMMAND $<TARGET_FILE:vk-video-parser-crafted> --case ${crafted})

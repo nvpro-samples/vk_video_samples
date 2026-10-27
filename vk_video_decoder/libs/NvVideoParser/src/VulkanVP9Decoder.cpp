@@ -262,7 +262,6 @@ bool VulkanVP9Decoder::ParseFrameHeader(uint32_t framesize)
     m_pVkPictureData->bitstreamDataOffset = (size_t)(m_nalu.start_offset & ~((int64_t)m_bufferOffsetAlignment - 1));
 
     if (!BeginPicture(m_pVkPictureData)) {
-        assert(!"BeginPicture failed");
         return false;
     }
 
@@ -883,10 +882,13 @@ bool VulkanVP9Decoder::BeginPicture(VkParserPictureData* pnvpd)
         return false;
     }
 
-    // Allocate a buffer for the current picture
+    // Allocate a buffer for the current picture. A client with no free picture cannot take the
+    // frame, which is dropped.
     if (m_pCurrPic == nullptr) {
-        m_pClient->AllocPictureBuffer(&m_pCurrPic);
-        assert(m_pCurrPic);
+        if (!m_pClient->AllocPictureBuffer(&m_pCurrPic) || (m_pCurrPic == nullptr)) {
+            m_pCurrPic = nullptr;
+            return false;
+        }
 
         m_pCurrPic->decodeWidth = width;
         m_pCurrPic->decodeHeight = height;

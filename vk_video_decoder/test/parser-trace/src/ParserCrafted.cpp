@@ -606,6 +606,18 @@ const std::vector<CraftedCase>& Cases() {
              checks.Field("  fg", "num_y_points", "14");
              return checks.Failures();
          }},
+        // a client with one picture, which the first key frame keeps in all eight reference
+        // buffers, has none for the second.
+        {"Vp9PicturePoolExhausted",
+         [](CaseContext& stream) {
+             stream.packets.push_back({Vp9KeyFrame(), 0});
+             stream.packets.push_back({Vp9KeyFrame(), 1});
+             const Trace trace = Run(stream, "vp9", 1);
+             Checks checks(trace);
+             checks.Count("pic", 1);
+             checks.Count("alloc-failed", 1);
+             return checks.Failures();
+         }},
         // Proves the VP9 key frame builder.
         {"Vp9CraftedKeyFrame",
          [](CaseContext& stream) {
