@@ -15,19 +15,21 @@
 cmake_minimum_required(VERSION 3.20)
 project(vk-video-parser-trace LANGUAGES CXX)
 
-# The parser is linked from its static archive: the tool needs no Vulkan loader, no device and no
-# shared library, which is what lets the test carry the device-free label.
-add_executable(${PROJECT_NAME} src/ParserTrace.cpp)
+# The parser is linked from its static archive: the tools need no Vulkan loader, no device and no
+# shared library, which is what lets the tests carry the device-free label.
+add_executable(${PROJECT_NAME} src/ParserTrace.cpp src/TraceClient.cpp)
+add_executable(vk-video-parser-crafted src/ParserCrafted.cpp src/TraceClient.cpp)
 
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ${VULKAN_VIDEO_PARSER_INCLUDE}/..
-    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}
-    ${VULKAN_HEADERS_INCLUDE_DIR}
-)
+foreach(tool ${PROJECT_NAME} vk-video-parser-crafted)
+    target_include_directories(${tool} PRIVATE
+        ${VULKAN_VIDEO_PARSER_INCLUDE}/..
+        ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}
+        ${VULKAN_HEADERS_INCLUDE_DIR}
+    )
+    target_link_libraries(${tool} PRIVATE ${VULKAN_VIDEO_PARSER_STATIC_LIB})
+endforeach()
 
-target_link_libraries(${PROJECT_NAME} PRIVATE ${VULKAN_VIDEO_PARSER_STATIC_LIB})
-
-install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
+install(TARGETS ${PROJECT_NAME} vk-video-parser-crafted RUNTIME DESTINATION bin)
 
 # WHAT THIS GATES. Every stream in suites/<codec>.json that is available runs through the parser,
 # and these checks apply:
@@ -57,3 +59,21 @@ foreach(codec Av1 H264 H265 Vp9)
 endforeach()
 
 message(STATUS "vk-video-parser-trace: Configured")
+
+# The crafted cases: streams built in src/ParserCrafted.cpp, each reaching one parser path, with
+# checks on what the parser hands its client. A case that hangs the parser fails at the timeout,
+# and one in a sanitizer build fails on any report the sanitizer makes fatal. ParserCraftedCases
+# fails unless this list names exactly the cases the tool has.
+set(PARSER_CRAFTED_CASES
+    H264CraftedStream
+    H265CraftedStream
+    Av1CraftedSequenceHeader
+    Vp9CraftedKeyFrame
+)
+foreach(crafted ${PARSER_CRAFTED_CASES})
+    add_test(NAME ParserCrafted.${crafted} COMMAND $<TARGET_FILE:vk-video-parser-crafted> --case ${crafted})
+    set_tests_properties(ParserCrafted.${crafted} PROPERTIES LABELS "device-free" TIMEOUT 10)
+endforeach()
+add_test(NAME ParserCraftedCases
+         COMMAND $<TARGET_FILE:vk-video-parser-crafted> --expect-cases ${PARSER_CRAFTED_CASES})
+set_tests_properties(ParserCraftedCases PROPERTIES LABELS "device-free")

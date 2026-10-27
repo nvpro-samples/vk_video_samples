@@ -22,6 +22,10 @@ The CTests `ParserTraceAv1`, `ParserTraceH264`, `ParserTraceH265` and `ParserTra
   unlisted fails; a listed one that no longer appears fails too. A fix therefore removes its
   category from `known`, and a golden diff shows exactly the fields it changed.
 
+`vk-video-parser-crafted` runs the parser over streams built in code, each reaching one parser
+path, and checks what the parser hands its client. Its cases run as `ParserCrafted.<case>` (label
+`device-free`, a 10 s timeout); see [Crafted cases](#crafted-cases).
+
 Nothing is decoded. A green run says what the parser hands a client, not that a driver decodes it
 correctly.
 
@@ -29,7 +33,10 @@ correctly.
 
 | File | What it is |
 |---|---|
-| `src/ParserTrace.cpp` | the tool: a recording client, a host-memory bitstream buffer, a picture pool, and the stream readers |
+| `src/ParserTrace.cpp` | the trace tool: the stream readers and `main` |
+| `src/TraceClient.h`, `src/TraceClient.cpp` | what both tools share: the recording client with its host-memory bitstream buffer and picture pool, the trace lines, the parser setup and the packet feeds |
+| `src/ParserCrafted.cpp` | the crafted-case tool: the stream builders and the cases |
+| `src/BitWriter.h` | the bit writer the builders use: `u(n)`, `ue(v)`, `se(v)`, `uvlc()`, trailing bits, Annex B NAL units with emulation prevention, AV1 OBUs |
 | `scripts/av1_reference_model.py` | the AV1 model and the comparison |
 | `scripts/parser_trace_suite.py` | the suite runner CTest calls |
 | `suites/<codec>.json` | the streams of each codec, their goldens, md5 lists, AV1 header dumps and known categories, and the AV1 defects table |
@@ -127,6 +134,31 @@ element 0 of `SavedOrderHints`, and the segmentation update flags of a frame wit
 Buffers whose content the headers do not determine, after an error-resilient `ref_order_hint`
 mismatch, are skipped. Scalable streams are not compared: the parser decodes one operating point
 and the dump holds them all.
+
+## Crafted cases
+
+```bash
+<build>/bin/vk-video-parser-crafted --list
+<build>/bin/vk-video-parser-crafted --case H265CraftedStream --trace case.trace --write case.h265
+ffmpeg -i case.h265 -c copy -bsf:v trace_headers -f null -     # how another parser reads the stream
+```
+
+A case builds its stream (an H.264 or H.265 byte stream, or AV1 or VP9 packets), runs the parser
+over it with the recording client, and checks lines and fields of the trace. It exits 0 when every
+check holds. `--trace` writes the trace and `--write` the stream, H.264 and H.265 as a byte stream
+and AV1 and VP9 as IVF, so ffmpeg's `trace_headers` can confirm the stream says what the case
+means.
+
+The builders write well-formed syntax with defaults: an H.264 Baseline SPS, PPS and IDR slice for a
+64x64 picture; an H.265 Main VPS, SPS, PPS and IDR slice for a 64x64 picture with 16x16 coding tree
+blocks and one short-term reference picture set; an AV1 temporal delimiter and sequence header with
+timing info; a 64x64 VP9 key frame. Slice data, compressed headers and tiles are filler, which the
+parser does not read. The `...Crafted...` cases prove each builder: the parser takes the stream and
+reports the fields as written.
+
+A case for a parser defect builds the malformed or edge-case stream that reaches the defect, and lands
+with its fix. To add one, add it to `Cases()` in `src/ParserCrafted.cpp` and its name to
+`PARSER_CRAFTED_CASES` in `CMakeLists.txt`; `ParserCraftedCases` fails while the two lists differ.
 
 ## Recording
 
