@@ -537,7 +537,9 @@ void VulkanH265Decoder::seq_parameter_set_rbsp()
             }
             layerIdx++;
         }
-        for (int i = 0; i <= sps->sps_max_sub_layers_minus1; i++) {
+        // A layer that is not in the layer set takes none of its DPB sizes.
+        const int lastSubLayer = (layerIdx < vps->num_layers_in_id_list[targetOptLayerSetIdx]) ? sps->sps_max_sub_layers_minus1 : -1;
+        for (int i = 0; i <= lastSubLayer; i++) {
             sps->stdDecPicBufMgr.max_dec_pic_buffering_minus1[i] = vps->max_vps_dec_pic_buffering_minus1[targetOptLayerSetIdx][layerIdx][i];
             sps->stdDecPicBufMgr.max_num_reorder_pics[i]         = vps->max_vps_num_reorder_pics[targetOptLayerSetIdx][i];
             sps->stdDecPicBufMgr.max_latency_increase_plus1[i]   = vps->max_vps_latency_increase_plus1[targetOptLayerSetIdx][i];
@@ -1248,7 +1250,15 @@ bool VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pV
     if (pVideoParamSet->privFlags.vps_sub_layers_max_minus1_present_flag)
     {
         for (i = 0; i <= pVideoParamSet->vps_max_layers_minus1; i++)
+        {
+            // At most vps_max_sub_layers_minus1 (F.7.4.3.1.1), which the sub-layer arrays hold.
             pVideoParamSet->sub_layers_vps_max_minus1[i] = u(3);
+            if (pVideoParamSet->sub_layers_vps_max_minus1[i] > pVideoParamSet->vps_max_sub_layers_minus1)
+            {
+                nvParserLog("Invalid sub_layers_vps_max_minus1 (%d)\n", pVideoParamSet->sub_layers_vps_max_minus1[i]);
+                return false;
+            }
+        }
     }
     else
     {
@@ -1294,6 +1304,12 @@ bool VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pV
             pVideoParamSet->num_add_olss = 0;
         }
         pVideoParamSet->numOutputLayerSets =  pVideoParamSet->vps_num_layer_sets + pVideoParamSet->num_add_layer_sets + pVideoParamSet->num_add_olss;
+        // The output layer set arrays hold MAX_VPS_OUTPUTLAYER_SETS, and NumOutputLayerSets can reach 2047.
+        if (pVideoParamSet->numOutputLayerSets > MAX_VPS_OUTPUTLAYER_SETS)
+        {
+            nvParserLog("Unsupported number of output layer sets (%u)\n", pVideoParamSet->numOutputLayerSets);
+            return false;
+        }
         pVideoParamSet->default_output_layer_idc = u(2);
     }
 
@@ -1304,6 +1320,12 @@ bool VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pV
         {
             uint32_t codelength = CeilLog2(pVideoParamSet->vps_num_layer_sets + pVideoParamSet->num_add_layer_sets);
             pVideoParamSet->layer_set_idx_for_ols_minus1[i] = u(codelength);
+            // At most NumLayerSets - 2 (F.7.4.3.1.1): the output layer set's layer set exists.
+            if (pVideoParamSet->layer_set_idx_for_ols_minus1[i] + 2 > pVideoParamSet->vps_num_layer_sets + pVideoParamSet->num_add_layer_sets)
+            {
+                nvParserLog("Invalid layer_set_idx_for_ols_minus1 (%u)\n", pVideoParamSet->layer_set_idx_for_ols_minus1[i]);
+                return false;
+            }
         }
 
         if (i > pVideoParamSet->vps_num_layer_sets - 1 || pVideoParamSet->default_output_layer_idc == 2)
@@ -1402,7 +1424,14 @@ bool VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pV
         uint32_t currLsIdx = olsIdxToLsIdx(pVideoParamSet, i);
         pVideoParamSet->sub_layer_flag_info_present_flag[i] = u(1);
 
-        for (j = 0; j <= pVideoParamSet->sub_layers_vps_max_minus1[currLsIdx]; j++)
+        // MaxSubLayersInLayerSetMinus1[currLsIdx] (F.7.4.3.1.1): the most sub-layers of the set's layers.
+        uint32_t maxSubLayersInLayerSetMinus1 = 0;
+        for (k = 0; k < pVideoParamSet->num_layers_in_id_list[currLsIdx]; k++)
+        {
+            const uint32_t layerIdx = pVideoParamSet->LayerIdxInVps[pVideoParamSet->layer_set_layer_id_list[currLsIdx][k]];
+            maxSubLayersInLayerSetMinus1 = std::max<uint32_t>(maxSubLayersInLayerSetMinus1, pVideoParamSet->sub_layers_vps_max_minus1[layerIdx]);
+        }
+        for (j = 0; j <= maxSubLayersInLayerSetMinus1; j++)
         {
             if (j > 0 && pVideoParamSet->sub_layer_flag_info_present_flag[i])
             {

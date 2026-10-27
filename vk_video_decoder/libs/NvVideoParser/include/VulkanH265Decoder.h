@@ -629,7 +629,7 @@ struct hevc_video_param_s : public StdVideoPictureParametersSet, public StdVideo
     /* DPB size */
     uint8_t  sub_layer_flag_info_present_flag[MAX_VPS_OUTPUTLAYER_SETS];
     uint8_t  sub_layer_dpb_info_present_flag[MAX_VPS_OUTPUTLAYER_SETS][MAX_SUB_LAYERS];
-    uint8_t  max_vps_dec_pic_buffering_minus1[MAX_VPS_OUTPUTLAYER_SETS][MAX_SUB_LAYERS][MAX_NUM_LAYER_IDS];
+    uint8_t  max_vps_dec_pic_buffering_minus1[MAX_VPS_OUTPUTLAYER_SETS][MAX_NUM_LAYER_IDS][MAX_SUB_LAYERS];  // [i][k][j] as F.7.3.2.1.3
     uint8_t  max_vps_num_reorder_pics[MAX_VPS_OUTPUTLAYER_SETS][MAX_SUB_LAYERS];
     uint8_t  max_vps_latency_increase_plus1[MAX_VPS_OUTPUTLAYER_SETS][MAX_SUB_LAYERS];
 
