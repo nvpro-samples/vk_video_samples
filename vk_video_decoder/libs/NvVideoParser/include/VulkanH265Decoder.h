@@ -809,6 +809,7 @@ protected:
     int m_NumActiveRefLayerPics0;
     int m_NumActiveRefLayerPics1;
     int m_nuh_layer_id;
+    int m_picture_nuh_layer_id;  // the nuh_layer_id of the picture being parsed, from its first slice
     int m_max_dec_pic_buffering;
     int8_t m_RefPicSetStCurrBefore[32];
     int8_t m_RefPicSetStCurrAfter[32];

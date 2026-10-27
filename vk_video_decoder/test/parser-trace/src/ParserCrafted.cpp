@@ -417,6 +417,17 @@ std::vector<uint8_t> H265IdrSliceNal() {
     return AnnexBNal({0x26, 0x01}, w.Data());
 }
 
+// A slice segment of an IDR_W_RADL picture that is not its first, in layer nuhLayerId: slice segment
+// address 8 of the 16 coding tree blocks. Its slice data is filler the parser does not read.
+std::vector<uint8_t> H265IdrSliceSegmentNal(uint32_t nuhLayerId) {
+    BitWriter w;
+    w.Flag(false).Flag(false).Ue(0).U(4, 8);           // first slice, no_output_of_prior_pics, pps id, address
+    w.Ue(2).Se(0);                                     // slice_type I, slice_qp_delta
+    w.TrailingBits().Bytes({0x55, 0xAA, 0x55, 0xAA});  // byte_alignment(), slice data
+    return AnnexBNal({static_cast<uint8_t>(0x26 | (nuhLayerId >> 5)), static_cast<uint8_t>(((nuhLayerId & 0x1f) << 3) | 1)},
+                     w.Data());
+}
+
 // A TRAIL_R P slice with picture order count LSB pocLsb and the SPS's first reference picture set;
 // its slice data is filler the parser does not read. longTerm, for an SPS with long-term pictures,
 // writes the slice's, from num_long_term_sps to the last delta_poc_msb_present_flag.
@@ -693,6 +704,24 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "h265");
              Checks checks(trace);
              checks.Count("pic", 1);
+             return checks.Failures();
+         }},
+        // the VCL NAL units of a picture share its nuh_layer_id (Rec. ITU-T H.265 7.4.2.2). A layer-0
+        // IDR picture goes on with a slice segment of layer 1, which has no SPS, and ends at the next
+        // picture's first slice: it ends with layer 0's parameter sets, and the other layer's segment
+        // is dropped.
+        {"H265SliceOfAnotherLayer",
+         [](CaseContext& stream) {
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal());
+             Append(stream.byteStream, H265PpsNal());
+             Append(stream.byteStream, H265IdrSliceNal());
+             Append(stream.byteStream, H265IdrSliceSegmentNal(1));
+             Append(stream.byteStream, H265TrailSliceNal(1));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("pic", 2);
+             checks.Field("pic", "numSlices", "1", 0);
              return checks.Failures();
          }},
         // num_long_term_sps is at most num_long_term_ref_pics_sps (Rec. ITU-T H.265 7.4.7.1), and

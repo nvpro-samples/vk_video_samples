@@ -144,6 +144,7 @@ set(PARSER_CRAFTED_CASES
     H265InterRpsOverflow
     H265SpsNumStRps
     H265RefPicSetCurrBefore9
+    H265SliceOfAnotherLayer
     H265SliceNumLongTermSps
     H265ScalingListRefMatrix
     H265VpsSubLayers8

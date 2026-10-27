@@ -72,6 +72,7 @@ void VulkanH265Decoder::InitParser()
     m_bEmulBytesPresent = true;
     m_bNoStartCodes = false;
     m_nuh_layer_id = 0;
+    m_picture_nuh_layer_id = 0;
     m_max_dec_pic_buffering = 0;
     EndOfStream();
 }
@@ -123,9 +124,10 @@ bool VulkanH265Decoder::BeginPicture(VkParserPictureData *pnvpd)
     hevc_dpb_entry_s *cur = m_dpb_cur;
     int8_t current_dpb_id = m_current_dpb_id;
     VkParserHevcPictureData * const hevc = &pnvpd->CodecSpecific.hevc;
-    const hevc_seq_param_s * const sps = m_active_sps[m_nuh_layer_id].get();
+    // The picture ends with its own layer's parameter sets: m_nuh_layer_id is the last NAL unit's layer.
+    const hevc_seq_param_s * const sps = m_active_sps[m_picture_nuh_layer_id].get();
     assert(sps);
-    const hevc_pic_param_s * const pps = m_active_pps[m_nuh_layer_id].get();
+    const hevc_pic_param_s * const pps = m_active_pps[m_picture_nuh_layer_id].get();
     assert(pps);
     const hevc_video_param_s * const vps = m_active_vps.get();
     // It is possible VPS not to be available with some malformed video content
@@ -215,14 +217,14 @@ bool VulkanH265Decoder::BeginPicture(VkParserPictureData *pnvpd)
     }
 
     // MV-HEVC related fields
-    if (m_nuh_layer_id > 0)
+    if (m_picture_nuh_layer_id > 0)
     {
         hevc->mv_hevc_enable = 1;
-        hevc->nuh_layer_id = m_nuh_layer_id;
+        hevc->nuh_layer_id = m_picture_nuh_layer_id;
         hevc->default_ref_layers_active_flag = vps->privFlags.default_ref_layers_active_flag;
-        hevc->NumDirectRefLayers = vps->numDirectRefLayers[m_nuh_layer_id];
+        hevc->NumDirectRefLayers = vps->numDirectRefLayers[m_picture_nuh_layer_id];
         hevc->max_one_active_ref_layer_flag = vps->privFlags.max_one_active_ref_layer_flag;
-        hevc->poc_lsb_not_present_flag = vps->poc_lsb_not_present_flag[vps->LayerIdxInVps[m_nuh_layer_id]];
+        hevc->poc_lsb_not_present_flag = vps->poc_lsb_not_present_flag[vps->LayerIdxInVps[m_picture_nuh_layer_id]];
     }
 
     return true;
@@ -307,6 +309,13 @@ int32_t VulkanH265Decoder::ParseNalUnit()
     default:
         if ((nal_unit_type >= NUT_TRAIL_N && nal_unit_type <= NUT_RASL_R) || (nal_unit_type >= NUT_BLA_W_LP && nal_unit_type <= NUT_CRA_NUT))
         {
+            // The VCL NAL units of a picture share its nuh_layer_id (7.4.2.2): a slice of another layer
+            // that does not start a picture is dropped, before its header replaces the picture's.
+            if (m_bPictureStarted && (m_nuh_layer_id != m_picture_nuh_layer_id))
+            {
+                nvParserLog("Discarding a slice of layer %d in a picture of layer %d\n", m_nuh_layer_id, m_picture_nuh_layer_id);
+                break;
+            }
             // slice_layer_rbsp
             if (slice_header(nal_unit_type, nuh_temporal_id_plus1))
             {
@@ -2676,7 +2685,7 @@ int VulkanH265Decoder::dpb_reordering_delay()
     int numReorderPics = 0, i;
     for (i = 0; i < HEVC_DPB_SIZE; i++)
     {
-        if ((m_dpb[i].LayerId == m_nuh_layer_id) &&
+        if ((m_dpb[i].LayerId == m_picture_nuh_layer_id) &&
                 (m_dpb[i].state == 1) && (m_dpb[i].output != 0)) {
             numReorderPics++;
         }
@@ -2758,6 +2767,7 @@ void VulkanH265Decoder::dpb_picture_start(VkSharedBaseObj<hevc_pic_param_s>& pps
 
     m_active_pps[m_nuh_layer_id] = pps;
     m_bPictureStarted = true;
+    m_picture_nuh_layer_id = m_nuh_layer_id;
     m_NumDeltaPocsOfRefRpsIdx = 0;
     if (slh->strps.inter_ref_pic_set_prediction_flag && m_active_sps[m_nuh_layer_id])
     {
@@ -2851,8 +2861,8 @@ void VulkanH265Decoder::dpb_picture_end()
     cur->state = 1;
     cur->marking = 1;
     // Apply max reordering delay now to minimize decode->display latency
-    assert(m_active_sps[m_nuh_layer_id]);
-    while (dpb_reordering_delay() > m_active_sps[m_nuh_layer_id]->max_num_reorder_pics)
+    assert(m_active_sps[m_picture_nuh_layer_id]);
+    while (dpb_reordering_delay() > m_active_sps[m_picture_nuh_layer_id]->max_num_reorder_pics)
     {
         // NOTE: This should never actually evict any references from the dpb (just output for display)
         ret = dpb_bumping(m_MaxDpbSize - 1);
