@@ -13,3 +13,6 @@
 
 # Text files to always have LF (unix) line endings on checkout.
 *.sh text eol=lf
+
+# Parser fuzz inputs, kept byte for byte.
+vk_video_decoder/test/parser-trace/fuzz/regressions/** binary
