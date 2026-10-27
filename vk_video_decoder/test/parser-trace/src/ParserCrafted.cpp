@@ -318,6 +318,34 @@ void H265PredictedScalingLists(BitWriter& w, const std::vector<uint64_t>& deltas
     }
 }
 
+// A VPS of two independent layers, 0 and layerIdInNuh, with one layer set, of layer 0, and a whole
+// extension (Rec. ITU-T H.265 F.7.3.2.1.1) with splitting_flag 1, so that the second layer's
+// dimension ids are bit fields of its nuh_layer_id. scalabilityMask holds scalability_mask_flag[0]
+// in its most significant of 16 bits, and dimensionIdLenMinus1 the lengths coded: those of every
+// dimension but the last.
+std::vector<uint8_t> H265VpsSplittingNal(uint32_t id, uint32_t scalabilityMask, const std::vector<uint32_t>& dimensionIdLenMinus1,
+                                         uint32_t layerIdInNuh) {
+    BitWriter w;
+    w.U(4, id).Flag(true).Flag(true).U(6, 1).U(3, 0).Flag(true).U(16, 0xffff);  // id, base layer, 2 layers, sub-layers
+    H265ProfileTierLevel(w);
+    w.Flag(true).Ue(1).Ue(0).Ue(0);       // sub_layer_ordering_info: max_dec_pic_buffering_minus1 1
+    w.U(6, layerIdInNuh).Ue(0);           // vps_max_layer_id, vps_num_layer_sets_minus1
+    w.Flag(false).Flag(true).AlignOne();  // vps_timing_info_present_flag, vps_extension_flag, alignment
+    w.U(8, 60).Flag(true);                // profile_tier_level(0, 0): general_level_idc; splitting_flag
+    w.U(16, scalabilityMask);
+    for (const uint32_t lenMinus1 : dimensionIdLenMinus1) {
+        w.U(3, lenMinus1);  // dimension_id_len_minus1[j]
+    }
+    w.Flag(true).U(6, layerIdInNuh);        // vps_nuh_layer_id_present_flag, layer_id_in_nuh[1]
+    w.U(4, 0).Flag(false).Ue(0);            // view_id_len, direct_dependency_flag[1][0], num_add_layer_sets
+    w.Flag(false).Flag(false).Flag(false);  // sub-layers max, max_tid_ref_present_flag, default_ref_layers_active_flag
+    w.Ue(1).Ue(0);                          // vps_num_profile_tier_level_minus1, vps_num_rep_formats_minus1
+    w.U(16, 64).U(16, 64).Flag(true);       // rep_format(): 64x64, chroma_and_bit_depth_vps_present_flag
+    w.U(2, 1).U(4, 0).U(4, 0).Flag(false);  // 4:2:0, 8-bit, no conformance window
+    w.Flag(false).Flag(false).Flag(false);  // max_one_active_ref_layer_flag, vps_poc_lsb_aligned_flag, poc_lsb_not_present
+    return AnnexBNal({0x40, 0x01}, w.TrailingBits().Data());
+}
+
 // The SPS fields the cases vary. The default SPS is for a 64x64 picture with 16x16 coding tree
 // blocks and one short-term RPS: one negative picture, used.
 struct H265Sps {
@@ -692,6 +720,21 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("pic", 2);
              checks.Field("  hevc", "CurrPicOrderCntVal", "1", 1);
+             return checks.Failures();
+         }},
+        // with splitting_flag 1 the scalability dimensions split the 6 bits of nuh_layer_id
+        // (Rec. ITU-T H.265 F.7.4.3.1.1). VPS 0 splits them 3 and 3 between two dimensions; VPS 1 gives
+        // the first dimension 8 bits, and the second starts past the sixth; VPS 2 has no dimension.
+        {"H265VpsSplittingDimensions",
+         [](CaseContext& stream) {
+             Append(stream.byteStream, H265VpsSplittingNal(0, 0x6000, {2}, 9));  // multiview and spatial
+             Append(stream.byteStream, H265VpsSplittingNal(1, 0x6000, {7}, 9));
+             Append(stream.byteStream, H265VpsSplittingNal(2, 0x0000, {}, 1));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("vps", 2);
+             checks.Field("vps", "vps_video_parameter_set_id", "0", 0);
+             checks.Field("vps", "vps_video_parameter_set_id", "2", 1);
              return checks.Failures();
          }},
         // scaling_list_pred_matrix_id_delta is at most matrixId (Rec. ITU-T H.265 7.4.5), so that

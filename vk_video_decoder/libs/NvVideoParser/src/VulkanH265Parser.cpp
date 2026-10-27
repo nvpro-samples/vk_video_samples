@@ -1130,15 +1130,24 @@ bool VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pV
         pVideoParamSet->numScalabilityTypes += pVideoParamSet->scalability_mask_flag[i];
     }
 
-    for (i = 0; i < ( pVideoParamSet->numScalabilityTypes - pVideoParamSet->privFlags.splitting_flag); i++)
+    // A length is coded for each dimension but, with splitting_flag, the last.
+    const uint32_t codedDimensionIdLens = pVideoParamSet->numScalabilityTypes -
+        std::min<uint32_t>(pVideoParamSet->numScalabilityTypes, pVideoParamSet->privFlags.splitting_flag);
+    for (i = 0; i < codedDimensionIdLens; i++)
     {
         pVideoParamSet->dimension_id_len[i] = (uint8_t)(u(3) + 1);
     }
-    if (pVideoParamSet->privFlags.splitting_flag)
+    if (pVideoParamSet->privFlags.splitting_flag && (pVideoParamSet->numScalabilityTypes > 0))
     {
-        /* infer last dimension ID Len */
-        pVideoParamSet->dimension_id_len[pVideoParamSet->numScalabilityTypes - 1]
-          = 5 - xGetDimBitOffset(pVideoParamSet, pVideoParamSet->numScalabilityTypes - 1);
+        // The dimensions split the 6 bits of nuh_layer_id (F.7.4.3.1.1): the last starts before the sixth
+        // bit, and its length, dimension_id_len_minus1 + 1, is inferred as the bits that remain.
+        const uint32_t lastDimBitOffset = xGetDimBitOffset(pVideoParamSet, pVideoParamSet->numScalabilityTypes - 1);
+        if (lastDimBitOffset >= 6)
+        {
+            nvParserLog("Invalid vps extension (dimension bit offset %u)\n", lastDimBitOffset);
+            return false;
+        }
+        pVideoParamSet->dimension_id_len[pVideoParamSet->numScalabilityTypes - 1] = (uint8_t)(6 - lastDimBitOffset);
     }
 
     pVideoParamSet->privFlags.vps_nuh_layer_id_present_flag = u(1);
@@ -1604,7 +1613,8 @@ uint32_t VulkanH265Decoder::xGetDimBitOffset(hevc_video_param_s *pVideoParamSet,
     }
     else
     {
-        for (uint32_t dimIdx = 0; dimIdx <= j-1; dimIdx++)
+        // dimBitOffset[0] is 0 (F.7.4.3.1.1): the sum is over the dimensions before j.
+        for (uint32_t dimIdx = 0; dimIdx < j; dimIdx++)
         {
             dimBitOffset += pVideoParamSet->dimension_id_len[dimIdx];
         }

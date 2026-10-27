@@ -140,6 +140,7 @@ set(PARSER_CRAFTED_CASES
     H265VpsLayerSetCountWrap
     H265VpsLayerSetCountLimit
     H265VpsExtensionLayerSetIndex
+    H265VpsSplittingDimensions
     H265InterRpsOverflow
     H265SpsNumStRps
     H265RefPicSetCurrBefore9
