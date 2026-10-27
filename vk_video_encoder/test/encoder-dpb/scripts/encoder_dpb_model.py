@@ -27,6 +27,10 @@ records, and checks the encoder's decisions against them:
   H.265: the reference picture set of the picture (7.4.8, 8.3.2) marks every other picture unused,
          and the initial lists (8.3.4) cycle StCurrBefore, StCurrAfter, LtCurr (list 1: StCurrAfter,
          StCurrBefore, LtCurr) to the active count.
+  AV1:   the eight reference buffers: refresh_frame_flags stores the frame in the buffers it names
+         (all of them for a shown key frame), showing an existing key frame loads it into every
+         buffer (7.20, 7.21), and an inter frame's reference names take their frames from the
+         buffers ref_frame_idx names.
 
 The encoder chooses each list's active count (num_ref_idx_lX_active_minus1, with the override flag
 when it is not the PPS default), and uses no list modification, so each list it writes must be
@@ -44,6 +48,15 @@ Categories:
   rps-slots       H.265: the encoder's RPS slots are not the pictures of the reference picture set
   slot-reuse      the setup slot holds a picture that stays a reference
   slot-range      a slot at or above the DPB size
+  AV1:
+  ref-name-slot   a reference name's slot is not the slot of the frame in the buffer its
+                  ref_frame_idx names, or that buffer holds no frame
+  ref-order-hint  ref_order_hint[i] is not the order hint of the frame in buffer i
+  names-unlisted  a reference name's slot is not among the slots the encode binds
+  ref-unnamed     a slot the encode binds that no reference name uses
+  ref-info        a reference's frame_type or OrderHint is not its frame's
+  refresh         a shown key frame that does not refresh every buffer
+  show-existing   show_existing_frame shows a buffer that holds no frame, or another frame
 
 Exit status: 0 no mismatch, 1 a mismatch, 2 not comparable.
 """
@@ -283,6 +296,73 @@ class H265Model:
             self.refs.append(Picture(f["input"], kind, poc, setup))
 
 
+class AV1Model:
+    KEY, INTER, INTRA_ONLY, SWITCH = 0, 1, 2, 3
+
+    def __init__(self, config, report):
+        self.report = report
+        self.dpb_size = config["dpbSize"]
+        self.buffers = [None] * 8  # (Picture, frame_type) in each reference buffer
+
+    def picture(self, entry):
+        f = entry.fields
+        key = f"picture {f['index']}"
+        av1 = entry.one("av1")
+        if f["show_existing"]:
+            buffer = entry.one("shown")["buffer"]
+            held = self.buffers[buffer] if 0 <= buffer < 8 else None
+            if held is None:
+                self.report.fail("show-existing", key, f"buffer {buffer} holds no frame")
+            elif held.pic != f["input"]:
+                self.report.fail("show-existing", key, f"buffer {buffer} holds picture {held.pic}, not {f['input']}")
+            elif held.kind == self.KEY:
+                self.buffers = [held] * 8
+            return
+        frame_type = av1["frame_type"]
+        names = av1["names"]
+        refs = entry.all("ref")
+        bound = [ref["slot"] for ref in refs]
+        if frame_type in (self.INTER, self.SWITCH):
+            for i, buffer in enumerate(av1["ref_frame_idx"]):
+                held = self.buffers[buffer] if 0 <= buffer < 8 else None
+                if held is None:
+                    self.report.fail("ref-name-slot", key, f"reference name {i} takes buffer {buffer}, which holds no frame")
+                elif names[i] >= 0 and names[i] != held.slot:
+                    self.report.fail("ref-name-slot", key, f"reference name {i} uses slot {names[i]}, buffer {buffer} "
+                                                           f"holds picture {held.pic} in slot {held.slot}")
+            for i, hint in enumerate(av1["ref_order_hint"]):
+                held = self.buffers[i]
+                if held is not None and hint != held.poc % 256:
+                    self.report.fail("ref-order-hint", key, f"ref_order_hint[{i}] {hint}, buffer {i} holds order hint {held.poc % 256}")
+        for i, slot in enumerate(names):
+            if slot >= 0 and slot not in bound:
+                self.report.fail("names-unlisted", key, f"reference name {i} uses slot {slot}, which the encode does not bind")
+        for slot in bound:
+            if slot not in names:
+                self.report.fail("ref-unnamed", key, f"slot {slot} is bound and no reference name uses it")
+        by_slot = {p.slot: p for p in self.buffers if p is not None}
+        for ref in refs:
+            held = by_slot.get(ref["slot"])
+            if held is None or held.pic != ref["pic"]:
+                self.report.fail("ref-unknown", key, f"slot {ref['slot']} (picture {ref['pic']}) is in no reference buffer")
+                continue
+            if ref["OrderHint"] != held.poc % 256 or ref["frame_type"] != held.kind:
+                self.report.fail("ref-info", key, f"picture {held.pic} frame_type {ref['frame_type']} OrderHint {ref['OrderHint']}, "
+                                                  f"not {held.kind} {held.poc % 256}")
+
+        setup = entry.one("setup")["slot"]
+        if setup >= self.dpb_size:
+            self.report.fail("slot-range", key, f"setup slot {setup}, DPB size {self.dpb_size}")
+        refresh = av1["refresh"]
+        if frame_type == self.KEY and "show_frame" in flags(av1) and refresh != 0xff:
+            self.report.fail("refresh", key, f"a shown key frame refreshes {refresh:#x}")
+        current = Picture(f["input"], frame_type, f["poc"], setup)
+        self.buffers = [current if (refresh >> i) & 1 else held for i, held in enumerate(self.buffers)]
+        for i, held in enumerate(self.buffers):
+            if held is not None and held is not current and held.slot == setup:
+                self.report.fail("slot-reuse", key, f"setup slot {setup} holds picture {held.pic}, still in buffer {i}")
+
+
 def compare(trace_path, verbose=False):
     """Returns (report, note); report is None when the trace has nothing to check."""
     entries = read_trace(trace_path)
@@ -292,7 +372,8 @@ def compare(trace_path, verbose=False):
     if config is None:
         return None, "no config line"
     report = Report(verbose)
-    model = H264Model(config, report) if config["codec"] == "h264" else H265Model(config, report)
+    models = {"h264": H264Model, "h265": H265Model, "av1": AV1Model}
+    model = models[config["codec"]](config, report)
     pictures = 0
     for entry in entries:
         if entry.tag == "pic":

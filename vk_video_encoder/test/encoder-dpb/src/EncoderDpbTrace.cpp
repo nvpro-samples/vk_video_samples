@@ -14,25 +14,29 @@
  * limitations under the License.
  */
 
-// vk-video-encoder-dpb-trace drives the encoder's DPB classes, VkEncDpbH264 and VkEncDpbH265 from
-// the encoder library, through a GOP sequence with no Vulkan device, making the calls the
-// encoder makes for each picture, and writes what they decide: the setup slot, the reference
-// lists, and the slots and Std reference information of the references.
+// vk-video-encoder-dpb-trace drives the encoder's DPB classes, VkEncDpbH264, VkEncDpbH265 and
+// VkEncDpbAV1 from the encoder library, through a GOP sequence with no Vulkan device, making the
+// calls the encoder makes for each picture, and writes what they decide: the setup slot, the
+// reference lists or reference names, and the slots and Std reference information of the
+// references.
 //
 // The harness stands in for the encoder where it feeds the DPB, and follows it line by line:
 //   - the configuration: EncoderConfigH264::InitSpsPpsParameters and InitDpbCount
 //     (VkEncoderConfigH264.cpp), EncoderConfigH265::InitDpbCount, InitializeSpsRefPicSet and the
-//     reference fields of InitParamameters (VkEncoderConfigH265.cpp), and the DPB size
-//     VkVideoEncoder::InitEncoder passes on (VkVideoEncoder.cpp);
+//     reference fields of InitParamameters (VkEncoderConfigH265.cpp), EncoderConfigAV1::InitDpbCount
+//     and InitSequenceHeader (VkEncoderConfigAV1.cpp), and the DPB size VkVideoEncoder::InitEncoder
+//     passes on (VkVideoEncoder.cpp);
 //   - the order: VkVideoEncoder::EncodeFrame takes each input frame's GOP position, and
 //     EnqueueFrame and InsertOrdered (VkVideoEncoder.h) defer it in GOP encode order until an IDR,
-//     the last frame, a reference frame or a GOP without B frames flushes the queue;
+//     the last frame, a reference frame or a GOP without B frames flushes the queue, and
+//     VkVideoEncoderAV1::InsertOrdered adds the show_existing_frame of a reordered AV1 frame;
 //   - each picture: VkVideoEncoderH264::EncodeFrame and ProcessDpb, VkVideoEncoderH265::EncodeFrame
-//     and ProcessDpb.
+//     and ProcessDpb, VkVideoEncoderAV1::EncodeFrame, StartOfVideoCodingEncodeOrder,
+//     InitializeFrameHeader and ProcessDpb.
 // A change to any of them is a change this harness has to follow.
 //
 // scripts/encoder_dpb_model.py checks the trace against the H.264 and H.265 reference picture
-// rules. See ../README.md.
+// rules and the AV1 reference buffers. See ../README.md.
 
 #include <algorithm>
 #include <cassert>
@@ -44,6 +48,7 @@
 #include <string>
 #include <vector>
 
+#include "VkVideoEncoder/VkEncoderDpbAV1.h"
 #include "VkVideoEncoder/VkEncoderDpbH264.h"
 #include "VkVideoEncoder/VkEncoderDpbH265.h"
 #include "VkVideoEncoder/VkVideoGopStructure.h"
@@ -119,6 +124,13 @@ struct Frame {
     StdVideoEncodeH264PictureInfo h264Info{};
     StdVideoEncodeH264SliceHeader h264Slice{};
     StdVideoEncodeH265PictureInfo h265Info{};
+    // AV1: VkVideoEncodeFrameInfoAV1's members.
+    StdVideoEncodeAV1PictureInfo av1Info{};
+    bool showExistingFrame = false;
+    bool overlayFrame = false;
+    bool shownKeyFrameOrSwitch = false;
+    int32_t frameToShowBufId = -1;
+    uint64_t frameEncodeEncodeOrderNum = uint64_t(-1);
 };
 
 // The encoder's DPB images: one per picture, named by the picture's input number in the trace.
@@ -140,11 +152,22 @@ class Images {
     std::map<const VulkanVideoImagePoolNode*, int32_t> m_owner;
 };
 
+using FrameQueue = std::vector<std::unique_ptr<Frame>>;
+
 class CodecDriver {
    public:
     virtual ~CodecDriver() = default;
     virtual void EncodeFrame(Frame& frame) = 0;
     virtual void ProcessDpb(Frame& frame, uint32_t encodeNum) = 0;
+
+    // VkVideoEncoder::InsertOrdered: before the first deferred frame whose GOP encode order is not
+    // lower.
+    virtual void InsertOrdered(FrameQueue& deferred, std::unique_ptr<Frame> frame) {
+        auto at = std::find_if(deferred.begin(), deferred.end(), [&](const std::unique_ptr<Frame>& other) {
+            return other->gop.encodeOrder >= frame->gop.encodeOrder;
+        });
+        deferred.insert(at, std::move(frame));
+    }
 };
 
 // VkVideoEncoderH264 with EncoderConfigH264.
@@ -510,13 +533,301 @@ class H265Driver : public CodecDriver {
     uint32_t m_maxDpbPicturesCount = 0;
 };
 
+// VkVideoEncoderAV1 with EncoderConfigAV1.
+class AV1Driver : public CodecDriver {
+   public:
+    AV1Driver(const VkVideoGopStructure& gop, FILE* out)
+        : m_out(out), m_config(new EncoderConfigAV1()), m_dpb(VkEncDpbAV1::CreateInstance()) {
+        m_config->gopStructure = gop;
+        m_config->enableIntraRefresh = false;
+        // The reference capabilities of a device that allows every reference name: up to seven
+        // single references, four unidirectional compound and seven bidirectional compound
+        // (four in group 1, three in group 2).
+        VkVideoEncodeAV1CapabilitiesKHR& caps = m_config->av1EncodeCapabilities;
+        caps.maxSingleReferenceCount = 7;
+        caps.singleReferenceNameMask = 0x7f;
+        caps.maxUnidirectionalCompoundReferenceCount = 4;
+        caps.maxUnidirectionalCompoundGroup1ReferenceCount = 4;
+        caps.unidirectionalCompoundReferenceNameMask = 0xf;
+        caps.maxBidirectionalCompoundReferenceCount = 7;
+        caps.maxBidirectionalCompoundGroup1ReferenceCount = 4;
+        caps.maxBidirectionalCompoundGroup2ReferenceCount = 3;
+        caps.bidirectionalCompoundReferenceNameMask = 0x7f;
+
+        // EncoderConfigAV1::InitDpbCount, then VkVideoEncoder::InitEncoder's min(.., 16u).
+        m_maxDpbPicturesCount = std::min<uint32_t>(STD_VIDEO_AV1_NUM_REF_FRAMES + 1, 16u);
+        // EncoderConfigAV1::InitSequenceHeader: the fields the DPB and the frame header read.
+        m_seqHdr.flags.frame_id_numbers_present_flag = 0;
+        m_seqHdr.additional_frame_id_length_minus_1 = FRAME_ID_BITS - DELTA_FRAME_ID_BITS - 1;
+        m_seqHdr.delta_frame_id_length_minus_2 = DELTA_FRAME_ID_BITS - 2;
+        m_seqHdr.flags.enable_order_hint = 1;
+        m_seqHdr.order_hint_bits_minus_1 = ORDER_HINT_BITS - 1;
+
+        m_dpb->DpbSequenceStart(m_config, m_maxDpbPicturesCount);
+        Line("config")
+            .Str("codec", "av1")
+            .Num("dpbSize", m_maxDpbPicturesCount)
+            .Num("order_hint_bits", m_seqHdr.order_hint_bits_minus_1 + 1)
+            .Emit(m_out);
+    }
+
+    // As ~VkVideoEncoderAV1.
+    ~AV1Driver() override { m_dpb->DpbDestroy(); }
+
+    // VkVideoEncoderAV1::EncodeFrame: the members ProcessDpb reads.
+    void EncodeFrame(Frame& frame) override {
+        frame.picOrderCntVal = frame.gop.inputOrder;
+        frame.showExistingFrame = false;
+        frame.overlayFrame = false;
+        if (frame.gop.pictureType == VkVideoGopStructure::FRAME_TYPE_B) {
+            m_numBFramesToEncode++;
+        }
+        if (frame.gop.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) {
+            m_lastKeyFrameOrderHint = static_cast<int32_t>(frame.picOrderCntVal);
+        }
+        frame.picOrderCntVal = frame.picOrderCntVal - m_lastKeyFrameOrderHint;
+    }
+
+    // VkVideoEncoderAV1::InsertOrdered: a frame never goes before a show_existing_frame, and a
+    // frame inserted ahead of others gets a show_existing_frame, appended at the end, that shows
+    // it in display order.
+    void InsertOrdered(FrameQueue& deferred, std::unique_ptr<Frame> frame) override {
+        auto at = std::find_if(deferred.begin(), deferred.end(), [&](const std::unique_ptr<Frame>& other) {
+            return !other->showExistingFrame && (other->gop.encodeOrder >= frame->gop.encodeOrder);
+        });
+        const bool reordered = (at != deferred.end());
+        auto companion = std::make_unique<Frame>(frame->gop.inputOrder);
+        companion->gop = frame->gop;
+        companion->picOrderCntVal = frame->picOrderCntVal;
+        companion->inputNum = frame->inputNum;
+        companion->timeStamp = frame->inputNum;
+        companion->overlayFrame = true;
+        companion->showExistingFrame = true;
+        deferred.insert(at, std::move(frame));
+        if (reordered) {
+            deferred.push_back(std::move(companion));
+        }
+    }
+
+    // VkVideoEncoderAV1::StartOfVideoCodingEncodeOrder, then ProcessDpb, without the image pool, the
+    // rate control and the intra refresh. The encoder recognizes a reference it already binds by
+    // its image index (GetImageIndex()); each image here is its own node, so the node stands for
+    // the index.
+    void ProcessDpb(Frame& frame, uint32_t encodeNum) override {
+        if (!frame.showExistingFrame) {
+            frame.frameEncodeEncodeOrderNum = m_encodeEncodeFrameNum++;
+        }
+
+        uint32_t flags = 0;
+        if (frame.gop.pictureType != VkVideoGopStructure::FRAME_TYPE_B) {
+            if ((frame.gop.pictureType == VkVideoGopStructure::FRAME_TYPE_I) && (frame.gop.inputOrder == frame.gop.encodeOrder)) {
+                flags = 1 << STD_VIDEO_AV1_REFERENCE_NAME_INTRA_FRAME;
+            } else {
+                flags = (m_config->gopStructure.GetConsecutiveBFrameCount() == 0)
+                            ? 0
+                            : (m_numBFramesToEncode == 0 ? (1 << STD_VIDEO_AV1_REFERENCE_NAME_GOLDEN_FRAME)
+                                                         : (1 << STD_VIDEO_AV1_REFERENCE_NAME_ALTREF_FRAME));
+            }
+        }
+        const bool isReference = m_config->gopStructure.IsFrameReference(frame.gop);
+        StdVideoAV1ReferenceName refName = m_dpb->AssignReferenceFrameType(frame.gop.pictureType, flags, isReference);
+        InitializeFrameHeader(frame, refName);
+        if (!frame.showExistingFrame) {
+            m_dpb->SetupReferenceFrameGroups(frame.gop.pictureType, frame.av1Info.frame_type,
+                                             static_cast<uint32_t>(frame.picOrderCntVal));
+            if ((frame.gop.pictureType == VkVideoGopStructure::FRAME_TYPE_B) && (m_dpb->GetNumRefsL1() == 0)) {
+                frame.gop.pictureType = VkVideoGopStructure::FRAME_TYPE_P;
+                m_numBFramesToEncode--;
+            }
+        }
+        const VkVideoEncoderAV1FrameUpdateType frameUpdateType = m_dpb->GetFrameUpdateType(refName, frame.overlayFrame);
+        const int8_t dpbIndx =
+            m_dpb->DpbPictureStart(frame.av1Info.frame_type, refName, static_cast<uint32_t>(frame.picOrderCntVal),
+                                   frame.av1Info.current_frame_id, frame.showExistingFrame, frame.frameToShowBufId);
+        m_dpb->ConfigureRefBufUpdate(frame.shownKeyFrameOrSwitch, frame.showExistingFrame, frameUpdateType);
+
+        Line("pic")
+            .Num("index", encodeNum)
+            .Num("input", frame.inputNum)
+            .Str("type", FrameTypeName(frame.gop.pictureType))
+            .Num("poc", static_cast<int64_t>(frame.picOrderCntVal))
+            .Num("ref", isReference)
+            .Num("show_existing", frame.showExistingFrame)
+            .Emit(m_out);
+
+        VkSharedBaseObj<VulkanVideoImagePoolNode> setupImage;
+        if (frame.showExistingFrame) {
+            frame.av1Info.refresh_frame_flags =
+                static_cast<uint8_t>(m_dpb->GetRefreshFrameFlags(frame.shownKeyFrameOrSwitch, frame.showExistingFrame));
+            TraceHeader(frame, refName, nullptr);
+            m_dpb->DpbPictureEnd(dpbIndx, setupImage, &m_seqHdr, frame.showExistingFrame, frame.shownKeyFrameOrSwitch,
+                                 frame.av1Info.flags.error_resilient_mode, frame.overlayFrame, refName, frameUpdateType);
+            Line("  shown").Num("slot", dpbIndx).Num("buffer", frame.frameToShowBufId).Emit(m_out);
+            return;
+        }
+        if (frame.frameEncodeEncodeOrderNum != uint64_t(-1)) {
+            m_dpb->InvalidateStaleReferenceFrames(static_cast<uint32_t>(frame.frameEncodeEncodeOrderNum),
+                                                  static_cast<uint32_t>(frame.picOrderCntVal), &m_seqHdr);
+        }
+        frame.av1Info.refresh_frame_flags =
+            static_cast<uint8_t>(m_dpb->GetRefreshFrameFlags(frame.shownKeyFrameOrSwitch, frame.showExistingFrame));
+
+        setupImage = m_images.New(frame.inputNum);
+        StdVideoEncodeAV1ReferenceInfo setupInfo{};
+        m_dpb->FillStdReferenceInfo(static_cast<uint8_t>(dpbIndx), &setupInfo);
+
+        // The references, by reference name, each image bound once.
+        int32_t names[STD_VIDEO_AV1_REFS_PER_FRAME];
+        std::fill(std::begin(names), std::end(names), -1);
+        std::vector<std::pair<int32_t, VkSharedBaseObj<VulkanVideoImagePoolNode>>> bound;
+        auto isBound = [&](const VkSharedBaseObj<VulkanVideoImagePoolNode>& image) {
+            return std::any_of(bound.begin(), bound.end(), [&](const auto& entry) { return entry.second.get() == image.get(); });
+        };
+        bool primaryRefCdfOnly = true;
+        for (int32_t groupId = 0; groupId < 2; groupId++) {
+            for (int32_t i = 0; i < m_dpb->GetNumRefsInGroup(groupId); i++) {
+                const int32_t refNameMinus1 = m_dpb->GetRefNameMinus1(groupId, i);
+                const int32_t dpbIdx = m_dpb->GetDpbIdx(groupId, i);
+                names[refNameMinus1] = dpbIdx;
+                VkSharedBaseObj<VulkanVideoImagePoolNode> image;
+                if (!m_dpb->GetDpbPictureResource(dpbIdx, image)) {
+                    Line("  missing").Num("slot", dpbIdx).Num("name", refNameMinus1).Emit(m_out);
+                    continue;
+                }
+                if (isBound(image)) {
+                    continue;
+                }
+                bound.emplace_back(dpbIdx, image);
+                if (refNameMinus1 == frame.av1Info.primary_ref_frame) {
+                    primaryRefCdfOnly = false;
+                }
+            }
+        }
+        if ((frame.av1Info.primary_ref_frame != STD_VIDEO_AV1_PRIMARY_REF_NONE) && primaryRefCdfOnly) {
+            const int32_t dpbIdx = m_dpb->GetDpbIdx(frame.av1Info.primary_ref_frame);
+            VkSharedBaseObj<VulkanVideoImagePoolNode> image;
+            if (!m_dpb->GetDpbPictureResource(dpbIdx, image)) {
+                Line("  missing").Num("slot", dpbIdx).Num("name", frame.av1Info.primary_ref_frame).Emit(m_out);
+            } else {
+                if (!isBound(image)) {
+                    bound.emplace_back(dpbIdx, image);
+                }
+                names[frame.av1Info.primary_ref_frame] = dpbIdx;
+            }
+        }
+        TraceHeader(frame, refName, names);
+        for (const auto& entry : bound) {
+            StdVideoEncodeAV1ReferenceInfo info{};
+            m_dpb->FillStdReferenceInfo(static_cast<uint8_t>(entry.first), &info);
+            TraceReferenceInfo(Line("  ref").Num("slot", entry.first).Num("pic", m_images.Owner(entry.second)), info).Emit(m_out);
+        }
+
+        m_dpb->DpbPictureEnd(dpbIndx, setupImage, &m_seqHdr, frame.showExistingFrame, frame.shownKeyFrameOrSwitch,
+                             frame.av1Info.flags.error_resilient_mode, frame.overlayFrame, refName, frameUpdateType);
+        TraceReferenceInfo(Line("  setup").Num("slot", dpbIndx), setupInfo).Emit(m_out);
+
+        if (frame.gop.pictureType == VkVideoGopStructure::FRAME_TYPE_B) {
+            m_numBFramesToEncode--;
+        }
+    }
+
+   private:
+    // VkVideoEncoderAV1::InitializeFrameHeader: the fields of the frame header the DPB decides.
+    void InitializeFrameHeader(Frame& frame, StdVideoAV1ReferenceName& refName) {
+        StdVideoEncodeAV1PictureInfo& info = frame.av1Info;
+        info = StdVideoEncodeAV1PictureInfo{};
+        const int32_t frameIdBits = m_seqHdr.delta_frame_id_length_minus_2 + 2 + m_seqHdr.additional_frame_id_length_minus_1 + 1;
+        const int32_t orderHintBits = m_seqHdr.order_hint_bits_minus_1 + 1;
+        if (frame.gop.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) {
+            info.frame_type = STD_VIDEO_AV1_FRAME_TYPE_KEY;
+        } else if (frame.gop.pictureType == VkVideoGopStructure::FRAME_TYPE_I) {
+            info.frame_type = STD_VIDEO_AV1_FRAME_TYPE_INTRA_ONLY;
+        } else {
+            info.frame_type = STD_VIDEO_AV1_FRAME_TYPE_INTER;
+        }
+        info.current_frame_id = static_cast<uint32_t>(frame.gop.encodeOrder % (1ULL << frameIdBits));
+        info.order_hint = static_cast<uint8_t>(frame.picOrderCntVal % (1 << orderHintBits));
+        if (frame.overlayFrame) {
+            frame.frameToShowBufId = m_dpb->GetOverlayRefBufId(static_cast<int32_t>(frame.picOrderCntVal));
+            const int32_t refBufDpbId = m_dpb->GetRefBufDpbId(frame.frameToShowBufId);
+            refName = m_dpb->GetRefName(refBufDpbId);
+            info.frame_type = m_dpb->GetFrameType(refBufDpbId);
+            info.current_frame_id = m_dpb->GetFrameId(refBufDpbId);
+        }
+        info.flags.show_frame =
+            (((refName == STD_VIDEO_AV1_REFERENCE_NAME_BWDREF_FRAME) || (refName == STD_VIDEO_AV1_REFERENCE_NAME_ALTREF2_FRAME) ||
+              (refName == STD_VIDEO_AV1_REFERENCE_NAME_ALTREF_FRAME)) &&
+             !frame.overlayFrame)
+                ? 0
+                : 1;
+        info.flags.showable_frame = info.flags.show_frame ? ((info.frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY) ? 0 : 1) : 1;
+        if ((info.frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY) && info.flags.show_frame) {
+            info.flags.error_resilient_mode = 1;
+        }
+        frame.shownKeyFrameOrSwitch = ((info.frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY) && info.flags.show_frame) ||
+                                      (info.frame_type == STD_VIDEO_AV1_FRAME_TYPE_SWITCH);
+        if (!frame.showExistingFrame &&
+            ((info.frame_type == STD_VIDEO_AV1_FRAME_TYPE_INTER) || (info.frame_type == STD_VIDEO_AV1_FRAME_TYPE_SWITCH))) {
+            for (int32_t ref = STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME; ref <= STD_VIDEO_AV1_REFERENCE_NAME_ALTREF_FRAME; ref++) {
+                info.ref_frame_idx[ref - STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME] =
+                    static_cast<int8_t>(m_dpb->GetRefBufId(static_cast<StdVideoAV1ReferenceName>(ref)));
+            }
+            for (uint32_t bufIdx = 0; bufIdx < STD_VIDEO_AV1_NUM_REF_FRAMES; bufIdx++) {
+                const int32_t dpbIdx = m_dpb->GetRefBufDpbId(static_cast<int32_t>(bufIdx));
+                info.ref_order_hint[bufIdx] = static_cast<uint8_t>(m_dpb->GetPicOrderCntVal(dpbIdx) % (1 << ORDER_HINT_BITS));
+            }
+        }
+        info.primary_ref_frame = static_cast<uint8_t>(
+            m_dpb->GetPrimaryRefFrame(info.frame_type, refName, info.flags.error_resilient_mode, frame.overlayFrame));
+    }
+
+    void TraceHeader(const Frame& frame, StdVideoAV1ReferenceName refName, const int32_t* names) const {
+        const StdVideoEncodeAV1PictureInfo& info = frame.av1Info;
+        Line line("  av1");
+        line.Num("frame_type", info.frame_type)
+            .Num("ref_name", refName)
+            .Num("refresh", info.refresh_frame_flags)
+            .Flags("flags", {{"show_frame", info.flags.show_frame},
+                             {"showable_frame", info.flags.showable_frame},
+                             {"error_resilient_mode", info.flags.error_resilient_mode},
+                             {"overlay", frame.overlayFrame}})
+            .Num("order_hint", info.order_hint)
+            .Num("primary_ref_frame", info.primary_ref_frame)
+            .Array("ref_frame_idx", info.ref_frame_idx, STD_VIDEO_AV1_REFS_PER_FRAME)
+            .Array("ref_order_hint", info.ref_order_hint, STD_VIDEO_AV1_NUM_REF_FRAMES);
+        if (names != nullptr) {
+            line.Array("names", names, STD_VIDEO_AV1_REFS_PER_FRAME);
+        }
+        line.Emit(m_out);
+    }
+
+    static Line& TraceReferenceInfo(Line& line, const StdVideoEncodeAV1ReferenceInfo& info) {
+        return line.Num("frame_type", info.frame_type)
+            .Num("OrderHint", info.OrderHint)
+            .Num("RefFrameId", info.RefFrameId)
+            .Flags("flags", {{"disable_frame_end_update_cdf", info.flags.disable_frame_end_update_cdf},
+                             {"segmentation_enabled", info.flags.segmentation_enabled}});
+    }
+
+    FILE* m_out;
+    VkSharedBaseObj<EncoderConfigAV1> m_config;
+    VkEncDpbAV1* m_dpb;
+    Images m_images;
+    StdVideoAV1SequenceHeader m_seqHdr{};
+    uint32_t m_maxDpbPicturesCount = 0;
+    uint32_t m_numBFramesToEncode = 0;
+    int32_t m_lastKeyFrameOrderHint = 0;
+    uint64_t m_encodeEncodeFrameNum = 0;
+};
+
 int Usage(const char* program) {
     fprintf(stderr,
-            "Usage: %s --codec h264|h265 [-o <trace>] [--frames N] [--gop N] [--idr N] [--bframes N] [--closed-gop]\n"
+            "Usage: %s --codec h264|h265|av1 [-o <trace>] [--frames N] [--gop N] [--idr N] [--bframes N] [--closed-gop]\n"
             "          [--refs-l0 N] [--refs-l1 N] [--level-dpb N]\n"
             "       %s --asserts\n"
             "Drives the encoder's DPB class through a GOP sequence as the encoder does, and writes the\n"
-            "setup slot, reference lists and references of every picture. --asserts prints whether the\n"
+            "setup slot, reference lists or names, and references of every picture. --refs-l0, --refs-l1\n"
+            "and --level-dpb apply to H.264 and H.265. --asserts prints whether the\n"
             "encoder library was built with assertions.\n",
             program, program);
     return 2;
@@ -567,7 +878,7 @@ int main(int argc, char** argv) {
             return Usage(argv[0]);
         }
     }
-    if ((settings.codec != "h264") && (settings.codec != "h265")) {
+    if ((settings.codec != "h264") && (settings.codec != "h265") && (settings.codec != "av1")) {
         return Usage(argv[0]);
     }
 
@@ -600,15 +911,17 @@ int main(int argc, char** argv) {
     std::unique_ptr<CodecDriver> driver;
     if (settings.codec == "h264") {
         driver = std::make_unique<H264Driver>(settings, gop, out);
-    } else {
+    } else if (settings.codec == "h265") {
         driver = std::make_unique<H265Driver>(settings, gop, out);
+    } else {
+        driver = std::make_unique<AV1Driver>(gop, out);
     }
 
     // VkVideoEncoder::EncodeFrame and EnqueueFrame: the deferred queue in GOP encode order, held
     // until one reference frame (m_holdRefFramesInQueue 1) and flushed then, at an IDR, at the last
     // frame and on every frame of a GOP without B frames.
     VkVideoGopStructure::GopState gopState;
-    std::vector<std::unique_ptr<Frame>> deferred;
+    FrameQueue deferred;
     uint32_t deferredRefFrames = 0;
     uint32_t encodeNum = 0;
     auto flush = [&]() {
@@ -632,11 +945,7 @@ int main(int argc, char** argv) {
         }
         const bool isReference = frame->isReference;
         const bool lastFrame = frame->lastFrame;
-        // InsertOrdered: before the first deferred frame whose GOP encode order is not lower.
-        auto at = std::find_if(deferred.begin(), deferred.end(), [&](const std::unique_ptr<Frame>& other) {
-            return other->gop.encodeOrder >= frame->gop.encodeOrder;
-        });
-        deferred.insert(at, std::move(frame));
+        driver->InsertOrdered(deferred, std::move(frame));
         if (isReference) {
             deferredRefFrames++;
         }
