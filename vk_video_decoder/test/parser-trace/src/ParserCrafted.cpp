@@ -283,7 +283,9 @@ std::vector<uint8_t> H265VpsExtensionNal(uint32_t numLayerSetsMinus1, uint32_t n
 
 // An SPS for a 64x64 picture with 16x16 coding tree blocks and one short-term RPS: one negative
 // picture, used.
-std::vector<uint8_t> H265SpsNal() {
+// refPicSets writes num_short_term_ref_pic_sets and the sets; by default, one set of one negative
+// picture, used.
+std::vector<uint8_t> H265SpsNal(const std::function<void(BitWriter&)>& refPicSets = nullptr) {
     BitWriter w;
     w.U(4, 0).U(3, 0).Flag(true);  // vps id, sps_max_sub_layers_minus1, sps_temporal_id_nesting_flag
     H265ProfileTierLevel(w);
@@ -292,9 +294,13 @@ std::vector<uint8_t> H265SpsNal() {
     w.Flag(true).Ue(1).Ue(0).Ue(0);                     // sub_layer_ordering_info
     w.Ue(0).Ue(1).Ue(0).Ue(2).Ue(0).Ue(0);              // coding and transform block sizes, hierarchy depths
     w.Flag(false).Flag(false).Flag(false).Flag(false);  // scaling lists, AMP, SAO, PCM
-    w.Ue(1).Ue(1).Ue(0).Ue(0).Flag(true);               // one st_ref_pic_set: one negative picture, used
-    w.Flag(false).Flag(false).Flag(false);              // long-term pictures, temporal MVP, strong intra smoothing
-    w.Flag(false).Flag(false);                          // VUI, extensions
+    if (refPicSets) {
+        refPicSets(w);
+    } else {
+        w.Ue(1).Ue(1).Ue(0).Ue(0).Flag(true);  // one st_ref_pic_set: one negative picture, used
+    }
+    w.Flag(false).Flag(false).Flag(false);  // long-term pictures, temporal MVP, strong intra smoothing
+    w.Flag(false).Flag(false);              // VUI, extensions
     return AnnexBNal({0x42, 0x01}, w.TrailingBits().Data());
 }
 
@@ -491,6 +497,26 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "h265");
              Checks checks(trace);
              checks.Count("vps", 0);
+             return checks.Failures();
+         }},
+        // a set predicted from one of 16 negative pictures with DeltaRPS -1 derives 17 negative
+        // pictures (7.4.8), one more than the arrays they are written to hold.
+        {"H265InterRpsOverflow",
+         [](CaseContext& stream) {
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal([](BitWriter& w) {
+                        w.Ue(2).Ue(16).Ue(0);  // num_short_term_ref_pic_sets; set 0: 16 negative pictures
+                        for (int i = 0; i < 16; i++) {
+                            w.Ue(0).Flag(true);  // delta_poc_s0_minus1, used_by_curr_pic_s0_flag
+                        }
+                        w.Flag(true).Flag(true).Ue(0);  // set 1: inter_ref_pic_set_prediction_flag, DeltaRPS -1
+                        for (int j = 0; j <= 16; j++) {
+                            w.Flag(true);  // used_by_curr_pic_flag[j]
+                        }
+                    }));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("sps", 0);
              return checks.Failures();
          }},
         // Proves the AV1 sequence header builder: every field after the timing info, uvlc() included,

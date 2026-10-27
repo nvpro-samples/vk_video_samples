@@ -1778,6 +1778,8 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
             }
         }
 
+        // Each derived picture is checked before it is written: the predicted set can hold one picture
+        // more than the set it is predicted from, which may already fill the arrays (7.4.8).
         {
             int i = 0;
             for (int j = rstrps->NumPositivePics - 1; j >= 0; j--)
@@ -1785,7 +1787,10 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
                 int dPoc = rstrps->DeltaPocS1[j] + DeltaRPS;
                 if ((dPoc < 0) && use_delta_flag[rstrps->NumNegativePics + j])
                 {
-                    assert(i < MAX_NUM_STRPS_ENTRIES);
+                    if (i >= MAX_NUM_STRPS_ENTRIES) {
+                        nvParserLog("Invalid inter RPS: more than %d pictures\n", MAX_NUM_STRPS_ENTRIES);
+                        return nullptr;
+                    }
                     strps->DeltaPocS0[i] = dPoc;
                     stdShortTermRefPicSet->delta_poc_s0_minus1[i] = (uint16_t)dPoc;
                     strps->UsedByCurrPicS0[i] = used_by_curr_pic_flag[rstrps->NumNegativePics + j];
@@ -1797,7 +1802,10 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
             }
             if ((DeltaRPS < 0) && use_delta_flag[rstrps->NumNegativePics+rstrps->NumPositivePics])
             {
-                assert(i < MAX_NUM_STRPS_ENTRIES);
+                if (i >= MAX_NUM_STRPS_ENTRIES) {
+                    nvParserLog("Invalid inter RPS: more than %d pictures\n", MAX_NUM_STRPS_ENTRIES);
+                    return nullptr;
+                }
                 strps->DeltaPocS0[i] = DeltaRPS;
                 stdShortTermRefPicSet->delta_poc_s0_minus1[i] = (uint16_t)DeltaRPS;
                 strps->UsedByCurrPicS0[i] = used_by_curr_pic_flag[rstrps->NumNegativePics+rstrps->NumPositivePics];
@@ -1811,7 +1819,10 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
                 int dPoc = rstrps->DeltaPocS0[j] + DeltaRPS;
                 if ((dPoc < 0) && use_delta_flag[j])
                 {
-                    assert(i < MAX_NUM_STRPS_ENTRIES);
+                    if (i >= MAX_NUM_STRPS_ENTRIES) {
+                        nvParserLog("Invalid inter RPS: more than %d pictures\n", MAX_NUM_STRPS_ENTRIES);
+                        return nullptr;
+                    }
                     strps->DeltaPocS0[i] = dPoc;
                     stdShortTermRefPicSet->delta_poc_s0_minus1[i] = (uint16_t)dPoc;
                     strps->UsedByCurrPicS0[i] = used_by_curr_pic_flag[j];
@@ -1831,7 +1842,10 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
                 int dPoc = rstrps->DeltaPocS0[j] + DeltaRPS;
                 if ((dPoc > 0) && use_delta_flag[j])
                 {
-                    assert(i < MAX_NUM_STRPS_ENTRIES);
+                    if (i >= MAX_NUM_STRPS_ENTRIES) {
+                        nvParserLog("Invalid inter RPS: more than %d pictures\n", MAX_NUM_STRPS_ENTRIES);
+                        return nullptr;
+                    }
                     strps->DeltaPocS1[i] = dPoc;
                     stdShortTermRefPicSet->delta_poc_s1_minus1[i] = dPoc;
                     strps->UsedByCurrPicS1[i] = used_by_curr_pic_flag[j];
@@ -1843,7 +1857,10 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
             }
             if ((DeltaRPS > 0) && use_delta_flag[rstrps->NumNegativePics+rstrps->NumPositivePics])
             {
-                assert(i < MAX_NUM_STRPS_ENTRIES);
+                if (i >= MAX_NUM_STRPS_ENTRIES) {
+                    nvParserLog("Invalid inter RPS: more than %d pictures\n", MAX_NUM_STRPS_ENTRIES);
+                    return nullptr;
+                }
                 strps->DeltaPocS1[i] = DeltaRPS;
                 stdShortTermRefPicSet->delta_poc_s1_minus1[i] = DeltaRPS;
                 strps->UsedByCurrPicS1[i] = used_by_curr_pic_flag[rstrps->NumNegativePics+rstrps->NumPositivePics];
@@ -1857,7 +1874,10 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
                 int dPoc = rstrps->DeltaPocS1[j] + DeltaRPS;
                 if ((dPoc > 0) && use_delta_flag[rstrps->NumNegativePics+j])
                 {
-                    assert(i < MAX_NUM_STRPS_ENTRIES);
+                    if (i >= MAX_NUM_STRPS_ENTRIES) {
+                        nvParserLog("Invalid inter RPS: more than %d pictures\n", MAX_NUM_STRPS_ENTRIES);
+                        return nullptr;
+                    }
                     strps->DeltaPocS1[i] = dPoc;
                     stdShortTermRefPicSet->delta_poc_s1_minus1[i] = dPoc;
                     strps->UsedByCurrPicS1[i] = used_by_curr_pic_flag[rstrps->NumNegativePics + j];
