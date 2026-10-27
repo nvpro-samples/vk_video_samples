@@ -75,6 +75,12 @@
       "known": []
     },
     {
+      "name": "decode-samples",
+      "root": "VVS_DECODE_SAMPLES_ROOT",
+      "decode_samples": "../../../../tests/decode_samples.json",
+      "md5": "../golden/md5/av1-decode-samples.md5"
+    },
+    {
       "name": "basketball-1080p-rav1e",
       "root": "VVS_AV1_SEGMENTATION_STREAMS",
       "path": "rav1e/basketball_1080p_rav1e_60f.ivf",

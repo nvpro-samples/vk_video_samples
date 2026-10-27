@@ -1,0 +1,29 @@
+{
+  "codec": "vp9",
+  "streams": [
+    {
+      "name": "vp9-libvpx-altref-64x64",
+      "path": "../streams/vp9-libvpx-altref-64x64.ivf",
+      "format": "ivf",
+      "golden": "../golden/vp9-libvpx-altref-64x64.trace"
+    },
+    {
+      "name": "vp9-libvpx-profile2-10bit-64x64",
+      "path": "../streams/vp9-libvpx-profile2-10bit-64x64.ivf",
+      "format": "ivf",
+      "golden": "../golden/vp9-libvpx-profile2-10bit-64x64.trace"
+    },
+    {
+      "name": "vp9-libvpx-tiles-cyclic-aq-512x64",
+      "path": "../streams/vp9-libvpx-tiles-cyclic-aq-512x64.ivf",
+      "format": "ivf",
+      "golden": "../golden/vp9-libvpx-tiles-cyclic-aq-512x64.trace"
+    },
+    {
+      "name": "decode-samples",
+      "root": "VVS_DECODE_SAMPLES_ROOT",
+      "decode_samples": "../../../../tests/decode_samples.json",
+      "md5": "../golden/md5/vp9-decode-samples.md5"
+    }
+  ]
+}

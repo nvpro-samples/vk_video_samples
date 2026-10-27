@@ -1,0 +1,35 @@
+{
+  "codec": "h265",
+  "streams": [
+    {
+      "name": "h265-x265-bpyramid-cra-64x64",
+      "path": "../streams/h265-x265-bpyramid-cra-64x64.h265",
+      "format": "bytestream",
+      "golden": "../golden/h265-x265-bpyramid-cra-64x64.trace"
+    },
+    {
+      "name": "h265-x265-idr-64x64",
+      "path": "../streams/h265-x265-idr-64x64.h265",
+      "format": "bytestream",
+      "golden": "../golden/h265-x265-idr-64x64.trace"
+    },
+    {
+      "name": "h265-x265-main10-64x64",
+      "path": "../streams/h265-x265-main10-64x64.h265",
+      "format": "bytestream",
+      "golden": "../golden/h265-x265-main10-64x64.trace"
+    },
+    {
+      "name": "h265-x265-hrd-scaling-slices-sublayers-64x64",
+      "path": "../streams/h265-x265-hrd-scaling-slices-sublayers-64x64.h265",
+      "format": "bytestream",
+      "golden": "../golden/h265-x265-hrd-scaling-slices-sublayers-64x64.trace"
+    },
+    {
+      "name": "decode-samples",
+      "root": "VVS_DECODE_SAMPLES_ROOT",
+      "decode_samples": "../../../../tests/decode_samples.json",
+      "md5": "../golden/md5/h265-decode-samples.md5"
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "codec": "h264",
+  "streams": [
+    {
+      "name": "h264-x264-high-bpyramid-64x64",
+      "path": "../streams/h264-x264-high-bpyramid-64x64.h264",
+      "format": "bytestream",
+      "golden": "../golden/h264-x264-high-bpyramid-64x64.trace"
+    },
+    {
+      "name": "h264-x264-baseline-64x64",
+      "path": "../streams/h264-x264-baseline-64x64.h264",
+      "format": "bytestream",
+      "golden": "../golden/h264-x264-baseline-64x64.trace"
+    },
+    {
+      "name": "h264-x264-mbaff-64x64",
+      "path": "../streams/h264-x264-mbaff-64x64.h264",
+      "format": "bytestream",
+      "golden": "../golden/h264-x264-mbaff-64x64.trace"
+    },
+    {
+      "name": "h264-x264-cqm-weightp-slices-64x64",
+      "path": "../streams/h264-x264-cqm-weightp-slices-64x64.h264",
+      "format": "bytestream",
+      "golden": "../golden/h264-x264-cqm-weightp-slices-64x64.trace"
+    },
+    {
+      "name": "decode-samples",
+      "root": "VVS_DECODE_SAMPLES_ROOT",
+      "decode_samples": "../../../../tests/decode_samples.json",
+      "md5": "../golden/md5/h264-decode-samples.md5"
+    },
+    {
+      "name": "itu-avcv1",
+      "root": "VVS_ITU_H264_ROOT",
+      "glob": [
+        "AVCv1/streams/*/*.264",
+        "AVCv1/streams/*/*.jsv",
+        "AVCv1/streams/*/*.26l",
+        "AVCv1/streams/*/*.h264",
+        "AVCv1/streams/*/*.jvt",
+        "AVCv1/streams/*/*.avc",
+        "MR4/*.264"
+      ],
+      "format": "bytestream",
+      "md5": "../golden/md5/h264-itu-avcv1.md5"
+    },
+    {
+      "name": "itu-frext",
+      "root": "VVS_ITU_H264_ROOT",
+      "glob": [
+        "FRExt/streams/*/*.264",
+        "FRExt/streams/*/*.jsv",
+        "FRExt/streams/*/*.26l",
+        "FRExt/streams/*/*.h264",
+        "FRExt/streams/*/*.jvt",
+        "FRExt/streams/*/*.avc"
+      ],
+      "format": "bytestream",
+      "md5": "../golden/md5/h264-itu-frext.md5"
+    }
+  ]
+}

@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-// vk-video-parser-trace runs NvVideoParser over a stream with no Vulkan device and writes a
-// canonical text trace of every callback the parser makes: sequence info, parameter sets, each
-// picture with its DPB snapshot and a CRC32 of its bytes, and the display order.
+// vk-video-parser-trace runs NvVideoParser over an H.264, H.265, AV1 or VP9 stream with no Vulkan
+// device and writes a canonical text trace of every callback the parser makes: sequence info,
+// parameter sets, each picture with its DPB snapshot and a CRC32 of its bytes, and the display
+// order.
 //
 // The trace is deterministic for a given parser and stream, so a golden comparison catches any
 // change in what the parser hands a decoder. scripts/av1_reference_model.py checks the AV1 fields
@@ -518,6 +519,667 @@ void TraceAv1Picture(FILE* out, const VkParserPictureData& pd) {
     }
 }
 
+template <typename T>
+uint32_t StructCrc32(const T& value) {
+    return Crc32(reinterpret_cast<const uint8_t*>(&value), sizeof(value));
+}
+
+int64_t ParameterSetUpdate(const StdVideoPictureParametersSet* params) {
+    return (params != nullptr) ? params->GetUpdateSequenceCount() : -1;
+}
+
+void TraceH264Hrd(FILE* out, const StdVideoH264HrdParameters& hrd) {
+    const size_t count = std::min<size_t>(hrd.cpb_cnt_minus1 + 1u, STD_VIDEO_H264_CPB_CNT_LIST_SIZE);
+    Line("  hrd")
+        .Num("cpb_cnt_minus1", hrd.cpb_cnt_minus1)
+        .Num("bit_rate_scale", hrd.bit_rate_scale)
+        .Num("cpb_size_scale", hrd.cpb_size_scale)
+        .Array("bit_rate_value_minus1", hrd.bit_rate_value_minus1, count)
+        .Array("cpb_size_value_minus1", hrd.cpb_size_value_minus1, count)
+        .Array("cbr_flag", hrd.cbr_flag, count)
+        .Num("initial_cpb_removal_delay_length_minus1", hrd.initial_cpb_removal_delay_length_minus1)
+        .Num("cpb_removal_delay_length_minus1", hrd.cpb_removal_delay_length_minus1)
+        .Num("dpb_output_delay_length_minus1", hrd.dpb_output_delay_length_minus1)
+        .Num("time_offset_length", hrd.time_offset_length)
+        .Emit(out);
+}
+
+void TraceH264Sps(FILE* out, uint64_t index, int64_t update, const StdVideoH264SequenceParameterSet& sps) {
+    const StdVideoH264SpsFlags& f = sps.flags;
+    Line line("sps");
+    line.Num("index", static_cast<int64_t>(index))
+        .Str("codec", "h264")
+        .Num("update", update)
+        .Num("seq_parameter_set_id", sps.seq_parameter_set_id)
+        .Num("profile_idc", sps.profile_idc)
+        .Num("level_idc", sps.level_idc)
+        .Num("chroma_format_idc", sps.chroma_format_idc)
+        .Num("bit_depth_luma_minus8", sps.bit_depth_luma_minus8)
+        .Num("bit_depth_chroma_minus8", sps.bit_depth_chroma_minus8)
+        .Num("log2_max_frame_num_minus4", sps.log2_max_frame_num_minus4)
+        .Num("pic_order_cnt_type", sps.pic_order_cnt_type)
+        .Num("offset_for_non_ref_pic", sps.offset_for_non_ref_pic)
+        .Num("offset_for_top_to_bottom_field", sps.offset_for_top_to_bottom_field)
+        .Num("log2_max_pic_order_cnt_lsb_minus4", sps.log2_max_pic_order_cnt_lsb_minus4)
+        .Num("num_ref_frames_in_pic_order_cnt_cycle", sps.num_ref_frames_in_pic_order_cnt_cycle)
+        .Num("max_num_ref_frames", sps.max_num_ref_frames)
+        .Num("pic_width_in_mbs_minus1", sps.pic_width_in_mbs_minus1)
+        .Num("pic_height_in_map_units_minus1", sps.pic_height_in_map_units_minus1)
+        .Num("frame_crop_left_offset", sps.frame_crop_left_offset)
+        .Num("frame_crop_right_offset", sps.frame_crop_right_offset)
+        .Num("frame_crop_top_offset", sps.frame_crop_top_offset)
+        .Num("frame_crop_bottom_offset", sps.frame_crop_bottom_offset);
+    if (sps.pOffsetForRefFrame != nullptr) {
+        line.Array("offset_for_ref_frame", sps.pOffsetForRefFrame, sps.num_ref_frames_in_pic_order_cnt_cycle);
+    }
+    line.Flags("flags", {{"constraint_set0_flag", f.constraint_set0_flag},
+                         {"constraint_set1_flag", f.constraint_set1_flag},
+                         {"constraint_set2_flag", f.constraint_set2_flag},
+                         {"constraint_set3_flag", f.constraint_set3_flag},
+                         {"constraint_set4_flag", f.constraint_set4_flag},
+                         {"constraint_set5_flag", f.constraint_set5_flag},
+                         {"direct_8x8_inference_flag", f.direct_8x8_inference_flag},
+                         {"mb_adaptive_frame_field_flag", f.mb_adaptive_frame_field_flag},
+                         {"frame_mbs_only_flag", f.frame_mbs_only_flag},
+                         {"delta_pic_order_always_zero_flag", f.delta_pic_order_always_zero_flag},
+                         {"separate_colour_plane_flag", f.separate_colour_plane_flag},
+                         {"gaps_in_frame_num_value_allowed_flag", f.gaps_in_frame_num_value_allowed_flag},
+                         {"qpprime_y_zero_transform_bypass_flag", f.qpprime_y_zero_transform_bypass_flag},
+                         {"frame_cropping_flag", f.frame_cropping_flag},
+                         {"seq_scaling_matrix_present_flag", f.seq_scaling_matrix_present_flag},
+                         {"vui_parameters_present_flag", f.vui_parameters_present_flag}})
+        .Emit(out);
+    if (sps.pScalingLists != nullptr) {
+        Line("  scaling")
+            .Hex("scaling_list_present_mask", sps.pScalingLists->scaling_list_present_mask)
+            .Hex("use_default_scaling_matrix_mask", sps.pScalingLists->use_default_scaling_matrix_mask)
+            .Hex("crc32", StructCrc32(*sps.pScalingLists))
+            .Emit(out);
+    }
+    if (sps.pSequenceParameterSetVui != nullptr) {
+        const StdVideoH264SequenceParameterSetVui& vui = *sps.pSequenceParameterSetVui;
+        const StdVideoH264SpsVuiFlags& v = vui.flags;
+        Line("  vui")
+            .Num("aspect_ratio_idc", vui.aspect_ratio_idc)
+            .Num("sar_width", vui.sar_width)
+            .Num("sar_height", vui.sar_height)
+            .Num("video_format", vui.video_format)
+            .Num("colour_primaries", vui.colour_primaries)
+            .Num("transfer_characteristics", vui.transfer_characteristics)
+            .Num("matrix_coefficients", vui.matrix_coefficients)
+            .Num("num_units_in_tick", vui.num_units_in_tick)
+            .Num("time_scale", vui.time_scale)
+            .Num("max_num_reorder_frames", vui.max_num_reorder_frames)
+            .Num("max_dec_frame_buffering", vui.max_dec_frame_buffering)
+            .Num("chroma_sample_loc_type_top_field", vui.chroma_sample_loc_type_top_field)
+            .Num("chroma_sample_loc_type_bottom_field", vui.chroma_sample_loc_type_bottom_field)
+            .Flags("flags", {{"aspect_ratio_info_present_flag", v.aspect_ratio_info_present_flag},
+                             {"overscan_info_present_flag", v.overscan_info_present_flag},
+                             {"overscan_appropriate_flag", v.overscan_appropriate_flag},
+                             {"video_signal_type_present_flag", v.video_signal_type_present_flag},
+                             {"video_full_range_flag", v.video_full_range_flag},
+                             {"color_description_present_flag", v.color_description_present_flag},
+                             {"chroma_loc_info_present_flag", v.chroma_loc_info_present_flag},
+                             {"timing_info_present_flag", v.timing_info_present_flag},
+                             {"fixed_frame_rate_flag", v.fixed_frame_rate_flag},
+                             {"bitstream_restriction_flag", v.bitstream_restriction_flag},
+                             {"nal_hrd_parameters_present_flag", v.nal_hrd_parameters_present_flag},
+                             {"vcl_hrd_parameters_present_flag", v.vcl_hrd_parameters_present_flag}})
+            .Emit(out);
+        if (vui.pHrdParameters != nullptr) {
+            TraceH264Hrd(out, *vui.pHrdParameters);
+        }
+    }
+}
+
+void TraceH264Pps(FILE* out, uint64_t index, int64_t update, const StdVideoH264PictureParameterSet& pps) {
+    const StdVideoH264PpsFlags& f = pps.flags;
+    Line("pps")
+        .Num("index", static_cast<int64_t>(index))
+        .Str("codec", "h264")
+        .Num("update", update)
+        .Num("seq_parameter_set_id", pps.seq_parameter_set_id)
+        .Num("pic_parameter_set_id", pps.pic_parameter_set_id)
+        .Num("num_ref_idx_l0_default_active_minus1", pps.num_ref_idx_l0_default_active_minus1)
+        .Num("num_ref_idx_l1_default_active_minus1", pps.num_ref_idx_l1_default_active_minus1)
+        .Num("weighted_bipred_idc", pps.weighted_bipred_idc)
+        .Num("pic_init_qp_minus26", pps.pic_init_qp_minus26)
+        .Num("pic_init_qs_minus26", pps.pic_init_qs_minus26)
+        .Num("chroma_qp_index_offset", pps.chroma_qp_index_offset)
+        .Num("second_chroma_qp_index_offset", pps.second_chroma_qp_index_offset)
+        .Flags("flags", {{"transform_8x8_mode_flag", f.transform_8x8_mode_flag},
+                         {"redundant_pic_cnt_present_flag", f.redundant_pic_cnt_present_flag},
+                         {"constrained_intra_pred_flag", f.constrained_intra_pred_flag},
+                         {"deblocking_filter_control_present_flag", f.deblocking_filter_control_present_flag},
+                         {"weighted_pred_flag", f.weighted_pred_flag},
+                         {"bottom_field_pic_order_in_frame_present_flag", f.bottom_field_pic_order_in_frame_present_flag},
+                         {"entropy_coding_mode_flag", f.entropy_coding_mode_flag},
+                         {"pic_scaling_matrix_present_flag", f.pic_scaling_matrix_present_flag}})
+        .Emit(out);
+    if (pps.pScalingLists != nullptr) {
+        Line("  scaling")
+            .Hex("scaling_list_present_mask", pps.pScalingLists->scaling_list_present_mask)
+            .Hex("use_default_scaling_matrix_mask", pps.pScalingLists->use_default_scaling_matrix_mask)
+            .Hex("crc32", StructCrc32(*pps.pScalingLists))
+            .Emit(out);
+    }
+}
+
+void TraceH264Picture(FILE* out, const VkParserPictureData& pd) {
+    const VkParserH264PictureData& h = pd.CodecSpecific.h264;
+    Line("  h264")
+        .Num("field_pic_flag", pd.field_pic_flag)
+        .Num("bottom_field_flag", pd.bottom_field_flag)
+        .Num("second_field", pd.second_field)
+        .Num("top_field_first", pd.top_field_first)
+        .Num("repeat_first_field", pd.repeat_first_field)
+        .Num("sps_update", ParameterSetUpdate(h.pStdSps))
+        .Num("pps_update", ParameterSetUpdate(h.pStdPps))
+        .Num("seq_parameter_set_id", h.seq_parameter_set_id)
+        .Num("pic_parameter_set_id", h.pic_parameter_set_id)
+        .Num("frame_num", h.frame_num)
+        .Array("CurrFieldOrderCnt", h.CurrFieldOrderCnt, 2)
+        .Num("num_ref_idx_l0_active_minus1", h.num_ref_idx_l0_active_minus1)
+        .Num("num_ref_idx_l1_active_minus1", h.num_ref_idx_l1_active_minus1)
+        .Num("weighted_pred_flag", h.weighted_pred_flag)
+        .Num("weighted_bipred_idc", h.weighted_bipred_idc)
+        .Num("pic_init_qp_minus26", h.pic_init_qp_minus26)
+        .Num("pic_init_qs_minus26", h.pic_init_qs_minus26)
+        .Num("redundant_pic_cnt_present_flag", h.redundant_pic_cnt_present_flag)
+        .Num("deblocking_filter_control_present_flag", h.deblocking_filter_control_present_flag)
+        .Num("transform_8x8_mode_flag", h.transform_8x8_mode_flag)
+        .Num("MbaffFrameFlag", h.MbaffFrameFlag)
+        .Num("constrained_intra_pred_flag", h.constrained_intra_pred_flag)
+        .Num("entropy_coding_mode_flag", h.entropy_coding_mode_flag)
+        .Num("pic_order_present_flag", h.pic_order_present_flag)
+        .Num("chroma_qp_index_offset", h.chroma_qp_index_offset)
+        .Num("second_chroma_qp_index_offset", h.second_chroma_qp_index_offset)
+        .Num("fmo_aso_enable", h.fmo_aso_enable)
+        .Num("num_slice_groups_minus1", h.num_slice_groups_minus1)
+        .Num("slice_group_map_type", h.slice_group_map_type)
+        .Num("slice_group_change_rate_minus1", h.slice_group_change_rate_minus1)
+        .Emit(out);
+    for (size_t i = 0; i < std::size(h.dpb); i++) {
+        const VkParserH264DpbEntry& e = h.dpb[i];
+        const bool empty = (e.pPicBuf == nullptr) && (e.FrameIdx == 0) && (e.is_long_term == 0) && (e.not_existing == 0) &&
+                           (e.used_for_reference == 0) && (e.FieldOrderCnt[0] == 0) && (e.FieldOrderCnt[1] == 0);
+        if (!empty) {
+            Line("  dpb")
+                .Num("i", static_cast<int64_t>(i))
+                .Num("pic", (e.pPicBuf != nullptr) ? static_cast<vkPicBuffBase*>(e.pPicBuf)->m_picIdx : -1)
+                .Num("FrameIdx", e.FrameIdx)
+                .Num("is_long_term", e.is_long_term)
+                .Num("not_existing", e.not_existing)
+                .Num("used_for_reference", e.used_for_reference)
+                .Array("FieldOrderCnt", e.FieldOrderCnt, 2)
+                .Emit(out);
+        }
+    }
+}
+
+void TraceH265Ptl(FILE* out, const StdVideoH265ProfileTierLevel& ptl) {
+    const StdVideoH265ProfileTierLevelFlags& f = ptl.flags;
+    Line("  ptl")
+        .Num("general_profile_idc", ptl.general_profile_idc)
+        .Num("general_level_idc", ptl.general_level_idc)
+        .Flags("flags", {{"general_tier_flag", f.general_tier_flag},
+                         {"general_progressive_source_flag", f.general_progressive_source_flag},
+                         {"general_interlaced_source_flag", f.general_interlaced_source_flag},
+                         {"general_non_packed_constraint_flag", f.general_non_packed_constraint_flag},
+                         {"general_frame_only_constraint_flag", f.general_frame_only_constraint_flag}})
+        .Emit(out);
+}
+
+void TraceH265DecPicBufMgr(FILE* out, const StdVideoH265DecPicBufMgr& dpbm) {
+    Line("  dpbm")
+        .Array("max_latency_increase_plus1", dpbm.max_latency_increase_plus1, STD_VIDEO_H265_SUBLAYERS_LIST_SIZE)
+        .Array("max_dec_pic_buffering_minus1", dpbm.max_dec_pic_buffering_minus1, STD_VIDEO_H265_SUBLAYERS_LIST_SIZE)
+        .Array("max_num_reorder_pics", dpbm.max_num_reorder_pics, STD_VIDEO_H265_SUBLAYERS_LIST_SIZE)
+        .Emit(out);
+}
+
+void TraceH265SubLayerHrd(FILE* out, const char* tag, const StdVideoH265SubLayerHrdParameters* subLayers,
+                          const StdVideoH265HrdParameters& hrd, uint32_t subLayerCount) {
+    for (uint32_t i = 0; (subLayers != nullptr) && (i < subLayerCount); i++) {
+        const StdVideoH265SubLayerHrdParameters& s = subLayers[i];
+        const size_t count = std::min<size_t>(hrd.cpb_cnt_minus1[i] + 1u, STD_VIDEO_H265_CPB_CNT_LIST_SIZE);
+        Line(tag)
+            .Num("i", i)
+            .Array("bit_rate_value_minus1", s.bit_rate_value_minus1, count)
+            .Array("cpb_size_value_minus1", s.cpb_size_value_minus1, count)
+            .Array("cpb_size_du_value_minus1", s.cpb_size_du_value_minus1, count)
+            .Array("bit_rate_du_value_minus1", s.bit_rate_du_value_minus1, count)
+            .Hex("cbr_flag", s.cbr_flag)
+            .Emit(out);
+    }
+}
+
+void TraceH265Hrd(FILE* out, const StdVideoH265HrdParameters& hrd, uint32_t maxSubLayersMinus1) {
+    const StdVideoH265HrdFlags& f = hrd.flags;
+    const uint32_t subLayerCount = std::min<uint32_t>(maxSubLayersMinus1 + 1u, STD_VIDEO_H265_SUBLAYERS_LIST_SIZE);
+    Line("  hrd")
+        .Num("tick_divisor_minus2", hrd.tick_divisor_minus2)
+        .Num("du_cpb_removal_delay_increment_length_minus1", hrd.du_cpb_removal_delay_increment_length_minus1)
+        .Num("dpb_output_delay_du_length_minus1", hrd.dpb_output_delay_du_length_minus1)
+        .Num("bit_rate_scale", hrd.bit_rate_scale)
+        .Num("cpb_size_scale", hrd.cpb_size_scale)
+        .Num("cpb_size_du_scale", hrd.cpb_size_du_scale)
+        .Num("initial_cpb_removal_delay_length_minus1", hrd.initial_cpb_removal_delay_length_minus1)
+        .Num("au_cpb_removal_delay_length_minus1", hrd.au_cpb_removal_delay_length_minus1)
+        .Num("dpb_output_delay_length_minus1", hrd.dpb_output_delay_length_minus1)
+        .Array("cpb_cnt_minus1", hrd.cpb_cnt_minus1, STD_VIDEO_H265_SUBLAYERS_LIST_SIZE)
+        .Array("elemental_duration_in_tc_minus1", hrd.elemental_duration_in_tc_minus1, STD_VIDEO_H265_SUBLAYERS_LIST_SIZE)
+        .Hex("fixed_pic_rate_general_flag", f.fixed_pic_rate_general_flag)
+        .Hex("fixed_pic_rate_within_cvs_flag", f.fixed_pic_rate_within_cvs_flag)
+        .Hex("low_delay_hrd_flag", f.low_delay_hrd_flag)
+        .Flags("flags", {{"nal_hrd_parameters_present_flag", f.nal_hrd_parameters_present_flag},
+                         {"vcl_hrd_parameters_present_flag", f.vcl_hrd_parameters_present_flag},
+                         {"sub_pic_hrd_params_present_flag", f.sub_pic_hrd_params_present_flag},
+                         {"sub_pic_cpb_params_in_pic_timing_sei_flag", f.sub_pic_cpb_params_in_pic_timing_sei_flag}})
+        .Emit(out);
+    if (f.nal_hrd_parameters_present_flag) {
+        TraceH265SubLayerHrd(out, "  hrd-nal", hrd.pSubLayerHrdParametersNal, hrd, subLayerCount);
+    }
+    if (f.vcl_hrd_parameters_present_flag) {
+        TraceH265SubLayerHrd(out, "  hrd-vcl", hrd.pSubLayerHrdParametersVcl, hrd, subLayerCount);
+    }
+}
+
+void TraceH265Vps(FILE* out, uint64_t index, int64_t update, const StdVideoH265VideoParameterSet& vps) {
+    const StdVideoH265VpsFlags& f = vps.flags;
+    Line("vps")
+        .Num("index", static_cast<int64_t>(index))
+        .Str("codec", "h265")
+        .Num("update", update)
+        .Num("vps_video_parameter_set_id", vps.vps_video_parameter_set_id)
+        .Num("vps_max_sub_layers_minus1", vps.vps_max_sub_layers_minus1)
+        .Num("vps_num_units_in_tick", vps.vps_num_units_in_tick)
+        .Num("vps_time_scale", vps.vps_time_scale)
+        .Num("vps_num_ticks_poc_diff_one_minus1", vps.vps_num_ticks_poc_diff_one_minus1)
+        .Flags("flags", {{"vps_temporal_id_nesting_flag", f.vps_temporal_id_nesting_flag},
+                         {"vps_sub_layer_ordering_info_present_flag", f.vps_sub_layer_ordering_info_present_flag},
+                         {"vps_timing_info_present_flag", f.vps_timing_info_present_flag},
+                         {"vps_poc_proportional_to_timing_flag", f.vps_poc_proportional_to_timing_flag}})
+        .Emit(out);
+    if (vps.pProfileTierLevel != nullptr) {
+        TraceH265Ptl(out, *vps.pProfileTierLevel);
+    }
+    if (vps.pDecPicBufMgr != nullptr) {
+        TraceH265DecPicBufMgr(out, *vps.pDecPicBufMgr);
+    }
+    if (vps.pHrdParameters != nullptr) {
+        TraceH265Hrd(out, *vps.pHrdParameters, vps.vps_max_sub_layers_minus1);
+    }
+}
+
+void TraceH265ShortTermRefPicSet(FILE* out, uint32_t index, const StdVideoH265ShortTermRefPicSet& rps) {
+    Line("  strps")
+        .Num("i", index)
+        .Num("delta_idx_minus1", rps.delta_idx_minus1)
+        .Hex("use_delta_flag", rps.use_delta_flag)
+        .Num("abs_delta_rps_minus1", rps.abs_delta_rps_minus1)
+        .Hex("used_by_curr_pic_flag", rps.used_by_curr_pic_flag)
+        .Hex("used_by_curr_pic_s0_flag", rps.used_by_curr_pic_s0_flag)
+        .Hex("used_by_curr_pic_s1_flag", rps.used_by_curr_pic_s1_flag)
+        .Num("num_negative_pics", rps.num_negative_pics)
+        .Num("num_positive_pics", rps.num_positive_pics)
+        .Array("delta_poc_s0_minus1", rps.delta_poc_s0_minus1, STD_VIDEO_H265_MAX_DPB_SIZE)
+        .Array("delta_poc_s1_minus1", rps.delta_poc_s1_minus1, STD_VIDEO_H265_MAX_DPB_SIZE)
+        .Flags("flags", {{"inter_ref_pic_set_prediction_flag", rps.flags.inter_ref_pic_set_prediction_flag},
+                         {"delta_rps_sign", rps.flags.delta_rps_sign}})
+        .Emit(out);
+}
+
+void TraceH265Sps(FILE* out, uint64_t index, int64_t update, const StdVideoH265SequenceParameterSet& sps) {
+    const StdVideoH265SpsFlags& f = sps.flags;
+    Line("sps")
+        .Num("index", static_cast<int64_t>(index))
+        .Str("codec", "h265")
+        .Num("update", update)
+        .Num("sps_video_parameter_set_id", sps.sps_video_parameter_set_id)
+        .Num("sps_max_sub_layers_minus1", sps.sps_max_sub_layers_minus1)
+        .Num("sps_seq_parameter_set_id", sps.sps_seq_parameter_set_id)
+        .Num("chroma_format_idc", sps.chroma_format_idc)
+        .Num("pic_width_in_luma_samples", sps.pic_width_in_luma_samples)
+        .Num("pic_height_in_luma_samples", sps.pic_height_in_luma_samples)
+        .Num("bit_depth_luma_minus8", sps.bit_depth_luma_minus8)
+        .Num("bit_depth_chroma_minus8", sps.bit_depth_chroma_minus8)
+        .Num("log2_max_pic_order_cnt_lsb_minus4", sps.log2_max_pic_order_cnt_lsb_minus4)
+        .Num("log2_min_luma_coding_block_size_minus3", sps.log2_min_luma_coding_block_size_minus3)
+        .Num("log2_diff_max_min_luma_coding_block_size", sps.log2_diff_max_min_luma_coding_block_size)
+        .Num("log2_min_luma_transform_block_size_minus2", sps.log2_min_luma_transform_block_size_minus2)
+        .Num("log2_diff_max_min_luma_transform_block_size", sps.log2_diff_max_min_luma_transform_block_size)
+        .Num("max_transform_hierarchy_depth_inter", sps.max_transform_hierarchy_depth_inter)
+        .Num("max_transform_hierarchy_depth_intra", sps.max_transform_hierarchy_depth_intra)
+        .Num("num_short_term_ref_pic_sets", sps.num_short_term_ref_pic_sets)
+        .Num("num_long_term_ref_pics_sps", sps.num_long_term_ref_pics_sps)
+        .Num("pcm_sample_bit_depth_luma_minus1", sps.pcm_sample_bit_depth_luma_minus1)
+        .Num("pcm_sample_bit_depth_chroma_minus1", sps.pcm_sample_bit_depth_chroma_minus1)
+        .Num("log2_min_pcm_luma_coding_block_size_minus3", sps.log2_min_pcm_luma_coding_block_size_minus3)
+        .Num("log2_diff_max_min_pcm_luma_coding_block_size", sps.log2_diff_max_min_pcm_luma_coding_block_size)
+        .Num("palette_max_size", sps.palette_max_size)
+        .Num("delta_palette_max_predictor_size", sps.delta_palette_max_predictor_size)
+        .Num("motion_vector_resolution_control_idc", sps.motion_vector_resolution_control_idc)
+        .Num("sps_num_palette_predictor_initializers_minus1", sps.sps_num_palette_predictor_initializers_minus1)
+        .Num("conf_win_left_offset", sps.conf_win_left_offset)
+        .Num("conf_win_right_offset", sps.conf_win_right_offset)
+        .Num("conf_win_top_offset", sps.conf_win_top_offset)
+        .Num("conf_win_bottom_offset", sps.conf_win_bottom_offset)
+        .Flags("flags", {{"sps_temporal_id_nesting_flag", f.sps_temporal_id_nesting_flag},
+                         {"separate_colour_plane_flag", f.separate_colour_plane_flag},
+                         {"conformance_window_flag", f.conformance_window_flag},
+                         {"sps_sub_layer_ordering_info_present_flag", f.sps_sub_layer_ordering_info_present_flag},
+                         {"scaling_list_enabled_flag", f.scaling_list_enabled_flag},
+                         {"sps_scaling_list_data_present_flag", f.sps_scaling_list_data_present_flag},
+                         {"amp_enabled_flag", f.amp_enabled_flag},
+                         {"sample_adaptive_offset_enabled_flag", f.sample_adaptive_offset_enabled_flag},
+                         {"pcm_enabled_flag", f.pcm_enabled_flag},
+                         {"pcm_loop_filter_disabled_flag", f.pcm_loop_filter_disabled_flag},
+                         {"long_term_ref_pics_present_flag", f.long_term_ref_pics_present_flag},
+                         {"sps_temporal_mvp_enabled_flag", f.sps_temporal_mvp_enabled_flag},
+                         {"strong_intra_smoothing_enabled_flag", f.strong_intra_smoothing_enabled_flag},
+                         {"vui_parameters_present_flag", f.vui_parameters_present_flag},
+                         {"sps_extension_present_flag", f.sps_extension_present_flag},
+                         {"sps_range_extension_flag", f.sps_range_extension_flag},
+                         {"transform_skip_rotation_enabled_flag", f.transform_skip_rotation_enabled_flag},
+                         {"transform_skip_context_enabled_flag", f.transform_skip_context_enabled_flag},
+                         {"implicit_rdpcm_enabled_flag", f.implicit_rdpcm_enabled_flag},
+                         {"explicit_rdpcm_enabled_flag", f.explicit_rdpcm_enabled_flag},
+                         {"extended_precision_processing_flag", f.extended_precision_processing_flag},
+                         {"intra_smoothing_disabled_flag", f.intra_smoothing_disabled_flag},
+                         {"high_precision_offsets_enabled_flag", f.high_precision_offsets_enabled_flag},
+                         {"persistent_rice_adaptation_enabled_flag", f.persistent_rice_adaptation_enabled_flag},
+                         {"cabac_bypass_alignment_enabled_flag", f.cabac_bypass_alignment_enabled_flag},
+                         {"sps_scc_extension_flag", f.sps_scc_extension_flag},
+                         {"sps_curr_pic_ref_enabled_flag", f.sps_curr_pic_ref_enabled_flag},
+                         {"palette_mode_enabled_flag", f.palette_mode_enabled_flag},
+                         {"sps_palette_predictor_initializers_present_flag", f.sps_palette_predictor_initializers_present_flag},
+                         {"intra_boundary_filtering_disabled_flag", f.intra_boundary_filtering_disabled_flag}})
+        .Emit(out);
+    if (sps.pProfileTierLevel != nullptr) {
+        TraceH265Ptl(out, *sps.pProfileTierLevel);
+    }
+    if (sps.pDecPicBufMgr != nullptr) {
+        TraceH265DecPicBufMgr(out, *sps.pDecPicBufMgr);
+    }
+    if (sps.pScalingLists != nullptr) {
+        Line("  scaling").Hex("crc32", StructCrc32(*sps.pScalingLists)).Emit(out);
+    }
+    for (uint32_t i = 0; (sps.pShortTermRefPicSet != nullptr) && (i < sps.num_short_term_ref_pic_sets); i++) {
+        TraceH265ShortTermRefPicSet(out, i, sps.pShortTermRefPicSet[i]);
+    }
+    if (sps.pLongTermRefPicsSps != nullptr) {
+        Line("  ltrps")
+            .Hex("used_by_curr_pic_lt_sps_flag", sps.pLongTermRefPicsSps->used_by_curr_pic_lt_sps_flag)
+            .Array("lt_ref_pic_poc_lsb_sps", sps.pLongTermRefPicsSps->lt_ref_pic_poc_lsb_sps,
+                   std::min<size_t>(sps.num_long_term_ref_pics_sps, STD_VIDEO_H265_MAX_LONG_TERM_REF_PICS_SPS))
+            .Emit(out);
+    }
+    if (sps.pSequenceParameterSetVui != nullptr) {
+        const StdVideoH265SequenceParameterSetVui& vui = *sps.pSequenceParameterSetVui;
+        const StdVideoH265SpsVuiFlags& v = vui.flags;
+        Line("  vui")
+            .Num("aspect_ratio_idc", vui.aspect_ratio_idc)
+            .Num("sar_width", vui.sar_width)
+            .Num("sar_height", vui.sar_height)
+            .Num("video_format", vui.video_format)
+            .Num("colour_primaries", vui.colour_primaries)
+            .Num("transfer_characteristics", vui.transfer_characteristics)
+            .Num("matrix_coeffs", vui.matrix_coeffs)
+            .Num("chroma_sample_loc_type_top_field", vui.chroma_sample_loc_type_top_field)
+            .Num("chroma_sample_loc_type_bottom_field", vui.chroma_sample_loc_type_bottom_field)
+            .Num("def_disp_win_left_offset", vui.def_disp_win_left_offset)
+            .Num("def_disp_win_right_offset", vui.def_disp_win_right_offset)
+            .Num("def_disp_win_top_offset", vui.def_disp_win_top_offset)
+            .Num("def_disp_win_bottom_offset", vui.def_disp_win_bottom_offset)
+            .Num("vui_num_units_in_tick", vui.vui_num_units_in_tick)
+            .Num("vui_time_scale", vui.vui_time_scale)
+            .Num("vui_num_ticks_poc_diff_one_minus1", vui.vui_num_ticks_poc_diff_one_minus1)
+            .Num("min_spatial_segmentation_idc", vui.min_spatial_segmentation_idc)
+            .Num("max_bytes_per_pic_denom", vui.max_bytes_per_pic_denom)
+            .Num("max_bits_per_min_cu_denom", vui.max_bits_per_min_cu_denom)
+            .Num("log2_max_mv_length_horizontal", vui.log2_max_mv_length_horizontal)
+            .Num("log2_max_mv_length_vertical", vui.log2_max_mv_length_vertical)
+            .Flags("flags", {{"aspect_ratio_info_present_flag", v.aspect_ratio_info_present_flag},
+                             {"overscan_info_present_flag", v.overscan_info_present_flag},
+                             {"overscan_appropriate_flag", v.overscan_appropriate_flag},
+                             {"video_signal_type_present_flag", v.video_signal_type_present_flag},
+                             {"video_full_range_flag", v.video_full_range_flag},
+                             {"colour_description_present_flag", v.colour_description_present_flag},
+                             {"chroma_loc_info_present_flag", v.chroma_loc_info_present_flag},
+                             {"neutral_chroma_indication_flag", v.neutral_chroma_indication_flag},
+                             {"field_seq_flag", v.field_seq_flag},
+                             {"frame_field_info_present_flag", v.frame_field_info_present_flag},
+                             {"default_display_window_flag", v.default_display_window_flag},
+                             {"vui_timing_info_present_flag", v.vui_timing_info_present_flag},
+                             {"vui_poc_proportional_to_timing_flag", v.vui_poc_proportional_to_timing_flag},
+                             {"vui_hrd_parameters_present_flag", v.vui_hrd_parameters_present_flag},
+                             {"bitstream_restriction_flag", v.bitstream_restriction_flag},
+                             {"tiles_fixed_structure_flag", v.tiles_fixed_structure_flag},
+                             {"motion_vectors_over_pic_boundaries_flag", v.motion_vectors_over_pic_boundaries_flag},
+                             {"restricted_ref_pic_lists_flag", v.restricted_ref_pic_lists_flag}})
+            .Emit(out);
+        if (vui.pHrdParameters != nullptr) {
+            TraceH265Hrd(out, *vui.pHrdParameters, sps.sps_max_sub_layers_minus1);
+        }
+    }
+    if (sps.pPredictorPaletteEntries != nullptr) {
+        Line("  palette").Hex("crc32", StructCrc32(*sps.pPredictorPaletteEntries)).Emit(out);
+    }
+}
+
+void TraceH265Pps(FILE* out, uint64_t index, int64_t update, const StdVideoH265PictureParameterSet& pps) {
+    const StdVideoH265PpsFlags& f = pps.flags;
+    Line("pps")
+        .Num("index", static_cast<int64_t>(index))
+        .Str("codec", "h265")
+        .Num("update", update)
+        .Num("pps_pic_parameter_set_id", pps.pps_pic_parameter_set_id)
+        .Num("pps_seq_parameter_set_id", pps.pps_seq_parameter_set_id)
+        .Num("sps_video_parameter_set_id", pps.sps_video_parameter_set_id)
+        .Num("num_extra_slice_header_bits", pps.num_extra_slice_header_bits)
+        .Num("num_ref_idx_l0_default_active_minus1", pps.num_ref_idx_l0_default_active_minus1)
+        .Num("num_ref_idx_l1_default_active_minus1", pps.num_ref_idx_l1_default_active_minus1)
+        .Num("init_qp_minus26", pps.init_qp_minus26)
+        .Num("diff_cu_qp_delta_depth", pps.diff_cu_qp_delta_depth)
+        .Num("pps_cb_qp_offset", pps.pps_cb_qp_offset)
+        .Num("pps_cr_qp_offset", pps.pps_cr_qp_offset)
+        .Num("pps_beta_offset_div2", pps.pps_beta_offset_div2)
+        .Num("pps_tc_offset_div2", pps.pps_tc_offset_div2)
+        .Num("log2_parallel_merge_level_minus2", pps.log2_parallel_merge_level_minus2)
+        .Num("log2_max_transform_skip_block_size_minus2", pps.log2_max_transform_skip_block_size_minus2)
+        .Num("diff_cu_chroma_qp_offset_depth", pps.diff_cu_chroma_qp_offset_depth)
+        .Num("chroma_qp_offset_list_len_minus1", pps.chroma_qp_offset_list_len_minus1)
+        .Array("cb_qp_offset_list", pps.cb_qp_offset_list, STD_VIDEO_H265_CHROMA_QP_OFFSET_LIST_SIZE)
+        .Array("cr_qp_offset_list", pps.cr_qp_offset_list, STD_VIDEO_H265_CHROMA_QP_OFFSET_LIST_SIZE)
+        .Num("log2_sao_offset_scale_luma", pps.log2_sao_offset_scale_luma)
+        .Num("log2_sao_offset_scale_chroma", pps.log2_sao_offset_scale_chroma)
+        .Num("pps_act_y_qp_offset_plus5", pps.pps_act_y_qp_offset_plus5)
+        .Num("pps_act_cb_qp_offset_plus5", pps.pps_act_cb_qp_offset_plus5)
+        .Num("pps_act_cr_qp_offset_plus3", pps.pps_act_cr_qp_offset_plus3)
+        .Num("pps_num_palette_predictor_initializers", pps.pps_num_palette_predictor_initializers)
+        .Num("luma_bit_depth_entry_minus8", pps.luma_bit_depth_entry_minus8)
+        .Num("chroma_bit_depth_entry_minus8", pps.chroma_bit_depth_entry_minus8)
+        .Num("num_tile_columns_minus1", pps.num_tile_columns_minus1)
+        .Num("num_tile_rows_minus1", pps.num_tile_rows_minus1)
+        .Array("column_width_minus1", pps.column_width_minus1, STD_VIDEO_H265_CHROMA_QP_OFFSET_TILE_COLS_LIST_SIZE)
+        .Array("row_height_minus1", pps.row_height_minus1, STD_VIDEO_H265_CHROMA_QP_OFFSET_TILE_ROWS_LIST_SIZE)
+        .Flags("flags", {{"dependent_slice_segments_enabled_flag", f.dependent_slice_segments_enabled_flag},
+                         {"output_flag_present_flag", f.output_flag_present_flag},
+                         {"sign_data_hiding_enabled_flag", f.sign_data_hiding_enabled_flag},
+                         {"cabac_init_present_flag", f.cabac_init_present_flag},
+                         {"constrained_intra_pred_flag", f.constrained_intra_pred_flag},
+                         {"transform_skip_enabled_flag", f.transform_skip_enabled_flag},
+                         {"cu_qp_delta_enabled_flag", f.cu_qp_delta_enabled_flag},
+                         {"pps_slice_chroma_qp_offsets_present_flag", f.pps_slice_chroma_qp_offsets_present_flag},
+                         {"weighted_pred_flag", f.weighted_pred_flag},
+                         {"weighted_bipred_flag", f.weighted_bipred_flag},
+                         {"transquant_bypass_enabled_flag", f.transquant_bypass_enabled_flag},
+                         {"tiles_enabled_flag", f.tiles_enabled_flag},
+                         {"entropy_coding_sync_enabled_flag", f.entropy_coding_sync_enabled_flag},
+                         {"uniform_spacing_flag", f.uniform_spacing_flag},
+                         {"loop_filter_across_tiles_enabled_flag", f.loop_filter_across_tiles_enabled_flag},
+                         {"pps_loop_filter_across_slices_enabled_flag", f.pps_loop_filter_across_slices_enabled_flag},
+                         {"deblocking_filter_control_present_flag", f.deblocking_filter_control_present_flag},
+                         {"deblocking_filter_override_enabled_flag", f.deblocking_filter_override_enabled_flag},
+                         {"pps_deblocking_filter_disabled_flag", f.pps_deblocking_filter_disabled_flag},
+                         {"pps_scaling_list_data_present_flag", f.pps_scaling_list_data_present_flag},
+                         {"lists_modification_present_flag", f.lists_modification_present_flag},
+                         {"slice_segment_header_extension_present_flag", f.slice_segment_header_extension_present_flag},
+                         {"pps_extension_present_flag", f.pps_extension_present_flag},
+                         {"cross_component_prediction_enabled_flag", f.cross_component_prediction_enabled_flag},
+                         {"chroma_qp_offset_list_enabled_flag", f.chroma_qp_offset_list_enabled_flag},
+                         {"pps_curr_pic_ref_enabled_flag", f.pps_curr_pic_ref_enabled_flag},
+                         {"residual_adaptive_colour_transform_enabled_flag", f.residual_adaptive_colour_transform_enabled_flag},
+                         {"pps_slice_act_qp_offsets_present_flag", f.pps_slice_act_qp_offsets_present_flag},
+                         {"pps_palette_predictor_initializers_present_flag", f.pps_palette_predictor_initializers_present_flag},
+                         {"monochrome_palette_flag", f.monochrome_palette_flag},
+                         {"pps_range_extension_flag", f.pps_range_extension_flag}})
+        .Emit(out);
+    if (pps.pScalingLists != nullptr) {
+        Line("  scaling").Hex("crc32", StructCrc32(*pps.pScalingLists)).Emit(out);
+    }
+    if (pps.pPredictorPaletteEntries != nullptr) {
+        Line("  palette").Hex("crc32", StructCrc32(*pps.pPredictorPaletteEntries)).Emit(out);
+    }
+}
+
+void TraceH265Picture(FILE* out, const VkParserPictureData& pd) {
+    const VkParserHevcPictureData& h = pd.CodecSpecific.hevc;
+    int64_t refPics[sizeof(h.RefPics) / sizeof(h.RefPics[0])];
+    for (size_t i = 0; i < std::size(refPics); i++) {
+        refPics[i] = (h.RefPics[i] != nullptr) ? static_cast<vkPicBuffBase*>(h.RefPics[i])->m_picIdx : -1;
+    }
+    Line("  hevc")
+        .Num("vps_update", ParameterSetUpdate(h.pStdVps))
+        .Num("sps_update", ParameterSetUpdate(h.pStdSps))
+        .Num("pps_update", ParameterSetUpdate(h.pStdPps))
+        .Num("vps_video_parameter_set_id", h.vps_video_parameter_set_id)
+        .Num("seq_parameter_set_id", h.seq_parameter_set_id)
+        .Num("pic_parameter_set_id", h.pic_parameter_set_id)
+        .Num("IrapPicFlag", h.IrapPicFlag)
+        .Num("IdrPicFlag", h.IdrPicFlag)
+        .Num("short_term_ref_pic_set_sps_flag", h.short_term_ref_pic_set_sps_flag)
+        .Num("CurrPicOrderCntVal", h.CurrPicOrderCntVal)
+        .Num("NumBitsForShortTermRPSInSlice", h.NumBitsForShortTermRPSInSlice)
+        .Num("NumDeltaPocsOfRefRpsIdx", h.NumDeltaPocsOfRefRpsIdx)
+        .Num("ProfileLevel", h.ProfileLevel)
+        .Num("ColorPrimaries", h.ColorPrimaries)
+        .Num("bit_depth_luma_minus8", h.bit_depth_luma_minus8)
+        .Num("bit_depth_chroma_minus8", h.bit_depth_chroma_minus8)
+        .Emit(out);
+    Line("  rps")
+        .Num("NumPocTotalCurr", h.NumPocTotalCurr)
+        .Num("NumPocStCurrBefore", h.NumPocStCurrBefore)
+        .Num("NumPocStCurrAfter", h.NumPocStCurrAfter)
+        .Num("NumPocLtCurr", h.NumPocLtCurr)
+        .Array("RefPics", refPics, std::size(refPics))
+        .Array("PicOrderCntVal", h.PicOrderCntVal, std::size(h.PicOrderCntVal))
+        .Array("IsLongTerm", h.IsLongTerm, std::size(h.IsLongTerm))
+        .Array("RefPicSetStCurrBefore", h.RefPicSetStCurrBefore, std::size(h.RefPicSetStCurrBefore))
+        .Array("RefPicSetStCurrAfter", h.RefPicSetStCurrAfter, std::size(h.RefPicSetStCurrAfter))
+        .Array("RefPicSetLtCurr", h.RefPicSetLtCurr, std::size(h.RefPicSetLtCurr))
+        .Emit(out);
+    if (h.mv_hevc_enable || (h.nuh_layer_id != 0)) {
+        Line("  mv-hevc")
+            .Num("mv_hevc_enable", h.mv_hevc_enable)
+            .Num("nuh_layer_id", h.nuh_layer_id)
+            .Num("default_ref_layers_active_flag", h.default_ref_layers_active_flag)
+            .Num("NumDirectRefLayers", h.NumDirectRefLayers)
+            .Num("max_one_active_ref_layer_flag", h.max_one_active_ref_layer_flag)
+            .Num("poc_lsb_not_present_flag", h.poc_lsb_not_present_flag)
+            .Num("NumActiveRefLayerPics0", h.NumActiveRefLayerPics0)
+            .Num("NumActiveRefLayerPics1", h.NumActiveRefLayerPics1)
+            .Array("RefPicSetInterLayer0", h.RefPicSetInterLayer0, std::size(h.RefPicSetInterLayer0))
+            .Array("RefPicSetInterLayer1", h.RefPicSetInterLayer1, std::size(h.RefPicSetInterLayer1))
+            .Emit(out);
+    }
+}
+
+void TraceVp9Picture(FILE* out, const VkParserPictureData& pd) {
+    const VkParserVp9PictureData& v = pd.CodecSpecific.vp9;
+    const StdVideoDecodeVP9PictureInfo& info = v.stdPictureInfo;
+    const StdVideoDecodeVP9PictureInfoFlags& f = info.flags;
+    const auto picIdx = [](VkPicIf* picture) { return (picture != nullptr) ? static_cast<vkPicBuffBase*>(picture)->m_picIdx : -1; };
+    Line("  vp9")
+        .Num("FrameWidth", v.FrameWidth)
+        .Num("FrameHeight", v.FrameHeight)
+        .Num("MiCols", v.MiCols)
+        .Num("MiRows", v.MiRows)
+        .Num("Sb64Cols", v.Sb64Cols)
+        .Num("Sb64Rows", v.Sb64Rows)
+        .Num("renderWidth", v.renderWidth)
+        .Num("renderHeight", v.renderHeight)
+        .Num("frame_to_show_map_idx", v.frame_to_show_map_idx)
+        .Num("show_existing_frame", v.show_existing_frame)
+        .Array("ref_frame_idx", v.ref_frame_idx, STD_VIDEO_VP9_REFS_PER_FRAME)
+        .Array("pic_idx", v.pic_idx, STD_VIDEO_VP9_NUM_REF_FRAMES)
+        .Num("last", picIdx(v.pLastRef))
+        .Num("golden", picIdx(v.pGoldenRef))
+        .Num("altref", picIdx(v.pAltRef))
+        .Num("FrameIsIntra", v.FrameIsIntra)
+        .Num("ChromaFormat", v.ChromaFormat)
+        .Num("numTiles", v.numTiles)
+        .Num("compressedHeaderSize", v.compressedHeaderSize)
+        .Num("uncompressedHeaderOffset", v.uncompressedHeaderOffset)
+        .Num("compressedHeaderOffset", v.compressedHeaderOffset)
+        .Num("tilesOffset", v.tilesOffset)
+        .Emit(out);
+    Line("  std")
+        .Num("profile", info.profile)
+        .Num("frame_type", info.frame_type)
+        .Num("frame_context_idx", info.frame_context_idx)
+        .Num("reset_frame_context", info.reset_frame_context)
+        .Hex("refresh_frame_flags", info.refresh_frame_flags)
+        .Hex("ref_frame_sign_bias_mask", info.ref_frame_sign_bias_mask)
+        .Num("interpolation_filter", info.interpolation_filter)
+        .Num("base_q_idx", info.base_q_idx)
+        .Num("delta_q_y_dc", info.delta_q_y_dc)
+        .Num("delta_q_uv_dc", info.delta_q_uv_dc)
+        .Num("delta_q_uv_ac", info.delta_q_uv_ac)
+        .Num("tile_cols_log2", info.tile_cols_log2)
+        .Num("tile_rows_log2", info.tile_rows_log2)
+        .Flags("flags", {{"error_resilient_mode", f.error_resilient_mode},
+                         {"intra_only", f.intra_only},
+                         {"allow_high_precision_mv", f.allow_high_precision_mv},
+                         {"refresh_frame_context", f.refresh_frame_context},
+                         {"frame_parallel_decoding_mode", f.frame_parallel_decoding_mode},
+                         {"segmentation_enabled", f.segmentation_enabled},
+                         {"show_frame", f.show_frame},
+                         {"UsePrevFrameMvs", f.UsePrevFrameMvs}})
+        .Emit(out);
+    const StdVideoVP9ColorConfig& c = v.stdColorConfig;
+    Line("  color")
+        .Num("BitDepth", c.BitDepth)
+        .Num("subsampling_x", c.subsampling_x)
+        .Num("subsampling_y", c.subsampling_y)
+        .Num("color_space", c.color_space)
+        .Flags("flags", {{"color_range", c.flags.color_range}})
+        .Emit(out);
+    const StdVideoVP9LoopFilter& lf = v.stdLoopFilter;
+    Line("  lf")
+        .Num("loop_filter_level", lf.loop_filter_level)
+        .Num("loop_filter_sharpness", lf.loop_filter_sharpness)
+        .Num("update_ref_delta", lf.update_ref_delta)
+        .Array("loop_filter_ref_deltas", lf.loop_filter_ref_deltas, STD_VIDEO_VP9_MAX_REF_FRAMES)
+        .Num("update_mode_delta", lf.update_mode_delta)
+        .Array("loop_filter_mode_deltas", lf.loop_filter_mode_deltas, STD_VIDEO_VP9_LOOP_FILTER_ADJUSTMENTS)
+        .Flags("flags", {{"loop_filter_delta_enabled", lf.flags.loop_filter_delta_enabled},
+                         {"loop_filter_delta_update", lf.flags.loop_filter_delta_update}})
+        .Emit(out);
+    const StdVideoVP9Segmentation& seg = v.stdSegmentation;
+    Line("  seg")
+        .Array("segmentation_tree_probs", seg.segmentation_tree_probs, STD_VIDEO_VP9_MAX_SEGMENTATION_TREE_PROBS)
+        .Array("segmentation_pred_prob", seg.segmentation_pred_prob, STD_VIDEO_VP9_MAX_SEGMENTATION_PRED_PROB)
+        .Array("FeatureEnabled", seg.FeatureEnabled, STD_VIDEO_VP9_MAX_SEGMENTS)
+        .Array("FeatureData", &seg.FeatureData[0][0], STD_VIDEO_VP9_MAX_SEGMENTS * STD_VIDEO_VP9_SEG_LVL_MAX)
+        .Flags("flags", {{"segmentation_update_map", seg.flags.segmentation_update_map},
+                         {"segmentation_temporal_update", seg.flags.segmentation_temporal_update},
+                         {"segmentation_update_data", seg.flags.segmentation_update_data},
+                         {"segmentation_abs_or_delta_update", seg.flags.segmentation_abs_or_delta_update}})
+        .Emit(out);
+}
+
 // Records every callback. Pictures come from a fixed pool, lowest free index first, so the picture
 // indices in the trace depend only on the parser's reference counting.
 class TraceClient : public VkParserVideoDecodeClient {
@@ -608,19 +1270,45 @@ class TraceClient : public VkParserVideoDecodeClient {
             .Num("bitstreamDataLen", static_cast<int64_t>(pd->bitstreamDataLen))
             .Hex("crc32", crc)
             .Emit(m_out);
-        if (m_codec == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
-            TraceAv1Picture(m_out, *pd);
+        switch (m_codec) {
+            case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR:
+                TraceH264Picture(m_out, *pd);
+                break;
+            case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR:
+                TraceH265Picture(m_out, *pd);
+                break;
+            case VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR:
+                TraceAv1Picture(m_out, *pd);
+                break;
+            case VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR:
+                TraceVp9Picture(m_out, *pd);
+                break;
+            default:
+                break;
         }
         return true;
     }
 
     bool UpdatePictureParameters(VkSharedBaseObj<StdVideoPictureParametersSet>& params,
                                  VkSharedBaseObj<VkVideoRefCountBase>& client) override {
-        const StdVideoAV1SequenceHeader* av1Sps = params ? params->GetStdAV1Sps() : nullptr;
-        if (av1Sps != nullptr) {
-            TraceAv1SequenceHeader(m_out, m_parameterSets++, *av1Sps);
+        const uint64_t index = m_parameterSets++;
+        const int64_t update = ParameterSetUpdate(params.get());
+        if (!params) {
+            Line("params").Num("index", static_cast<int64_t>(index)).Emit(m_out);
+        } else if (params->GetStdH264Sps() != nullptr) {
+            TraceH264Sps(m_out, index, update, *params->GetStdH264Sps());
+        } else if (params->GetStdH264Pps() != nullptr) {
+            TraceH264Pps(m_out, index, update, *params->GetStdH264Pps());
+        } else if (params->GetStdH265Vps() != nullptr) {
+            TraceH265Vps(m_out, index, update, *params->GetStdH265Vps());
+        } else if (params->GetStdH265Sps() != nullptr) {
+            TraceH265Sps(m_out, index, update, *params->GetStdH265Sps());
+        } else if (params->GetStdH265Pps() != nullptr) {
+            TraceH265Pps(m_out, index, update, *params->GetStdH265Pps());
+        } else if (params->GetStdAV1Sps() != nullptr) {
+            TraceAv1SequenceHeader(m_out, index, *params->GetStdAV1Sps());
         } else {
-            Line("params").Num("index", static_cast<int64_t>(m_parameterSets++)).Emit(m_out);
+            Line("params").Num("index", static_cast<int64_t>(index)).Num("type", params->GetStdType()).Emit(m_out);
         }
         client = std::make_shared<VkVideoRefCountBase>();
         return true;
@@ -858,13 +1546,69 @@ void ParserLog(const char* format, ...) {
 
 int Usage(const char* program) {
     fprintf(stderr,
-            "Usage: %s --codec av1 --format ivf|obu|annexb -i <stream> [-o <trace>]\n"
+            "Usage: %s --codec h264|h265|av1|vp9 --format bytestream|ivf|obu|annexb -i <stream> [-o <trace>]\n"
             "          [--offset-alignment N] [--size-alignment N] [--pool N] [--write-ivf <file>]\n"
             "Runs NvVideoParser over the stream with no Vulkan device and writes a canonical trace of\n"
-            "every parser callback. obu is the low-overhead OBU format, annexb is AV1 Annex B.\n"
-            "--write-ivf also writes the temporal units the parser is given as an IVF file.\n",
+            "every parser callback.\n"
+            "  bytestream  an H.264 or H.265 Annex B byte stream, given to the parser the way the decoder\n"
+            "              sample gives an elementary stream: the rest of the stream on each call, with\n"
+            "              partial parsing, advancing by the bytes the parser consumed\n"
+            "  ivf         one packet per IVF frame (AV1, VP9)\n"
+            "  obu         the AV1 low-overhead OBU format, one packet per temporal unit\n"
+            "  annexb      AV1 Annex B, one packet per temporal unit\n"
+            "--write-ivf also writes the AV1 temporal units the parser is given as an IVF file.\n",
             program);
     return 2;
+}
+
+struct CodecInfo {
+    const char* name;
+    VkVideoCodecOperationFlagBitsKHR operation;
+    VkExtensionProperties stdExtension;
+};
+
+const CodecInfo kCodecs[] = {
+    {"h264",
+     VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR,
+     {VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION}},
+    {"h265",
+     VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR,
+     {VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION}},
+    {"av1",
+     VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR,
+     {VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_SPEC_VERSION}},
+    {"vp9",
+     VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR,
+     {VK_STD_VULKAN_VIDEO_CODEC_VP9_DECODE_EXTENSION_NAME, VK_STD_VULKAN_VIDEO_CODEC_VP9_DECODE_SPEC_VERSION}},
+};
+
+// Gives the parser a whole byte stream as the decoder sample does for an elementary stream
+// (VulkanVideoProcessor::ParserProcessNextDataChunk): the rest of the stream on each call, with
+// bPartialParsing, which returns after the first decode or display callback. The parser always
+// consumes at least one byte of a non-empty packet.
+void ParseByteStreamPartially(VulkanVideoDecodeParser& parser, const std::vector<uint8_t>& stream, FILE* out) {
+    size_t offset = 0;
+    for (uint64_t call = 0; offset < stream.size(); call++) {
+        VkParserBitstreamPacket packet = {};
+        packet.pByteStream = stream.data() + offset;
+        packet.nDataLength = stream.size() - offset;
+        packet.bPartialParsing = 1;
+        size_t parsedBytes = 0;
+        const bool parsed = parser.ParseByteStream(&packet, &parsedBytes);
+        Line("pkt")
+            .Num("index", static_cast<int64_t>(call))
+            .Num("offset", static_cast<int64_t>(offset))
+            .Num("parsed", static_cast<int64_t>(parsedBytes))
+            .Emit(out);
+        if (!parsed) {
+            Line("pkt-error").Num("index", static_cast<int64_t>(call)).Emit(out);
+        }
+        if ((parsedBytes == 0) || (parsedBytes > packet.nDataLength)) {
+            Line("pkt-stalled").Num("index", static_cast<int64_t>(call)).Emit(out);
+            break;
+        }
+        offset += parsedBytes;
+    }
 }
 
 }  // namespace
@@ -906,9 +1650,26 @@ int main(int argc, char** argv) {
     if ((codecName == nullptr) || (format == nullptr) || (input == nullptr)) {
         return Usage(argv[0]);
     }
-    if (strcmp(codecName, "av1") != 0) {
-        fprintf(stderr, "Only --codec av1 is traced.\n");
-        return 2;
+    const CodecInfo* codecInfo = nullptr;
+    for (const CodecInfo& candidate : kCodecs) {
+        if (strcmp(codecName, candidate.name) == 0) {
+            codecInfo = &candidate;
+        }
+    }
+    const bool isAv1 = (codecInfo != nullptr) && (codecInfo->operation == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR);
+    const bool isH26x = (codecInfo != nullptr) && ((codecInfo->operation == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) ||
+                                                   (codecInfo->operation == VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR));
+    const bool byteStream = (strcmp(format, "bytestream") == 0);
+    bool formatFits = false;
+    if (byteStream) {
+        formatFits = isH26x;
+    } else if (strcmp(format, "ivf") == 0) {
+        formatFits = !isH26x;
+    } else if ((strcmp(format, "obu") == 0) || (strcmp(format, "annexb") == 0)) {
+        formatFits = isAv1;
+    }
+    if ((codecInfo == nullptr) || !formatFits || ((ivfOutput != nullptr) && !isAv1)) {
+        return Usage(argv[0]);
     }
 
     std::vector<uint8_t> file;
@@ -918,15 +1679,13 @@ int main(int argc, char** argv) {
     }
     std::vector<Packet> packets;
     std::string error;
-    bool read = false;
+    bool read = true;
     if (strcmp(format, "ivf") == 0) {
         read = ReadIvf(file, packets, error);
     } else if (strcmp(format, "obu") == 0) {
         read = ReadObuStream(file, packets, error);
     } else if (strcmp(format, "annexb") == 0) {
         read = ReadAnnexB(file, packets, error);
-    } else {
-        return Usage(argv[0]);
     }
     if (!read) {
         fprintf(stderr, "%s: %s\n", input, error.c_str());
@@ -946,19 +1705,16 @@ int main(int argc, char** argv) {
         }
     }
 
-    Line("trace")
-        .Num("version", 1)
-        .Str("codec", codecName)
-        .Str("format", format)
-        .Num("packets", static_cast<int64_t>(packets.size()))
-        .Num("offsetAlignment", offsetAlignment)
-        .Num("sizeAlignment", sizeAlignment)
-        .Num("pool", poolSize)
-        .Emit(out);
+    Line trace("trace");
+    trace.Num("version", 1).Str("codec", codecName).Str("format", format);
+    if (byteStream) {
+        trace.Num("bytes", static_cast<int64_t>(file.size()));
+    } else {
+        trace.Num("packets", static_cast<int64_t>(packets.size()));
+    }
+    trace.Num("offsetAlignment", offsetAlignment).Num("sizeAlignment", sizeAlignment).Num("pool", poolSize).Emit(out);
 
-    const VkVideoCodecOperationFlagBitsKHR codec = VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR;
-    static const VkExtensionProperties av1StdExtensionVersion = {VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_EXTENSION_NAME,
-                                                                 VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_SPEC_VERSION};
+    const VkVideoCodecOperationFlagBitsKHR codec = codecInfo->operation;
     // The client outlives the parser: the parser releases its pictures when it is destroyed.
     TraceClient client(out, codec, poolSize);
     int status = 0;
@@ -973,11 +1729,14 @@ int main(int argc, char** argv) {
         params.errorThreshold = 0;
 
         VkSharedBaseObj<VulkanVideoDecodeParser> parser;
-        const VkResult result = CreateVulkanVideoDecodeParser(codec, &av1StdExtensionVersion, ParserLog, 0, &params, parser);
+        const VkResult result = CreateVulkanVideoDecodeParser(codec, &codecInfo->stdExtension, ParserLog, 0, &params, parser);
         if ((result != VK_SUCCESS) || !parser) {
             fprintf(stderr, "CreateVulkanVideoDecodeParser failed: %d\n", static_cast<int>(result));
             status = 1;
         } else {
+            if (byteStream) {
+                ParseByteStreamPartially(*parser, file, out);
+            }
             for (size_t i = 0; i < packets.size(); i++) {
                 Line("pkt")
                     .Num("index", static_cast<int64_t>(i))
