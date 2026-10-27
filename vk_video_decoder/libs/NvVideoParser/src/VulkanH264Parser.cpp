@@ -2054,10 +2054,10 @@ bool VulkanH264Decoder::pic_parameter_set_rbsp()
     pps->flags.entropy_coding_mode_flag = u(1);
     pps->flags.bottom_field_pic_order_in_frame_present_flag = u(1);
     // FMO
-    uint8_t num_slice_groups_minus1 = (uint8_t)ue();
-    if (pps->num_slice_groups_minus1 > 7)
+    const uint32_t num_slice_groups_minus1 = ue();
+    if (num_slice_groups_minus1 > 7)
     {
-        nvParserLog("Invalid num_slice_groups_minus1 value in PPS (%d)\n", pps->num_slice_groups_minus1);
+        nvParserLog("Invalid num_slice_groups_minus1 value in PPS (%u)\n", num_slice_groups_minus1);
         return false;
     }
     pps->num_slice_groups_minus1 = (unsigned char)num_slice_groups_minus1;

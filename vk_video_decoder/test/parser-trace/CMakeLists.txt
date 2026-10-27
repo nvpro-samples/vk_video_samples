@@ -135,6 +135,7 @@ set(PARSER_CRAFTED_CASES
     H264CraftedStream
     H264PpsSliceGroupMapUnits
     H264UeLongCodes
+    H264PpsSliceGroups
     H265CraftedStream
     H265VpsLayerSetCountWrap
     H265VpsLayerSetCountLimit
@@ -142,6 +143,7 @@ set(PARSER_CRAFTED_CASES
     H265InterRpsOverflow
     H265SpsNumStRps
     H265RefPicSetCurrBefore9
+    H265SliceNumLongTermSps
     H265VpsSubLayers8
     H265SpsHrdCpbCount
     Av1CraftedSequenceHeader

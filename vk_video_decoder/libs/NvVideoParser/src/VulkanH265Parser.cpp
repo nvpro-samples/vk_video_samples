@@ -2295,8 +2295,8 @@ bool VulkanH265Decoder::slice_header(int nal_unit_type, int nuh_temporal_id_plus
                 assert(sps->pLongTermRefPicsSps);
                 if (sps->num_long_term_ref_pics_sps) {
                     uint32_t num_long_term_sps = ue();
-                    if (slh->num_long_term_sps > sps->num_long_term_ref_pics_sps) {
-                        nvParserLog("Invalid num_long_term_sps (%d/%d)\n", num_long_term_sps, sps->num_long_term_ref_pics_sps);
+                    if (num_long_term_sps > sps->num_long_term_ref_pics_sps) {
+                        nvParserLog("Invalid num_long_term_sps (%u/%d)\n", num_long_term_sps, sps->num_long_term_ref_pics_sps);
                         return false;
                     }
                     slh->num_long_term_sps = (uint8_t)num_long_term_sps;
