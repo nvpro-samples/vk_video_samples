@@ -935,7 +935,7 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
         bool success = m_pClient->UpdatePictureParameters(picParamObj, m_sps->client);
         assert(success);
         if (!success) {
-            nvParserErrorLog("s", "\nError updating the AV1 sequence parameters\n");
+            nvParserErrorLog("\nError updating the AV1 sequence parameters\n");
         }
     }
 
@@ -2358,7 +2358,7 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
     {
         // Check before writing: pStdSps and the other fields follow the tile arrays.
         if (m_PicData.khr_info.tileCount >= ARRAY_SIZE(m_PicData.tileOffsets)) {
-            nvParserErrorLog("s", "\nError: Tile count exceeds the size of the tile arrays\n");
+            nvParserErrorLog("\nError: Tile count exceeds the size of the tile arrays\n");
             return false;
         }
 
@@ -2368,7 +2368,7 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
         {
             // The last tile takes the rest of the OBU, which the tiles before it must not overrun.
             if ((uint32_t)consumedBytes > hdr.payload_size) {
-                nvParserErrorLog("s", "\nError: Tile sizes exceed the tile group\n");
+                nvParserErrorLog("\nError: Tile sizes exceed the tile group\n");
                 return false;
             }
             tileSize = hdr.payload_size - consumedBytes;
@@ -2382,7 +2382,7 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
 
             // The tile has to fit in what is left of the OBU.
             if (((uint32_t)consumedBytes > hdr.payload_size) || (tile_size_minus_1 >= hdr.payload_size - (uint32_t)consumedBytes)) {
-                nvParserErrorLog("s", "\nError: Tile sizes exceed the tile group\n");
+                nvParserErrorLog("\nError: Tile sizes exceed the tile group\n");
                 return false;
             }
             tileSize = (size_t)(tile_size_minus_1 + 1);

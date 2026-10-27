@@ -23,6 +23,7 @@
 //   vk-video-parser-crafted --case <name> [--trace <file>] [--write <file>]
 //   vk-video-parser-crafted --expect-cases <name>...
 
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 #include <functional>
@@ -579,6 +580,21 @@ std::vector<uint8_t> Vp9SuperframeIndex(const std::vector<uint32_t>& sizes) {
     return index;
 }
 
+// What a parser logs through CaptureLog, the log function the client gives it.
+std::string& CapturedLog() {
+    static std::string log;
+    return log;
+}
+
+void CaptureLog(const char* format, ...) {
+    char text[1024];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(text, sizeof(text), format, args);
+    va_end(args);
+    CapturedLog() += text;
+}
+
 struct CraftedCase {
     const char* name;
     std::function<std::vector<std::string>(CaseContext&)> run;
@@ -600,6 +616,25 @@ const std::vector<CraftedCase>& Cases() {
              }
              if (parser) {
                  failures.push_back("the failed call returned a parser");
+             }
+             return failures;
+         }},
+        // the client's log function gets each message whole. An H.264 parser asked for the next Std
+        // version logs the version it supports.
+        {"ParserLogForwarding",
+         [](CaseContext&) {
+             VkExtensionProperties next = {VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME,
+                                           VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION + 1};
+             VkParserInitDecodeParameters params = {};
+             params.interfaceVersion = NV_VULKAN_VIDEO_PARSER_API_VERSION;
+             VkSharedBaseObj<VulkanVideoDecodeParser> parser;
+             CreateVulkanVideoDecodeParser(VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR, &next, CaptureLog, 0, &params, parser);
+             const std::string expected = "The supported decoder h.264 Codec STD version is version " +
+                                          std::to_string(VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION) +
+                                          " of " VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME "\n";
+             std::vector<std::string> failures;
+             if (CapturedLog().find(expected) == std::string::npos) {
+                 failures.push_back("the log is \"" + CapturedLog() + "\", without \"" + expected + "\"");
              }
              return failures;
          }},

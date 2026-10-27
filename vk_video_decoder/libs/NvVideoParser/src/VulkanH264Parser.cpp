@@ -1690,7 +1690,7 @@ int32_t VulkanH264Decoder::seq_parameter_set_rbsp(SpsNalUnitTarget spsNalUnitTar
             bool success = m_pClient->UpdatePictureParameters(picParamObj, sps->client);
             assert(success);
             if (success == false) {
-                nvParserErrorLog("s", "\nError Updating the h.264 SPS parameters\n");
+                nvParserErrorLog("\nError Updating the h.264 SPS parameters\n");
             }
         }
         m_spss[sps_id] = sps;
@@ -1752,7 +1752,7 @@ bool VulkanH264Decoder::seq_parameter_set_svc_extension_rbsp()
         bool success = m_pClient->UpdatePictureParameters(picParamObj, spssvc->client);
         assert(success);
         if (success == false) {
-            nvParserErrorLog("s", "\nError Updating the h.264 SPS ID %d SVC parameters\n", sps_id);
+            nvParserErrorLog("\nError Updating the h.264 SPS ID %d SVC parameters\n", sps_id);
         }
     }
 
@@ -1859,7 +1859,7 @@ bool VulkanH264Decoder::seq_parameter_set_mvc_extension_rbsp(int32_t sps_id)
         bool success = m_pClient->UpdatePictureParameters(picParamObj, m_spss[sps_id]->client);
         assert(success);
         if (success == false) {
-            nvParserErrorLog("s", "\nError Updating the h.264 SPS MVC parameters\n");
+            nvParserErrorLog("\nError Updating the h.264 SPS MVC parameters\n");
         }
     }
     return true;
@@ -2189,7 +2189,7 @@ bool VulkanH264Decoder::pic_parameter_set_rbsp()
         bool success = m_pClient->UpdatePictureParameters(picParamObj, pps->client);
         assert(success);
         if (success == false) {
-            nvParserErrorLog("s", "\nError Updating the h.264 PPS parameters\n");
+            nvParserErrorLog("\nError Updating the h.264 PPS parameters\n");
         }
     }
 

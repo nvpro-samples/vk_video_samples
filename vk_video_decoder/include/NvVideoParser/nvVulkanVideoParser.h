@@ -36,6 +36,8 @@
 #define NVPARSER_EXPORT
 #endif
 
+// The parser formats each message itself and calls the log function with the format "%s" and the
+// message.
 typedef void (*nvParserLogFuncType)(const char* format, ...);
 
 class VulkanVideoDecodeParser;

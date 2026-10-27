@@ -132,6 +132,7 @@ message(STATUS "vk-video-parser-trace: Configured")
 # and one in a sanitizer build fails on any report the sanitizer makes fatal. ParserCraftedCases
 # fails unless this list names exactly the cases the tool has.
 set(PARSER_CRAFTED_CASES
+    ParserLogForwarding
     ParserUnsupportedCodec
     H264CraftedStream
     H264PpsSliceGroupMapUnits

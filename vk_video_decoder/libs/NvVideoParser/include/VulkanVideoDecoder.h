@@ -203,8 +203,15 @@ protected:
     VkDeviceSize swapBitstreamBuffer(VkDeviceSize copyCurrBuffOffset, VkDeviceSize copyCurrBuffSize);
 };
 
-void nvParserLog(const char* format, ...);
-void nvParserVerboseLog(const char* format, ...);
-void nvParserErrorLog(const char* format, ...);
+#if defined(__GNUC__) || defined(__clang__)
+#define NV_PARSER_LOG_FORMAT __attribute__((format(printf, 1, 2)))
+#else
+#define NV_PARSER_LOG_FORMAT
+#endif
+
+// printf formats; the client's log function gets the formatted message.
+void nvParserLog(const char* format, ...) NV_PARSER_LOG_FORMAT;
+void nvParserVerboseLog(const char* format, ...) NV_PARSER_LOG_FORMAT;
+void nvParserErrorLog(const char* format, ...) NV_PARSER_LOG_FORMAT;
 
 #endif // _VULKANVIDEODECODER_H_

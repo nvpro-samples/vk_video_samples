@@ -660,6 +660,15 @@ void VulkanVideoDecoder::end_of_stream()
 static nvParserLogFuncType gParserLogFunc = nullptr;
 static int gLogLevel = 0;
 
+// The log function is variadic, and a va_list is not its arguments: the message is formatted here and
+// handed over as "%s" and the text.
+static void ParserLogV(const char* format, va_list args)
+{
+    char message[1024];
+    vsnprintf(message, sizeof(message), format, args);
+    gParserLogFunc("%s", message);
+}
+
 void nvParserErrorLog(const char* format, ...)
 {
     if (!gParserLogFunc) {
@@ -667,7 +676,7 @@ void nvParserErrorLog(const char* format, ...)
     }
     va_list argptr;
     va_start(argptr, format);
-    gParserLogFunc(format, argptr);
+    ParserLogV(format, argptr);
     va_end(argptr);
 }
 
@@ -678,7 +687,7 @@ void nvParserLog(const char* format, ...)
     }
     va_list argptr;
     va_start(argptr, format);
-    gParserLogFunc(format, argptr);
+    ParserLogV(format, argptr);
     va_end(argptr);
 }
 
@@ -689,7 +698,7 @@ void nvParserVerboseLog(const char* format, ...)
     }
     va_list argptr;
     va_start(argptr, format);
-    gParserLogFunc(format, argptr);
+    ParserLogV(format, argptr);
     va_end(argptr);
 }
 

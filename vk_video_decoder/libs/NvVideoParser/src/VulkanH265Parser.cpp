@@ -717,7 +717,7 @@ void VulkanH265Decoder::seq_parameter_set_rbsp()
         bool success = m_pClient->UpdatePictureParameters(picParamObj, sps->client);
         assert(success);
         if (success == false) {
-            nvParserErrorLog("s", "\nError Updating the h.265 SPS parameters\n");
+            nvParserErrorLog("\nError Updating the h.265 SPS parameters\n");
         }
     }
 
@@ -912,7 +912,7 @@ void VulkanH265Decoder::pic_parameter_set_rbsp()
         bool success = m_pClient->UpdatePictureParameters(picParamObj, pps->client);
         assert(success);
         if (success == false) {
-            nvParserErrorLog("s", "\nError Updating the h.265 PPS parameters\n");
+            nvParserErrorLog("\nError Updating the h.265 PPS parameters\n");
         }
     }
 
@@ -1104,7 +1104,7 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
         bool success = m_pClient->UpdatePictureParameters(picParamObj, vps->client);
         assert(success);
         if (success == false) {
-            nvParserErrorLog("s", "\nError Updating the h.265 VPS parameters\n");
+            nvParserErrorLog("\nError Updating the h.265 VPS parameters\n");
         }
     }
 

@@ -932,7 +932,7 @@ static void nvParserLog(const char* format, ...)
 {
     va_list argptr;
     va_start(argptr, format);
-    printf(format, argptr);
+    vprintf(format, argptr);
     va_end(argptr);
 }
 
