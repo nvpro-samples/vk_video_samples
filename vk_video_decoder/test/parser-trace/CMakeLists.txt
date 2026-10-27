@@ -150,6 +150,8 @@ set(PARSER_CRAFTED_CASES
     Av1CraftedSequenceHeader
     Av1UvlcTruncated
     Av1FilmGrainPointCount
+    Av1FrameBeforeSequenceHeader
+    Av1TileGroupWithoutFrameHeader
     Vp9CraftedKeyFrame
     Vp9PicturePoolExhausted
 )

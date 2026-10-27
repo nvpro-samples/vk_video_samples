@@ -38,6 +38,7 @@ VulkanAV1Decoder::VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std, bool an
     , spatial_id()
     , m_bSPSReceived()
     , m_bSPSChanged()
+    , m_bSeenFrameHeader()
     , m_obuAnnexB(annexB)
     , timing_info_present()
     , timing_info()
@@ -106,6 +107,7 @@ void VulkanAV1Decoder::InitParser()
     m_bNoStartCodes = true;
     m_bEmulBytesPresent = false;
     m_bSPSReceived = false;
+    m_bSeenFrameHeader = false;
     EndOfStream();
 }
 
@@ -610,6 +612,7 @@ bool VulkanAV1Decoder::ParseOBUHeaderAndSize(const uint8_t* data, uint32_t datas
 
 bool VulkanAV1Decoder::ParseObuTemporalDelimiter()
 {
+    m_bSeenFrameHeader = false;
     return true;
 }
 
@@ -2438,6 +2441,12 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
         case AV1_OBU_FRAME_HEADER:
         case AV1_OBU_FRAME:
         {
+            m_bSeenFrameHeader = false;
+            if (!m_bSPSReceived) {
+                // A frame header is parsed with the active sequence header (AV1 7.5): with none, the
+                // frame is dropped.
+                break;
+            }
 			memset(m_PicData.tileOffsets, 0, sizeof(m_PicData.tileOffsets));
 			m_PicData.khr_info.tileCount = 0;
 			memset(m_PicData.tileSizes, 0, sizeof(m_PicData.tileSizes));
@@ -2448,6 +2457,7 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
             }
 
             if (show_existing_frame) break;
+            m_bSeenFrameHeader = true;
             if (hdr.type != AV1_OBU_FRAME) {
                 rbsp_trailing_bits();
             }
@@ -2459,8 +2469,14 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
 
         case AV1_OBU_TILE_GROUP:
         {
+            if (!m_bSeenFrameHeader) {
+                // Tile groups follow their frame's header in its temporal unit (AV1 7.5): one that no
+                // frame header precedes is dropped.
+                break;
+            }
             if (ParseObuTileGroup(hdr)) {
 				// Last tile group for this frame
+                m_bSeenFrameHeader = false;
                 if (!end_of_picture(frameSizeBytes))
                     return false;
             }

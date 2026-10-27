@@ -776,6 +776,40 @@ const std::vector<CraftedCase>& Cases() {
              checks.Count("sps", 0);
              return checks.Failures();
          }},
+        // a key frame, then a tile group alone, before any sequence header, which frame headers and
+        // pictures are parsed with (AV1 7.5); then a sequence header and the key frame, which the
+        // parser takes.
+        {"Av1FrameBeforeSequenceHeader",
+         [](CaseContext& stream) {
+             std::vector<uint8_t> unit = Obu(2, {});  // OBU_TEMPORAL_DELIMITER
+             Append(unit, Av1KeyFrameObu(1));
+             stream.packets.push_back({unit, 0});
+             unit = Obu(2, {});
+             Append(unit, Obu(4, {0x55, 0xAA, 0x55, 0xAA}));  // OBU_TILE_GROUP: one tile, of filler
+             stream.packets.push_back({unit, 1});
+             unit = Av1SequenceHeaderUnit(0, true);
+             Append(unit, Av1KeyFrameObu(1));
+             stream.packets.push_back({unit, 2});
+             const Trace trace = Run(stream, "av1");
+             Checks checks(trace);
+             checks.Count("pic", 1);
+             return checks.Failures();
+         }},
+        // after a key frame, a temporal unit of a tile group alone, which no frame header of its
+        // temporal unit precedes (AV1 7.5).
+        {"Av1TileGroupWithoutFrameHeader",
+         [](CaseContext& stream) {
+             std::vector<uint8_t> unit = Av1SequenceHeaderUnit(0, true);
+             Append(unit, Av1KeyFrameObu(1));
+             stream.packets.push_back({unit, 0});
+             unit = Obu(2, {});
+             Append(unit, Obu(4, {0x55, 0xAA, 0x55, 0xAA}));
+             stream.packets.push_back({unit, 1});
+             const Trace trace = Run(stream, "av1");
+             Checks checks(trace);
+             checks.Count("pic", 1);
+             return checks.Failures();
+         }},
         // Proves the AV1 key frame builder, and the limit: 14 luma scaling points are the most
         // StdVideoAV1FilmGrain holds (STD_VIDEO_AV1_MAX_NUM_Y_POINTS), and 15 fit the 4-bit syntax
         // element.
