@@ -133,6 +133,7 @@ message(STATUS "vk-video-parser-trace: Configured")
 # fails unless this list names exactly the cases the tool has.
 set(PARSER_CRAFTED_CASES
     H264CraftedStream
+    H264PpsSliceGroupMapUnits
     H265CraftedStream
     H265VpsLayerSetCountWrap
     H265VpsLayerSetCountLimit

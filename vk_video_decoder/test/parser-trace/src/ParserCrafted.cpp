@@ -197,6 +197,21 @@ std::vector<uint8_t> H264PpsNal() {
     return AnnexBNal({0x68}, w.TrailingBits().Data());
 }
 
+// A PPS with two slice groups of slice_group_map_type 6, which codes a slice group for each of
+// picSizeInMapUnitsMinus1 + 1 map units; slice_group_id is written for the first idsWritten of them.
+std::vector<uint8_t> H264PpsExplicitSliceGroupsNal(uint64_t picSizeInMapUnitsMinus1, uint32_t idsWritten) {
+    BitWriter w;
+    w.Ue(0).Ue(0).Flag(false).Flag(false);      // pps id, sps id, entropy_coding_mode_flag, bottom_field_pic_order...
+    w.Ue(1).Ue(6).Ue(picSizeInMapUnitsMinus1);  // num_slice_groups_minus1, slice_group_map_type, map units
+    for (uint32_t i = 0; i < idsWritten; i++) {
+        w.U(1, i & 1);  // slice_group_id[i]
+    }
+    w.Ue(0).Ue(0).Flag(false).U(2, 0);     // num_ref_idx defaults, weighted_pred_flag, weighted_bipred_idc
+    w.Se(0).Se(0).Se(0);                   // pic_init_qp_minus26, pic_init_qs_minus26, chroma_qp_index_offset
+    w.Flag(true).Flag(false).Flag(false);  // deblocking control, constrained intra, redundant_pic_cnt
+    return AnnexBNal({0x68}, w.TrailingBits().Data());
+}
+
 // An IDR I slice of the whole picture; its slice data is filler the parser does not read.
 std::vector<uint8_t> H264IdrSliceNal(const H264Sps& sps) {
     BitWriter w;
@@ -380,6 +395,22 @@ const std::vector<CraftedCase>& Cases() {
              checks.Field("sps", "pic_width_in_mbs_minus1", "3");
              checks.Field("sps", "max_num_ref_frames", "1");
              checks.Field("  h264", "frame_num", "0");
+             return checks.Failures();
+         }},
+        // an explicit slice group map is coded for pic_size_in_map_units_minus1 + 1 map units,
+        // which the PPS reads with ue(); 0xFFFFFFFF never ends the loop over them. The SPS's picture
+        // has 16 map units, so 15 is the value 7.4.2.2 requires.
+        {"H264PpsSliceGroupMapUnits",
+         [](CaseContext& stream) {
+             const H264Sps sps;
+             Append(stream.byteStream, H264SpsNal(sps));
+             Append(stream.byteStream, H264PpsExplicitSliceGroupsNal(0xFFFFFFFFu, 0));
+             Append(stream.byteStream, H264PpsExplicitSliceGroupsNal(16, 17));
+             Append(stream.byteStream, H264PpsExplicitSliceGroupsNal(15, 16));
+             const Trace trace = Run(stream, "h264");
+             Checks checks(trace);
+             checks.Count("sps", 1);
+             checks.Count("pps", 1);
              return checks.Failures();
          }},
         // Proves the H.265 builders: one VPS, SPS and PPS and an IDR picture that the parser takes.

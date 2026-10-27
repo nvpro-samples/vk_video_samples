@@ -2100,6 +2100,17 @@ bool VulkanH264Decoder::pic_parameter_set_rbsp()
         else if (slcgrp->slice_group_map_type == 6)
         {
             uint32_t pic_size_in_map_units_minus1 = ue();
+            // PicSizeInMapUnits - 1 (7.4.2.2). The loop below reads a slice group for each map unit,
+            // so the count is held to the SPS's picture, or with no SPS yet to the largest frame of any
+            // level (MaxFS 139264, Table A-1): a ue() of 0xFFFFFFFF would never end it.
+            const seq_parameter_set_s* sps = m_spss[sps_id].get();
+            const uint32_t max_map_units = (sps != nullptr) ?
+                (sps->pic_width_in_mbs_minus1 + 1) * (sps->pic_height_in_map_units_minus1 + 1) : 139264;
+            if (pic_size_in_map_units_minus1 >= max_map_units)
+            {
+                nvParserLog("Invalid pic_size_in_map_units_minus1 in PPS (%u)\n", pic_size_in_map_units_minus1);
+                return false;
+            }
 
             uint32_t v = 0;
             for (v = 0; pps->num_slice_groups_minus1 >= (1 << v); v++);
