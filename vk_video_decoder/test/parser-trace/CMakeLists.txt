@@ -19,6 +19,9 @@ project(vk-video-parser-trace LANGUAGES CXX)
 # shared library, which is what lets the tests carry the device-free label.
 add_executable(${PROJECT_NAME} src/ParserTrace.cpp src/StreamInput.cpp src/TraceClient.cpp)
 add_executable(vk-video-parser-crafted src/ParserCrafted.cpp src/TraceClient.cpp)
+# The parser fuzz target without libFuzzer: it runs fuzz inputs from files, and the seed inputs it
+# derives from streams, with any compiler.
+add_executable(vk-video-parser-fuzz-replay src/ParserFuzz.cpp src/StreamInput.cpp src/TraceClient.cpp)
 # The decoder sample's parser adapter, compiled in: it makes no Vulkan call, so it runs with no
 # loader and no device as the parser does.
 add_executable(vk-video-adapter-trace src/AdapterTrace.cpp src/StreamInput.cpp src/TraceClient.cpp
@@ -26,7 +29,24 @@ add_executable(vk-video-adapter-trace src/AdapterTrace.cpp src/StreamInput.cpp s
 target_compile_definitions(vk-video-adapter-trace PRIVATE VK_NO_PROTOTYPES)
 target_include_directories(vk-video-adapter-trace PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE})
 
-foreach(tool ${PROJECT_NAME} vk-video-parser-crafted vk-video-adapter-trace)
+# The libFuzzer targets fuzz_parser_<codec>, for clang. Configure the build so its flags instrument
+# the parser for the fuzzer and the sanitizers, without assertions, which stop at the parser's
+# asserts on bitstream content (README.md, Fuzzing):
+#   CC=clang CXX=clang++ cmake -DBUILD_FUZZERS=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+#       -DCMAKE_C_FLAGS="-fsanitize=fuzzer-no-link,address,undefined" \
+#       -DCMAKE_CXX_FLAGS="-fsanitize=fuzzer-no-link,address,undefined" ...
+option(BUILD_FUZZERS "Build the libFuzzer parser targets fuzz_parser_<codec> (clang)" OFF)
+set(PARSER_FUZZ_TARGETS)
+if(BUILD_FUZZERS)
+    foreach(codec h264 h265 av1 vp9)
+        add_executable(fuzz_parser_${codec} src/ParserFuzz.cpp src/StreamInput.cpp src/TraceClient.cpp)
+        target_compile_definitions(fuzz_parser_${codec} PRIVATE PARSER_FUZZ_CODEC="${codec}")
+        target_link_options(fuzz_parser_${codec} PRIVATE -fsanitize=fuzzer)
+        list(APPEND PARSER_FUZZ_TARGETS fuzz_parser_${codec})
+    endforeach()
+endif()
+
+foreach(tool ${PROJECT_NAME} vk-video-parser-crafted vk-video-adapter-trace vk-video-parser-fuzz-replay ${PARSER_FUZZ_TARGETS})
     target_include_directories(${tool} PRIVATE
         ${VULKAN_VIDEO_PARSER_INCLUDE}/..
         ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}
@@ -35,7 +55,7 @@ foreach(tool ${PROJECT_NAME} vk-video-parser-crafted vk-video-adapter-trace)
     target_link_libraries(${tool} PRIVATE ${VULKAN_VIDEO_PARSER_STATIC_LIB})
 endforeach()
 
-install(TARGETS ${PROJECT_NAME} vk-video-parser-crafted vk-video-adapter-trace RUNTIME DESTINATION bin)
+install(TARGETS ${PROJECT_NAME} vk-video-parser-crafted vk-video-adapter-trace vk-video-parser-fuzz-replay RUNTIME DESTINATION bin)
 
 # WHAT THIS GATES. Every stream in suites/<codec>.json that is available runs through the parser,
 # and these checks apply:
@@ -78,6 +98,31 @@ foreach(codec Av1 H264 H265 Vp9)
                      --tool $<TARGET_FILE:vk-video-adapter-trace>
                      --suite ${CMAKE_CURRENT_SOURCE_DIR}/suites/${suite}.json)
     set_tests_properties(AdapterTrace${codec} PROPERTIES LABELS "device-free")
+endforeach()
+
+# The fuzz replay: each codec's committed streams, cut into packets in every mode of the fuzz
+# input, and the inputs under fuzz/regressions/<codec>, through the fuzz target. A pass is a run
+# that neither crashes nor hangs; in a sanitizer build (scripts/run_ctest_sanitizers.sh), one the
+# sanitizers report nothing in.
+foreach(codec Av1 H264 H265 Vp9)
+    string(TOLOWER ${codec} name)
+    if((name STREQUAL "h264") OR (name STREQUAL "h265"))
+        set(format bytestream)
+        set(extension ${name})
+    else()
+        set(format ivf)
+        set(extension ivf)
+    endif()
+    file(GLOB fuzz_streams CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/streams/${name}-*.${extension})
+    file(GLOB fuzz_regressions CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/fuzz/regressions/${name}/*)
+    set(fuzz_args)
+    foreach(stream ${fuzz_streams})
+        list(APPEND fuzz_args -i ${stream})
+    endforeach()
+    add_test(NAME ParserFuzzReplay${codec}
+             COMMAND $<TARGET_FILE:vk-video-parser-fuzz-replay> --codec ${name} --format ${format} ${fuzz_args}
+                     ${fuzz_regressions})
+    set_tests_properties(ParserFuzzReplay${codec} PROPERTIES LABELS "device-free" TIMEOUT 60)
 endforeach()
 
 message(STATUS "vk-video-parser-trace: Configured")

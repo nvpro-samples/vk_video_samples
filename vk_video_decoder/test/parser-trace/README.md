@@ -1,4 +1,4 @@
-# Parser trace test and adapter slot trace
+# Parser trace test, adapter slot trace and parser fuzzing
 
 `vk-video-parser-trace` runs NvVideoParser over an H.264, H.265, AV1 or VP9 stream with no Vulkan
 device, and writes a canonical text trace of every callback the parser makes:
@@ -37,6 +37,12 @@ specification. The CTests `AdapterTraceAv1`, `AdapterTraceH264`, `AdapterTraceH2
 `AdapterTraceVp9` (label `device-free`) run the suites in adapter mode; see
 [The adapter slot trace](#the-adapter-slot-trace).
 
+`fuzz_parser_h264`, `fuzz_parser_h265`, `fuzz_parser_av1` and `fuzz_parser_vp9` are libFuzzer
+targets for the parser, and `vk-video-parser-fuzz-replay` runs the same target over inputs from
+files. The CTests `ParserFuzzReplayAv1`, `ParserFuzzReplayH264`, `ParserFuzzReplayH265` and
+`ParserFuzzReplayVp9` (label `device-free`) replay the committed streams cut into packets every way
+the target cuts them, and the inputs that found defects; see [Fuzzing](#fuzzing).
+
 Nothing is decoded. A green run says what the parser hands a client, not that a driver decodes it
 correctly.
 
@@ -49,6 +55,7 @@ correctly.
 | `src/StreamInput.h`, `src/StreamInput.cpp` | the stream readers both trace tools use: IVF, AV1 low-overhead OBU and Annex B |
 | `src/TraceClient.h`, `src/TraceClient.cpp` | what the tools share: the recording client with its picture pool, the host-memory bitstream buffer, the trace lines, the parser setup and the packet feeds |
 | `src/ParserCrafted.cpp` | the crafted-case tool: the stream builders and the cases |
+| `src/ParserFuzz.cpp` | the parser fuzz target, and without libFuzzer the replay tool |
 | `src/BitWriter.h` | the bit writer the builders use: `u(n)`, `ue(v)`, `se(v)`, `uvlc()`, trailing bits, Annex B NAL units with emulation prevention, AV1 OBUs |
 | `scripts/av1_reference_model.py` | the AV1 model and the comparison |
 | `scripts/h264_header_model.py`, `h265_header_model.py`, `vp9_header_model.py` | the H.264, H.265 and VP9 models |
@@ -62,6 +69,7 @@ correctly.
 | `golden/*.trace` | the committed streams' recorded parser traces |
 | `golden/adapter/*.trace` | the committed streams' recorded adapter traces |
 | `golden/md5/*.md5` | the trace md5 of every stream of an outside set, one `<md5>  <path>` line each; `adapter-*.md5` for the adapter traces |
+| `fuzz/regressions/<codec>/` | fuzz inputs that found a defect, each added with the defect's fix |
 
 The parser is linked from its static archive, so the tool needs no Vulkan loader and no device.
 
@@ -266,6 +274,61 @@ reports the fields as written.
 A case for a parser defect builds the malformed or edge-case stream that reaches the defect, and lands
 with its fix. To add one, add it to `Cases()` in `src/ParserCrafted.cpp` and its name to
 `PARSER_CRAFTED_CASES` in `CMakeLists.txt`; `ParserCraftedCases` fails while the two lists differ.
+
+## Fuzzing
+
+`src/ParserFuzz.cpp` gives NvVideoParser an input the fuzzer chooses, through the recording client,
+so the parser makes every call it makes for a decoder. An input is a mode byte, a 32-bit
+little-endian seed and the payload:
+
+| Mode byte | How the payload reaches the parser |
+|---|---|
+| `& 3` is 0 | a byte stream, as `--format bytestream` gives it: the rest of it on each call, with partial parsing |
+| `& 3` is 1 | chunks of 1 to 4096 bytes, one call each; the seed draws the sizes |
+| `& 3` is 2 or 3 | packets, each a 32-bit little-endian size and its bytes; a size past the end takes the rest |
+| `& 4` | each packet ends a picture (`bEOP`) |
+| `& 8` | each packet carries a timestamp |
+
+An end-of-stream packet follows. The source builds two ways:
+
+- `vk-video-parser-fuzz-replay`, with any compiler, runs inputs from files and directories, and the
+  seed inputs it derives from streams: a byte stream whole and in chunks of three seeds, with and
+  without `bEOP`; a container's packets, with each flag. `--write-seeds <dir>` writes the seed
+  inputs, a fuzzer's starting corpus. The `ParserFuzzReplay<codec>` CTests (60 s timeout) run it
+  over the committed streams and `fuzz/regressions/<codec>/`. A pass is a run that neither crashes
+  nor hangs, and in a sanitizer build one the sanitizers report nothing in.
+- `fuzz_parser_<codec>`, the libFuzzer targets, with clang and `-DBUILD_FUZZERS=ON`.
+
+```bash
+CC=clang CXX=clang++ cmake -B build-fuzz -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_FUZZERS=ON \
+    -DBUILD_DECODER=OFF -DBUILD_ENCODER=OFF -DBUILD_DEMOS=OFF \
+    -DCMAKE_C_FLAGS="-fsanitize=fuzzer-no-link,address,undefined -fno-omit-frame-pointer -g" \
+    -DCMAKE_CXX_FLAGS="-fsanitize=fuzzer-no-link,address,undefined -fno-omit-frame-pointer -g" \
+    -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+cmake --build build-fuzz --target fuzz_parser_h265 vk-video-parser-fuzz-replay
+build-fuzz/bin/vk-video-parser-fuzz-replay --codec h265 --format bytestream $(printf -- '-i %s ' streams/h265-*.h265) \
+    --write-seeds seeds
+mkdir -p corpus findings
+build-fuzz/bin/fuzz_parser_h265 -fork=4 -ignore_crashes=1 -max_total_time=3600 -max_len=100000 -timeout=10 \
+    -artifact_prefix=findings/ corpus seeds
+build-fuzz/bin/vk-video-parser-fuzz-replay --codec h265 findings/crash-<sha1>    # one finding again
+```
+
+- A build with assertions stops at the parser's asserts on bitstream content, so the fuzzer
+  reaches nothing past them; `RelWithDebInfo` has none.
+- UBSan reports do not stop such a build; `UBSAN_OPTIONS=halt_on_error=1` makes each one a finding.
+- The clang 15 ASan runtime faults at process start, at random, where the kernel randomizes mmap
+  with 32 bits (`vm.mmap_rnd_bits` 32, the Ubuntu 24.04 kernel's default). Run the fuzzer under
+  `setarch $(uname -m) -R`, which turns address randomization off for it and the processes it
+  forks.
+
+An input that finds a defect lands with the defect's fix, minimized (`-minimize_crash=1
+-runs=10000`), in `fuzz/regressions/<codec>/`, where the replay test keeps it.
+
+The CI sanitizer job builds the tree in Debug with `-fsanitize=address,undefined
+-fno-sanitize-recover=all` and runs the `device-free` tests with `scripts/run_ctest_sanitizers.sh`,
+so any sanitizer report fails its test. The script lists the tests that a known defect fails, each
+with the defect: those must go on failing, and each fix removes its entry.
 
 ## Recording
 
