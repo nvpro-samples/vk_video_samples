@@ -570,6 +570,13 @@ python3 vvs_test_runner.py --export-json results.json
 - **CRASH** - Application crashed (exit code ±6, SIGABRT)
 - **ERROR** - Other failure conditions
 
+### The Run's Verdict
+
+The runner exits 0 when no test failed or crashed and at least one passed. A run in which
+nothing passed, every cell not supported or skipped, verified nothing and exits 1, unless
+`--allow-no-pass` is given: the CI job passes it on its runner, which has no Vulkan Video
+device.
+
 ### Test Naming Convention
 
 Tests are automatically prefixed with their type for display:

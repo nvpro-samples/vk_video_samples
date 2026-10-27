@@ -111,9 +111,13 @@ jobs:
         run: |
           OUT=tests/resources/video/negative bash ./scripts/gen_negative_test_content.sh
 
+      # This runner has no Vulkan Video device, so every cell is not supported
+      # and nothing can pass: the step proves that the framework runs, builds
+      # its commands and classifies the results. A run in which nothing passed
+      # fails unless --allow-no-pass says so; on a GPU runner, drop it.
       - name: Run codec test framework
         run: |
-          python3 ./tests/vvs_test_runner.py
+          python3 ./tests/vvs_test_runner.py --allow-no-pass
 
   sanitizers:
     name: Sanitizers
