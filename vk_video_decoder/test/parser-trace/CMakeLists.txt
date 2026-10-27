@@ -140,6 +140,7 @@ set(PARSER_CRAFTED_CASES
     H265VpsExtensionLayerSetIndex
     Av1CraftedSequenceHeader
     Av1UvlcTruncated
+    Av1FilmGrainPointCount
     Vp9CraftedKeyFrame
 )
 foreach(crafted ${PARSER_CRAFTED_CASES})

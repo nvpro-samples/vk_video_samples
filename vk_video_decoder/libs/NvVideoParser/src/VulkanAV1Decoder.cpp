@@ -1065,9 +1065,11 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
         }
 
         // Scaling functions parameters
+        // num_y_points, num_cb_points and num_cr_points are 4-bit syntax elements, and
+        // StdVideoAV1FilmGrain holds 14, 10 and 10 points (AV1 6.8.20 limits them to the same).
         pFilmGrain->num_y_points = u(4);
         if (pFilmGrain->num_y_points > STD_VIDEO_AV1_MAX_NUM_Y_POINTS) {
-            assert("num_y_points exceeds the maximum value\n");
+            return false;
         }
 
         for (uint32_t i = 0; i < pFilmGrain->num_y_points; i++) {
@@ -1086,8 +1088,8 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
             pFilmGrain->num_cr_points = 0;
         } else {
             pFilmGrain->num_cb_points = u(4);
-            if (pFilmGrain->num_cb_points > STD_VIDEO_AV1_MAX_NUM_CR_POINTS) {
-                assert(!"num_cb_points exceeds the maximum value\n");
+            if (pFilmGrain->num_cb_points > STD_VIDEO_AV1_MAX_NUM_CB_POINTS) {
+                return false;
             }
 
             for (uint32_t i = 0; i < pFilmGrain->num_cb_points; i++) {
@@ -1100,7 +1102,7 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
 
             pFilmGrain->num_cr_points = u(4);
             if (pFilmGrain->num_cr_points > STD_VIDEO_AV1_MAX_NUM_CR_POINTS) {
-                assert(!"num_cr_points exceeds the maximum value\n");
+                return false;
             }
 
             for (uint32_t i = 0; i < pFilmGrain->num_cr_points; i++) {
@@ -2291,9 +2293,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
         DecodeGlobalMotionParams();
     }
 
-    ReadFilmGrainParams();
-
-    return true;
+    return ReadFilmGrainParams();
 }
 
 
@@ -2442,7 +2442,10 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
 			m_PicData.khr_info.tileCount = 0;
 			memset(m_PicData.tileSizes, 0, sizeof(m_PicData.tileSizes));
 
-            ParseObuFrameHeader();
+            if (!ParseObuFrameHeader()) {
+                // A frame header the parser refuses drops its temporal unit.
+                return false;
+            }
 
             if (show_existing_frame) break;
             if (hdr.type != AV1_OBU_FRAME) {

@@ -323,7 +323,7 @@ std::vector<uint8_t> H265IdrSliceNal() {
 
 // A temporal delimiter and a sequence header for 64x64 Main 8-bit 4:2:0 with timing info; the
 // timing info ends with numTicksPerPictureMinus1 as uvlc().
-std::vector<uint8_t> Av1SequenceHeaderUnit(uint64_t numTicksPerPictureMinus1) {
+std::vector<uint8_t> Av1SequenceHeaderUnit(uint64_t numTicksPerPictureMinus1, bool filmGrain = false) {
     BitWriter w;
     w.U(3, 0).Flag(false).Flag(false).Flag(true);                    // seq_profile, still_picture, reduced header, timing info
     w.U(32, 1).U(32, 30).Flag(true).Uvlc(numTicksPerPictureMinus1);  // timing_info(), equal_picture_interval
@@ -335,10 +335,33 @@ std::vector<uint8_t> Av1SequenceHeaderUnit(uint64_t numTicksPerPictureMinus1) {
     w.Flag(true).Flag(true).U(3, 6);                                 // screen content and integer mv SELECT, order_hint_bits 7
     w.Flag(false).Flag(false).Flag(false);                           // superres, CDEF, restoration
     w.Flag(false).Flag(false).Flag(false).Flag(false);               // color_config: 8-bit, not mono, no description, limited
-    w.U(2, 0).Flag(false).Flag(false);                               // chroma_sample_position, separate_uv_delta_q, film grain
+    w.U(2, 0).Flag(false).Flag(filmGrain);                           // chroma_sample_position, separate_uv_delta_q, film grain
     std::vector<uint8_t> unit = Obu(2, {});                          // OBU_TEMPORAL_DELIMITER
     Append(unit, Obu(1, w.TrailingBits().Data()));                   // OBU_SEQUENCE_HEADER
     return unit;
+}
+
+// A shown 64x64 key frame for the sequence header of Av1SequenceHeaderUnit with film grain, as an
+// OBU_FRAME of one tile, whose data is filler. Its film grain has numYPoints luma scaling points.
+std::vector<uint8_t> Av1KeyFrameObu(uint32_t numYPoints) {
+    BitWriter w;
+    w.Flag(false).U(2, 0).Flag(true);   // show_existing_frame, KEY_FRAME, show_frame
+    w.Flag(false).Flag(false);          // disable_cdf_update, allow_screen_content_tools
+    w.Flag(false).U(7, 0).Flag(false);  // frame_size_override_flag, order_hint, render_and_frame_size_different
+    w.Flag(true).Flag(true);            // disable_frame_end_update_cdf, uniform_tile_spacing_flag
+    w.U(8, 60).Flag(false).Flag(false).Flag(false).Flag(false);  // base_q_idx, no delta_q, no qmatrix
+    w.Flag(false).Flag(false);                                   // segmentation_enabled, delta_q_present
+    w.U(6, 0).U(6, 0).U(3, 0).Flag(false);                       // loop filter levels, sharpness, deltas
+    w.Flag(false).Flag(false);                                   // tx_mode_select, reduced_tx_set
+    w.Flag(true).U(16, 1234).U(4, numYPoints);                   // film_grain_params(): apply_grain, grain_seed, num_y_points
+    for (uint32_t i = 0; i < numYPoints; i++) {
+        w.U(8, 16 * i).U(8, 64);  // point_y_value, increasing; point_y_scaling
+    }
+    w.Flag(false).U(4, 0).U(4, 0);      // chroma_scaling_from_luma, num_cb_points, num_cr_points
+    w.U(2, 0).U(2, 0).U(2, 0).U(2, 0);  // grain_scaling_minus_8, ar_coeff_lag, ar_coeff_shift_minus_6, grain_scale_shift
+    w.Flag(false).Flag(false);          // overlap_flag, clip_to_restricted_range
+    w.AlignZero().Bytes({0x55, 0xAA, 0x55, 0xAA});  // byte_alignment(), the tile
+    return Obu(6, w.Data());                        // OBU_FRAME
 }
 
 // A temporal delimiter and a sequence header whose timing info ends after equal_picture_interval in
@@ -492,6 +515,23 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "av1");
              Checks checks(trace);
              checks.Count("sps", 0);
+             return checks.Failures();
+         }},
+        // Proves the AV1 key frame builder, and the limit: 14 luma scaling points are the most
+        // StdVideoAV1FilmGrain holds (STD_VIDEO_AV1_MAX_NUM_Y_POINTS), and 15 fit the 4-bit syntax
+        // element.
+        {"Av1FilmGrainPointCount",
+         [](CaseContext& stream) {
+             std::vector<uint8_t> unit = Av1SequenceHeaderUnit(0, true);
+             Append(unit, Av1KeyFrameObu(14));
+             stream.packets.push_back({unit, 0});
+             unit = Obu(2, {});
+             Append(unit, Av1KeyFrameObu(15));
+             stream.packets.push_back({unit, 1});
+             const Trace trace = Run(stream, "av1");
+             Checks checks(trace);
+             checks.Count("pic", 1);
+             checks.Field("  fg", "num_y_points", "14");
              return checks.Failures();
          }},
         // Proves the VP9 key frame builder.
