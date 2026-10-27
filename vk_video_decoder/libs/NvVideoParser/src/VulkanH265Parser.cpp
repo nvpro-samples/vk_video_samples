@@ -326,7 +326,9 @@ int32_t VulkanH265Decoder::ParseNalUnit()
                         NoRaslOutputFlag = (nal_unit_type <= NUT_IDR_N_LP); // BLA or IDR
                     }
 
-                    StdVideoH265SequenceParameterSet* p_active_sps(*m_active_sps[m_nuh_layer_id]);
+                    // The layer has no active SPS before its first slice: the pointer is read, not dereferenced,
+                    // until the check below has seen it.
+                    const hevc_seq_param_s* const p_active_sps = m_active_sps[m_nuh_layer_id].get();
                     if (!m_active_sps[m_nuh_layer_id] ||
                         (sps->pic_width_in_luma_samples != p_active_sps->pic_width_in_luma_samples) ||
                         (sps->pic_height_in_luma_samples != p_active_sps->pic_height_in_luma_samples) ||
@@ -2746,7 +2748,7 @@ void VulkanH265Decoder::dpb_picture_start(VkSharedBaseObj<hevc_pic_param_s>& pps
     m_NumDeltaPocsOfRefRpsIdx = 0;
     if (slh->strps.inter_ref_pic_set_prediction_flag && m_active_sps[m_nuh_layer_id])
     {
-        StdVideoH265SequenceParameterSet* p_active_sps(*m_active_sps[m_nuh_layer_id]);
+        const hevc_seq_param_s* const p_active_sps = m_active_sps[m_nuh_layer_id].get();
         int RIdx = p_active_sps->num_short_term_ref_pic_sets - (slh->strps.delta_idx_minus1 + 1);
         if (RIdx >= 0) {
             m_NumDeltaPocsOfRefRpsIdx = m_active_sps[m_nuh_layer_id]->strpss[RIdx].NumNegativePics +

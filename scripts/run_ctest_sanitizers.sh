@@ -24,11 +24,6 @@ BUILD_DIR="${1:-BUILD-SAN}"
 
 # test name|the defect that fails it
 KNOWN=(
-    "ParserTraceH265|the H.265 parser dereferences an empty SPS pointer on the first slice"
-    "AdapterTraceH265|the H.265 parser reads an empty SPS pointer on the first slice"
-    "ParserFuzzReplayH265|the H.265 parser reads an empty SPS pointer on the first slice"
-    "ParserCrafted.H265CraftedStream|the H.265 parser reads an empty SPS pointer on the first slice"
-    "ParserCrafted.H265RefPicSetCurrBefore9|the H.265 parser reads an empty SPS pointer on the first slice"
     "EncoderExtInputFormatTaxonomy|VkVideoEncoderColorModel has no _MAX_ENUM entry, so the value 7 the test passes is outside the enumeration's range"
     "EncoderExtColorModelRegistrationGate|VkVideoEncoderColorModel has no _MAX_ENUM entry"
 )
