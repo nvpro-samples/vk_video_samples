@@ -1589,6 +1589,11 @@ int32_t VulkanH264Decoder::seq_parameter_set_rbsp(SpsNalUnitTarget spsNalUnitTar
         sps->flags.delta_pic_order_always_zero_flag = u(1);
         sps->offset_for_non_ref_pic = se();
         sps->offset_for_top_to_bottom_field = se();
+        // se(v) codes -2^31 + 1 to 2^31 - 1 (7.4.2.1.1); -2^31 comes only from a code past 32 bits.
+        if ((sps->offset_for_non_ref_pic == INT32_MIN) || (sps->offset_for_top_to_bottom_field == INT32_MIN)) {
+            nvParserLog("Invalid picture order count offset in SPS\n");
+            return -1;
+        }
         uint32_t num_ref_frames_in_pic_order_cnt_cycle = ue();
         if (num_ref_frames_in_pic_order_cnt_cycle > 255) {
             nvParserLog("Invalid num_ref_frames_in_pic_order_cnt_cycle value in SPS (%d)\n", sps->num_ref_frames_in_pic_order_cnt_cycle);
@@ -1598,6 +1603,10 @@ int32_t VulkanH264Decoder::seq_parameter_set_rbsp(SpsNalUnitTarget spsNalUnitTar
 
         for (int i = 0; i < sps->num_ref_frames_in_pic_order_cnt_cycle; i++) {
             sps->offset_for_ref_frame[i] = se();
+            if (sps->offset_for_ref_frame[i] == INT32_MIN) {
+                nvParserLog("Invalid offset_for_ref_frame in SPS\n");
+                return -1;
+            }
         }
     }
     sps->max_num_ref_frames = ue();
@@ -2322,6 +2331,13 @@ bool VulkanH264Decoder::slice_header(slice_header_s *slh, int nal_ref_idc, int n
         slh->delta_pic_order_cnt[0] = se();
         if (pps->flags.bottom_field_pic_order_in_frame_present_flag && !slh->field_pic_flag)
             slh->delta_pic_order_cnt[1] = se();
+    }
+    // se(v) codes -2^31 + 1 to 2^31 - 1 (7.4.3); -2^31 comes only from a code past 32 bits.
+    if ((slh->delta_pic_order_cnt_bottom == INT32_MIN) ||
+        (slh->delta_pic_order_cnt[0] == INT32_MIN) || (slh->delta_pic_order_cnt[1] == INT32_MIN))
+    {
+        nvParserLog("Invalid delta_pic_order_cnt in slice header\n");
+        return false;
     }
     if (pps->flags.redundant_pic_cnt_present_flag)
     {
@@ -3202,6 +3218,30 @@ void VulkanH264Decoder::dpb_picture_end()
 
 
 // 8.2.1
+// 8.2.1 requires the order counts, and the PicOrderCntMsb and FrameNumOffset they come from, to fit in
+// 32 bits. They are derived in 64 bits, and a value that a stream which is not conforming takes past 32
+// bits is held at the nearest 32-bit value, so that it stays defined.
+static int32_t OrderCnt32(int64_t value)
+{
+    if ((value < INT32_MIN) || (value > INT32_MAX)) {
+        nvParserLog("Picture order count past 32 bits (%lld)\n", (long long)value);
+    }
+    return (int32_t)std::max<int64_t>(INT32_MIN, std::min<int64_t>(INT32_MAX, value));
+}
+
+// picOrderCntCycleCnt * expectedDeltaPerPicOrderCntCycle (8-10), held at +-2^40 where it is larger: the
+// 64-bit product of a count up to 2^33 and a delta up to 2^39 can overflow, and past 2^40 the order
+// count it is part of is past 32 bits whatever offsets are added to it.
+static int64_t OrderCntCycleProduct(int64_t picOrderCntCycleCnt, int64_t expectedDeltaPerPicOrderCntCycle)
+{
+    const int64_t limit = (int64_t)1 << 40;
+    const int64_t delta = expectedDeltaPerPicOrderCntCycle;
+    if ((picOrderCntCycleCnt > 0) && (((delta < 0) ? -delta : delta) > limit / picOrderCntCycleCnt)) {
+        return (delta < 0) ? -limit : limit;
+    }
+    return picOrderCntCycleCnt * delta;
+}
+
 void VulkanH264Decoder::picture_order_count(const seq_parameter_set_s *sps, const slice_header_s *slh)
 {
     switch(sps->pic_order_cnt_type)
@@ -3240,22 +3280,22 @@ void VulkanH264Decoder::picture_order_count_type_0(const seq_parameter_set_s *sp
     int MaxPicOrderCntLsb = 1 << (sps->log2_max_pic_order_cnt_lsb_minus4 + 4); // (7-2)
 
     // (8-3)
-    int PicOrderCntMsb = 0;
+    int64_t PicOrderCntMsb = 0;
     if ((slh->pic_order_cnt_lsb < prevPicOrderCntLsb) && ((prevPicOrderCntLsb - slh->pic_order_cnt_lsb) >= (MaxPicOrderCntLsb / 2)))
-        PicOrderCntMsb = prevPicOrderCntMsb + MaxPicOrderCntLsb;
+        PicOrderCntMsb = (int64_t)prevPicOrderCntMsb + MaxPicOrderCntLsb;
     else if ((slh->pic_order_cnt_lsb > prevPicOrderCntLsb) && ((slh->pic_order_cnt_lsb - prevPicOrderCntLsb) > (MaxPicOrderCntLsb / 2)))
-        PicOrderCntMsb = prevPicOrderCntMsb - MaxPicOrderCntLsb;
+        PicOrderCntMsb = (int64_t)prevPicOrderCntMsb - MaxPicOrderCntLsb;
     else
         PicOrderCntMsb = prevPicOrderCntMsb;
 
     // (8-4)
     if (!slh->field_pic_flag || !slh->bottom_field_flag)
-        cur->TopFieldOrderCnt = PicOrderCntMsb + slh->pic_order_cnt_lsb;
+        cur->TopFieldOrderCnt = OrderCnt32(PicOrderCntMsb + slh->pic_order_cnt_lsb);
     // (8-5)
     if (!slh->field_pic_flag)
-        cur->BottomFieldOrderCnt = cur->TopFieldOrderCnt + slh->delta_pic_order_cnt_bottom;
+        cur->BottomFieldOrderCnt = OrderCnt32((int64_t)cur->TopFieldOrderCnt + slh->delta_pic_order_cnt_bottom);
     else if (slh->bottom_field_flag)
-        cur->BottomFieldOrderCnt = PicOrderCntMsb + slh->pic_order_cnt_lsb;
+        cur->BottomFieldOrderCnt = OrderCnt32(PicOrderCntMsb + slh->pic_order_cnt_lsb);
 
     if (slh->mmco5)
     {
@@ -3264,7 +3304,7 @@ void VulkanH264Decoder::picture_order_count_type_0(const seq_parameter_set_s *sp
         {
             // set to TopFieldOrderCount after having been reset by mmco 5
             int tempPicOrderCnt = Min(cur->TopFieldOrderCnt, cur->BottomFieldOrderCnt);
-            prevPicOrderCntLsb = cur->TopFieldOrderCnt - tempPicOrderCnt;
+            prevPicOrderCntLsb = OrderCnt32((int64_t)cur->TopFieldOrderCnt - tempPicOrderCnt);
         }
         else
         {
@@ -3275,7 +3315,7 @@ void VulkanH264Decoder::picture_order_count_type_0(const seq_parameter_set_s *sp
     }
     else if (slh->nal_ref_idc != 0) // reference picture
     {
-        prevPicOrderCntMsb = PicOrderCntMsb;
+        prevPicOrderCntMsb = OrderCnt32(PicOrderCntMsb);
         prevPicOrderCntLsb = slh->pic_order_cnt_lsb;
     }
 }
@@ -3283,8 +3323,9 @@ void VulkanH264Decoder::picture_order_count_type_0(const seq_parameter_set_s *sp
 // 8.2.1.2
 void VulkanH264Decoder::picture_order_count_type_1(const seq_parameter_set_s *sps, const slice_header_s *slh)
 {
-    int MaxFrameNum, FrameNumOffset, absFrameNum;
-    int expectedPicOrderCnt;
+    int MaxFrameNum;
+    int64_t FrameNumOffset, absFrameNum;
+    int64_t expectedPicOrderCnt;
     int i;
 
     MaxFrameNum = 1 << (sps->log2_max_frame_num_minus4 + 4); // (7-1)
@@ -3293,7 +3334,7 @@ void VulkanH264Decoder::picture_order_count_type_1(const seq_parameter_set_s *sp
     if (slh->IdrPicFlag) // (slh->nal_unit_type == 5)
         FrameNumOffset = 0;
     else if (prevFrameNum > slh->frame_num)
-        FrameNumOffset = prevFrameNumOffset + MaxFrameNum;
+        FrameNumOffset = OrderCnt32((int64_t)prevFrameNumOffset + MaxFrameNum);
     else
         FrameNumOffset = prevFrameNumOffset;
 
@@ -3308,15 +3349,15 @@ void VulkanH264Decoder::picture_order_count_type_1(const seq_parameter_set_s *sp
     // picOrderCntCycleCnt, frameNumInPicOrderCntCycle (8-8)
     if (absFrameNum > 0)
     {
-        int picOrderCntCycleCnt = (absFrameNum - 1) / sps->num_ref_frames_in_pic_order_cnt_cycle;
-        int frameNumInPicOrderCntCycle = (absFrameNum - 1) % sps->num_ref_frames_in_pic_order_cnt_cycle;
+        int64_t picOrderCntCycleCnt = (absFrameNum - 1) / sps->num_ref_frames_in_pic_order_cnt_cycle;
+        int64_t frameNumInPicOrderCntCycle = (absFrameNum - 1) % sps->num_ref_frames_in_pic_order_cnt_cycle;
         // expectedDeltaPerPicOrderCntCycle (8-9)
-        int expectedDeltaPerPicOrderCntCycle = 0;
+        int64_t expectedDeltaPerPicOrderCntCycle = 0;
         for (i = 0; i < sps->num_ref_frames_in_pic_order_cnt_cycle;  i++) {
             expectedDeltaPerPicOrderCntCycle += sps->offset_for_ref_frame[i];
         }
         // expectedPicOrderCnt (8-10)
-        expectedPicOrderCnt = picOrderCntCycleCnt * expectedDeltaPerPicOrderCntCycle;
+        expectedPicOrderCnt = OrderCntCycleProduct(picOrderCntCycleCnt, expectedDeltaPerPicOrderCntCycle);
         for (i = 0; i <= frameNumInPicOrderCntCycle; i++) {
             expectedPicOrderCnt = expectedPicOrderCnt + sps->offset_for_ref_frame[i];
         }
@@ -3332,13 +3373,13 @@ void VulkanH264Decoder::picture_order_count_type_1(const seq_parameter_set_s *sp
     // TopFieldOrderCnt, BottomFieldOrderCnt (8-11)
     if (!slh->field_pic_flag)
     {
-        cur->TopFieldOrderCnt = expectedPicOrderCnt + slh->delta_pic_order_cnt[0];
-        cur->BottomFieldOrderCnt = cur->TopFieldOrderCnt + sps->offset_for_top_to_bottom_field + slh->delta_pic_order_cnt[1];
+        cur->TopFieldOrderCnt = OrderCnt32(expectedPicOrderCnt + slh->delta_pic_order_cnt[0]);
+        cur->BottomFieldOrderCnt = OrderCnt32((int64_t)cur->TopFieldOrderCnt + sps->offset_for_top_to_bottom_field + slh->delta_pic_order_cnt[1]);
     }
     else if (!slh->bottom_field_flag)
-        cur->TopFieldOrderCnt = expectedPicOrderCnt + slh->delta_pic_order_cnt[0];
+        cur->TopFieldOrderCnt = OrderCnt32(expectedPicOrderCnt + slh->delta_pic_order_cnt[0]);
     else
-        cur->BottomFieldOrderCnt = expectedPicOrderCnt + sps->offset_for_top_to_bottom_field + slh->delta_pic_order_cnt[0];
+        cur->BottomFieldOrderCnt = OrderCnt32(expectedPicOrderCnt + sps->offset_for_top_to_bottom_field + slh->delta_pic_order_cnt[0]);
 
     if (slh->mmco5)
     {
@@ -3347,7 +3388,7 @@ void VulkanH264Decoder::picture_order_count_type_1(const seq_parameter_set_s *sp
     }
     else
     {
-        prevFrameNumOffset = FrameNumOffset;
+        prevFrameNumOffset = (int)FrameNumOffset;
         prevFrameNum = slh->frame_num;
     }
 }
@@ -3363,7 +3404,7 @@ void VulkanH264Decoder::picture_order_count_type_2(const seq_parameter_set_s *sp
     if (slh->IdrPicFlag) // (slh->nal_unit_type == 5)
         FrameNumOffset = 0;
     else if (prevFrameNum > slh->frame_num)
-        FrameNumOffset = prevFrameNumOffset + MaxFrameNum;
+        FrameNumOffset = OrderCnt32((int64_t)prevFrameNumOffset + MaxFrameNum);
     else
         FrameNumOffset = prevFrameNumOffset;
 
@@ -3371,9 +3412,9 @@ void VulkanH264Decoder::picture_order_count_type_2(const seq_parameter_set_s *sp
     if (slh->IdrPicFlag) // (slh->nal_unit_type == 5)
         tempPicOrderCnt = 0;
     else if (slh->nal_ref_idc == 0)
-        tempPicOrderCnt = 2 * (FrameNumOffset + slh->frame_num) - 1;
+        tempPicOrderCnt = OrderCnt32(2 * ((int64_t)FrameNumOffset + slh->frame_num) - 1);
     else
-        tempPicOrderCnt = 2 * (FrameNumOffset + slh->frame_num);
+        tempPicOrderCnt = OrderCnt32(2 * ((int64_t)FrameNumOffset + slh->frame_num));
 
     // TopFieldOrderCnt, BottomFieldOrderCnt (8-14)
     if (!slh->field_pic_flag)

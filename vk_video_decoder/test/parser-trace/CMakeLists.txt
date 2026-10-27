@@ -136,6 +136,7 @@ set(PARSER_CRAFTED_CASES
     H264PpsSliceGroupMapUnits
     H264UeLongCodes
     H264PpsSliceGroups
+    H264BottomFieldOrderCntPast32Bits
     H265CraftedStream
     H265VpsLayerSetCountWrap
     H265VpsLayerSetCountLimit
