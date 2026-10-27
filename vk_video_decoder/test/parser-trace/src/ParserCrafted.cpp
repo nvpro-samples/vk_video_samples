@@ -499,6 +499,22 @@ const std::vector<CraftedCase>& Cases() {
              checks.Count("vps", 0);
              return checks.Failures();
          }},
+        // num_short_term_ref_pic_sets 257, which a uint8_t holds as 1. 64 is the most H.265
+        // allows (7.4.3.2.1) and the SPS holds.
+        {"H265SpsNumStRps",
+         [](CaseContext& stream) {
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal([](BitWriter& w) {
+                        w.Ue(257).Ue(0).Ue(0);  // num_short_term_ref_pic_sets; set 0: no pictures
+                        for (int i = 1; i < 257; i++) {
+                            w.Flag(false).Ue(0).Ue(0);  // set i: not predicted, no pictures
+                        }
+                    }));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("sps", 0);
+             return checks.Failures();
+         }},
         // a set predicted from one of 16 negative pictures with DeltaRPS -1 derives 17 negative
         // pictures (7.4.8), one more than the arrays they are written to hold.
         {"H265InterRpsOverflow",

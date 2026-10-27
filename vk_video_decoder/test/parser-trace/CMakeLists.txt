@@ -139,6 +139,7 @@ set(PARSER_CRAFTED_CASES
     H265VpsLayerSetCountLimit
     H265VpsExtensionLayerSetIndex
     H265InterRpsOverflow
+    H265SpsNumStRps
     Av1CraftedSequenceHeader
     Av1UvlcTruncated
     Av1FilmGrainPointCount

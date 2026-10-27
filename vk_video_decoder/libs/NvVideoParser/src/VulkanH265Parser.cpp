@@ -577,13 +577,14 @@ void VulkanH265Decoder::seq_parameter_set_rbsp()
             return;
         }
     }
+    // Checked before it is narrowed to the uint8_t that stores it: 256 + k would pass as k.
     uint32_t num_short_term_ref_pic_sets = ue();
-    sps->num_short_term_ref_pic_sets = (uint8_t)num_short_term_ref_pic_sets;
-    if (sps->num_short_term_ref_pic_sets > MAX_NUM_STRPS) { // fatal
+    if (num_short_term_ref_pic_sets > MAX_NUM_STRPS) { // fatal
 
-        nvParserLog("Invalid num_short_term_ref_pic_sets (%d)\n", num_short_term_ref_pic_sets);
+        nvParserLog("Invalid num_short_term_ref_pic_sets (%u)\n", num_short_term_ref_pic_sets);
         return;
     }
+    sps->num_short_term_ref_pic_sets = (uint8_t)num_short_term_ref_pic_sets;
     for (uint32_t i = 0; i < num_short_term_ref_pic_sets; i++) {
         StdVideoH265ShortTermRefPicSet* pShortTermRefPicSet =
                 short_term_ref_pic_set(&sps->stdShortTermRefPicSet[i],
