@@ -166,37 +166,58 @@ void Append(std::vector<uint8_t>& stream, const std::vector<uint8_t>& bytes) {
 
 // ---- H.264 (Rec. ITU-T H.264 7.3) ----
 
-// A Baseline SPS for a 64x64 picture with POC type 0.
+// A Baseline SPS for a 64x64 picture with POC type 0. The ue(v) fields are 64 bits, for codes past 32.
+// High profile (100) adds chroma_format_idc 1 and the bit depths.
 struct H264Sps {
-    uint64_t id = 0;  // ue(v) codes past 32 bits: 2^32 takes 32 leading zeros
+    uint64_t id = 0;
     uint32_t profileIdc = 66;
     uint32_t levelIdc = 30;
-    uint32_t log2MaxFrameNumMinus4 = 0;
-    uint32_t log2MaxPocLsbMinus4 = 0;
-    uint32_t maxNumRefFrames = 1;
+    uint64_t bitDepthLumaMinus8 = 0;
+    uint64_t log2MaxFrameNumMinus4 = 0;
+    uint64_t picOrderCntType = 0;
+    uint64_t log2MaxPocLsbMinus4 = 0;
+    uint64_t maxNumRefFrames = 1;
     uint32_t widthInMbsMinus1 = 3;
     uint32_t heightInMapUnitsMinus1 = 3;
 };
 
 std::vector<uint8_t> H264SpsNal(const H264Sps& sps) {
     BitWriter w;
-    w.U(8, sps.profileIdc).U(8, 0).U(8, sps.levelIdc).Ue(sps.id);       // constraint flags and reserved bits 0, sps id
-    w.Ue(sps.log2MaxFrameNumMinus4).Ue(0).Ue(sps.log2MaxPocLsbMinus4);  // pic_order_cnt_type 0
-    w.Ue(sps.maxNumRefFrames).Flag(false);                              // gaps_in_frame_num_value_allowed_flag
+    w.U(8, sps.profileIdc).U(8, 0).U(8, sps.levelIdc).Ue(sps.id);  // constraint flags and reserved bits 0, sps id
+    if (sps.profileIdc == 100) {
+        w.Ue(1).Ue(sps.bitDepthLumaMinus8).Ue(0).Flag(false).Flag(false);  // 4:2:0, bit depths, no bypass, no matrices
+    }
+    w.Ue(sps.log2MaxFrameNumMinus4).Ue(sps.picOrderCntType);
+    if (sps.picOrderCntType == 0) {
+        w.Ue(sps.log2MaxPocLsbMinus4);
+    }
+    w.Ue(sps.maxNumRefFrames).Flag(false);  // gaps_in_frame_num_value_allowed_flag
     w.Ue(sps.widthInMbsMinus1).Ue(sps.heightInMapUnitsMinus1);
     w.Flag(true).Flag(true).Flag(false).Flag(false);  // frame_mbs_only, direct_8x8_inference, cropping, VUI
     return AnnexBNal({0x67}, w.TrailingBits().Data());
 }
 
-// A CAVLC PPS with one slice group and deblocking control. With bottomFieldPicOrder a frame's slices
-// code delta_pic_order_cnt_bottom.
-std::vector<uint8_t> H264PpsNal(bool bottomFieldPicOrder = false) {
+// The PPS fields the cases vary: a CAVLC PPS of SPS 0 with one slice group and deblocking control. With
+// bottomFieldPicOrder a frame's slices code delta_pic_order_cnt_bottom.
+struct H264Pps {
+    uint32_t id = 0;
+    bool bottomFieldPicOrder = false;
+    uint64_t numRefIdxL0DefaultActiveMinus1 = 0;
+    int64_t picInitQpMinus26 = 0;
+    int64_t chromaQpIndexOffset = 0;
+};
+
+std::vector<uint8_t> H264PpsNal(const H264Pps& pps = H264Pps()) {
     BitWriter w;
-    w.Ue(0).Ue(0).Flag(false).Flag(bottomFieldPicOrder);  // pps id, sps id, entropy_coding_mode_flag, bottom_field_pic_order...
-    w.Ue(0);                                              // num_slice_groups_minus1
-    w.Ue(0).Ue(0).Flag(false).U(2, 0);                    // num_ref_idx defaults, weighted_pred_flag, weighted_bipred_idc
-    w.Se(0).Se(0).Se(0);                                  // pic_init_qp_minus26, pic_init_qs_minus26, chroma_qp_index_offset
-    w.Flag(true).Flag(false).Flag(false);                 // deblocking control, constrained intra, redundant_pic_cnt
+    w.Ue(pps.id).Ue(0).Flag(false).Flag(
+        pps.bottomFieldPicOrder);                    // pps id, sps id, entropy_coding_mode_flag, bottom_field_pic_order...
+    w.Ue(0);                                         // num_slice_groups_minus1
+    w.Ue(pps.numRefIdxL0DefaultActiveMinus1).Ue(0);  // num_ref_idx defaults
+    w.Flag(false).U(2, 0);                           // weighted_pred_flag, weighted_bipred_idc
+    w.Se(pps.picInitQpMinus26)
+        .Se(0)
+        .Se(pps.chromaQpIndexOffset);      // pic_init_qp_minus26, pic_init_qs_minus26, chroma_qp_index_offset
+    w.Flag(true).Flag(false).Flag(false);  // deblocking control, constrained intra, redundant_pic_cnt
     return AnnexBNal({0x68}, w.TrailingBits().Data());
 }
 
@@ -218,12 +239,13 @@ std::vector<uint8_t> H264PpsExplicitSliceGroupsNal(uint64_t picSizeInMapUnitsMin
 // A PPS with numSliceGroupsMinus1 + 1 slice groups of slice_group_map_type 0, whose map codes a run
 // length for each of mapGroups groups; a valid PPS codes one for each slice group, and none when
 // there is one slice group.
-std::vector<uint8_t> H264PpsSliceGroupsNal(uint32_t ppsId, uint64_t numSliceGroupsMinus1, uint32_t mapGroups) {
+std::vector<uint8_t> H264PpsSliceGroupsNal(uint32_t ppsId, uint64_t numSliceGroupsMinus1, uint32_t mapGroups,
+                                           uint64_t mapType = 0) {
     BitWriter w;
     w.Ue(ppsId).Ue(0).Flag(false).Flag(false);  // pps id, sps id, entropy_coding_mode_flag, bottom_field_pic_order...
     w.Ue(numSliceGroupsMinus1);
     if (mapGroups > 0) {
-        w.Ue(0);  // slice_group_map_type
+        w.Ue(mapType);  // slice_group_map_type, coding run lengths when it reads as 0
         for (uint32_t i = 0; i < mapGroups; i++) {
             w.Ue(0);  // run_length_minus1[i]
         }
@@ -247,7 +269,7 @@ std::vector<uint8_t> H264IdrSliceNal(const H264Sps& sps) {
 }
 
 // An I slice of the whole picture, of a reference picture, an IDR picture when idr, with frame_num
-// frameNum, pic_order_cnt_lsb pocLsb and, for a PPS of H264PpsNal(true), delta_pic_order_cnt_bottom
+// frameNum, pic_order_cnt_lsb pocLsb and, for a PPS with bottomFieldPicOrder, delta_pic_order_cnt_bottom
 // deltaBottom. Its slice data is filler the parser does not read.
 std::vector<uint8_t> H264ReferenceISliceNal(const H264Sps& sps, bool idr, uint32_t frameNum, uint32_t pocLsb, int64_t deltaBottom) {
     BitWriter w;
@@ -715,7 +737,7 @@ const std::vector<CraftedCase>& Cases() {
          [](CaseContext& stream) {
              const H264Sps sps;
              Append(stream.byteStream, H264SpsNal(sps));
-             Append(stream.byteStream, H264PpsNal(true));
+             Append(stream.byteStream, H264PpsNal({.bottomFieldPicOrder = true}));
              Append(stream.byteStream, H264ReferenceISliceNal(sps, true, 0, 0, 0));
              Append(stream.byteStream, H264ReferenceISliceNal(sps, false, 1, 12, -2147483647));
              Append(stream.byteStream, H264ReferenceISliceNal(sps, false, 2, 14, -2147483648LL));
@@ -723,6 +745,40 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("pic", 2);
              checks.Field("  h264", "CurrFieldOrderCnt", "[-4,-2147483648]", 1);
+             return checks.Failures();
+         }},
+        // an SPS value is range-checked before it is narrowed to its field or cast to an enumeration.
+        // SPS 1's log2_max_frame_num_minus4 260 and SPS 2's max_num_ref_frames 257 fit their ranges once
+        // narrowed to 8 bits, SPS 3's pic_order_cnt_type 2^32 - 2 is outside its enumeration's values, and
+        // SPS 4's bit_depth_luma_minus8 7 passes 6 (7.4.2.1.1). SPS 0 is valid.
+        {"H264SpsValuesPastTheirRange",
+         [](CaseContext& stream) {
+             Append(stream.byteStream, H264SpsNal(H264Sps()));
+             Append(stream.byteStream, H264SpsNal({.id = 1, .log2MaxFrameNumMinus4 = 260}));
+             Append(stream.byteStream, H264SpsNal({.id = 2, .maxNumRefFrames = 257}));
+             Append(stream.byteStream, H264SpsNal({.id = 3, .picOrderCntType = 0xFFFFFFFEu}));
+             Append(stream.byteStream, H264SpsNal({.id = 4, .profileIdc = 100, .bitDepthLumaMinus8 = 7}));
+             const Trace trace = Run(stream, "h264");
+             Checks checks(trace);
+             checks.Count("sps", 1);
+             checks.Field("sps", "seq_parameter_set_id", "0");
+             return checks.Failures();
+         }},
+        // PPS values past their ranges (7.4.2.2). PPS 1's num_ref_idx_l0_default_active_minus1 256 and
+        // PPS 4's slice_group_map_type 65536 narrow to 0, PPS 2's pic_init_qp_minus26 200 narrows to -56,
+        // and PPS 3's chroma_qp_index_offset is 13. PPS 0 is valid.
+        {"H264PpsValuesPastTheirRange",
+         [](CaseContext& stream) {
+             Append(stream.byteStream, H264SpsNal(H264Sps()));
+             Append(stream.byteStream, H264PpsNal());
+             Append(stream.byteStream, H264PpsNal({.id = 1, .numRefIdxL0DefaultActiveMinus1 = 256}));
+             Append(stream.byteStream, H264PpsNal({.id = 2, .picInitQpMinus26 = 200}));
+             Append(stream.byteStream, H264PpsNal({.id = 3, .chromaQpIndexOffset = 13}));
+             Append(stream.byteStream, H264PpsSliceGroupsNal(4, 1, 2, 65536));
+             const Trace trace = Run(stream, "h264");
+             Checks checks(trace);
+             checks.Count("pps", 1);
+             checks.Field("pps", "pic_parameter_set_id", "0");
              return checks.Failures();
          }},
         // Proves the H.265 builders: one VPS, SPS and PPS and an IDR picture that the parser takes.

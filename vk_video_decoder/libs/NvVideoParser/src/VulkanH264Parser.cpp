@@ -1549,17 +1549,26 @@ int32_t VulkanH264Decoder::seq_parameter_set_rbsp(SpsNalUnitTarget spsNalUnitTar
         (profile_idc == 128) || (profile_idc == 138) || (profile_idc == 139) || (profile_idc == 134) ||
         (profile_idc == 135))
     {
-        sps->chroma_format_idc = (StdVideoH264ChromaFormatIdc)ue();
-        if ((sps->chroma_format_idc < 0) || (sps->chroma_format_idc > 3))
+        // A ue() is range-checked before it is narrowed, or cast to an enumeration that cannot hold it.
+        const uint32_t chroma_format_idc = ue();
+        if (chroma_format_idc > 3)
         {
-            nvParserLog("Invalid chroma_format_idc value in SPS (%d)\n", sps->chroma_format_idc);
+            nvParserLog("Invalid chroma_format_idc value in SPS (%u)\n", chroma_format_idc);
             return -1;
         }
+        sps->chroma_format_idc = (StdVideoH264ChromaFormatIdc)chroma_format_idc;
         if (sps->chroma_format_idc == 3) {
             sps->flags.separate_colour_plane_flag = u(1);
         }
-        sps->bit_depth_luma_minus8 = ue();
-        sps->bit_depth_chroma_minus8 = ue();
+        const uint32_t bit_depth_luma_minus8 = ue();
+        const uint32_t bit_depth_chroma_minus8 = ue();
+        if ((bit_depth_luma_minus8 > 6) || (bit_depth_chroma_minus8 > 6)) // 7.4.2.1.1
+        {
+            nvParserLog("Invalid bit depth in SPS (luma %u, chroma %u)\n", bit_depth_luma_minus8, bit_depth_chroma_minus8);
+            return -1;
+        }
+        sps->bit_depth_luma_minus8 = (uint8_t)bit_depth_luma_minus8;
+        sps->bit_depth_chroma_minus8 = (uint8_t)bit_depth_chroma_minus8;
         sps->flags.qpprime_y_zero_transform_bypass_flag = u(1);
         sps->seqScalingList.scaling_matrix_present_flag = u(1);
         if (sps->seqScalingList.scaling_matrix_present_flag) {
@@ -1574,22 +1583,25 @@ int32_t VulkanH264Decoder::seq_parameter_set_rbsp(SpsNalUnitTarget spsNalUnitTar
             }
         }
     }
-    sps->log2_max_frame_num_minus4 = ue();
-    if ((uint32_t)sps->log2_max_frame_num_minus4 > 12) {
-        nvParserLog("Invalid log2_max_frame_num_minus4 value in SPS (%d)\n", sps->log2_max_frame_num_minus4);
+    const uint32_t log2_max_frame_num_minus4 = ue();
+    if (log2_max_frame_num_minus4 > 12) {
+        nvParserLog("Invalid log2_max_frame_num_minus4 value in SPS (%u)\n", log2_max_frame_num_minus4);
         return -1;
     }
-    sps->pic_order_cnt_type = (StdVideoH264PocType)ue();
-    if ((sps->pic_order_cnt_type < 0) || (sps->pic_order_cnt_type > 2)) {
-        nvParserLog("Invalid pic_order_cnt_type value in SPS (%d)\n", sps->pic_order_cnt_type);
+    sps->log2_max_frame_num_minus4 = (uint8_t)log2_max_frame_num_minus4;
+    const uint32_t pic_order_cnt_type = ue();
+    if (pic_order_cnt_type > 2) {
+        nvParserLog("Invalid pic_order_cnt_type value in SPS (%u)\n", pic_order_cnt_type);
         return -1;
     }
+    sps->pic_order_cnt_type = (StdVideoH264PocType)pic_order_cnt_type;
     if (sps->pic_order_cnt_type == 0) {
-        sps->log2_max_pic_order_cnt_lsb_minus4 = ue();
-        if ((uint32_t)sps->log2_max_pic_order_cnt_lsb_minus4 > 12) {
-            nvParserLog("Invalid log2_max_pic_order_cnt_lsb_minus4 value in SPS (%d)\n", sps->log2_max_pic_order_cnt_lsb_minus4);
+        const uint32_t log2_max_pic_order_cnt_lsb_minus4 = ue();
+        if (log2_max_pic_order_cnt_lsb_minus4 > 12) {
+            nvParserLog("Invalid log2_max_pic_order_cnt_lsb_minus4 value in SPS (%u)\n", log2_max_pic_order_cnt_lsb_minus4);
             return -1;
         }
+        sps->log2_max_pic_order_cnt_lsb_minus4 = (uint8_t)log2_max_pic_order_cnt_lsb_minus4;
     }
     else if (sps->pic_order_cnt_type == 1) {
         sps->flags.delta_pic_order_always_zero_flag = u(1);
@@ -1615,12 +1627,12 @@ int32_t VulkanH264Decoder::seq_parameter_set_rbsp(SpsNalUnitTarget spsNalUnitTar
             }
         }
     }
-    sps->max_num_ref_frames = ue();
-    if (sps->max_num_ref_frames > 16) {
-        nvParserLog("SPS: Invalid num_ref_frames value (%d)", sps->max_num_ref_frames);
-        sps->max_num_ref_frames = 2;
+    const uint32_t max_num_ref_frames = ue();
+    if (max_num_ref_frames > 16) {
+        nvParserLog("SPS: Invalid num_ref_frames value (%u)\n", max_num_ref_frames);
         return -1;
     }
+    sps->max_num_ref_frames = (uint8_t)max_num_ref_frames;
     sps->flags.gaps_in_frame_num_value_allowed_flag = u(1);
     sps->pic_width_in_mbs_minus1 = ue();
     sps->pic_height_in_map_units_minus1 = ue();
@@ -1645,7 +1657,9 @@ int32_t VulkanH264Decoder::seq_parameter_set_rbsp(SpsNalUnitTarget spsNalUnitTar
     sps->vui.initial_cpb_removal_delay_length = 24;
 
     if (sps->flags.vui_parameters_present_flag) {
-        vui_parameters(&sps->vui);
+        if (!vui_parameters(&sps->vui)) {
+            return -1;
+        }
     }
 
     int MaxDpbSize = derive_MaxDpbFrames(sps.get());
@@ -1903,8 +1917,8 @@ void VulkanH264Decoder::nal_unit_header_extension()
     }
 }
 
-// VUI parameters (Annex E.1)
-void VulkanH264Decoder::vui_parameters(vui_parameters_s *vui)
+// VUI parameters (Annex E.1); false for HRD parameters past their ranges
+bool VulkanH264Decoder::vui_parameters(vui_parameters_s *vui)
 {
     vui->aspect_ratio_info_present_flag = u(1);
     if (vui->aspect_ratio_info_present_flag) { // aspect_ratio_info_present_flag
@@ -1974,11 +1988,11 @@ void VulkanH264Decoder::vui_parameters(vui_parameters_s *vui)
         vui->fixed_frame_rate_flag = u(1);
     }
     vui->nal_hrd_parameters_present_flag = u(1);
-    if (vui->nal_hrd_parameters_present_flag)
-        hrd_parameters(vui, &vui->nal_hrd);
+    if (vui->nal_hrd_parameters_present_flag && !hrd_parameters(vui, &vui->nal_hrd))
+        return false;
     vui->vcl_hrd_parameters_present_flag = u(1);
-    if (vui->vcl_hrd_parameters_present_flag)
-        hrd_parameters(vui, &vui->vcl_hrd);
+    if (vui->vcl_hrd_parameters_present_flag && !hrd_parameters(vui, &vui->vcl_hrd))
+        return false;
     if (vui->nal_hrd_parameters_present_flag || vui->vcl_hrd_parameters_present_flag)
     {
         u(1); // low_delay_hrd_flag;
@@ -1995,17 +2009,22 @@ void VulkanH264Decoder::vui_parameters(vui_parameters_s *vui)
         vui->max_num_reorder_frames = ue();
         vui->max_dec_frame_buffering = ue();
     }
+    return true;
 }
 
 
-// HRD parameters (E.1.2)
-void VulkanH264Decoder::hrd_parameters(vui_parameters_s *vui, hrd_parameters_s *hrd)
+// HRD parameters (E.1.2); false for a cpb_cnt_minus1 past 31 (E.2.2)
+bool VulkanH264Decoder::hrd_parameters(vui_parameters_s *vui, hrd_parameters_s *hrd)
 {
-    uint8_t cpb_cnt_minus1 = ue();   // cpb_cnt_minus1
+    const uint32_t cpb_cnt_minus1 = ue();
+    if (cpb_cnt_minus1 > 31) {
+        nvParserLog("Invalid cpb_cnt_minus1 in HRD parameters (%u)\n", cpb_cnt_minus1);
+        return false;
+    }
     hrd->bit_rate_scale = u(4) + 6; // bit_rate_scale
     hrd->cpb_size_scale = u(4) + 4; // cpb_size_scale
-    hrd->cpb_cnt_minus1 = cpb_cnt_minus1;
-    for (int SchedSelIdx = 0; SchedSelIdx <= cpb_cnt_minus1; SchedSelIdx++)
+    hrd->cpb_cnt_minus1 = (uint8_t)cpb_cnt_minus1;
+    for (uint32_t SchedSelIdx = 0; SchedSelIdx <= cpb_cnt_minus1; SchedSelIdx++)
     {
         hrd->bit_rate = (ue() + 1) << hrd->bit_rate_scale;   // bit_rate_value_minus1[SchedSelIdx]
         hrd->cbp_size = (ue() + 1) << hrd->cpb_size_scale;   // cpb_size_value_minus1[SchedSelIdx]
@@ -2018,6 +2037,7 @@ void VulkanH264Decoder::hrd_parameters(vui_parameters_s *vui, hrd_parameters_s *
     vui->cpb_removal_delay_length_minus1 = u(5);
     vui->dpb_output_delay_length_minus1 = u(5);
     hrd->time_offset_length = u(5);   // time_offset_length
+    return true;
 }
 
 
@@ -2087,12 +2107,13 @@ bool VulkanH264Decoder::pic_parameter_set_rbsp()
         }
 
         slice_group_map_s *slcgrp = &m_slice_group_map[pps_id];
-        slcgrp->slice_group_map_type = ue();
-        if (slcgrp->slice_group_map_type > 6)
+        const uint32_t slice_group_map_type = ue();
+        if (slice_group_map_type > 6)
         {
-            nvParserLog("Invalid slice_group_map_type value in PPS (%d)\n", slcgrp->slice_group_map_type);
+            nvParserLog("Invalid slice_group_map_type value in PPS (%u)\n", slice_group_map_type);
             return false;
         }
+        slcgrp->slice_group_map_type = (uint16_t)slice_group_map_type;
         if (slcgrp->slice_group_map_type == 0)
         {
             for (uint32_t iGroup = 0; iGroup <= pps->num_slice_groups_minus1; iGroup++) {
@@ -2110,7 +2131,18 @@ bool VulkanH264Decoder::pic_parameter_set_rbsp()
         else if ((slcgrp->slice_group_map_type >= 3) && (slcgrp->slice_group_map_type < 6))
         {
             /* slcgrp->slice_group_change_direction_flag = */ u(1);
-            slcgrp->slice_group_change_rate_minus1 = ue();
+            // At most PicSizeInMapUnits - 1 (7.4.2.2), or with no SPS yet the largest frame of any level
+            // (MaxFS 139264, Table A-1).
+            const uint32_t slice_group_change_rate_minus1 = ue();
+            const seq_parameter_set_s* sps = m_spss[sps_id].get();
+            const uint32_t max_map_units = (sps != nullptr) ?
+                (sps->pic_width_in_mbs_minus1 + 1) * (sps->pic_height_in_map_units_minus1 + 1) : 139264;
+            if (slice_group_change_rate_minus1 >= max_map_units)
+            {
+                nvParserLog("Invalid slice_group_change_rate_minus1 in PPS (%u)\n", slice_group_change_rate_minus1);
+                return false;
+            }
+            slcgrp->slice_group_change_rate_minus1 = slice_group_change_rate_minus1;
         }
         else if (slcgrp->slice_group_map_type == 6)
         {
@@ -2140,11 +2172,11 @@ bool VulkanH264Decoder::pic_parameter_set_rbsp()
             }
         }
     }
-    uint8_t num_ref_idx_l0_active_minus1 = (uint8_t)ue();
-    uint8_t num_ref_idx_l1_active_minus1 = (uint8_t)ue();
+    const uint32_t num_ref_idx_l0_active_minus1 = ue();
+    const uint32_t num_ref_idx_l1_active_minus1 = ue();
     if ((num_ref_idx_l0_active_minus1 > 31) || (num_ref_idx_l1_active_minus1 > 31))
     {
-        nvParserLog("Invalid num_ref_idx_lX_active_minus1 in PPS (L0=%d,L1=%d)\n",
+        nvParserLog("Invalid num_ref_idx_lX_active_minus1 in PPS (L0=%u,L1=%u)\n",
                 num_ref_idx_l0_active_minus1, num_ref_idx_l1_active_minus1);
         return false;
     }
@@ -2157,9 +2189,23 @@ bool VulkanH264Decoder::pic_parameter_set_rbsp()
         nvParserLog("Invalid weighted_bipred_idc value in PPS (%d)\n", pps->weighted_bipred_idc);
         return false;
     }
-    pps->pic_init_qp_minus26 = (signed char)se();
-    pps->pic_init_qs_minus26 = (signed char)se();
-    pps->second_chroma_qp_index_offset = pps->chroma_qp_index_offset = (signed char)se();
+    // 7.4.2.2: pic_init_qp_minus26 is -(26 + QpBdOffsetY) to 25, with QpBdOffsetY that of the SPS or with
+    // no SPS yet the largest, 36; pic_init_qs_minus26 is -26 to 25; the chroma offsets are -12 to 12.
+    const int32_t pic_init_qp_minus26 = se();
+    const int32_t pic_init_qs_minus26 = se();
+    const int32_t chroma_qp_index_offset = se();
+    const seq_parameter_set_s* qp_sps = m_spss[sps_id].get();
+    const int32_t QpBdOffsetY = 6 * ((qp_sps != nullptr) ? qp_sps->bit_depth_luma_minus8 : 6);
+    if ((pic_init_qp_minus26 < -(26 + QpBdOffsetY)) || (pic_init_qp_minus26 > 25) ||
+        (pic_init_qs_minus26 < -26) || (pic_init_qs_minus26 > 25) ||
+        (chroma_qp_index_offset < -12) || (chroma_qp_index_offset > 12))
+    {
+        nvParserLog("Invalid QP values in PPS (%d, %d, %d)\n", pic_init_qp_minus26, pic_init_qs_minus26, chroma_qp_index_offset);
+        return false;
+    }
+    pps->pic_init_qp_minus26 = (int8_t)pic_init_qp_minus26;
+    pps->pic_init_qs_minus26 = (int8_t)pic_init_qs_minus26;
+    pps->second_chroma_qp_index_offset = pps->chroma_qp_index_offset = (int8_t)chroma_qp_index_offset;
     pps->flags.deblocking_filter_control_present_flag = u(1);
     pps->flags.constrained_intra_pred_flag = u(1);
     pps->flags.redundant_pic_cnt_present_flag = u(1);
@@ -2178,7 +2224,13 @@ bool VulkanH264Decoder::pic_parameter_set_rbsp()
                 pps->picScalinList.scaling_list_type[i] = (unsigned char)scaling_list_type;
             }
         }
-        pps->second_chroma_qp_index_offset = (signed char)se();
+        const int32_t second_chroma_qp_index_offset = se();
+        if ((second_chroma_qp_index_offset < -12) || (second_chroma_qp_index_offset > 12))
+        {
+            nvParserLog("Invalid second_chroma_qp_index_offset in PPS (%d)\n", second_chroma_qp_index_offset);
+            return false;
+        }
+        pps->second_chroma_qp_index_offset = (int8_t)second_chroma_qp_index_offset;
     }
 
     pps->flags.pic_scaling_matrix_present_flag = pps->UpdateStdScalingList(pps.get(), &pps->stdScalingLists);
@@ -2427,8 +2479,8 @@ bool VulkanH264Decoder::slice_header(slice_header_s *slh, int nal_ref_idc, int n
         if ((slcgrp != nullptr) && (slcgrp->slice_group_map_type >= 3) && (slcgrp->slice_group_map_type <= 5))
         {
             uint32_t a = (sps->pic_width_in_mbs_minus1 + 1) * (sps->pic_height_in_map_units_minus1 + 1); // PicSizeInMapUnits
-            int16_t b = slcgrp->slice_group_change_rate_minus1 + 1; // SliceGroupChangeRate
-            if ((b <= 0) || ((uint32_t)b > a)) {
+            uint32_t b = slcgrp->slice_group_change_rate_minus1 + 1; // SliceGroupChangeRate
+            if (b > a) {
                 return false;
             }
             int32_t c = (a + b - 1) / b; // Ceil(PicSizeInMapUnits / SliceGroupChangeRate)
