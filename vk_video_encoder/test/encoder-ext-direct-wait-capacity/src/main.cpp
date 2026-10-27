@@ -78,6 +78,7 @@
  */
 
 #include "vulkan_video_encoder_ext.h"
+#include "encode_device_probe.h"
 
 #include "vk_video/vulkan_video_codec_h264std.h"
 #include "vk_video/vulkan_video_codec_h265std.h"
@@ -1061,9 +1062,9 @@ int main(int argc, char** argv)
                 h265 ? "H.265" : "H.264");
     std::printf("------------------------------------------------\n");
 
-    if ((CreateVulkanVideoEncoderExt(g_encoder) != VK_SUCCESS) || !g_encoder) {
-        std::printf("SKIP: CreateVulkanVideoEncoderExt failed\n");
-        return 77;
+    const VkResult created = CreateVulkanVideoEncoderExt(g_encoder);
+    if ((created != VK_SUCCESS) || !g_encoder) {
+        return enctest::Fail("CreateVulkanVideoEncoderExt", created);
     }
 
     VkVideoEncoderConfig config = {};
@@ -1098,10 +1099,11 @@ int main(int argc, char** argv)
     config.deviceId           = -1;
     config.disableFileOutput  = VK_TRUE;
 
-    if (g_encoder->InitializeExt(config) != VK_SUCCESS) {
-        std::printf("SKIP: InitializeExt failed -- no encode-capable Vulkan "
-                    "device on this host\n");
-        return 77;
+    // The library failed before it had a device: the probe, not the library,
+    // says whether this machine has one.
+    const VkResult initialized = g_encoder->InitializeExt(config);
+    if (initialized != VK_SUCCESS) {
+        return enctest::NoDeviceOrFail("InitializeExt", initialized, config.codec);
     }
 
     VkInstance       instance = g_encoder->GetVkInstance();
@@ -1109,8 +1111,7 @@ int main(int argc, char** argv)
     VkPhysicalDevice phys     = g_encoder->GetVkPhysicalDevice();
     g_device = device;
     if (!LoadDeviceFns(instance, device, &g_fns)) {
-        std::printf("SKIP: could not load the Vulkan entry points needed\n");
-        return 77;
+        return enctest::Fail("could not load the Vulkan entry points needed");
     }
 
     // Printed, not assumed: a silent fall-through to a software ICD would make
@@ -1122,8 +1123,7 @@ int main(int argc, char** argv)
 
     InputImage input;
     if (!CreateInputImage(g_fns, phys, device, &input, direct, h265)) {
-        std::printf("SKIP: could not create the input image\n");
-        return 77;
+        return enctest::Fail("could not create the input image");
     }
 
     VkVideoEncoderExternalImageDescriptor desc = {};
@@ -1158,9 +1158,7 @@ int main(int argc, char** argv)
             g_encoder->RegisterImageResource(desc, 0, &g_resource, nullptr);
         if ((regStatus != VK_VIDEO_ENCODER_STATUS_SUCCESS) ||
             (g_resource == VK_VIDEO_ENCODER_RESOURCE_NULL)) {
-            std::printf("SKIP: RegisterImageResource failed, status %d\n",
-                        (int)regStatus);
-            return 77;
+            return enctest::Fail("RegisterImageResource failed, status", regStatus);
         }
     }
 

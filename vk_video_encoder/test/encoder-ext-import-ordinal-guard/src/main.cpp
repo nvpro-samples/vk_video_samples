@@ -102,10 +102,13 @@
 //   1   an assertion failed -- including every library refusal once the host
 //       question has been settled. g_failures is checked BEFORE any skip, so
 //       a skip cannot launder a failure.
-//   77  the host cannot run this at all: no Vulkan device, no dma-buf export,
-//       or a non-NVIDIA GPU. The guard is NVIDIA-gated by design, so on any
-//       other vendor there is nothing to prove and reporting PASSED would be
-//       a lie. CTest reports these SKIPPED.
+//   77  the host cannot run this at all: no Vulkan device, no device with the
+//       dma-buf and DRM-modifier extensions, a non-NVIDIA GPU, or no NV12
+//       modifier the driver offers for both export and import. The guard is
+//       NVIDIA-gated by design, so on any other vendor there is nothing to
+//       prove and reporting PASSED would be a lie. CTest reports these
+//       SKIPPED. Once the host has passed those questions, a failure to bring
+//       the device up or to export the buffer is a failure (1).
 //
 // ARMS
 //   (default)          the library's shipped count, which is 0: asserts the
@@ -418,7 +421,7 @@ public:
     ~Harness() { Teardown(); }
 
 private:
-    int  Setup();                 // 0 ok, 77 cannot run here
+    int  Setup();                 // 0 ok, 77 cannot run here, 1 failed
     bool ExportDmaBuf();
     bool PickModifier(uint64_t* outModifier, uint32_t* outPlaneCount);
     int  ExportFd();              // a new dma-buf fd, or -1
@@ -432,6 +435,7 @@ private:
     Exported            m_exp;
     VkPhysicalDeviceMemoryProperties m_memProps{};
     std::string         m_why;   // why Setup() gave up
+    bool                m_noModifier = false;  // ExportDmaBuf: a host fact
 
     // The caller-visible imports, destroyed by Teardown() with the thunks
     // already removed so the cleanup cannot move a counter an assertion read.
@@ -449,6 +453,7 @@ bool Harness::PickModifier(uint64_t* outModifier, uint32_t* outPlaneCount)
     m_ctx.GetPhysicalDeviceFormatProperties2(phys, kFormat, &fmtProps);
     if (list.drmFormatModifierCount == 0) {
         m_why = "the driver reports no DRM format modifiers for NV12";
+        m_noModifier = true;
         return false;
     }
     std::vector<VkDrmFormatModifierPropertiesEXT> props(
@@ -511,6 +516,7 @@ bool Harness::PickModifier(uint64_t* outModifier, uint32_t* outPlaneCount)
     }
     m_why = "no DRM modifier for NV12 is advertised as both EXPORTABLE and "
             "IMPORTABLE for dma-buf with the encode-source usage/flags";
+    m_noModifier = true;
     return false;
 }
 
@@ -781,24 +787,27 @@ int Harness::Setup()
                                  /*present*/ false, /*compute*/ true) !=
         VK_SUCCESS) {
         m_why = "CreateVulkanDevice failed";
-        return 77;
+        return 1;
     }
     m_deviceUp = true;
     m_device   = m_ctx.getDevice();
     if (m_device == VK_NULL_HANDLE) {
         m_why = "the device context produced a null VkDevice";
-        return 77;
+        return 1;
     }
     m_ctx.GetPhysicalDeviceMemoryProperties(m_ctx.getPhysicalDevice(),
                                             &m_memProps);
 
     if (m_ctx.GetMemoryFdKHR == nullptr) {
-        m_why = "the device has no vkGetMemoryFdKHR, so no dma-buf can be "
-                "exported to import";
-        return 77;
+        m_why = "the device has no vkGetMemoryFdKHR, although "
+                VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME " is enabled";
+        return 1;
     }
     if (!ExportDmaBuf()) {
-        return 77;  // m_why already set
+        // m_why already set. A driver that offers no exportable NV12 modifier
+        // cannot run this; any other failure on an NVIDIA device with the
+        // dma-buf extensions is the device's or the test's, and fails.
+        return m_noModifier ? 77 : 1;
     }
     return 0;
 }
@@ -847,16 +856,20 @@ void Harness::Teardown()
 int Harness::Run(bool expectDisabled)
 {
     const int setup = Setup();
-    if (setup != 0) {
+    if (setup == 77) {
         std::printf("SKIP: %s\n", m_why.c_str());
         return 77;
     }
+    if (setup != 0) {
+        std::printf("FAIL: %s\n", m_why.c_str());
+        return 1;
+    }
 
     if (!InstallCountingDispatch(m_ctx)) {
-        std::printf("SKIP: the device dispatch table is missing one of "
+        std::printf("FAIL: the device dispatch table is missing one of "
                     "vkCreateImage / vkAllocateMemory / vkDestroyImage / "
                     "vkFreeMemory\n");
-        return 77;
+        return 1;
     }
     m_thunksIn = true;
 

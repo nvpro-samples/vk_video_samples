@@ -31,6 +31,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${VULKAN_VIDEO_ENCODER_INCLUDE}
+    # encode_device_probe.h, which decides whether a library failure is a skip.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common
     # This test includes vulkan_video_encoder_ext_internal.h, which is not on
     # the library target's interface. Naming the directory here is what a
     # legitimate internal consumer does, and what a client cannot.

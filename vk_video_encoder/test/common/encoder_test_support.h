@@ -23,9 +23,12 @@
 // THREE VERDICTS, NOT TWO. A check that could not be made is not a check that
 // passed. Skip() says the machine could not answer -- no device, no importable
 // format -- and is counted separately, so a run on a machine that can measure
-// nothing reports that rather than a clean sheet.
+// nothing reports that rather than a clean sheet. Whether a failure to get a
+// device is the machine's is encode_device_probe.h's to decide, never the
+// library's.
 
 #include "vulkan_video_encoder.h"
+#include "encode_device_probe.h"
 
 #include <cstdio>
 #include <cstring>
@@ -311,11 +314,15 @@ private:
 //
 // The shape every test here starts from: a platform on the default device, a
 // rate-controlled H.264 configuration at the requested size, and the roles.
-// Returns false when the machine cannot answer, with |why| set -- which the
-// caller reports as a skip rather than a failure.
+// Open() returns Ready, or with |why| set: NoDevice when the machine has no
+// device that encodes H.264 (the probe's answer, not the library's), which the
+// caller reports as a skip; Failed when it has one and the library still did not
+// open a session, which is a failure.
 //=============================================================================
 
 struct Session {
+    enum Opened { Ready, NoDevice, Failed };
+
     vk::video::enc::Ref<vk::video::enc::IEncoderPlatform>   platform;
     vk::video::enc::Ref<vk::video::enc::IEncoderConfig>     config;
     vk::video::enc::Ref<vk::video::enc::IEncoderSession>    session;
@@ -326,26 +333,23 @@ struct Session {
     vk::video::enc::Ref<vk::video::enc::IDeviceBinding>     binding;
     vk::video::enc::Ref<vk::video::enc::IDiagnostics>       diagnostics;
 
-    bool Open(uint32_t width, uint32_t height, const char** why)
+    Opened Open(uint32_t width, uint32_t height, const char** why)
     {
         using namespace vk::video::enc;
 
         PlatformCreateInfo info;
         info.silenceStdio = true;
         if (VkEncCreatePlatform(info, platform) != VK_SUCCESS || !platform) {
-            *why = "no Vulkan encode platform";
-            return false;
+            return NotOpened("no Vulkan encode platform", why);
         }
         if (platform->Caps()->Codecs().empty()) {
-            *why = "no encode-capable device";
-            return false;
+            return NotOpened("the platform reports no encode-capable device", why);
         }
 
         Expected<Ref<IEncoderConfig>> made =
             platform->CreateConfig(Codec::H264, Profile::H264Main);
         if (!made) {
-            *why = made.status().detail();
-            return false;
+            return NotOpened(made.status().detail(), why);
         }
         config = *made;
 
@@ -360,8 +364,7 @@ struct Session {
 
         Expected<Ref<IEncoderSession>> opened = platform->CreateSession(config);
         if (!opened) {
-            *why = opened.status().detail();
-            return false;
+            return NotOpened(opened.status().detail(), why);
         }
         session     = *opened;
         submitter   = Query<IFrameSubmitter>(session);
@@ -372,9 +375,24 @@ struct Session {
         diagnostics = Query<IDiagnostics>(session);
         if (!submitter || !bitstream || !registry || !binding) {
             *why = "the session does not offer the roles a test needs";
-            return false;
+            return Failed;
         }
-        return true;
+        return Ready;
+    }
+
+    // Why the library gave no session, and whose fault that is: the probe
+    // asks the loader whether any device encodes H.264.
+    static Opened NotOpened(const char* what, const char** why)
+    {
+        static std::string detail;
+        std::string probe;
+        const bool device = ProbeEncodeDevice(VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR, &probe);
+        detail = std::string(what) + "; probe: " + probe;
+        *why = detail.c_str();
+        if (device) {
+            return Failed;
+        }
+        return RequireGpu() ? Failed : NoDevice;
     }
 
     // Take everything ready, returning how many frames were retired.

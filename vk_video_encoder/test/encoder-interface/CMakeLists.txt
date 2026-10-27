@@ -10,6 +10,7 @@ add_executable(${TEST_NAME} src/main.cpp)
 
 target_include_directories(${TEST_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common
     ${VULKAN_VIDEO_APIS_INCLUDE}
     ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}
 )

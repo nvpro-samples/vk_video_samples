@@ -61,6 +61,15 @@ option(USE_CCACHE "Use ccache" OFF)
 option(BUILD_LOADER "Build loader" ON)
 option(BUILD_TESTS "Build tests" ON)
 option(BUILD_DEMOS "Build demos" ON)
+# The encoder gpu tests skip (exit 77) only when a device probe that asks the
+# Vulkan loader, not the library, finds no device that encodes their codec
+# (vk_video_encoder/test/common/encode_device_probe.h). On a rig that has the
+# GPU, a missing device is itself the fault: this option makes that a failure
+# too. The environment variable VVS_REQUIRE_GPU=1 does the same at run time.
+option(VVS_REQUIRE_GPU "Encoder gpu tests fail instead of skipping when no device encodes" OFF)
+if(VVS_REQUIRE_GPU)
+    add_compile_definitions(VVS_REQUIRE_GPU=1)
+endif()
 
 # Handle ccache
 if(USE_CCACHE)
@@ -752,6 +761,8 @@ if(BUILD_ENCODER)
             add_subdirectory(vk_video_encoder/test/encoder-interface)
         endif()
         add_subdirectory(vk_video_encoder/test/encoder-drain)
+        # The device probe's skip-or-fail verdict, without a device.
+        add_subdirectory(vk_video_encoder/test/encode-device-probe)
         if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             add_subdirectory(vk_video_encoder/test/encoder-release-fence)
         endif()

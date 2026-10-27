@@ -21,6 +21,7 @@
 // when there is none -- a suite that silently selects nothing must not pass.
 
 #include "vulkan_video_encoder.h"
+#include "encode_device_probe.h"
 
 #include <cstdio>
 #include <cstring>
@@ -52,6 +53,31 @@ void Skip(const char* what, const char* why)
 {
     ++g_skipped;
     fprintf(stderr, "  SKIP  %s (%s)\n", what, why);
+}
+
+int Summarise()
+{
+    fprintf(stderr, "\n%d checks, %d failures, %d skipped\n",
+            g_checks, g_failures, g_skipped);
+    return g_failures == 0 ? 0 : 1;
+}
+
+// The device-backed checks cannot run because the library has no device.
+// Whose doing that is, is the probe's answer, not the library's: with no
+// device that encodes H.264 the run is a SKIP (77) -- not a pass, since those
+// checks never ran -- and with one it is the library's failure.
+int NoDevice(const char* what, const char* why)
+{
+    std::string probe;
+    const bool device =
+        enctest::ProbeEncodeDevice(VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR, &probe);
+    const std::string detail = std::string(why) + "; probe: " + probe;
+    if (device || enctest::RequireGpu()) {
+        Check(false, detail.c_str());
+    } else {
+        Skip(what, detail.c_str());
+    }
+    return (Summarise() == 0) ? enctest::kExitSkip : 1;
 }
 
 //=============================================================================
@@ -1078,12 +1104,7 @@ int main(int argc, const char** argv)
     Ref<IEncoderPlatform> platform;
     const VkResult created = VkEncCreatePlatform(info, platform);
     if (created != VK_SUCCESS || !platform) {
-        Skip("every device-backed check", "no Vulkan encode device");
-        fprintf(stderr, "\n%d checks, %d failures, %d skipped\n",
-                g_checks, g_failures, g_skipped);
-        // A missing device is not a test failure, but it is not a pass of the
-        // device-backed checks either, and the count above says so.
-        return g_failures == 0 ? 0 : 1;
+        return NoDevice("every device-backed check", "VkEncCreatePlatform failed");
     }
 
     Check(Query<IEncoderPlatform>(platform) != nullptr, "the platform answers its own id");
@@ -1096,14 +1117,12 @@ int main(int argc, const char** argv)
     TestConfigRules(platform);
 
     if (!haveEncodeDevice) {
-        Skip("session role checks", "no encode-capable device");
-        fprintf(stderr, "\n%d checks, %d failures, %d skipped\n",
-                g_checks, g_failures, g_skipped);
-        return g_failures == 0 ? 0 : 1;
+        return NoDevice("session role checks", "the platform reports no encode-capable device");
     }
 
     Expected<Ref<IEncoderConfig>> config =
         platform->CreateConfig(Codec::H264, Profile::H264Main);
+    Check(static_cast<bool>(config), "an H.264 Main configuration is created");
     if (config) {
         // A rate-controlled session, because rateControlMode is immutable:
         // a session created without one cannot be moved into CBR later, and
@@ -1118,15 +1137,14 @@ int main(int argc, const char** argv)
                   .SetInputFormat(VK_FORMAT_G8_B8R8_2PLANE_420_UNORM, ColorModel::YCbCr)
                   .SetRateControl(rate);
         Expected<Ref<IEncoderSession>> session = platform->CreateSession(*config);
+        Check(static_cast<bool>(session), "a session is created on the encode device");
         if (session) {
             TestSessionRoles(*session);
             TestFrameTransfer(platform, *session, *config);
         } else {
-            Skip("session role checks", session.status().detail());
+            fprintf(stderr, "        %s\n", session.status().detail());
         }
     }
 
-    fprintf(stderr, "\n%d checks, %d failures, %d skipped\n",
-            g_checks, g_failures, g_skipped);
-    return g_failures == 0 ? 0 : 1;
+    return Summarise();
 }

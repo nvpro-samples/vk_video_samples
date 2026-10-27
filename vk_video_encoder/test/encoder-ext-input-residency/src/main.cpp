@@ -113,11 +113,14 @@
  *                        this did not fail -- it ABORTED, via the table's
  *                        terminal `throw` in a build with no handler.
  *
- * Exits 0 all assertions held, 1 an assertion failed, 77 (CTest SKIP) with no
- * encode-capable Vulkan device -- same contract as the sibling suites.
+ * Exits 0 all assertions held, 1 an assertion failed, 77 (CTest SKIP) when the
+ * device probe finds no device that encodes H.264, or for an OS-handle arm on
+ * a device without VK_KHR_external_memory_fd -- same contract as the sibling
+ * suites.
  */
 
 #include "vulkan_video_encoder_ext_internal.h"
+#include "encode_device_probe.h"
 
 // The public header reaches the Xlib platform headers, whose macros collide
 // with ordinary identifiers. Same scrub, same reason, as the sibling tests.
@@ -292,7 +295,7 @@ bool CreateInputImage(const DeviceFns& fns, VkPhysicalDevice phys,
     ci.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
     ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     if (fns.CreateImage(device, &ci, nullptr, &out->image) != VK_SUCCESS) {
-        std::printf("  SKIP-CAUSE: vkCreateImage(LINEAR NV12, exportable=%d) "
+        std::printf("  CAUSE: vkCreateImage(LINEAR NV12, exportable=%d) "
                     "failed\n", (int)exportable);
         return false;
     }
@@ -314,7 +317,7 @@ bool CreateInputImage(const DeviceFns& fns, VkPhysicalDevice phys,
         }
     }
     if (typeIndex == UINT32_MAX) {
-        std::printf("  SKIP-CAUSE: no host-visible+coherent memory type\n");
+        std::printf("  CAUSE: no host-visible+coherent memory type\n");
         fns.DestroyImage(device, out->image, nullptr);
         out->image = VK_NULL_HANDLE;
         return false;
@@ -340,7 +343,7 @@ bool CreateInputImage(const DeviceFns& fns, VkPhysicalDevice phys,
     ai.allocationSize  = req.size;
     ai.memoryTypeIndex = typeIndex;
     if (fns.AllocateMemory(device, &ai, nullptr, &out->memory) != VK_SUCCESS) {
-        std::printf("  SKIP-CAUSE: vkAllocateMemory(exportable=%d) failed\n",
+        std::printf("  CAUSE: vkAllocateMemory(exportable=%d) failed\n",
                     (int)exportable);
         fns.DestroyImage(device, out->image, nullptr);
         out->image = VK_NULL_HANDLE;
@@ -348,7 +351,7 @@ bool CreateInputImage(const DeviceFns& fns, VkPhysicalDevice phys,
     }
     if (fns.BindImageMemory(device, out->image, out->memory, 0) !=
         VK_SUCCESS) {
-        std::printf("  SKIP-CAUSE: vkBindImageMemory failed\n");
+        std::printf("  CAUSE: vkBindImageMemory failed\n");
         fns.DestroyImage(device, out->image, nullptr);
         fns.FreeMemory(device, out->memory, nullptr);
         out->image  = VK_NULL_HANDLE;
@@ -361,7 +364,7 @@ bool CreateInputImage(const DeviceFns& fns, VkPhysicalDevice phys,
     // image between submits. HOST_COHERENT, so there is nothing to flush.
     if (fns.MapMemory(device, out->memory, 0, req.size, 0, &out->mapped) !=
         VK_SUCCESS) {
-        std::printf("  SKIP-CAUSE: vkMapMemory failed\n");
+        std::printf("  CAUSE: vkMapMemory failed\n");
         fns.DestroyImage(device, out->image, nullptr);
         fns.FreeMemory(device, out->memory, nullptr);
         out->image  = VK_NULL_HANDLE;
@@ -551,9 +554,9 @@ int main(int argc, const char** argv)
     int rc = 0;
     {
         VkSharedBaseObj<VulkanVideoEncoderExt> encoder;
-        if ((CreateVulkanVideoEncoderExt(encoder) != VK_SUCCESS) || !encoder) {
-            std::printf("SKIP: CreateVulkanVideoEncoderExt failed\n");
-            return 77;
+        const VkResult created = CreateVulkanVideoEncoderExt(encoder);
+        if ((created != VK_SUCCESS) || !encoder) {
+            return enctest::Fail("CreateVulkanVideoEncoderExt", created);
         }
 
         VkVideoEncoderConfig config = {};
@@ -563,12 +566,12 @@ int main(int argc, const char** argv)
         }
         const VkResult init = encoder->InitializeExt(config);
         if (init != VK_SUCCESS) {
-            // A SKIP, and only here: no encode-capable device, no codec, no
-            // encode queue. Every failure BELOW this line is an assertion,
-            // because by then the library has stood a working device up.
-            std::printf("SKIP: InitializeExt failed (%d)\n", (int)init);
+            // A SKIP only here, and only when the probe finds no device that
+            // encodes the codec; with one, the library failed. Every failure
+            // BELOW this line is an assertion, because by then the library
+            // has stood a working device up.
             encoder.reset();
-            return 77;
+            return enctest::NoDeviceOrFail("InitializeExt", init, config.codec);
         }
 
         const VkDevice         device = encoder->GetVkDevice();
@@ -577,9 +580,8 @@ int main(int argc, const char** argv)
         DeviceFns fns;
         if ((device == VK_NULL_HANDLE) || (phys == VK_NULL_HANDLE) ||
             (inst == VK_NULL_HANDLE) || !LoadDeviceFns(inst, device, &fns)) {
-            std::printf("SKIP: could not resolve device entry points\n");
             encoder.reset();
-            return 77;
+            return enctest::Fail("could not resolve device entry points");
         }
 
         const bool isOsHandle =
@@ -589,7 +591,7 @@ int main(int argc, const char** argv)
             std::printf("SKIP: the library's device has no vkGetMemoryFdKHR; "
                         "the OS-handle arms cannot run here\n");
             encoder.reset();
-            return 77;
+            return enctest::kExitSkip;
         }
 
         // THE IMAGE IS ALWAYS EXPORTABLE, on every arm including VK_IMAGE.
@@ -599,9 +601,8 @@ int main(int argc, const char** argv)
         InputImage input;
         if (!CreateInputImage(fns, phys, device, /*exportable=*/true,
                               &input)) {
-            std::printf("SKIP: could not create the input image\n");
             encoder.reset();
-            return 77;
+            return enctest::Fail("could not create the input image");
         }
         WriteFramePattern(&input, 0);
 
@@ -613,10 +614,9 @@ int main(int argc, const char** argv)
             getFd.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
             const VkResult fr = fns.GetMemoryFdKHR(device, &getFd, &fd);
             if ((fr != VK_SUCCESS) || (fd < 0)) {
-                std::printf("SKIP: vkGetMemoryFdKHR failed (%d)\n", (int)fr);
                 DestroyInputImage(fns, device, &input);
                 encoder.reset();
-                return 77;
+                return enctest::Fail("vkGetMemoryFdKHR failed", fr);
             }
             std::printf("  exported OPAQUE_FD %d from the LIBRARY's own "
                         "device (self-import)\n", fd);
