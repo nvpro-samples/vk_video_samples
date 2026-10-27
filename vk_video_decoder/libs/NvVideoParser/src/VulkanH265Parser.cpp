@@ -623,7 +623,9 @@ void VulkanH265Decoder::seq_parameter_set_rbsp()
     sps->flags.vui_parameters_present_flag = u(1);
     if (sps->flags.vui_parameters_present_flag) { // vui_parameters_present_flag
 
-        vui_parameters(sps.get(), sps->sps_max_sub_layers_minus1);
+        if (!vui_parameters(sps.get(), sps->sps_max_sub_layers_minus1)) {
+            return;
+        }
     }
     sps->flags.sps_extension_present_flag = u(1);
     if (sps->flags.sps_extension_present_flag) { // sps_extension_present_flag
@@ -929,6 +931,11 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
     uint32_t tmp = u(6);
     vps->vps_max_layers_minus1         = std::min<int32_t>(tmp, (uint32_t)(MAX_NUM_LAYER_IDS - 2));
     vps->vps_max_sub_layers_minus1     = u(3);
+    if (vps->vps_max_sub_layers_minus1 >= STD_VIDEO_H265_SUBLAYERS_LIST_SIZE)
+    {
+        nvParserLog("Invalid vps_max_sub_layers_minus1 (%d)\n", vps->vps_max_sub_layers_minus1);
+        return;
+    }
     vps->flags.vps_temporal_id_nesting_flag  = u(1);
 
     tmp = u(16);
@@ -1049,8 +1056,10 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
                 vps->cprms_present_flag[i] = u(1);
             }
 
-            hrd_parameters(&pHrdParameters[i], vps->cprms_present_flag[i],
-                            vps->vps_max_sub_layers_minus1);
+            if (!hrd_parameters(&pHrdParameters[i], vps->cprms_present_flag[i],
+                                vps->vps_max_sub_layers_minus1)) {
+                return;
+            }
         }
         // hevcDecodeHrdParameters(&pVideoParamSet->hrdParameters[i], 1); // CMOD function
     }
@@ -1949,7 +1958,8 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
 }
 
 
-void VulkanH265Decoder::vui_parameters(hevc_seq_param_s *sps, int sps_max_sub_layers_minus1)
+// Returns false for HRD parameters the SPS cannot hold.
+bool VulkanH265Decoder::vui_parameters(hevc_seq_param_s *sps, int sps_max_sub_layers_minus1)
 {
     StdVideoH265SequenceParameterSetVui *vui = &sps->stdVui;
     vui->aspect_ratio_idc = STD_VIDEO_H265_ASPECT_RATIO_IDC_UNSPECIFIED;
@@ -2028,7 +2038,9 @@ void VulkanH265Decoder::vui_parameters(hevc_seq_param_s *sps, int sps_max_sub_la
         }
         vui->flags.vui_hrd_parameters_present_flag = u(1);
         if (vui->flags.vui_hrd_parameters_present_flag) {
-            hrd_parameters(&sps->stdHrdParameters, 1, sps_max_sub_layers_minus1);
+            if (!hrd_parameters(&sps->stdHrdParameters, 1, sps_max_sub_layers_minus1)) {
+                return false;
+            }
             sps->stdVui.pHrdParameters = &sps->stdHrdParameters;
         }
     }
@@ -2043,6 +2055,7 @@ void VulkanH265Decoder::vui_parameters(hevc_seq_param_s *sps, int sps_max_sub_la
         vui->log2_max_mv_length_horizontal = ue();
         vui->log2_max_mv_length_vertical = ue();
     }
+    return true;
 }
 
 
@@ -2066,8 +2079,9 @@ void VulkanH265Decoder::sub_layer_hrd_parameters(StdVideoH265SubLayerHrdParamete
     }
 }
 
-// Annex E
-void VulkanH265Decoder::hrd_parameters(hevc_video_hrd_param_s* pStdHrdParameters, bool commonInfPresentFlag, uint8_t maxNumSubLayersMinus1)
+// Annex E. Returns false for counts past the arrays of the Std HRD parameters: maxNumSubLayersMinus1
+// of 7 or more, or a cpb_cnt_minus1 above 31 (E.3.2).
+bool VulkanH265Decoder::hrd_parameters(hevc_video_hrd_param_s* pStdHrdParameters, bool commonInfPresentFlag, uint8_t maxNumSubLayersMinus1)
 {
     if (commonInfPresentFlag)
     {
@@ -2093,7 +2107,9 @@ void VulkanH265Decoder::hrd_parameters(hevc_video_hrd_param_s* pStdHrdParameters
             pStdHrdParameters->dpb_output_delay_length_minus1 = u(5);
         }
     }
-    assert(maxNumSubLayersMinus1 < STD_VIDEO_H265_SUBLAYERS_LIST_SIZE);
+    if (maxNumSubLayersMinus1 >= STD_VIDEO_H265_SUBLAYERS_LIST_SIZE) {
+        return false;
+    }
     for (uint32_t i = 0; i <= maxNumSubLayersMinus1; i++)
     {
         bool fixed_pic_rate_within_cvs_flag = false;
@@ -2118,24 +2134,27 @@ void VulkanH265Decoder::hrd_parameters(hevc_video_hrd_param_s* pStdHrdParameters
                 pStdHrdParameters->flags.low_delay_hrd_flag |= (1 << i);
             }
         }
-        if (!low_delay_hrd_flag) {
-            pStdHrdParameters->cpb_cnt_minus1[i] = (uint8_t)ue();
-        } else {
-            pStdHrdParameters->cpb_cnt_minus1[i] = 0;
+        const uint32_t cpb_cnt_minus1 = low_delay_hrd_flag ? 0 : ue();
+        if (cpb_cnt_minus1 >= STD_VIDEO_H265_CPB_CNT_LIST_SIZE) {
+            nvParserLog("Invalid cpb_cnt_minus1 (%u)\n", cpb_cnt_minus1);
+            return false;
         }
+        pStdHrdParameters->cpb_cnt_minus1[i] = (uint8_t)cpb_cnt_minus1;
+        // Each sub-layer's parameters go to its own entry of the sub-layer arrays.
         if (pStdHrdParameters->flags.nal_hrd_parameters_present_flag) {
-            sub_layer_hrd_parameters(pStdHrdParameters->stdSubLayerHrdParametersNal, i,
+            sub_layer_hrd_parameters(&pStdHrdParameters->stdSubLayerHrdParametersNal[i], i,
                                      pStdHrdParameters->cpb_cnt_minus1[i],
                                      pStdHrdParameters->flags.sub_pic_hrd_params_present_flag);
         }
         if (pStdHrdParameters->flags.vcl_hrd_parameters_present_flag) {
-            sub_layer_hrd_parameters(pStdHrdParameters->stdSubLayerHrdParametersVcl, i,
+            sub_layer_hrd_parameters(&pStdHrdParameters->stdSubLayerHrdParametersVcl[i], i,
                                      pStdHrdParameters->cpb_cnt_minus1[i],
                                      pStdHrdParameters->flags.sub_pic_hrd_params_present_flag);
         }
     }
 
     pStdHrdParameters->BindSubLayers(maxNumSubLayersMinus1);
+    return true;
 }
 
 

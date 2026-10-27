@@ -226,26 +226,34 @@ std::vector<uint8_t> H264IdrSliceNal(const H264Sps& sps) {
 
 // ---- H.265 (Rec. ITU-T H.265 7.3) ----
 
-// profile_tier_level(1, 0): Main profile, level 2.
-void H265ProfileTierLevel(BitWriter& w) {
+// profile_tier_level(1, maxSubLayersMinus1): Main profile, level 2, no sub-layer profile or level.
+void H265ProfileTierLevel(BitWriter& w, uint32_t maxSubLayersMinus1 = 0) {
     w.U(2, 0).Flag(false).U(5, 1).U(32, 0x60000000);  // profile space, tier, Main, compatibility flags 1 and 2
     w.Flag(true).Flag(false).Flag(false).Flag(true);  // progressive, interlaced, non-packed, frame-only
     w.Zeros(44).U(8, 60);                             // reserved bits, general_level_idc
+    if (maxSubLayersMinus1 > 0) {
+        w.U(16, 0);  // sub_layer_profile_present_flag, sub_layer_level_present_flag, reserved_zero_2bits
+    }
 }
 
 // The VPS fields the cases vary. The default VPS has one layer set, of layer 0.
 struct H265Vps {
     uint32_t id = 0;
+    uint32_t maxSubLayersMinus1 = 0;
     uint32_t numLayerSetsMinus1 = 0;
     bool endAfterMaxLayerId = false;  // the NAL unit ends after vps_max_layer_id, zero-padded to a byte
 };
 
 std::vector<uint8_t> H265VpsNal(const H265Vps& vps = H265Vps()) {
     BitWriter w;
-    w.U(4, vps.id).Flag(true).Flag(true).U(6, 0).U(3, 0).Flag(true).U(16, 0xffff);  // id, base layer, layers, sub-layers
-    H265ProfileTierLevel(w);
-    w.Flag(true).Ue(1).Ue(0).Ue(0);  // sub_layer_ordering_info: max_dec_pic_buffering_minus1 1
-    w.U(6, 0);                       // vps_max_layer_id
+    w.U(4, vps.id).Flag(true).Flag(true).U(6, 0).U(3, vps.maxSubLayersMinus1).Flag(true);  // id, base layer, layers, sub-layers
+    w.U(16, 0xffff);
+    H265ProfileTierLevel(w, vps.maxSubLayersMinus1);
+    w.Flag(true);  // vps_sub_layer_ordering_info_present_flag
+    for (uint32_t i = 0; i <= vps.maxSubLayersMinus1; i++) {
+        w.Ue(1).Ue(0).Ue(0);  // max_dec_pic_buffering_minus1 1, max_num_reorder_pics, max_latency_increase_plus1
+    }
+    w.U(6, 0);  // vps_max_layer_id
     if (vps.endAfterMaxLayerId) {
         return AnnexBNal({0x40, 0x01}, w.AlignZero().Data());
     }
@@ -284,8 +292,9 @@ std::vector<uint8_t> H265VpsExtensionNal(uint32_t numLayerSetsMinus1, uint32_t n
 // An SPS for a 64x64 picture with 16x16 coding tree blocks and one short-term RPS: one negative
 // picture, used.
 // refPicSets writes num_short_term_ref_pic_sets and the sets; by default, one set of one negative
-// picture, used.
-std::vector<uint8_t> H265SpsNal(const std::function<void(BitWriter&)>& refPicSets = nullptr) {
+// picture, used. vui, when given, writes vui_parameters().
+std::vector<uint8_t> H265SpsNal(const std::function<void(BitWriter&)>& refPicSets = nullptr,
+                                const std::function<void(BitWriter&)>& vui = nullptr) {
     BitWriter w;
     w.U(4, 0).U(3, 0).Flag(true);  // vps id, sps_max_sub_layers_minus1, sps_temporal_id_nesting_flag
     H265ProfileTierLevel(w);
@@ -300,7 +309,11 @@ std::vector<uint8_t> H265SpsNal(const std::function<void(BitWriter&)>& refPicSet
         w.Ue(1).Ue(1).Ue(0).Ue(0).Flag(true);  // one st_ref_pic_set: one negative picture, used
     }
     w.Flag(false).Flag(false).Flag(false);  // long-term pictures, temporal MVP, strong intra smoothing
-    w.Flag(false).Flag(false);              // VUI, extensions
+    w.Flag(static_cast<bool>(vui));         // vui_parameters_present_flag
+    if (vui) {
+        vui(w);
+    }
+    w.Flag(false);  // sps_extension_present_flag
     return AnnexBNal({0x42, 0x01}, w.TrailingBits().Data());
 }
 
@@ -527,6 +540,40 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "h265");
              Checks checks(trace);
              checks.Count("pic", 1);
+             return checks.Failures();
+         }},
+        // vps_max_sub_layers_minus1 7, one past the 7 sub-layers H.265 allows (7.4.3.1) and the
+        // Std VPS holds.
+        {"H265VpsSubLayers8",
+         [](CaseContext& stream) {
+             H265Vps vps;
+             vps.maxSubLayersMinus1 = 7;
+             Append(stream.byteStream, H265VpsNal(vps));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("vps", 0);
+             return checks.Failures();
+         }},
+        // an SPS whose VUI HRD parameters have cpb_cnt_minus1 32, one past the 32 CPB entries
+        // H.265 allows (E.3.2) and the Std sub-layer HRD parameters hold.
+        {"H265SpsHrdCpbCount",
+         [](CaseContext& stream) {
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal(nullptr, [](BitWriter& w) {
+                        w.Zeros(8);                                    // aspect ratio ... default display window
+                        w.Flag(true).U(32, 1).U(32, 30).Flag(false);   // vui_timing_info_present_flag, timing
+                        w.Flag(true);                                  // vui_hrd_parameters_present_flag
+                        w.Flag(true).Flag(false).Flag(false);          // nal and vcl HRD, sub_pic_hrd_params_present_flag
+                        w.U(4, 0).U(4, 0).U(5, 23).U(5, 23).U(5, 23);  // scales, delay lengths
+                        w.Flag(true).Ue(0).Ue(32);  // fixed_pic_rate_general_flag, elemental_duration, cpb_cnt_minus1
+                        for (int i = 0; i <= 32; i++) {
+                            w.Ue(0).Ue(0).Flag(false);  // bit_rate_value_minus1, cpb_size_value_minus1, cbr_flag
+                        }
+                        w.Flag(false);  // bitstream_restriction_flag
+                    }));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("sps", 0);
              return checks.Failures();
          }},
         // num_short_term_ref_pic_sets 257, which a uint8_t holds as 1. 64 is the most H.265

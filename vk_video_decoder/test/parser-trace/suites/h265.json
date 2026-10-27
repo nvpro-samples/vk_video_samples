@@ -73,8 +73,7 @@
       "headers": "../streams/h265-x265-hrd-scaling-slices-sublayers-64x64.headers.txt",
       "known": [
         "ptl-flags",
-        "sps-flags",
-        "sps-hrd"
+        "sps-flags"
       ],
       "adapter_golden": "../golden/adapter/h265-x265-hrd-scaling-slices-sublayers-64x64.trace",
       "adapter_known": [

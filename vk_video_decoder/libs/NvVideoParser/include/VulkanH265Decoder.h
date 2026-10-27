@@ -770,8 +770,8 @@ protected:
                                                            short_term_ref_pic_set_s *strps,
                                                            const short_term_ref_pic_set_s strpss[],
                                                            int idx, int num_short_term_ref_pic_sets);
-    void vui_parameters(hevc_seq_param_s *sps, int sps_max_sub_layers_minus1);
-    void hrd_parameters(hevc_video_hrd_param_s* pStdHrdParameters, bool commonInfPresentFlag, uint8_t maxNumSubLayersMinus1);
+    bool vui_parameters(hevc_seq_param_s *sps, int sps_max_sub_layers_minus1);
+    bool hrd_parameters(hevc_video_hrd_param_s* pStdHrdParameters, bool commonInfPresentFlag, uint8_t maxNumSubLayersMinus1);
     void sub_layer_hrd_parameters(StdVideoH265SubLayerHrdParameters* pStdSubLayerHrdParameters, int subLayerId, int cpb_cnt_minus1, int sub_pic_cpb_params_present_flag);
     bool slice_header(int nal_unit_type, int nuh_temporal_id_plus1);
     uint32_t getNumRefLayerPics(const hevc_video_param_s* vps, hevc_slice_header_s *pSliceHeader);
