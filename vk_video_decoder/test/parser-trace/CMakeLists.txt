@@ -134,6 +134,8 @@ message(STATUS "vk-video-parser-trace: Configured")
 set(PARSER_CRAFTED_CASES
     H264CraftedStream
     H265CraftedStream
+    H265VpsLayerSetCountWrap
+    H265VpsLayerSetCountLimit
     Av1CraftedSequenceHeader
     Vp9CraftedKeyFrame
 )

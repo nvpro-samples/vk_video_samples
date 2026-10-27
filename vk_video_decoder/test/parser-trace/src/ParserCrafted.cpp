@@ -218,13 +218,27 @@ void H265ProfileTierLevel(BitWriter& w) {
     w.Zeros(44).U(8, 60);                             // reserved bits, general_level_idc
 }
 
-std::vector<uint8_t> H265VpsNal() {
+// The VPS fields the cases vary. The default VPS has one layer set, of layer 0.
+struct H265Vps {
+    uint32_t id = 0;
+    uint32_t numLayerSetsMinus1 = 0;
+    bool endAfterMaxLayerId = false;  // the NAL unit ends after vps_max_layer_id, zero-padded to a byte
+};
+
+std::vector<uint8_t> H265VpsNal(const H265Vps& vps = H265Vps()) {
     BitWriter w;
-    w.U(4, 0).Flag(true).Flag(true).U(6, 0).U(3, 0).Flag(true).U(16, 0xffff);  // id, base layer, layers, sub-layers
+    w.U(4, vps.id).Flag(true).Flag(true).U(6, 0).U(3, 0).Flag(true).U(16, 0xffff);  // id, base layer, layers, sub-layers
     H265ProfileTierLevel(w);
     w.Flag(true).Ue(1).Ue(0).Ue(0);  // sub_layer_ordering_info: max_dec_pic_buffering_minus1 1
-    w.U(6, 0).Ue(0);                 // vps_max_layer_id, vps_num_layer_sets_minus1
-    w.Flag(false).Flag(false);       // vps_timing_info_present_flag, vps_extension_flag
+    w.U(6, 0);                       // vps_max_layer_id
+    if (vps.endAfterMaxLayerId) {
+        return AnnexBNal({0x40, 0x01}, w.AlignZero().Data());
+    }
+    w.Ue(vps.numLayerSetsMinus1);
+    for (uint32_t i = 1; i <= vps.numLayerSetsMinus1; i++) {
+        w.Flag(true);  // layer_id_included_flag[i][0]
+    }
+    w.Flag(false).Flag(false);  // vps_timing_info_present_flag, vps_extension_flag
     return AnnexBNal({0x40, 0x01}, w.TrailingBits().Data());
 }
 
@@ -349,6 +363,34 @@ const std::vector<CraftedCase>& Cases() {
              checks.Field("sps", "num_short_term_ref_pic_sets", "1");
              checks.Field("  strps", "num_negative_pics", "1");
              checks.Field("  hevc", "IdrPicFlag", "1");
+             return checks.Failures();
+         }},
+        // a VPS that ends after vps_max_layer_id reads vps_num_layer_sets_minus1 from the zeros past
+        // its end, 0xFFFFFFFF, whose count of layer sets wraps to 0 and passes a check on the count.
+        {"H265VpsLayerSetCountWrap",
+         [](CaseContext& stream) {
+             H265Vps vps;
+             vps.endAfterMaxLayerId = true;
+             Append(stream.byteStream, H265VpsNal(vps));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("vps", 0);
+             return checks.Failures();
+         }},
+        // vps_num_layer_sets_minus1 is at most 1023 (Rec. ITU-T H.265 7.4.3.1).
+        {"H265VpsLayerSetCountLimit",
+         [](CaseContext& stream) {
+             H265Vps largest;
+             largest.numLayerSetsMinus1 = 1023;
+             H265Vps beyond;
+             beyond.id = 1;
+             beyond.numLayerSetsMinus1 = 1024;
+             Append(stream.byteStream, H265VpsNal(largest));
+             Append(stream.byteStream, H265VpsNal(beyond));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("vps", 1);
+             checks.Field("vps", "vps_video_parameter_set_id", "0");
              return checks.Failures();
          }},
         // Proves the AV1 sequence header builder: every field after the timing info, uvlc() included,

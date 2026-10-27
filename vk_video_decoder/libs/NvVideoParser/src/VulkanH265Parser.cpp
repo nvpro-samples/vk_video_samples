@@ -964,12 +964,14 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
     }
 
     vps->vps_max_layer_id = u(6);
-    vps->vps_num_layer_sets = ue() + 1;
-    if (vps->vps_num_layer_sets > 1024)
+    // Checked before adding 1, which wraps a ue() of 0xFFFFFFFF to 0.
+    const uint32_t vps_num_layer_sets_minus1 = ue();
+    if (vps_num_layer_sets_minus1 >= MAX_VPS_LAYER_SETS)
     {
-        nvParserLog("Invalid Invalid vps parameter (vps_num_layer_sets=%d)\n", vps->vps_num_layer_sets);
+        nvParserLog("Invalid vps parameter (vps_num_layer_sets_minus1=%u)\n", vps_num_layer_sets_minus1);
         return;
     }
+    vps->vps_num_layer_sets = vps_num_layer_sets_minus1 + 1;
 
     for (uint32_t i = 1; i <= vps->vps_num_layer_sets - 1; i++)
     {
