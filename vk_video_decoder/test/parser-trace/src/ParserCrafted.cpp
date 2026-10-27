@@ -395,6 +395,7 @@ std::vector<uint8_t> H265VpsSplittingNal(uint32_t id, uint32_t scalabilityMask, 
 // blocks and one short-term RPS: one negative picture, used.
 struct H265Sps {
     uint32_t id = 0;
+    uint32_t log2MaxPocLsbMinus4 = 4;
     bool scalingListEnabled = false;  // scaling_list_enabled_flag
     // with scalingListEnabled, the lists of H265PredictedScalingLists; none for the default lists
     std::vector<uint64_t> scalingListDeltas;
@@ -411,7 +412,7 @@ std::vector<uint8_t> H265SpsNal(const H265Sps& sps = H265Sps()) {
     w.U(4, 0).U(3, 0).Flag(true);  // vps id, sps_max_sub_layers_minus1, sps_temporal_id_nesting_flag
     H265ProfileTierLevel(w);
     w.Ue(sps.id).Ue(1).Ue(64).Ue(64).Flag(false);  // sps id, 4:2:0, width, height, conformance window
-    w.Ue(0).Ue(0).Ue(4);                           // bit depths, log2_max_pic_order_cnt_lsb_minus4
+    w.Ue(0).Ue(0).Ue(sps.log2MaxPocLsbMinus4);     // bit depths, log2_max_pic_order_cnt_lsb_minus4
     w.Flag(true).Ue(1).Ue(0).Ue(0);                // sub_layer_ordering_info
     w.Ue(0).Ue(1).Ue(0).Ue(2).Ue(0).Ue(0);         // coding and transform block sizes, hierarchy depths
     w.Flag(sps.scalingListEnabled);
@@ -438,17 +439,25 @@ std::vector<uint8_t> H265SpsNal(const H265Sps& sps = H265Sps()) {
     return AnnexBNal({0x42, 0x01}, w.TrailingBits().Data());
 }
 
-// A PPS of SPS 0. With scalingListDeltas it sets pps_scaling_list_data_present_flag and codes the
-// lists of H265PredictedScalingLists.
-std::vector<uint8_t> H265PpsNal(uint32_t id = 0, const std::vector<uint64_t>& scalingListDeltas = {}) {
+// The PPS fields the cases vary: a PPS of SPS 0. With scalingListDeltas it sets
+// pps_scaling_list_data_present_flag and codes the lists of H265PredictedScalingLists.
+struct H265Pps {
+    uint32_t id = 0;
+    std::vector<uint64_t> scalingListDeltas;
+    int64_t initQpMinus26 = 0;
+    int64_t cbQpOffset = 0;
+};
+
+std::vector<uint8_t> H265PpsNal(const H265Pps& pps = H265Pps()) {
+    const std::vector<uint64_t>& scalingListDeltas = pps.scalingListDeltas;
     BitWriter w;
-    w.Ue(id).Ue(0).Flag(false).Flag(false).U(3, 0);  // ids, dependent slices, output flag, extra slice header bits
-    w.Flag(false).Flag(false).Ue(0).Ue(0).Se(0);     // sign hiding, cabac init, num_ref_idx defaults, init_qp
-    w.Flag(false).Flag(false).Flag(false);           // constrained intra, transform skip, cu_qp_delta
-    w.Se(0).Se(0).Flag(false);                       // cb and cr offsets, slice chroma offsets
-    w.Flag(false).Flag(false).Flag(false);           // weighted pred and bipred, transquant bypass
-    w.Flag(false).Flag(false).Flag(false);           // tiles, entropy sync, loop filter across slices
-    w.Flag(false).Flag(!scalingListDeltas.empty());  // deblocking control, pps_scaling_list_data_present_flag
+    w.Ue(pps.id).Ue(0).Flag(false).Flag(false).U(3, 0);           // ids, dependent slices, output flag, extra slice header bits
+    w.Flag(false).Flag(false).Ue(0).Ue(0).Se(pps.initQpMinus26);  // sign hiding, cabac init, num_ref_idx defaults, init_qp
+    w.Flag(false).Flag(false).Flag(false);                        // constrained intra, transform skip, cu_qp_delta
+    w.Se(pps.cbQpOffset).Se(0).Flag(false);                       // cb and cr offsets, slice chroma offsets
+    w.Flag(false).Flag(false).Flag(false);                        // weighted pred and bipred, transquant bypass
+    w.Flag(false).Flag(false).Flag(false);                        // tiles, entropy sync, loop filter across slices
+    w.Flag(false).Flag(!scalingListDeltas.empty());               // deblocking control, pps_scaling_list_data_present_flag
     H265PredictedScalingLists(w, scalingListDeltas);
     w.Flag(false).Ue(0).Flag(false).Flag(false);  // list modification, parallel merge level, header extension, extensions
     return AnnexBNal({0x44, 0x01}, w.TrailingBits().Data());
@@ -475,15 +484,21 @@ std::vector<uint8_t> H265IdrSliceSegmentNal(uint32_t nuhLayerId) {
 
 // A TRAIL_R P slice with picture order count LSB pocLsb and the SPS's first reference picture set;
 // its slice data is filler the parser does not read. longTerm, for an SPS with long-term pictures,
-// writes the slice's, from num_long_term_sps to the last delta_poc_msb_present_flag.
-std::vector<uint8_t> H265TrailSliceNal(uint32_t pocLsb, const std::function<void(BitWriter&)>& longTerm = nullptr) {
+// writes the slice's, from num_long_term_sps to the last delta_poc_msb_present_flag. A non-negative
+// numRefIdxL0ActiveMinus1 overrides the PPS's count.
+std::vector<uint8_t> H265TrailSliceNal(uint32_t pocLsb, const std::function<void(BitWriter&)>& longTerm = nullptr,
+                                       int64_t numRefIdxL0ActiveMinus1 = -1) {
     BitWriter w;
     w.Flag(true).Ue(0).Ue(1);   // first slice, pps id, slice_type P
     w.U(8, pocLsb).Flag(true);  // slice_pic_order_cnt_lsb, short_term_ref_pic_set_sps_flag
     if (longTerm) {
         longTerm(w);
     }
-    w.Flag(false).Ue(0).Se(0);                         // num_ref_idx_active_override_flag, merge candidates, slice_qp_delta
+    w.Flag(numRefIdxL0ActiveMinus1 >= 0);  // num_ref_idx_active_override_flag
+    if (numRefIdxL0ActiveMinus1 >= 0) {
+        w.Ue(static_cast<uint64_t>(numRefIdxL0ActiveMinus1));
+    }
+    w.Ue(0).Se(0);                                     // num_ref_idx_active_override_flag, merge candidates, slice_qp_delta
     w.TrailingBits().Bytes({0x55, 0xAA, 0x55, 0xAA});  // byte_alignment(), slice data
     return AnnexBNal({0x02, 0x01}, w.Data());
 }
@@ -931,15 +946,47 @@ const std::vector<CraftedCase>& Cases() {
              Append(stream.byteStream, H265VpsNal());
              Append(stream.byteStream, H265SpsNal({.scalingListEnabled = true}));
              Append(stream.byteStream, H265SpsNal({.id = 1, .scalingListEnabled = true, .scalingListDeltas = wrapped}));
-             Append(stream.byteStream, H265PpsNal(0, valid));
-             Append(stream.byteStream, H265PpsNal(1, {0, 2}));
-             Append(stream.byteStream, H265PpsNal(2, wrapped));
+             Append(stream.byteStream, H265PpsNal({.id = 0, .scalingListDeltas = valid}));
+             Append(stream.byteStream, H265PpsNal({.id = 1, .scalingListDeltas = {0, 2}}));
+             Append(stream.byteStream, H265PpsNal({.id = 2, .scalingListDeltas = wrapped}));
              const Trace trace = Run(stream, "h265");
              Checks checks(trace);
              checks.Count("sps", 1);
              checks.Field("sps", "sps_seq_parameter_set_id", "0");
              checks.Count("pps", 1);
              checks.Field("pps", "pps_pic_parameter_set_id", "0");
+             return checks.Failures();
+         }},
+        // an SPS value is range-checked before it is narrowed to its 8-bit field. SPS 256 narrows to the
+        // id of SPS 0, which it would replace; SPS 1's log2_max_pic_order_cnt_lsb_minus4 260 narrows to 4.
+        {"H265SpsValuesPastTheirRange",
+         [](CaseContext& stream) {
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal());
+             Append(stream.byteStream, H265SpsNal({.id = 256}));
+             Append(stream.byteStream, H265SpsNal({.id = 1, .log2MaxPocLsbMinus4 = 260}));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("sps", 1);
+             checks.Field("sps", "sps_seq_parameter_set_id", "0");
+             return checks.Failures();
+         }},
+        // PPS 1's init_qp_minus26 266 narrows to 10, PPS 2's pps_cb_qp_offset 261 to 5, and a P slice's
+        // num_ref_idx_l0_active_minus1 256 to 0 (0 to 14, 7.4.7.1). PPS 0 and the slices after are valid.
+        {"H265PpsSliceValuesPastTheirRange",
+         [](CaseContext& stream) {
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal());
+             Append(stream.byteStream, H265PpsNal());
+             Append(stream.byteStream, H265PpsNal({.id = 1, .initQpMinus26 = 266}));
+             Append(stream.byteStream, H265PpsNal({.id = 2, .cbQpOffset = 261}));
+             Append(stream.byteStream, H265IdrSliceNal());
+             Append(stream.byteStream, H265TrailSliceNal(1, nullptr, 256));
+             Append(stream.byteStream, H265TrailSliceNal(2));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("pps", 1);
+             checks.Count("pic", 2);
              return checks.Failures();
          }},
         // vps_max_sub_layers_minus1 7, one past the 7 sub-layers H.265 allows (7.4.3.1) and the

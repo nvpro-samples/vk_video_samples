@@ -151,6 +151,8 @@ set(PARSER_CRAFTED_CASES
     H265RefPicSetCurrBefore9
     H265SliceOfAnotherLayer
     H265SliceNumLongTermSps
+    H265SpsValuesPastTheirRange
+    H265PpsSliceValuesPastTheirRange
     H265ScalingListRefMatrix
     H265VpsSubLayers8
     H265SpsHrdCpbCount
