@@ -140,6 +140,7 @@ set(PARSER_CRAFTED_CASES
     H265VpsExtensionLayerSetIndex
     H265InterRpsOverflow
     H265SpsNumStRps
+    H265RefPicSetCurrBefore9
     Av1CraftedSequenceHeader
     Av1UvlcTruncated
     Av1FilmGrainPointCount

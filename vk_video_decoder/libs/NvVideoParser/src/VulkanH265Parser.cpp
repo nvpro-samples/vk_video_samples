@@ -190,13 +190,14 @@ bool VulkanH265Decoder::BeginPicture(VkParserPictureData *pnvpd)
     hevc->NumActiveRefLayerPics0 = m_NumActiveRefLayerPics0;
     hevc->NumActiveRefLayerPics1 = m_NumActiveRefLayerPics1;
 
-    for (int32_t i = 0; i < hevc->NumPocStCurrBefore; i++) {
+    // slice_header() refuses a slice with more current pictures in a list than these lists hold.
+    for (int32_t i = 0; i < std::min<int32_t>(hevc->NumPocStCurrBefore, sizeof(hevc->RefPicSetStCurrBefore) / sizeof(hevc->RefPicSetStCurrBefore[0])); i++) {
         hevc->RefPicSetStCurrBefore[i] = m_RefPicSetStCurrBefore[i];
     }
-    for (int32_t i = 0; i < hevc->NumPocStCurrAfter; i++) {
+    for (int32_t i = 0; i < std::min<int32_t>(hevc->NumPocStCurrAfter, sizeof(hevc->RefPicSetStCurrAfter) / sizeof(hevc->RefPicSetStCurrAfter[0])); i++) {
         hevc->RefPicSetStCurrAfter[i] = m_RefPicSetStCurrAfter[i];
     }
-    for (int32_t i = 0; i < hevc->NumPocLtCurr; i++) {
+    for (int32_t i = 0; i < std::min<int32_t>(hevc->NumPocLtCurr, sizeof(hevc->RefPicSetLtCurr) / sizeof(hevc->RefPicSetLtCurr[0])); i++) {
         hevc->RefPicSetLtCurr[i] = m_RefPicSetLtCurr[i];
     }
     for (int32_t i = 0; i < hevc->NumActiveRefLayerPics0; i++) {
@@ -2307,17 +2308,27 @@ bool VulkanH265Decoder::slice_header(int nal_unit_type, int nuh_temporal_id_plus
             }
 
             const short_term_ref_pic_set_s *strps = !slh->short_term_ref_pic_set_sps_flag ? &slh->strps : &sps->strpss[slh->short_term_ref_pic_set_idx];
+            uint32_t numPocStCurrBefore = 0, numPocStCurrAfter = 0, numPocLtCurr = 0;
             for (uint32_t i = 0; i < strps->NumNegativePics; i++) {
-                m_NumPocTotalCurr += strps->UsedByCurrPicS0[i];
+                numPocStCurrBefore += strps->UsedByCurrPicS0[i];
             }
             for (uint32_t  i = 0; i < strps->NumPositivePics; i++) {
-                m_NumPocTotalCurr += strps->UsedByCurrPicS1[i];
+                numPocStCurrAfter += strps->UsedByCurrPicS1[i];
             }
             for (uint32_t i = 0; i < (uint32_t )(slh->num_long_term_sps + slh->num_long_term_pics); i++) {
                 int UsedByCurrPicLt =
                     (i < slh->num_long_term_sps) ? ((sps->stdLongTermRefPicsSps.used_by_curr_pic_lt_sps_flag >> slh->lt_idx_sps[i]) & 1)
                                                  : ((slh->used_by_curr_pic_lt_flags >> i) & 1);
-                m_NumPocTotalCurr += UsedByCurrPicLt;
+                numPocLtCurr += UsedByCurrPicLt;
+            }
+            m_NumPocTotalCurr = numPocStCurrBefore + numPocStCurrAfter + numPocLtCurr;
+            // The Std picture information holds STD_VIDEO_DECODE_H265_REF_PIC_SET_LIST_SIZE pictures per list.
+            if ((numPocStCurrBefore > STD_VIDEO_DECODE_H265_REF_PIC_SET_LIST_SIZE) ||
+                (numPocStCurrAfter > STD_VIDEO_DECODE_H265_REF_PIC_SET_LIST_SIZE) ||
+                (numPocLtCurr > STD_VIDEO_DECODE_H265_REF_PIC_SET_LIST_SIZE)) {
+                nvParserLog("Invalid reference picture set: %u, %u and %u current pictures\n",
+                            numPocStCurrBefore, numPocStCurrAfter, numPocLtCurr);
+                return false;
             }
         }
     }

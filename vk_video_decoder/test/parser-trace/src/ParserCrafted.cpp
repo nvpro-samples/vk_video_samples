@@ -325,6 +325,17 @@ std::vector<uint8_t> H265IdrSliceNal() {
     return AnnexBNal({0x26, 0x01}, w.Data());
 }
 
+// A TRAIL_R P slice with picture order count LSB pocLsb and the SPS's first reference picture set;
+// its slice data is filler the parser does not read.
+std::vector<uint8_t> H265TrailSliceNal(uint32_t pocLsb) {
+    BitWriter w;
+    w.Flag(true).Ue(0).Ue(1);                          // first slice, pps id, slice_type P
+    w.U(8, pocLsb).Flag(true);                         // slice_pic_order_cnt_lsb, short_term_ref_pic_set_sps_flag
+    w.Flag(false).Ue(0).Se(0);                         // num_ref_idx_active_override_flag, merge candidates, slice_qp_delta
+    w.TrailingBits().Bytes({0x55, 0xAA, 0x55, 0xAA});  // byte_alignment(), slice data
+    return AnnexBNal({0x02, 0x01}, w.Data());
+}
+
 // ---- AV1 (AV1 bitstream specification 5.5) ----
 
 // A temporal delimiter and a sequence header for 64x64 Main 8-bit 4:2:0 with timing info; the
@@ -497,6 +508,25 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "h265");
              Checks checks(trace);
              checks.Count("vps", 0);
+             return checks.Failures();
+         }},
+        // a P slice whose reference picture set has 9 pictures before it, used; the Std picture
+        // information holds 8 per list (STD_VIDEO_DECODE_H265_REF_PIC_SET_LIST_SIZE).
+        {"H265RefPicSetCurrBefore9",
+         [](CaseContext& stream) {
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal([](BitWriter& w) {
+                        w.Ue(1).Ue(9).Ue(0);  // one set: 9 negative pictures
+                        for (int i = 0; i < 9; i++) {
+                            w.Ue(0).Flag(true);  // delta_poc_s0_minus1, used_by_curr_pic_s0_flag
+                        }
+                    }));
+             Append(stream.byteStream, H265PpsNal());
+             Append(stream.byteStream, H265IdrSliceNal());
+             Append(stream.byteStream, H265TrailSliceNal(1));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("pic", 1);
              return checks.Failures();
          }},
         // num_short_term_ref_pic_sets 257, which a uint8_t holds as 1. 64 is the most H.265

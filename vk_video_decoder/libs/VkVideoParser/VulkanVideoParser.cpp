@@ -1646,7 +1646,7 @@ uint32_t VulkanVideoParser::FillDpbH265State(
     if ((size_t)pin->NumPocStCurrBefore > maxNumPocStCurrBefore) {
         fprintf(stderr, "\nERROR: FillDpbH265State() pin->NumPocStCurrBefore(%d) must be smaller than maxNumPocStCurrBefore(%zd)\n", pin->NumPocStCurrBefore, maxNumPocStCurrBefore);
     }
-    for (int32_t i = 0; i < pin->NumPocStCurrBefore; i++) {
+    for (int32_t i = 0; i < std::min<int32_t>(pin->NumPocStCurrBefore, (int32_t)maxNumPocStCurrBefore); i++) {
         uint8_t idx = (uint8_t)pin->RefPicSetStCurrBefore[i];
         if (idx < HEVC_MAX_DPB_SLOTS) {
             if (m_dumpParserData)
@@ -1666,7 +1666,7 @@ uint32_t VulkanVideoParser::FillDpbH265State(
     if ((size_t)pin->NumPocStCurrAfter > maxNumPocStCurrAfter) {
         fprintf(stderr, "\nERROR: FillDpbH265State() pin->NumPocStCurrAfter(%d) must be smaller than maxNumPocStCurrAfter(%zd)\n", pin->NumPocStCurrAfter, maxNumPocStCurrAfter);
     }
-    for (int32_t i = 0; i < pin->NumPocStCurrAfter; i++) {
+    for (int32_t i = 0; i < std::min<int32_t>(pin->NumPocStCurrAfter, (int32_t)maxNumPocStCurrAfter); i++) {
         uint8_t idx = (uint8_t)pin->RefPicSetStCurrAfter[i];
         if (idx < HEVC_MAX_DPB_SLOTS) {
             if (m_dumpParserData)
@@ -1686,7 +1686,7 @@ uint32_t VulkanVideoParser::FillDpbH265State(
     if ((size_t)pin->NumPocLtCurr > maxNumPocLtCurr) {
         fprintf(stderr, "\nERROR: FillDpbH265State() pin->NumPocLtCurr(%d) must be smaller than maxNumPocLtCurr(%zd)\n", pin->NumPocLtCurr, maxNumPocLtCurr);
     }
-    for (int32_t i = 0; i < pin->NumPocLtCurr; i++) {
+    for (int32_t i = 0; i < std::min<int32_t>(pin->NumPocLtCurr, (int32_t)maxNumPocLtCurr); i++) {
         uint8_t idx = (uint8_t)pin->RefPicSetLtCurr[i];
         if (idx < HEVC_MAX_DPB_SLOTS) {
             if (m_dumpParserData)
