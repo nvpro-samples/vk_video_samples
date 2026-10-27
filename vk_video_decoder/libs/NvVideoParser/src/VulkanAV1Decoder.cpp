@@ -2130,6 +2130,16 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
                 }
             }
 
+            // Each reference an inter frame names holds a frame (AV1 6.8.2 requires RefValid for each).
+            // A frame that names an empty buffer, as an inter frame before any key frame does, has no
+            // size or order hint to take from it, and is dropped, as libaom drops it.
+            for (uint32_t i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
+                if (m_pBuffers[ref_frame_idx[i]].buffer == nullptr) {
+                    nvParserLog("Inter frame references the empty buffer %d\n", ref_frame_idx[i]);
+                    return false;
+                }
+            }
+
             if (!pic_flags->error_resilient_mode && pic_flags->frame_size_override_flag) {
                 SetupFrameSizeWithRefs();
             } else {
@@ -2206,7 +2216,12 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
         pic_flags->disable_frame_end_update_cdf = 1;
     }
 
-    // tile_info
+    // tile_info. DecodeTileInfo divides by the frame's superblock columns and rows, which a frame of no
+    // width or height makes 0.
+    if ((frame_width == 0) || (frame_height == 0)) {
+        nvParserLog("Invalid frame size (%dx%d)\n", frame_width, frame_height);
+        return false;
+    }
     DecodeTileInfo();
     DecodeQuantizationData();
     DecodeSegmentationData();

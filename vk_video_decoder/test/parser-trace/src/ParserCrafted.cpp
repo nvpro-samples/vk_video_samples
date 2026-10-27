@@ -449,6 +449,30 @@ std::vector<uint8_t> Av1KeyFrameObu(uint32_t numYPoints) {
     return Obu(6, w.Data());                        // OBU_FRAME
 }
 
+// A shown 64x64 inter frame for the sequence header of Av1SequenceHeaderUnit with film grain, as an
+// OBU_FRAME of one tile, whose data is filler. Its seven references name buffer 0, it takes its size
+// from the first of them (found_ref), and it refreshes buffer 0.
+std::vector<uint8_t> Av1InterFrameObu() {
+    BitWriter w;
+    w.Flag(false).U(2, 1).Flag(true);       // show_existing_frame, INTER_FRAME, show_frame
+    w.Flag(false).Flag(false).Flag(false);  // error_resilient_mode, disable_cdf_update, allow_screen_content_tools
+    w.Flag(true).U(7, 1).U(3, 7);           // frame_size_override_flag, order_hint, primary_ref_frame NONE
+    w.U(8, 0x01).Flag(false);               // refresh_frame_flags, frame_refs_short_signaling
+    for (int i = 0; i < 7; i++) {
+        w.U(3, 0);  // ref_frame_idx[i]
+    }
+    w.Flag(true);                                                // frame_size_with_refs(): found_ref
+    w.Flag(false).Flag(true).Flag(false);                        // allow_high_precision_mv, switchable filter, motion mode
+    w.Flag(true).Flag(true);                                     // disable_frame_end_update_cdf, uniform_tile_spacing_flag
+    w.U(8, 60).Flag(false).Flag(false).Flag(false).Flag(false);  // base_q_idx, no delta_q, no qmatrix
+    w.Flag(false).Flag(false);                                   // segmentation_enabled, delta_q_present
+    w.U(6, 0).U(6, 0).U(3, 0).Flag(false);                       // loop filter levels, sharpness, deltas
+    w.Flag(false).Flag(false).Flag(false);                       // tx_mode_select, reference_select, reduced_tx_set
+    w.Zeros(7).Flag(false);                                      // is_global for each reference, apply_grain
+    w.AlignZero().Bytes({0x55, 0xAA, 0x55, 0xAA});               // byte_alignment(), the tile
+    return Obu(6, w.Data());                                     // OBU_FRAME
+}
+
 // A temporal delimiter and a sequence header whose timing info ends after equal_picture_interval in
 // zero bytes, so num_ticks_per_picture_minus1 reads uvlc() over zeros to the end of the packet.
 std::vector<uint8_t> Av1TruncatedTimingUnit() {
@@ -821,6 +845,25 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "av1");
              Checks checks(trace);
              checks.Count("pic", 1);
+             return checks.Failures();
+         }},
+        // an inter frame before any key frame takes its size from a reference buffer that holds no
+        // frame (found_ref); AV1 6.8.2 requires each reference it names to be valid. Then a key frame
+        // and the same inter frame, which the parser takes.
+        {"Av1InterFrameEmptyReference",
+         [](CaseContext& stream) {
+             std::vector<uint8_t> unit = Av1SequenceHeaderUnit(0, true);
+             Append(unit, Av1InterFrameObu());
+             stream.packets.push_back({unit, 0});
+             unit = Obu(2, {});
+             Append(unit, Av1KeyFrameObu(1));
+             stream.packets.push_back({unit, 1});
+             unit = Obu(2, {});
+             Append(unit, Av1InterFrameObu());
+             stream.packets.push_back({unit, 2});
+             const Trace trace = Run(stream, "av1");
+             Checks checks(trace);
+             checks.Count("pic", 2);
              return checks.Failures();
          }},
         // Proves the AV1 key frame builder, and the limit: 14 luma scaling points are the most

@@ -152,6 +152,7 @@ set(PARSER_CRAFTED_CASES
     Av1FilmGrainPointCount
     Av1FrameBeforeSequenceHeader
     Av1TileGroupWithoutFrameHeader
+    Av1InterFrameEmptyReference
     Vp9CraftedKeyFrame
     Vp9PicturePoolExhausted
     Vp9SuperframeIndex
