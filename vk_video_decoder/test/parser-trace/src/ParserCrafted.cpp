@@ -489,8 +489,9 @@ std::vector<uint8_t> Av1SequenceHeaderUnit(uint64_t numTicksPerPictureMinus1, bo
 }
 
 // A shown 64x64 key frame for the sequence header of Av1SequenceHeaderUnit with film grain, as an
-// OBU_FRAME of one tile, whose data is filler. Its film grain has numYPoints luma scaling points.
-std::vector<uint8_t> Av1KeyFrameObu(uint32_t numYPoints) {
+// OBU_FRAME of one tile, whose data is filler. Its film grain has numYPoints luma scaling points,
+// yStep apart.
+std::vector<uint8_t> Av1KeyFrameObu(uint32_t numYPoints, uint32_t yStep = 16) {
     BitWriter w;
     w.Flag(false).U(2, 0).Flag(true);   // show_existing_frame, KEY_FRAME, show_frame
     w.Flag(false).Flag(false);          // disable_cdf_update, allow_screen_content_tools
@@ -502,7 +503,7 @@ std::vector<uint8_t> Av1KeyFrameObu(uint32_t numYPoints) {
     w.Flag(false).Flag(false);                                   // tx_mode_select, reduced_tx_set
     w.Flag(true).U(16, 1234).U(4, numYPoints);                   // film_grain_params(): apply_grain, grain_seed, num_y_points
     for (uint32_t i = 0; i < numYPoints; i++) {
-        w.U(8, 16 * i).U(8, 64);  // point_y_value, increasing; point_y_scaling
+        w.U(8, yStep * i).U(8, 64);  // point_y_value, point_y_scaling
     }
     w.Flag(false).U(4, 0).U(4, 0);      // chroma_scaling_from_luma, num_cb_points, num_cr_points
     w.U(2, 0).U(2, 0).U(2, 0).U(2, 0);  // grain_scaling_minus_8, ar_coeff_lag, ar_coeff_shift_minus_6, grain_scale_shift
@@ -549,12 +550,12 @@ std::vector<uint8_t> Av1TruncatedTimingUnit() {
 
 // ---- VP9 (VP9 bitstream specification 6.2) ----
 
-// A shown profile 0 key frame of 64x64, with frame_sync_code syncCode; its compressed header and tile
-// are filler.
-std::vector<uint8_t> Vp9KeyFrame(uint32_t syncCode = 0x498342) {
+// A shown profile 0 key frame of 64x64, with frame_marker frameMarker and frame_sync_code syncCode; its
+// compressed header and tile are filler.
+std::vector<uint8_t> Vp9KeyFrame(uint32_t syncCode = 0x498342, uint32_t frameMarker = 2) {
     const std::vector<uint8_t> compressedHeader = {0x55, 0xAA, 0x55, 0xAA};
     BitWriter w;
-    w.U(2, 2).Flag(false).Flag(false);                 // frame_marker, profile 0
+    w.U(2, frameMarker).Flag(false).Flag(false);       // frame_marker, profile 0
     w.Flag(false).Flag(false).Flag(true).Flag(false);  // show_existing_frame, KEY_FRAME, show_frame, error res
     w.U(24, syncCode);                                 // frame_sync_code
     w.U(3, 1).Flag(false);                             // color_space BT.601, color_range
@@ -1065,6 +1066,21 @@ const std::vector<CraftedCase>& Cases() {
              checks.Count("pic", 1);
              return checks.Failures();
          }},
+        // film grain points increase (AV1 6.8.20); a key frame whose two luma points are both 0 is
+        // refused, where a build with assertions stopped and one without took it.
+        {"Av1FilmGrainPointsNotIncreasing",
+         [](CaseContext& stream) {
+             std::vector<uint8_t> unit = Av1SequenceHeaderUnit(0, true);
+             Append(unit, Av1KeyFrameObu(2, 0));
+             stream.packets.push_back({unit, 0});
+             unit = Obu(2, {});
+             Append(unit, Av1KeyFrameObu(2));
+             stream.packets.push_back({unit, 1});
+             const Trace trace = Run(stream, "av1");
+             Checks checks(trace);
+             checks.Count("pic", 1);
+             return checks.Failures();
+         }},
         // Proves the AV1 key frame builder, and the limit: 14 luma scaling points are the most
         // StdVideoAV1FilmGrain holds (STD_VIDEO_AV1_MAX_NUM_Y_POINTS), and 15 fit the 4-bit syntax
         // element.
@@ -1111,6 +1127,17 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "vp9");
              Checks checks(trace);
              checks.Count("pic", 2);
+             return checks.Failures();
+         }},
+        // frame_marker is 2 (VP9 6.2); a frame with another is refused, where a build with assertions
+        // stopped.
+        {"Vp9BadFrameMarker",
+         [](CaseContext& stream) {
+             stream.packets.push_back({Vp9KeyFrame(0x498342, 1), 0});
+             stream.packets.push_back({Vp9KeyFrame(), 1});
+             const Trace trace = Run(stream, "vp9");
+             Checks checks(trace);
+             checks.Count("pic", 1);
              return checks.Failures();
          }},
         // frame_sync_code is 0x49, 0x83, 0x42 (VP9 6.2); a key frame with another is not a frame.

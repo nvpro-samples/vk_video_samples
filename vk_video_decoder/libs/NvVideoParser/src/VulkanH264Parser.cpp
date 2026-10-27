@@ -334,10 +334,16 @@ bool VulkanH264Decoder::BeginPicture(VkParserPictureData *pnvpd)
         }
         memset(&h264->dpb, 0, sizeof(h264->dpb));
         for (int32_t i = 0; i < MAX_DPB_SIZE; i++) {
-            // Check dpb consistency
-            assert((dpb[i].state & 1) || (dpb[i].top_field_marking == 0));
-            assert((dpb[i].state & 2) || (dpb[i].bottom_field_marking == 0));
-            assert((dpb[i].state != 3) || (dpb[i].top_field_marking == 0) || (dpb[i].bottom_field_marking == 0) || (dpb[i].top_field_marking == dpb[i].bottom_field_marking));
+            // A field the entry does not hold is unmarked, and a frame's fields are marked alike. Memory
+            // management operations of a stream that does not conform can leave that otherwise; the entry is
+            // exported as it is.
+            if (!((dpb[i].state & 1) || (dpb[i].top_field_marking == 0)) ||
+                !((dpb[i].state & 2) || (dpb[i].bottom_field_marking == 0)) ||
+                !((dpb[i].state != 3) || (dpb[i].top_field_marking == 0) || (dpb[i].bottom_field_marking == 0) ||
+                  (dpb[i].top_field_marking == dpb[i].bottom_field_marking))) {
+                nvParserLog("DPB entry %d: state %d, field markings %d and %d\n", i, dpb[i].state,
+                            dpb[i].top_field_marking, dpb[i].bottom_field_marking);
+            }
             if (dpb[i].top_field_marking != 0 || dpb[i].bottom_field_marking != 0 || 
                 (dpb[i].inter_view_flag && dpb[i].view_id != m_nhe.mvc.view_id))
             {

@@ -401,9 +401,9 @@ int VulkanAV1Decoder::GetRelativeDist(int a, int b)
 
     const int bits = sps->order_hint_bits_minus_1 + 1;
 
+    // a and b are order hints of bits bits, but a stream that changes order_hint_bits_minus_1 without a
+    // key frame leaves references with wider ones: the masks below keep the distance defined for any.
     assert(bits >= 1);
-    assert(a >= 0 && a < (1 << bits));
-    assert(b >= 0 && b < (1 << bits));
 
     int diff = a - b;
     const int m = 1 << (bits - 1);
@@ -958,9 +958,6 @@ void VulkanAV1Decoder::SetupFrameSize(int frame_size_override_flag)
     if (frame_size_override_flag) {
         frame_width = u(sps->frame_width_bits_minus_1 + 1) + 1;
         frame_height = u(sps->frame_height_bits_minus_1 + 1) + 1;
-        if (frame_width > (sps->max_frame_width_minus_1 + 1) || frame_height > (sps->max_frame_height_minus_1 + 1)) {
-            assert(false);
-        }
     } else {
         frame_width = sps->max_frame_width_minus_1 + 1;
         frame_height = sps->max_frame_height_minus_1 + 1;
@@ -1081,7 +1078,8 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
         for (uint32_t i = 0; i < pFilmGrain->num_y_points; i++) {
             pFilmGrain->point_y_value[i] = u(8);
             if (i && pFilmGrain->point_y_value[i-1] >= pFilmGrain->point_y_value[i]) {
-                assert(!"Y cordinates should be increasing\n");
+                nvParserLog("Film grain point_y_value not increasing\n");  // AV1 6.8.20
+                return false;
             }
             pFilmGrain->point_y_scaling[i] = u(8);
         }
@@ -1101,7 +1099,8 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
             for (uint32_t i = 0; i < pFilmGrain->num_cb_points; i++) {
                 pFilmGrain->point_cb_value[i] = u(8);
                 if (i && pFilmGrain->point_cb_value[i-1] >= pFilmGrain->point_cb_value[i]) {
-                    assert(!"cb cordinates should be increasing\n");
+                    nvParserLog("Film grain point_cb_value not increasing\n");  // AV1 6.8.20
+                    return false;
                 }
                 pFilmGrain->point_cb_scaling[i] = u(8);
             }
@@ -1114,7 +1113,8 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
             for (uint32_t i = 0; i < pFilmGrain->num_cr_points; i++) {
                 pFilmGrain->point_cr_value[i] = u(8);
                 if (i && pFilmGrain->point_cr_value[i-1] >= pFilmGrain->point_cr_value[i]) {
-                    assert(!"cr cordinates should be increasing\n");
+                    nvParserLog("Film grain point_cr_value not increasing\n");  // AV1 6.8.20
+                    return false;
                 }
                 pFilmGrain->point_cr_scaling[i] = u(8);
             }
@@ -1609,9 +1609,9 @@ int VulkanAV1Decoder::GetRelativeDist1(int a, int b)
 
     const int bits = sps->order_hint_bits_minus_1 + 1;
 
+    // a and b are order hints of bits bits, but a stream that changes order_hint_bits_minus_1 without a
+    // key frame leaves references with wider ones: the masks below keep the distance defined for any.
     assert(bits >= 1);
-    assert(a >= 0 && a < (1 << bits));
-    assert(b >= 0 && b < (1 << bits));
 
     int diff = a - b;
     const int m = 1 << (bits - 1);
@@ -1854,9 +1854,11 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
             if (sps->flags.frame_id_numbers_present_flag) {
                 int display_frame_id = u(frame_id_length);
 
+                // The frame shown is the one the buffer holds (AV1 6.8.2).
                 if (display_frame_id != ref_frame_id[frame_to_show_map_idx] ||
                     RefValid[frame_to_show_map_idx] == 0) {
-                    assert(!"ref frame ID mismatch");
+                    nvParserLog("display_frame_id %d does not name buffer %d's frame\n", display_frame_id, frame_to_show_map_idx);
+                    return false;
                 }
             }
             if (!m_pBuffers[show_existing_frame_index].buffer) {
@@ -2057,7 +2059,8 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
         if (intra_only || pStd->frame_type != 3) {
             pStd->refresh_frame_flags = u(STD_VIDEO_AV1_NUM_REF_FRAMES);
             if (pStd->refresh_frame_flags == 0xFF && intra_only) {
-                assert(!"Intra_only frames cannot have refresh flags 0xFF");
+                nvParserLog("Intra-only frame with refresh_frame_flags 0xFF\n");  // AV1 6.8.2
+                return false;
             }
 
             //  memset(&ref_frame_names, -1, sizeof(ref_frame_names));
@@ -2220,9 +2223,11 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
     }
 
     // tile_info. DecodeTileInfo divides by the frame's superblock columns and rows, which a frame of no
-    // width or height makes 0.
-    if ((frame_width == 0) || (frame_height == 0)) {
-        nvParserLog("Invalid frame size (%dx%d)\n", frame_width, frame_height);
+    // width or height makes 0. The frame, before superres, fits in the sequence's maximum (AV1 6.8.4),
+    // which the client allocates its pictures at.
+    if ((frame_width == 0) || (frame_height == 0) || (upscaled_width > sps->max_frame_width_minus_1 + 1) ||
+        (frame_height > sps->max_frame_height_minus_1 + 1)) {
+        nvParserLog("Invalid frame size (%dx%d, upscaled width %d)\n", frame_width, frame_height, upscaled_width);
         return false;
     }
     DecodeTileInfo();

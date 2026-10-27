@@ -354,7 +354,7 @@ bool VulkanVP9Decoder::ParseUncompressedHeader()
     pStdPicInfo->profile = (StdVideoVP9Profile)profile;
     if (pStdPicInfo->profile == STD_VIDEO_VP9_PROFILE_3) {
         if (u(1) != 0) {
-            assert(!"Invalid syntax");
+            nvParserLog("Invalid VP9 syntax: reserved_zero of profile 3\n");
             return false;
         }
     }

@@ -155,6 +155,7 @@ set(PARSER_CRAFTED_CASES
     Av1CraftedSequenceHeader
     Av1UvlcTruncated
     Av1FilmGrainPointCount
+    Av1FilmGrainPointsNotIncreasing
     Av1FrameBeforeSequenceHeader
     Av1TileGroupWithoutFrameHeader
     Av1InterFrameEmptyReference
@@ -164,6 +165,7 @@ set(PARSER_CRAFTED_CASES
     Vp9PicturePoolExhausted
     Vp9SuperframeIndex
     Vp9BadSyncCode
+    Vp9BadFrameMarker
 )
 foreach(crafted ${PARSER_CRAFTED_CASES})
     add_test(NAME ParserCrafted.${crafted} COMMAND $<TARGET_FILE:vk-video-parser-crafted> --case ${crafted})

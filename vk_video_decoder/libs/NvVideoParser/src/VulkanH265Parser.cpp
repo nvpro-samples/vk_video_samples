@@ -430,8 +430,8 @@ void VulkanH265Decoder::seq_parameter_set_rbsp()
         sps->sps_max_sub_layers_minus1 = (tmp == 7 ? vps->vps_max_sub_layers_minus1 : tmp);
     }
 
-    if (sps->sps_max_sub_layers_minus1 >= MAX_NUM_SUB_LAYERS) { // fatal
-        assert(!"Too many layers");
+    if (sps->sps_max_sub_layers_minus1 >= MAX_NUM_SUB_LAYERS) {
+        nvParserLog("Invalid sps_max_sub_layers_minus1 (%d)\n", sps->sps_max_sub_layers_minus1);
         return;
     }
 
@@ -802,7 +802,6 @@ void VulkanH265Decoder::pic_parameter_set_rbsp()
         uint32_t num_tile_rows_minus1 = ue();
         if ((num_tile_columns_minus1 >= MAX_NUM_TILE_COLUMNS) || (num_tile_rows_minus1 >= MAX_NUM_TILE_ROWS))
         {
-            assert(!"Unsupported number of tiles in PPS");
             nvParserLog("Unsupported number of tiles in PPS: %dx%d\n", num_tile_columns_minus1, num_tile_rows_minus1);
             return;
         }
@@ -871,11 +870,8 @@ void VulkanH265Decoder::pic_parameter_set_rbsp()
                 pps->diff_cu_chroma_qp_offset_depth = (uint8_t)ue();
                 pps->chroma_qp_offset_list_len_minus1 = (uint8_t)ue();
                 if (pps->chroma_qp_offset_list_len_minus1 > 5) {
-                    assert(!"Invalid pps range extension data");
-                    nvParserLog("Invalid pps range extension data\n");
-                    pps->flags.chroma_qp_offset_list_enabled_flag = false;
-                    pps->chroma_qp_offset_list_len_minus1 = 0;
-                    pps->diff_cu_chroma_qp_offset_depth = 0;
+                    nvParserLog("Invalid chroma_qp_offset_list_len_minus1 (%d)\n", pps->chroma_qp_offset_list_len_minus1);  // 7.4.3.3.2
+                    return;
                 }
                 else
                 {
