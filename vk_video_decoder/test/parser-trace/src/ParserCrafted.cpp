@@ -481,6 +481,19 @@ std::vector<uint8_t> Vp9KeyFrame() {
     return w.Data();
 }
 
+// A superframe index (VP9 Annex B) for frames of the given sizes, each in two bytes.
+std::vector<uint8_t> Vp9SuperframeIndex(const std::vector<uint32_t>& sizes) {
+    // superframe_marker, bytes_per_framesize_minus_1 1, frames_in_superframe_minus_1
+    const uint8_t marker = static_cast<uint8_t>(0xc0 | (1 << 3) | (sizes.size() - 1));
+    std::vector<uint8_t> index = {marker};
+    for (const uint32_t size : sizes) {
+        index.push_back(static_cast<uint8_t>(size & 0xff));
+        index.push_back(static_cast<uint8_t>(size >> 8));
+    }
+    index.push_back(marker);
+    return index;
+}
+
 struct CraftedCase {
     const char* name;
     std::function<std::vector<std::string>(CaseContext&)> run;
@@ -837,6 +850,25 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("pic", 1);
              checks.Count("alloc-failed", 1);
+             return checks.Failures();
+         }},
+        // a superframe's index gives the size of each of its frames (VP9 Annex B), and they are the
+        // frames the parser takes. The first packet is a superframe of two key frames; the second is a
+        // key frame before an index of eight frames of no bytes, which leaves the key frame out.
+        {"Vp9SuperframeIndex",
+         [](CaseContext& stream) {
+             const std::vector<uint8_t> frame = Vp9KeyFrame();
+             const uint32_t frameSize = static_cast<uint32_t>(frame.size());
+             std::vector<uint8_t> superframe = frame;
+             Append(superframe, frame);
+             Append(superframe, Vp9SuperframeIndex({frameSize, frameSize}));
+             stream.packets.push_back({superframe, 0});
+             std::vector<uint8_t> uncovered = frame;
+             Append(uncovered, Vp9SuperframeIndex(std::vector<uint32_t>(8, 0)));
+             stream.packets.push_back({uncovered, 1});
+             const Trace trace = Run(stream, "vp9");
+             Checks checks(trace);
+             checks.Count("pic", 2);
              return checks.Failures();
          }},
         // Proves the VP9 key frame builder.
