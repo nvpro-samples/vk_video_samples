@@ -471,16 +471,19 @@ void VulkanAV1Decoder::lEndPicture(VkPicIf* pDispPic, bool bEvict)
 }
 
 //
+// uvlc() (AV1 4.10.3). The leading zeros stop at 32: the one value of a uvlc() syntax element that
+// needs more, 2^32 - 1, is out of its range, and the reader returns zeros past the end of a packet,
+// so a truncated uvlc() would never end.
 uint32_t VulkanAV1Decoder::ReadUvlc()
 {
-    int lz = 0;
-    while (!u(1)) lz++;
-
-    if (lz >= 32) {
-        return BIT32_MAX;
+    uint32_t lz = 0;
+    while (!u(1)) {
+        if (++lz >= 32) {
+            return BIT32_MAX;
+        }
     }
     uint32_t v = u(lz);
-    v += (1 << lz) - 1;
+    v += (1u << lz) - 1;
     return v;
 }
 

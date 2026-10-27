@@ -326,6 +326,18 @@ std::vector<uint8_t> Av1SequenceHeaderUnit(uint64_t numTicksPerPictureMinus1) {
     return unit;
 }
 
+// A temporal delimiter and a sequence header whose timing info ends after equal_picture_interval in
+// zero bytes, so num_ticks_per_picture_minus1 reads uvlc() over zeros to the end of the packet.
+std::vector<uint8_t> Av1TruncatedTimingUnit() {
+    BitWriter w;
+    w.U(3, 0).Flag(false).Flag(false).Flag(true);  // seq_profile, still_picture, reduced header, timing info
+    w.U(32, 1).U(32, 30).Flag(true);               // timing_info(): equal_picture_interval
+    w.AlignZero().Bytes({0, 0, 0, 0, 0, 0, 0, 0});
+    std::vector<uint8_t> unit = Obu(2, {});  // OBU_TEMPORAL_DELIMITER
+    Append(unit, Obu(1, w.Data()));          // OBU_SEQUENCE_HEADER
+    return unit;
+}
+
 // ---- VP9 (VP9 bitstream specification 6.2) ----
 
 // A shown profile 0 key frame of 64x64; its compressed header and tile are filler.
@@ -440,6 +452,15 @@ const std::vector<CraftedCase>& Cases() {
              checks.Field("sps", "seq_force_screen_content_tools", "2");
              checks.Field("sps", "seq_force_integer_mv", "2");
              checks.Field("sps", "flags", "enable_order_hint");
+             return checks.Failures();
+         }},
+        // uvlc() over the zeros past the end of a packet meets no one bit.
+        {"Av1UvlcTruncated",
+         [](CaseContext& stream) {
+             stream.packets.push_back({Av1TruncatedTimingUnit(), 0});
+             const Trace trace = Run(stream, "av1");
+             Checks checks(trace);
+             checks.Count("sps", 0);
              return checks.Failures();
          }},
         // Proves the VP9 key frame builder.
