@@ -322,8 +322,15 @@ build-fuzz/bin/vk-video-parser-fuzz-replay --codec h265 findings/crash-<sha1>   
   `setarch $(uname -m) -R`, which turns address randomization off for it and the processes it
   forks.
 
-An input that finds a defect lands with the defect's fix, minimized (`-minimize_crash=1
--runs=10000`), in `fuzz/regressions/<codec>/`, where the replay test keeps it.
+An input that finds a defect lands with the defect's fix in `fuzz/regressions/<codec>/`, where the
+replay test keeps it, named for the defect and what the input does (`pps-scaling-list-8x8-segv`).
+It is minimized (`-minimize_crash=1 -runs=10000`) on the parser just before the fix. The minimizer
+keeps any crash, so where an earlier defect is still open it can turn the input into one for that
+defect: the AV1 inputs that found an inter frame naming an empty reference buffer, minimized while
+frames before a sequence header were still parsed, became frame headers with
+no sequence header. Replay the minimized input on the parser before the fix and check it fails the
+way the original did. An input that other fixes now stop before it reaches its defect does not
+land; the defect's crafted case tests it.
 
 The CI sanitizer job builds the tree in Debug with `-fsanitize=address,undefined
 -fno-sanitize-recover=all` and runs the `device-free` tests with `scripts/run_ctest_sanitizers.sh`,
