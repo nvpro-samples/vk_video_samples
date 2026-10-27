@@ -755,7 +755,7 @@ protected:
     void seq_parameter_set_rbsp();
     void pic_parameter_set_rbsp();
     void video_parameter_set_rbsp();
-    void video_parameter_set_rbspExtension(hevc_video_param_s *pVideoParamSet);
+    bool video_parameter_set_rbspExtension(hevc_video_param_s *pVideoParamSet);
     void deriveNecessaryLayerFlags(hevc_video_param_s *pVideoParamSet, uint32_t olsIdx );
     void setRefLayers(hevc_video_param_s *pVideoParamSet);
     uint32_t olsIdxToLsIdx(hevc_video_param_s *pVideoParamSet, uint32_t i );

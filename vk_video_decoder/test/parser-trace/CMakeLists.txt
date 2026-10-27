@@ -136,6 +136,7 @@ set(PARSER_CRAFTED_CASES
     H265CraftedStream
     H265VpsLayerSetCountWrap
     H265VpsLayerSetCountLimit
+    H265VpsExtensionLayerSetIndex
     Av1CraftedSequenceHeader
     Vp9CraftedKeyFrame
 )

@@ -242,6 +242,30 @@ std::vector<uint8_t> H265VpsNal(const H265Vps& vps = H265Vps()) {
     return AnnexBNal({0x40, 0x01}, w.TrailingBits().Data());
 }
 
+// A VPS of two independent layers, 0 and 1, with numLayerSetsMinus1 + 1 layer sets of both layers,
+// and an extension (Rec. ITU-T H.265 F.7.3.2.1.1) with one multiview scalability dimension that
+// adds numAddLayerSets layer sets of layer 1. The extension ends after the additional layer sets.
+std::vector<uint8_t> H265VpsExtensionNal(uint32_t numLayerSetsMinus1, uint32_t numAddLayerSets) {
+    BitWriter w;
+    w.U(4, 0).Flag(true).Flag(true).U(6, 1).U(3, 0).Flag(true).U(16, 0xffff);  // id, base layer, 2 layers, sub-layers
+    H265ProfileTierLevel(w);
+    w.Flag(true).Ue(1).Ue(0).Ue(0);    // sub_layer_ordering_info: max_dec_pic_buffering_minus1 1
+    w.U(6, 1).Ue(numLayerSetsMinus1);  // vps_max_layer_id 1, vps_num_layer_sets_minus1
+    for (uint32_t i = 1; i <= numLayerSetsMinus1; i++) {
+        w.Flag(true).Flag(true);  // layer_id_included_flag[i][0] and [i][1]
+    }
+    w.Flag(false).Flag(true).AlignOne();  // vps_timing_info_present_flag, vps_extension_flag, alignment
+    w.U(8, 60).Flag(false);               // profile_tier_level(0, 0): general_level_idc; splitting_flag
+    w.U(16, 0x4000).U(3, 0);              // scalability_mask_flag[1] (multiview); dimension_id_len_minus1[0]
+    w.Flag(false).U(1, 1);                // vps_nuh_layer_id_present_flag; dimension_id[1][0]
+    w.U(4, 0).Flag(false);                // view_id_len; direct_dependency_flag[1][0]: layer 1 is independent
+    w.Ue(numAddLayerSets);
+    for (uint32_t i = 0; i < numAddLayerSets; i++) {
+        w.U(1, 1);  // highest_layer_idx_plus1[i][1]
+    }
+    return AnnexBNal({0x40, 0x01}, w.TrailingBits().Data());
+}
+
 // An SPS for a 64x64 picture with 16x16 coding tree blocks and one short-term RPS: one negative
 // picture, used.
 std::vector<uint8_t> H265SpsNal() {
@@ -391,6 +415,16 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("vps", 1);
              checks.Field("vps", "vps_video_parameter_set_id", "0");
+             return checks.Failures();
+         }},
+        // the additional layer sets of a VPS extension follow its vps_num_layer_sets, so 1024
+        // layer sets and one more index row 1024 of arrays of 1024 rows.
+        {"H265VpsExtensionLayerSetIndex",
+         [](CaseContext& stream) {
+             Append(stream.byteStream, H265VpsExtensionNal(1023, 1));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("vps", 0);
              return checks.Failures();
          }},
         // Proves the AV1 sequence header builder: every field after the timing info, uvlc() included,

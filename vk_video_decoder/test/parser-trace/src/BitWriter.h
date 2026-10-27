@@ -74,6 +74,14 @@ class BitWriter {
         return *this;
     }
 
+    // One bits to the byte boundary: H.265 vps_extension_alignment_bit_equal_to_one.
+    BitWriter& AlignOne() {
+        while (m_bitsInLastByte != 0) {
+            Bit(1);
+        }
+        return *this;
+    }
+
     // Whole bytes, after the writer is byte-aligned.
     BitWriter& Bytes(const std::vector<uint8_t>& bytes) {
         AlignZero();

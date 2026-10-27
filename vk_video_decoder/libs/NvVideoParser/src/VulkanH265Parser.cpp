@@ -1067,7 +1067,10 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
             // vps_extension_alignment_bit_equal_to_one
             while (!byte_aligned())
                 u(1); // vps_extension_alignment_bit_equal_to_one
-            video_parameter_set_rbspExtension(vps.get());
+            if (!video_parameter_set_rbspExtension(vps.get()))
+            {
+                return;
+            }
         }
     }
 
@@ -1089,7 +1092,8 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
 
 
 /* Decode video parameter set extension information from the stream. */
-void VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pVideoParamSet)
+// Returns false for an extension the parser cannot hold, and the VPS is then dropped.
+bool VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pVideoParamSet)
 {
     uint32_t i, j, k;
 
@@ -1183,10 +1187,13 @@ void VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pV
     if (pVideoParamSet->numIndependentLayers > 1)
     {
         pVideoParamSet->num_add_layer_sets = ue();
-        if (pVideoParamSet->num_add_layer_sets > 1023)
+        // The additional layer sets follow the vps_num_layer_sets of the base VPS in the same
+        // arrays of MAX_VPS_LAYER_SETS rows.
+        if ((pVideoParamSet->num_add_layer_sets > 1023) ||
+            (pVideoParamSet->vps_num_layer_sets + pVideoParamSet->num_add_layer_sets > MAX_VPS_LAYER_SETS))
         {
-            nvParserLog("Invalid Invalid vps parameter (num_add_layer_sets=%d)\n", pVideoParamSet->num_add_layer_sets);
-            return;
+            nvParserLog("Invalid vps parameter (num_add_layer_sets=%u)\n", pVideoParamSet->num_add_layer_sets);
+            return false;
         }
     }
 
@@ -1242,7 +1249,7 @@ void VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pV
         (pVideoParamSet->vps_max_layers_minus1 > 0 && pVideoParamSet->vps_num_profile_tier_level_minus1 == 0))
     {
         nvParserLog("Invalid vps parameter (vps_num_profile_tier_level_minus1=%d)\n", pVideoParamSet->vps_num_profile_tier_level_minus1);
-        return;
+        return false;
     }
     for (i = pVideoParamSet->privFlags.vps_base_layer_internal_flag ? 2 : 1; i <= pVideoParamSet->vps_num_profile_tier_level_minus1; i++)
     {
@@ -1305,7 +1312,7 @@ void VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pV
     if (pVideoParamSet->vps_num_rep_formats_minus1 > 15)
     {
         nvParserLog("Invalid vps parameter (vps_num_rep_formats_minus1=%d)\n", pVideoParamSet->vps_num_rep_formats_minus1);
-        return;
+        return false;
     }
 
     for (i = 0; i <= pVideoParamSet->vps_num_rep_formats_minus1; i++)
@@ -1395,7 +1402,7 @@ void VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pV
     }
     /* Others not used for MV-HEVC */
 
-    return;
+    return true;
 }
 
 void VulkanH265Decoder::deriveNecessaryLayerFlags(hevc_video_param_s *pVideoParamSet, uint32_t olsIdx)
