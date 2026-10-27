@@ -30,20 +30,23 @@ The suite file (suites/<codec>.json) names its "codec" and lists streams. An ent
   golden          the recorded trace, relative to the suite file's directory (optional)
   md5             for a glob or decode_samples entry: the file, relative to the suite file's
                   directory, that lists the md5 of each stream's trace
-  headers         AV1: a compact header dump (av1_reference_model.py --save-headers), relative to the
-                  suite file's directory. Without it the dump is made with ffmpeg from the IVF the
-                  tool writes, and the model check is skipped when ffmpeg is missing.
-  known           AV1: the model mismatch categories the stream shows, each one a defect named in the
+  headers         a compact dump of the stream's headers (av1_reference_model.py --save-headers,
+                  header_check.py --save-headers), relative to the suite file's directory. Without it
+                  the dump is made with ffmpeg, from the stream or, for AV1, from the IVF the tool
+                  writes, and the model check is skipped when ffmpeg is missing.
+  known           the model mismatch categories the stream shows, each one a defect named in the
                   suite's "defects" table
 
 Checks per stream: the tool exits 0; the trace equals the golden, or its md5 equals the recorded
-one; for AV1, the set of model mismatch categories equals "known". An unlisted category is a new
-defect or a regression. A listed category that no longer appears means its fix landed, and the
-entry has to go with that fix. A stream an md5 list names but the root does not hold is reported
-and does not fail. An AV1 glob entry without md5 is reported per model category and never fails.
+one; the set of model mismatch categories equals "known". The model is av1_reference_model.py for
+AV1 and h264_header_model.py, h265_header_model.py or vp9_header_model.py for the others. An
+unlisted category is a new defect or a regression. A listed category that no longer appears means
+its fix landed, and the entry has to go with that fix. A stream an md5 list names but the root does
+not hold is reported and does not fail. An AV1 glob entry without md5 is reported per model category
+and never fails.
 
 --mint records the goldens, the md5 lists and the header dumps of entries that name one, from
-this run, and prints each AV1 stream's categories for the "known" lists. Exit status: 0 every check
+this run, and prints each stream's categories for the "known" lists. Exit status: 0 every check
 held, 1 a check failed, 2 nothing ran.
 """
 import argparse
@@ -62,6 +65,8 @@ import tempfile
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import av1_reference_model as model  # noqa: E402
+import header_check  # noqa: E402
+import header_dump  # noqa: E402
 
 FORMAT_BY_EXTENSION = {".h264": "bytestream", ".264": "bytestream", ".h265": "bytestream", ".265": "bytestream",
                        ".ivf": "ivf", ".obu": "annexb"}
@@ -101,28 +106,38 @@ def write_md5_list(path, digests):
             f.write(f"{digests[name]}  {name}\n")
 
 
-def header_lines(entry, suite_dir, tool, stream, work, ffmpeg, mint):
+def header_lines(codec, entry, suite_dir, tool, stream, work, ffmpeg, mint):
     """Returns (lines, note); lines is None when no dump is available."""
     if entry.get("headers") and not mint:
         with open(os.path.join(suite_dir, entry["headers"])) as dump:
             return dump.read().splitlines(), ""
     if not shutil.which(ffmpeg):
         return None, "ffmpeg not found"
-    ivf = os.path.join(work, "stream.ivf")
-    failure = run_tool(tool, "av1", entry["format"], stream, os.devnull, ivf)
-    if failure:
-        return None, f"tool {failure} writing the IVF"
-    rc, lines = model.run_ffmpeg(ffmpeg, ivf)
+    if codec == "av1":
+        ivf = os.path.join(work, "stream.ivf")
+        failure = run_tool(tool, "av1", entry["format"], stream, os.devnull, ivf)
+        if failure:
+            return None, f"tool {failure} writing the IVF"
+        rc, lines = model.run_ffmpeg(ffmpeg, ivf)
+    else:
+        rc, lines = header_dump.run_ffmpeg(ffmpeg, stream, header_check.MODELS[codec].DEMUXER)
     if rc != 0:
         return None, f"ffmpeg exited {rc}"
     if mint and entry.get("headers"):
         with open(os.path.join(suite_dir, entry["headers"]), "w") as out:
-            out.write(model.compact_headers(lines))
+            if codec == "av1":
+                out.write(model.compact_headers(lines))
+            else:
+                header_model = header_check.MODELS[codec]
+                out.write(header_dump.compact(lines, header_model.KINDS, header_model.TITLE,
+                                              getattr(header_model, "keep", None)))
     return lines, ""
 
 
-def model_categories(lines, trace):
+def model_categories(codec, lines, trace):
     """Returns ({category: (pictures, first)}, note); the dict is None when not comparable."""
+    if codec != "av1":
+        return header_check.categories(header_check.MODELS[codec], lines, trace)
     frames, scalable = model.model_frames(lines)
     if scalable:
         return None, "scalable stream"
@@ -153,13 +168,11 @@ def check_stream(entry, suite, suite_dir, stream, args, work):
             if expected != actual:
                 diff = list(difflib.unified_diff(expected, actual, "golden", "trace", n=0, lineterm=""))
                 failures.append("trace differs from the golden:\n      " + "\n      ".join(diff[:24]))
-    if codec != "av1":
-        return failures
-    lines, note = header_lines(entry, suite_dir, args.tool, stream, work, args.ffmpeg, args.mint)
+    lines, note = header_lines(codec, entry, suite_dir, args.tool, stream, work, args.ffmpeg, args.mint)
     if lines is None:
         print(f"    {name}: model not checked ({note})")
         return failures
-    found, note = model_categories(lines, trace)
+    found, note = model_categories(codec, lines, trace)
     if found is None:
         print(f"    {name}: model not comparable ({note})")
         return failures
@@ -229,8 +242,8 @@ def report_glob(entry, base, args, work):
         if run_tool(args.tool, "av1", entry["format"], stream, trace):
             tool_failures += 1
             continue
-        lines, _ = header_lines(entry, base, args.tool, stream, work, args.ffmpeg, False)
-        found = model_categories(lines, trace)[0] if lines is not None else None
+        lines, _ = header_lines("av1", entry, base, args.tool, stream, work, args.ffmpeg, False)
+        found = model_categories("av1", lines, trace)[0] if lines is not None else None
         if found is None:
             not_comparable += 1
             continue

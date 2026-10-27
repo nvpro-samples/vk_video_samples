@@ -15,12 +15,16 @@ The CTests `ParserTraceAv1`, `ParserTraceH264`, `ParserTraceH265` and `ParserTra
 - **md5:** a stream outside the tree, from the decode samples or a conformance corpus, is held to
   the md5 of its trace in `golden/md5/<set>.md5`, so its traces need not be committed. A stream a
   list names but the root does not hold is reported and does not fail.
-- **Model, AV1:** `scripts/av1_reference_model.py` replays, from the stream's syntax elements, the
-  state the AV1 specification defines (5.9.2, 5.9.14, 7.8, 7.20, 7.21), and compares each picture
-  of the trace with it. Mismatches are grouped in categories. Each stream lists the categories of
-  its known defects in `known`, and the suite's `defects` table names them. A category that appears
-  unlisted fails; a listed one that no longer appears fails too. A fix therefore removes its
-  category from `known`, and a golden diff shows exactly the fields it changed.
+- **Model:** a model reads the stream's syntax elements from ffmpeg's `trace_headers` dump and
+  compares the trace with what the specification makes of them. `scripts/av1_reference_model.py`
+  replays the AV1 reference state (5.9.2, 5.9.14, 7.8, 7.20, 7.21); `scripts/h264_header_model.py`,
+  `h265_header_model.py` and `vp9_header_model.py` check every parameter set field, the POC and
+  the reference picture sets of H.264 and H.265, and the VP9 frame header with the state VP9
+  carries between frames ([The H.264, H.265 and VP9 models](#the-h264-h265-and-vp9-models)).
+  Mismatches are grouped in categories. Each stream lists the categories of its known defects in
+  `known`, and the suite's `defects` table names them. A category that appears unlisted fails; a
+  listed one that no longer appears fails too. A fix therefore removes its category from `known`,
+  and a golden diff shows exactly the fields it changed.
 
 `vk-video-parser-crafted` runs the parser over streams built in code, each reaching one parser
 path, and checks what the parser hands its client. Its cases run as `ParserCrafted.<case>` (label
@@ -38,10 +42,13 @@ correctly.
 | `src/ParserCrafted.cpp` | the crafted-case tool: the stream builders and the cases |
 | `src/BitWriter.h` | the bit writer the builders use: `u(n)`, `ue(v)`, `se(v)`, `uvlc()`, trailing bits, Annex B NAL units with emulation prevention, AV1 OBUs |
 | `scripts/av1_reference_model.py` | the AV1 model and the comparison |
+| `scripts/h264_header_model.py`, `h265_header_model.py`, `vp9_header_model.py` | the H.264, H.265 and VP9 models |
+| `scripts/header_dump.py` | what those three share: ffmpeg's dump, its compact form, the trace reader and the report |
+| `scripts/header_check.py` | checks one H.264, H.265 or VP9 trace against its stream: `--codec c --trace t --stream s` (or `--headers h`) |
 | `scripts/parser_trace_suite.py` | the suite runner CTest calls |
-| `suites/<codec>.json` | the streams of each codec, their goldens, md5 lists, AV1 header dumps and known categories, and the AV1 defects table |
-| `streams/` | twenty committed streams of 2 to 16 KB |
-| `streams/*.headers.txt` | the AV1 streams' compact header dumps, so the model check needs no ffmpeg |
+| `suites/<codec>.json` | the streams of each codec, their goldens, md5 lists, header dumps and known categories, and the defects table |
+| `streams/` | twenty committed streams of 1.5 to 15 KB |
+| `streams/*.headers.txt` | the committed streams' compact header dumps, with the syntax elements the models read, so the model check needs no ffmpeg |
 | `golden/*.trace` | the committed streams' recorded traces |
 | `golden/md5/*.md5` | the trace md5 of every stream of an outside set, one `<md5>  <path>` line each |
 
@@ -55,6 +62,7 @@ python3 scripts/parser_trace_suite.py --tool <build>/bin/vk-video-parser-trace -
 <build>/bin/vk-video-parser-trace --codec h264 --format bytestream -i stream.h264 -o stream.trace
 <build>/bin/vk-video-parser-trace --codec av1 --format ivf -i stream.ivf -o stream.trace
 python3 scripts/av1_reference_model.py --trace stream.trace --headers stream.headers.txt -v
+python3 scripts/header_check.py --codec h265 --trace stream.trace --stream stream.h265 -v
 ```
 
 How the tool gives each format to the parser:
@@ -135,6 +143,33 @@ Buffers whose content the headers do not determine, after an error-resilient `re
 mismatch, are skipped. Scalable streams are not compared: the parser decodes one operating point
 and the dump holds them all.
 
+## The H.264, H.265 and VP9 models
+
+Each model reads the dump of the same file the tool reads (ffmpeg `-f h264`, `-f hevc` or `-f ivf`),
+leaving out the parameter sets ffmpeg prints from a raw stream's extradata, and aligns its pictures
+with the trace's: H.264 by `frame_num` and picture structure, H.265 by POC LSB, VP9 by frame type,
+`intra_only`, `refresh_frame_flags` and `base_q_idx`, so that a wrong value shows in its category
+rather than as misalignment. Parameter sets are matched in order, one trace line per parameter set
+NAL unit. Std fields hold syntax element values; a field whose element is not coded holds 0 unless
+the specification infers another value.
+
+| Model | Categories |
+|---|---|
+| H.264 | `sps`, `pps` (fields, the Std level enum for `level_idc`), `sps-flags`, `pps-flags`, `sps-constraint-flags`; `hdr-poc` (`CurrFieldOrderCnt`, POC types 0, 1 and 2 of 8.2.1, with memory management control operation 5); `hdr-slice` (`frame_num`, `field_pic_flag`, `bottom_field_flag`, the PPS id); `hdr-flags` (`ref_pic_flag`, `intra_pic_flag`) |
+| H.265 | `vps`, `sps`, `pps` and their `-flags`; `ptl`, `ptl-level`, `ptl-flags`; `vps-dpbm`, `sps-dpbm`; `sps-strps` (each SPS short-term reference picture set, inter-predicted ones by their inter syntax); `sps-ltrps`; `sps-vui` and `sps-hrd` (the coded fields); `hdr-poc` (8.3.1); `hdr-flags`; `hdr-rps-bits` (`NumBitsForShortTermRPSInSlice`, `NumDeltaPocsOfRefRpsIdx`); `rps-counts` and `rps-pocs` (the lists of 8.3.2, with the POC of each reference they name, 7.4.8 inter prediction included) |
+| VP9 | `hdr` (the Std picture information and flags; `UsePrevFrameMvs` as ffmpeg's `use_last_frame_mvs`); `hdr-intra` (an intra frame's inter-frame fields, which are 0); `hdr-size`; `color`; `lf` and `lf-update`; `seg` |
+
+Every model also has `picture-count` (a picture in the trace or the model but not both) and, for
+H.264 and H.265, `params-count`. The models leave out what the parser does not decode: H.264
+redundant slices, auxiliary pictures and pictures whose PPS uses slice groups (FMO), H.265 RASL
+pictures of a CRA that starts the stream or follows an end of sequence, and VP9 frames shown with
+`show_existing_frame`. The rest of `VkParserH264PictureData`'s slice and PPS copies are not filled
+by the parser and are not compared.
+
+The suite runs the models on the committed streams; the streams of an md5 set are held to their
+trace md5 only. To run a model over an outside set, trace each stream with `vk-video-parser-trace`
+and check the trace with `header_check.py --stream`, which needs ffmpeg.
+
 ## Crafted cases
 
 ```bash
@@ -167,8 +202,8 @@ python3 scripts/parser_trace_suite.py --tool <build>/bin/vk-video-parser-trace -
 ```
 
 `--mint` writes the goldens, the md5 lists of the sets whose roots are set, and the header dumps of
-the committed AV1 streams (this needs ffmpeg), from the current parser, and prints each AV1
-stream's categories. A golden records today's parser, defects included. A change that alters a
+the committed streams (this needs ffmpeg), from the current parser, and prints each stream's
+categories. A golden records today's parser, defects included. A change that alters a
 golden or an md5 explains each changed field in its commit, and updates `known` to match.
 
 ## The committed streams

@@ -1,29 +1,42 @@
 {
   "codec": "h264",
+  "defects": {
+    "sps-constraint-flags": "the parser takes constraint_setN_flag of the Std SPS from bit N of the byte, which the stream codes most significant bit first: constraint_set0_flag and constraint_set1_flag read the reserved zero bits, and constraint_set2_flag to constraint_set5_flag hold constraint_set5_flag to constraint_set2_flag"
+  },
   "streams": [
     {
       "name": "h264-x264-high-bpyramid-64x64",
       "path": "../streams/h264-x264-high-bpyramid-64x64.h264",
       "format": "bytestream",
-      "golden": "../golden/h264-x264-high-bpyramid-64x64.trace"
+      "golden": "../golden/h264-x264-high-bpyramid-64x64.trace",
+      "headers": "../streams/h264-x264-high-bpyramid-64x64.headers.txt",
+      "known": []
     },
     {
       "name": "h264-x264-baseline-64x64",
       "path": "../streams/h264-x264-baseline-64x64.h264",
       "format": "bytestream",
-      "golden": "../golden/h264-x264-baseline-64x64.trace"
+      "golden": "../golden/h264-x264-baseline-64x64.trace",
+      "headers": "../streams/h264-x264-baseline-64x64.headers.txt",
+      "known": [
+        "sps-constraint-flags"
+      ]
     },
     {
       "name": "h264-x264-mbaff-64x64",
       "path": "../streams/h264-x264-mbaff-64x64.h264",
       "format": "bytestream",
-      "golden": "../golden/h264-x264-mbaff-64x64.trace"
+      "golden": "../golden/h264-x264-mbaff-64x64.trace",
+      "headers": "../streams/h264-x264-mbaff-64x64.headers.txt",
+      "known": []
     },
     {
       "name": "h264-x264-cqm-weightp-slices-64x64",
       "path": "../streams/h264-x264-cqm-weightp-slices-64x64.h264",
       "format": "bytestream",
-      "golden": "../golden/h264-x264-cqm-weightp-slices-64x64.trace"
+      "golden": "../golden/h264-x264-cqm-weightp-slices-64x64.trace",
+      "headers": "../streams/h264-x264-cqm-weightp-slices-64x64.headers.txt",
+      "known": []
     },
     {
       "name": "decode-samples",

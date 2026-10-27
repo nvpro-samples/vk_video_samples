@@ -36,13 +36,14 @@ install(TARGETS ${PROJECT_NAME} vk-video-parser-crafted RUNTIME DESTINATION bin)
 # - golden: the trace equals the recorded golden, so any change in what the parser hands a decoder
 #   fails until the golden is re-recorded with that change explained. Streams outside the tree
 #   (the decode samples, conformance corpora) are held to the md5 of their trace instead;
-# - model, AV1: scripts/av1_reference_model.py replays the AV1 reference state of the
-#   specification (AV1 5.9.2, 7.8, 7.20, 7.21) from the stream's headers and compares the trace's
-#   picture, segmentation and reference information with it. Each stream lists the mismatch
-#   categories of known defects; a category that appears unlisted fails, and a listed one that no
-#   longer appears fails too, so a fix has to remove its entry.
+# - model: a model compares the trace with what the specification makes of the stream's syntax
+#   elements: scripts/av1_reference_model.py replays the AV1 reference state (AV1 5.9.2, 7.8,
+#   7.20, 7.21); scripts/h264_header_model.py, h265_header_model.py and vp9_header_model.py check
+#   the parameter sets, the POC and reference picture sets, and the VP9 frame headers. Each stream
+#   lists the mismatch categories of known defects; a category that appears unlisted fails, and a
+#   listed one that no longer appears fails too, so a fix has to remove its entry.
 #
-# The committed streams under streams/ carry their AV1 header dumps, so no check needs ffmpeg.
+# The committed streams under streams/ carry their header dumps, so no check needs ffmpeg.
 # Streams under an environment-variable root run only when that variable is set.
 #
 # WHAT A GREEN HERE DOES NOT MEAN. Nothing is decoded. The test shows what the parser hands a
