@@ -309,50 +309,75 @@ std::vector<uint8_t> H265VpsExtensionNal(uint32_t numLayerSetsMinus1, uint32_t n
     return AnnexBNal({0x40, 0x01}, w.TrailingBits().Data());
 }
 
-// An SPS for a 64x64 picture with 16x16 coding tree blocks and one short-term RPS: one negative
-// picture, used.
-// refPicSets writes num_short_term_ref_pic_sets and the sets; by default, one set of one negative
-// picture, used. vui, when given, writes vui_parameters(). longTermRefPics, when given, sets
-// long_term_ref_pics_present_flag and writes num_long_term_ref_pics_sps and the pictures.
-std::vector<uint8_t> H265SpsNal(const std::function<void(BitWriter&)>& refPicSets = nullptr,
-                                const std::function<void(BitWriter&)>& vui = nullptr,
-                                const std::function<void(BitWriter&)>& longTermRefPics = nullptr) {
+// scaling_list_data() (Rec. ITU-T H.265 7.3.4) of predicted lists, one for each delta, in order:
+// scaling_list_pred_mode_flag 0, the delta as scaling_list_pred_matrix_id_delta. 20 deltas code
+// every list; fewer end the structure early.
+void H265PredictedScalingLists(BitWriter& w, const std::vector<uint64_t>& deltas) {
+    for (const uint64_t delta : deltas) {
+        w.Flag(false).Ue(delta);
+    }
+}
+
+// The SPS fields the cases vary. The default SPS is for a 64x64 picture with 16x16 coding tree
+// blocks and one short-term RPS: one negative picture, used.
+struct H265Sps {
+    uint32_t id = 0;
+    bool scalingListEnabled = false;  // scaling_list_enabled_flag
+    // with scalingListEnabled, the lists of H265PredictedScalingLists; none for the default lists
+    std::vector<uint64_t> scalingListDeltas;
+    // num_short_term_ref_pic_sets and the sets
+    std::function<void(BitWriter&)> refPicSets;
+    // num_long_term_ref_pics_sps and the pictures, after a long_term_ref_pics_present_flag of 1
+    std::function<void(BitWriter&)> longTermRefPics;
+    // vui_parameters(), after a vui_parameters_present_flag of 1
+    std::function<void(BitWriter&)> vui;
+};
+
+std::vector<uint8_t> H265SpsNal(const H265Sps& sps = H265Sps()) {
     BitWriter w;
     w.U(4, 0).U(3, 0).Flag(true);  // vps id, sps_max_sub_layers_minus1, sps_temporal_id_nesting_flag
     H265ProfileTierLevel(w);
-    w.Ue(0).Ue(1).Ue(64).Ue(64).Flag(false);            // sps id, 4:2:0, width, height, conformance window
-    w.Ue(0).Ue(0).Ue(4);                                // bit depths, log2_max_pic_order_cnt_lsb_minus4
-    w.Flag(true).Ue(1).Ue(0).Ue(0);                     // sub_layer_ordering_info
-    w.Ue(0).Ue(1).Ue(0).Ue(2).Ue(0).Ue(0);              // coding and transform block sizes, hierarchy depths
-    w.Flag(false).Flag(false).Flag(false).Flag(false);  // scaling lists, AMP, SAO, PCM
-    if (refPicSets) {
-        refPicSets(w);
+    w.Ue(sps.id).Ue(1).Ue(64).Ue(64).Flag(false);  // sps id, 4:2:0, width, height, conformance window
+    w.Ue(0).Ue(0).Ue(4);                           // bit depths, log2_max_pic_order_cnt_lsb_minus4
+    w.Flag(true).Ue(1).Ue(0).Ue(0);                // sub_layer_ordering_info
+    w.Ue(0).Ue(1).Ue(0).Ue(2).Ue(0).Ue(0);         // coding and transform block sizes, hierarchy depths
+    w.Flag(sps.scalingListEnabled);
+    if (sps.scalingListEnabled) {
+        w.Flag(!sps.scalingListDeltas.empty());  // sps_scaling_list_data_present_flag
+        H265PredictedScalingLists(w, sps.scalingListDeltas);
+    }
+    w.Flag(false).Flag(false).Flag(false);  // AMP, SAO, PCM
+    if (sps.refPicSets) {
+        sps.refPicSets(w);
     } else {
         w.Ue(1).Ue(1).Ue(0).Ue(0).Flag(true);  // one st_ref_pic_set: one negative picture, used
     }
-    w.Flag(static_cast<bool>(longTermRefPics));  // long_term_ref_pics_present_flag
-    if (longTermRefPics) {
-        longTermRefPics(w);
+    w.Flag(static_cast<bool>(sps.longTermRefPics));  // long_term_ref_pics_present_flag
+    if (sps.longTermRefPics) {
+        sps.longTermRefPics(w);
     }
-    w.Flag(false).Flag(false);       // temporal MVP, strong intra smoothing
-    w.Flag(static_cast<bool>(vui));  // vui_parameters_present_flag
-    if (vui) {
-        vui(w);
+    w.Flag(false).Flag(false);           // temporal MVP, strong intra smoothing
+    w.Flag(static_cast<bool>(sps.vui));  // vui_parameters_present_flag
+    if (sps.vui) {
+        sps.vui(w);
     }
     w.Flag(false);  // sps_extension_present_flag
     return AnnexBNal({0x42, 0x01}, w.TrailingBits().Data());
 }
 
-std::vector<uint8_t> H265PpsNal() {
+// A PPS of SPS 0. With scalingListDeltas it sets pps_scaling_list_data_present_flag and codes the
+// lists of H265PredictedScalingLists.
+std::vector<uint8_t> H265PpsNal(uint32_t id = 0, const std::vector<uint64_t>& scalingListDeltas = {}) {
     BitWriter w;
-    w.Ue(0).Ue(0).Flag(false).Flag(false).U(3, 0);  // ids, dependent slices, output flag, extra slice header bits
-    w.Flag(false).Flag(false).Ue(0).Ue(0).Se(0);    // sign hiding, cabac init, num_ref_idx defaults, init_qp
-    w.Flag(false).Flag(false).Flag(false);          // constrained intra, transform skip, cu_qp_delta
-    w.Se(0).Se(0).Flag(false);                      // cb and cr offsets, slice chroma offsets
-    w.Flag(false).Flag(false).Flag(false);          // weighted pred and bipred, transquant bypass
-    w.Flag(false).Flag(false).Flag(false);          // tiles, entropy sync, loop filter across slices
-    w.Flag(false).Flag(false).Flag(false);          // deblocking control, scaling lists, list modification
-    w.Ue(0).Flag(false).Flag(false);                // parallel merge level, slice header extension, extensions
+    w.Ue(id).Ue(0).Flag(false).Flag(false).U(3, 0);  // ids, dependent slices, output flag, extra slice header bits
+    w.Flag(false).Flag(false).Ue(0).Ue(0).Se(0);     // sign hiding, cabac init, num_ref_idx defaults, init_qp
+    w.Flag(false).Flag(false).Flag(false);           // constrained intra, transform skip, cu_qp_delta
+    w.Se(0).Se(0).Flag(false);                       // cb and cr offsets, slice chroma offsets
+    w.Flag(false).Flag(false).Flag(false);           // weighted pred and bipred, transquant bypass
+    w.Flag(false).Flag(false).Flag(false);           // tiles, entropy sync, loop filter across slices
+    w.Flag(false).Flag(!scalingListDeltas.empty());  // deblocking control, pps_scaling_list_data_present_flag
+    H265PredictedScalingLists(w, scalingListDeltas);
+    w.Flag(false).Ue(0).Flag(false).Flag(false);  // list modification, parallel merge level, header extension, extensions
     return AnnexBNal({0x44, 0x01}, w.TrailingBits().Data());
 }
 
@@ -591,12 +616,12 @@ const std::vector<CraftedCase>& Cases() {
         {"H265RefPicSetCurrBefore9",
          [](CaseContext& stream) {
              Append(stream.byteStream, H265VpsNal());
-             Append(stream.byteStream, H265SpsNal([](BitWriter& w) {
+             Append(stream.byteStream, H265SpsNal({.refPicSets = [](BitWriter& w) {
                         w.Ue(1).Ue(9).Ue(0);  // one set: 9 negative pictures
                         for (int i = 0; i < 9; i++) {
                             w.Ue(0).Flag(true);  // delta_poc_s0_minus1, used_by_curr_pic_s0_flag
                         }
-                    }));
+                    }}));
              Append(stream.byteStream, H265PpsNal());
              Append(stream.byteStream, H265IdrSliceNal());
              Append(stream.byteStream, H265TrailSliceNal(1));
@@ -619,9 +644,9 @@ const std::vector<CraftedCase>& Cases() {
                  };
              };
              Append(stream.byteStream, H265VpsNal());
-             Append(stream.byteStream, H265SpsNal(nullptr, nullptr, [](BitWriter& w) {
+             Append(stream.byteStream, H265SpsNal({.longTermRefPics = [](BitWriter& w) {
                         w.Ue(1).U(8, 100).Flag(false);  // lt_ref_pic_poc_lsb_sps 100, used_by_curr_pic_lt_sps_flag
-                    }));
+                    }}));
              Append(stream.byteStream, H265PpsNal());
              Append(stream.byteStream, H265IdrSliceNal());
              Append(stream.byteStream, H265TrailSliceNal(1, longTermSps(1)));
@@ -630,6 +655,31 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("pic", 2);
              checks.Field("  hevc", "CurrPicOrderCntVal", "1", 1);
+             return checks.Failures();
+         }},
+        // scaling_list_pred_matrix_id_delta is at most matrixId (Rec. ITU-T H.265 7.4.5), so that
+        // refMatrixId, matrixId - delta, names this list or one before it. SPS 1 and PPS 2 predict
+        // list 0 with a delta of 2^32 - 1, -1 as an int. PPS 1 predicts 4x4 list 1 from list -1, which
+        // the reader refuses; the PPS's other fields follow that list, where a PPS that ignores the
+        // refusal reads them.
+        {"H265ScalingListRefMatrix",
+         [](CaseContext& stream) {
+             std::vector<uint64_t> valid(20, 0);  // the default lists
+             valid[1] = 1;                        // 4x4 list 1 from list 0
+             std::vector<uint64_t> wrapped(20, 0);
+             wrapped[0] = 0xFFFFFFFFu;
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal({.scalingListEnabled = true}));
+             Append(stream.byteStream, H265SpsNal({.id = 1, .scalingListEnabled = true, .scalingListDeltas = wrapped}));
+             Append(stream.byteStream, H265PpsNal(0, valid));
+             Append(stream.byteStream, H265PpsNal(1, {0, 2}));
+             Append(stream.byteStream, H265PpsNal(2, wrapped));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("sps", 1);
+             checks.Field("sps", "sps_seq_parameter_set_id", "0");
+             checks.Count("pps", 1);
+             checks.Field("pps", "pps_pic_parameter_set_id", "0");
              return checks.Failures();
          }},
         // vps_max_sub_layers_minus1 7, one past the 7 sub-layers H.265 allows (7.4.3.1) and the
@@ -649,7 +699,7 @@ const std::vector<CraftedCase>& Cases() {
         {"H265SpsHrdCpbCount",
          [](CaseContext& stream) {
              Append(stream.byteStream, H265VpsNal());
-             Append(stream.byteStream, H265SpsNal(nullptr, [](BitWriter& w) {
+             Append(stream.byteStream, H265SpsNal({.vui = [](BitWriter& w) {
                         w.Zeros(8);                                    // aspect ratio ... default display window
                         w.Flag(true).U(32, 1).U(32, 30).Flag(false);   // vui_timing_info_present_flag, timing
                         w.Flag(true);                                  // vui_hrd_parameters_present_flag
@@ -660,7 +710,7 @@ const std::vector<CraftedCase>& Cases() {
                             w.Ue(0).Ue(0).Flag(false);  // bit_rate_value_minus1, cpb_size_value_minus1, cbr_flag
                         }
                         w.Flag(false);  // bitstream_restriction_flag
-                    }));
+                    }}));
              const Trace trace = Run(stream, "h265");
              Checks checks(trace);
              checks.Count("sps", 0);
@@ -671,12 +721,12 @@ const std::vector<CraftedCase>& Cases() {
         {"H265SpsNumStRps",
          [](CaseContext& stream) {
              Append(stream.byteStream, H265VpsNal());
-             Append(stream.byteStream, H265SpsNal([](BitWriter& w) {
+             Append(stream.byteStream, H265SpsNal({.refPicSets = [](BitWriter& w) {
                         w.Ue(257).Ue(0).Ue(0);  // num_short_term_ref_pic_sets; set 0: no pictures
                         for (int i = 1; i < 257; i++) {
                             w.Flag(false).Ue(0).Ue(0);  // set i: not predicted, no pictures
                         }
-                    }));
+                    }}));
              const Trace trace = Run(stream, "h265");
              Checks checks(trace);
              checks.Count("sps", 0);
@@ -687,7 +737,7 @@ const std::vector<CraftedCase>& Cases() {
         {"H265InterRpsOverflow",
          [](CaseContext& stream) {
              Append(stream.byteStream, H265VpsNal());
-             Append(stream.byteStream, H265SpsNal([](BitWriter& w) {
+             Append(stream.byteStream, H265SpsNal({.refPicSets = [](BitWriter& w) {
                         w.Ue(2).Ue(16).Ue(0);  // num_short_term_ref_pic_sets; set 0: 16 negative pictures
                         for (int i = 0; i < 16; i++) {
                             w.Ue(0).Flag(true);  // delta_poc_s0_minus1, used_by_curr_pic_s0_flag
@@ -696,7 +746,7 @@ const std::vector<CraftedCase>& Cases() {
                         for (int j = 0; j <= 16; j++) {
                             w.Flag(true);  // used_by_curr_pic_flag[j]
                         }
-                    }));
+                    }}));
              const Trace trace = Run(stream, "h265");
              Checks checks(trace);
              checks.Count("sps", 0);

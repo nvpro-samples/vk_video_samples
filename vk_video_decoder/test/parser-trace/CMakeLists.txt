@@ -144,6 +144,7 @@ set(PARSER_CRAFTED_CASES
     H265SpsNumStRps
     H265RefPicSetCurrBefore9
     H265SliceNumLongTermSps
+    H265ScalingListRefMatrix
     H265VpsSubLayers8
     H265SpsHrdCpbCount
     Av1CraftedSequenceHeader

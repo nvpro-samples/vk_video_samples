@@ -835,7 +835,8 @@ void VulkanH265Decoder::pic_parameter_set_rbsp()
     }
     pps->flags.pps_scaling_list_data_present_flag = u(1);
     if (pps->flags.pps_scaling_list_data_present_flag) {
-        scaling_list_data(&pps->pps_scaling_list);
+        if (!scaling_list_data(&pps->pps_scaling_list))
+            return;
     }
     pps->flags.lists_modification_present_flag = u(1);
     pps->log2_parallel_merge_level_minus2 = (uint8_t)ue();
@@ -1703,14 +1704,16 @@ bool VulkanH265Decoder::scaling_list_data(scaling_list_s *scl)
             scle->scaling_list_pred_mode_flag = u(1);
             if (!scle->scaling_list_pred_mode_flag)
             {
-                int scaling_list_pred_matrix_id_delta = ue();
-                int refMatrixId = matrixId - scaling_list_pred_matrix_id_delta;
-                scle->scaling_list_pred_matrix_id_delta = scaling_list_pred_matrix_id_delta;
-                if (refMatrixId < 0)
+                // At most matrixId (7.4.5): refMatrixId = matrixId - delta names this list or an earlier one,
+                // which the scaling factors are copied from.
+                const uint32_t scaling_list_pred_matrix_id_delta = ue();
+                if (scaling_list_pred_matrix_id_delta > (uint32_t)matrixId)
                 {
-                    nvParserLog("Invalid scaling_list_pred_matrix_id_delta (refMatrixId = %d)\n", refMatrixId);
+                    nvParserLog("Invalid scaling_list_pred_matrix_id_delta (%u, matrixId %d)\n",
+                                scaling_list_pred_matrix_id_delta, matrixId);
                     return false;
                 }
+                scle->scaling_list_pred_matrix_id_delta = (int)scaling_list_pred_matrix_id_delta;
             }
             else
             {
