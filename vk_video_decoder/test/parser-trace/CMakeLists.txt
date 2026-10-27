@@ -165,6 +165,7 @@ set(PARSER_CRAFTED_CASES
     Av1InterFrameEmptyReference
     Av1ObuSizePastPacket
     Av1ObuSizeLeb128Past32Bits
+    Av1SequenceHeaderRefused
     Vp9CraftedKeyFrame
     Vp9PicturePoolExhausted
     Vp9SuperframeIndex

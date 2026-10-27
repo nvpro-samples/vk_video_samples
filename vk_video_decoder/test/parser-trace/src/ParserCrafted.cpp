@@ -506,10 +506,10 @@ std::vector<uint8_t> H265TrailSliceNal(uint32_t pocLsb, const std::function<void
 // ---- AV1 (AV1 bitstream specification 5.5) ----
 
 // A temporal delimiter and a sequence header for 64x64 Main 8-bit 4:2:0 with timing info; the
-// timing info ends with numTicksPerPictureMinus1 as uvlc().
-std::vector<uint8_t> Av1SequenceHeaderUnit(uint64_t numTicksPerPictureMinus1, bool filmGrain = false) {
+// timing info ends with numTicksPerPictureMinus1 as uvlc(). seqProfile is the profile it codes.
+std::vector<uint8_t> Av1SequenceHeaderUnit(uint64_t numTicksPerPictureMinus1, bool filmGrain = false, uint32_t seqProfile = 0) {
     BitWriter w;
-    w.U(3, 0).Flag(false).Flag(false).Flag(true);                    // seq_profile, still_picture, reduced header, timing info
+    w.U(3, seqProfile).Flag(false).Flag(false).Flag(true);           // seq_profile, still_picture, reduced header, timing info
     w.U(32, 1).U(32, 30).Flag(true).Uvlc(numTicksPerPictureMinus1);  // timing_info(), equal_picture_interval
     w.Flag(false).Flag(false).U(5, 0).U(12, 0).U(5, 0);              // decoder model, display delay, one operating point
     w.U(4, 5).U(4, 5).U(6, 63).U(6, 63);                             // frame size bits and maxima
@@ -1182,6 +1182,26 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "av1");
              Checks checks(trace);
              checks.Count("pic", 1);
+             return checks.Failures();
+         }},
+        // a sequence header the parser refuses leaves the one before it active, and drops its temporal
+        // unit. The second temporal unit's header codes the reserved seq_profile 3; the third unit's key
+        // frame is parsed with the first header.
+        {"Av1SequenceHeaderRefused",
+         [](CaseContext& stream) {
+             std::vector<uint8_t> unit = Av1SequenceHeaderUnit(0, true);
+             Append(unit, Av1KeyFrameObu(1));
+             stream.packets.push_back({unit, 0});
+             unit = Av1SequenceHeaderUnit(0, true, 3);
+             Append(unit, Av1KeyFrameObu(1));
+             stream.packets.push_back({unit, 1});
+             unit = Obu(2, {});
+             Append(unit, Av1KeyFrameObu(1));
+             stream.packets.push_back({unit, 2});
+             const Trace trace = Run(stream, "av1");
+             Checks checks(trace);
+             checks.Count("pic", 2);
+             checks.Field("  av1", "frame_width", "64", 1);
              return checks.Failures();
          }},
         // Proves the AV1 key frame builder, and the limit: 14 luma scaling points are the most

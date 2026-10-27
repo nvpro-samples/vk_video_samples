@@ -677,14 +677,17 @@ static int spsSequenceCounter = 0;
 
 bool VulkanAV1Decoder::ParseObuSequenceHeader()
 {
+    // The header is parsed into a new object, which becomes the active sequence header once the whole
+    // header has parsed: a header the parser refuses leaves the one before it active.
     auto prevSps = m_sps;
-    VkResult result = av1_seq_param_s::Create(spsSequenceCounter++, m_sps);
+    VkSharedBaseObj<av1_seq_param_s> newSps;
+    VkResult result = av1_seq_param_s::Create(spsSequenceCounter++, newSps);
 
-    assert((result == VK_SUCCESS) && m_sps);
+    assert((result == VK_SUCCESS) && newSps);
     if (result != VK_SUCCESS)
         return false;
 
-    auto* sps = m_sps.get();
+    auto* sps = newSps.get();
 
 	memset(&sps->color_config, 0, sizeof(sps->color_config));
 	memset(&sps->timing_info, 0, sizeof(sps->timing_info));
@@ -919,6 +922,7 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
         return false;
     }
 
+    m_sps = newSps;
     if (m_bSPSReceived) {
         // @review: this is not correct
 	if (m_sps->isDifferentFrom(prevSps.get()))
@@ -2460,7 +2464,10 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
             break;
 
         case AV1_OBU_SEQUENCE_HEADER:
-            ParseObuSequenceHeader();
+            if (!ParseObuSequenceHeader()) {
+                // A sequence header the parser refuses drops its temporal unit, whose frames are of it.
+                return false;
+            }
             break;
 
         case AV1_OBU_FRAME_HEADER:
