@@ -4,6 +4,10 @@
     "lf-update": "the loop filter update masks and loop_filter_delta_update keep values from earlier frames",
     "hdr-intra": "an intra frame keeps the previous inter frame's ref_frame_sign_bias_mask and allow_high_precision_mv"
   },
+  "adapter_defects": {
+    "begin-setup-inactive": "the begin-coding list names the setup picture under its target slot, which is not active yet: activation happens in the decode",
+    "begin-setup-mismatch": "the begin-coding list names the setup picture under its target slot, which still holds the picture it held before"
+  },
   "streams": [
     {
       "name": "vp9-libvpx-altref-64x64",
@@ -13,6 +17,11 @@
       "headers": "../streams/vp9-libvpx-altref-64x64.headers.txt",
       "known": [
         "lf-update"
+      ],
+      "adapter_golden": "../golden/adapter/vp9-libvpx-altref-64x64.trace",
+      "adapter_known": [
+        "begin-setup-inactive",
+        "begin-setup-mismatch"
       ]
     },
     {
@@ -23,6 +32,11 @@
       "headers": "../streams/vp9-libvpx-profile2-10bit-64x64.headers.txt",
       "known": [
         "lf-update"
+      ],
+      "adapter_golden": "../golden/adapter/vp9-libvpx-profile2-10bit-64x64.trace",
+      "adapter_known": [
+        "begin-setup-inactive",
+        "begin-setup-mismatch"
       ]
     },
     {
@@ -33,13 +47,23 @@
       "headers": "../streams/vp9-libvpx-tiles-cyclic-aq-512x64.headers.txt",
       "known": [
         "lf-update"
+      ],
+      "adapter_golden": "../golden/adapter/vp9-libvpx-tiles-cyclic-aq-512x64.trace",
+      "adapter_known": [
+        "begin-setup-inactive",
+        "begin-setup-mismatch"
       ]
     },
     {
       "name": "decode-samples",
       "root": "VVS_DECODE_SAMPLES_ROOT",
       "decode_samples": "../../../../tests/decode_samples.json",
-      "md5": "../golden/md5/vp9-decode-samples.md5"
+      "md5": "../golden/md5/vp9-decode-samples.md5",
+      "adapter_md5": "../golden/md5/adapter-vp9-decode-samples.md5",
+      "adapter_known": [
+        "begin-setup-inactive",
+        "begin-setup-mismatch"
+      ]
     }
   ]
 }

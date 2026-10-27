@@ -1,0 +1,276 @@
+adapter-trace version=1 codec=h264 format=bytestream bytes=7363 offsetAlignment=256 sizeAlignment=256
+seq index=0 codec=h264 width=64 height=64 chroma=2 bitDepth=8 profile=100 flags=progressive minDecodeSurfaces=5 maxDpbSlots=17 pictures=13
+session state=new maxDpbSlots=17 maxActiveReferencePictures=16
+pic index=0 idx=0 setup=0 refs=0
+  h264 frame_num=0 poc=[0,0] flags=ref|intra
+  setup slot=0 res=0 frame_num=0 poc=[0,0] flags=-
+  begin role=setup slot=0 res=0
+pkt index=0 offset=0 parsed=2136
+pic index=1 idx=1 setup=1 refs=1
+  h264 frame_num=1 poc=[8,8] flags=ref
+  setup slot=1 res=1 frame_num=1 poc=[8,8] flags=-
+  ref slot=0 res=0 frame_num=0 poc=[0,0] flags=-
+  begin role=ref slot=0 res=0
+  begin role=setup slot=1 res=1
+pkt index=1 offset=2136 parsed=230
+pic index=2 idx=2 setup=2 refs=2
+  h264 frame_num=2 poc=[4,4] flags=ref
+  setup slot=2 res=2 frame_num=2 poc=[4,4] flags=-
+  ref slot=0 res=0 frame_num=0 poc=[0,0] flags=-
+  ref slot=1 res=1 frame_num=1 poc=[8,8] flags=-
+  begin role=ref slot=0 res=0
+  begin role=ref slot=1 res=1
+  begin role=setup slot=2 res=2
+disp idx=0 pts=0
+pkt index=2 offset=2366 parsed=98
+pic index=3 idx=3 setup=3 refs=3
+  h264 frame_num=3 poc=[2,2] flags=-
+  setup slot=3 res=3 frame_num=3 poc=[2,2] flags=-
+  ref slot=0 res=0 frame_num=0 poc=[0,0] flags=-
+  ref slot=1 res=1 frame_num=1 poc=[8,8] flags=-
+  ref slot=2 res=2 frame_num=2 poc=[4,4] flags=-
+  begin role=ref slot=0 res=0
+  begin role=ref slot=1 res=1
+  begin role=ref slot=2 res=2
+  begin role=setup slot=3 res=3
+disp idx=3 pts=333333
+pkt index=3 offset=2464 parsed=123
+pic index=4 idx=4 setup=4 refs=3
+  h264 frame_num=3 poc=[6,6] flags=-
+  setup slot=4 res=4 frame_num=3 poc=[6,6] flags=-
+  ref slot=0 res=0 frame_num=0 poc=[0,0] flags=-
+  ref slot=1 res=1 frame_num=1 poc=[8,8] flags=-
+  ref slot=2 res=2 frame_num=2 poc=[4,4] flags=-
+  begin role=ref slot=0 res=0
+  begin role=ref slot=1 res=1
+  begin role=ref slot=2 res=2
+  begin role=setup slot=4 res=4
+disp idx=2 pts=666666
+pkt index=4 offset=2587 parsed=253
+pic index=5 idx=5 setup=5 refs=3
+  h264 frame_num=3 poc=[16,16] flags=ref
+  setup slot=5 res=5 frame_num=3 poc=[16,16] flags=-
+  ref slot=0 res=0 frame_num=0 poc=[0,0] flags=-
+  ref slot=1 res=1 frame_num=1 poc=[8,8] flags=-
+  ref slot=2 res=2 frame_num=2 poc=[4,4] flags=-
+  begin role=ref slot=0 res=0
+  begin role=ref slot=1 res=1
+  begin role=ref slot=2 res=2
+  begin role=setup slot=5 res=5
+disp idx=4 pts=999999
+pkt index=5 offset=2840 parsed=260
+pic index=6 idx=6 setup=6 refs=4
+  h264 frame_num=4 poc=[12,12] flags=ref
+  setup slot=6 res=6 frame_num=4 poc=[12,12] flags=-
+  ref slot=0 res=0 frame_num=0 poc=[0,0] flags=-
+  ref slot=1 res=1 frame_num=1 poc=[8,8] flags=-
+  ref slot=2 res=2 frame_num=2 poc=[4,4] flags=-
+  ref slot=5 res=5 frame_num=3 poc=[16,16] flags=-
+  begin role=ref slot=0 res=0
+  begin role=ref slot=1 res=1
+  begin role=ref slot=2 res=2
+  begin role=ref slot=5 res=5
+  begin role=setup slot=6 res=6
+disp idx=1 pts=1333332
+pkt index=6 offset=3100 parsed=102
+pic index=7 idx=7 setup=7 refs=3
+  h264 frame_num=5 poc=[10,10] flags=-
+  setup slot=7 res=7 frame_num=5 poc=[10,10] flags=-
+  ref slot=6 res=6 frame_num=4 poc=[12,12] flags=-
+  ref slot=1 res=1 frame_num=1 poc=[8,8] flags=-
+  ref slot=5 res=5 frame_num=3 poc=[16,16] flags=-
+  begin role=ref slot=6 res=6
+  begin role=ref slot=1 res=1
+  begin role=ref slot=5 res=5
+  begin role=setup slot=7 res=7
+disp idx=7 pts=1666665
+pkt index=7 offset=3202 parsed=111
+pic index=8 idx=0 setup=8 refs=3
+  h264 frame_num=5 poc=[14,14] flags=-
+  setup slot=8 res=0 frame_num=5 poc=[14,14] flags=-
+  ref slot=6 res=6 frame_num=4 poc=[12,12] flags=-
+  ref slot=1 res=1 frame_num=1 poc=[8,8] flags=-
+  ref slot=5 res=5 frame_num=3 poc=[16,16] flags=-
+  begin role=ref slot=6 res=6
+  begin role=ref slot=1 res=1
+  begin role=ref slot=5 res=5
+  begin role=setup slot=8 res=0
+disp idx=6 pts=1999998
+pkt index=8 offset=3313 parsed=249
+pic index=9 idx=8 setup=9 refs=3
+  h264 frame_num=5 poc=[22,22] flags=ref
+  setup slot=9 res=8 frame_num=5 poc=[22,22] flags=-
+  ref slot=6 res=6 frame_num=4 poc=[12,12] flags=-
+  ref slot=1 res=1 frame_num=1 poc=[8,8] flags=-
+  ref slot=5 res=5 frame_num=3 poc=[16,16] flags=-
+  begin role=ref slot=6 res=6
+  begin role=ref slot=1 res=1
+  begin role=ref slot=5 res=5
+  begin role=setup slot=9 res=8
+disp idx=0 pts=2333331
+pkt index=9 offset=3562 parsed=135
+pic index=10 idx=9 setup=10 refs=4
+  h264 frame_num=6 poc=[18,18] flags=ref
+  setup slot=10 res=9 frame_num=6 poc=[18,18] flags=-
+  ref slot=6 res=6 frame_num=4 poc=[12,12] flags=-
+  ref slot=1 res=1 frame_num=1 poc=[8,8] flags=-
+  ref slot=9 res=8 frame_num=5 poc=[22,22] flags=-
+  ref slot=5 res=5 frame_num=3 poc=[16,16] flags=-
+  begin role=ref slot=6 res=6
+  begin role=ref slot=1 res=1
+  begin role=ref slot=9 res=8
+  begin role=ref slot=5 res=5
+  begin role=setup slot=10 res=9
+disp idx=5 pts=2666664
+pkt index=10 offset=3697 parsed=143
+pic index=11 idx=10 setup=11 refs=3
+  h264 frame_num=7 poc=[20,20] flags=-
+  setup slot=11 res=10 frame_num=7 poc=[20,20] flags=-
+  ref slot=10 res=9 frame_num=6 poc=[18,18] flags=-
+  ref slot=9 res=8 frame_num=5 poc=[22,22] flags=-
+  ref slot=5 res=5 frame_num=3 poc=[16,16] flags=-
+  begin role=ref slot=10 res=9
+  begin role=ref slot=9 res=8
+  begin role=ref slot=5 res=5
+  begin role=setup slot=11 res=10
+disp idx=9 pts=2999997
+pkt index=11 offset=3840 parsed=290
+disp idx=10 pts=3333330
+disp idx=8 pts=3666663
+pkt index=12 offset=4130 parsed=1189
+pic index=12 idx=11 setup=12 refs=0
+  h264 frame_num=0 poc=[0,0] flags=ref|intra
+  setup slot=12 res=11 frame_num=0 poc=[0,0] flags=-
+  begin role=setup slot=12 res=11
+pkt index=13 offset=5319 parsed=253
+pic index=13 idx=12 setup=13 refs=1
+  h264 frame_num=1 poc=[8,8] flags=ref
+  setup slot=13 res=12 frame_num=1 poc=[8,8] flags=-
+  ref slot=12 res=11 frame_num=0 poc=[0,0] flags=-
+  begin role=ref slot=12 res=11
+  begin role=setup slot=13 res=12
+pkt index=14 offset=5572 parsed=222
+pic index=14 idx=1 setup=14 refs=2
+  h264 frame_num=2 poc=[4,4] flags=ref
+  setup slot=14 res=1 frame_num=2 poc=[4,4] flags=-
+  ref slot=12 res=11 frame_num=0 poc=[0,0] flags=-
+  ref slot=13 res=12 frame_num=1 poc=[8,8] flags=-
+  begin role=ref slot=12 res=11
+  begin role=ref slot=13 res=12
+  begin role=setup slot=14 res=1
+disp idx=11 pts=3999996
+pkt index=15 offset=5794 parsed=115
+pic index=15 idx=2 setup=15 refs=3
+  h264 frame_num=3 poc=[2,2] flags=-
+  setup slot=15 res=2 frame_num=3 poc=[2,2] flags=-
+  ref slot=12 res=11 frame_num=0 poc=[0,0] flags=-
+  ref slot=13 res=12 frame_num=1 poc=[8,8] flags=-
+  ref slot=14 res=1 frame_num=2 poc=[4,4] flags=-
+  begin role=ref slot=12 res=11
+  begin role=ref slot=13 res=12
+  begin role=ref slot=14 res=1
+  begin role=setup slot=15 res=2
+disp idx=2 pts=4333329
+pkt index=16 offset=5909 parsed=119
+pic index=16 idx=3 setup=16 refs=3
+  h264 frame_num=3 poc=[6,6] flags=-
+  setup slot=16 res=3 frame_num=3 poc=[6,6] flags=-
+  ref slot=12 res=11 frame_num=0 poc=[0,0] flags=-
+  ref slot=13 res=12 frame_num=1 poc=[8,8] flags=-
+  ref slot=14 res=1 frame_num=2 poc=[4,4] flags=-
+  begin role=ref slot=12 res=11
+  begin role=ref slot=13 res=12
+  begin role=ref slot=14 res=1
+  begin role=setup slot=16 res=3
+disp idx=1 pts=4666662
+pkt index=17 offset=6028 parsed=253
+pic index=17 idx=4 setup=3 refs=3
+  h264 frame_num=3 poc=[16,16] flags=ref
+  setup slot=3 res=4 frame_num=3 poc=[16,16] flags=-
+  ref slot=12 res=11 frame_num=0 poc=[0,0] flags=-
+  ref slot=13 res=12 frame_num=1 poc=[8,8] flags=-
+  ref slot=14 res=1 frame_num=2 poc=[4,4] flags=-
+  begin role=ref slot=12 res=11
+  begin role=ref slot=13 res=12
+  begin role=ref slot=14 res=1
+  begin role=setup slot=3 res=4
+disp idx=3 pts=4999995
+pkt index=18 offset=6281 parsed=316
+pic index=18 idx=5 setup=4 refs=4
+  h264 frame_num=4 poc=[12,12] flags=ref
+  setup slot=4 res=5 frame_num=4 poc=[12,12] flags=-
+  ref slot=12 res=11 frame_num=0 poc=[0,0] flags=-
+  ref slot=13 res=12 frame_num=1 poc=[8,8] flags=-
+  ref slot=14 res=1 frame_num=2 poc=[4,4] flags=-
+  ref slot=3 res=4 frame_num=3 poc=[16,16] flags=-
+  begin role=ref slot=12 res=11
+  begin role=ref slot=13 res=12
+  begin role=ref slot=14 res=1
+  begin role=ref slot=3 res=4
+  begin role=setup slot=4 res=5
+disp idx=12 pts=5333328
+pkt index=19 offset=6597 parsed=136
+pic index=19 idx=6 setup=0 refs=3
+  h264 frame_num=5 poc=[10,10] flags=-
+  setup slot=0 res=6 frame_num=5 poc=[10,10] flags=-
+  ref slot=4 res=5 frame_num=4 poc=[12,12] flags=-
+  ref slot=13 res=12 frame_num=1 poc=[8,8] flags=-
+  ref slot=3 res=4 frame_num=3 poc=[16,16] flags=-
+  begin role=ref slot=4 res=5
+  begin role=ref slot=13 res=12
+  begin role=ref slot=3 res=4
+  begin role=setup slot=0 res=6
+disp idx=6 pts=5666661
+pkt index=20 offset=6733 parsed=127
+pic index=20 idx=7 setup=2 refs=3
+  h264 frame_num=5 poc=[14,14] flags=-
+  setup slot=2 res=7 frame_num=5 poc=[14,14] flags=-
+  ref slot=4 res=5 frame_num=4 poc=[12,12] flags=-
+  ref slot=13 res=12 frame_num=1 poc=[8,8] flags=-
+  ref slot=3 res=4 frame_num=3 poc=[16,16] flags=-
+  begin role=ref slot=4 res=5
+  begin role=ref slot=13 res=12
+  begin role=ref slot=3 res=4
+  begin role=setup slot=2 res=7
+disp idx=5 pts=5999994
+pkt index=21 offset=6860 parsed=230
+pic index=21 idx=0 setup=7 refs=3
+  h264 frame_num=5 poc=[22,22] flags=ref
+  setup slot=7 res=0 frame_num=5 poc=[22,22] flags=-
+  ref slot=4 res=5 frame_num=4 poc=[12,12] flags=-
+  ref slot=13 res=12 frame_num=1 poc=[8,8] flags=-
+  ref slot=3 res=4 frame_num=3 poc=[16,16] flags=-
+  begin role=ref slot=4 res=5
+  begin role=ref slot=13 res=12
+  begin role=ref slot=3 res=4
+  begin role=setup slot=7 res=0
+disp idx=7 pts=6333327
+pkt index=22 offset=7090 parsed=169
+pkt index=23 offset=7259 parsed=104
+pic index=22 idx=8 setup=8 refs=4
+  h264 frame_num=6 poc=[18,18] flags=ref
+  setup slot=8 res=8 frame_num=6 poc=[18,18] flags=-
+  ref slot=4 res=5 frame_num=4 poc=[12,12] flags=-
+  ref slot=13 res=12 frame_num=1 poc=[8,8] flags=-
+  ref slot=7 res=0 frame_num=5 poc=[22,22] flags=-
+  ref slot=3 res=4 frame_num=3 poc=[16,16] flags=-
+  begin role=ref slot=4 res=5
+  begin role=ref slot=13 res=12
+  begin role=ref slot=7 res=0
+  begin role=ref slot=3 res=4
+  begin role=setup slot=8 res=8
+disp idx=4 pts=6666660
+pic index=23 idx=9 setup=1 refs=3
+  h264 frame_num=7 poc=[20,20] flags=-
+  setup slot=1 res=9 frame_num=7 poc=[20,20] flags=-
+  ref slot=8 res=8 frame_num=6 poc=[18,18] flags=-
+  ref slot=7 res=0 frame_num=5 poc=[22,22] flags=-
+  ref slot=3 res=4 frame_num=3 poc=[16,16] flags=-
+  begin role=ref slot=8 res=8
+  begin role=ref slot=7 res=0
+  begin role=ref slot=3 res=4
+  begin role=setup slot=1 res=9
+disp idx=8 pts=6999993
+disp idx=9 pts=7333326
+disp idx=0 pts=7666659
+eos pictures=24 displayed=24

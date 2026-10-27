@@ -8,6 +8,11 @@
     "sps-strps": "delta_poc_s0_minus1 and delta_poc_s1_minus1 of an SPS reference picture set hold derived POC deltas",
     "sps-hrd": "every sub-layer's HRD parameters are written to sub-layer 0"
   },
+  "adapter_defects": {
+    "begin-setup-inactive": "the begin-coding list names the setup picture under its target slot, which is not active yet: activation happens in the decode",
+    "begin-setup-mismatch": "the begin-coding list names the setup picture under its target slot, which still holds the picture it held before",
+    "begin-ref-inactive": "the adapter never sets StdVideoDecodeH265PictureInfo::flags.IsReference, so no decode requests reference picture setup and no slot is ever active"
+  },
   "streams": [
     {
       "name": "h265-x265-bpyramid-cra-64x64",
@@ -19,6 +24,11 @@
         "ptl-flags",
         "sps-flags",
         "vps-dpbm"
+      ],
+      "adapter_golden": "../golden/adapter/h265-x265-bpyramid-cra-64x64.trace",
+      "adapter_known": [
+        "begin-ref-inactive",
+        "begin-setup-inactive"
       ]
     },
     {
@@ -31,6 +41,11 @@
         "ptl-flags",
         "sps-flags",
         "vps-dpbm"
+      ],
+      "adapter_golden": "../golden/adapter/h265-x265-idr-64x64.trace",
+      "adapter_known": [
+        "begin-ref-inactive",
+        "begin-setup-inactive"
       ]
     },
     {
@@ -43,6 +58,11 @@
         "ptl-flags",
         "sps-flags",
         "vps-dpbm"
+      ],
+      "adapter_golden": "../golden/adapter/h265-x265-main10-64x64.trace",
+      "adapter_known": [
+        "begin-ref-inactive",
+        "begin-setup-inactive"
       ]
     },
     {
@@ -55,13 +75,23 @@
         "ptl-flags",
         "sps-flags",
         "sps-hrd"
+      ],
+      "adapter_golden": "../golden/adapter/h265-x265-hrd-scaling-slices-sublayers-64x64.trace",
+      "adapter_known": [
+        "begin-ref-inactive",
+        "begin-setup-inactive"
       ]
     },
     {
       "name": "decode-samples",
       "root": "VVS_DECODE_SAMPLES_ROOT",
       "decode_samples": "../../../../tests/decode_samples.json",
-      "md5": "../golden/md5/h265-decode-samples.md5"
+      "md5": "../golden/md5/h265-decode-samples.md5",
+      "adapter_md5": "../golden/md5/adapter-h265-decode-samples.md5",
+      "adapter_known": [
+        "begin-ref-inactive",
+        "begin-setup-inactive"
+      ]
     }
   ]
 }

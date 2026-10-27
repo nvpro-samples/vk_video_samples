@@ -1,4 +1,4 @@
-# Parser trace test
+# Parser trace test and adapter slot trace
 
 `vk-video-parser-trace` runs NvVideoParser over an H.264, H.265, AV1 or VP9 stream with no Vulkan
 device, and writes a canonical text trace of every callback the parser makes:
@@ -30,6 +30,13 @@ The CTests `ParserTraceAv1`, `ParserTraceH264`, `ParserTraceH265` and `ParserTra
 path, and checks what the parser hands its client. Its cases run as `ParserCrafted.<case>` (label
 `device-free`, a 10 s timeout); see [Crafted cases](#crafted-cases).
 
+`vk-video-adapter-trace` runs the decoder sample's parser adapter, `VulkanVideoParser.cpp`, over the
+same streams and writes the DPB slots, Std reference information and begin-coding list of every
+decode; `scripts/slot_oracle.py` checks them against the DPB slot rules of the Vulkan
+specification. The CTests `AdapterTraceAv1`, `AdapterTraceH264`, `AdapterTraceH265` and
+`AdapterTraceVp9` (label `device-free`) run the suites in adapter mode; see
+[The adapter slot trace](#the-adapter-slot-trace).
+
 Nothing is decoded. A green run says what the parser hands a client, not that a driver decodes it
 correctly.
 
@@ -37,20 +44,24 @@ correctly.
 
 | File | What it is |
 |---|---|
-| `src/ParserTrace.cpp` | the trace tool: the stream readers and `main` |
-| `src/TraceClient.h`, `src/TraceClient.cpp` | what both tools share: the recording client with its host-memory bitstream buffer and picture pool, the trace lines, the parser setup and the packet feeds |
+| `src/ParserTrace.cpp` | the parser trace tool |
+| `src/AdapterTrace.cpp` | the adapter slot trace tool: the recording decoder and the picture pool in place of `VkVideoDecoder` and `VulkanVideoFrameBuffer` |
+| `src/StreamInput.h`, `src/StreamInput.cpp` | the stream readers both trace tools use: IVF, AV1 low-overhead OBU and Annex B |
+| `src/TraceClient.h`, `src/TraceClient.cpp` | what the tools share: the recording client with its picture pool, the host-memory bitstream buffer, the trace lines, the parser setup and the packet feeds |
 | `src/ParserCrafted.cpp` | the crafted-case tool: the stream builders and the cases |
 | `src/BitWriter.h` | the bit writer the builders use: `u(n)`, `ue(v)`, `se(v)`, `uvlc()`, trailing bits, Annex B NAL units with emulation prevention, AV1 OBUs |
 | `scripts/av1_reference_model.py` | the AV1 model and the comparison |
 | `scripts/h264_header_model.py`, `h265_header_model.py`, `vp9_header_model.py` | the H.264, H.265 and VP9 models |
 | `scripts/header_dump.py` | what those three share: ffmpeg's dump, its compact form, the trace reader and the report |
 | `scripts/header_check.py` | checks one H.264, H.265 or VP9 trace against its stream: `--codec c --trace t --stream s` (or `--headers h`) |
-| `scripts/parser_trace_suite.py` | the suite runner CTest calls |
+| `scripts/slot_oracle.py` | the DPB slot oracle of the adapter trace: `--trace t [-v]` |
+| `scripts/parser_trace_suite.py` | the suite runner CTest calls, in parser or adapter mode |
 | `suites/<codec>.json` | the streams of each codec, their goldens, md5 lists, header dumps and known categories, and the defects table |
 | `streams/` | twenty committed streams of 1.5 to 15 KB |
 | `streams/*.headers.txt` | the committed streams' compact header dumps, with the syntax elements the models read, so the model check needs no ffmpeg |
-| `golden/*.trace` | the committed streams' recorded traces |
-| `golden/md5/*.md5` | the trace md5 of every stream of an outside set, one `<md5>  <path>` line each |
+| `golden/*.trace` | the committed streams' recorded parser traces |
+| `golden/adapter/*.trace` | the committed streams' recorded adapter traces |
+| `golden/md5/*.md5` | the trace md5 of every stream of an outside set, one `<md5>  <path>` line each; `adapter-*.md5` for the adapter traces |
 
 The parser is linked from its static archive, so the tool needs no Vulkan loader and no device.
 
@@ -170,6 +181,67 @@ The suite runs the models on the committed streams; the streams of an md5 set ar
 trace md5 only. To run a model over an outside set, trace each stream with `vk-video-parser-trace`
 and check the trace with `header_check.py --stream`, which needs ffmpeg.
 
+## The adapter slot trace
+
+```bash
+<build>/bin/vk-video-adapter-trace --codec h264 --format bytestream -i stream.h264 -o stream.trace
+python3 scripts/slot_oracle.py --trace stream.trace -v
+python3 scripts/parser_trace_suite.py --mode adapter --tool <build>/bin/vk-video-adapter-trace --suite suites/h264.json
+```
+
+The tool links `VulkanVideoParser.cpp` and the parser's static archive, and stands in for the rest
+of the decoder sample where it reaches the adapter:
+
+- it creates the adapter as `VulkanVideoProcessor` does, and gives it a stream the same way: an
+  elementary stream with partial parsing, advancing by the bytes consumed, a demuxed stream one
+  packet per call with no flags, then an empty end-of-stream packet;
+- the picture pool is `VulkanVideoFrameBuffer`'s: as many pictures as `VkVideoDecoder` asks for
+  (the parser's minimum plus 8, at most 32), a new picture taking the free one decoded longest ago
+  (only below picture 0's decode order plus 1000, as `ReservePictureBuffer` searches), and no
+  picture before the first sequence. The consumer takes a displayed picture at once;
+- `StartVideoSequence` keeps the session or creates a new one as `VkVideoDecoder` does
+  (`VulkanVideoSession::IsCompatible`); a new session starts with every DPB slot inactive;
+- the begin-coding list is built as `VkVideoDecoder::DecodePictureWithParameters` builds it: the
+  reference slots, then the setup slot.
+
+| Line | What it records |
+|---|---|
+| `adapter-trace` | the tool's settings |
+| `seq`, `session` | `StartVideoSequence`: the format, the number of pictures, and whether the session is kept or new, with its `maxDpbSlots` |
+| `pic` | a decode: the picture, its setup slot and its reference count |
+| `h264`, `h265`, `av1`, `vp9` | the picture information that decides reference picture setup (`is_reference`, `IsReference`, `refresh_frame_flags`) and the codec's slot arrays: `RefPicSetStCurrBefore`, `RefPicSetStCurrAfter`, `RefPicSetLtCurr`, `referenceNameSlotIndices` |
+| `setup`, `ref` | `pSetupReferenceSlot` and each element of `pReferenceSlots`: the slot, the picture its resource belongs to (`res`), and the Std reference information; VP9 the coded extent |
+| `begin` | each element of the begin-coding list, `role=setup` for the setup picture's entry |
+| `disp`, `pkt`, `eos`, `reserve-failed` | display, the packets, the end of the stream, a picture the pool could not give |
+
+The oracle replays the DPB slot states of the specification (videocoding.adoc "DPB Slot States",
+and each codec's reference picture setup rule) over the trace. A slot is activated by a decode
+whose setup the codec requests and invalidated by one whose setup it does not; an H.264 field sets
+up or invalidates its own parity. It checks VUID-07238, 07239, 07265 and 04856 (begin-coding);
+07264, 07151, 07149, 07176 to 07178, 07261 to 07263, 07266 to 07268, 08376, 07170 and 07256 (the
+decode); 09262 and 09263 (AV1); 10809 and 10810 (VP9); the H.265 reference picture set lists; and
+that each reference's Std information is the one its picture was set up with. The categories are in
+`slot_oracle.py`. Each suite's `adapter_defects` table names the defect behind each category:
+
+| Category | Defect | Where |
+|---|---|---|
+| `begin-setup-inactive`, `begin-setup-mismatch` | the setup picture is listed for begin-coding under its target slot, which is not active yet, or still holds the picture it held before | every stream |
+| `begin-duplicate` | a second field's setup lists its first field's slot and picture again | field-coded H.264 |
+| `nonexisting` | a non-existing reference takes another reference's picture and a slot no decode set up | H.264 with `frame_num` gaps or dropped pictures |
+| `begin-ref-inactive` | `StdVideoDecodeH265PictureInfo::flags.IsReference` is never set, so no H.265 decode sets up a reference | every H.265 stream |
+| `ref-info` | the AV1 setup reference information is zero apart from `frame_type` and `OrderHint` | AV1 |
+| `names-missing` | a key frame frees every slot, and a later inter frame's reference whose picture lost its slot drops out of the decode | AV1 |
+| `reserve-failed` | the AV1 parser decodes frames of a sequence it has not reported with `BeginSequence` | scalable AV1 |
+
+An md5 set's `adapter_known` lists the categories its streams show together. The Argon AV1 sets
+are reported per category, as in parser mode.
+
+In a Debug build some outside streams stop at an assert, and their md5 entries fail: 4:0:0
+sequences at `VulkanVideoParser.cpp:1196`, which maps no monochrome format; an AV1 reference
+without a slot at `:1789`; FM1_BT_B's non-existing reference at `:1437`; and the
+VP9 4:2:2 sample. A Release build with AddressSanitizer and UBSan shows the reference without a slot as a write to
+`activeReferences[-1]` (`:1791`).
+
 ## Crafted cases
 
 ```bash
@@ -203,7 +275,8 @@ python3 scripts/parser_trace_suite.py --tool <build>/bin/vk-video-parser-trace -
 
 `--mint` writes the goldens, the md5 lists of the sets whose roots are set, and the header dumps of
 the committed streams (this needs ffmpeg), from the current parser, and prints each stream's
-categories. A golden records today's parser, defects included. A change that alters a
+categories. With `--mode adapter` it writes the adapter goldens and md5 lists, and prints the slot
+oracle's categories. A golden records today's parser, defects included. A change that alters a
 golden or an md5 explains each changed field in its commit, and updates `known` to match.
 
 ## The committed streams

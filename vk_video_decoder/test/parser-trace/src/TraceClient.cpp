@@ -1239,13 +1239,8 @@ class TraceClient final : public TraceClientIf {
                                     VkDeviceSize minBitstreamBufferSizeAlignment, const uint8_t* pInitializeBufferMemory,
                                     VkDeviceSize initializeBufferMemorySize,
                                     VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer) override {
-        auto buffer = std::make_shared<HostBitstreamBuffer>(std::max(size, initializeBufferMemorySize),
-                                                            minBitstreamBufferOffsetAlignment, minBitstreamBufferSizeAlignment);
-        if ((pInitializeBufferMemory != nullptr) && (initializeBufferMemorySize != 0)) {
-            buffer->CopyDataFromBuffer(pInitializeBufferMemory, 0, 0, initializeBufferMemorySize);
-        }
-        bitstreamBuffer = buffer;
-        return buffer->GetMaxSize();
+        return CreateHostBitstreamBuffer(size, minBitstreamBufferOffsetAlignment, minBitstreamBufferSizeAlignment,
+                                         pInitializeBufferMemory, initializeBufferMemorySize, bitstreamBuffer);
     }
 
     uint64_t Decoded() const override { return m_decoded; }
@@ -1287,6 +1282,17 @@ const CodecInfo* FindCodec(const char* name) {
         }
     }
     return nullptr;
+}
+
+VkDeviceSize CreateHostBitstreamBuffer(VkDeviceSize size, VkDeviceSize offsetAlignment, VkDeviceSize sizeAlignment,
+                                       const uint8_t* initialData, VkDeviceSize initialSize,
+                                       VkSharedBaseObj<VulkanBitstreamBuffer>& buffer) {
+    auto host = std::make_shared<HostBitstreamBuffer>(std::max(size, initialSize), offsetAlignment, sizeAlignment);
+    if ((initialData != nullptr) && (initialSize != 0)) {
+        host->CopyDataFromBuffer(initialData, 0, 0, initialSize);
+    }
+    buffer = host;
+    return host->GetMaxSize();
 }
 
 std::unique_ptr<TraceClientIf> CreateTraceClient(FILE* out, VkVideoCodecOperationFlagBitsKHR codec, uint32_t poolSize) {

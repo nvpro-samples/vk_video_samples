@@ -133,6 +133,12 @@ class TraceClientIf : public VkParserVideoDecodeClient {
 // allocation with none free fails and writes an alloc-failed line.
 std::unique_ptr<TraceClientIf> CreateTraceClient(FILE* out, VkVideoCodecOperationFlagBitsKHR codec, uint32_t poolSize);
 
+// A bitstream buffer in host memory of at least size bytes, holding initialData: what a
+// GetBitstreamBuffer callback hands the parser. Returns the buffer's size.
+VkDeviceSize CreateHostBitstreamBuffer(VkDeviceSize size, VkDeviceSize offsetAlignment, VkDeviceSize sizeAlignment,
+                                       const uint8_t* initialData, VkDeviceSize initialSize,
+                                       VkSharedBaseObj<VulkanBitstreamBuffer>& buffer);
+
 // One IVF frame or AV1 temporal unit: one packet for the parser.
 struct Packet {
     std::vector<uint8_t> data;

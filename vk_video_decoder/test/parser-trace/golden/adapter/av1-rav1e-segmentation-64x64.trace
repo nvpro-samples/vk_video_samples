@@ -1,0 +1,132 @@
+adapter-trace version=1 codec=av1 format=ivf packets=12 offsetAlignment=256 sizeAlignment=256
+pkt index=0 bytes=1258
+seq index=0 codec=av1 width=64 height=64 chroma=2 bitDepth=8 profile=0 flags=progressive minDecodeSurfaces=9 maxDpbSlots=9 pictures=17
+session state=new maxDpbSlots=9 maxActiveReferencePictures=9
+pic index=0 idx=0 setup=0 refs=0
+  av1 frame_type=0 order_hint=0 refresh=0xff names=[-1,-1,-1,-1,-1,-1,-1]
+  setup slot=0 res=0 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
+  begin role=setup slot=0 res=0
+disp idx=0 pts=0
+pkt index=1 bytes=1045
+pic index=1 idx=1 setup=1 refs=1
+  av1 frame_type=1 order_hint=4 refresh=0x2 names=[0,0,0,0,0,0,0]
+  setup slot=1 res=1 frame_type=1 order_hint=4 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
+  ref slot=0 res=0 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=seg
+  begin role=ref slot=0 res=0
+  begin role=setup slot=1 res=1
+pic index=2 idx=2 setup=2 refs=2
+  av1 frame_type=1 order_hint=2 refresh=0x10 names=[0,0,0,0,0,0,1]
+  setup slot=2 res=2 frame_type=1 order_hint=2 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
+  ref slot=0 res=0 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=seg
+  ref slot=1 res=1 frame_type=1 order_hint=4 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=seg
+  begin role=ref slot=0 res=0
+  begin role=ref slot=1 res=1
+  begin role=setup slot=2 res=2
+pic index=3 idx=3 setup=3 refs=2
+  av1 frame_type=1 order_hint=1 refresh=0x20 names=[0,0,0,0,0,0,2]
+  setup slot=3 res=3 frame_type=1 order_hint=1 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
+  ref slot=0 res=0 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=seg
+  ref slot=2 res=2 frame_type=1 order_hint=2 sign_bias=0x80 saved=[0,0,0,0,0,0,0,4] flags=seg
+  begin role=ref slot=0 res=0
+  begin role=ref slot=2 res=2
+  begin role=setup slot=3 res=3
+disp idx=3 pts=333333
+pkt index=2 bytes=5
+disp idx=2 pts=666666
+pkt index=3 bytes=148
+pic index=4 idx=4 setup=4 refs=3
+  av1 frame_type=1 order_hint=3 refresh=0x20 names=[2,2,3,2,2,2,1]
+  setup slot=4 res=4 frame_type=1 order_hint=3 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
+  ref slot=1 res=1 frame_type=1 order_hint=4 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=seg
+  ref slot=2 res=2 frame_type=1 order_hint=2 sign_bias=0x80 saved=[0,0,0,0,0,0,0,4] flags=seg
+  ref slot=3 res=3 frame_type=1 order_hint=1 sign_bias=0x80 saved=[0,0,0,0,0,0,0,2] flags=seg
+  begin role=ref slot=1 res=1
+  begin role=ref slot=2 res=2
+  begin role=ref slot=3 res=3
+  begin role=setup slot=4 res=4
+disp idx=4 pts=999999
+pkt index=4 bytes=5
+disp idx=1 pts=1333332
+pkt index=5 bytes=915
+pic index=5 idx=5 setup=5 refs=2
+  av1 frame_type=1 order_hint=8 refresh=0x4 names=[1,0,1,1,1,1,1]
+  setup slot=5 res=5 frame_type=1 order_hint=8 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
+  ref slot=0 res=0 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=seg
+  ref slot=1 res=1 frame_type=1 order_hint=4 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=seg
+  begin role=ref slot=0 res=0
+  begin role=ref slot=1 res=1
+  begin role=setup slot=5 res=5
+pic index=6 idx=6 setup=6 refs=3
+  av1 frame_type=1 order_hint=6 refresh=0x10 names=[1,1,2,1,1,1,5]
+  setup slot=6 res=6 frame_type=1 order_hint=6 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
+  ref slot=1 res=1 frame_type=1 order_hint=4 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=seg
+  ref slot=5 res=5 frame_type=1 order_hint=8 sign_bias=0x0 saved=[0,4,0,4,4,4,4,4] flags=seg
+  ref slot=2 res=2 frame_type=1 order_hint=2 sign_bias=0x80 saved=[0,0,0,0,0,0,0,4] flags=seg
+  begin role=ref slot=1 res=1
+  begin role=ref slot=5 res=5
+  begin role=ref slot=2 res=2
+  begin role=setup slot=6 res=6
+pic index=7 idx=7 setup=7 refs=3
+  av1 frame_type=1 order_hint=5 refresh=0x20 names=[1,1,4,1,1,1,6]
+  setup slot=7 res=7 frame_type=1 order_hint=5 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
+  ref slot=1 res=1 frame_type=1 order_hint=4 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=seg
+  ref slot=6 res=6 frame_type=1 order_hint=6 sign_bias=0x80 saved=[0,4,4,2,4,4,4,8] flags=seg
+  ref slot=4 res=4 frame_type=1 order_hint=3 sign_bias=0x80 saved=[0,2,2,1,2,2,2,4] flags=seg
+  begin role=ref slot=1 res=1
+  begin role=ref slot=6 res=6
+  begin role=ref slot=4 res=4
+  begin role=setup slot=7 res=7
+disp idx=7 pts=1666665
+pkt index=6 bytes=5
+disp idx=6 pts=1999998
+pkt index=7 bytes=127
+pic index=8 idx=8 setup=8 refs=3
+  av1 frame_type=1 order_hint=7 refresh=0x20 names=[6,6,7,6,6,6,5]
+  setup slot=8 res=8 frame_type=1 order_hint=7 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
+  ref slot=5 res=5 frame_type=1 order_hint=8 sign_bias=0x0 saved=[0,4,0,4,4,4,4,4] flags=seg
+  ref slot=6 res=6 frame_type=1 order_hint=6 sign_bias=0x80 saved=[0,4,4,2,4,4,4,8] flags=seg
+  ref slot=7 res=7 frame_type=1 order_hint=5 sign_bias=0x80 saved=[0,4,4,3,4,4,4,6] flags=seg
+  begin role=ref slot=5 res=5
+  begin role=ref slot=6 res=6
+  begin role=ref slot=7 res=7
+  begin role=setup slot=8 res=8
+disp idx=8 pts=2333331
+pkt index=8 bytes=5
+disp idx=5 pts=2666664
+pkt index=9 bytes=406
+pic index=9 idx=9 setup=3 refs=3
+  av1 frame_type=1 order_hint=10 refresh=0x10 names=[5,5,6,5,5,5,0]
+  setup slot=3 res=9 frame_type=1 order_hint=10 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
+  ref slot=0 res=0 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=seg
+  ref slot=5 res=5 frame_type=1 order_hint=8 sign_bias=0x0 saved=[0,4,0,4,4,4,4,4] flags=seg
+  ref slot=6 res=6 frame_type=1 order_hint=6 sign_bias=0x80 saved=[0,4,4,2,4,4,4,8] flags=seg
+  begin role=ref slot=0 res=0
+  begin role=ref slot=5 res=5
+  begin role=ref slot=6 res=6
+  begin role=setup slot=3 res=9
+pic index=10 idx=10 setup=2 refs=3
+  av1 frame_type=1 order_hint=9 refresh=0x20 names=[5,5,8,5,5,5,3]
+  setup slot=2 res=10 frame_type=1 order_hint=9 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
+  ref slot=5 res=5 frame_type=1 order_hint=8 sign_bias=0x0 saved=[0,4,0,4,4,4,4,4] flags=seg
+  ref slot=3 res=9 frame_type=1 order_hint=10 sign_bias=0x0 saved=[0,8,8,6,8,8,8,0] flags=seg
+  ref slot=8 res=8 frame_type=1 order_hint=7 sign_bias=0x80 saved=[0,6,6,5,6,6,6,8] flags=seg
+  begin role=ref slot=5 res=5
+  begin role=ref slot=3 res=9
+  begin role=ref slot=8 res=8
+  begin role=setup slot=2 res=10
+disp idx=10 pts=2999997
+pkt index=10 bytes=5
+disp idx=9 pts=3333330
+pkt index=11 bytes=336
+pic index=11 idx=11 setup=4 refs=3
+  av1 frame_type=1 order_hint=11 refresh=0x20 names=[3,3,2,3,3,3,0]
+  setup slot=4 res=11 frame_type=1 order_hint=11 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
+  ref slot=0 res=0 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=seg
+  ref slot=3 res=9 frame_type=1 order_hint=10 sign_bias=0x0 saved=[0,8,8,6,8,8,8,0] flags=seg
+  ref slot=2 res=10 frame_type=1 order_hint=9 sign_bias=0x80 saved=[0,8,8,7,8,8,8,10] flags=seg
+  begin role=ref slot=0 res=0
+  begin role=ref slot=3 res=9
+  begin role=ref slot=2 res=10
+  begin role=setup slot=4 res=11
+disp idx=11 pts=3666663
+eos pictures=12 displayed=12

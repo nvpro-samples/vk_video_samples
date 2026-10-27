@@ -17,10 +17,16 @@ project(vk-video-parser-trace LANGUAGES CXX)
 
 # The parser is linked from its static archive: the tools need no Vulkan loader, no device and no
 # shared library, which is what lets the tests carry the device-free label.
-add_executable(${PROJECT_NAME} src/ParserTrace.cpp src/TraceClient.cpp)
+add_executable(${PROJECT_NAME} src/ParserTrace.cpp src/StreamInput.cpp src/TraceClient.cpp)
 add_executable(vk-video-parser-crafted src/ParserCrafted.cpp src/TraceClient.cpp)
+# The decoder sample's parser adapter, compiled in: it makes no Vulkan call, so it runs with no
+# loader and no device as the parser does.
+add_executable(vk-video-adapter-trace src/AdapterTrace.cpp src/StreamInput.cpp src/TraceClient.cpp
+               ${VK_VIDEO_DECODER_LIBS_SOURCE_ROOT}/VkVideoParser/VulkanVideoParser.cpp)
+target_compile_definitions(vk-video-adapter-trace PRIVATE VK_NO_PROTOTYPES)
+target_include_directories(vk-video-adapter-trace PRIVATE ${VULKAN_VIDEO_APIS_INCLUDE})
 
-foreach(tool ${PROJECT_NAME} vk-video-parser-crafted)
+foreach(tool ${PROJECT_NAME} vk-video-parser-crafted vk-video-adapter-trace)
     target_include_directories(${tool} PRIVATE
         ${VULKAN_VIDEO_PARSER_INCLUDE}/..
         ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}
@@ -29,7 +35,7 @@ foreach(tool ${PROJECT_NAME} vk-video-parser-crafted)
     target_link_libraries(${tool} PRIVATE ${VULKAN_VIDEO_PARSER_STATIC_LIB})
 endforeach()
 
-install(TARGETS ${PROJECT_NAME} vk-video-parser-crafted RUNTIME DESTINATION bin)
+install(TARGETS ${PROJECT_NAME} vk-video-parser-crafted vk-video-adapter-trace RUNTIME DESTINATION bin)
 
 # WHAT THIS GATES. Every stream in suites/<codec>.json that is available runs through the parser,
 # and these checks apply:
@@ -57,6 +63,21 @@ foreach(codec Av1 H264 H265 Vp9)
                      --suite ${CMAKE_CURRENT_SOURCE_DIR}/suites/${suite}.json)
     # LABELS: this is the CI gating set. See the top-level CMakeLists.txt note.
     set_tests_properties(ParserTrace${codec} PROPERTIES LABELS "device-free")
+endforeach()
+
+# The adapter slot trace: vk-video-adapter-trace runs the decoder sample's parser adapter over
+# the same suites, and scripts/slot_oracle.py checks each decode's DPB slots, Std reference
+# information and begin-coding list against the DPB slot rules of the Vulkan specification. The
+# trace equals the stream's adapter_golden (or its md5 the set's adapter_md5 list), and the oracle's
+# categories equal adapter_known, each one a defect the suite's adapter_defects table names. No
+# check needs ffmpeg.
+foreach(codec Av1 H264 H265 Vp9)
+    string(TOLOWER ${codec} suite)
+    add_test(NAME AdapterTrace${codec}
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/parser_trace_suite.py --mode adapter
+                     --tool $<TARGET_FILE:vk-video-adapter-trace>
+                     --suite ${CMAKE_CURRENT_SOURCE_DIR}/suites/${suite}.json)
+    set_tests_properties(AdapterTrace${codec} PROPERTIES LABELS "device-free")
 endforeach()
 
 message(STATUS "vk-video-parser-trace: Configured")

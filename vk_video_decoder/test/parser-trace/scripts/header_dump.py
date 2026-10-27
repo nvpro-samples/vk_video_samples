@@ -176,3 +176,13 @@ class Report:
             entry["first"] = f"{key}: {field} expected {expected} got {actual}"
         if self.verbose:
             print(f"  {key} {category}: {field} expected {expected} got {actual}")
+
+    def fail(self, category, key, message):
+        """Records a broken rule, which has no expected value."""
+        entry = self.categories.setdefault(category, {"pictures": [], "first": None})
+        if key not in entry["pictures"]:
+            entry["pictures"].append(key)
+        if entry["first"] is None:
+            entry["first"] = f"{key}: {message}"
+        if self.verbose:
+            print(f"  {key} {category}: {message}")
