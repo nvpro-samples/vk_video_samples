@@ -549,13 +549,14 @@ std::vector<uint8_t> Av1TruncatedTimingUnit() {
 
 // ---- VP9 (VP9 bitstream specification 6.2) ----
 
-// A shown profile 0 key frame of 64x64; its compressed header and tile are filler.
-std::vector<uint8_t> Vp9KeyFrame() {
+// A shown profile 0 key frame of 64x64, with frame_sync_code syncCode; its compressed header and tile
+// are filler.
+std::vector<uint8_t> Vp9KeyFrame(uint32_t syncCode = 0x498342) {
     const std::vector<uint8_t> compressedHeader = {0x55, 0xAA, 0x55, 0xAA};
     BitWriter w;
     w.U(2, 2).Flag(false).Flag(false);                 // frame_marker, profile 0
     w.Flag(false).Flag(false).Flag(true).Flag(false);  // show_existing_frame, KEY_FRAME, show_frame, error res
-    w.U(8, 0x49).U(8, 0x83).U(8, 0x42);                // frame_sync_code
+    w.U(24, syncCode);                                 // frame_sync_code
     w.U(3, 1).Flag(false);                             // color_space BT.601, color_range
     w.U(16, 63).U(16, 63).Flag(false);                 // frame size, render size equal
     w.Flag(true).Flag(true).U(2, 0);                   // refresh_frame_context, parallel mode, context 0
@@ -1110,6 +1111,16 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "vp9");
              Checks checks(trace);
              checks.Count("pic", 2);
+             return checks.Failures();
+         }},
+        // frame_sync_code is 0x49, 0x83, 0x42 (VP9 6.2); a key frame with another is not a frame.
+        {"Vp9BadSyncCode",
+         [](CaseContext& stream) {
+             stream.packets.push_back({Vp9KeyFrame(0x498343), 0});
+             stream.packets.push_back({Vp9KeyFrame(), 1});
+             const Trace trace = Run(stream, "vp9");
+             Checks checks(trace);
+             checks.Count("pic", 1);
              return checks.Failures();
          }},
         // Proves the VP9 key frame builder.

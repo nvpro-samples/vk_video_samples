@@ -1860,7 +1860,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
                 }
             }
             if (!m_pBuffers[show_existing_frame_index].buffer) {
-                assert("Error: Frame not decoded yet\n");
+                nvParserLog("show_existing_frame of an empty buffer (%d)\n", show_existing_frame_index);
                 return false;
             }
 

@@ -163,6 +163,7 @@ set(PARSER_CRAFTED_CASES
     Vp9CraftedKeyFrame
     Vp9PicturePoolExhausted
     Vp9SuperframeIndex
+    Vp9BadSyncCode
 )
 foreach(crafted ${PARSER_CRAFTED_CASES})
     add_test(NAME ParserCrafted.${crafted} COMMAND $<TARGET_FILE:vk-video-parser-crafted> --case ${crafted})

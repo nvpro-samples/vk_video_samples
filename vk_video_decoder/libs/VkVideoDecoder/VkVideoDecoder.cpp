@@ -805,7 +805,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
             int32_t nodeAddedWithIndex = m_decodeFramesData.GetBitstreamBuffersQueue().
                                                  AddNodeToPool(bitstreamBuffer, false);
             if (nodeAddedWithIndex < 0) {
-                assert("Could not add the new node to the pool");
+                assert(!"Could not add the new node to the pool");
                 break;
             }
         }
@@ -1939,7 +1939,7 @@ VkDeviceSize VkVideoDecoder::GetBitstreamBuffer(VkDeviceSize size,
         if (enablePool) {
             int32_t nodeAddedWithIndex = m_decodeFramesData.GetBitstreamBuffersQueue().AddNodeToPool(newBitstreamBuffer, true);
             if (nodeAddedWithIndex < 0) {
-                assert("Could not add the new node to the pool");
+                assert(!"Could not add the new node to the pool");
             }
         }
 

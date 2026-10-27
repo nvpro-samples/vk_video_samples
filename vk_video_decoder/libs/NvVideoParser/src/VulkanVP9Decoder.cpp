@@ -199,7 +199,7 @@ bool VulkanVP9Decoder::ParseFrameHeader(uint32_t framesize)
     //parse uncompressed header
     if(!ParseUncompressedHeader())
     {
-        assert((!"Error in ParseUncompressedVP9\n"));
+        nvParserLog("Invalid VP9 uncompressed header\n");
         return 0;
     }
     if (m_PicData.show_existing_frame == true)  {

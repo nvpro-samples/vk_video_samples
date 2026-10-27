@@ -4161,7 +4161,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
             int32_t nodeAddedWithIndex = m_bitstreamBuffersQueue.AddNodeToPool(bitstreamBuffer, false);
             if (nodeAddedWithIndex < 0) {
-                assert("Could not add the new node to the pool");
+                assert(!"Could not add the new node to the pool");
                 break;
             }
         }
@@ -4784,7 +4784,7 @@ VkDeviceSize VkVideoEncoder::GetBitstreamBuffer(VkSharedBaseObj<VulkanBitstreamB
         if (enablePool) {
             int32_t nodeAddedWithIndex = m_bitstreamBuffersQueue.AddNodeToPool(newBitstreamBuffer, true);
             if (nodeAddedWithIndex < 0) {
-                assert("Could not add the new node to the pool");
+                assert(!"Could not add the new node to the pool");
             }
         }
 
