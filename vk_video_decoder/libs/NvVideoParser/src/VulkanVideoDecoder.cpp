@@ -249,19 +249,23 @@ uint32_t VulkanVideoDecoder::u(uint32_t n)
 // 9.1
 uint32_t VulkanVideoDecoder::ue()
 {
-    int leadingZeroBits, b, codeNum;
+    int leadingZeroBits, b;
+    uint32_t codeNum;
 
     leadingZeroBits = -1;
     for (b = 0; (!b) && (leadingZeroBits<32); leadingZeroBits++)
         b = u(1);
 
-    codeNum = 0;
     if (leadingZeroBits < 32)
     {
-        codeNum = (1 << leadingZeroBits) - 1 + u(leadingZeroBits);
+        // Unsigned: 31 leading zero bits code 2^31 - 1 to 2^32 - 2.
+        codeNum = (1u << leadingZeroBits) - 1 + u(leadingZeroBits);
     } else
     {
-        codeNum = 0xffffffff + u(leadingZeroBits);
+        // 32 leading zero bits code 2^32 - 1 or more, which 32 bits do not hold. The largest value
+        // stands for all of them, where the sum would wrap to a small one.
+        u(leadingZeroBits);
+        codeNum = 0xffffffff;
     }
     return codeNum;
 }

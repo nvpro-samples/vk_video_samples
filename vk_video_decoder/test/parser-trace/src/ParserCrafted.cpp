@@ -167,6 +167,7 @@ void Append(std::vector<uint8_t>& stream, const std::vector<uint8_t>& bytes) {
 
 // A Baseline SPS for a 64x64 picture with POC type 0.
 struct H264Sps {
+    uint64_t id = 0;  // ue(v) codes past 32 bits: 2^32 takes 32 leading zeros
     uint32_t profileIdc = 66;
     uint32_t levelIdc = 30;
     uint32_t log2MaxFrameNumMinus4 = 0;
@@ -178,7 +179,7 @@ struct H264Sps {
 
 std::vector<uint8_t> H264SpsNal(const H264Sps& sps) {
     BitWriter w;
-    w.U(8, sps.profileIdc).U(8, 0).U(8, sps.levelIdc).Ue(0);            // constraint flags and reserved bits 0, sps id 0
+    w.U(8, sps.profileIdc).U(8, 0).U(8, sps.levelIdc).Ue(sps.id);       // constraint flags and reserved bits 0, sps id
     w.Ue(sps.log2MaxFrameNumMinus4).Ue(0).Ue(sps.log2MaxPocLsbMinus4);  // pic_order_cnt_type 0
     w.Ue(sps.maxNumRefFrames).Flag(false);                              // gaps_in_frame_num_value_allowed_flag
     w.Ue(sps.widthInMbsMinus1).Ue(sps.heightInMapUnitsMinus1);
@@ -464,6 +465,24 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("sps", 1);
              checks.Count("pps", 1);
+             return checks.Failures();
+         }},
+        // ue() with 31 and with 32 leading zero bits, in seq_parameter_set_id. 31 code 2^31 - 1 to
+        // 2^32 - 2 (9.1), past int; 32 code 2^32 - 1 or more, which 32 bits do not hold, so 2^32 must
+        // not wrap to the valid id 0. Neither id is valid; the third SPS's, 1, is.
+        {"H264UeLongCodes",
+         [](CaseContext& stream) {
+             H264Sps sps;
+             sps.id = 0xFFFFFFFEu;
+             Append(stream.byteStream, H264SpsNal(sps));
+             sps.id = 0x100000000u;
+             Append(stream.byteStream, H264SpsNal(sps));
+             sps.id = 1;
+             Append(stream.byteStream, H264SpsNal(sps));
+             const Trace trace = Run(stream, "h264");
+             Checks checks(trace);
+             checks.Count("sps", 1);
+             checks.Field("sps", "seq_parameter_set_id", "1");
              return checks.Failures();
          }},
         // Proves the H.265 builders: one VPS, SPS and PPS and an IDR picture that the parser takes.
