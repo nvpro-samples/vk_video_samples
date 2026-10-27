@@ -866,6 +866,39 @@ const std::vector<CraftedCase>& Cases() {
              checks.Count("pic", 2);
              return checks.Failures();
          }},
+        // an OBU must fit in the rest of its temporal unit, and a padding OBU's obu_size of
+        // 2^32 - 16 does not; with its header the sum, as an int, was -10, which the check let pass.
+        // Then a key frame, which the parser takes.
+        {"Av1ObuSizePastPacket",
+         [](CaseContext& stream) {
+             std::vector<uint8_t> unit = Av1SequenceHeaderUnit(0, true);
+             Append(unit, Obu(15, std::vector<uint8_t>(32, 0x55), 0xFFFFFFF0u));  // OBU_PADDING
+             stream.packets.push_back({unit, 0});
+             unit = Obu(2, {});
+             Append(unit, Av1KeyFrameObu(1));
+             stream.packets.push_back({unit, 1});
+             const Trace trace = Run(stream, "av1");
+             Checks checks(trace);
+             checks.Count("pic", 1);
+             return checks.Failures();
+         }},
+        // leb128() codes at most 2^32 - 1 (AV1 4.10.5). A padding OBU's obu_size of 2^32 + 3,
+        // which 32 bits held as 3, is followed by 3 bytes and a key frame: the temporal unit is
+        // dropped, and the next one's key frame taken.
+        {"Av1ObuSizeLeb128Past32Bits",
+         [](CaseContext& stream) {
+             std::vector<uint8_t> unit = Av1SequenceHeaderUnit(0, true);
+             Append(unit, Obu(15, {0x55, 0x55, 0x55}, 0x100000003u));  // OBU_PADDING
+             Append(unit, Av1KeyFrameObu(1));
+             stream.packets.push_back({unit, 0});
+             unit = Obu(2, {});
+             Append(unit, Av1KeyFrameObu(1));
+             stream.packets.push_back({unit, 1});
+             const Trace trace = Run(stream, "av1");
+             Checks checks(trace);
+             checks.Count("pic", 1);
+             return checks.Failures();
+         }},
         // Proves the AV1 key frame builder, and the limit: 14 luma scaling points are the most
         // StdVideoAV1FilmGrain holds (STD_VIDEO_AV1_MAX_NUM_Y_POINTS), and 15 fit the 4-bit syntax
         // element.

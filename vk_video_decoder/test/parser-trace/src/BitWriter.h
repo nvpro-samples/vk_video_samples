@@ -122,10 +122,10 @@ inline std::vector<uint8_t> AnnexBNal(const std::vector<uint8_t>& header, const 
     return nal;
 }
 
-// An AV1 OBU with obu_has_size_field set and no extension (AV1 5.3).
-inline std::vector<uint8_t> Obu(uint32_t type, const std::vector<uint8_t>& payload) {
+// An AV1 OBU with obu_has_size_field set and no extension (AV1 5.3), whose obu_size, in leb128(), is
+// size whatever the payload holds.
+inline std::vector<uint8_t> Obu(uint32_t type, const std::vector<uint8_t>& payload, uint64_t size) {
     std::vector<uint8_t> obu = {static_cast<uint8_t>((type << 3) | 0x02)};
-    uint64_t size = payload.size();
     do {
         const uint8_t byte = size & 0x7f;
         size >>= 7;
@@ -134,6 +134,9 @@ inline std::vector<uint8_t> Obu(uint32_t type, const std::vector<uint8_t>& paylo
     obu.insert(obu.end(), payload.begin(), payload.end());
     return obu;
 }
+
+// An AV1 OBU with obu_has_size_field set and no extension (AV1 5.3).
+inline std::vector<uint8_t> Obu(uint32_t type, const std::vector<uint8_t>& payload) { return Obu(type, payload, payload.size()); }
 
 }  // namespace parser_trace
 

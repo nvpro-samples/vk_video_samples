@@ -492,16 +492,19 @@ uint32_t VulkanAV1Decoder::ReadUvlc()
 // Read OBU size (size does not include obu_header or the obu_size syntax element
 bool VulkanAV1Decoder::ReadObuSize(const uint8_t* data, uint32_t datasize, uint32_t* obu_size, uint32_t* length_feild_size)
 {
+    // leb128() (AV1 4.10.5) reads up to 8 bytes, and its value is at most 2^32 - 1: checked on the 64 bits
+    // it is decoded in, before it is narrowed to the 32 bits it is returned in.
+    uint64_t value = 0;
     for (uint32_t i = 0; i < 8 && (i < datasize); ++i) {
         const uint8_t decoded_byte = data[i] & 0x7f;
-        *obu_size |= ((uint64_t)decoded_byte) << (i * 7);
+        value |= ((uint64_t)decoded_byte) << (i * 7);
         if ((data[i] >> 7) == 0) {
             *length_feild_size = i + 1;
-            if (*obu_size > BIT32_MAX) {
+            if (value > BIT32_MAX) {
                 return false;
-            } else {
-                return true;
             }
+            *obu_size = (uint32_t)value;
+            return true;
         }
     }
 
@@ -2421,7 +2424,9 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
             return false;
         }
 
-        if (remainingFrameBytes < int(hdr.payload_size + hdr.header_size)) {
+        // The OBU fits in the rest of the temporal unit. Its payload can be as large as 2^32 - 1, so the
+        // sum with its header is taken in 64 bits.
+        if ((uint64_t)hdr.payload_size + hdr.header_size > (uint64_t)remainingFrameBytes) {
             // Error: Truncated frame data
             return false;
         }
