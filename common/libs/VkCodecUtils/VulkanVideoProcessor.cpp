@@ -104,6 +104,10 @@ VkResult VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
         enableDecoderFeatures |= VkVideoDecoder::ENABLE_SYNC_TEST_BITSTREAM_COPY;
     }
 
+    if (programConfig.syncTestGpuOnlyBitstream) {
+        enableDecoderFeatures |= VkVideoDecoder::ENABLE_SYNC_TEST_GPU_ONLY_BITSTREAM;
+    }
+
     if (enablePostProcessFilter) {
         enableDecoderFeatures |= VkVideoDecoder::ENABLE_POST_PROCESS_FILTER;
     }

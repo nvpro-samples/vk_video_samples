@@ -80,6 +80,7 @@ struct DecoderConfig {
         directMode = false;
         enableHwLoadBalancing = false;
         syncTestBitstreamCopy = false;
+        syncTestGpuOnlyBitstream = false;
         selectVideoWithComputeQueue = false;
         noDeviceFallback = false;
         outputy4m = true; // by default, use Y4M
@@ -237,6 +238,15 @@ struct DecoderConfig {
                 "per-frame CRCs against a run without this option",
                 [this](const char **args, const ProgramArgs &a) {
                     syncTestBitstreamCopy = true;
+                    return true;
+                }},
+            {"--syncTestGpuOnlyBitstream", nullptr, 0,
+                "--syncTestBitstreamCopy, where only the transfer commands write the copy the "
+                "decode reads: the host does not write it before the decode is recorded. "
+                "Tests that the driver reads the bitstream when the decode executes",
+                [this](const char **args, const ProgramArgs &a) {
+                    syncTestBitstreamCopy = true;
+                    syncTestGpuOnlyBitstream = true;
                     return true;
                 }},
             {"--input", "-i", 1, "Input filename to decode",
@@ -542,6 +552,7 @@ struct DecoderConfig {
     uint32_t noPresent : 1;
     uint32_t enableHwLoadBalancing : 1;
     uint32_t syncTestBitstreamCopy : 1;
+    uint32_t syncTestGpuOnlyBitstream : 1;
     uint32_t selectVideoWithComputeQueue : 1;
     uint32_t noDeviceFallback : 1;
     uint32_t outputy4m : 1;
