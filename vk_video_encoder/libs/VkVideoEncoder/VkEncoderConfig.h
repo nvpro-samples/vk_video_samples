@@ -914,6 +914,16 @@ public:
     uint32_t encodeAlignedHeight;
     uint32_t encodeMaxWidth;
     uint32_t encodeMaxHeight;
+    // The extent of the pictures the stream shows. encodeWidth/encodeHeight are
+    // the extent the device codes: VkVideoEncoder::InitEncoder raises them to the
+    // profile's minCodedExtent, and the stream crops the coded pictures back to
+    // this extent (H.264 frame cropping, H.265 conformance window, AV1 render
+    // size). Zero until InitEncoder sets it; PictureWidth()/PictureHeight() then
+    // return the encode extent.
+    uint32_t pictureWidth;
+    uint32_t pictureHeight;
+    uint32_t PictureWidth() const { return (pictureWidth != 0) ? pictureWidth : encodeWidth; }
+    uint32_t PictureHeight() const { return (pictureHeight != 0) ? pictureHeight : encodeHeight; }
     uint32_t startFrame;
     uint32_t numFrames;
     uint32_t codecBlockAlignment;
@@ -1150,6 +1160,8 @@ public:
     , encodeAlignedHeight(0)
     , encodeMaxWidth(0)
     , encodeMaxHeight(0)
+    , pictureWidth(0)
+    , pictureHeight(0)
     , startFrame(0)
     , numFrames(0)
     , codecBlockAlignment(16)
@@ -1515,6 +1527,11 @@ public:
 
     // These functions should be overwritten from the codec-specific classes
     virtual VkResult InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx) { return VK_ERROR_INITIALIZATION_FAILED; };
+
+    // Recomputes what the codec derived from encodeWidth/encodeHeight in
+    // InitializeParameters: VkVideoEncoder::InitEncoder calls it after raising
+    // them to minCodedExtent, before the DPB and the parameter sets are sized.
+    virtual void CodedExtentChanged() {}
 
     // Returns the codec-specific profile identifier (must be set by InitProfileLevel first)
     virtual uint32_t GetCodecProfile() = 0;

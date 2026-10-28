@@ -157,6 +157,8 @@ struct EncoderConfigH265 : public EncoderConfig {
 
     virtual VkResult InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx) override;
 
+    virtual void CodedExtentChanged() override { DetermineLevelTier(); }
+
     virtual uint32_t GetCodecProfile() override {
         assert(profile != STD_VIDEO_H265_PROFILE_IDC_INVALID);
         return static_cast<uint32_t>(profile);

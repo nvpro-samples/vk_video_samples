@@ -637,6 +637,13 @@ void VkVideoEncoderAV1::InitializeFrameHeader(StdVideoAV1SequenceHeader* pSequen
         pStdPictureInfo->frame_type = STD_VIDEO_AV1_FRAME_TYPE_INTER;
     }
     pStdPictureInfo->current_frame_id = (uint32_t)(pFrameInfo->gopPosition.encodeOrder % (1ULL << frameIdBits));
+    // A coded extent padded up to minCodedExtent renders at the picture's extent.
+    if ((m_encoderConfig->PictureWidth() != m_encoderConfig->encodeWidth) ||
+        (m_encoderConfig->PictureHeight() != m_encoderConfig->encodeHeight)) {
+        pStdPictureInfo->flags.render_and_frame_size_different = 1;
+        pStdPictureInfo->render_width_minus_1 = (uint16_t)(m_encoderConfig->PictureWidth() - 1);
+        pStdPictureInfo->render_height_minus_1 = (uint16_t)(m_encoderConfig->PictureHeight() - 1);
+    }
     pStdPictureInfo->order_hint = (uint8_t)(pFrameInfo->picOrderCntVal % (1 << orderHintBits));
     if (pFrameInfo->bOverlayFrame) {
         assert(pFrameInfo->bShowExistingFrame);
@@ -901,8 +908,8 @@ VkResult VkVideoEncoderAV1::FlushBatchedTemporalUnit(VkSharedBaseObj<VkVideoEnco
         mem_put_le16(ivfFileHdr +  4, 0);
         mem_put_le16(ivfFileHdr +  6, 32);
         mem_put_le32(ivfFileHdr +  8, MAKE_FOURCC('A', 'V', '0', '1'));
-        mem_put_le16(ivfFileHdr + 12, m_encoderConfig->encodeWidth);
-        mem_put_le16(ivfFileHdr + 14, m_encoderConfig->encodeHeight);
+        mem_put_le16(ivfFileHdr + 12, m_encoderConfig->PictureWidth());
+        mem_put_le16(ivfFileHdr + 14, m_encoderConfig->PictureHeight());
         mem_put_le32(ivfFileHdr + 16, m_encoderConfig->frameRateNumerator);
         mem_put_le32(ivfFileHdr + 20, m_encoderConfig->frameRateDenominator);
         mem_put_le32(ivfFileHdr + 24, m_encoderConfig->numFrames);
