@@ -184,6 +184,11 @@ public:
     }
 
     /**
+     *   @brief  The result the last StartVideoSequence() refused the stream's sequence with, or VK_SUCCESS
+     */
+    VkResult GetVideoSequenceResult() const { return m_videoSequenceResult; }
+
+    /**
     *   @brief  This callback function gets called when when decoding of sequence starts,
     */
     virtual int32_t StartVideoSequence(VkParserDetectedVideoFormat* pVideoFormat);
@@ -219,6 +224,7 @@ private:
         , m_numDecodeImagesInFlight(numDecodeImagesInFlight)
         , m_numDecodeImagesToPreallocate(numDecodeImagesToPreallocate)
         , m_capabilityFlags()
+        , m_videoSequenceResult(VK_SUCCESS)
         , m_videoSession(nullptr)
         , m_videoFrameBuffer(videoFrameBuffer)
         , m_decodeFramesData(vkDevCtx)
@@ -333,6 +339,7 @@ private:
     int32_t                     m_numDecodeImagesToPreallocate; // -1 means pre-allocate all required images on setup
 
     VkVideoDecodeCapabilityFlagsKHR         m_capabilityFlags;
+    VkResult                                m_videoSequenceResult;
     VkSharedBaseObj<VulkanVideoSession>     m_videoSession;
     VkSharedBaseObj<VulkanVideoFrameBuffer> m_videoFrameBuffer;
     NvVkDecodeFrameData                     m_decodeFramesData;
