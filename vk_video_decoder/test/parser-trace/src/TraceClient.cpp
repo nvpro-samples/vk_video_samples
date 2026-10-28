@@ -1378,6 +1378,11 @@ void EndStream(VulkanVideoDecodeParser& parser, const TraceClientIf& client, FIL
         .Num("pictures", static_cast<int64_t>(client.Decoded()))
         .Num("displayed", static_cast<int64_t>(client.Displayed()))
         .Emit(out);
+    // A stream the parser takes whole has no "refused" line, so its trace does not carry the count.
+    const uint64_t refused = parser.GetRefusedUnitCount();
+    if (refused > 0) {
+        Line("refused").Num("units", static_cast<int64_t>(refused)).Emit(out);
+    }
 }
 
 void ParseByteStreamPartially(VulkanVideoDecodeParser& parser, const std::vector<uint8_t>& stream, FILE* out) {

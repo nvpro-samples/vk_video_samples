@@ -61,6 +61,7 @@ VulkanVideoDecoder::VulkanVideoDecoder(VkVideoCodecOperationFlagBitsKHR std)
     , m_lCheckPTS()
     , m_eError(NV_NO_ERROR)
     , m_NextStartCode()
+    , m_refusedUnits(0)
 {
     if (m_264SvcEnabled) {
         m_pVkPictureData = new VkParserPictureData[128];
@@ -137,6 +138,7 @@ VkResult VulkanVideoDecoder::Initialize(const VkParserInitDecodeParameters *pPar
     m_BitBfr = (uint32_t)~0;
     m_MaxFrameBuffers = 0;
     m_bDecoderInitFailed = false;
+    m_refusedUnits = 0;
     m_llParsedBytes = 0;
     m_llNaluStartLocation = 0;
     m_llFrameStartLocation = 0;

@@ -158,6 +158,7 @@ bool VulkanVP9Decoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_
                 for (uint32_t i = 0; i < frames_in_superframe; i++) {
                     if (frame_sizes[i] > (uint32_t)m_frameSize - sizeparsed) {
                         nvParserLog("Invalid frame size in the superframe index (%u)\n", frame_sizes[i]);
+                        m_refusedUnits++;
                         break;
                     }
                     if (frame_sizes[i] > 0) {
@@ -200,6 +201,7 @@ bool VulkanVP9Decoder::ParseFrameHeader(uint32_t framesize)
     if(!ParseUncompressedHeader())
     {
         nvParserLog("Invalid VP9 uncompressed header\n");
+        m_refusedUnits++;
         return 0;
     }
     if (m_PicData.show_existing_frame == true)  {

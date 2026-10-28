@@ -1219,6 +1219,7 @@ int32_t VulkanH264Decoder::ParseNalUnit()
                  || (sps->log2_max_frame_num_minus4 != m_sps->log2_max_frame_num_minus4) )
                 {
                     if (!dpb_sequence_start(&slh)) {
+                        m_refusedUnits++;
                         return NALU_UNKNOWN;
                     }
                 }
@@ -1243,6 +1244,12 @@ int32_t VulkanH264Decoder::ParseNalUnit()
             if ((slh.slice_type != I) && (slh.slice_type != SI))
                 m_intra_pic_flag = 0;
             retval = NALU_SLICE;
+        }
+        else if (slh.redundant_pic_cnt == 0)
+        {
+            // The slice header is refused. A redundant slice is dropped too, by design: the decoder
+            // uses the primary coded picture.
+            m_refusedUnits++;
         }
         break;
     case NAL_UNIT_CODED_SLICE_SCALABLE:
@@ -1313,7 +1320,9 @@ int32_t VulkanH264Decoder::ParseNalUnit()
         }
         break;
     case NAL_UNIT_SPS:
-        seq_parameter_set_rbsp();
+        if (seq_parameter_set_rbsp() < 0) {
+            m_refusedUnits++;
+        }
         break;
     case NAL_UNIT_SUBSET_SPS:
         if(m_bUseMVC)
@@ -1327,7 +1336,9 @@ int32_t VulkanH264Decoder::ParseNalUnit()
         }
         break;
     case NAL_UNIT_PPS:
-        pic_parameter_set_rbsp();
+        if (!pic_parameter_set_rbsp()) {
+            m_refusedUnits++;
+        }
         break;
     case NAL_UNIT_ACCESS_UNIT_DELIMITER:
         m_last_primary_pic_type = u(3);
@@ -1523,7 +1534,7 @@ int32_t VulkanH264Decoder::seq_parameter_set_rbsp(SpsNalUnitTarget spsNalUnitTar
         VkResult result = seq_parameter_set_s::Create(0, sps);
         assert((result == VK_SUCCESS) && sps);
         if (result != VK_SUCCESS) {
-            return false;
+            return -1;
         }
     }
 

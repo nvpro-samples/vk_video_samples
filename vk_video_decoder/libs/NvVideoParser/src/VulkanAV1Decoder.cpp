@@ -2430,6 +2430,7 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
 		// NOTE: This does not modify any bitstream reader stare.
         if (!ParseOBUHeaderAndSize(pCurrOBU, remainingFrameBytes, &hdr)) {
             // OBU header parsing failed
+            m_refusedUnits++;
             return false;
         }
 
@@ -2437,6 +2438,7 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
         // sum with its header is taken in 64 bits.
         if ((uint64_t)hdr.payload_size + hdr.header_size > (uint64_t)remainingFrameBytes) {
             // Error: Truncated frame data
+            m_refusedUnits++;
             return false;
         }
 
@@ -2466,6 +2468,7 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
         case AV1_OBU_SEQUENCE_HEADER:
             if (!ParseObuSequenceHeader()) {
                 // A sequence header the parser refuses drops its temporal unit, whose frames are of it.
+                m_refusedUnits++;
                 return false;
             }
             break;
@@ -2477,6 +2480,7 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
             if (!m_bSPSReceived) {
                 // A frame header is parsed with the active sequence header (AV1 7.5): with none, the
                 // frame is dropped.
+                m_refusedUnits++;
                 break;
             }
 			memset(m_PicData.tileOffsets, 0, sizeof(m_PicData.tileOffsets));
@@ -2485,6 +2489,7 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
 
             if (!ParseObuFrameHeader()) {
                 // A frame header the parser refuses drops its temporal unit.
+                m_refusedUnits++;
                 return false;
             }
 
@@ -2504,6 +2509,7 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
             if (!m_bSeenFrameHeader) {
                 // Tile groups follow their frame's header in its temporal unit (AV1 7.5): one that no
                 // frame header precedes is dropped.
+                m_refusedUnits++;
                 break;
             }
             if (ParseObuTileGroup(hdr)) {
@@ -2606,7 +2612,9 @@ bool VulkanAV1Decoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_
         }
         int parsedBytes = 0;
         if (!ParseOneFrame(pdataStart, frame_size, pck, &parsedBytes)) {
-            return false;
+            // The rest of a temporal unit the parser refuses, or whose picture the client does not take,
+            // is dropped, and parsing continues with the next one: the packet is consumed.
+            parsedBytes = (int)pck->nDataLength;
         }
 
 		if (pParsedBytes)

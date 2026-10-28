@@ -113,6 +113,7 @@ protected:
     int32_t m_lCheckPTS;                        // Run the m_bFilterTimestamps for the first few framew to look for out of order PTS
     NVCodecErrors m_eError;
     SIMD_ISA m_NextStartCode;
+    uint64_t m_refusedUnits;                    // Units refused since Initialize (GetRefusedUnitCount)
 public:
     VulkanVideoDecoder(VkVideoCodecOperationFlagBitsKHR std);
     virtual ~VulkanVideoDecoder();
@@ -154,6 +155,7 @@ public:
     bool ParseByteStreamNEON(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
 #endif
     virtual bool GetDisplayMasteringInfo(VkParserDisplayMasteringInfo *) { return false; }
+    virtual uint64_t GetRefusedUnitCount() const { return m_refusedUnits; }
 
 protected:
     virtual void CreatePrivateContext() = 0;                   // Implemented by derived classes

@@ -617,6 +617,7 @@ public:
     virtual VkResult ParseVideoData(VkParserSourceDataPacket* pPacket,
                                     size_t* pParsedBytes,
                                     bool doPartialParsing = false);
+    virtual uint64_t GetRefusedUnitCount() const { return m_vkParser ? m_vkParser->GetRefusedUnitCount() : 0; }
 
     // Interface to allow decoder to communicate with the client implementing
     // INvVideoDecoderClient

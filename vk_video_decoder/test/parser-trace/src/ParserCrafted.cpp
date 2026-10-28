@@ -692,6 +692,7 @@ const std::vector<CraftedCase>& Cases() {
              checks.Field("sps", "pic_width_in_mbs_minus1", "3");
              checks.Field("sps", "max_num_ref_frames", "1");
              checks.Field("  h264", "frame_num", "0");
+             checks.Count("refused", 0);
              return checks.Failures();
          }},
         // an explicit slice group map is coded for pic_size_in_map_units_minus1 + 1 map units,
@@ -708,6 +709,7 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("sps", 1);
              checks.Count("pps", 1);
+             checks.Field("refused", "units", "2");
              return checks.Failures();
          }},
         // ue() with 31 and with 32 leading zero bits, in seq_parameter_set_id. 31 code 2^31 - 1 to
@@ -726,6 +728,7 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("sps", 1);
              checks.Field("sps", "seq_parameter_set_id", "1");
+             checks.Field("refused", "units", "2");
              return checks.Failures();
          }},
         // num_slice_groups_minus1 is at most 7 (Rec. ITU-T H.264 A.2.1), and the PPS's check tested
@@ -741,6 +744,7 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("pps", 1);
              checks.Field("pps", "pic_parameter_set_id", "0");
+             checks.Field("refused", "units", "2");
              return checks.Failures();
          }},
         // BottomFieldOrderCnt is TopFieldOrderCnt + delta_pic_order_cnt_bottom (8-5). After an IDR
@@ -760,6 +764,7 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("pic", 2);
              checks.Field("  h264", "CurrFieldOrderCnt", "[-4,-2147483648]", 1);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // an SPS value is range-checked before it is narrowed to its field or cast to an enumeration.
@@ -777,6 +782,7 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("sps", 1);
              checks.Field("sps", "seq_parameter_set_id", "0");
+             checks.Field("refused", "units", "4");
              return checks.Failures();
          }},
         // PPS values past their ranges (7.4.2.2). PPS 1's num_ref_idx_l0_default_active_minus1 256 and
@@ -794,6 +800,7 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("pps", 1);
              checks.Field("pps", "pic_parameter_set_id", "0");
+             checks.Field("refused", "units", "4");
              return checks.Failures();
          }},
         // Proves the H.265 builders: one VPS, SPS and PPS and an IDR picture that the parser takes.
@@ -813,6 +820,7 @@ const std::vector<CraftedCase>& Cases() {
              checks.Field("sps", "num_short_term_ref_pic_sets", "1");
              checks.Field("  strps", "num_negative_pics", "1");
              checks.Field("  hevc", "IdrPicFlag", "1");
+             checks.Count("refused", 0);
              return checks.Failures();
          }},
         // a VPS that ends after vps_max_layer_id reads vps_num_layer_sets_minus1 from the zeros past
@@ -825,6 +833,7 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "h265");
              Checks checks(trace);
              checks.Count("vps", 0);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // vps_num_layer_sets_minus1 is at most 1023 (Rec. ITU-T H.265 7.4.3.1).
@@ -841,6 +850,7 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("vps", 1);
              checks.Field("vps", "vps_video_parameter_set_id", "0");
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // the additional layer sets of a VPS extension follow its vps_num_layer_sets, so 1024
@@ -851,6 +861,7 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "h265");
              Checks checks(trace);
              checks.Count("vps", 0);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // a P slice whose reference picture set has 9 pictures before it, used; the Std picture
@@ -870,6 +881,7 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "h265");
              Checks checks(trace);
              checks.Count("pic", 1);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // the VCL NAL units of a picture share its nuh_layer_id (Rec. ITU-T H.265 7.4.2.2). A layer-0
@@ -888,6 +900,7 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("pic", 2);
              checks.Field("pic", "numSlices", "1", 0);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // num_long_term_sps is at most num_long_term_ref_pics_sps (Rec. ITU-T H.265 7.4.7.1), and
@@ -915,6 +928,7 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("pic", 2);
              checks.Field("  hevc", "CurrPicOrderCntVal", "1", 1);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // with splitting_flag 1 the scalability dimensions split the 6 bits of nuh_layer_id
@@ -930,6 +944,7 @@ const std::vector<CraftedCase>& Cases() {
              checks.Count("vps", 2);
              checks.Field("vps", "vps_video_parameter_set_id", "0", 0);
              checks.Field("vps", "vps_video_parameter_set_id", "2", 1);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // scaling_list_pred_matrix_id_delta is at most matrixId (Rec. ITU-T H.265 7.4.5), so that
@@ -955,6 +970,7 @@ const std::vector<CraftedCase>& Cases() {
              checks.Field("sps", "sps_seq_parameter_set_id", "0");
              checks.Count("pps", 1);
              checks.Field("pps", "pps_pic_parameter_set_id", "0");
+             checks.Field("refused", "units", "3");
              return checks.Failures();
          }},
         // an SPS value is range-checked before it is narrowed to its 8-bit field. SPS 256 narrows to the
@@ -969,6 +985,7 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("sps", 1);
              checks.Field("sps", "sps_seq_parameter_set_id", "0");
+             checks.Field("refused", "units", "2");
              return checks.Failures();
          }},
         // PPS 1's init_qp_minus26 266 narrows to 10, PPS 2's pps_cb_qp_offset 261 to 5, and a P slice's
@@ -987,6 +1004,7 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("pps", 1);
              checks.Count("pic", 2);
+             checks.Field("refused", "units", "3");
              return checks.Failures();
          }},
         // vps_max_sub_layers_minus1 7, one past the 7 sub-layers H.265 allows (7.4.3.1) and the
@@ -999,6 +1017,7 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "h265");
              Checks checks(trace);
              checks.Count("vps", 0);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // an SPS whose VUI HRD parameters have cpb_cnt_minus1 32, one past the 32 CPB entries
@@ -1021,6 +1040,7 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "h265");
              Checks checks(trace);
              checks.Count("sps", 0);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // num_short_term_ref_pic_sets 257, which a uint8_t holds as 1. 64 is the most H.265
@@ -1037,6 +1057,7 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "h265");
              Checks checks(trace);
              checks.Count("sps", 0);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // a set predicted from one of 16 negative pictures with DeltaRPS -1 derives 17 negative
@@ -1057,6 +1078,7 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "h265");
              Checks checks(trace);
              checks.Count("sps", 0);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // Proves the AV1 sequence header builder: every field after the timing info, uvlc() included,
@@ -1072,6 +1094,8 @@ const std::vector<CraftedCase>& Cases() {
              checks.Field("sps", "seq_force_screen_content_tools", "2");
              checks.Field("sps", "seq_force_integer_mv", "2");
              checks.Field("sps", "flags", "enable_order_hint");
+             checks.Count("pkt-error", 0);
+             checks.Count("refused", 0);
              return checks.Failures();
          }},
         // uvlc() over the zeros past the end of a packet meets no one bit.
@@ -1081,6 +1105,8 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "av1");
              Checks checks(trace);
              checks.Count("sps", 0);
+             checks.Count("pkt-error", 0);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // a key frame, then a tile group alone, before any sequence header, which frame headers and
@@ -1100,6 +1126,8 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "av1");
              Checks checks(trace);
              checks.Count("pic", 1);
+             checks.Count("pkt-error", 0);
+             checks.Field("refused", "units", "2");
              return checks.Failures();
          }},
         // after a key frame, a temporal unit of a tile group alone, which no frame header of its
@@ -1115,6 +1143,8 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "av1");
              Checks checks(trace);
              checks.Count("pic", 1);
+             checks.Count("pkt-error", 0);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // an inter frame before any key frame takes its size from a reference buffer that holds no
@@ -1134,6 +1164,8 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "av1");
              Checks checks(trace);
              checks.Count("pic", 2);
+             checks.Count("pkt-error", 0);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // an OBU must fit in the rest of its temporal unit, and a padding OBU's obu_size of
@@ -1150,6 +1182,8 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "av1");
              Checks checks(trace);
              checks.Count("pic", 1);
+             checks.Count("pkt-error", 0);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // leb128() codes at most 2^32 - 1 (AV1 4.10.5). A padding OBU's obu_size of 2^32 + 3,
@@ -1167,6 +1201,8 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "av1");
              Checks checks(trace);
              checks.Count("pic", 1);
+             checks.Count("pkt-error", 0);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // film grain points increase (AV1 6.8.20); a key frame whose two luma points are both 0 is
@@ -1182,11 +1218,13 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "av1");
              Checks checks(trace);
              checks.Count("pic", 1);
+             checks.Count("pkt-error", 0);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // a sequence header the parser refuses leaves the one before it active, and drops its temporal
         // unit. The second temporal unit's header codes the reserved seq_profile 3; the third unit's key
-        // frame is parsed with the first header.
+        // frame is parsed with the first header. The refusal is counted, and ParseByteStream does not fail.
         {"Av1SequenceHeaderRefused",
          [](CaseContext& stream) {
              std::vector<uint8_t> unit = Av1SequenceHeaderUnit(0, true);
@@ -1202,6 +1240,8 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("pic", 2);
              checks.Field("  av1", "frame_width", "64", 1);
+             checks.Count("pkt-error", 0);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // Proves the AV1 key frame builder, and the limit: 14 luma scaling points are the most
@@ -1219,6 +1259,8 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("pic", 1);
              checks.Field("  fg", "num_y_points", "14");
+             checks.Count("pkt-error", 0);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // a client with one picture, which the first key frame keeps in all eight reference
@@ -1231,11 +1273,13 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("pic", 1);
              checks.Count("alloc-failed", 1);
+             checks.Count("refused", 0);
              return checks.Failures();
          }},
         // a superframe's index gives the size of each of its frames (VP9 Annex B), and they are the
         // frames the parser takes. The first packet is a superframe of two key frames; the second is a
-        // key frame before an index of eight frames of no bytes, which leaves the key frame out.
+        // key frame before an index of eight frames of no bytes, which leaves the key frame out; the
+        // third's index gives its second frame more bytes than the packet holds, which refuses it.
         {"Vp9SuperframeIndex",
          [](CaseContext& stream) {
              const std::vector<uint8_t> frame = Vp9KeyFrame();
@@ -1247,9 +1291,14 @@ const std::vector<CraftedCase>& Cases() {
              std::vector<uint8_t> uncovered = frame;
              Append(uncovered, Vp9SuperframeIndex(std::vector<uint32_t>(8, 0)));
              stream.packets.push_back({uncovered, 1});
+             std::vector<uint8_t> overrun = frame;
+             Append(overrun, frame);
+             Append(overrun, Vp9SuperframeIndex({frameSize, frameSize + 64}));
+             stream.packets.push_back({overrun, 2});
              const Trace trace = Run(stream, "vp9");
              Checks checks(trace);
-             checks.Count("pic", 2);
+             checks.Count("pic", 3);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // frame_marker is 2 (VP9 6.2); a frame with another is refused, where a build with assertions
@@ -1261,6 +1310,7 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "vp9");
              Checks checks(trace);
              checks.Count("pic", 1);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // frame_sync_code is 0x49, 0x83, 0x42 (VP9 6.2); a key frame with another is not a frame.
@@ -1271,6 +1321,7 @@ const std::vector<CraftedCase>& Cases() {
              const Trace trace = Run(stream, "vp9");
              Checks checks(trace);
              checks.Count("pic", 1);
+             checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
         // Proves the VP9 key frame builder.
@@ -1283,6 +1334,7 @@ const std::vector<CraftedCase>& Cases() {
              checks.Field("  vp9", "FrameWidth", "64");
              checks.Field("  std", "base_q_idx", "60");
              checks.Field("  lf", "loop_filter_level", "10");
+             checks.Count("refused", 0);
              return checks.Failures();
          }},
     };

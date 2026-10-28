@@ -559,6 +559,10 @@ int main(int argc, char** argv) {
                 .Num("pictures", static_cast<int64_t>(decoder->Decoded()))
                 .Num("displayed", static_cast<int64_t>(pool->Displayed()))
                 .Emit(out);
+            const uint64_t refused = adapter->GetRefusedUnitCount();
+            if (refused > 0) {
+                Line("refused").Num("units", static_cast<int64_t>(refused)).Emit(out);
+            }
         }
     }
 

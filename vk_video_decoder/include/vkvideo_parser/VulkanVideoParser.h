@@ -73,6 +73,9 @@ public:
                                     size_t* pParsedBytes,
                                     bool doPartialParsing = false) = 0;
 
+    // The number of units of the stream the parser has refused (VulkanVideoDecodeParser::GetRefusedUnitCount).
+    virtual uint64_t GetRefusedUnitCount() const { return 0; }
+
     virtual void Deinitialize() = 0;
 
 protected:

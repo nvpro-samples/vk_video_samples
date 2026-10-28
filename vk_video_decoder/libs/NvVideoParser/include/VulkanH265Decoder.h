@@ -752,9 +752,9 @@ protected:
 
 protected:
     // Syntax
-    void seq_parameter_set_rbsp();
-    void pic_parameter_set_rbsp();
-    void video_parameter_set_rbsp();
+    bool seq_parameter_set_rbsp();                      // false when the parser refuses the SPS
+    bool pic_parameter_set_rbsp();                      // false when the parser refuses the PPS
+    bool video_parameter_set_rbsp();                    // false when the parser refuses the VPS
     bool video_parameter_set_rbspExtension(hevc_video_param_s *pVideoParamSet);
     void deriveNecessaryLayerFlags(hevc_video_param_s *pVideoParamSet, uint32_t olsIdx );
     void setRefLayers(hevc_video_param_s *pVideoParamSet);
