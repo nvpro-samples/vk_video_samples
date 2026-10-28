@@ -63,6 +63,16 @@ public:
     uint64_t GetDumpFramesNotWritten() const { return m_dumpPool.getFramesNotWritten(); }
     // Output frame releases that would have signaled a value not above the previous one.
     uint64_t GetDumpReleaseOrderErrors() const { return m_dumpPool.getReleaseOrderErrors(); }
+    // Why the stream stopped before its end: the result the decoder refused the stream's sequence
+    // with, or else the parser's status. VK_SUCCESS while the stream decodes and after its end.
+    VkResult GetStreamResult() const { return m_streamResult; }
+    // The result the decoder refused the stream's last sequence with, or VK_SUCCESS. A parser that
+    // drops a refused sequence and goes on (AV1) does not stop the stream for it.
+    VkResult GetVideoSequenceResult() const {
+        return m_vkVideoDecoder ? m_vkVideoDecoder->GetVideoSequenceResult() : VK_SUCCESS;
+    }
+    // The frames GetNextFrame() returned since the stream, or its last loop, started.
+    uint32_t GetVideoFrameCount() const { return m_videoFrameNum; }
 
     static void DumpVideoFormat(const VkParserDetectedVideoFormat* videoFormat, bool dumpData);
 
@@ -100,6 +110,7 @@ private:
         , m_frameToFile()
         , m_currentBitstreamOffset(0)
         , m_videoFrameNum(0)
+        , m_streamResult(VK_SUCCESS)
         , m_videoStreamsCompleted(false)
         , m_usesStreamDemuxer(false)
         , m_usesFramePreparser(false)
@@ -136,6 +147,7 @@ private:
     VkVideoDumpPool m_dumpPool;
     int64_t  m_currentBitstreamOffset;
     uint32_t m_videoFrameNum;
+    VkResult m_streamResult;
     uint32_t m_videoStreamsCompleted : 1;
     uint32_t m_usesStreamDemuxer : 1;
     uint32_t m_usesFramePreparser : 1;

@@ -79,6 +79,8 @@ const char* VkVideoDecoder::GetVideoChromaFormatString(VkVideoChromaSubsamplingF
  */
 int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFormat)
 {
+    m_videoSequenceResult = VK_SUCCESS;
+
     const bool testUseLargestSurfaceExtent = false;
     // Assume 4k content for testing surfaces
     const uint32_t surfaceMinWidthExtent  = 4096;
@@ -147,7 +149,9 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                                        m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                                        videoCodec)) {
         std::cout << "*** The video codec " << VkVideoCoreProfile::CodecToName(videoCodec) << " is not supported! ***" << std::endl;
-        assert(!"The video codec is not supported");
+        // A refusal is the device's answer for this stream, not a programming error; the caller
+        // reports it through GetVideoSequenceResult(), here and below.
+        m_videoSequenceResult = VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
         return -1;
     }
 
@@ -242,7 +246,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     }
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
-        assert(!"Could not get Video Capabilities!");
+        m_videoSequenceResult = result;
         return -1;
     }
     m_capabilityFlags = videoDecodeCapabilities.flags;
@@ -255,7 +259,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                                                dpbImageFormat);
     if (result != VK_SUCCESS) {
         std::cout << "*** Could not get supported video formats :" << result << " ***" << std::endl;
-        assert(!"Could not get supported video formats!");
+        m_videoSequenceResult = result;
         return -1;
     }
 

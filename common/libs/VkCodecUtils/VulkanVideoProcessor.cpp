@@ -683,6 +683,9 @@ int32_t VulkanVideoProcessor::ParserProcessNextDataChunk()
                                                      requiresPartialParsing);
         if (parserStatus != VK_SUCCESS) {
             m_videoStreamsCompleted = true;
+            // The parser stops when the decoder refuses a sequence, and only the decoder knows why.
+            const VkResult sequenceResult = m_vkVideoDecoder->GetVideoSequenceResult();
+            m_streamResult = (sequenceResult != VK_SUCCESS) ? sequenceResult : parserStatus;
             std::cerr << "Parser: end of Video Stream with status  " << parserStatus << std::endl;
             retValue = -1;
         } else {
