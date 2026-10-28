@@ -159,6 +159,8 @@ class VulkanVideoTestFramework:  # pylint: disable=too-many-instance-attributes
             # Pass encoder-specific CLI options
             if options.get('no_validate_with_decoder', False):
                 encoder_options['validate_with_decoder'] = False
+            if options.get('no_quality_check', False):
+                encoder_options['quality_check'] = False
             decoder_args = options.get('decoder_args')
             if decoder_args:
                 encoder_options['decoder_args'] = decoder_args
@@ -714,6 +716,10 @@ def create_argument_parser() -> argparse.ArgumentParser:
         help="Disable validation of encoder output with decoder "
              "(validation enabled by default)")
     encoder_group.add_argument(
+        "--no-quality-check", action="store_true",
+        help="Do not decode the encoded stream in software and measure its "
+             "PSNR against the source (measured by default)")
+    encoder_group.add_argument(
         "--decoder-args", nargs="+",
         help="Additional arguments to pass to decoder during "
              "encoder validation")
@@ -826,6 +832,7 @@ def run_framework_tests(args: argparse.Namespace, encoder_path: str,
         decode_display=args.decode_display,
         no_verify_md5=args.no_verify_md5,
         no_validate_with_decoder=args.no_validate_with_decoder,
+        no_quality_check=args.no_quality_check,
         decoder_args=args.decoder_args,
         extended=args.extended,
         codec_filter=args.codec,

@@ -233,6 +233,7 @@ The `encode_samples.json` file defines encoder test cases:
 | `source_checksum` | Yes | SHA256 checksum of the source file |
 | `source_filepath` | Yes | Relative path where the file is stored in `resources/` |
 | `rate_control_check` | No | Measure the encoded stream against its rate-control target — see [Rate Control Checks](#rate-control-checks) |
+| `quality_check` | No | Thresholds of the PSNR check, which runs on every sample that encodes, or `false` to turn it off — see [PSNR Check](#psnr-check) |
 
 #### Rate Control Checks
 
@@ -259,6 +260,39 @@ The `*_ll_cbr_svbv` and `*_ull_cbr_svbv` cells, one pair per codec, target NVIDI
 ultra-low-latency (ULL) tuning profile: the same 90-frame stream at CBR 300 kbps with a single-frame
 VBV, encoded with the low-latency tuning (the control) and with the ULL tuning. Compare their
 rate-control lines.
+
+#### PSNR Check
+
+Every sample that encodes, and passes the checks before it, is decoded again with ffmpeg in
+software, independently of the GPU's decoder, and `libs/video_test_quality.py` measures the PSNR
+of each decoded picture against the source picture it codes, plane by plane:
+
+- the stream must decode to as many pictures as were encoded: the source's, `--numFrames` when
+  given, from `--startFrame`, repeating the source with `--repeatInputFrames`;
+- decoded picture i codes source picture `--startFrame` + i, modulo the source's length when the
+  input repeats;
+- samples are compared at the source's depth (`--inputBpp`) and chroma format
+  (`--inputChromaSubsampling`), with no conversion;
+- with `--encodeWidth`/`--encodeHeight` below the source's extent the encoder codes the top-left
+  window of that size of each source picture, and the pictures are compared with that window;
+- a decoded picture larger than the window, as AV1 codes 1080 rows as 1088, is cropped to the
+  window, and may exceed it by less than 16 samples each way.
+
+| Key | Meaning |
+|-----|---------|
+| `min_mean_psnr` | Lowest mean PSNR of each plane over the pictures, in dB; 30 when not given |
+| `min_picture_psnr` | Lowest PSNR of each plane of the worst picture, in dB; not checked when not given |
+| `exact_extent` | The picture's extent must equal the window: a larger coded extent must be cropped in the stream (H.264 frame cropping, H.265 conformance window, AV1 render size, which the check reads from the frame header) |
+
+The thresholds in `encode_samples.json` are calibrated on known-good builds on NVIDIA RTX 3080 Ti,
+RTX 4080 and RTX 5080 GPUs, over repeated runs: `min_mean_psnr` is the lowest mean of any plane
+minus 0.5 dB, and `min_picture_psnr` the lowest worst picture of any plane minus 2 dB, both rounded
+down to 0.1 dB. The margins cover the run-to-run variation of rate-controlled encodes. Recalibrate a
+sample when its command line or source changes.
+
+The result line prints the means and the worst picture, and the JSON results carry them under
+`quality`. The check needs ffmpeg and ffprobe on `PATH`, and is faster with numpy. A sample can turn
+it off with `"quality_check": false`, and a run with `--no-quality-check`.
 
 #### Extra Arguments Example
 
@@ -557,6 +591,7 @@ python3 vvs_test_runner.py --export-json results.json
 #### Encode-Specific Options
 
 - `--no-validate-with-decoder` - Disable validation of encoder output with decoder
+- `--no-quality-check` - Do not measure the PSNR of the encoded stream against its source (see [PSNR Check](#psnr-check))
 - `--decoder-args ARGS` - Additional arguments to pass to decoder during validation
 
 ---
