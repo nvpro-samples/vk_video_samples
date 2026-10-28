@@ -327,7 +327,10 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
 
     // reference frames
     memset(pFrameInfo->pictureInfo.referenceNameSlotIndices, 0xff, sizeof(pFrameInfo->pictureInfo.referenceNameSlotIndices));
-    bool primaryRefCdfOnly = true;
+    // CDF-only use of the primary reference needs a primary reference: with
+    // primary_ref_frame PRIMARY_REF_NONE (intra frames, error resilient mode)
+    // there is none, and primaryReferenceCdfOnly must be false.
+    bool primaryRefCdfOnly = (pFrameInfo->stdPictureInfo.primary_ref_frame != STD_VIDEO_AV1_PRIMARY_REF_NONE);
     for (uint32_t groupId = 0; groupId < 2; groupId++) {
         for (int32_t i = 0; i < m_dpbAV1->GetNumRefsInGroup(groupId); i++) {
             int32_t refNameMinus1 = m_dpbAV1->GetRefNameMinus1(groupId, i);
