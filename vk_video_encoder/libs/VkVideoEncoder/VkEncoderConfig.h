@@ -1061,6 +1061,9 @@ public:
     uint32_t enablePreprocessComputeFilter : 1;
 #endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     uint32_t repeatInputFrames : 1;
+    // --syncTestBitstreamCopy: synchronization test between the transfer and the video encode work
+    // of the encode queue (see VkVideoEncoder::RecordSyncTestBitstreamFill).
+    uint32_t syncTestBitstreamCopy : 1;
     // --pictureRowColReplication: how the filter fills the input picture past its coded extent.
     // 0: row and column replication is disabled;
     // 1: (default) replicate the last row and column to the padding area;
@@ -1243,6 +1246,7 @@ public:
     , enablePreprocessComputeFilter(true)
 #endif  // VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     , repeatInputFrames(false)
+    , syncTestBitstreamCopy(false)
     , enablePictureRowColReplication(1)
     , enableOutOfOrderRecording(false)
     , enablePsnrMetrics(false)

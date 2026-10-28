@@ -206,6 +206,12 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --repeatInputFrames                none :   Repeat the input file frame'ss sequence by reseting the the stream to the beginning \n\
                                                 when the file ends. The numFrames parameter in this case can be higher than \n\
                                                 the max frames contained in the file.\n\
+    --syncTestBitstreamCopy            none :   Synchronization test between the transfer and the video encode work of \n\
+                                                the encode queue: transfer commands fill each encode's bitstream range \n\
+                                                with poison before the encode and copy the encoded bitstream back after \n\
+                                                it, in the same command buffer. Every copy is checked against the \n\
+                                                bitstream; check the output itself against a run without this option. \n\
+                                                Requires an encode queue family with VK_QUEUE_TRANSFER_BIT.\n\
     --encodeOffsetX                 <integer> : Encoded offset X \n\
     --encodeOffsetY                 <integer> : Encoded offset Y \n\
     --encodeWidth                   <integer> : Encoded width \n\
@@ -550,6 +556,8 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             }
         } else if (args[i] == "--repeatInputFrames") {
             repeatInputFrames = true;
+        } else if (args[i] == "--syncTestBitstreamCopy") {
+            syncTestBitstreamCopy = true;
         } else if (args[i] == "--encodeOffsetX") {
             if ((++i >= argc) || !parseUint(args[i], encodeOffsetX)) {
                 VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());

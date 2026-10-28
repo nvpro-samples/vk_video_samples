@@ -79,6 +79,7 @@ struct DecoderConfig {
         deviceId = (uint32_t)-1;
         directMode = false;
         enableHwLoadBalancing = false;
+        syncTestBitstreamCopy = false;
         selectVideoWithComputeQueue = false;
         noDeviceFallback = false;
         outputy4m = true; // by default, use Y4M
@@ -226,6 +227,16 @@ struct DecoderConfig {
                 "available decode queues",
                 [this](const char **args, const ProgramArgs &a) {
                     enableHwLoadBalancing = true;
+                    return true;
+                }},
+            {"--syncTestBitstreamCopy", nullptr, 0,
+                "Synchronization test between the transfer and the video decode work of the "
+                "decode queue: every decode reads its bitstream from a copy that transfer "
+                "commands make, over a poison fill, earlier in the same command buffer. "
+                "Requires a decode queue family with VK_QUEUE_TRANSFER_BIT; check the "
+                "per-frame CRCs against a run without this option",
+                [this](const char **args, const ProgramArgs &a) {
+                    syncTestBitstreamCopy = true;
                     return true;
                 }},
             {"--input", "-i", 1, "Input filename to decode",
@@ -530,6 +541,7 @@ struct DecoderConfig {
     uint32_t verbose : 1;
     uint32_t noPresent : 1;
     uint32_t enableHwLoadBalancing : 1;
+    uint32_t syncTestBitstreamCopy : 1;
     uint32_t selectVideoWithComputeQueue : 1;
     uint32_t noDeviceFallback : 1;
     uint32_t outputy4m : 1;

@@ -791,7 +791,8 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
 
             result = VulkanBitstreamBufferImpl::Create(m_vkDevCtx,
                     m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
-                    VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR,
+                    VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR |
+                        (m_syncTestBitstreamCopy ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0),
                     allocSize,
                     videoCapabilities.minBitstreamBufferOffsetAlignment,
                     videoCapabilities.minBitstreamBufferSizeAlignment,
@@ -828,6 +829,97 @@ bool VkVideoDecoder::UpdatePictureParameters(VkSharedBaseObj<StdVideoPicturePara
     return (result == VK_SUCCESS);
 }
 
+bool VkVideoDecoder::RecordSyncTestBitstreamCopy(VkCommandBuffer commandBuffer, uint32_t slotId,
+                                                 const VkSharedBaseObj<VulkanBitstreamBuffer>& source,
+                                                 VkVideoDecodeInfoKHR& decodeInfo)
+{
+    if ((m_vkDevCtx->GetVideoDecodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) == 0) {
+        fprintf(stderr, "\nERROR: --syncTestBitstreamCopy needs a decode queue family with VK_QUEUE_TRANSFER_BIT\n");
+        m_syncTestBitstreamCopy = false;
+        return false;
+    }
+
+    const VkDeviceSize copySize = decodeInfo.srcBufferRange;
+    // vkCmdFillBuffer writes whole 32-bit words.
+    const VkDeviceSize fillSize = (copySize + 3) & ~VkDeviceSize(3);
+
+    if (slotId >= m_syncTestBitstreamBuffers.size()) {
+        m_syncTestBitstreamBuffers.resize(slotId + 1);
+    }
+    VkSharedBaseObj<VulkanBitstreamBufferImpl>& copyBuffer = m_syncTestBitstreamBuffers[slotId];
+    if (!copyBuffer || (copyBuffer->GetMaxSize() < fillSize)) {
+        VkSharedBaseObj<VulkanBitstreamBufferImpl> newBuffer;
+        const VkResult result = VulkanBitstreamBufferImpl::Create(m_vkDevCtx,
+                m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
+                VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                std::max<VkDeviceSize>(fillSize, m_maxStreamBufferSize),
+                source->GetOffsetAlignment(), source->GetSizeAlignment(), nullptr, 0, newBuffer);
+        if (result != VK_SUCCESS) {
+            fprintf(stderr, "\nERROR: --syncTestBitstreamCopy: VulkanBitstreamBufferImpl::Create() result: 0x%x\n", result);
+            return false;
+        }
+        copyBuffer = newBuffer;
+    }
+
+    // A non-compliant driver may read the bitstream through the buffer's host mapping when
+    // vkCmdDecodeVideoKHR is recorded, rather than when the decode executes. Writing the copy
+    // buffer on the host first keeps this test about the transfer/decode ordering only. The
+    // slot's command buffer is being re-recorded, so its previous decode has completed.
+    if (copyBuffer->CopyDataFromBuffer(source, decodeInfo.srcBufferOffset, 0, copySize) < 0) {
+        fprintf(stderr, "\nERROR: --syncTestBitstreamCopy: the host copy of the bitstream failed\n");
+        return false;
+    }
+
+    const VkBuffer srcBuffer = decodeInfo.srcBuffer;
+    const VkBuffer dstBuffer = copyBuffer->GetBuffer();
+
+    // The parser wrote the source on the host. The slot's previous decode read the copy buffer.
+    const VkBufferMemoryBarrier2KHR toTransfer[2] = {
+        { VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR, nullptr,
+          VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT_KHR,
+          VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR, VK_ACCESS_2_TRANSFER_READ_BIT_KHR,
+          VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+          srcBuffer, decodeInfo.srcBufferOffset, copySize },
+        { VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR, nullptr,
+          VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR, VK_ACCESS_2_NONE_KHR,
+          VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR, VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR,
+          VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+          dstBuffer, 0, VK_WHOLE_SIZE },
+    };
+    VkDependencyInfoKHR dependencyInfo = { VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR };
+    dependencyInfo.bufferMemoryBarrierCount = 2;
+    dependencyInfo.pBufferMemoryBarriers = toTransfer;
+    m_vkDevCtx->CmdPipelineBarrier2KHR(commandBuffer, &dependencyInfo);
+
+    // A decode that starts before the copy below completes reads this pattern.
+    m_vkDevCtx->CmdFillBuffer(commandBuffer, dstBuffer, 0, fillSize, 0xA5A5A5A5u);
+
+    const VkBufferMemoryBarrier2KHR fillToCopy = {
+        VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR, nullptr,
+        VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR, VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR,
+        VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR, VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR,
+        VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+        dstBuffer, 0, fillSize };
+    dependencyInfo.bufferMemoryBarrierCount = 1;
+    dependencyInfo.pBufferMemoryBarriers = &fillToCopy;
+    m_vkDevCtx->CmdPipelineBarrier2KHR(commandBuffer, &dependencyInfo);
+
+    const VkBufferCopy region = { decodeInfo.srcBufferOffset, 0, copySize };
+    m_vkDevCtx->CmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &region);
+
+    const VkBufferMemoryBarrier2KHR copyToDecode = {
+        VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR, nullptr,
+        VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR, VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR,
+        VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR, VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR,
+        VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+        dstBuffer, 0, fillSize };
+    dependencyInfo.pBufferMemoryBarriers = &copyToDecode;
+    m_vkDevCtx->CmdPipelineBarrier2KHR(commandBuffer, &dependencyInfo);
+
+    decodeInfo.srcBuffer = dstBuffer;
+    decodeInfo.srcBufferOffset = 0;
+    return true;
+}
 
 int VkVideoDecoder::CopyOptimalToLinearImage(VkCommandBuffer& commandBuffer,
                                              const VkVideoPictureResourceInfoKHR& srcPictureResource,
@@ -1364,6 +1456,13 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     if (frameSynchronizationInfo.queryPool) {
         m_vkDevCtx->CmdResetQueryPool(frameDataSlot.commandBuffer, frameSynchronizationInfo.queryPool,
                                       frameSynchronizationInfo.startQueryId, frameSynchronizationInfo.numQueries);
+    }
+
+    if (m_syncTestBitstreamCopy) {
+        // Transfer commands are only allowed outside the video coding scope.
+        RecordSyncTestBitstreamCopy(frameDataSlot.commandBuffer, frameDataSlot.slot,
+                                    pCurrFrameDecParams->bitstreamData,
+                                    pCurrFrameDecParams->decodeFrameInfo);
     }
 
     m_vkDevCtx->CmdBeginVideoCodingKHR(frameDataSlot.commandBuffer, &decodeBeginInfo);
@@ -1923,7 +2022,8 @@ VkDeviceSize VkVideoDecoder::GetBitstreamBuffer(VkDeviceSize size,
     if (!(availablePoolNode >= 0)) {
         VkResult result = VulkanBitstreamBufferImpl::Create(m_vkDevCtx,
                 m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
-                VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR,
+                VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR |
+                    (m_syncTestBitstreamCopy ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0),
                 newSize, minBitstreamBufferOffsetAlignment,
                 minBitstreamBufferSizeAlignment,
                 pInitializeBufferMemory, initializeBufferMemorySize, newBitstreamBuffer);
@@ -2029,6 +2129,7 @@ void VkVideoDecoder::Deinitialize()
         m_filterOutYcbcrConversion = VK_NULL_HANDLE;
     }
 
+    m_syncTestBitstreamBuffers.clear();
     m_videoFrameBuffer = nullptr;
     m_decodeFramesData.deinit();
     if (m_currentPictureParameters) {
