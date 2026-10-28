@@ -36,8 +36,8 @@
 #endif
 
 #define DKIF_FRAME_CONTAINER_HEADER_SIZE 12
-#define DKIF_HEADER_MAGIC *((const uint32_t*)"DKIF")
 #define DKIF_FILE_HEADER_SIZE 32
+#define DKIF_FILE_HEADER_LENGTH_OFFSET 6
 
 class ElementaryStream : public VideoStreamDemuxer {
 
@@ -59,7 +59,8 @@ public:
 #endif
         , m_pBitstreamData(nullptr)
         , m_bitstreamDataSize(0)
-        , m_bytesRead(0) {
+        , m_bytesRead(0)
+        , m_ivfHeaderSize(0) {
 
 #ifdef USE_SIMPLE_MALLOC
         FILE* handle = fopen(pFilePath, "rb");
@@ -101,16 +102,12 @@ public:
 
         m_pBitstreamData = m_inputVideoStreamMmap.data();
 #endif
-        if (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
-            // Assume Duck IVF. DKIF.
-            assert(*(const uint32_t*)m_pBitstreamData == DKIF_HEADER_MAGIC);
-            const uint32_t firstFrameOffset = (DKIF_FILE_HEADER_SIZE + DKIF_FRAME_CONTAINER_HEADER_SIZE);
-            m_pBitstreamData += firstFrameOffset;
-            m_bitstreamDataSize -= firstFrameOffset;
+        if ((m_pBitstreamData != nullptr) && (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR)) {
+            SkipIvfFileHeader();
         }
     }
 
-    ElementaryStream(const uint8_t *pInput, const size_t,
+    ElementaryStream(const uint8_t *pInput, const size_t size,
                      VkVideoCodecOperationFlagBitsKHR codecType)
         : m_width(176)
         , m_height(144)
@@ -121,14 +118,12 @@ public:
         , m_inputVideoStreamMmap()
 #endif
         , m_pBitstreamData(pInput)
-        , m_bitstreamDataSize(0)
+        , m_bitstreamDataSize(size)
         , m_bytesRead(0)
+        , m_ivfHeaderSize(0)
     {
-        if (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
-            // Assume Duck IVF. DKIF.
-            assert(*(const uint32_t*)pInput == DKIF_HEADER_MAGIC);
-            const uint32_t firstFrameOffset = (DKIF_FILE_HEADER_SIZE + DKIF_FRAME_CONTAINER_HEADER_SIZE);
-            m_pBitstreamData += firstFrameOffset;
+        if ((m_pBitstreamData != nullptr) && (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR)) {
+            SkipIvfFileHeader();
         }
     }
 
@@ -157,19 +152,17 @@ public:
 
     virtual ~ElementaryStream() {
 #ifdef USE_SIMPLE_MALLOC
-        if (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
-            const uint32_t firstFrameOffset = (DKIF_FILE_HEADER_SIZE + DKIF_FRAME_CONTAINER_HEADER_SIZE);
-            m_pBitstreamData -= firstFrameOffset;
-        }
-
-        free((void*)(m_pBitstreamData));
+        free((void*)(m_pBitstreamData - m_ivfHeaderSize));
 #else
         m_inputVideoStreamMmap.unmap();
 #endif
     }
 
     virtual bool IsStreamDemuxerEnabled() const { return false; }
-    virtual bool HasFramePreparser() const { return false; }
+    // An AV1 elementary stream comes in an IVF file, which gives its frames one at a time
+    // (DemuxFrame). An H.264 or H.265 Annex B byte stream has no frame boundaries the reader knows;
+    // the parser takes it in pieces (ReadBitstreamData).
+    virtual bool HasFramePreparser() const { return (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR); }
     virtual void Rewind() { m_bytesRead = 0; }
     virtual VkVideoCodecOperationFlagBitsKHR GetVideoCodec() const { return m_videoCodecType; }
 
@@ -269,8 +262,30 @@ public:
     virtual int32_t GetWidth() const { return m_width; }
     virtual int32_t GetHeight() const { return m_height; }
     virtual int32_t GetBitDepth() const { return m_bitDepth; }
-    virtual int64_t DemuxFrame(const uint8_t**) {
-        return -1;
+    // The payload of the next IVF frame, after its 12-byte frame header, and its size. 0 at the end
+    // of the file; a frame that runs past the end of the file ends the stream too.
+    virtual int64_t DemuxFrame(const uint8_t** ppVideo) {
+        if (m_videoCodecType != VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
+            return -1;
+        }
+        // A frame of size 0 carries nothing for the parser, and a size of 0 here means the end.
+        uint32_t frameSize = 0;
+        while (frameSize == 0) {
+            if ((m_bitstreamDataSize - m_bytesRead) < DKIF_FRAME_CONTAINER_HEADER_SIZE) {
+                return 0;
+            }
+            memcpy(&frameSize, m_pBitstreamData + m_bytesRead, sizeof(frameSize)); // little-endian
+            const VkDeviceSize frameStart = m_bytesRead + DKIF_FRAME_CONTAINER_HEADER_SIZE;
+            if (frameSize > (m_bitstreamDataSize - frameStart)) {
+                fprintf(stderr, "The IVF frame at file offset %llu runs past the end of the file\n",
+                        (unsigned long long)(m_ivfHeaderSize + m_bytesRead));
+                m_bytesRead = m_bitstreamDataSize;
+                return 0;
+            }
+            *ppVideo = m_pBitstreamData + frameStart;
+            m_bytesRead = frameStart + frameSize;
+        }
+        return frameSize;
     }
     virtual int64_t ReadBitstreamData(const uint8_t **ppVideo, int64_t offset)
     {
@@ -278,24 +293,31 @@ public:
         assert(m_pBitstreamData != nullptr);
 
         // Compute and return the pointer to data at new offset.
-        if (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
-            *ppVideo = (m_pBitstreamData + offset);
-            uint32_t dataSize = *(const uint32_t*)(*ppVideo - DKIF_FRAME_CONTAINER_HEADER_SIZE);
-            if ((m_bitstreamDataSize - (offset + dataSize)) == 0) {
-                return dataSize;
-            }
-
-            return dataSize + DKIF_FRAME_CONTAINER_HEADER_SIZE;
-        } else {
-            *ppVideo = (m_pBitstreamData + offset);
-            return m_bitstreamDataSize - offset;
-        }
+        *ppVideo = (m_pBitstreamData + offset);
+        return m_bitstreamDataSize - offset;
     }
 
     virtual void DumpStreamParameters() const {
     }
 
 private:
+    // Leaves m_pBitstreamData at the first IVF frame header. Input that is not an IVF file leaves
+    // no data to read.
+    void SkipIvfFileHeader() {
+        uint16_t headerSize = 0;
+        if ((m_bitstreamDataSize >= DKIF_FILE_HEADER_SIZE) && (memcmp(m_pBitstreamData, "DKIF", 4) == 0)) {
+            memcpy(&headerSize, m_pBitstreamData + DKIF_FILE_HEADER_LENGTH_OFFSET, sizeof(headerSize));
+        }
+        if ((headerSize < DKIF_FILE_HEADER_SIZE) || (headerSize > m_bitstreamDataSize)) {
+            fprintf(stderr, "An AV1 elementary stream must be an IVF file\n");
+            m_bitstreamDataSize = 0;
+            return;
+        }
+        m_ivfHeaderSize = headerSize;
+        m_pBitstreamData += headerSize;
+        m_bitstreamDataSize -= headerSize;
+    }
+
     int32_t    m_width, m_height, m_bitDepth;
     int32_t    m_chroma;   // 400 | 420 | 422 | 444
     VkVideoCodecOperationFlagBitsKHR m_videoCodecType;
@@ -304,7 +326,10 @@ private:
 #endif
     const uint8_t* m_pBitstreamData;
     VkDeviceSize   m_bitstreamDataSize;
+    // The read position in the IVF frames of an AV1 stream.
     VkDeviceSize   m_bytesRead;
+    // The IVF file header DemuxFrame skips; m_pBitstreamData starts after it.
+    VkDeviceSize   m_ivfHeaderSize;
 };
 
 VkResult ElementaryStreamCreate(const char *pFilePath,
