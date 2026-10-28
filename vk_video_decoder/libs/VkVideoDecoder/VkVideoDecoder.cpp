@@ -865,7 +865,9 @@ bool VkVideoDecoder::RecordSyncTestBitstreamCopy(VkCommandBuffer commandBuffer, 
     // vkCmdDecodeVideoKHR is recorded, rather than when the decode executes. Writing the copy
     // buffer on the host first keeps this test about the transfer/decode ordering only. The
     // slot's command buffer is being re-recorded, so its previous decode has completed.
-    if (copyBuffer->CopyDataFromBuffer(source, decodeInfo.srcBufferOffset, 0, copySize) < 0) {
+    // --syncTestGpuOnlyBitstream leaves the write to the transfer commands alone.
+    if (!m_syncTestGpuOnlyBitstream &&
+        (copyBuffer->CopyDataFromBuffer(source, decodeInfo.srcBufferOffset, 0, copySize) < 0)) {
         fprintf(stderr, "\nERROR: --syncTestBitstreamCopy: the host copy of the bitstream failed\n");
         return false;
     }
