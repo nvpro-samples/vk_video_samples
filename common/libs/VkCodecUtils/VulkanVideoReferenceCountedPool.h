@@ -17,6 +17,8 @@
 #ifndef _VULKANVIDEOREFERENCECOUNTEDPOOL_H_
 #define _VULKANVIDEOREFERENCECOUNTEDPOOL_H_
 
+#include <cassert>
+#include <cstdint>
 #include <vector>
 #include <bitset>
 #include <algorithm>
@@ -34,7 +36,7 @@ public:
                        uint32_t index, bool isValid, bool isAvailable);
     };
 
-    VulkanVideoRefCountedPool(uint32_t maxNodes = 32)
+    VulkanVideoRefCountedPool(uint32_t maxNodes = MAX_POOL_ENTRIES)
     : m_poolMutex()
     , m_maxNodes(maxNodes)
     , m_poolNodeSlotsInUseMask()
@@ -96,19 +98,7 @@ public:
         int32_t idx = GetAvailableNodeIndx();
         if (idx >= 0) {
             assert((uint32_t)idx < m_maxNodes);
-            auto* pool = this;
-            uint32_t uidx = static_cast<uint32_t>(idx);
-            struct CheckoutGuard {
-                VkSharedBaseObj<RefCountedNodeType> node;
-                VulkanVideoRefCountedPool* pool;
-                uint32_t idx;
-                ~CheckoutGuard() { if (pool) pool->ReturnNodeToPool(idx); }
-            };
-            auto guard = std::make_shared<CheckoutGuard>();
-            guard->node = m_pool[idx];
-            guard->pool = pool;
-            guard->idx = uidx;
-            availableNodeFromPool = std::shared_ptr<RefCountedNodeType>(guard, guard->node.get());
+            availableNodeFromPool = CheckOutNode(static_cast<uint32_t>(idx));
         }
         return idx;
     }
@@ -119,6 +109,9 @@ public:
         return m_maxNodes - (uint32_t)m_poolNodeSlotsInUseMask.count();
     }
 
+    // With setUnavailable, the new node is checked out to the caller: newNodeToPool
+    // is replaced by a reference that returns the node to the pool when its last
+    // copy is released, as a reference from GetAvailableNodeFromPool does.
     int32_t AddNodeToPool(VkSharedBaseObj<RefCountedNodeType>& newNodeToPool, bool setUnavailable)
     {
         std::lock_guard<std::mutex> lock(m_poolMutex);
@@ -127,11 +120,32 @@ public:
             assert((uint32_t)freeNodeSlotIndx < m_maxNodes);
             m_poolNodesCheckedOutMask[freeNodeSlotIndx] = setUnavailable;
             m_pool[freeNodeSlotIndx] = newNodeToPool;
+            if (setUnavailable) {
+                newNodeToPool = CheckOutNode(static_cast<uint32_t>(freeNodeSlotIndx));
+            }
         }
         return freeNodeSlotIndx;
     }
 
 private:
+    // Called with m_poolMutex held, for a node already marked checked out. The
+    // reference it returns shares a guard whose destructor marks the node
+    // available again.
+    VkSharedBaseObj<RefCountedNodeType> CheckOutNode(uint32_t idx)
+    {
+        struct CheckoutGuard {
+            VkSharedBaseObj<RefCountedNodeType> node;
+            VulkanVideoRefCountedPool* pool;
+            uint32_t idx;
+            ~CheckoutGuard() { if (pool) pool->ReturnNodeToPool(idx); }
+        };
+        auto guard = std::make_shared<CheckoutGuard>();
+        guard->node = m_pool[idx];
+        guard->pool = this;
+        guard->idx = idx;
+        return VkSharedBaseObj<RefCountedNodeType>(guard, guard->node.get());
+    }
+
     void ReturnNodeToPool(uint32_t idx)
     {
         std::lock_guard<std::mutex> lock(m_poolMutex);
