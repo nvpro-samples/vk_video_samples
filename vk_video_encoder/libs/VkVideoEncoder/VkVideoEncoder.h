@@ -360,6 +360,8 @@ public:
         VkSharedBaseObj<VulkanVideoImagePoolNode>          setupImageResource;
         VkSharedBaseObj<VulkanVideoImagePoolNode>          subsampledImageResource; // 2x2 subsampled Y for AQ
         VkSharedBaseObj<VulkanBitstreamBuffer>             outputBitstreamBuffer;
+        // --syncTestBitstreamCopy: the buffer the transfer copy of this frame's bitstream lands in.
+        VkSharedBaseObj<VulkanBitstreamBuffer>             syncTestReadbackBuffer;
         VkSharedBaseObj<VulkanVideoImagePoolNode>          dpbImageResources[MAX_IMAGE_REF_RESOURCES];
         VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> inputCmdBuffer;
         VkSharedBaseObj<VulkanCommandBufferPool::PoolNode> encodeCmdBuffer;
@@ -742,6 +744,7 @@ public:
                 srcQpMapImageResource = nullptr;
                 subsampledImageResource = nullptr;  // Release subsampled Y image back to pool
                 outputBitstreamBuffer = nullptr;
+                syncTestReadbackBuffer = nullptr;
                 assert(numDpbImageResources <= ARRAYSIZE(dpbImageResources));
                 for (uint32_t i = 0; i < numDpbImageResources; i++) {
                    dpbImageResources[i] = nullptr;
@@ -1192,6 +1195,21 @@ private:
     // Private and non-virtual: it must never grow a second completion publish.
     VkResult WriteBitstreamToFileOutput(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                         BitstreamReadback& readback);
+
+    // --syncTestBitstreamCopy: synchronization test between the transfer and the video encode
+    // work of the encode queue. Before the video coding scope a transfer fill writes poison over
+    // the encode's bitstream range; after it a transfer copy reads the encoded bitstream into a
+    // readback buffer. An encode that overlaps the fill leaves poison in its output, which the
+    // output check against a run without this option finds. A copy that starts before the encode
+    // completes differs from the bitstream the host reads after the frame's fence, which
+    // VerifySyncTestBitstreamCopy finds.
+    void RecordSyncTestBitstreamFill(VkCommandBuffer cmdBuf,
+                                     VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
+    void RecordSyncTestBitstreamCopy(VkCommandBuffer cmdBuf, uint32_t slotIndex,
+                                     VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo);
+    void VerifySyncTestBitstreamCopy(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                     const BitstreamReadback& readback);
+    void ReportSyncTest();
 
 public:
     virtual VkResult ReadbackBitstreamData(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
@@ -2091,6 +2109,11 @@ protected:
     // one. Both counters are monotonic for the life of the session and are
     // zeroed with the rest of the per-session counters.
     std::atomic<uint32_t>                    m_frameProcessingErrorCount{0};
+    // --syncTestBitstreamCopy: one readback buffer per encode command buffer, and the counts
+    // ReportSyncTest() prints.
+    std::vector<VkSharedBaseObj<VulkanBitstreamBuffer>> m_syncTestReadbackBuffers;
+    std::atomic<uint64_t>                    m_syncTestFrames{0};
+    std::atomic<uint64_t>                    m_syncTestMismatches{0};
 };
 
 VkResult CreateVideoEncoderH264(const VulkanDeviceContext* vkDevCtx,

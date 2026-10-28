@@ -151,6 +151,7 @@ public:
                            ENABLE_POST_PROCESS_FILTER        = (1 << 2),
                            ENABLE_GRAPHICS_TEXTURE_SAMPLING  = (1 << 3),
                            ENABLE_EXTERNAL_CONSUMER_EXPORT   = (1 << 4),
+                           ENABLE_SYNC_TEST_BITSTREAM_COPY   = (1 << 5),
                          };
 
     static VkResult Create(const VulkanDeviceContext* vkDevCtx,
@@ -236,6 +237,7 @@ private:
         , m_useLinearOutput((enableDecoderFeatures & ENABLE_LINEAR_OUTPUT) != 0)
         , m_useSeparateLinearImages(VK_FALSE)
         , m_useTransferOperation(VK_FALSE)
+        , m_syncTestBitstreamCopy((enableDecoderFeatures & ENABLE_SYNC_TEST_BITSTREAM_COPY) != 0)
         , m_resetDecoder(VK_TRUE)
         , m_dumpDecodeData(VK_FALSE)
         , m_numImageTypes(1) // At least the decoder requires images for DPB
@@ -300,6 +302,14 @@ public:
                                  const VulkanVideoFrameBuffer::PictureResourceInfo& dstPictureResourceInfo,
                                  const VulkanVideoFrameBuffer::FrameSynchronizationInfo *pFrameSynchronizationInfo);
 
+    // Synchronization test (--syncTestBitstreamCopy): copies the picture's bitstream into the
+    // slot's copy buffer on the host, then records, in the decode command buffer before the video
+    // coding scope, a poison fill of that buffer and a transfer copy of the bitstream back into it,
+    // and makes the decode read that copy.
+    bool RecordSyncTestBitstreamCopy(VkCommandBuffer commandBuffer, uint32_t slotId,
+                                     const VkSharedBaseObj<VulkanBitstreamBuffer>& source,
+                                     VkVideoDecodeInfoKHR& decodeInfo);
+
     int32_t GetCurrentFrameData(uint32_t slotId, NvVkDecodeFrameDataSlot& frameDataSlot)
     {
         if (slotId < m_decodeFramesData.size()) {
@@ -342,6 +352,7 @@ private:
     uint32_t m_useLinearOutput : 1;
     uint32_t m_useSeparateLinearImages : 1;
     uint32_t m_useTransferOperation : 1;
+    uint32_t m_syncTestBitstreamCopy : 1;
     uint32_t m_resetDecoder : 1;
     uint32_t m_dumpDecodeData : 1;
     uint32_t m_numImageTypes;
@@ -351,6 +362,9 @@ private:
     VkDeviceSize   m_maxStreamBufferSize;
     VulkanFilterYuvCompute::FilterType m_filterType;
     VkSharedBaseObj<VulkanFilter> m_yuvFilter;
+    // --syncTestBitstreamCopy: the bitstream copy each decode slot reads, written by transfer
+    // commands in that slot's command buffer.
+    std::vector<VkSharedBaseObj<VulkanBitstreamBufferImpl>> m_syncTestBitstreamBuffers;
     VkSamplerYcbcrConversion m_dpbYcbcrConversion{VK_NULL_HANDLE};
     VkSamplerYcbcrConversion m_filterOutYcbcrConversion{VK_NULL_HANDLE};
 };

@@ -2801,10 +2801,160 @@ VkResult VkVideoEncoder::ReadbackBitstreamData(
     readback.status = encodeResult.status;
     readback.readbackDone = true;
 
+    if (m_encoderConfig->syncTestBitstreamCopy) {
+        VerifySyncTestBitstreamCopy(encodeFrameInfo, readback);
+    }
+
     if (m_encodeTimestampPool != VK_NULL_HANDLE) {
         ReadEncodeTiming(2 * encodeFrameInfo->encodeCmdBuffer->GetNodePoolIndex());
     }
     return VK_SUCCESS;
+}
+
+// The bytes of the bitstream buffer the encode may write: dstBufferRange, or everything past
+// dstBufferOffset when the range is left at 0.
+static VkDeviceSize SyncTestBitstreamRange(const VkSharedBaseObj<VkVideoEncoder::VkVideoEncodeFrameInfo>& encodeFrameInfo)
+{
+    const VkVideoEncodeInfoKHR& encodeInfo = encodeFrameInfo->encodeInfo;
+    if (encodeInfo.dstBufferRange != 0) {
+        return encodeInfo.dstBufferRange;
+    }
+    return encodeFrameInfo->outputBitstreamBuffer->GetMaxSize() - encodeInfo.dstBufferOffset;
+}
+
+void VkVideoEncoder::RecordSyncTestBitstreamFill(VkCommandBuffer cmdBuf,
+                                                 VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
+{
+    if ((m_vkDevCtx->GetVideoEncodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) == 0) {
+        VkEncPrintfErr("\n--syncTestBitstreamCopy needs an encode queue family with VK_QUEUE_TRANSFER_BIT\n");
+        m_encoderConfig->syncTestBitstreamCopy = false;
+        return;
+    }
+
+    const VkVideoEncodeInfoKHR& encodeInfo = encodeFrameInfo->encodeInfo;
+    // vkCmdFillBuffer writes whole 32-bit words from a 4-byte-aligned offset.
+    const VkDeviceSize fillSize = SyncTestBitstreamRange(encodeFrameInfo) & ~VkDeviceSize(3);
+    assert((encodeInfo.dstBufferOffset & 3) == 0);
+
+    // Earlier encodes wrote this pooled buffer; the host read it after their fences.
+    VkBufferMemoryBarrier2KHR barrier = { VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR, nullptr,
+        VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR, VK_ACCESS_2_VIDEO_ENCODE_WRITE_BIT_KHR,
+        VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR, VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR,
+        VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+        encodeInfo.dstBuffer, encodeInfo.dstBufferOffset, fillSize };
+    VkDependencyInfoKHR dependencyInfo = { VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR };
+    dependencyInfo.bufferMemoryBarrierCount = 1;
+    dependencyInfo.pBufferMemoryBarriers = &barrier;
+    m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &dependencyInfo);
+
+    // An encode that starts before this fill completes keeps some of this pattern in its output.
+    m_vkDevCtx->CmdFillBuffer(cmdBuf, encodeInfo.dstBuffer, encodeInfo.dstBufferOffset, fillSize, 0xA5A5A5A5u);
+
+    barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+    barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR;
+    barrier.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+    barrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_WRITE_BIT_KHR;
+    m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &dependencyInfo);
+}
+
+void VkVideoEncoder::RecordSyncTestBitstreamCopy(VkCommandBuffer cmdBuf, uint32_t slotIndex,
+                                                 VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo)
+{
+    if (!m_encoderConfig->syncTestBitstreamCopy) {
+        return;
+    }
+
+    const VkVideoEncodeInfoKHR& encodeInfo = encodeFrameInfo->encodeInfo;
+    const VkDeviceSize copySize = SyncTestBitstreamRange(encodeFrameInfo);
+
+    if (slotIndex >= m_syncTestReadbackBuffers.size()) {
+        m_syncTestReadbackBuffers.resize(slotIndex + 1);
+    }
+    VkSharedBaseObj<VulkanBitstreamBuffer>& readbackBuffer = m_syncTestReadbackBuffers[slotIndex];
+    if (!readbackBuffer || (readbackBuffer->GetMaxSize() < copySize)) {
+        VkSharedBaseObj<VulkanBitstreamBufferImpl> newBuffer;
+        const VkResult result = VulkanBitstreamBufferImpl::Create(m_vkDevCtx,
+                m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
+                VK_BUFFER_USAGE_VIDEO_ENCODE_DST_BIT_KHR | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                copySize,
+                m_encoderConfig->videoCapabilities.minBitstreamBufferOffsetAlignment,
+                m_encoderConfig->videoCapabilities.minBitstreamBufferSizeAlignment,
+                nullptr, 0, newBuffer);
+        if (result != VK_SUCCESS) {
+            VkEncPrintfErr("\n--syncTestBitstreamCopy: VulkanBitstreamBufferImpl::Create() result: 0x%x\n", result);
+            return;
+        }
+        readbackBuffer = newBuffer;
+    }
+
+    // The encode wrote the bitstream; the host read this slot's readback buffer for its previous frame.
+    const VkBufferMemoryBarrier2KHR toCopy[2] = {
+        { VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR, nullptr,
+          VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR, VK_ACCESS_2_VIDEO_ENCODE_WRITE_BIT_KHR,
+          VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR, VK_ACCESS_2_TRANSFER_READ_BIT_KHR,
+          VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+          encodeInfo.dstBuffer, encodeInfo.dstBufferOffset, copySize },
+        { VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR, nullptr,
+          VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_NONE_KHR,
+          VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR, VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR,
+          VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+          readbackBuffer->GetBuffer(), 0, copySize },
+    };
+    VkDependencyInfoKHR dependencyInfo = { VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR };
+    dependencyInfo.bufferMemoryBarrierCount = 2;
+    dependencyInfo.pBufferMemoryBarriers = toCopy;
+    m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &dependencyInfo);
+
+    const VkBufferCopy region = { encodeInfo.dstBufferOffset, 0, copySize };
+    m_vkDevCtx->CmdCopyBuffer(cmdBuf, encodeInfo.dstBuffer, readbackBuffer->GetBuffer(), 1, &region);
+
+    const VkBufferMemoryBarrier2KHR toHost = { VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR, nullptr,
+        VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR, VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR,
+        VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_READ_BIT,
+        VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+        readbackBuffer->GetBuffer(), 0, copySize };
+    dependencyInfo.bufferMemoryBarrierCount = 1;
+    dependencyInfo.pBufferMemoryBarriers = &toHost;
+    m_vkDevCtx->CmdPipelineBarrier2KHR(cmdBuf, &dependencyInfo);
+
+    encodeFrameInfo->syncTestReadbackBuffer = readbackBuffer;
+}
+
+void VkVideoEncoder::VerifySyncTestBitstreamCopy(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
+                                                 const BitstreamReadback& readback)
+{
+    if (!encodeFrameInfo->syncTestReadbackBuffer || !encodeFrameInfo->outputBitstreamBuffer) {
+        return;
+    }
+
+    VkDeviceSize encodedMaxSize = 0;
+    VkDeviceSize copiedMaxSize = 0;
+    const uint8_t* encoded = encodeFrameInfo->outputBitstreamBuffer->GetDataPtr(0, encodedMaxSize) +
+                             encodeFrameInfo->encodeInfo.dstBufferOffset + readback.bitstreamStartOffset;
+    const uint8_t* copied = encodeFrameInfo->syncTestReadbackBuffer->GetDataPtr(0, copiedMaxSize) +
+                            readback.bitstreamStartOffset;
+
+    const uint64_t frame = m_syncTestFrames++;
+    if (memcmp(encoded, copied, readback.bitstreamSize) != 0) {
+        uint32_t firstDifference = 0;
+        while ((firstDifference < readback.bitstreamSize) && (encoded[firstDifference] == copied[firstDifference])) {
+            firstDifference++;
+        }
+        if (m_syncTestMismatches++ < 10) {
+            VkEncPrintfErr("SYNC_TEST encode: frame %llu: the transfer copy differs from the bitstream at byte %u of %u\n",
+                           (unsigned long long)frame, firstDifference, readback.bitstreamSize);
+        }
+    }
+    encodeFrameInfo->syncTestReadbackBuffer = nullptr;
+}
+
+void VkVideoEncoder::ReportSyncTest()
+{
+    if (m_encoderConfig && m_encoderConfig->syncTestBitstreamCopy) {
+        VkEncOut() << "SYNC_TEST encode: frames " << m_syncTestFrames.load()
+                   << ", copy mismatches " << m_syncTestMismatches.load() << std::endl;
+    }
+    m_syncTestReadbackBuffers.clear();
 }
 
 VkResult VkVideoEncoder::InitEncodeTiming(uint32_t numEncodeCmdBuffers)
@@ -4148,7 +4298,9 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
 
             result = VulkanBitstreamBufferImpl::Create(m_vkDevCtx,
                     m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
-                    VK_BUFFER_USAGE_VIDEO_ENCODE_DST_BIT_KHR,
+                    VK_BUFFER_USAGE_VIDEO_ENCODE_DST_BIT_KHR |
+                        (encoderConfig->syncTestBitstreamCopy ?
+                             (VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT) : 0),
                     allocSize,
                     encoderConfig->videoCapabilities.minBitstreamBufferOffsetAlignment,
                     encoderConfig->videoCapabilities.minBitstreamBufferSizeAlignment,
@@ -4767,7 +4919,9 @@ VkDeviceSize VkVideoEncoder::GetBitstreamBuffer(VkSharedBaseObj<VulkanBitstreamB
     if (!(availablePoolNode >= 0)) {
         VkResult result = VulkanBitstreamBufferImpl::Create(m_vkDevCtx,
                 m_vkDevCtx->GetVideoEncodeQueueFamilyIdx(),
-                VK_BUFFER_USAGE_VIDEO_ENCODE_DST_BIT_KHR,
+                VK_BUFFER_USAGE_VIDEO_ENCODE_DST_BIT_KHR |
+                    (m_encoderConfig->syncTestBitstreamCopy ?
+                         (VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT) : 0),
                 newSize,
                 m_encoderConfig->videoCapabilities.minBitstreamBufferOffsetAlignment,
                 m_encoderConfig->videoCapabilities.minBitstreamBufferSizeAlignment,
@@ -6161,6 +6315,11 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
         vkDevCtx->CmdWriteTimestamp(cmdBuf, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_encodeTimestampPool, timingIndex);
     }
 
+    if (m_encoderConfig->syncTestBitstreamCopy) {
+        // Transfer commands are only allowed outside the video coding scope.
+        RecordSyncTestBitstreamFill(cmdBuf, encodeFrameInfo);
+    }
+
     vkDevCtx->CmdBeginVideoCodingKHR(cmdBuf, &encodeBeginInfo);
 
     if (encodeFrameInfo->controlCmd != VkVideoCodingControlFlagsKHR()) {
@@ -6298,6 +6457,10 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
 
     VkVideoEndCodingInfoKHR encodeEndInfo { VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR };
     vkDevCtx->CmdEndVideoCodingKHR(cmdBuf, &encodeEndInfo);
+
+    if (m_encoderConfig->syncTestBitstreamCopy) {
+        RecordSyncTestBitstreamCopy(cmdBuf, encodeCmdBuffer->GetNodePoolIndex(), encodeFrameInfo);
+    }
 
     if (m_encodeTimestampPool != VK_NULL_HANDLE) {
         vkDevCtx->CmdWriteTimestamp(cmdBuf, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_encodeTimestampPool, timingIndex + 1);
@@ -7214,6 +7377,7 @@ int32_t VkVideoEncoder::DeinitEncoder()
     if (m_vkDevCtx)
         m_vkDevCtx->MultiThreadedQueueWaitIdle(VulkanDeviceContext::ENCODE, 0);
 
+    ReportSyncTest();
     ReportEncodeTiming();
     if (m_encodeTimestampPool != VK_NULL_HANDLE) {
         m_vkDevCtx->DestroyQueryPool(*m_vkDevCtx, m_encodeTimestampPool, nullptr);
