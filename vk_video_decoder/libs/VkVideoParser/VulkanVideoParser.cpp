@@ -1186,7 +1186,11 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
         detectedFormat.filmGrainUsed = pnvsi->hasFilmGrain;
         detectedFormat.canUseFields  = pnvsi->canUseFields;
 
-        if ((StdChromaFormatIdc)pnvsi->nChromaFormat == chroma_format_idc_420) {
+        // A monochrome sequence (H.264 and H.265 chroma_format_idc 0, AV1 mono_chrome) asks for a
+        // monochrome profile; the device's capabilities decide whether it decodes it.
+        if ((StdChromaFormatIdc)pnvsi->nChromaFormat == chroma_format_idc_monochrome) {
+            detectedFormat.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR;
+        } else if ((StdChromaFormatIdc)pnvsi->nChromaFormat == chroma_format_idc_420) {
             detectedFormat.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;
         } else if ((StdChromaFormatIdc)pnvsi->nChromaFormat == chroma_format_idc_422) {
             detectedFormat.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR;
