@@ -162,6 +162,10 @@ add_test(NAME FilterListTests COMMAND ${PROJECT_NAME} --list)
 set_tests_properties(FilterListTests PROPERTIES
                      LABELS "device-free")
 
+# refcounted_pool_test: checkout and return in VulkanVideoRefCountedPool, the
+# pool behind the decoder's and the encoder's bitstream buffers. Device-free.
+add_subdirectory(refcounted_pool)
+
 # Add DRM Format Modifier test (Linux only)
 if(UNIX AND NOT APPLE)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/drm_format_mod")
