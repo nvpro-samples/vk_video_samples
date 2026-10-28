@@ -71,6 +71,10 @@ int main()
     Check(enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_INITIALIZATION_FAILED,
                                   VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) == 1,
           "with VVS_REQUIRE_GPU built in, a library failure with no device fails");
+    // A missing layer is the machine's whatever VVS_REQUIRE_GPU says: the validation gate decides.
+    Check(enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_LAYER_NOT_PRESENT,
+                                  VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) == enctest::kExitSkip,
+          "a requested layer that is missing is a skip (77), also with VVS_REQUIRE_GPU");
 #else
     SetEnv("VVS_REQUIRE_GPU", nullptr);
     Check(enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_INITIALIZATION_FAILED,
@@ -83,6 +87,10 @@ int main()
     Check(enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_INITIALIZATION_FAILED,
                                   VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) == 1,
           "with VVS_REQUIRE_GPU=1 it fails (1)");
+    // A missing layer is the machine's whatever VVS_REQUIRE_GPU says: the validation gate decides.
+    Check(enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_LAYER_NOT_PRESENT,
+                                  VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) == enctest::kExitSkip,
+          "a requested layer that is missing is a skip (77), also with VVS_REQUIRE_GPU");
     SetEnv("VVS_REQUIRE_GPU", "0");
     Check(enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_INITIALIZATION_FAILED,
                                   VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) == enctest::kExitSkip,

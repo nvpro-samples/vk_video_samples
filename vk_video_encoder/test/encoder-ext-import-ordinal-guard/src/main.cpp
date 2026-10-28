@@ -153,6 +153,7 @@ int main()
 
 #include "vulkan_video_encoder_ext_internal.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
+#include "encode_device_probe.h"
 
 #undef Status
 #undef None
@@ -436,6 +437,7 @@ private:
     VkPhysicalDeviceMemoryProperties m_memProps{};
     std::string         m_why;   // why Setup() gave up
     bool                m_noModifier = false;  // ExportDmaBuf: a host fact
+    bool                m_noDevice = false;    // Setup: no driver or no device, a failure with VVS_REQUIRE_GPU
 
     // The caller-visible imports, destroyed by Teardown() with the thunks
     // already removed so the cleanup cannot move a counter an assertion read.
@@ -738,6 +740,7 @@ int Harness::Setup()
     if (m_ctx.InitVulkanDevice("EncoderExtImportOrdinalGuardTest",
                                VK_NULL_HANDLE, g_verbose) != VK_SUCCESS) {
         m_why = "InitVulkanDevice failed (no Vulkan loader or no ICD)";
+        m_noDevice = true;
         return 77;
     }
 
@@ -750,6 +753,7 @@ int Harness::Setup()
         VK_SUCCESS) {
         m_why = "InitPhysicalDevice found no device offering the dma-buf / "
                 "DRM-modifier extension set";
+        m_noDevice = true;
         return 77;
     }
     for (const char* const* p = requiredDeviceExtensions; *p != nullptr; ++p) {
@@ -856,6 +860,10 @@ void Harness::Teardown()
 int Harness::Run(bool expectDisabled)
 {
     const int setup = Setup();
+    if ((setup == 77) && m_noDevice && enctest::RequireGpu()) {
+        std::printf("FAIL: %s, and VVS_REQUIRE_GPU is set\n", m_why.c_str());
+        return 1;
+    }
     if (setup == 77) {
         std::printf("SKIP: %s\n", m_why.c_str());
         return 77;

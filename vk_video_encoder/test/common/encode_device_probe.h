@@ -180,6 +180,13 @@ inline int NoDeviceOrFail(const std::string& what, VkVideoCodecOperationFlagsKHR
 
 inline int NoDeviceOrFail(const char* call, VkResult result, VkVideoCodecOperationFlagsKHR codecOps)
 {
+    if (result == VK_ERROR_LAYER_NOT_PRESENT) {
+        // The test asked for a layer this machine does not have, the validation layer of a --validate run. A
+        // validation gate with REQUIRE_LAYER turns this skip into a failure where the layer must be present.
+        std::printf("SKIP: %s returned %d: a requested layer is not on the loader's search path\n", call,
+                    static_cast<int>(result));
+        return kExitSkip;
+    }
     return NoDeviceOrFail(std::string(call) + " returned " + std::to_string(result), codecOps);
 }
 

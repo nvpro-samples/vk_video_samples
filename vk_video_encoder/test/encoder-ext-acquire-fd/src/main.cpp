@@ -1494,7 +1494,7 @@ void CaseArmedFdAlongsideCallerWaitArray()
     DestroyCase10Semaphores(callerWait, callerSignal);
 }
 
-int main(int argc, char** argv)
+static int RunTest(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++) {
         if (std::strcmp(argv[i], "--caller-wait-order") == 0) {
@@ -1755,4 +1755,13 @@ int main(int argc, char** argv)
     std::printf("checks: %d, failures: %d\n", g_checks, g_failures);
     std::printf("RESULT: %s\n", (g_failures == 0) ? "PASS" : "FAIL");
     return (g_failures == 0) ? 0 : 1;
+}
+
+int main(int argc, char** argv)
+{
+    const int status = RunTest(argc, argv);
+    // g_encoder holds the library's VkInstance. Released here, on every path, vkDestroyInstance runs while the
+    // layers loaded with that instance are still alive; left to exit(), it runs after their static destructors.
+    g_encoder = nullptr;
+    return status;
 }

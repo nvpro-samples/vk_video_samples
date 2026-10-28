@@ -822,6 +822,12 @@ Examples:
     # used to match "Error creating the encoder instance" instead, which the
     # encoder prints before every one of those -- so each of them skipped.
     if is_unsupported_run(results):
+        # On a rig, where the device is expected, VVS_REQUIRE_GPU makes this a
+        # failure, as it does in the C++ tests (encode_device_probe.h).
+        if os.environ.get("VVS_REQUIRE_GPU") == "1":
+            print(f"FAIL: no encode-capable device, and VVS_REQUIRE_GPU is set "
+                  f"({results[0].error_msg.strip()})")
+            return 1
         print(f"SKIP: no encode-capable device "
               f"({results[0].error_msg.strip()})")
         return 77

@@ -923,6 +923,10 @@ if(BUILD_ENCODER)
                          --codecs av1)
         set_tests_properties(EncoderAv1QualityRoundTrip PROPERTIES
                              SKIP_RETURN_CODE 77 LABELS "gpu")
+        if(VVS_REQUIRE_GPU)
+            # The script reads the environment; the C++ tests get the option as a definition.
+            set_tests_properties(EncoderAv1QualityRoundTrip PROPERTIES ENVIRONMENT "VVS_REQUIRE_GPU=1")
+        endif()
 
         # The gate's own classification, device-free. The round trip above can
         # only exercise these decisions on a host that has an encoder, ffmpeg

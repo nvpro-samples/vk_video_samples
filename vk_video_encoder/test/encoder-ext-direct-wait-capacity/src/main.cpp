@@ -1035,7 +1035,7 @@ void CaseLegacySurplusWaitIsReported(const InputImage& input)
 
 }  // namespace
 
-int main(int argc, char** argv)
+static int RunTest(int argc, char** argv)
 {
     bool direct = true;
     bool legacy = false;
@@ -1214,4 +1214,13 @@ int main(int argc, char** argv)
     g_encoder = nullptr;
 
     return (g_failures == 0) ? 0 : 1;
+}
+
+int main(int argc, char** argv)
+{
+    const int status = RunTest(argc, argv);
+    // g_encoder holds the library's VkInstance. Released here, on every path, vkDestroyInstance runs while the
+    // layers loaded with that instance are still alive; left to exit(), it runs after their static destructors.
+    g_encoder = nullptr;
+    return status;
 }
