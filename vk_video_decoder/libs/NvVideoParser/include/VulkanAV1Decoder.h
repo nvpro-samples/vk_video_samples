@@ -265,7 +265,7 @@ typedef struct _av1_ref_frames_s {
     bool disable_frame_end_update_cdf;
     bool segmentation_enabled;
 
-    int8_t RefFrameSignBias[STD_VIDEO_AV1_NUM_REF_FRAMES];
+    uint8_t RefFrameSignBias;  // bit i is RefFrameSignBias[i] (AV1 6.8.2) of the frame stored here
     uint8_t SavedOrderHints[STD_VIDEO_AV1_NUM_REF_FRAMES];
     uint8_t order_hint;
 } av1_ref_frames_s;
@@ -324,6 +324,8 @@ class VulkanAV1Decoder : public VulkanVideoDecoder {
 
     // According to AV1 spec section - E.2. Decoder model definitions
     int32_t RefOrderHint[BUFFER_POOL_MAX_SIZE];
+    // RefFrameSignBias[] of the current frame (AV1 6.8.2) as a bitmask; 0 for intra frames
+    uint8_t m_RefFrameSignBias;
     av1_ref_frames_s m_pBuffers[BUFFER_POOL_MAX_SIZE];
 
     VkPicIf* m_pCurrPic;

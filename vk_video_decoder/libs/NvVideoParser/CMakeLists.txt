@@ -65,13 +65,13 @@ if ((CMAKE_SYSTEM_PROCESSOR MATCHES "^aarch64") OR (CMAKE_SYSTEM_PROCESSOR MATCH
   target_include_directories(next_start_code_neon PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
   if(WIN32) # clang-cl limitation (SVE intrinsics are not supported by MSVC at the moment)
     MESSAGE(STATUS "Parser optimizations linking ARM64 next_start_code_c next_start_code_neon")
-    target_link_libraries(${VULKAN_VIDEO_PARSER_LIB} next_start_code_c next_start_code_neon)
+    set(NVPARSER_START_CODE_OBJECTS next_start_code_c next_start_code_neon)
   elseif(UNIX)
     add_library(next_start_code_sve OBJECT ${CMAKE_CURRENT_SOURCE_DIR}/src/NextStartCodeSVE.cpp include)
     set_target_properties(next_start_code_sve PROPERTIES COMPILE_FLAGS ${SVE_CPU_FEATURE} )
     target_include_directories(next_start_code_sve PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
     MESSAGE(STATUS "Parser optimizations linking ARM64 next_start_code_c, next_start_code_neon, and next_start_code_sve")
-    target_link_libraries(${VULKAN_VIDEO_PARSER_LIB} next_start_code_c next_start_code_neon next_start_code_sve)
+    set(NVPARSER_START_CODE_OBJECTS next_start_code_c next_start_code_neon next_start_code_sve)
   endif()
 elseif ((CMAKE_SYSTEM_PROCESSOR MATCHES "^arm") OR (CMAKE_SYSTEM_PROCESSOR MATCHES "^ARM"))
   MESSAGE(STATUS "Parser optimization for ARM ${CMAKE_SYSTEM_PROCESSOR}")
@@ -88,7 +88,7 @@ elseif ((CMAKE_SYSTEM_PROCESSOR MATCHES "^arm") OR (CMAKE_SYSTEM_PROCESSOR MATCH
   set_target_properties(next_start_code_neon PROPERTIES COMPILE_FLAGS ${NEON_CPU_FEATURE} )
   target_include_directories(next_start_code_neon PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
   MESSAGE(STATUS "Parser optimizations linking ARM next_start_code_c next_start_code_neon")
-  target_link_libraries(${VULKAN_VIDEO_PARSER_LIB} next_start_code_c next_start_code_neon)
+  set(NVPARSER_START_CODE_OBJECTS next_start_code_c next_start_code_neon)
 else()
   MESSAGE(STATUS "Parser optimization for X86 ${CMAKE_SYSTEM_PROCESSOR}")
   if(WIN32)
@@ -117,8 +117,12 @@ else()
   endif()
   target_include_directories(next_start_code_avx512 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
   MESSAGE(STATUS "Parser optimizations linking x86 next_start_code_c next_start_code_ssse3 next_start_code_avx2 next_start_code_avx512")
-  target_link_libraries(${VULKAN_VIDEO_PARSER_LIB} next_start_code_c next_start_code_ssse3 next_start_code_avx2 next_start_code_avx512)
+  set(NVPARSER_START_CODE_OBJECTS next_start_code_c next_start_code_ssse3 next_start_code_avx2 next_start_code_avx512)
 endif()
+
+# The start-code scanners are object libraries, and next_start_code_c holds the only definition of
+# ParseByteStreamC. Both the shared library and the static archive need all of them.
+target_link_libraries(${VULKAN_VIDEO_PARSER_LIB} ${NVPARSER_START_CODE_OBJECTS})
 
 target_include_directories(${VULKAN_VIDEO_PARSER_LIB} PUBLIC ${VULKAN_VIDEO_PARSER_INCLUDE} ${VULKAN_VIDEO_PARSER_INCLUDE}/../NvVideoParser PRIVATE include)
 target_compile_definitions(${VULKAN_VIDEO_PARSER_LIB}
@@ -141,6 +145,7 @@ endif()
 
 add_library(${VULKAN_VIDEO_PARSER_STATIC_LIB} STATIC ${LIBNVPARSER})
 target_include_directories(${VULKAN_VIDEO_PARSER_STATIC_LIB} PUBLIC ${VULKAN_VIDEO_PARSER_INCLUDE} ${VULKAN_VIDEO_PARSER_INCLUDE}/../NvVideoParser PRIVATE include)
+target_link_libraries(${VULKAN_VIDEO_PARSER_STATIC_LIB} ${NVPARSER_START_CODE_OBJECTS})
 
 install(TARGETS ${VULKAN_VIDEO_PARSER_LIB} ${VULKAN_VIDEO_PARSER_STATIC_LIB}
                 RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}
