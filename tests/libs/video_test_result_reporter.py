@@ -91,14 +91,21 @@ def print_final_summary(counts: tuple, test_type: str) -> bool:
         test_type: Type of test (e.g., "decoder", "encoder")
 
     Returns:
-        True if all tests passed (or only not supported), False otherwise
+        True if no test failed or crashed, False otherwise. A set in which
+        nothing passed is not a failure of this set; whether the run as a
+        whole may pass with nothing passed is the runner's decision.
     """
     passed, not_supported, crashed, failed = counts
     total_errors = failed + crashed
     test_type_upper = test_type.upper()
 
     if total_errors == 0:
-        if not_supported > 0:
+        if passed == 0:
+            print(
+                f"\n○ NO {test_type_upper} TEST PASSED - "
+                f"{not_supported} not supported by hardware/driver"
+            )
+        elif not_supported > 0:
             print(
                 f"\n✓ ALL TESTS COMPLETED - {passed} passed, "
                 f"{not_supported} not supported by hardware/driver"

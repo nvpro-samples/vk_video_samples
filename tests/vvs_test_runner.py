@@ -71,6 +71,10 @@ class FrameworkConfig:  # pylint: disable=too-many-instance-attributes
     keep_files: bool = False
     no_auto_download: bool = False
     timeout: int = DEFAULT_TEST_TIMEOUT
+    # A run in which no test passed fails unless this is set. With no pass
+    # and no failure it verified nothing, which is all a host with no Vulkan
+    # Video device can do.
+    allow_no_pass: bool = False
 
 
 class TestType(Enum):
@@ -93,7 +97,8 @@ class VulkanVideoTestFramework:  # pylint: disable=too-many-instance-attributes
             verbose=options.get('verbose', False),
             keep_files=options.get('keep_files', False),
             no_auto_download=options.get('no_auto_download', False),
-            timeout=options.get('timeout', DEFAULT_TEST_TIMEOUT)
+            timeout=options.get('timeout', DEFAULT_TEST_TIMEOUT),
+            allow_no_pass=options.get('allow_no_pass', False)
         )
         # Skip list configuration
         self.skip_list_path = options.get('skip_list', 'skipped_samples.json')
@@ -154,6 +159,8 @@ class VulkanVideoTestFramework:  # pylint: disable=too-many-instance-attributes
             # Pass encoder-specific CLI options
             if options.get('no_validate_with_decoder', False):
                 encoder_options['validate_with_decoder'] = False
+            if options.get('no_quality_check', False):
+                encoder_options['quality_check'] = False
             decoder_args = options.get('decoder_args')
             if decoder_args:
                 encoder_options['decoder_args'] = decoder_args
@@ -363,7 +370,7 @@ class VulkanVideoTestFramework:  # pylint: disable=too-many-instance-attributes
         """Print final status message
 
         Args:
-            overall_success: Whether all tests passed
+            overall_success: Whether the run passes
             test_counts: Dict with keys 'passed', 'not_supported',
                         'crashed', 'failed'
         """
@@ -372,7 +379,16 @@ class VulkanVideoTestFramework:  # pylint: disable=too-many-instance-attributes
         crashed = test_counts['crashed']
         failed = test_counts['failed']
 
-        if overall_success:
+        if passed == 0 and crashed == 0 and failed == 0:
+            if overall_success:
+                print(f"\n○ NO TEST PASSED - {not_supported} not supported "
+                      f"by hardware/driver, accepted by --allow-no-pass")
+            else:
+                print(f"\n✗ NO TEST PASSED - {not_supported} not supported "
+                      f"by hardware/driver; the run verified nothing "
+                      f"(--allow-no-pass accepts that on a host with no "
+                      f"Vulkan Video device)")
+        elif overall_success:
             if not_supported > 0:
                 print(f"\n✓ ALL TESTS COMPLETED - {passed} passed, "
                       f"{not_supported} not supported by "
@@ -454,6 +470,8 @@ class VulkanVideoTestFramework:  # pylint: disable=too-many-instance-attributes
             print(f"Success Rate: {success_rate:.1f}%")
 
         overall_success = encode_success and decode_success
+        if total_passed == 0 and not self.config.allow_no_pass:
+            overall_success = False
         self._print_final_status(
             overall_success,
             {
@@ -675,6 +693,11 @@ def create_argument_parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_TEST_TIMEOUT,
         help=f"Per-test timeout in seconds (default: {DEFAULT_TEST_TIMEOUT})")
+    parser.add_argument(
+        "--allow-no-pass", action="store_true",
+        help="Pass a run in which no test passed and none failed or "
+             "crashed, as on a host with no Vulkan Video device. Without "
+             "it such a run fails: it verified nothing")
 
     # Encoder-specific options
     encoder_group = parser.add_argument_group("encoder options")
@@ -692,6 +715,10 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "--no-validate-with-decoder", action="store_true",
         help="Disable validation of encoder output with decoder "
              "(validation enabled by default)")
+    encoder_group.add_argument(
+        "--no-quality-check", action="store_true",
+        help="Do not decode the encoded stream in software and measure its "
+             "PSNR against the source (measured by default)")
     encoder_group.add_argument(
         "--decoder-args", nargs="+",
         help="Additional arguments to pass to decoder during "
@@ -805,10 +832,12 @@ def run_framework_tests(args: argparse.Namespace, encoder_path: str,
         decode_display=args.decode_display,
         no_verify_md5=args.no_verify_md5,
         no_validate_with_decoder=args.no_validate_with_decoder,
+        no_quality_check=args.no_quality_check,
         decoder_args=args.decoder_args,
         extended=args.extended,
         codec_filter=args.codec,
         test_pattern=args.test,
+        allow_no_pass=args.allow_no_pass,
     )
 
     # Determine test type filter

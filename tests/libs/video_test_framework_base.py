@@ -440,6 +440,8 @@ class VulkanVideoTestFrameworkBase:
         }
         if result.meta.get("rate_control") is not None:
             result_dict["rate_control"] = result.meta["rate_control"]
+        if result.meta.get("quality") is not None:
+            result_dict["quality"] = result.meta["quality"]
 
         if hasattr(result.config, 'full_path'):
             result_dict["input_file"] = str(result.config.full_path)
@@ -936,6 +938,9 @@ class VulkanVideoTestFrameworkBase:
         rate_control_summary = result.meta.get("rate_control_summary")
         if rate_control_summary:
             print(f"   Rate control: {rate_control_summary}")
+        quality_summary = result.meta.get("quality_summary")
+        if quality_summary:
+            print(f"   PSNR: {quality_summary}")
 
         decoder_output = result.meta.get("decoder_validation_output")
         if decoder_output and result.status == VideoTestStatus.ERROR:

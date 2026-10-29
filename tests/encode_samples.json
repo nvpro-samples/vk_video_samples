@@ -10,7 +10,11 @@
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
       "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
-      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 37.8,
+        "min_picture_psnr": 35.1
+      }
     },
     {
       "name": "h264_baseline_profile",
@@ -22,7 +26,11 @@
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
       "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
-      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 37.4,
+        "min_picture_psnr": 34.7
+      }
     },
     {
       "name": "h264_main_profile",
@@ -34,7 +42,11 @@
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
       "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
-      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 37.6,
+        "min_picture_psnr": 34.7
+      }
     },
     {
       "name": "h264_high_profile",
@@ -46,7 +58,11 @@
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
       "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
-      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 37.8,
+        "min_picture_psnr": 35.1
+      }
     },
     {
       "name": "h264_high444_profile",
@@ -62,7 +78,11 @@
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i444.yuv",
       "source_checksum": "1887c736739db1e5b8c67a5cc873c6135edb5a4e6930a0b0183813b60f2ad761",
       "source_filepath": "video/yuv/352x288_15_i444.yuv",
-      "validate_with_decoder": false
+      "validate_with_decoder": false,
+      "quality_check": {
+        "min_mean_psnr": 37.4,
+        "min_picture_psnr": 34.8
+      }
     },
     {
       "name": "h264_ip_gop",
@@ -78,7 +98,11 @@
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
       "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
-      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 37.6,
+        "min_picture_psnr": 34.7
+      }
     },
     {
       "name": "h264_cbr_ratecontrol",
@@ -95,7 +119,11 @@
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
       "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
-      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 44.5,
+        "min_picture_psnr": 40.8
+      }
     },
     {
       "name": "h264_vbr_ratecontrol",
@@ -114,7 +142,11 @@
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
       "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
-      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 45.5,
+        "min_picture_psnr": 43.2
+      }
     },
     {
       "name": "h264_small_frame",
@@ -126,7 +158,11 @@
       "height": 144,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/176x144_30_i420.yuv",
       "source_checksum": "235d1727dc8b4d3766fcbb52a8bfc5a87bcb050d3d7a15785bd30fa4a473c8e4",
-      "source_filepath": "video/yuv/176x144_30_i420.yuv"
+      "source_filepath": "video/yuv/176x144_30_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 43.4,
+        "min_picture_psnr": 40.3
+      }
     },
     {
       "name": "h265_default",
@@ -138,7 +174,11 @@
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
       "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
-      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 42.1,
+        "min_picture_psnr": 38.7
+      }
     },
     {
       "name": "h265_main_profile",
@@ -150,7 +190,11 @@
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
       "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
-      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 42.1,
+        "min_picture_psnr": 38.7
+      }
     },
     {
       "name": "h265_main10_profile",
@@ -165,7 +209,11 @@
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_420_10le.yuv",
       "source_checksum": "cd04579c7115e33d01a874f4167a99ba73e165eb5086b5ffa66a8b018e13efb0",
-      "source_filepath": "video/yuv/352x288_15_i420_10le.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420_10le.yuv",
+      "quality_check": {
+        "min_mean_psnr": 38.7,
+        "min_picture_psnr": 35.4
+      }
     },
     {
       "name": "h265_ip_gop",
@@ -181,7 +229,11 @@
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
       "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
-      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 42.1,
+        "min_picture_psnr": 38.7
+      }
     },
     {
       "name": "av1_default",
@@ -193,7 +245,11 @@
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
       "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
-      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 45.5,
+        "min_picture_psnr": 42.4
+      }
     },
     {
       "name": "av1_main_profile",
@@ -205,7 +261,11 @@
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
       "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
-      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 45.5,
+        "min_picture_psnr": 42.4
+      }
     },
     {
       "name": "av1_high_profile",
@@ -249,19 +309,41 @@
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
       "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
-      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 44.4,
+        "min_picture_psnr": 40.7
+      }
     },
     {
       "name": "h264_resolution_too_small",
       "codec": "h264",
       "profile": null,
-      "extra_args": null,
-      "description": "Test H.264 encoding rejects resolution below hardware minimum",
-      "width": 128,
-      "height": 48,
+      "extra_args": [
+        "--encodeWidth",
+        "128",
+        "--encodeHeight",
+        "48",
+        "--rateControlMode",
+        "disabled",
+        "--qpI",
+        "20",
+        "--qpP",
+        "20",
+        "--qpB",
+        "20"
+      ],
+      "description": "H.264 encode of a 128x48 picture, below the minimum coded extent of most devices (160x64 for H.264 and H.265, 192x128 for AV1 on NVIDIA). The encoder pads the picture to the device's minimum and signals the 128x48 picture in the stream (its SPS frame cropping), so the stream must decode to exactly 128x48 (quality_check exact_extent) and match the source. The input is the top-left 128x48 window (--encodeWidth/--encodeHeight) of the 352x288 clip, so the pictures are real, correlated video, and constant QP 20 makes the PSNR measure the extent handling rather than the rate control.",
+      "width": 352,
+      "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
       "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
-      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 45.2,
+        "min_picture_psnr": 43.3,
+        "exact_extent": true
+      }
     },
     {
       "name": "h264_resolution_too_large",
@@ -280,13 +362,31 @@
       "name": "h265_resolution_too_small",
       "codec": "h265",
       "profile": null,
-      "extra_args": null,
-      "description": "Test H.265 encoding rejects resolution below hardware minimum",
-      "width": 128,
-      "height": 48,
+      "extra_args": [
+        "--encodeWidth",
+        "128",
+        "--encodeHeight",
+        "48",
+        "--rateControlMode",
+        "disabled",
+        "--qpI",
+        "20",
+        "--qpP",
+        "20",
+        "--qpB",
+        "20"
+      ],
+      "description": "H.265 encode of a 128x48 picture, below the minimum coded extent of most devices (160x64 for H.264 and H.265, 192x128 for AV1 on NVIDIA). The encoder pads the picture to the device's minimum and signals the 128x48 picture in the stream (its SPS conformance window), so the stream must decode to exactly 128x48 (quality_check exact_extent) and match the source. The input is the top-left 128x48 window (--encodeWidth/--encodeHeight) of the 352x288 clip, so the pictures are real, correlated video, and constant QP 20 makes the PSNR measure the extent handling rather than the rate control.",
+      "width": 352,
+      "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
       "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
-      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 45.2,
+        "min_picture_psnr": 43.4,
+        "exact_extent": true
+      }
     },
     {
       "name": "h265_resolution_too_large",
@@ -305,13 +405,31 @@
       "name": "av1_resolution_too_small",
       "codec": "av1",
       "profile": null,
-      "extra_args": null,
-      "description": "Test AV1 encoding rejects resolution below hardware minimum",
-      "width": 128,
-      "height": 48,
+      "extra_args": [
+        "--encodeWidth",
+        "128",
+        "--encodeHeight",
+        "48",
+        "--rateControlMode",
+        "disabled",
+        "--qpI",
+        "20",
+        "--qpP",
+        "20",
+        "--qpB",
+        "20"
+      ],
+      "description": "AV1 encode of a 128x48 picture, below the minimum coded extent of most devices (160x64 for H.264 and H.265, 192x128 for AV1 on NVIDIA). The encoder pads the picture to the device's minimum and signals the 128x48 picture in the stream (its render size), so the stream must decode to exactly 128x48 (quality_check exact_extent) and match the source. The input is the top-left 128x48 window (--encodeWidth/--encodeHeight) of the 352x288 clip, so the pictures are real, correlated video, and constant QP 20 makes the PSNR measure the extent handling rather than the rate control.",
+      "width": 352,
+      "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
       "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
-      "source_filepath": "video/yuv/352x288_15_i420.yuv"
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 46.7,
+        "min_picture_psnr": 44.7,
+        "exact_extent": true
+      }
     },
     {
       "name": "av1_resolution_too_large",
@@ -377,6 +495,10 @@
         "vbv_buffer_size": 10010,
         "expected_frames": 90,
         "max_bitrate_error": 0.35
+      },
+      "quality_check": {
+        "min_mean_psnr": 35.1,
+        "min_picture_psnr": 27.1
       }
     },
     {
@@ -414,6 +536,10 @@
         "expected_frames": 90,
         "max_bitrate_error": 0.35,
         "max_frame_ratio": 3.0
+      },
+      "quality_check": {
+        "min_mean_psnr": 32.3,
+        "min_picture_psnr": 26.9
       }
     },
     {
@@ -450,6 +576,10 @@
         "vbv_buffer_size": 10010,
         "expected_frames": 90,
         "max_bitrate_error": 0.35
+      },
+      "quality_check": {
+        "min_mean_psnr": 35.5,
+        "min_picture_psnr": 26.5
       }
     },
     {
@@ -487,6 +617,10 @@
         "expected_frames": 90,
         "max_bitrate_error": 0.35,
         "max_frame_ratio": 3.0
+      },
+      "quality_check": {
+        "min_mean_psnr": 34.3,
+        "min_picture_psnr": 27.5
       }
     },
     {
@@ -523,6 +657,10 @@
         "vbv_buffer_size": 10010,
         "expected_frames": 90,
         "max_bitrate_error": 0.35
+      },
+      "quality_check": {
+        "min_mean_psnr": 36.2,
+        "min_picture_psnr": 23.7
       }
     },
     {
@@ -560,6 +698,10 @@
         "expected_frames": 90,
         "max_bitrate_error": 0.35,
         "max_frame_ratio": 3.0
+      },
+      "quality_check": {
+        "min_mean_psnr": 34.7,
+        "min_picture_psnr": 23.8
       }
     }
   ]
