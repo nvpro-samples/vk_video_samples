@@ -97,6 +97,36 @@ def test_a_decode_failure_is_not_a_skip():
 
 
 # --------------------------------------------------------------------------
+# An unsupported run under VVS_REQUIRE_GPU: no encoder fails, an encoder
+# without the codecs under test skips.
+# --------------------------------------------------------------------------
+
+def test_unsupported_run_skips_without_require_gpu():
+    assert gate.unsupported_run_exit(False, None) == 77
+
+
+def test_unsupported_run_skips_when_the_probe_encodes():
+    assert gate.unsupported_run_exit(True, 0) == 77
+
+
+def test_unsupported_run_fails_when_the_probe_is_unsupported():
+    assert gate.unsupported_run_exit(True, gate.ENCODER_EXIT_UNSUPPORTED) == 1
+
+
+def test_unsupported_run_fails_when_the_probe_fails():
+    assert gate.unsupported_run_exit(True, 1) == 1
+
+
+def test_unsupported_run_fails_without_a_probe_status():
+    assert gate.unsupported_run_exit(True, None) == 1
+
+
+def test_the_probe_codec_encodes_the_input_bit_depth():
+    assert gate.probe_codec_for(8) == "h264"
+    assert gate.probe_codec_for(10) == "h265"
+
+
+# --------------------------------------------------------------------------
 # The completeness decision. A readable prefix is not a pass.
 # --------------------------------------------------------------------------
 
