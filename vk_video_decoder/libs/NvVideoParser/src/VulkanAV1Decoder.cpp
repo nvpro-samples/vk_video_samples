@@ -70,6 +70,7 @@ VulkanAV1Decoder::VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std, bool an
     , RefValid{}
     , ref_frame_idx{}
     , RefOrderHint{}
+    , m_RefFrameSignBias(0)
     , m_pBuffers{}
     , m_pCurrPic(nullptr)
     , m_bOutputAllLayers()
@@ -152,15 +153,14 @@ bool VulkanAV1Decoder::AddBuffertoOutputQueue(VkPicIf* pDispPic, bool bShowableF
             pDispPic->Release();
         }
     } else {
-        assert(m_numOutFrames == 0 || m_numOutFrames == 1);
-
-        if (m_numOutFrames > 0) {
+        // One entry: a temporal unit outputs its last shown frame, the one of its highest spatial layer.
+        if ((m_numOutFrames > 0) && (m_pOutFrame[0] != nullptr)) {
             m_pOutFrame[0]->Release();
         }
 
         m_pOutFrame[0] = pDispPic;
         m_showableFrame[0] = bShowableFrame;
-        m_numOutFrames++;
+        m_numOutFrames = 1;
     }
     return true;
 }
@@ -353,11 +353,10 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
 
     // Setup slot information
     av1->setupSlot.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_DPB_SLOT_INFO_KHR;
+    av1->setupSlotInfo.frame_type = m_PicData.std_info.frame_type;
     av1->setupSlotInfo.OrderHint = m_PicData.std_info.OrderHint;
     memcpy(&av1->setupSlotInfo.SavedOrderHints, m_PicData.std_info.OrderHints, STD_VIDEO_AV1_NUM_REF_FRAMES);
-    for (size_t av1name = 0; av1name < STD_VIDEO_AV1_NUM_REF_FRAMES; av1name += 1) {
-        av1->setupSlotInfo.RefFrameSignBias |= (m_pBuffers[0].RefFrameSignBias[av1name] <= 0) << av1name;
-    }
+    av1->setupSlotInfo.RefFrameSignBias = m_RefFrameSignBias;
     av1->setupSlotInfo.flags.disable_frame_end_update_cdf = m_PicData.std_info.flags.disable_frame_end_update_cdf;
     av1->setupSlotInfo.flags.segmentation_enabled = m_PicData.std_info.flags.segmentation_enabled;
 
@@ -369,8 +368,8 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
         av1->dpbSlotInfos[i].flags.segmentation_enabled = m_pBuffers[i].segmentation_enabled;
         av1->dpbSlotInfos[i].frame_type = m_pBuffers[i].frame_type;
         av1->dpbSlotInfos[i].OrderHint = m_pBuffers[i].order_hint;
+        av1->dpbSlotInfos[i].RefFrameSignBias = m_pBuffers[i].RefFrameSignBias;
         for (size_t av1name = STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME; av1name < STD_VIDEO_AV1_NUM_REF_FRAMES; av1name += 1) {
-            av1->dpbSlotInfos[i].RefFrameSignBias |= (m_pBuffers[i].RefFrameSignBias[av1name] <= 0) << av1name;
             av1->dpbSlotInfos[i].SavedOrderHints[av1name] = m_pBuffers[i].SavedOrderHints[av1name];
         }
     }
@@ -430,10 +429,9 @@ void VulkanAV1Decoder::UpdateFramePointers(VkPicIf* currentPicture)
             m_pBuffers[ref_index].frame_type = pStd->frame_type;
             m_pBuffers[ref_index].order_hint = pStd->OrderHint;
             for (uint8_t refName = STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME; refName < STD_VIDEO_AV1_NUM_REF_FRAMES; refName ++) {
-                uint8_t ref_order_hint = pStd->OrderHints[refName];
-                m_pBuffers[ref_index].SavedOrderHints[refName] = ref_order_hint;
-                m_pBuffers[ref_index].RefFrameSignBias[refName] = GetRelativeDist(pStd->OrderHint, ref_order_hint);
+                m_pBuffers[ref_index].SavedOrderHints[refName] = pStd->OrderHints[refName];
             }
+            m_pBuffers[ref_index].RefFrameSignBias = m_RefFrameSignBias;
 
             // film grain
             memcpy(&m_pBuffers[ref_index].film_grain_params, &m_PicData.filmGrain, sizeof(StdVideoAV1FilmGrain));
@@ -444,7 +442,8 @@ void VulkanAV1Decoder::UpdateFramePointers(VkPicIf* currentPicture)
             memcpy(&m_pBuffers[ref_index].lf_mode_delta, m_PicData.loopFilter.loop_filter_mode_deltas, ARRAY_SIZE(m_PicData.loopFilter.loop_filter_mode_deltas));
             // segmentation
             memcpy(&m_pBuffers[ref_index].seg.FeatureEnabled, pic_data->segmentation.FeatureEnabled, ARRAY_SIZE(pic_data->segmentation.FeatureEnabled));
-            memcpy(&m_pBuffers[ref_index].seg.FeatureData, pic_data->segmentation.FeatureData, ARRAY_SIZE(pic_data->segmentation.FeatureData));
+            memcpy(&m_pBuffers[ref_index].seg.FeatureData, pic_data->segmentation.FeatureData, sizeof(m_pBuffers[ref_index].seg.FeatureData));
+            m_pBuffers[ref_index].segmentation_enabled = pStd->flags.segmentation_enabled;
             m_pBuffers[ref_index].primary_ref_frame = m_PicData.std_info.primary_ref_frame;
             m_pBuffers[ref_index].base_q_index = pic_data->quantization.base_q_idx;
             m_pBuffers[ref_index].disable_frame_end_update_cdf = pStd->flags.disable_frame_end_update_cdf;
@@ -703,7 +702,7 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
         sps->operating_points_cnt_minus_1 = 0;
         sps->operating_point_idc[0] = 0;
         sps->level[0] = (StdVideoAV1Level)u(5);
-        if (sps->level[0] > STD_VIDEO_AV1_LEVEL_3_3) {
+        if (!(sps->level[0] <= STD_VIDEO_AV1_LEVEL_7_3 || sps->level[0] == 31 /* LEVEL_MAX */)) {
             return false;
         }
 
@@ -1157,6 +1156,8 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
         pFilmGrain->flags.overlap_flag = u(1);
         pFilmGrain->flags.clip_to_restricted_range = u(1);
     } else {
+        // reset_grain_params(): apply_grain is one of the film grain syntax elements it clears.
+        pStd->flags.apply_grain = 0;
         memset(pFilmGrain, 0, sizeof(StdVideoAV1FilmGrain));
     }
 
@@ -1239,9 +1240,6 @@ bool VulkanAV1Decoder::DecodeTileInfo()
         }
 
         tile_width_sb = (sb_cols + (1 << log2_tile_cols) - 1) >> log2_tile_cols;
-        for (uint32_t off = 0, i = 0; off < sb_cols; off += tile_width_sb)
-            pic_data->MiColStarts[i++] = off;
-
         pic_data->tileInfo.TileCols = (sb_cols + tile_width_sb - 1) / tile_width_sb;
 
         min_log2_tile_rows = std::max(int(min_log2_tiles - log2_tile_cols), 0);
@@ -1253,9 +1251,6 @@ bool VulkanAV1Decoder::DecodeTileInfo()
         }
 
         tile_height_sb = (sb_rows + (1 << log2_tile_rows) - 1) >> log2_tile_rows;
-        for (uint32_t off = 0, i = 0; off < sb_rows; off += tile_height_sb)
-            pic_data->MiRowStarts[i++] = off;
-
         pic_data->tileInfo.TileRows = (sb_rows + tile_height_sb - 1) / tile_height_sb;
 
         // Derive tile_width_in_sbs_minus_1 and tile_height_in_sbs_minus_1
@@ -1269,19 +1264,19 @@ bool VulkanAV1Decoder::DecodeTileInfo()
             pic_data->height_in_sbs_minus_1[tile_row] = tile_height_sb - 1;
         pic_data->height_in_sbs_minus_1[tile_row] = sb_rows - (pic_data->tileInfo.TileRows - 1) * tile_height_sb - 1;
 
-        // Derivce superblock column / row start positions
+        // MiColStarts and MiRowStarts are in mode info units (AV1 6.8.14), as Vulkan takes them.
         uint32_t i, start_sb;
         for (i = 0, start_sb = 0; start_sb < sb_cols; i++) {
-            pic_data->MiColStarts[i] = start_sb;
+            pic_data->MiColStarts[i] = start_sb << sb_shift;
             start_sb += tile_width_sb;
         }
-        pic_data->MiColStarts[i] = sb_cols;
+        pic_data->MiColStarts[i] = mi_cols;
 
         for (i = 0, start_sb = 0; start_sb < sb_rows; i++) {
-            pic_data->MiRowStarts[i] = start_sb;
+            pic_data->MiRowStarts[i] = start_sb << sb_shift;
             start_sb += tile_height_sb;
         }
-        pic_data->MiRowStarts[i] = sb_rows;
+        pic_data->MiRowStarts[i] = mi_rows;
     } else {
         uint32_t i, widest_tile_sb, start_sb, size_sb, max_width, max_height;
         widest_tile_sb = 0;
@@ -1289,13 +1284,14 @@ bool VulkanAV1Decoder::DecodeTileInfo()
 
         start_sb = 0;
         for (i = 0; start_sb < sb_cols && i < STD_VIDEO_AV1_MAX_TILE_COLS; i++) {
-            pic_data->MiColStarts[i] = start_sb;
+            pic_data->MiColStarts[i] = start_sb << sb_shift;
             max_width = std::min(sb_cols - start_sb, max_tile_width_sb);
             pic_data->width_in_sbs_minus_1[i] = (max_width > 1) ? SwGetUniform(max_width) : 0;
             size_sb = pic_data->width_in_sbs_minus_1[i] + 1;
             widest_tile_sb = std::max(size_sb, widest_tile_sb);
             start_sb += size_sb;
         }
+        pic_data->MiColStarts[i] = mi_cols;
         log2_tile_cols = tile_log2(1, i);
         pic_data->tileInfo.TileCols = i;
 
@@ -1307,12 +1303,13 @@ bool VulkanAV1Decoder::DecodeTileInfo()
 
         start_sb = 0;
         for (i = 0; start_sb < sb_rows && i < STD_VIDEO_AV1_MAX_TILE_ROWS; i++) {
-            pic_data->MiRowStarts[i] = start_sb;
+            pic_data->MiRowStarts[i] = start_sb << sb_shift;
             max_height = std::min(sb_rows - start_sb, max_tile_height_sb);
             pic_data->height_in_sbs_minus_1[i] = (max_height > 1) ? SwGetUniform(max_height) : 0;
             size_sb = pic_data->height_in_sbs_minus_1[i] + 1;
             start_sb += size_sb;
         }
+        pic_data->MiRowStarts[i] = mi_rows;
         log2_tile_rows = tile_log2(1, i);
         pic_data->tileInfo.TileRows = i;
     }
@@ -1878,6 +1875,11 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
                 memcpy(pic_info->segmentation.FeatureEnabled, m_pBuffers[show_existing_frame_index].seg.FeatureEnabled, STD_VIDEO_AV1_MAX_SEGMENTS * sizeof(pic_info->segmentation.FeatureEnabled[0]));
                 memcpy(pic_info->segmentation.FeatureData, m_pBuffers[show_existing_frame_index].seg.FeatureData, STD_VIDEO_AV1_MAX_SEGMENTS * STD_VIDEO_AV1_SEG_LVL_MAX * sizeof(pic_info->segmentation.FeatureData[0][0]));
                 pStd->OrderHint = RefOrderHint[show_existing_frame_index];
+                for (uint8_t refName = STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME; refName < STD_VIDEO_AV1_NUM_REF_FRAMES; refName++) {
+                    pStd->OrderHints[refName] = m_pBuffers[show_existing_frame_index].SavedOrderHints[refName];
+                }
+                pStd->flags.segmentation_enabled = m_pBuffers[show_existing_frame_index].segmentation_enabled;
+                m_RefFrameSignBias = m_pBuffers[show_existing_frame_index].RefFrameSignBias;
                 UpdateFramePointers(m_pBuffers[show_existing_frame_index].buffer);
             } else {
                 pStd->refresh_frame_flags = 0;
@@ -1913,6 +1915,9 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
             RefValid[i] = 0;
             RefOrderHint[i] = 0;
         }
+        for (uint32_t i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
+            pStd->OrderHints[STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME + i] = 0;
+        }
     }
 
     pic_flags->disable_cdf_update = u(1);
@@ -1940,6 +1945,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
     pic_flags->frame_refs_short_signaling = 0;
     pic_flags->allow_intrabc = 0;
     pStd->primary_ref_frame = STD_VIDEO_AV1_PRIMARY_REF_NONE;
+    m_RefFrameSignBias = 0;
     pic_flags->frame_size_override_flag = 0;
 
     if (!sps->flags.reduced_still_picture_header) {
@@ -1999,6 +2005,10 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
         if (!pic_flags->error_resilient_mode && !(IsFrameIntra())) {
             pStd->primary_ref_frame = u(3);
         }
+    } else {
+        // frame_id_numbers_present_flag and enable_order_hint are 0 in a reduced still picture header.
+        pStd->current_frame_id = 0;
+        pStd->OrderHint = 0;
     }
 
     if (sps->decoder_model_info_present) {
@@ -2050,11 +2060,10 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
         for (uint32_t buf_idx = 0; buf_idx < STD_VIDEO_AV1_NUM_REF_FRAMES; buf_idx++) {
             // ref_order_hint[i]
             int offset = u(sps->order_hint_bits_minus_1 + 1);
-            // assert(buf_idx < FRAME_BUFFERS);
-            if ((buf_idx == (uint32_t)-1) || (offset != RefOrderHint[buf_idx])) {
-                //RefValid[buf_idx] = 0;
-                //RefOrderHint[buf_idx] = frame_offset;
-                assert(0);
+            if (offset != RefOrderHint[buf_idx]) {
+                // AV1 5.9.2 invalidates the buffer. Annex C, as libaom does, gives it the expected order hint.
+                RefValid[buf_idx] = 0;
+                RefOrderHint[buf_idx] = offset;
             }
         }
     }
@@ -2151,6 +2160,12 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
             }
 
             pStd->OrderHints[i + STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME] = RefOrderHint[ref_frame_idx[i]];
+
+            // RefFrameSignBias[LAST_FRAME + i] = get_relative_dist(hint, OrderHint) > 0; GetRelativeDist
+            // returns 0 when enable_order_hint is 0, which makes the bias 0 as the spec requires.
+            if (GetRelativeDist(RefOrderHint[ref_frame_idx[i]], pStd->OrderHint) > 0) {
+                m_RefFrameSignBias |= 1 << (i + STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME);
+            }
          }
 
         /*      for (int i = 0; i < REFS_PER_FRAME; ++i)
@@ -2206,7 +2221,8 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
     }
 
     for (uint32_t i = 0; i < STD_VIDEO_AV1_MAX_SEGMENTS; ++i) {
-        int qindex = pic_flags->segmentation_enabled && (pic_info->segmentation.FeatureEnabled[i] & 0)
+        // get_qindex(1, i) (AV1 7.12.2): bit 0 of FeatureEnabled is SEG_LVL_ALT_Q.
+        int qindex = pic_flags->segmentation_enabled && (pic_info->segmentation.FeatureEnabled[i] & 1)
             ? pic_info->segmentation.FeatureData[i][0] + pic_info->quantization.base_q_idx : pic_info->quantization.base_q_idx;
         qindex = CLAMP(qindex, 0, 255);
         lossless[i] = qindex == 0 && pic_info->quantization.DeltaQYDc == 0 &&
@@ -2316,10 +2332,21 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
 	// Compute the tile group size
     for (int TileNum = tg_start; TileNum <= tg_end; TileNum++)
     {
+        // Check before writing: pStdSps and the other fields follow the tile arrays.
+        if (m_PicData.khr_info.tileCount >= ARRAY_SIZE(m_PicData.tileOffsets)) {
+            nvParserErrorLog("s", "\nError: Tile count exceeds the size of the tile arrays\n");
+            return false;
+        }
+
         int lastTile = TileNum == tg_end;
         size_t tileSize = 0;
         if (lastTile)
         {
+            // The last tile takes the rest of the OBU, which the tiles before it must not overrun.
+            if ((uint32_t)consumedBytes > hdr.payload_size) {
+                nvParserErrorLog("s", "\nError: Tile sizes exceed the tile group\n");
+                return false;
+            }
             tileSize = hdr.payload_size - consumedBytes;
             m_PicData.tileOffsets[m_PicData.khr_info.tileCount] = (uint32_t)m_nalu.start_offset + (uint32_t)consumedBytes;
         }
@@ -2329,20 +2356,15 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
             consumedBytes += tile_size_bytes_minus_1 + 1;
             m_PicData.tileOffsets[m_PicData.khr_info.tileCount] = (uint32_t)m_nalu.start_offset + (uint32_t)consumedBytes;
 
-            // Add bounds checking and safe conversion
-            if (tile_size_minus_1 > (SIZE_MAX - 1)) {
-                return false; // Tile size too large
+            // The tile has to fit in what is left of the OBU.
+            if (((uint32_t)consumedBytes > hdr.payload_size) || (tile_size_minus_1 >= hdr.payload_size - (uint32_t)consumedBytes)) {
+                nvParserErrorLog("s", "\nError: Tile sizes exceed the tile group\n");
+                return false;
             }
             tileSize = (size_t)(tile_size_minus_1 + 1);
             consumedBytes += (uint32_t)tileSize;
 
             skip_bits((uint32_t)(tileSize * 8));
-        }
-
-        // Bounds check to prevent buffer overflow into pStdSps and other fields
-        if (m_PicData.khr_info.tileCount >= 64) {
-            nvParserErrorLog("s", "\nError: Tile count exceeds maximum of 64 tiles\n");
-            return false;
         }
 
         m_PicData.tileSizes[m_PicData.khr_info.tileCount] = (uint32_t)tileSize;

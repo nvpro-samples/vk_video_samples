@@ -282,10 +282,11 @@ struct VkParserAv1PictureData {
 
     StdVideoAV1TileInfo tileInfo;
     // --- The following fields are referred to by pointer from tileInfo ---
-    uint16_t MiColStarts[64];
-    uint16_t MiRowStarts[64];
-    uint16_t width_in_sbs_minus_1[64];
-    uint16_t height_in_sbs_minus_1[64];
+    // MiColStarts and MiRowStarts end with one entry past the last tile: the frame's MiCols and MiRows (AV1 5.9.15).
+    uint16_t MiColStarts[STD_VIDEO_AV1_MAX_TILE_COLS + 1];
+    uint16_t MiRowStarts[STD_VIDEO_AV1_MAX_TILE_ROWS + 1];
+    uint16_t width_in_sbs_minus_1[STD_VIDEO_AV1_MAX_TILE_COLS];
+    uint16_t height_in_sbs_minus_1[STD_VIDEO_AV1_MAX_TILE_ROWS];
     // --- End of tileInfo data ---
 
     StdVideoAV1Quantization quantization;
@@ -295,10 +296,9 @@ struct VkParserAv1PictureData {
     StdVideoAV1LoopRestoration loopRestoration;
     StdVideoAV1GlobalMotion globalMotion;
     StdVideoAV1FilmGrain filmGrain;
-    uint32_t tileOffsets[64];  // TODO: Hack until the interfaces get cleaned up (all the cached parameters should be ref-counted
-                               // etc, AV1_MAX_COLS*AV1_MAX_ROWS is larger than 64, switch to dynamic structure. Cheat while the CTS
-                               // uses simpler bitstreams)
-    uint32_t tileSizes[64];
+    // Room for the most tiles a frame can have: TileCols and TileRows are at most 64 each (AV1 5.9.15).
+    uint32_t tileOffsets[STD_VIDEO_AV1_MAX_TILE_COLS * STD_VIDEO_AV1_MAX_TILE_ROWS];
+    uint32_t tileSizes[STD_VIDEO_AV1_MAX_TILE_COLS * STD_VIDEO_AV1_MAX_TILE_ROWS];
     // --- End of pKHR data ---
 
     const StdVideoPictureParametersSet* pStdSps;
