@@ -38,6 +38,7 @@ VulkanAV1Decoder::VulkanAV1Decoder(VkVideoCodecOperationFlagBitsKHR std, bool an
     , spatial_id()
     , m_bSPSReceived()
     , m_bSPSChanged()
+    , m_bSeenFrameHeader()
     , m_obuAnnexB(annexB)
     , timing_info_present()
     , timing_info()
@@ -106,6 +107,7 @@ void VulkanAV1Decoder::InitParser()
     m_bNoStartCodes = true;
     m_bEmulBytesPresent = false;
     m_bSPSReceived = false;
+    m_bSeenFrameHeader = false;
     EndOfStream();
 }
 
@@ -471,32 +473,38 @@ void VulkanAV1Decoder::lEndPicture(VkPicIf* pDispPic, bool bEvict)
 }
 
 //
+// uvlc() (AV1 4.10.3). The leading zeros stop at 32: the one value of a uvlc() syntax element that
+// needs more, 2^32 - 1, is out of its range, and the reader returns zeros past the end of a packet,
+// so a truncated uvlc() would never end.
 uint32_t VulkanAV1Decoder::ReadUvlc()
 {
-    int lz = 0;
-    while (!u(1)) lz++;
-
-    if (lz >= 32) {
-        return BIT32_MAX;
+    uint32_t lz = 0;
+    while (!u(1)) {
+        if (++lz >= 32) {
+            return BIT32_MAX;
+        }
     }
     uint32_t v = u(lz);
-    v += (1 << lz) - 1;
+    v += (1u << lz) - 1;
     return v;
 }
 
 // Read OBU size (size does not include obu_header or the obu_size syntax element
 bool VulkanAV1Decoder::ReadObuSize(const uint8_t* data, uint32_t datasize, uint32_t* obu_size, uint32_t* length_feild_size)
 {
+    // leb128() (AV1 4.10.5) reads up to 8 bytes, and its value is at most 2^32 - 1: checked on the 64 bits
+    // it is decoded in, before it is narrowed to the 32 bits it is returned in.
+    uint64_t value = 0;
     for (uint32_t i = 0; i < 8 && (i < datasize); ++i) {
         const uint8_t decoded_byte = data[i] & 0x7f;
-        *obu_size |= ((uint64_t)decoded_byte) << (i * 7);
+        value |= ((uint64_t)decoded_byte) << (i * 7);
         if ((data[i] >> 7) == 0) {
             *length_feild_size = i + 1;
-            if (*obu_size > BIT32_MAX) {
+            if (value > BIT32_MAX) {
                 return false;
-            } else {
-                return true;
             }
+            *obu_size = (uint32_t)value;
+            return true;
         }
     }
 
@@ -607,6 +615,7 @@ bool VulkanAV1Decoder::ParseOBUHeaderAndSize(const uint8_t* data, uint32_t datas
 
 bool VulkanAV1Decoder::ParseObuTemporalDelimiter()
 {
+    m_bSeenFrameHeader = false;
     return true;
 }
 
@@ -1062,9 +1071,11 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
         }
 
         // Scaling functions parameters
+        // num_y_points, num_cb_points and num_cr_points are 4-bit syntax elements, and
+        // StdVideoAV1FilmGrain holds 14, 10 and 10 points (AV1 6.8.20 limits them to the same).
         pFilmGrain->num_y_points = u(4);
         if (pFilmGrain->num_y_points > STD_VIDEO_AV1_MAX_NUM_Y_POINTS) {
-            assert("num_y_points exceeds the maximum value\n");
+            return false;
         }
 
         for (uint32_t i = 0; i < pFilmGrain->num_y_points; i++) {
@@ -1083,8 +1094,8 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
             pFilmGrain->num_cr_points = 0;
         } else {
             pFilmGrain->num_cb_points = u(4);
-            if (pFilmGrain->num_cb_points > STD_VIDEO_AV1_MAX_NUM_CR_POINTS) {
-                assert(!"num_cb_points exceeds the maximum value\n");
+            if (pFilmGrain->num_cb_points > STD_VIDEO_AV1_MAX_NUM_CB_POINTS) {
+                return false;
             }
 
             for (uint32_t i = 0; i < pFilmGrain->num_cb_points; i++) {
@@ -1097,7 +1108,7 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
 
             pFilmGrain->num_cr_points = u(4);
             if (pFilmGrain->num_cr_points > STD_VIDEO_AV1_MAX_NUM_CR_POINTS) {
-                assert(!"num_cr_points exceeds the maximum value\n");
+                return false;
             }
 
             for (uint32_t i = 0; i < pFilmGrain->num_cr_points; i++) {
@@ -2122,6 +2133,16 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
                 }
             }
 
+            // Each reference an inter frame names holds a frame (AV1 6.8.2 requires RefValid for each).
+            // A frame that names an empty buffer, as an inter frame before any key frame does, has no
+            // size or order hint to take from it, and is dropped, as libaom drops it.
+            for (uint32_t i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
+                if (m_pBuffers[ref_frame_idx[i]].buffer == nullptr) {
+                    nvParserLog("Inter frame references the empty buffer %d\n", ref_frame_idx[i]);
+                    return false;
+                }
+            }
+
             if (!pic_flags->error_resilient_mode && pic_flags->frame_size_override_flag) {
                 SetupFrameSizeWithRefs();
             } else {
@@ -2198,7 +2219,12 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
         pic_flags->disable_frame_end_update_cdf = 1;
     }
 
-    // tile_info
+    // tile_info. DecodeTileInfo divides by the frame's superblock columns and rows, which a frame of no
+    // width or height makes 0.
+    if ((frame_width == 0) || (frame_height == 0)) {
+        nvParserLog("Invalid frame size (%dx%d)\n", frame_width, frame_height);
+        return false;
+    }
     DecodeTileInfo();
     DecodeQuantizationData();
     DecodeSegmentationData();
@@ -2288,9 +2314,7 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
         DecodeGlobalMotionParams();
     }
 
-    ReadFilmGrainParams();
-
-    return true;
+    return ReadFilmGrainParams();
 }
 
 
@@ -2400,7 +2424,9 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
             return false;
         }
 
-        if (remainingFrameBytes < int(hdr.payload_size + hdr.header_size)) {
+        // The OBU fits in the rest of the temporal unit. Its payload can be as large as 2^32 - 1, so the
+        // sum with its header is taken in 64 bits.
+        if ((uint64_t)hdr.payload_size + hdr.header_size > (uint64_t)remainingFrameBytes) {
             // Error: Truncated frame data
             return false;
         }
@@ -2435,13 +2461,23 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
         case AV1_OBU_FRAME_HEADER:
         case AV1_OBU_FRAME:
         {
+            m_bSeenFrameHeader = false;
+            if (!m_bSPSReceived) {
+                // A frame header is parsed with the active sequence header (AV1 7.5): with none, the
+                // frame is dropped.
+                break;
+            }
 			memset(m_PicData.tileOffsets, 0, sizeof(m_PicData.tileOffsets));
 			m_PicData.khr_info.tileCount = 0;
 			memset(m_PicData.tileSizes, 0, sizeof(m_PicData.tileSizes));
 
-            ParseObuFrameHeader();
+            if (!ParseObuFrameHeader()) {
+                // A frame header the parser refuses drops its temporal unit.
+                return false;
+            }
 
             if (show_existing_frame) break;
+            m_bSeenFrameHeader = true;
             if (hdr.type != AV1_OBU_FRAME) {
                 rbsp_trailing_bits();
             }
@@ -2453,8 +2489,14 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
 
         case AV1_OBU_TILE_GROUP:
         {
+            if (!m_bSeenFrameHeader) {
+                // Tile groups follow their frame's header in its temporal unit (AV1 7.5): one that no
+                // frame header precedes is dropped.
+                break;
+            }
             if (ParseObuTileGroup(hdr)) {
 				// Last tile group for this frame
+                m_bSeenFrameHeader = false;
                 if (!end_of_picture(frameSizeBytes))
                     return false;
             }
