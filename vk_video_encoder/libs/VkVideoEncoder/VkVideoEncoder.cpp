@@ -3187,7 +3187,9 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
                   << "The video codec " << VkVideoCoreProfile::CodecToName(encoderConfig->codec)
                   << " is not supported!" << std::endl;
-        return VK_ERROR_INITIALIZATION_FAILED;
+        // A device without this codec is unsupported, not broken: the result is one of the
+        // IsVideoUnsupportedResult() set, so the demos exit VVS_EXIT_UNSUPPORTED (69).
+        return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
     }
 
     m_encoderConfig = encoderConfig;
@@ -3206,6 +3208,23 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
                   << " (0x" << std::hex << result << std::dec << ")"
                   << " - The video profile/format may not be supported by the driver." << std::endl;
         return result;
+    }
+
+    // Pad an extent below the profile's minCodedExtent up to it: the device
+    // codes the padded extent, and the stream crops it back to the picture's
+    // (EncoderConfig::pictureWidth). This runs before the DPB, the session and
+    // the parameter sets are sized from the coded extent, and the session's
+    // maximum is raised with it so that every coded extent lies within the
+    // session's [minCodedExtent, maxCodedExtent].
+    encoderConfig->pictureWidth  = encoderConfig->encodeWidth;
+    encoderConfig->pictureHeight = encoderConfig->encodeHeight;
+    encoderConfig->encodeWidth  = std::max(encoderConfig->encodeWidth,  encoderConfig->videoCapabilities.minCodedExtent.width);
+    encoderConfig->encodeHeight = std::max(encoderConfig->encodeHeight, encoderConfig->videoCapabilities.minCodedExtent.height);
+    encoderConfig->encodeMaxWidth  = std::max(encoderConfig->encodeMaxWidth,  encoderConfig->encodeWidth);
+    encoderConfig->encodeMaxHeight = std::max(encoderConfig->encodeMaxHeight, encoderConfig->encodeHeight);
+    if ((encoderConfig->encodeWidth != encoderConfig->pictureWidth) ||
+        (encoderConfig->encodeHeight != encoderConfig->pictureHeight)) {
+        encoderConfig->CodedExtentChanged();
     }
 
     if (encoderConfig->qualityLevel >= encoderConfig->videoEncodeCapabilities.maxQualityLevels) {
@@ -3636,18 +3655,12 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         }
     }
 
-    uint32_t requestedW = encoderConfig->encodeWidth;
-    uint32_t requestedH = encoderConfig->encodeHeight;
-
-    encoderConfig->encodeWidth  = std::max(encoderConfig->encodeWidth,  encoderConfig->videoCapabilities.minCodedExtent.width);
-    encoderConfig->encodeHeight = std::max(encoderConfig->encodeHeight, encoderConfig->videoCapabilities.minCodedExtent.height);
-
-    encoderConfig->encodeWidth  = std::min(encoderConfig->encodeWidth,  encoderConfig->videoCapabilities.maxCodedExtent.width);
-    encoderConfig->encodeHeight = std::min(encoderConfig->encodeHeight, encoderConfig->videoCapabilities.maxCodedExtent.height);
+    const uint32_t requestedW = encoderConfig->PictureWidth();
+    const uint32_t requestedH = encoderConfig->PictureHeight();
 
     // Refuse an extent the device cannot encode, rather than quietly encoding a
-    // cropped picture. The min-clamp above is benign padding, but clamping down
-    // to maxCodedExtent changes what the caller asked for: it gets a smaller
+    // cropped picture. Padding up to minCodedExtent keeps the picture, but
+    // clamping down to maxCodedExtent changes what the caller asked for: it gets a smaller
     // picture than it requested with nothing to say so, and comparing that
     // against a reference at the requested size reads as a quality failure with
     // no cause. maxCodedExtent varies by device and by profile, so the request
@@ -3662,7 +3675,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
 
-    // Keep the session's maximum in step with the clamped extent. These are what
+    // Keep the session's maximum within the capability. These are what
     // VideoSession/DPB creation is sized from, and a session asked for more than
     // the device's maxCodedExtent is not rejected cleanly -- the encoder faults
     // with an access violation instead of failing validation -- so they must
@@ -3687,7 +3700,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
             encoderConfig->videoCapabilities.pictureAccessGranularity.width,
             encoderConfig->videoCapabilities.pictureAccessGranularity.height);
     if (encoderConfig->encodeWidth != requestedW || encoderConfig->encodeHeight != requestedH)
-        VkEncPrintfErr(" (clamped from %ux%u)", requestedW, requestedH);
+        VkEncPrintfErr(" (padded from %ux%u)", requestedW, requestedH);
     if (encoderConfig->encodeAlignedWidth != encoderConfig->encodeWidth ||
         encoderConfig->encodeAlignedHeight != encoderConfig->encodeHeight)
         VkEncPrintfErr(" (aligned to %ux%u)", encoderConfig->encodeAlignedWidth, encoderConfig->encodeAlignedHeight);

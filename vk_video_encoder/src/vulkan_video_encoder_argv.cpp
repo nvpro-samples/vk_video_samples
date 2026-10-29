@@ -89,6 +89,11 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
         return result;
     }
 
+    // The device is selected and created for the codec of --codec, which CreateCodecConfig
+    // requires. The test binary enters with H.264 whatever it encodes, and a device that encodes
+    // H.264 but not the requested codec must not be chosen over one that encodes it.
+    (void)videoCodecOperation;
+
     static const char* const requiredInstanceLayers[] = {
         "VK_LAYER_KHRONOS_validation",
         nullptr
@@ -172,7 +177,7 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
                                             0,
                                             VK_VIDEO_CODEC_OPERATION_NONE_KHR,
                                             requestVideoEncodeQueueMask,
-                                            videoCodecOperation);
+                                            m_encoderConfig->codec);
     if (result != VK_SUCCESS) {
         VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
                   << "InitVulkanDevice() failed - video codec may not be supported. VkResult: " << result
@@ -187,7 +192,7 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
 
     result = m_vkDevCtxt.CreateVulkanDevice(0, // num decode queues
                                             numEncodeQueues,     // num encode queues
-                                            videoCodecOperation,
+                                            m_encoderConfig->codec,
                                             // If no graphics or compute queue is requested, only video queues
                                             // will be created. Not all implementations support transfer on video queues,
                                             // so request a separate transfer queue for such implementations.

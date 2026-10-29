@@ -121,6 +121,13 @@ struct EncoderConfigAV1 : public EncoderConfig {
 
     virtual VkResult InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx) override;
 
+    virtual void CodedExtentChanged() override
+    {
+        picWidthInSbs = DivUp<uint32_t>(encodeWidth, SUPERBLOCK_SIZE);
+        picHeightInSbs = DivUp<uint32_t>(encodeHeight, SUPERBLOCK_SIZE);
+        DetermineLevelTier();
+    }
+
     void InitProfileLevel();
 
     virtual uint32_t GetCodecProfile() override {
