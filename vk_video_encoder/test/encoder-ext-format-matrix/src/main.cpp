@@ -84,6 +84,7 @@
  */
 
 #include "vulkan_video_encoder_ext.h"
+#include "encode_device_probe.h"
 #include "vulkan_video_encoder_ext_internal.h"
 
 #include "vk_video/vulkan_video_codec_h264std.h"
@@ -850,9 +851,9 @@ int main(int argc, char** argv)
     // meaningless, and this is what makes that visible rather than assumed.
     {
         VkSharedBaseObj<VulkanVideoEncoderExt> probe;
-        if ((CreateVulkanVideoEncoderExt(probe) != VK_SUCCESS) || !probe) {
-            std::printf("SKIP: CreateVulkanVideoEncoderExt failed\n");
-            return 77;
+        const VkResult created = CreateVulkanVideoEncoderExt(probe);
+        if ((created != VK_SUCCESS) || !probe) {
+            return enctest::Fail("CreateVulkanVideoEncoderExt", created);
         }
         VkVideoEncoderConfig c = {};
         c.sType           = VK_VIDEO_ENCODER_STRUCTURE_TYPE_CONFIG;
@@ -871,10 +872,9 @@ int main(int argc, char** argv)
         c.frameRateDen    = 1;
         c.deviceId        = -1;
         c.disableFileOutput = VK_TRUE;
-        if (probe->InitializeExt(c) != VK_SUCCESS) {
-            std::printf("SKIP: InitializeExt failed -- no encode-capable "
-                        "Vulkan device on this host\n");
-            return 77;
+        const VkResult initialized = probe->InitializeExt(c);
+        if (initialized != VK_SUCCESS) {
+            return enctest::NoDeviceOrFail("InitializeExt", initialized, c.codec);
         }
         DeviceFns fns;
         if (LoadDeviceFns(probe->GetVkInstance(), probe->GetVkDevice(),

@@ -1,0 +1,135 @@
+{
+  "codec": "h265",
+  "defects": {
+    "ref-pic-type": "VkEncDpbH265::FillStdReferenceInfo leaves pic_type at 0"
+  },
+  "configs": [
+    {
+      "name": "h265-ippp-1ref",
+      "args": [
+        "--frames",
+        "64",
+        "--gop",
+        "30",
+        "--idr",
+        "30",
+        "--bframes",
+        "0",
+        "--refs-l0",
+        "1",
+        "--refs-l1",
+        "0"
+      ],
+      "golden": "../golden/h265-ippp-1ref.trace",
+      "known": [
+        "ref-pic-type"
+      ]
+    },
+    {
+      "name": "h265-ippp-4ref",
+      "args": [
+        "--frames",
+        "64",
+        "--gop",
+        "30",
+        "--idr",
+        "60",
+        "--bframes",
+        "0",
+        "--refs-l0",
+        "4",
+        "--refs-l1",
+        "0"
+      ],
+      "golden": "../golden/h265-ippp-4ref.trace",
+      "known": [
+        "ref-pic-type"
+      ]
+    },
+    {
+      "name": "h265-ibbbp-open",
+      "args": [
+        "--frames",
+        "64",
+        "--gop",
+        "16",
+        "--idr",
+        "60",
+        "--bframes",
+        "3",
+        "--refs-l0",
+        "2",
+        "--refs-l1",
+        "1"
+      ],
+      "golden": "../golden/h265-ibbbp-open.trace",
+      "known": [
+        "ref-pic-type"
+      ]
+    },
+    {
+      "name": "h265-ibbbp-closed",
+      "args": [
+        "--frames",
+        "64",
+        "--gop",
+        "16",
+        "--idr",
+        "60",
+        "--bframes",
+        "3",
+        "--refs-l0",
+        "2",
+        "--refs-l1",
+        "1",
+        "--closed-gop"
+      ],
+      "golden": "../golden/h265-ibbbp-closed.trace",
+      "known": [
+        "ref-pic-type"
+      ]
+    },
+    {
+      "name": "h265-ib7p-4ref",
+      "args": [
+        "--frames",
+        "64",
+        "--gop",
+        "32",
+        "--idr",
+        "60",
+        "--bframes",
+        "7",
+        "--refs-l0",
+        "4",
+        "--refs-l1",
+        "1"
+      ],
+      "golden": "../golden/h265-ib7p-4ref.trace",
+      "known": [
+        "ref-pic-type"
+      ]
+    },
+    {
+      "name": "h265-ippp-poc-wrap",
+      "args": [
+        "--frames",
+        "300",
+        "--gop",
+        "8",
+        "--idr",
+        "400",
+        "--bframes",
+        "0",
+        "--refs-l0",
+        "2",
+        "--refs-l1",
+        "0"
+      ],
+      "known": [
+        "ref-pic-type"
+      ],
+      "md5": "e7b7360f1f1927e7a55540c4fe9f14c4"
+    }
+  ]
+}

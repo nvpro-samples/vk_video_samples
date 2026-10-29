@@ -98,6 +98,8 @@
 #include <string>
 #include <vector>
 
+#include "encode_device_probe.h"
+
 namespace {
 
 int g_failures = 0;
@@ -1107,10 +1109,10 @@ int main(int argc, const char** argv)
     Embedder emb;
     if (!own) {
         if (!BuildEmbedder(&emb, /*withValidationLayer=*/false)) {
-            std::printf("SKIP: could not stand up an embedder instance / "
-                        "encode-capable physical device\n");
             TearDownEmbedder(&emb);
-            return 77;
+            return enctest::NoDeviceOrFail(
+                "could not stand up an embedder instance and an encode-capable physical device",
+                VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR);
         }
         std::printf("  embedder instance %s physicalDevice %s (%s, deviceID "
                     "0x%x)\n",
@@ -1245,9 +1247,9 @@ int main(int argc, const char** argv)
             }
         } else if ((CreateVulkanVideoEncoderExt(encoder) != VK_SUCCESS) ||
                    !encoder) {
-            std::printf("SKIP: CreateVulkanVideoEncoderExt failed\n");
             TearDownEmbedder(&emb);
-            return 77;
+            return enctest::NoDeviceOrFail("CreateVulkanVideoEncoderExt failed",
+                                           VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR);
         }
 
         VkVideoEncoderConfig config = {};
@@ -1384,13 +1386,14 @@ int main(int argc, const char** argv)
                                 "OWN+validate control cannot run. Export "
                                 "VK_LAYER_PATH to a directory containing its "
                                 "manifest to enable it.\n");
-                } else {
-                    std::printf("SKIP: InitializeExt failed (%d) -- no "
-                                "encode-capable Vulkan device on this host\n",
-                                (int)init);
+                    TearDownEmbedder(&emb);
+                    return 77;
                 }
+                // Any other failure is the library's on a host that encodes
+                // H.264, and a skip only where no device does.
                 TearDownEmbedder(&emb);
-                return 77;
+                return enctest::NoDeviceOrFail("InitializeExt(OWN)", init,
+                                               VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR);
             }
             Check(false, "InitializeExt(ADOPT)",
                   "returned " + I64((long long)init) +
@@ -1459,8 +1462,8 @@ int main(int argc, const char** argv)
         }
         if ((gipa == nullptr) ||
             !LoadDeviceFns(gipa, instance, device, &fns)) {
-            std::printf("SKIP: could not load the Vulkan entry points this "
-                        "test needs\n");
+            std::printf("FAIL: could not load the Vulkan entry points this "
+                        "test needs, after the library created its device\n");
             // Release the session BEFORE the embedder's instance: by here the
             // library has created a VkDevice on that instance, and
             // ~VulkanDeviceContext runs DeviceWaitIdle + DestroyDevice on it.
@@ -1469,19 +1472,20 @@ int main(int argc, const char** argv)
             encoder.reset();
             context.reset();
             TearDownEmbedder(&emb);
-            return 77;
+            return 1;
         }
 
         uint32_t frames = 0;
         uint64_t bytes  = 0;
         if (!EncodeAndDrain(encoder, fns, phys, device, &frames, &bytes)) {
-            std::printf("SKIP: the encode harness could not be set up\n");
+            std::printf("FAIL: the encode harness could not be set up on the "
+                        "library's device\n");
             // Same ordering hazard as above: a live VkDevice on the borrowed
             // instance must go first.
             encoder.reset();
             context.reset();
             TearDownEmbedder(&emb);
-            return 77;
+            return 1;
         }
         std::printf("  encoded %u frames, %llu bitstream bytes\n", frames,
                     (unsigned long long)bytes);

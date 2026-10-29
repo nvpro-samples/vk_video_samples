@@ -79,29 +79,37 @@ int main(int argc, const char** argv)
 
     enctest::Report report;
 
+    // Only a machine with no device that encodes skips. Once the session is
+    // open, every failure is the library's or the test's, and fails.
     enctest::Session s;
     const char* why = "";
-    if (!s.Open(kWidth, kHeight, &why)) {
+    switch (s.Open(kWidth, kHeight, &why)) {
+    case enctest::Session::Ready:
+        break;
+    case enctest::Session::NoDevice:
         report.Skip("every check", why);
+        return report.Summarise("encoder-drain");
+    case enctest::Session::Failed:
+        report.Check(false, why);
         return report.Summarise("encoder-drain");
     }
 
     enctest::DeviceFns fns;
     if (!fns.Load(s.binding)) {
-        report.Skip("every check", "device entry points unavailable");
+        report.Check(false, "the device entry points load");
         return report.Summarise("encoder-drain");
     }
 
     enctest::HostImage image(fns, s.binding->PhysicalDevice(), s.binding->Device(),
                             kWidth, kHeight);
     if (!image.Create(&why)) {
-        report.Skip("every check", why);
+        report.Check(false, why);
         return report.Summarise("encoder-drain");
     }
 
     Expected<ResourceId> registered = s.registry->RegisterImage(image.Describe());
     if (!registered) {
-        report.Skip("every check", registered.status().detail());
+        report.Check(false, registered.status().detail());
         return report.Summarise("encoder-drain");
     }
 

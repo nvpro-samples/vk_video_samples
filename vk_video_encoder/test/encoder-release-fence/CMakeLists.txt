@@ -1,8 +1,9 @@
 # The release fence: when the caller may write the buffer again.
 #
-# Drives the encoder interface only. Skips without an encode-capable GPU, and
-# because the property under test is one the interface promises and a caller
-# can observe. Skips (exit 0 with a skip count) without an encode-capable GPU.
+# Drives the encoder interface only, because the property under test is one
+# the interface promises and a caller can observe. Skips (exit 77) only when
+# the device probe finds no device that encodes H.264; a session the library
+# fails to open on a host that has one is a failure.
 
 set(TEST_NAME vk-video-enc-release-fence-test)
 

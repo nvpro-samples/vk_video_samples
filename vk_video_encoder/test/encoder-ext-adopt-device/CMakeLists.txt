@@ -30,6 +30,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${VULKAN_VIDEO_ENCODER_INCLUDE}
+    # encode_device_probe.h, which decides whether a library failure is a skip.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common
     # The descriptor API is an internal header: the public surface of this
     # library is the encoder interface, and a test that drives the layer
     # beneath it names the internal directory to say so.

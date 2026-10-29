@@ -112,6 +112,25 @@ def is_unsupported_run(results):
         for r in results)
 
 
+def probe_codec_for(bpp):
+    """The codec of the probe encode: one that every encoder this tree runs on has, at bpp."""
+    return "h265" if bpp > 8 else "h264"
+
+
+def unsupported_run_exit(require_gpu, probe_rc):
+    """The exit status of a run in which every row was unsupported.
+
+    Without VVS_REQUIRE_GPU, a skip. With it, a skip only when the probe encode
+    (probe_codec_for) exited 0: the host has an encoder, which lacks the codecs
+    under test, and a device that refuses what a test asks for is a skip in
+    encode_device_probe.h as well. Any other probe status, or no probe, means
+    the host has no encoder, which VVS_REQUIRE_GPU makes a failure.
+    """
+    if not require_gpu:
+        return 77
+    return 77 if probe_rc == 0 else 1
+
+
 def short_rows(results, requested_frames):
     """Rows that encoded and decoded but returned fewer frames than asked.
 
@@ -822,9 +841,25 @@ Examples:
     # used to match "Error creating the encoder instance" instead, which the
     # encoder prints before every one of those -- so each of them skipped.
     if is_unsupported_run(results):
-        print(f"SKIP: no encode-capable device "
-              f"({results[0].error_msg.strip()})")
-        return 77
+        # On a rig, where the device is expected, VVS_REQUIRE_GPU makes a host
+        # with no encoder a failure, as the C++ tests do (encode_device_probe.h);
+        # a one-frame probe encode tells it from an encoder without these codecs.
+        require_gpu = os.environ.get("VVS_REQUIRE_GPU") == "1"
+        probe_rc = None
+        if require_gpu:
+            probe = probe_codec_for(args.bpp)
+            probe_path = os.path.join(args.output_dir, f"probe.{CODECS[probe]['ext']}")
+            _, _, probe_rc = encode(yuv_path, probe_path, probe, args.width, args.height,
+                                    1, 1, args.qp, encoder_bin=encoder_bin,
+                                    remote_host=args.remote_host, bpp=args.bpp)
+        status = unsupported_run_exit(require_gpu, probe_rc)
+        reason = results[0].error_msg.strip()
+        if status == 77:
+            print(f"SKIP: no device encodes {', '.join(args.codecs)} ({reason})")
+        else:
+            print(f"FAIL: no encode-capable device, and VVS_REQUIRE_GPU is set "
+                  f"(probe exit {probe_rc}; {reason})")
+        return status
 
     if not results:
         print("FAIL: no encode produced a result")
