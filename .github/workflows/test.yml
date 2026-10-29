@@ -114,3 +114,47 @@ jobs:
       - name: Run codec test framework
         run: |
           python3 ./tests/vvs_test_runner.py
+
+  sanitizers:
+    name: Sanitizers
+    needs: lint
+    runs-on: ubuntu-24.04
+
+    env:
+      BUILD_JOBS: 16
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install --assume-yes --no-install-recommends \
+            ninja-build \
+            cmake \
+            ffmpeg \
+            libx11-dev \
+            libwayland-dev \
+            libavformat-dev \
+            libxrandr-dev \
+            libvulkan-dev
+
+      # Every sanitizer report is fatal, so a test passes only when AddressSanitizer
+      # and UBSan report nothing. UBSan's bounds check sees the overflows that stay
+      # inside one object, where AddressSanitizer sees nothing.
+      - name: Build with AddressSanitizer and UBSan
+        run: |
+          SAN="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
+          cmake -B BUILD-SAN -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="$SAN" -DCMAKE_CXX_FLAGS="$SAN" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
+          cmake --build BUILD-SAN --parallel $BUILD_JOBS
+
+      # The device-free set, the parser fuzz replay included. The script lists the
+      # tests a known defect fails, each with its defect: those must still fail, and
+      # every other test must pass.
+      - name: Run the device-free tests under the sanitizers
+        run: |
+          ./scripts/run_ctest_sanitizers.sh BUILD-SAN

@@ -1,0 +1,118 @@
+{
+  "codec": "h264",
+  "defects": {
+    "sps-constraint-flags": "the parser takes constraint_setN_flag of the Std SPS from bit N of the byte, which the stream codes most significant bit first: constraint_set0_flag and constraint_set1_flag read the reserved zero bits, and constraint_set2_flag to constraint_set5_flag hold constraint_set5_flag to constraint_set2_flag"
+  },
+  "adapter_defects": {
+    "begin-setup-inactive": "the begin-coding list names the setup picture under its target slot, which is not active yet: activation happens in the decode",
+    "begin-setup-mismatch": "the begin-coding list names the setup picture under its target slot, which still holds the picture it held before",
+    "begin-duplicate": "a second field's setup names its first field's slot and picture, which its reference entry already names",
+    "nonexisting": "a non-existing reference takes another reference's picture and a slot no decode set up"
+  },
+  "streams": [
+    {
+      "name": "h264-x264-high-bpyramid-64x64",
+      "path": "../streams/h264-x264-high-bpyramid-64x64.h264",
+      "format": "bytestream",
+      "golden": "../golden/h264-x264-high-bpyramid-64x64.trace",
+      "headers": "../streams/h264-x264-high-bpyramid-64x64.headers.txt",
+      "known": [],
+      "adapter_golden": "../golden/adapter/h264-x264-high-bpyramid-64x64.trace",
+      "adapter_known": [
+        "begin-setup-inactive",
+        "begin-setup-mismatch"
+      ]
+    },
+    {
+      "name": "h264-x264-baseline-64x64",
+      "path": "../streams/h264-x264-baseline-64x64.h264",
+      "format": "bytestream",
+      "golden": "../golden/h264-x264-baseline-64x64.trace",
+      "headers": "../streams/h264-x264-baseline-64x64.headers.txt",
+      "known": [
+        "sps-constraint-flags"
+      ],
+      "adapter_golden": "../golden/adapter/h264-x264-baseline-64x64.trace",
+      "adapter_known": [
+        "begin-setup-inactive"
+      ]
+    },
+    {
+      "name": "h264-x264-mbaff-64x64",
+      "path": "../streams/h264-x264-mbaff-64x64.h264",
+      "format": "bytestream",
+      "golden": "../golden/h264-x264-mbaff-64x64.trace",
+      "headers": "../streams/h264-x264-mbaff-64x64.headers.txt",
+      "known": [],
+      "adapter_golden": "../golden/adapter/h264-x264-mbaff-64x64.trace",
+      "adapter_known": [
+        "begin-setup-inactive"
+      ]
+    },
+    {
+      "name": "h264-x264-cqm-weightp-slices-64x64",
+      "path": "../streams/h264-x264-cqm-weightp-slices-64x64.h264",
+      "format": "bytestream",
+      "golden": "../golden/h264-x264-cqm-weightp-slices-64x64.trace",
+      "headers": "../streams/h264-x264-cqm-weightp-slices-64x64.headers.txt",
+      "known": [],
+      "adapter_golden": "../golden/adapter/h264-x264-cqm-weightp-slices-64x64.trace",
+      "adapter_known": [
+        "begin-setup-inactive"
+      ]
+    },
+    {
+      "name": "decode-samples",
+      "root": "VVS_DECODE_SAMPLES_ROOT",
+      "decode_samples": "../../../../tests/decode_samples.json",
+      "md5": "../golden/md5/h264-decode-samples.md5",
+      "adapter_md5": "../golden/md5/adapter-h264-decode-samples.md5",
+      "adapter_known": [
+        "begin-setup-inactive",
+        "begin-setup-mismatch"
+      ]
+    },
+    {
+      "name": "itu-avcv1",
+      "root": "VVS_ITU_H264_ROOT",
+      "glob": [
+        "AVCv1/streams/*/*.264",
+        "AVCv1/streams/*/*.jsv",
+        "AVCv1/streams/*/*.26l",
+        "AVCv1/streams/*/*.h264",
+        "AVCv1/streams/*/*.jvt",
+        "AVCv1/streams/*/*.avc",
+        "MR4/*.264"
+      ],
+      "format": "bytestream",
+      "md5": "../golden/md5/h264-itu-avcv1.md5",
+      "adapter_md5": "../golden/md5/adapter-h264-itu-avcv1.md5",
+      "adapter_known": [
+        "begin-duplicate",
+        "begin-setup-inactive",
+        "begin-setup-mismatch",
+        "nonexisting"
+      ]
+    },
+    {
+      "name": "itu-frext",
+      "root": "VVS_ITU_H264_ROOT",
+      "glob": [
+        "FRExt/streams/*/*.264",
+        "FRExt/streams/*/*.jsv",
+        "FRExt/streams/*/*.26l",
+        "FRExt/streams/*/*.h264",
+        "FRExt/streams/*/*.jvt",
+        "FRExt/streams/*/*.avc"
+      ],
+      "format": "bytestream",
+      "md5": "../golden/md5/h264-itu-frext.md5",
+      "adapter_md5": "../golden/md5/adapter-h264-itu-frext.md5",
+      "adapter_known": [
+        "begin-duplicate",
+        "begin-setup-inactive",
+        "begin-setup-mismatch"
+      ]
+    }
+  ]
+}
