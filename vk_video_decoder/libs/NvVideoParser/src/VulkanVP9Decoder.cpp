@@ -145,63 +145,30 @@ bool VulkanVP9Decoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_
                 m_bitstreamComplete = false;
             }
         } else {
-            uint32_t frames_processed = 0;
-            uint32_t sizeparsed = 0, framesdone = 0;
-
-            uint32_t frame_size = m_frameSize;
-
             const uint8_t* data_start = m_bitstreamData.GetBitstreamPtr();
-            const uint8_t* data_end = data_start + m_frameSize;
-            uint32_t data_size = m_frameSize;
             uint32_t frames_in_superframe, frame_sizes[8];
 
-            ParseSuperFrameIndex(data_start, data_size, frame_sizes, &frames_in_superframe);
+            ParseSuperFrameIndex(data_start, m_frameSize, frame_sizes, &frames_in_superframe);
 
-            do {
-                // Skip over the superframe index, if present
-                if ((data_size > 0) && ((data_start[0] & 0xe0) == 0xc0)) {
-                    const uint8_t marker = data_start[0];
-                    const uint32_t frames = (marker & 0x7) + 1;
-                    const uint32_t mag = ((marker >> 3) & 0x3) + 1;
-                    const uint32_t index_sz = 2 + mag * frames;
-
-                    if ((data_size >= index_sz) && (data_start[index_sz - 1] == marker)) {
-                        data_start += index_sz;
-                        data_size -= index_sz;
-                        if (data_start < data_end) {
-                            continue;
-                        } else {
-                            break;
-                        }
+            if (frames_in_superframe > 0) {
+                // The index gives the size of each frame of the superframe (VP9 Annex B), and they are the
+                // frames parsed, as libvpx's decoder_decode parses them. A frame the data left before it
+                // does not hold drops itself and the frames after it; a frame of no bytes has no header.
+                uint32_t sizeparsed = 0;
+                for (uint32_t i = 0; i < frames_in_superframe; i++) {
+                    if (frame_sizes[i] > (uint32_t)m_frameSize - sizeparsed) {
+                        nvParserLog("Invalid frame size in the superframe index (%u)\n", frame_sizes[i]);
+                        break;
                     }
-                }
-
-                // Use the correct size for this frame, if an index is present
-                if (frames_in_superframe > 0) {
-                    frame_size = frame_sizes[frames_processed];
-                    if (data_size < frame_size) {
-                        // Invalid frame size in index
-                        return false;
+                    if (frame_sizes[i] > 0) {
+                        m_nalu.start_offset = sizeparsed;
+                        ParseFrameHeader(frame_sizes[i]);
                     }
-                    data_size = frame_size;
-                    m_nalu.start_offset = sizeparsed;
-
+                    sizeparsed += frame_sizes[i];
                 }
-
-                ParseFrameHeader(frame_size);
-
-                if (frames_in_superframe > 0) {
-                    sizeparsed += frame_sizes[framesdone];
-                    framesdone++;
-                }
-                data_start += data_size;
-                while (data_start < data_end && *data_start == 0) {
-                    data_start++;
-                }
-
-                data_size = (int)(data_end - data_start);
-                frames_processed += 1;
-            } while (data_start < data_end);
+            } else {
+                ParseFrameHeader(m_frameSize);
+            }
 
             m_frameIdx++;
             m_pictureStarted = false;
@@ -262,7 +229,6 @@ bool VulkanVP9Decoder::ParseFrameHeader(uint32_t framesize)
     m_pVkPictureData->bitstreamDataOffset = (size_t)(m_nalu.start_offset & ~((int64_t)m_bufferOffsetAlignment - 1));
 
     if (!BeginPicture(m_pVkPictureData)) {
-        assert(!"BeginPicture failed");
         return false;
     }
 
@@ -883,10 +849,13 @@ bool VulkanVP9Decoder::BeginPicture(VkParserPictureData* pnvpd)
         return false;
     }
 
-    // Allocate a buffer for the current picture
+    // Allocate a buffer for the current picture. A client with no free picture cannot take the
+    // frame, which is dropped.
     if (m_pCurrPic == nullptr) {
-        m_pClient->AllocPictureBuffer(&m_pCurrPic);
-        assert(m_pCurrPic);
+        if (!m_pClient->AllocPictureBuffer(&m_pCurrPic) || (m_pCurrPic == nullptr)) {
+            m_pCurrPic = nullptr;
+            return false;
+        }
 
         m_pCurrPic->decodeWidth = width;
         m_pCurrPic->decodeHeight = height;

@@ -72,6 +72,7 @@ void VulkanH265Decoder::InitParser()
     m_bEmulBytesPresent = true;
     m_bNoStartCodes = false;
     m_nuh_layer_id = 0;
+    m_picture_nuh_layer_id = 0;
     m_max_dec_pic_buffering = 0;
     EndOfStream();
 }
@@ -123,9 +124,10 @@ bool VulkanH265Decoder::BeginPicture(VkParserPictureData *pnvpd)
     hevc_dpb_entry_s *cur = m_dpb_cur;
     int8_t current_dpb_id = m_current_dpb_id;
     VkParserHevcPictureData * const hevc = &pnvpd->CodecSpecific.hevc;
-    const hevc_seq_param_s * const sps = m_active_sps[m_nuh_layer_id].get();
+    // The picture ends with its own layer's parameter sets: m_nuh_layer_id is the last NAL unit's layer.
+    const hevc_seq_param_s * const sps = m_active_sps[m_picture_nuh_layer_id].get();
     assert(sps);
-    const hevc_pic_param_s * const pps = m_active_pps[m_nuh_layer_id].get();
+    const hevc_pic_param_s * const pps = m_active_pps[m_picture_nuh_layer_id].get();
     assert(pps);
     const hevc_video_param_s * const vps = m_active_vps.get();
     // It is possible VPS not to be available with some malformed video content
@@ -190,13 +192,14 @@ bool VulkanH265Decoder::BeginPicture(VkParserPictureData *pnvpd)
     hevc->NumActiveRefLayerPics0 = m_NumActiveRefLayerPics0;
     hevc->NumActiveRefLayerPics1 = m_NumActiveRefLayerPics1;
 
-    for (int32_t i = 0; i < hevc->NumPocStCurrBefore; i++) {
+    // slice_header() refuses a slice with more current pictures in a list than these lists hold.
+    for (int32_t i = 0; i < std::min<int32_t>(hevc->NumPocStCurrBefore, sizeof(hevc->RefPicSetStCurrBefore) / sizeof(hevc->RefPicSetStCurrBefore[0])); i++) {
         hevc->RefPicSetStCurrBefore[i] = m_RefPicSetStCurrBefore[i];
     }
-    for (int32_t i = 0; i < hevc->NumPocStCurrAfter; i++) {
+    for (int32_t i = 0; i < std::min<int32_t>(hevc->NumPocStCurrAfter, sizeof(hevc->RefPicSetStCurrAfter) / sizeof(hevc->RefPicSetStCurrAfter[0])); i++) {
         hevc->RefPicSetStCurrAfter[i] = m_RefPicSetStCurrAfter[i];
     }
-    for (int32_t i = 0; i < hevc->NumPocLtCurr; i++) {
+    for (int32_t i = 0; i < std::min<int32_t>(hevc->NumPocLtCurr, sizeof(hevc->RefPicSetLtCurr) / sizeof(hevc->RefPicSetLtCurr[0])); i++) {
         hevc->RefPicSetLtCurr[i] = m_RefPicSetLtCurr[i];
     }
     for (int32_t i = 0; i < hevc->NumActiveRefLayerPics0; i++) {
@@ -214,14 +217,14 @@ bool VulkanH265Decoder::BeginPicture(VkParserPictureData *pnvpd)
     }
 
     // MV-HEVC related fields
-    if (m_nuh_layer_id > 0)
+    if (m_picture_nuh_layer_id > 0)
     {
         hevc->mv_hevc_enable = 1;
-        hevc->nuh_layer_id = m_nuh_layer_id;
+        hevc->nuh_layer_id = m_picture_nuh_layer_id;
         hevc->default_ref_layers_active_flag = vps->privFlags.default_ref_layers_active_flag;
-        hevc->NumDirectRefLayers = vps->numDirectRefLayers[m_nuh_layer_id];
+        hevc->NumDirectRefLayers = vps->numDirectRefLayers[m_picture_nuh_layer_id];
         hevc->max_one_active_ref_layer_flag = vps->privFlags.max_one_active_ref_layer_flag;
-        hevc->poc_lsb_not_present_flag = vps->poc_lsb_not_present_flag[vps->LayerIdxInVps[m_nuh_layer_id]];
+        hevc->poc_lsb_not_present_flag = vps->poc_lsb_not_present_flag[vps->LayerIdxInVps[m_picture_nuh_layer_id]];
     }
 
     return true;
@@ -306,6 +309,13 @@ int32_t VulkanH265Decoder::ParseNalUnit()
     default:
         if ((nal_unit_type >= NUT_TRAIL_N && nal_unit_type <= NUT_RASL_R) || (nal_unit_type >= NUT_BLA_W_LP && nal_unit_type <= NUT_CRA_NUT))
         {
+            // The VCL NAL units of a picture share its nuh_layer_id (7.4.2.2): a slice of another layer
+            // that does not start a picture is dropped, before its header replaces the picture's.
+            if (m_bPictureStarted && (m_nuh_layer_id != m_picture_nuh_layer_id))
+            {
+                nvParserLog("Discarding a slice of layer %d in a picture of layer %d\n", m_nuh_layer_id, m_picture_nuh_layer_id);
+                break;
+            }
             // slice_layer_rbsp
             if (slice_header(nal_unit_type, nuh_temporal_id_plus1))
             {
@@ -325,7 +335,9 @@ int32_t VulkanH265Decoder::ParseNalUnit()
                         NoRaslOutputFlag = (nal_unit_type <= NUT_IDR_N_LP); // BLA or IDR
                     }
 
-                    StdVideoH265SequenceParameterSet* p_active_sps(*m_active_sps[m_nuh_layer_id]);
+                    // The layer has no active SPS before its first slice: the pointer is read, not dereferenced,
+                    // until the check below has seen it.
+                    const hevc_seq_param_s* const p_active_sps = m_active_sps[m_nuh_layer_id].get();
                     if (!m_active_sps[m_nuh_layer_id] ||
                         (sps->pic_width_in_luma_samples != p_active_sps->pic_width_in_luma_samples) ||
                         (sps->pic_height_in_luma_samples != p_active_sps->pic_height_in_luma_samples) ||
@@ -577,13 +589,14 @@ void VulkanH265Decoder::seq_parameter_set_rbsp()
             return;
         }
     }
+    // Checked before it is narrowed to the uint8_t that stores it: 256 + k would pass as k.
     uint32_t num_short_term_ref_pic_sets = ue();
-    sps->num_short_term_ref_pic_sets = (uint8_t)num_short_term_ref_pic_sets;
-    if (sps->num_short_term_ref_pic_sets > MAX_NUM_STRPS) { // fatal
+    if (num_short_term_ref_pic_sets > MAX_NUM_STRPS) { // fatal
 
-        nvParserLog("Invalid num_short_term_ref_pic_sets (%d)\n", num_short_term_ref_pic_sets);
+        nvParserLog("Invalid num_short_term_ref_pic_sets (%u)\n", num_short_term_ref_pic_sets);
         return;
     }
+    sps->num_short_term_ref_pic_sets = (uint8_t)num_short_term_ref_pic_sets;
     for (uint32_t i = 0; i < num_short_term_ref_pic_sets; i++) {
         StdVideoH265ShortTermRefPicSet* pShortTermRefPicSet =
                 short_term_ref_pic_set(&sps->stdShortTermRefPicSet[i],
@@ -621,7 +634,9 @@ void VulkanH265Decoder::seq_parameter_set_rbsp()
     sps->flags.vui_parameters_present_flag = u(1);
     if (sps->flags.vui_parameters_present_flag) { // vui_parameters_present_flag
 
-        vui_parameters(sps.get(), sps->sps_max_sub_layers_minus1);
+        if (!vui_parameters(sps.get(), sps->sps_max_sub_layers_minus1)) {
+            return;
+        }
     }
     sps->flags.sps_extension_present_flag = u(1);
     if (sps->flags.sps_extension_present_flag) { // sps_extension_present_flag
@@ -829,7 +844,8 @@ void VulkanH265Decoder::pic_parameter_set_rbsp()
     }
     pps->flags.pps_scaling_list_data_present_flag = u(1);
     if (pps->flags.pps_scaling_list_data_present_flag) {
-        scaling_list_data(&pps->pps_scaling_list);
+        if (!scaling_list_data(&pps->pps_scaling_list))
+            return;
     }
     pps->flags.lists_modification_present_flag = u(1);
     pps->log2_parallel_merge_level_minus2 = (uint8_t)ue();
@@ -927,6 +943,11 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
     uint32_t tmp = u(6);
     vps->vps_max_layers_minus1         = std::min<int32_t>(tmp, (uint32_t)(MAX_NUM_LAYER_IDS - 2));
     vps->vps_max_sub_layers_minus1     = u(3);
+    if (vps->vps_max_sub_layers_minus1 >= STD_VIDEO_H265_SUBLAYERS_LIST_SIZE)
+    {
+        nvParserLog("Invalid vps_max_sub_layers_minus1 (%d)\n", vps->vps_max_sub_layers_minus1);
+        return;
+    }
     vps->flags.vps_temporal_id_nesting_flag  = u(1);
 
     tmp = u(16);
@@ -964,12 +985,14 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
     }
 
     vps->vps_max_layer_id = u(6);
-    vps->vps_num_layer_sets = ue() + 1;
-    if (vps->vps_num_layer_sets > 1024)
+    // Checked before adding 1, which wraps a ue() of 0xFFFFFFFF to 0.
+    const uint32_t vps_num_layer_sets_minus1 = ue();
+    if (vps_num_layer_sets_minus1 >= MAX_VPS_LAYER_SETS)
     {
-        nvParserLog("Invalid Invalid vps parameter (vps_num_layer_sets=%d)\n", vps->vps_num_layer_sets);
+        nvParserLog("Invalid vps parameter (vps_num_layer_sets_minus1=%u)\n", vps_num_layer_sets_minus1);
         return;
     }
+    vps->vps_num_layer_sets = vps_num_layer_sets_minus1 + 1;
 
     for (uint32_t i = 1; i <= vps->vps_num_layer_sets - 1; i++)
     {
@@ -1045,8 +1068,10 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
                 vps->cprms_present_flag[i] = u(1);
             }
 
-            hrd_parameters(&pHrdParameters[i], vps->cprms_present_flag[i],
-                            vps->vps_max_sub_layers_minus1);
+            if (!hrd_parameters(&pHrdParameters[i], vps->cprms_present_flag[i],
+                                vps->vps_max_sub_layers_minus1)) {
+                return;
+            }
         }
         // hevcDecodeHrdParameters(&pVideoParamSet->hrdParameters[i], 1); // CMOD function
     }
@@ -1065,7 +1090,10 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
             // vps_extension_alignment_bit_equal_to_one
             while (!byte_aligned())
                 u(1); // vps_extension_alignment_bit_equal_to_one
-            video_parameter_set_rbspExtension(vps.get());
+            if (!video_parameter_set_rbspExtension(vps.get()))
+            {
+                return;
+            }
         }
     }
 
@@ -1087,7 +1115,8 @@ void VulkanH265Decoder::video_parameter_set_rbsp()
 
 
 /* Decode video parameter set extension information from the stream. */
-void VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pVideoParamSet)
+// Returns false for an extension the parser cannot hold, and the VPS is then dropped.
+bool VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pVideoParamSet)
 {
     uint32_t i, j, k;
 
@@ -1110,15 +1139,24 @@ void VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pV
         pVideoParamSet->numScalabilityTypes += pVideoParamSet->scalability_mask_flag[i];
     }
 
-    for (i = 0; i < ( pVideoParamSet->numScalabilityTypes - pVideoParamSet->privFlags.splitting_flag); i++)
+    // A length is coded for each dimension but, with splitting_flag, the last.
+    const uint32_t codedDimensionIdLens = pVideoParamSet->numScalabilityTypes -
+        std::min<uint32_t>(pVideoParamSet->numScalabilityTypes, pVideoParamSet->privFlags.splitting_flag);
+    for (i = 0; i < codedDimensionIdLens; i++)
     {
         pVideoParamSet->dimension_id_len[i] = (uint8_t)(u(3) + 1);
     }
-    if (pVideoParamSet->privFlags.splitting_flag)
+    if (pVideoParamSet->privFlags.splitting_flag && (pVideoParamSet->numScalabilityTypes > 0))
     {
-        /* infer last dimension ID Len */
-        pVideoParamSet->dimension_id_len[pVideoParamSet->numScalabilityTypes - 1]
-          = 5 - xGetDimBitOffset(pVideoParamSet, pVideoParamSet->numScalabilityTypes - 1);
+        // The dimensions split the 6 bits of nuh_layer_id (F.7.4.3.1.1): the last starts before the sixth
+        // bit, and its length, dimension_id_len_minus1 + 1, is inferred as the bits that remain.
+        const uint32_t lastDimBitOffset = xGetDimBitOffset(pVideoParamSet, pVideoParamSet->numScalabilityTypes - 1);
+        if (lastDimBitOffset >= 6)
+        {
+            nvParserLog("Invalid vps extension (dimension bit offset %u)\n", lastDimBitOffset);
+            return false;
+        }
+        pVideoParamSet->dimension_id_len[pVideoParamSet->numScalabilityTypes - 1] = (uint8_t)(6 - lastDimBitOffset);
     }
 
     pVideoParamSet->privFlags.vps_nuh_layer_id_present_flag = u(1);
@@ -1181,10 +1219,13 @@ void VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pV
     if (pVideoParamSet->numIndependentLayers > 1)
     {
         pVideoParamSet->num_add_layer_sets = ue();
-        if (pVideoParamSet->num_add_layer_sets > 1023)
+        // The additional layer sets follow the vps_num_layer_sets of the base VPS in the same
+        // arrays of MAX_VPS_LAYER_SETS rows.
+        if ((pVideoParamSet->num_add_layer_sets > 1023) ||
+            (pVideoParamSet->vps_num_layer_sets + pVideoParamSet->num_add_layer_sets > MAX_VPS_LAYER_SETS))
         {
-            nvParserLog("Invalid Invalid vps parameter (num_add_layer_sets=%d)\n", pVideoParamSet->num_add_layer_sets);
-            return;
+            nvParserLog("Invalid vps parameter (num_add_layer_sets=%u)\n", pVideoParamSet->num_add_layer_sets);
+            return false;
         }
     }
 
@@ -1240,7 +1281,7 @@ void VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pV
         (pVideoParamSet->vps_max_layers_minus1 > 0 && pVideoParamSet->vps_num_profile_tier_level_minus1 == 0))
     {
         nvParserLog("Invalid vps parameter (vps_num_profile_tier_level_minus1=%d)\n", pVideoParamSet->vps_num_profile_tier_level_minus1);
-        return;
+        return false;
     }
     for (i = pVideoParamSet->privFlags.vps_base_layer_internal_flag ? 2 : 1; i <= pVideoParamSet->vps_num_profile_tier_level_minus1; i++)
     {
@@ -1303,7 +1344,7 @@ void VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pV
     if (pVideoParamSet->vps_num_rep_formats_minus1 > 15)
     {
         nvParserLog("Invalid vps parameter (vps_num_rep_formats_minus1=%d)\n", pVideoParamSet->vps_num_rep_formats_minus1);
-        return;
+        return false;
     }
 
     for (i = 0; i <= pVideoParamSet->vps_num_rep_formats_minus1; i++)
@@ -1393,7 +1434,7 @@ void VulkanH265Decoder::video_parameter_set_rbspExtension(hevc_video_param_s *pV
     }
     /* Others not used for MV-HEVC */
 
-    return;
+    return true;
 }
 
 void VulkanH265Decoder::deriveNecessaryLayerFlags(hevc_video_param_s *pVideoParamSet, uint32_t olsIdx)
@@ -1581,7 +1622,8 @@ uint32_t VulkanH265Decoder::xGetDimBitOffset(hevc_video_param_s *pVideoParamSet,
     }
     else
     {
-        for (uint32_t dimIdx = 0; dimIdx <= j-1; dimIdx++)
+        // dimBitOffset[0] is 0 (F.7.4.3.1.1): the sum is over the dimensions before j.
+        for (uint32_t dimIdx = 0; dimIdx < j; dimIdx++)
         {
             dimBitOffset += pVideoParamSet->dimension_id_len[dimIdx];
         }
@@ -1681,14 +1723,16 @@ bool VulkanH265Decoder::scaling_list_data(scaling_list_s *scl)
             scle->scaling_list_pred_mode_flag = u(1);
             if (!scle->scaling_list_pred_mode_flag)
             {
-                int scaling_list_pred_matrix_id_delta = ue();
-                int refMatrixId = matrixId - scaling_list_pred_matrix_id_delta;
-                scle->scaling_list_pred_matrix_id_delta = scaling_list_pred_matrix_id_delta;
-                if (refMatrixId < 0)
+                // At most matrixId (7.4.5): refMatrixId = matrixId - delta names this list or an earlier one,
+                // which the scaling factors are copied from.
+                const uint32_t scaling_list_pred_matrix_id_delta = ue();
+                if (scaling_list_pred_matrix_id_delta > (uint32_t)matrixId)
                 {
-                    nvParserLog("Invalid scaling_list_pred_matrix_id_delta (refMatrixId = %d)\n", refMatrixId);
+                    nvParserLog("Invalid scaling_list_pred_matrix_id_delta (%u, matrixId %d)\n",
+                                scaling_list_pred_matrix_id_delta, matrixId);
                     return false;
                 }
+                scle->scaling_list_pred_matrix_id_delta = (int)scaling_list_pred_matrix_id_delta;
             }
             else
             {
@@ -1769,6 +1813,8 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
             }
         }
 
+        // Each derived picture is checked before it is written: the predicted set can hold one picture
+        // more than the set it is predicted from, which may already fill the arrays (7.4.8).
         {
             int i = 0;
             for (int j = rstrps->NumPositivePics - 1; j >= 0; j--)
@@ -1776,7 +1822,10 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
                 int dPoc = rstrps->DeltaPocS1[j] + DeltaRPS;
                 if ((dPoc < 0) && use_delta_flag[rstrps->NumNegativePics + j])
                 {
-                    assert(i < MAX_NUM_STRPS_ENTRIES);
+                    if (i >= MAX_NUM_STRPS_ENTRIES) {
+                        nvParserLog("Invalid inter RPS: more than %d pictures\n", MAX_NUM_STRPS_ENTRIES);
+                        return nullptr;
+                    }
                     strps->DeltaPocS0[i] = dPoc;
                     stdShortTermRefPicSet->delta_poc_s0_minus1[i] = (uint16_t)dPoc;
                     strps->UsedByCurrPicS0[i] = used_by_curr_pic_flag[rstrps->NumNegativePics + j];
@@ -1788,7 +1837,10 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
             }
             if ((DeltaRPS < 0) && use_delta_flag[rstrps->NumNegativePics+rstrps->NumPositivePics])
             {
-                assert(i < MAX_NUM_STRPS_ENTRIES);
+                if (i >= MAX_NUM_STRPS_ENTRIES) {
+                    nvParserLog("Invalid inter RPS: more than %d pictures\n", MAX_NUM_STRPS_ENTRIES);
+                    return nullptr;
+                }
                 strps->DeltaPocS0[i] = DeltaRPS;
                 stdShortTermRefPicSet->delta_poc_s0_minus1[i] = (uint16_t)DeltaRPS;
                 strps->UsedByCurrPicS0[i] = used_by_curr_pic_flag[rstrps->NumNegativePics+rstrps->NumPositivePics];
@@ -1802,7 +1854,10 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
                 int dPoc = rstrps->DeltaPocS0[j] + DeltaRPS;
                 if ((dPoc < 0) && use_delta_flag[j])
                 {
-                    assert(i < MAX_NUM_STRPS_ENTRIES);
+                    if (i >= MAX_NUM_STRPS_ENTRIES) {
+                        nvParserLog("Invalid inter RPS: more than %d pictures\n", MAX_NUM_STRPS_ENTRIES);
+                        return nullptr;
+                    }
                     strps->DeltaPocS0[i] = dPoc;
                     stdShortTermRefPicSet->delta_poc_s0_minus1[i] = (uint16_t)dPoc;
                     strps->UsedByCurrPicS0[i] = used_by_curr_pic_flag[j];
@@ -1822,7 +1877,10 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
                 int dPoc = rstrps->DeltaPocS0[j] + DeltaRPS;
                 if ((dPoc > 0) && use_delta_flag[j])
                 {
-                    assert(i < MAX_NUM_STRPS_ENTRIES);
+                    if (i >= MAX_NUM_STRPS_ENTRIES) {
+                        nvParserLog("Invalid inter RPS: more than %d pictures\n", MAX_NUM_STRPS_ENTRIES);
+                        return nullptr;
+                    }
                     strps->DeltaPocS1[i] = dPoc;
                     stdShortTermRefPicSet->delta_poc_s1_minus1[i] = dPoc;
                     strps->UsedByCurrPicS1[i] = used_by_curr_pic_flag[j];
@@ -1834,7 +1892,10 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
             }
             if ((DeltaRPS > 0) && use_delta_flag[rstrps->NumNegativePics+rstrps->NumPositivePics])
             {
-                assert(i < MAX_NUM_STRPS_ENTRIES);
+                if (i >= MAX_NUM_STRPS_ENTRIES) {
+                    nvParserLog("Invalid inter RPS: more than %d pictures\n", MAX_NUM_STRPS_ENTRIES);
+                    return nullptr;
+                }
                 strps->DeltaPocS1[i] = DeltaRPS;
                 stdShortTermRefPicSet->delta_poc_s1_minus1[i] = DeltaRPS;
                 strps->UsedByCurrPicS1[i] = used_by_curr_pic_flag[rstrps->NumNegativePics+rstrps->NumPositivePics];
@@ -1848,7 +1909,10 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
                 int dPoc = rstrps->DeltaPocS1[j] + DeltaRPS;
                 if ((dPoc > 0) && use_delta_flag[rstrps->NumNegativePics+j])
                 {
-                    assert(i < MAX_NUM_STRPS_ENTRIES);
+                    if (i >= MAX_NUM_STRPS_ENTRIES) {
+                        nvParserLog("Invalid inter RPS: more than %d pictures\n", MAX_NUM_STRPS_ENTRIES);
+                        return nullptr;
+                    }
                     strps->DeltaPocS1[i] = dPoc;
                     stdShortTermRefPicSet->delta_poc_s1_minus1[i] = dPoc;
                     strps->UsedByCurrPicS1[i] = used_by_curr_pic_flag[rstrps->NumNegativePics + j];
@@ -1918,7 +1982,8 @@ StdVideoH265ShortTermRefPicSet* VulkanH265Decoder::short_term_ref_pic_set(StdVid
 }
 
 
-void VulkanH265Decoder::vui_parameters(hevc_seq_param_s *sps, int sps_max_sub_layers_minus1)
+// Returns false for HRD parameters the SPS cannot hold.
+bool VulkanH265Decoder::vui_parameters(hevc_seq_param_s *sps, int sps_max_sub_layers_minus1)
 {
     StdVideoH265SequenceParameterSetVui *vui = &sps->stdVui;
     vui->aspect_ratio_idc = STD_VIDEO_H265_ASPECT_RATIO_IDC_UNSPECIFIED;
@@ -1997,7 +2062,9 @@ void VulkanH265Decoder::vui_parameters(hevc_seq_param_s *sps, int sps_max_sub_la
         }
         vui->flags.vui_hrd_parameters_present_flag = u(1);
         if (vui->flags.vui_hrd_parameters_present_flag) {
-            hrd_parameters(&sps->stdHrdParameters, 1, sps_max_sub_layers_minus1);
+            if (!hrd_parameters(&sps->stdHrdParameters, 1, sps_max_sub_layers_minus1)) {
+                return false;
+            }
             sps->stdVui.pHrdParameters = &sps->stdHrdParameters;
         }
     }
@@ -2012,6 +2079,7 @@ void VulkanH265Decoder::vui_parameters(hevc_seq_param_s *sps, int sps_max_sub_la
         vui->log2_max_mv_length_horizontal = ue();
         vui->log2_max_mv_length_vertical = ue();
     }
+    return true;
 }
 
 
@@ -2035,8 +2103,9 @@ void VulkanH265Decoder::sub_layer_hrd_parameters(StdVideoH265SubLayerHrdParamete
     }
 }
 
-// Annex E
-void VulkanH265Decoder::hrd_parameters(hevc_video_hrd_param_s* pStdHrdParameters, bool commonInfPresentFlag, uint8_t maxNumSubLayersMinus1)
+// Annex E. Returns false for counts past the arrays of the Std HRD parameters: maxNumSubLayersMinus1
+// of 7 or more, or a cpb_cnt_minus1 above 31 (E.3.2).
+bool VulkanH265Decoder::hrd_parameters(hevc_video_hrd_param_s* pStdHrdParameters, bool commonInfPresentFlag, uint8_t maxNumSubLayersMinus1)
 {
     if (commonInfPresentFlag)
     {
@@ -2062,7 +2131,9 @@ void VulkanH265Decoder::hrd_parameters(hevc_video_hrd_param_s* pStdHrdParameters
             pStdHrdParameters->dpb_output_delay_length_minus1 = u(5);
         }
     }
-    assert(maxNumSubLayersMinus1 < STD_VIDEO_H265_SUBLAYERS_LIST_SIZE);
+    if (maxNumSubLayersMinus1 >= STD_VIDEO_H265_SUBLAYERS_LIST_SIZE) {
+        return false;
+    }
     for (uint32_t i = 0; i <= maxNumSubLayersMinus1; i++)
     {
         bool fixed_pic_rate_within_cvs_flag = false;
@@ -2087,24 +2158,27 @@ void VulkanH265Decoder::hrd_parameters(hevc_video_hrd_param_s* pStdHrdParameters
                 pStdHrdParameters->flags.low_delay_hrd_flag |= (1 << i);
             }
         }
-        if (!low_delay_hrd_flag) {
-            pStdHrdParameters->cpb_cnt_minus1[i] = (uint8_t)ue();
-        } else {
-            pStdHrdParameters->cpb_cnt_minus1[i] = 0;
+        const uint32_t cpb_cnt_minus1 = low_delay_hrd_flag ? 0 : ue();
+        if (cpb_cnt_minus1 >= STD_VIDEO_H265_CPB_CNT_LIST_SIZE) {
+            nvParserLog("Invalid cpb_cnt_minus1 (%u)\n", cpb_cnt_minus1);
+            return false;
         }
+        pStdHrdParameters->cpb_cnt_minus1[i] = (uint8_t)cpb_cnt_minus1;
+        // Each sub-layer's parameters go to its own entry of the sub-layer arrays.
         if (pStdHrdParameters->flags.nal_hrd_parameters_present_flag) {
-            sub_layer_hrd_parameters(pStdHrdParameters->stdSubLayerHrdParametersNal, i,
+            sub_layer_hrd_parameters(&pStdHrdParameters->stdSubLayerHrdParametersNal[i], i,
                                      pStdHrdParameters->cpb_cnt_minus1[i],
                                      pStdHrdParameters->flags.sub_pic_hrd_params_present_flag);
         }
         if (pStdHrdParameters->flags.vcl_hrd_parameters_present_flag) {
-            sub_layer_hrd_parameters(pStdHrdParameters->stdSubLayerHrdParametersVcl, i,
+            sub_layer_hrd_parameters(&pStdHrdParameters->stdSubLayerHrdParametersVcl[i], i,
                                      pStdHrdParameters->cpb_cnt_minus1[i],
                                      pStdHrdParameters->flags.sub_pic_hrd_params_present_flag);
         }
     }
 
     pStdHrdParameters->BindSubLayers(maxNumSubLayersMinus1);
+    return true;
 }
 
 
@@ -2243,8 +2317,8 @@ bool VulkanH265Decoder::slice_header(int nal_unit_type, int nuh_temporal_id_plus
                 assert(sps->pLongTermRefPicsSps);
                 if (sps->num_long_term_ref_pics_sps) {
                     uint32_t num_long_term_sps = ue();
-                    if (slh->num_long_term_sps > sps->num_long_term_ref_pics_sps) {
-                        nvParserLog("Invalid num_long_term_sps (%d/%d)\n", num_long_term_sps, sps->num_long_term_ref_pics_sps);
+                    if (num_long_term_sps > sps->num_long_term_ref_pics_sps) {
+                        nvParserLog("Invalid num_long_term_sps (%u/%d)\n", num_long_term_sps, sps->num_long_term_ref_pics_sps);
                         return false;
                     }
                     slh->num_long_term_sps = (uint8_t)num_long_term_sps;
@@ -2277,17 +2351,27 @@ bool VulkanH265Decoder::slice_header(int nal_unit_type, int nuh_temporal_id_plus
             }
 
             const short_term_ref_pic_set_s *strps = !slh->short_term_ref_pic_set_sps_flag ? &slh->strps : &sps->strpss[slh->short_term_ref_pic_set_idx];
+            uint32_t numPocStCurrBefore = 0, numPocStCurrAfter = 0, numPocLtCurr = 0;
             for (uint32_t i = 0; i < strps->NumNegativePics; i++) {
-                m_NumPocTotalCurr += strps->UsedByCurrPicS0[i];
+                numPocStCurrBefore += strps->UsedByCurrPicS0[i];
             }
             for (uint32_t  i = 0; i < strps->NumPositivePics; i++) {
-                m_NumPocTotalCurr += strps->UsedByCurrPicS1[i];
+                numPocStCurrAfter += strps->UsedByCurrPicS1[i];
             }
             for (uint32_t i = 0; i < (uint32_t )(slh->num_long_term_sps + slh->num_long_term_pics); i++) {
                 int UsedByCurrPicLt =
                     (i < slh->num_long_term_sps) ? ((sps->stdLongTermRefPicsSps.used_by_curr_pic_lt_sps_flag >> slh->lt_idx_sps[i]) & 1)
                                                  : ((slh->used_by_curr_pic_lt_flags >> i) & 1);
-                m_NumPocTotalCurr += UsedByCurrPicLt;
+                numPocLtCurr += UsedByCurrPicLt;
+            }
+            m_NumPocTotalCurr = numPocStCurrBefore + numPocStCurrAfter + numPocLtCurr;
+            // The Std picture information holds STD_VIDEO_DECODE_H265_REF_PIC_SET_LIST_SIZE pictures per list.
+            if ((numPocStCurrBefore > STD_VIDEO_DECODE_H265_REF_PIC_SET_LIST_SIZE) ||
+                (numPocStCurrAfter > STD_VIDEO_DECODE_H265_REF_PIC_SET_LIST_SIZE) ||
+                (numPocLtCurr > STD_VIDEO_DECODE_H265_REF_PIC_SET_LIST_SIZE)) {
+                nvParserLog("Invalid reference picture set: %u, %u and %u current pictures\n",
+                            numPocStCurrBefore, numPocStCurrAfter, numPocLtCurr);
+                return false;
             }
         }
     }
@@ -2601,7 +2685,7 @@ int VulkanH265Decoder::dpb_reordering_delay()
     int numReorderPics = 0, i;
     for (i = 0; i < HEVC_DPB_SIZE; i++)
     {
-        if ((m_dpb[i].LayerId == m_nuh_layer_id) &&
+        if ((m_dpb[i].LayerId == m_picture_nuh_layer_id) &&
                 (m_dpb[i].state == 1) && (m_dpb[i].output != 0)) {
             numReorderPics++;
         }
@@ -2683,10 +2767,11 @@ void VulkanH265Decoder::dpb_picture_start(VkSharedBaseObj<hevc_pic_param_s>& pps
 
     m_active_pps[m_nuh_layer_id] = pps;
     m_bPictureStarted = true;
+    m_picture_nuh_layer_id = m_nuh_layer_id;
     m_NumDeltaPocsOfRefRpsIdx = 0;
     if (slh->strps.inter_ref_pic_set_prediction_flag && m_active_sps[m_nuh_layer_id])
     {
-        StdVideoH265SequenceParameterSet* p_active_sps(*m_active_sps[m_nuh_layer_id]);
+        const hevc_seq_param_s* const p_active_sps = m_active_sps[m_nuh_layer_id].get();
         int RIdx = p_active_sps->num_short_term_ref_pic_sets - (slh->strps.delta_idx_minus1 + 1);
         if (RIdx >= 0) {
             m_NumDeltaPocsOfRefRpsIdx = m_active_sps[m_nuh_layer_id]->strpss[RIdx].NumNegativePics +
@@ -2776,8 +2861,8 @@ void VulkanH265Decoder::dpb_picture_end()
     cur->state = 1;
     cur->marking = 1;
     // Apply max reordering delay now to minimize decode->display latency
-    assert(m_active_sps[m_nuh_layer_id]);
-    while (dpb_reordering_delay() > m_active_sps[m_nuh_layer_id]->max_num_reorder_pics)
+    assert(m_active_sps[m_picture_nuh_layer_id]);
+    while (dpb_reordering_delay() > m_active_sps[m_picture_nuh_layer_id]->max_num_reorder_pics)
     {
         // NOTE: This should never actually evict any references from the dpb (just output for display)
         ret = dpb_bumping(m_MaxDpbSize - 1);

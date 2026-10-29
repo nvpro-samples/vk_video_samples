@@ -281,6 +281,7 @@ class VulkanAV1Decoder : public VulkanVideoDecoder {
     int32_t spatial_id;
     bool m_bSPSReceived;
     bool m_bSPSChanged;
+    bool m_bSeenFrameHeader;  // SeenFrameHeader (AV1 5.9.1): a frame header waits for its tile groups
     bool m_obuAnnexB;
     uint8_t timing_info_present;
     av1_timing_info_t timing_info;
