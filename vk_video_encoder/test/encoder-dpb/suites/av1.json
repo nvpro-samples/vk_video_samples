@@ -1,0 +1,82 @@
+{
+  "codec": "av1",
+  "defects": {},
+  "configs": [
+    {
+      "name": "av1-ippp",
+      "args": [
+        "--frames",
+        "48",
+        "--gop",
+        "30",
+        "--idr",
+        "30",
+        "--bframes",
+        "0"
+      ],
+      "known": [],
+      "golden": "../golden/av1-ippp.trace"
+    },
+    {
+      "name": "av1-ibbbp-open",
+      "args": [
+        "--frames",
+        "48",
+        "--gop",
+        "16",
+        "--idr",
+        "60",
+        "--bframes",
+        "3"
+      ],
+      "known": [],
+      "golden": "../golden/av1-ibbbp-open.trace"
+    },
+    {
+      "name": "av1-ibbbp-closed",
+      "args": [
+        "--frames",
+        "48",
+        "--gop",
+        "16",
+        "--idr",
+        "60",
+        "--bframes",
+        "3",
+        "--closed-gop"
+      ],
+      "known": [],
+      "golden": "../golden/av1-ibbbp-closed.trace"
+    },
+    {
+      "name": "av1-ib7p",
+      "args": [
+        "--frames",
+        "48",
+        "--gop",
+        "32",
+        "--idr",
+        "64",
+        "--bframes",
+        "7"
+      ],
+      "known": [],
+      "golden": "../golden/av1-ib7p.trace"
+    },
+    {
+      "name": "av1-ibp-order-hint-wrap",
+      "args": [
+        "--frames",
+        "300",
+        "--gop",
+        "8",
+        "--idr",
+        "400",
+        "--bframes",
+        "1"
+      ],
+      "known": [],
+      "md5": "ec763b6df4cda831e06a730415fa0406"
+    }
+  ]
+}

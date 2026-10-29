@@ -79,6 +79,7 @@
  */
 
 #include "vulkan_video_encoder_ext.h"
+#include "encode_device_probe.h"
 
 // The public header reaches the Xlib platform headers, whose macros collide
 // with ordinary identifiers. Same scrub, same reason, as the sibling tests.
@@ -1493,7 +1494,7 @@ void CaseArmedFdAlongsideCallerWaitArray()
     DestroyCase10Semaphores(callerWait, callerSignal);
 }
 
-int main(int argc, char** argv)
+static int RunTest(int argc, char** argv)
 {
     for (int i = 1; i < argc; i++) {
         if (std::strcmp(argv[i], "--caller-wait-order") == 0) {
@@ -1507,9 +1508,9 @@ int main(int argc, char** argv)
                     : "");
     std::printf("------------------------------------------------\n");
 
-    if ((CreateVulkanVideoEncoderExt(g_encoder) != VK_SUCCESS) || !g_encoder) {
-        std::printf("SKIP: CreateVulkanVideoEncoderExt failed\n");
-        return 77;
+    const VkResult created = CreateVulkanVideoEncoderExt(g_encoder);
+    if ((created != VK_SUCCESS) || !g_encoder) {
+        return enctest::Fail("CreateVulkanVideoEncoderExt", created);
     }
 
     VkVideoEncoderConfig config = {};
@@ -1534,10 +1535,11 @@ int main(int argc, char** argv)
     config.deviceId           = -1;  // -1 is auto-select; 0 names index 0
     config.disableFileOutput  = VK_TRUE;
 
-    if (g_encoder->InitializeExt(config) != VK_SUCCESS) {
-        std::printf("SKIP: InitializeExt failed -- no encode-capable Vulkan "
-                    "device on this host\n");
-        return 77;
+    // The library failed before it had a device: the probe, not the library,
+    // says whether this machine has one.
+    const VkResult initialized = g_encoder->InitializeExt(config);
+    if (initialized != VK_SUCCESS) {
+        return enctest::NoDeviceOrFail("InitializeExt", initialized, config.codec);
     }
 
     VkInstance       instance = g_encoder->GetVkInstance();
@@ -1546,8 +1548,7 @@ int main(int argc, char** argv)
     DeviceFns& fns = g_fns;
     g_device = device;
     if (!LoadDeviceFns(instance, device, &fns)) {
-        std::printf("SKIP: could not load the Vulkan entry points needed\n");
-        return 77;
+        return enctest::Fail("could not load the Vulkan entry points needed");
     }
 
     // Printed, not assumed. Nine ICDs are installed on the test host and a
@@ -1560,8 +1561,7 @@ int main(int argc, char** argv)
 
     InputImage input;
     if (!CreateInputImage(fns, phys, device, &input)) {
-        std::printf("SKIP: could not create the input image\n");
-        return 77;
+        return enctest::Fail("could not create the input image");
     }
 
     VkVideoEncoderExternalImageDescriptor desc = {};
@@ -1582,9 +1582,7 @@ int main(int argc, char** argv)
         g_encoder->RegisterImageResource(desc, 0, &g_resource, nullptr);
     if ((regStatus != VK_VIDEO_ENCODER_STATUS_SUCCESS) ||
         (g_resource == VK_VIDEO_ENCODER_RESOURCE_NULL)) {
-        std::printf("SKIP: RegisterImageResource failed, status %d\n",
-                    (int)regStatus);
-        return 77;
+        return enctest::Fail("RegisterImageResource failed, status", regStatus);
     }
 
     // The counter has to be live before the first assertion depends on it.
@@ -1607,8 +1605,7 @@ int main(int argc, char** argv)
     {
         const int probe = ::dup(2);
         if (probe < 0) {
-            std::printf("SKIP: dup(2) failed\n");
-            return 77;
+            return enctest::Fail("dup(2) failed");
         }
         g_closeCount.store(0, std::memory_order_relaxed);
         g_watchedFd.store(probe, std::memory_order_relaxed);
@@ -1758,4 +1755,13 @@ int main(int argc, char** argv)
     std::printf("checks: %d, failures: %d\n", g_checks, g_failures);
     std::printf("RESULT: %s\n", (g_failures == 0) ? "PASS" : "FAIL");
     return (g_failures == 0) ? 0 : 1;
+}
+
+int main(int argc, char** argv)
+{
+    const int status = RunTest(argc, argv);
+    // g_encoder holds the library's VkInstance. Released here, on every path, vkDestroyInstance runs while the
+    // layers loaded with that instance are still alive; left to exit(), it runs after their static destructors.
+    g_encoder = nullptr;
+    return status;
 }

@@ -42,6 +42,7 @@
  */
 
 #include "vulkan_video_encoder_ext.h"
+#include "encode_device_probe.h"
 
 #include "vk_video/vulkan_video_codec_h264std.h"
 
@@ -350,9 +351,9 @@ int main(int argc, char** argv)
     std::printf("------------------------------------------------\n");
 
     VkSharedBaseObj<VulkanVideoEncoderExt> encoder;
-    if ((CreateVulkanVideoEncoderExt(encoder) != VK_SUCCESS) || !encoder) {
-        std::printf("SKIP: CreateVulkanVideoEncoderExt failed\n");
-        return 77;
+    const VkResult created = CreateVulkanVideoEncoderExt(encoder);
+    if ((created != VK_SUCCESS) || !encoder) {
+        return enctest::Fail("CreateVulkanVideoEncoderExt", created);
     }
 
     VkVideoEncoderConfig config = {};
@@ -383,10 +384,11 @@ int main(int argc, char** argv)
     // working 6.4 MB bitstream for a broken one.
     config.disableFileOutput  = VK_TRUE;
 
-    if (encoder->InitializeExt(config) != VK_SUCCESS) {
-        std::printf("SKIP: InitializeExt failed -- no encode-capable Vulkan "
-                    "device on this host\n");
-        return 77;
+    // The library failed before it had a device: the probe, not the library,
+    // says whether this machine has one.
+    const VkResult initialized = encoder->InitializeExt(config);
+    if (initialized != VK_SUCCESS) {
+        return enctest::NoDeviceOrFail("InitializeExt", initialized, config.codec);
     }
 
     VkInstance       instance = encoder->GetVkInstance();
@@ -394,15 +396,12 @@ int main(int argc, char** argv)
     VkPhysicalDevice phys     = encoder->GetVkPhysicalDevice();
     DeviceFns fns;
     if (!LoadDeviceFns(instance, device, &fns)) {
-        std::printf("SKIP: could not load the Vulkan entry points this test "
-                    "needs\n");
-        return 77;
+        return enctest::Fail("could not load the Vulkan entry points needed");
     }
 
     InputImage input;
     if (!CreateInputImage(fns, phys, device, &input, direct)) {
-        std::printf("SKIP: could not create the input image\n");
-        return 77;
+        return enctest::Fail("could not create the input image");
     }
 
     VkVideoEncoderExternalImageDescriptor desc = {};
@@ -440,9 +439,7 @@ int main(int argc, char** argv)
         encoder->RegisterImageResource(desc, 0, &resource, nullptr);
     if ((regStatus != VK_VIDEO_ENCODER_STATUS_SUCCESS) ||
         (resource == VK_VIDEO_ENCODER_RESOURCE_NULL)) {
-        std::printf("SKIP: RegisterImageResource failed, status %d\n",
-                    (int)regStatus);
-        return 77;
+        return enctest::Fail("RegisterImageResource failed, status", regStatus);
     }
 
     // THE CALLER'S OWN SIGNAL SEMAPHORE -- the half of this entry point that
@@ -470,8 +467,7 @@ int main(int argc, char** argv)
     VkSemaphore callerSignal = VK_NULL_HANDLE;
     if (fns.CreateSemaphore(device, &semCi, nullptr, &callerSignal) !=
         VK_SUCCESS) {
-        std::printf("SKIP: could not create a timeline semaphore\n");
-        return 77;
+        return enctest::Fail("could not create a timeline semaphore");
     }
 
     // Baseline AFTER every one-time allocation, so the delta below is the

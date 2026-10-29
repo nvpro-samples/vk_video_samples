@@ -183,6 +183,8 @@
 #include <string>
 #include <vector>
 
+#include "encode_device_probe.h"
+
 namespace {
 
 const uint32_t kWidth  = 1920;
@@ -3294,9 +3296,10 @@ int main(int argc, char** argv)
             }
         }
         if (everyRowSaysNoDriver) {
-            std::printf("SKIP: no usable Vulkan driver -- every row returned "
-                        "VK_ERROR_INCOMPATIBLE_DRIVER\n");
-            return 77;
+            // A skip where the loader finds no device that encodes; on a host
+            // with one, or with VVS_REQUIRE_GPU, a failure.
+            return enctest::NoDeviceOrFail(
+                "every row's InitializeExt returned VK_ERROR_INCOMPATIBLE_DRIVER", 0);
         }
         if (everyRowRefusedByDevice) {
             std::printf("SKIP: every selected row was refused by the DEVICE, "

@@ -77,6 +77,7 @@
  */
 
 #include "vulkan_video_encoder_ext.h"
+#include "encode_device_probe.h"
 
 // The public header reaches the Xlib platform headers, whose macros collide
 // with ordinary identifiers. Same scrub, same reason, as the sibling tests.
@@ -924,9 +925,11 @@ int main(int argc, char** argv)
     ci.mode  = VK_VIDEO_ENCODER_CONTEXT_MODE_OWN;
 
     VkSharedBaseObj<VulkanVideoEncoderContext> context;
-    if (CreateVulkanVideoEncoderContext(&ci, context) != VK_SUCCESS) {
-        std::printf("SKIP: no Vulkan encoder context could be created\n");
-        return 77;
+    const VkResult created = CreateVulkanVideoEncoderContext(&ci, context);
+    if (created != VK_SUCCESS) {
+        // Any device with an encode queue could have given the library a
+        // context; with none, the host cannot run this.
+        return enctest::NoDeviceOrFail("CreateVulkanVideoEncoderContext", created, 0);
     }
     VulkanVideoEncoderContext* const ctx = context.get();
 
@@ -960,8 +963,10 @@ int main(int argc, char** argv)
         }
     }
     if (chosen == UINT32_MAX) {
-        std::printf("SKIP: no encode-capable NVIDIA device enumerated\n");
-        return 77;
+        // NVIDIA-only by design: a host whose NVIDIA devices encode no H.264
+        // skips, one whose do and that the library did not find fails.
+        return enctest::NoDeviceOrFail("the library enumerated no NVIDIA device that encodes H.264",
+                                       kH264, 0x10DEu);
     }
     std::printf("  using device[%u]\n", chosen);
 

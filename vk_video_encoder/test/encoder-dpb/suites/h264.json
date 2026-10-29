@@ -1,0 +1,235 @@
+{
+  "codec": "h264",
+  "defects": {
+    "ref-frame-num": "VkEncDpbH264::FillStdReferenceInfo leaves FrameNum at 0",
+    "ref-pic-type": "VkEncDpbH264::FillStdReferenceInfo leaves primary_pic_type at 0",
+    "slot-range": "with 16 references and the session capped at 16 slots, a non-reference picture finds no free slot; VkEncDpbH264::DpbPictureEnd asserts in a debug build and returns slot 16 in a release build",
+    "slot-reuse": "max_num_ref_frames is numRefL0 + numRefL1 without the limit of 16, so the 16-slot DPB overwrites a picture the sliding window still holds"
+  },
+  "configs": [
+    {
+      "name": "h264-ippp-1ref",
+      "args": [
+        "--frames",
+        "64",
+        "--gop",
+        "30",
+        "--idr",
+        "30",
+        "--bframes",
+        "0",
+        "--refs-l0",
+        "1",
+        "--refs-l1",
+        "0"
+      ],
+      "golden": "../golden/h264-ippp-1ref.trace",
+      "known": [
+        "ref-frame-num",
+        "ref-pic-type"
+      ]
+    },
+    {
+      "name": "h264-ippp-4ref",
+      "args": [
+        "--frames",
+        "64",
+        "--gop",
+        "30",
+        "--idr",
+        "60",
+        "--bframes",
+        "0",
+        "--refs-l0",
+        "4",
+        "--refs-l1",
+        "0"
+      ],
+      "golden": "../golden/h264-ippp-4ref.trace",
+      "known": [
+        "ref-frame-num",
+        "ref-pic-type"
+      ]
+    },
+    {
+      "name": "h264-ibbbp-open",
+      "args": [
+        "--frames",
+        "64",
+        "--gop",
+        "16",
+        "--idr",
+        "60",
+        "--bframes",
+        "3",
+        "--refs-l0",
+        "2",
+        "--refs-l1",
+        "1"
+      ],
+      "golden": "../golden/h264-ibbbp-open.trace",
+      "known": [
+        "ref-frame-num",
+        "ref-pic-type"
+      ]
+    },
+    {
+      "name": "h264-ibbbp-closed",
+      "args": [
+        "--frames",
+        "64",
+        "--gop",
+        "16",
+        "--idr",
+        "60",
+        "--bframes",
+        "3",
+        "--refs-l0",
+        "2",
+        "--refs-l1",
+        "1",
+        "--closed-gop"
+      ],
+      "golden": "../golden/h264-ibbbp-closed.trace",
+      "known": [
+        "ref-frame-num",
+        "ref-pic-type"
+      ]
+    },
+    {
+      "name": "h264-ib7p-4ref",
+      "args": [
+        "--frames",
+        "64",
+        "--gop",
+        "32",
+        "--idr",
+        "60",
+        "--bframes",
+        "7",
+        "--refs-l0",
+        "4",
+        "--refs-l1",
+        "1"
+      ],
+      "golden": "../golden/h264-ib7p-4ref.trace",
+      "known": [
+        "ref-frame-num",
+        "ref-pic-type"
+      ]
+    },
+    {
+      "name": "h264-ippp-frame-num-wrap",
+      "args": [
+        "--frames",
+        "300",
+        "--gop",
+        "8",
+        "--idr",
+        "400",
+        "--bframes",
+        "0",
+        "--refs-l0",
+        "2",
+        "--refs-l1",
+        "0"
+      ],
+      "known": [
+        "ref-frame-num",
+        "ref-pic-type"
+      ],
+      "md5": "367d777a2d5b2fda4b2220ec760bc2de"
+    },
+    {
+      "name": "h264-ibp-poc-wrap",
+      "args": [
+        "--frames",
+        "160",
+        "--gop",
+        "8",
+        "--idr",
+        "400",
+        "--bframes",
+        "1",
+        "--refs-l0",
+        "2",
+        "--refs-l1",
+        "1"
+      ],
+      "known": [
+        "ref-frame-num",
+        "ref-pic-type"
+      ],
+      "md5": "01c3d63e362b292c2ba34b2ae25b9f1d"
+    },
+    {
+      "name": "h264-ippp-16ref",
+      "args": [
+        "--frames",
+        "24",
+        "--gop",
+        "60",
+        "--idr",
+        "60",
+        "--bframes",
+        "0",
+        "--refs-l0",
+        "16",
+        "--refs-l1",
+        "0"
+      ],
+      "golden": "../golden/h264-ippp-16ref.trace",
+      "known": [
+        "ref-frame-num",
+        "ref-pic-type"
+      ]
+    },
+    {
+      "name": "h264-ibp-16ref",
+      "args": [
+        "--frames",
+        "40",
+        "--gop",
+        "16",
+        "--idr",
+        "60",
+        "--bframes",
+        "1",
+        "--refs-l0",
+        "16",
+        "--refs-l1",
+        "0"
+      ],
+      "golden": "../golden/h264-ibp-16ref.trace",
+      "known": [
+        "ref-frame-num",
+        "ref-pic-type",
+        "slot-range"
+      ],
+      "debug": "VkEncDpbH264::DpbPictureEnd asserts \"Failed to find a free DPB slot\" (VkEncoderDpbH264.cpp:379)"
+    },
+    {
+      "name": "h264-ippp-16-1ref",
+      "args": [
+        "--frames",
+        "24",
+        "--gop",
+        "60",
+        "--idr",
+        "60",
+        "--bframes",
+        "0",
+        "--refs-l0",
+        "16",
+        "--refs-l1",
+        "1"
+      ],
+      "golden": "../golden/h264-ippp-16-1ref.trace",
+      "known": [
+        "ref-frame-num",
+        "ref-pic-type",
+        "slot-reuse"
+      ]
+    }
+  ]
+}
