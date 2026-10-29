@@ -52,6 +52,7 @@ include(VvsValidationGate)
 # scripts/run_ctest_ci.sh enforces the contract: it fails if any registered
 # test is in neither set, and CI calls it. Add a test, add its label.
 enable_testing()
+add_subdirectory(scripts/lint)
 
 # Common options
 option(BUILD_VIDEO_PARSER "Build the video parser" ON)

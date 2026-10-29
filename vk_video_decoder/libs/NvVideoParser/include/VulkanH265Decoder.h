@@ -629,7 +629,7 @@ struct hevc_video_param_s : public StdVideoPictureParametersSet, public StdVideo
     /* DPB size */
     uint8_t  sub_layer_flag_info_present_flag[MAX_VPS_OUTPUTLAYER_SETS];
     uint8_t  sub_layer_dpb_info_present_flag[MAX_VPS_OUTPUTLAYER_SETS][MAX_SUB_LAYERS];
-    uint8_t  max_vps_dec_pic_buffering_minus1[MAX_VPS_OUTPUTLAYER_SETS][MAX_SUB_LAYERS][MAX_NUM_LAYER_IDS];
+    uint8_t  max_vps_dec_pic_buffering_minus1[MAX_VPS_OUTPUTLAYER_SETS][MAX_NUM_LAYER_IDS][MAX_SUB_LAYERS];  // [i][k][j] as F.7.3.2.1.3
     uint8_t  max_vps_num_reorder_pics[MAX_VPS_OUTPUTLAYER_SETS][MAX_SUB_LAYERS];
     uint8_t  max_vps_latency_increase_plus1[MAX_VPS_OUTPUTLAYER_SETS][MAX_SUB_LAYERS];
 
@@ -752,9 +752,9 @@ protected:
 
 protected:
     // Syntax
-    void seq_parameter_set_rbsp();
-    void pic_parameter_set_rbsp();
-    void video_parameter_set_rbsp();
+    bool seq_parameter_set_rbsp();                      // false when the parser refuses the SPS
+    bool pic_parameter_set_rbsp();                      // false when the parser refuses the PPS
+    bool video_parameter_set_rbsp();                    // false when the parser refuses the VPS
     bool video_parameter_set_rbspExtension(hevc_video_param_s *pVideoParamSet);
     void deriveNecessaryLayerFlags(hevc_video_param_s *pVideoParamSet, uint32_t olsIdx );
     void setRefLayers(hevc_video_param_s *pVideoParamSet);

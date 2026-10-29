@@ -720,7 +720,7 @@ typedef struct _slice_group_map_s
     // Reduced version just to make sure the bitstream
     // is correctly handled.
     uint16_t slice_group_map_type;
-    int16_t  slice_group_change_rate_minus1;
+    uint32_t slice_group_change_rate_minus1;
 } slice_group_map_s;
 
 typedef struct _frame_packing_arrangement_s
@@ -803,8 +803,8 @@ private:
     int32_t seq_parameter_set_rbsp(SpsNalUnitTarget spsNalUnitTarget = SPS_NAL_UNIT_TARGET_SPS,
                                    seq_parameter_set_s *spssvc = NULL);
     bool seq_parameter_set_mvc_extension_rbsp(int32_t sps_id);
-    void vui_parameters(vui_parameters_s *vui);
-    void hrd_parameters(vui_parameters_s *vui, hrd_parameters_s *hrd);
+    bool vui_parameters(vui_parameters_s *vui);
+    bool hrd_parameters(vui_parameters_s *vui, hrd_parameters_s *hrd);
     int scaling_list(unsigned char scalingList[], int sizeOfScalingList); // returns scaling_list_type
     bool pic_parameter_set_rbsp();
     bool slice_header(slice_header_s *slh, int nal_ref_idc, int nal_unit_type);

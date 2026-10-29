@@ -33,24 +33,25 @@
 #define VP9_BUFFER_POOL_MAX_SIZE 10
 #define VP9_MAX_NUM_SPATIAL_LAYERS 4
 
-#define VP9_CHECK_FRAME_MARKER {    \
-  if (u(2) != VP9_FRAME_MARKER) {   \
-    assert(!"Invalid frame marker");\
-    return false;                   \
-  }                                 \
+#define VP9_CHECK_FRAME_MARKER {               \
+  if (u(2) != VP9_FRAME_MARKER) {              \
+    nvParserLog("Invalid VP9 frame marker\n"); \
+    return false;                              \
+  }                                            \
 }
 
-#define VP9_CHECK_ZERO_BIT {    \
-  if (u(1) != 0) {              \
-    assert("!Invalid syntax");  \
-    return false;               \
-  }                             \
+#define VP9_CHECK_ZERO_BIT {                 \
+  if (u(1) != 0) {                           \
+    nvParserLog("Invalid VP9 syntax\n");     \
+    return false;                            \
+  }                                          \
 }
 
-#define VP9_CHECK_FRAME_SYNC_CODE   {   \
-  if (u(24) != VP9_FRAME_SYNC_CODE) {   \
-    assert("!Invalid frame sync code"); \
-  }                                     \
+#define VP9_CHECK_FRAME_SYNC_CODE   {                \
+  if (u(24) != VP9_FRAME_SYNC_CODE) {                \
+    nvParserLog("Invalid VP9 frame sync code\n");    \
+    return false;                                    \
+  }                                                  \
 }
 
 // Segment level features.

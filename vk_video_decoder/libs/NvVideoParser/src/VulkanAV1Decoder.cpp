@@ -401,9 +401,9 @@ int VulkanAV1Decoder::GetRelativeDist(int a, int b)
 
     const int bits = sps->order_hint_bits_minus_1 + 1;
 
+    // a and b are order hints of bits bits, but a stream that changes order_hint_bits_minus_1 without a
+    // key frame leaves references with wider ones: the masks below keep the distance defined for any.
     assert(bits >= 1);
-    assert(a >= 0 && a < (1 << bits));
-    assert(b >= 0 && b < (1 << bits));
 
     int diff = a - b;
     const int m = 1 << (bits - 1);
@@ -677,14 +677,17 @@ static int spsSequenceCounter = 0;
 
 bool VulkanAV1Decoder::ParseObuSequenceHeader()
 {
+    // The header is parsed into a new object, which becomes the active sequence header once the whole
+    // header has parsed: a header the parser refuses leaves the one before it active.
     auto prevSps = m_sps;
-    VkResult result = av1_seq_param_s::Create(spsSequenceCounter++, m_sps);
+    VkSharedBaseObj<av1_seq_param_s> newSps;
+    VkResult result = av1_seq_param_s::Create(spsSequenceCounter++, newSps);
 
-    assert((result == VK_SUCCESS) && m_sps);
+    assert((result == VK_SUCCESS) && newSps);
     if (result != VK_SUCCESS)
         return false;
 
-    auto* sps = m_sps.get();
+    auto* sps = newSps.get();
 
 	memset(&sps->color_config, 0, sizeof(sps->color_config));
 	memset(&sps->timing_info, 0, sizeof(sps->timing_info));
@@ -919,6 +922,7 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
         return false;
     }
 
+    m_sps = newSps;
     if (m_bSPSReceived) {
         // @review: this is not correct
 	if (m_sps->isDifferentFrom(prevSps.get()))
@@ -935,7 +939,7 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
         bool success = m_pClient->UpdatePictureParameters(picParamObj, m_sps->client);
         assert(success);
         if (!success) {
-            nvParserErrorLog("s", "\nError updating the AV1 sequence parameters\n");
+            nvParserErrorLog("\nError updating the AV1 sequence parameters\n");
         }
     }
 
@@ -958,9 +962,6 @@ void VulkanAV1Decoder::SetupFrameSize(int frame_size_override_flag)
     if (frame_size_override_flag) {
         frame_width = u(sps->frame_width_bits_minus_1 + 1) + 1;
         frame_height = u(sps->frame_height_bits_minus_1 + 1) + 1;
-        if (frame_width > (sps->max_frame_width_minus_1 + 1) || frame_height > (sps->max_frame_height_minus_1 + 1)) {
-            assert(false);
-        }
     } else {
         frame_width = sps->max_frame_width_minus_1 + 1;
         frame_height = sps->max_frame_height_minus_1 + 1;
@@ -1081,7 +1082,8 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
         for (uint32_t i = 0; i < pFilmGrain->num_y_points; i++) {
             pFilmGrain->point_y_value[i] = u(8);
             if (i && pFilmGrain->point_y_value[i-1] >= pFilmGrain->point_y_value[i]) {
-                assert(!"Y cordinates should be increasing\n");
+                nvParserLog("Film grain point_y_value not increasing\n");  // AV1 6.8.20
+                return false;
             }
             pFilmGrain->point_y_scaling[i] = u(8);
         }
@@ -1101,7 +1103,8 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
             for (uint32_t i = 0; i < pFilmGrain->num_cb_points; i++) {
                 pFilmGrain->point_cb_value[i] = u(8);
                 if (i && pFilmGrain->point_cb_value[i-1] >= pFilmGrain->point_cb_value[i]) {
-                    assert(!"cb cordinates should be increasing\n");
+                    nvParserLog("Film grain point_cb_value not increasing\n");  // AV1 6.8.20
+                    return false;
                 }
                 pFilmGrain->point_cb_scaling[i] = u(8);
             }
@@ -1114,7 +1117,8 @@ bool VulkanAV1Decoder::ReadFilmGrainParams()
             for (uint32_t i = 0; i < pFilmGrain->num_cr_points; i++) {
                 pFilmGrain->point_cr_value[i] = u(8);
                 if (i && pFilmGrain->point_cr_value[i-1] >= pFilmGrain->point_cr_value[i]) {
-                    assert(!"cr cordinates should be increasing\n");
+                    nvParserLog("Film grain point_cr_value not increasing\n");  // AV1 6.8.20
+                    return false;
                 }
                 pFilmGrain->point_cr_scaling[i] = u(8);
             }
@@ -1609,9 +1613,9 @@ int VulkanAV1Decoder::GetRelativeDist1(int a, int b)
 
     const int bits = sps->order_hint_bits_minus_1 + 1;
 
+    // a and b are order hints of bits bits, but a stream that changes order_hint_bits_minus_1 without a
+    // key frame leaves references with wider ones: the masks below keep the distance defined for any.
     assert(bits >= 1);
-    assert(a >= 0 && a < (1 << bits));
-    assert(b >= 0 && b < (1 << bits));
 
     int diff = a - b;
     const int m = 1 << (bits - 1);
@@ -1854,13 +1858,15 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
             if (sps->flags.frame_id_numbers_present_flag) {
                 int display_frame_id = u(frame_id_length);
 
+                // The frame shown is the one the buffer holds (AV1 6.8.2).
                 if (display_frame_id != ref_frame_id[frame_to_show_map_idx] ||
                     RefValid[frame_to_show_map_idx] == 0) {
-                    assert(!"ref frame ID mismatch");
+                    nvParserLog("display_frame_id %d does not name buffer %d's frame\n", display_frame_id, frame_to_show_map_idx);
+                    return false;
                 }
             }
             if (!m_pBuffers[show_existing_frame_index].buffer) {
-                assert("Error: Frame not decoded yet\n");
+                nvParserLog("show_existing_frame of an empty buffer (%d)\n", show_existing_frame_index);
                 return false;
             }
 
@@ -2057,7 +2063,8 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
         if (intra_only || pStd->frame_type != 3) {
             pStd->refresh_frame_flags = u(STD_VIDEO_AV1_NUM_REF_FRAMES);
             if (pStd->refresh_frame_flags == 0xFF && intra_only) {
-                assert(!"Intra_only frames cannot have refresh flags 0xFF");
+                nvParserLog("Intra-only frame with refresh_frame_flags 0xFF\n");  // AV1 6.8.2
+                return false;
             }
 
             //  memset(&ref_frame_names, -1, sizeof(ref_frame_names));
@@ -2220,9 +2227,11 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
     }
 
     // tile_info. DecodeTileInfo divides by the frame's superblock columns and rows, which a frame of no
-    // width or height makes 0.
-    if ((frame_width == 0) || (frame_height == 0)) {
-        nvParserLog("Invalid frame size (%dx%d)\n", frame_width, frame_height);
+    // width or height makes 0. The frame, before superres, fits in the sequence's maximum (AV1 6.8.4),
+    // which the client allocates its pictures at.
+    if ((frame_width == 0) || (frame_height == 0) || (upscaled_width > sps->max_frame_width_minus_1 + 1) ||
+        (frame_height > sps->max_frame_height_minus_1 + 1)) {
+        nvParserLog("Invalid frame size (%dx%d, upscaled width %d)\n", frame_width, frame_height, upscaled_width);
         return false;
     }
     DecodeTileInfo();
@@ -2358,7 +2367,7 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
     {
         // Check before writing: pStdSps and the other fields follow the tile arrays.
         if (m_PicData.khr_info.tileCount >= ARRAY_SIZE(m_PicData.tileOffsets)) {
-            nvParserErrorLog("s", "\nError: Tile count exceeds the size of the tile arrays\n");
+            nvParserErrorLog("\nError: Tile count exceeds the size of the tile arrays\n");
             return false;
         }
 
@@ -2368,7 +2377,7 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
         {
             // The last tile takes the rest of the OBU, which the tiles before it must not overrun.
             if ((uint32_t)consumedBytes > hdr.payload_size) {
-                nvParserErrorLog("s", "\nError: Tile sizes exceed the tile group\n");
+                nvParserErrorLog("\nError: Tile sizes exceed the tile group\n");
                 return false;
             }
             tileSize = hdr.payload_size - consumedBytes;
@@ -2382,7 +2391,7 @@ bool VulkanAV1Decoder::ParseObuTileGroup(const AV1ObuHeader& hdr)
 
             // The tile has to fit in what is left of the OBU.
             if (((uint32_t)consumedBytes > hdr.payload_size) || (tile_size_minus_1 >= hdr.payload_size - (uint32_t)consumedBytes)) {
-                nvParserErrorLog("s", "\nError: Tile sizes exceed the tile group\n");
+                nvParserErrorLog("\nError: Tile sizes exceed the tile group\n");
                 return false;
             }
             tileSize = (size_t)(tile_size_minus_1 + 1);
@@ -2421,6 +2430,7 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
 		// NOTE: This does not modify any bitstream reader stare.
         if (!ParseOBUHeaderAndSize(pCurrOBU, remainingFrameBytes, &hdr)) {
             // OBU header parsing failed
+            m_refusedUnits++;
             return false;
         }
 
@@ -2428,6 +2438,7 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
         // sum with its header is taken in 64 bits.
         if ((uint64_t)hdr.payload_size + hdr.header_size > (uint64_t)remainingFrameBytes) {
             // Error: Truncated frame data
+            m_refusedUnits++;
             return false;
         }
 
@@ -2455,7 +2466,11 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
             break;
 
         case AV1_OBU_SEQUENCE_HEADER:
-            ParseObuSequenceHeader();
+            if (!ParseObuSequenceHeader()) {
+                // A sequence header the parser refuses drops its temporal unit, whose frames are of it.
+                m_refusedUnits++;
+                return false;
+            }
             break;
 
         case AV1_OBU_FRAME_HEADER:
@@ -2465,6 +2480,7 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
             if (!m_bSPSReceived) {
                 // A frame header is parsed with the active sequence header (AV1 7.5): with none, the
                 // frame is dropped.
+                m_refusedUnits++;
                 break;
             }
 			memset(m_PicData.tileOffsets, 0, sizeof(m_PicData.tileOffsets));
@@ -2473,6 +2489,7 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
 
             if (!ParseObuFrameHeader()) {
                 // A frame header the parser refuses drops its temporal unit.
+                m_refusedUnits++;
                 return false;
             }
 
@@ -2492,6 +2509,7 @@ bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int3
             if (!m_bSeenFrameHeader) {
                 // Tile groups follow their frame's header in its temporal unit (AV1 7.5): one that no
                 // frame header precedes is dropped.
+                m_refusedUnits++;
                 break;
             }
             if (ParseObuTileGroup(hdr)) {
@@ -2594,7 +2612,9 @@ bool VulkanAV1Decoder::ParseByteStream(const VkParserBitstreamPacket* pck, size_
         }
         int parsedBytes = 0;
         if (!ParseOneFrame(pdataStart, frame_size, pck, &parsedBytes)) {
-            return false;
+            // The rest of a temporal unit the parser refuses, or whose picture the client does not take,
+            // is dropped, and parsing continues with the next one: the packet is consumed.
+            parsedBytes = (int)pck->nDataLength;
         }
 
 		if (pParsedBytes)
