@@ -652,6 +652,11 @@ bool VulkanVideoProcessor::StreamCompleted()
 #if !defined(VK_VIDEO_NO_STDOUT_INFO)
         std::cout << "End of Video Stream with status  " << VK_SUCCESS << std::endl;
 #endif
+        const uint64_t refusedUnits = m_vkParser ? m_vkParser->GetRefusedUnitCount() : 0;
+        if (refusedUnits > 0) {
+            // The parser drops a unit it refuses and carries on, so the stream ends normally.
+            std::cerr << "Parser: refused " << refusedUnits << " units of the stream" << std::endl;
+        }
         return true;
     }
 }

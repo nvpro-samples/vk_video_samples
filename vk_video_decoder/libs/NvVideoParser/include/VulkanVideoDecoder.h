@@ -113,6 +113,7 @@ protected:
     int32_t m_lCheckPTS;                        // Run the m_bFilterTimestamps for the first few framew to look for out of order PTS
     NVCodecErrors m_eError;
     SIMD_ISA m_NextStartCode;
+    uint64_t m_refusedUnits;                    // Units refused since Initialize (GetRefusedUnitCount)
 public:
     VulkanVideoDecoder(VkVideoCodecOperationFlagBitsKHR std);
     virtual ~VulkanVideoDecoder();
@@ -154,6 +155,7 @@ public:
     bool ParseByteStreamNEON(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
 #endif
     virtual bool GetDisplayMasteringInfo(VkParserDisplayMasteringInfo *) { return false; }
+    virtual uint64_t GetRefusedUnitCount() const { return m_refusedUnits; }
 
 protected:
     virtual void CreatePrivateContext() = 0;                   // Implemented by derived classes
@@ -203,8 +205,15 @@ protected:
     VkDeviceSize swapBitstreamBuffer(VkDeviceSize copyCurrBuffOffset, VkDeviceSize copyCurrBuffSize);
 };
 
-void nvParserLog(const char* format, ...);
-void nvParserVerboseLog(const char* format, ...);
-void nvParserErrorLog(const char* format, ...);
+#if defined(__GNUC__) || defined(__clang__)
+#define NV_PARSER_LOG_FORMAT __attribute__((format(printf, 1, 2)))
+#else
+#define NV_PARSER_LOG_FORMAT
+#endif
+
+// printf formats; the client's log function gets the formatted message.
+void nvParserLog(const char* format, ...) NV_PARSER_LOG_FORMAT;
+void nvParserVerboseLog(const char* format, ...) NV_PARSER_LOG_FORMAT;
+void nvParserErrorLog(const char* format, ...) NV_PARSER_LOG_FORMAT;
 
 #endif // _VULKANVIDEODECODER_H_

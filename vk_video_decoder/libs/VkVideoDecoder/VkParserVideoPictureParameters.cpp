@@ -406,7 +406,7 @@ bool VkParserVideoPictureParameters::UpdatePictureParametersHierarchy(
         }
         break;
     default:
-        assert("!Invalid STD type");
+        assert(!"Invalid STD type");
         return false;
     }
     m_lastPictParamsQueue[pictureParametersObject->GetParameterType()] = pictureParametersObject;

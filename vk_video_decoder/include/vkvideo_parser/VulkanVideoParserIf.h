@@ -517,6 +517,10 @@ class VulkanVideoDecodeParser : public virtual VkVideoRefCountBase {
     virtual VkResult Initialize(const VkParserInitDecodeParameters* pParserPictureData) = 0;
     virtual bool ParseByteStream(const VkParserBitstreamPacket* pck, size_t* pParsedBytes = NULL) = 0;
     virtual bool GetDisplayMasteringInfo(VkParserDisplayMasteringInfo* pdisp) = 0;
+    // The number of units the parser has refused since Initialize: H.264 and H.265 NAL units, AV1
+    // OBUs and temporal units, and VP9 frames whose syntax or values it does not accept. A refused
+    // unit is dropped and parsing continues, so ParseByteStream does not fail for it.
+    virtual uint64_t GetRefusedUnitCount() const { return 0; }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////
