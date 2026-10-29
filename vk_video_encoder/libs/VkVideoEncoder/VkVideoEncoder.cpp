@@ -3337,7 +3337,9 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
                   << "The video codec " << VkVideoCoreProfile::CodecToName(encoderConfig->codec)
                   << " is not supported!" << std::endl;
-        return VK_ERROR_INITIALIZATION_FAILED;
+        // A device without this codec is unsupported, not broken: the result is one of the
+        // IsVideoUnsupportedResult() set, so the demos exit VVS_EXIT_UNSUPPORTED (69).
+        return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
     }
 
     m_encoderConfig = encoderConfig;
