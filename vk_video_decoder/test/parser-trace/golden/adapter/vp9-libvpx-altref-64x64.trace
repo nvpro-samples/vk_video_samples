@@ -1,0 +1,300 @@
+adapter-trace version=1 codec=vp9 format=ivf packets=24 offsetAlignment=256 sizeAlignment=256
+pkt index=0 bytes=2227
+seq index=0 codec=vp9 width=64 height=64 chroma=2 bitDepth=8 profile=0 flags=progressive minDecodeSurfaces=9 maxDpbSlots=9 pictures=17
+session state=new maxDpbSlots=9 maxActiveReferencePictures=9
+pic index=0 idx=0 setup=0 refs=0
+  vp9 frame_type=0 flags=- refresh=0xff names=[-1,-1,-1]
+  setup slot=0 res=0 width=64 height=64
+  begin role=setup slot=0 res=0 width=64 height=64
+disp idx=0 pts=0
+pkt index=1 bytes=1975
+pic index=1 idx=1 setup=1 refs=1
+  vp9 frame_type=1 flags=- refresh=0x4 names=[0,0,0]
+  setup slot=1 res=1 width=64 height=64
+  ref slot=0 res=0 width=64 height=64
+  begin role=ref slot=0 res=0 width=64 height=64
+  begin role=setup slot=1 res=1 width=64 height=64
+pic index=2 idx=2 setup=2 refs=2
+  vp9 frame_type=1 flags=- refresh=0x1 names=[0,0,1]
+  setup slot=2 res=2 width=64 height=64
+  ref slot=0 res=0 width=64 height=64
+  ref slot=1 res=1 width=64 height=64
+  begin role=ref slot=0 res=0 width=64 height=64
+  begin role=ref slot=1 res=1 width=64 height=64
+  begin role=setup slot=2 res=2 width=64 height=64
+disp idx=2 pts=333333
+pkt index=2 bytes=387
+pic index=3 idx=3 setup=3 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[2,0,1]
+  setup slot=3 res=3 width=64 height=64
+  ref slot=2 res=2 width=64 height=64
+  ref slot=0 res=0 width=64 height=64
+  ref slot=1 res=1 width=64 height=64
+  begin role=ref slot=2 res=2 width=64 height=64
+  begin role=ref slot=0 res=0 width=64 height=64
+  begin role=ref slot=1 res=1 width=64 height=64
+  begin role=setup slot=3 res=3 width=64 height=64
+disp idx=3 pts=666666
+pkt index=3 bytes=317
+pic index=4 idx=4 setup=4 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[3,0,1]
+  setup slot=4 res=4 width=64 height=64
+  ref slot=3 res=3 width=64 height=64
+  ref slot=0 res=0 width=64 height=64
+  ref slot=1 res=1 width=64 height=64
+  begin role=ref slot=3 res=3 width=64 height=64
+  begin role=ref slot=0 res=0 width=64 height=64
+  begin role=ref slot=1 res=1 width=64 height=64
+  begin role=setup slot=4 res=4 width=64 height=64
+disp idx=4 pts=999999
+pkt index=4 bytes=522
+pic index=5 idx=5 setup=5 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[4,0,1]
+  setup slot=5 res=5 width=64 height=64
+  ref slot=4 res=4 width=64 height=64
+  ref slot=0 res=0 width=64 height=64
+  ref slot=1 res=1 width=64 height=64
+  begin role=ref slot=4 res=4 width=64 height=64
+  begin role=ref slot=0 res=0 width=64 height=64
+  begin role=ref slot=1 res=1 width=64 height=64
+  begin role=setup slot=5 res=5 width=64 height=64
+disp idx=5 pts=1333332
+pkt index=5 bytes=467
+pic index=6 idx=6 setup=6 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[5,0,1]
+  setup slot=6 res=6 width=64 height=64
+  ref slot=5 res=5 width=64 height=64
+  ref slot=0 res=0 width=64 height=64
+  ref slot=1 res=1 width=64 height=64
+  begin role=ref slot=5 res=5 width=64 height=64
+  begin role=ref slot=0 res=0 width=64 height=64
+  begin role=ref slot=1 res=1 width=64 height=64
+  begin role=setup slot=6 res=6 width=64 height=64
+disp idx=6 pts=1666665
+pkt index=6 bytes=429
+pic index=7 idx=7 setup=7 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[6,0,1]
+  setup slot=7 res=7 width=64 height=64
+  ref slot=6 res=6 width=64 height=64
+  ref slot=0 res=0 width=64 height=64
+  ref slot=1 res=1 width=64 height=64
+  begin role=ref slot=6 res=6 width=64 height=64
+  begin role=ref slot=0 res=0 width=64 height=64
+  begin role=ref slot=1 res=1 width=64 height=64
+  begin role=setup slot=7 res=7 width=64 height=64
+disp idx=7 pts=1999998
+pkt index=7 bytes=451
+pic index=8 idx=8 setup=8 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[7,0,1]
+  setup slot=8 res=8 width=64 height=64
+  ref slot=7 res=7 width=64 height=64
+  ref slot=0 res=0 width=64 height=64
+  ref slot=1 res=1 width=64 height=64
+  begin role=ref slot=7 res=7 width=64 height=64
+  begin role=ref slot=0 res=0 width=64 height=64
+  begin role=ref slot=1 res=1 width=64 height=64
+  begin role=setup slot=8 res=8 width=64 height=64
+disp idx=8 pts=2333331
+pkt index=8 bytes=343
+pic index=9 idx=9 setup=2 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[8,0,1]
+  setup slot=2 res=9 width=64 height=64
+  ref slot=8 res=8 width=64 height=64
+  ref slot=0 res=0 width=64 height=64
+  ref slot=1 res=1 width=64 height=64
+  begin role=ref slot=8 res=8 width=64 height=64
+  begin role=ref slot=0 res=0 width=64 height=64
+  begin role=ref slot=1 res=1 width=64 height=64
+  begin role=setup slot=2 res=9 width=64 height=64
+disp idx=9 pts=2666664
+pkt index=9 bytes=445
+pic index=10 idx=10 setup=3 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[2,0,1]
+  setup slot=3 res=10 width=64 height=64
+  ref slot=2 res=9 width=64 height=64
+  ref slot=0 res=0 width=64 height=64
+  ref slot=1 res=1 width=64 height=64
+  begin role=ref slot=2 res=9 width=64 height=64
+  begin role=ref slot=0 res=0 width=64 height=64
+  begin role=ref slot=1 res=1 width=64 height=64
+  begin role=setup slot=3 res=10 width=64 height=64
+disp idx=10 pts=2999997
+pkt index=10 bytes=366
+pic index=11 idx=11 setup=4 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[3,0,1]
+  setup slot=4 res=11 width=64 height=64
+  ref slot=3 res=10 width=64 height=64
+  ref slot=0 res=0 width=64 height=64
+  ref slot=1 res=1 width=64 height=64
+  begin role=ref slot=3 res=10 width=64 height=64
+  begin role=ref slot=0 res=0 width=64 height=64
+  begin role=ref slot=1 res=1 width=64 height=64
+  begin role=setup slot=4 res=11 width=64 height=64
+disp idx=11 pts=3333330
+pkt index=11 bytes=399
+pic index=12 idx=12 setup=5 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[4,0,1]
+  setup slot=5 res=12 width=64 height=64
+  ref slot=4 res=11 width=64 height=64
+  ref slot=0 res=0 width=64 height=64
+  ref slot=1 res=1 width=64 height=64
+  begin role=ref slot=4 res=11 width=64 height=64
+  begin role=ref slot=0 res=0 width=64 height=64
+  begin role=ref slot=1 res=1 width=64 height=64
+  begin role=setup slot=5 res=12 width=64 height=64
+disp idx=12 pts=3666663
+pkt index=12 bytes=16
+pic index=13 idx=13 setup=6 refs=3
+  vp9 frame_type=1 flags=- refresh=0x4 names=[5,0,1]
+  setup slot=6 res=13 width=64 height=64
+  ref slot=5 res=12 width=64 height=64
+  ref slot=0 res=0 width=64 height=64
+  ref slot=1 res=1 width=64 height=64
+  begin role=ref slot=5 res=12 width=64 height=64
+  begin role=ref slot=0 res=0 width=64 height=64
+  begin role=ref slot=1 res=1 width=64 height=64
+  begin role=setup slot=6 res=13 width=64 height=64
+disp idx=13 pts=3999996
+pkt index=13 bytes=2062
+pic index=14 idx=14 setup=7 refs=3
+  vp9 frame_type=1 flags=- refresh=0x2 names=[5,6,0]
+  setup slot=7 res=14 width=64 height=64
+  ref slot=5 res=12 width=64 height=64
+  ref slot=0 res=0 width=64 height=64
+  ref slot=6 res=13 width=64 height=64
+  begin role=ref slot=5 res=12 width=64 height=64
+  begin role=ref slot=0 res=0 width=64 height=64
+  begin role=ref slot=6 res=13 width=64 height=64
+  begin role=setup slot=7 res=14 width=64 height=64
+pic index=15 idx=15 setup=8 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[5,6,7]
+  setup slot=8 res=15 width=64 height=64
+  ref slot=5 res=12 width=64 height=64
+  ref slot=7 res=14 width=64 height=64
+  ref slot=6 res=13 width=64 height=64
+  begin role=ref slot=5 res=12 width=64 height=64
+  begin role=ref slot=7 res=14 width=64 height=64
+  begin role=ref slot=6 res=13 width=64 height=64
+  begin role=setup slot=8 res=15 width=64 height=64
+disp idx=15 pts=4333329
+pkt index=14 bytes=569
+pic index=16 idx=16 setup=2 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[8,6,7]
+  setup slot=2 res=16 width=64 height=64
+  ref slot=8 res=15 width=64 height=64
+  ref slot=7 res=14 width=64 height=64
+  ref slot=6 res=13 width=64 height=64
+  begin role=ref slot=8 res=15 width=64 height=64
+  begin role=ref slot=7 res=14 width=64 height=64
+  begin role=ref slot=6 res=13 width=64 height=64
+  begin role=setup slot=2 res=16 width=64 height=64
+disp idx=16 pts=4666662
+pkt index=15 bytes=472
+pic index=17 idx=1 setup=3 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[2,6,7]
+  setup slot=3 res=1 width=64 height=64
+  ref slot=2 res=16 width=64 height=64
+  ref slot=7 res=14 width=64 height=64
+  ref slot=6 res=13 width=64 height=64
+  begin role=ref slot=2 res=16 width=64 height=64
+  begin role=ref slot=7 res=14 width=64 height=64
+  begin role=ref slot=6 res=13 width=64 height=64
+  begin role=setup slot=3 res=1 width=64 height=64
+disp idx=1 pts=4999995
+pkt index=16 bytes=505
+pic index=18 idx=2 setup=4 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[3,6,7]
+  setup slot=4 res=2 width=64 height=64
+  ref slot=3 res=1 width=64 height=64
+  ref slot=7 res=14 width=64 height=64
+  ref slot=6 res=13 width=64 height=64
+  begin role=ref slot=3 res=1 width=64 height=64
+  begin role=ref slot=7 res=14 width=64 height=64
+  begin role=ref slot=6 res=13 width=64 height=64
+  begin role=setup slot=4 res=2 width=64 height=64
+disp idx=2 pts=5333328
+pkt index=17 bytes=641
+pic index=19 idx=3 setup=1 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[4,6,7]
+  setup slot=1 res=3 width=64 height=64
+  ref slot=4 res=2 width=64 height=64
+  ref slot=7 res=14 width=64 height=64
+  ref slot=6 res=13 width=64 height=64
+  begin role=ref slot=4 res=2 width=64 height=64
+  begin role=ref slot=7 res=14 width=64 height=64
+  begin role=ref slot=6 res=13 width=64 height=64
+  begin role=setup slot=1 res=3 width=64 height=64
+disp idx=3 pts=5666661
+pkt index=18 bytes=414
+pic index=20 idx=4 setup=5 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[1,6,7]
+  setup slot=5 res=4 width=64 height=64
+  ref slot=1 res=3 width=64 height=64
+  ref slot=7 res=14 width=64 height=64
+  ref slot=6 res=13 width=64 height=64
+  begin role=ref slot=1 res=3 width=64 height=64
+  begin role=ref slot=7 res=14 width=64 height=64
+  begin role=ref slot=6 res=13 width=64 height=64
+  begin role=setup slot=5 res=4 width=64 height=64
+disp idx=4 pts=5999994
+pkt index=19 bytes=542
+pic index=21 idx=5 setup=8 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[5,6,7]
+  setup slot=8 res=5 width=64 height=64
+  ref slot=5 res=4 width=64 height=64
+  ref slot=7 res=14 width=64 height=64
+  ref slot=6 res=13 width=64 height=64
+  begin role=ref slot=5 res=4 width=64 height=64
+  begin role=ref slot=7 res=14 width=64 height=64
+  begin role=ref slot=6 res=13 width=64 height=64
+  begin role=setup slot=8 res=5 width=64 height=64
+disp idx=5 pts=6333327
+pkt index=20 bytes=623
+pic index=22 idx=6 setup=2 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[8,6,7]
+  setup slot=2 res=6 width=64 height=64
+  ref slot=8 res=5 width=64 height=64
+  ref slot=7 res=14 width=64 height=64
+  ref slot=6 res=13 width=64 height=64
+  begin role=ref slot=8 res=5 width=64 height=64
+  begin role=ref slot=7 res=14 width=64 height=64
+  begin role=ref slot=6 res=13 width=64 height=64
+  begin role=setup slot=2 res=6 width=64 height=64
+disp idx=6 pts=6666660
+pkt index=21 bytes=594
+pic index=23 idx=7 setup=3 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[2,6,7]
+  setup slot=3 res=7 width=64 height=64
+  ref slot=2 res=6 width=64 height=64
+  ref slot=7 res=14 width=64 height=64
+  ref slot=6 res=13 width=64 height=64
+  begin role=ref slot=2 res=6 width=64 height=64
+  begin role=ref slot=7 res=14 width=64 height=64
+  begin role=ref slot=6 res=13 width=64 height=64
+  begin role=setup slot=3 res=7 width=64 height=64
+disp idx=7 pts=6999993
+pkt index=22 bytes=274
+pic index=24 idx=8 setup=4 refs=3
+  vp9 frame_type=1 flags=- refresh=0x1 names=[3,6,7]
+  setup slot=4 res=8 width=64 height=64
+  ref slot=3 res=7 width=64 height=64
+  ref slot=7 res=14 width=64 height=64
+  ref slot=6 res=13 width=64 height=64
+  begin role=ref slot=3 res=7 width=64 height=64
+  begin role=ref slot=7 res=14 width=64 height=64
+  begin role=ref slot=6 res=13 width=64 height=64
+  begin role=setup slot=4 res=8 width=64 height=64
+disp idx=8 pts=7333326
+pkt index=23 bytes=16
+pic index=25 idx=9 setup=1 refs=3
+  vp9 frame_type=1 flags=- refresh=0x2 names=[4,6,7]
+  setup slot=1 res=9 width=64 height=64
+  ref slot=4 res=8 width=64 height=64
+  ref slot=7 res=14 width=64 height=64
+  ref slot=6 res=13 width=64 height=64
+  begin role=ref slot=4 res=8 width=64 height=64
+  begin role=ref slot=7 res=14 width=64 height=64
+  begin role=ref slot=6 res=13 width=64 height=64
+  begin role=setup slot=1 res=9 width=64 height=64
+disp idx=9 pts=7666659
+eos pictures=26 displayed=24
