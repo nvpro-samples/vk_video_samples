@@ -160,7 +160,7 @@ StdVideoH264SequenceParameterSetVui*
 EncoderConfigH264::InitVuiParameters(StdVideoH264SequenceParameterSetVui *vui,
                                      StdVideoH264HrdParameters *pHrdParameters) {
 
-    SetAspectRatio(vui, encodeWidth, encodeHeight, darWidth, darHeight);
+    SetAspectRatio(vui, PictureWidth(), PictureHeight(), darWidth, darHeight);
 
     if (!!overscan_info_present_flag) {
         vui->flags.overscan_info_present_flag = true;
@@ -304,12 +304,13 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
 
     sps->flags.frame_mbs_only_flag = true;
 
-    if (16 * (pic_width_in_mbs) > (uint32_t)encodeWidth ||
-        16 * (sps->pic_height_in_map_units_minus1 + 1) > (uint32_t)encodeHeight) {
+    // The macroblocks cover the coded extent; the cropping leaves the picture's.
+    if (16 * (pic_width_in_mbs) > PictureWidth() ||
+        16 * (sps->pic_height_in_map_units_minus1 + 1) > PictureHeight()) {
         sps->flags.frame_cropping_flag = true;
 
-        sps->frame_crop_right_offset = (16 * (pic_width_in_mbs) - encodeWidth);
-        sps->frame_crop_bottom_offset = (16 * (sps->pic_height_in_map_units_minus1 + 1) - encodeHeight);
+        sps->frame_crop_right_offset = (16 * (pic_width_in_mbs) - PictureWidth());
+        sps->frame_crop_bottom_offset = (16 * (sps->pic_height_in_map_units_minus1 + 1) - PictureHeight());
 
         // ITU-T H.264 7.4.2.1.1: the crop offsets are in units of CropUnitX = SubWidthC
         // and CropUnitY = SubHeightC * (2 - frame_mbs_only_flag). Per Table 6-1

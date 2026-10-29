@@ -314,7 +314,7 @@ EncoderConfigH265::InitVuiParameters(StdVideoH265SequenceParameterSetVui *vuiInf
                                           StdVideoH265SubLayerHrdParameters *pSubLayerHrdParametersNal)
 {
 
-    SetupAspectRatio(vuiInfo, encodeWidth, encodeHeight, darWidth, darHeight);
+    SetupAspectRatio(vuiInfo, PictureWidth(), PictureHeight(), darWidth, darHeight);
 
     if (!!overscan_info_present_flag) {
         vuiInfo->flags.overscan_info_present_flag = true;
@@ -815,9 +815,10 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
     uint32_t subWidthC  = (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR) ? 1 : 2;
     uint32_t subHeightC = (encodeChromaSubsampling == VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR) ? 1 : 2;
     spsInfo->sps.conf_win_left_offset   = 0;
-    spsInfo->sps.conf_win_right_offset  = (picWidthAlignedToMinCbsY - encodeWidth) / subWidthC;
+    // The luma samples cover the coded extent; the window leaves the picture's.
+    spsInfo->sps.conf_win_right_offset  = (picWidthAlignedToMinCbsY - PictureWidth()) / subWidthC;
     spsInfo->sps.conf_win_top_offset    = 0;
-    spsInfo->sps.conf_win_bottom_offset = (picHeightAlignedToMinCbsY - encodeHeight) / subHeightC;
+    spsInfo->sps.conf_win_bottom_offset = (picHeightAlignedToMinCbsY - PictureHeight()) / subHeightC;
     spsInfo->sps.flags.conformance_window_flag = ((spsInfo->sps.conf_win_left_offset != 0) ||
                                                       (spsInfo->sps.conf_win_right_offset != 0) ||
                                                       (spsInfo->sps.conf_win_top_offset != 0) ||

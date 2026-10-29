@@ -188,6 +188,14 @@ struct EncoderConfigH264 : public EncoderConfig {
 
     virtual VkResult InitDeviceCapabilities(const VulkanDeviceContext* vkDevCtx) override;
 
+    virtual void CodedExtentChanged() override
+    {
+        pic_width_in_mbs = DivUp<uint32_t>(encodeWidth, 16);
+        pic_height_in_map_units = DivUp<uint32_t>(encodeHeight, 16);
+        // The profile is set by now, so this redetermines the level only.
+        InitProfileLevel();
+    }
+
     virtual uint32_t GetCodecProfile() override {
         assert(profileIdc != STD_VIDEO_H264_PROFILE_IDC_INVALID);
         return static_cast<uint32_t>(profileIdc);
