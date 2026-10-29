@@ -43,6 +43,11 @@ from tests.libs.video_test_rate_control import (
     RateControlCheck,
     check_stream,
 )
+from tests.libs.video_test_quality import (
+    QualityCheck,
+    SourceFormat,
+    check_quality,
+)
 
 
 @dataclass(init=False)
@@ -55,6 +60,7 @@ class EncodeTestSample(BaseTestConfig):
     height: int = 0
     validate_with_decoder: bool = True
     rate_control_check: Optional[RateControlCheck] = None
+    quality_check: Optional[QualityCheck] = None
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
@@ -64,6 +70,7 @@ class EncodeTestSample(BaseTestConfig):
         height: int = 0,
         validate_with_decoder: bool = True,
         rate_control_check: Optional[RateControlCheck] = None,
+        quality_check: Optional[QualityCheck] = None,
         **kwargs,
     ):
         """Initialize EncodeTestSample with all fields from base and child"""
@@ -74,6 +81,7 @@ class EncodeTestSample(BaseTestConfig):
         self.height = height
         self.validate_with_decoder = validate_with_decoder
         self.rate_control_check = rate_control_check
+        self.quality_check = quality_check
 
     @classmethod
     def from_dict(cls, data: dict) -> 'EncodeTestSample':
@@ -99,6 +107,12 @@ class EncodeTestSample(BaseTestConfig):
             rate_control_check=(
                 RateControlCheck.from_dict(data["rate_control_check"])
                 if data.get("rate_control_check") else None),
+            # The PSNR check (tests/libs/video_test_quality.py) runs on every
+            # sample that encodes; "quality_check" gives its calibrated
+            # thresholds, and false turns it off for the sample.
+            quality_check=(
+                None if data.get("quality_check") is False
+                else QualityCheck.from_dict(data.get("quality_check") or {})),
         )
 
     @property
@@ -155,6 +169,7 @@ class VulkanVideoEncodeTestFramework(VulkanVideoTestFrameworkBase):
             'path': Path(decoder_path_str) if decoder_path_str else None,
             'args': decoder_args,
         }
+        self._options['quality_check'] = options.get('quality_check', True)
 
         # Load encode test samples from JSON file
         test_suite = options.get('test_suite') or 'encode_samples.json'
@@ -350,6 +365,11 @@ class VulkanVideoEncodeTestFramework(VulkanVideoTestFrameworkBase):
                     "Rate control check failed: " +
                     "; ".join(report.failures))
 
+        # Measure the pictures against the source, decoded in software. It runs
+        # on every stream that encoded and passed the checks above, the decode
+        # round trip included where the sample asks for it.
+        self._check_quality(result, config, output_file)
+
         # Clean up output file only if test succeeded and keep_files is False
         if (output_file.exists() and
                 result.status == VideoTestStatus.SUCCESS and
@@ -357,6 +377,27 @@ class VulkanVideoEncodeTestFramework(VulkanVideoTestFrameworkBase):
             output_file.unlink()
 
         return result
+
+    def _check_quality(self, result: TestResult, config: EncodeTestSample,
+                       output_file: Path) -> None:
+        """The PSNR check of tests/libs/video_test_quality.py, on a stream
+        that passed every check before it, unless the run or the sample turns
+        it off."""
+        if (not self._options['quality_check'] or config.quality_check is None or
+                not output_file.exists() or
+                result.status != VideoTestStatus.SUCCESS):
+            return
+        fmt = SourceFormat.from_encoder_args(
+            config.width, config.height, config.extra_args)
+        fmt.y4m = config.source_format == "y4m"
+        report = check_quality(output_file, config.full_yuv_path, fmt,
+                               config.quality_check)
+        result.meta["quality"] = report.to_dict()
+        result.meta["quality_summary"] = report.summary()
+        if not report.passed:
+            result.status = VideoTestStatus.ERROR
+            result.error_message = (
+                "PSNR check failed: " + "; ".join(report.failures))
 
     def _analyze_encoder_output(self, stderr: str,
                                 _config: EncodeTestSample) -> bool:
