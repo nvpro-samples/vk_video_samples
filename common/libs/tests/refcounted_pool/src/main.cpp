@@ -53,8 +53,7 @@ int g_failures = 0;
     } while (0)
 
 // GetBitstreamBuffer as VkVideoDecoder and VkVideoEncoder implement it.
-VkSharedBaseObj<Node> GetBuffer(Pool& pool, uint32_t& created, uint32_t& addFailures)
-{
+VkSharedBaseObj<Node> GetBuffer(Pool& pool, uint32_t& created, uint32_t& addFailures) {
     VkSharedBaseObj<Node> node;
     if (pool.GetAvailableNodeFromPool(node) >= 0) {
         return node;
@@ -68,8 +67,7 @@ VkSharedBaseObj<Node> GetBuffer(Pool& pool, uint32_t& created, uint32_t& addFail
 
 // A node added checked out stays out while any copy of the caller's reference
 // lives, then becomes the pool's next available node.
-void AddedNodeReturnsToPool()
-{
+void AddedNodeReturnsToPool() {
     Pool pool;
     VkSharedBaseObj<Node> node = std::make_shared<Node>(7);
     Node* const added = node.get();
@@ -90,8 +88,7 @@ void AddedNodeReturnsToPool()
 }
 
 // A node added available can be checked out at once.
-void PreallocatedNodeIsAvailable()
-{
+void PreallocatedNodeIsAvailable() {
     Pool pool;
     VkSharedBaseObj<Node> node = std::make_shared<Node>(1);
     Node* const added = node.get();
@@ -108,8 +105,7 @@ void PreallocatedNodeIsAvailable()
 // buffers held at a time, as the frame buffer slots hold them. The 21st
 // buffer is fetched while the 20 are held, so the pool needs 21 nodes, 13 of
 // them created, and then creates no more.
-void SteadyStateCreatesNoNodes()
-{
+void SteadyStateCreatesNoNodes() {
     constexpr uint32_t kPreallocated = 8;
     constexpr size_t kHeld = 20;
     constexpr uint32_t kPictures = 10000;
@@ -130,8 +126,8 @@ void SteadyStateCreatesNoNodes()
         }
     }
 
-    std::printf("  %u pictures, %zu buffers held: %u nodes created, %u not added to the pool\n",
-                kPictures, kHeld, created, addFailures);
+    std::printf("  %u pictures, %zu buffers held: %u nodes created, %u not added to the pool\n", kPictures, kHeld, created,
+                addFailures);
     CHECK(created == kHeld + 1 - kPreallocated);
     CHECK(addFailures == 0);
 
@@ -143,8 +139,7 @@ void SteadyStateCreatesNoNodes()
 // capacity. The decoder keeps one bitstream buffer per frame buffer slot (up
 // to VulkanVideoFrameBuffer::maxImages, 32) and the parser holds two more while
 // it swaps buffers, so its 64-entry pool must not stop at 32.
-void DefaultSizeIsTemplateCapacity()
-{
+void DefaultSizeIsTemplateCapacity() {
     Pool pool;
     CHECK(pool.GetMaxNodes() == kPoolCapacity);
     uint32_t added = 0;
@@ -159,18 +154,17 @@ void DefaultSizeIsTemplateCapacity()
     CHECK(pool.AddNodeToPool(extra, false) < 0);
 }
 
-} // namespace
+}  // namespace
 
-int main()
-{
+int main() {
     struct {
         const char* name;
         void (*run)();
     } const tests[] = {
-        { "AddedNodeReturnsToPool", AddedNodeReturnsToPool },
-        { "PreallocatedNodeIsAvailable", PreallocatedNodeIsAvailable },
-        { "SteadyStateCreatesNoNodes", SteadyStateCreatesNoNodes },
-        { "DefaultSizeIsTemplateCapacity", DefaultSizeIsTemplateCapacity },
+        {"AddedNodeReturnsToPool", AddedNodeReturnsToPool},
+        {"PreallocatedNodeIsAvailable", PreallocatedNodeIsAvailable},
+        {"SteadyStateCreatesNoNodes", SteadyStateCreatesNoNodes},
+        {"DefaultSizeIsTemplateCapacity", DefaultSizeIsTemplateCapacity},
     };
 
     for (const auto& test : tests) {

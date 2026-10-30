@@ -26,6 +26,8 @@ jobs:
 
     env:
       TERM: dumb
+      # linux-x86_64 builds without FFmpeg, linux-x86_64-ffmpeg must find it, linux-x86 links it when found.
+      VVS_FFMPEG: ${{ matrix.platform == 'linux-x86_64' && 'OFF' || matrix.platform == 'linux-x86_64-ffmpeg' && 'ON' || 'AUTO' }}
 
     steps:
       - name: Checkout code
@@ -45,7 +47,6 @@ jobs:
           sudo apt install --assume-yes --no-install-recommends valgrind python3-pip ninja-build
           sudo apt install cmake
           sudo apt install libx11-dev libwayland-dev
-          sudo apt install libavformat-dev
           sudo apt install libxrandr-dev
           sudo apt install libvulkan-dev
 
@@ -72,7 +73,7 @@ jobs:
         run: |
           mkdir BUILD_DEBUG
           cd BUILD_DEBUG
-          cmake -DCMAKE_BUILD_TYPE=Debug ..
+          cmake -DCMAKE_BUILD_TYPE=Debug -DVVS_FFMPEG=$VVS_FFMPEG ..
           cmake --build . --parallel $BUILD_JOBS --config Debug
 
       - name: Build release
@@ -80,7 +81,7 @@ jobs:
         run: |
           mkdir BUILD_RELEASE
           cd BUILD_RELEASE
-          cmake -DCMAKE_BUILD_TYPE=Release ..
+          cmake -DCMAKE_BUILD_TYPE=Release -DVVS_FFMPEG=$VVS_FFMPEG ..
           cmake --build . --parallel $BUILD_JOBS --config Release
 
   vk_video_samples-win:
@@ -90,11 +91,6 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Set up X86 MSVC environment
-        if: matrix.platform == 'windows-x86'
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: "x86"
       - name: Checkout code
         uses: actions/checkout@v3
 
@@ -108,6 +104,11 @@ jobs:
           python-version: "3.10"
 
       - name: Install FFmpeg
+        env:
+          # FFmpeg 9.0.2, gyan.dev's shared-library build, from its GitHub mirror, which keeps its
+          # releases back to 2020, so the archive stays downloadable. Change the URL and SHA-256 together.
+          FFMPEG_URL: https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-full_build-shared.zip
+          FFMPEG_SHA256: 8d31e162f1616e37aab3fa2db991b97e1b8dbeb1c8465fd81a81be16ff91b328
         run: |
           # Define the custom installation location
           $currentDir = pwd
@@ -117,18 +118,23 @@ jobs:
           # Create the directory
           New-Item -ItemType Directory -Force -Path $finalDestination
 
-          # Download FFmpeg static build
-          Invoke-WebRequest -Uri https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip -OutFile ffmpeg.zip
+          # Download the FFmpeg shared build, and refuse an archive other than the pinned one
+          Invoke-WebRequest -Uri $env:FFMPEG_URL -OutFile ffmpeg.zip
+          $sha256 = (Get-FileHash -Algorithm SHA256 ffmpeg.zip).Hash
+          if ($sha256 -ne $env:FFMPEG_SHA256) {
+            throw "ffmpeg.zip has SHA-256 $sha256, expected $env:FFMPEG_SHA256"
+          }
 
           # Extract FFmpeg to the tmp location
           $tempExtractPath = "$currentDir\temp\extracted"
 
           # Extract the entire archive to a temporary folder
           Expand-Archive -Path ffmpeg.zip -DestinationPath $tempExtractPath -Force
-          Get-ChildItem -Path $tempExtractPath\ffmpeg-master-latest-win64-gpl-shared
 
-          # Get the contents of the first folder in the archive
-          Get-ChildItem -Path $tempExtractPath\ffmpeg-master-latest-win64-gpl-shared | Where-Object { $_.PSIsContainer } | Copy-Item -Destination $finalDestination -Force -Recurse
+          # The archive holds one folder named as the archive; copy its bin, include and lib folders
+          $archiveRoot = Join-Path $tempExtractPath ([IO.Path]::GetFileNameWithoutExtension($env:FFMPEG_URL))
+          Get-ChildItem -Path $archiveRoot | Where-Object { $_.PSIsContainer } | Copy-Item -Destination $finalDestination -Force -Recurse
+          (& "$finalDestination\bin\ffmpeg.exe" -hide_banner -version)[0]
           echo "$finalDestination\bin" | Out-File -Encoding ASCII -Append $env:GITHUB_PATH
 
       - name: Build Debug

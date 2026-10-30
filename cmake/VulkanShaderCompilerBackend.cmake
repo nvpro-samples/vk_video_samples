@@ -11,6 +11,7 @@
 #   target_link_libraries(mytarget PRIVATE ${VK_SHADER_COMPILER_LIBS})
 
 include_guard(GLOBAL)
+include(${CMAKE_CURRENT_LIST_DIR}/VvsFetchReport.cmake)
 
 # ----------------------------------------------------------------------------
 # GLSL shader compiler backend
@@ -169,11 +170,12 @@ if(VK_VIDEO_SAMPLES_SHADER_BACKEND STREQUAL "glslang")
             FetchContent_Declare(
                 glslang
                 GIT_REPOSITORY https://github.com/KhronosGroup/glslang.git
-                GIT_TAG main
+                GIT_TAG vulkan-sdk-1.4.363.0
                 GIT_SHALLOW TRUE
                 EXCLUDE_FROM_ALL
             )
             FetchContent_MakeAvailable(glslang)
+            vvs_report_fetched(glslang)
 
             if(NOT TARGET glslang OR NOT TARGET glslang-default-resource-limits)
                 message(FATAL_ERROR
@@ -228,11 +230,12 @@ elseif(VK_VIDEO_SAMPLES_SHADER_BACKEND STREQUAL "shaderc")
         FetchContent_Declare(
             spirv-headers
             GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Headers.git
-            GIT_TAG main
+            GIT_TAG vulkan-sdk-1.4.363.0
             GIT_SHALLOW TRUE
             EXCLUDE_FROM_ALL
         )
         FetchContent_MakeAvailable(spirv-headers)
+        vvs_report_fetched(spirv-headers)
 
         set(SPIRV_SKIP_TESTS       ON  CACHE BOOL "Disable SPIRV-Tools tests" FORCE)
         set(SPIRV_SKIP_EXECUTABLES ON  CACHE BOOL "Disable SPIRV-Tools executables" FORCE)
@@ -240,11 +243,12 @@ elseif(VK_VIDEO_SAMPLES_SHADER_BACKEND STREQUAL "shaderc")
         FetchContent_Declare(
             spirv-tools
             GIT_REPOSITORY https://github.com/KhronosGroup/SPIRV-Tools.git
-            GIT_TAG main
+            GIT_TAG vulkan-sdk-1.4.363.0
             GIT_SHALLOW TRUE
             EXCLUDE_FROM_ALL
         )
         FetchContent_MakeAvailable(spirv-tools)
+        vvs_report_fetched(spirv-tools)
 
         # shaderc drives glslang's optimiser, so unlike the glslang backend this
         # chain does need ENABLE_OPT and an external SPIRV-Tools.
@@ -257,11 +261,12 @@ elseif(VK_VIDEO_SAMPLES_SHADER_BACKEND STREQUAL "shaderc")
         FetchContent_Declare(
             glslang
             GIT_REPOSITORY https://github.com/KhronosGroup/glslang.git
-            GIT_TAG main
+            GIT_TAG vulkan-sdk-1.4.363.0
             GIT_SHALLOW TRUE
             EXCLUDE_FROM_ALL
         )
         FetchContent_MakeAvailable(glslang)
+        vvs_report_fetched(glslang)
 
         set(SHADERC_SKIP_TESTS           ON  CACHE BOOL "Skip shaderc tests" FORCE)
         set(SHADERC_SKIP_EXAMPLES        ON  CACHE BOOL "Skip shaderc examples" FORCE)
@@ -274,11 +279,12 @@ elseif(VK_VIDEO_SAMPLES_SHADER_BACKEND STREQUAL "shaderc")
         FetchContent_Declare(
             shaderc
             GIT_REPOSITORY https://github.com/google/shaderc.git
-            GIT_TAG main
+            GIT_TAG v2026.4
             GIT_SHALLOW TRUE
             EXCLUDE_FROM_ALL
         )
         FetchContent_MakeAvailable(shaderc)
+        vvs_report_fetched(shaderc)
 
         if(TARGET shaderc_shared)
             set(VK_SHADER_COMPILER_LIBS shaderc_shared)

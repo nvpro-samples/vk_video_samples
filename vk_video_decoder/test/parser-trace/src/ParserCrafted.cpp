@@ -635,9 +635,9 @@ std::vector<uint8_t> Vp9KeyFrame(const Vp9KeyFrameSyntax& syntax = {}) {
     const std::vector<uint8_t> compressedHeader = {0x55, 0xAA, 0x55, 0xAA};
     BitWriter w;
     w.U(2, syntax.frameMarker).Flag(syntax.profile1).Flag(false);  // frame_marker, profile_low_bit, profile_high_bit
-    w.Flag(false).Flag(false).Flag(true).Flag(false);  // show_existing_frame, KEY_FRAME, show_frame, error res
-    w.U(24, syntax.syncCode);                          // frame_sync_code
-    w.U(3, 1).Flag(false);                             // color_space BT.601, color_range
+    w.Flag(false).Flag(false).Flag(true).Flag(false);              // show_existing_frame, KEY_FRAME, show_frame, error res
+    w.U(24, syntax.syncCode);                                      // frame_sync_code
+    w.U(3, 1).Flag(false);                                         // color_space BT.601, color_range
     if (syntax.profile1) {
         w.Flag(syntax.subsamplingX).Flag(syntax.subsamplingY).Flag(false);  // subsampling_x, subsampling_y, reserved_zero
     }
@@ -647,9 +647,9 @@ std::vector<uint8_t> Vp9KeyFrame(const Vp9KeyFrameSyntax& syntax = {}) {
     if (syntax.loopFilterDeltas != nullptr) {
         syntax.loopFilterDeltas(w);
     }
-    w.U(8, 60).Flag(false).Flag(false).Flag(false);    // base_q_idx, no delta_q
-    w.Flag(false).Flag(false);                         // segmentation off, tile_rows_log2 0
-    w.U(16, compressedHeader.size()).AlignZero();      // header_size_in_bytes, trailing_bits
+    w.U(8, 60).Flag(false).Flag(false).Flag(false);  // base_q_idx, no delta_q
+    w.Flag(false).Flag(false);                       // segmentation off, tile_rows_log2 0
+    w.U(16, compressedHeader.size()).AlignZero();    // header_size_in_bytes, trailing_bits
     w.Bytes(compressedHeader).Bytes({0x55, 0xAA, 0x55, 0xAA});
     return w.Data();
 }
@@ -1059,7 +1059,7 @@ const std::vector<CraftedCase>& Cases() {
         {"H265LongTermMissingKeepsPosition",
          [](CaseContext& stream) {
              const auto twoLongTermPictures = [](BitWriter& w) {
-                 w.Ue(2);                                // num_long_term_pics
+                 w.Ue(2);                            // num_long_term_pics
                  w.U(8, 50).Flag(true).Flag(false);  // poc_lsb_lt, used_by_curr_pic_lt_flag, delta_poc_msb_present_flag
                  w.U(8, 0).Flag(true).Flag(false);
              };

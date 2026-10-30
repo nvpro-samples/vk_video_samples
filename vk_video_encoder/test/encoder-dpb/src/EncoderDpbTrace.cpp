@@ -456,8 +456,7 @@ class H265Driver : public CodecDriver {
 
         VkSharedBaseObj<VulkanVideoImagePoolNode> setupImage = m_images.New(frame.inputNum);
         VkEncDpbH265::RefPicSet refPicSet{};
-        const int8_t setupSlot =
-            m_dpb.DpbPictureStart(&info, rps, nullptr, maxPicOrderCntLsb, frame.timeStamp, &refPicSet);
+        const int8_t setupSlot = m_dpb.DpbPictureStart(&info, rps, nullptr, maxPicOrderCntLsb, frame.timeStamp, &refPicSet);
 
         StdVideoEncodeH265ReferenceListsInfo refLists{};
         const bool inter = (picType == VkVideoGopStructure::FRAME_TYPE_P) || (picType == VkVideoGopStructure::FRAME_TYPE_B);

@@ -54,18 +54,20 @@ namespace enctest {
 
 constexpr int kExitSkip = 77;
 
-inline const char* CodecOperationName(VkVideoCodecOperationFlagsKHR op)
-{
+inline const char* CodecOperationName(VkVideoCodecOperationFlagsKHR op) {
     switch (op) {
-    case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR: return "H.264 encode";
-    case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR: return "H.265 encode";
-    case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:  return "AV1 encode";
-    default:                                           return "video encode";
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
+            return "H.264 encode";
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR:
+            return "H.265 encode";
+        case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:
+            return "AV1 encode";
+        default:
+            return "video encode";
     }
 }
 
-inline std::string Hex(uint32_t value)
-{
+inline std::string Hex(uint32_t value) {
     char text[16];
     std::snprintf(text, sizeof(text), "0x%x", value);
     return text;
@@ -74,8 +76,7 @@ inline std::string Hex(uint32_t value)
 // Whether some physical device -- of |vendorID|, when it is not 0 -- has a
 // queue family that encodes every operation in |codecOps| (any encode queue,
 // when it is 0). |detail| says what was found, or where the search stopped.
-inline bool ProbeEncodeDevice(VkVideoCodecOperationFlagsKHR codecOps, std::string* detail, uint32_t vendorID = 0)
-{
+inline bool ProbeEncodeDevice(VkVideoCodecOperationFlagsKHR codecOps, std::string* detail, uint32_t vendorID = 0) {
 #ifdef _WIN32
     HMODULE lib = LoadLibraryA("vulkan-1.dll");
     PFN_vkGetInstanceProcAddr gipa =
@@ -116,8 +117,8 @@ inline bool ProbeEncodeDevice(VkVideoCodecOperationFlagsKHR codecOps, std::strin
     if (enumerate && properties && queues && (enumerate(instance, &count, nullptr) == VK_SUCCESS) && (count != 0)) {
         std::vector<VkPhysicalDevice> devices(count);
         enumerate(instance, &count, devices.data());
-        *detail = std::to_string(count) + " physical device(s), none with a queue family for " +
-                  CodecOperationName(codecOps) + ((vendorID != 0) ? " from vendor " + Hex(vendorID) : "");
+        *detail = std::to_string(count) + " physical device(s), none with a queue family for " + CodecOperationName(codecOps) +
+                  ((vendorID != 0) ? " from vendor " + Hex(vendorID) : "");
         for (uint32_t d = 0; (d < count) && !found; d++) {
             VkPhysicalDeviceProperties p = {};
             properties(devices[d], &p);
@@ -149,8 +150,7 @@ inline bool ProbeEncodeDevice(VkVideoCodecOperationFlagsKHR codecOps, std::strin
     return found;
 }
 
-inline bool RequireGpu()
-{
+inline bool RequireGpu() {
 #ifdef VVS_REQUIRE_GPU
     return true;
 #else
@@ -163,8 +163,7 @@ inline bool RequireGpu()
 // device, |what| saying how: 77 when no device (of |vendorID|, when it is not
 // 0) encodes |codecOps| and VVS_REQUIRE_GPU is off; 1 otherwise, since then
 // the library is at fault.
-inline int NoDeviceOrFail(const std::string& what, VkVideoCodecOperationFlagsKHR codecOps, uint32_t vendorID = 0)
-{
+inline int NoDeviceOrFail(const std::string& what, VkVideoCodecOperationFlagsKHR codecOps, uint32_t vendorID = 0) {
     std::string detail;
     if (ProbeEncodeDevice(codecOps, &detail, vendorID)) {
         std::printf("FAIL: %s, on a host with a device that encodes: %s\n", what.c_str(), detail.c_str());
@@ -178,13 +177,11 @@ inline int NoDeviceOrFail(const std::string& what, VkVideoCodecOperationFlagsKHR
     return kExitSkip;
 }
 
-inline int NoDeviceOrFail(const char* call, VkResult result, VkVideoCodecOperationFlagsKHR codecOps)
-{
+inline int NoDeviceOrFail(const char* call, VkResult result, VkVideoCodecOperationFlagsKHR codecOps) {
     if (result == VK_ERROR_LAYER_NOT_PRESENT) {
         // The test asked for a layer this machine does not have, the validation layer of a --validate run. A
         // validation gate with REQUIRE_LAYER turns this skip into a failure where the layer must be present.
-        std::printf("SKIP: %s returned %d: a requested layer is not on the loader's search path\n", call,
-                    static_cast<int>(result));
+        std::printf("SKIP: %s returned %d: a requested layer is not on the loader's search path\n", call, static_cast<int>(result));
         return kExitSkip;
     }
     return NoDeviceOrFail(std::string(call) + " returned " + std::to_string(result), codecOps);
@@ -192,14 +189,12 @@ inline int NoDeviceOrFail(const char* call, VkResult result, VkVideoCodecOperati
 
 // The exit status of a failure no machine excuses: after the library has a
 // device, or in a call that never needs one.
-inline int Fail(const char* what, long long result)
-{
+inline int Fail(const char* what, long long result) {
     std::printf("FAIL: %s (%lld)\n", what, result);
     return 1;
 }
 
-inline int Fail(const char* what)
-{
+inline int Fail(const char* what) {
     std::printf("FAIL: %s\n", what);
     return 1;
 }
