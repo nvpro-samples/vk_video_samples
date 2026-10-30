@@ -31,16 +31,14 @@ namespace {
 
 int g_failures = 0;
 
-void Check(bool condition, const char* what)
-{
+void Check(bool condition, const char* what) {
     std::printf("  %s  %s\n", condition ? "ok  " : "FAIL", what);
     if (!condition) {
         ++g_failures;
     }
 }
 
-void SetEnv(const char* name, const char* value)
-{
+void SetEnv(const char* name, const char* value) {
 #ifdef _WIN32
     _putenv_s(name, (value != nullptr) ? value : "");
 #else
@@ -54,8 +52,7 @@ void SetEnv(const char* name, const char* value)
 
 }  // namespace
 
-int main()
-{
+int main() {
     SetEnv("VK_DRIVER_FILES", "encode-device-probe-no-such-driver.json");
     SetEnv("VK_ICD_FILENAMES", nullptr);
     SetEnv("VK_ADD_DRIVER_FILES", nullptr);
@@ -68,32 +65,31 @@ int main()
 
 #ifdef VVS_REQUIRE_GPU
     // Built for a rig: a missing device is never a skip.
-    Check(enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_INITIALIZATION_FAILED,
-                                  VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) == 1,
-          "with VVS_REQUIRE_GPU built in, a library failure with no device fails");
+    Check(
+        enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_INITIALIZATION_FAILED, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) == 1,
+        "with VVS_REQUIRE_GPU built in, a library failure with no device fails");
     // A missing layer is the machine's whatever VVS_REQUIRE_GPU says: the validation gate decides.
-    Check(enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_LAYER_NOT_PRESENT,
-                                  VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) == enctest::kExitSkip,
+    Check(enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_LAYER_NOT_PRESENT, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) ==
+              enctest::kExitSkip,
           "a requested layer that is missing is a skip (77), also with VVS_REQUIRE_GPU");
 #else
     SetEnv("VVS_REQUIRE_GPU", nullptr);
-    Check(enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_INITIALIZATION_FAILED,
-                                  VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) == enctest::kExitSkip,
-          "a library failure with no device is a skip (77)");
-    Check(enctest::NoDeviceOrFail("no NVIDIA device", VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR, 0x10DEu) ==
+    Check(enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_INITIALIZATION_FAILED, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) ==
               enctest::kExitSkip,
+          "a library failure with no device is a skip (77)");
+    Check(enctest::NoDeviceOrFail("no NVIDIA device", VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR, 0x10DEu) == enctest::kExitSkip,
           "so is one with no device of the vendor");
     SetEnv("VVS_REQUIRE_GPU", "1");
-    Check(enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_INITIALIZATION_FAILED,
-                                  VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) == 1,
-          "with VVS_REQUIRE_GPU=1 it fails (1)");
+    Check(
+        enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_INITIALIZATION_FAILED, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) == 1,
+        "with VVS_REQUIRE_GPU=1 it fails (1)");
     // A missing layer is the machine's whatever VVS_REQUIRE_GPU says: the validation gate decides.
-    Check(enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_LAYER_NOT_PRESENT,
-                                  VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) == enctest::kExitSkip,
+    Check(enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_LAYER_NOT_PRESENT, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) ==
+              enctest::kExitSkip,
           "a requested layer that is missing is a skip (77), also with VVS_REQUIRE_GPU");
     SetEnv("VVS_REQUIRE_GPU", "0");
-    Check(enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_INITIALIZATION_FAILED,
-                                  VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) == enctest::kExitSkip,
+    Check(enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_INITIALIZATION_FAILED, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) ==
+              enctest::kExitSkip,
           "VVS_REQUIRE_GPU=0 leaves it a skip");
 #endif
     Check(enctest::Fail("a failure after the device exists") == 1, "Fail() is always 1");

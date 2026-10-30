@@ -1,0 +1,56 @@
+# Fails when a FetchContent or ExternalProject declaration of this tree names a branch as its GIT_TAG.
+# A branch moves, so two builds of one commit of this tree can fetch, and build against, different
+# code. A GIT_TAG names a release tag (v1.4.365, 16.6.0, vulkan-sdk-1.4.363.0) or a commit (40 hex
+# digits).
+#
+#   cmake -DROOT=<source tree> -P git_tag_pinned.cmake
+#   cmake -DACCEPT=<tag>,... -DREFUSE=<tag>,... -P git_tag_pinned.cmake   (checks the pattern itself)
+
+# CMake's regular expressions have no {n} repetition: the 40 digits are 40 bracket expressions.
+string(REPEAT "[0-9a-f]" 40 commitDigits)
+set(pinned "^(${commitDigits}|v?[0-9]+(\\.[0-9]+)+(-[0-9A-Za-z.]+)?|vulkan-sdk-[0-9]+(\\.[0-9]+)+)$")
+
+if(DEFINED ACCEPT OR DEFINED REFUSE)
+    string(REPLACE "," ";" accept "${ACCEPT}")
+    string(REPLACE "," ";" refuse "${REFUSE}")
+    set(wrong "")
+    foreach(tag ${accept})
+        if(NOT tag MATCHES "${pinned}")
+            string(APPEND wrong "  refuses ${tag}\n")
+        endif()
+    endforeach()
+    foreach(tag ${refuse})
+        if(tag MATCHES "${pinned}")
+            string(APPEND wrong "  accepts ${tag}\n")
+        endif()
+    endforeach()
+    if(wrong)
+        message(FATAL_ERROR "The GIT_TAG pattern:\n${wrong}")
+    endif()
+    message(STATUS "The GIT_TAG pattern accepts ${ACCEPT} and refuses ${REFUSE}")
+    return()
+endif()
+
+file(GLOB_RECURSE files LIST_DIRECTORIES false "${ROOT}/CMakeLists.txt" "${ROOT}/*.cmake")
+list(FILTER files EXCLUDE REGEX "/_deps/|/build[^/]*/|/\\.git/")
+if(NOT files)
+    message(FATAL_ERROR "No CMake files under ${ROOT}")
+endif()
+set(found "")
+set(tags 0)
+foreach(file ${files})
+    file(STRINGS "${file}" lines REGEX "^[ \t]*GIT_TAG[ \t]")
+    foreach(line ${lines})
+        string(STRIP "${line}" line)
+        string(REGEX REPLACE "^GIT_TAG[ \t]+([^ \t)]+).*$" "\\1" tag "${line}")
+        math(EXPR tags "${tags}+1")
+        if(NOT tag MATCHES "${pinned}")
+            string(APPEND found "  ${file}: ${line}\n")
+        endif()
+    endforeach()
+endforeach()
+if(found)
+    message(FATAL_ERROR "GIT_TAG names a branch, not a release tag or a commit:\n${found}")
+endif()
+list(LENGTH files count)
+message(STATUS "${count} CMake files, ${tags} GIT_TAG lines, each a release tag or a commit")

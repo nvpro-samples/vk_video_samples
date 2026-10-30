@@ -94,8 +94,8 @@ class LongTermRefTest {
         const StdVideoH265LongTermRefPicsSps longTermSps{};
 
         VkEncDpbH265::RefPicSet refPicSet{};
-        const int8_t slot = m_dpb->DpbPictureStart(&info, &rps, &longTermSps, kMaxPicOrderCntLsb,
-                                                   static_cast<uint64_t>(poc), &refPicSet);
+        const int8_t slot =
+            m_dpb->DpbPictureStart(&info, &rps, &longTermSps, kMaxPicOrderCntLsb, static_cast<uint64_t>(poc), &refPicSet);
         VkSharedBaseObj<VulkanVideoImagePoolNode> image(new VulkanVideoImagePoolNode());
         m_dpb->DpbPictureEnd(image, 1, true);
         m_slots[poc] = slot;
@@ -134,8 +134,7 @@ class LongTermRefTest {
         const StdVideoH265LongTermRefPicsSps longTermSps{};
 
         VkEncDpbH265::RefPicSet refPicSet{};
-        return m_dpb->DpbPictureStart(&info, &rps, &longTermSps, kMaxPicOrderCntLsb,
-                                      static_cast<uint64_t>(poc), &refPicSet);
+        return m_dpb->DpbPictureStart(&info, &rps, &longTermSps, kMaxPicOrderCntLsb, static_cast<uint64_t>(poc), &refPicSet);
     }
 
     int8_t Slot(int32_t poc) const { return m_slots.at(poc); }

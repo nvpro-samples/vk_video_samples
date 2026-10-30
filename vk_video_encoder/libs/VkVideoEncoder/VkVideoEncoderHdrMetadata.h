@@ -28,8 +28,8 @@
 // no StdVideoEncodeH265SeiMastering..., no AV1 metadata OBU entry point, and
 // GetEncodedVideoSessionParametersKHR emits parameter sets only. Every
 // mastering-display / content-light symbol elsewhere in this tree is
-// decoder-side or lives in scripts/vk.xml. So the bytes are built here and
-// appended to the non-VCL header the driver produced.
+// decoder-side. So the bytes are built here and appended to the non-VCL
+// header the driver produced.
 //
 // UNITS. The struct below carries SMPTE ST 2086 units, which is what the
 // H.265 SEI codes directly and what a producer already has (Chromium's
