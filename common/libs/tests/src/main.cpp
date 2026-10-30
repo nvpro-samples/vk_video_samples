@@ -28,9 +28,9 @@
  *   --help, -h       Show this help message
  *   --verbose, -v    Enable verbose output
  *   --smoke          Run only smoke tests (quick validation)
- *   --all            Run all standard tests
- *   --test <name>    Run specific test by name
- *   --list           List all available tests
+ *   --all            Run every set but the disabled cases
+ *   --test <name>    Run one case by name, a disabled one included
+ *   --list           List every set, and the disabled cases with their defects
  */
 
 #include <iostream>
@@ -52,12 +52,13 @@ void printUsage(const char* programName) {
     std::cout << "  --verbose, -v    Enable verbose output" << std::endl;
     std::cout << "  --validate       Enable Vulkan validation layers; any error fails the run" << std::endl;
     std::cout << "  --smoke          Run only smoke tests (quick validation)" << std::endl;
-    std::cout << "  --all            Run all standard tests" << std::endl;
+    std::cout << "  --all            Run the standard, regression, production, buffer I/O and" << std::endl;
+    std::cout << "                   transfer tests (every set but the disabled cases)" << std::endl;
     std::cout << "  --production     Run production validation tests" << std::endl;
     std::cout << "  --regression     Run regression tests (verify bug fixes)" << std::endl;
     std::cout << "  --primaries      Run color primaries tests (BT.601/709/2020)" << std::endl;
-    std::cout << "  --test <name>    Run specific test by name" << std::endl;
-    std::cout << "  --list           List all available tests" << std::endl;
+    std::cout << "  --test <name>    Run one case by name, a disabled one included" << std::endl;
+    std::cout << "  --list           List every set, and the disabled cases with their defects" << std::endl;
     std::cout << "  --deviceUuid <uuid>  Select the GPU by UUID (see vulkaninfo), not by index." << std::endl;
     std::cout << "                       Without it the first enumerated device wins, which on a" << std::endl;
     std::cout << "                       multi-GPU box is rarely the one under test." << std::endl;
@@ -96,8 +97,39 @@ void listTests() {
     for (const auto& test : allTests) {
         std::cout << "  " << test.name << std::endl;
     }
+
+    std::cout << "\n=== BUFFER I/O TESTS ===" << std::endl;
+    auto bufferIOTests = TestCases::getBufferIOTests();
+    for (const auto& test : bufferIOTests) {
+        std::cout << "  " << test.name << std::endl;
+    }
+
+    std::cout << "\n=== TRANSFER TESTS ===" << std::endl;
+    auto transferTests = TestCases::getTransferTests();
+    for (const auto& test : transferTests) {
+        std::cout << "  " << test.name << std::endl;
+    }
+
+    // No set runs these; --test runs one by name. Each line is the case and its defect.
+    std::cout << "\n=== DISABLED TESTS ===" << std::endl;
+    auto disabledTests = TestCases::getDisabledTests();
+    for (const auto& disabled : disabledTests) {
+        std::cout << "  " << disabled.config.name << ": " << disabled.defect << std::endl;
+    }
     
     std::cout << std::endl;
+}
+
+// Every case a set runs: what --all runs and what --test searches first. The smoke
+// and primaries sets are subsets of the standard set.
+static std::vector<TestCaseConfig> getAllRunnableTests() {
+    std::vector<TestCaseConfig> tests = TestCases::getAllStandardTests();
+    for (auto getSet : {TestCases::getRegressionTests, TestCases::getProductionTests,
+                        TestCases::getBufferIOTests, TestCases::getTransferTests}) {
+        auto set = getSet();
+        tests.insert(tests.end(), set.begin(), set.end());
+    }
+    return tests;
 }
 
 
@@ -197,23 +229,25 @@ int main(int argc, char* argv[]) {
     std::vector<TestCaseConfig> testsToRun;
     
     if (!specificTest.empty()) {
-        // Find specific test - search all test categories
-        auto allTests = TestCases::getAllStandardTests();
-        auto regressionTests = TestCases::getRegressionTests();
-        auto productionTests = TestCases::getProductionTests();
-        
-        // Combine all tests for search
-        std::vector<TestCaseConfig> allPossibleTests;
-        allPossibleTests.insert(allPossibleTests.end(), allTests.begin(), allTests.end());
-        allPossibleTests.insert(allPossibleTests.end(), regressionTests.begin(), regressionTests.end());
-        allPossibleTests.insert(allPossibleTests.end(), productionTests.begin(), productionTests.end());
-        
+        // Find the case in the sets, then among the disabled cases: running a disabled
+        // case by name is how its defect is reproduced.
         bool found = false;
-        for (const auto& test : allPossibleTests) {
+        for (const auto& test : getAllRunnableTests()) {
             if (test.name == specificTest) {
                 testsToRun.push_back(test);
                 found = true;
                 break;
+            }
+        }
+        if (!found) {
+            for (const auto& disabled : TestCases::getDisabledTests()) {
+                if (disabled.config.name == specificTest) {
+                    std::cout << "[DISABLED] " << specificTest << ": " << disabled.defect
+                              << " (running it because --test named it)" << std::endl;
+                    testsToRun.push_back(disabled.config);
+                    found = true;
+                    break;
+                }
             }
         }
         if (!found) {
@@ -222,12 +256,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
     } else if (runAll) {
-        testsToRun = TestCases::getAllStandardTests();
-        // Also add production and regression tests
-        auto regressionTests = TestCases::getRegressionTests();
-        auto productionTests = TestCases::getProductionTests();
-        testsToRun.insert(testsToRun.end(), regressionTests.begin(), regressionTests.end());
-        testsToRun.insert(testsToRun.end(), productionTests.begin(), productionTests.end());
+        testsToRun = getAllRunnableTests();
     } else if (runProduction) {
         testsToRun = TestCases::getProductionTests();
     } else if (runRegression) {

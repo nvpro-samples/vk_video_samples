@@ -287,6 +287,22 @@ std::vector<TestCaseConfig> getColorPrimariesTests();
  */
 std::vector<TestCaseConfig> getTransferTests();
 
+/**
+ * @brief A defined case that no set runs, and the defect that keeps it out
+ *
+ * --list prints each one with its defect, and --test <name> runs it, so the
+ * defect can be reproduced; --smoke, --all and the other sets never run it.
+ */
+struct DisabledTestCase {
+    TestCaseConfig config;
+    const char*    defect;
+};
+
+/**
+ * @brief Get the disabled cases, each with the defect that keeps it out of every set
+ */
+std::vector<DisabledTestCase> getDisabledTests();
+
 // =============================================================================
 // Regression Tests (verifying bug fixes)
 // =============================================================================

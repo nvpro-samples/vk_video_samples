@@ -277,9 +277,9 @@ class RecordingDecoder : public IVulkanVideoDecoderHandler {
                                     VkDeviceSize minBitstreamBufferSizeAlignment, const uint8_t* pInitializeBufferMemory,
                                     VkDeviceSize initializeBufferMemorySize,
                                     VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer) override {
-        return CreateHostBitstreamBuffer(size, std::max<VkDeviceSize>(minBitstreamBufferOffsetAlignment, m_offsetAlignment),
-                                         std::max<VkDeviceSize>(minBitstreamBufferSizeAlignment, m_sizeAlignment),
-                                         pInitializeBufferMemory, initializeBufferMemorySize, bitstreamBuffer);
+        return m_bitstreamBuffers.Get(size, std::max<VkDeviceSize>(minBitstreamBufferOffsetAlignment, m_offsetAlignment),
+                                      std::max<VkDeviceSize>(minBitstreamBufferSizeAlignment, m_sizeAlignment),
+                                      pInitializeBufferMemory, initializeBufferMemorySize, bitstreamBuffer);
     }
 
     uint64_t Decoded() const { return m_decoded; }
@@ -431,6 +431,7 @@ class RecordingDecoder : public IVulkanVideoDecoderHandler {
     PicturePool& m_pool;
     uint32_t m_offsetAlignment;
     uint32_t m_sizeAlignment;
+    HostBitstreamBufferPool m_bitstreamBuffers;
     VkVideoChromaSubsamplingFlagsKHR m_refusedChroma;
     Session m_session;
     uint64_t m_sequences = 0;

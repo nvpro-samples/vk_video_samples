@@ -26,11 +26,13 @@
 //   * The storage is written on every submission, before anything can refuse.
 //     A caller that re-submits must not inherit the previous attempt's fd.
 //   * What arrives is usable, and belongs to the caller, who closes it.
-//   * SOME OF THEM ARE UNSIGNALLED WHEN HANDED OVER. A fence that is already
-//     signalled every time is indistinguishable from no fence at all: the
-//     test would pass against an encoder that returns a pre-signalled
-//     descriptor and never orders anything. Requiring that a fair share are
-//     still pending at handover is what makes the rest of this a measurement.
+//   * THEY ARE UNSIGNALLED WHEN HANDED OVER. A fence that is already
+//     signalled is indistinguishable from no fence at all: the test would
+//     pass against an encoder that returns a pre-signalled descriptor and
+//     never orders anything. Each frame waits on a semaphore the test signals
+//     only after it has looked at that frame's fence, so the encoder cannot
+//     have read the image yet, and a real fence is pending at handover on
+//     any device, however fast it reads.
 //   * Every one of them eventually signals. A fence that never does is worse
 //     than none: the producer waits forever on a buffer it owns.
 //
@@ -49,11 +51,9 @@ using namespace vk::video::enc;
 
 namespace {
 
-// FULL HD, AND ENOUGH FRAMES TO MEASURE. The handover check below asks
-// whether a fence is still pending when the caller receives it, and at a small
-// enough frame the encode finishes inside the submission call -- so every
-// fence comes back signalled and the check reports a property of the frame
-// size rather than of the encoder.
+// FULL HD, AND ENOUGH FRAMES TO CYCLE THE ENCODER'S POOLS. The handover check
+// does not depend on the frame size: each frame's read is held back until
+// its fence has been looked at.
 const uint32_t kWidth  = 1920;
 const uint32_t kHeight = 1080;
 const uint32_t kFrames = 64;
@@ -93,6 +93,57 @@ bool WaitSignalled(int fd, int timeoutMs)
     return poll(&p, 1, timeoutMs) > 0;
 }
 
+// The gate each frame waits on: a timeline semaphore on the encoder's device,
+// signalled from the host to release one frame at a time.
+struct Gate {
+    PFN_vkCreateSemaphore  CreateSemaphore  = nullptr;
+    PFN_vkDestroySemaphore DestroySemaphore = nullptr;
+    PFN_vkSignalSemaphore  SignalSemaphore  = nullptr;
+    VkDevice    device    = VK_NULL_HANDLE;
+    VkSemaphore semaphore = VK_NULL_HANDLE;
+
+    bool Create(const enctest::DeviceFns& fns, VkDevice dev)
+    {
+        device = dev;
+        CreateSemaphore = reinterpret_cast<PFN_vkCreateSemaphore>(
+            fns.GetDeviceProcAddr(device, "vkCreateSemaphore"));
+        DestroySemaphore = reinterpret_cast<PFN_vkDestroySemaphore>(
+            fns.GetDeviceProcAddr(device, "vkDestroySemaphore"));
+        SignalSemaphore = reinterpret_cast<PFN_vkSignalSemaphore>(
+            fns.GetDeviceProcAddr(device, "vkSignalSemaphore"));
+        if (SignalSemaphore == nullptr) {
+            SignalSemaphore = reinterpret_cast<PFN_vkSignalSemaphore>(
+                fns.GetDeviceProcAddr(device, "vkSignalSemaphoreKHR"));
+        }
+        if ((CreateSemaphore == nullptr) || (DestroySemaphore == nullptr) ||
+            (SignalSemaphore == nullptr)) {
+            return false;
+        }
+        VkSemaphoreTypeCreateInfo typeInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
+        typeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+        typeInfo.initialValue = 0;
+        VkSemaphoreCreateInfo createInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, &typeInfo };
+        return CreateSemaphore(device, &createInfo, nullptr, &semaphore) == VK_SUCCESS;
+    }
+
+    // Lets the frame that waits on |value| read its image.
+    void Release(uint64_t value)
+    {
+        VkSemaphoreSignalInfo signalInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO };
+        signalInfo.semaphore = semaphore;
+        signalInfo.value = value;
+        SignalSemaphore(device, &signalInfo);
+    }
+
+    void Destroy()
+    {
+        if (semaphore != VK_NULL_HANDLE) {
+            DestroySemaphore(device, semaphore, nullptr);
+            semaphore = VK_NULL_HANDLE;
+        }
+    }
+};
+
 }  // namespace
 
 int main(int argc, const char** argv)
@@ -130,6 +181,12 @@ int main(int argc, const char** argv)
         return report.Summarise("encoder-release-fence");
     }
 
+    Gate gate;
+    if (!gate.Create(fns, s.binding->Device())) {
+        report.Check(false, "a timeline semaphore is created on the encoder's device");
+        return report.Summarise("encoder-release-fence");
+    }
+
     Expected<ResourceId> registered = s.registry->RegisterImage(image.Describe());
     if (!registered) {
         report.Check(false, registered.status().detail());
@@ -154,11 +211,15 @@ int main(int argc, const char** argv)
         // not a leftover from the last one.
         int releaseFenceFd = kSentinel;
 
+        // Held back until this frame's fence has been looked at below.
+        const SemaphoreWait gateWait = { gate.semaphore, i + 1 };
+
         FrameSubmit frame;
         frame.frameId         = 1000 + i;
         frame.pts             = i * 3000;
         frame.registeredImage = *registered;
         frame.image.layout    = VK_IMAGE_LAYOUT_PREINITIALIZED;
+        frame.waitSemaphores  = ArrayView<SemaphoreWait>(&gateWait, 1);
         frame.releaseFenceFd  = &releaseFenceFd;
 
         // BACKPRESSURE IS NOT A FAILURE. A full pipeline refuses with NotReady,
@@ -175,6 +236,7 @@ int main(int argc, const char** argv)
         }
         if (!sent) {
             fprintf(stderr, "        submission refused: %s\n", sent.detail());
+            gate.Release(i + 1);
             break;
         }
         ++submitted;
@@ -189,6 +251,7 @@ int main(int argc, const char** argv)
             }
             fences.push_back(releaseFenceFd);
         }
+        gate.Release(i + 1);
     }
 
     report.Check(submitted == kFrames, "every frame is accepted");
@@ -207,11 +270,10 @@ int main(int argc, const char** argv)
 
         fprintf(stderr, "        %u of %u fences were still pending at handover\n",
                 pendingAtHandover, usable);
-        // A FLOOR, not "> 0". The count exists to rule out a fence exported
-        // after the fact, which would come back already signalled on nearly
-        // every frame -- and "> 0" passes that as long as a single frame races
-        // ahead, which is the exact state the check is written to forbid.
-        report.Check(pendingAtHandover >= (usable / 2),
+        // EVERY ONE. The frame's read waits on the gate, so a fence that has
+        // signalled at handover was not made from that read: it was exported
+        // after the fact, or pre-signalled.
+        report.Check(pendingAtHandover == usable,
                      "release fences are handed over before they have signalled");
 
         s.session->Drain();
@@ -249,6 +311,7 @@ int main(int argc, const char** argv)
     }
     s.registry->UnregisterImage(*registered);
     fns.DeviceWaitIdle(s.binding->Device());
+    gate.Destroy();
     image.Destroy();
 
     const int fdAfter = OpenDescriptorCount();

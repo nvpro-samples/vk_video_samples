@@ -5,11 +5,12 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_DIR="${SCRIPT_DIR}/../../../../build"
-TEST_APP="${BUILD_DIR}/common/libs/tests/vk_filter_test"
+# The build directory: <repo>/build unless BUILD_DIR names another. The binary lands in its bin/.
+BUILD_DIR="${BUILD_DIR:-${SCRIPT_DIR}/../../../../build}"
+TEST_APP="${BUILD_DIR}/bin/vk_filter_test"
 
 # ThreadedRenderingVk paths
-THREADED_DIR="/data/nvidia/vulkan/samples/ThreadedRenderingVk_Standalone"
+THREADED_DIR="${THREADED_DIR:-${SCRIPT_DIR}/../../../../../ThreadedRenderingVk_Standalone}"
 THREADED_APP="${THREADED_DIR}/_bin/Release/ThreadedRenderingVk"
 THREADED_SCRIPT="${THREADED_DIR}/scripts/test_dump_formats.sh"
 
@@ -59,10 +60,11 @@ echo "  1. vk_filter_test    - Standalone filter class tests"
 echo "  2. ThreadedRenderingVk - Integration tests (file dump)"
 echo ""
 
-# Check if vk_filter_test exists
+# vk_filter_test is this tree's own binary: a run without it has tested nothing, so it fails.
 if [ ! -f "${TEST_APP}" ]; then
-    echo -e "${YELLOW}WARNING: vk_filter_test not found at ${TEST_APP}${NC}"
-    echo "Build it with: cd ${BUILD_DIR} && cmake .. -DBUILD_TESTS=ON && make vk_filter_test"
+    echo -e "${RED}ERROR: vk_filter_test not found at ${TEST_APP}${NC}"
+    echo "Build it with: cd ${BUILD_DIR} && cmake .. -DBUILD_TESTS=ON && cmake --build . --target vk_filter_test"
+    echo "or name another build directory: BUILD_DIR=<dir> $0"
     SKIP_STANDALONE=1
 else
     SKIP_STANDALONE=0
@@ -82,8 +84,8 @@ fi
 print_header "Part 1: Standalone Filter Tests (vk_filter_test)"
 
 if [ "${SKIP_STANDALONE}" == "1" ]; then
-    echo -e "${YELLOW}Skipping - application not found${NC}"
-    SKIPPED=$((SKIPPED + 1))
+    echo -e "${RED}Failed - application not found${NC}"
+    FAILED=$((FAILED + 1))
 else
     # Smoke tests (quick sanity check)
     run_test_suite "Smoke Tests" "${TEST_APP} --smoke" || true
@@ -164,9 +166,6 @@ if [ ${FAILED} -eq 0 ]; then
 else
     echo -e "${RED}${BOLD}Some tests failed.${NC}"
     echo ""
-    echo "Known issues:"
-    echo "  - YCBCR2RGBA: Shader generation bug (type mismatches)"
-    echo "  - Y410: Packed format not yet supported"
-    echo "  - Buffer I/O: Not yet implemented in filter"
+    echo "The disabled cases and their defects: ${TEST_APP} --list"
     exit 1
 fi

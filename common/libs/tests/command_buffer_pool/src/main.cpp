@@ -24,8 +24,9 @@
  * VkCommandPool. The layer reports a command pool that two threads write at once; any error the
  * layer reports fails the test.
  *
- * Exit codes: 0 pass, 1 fail, 77 skip (no validation layer, or no device with a compute queue;
- * with VVS_REQUIRE_GPU=1 in the environment, or the VVS_REQUIRE_GPU compile definition, a failure).
+ * Exit codes: 0 pass, 1 fail, 77 skip: no validation layer (the test's oracle, which a machine with a
+ * GPU may still lack), or no device with a compute queue. VVS_REQUIRE_GPU=1 in the environment, or
+ * the VVS_REQUIRE_GPU compile definition, makes the missing device a failure, not the missing layer.
  */
 
 #include <atomic>
@@ -56,7 +57,13 @@ bool RequireGpu() {
 #endif
 }
 
-// The machine lacks what the test needs: a skip, or a failure where a GPU is required.
+// The machine has no validation layer to check with: a skip, GPU or not.
+int NoLayer(const char* what, VkResult result) {
+    std::printf("SKIP: %s (VkResult %d)\n", what, static_cast<int>(result));
+    return kExitSkip;
+}
+
+// The machine has no device the test can use: a skip, or a failure where a GPU is required.
 int NoDevice(const char* what, VkResult result) {
     const bool requireGpu = RequireGpu();
     std::printf("%s: %s (VkResult %d)%s\n", requireGpu ? "FAIL" : "SKIP", what, static_cast<int>(result),
@@ -143,8 +150,11 @@ int main(int argc, char** argv) {
     vkDevCtx.AddReqDeviceExtensions(deviceExtensions);
 
     VkResult result = vkDevCtx.InitVulkanDevice("CommandBufferPoolTwoThreads", VK_NULL_HANDLE, false);
+    if ((result == VK_ERROR_LAYER_NOT_PRESENT) || (result == VK_ERROR_EXTENSION_NOT_PRESENT)) {
+        return NoLayer("no VK_LAYER_KHRONOS_validation with VK_EXT_debug_utils", result);
+    }
     if (result != VK_SUCCESS) {
-        return NoDevice("no Vulkan instance with VK_LAYER_KHRONOS_validation and VK_EXT_debug_utils", result);
+        return NoDevice("no Vulkan instance", result);
     }
     result = vkDevCtx.InitDebugReport(true, false);
     if (result != VK_SUCCESS) {
