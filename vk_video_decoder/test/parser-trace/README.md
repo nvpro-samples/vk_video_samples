@@ -208,7 +208,9 @@ of the decoder sample where it reaches the adapter:
   (only below picture 0's decode order plus 1000, as `ReservePictureBuffer` searches), and no
   picture before the first sequence. The consumer takes a displayed picture at once;
 - `StartVideoSequence` keeps the session or creates a new one as `VkVideoDecoder` does
-  (`VulkanVideoSession::IsCompatible`); a new session starts with every DPB slot inactive;
+  (`VulkanVideoSession::IsCompatible`); a new session starts with every DPB slot inactive. With
+  `--refuse-chroma 400|420|422|444` it refuses every sequence of that chroma format before it
+  allocates a picture, as `VkVideoDecoder` refuses a profile the device does not decode;
 - the begin-coding list is built as `VkVideoDecoder::DecodePictureWithParameters` builds it: the
   reference slots, then the setup slot.
 
@@ -221,6 +223,8 @@ of the decoder sample where it reaches the adapter:
 | `setup`, `ref` | `pSetupReferenceSlot` and each element of `pReferenceSlots`: the slot, the picture its resource belongs to (`res`), and the Std reference information; VP9 the coded extent |
 | `begin` | each element of the begin-coding list, `role=setup` for the setup picture's entry |
 | `disp`, `pkt`, `eos`, `reserve-failed` | display, the packets, the end of the stream, a picture the pool could not give |
+| `seq-refused` | a sequence `StartVideoSequence` refused (`--refuse-chroma`) |
+| `disp-undecoded` | a displayed picture that no decode wrote since the pool gave it out |
 
 The oracle replays the DPB slot states of the specification (videocoding.adoc "DPB Slot States",
 and each codec's reference picture setup rule) over the trace. A slot is activated by a decode
@@ -244,11 +248,12 @@ that each reference's Std information is the one its picture was set up with. Th
 An md5 set's `adapter_known` lists the categories its streams show together. The Argon AV1 sets
 are reported per category, as in parser mode.
 
-In a Debug build some outside streams stop at an assert, and their md5 entries fail: 4:0:0
-sequences at `VulkanVideoParser.cpp:1196`, which maps no monochrome format; an AV1 reference
-without a slot at `:1789`; FM1_BT_B's non-existing reference at `:1437`; and the
-VP9 4:2:2 sample. A Release build with AddressSanitizer and UBSan shows the reference without a slot as a write to
-`activeReferences[-1]` (`:1791`).
+In a Debug build some outside streams stop at an assert, and their md5 entries fail: an AV1
+reference without a slot (`VulkanVideoParser::FillDpbAV1State`); FM1_BT_B's non-existing reference
+(`VulkanVideoParser::FillDpbH264State`); and the VP9 4:2:2 sample, whose chroma format
+`VulkanVP9Decoder::ParseUncompressedHeader` takes for 4:0:0. A Release build with AddressSanitizer
+and UBSan shows the reference without a slot as a write to `activeReferences[-1]`. In a Release
+build the VP9 4:2:2 sample reaches the adapter as 4:0:0, so its trace asks for a monochrome profile.
 
 ## Crafted cases
 
@@ -372,6 +377,7 @@ Encoded with ffmpeg 6.1.1, x264 core 164, x265 3.5, libvpx 1.14.0, rav1e 0.7.1 a
 | `av1-libaom-altref-aq-64x64.ivf` | `-frames:v 17 -c:v libaom-av1 -cpu-used 6 -lag-in-frames 16 -auto-alt-ref 1 -arnr-strength 5 -arnr-max-frames 7 -aq-mode 1 -g 17` | hidden alternate reference frames, show_existing_frame, references with segmentation |
 | `av1-libaom-key-frames-64x64.ivf` | `-frames:v 12 -c:v libaom-av1 -cpu-used 8 -lag-in-frames 0 -g 4 -keyint_min 4` | shown key frames after inter frames, which reset `OrderHints` |
 | `av1-libaom-still-after-inter-64x64.ivf` | `-frames:v 4 -c:v libaom-av1 -cpu-used 8 -lag-in-frames 0`, followed by `-frames:v 1 -c:v libaom-av1 -cpu-used 8 -still-picture 1`, joined with `-f concat -i <list> -c copy` | a reduced still picture header after frames with order hints |
+| `av1-libaom-mono-420-mono-64x64.ivf` | `-frames:v 3 -pix_fmt gray -c:v libaom-av1 -cpu-used 8 -lag-in-frames 0 -g 3`, the same with `-pix_fmt yuv420p`, and `-frames:v 17 -pix_fmt gray -c:v libaom-av1 -cpu-used 8 -lag-in-frames 16 -auto-alt-ref 1 -g 17`, joined with `-f concat -i <list> -c copy` | a monochrome sequence, a 4:2:0 one of the same size and a monochrome one with hidden frames and show_existing_frame; in adapter mode also with the monochrome sequences refused |
 | `av1-libaom-film-grain-64x64.ivf` | `-frames:v 17 -c:v libaom-av1 -cpu-used 6 -lag-in-frames 16 -auto-alt-ref 1 -g 17 -denoise-noise-level 25` | film grain on every shown frame, and one frame with show_frame and showable_frame 0, which codes no film grain parameters |
 | `av1-libaom-64-tile-rows-64x4096.ivf` | 64x4096 from `testsrc2` blurred with `gblur=sigma=20`, `-frames:v 2 -c:v libaom-av1 -cpu-used 8 -crf 63 -lag-in-frames 0 -tile-rows 6 -aom-params sb-size=64` | 64 tile rows of one superblock |
 | `av1-libaom-128-tiles-1024x512.ivf` | 1024x512 from `testsrc2` blurred with `gblur=sigma=20`, `-frames:v 2 -c:v libaom-av1 -cpu-used 8 -crf 63 -lag-in-frames 0 -tile-columns 4 -tile-rows 3 -aom-params sb-size=64` | 16 by 8 tiles, 128 in all |

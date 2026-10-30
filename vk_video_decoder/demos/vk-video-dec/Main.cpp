@@ -29,24 +29,11 @@
 #include "VkCodecUtils/VkVideoFrameOutput.h"
 #include "VkVSCommon.h"
 
-// The exit status of a decode that ran to the end of its loop. A stream the decoder refused fails
-// with ExitCodeFromVkResult() of the refusal (VVS_EXIT_UNSUPPORTED for a profile the device does
-// not decode), and so does a parse failure. A stream that ended without a decoded picture fails
-// too: with the refusal of its last sequence if the parser went on past it, otherwise with
-// EXIT_FAILURE.
 static int StreamExitCode(const VulkanVideoProcessor& vulkanVideoProcessor)
 {
-    const VkResult streamResult = vulkanVideoProcessor.GetStreamResult();
-    if (streamResult != VK_SUCCESS) {
-        fprintf(stderr, "The decode stopped with result %d\n", streamResult);
-        return ExitCodeFromVkResult(streamResult);
-    }
-    if (vulkanVideoProcessor.GetVideoFrameCount() == 0) {
-        fprintf(stderr, "The stream ended without a decoded picture\n");
-        const VkResult sequenceResult = vulkanVideoProcessor.GetVideoSequenceResult();
-        return (sequenceResult != VK_SUCCESS) ? ExitCodeFromVkResult(sequenceResult) : EXIT_FAILURE;
-    }
-    return EXIT_SUCCESS;
+    return ExitCodeFromDecodedStream(vulkanVideoProcessor.GetStreamResult(),
+                                     vulkanVideoProcessor.GetVideoFrameCount(),
+                                     vulkanVideoProcessor.GetVideoSequenceResult());
 }
 
 int main(int argc, const char **argv)

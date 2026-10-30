@@ -62,6 +62,17 @@ public:
     // External consumers wait on this before reading decoded frames.
     virtual int ExportFrameCompleteSemaphoreFd() = 0;
 
+    // Why the stream stopped before its end: the result the decoder refused the stream's sequence
+    // with, or else the parser's status. VK_SUCCESS while the stream decodes and after its end.
+    virtual VkResult GetStreamResult() const = 0;
+
+    // The result the decoder refused the stream's last sequence with, or VK_SUCCESS. A parser that
+    // drops a refused sequence and goes on does not stop the stream for it.
+    virtual VkResult GetVideoSequenceResult() const = 0;
+
+    // The pictures the decoder has output since the stream, or its last loop, started.
+    virtual uint32_t GetVideoFrameCount() const = 0;
+
     virtual ~VulkanVideoDecoder() {};
 };
 

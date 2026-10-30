@@ -40,6 +40,13 @@ static void DumpDecoderStreamInfo(VkSharedBaseObj<VulkanVideoDecoder>& vulkanVid
     std::cout << std::endl;
 }
 
+static int StreamExitCode(const VkSharedBaseObj<VulkanVideoDecoder>& vulkanVideoDecoder)
+{
+    return ExitCodeFromDecodedStream(vulkanVideoDecoder->GetStreamResult(),
+                                     vulkanVideoDecoder->GetVideoFrameCount(),
+                                     vulkanVideoDecoder->GetVideoSequenceResult());
+}
+
 int main(int argc, const char** argv)
 {
     std::cout << "Enter decoder test" << std::endl;
@@ -186,6 +193,9 @@ int main(int argc, const char** argv)
         displayShell->AttachFrameProcessor(frameProcessor);
         displayShell->RunLoop();
 
+        std::cout << "Exit decoder test" << std::endl;
+        return StreamExitCode(vulkanVideoDecoder);
+
     } else {
 
         result = vkDevCtxt.InitPhysicalDevice(decoderConfig.deviceId, decoderConfig.deviceUUID,
@@ -254,11 +264,10 @@ int main(int argc, const char** argv)
         do {
             continueLoop = frameProcessor->OnFrame(0);
         } while (continueLoop);
+
+        std::cout << "Exit decoder test" << std::endl;
+        return StreamExitCode(vulkanVideoDecoder);
     }
-
-    /*******************************************************************************************/
-
-    std::cout << "Exit decoder test" << std::endl;
 }
 
 

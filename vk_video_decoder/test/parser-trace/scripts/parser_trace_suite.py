@@ -45,6 +45,8 @@ The suite file (suites/<codec>.json) names its "codec" and lists streams. An ent
                   the same for adapter mode, the categories being the slot oracle's. On an md5 entry,
                   adapter_known lists the categories its streams show together, named in the suite's
                   "adapter_defects" table
+  adapter_args    arguments added to vk-video-adapter-trace's, such as --refuse-chroma 400; an entry
+                  that has them runs in adapter mode only
 
 Checks per stream: the tool exits 0; the trace equals the golden, or its md5 equals the recorded
 one; the set of model mismatch categories equals "known". The model is av1_reference_model.py for
@@ -91,8 +93,8 @@ FORMAT_BY_EXTENSION = {".h264": "bytestream", ".264": "bytestream", ".h265": "by
                        ".ivf": "ivf", ".obu": "annexb"}
 
 
-def run_tool(tool, codec, fmt, stream, trace, ivf=None):
-    cmd = [tool, "--codec", codec, "--format", fmt, "-i", stream, "-o", trace]
+def run_tool(tool, codec, fmt, stream, trace, ivf=None, extra=()):
+    cmd = [tool, "--codec", codec, "--format", fmt, "-i", stream, "-o", trace] + list(extra)
     if ivf:
         cmd += ["--write-ivf", ivf]
     try:
@@ -172,7 +174,7 @@ def check_stream(entry, suite, suite_dir, stream, args, work):
     name = entry["name"]
     codec = suite["codec"]
     trace = os.path.join(work, name + ".trace")
-    failure = run_tool(args.tool, codec, entry["format"], stream, trace)
+    failure = run_tool(args.tool, codec, entry["format"], stream, trace, extra=entry.get("adapter_args", []))
     if failure:
         return [f"tool {failure}"]
     failures = []
@@ -327,6 +329,8 @@ def main():
     ran = 0
     failed = 0
     for entry in suite["streams"]:
+        if ("adapter_args" in entry) and (args.mode != "adapter"):
+            continue
         base = suite_dir
         if entry.get("root"):
             if entry["root"] not in os.environ:

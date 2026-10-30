@@ -293,8 +293,15 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
 
     nvsi.hasFilmGrain = sps->flags.film_grain_params_present;
 
-    if (av1->needsSessionReset && !init_sequence(&nvsi))
+    // A sequence the client refused stays refused: each of its frames asks again and is dropped,
+    // so no picture of it is allocated, decoded, kept as a reference or shown. A frame the client
+    // accepts after a refusal starts the session it was accepted with.
+    const bool sequenceRefused = (m_MaxFrameBuffers == 0);
+    if ((av1->needsSessionReset || sequenceRefused) && !init_sequence(&nvsi))
         return false;
+    if (sequenceRefused) {
+        av1->needsSessionReset = true;
+    }
 
     // Allocate a buffer for the current picture
     if (m_pCurrPic == nullptr) {
@@ -1902,10 +1909,14 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
                 pStd->refresh_frame_flags = 0;
             }
 
-            VkPicIf* pDispPic = m_pBuffers[show_existing_frame_index].buffer;
-            if (pDispPic)
-                pDispPic->AddRef();
-            AddBuffertoOutputQueue(pDispPic, !!showable_frame);
+            // While the client refuses the sequence, the buffers hold no picture of it, and the
+            // frame shows nothing.
+            if (m_MaxFrameBuffers != 0) {
+                VkPicIf* pDispPic = m_pBuffers[show_existing_frame_index].buffer;
+                if (pDispPic)
+                    pDispPic->AddRef();
+                AddBuffertoOutputQueue(pDispPic, !!showable_frame);
+            }
 
             return true;
         }
