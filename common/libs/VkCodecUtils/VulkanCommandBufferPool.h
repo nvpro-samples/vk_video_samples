@@ -74,7 +74,7 @@ public:
                 assert(!"Invalid PoolNode state!");
                 return nullptr;
             }
-            return m_parent->m_commandBuffersSet.GetCommandBuffer(m_parentIndex);
+            return m_parent->m_commandBuffersSets[m_parentIndex].GetCommandBuffer();
         }
 
         VkCommandBuffer BeginCommandBufferRecording(const VkCommandBufferBeginInfo& beginInfo) {
@@ -87,7 +87,7 @@ public:
                 return VK_NULL_HANDLE;
             }
 
-            const VkCommandBuffer cmdBuf = *m_parent->m_commandBuffersSet.GetCommandBuffer(m_parentIndex);
+            const VkCommandBuffer cmdBuf = *m_parent->m_commandBuffersSets[m_parentIndex].GetCommandBuffer();
             m_vkDevCtx->BeginCommandBuffer(cmdBuf, &beginInfo);
             m_cmdBufState = CmdBufStateRecording;
             return cmdBuf;
@@ -103,7 +103,7 @@ public:
                 return VK_ERROR_INITIALIZATION_FAILED;
             }
 
-            assert(cmdBuf == *m_parent->m_commandBuffersSet.GetCommandBuffer(m_parentIndex));
+            assert(cmdBuf == *m_parent->m_commandBuffersSets[m_parentIndex].GetCommandBuffer());
 
             VkResult result = m_vkDevCtx->EndCommandBuffer(cmdBuf);
             if (result == VK_SUCCESS) {
@@ -365,7 +365,7 @@ public:
         , m_nextNodeToUse(0)
         , m_availablePoolNodes(0UL)
         , m_queueFamilyIndex((uint32_t)-1)
-        , m_commandBuffersSet()
+        , m_commandBuffersSets(maxPoolNodes)
         , m_semaphoreSet()
         , m_fenceSet()
         , m_queryPoolSet()
@@ -414,7 +414,10 @@ private:
     uint32_t                   m_nextNodeToUse;
     uint64_t                   m_availablePoolNodes;
     uint32_t                   m_queueFamilyIndex;
-    VulkanCommandBuffersSet    m_commandBuffersSet;
+    // One command pool for each node. Recording into a command buffer is host access to its
+    // pool, which Vulkan requires to be externally synchronized, so nodes that share a pool
+    // cannot be recorded on two threads at once; nodes with their own pools can.
+    std::vector<VulkanCommandBuffersSet> m_commandBuffersSets;
     VulkanSemaphoreSet         m_semaphoreSet;
     VulkanFenceSet             m_fenceSet;
     VulkanQueryPoolSet         m_queryPoolSet;

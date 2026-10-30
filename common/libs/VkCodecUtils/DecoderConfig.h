@@ -74,6 +74,7 @@ struct DecoderConfig {
         decoderQueueSize = 5;
         dumpTestReleaseDelayUs = 0;
         dumpTestFailWaitDisplayOrder = -1;
+        dumpTestFlushDelayUs = 0;
         enablePostProcessFilter = -1,
         enableStreamDemuxing = true;
         deviceId = (uint32_t)-1;
@@ -277,6 +278,13 @@ struct DecoderConfig {
                 "by this many microseconds, so that a release out of display order shows up",
                 [this](const char **args, const ProgramArgs &a) {
                     dumpTestReleaseDelayUs = std::atoi(args[0]);
+                    return true;
+                }},
+            {"--dumpTestFlushDelayUs", nullptr, 1,
+                "Test only: sleep this many microseconds in each flush of the output frame writes, "
+                "while it holds the queue, whenever frames are still to be written",
+                [this](const char **args, const ProgramArgs &a) {
+                    dumpTestFlushDelayUs = std::atoi(args[0]);
                     return true;
                 }},
             {"--dumpTestFailWait", nullptr, 1,
@@ -542,6 +550,7 @@ struct DecoderConfig {
     uint32_t decoderQueueSize;
     uint32_t dumpTestReleaseDelayUs;
     int64_t dumpTestFailWaitDisplayOrder;
+    uint32_t dumpTestFlushDelayUs;
     int32_t enablePostProcessFilter;
     uint32_t enableStreamDemuxing : 1;
     uint32_t directMode : 1;

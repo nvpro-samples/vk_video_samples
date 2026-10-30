@@ -47,6 +47,20 @@
       "expected_output_y4m_md5": "a80eead62d5844a5da55bc691b39abb3"
     },
     {
+      "name": "h264_clip_a_dump_flush_delay",
+      "codec": "h264",
+      "description": "Test H.264 decoding with the flush of the output frame writes waiting until the writers have taken every frame, then sleeping 200 ms, holding the write queue, whenever frames are still to be written (--dumpTestFlushDelayUs): the writes that finish meanwhile must still wake it, or the decode never ends",
+      "extra_args": [
+        "--dumpTestFlushDelayUs",
+        "200000"
+      ],
+      "timeout": 60,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-a.h264",
+      "source_checksum": "b119d5d667eb7791613d0e39f375b61f0fa41baa5ee1f216a678e0483c69333c",
+      "source_filepath": "video/avc/clip-a.h264",
+      "expected_output_y4m_md5": "2bcb11929bbacd1d0ba1c088e66ff7da"
+    },
+    {
       "name": "h264_clip_a_hw_load_balancing",
       "codec": "h264",
       "description": "Test H.264 decoding with hardware load balancing",

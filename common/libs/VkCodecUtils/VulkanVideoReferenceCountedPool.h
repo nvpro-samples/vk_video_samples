@@ -22,6 +22,7 @@
 #include <vector>
 #include <bitset>
 #include <algorithm>
+#include <memory>
 #include <mutex>
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 
@@ -37,7 +38,8 @@ public:
     };
 
     VulkanVideoRefCountedPool(uint32_t maxNodes = MAX_POOL_ENTRIES)
-    : m_poolMutex()
+    : m_returnPath(std::make_shared<ReturnPath>(this))
+    , m_poolMutex()
     , m_maxNodes(maxNodes)
     , m_poolNodeSlotsInUseMask()
     , m_poolNodesCheckedOutMask()
@@ -45,6 +47,11 @@ public:
 
     virtual ~VulkanVideoRefCountedPool()
     {
+        {
+            // A node checked out now returns to nothing when its holder releases it.
+            std::lock_guard<std::mutex> lock(m_returnPath->mutex);
+            m_returnPath->pool = nullptr;
+        }
         std::lock_guard<std::mutex> lock(m_poolMutex);
         uint32_t maxNodes = m_maxNodes;
         m_maxNodes = 0;
@@ -128,20 +135,34 @@ public:
     }
 
 private:
+    // The way back to the pool for the nodes it checks out. The checkout guards share it, so it
+    // outlives a pool destroyed while a node is out, and the pool clears it first.
+    struct ReturnPath {
+        explicit ReturnPath(VulkanVideoRefCountedPool* p) : pool(p) {}
+        std::mutex mutex;
+        VulkanVideoRefCountedPool* pool;
+    };
+
     // Called with m_poolMutex held, for a node already marked checked out. The
     // reference it returns shares a guard whose destructor marks the node
-    // available again.
+    // available again, if the pool is still there.
     VkSharedBaseObj<RefCountedNodeType> CheckOutNode(uint32_t idx)
     {
         struct CheckoutGuard {
             VkSharedBaseObj<RefCountedNodeType> node;
-            VulkanVideoRefCountedPool* pool;
+            std::shared_ptr<ReturnPath> returnPath;
             uint32_t idx;
-            ~CheckoutGuard() { if (pool) pool->ReturnNodeToPool(idx); }
+            ~CheckoutGuard()
+            {
+                std::lock_guard<std::mutex> lock(returnPath->mutex);
+                if (returnPath->pool) {
+                    returnPath->pool->ReturnNodeToPool(idx);
+                }
+            }
         };
         auto guard = std::make_shared<CheckoutGuard>();
         guard->node = m_pool[idx];
-        guard->pool = this;
+        guard->returnPath = m_returnPath;
         guard->idx = idx;
         return VkSharedBaseObj<RefCountedNodeType>(guard, guard->node.get());
     }
@@ -184,6 +205,7 @@ private:
     }
 
 private:
+    std::shared_ptr<ReturnPath>                        m_returnPath;
     std::mutex                                         m_poolMutex;
     uint32_t                                           m_maxNodes;
     std::bitset<MAX_POOL_ENTRIES>                      m_poolNodeSlotsInUseMask;

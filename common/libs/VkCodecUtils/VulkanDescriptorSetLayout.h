@@ -121,6 +121,23 @@ public:
         UpdateLayout(flags);
     }
 
+    // A copy points at its own bindings and its own samplers, not at the original's.
+    VulkanDescriptorSetLayoutInfo(const VulkanDescriptorSetLayoutInfo& other)
+    : m_descriptorSetLayoutBindings(other.m_descriptorSetLayoutBindings),
+      m_descriptorSetLayoutCreateInfo()
+    {
+        UpdateLayout(other.m_descriptorSetLayoutCreateInfo.flags);
+    }
+
+    VulkanDescriptorSetLayoutInfo& operator=(const VulkanDescriptorSetLayoutInfo& other)
+    {
+        if (this != &other) {
+            m_descriptorSetLayoutBindings = other.m_descriptorSetLayoutBindings;
+            UpdateLayout(other.m_descriptorSetLayoutCreateInfo.flags);
+        }
+        return *this;
+    }
+
     size_t SetDescriptorSetLayoutInfo(const std::vector<VkDescriptorSetLayoutBinding>& setLayoutBindings,
                                       VkDescriptorSetLayoutCreateFlags flags)
     {
@@ -139,15 +156,37 @@ public:
     }
 
 private:
+    // Vulkan reads pImmutableSamplers only for the two sampler types, and then descriptorCount of them.
+    static bool HasImmutableSamplers(const VkDescriptorSetLayoutBinding& binding) {
+        return (binding.pImmutableSamplers != nullptr) && (binding.descriptorCount > 0) &&
+               ((binding.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER) ||
+                (binding.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER));
+    }
+
     size_t UpdateLayout(VkDescriptorSetLayoutCreateFlags flags) {
 
-        m_immutableSamplers.clear();
-        // Make a local copy of the immutable samplers
+        // Copy the immutable samplers, all of them, before pointing any binding at the copies:
+        // a pointer into a vector that is still growing dangles when the vector reallocates.
+        // m_immutableSamplers is replaced only once every sampler has been read, since the
+        // bindings may point into it (a layout set again from its own create info).
+        std::vector<VkSampler> immutableSamplers;
+        for (const auto& descriptorSetLayoutBinding : m_descriptorSetLayoutBindings) {
+            if (HasImmutableSamplers(descriptorSetLayoutBinding)) {
+                immutableSamplers.insert(immutableSamplers.end(),
+                                         descriptorSetLayoutBinding.pImmutableSamplers,
+                                         descriptorSetLayoutBinding.pImmutableSamplers +
+                                             descriptorSetLayoutBinding.descriptorCount);
+            }
+        }
+        m_immutableSamplers = std::move(immutableSamplers);
+
+        const VkSampler* pNextImmutableSampler = m_immutableSamplers.data();
         for (auto& descriptorSetLayoutBinding : m_descriptorSetLayoutBindings) {
-            if(descriptorSetLayoutBinding.pImmutableSamplers) {
-                const VkSampler immutableSampler = *descriptorSetLayoutBinding.pImmutableSamplers;
-                m_immutableSamplers.emplace_back(immutableSampler);
-                descriptorSetLayoutBinding.pImmutableSamplers = &m_immutableSamplers.back();
+            if (HasImmutableSamplers(descriptorSetLayoutBinding)) {
+                descriptorSetLayoutBinding.pImmutableSamplers = pNextImmutableSampler;
+                pNextImmutableSampler += descriptorSetLayoutBinding.descriptorCount;
+            } else {
+                descriptorSetLayoutBinding.pImmutableSamplers = nullptr;
             }
         }
 
@@ -267,32 +306,36 @@ public:
                                                                pDescriptorWrite->dstBinding,
                                                                &dstBindingOffset);
 
-            size_t descriptorSize = m_descriptorBufferProperties.storageImageDescriptorSize;
+            VkDescriptorGetInfoEXT descriptorInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT };
+            descriptorInfo.type = pDescriptorWrite->descriptorType;
+            size_t descriptorSize = 0;
             switch (pDescriptorWrite->descriptorType) {
             case VK_DESCRIPTOR_TYPE_SAMPLER:
                 descriptorSize = m_descriptorBufferProperties.samplerDescriptorSize;
-                // fall through
+                descriptorInfo.data.pSampler = &pDescriptorWrite->pImageInfo->sampler;
+                break;
             case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
                 descriptorSize = m_descriptorBufferProperties.combinedImageSamplerDescriptorSize;
-                // fall through
+                descriptorInfo.data.pCombinedImageSampler = pDescriptorWrite->pImageInfo;
+                break;
             case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
                 descriptorSize = m_descriptorBufferProperties.sampledImageDescriptorSize;
-                // fall through
+                descriptorInfo.data.pSampledImage = pDescriptorWrite->pImageInfo;
+                break;
             case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-            {
-                assert((dstBindingOffset + descriptorSize) < m_descriptorLayoutSize);
-
-                VkDescriptorGetInfoEXT descriptorInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT };
-                descriptorInfo.type = pDescriptorWrite->descriptorType;
-                descriptorInfo.data.pCombinedImageSampler = pDescriptorWrite->pImageInfo;
-
-                m_vkDevCtx->GetDescriptorEXT(*m_vkDevCtx, &descriptorInfo, descriptorSize,
-                                             imageDescriptorBufPtr + dstBindingOffset);
-            }
-            break;
+                descriptorSize = m_descriptorBufferProperties.storageImageDescriptorSize;
+                descriptorInfo.data.pStorageImage = pDescriptorWrite->pImageInfo;
+                break;
             default:
                 assert(!"Unknown descriptor type");
+                continue;
             }
+
+            // The binding's descriptor may end exactly where the layout does.
+            assert((dstBindingOffset + descriptorSize) <= m_descriptorLayoutSize);
+
+            m_vkDevCtx->GetDescriptorEXT(*m_vkDevCtx, &descriptorInfo, descriptorSize,
+                                         imageDescriptorBufPtr + dstBindingOffset);
         }
         VkBuffer imageDescriptorBuffer = m_resourceDescriptorBuffer->GetBuffer();
         assert(imageDescriptorBuffer);

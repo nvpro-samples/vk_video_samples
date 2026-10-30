@@ -195,6 +195,7 @@ VkResult VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
         VkVideoDumpPoolTestOptions dumpTestOptions;
         dumpTestOptions.releaseDelayUs = programConfig.dumpTestReleaseDelayUs;
         dumpTestOptions.failWaitDisplayOrder = programConfig.dumpTestFailWaitDisplayOrder;
+        dumpTestOptions.flushDelayUs = programConfig.dumpTestFlushDelayUs;
         result = m_dumpPool.init(m_vkDevCtx, *m_vkDevCtx, 4 /* writerThreads */, dumpTestOptions);
         if (result == VK_SUCCESS) {
             // Register the dump pool's own TL semaphore as an external consumer

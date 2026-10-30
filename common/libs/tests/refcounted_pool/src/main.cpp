@@ -135,6 +135,22 @@ void SteadyStateCreatesNoNodes() {
     CHECK(pool.GetAvailableNodesNumber() == kHeld + 1);
 }
 
+// A node still held when its pool is destroyed stays usable, and returns to nothing when it is
+// released. The pool is on the heap, so that AddressSanitizer sees a release that reaches it.
+void HolderOutlivesPool() {
+    VkSharedBaseObj<Node> held;
+    {
+        auto pool = std::make_unique<Pool>();
+        VkSharedBaseObj<Node> node = std::make_shared<Node>(3);
+        CHECK(pool->AddNodeToPool(node, true) == 0);
+        held = node;
+        VkSharedBaseObj<Node> fromPool;
+        CHECK(pool->GetAvailableNodeFromPool(fromPool) < 0);
+    }
+    CHECK(held->m_id == 3);
+    held = nullptr;
+}
+
 // A pool built with the default size holds as many nodes as its template
 // capacity. The decoder keeps one bitstream buffer per frame buffer slot (up
 // to VulkanVideoFrameBuffer::maxImages, 32) and the parser holds two more while
@@ -165,6 +181,7 @@ int main() {
         {"PreallocatedNodeIsAvailable", PreallocatedNodeIsAvailable},
         {"SteadyStateCreatesNoNodes", SteadyStateCreatesNoNodes},
         {"DefaultSizeIsTemplateCapacity", DefaultSizeIsTemplateCapacity},
+        {"HolderOutlivesPool", HolderOutlivesPool},
     };
 
     for (const auto& test : tests) {
