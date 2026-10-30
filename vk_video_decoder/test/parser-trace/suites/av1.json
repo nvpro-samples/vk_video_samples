@@ -65,6 +65,33 @@
       ]
     },
     {
+      "name": "av1-libaom-mono-420-mono-64x64",
+      "path": "../streams/av1-libaom-mono-420-mono-64x64.ivf",
+      "format": "ivf",
+      "golden": "../golden/av1-libaom-mono-420-mono-64x64.trace",
+      "headers": "../streams/av1-libaom-mono-420-mono-64x64.headers.txt",
+      "known": [],
+      "adapter_golden": "../golden/adapter/av1-libaom-mono-420-mono-64x64.trace",
+      "adapter_known": [
+        "begin-setup-inactive",
+        "begin-setup-mismatch",
+        "ref-info"
+      ]
+    },
+    {
+      "name": "av1-libaom-mono-420-mono-64x64-mono-refused",
+      "path": "../streams/av1-libaom-mono-420-mono-64x64.ivf",
+      "format": "ivf",
+      "adapter_args": [
+        "--refuse-chroma",
+        "400"
+      ],
+      "adapter_golden": "../golden/adapter/av1-libaom-mono-420-mono-64x64-mono-refused.trace",
+      "adapter_known": [
+        "begin-setup-inactive"
+      ]
+    },
+    {
       "name": "av1-libaom-still-after-inter-64x64",
       "path": "../streams/av1-libaom-still-after-inter-64x64.ivf",
       "format": "ivf",

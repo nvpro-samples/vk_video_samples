@@ -1121,19 +1121,32 @@ uint32_t VulkanVideoParser::ResetPicDpbSlots(uint32_t picIndexSlotValidMask)
 
 int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
 {
+    // m_nvsi is the last sequence the decoder accepted, which its session is configured for. A
+    // sequence the decoder refuses leaves it as it is.
     bool sequenceUpdate = ((m_nvsi.nMaxWidth != 0) && (m_nvsi.nMaxHeight != 0)) ? true : false;
 
     uint32_t maxDpbSlots =  (pnvsi->eCodec == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) ?
         MAX_DPB_REF_AND_SETUP_SLOTS : MAX_DPB_REF_SLOTS;
 
+    // An AV1 or VP9 sequence whose format is the accepted one's, and whose pictures fit its
+    // session, needs nothing new from the decoder. Any other change goes to the decoder, which
+    // may refuse it: a monochrome sequence after a 4:2:0 one of the same size is a new profile.
+    const bool sameFormat = sequenceUpdate &&
+                            (pnvsi->eCodec == m_nvsi.eCodec) &&
+                            (pnvsi->nChromaFormat == m_nvsi.nChromaFormat) &&
+                            (pnvsi->uBitDepthLumaMinus8 == m_nvsi.uBitDepthLumaMinus8) &&
+                            (pnvsi->uBitDepthChromaMinus8 == m_nvsi.uBitDepthChromaMinus8) &&
+                            (pnvsi->bProgSeq == m_nvsi.bProgSeq) &&
+                            (pnvsi->codecProfile == m_nvsi.codecProfile) &&
+                            (pnvsi->hasFilmGrain == m_nvsi.hasFilmGrain);
     if (pnvsi->eCodec == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
         maxDpbSlots = 9;
-        if ((pnvsi->nCodedWidth <= m_nvsi.nCodedWidth) && (pnvsi->nCodedHeight <= m_nvsi.nCodedHeight)) {
+        if (sameFormat && (pnvsi->nCodedWidth <= m_nvsi.nCodedWidth) && (pnvsi->nCodedHeight <= m_nvsi.nCodedHeight)) {
             return 1;
         }
     } else if (pnvsi->eCodec == VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
         maxDpbSlots = 9;
-        if ((pnvsi->nMaxWidth <= m_nvsi.nMaxWidth) && (pnvsi->nMaxHeight <= m_nvsi.nMaxHeight)) {
+        if (sameFormat && (pnvsi->nMaxWidth <= m_nvsi.nMaxWidth) && (pnvsi->nMaxHeight <= m_nvsi.nMaxHeight)) {
             return 1;
         }
     }
@@ -1156,12 +1169,6 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
         }
 
     }
-
-    m_nvsi = *pnvsi;
-    m_nvsi.nMaxWidth = pnvsi->nMaxWidth;
-    m_nvsi.nMaxHeight = pnvsi->nMaxHeight;
-
-    m_maxNumDecodeSurfaces = pnvsi->nMinNumDecodeSurfaces;
 
     if (m_decoderHandler) {
         VkParserDetectedVideoFormat detectedFormat;
@@ -1255,6 +1262,8 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
         if (maxDecodeRTs <= 0) {
             return 0;
         }
+        m_nvsi = *pnvsi;
+        m_maxNumDecodeSurfaces = pnvsi->nMinNumDecodeSurfaces;
         // MaxNumDecodeSurface may not be correctly calculated by the client while
         // parser creation so overwrite it with NumDecodeSurface. (only if nDecodeRT
         // > 1)

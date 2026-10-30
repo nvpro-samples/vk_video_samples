@@ -846,8 +846,9 @@ bool VulkanVP9Decoder::BeginPicture(VkParserPictureData* pnvpd)
         }
     }
 
+    // A sequence the client refuses drops its frames; the refusal is the client's answer, not an
+    // error of the parser.
     if (!init_sequence(&nvsi)) {
-        assert(!"init_sequence failed!");
         return false;
     }
 

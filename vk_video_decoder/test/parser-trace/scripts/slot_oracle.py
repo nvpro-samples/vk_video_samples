@@ -64,6 +64,9 @@ resource is the picture the tool names with res, and for VP9 also its coded exte
                          memory_management_control_operation 5 has FrameNum 0 and rebased field
                          order counts after its decode (H.264 8.2.1), which is not a mismatch.
   reserve-failed         the frame buffer found no free picture
+  decode-refused         a decode after the decoder refused the stream's sequence (seq-refused) and
+                         before it accepted another: the decoder has no session for the picture
+  display-undecoded      a picture shown that no decode wrote since the frame buffer gave it out
 
 Exit status: 0 no mismatch, 1 a mismatch, 2 not comparable.
 """
@@ -306,18 +309,28 @@ def compare(trace_path, verbose=False):
     report = hd.Report(verbose)
     oracle = Oracle(codec, report)
     pictures = 0
+    refused = False
     for entry in entries[1:]:
-        if entry.tag == "session":
+        if entry.tag == "seq-refused":
+            refused = True
+        elif entry.tag == "seq":
+            refused = False
+        elif entry.tag == "session":
             if word(entry.fields["state"]) == "new":
                 oracle.new_session(entry.fields["maxDpbSlots"])
             else:
                 oracle.max_dpb_slots = entry.fields["maxDpbSlots"]
         elif entry.tag == "pic":
+            if refused:
+                report.fail("decode-refused", f"picture {pictures}", "decoded while the decoder refuses the sequence")
             oracle.picture(entry)
             pictures += 1
         elif entry.tag == "reserve-failed":
             report.fail("reserve-failed", f"after picture {pictures - 1}", "no free picture")
-    if pictures == 0:
+        elif entry.tag == "disp-undecoded":
+            report.fail("display-undecoded", f"after picture {pictures - 1}",
+                        f"picture {entry.fields['idx']} shown with no decode since it was given out")
+    if pictures == 0 and not report.categories:
         return None, "no pictures"
     return report, ""
 

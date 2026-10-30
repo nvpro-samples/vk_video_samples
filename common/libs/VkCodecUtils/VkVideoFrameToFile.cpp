@@ -100,7 +100,11 @@ public:
 
         VkSharedBaseObj<VkImageResourceView> imageResourceView;
         pFrame->imageViews[VulkanDecodedFrame::IMAGE_VIEW_TYPE_LINEAR].GetImageResourceView(imageResourceView);
-        assert(!!imageResourceView);
+        if (!imageResourceView) {
+            // A frame no decode wrote has no image: it is reported and nothing is written for it.
+            fprintf(stderr, "The frame of picture %d has no image to write\n", pFrame->pictureIndex);
+            return 0;
+        }
         assert(pFrame->pictureIndex != -1);
 
         VkSharedBaseObj<VkImageResource> imageResource = imageResourceView->GetImageResource();

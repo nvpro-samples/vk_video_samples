@@ -5,8 +5,7 @@
     "ptl-level": "level 2.1 (general_level_idc 63) reaches the Std level enum as 6.2: the parser's table holds (uint32_t)(2.1f * 30), which is 62",
     "sps-flags": "the parser leaves sps_sub_layer_ordering_info_present_flag and conformance_window_flag of the Std SPS at 0",
     "vps-dpbm": "the parser sets the Std VPS pDecPicBufMgr only when the VPS has more than one sub-layer",
-    "sps-strps": "delta_poc_s0_minus1 and delta_poc_s1_minus1 of an SPS reference picture set hold derived POC deltas",
-    "sps-hrd": "every sub-layer's HRD parameters are written to sub-layer 0"
+    "sps-strps": "delta_poc_s0_minus1 and delta_poc_s1_minus1 of an SPS reference picture set hold derived POC deltas"
   },
   "adapter_defects": {
     "begin-setup-inactive": "the begin-coding list names the setup picture under its target slot, which is not active yet: activation happens in the decode",
