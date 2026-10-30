@@ -931,6 +931,31 @@ const std::vector<CraftedCase>& Cases() {
              checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
+        // A long-term reference picture the DPB does not hold is "no reference picture" (Rec. ITU-T
+        // H.265 8.3.2), in its place in RefPicSetLtCurr. The SPS lists no long-term picture; the third
+        // picture's slice names two of its own, POC 50, which no picture has, and the IDR picture.
+        {"H265LongTermMissingKeepsPosition",
+         [](CaseContext& stream) {
+             const auto twoLongTermPictures = [](BitWriter& w) {
+                 w.Ue(2);                                // num_long_term_pics
+                 w.U(8, 50).Flag(true).Flag(false);  // poc_lsb_lt, used_by_curr_pic_lt_flag, delta_poc_msb_present_flag
+                 w.U(8, 0).Flag(true).Flag(false);
+             };
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal({.longTermRefPics = [](BitWriter& w) {
+                        w.Ue(0);  // num_long_term_ref_pics_sps
+                    }}));
+             Append(stream.byteStream, H265PpsNal());
+             Append(stream.byteStream, H265IdrSliceNal());
+             Append(stream.byteStream, H265TrailSliceNal(1, [](BitWriter& w) { w.Ue(0); }));
+             Append(stream.byteStream, H265TrailSliceNal(2, twoLongTermPictures));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("pic", 3);
+             checks.Field("  rps", "NumPocLtCurr", "2", 2);
+             checks.Field("  rps", "RefPicSetLtCurr", "[-1,0,0,0,0,0,0,0]", 2);
+             return checks.Failures();
+         }},
         // with splitting_flag 1 the scalability dimensions split the 6 bits of nuh_layer_id
         // (Rec. ITU-T H.265 F.7.4.3.1.1). VPS 0 splits them 3 and 3 between two dimensions; VPS 1 gives
         // the first dimension 8 bits, and the second starts past the sixth; VPS 2 has no dimension.

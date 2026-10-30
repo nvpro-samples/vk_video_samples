@@ -436,16 +436,6 @@ static constexpr uint32_t g_ignoredValidationMessageIds[] = {
     // VkImageCreateInfo pNext chain includes VkVideoProfileListInfoKHR.
     0x6516b437,
 
-    // VUID-vkCmdBeginVideoCodingKHR-slotIndex-07239 (MessageID = 0xc36d9e29)
-    // Cascading VVL false positive from the VUID-01762 issue above.
-    // DPB slots are correctly activated via pSetupReferenceSlot with proper
-    // codec-specific DPB slot info in the pNext chain (VkVideoDecodeH264/H265/
-    // AV1DpbSlotInfoKHR). Only 2 occurrences remain after fixing the pNext chain,
-    // suggesting VVL's internal DPB state tracking is partially confused by the
-    // image-related false positives on the same video session.
-    // Decoding works correctly on all tested hardware.
-    0xc36d9e29,
-
     // VUID-VkVideoCapabilitiesKHR-pNext-pNext (MessageID = 0xc1bea994)
     // VP9 decode is a provisional extension (VK_KHR_video_decode_vp9).
     // VkVideoDecodeVP9CapabilitiesKHR (struct type 1000514001) is not yet
@@ -493,21 +483,6 @@ static constexpr uint32_t g_ignoredValidationMessageIds[] = {
     // multi-planar NV12 images. Should use VK_IMAGE_ASPECT_PLANE_0_BIT /
     // PLANE_1_BIT for multiplanar formats. TODO: fix in VkImageResource.cpp.
     0x4148a5e9,
-
-    // VUID-vkCmdBeginVideoCodingKHR-pPictureResource-07265 (MessageID = 0xa9049dc2)
-    // VVL false positive: DPB slot re-association during decode.
-    // The validation layer does not track slot activations performed by
-    // CmdDecodeVideoKHR's pSetupReferenceSlot — it only tracks BeginVideoCoding's
-    // pReferenceSlots. This causes false positives when:
-    //   1. A DPB slot is activated for the first time (no prior association exists)
-    //   2. A DPB slot is reused with a different image (parser evicted the old
-    //      reference and reassigned the slot)
-    // Per spec §40.1: "A DPB slot can be activated with a new frame even if it is
-    // already active. All previous associations are replaced with the reconstructed
-    // picture used to activate it." The activation happens during CmdDecodeVideoKHR
-    // via pSetupReferenceSlot, which the validation layer does not track.
-    // See: docs/VK_LAYER_VALIDATION_BUG_REPORT-DPB-SLOT-TRACKING.md
-    0xa9049dc2,
 };
 
 static std::atomic<uint32_t> g_validationErrorCount{0};

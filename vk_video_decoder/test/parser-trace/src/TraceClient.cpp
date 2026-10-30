@@ -1096,7 +1096,8 @@ void TraceVp9Picture(FILE* out, const VkParserPictureData& pd) {
 // indices in the trace depend only on the parser's reference counting.
 class TraceClient final : public TraceClientIf {
    public:
-    TraceClient(FILE* out, VkVideoCodecOperationFlagBitsKHR codec, uint32_t poolSize) : m_out(out), m_codec(codec) {
+    TraceClient(FILE* out, VkVideoCodecOperationFlagBitsKHR codec, uint32_t poolSize, int64_t failDecode)
+        : m_out(out), m_codec(codec), m_failDecode(failDecode) {
         for (uint32_t i = 0; i < poolSize; i++) {
             m_pictures.emplace_back(std::make_unique<TracePicture>());
             m_pictures.back()->m_picIdx = static_cast<int32_t>(i);
@@ -1198,6 +1199,10 @@ class TraceClient final : public TraceClientIf {
             default:
                 break;
         }
+        if (static_cast<int64_t>(m_decoded) - 1 == m_failDecode) {
+            Line("pic-failed").Num("index", m_failDecode).Emit(m_out);
+            return false;
+        }
         return true;
     }
 
@@ -1255,6 +1260,7 @@ class TraceClient final : public TraceClientIf {
     uint64_t m_sequences = 0;
     uint64_t m_parameterSets = 0;
     uint64_t m_decoded = 0;
+    int64_t m_failDecode;
     uint64_t m_displayed = 0;
 };
 
@@ -1295,8 +1301,9 @@ VkDeviceSize CreateHostBitstreamBuffer(VkDeviceSize size, VkDeviceSize offsetAli
     return host->GetMaxSize();
 }
 
-std::unique_ptr<TraceClientIf> CreateTraceClient(FILE* out, VkVideoCodecOperationFlagBitsKHR codec, uint32_t poolSize) {
-    return std::make_unique<TraceClient>(out, codec, poolSize);
+std::unique_ptr<TraceClientIf> CreateTraceClient(FILE* out, VkVideoCodecOperationFlagBitsKHR codec, uint32_t poolSize,
+                                                 int64_t failDecode) {
+    return std::make_unique<TraceClient>(out, codec, poolSize, failDecode);
 }
 
 // Gives the parser a whole byte stream as the decoder sample does for an elementary stream

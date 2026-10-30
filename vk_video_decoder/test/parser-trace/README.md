@@ -131,11 +131,14 @@ above them.
 | `setup`, `slot` | AV1: `setupSlotInfo`, the picture's own reference information, and `dpbSlotInfos[i]` for the eight reference buffers, with the picture index each holds |
 | `vp9`, `std`, `color`, `lf`, `seg` | `VkParserVp9PictureData` |
 | `disp` | `DisplayPicture` |
+| `pic-failed` | the decode `--fail-decode N` fails: the client answers picture N's `DecodePicture` with false, as a decoder that cannot decode it does |
 | `unhandled` | `UnhandledNALU`, with the size and CRC32 of the data |
 | `eos` | the end of the stream, with the picture and display counts |
 
 Pictures come from a fixed pool, lowest free index first, so the indices depend only on the
-parser's reference counting.
+parser's reference counting. A suite entry's `parser_args` passes `--fail-decode` to the tool: the
+AV1 and VP9 entries named `...-decode-1-failed` check that a picture whose decode failed is no
+reference, and that the frames that name it are dropped up to the next key frame.
 
 ## The AV1 model
 
@@ -211,8 +214,9 @@ of the decoder sample where it reaches the adapter:
   (`VulkanVideoSession::IsCompatible`); a new session starts with every DPB slot inactive. With
   `--refuse-chroma 400|420|422|444` it refuses every sequence of that chroma format before it
   allocates a picture, as `VkVideoDecoder` refuses a profile the device does not decode;
-- the begin-coding list is built as `VkVideoDecoder::DecodePictureWithParameters` builds it: the
-  reference slots, then the setup slot.
+- the begin-coding list is the adapter's `pBeginCodingReferenceSlots`, which
+  `VkVideoDecoder::DecodePictureWithParameters` binds: the reference slots, then the setup picture
+  with slot index -1, unless a reference already binds it.
 
 | Line | What it records |
 |---|---|
@@ -237,23 +241,16 @@ that each reference's Std information is the one its picture was set up with. Th
 
 | Category | Defect | Where |
 |---|---|---|
-| `begin-setup-inactive`, `begin-setup-mismatch` | the setup picture is listed for begin-coding under its target slot, which is not active yet, or still holds the picture it held before | every stream |
-| `begin-duplicate` | a second field's setup lists its first field's slot and picture again | field-coded H.264 |
 | `nonexisting` | a non-existing reference takes another reference's picture and a slot no decode set up | H.264 with `frame_num` gaps or dropped pictures |
-| `begin-ref-inactive` | `StdVideoDecodeH265PictureInfo::flags.IsReference` is never set, so no H.265 decode sets up a reference | every H.265 stream |
-| `ref-info` | the AV1 setup reference information is zero apart from `frame_type` and `OrderHint` | AV1 |
-| `names-missing` | a key frame frees every slot, and a later inter frame's reference whose picture lost its slot drops out of the decode | AV1 |
 | `reserve-failed` | the AV1 parser decodes frames of a sequence it has not reported with `BeginSequence` | scalable AV1 |
 
 An md5 set's `adapter_known` lists the categories its streams show together. The Argon AV1 sets
 are reported per category, as in parser mode.
 
-In a Debug build some outside streams stop at an assert, and their md5 entries fail: an AV1
-reference without a slot (`VulkanVideoParser::FillDpbAV1State`); FM1_BT_B's non-existing reference
-(`VulkanVideoParser::FillDpbH264State`); and the VP9 4:2:2 sample, whose chroma format
-`VulkanVP9Decoder::ParseUncompressedHeader` takes for 4:0:0. A Release build with AddressSanitizer
-and UBSan shows the reference without a slot as a write to `activeReferences[-1]`. In a Release
-build the VP9 4:2:2 sample reaches the adapter as 4:0:0, so its trace asks for a monochrome profile.
+In a Debug build some outside streams stop at an assert, and their md5 entries fail: FM1_BT_B's
+non-existing reference (`VulkanVideoParser::FillDpbH264State`), and the VP9 4:2:2 sample, whose
+chroma format `VulkanVP9Decoder::ParseUncompressedHeader` takes for 4:0:0. In a Release build the
+VP9 4:2:2 sample reaches the adapter as 4:0:0, so its trace asks for a monochrome profile.
 
 ## Crafted cases
 
@@ -365,10 +362,13 @@ Encoded with ffmpeg 6.1.1, x264 core 164, x265 3.5, libvpx 1.14.0, rav1e 0.7.1 a
 | `h264-x264-baseline-64x64.h264` | `-frames:v 16 -c:v libx264 -preset medium -profile:v baseline -x264-params threads=1:scenecut=0:ref=3:keyint=8` | POC type 2, CAVLC, sliding-window references |
 | `h264-x264-mbaff-64x64.h264` | `-frames:v 12 -c:v libx264 -preset medium -x264-params threads=1:scenecut=0:interlaced=1:tff=1:bframes=2:ref=3:keyint=12` | MBAFF frames (`frame_mbs_only_flag` 0) |
 | `h264-x264-cqm-weightp-slices-64x64.h264` | `-frames:v 12 -c:v libx264 -preset medium -x264-params threads=1:scenecut=0:cqm=jvt:weightp=2:slices=4:bframes=2:keyint=12` | PPS scaling lists, weighted prediction, four slices per picture |
+| `h264-level21-then-level2-352x288.h264` | `color=c=gray:size=352x288:rate=15`, `-frames:v 6 -c:v libx264 -preset ultrafast -level 2.1 -x264-params keyint=6:scenecut=0:ref=1:bframes=0:threads=1`, then the same with `-level 2`, joined | a second sequence of the same size whose DPB is smaller, which the first sequence's session can decode |
+| `h264-x264-poc-past-32767-64x64.h264` | `color=c=gray:size=64x64:rate=30`, `-frames:v 16500 -c:v libx264 -preset ultrafast -tune zerolatency -x264-params keyint=infinite:min-keyint=infinite:scenecut=0:bframes=2:b-adapt=0:direct=temporal:weightb=1:ref=2:threads=1:sliced-threads=0`; adapter mode only | picture order counts past 32767 in one coded video sequence, with B frames, temporal direct and weighted B prediction |
 | `h265-x265-bpyramid-cra-64x64.h265` | `-frames:v 24 -c:v libx265 -x265-params pools=1:frame-threads=1:scenecut=0:bframes=3:b-pyramid=1:ref=4:keyint=12:open-gop=1` | an open GOP: CRA with RASL pictures, B pyramid |
 | `h265-x265-idr-64x64.h265` | `-frames:v 16 -c:v libx265 -x265-params pools=1:frame-threads=1:scenecut=0:bframes=0:ref=3:keyint=8:open-gop=0` | IDR pictures in a closed GOP |
 | `h265-x265-main10-64x64.h265` | `-frames:v 12 -pix_fmt yuv420p10le -c:v libx265 -x265-params pools=1:frame-threads=1:scenecut=0:bframes=2:keyint=12` | Main 10 |
 | `h265-x265-hrd-scaling-slices-sublayers-64x64.h265` | `-frames:v 16 -c:v libx265 -x265-params pools=1:frame-threads=1:scenecut=0:ctu=16:hrd=1:vbv-maxrate=300:vbv-bufsize=300:scaling-list=default:slices=2:temporal-layers=1:bframes=3:keyint=16` | HRD parameters in the VPS and the SPS VUI, two temporal sub-layers, default scaling lists, two slices per picture |
+| `h265-crafted-long-term-missing.h265` | `vk-video-parser-crafted --case H265LongTermMissingKeepsPosition --write <file>`; adapter mode only | a P picture whose two long-term reference pictures are one the DPB does not hold, then the IDR picture |
 | `vp9-libvpx-altref-64x64.ivf` | `testsrc2=size=64x64:rate=30:duration=0.8`, two passes of `-c:v libvpx-vp9 -deadline good -cpu-used 4 -threads 1 -row-mt 0 -auto-alt-ref 1 -lag-in-frames 16 -arnr-maxframes 7 -g 24 -b:v 200k` | hidden alternate reference frames in superframes |
 | `vp9-libvpx-profile2-10bit-64x64.ivf` | `-frames:v 12 -pix_fmt yuv420p10le -c:v libvpx-vp9 -deadline good -cpu-used 4 -threads 1 -row-mt 0 -profile:v 2 -g 12 -b:v 200k` | profile 2, 10-bit |
 | `vp9-libvpx-tiles-cyclic-aq-512x64.ivf` | 512x64, `-frames:v 12 -c:v libvpx-vp9 -deadline good -cpu-used 4 -threads 1 -row-mt 0 -tile-columns 1 -aq-mode 3 -lag-in-frames 0 -g 12 -b:v 300k` | two tile columns, segmentation from cyclic refresh |
@@ -377,6 +377,7 @@ Encoded with ffmpeg 6.1.1, x264 core 164, x265 3.5, libvpx 1.14.0, rav1e 0.7.1 a
 | `av1-libaom-altref-aq-64x64.ivf` | `-frames:v 17 -c:v libaom-av1 -cpu-used 6 -lag-in-frames 16 -auto-alt-ref 1 -arnr-strength 5 -arnr-max-frames 7 -aq-mode 1 -g 17` | hidden alternate reference frames, show_existing_frame, references with segmentation |
 | `av1-libaom-key-frames-64x64.ivf` | `-frames:v 12 -c:v libaom-av1 -cpu-used 8 -lag-in-frames 0 -g 4 -keyint_min 4` | shown key frames after inter frames, which reset `OrderHints` |
 | `av1-libaom-still-after-inter-64x64.ivf` | `-frames:v 4 -c:v libaom-av1 -cpu-used 8 -lag-in-frames 0`, followed by `-frames:v 1 -c:v libaom-av1 -cpu-used 8 -still-picture 1`, joined with `-f concat -i <list> -c copy` | a reduced still picture header after frames with order hints |
+| `av1-libaom-forward-key-frames-64x64.ivf` | `-frames:v 40 -c:v libaom-av1 -cpu-used 8 -lag-in-frames 19 -auto-alt-ref 1 -g 40 -aom-params fwd-kf-dist=12` | hidden forward key frames that refresh some buffers, shown later with show_existing_frame, and inter frames that reference the pictures they keep |
 | `av1-libaom-mono-420-mono-64x64.ivf` | `-frames:v 3 -pix_fmt gray -c:v libaom-av1 -cpu-used 8 -lag-in-frames 0 -g 3`, the same with `-pix_fmt yuv420p`, and `-frames:v 17 -pix_fmt gray -c:v libaom-av1 -cpu-used 8 -lag-in-frames 16 -auto-alt-ref 1 -g 17`, joined with `-f concat -i <list> -c copy` | a monochrome sequence, a 4:2:0 one of the same size and a monochrome one with hidden frames and show_existing_frame; in adapter mode also with the monochrome sequences refused |
 | `av1-libaom-film-grain-64x64.ivf` | `-frames:v 17 -c:v libaom-av1 -cpu-used 6 -lag-in-frames 16 -auto-alt-ref 1 -g 17 -denoise-noise-level 25` | film grain on every shown frame, and one frame with show_frame and showable_frame 0, which codes no film grain parameters |
 | `av1-libaom-64-tile-rows-64x4096.ivf` | 64x4096 from `testsrc2` blurred with `gblur=sigma=20`, `-frames:v 2 -c:v libaom-av1 -cpu-used 8 -crf 63 -lag-in-frames 0 -tile-rows 6 -aom-params sb-size=64` | 64 tile rows of one superblock |

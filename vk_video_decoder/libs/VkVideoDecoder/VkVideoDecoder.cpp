@@ -296,6 +296,24 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     }
 
     const VkExtent2D sessionMaxCodedExtent{imageExtent.width, imageExtent.height};
+
+    // The session's DPB slots: the sequence's, and for a sequence that reconfigures the current one
+    // at least the current session's, as the parser adapter keeps its larger slot range then
+    // (DpbSlots::Init). A smaller session would take slot indices at or above its maxDpbSlots.
+    uint32_t sessionMaxDpbSlots = maxDpbSlotCount;
+    if (pVideoFormat->sequenceUpdate && m_videoSession) {
+        sessionMaxDpbSlots = std::max(sessionMaxDpbSlots, m_videoSession->GetMaxDpbSlots());
+    }
+    sessionMaxDpbSlots = std::min(sessionMaxDpbSlots, videoCapabilities.maxDpbSlots);
+    // The active reference pictures: one per DPB slot, up to 16 references. A session that decodes
+    // fields takes every one the device allows, as a reference to both fields of a frame counts twice
+    // (VUID-vkCmdDecodeVideoKHR-activeReferencePictureCount-07150). The compatibility check asks for
+    // the counts the session is created with, so an unchanged sequence keeps its session.
+    uint32_t sessionMaxActiveReferencePictures = pVideoFormat->canUseFields ?
+            videoCapabilities.maxActiveReferencePictures :
+            std::min<uint32_t>(sessionMaxDpbSlots, VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS);
+    sessionMaxActiveReferencePictures = std::min(sessionMaxActiveReferencePictures, videoCapabilities.maxActiveReferencePictures);
+
     if (!m_videoSession ||
             !m_videoSession->IsCompatible( m_vkDevCtx,
                                            sessionCreateFlags,
@@ -304,8 +322,8 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                            outImageFormat,
                                            sessionMaxCodedExtent,
                                            dpbImageFormat,
-                                           maxDpbSlotCount,
-                                           std::max<uint32_t>(maxDpbSlotCount, VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS)) ) {
+                                           sessionMaxDpbSlots,
+                                           sessionMaxActiveReferencePictures) ) {
 
         result = VulkanVideoSession::Create( m_vkDevCtx,
                                              sessionCreateFlags,
@@ -314,8 +332,8 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                              outImageFormat,
                                              sessionMaxCodedExtent,
                                              dpbImageFormat,
-                                             maxDpbSlotCount,
-                                             std::min<uint32_t>(maxDpbSlotCount, VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS),
+                                             sessionMaxDpbSlots,
+                                             sessionMaxActiveReferencePictures,
                                              nullptr,
                                              m_videoSession);
 
@@ -1319,12 +1337,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         }
     }
 
-    // Add setup reference slot details to decodeBeginInfo
-    decodeBeginInfo.referenceSlotCount = pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount +
-                                            (pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot ? 1 : 0);
-    decodeBeginInfo.pReferenceSlots = (pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount > 0) ?
-                                            pCurrFrameDecParams->decodeFrameInfo.pReferenceSlots :
-                                            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot;
+    // The pictures begin-coding binds: the reference slots, and the setup picture with slot index -1.
+    decodeBeginInfo.referenceSlotCount = pCurrFrameDecParams->beginCodingReferenceSlotCount;
+    decodeBeginInfo.pReferenceSlots = pCurrFrameDecParams->pBeginCodingReferenceSlots;
 
     m_imageSpecsIndex.displayOut = ((m_dpbAndOutputCoincide == VK_TRUE) &&
                                     !(pDecodePictureInfo->flags.applyFilmGrain == VK_TRUE)) ?

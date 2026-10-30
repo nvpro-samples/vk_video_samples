@@ -249,7 +249,9 @@ bool VulkanVP9Decoder::ParseFrameHeader(uint32_t framesize)
 
     //m_PicData.prevIsKeyFrame = m_PicData.keyFrame;
     //m_PicData.PrevShowFrame  = m_PicData.showFrame;
-    UpdateFramePointers(m_pCurrPic);
+    // A picture the client did not decode refreshes its buffers with no picture: a later frame
+    // that names one has no reference there.
+    UpdateFramePointers(bSkipped ? nullptr : m_pCurrPic);
 
     if (m_PicData.stdPictureInfo.flags.show_frame && !bSkipped) {
         // Call back codec for post-decode event (display the decoded frame)
@@ -413,6 +415,15 @@ bool VulkanVP9Decoder::ParseUncompressedHeader()
             for (uint32_t i = 0; i < STD_VIDEO_VP9_REFS_PER_FRAME; i++) {
                 pPicData->ref_frame_idx[i] = u(3);
                 pStdPicInfo->ref_frame_sign_bias_mask |= (u(1) << (STD_VIDEO_VP9_REFERENCE_NAME_LAST_FRAME + i));
+            }
+            // An inter frame predicts from every buffer it names; one that names a buffer without a
+            // picture, as after a decode the client failed, is dropped.
+            for (uint32_t i = 0; i < STD_VIDEO_VP9_REFS_PER_FRAME; i++) {
+                if (m_pBuffers[pPicData->ref_frame_idx[i]].buffer == nullptr) {
+                    nvParserErrorLog("VP9 inter frame names reference buffer %u, which holds no picture\n",
+                                     pPicData->ref_frame_idx[i]);
+                    return false;
+                }
             }
 
             ParseFrameAndRenderSizeWithRefs();

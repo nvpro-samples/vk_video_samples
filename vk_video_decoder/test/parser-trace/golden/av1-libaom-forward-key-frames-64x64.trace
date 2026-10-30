@@ -1,0 +1,907 @@
+trace version=1 codec=av1 format=ivf packets=40 offsetAlignment=256 sizeAlignment=256 pool=32
+pkt index=0 bytes=756 pts=0
+sps index=0 codec=av1 seq_profile=0 frame_width_bits_minus_1=5 frame_height_bits_minus_1=5 max_frame_width_minus_1=63 max_frame_height_minus_1=63 delta_frame_id_length_minus_2=0 additional_frame_id_length_minus_1=0 order_hint_bits_minus_1=6 seq_force_integer_mv=2 seq_force_screen_content_tools=2 flags=enable_filter_intra|enable_intra_edge_filter|enable_masked_compound|enable_warped_motion|enable_order_hint|enable_ref_frame_mvs|enable_cdef
+  color BitDepth=8 subsampling_x=1 subsampling_y=1 color_primaries=2 transfer_characteristics=2 matrix_coefficients=2 chroma_sample_position=0 flags=-
+seq index=0 eCodec=0x4 isSVC=0 frameRate=0x0 bProgSeq=1 nDisplayWidth=64 nDisplayHeight=64 nCodedWidth=64 nCodedHeight=64 nDisplayOffsetX=0 nDisplayOffsetY=0 nMaxWidth=64 nMaxHeight=64 nChromaFormat=1 uBitDepthLumaMinus8=0 uBitDepthChromaMinus8=0 uVideoFullRange=0 lBitrate=0 lDARWidth=64 lDARHeight=64 lVideoFormat=5 lColorPrimaries=2 lTransferCharacteristics=2 lMatrixCoefficients=2 nMinNumDpbSlots=0 nMinNumDecodeSurfaces=9 codecProfile=0 hasFilmGrain=0 canUseFields=0 cbSequenceHeader=0 sequenceHeaderCrc32=0x0
+pic index=0 curr=0 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=1 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=756 crc32=0x5db65b6a
+  av1 showFrame=1 needsSessionReset=1 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[0,0,0,0,0,0,0] pic_idx=[-1,-1,-1,-1,-1,-1,-1,-1] frameHeaderOffset=0 tileCount=1 tileOffsets=[27] tileSizes=[729]
+  std frame_type=0 current_frame_id=0 OrderHint=0 primary_ref_frame=7 refresh_frame_flags=0xff interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[0,0] coded_denom=0 OrderHints=[0,0,0,0,0,0,0,0] expectedFrameId=[0,0,0,0,0,0,0,0] flags=error_resilient_mode|allow_screen_content_tools|force_integer_mv
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=87 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[1,1,8,14] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=0 pic=-1 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=-1 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=-1 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=3 pic=-1 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=4 pic=-1 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=5 pic=-1 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=6 pic=-1 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=7 pic=-1 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+disp index=0 pic=0 pts=0
+pkt index=1 bytes=1155 pts=1
+pic index=1 curr=1 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=1155 crc32=0x13d390a4
+  av1 showFrame=0 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[0,0,0,0,0,0,0] pic_idx=[0,0,0,0,0,0,0,0] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[490]
+  std frame_type=1 current_frame_id=0 OrderHint=13 primary_ref_frame=7 refresh_frame_flags=0x2 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[0,0] coded_denom=0 OrderHints=[0,0,0,0,0,0,0,0] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=97 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[9,9,8,6] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[11,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[11,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=3 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=4 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=5 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=6 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=7 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+pic index=2 curr=2 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=1155 crc32=0x13d390a4
+  av1 showFrame=0 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[0,0,0,0,0,0,1] pic_idx=[0,1,0,0,0,0,0,0] frameHeaderOffset=0 tileCount=1 tileOffsets=[532] tileSizes=[267]
+  std frame_type=1 current_frame_id=0 OrderHint=6 primary_ref_frame=7 refresh_frame_flags=0x4 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,0,0,0,0,0,0,13] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=104 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,8,10] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[11,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=6 RefFrameSignBias=0x80 SavedOrderHints=[0,0,0,0,0,0,0,13] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=3 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=4 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=5 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=6 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=7 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+pic index=3 curr=3 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=1155 crc32=0x13d390a4
+  av1 showFrame=0 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[0,0,0,0,2,0,1] pic_idx=[0,1,2,0,0,0,0,0] frameHeaderOffset=0 tileCount=1 tileOffsets=[819] tileSizes=[181]
+  std frame_type=1 current_frame_id=0 OrderHint=3 primary_ref_frame=4 refresh_frame_flags=0x8 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,0,0,0,0,6,0,13] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=115 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,12,10] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[11,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=3 RefFrameSignBias=0xa0 SavedOrderHints=[0,0,0,0,0,6,0,13] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=2 frame_type=1 OrderHint=6 RefFrameSignBias=0x80 SavedOrderHints=[0,0,0,0,0,0,0,13] flags=-
+  slot i=3 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=4 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=5 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=6 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=7 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+pic index=4 curr=4 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=1155 crc32=0x13d390a4
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[0,0,0,0,3,2,1] pic_idx=[0,1,2,3,0,0,0,0] frameHeaderOffset=0 tileCount=1 tileOffsets=[1020] tileSizes=[135]
+  std frame_type=1 current_frame_id=0 OrderHint=1 primary_ref_frame=7 refresh_frame_flags=0x10 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,0,0,0,0,3,6,13] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=127 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[9,9,16,14] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=1 RefFrameSignBias=0xe0 SavedOrderHints=[0,0,0,0,0,3,6,13] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=2 frame_type=1 OrderHint=6 RefFrameSignBias=0x80 SavedOrderHints=[0,0,0,0,0,0,0,13] flags=-
+  slot i=3 pic=3 frame_type=1 OrderHint=3 RefFrameSignBias=0xa0 SavedOrderHints=[0,0,0,0,0,6,0,13] flags=-
+  slot i=4 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=5 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=6 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=7 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+disp index=1 pic=4 pts=1
+pkt index=2 bytes=145 pts=2
+pic index=5 curr=5 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=145 crc32=0x2a04b371
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[4,0,0,0,3,2,1] pic_idx=[0,1,2,3,4,0,0,0] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[123]
+  std frame_type=1 current_frame_id=0 OrderHint=2 primary_ref_frame=0 refresh_frame_flags=0x20 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,1,0,0,0,3,6,13] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,12,10] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[11,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=2 RefFrameSignBias=0xe0 SavedOrderHints=[0,1,0,0,0,3,6,13] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=2 frame_type=1 OrderHint=6 RefFrameSignBias=0x80 SavedOrderHints=[0,0,0,0,0,0,0,13] flags=-
+  slot i=3 pic=3 frame_type=1 OrderHint=3 RefFrameSignBias=0xa0 SavedOrderHints=[0,0,0,0,0,6,0,13] flags=-
+  slot i=4 pic=4 frame_type=1 OrderHint=1 RefFrameSignBias=0xe0 SavedOrderHints=[0,0,0,0,0,3,6,13] flags=-
+  slot i=5 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=6 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=7 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+disp index=2 pic=5 pts=1
+pkt index=3 bytes=5 pts=3
+disp index=3 pic=3 pts=1
+pkt index=4 bytes=180 pts=4
+pic index=6 curr=6 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=180 crc32=0x1531e2ff
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[3,5,4,0,2,0,1] pic_idx=[0,1,2,3,4,5,0,0] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[158]
+  std frame_type=1 current_frame_id=0 OrderHint=4 primary_ref_frame=1 refresh_frame_flags=0x40 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,3,2,1,0,6,0,13] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=122 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,8,6] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[11,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=4 RefFrameSignBias=0xa0 SavedOrderHints=[0,3,2,1,0,6,0,13] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=2 frame_type=1 OrderHint=6 RefFrameSignBias=0x80 SavedOrderHints=[0,0,0,0,0,0,0,13] flags=-
+  slot i=3 pic=3 frame_type=1 OrderHint=3 RefFrameSignBias=0xa0 SavedOrderHints=[0,0,0,0,0,6,0,13] flags=-
+  slot i=4 pic=4 frame_type=1 OrderHint=1 RefFrameSignBias=0xe0 SavedOrderHints=[0,0,0,0,0,3,6,13] flags=-
+  slot i=5 pic=5 frame_type=1 OrderHint=2 RefFrameSignBias=0xe0 SavedOrderHints=[0,1,0,0,0,3,6,13] flags=-
+  slot i=6 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=7 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+disp index=4 pic=6 pts=1
+pkt index=5 bytes=159 pts=5
+pic index=7 curr=7 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=159 crc32=0x63d790ff
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[6,3,5,0,2,4,1] pic_idx=[0,1,2,3,4,5,6,0] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[137]
+  std frame_type=1 current_frame_id=0 OrderHint=5 primary_ref_frame=0 refresh_frame_flags=0x80 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,4,3,2,0,6,1,13] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,8,10] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=5 RefFrameSignBias=0xa0 SavedOrderHints=[0,4,3,2,0,6,1,13] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=2 frame_type=1 OrderHint=6 RefFrameSignBias=0x80 SavedOrderHints=[0,0,0,0,0,0,0,13] flags=-
+  slot i=3 pic=3 frame_type=1 OrderHint=3 RefFrameSignBias=0xa0 SavedOrderHints=[0,0,0,0,0,6,0,13] flags=-
+  slot i=4 pic=4 frame_type=1 OrderHint=1 RefFrameSignBias=0xe0 SavedOrderHints=[0,0,0,0,0,3,6,13] flags=-
+  slot i=5 pic=5 frame_type=1 OrderHint=2 RefFrameSignBias=0xe0 SavedOrderHints=[0,1,0,0,0,3,6,13] flags=-
+  slot i=6 pic=6 frame_type=1 OrderHint=4 RefFrameSignBias=0xa0 SavedOrderHints=[0,3,2,1,0,6,0,13] flags=-
+  slot i=7 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+disp index=5 pic=7 pts=1
+pkt index=6 bytes=5 pts=6
+disp index=6 pic=2 pts=1
+pkt index=7 bytes=394 pts=7
+pic index=8 curr=8 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=394 crc32=0x92d9f32
+  av1 showFrame=0 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[2,7,6,0,3,5,1] pic_idx=[0,1,2,3,4,5,6,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[199]
+  std frame_type=1 current_frame_id=0 OrderHint=9 primary_ref_frame=4 refresh_frame_flags=0x10 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,6,5,4,0,3,2,13] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=120 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,12,10] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[11,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=9 RefFrameSignBias=0x80 SavedOrderHints=[0,6,5,4,0,3,2,13] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=2 frame_type=1 OrderHint=6 RefFrameSignBias=0x80 SavedOrderHints=[0,0,0,0,0,0,0,13] flags=-
+  slot i=3 pic=3 frame_type=1 OrderHint=3 RefFrameSignBias=0xa0 SavedOrderHints=[0,0,0,0,0,6,0,13] flags=-
+  slot i=4 pic=4 frame_type=1 OrderHint=1 RefFrameSignBias=0xe0 SavedOrderHints=[0,0,0,0,0,3,6,13] flags=-
+  slot i=5 pic=5 frame_type=1 OrderHint=2 RefFrameSignBias=0xe0 SavedOrderHints=[0,1,0,0,0,3,6,13] flags=-
+  slot i=6 pic=6 frame_type=1 OrderHint=4 RefFrameSignBias=0xa0 SavedOrderHints=[0,3,2,1,0,6,0,13] flags=-
+  slot i=7 pic=7 frame_type=1 OrderHint=5 RefFrameSignBias=0xa0 SavedOrderHints=[0,4,3,2,0,6,1,13] flags=-
+pic index=9 curr=4 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=394 crc32=0x92d9f32
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[2,7,6,0,4,3,1] pic_idx=[0,1,2,3,8,5,6,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[241] tileSizes=[153]
+  std frame_type=1 current_frame_id=0 OrderHint=7 primary_ref_frame=1 refresh_frame_flags=0x20 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,6,5,4,0,9,3,13] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=124 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,16,14] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=7 RefFrameSignBias=0xa0 SavedOrderHints=[0,6,5,4,0,9,3,13] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=2 frame_type=1 OrderHint=6 RefFrameSignBias=0x80 SavedOrderHints=[0,0,0,0,0,0,0,13] flags=-
+  slot i=3 pic=3 frame_type=1 OrderHint=3 RefFrameSignBias=0xa0 SavedOrderHints=[0,0,0,0,0,6,0,13] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=9 RefFrameSignBias=0x80 SavedOrderHints=[0,6,5,4,0,3,2,13] flags=-
+  slot i=5 pic=5 frame_type=1 OrderHint=2 RefFrameSignBias=0xe0 SavedOrderHints=[0,1,0,0,0,3,6,13] flags=-
+  slot i=6 pic=6 frame_type=1 OrderHint=4 RefFrameSignBias=0xa0 SavedOrderHints=[0,3,2,1,0,6,0,13] flags=-
+  slot i=7 pic=7 frame_type=1 OrderHint=5 RefFrameSignBias=0xa0 SavedOrderHints=[0,4,3,2,0,6,1,13] flags=-
+disp index=7 pic=4 pts=1
+pkt index=8 bytes=144 pts=8
+pic index=10 curr=5 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=144 crc32=0x3433342c
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[5,2,7,0,4,6,1] pic_idx=[0,1,2,3,8,4,6,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[122]
+  std frame_type=1 current_frame_id=0 OrderHint=8 primary_ref_frame=0 refresh_frame_flags=0x8 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,7,6,5,0,9,4,13] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[13,13,12,10] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=8 RefFrameSignBias=0xa0 SavedOrderHints=[0,7,6,5,0,9,4,13] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=2 frame_type=1 OrderHint=6 RefFrameSignBias=0x80 SavedOrderHints=[0,0,0,0,0,0,0,13] flags=-
+  slot i=3 pic=3 frame_type=1 OrderHint=3 RefFrameSignBias=0xa0 SavedOrderHints=[0,0,0,0,0,6,0,13] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=9 RefFrameSignBias=0x80 SavedOrderHints=[0,6,5,4,0,3,2,13] flags=-
+  slot i=5 pic=4 frame_type=1 OrderHint=7 RefFrameSignBias=0xa0 SavedOrderHints=[0,6,5,4,0,9,3,13] flags=-
+  slot i=6 pic=6 frame_type=1 OrderHint=4 RefFrameSignBias=0xa0 SavedOrderHints=[0,3,2,1,0,6,0,13] flags=-
+  slot i=7 pic=7 frame_type=1 OrderHint=5 RefFrameSignBias=0xa0 SavedOrderHints=[0,4,3,2,0,6,1,13] flags=-
+disp index=8 pic=5 pts=1
+pkt index=9 bytes=5 pts=9
+disp index=9 pic=8 pts=1
+pkt index=10 bytes=327 pts=10
+pic index=11 curr=3 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=327 crc32=0x791fa389
+  av1 showFrame=0 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[4,3,5,0,2,7,1] pic_idx=[0,1,2,5,8,4,6,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[144]
+  std frame_type=1 current_frame_id=0 OrderHint=11 primary_ref_frame=0 refresh_frame_flags=0x40 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,9,8,7,0,6,5,13] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=126 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,12,6] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=11 RefFrameSignBias=0x80 SavedOrderHints=[0,9,8,7,0,6,5,13] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=2 frame_type=1 OrderHint=6 RefFrameSignBias=0x80 SavedOrderHints=[0,0,0,0,0,0,0,13] flags=-
+  slot i=3 pic=5 frame_type=1 OrderHint=8 RefFrameSignBias=0xa0 SavedOrderHints=[0,7,6,5,0,9,4,13] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=9 RefFrameSignBias=0x80 SavedOrderHints=[0,6,5,4,0,3,2,13] flags=-
+  slot i=5 pic=4 frame_type=1 OrderHint=7 RefFrameSignBias=0xa0 SavedOrderHints=[0,6,5,4,0,9,3,13] flags=-
+  slot i=6 pic=6 frame_type=1 OrderHint=4 RefFrameSignBias=0xa0 SavedOrderHints=[0,3,2,1,0,6,0,13] flags=-
+  slot i=7 pic=7 frame_type=1 OrderHint=5 RefFrameSignBias=0xa0 SavedOrderHints=[0,4,3,2,0,6,1,13] flags=-
+pic index=12 curr=6 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=327 crc32=0x791fa389
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[4,3,5,0,6,2,1] pic_idx=[0,1,2,5,8,4,3,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[186] tileSizes=[141]
+  std frame_type=1 current_frame_id=0 OrderHint=10 primary_ref_frame=1 refresh_frame_flags=0x80 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,9,8,7,0,11,6,13] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,8,14] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=10 RefFrameSignBias=0xa0 SavedOrderHints=[0,9,8,7,0,11,6,13] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=2 frame_type=1 OrderHint=6 RefFrameSignBias=0x80 SavedOrderHints=[0,0,0,0,0,0,0,13] flags=-
+  slot i=3 pic=5 frame_type=1 OrderHint=8 RefFrameSignBias=0xa0 SavedOrderHints=[0,7,6,5,0,9,4,13] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=9 RefFrameSignBias=0x80 SavedOrderHints=[0,6,5,4,0,3,2,13] flags=-
+  slot i=5 pic=4 frame_type=1 OrderHint=7 RefFrameSignBias=0xa0 SavedOrderHints=[0,6,5,4,0,9,3,13] flags=-
+  slot i=6 pic=3 frame_type=1 OrderHint=11 RefFrameSignBias=0x80 SavedOrderHints=[0,9,8,7,0,6,5,13] flags=-
+  slot i=7 pic=7 frame_type=1 OrderHint=5 RefFrameSignBias=0xa0 SavedOrderHints=[0,4,3,2,0,6,1,13] flags=-
+disp index=10 pic=6 pts=1
+pkt index=11 bytes=5 pts=11
+disp index=11 pic=3 pts=1
+pkt index=12 bytes=138 pts=12
+pic index=13 curr=7 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=138 crc32=0x83d147f3
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[6,7,4,0,3,5,1] pic_idx=[0,1,2,5,8,4,3,6] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[116]
+  std frame_type=1 current_frame_id=0 OrderHint=12 primary_ref_frame=1 refresh_frame_flags=0x4 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,11,10,9,0,8,7,13] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,12,14] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=12 RefFrameSignBias=0x80 SavedOrderHints=[0,11,10,9,0,8,7,13] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=2 frame_type=1 OrderHint=6 RefFrameSignBias=0x80 SavedOrderHints=[0,0,0,0,0,0,0,13] flags=-
+  slot i=3 pic=5 frame_type=1 OrderHint=8 RefFrameSignBias=0xa0 SavedOrderHints=[0,7,6,5,0,9,4,13] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=9 RefFrameSignBias=0x80 SavedOrderHints=[0,6,5,4,0,3,2,13] flags=-
+  slot i=5 pic=4 frame_type=1 OrderHint=7 RefFrameSignBias=0xa0 SavedOrderHints=[0,6,5,4,0,9,3,13] flags=-
+  slot i=6 pic=3 frame_type=1 OrderHint=11 RefFrameSignBias=0x80 SavedOrderHints=[0,9,8,7,0,6,5,13] flags=-
+  slot i=7 pic=6 frame_type=1 OrderHint=10 RefFrameSignBias=0xa0 SavedOrderHints=[0,9,8,7,0,11,6,13] flags=-
+disp index=12 pic=7 pts=1
+pkt index=13 bytes=21 pts=13
+pic index=14 curr=2 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=21 crc32=0xc40431c4
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[2,6,7,0,4,3,1] pic_idx=[0,1,7,5,8,4,3,6] frameHeaderOffset=0 tileCount=1 tileOffsets=[20] tileSizes=[1]
+  std frame_type=1 current_frame_id=0 OrderHint=13 primary_ref_frame=0 refresh_frame_flags=0x0 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,12,11,10,0,9,8,13] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,12,14] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=7 frame_type=1 OrderHint=12 RefFrameSignBias=0x80 SavedOrderHints=[0,11,10,9,0,8,7,13] flags=-
+  slot i=3 pic=5 frame_type=1 OrderHint=8 RefFrameSignBias=0xa0 SavedOrderHints=[0,7,6,5,0,9,4,13] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=9 RefFrameSignBias=0x80 SavedOrderHints=[0,6,5,4,0,3,2,13] flags=-
+  slot i=5 pic=4 frame_type=1 OrderHint=7 RefFrameSignBias=0xa0 SavedOrderHints=[0,6,5,4,0,9,3,13] flags=-
+  slot i=6 pic=3 frame_type=1 OrderHint=11 RefFrameSignBias=0x80 SavedOrderHints=[0,9,8,7,0,6,5,13] flags=-
+  slot i=7 pic=6 frame_type=1 OrderHint=10 RefFrameSignBias=0xa0 SavedOrderHints=[0,9,8,7,0,11,6,13] flags=-
+disp index=13 pic=2 pts=1
+pkt index=14 bytes=1476 pts=14
+sps index=1 codec=av1 seq_profile=0 frame_width_bits_minus_1=5 frame_height_bits_minus_1=5 max_frame_width_minus_1=63 max_frame_height_minus_1=63 delta_frame_id_length_minus_2=0 additional_frame_id_length_minus_1=0 order_hint_bits_minus_1=6 seq_force_integer_mv=2 seq_force_screen_content_tools=2 flags=enable_filter_intra|enable_intra_edge_filter|enable_masked_compound|enable_warped_motion|enable_order_hint|enable_ref_frame_mvs|enable_cdef
+  color BitDepth=8 subsampling_x=1 subsampling_y=1 color_primaries=2 transfer_characteristics=2 matrix_coefficients=2 chroma_sample_position=0 flags=-
+pic index=15 curr=2 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=1 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=1476 crc32=0xf8ea232a
+  av1 showFrame=0 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[0,0,0,0,0,0,0] pic_idx=[0,1,7,5,8,4,3,6] frameHeaderOffset=0 tileCount=1 tileOffsets=[29] tileSizes=[786]
+  std frame_type=0 current_frame_id=0 OrderHint=24 primary_ref_frame=7 refresh_frame_flags=0x20 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,12,11,10,0,9,8,13] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|force_integer_mv|is_motion_mode_switchable
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=88 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[9,9,4,4] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[11,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=7 frame_type=1 OrderHint=12 RefFrameSignBias=0x80 SavedOrderHints=[0,11,10,9,0,8,7,13] flags=-
+  slot i=3 pic=5 frame_type=1 OrderHint=8 RefFrameSignBias=0xa0 SavedOrderHints=[0,7,6,5,0,9,4,13] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=9 RefFrameSignBias=0x80 SavedOrderHints=[0,6,5,4,0,3,2,13] flags=-
+  slot i=5 pic=4 frame_type=1 OrderHint=7 RefFrameSignBias=0xa0 SavedOrderHints=[0,6,5,4,0,9,3,13] flags=-
+  slot i=6 pic=3 frame_type=1 OrderHint=11 RefFrameSignBias=0x80 SavedOrderHints=[0,9,8,7,0,6,5,13] flags=-
+  slot i=7 pic=6 frame_type=1 OrderHint=10 RefFrameSignBias=0xa0 SavedOrderHints=[0,9,8,7,0,11,6,13] flags=-
+pic index=16 curr=4 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=1476 crc32=0xf8ea232a
+  av1 showFrame=0 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[2,6,7,1,0,4,5] pic_idx=[0,1,7,5,8,2,3,6] frameHeaderOffset=0 tileCount=1 tileOffsets=[835] tileSizes=[274]
+  std frame_type=1 current_frame_id=0 OrderHint=18 primary_ref_frame=7 refresh_frame_flags=0x8 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[4,7] coded_denom=0 OrderHints=[0,12,11,10,13,0,9,24] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=103 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[9,9,12,0] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[11,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=18 RefFrameSignBias=0x80 SavedOrderHints=[0,12,11,10,13,0,9,24] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=7 frame_type=1 OrderHint=12 RefFrameSignBias=0x80 SavedOrderHints=[0,11,10,9,0,8,7,13] flags=-
+  slot i=3 pic=5 frame_type=1 OrderHint=8 RefFrameSignBias=0xa0 SavedOrderHints=[0,7,6,5,0,9,4,13] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=9 RefFrameSignBias=0x80 SavedOrderHints=[0,6,5,4,0,3,2,13] flags=-
+  slot i=5 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=6 pic=3 frame_type=1 OrderHint=11 RefFrameSignBias=0x80 SavedOrderHints=[0,9,8,7,0,6,5,13] flags=-
+  slot i=7 pic=6 frame_type=1 OrderHint=10 RefFrameSignBias=0xa0 SavedOrderHints=[0,9,8,7,0,11,6,13] flags=-
+pic index=17 curr=5 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=1476 crc32=0xf8ea232a
+  av1 showFrame=0 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[2,6,7,1,3,0,5] pic_idx=[0,1,7,4,8,2,3,6] frameHeaderOffset=0 tileCount=1 tileOffsets=[1129] tileSizes=[172]
+  std frame_type=1 current_frame_id=0 OrderHint=15 primary_ref_frame=4 refresh_frame_flags=0x10 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[4,5] coded_denom=0 OrderHints=[0,12,11,10,13,18,0,24] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=117 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[9,9,12,12] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[11,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=15 RefFrameSignBias=0xa0 SavedOrderHints=[0,12,11,10,13,18,0,24] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=7 frame_type=1 OrderHint=12 RefFrameSignBias=0x80 SavedOrderHints=[0,11,10,9,0,8,7,13] flags=-
+  slot i=3 pic=4 frame_type=1 OrderHint=18 RefFrameSignBias=0x80 SavedOrderHints=[0,12,11,10,13,0,9,24] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=9 RefFrameSignBias=0x80 SavedOrderHints=[0,6,5,4,0,3,2,13] flags=-
+  slot i=5 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=6 pic=3 frame_type=1 OrderHint=11 RefFrameSignBias=0x80 SavedOrderHints=[0,9,8,7,0,6,5,13] flags=-
+  slot i=7 pic=6 frame_type=1 OrderHint=10 RefFrameSignBias=0xa0 SavedOrderHints=[0,9,8,7,0,11,6,13] flags=-
+pic index=18 curr=8 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=1476 crc32=0xf8ea232a
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[2,6,0,1,4,3,5] pic_idx=[0,1,7,4,5,2,3,6] frameHeaderOffset=0 tileCount=1 tileOffsets=[1321] tileSizes=[155]
+  std frame_type=1 current_frame_id=0 OrderHint=14 primary_ref_frame=7 refresh_frame_flags=0x80 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[4,5] coded_denom=0 OrderHints=[0,12,11,0,13,15,18,24] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[13,13,8,12] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=14 RefFrameSignBias=0xe0 SavedOrderHints=[0,12,11,0,13,15,18,24] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=7 frame_type=1 OrderHint=12 RefFrameSignBias=0x80 SavedOrderHints=[0,11,10,9,0,8,7,13] flags=-
+  slot i=3 pic=4 frame_type=1 OrderHint=18 RefFrameSignBias=0x80 SavedOrderHints=[0,12,11,10,13,0,9,24] flags=-
+  slot i=4 pic=5 frame_type=1 OrderHint=15 RefFrameSignBias=0xa0 SavedOrderHints=[0,12,11,10,13,18,0,24] flags=-
+  slot i=5 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=6 pic=3 frame_type=1 OrderHint=11 RefFrameSignBias=0x80 SavedOrderHints=[0,9,8,7,0,6,5,13] flags=-
+  slot i=7 pic=6 frame_type=1 OrderHint=10 RefFrameSignBias=0xa0 SavedOrderHints=[0,9,8,7,0,11,6,13] flags=-
+disp index=14 pic=8 pts=1
+pkt index=15 bytes=5 pts=15
+disp index=15 pic=5 pts=1
+pkt index=16 bytes=159 pts=16
+pic index=19 curr=6 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=159 crc32=0xcb16dce5
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[4,7,2,1,3,0,5] pic_idx=[0,1,7,4,5,2,3,8] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[137]
+  std frame_type=1 current_frame_id=0 OrderHint=16 primary_ref_frame=1 refresh_frame_flags=0x40 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,15,14,12,13,18,0,24] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=126 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[9,9,8,8] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=16 RefFrameSignBias=0xa0 SavedOrderHints=[0,15,14,12,13,18,0,24] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=7 frame_type=1 OrderHint=12 RefFrameSignBias=0x80 SavedOrderHints=[0,11,10,9,0,8,7,13] flags=-
+  slot i=3 pic=4 frame_type=1 OrderHint=18 RefFrameSignBias=0x80 SavedOrderHints=[0,12,11,10,13,0,9,24] flags=-
+  slot i=4 pic=5 frame_type=1 OrderHint=15 RefFrameSignBias=0xa0 SavedOrderHints=[0,12,11,10,13,18,0,24] flags=-
+  slot i=5 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=6 pic=3 frame_type=1 OrderHint=11 RefFrameSignBias=0x80 SavedOrderHints=[0,9,8,7,0,6,5,13] flags=-
+  slot i=7 pic=8 frame_type=1 OrderHint=14 RefFrameSignBias=0xe0 SavedOrderHints=[0,12,11,0,13,15,18,24] flags=-
+disp index=16 pic=6 pts=1
+pkt index=17 bytes=148 pts=17
+pic index=20 curr=3 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=148 crc32=0x60c82bfd
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[6,4,7,1,3,0,5] pic_idx=[0,1,7,4,5,2,6,8] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[126]
+  std frame_type=1 current_frame_id=0 OrderHint=17 primary_ref_frame=0 refresh_frame_flags=0x4 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,16,15,14,13,18,0,24] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,4,12] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=17 RefFrameSignBias=0xa0 SavedOrderHints=[0,16,15,14,13,18,0,24] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=7 frame_type=1 OrderHint=12 RefFrameSignBias=0x80 SavedOrderHints=[0,11,10,9,0,8,7,13] flags=-
+  slot i=3 pic=4 frame_type=1 OrderHint=18 RefFrameSignBias=0x80 SavedOrderHints=[0,12,11,10,13,0,9,24] flags=-
+  slot i=4 pic=5 frame_type=1 OrderHint=15 RefFrameSignBias=0xa0 SavedOrderHints=[0,12,11,10,13,18,0,24] flags=-
+  slot i=5 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=6 pic=6 frame_type=1 OrderHint=16 RefFrameSignBias=0xa0 SavedOrderHints=[0,15,14,12,13,18,0,24] flags=-
+  slot i=7 pic=8 frame_type=1 OrderHint=14 RefFrameSignBias=0xe0 SavedOrderHints=[0,12,11,0,13,15,18,24] flags=-
+disp index=17 pic=3 pts=1
+pkt index=18 bytes=5 pts=18
+disp index=18 pic=4 pts=1
+pkt index=19 bytes=356 pts=19
+pic index=21 curr=7 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=356 crc32=0xba467bd2
+  av1 showFrame=0 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[3,2,6,1,0,4,5] pic_idx=[0,1,3,4,5,2,6,8] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[176]
+  std frame_type=1 current_frame_id=0 OrderHint=21 primary_ref_frame=5 refresh_frame_flags=0x80 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,18,17,16,13,0,15,24] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=119 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[9,9,8,4] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[11,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=21 RefFrameSignBias=0x80 SavedOrderHints=[0,18,17,16,13,0,15,24] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=3 frame_type=1 OrderHint=17 RefFrameSignBias=0xa0 SavedOrderHints=[0,16,15,14,13,18,0,24] flags=-
+  slot i=3 pic=4 frame_type=1 OrderHint=18 RefFrameSignBias=0x80 SavedOrderHints=[0,12,11,10,13,0,9,24] flags=-
+  slot i=4 pic=5 frame_type=1 OrderHint=15 RefFrameSignBias=0xa0 SavedOrderHints=[0,12,11,10,13,18,0,24] flags=-
+  slot i=5 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=6 pic=6 frame_type=1 OrderHint=16 RefFrameSignBias=0xa0 SavedOrderHints=[0,15,14,12,13,18,0,24] flags=-
+  slot i=7 pic=8 frame_type=1 OrderHint=14 RefFrameSignBias=0xe0 SavedOrderHints=[0,12,11,0,13,15,18,24] flags=-
+pic index=22 curr=8 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=356 crc32=0xba467bd2
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[3,2,6,1,7,0,5] pic_idx=[0,1,3,4,5,2,6,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[218] tileSizes=[138]
+  std frame_type=1 current_frame_id=0 OrderHint=19 primary_ref_frame=1 refresh_frame_flags=0x10 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,18,17,16,13,21,0,24] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=126 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[9,9,4,0] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=19 RefFrameSignBias=0xa0 SavedOrderHints=[0,18,17,16,13,21,0,24] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=3 frame_type=1 OrderHint=17 RefFrameSignBias=0xa0 SavedOrderHints=[0,16,15,14,13,18,0,24] flags=-
+  slot i=3 pic=4 frame_type=1 OrderHint=18 RefFrameSignBias=0x80 SavedOrderHints=[0,12,11,10,13,0,9,24] flags=-
+  slot i=4 pic=5 frame_type=1 OrderHint=15 RefFrameSignBias=0xa0 SavedOrderHints=[0,12,11,10,13,18,0,24] flags=-
+  slot i=5 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=6 pic=6 frame_type=1 OrderHint=16 RefFrameSignBias=0xa0 SavedOrderHints=[0,15,14,12,13,18,0,24] flags=-
+  slot i=7 pic=7 frame_type=1 OrderHint=21 RefFrameSignBias=0x80 SavedOrderHints=[0,18,17,16,13,0,15,24] flags=-
+disp index=19 pic=8 pts=1
+pkt index=20 bytes=170 pts=20
+pic index=23 curr=5 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=170 crc32=0xa538a588
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[4,3,2,1,7,0,5] pic_idx=[0,1,3,4,8,2,6,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[148]
+  std frame_type=1 current_frame_id=0 OrderHint=20 primary_ref_frame=0 refresh_frame_flags=0x40 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,19,18,17,13,21,0,24] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[13,13,8,0] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[11,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=20 RefFrameSignBias=0xa0 SavedOrderHints=[0,19,18,17,13,21,0,24] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=3 frame_type=1 OrderHint=17 RefFrameSignBias=0xa0 SavedOrderHints=[0,16,15,14,13,18,0,24] flags=-
+  slot i=3 pic=4 frame_type=1 OrderHint=18 RefFrameSignBias=0x80 SavedOrderHints=[0,12,11,10,13,0,9,24] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=19 RefFrameSignBias=0xa0 SavedOrderHints=[0,18,17,16,13,21,0,24] flags=-
+  slot i=5 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=6 pic=6 frame_type=1 OrderHint=16 RefFrameSignBias=0xa0 SavedOrderHints=[0,15,14,12,13,18,0,24] flags=-
+  slot i=7 pic=7 frame_type=1 OrderHint=21 RefFrameSignBias=0x80 SavedOrderHints=[0,18,17,16,13,0,15,24] flags=-
+disp index=20 pic=5 pts=1
+pkt index=21 bytes=5 pts=21
+disp index=21 pic=7 pts=1
+pkt index=22 bytes=176 pts=22
+pic index=24 curr=6 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=176 crc32=0x29b6b2cc
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[7,6,4,1,0,3,5] pic_idx=[0,1,3,4,8,2,5,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[154]
+  std frame_type=1 current_frame_id=0 OrderHint=22 primary_ref_frame=1 refresh_frame_flags=0x4 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,21,20,19,13,0,18,24] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=120 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[13,13,8,0] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[11,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[11,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=22 RefFrameSignBias=0x80 SavedOrderHints=[0,21,20,19,13,0,18,24] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=3 frame_type=1 OrderHint=17 RefFrameSignBias=0xa0 SavedOrderHints=[0,16,15,14,13,18,0,24] flags=-
+  slot i=3 pic=4 frame_type=1 OrderHint=18 RefFrameSignBias=0x80 SavedOrderHints=[0,12,11,10,13,0,9,24] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=19 RefFrameSignBias=0xa0 SavedOrderHints=[0,18,17,16,13,21,0,24] flags=-
+  slot i=5 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=6 pic=5 frame_type=1 OrderHint=20 RefFrameSignBias=0xa0 SavedOrderHints=[0,19,18,17,13,21,0,24] flags=-
+  slot i=7 pic=7 frame_type=1 OrderHint=21 RefFrameSignBias=0x80 SavedOrderHints=[0,18,17,16,13,0,15,24] flags=-
+disp index=22 pic=6 pts=1
+pkt index=23 bytes=129 pts=23
+pic index=25 curr=3 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=129 crc32=0xa3461acb
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[2,7,6,1,0,4,5] pic_idx=[0,1,6,4,8,2,5,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[21] tileSizes=[108]
+  std frame_type=1 current_frame_id=0 OrderHint=23 primary_ref_frame=0 refresh_frame_flags=0x8 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,22,21,20,13,0,19,24] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[9,9,12,0] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=23 RefFrameSignBias=0x80 SavedOrderHints=[0,22,21,20,13,0,19,24] flags=-
+  slot i=0 pic=0 frame_type=0 OrderHint=0 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=1 pic=1 frame_type=1 OrderHint=13 RefFrameSignBias=0x0 SavedOrderHints=[0,0,0,0,0,0,0,0] flags=-
+  slot i=2 pic=6 frame_type=1 OrderHint=22 RefFrameSignBias=0x80 SavedOrderHints=[0,21,20,19,13,0,18,24] flags=-
+  slot i=3 pic=4 frame_type=1 OrderHint=18 RefFrameSignBias=0x80 SavedOrderHints=[0,12,11,10,13,0,9,24] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=19 RefFrameSignBias=0xa0 SavedOrderHints=[0,18,17,16,13,21,0,24] flags=-
+  slot i=5 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=6 pic=5 frame_type=1 OrderHint=20 RefFrameSignBias=0xa0 SavedOrderHints=[0,19,18,17,13,21,0,24] flags=-
+  slot i=7 pic=7 frame_type=1 OrderHint=21 RefFrameSignBias=0x80 SavedOrderHints=[0,18,17,16,13,0,15,24] flags=-
+disp index=23 pic=3 pts=1
+pkt index=24 bytes=5 pts=24
+disp index=24 pic=2 pts=1
+pkt index=25 bytes=1041 pts=25
+pic index=26 curr=0 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=1041 crc32=0x688a4020
+  av1 showFrame=0 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[0,0,0,0,0,0,0] pic_idx=[2,2,2,2,2,2,2,2] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[397]
+  std frame_type=1 current_frame_id=0 OrderHint=34 primary_ref_frame=6 refresh_frame_flags=0x2 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,24,24,24,24,24,24,24] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=110 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,16,12] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[11,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=34 RefFrameSignBias=0x0 SavedOrderHints=[0,24,24,24,24,24,24,24] flags=-
+  slot i=0 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=1 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=2 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=3 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=4 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=5 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=6 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=7 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+pic index=27 curr=1 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=1041 crc32=0x688a4020
+  av1 showFrame=0 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[0,0,0,0,0,0,1] pic_idx=[2,0,2,2,2,2,2,2] frameHeaderOffset=0 tileCount=1 tileOffsets=[439] tileSizes=[250]
+  std frame_type=1 current_frame_id=0 OrderHint=29 primary_ref_frame=7 refresh_frame_flags=0x4 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,24,24,24,24,24,24,34] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=115 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,16,12] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[11,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=29 RefFrameSignBias=0x80 SavedOrderHints=[0,24,24,24,24,24,24,34] flags=-
+  slot i=0 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=1 pic=0 frame_type=1 OrderHint=34 RefFrameSignBias=0x0 SavedOrderHints=[0,24,24,24,24,24,24,24] flags=-
+  slot i=2 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=3 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=4 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=5 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=6 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=7 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+pic index=28 curr=3 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=1041 crc32=0x688a4020
+  av1 showFrame=0 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[0,0,0,0,2,0,1] pic_idx=[2,0,1,2,2,2,2,2] frameHeaderOffset=0 tileCount=1 tileOffsets=[709] tileSizes=[176]
+  std frame_type=1 current_frame_id=0 OrderHint=26 primary_ref_frame=4 refresh_frame_flags=0x8 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,24,24,24,24,29,24,34] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=124 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[9,9,4,12] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[11,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=26 RefFrameSignBias=0xa0 SavedOrderHints=[0,24,24,24,24,29,24,34] flags=-
+  slot i=0 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=1 pic=0 frame_type=1 OrderHint=34 RefFrameSignBias=0x0 SavedOrderHints=[0,24,24,24,24,24,24,24] flags=-
+  slot i=2 pic=1 frame_type=1 OrderHint=29 RefFrameSignBias=0x80 SavedOrderHints=[0,24,24,24,24,24,24,34] flags=-
+  slot i=3 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=4 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=5 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=6 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=7 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+pic index=29 curr=4 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=1041 crc32=0x688a4020
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[0,0,0,0,3,2,1] pic_idx=[2,0,1,3,2,2,2,2] frameHeaderOffset=0 tileCount=1 tileOffsets=[905] tileSizes=[136]
+  std frame_type=1 current_frame_id=0 OrderHint=25 primary_ref_frame=4 refresh_frame_flags=0x10 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,24,24,24,24,26,29,34] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[13,13,8,12] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=25 RefFrameSignBias=0xe0 SavedOrderHints=[0,24,24,24,24,26,29,34] flags=-
+  slot i=0 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=1 pic=0 frame_type=1 OrderHint=34 RefFrameSignBias=0x0 SavedOrderHints=[0,24,24,24,24,24,24,24] flags=-
+  slot i=2 pic=1 frame_type=1 OrderHint=29 RefFrameSignBias=0x80 SavedOrderHints=[0,24,24,24,24,24,24,34] flags=-
+  slot i=3 pic=3 frame_type=1 OrderHint=26 RefFrameSignBias=0xa0 SavedOrderHints=[0,24,24,24,24,29,24,34] flags=-
+  slot i=4 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=5 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=6 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=7 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+disp index=25 pic=4 pts=20
+pkt index=26 bytes=5 pts=26
+disp index=26 pic=3 pts=20
+pkt index=27 bytes=185 pts=27
+pic index=30 curr=5 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=185 crc32=0x53d0b875
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[3,4,0,0,2,0,1] pic_idx=[2,0,1,3,4,2,2,2] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[163]
+  std frame_type=1 current_frame_id=0 OrderHint=27 primary_ref_frame=1 refresh_frame_flags=0x20 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,26,25,24,24,29,24,34] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=120 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[13,13,8,8] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=27 RefFrameSignBias=0xa0 SavedOrderHints=[0,26,25,24,24,29,24,34] flags=-
+  slot i=0 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=1 pic=0 frame_type=1 OrderHint=34 RefFrameSignBias=0x0 SavedOrderHints=[0,24,24,24,24,24,24,24] flags=-
+  slot i=2 pic=1 frame_type=1 OrderHint=29 RefFrameSignBias=0x80 SavedOrderHints=[0,24,24,24,24,24,24,34] flags=-
+  slot i=3 pic=3 frame_type=1 OrderHint=26 RefFrameSignBias=0xa0 SavedOrderHints=[0,24,24,24,24,29,24,34] flags=-
+  slot i=4 pic=4 frame_type=1 OrderHint=25 RefFrameSignBias=0xe0 SavedOrderHints=[0,24,24,24,24,26,29,34] flags=-
+  slot i=5 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=6 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=7 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+disp index=27 pic=5 pts=20
+pkt index=28 bytes=129 pts=28
+pic index=31 curr=6 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=129 crc32=0x511e83d0
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[5,3,4,0,2,0,1] pic_idx=[2,0,1,3,4,5,2,2] frameHeaderOffset=0 tileCount=1 tileOffsets=[21] tileSizes=[108]
+  std frame_type=1 current_frame_id=0 OrderHint=28 primary_ref_frame=0 refresh_frame_flags=0x40 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,27,26,25,24,29,24,34] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[9,9,8,12] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=28 RefFrameSignBias=0xa0 SavedOrderHints=[0,27,26,25,24,29,24,34] flags=-
+  slot i=0 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=1 pic=0 frame_type=1 OrderHint=34 RefFrameSignBias=0x0 SavedOrderHints=[0,24,24,24,24,24,24,24] flags=-
+  slot i=2 pic=1 frame_type=1 OrderHint=29 RefFrameSignBias=0x80 SavedOrderHints=[0,24,24,24,24,24,24,34] flags=-
+  slot i=3 pic=3 frame_type=1 OrderHint=26 RefFrameSignBias=0xa0 SavedOrderHints=[0,24,24,24,24,29,24,34] flags=-
+  slot i=4 pic=4 frame_type=1 OrderHint=25 RefFrameSignBias=0xe0 SavedOrderHints=[0,24,24,24,24,26,29,34] flags=-
+  slot i=5 pic=5 frame_type=1 OrderHint=27 RefFrameSignBias=0xa0 SavedOrderHints=[0,26,25,24,24,29,24,34] flags=-
+  slot i=6 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=7 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+disp index=28 pic=6 pts=20
+pkt index=29 bytes=5 pts=29
+disp index=29 pic=1 pts=20
+pkt index=30 bytes=351 pts=30
+pic index=32 curr=7 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=351 crc32=0x994b5184
+  av1 showFrame=0 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[2,6,5,0,3,4,1] pic_idx=[2,0,1,3,4,5,6,2] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[149]
+  std frame_type=1 current_frame_id=0 OrderHint=31 primary_ref_frame=4 refresh_frame_flags=0x80 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,29,28,27,24,26,25,34] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=124 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,16,8] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=31 RefFrameSignBias=0x80 SavedOrderHints=[0,29,28,27,24,26,25,34] flags=-
+  slot i=0 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=1 pic=0 frame_type=1 OrderHint=34 RefFrameSignBias=0x0 SavedOrderHints=[0,24,24,24,24,24,24,24] flags=-
+  slot i=2 pic=1 frame_type=1 OrderHint=29 RefFrameSignBias=0x80 SavedOrderHints=[0,24,24,24,24,24,24,34] flags=-
+  slot i=3 pic=3 frame_type=1 OrderHint=26 RefFrameSignBias=0xa0 SavedOrderHints=[0,24,24,24,24,29,24,34] flags=-
+  slot i=4 pic=4 frame_type=1 OrderHint=25 RefFrameSignBias=0xe0 SavedOrderHints=[0,24,24,24,24,26,29,34] flags=-
+  slot i=5 pic=5 frame_type=1 OrderHint=27 RefFrameSignBias=0xa0 SavedOrderHints=[0,26,25,24,24,29,24,34] flags=-
+  slot i=6 pic=6 frame_type=1 OrderHint=28 RefFrameSignBias=0xa0 SavedOrderHints=[0,27,26,25,24,29,24,34] flags=-
+  slot i=7 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+pic index=33 curr=8 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=351 crc32=0x994b5184
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[2,6,5,0,7,3,1] pic_idx=[2,0,1,3,4,5,6,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[191] tileSizes=[160]
+  std frame_type=1 current_frame_id=0 OrderHint=30 primary_ref_frame=1 refresh_frame_flags=0x10 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,5] coded_denom=0 OrderHints=[0,29,28,27,24,31,26,34] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[13,13,12,16] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=30 RefFrameSignBias=0xa0 SavedOrderHints=[0,29,28,27,24,31,26,34] flags=-
+  slot i=0 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=1 pic=0 frame_type=1 OrderHint=34 RefFrameSignBias=0x0 SavedOrderHints=[0,24,24,24,24,24,24,24] flags=-
+  slot i=2 pic=1 frame_type=1 OrderHint=29 RefFrameSignBias=0x80 SavedOrderHints=[0,24,24,24,24,24,24,34] flags=-
+  slot i=3 pic=3 frame_type=1 OrderHint=26 RefFrameSignBias=0xa0 SavedOrderHints=[0,24,24,24,24,29,24,34] flags=-
+  slot i=4 pic=4 frame_type=1 OrderHint=25 RefFrameSignBias=0xe0 SavedOrderHints=[0,24,24,24,24,26,29,34] flags=-
+  slot i=5 pic=5 frame_type=1 OrderHint=27 RefFrameSignBias=0xa0 SavedOrderHints=[0,26,25,24,24,29,24,34] flags=-
+  slot i=6 pic=6 frame_type=1 OrderHint=28 RefFrameSignBias=0xa0 SavedOrderHints=[0,27,26,25,24,29,24,34] flags=-
+  slot i=7 pic=7 frame_type=1 OrderHint=31 RefFrameSignBias=0x80 SavedOrderHints=[0,29,28,27,24,26,25,34] flags=-
+disp index=30 pic=8 pts=20
+pkt index=31 bytes=5 pts=31
+disp index=31 pic=7 pts=20
+pkt index=32 bytes=196 pts=32
+pic index=34 curr=4 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=196 crc32=0xbc18f9f5
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[7,4,2,0,6,5,1] pic_idx=[2,0,1,3,8,5,6,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[174]
+  std frame_type=1 current_frame_id=0 OrderHint=32 primary_ref_frame=1 refresh_frame_flags=0x8 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,31,30,29,24,28,27,34] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=119 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[9,9,12,16] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[11,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[11,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=32 RefFrameSignBias=0x80 SavedOrderHints=[0,31,30,29,24,28,27,34] flags=-
+  slot i=0 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=1 pic=0 frame_type=1 OrderHint=34 RefFrameSignBias=0x0 SavedOrderHints=[0,24,24,24,24,24,24,24] flags=-
+  slot i=2 pic=1 frame_type=1 OrderHint=29 RefFrameSignBias=0x80 SavedOrderHints=[0,24,24,24,24,24,24,34] flags=-
+  slot i=3 pic=3 frame_type=1 OrderHint=26 RefFrameSignBias=0xa0 SavedOrderHints=[0,24,24,24,24,29,24,34] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=30 RefFrameSignBias=0xa0 SavedOrderHints=[0,29,28,27,24,31,26,34] flags=-
+  slot i=5 pic=5 frame_type=1 OrderHint=27 RefFrameSignBias=0xa0 SavedOrderHints=[0,26,25,24,24,29,24,34] flags=-
+  slot i=6 pic=6 frame_type=1 OrderHint=28 RefFrameSignBias=0xa0 SavedOrderHints=[0,27,26,25,24,29,24,34] flags=-
+  slot i=7 pic=7 frame_type=1 OrderHint=31 RefFrameSignBias=0x80 SavedOrderHints=[0,29,28,27,24,26,25,34] flags=-
+disp index=32 pic=4 pts=20
+pkt index=33 bytes=134 pts=33
+pic index=35 curr=3 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=134 crc32=0xe0741453
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[3,7,4,0,2,6,1] pic_idx=[2,0,1,4,8,5,6,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[22] tileSizes=[112]
+  std frame_type=1 current_frame_id=0 OrderHint=33 primary_ref_frame=0 refresh_frame_flags=0x20 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,32,31,30,24,29,28,34] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion|reference_select|skip_mode_present
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,12,12] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=33 RefFrameSignBias=0x80 SavedOrderHints=[0,32,31,30,24,29,28,34] flags=-
+  slot i=0 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=1 pic=0 frame_type=1 OrderHint=34 RefFrameSignBias=0x0 SavedOrderHints=[0,24,24,24,24,24,24,24] flags=-
+  slot i=2 pic=1 frame_type=1 OrderHint=29 RefFrameSignBias=0x80 SavedOrderHints=[0,24,24,24,24,24,24,34] flags=-
+  slot i=3 pic=4 frame_type=1 OrderHint=32 RefFrameSignBias=0x80 SavedOrderHints=[0,31,30,29,24,28,27,34] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=30 RefFrameSignBias=0xa0 SavedOrderHints=[0,29,28,27,24,31,26,34] flags=-
+  slot i=5 pic=5 frame_type=1 OrderHint=27 RefFrameSignBias=0xa0 SavedOrderHints=[0,26,25,24,24,29,24,34] flags=-
+  slot i=6 pic=6 frame_type=1 OrderHint=28 RefFrameSignBias=0xa0 SavedOrderHints=[0,27,26,25,24,29,24,34] flags=-
+  slot i=7 pic=7 frame_type=1 OrderHint=31 RefFrameSignBias=0x80 SavedOrderHints=[0,29,28,27,24,26,25,34] flags=-
+disp index=33 pic=3 pts=20
+pkt index=34 bytes=5 pts=34
+disp index=34 pic=0 pts=20
+pkt index=35 bytes=198 pts=35
+pic index=36 curr=5 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=198 crc32=0xa04fd196
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[5,3,7,1,0,4,2] pic_idx=[2,0,1,4,8,3,6,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[21] tileSizes=[177]
+  std frame_type=1 current_frame_id=0 OrderHint=35 primary_ref_frame=7 refresh_frame_flags=0x40 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,33,32,31,34,24,30,29] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[9,9,16,4] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=35 RefFrameSignBias=0x0 SavedOrderHints=[0,33,32,31,34,24,30,29] flags=-
+  slot i=0 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=1 pic=0 frame_type=1 OrderHint=34 RefFrameSignBias=0x0 SavedOrderHints=[0,24,24,24,24,24,24,24] flags=-
+  slot i=2 pic=1 frame_type=1 OrderHint=29 RefFrameSignBias=0x80 SavedOrderHints=[0,24,24,24,24,24,24,34] flags=-
+  slot i=3 pic=4 frame_type=1 OrderHint=32 RefFrameSignBias=0x80 SavedOrderHints=[0,31,30,29,24,28,27,34] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=30 RefFrameSignBias=0xa0 SavedOrderHints=[0,29,28,27,24,31,26,34] flags=-
+  slot i=5 pic=3 frame_type=1 OrderHint=33 RefFrameSignBias=0x80 SavedOrderHints=[0,32,31,30,24,29,28,34] flags=-
+  slot i=6 pic=6 frame_type=1 OrderHint=28 RefFrameSignBias=0xa0 SavedOrderHints=[0,27,26,25,24,29,24,34] flags=-
+  slot i=7 pic=7 frame_type=1 OrderHint=31 RefFrameSignBias=0x80 SavedOrderHints=[0,29,28,27,24,26,25,34] flags=-
+disp index=35 pic=5 pts=20
+pkt index=36 bytes=236 pts=36
+pic index=37 curr=6 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=236 crc32=0xf5d7b277
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[1,5,3,6,0,7,4] pic_idx=[2,0,1,4,8,3,5,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[21] tileSizes=[215]
+  std frame_type=1 current_frame_id=0 OrderHint=36 primary_ref_frame=0 refresh_frame_flags=0x4 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,34,33,32,35,24,31,30] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,8,12] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[11,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[11,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=36 RefFrameSignBias=0x0 SavedOrderHints=[0,34,33,32,35,24,31,30] flags=-
+  slot i=0 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=1 pic=0 frame_type=1 OrderHint=34 RefFrameSignBias=0x0 SavedOrderHints=[0,24,24,24,24,24,24,24] flags=-
+  slot i=2 pic=1 frame_type=1 OrderHint=29 RefFrameSignBias=0x80 SavedOrderHints=[0,24,24,24,24,24,24,34] flags=-
+  slot i=3 pic=4 frame_type=1 OrderHint=32 RefFrameSignBias=0x80 SavedOrderHints=[0,31,30,29,24,28,27,34] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=30 RefFrameSignBias=0xa0 SavedOrderHints=[0,29,28,27,24,31,26,34] flags=-
+  slot i=5 pic=3 frame_type=1 OrderHint=33 RefFrameSignBias=0x80 SavedOrderHints=[0,32,31,30,24,29,28,34] flags=-
+  slot i=6 pic=5 frame_type=1 OrderHint=35 RefFrameSignBias=0x0 SavedOrderHints=[0,33,32,31,34,24,30,29] flags=-
+  slot i=7 pic=7 frame_type=1 OrderHint=31 RefFrameSignBias=0x80 SavedOrderHints=[0,29,28,27,24,26,25,34] flags=-
+disp index=36 pic=6 pts=20
+pkt index=37 bytes=203 pts=37
+pic index=38 curr=1 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=203 crc32=0x990525b
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[6,1,5,2,0,3,7] pic_idx=[2,0,6,4,8,3,5,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[21] tileSizes=[182]
+  std frame_type=1 current_frame_id=0 OrderHint=37 primary_ref_frame=0 refresh_frame_flags=0x10 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,35,34,33,36,24,32,31] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=115 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,12,8] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=37 RefFrameSignBias=0x0 SavedOrderHints=[0,35,34,33,36,24,32,31] flags=-
+  slot i=0 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=1 pic=0 frame_type=1 OrderHint=34 RefFrameSignBias=0x0 SavedOrderHints=[0,24,24,24,24,24,24,24] flags=-
+  slot i=2 pic=6 frame_type=1 OrderHint=36 RefFrameSignBias=0x0 SavedOrderHints=[0,34,33,32,35,24,31,30] flags=-
+  slot i=3 pic=4 frame_type=1 OrderHint=32 RefFrameSignBias=0x80 SavedOrderHints=[0,31,30,29,24,28,27,34] flags=-
+  slot i=4 pic=8 frame_type=1 OrderHint=30 RefFrameSignBias=0xa0 SavedOrderHints=[0,29,28,27,24,31,26,34] flags=-
+  slot i=5 pic=3 frame_type=1 OrderHint=33 RefFrameSignBias=0x80 SavedOrderHints=[0,32,31,30,24,29,28,34] flags=-
+  slot i=6 pic=5 frame_type=1 OrderHint=35 RefFrameSignBias=0x0 SavedOrderHints=[0,33,32,31,34,24,30,29] flags=-
+  slot i=7 pic=7 frame_type=1 OrderHint=31 RefFrameSignBias=0x80 SavedOrderHints=[0,29,28,27,24,26,25,34] flags=-
+disp index=37 pic=1 pts=20
+pkt index=38 bytes=131 pts=38
+pic index=39 curr=8 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=131 crc32=0x5b554612
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[2,6,1,4,5,3,7] pic_idx=[2,0,6,4,1,3,5,7] frameHeaderOffset=0 tileCount=1 tileOffsets=[20] tileSizes=[111]
+  std frame_type=1 current_frame_id=0 OrderHint=38 primary_ref_frame=6 refresh_frame_flags=0x80 interpolation_filter=0 TxMode=1 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,36,35,34,37,33,32,31] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|allow_high_precision_mv|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=126 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,0,8] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=1 cdef_bits=0 cdef_y_pri_strength=[11,0,0,0,0,0,0,0] cdef_y_sec_strength=[0,0,0,0,0,0,0,0] cdef_uv_pri_strength=[11,0,0,0,0,0,0,0] cdef_uv_sec_strength=[0,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=38 RefFrameSignBias=0x0 SavedOrderHints=[0,36,35,34,37,33,32,31] flags=-
+  slot i=0 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=1 pic=0 frame_type=1 OrderHint=34 RefFrameSignBias=0x0 SavedOrderHints=[0,24,24,24,24,24,24,24] flags=-
+  slot i=2 pic=6 frame_type=1 OrderHint=36 RefFrameSignBias=0x0 SavedOrderHints=[0,34,33,32,35,24,31,30] flags=-
+  slot i=3 pic=4 frame_type=1 OrderHint=32 RefFrameSignBias=0x80 SavedOrderHints=[0,31,30,29,24,28,27,34] flags=-
+  slot i=4 pic=1 frame_type=1 OrderHint=37 RefFrameSignBias=0x0 SavedOrderHints=[0,35,34,33,36,24,32,31] flags=-
+  slot i=5 pic=3 frame_type=1 OrderHint=33 RefFrameSignBias=0x80 SavedOrderHints=[0,32,31,30,24,29,28,34] flags=-
+  slot i=6 pic=5 frame_type=1 OrderHint=35 RefFrameSignBias=0x0 SavedOrderHints=[0,33,32,31,34,24,30,29] flags=-
+  slot i=7 pic=7 frame_type=1 OrderHint=31 RefFrameSignBias=0x80 SavedOrderHints=[0,29,28,27,24,26,25,34] flags=-
+disp index=38 pic=8 pts=20
+pkt index=39 bytes=232 pts=39
+pic index=40 curr=7 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=232 crc32=0xd066191c
+  av1 showFrame=1 needsSessionReset=0 upscaled_width=64 frame_width=64 frame_height=64 ref_frame_idx=[7,2,6,4,1,5,3] pic_idx=[2,0,6,4,1,3,5,8] frameHeaderOffset=0 tileCount=1 tileOffsets=[21] tileSizes=[211]
+  std frame_type=1 current_frame_id=0 OrderHint=39 primary_ref_frame=1 refresh_frame_flags=0x8 interpolation_filter=0 TxMode=2 delta_q_res=0 delta_lf_res=0 SkipModeFrame=[1,7] coded_denom=0 OrderHints=[0,38,36,35,37,34,33,32] expectedFrameId=[0,0,0,0,0,0,0,0] flags=allow_screen_content_tools|is_motion_mode_switchable|use_ref_frame_mvs|allow_warped_motion
+  tiles TileCols=1 TileRows=1 context_update_tile_id=0 tile_size_bytes_minus_1=0 MiColStarts=[0,16] MiRowStarts=[0,16] width_in_sbs_minus_1=[0] height_in_sbs_minus_1=[0] flags=uniform_tile_spacing_flag
+  quant base_q_idx=128 DeltaQYDc=0 DeltaQUDc=0 DeltaQUAc=0 DeltaQVDc=0 DeltaQVAc=0 qm_y=0 qm_u=0 qm_v=0 flags=-
+  seg FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+  lf loop_filter_level=[5,5,8,12] loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,0,0,-1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  cdef cdef_damping_minus_3=2 cdef_bits=0 cdef_y_pri_strength=[0,0,0,0,0,0,0,0] cdef_y_sec_strength=[2,0,0,0,0,0,0,0] cdef_uv_pri_strength=[0,0,0,0,0,0,0,0] cdef_uv_sec_strength=[2,0,0,0,0,0,0,0]
+  lr FrameRestorationType=[0,0,0] LoopRestorationSize=[0,0,0]
+  gm GmType=[0,0,0,0,0,0,0,0] gm_params=[0,0,0,0,0,0,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536,0,0,65536]
+  fg grain_scaling_minus_8=0 ar_coeff_lag=0 ar_coeff_shift_minus_6=0 grain_scale_shift=0 grain_seed=0 film_grain_params_ref_idx=0 num_y_points=0 point_y_value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] point_y_scaling=[0,0,0,0,0,0,0,0,0,0,0,0,0,0] num_cb_points=0 point_cb_value=[0,0,0,0,0,0,0,0,0,0] point_cb_scaling=[0,0,0,0,0,0,0,0,0,0] num_cr_points=0 point_cr_value=[0,0,0,0,0,0,0,0,0,0] point_cr_scaling=[0,0,0,0,0,0,0,0,0,0] ar_coeffs_y_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cb_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] ar_coeffs_cr_plus_128=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] cb_mult=0 cb_luma_mult=0 cb_offset=0 cr_mult=0 cr_luma_mult=0 cr_offset=0 flags=-
+  setup frame_type=1 OrderHint=39 RefFrameSignBias=0x0 SavedOrderHints=[0,38,36,35,37,34,33,32] flags=-
+  slot i=0 pic=2 frame_type=0 OrderHint=24 RefFrameSignBias=0x0 SavedOrderHints=[0,12,11,10,0,9,8,13] flags=-
+  slot i=1 pic=0 frame_type=1 OrderHint=34 RefFrameSignBias=0x0 SavedOrderHints=[0,24,24,24,24,24,24,24] flags=-
+  slot i=2 pic=6 frame_type=1 OrderHint=36 RefFrameSignBias=0x0 SavedOrderHints=[0,34,33,32,35,24,31,30] flags=-
+  slot i=3 pic=4 frame_type=1 OrderHint=32 RefFrameSignBias=0x80 SavedOrderHints=[0,31,30,29,24,28,27,34] flags=-
+  slot i=4 pic=1 frame_type=1 OrderHint=37 RefFrameSignBias=0x0 SavedOrderHints=[0,35,34,33,36,24,32,31] flags=-
+  slot i=5 pic=3 frame_type=1 OrderHint=33 RefFrameSignBias=0x80 SavedOrderHints=[0,32,31,30,24,29,28,34] flags=-
+  slot i=6 pic=5 frame_type=1 OrderHint=35 RefFrameSignBias=0x0 SavedOrderHints=[0,33,32,31,34,24,30,29] flags=-
+  slot i=7 pic=8 frame_type=1 OrderHint=38 RefFrameSignBias=0x0 SavedOrderHints=[0,36,35,34,37,33,32,31] flags=-
+disp index=39 pic=7 pts=20
+eos pictures=41 displayed=40

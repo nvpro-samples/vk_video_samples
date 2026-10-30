@@ -53,6 +53,12 @@ struct VkParserPerFrameDecodeParameters {
     int32_t numGopReferenceSlots;
     int8_t pGopReferenceImagesIndexes[MAX_DPB_REF_AND_SETUP_SLOTS];
     VkVideoPictureResourceInfoKHR pictureResources[MAX_DPB_REF_AND_SETUP_SLOTS];
+    // The list vkCmdBeginVideoCodingKHR binds: the reference slots, then the setup picture with slot
+    // index -1 unless a reference already binds it. The decode activates the setup slot, so
+    // begin-coding cannot name it yet (VUID-vkCmdBeginVideoCodingKHR-slotIndex-07239,
+    // pPictureResource-07265), and a picture is bound once (VkVideoBeginCodingInfoKHR 07238).
+    const VkVideoReferenceSlotInfoKHR* pBeginCodingReferenceSlots;
+    uint32_t beginCodingReferenceSlotCount;
     uint32_t useInlinedPictureParameters : 1; // maintenance2 inline params on VkVideoDecode*PictureInfoKHR::pNext
 };
 

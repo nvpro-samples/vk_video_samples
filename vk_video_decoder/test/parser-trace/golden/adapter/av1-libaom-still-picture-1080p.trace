@@ -4,7 +4,7 @@ seq index=0 codec=av1 width=1920 height=1080 chroma=2 bitDepth=8 profile=0 flags
 session state=new maxDpbSlots=9 maxActiveReferencePictures=9
 pic index=0 idx=0 setup=0 refs=0
   av1 frame_type=0 order_hint=0 refresh=0xff names=[-1,-1,-1,-1,-1,-1,-1]
-  setup slot=0 res=0 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
-  begin role=setup slot=0 res=0
+  setup slot=0 res=0 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=cdf
+  begin role=setup slot=-1 res=0
 disp idx=0 pts=0
 eos pictures=1 displayed=1

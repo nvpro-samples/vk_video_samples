@@ -2,29 +2,29 @@ adapter-trace version=1 codec=h265 format=bytestream bytes=5392 offsetAlignment=
 seq index=0 codec=h265 width=64 height=64 chroma=2 bitDepth=8 profile=1 flags=progressive minDecodeSurfaces=8 maxDpbSlots=16 pictures=16
 session state=new maxDpbSlots=16 maxActiveReferencePictures=16
 pic index=0 idx=0 setup=0 refs=0
-  h265 poc=0 flags=irap|idr before=[255,255,255,255,255,255,255,255] after=[255,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  h265 poc=0 flags=irap|idr|isref before=[255,255,255,255,255,255,255,255] after=[255,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
   setup slot=0 res=0 poc=0 flags=-
-  begin role=setup slot=0 res=0
+  begin role=setup slot=-1 res=0
 pkt index=0 offset=0 parsed=3584
 pic index=1 idx=1 setup=1 refs=1
-  h265 poc=4 flags=- before=[0,255,255,255,255,255,255,255] after=[255,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  h265 poc=4 flags=isref before=[0,255,255,255,255,255,255,255] after=[255,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
   setup slot=1 res=1 poc=4 flags=-
   ref slot=0 res=0 poc=0 flags=-
   begin role=ref slot=0 res=0
-  begin role=setup slot=1 res=1
+  begin role=setup slot=-1 res=1
 pkt index=1 offset=3584 parsed=279
 pic index=2 idx=2 setup=2 refs=2
-  h265 poc=2 flags=- before=[0,255,255,255,255,255,255,255] after=[1,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  h265 poc=2 flags=isref before=[0,255,255,255,255,255,255,255] after=[1,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
   setup slot=2 res=2 poc=2 flags=-
   ref slot=0 res=0 poc=0 flags=-
   ref slot=1 res=1 poc=4 flags=-
   begin role=ref slot=0 res=0
   begin role=ref slot=1 res=1
-  begin role=setup slot=2 res=2
+  begin role=setup slot=-1 res=2
 disp idx=0 pts=0
 pkt index=2 offset=3863 parsed=94
 pic index=3 idx=3 setup=3 refs=3
-  h265 poc=1 flags=- before=[0,255,255,255,255,255,255,255] after=[2,1,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  h265 poc=1 flags=isref before=[0,255,255,255,255,255,255,255] after=[2,1,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
   setup slot=3 res=3 poc=1 flags=-
   ref slot=0 res=0 poc=0 flags=-
   ref slot=1 res=1 poc=4 flags=-
@@ -32,11 +32,11 @@ pic index=3 idx=3 setup=3 refs=3
   begin role=ref slot=0 res=0
   begin role=ref slot=1 res=1
   begin role=ref slot=2 res=2
-  begin role=setup slot=3 res=3
+  begin role=setup slot=-1 res=3
 disp idx=3 pts=333333
 pkt index=3 offset=3957 parsed=58
 pic index=4 idx=4 setup=4 refs=3
-  h265 poc=3 flags=- before=[2,0,255,255,255,255,255,255] after=[1,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  h265 poc=3 flags=isref before=[2,0,255,255,255,255,255,255] after=[1,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
   setup slot=4 res=4 poc=3 flags=-
   ref slot=0 res=0 poc=0 flags=-
   ref slot=1 res=1 poc=4 flags=-
@@ -44,11 +44,11 @@ pic index=4 idx=4 setup=4 refs=3
   begin role=ref slot=0 res=0
   begin role=ref slot=1 res=1
   begin role=ref slot=2 res=2
-  begin role=setup slot=4 res=4
+  begin role=setup slot=-1 res=4
 disp idx=2 pts=666666
 pkt index=4 offset=4015 parsed=64
 pic index=5 idx=5 setup=5 refs=3
-  h265 poc=6 flags=- before=[1,2,0,255,255,255,255,255] after=[255,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  h265 poc=6 flags=isref before=[1,2,0,255,255,255,255,255] after=[255,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
   setup slot=5 res=5 poc=6 flags=-
   ref slot=0 res=0 poc=0 flags=-
   ref slot=1 res=1 poc=4 flags=-
@@ -56,11 +56,11 @@ pic index=5 idx=5 setup=5 refs=3
   begin role=ref slot=0 res=0
   begin role=ref slot=1 res=1
   begin role=ref slot=2 res=2
-  begin role=setup slot=5 res=5
+  begin role=setup slot=-1 res=5
 disp idx=4 pts=999999
 pkt index=5 offset=4079 parsed=241
 pic index=6 idx=6 setup=6 refs=4
-  h265 poc=5 flags=- before=[1,2,0,255,255,255,255,255] after=[5,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  h265 poc=5 flags=isref before=[1,2,0,255,255,255,255,255] after=[5,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
   setup slot=6 res=6 poc=5 flags=-
   ref slot=0 res=0 poc=0 flags=-
   ref slot=1 res=1 poc=4 flags=-
@@ -70,13 +70,13 @@ pic index=6 idx=6 setup=6 refs=4
   begin role=ref slot=1 res=1
   begin role=ref slot=2 res=2
   begin role=ref slot=5 res=5
-  begin role=setup slot=6 res=6
+  begin role=setup slot=-1 res=6
 disp idx=1 pts=1333332
 pkt index=6 offset=4320 parsed=52
 disp idx=6 pts=1666665
 pkt index=7 offset=4372 parsed=65
 pic index=7 idx=7 setup=7 refs=4
-  h265 poc=9 flags=- before=[5,1,2,0,255,255,255,255] after=[255,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  h265 poc=9 flags=isref before=[5,1,2,0,255,255,255,255] after=[255,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
   setup slot=7 res=7 poc=9 flags=-
   ref slot=0 res=0 poc=0 flags=-
   ref slot=1 res=1 poc=4 flags=-
@@ -86,10 +86,10 @@ pic index=7 idx=7 setup=7 refs=4
   begin role=ref slot=1 res=1
   begin role=ref slot=2 res=2
   begin role=ref slot=5 res=5
-  begin role=setup slot=7 res=7
+  begin role=setup slot=-1 res=7
 pkt index=8 offset=4437 parsed=171
 pic index=8 idx=8 setup=8 refs=4
-  h265 poc=8 flags=- before=[5,1,2,255,255,255,255,255] after=[7,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  h265 poc=8 flags=isref before=[5,1,2,255,255,255,255,255] after=[7,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
   setup slot=8 res=8 poc=8 flags=-
   ref slot=1 res=1 poc=4 flags=-
   ref slot=2 res=2 poc=2 flags=-
@@ -99,11 +99,11 @@ pic index=8 idx=8 setup=8 refs=4
   begin role=ref slot=2 res=2
   begin role=ref slot=7 res=7
   begin role=ref slot=5 res=5
-  begin role=setup slot=8 res=8
+  begin role=setup slot=-1 res=8
 disp idx=5 pts=1999998
 pkt index=9 offset=4608 parsed=82
 pic index=9 idx=0 setup=9 refs=4
-  h265 poc=7 flags=- before=[5,2,255,255,255,255,255,255] after=[8,7,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  h265 poc=7 flags=isref before=[5,2,255,255,255,255,255,255] after=[8,7,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
   setup slot=9 res=0 poc=7 flags=-
   ref slot=8 res=8 poc=8 flags=-
   ref slot=2 res=2 poc=2 flags=-
@@ -113,11 +113,11 @@ pic index=9 idx=0 setup=9 refs=4
   begin role=ref slot=2 res=2
   begin role=ref slot=7 res=7
   begin role=ref slot=5 res=5
-  begin role=setup slot=9 res=0
+  begin role=setup slot=-1 res=0
 disp idx=0 pts=2333331
 pkt index=10 offset=4690 parsed=51
 pic index=10 idx=9 setup=10 refs=4
-  h265 poc=11 flags=- before=[7,8,5,2,255,255,255,255] after=[255,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  h265 poc=11 flags=isref before=[7,8,5,2,255,255,255,255] after=[255,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
   setup slot=10 res=9 poc=11 flags=-
   ref slot=8 res=8 poc=8 flags=-
   ref slot=2 res=2 poc=2 flags=-
@@ -127,11 +127,11 @@ pic index=10 idx=9 setup=10 refs=4
   begin role=ref slot=2 res=2
   begin role=ref slot=7 res=7
   begin role=ref slot=5 res=5
-  begin role=setup slot=10 res=9
+  begin role=setup slot=-1 res=9
 disp idx=8 pts=2666664
 pkt index=11 offset=4741 parsed=202
 pic index=11 idx=10 setup=11 refs=4
-  h265 poc=10 flags=- before=[7,8,5,255,255,255,255,255] after=[10,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  h265 poc=10 flags=isref before=[7,8,5,255,255,255,255,255] after=[10,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
   setup slot=11 res=10 poc=10 flags=-
   ref slot=8 res=8 poc=8 flags=-
   ref slot=10 res=9 poc=11 flags=-
@@ -141,13 +141,13 @@ pic index=11 idx=10 setup=11 refs=4
   begin role=ref slot=10 res=9
   begin role=ref slot=7 res=7
   begin role=ref slot=5 res=5
-  begin role=setup slot=11 res=10
+  begin role=setup slot=-1 res=10
 disp idx=7 pts=2999997
 pkt index=12 offset=4943 parsed=49
 disp idx=10 pts=3333330
 pkt index=13 offset=4992 parsed=34
 pic index=12 idx=11 setup=12 refs=4
-  h265 poc=15 flags=- before=[10,7,8,5,255,255,255,255] after=[255,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  h265 poc=15 flags=isref before=[10,7,8,5,255,255,255,255] after=[255,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
   setup slot=12 res=11 poc=15 flags=-
   ref slot=8 res=8 poc=8 flags=-
   ref slot=10 res=9 poc=11 flags=-
@@ -157,10 +157,10 @@ pic index=12 idx=11 setup=12 refs=4
   begin role=ref slot=10 res=9
   begin role=ref slot=7 res=7
   begin role=ref slot=5 res=5
-  begin role=setup slot=12 res=11
+  begin role=setup slot=-1 res=11
 pkt index=14 offset=5026 parsed=156
 pic index=13 idx=12 setup=13 refs=4
-  h265 poc=13 flags=- before=[10,7,8,255,255,255,255,255] after=[12,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  h265 poc=13 flags=isref before=[10,7,8,255,255,255,255,255] after=[12,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
   setup slot=13 res=12 poc=13 flags=-
   ref slot=8 res=8 poc=8 flags=-
   ref slot=10 res=9 poc=11 flags=-
@@ -170,11 +170,11 @@ pic index=13 idx=12 setup=13 refs=4
   begin role=ref slot=10 res=9
   begin role=ref slot=12 res=11
   begin role=ref slot=7 res=7
-  begin role=setup slot=13 res=12
+  begin role=setup slot=-1 res=12
 disp idx=9 pts=3666663
 pkt index=15 offset=5182 parsed=123
 pic index=14 idx=13 setup=14 refs=4
-  h265 poc=12 flags=- before=[10,8,255,255,255,255,255,255] after=[13,12,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  h265 poc=12 flags=isref before=[10,8,255,255,255,255,255,255] after=[13,12,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
   setup slot=14 res=13 poc=12 flags=-
   ref slot=8 res=8 poc=8 flags=-
   ref slot=10 res=9 poc=11 flags=-
@@ -184,12 +184,12 @@ pic index=14 idx=13 setup=14 refs=4
   begin role=ref slot=10 res=9
   begin role=ref slot=12 res=11
   begin role=ref slot=13 res=12
-  begin role=setup slot=14 res=13
+  begin role=setup slot=-1 res=13
 disp idx=13 pts=3999996
 pkt index=16 offset=5305 parsed=55
 pkt index=17 offset=5360 parsed=32
 pic index=15 idx=14 setup=15 refs=4
-  h265 poc=14 flags=- before=[13,10,8,255,255,255,255,255] after=[12,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  h265 poc=14 flags=isref before=[13,10,8,255,255,255,255,255] after=[12,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
   setup slot=15 res=14 poc=14 flags=-
   ref slot=8 res=8 poc=8 flags=-
   ref slot=10 res=9 poc=11 flags=-
@@ -199,7 +199,7 @@ pic index=15 idx=14 setup=15 refs=4
   begin role=ref slot=10 res=9
   begin role=ref slot=12 res=11
   begin role=ref slot=13 res=12
-  begin role=setup slot=15 res=14
+  begin role=setup slot=-1 res=14
 disp idx=12 pts=4333329
 disp idx=14 pts=4666662
 disp idx=11 pts=4999995
