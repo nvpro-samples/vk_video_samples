@@ -3378,12 +3378,16 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         encoderConfig->CodedExtentChanged();
     }
 
+    // The device states its quality levels per video profile, and the count depends on the codec and the
+    // tuning mode. A level it does not state is unsupported, not broken: the result is one of the
+    // IsVideoUnsupportedResult() set, so the demos exit VVS_EXIT_UNSUPPORTED (69).
     if (encoderConfig->qualityLevel >= encoderConfig->videoEncodeCapabilities.maxQualityLevels) {
         VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
                   << "Quality level " << encoderConfig->qualityLevel
-                  << " is greater than the maximum supported quality level "
-                  << (encoderConfig->videoEncodeCapabilities.maxQualityLevels - 1) << std::endl;
-        return VK_ERROR_INITIALIZATION_FAILED;
+                  << " is not supported: the device states quality levels 0 to "
+                  << (encoderConfig->videoEncodeCapabilities.maxQualityLevels - 1)
+                  << " for this codec and tuning mode" << std::endl;
+        return VK_ERROR_FEATURE_NOT_PRESENT;
     }
 
     if (encoderConfig->useDpbArray == false &&

@@ -75,7 +75,7 @@ class TestConfig:
     input_height: int = 0
     input_bpp: int = 8
     input_chroma: str = "420"
-    max_supported_quality_preset: int = 4
+    max_supported_quality_preset: Optional[int] = None
 
 
 @dataclass
@@ -364,7 +364,10 @@ class EncoderProfileTestRunner:
             except (TypeError, ValueError):
                 quality_preset = None
 
-        if quality_preset is not None and quality_preset > self.config.max_supported_quality_preset:
+        # Without a limit, every profile runs and the encoder refuses a quality level the device does not state
+        # for the codec and tuning mode (exit status 69), which reports the test as not supported.
+        max_preset = self.config.max_supported_quality_preset
+        if quality_preset is not None and max_preset is not None and quality_preset > max_preset:
             print(
                 f"  {YELLOW}○{NC} {profile_name} - Unsupported qualityPreset={quality_preset} "
                 f"(max supported: {self.config.max_supported_quality_preset})"
@@ -470,6 +473,11 @@ class EncoderProfileTestRunner:
                       f"{per_frame_ms:.1f} ms/frame, {enc_fps:.1f} enc-fps)")
                 self.passed += 1
                 self.results.append(TestResult(test_name, True, False, duration))
+        elif returncode == 69:
+            # The encoder's exit status for a configuration the device does not support (VVS_EXIT_UNSUPPORTED).
+            print(f"  {YELLOW}○{NC} {test_name} - Not supported by the device ({duration:.2f}s)")
+            self.skipped += 1
+            self.results.append(TestResult(test_name, False, True, duration, "Not supported by the device"))
         else:
             print(f"  {RED}✗{NC} {test_name} - Failed ({duration:.2f}s)")
             self.failed += 1
@@ -489,7 +497,8 @@ class EncoderProfileTestRunner:
         print(f"Output Dir: {self.config.output_dir}")
         print(f"Max Frames: {self.config.max_frames}")
         print(f"Validation: {GREEN}Enabled{NC}" if self.config.validate else "Validation: Disabled")
-        print(f"Max Supported qualityPreset: {self.config.max_supported_quality_preset}")
+        if self.config.max_supported_quality_preset is not None:
+            print(f"Max Supported qualityPreset: {self.config.max_supported_quality_preset}")
         if self.config.filter_codec:
             print(f"Codec Filter: {self.config.filter_codec}")
         if self.config.profile_filter:
@@ -596,8 +605,9 @@ def main() -> int:
     parser.add_argument(
         "--max-supported-quality-preset",
         type=int,
-        default=4,
-        help="Maximum qualityPreset supported by current driver (default: 4)",
+        default=None,
+        help="Skip the profiles whose qualityPreset is above this one (default: run every profile; the encoder "
+             "refuses a quality level the device does not state for the codec and tuning mode)",
     )
     args = parser.parse_args()
 
