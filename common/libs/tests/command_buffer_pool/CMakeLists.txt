@@ -71,7 +71,8 @@ install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
 # the layer reports through its own messenger.
 #
 # 0 means no error, 1 an error or a recording failure, 77 no validation
-# layer or no device (a failure with VVS_REQUIRE_GPU=1).
+# layer, or no device (a failure with VVS_REQUIRE_GPU=1; a missing layer
+# stays a skip).
 enable_testing()
 add_test(NAME CommandBufferPoolTwoThreads
          COMMAND ${PROJECT_NAME})

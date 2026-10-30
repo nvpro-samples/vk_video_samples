@@ -13,14 +13,17 @@
 # writes it, on a path that has already established there were no unexpected
 # validation messages.
 #
-# WHAT IS COUNTED: MESSAGES, NOT VUID TOKENS. A binary that installs its own
-# debug-utils messenger prints a "Validation Error: [ VUID-x ]" header AND a
-# "The Vulkan spec states: ...(VUID-x)" trailer, two tokens per message; the
-# layer default reporter prints the trailer only. Counting tokens therefore
-# doubles under a reporter swap, which cannot distinguish a removed defect
-# from a changed message format. What both reporters emit exactly once per
-# message is the trailer, so the trailer closes a block and the block carries
-# the body and the VUID name.
+# WHAT IS COUNTED: MESSAGES, NOT VUID TOKENS. A message with a VUID carries
+# it in a "Validation Error: [ VUID-x ]" header and again in a "The Vulkan
+# spec states: ...(VUID-x)" trailer, two tokens per message, and a reporter
+# may print the trailer only. Counting tokens therefore doubles under a
+# reporter swap, which cannot distinguish a removed defect from a changed
+# message format. A message with a VUID is counted once per trailer: the
+# trailer closes a block, and the block carries the body and the VUID name.
+# A message without a VUID -- thread safety, the layer's own parameter checks
+# (UNASSIGNED-*), synchronization hazards -- has no trailer, so it is counted
+# once per "Validation Error: [ <id> ]" header. Warnings without a VUID are
+# not counted.
 #
 # THE LAYER IS FORCED, AND ITS INSERTION IS WITNESSED. A gated test that runs
 # without the validation layer loaded is a check that cannot fail, and it
@@ -47,7 +50,8 @@
 #                            reports its exit code -- a missing layer removes
 #                            the validation verdict and nothing else.
 #   -DALLOW_VUIDS=<regex>    optional, matched against the message BODY.
-#   -DEXPECT_VUIDS=<list>    optional, comma-separated <VUID>=<count> ceilings.
+#   -DEXPECT_VUIDS=<list>    optional, comma-separated <id>=<count> ceilings; an
+#                            id is a VUID or another message id (UNASSIGNED-*).
 #   -DGATE_SUMMARY=<path>    optional, a file every run appends its tally to.
 #   -DRUN_TIMEOUT=<secs>     optional, default 600.
 
@@ -84,9 +88,9 @@ if(DEFINED EXPECT_VUIDS AND NOT EXPECT_VUIDS STREQUAL "")
   foreach(_entry IN LISTS _expect_list)
     string(STRIP "${_entry}" _entry)
     if(NOT _entry STREQUAL "")
-      if(NOT _entry MATCHES "^(VUID-[A-Za-z0-9_]+-[A-Za-z0-9_-]+)=([0-9]+)$")
+      if(NOT _entry MATCHES "^([A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9_-]+)=([0-9]+)$")
         message(FATAL_ERROR
-                "validation_gate: EXPECT_VUIDS entry is not <VUID>=<count>: ${_entry}")
+                "validation_gate: EXPECT_VUIDS entry is not <id>=<count>: ${_entry}")
       endif()
       set(_exp_${CMAKE_MATCH_1} "${CMAKE_MATCH_2}")
       list(APPEND _expected_names "${CMAKE_MATCH_1}")
@@ -140,11 +144,11 @@ if(_n_witness EQUAL 0)
           " gated, and this run stands on the test's own exit code")
 endif()
 
-# Block-based counting. A line-based count is wrong for one of the two
-# reporters: the default reporter carries the VUID token on the trailer only,
-# so skipping trailers discards every message it emits, while counting every
-# token double-counts the messenger reporter. The trailer closes the block,
-# and the block carries the body the allowlist is matched against.
+# Block-based counting for messages with a VUID. A line-based count is wrong
+# for a reporter that carries the VUID token on the trailer only, so skipping
+# trailers discards every message it emits, while counting every token
+# double-counts a reporter that prints both. The trailer closes the block, and
+# the block carries the body the allowlist is matched against.
 string(REPLACE ";" "\\;" _lines "${_all}")
 string(REPLACE "\n" ";" _lines "${_lines}")
 set(_real 0)
@@ -152,19 +156,23 @@ set(_allowed 0)
 set(_seen_names "")
 set(_block "")
 
+macro(_vvs_count _id _text)
+  if("${_text}" MATCHES "${ALLOW_VUIDS}")
+    math(EXPR _allowed "${_allowed}+1")
+  else()
+    math(EXPR _real "${_real}+1")
+    if(NOT DEFINED _seen_${_id})
+      set(_seen_${_id} 0)
+      list(APPEND _seen_names "${_id}")
+    endif()
+    math(EXPR _seen_${_id} "${_seen_${_id}}+1")
+  endif()
+endmacro()
+
 macro(_vvs_tally _text)
   if("${_text}" MATCHES "VUID-[A-Za-z0-9_]+-[A-Za-z0-9_-]+")
     set(_vuid "${CMAKE_MATCH_0}")
-    if("${_text}" MATCHES "${ALLOW_VUIDS}")
-      math(EXPR _allowed "${_allowed}+1")
-    else()
-      math(EXPR _real "${_real}+1")
-      if(NOT DEFINED _seen_${_vuid})
-        set(_seen_${_vuid} 0)
-        list(APPEND _seen_names "${_vuid}")
-      endif()
-      math(EXPR _seen_${_vuid} "${_seen_${_vuid}}+1")
-    endif()
+    _vvs_count("${_vuid}" "${_text}")
   endif()
 endmacro()
 
@@ -178,6 +186,31 @@ endforeach()
 # A layer that emits a VUID with no trailer at all leaves a dangling block;
 # count it rather than lose it.
 _vvs_tally("${_block}")
+
+# Errors without a VUID, once per header. The body the allowlist is matched
+# against is the header and the line after it, where both reporters put the
+# message text.
+set(_header_regex "Validation (Error|Warning|Performance Warning): \\[ ([A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9_-]+) \\]")
+set(_pending_id "")
+set(_pending_text "")
+foreach(_line IN LISTS _lines)
+  if(NOT _pending_id STREQUAL "")
+    _vvs_count("${_pending_id}" "${_pending_text}\n${_line}")
+    set(_pending_id "")
+  endif()
+  if(_line MATCHES "${_header_regex}")
+    # Copied before the next MATCHES, which sets CMAKE_MATCH_<n> again.
+    set(_severity "${CMAKE_MATCH_1}")
+    set(_id "${CMAKE_MATCH_2}")
+    if(_severity STREQUAL "Error" AND NOT _id MATCHES "^VUID-")
+      set(_pending_id "${_id}")
+      set(_pending_text "${_line}")
+    endif()
+  endif()
+endforeach()
+if(NOT _pending_id STREQUAL "")
+  _vvs_count("${_pending_id}" "${_pending_text}")
+endif()
 
 # Sort the tally into what the ceilings cover and what they do not. A VUID
 # with no ceiling fails on its first message, and a VUID with one fails on the
@@ -258,7 +291,7 @@ endif()
 if(_over)
   message(FATAL_ERROR
           "validation_gate: validation message(s) past their declared ceiling:"
-          " ${_over_txt}. A VUID with no declared ceiling has a ceiling of zero."
+          " ${_over_txt}. A message id with no declared ceiling has a ceiling of zero."
           " (exit=${_rc}, ${_allowed} skew-allowlisted by body /${ALLOW_VUIDS}/)")
 endif()
 

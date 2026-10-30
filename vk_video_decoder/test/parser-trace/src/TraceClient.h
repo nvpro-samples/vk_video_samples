@@ -142,6 +142,20 @@ VkDeviceSize CreateHostBitstreamBuffer(VkDeviceSize size, VkDeviceSize offsetAli
                                        const uint8_t* initialData, VkDeviceSize initialSize,
                                        VkSharedBaseObj<VulkanBitstreamBuffer>& buffer);
 
+// The host bitstream buffers of one client. Get() hands out a buffer the parser has released when one
+// has the size and alignments a new buffer would have, zero-filled and holding initialData as a new
+// one does, so the parser cannot tell the two apart; otherwise it creates one. A new buffer per
+// picture is allocated, filled and freed each time, which under AddressSanitizer is most of a long
+// stream's run time.
+class HostBitstreamBufferPool {
+   public:
+    VkDeviceSize Get(VkDeviceSize size, VkDeviceSize offsetAlignment, VkDeviceSize sizeAlignment, const uint8_t* initialData,
+                     VkDeviceSize initialSize, VkSharedBaseObj<VulkanBitstreamBuffer>& buffer);
+
+   private:
+    std::vector<VkSharedBaseObj<VulkanBitstreamBuffer>> m_buffers;
+};
+
 // One IVF frame or AV1 temporal unit: one packet for the parser.
 struct Packet {
     std::vector<uint8_t> data;

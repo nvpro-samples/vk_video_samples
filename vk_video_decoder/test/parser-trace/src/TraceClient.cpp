@@ -1244,8 +1244,8 @@ class TraceClient final : public TraceClientIf {
                                     VkDeviceSize minBitstreamBufferSizeAlignment, const uint8_t* pInitializeBufferMemory,
                                     VkDeviceSize initializeBufferMemorySize,
                                     VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer) override {
-        return CreateHostBitstreamBuffer(size, minBitstreamBufferOffsetAlignment, minBitstreamBufferSizeAlignment,
-                                         pInitializeBufferMemory, initializeBufferMemorySize, bitstreamBuffer);
+        return m_bitstreamBuffers.Get(size, minBitstreamBufferOffsetAlignment, minBitstreamBufferSizeAlignment,
+                                      pInitializeBufferMemory, initializeBufferMemorySize, bitstreamBuffer);
     }
 
     uint64_t Decoded() const override { return m_decoded; }
@@ -1256,6 +1256,7 @@ class TraceClient final : public TraceClientIf {
 
     FILE* m_out;
     VkVideoCodecOperationFlagBitsKHR m_codec;
+    HostBitstreamBufferPool m_bitstreamBuffers;
     std::vector<std::unique_ptr<TracePicture>> m_pictures;
     uint64_t m_sequences = 0;
     uint64_t m_parameterSets = 0;
@@ -1299,6 +1300,27 @@ VkDeviceSize CreateHostBitstreamBuffer(VkDeviceSize size, VkDeviceSize offsetAli
     }
     buffer = host;
     return host->GetMaxSize();
+}
+
+VkDeviceSize HostBitstreamBufferPool::Get(VkDeviceSize size, VkDeviceSize offsetAlignment, VkDeviceSize sizeAlignment,
+                                          const uint8_t* initialData, VkDeviceSize initialSize,
+                                          VkSharedBaseObj<VulkanBitstreamBuffer>& buffer) {
+    const VkDeviceSize newSize = AlignUp(std::max(size, initialSize), sizeAlignment);
+    for (const VkSharedBaseObj<VulkanBitstreamBuffer>& pooled : m_buffers) {
+        // Only the pool holds it: the parser has released it.
+        if ((pooled.use_count() == 1) && (pooled->GetMaxSize() == newSize) && (pooled->GetOffsetAlignment() == offsetAlignment) &&
+            (pooled->GetSizeAlignment() == sizeAlignment)) {
+            pooled->MemsetData(0, 0, newSize);
+            if ((initialData != nullptr) && (initialSize != 0)) {
+                pooled->CopyDataFromBuffer(initialData, 0, 0, initialSize);
+            }
+            buffer = pooled;
+            return newSize;
+        }
+    }
+    const VkDeviceSize created = CreateHostBitstreamBuffer(size, offsetAlignment, sizeAlignment, initialData, initialSize, buffer);
+    m_buffers.push_back(buffer);
+    return created;
 }
 
 std::unique_ptr<TraceClientIf> CreateTraceClient(FILE* out, VkVideoCodecOperationFlagBitsKHR codec, uint32_t poolSize,
