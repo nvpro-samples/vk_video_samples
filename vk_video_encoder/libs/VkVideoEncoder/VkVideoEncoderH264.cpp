@@ -454,6 +454,11 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         assert(setupImageViewPictureResource);
         pFrameInfo->referenceSlotsInfo[0] = { VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR,
                                               pFrameInfo->stdDpbSlotInfo, targetDpbSlot, setupImageViewPictureResource };
+        // stdDpbSlotInfo[0] points at stdReferenceInfo[0]: the reference information the
+        // reconstructed picture is associated with is the current picture's.
+        if ((targetDpbSlot >= 0) && (targetDpbSlot < m_dpb264->GetMaxDPBSize())) {
+            m_dpb264->FillStdReferenceInfo((uint8_t)targetDpbSlot, &pFrameInfo->stdReferenceInfo[0]);
+        }
 
         pFrameInfo->setupReferenceSlotInfo = pFrameInfo->referenceSlotsInfo[0];
         pFrameInfo->encodeInfo.pSetupReferenceSlot = &pFrameInfo->setupReferenceSlotInfo;

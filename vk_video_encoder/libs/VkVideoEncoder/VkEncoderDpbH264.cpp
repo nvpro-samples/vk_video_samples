@@ -223,6 +223,7 @@ int8_t VkEncDpbH264::DpbPictureStart(const PicInfoH264 *pPicInfo,
         pCurDPBEntry->complementary_field_pair = false;
         pCurDPBEntry->not_existing = false;
         pCurDPBEntry->picInfo.frame_num = pPicInfo->frame_num;
+        pCurDPBEntry->picInfo.primary_pic_type = pPicInfo->primary_pic_type;
         pCurDPBEntry->timeStamp = pPicInfo->timeStamp;
         pCurDPBEntry->frame_is_corrupted = false;
         if (pPicInfo->flags.IdrPicFlag) {
@@ -1701,21 +1702,6 @@ void VkEncDpbH264::SetCurDirtyIntraRefreshRegions(uint32_t dirtyIntraRefreshRegi
     }
 }
 
-// Returns a "view" of the DPB in terms of the entries holding valid reference
-// pictures.
-int32_t VkEncDpbH264::GetValidEntries(DpbEntryH264 entries[MAX_DPB_SLOTS])
-{
-    int32_t numEntries = 0;
-
-    for (int32_t i = 0; i < MAX_DPB_SLOTS; i++) {
-        if ((m_DPB[i].top_field_marking != 0) || (m_DPB[i].bottom_field_marking != 0)) {
-            entries[numEntries++] = m_DPB[i];
-        }
-    }
-
-    return numEntries;
-}
-
 uint32_t VkEncDpbH264::GetUsedFbSlotsMask()
 {
     uint32_t usedFbSlotsMask = 0;
@@ -1751,7 +1737,14 @@ void VkEncDpbH264::FillStdReferenceInfo(uint8_t dpbIdx, StdVideoEncodeH264Refere
 
     bool isLongTerm = (pDpbEntry->top_field_marking == MARKING_LONG);
 
-    pStdReferenceInfo->PicOrderCnt = pDpbEntry->picInfo.PicOrderCnt;
+    // Every member is written: the caller's structure is reused from frame to frame. temporal_id
+    // stays 0, as the encoder codes no temporal layers.
+    memset(pStdReferenceInfo, 0, sizeof(StdVideoEncodeH264ReferenceInfo));
     pStdReferenceInfo->flags.used_for_long_term_reference = isLongTerm;
+    pStdReferenceInfo->primary_pic_type = pDpbEntry->picInfo.primary_pic_type;
+    pStdReferenceInfo->FrameNum = pDpbEntry->picInfo.frame_num;
+    pStdReferenceInfo->PicOrderCnt = pDpbEntry->picInfo.PicOrderCnt;
+    // Vulkan encodes frames only, and the LongTermPicNum of a frame is its LongTermFrameIdx (8-30).
+    pStdReferenceInfo->long_term_pic_num = isLongTerm ? (uint16_t)pDpbEntry->longTermFrameIdx : 0;
     pStdReferenceInfo->long_term_frame_idx = isLongTerm ? (uint16_t)pDpbEntry->longTermFrameIdx : (uint16_t)-1;
 }

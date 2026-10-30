@@ -34,6 +34,22 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     $<TARGET_FILE:${VULKAN_VIDEO_ENCODER_STATIC_LIB}> simdjson::simdjson)
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
 
+# H.265 long-term reference pictures, which the encoder does not set, driven through VkEncDpbH265
+# directly.
+add_executable(vk-video-encoder-dpb-h265-long-term src/H265LongTermRefs.cpp)
+add_dependencies(vk-video-encoder-dpb-h265-long-term ${VULKAN_VIDEO_ENCODER_STATIC_LIB})
+target_include_directories(vk-video-encoder-dpb-h265-long-term PRIVATE
+    ${VULKAN_VIDEO_ENCODER_INCLUDE}/../libs
+    ${VK_VIDEO_COMMON_LIBS_SOURCE_ROOT}
+    ${VULKAN_VIDEO_APIS_INCLUDE}
+    ${CMAKE_BINARY_DIR}/generated
+    ${CMAKE_BINARY_DIR}/generated/VkCodecUtils
+    ${VULKAN_HEADERS_INCLUDE_DIR}
+)
+target_link_libraries(vk-video-encoder-dpb-h265-long-term PRIVATE
+    $<TARGET_FILE:${VULKAN_VIDEO_ENCODER_STATIC_LIB}> simdjson::simdjson)
+install(TARGETS vk-video-encoder-dpb-h265-long-term RUNTIME DESTINATION bin)
+
 # Add tests.
 #
 # WHAT THIS GATES. The encoder's DPB decisions for H.264, H.265 and AV1 over GOP configurations
@@ -61,5 +77,11 @@ foreach(codec H264 H265 Av1)
     # LABELS: this is the CI gating set. See the top-level CMakeLists.txt note.
     set_tests_properties(EncoderDpbSequencing${codec} PROPERTIES LABELS "device-free")
 endforeach()
+
+# The H.265 long-term reference sets and their marking (8.3.2): every picture in RefPicSetLtCurr
+# or RefPicSetLtFoll is used for long-term reference, with more Foll than Curr entries too, and a
+# reference picture in no set is unused.
+add_test(NAME EncoderH265DpbLongTermFoll COMMAND vk-video-encoder-dpb-h265-long-term)
+set_tests_properties(EncoderH265DpbLongTermFoll PROPERTIES LABELS "device-free")
 
 message(STATUS "vk-video-encoder-dpb-trace: Configured")

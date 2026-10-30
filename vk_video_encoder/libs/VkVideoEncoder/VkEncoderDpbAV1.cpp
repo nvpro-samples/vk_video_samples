@@ -137,12 +137,13 @@ int32_t VkEncDpbAV1::DpbSequenceStart(const VkSharedBaseObj<EncoderConfigAV1>& e
     m_maxSingleReferenceCount = capabilities.maxSingleReferenceCount;
     m_singleReferenceNameMask = capabilities.singleReferenceNameMask;
     m_maxUnidirectionalCompoundReferenceCount = capabilities.maxUnidirectionalCompoundReferenceCount;
-    m_maxUnidirectionalCompoundGroup1ReferenceCount = capabilities.maxUnidirectionalCompoundReferenceCount;
+    m_maxUnidirectionalCompoundGroup1ReferenceCount = capabilities.maxUnidirectionalCompoundGroup1ReferenceCount;
     m_unidirectionalCompoundReferenceNameMask = capabilities.unidirectionalCompoundReferenceNameMask;
     m_maxBidirectionalCompoundReferenceCount = capabilities.maxBidirectionalCompoundReferenceCount;
     m_maxBidirectionalCompoundGroup1ReferenceCount = capabilities.maxBidirectionalCompoundGroup1ReferenceCount;
     m_maxBidirectionalCompoundGroup2ReferenceCount = capabilities.maxBidirectionalCompoundGroup2ReferenceCount;
     m_bidirectionalCompoundReferenceNameMask = capabilities.bidirectionalCompoundReferenceNameMask;
+    m_maxActiveReferencePictures = encoderConfig->videoCapabilities.maxActiveReferencePictures;
 
     m_maxDpbSize = (uint8_t)userDpbSize;
     // Restricts the number of frames in list0 and list1
@@ -680,6 +681,24 @@ void VkEncDpbAV1::UpdateRefBufIdMap(bool bShownKeyFrameOrSwitch, bool bShowExist
 
 }
 
+bool VkEncDpbAV1::PrimaryRefIsAdded() const
+{
+    if (m_primaryRefDpbIdx == VkEncDpbAV1::INVALID_IDX) {
+        return false;
+    }
+    for (int32_t i = 0; i < m_numRefFramesInGroup1; i++) {
+        if (m_refName2DpbIdx[m_refNamesInGroup1[i]] == m_primaryRefDpbIdx) {
+            return false;
+        }
+    }
+    for (int32_t i = 0; i < m_numRefFramesInGroup2; i++) {
+        if (m_refName2DpbIdx[m_refNamesInGroup2[i]] == m_primaryRefDpbIdx) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void VkEncDpbAV1::SetupReferenceFrameGroups(VkVideoGopStructure::FrameType pictureType, StdVideoAV1FrameType frame_type,
                                             uint32_t curPicOrderCntVal)
 {
@@ -760,20 +779,23 @@ void VkEncDpbAV1::SetupReferenceFrameGroups(VkVideoGopStructure::FrameType pictu
         //     - If not available, fallback to single reference
         // - Otherwise, use single reference
         // For unidir compound, only consider group1 for now.
+        // The mode's capabilities give the reference names, and how many references of each group
+        // and in all the picture uses.
         uint32_t supportedReferenceMask = 0;
-        if (pictureType == VkVideoGopStructure::FRAME_TYPE_B) {
-            if (m_maxBidirectionalCompoundReferenceCount > 0) {
-                supportedReferenceMask = m_bidirectionalCompoundReferenceNameMask;
-            } else {
-                // Limit only to group1 for now
-                supportedReferenceMask = m_unidirectionalCompoundReferenceNameMask & ((1 << STD_VIDEO_AV1_REFERENCE_NAME_GOLDEN_FRAME) - 1);
-            }
+        int32_t maxReferences = (int32_t)m_maxActiveReferencePictures;
+        if ((pictureType == VkVideoGopStructure::FRAME_TYPE_B) && (m_maxBidirectionalCompoundReferenceCount > 0)) {
+            supportedReferenceMask = m_bidirectionalCompoundReferenceNameMask;
+            m_numRefFramesL0 = std::min(m_numRefFramesL0, (int32_t)m_maxBidirectionalCompoundGroup1ReferenceCount);
+            m_numRefFramesL1 = std::min(m_numRefFramesL1, (int32_t)m_maxBidirectionalCompoundGroup2ReferenceCount);
+            maxReferences = std::min(maxReferences, (int32_t)m_maxBidirectionalCompoundReferenceCount);
+        } else if (m_maxUnidirectionalCompoundReferenceCount > 0) {
+            // Limit only to group1 for now
+            supportedReferenceMask = m_unidirectionalCompoundReferenceNameMask & ((1 << STD_VIDEO_AV1_REFERENCE_NAME_GOLDEN_FRAME) - 1);
+            m_numRefFramesL0 = std::min(m_numRefFramesL0, (int32_t)m_maxUnidirectionalCompoundGroup1ReferenceCount);
+            maxReferences = std::min(maxReferences, (int32_t)m_maxUnidirectionalCompoundReferenceCount);
         } else {
-            if (m_maxUnidirectionalCompoundReferenceCount > 0) {
-                supportedReferenceMask = m_unidirectionalCompoundReferenceNameMask & ((1 << STD_VIDEO_AV1_REFERENCE_NAME_GOLDEN_FRAME) - 1);
-            } else {
-                supportedReferenceMask = m_singleReferenceNameMask;
-            }
+            supportedReferenceMask = m_singleReferenceNameMask;
+            maxReferences = std::min(maxReferences, (int32_t)m_maxSingleReferenceCount);
         }
 
         assert(supportedReferenceMask != 0);
@@ -823,6 +845,21 @@ void VkEncDpbAV1::SetupReferenceFrameGroups(VkVideoGopStructure::FrameType pictu
             numRef++;
         }
         m_numRefFramesInGroup2 = numRef;
+
+        // Over the mode's count, or over the session's active references with the primary
+        // reference frame, which the encoder adds as one more reference when its picture is none
+        // of these (it uses it for its CDFs only): the farthest reference of the larger group goes
+        // first.
+        while (((m_numRefFramesInGroup1 + m_numRefFramesInGroup2) > 0) &&
+               (((m_numRefFramesInGroup1 + m_numRefFramesInGroup2) > maxReferences) ||
+                ((m_numRefFramesInGroup1 + m_numRefFramesInGroup2 + (PrimaryRefIsAdded() ? 1 : 0)) >
+                 (int32_t)m_maxActiveReferencePictures))) {
+            if (m_numRefFramesInGroup1 > m_numRefFramesInGroup2) {
+                m_numRefFramesInGroup1--;
+            } else {
+                m_numRefFramesInGroup2--;
+            }
+        }
     } else {
         // map list0 frames to Group1 or Group2
         int32_t numRef1 = 0, numRef2 = 0;
@@ -910,7 +947,7 @@ void VkEncDpbAV1::FillStdReferenceInfo(uint8_t dpbIdx, StdVideoEncodeAV1Referenc
     const DpbEntryAV1* pDpbEntry = &m_DPB[dpbIdx];
 
     memset(pStdReferenceInfo, 0, sizeof(StdVideoEncodeAV1ReferenceInfo));
-    pStdReferenceInfo->RefFrameId = 0; //GetRefBufId(); FIXME
+    pStdReferenceInfo->RefFrameId = pDpbEntry->frameId;
     pStdReferenceInfo->frame_type = pDpbEntry->frameType;
     pStdReferenceInfo->OrderHint = pDpbEntry->picOrderCntVal % (1 << ORDER_HINT_BITS);
 }
