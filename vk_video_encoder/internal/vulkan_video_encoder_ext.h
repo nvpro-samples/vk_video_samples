@@ -991,7 +991,8 @@ struct VkVideoEncoderDiagnosticInfo {
 //
 // Extends VulkanVideoEncoder for frame-at-a-time operation with
 // externally-provided VkImages and timeline semaphore synchronization.
-// This is the interface for cross-process encoder services.
+// The producer hands the encoder its own images: from the same process, or
+// from another one by file descriptor or Win32 handle.
 //
 // Usage flow:
 //   1. CreateVulkanVideoEncoderExt() to create the encoder
@@ -1566,7 +1567,7 @@ struct VkVideoEncoderConfig {
 // External Frame Descriptor
 //
 // Describes a frame to encode that was allocated externally
-// (e.g. imported from DMA-BUF in a cross-process encoder service).
+// (e.g. imported from a DMA-BUF that another process exported).
 //=============================================================================
 struct VkVideoEncodeInputFrame {
     VkVideoEncoderStructureType sType =

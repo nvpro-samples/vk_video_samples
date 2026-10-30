@@ -1337,6 +1337,15 @@ public:
     // command-line args passed to ParseArguments override. Returns 0 on success, -1 on error.
     int LoadFromJsonFile(const char* path);
 
+    // The codec a JSON file names, VK_VIDEO_CODEC_OPERATION_NONE_KHR when it names none.
+    // Returns 0, or -1 when the file cannot be read or names an unknown codec.
+    static int ReadCodecFromJsonFile(const char* path, VkVideoCodecOperationFlagBitsKHR& codec);
+
+    // The tuning mode a name stands for, in any case: default, highquality, lowlatency,
+    // ultralowlatency or lossless, as --tuningMode and the JSON key "tuningMode" take them.
+    // Returns false, leaving tuningMode unchanged, for any other name.
+    static bool TuningModeFromName(std::string name, VkVideoEncodeTuningModeKHR& tuningMode);
+
     virtual int DoParseArguments(int argc, const char *argv[]) {
         if (argc > 0) {
             std::cout << "Invalid parameters: ";

@@ -900,6 +900,11 @@ if(BUILD_ENCODER)
         # reference picture rules and recorded goldens.
         add_subdirectory(vk_video_encoder/test/encoder-dpb)
 
+        # The encoder's JSON profiles, device-free: each file under vk_video_encoder/json_config
+        # through the loader --encoderConfig calls, checked against the schema and the settings
+        # the file names.
+        add_subdirectory(vk_video_encoder/test/encoder-json-profiles)
+
         # Encoder quality round trip: encode, decode with ffmpeg, and compare
         # per-frame PSNR against the source. This is the only round-trip
         # quality measurement in the tree -- the encoder's own --psnr option
@@ -926,6 +931,13 @@ if(BUILD_ENCODER)
         if(VVS_REQUIRE_GPU)
             # The script reads the environment; the C++ tests get the option as a definition.
             set_tests_properties(EncoderAv1QualityRoundTrip PROPERTIES ENVIRONMENT "VVS_REQUIRE_GPU=1")
+        endif()
+
+        # An encode on a device that states no preferred GOP length, which a
+        # device may and the GPUs the tests run on do not: a test layer states
+        # it, and the encoder must give the GOP the codec's default length.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_encoder/test/encoder-gop-no-preference)
         endif()
 
         # The gate's own classification, device-free. The round trip above can
