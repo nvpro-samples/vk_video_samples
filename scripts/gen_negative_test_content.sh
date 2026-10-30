@@ -11,7 +11,8 @@
 # Inputs are public: the same YUVs the encode suite already downloads.
 set -euo pipefail
 
-OUT=${OUT:-/data/MediaContent/media/compressed/negative_cells}
+# Written where the decode and encode samples read them, unless OUT names another directory.
+OUT=${OUT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/tests/resources/video/negative}
 WORK=${WORK:-$(mktemp -d)}
 BUCKET=https://storage.googleapis.com/vulkan-video-samples/yuv
 FRAMES=${FRAMES:-15}

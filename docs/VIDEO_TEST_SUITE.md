@@ -48,87 +48,87 @@ This document describes the comprehensive test suite for the Vulkan Video decode
 
 ```bash
 # Run all tests (video-dir is required)
-python scripts/run_all_video_tests.py --video-dir /data/misc/VideoClips
+python scripts/run_all_video_tests.py --video-dir /path/to/VideoClips
 
 # Run with validation layers
-python scripts/run_all_video_tests.py --video-dir /data/misc/VideoClips --validate
+python scripts/run_all_video_tests.py --video-dir /path/to/VideoClips --validate
 
 # Run on a specific remote host
-python scripts/run_all_video_tests.py --video-dir /data/misc/VideoClips --remote 192.168.122.216
+python scripts/run_all_video_tests.py --video-dir /path/to/VideoClips --remote <remote-host>
 
 # Quick test mode (fewer frames)
-python scripts/run_all_video_tests.py --video-dir /data/misc/VideoClips --quick --validate
+python scripts/run_all_video_tests.py --video-dir /path/to/VideoClips --quick --validate
 
 # Run locally (no SSH)
-python scripts/run_all_video_tests.py --video-dir /data/misc/VideoClips --local
+python scripts/run_all_video_tests.py --video-dir /path/to/VideoClips --local
 ```
 
 ### Decoder Tests Only
 
 ```bash
 # All decoder tests
-python scripts/run_decoder_tests.py --video-dir /data/misc/VideoClips
+python scripts/run_decoder_tests.py --video-dir /path/to/VideoClips
 
 # With validation
-python scripts/run_decoder_tests.py --video-dir /data/misc/VideoClips --validate
+python scripts/run_decoder_tests.py --video-dir /path/to/VideoClips --validate
 
 # Specific codec only
-python scripts/run_decoder_tests.py --video-dir /data/misc/VideoClips --codec h264
-python scripts/run_decoder_tests.py --video-dir /data/misc/VideoClips --codec h265
-python scripts/run_decoder_tests.py --video-dir /data/misc/VideoClips --codec av1
-python scripts/run_decoder_tests.py --video-dir /data/misc/VideoClips --codec vp9
+python scripts/run_decoder_tests.py --video-dir /path/to/VideoClips --codec h264
+python scripts/run_decoder_tests.py --video-dir /path/to/VideoClips --codec h265
+python scripts/run_decoder_tests.py --video-dir /path/to/VideoClips --codec av1
+python scripts/run_decoder_tests.py --video-dir /path/to/VideoClips --codec vp9
 ```
 
 ### Encoder Tests Only
 
 ```bash
 # All encoder tests
-python scripts/run_encoder_tests.py --video-dir /data/misc/VideoClips
+python scripts/run_encoder_tests.py --video-dir /path/to/VideoClips
 
 # With AQ (Adaptive Quantization) tests
-python scripts/run_encoder_tests.py --video-dir /data/misc/VideoClips --aq
+python scripts/run_encoder_tests.py --video-dir /path/to/VideoClips --aq
 
 # With validation
-python scripts/run_encoder_tests.py --video-dir /data/misc/VideoClips --validate
+python scripts/run_encoder_tests.py --video-dir /path/to/VideoClips --validate
 
 # Specific codec
-python scripts/run_encoder_tests.py --video-dir /data/misc/VideoClips --codec h264
+python scripts/run_encoder_tests.py --video-dir /path/to/VideoClips --codec h264
 ```
 
 ### Encoder JSON Profile Tests
 
 ```bash
 # Run all NVIDIA JSON profiles
-python scripts/run_encoder_profile_tests.py --video-dir /data/misc/VideoClips
+python scripts/run_encoder_profile_tests.py --video-dir /path/to/VideoClips
 
 # Local run with validation
-python scripts/run_encoder_profile_tests.py --video-dir /data/misc/VideoClips --local --validate
+python scripts/run_encoder_profile_tests.py --video-dir /path/to/VideoClips --local --validate
 
 # Filter by codec or profile name
-python scripts/run_encoder_profile_tests.py --video-dir /data/misc/VideoClips --codec h265
-python scripts/run_encoder_profile_tests.py --video-dir /data/misc/VideoClips --profile-filter ull
+python scripts/run_encoder_profile_tests.py --video-dir /path/to/VideoClips --codec h265
+python scripts/run_encoder_profile_tests.py --video-dir /path/to/VideoClips --profile-filter ull
 
 # Current driver support cap (example: skip qualityPreset > 4)
-python scripts/run_encoder_profile_tests.py --video-dir /data/misc/VideoClips --max-supported-quality-preset 4
+python scripts/run_encoder_profile_tests.py --video-dir /path/to/VideoClips --max-supported-quality-preset 4
 
 # Shell wrapper (same options)
-scripts/run_encoder_profile_tests.sh --video-dir /data/misc/VideoClips --local
+scripts/run_encoder_profile_tests.sh --video-dir /path/to/VideoClips --local
 ```
 
 ### Advanced Test Framework (JSON Reports)
 
 ```bash
 # Full test suite with JSON reporting
-python scripts/vulkan_video_test.py --video-dir /data/misc/VideoClips --test all
+python scripts/vulkan_video_test.py --video-dir /path/to/VideoClips --test all
 
 # Decoder only with validation
-python scripts/vulkan_video_test.py --video-dir /data/misc/VideoClips --test decoder --validate
+python scripts/vulkan_video_test.py --video-dir /path/to/VideoClips --test decoder --validate
 
 # Encoder with AQ
-python scripts/vulkan_video_test.py --video-dir /data/misc/VideoClips --test encoder --aq
+python scripts/vulkan_video_test.py --video-dir /path/to/VideoClips --test encoder --aq
 
 # On a remote host
-python scripts/vulkan_video_test.py --video-dir /data/misc/VideoClips --remote 192.168.122.216
+python scripts/vulkan_video_test.py --video-dir /path/to/VideoClips --remote <remote-host>
 ```
 
 ### Windows Usage
@@ -159,13 +159,13 @@ All tests are designed to run on a remote host with an NVIDIA GPU. The host mach
 
 ```bash
 # Using command-line arguments
-python scripts/run_all_video_tests.py --video-dir /data/misc/VideoClips --remote 192.168.122.216
+python scripts/run_all_video_tests.py --video-dir /path/to/VideoClips --remote <remote-host>
 
 # With custom username
-python scripts/run_all_video_tests.py --video-dir /data/misc/VideoClips --remote 192.168.1.100 --remote-user nvidia
+python scripts/run_all_video_tests.py --video-dir /path/to/VideoClips --remote <remote-host> --remote-user <user>
 
 # Run locally (if host has GPU)
-python scripts/run_all_video_tests.py --video-dir /data/misc/VideoClips --local
+python scripts/run_all_video_tests.py --video-dir /path/to/VideoClips --local
 ```
 
 ## Validation Layers
@@ -180,10 +180,10 @@ When enabled, validation layers check for:
 
 ```bash
 # All test scripts support --validate
-python scripts/run_all_video_tests.py --video-dir /data/misc/VideoClips --validate
-python scripts/run_decoder_tests.py --video-dir /data/misc/VideoClips --validate
-python scripts/run_encoder_tests.py --video-dir /data/misc/VideoClips --validate
-python scripts/run_encoder_profile_tests.py --video-dir /data/misc/VideoClips --validate
+python scripts/run_all_video_tests.py --video-dir /path/to/VideoClips --validate
+python scripts/run_decoder_tests.py --video-dir /path/to/VideoClips --validate
+python scripts/run_encoder_tests.py --video-dir /path/to/VideoClips --validate
+python scripts/run_encoder_profile_tests.py --video-dir /path/to/VideoClips --validate
 ```
 
 The scripts set these environment variables on the remote host:
@@ -252,9 +252,9 @@ AQ testing verifies the adaptive quantization feature that improves video qualit
 ### Running AQ Tests
 
 ```bash
-python scripts/run_encoder_tests.py --video-dir /data/misc/VideoClips --aq
-python scripts/run_all_video_tests.py --video-dir /data/misc/VideoClips --encoder --aq
-python scripts/vulkan_video_test.py --video-dir /data/misc/VideoClips --test encoder --aq
+python scripts/run_encoder_tests.py --video-dir /path/to/VideoClips --aq
+python scripts/run_all_video_tests.py --video-dir /path/to/VideoClips --encoder --aq
+python scripts/vulkan_video_test.py --video-dir /path/to/VideoClips --test encoder --aq
 ```
 
 ## Output and Reports
@@ -266,7 +266,7 @@ python scripts/vulkan_video_test.py --video-dir /data/misc/VideoClips --test enc
 ### JSON Report
 The vulkan_video_test.py framework generates a JSON report:
 ```bash
-python scripts/vulkan_video_test.py --video-dir /data/misc/VideoClips --test all
+python scripts/vulkan_video_test.py --video-dir /path/to/VideoClips --test all
 # Creates: /tmp/vulkan_video_tests/test_report.json
 ```
 
@@ -313,14 +313,14 @@ ssh user@<remote-host> "ls -la /path/to/build/vk_video_decoder/demos/"
 ### Missing Test Content
 ```bash
 # List available test content
-ls /data/misc/VideoClips/cts/
-ls /data/misc/VideoClips/cts/video/
+ls /path/to/VideoClips/cts/
+ls /path/to/VideoClips/cts/video/
 ```
 
 ### Validation Errors
 Review the verbose output to identify specific Vulkan API errors:
 ```bash
-python scripts/run_decoder_tests.py --video-dir /data/misc/VideoClips --validate --verbose
+python scripts/run_decoder_tests.py --video-dir /path/to/VideoClips --validate --verbose
 ```
 
 ## CI/CD Integration
