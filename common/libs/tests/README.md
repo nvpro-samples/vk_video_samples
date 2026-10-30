@@ -16,23 +16,23 @@ cmake .. -DBUILD_TESTS=ON
 make -j$(nproc) vk_filter_test
 ```
 
-**Run:**
+**Run** (from the build directory):
 ```bash
 # Smoke tests (quick sanity check)
-./common/libs/tests/vk_filter_test --smoke
+./bin/vk_filter_test --smoke
 
 # With validation layers
-./common/libs/tests/vk_filter_test --smoke --validate
+./bin/vk_filter_test --smoke --validate
 
-# List all tests
-./common/libs/tests/vk_filter_test --list
+# List every set, and the disabled cases with their defects
+./bin/vk_filter_test --list
 
-# Run specific test
-./common/libs/tests/vk_filter_test --test TC001_RGBA_to_NV12
+# Run one case by name, a disabled one included
+./bin/vk_filter_test --test TC001_RGBA_to_NV12
 
-# Run test category
-./common/libs/tests/vk_filter_test --rgba2ycbcr
-./common/libs/tests/vk_filter_test --copy
+# Run a set: --all runs every set but the disabled cases
+./bin/vk_filter_test --all
+./bin/vk_filter_test --regression    # also --production, --primaries
 ```
 
 ### 2. ThreadedRenderingVk - Integration Tests
@@ -66,20 +66,31 @@ Comprehensive test runner that runs both standalone and integration tests:
 ./scripts/run_all_tests.sh
 ```
 
-## Test Categories
+## Test Sets
 
-| Category | Tests | Description | Status |
-|----------|-------|-------------|--------|
-| `smoke` | 8 | Quick sanity check | ✅ Working |
-| `rgba2ycbcr` | 8 | RGBA → YCbCr conversions | ✅ Working |
-| `ycbcr2rgba` | 8 | YCbCr → RGBA conversions | ⚠️ Shader bugs |
-| `copy` | 5 | YCbCr format copy/convert | ✅ Working |
-| `clear` | 2 | YCbCr image clear | ✅ Working |
-| `colorprimaries` | 9 | BT.601/709/2020 | ✅ Working |
-| `range` | 4 | Full/Limited range | ✅ Working |
-| `transfer` | 10 | Pre/post transfer ops | 🔄 In progress |
-| `buffer` | 6 | Buffer I/O | 🔄 Not implemented |
-| `resolution` | 5 | Edge cases | ⚠️ Some issues |
+`--list` prints each set and the disabled cases. `--all` runs the standard, regression,
+production, buffer I/O and transfer sets; the smoke and primaries sets are subsets of the
+standard set.
+
+| Set | Option | What it holds |
+|-----|--------|---------------|
+| Smoke | `--smoke` (the default) | One case per major category |
+| Standard | in `--all` | RGBA to YCbCr, YCbCr to RGBA, copy, clear, format conversion, linear tiling, multi-output, component order, edge cases |
+| Regression | `--regression` | BT.2020 cases |
+| Production | `--production` | SD to 4K, full and limited range |
+| Color primaries | `--primaries` | BT.601, BT.709, BT.2020 |
+| Buffer I/O | in `--all` | Empty: every case is disabled |
+| Transfer | in `--all` | Pre- and post-transfer around the filter |
+
+### Disabled cases
+
+YCbCr to RGBA from a packed input (TC017), RGBA to Y410 (TC008), buffer I/O (TC070 to TC076)
+and the transfer-only filter types (TC117 to TC120) are disabled.
+A case that fails for a known defect is in no set: `getDisabledTests()` in
+`src/TestCases.cpp` lists it with the defect, `--list` prints both, and `--test <name>` runs
+it to reproduce the defect. A case leaves the list in the change that fixes its defect. The
+device-free CTest `FilterListTests` fails when a case that `src/TestCases.cpp` defines is in
+no set and not disabled, or is both.
 
 ## Supported Formats
 
@@ -95,48 +106,6 @@ Comprehensive test runner that runs both standalone and integration tests:
 | Y410 | Packed | 10-bit | 4:4:4 | ❌ Not yet |
 
 ## Known Issues
-
-### YCBCR2RGBA Shader Generation Bug
-
-The `YCBCR2RGBA` filter mode has shader generation issues:
-- `'normalizeYCbCr' : no matching overloaded function found`
-- `'shiftCbCr' : no matching overloaded function found`
-
-**Workaround:** Tests `TC010_NV12_to_RGBA` etc. are disabled in smoke tests.
-
-### Y410 Packed Format
-
-Packed 4:4:4 handling is implemented on the `YCBCRCOPY` arm, in both
-directions: a packed input is bound as a single storage image and read with
-`imageLoad()`, and a packed output is written the same way. That is the arm the
-encoder builds, so Y410 is not unimplemented in general.
-
-It is **not** implemented on either of the two arms these tests exercise, and
-both are shader-generation defects rather than missing features:
-
-- `RGBA2YCBCR` with a packed **output** declares `outputImageRGB` as an
-  `image2DArray` but stores into it with an `ivec2`, so the generated GLSL does
-  not compile. This is `TC008_RGBA_to_Y410`'s path.
-- `YCBCR2RGBA` has two faults, and the ORDER matters to anyone fixing it.
-  Generation reaches neither GLSL statement first: it derives a bit depth from
-  `YcbcrVkFormatInfo(...)`, which answers NULL for `A2B10G10R10_UNORM_PACK32`
-  because that enumerant is outside both ranges the multi-planar table covers.
-  That dereference was unguarded and crashed the process; it is now guarded, so
-  the arm reaches its second fault -- it names `inputImageY` and
-  `inputImageCbCr` unconditionally, and a packed input declares neither, so the
-  shader does not compile. This is `TC017_Y410_to_RGBA`'s path. Fixing only the
-  identifier emission would not have made the case run. The arm is also marked
-  deprecated.
-
-**Workaround:** Tests `TC008_RGBA_to_Y410` and `TC017_Y410_to_RGBA` remain
-disabled. Re-enabling either needs its arm fixed first -- the disable records a
-live defect and is not stale.
-
-### Buffer I/O
-
-Buffer inputs and outputs are not yet implemented in the filter.
-
-**Workaround:** Tests `TC070_RGBABuffer_to_NV12Image` etc. are disabled.
 
 ### Minimum Resolution
 

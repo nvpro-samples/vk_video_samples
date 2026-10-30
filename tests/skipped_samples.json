@@ -13,10 +13,10 @@
         "all"
       ],
       "reproduction": "always",
-      "reason": "TEST ISSUE plus no usable reference. Multi-resolution Argon vector; additionally dav1d fails on the stream ('Unknown Metadata OBU type 0') and writes 0 bytes, so ffmpeg cannot arbitrate correctness either. The assertion failure `!(m_ownedByDisplayMask & (1 << pictureIndex))' is a separate symptom worth fixing on its own; a single flat raw-YUV md5 cannot validate this stream in any case.",
+      "reason": "TEST ISSUE plus no usable reference. Multi-resolution Argon vector; its first sequence, 110x1082, is narrower than the 128x128 AV1 decode minimum the RTX GPUs state, so the decoder refuses the stream (exit 69); additionally dav1d fails on the stream ('Unknown Metadata OBU type 0') and writes 0 bytes, so ffmpeg cannot arbitrate correctness either; a single flat raw-YUV md5 cannot validate this stream in any case.",
       "bug_url": "https://github.com/KhronosGroup/Vulkan-Video-Samples/issues/138",
       "date_added": "2025-01-27",
-      "date_updated": "2026-08-18"
+      "date_updated": "2026-10-29"
     },
     {
       "name": "av1_argon_test787",
@@ -134,10 +134,10 @@
         "all"
       ],
       "reproduction": "always",
-      "reason": "TEST ISSUE: exercises the YCBCR2RGBA compute filter, which VulkanFilterYuvCompute.h marks deprecated and broken (no production path uses it; its vk_filter_test family TC010-TC017 is disabled). In the decoder the filter output is created in the decode output format instead of RGBA (GetOutputFormat is not used), the decoded picture's view has no per-plane views while the filter declares plane aspects for its input so no input descriptor is bound (assert descrIndex >= 2), and two debug asserts compare per-plane views the RGBA output does not have. Re-enable with the filter's own tests once the path is repaired.",
+      "reason": "TEST ISSUE: exercises the YCBCR2RGBA compute filter, which VulkanFilterYuvCompute.h marks deprecated (vk_filter_test runs it for 2-plane inputs and lists the 3-plane and packed ones as disabled). In the decoder the filter output is created in the decode output format instead of RGBA (GetOutputFormat is not used), the decoded picture's view has no per-plane views while the filter declares plane aspects for its input so no input descriptor is bound (assert descrIndex >= 2), and two debug asserts compare per-plane views the RGBA output does not have. Re-enable once the decoder path is repaired.",
       "bug_url": "",
       "date_added": "2026-09-29",
-      "date_updated": "2026-09-29"
+      "date_updated": "2026-10-29"
     }
   ],
   "encode": [

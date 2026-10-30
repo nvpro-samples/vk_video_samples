@@ -49,6 +49,24 @@
       }
     },
     {
+      "name": "h264_hw_load_balancing",
+      "codec": "h264",
+      "profile": null,
+      "extra_args": [
+        "--enableHwLoadBalancing"
+      ],
+      "description": "H.264 with --enableHwLoadBalancing: the encode submits wait on and signal a timeline semaphore at the encode stage",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 37.9,
+        "min_picture_psnr": 35.1
+      }
+    },
+    {
       "name": "h264_high_profile",
       "codec": "h264",
       "profile": "high",
@@ -181,6 +199,32 @@
       }
     },
     {
+      "name": "h265_two_idr_periods",
+      "codec": "h265",
+      "profile": null,
+      "extra_args": [
+        "--gopFrameCount",
+        "30",
+        "--idrPeriod",
+        "60",
+        "--consecutiveBFrameCount",
+        "3",
+        "--numFrames",
+        "150",
+        "--repeatInputFrames"
+      ],
+      "description": "H.265 with three B frames, a GOP of 30 and an IDR every 60 frames, over 150 frames: the pictures waiting for reordering at the IDRs of frames 60 and 120 are decoded too. The GOP is given because the driver's preferred GOP may code a single IDR in 150 frames",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 43.6,
+        "min_picture_psnr": 39.9
+      }
+    },
+    {
       "name": "h265_main_profile",
       "codec": "h265",
       "profile": "main",
@@ -240,7 +284,7 @@
       "codec": "av1",
       "profile": null,
       "extra_args": null,
-      "description": "Test AV1 encoding with default settings",
+      "description": "Test AV1 encoding with default settings. It runs under the Khronos validation layer when the layer is installed, which checks the AV1 information of every picture, its primaryReferenceCdfOnly among them.",
       "width": 352,
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
@@ -249,7 +293,8 @@
       "quality_check": {
         "min_mean_psnr": 45.5,
         "min_picture_psnr": 42.4
-      }
+      },
+      "validation_layer": true
     },
     {
       "name": "av1_main_profile",
@@ -333,7 +378,7 @@
         "--qpB",
         "20"
       ],
-      "description": "H.264 encode of a 128x48 picture, below the minimum coded extent of most devices (160x64 for H.264 and H.265, 192x128 for AV1 on NVIDIA). The encoder pads the picture to the device's minimum and signals the 128x48 picture in the stream (its SPS frame cropping), so the stream must decode to exactly 128x48 (quality_check exact_extent) and match the source. The input is the top-left 128x48 window (--encodeWidth/--encodeHeight) of the 352x288 clip, so the pictures are real, correlated video, and constant QP 20 makes the PSNR measure the extent handling rather than the rate control.",
+      "description": "H.264 encode of a 128x48 picture, below the minimum coded extent of most devices (160x64 for H.264 and H.265, 192x128 for AV1 on NVIDIA). The encoder pads the picture to the device's minimum and signals the 128x48 picture in the stream (its SPS frame cropping), so the stream must decode to exactly 128x48 (quality_check exact_extent) and match the source. The input is the top-left 128x48 window (--encodeWidth/--encodeHeight) of the 352x288 clip, so the pictures are real, correlated video, and constant QP 20 makes the PSNR measure the extent handling rather than the rate control. It runs under the Khronos validation layer when the layer is installed, which checks the session's and the pictures' coded extents against the device's minimum.",
       "width": 352,
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
@@ -343,7 +388,8 @@
         "min_mean_psnr": 45.2,
         "min_picture_psnr": 43.3,
         "exact_extent": true
-      }
+      },
+      "validation_layer": true
     },
     {
       "name": "h264_resolution_too_large",
@@ -376,7 +422,7 @@
         "--qpB",
         "20"
       ],
-      "description": "H.265 encode of a 128x48 picture, below the minimum coded extent of most devices (160x64 for H.264 and H.265, 192x128 for AV1 on NVIDIA). The encoder pads the picture to the device's minimum and signals the 128x48 picture in the stream (its SPS conformance window), so the stream must decode to exactly 128x48 (quality_check exact_extent) and match the source. The input is the top-left 128x48 window (--encodeWidth/--encodeHeight) of the 352x288 clip, so the pictures are real, correlated video, and constant QP 20 makes the PSNR measure the extent handling rather than the rate control.",
+      "description": "H.265 encode of a 128x48 picture, below the minimum coded extent of most devices (160x64 for H.264 and H.265, 192x128 for AV1 on NVIDIA). The encoder pads the picture to the device's minimum and signals the 128x48 picture in the stream (its SPS conformance window), so the stream must decode to exactly 128x48 (quality_check exact_extent) and match the source. The input is the top-left 128x48 window (--encodeWidth/--encodeHeight) of the 352x288 clip, so the pictures are real, correlated video, and constant QP 20 makes the PSNR measure the extent handling rather than the rate control. It runs under the Khronos validation layer when the layer is installed, which checks the session's and the pictures' coded extents against the device's minimum.",
       "width": 352,
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
@@ -386,7 +432,8 @@
         "min_mean_psnr": 45.2,
         "min_picture_psnr": 43.4,
         "exact_extent": true
-      }
+      },
+      "validation_layer": true
     },
     {
       "name": "h265_resolution_too_large",
@@ -419,7 +466,7 @@
         "--qpB",
         "20"
       ],
-      "description": "AV1 encode of a 128x48 picture, below the minimum coded extent of most devices (160x64 for H.264 and H.265, 192x128 for AV1 on NVIDIA). The encoder pads the picture to the device's minimum and signals the 128x48 picture in the stream (its render size), so the stream must decode to exactly 128x48 (quality_check exact_extent) and match the source. The input is the top-left 128x48 window (--encodeWidth/--encodeHeight) of the 352x288 clip, so the pictures are real, correlated video, and constant QP 20 makes the PSNR measure the extent handling rather than the rate control.",
+      "description": "AV1 encode of a 128x48 picture, below the minimum coded extent of most devices (160x64 for H.264 and H.265, 192x128 for AV1 on NVIDIA). The encoder pads the picture to the device's minimum and signals the 128x48 picture in the stream (its render size), so the stream must decode to exactly 128x48 (quality_check exact_extent) and match the source. The input is the top-left 128x48 window (--encodeWidth/--encodeHeight) of the 352x288 clip, so the pictures are real, correlated video, and constant QP 20 makes the PSNR measure the extent handling rather than the rate control. It runs under the Khronos validation layer when the layer is installed, which checks the session's and the pictures' coded extents against the device's minimum.",
       "width": 352,
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
@@ -429,7 +476,8 @@
         "min_mean_psnr": 46.7,
         "min_picture_psnr": 44.7,
         "exact_extent": true
-      }
+      },
+      "validation_layer": true
     },
     {
       "name": "av1_resolution_too_large",

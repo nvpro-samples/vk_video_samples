@@ -419,8 +419,11 @@ struct RateControl {
 };
 
 struct GopStructure {
-    uint32_t gopLength          = 0;   // frames; 0 means infinite
-    uint32_t idrPeriod          = 0;   // frames; 0 means IDR only at the start
+    // Frames per GOP; 0 leaves the length to the device's preferred value.
+    uint32_t gopLength          = 0;
+    // Frames between IDRs; 0 leaves the period to the device's preferred value. On a device
+    // that reports no preference, only the first frame of the stream is an IDR.
+    uint32_t idrPeriod          = 0;
     uint32_t consecutiveBFrames = 0;
     bool     closedGop          = false;
 };

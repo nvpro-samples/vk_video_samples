@@ -405,11 +405,11 @@ public:
         uint32_t is_non_existing : 1; // 1 = marked as non-existing
         uint32_t is_field_ref : 1; // set if unpaired field or complementary field pair
         union {
-            int16_t FieldOrderCnt[2]; // h.264 : 2*32 [top/bottom].
+            int32_t FieldOrderCnt[2]; // h.264 : 2*32 [top/bottom].
             int32_t PicOrderCnt; // HEVC PicOrderCnt
         };
         union {
-            int16_t FrameIdx; // : 16   short-term: FrameNum (16 bits), long-term:
+            uint16_t FrameIdx; // : 16   short-term: FrameNum (16 bits), long-term:
                 // LongTermFrameIdx (4 bits)
             int8_t originalDpbIndex; // Original Dpb source Index.
         };
@@ -417,8 +417,8 @@ public:
 
         void setReferenceAndTopBottomField(
             bool isReference, bool nonExisting, bool isLongTerm, bool isFieldRef,
-            bool topFieldIsReference, bool bottomFieldIsReference, int16_t frameIdx,
-            const int16_t fieldOrderCntList[2], vkPicBuffBase* picBuff)
+            bool topFieldIsReference, bool bottomFieldIsReference, uint16_t frameIdx,
+            const int32_t fieldOrderCntList[2], vkPicBuffBase* picBuff)
         {
             is_non_existing = nonExisting;
             is_long_term = isLongTerm;
@@ -618,6 +618,7 @@ public:
                                     size_t* pParsedBytes,
                                     bool doPartialParsing = false);
     virtual uint64_t GetRefusedUnitCount() const { return m_vkParser ? m_vkParser->GetRefusedUnitCount() : 0; }
+    virtual uint64_t GetUnsupportedPictureCount() const { return m_vkParser ? m_vkParser->GetUnsupportedPictureCount() : 0; }
 
     // Interface to allow decoder to communicate with the client implementing
     // INvVideoDecoderClient
@@ -1121,19 +1122,32 @@ uint32_t VulkanVideoParser::ResetPicDpbSlots(uint32_t picIndexSlotValidMask)
 
 int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
 {
+    // m_nvsi is the last sequence the decoder accepted, which its session is configured for. A
+    // sequence the decoder refuses leaves it as it is.
     bool sequenceUpdate = ((m_nvsi.nMaxWidth != 0) && (m_nvsi.nMaxHeight != 0)) ? true : false;
 
     uint32_t maxDpbSlots =  (pnvsi->eCodec == VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR) ?
         MAX_DPB_REF_AND_SETUP_SLOTS : MAX_DPB_REF_SLOTS;
 
+    // An AV1 or VP9 sequence whose format is the accepted one's, and whose pictures fit its
+    // session, needs nothing new from the decoder. Any other change goes to the decoder, which
+    // may refuse it: a monochrome sequence after a 4:2:0 one of the same size is a new profile.
+    const bool sameFormat = sequenceUpdate &&
+                            (pnvsi->eCodec == m_nvsi.eCodec) &&
+                            (pnvsi->nChromaFormat == m_nvsi.nChromaFormat) &&
+                            (pnvsi->uBitDepthLumaMinus8 == m_nvsi.uBitDepthLumaMinus8) &&
+                            (pnvsi->uBitDepthChromaMinus8 == m_nvsi.uBitDepthChromaMinus8) &&
+                            (pnvsi->bProgSeq == m_nvsi.bProgSeq) &&
+                            (pnvsi->codecProfile == m_nvsi.codecProfile) &&
+                            (pnvsi->hasFilmGrain == m_nvsi.hasFilmGrain);
     if (pnvsi->eCodec == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
         maxDpbSlots = 9;
-        if ((pnvsi->nCodedWidth <= m_nvsi.nCodedWidth) && (pnvsi->nCodedHeight <= m_nvsi.nCodedHeight)) {
+        if (sameFormat && (pnvsi->nCodedWidth <= m_nvsi.nCodedWidth) && (pnvsi->nCodedHeight <= m_nvsi.nCodedHeight)) {
             return 1;
         }
     } else if (pnvsi->eCodec == VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
         maxDpbSlots = 9;
-        if ((pnvsi->nMaxWidth <= m_nvsi.nMaxWidth) && (pnvsi->nMaxHeight <= m_nvsi.nMaxHeight)) {
+        if (sameFormat && (pnvsi->nMaxWidth <= m_nvsi.nMaxWidth) && (pnvsi->nMaxHeight <= m_nvsi.nMaxHeight)) {
             return 1;
         }
     }
@@ -1156,12 +1170,6 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
         }
 
     }
-
-    m_nvsi = *pnvsi;
-    m_nvsi.nMaxWidth = pnvsi->nMaxWidth;
-    m_nvsi.nMaxHeight = pnvsi->nMaxHeight;
-
-    m_maxNumDecodeSurfaces = pnvsi->nMinNumDecodeSurfaces;
 
     if (m_decoderHandler) {
         VkParserDetectedVideoFormat detectedFormat;
@@ -1212,7 +1220,9 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
             detectedFormat.lumaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_12_BIT_KHR;
             break;
         default:
-            assert(false);
+            // A depth Vulkan Video has no flag for (9 or 11 bits): the decoder refuses the sequence.
+            detectedFormat.lumaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
+            break;
         }
 
         switch (pnvsi->uBitDepthChromaMinus8) {
@@ -1226,7 +1236,8 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
             detectedFormat.chromaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_12_BIT_KHR;
             break;
         default:
-            assert(false);
+            detectedFormat.chromaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
+            break;
         }
 
         detectedFormat.bit_depth_luma_minus8 = pnvsi->uBitDepthLumaMinus8;
@@ -1255,6 +1266,8 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
         if (maxDecodeRTs <= 0) {
             return 0;
         }
+        m_nvsi = *pnvsi;
+        m_maxNumDecodeSurfaces = pnvsi->nMinNumDecodeSurfaces;
         // MaxNumDecodeSurface may not be correctly calculated by the client while
         // parser creation so overwrite it with NumDecodeSurface. (only if nDecodeRT
         // > 1)
@@ -1309,9 +1322,9 @@ uint32_t VulkanVideoParser::FillDpbH264State(
                 : -1;
             const bool isFieldRef = (picIdx >= 0) ? GetFieldPicFlag(picIdx)
                                                   : (used_for_reference && (used_for_reference != fieldIsReferenceMask));
-            const int16_t fieldOrderCntList[2] = {
-                (int16_t)dpbIn[inIdx].FieldOrderCnt[0],
-                (int16_t)dpbIn[inIdx].FieldOrderCnt[1]
+            const int32_t fieldOrderCntList[2] = {
+                dpbIn[inIdx].FieldOrderCnt[0],
+                dpbIn[inIdx].FieldOrderCnt[1]
             };
             refOnlyDpbIn[numUsedRef].setReferenceAndTopBottomField(
                 !!used_for_reference,
@@ -1319,7 +1332,7 @@ uint32_t VulkanVideoParser::FillDpbH264State(
                            process for gaps in frame_num */
                 !!dpbIn[inIdx].is_long_term, isFieldRef,
                 !!(used_for_reference & topFieldMask),
-                !!(used_for_reference & bottomFieldMask), dpbIn[inIdx].FrameIdx,
+                !!(used_for_reference & bottomFieldMask), (uint16_t)dpbIn[inIdx].FrameIdx,
                 fieldOrderCntList, GetPic(dpbIn[inIdx].pPicBuf));
             if (picIdx >= 0) {
                 refDpbUsedAndValidMask |= (1 << picIdx);
@@ -1575,9 +1588,9 @@ uint32_t VulkanVideoParser::FillDpbH265State(
     // along with the co-located data, so once a reference frame is assigned a DPB
     // entry, it can no longer change.
 
+    // The DPB slot of each RefPics entry; -1 for an entry the DPB does not hold.
     int8_t frmListToDpb[HEVC_MAX_DPB_SLOTS];
-    // TODO change to -1 for invalid indexes.
-    memset(&frmListToDpb, 0, sizeof(frmListToDpb));
+    memset(&frmListToDpb, -1, sizeof(frmListToDpb));
     // Find or allocate slots for existing dpb items.
     for (int32_t dpbIdx = 0; (uint32_t)dpbIdx < numUsedRef; dpbIdx++) {
         if (!refOnlyDpbIn[dpbIdx].is_non_existing) {
@@ -1644,68 +1657,29 @@ uint32_t VulkanVideoParser::FillDpbH265State(
         }
     }
 
-    int32_t numPocTotalCurr = 0;
-    int32_t numPocStCurrBefore = 0;
-    const size_t maxNumPocStCurrBefore = ARRAYSIZE(pStdPictureInfo->RefPicSetStCurrBefore);
-    assert((size_t)pin->NumPocStCurrBefore <= maxNumPocStCurrBefore);
-    if ((size_t)pin->NumPocStCurrBefore > maxNumPocStCurrBefore) {
-        fprintf(stderr, "\nERROR: FillDpbH265State() pin->NumPocStCurrBefore(%d) must be smaller than maxNumPocStCurrBefore(%zd)\n", pin->NumPocStCurrBefore, maxNumPocStCurrBefore);
-    }
-    for (int32_t i = 0; i < std::min<int32_t>(pin->NumPocStCurrBefore, (int32_t)maxNumPocStCurrBefore); i++) {
-        uint8_t idx = (uint8_t)pin->RefPicSetStCurrBefore[i];
-        if (idx < HEVC_MAX_DPB_SLOTS) {
-            if (m_dumpParserData)
-                std::cout << "\trefPicSetStCurrBefore[" << i << "] is " << (int32_t)idx
-                          << " -> " << (int32_t)frmListToDpb[idx] << std::endl;
-            pStdPictureInfo->RefPicSetStCurrBefore[numPocStCurrBefore++] = frmListToDpb[idx] & 0xf;
-            numPocTotalCurr++;
+    // Each list keeps its positions, which the slices' ref_idx values index: an entry the DPB does
+    // not hold, a "no reference picture" (H.265 8.3.2), is STD_VIDEO_H265_NO_REFERENCE_PICTURE in its
+    // place, and so is the rest of the list.
+    auto fillRefPicSetList = [&](const char* name, const int8_t* in, int32_t count, uint8_t* out, size_t outSize) {
+        if ((size_t)count > outSize) {
+            fprintf(stderr, "\nERROR: FillDpbH265State() %s count (%d) must not exceed %zd\n", name, count, outSize);
         }
-    }
-    while (numPocStCurrBefore < 8) {
-        pStdPictureInfo->RefPicSetStCurrBefore[numPocStCurrBefore++] = 0xff;
-    }
-
-    int32_t numPocStCurrAfter = 0;
-    const size_t maxNumPocStCurrAfter = ARRAYSIZE(pStdPictureInfo->RefPicSetStCurrAfter);
-    assert((size_t)pin->NumPocStCurrAfter <= maxNumPocStCurrAfter);
-    if ((size_t)pin->NumPocStCurrAfter > maxNumPocStCurrAfter) {
-        fprintf(stderr, "\nERROR: FillDpbH265State() pin->NumPocStCurrAfter(%d) must be smaller than maxNumPocStCurrAfter(%zd)\n", pin->NumPocStCurrAfter, maxNumPocStCurrAfter);
-    }
-    for (int32_t i = 0; i < std::min<int32_t>(pin->NumPocStCurrAfter, (int32_t)maxNumPocStCurrAfter); i++) {
-        uint8_t idx = (uint8_t)pin->RefPicSetStCurrAfter[i];
-        if (idx < HEVC_MAX_DPB_SLOTS) {
-            if (m_dumpParserData)
-                std::cout << "\trefPicSetStCurrAfter[" << i << "] is " << (int32_t)idx
-                          << " -> " << (int32_t)frmListToDpb[idx] << std::endl;
-            pStdPictureInfo->RefPicSetStCurrAfter[numPocStCurrAfter++] = frmListToDpb[idx] & 0xf;
-            numPocTotalCurr++;
+        const int32_t listed = std::min<int32_t>(count, (int32_t)outSize);
+        for (int32_t i = 0; i < (int32_t)outSize; i++) {
+            const int8_t idx = (i < listed) ? in[i] : -1;
+            const int8_t dpbSlot = ((idx >= 0) && (idx < HEVC_MAX_DPB_SLOTS)) ? frmListToDpb[idx] : -1;
+            out[i] = (dpbSlot >= 0) ? (uint8_t)dpbSlot : STD_VIDEO_H265_NO_REFERENCE_PICTURE;
+            if (m_dumpParserData && (i < listed)) {
+                std::cout << "\t" << name << "[" << i << "] -> " << (int32_t)out[i] << std::endl;
+            }
         }
-    }
-    while (numPocStCurrAfter < 8) {
-        pStdPictureInfo->RefPicSetStCurrAfter[numPocStCurrAfter++] = 0xff;
-    }
-
-    int32_t numPocLtCurr = 0;
-    const size_t maxNumPocLtCurr = ARRAYSIZE(pStdPictureInfo->RefPicSetLtCurr);
-    assert((size_t)pin->NumPocLtCurr <= maxNumPocLtCurr);
-    if ((size_t)pin->NumPocLtCurr > maxNumPocLtCurr) {
-        fprintf(stderr, "\nERROR: FillDpbH265State() pin->NumPocLtCurr(%d) must be smaller than maxNumPocLtCurr(%zd)\n", pin->NumPocLtCurr, maxNumPocLtCurr);
-    }
-    for (int32_t i = 0; i < std::min<int32_t>(pin->NumPocLtCurr, (int32_t)maxNumPocLtCurr); i++) {
-        uint8_t idx = (uint8_t)pin->RefPicSetLtCurr[i];
-        if (idx < HEVC_MAX_DPB_SLOTS) {
-            if (m_dumpParserData)
-                std::cout << "\trefPicSetLtCurr[" << i << "] is " << (int32_t)idx
-                          << " -> " << (int32_t)frmListToDpb[idx] << std::endl;
-            pStdPictureInfo->RefPicSetLtCurr[numPocLtCurr++] = frmListToDpb[idx] & 0xf;
-            numPocTotalCurr++;
-        }
-    }
-    while (numPocLtCurr < 8) {
-        pStdPictureInfo->RefPicSetLtCurr[numPocLtCurr++] = 0xff;
-    }
-
-    (void)numPocTotalCurr; // TODO: This variable is unused, remove or use.
+    };
+    fillRefPicSetList("RefPicSetStCurrBefore", pin->RefPicSetStCurrBefore, pin->NumPocStCurrBefore,
+                      pStdPictureInfo->RefPicSetStCurrBefore, ARRAYSIZE(pStdPictureInfo->RefPicSetStCurrBefore));
+    fillRefPicSetList("RefPicSetStCurrAfter", pin->RefPicSetStCurrAfter, pin->NumPocStCurrAfter,
+                      pStdPictureInfo->RefPicSetStCurrAfter, ARRAYSIZE(pStdPictureInfo->RefPicSetStCurrAfter));
+    fillRefPicSetList("RefPicSetLtCurr", pin->RefPicSetLtCurr, pin->NumPocLtCurr,
+                      pStdPictureInfo->RefPicSetLtCurr, ARRAYSIZE(pStdPictureInfo->RefPicSetLtCurr));
 
     for (int32_t i = 0; i < 8; i++) {
         if (m_dumpParserData)
@@ -1781,6 +1755,16 @@ uint32_t VulkanVideoParser::FillDpbAV1State(
 
     bool isKeyFrame = pin->std_info.frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY;
 
+    // A reference whose picture has no DPB slot cannot be named or listed: the decode goes on
+    // without it, and the first one of the picture is logged.
+    bool loggedReferenceWithoutSlot = false;
+    auto referenceWithoutSlot = [&](int8_t picIdx) {
+        if (!loggedReferenceWithoutSlot) {
+            fprintf(stderr, "AV1 picture %d: reference picture %d has no DPB slot\n", m_nCurrentPictureID, picIdx);
+            loggedReferenceWithoutSlot = true;
+        }
+    };
+
     // It doesn't look like this tracking is needed.
     int8_t activeReferences[32];
     memset(activeReferences, 0, sizeof(activeReferences));
@@ -1791,20 +1775,25 @@ uint32_t VulkanVideoParser::FillDpbAV1State(
             continue;
         }
         int8_t dpbSlot = GetPicDpbSlot(picIdx);
-        assert(dpbSlot >= 0);
+        if (dpbSlot < 0) {
+            referenceWithoutSlot(picIdx);
+            continue;
+        }
         //pKhr->referenceNameSlotIndices[refName] = dpbSlot;
         activeReferences[dpbSlot]++;
         //hdr.delta_frame_id_minus_1[dpbSlot] = pin->delta_frame_id_minus_1[pin->ref_frame_idx[i]];
     }
 
+    // Every buffer's picture keeps its slot, a key frame's included: a key frame names no
+    // reference, but a hidden one may refresh only some buffers, and the pictures the others hold
+    // are referenced by the frames after it (AV1 7.20).
     for (uint32_t inIdx = 0; inIdx < STD_VIDEO_AV1_NUM_REF_FRAMES; inIdx++) {
-        int8_t picIdx = isKeyFrame ? -1 : pin->pic_idx[inIdx];
+        int8_t picIdx = pin->pic_idx[inIdx];
         int8_t dpbSlot = -1;
         if ((picIdx >= 0) && !(refDpbUsedAndValidMask & (1 << picIdx))) {
             dpbSlot = GetPicDpbSlot(picIdx);
-
-            assert(dpbSlot >= 0); // There is still content hitting this assert.
             if (dpbSlot < 0) {
+                referenceWithoutSlot(picIdx);
                 continue;
             }
 
@@ -1931,6 +1920,16 @@ uint32_t VulkanVideoParser::FillDpbVP9State(
 
     bool isKeyFrame = (pin->stdPictureInfo.frame_type == STD_VIDEO_VP9_FRAME_TYPE_KEY);
 
+    // A reference whose picture has no DPB slot cannot be named or listed: the decode goes on
+    // without it, and the first one of the picture is logged.
+    bool loggedReferenceWithoutSlot = false;
+    auto referenceWithoutSlot = [&](int8_t picIdx) {
+        if (!loggedReferenceWithoutSlot) {
+            fprintf(stderr, "VP9 picture %d: reference picture %d has no DPB slot\n", m_nCurrentPictureID, picIdx);
+            loggedReferenceWithoutSlot = true;
+        }
+    };
+
     // It doesn't look like this tracking is needed.
     int8_t activeReferences[32];
     memset(activeReferences, 0, sizeof(activeReferences));
@@ -1941,7 +1940,10 @@ uint32_t VulkanVideoParser::FillDpbVP9State(
             continue;
         }
         int8_t dpbSlot = GetPicDpbSlot(picIdx);
-        assert(dpbSlot >= 0);
+        if (dpbSlot < 0) {
+            referenceWithoutSlot(picIdx);
+            continue;
+        }
         //pKhr->referenceNameSlotIndices[refName] = dpbSlot;
         activeReferences[dpbSlot]++;
         //hdr.delta_frame_id_minus_1[dpbSlot] = pin->delta_frame_id_minus_1[pin->ref_frame_idx[i]];
@@ -1952,9 +1954,8 @@ uint32_t VulkanVideoParser::FillDpbVP9State(
         int8_t dpbSlot = -1;
         if ((picIdx >= 0) && !(refDpbUsedAndValidMask & (1 << picIdx))) {
             dpbSlot = GetPicDpbSlot(picIdx);
-
-            assert(dpbSlot >= 0); // There is still content hitting this assert.
             if (dpbSlot < 0) {
+                referenceWithoutSlot(picIdx);
                 continue;
             }
 
@@ -2195,7 +2196,6 @@ bool VulkanVideoParser::DecodePicture(
 
         h264 = nvVideoH264PicParameters();
 
-        nvVideoH264PicParameters* const pout = &h264;
         VkVideoDecodeH264PictureInfoKHR* pPictureInfo = &h264.pictureInfo;
         nvVideoDecodeH264DpbSlotInfo* pDpbRefList = h264.dpbRefList;
         StdVideoDecodeH264PictureInfo* pStdPictureInfo = &h264.stdPictureInfo;
@@ -2271,8 +2271,6 @@ bool VulkanVideoParser::DecodePicture(
             VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS, // 16 reference pictures
             referenceSlots, pCurrFrameDecParams->pGopReferenceImagesIndexes,
             h264.stdPictureInfo.flags, &setupReferenceSlot.slotIndex);
-        // TODO: Remove it is for debugging only. Reserved fields must be set to "0".
-        pout->stdPictureInfo.reserved1 = pCurrFrameDecParams->numGopReferenceSlots;
         if (pCurrFrameDecParams->numGopReferenceSlots) {
             assert(pCurrFrameDecParams->numGopReferenceSlots <= (int32_t)MAX_DPB_REF_SLOTS);
             for (uint32_t dpbEntryIdx = 0; dpbEntryIdx < (uint32_t)pCurrFrameDecParams->numGopReferenceSlots;
@@ -2368,6 +2366,9 @@ bool VulkanVideoParser::DecodePicture(
         // hevc->idrPicFlag = m_slh.nal_unit_type == NUT_IDR_W_RADL ||
         // m_slh.nal_unit_type == NUT_IDR_N_LP;
         pStdPictureInfo->flags.IdrPicFlag = pin->IdrPicFlag; // Instantaneous Decoding Refresh for current picture.
+        // Every decoded H.265 picture is marked as used for short-term reference (8.1.3), and
+        // IsReference is what requests its reference picture setup (h265_decode.adoc).
+        pStdPictureInfo->flags.IsReference = pd->ref_pic_flag;
 
         // NumBitsForShortTermRPSInSlice = s->sh.short_term_rps ?
         // s->sh.short_term_ref_pic_set_size : 0
@@ -2495,10 +2496,10 @@ bool VulkanVideoParser::DecodePicture(
         if (setupReferenceSlot.slotIndex >= 0) {
             // Wire pNext to VkVideoDecodeAV1DpbSlotInfoKHR for the setup slot (VUID-07170)
             setupReferenceSlot.pNext = av1.currentDpbSlotInfo.Init(setupReferenceSlot.slotIndex);
+            // The parser's setup reference information: what the buffers this picture refreshes
+            // save of it (AV1 7.20), which later references of the picture carry.
             StdVideoDecodeAV1ReferenceInfo* pSetupRefInfo = &av1.currentDpbSlotInfo.stdReferenceInfo;
-            memset(pSetupRefInfo, 0, sizeof(*pSetupRefInfo));
-            pSetupRefInfo->frame_type = pin->std_info.frame_type;
-            pSetupRefInfo->OrderHint = pin->std_info.OrderHint;
+            *pSetupRefInfo = pin->setupSlotInfo;
 
             setupReferenceSlot.pPictureResource = &pCurrFrameDecParams->dpbSetupPictureResource;
             pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot = &setupReferenceSlot;
@@ -2532,8 +2533,8 @@ bool VulkanVideoParser::DecodePicture(
                 continue;
             }
 
+            // A reference whose picture has no DPB slot (FillDpb logs it) names no slot: -1.
             int8_t dpbSlot = GetPicDpbSlot(picIdx);
-            assert(dpbSlot >= 0);
             pPictureInfo->referenceNameSlotIndices[i] = dpbSlot;
         }
 
@@ -2636,8 +2637,8 @@ bool VulkanVideoParser::DecodePicture(
                 continue;
             }
 
+            // A reference whose picture has no DPB slot (FillDpb logs it) names no slot: -1.
             int8_t dpbSlot = GetPicDpbSlot(picIdx);
-            assert(dpbSlot >= 0);
             pVkPicInfo->referenceNameSlotIndices[i] = dpbSlot;
         }
 
@@ -2654,6 +2655,25 @@ bool VulkanVideoParser::DecodePicture(
         pDecodePictureInfo->displayWidth  = m_nvsi.nDisplayWidth;
         pDecodePictureInfo->displayHeight = m_nvsi.nDisplayHeight;
     }
+
+    // The begin-coding list: the reference slots, then the setup picture, which each codec stored
+    // after them, with slot index -1. A setup picture a reference already binds, the second field
+    // of a pair whose first field is a reference of it, is not bound again.
+    uint32_t beginCodingSlotCount = (uint32_t)std::max(pCurrFrameDecParams->numGopReferenceSlots, 0);
+    if (pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot != nullptr) {
+        bool setupPictureBound = false;
+        for (uint32_t i = 0; i < beginCodingSlotCount; i++) {
+            if (pCurrFrameDecParams->pGopReferenceImagesIndexes[i] == pCurrFrameDecParams->currPicIdx) {
+                setupPictureBound = true;
+            }
+        }
+        if (!setupPictureBound) {
+            referenceSlots[beginCodingSlotCount].slotIndex = -1;
+            beginCodingSlotCount++;
+        }
+    }
+    pCurrFrameDecParams->pBeginCodingReferenceSlots = (beginCodingSlotCount > 0) ? referenceSlots : nullptr;
+    pCurrFrameDecParams->beginCodingReferenceSlotCount = beginCodingSlotCount;
 
     bRet = (m_decoderHandler->DecodePictureWithParameters(pCurrFrameDecParams, pDecodePictureInfo) >= 0);
 

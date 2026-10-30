@@ -598,6 +598,9 @@ typedef enum VkVideoEncoderColorModel {
     // declaration that makes AYUV and Y410 nameable; over any other Y'CbCr
     // format it states what the format already says and changes nothing.
     VK_VIDEO_ENCODER_COLOR_MODEL_YCBCR = 2,
+    // As Vulkan's enumerations do: the enumeration spans 32 bits, so a caller's value outside the
+    // models above is a value of the type, which the library refuses, not an undefined one.
+    VK_VIDEO_ENCODER_COLOR_MODEL_MAX_ENUM = 0x7FFFFFFF
 } VkVideoEncoderColorModel;
 
 // THE IPC PAYLOAD. A producer in another process fills this by field copy and
@@ -612,8 +615,9 @@ typedef enum VkVideoEncoderColorModel {
 // same-process arm, never an IPC one. Everything else is scalar, enum, flags,
 // or a fixed array of those.
 typedef struct VkVideoEncoderExternalImageDescriptor {
-    VkVideoEncoderStructureType sType;
-    const void*                 pNext;  // MUST be NULL; a chain is refused
+    VkVideoEncoderStructureType sType =
+        VK_VIDEO_ENCODER_STRUCTURE_TYPE_EXTERNAL_IMAGE_DESCRIPTOR;
+    const void*                 pNext = nullptr;  // MUST be NULL; a chain is refused
 
     VkVideoEncoderExternalHandleType handleType;
 
@@ -862,8 +866,8 @@ typedef struct VkVideoEncoderExternalImageDescriptor {
 // Everything describing the IMAGE lives in the registration; this carries
 // only what genuinely varies per frame.
 typedef struct VkVideoEncoderFrameSubmitInfo {
-    VkVideoEncoderStructureType sType;  // ..._FRAME_PARAMS
-    const void*                 pNext;
+    VkVideoEncoderStructureType sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_FRAME_PARAMS;
+    const void*                 pNext = nullptr;
 
     VkVideoEncoderResource resource;  // from RegisterImageResource
 
@@ -991,7 +995,8 @@ struct VkVideoEncoderDiagnosticInfo {
 //
 // Extends VulkanVideoEncoder for frame-at-a-time operation with
 // externally-provided VkImages and timeline semaphore synchronization.
-// This is the interface for cross-process encoder services.
+// The producer hands the encoder its own images: from the same process, or
+// from another one by file descriptor or Win32 handle.
 //
 // Usage flow:
 //   1. CreateVulkanVideoEncoderExt() to create the encoder
@@ -1566,7 +1571,7 @@ struct VkVideoEncoderConfig {
 // External Frame Descriptor
 //
 // Describes a frame to encode that was allocated externally
-// (e.g. imported from DMA-BUF in a cross-process encoder service).
+// (e.g. imported from a DMA-BUF that another process exported).
 //=============================================================================
 struct VkVideoEncodeInputFrame {
     VkVideoEncoderStructureType sType =

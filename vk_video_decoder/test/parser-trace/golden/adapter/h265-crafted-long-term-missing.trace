@@ -1,0 +1,27 @@
+adapter-trace version=1 codec=h265 format=bytestream bytes=109 offsetAlignment=256 sizeAlignment=256
+seq index=0 codec=h265 width=64 height=64 chroma=2 bitDepth=8 profile=1 flags=progressive minDecodeSurfaces=5 maxDpbSlots=16 pictures=13
+session state=new maxDpbSlots=16 maxActiveReferencePictures=16
+pic index=0 idx=0 setup=0 refs=0
+  h265 poc=0 flags=irap|idr|isref before=[255,255,255,255,255,255,255,255] after=[255,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  setup slot=0 res=0 poc=0 flags=-
+  begin role=setup slot=-1 res=0
+disp idx=0 pts=0
+pkt index=0 offset=0 parsed=97
+pkt index=1 offset=97 parsed=12
+pic index=1 idx=1 setup=1 refs=1
+  h265 poc=1 flags=isref before=[0,255,255,255,255,255,255,255] after=[255,255,255,255,255,255,255,255] lt=[255,255,255,255,255,255,255,255]
+  setup slot=1 res=1 poc=1 flags=-
+  ref slot=0 res=0 poc=0 flags=-
+  begin role=ref slot=0 res=0
+  begin role=setup slot=-1 res=1
+disp idx=1 pts=333333
+pic index=2 idx=2 setup=2 refs=2
+  h265 poc=2 flags=isref before=[1,255,255,255,255,255,255,255] after=[255,255,255,255,255,255,255,255] lt=[255,0,255,255,255,255,255,255]
+  setup slot=2 res=2 poc=2 flags=-
+  ref slot=0 res=0 poc=0 flags=lt
+  ref slot=1 res=1 poc=1 flags=-
+  begin role=ref slot=0 res=0
+  begin role=ref slot=1 res=1
+  begin role=setup slot=-1 res=2
+disp idx=2 pts=666666
+eos pictures=3 displayed=3

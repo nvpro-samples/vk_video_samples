@@ -66,6 +66,17 @@ struct Settings {
     uint32_t refsL1 = 1;
     // H.264: the DPB size the level allows for the picture size (levelLimits[].maxDPB), at most 16.
     uint32_t levelDpbSize = 16;
+    // The device's VkVideoCapabilitiesKHR::maxDpbSlots.
+    uint32_t maxDpbSlots = 17;
+    // AV1: the device's VkVideoCapabilitiesKHR::maxActiveReferencePictures and the reference
+    // capabilities of VkVideoEncodeAV1CapabilitiesKHR. The defaults are those of a device that
+    // allows every reference name.
+    uint32_t maxActiveRefs = 7;
+    uint32_t av1Single[2] = {7, 0x7f};       // maxSingleReferenceCount, singleReferenceNameMask
+    uint32_t av1Unidir[3] = {4, 4, 0xf};     // count, group 1 count, name mask
+    uint32_t av1Bidir[4] = {7, 4, 3, 0x7f};  // count, group 1 count, group 2 count, name mask
+    // VK_VIDEO_ENCODE_AV1_CAPABILITY_PRIMARY_REFERENCE_CDF_ONLY_BIT_KHR.
+    bool av1CdfOnly = true;
 };
 
 // One trace line: a tag and key=value tokens, arrays as [a,b], flags as a|b or "-".
@@ -175,10 +186,11 @@ class H264Driver : public CodecDriver {
    public:
     H264Driver(const Settings& settings, const VkVideoGopStructure& gop, FILE* out)
         : m_out(out), m_dpb(VkEncDpbH264::CreateInstance()) {
-        // EncoderConfigH264::InitDpbCount, then VkVideoEncoder::InitEncoder's min(.., 16u).
+        // EncoderConfigH264::InitDpbCount, then VkVideoEncoder::InitEncoder's min(.., 16u, maxDpbSlots),
+        // which it writes back to dpbCount.
         const uint32_t numRefFrames = settings.refsL0 + settings.refsL1;
         const uint32_t dpbCount = ((numRefFrames > 0) ? std::min(numRefFrames, settings.levelDpbSize) : settings.levelDpbSize) + 1;
-        m_maxDpbPicturesCount = std::min(dpbCount, 16u);
+        m_maxDpbPicturesCount = std::min({dpbCount, 16u, settings.maxDpbSlots});
 
         // EncoderConfigH264::InitSpsPpsParameters: the fields the DPB and the reference lists read.
         m_sps.flags.frame_mbs_only_flag = 1;
@@ -193,8 +205,9 @@ class H264Driver : public CodecDriver {
                 m_sps.max_num_ref_frames =
                     static_cast<uint8_t>(m_sps.max_num_ref_frames + m_pps.num_ref_idx_l1_default_active_minus1 + 1U);
             }
-            m_sps.max_num_ref_frames = std::min(m_sps.max_num_ref_frames, static_cast<uint8_t>(dpbCount));
         }
+        m_sps.max_num_ref_frames =
+            std::min(m_sps.max_num_ref_frames, static_cast<uint8_t>(std::max(static_cast<int32_t>(m_maxDpbPicturesCount) - 1, 0)));
         m_sps.pic_order_cnt_type = (gop.GetConsecutiveBFrameCount() > 0) ? STD_VIDEO_H264_POC_TYPE_0 : STD_VIDEO_H264_POC_TYPE_2;
 
         m_dpb->DpbSequenceStart(static_cast<int32_t>(m_maxDpbPicturesCount));
@@ -311,23 +324,32 @@ class H264Driver : public CodecDriver {
                 const bool available = m_dpb->GetRefPicture(slot, image);
                 StdVideoEncodeH264ReferenceInfo info{};
                 m_dpb->FillStdReferenceInfo(static_cast<uint8_t>(slot), &info);
-                Line("  ref")
-                    .Num("slot", slot)
-                    .Num("pic", available ? m_images.Owner(image) : -1)
-                    .Num("FrameNum", info.FrameNum)
-                    .Num("PicOrderCnt", info.PicOrderCnt)
-                    .Num("long_term_frame_idx", info.long_term_frame_idx)
-                    .Num("primary_pic_type", info.primary_pic_type)
-                    .Flags("flags", {{"lt", info.flags.used_for_long_term_reference}})
+                TraceReferenceInfo(Line("  ref").Num("slot", slot).Num("pic", available ? m_images.Owner(image) : -1), info)
                     .Emit(m_out);
             }
         }
 
         const int8_t setupSlot = m_dpb->DpbPictureEnd(&pictureInfo, setupImage, &m_sps, &slice, &refListsInfo, 10);
-        Line("  setup").Num("slot", setupSlot).Emit(m_out);
+        // The reference information of the setup slot, filled from the slot as the encoder does.
+        StdVideoEncodeH264ReferenceInfo setupInfo{};
+        if ((setupSlot >= 0) && (setupSlot < m_dpb->GetMaxDPBSize())) {
+            m_dpb->FillStdReferenceInfo(static_cast<uint8_t>(setupSlot), &setupInfo);
+        }
+        TraceReferenceInfo(Line("  setup").Num("slot", setupSlot), setupInfo).Emit(m_out);
     }
 
    private:
+    // Every member of the structure FillStdReferenceInfo fills.
+    static Line& TraceReferenceInfo(Line& line, const StdVideoEncodeH264ReferenceInfo& info) {
+        return line.Num("FrameNum", info.FrameNum)
+            .Num("PicOrderCnt", info.PicOrderCnt)
+            .Num("long_term_pic_num", info.long_term_pic_num)
+            .Num("long_term_frame_idx", info.long_term_frame_idx)
+            .Num("primary_pic_type", info.primary_pic_type)
+            .Num("temporal_id", info.temporal_id)
+            .Flags("flags", {{"lt", info.flags.used_for_long_term_reference}});
+    }
+
     FILE* m_out;
     VkEncDpbH264* m_dpb;
     Images m_images;
@@ -343,9 +365,10 @@ class H265Driver : public CodecDriver {
    public:
     H265Driver(const Settings& settings, const VkVideoGopStructure&, FILE* out) : m_out(out), m_settings(settings) {
         // EncoderConfigH265::InitDpbCount (VerifyDpbSize keeps 5 at the levels the encoder picks),
-        // then VkVideoEncoder::InitEncoder's min(.., 16u).
-        const uint32_t dpbCount = 5;
-        m_maxDpbPicturesCount = std::min(dpbCount, 16u);
+        // then VkVideoEncoder::InitEncoder's min(.., 16u, maxDpbSlots), which it writes back to
+        // dpbCount.
+        const uint32_t dpbCount = std::min({5u, 16u, settings.maxDpbSlots});
+        m_maxDpbPicturesCount = dpbCount;
 
         // EncoderConfigH265::InitParamameters and InitializeSpsRefPicSet.
         m_sps.log2_max_pic_order_cnt_lsb_minus4 = 4;
@@ -396,8 +419,7 @@ class H265Driver : public CodecDriver {
                                                ? 1
                                                : 0;
         frame.h265Info.flags.pic_output_flag = 1;
-        frame.h265Info.flags.no_output_of_prior_pics_flag =
-            ((frame.gop.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) && (frame.inputNum != 0)) ? 1 : 0;
+        frame.h265Info.flags.no_output_of_prior_pics_flag = 0;
         frame.h265Info.pic_type = type;
         frame.h265Info.PicOrderCntVal = static_cast<int32_t>(frame.picOrderCntVal);
         frame.h265Info.TemporalId = 0;
@@ -434,8 +456,7 @@ class H265Driver : public CodecDriver {
 
         VkSharedBaseObj<VulkanVideoImagePoolNode> setupImage = m_images.New(frame.inputNum);
         VkEncDpbH265::RefPicSet refPicSet{};
-        const int8_t setupSlot =
-            m_dpb.DpbPictureStart(frame.inputNum, &info, rps, nullptr, maxPicOrderCntLsb, frame.timeStamp, &refPicSet);
+        const int8_t setupSlot = m_dpb.DpbPictureStart(&info, rps, nullptr, maxPicOrderCntLsb, frame.timeStamp, &refPicSet);
 
         StdVideoEncodeH265ReferenceListsInfo refLists{};
         const bool inter = (picType == VkVideoGopStructure::FRAME_TYPE_P) || (picType == VkVideoGopStructure::FRAME_TYPE_B);
@@ -497,21 +518,28 @@ class H265Driver : public CodecDriver {
                     const bool available = m_dpb.GetRefPicture(static_cast<int8_t>(slot), image);
                     StdVideoEncodeH265ReferenceInfo refInfo{};
                     m_dpb.FillStdReferenceInfo(slot, &refInfo);
-                    Line("  ref")
-                        .Num("slot", slot)
-                        .Num("pic", available ? m_images.Owner(image) : -1)
-                        .Num("PicOrderCntVal", refInfo.PicOrderCntVal)
-                        .Num("pic_type", refInfo.pic_type)
-                        .Flags("flags",
-                               {{"lt", refInfo.flags.used_for_long_term_reference}, {"unused", refInfo.flags.unused_for_reference}})
+                    TraceReferenceInfo(Line("  ref").Num("slot", slot).Num("pic", available ? m_images.Owner(image) : -1), refInfo)
                         .Emit(m_out);
                 }
             }
         }
-        Line("  setup").Num("slot", setupSlot).Emit(m_out);
+        // The reference information of the setup slot, filled from the slot as the encoder does.
+        StdVideoEncodeH265ReferenceInfo setupInfo{};
+        if (setupSlot >= 0) {
+            m_dpb.FillStdReferenceInfo(static_cast<uint8_t>(setupSlot), &setupInfo);
+        }
+        TraceReferenceInfo(Line("  setup").Num("slot", setupSlot), setupInfo).Emit(m_out);
     }
 
    private:
+    // Every member of the structure FillStdReferenceInfo fills.
+    static Line& TraceReferenceInfo(Line& line, const StdVideoEncodeH265ReferenceInfo& info) {
+        return line.Num("PicOrderCntVal", info.PicOrderCntVal)
+            .Num("pic_type", info.pic_type)
+            .Num("TemporalId", info.TemporalId)
+            .Flags("flags", {{"lt", info.flags.used_for_long_term_reference}, {"unused", info.flags.unused_for_reference}});
+    }
+
     void TraceRps(const char* tag, const StdVideoH265ShortTermRefPicSet& rps) const {
         Line(tag)
             .Num("num_negative_pics", rps.num_negative_pics)
@@ -536,26 +564,26 @@ class H265Driver : public CodecDriver {
 // VkVideoEncoderAV1 with EncoderConfigAV1.
 class AV1Driver : public CodecDriver {
    public:
-    AV1Driver(const VkVideoGopStructure& gop, FILE* out)
+    AV1Driver(const Settings& settings, const VkVideoGopStructure& gop, FILE* out)
         : m_out(out), m_config(new EncoderConfigAV1()), m_dpb(VkEncDpbAV1::CreateInstance()) {
         m_config->gopStructure = gop;
         m_config->enableIntraRefresh = false;
-        // The reference capabilities of a device that allows every reference name: up to seven
-        // single references, four unidirectional compound and seven bidirectional compound
-        // (four in group 1, three in group 2).
+        // The device's reference capabilities (Settings).
+        m_config->videoCapabilities.maxActiveReferencePictures = settings.maxActiveRefs;
         VkVideoEncodeAV1CapabilitiesKHR& caps = m_config->av1EncodeCapabilities;
-        caps.maxSingleReferenceCount = 7;
-        caps.singleReferenceNameMask = 0x7f;
-        caps.maxUnidirectionalCompoundReferenceCount = 4;
-        caps.maxUnidirectionalCompoundGroup1ReferenceCount = 4;
-        caps.unidirectionalCompoundReferenceNameMask = 0xf;
-        caps.maxBidirectionalCompoundReferenceCount = 7;
-        caps.maxBidirectionalCompoundGroup1ReferenceCount = 4;
-        caps.maxBidirectionalCompoundGroup2ReferenceCount = 3;
-        caps.bidirectionalCompoundReferenceNameMask = 0x7f;
+        caps.maxSingleReferenceCount = settings.av1Single[0];
+        caps.singleReferenceNameMask = settings.av1Single[1];
+        caps.maxUnidirectionalCompoundReferenceCount = settings.av1Unidir[0];
+        caps.maxUnidirectionalCompoundGroup1ReferenceCount = settings.av1Unidir[1];
+        caps.unidirectionalCompoundReferenceNameMask = settings.av1Unidir[2];
+        caps.maxBidirectionalCompoundReferenceCount = settings.av1Bidir[0];
+        caps.maxBidirectionalCompoundGroup1ReferenceCount = settings.av1Bidir[1];
+        caps.maxBidirectionalCompoundGroup2ReferenceCount = settings.av1Bidir[2];
+        caps.bidirectionalCompoundReferenceNameMask = settings.av1Bidir[3];
+        caps.flags = settings.av1CdfOnly ? VK_VIDEO_ENCODE_AV1_CAPABILITY_PRIMARY_REFERENCE_CDF_ONLY_BIT_KHR : 0;
 
-        // EncoderConfigAV1::InitDpbCount, then VkVideoEncoder::InitEncoder's min(.., 16u).
-        m_maxDpbPicturesCount = std::min<uint32_t>(STD_VIDEO_AV1_NUM_REF_FRAMES + 1, 16u);
+        // EncoderConfigAV1::InitDpbCount, then VkVideoEncoder::InitEncoder's min(.., 16u, maxDpbSlots).
+        m_maxDpbPicturesCount = AV1DpbSize(settings);
         // EncoderConfigAV1::InitSequenceHeader: the fields the DPB and the frame header read.
         m_seqHdr.flags.frame_id_numbers_present_flag = 0;
         m_seqHdr.additional_frame_id_length_minus_1 = FRAME_ID_BITS - DELTA_FRAME_ID_BITS - 1;
@@ -564,11 +592,25 @@ class AV1Driver : public CodecDriver {
         m_seqHdr.order_hint_bits_minus_1 = ORDER_HINT_BITS - 1;
 
         m_dpb->DpbSequenceStart(m_config, m_maxDpbPicturesCount);
-        Line("config")
-            .Str("codec", "av1")
+        Line config("config");
+        config.Str("codec", "av1")
             .Num("dpbSize", m_maxDpbPicturesCount)
             .Num("order_hint_bits", m_seqHdr.order_hint_bits_minus_1 + 1)
-            .Emit(m_out);
+            .Num("max_active_refs", settings.maxActiveRefs)
+            .Array("single", settings.av1Single, 2)
+            .Array("unidir", settings.av1Unidir, 3)
+            .Array("bidir", settings.av1Bidir, 4);
+        // The line names the CDF-only capability only for a device without it.
+        if (!settings.av1CdfOnly) {
+            config.Num("cdf_only_primary", 0);
+        }
+        config.Emit(m_out);
+    }
+
+    // EncoderConfigAV1::InitDpbCount, then VkVideoEncoder::InitEncoder's min(.., 16u, maxDpbSlots).
+    // VkVideoEncoderAV1::InitEncoderCodec refuses fewer than STD_VIDEO_AV1_NUM_REF_FRAMES.
+    static uint32_t AV1DpbSize(const Settings& settings) {
+        return std::min({static_cast<uint32_t>(STD_VIDEO_AV1_NUM_REF_FRAMES + 1), 16u, settings.maxDpbSlots});
     }
 
     // As ~VkVideoEncoderAV1.
@@ -635,6 +677,7 @@ class AV1Driver : public CodecDriver {
         if (!frame.showExistingFrame) {
             m_dpb->SetupReferenceFrameGroups(frame.gop.pictureType, frame.av1Info.frame_type,
                                              static_cast<uint32_t>(frame.picOrderCntVal));
+            frame.av1Info.primary_ref_frame = static_cast<uint8_t>(m_dpb->ResolvePrimaryRefFrame());
             if ((frame.gop.pictureType == VkVideoGopStructure::FRAME_TYPE_B) && (m_dpb->GetNumRefsL1() == 0)) {
                 frame.gop.pictureType = VkVideoGopStructure::FRAME_TYPE_P;
                 m_numBFramesToEncode--;
@@ -659,7 +702,7 @@ class AV1Driver : public CodecDriver {
         if (frame.showExistingFrame) {
             frame.av1Info.refresh_frame_flags =
                 static_cast<uint8_t>(m_dpb->GetRefreshFrameFlags(frame.shownKeyFrameOrSwitch, frame.showExistingFrame));
-            TraceHeader(frame, refName, nullptr);
+            TraceHeader(frame, refName, nullptr, false);
             m_dpb->DpbPictureEnd(dpbIndx, setupImage, &m_seqHdr, frame.showExistingFrame, frame.shownKeyFrameOrSwitch,
                                  frame.av1Info.flags.error_resilient_mode, frame.overlayFrame, refName, frameUpdateType);
             Line("  shown").Num("slot", dpbIndx).Num("buffer", frame.frameToShowBufId).Emit(m_out);
@@ -683,7 +726,7 @@ class AV1Driver : public CodecDriver {
         auto isBound = [&](const VkSharedBaseObj<VulkanVideoImagePoolNode>& image) {
             return std::any_of(bound.begin(), bound.end(), [&](const auto& entry) { return entry.second.get() == image.get(); });
         };
-        bool primaryRefCdfOnly = true;
+        bool primaryRefCdfOnly = (frame.av1Info.primary_ref_frame != STD_VIDEO_AV1_PRIMARY_REF_NONE);
         for (int32_t groupId = 0; groupId < 2; groupId++) {
             for (int32_t i = 0; i < m_dpb->GetNumRefsInGroup(groupId); i++) {
                 const int32_t refNameMinus1 = m_dpb->GetRefNameMinus1(groupId, i);
@@ -715,7 +758,7 @@ class AV1Driver : public CodecDriver {
                 names[frame.av1Info.primary_ref_frame] = dpbIdx;
             }
         }
-        TraceHeader(frame, refName, names);
+        TraceHeader(frame, refName, names, primaryRefCdfOnly);
         for (const auto& entry : bound) {
             StdVideoEncodeAV1ReferenceInfo info{};
             m_dpb->FillStdReferenceInfo(static_cast<uint8_t>(entry.first), &info);
@@ -781,7 +824,7 @@ class AV1Driver : public CodecDriver {
             m_dpb->GetPrimaryRefFrame(info.frame_type, refName, info.flags.error_resilient_mode, frame.overlayFrame));
     }
 
-    void TraceHeader(const Frame& frame, StdVideoAV1ReferenceName refName, const int32_t* names) const {
+    void TraceHeader(const Frame& frame, StdVideoAV1ReferenceName refName, const int32_t* names, bool cdfOnly) const {
         const StdVideoEncodeAV1PictureInfo& info = frame.av1Info;
         Line line("  av1");
         line.Num("frame_type", info.frame_type)
@@ -792,11 +835,12 @@ class AV1Driver : public CodecDriver {
                              {"error_resilient_mode", info.flags.error_resilient_mode},
                              {"overlay", frame.overlayFrame}})
             .Num("order_hint", info.order_hint)
+            .Num("current_frame_id", info.current_frame_id)
             .Num("primary_ref_frame", info.primary_ref_frame)
             .Array("ref_frame_idx", info.ref_frame_idx, STD_VIDEO_AV1_REFS_PER_FRAME)
             .Array("ref_order_hint", info.ref_order_hint, STD_VIDEO_AV1_NUM_REF_FRAMES);
         if (names != nullptr) {
-            line.Array("names", names, STD_VIDEO_AV1_REFS_PER_FRAME);
+            line.Array("names", names, STD_VIDEO_AV1_REFS_PER_FRAME).Num("cdf_only", cdfOnly);
         }
         line.Emit(m_out);
     }
@@ -820,15 +864,32 @@ class AV1Driver : public CodecDriver {
     uint64_t m_encodeEncodeFrameNum = 0;
 };
 
+// "a:b:..." into count values (each decimal or 0x hexadecimal).
+bool ParseCounts(const char* text, uint32_t* values, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        char* end = nullptr;
+        values[i] = static_cast<uint32_t>(strtoul(text, &end, 0));
+        if ((end == text) || (*end != ((i + 1 < count) ? ':' : '\0'))) {
+            return false;
+        }
+        text = end + 1;
+    }
+    return true;
+}
+
 int Usage(const char* program) {
     fprintf(stderr,
             "Usage: %s --codec h264|h265|av1 [-o <trace>] [--frames N] [--gop N] [--idr N] [--bframes N] [--closed-gop]\n"
-            "          [--refs-l0 N] [--refs-l1 N] [--level-dpb N]\n"
+            "          [--refs-l0 N] [--refs-l1 N] [--level-dpb N] [--max-dpb-slots N] [--max-active-refs N]\n"
+            "          [--av1-single N:MASK] [--av1-unidir N:G1:MASK] [--av1-bidir N:G1:G2:MASK] [--av1-cdf-only 0|1]\n"
             "       %s --asserts\n"
             "Drives the encoder's DPB class through a GOP sequence as the encoder does, and writes the\n"
             "setup slot, reference lists or names, and references of every picture. --refs-l0, --refs-l1\n"
-            "and --level-dpb apply to H.264 and H.265. --asserts prints whether the\n"
-            "encoder library was built with assertions.\n",
+            "and --level-dpb apply to H.264 and H.265. --max-dpb-slots is the device's maxDpbSlots;\n"
+            "--max-active-refs and the --av1- options give AV1 the device's maxActiveReferencePictures\n"
+            "and reference capabilities (counts, group counts and name masks), --av1-cdf-only whether it\n"
+            "takes a primary reference frame for its CDFs only (1). --asserts prints whether the encoder\n"
+            "library was built with assertions.\n",
             program, program);
     return 2;
 }
@@ -874,6 +935,24 @@ int main(int argc, char** argv) {
             settings.refsL1 = static_cast<uint32_t>(strtoul(value, nullptr, 0));
         } else if (arg == "--level-dpb") {
             settings.levelDpbSize = static_cast<uint32_t>(strtoul(value, nullptr, 0));
+        } else if (arg == "--max-dpb-slots") {
+            settings.maxDpbSlots = static_cast<uint32_t>(strtoul(value, nullptr, 0));
+        } else if (arg == "--max-active-refs") {
+            settings.maxActiveRefs = static_cast<uint32_t>(strtoul(value, nullptr, 0));
+        } else if (arg == "--av1-single") {
+            if (!ParseCounts(value, settings.av1Single, 2)) {
+                return Usage(argv[0]);
+            }
+        } else if (arg == "--av1-unidir") {
+            if (!ParseCounts(value, settings.av1Unidir, 3)) {
+                return Usage(argv[0]);
+            }
+        } else if (arg == "--av1-bidir") {
+            if (!ParseCounts(value, settings.av1Bidir, 4)) {
+                return Usage(argv[0]);
+            }
+        } else if (arg == "--av1-cdf-only") {
+            settings.av1CdfOnly = (strtoul(value, nullptr, 0) != 0);
         } else {
             return Usage(argv[0]);
         }
@@ -901,6 +980,7 @@ int main(int argc, char** argv) {
         .Num("refs_l0", settings.refsL0)
         .Num("refs_l1", settings.refsL1)
         .Num("level_dpb", settings.levelDpbSize)
+        .Num("max_dpb_slots", settings.maxDpbSlots)
         .Emit(out);
 
     // EncoderConfig's GOP, initialized as VkVideoEncoder::InitEncoder does.
@@ -913,8 +993,15 @@ int main(int argc, char** argv) {
         driver = std::make_unique<H264Driver>(settings, gop, out);
     } else if (settings.codec == "h265") {
         driver = std::make_unique<H265Driver>(settings, gop, out);
+    } else if (AV1Driver::AV1DpbSize(settings) < STD_VIDEO_AV1_NUM_REF_FRAMES) {
+        // VkVideoEncoderAV1::InitEncoderCodec refuses the session.
+        Line("refused").Num("dpbSize", AV1Driver::AV1DpbSize(settings)).Emit(out);
+        if (out != stdout) {
+            fclose(out);
+        }
+        return 1;
     } else {
-        driver = std::make_unique<AV1Driver>(gop, out);
+        driver = std::make_unique<AV1Driver>(settings, gop, out);
     }
 
     // VkVideoEncoder::EncodeFrame and EnqueueFrame: the deferred queue in GOP encode order, held

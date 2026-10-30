@@ -199,15 +199,12 @@ These are tracked in `preset_review_report.md`.
 
 ## 9. Note on `tuningMode` in JSON
 
-These preset JSON files include a `tuningMode` field for clarity and future-proofing.
-If your local JSON schema/loader does not yet recognize `tuningMode`, pass it explicitly via CLI:
-
-```bash
---tuningMode highquality
---tuningMode lowlatency
---tuningMode ultralowlatency
---tuningMode lossless
-```
+Each preset sets its tuning mode with the `tuningMode` key, which takes the names `--tuningMode`
+takes (`default`, `highquality`, `lowlatency`, `ultralowlatency`, `lossless`). A `--tuningMode` on
+the command line overrides it, as every command-line option overrides the JSON file. The loader
+refuses a file with a key `encoder_config.schema.json` does not define, or with a tuning mode it
+does not know, so a misspelt setting stops the encode instead of being ignored. The device-free
+CTest `EncoderJsonProfiles` loads every preset and checks it against the schema.
 
 ## 10. Validation Checklist
 

@@ -18,6 +18,7 @@
 #include <atomic>
 #include <chrono>
 #include <iostream>
+#include <limits>
 #include <mutex>
 #include <vector>
 #include <array>
@@ -177,12 +178,18 @@ public:
     uint32_t m_inDecodeQueue : 1;
     uint32_t m_inDisplayQueue : 1;
     uint32_t m_ownedByConsummer : 1;
+    // The picture's displays queued and not yet taken, and taken by the consumer and not yet released: a
+    // picture shown again (AV1 show_existing_frame) is queued while the consumer holds its earlier display.
+    uint8_t m_displaysQueued{};
+    uint8_t m_displaysHeld{};
     // VPS
     VkSharedBaseObj<VkVideoRefCountBase>  stdVps;
     // SPS
     VkSharedBaseObj<VkVideoRefCountBase>  stdSps;
     // PPS
     VkSharedBaseObj<VkVideoRefCountBase>  stdPps;
+    // The session parameters object the picture is decoded with, held until the slot is reused.
+    VkSharedBaseObj<VkVideoRefCountBase>  sessionParameters;
     // The bitstream Buffer
     VkSharedBaseObj<VkVideoRefCountBase>  bitstreamData;
 
@@ -288,6 +295,9 @@ public:
     // External consumer semaphores (imported release semaphores from external processes)
     VkSemaphore                            m_externalConsumerSemaphores[NvPerFrameDecodeResources::MAX_EXTERNAL_CONSUMERS]{};
     DecodeFrameBufferIf::SemSyncTypeIdx    m_externalConsumerTypes[NvPerFrameDecodeResources::MAX_EXTERNAL_CONSUMERS]{};
+    // A consumer that did not release a picture within the bound of QueuePictureForDecode's wait;
+    // it is not waited for again.
+    bool                                   m_externalConsumerStopped[NvPerFrameDecodeResources::MAX_EXTERNAL_CONSUMERS]{};
     uint32_t                               m_numExternalConsumers{0};
 private:
     uint32_t                               m_numImages;
@@ -298,6 +308,11 @@ private:
 
 class VkVideoFrameBuffer : public VulkanVideoFrameBuffer {
 public:
+
+    // How long QueuePictureForDecode waits for an external consumer to release a picture. The
+    // dump pool, the slowest in-tree consumer, releases a picture within its own 10 s GPU wait
+    // plus the write.
+    static constexpr uint64_t externalConsumerWaitTimeoutNs = 20ULL * 1000ULL * 1000ULL * 1000ULL;
 
     VkVideoFrameBuffer(const VulkanDeviceContext* vkDevCtx)
         : m_vkDevCtx(vkDevCtx)
@@ -344,9 +359,13 @@ public:
 
         uint32_t flushedImages = 0;
         while (!m_displayFrames.empty()) {
-            int8_t pictureIndex = m_displayFrames.front();
+            int8_t pictureIndex = (int8_t)m_displayFrames.front().pictureIndex;
             assert((pictureIndex >= 0) && ((uint32_t)pictureIndex < m_perFrameDecodeImageSet.size()));
             m_displayFrames.pop();
+            assert(m_perFrameDecodeImageSet[(uint32_t)pictureIndex].m_displaysQueued > 0);
+            m_perFrameDecodeImageSet[(uint32_t)pictureIndex].m_displaysQueued--;
+            m_perFrameDecodeImageSet[(uint32_t)pictureIndex].m_inDisplayQueue =
+                (m_perFrameDecodeImageSet[(uint32_t)pictureIndex].m_displaysQueued > 0);
             if (m_perFrameDecodeImageSet[(uint32_t)pictureIndex].IsAvailable()) {
                 // The frame is not released yet - force release it.
                 m_perFrameDecodeImageSet[(uint32_t)pictureIndex].Release();
@@ -414,9 +433,11 @@ public:
         m_perFrameDecodeImageSet[picId].m_displayOrder = m_frameNumInDisplayOrder++;
         m_perFrameDecodeImageSet[picId].m_timestamp = pDispInfo->timestamp;
         m_perFrameDecodeImageSet[picId].m_inDisplayQueue = true;
+        m_perFrameDecodeImageSet[picId].m_displaysQueued++;
         m_perFrameDecodeImageSet[picId].AddRef();
 
-        m_displayFrames.push((uint8_t)picId);
+        m_displayFrames.push({(uint8_t)picId, m_perFrameDecodeImageSet[picId].m_displayOrder,
+                              m_perFrameDecodeImageSet[picId].m_timestamp});
 
         if (m_debug) {
             std::cout << "==> Queue Display Picture picIdx: " << (uint32_t)picId
@@ -449,16 +470,32 @@ public:
             m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence = false;
         }
 
-        // 3. External consumer TL semaphores (dump pool, presenter)
+        // 3. External consumer TL semaphores (dump pool, presenter). The wait is bounded: a
+        //    consumer that has not released the picture by then is reported, and the frame
+        //    buffer stops waiting for it, so that a consumer that died cannot stop the decode.
         for (uint32_t c = 0; c < m_perFrameDecodeImageSet.m_numExternalConsumers; c++) {
-            if (m_perFrameDecodeImageSet.m_externalConsumerSemaphores[c] != VK_NULL_HANDLE) {
+            if ((m_perFrameDecodeImageSet.m_externalConsumerSemaphores[c] != VK_NULL_HANDLE) &&
+                !m_perFrameDecodeImageSet.m_externalConsumerStopped[c]) {
                 uint64_t waitValue = m_perFrameDecodeImageSet[picId].m_externalConsumerDoneValues[c];
                 if (waitValue > 0) {
                     VkSemaphoreWaitInfo waitInfo{VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO};
                     waitInfo.semaphoreCount = 1;
                     waitInfo.pSemaphores = &m_perFrameDecodeImageSet.m_externalConsumerSemaphores[c];
                     waitInfo.pValues = &waitValue;
-                    m_vkDevCtx->WaitSemaphores(*m_vkDevCtx, &waitInfo, UINT64_MAX);
+                    const VkResult waitResult = m_vkDevCtx->WaitSemaphores(*m_vkDevCtx, &waitInfo,
+                                                                           externalConsumerWaitTimeoutNs);
+                    if (waitResult != VK_SUCCESS) {
+                        uint64_t currentValue = 0;
+                        m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx,
+                                                             m_perFrameDecodeImageSet.m_externalConsumerSemaphores[c],
+                                                             &currentValue);
+                        fprintf(stderr, "ERROR: external consumer %u did not release picture %d within %llu ms "
+                                "(waiting for %llu, at %llu, result %d); it is not waited for again\n",
+                                c, (int)picId,
+                                (unsigned long long)(externalConsumerWaitTimeoutNs / (1000ULL * 1000ULL)),
+                                (unsigned long long)waitValue, (unsigned long long)currentValue, waitResult);
+                        m_perFrameDecodeImageSet.m_externalConsumerStopped[c] = true;
+                    }
                 } else {
 #if 0
                     fprintf(stderr, " [External consumer %d: value=%llu of sem %llx SKIP]", c,
@@ -476,6 +513,7 @@ public:
         m_perFrameDecodeImageSet[picId].stdPps = pReferencedObjectsInfo->stdPps;
         m_perFrameDecodeImageSet[picId].stdSps = pReferencedObjectsInfo->stdSps;
         m_perFrameDecodeImageSet[picId].stdVps = pReferencedObjectsInfo->stdVps;
+        m_perFrameDecodeImageSet[picId].sessionParameters = pReferencedObjectsInfo->sessionParameters;
         m_perFrameDecodeImageSet[picId].bitstreamData = pReferencedObjectsInfo->bitstreamData;
         m_perFrameDecodeImageSet[picId].filterPoolNode = pReferencedObjectsInfo->filterPoolNode;
 
@@ -539,12 +577,18 @@ public:
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
         if (!m_displayFrames.empty()) {
             numberofPendingFrames = (int)m_displayFrames.size();
-            pictureIndex = m_displayFrames.front();
+            const DisplayQueueEntry display = m_displayFrames.front();
+            pictureIndex = display.pictureIndex;
             assert((pictureIndex >= 0) && ((uint32_t)pictureIndex < m_perFrameDecodeImageSet.size()));
-            assert(!(m_ownedByDisplayMask & (1 << pictureIndex)));
+            // The consumer may still hold an earlier display of the picture: each display is released on its own.
             m_ownedByDisplayMask |= (1 << pictureIndex);
             m_displayFrames.pop();
-            m_perFrameDecodeImageSet[pictureIndex].m_inDisplayQueue = false;
+            m_perFrameDecodeImageSet[pictureIndex].m_displayOrder = display.displayOrder;
+            m_perFrameDecodeImageSet[pictureIndex].m_timestamp = display.timestamp;
+            assert(m_perFrameDecodeImageSet[pictureIndex].m_displaysQueued > 0);
+            m_perFrameDecodeImageSet[pictureIndex].m_displaysQueued--;
+            m_perFrameDecodeImageSet[pictureIndex].m_displaysHeld++;
+            m_perFrameDecodeImageSet[pictureIndex].m_inDisplayQueue = (m_perFrameDecodeImageSet[pictureIndex].m_displaysQueued > 0);
             m_perFrameDecodeImageSet[pictureIndex].m_ownedByConsummer = true;
         }
 
@@ -647,12 +691,18 @@ public:
             assert((picId >= 0) && ((uint32_t)picId < m_perFrameDecodeImageSet.size()));
 
             assert(m_perFrameDecodeImageSet[picId].m_decodeOrder == pDecodedFrameRelease->decodeOrder);
-            assert(m_perFrameDecodeImageSet[picId].m_displayOrder == pDecodedFrameRelease->displayOrder);
+            // One of the picture's displays: the last one taken, or an earlier one of a picture shown again.
+            assert(pDecodedFrameRelease->displayOrder <= m_perFrameDecodeImageSet[picId].m_displayOrder);
 
             assert(m_ownedByDisplayMask & (1 << picId));
-            m_ownedByDisplayMask &= ~(1 << picId);
-            m_perFrameDecodeImageSet[picId].m_inDecodeQueue = false;
-            m_perFrameDecodeImageSet[picId].m_ownedByConsummer = false;
+            assert(m_perFrameDecodeImageSet[picId].m_displaysHeld > 0);
+            m_perFrameDecodeImageSet[picId].m_displaysHeld--;
+            if (m_perFrameDecodeImageSet[picId].m_displaysHeld == 0) {
+                m_ownedByDisplayMask &= ~(1 << picId);
+                m_perFrameDecodeImageSet[picId].m_ownedByConsummer = false;
+                m_perFrameDecodeImageSet[picId].m_inDecodeQueue = false;
+            }
+            // Each display took its own reference (QueueDecodedPictureForDisplay).
             m_perFrameDecodeImageSet[picId].Release();
 
             m_perFrameDecodeImageSet[picId].m_hasConsummerSignalFence = pDecodedFrameRelease->hasConsummerSignalFence;
@@ -676,6 +726,7 @@ public:
         }
         m_perFrameDecodeImageSet.m_externalConsumerSemaphores[idx] = importedReleaseSemaphore;
         m_perFrameDecodeImageSet.m_externalConsumerTypes[idx] = consumerType;
+        m_perFrameDecodeImageSet.m_externalConsumerStopped[idx] = false;
         m_perFrameDecodeImageSet.m_numExternalConsumers = idx + 1;
         return static_cast<int32_t>(idx);
     }
@@ -806,8 +857,9 @@ public:
     virtual vkPicBuffBase* ReservePictureBuffer()
     {
         std::lock_guard<std::mutex> lock(m_displayQueueMutex);
+        // The free picture decoded longest ago, whatever the others hold.
         int32_t foundPicId = -1;
-        int64_t minDecodeOrder = m_perFrameDecodeImageSet[0].m_decodeOrder + 1000;
+        int64_t minDecodeOrder = std::numeric_limits<int64_t>::max();
         uint32_t numAvailablePictures = 0;
         for (uint32_t picId = 0; picId < m_perFrameDecodeImageSet.size(); picId++) {
             if (m_perFrameDecodeImageSet[picId].IsAvailable()) {
@@ -853,7 +905,13 @@ private:
     const VulkanDeviceContext* m_vkDevCtx;
     mutable std::mutex       m_displayQueueMutex;
     NvPerFrameDecodeImageSet m_perFrameDecodeImageSet;
-    std::queue<uint8_t>      m_displayFrames;
+    // One display of a picture: a picture shown again is queued again, with the order and time of that display.
+    struct DisplayQueueEntry {
+        uint8_t  pictureIndex;
+        uint32_t displayOrder;
+        uint64_t timestamp;
+    };
+    std::queue<DisplayQueueEntry> m_displayFrames;
     VkQueryPool              m_queryPool;
     uint32_t                 m_ownedByDisplayMask;
     int32_t                  m_frameNumInDisplayOrder;
@@ -993,6 +1051,7 @@ void NvPerFrameDecodeResources::Deinit(const VulkanDeviceContext* vkDevCtx)
     stdPps = nullptr;
     stdSps = nullptr;
     stdVps = nullptr;
+    sessionParameters = nullptr;
     filterPoolNode = nullptr;
 
     if (vkDevCtx == nullptr) {

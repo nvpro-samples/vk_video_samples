@@ -104,6 +104,22 @@ public:
         return -1;
     }
 
+    virtual VkResult GetStreamResult() const override {
+        return m_vulkanVideoProcessor ? m_vulkanVideoProcessor->GetStreamResult() : VK_SUCCESS;
+    }
+
+    virtual VkResult GetVideoSequenceResult() const override {
+        return m_vulkanVideoProcessor ? m_vulkanVideoProcessor->GetVideoSequenceResult() : VK_SUCCESS;
+    }
+
+    virtual uint32_t GetVideoFrameCount() const override {
+        return m_vulkanVideoProcessor ? m_vulkanVideoProcessor->GetVideoFrameCount() : 0;
+    }
+
+    virtual uint64_t GetUnsupportedPictureCount() const override {
+        return m_vulkanVideoProcessor ? m_vulkanVideoProcessor->GetUnsupportedPictureCount() : 0;
+    }
+
     VulkanVideoDecoderImpl(const char* programName,
                            VulkanDeviceContext* pVkDevCtxt = nullptr)
     : m_pVkDevCtxt(pVkDevCtxt)

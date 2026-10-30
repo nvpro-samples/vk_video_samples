@@ -125,7 +125,7 @@ Examples:
     python run_all_video_tests.py --video-dir /data/videos
     python run_all_video_tests.py --video-dir /data/videos --validate
     python run_all_video_tests.py --video-dir /data/videos --encoder --aq
-    python run_all_video_tests.py --video-dir /data/videos --remote 192.168.122.216
+    python run_all_video_tests.py --video-dir /path/to/videos --remote <remote-host>
     python run_all_video_tests.py --video-dir /data/videos --quick --validate --local
 """
     )

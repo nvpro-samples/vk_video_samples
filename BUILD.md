@@ -66,11 +66,12 @@ Windows 10 or Windows 11 with the following software packages:
   - Example download link:
          For Windows x86_64 https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip
          For Windows ARM64  https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-winarm64-lgpl-shared.zip
+  - The Windows CI job builds with FFmpeg 9.0.2, gyan.dev's shared build ffmpeg-9.0.2-full_build-shared.zip, whose bin, include and lib folders have the same layout (download link and SHA-256 in .github/workflows/main.yml)
   - Extract to <APP_INSTALLED_LOC>\vk_video_decoder\bin\libs\ffmpeg
-  - Verify that <APP_INSTALLED_LOC>\vk_video_decoder\bin\libs\ffmpeg\win64\bin or <APP_INSTALLED_LOC>\vk_video_decoder\bin\libs\ffmpeg\winarm64\bin contains:
-    - avformat-59.dll
-    - avutil-59.dll
-    - avcodec-59.dll
+  - Verify that <APP_INSTALLED_LOC>\vk_video_decoder\bin\libs\ffmpeg\win64\bin or <APP_INSTALLED_LOC>\vk_video_decoder\bin\libs\ffmpeg\winarm64\bin contains, with the library major versions of the FFmpeg release (avcodec-63.dll for FFmpeg 9.0):
+    - avformat-*.dll
+    - avutil-*.dll
+    - avcodec-*.dll
   - Verify that <APP_INSTALLED_LOC>\vk_video_decoder\bin\libs\ffmpeg\win64\lib or <APP_INSTALLED_LOC>\vk_video_decoder\bin\libs\ffmpeg\winarm64\lib contains the corresponding .lib files
 
 ### Windows Build Commands

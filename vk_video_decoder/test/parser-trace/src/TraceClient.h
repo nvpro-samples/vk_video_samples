@@ -130,14 +130,31 @@ class TraceClientIf : public VkParserVideoDecodeClient {
 };
 
 // Writes every callback to out. Pictures come from a pool of poolSize, lowest free index first; an
-// allocation with none free fails and writes an alloc-failed line.
-std::unique_ptr<TraceClientIf> CreateTraceClient(FILE* out, VkVideoCodecOperationFlagBitsKHR codec, uint32_t poolSize);
+// allocation with none free fails and writes an alloc-failed line. With a non-negative failDecode,
+// the decode of that picture, counted from 0, fails as a decoder that cannot decode it fails, and
+// writes a pic-failed line.
+std::unique_ptr<TraceClientIf> CreateTraceClient(FILE* out, VkVideoCodecOperationFlagBitsKHR codec, uint32_t poolSize,
+                                                 int64_t failDecode = -1);
 
 // A bitstream buffer in host memory of at least size bytes, holding initialData: what a
 // GetBitstreamBuffer callback hands the parser. Returns the buffer's size.
 VkDeviceSize CreateHostBitstreamBuffer(VkDeviceSize size, VkDeviceSize offsetAlignment, VkDeviceSize sizeAlignment,
                                        const uint8_t* initialData, VkDeviceSize initialSize,
                                        VkSharedBaseObj<VulkanBitstreamBuffer>& buffer);
+
+// The host bitstream buffers of one client. Get() hands out a buffer the parser has released when one
+// has the size and alignments a new buffer would have, zero-filled and holding initialData as a new
+// one does, so the parser cannot tell the two apart; otherwise it creates one. A new buffer per
+// picture is allocated, filled and freed each time, which under AddressSanitizer is most of a long
+// stream's run time.
+class HostBitstreamBufferPool {
+   public:
+    VkDeviceSize Get(VkDeviceSize size, VkDeviceSize offsetAlignment, VkDeviceSize sizeAlignment, const uint8_t* initialData,
+                     VkDeviceSize initialSize, VkSharedBaseObj<VulkanBitstreamBuffer>& buffer);
+
+   private:
+    std::vector<VkSharedBaseObj<VulkanBitstreamBuffer>> m_buffers;
+};
 
 // One IVF frame or AV1 temporal unit: one packet for the parser.
 struct Packet {

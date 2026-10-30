@@ -249,7 +249,9 @@ bool VulkanVP9Decoder::ParseFrameHeader(uint32_t framesize)
 
     //m_PicData.prevIsKeyFrame = m_PicData.keyFrame;
     //m_PicData.PrevShowFrame  = m_PicData.showFrame;
-    UpdateFramePointers(m_pCurrPic);
+    // A picture the client did not decode refreshes its buffers with no picture: a later frame
+    // that names one has no reference there.
+    UpdateFramePointers(bSkipped ? nullptr : m_pCurrPic);
 
     if (m_PicData.stdPictureInfo.flags.show_frame && !bSkipped) {
         // Call back codec for post-decode event (display the decoded frame)
@@ -377,6 +379,12 @@ bool VulkanVP9Decoder::ParseUncompressedHeader()
     pStdPicInfo->flags.show_frame = u(1);
     pStdPicInfo->flags.error_resilient_mode = u(1);
 
+    // A key or intra-only frame codes none of the inter-frame fields; the inter-frame branch below
+    // sets them.
+    pStdPicInfo->ref_frame_sign_bias_mask = 0;
+    pStdPicInfo->flags.allow_high_precision_mv = 0;
+    pStdPicInfo->interpolation_filter = STD_VIDEO_VP9_INTERPOLATION_FILTER_EIGHTTAP;
+
     if (pStdPicInfo->frame_type == STD_VIDEO_VP9_FRAME_TYPE_KEY) {
         VP9_CHECK_FRAME_SYNC_CODE;
         ParseColorConfig();
@@ -413,6 +421,15 @@ bool VulkanVP9Decoder::ParseUncompressedHeader()
             for (uint32_t i = 0; i < STD_VIDEO_VP9_REFS_PER_FRAME; i++) {
                 pPicData->ref_frame_idx[i] = u(3);
                 pStdPicInfo->ref_frame_sign_bias_mask |= (u(1) << (STD_VIDEO_VP9_REFERENCE_NAME_LAST_FRAME + i));
+            }
+            // An inter frame predicts from every buffer it names; one that names a buffer without a
+            // picture, as after a decode the client failed, is dropped.
+            for (uint32_t i = 0; i < STD_VIDEO_VP9_REFS_PER_FRAME; i++) {
+                if (m_pBuffers[pPicData->ref_frame_idx[i]].buffer == nullptr) {
+                    nvParserErrorLog("VP9 inter frame names reference buffer %u, which holds no picture\n",
+                                     pPicData->ref_frame_idx[i]);
+                    return false;
+                }
             }
 
             ParseFrameAndRenderSizeWithRefs();
@@ -466,8 +483,13 @@ bool VulkanVP9Decoder::ParseUncompressedHeader()
     pPicData->compressedHeaderOffset = (consumed_bits() + 7) >> 3;
     pPicData->tilesOffset = pPicData->compressedHeaderOffset + pPicData->compressedHeaderSize;
 
-    pPicData->ChromaFormat = (pStdColorConfig->subsampling_x == 1) && (pStdColorConfig->subsampling_y == 1) ? 1 : 0;
-    assert(pPicData->ChromaFormat); // TODO: support only YUV420
+    // Profiles 1 and 3 code 4:2:2, 4:4:0 and 4:4:4 too (VP9 7.2). Vulkan has no 4:4:0 format.
+    if ((pStdColorConfig->subsampling_x == 0) && (pStdColorConfig->subsampling_y == 1)) {
+        nvParserErrorLog("VP9 4:4:0 frame: Vulkan has no 4:4:0 chroma format\n");
+        return false;
+    }
+    // StdChromaFormatIdc: 1 is 4:2:0, 2 is 4:2:2, 3 is 4:4:4.
+    pPicData->ChromaFormat = pStdColorConfig->subsampling_x ? (pStdColorConfig->subsampling_y ? 1 : 2) : 3;
 
     return true;
 }
@@ -601,6 +623,11 @@ void VulkanVP9Decoder::ParseLoopFilterParams()
         m_loopFilterRefDeltas[3] = -1;
     }
 
+    // The update flag and masks describe this frame's syntax only.
+    pStdLoopFilter->flags.loop_filter_delta_update = 0;
+    pStdLoopFilter->update_ref_delta = 0;
+    pStdLoopFilter->update_mode_delta = 0;
+
     pStdLoopFilter->loop_filter_level =  u(6);
     pStdLoopFilter->loop_filter_sharpness = u(3);
 
@@ -628,7 +655,7 @@ void VulkanVP9Decoder::ParseLoopFilterParams()
                 if (update_mode_delta) {
                     m_loopFilterModeDeltas[i] = u(6);
                     if(u(1)) { // sign
-                        m_loopFilterModeDeltas[i] = -m_loopFilterRefDeltas[i];
+                        m_loopFilterModeDeltas[i] = -m_loopFilterModeDeltas[i];
                     }
                 }
             }
@@ -846,8 +873,9 @@ bool VulkanVP9Decoder::BeginPicture(VkParserPictureData* pnvpd)
         }
     }
 
+    // A sequence the client refuses drops its frames; the refusal is the client's answer, not an
+    // error of the parser.
     if (!init_sequence(&nvsi)) {
-        assert(!"init_sequence failed!");
         return false;
     }
 

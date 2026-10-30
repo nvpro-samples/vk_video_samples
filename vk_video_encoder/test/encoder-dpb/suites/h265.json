@@ -1,8 +1,6 @@
 {
   "codec": "h265",
-  "defects": {
-    "ref-pic-type": "VkEncDpbH265::FillStdReferenceInfo leaves pic_type at 0"
-  },
+  "defects": {},
   "configs": [
     {
       "name": "h265-ippp-1ref",
@@ -21,9 +19,7 @@
         "0"
       ],
       "golden": "../golden/h265-ippp-1ref.trace",
-      "known": [
-        "ref-pic-type"
-      ]
+      "known": []
     },
     {
       "name": "h265-ippp-4ref",
@@ -42,9 +38,7 @@
         "0"
       ],
       "golden": "../golden/h265-ippp-4ref.trace",
-      "known": [
-        "ref-pic-type"
-      ]
+      "known": []
     },
     {
       "name": "h265-ibbbp-open",
@@ -63,9 +57,7 @@
         "1"
       ],
       "golden": "../golden/h265-ibbbp-open.trace",
-      "known": [
-        "ref-pic-type"
-      ]
+      "known": []
     },
     {
       "name": "h265-ibbbp-closed",
@@ -85,9 +77,7 @@
         "--closed-gop"
       ],
       "golden": "../golden/h265-ibbbp-closed.trace",
-      "known": [
-        "ref-pic-type"
-      ]
+      "known": []
     },
     {
       "name": "h265-ib7p-4ref",
@@ -106,9 +96,7 @@
         "1"
       ],
       "golden": "../golden/h265-ib7p-4ref.trace",
-      "known": [
-        "ref-pic-type"
-      ]
+      "known": []
     },
     {
       "name": "h265-ippp-poc-wrap",
@@ -126,10 +114,50 @@
         "--refs-l1",
         "0"
       ],
-      "known": [
-        "ref-pic-type"
+      "known": [],
+      "md5": "cdc92a96944d81a1636601395a9a6f94"
+    },
+    {
+      "name": "h265-ippp-4ref-3slots",
+      "args": [
+        "--frames",
+        "64",
+        "--gop",
+        "30",
+        "--idr",
+        "60",
+        "--bframes",
+        "0",
+        "--refs-l0",
+        "4",
+        "--refs-l1",
+        "0",
+        "--max-dpb-slots",
+        "3"
       ],
-      "md5": "e7b7360f1f1927e7a55540c4fe9f14c4"
+      "md5": "0b515672aadfbc9706f2e52c948af355",
+      "known": []
+    },
+    {
+      "name": "h265-ibbbp-3slots",
+      "args": [
+        "--frames",
+        "64",
+        "--gop",
+        "16",
+        "--idr",
+        "60",
+        "--bframes",
+        "3",
+        "--refs-l0",
+        "2",
+        "--refs-l1",
+        "1",
+        "--max-dpb-slots",
+        "3"
+      ],
+      "md5": "796cb472df9dc309863f6078ab7765a3",
+      "known": []
     }
   ]
 }

@@ -26,11 +26,11 @@ const VkFormatDesc vkFormatInfo[] = {
     { VK_FORMAT_R8G8B8A8_UNORM,                 4,   4,        "rgba8",             },
     // The same texel class as R8G8B8A8_UNORM, and both carried here for the
     // same reason: the encoder accepts all three 8-bit RGBA spellings as
-    // filter inputs, so all three can reach shader generation, and a format
-    // this table does not hold has no image-format qualifier to declare its
-    // binding with. GLSL spells the qualifier by texel class rather than by
-    // component order -- there is no "bgra8" -- so the qualifier is "rgba8"
-    // for each, and the component order stays a property of the view.
+    // filter inputs, so all three can reach shader generation. The name is
+    // the texel class's. As a storage image format it fits R8G8B8A8_UNORM and
+    // A8B8G8R8_UNORM_PACK32, whose SPIR-V image format is Rgba8; SPIR-V has
+    // none for B8G8R8A8_UNORM, which the compute filter declares without one
+    // (GlslImageFormatQualifier).
     { VK_FORMAT_B8G8R8A8_UNORM,                 4,   4,        "rgba8",             },
     { VK_FORMAT_A8B8G8R8_UNORM_PACK32,          4,   4,        "rgba8",             },
     { VK_FORMAT_R32G32B32A32_SFLOAT,            4,  16,       "rgba32f",            },

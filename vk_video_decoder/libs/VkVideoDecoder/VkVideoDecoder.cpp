@@ -141,10 +141,20 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         std::cout << "\tcodec " << VkVideoCoreProfile::CodecToName(videoCodec) << std::endl;
     }
 
+    // A bit depth Vulkan Video has no flag for (a 9-bit chroma plane) has no profile to ask about.
+    if ((pVideoFormat->lumaBitDepth == VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR) ||
+        (pVideoFormat->chromaBitDepth == VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR)) {
+        std::cout << "*** The sequence's bit depth has no Vulkan Video profile ***" << std::endl;
+        m_videoSequenceResult = VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR;
+        return -1;
+    }
+
     VkVideoCoreProfile videoProfile(videoCodec, pVideoFormat->chromaSubsampling, pVideoFormat->lumaBitDepth, pVideoFormat->chromaBitDepth,
                                     pVideoFormat->codecProfile, pVideoFormat->canUseFields ?
                                         VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_INTERLACED_INTERLEAVED_LINES_BIT_KHR :
                                         VK_VIDEO_DECODE_H264_PICTURE_LAYOUT_PROGRESSIVE_KHR);
+    // A sequence with film grain parameters needs a session that applies film grain.
+    videoProfile.SetAV1FilmGrainSupport(pVideoFormat->filmGrainUsed ? VK_TRUE : VK_FALSE);
     if (!VulkanVideoCapabilities::IsCodecTypeSupported(m_vkDevCtx,
                                                        m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                                        videoCodec)) {
@@ -263,8 +273,26 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         return -1;
     }
 
-    imageExtent.width  = std::max(imageExtent.width, videoCapabilities.minCodedExtent.width);
-    imageExtent.height = std::max(imageExtent.height, videoCapabilities.minCodedExtent.height);
+    // A picture larger than the device decodes: no session can be created for it
+    // (VUID-VkVideoSessionCreateInfoKHR-maxCodedExtent-04851).
+    if ((imageExtent.width > videoCapabilities.maxCodedExtent.width) || (imageExtent.height > videoCapabilities.maxCodedExtent.height)) {
+        std::cout << "*** The coded extent " << imageExtent.width << " x " << imageExtent.height
+                  << " is larger than the device decodes (" << videoCapabilities.maxCodedExtent.width << " x "
+                  << videoCapabilities.maxCodedExtent.height << ") ***" << std::endl;
+        m_videoSequenceResult = VK_ERROR_FORMAT_NOT_SUPPORTED;
+        return -1;
+    }
+
+    // A picture smaller than the device decodes: every decode codes m_codedExtent, which must be at
+    // least minCodedExtent (VUID-vkCmdDecodeVideoKHR-pDecodeInfo-07145). The image extent, at least
+    // the coded extent, is then within the session's limits too.
+    if ((m_codedExtent.width < videoCapabilities.minCodedExtent.width) || (m_codedExtent.height < videoCapabilities.minCodedExtent.height)) {
+        std::cout << "*** The coded extent " << m_codedExtent.width << " x " << m_codedExtent.height
+                  << " is smaller than the device decodes (" << videoCapabilities.minCodedExtent.width << " x "
+                  << videoCapabilities.minCodedExtent.height << ") ***" << std::endl;
+        m_videoSequenceResult = VK_ERROR_FORMAT_NOT_SUPPORTED;
+        return -1;
+    }
 
     uint32_t alignWidth = videoCapabilities.pictureAccessGranularity.width - 1;
     imageExtent.width = ((imageExtent.width + alignWidth) & ~alignWidth);
@@ -291,11 +319,32 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         sessionCreateFlags |= VK_VIDEO_SESSION_CREATE_INLINE_QUERIES_BIT_KHR;
     }
 #endif // VK_KHR_video_maintenance1
-    if (VulkanVideoCapabilities::GetVideoMaintenance2FeatureSupported(m_vkDevCtx)) {
+    // Only a device created with VK_KHR_video_maintenance2, which CreateVulkanDevice() then creates with
+    // its videoMaintenance2 feature, takes the flag (VUID-VkVideoSessionCreateInfoKHR-flags-10398).
+    if ((m_vkDevCtx->FindRequiredDeviceExtension(VK_KHR_VIDEO_MAINTENANCE_2_EXTENSION_NAME) != nullptr) &&
+        VulkanVideoCapabilities::GetVideoMaintenance2FeatureSupported(m_vkDevCtx)) {
         sessionCreateFlags |= VK_VIDEO_SESSION_CREATE_INLINE_SESSION_PARAMETERS_BIT_KHR;
     }
 
     const VkExtent2D sessionMaxCodedExtent{imageExtent.width, imageExtent.height};
+
+    // The session's DPB slots: the sequence's, and for a sequence that reconfigures the current one
+    // at least the current session's, as the parser adapter keeps its larger slot range then
+    // (DpbSlots::Init). A smaller session would take slot indices at or above its maxDpbSlots.
+    uint32_t sessionMaxDpbSlots = maxDpbSlotCount;
+    if (pVideoFormat->sequenceUpdate && m_videoSession) {
+        sessionMaxDpbSlots = std::max(sessionMaxDpbSlots, m_videoSession->GetMaxDpbSlots());
+    }
+    sessionMaxDpbSlots = std::min(sessionMaxDpbSlots, videoCapabilities.maxDpbSlots);
+    // The active reference pictures: one per DPB slot, up to 16 references. A session that decodes
+    // fields takes every one the device allows, as a reference to both fields of a frame counts twice
+    // (VUID-vkCmdDecodeVideoKHR-activeReferencePictureCount-07150). The compatibility check asks for
+    // the counts the session is created with, so an unchanged sequence keeps its session.
+    uint32_t sessionMaxActiveReferencePictures = pVideoFormat->canUseFields ?
+            videoCapabilities.maxActiveReferencePictures :
+            std::min<uint32_t>(sessionMaxDpbSlots, VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS);
+    sessionMaxActiveReferencePictures = std::min(sessionMaxActiveReferencePictures, videoCapabilities.maxActiveReferencePictures);
+
     if (!m_videoSession ||
             !m_videoSession->IsCompatible( m_vkDevCtx,
                                            sessionCreateFlags,
@@ -304,8 +353,8 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                            outImageFormat,
                                            sessionMaxCodedExtent,
                                            dpbImageFormat,
-                                           maxDpbSlotCount,
-                                           std::max<uint32_t>(maxDpbSlotCount, VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS)) ) {
+                                           sessionMaxDpbSlots,
+                                           sessionMaxActiveReferencePictures) ) {
 
         result = VulkanVideoSession::Create( m_vkDevCtx,
                                              sessionCreateFlags,
@@ -314,14 +363,38 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                              outImageFormat,
                                              sessionMaxCodedExtent,
                                              dpbImageFormat,
-                                             maxDpbSlotCount,
-                                             std::min<uint32_t>(maxDpbSlotCount, VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS),
+                                             sessionMaxDpbSlots,
+                                             sessionMaxActiveReferencePictures,
                                              nullptr,
                                              m_videoSession);
 
         // after creating a new video session, we need codec reset.
         m_resetDecoder = VK_TRUE;
-        assert(result == VK_SUCCESS);
+        if (result != VK_SUCCESS) {
+            std::cout << "*** Could not create the video session: " << result << " ***" << std::endl;
+            m_videoSequenceResult = result;
+            return -1;
+        }
+
+        // The parameters objects made so far were created for the previous session, which a picture
+        // of this one cannot begin coding with (VUID-VkVideoBeginCodingInfoKHR-videoSessionParameters-04857).
+        // The pictures that follow take a new object, made for this session from the latest set of
+        // each key.
+        if (m_currentPictureParameters && !m_currentPictureParameters->IsForSession(m_videoSession)) {
+            VkSharedBaseObj<VkParserVideoPictureParameters> noTemplate;
+            VkSharedBaseObj<VkParserVideoPictureParameters> sessionPictureParameters;
+            result = VkParserVideoPictureParameters::Create(m_vkDevCtx, noTemplate, sessionPictureParameters);
+            if (result != VK_SUCCESS) {
+                m_videoSequenceResult = result;
+                return -1;
+            }
+            // The map orders the keys by type: VPS, then SPS, then PPS.
+            for (auto& entry : m_pictureParametersSets) {
+                sessionPictureParameters->AddPictureParametersToQueue(entry.second);
+            }
+            m_currentPictureParameters = sessionPictureParameters;
+            TrackPictureParameters(m_currentPictureParameters);
+        }
     }
 
     uint8_t imageSpecsIndex = 0;
@@ -824,13 +897,48 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
 bool VkVideoDecoder::UpdatePictureParameters(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersObject,
                                              VkSharedBaseObj<VkVideoRefCountBase>& client)
 {
+    if (pictureParametersObject) {
+        bool isId = false;
+        const std::array<int32_t, 4> key = {int32_t(pictureParametersObject->GetStdType()),
+                                            pictureParametersObject->GetVpsId(isId),
+                                            pictureParametersObject->GetSpsId(isId),
+                                            pictureParametersObject->GetPpsId(isId)};
+        m_pictureParametersSets[key] = pictureParametersObject;
+    }
+
+    const VkParserVideoPictureParameters* const previous = m_currentPictureParameters.get();
     VkResult result = VkParserVideoPictureParameters::AddPictureParameters(m_vkDevCtx,
                                                                            m_videoSession,
                                                                            pictureParametersObject,
                                                                            m_currentPictureParameters);
+    if (m_currentPictureParameters.get() != previous) {
+        TrackPictureParameters(m_currentPictureParameters);
+    }
 
     client = m_currentPictureParameters;
     return (result == VK_SUCCESS);
+}
+
+void VkVideoDecoder::TrackPictureParameters(const VkSharedBaseObj<VkParserVideoPictureParameters>& pictureParameters)
+{
+    m_pictureParametersObjects.erase(std::remove_if(m_pictureParametersObjects.begin(), m_pictureParametersObjects.end(),
+                                                    [](const std::weak_ptr<VkParserVideoPictureParameters>& made) {
+                                                        return made.expired();
+                                                    }),
+                                     m_pictureParametersObjects.end());
+    m_pictureParametersObjects.push_back(pictureParameters);
+}
+
+VkSharedBaseObj<VkVideoRefCountBase> VkVideoDecoder::FindPictureParametersSet(const StdVideoPictureParametersSet* set) const
+{
+    if (set != nullptr) {
+        for (const auto& entry : m_pictureParametersSets) {
+            if (entry.second.get() == set) {
+                return entry.second;
+            }
+        }
+    }
+    return nullptr;
 }
 
 bool VkVideoDecoder::RecordSyncTestBitstreamCopy(VkCommandBuffer commandBuffer, uint32_t slotId,
@@ -930,6 +1038,7 @@ bool VkVideoDecoder::RecordSyncTestBitstreamCopy(VkCommandBuffer commandBuffer, 
 int VkVideoDecoder::CopyOptimalToLinearImage(VkCommandBuffer& commandBuffer,
                                              const VkVideoPictureResourceInfoKHR& srcPictureResource,
                                              const VulkanVideoFrameBuffer::PictureResourceInfo& srcPictureResourceInfo,
+                                             VkImageLayout srcDecodeLayout,
                                              const VkVideoPictureResourceInfoKHR& dstPictureResource,
                                              const VulkanVideoFrameBuffer::PictureResourceInfo& dstPictureResourceInfo,
                                              const VulkanVideoFrameBuffer::FrameSynchronizationInfo* )
@@ -987,18 +1096,50 @@ int VkVideoDecoder::CopyOptimalToLinearImage(VkCommandBuffer& commandBuffer,
     copyRegion[1].dstSubresource.baseArrayLayer = dstPictureResourceInfo.baseArrayLayer;
     copyRegion[1].dstSubresource.layerCount = 1;
 
-    m_vkDevCtx->CmdCopyImage(commandBuffer, srcPictureResourceInfo.image, srcPictureResourceInfo.currentImageLayout,
-                                    dstPictureResourceInfo.image, dstPictureResourceInfo.currentImageLayout,
+    // The decode left the source picture in srcDecodeLayout (VIDEO_DECODE_DPB_KHR for the setup
+    // picture, VIDEO_DECODE_DST_KHR for a separate output); the copy reads it in TRANSFER_SRC_OPTIMAL
+    // and gives it back in srcDecodeLayout, the layout the frame buffer records for it. The linear
+    // image is written and left in GENERAL, the layout host access needs; its
+    // dstPictureResourceInfo.currentImageLayout is the layout it had before (UNDEFINED at first).
+    const VkImageSubresourceRange srcRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, srcPictureResourceInfo.baseArrayLayer, 1};
+    const VkImageSubresourceRange dstRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, dstPictureResourceInfo.baseArrayLayer, 1};
+    const VkImageMemoryBarrier2KHR beforeCopy[2] = {
+        {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR, nullptr,
+         VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR, VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR,
+         VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR, VK_ACCESS_2_TRANSFER_READ_BIT_KHR,
+         srcDecodeLayout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+         VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, srcPictureResourceInfo.image, srcRange},
+        {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR, nullptr,
+         VK_PIPELINE_STAGE_2_NONE_KHR, 0,
+         VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR, VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR,
+         dstPictureResourceInfo.currentImageLayout, VK_IMAGE_LAYOUT_GENERAL,
+         VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, dstPictureResourceInfo.image, dstRange},
+    };
+    VkDependencyInfoKHR dependencyInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR};
+    dependencyInfo.imageMemoryBarrierCount = 2;
+    dependencyInfo.pImageMemoryBarriers = beforeCopy;
+    m_vkDevCtx->CmdPipelineBarrier2KHR(commandBuffer, &dependencyInfo);
+
+    m_vkDevCtx->CmdCopyImage(commandBuffer, srcPictureResourceInfo.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                    dstPictureResourceInfo.image, VK_IMAGE_LAYOUT_GENERAL,
                                     (uint32_t)2, copyRegion);
 
-    {
-        VkMemoryBarrier memoryBarrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
-        memoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-        memoryBarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
-        m_vkDevCtx->CmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-                               1, &memoryBarrier, 0,
-                                0, 0, 0);
-    }
+    // The source goes back to the decodes that reference it; the copy's writes become visible to the
+    // host that reads the linear image.
+    const VkImageMemoryBarrier2KHR afterCopy[2] = {
+        {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR, nullptr,
+         VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR, 0,
+         VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR, VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR | VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR,
+         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, srcDecodeLayout,
+         VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, srcPictureResourceInfo.image, srcRange},
+        {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR, nullptr,
+         VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR, VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR,
+         VK_PIPELINE_STAGE_2_HOST_BIT_KHR, VK_ACCESS_2_HOST_READ_BIT_KHR,
+         VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL,
+         VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, dstPictureResourceInfo.image, dstRange},
+    };
+    dependencyInfo.pImageMemoryBarriers = afterCopy;
+    m_vkDevCtx->CmdPipelineBarrier2KHR(commandBuffer, &dependencyInfo);
 
     return 0;
 }
@@ -1205,9 +1346,11 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             pOutputPictureResource->codedExtent = pCurrFrameDecParams->dpbSetupPictureResource.codedExtent;
         }
 
-        // For Output Distinct transition the image to DECODE_DST
+        // For Output Distinct transition the image to DECODE_DST. The output is an image of its own: its
+        // layer is the one its view names, not the picture's layer of a DPB array.
         if (pOutputPictureResourceInfo->currentImageLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
             imageBarriers[numDpbBarriers] = dpbBarrierTemplates[0];
+            imageBarriers[numDpbBarriers].subresourceRange.baseArrayLayer = pOutputPictureResourceInfo->baseArrayLayer;
             imageBarriers[numDpbBarriers].oldLayout = pOutputPictureResourceInfo->currentImageLayout;
             imageBarriers[numDpbBarriers].newLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR;
             imageBarriers[numDpbBarriers].image = pOutputPictureResourceInfo->image;
@@ -1249,15 +1392,14 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
     if (filterOutImageSpecsIndex != InvalidImageTypeIdx) {
 
-        // FIXME: VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR is incorrect layout for linear or filtered output
+        // The compute filter writes its output in GENERAL, and the transfer copy writes the linear
+        // image in GENERAL, the layout host access needs (CopyOptimalToLinearImage).
         int resourceIndexFilter = m_videoFrameBuffer->GetCurrentImageResourceByIndex(
                                                                  pCurrFrameDecParams->currPicIdx,
                                                                  filterOutImageSpecsIndex,
                                                                  pFrameFilterOutResource,
                                                                  pFrameFilterOutResourceInfo,
-                                                                 (m_enableDecodeComputeFilter == VK_TRUE) ?
-                                                                         VK_IMAGE_LAYOUT_GENERAL :
-                                                                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                                                                 VK_IMAGE_LAYOUT_GENERAL);
 
         if (pCurrFrameDecParams->currPicIdx != resourceIndexFilter) {
             assert(!"GetImageResourcesByIndex has failed");
@@ -1290,7 +1432,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             // pictureResourcesInfo[resId].image can be a nullptr handle if the picture is not-existent.
             if (pictureResourcesInfo[resId].image && (pictureResourcesInfo[resId].currentImageLayout != VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR)) {
                 imageBarriers[numDpbBarriers] = dpbBarrierTemplates[0];
-                imageBarriers[numDpbBarriers].subresourceRange.baseArrayLayer = pCurrFrameDecParams->pictureResources[resId].baseArrayLayer;
+                // The reference's layer of the image: the picture resource's baseArrayLayer is relative
+                // to its view, which names the layer.
+                imageBarriers[numDpbBarriers].subresourceRange.baseArrayLayer = pictureResourcesInfo[resId].baseArrayLayer;
                 imageBarriers[numDpbBarriers].oldLayout = pictureResourcesInfo[resId].currentImageLayout;
                 imageBarriers[numDpbBarriers].newLayout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR;
                 imageBarriers[numDpbBarriers].image = pictureResourcesInfo[resId].image;
@@ -1319,12 +1463,9 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         }
     }
 
-    // Add setup reference slot details to decodeBeginInfo
-    decodeBeginInfo.referenceSlotCount = pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount +
-                                            (pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot ? 1 : 0);
-    decodeBeginInfo.pReferenceSlots = (pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount > 0) ?
-                                            pCurrFrameDecParams->decodeFrameInfo.pReferenceSlots :
-                                            pCurrFrameDecParams->decodeFrameInfo.pSetupReferenceSlot;
+    // The pictures begin-coding binds: the reference slots, and the setup picture with slot index -1.
+    decodeBeginInfo.referenceSlotCount = pCurrFrameDecParams->beginCodingReferenceSlotCount;
+    decodeBeginInfo.pReferenceSlots = pCurrFrameDecParams->pBeginCodingReferenceSlots;
 
     m_imageSpecsIndex.displayOut = ((m_dpbAndOutputCoincide == VK_TRUE) &&
                                     !(pDecodePictureInfo->flags.applyFilmGrain == VK_TRUE)) ?
@@ -1356,6 +1497,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     frameSynchronizationInfo.imageSpecsIndex = m_imageSpecsIndex;
 
     decodeBeginInfo.videoSessionParameters = VK_NULL_HANDLE;
+    // The parameters object the picture begins coding with: the picture holds it until it is done.
+    VkSharedBaseObj<VkVideoRefCountBase> boundPictureParameters;
     if (!pCurrFrameDecParams->useInlinedPictureParameters) {
         if (m_videoFormat.codec == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
             VkSharedBaseObj<VkVideoRefCountBase> currentVkPictureParameters;
@@ -1371,6 +1514,12 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             assert(pCurrFrameDecParams->pStdSps->GetStdType() == StdVideoPictureParametersSet::TYPE_AV1_SPS);
             assert(pOwnerPictureParameters);
             assert(m_currentPictureParameters);
+            // Given for a previous session: the current object holds every set for this one.
+            if (!pOwnerPictureParameters->IsForSession(m_videoSession)) {
+                pOwnerPictureParameters = m_currentPictureParameters.get();
+                currentVkPictureParameters = m_currentPictureParameters;
+            }
+            boundPictureParameters = currentVkPictureParameters;
             assert(pOwnerPictureParameters->GetId() <= m_currentPictureParameters->GetId());
             int32_t ret = pOwnerPictureParameters->FlushPictureParametersQueue(m_videoSession);
             assert(ret >= 0);
@@ -1394,6 +1543,12 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
                 VkParserVideoPictureParameters::VideoPictureParametersFromBase(currentVkPictureParameters.get());
             assert(pOwnerPictureParameters);
             assert(m_currentPictureParameters);
+            // Given for a previous session: the current object holds every set for this one.
+            if (!pOwnerPictureParameters->IsForSession(m_videoSession)) {
+                pOwnerPictureParameters = m_currentPictureParameters.get();
+                currentVkPictureParameters = m_currentPictureParameters;
+            }
+            boundPictureParameters = currentVkPictureParameters;
             assert(pOwnerPictureParameters->GetId() <= m_currentPictureParameters->GetId());
             int32_t ret = pOwnerPictureParameters->FlushPictureParametersQueue(m_videoSession);
             assert(ret >= 0);
@@ -1434,10 +1589,11 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
     VulkanVideoFrameBuffer::ReferencedObjectsInfo referencedObjectsInfo(
         pCurrFrameDecParams->bitstreamData,
-        m_currentPictureParameters ? m_currentPictureParameters->FindByRawPtr(pCurrFrameDecParams->pStdPps) : nullptr,
-        m_currentPictureParameters ? m_currentPictureParameters->FindByRawPtr(pCurrFrameDecParams->pStdSps) : nullptr,
-        m_currentPictureParameters ? m_currentPictureParameters->FindByRawPtr(pCurrFrameDecParams->pStdVps) : nullptr,
-        filterCmdBuffer);
+        FindPictureParametersSet(pCurrFrameDecParams->pStdPps),
+        FindPictureParametersSet(pCurrFrameDecParams->pStdSps),
+        FindPictureParametersSet(pCurrFrameDecParams->pStdVps),
+        filterCmdBuffer,
+        boundPictureParameters);
     int32_t retVal = m_videoFrameBuffer->QueuePictureForDecode(currPicIdx, pDecodePictureInfo,
                                                                &referencedObjectsInfo,
                                                                &frameSynchronizationInfo);
@@ -1536,6 +1692,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         CopyOptimalToLinearImage(frameDataSlot.commandBuffer,
                                  *pOutputPictureResource,
                                  *pOutputPictureResourceInfo,
+                                 useSeparateDecodeOutput ? VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR :
+                                                           VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR,
                                  *pFrameFilterOutResource,
                                  *pFrameFilterOutResourceInfo,
                                  &frameSynchronizationInfo);
@@ -2142,6 +2300,14 @@ void VkVideoDecoder::Deinitialize()
         m_currentPictureParameters->Reset();
         m_currentPictureParameters = nullptr;
     }
+    // Those a parameter set still holds included: their session parameters go before the device.
+    for (const std::weak_ptr<VkParserVideoPictureParameters>& made : m_pictureParametersObjects) {
+        if (VkSharedBaseObj<VkParserVideoPictureParameters> pictureParameters = made.lock()) {
+            pictureParameters->Reset();
+        }
+    }
+    m_pictureParametersObjects.clear();
+    m_pictureParametersSets.clear();
     m_videoSession = nullptr;
     m_yuvFilter = nullptr;
     m_vkDevCtx = nullptr;

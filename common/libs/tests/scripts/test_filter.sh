@@ -5,8 +5,9 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_DIR="${SCRIPT_DIR}/../../../../build"
-TEST_APP="${BUILD_DIR}/common/libs/tests/vk_filter_test"
+# The build directory: <repo>/build unless BUILD_DIR names another. The binary lands in its bin/.
+BUILD_DIR="${BUILD_DIR:-${SCRIPT_DIR}/../../../../build}"
+TEST_APP="${BUILD_DIR}/bin/vk_filter_test"
 
 # Colors for output
 RED='\033[0;31m'
@@ -27,7 +28,8 @@ if [ ! -f "${TEST_APP}" ]; then
     echo "Build it first:"
     echo "  mkdir -p ${BUILD_DIR} && cd ${BUILD_DIR}"
     echo "  cmake .. -DBUILD_TESTS=ON"
-    echo "  make -j\$(nproc) vk_filter_test"
+    echo "  cmake --build . --target vk_filter_test"
+    echo "or name another build directory: BUILD_DIR=<dir> $0"
     exit 1
 fi
 
@@ -47,28 +49,8 @@ while [[ $# -gt 0 ]]; do
             VERBOSE=1
             shift
             ;;
-        --smoke)
-            TEST_SUITE="smoke"
-            shift
-            ;;
-        --rgba2ycbcr)
-            TEST_SUITE="rgba2ycbcr"
-            shift
-            ;;
-        --ycbcr2rgba)
-            TEST_SUITE="ycbcr2rgba"
-            shift
-            ;;
-        --copy)
-            TEST_SUITE="copy"
-            shift
-            ;;
-        --transfer)
-            TEST_SUITE="transfer"
-            shift
-            ;;
-        --full)
-            TEST_SUITE="full"
+        --smoke|--all|--regression|--production|--primaries)
+            TEST_SUITE="${1#--}"
             shift
             ;;
         --test)
@@ -86,27 +68,20 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --validate, -v   Run with Vulkan validation layers"
             echo "  --verbose        Show verbose output"
-            echo "  --smoke          Run smoke tests only (default)"
-            echo "  --rgba2ycbcr     Run RGBA to YCbCr conversion tests"
-            echo "  --ycbcr2rgba     Run YCbCr to RGBA conversion tests (may fail - shader bug)"
-            echo "  --copy           Run YCbCr copy tests"
-            echo "  --transfer       Run transfer operation tests"
-            echo "  --full           Run all tests"
-            echo "  --test NAME      Run specific test by name"
-            echo "  --list           List all available tests"
+            echo "  --smoke          Run the smoke set (default)"
+            echo "  --all            Run every set but the disabled cases"
+            echo "  --regression     Run the regression set"
+            echo "  --production     Run the production set"
+            echo "  --primaries      Run the color primaries set"
+            echo "  --test NAME      Run one case by name, a disabled one included"
+            echo "  --list           List every set, and the disabled cases with their defects"
             echo "  --help, -h       Show this help"
             echo ""
-            echo "Test suites:"
-            echo "  smoke      - Quick sanity check (8 tests)"
-            echo "  rgba2ycbcr - RGBA to YCbCr conversions (8 formats)"
-            echo "  ycbcr2rgba - YCbCr to RGBA conversions (known shader bugs)"
-            echo "  copy       - YCbCr format copy operations"
-            echo "  transfer   - Pre/post transfer operations"
-            echo "  full       - All tests"
+            echo "The build directory is <repo>/build; set BUILD_DIR to name another."
             echo ""
             echo "Examples:"
             echo "  $0 --smoke -v              # Smoke tests with validation"
-            echo "  $0 --rgba2ycbcr            # All RGBA to YCbCr tests"
+            echo "  $0 --all                   # Every set"
             echo "  $0 --test TC001_RGBA_to_NV12  # Run specific test"
             exit 0
             ;;
@@ -144,9 +119,9 @@ echo "  ${CMD}"
 echo ""
 echo "=============================================="
 
-# Run the test
-${CMD}
-RESULT=$?
+# Run the test. Under set -e a failing run would end the script here, before the summary.
+RESULT=0
+${CMD} || RESULT=$?
 
 echo ""
 echo "=============================================="

@@ -136,20 +136,20 @@ IF (FFMPEG_LIBAVFORMAT_FOUND AND FFMPEG_LIBAVCODEC_FOUND AND STDINT_OK)
         ${FFMPEG_LIBX265_LIBRARIES})
 ENDIF()
 
-# Find FFmpeg components
+# Find FFmpeg components: the samples demux with libavformat, libavcodec and libavutil, and link
+# no other FFmpeg library, so no other is required.
 find_package(PkgConfig QUIET)
 if(PKG_CONFIG_FOUND)
     pkg_check_modules(FFMPEG QUIET
         libavcodec
         libavformat
         libavutil
-        libswscale
     )
 endif()
 
 # Find individual components
 find_path(FFMPEG_INCLUDE_DIR
-    NAMES libavcodec/avcodec.h libavformat/avformat.h libavutil/avutil.h libswscale/swscale.h
+    NAMES libavcodec/avcodec.h libavformat/avformat.h libavutil/avutil.h
     PATHS
         ${FFMPEG_INCLUDE_DIRS}
         /usr/include
@@ -186,21 +186,11 @@ find_library(AVUTIL_LIBRARY
         $ENV{FFMPEG_ROOT}/lib
 )
 
-find_library(SWSCALE_LIBRARY
-    NAMES swscale
-    PATHS
-        ${FFMPEG_LIBRARY_DIRS}
-        /usr/lib
-        /usr/local/lib
-        $ENV{FFMPEG_ROOT}/lib
-)
-
 # Set FFmpeg libraries
 set(FFMPEG_LIBRARIES
     ${AVCODEC_LIBRARY}
     ${AVFORMAT_LIBRARY}
     ${AVUTIL_LIBRARY}
-    ${SWSCALE_LIBRARY}
 )
 
 # Handle the QUIETLY and REQUIRED arguments
@@ -211,7 +201,6 @@ find_package_handle_standard_args(FFmpeg
         AVCODEC_LIBRARY
         AVFORMAT_LIBRARY
         AVUTIL_LIBRARY
-        SWSCALE_LIBRARY
 )
 
 # Mark as advanced
@@ -220,7 +209,6 @@ mark_as_advanced(
     AVCODEC_LIBRARY
     AVFORMAT_LIBRARY
     AVUTIL_LIBRARY
-    SWSCALE_LIBRARY
 )
 
 # Set variables for use in the project

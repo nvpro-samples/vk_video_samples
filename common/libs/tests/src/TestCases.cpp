@@ -1383,7 +1383,7 @@ TestCaseConfig TC133_BGRA_NoSwapControl_MustDiffer() {
 
 std::vector<TestCaseConfig> getAllStandardTests() {
     return {
-        // RGBA to YCbCr (7 formats - Y410 disabled: packed format needs special handling)
+        // RGBA to YCbCr (RGBA to Y410 is in getDisabledTests())
         TC001_RGBA_to_NV12(),
         TC001L_RGBA_to_NV12_Linear(),
         TC005L_RGBA_to_NV16_Linear(),
@@ -1396,49 +1396,17 @@ std::vector<TestCaseConfig> getAllStandardTests() {
         TC005_RGBA_to_NV16(),
         TC006_RGBA_to_P210(),
         TC007_RGBA_to_YUV444(),
-        // TC008_RGBA_to_Y410(),  // Still disabled, but NO LONGER for the
-        // reason recorded here before, which was a real defect and is now
-        // fixed. The RGBA2YCBCR packed-output arm used to declare
-        // outputImageRGB an image2DArray while storing into it with an ivec2,
-        // so its GLSL did not compile ("imageStore: no matching overloaded
-        // function found"). ShaderGenerateImagePlaneDescriptors now declares
-        // the single-plane arm image2D unconditionally -- what the combined
-        // VK_IMAGE_VIEW_TYPE_2D view it binds required all along -- and the
-        // two index forms agree.
-        //
-        // Measured after that change: the case builds its pipeline, dispatches,
-        // and stops at UNVALIDATED -- "no CPU reference model for this format
-        // pair". That is the remaining work, and it is in
-        // generateReferenceOutput, not in the shader generator. Enabling the
-        // case before then would add a row that cannot judge its own pixels.
-        
-        // YCbCr to RGBA -- DISABLED. YCBCR2RGBA has several independent shader-generation
-        // defects; dump the generated GLSL with VK_FILTER_DUMP_SHADERS=1 to see them:
-        //   1. main() hardcodes a 2-plane fetch (`inputImageCbCr`), so a 3-plane input
-        //      (I420, 3-plane 4:4:4) generates GLSL that does not compile --
-        //      "ERROR: 2 compilation errors. No code generated." -- and CreatePipeline()
-        //      fails with VK_ERROR_INITIALIZATION_FAILED.
-        //   2. The output storage-image qualifier is emitted as `rgba16` even when the
-        //      output image is VK_FORMAT_R8G8B8A8_UNORM.
-        //   3. TC010/TC011/TC012 (2-plane 4:2:0, which the format-derived chroma ratios do
-        //      not affect) disagree with the CPU model, cause not yet isolated.
-        // Nothing in the encode, decode, TRV post-filter or display paths uses YCBCR2RGBA
-        // -- it is referenced only by this test file -- so this is a latent capability gap,
-        // not a shipping defect. Re-enable each case as the defect behind it is fixed.
-        // TC010_NV12_to_RGBA(),
-        // TC011_P010_to_RGBA(),
-        // TC012_P012_to_RGBA(),
-        // TC013_I420_to_RGBA(),
-        // TC014_NV16_to_RGBA(),
-        // TC015_P210_to_RGBA(),
-        // TC016_YUV444_to_RGBA(),
-        // TC017_Y410_to_RGBA(),  // Disabled, and not stale. Two faults, in
-        // this order: the arm derives a bit depth through YcbcrVkFormatInfo,
-        // which answers NULL for A2B10G10R10_UNORM_PACK32 -- that dereference
-        // used to crash and is now guarded -- and only then emits
-        // inputImageY/inputImageCbCr, which a packed input never declares, so
-        // the shader does not compile. The arm is deprecated besides.
-        
+
+        // YCbCr to RGBA (the packed input is in getDisabledTests())
+        TC010_NV12_to_RGBA(),
+        TC011_P010_to_RGBA(),
+        TC012_P012_to_RGBA(),
+        TC013_I420_to_RGBA(),
+        TC014_NV16_to_RGBA(),
+        TC015_P210_to_RGBA(),
+        TC015b_P212_to_RGBA(),
+        TC016_YUV444_to_RGBA(),
+
         // Color primaries (BT.601, BT.709, BT.2020)
         TC020_RGBA_to_NV12_BT601(),
         TC021_RGBA_to_NV12_BT709(),
@@ -1472,27 +1440,14 @@ std::vector<TestCaseConfig> getAllStandardTests() {
         TC064_P010_to_NV12(),
         TC065_NV12_to_P010(),
         TC006b_RGBA_to_P212(),
-        // TC015b_P212_to_RGBA(),   // same broken family -- see the block above
         TC084_RGBA_to_P212_Linear(),
         TC085_RGBA_to_P210_Linear(),
         TC066_NV12_to_P012(),
         TC067_P012_to_NV12(),
         TC068_RGBA_to_P012(),
         
-        // Buffer I/O -- disabled because the TEST HARNESS does not implement it
-        // ("Buffer I/O not yet implemented in test", createTestInput/readback for
-        // ResourceType::Buffer). The gap is test-side, NOT a filter limitation --
-        // VulkanFilterYuvCompute has the XFER_IMAGE_TO_BUFFER / XFER_BUFFER_TO_IMAGE
-        // modes and the buffer RecordCommandBuffer overloads. Implementing the harness
-        // side would give real coverage of those modes.
-        // TC070_RGBABuffer_to_NV12Image(),
-        // TC071_RGBAImage_to_NV12Buffer(),
-        // TC072_RGBABuffer_to_NV12Buffer(),
-        // TC073_NV12Buffer_to_RGBAImage(),
-        // TC074_NV12Image_to_RGBABuffer(),
-        // TC075_RGBABuffer_to_P010Buffer(),
-        // TC076_P010Buffer_to_RGBABuffer(),
-        
+        // Buffer I/O and transfer cases: getBufferIOTests() and getTransferTests().
+
         // Linear tiling
         TC080_RGBA_to_NV12_Linear(),
         TC081_RGBA_to_P010_Linear(),
@@ -1540,10 +1495,9 @@ std::vector<TestCaseConfig> getSmokeTests() {
         TC002_RGBA_to_P010(),       // 10-bit 4:2:0
         TC005_RGBA_to_NV16(),       // 8-bit 4:2:2
         TC007_RGBA_to_YUV444(),     // 8-bit 4:4:4
-        // TC010_NV12_to_RGBA(),    // YCbCr to RGBA - disabled: shader generation bug in YCBCR2RGBA
+        TC010_NV12_to_RGBA(),       // YCbCr to RGBA
         TC040_YCbCrCopy_NV12(),     // Copy
         TC050_YCbCrClear_NV12(),    // Clear
-        // TC070_RGBABuffer_to_NV12Image(),  // Buffer I/O - not implemented yet
         TC100_Small_Resolution_64x64(),   // Edge case
     };
 }
@@ -1606,15 +1560,8 @@ std::vector<TestCaseConfig> get12BitTests() {
 }
 
 std::vector<TestCaseConfig> getBufferIOTests() {
-    return {
-        TC070_RGBABuffer_to_NV12Image(),
-        TC071_RGBAImage_to_NV12Buffer(),
-        TC072_RGBABuffer_to_NV12Buffer(),
-        TC073_NV12Buffer_to_RGBAImage(),
-        TC074_NV12Image_to_RGBABuffer(),
-        TC075_RGBABuffer_to_P010Buffer(),
-        TC076_P010Buffer_to_RGBABuffer(),
-    };
+    // TC070 to TC076 are in getDisabledTests(): runTest() has no buffer input or output.
+    return {};
 }
 
 std::vector<TestCaseConfig> getColorPrimariesTests() {
@@ -1644,12 +1591,45 @@ std::vector<TestCaseConfig> getTransferTests() {
         
         // RGBA conversion with post-transfer
         TC116_RGBA2NV12_PostTransfer_ToBuffer(),
-        
-        // Transfer-only operations (XFER filter types)
-        TC117_XFER_ImageToBuffer_NV12(),
-        TC118_XFER_BufferToImage_NV12(),
-        TC119_XFER_ImageToImage_LinearToOptimal(),
-        TC120_XFER_ImageToImage_OptimalToLinear(),
+
+        // Transfer-only operations (XFER filter types): TC117 to TC120 are in
+        // getDisabledTests().
+    };
+}
+
+// =============================================================================
+// Disabled cases
+// =============================================================================
+
+std::vector<DisabledTestCase> getDisabledTests() {
+    // Each entry names the defect the case shows. A case leaves this list in the change
+    // that fixes its defect.
+    static const char* const kNoBufferIo =
+        "runTest() has no buffer input or output: it stops at \"Buffer I/O not yet "
+        "implemented in test\" before recording the filter";
+    static const char* const kTransferOnlyCreate =
+        "runTest() creates the filter with VulkanFilterYuvCompute::Create(), whose Init() has "
+        "no arm for the XFER_* types and asserts \"Invalid filter type\"; a transfer-only "
+        "filter comes from CreateTransfer(), which runTest() does not call";
+    return {
+        {TC008_RGBA_to_Y410(),
+         "RGBA2YCBCR to Y410 builds and dispatches, but generateReferenceOutput() has no CPU "
+         "model for a Y410 output, so the case reports UNVALIDATED"},
+        {TC017_Y410_to_RGBA(),
+         "YCBCR2RGBA with a packed input: GetOutputFormat() asks only the multi-planar format "
+         "table and answers VK_FORMAT_UNDEFINED, so GlslImageFormatQualifier() has no "
+         "qualifier for the output binding and asserts"},
+        {TC070_RGBABuffer_to_NV12Image(), kNoBufferIo},
+        {TC071_RGBAImage_to_NV12Buffer(), kNoBufferIo},
+        {TC072_RGBABuffer_to_NV12Buffer(), kNoBufferIo},
+        {TC073_NV12Buffer_to_RGBAImage(), kNoBufferIo},
+        {TC074_NV12Image_to_RGBABuffer(), kNoBufferIo},
+        {TC075_RGBABuffer_to_P010Buffer(), kNoBufferIo},
+        {TC076_P010Buffer_to_RGBABuffer(), kNoBufferIo},
+        {TC117_XFER_ImageToBuffer_NV12(), kTransferOnlyCreate},
+        {TC118_XFER_BufferToImage_NV12(), kTransferOnlyCreate},
+        {TC119_XFER_ImageToImage_LinearToOptimal(), kTransferOnlyCreate},
+        {TC120_XFER_ImageToImage_OptimalToLinear(), kTransferOnlyCreate},
     };
 }
 

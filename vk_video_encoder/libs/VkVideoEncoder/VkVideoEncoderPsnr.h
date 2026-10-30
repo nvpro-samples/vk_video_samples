@@ -22,6 +22,7 @@
 #include "VkCodecUtils/VkVideoRefCountBase.h"
 #include "VkCodecUtils/VulkanVideoImagePool.h"
 #include "VkVideoEncoder/VkEncoderConfig.h"
+#include "VkVideoEncoder/VkVideoEncoderPsnrSum.h"
 #include "vulkan/vulkan.h"
 
 class VulkanDeviceContext;
@@ -112,9 +113,9 @@ private:
     uint32_t m_capSrcFilesWritten = 0;
     uint32_t m_capSrcMaxFiles = 0;
     void DumpCapturedSource(void* encodeFrameInfoVoid);
-    double m_psnrSum = 0.0;
-    double m_psnrSumU = 0.0;
-    double m_psnrSumV = 0.0;
+    VkVideoEncoderPsnrSum m_psnrSum;
+    VkVideoEncoderPsnrSum m_psnrSumU;
+    VkVideoEncoderPsnrSum m_psnrSumV;
     uint32_t m_psnrFrameCount = 0;
     std::vector<uint8_t> m_psnrReconY;
     std::vector<uint8_t> m_psnrReconU;

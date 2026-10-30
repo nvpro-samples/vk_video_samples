@@ -2,10 +2,6 @@
   "codec": "av1",
   "defects": {},
   "adapter_defects": {
-    "begin-setup-inactive": "the begin-coding list names the setup picture under its target slot, which is not active yet: activation happens in the decode",
-    "begin-setup-mismatch": "the begin-coding list names the setup picture under its target slot, which still holds the picture it held before",
-    "ref-info": "the setup reference information is zero apart from frame_type and OrderHint, so a reference's information differs from the one its picture was set up with",
-    "names-missing": "a key frame frees every slot, and a later inter frame's reference whose picture lost its slot drops out of the decode (and in a release build is counted at activeReferences[-1])",
     "reserve-failed": "the parser decodes frames of a sequence it has not reported with BeginSequence, and the frame buffer has no picture for them"
   },
   "streams": [
@@ -17,11 +13,7 @@
       "headers": "../streams/av1-rav1e-segmentation-64x64.headers.txt",
       "known": [],
       "adapter_golden": "../golden/adapter/av1-rav1e-segmentation-64x64.trace",
-      "adapter_known": [
-        "begin-setup-inactive",
-        "begin-setup-mismatch",
-        "ref-info"
-      ]
+      "adapter_known": []
     },
     {
       "name": "av1-libaom-no-order-hint-64x64",
@@ -31,10 +23,7 @@
       "headers": "../streams/av1-libaom-no-order-hint-64x64.headers.txt",
       "known": [],
       "adapter_golden": "../golden/adapter/av1-libaom-no-order-hint-64x64.trace",
-      "adapter_known": [
-        "begin-setup-inactive",
-        "begin-setup-mismatch"
-      ]
+      "adapter_known": []
     },
     {
       "name": "av1-libaom-altref-aq-64x64",
@@ -44,11 +33,7 @@
       "headers": "../streams/av1-libaom-altref-aq-64x64.headers.txt",
       "known": [],
       "adapter_golden": "../golden/adapter/av1-libaom-altref-aq-64x64.trace",
-      "adapter_known": [
-        "begin-setup-inactive",
-        "begin-setup-mismatch",
-        "ref-info"
-      ]
+      "adapter_known": []
     },
     {
       "name": "av1-libaom-key-frames-64x64",
@@ -58,11 +43,72 @@
       "headers": "../streams/av1-libaom-key-frames-64x64.headers.txt",
       "known": [],
       "adapter_golden": "../golden/adapter/av1-libaom-key-frames-64x64.trace",
-      "adapter_known": [
-        "begin-setup-inactive",
-        "begin-setup-mismatch",
-        "ref-info"
+      "adapter_known": []
+    },
+    {
+      "name": "av1-libaom-key-frames-64x64-decode-1-failed",
+      "path": "../streams/av1-libaom-key-frames-64x64.ivf",
+      "format": "ivf",
+      "parser_args": [
+        "--fail-decode",
+        "1"
+      ],
+      "golden": "../golden/av1-libaom-key-frames-64x64-decode-1-failed.trace",
+      "headers": "../streams/av1-libaom-key-frames-64x64.headers.txt",
+      "known": [
+        "picture-count"
       ]
+    },
+    {
+      "name": "av1-libaom-forward-key-frames-64x64",
+      "path": "../streams/av1-libaom-forward-key-frames-64x64.ivf",
+      "format": "ivf",
+      "golden": "../golden/av1-libaom-forward-key-frames-64x64.trace",
+      "headers": "../streams/av1-libaom-forward-key-frames-64x64.headers.txt",
+      "known": [],
+      "adapter_golden": "../golden/adapter/av1-libaom-forward-key-frames-64x64.trace",
+      "adapter_known": []
+    },
+    {
+      "name": "av1-libaom-timing-info-64x64",
+      "path": "../streams/av1-libaom-timing-info-64x64.ivf",
+      "format": "ivf",
+      "golden": "../golden/av1-libaom-timing-info-64x64.trace",
+      "headers": "../streams/av1-libaom-timing-info-64x64.headers.txt",
+      "known": [],
+      "adapter_golden": "../golden/adapter/av1-libaom-timing-info-64x64.trace",
+      "adapter_known": []
+    },
+    {
+      "name": "av1-libaom-sequence-only-unit-64x64",
+      "path": "../streams/av1-libaom-sequence-only-unit-64x64.ivf",
+      "format": "ivf",
+      "golden": "../golden/av1-libaom-sequence-only-unit-64x64.trace",
+      "headers": "../streams/av1-libaom-sequence-only-unit-64x64.headers.txt",
+      "known": [],
+      "adapter_golden": "../golden/adapter/av1-libaom-sequence-only-unit-64x64.trace",
+      "adapter_known": []
+    },
+    {
+      "name": "av1-libaom-mono-420-mono-64x64",
+      "path": "../streams/av1-libaom-mono-420-mono-64x64.ivf",
+      "format": "ivf",
+      "golden": "../golden/av1-libaom-mono-420-mono-64x64.trace",
+      "headers": "../streams/av1-libaom-mono-420-mono-64x64.headers.txt",
+      "known": [],
+      "adapter_golden": "../golden/adapter/av1-libaom-mono-420-mono-64x64.trace",
+      "adapter_known": []
+    },
+    {
+      "name": "av1-libaom-mono-420-mono-64x64-mono-refused",
+      "path": "../streams/av1-libaom-mono-420-mono-64x64.ivf",
+      "format": "ivf",
+      "adapter_args": [
+        "--refuse-chroma",
+        "400"
+      ],
+      "adapter_golden": "../golden/adapter/av1-libaom-mono-420-mono-64x64-mono-refused.trace",
+      "adapter_known": []
     },
     {
       "name": "av1-libaom-still-after-inter-64x64",
@@ -72,10 +118,7 @@
       "headers": "../streams/av1-libaom-still-after-inter-64x64.headers.txt",
       "known": [],
       "adapter_golden": "../golden/adapter/av1-libaom-still-after-inter-64x64.trace",
-      "adapter_known": [
-        "begin-setup-inactive",
-        "ref-info"
-      ]
+      "adapter_known": []
     },
     {
       "name": "av1-libaom-still-picture-1080p",
@@ -85,9 +128,7 @@
       "headers": "../streams/av1-libaom-still-picture-1080p.headers.txt",
       "known": [],
       "adapter_golden": "../golden/adapter/av1-libaom-still-picture-1080p.trace",
-      "adapter_known": [
-        "begin-setup-inactive"
-      ]
+      "adapter_known": []
     },
     {
       "name": "av1-libaom-film-grain-64x64",
@@ -97,11 +138,7 @@
       "headers": "../streams/av1-libaom-film-grain-64x64.headers.txt",
       "known": [],
       "adapter_golden": "../golden/adapter/av1-libaom-film-grain-64x64.trace",
-      "adapter_known": [
-        "begin-setup-inactive",
-        "begin-setup-mismatch",
-        "ref-info"
-      ]
+      "adapter_known": []
     },
     {
       "name": "av1-libaom-64-tile-rows-64x4096",
@@ -111,9 +148,7 @@
       "headers": "../streams/av1-libaom-64-tile-rows-64x4096.headers.txt",
       "known": [],
       "adapter_golden": "../golden/adapter/av1-libaom-64-tile-rows-64x4096.trace",
-      "adapter_known": [
-        "begin-setup-inactive"
-      ]
+      "adapter_known": []
     },
     {
       "name": "av1-libaom-128-tiles-1024x512",
@@ -123,9 +158,7 @@
       "headers": "../streams/av1-libaom-128-tiles-1024x512.headers.txt",
       "known": [],
       "adapter_golden": "../golden/adapter/av1-libaom-128-tiles-1024x512.trace",
-      "adapter_known": [
-        "begin-setup-inactive"
-      ]
+      "adapter_known": []
     },
     {
       "name": "decode-samples",
@@ -133,12 +166,7 @@
       "decode_samples": "../../../../tests/decode_samples.json",
       "md5": "../golden/md5/av1-decode-samples.md5",
       "adapter_md5": "../golden/md5/adapter-av1-decode-samples.md5",
-      "adapter_known": [
-        "begin-setup-inactive",
-        "begin-setup-mismatch",
-        "names-missing",
-        "ref-info"
-      ]
+      "adapter_known": []
     },
     {
       "name": "basketball-1080p-rav1e",
@@ -146,11 +174,7 @@
       "path": "rav1e/basketball_1080p_rav1e_60f.ivf",
       "format": "ivf",
       "known": [],
-      "adapter_known": [
-        "begin-setup-inactive",
-        "begin-setup-mismatch",
-        "ref-info"
-      ]
+      "adapter_known": []
     },
     {
       "name": "basketball-1080p-libaom-variance-aq",
@@ -158,11 +182,7 @@
       "path": "basketball_1080p_aq1_60f.ivf",
       "format": "ivf",
       "known": [],
-      "adapter_known": [
-        "begin-setup-inactive",
-        "begin-setup-mismatch",
-        "ref-info"
-      ]
+      "adapter_known": []
     },
     {
       "name": "still-noise-1080p-libaom-cyclic-refresh",
@@ -170,11 +190,7 @@
       "path": "cyclic/still_noise_1080p_cyclic_60f.ivf",
       "format": "ivf",
       "known": [],
-      "adapter_known": [
-        "begin-setup-inactive",
-        "begin-setup-mismatch",
-        "ref-info"
-      ]
+      "adapter_known": []
     },
     {
       "name": "argon-profile0-core",

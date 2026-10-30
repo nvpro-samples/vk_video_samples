@@ -59,6 +59,7 @@ python3 tests/vvs_test_runner.py --test "h264_4k_main"
 - **`encode_samples.json`** - Encoder test definitions with YUV input files
 - **`decode_samples.json`** - Decoder test definitions with codec samples
 - **`skipped_samples.json`** - Test skipped list with conditions for skipping tests
+- **`validation_allowlist.json`** - Errors of the validation layer an encode may report and still pass (see [Validation Layer](#validation-layer))
 
 ### Unit Tests
 
@@ -119,6 +120,7 @@ The `decode_samples.json` file defines decoder test cases:
 | `description` | No | Human-readable test description |
 | `expected_output_md5` | No | MD5 of the RAW decoded surface. Layout-dependent — see [Goldens](#goldens) |
 | `expected_output_y4m_md5` | No | MD5 of Y4M output. Portable across GPUs — prefer this |
+| `write_output` | No | `true` asks the decoder for its Y4M output even without a golden, so that the output path (the frame writers) runs; nothing checks the output |
 | `expected_result` | No | `success` (default) or `unsupported` — see [Negative Cells](#negative-cells) |
 | `expected_vk_result` | No | For a negative cell, the exact `VkResult` the rejection must carry |
 | `source_url` | Yes | URL to download the test sample |
@@ -234,6 +236,7 @@ The `encode_samples.json` file defines encoder test cases:
 | `source_filepath` | Yes | Relative path where the file is stored in `resources/` |
 | `rate_control_check` | No | Measure the encoded stream against its rate-control target — see [Rate Control Checks](#rate-control-checks) |
 | `quality_check` | No | Thresholds of the PSNR check, which runs on every sample that encodes, or `false` to turn it off — see [PSNR Check](#psnr-check) |
+| `validation_layer` | No | `true` runs the encode under the Khronos validation layer when the layer is installed, `false` never does; without it `--validation-layer` decides — see [Validation Layer](#validation-layer) |
 
 #### Rate Control Checks
 
@@ -293,6 +296,45 @@ sample when its command line or source changes.
 The result line prints the means and the worst picture, and the JSON results carry them under
 `quality`. The check needs ffmpeg and ffprobe on `PATH`, and is faster with numpy. A sample can turn
 it off with `"quality_check": false`, and a run with `--no-quality-check`.
+
+#### Validation Layer
+
+With `--validation-layer` every encode runs under the Khronos validation layer
+(`VK_LAYER_KHRONOS_validation`), and a sample with `"validation_layer": true` runs under it in
+every run where the layer is installed. These are the samples whose defects only the layer sees,
+such as a session sized below the device's minimum extent. `libs/video_test_validation_layer.py`
+runs the check:
+
+- the layer is the one the Vulkan loader loads: the first manifest of it in `VK_ADD_LAYER_PATH`,
+  then in `VK_LAYER_PATH` or the loader's default directories; a layer found only in
+  `VULKAN_SDK` is added to `VK_ADD_LAYER_PATH` for the encode. On Windows the loader's registry
+  is not read, so set one of those variables;
+- the layer writes its messages to `validation_layer_<sample>.log` in the results directory,
+  which it creates when the encoder creates its Vulkan instance, and drops no repeated message;
+- an error of the layer fails a sample that encoded, unless `validation_allowlist.json` lists it.
+  A layer that wrote no log never loaded, and fails the sample too. Warnings are reported and do
+  not fail it;
+- `--validation-layer` refuses to run when the layer is not installed; a sample that asks for the
+  layer runs without it, and its result line says it was not checked.
+
+The result line prints the errors, the allowed errors and the warnings by VUID, and the JSON
+results carry them under `validation_layer`. The log is removed with the stream when the sample
+passes, unless `--keep-files` is given.
+
+Each entry of `validation_allowlist.json`, under `encode`, names an error the layer reports for a
+valid encode:
+
+| Key | Required | Meaning |
+|-----|----------|---------|
+| `vuid` | Yes | The error's VUID, or a pattern of it with `*` and `?` |
+| `reason` | Yes | Why the encode is valid usage, or why the layer reports it |
+| `codecs` | No | The codecs whose encodes it applies to; all when not given |
+| `min_layer_version` | No | The oldest layer that reports it, as the `api_version` of the layer's manifest |
+| `max_layer_version` | No | The newest layer that reports it; give it when a later layer is fixed |
+| `message` | No | Text the message must contain, to name one structure or one case of a VUID |
+| `bug_url` | No | Where the report or its fix is tracked |
+
+Unknown keys are rejected when the allowlist loads.
 
 #### Extra Arguments Example
 
@@ -592,6 +634,7 @@ python3 vvs_test_runner.py --export-json results.json
 
 - `--no-validate-with-decoder` - Disable validation of encoder output with decoder
 - `--no-quality-check` - Do not measure the PSNR of the encoded stream against its source (see [PSNR Check](#psnr-check))
+- `--validation-layer` - Run each encode under the Khronos validation layer and fail a sample on any error of the layer that `validation_allowlist.json` does not list (see [Validation Layer](#validation-layer))
 - `--decoder-args ARGS` - Additional arguments to pass to decoder during validation
 
 ---

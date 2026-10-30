@@ -5256,6 +5256,37 @@ void CaseUnknownColorModelValueIsRefused(NullSession& s)
           "status " + U32((uint32_t)reg));
 }
 
+void CaseValueInitialisedStructsAreTyped()
+{
+    g_currentCase = "structs initialised with = {} carry their sType";
+    const VkVideoEncoderExternalImageDescriptor desc = {};
+    Check((desc.sType == VK_VIDEO_ENCODER_STRUCTURE_TYPE_EXTERNAL_IMAGE_DESCRIPTOR) && (desc.pNext == nullptr),
+          "an external image descriptor", "sType " + U32((uint32_t)desc.sType));
+    const VkVideoEncoderFrameSubmitInfo info = {};
+    Check((info.sType == VK_VIDEO_ENCODER_STRUCTURE_TYPE_FRAME_PARAMS) && (info.pNext == nullptr),
+          "a frame submit info", "sType " + U32((uint32_t)info.sType));
+}
+
+void CaseValueInitialisedDescriptorRegisters(NullSession& s)
+{
+    g_currentCase = "a descriptor initialised with = {} carries its sType";
+    // The header promises that `T x = {};` is correctly typed: a caller that
+    // never names sType still hands in a descriptor the library takes.
+    VkVideoEncoderExternalImageDescriptor desc = {};
+    desc.handleType = VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_VK_IMAGE;
+    desc.format     = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+    desc.width      = 640;
+    desc.height     = 360;
+    desc.tiling     = VK_IMAGE_TILING_OPTIMAL;
+    desc.imageUsage = VK_IMAGE_USAGE_VIDEO_ENCODE_SRC_BIT_KHR;
+    desc.residency  = VK_VIDEO_ENCODER_INPUT_RESIDENCY_LOCAL;
+    desc.existingImage = (VkImage)(uintptr_t)0xA110C8ED;
+    const VkVideoEncoderStatusCode reg = Register(s, desc);
+    Check(reg == VK_VIDEO_ENCODER_STATUS_SUCCESS,
+          "a value-initialised descriptor registers",
+          "status " + U32((uint32_t)reg));
+}
+
 }  // namespace
 
 // The registration gate stands up an encoder session; every other group in
@@ -5287,6 +5318,7 @@ int RunRegistrationGroup()
     CaseAgreeingDeclarationStillRegisters(session);
     CasePackedYcbcrDeclarationIsNotAContradiction(session);
     CaseUnknownColorModelValueIsRefused(session);
+    CaseValueInitialisedDescriptorRegisters(session);
 
     std::printf("-------------------------------------------------------\n");
     std::printf("checks: %d, failures: %d\n", g_checks, g_failures);
@@ -5307,6 +5339,7 @@ int main(int argc, char** argv)
                 kFilterCompiledIn ? "yes" : "no");
 
     CaseSemiPlanarIsDirect();
+    CaseValueInitialisedStructsAreTyped();
     CaseTwelveBitSemiPlanarIsViaFilter();
     CaseThreePlaneIsViaFilter();
     CaseRgbaIsViaFilterAndSinglePlane();

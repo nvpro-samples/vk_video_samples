@@ -131,7 +131,7 @@ while [[ $# -gt 0 ]]; do
             echo "  $0 --video-dir /data/videos                    # Run all tests"
             echo "  $0 --video-dir /data/videos --validate         # With validation"
             echo "  $0 --video-dir /data/videos --encoder --aq     # Encoder with AQ"
-            echo "  $0 --video-dir /data/videos --remote 192.168.122.216  # On remote"
+            echo "  $0 --video-dir /path/to/videos --remote <remote-host>  # On remote"
             echo "  $0 --video-dir /data/videos --quick --validate # Quick validation"
             exit 0
             ;;

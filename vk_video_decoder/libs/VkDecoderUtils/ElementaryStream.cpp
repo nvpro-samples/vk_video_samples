@@ -102,7 +102,7 @@ public:
 
         m_pBitstreamData = m_inputVideoStreamMmap.data();
 #endif
-        if ((m_pBitstreamData != nullptr) && (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR)) {
+        if ((m_pBitstreamData != nullptr) && UsesIvf()) {
             SkipIvfFileHeader();
         }
     }
@@ -122,7 +122,7 @@ public:
         , m_bytesRead(0)
         , m_ivfHeaderSize(0)
     {
-        if ((m_pBitstreamData != nullptr) && (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR)) {
+        if ((m_pBitstreamData != nullptr) && UsesIvf()) {
             SkipIvfFileHeader();
         }
     }
@@ -159,10 +159,10 @@ public:
     }
 
     virtual bool IsStreamDemuxerEnabled() const { return false; }
-    // An AV1 elementary stream comes in an IVF file, which gives its frames one at a time
+    // An AV1 or VP9 elementary stream comes in an IVF file, which gives its frames one at a time
     // (DemuxFrame). An H.264 or H.265 Annex B byte stream has no frame boundaries the reader knows;
     // the parser takes it in pieces (ReadBitstreamData).
-    virtual bool HasFramePreparser() const { return (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR); }
+    virtual bool HasFramePreparser() const { return UsesIvf(); }
     virtual void Rewind() { m_bytesRead = 0; }
     virtual VkVideoCodecOperationFlagBitsKHR GetVideoCodec() const { return m_videoCodecType; }
 
@@ -253,6 +253,13 @@ public:
                 return STD_VIDEO_AV1_PROFILE_HIGH;
             }
             return STD_VIDEO_AV1_PROFILE_MAIN;
+        case VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR:
+            // VP9 profiles 0 and 1 are 8-bit, 2 and 3 are 10- and 12-bit; profiles 0 and 2 are
+            // 4:2:0, 1 and 3 the other chroma formats.
+            if (m_bitDepth > 8) {
+                return (m_chroma == 420) ? STD_VIDEO_VP9_PROFILE_2 : STD_VIDEO_VP9_PROFILE_3;
+            }
+            return (m_chroma == 420) ? STD_VIDEO_VP9_PROFILE_0 : STD_VIDEO_VP9_PROFILE_1;
         default:
             assert(0);
         }
@@ -265,7 +272,7 @@ public:
     // The payload of the next IVF frame, after its 12-byte frame header, and its size. 0 at the end
     // of the file; a frame that runs past the end of the file ends the stream too.
     virtual int64_t DemuxFrame(const uint8_t** ppVideo) {
-        if (m_videoCodecType != VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
+        if (!UsesIvf()) {
             return -1;
         }
         // A frame of size 0 carries nothing for the parser, and a size of 0 here means the end.
@@ -301,6 +308,12 @@ public:
     }
 
 private:
+    // AV1 and VP9 elementary streams are read from IVF files.
+    bool UsesIvf() const {
+        return (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) ||
+               (m_videoCodecType == VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR);
+    }
+
     // Leaves m_pBitstreamData at the first IVF frame header. Input that is not an IVF file leaves
     // no data to read.
     void SkipIvfFileHeader() {
@@ -309,7 +322,7 @@ private:
             memcpy(&headerSize, m_pBitstreamData + DKIF_FILE_HEADER_LENGTH_OFFSET, sizeof(headerSize));
         }
         if ((headerSize < DKIF_FILE_HEADER_SIZE) || (headerSize > m_bitstreamDataSize)) {
-            fprintf(stderr, "An AV1 elementary stream must be an IVF file\n");
+            fprintf(stderr, "An AV1 or VP9 elementary stream must be an IVF file\n");
             m_bitstreamDataSize = 0;
             return;
         }

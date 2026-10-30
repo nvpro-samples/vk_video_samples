@@ -277,6 +277,23 @@ class BaseTestConfig:  # pylint: disable=too-many-instance-attributes
     expected_result: ExpectedResult = ExpectedResult.SUCCESS
     expected_vk_result: str = ""
 
+    # The keys every sample takes; each sample class adds its own.
+    BASE_KEYS = frozenset({
+        "name", "codec", "extra_args", "description", "timeout", "source_url",
+        "source_checksum", "source_filepath", "extended", "expected_result",
+        "expected_vk_result",
+    })
+
+    @classmethod
+    def _refuse_unknown_keys(cls, data: dict, own: frozenset) -> None:
+        """Raise ValueError for a key that neither the base nor the sample
+        class reads: a misspelt or stale key would otherwise be dropped
+        without a word."""
+        unknown = sorted(set(data) - cls.BASE_KEYS - own)
+        if unknown:
+            raise ValueError(
+                f"sample {data.get('name')!r}: unknown keys {unknown}")
+
     @staticmethod
     def _parse_base_fields(data: dict) -> dict:
         """Extract base config fields from a dictionary."""

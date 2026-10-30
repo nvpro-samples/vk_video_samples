@@ -49,9 +49,9 @@ PFN_vkGetInstanceProcAddr VulkanDeviceContext::LoadVk(VulkanLibraryHandleType &v
     const char filename[] = "libvulkan.so.1";
     void *handle = nullptr, *symbol = nullptr;
 
+    // When the custom library does not load, the system's Vulkan library takes its place.
     if (pCustomLoader) {
         handle = dlopen(pCustomLoader, RTLD_LAZY);
-        assert(!"ERROR: Could NOT get the custom Vulkan solib!");
     }
 
     if (handle == nullptr) {
@@ -63,11 +63,10 @@ PFN_vkGetInstanceProcAddr VulkanDeviceContext::LoadVk(VulkanLibraryHandleType &v
         return nullptr;
     }
 
+    // A custom library is an ICD, with vk_icdGetInstanceProcAddr, or a loader, with
+    // vkGetInstanceProcAddr.
     if (pCustomLoader) {
         symbol = dlsym(handle, "vk_icdGetInstanceProcAddr");
-        if (symbol == nullptr) {
-            assert(!"ERROR: Can't get the vk_icdGetInstanceProcAddr symbol!");
-        }
     }
 
     if (symbol == nullptr) {
@@ -409,75 +408,10 @@ VkResult VulkanDeviceContext::InitVkInstance(const char * pAppName, VkInstance v
     return result;
 }
 
-// Known validation layer false positives for Vulkan Video decode operations.
-// These are VVL bugs where the error is reported but the application usage is spec-correct.
-// Matching the pattern from nvpro_core2/nvvk/context.cpp g_ignoredValidationMessageIds[].
-// See: https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/11531
-// See: https://github.com/nvpro-samples/vk_video_samples/issues/183
+// Validation messages the samples' debug callbacks do not print: each entry is a workaround the
+// samples keep on purpose, with its reason. The layer still reports them when it logs messages itself
+// (VK_KHRONOS_VALIDATION_DEBUG_ACTION=VK_DBG_LAYER_ACTION_LOG_MSG).
 static constexpr uint32_t g_ignoredValidationMessageIds[] = {
-
-    // VUID-VkDeviceCreateInfo-pNext-pNext (MessageID = 0x901f59ec)
-    // The application enables a private/provisional Vulkan extension (struct type
-    // 1000552004) that is present in the NVIDIA driver but not yet recognized by
-    // the installed VVL version. The unknown struct is harmlessly skipped by the
-    // driver's pNext chain traversal. Will resolve when VVL headers are updated.
-    0x901f59ec,
-
-    // VUID-VkImageViewCreateInfo-image-01762 (MessageID = 0x6516b437)
-    // VVL false positive for video-profile-bound multi-planar images.
-    // The DPB images ARE created with VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT
-    // (VulkanVideoImagePool.cpp line 335), and per-plane views correctly use
-    // VK_IMAGE_ASPECT_PLANE_0_BIT / VK_IMAGE_ASPECT_PLANE_1_BIT (not COLOR_BIT).
-    // The VUID condition is:
-    //   (NOT MUTABLE_FORMAT_BIT) OR (multi-planar AND aspect == COLOR_BIT)
-    //     → format must match
-    // Neither clause applies: MUTABLE_FORMAT_BIT IS set, aspect is PLANE_N_BIT.
-    // VVL 1.4.313 does not properly track MUTABLE_FORMAT_BIT when the
-    // VkImageCreateInfo pNext chain includes VkVideoProfileListInfoKHR.
-    0x6516b437,
-
-    // VUID-vkCmdBeginVideoCodingKHR-slotIndex-07239 (MessageID = 0xc36d9e29)
-    // Cascading VVL false positive from the VUID-01762 issue above.
-    // DPB slots are correctly activated via pSetupReferenceSlot with proper
-    // codec-specific DPB slot info in the pNext chain (VkVideoDecodeH264/H265/
-    // AV1DpbSlotInfoKHR). Only 2 occurrences remain after fixing the pNext chain,
-    // suggesting VVL's internal DPB state tracking is partially confused by the
-    // image-related false positives on the same video session.
-    // Decoding works correctly on all tested hardware.
-    0xc36d9e29,
-
-    // VUID-VkVideoCapabilitiesKHR-pNext-pNext (MessageID = 0xc1bea994)
-    // VP9 decode is a provisional extension (VK_KHR_video_decode_vp9).
-    // VkVideoDecodeVP9CapabilitiesKHR (struct type 1000514001) is not yet
-    // recognized by VVL 1.4.313. Same category as the device create pNext
-    // issue above. Harmlessly skipped by the driver.
-    0xc1bea994,
-
-    // VUID-VkVideoSessionCreateInfoKHR-maxDpbSlots-04847 (MessageID = 0xf095f12f)
-    // H.265 decoder reports maxDpbSlots validation error. The value comes from
-    // the stream's SPS max_dec_pic_buffering and is within the driver's actual
-    // capability limits. Likely a VVL tracking issue with video session caps.
-    0xf095f12f,
-
-    // UNASSIGNED-GeneralParameterError-UnrecognizedBool32 (MessageID = 0xa320b052)
-    // AV1 filmGrainSupport field in VkVideoDecodeAV1ProfileInfoKHR is
-    // uninitialized when the profile comes from the parser (not the default
-    // path). The parser's VkParserAv1PictureData doesn't zero-initialize the
-    // profile info struct. Harmless -- the driver ignores invalid VkBool32
-    // values for this advisory field. TODO: fix in parser.
-    0xa320b052,
-
-    // WARNING-CreateDevice-extension-not-found (MessageID = 0x297ec5be)
-    // VP9 decode extension (VK_KHR_video_decode_vp9) is provisional and not
-    // recognized by VVL 1.4.313. The driver supports it but the validation
-    // layer doesn't know about it.
-    0x297ec5be,
-
-    // VUID-VkImageViewUsageCreateInfo-usage-requiredbitmask (MessageID = 0x1f778da5)
-    // VkImageViewUsageCreateInfo is chained with usage=0 when planeUsageOverride
-    // is 0 (non-storage decode-only images). The struct should not be chained
-    // at all when there's no usage override. TODO: fix in VkImageResource.cpp.
-    0x1f778da5,
 
     // VUID-vkCmdDecodeVideoKHR-pDecodeInfo-07139 (MessageID = 0xe9634196)
     // H.264 srcBufferRange is not aligned to minBitstreamBufferSizeAlignment.
@@ -487,27 +421,6 @@ static constexpr uint32_t g_ignoredValidationMessageIds[] = {
     // The proper fix is to handle alignment in the H.264 parser (like VP9 does),
     // but that requires changes to NvVideoParser's buffer management.
     0xe9634196,
-
-    // VUID-vkGetImageSubresourceLayout-tiling-08717 (MessageID = 0x4148a5e9)
-    // vkGetImageSubresourceLayout called with VK_IMAGE_ASPECT_COLOR_BIT on
-    // multi-planar NV12 images. Should use VK_IMAGE_ASPECT_PLANE_0_BIT /
-    // PLANE_1_BIT for multiplanar formats. TODO: fix in VkImageResource.cpp.
-    0x4148a5e9,
-
-    // VUID-vkCmdBeginVideoCodingKHR-pPictureResource-07265 (MessageID = 0xa9049dc2)
-    // VVL false positive: DPB slot re-association during decode.
-    // The validation layer does not track slot activations performed by
-    // CmdDecodeVideoKHR's pSetupReferenceSlot — it only tracks BeginVideoCoding's
-    // pReferenceSlots. This causes false positives when:
-    //   1. A DPB slot is activated for the first time (no prior association exists)
-    //   2. A DPB slot is reused with a different image (parser evicted the old
-    //      reference and reassigned the slot)
-    // Per spec §40.1: "A DPB slot can be activated with a new frame even if it is
-    // already active. All previous associations are replaced with the reconstructed
-    // picture used to activate it." The activation happens during CmdDecodeVideoKHR
-    // via pSetupReferenceSlot, which the validation layer does not track.
-    // See: docs/VK_LAYER_VALIDATION_BUG_REPORT-DPB-SLOT-TRACKING.md
-    0xa9049dc2,
 };
 
 static std::atomic<uint32_t> g_validationErrorCount{0};
@@ -519,7 +432,7 @@ bool VulkanDeviceContext::DebugReportCallback(VkDebugReportFlagsEXT flags, VkDeb
                                               uint64_t, size_t,
                                               int32_t msg_code, const char *layer_prefix, const char *msg)
 {
-    // Suppress known validation layer false positives (see explanations above)
+    // Skip the messages of g_ignoredValidationMessageIds (see their reasons above)
     for (uint32_t ignoredId : g_ignoredValidationMessageIds) {
         if (static_cast<uint32_t>(msg_code) == ignoredId) {
             return false;  // Silently ignore this message
@@ -565,14 +478,18 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDeviceContext::DebugUtilsMessengerCallback(
     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
     void* pUserData)
 {
-    // Suppress known validation layer false positives by messageIdNumber
+    // Skip the messages of g_ignoredValidationMessageIds, by messageIdNumber
     for (uint32_t ignoredId : g_ignoredValidationMessageIds) {
         if (static_cast<uint32_t>(pCallbackData->messageIdNumber) == ignoredId) {
             return VK_FALSE;  // Silently ignore this message
         }
     }
 
-    if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+    // A warning the layer files under Undefined-Value- reports an access whose result is undefined,
+    // and counts as an error does.
+    const bool undefinedValue = (pCallbackData->pMessageIdName != nullptr) &&
+                                (strncmp(pCallbackData->pMessageIdName, "Undefined-Value-", 16) == 0);
+    if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) || undefinedValue) {
         g_validationErrorCount.fetch_add(1);
     }
 
@@ -1237,6 +1154,16 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
             VK_FALSE };
         if (FindRequiredDeviceExtension(VK_KHR_VIDEO_ENCODE_QUANTIZATION_MAP_EXTENSION_NAME) != nullptr) {
             pAfterYcbcr = &quantizationMapFeatures;
+        }
+
+        // VK_KHR_video_maintenance2 too: its feature, videoMaintenance2, is what lets a session take
+        // VK_VIDEO_SESSION_CREATE_INLINE_SESSION_PARAMETERS_BIT_KHR (VUID-VkVideoSessionCreateInfoKHR-flags-10398).
+        VkPhysicalDeviceVideoMaintenance2FeaturesKHR videoMaintenance2Features {
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_2_FEATURES_KHR,
+            pAfterYcbcr,
+            VK_FALSE };
+        if (FindRequiredDeviceExtension(VK_KHR_VIDEO_MAINTENANCE_2_EXTENSION_NAME) != nullptr) {
+            pAfterYcbcr = &videoMaintenance2Features;
         }
 
         // Required for creating YCbCr samplers used with multi-planar video formats

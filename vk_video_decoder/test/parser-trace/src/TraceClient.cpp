@@ -1096,7 +1096,8 @@ void TraceVp9Picture(FILE* out, const VkParserPictureData& pd) {
 // indices in the trace depend only on the parser's reference counting.
 class TraceClient final : public TraceClientIf {
    public:
-    TraceClient(FILE* out, VkVideoCodecOperationFlagBitsKHR codec, uint32_t poolSize) : m_out(out), m_codec(codec) {
+    TraceClient(FILE* out, VkVideoCodecOperationFlagBitsKHR codec, uint32_t poolSize, int64_t failDecode)
+        : m_out(out), m_codec(codec), m_failDecode(failDecode) {
         for (uint32_t i = 0; i < poolSize; i++) {
             m_pictures.emplace_back(std::make_unique<TracePicture>());
             m_pictures.back()->m_picIdx = static_cast<int32_t>(i);
@@ -1198,6 +1199,10 @@ class TraceClient final : public TraceClientIf {
             default:
                 break;
         }
+        if (static_cast<int64_t>(m_decoded) - 1 == m_failDecode) {
+            Line("pic-failed").Num("index", m_failDecode).Emit(m_out);
+            return false;
+        }
         return true;
     }
 
@@ -1239,8 +1244,8 @@ class TraceClient final : public TraceClientIf {
                                     VkDeviceSize minBitstreamBufferSizeAlignment, const uint8_t* pInitializeBufferMemory,
                                     VkDeviceSize initializeBufferMemorySize,
                                     VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer) override {
-        return CreateHostBitstreamBuffer(size, minBitstreamBufferOffsetAlignment, minBitstreamBufferSizeAlignment,
-                                         pInitializeBufferMemory, initializeBufferMemorySize, bitstreamBuffer);
+        return m_bitstreamBuffers.Get(size, minBitstreamBufferOffsetAlignment, minBitstreamBufferSizeAlignment,
+                                      pInitializeBufferMemory, initializeBufferMemorySize, bitstreamBuffer);
     }
 
     uint64_t Decoded() const override { return m_decoded; }
@@ -1251,10 +1256,12 @@ class TraceClient final : public TraceClientIf {
 
     FILE* m_out;
     VkVideoCodecOperationFlagBitsKHR m_codec;
+    HostBitstreamBufferPool m_bitstreamBuffers;
     std::vector<std::unique_ptr<TracePicture>> m_pictures;
     uint64_t m_sequences = 0;
     uint64_t m_parameterSets = 0;
     uint64_t m_decoded = 0;
+    int64_t m_failDecode;
     uint64_t m_displayed = 0;
 };
 
@@ -1295,8 +1302,30 @@ VkDeviceSize CreateHostBitstreamBuffer(VkDeviceSize size, VkDeviceSize offsetAli
     return host->GetMaxSize();
 }
 
-std::unique_ptr<TraceClientIf> CreateTraceClient(FILE* out, VkVideoCodecOperationFlagBitsKHR codec, uint32_t poolSize) {
-    return std::make_unique<TraceClient>(out, codec, poolSize);
+VkDeviceSize HostBitstreamBufferPool::Get(VkDeviceSize size, VkDeviceSize offsetAlignment, VkDeviceSize sizeAlignment,
+                                          const uint8_t* initialData, VkDeviceSize initialSize,
+                                          VkSharedBaseObj<VulkanBitstreamBuffer>& buffer) {
+    const VkDeviceSize newSize = AlignUp(std::max(size, initialSize), sizeAlignment);
+    for (const VkSharedBaseObj<VulkanBitstreamBuffer>& pooled : m_buffers) {
+        // Only the pool holds it: the parser has released it.
+        if ((pooled.use_count() == 1) && (pooled->GetMaxSize() == newSize) && (pooled->GetOffsetAlignment() == offsetAlignment) &&
+            (pooled->GetSizeAlignment() == sizeAlignment)) {
+            pooled->MemsetData(0, 0, newSize);
+            if ((initialData != nullptr) && (initialSize != 0)) {
+                pooled->CopyDataFromBuffer(initialData, 0, 0, initialSize);
+            }
+            buffer = pooled;
+            return newSize;
+        }
+    }
+    const VkDeviceSize created = CreateHostBitstreamBuffer(size, offsetAlignment, sizeAlignment, initialData, initialSize, buffer);
+    m_buffers.push_back(buffer);
+    return created;
+}
+
+std::unique_ptr<TraceClientIf> CreateTraceClient(FILE* out, VkVideoCodecOperationFlagBitsKHR codec, uint32_t poolSize,
+                                                 int64_t failDecode) {
+    return std::make_unique<TraceClient>(out, codec, poolSize, failDecode);
 }
 
 // Gives the parser a whole byte stream as the decoder sample does for an elementary stream
@@ -1382,6 +1411,11 @@ void EndStream(VulkanVideoDecodeParser& parser, const TraceClientIf& client, FIL
     const uint64_t refused = parser.GetRefusedUnitCount();
     if (refused > 0) {
         Line("refused").Num("units", static_cast<int64_t>(refused)).Emit(out);
+    }
+    // Likewise a stream with no picture the decoder cannot decode has no "unsupported" line.
+    const uint64_t unsupported = parser.GetUnsupportedPictureCount();
+    if (unsupported > 0) {
+        Line("unsupported").Num("pictures", static_cast<int64_t>(unsupported)).Emit(out);
     }
 }
 

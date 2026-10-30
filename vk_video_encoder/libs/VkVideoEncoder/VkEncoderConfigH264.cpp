@@ -384,11 +384,13 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
         if (gopStructure.GetConsecutiveBFrameCount() > 0) {
             sps->max_num_ref_frames = (uint8_t)(sps->max_num_ref_frames + pps->num_ref_idx_l1_default_active_minus1 + 1U);
         }
-
-        // max_num_ref_frames must not exceed the largest DPB size allowed by
-        // the selected level.
-        sps->max_num_ref_frames = std::min(sps->max_num_ref_frames, (uint8_t)dpbCount);
     }
+
+    // The dpbCount slots of the session hold the reference frames and the picture being set up, so
+    // max_num_ref_frames is at most dpbCount - 1: within the DPB size of the selected level, and
+    // within H.264's 16. With more, the sliding window keeps a frame whose slot the DPB manager
+    // has already given to a later picture.
+    sps->max_num_ref_frames = std::min(sps->max_num_ref_frames, (uint8_t)std::max(dpbCount - 1, 0));
 
     if (gopStructure.GetConsecutiveBFrameCount() > 0) {
         sps->pic_order_cnt_type = STD_VIDEO_H264_POC_TYPE_0;
@@ -506,7 +508,10 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
         rateControlMode = qualityLevelProperties.preferredRateControlMode;
     }
     if (gopStructure.GetGopFrameCount() == ZERO_GOP_FRAME_COUNT) {
-        gopStructure.SetGopFrameCount(h264QualityLevelProperties.preferredGopFrameCount);
+        // A device may state no preferred GOP length (0). The GOP structure needs one, so it
+        // takes the codec's default then.
+        const uint32_t preferredGopFrameCount = h264QualityLevelProperties.preferredGopFrameCount;
+        gopStructure.SetGopFrameCount((preferredGopFrameCount != 0) ? preferredGopFrameCount : uint32_t(GOP_LENGTH_DEFAULT));
     }
     if (gopStructure.GetIdrPeriod() == ZERO_GOP_IDR_PERIOD) {
         gopStructure.SetIdrPeriod(h264QualityLevelProperties.preferredIdrPeriod);
@@ -832,7 +837,9 @@ bool EncoderConfigH264::GetRateControlParameters(VkVideoEncodeRateControlInfoKHR
     pRateControlInfoH264->consecutiveBFrameCount = gopStructure.GetConsecutiveBFrameCount();
 
     pRateControlInfoH264->gopFrameCount = (gopStructure.GetGopFrameCount() > 0) ? gopStructure.GetGopFrameCount() : (uint32_t)GOP_LENGTH_DEFAULT;
-    pRateControlInfoH264->idrPeriod = (gopStructure.GetIdrPeriod() > 0) ? gopStructure.GetIdrPeriod() : (uint32_t)IDR_PERIOD_DEFAULT;
+    // The period the GOP emits: 0, the rate control's "unspecified", when it emits no periodic IDR, as
+    // when the device states no preferred period.
+    pRateControlInfoH264->idrPeriod = gopStructure.GetIdrPeriod();
 
     // Validation: If idrPeriod is not 0, it must be >= gopFrameCount
     // If gopFrameCount is very large (e.g., UINT32_MAX for infinite GOP), set idrPeriod to 0

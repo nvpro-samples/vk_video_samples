@@ -125,46 +125,45 @@ enable_testing()
 # verbose flag, so under CTest it runs with no layer at all and its exit code
 # is the whole verdict. vvs_add_validation_gated_test() forces the layer on,
 # witnesses that the loader inserted it, and fails the arm that produced a
-# message.
-#
-# THE CEILINGS BELOW NAME DEFECTS, THEY DO NOT EXCUSE THEM. Each is a
-# violation this suite reports today, held at exactly the count it reports so
-# that it cannot grow and nothing new can hide behind it:
-#
-#   VUID-VkDeviceQueueCreateInfo-pQueuePriorities-parameter
-#       vkCreateDevice is called with pQueueCreateInfos[0].pQueuePriorities
-#       NULL. It is raised once per device creation, by every binary in the
-#       tree that stands up a device through VulkanDeviceContext directly.
-#   VUID-vkCmdDispatch-None-08114
-#       the triple-output case dispatches with binding 9, the subsampled Y
-#       output, never written by vkUpdateDescriptorSets.
-set(_filter_gate_expect
-    VUID-VkDeviceQueueCreateInfo-pQueuePriorities-parameter=1)
-
+# message. Neither arm has a ceiling: one message of any id fails it.
 vvs_add_validation_gated_test(FilterSmokeTest
     TARGET ${PROJECT_NAME}
-    ARGS   --smoke
-    EXPECT ${_filter_gate_expect})
+    ARGS   --smoke)
 vvs_add_validation_gated_test(FilterAllTests
     TARGET ${PROJECT_NAME}
-    ARGS   --all
-    EXPECT ${_filter_gate_expect}
-           VUID-vkCmdDispatch-None-08114=1)
+    ARGS   --all)
 set_tests_properties(FilterSmokeTest FilterAllTests PROPERTIES
                      LABELS "gpu"
                      TIMEOUT 900)
 
-# --list touches no Vulkan entry point at all: it builds the standard test
-# table and prints it, and returns before app.init(). That makes it the one
-# arm of this binary that belongs in the gating device-free set -- it proves
-# the test-case table still constructs on every push.
-add_test(NAME FilterListTests COMMAND ${PROJECT_NAME} --list)
+# --list touches no Vulkan entry point at all: it builds the test tables and
+# prints them, and returns before app.init(). That makes it the one arm of this
+# binary that belongs in the gating device-free set -- it proves the test-case
+# tables still construct on every push. scripts/filter_test_list.cmake checks
+# that it lists every case function TestCases.cpp defines, in a set or among
+# the disabled cases with its defect.
+add_test(NAME FilterListTests
+         COMMAND ${CMAKE_COMMAND} -DFILTER_TEST=$<TARGET_FILE:${PROJECT_NAME}>
+                 -DTEST_CASES_CPP=${CMAKE_CURRENT_SOURCE_DIR}/src/TestCases.cpp
+                 -P ${CMAKE_CURRENT_SOURCE_DIR}/scripts/filter_test_list.cmake)
 set_tests_properties(FilterListTests PROPERTIES
                      LABELS "device-free")
 
 # refcounted_pool_test: checkout and return in VulkanVideoRefCountedPool, the
 # pool behind the decoder's and the encoder's bitstream buffers. Device-free.
 add_subdirectory(refcounted_pool)
+
+# descriptor_layout_test: the immutable samplers VulkanDescriptorSetLayoutInfo
+# keeps for the compute filter's and the display's layouts. Device-free.
+add_subdirectory(descriptor_layout)
+
+# command_buffer_pool_test: VulkanCommandBufferPool's nodes recorded on two
+# threads at once, under the validation layer's thread-safety check. GPU.
+add_subdirectory(command_buffer_pool)
+
+# validation_gate_fake_layer_output: cmake/validation_gate.cmake against canned
+# loader and layer output. Device-free.
+add_subdirectory(validation_gate)
 
 # Add DRM Format Modifier test (Linux only)
 if(UNIX AND NOT APPLE)

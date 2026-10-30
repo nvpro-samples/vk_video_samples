@@ -307,6 +307,8 @@ struct H265Vps {
     uint32_t maxSubLayersMinus1 = 0;
     uint32_t numLayerSetsMinus1 = 0;
     bool endAfterMaxLayerId = false;  // the NAL unit ends after vps_max_layer_id, zero-padded to a byte
+    // With it, vps_timing_info_present_flag is 1 and it writes the syntax after it.
+    std::function<void(BitWriter&)> timingInfo;
 };
 
 std::vector<uint8_t> H265VpsNal(const H265Vps& vps = H265Vps()) {
@@ -326,7 +328,11 @@ std::vector<uint8_t> H265VpsNal(const H265Vps& vps = H265Vps()) {
     for (uint32_t i = 1; i <= vps.numLayerSetsMinus1; i++) {
         w.Flag(true);  // layer_id_included_flag[i][0]
     }
-    w.Flag(false).Flag(false);  // vps_timing_info_present_flag, vps_extension_flag
+    w.Flag(vps.timingInfo != nullptr);  // vps_timing_info_present_flag
+    if (vps.timingInfo != nullptr) {
+        vps.timingInfo(w);
+    }
+    w.Flag(false);  // vps_extension_flag
     return AnnexBNal({0x40, 0x01}, w.TrailingBits().Data());
 }
 
@@ -395,7 +401,12 @@ std::vector<uint8_t> H265VpsSplittingNal(uint32_t id, uint32_t scalabilityMask, 
 // blocks and one short-term RPS: one negative picture, used.
 struct H265Sps {
     uint32_t id = 0;
+    uint32_t vpsId = 0;
     uint32_t log2MaxPocLsbMinus4 = 4;
+    // sps_max_dec_pic_buffering_minus1, sps_max_num_reorder_pics and sps_max_latency_increase_plus1
+    uint32_t maxDecPicBufferingMinus1 = 1;
+    uint32_t maxNumReorderPics = 0;
+    uint32_t maxLatencyIncreasePlus1 = 0;
     bool scalingListEnabled = false;  // scaling_list_enabled_flag
     // with scalingListEnabled, the lists of H265PredictedScalingLists; none for the default lists
     std::vector<uint64_t> scalingListDeltas;
@@ -409,12 +420,13 @@ struct H265Sps {
 
 std::vector<uint8_t> H265SpsNal(const H265Sps& sps = H265Sps()) {
     BitWriter w;
-    w.U(4, 0).U(3, 0).Flag(true);  // vps id, sps_max_sub_layers_minus1, sps_temporal_id_nesting_flag
+    w.U(4, sps.vpsId).U(3, 0).Flag(true);  // vps id, sps_max_sub_layers_minus1, sps_temporal_id_nesting_flag
     H265ProfileTierLevel(w);
-    w.Ue(sps.id).Ue(1).Ue(64).Ue(64).Flag(false);  // sps id, 4:2:0, width, height, conformance window
-    w.Ue(0).Ue(0).Ue(sps.log2MaxPocLsbMinus4);     // bit depths, log2_max_pic_order_cnt_lsb_minus4
-    w.Flag(true).Ue(1).Ue(0).Ue(0);                // sub_layer_ordering_info
-    w.Ue(0).Ue(1).Ue(0).Ue(2).Ue(0).Ue(0);         // coding and transform block sizes, hierarchy depths
+    w.Ue(sps.id).Ue(1).Ue(64).Ue(64).Flag(false);                 // sps id, 4:2:0, width, height, conformance window
+    w.Ue(0).Ue(0).Ue(sps.log2MaxPocLsbMinus4);                    // bit depths, log2_max_pic_order_cnt_lsb_minus4
+    w.Flag(true).Ue(sps.maxDecPicBufferingMinus1);                // sub_layer_ordering_info: DPB size,
+    w.Ue(sps.maxNumReorderPics).Ue(sps.maxLatencyIncreasePlus1);  // reorder and latency limits
+    w.Ue(0).Ue(1).Ue(0).Ue(2).Ue(0).Ue(0);                        // coding and transform block sizes, hierarchy depths
     w.Flag(sps.scalingListEnabled);
     if (sps.scalingListEnabled) {
         w.Flag(!sps.scalingListDeltas.empty());  // sps_scaling_list_data_present_flag
@@ -464,10 +476,10 @@ std::vector<uint8_t> H265PpsNal(const H265Pps& pps = H265Pps()) {
 }
 
 // An IDR_W_RADL I slice; its slice data is filler the parser does not read.
-std::vector<uint8_t> H265IdrSliceNal() {
+std::vector<uint8_t> H265IdrSliceNal(bool noOutputOfPriorPics = false) {
     BitWriter w;
-    w.Flag(true).Flag(false).Ue(0).Ue(2).Se(0);        // first slice, no_output_of_prior_pics, pps id, I, slice_qp_delta
-    w.TrailingBits().Bytes({0x55, 0xAA, 0x55, 0xAA});  // byte_alignment(), slice data
+    w.Flag(true).Flag(noOutputOfPriorPics).Ue(0).Ue(2).Se(0);  // first slice, no_output_of_prior_pics, pps id, I, slice_qp_delta
+    w.TrailingBits().Bytes({0x55, 0xAA, 0x55, 0xAA});          // byte_alignment(), slice data
     return AnnexBNal({0x26, 0x01}, w.Data());
 }
 
@@ -502,6 +514,26 @@ std::vector<uint8_t> H265TrailSliceNal(uint32_t pocLsb, const std::function<void
     w.TrailingBits().Bytes({0x55, 0xAA, 0x55, 0xAA});  // byte_alignment(), slice data
     return AnnexBNal({0x02, 0x01}, w.Data());
 }
+
+// An I slice of a picture that is not an IDR, of NAL unit type nalUnitType (TRAIL_R 1, CRA 21), with
+// picture order count LSB pocLsb and an empty reference picture set of its own; its slice data is
+// filler the parser does not read.
+std::vector<uint8_t> H265IntraSliceNal(uint8_t nalUnitType, uint32_t pocLsb) {
+    BitWriter w;
+    w.Flag(true);  // first_slice_segment_in_pic_flag
+    if ((nalUnitType >= 16) && (nalUnitType <= 23)) {
+        w.Flag(false);  // no_output_of_prior_pics_flag, in an IRAP
+    }
+    w.Ue(0).Ue(2);                                     // pps id, slice_type I
+    w.U(8, pocLsb).Flag(false);                        // slice_pic_order_cnt_lsb, short_term_ref_pic_set_sps_flag
+    w.Flag(false).Ue(0).Ue(0);                         // st_ref_pic_set(1): not predicted, no pictures
+    w.Se(0);                                           // slice_qp_delta
+    w.TrailingBits().Bytes({0x55, 0xAA, 0x55, 0xAA});  // byte_alignment(), slice data
+    return AnnexBNal({static_cast<uint8_t>(nalUnitType << 1), 0x01}, w.Data());
+}
+
+// An end of sequence NAL unit: a header and no payload.
+std::vector<uint8_t> H265EndOfSequenceNal() { return AnnexBNal({0x48, 0x01}, {}); }
 
 // ---- AV1 (AV1 bitstream specification 5.5) ----
 
@@ -587,21 +619,37 @@ std::vector<uint8_t> Av1TruncatedTimingUnit() {
 
 // ---- VP9 (VP9 bitstream specification 6.2) ----
 
-// A shown profile 0 key frame of 64x64, with frame_marker frameMarker and frame_sync_code syncCode; its
-// compressed header and tile are filler.
-std::vector<uint8_t> Vp9KeyFrame(uint32_t syncCode = 0x498342, uint32_t frameMarker = 2) {
+// The syntax a crafted VP9 key frame varies.
+struct Vp9KeyFrameSyntax {
+    uint32_t syncCode = 0x498342;  // frame_sync_code
+    uint32_t frameMarker = 2;      // frame_marker
+    bool profile1 = false;         // profile 1, which codes the chroma subsampling
+    bool subsamplingX = true;      // with profile1
+    bool subsamplingY = true;      // with profile1
+    // With it, loop_filter_delta_enabled is 1 and it writes the syntax after it.
+    std::function<void(BitWriter&)> loopFilterDeltas;
+};
+
+// A shown 8-bit key frame of 64x64, profile 0 or 1; its compressed header and tile are filler.
+std::vector<uint8_t> Vp9KeyFrame(const Vp9KeyFrameSyntax& syntax = {}) {
     const std::vector<uint8_t> compressedHeader = {0x55, 0xAA, 0x55, 0xAA};
     BitWriter w;
-    w.U(2, frameMarker).Flag(false).Flag(false);       // frame_marker, profile 0
-    w.Flag(false).Flag(false).Flag(true).Flag(false);  // show_existing_frame, KEY_FRAME, show_frame, error res
-    w.U(24, syncCode);                                 // frame_sync_code
-    w.U(3, 1).Flag(false);                             // color_space BT.601, color_range
-    w.U(16, 63).U(16, 63).Flag(false);                 // frame size, render size equal
-    w.Flag(true).Flag(true).U(2, 0);                   // refresh_frame_context, parallel mode, context 0
-    w.U(6, 10).U(3, 0).Flag(false);                    // loop filter level and sharpness, no deltas
-    w.U(8, 60).Flag(false).Flag(false).Flag(false);    // base_q_idx, no delta_q
-    w.Flag(false).Flag(false);                         // segmentation off, tile_rows_log2 0
-    w.U(16, compressedHeader.size()).AlignZero();      // header_size_in_bytes, trailing_bits
+    w.U(2, syntax.frameMarker).Flag(syntax.profile1).Flag(false);  // frame_marker, profile_low_bit, profile_high_bit
+    w.Flag(false).Flag(false).Flag(true).Flag(false);              // show_existing_frame, KEY_FRAME, show_frame, error res
+    w.U(24, syntax.syncCode);                                      // frame_sync_code
+    w.U(3, 1).Flag(false);                                         // color_space BT.601, color_range
+    if (syntax.profile1) {
+        w.Flag(syntax.subsamplingX).Flag(syntax.subsamplingY).Flag(false);  // subsampling_x, subsampling_y, reserved_zero
+    }
+    w.U(16, 63).U(16, 63).Flag(false);                            // frame size, render size equal
+    w.Flag(true).Flag(true).U(2, 0);                              // refresh_frame_context, parallel mode, context 0
+    w.U(6, 10).U(3, 0).Flag(syntax.loopFilterDeltas != nullptr);  // loop filter level, sharpness, delta_enabled
+    if (syntax.loopFilterDeltas != nullptr) {
+        syntax.loopFilterDeltas(w);
+    }
+    w.U(8, 60).Flag(false).Flag(false).Flag(false);  // base_q_idx, no delta_q
+    w.Flag(false).Flag(false);                       // segmentation off, tile_rows_log2 0
+    w.U(16, compressedHeader.size()).AlignZero();    // header_size_in_bytes, trailing_bits
     w.Bytes(compressedHeader).Bytes({0x55, 0xAA, 0x55, 0xAA});
     return w.Data();
 }
@@ -823,6 +871,80 @@ const std::vector<CraftedCase>& Cases() {
              checks.Count("refused", 0);
              return checks.Failures();
          }},
+        // A CRA after an end of sequence starts a sequence (8.1.3: NoRaslOutputFlag 1), so, a CRA, it
+        // has NoOutputOfPriorPicsFlag 1 (C.5.2.2): the pictures still waiting for output, POC 1 and 2
+        // (sps_max_num_reorder_pics 2 lets two wait), are discarded, and 0, 8 and 9 are output.
+        {"H265EndOfSequenceCra",
+         [](CaseContext& stream) {
+             H265Sps sps;
+             sps.maxDecPicBufferingMinus1 = 3;
+             sps.maxNumReorderPics = 2;
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal(sps));
+             Append(stream.byteStream, H265PpsNal());
+             Append(stream.byteStream, H265IdrSliceNal());
+             Append(stream.byteStream, H265TrailSliceNal(1));
+             Append(stream.byteStream, H265TrailSliceNal(2));
+             Append(stream.byteStream, H265EndOfSequenceNal());
+             Append(stream.byteStream, H265IntraSliceNal(21, 8));  // CRA
+             Append(stream.byteStream, H265TrailSliceNal(9));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("pic", 5);
+             checks.Count("disp", 3);
+             checks.Count("refused", 0);
+             return checks.Failures();
+         }},
+        // sps_max_latency_increase_plus1 1 with sps_max_num_reorder_pics 2 makes SpsMaxLatencyPictures 2
+        // (C.5.2.3). Decoded 0, 10, 1, 2: after 2, POC 10 has two pictures after it in decoding order and
+        // before it in output order, so 2 and 10 are output then, rather than waiting; the IDR after them,
+        // with no_output_of_prior_pics_flag 1, finds nothing to discard, and 0, 1, 2, 10 and the IDR are
+        // output. The reorder limit alone leaves 2 and 10 to the IDR, and outputs 0, 1 and the IDR.
+        {"H265OutputLatency",
+         [](CaseContext& stream) {
+             H265Sps sps;
+             sps.maxDecPicBufferingMinus1 = 3;
+             sps.maxNumReorderPics = 2;
+             sps.maxLatencyIncreasePlus1 = 1;
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal(sps));
+             Append(stream.byteStream, H265PpsNal());
+             Append(stream.byteStream, H265IdrSliceNal());
+             Append(stream.byteStream, H265IntraSliceNal(1, 10));  // TRAIL_R
+             Append(stream.byteStream, H265IntraSliceNal(1, 1));
+             Append(stream.byteStream, H265IntraSliceNal(1, 2));
+             Append(stream.byteStream, H265IdrSliceNal(true));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("pic", 5);
+             checks.Count("disp", 5);
+             checks.Count("refused", 0);
+             return checks.Failures();
+         }},
+        // A PPS names no VPS, and one sent before its SPS takes VPS id 0, while the client keys a PPS by
+        // the VPS id of its SPS: the slice that activates it gives the client the PPS again, with that id
+        // (1 here), and the picture uses it.
+        {"H265PpsBeforeItsSps",
+         [](CaseContext& stream) {
+             H265Vps vps;
+             vps.id = 1;
+             H265Sps sps;
+             sps.vpsId = 1;
+             Append(stream.byteStream, H265VpsNal(vps));
+             Append(stream.byteStream, H265PpsNal());
+             Append(stream.byteStream, H265SpsNal(sps));
+             Append(stream.byteStream, H265IdrSliceNal());
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("pps", 2);
+             checks.Field("pps", "sps_video_parameter_set_id", "0", 0);
+             checks.Field("pps", "sps_video_parameter_set_id", "1", 1);
+             checks.Count("pic", 1);
+             checks.Field("  hevc", "vps_video_parameter_set_id", "1");
+             checks.Field("  hevc", "pps_update", "1");
+             checks.Count("refused", 0);
+             return checks.Failures();
+         }},
         // a VPS that ends after vps_max_layer_id reads vps_num_layer_sets_minus1 from the zeros past
         // its end, 0xFFFFFFFF, whose count of layer sets wraps to 0 and passes a check on the count.
         {"H265VpsLayerSetCountWrap",
@@ -884,10 +1006,10 @@ const std::vector<CraftedCase>& Cases() {
              checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
-        // the VCL NAL units of a picture share its nuh_layer_id (Rec. ITU-T H.265 7.4.2.2). A layer-0
-        // IDR picture goes on with a slice segment of layer 1, which has no SPS, and ends at the next
-        // picture's first slice: it ends with layer 0's parameter sets, and the other layer's segment
-        // is dropped.
+        // the parser gives its client the base layer: a NAL unit of a layer above 0 is ignored, as a
+        // decoder of the single-layer profiles ignores it (Rec. ITU-T H.265 7.4.2.2). A layer-0 IDR
+        // picture goes on with a slice segment of layer 1, which has no SPS, and ends at the next
+        // picture's first slice with its one slice; the other layer's segment is not refused.
         {"H265SliceOfAnotherLayer",
          [](CaseContext& stream) {
              Append(stream.byteStream, H265VpsNal());
@@ -900,7 +1022,7 @@ const std::vector<CraftedCase>& Cases() {
              Checks checks(trace);
              checks.Count("pic", 2);
              checks.Field("pic", "numSlices", "1", 0);
-             checks.Field("refused", "units", "1");
+             checks.Count("refused", 0);
              return checks.Failures();
          }},
         // num_long_term_sps is at most num_long_term_ref_pics_sps (Rec. ITU-T H.265 7.4.7.1), and
@@ -929,6 +1051,31 @@ const std::vector<CraftedCase>& Cases() {
              checks.Count("pic", 2);
              checks.Field("  hevc", "CurrPicOrderCntVal", "1", 1);
              checks.Field("refused", "units", "1");
+             return checks.Failures();
+         }},
+        // A long-term reference picture the DPB does not hold is "no reference picture" (Rec. ITU-T
+        // H.265 8.3.2), in its place in RefPicSetLtCurr. The SPS lists no long-term picture; the third
+        // picture's slice names two of its own, POC 50, which no picture has, and the IDR picture.
+        {"H265LongTermMissingKeepsPosition",
+         [](CaseContext& stream) {
+             const auto twoLongTermPictures = [](BitWriter& w) {
+                 w.Ue(2);                            // num_long_term_pics
+                 w.U(8, 50).Flag(true).Flag(false);  // poc_lsb_lt, used_by_curr_pic_lt_flag, delta_poc_msb_present_flag
+                 w.U(8, 0).Flag(true).Flag(false);
+             };
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal({.longTermRefPics = [](BitWriter& w) {
+                        w.Ue(0);  // num_long_term_ref_pics_sps
+                    }}));
+             Append(stream.byteStream, H265PpsNal());
+             Append(stream.byteStream, H265IdrSliceNal());
+             Append(stream.byteStream, H265TrailSliceNal(1, [](BitWriter& w) { w.Ue(0); }));
+             Append(stream.byteStream, H265TrailSliceNal(2, twoLongTermPictures));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("pic", 3);
+             checks.Field("  rps", "NumPocLtCurr", "2", 2);
+             checks.Field("  rps", "RefPicSetLtCurr", "[-1,0,0,0,0,0,0,0]", 2);
              return checks.Failures();
          }},
         // with splitting_flag 1 the scalability dimensions split the 6 bits of nuh_layer_id
@@ -1081,8 +1228,66 @@ const std::vector<CraftedCase>& Cases() {
              checks.Field("refused", "units", "1");
              return checks.Failures();
          }},
+        // The first HRD of a VPS carries the common information, cprms_present_flag[0] being inferred
+        // to be 1 (7.4.3.1): one HRD with NAL HRD parameters, of the one sub-layer, reads as written.
+        {"H265VpsHrdCommonInfo",
+         [](CaseContext& stream) {
+             H265Vps vps;
+             vps.timingInfo = [](BitWriter& w) {
+                 w.U(32, 1).U(32, 30).Flag(false);      // num_units_in_tick, time_scale, poc_proportional
+                 w.Ue(1).Ue(0);                         // vps_num_hrd_parameters, hrd_layer_set_idx[0]
+                 w.Flag(true).Flag(false).Flag(false);  // nal and vcl HRD parameters, sub_pic_hrd_params
+                 w.U(4, 4).U(4, 5);                     // bit_rate_scale, cpb_size_scale
+                 w.U(5, 23).U(5, 23).U(5, 23);          // the three delay lengths minus 1
+                 w.Flag(true).Ue(0).Ue(0);              // fixed_pic_rate_general_flag, duration, cpb_cnt_minus1
+                 w.Ue(999).Ue(1999).Flag(false);        // bit_rate_value_minus1, cpb_size_value_minus1, cbr_flag
+             };
+             Append(stream.byteStream, H265VpsNal(vps));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("vps", 1);
+             checks.Field("  hrd", "flags", "nal_hrd_parameters_present_flag");
+             checks.Field("  hrd", "bit_rate_scale", "4");
+             checks.Field("  hrd", "cpb_size_scale", "5");
+             checks.Field("  hrd", "initial_cpb_removal_delay_length_minus1", "23");
+             checks.Field("  hrd", "dpb_output_delay_length_minus1", "23");
+             checks.Field("  hrd", "cpb_cnt_minus1", "[0,0,0,0,0,0,0]");
+             checks.Field("  hrd-nal", "bit_rate_value_minus1", "[999]");
+             checks.Field("  hrd-nal", "cpb_size_value_minus1", "[1999]");
+             return checks.Failures();
+         }},
+        // The Std short-term reference picture sets of an SPS hold syntax values (7.4.8): a coded
+        // set its delta_poc_s0_minus1 and delta_poc_s1_minus1, and a set predicted from another the
+        // values a set coding the pictures it derives would hold. Set 0 codes DeltaPocS0 {-1, -3}
+        // and DeltaPocS1 {3}; set 1, predicted from it with DeltaRPS -1, derives {-1, -2, -4}
+        // and {2}.
+        {"H265SpsRpsStdFields",
+         [](CaseContext& stream) {
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal({.refPicSets = [](BitWriter& w) {
+                        w.Ue(2).Ue(2).Ue(1);                  // num_short_term_ref_pic_sets; set 0: 2 negative, 1 positive
+                        w.Ue(0).Flag(true).Ue(1).Flag(true);  // delta_poc_s0_minus1 0 and 1, used
+                        w.Ue(2).Flag(true);                   // delta_poc_s1_minus1 2, used
+                        w.Flag(true).Flag(true).Ue(0);        // set 1: inter_ref_pic_set_prediction_flag, DeltaRPS -1
+                        for (int j = 0; j <= 3; j++) {
+                            w.Flag(true);  // used_by_curr_pic_flag[j]
+                        }
+                    }}));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("sps", 1);
+             checks.Field("  strps", "num_negative_pics", "2", 0);
+             checks.Field("  strps", "delta_poc_s0_minus1", "[0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0]", 0);
+             checks.Field("  strps", "num_positive_pics", "1", 0);
+             checks.Field("  strps", "delta_poc_s1_minus1", "[2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]", 0);
+             checks.Field("  strps", "num_negative_pics", "3", 1);
+             checks.Field("  strps", "delta_poc_s0_minus1", "[0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0]", 1);
+             checks.Field("  strps", "num_positive_pics", "1", 1);
+             checks.Field("  strps", "delta_poc_s1_minus1", "[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]", 1);
+             return checks.Failures();
+         }},
         // Proves the AV1 sequence header builder: every field after the timing info, uvlc() included,
-        // reads as written. The parser keeps the timing info out of the Std sequence header.
+        // reads as written, and the Std sequence header flags the timing info the header codes.
         {"Av1CraftedSequenceHeader",
          [](CaseContext& stream) {
              stream.packets.push_back({Av1SequenceHeaderUnit(5), 0});
@@ -1093,7 +1298,7 @@ const std::vector<CraftedCase>& Cases() {
              checks.Field("sps", "order_hint_bits_minus_1", "6");
              checks.Field("sps", "seq_force_screen_content_tools", "2");
              checks.Field("sps", "seq_force_integer_mv", "2");
-             checks.Field("sps", "flags", "enable_order_hint");
+             checks.Field("sps", "flags", "enable_order_hint|timing_info_present_flag");
              checks.Count("pkt-error", 0);
              checks.Count("refused", 0);
              return checks.Failures();
@@ -1303,9 +1508,64 @@ const std::vector<CraftedCase>& Cases() {
          }},
         // frame_marker is 2 (VP9 6.2); a frame with another is refused, where a build with assertions
         // stopped.
+        // The loop filter deltas a key frame codes (VP9 6.2.8): a negative mode delta, update masks
+        // and loop_filter_delta_update for each frame's own syntax. Frame 0 sets ref delta 1 to 2 and
+        // mode delta 0 to -3; frame 1 updates mode delta 1 only; frame 2 codes no deltas.
+        {"Vp9LoopFilterDeltas",
+         [](CaseContext& stream) {
+             stream.packets.push_back({Vp9KeyFrame({.loopFilterDeltas =
+                                                        [](BitWriter& w) {
+                                                            w.Flag(true);  // loop_filter_delta_update
+                                                            w.Flag(false).Flag(true).U(6, 2).Flag(false);  // ref 0 kept, ref 1: +2
+                                                            w.Flag(false).Flag(false);                     // refs 2 and 3 kept
+                                                            w.Flag(true).U(6, 3).Flag(true);               // mode 0: -3
+                                                            w.Flag(false);                                 // mode 1 kept
+                                                        }}),
+                                       0});
+             stream.packets.push_back({Vp9KeyFrame({.loopFilterDeltas =
+                                                        [](BitWriter& w) {
+                                                            w.Flag(true);  // loop_filter_delta_update
+                                                            w.Flag(false).Flag(false).Flag(false).Flag(false);  // refs kept
+                                                            w.Flag(false).Flag(true).U(6, 5).Flag(false);       // mode 1: +5
+                                                        }}),
+                                       1});
+             stream.packets.push_back({Vp9KeyFrame(), 2});
+             const Trace trace = Run(stream, "vp9");
+             Checks checks(trace);
+             checks.Count("  lf", 3);
+             checks.Field("  lf", "loop_filter_ref_deltas", "[1,2,-1,-1]", 0);
+             checks.Field("  lf", "loop_filter_mode_deltas", "[-3,0]", 0);
+             checks.Field("  lf", "update_ref_delta", "2", 0);
+             checks.Field("  lf", "update_mode_delta", "1", 0);
+             checks.Field("  lf", "flags", "loop_filter_delta_enabled|loop_filter_delta_update", 0);
+             checks.Field("  lf", "loop_filter_ref_deltas", "[1,0,-1,-1]", 1);
+             checks.Field("  lf", "loop_filter_mode_deltas", "[0,5]", 1);
+             checks.Field("  lf", "update_ref_delta", "0", 1);
+             checks.Field("  lf", "update_mode_delta", "2", 1);
+             checks.Field("  lf", "update_ref_delta", "0", 2);
+             checks.Field("  lf", "update_mode_delta", "0", 2);
+             checks.Field("  lf", "flags", "-", 2);
+             return checks.Failures();
+         }},
+        // The chroma format of a profile 1 key frame (VP9 7.2): 4:4:4 and 4:2:2 reach the sequence
+        // as StdChromaFormatIdc 3 and 2, and a 4:4:0 frame, which Vulkan has no format for, is
+        // refused.
+        {"Vp9ChromaFormats",
+         [](CaseContext& stream) {
+             stream.packets.push_back({Vp9KeyFrame({.profile1 = true, .subsamplingX = false, .subsamplingY = false}), 0});
+             stream.packets.push_back({Vp9KeyFrame({.profile1 = true, .subsamplingX = true, .subsamplingY = false}), 1});
+             stream.packets.push_back({Vp9KeyFrame({.profile1 = true, .subsamplingX = false, .subsamplingY = true}), 2});
+             const Trace trace = Run(stream, "vp9");
+             Checks checks(trace);
+             checks.Count("seq", 2);
+             checks.Field("seq", "nChromaFormat", "3", 0);
+             checks.Field("seq", "nChromaFormat", "2", 1);
+             checks.Count("pic", 2);
+             return checks.Failures();
+         }},
         {"Vp9BadFrameMarker",
          [](CaseContext& stream) {
-             stream.packets.push_back({Vp9KeyFrame(0x498342, 1), 0});
+             stream.packets.push_back({Vp9KeyFrame({.frameMarker = 1}), 0});
              stream.packets.push_back({Vp9KeyFrame(), 1});
              const Trace trace = Run(stream, "vp9");
              Checks checks(trace);
@@ -1316,7 +1576,7 @@ const std::vector<CraftedCase>& Cases() {
         // frame_sync_code is 0x49, 0x83, 0x42 (VP9 6.2); a key frame with another is not a frame.
         {"Vp9BadSyncCode",
          [](CaseContext& stream) {
-             stream.packets.push_back({Vp9KeyFrame(0x498343), 0});
+             stream.packets.push_back({Vp9KeyFrame({.syncCode = 0x498343}), 0});
              stream.packets.push_back({Vp9KeyFrame(), 1});
              const Trace trace = Run(stream, "vp9");
              Checks checks(trace);

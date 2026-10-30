@@ -1,0 +1,42 @@
+trace version=1 codec=vp9 format=ivf packets=24 offsetAlignment=256 sizeAlignment=256 pool=32
+pkt index=0 bytes=2227 pts=0
+seq index=0 eCodec=0x8 isSVC=0 frameRate=0x0 bProgSeq=1 nDisplayWidth=64 nDisplayHeight=64 nCodedWidth=64 nCodedHeight=64 nDisplayOffsetX=0 nDisplayOffsetY=0 nMaxWidth=64 nMaxHeight=64 nChromaFormat=1 uBitDepthLumaMinus8=0 uBitDepthChromaMinus8=0 uVideoFullRange=0 lBitrate=0 lDARWidth=64 lDARHeight=64 lVideoFormat=0 lColorPrimaries=0 lTransferCharacteristics=0 lMatrixCoefficients=0 nMinNumDpbSlots=0 nMinNumDecodeSurfaces=9 codecProfile=0 hasFilmGrain=0 canUseFields=0 cbSequenceHeader=0 sequenceHeaderCrc32=0x0
+pic index=0 curr=0 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=1 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=2304 crc32=0xfa74dbc7
+  vp9 FrameWidth=64 FrameHeight=64 MiCols=8 MiRows=8 Sb64Cols=1 Sb64Rows=1 renderWidth=64 renderHeight=64 frame_to_show_map_idx=0 show_existing_frame=0 ref_frame_idx=[0,0,0] pic_idx=[255,255,255,255,255,255,255,255] last=-1 golden=-1 altref=-1 FrameIsIntra=1 ChromaFormat=1 numTiles=1 compressedHeaderSize=81 uncompressedHeaderOffset=0 compressedHeaderOffset=18 tilesOffset=99
+  std profile=0 frame_type=0 frame_context_idx=0 reset_frame_context=0 refresh_frame_flags=0xff ref_frame_sign_bias_mask=0x0 interpolation_filter=0 base_q_idx=11 delta_q_y_dc=0 delta_q_uv_dc=0 delta_q_uv_ac=0 tile_cols_log2=0 tile_rows_log2=0 flags=refresh_frame_context|frame_parallel_decoding_mode|show_frame
+  color BitDepth=8 subsampling_x=1 subsampling_y=1 color_space=0 flags=-
+  lf loop_filter_level=1 loop_filter_sharpness=0 update_ref_delta=13 loop_filter_ref_deltas=[1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled|loop_filter_delta_update
+  seg segmentation_tree_probs=[0,0,0,0,0,0,0] segmentation_pred_prob=[0,0,0] FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] flags=-
+disp index=0 pic=0 pts=0
+pkt index=1 bytes=1975 pts=1
+pic index=1 curr=1 PicWidthInMbs=4 FrameHeightInMbs=4 progressive_frame=1 ref_pic_flag=1 intra_pic_flag=0 chroma_format=1 picture_order_count=0 current_dpb_id=0 firstSliceIndex=0 numSlices=1 bitstreamDataOffset=0 bitstreamDataLen=1792 crc32=0x85509b9f
+  vp9 FrameWidth=64 FrameHeight=64 MiCols=8 MiRows=8 Sb64Cols=1 Sb64Rows=1 renderWidth=64 renderHeight=64 frame_to_show_map_idx=0 show_existing_frame=0 ref_frame_idx=[0,1,2] pic_idx=[0,0,0,0,0,0,0,0] last=-1 golden=-1 altref=-1 FrameIsIntra=0 ChromaFormat=1 numTiles=1 compressedHeaderSize=63 uncompressedHeaderOffset=0 compressedHeaderOffset=10 tilesOffset=73
+  std profile=0 frame_type=1 frame_context_idx=1 reset_frame_context=0 refresh_frame_flags=0x4 ref_frame_sign_bias_mask=0x0 interpolation_filter=4 base_q_idx=13 delta_q_y_dc=0 delta_q_uv_dc=0 delta_q_uv_ac=0 tile_cols_log2=0 tile_rows_log2=0 flags=allow_high_precision_mv|refresh_frame_context|frame_parallel_decoding_mode|UsePrevFrameMvs
+  color BitDepth=8 subsampling_x=1 subsampling_y=1 color_space=0 flags=-
+  lf loop_filter_level=2 loop_filter_sharpness=0 update_ref_delta=0 loop_filter_ref_deltas=[1,0,-1,-1] update_mode_delta=0 loop_filter_mode_deltas=[0,0] flags=loop_filter_delta_enabled
+  seg segmentation_tree_probs=[0,0,0,0,0,0,0] segmentation_pred_prob=[0,0,0] FeatureEnabled=[0,0,0,0,0,0,0,0] FeatureData=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] flags=-
+pic-failed index=1
+pkt index=2 bytes=387 pts=2
+pkt index=3 bytes=317 pts=3
+pkt index=4 bytes=522 pts=4
+pkt index=5 bytes=467 pts=5
+pkt index=6 bytes=429 pts=6
+pkt index=7 bytes=451 pts=7
+pkt index=8 bytes=343 pts=8
+pkt index=9 bytes=445 pts=9
+pkt index=10 bytes=366 pts=10
+pkt index=11 bytes=399 pts=11
+pkt index=12 bytes=16 pts=12
+pkt index=13 bytes=2062 pts=13
+pkt index=14 bytes=569 pts=14
+pkt index=15 bytes=472 pts=15
+pkt index=16 bytes=505 pts=16
+pkt index=17 bytes=641 pts=17
+pkt index=18 bytes=414 pts=18
+pkt index=19 bytes=542 pts=19
+pkt index=20 bytes=623 pts=20
+pkt index=21 bytes=594 pts=21
+pkt index=22 bytes=274 pts=22
+pkt index=23 bytes=16 pts=23
+eos pictures=2 displayed=1
+refused units=24

@@ -5,7 +5,7 @@ session state=new maxDpbSlots=9 maxActiveReferencePictures=9
 pic index=0 idx=0 setup=0 refs=0
   av1 frame_type=0 order_hint=0 refresh=0xff names=[-1,-1,-1,-1,-1,-1,-1]
   setup slot=0 res=0 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
-  begin role=setup slot=0 res=0
+  begin role=setup slot=-1 res=0
 disp idx=0 pts=0
 pkt index=1 bytes=310
 pic index=1 idx=1 setup=1 refs=1
@@ -13,34 +13,34 @@ pic index=1 idx=1 setup=1 refs=1
   setup slot=1 res=1 frame_type=1 order_hint=1 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
   ref slot=0 res=0 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
   begin role=ref slot=0 res=0
-  begin role=setup slot=1 res=1
+  begin role=setup slot=-1 res=1
 disp idx=1 pts=333333
 pkt index=2 bytes=266
 pic index=2 idx=2 setup=2 refs=2
   av1 frame_type=1 order_hint=2 refresh=0x4 names=[0,0,0,1,0,0,0]
-  setup slot=2 res=2 frame_type=1 order_hint=2 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
+  setup slot=2 res=2 frame_type=1 order_hint=2 sign_bias=0x0 saved=[0,0,0,0,1,0,0,0] flags=-
   ref slot=0 res=0 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
   ref slot=1 res=1 frame_type=1 order_hint=1 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
   begin role=ref slot=0 res=0
   begin role=ref slot=1 res=1
-  begin role=setup slot=2 res=2
+  begin role=setup slot=-1 res=2
 disp idx=2 pts=666666
 pkt index=3 bytes=221
 pic index=3 idx=3 setup=3 refs=3
   av1 frame_type=1 order_hint=3 refresh=0x8 names=[1,0,0,2,0,0,0]
-  setup slot=3 res=3 frame_type=1 order_hint=3 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
+  setup slot=3 res=3 frame_type=1 order_hint=3 sign_bias=0x0 saved=[0,1,0,0,2,0,0,0] flags=-
   ref slot=0 res=0 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
   ref slot=1 res=1 frame_type=1 order_hint=1 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
   ref slot=2 res=2 frame_type=1 order_hint=2 sign_bias=0x0 saved=[0,0,0,0,1,0,0,0] flags=-
   begin role=ref slot=0 res=0
   begin role=ref slot=1 res=1
   begin role=ref slot=2 res=2
-  begin role=setup slot=3 res=3
+  begin role=setup slot=-1 res=3
 disp idx=3 pts=999999
 pkt index=4 bytes=591
 pic index=4 idx=4 setup=4 refs=0
   av1 frame_type=0 order_hint=0 refresh=0xff names=[-1,-1,-1,-1,-1,-1,-1]
-  setup slot=4 res=4 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
-  begin role=setup slot=4 res=4
+  setup slot=4 res=4 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=cdf
+  begin role=setup slot=-1 res=4
 disp idx=4 pts=1333332
 eos pictures=5 displayed=5

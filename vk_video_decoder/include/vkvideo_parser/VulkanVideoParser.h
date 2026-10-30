@@ -75,6 +75,9 @@ public:
 
     // The number of units of the stream the parser has refused (VulkanVideoDecodeParser::GetRefusedUnitCount).
     virtual uint64_t GetRefusedUnitCount() const { return 0; }
+    // The number of pictures the parser has dropped for a coding tool Vulkan Video cannot decode
+    // (VulkanVideoDecodeParser::GetUnsupportedPictureCount).
+    virtual uint64_t GetUnsupportedPictureCount() const { return 0; }
 
     virtual void Deinitialize() = 0;
 

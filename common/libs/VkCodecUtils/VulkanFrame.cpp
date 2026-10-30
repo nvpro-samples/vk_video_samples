@@ -61,7 +61,7 @@ VulkanFrame<FrameDataType>::~VulkanFrame()
 template<class FrameDataType>
 int VulkanFrame<FrameDataType>::AttachQueue(VkSharedBaseObj<VkVideoRefCountBase>& videoQueue)
 {
-    m_videoQueue = (VkSharedBaseObj<VkVideoQueue<FrameDataType>>&)videoQueue;
+    m_videoQueue = std::static_pointer_cast<VkVideoQueue<FrameDataType>>(videoQueue);
 
     return 0;
 }

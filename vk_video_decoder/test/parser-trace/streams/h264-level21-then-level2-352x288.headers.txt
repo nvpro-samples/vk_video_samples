@@ -1,0 +1,194 @@
+# H.264 syntax elements read by h264_header_model.py
+# from ffmpeg's trace_headers dump (-c copy -copyinkf -bsf:v trace_headers -f null -)
+== Packet
+== Sequence Parameter Set
+0 forbidden_zero_bit 0
+1 nal_ref_idc 3
+3 nal_unit_type 7
+8 profile_idc 66
+16 constraint_set0_flag 1
+17 constraint_set1_flag 1
+18 constraint_set2_flag 0
+19 constraint_set3_flag 0
+20 constraint_set4_flag 0
+21 constraint_set5_flag 0
+22 reserved_zero_2bits 0
+24 level_idc 21
+32 seq_parameter_set_id 0
+33 log2_max_frame_num_minus4 0
+34 pic_order_cnt_type 2
+37 max_num_ref_frames 1
+40 gaps_in_frame_num_allowed_flag 0
+41 pic_width_in_mbs_minus1 21
+50 pic_height_in_map_units_minus1 17
+59 frame_mbs_only_flag 1
+60 direct_8x8_inference_flag 1
+61 frame_cropping_flag 0
+62 vui_parameters_present_flag 1
+== Picture Parameter Set
+0 forbidden_zero_bit 0
+1 nal_ref_idc 3
+3 nal_unit_type 8
+8 pic_parameter_set_id 0
+9 seq_parameter_set_id 0
+10 entropy_coding_mode_flag 0
+11 bottom_field_pic_order_in_frame_present_flag 0
+12 num_slice_groups_minus1 0
+13 num_ref_idx_l0_default_active_minus1 0
+14 num_ref_idx_l1_default_active_minus1 0
+15 weighted_pred_flag 0
+16 weighted_bipred_idc 0
+18 pic_init_qp_minus26 -3
+23 pic_init_qs_minus26 0
+24 chroma_qp_index_offset 0
+25 deblocking_filter_control_present_flag 1
+26 constrained_intra_pred_flag 0
+27 redundant_pic_cnt_present_flag 0
+28 rbsp_stop_one_bit 1
+29 rbsp_alignment_zero_bit 0
+30 rbsp_alignment_zero_bit 0
+31 rbsp_alignment_zero_bit 0
+== Slice Header
+1 nal_ref_idc 3
+3 nal_unit_type 5
+8 first_mb_in_slice 0
+9 slice_type 7
+16 pic_parameter_set_id 0
+17 frame_num 0
+21 idr_pic_id 0
+== Packet
+== Slice Header
+1 nal_ref_idc 2
+3 nal_unit_type 1
+8 first_mb_in_slice 0
+9 slice_type 5
+14 pic_parameter_set_id 0
+15 frame_num 1
+== Packet
+== Slice Header
+1 nal_ref_idc 2
+3 nal_unit_type 1
+8 first_mb_in_slice 0
+9 slice_type 5
+14 pic_parameter_set_id 0
+15 frame_num 2
+== Packet
+== Slice Header
+1 nal_ref_idc 2
+3 nal_unit_type 1
+8 first_mb_in_slice 0
+9 slice_type 5
+14 pic_parameter_set_id 0
+15 frame_num 3
+== Packet
+== Slice Header
+1 nal_ref_idc 2
+3 nal_unit_type 1
+8 first_mb_in_slice 0
+9 slice_type 5
+14 pic_parameter_set_id 0
+15 frame_num 4
+== Packet
+== Slice Header
+1 nal_ref_idc 2
+3 nal_unit_type 1
+8 first_mb_in_slice 0
+9 slice_type 5
+14 pic_parameter_set_id 0
+15 frame_num 5
+== Packet
+== Sequence Parameter Set
+0 forbidden_zero_bit 0
+1 nal_ref_idc 3
+3 nal_unit_type 7
+8 profile_idc 66
+16 constraint_set0_flag 1
+17 constraint_set1_flag 1
+18 constraint_set2_flag 0
+19 constraint_set3_flag 0
+20 constraint_set4_flag 0
+21 constraint_set5_flag 0
+22 reserved_zero_2bits 0
+24 level_idc 20
+32 seq_parameter_set_id 0
+33 log2_max_frame_num_minus4 0
+34 pic_order_cnt_type 2
+37 max_num_ref_frames 1
+40 gaps_in_frame_num_allowed_flag 0
+41 pic_width_in_mbs_minus1 21
+50 pic_height_in_map_units_minus1 17
+59 frame_mbs_only_flag 1
+60 direct_8x8_inference_flag 1
+61 frame_cropping_flag 0
+62 vui_parameters_present_flag 1
+== Picture Parameter Set
+0 forbidden_zero_bit 0
+1 nal_ref_idc 3
+3 nal_unit_type 8
+8 pic_parameter_set_id 0
+9 seq_parameter_set_id 0
+10 entropy_coding_mode_flag 0
+11 bottom_field_pic_order_in_frame_present_flag 0
+12 num_slice_groups_minus1 0
+13 num_ref_idx_l0_default_active_minus1 0
+14 num_ref_idx_l1_default_active_minus1 0
+15 weighted_pred_flag 0
+16 weighted_bipred_idc 0
+18 pic_init_qp_minus26 -3
+23 pic_init_qs_minus26 0
+24 chroma_qp_index_offset 0
+25 deblocking_filter_control_present_flag 1
+26 constrained_intra_pred_flag 0
+27 redundant_pic_cnt_present_flag 0
+28 rbsp_stop_one_bit 1
+29 rbsp_alignment_zero_bit 0
+30 rbsp_alignment_zero_bit 0
+31 rbsp_alignment_zero_bit 0
+== Slice Header
+1 nal_ref_idc 3
+3 nal_unit_type 5
+8 first_mb_in_slice 0
+9 slice_type 7
+16 pic_parameter_set_id 0
+17 frame_num 0
+21 idr_pic_id 0
+== Packet
+== Slice Header
+1 nal_ref_idc 2
+3 nal_unit_type 1
+8 first_mb_in_slice 0
+9 slice_type 5
+14 pic_parameter_set_id 0
+15 frame_num 1
+== Packet
+== Slice Header
+1 nal_ref_idc 2
+3 nal_unit_type 1
+8 first_mb_in_slice 0
+9 slice_type 5
+14 pic_parameter_set_id 0
+15 frame_num 2
+== Packet
+== Slice Header
+1 nal_ref_idc 2
+3 nal_unit_type 1
+8 first_mb_in_slice 0
+9 slice_type 5
+14 pic_parameter_set_id 0
+15 frame_num 3
+== Packet
+== Slice Header
+1 nal_ref_idc 2
+3 nal_unit_type 1
+8 first_mb_in_slice 0
+9 slice_type 5
+14 pic_parameter_set_id 0
+15 frame_num 4
+== Packet
+== Slice Header
+1 nal_ref_idc 2
+3 nal_unit_type 1
+8 first_mb_in_slice 0
+9 slice_type 5
+14 pic_parameter_set_id 0
+15 frame_num 5

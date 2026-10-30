@@ -43,6 +43,8 @@ Every decoded picture of the trace is compared with the model. Mismatches are co
   seg-*      the picture's segmentation flags and its effective FeatureEnabled and FeatureData
   setup-*    StdVideoDecodeAV1ReferenceInfo of the picture itself (the setup slot)
   ref-*      StdVideoDecodeAV1ReferenceInfo of each buffer the picture references
+  seq-timing the timing_info_present_flag of each sequence header the trace reports (key "sps"),
+             when the stream's sequence headers agree on it and the dump has the field
 Values the specification leaves undefined are not compared: RefFrameSignBias of intra frames,
 element 0 (INTRA_FRAME) of SavedOrderHints, and the segmentation update flags of a frame without
 segmentation. Buffers whose content the headers do not determine (a
@@ -74,7 +76,8 @@ UNITS = ("Sequence Header", "Frame Header", "Redundant Frame Header")
 
 # The syntax elements the model reads; a compact dump (--save-headers) keeps only these.
 MODEL_FIELDS = {
-    "reduced_still_picture_header", "enable_order_hint", "order_hint_bits_minus_1", "operating_points_cnt_minus_1",
+    "reduced_still_picture_header", "timing_info_present_flag", "enable_order_hint", "order_hint_bits_minus_1",
+    "operating_points_cnt_minus_1",
     "show_existing_frame", "frame_to_show_map_idx", "frame_type", "show_frame", "error_resilient_mode",
     "disable_cdf_update", "order_hint", "primary_ref_frame", "refresh_frame_flags", "frame_refs_short_signaling",
     "last_frame_idx", "golden_frame_idx", "disable_frame_end_update_cdf", "segmentation_enabled",
@@ -538,6 +541,28 @@ def parse_line(line):
     return tokens[0], fields
 
 
+def trace_sequence_flags(path):
+    """The flags of each sequence header the trace reports, in order."""
+    flags = []
+    with open(path) as trace:
+        for line in trace:
+            if line.startswith("sps "):
+                flags.append(parse_line(line)[1].get("flags", set()))
+    return flags
+
+
+def compare_sequences(report, lines, sequence_flags):
+    """seq-timing: each reported sequence header against the stream's timing_info_present_flag."""
+    coded = {fields.get("timing_info_present_flag") for _, kind, fields in read_header_units(lines)
+             if kind == "Sequence Header"}
+    if len(coded) != 1 or None in coded:
+        return
+    expected = coded.pop()
+    for index, flags in enumerate(sequence_flags):
+        report.check("seq-timing", ("sps", index), "timing_info_present_flag", expected,
+                     int("timing_info_present_flag" in flags))
+
+
 def trace_pictures(path):
     """Returns the trace's pictures keyed by (packet index, picture number within the packet)."""
     pictures = {}
@@ -745,6 +770,7 @@ def main():
             result.update(status="not-comparable", reason="no frame headers in the dump")
         else:
             report = compare(frames, pictures, args.verbose)
+            compare_sequences(report, lines, trace_sequence_flags(args.trace))
             result["pictures"] = len(pictures)
             result["frames"] = len(frames)
             result["categories"] = {name: {"pictures": len(entry["pictures"]), "first": entry["first"]}

@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "description": "Errors of the Khronos validation layer an encode may report and still pass, when it runs under the layer (vvs_test_runner.py --validation-layer, or a sample's \"validation_layer\": true). An entry names an error by its VUID, which may hold shell wildcards, and may narrow it to codecs, to the layer versions that report it (min_layer_version and max_layer_version, compared with the api_version of the layer's manifest) and to a substring of the message (message). Every entry gives its reason. See libs/video_test_validation_layer.py.",
+  "encode": [
+    {
+      "vuid": "VUID-vkCmdEncodeVideoKHR-predictionMode-10331",
+      "codecs": [
+        "av1"
+      ],
+      "max_layer_version": "1.4.357",
+      "reason": "False report for a unidirectional compound picture whose reference pair has a picture in DPB slot 0, such as LAST_FRAME and GOLDEN_FRAME with LAST_FRAME in slot 0: the layer takes slot index 0 for an unused reference name (it tests referenceNameSlotIndices[i] > 0 instead of >= 0). The 1.4.313 and 1.4.357 layers report it; Vulkan-ValidationLayers 2afb6caba2 fixes it, first in the 1.4.363 SDK.",
+      "bug_url": "https://github.com/KhronosGroup/Vulkan-ValidationLayers/commit/2afb6caba23815eeec7bb5f675a33d7cc19209f7"
+    }
+  ]
+}

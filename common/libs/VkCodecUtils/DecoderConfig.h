@@ -74,6 +74,9 @@ struct DecoderConfig {
         decoderQueueSize = 5;
         dumpTestReleaseDelayUs = 0;
         dumpTestFailWaitDisplayOrder = -1;
+        dumpTestFlushDelayUs = 0;
+        dumpTestSkipDisplayOrder = -1;
+        dumpTestStopReleaseDisplayOrder = -1;
         enablePostProcessFilter = -1,
         enableStreamDemuxing = true;
         deviceId = (uint32_t)-1;
@@ -279,11 +282,32 @@ struct DecoderConfig {
                     dumpTestReleaseDelayUs = std::atoi(args[0]);
                     return true;
                 }},
+            {"--dumpTestFlushDelayUs", nullptr, 1,
+                "Test only: sleep this many microseconds in each flush of the output frame writes, "
+                "while it holds the queue, whenever frames are still to be written",
+                [this](const char **args, const ProgramArgs &a) {
+                    dumpTestFlushDelayUs = std::atoi(args[0]);
+                    return true;
+                }},
             {"--dumpTestFailWait", nullptr, 1,
                 "Test only: fail the GPU wait of the output frame with this display order, "
                 "which is then not written",
                 [this](const char **args, const ProgramArgs &a) {
                     dumpTestFailWaitDisplayOrder = std::atoll(args[0]);
+                    return true;
+                }},
+            {"--dumpTestSkipDisplayOrder", nullptr, 1,
+                "Test only: do not queue the output frame with this display order for writing, "
+                "so that the writers wait for a display order that never comes",
+                [this](const char **args, const ProgramArgs &a) {
+                    dumpTestSkipDisplayOrder = std::atoll(args[0]);
+                    return true;
+                }},
+            {"--dumpTestStopRelease", nullptr, 1,
+                "Test only: from the output frame with this display order on, the writers "
+                "release no frame, as an output consumer that stopped would",
+                [this](const char **args, const ProgramArgs &a) {
+                    dumpTestStopReleaseDisplayOrder = std::atoll(args[0]);
                     return true;
                 }},
             {"--decodeImagesInFlight", nullptr, 1,
@@ -542,6 +566,9 @@ struct DecoderConfig {
     uint32_t decoderQueueSize;
     uint32_t dumpTestReleaseDelayUs;
     int64_t dumpTestFailWaitDisplayOrder;
+    uint32_t dumpTestFlushDelayUs;
+    int64_t dumpTestSkipDisplayOrder;
+    int64_t dumpTestStopReleaseDisplayOrder;
     int32_t enablePostProcessFilter;
     uint32_t enableStreamDemuxing : 1;
     uint32_t directMode : 1;

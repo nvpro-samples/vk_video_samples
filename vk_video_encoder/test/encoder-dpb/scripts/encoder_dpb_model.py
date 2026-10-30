@@ -44,26 +44,40 @@ Categories:
   ref-frame-num   H.264: the reference's FrameNum is not its picture's frame_num
   ref-pic-type    the reference's primary_pic_type (H.264) or pic_type (H.265) is not its picture's
   ref-unused      H.265: a reference flagged unused_for_reference
+  setup-info      the setup slot's reference information is not the picture's: H.264 PicOrderCnt,
+                  FrameNum and primary_pic_type; H.265 PicOrderCntVal, pic_type, and
+                  unused_for_reference for a picture that is not a reference; AV1 frame_type,
+                  OrderHint and RefFrameId
   rps-missing     H.265: the reference picture set names a POC no reference picture has
   rps-slots       H.265: the encoder's RPS slots are not the pictures of the reference picture set
   slot-reuse      the setup slot holds a picture that stays a reference
-  slot-range      a slot at or above the DPB size
+  slot-range      a slot at or above the DPB size, or at or above the device's maxDpbSlots
   AV1:
   ref-name-slot   a reference name's slot is not the slot of the frame in the buffer its
                   ref_frame_idx names, or that buffer holds no frame
   ref-order-hint  ref_order_hint[i] is not the order hint of the frame in buffer i
   names-unlisted  a reference name's slot is not among the slots the encode binds
   ref-unnamed     a slot the encode binds that no reference name uses
-  ref-info        a reference's frame_type or OrderHint is not its frame's
+  ref-info        a reference's frame_type, OrderHint or RefFrameId is not its frame's
   refresh         a shown key frame that does not refresh every buffer
   show-existing   show_existing_frame shows a buffer that holds no frame, or another frame
+  ref-count       an inter frame binds more references than the session holds active, or names
+                  none, more than the prediction mode the DPB plans for its type takes (of
+                  group 1, of group 2, or in all), or a name outside that mode's name mask. The
+                  DPB plans bidirectional compound for a B picture, else unidirectional compound
+                  from group 1, else single reference; a primary reference frame used for its
+                  CDFs only is bound, not named
+  primary-ref     the primary reference frame's name has no slot, or the primary reference frame
+                  is used for its CDFs only on a device without
+                  VK_VIDEO_ENCODE_AV1_CAPABILITY_PRIMARY_REFERENCE_CDF_ONLY_BIT_KHR (the config
+                  line's cdf_only_primary=0)
 
 Exit status: 0 no mismatch, 1 a mismatch, 2 not comparable.
 """
 import argparse
 import sys
 
-H264_TYPES = {"IDR": 3, "I": 2, "P": 0, "B": 1}  # StdVideoH264PictureType
+H264_TYPES = {"IDR": 5, "I": 2, "P": 0, "B": 1}  # StdVideoH264PictureType
 H265_TYPES = {"IDR": 3, "I": 2, "P": 0, "B": 1}  # StdVideoH265PictureType
 
 
@@ -132,12 +146,13 @@ class Report:
 
 
 class Picture:
-    def __init__(self, pic, kind, poc, slot, frame_num=None):
+    def __init__(self, pic, kind, poc, slot, frame_num=None, frame_id=None):
         self.pic = pic
         self.kind = kind
         self.poc = poc
         self.slot = slot
         self.frame_num = frame_num
+        self.frame_id = frame_id
 
 
 def compare_list(report, key, name, actual, expected):
@@ -151,7 +166,7 @@ def compare_list(report, key, name, actual, expected):
 class H264Model:
     def __init__(self, config, report):
         self.report = report
-        self.dpb_size = config["dpbSize"]
+        self.dpb_size = min(config["dpbSize"], config["max_dpb_slots"])
         self.max_num_ref_frames = config["max_num_ref_frames"]
         self.max_frame_num = 1 << config["log2_max_frame_num"]
         self.refs = []  # short-term reference pictures, oldest first
@@ -198,9 +213,14 @@ class H264Model:
                                  f"picture {held.pic} primary_pic_type {ref['primary_pic_type']}, not {H264_TYPES[held.kind]}")
 
         # The sliding window, then the current picture.
-        setup = entry.one("setup")["slot"]
+        setup_info = entry.one("setup")
+        setup = setup_info["slot"]
         if setup >= self.dpb_size:
             self.report.fail("slot-range", key, f"setup slot {setup}, DPB size {self.dpb_size}")
+        elif (setup_info["PicOrderCnt"], setup_info["FrameNum"], setup_info["primary_pic_type"]) != (poc, frame_num, H264_TYPES[kind]):
+            self.report.fail("setup-info", key,
+                             f"PicOrderCnt {setup_info['PicOrderCnt']} FrameNum {setup_info['FrameNum']} primary_pic_type "
+                             f"{setup_info['primary_pic_type']}, not {poc} {frame_num} {H264_TYPES[kind]}")
         if f["ref"]:
             if len(self.refs) >= self.max_num_ref_frames:
                 oldest = min(self.refs, key=lambda p: p.frame_num if p.frame_num <= frame_num else p.frame_num - self.max_frame_num)
@@ -229,7 +249,7 @@ def rps_pocs(rps, poc):
 class H265Model:
     def __init__(self, config, report):
         self.report = report
-        self.dpb_size = config["dpbSize"]
+        self.dpb_size = min(config["dpbSize"], config["max_dpb_slots"])
         self.refs = []
 
     def picture(self, entry):
@@ -285,9 +305,15 @@ class H265Model:
             if "unused" in flags(ref):
                 self.report.fail("ref-unused", key, f"picture {held.pic} is flagged unused_for_reference")
 
-        setup = entry.one("setup")["slot"]
+        setup_info = entry.one("setup")
+        setup = setup_info["slot"]
         if setup >= self.dpb_size:
             self.report.fail("slot-range", key, f"setup slot {setup}, DPB size {self.dpb_size}")
+        elif ((setup_info["PicOrderCntVal"], setup_info["pic_type"]) != (poc, H265_TYPES[kind]) or
+              ("unused" in flags(setup_info)) == bool(f["ref"])):
+            self.report.fail("setup-info", key,
+                             f"PicOrderCntVal {setup_info['PicOrderCntVal']} pic_type {setup_info['pic_type']} flags "
+                             f"{setup_info.get('flags', '-')}, not {poc} {H265_TYPES[kind]} of a picture with ref={f['ref']}")
         for p in self.refs:
             if p.slot == setup:
                 self.report.fail("slot-reuse", key, f"setup slot {setup} holds reference picture {p.pic}")
@@ -301,8 +327,36 @@ class AV1Model:
 
     def __init__(self, config, report):
         self.report = report
-        self.dpb_size = config["dpbSize"]
+        self.dpb_size = min(config["dpbSize"], config["max_dpb_slots"])
         self.buffers = [None] * 8  # (Picture, frame_type) in each reference buffer
+        self.max_active = config["max_active_refs"]
+        self.single, self.unidir, self.bidir = config["single"], config["unidir"], config["bidir"]
+        self.cdf_only_primary = config.get("cdf_only_primary", 1)
+
+    def plan(self, kind):
+        """(name mask, group 1 count, group 2 count, count) of the prediction mode the DPB plans
+        for a P or B picture."""
+        if kind == "B" and self.bidir[0] > 0:
+            return self.bidir[3], self.bidir[1], self.bidir[2], self.bidir[0]
+        if self.unidir[0] > 0:
+            return self.unidir[2] & 0xf, self.unidir[1], 0, self.unidir[0]
+        return self.single[1], 4, 3, self.single[0]
+
+    def count(self, key, kind, av1, bound):
+        if len(bound) > self.max_active:
+            self.report.fail("ref-count", key, f"{len(bound)} references bound, {self.max_active} active")
+        cdf_only = av1["primary_ref_frame"] if av1["cdf_only"] else None
+        named = [i for i, slot in enumerate(av1["names"]) if slot >= 0 and i != cdf_only]
+        mask, group1, group2, total = self.plan(kind)
+        in1, in2 = [i for i in named if i < 4], [i for i in named if i >= 4]
+        if not named:
+            self.report.fail("ref-count", key, f"a {kind} picture names no reference")
+        elif len(in1) > group1 or len(in2) > group2 or len(named) > total:
+            self.report.fail("ref-count", key, f"a {kind} picture names {len(in1)} + {len(in2)} references, "
+                                               f"its prediction mode takes {group1} + {group2}, {total} in all")
+        outside = [i for i in named if not (mask >> i) & 1]
+        if outside:
+            self.report.fail("ref-count", key, f"a {kind} picture names {outside}, outside the name mask {mask:#x}")
 
     def picture(self, entry):
         f = entry.fields
@@ -337,6 +391,15 @@ class AV1Model:
         for i, slot in enumerate(names):
             if slot >= 0 and slot not in bound:
                 self.report.fail("names-unlisted", key, f"reference name {i} uses slot {slot}, which the encode does not bind")
+        if frame_type in (self.INTER, self.SWITCH) and f["type"] in ("P", "B"):
+            self.count(key, f["type"], av1, bound)
+        primary = av1["primary_ref_frame"]
+        if primary < len(names):
+            if names[primary] < 0:
+                self.report.fail("primary-ref", key, f"primary_ref_frame {primary} names no slot")
+            elif av1["cdf_only"] and not self.cdf_only_primary:
+                self.report.fail("primary-ref", key, f"primary_ref_frame {primary} is used for its CDFs only, "
+                                                     "which the device does not take")
         for slot in bound:
             if slot not in names:
                 self.report.fail("ref-unnamed", key, f"slot {slot} is bound and no reference name uses it")
@@ -346,17 +409,23 @@ class AV1Model:
             if held is None or held.pic != ref["pic"]:
                 self.report.fail("ref-unknown", key, f"slot {ref['slot']} (picture {ref['pic']}) is in no reference buffer")
                 continue
-            if ref["OrderHint"] != held.poc % 256 or ref["frame_type"] != held.kind:
-                self.report.fail("ref-info", key, f"picture {held.pic} frame_type {ref['frame_type']} OrderHint {ref['OrderHint']}, "
-                                                  f"not {held.kind} {held.poc % 256}")
+            if (ref["frame_type"], ref["OrderHint"], ref["RefFrameId"]) != (held.kind, held.poc % 256, held.frame_id):
+                self.report.fail("ref-info", key, f"picture {held.pic} frame_type {ref['frame_type']} OrderHint {ref['OrderHint']} "
+                                                  f"RefFrameId {ref['RefFrameId']}, not {held.kind} {held.poc % 256} {held.frame_id}")
 
-        setup = entry.one("setup")["slot"]
+        setup_info = entry.one("setup")
+        setup = setup_info["slot"]
+        frame_id = av1["current_frame_id"]
         if setup >= self.dpb_size:
             self.report.fail("slot-range", key, f"setup slot {setup}, DPB size {self.dpb_size}")
+        elif (setup_info["frame_type"], setup_info["OrderHint"], setup_info["RefFrameId"]) != (frame_type, f["poc"] % 256, frame_id):
+            self.report.fail("setup-info", key,
+                             f"frame_type {setup_info['frame_type']} OrderHint {setup_info['OrderHint']} RefFrameId "
+                             f"{setup_info['RefFrameId']}, not {frame_type} {f['poc'] % 256} {frame_id}")
         refresh = av1["refresh"]
         if frame_type == self.KEY and "show_frame" in flags(av1) and refresh != 0xff:
             self.report.fail("refresh", key, f"a shown key frame refreshes {refresh:#x}")
-        current = Picture(f["input"], frame_type, f["poc"], setup)
+        current = Picture(f["input"], frame_type, f["poc"], setup, frame_id=frame_id)
         self.buffers = [current if (refresh >> i) & 1 else held for i, held in enumerate(self.buffers)]
         for i, held in enumerate(self.buffers):
             if held is not None and held is not current and held.slot == setup:
@@ -371,6 +440,7 @@ def compare(trace_path, verbose=False):
     config = next((e.fields for e in entries if e.tag == "config"), None)
     if config is None:
         return None, "no config line"
+    config = dict(config, max_dpb_slots=entries[0].fields["max_dpb_slots"])
     report = Report(verbose)
     models = {"h264": H264Model, "h265": H265Model, "av1": AV1Model}
     model = models[config["codec"]](config, report)

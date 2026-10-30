@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -58,6 +59,7 @@ class PicturePool : public IVulkanVideoFrameBufferParserCb {
     void Grow(uint32_t count) {
         while (m_pictures.size() < count) {
             m_pictures.push_back(std::make_unique<vkPicBuffBase>());
+            m_decodedSinceReserve.push_back(false);
         }
     }
 
@@ -66,21 +68,19 @@ class PicturePool : public IVulkanVideoFrameBufferParserCb {
     void SetDecodeOrder(int32_t picIdx, uint64_t decodeOrder) {
         if ((picIdx >= 0) && (static_cast<size_t>(picIdx) < m_pictures.size())) {
             m_pictures[picIdx]->m_decodeOrder = decodeOrder;
+            m_decodedSinceReserve[picIdx] = true;
         }
     }
 
-    // VulkanVideoFrameBuffer::ReservePictureBuffer, with its search bound: a free picture is taken
-    // only if its decode order is below picture 0's plus 1000.
+    // VulkanVideoFrameBuffer::ReservePictureBuffer: the free picture decoded longest ago.
     vkPicBuffBase* ReservePictureBuffer() override {
         int32_t found = -1;
-        if (!m_pictures.empty()) {
-            int64_t minDecodeOrder = static_cast<int64_t>(m_pictures[0]->m_decodeOrder) + 1000;
-            for (uint32_t picIdx = 0; picIdx < m_pictures.size(); picIdx++) {
-                const int64_t decodeOrder = static_cast<int64_t>(m_pictures[picIdx]->m_decodeOrder);
-                if (m_pictures[picIdx]->IsAvailable() && (decodeOrder < minDecodeOrder)) {
-                    found = static_cast<int32_t>(picIdx);
-                    minDecodeOrder = decodeOrder;
-                }
+        int64_t minDecodeOrder = std::numeric_limits<int64_t>::max();
+        for (uint32_t picIdx = 0; picIdx < m_pictures.size(); picIdx++) {
+            const int64_t decodeOrder = static_cast<int64_t>(m_pictures[picIdx]->m_decodeOrder);
+            if (m_pictures[picIdx]->IsAvailable() && (decodeOrder < minDecodeOrder)) {
+                found = static_cast<int32_t>(picIdx);
+                minDecodeOrder = decodeOrder;
             }
         }
         if (found < 0) {
@@ -91,11 +91,16 @@ class PicturePool : public IVulkanVideoFrameBufferParserCb {
         picture->Reset();
         picture->AddRef();
         picture->m_picIdx = found;
+        m_decodedSinceReserve[found] = false;
         return picture;
     }
 
     int32_t QueueDecodedPictureForDisplay(int8_t picId, VulkanVideoDisplayPictureInfo* pDispInfo) override {
         Line("disp").Num("idx", picId).Num("pts", (pDispInfo != nullptr) ? pDispInfo->timestamp : 0).Emit(m_out);
+        // A picture no decode wrote since the pool gave it out holds no image of the stream.
+        if ((picId >= 0) && (static_cast<size_t>(picId) < m_pictures.size()) && !m_decodedSinceReserve[picId]) {
+            Line("disp-undecoded").Num("idx", picId).Emit(m_out);
+        }
         m_displayed++;
         return picId;
     }
@@ -105,6 +110,7 @@ class PicturePool : public IVulkanVideoFrameBufferParserCb {
    private:
     FILE* m_out;
     std::vector<std::unique_ptr<vkPicBuffBase>> m_pictures;
+    std::vector<bool> m_decodedSinceReserve;
     uint64_t m_displayed = 0;
 };
 
@@ -155,11 +161,26 @@ const DpbSlotInfo* FindDpbSlotInfo(const VkVideoReferenceSlotInfoKHR& slot, VkSt
 class RecordingDecoder : public IVulkanVideoDecoderHandler {
    public:
     RecordingDecoder(FILE* out, VkVideoCodecOperationFlagBitsKHR codec, PicturePool& pool, uint32_t offsetAlignment,
-                     uint32_t sizeAlignment)
-        : m_out(out), m_codec(codec), m_pool(pool), m_offsetAlignment(offsetAlignment), m_sizeAlignment(sizeAlignment) {}
+                     uint32_t sizeAlignment, VkVideoChromaSubsamplingFlagsKHR refusedChroma)
+        : m_out(out),
+          m_codec(codec),
+          m_pool(pool),
+          m_offsetAlignment(offsetAlignment),
+          m_sizeAlignment(sizeAlignment),
+          m_refusedChroma(refusedChroma) {}
 
     // VkVideoDecoder::StartVideoSequence: the number of pictures, and the session.
     int32_t StartVideoSequence(VkParserDetectedVideoFormat* format) override {
+        // A sequence the device does not decode: VkVideoDecoder refuses it before it allocates a
+        // picture or touches the session.
+        if ((format->chromaSubsampling & m_refusedChroma) != 0) {
+            Line("seq-refused")
+                .Num("index", static_cast<int64_t>(m_sequences++))
+                .Num("chroma", format->chromaSubsampling)
+                .Emit(m_out);
+            return -1;
+        }
+
         const uint32_t numDecodeSurfaces =
             std::min(kMaxImages, std::max(m_pool.Size(), format->minNumDecodeSurfaces + kDecodeImagesInFlight));
         m_pool.Grow(numDecodeSurfaces);
@@ -168,14 +189,23 @@ class RecordingDecoder : public IVulkanVideoDecoderHandler {
             std::max(static_cast<uint32_t>(format->display_area.right - format->display_area.left), format->coded_width),
             std::max(static_cast<uint32_t>(format->display_area.bottom - format->display_area.top), format->coded_height)};
         const uint32_t maxDpbSlots = format->maxNumDpbSlots;
-        // VulkanVideoSession::IsCompatible, asked with the counts StartVideoSequence passes it.
+        // VkVideoDecoder::StartVideoSequence's session counts: the sequence's DPB slots, and for a
+        // sequence that reconfigures the current one at least the current session's; one active
+        // reference picture per slot up to 16, every one the device allows (here 16) for a session
+        // that decodes fields. VulkanVideoSession::IsCompatible is asked with the same counts.
+        uint32_t sessionMaxDpbSlots = maxDpbSlots;
+        if (format->sequenceUpdate && m_session.exists) {
+            sessionMaxDpbSlots = std::max(sessionMaxDpbSlots, m_session.maxDpbSlots);
+        }
+        const uint32_t sessionMaxActiveReferencePictures =
+            format->canUseFields ? kMaxActiveReferencePictures : std::min(sessionMaxDpbSlots, kMaxActiveReferencePictures);
         const bool compatible =
             m_session.exists && (m_session.codec == format->codec) && (m_session.chromaSubsampling == format->chromaSubsampling) &&
             (m_session.lumaBitDepth == format->lumaBitDepth) && (m_session.chromaBitDepth == format->chromaBitDepth) &&
             (m_session.codecProfile == format->codecProfile) && (m_session.canUseFields == (format->canUseFields != 0)) &&
             (maxCodedExtent.width <= m_session.maxCodedExtent.width) &&
-            (maxCodedExtent.height <= m_session.maxCodedExtent.height) && (maxDpbSlots <= m_session.maxDpbSlots) &&
-            (std::max(maxDpbSlots, kMaxActiveReferencePictures) <= m_session.maxActiveReferencePictures);
+            (maxCodedExtent.height <= m_session.maxCodedExtent.height) && (sessionMaxDpbSlots <= m_session.maxDpbSlots) &&
+            (sessionMaxActiveReferencePictures <= m_session.maxActiveReferencePictures);
         if (!compatible) {
             m_session.exists = true;
             m_session.codec = format->codec;
@@ -185,8 +215,8 @@ class RecordingDecoder : public IVulkanVideoDecoderHandler {
             m_session.codecProfile = format->codecProfile;
             m_session.canUseFields = (format->canUseFields != 0);
             m_session.maxCodedExtent = maxCodedExtent;
-            m_session.maxDpbSlots = maxDpbSlots;
-            m_session.maxActiveReferencePictures = std::min(maxDpbSlots, kMaxActiveReferencePictures);
+            m_session.maxDpbSlots = sessionMaxDpbSlots;
+            m_session.maxActiveReferencePictures = sessionMaxActiveReferencePictures;
         }
 
         Line("seq")
@@ -235,14 +265,9 @@ class RecordingDecoder : public IVulkanVideoDecoderHandler {
         for (uint32_t i = 0; i < decode.referenceSlotCount; i++) {
             TraceSlot("ref", *params, decode.pReferenceSlots[i], true);
         }
-        // VkVideoDecoder::DecodePictureWithParameters builds the begin-coding list this way: the
-        // decode's reference slots and the setup slot after them (the adapter stores it at
-        // pReferenceSlots[referenceSlotCount]), or the setup slot alone when there is no reference.
-        const uint32_t beginCount = decode.referenceSlotCount + ((decode.pSetupReferenceSlot != nullptr) ? 1 : 0);
-        const VkVideoReferenceSlotInfoKHR* begin =
-            (decode.referenceSlotCount > 0) ? decode.pReferenceSlots : decode.pSetupReferenceSlot;
-        for (uint32_t i = 0; i < beginCount; i++) {
-            TraceSlot("begin", *params, begin[i], false);
+        // VkVideoDecoder::DecodePictureWithParameters binds the adapter's begin-coding list.
+        for (uint32_t i = 0; i < params->beginCodingReferenceSlotCount; i++) {
+            TraceSlot("begin", *params, params->pBeginCodingReferenceSlots[i], false);
         }
         m_decoded++;
         return params->currPicIdx;
@@ -252,9 +277,9 @@ class RecordingDecoder : public IVulkanVideoDecoderHandler {
                                     VkDeviceSize minBitstreamBufferSizeAlignment, const uint8_t* pInitializeBufferMemory,
                                     VkDeviceSize initializeBufferMemorySize,
                                     VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer) override {
-        return CreateHostBitstreamBuffer(size, std::max<VkDeviceSize>(minBitstreamBufferOffsetAlignment, m_offsetAlignment),
-                                         std::max<VkDeviceSize>(minBitstreamBufferSizeAlignment, m_sizeAlignment),
-                                         pInitializeBufferMemory, initializeBufferMemorySize, bitstreamBuffer);
+        return m_bitstreamBuffers.Get(size, std::max<VkDeviceSize>(minBitstreamBufferOffsetAlignment, m_offsetAlignment),
+                                      std::max<VkDeviceSize>(minBitstreamBufferSizeAlignment, m_sizeAlignment),
+                                      pInitializeBufferMemory, initializeBufferMemorySize, bitstreamBuffer);
     }
 
     uint64_t Decoded() const { return m_decoded; }
@@ -406,23 +431,52 @@ class RecordingDecoder : public IVulkanVideoDecoderHandler {
     PicturePool& m_pool;
     uint32_t m_offsetAlignment;
     uint32_t m_sizeAlignment;
+    HostBitstreamBufferPool m_bitstreamBuffers;
+    VkVideoChromaSubsamplingFlagsKHR m_refusedChroma;
     Session m_session;
     uint64_t m_sequences = 0;
     uint64_t m_decoded = 0;
 };
 
+// --hold-check N: the picture pool alone, four pictures, with picture 0 held while N pictures are
+// reserved, decoded and freed one after the other, as a long-term reference holds its picture.
+// Writes how many reservations failed, and exits 1 when one did.
+int HoldCheck(uint32_t count) {
+    PicturePool pool(stdout);
+    pool.Grow(4);
+    vkPicBuffBase* held = pool.ReservePictureBuffer();
+    pool.SetDecodeOrder(held->m_picIdx, 0);
+    uint32_t failed = 0;
+    for (uint32_t decodeOrder = 1; decodeOrder <= count; decodeOrder++) {
+        vkPicBuffBase* picture = pool.ReservePictureBuffer();
+        if (picture == nullptr) {
+            failed++;
+            continue;
+        }
+        pool.SetDecodeOrder(picture->m_picIdx, decodeOrder);
+        picture->Release();
+    }
+    held->Release();
+    printf("hold-check reserved=%u failed=%u\n", count, failed);
+    return (failed == 0) ? 0 : 1;
+}
+
 int Usage(const char* program) {
     fprintf(stderr,
             "Usage: %s --codec h264|h265|av1|vp9 --format bytestream|ivf|obu|annexb -i <stream> [-o <trace>]\n"
-            "          [--offset-alignment N] [--size-alignment N]\n"
+            "          [--offset-alignment N] [--size-alignment N] [--refuse-chroma 400|420|422|444]...\n"
+            "       %s --hold-check N\n"
             "Runs the decoder sample's parser adapter over the stream with no Vulkan device and writes\n"
             "the DPB slots, reference information and begin-coding list of every decode.\n"
+            "  --refuse-chroma  refuses every sequence of that chroma format, as a device that does not\n"
+            "                   decode it refuses it\n"
             "  bytestream  an H.264 or H.265 Annex B byte stream, given as the decoder sample gives an\n"
             "              elementary stream: the rest of the stream on each call, with partial parsing\n"
             "  ivf         one packet per IVF frame (AV1, VP9)\n"
             "  obu         the AV1 low-overhead OBU format, one packet per temporal unit\n"
-            "  annexb      AV1 Annex B, one packet per temporal unit\n",
-            program);
+            "  annexb      AV1 Annex B, one packet per temporal unit\n"
+            "  --hold-check  reserves N pictures from the picture pool while its first picture is held\n",
+            program, program);
     return 2;
 }
 
@@ -435,12 +489,15 @@ int main(int argc, char** argv) {
     const char* output = nullptr;
     uint32_t offsetAlignment = 256;
     uint32_t sizeAlignment = 256;
+    VkVideoChromaSubsamplingFlagsKHR refusedChroma = 0;
     for (int i = 1; i < argc; i++) {
         const std::string arg = argv[i];
         if (i + 1 >= argc) {
             return Usage(argv[0]);
         }
-        if (arg == "--codec") {
+        if (arg == "--hold-check") {
+            return HoldCheck(static_cast<uint32_t>(strtoul(argv[++i], nullptr, 0)));
+        } else if (arg == "--codec") {
             codecName = argv[++i];
         } else if (arg == "--format") {
             format = argv[++i];
@@ -452,6 +509,19 @@ int main(int argc, char** argv) {
             offsetAlignment = static_cast<uint32_t>(strtoul(argv[++i], nullptr, 0));
         } else if (arg == "--size-alignment") {
             sizeAlignment = static_cast<uint32_t>(strtoul(argv[++i], nullptr, 0));
+        } else if (arg == "--refuse-chroma") {
+            const std::string chroma = argv[++i];
+            if (chroma == "400") {
+                refusedChroma |= VK_VIDEO_CHROMA_SUBSAMPLING_MONOCHROME_BIT_KHR;
+            } else if (chroma == "420") {
+                refusedChroma |= VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR;
+            } else if (chroma == "422") {
+                refusedChroma |= VK_VIDEO_CHROMA_SUBSAMPLING_422_BIT_KHR;
+            } else if (chroma == "444") {
+                refusedChroma |= VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
+            } else {
+                return Usage(argv[0]);
+            }
         } else {
             return Usage(argv[0]);
         }
@@ -498,7 +568,8 @@ int main(int argc, char** argv) {
     // The pool and the decoder outlive the adapter: the adapter and the parser release the
     // pictures they hold when they are destroyed.
     auto pool = std::make_shared<PicturePool>(out);
-    auto decoder = std::make_shared<RecordingDecoder>(out, codecInfo->operation, *pool, offsetAlignment, sizeAlignment);
+    auto decoder =
+        std::make_shared<RecordingDecoder>(out, codecInfo->operation, *pool, offsetAlignment, sizeAlignment, refusedChroma);
     int status = 0;
     {
         VkSharedBaseObj<IVulkanVideoDecoderHandler> decoderHandler(decoder);
@@ -562,6 +633,10 @@ int main(int argc, char** argv) {
             const uint64_t refused = adapter->GetRefusedUnitCount();
             if (refused > 0) {
                 Line("refused").Num("units", static_cast<int64_t>(refused)).Emit(out);
+            }
+            const uint64_t unsupported = adapter->GetUnsupportedPictureCount();
+            if (unsupported > 0) {
+                Line("unsupported").Num("pictures", static_cast<int64_t>(unsupported)).Emit(out);
             }
         }
     }

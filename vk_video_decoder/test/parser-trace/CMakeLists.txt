@@ -100,8 +100,14 @@ foreach(codec Av1 H264 H265 Vp9)
     set_tests_properties(AdapterTrace${codec} PROPERTIES LABELS "device-free")
 endforeach()
 
-# The fuzz replay: each codec's committed streams, cut into packets in every mode of the fuzz
-# input, and the inputs under fuzz/regressions/<codec>, through the fuzz target. A pass is a run
+# The picture pool keeps giving out free pictures while one stays held for 2000 decodes, as a
+# long-term reference holds its picture.
+add_test(NAME AdapterTracePictureHold COMMAND $<TARGET_FILE:vk-video-adapter-trace> --hold-check 2000)
+set_tests_properties(AdapterTracePictureHold PROPERTIES LABELS "device-free")
+
+# The fuzz replay: each codec's committed streams (the first 16 KiB of each), cut into packets in
+# every mode of the fuzz input, and the inputs under fuzz/regressions/<codec>, through the fuzz
+# target. A pass is a run
 # that neither crashes nor hangs; in a sanitizer build (scripts/run_ctest_sanitizers.sh), one the
 # sanitizers report nothing in.
 foreach(codec Av1 H264 H265 Vp9)
@@ -147,15 +153,21 @@ set(PARSER_CRAFTED_CASES
     H265VpsExtensionLayerSetIndex
     H265VpsSplittingDimensions
     H265InterRpsOverflow
+    H265SpsRpsStdFields
+    H265VpsHrdCommonInfo
     H265SpsNumStRps
     H265RefPicSetCurrBefore9
     H265SliceOfAnotherLayer
     H265SliceNumLongTermSps
+    H265LongTermMissingKeepsPosition
     H265SpsValuesPastTheirRange
     H265PpsSliceValuesPastTheirRange
     H265ScalingListRefMatrix
     H265VpsSubLayers8
     H265SpsHrdCpbCount
+    H265EndOfSequenceCra
+    H265OutputLatency
+    H265PpsBeforeItsSps
     Av1CraftedSequenceHeader
     Av1UvlcTruncated
     Av1FilmGrainPointCount
@@ -170,6 +182,8 @@ set(PARSER_CRAFTED_CASES
     Vp9PicturePoolExhausted
     Vp9SuperframeIndex
     Vp9BadSyncCode
+    Vp9LoopFilterDeltas
+    Vp9ChromaFormats
     Vp9BadFrameMarker
 )
 foreach(crafted ${PARSER_CRAFTED_CASES})

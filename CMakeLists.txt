@@ -23,7 +23,6 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Set module path for Find*.cmake files
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-set(SCRIPTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
 
 # vvs_add_validation_gated_test(), which registers a test whose
 # validation-layer output is gating. Included here rather than per directory
@@ -64,7 +63,7 @@ option(BUILD_TESTS "Build tests" ON)
 option(BUILD_DEMOS "Build demos" ON)
 # The encoder gpu tests skip (exit 77) only when a device probe that asks the
 # Vulkan loader, not the library, finds no device that encodes their codec
-# (vk_video_encoder/test/common/encode_device_probe.h). On a rig that has the
+# (vk_video_encoder/test/common/encode_device_probe.h). On a host that has the
 # GPU, a missing device is itself the fault: this option makes that a failure
 # too. The environment variable VVS_REQUIRE_GPU=1 does the same at run time.
 option(VVS_REQUIRE_GPU "Encoder gpu tests fail instead of skipping when no device encodes" OFF)
@@ -91,6 +90,14 @@ string(TOLOWER ${API_NAME} API_LOWERCASE)
 
 # Include common modules
 include(FindVulkanAndDependencies)
+
+# FFmpeg, which the decoders use to demux container files: AUTO links it when it is found, ON fails
+# the configure without it, OFF builds without it even where it is installed.
+set(VVS_FFMPEG AUTO CACHE STRING "Link FFmpeg for demuxing: AUTO, ON or OFF")
+set_property(CACHE VVS_FFMPEG PROPERTY STRINGS AUTO ON OFF)
+if(NOT VVS_FFMPEG MATCHES "^(AUTO|ON|OFF)$")
+    message(FATAL_ERROR "VVS_FFMPEG is ${VVS_FFMPEG}; it takes AUTO, ON or OFF")
+endif()
 
 ############ VULKAN_FFMPEG_LIB_PATH ######################################
 if (DEFINED ENV{VULKAN_FFMPEG_LIB_DIR_PATH})
@@ -126,9 +133,13 @@ else()
 endif()
 ############ VULKAN_FFMPEG_LIB_PATH ######################################
 
-# find_package(FFmpeg REQUIRED)
-include(FindFFmpeg)
 set(FFMPEG_AVAILABLE OFF)
+# Windows finds FFmpeg with the search below, in VULKAN_FFMPEG_LIB_PATH, which sets the AVCODEC_LIB,
+# AVFORMAT_LIB and AVUTIL_LIB that its targets link. FindFFmpeg sets none of them, yet it can find the
+# libraries on Windows, through FFmpeg's bin directory on PATH (CMake searches its <prefix>/lib).
+if(NOT VVS_FFMPEG STREQUAL "OFF" AND NOT WIN32)
+    include(FindFFmpeg)
+endif()
 
 # FFMPEG_FOUND - system has ffmpeg or libav
 # FFMPEG_INCLUDE_DIR - the ffmpeg include directory
@@ -136,7 +147,9 @@ set(FFMPEG_AVAILABLE OFF)
 # FFMPEG_LIBAVCODEC
 # FFMPEG_LIBAVFORMAT
 # FFMPEG_LIBAVUTIL
-if(FFMPEG_FOUND)
+if(VVS_FFMPEG STREQUAL "OFF")
+    message(STATUS "VVS_FFMPEG is OFF: building without FFmpeg")
+elseif(FFMPEG_FOUND)
     message("Found FFMPEG/LibAV libraries")
     include_directories(${FFMPEG_INCLUDE_DIR})
     set(FFMPEG_AVAILABLE ON)
@@ -169,7 +182,9 @@ else()
     endif()
 endif()
 
-if (NOT FFMPEG_AVAILABLE)
+if(VVS_FFMPEG STREQUAL "ON" AND NOT FFMPEG_AVAILABLE)
+    message(FATAL_ERROR "VVS_FFMPEG is ON, and libavcodec, libavformat and libavutil were not all found")
+elseif(VVS_FFMPEG STREQUAL "AUTO" AND NOT FFMPEG_AVAILABLE)
     message(WARNING "FFMPEG demuxing is not going to be supported.")
 endif()
 
@@ -240,9 +255,12 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/common/include
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_BINARY_DIR}
-    ${VULKAN_HEADERS_INCLUDE_DIR}
     ${Vulkan_INCLUDE_DIR}
 )
+# The Vulkan-Headers this build takes come before every other include directory. A glslang found in a
+# Vulkan SDK adds the SDK's include directory (cmake/VulkanShaderCompilerBackend.cmake), which holds that
+# SDK's own vulkan/ and vk_video/ headers, and Vulkan_INCLUDE_DIR can be the same directory.
+include_directories(BEFORE ${VULKAN_HEADERS_INCLUDE_DIR})
 
 # Output directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -274,37 +292,6 @@ set(VK_VIDEO_ENCODER_LIBS_INCLUDE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/vk_video_enc
 
 # Enable cmake folders
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-set(LVL_TARGET_FOLDER lvl_cmake_targets)
-set (PYTHON_CMD ${PYTHON_EXECUTABLE})
-
-# Define macro used for building vkxml generated files
-macro(run_vk_xml_generate dependency output)
-    add_custom_command(OUTPUT ${output}
-    COMMAND ${PYTHON_CMD} ${SCRIPTS_DIR}/lvl_genvk.py -registry ${SCRIPTS_DIR}/vk.xml ${output}
-    DEPENDS ${SCRIPTS_DIR}/vk.xml ${SCRIPTS_DIR}/generator.py ${SCRIPTS_DIR}/${dependency} ${SCRIPTS_DIR}/lvl_genvk.py ${SCRIPTS_DIR}/reg.py
-    )
-endmacro()
-
-# Define macro used for generating header files containing commit IDs for external dependencies
-macro(run_external_revision_generate source_dir symbol_name output)
-    add_custom_command(OUTPUT ${output}
-    # NOTE: If you modify this call to use --rev_file instead of --git_dir (to read the commit ID from a file instead of
-    # parsing from a Git repository), you probably also want to add the revision file to the list of DEPENDS on the
-    # subsequent line (to ensure that the script is re-run when the revision file is modified).
-    COMMAND ${PYTHON_CMD} ${SCRIPTS_DIR}/external_revision_generator.py --git_dir ${source_dir} -s ${symbol_name} -o ${output}
-    DEPENDS ${SCRIPTS_DIR}/external_revision_generator.py ${source_dir}/.git/HEAD ${source_dir}/.git/index
-    )
-endmacro()
-
-# Rules to build generated helper files
-run_vk_xml_generate(loader_extension_generator.py vk_layer_dispatch_table.h)
-run_vk_xml_generate(dispatch_table_helper_generator.py vk_dispatch_table_helper.h)
-run_vk_xml_generate(helper_file_generator.py vk_safe_struct.h)
-run_vk_xml_generate(helper_file_generator.py vk_safe_struct.cpp)
-run_vk_xml_generate(helper_file_generator.py vk_enum_string_helper.h)
-run_vk_xml_generate(helper_file_generator.py vk_object_types.h)
-run_vk_xml_generate(helper_file_generator.py vk_extension_helper.h)
-run_vk_xml_generate(helper_file_generator.py vk_typemap_helper.h)
 
 # Generate the dispatch table into the build tree. Shared with the external
 # projects that embed VkCodecUtils sources, so they generate it the same way;
@@ -444,6 +431,12 @@ endif()
     if(BUILD_TESTS AND NOT DEFINED DEQP_TARGET)
         add_subdirectory(vk_video_decoder/test/vulkan-video-simple-dec)
         add_subdirectory(vk_video_decoder/test/vulkan-video-dec)
+        # The video session parameters objects a decode keeps alive, counted by
+        # a test layer over streams that send their parameter sets again with
+        # every key frame.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_decoder/test/decoder-session-parameters)
+        endif()
     endif()
 
     if(BUILD_DEMOS AND NOT DEFINED DEQP_TARGET)
@@ -627,11 +620,6 @@ if(BUILD_ENCODER)
         # dirent for dma-buf fd ownership, unistd for the fd lifetime
         # assertions. There is no Windows equivalent to assert about, so they
         # are Linux-only by construction rather than merely unported.
-        #
-        # THE SAME LIST IS GUARDED IN vk_video_encoder/CMakeLists.txt. Both
-        # files register these directories -- this one is what a top-level
-        # configure uses -- so a guard added to only one of them is no guard
-        # at all.
         if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             add_subdirectory(vk_video_encoder/test/encoder-ext-release-fence)
         endif()
@@ -900,6 +888,19 @@ if(BUILD_ENCODER)
         # reference picture rules and recorded goldens.
         add_subdirectory(vk_video_encoder/test/encoder-dpb)
 
+        # The encoder's JSON profiles, device-free: each file under vk_video_encoder/json_config
+        # through the loader --encoderConfig calls, checked against the schema and the settings
+        # the file names.
+        add_subdirectory(vk_video_encoder/test/encoder-json-profiles)
+
+        # The AV1 encoder's bit writer, device-free: f(n) of every width, leb128() and
+        # trailing_bits() against the AV1 specification.
+        add_subdirectory(vk_video_encoder/test/encoder-av1-bit-writer)
+
+        # The encoder's PSNR sum, device-free: the same frames added in any order give the same
+        # average.
+        add_subdirectory(vk_video_encoder/test/encoder-psnr-sum)
+
         # Encoder quality round trip: encode, decode with ffmpeg, and compare
         # per-frame PSNR against the source. This is the only round-trip
         # quality measurement in the tree -- the encoder's own --psnr option
@@ -926,6 +927,13 @@ if(BUILD_ENCODER)
         if(VVS_REQUIRE_GPU)
             # The script reads the environment; the C++ tests get the option as a definition.
             set_tests_properties(EncoderAv1QualityRoundTrip PROPERTIES ENVIRONMENT "VVS_REQUIRE_GPU=1")
+        endif()
+
+        # An encode on a device that states no preferred GOP length, which a
+        # device may and the GPUs the tests run on do not: a test layer states
+        # it, and the encoder must give the GOP the codec's default length.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_encoder/test/encoder-gop-no-preference)
         endif()
 
         # The gate's own classification, device-free. The round trip above can

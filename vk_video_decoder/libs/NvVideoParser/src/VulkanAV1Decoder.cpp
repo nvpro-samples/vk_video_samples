@@ -240,8 +240,9 @@ bool VulkanAV1Decoder::end_of_picture(uint32_t frameSize)
         // "WARNING: no valid render target for current picture
     }
 
-    // decode_frame_wrapup
-    UpdateFramePointers(m_pCurrPic);
+    // decode_frame_wrapup. A picture the client did not decode refreshes its buffers with no
+    // picture: they are not valid references (AV1 7.20), and a later frame that names one is dropped.
+    UpdateFramePointers(bSkipped ? nullptr : m_pCurrPic);
     if (m_PicData.showFrame && !bSkipped) {
         AddBuffertoOutputQueue(m_pCurrPic, !!showable_frame);
         m_pCurrPic = nullptr;
@@ -293,8 +294,15 @@ bool VulkanAV1Decoder::BeginPicture(VkParserPictureData* pnvpd)
 
     nvsi.hasFilmGrain = sps->flags.film_grain_params_present;
 
-    if (av1->needsSessionReset && !init_sequence(&nvsi))
+    // A sequence the client refused stays refused: each of its frames asks again and is dropped,
+    // so no picture of it is allocated, decoded, kept as a reference or shown. A frame the client
+    // accepts after a refusal starts the session it was accepted with.
+    const bool sequenceRefused = (m_MaxFrameBuffers == 0);
+    if ((av1->needsSessionReset || sequenceRefused) && !init_sequence(&nvsi))
         return false;
+    if (sequenceRefused) {
+        av1->needsSessionReset = true;
+    }
 
     // Allocate a buffer for the current picture
     if (m_pCurrPic == nullptr) {
@@ -454,6 +462,8 @@ void VulkanAV1Decoder::UpdateFramePointers(VkPicIf* currentPicture)
 
             if (m_pBuffers[ref_index].buffer) {
                 m_pBuffers[ref_index].buffer->AddRef();
+            } else {
+                RefValid[ref_index] = 0;
             }
         }
         ++ref_index;
@@ -709,6 +719,7 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
 
     if (sps->flags.reduced_still_picture_header) {
         timing_info_present = 0;
+        sps->flags.timing_info_present_flag = 0;
         sps->decoder_model_info_present = 0;
         sps->display_model_info_present = 0;
         sps->operating_points_cnt_minus_1 = 0;
@@ -723,6 +734,7 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
         op_params[0].display_model_param_present = 0;
     } else {
         timing_info_present = u(1);
+        sps->flags.timing_info_present_flag = timing_info_present;
         if (timing_info_present) {
             ReadTimingInfoHeader();
 
@@ -1902,10 +1914,14 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
                 pStd->refresh_frame_flags = 0;
             }
 
-            VkPicIf* pDispPic = m_pBuffers[show_existing_frame_index].buffer;
-            if (pDispPic)
-                pDispPic->AddRef();
-            AddBuffertoOutputQueue(pDispPic, !!showable_frame);
+            // While the client refuses the sequence, the buffers hold no picture of it, and the
+            // frame shows nothing.
+            if (m_MaxFrameBuffers != 0) {
+                VkPicIf* pDispPic = m_pBuffers[show_existing_frame_index].buffer;
+                if (pDispPic)
+                    pDispPic->AddRef();
+                AddBuffertoOutputQueue(pDispPic, !!showable_frame);
+            }
 
             return true;
         }
@@ -2419,7 +2435,8 @@ static bool IsObuInCurrentOperatingPoint(int  current_operating_point, AV1ObuHea
 
 bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int32_t frameSizeBytes, const VkParserBitstreamPacket* pck, int* pParsedBytes)
 {
-    m_bSPSChanged = false;
+    // m_bSPSChanged stays set until a frame of the new sequence reaches end_of_picture(), which
+    // clears it: a temporal unit whose frames are all outside the operating point decodes none.
     AV1ObuHeader hdr;
 
 	const uint8_t* pCurrOBU = pFrameStart;

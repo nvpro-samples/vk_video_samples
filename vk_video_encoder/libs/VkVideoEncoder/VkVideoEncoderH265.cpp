@@ -218,14 +218,16 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     setupImageViewPictureResource->codedExtent = pFrameInfo->encodeInfo.srcPictureResource.codedExtent;
 
     VkEncDpbH265::RefPicSet refPicSet{};
-    int8_t targetDpbSlot = m_dpb.DpbPictureStart(encodeFrameInfo->frameEncodeInputOrderNum,
-                                                 &pFrameInfo->stdPictureInfo,
+    int8_t targetDpbSlot = m_dpb.DpbPictureStart(&pFrameInfo->stdPictureInfo,
                                                  pShortTermRefPicSet,
                                                  pLongTermRefPicsSps,
                                                  maxPicOrderCntLsb,
                                                  encodeFrameInfo->inputTimeStamp,
                                                  &refPicSet);
     assert(targetDpbSlot >= 0);
+    if (targetDpbSlot < 0) {
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
 
     if ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_P) ||
         (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B)) {
@@ -260,6 +262,11 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         // setup ref slot index 0
         pFrameInfo->referenceSlotsInfo[numReferenceSlots] = { VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR,
                                                               pFrameInfo->stdDpbSlotInfo, targetDpbSlot, setupImageViewPictureResource };
+        // stdDpbSlotInfo[0] points at stdReferenceInfo[0]: the reference information the
+        // reconstructed picture is associated with is the current picture's.
+        if (targetDpbSlot >= 0) {
+            m_dpb.FillStdReferenceInfo((uint8_t)targetDpbSlot, &pFrameInfo->stdReferenceInfo[numReferenceSlots]);
+        }
 
         pFrameInfo->setupReferenceSlotInfo = pFrameInfo->referenceSlotsInfo[numReferenceSlots];
         pFrameInfo->encodeInfo.pSetupReferenceSlot = &pFrameInfo->setupReferenceSlotInfo;
@@ -657,8 +664,9 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
     pFrameInfo->stdPictureInfo.flags.IrapPicFlag = ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) ||
                                                     (encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_I)) ? 1 : 0;
     pFrameInfo->stdPictureInfo.flags.pic_output_flag = 1;
-    pFrameInfo->stdPictureInfo.flags.no_output_of_prior_pics_flag = ((encodeFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_IDR) &&
-                                                                     (encodeFrameInfo->frameEncodeInputOrderNum != 0)) ? 1 : 0;
+    // An IDR outputs the pictures still waiting in the decoder's DPB (C.5.2.2): with B frames one
+    // picture waits for reordering at every IDR, and the flag would make the decoder discard it.
+    pFrameInfo->stdPictureInfo.flags.no_output_of_prior_pics_flag = 0;
     pFrameInfo->stdPictureInfo.pic_type = stdPictureType;
     pFrameInfo->stdPictureInfo.pps_seq_parameter_set_id = m_sps.sps.sps_seq_parameter_set_id;
     pFrameInfo->stdPictureInfo.pps_pic_parameter_set_id = m_pps.pps_pic_parameter_set_id;

@@ -5,7 +5,7 @@ session state=new maxDpbSlots=9 maxActiveReferencePictures=9
 pic index=0 idx=0 setup=0 refs=0
   av1 frame_type=0 order_hint=0 refresh=0xff names=[-1,-1,-1,-1,-1,-1,-1]
   setup slot=0 res=0 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
-  begin role=setup slot=0 res=0
+  begin role=setup slot=-1 res=0
 disp idx=0 pts=0
 pkt index=1 bytes=309
 pic index=1 idx=1 setup=1 refs=1
@@ -13,7 +13,7 @@ pic index=1 idx=1 setup=1 refs=1
   setup slot=1 res=1 frame_type=1 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
   ref slot=0 res=0 frame_type=0 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
   begin role=ref slot=0 res=0
-  begin role=setup slot=1 res=1
+  begin role=setup slot=-1 res=1
 disp idx=1 pts=333333
 pkt index=2 bytes=265
 pic index=2 idx=2 setup=2 refs=2
@@ -23,7 +23,7 @@ pic index=2 idx=2 setup=2 refs=2
   ref slot=1 res=1 frame_type=1 order_hint=0 sign_bias=0x0 saved=[0,0,0,0,0,0,0,0] flags=-
   begin role=ref slot=0 res=0
   begin role=ref slot=1 res=1
-  begin role=setup slot=2 res=2
+  begin role=setup slot=-1 res=2
 disp idx=2 pts=666666
 pkt index=3 bytes=222
 pic index=3 idx=3 setup=3 refs=3
@@ -35,7 +35,7 @@ pic index=3 idx=3 setup=3 refs=3
   begin role=ref slot=0 res=0
   begin role=ref slot=1 res=1
   begin role=ref slot=2 res=2
-  begin role=setup slot=3 res=3
+  begin role=setup slot=-1 res=3
 disp idx=3 pts=999999
 pkt index=4 bytes=303
 pic index=4 idx=4 setup=4 refs=4
@@ -49,7 +49,7 @@ pic index=4 idx=4 setup=4 refs=4
   begin role=ref slot=1 res=1
   begin role=ref slot=2 res=2
   begin role=ref slot=3 res=3
-  begin role=setup slot=4 res=4
+  begin role=setup slot=-1 res=4
 disp idx=4 pts=1333332
 pkt index=5 bytes=284
 pic index=5 idx=5 setup=5 refs=5
@@ -65,7 +65,7 @@ pic index=5 idx=5 setup=5 refs=5
   begin role=ref slot=2 res=2
   begin role=ref slot=3 res=3
   begin role=ref slot=4 res=4
-  begin role=setup slot=5 res=5
+  begin role=setup slot=-1 res=5
 disp idx=5 pts=1666665
 pkt index=6 bytes=258
 pic index=6 idx=6 setup=6 refs=6
@@ -83,7 +83,7 @@ pic index=6 idx=6 setup=6 refs=6
   begin role=ref slot=3 res=3
   begin role=ref slot=4 res=4
   begin role=ref slot=5 res=5
-  begin role=setup slot=6 res=6
+  begin role=setup slot=-1 res=6
 disp idx=6 pts=1999998
 pkt index=7 bytes=269
 pic index=7 idx=7 setup=7 refs=7
@@ -103,7 +103,7 @@ pic index=7 idx=7 setup=7 refs=7
   begin role=ref slot=4 res=4
   begin role=ref slot=5 res=5
   begin role=ref slot=6 res=6
-  begin role=setup slot=7 res=7
+  begin role=setup slot=-1 res=7
 disp idx=7 pts=2333331
 pkt index=8 bytes=243
 pic index=8 idx=8 setup=8 refs=7
@@ -123,7 +123,7 @@ pic index=8 idx=8 setup=8 refs=7
   begin role=ref slot=5 res=5
   begin role=ref slot=6 res=6
   begin role=ref slot=7 res=7
-  begin role=setup slot=8 res=8
+  begin role=setup slot=-1 res=8
 disp idx=8 pts=2666664
 pkt index=9 bytes=273
 pic index=9 idx=9 setup=0 refs=7
@@ -143,7 +143,7 @@ pic index=9 idx=9 setup=0 refs=7
   begin role=ref slot=5 res=5
   begin role=ref slot=6 res=6
   begin role=ref slot=7 res=7
-  begin role=setup slot=0 res=9
+  begin role=setup slot=-1 res=9
 disp idx=9 pts=2999997
 pkt index=10 bytes=270
 pic index=10 idx=0 setup=1 refs=7
@@ -163,7 +163,7 @@ pic index=10 idx=0 setup=1 refs=7
   begin role=ref slot=5 res=5
   begin role=ref slot=6 res=6
   begin role=ref slot=7 res=7
-  begin role=setup slot=1 res=0
+  begin role=setup slot=-1 res=0
 disp idx=0 pts=3333330
 pkt index=11 bytes=263
 pic index=11 idx=10 setup=2 refs=7
@@ -183,6 +183,6 @@ pic index=11 idx=10 setup=2 refs=7
   begin role=ref slot=5 res=5
   begin role=ref slot=6 res=6
   begin role=ref slot=7 res=7
-  begin role=setup slot=2 res=10
+  begin role=setup slot=-1 res=10
 disp idx=10 pts=3666663
 eos pictures=12 displayed=12

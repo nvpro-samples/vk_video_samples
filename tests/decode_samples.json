@@ -4,7 +4,6 @@
       "name": "h264_4k_main",
       "codec": "h264",
       "description": "Test H.264 decoding with 4K main profile sample",
-      "expected_output_crc": "ce81af28",
       "expected_output_md5": "716a1a1999bd67ed129b07c749351859",
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/4k_26_ibp_main.h264",
       "source_checksum": "1b6c2fa6ea7cb8fac8064036d8729f668e913ea7cf3860009924789b8edf042f",
@@ -46,6 +45,48 @@
       "source_checksum": "b119d5d667eb7791613d0e39f375b61f0fa41baa5ee1f216a678e0483c69333c",
       "source_filepath": "video/avc/clip-a.h264",
       "expected_output_y4m_md5": "a80eead62d5844a5da55bc691b39abb3"
+    },
+    {
+      "name": "h264_clip_a_dump_flush_delay",
+      "codec": "h264",
+      "description": "Test H.264 decoding with the flush of the output frame writes waiting until the writers have taken every frame, then sleeping 200 ms, holding the write queue, whenever frames are still to be written (--dumpTestFlushDelayUs): the writes that finish meanwhile must still wake it, or the decode never ends",
+      "extra_args": [
+        "--dumpTestFlushDelayUs",
+        "200000"
+      ],
+      "timeout": 60,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-a.h264",
+      "source_checksum": "b119d5d667eb7791613d0e39f375b61f0fa41baa5ee1f216a678e0483c69333c",
+      "source_filepath": "video/avc/clip-a.h264",
+      "expected_output_y4m_md5": "2bcb11929bbacd1d0ba1c088e66ff7da"
+    },
+    {
+      "name": "h264_clip_a_dump_skip_display_order",
+      "codec": "h264",
+      "description": "Test H.264 decoding with the output frame of display order 10 left out of the writes (--dumpTestSkipDisplayOrder): the writers must report the display order that never comes and write the frames after it, or the decode never ends; the output is clip-a's without its eleventh frame",
+      "extra_args": [
+        "--dumpTestSkipDisplayOrder",
+        "10"
+      ],
+      "timeout": 60,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-a.h264",
+      "source_checksum": "b119d5d667eb7791613d0e39f375b61f0fa41baa5ee1f216a678e0483c69333c",
+      "source_filepath": "video/avc/clip-a.h264",
+      "expected_output_y4m_md5": "369693e234216c9c3fba29eeac369394"
+    },
+    {
+      "name": "h264_clip_a_dump_stop_release",
+      "codec": "h264",
+      "description": "Test H.264 decoding with the output writers releasing no frame from display order 5 on (--dumpTestStopRelease), as an output consumer that stopped would: the decoder must report the consumer after its bounded wait and stop waiting for it, or the decode never ends. The output is written (write_output), so that the writers run, but not checked: frames written after the consumer stops may hold later pictures",
+      "extra_args": [
+        "--dumpTestStopRelease",
+        "5"
+      ],
+      "timeout": 120,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-a.h264",
+      "source_checksum": "b119d5d667eb7791613d0e39f375b61f0fa41baa5ee1f216a678e0483c69333c",
+      "source_filepath": "video/avc/clip-a.h264",
+      "write_output": true
     },
     {
       "name": "h264_clip_a_hw_load_balancing",
@@ -110,7 +151,6 @@
       "name": "h265_big_buck_bunny_2160p",
       "codec": "h265",
       "description": "Test H.265 decoding with Big Buck Bunny 4K sample",
-      "expected_output_crc": "491789f3",
       "expected_output_md5": "2edc2b32d72d1e590ce73c6bb542b0ec",
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/hevc/hevc-big_buck_bunny_2160p.h265",
       "source_checksum": "ddb1e4f0b0b6be037a81b9c88842b729d3780813ff67f90145305be422becc43",
@@ -121,7 +161,6 @@
       "name": "h265_clip_d",
       "codec": "h265",
       "description": "Test H.265 decoding with clip-d sample",
-      "expected_output_crc": "491789f3",
       "expected_output_md5": "9a629a99a9870197022265fcb1fc4bb2",
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/hevc/clip-d.h265",
       "source_checksum": "d7db8cb323e10c5e30667b141554e88bab3bacf6bc878b544866867b76c3d35a",
