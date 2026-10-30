@@ -3553,7 +3553,12 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     // with VK_ERROR_DEVICE_LOST) when a reference is bound at DPB slot
     // index 16. The cap is defense-in-depth on top of the DpbSequenceStart()
     // clamp, so that binding is never exercised by this encoder.
-    m_maxDpbPicturesCount = std::min<uint32_t>(encoderConfig->InitDpbCount(), 16u);
+    // The device's maxDpbSlots bounds the count too. The session, the codec's DPB manager and the
+    // parameter sets, which size the DPB from dpbCount, all take this one count, so the DPB manager
+    // hands out no slot the session lacks.
+    m_maxDpbPicturesCount = std::min<uint32_t>(
+        {static_cast<uint32_t>(encoderConfig->InitDpbCount()), 16u, encoderConfig->videoCapabilities.maxDpbSlots});
+    encoderConfig->dpbCount = static_cast<int8_t>(m_maxDpbPicturesCount);
 
     encoderConfig->InitRateControl();
 
@@ -3857,7 +3862,7 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
     VkEncPrintfErr("\n");
 
     const uint32_t maxActiveReferencePicturesCount = encoderConfig->videoCapabilities.maxActiveReferencePictures;
-    const uint32_t maxDpbPicturesCount = std::min<uint32_t>(m_maxDpbPicturesCount, encoderConfig->videoCapabilities.maxDpbSlots);
+    const uint32_t maxDpbPicturesCount = m_maxDpbPicturesCount;
 
     VkVideoSessionCreateFlagsKHR sessionCreateFlags{};
     void* sessionCreateInfoChain = nullptr;
@@ -5022,6 +5027,14 @@ VkImageLayout VkVideoEncoder::TransitionImageLayout(VkCommandBuffer cmdBuf,
         imageBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         imageBarrier.srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         imageBarrier.dstStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } else if ((oldLayout == VK_IMAGE_LAYOUT_UNDEFINED) && (newLayout == VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR)) {
+        // A DPB image the encode reconstructs its setup picture into, its contents discarded. The
+        // first scope orders the transition after the encodes before it, which may have read the
+        // image as a reference.
+        imageBarrier.srcAccessMask = 0;
+        imageBarrier.dstAccessMask = VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR | VK_ACCESS_2_VIDEO_ENCODE_WRITE_BIT_KHR;
+        imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
+        imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR;
     } else if ((oldLayout == VK_IMAGE_LAYOUT_GENERAL) &&
                (newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) &&
                (srcQueueFamilyIndex == VK_QUEUE_FAMILY_FOREIGN_EXT)) {
@@ -6331,6 +6344,18 @@ VkResult VkVideoEncoder::RecordVideoCodingCmd(VkSharedBaseObj<VkVideoEncodeFrame
     if (m_encoderConfig->syncTestBitstreamCopy) {
         // Transfer commands are only allowed outside the video coding scope.
         RecordSyncTestBitstreamFill(cmdBuf, encodeFrameInfo);
+    }
+
+    // The setup picture's image holds nothing the encode reads: the reconstructed picture replaces
+    // it. The pool hands each DPB image out in VIDEO_ENCODE_DPB_KHR by declaration only, and a
+    // newly created one is still UNDEFINED, so each setup image is transitioned from UNDEFINED
+    // here, its contents discarded.
+    if (encodeFrameInfo->setupImageResource) {
+        VkSharedBaseObj<VkImageResourceView> setupImageView;
+        encodeFrameInfo->setupImageResource->GetImageView(setupImageView);
+        TransitionImageLayout(cmdBuf, setupImageView, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR,
+                              VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+                              setupImageView->GetImageSubresourceRange().baseArrayLayer);
     }
 
     vkDevCtx->CmdBeginVideoCodingKHR(cmdBuf, &encodeBeginInfo);

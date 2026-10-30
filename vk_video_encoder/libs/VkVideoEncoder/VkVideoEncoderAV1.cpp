@@ -101,6 +101,13 @@ VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& enc
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
+    // The DPB manager needs a slot for each of the eight reference frame buffers.
+    if (m_maxDpbPicturesCount < STD_VIDEO_AV1_NUM_REF_FRAMES) {
+        VkEncOut() << "The AV1 encoder needs " << STD_VIDEO_AV1_NUM_REF_FRAMES << " DPB slots, and the implementation has "
+                   << m_maxDpbPicturesCount << "!" << std::endl;
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
     // Initialize DPB
     m_dpbAV1 = VkEncDpbAV1::CreateInstance();
     assert(m_dpbAV1);

@@ -28,13 +28,11 @@ struct DpbEntryH265 {
     uint32_t  output : 1;  // 0: not needed for output, 1: needed for output
     uint32_t  corrupted : 1;
     uint32_t picOrderCntVal;
-    int32_t  refPicOrderCnt[STD_VIDEO_H265_MAX_DPB_SIZE];
-    uint32_t longTermRefPic; // reference marked as long term reference bitfield array with size of the refPicOrderCnt
 
     // The YCbCr dpb image resource
     VkSharedBaseObj<VulkanVideoImagePoolNode>  dpbImageView;
-    uint64_t frameId;      // internal unique id
     int32_t  temporalId;
+    StdVideoH265PictureType picType;
 
     // Intra-refresh
     uint32_t dirtyIntraRefreshRegions;
@@ -70,7 +68,7 @@ public:
                        StdVideoEncodeH265PictureInfo *pPicInfo,
                        StdVideoH265ShortTermRefPicSet *pShortTermRefPicSet,
                        uint32_t numRefL0, uint32_t numRefL1);
-    int8_t DpbPictureStart(uint64_t frameId, const StdVideoEncodeH265PictureInfo *pPicInfo,
+    int8_t DpbPictureStart(const StdVideoEncodeH265PictureInfo *pPicInfo,
                            const StdVideoH265ShortTermRefPicSet *pShortTermRefPicSet,
                            const StdVideoH265LongTermRefPicsSps* pLongTermRefPicsSps,
                            int32_t maxPicOrderCntLsb,
@@ -97,7 +95,8 @@ private:
     bool IsDpbEmpty();
     bool IsDpbFull();
 
-    void ApplyReferencePictureSet(const StdVideoEncodeH265PictureInfo *pPicInfo,
+    // false for a picture whose reference picture set holds more pictures than the DPB less one.
+    bool ApplyReferencePictureSet(const StdVideoEncodeH265PictureInfo *pPicInfo,
                                   const StdVideoH265ShortTermRefPicSet *pShortTermRefPicSet,
                                   const StdVideoH265LongTermRefPicsSps* pLongTermRefPicsSps,
                                   int32_t maxPicOrderCntLsb,
@@ -124,7 +123,6 @@ private:
     uint64_t                       m_lastIDRTimeStamp;
     int32_t                        m_picOrderCntCRA;
     bool                           m_refreshPending;
-    uint32_t                       m_longTermFlags;
     bool                           m_useMultipleRefs;
 };
 

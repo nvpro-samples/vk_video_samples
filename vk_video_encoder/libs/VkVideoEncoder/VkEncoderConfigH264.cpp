@@ -384,11 +384,13 @@ bool EncoderConfigH264::InitSpsPpsParameters(StdVideoH264SequenceParameterSet *s
         if (gopStructure.GetConsecutiveBFrameCount() > 0) {
             sps->max_num_ref_frames = (uint8_t)(sps->max_num_ref_frames + pps->num_ref_idx_l1_default_active_minus1 + 1U);
         }
-
-        // max_num_ref_frames must not exceed the largest DPB size allowed by
-        // the selected level.
-        sps->max_num_ref_frames = std::min(sps->max_num_ref_frames, (uint8_t)dpbCount);
     }
+
+    // The dpbCount slots of the session hold the reference frames and the picture being set up, so
+    // max_num_ref_frames is at most dpbCount - 1: within the DPB size of the selected level, and
+    // within H.264's 16. With more, the sliding window keeps a frame whose slot the DPB manager
+    // has already given to a later picture.
+    sps->max_num_ref_frames = std::min(sps->max_num_ref_frames, (uint8_t)std::max(dpbCount - 1, 0));
 
     if (gopStructure.GetConsecutiveBFrameCount() > 0) {
         sps->pic_order_cnt_type = STD_VIDEO_H264_POC_TYPE_0;

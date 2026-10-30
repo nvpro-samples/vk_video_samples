@@ -181,6 +181,32 @@
       }
     },
     {
+      "name": "h265_two_idr_periods",
+      "codec": "h265",
+      "profile": null,
+      "extra_args": [
+        "--gopFrameCount",
+        "30",
+        "--idrPeriod",
+        "60",
+        "--consecutiveBFrameCount",
+        "3",
+        "--numFrames",
+        "150",
+        "--repeatInputFrames"
+      ],
+      "description": "H.265 with three B frames, a GOP of 30 and an IDR every 60 frames, over 150 frames: the pictures waiting for reordering at the IDRs of frames 60 and 120 are decoded too. The GOP is given because the driver's preferred GOP may code a single IDR in 150 frames",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 43.6,
+        "min_picture_psnr": 39.9
+      }
+    },
+    {
       "name": "h265_main_profile",
       "codec": "h265",
       "profile": "main",

@@ -249,6 +249,10 @@ private:
     }
 
 private:
+    // Whether the encoder adds the primary reference frame's picture as one more reference (for its
+    // CDFs only): there is a primary reference frame, and no reference of the groups is its picture.
+    bool PrimaryRefIsAdded() const;
+
     DpbEntryAV1     m_DPB[BUFFER_POOL_MAX_SIZE + 1]; // 1 for the current
     uint8_t         m_maxDpbSize;
 
@@ -261,6 +265,7 @@ private:
     uint32_t        m_maxBidirectionalCompoundGroup1ReferenceCount;
     uint32_t        m_maxBidirectionalCompoundGroup2ReferenceCount;
     uint32_t        m_bidirectionalCompoundReferenceNameMask;
+    uint32_t        m_maxActiveReferencePictures; // of the session
 
     int32_t         m_maxRefFramesL0; // maximum reference frames allowed from the past
     int32_t         m_maxRefFramesL1; // maximum reference frames allowed from the future

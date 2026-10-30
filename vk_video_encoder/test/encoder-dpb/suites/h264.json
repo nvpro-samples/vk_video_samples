@@ -1,11 +1,6 @@
 {
   "codec": "h264",
-  "defects": {
-    "ref-frame-num": "VkEncDpbH264::FillStdReferenceInfo leaves FrameNum at 0",
-    "ref-pic-type": "VkEncDpbH264::FillStdReferenceInfo leaves primary_pic_type at 0",
-    "slot-range": "with 16 references and the session capped at 16 slots, a non-reference picture finds no free slot; VkEncDpbH264::DpbPictureEnd asserts in a debug build and returns slot 16 in a release build",
-    "slot-reuse": "max_num_ref_frames is numRefL0 + numRefL1 without the limit of 16, so the 16-slot DPB overwrites a picture the sliding window still holds"
-  },
+  "defects": {},
   "configs": [
     {
       "name": "h264-ippp-1ref",
@@ -24,10 +19,7 @@
         "0"
       ],
       "golden": "../golden/h264-ippp-1ref.trace",
-      "known": [
-        "ref-frame-num",
-        "ref-pic-type"
-      ]
+      "known": []
     },
     {
       "name": "h264-ippp-4ref",
@@ -46,10 +38,7 @@
         "0"
       ],
       "golden": "../golden/h264-ippp-4ref.trace",
-      "known": [
-        "ref-frame-num",
-        "ref-pic-type"
-      ]
+      "known": []
     },
     {
       "name": "h264-ibbbp-open",
@@ -68,10 +57,7 @@
         "1"
       ],
       "golden": "../golden/h264-ibbbp-open.trace",
-      "known": [
-        "ref-frame-num",
-        "ref-pic-type"
-      ]
+      "known": []
     },
     {
       "name": "h264-ibbbp-closed",
@@ -91,10 +77,7 @@
         "--closed-gop"
       ],
       "golden": "../golden/h264-ibbbp-closed.trace",
-      "known": [
-        "ref-frame-num",
-        "ref-pic-type"
-      ]
+      "known": []
     },
     {
       "name": "h264-ib7p-4ref",
@@ -113,10 +96,7 @@
         "1"
       ],
       "golden": "../golden/h264-ib7p-4ref.trace",
-      "known": [
-        "ref-frame-num",
-        "ref-pic-type"
-      ]
+      "known": []
     },
     {
       "name": "h264-ippp-frame-num-wrap",
@@ -134,11 +114,8 @@
         "--refs-l1",
         "0"
       ],
-      "known": [
-        "ref-frame-num",
-        "ref-pic-type"
-      ],
-      "md5": "367d777a2d5b2fda4b2220ec760bc2de"
+      "known": [],
+      "md5": "13eb7514efc527b349f94d354b0da677"
     },
     {
       "name": "h264-ibp-poc-wrap",
@@ -156,11 +133,8 @@
         "--refs-l1",
         "1"
       ],
-      "known": [
-        "ref-frame-num",
-        "ref-pic-type"
-      ],
-      "md5": "01c3d63e362b292c2ba34b2ae25b9f1d"
+      "known": [],
+      "md5": "9937588752ad59d7297a77da3c08fe95"
     },
     {
       "name": "h264-ippp-16ref",
@@ -179,10 +153,7 @@
         "0"
       ],
       "golden": "../golden/h264-ippp-16ref.trace",
-      "known": [
-        "ref-frame-num",
-        "ref-pic-type"
-      ]
+      "known": []
     },
     {
       "name": "h264-ibp-16ref",
@@ -201,12 +172,7 @@
         "0"
       ],
       "golden": "../golden/h264-ibp-16ref.trace",
-      "known": [
-        "ref-frame-num",
-        "ref-pic-type",
-        "slot-range"
-      ],
-      "debug": "VkEncDpbH264::DpbPictureEnd asserts \"Failed to find a free DPB slot\" (VkEncoderDpbH264.cpp:379)"
+      "known": []
     },
     {
       "name": "h264-ippp-16-1ref",
@@ -225,11 +191,49 @@
         "1"
       ],
       "golden": "../golden/h264-ippp-16-1ref.trace",
-      "known": [
-        "ref-frame-num",
-        "ref-pic-type",
-        "slot-reuse"
-      ]
+      "known": []
+    },
+    {
+      "name": "h264-ippp-4ref-4slots",
+      "args": [
+        "--frames",
+        "64",
+        "--gop",
+        "30",
+        "--idr",
+        "60",
+        "--bframes",
+        "0",
+        "--refs-l0",
+        "4",
+        "--refs-l1",
+        "0",
+        "--max-dpb-slots",
+        "4"
+      ],
+      "md5": "8d1d9e6da31313fee236ae9ac47ff6b5",
+      "known": []
+    },
+    {
+      "name": "h264-ibbbp-3slots",
+      "args": [
+        "--frames",
+        "64",
+        "--gop",
+        "16",
+        "--idr",
+        "60",
+        "--bframes",
+        "3",
+        "--refs-l0",
+        "2",
+        "--refs-l1",
+        "1",
+        "--max-dpb-slots",
+        "3"
+      ],
+      "md5": "06b58ea91fcf2ccab67e63cf67d071b2",
+      "known": []
     }
   ]
 }

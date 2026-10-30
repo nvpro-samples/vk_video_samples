@@ -150,7 +150,6 @@ public:
         return pPictureInfo->frame_num;
     }
 
-    int32_t GetValidEntries(DpbEntryH264 entries[MAX_DPB_SLOTS]);
     uint32_t GetUsedFbSlotsMask();
     bool NeedToReorder();
     void FillStdReferenceInfo(uint8_t dpbIdx, StdVideoEncodeH264ReferenceInfo* pStdReferenceInfo);

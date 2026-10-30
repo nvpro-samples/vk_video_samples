@@ -2,8 +2,9 @@
 
 `vk-video-encoder-dpb-trace` drives the encoder's DPB classes, `VkEncDpbH264`, `VkEncDpbH265` and
 `VkEncDpbAV1`, through a GOP sequence with no Vulkan device, making the calls the encoder makes for
-each picture, and writes what they decide: the setup slot, the reference lists or AV1 reference
-names, and each reference's slot, picture and Std reference information. The classes come from the
+each picture, and writes what they decide: the setup slot and its Std reference information, the
+reference lists or AV1 reference names, and each reference's slot, picture and Std reference
+information. The classes come from the
 encoder library's static archive, as the encoder uses them; the tool links that archive and
 simdjson's, and no Vulkan loader.
 
@@ -27,6 +28,7 @@ would decide.
 | File | What it holds |
 |---|---|
 | `src/EncoderDpbTrace.cpp` | the tool: the configuration, the frame queue and each codec's per-picture calls |
+| `src/H265LongTermRefs.cpp` | `vk-video-encoder-dpb-h265-long-term`: H.265 long-term reference pictures through `VkEncDpbH265` |
 | `scripts/encoder_dpb_model.py` | the model: `--trace t [-v]` |
 | `scripts/encoder_dpb_suite.py` | the suite runner CTest calls |
 | `suites/h264.json`, `suites/h265.json`, `suites/av1.json` | the configurations, their goldens or md5s, known categories, and the defects table |
@@ -36,17 +38,24 @@ would decide.
 
 ```bash
 <build>/bin/vk-video-encoder-dpb-trace --codec h264 --frames 64 --gop 16 --idr 60 --bframes 3 \
-    --refs-l0 2 --refs-l1 1 [--closed-gop] [--level-dpb 16] -o h264.trace
+    --refs-l0 2 --refs-l1 1 [--closed-gop] [--level-dpb 16] [--max-dpb-slots 17] -o h264.trace
+<build>/bin/vk-video-encoder-dpb-trace --codec av1 --frames 48 --gop 16 --idr 60 --bframes 3 \
+    [--max-active-refs 7] [--av1-single 7:0x7f] [--av1-unidir 4:4:0xf] [--av1-bidir 7:4:3:0x7f] -o av1.trace
 python3 scripts/encoder_dpb_model.py --trace h264.trace -v
 python3 scripts/encoder_dpb_suite.py --tool <build>/bin/vk-video-encoder-dpb-trace --suite suites/h264.json [--mint] [-v]
 ```
 
 `--refs-l0` and `--refs-l1` stand for the driver's preferred reference counts
 (`preferredMaxL0ReferenceCount`, `preferredMaxL1ReferenceCount`), which set the H.264 and H.265
-encoders' counts; `--level-dpb` is the H.264 DPB size the level allows for the picture size. AV1
-uses the reference capabilities of a device that allows every reference name: seven single
-references, four unidirectional compound, and seven bidirectional compound (four and three). `--mint` writes the
-goldens and md5s from the current classes and prints each configuration's categories.
+encoders' counts; `--level-dpb` is the H.264 DPB size the level allows for the picture size.
+`--max-dpb-slots` is the device's `maxDpbSlots` (17). For AV1, `--max-active-refs` is the device's
+`maxActiveReferencePictures` (7), and `--av1-single`, `--av1-unidir` and `--av1-bidir` its reference
+capabilities, the counts (`N`, group 1 `G1`, group 2 `G2`) and the name mask of each prediction
+mode. The defaults are those of a device that allows every reference name: seven single
+references, four unidirectional compound, and seven bidirectional compound (four and three). With
+fewer than eight DPB slots, the AV1 encoder refuses the session, and the tool writes `refused` and
+exits 1. `--mint` writes the goldens and md5s from the current classes and prints each
+configuration's categories.
 
 ## What the harness follows
 
@@ -55,7 +64,8 @@ Where the encoder feeds the DPB, the harness does what the encoder does, line by
 - the configuration: `EncoderConfigH264::InitSpsPpsParameters` and `InitDpbCount`;
   `EncoderConfigH265::InitDpbCount`, `InitializeSpsRefPicSet` and the reference fields of
   `InitParamameters`; `EncoderConfigAV1::InitDpbCount` and `InitSequenceHeader`; and the DPB size
-  `VkVideoEncoder::InitEncoder` passes on, at most 16;
+  `VkVideoEncoder::InitEncoder` gives the session, the DPB class and the parameter sets (as
+  `dpbCount`), at most 16 and at most the device's `maxDpbSlots`;
 - the order: each input frame takes its GOP position (`VkVideoGopStructure::GetPositionInGOP`),
   and `VkVideoEncoder::EnqueueFrame` and `InsertOrdered` defer it in GOP encode order until an
   IDR, the last frame, a reference frame or a GOP without B frames flushes the queue;
@@ -76,14 +86,15 @@ configurations that stop at one (`debug` in the suite); the runner asks the tool
 | Line | What it records |
 |---|---|
 | `encoder-dpb-trace` | the settings |
-| `config` | the DPB size and the parameter set fields the DPB reads; H.265 `sps-rps`, the SPS short-term reference picture set |
+| `config` | the DPB size and the parameter set fields the DPB reads; H.265 `sps-rps`, the SPS short-term reference picture set; AV1 the device's active references (`max_active_refs`) and reference capabilities (`single`, `unidir`, `bidir`) |
+| `refused` | AV1: the encoder refuses a DPB of fewer than eight slots |
 | `pic` | a picture in encode order: its input number, type, POC and whether it is a reference |
 | `h264`, `h265` | `frame_num` and `PicOrderCnt`; H.265 the flags and the reference picture set used (`rps`) with the slots `DpbPictureStart` put in each list (`rps-slots`) |
-| `av1` | the frame header fields the DPB decides: `frame_type`, the reference name the frame takes, `refresh_frame_flags`, the show flags, `order_hint`, `primary_ref_frame`, `ref_frame_idx`, `ref_order_hint`, and `referenceNameSlotIndices` (`names`) |
+| `av1` | the frame header fields the DPB decides: `frame_type`, the reference name the frame takes, `refresh_frame_flags`, the show flags, `order_hint`, `current_frame_id`, `primary_ref_frame`, `ref_frame_idx`, `ref_order_hint`, `referenceNameSlotIndices` (`names`), and `primaryReferenceCdfOnly` (`cdf_only`) |
 | `shown` | AV1 show_existing_frame: the slot and the reference buffer it shows |
 | `lists` | `RefPicList0` and `RefPicList1` as slots, at the active counts |
-| `ref` | each slot the encode binds: the picture it holds and `FillStdReferenceInfo`'s fields |
-| `setup` | the setup slot |
+| `ref` | each slot the encode binds: the picture it holds and every member of the Std reference information `FillStdReferenceInfo` fills |
+| `setup` | the setup slot and the Std reference information the encoder fills for it from the slot |
 
 ## The model
 
@@ -93,30 +104,45 @@ configurations that stop at one (`debug` in the suite); the runner asks the tool
 | `ref-unknown` | a reference slot holds the picture the model holds there as a reference |
 | `ref-poc`, `ref-frame-num`, `ref-pic-type` | the reference's Std information is its picture's: `PicOrderCnt` or `PicOrderCntVal`, H.264 `FrameNum`, `primary_pic_type` or `pic_type` |
 | `ref-unused` | an H.265 reference is not flagged `unused_for_reference` |
+| `setup-info` | the setup slot's Std reference information is the picture's: H.264 `PicOrderCnt`, `FrameNum` and `primary_pic_type`; H.265 `PicOrderCntVal`, `pic_type`, and `unused_for_reference` exactly when the picture is not a reference; AV1 `frame_type`, `OrderHint` and `RefFrameId` (its `current_frame_id`) |
 | `rps-missing`, `rps-slots` | H.265: every POC of the reference picture set is a reference picture, and the encoder's slots for each list are those pictures |
 | `slot-reuse` | the setup slot holds no picture that stays a reference: H.264 after the sliding window (8.2.5.3) with `max_num_ref_frames`, H.265 after the reference picture set marks the others unused (8.3.2) |
-| `slot-range` | no slot at or above the DPB size |
+| `slot-range` | no slot at or above the DPB size or the device's `maxDpbSlots` |
 | AV1 `ref-name-slot`, `ref-order-hint` | each reference name's slot holds the frame in the buffer its `ref_frame_idx` names, and each `ref_order_hint` is that buffer's order hint, over the eight reference buffers `refresh_frame_flags` updates (a shown key frame refreshes all of them, and showing an existing key frame loads it into all, 7.20, 7.21) |
 | AV1 `names-unlisted`, `ref-unnamed` | every reference name's slot is bound, and every bound slot is a reference name's |
-| AV1 `ref-info`, `refresh`, `show-existing` | a reference's `frame_type` and `OrderHint` are its frame's; a shown key frame refreshes every buffer; show_existing_frame shows the buffer that holds its frame |
+| AV1 `ref-info`, `refresh`, `show-existing` | a reference's `frame_type`, `OrderHint` and `RefFrameId` are its frame's; a shown key frame refreshes every buffer; show_existing_frame shows the buffer that holds its frame |
+| AV1 `ref-count` | an inter frame binds at most the session's active references, and names at least one reference and no more than the prediction mode the DPB plans for its type takes, of group 1, of group 2 and in all, all inside that mode's name mask: bidirectional compound for a B picture, else unidirectional compound from group 1, else single reference. A primary reference frame used for its CDFs only is bound, not named |
 
 ## What the configurations show
 
-Over the suites and a sweep of 720 configurations (0, 1, 3 and 7 B frames; 1 to 16 L0 and 0 to 2
-L1 references; open and closed GOPs; IDR periods 30, 60 and 400):
+Over the suites and a sweep of 2304 H.264 and H.265 configurations (0, 1, 3 and 7 B frames; 1 to
+16 L0 and 0 to 2 L1 references; open and closed GOPs; IDR periods 30, 60 and 400), in a release
+build and in a build with assertions and the sanitizers:
 
 - the lists, the sliding window and the reference picture sets match the model everywhere;
-- every H.264 reference has `FrameNum` and `primary_pic_type` 0, and every H.265 reference
-  `pic_type` 0 (`ref-frame-num`, `ref-pic-type`);
-- with 16 L0 references and B frames, the 16-slot DPB has no slot for a non-reference
-  picture: `DpbPictureEnd` asserts in a build with assertions and returns slot 16 in a release
-  build (`slot-range`);
-- with 16 L0 and 1 L1 references, `max_num_ref_frames` is 17, above H.264's limit of 16,
-  and the 16-slot DPB overwrites a picture the sliding window still holds (`slot-reuse`).
+- the Std reference information of every reference and of every setup slot is its picture's;
+- every slot is below the DPB size: `max_num_ref_frames` is at most the DPB size less one (15 with
+  the 16-slot DPB), so a non-reference picture always finds a slot, and the sliding window frees a
+  slot before the DPB class gives it to a later picture.
 
-Over the AV1 suite and a sweep of 60 configurations (0, 1, 2, 3, 5 and 7 B frames, open and closed
-GOPs, IDR periods 30, 60, 64 and 400, past the order hint wrap) the reference names, the order
-hints, the references and the setup slots match the reference buffers everywhere.
+Over the AV1 suite and a sweep of 48 configurations (0, 1, 2, 3, 5 and 7 B frames, open and closed
+GOPs, IDR periods 30, 60, 64 and 400, 300 frames, past the order hint wrap) the reference names,
+the order hints, the references and the setup slots, with their Std reference information, match
+the reference buffers everywhere.
 
-The H.265 long-term "Foll" loop, is not reachable: the encoder sets no long-term references.
-Its test drives the class with long-term references and lands with its fix.
+The suite configurations of a device with fewer slots or references (`h264-*-4slots`,
+`h264-*-3slots`, `h265-*-3slots`, `av1-ippp-8slots`, `av1-ibbbp-single`, `av1-ibbbp-counts`,
+`av1-ib7p-2active`) keep every slot below the device's `maxDpbSlots`, and every AV1 picture within
+the session's active references and the counts and names of its prediction mode.
+
+## H.265 long-term reference pictures
+
+The encoder sets no long-term reference pictures, so the suites never reach the long-term half of
+the H.265 reference picture set. The CTest `EncoderH265DpbLongTermFoll` (label `device-free`)
+runs `vk-video-encoder-dpb-h265-long-term`, which drives `VkEncDpbH265` directly: an IDR, then P
+pictures whose reference picture sets name long-term pictures, one with a Foll entry and no Curr
+entry, one with a picture short-term until that set names it. It checks the sets
+`DpbPictureStart` derives and the marking of 8.3.2, read back through `FillStdReferenceInfo`: every
+picture in RefPicSetLtCurr or RefPicSetLtFoll is used for long-term reference, and a reference
+picture in no set is unused. The class is allocated on its own, so a sanitizer build sees an
+access outside it.

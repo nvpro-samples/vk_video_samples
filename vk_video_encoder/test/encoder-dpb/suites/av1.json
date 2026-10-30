@@ -76,7 +76,87 @@
         "1"
       ],
       "known": [],
-      "md5": "ec763b6df4cda831e06a730415fa0406"
+      "md5": "c21103e286605eacfa76b46ae8d3222a"
+    },
+    {
+      "name": "av1-ippp-8slots",
+      "args": [
+        "--frames",
+        "48",
+        "--gop",
+        "16",
+        "--idr",
+        "60",
+        "--bframes",
+        "0",
+        "--max-dpb-slots",
+        "8"
+      ],
+      "md5": "096600828d55fa9e1fd24f859c75f628",
+      "known": []
+    },
+    {
+      "name": "av1-ibbbp-single",
+      "args": [
+        "--frames",
+        "48",
+        "--gop",
+        "16",
+        "--idr",
+        "60",
+        "--bframes",
+        "3",
+        "--max-active-refs",
+        "3",
+        "--av1-single",
+        "2:0x7f",
+        "--av1-unidir",
+        "0:0:0",
+        "--av1-bidir",
+        "0:0:0:0"
+      ],
+      "md5": "2b6e17f71044bb477087b496a6cc2cf5",
+      "known": []
+    },
+    {
+      "name": "av1-ibbbp-counts",
+      "args": [
+        "--frames",
+        "48",
+        "--gop",
+        "16",
+        "--idr",
+        "60",
+        "--bframes",
+        "3",
+        "--max-active-refs",
+        "3",
+        "--av1-single",
+        "1:0x7f",
+        "--av1-unidir",
+        "2:2:0xf",
+        "--av1-bidir",
+        "2:1:1:0x7f"
+      ],
+      "md5": "e8089d34a1310aa9bbcbc82e6f0f5a9a",
+      "known": []
+    },
+    {
+      "name": "av1-ib7p-2active",
+      "args": [
+        "--frames",
+        "48",
+        "--gop",
+        "32",
+        "--idr",
+        "64",
+        "--bframes",
+        "7",
+        "--max-active-refs",
+        "2"
+      ],
+      "md5": "d1768916efd4cc36e2242bef35a1f739",
+      "known": []
     }
   ]
 }
