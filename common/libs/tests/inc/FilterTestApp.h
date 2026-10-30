@@ -212,10 +212,13 @@ public:
     /**
      * @brief Initialize Vulkan device and resources
      * @param verbose Enable verbose logging
+     * @param descriptorBuffer Create the device with VK_EXT_descriptor_buffer and without
+     *        VK_KHR_push_descriptor, so that the filter's descriptors go through descriptor buffers
      * @return VK_SUCCESS on success
      */
     VkResult init(bool verbose,
-                  bool validate = false, const char* deviceUuidStr = nullptr);
+                  bool validate = false, const char* deviceUuidStr = nullptr,
+                  bool descriptorBuffer = false);
     
     /**
      * @brief Run a single test case

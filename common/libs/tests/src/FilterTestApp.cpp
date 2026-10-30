@@ -344,7 +344,7 @@ FilterTestApp::~FilterTestApp() {
     }
 }
 
-VkResult FilterTestApp::init(bool verbose, bool validate, const char* deviceUuidStr) {
+VkResult FilterTestApp::init(bool verbose, bool validate, const char* deviceUuidStr, bool descriptorBuffer) {
     
     // Required instance layers and extensions for validation (if verbose)
     static const char* const requiredInstanceLayers[] = {
@@ -362,6 +362,16 @@ VkResult FilterTestApp::init(bool verbose, bool validate, const char* deviceUuid
         VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
         VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
         VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,  // Required for push descriptor layout
+        nullptr
+    };
+
+    // --descriptor-buffer: the same, with descriptor buffers in place of push descriptors. A device
+    // without VK_KHR_push_descriptor takes descriptor buffers (VulkanDeviceContext::UsesDescriptorBuffers).
+    static const char* const requiredDescriptorBufferDeviceExtensions[] = {
+        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
+        VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME,
+        VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME,
+        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
         nullptr
     };
     
@@ -382,7 +392,8 @@ VkResult FilterTestApp::init(bool verbose, bool validate, const char* deviceUuid
     }
     
     // Add required device extensions
-    m_vkDevCtx.AddReqDeviceExtensions(requiredDeviceExtensions, verbose);
+    m_vkDevCtx.AddReqDeviceExtensions(descriptorBuffer ? requiredDescriptorBufferDeviceExtensions
+                                                       : requiredDeviceExtensions, verbose);
     m_vkDevCtx.AddOptDeviceExtensions(optionalDeviceExtensions, verbose);
     
     // Initialize Vulkan device (creates instance)
@@ -442,7 +453,14 @@ VkResult FilterTestApp::init(bool verbose, bool validate, const char* deviceUuid
         std::cerr << "[FilterTestApp] Failed to create Vulkan device: " << result << std::endl;
         return result;
     }
-    
+
+    // --descriptor-buffer tests nothing on a device that does not take descriptor buffers.
+    if (descriptorBuffer && !m_vkDevCtx.UsesDescriptorBuffers()) {
+        std::cerr << "[FilterTestApp] The device lacks the descriptorBuffer or bufferDeviceAddress feature"
+                  << std::endl;
+        return VK_ERROR_FEATURE_NOT_PRESENT;
+    }
+
     // Create command pool for compute queue
     VkCommandPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     poolInfo.queueFamilyIndex = m_vkDevCtx.GetComputeQueueFamilyIdx();
@@ -457,6 +475,8 @@ VkResult FilterTestApp::init(bool verbose, bool validate, const char* deviceUuid
     std::cout << "[FilterTestApp] Initialized successfully" << std::endl;
     std::cout << "  Compute Queue Family: " << m_vkDevCtx.GetComputeQueueFamilyIdx() << std::endl;
     std::cout << "  Transfer Queue Family: " << m_vkDevCtx.GetTransferQueueFamilyIdx() << std::endl;
+    std::cout << "  Descriptors: "
+              << (m_vkDevCtx.UsesDescriptorBuffers() ? "descriptor buffers" : "push descriptors") << std::endl;
     
     return VK_SUCCESS;
 }

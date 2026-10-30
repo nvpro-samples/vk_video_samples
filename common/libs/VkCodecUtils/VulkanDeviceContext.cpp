@@ -1166,6 +1166,29 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
             pAfterYcbcr = &videoMaintenance2Features;
         }
 
+        // The descriptor set layouts use push descriptors when VK_KHR_push_descriptor is enabled, and
+        // descriptor buffers when it is not and VK_EXT_descriptor_buffer is, with VK_KHR_buffer_device_address,
+        // whose vkGetBufferDeviceAddressKHR gives the addresses the descriptors take. A descriptor buffer
+        // layout needs descriptorBuffer (VUID-vkGetDescriptorSetLayoutSizeEXT-None-08011), and an address
+        // needs bufferDeviceAddress (VUID-vkGetBufferDeviceAddress-bufferDeviceAddress-03324). Only these two
+        // are enabled, and only on the device that uses descriptor buffers: a device with push descriptors is
+        // created as without the extensions.
+        VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures {
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES,
+            pAfterYcbcr,
+            VK_FALSE, VK_FALSE, VK_FALSE };
+        VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptorBufferFeatures {
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT,
+            &bufferDeviceAddressFeatures,
+            VK_FALSE, VK_FALSE, VK_FALSE, VK_FALSE };
+        const bool selectDescriptorBuffers =
+            (FindRequiredDeviceExtension(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME) != nullptr) &&
+            (FindRequiredDeviceExtension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME) != nullptr) &&
+            (FindRequiredDeviceExtension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME) == nullptr);
+        if (selectDescriptorBuffers) {
+            pAfterYcbcr = &descriptorBufferFeatures;
+        }
+
         // Required for creating YCbCr samplers used with multi-planar video formats
         VkPhysicalDeviceSamplerYcbcrConversionFeatures samplerYcbcrFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES,
                                                                                pAfterYcbcr,
@@ -1174,6 +1197,18 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
 
         VkPhysicalDeviceFeatures2 deviceFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &samplerYcbcrFeatures};
         GetPhysicalDeviceFeatures2(m_physDevice, &deviceFeatures);
+
+        // The query filled in every feature the device has; keep the two the descriptor buffers need. The
+        // capture and replay features are for capture tools.
+        m_descriptorBufferEnabled = selectDescriptorBuffers &&
+                                    (descriptorBufferFeatures.descriptorBuffer == VK_TRUE) &&
+                                    (bufferDeviceAddressFeatures.bufferDeviceAddress == VK_TRUE);
+        descriptorBufferFeatures.descriptorBufferCaptureReplay = VK_FALSE;
+        descriptorBufferFeatures.descriptorBufferImageLayoutIgnored = VK_FALSE;
+        descriptorBufferFeatures.descriptorBufferPushDescriptors = VK_FALSE;
+        bufferDeviceAddressFeatures.bufferDeviceAddressCaptureReplay = VK_FALSE;
+        bufferDeviceAddressFeatures.bufferDeviceAddressMultiDevice = VK_FALSE;
+        m_robustBufferAccessEnabled = (deviceFeatures.features.robustBufferAccess == VK_TRUE);
 
         assert(timelineSemaphoreFeatures.timelineSemaphore);
         assert(videoMaintenance1Features.videoMaintenance1);
@@ -1233,6 +1268,9 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
 
         m_device = vkDevice;
         m_importedDeviceHandle = true;
+        // The creator chose the imported device's features; descriptor buffers are not assumed.
+        m_descriptorBufferEnabled = false;
+        m_robustBufferAccessEnabled = false;
         // Log the imported-VkDevice path so an embedder can verify it is
         // active. Gated on the silenceStdio latch via VkEncOut() so it
         // stays quiet inside the sandboxed GPU process.

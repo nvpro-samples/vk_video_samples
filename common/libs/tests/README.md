@@ -33,6 +33,10 @@ make -j$(nproc) vk_filter_test
 # Run a set: --all runs every set but the disabled cases
 ./bin/vk_filter_test --all
 ./bin/vk_filter_test --regression    # also --production, --primaries
+
+# The filter's descriptors in descriptor buffers (VK_EXT_descriptor_buffer) instead of
+# push descriptors; a device without descriptor buffers reports SKIPPED (exit 77)
+./bin/vk_filter_test --all --validate --descriptor-buffer
 ```
 
 ### 2. ThreadedRenderingVk - Integration Tests

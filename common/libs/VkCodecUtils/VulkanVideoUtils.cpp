@@ -647,6 +647,12 @@ VkResult VulkanGraphicsPipeline::CreatePipeline(const VulkanDeviceContext* vkDev
     pipelineCreateInfo.pColorBlendState = &colorBlendInfo;
     pipelineCreateInfo.pDynamicState = &dynamicStateInfo;
     pipelineCreateInfo.layout = pBufferDescriptorSets->GetPipelineLayout();
+    // A pipeline whose descriptors come from a descriptor buffer is created for one
+    // (VUID-vkCmdDraw-None-08117).
+    if (pBufferDescriptorSets->GetDescriptorSetLayoutInfo().GetDescriptorLayoutMode() ==
+        VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) {
+        pipelineCreateInfo.flags |= VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+    }
     pipelineCreateInfo.renderPass = renderPass;
     pipelineCreateInfo.subpass = 0;
     pipelineCreateInfo.basePipelineHandle = VK_NULL_HANDLE;

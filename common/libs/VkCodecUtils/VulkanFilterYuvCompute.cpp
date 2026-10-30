@@ -414,30 +414,23 @@ VkResult VulkanFilterYuvCompute::InitDescriptorSetLayout(uint32_t maxNumFrames)
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(PushConstants); // Size matches the actual PushConstants struct
 
-    // autoSelect (last argument) rather than pinning push descriptors.
-    //
-    // The flags argument below is only a preference now: with autoSelect set,
+    // autoSelect (last argument): the flags argument below is only a preference.
     // CreateDescriptorSet picks push descriptors when VK_KHR_push_descriptor is
-    // enabled, VK_EXT_descriptor_buffer when it is not and that one is, and
-    // plain descriptor sets when neither is. Pinning
-    // PUSH_DESCRIPTOR_BIT unconditionally discarded a descriptor-buffer arm
-    // that is fully implemented on both sides -- the layout/buffer half in
-    // VulkanDescriptorSetLayout and the bind half in this file's
-    // RecordCommandBuffer switch -- and that produces byte-identical output to
-    // the push-descriptor arm on hardware that has both.
+    // enabled, descriptor buffers when the device uses them
+    // (VulkanDeviceContext::UsesDescriptorBuffers), and plain descriptor sets
+    // otherwise.
+    // RecordCommandBuffer pushes the descriptors or writes them to the frame's
+    // part of the descriptor buffer (vk_filter_test --descriptor-buffer).
     //
-    // WHAT THIS DOES NOT FIX, recorded so the next reader does not re-derive
-    // it: this does not make the filter work on a device that enables neither
-    // extension. The third arm is a stub -- nothing in this file ever calls
+    // The filter does not work on a device that enables neither extension. The
+    // third arm is a stub -- nothing in this file ever calls
     // VulkanDescriptorSetLayout::WriteDescriptorSet, and the pool it allocates
     // is typed COMBINED_IMAGE_SAMPLER while these bindings are storage
-    // images/buffers -- so it fails at Create with VK_ERROR_OUT_OF_POOL_MEMORY.
-    // That is a loud failure the encoder already treats as fatal, not silent
-    // corruption, but it is still a failure. In particular a caller-supplied
-    // VkDevice lands there twice over: VulkanDeviceContext's imported path
-    // never populates m_reqDeviceExtensions, so FindRequiredDeviceExtension
-    // answers "no" for every extension regardless of what the embedder actually
-    // enabled.
+    // images/buffers -- so it fails at Create with VK_ERROR_OUT_OF_POOL_MEMORY,
+    // a failure the encoder treats as fatal. A caller-supplied VkDevice lands
+    // there too: VulkanDeviceContext's imported path never populates
+    // m_reqDeviceExtensions, so FindRequiredDeviceExtension answers "no" for
+    // every extension regardless of what the embedder enabled.
     return m_descriptorSetLayout.CreateDescriptorSet(m_vkDevCtx,
                                                      setLayoutBindings,
                                                      VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR,

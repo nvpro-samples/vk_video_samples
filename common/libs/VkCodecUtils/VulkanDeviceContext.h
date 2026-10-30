@@ -236,6 +236,15 @@ public:
     const VkExtensionProperties* FindDeviceExtension(const char* name) const;
     const char * FindRequiredDeviceExtension(const char* name) const;
 
+    // True when the device was created for descriptor buffers: VK_EXT_descriptor_buffer and
+    // VK_KHR_buffer_device_address are enabled, VK_KHR_push_descriptor is not, and the descriptorBuffer and
+    // bufferDeviceAddress features are on.
+    // The descriptor set layouts then use descriptor buffers (VulkanDescriptorSetLayout::CreateDescriptorSet).
+    bool UsesDescriptorBuffers() const { return m_descriptorBufferEnabled; }
+    // The device enables every core feature it has, robustBufferAccess among them, which sets the size of a
+    // buffer descriptor in a descriptor buffer.
+    bool IsRobustBufferAccessEnabled() const { return m_robustBufferAccessEnabled; }
+
     void PrintExtensions(bool deviceExt = false) const;
 
     // Keep the Vulkan loader (libvulkan.so.1 / vulkan-1.dll) mapped for
@@ -423,6 +432,8 @@ private:
     mutable std::mutex                                  m_presentQueueMutex;
     mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoDecodeQueueMutexes;
     mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoEncodeQueueMutexes;
+    bool                               m_descriptorBufferEnabled = false;
+    bool                               m_robustBufferAccessEnabled = false;
     VkDebugReportCallbackEXT           m_debugReport = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT           m_debugUtilsMessenger = VK_NULL_HANDLE;
     PFN_vkCreateDebugUtilsMessengerEXT  m_createDebugUtilsMessengerEXT = nullptr;
