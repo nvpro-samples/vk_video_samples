@@ -66,6 +66,10 @@ struct VkVideoDumpPoolTestOptions {
     uint32_t releaseDelayUs{0};
     // Treat the GPU wait of the frame with this display order as failed; -1 for none.
     int64_t  failWaitDisplayOrder{-1};
+    // Make flush() wait until the writers have taken every queued frame, then sleep this long,
+    // holding the queue mutex, each time it finds frames still to write: the writes that finish
+    // meanwhile have to wake it all the same.
+    uint32_t flushDelayUs{0};
 };
 
 /**
@@ -143,10 +147,27 @@ public:
      * @brief Flush all pending writes and wait for completion.
      */
     void flush() {
+        if (m_testOptions.flushDelayUs != 0) {
+            // Test: the writers take every queued frame first, so that the frames still to write
+            // are being written while the test below sleeps.
+            for (;;) {
+                {
+                    std::lock_guard<std::mutex> lock(m_queueMutex);
+                    if (m_frameQueue.empty()) {
+                        break;
+                    }
+                }
+                std::this_thread::yield();
+            }
+        }
         // Wait until all queued frames are written
         std::unique_lock<std::mutex> lock(m_queueMutex);
         m_flushCV.wait(lock, [this]() {
-            return m_frameQueue.empty() && (m_framesWritten >= m_framesQueued);
+            const bool written = m_frameQueue.empty() && (m_framesWritten >= m_framesQueued);
+            if (!written && (m_testOptions.flushDelayUs != 0)) {
+                std::this_thread::sleep_for(std::chrono::microseconds(m_testOptions.flushDelayUs));
+            }
+            return written;
         });
     }
 
@@ -279,7 +300,12 @@ private:
                 frame.releaseCallback(frame);
             }
 
-            m_framesWritten++;
+            // Counted under the queue mutex, which flush() tests the count under: a count made
+            // between its test and its wait would wake no one.
+            {
+                std::lock_guard<std::mutex> lock(m_queueMutex);
+                m_framesWritten++;
+            }
             m_flushCV.notify_all();
         }
     }

@@ -127,10 +127,19 @@ VkResult VulkanCommandBufferPool::Configure(const VulkanDeviceContext*   vkDevCt
         return VK_ERROR_TOO_MANY_OBJECTS;
     }
 
-    VkResult result = m_commandBuffersSet.CreateCommandBufferPool(vkDevCtx, queueFamilyIndex, numPoolNodes);
-    if (result != VK_SUCCESS) {
-        assert(!"ERROR: CreateCommandBufferPool!");
-        return result;
+    VkResult result = VK_SUCCESS;
+    for (uint32_t poolNodeIdx = 0; poolNodeIdx < m_commandBuffersSets.size(); poolNodeIdx++) {
+        VulkanCommandBuffersSet& commandBuffersSet = m_commandBuffersSets[poolNodeIdx];
+        if (poolNodeIdx >= numPoolNodes) {
+            commandBuffersSet.DestroyCommandBuffer();
+            commandBuffersSet.DestroyCommandBufferPool();
+            continue;
+        }
+        result = commandBuffersSet.CreateCommandBufferPool(vkDevCtx, queueFamilyIndex, 1);
+        if (result != VK_SUCCESS) {
+            assert(!"ERROR: CreateCommandBufferPool!");
+            return result;
+        }
     }
 
     if (createSemaphores) {

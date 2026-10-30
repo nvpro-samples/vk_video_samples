@@ -166,6 +166,14 @@ set_tests_properties(FilterListTests PROPERTIES
 # pool behind the decoder's and the encoder's bitstream buffers. Device-free.
 add_subdirectory(refcounted_pool)
 
+# descriptor_layout_test: the immutable samplers VulkanDescriptorSetLayoutInfo
+# keeps for the compute filter's and the display's layouts. Device-free.
+add_subdirectory(descriptor_layout)
+
+# command_buffer_pool_test: VulkanCommandBufferPool's nodes recorded on two
+# threads at once, under the validation layer's thread-safety check. GPU.
+add_subdirectory(command_buffer_pool)
+
 # Add DRM Format Modifier test (Linux only)
 if(UNIX AND NOT APPLE)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/drm_format_mod")

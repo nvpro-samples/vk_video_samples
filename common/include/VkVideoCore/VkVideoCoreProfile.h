@@ -225,13 +225,14 @@ public:
             return;
         }
 
-        VkVideoDecodeH264ProfileInfoKHR decodeH264ProfilesRequest;
-        VkVideoDecodeH265ProfileInfoKHR decodeH265ProfilesRequest;
-        VkVideoDecodeAV1ProfileInfoKHR  decodeAV1ProfilesRequest;
-        VkVideoDecodeVP9ProfileInfoKHR  decodeVP9ProfilesRequest;
-        VkVideoEncodeH264ProfileInfoKHR encodeH264ProfilesRequest;
-        VkVideoEncodeH265ProfileInfoKHR encodeH265ProfilesRequest;
-        VkVideoEncodeAV1ProfileInfoKHR encodeAV1ProfilesRequest;
+        // Value-initialized: a member the codec's branch does not set is zero, not what the stack held.
+        VkVideoDecodeH264ProfileInfoKHR decodeH264ProfilesRequest{};
+        VkVideoDecodeH265ProfileInfoKHR decodeH265ProfilesRequest{};
+        VkVideoDecodeAV1ProfileInfoKHR  decodeAV1ProfilesRequest{};
+        VkVideoDecodeVP9ProfileInfoKHR  decodeVP9ProfilesRequest{};
+        VkVideoEncodeH264ProfileInfoKHR encodeH264ProfilesRequest{};
+        VkVideoEncodeH265ProfileInfoKHR encodeH265ProfilesRequest{};
+        VkVideoEncodeAV1ProfileInfoKHR encodeAV1ProfilesRequest{};
         VkBaseInStructure* pVideoProfileExt = NULL;
         VkBaseInStructure* pEncodeUsageInfo = (VkBaseInStructure*)&encodeUsageInfo;
 
@@ -370,6 +371,17 @@ public:
         }
     }
 
+    // AV1 decode: whether the session applies film grain (filmGrainSupport), as a sequence with
+    // film grain parameters needs. Returns false, and changes nothing, for another profile.
+    bool SetAV1FilmGrainSupport(VkBool32 filmGrainSupport)
+    {
+        if (!HasAV1DecodeProfile()) {
+            return false;
+        }
+        m_av1DecodeProfile.filmGrainSupport = filmGrainSupport;
+        return true;
+    }
+
     const VkVideoDecodeVP9ProfileInfoKHR* GetDecodeVP9Profile() const
     {
         if (m_vp9DecodeProfile.sType == VK_STRUCTURE_TYPE_VIDEO_DECODE_VP9_PROFILE_INFO_KHR) {
@@ -452,6 +464,12 @@ public:
         }
 
         if (m_profile.chromaBitDepth != other.m_profile.chromaBitDepth) {
+            return false;
+        }
+
+        // An AV1 decode profile that applies film grain is another profile.
+        if (HasAV1DecodeProfile() && other.HasAV1DecodeProfile() &&
+            (m_av1DecodeProfile.filmGrainSupport != other.m_av1DecodeProfile.filmGrainSupport)) {
             return false;
         }
 
@@ -907,6 +925,14 @@ public:
 
 
 private:
+    // Whether the profile is an AV1 decode one with its codec structure set: the union below holds
+    // m_av1DecodeProfile then, and nothing at all for a profile of no valid codec.
+    bool HasAV1DecodeProfile() const
+    {
+        return (m_profile.videoCodecOperation == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) &&
+               (m_profile.pNext == &m_av1DecodeProfile);
+    }
+
     VkVideoProfileInfoKHR     m_profile;
     VkVideoProfileListInfoKHR m_profileList;
     VkVideoEncodeUsageInfoKHR m_encodeUsageInfo;
