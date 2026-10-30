@@ -64,7 +64,7 @@ int main() {
     Check(!enctest::ProbeEncodeDevice(0, &detail), "nor any device with an encode queue");
 
 #ifdef VVS_REQUIRE_GPU
-    // Built for a rig: a missing device is never a skip.
+    // Built for a GPU host: a missing device is never a skip.
     Check(
         enctest::NoDeviceOrFail("InitializeExt", VK_ERROR_INITIALIZATION_FAILED, VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) == 1,
         "with VVS_REQUIRE_GPU built in, a library failure with no device fails");

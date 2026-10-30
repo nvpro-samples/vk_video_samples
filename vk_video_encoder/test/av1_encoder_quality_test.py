@@ -841,7 +841,7 @@ Examples:
     # used to match "Error creating the encoder instance" instead, which the
     # encoder prints before every one of those -- so each of them skipped.
     if is_unsupported_run(results):
-        # On a rig, where the device is expected, VVS_REQUIRE_GPU makes a host
+        # Where the device is expected, VVS_REQUIRE_GPU makes a host
         # with no encoder a failure, as the C++ tests do (encode_device_probe.h);
         # a one-frame probe encode tells it from an encoder without these codecs.
         require_gpu = os.environ.get("VVS_REQUIRE_GPU") == "1"

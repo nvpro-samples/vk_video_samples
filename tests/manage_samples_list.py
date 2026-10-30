@@ -597,8 +597,6 @@ def add_decode_sample(sample_list: Dict) -> None:
     # Optional fields
     expected_md5 = get_input("Expected output MD5 (optional)",
                              allow_empty=True)
-    expected_crc = get_input("Expected output CRC (optional)",
-                             allow_empty=True)
 
     # Extra args
     extra_args_str = get_input("Extra args (space-separated, optional)",
@@ -617,8 +615,6 @@ def add_decode_sample(sample_list: Dict) -> None:
 
     if expected_md5:
         entry["expected_output_md5"] = expected_md5
-    if expected_crc:
-        entry["expected_output_crc"] = expected_crc
     if extra_args:
         entry["extra_args"] = extra_args
 

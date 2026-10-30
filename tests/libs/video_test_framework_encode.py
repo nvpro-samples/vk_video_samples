@@ -48,6 +48,14 @@ from tests.libs.video_test_quality import (
     SourceFormat,
     check_quality,
 )
+from tests.libs.video_test_validation_layer import (
+    LAYER_NAME,
+    LayerManifest,
+    check_layer_log,
+    find_validation_layer,
+    layer_environment,
+    load_allowlist,
+)
 
 
 @dataclass(init=False)
@@ -61,6 +69,7 @@ class EncodeTestSample(BaseTestConfig):
     validate_with_decoder: bool = True
     rate_control_check: Optional[RateControlCheck] = None
     quality_check: Optional[QualityCheck] = None
+    validation_layer: Optional[bool] = None
 
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
@@ -71,6 +80,7 @@ class EncodeTestSample(BaseTestConfig):
         validate_with_decoder: bool = True,
         rate_control_check: Optional[RateControlCheck] = None,
         quality_check: Optional[QualityCheck] = None,
+        validation_layer: Optional[bool] = None,
         **kwargs,
     ):
         """Initialize EncodeTestSample with all fields from base and child"""
@@ -82,10 +92,18 @@ class EncodeTestSample(BaseTestConfig):
         self.validate_with_decoder = validate_with_decoder
         self.rate_control_check = rate_control_check
         self.quality_check = quality_check
+        self.validation_layer = validation_layer
 
     @classmethod
     def from_dict(cls, data: dict) -> 'EncodeTestSample':
         """Create an EncodeTestSample from a dictionary"""
+        cls._refuse_unknown_keys(data, frozenset({
+            "profile", "source_format", "validate_with_decoder", "width",
+            "height", "rate_control_check", "quality_check", "validation_layer"}))
+        validation_layer = data.get("validation_layer")
+        if validation_layer is not None and not isinstance(validation_layer, bool):
+            raise ValueError(
+                f"sample {data.get('name')!r}: validation_layer is not true or false")
         return cls(
             **cls._parse_base_fields(data),
             profile=data.get("profile"),
@@ -113,6 +131,11 @@ class EncodeTestSample(BaseTestConfig):
             quality_check=(
                 None if data.get("quality_check") is False
                 else QualityCheck.from_dict(data.get("quality_check") or {})),
+            # true runs the encode under the validation layer
+            # (tests/libs/video_test_validation_layer.py) when the layer is
+            # installed, false never does; without the key the run's
+            # --validation-layer decides.
+            validation_layer=validation_layer,
         )
 
     @property
@@ -189,6 +212,15 @@ class VulkanVideoEncodeTestFramework(VulkanVideoTestFrameworkBase):
                 "--no-validate-with-decoder to disable validation"
             )
 
+        # --validation-layer runs every encode under the Khronos validation
+        # layer, which has to be installed.
+        self._options['validation_layer'] = options.get('validation_layer', False)
+        if self._options['validation_layer'] and self._layer_manifest() is None:
+            raise FileNotFoundError(
+                f"--validation-layer: {LAYER_NAME} is not installed: no manifest "
+                "of it in VK_ADD_LAYER_PATH, in VK_LAYER_PATH or the loader's "
+                "directories, or in VULKAN_SDK")
+
     @property
     def validate_with_decoder(self) -> bool:
         """Whether to validate encoder output with decoder"""
@@ -203,6 +235,50 @@ class VulkanVideoEncodeTestFramework(VulkanVideoTestFrameworkBase):
     def decoder_args(self) -> list:
         """Additional arguments for decoder validation"""
         return self._decoder_config['args']
+
+    def _layer_manifest(self) -> Optional[LayerManifest]:
+        """The validation layer's manifest, looked up once per run."""
+        if 'layer_manifest' not in self._options:
+            self._options['layer_manifest'] = find_validation_layer()
+        return self._options['layer_manifest']
+
+    def _layer_allowlist(self) -> list:
+        """The allowlist of the validation layer's errors, read once per run."""
+        if 'layer_allowlist' not in self._options:
+            self._options['layer_allowlist'] = load_allowlist()
+        return self._options['layer_allowlist']
+
+    def _layer_run(self, config: EncodeTestSample) -> tuple:
+        """Whether the encode runs under the validation layer, the layer's
+        manifest when it is installed, and the log the layer writes."""
+        under_layer = (config.validation_layer
+                       if config.validation_layer is not None
+                       else self._options['validation_layer'])
+        manifest = self._layer_manifest() if under_layer else None
+        if manifest is None:
+            return under_layer, None, None
+        layer_log = self.results_dir / f"validation_layer_{config.name}.log"
+        # A log of an earlier run would read as this run's.
+        layer_log.unlink(missing_ok=True)
+        return under_layer, manifest, layer_log
+
+    def _check_layer(self, result: TestResult, config: EncodeTestSample,
+                     manifest: Optional[LayerManifest],
+                     layer_log: Optional[Path]) -> None:
+        """Fail an encode that succeeded when the validation layer did not
+        load, or reported an error that is not on the allowlist."""
+        if manifest is None:
+            result.meta["validation_layer_summary"] = (
+                f"not checked: {LAYER_NAME} is not installed")
+            return
+        report = check_layer_log(layer_log, manifest, config.codec.value,
+                                 self._layer_allowlist())
+        result.meta["validation_layer"] = report.to_dict()
+        result.meta["validation_layer_summary"] = report.summary()
+        if result.status == VideoTestStatus.SUCCESS and not report.passed:
+            result.status = VideoTestStatus.ERROR
+            result.error_message = (
+                "Validation layer: " + "; ".join(report.failures))
 
     def _load_encode_samples(
             self, json_file: str = "encode_samples.json"
@@ -323,11 +399,15 @@ class VulkanVideoEncodeTestFramework(VulkanVideoTestFrameworkBase):
         )
         cmd.extend(["-o", str(output_file)])
 
+        # Under the validation layer when the run or the sample asks for it.
+        under_layer, manifest, layer_log = self._layer_run(config)
+
         # Use base class to execute (handles subprocess details)
         run_cwd = self._default_run_cwd()
         result = self.execute_test_command(
             cmd, config, timeout=self.timeout, cwd=run_cwd,
-            output_file=output_file
+            output_file=output_file,
+            env=layer_environment(manifest, layer_log) if manifest else None,
         )
 
         # Analyze output
@@ -335,20 +415,12 @@ class VulkanVideoEncodeTestFramework(VulkanVideoTestFrameworkBase):
             result.stderr, config
         )
 
+        # The layer's errors fail the encode before its stream is checked.
+        if under_layer:
+            self._check_layer(result, config, manifest, layer_log)
+
         # Validate encoded output with decoder if enabled, globally AND for this sample.
-        if (self.validate_with_decoder and
-                getattr(config, "validate_with_decoder", True) and
-                output_file.exists() and
-                result.status == VideoTestStatus.SUCCESS):
-            validation_success, validation_output = (
-                self._validate_with_decoder(output_file, config)
-            )
-            if not validation_success:
-                # Decoder validation failed - mark encoder test as error
-                result.status = VideoTestStatus.ERROR
-                result.error_message = "Decoder validation failed"
-                # Store validation output for display after test result
-                result.meta["decoder_validation_output"] = validation_output
+        self._check_decoder_validation(result, config, output_file)
 
         # Measure the stream against the sample's rate-control target. It runs
         # only on a stream that encoded and decoded, and a stream that cannot
@@ -370,13 +442,45 @@ class VulkanVideoEncodeTestFramework(VulkanVideoTestFrameworkBase):
         # round trip included where the sample asks for it.
         self._check_quality(result, config, output_file)
 
-        # Clean up output file only if test succeeded and keep_files is False
-        if (output_file.exists() and
-                result.status == VideoTestStatus.SUCCESS and
-                not self.keep_files):
-            output_file.unlink()
+        # Clean up the stream and the layer's log only if test succeeded and
+        # keep_files is False
+        self._remove_outputs(result, output_file, layer_log)
 
         return result
+
+    def _remove_outputs(self, result: TestResult, *paths: Optional[Path]) -> None:
+        """Remove the files of an encode that succeeded, unless the run keeps
+        them."""
+        if result.status != VideoTestStatus.SUCCESS or self.keep_files:
+            return
+        for path in paths:
+            if path is not None and path.exists():
+                path.unlink()
+
+    def _check_decoder_validation(self, result: TestResult, config: EncodeTestSample,
+                                  output_file: Path) -> None:
+        """Decode a stream that encoded with the decoder, when the run and the
+        sample ask for it: a failure of the decoder fails the encode."""
+        if (not self.validate_with_decoder or
+                not getattr(config, "validate_with_decoder", True) or
+                not output_file.exists() or
+                result.status != VideoTestStatus.SUCCESS):
+            return
+        validation_status, validation_output = (
+            self._validate_with_decoder(output_file, config)
+        )
+        if validation_status == VideoTestStatus.NOT_SUPPORTED:
+            # The device's decoder does not take the stream: a picture below
+            # its minimum coded extent, which can be larger than the
+            # encoder's. Nothing to validate on this device; the PSNR check
+            # decodes the stream in software.
+            result.meta["decoder_validation"] = "not supported by the decoder"
+        elif validation_status != VideoTestStatus.SUCCESS:
+            # Decoder validation failed - mark encoder test as error
+            result.status = VideoTestStatus.ERROR
+            result.error_message = "Decoder validation failed"
+            # Store validation output for display after test result
+            result.meta["decoder_validation_output"] = validation_output
 
     def _check_quality(self, result: TestResult, config: EncodeTestSample,
                        output_file: Path) -> None:
@@ -429,7 +533,7 @@ class VulkanVideoEncodeTestFramework(VulkanVideoTestFrameworkBase):
             config: Encoder test configuration
 
         Returns:
-            Tuple of (success: bool, validation_output: str or None)
+            Tuple of (status: VideoTestStatus, validation_output: str or None)
         """
         # Use base class method to run decoder validation
         return self.run_decoder_validation(

@@ -32,7 +32,7 @@
 //
 // VVS_REQUIRE_GPU (a compile definition from the CMake option of that name, or
 // the environment variable set to 1) turns the no-device skip into a failure as
-// well, for the rigs, where a missing device is itself the fault. A skip for
+// well, on GPU hosts, where a missing device is itself the fault. A skip for
 // another reason -- a format the device refuses, a platform without dma-buf --
 // is not affected.
 
