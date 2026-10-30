@@ -496,6 +496,17 @@ void convertRGBAtoYUV444(const uint8_t* rgba,
                          std::vector<uint8_t>& uPlane,
                          std::vector<uint8_t>& vPlane);
 
+/**
+ * @brief Convert RGBA buffer to Y410 (packed 10-bit 4:4:4)
+ *
+ * One little-endian 32-bit word per pixel: U (Cb) in bits 9:0, Y in 19:10, V (Cr) in 29:20
+ * and an opaque alpha in 31:30. The samples are computed as convertRGBAtoP010() computes them.
+ */
+void convertRGBAtoY410(const uint8_t* rgba,
+                       uint32_t width, uint32_t height,
+                       ColorPrimaries primaries, ColorRange range,
+                       std::vector<uint8_t>& packed);
+
 // =============================================================================
 // Validation Functions
 // =============================================================================

@@ -207,9 +207,30 @@ static void writeCanonicalSample(uint8_t* base, const PlaneBufferGeometry& geom,
 
 static bool unpackToCanonical(const std::vector<uint8_t>& bytes, TestFormat format,
                               uint32_t width, uint32_t height, CanonicalFrame& out) {
+    if (format == TestFormat::Y410) {
+        // One little-endian 32-bit word per pixel: Cb in bits 9:0, Y in 19:10, Cr in 29:20, each
+        // normalized as the A2B10G10R10 UNORM view the filter reads it through.
+        if (bytes.size() < (size_t)width * height * 4) {
+            return false;
+        }
+        out.width  = width;
+        out.height = height;
+        for (uint32_t p = 0; p < 3; p++) {
+            out.plane[p].assign((size_t)width * height, 0.0f);
+        }
+        for (size_t i = 0; i < (size_t)width * height; i++) {
+            const uint32_t word = (uint32_t)bytes[i * 4] | ((uint32_t)bytes[i * 4 + 1] << 8) |
+                                  ((uint32_t)bytes[i * 4 + 2] << 16) | ((uint32_t)bytes[i * 4 + 3] << 24);
+            out.plane[0][i] = (float)((word >> 10) & 0x3FFu) / 1023.0f;
+            out.plane[1][i] = (float)(word & 0x3FFu) / 1023.0f;
+            out.plane[2][i] = (float)((word >> 20) & 0x3FFu) / 1023.0f;
+        }
+        return true;
+    }
+
     const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(toVkFormat(format));
     if ((mpInfo == nullptr) || (mpInfo->planesLayout.numberOfExtraPlanes == 0)) {
-        return false;   // packed / RGBA: not modelled here
+        return false;   // RGBA and the other packed formats: not modelled here
     }
     if (bytes.size() < calculateImageSize(format, width, height)) {
         return false;
@@ -541,6 +562,58 @@ const KnownFilterDefect* FindKnownFilterDefect(const std::string& name) {
 }
 }  // namespace
 
+// Per-plane description of the packed host pattern buffer. Mirrors exactly
+// the layout generateTestPattern() produces and calculateImageSize()
+// measures: planes back to back, each tightly packed, no padding.
+namespace {
+struct PlaneCopyDesc {
+    VkImageAspectFlagBits aspect;
+    uint32_t              width;       // plane width, in plane texels
+    uint32_t              height;      // plane height, in plane texels
+    uint32_t              texelBytes;  // bytes per plane texel
+};
+
+uint32_t describePlanes(TestFormat format, uint32_t width, uint32_t height,
+                        PlaneCopyDesc planes[3]) {
+    switch (format) {
+        case TestFormat::RGBA8:
+        case TestFormat::BGRA8:
+        case TestFormat::Y410:   // packed 4:4:4, single plane
+            planes[0] = {VK_IMAGE_ASPECT_COLOR_BIT, width, height, 4};
+            return 1;
+        case TestFormat::NV12:
+            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 1};
+            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width / 2, height / 2, 2};
+            return 2;
+        case TestFormat::P010:
+        case TestFormat::P012:
+            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 2};
+            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width / 2, height / 2, 4};
+            return 2;
+        case TestFormat::I420:
+            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 1};
+            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width / 2, height / 2, 1};
+            planes[2] = {VK_IMAGE_ASPECT_PLANE_2_BIT, width / 2, height / 2, 1};
+            return 3;
+        case TestFormat::NV16:
+            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 1};
+            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width / 2, height, 2};
+            return 2;
+        case TestFormat::P210:
+            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 2};
+            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width / 2, height, 4};
+            return 2;
+        case TestFormat::YUV444:
+            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 1};
+            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width, height, 1};
+            planes[2] = {VK_IMAGE_ASPECT_PLANE_2_BIT, width, height, 1};
+            return 3;
+        default:
+            return 0;
+    }
+}
+}  // namespace
+
 TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
     TestResult result;
     result.testName = config.name;
@@ -684,40 +757,74 @@ TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
         outputBuffers.push_back(buffer);
     }
     
-    // Create the filter
+    // Create the filter. It reads the conversion's format, model and range for its color matrix, and
+    // makes no conversion object.
     VkSamplerYcbcrConversionCreateInfo ycbcrInfo{VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO};
     ycbcrInfo.format = toVkFormat(config.inputs[0].format);
     ycbcrInfo.ycbcrModel = config.ycbcrModel;
     ycbcrInfo.ycbcrRange = config.ycbcrRange;
     ycbcrInfo.components = {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
                             VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY};
-    ycbcrInfo.xChromaOffset = VK_CHROMA_LOCATION_COSITED_EVEN;
-    ycbcrInfo.yChromaOffset = VK_CHROMA_LOCATION_COSITED_EVEN;
-    ycbcrInfo.chromaFilter = VK_FILTER_LINEAR;
-    ycbcrInfo.forceExplicitReconstruction = VK_FALSE;
     
+    // A buffer on either side is the filter's buffer input or output.
+    uint32_t filterFlags = config.filterFlags;
+    if (config.inputs[0].resourceType == ResourceType::Buffer) {
+        filterFlags |= VulkanFilterYuvCompute::FLAG_INPUT_BUFFER;
+    }
+    if (config.outputs[0].resourceType == ResourceType::Buffer) {
+        filterFlags |= VulkanFilterYuvCompute::FLAG_OUTPUT_BUFFER;
+    }
+
+    // A transfer-only type copies its input unchanged, with no dispatch: CreateTransfer() makes
+    // it, and the copy is recorded as the filter's post-transfer below.
+    TransferOpType transferOp = TransferOpType::NONE;
+    switch (config.filterType) {
+        case VulkanFilterYuvCompute::XFER_IMAGE_TO_BUFFER:
+            transferOp = TransferOpType::COPY_IMAGE_TO_BUFFER;
+            break;
+        case VulkanFilterYuvCompute::XFER_BUFFER_TO_IMAGE:
+            transferOp = TransferOpType::COPY_BUFFER_TO_IMAGE;
+            break;
+        case VulkanFilterYuvCompute::XFER_IMAGE_TO_IMAGE:
+            transferOp = TransferOpType::COPY_IMAGE_TO_IMAGE;
+            break;
+        default:
+            break;
+    }
+
     VkSharedBaseObj<VulkanFilter> filter;
-    VkResult vkResult = VulkanFilterYuvCompute::Create(
-        &m_vkDevCtx,
-        m_vkDevCtx.GetComputeQueueFamilyIdx(),
-        0,  // queue index
-        config.filterType,
-        4,  // maxNumFrames
-        toVkFormat(config.inputs[0].format),
-        toVkFormat(config.outputs[0].format),
-        config.filterFlags,
-        &ycbcrInfo,
-        nullptr,  // YCbCr primaries constants (use default)
-        nullptr,  // Sampler create info (use default)
-        filter
-    );
-    
+    VkResult vkResult = VK_SUCCESS;
+    if (transferOp != TransferOpType::NONE) {
+        vkResult = VulkanFilterYuvCompute::CreateTransfer(&m_vkDevCtx,
+                                                          m_vkDevCtx.GetComputeQueueFamilyIdx(),
+                                                          0,  // queue index
+                                                          transferOp,
+                                                          filter);
+    } else {
+        vkResult = VulkanFilterYuvCompute::Create(
+            &m_vkDevCtx,
+            m_vkDevCtx.GetComputeQueueFamilyIdx(),
+            0,  // queue index
+            config.filterType,
+            4,  // maxNumFrames
+            toVkFormat(config.inputs[0].format),
+            toVkFormat(config.outputs[0].format),
+            filterFlags,
+            &ycbcrInfo,
+            nullptr,  // YCbCr primaries constants (use default)
+            nullptr,  // Sampler create info (the filter makes no sampler)
+            filter
+        );
+    }
+
     if (vkResult != VK_SUCCESS) {
         result.errorMessage = "Failed to create filter: " + std::to_string(vkResult);
         result.passed = false;
-        // A filter the device cannot run (a storage image format it cannot read) is not
-        // coverage either, as for a format it does not implement.
-        result.unvalidated = (vkResult == VK_ERROR_FORMAT_NOT_SUPPORTED);
+        // A filter the device cannot run (a storage image format it cannot read, a buffer
+        // without the 8- or 16-bit storage it needs) is not coverage either, as for a format
+        // it does not implement.
+        result.unvalidated = (vkResult == VK_ERROR_FORMAT_NOT_SUPPORTED) ||
+                             (vkResult == VK_ERROR_FEATURE_NOT_PRESENT);
         return result;
     }
     
@@ -765,7 +872,9 @@ TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
             }
             VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
             b.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-            b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            // The pattern uploads and the transfer-only cases copy into these images too.
+            b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
+                              VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
             b.oldLayout = img->GetImageCreateInfo().initialLayout;
             b.newLayout = VK_IMAGE_LAYOUT_GENERAL;
             b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -785,7 +894,8 @@ TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
         if (!toGeneral.empty()) {
             m_vkDevCtx.CmdPipelineBarrier(cmdBuffer,
                                           VK_PIPELINE_STAGE_HOST_BIT,
-                                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+                                              VK_PIPELINE_STAGE_TRANSFER_BIT,
                                           0,
                                           0, nullptr,
                                           0, nullptr,
@@ -812,8 +922,69 @@ TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
     VkSharedBaseObj<VkBufferResource> outputStagingBuffer;
 
     // Record based on resource types
-    if (config.inputs[0].resourceType == ResourceType::Image &&
-        config.outputs[0].resourceType == ResourceType::Image) {
+    if (transferOp != TransferOpType::NONE) {
+        // The filter's transfer from the test's input to its output, recorded as the post-transfer
+        // of an output slot whose primary resource is the input: the filter records no dispatch.
+        // An image input is uploaded first and moved to TRANSFER_SRC_OPTIMAL; an image output is
+        // in GENERAL from the barrier above, and returns there for its readback.
+        const TestIOSlot& inSlot  = config.inputs[0];
+        const TestIOSlot& outSlot = config.outputs[0];
+        auto bufferResource = [](const TestIOSlot& slot, const VkSharedBaseObj<VkBufferResource>& buffer) {
+            PlaneBufferGeometry geometry[TransferResource::kMaxPlanes];
+            const uint32_t numPlanes = calculatePlaneGeometry(slot.format, slot.width, slot.height, geometry);
+            return TransferResource::fromBuffer(buffer->GetBuffer(),
+                                                calculateImageSize(slot.format, slot.width, slot.height),
+                                                numPlanes, geometry);
+        };
+        auto transferBarrier = [this, cmdBuffer](VkImage image, VkImageLayout oldLayout,
+                                                 VkImageLayout newLayout) {
+            VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            barrier.oldLayout = oldLayout;
+            barrier.newLayout = newLayout;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.image = image;
+            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            m_vkDevCtx.CmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                          VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                                          0, nullptr, 0, nullptr, 1, &barrier);
+        };
+
+        TransferResource src;
+        if (inSlot.resourceType == ResourceType::Image) {
+            vkResult = recordPatternUpload(cmdBuffer, inSlot, inputImages[0], firstInputPattern,
+                                           inputStagingBuffer);
+            if (vkResult == VK_SUCCESS) {
+                transferBarrier(inputImages[0]->GetImage(), VK_IMAGE_LAYOUT_GENERAL,
+                                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+                src = TransferResource::fromImageResource(*inputImages[0],
+                                                          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+            }
+        } else {
+            src = bufferResource(inSlot, inputBuffers[0]);
+        }
+
+        if (vkResult == VK_SUCCESS) {
+            FilterExecutionDesc execDesc{};
+            execDesc.numInputs  = 0;
+            execDesc.numOutputs = 1;
+            execDesc.outputs[0].primary = src;
+            execDesc.outputs[0].postTransferDest =
+                (outSlot.resourceType == ResourceType::Image)
+                    ? TransferResource::fromImageResource(*outputImages[0], VK_IMAGE_LAYOUT_GENERAL)
+                    : bufferResource(outSlot, outputBuffers[0]);
+            execDesc.outputs[0].postTransferOp = transferOp;
+            vkResult = yuvFilter->RecordCommandBuffer(cmdBuffer, 0 /* bufferIdx */, execDesc);
+        }
+
+        if ((vkResult == VK_SUCCESS) && (outSlot.resourceType == ResourceType::Image)) {
+            transferBarrier(outputImages[0]->GetImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                            VK_IMAGE_LAYOUT_GENERAL);
+        }
+    } else if (config.inputs[0].resourceType == ResourceType::Image &&
+               config.outputs[0].resourceType == ResourceType::Image) {
 
         const TestIOSlot& inSlot  = config.inputs[0];
         const TestIOSlot& outSlot = config.outputs[0];
@@ -938,11 +1109,85 @@ TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
             );
         }
     } else {
-        result.errorMessage = "Buffer I/O not yet implemented in test";
-        result.passed = false;
-        m_vkDevCtx.EndCommandBuffer(cmdBuffer);
-        m_vkDevCtx.FreeCommandBuffers(m_vkDevCtx.getDevice(), m_commandPool, 1, &cmdBuffer);
-        return result;
+        // A buffer on either side: its planes tightly packed, as generateTestPattern() writes a
+        // buffer input and validateOutput() reads a buffer output. The filter takes each plane's
+        // offset and row pitch in bytes.
+        const TestIOSlot& inSlot  = config.inputs[0];
+        const TestIOSlot& outSlot = config.outputs[0];
+        auto planeLayouts = [](const TestIOSlot& slot, VkSubresourceLayout layouts[3]) -> uint32_t {
+            PlaneBufferGeometry geometry[TransferResource::kMaxPlanes];
+            const uint32_t numPlanes = calculatePlaneGeometry(slot.format, slot.width, slot.height, geometry);
+            for (uint32_t i = 0; (i < numPlanes) && (i < 3); i++) {
+                layouts[i] = VkSubresourceLayout{};
+                layouts[i].offset = geometry[i].offset;
+                layouts[i].size = geometry[i].size;
+                layouts[i].rowPitch = geometry[i].rowPitch;
+                layouts[i].arrayPitch = geometry[i].size;
+            }
+            return numPlanes;
+        };
+        VkSubresourceLayout inLayouts[3]{};
+        VkSubresourceLayout outLayouts[3]{};
+        const uint32_t numInPlanes = planeLayouts(inSlot, inLayouts);
+        const uint32_t numOutPlanes = planeLayouts(outSlot, outLayouts);
+        const VkFormat inFormats[3] = {toVkFormat(inSlot.format), toVkFormat(inSlot.format), toVkFormat(inSlot.format)};
+        const VkFormat outFormats[3] = {toVkFormat(outSlot.format), toVkFormat(outSlot.format), toVkFormat(outSlot.format)};
+
+        if (inSlot.resourceType == ResourceType::Image) {
+            // Image input, buffer output: upload the pattern into the input image first, a copy
+            // per plane from a staging buffer, into the GENERAL layout the barrier above set.
+            vkResult = recordPatternUpload(cmdBuffer, inSlot, inputImages[0], firstInputPattern,
+                                           inputStagingBuffer);
+            if (vkResult != VK_SUCCESS) {
+                result.errorMessage = "Failed to stage the input image's pattern";
+                result.passed = false;
+                m_vkDevCtx.EndCommandBuffer(cmdBuffer);
+                m_vkDevCtx.FreeCommandBuffers(m_vkDevCtx.getDevice(), m_commandPool, 1, &cmdBuffer);
+                return result;
+            }
+            VkImageMemoryBarrier toShader{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            toShader.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            toShader.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            toShader.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+            toShader.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            toShader.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            toShader.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            toShader.image = inputImages[0]->GetImage();
+            toShader.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            m_vkDevCtx.CmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0,
+                                          0, nullptr, 0, nullptr, 1, &toShader);
+
+            const VkBuffer outBuffer = outputBuffers[0]->GetBuffer();
+            VkBufferImageCopy outRegion{};
+            outRegion.imageExtent = {outSlot.width, outSlot.height, 1};
+            vkResult = yuvFilter->RecordCommandBuffer(cmdBuffer, 0, inputImageViews[0].get(), &inputResourceInfo,
+                                                      &outBuffer, 1, outFormats, outLayouts, numOutPlanes,
+                                                      &outRegion);
+        } else if (outSlot.resourceType == ResourceType::Image) {
+            // Buffer input, image output: the output is read back after the submission.
+            const VkBuffer inBuffer = inputBuffers[0]->GetBuffer();
+            VkBufferImageCopy inRegion{};
+            inRegion.imageExtent = {inSlot.width, inSlot.height, 1};
+            vkResult = yuvFilter->RecordCommandBuffer(cmdBuffer, 0, &inBuffer, 1, inFormats, inLayouts, numInPlanes,
+                                                      outputImageViews[0].get(), &outputResourceInfo, &inRegion);
+        } else {
+            const VkBuffer inBuffer = inputBuffers[0]->GetBuffer();
+            const VkBuffer outBuffer = outputBuffers[0]->GetBuffer();
+            vkResult = yuvFilter->RecordCommandBuffer(cmdBuffer, 0,
+                                                      &inBuffer, 1, inFormats, inLayouts, numInPlanes,
+                                                      VkExtent3D{inSlot.width, inSlot.height, 1},
+                                                      &outBuffer, 1, outFormats, outLayouts, numOutPlanes,
+                                                      VkExtent3D{outSlot.width, outSlot.height, 1});
+        }
+        if ((vkResult == VK_SUCCESS) && (outSlot.resourceType == ResourceType::Buffer)) {
+            // The shader's writes to the output buffer, made visible to the host that reads it.
+            VkMemoryBarrier toHost{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+            toHost.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            toHost.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+            m_vkDevCtx.CmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                          VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &toHost, 0, nullptr, 0, nullptr);
+        }
     }
     
     if (vkResult != VK_SUCCESS) {
@@ -981,6 +1226,18 @@ TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
     // Cleanup
     m_vkDevCtx.DestroyFence(m_vkDevCtx.getDevice(), fence, nullptr);
     m_vkDevCtx.FreeCommandBuffers(m_vkDevCtx.getDevice(), m_commandPool, 1, &cmdBuffer);
+
+    // The output image of a buffer input or of a transfer-only filter: read back now, as the image
+    // cases' post-transfer does in their submission.
+    if (((config.inputs[0].resourceType == ResourceType::Buffer) || (transferOp != TransferOpType::NONE)) &&
+        (config.outputs[0].resourceType == ResourceType::Image) && config.outputs[0].validateOutput) {
+        vkResult = copyImageToStagingBuffer(config.outputs[0], outputImages[0], outputStagingBuffer);
+        if (vkResult != VK_SUCCESS) {
+            result.errorMessage = "Failed to read back the output image: " + std::to_string(vkResult);
+            result.passed = false;
+            return result;
+        }
+    }
     
     // Validate output. A buffer output is read from its own mapping; an image output of
     // either tiling was copied into outputStagingBuffer by the post-transfer above, which
@@ -1308,57 +1565,6 @@ VkResult FilterTestApp::createStagingBuffer(size_t size,
     );
 }
 
-// Per-plane description of the packed host pattern buffer. Mirrors exactly
-// the layout generateTestPattern() produces and calculateImageSize()
-// measures: planes back to back, each tightly packed, no padding.
-namespace {
-struct PlaneCopyDesc {
-    VkImageAspectFlagBits aspect;
-    uint32_t              width;       // plane width, in plane texels
-    uint32_t              height;      // plane height, in plane texels
-    uint32_t              texelBytes;  // bytes per plane texel
-};
-
-uint32_t describePlanes(TestFormat format, uint32_t width, uint32_t height,
-                        PlaneCopyDesc planes[3]) {
-    switch (format) {
-        case TestFormat::RGBA8:
-        case TestFormat::BGRA8:
-        case TestFormat::Y410:   // packed 4:4:4, single plane
-            planes[0] = {VK_IMAGE_ASPECT_COLOR_BIT, width, height, 4};
-            return 1;
-        case TestFormat::NV12:
-            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 1};
-            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width / 2, height / 2, 2};
-            return 2;
-        case TestFormat::P010:
-        case TestFormat::P012:
-            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 2};
-            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width / 2, height / 2, 4};
-            return 2;
-        case TestFormat::I420:
-            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 1};
-            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width / 2, height / 2, 1};
-            planes[2] = {VK_IMAGE_ASPECT_PLANE_2_BIT, width / 2, height / 2, 1};
-            return 3;
-        case TestFormat::NV16:
-            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 1};
-            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width / 2, height, 2};
-            return 2;
-        case TestFormat::P210:
-            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 2};
-            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width / 2, height, 4};
-            return 2;
-        case TestFormat::YUV444:
-            planes[0] = {VK_IMAGE_ASPECT_PLANE_0_BIT, width, height, 1};
-            planes[1] = {VK_IMAGE_ASPECT_PLANE_1_BIT, width, height, 1};
-            planes[2] = {VK_IMAGE_ASPECT_PLANE_2_BIT, width, height, 1};
-            return 3;
-        default:
-            return 0;
-    }
-}
-}  // namespace
 
 VkResult FilterTestApp::generateTestPattern(const TestIOSlot& slot,
                                            VkSharedBaseObj<VkImageResource>& image,
@@ -1433,6 +1639,15 @@ VkResult FilterTestApp::generateTestPattern(const TestIOSlot& slot,
             patternData.clear();
             appendSamples16(patternData, yPlane16);
             appendSamples16(patternData, uvPlane16);
+            break;
+        }
+
+        case TestFormat::Y410: {
+            std::vector<uint8_t> rgbaData;
+            generateRGBATestPattern(TestPatternType::ColorBars,
+                                   slot.width, slot.height, rgbaData);
+            convertRGBAtoY410(rgbaData.data(), slot.width, slot.height,
+                              ColorPrimaries::BT709, ColorRange::Full, patternData);
             break;
         }
         
@@ -1522,6 +1737,69 @@ VkResult FilterTestApp::generateTestPattern(const TestIOSlot& slot,
     return VK_SUCCESS;
 }
 
+// A multi-planar YCbCr output against its reference one component at a time: Y, and Cb and Cr apart
+// whether they share a plane or not, in the format's sample units (16-bit words for the 10- and 12-bit
+// formats). Each component must reach 30 dB and stay within twice the tolerance, as compareNV12()
+// requires of NV12: an error in one chroma component must not hide in an average over the frame.
+static ValidationResult compareYcbcrComponents(const std::vector<uint8_t>& actual, const std::vector<uint8_t>& expected,
+                                               TestFormat format, uint32_t width, uint32_t height, float tolerance) {
+    ValidationResult result;
+    PlaneBufferGeometry geometry[TransferResource::kMaxPlanes];
+    const uint32_t numPlanes = calculatePlaneGeometry(format, width, height, geometry);
+    const size_t frameSize = (size_t)(geometry[numPlanes - 1].offset + geometry[numPlanes - 1].size);
+    if ((numPlanes < 2) || (actual.size() < frameSize) || (expected.size() < frameSize)) {
+        result.passed = false;
+        result.errorMessage = "Size mismatch for " + std::string(testFormatName(format)) + " validation";
+        return result;
+    }
+
+    const bool is16Bit = formatIs16BitSamples(format);
+    const double peak = is16Bit ? 65535.0 : 255.0;
+    const uint32_t maxAllowed = static_cast<uint32_t>(tolerance * peak) * 2;
+    auto sample = [is16Bit](const std::vector<uint8_t>& bytes, size_t byteOffset) {
+        return is16Bit ? (int)(bytes[byteOffset] | (bytes[byteOffset + 1] << 8)) : (int)bytes[byteOffset];
+    };
+
+    // Component 0 is Y (plane 0), 1 Cb and 2 Cr: plane 1 and 2 of a 3-plane format, or the even and odd
+    // samples of plane 1 of a 2-plane one.
+    double sumSq[3] = {0.0, 0.0, 0.0};
+    double maxError[3] = {0.0, 0.0, 0.0};
+    size_t count[3] = {0, 0, 0};
+    const size_t sampleBytes = is16Bit ? 2 : 1;
+    for (uint32_t plane = 0; plane < numPlanes; plane++) {
+        const size_t samples = (size_t)geometry[plane].size / sampleBytes;
+        for (size_t i = 0; i < samples; i++) {
+            const uint32_t component = (plane == 0) ? 0 : ((numPlanes == 3) ? plane : 1 + (uint32_t)(i & 1));
+            const size_t byteOffset = (size_t)geometry[plane].offset + i * sampleBytes;
+            const int d = sample(actual, byteOffset) - sample(expected, byteOffset);
+            sumSq[component] += (double)d * (double)d;
+            maxError[component] = std::max(maxError[component], (double)std::abs(d));
+            count[component]++;
+        }
+    }
+    double psnr[3];
+    for (uint32_t c = 0; c < 3; c++) {
+        const double mse = (count[c] != 0) ? (sumSq[c] / (double)count[c]) : 0.0;
+        psnr[c] = (mse == 0.0) ? 100.0 : 10.0 * std::log10((peak * peak) / mse);
+    }
+    result.psnrY = psnr[0];
+    result.psnrCb = psnr[1];
+    result.psnrCr = psnr[2];
+    result.maxErrorY = maxError[0];
+    result.maxErrorCb = maxError[1];
+    result.maxErrorCr = maxError[2];
+    result.passed = (psnr[0] >= 30.0) && (psnr[1] >= 30.0) && (psnr[2] >= 30.0) && (maxError[0] <= maxAllowed) &&
+                    (maxError[1] <= maxAllowed) && (maxError[2] <= maxAllowed);
+    if (!result.passed) {
+        char message[256];
+        snprintf(message, sizeof(message),
+                 "PSNR: Y=%.2f dB, Cb=%.2f dB, Cr=%.2f dB; Max errors: Y=%.0f, Cb=%.0f, Cr=%.0f (allowed %u)", psnr[0],
+                 psnr[1], psnr[2], maxError[0], maxError[1], maxError[2], maxAllowed);
+        result.errorMessage = message;
+    }
+    return result;
+}
+
 TestResult FilterTestApp::validateOutput(const TestCaseConfig& config,
                                         const TestIOSlot& outputSlot,
                                         VkSharedBaseObj<VkImageResource>& outputImage,
@@ -1588,8 +1866,8 @@ TestResult FilterTestApp::validateOutput(const TestCaseConfig& config,
     // Report the raw agreement between GPU output and CPU reference before
     // any tolerance is applied, so a threshold argument can be had against
     // numbers rather than against a bare PASS/FAIL.
-    if (!referenceData.empty() && !actualData.empty()) {
-        // Report in the format's OWN sample units. Reporting a 16-bit-per-
+    if (!referenceData.empty() && !actualData.empty() && (outputSlot.format != TestFormat::Y410)) {
+        // Report in the format's OWN sample units (Y410's arm below reports its own). Reporting a 16-bit-per-
         // sample format byte-wise made this line disagree with the verdict it
         // is supposed to explain: TC002_RGBA_to_P010 printed "maxdiff=255
         // psnr=10.26" and then PASSED, because a 107/65535 disagreement lands
@@ -1624,35 +1902,86 @@ TestResult FilterTestApp::validateOutput(const TestCaseConfig& config,
 
     // If we have reference data, compare
     if (!referenceData.empty() && !actualData.empty()) {
+        const size_t compareBytes = std::min(actualData.size(), referenceData.size());
+        // VKFT_DIFF: where each plane's bytes differ from the reference, to place an error.
+        if (getenv("VKFT_DIFF")) {
+            PlaneBufferGeometry g[TransferResource::kMaxPlanes];
+            const uint32_t np = calculatePlaneGeometry(outputSlot.format,
+                                                       outputSlot.width, outputSlot.height, g);
+            for (uint32_t pl = 0; pl < np; pl++) {
+                size_t nDiff = 0, firstDiff = 0; double maxErr = 0;
+                const size_t begin = (size_t)g[pl].offset;
+                const size_t end = std::min(begin + (size_t)g[pl].size, compareBytes);
+                for (size_t i = begin; i < end; i++) {
+                    const double d = std::abs((double)actualData[i] - (double)referenceData[i]);
+                    if (d > 1.5) { if (!nDiff) firstDiff = i - begin; nDiff++; if (d > maxErr) maxErr = d; }
+                }
+                fprintf(stderr, "[diff] plane%u %ux%u pitch=%llu: %zu/%zu bytes differ, "
+                                "first at +%zu (row %zu col %zu), maxErr=%.0f\n",
+                        pl, g[pl].width, g[pl].height, (unsigned long long)g[pl].rowPitch,
+                        nDiff, end - begin, firstDiff,
+                        g[pl].rowPitch ? firstDiff / (size_t)g[pl].rowPitch : 0,
+                        g[pl].rowPitch ? firstDiff % (size_t)g[pl].rowPitch : 0, maxErr);
+            }
+        }
         // Determine comparison method based on output format
         switch (outputSlot.format) {
             case TestFormat::NV12:
-            case TestFormat::I420: {
-                // Split into Y and UV planes
-                size_t ySize = outputSlot.width * outputSlot.height;
-                size_t uvSize = (outputSlot.width / 2) * (outputSlot.height / 2) * 2;
-                
-                if (actualData.size() >= ySize + uvSize && referenceData.size() >= ySize + uvSize) {
-                    const uint8_t* actualY = actualData.data();
-                    const uint8_t* actualUV = actualData.data() + ySize;
-                    const uint8_t* refY = referenceData.data();
-                    const uint8_t* refUV = referenceData.data() + ySize;
-                    
-                    ValidationResult valResult = compareNV12(actualY, actualUV, refY, refUV,
-                                                            outputSlot.width, outputSlot.height,
-                                                            static_cast<uint32_t>(config.tolerance * 255.0f));
-                    result.passed = valResult.passed;
-                    result.psnrY = valResult.psnrY;
-                    result.psnrCb = valResult.psnrCb;
-                    result.psnrCr = valResult.psnrCr;
-                    result.errorMessage = valResult.errorMessage;
-                } else {
-                    result.passed = false;
-                    result.errorMessage = "Size mismatch for NV12 validation";
-                }
+            case TestFormat::I420:
+            case TestFormat::NV16:
+            case TestFormat::YUV444:
+            case TestFormat::P010:
+            case TestFormat::P012:
+            case TestFormat::P210:
+            case TestFormat::P212: {
+                ValidationResult valResult = compareYcbcrComponents(actualData, referenceData, outputSlot.format,
+                                                                    outputSlot.width, outputSlot.height,
+                                                                    config.tolerance);
+                result.passed = valResult.passed;
+                result.psnrY = valResult.psnrY;
+                result.psnrCb = valResult.psnrCb;
+                result.psnrCr = valResult.psnrCr;
+                result.errorMessage = valResult.errorMessage;
                 break;
             }
             
+            case TestFormat::Y410: {
+                // Packed 4:4:4: compare the three 10-bit samples of each word, not its bytes.
+                // Bits 9:0 carry Cb, 19:10 Y and 29:20 Cr.
+                const size_t words = std::min(actualData.size(), referenceData.size()) / 4;
+                double sumSq[3] = {0.0, 0.0, 0.0};
+                uint32_t maxDiff[3] = {0, 0, 0};
+                for (size_t i = 0; i < words; i++) {
+                    uint32_t actualWord = 0;
+                    uint32_t refWord = 0;
+                    memcpy(&actualWord, &actualData[i * 4], sizeof(actualWord));
+                    memcpy(&refWord, &referenceData[i * 4], sizeof(refWord));
+                    for (uint32_t c = 0; c < 3; c++) {
+                        const int d = (int)((actualWord >> (10 * c)) & 0x3FF) - (int)((refWord >> (10 * c)) & 0x3FF);
+                        maxDiff[c] = std::max(maxDiff[c], (uint32_t)(d < 0 ? -d : d));
+                        sumSq[c] += (double)d * (double)d;
+                    }
+                }
+                double psnr[3];
+                for (uint32_t c = 0; c < 3; c++) {
+                    const double mse = (words != 0) ? (sumSq[c] / (double)words) : 0.0;
+                    psnr[c] = (mse == 0.0) ? 100.0 : 10.0 * std::log10((1023.0 * 1023.0) / mse);
+                }
+                std::cout << "[REFCMP] " << config.name << " unit=y410 n=" << words
+                          << " maxdiff Y/Cb/Cr=" << maxDiff[1] << "/" << maxDiff[0] << "/" << maxDiff[2]
+                          << " psnr Y/Cb/Cr=" << psnr[1] << "/" << psnr[0] << "/" << psnr[2] << std::endl;
+                result.psnrCb = psnr[0];
+                result.psnrY = psnr[1];
+                result.psnrCr = psnr[2];
+                result.passed = ((words * 4) == expectedSize) &&
+                                (psnr[0] >= 30.0) && (psnr[1] >= 30.0) && (psnr[2] >= 30.0);
+                if (!result.passed) {
+                    result.errorMessage = "Y410 PSNR below threshold or size mismatch: Y " + std::to_string(psnr[1]) +
+                                          " dB, Cb " + std::to_string(psnr[0]) +
+                                          " dB, Cr " + std::to_string(psnr[2]) + " dB";
+                }
+                break;
+            }
             case TestFormat::RGBA8:
             case TestFormat::BGRA8: {
                 if (actualData.size() >= expectedSize && referenceData.size() >= expectedSize) {
@@ -1670,32 +1999,7 @@ TestResult FilterTestApp::validateOutput(const TestCaseConfig& config,
             }
             
             default: {
-                const size_t compareBytes = std::min(actualData.size(), referenceData.size());
-
-                // 10/12-bit formats store one sample per 16-bit word. Comparing those a
-                // byte at a time against a 255 peak produces a number that moves with the
-                // data but means nothing: the high byte of every sample is compared on the
-                // same footing as its low byte.
-                if (getenv("VKFT_DIFF")) {
-                    PlaneBufferGeometry g[TransferResource::kMaxPlanes];
-                    const uint32_t np = calculatePlaneGeometry(outputSlot.format,
-                                                               outputSlot.width, outputSlot.height, g);
-                    for (uint32_t pl = 0; pl < np; pl++) {
-                        size_t nDiff = 0, firstDiff = 0; double maxErr = 0;
-                        const size_t begin = (size_t)g[pl].offset;
-                        const size_t end = std::min(begin + (size_t)g[pl].size, compareBytes);
-                        for (size_t i = begin; i < end; i++) {
-                            const double d = std::abs((double)actualData[i] - (double)referenceData[i]);
-                            if (d > 1.5) { if (!nDiff) firstDiff = i - begin; nDiff++; if (d > maxErr) maxErr = d; }
-                        }
-                        fprintf(stderr, "[diff] plane%u %ux%u pitch=%llu: %zu/%zu bytes differ, "
-                                        "first at +%zu (row %zu col %zu), maxErr=%.0f\n",
-                                pl, g[pl].width, g[pl].height, (unsigned long long)g[pl].rowPitch,
-                                nDiff, end - begin, firstDiff,
-                                g[pl].rowPitch ? firstDiff / (size_t)g[pl].rowPitch : 0,
-                                g[pl].rowPitch ? firstDiff % (size_t)g[pl].rowPitch : 0, maxErr);
-                    }
-                }
+                // 10/12-bit formats store one sample per 16-bit word, compared as such.
                 const double psnr = formatIs16BitSamples(outputSlot.format)
                     ? calculatePSNR16(actualData.data(), referenceData.data(), compareBytes)
                     : calculatePSNR(actualData.data(), referenceData.data(), compareBytes);
@@ -1784,7 +2088,12 @@ std::vector<uint8_t> FilterTestApp::generateReferenceOutput(const TestCaseConfig
                         referenceData.insert(referenceData.end(), vPlane.begin(), vPlane.end());
                         break;
                     }
-                    
+
+                    case TestFormat::Y410:
+                        convertRGBAtoY410(inputData.data(), input.width, input.height,
+                                          primaries, range, referenceData);
+                        break;
+
                     case TestFormat::P010:
                     case TestFormat::P012:
                     case TestFormat::P210:
@@ -1833,11 +2142,11 @@ std::vector<uint8_t> FilterTestApp::generateReferenceOutput(const TestCaseConfig
                     }
                     
                     default: {
-                        // Generic model for any planar/semi-planar YCbCr input. The shader
-                        // fetches chroma with imageLoad at srcPos/ratio -- nearest
-                        // neighbour, no filtering -- so the reference replicates chroma the
-                        // same way via the canonical frame, which uses the same x/subX,
-                        // y/subY indexing.
+                        // Generic model for any YCbCr input unpackToCanonical() reads: planar,
+                        // semi-planar or Y410. The shader fetches chroma with imageLoad at
+                        // srcPos/ratio -- nearest neighbour, no filtering -- so the reference
+                        // replicates chroma the same way via the canonical frame, which uses
+                        // the same x/subX, y/subY indexing.
                         if (range != ColorRange::Full) {
                             break;   // limited range not modelled; stays honestly unvalidated
                         }
@@ -1894,7 +2203,17 @@ std::vector<uint8_t> FilterTestApp::generateReferenceOutput(const TestCaseConfig
             referenceData.clear();
             break;
         }
-        
+
+        case VulkanFilterYuvCompute::XFER_IMAGE_TO_BUFFER:
+        case VulkanFilterYuvCompute::XFER_BUFFER_TO_IMAGE:
+        case VulkanFilterYuvCompute::XFER_IMAGE_TO_IMAGE:
+            // A transfer copies the picture unchanged, between the same format and extent.
+            if ((input.format == output.format) &&
+                (input.width == output.width) && (input.height == output.height)) {
+                referenceData = inputData;
+            }
+            break;
+
         case VulkanFilterYuvCompute::YCBCRCLEAR: {
             // For clear, generate expected cleared values
             size_t size = calculateImageSize(output.format, output.width, output.height);
@@ -2101,6 +2420,47 @@ VkResult FilterTestApp::copyImageToStagingBuffer(const TestIOSlot& slot,
         }
     }
 
+    return VK_SUCCESS;
+}
+
+VkResult FilterTestApp::recordPatternUpload(VkCommandBuffer cmdBuffer,
+                                            const TestIOSlot& slot,
+                                            VkSharedBaseObj<VkImageResource>& image,
+                                            const std::vector<uint8_t>& pattern,
+                                            VkSharedBaseObj<VkBufferResource>& stagingBuffer) {
+    PlaneBufferGeometry geometry[TransferResource::kMaxPlanes];
+    const uint32_t numPlanes = calculatePlaneGeometry(slot.format, slot.width, slot.height, geometry);
+    PlaneCopyDesc planes[3];
+    const uint32_t numCopyPlanes = describePlanes(slot.format, slot.width, slot.height, planes);
+    // Each region's bufferOffset must be a multiple of its plane's texel size, which the
+    // tightly packed planes are not for every extent; such a pattern is not uploaded.
+    bool aligned = (image != nullptr) && !pattern.empty() && (numCopyPlanes == numPlanes);
+    for (uint32_t i = 0; aligned && (i < numPlanes); i++) {
+        aligned = ((geometry[i].offset % planes[i].texelBytes) == 0);
+    }
+    if (!aligned) {
+        return VK_ERROR_FORMAT_NOT_SUPPORTED;
+    }
+
+    VkResult result = createStagingBuffer(pattern.size(), stagingBuffer, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    if (result != VK_SUCCESS) {
+        return result;
+    }
+    VkDeviceSize maxSize = 0;
+    uint8_t* stagingData = stagingBuffer->GetDataPtr(0, maxSize);
+    if ((stagingData == nullptr) || (maxSize < pattern.size())) {
+        return VK_ERROR_MEMORY_MAP_FAILED;
+    }
+    memcpy(stagingData, pattern.data(), pattern.size());
+
+    VkBufferImageCopy regions[3]{};
+    for (uint32_t i = 0; i < numPlanes; i++) {
+        regions[i].bufferOffset = geometry[i].offset;
+        regions[i].imageSubresource = {static_cast<VkImageAspectFlags>(planes[i].aspect), 0, 0, 1};
+        regions[i].imageExtent = {planes[i].width, planes[i].height, 1};
+    }
+    m_vkDevCtx.CmdCopyBufferToImage(cmdBuffer, stagingBuffer->GetBuffer(), image->GetImage(),
+                                    VK_IMAGE_LAYOUT_GENERAL, numPlanes, regions);
     return VK_SUCCESS;
 }
 

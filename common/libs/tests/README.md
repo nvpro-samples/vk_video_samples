@@ -83,13 +83,12 @@ standard set.
 | Regression | `--regression` | BT.2020 cases |
 | Production | `--production` | SD to 4K, full and limited range |
 | Color primaries | `--primaries` | BT.601, BT.709, BT.2020 |
-| Buffer I/O | in `--all` | Empty: every case is disabled |
-| Transfer | in `--all` | Pre- and post-transfer around the filter |
+| Buffer I/O | in `--all` | A buffer input or output for RGBA to YCbCr, YCbCr to RGBA and the YCbCr copy |
+| Transfer | in `--all` | Pre- and post-transfer around the filter, and the transfer-only filter types |
 
 ### Disabled cases
 
-YCbCr to RGBA from a packed input (TC017), RGBA to Y410 (TC008), buffer I/O (TC070 to TC076)
-and the transfer-only filter types (TC117 to TC120) are disabled.
+No case is disabled.
 A case that fails for a known defect is in no set: `getDisabledTests()` in
 `src/TestCases.cpp` lists it with the defect, `--list` prints both, and `--test <name>` runs
 it to reproduce the defect. A case leaves the list in the change that fixes its defect. The
@@ -107,7 +106,7 @@ no set and not disabled, or is both.
 | NV16 | 2-plane | 8-bit | 4:2:2 | ✅ |
 | P210 | 2-plane | 10-bit | 4:2:2 | ✅ |
 | YUV444 | 3-plane | 8-bit | 4:4:4 | ✅ |
-| Y410 | Packed | 10-bit | 4:4:4 | ❌ Not yet |
+| Y410 | Packed | 10-bit | 4:4:4 | ✅ |
 
 ## Known Issues
 

@@ -544,9 +544,8 @@ public:
          * --enablePostProcessFilter 2, and that path fails in the decoder itself: see
          * h264_clip_a_filter_ycbcr2rgba in tests/skipped_samples.json.
          *
-         * It converts a 2-plane or a 3-plane input (vk_filter_test TC010-TC016, TC015b).
-         * A packed input (Y410) gets no output format; vk_filter_test lists that case among
-         * its disabled ones, with the defect (getDisabledTests() in tests/src/TestCases.cpp).
+         * It converts a 2-plane, a 3-plane or a packed 4:4:4 input (AYUV, Y410, Y416):
+         * vk_filter_test TC010-TC017 and TC015b.
          */
         YCBCR2RGBA,
         
@@ -733,6 +732,17 @@ public:
         /// views, which are always array views regardless of this flag.
         FLAG_OUTPUT_IMAGE_ARRAY                 = (1 << 5),
 
+        /// The input is a buffer, recorded with a buffer RecordCommandBuffer() overload. The filter
+        /// reads a YCbCr buffer (YCBCR2RGBA, YCBCRCOPY) one storage buffer per plane, a byte per 8-bit
+        /// sample and a 16-bit word per sample above 8 bits, held in its most significant bits as an
+        /// R10X6 or R12X4 plane holds it; an RGBA buffer (RGBA2YCBCR) one 32-bit word per pixel, two
+        /// for R16G16B16A16. YCbCr planes need the device's storageBuffer8BitAccess or
+        /// storageBuffer16BitAccess.
+        FLAG_INPUT_BUFFER                       = (1 << 6),
+
+        /// The output is a buffer, laid out as FLAG_INPUT_BUFFER describes.
+        FLAG_OUTPUT_BUFFER                      = (1 << 7),
+
         // Transfer operation flags
         FLAG_PRE_TRANSFER_ENABLED               = (1 << 8),  ///< Enable pre-transfer stage
         FLAG_POST_TRANSFER_ENABLED              = (1 << 9),  ///< Enable post-transfer stage
@@ -845,6 +855,7 @@ public:
         , m_ycbcrPrimariesConstants (pYcbcrPrimariesConstants ?
                                         *pYcbcrPrimariesConstants :
                                         YcbcrPrimariesConstants{0.0, 0.0})
+        , m_ycbcrConversionCreateInfo()
         , m_inputImageAspects(  VK_IMAGE_ASPECT_COLOR_BIT |
                                 VK_IMAGE_ASPECT_PLANE_0_BIT |
                                 VK_IMAGE_ASPECT_PLANE_1_BIT |
@@ -857,8 +868,8 @@ public:
         , m_inputEnableMsbToLsbShift((filterFlags & FLAG_INPUT_MSB_TO_LSB_SHIFT) != 0)
         , m_outputEnableLsbToMsbShift((filterFlags & FLAG_OUTPUT_LSB_TO_MSB_SHIFT) != 0)
         , m_enableRowAndColumnReplication((filterFlags & (FLAG_ENABLE_ROW_COLUMN_REPLICATION_ONE | FLAG_ENABLE_ROW_COLUMN_REPLICATION_ALL)) != 0)
-        , m_inputIsBuffer(false)
-        , m_outputIsBuffer(false)
+        , m_inputIsBuffer((filterFlags & FLAG_INPUT_BUFFER) != 0)
+        , m_outputIsBuffer((filterFlags & FLAG_OUTPUT_BUFFER) != 0)
         , m_outputImageArray((filterFlags & FLAG_OUTPUT_IMAGE_ARRAY) != 0)
         , m_enableYSubsampling((filterFlags & FLAG_ENABLE_Y_SUBSAMPLING) != 0)
         , m_skipCompute((filterFlags & FLAG_SKIP_COMPUTE) != 0 ||
@@ -908,6 +919,13 @@ public:
                                  const VkVideoPictureResourceInfoKHR * outputImageResourceInfo,
                                  const VkImageResourceView* subsampledImageView = nullptr,
                                  const VkVideoPictureResourceInfoKHR * subsampledImageResourceInfo = nullptr);
+
+    // The push constants and the dispatch of the three buffer overloads below.
+    VkResult RecordBufferDispatch(VkCommandBuffer cmdBuf,
+                                  const VkExtent2D& inputExtent, uint32_t srcLayer,
+                                  const VkSubresourceLayout* inLayouts, uint32_t numInPlanes,
+                                  const VkExtent2D& outputExtent, uint32_t dstLayer,
+                                  const VkSubresourceLayout* outLayouts, uint32_t numOutPlanes);
 
     // Buffer input -> Image output
     VkResult RecordCommandBuffer(VkCommandBuffer cmdBuf,
@@ -1358,7 +1376,9 @@ protected:
     uint32_t                                 m_blockHorzRatio;
     uint32_t                                 m_blockVertRatio;
     const YcbcrPrimariesConstants            m_ycbcrPrimariesConstants;
-    VulkanSamplerYcbcrConversion             m_samplerYcbcrConversion;
+    // The caller's Y'CbCr conversion: its format, model and range give the color matrix. The filter reads
+    // its input with imageLoad() and makes no conversion object or sampler.
+    VkSamplerYcbcrConversionCreateInfo       m_ycbcrConversionCreateInfo;
     VulkanDescriptorSetLayout                m_descriptorSetLayout;
     VulkanComputePipeline                    m_computePipeline;
     VkImageAspectFlags                       m_inputImageAspects;
