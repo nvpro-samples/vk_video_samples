@@ -157,7 +157,8 @@ private:
                 return -1;
             }
             ck(av_bsf_alloc(bsf, &bsfc));
-            bsfc->par_in = fmtc->streams[videoStream]->codecpar;
+            // The filter owns its input parameters, which av_bsf_free frees: a copy of the stream's.
+            ck(avcodec_parameters_copy(bsfc->par_in, fmtc->streams[videoStream]->codecpar));
             ck(av_bsf_init(bsfc));
         }
 
@@ -271,6 +272,8 @@ private:
 #endif // (LIBAVCODEC_VERSION_MAJOR < 58)
             pktFiltered = nullptr;
         }
+
+        av_bsf_free(&bsfc);
 
         if (fmtc) {
             avformat_close_input(&fmtc);

@@ -1390,6 +1390,11 @@ void EndStream(VulkanVideoDecodeParser& parser, const TraceClientIf& client, FIL
     if (refused > 0) {
         Line("refused").Num("units", static_cast<int64_t>(refused)).Emit(out);
     }
+    // Likewise a stream with no picture the decoder cannot decode has no "unsupported" line.
+    const uint64_t unsupported = parser.GetUnsupportedPictureCount();
+    if (unsupported > 0) {
+        Line("unsupported").Num("pictures", static_cast<int64_t>(unsupported)).Emit(out);
+    }
 }
 
 void ParseByteStreamPartially(VulkanVideoDecodeParser& parser, const std::vector<uint8_t>& stream, FILE* out) {

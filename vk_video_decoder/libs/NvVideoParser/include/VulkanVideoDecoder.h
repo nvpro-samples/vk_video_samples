@@ -114,6 +114,7 @@ protected:
     NVCodecErrors m_eError;
     SIMD_ISA m_NextStartCode;
     uint64_t m_refusedUnits;                    // Units refused since Initialize (GetRefusedUnitCount)
+    uint64_t m_unsupportedPictures;             // Pictures dropped since Initialize (GetUnsupportedPictureCount)
 public:
     VulkanVideoDecoder(VkVideoCodecOperationFlagBitsKHR std);
     virtual ~VulkanVideoDecoder();
@@ -156,6 +157,7 @@ public:
 #endif
     virtual bool GetDisplayMasteringInfo(VkParserDisplayMasteringInfo *) { return false; }
     virtual uint64_t GetRefusedUnitCount() const { return m_refusedUnits; }
+    virtual uint64_t GetUnsupportedPictureCount() const { return m_unsupportedPictures; }
 
 protected:
     virtual void CreatePrivateContext() = 0;                   // Implemented by derived classes

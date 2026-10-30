@@ -87,6 +87,12 @@ public:
 
     int32_t GetId() const { return m_Id; }
 
+    // Whether a picture of |videoSession| can begin coding with this object: its session parameters
+    // were created for that session, or are not created yet and take the session that flushes them.
+    bool IsForSession(const VkSharedBaseObj<VulkanVideoSession>& videoSession) const {
+        return (m_sessionParameters == VK_NULL_HANDLE) || (m_videoSession == videoSession);
+    }
+
     bool HasVpsId(uint32_t vpsId) const {
         return m_vpsIdsUsed[vpsId];
     }
@@ -107,13 +113,6 @@ public:
 
     VkResult AddPictureParametersToQueue(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet);
 
-    VkSharedBaseObj<StdVideoPictureParametersSet> FindByRawPtr(const StdVideoPictureParametersSet* raw) const {
-        if (!raw) return nullptr;
-        for (const auto& sp : m_allRegisteredParams) {
-            if (sp.get() == raw) return sp;
-        }
-        return nullptr;
-    }
     int32_t FlushPictureParametersQueue(VkSharedBaseObj<VulkanVideoSession>& videoSession);
 
     void Reset();
@@ -133,7 +132,8 @@ public:
 
 private:
     static const char*              m_refClassId;
-    static int32_t                  m_currentId;
+    // Shared by every decoder in the process, which may create parameters on its own thread.
+    static std::atomic<int32_t>     m_currentId;
     const char*                     m_classId;
     int32_t                         m_Id;
     const VulkanDeviceContext*      m_vkDevCtx;
@@ -148,7 +148,6 @@ private:
 
     std::queue<VkSharedBaseObj<StdVideoPictureParametersSet>>  m_pictureParametersQueue;
     VkSharedBaseObj<StdVideoPictureParametersSet>              m_lastPictParamsQueue[StdVideoPictureParametersSet::NUM_OF_TYPES];
-    std::vector<VkSharedBaseObj<StdVideoPictureParametersSet>> m_allRegisteredParams;
 };
 
 #endif /* _VKVIDEODECODER_VKPARSERVIDEOPICTUREPARAMETERS_H_ */

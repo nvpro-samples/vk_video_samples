@@ -100,6 +100,11 @@ foreach(codec Av1 H264 H265 Vp9)
     set_tests_properties(AdapterTrace${codec} PROPERTIES LABELS "device-free")
 endforeach()
 
+# The picture pool keeps giving out free pictures while one stays held for 2000 decodes, as a
+# long-term reference holds its picture.
+add_test(NAME AdapterTracePictureHold COMMAND $<TARGET_FILE:vk-video-adapter-trace> --hold-check 2000)
+set_tests_properties(AdapterTracePictureHold PROPERTIES LABELS "device-free")
+
 # The fuzz replay: each codec's committed streams (the first 16 KiB of each), cut into packets in
 # every mode of the fuzz input, and the inputs under fuzz/regressions/<codec>, through the fuzz
 # target. A pass is a run

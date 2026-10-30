@@ -82,19 +82,25 @@ inline int ExitCodeFromVkResult(VkResult result) {
 
 // The exit status of a decode that ran to the end of its loop. |streamResult| is why the stream
 // stopped before its end (VK_SUCCESS when it did not), |decodedFrameCount| the pictures the decoder
-// output, and |sequenceResult| the result the decoder refused the stream's last sequence with. A
-// stream the decoder refused fails with ExitCodeFromVkResult() of the refusal (VVS_EXIT_UNSUPPORTED
-// for a profile the device does not decode), and so does a parse failure. A stream that ended
-// without a decoded picture fails too: with the refusal of its last sequence if the parser went on
-// past it, otherwise with EXIT_FAILURE.
-inline int ExitCodeFromDecodedStream(VkResult streamResult, uint32_t decodedFrameCount, VkResult sequenceResult) {
+// output, |sequenceResult| the result the decoder refused the stream's last sequence with, and
+// |unsupportedPictureCount| the pictures the parser dropped for a coding tool the decoder cannot
+// decode. A stream the decoder refused fails with ExitCodeFromVkResult() of the refusal
+// (VVS_EXIT_UNSUPPORTED for a profile the device does not decode), and so does a parse failure. A
+// stream that ended without a decoded picture fails too: with the refusal of its last sequence if
+// the parser went on past it, with VVS_EXIT_UNSUPPORTED if its pictures were dropped as
+// unsupported, otherwise with EXIT_FAILURE.
+inline int ExitCodeFromDecodedStream(VkResult streamResult, uint32_t decodedFrameCount, VkResult sequenceResult,
+                                     uint64_t unsupportedPictureCount) {
     if (streamResult != VK_SUCCESS) {
         fprintf(stderr, "The decode stopped with result %d\n", streamResult);
         return ExitCodeFromVkResult(streamResult);
     }
     if (decodedFrameCount == 0) {
         fprintf(stderr, "The stream ended without a decoded picture\n");
-        return (sequenceResult != VK_SUCCESS) ? ExitCodeFromVkResult(sequenceResult) : EXIT_FAILURE;
+        if (sequenceResult != VK_SUCCESS) {
+            return ExitCodeFromVkResult(sequenceResult);
+        }
+        return (unsupportedPictureCount > 0) ? VVS_EXIT_UNSUPPORTED : EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
 }

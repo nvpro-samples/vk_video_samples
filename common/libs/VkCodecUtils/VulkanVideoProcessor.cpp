@@ -38,6 +38,24 @@ size_t ConvertFrameToNv12(const VulkanDeviceContext* vkDevCtx, int32_t frameWidt
                          VkSharedBaseObj<VkImageResource>& imageResource,
                          uint8_t* pOutBuffer, const VkMpFormatInfo* mpInfo);
 
+// The profile idc of a decode codec's base profile, which with 8-bit 4:2:0 names the profile a
+// decoder of the codec supports first.
+static uint32_t BaseDecodeProfileIdc(VkVideoCodecOperationFlagBitsKHR codec)
+{
+    switch (codec) {
+    case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR:
+        return STD_VIDEO_H264_PROFILE_IDC_HIGH;
+    case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR:
+        return STD_VIDEO_H265_PROFILE_IDC_MAIN;
+    case VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR:
+        return STD_VIDEO_AV1_PROFILE_MAIN;
+    case VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR:
+        return STD_VIDEO_VP9_PROFILE_0;
+    default:
+        return 0;
+    }
+}
+
 VkResult VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                                           VkSharedBaseObj<VideoStreamDemuxer>& videoStreamDemuxer,
                                           VkSharedBaseObj<VkVideoFrameOutput>& frameToFile,
@@ -165,13 +183,35 @@ VkResult VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
                                                                  videoDecodeCapabilities);
 
     if (result != VK_SUCCESS) {
-        std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
-        // Chroma/bit-depth combinations the hardware does not decode land here
-        // (VP9 Profile 3, H.264 4:4:4, ...). The driver's rejection is the answer,
-        // so hand it back verbatim instead of asserting -- an assert() aborts the
-        // debug build on a legitimate input and vanishes under NDEBUG, leaving
-        // execution to continue into a decoder that was never initialized.
-        return result;
+        // The demuxer's profile is a guess made before the parser reads the stream's sequence,
+        // and the demuxer can guess wrong: an unknown profile, or a pixel format the stream does
+        // not have. These capabilities only give the parser its bitstream buffer alignments,
+        // and the decoder checks the sequence the parser reads before it creates a session, so
+        // the codec's base profile (8-bit 4:2:0) gives the alignments instead, and the stream's
+        // own sequence decides whether it decodes. A sequence the device does not decode (VP9
+        // Profile 3, H.264 4:4:4, ...) is refused there, with the driver's result.
+        const VkVideoCodecOperationFlagBitsKHR codec = m_videoStreamDemuxer->GetVideoCodec();
+        VkVideoCoreProfile baseProfile ({
+            codec,
+            VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR,
+            VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR,
+            VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR,
+            BaseDecodeProfileIdc(codec)
+        });
+        const VkResult baseResult = VulkanVideoCapabilities::GetVideoDecodeCapabilities(m_vkDevCtx, baseProfile,
+                                                                                     videoCapabilities,
+                                                                                     videoDecodeCapabilities);
+        if (baseResult != VK_SUCCESS) {
+            // Hand the driver's rejection back verbatim instead of asserting -- an assert() aborts
+            // the debug build on a legitimate input and vanishes under NDEBUG, leaving execution
+            // to continue into a decoder that was never initialized.
+            std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
+            return result;
+        }
+        std::cout << "*** The demuxer's profile is not supported (" << result << "); the "
+                  << VkVideoCoreProfile::CodecToName(codec)
+                  << " base profile gives the bitstream alignments, and the stream's sequence decides ***"
+                  << std::endl;
     }
 
     const uint32_t defaultMinBufferSize = 2 * 1024 * 1024; // 2MB
@@ -196,6 +236,7 @@ VkResult VulkanVideoProcessor::Initialize(const VulkanDeviceContext* vkDevCtx,
         dumpTestOptions.releaseDelayUs = programConfig.dumpTestReleaseDelayUs;
         dumpTestOptions.failWaitDisplayOrder = programConfig.dumpTestFailWaitDisplayOrder;
         dumpTestOptions.flushDelayUs = programConfig.dumpTestFlushDelayUs;
+        dumpTestOptions.stopReleaseDisplayOrder = programConfig.dumpTestStopReleaseDisplayOrder;
         result = m_dumpPool.init(m_vkDevCtx, *m_vkDevCtx, 4 /* writerThreads */, dumpTestOptions);
         if (result == VK_SUCCESS) {
             // Register the dump pool's own TL semaphore as an external consumer
@@ -305,6 +346,14 @@ void VulkanVideoProcessor::Deinit()
         if (m_dumpPool.getReleaseOrderErrors() != 0) {
             fprintf(stderr, "ERROR: %llu output frame releases were out of display order\n",
                     (unsigned long long)m_dumpPool.getReleaseOrderErrors());
+        }
+        if (m_dumpPool.getDisplayOrderGaps() != 0) {
+            fprintf(stderr, "ERROR: %llu runs of display orders were never queued for writing\n",
+                    (unsigned long long)m_dumpPool.getDisplayOrderGaps());
+        }
+        if (m_dumpPool.getFramesLate() != 0) {
+            fprintf(stderr, "ERROR: %llu output frames were queued after their turn and not written\n",
+                    (unsigned long long)m_dumpPool.getFramesLate());
         }
     }
 
@@ -581,6 +630,12 @@ size_t VulkanVideoProcessor::OutputFrameToFile(VulkanDecodedFrame* pFrame)
     // If the dump pool is initialized, queue async — return immediately
     if (m_dumpPool.isInitialized()) {
 
+        // Test: leave this display order out of the writes.
+        if ((m_settings.dumpTestSkipDisplayOrder >= 0) &&
+            ((int64_t)pFrame->displayOrder == m_settings.dumpTestSkipDisplayOrder)) {
+            return 0;
+        }
+
         VkVideoDumpFrame dumpFrame;
         dumpFrame.pictureIndex = pFrame->pictureIndex;
         dumpFrame.displayOrder = pFrame->displayOrder;
@@ -657,6 +712,11 @@ bool VulkanVideoProcessor::StreamCompleted()
         if (refusedUnits > 0) {
             // The parser drops a unit it refuses and carries on, so the stream ends normally.
             std::cerr << "Parser: refused " << refusedUnits << " units of the stream" << std::endl;
+        }
+        const uint64_t unsupportedPictures = GetUnsupportedPictureCount();
+        if (unsupportedPictures > 0) {
+            std::cerr << "Parser: dropped " << unsupportedPictures
+                      << " pictures that use a coding tool the decoder does not support" << std::endl;
         }
         return true;
     }

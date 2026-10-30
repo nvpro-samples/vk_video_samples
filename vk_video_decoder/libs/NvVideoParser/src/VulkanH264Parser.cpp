@@ -278,8 +278,10 @@ bool VulkanH264Decoder::BeginPicture(VkParserPictureData *pnvpd)
         h264->fmo_aso_enable = m_aso;
         if (pps->num_slice_groups_minus1)
         {
-            // slice_group_map_s is not ssupported with this version of the parser
+            // Vulkan Video has no slice group map (FMO), so a picture with slice groups cannot be
+            // decoded: it is dropped, and counted as unsupported.
             cur->not_existing = true;
+            m_unsupportedPictures++;
         }
         // DPB
         h264->frame_num = dpb[iCur].FrameNum;

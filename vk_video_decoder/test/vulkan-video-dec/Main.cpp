@@ -44,7 +44,8 @@ static int StreamExitCode(const VkSharedBaseObj<VulkanVideoDecoder>& vulkanVideo
 {
     return ExitCodeFromDecodedStream(vulkanVideoDecoder->GetStreamResult(),
                                      vulkanVideoDecoder->GetVideoFrameCount(),
-                                     vulkanVideoDecoder->GetVideoSequenceResult());
+                                     vulkanVideoDecoder->GetVideoSequenceResult(),
+                                     vulkanVideoDecoder->GetUnsupportedPictureCount());
 }
 
 int main(int argc, const char** argv)

@@ -431,6 +431,12 @@ endif()
     if(BUILD_TESTS AND NOT DEFINED DEQP_TARGET)
         add_subdirectory(vk_video_decoder/test/vulkan-video-simple-dec)
         add_subdirectory(vk_video_decoder/test/vulkan-video-dec)
+        # The video session parameters objects a decode keeps alive, counted by
+        # a test layer over streams that send their parameter sets again with
+        # every key frame.
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_subdirectory(vk_video_decoder/test/decoder-session-parameters)
+        endif()
     endif()
 
     if(BUILD_DEMOS AND NOT DEFINED DEQP_TARGET)

@@ -35,7 +35,10 @@ same streams and writes the DPB slots, Std reference information and begin-codin
 decode; `scripts/slot_oracle.py` checks them against the DPB slot rules of the Vulkan
 specification. The CTests `AdapterTraceAv1`, `AdapterTraceH264`, `AdapterTraceH265` and
 `AdapterTraceVp9` (label `device-free`) run the suites in adapter mode; see
-[The adapter slot trace](#the-adapter-slot-trace).
+[The adapter slot trace](#the-adapter-slot-trace). `AdapterTracePictureHold` runs
+`vk-video-adapter-trace --hold-check 2000`: the picture pool alone, four pictures, the first held
+while 2000 others are reserved, decoded and freed, as a long-term reference holds its picture; no
+reservation may fail.
 
 `fuzz_parser_h264`, `fuzz_parser_h265`, `fuzz_parser_av1` and `fuzz_parser_vp9` are libFuzzer
 targets for the parser, and `vk-video-parser-fuzz-replay` runs the same target over inputs from
@@ -208,9 +211,9 @@ of the decoder sample where it reaches the adapter:
   elementary stream with partial parsing, advancing by the bytes consumed, a demuxed stream one
   packet per call with no flags, then an empty end-of-stream packet;
 - the picture pool is `VulkanVideoFrameBuffer`'s: as many pictures as `VkVideoDecoder` asks for
-  (the parser's minimum plus 8, at most 32), a new picture taking the free one decoded longest ago
-  (only below picture 0's decode order plus 1000, as `ReservePictureBuffer` searches), and no
-  picture before the first sequence. The consumer takes a displayed picture at once;
+  (the parser's minimum plus 8, at most 32), a new picture taking the free one decoded longest ago,
+  as `ReservePictureBuffer` does, and no picture before the first sequence. The consumer takes a
+  displayed picture at once;
 - `StartVideoSequence` keeps the session or creates a new one as `VkVideoDecoder` does
   (`VulkanVideoSession::IsCompatible`); a new session starts with every DPB slot inactive. With
   `--refuse-chroma 400|420|422|444` it refuses every sequence of that chroma format before it

@@ -17,7 +17,7 @@
 #include "VkVideoDecoder/VkParserVideoPictureParameters.h"
 
 const char* VkParserVideoPictureParameters::m_refClassId = "VkParserVideoPictureParameters";
-int32_t VkParserVideoPictureParameters::m_currentId = 0;
+std::atomic<int32_t> VkParserVideoPictureParameters::m_currentId{0};
 
 int32_t VkParserVideoPictureParameters::PopulateH264UpdateFields(const StdVideoPictureParametersSet* pStdPictureParametersSet,
                                                                  VkVideoDecodeH264SessionParametersAddInfoKHR& h264SessionParametersAddInfo)
@@ -174,6 +174,12 @@ VkResult VkParserVideoPictureParameters::CreateParametersObject(const VulkanDevi
             return VK_ERROR_INITIALIZATION_FAILED;
     }
 
+    // A template must have been created for the same session
+    // (VUID-VkVideoSessionParametersCreateInfoKHR-videoSessionParametersTemplate-04855): an object for
+    // another session starts from its own sets.
+    if ((pTemplatePictureParameters != nullptr) && (pTemplatePictureParameters->m_videoSession != videoSession)) {
+        pTemplatePictureParameters = nullptr;
+    }
     createInfo.videoSessionParametersTemplate = pTemplatePictureParameters ? VkVideoSessionParametersKHR(*pTemplatePictureParameters) : VK_NULL_HANDLE;
     createInfo.videoSession = videoSession->GetVideoSession();
     VkResult result = vkDevCtx->CreateVideoSessionParametersKHR(*vkDevCtx,
@@ -308,10 +314,6 @@ VkResult VkParserVideoPictureParameters::UpdateParametersObject(const StdVideoPi
 
 void VkParserVideoPictureParameters::Reset()
 {
-    for (auto& sp : m_allRegisteredParams) {
-        if (sp) sp->ReleaseClientObject();
-    }
-    m_allRegisteredParams.clear();
     while (!m_pictureParametersQueue.empty()) {
         auto& front = m_pictureParametersQueue.front();
         if (front) front->ReleaseClientObject();
@@ -417,7 +419,6 @@ bool VkParserVideoPictureParameters::UpdatePictureParametersHierarchy(
 VkResult VkParserVideoPictureParameters::AddPictureParametersToQueue(VkSharedBaseObj<StdVideoPictureParametersSet>& pictureParametersSet)
 {
     m_pictureParametersQueue.push(pictureParametersSet);
-    m_allRegisteredParams.push_back(pictureParametersSet);
     return VK_SUCCESS;
 }
 
@@ -434,8 +435,10 @@ VkResult VkParserVideoPictureParameters::HandleNewPictureParametersSet(VkSharedB
         result = CreateParametersObject(m_vkDevCtx, videoSession, pStdVideoPictureParametersSet,
                                         m_templatePictureParameters.get());
         assert(result == VK_SUCCESS);
-        // Keep m_templatePictureParameters alive so Reset() can break
-        // the client back-ref cycle during shutdown.
+        // The template is needed for the create only: kept, it would keep every earlier object alive.
+        // A picture holds the object it begins coding with until it is done, and VkVideoDecoder resets
+        // every object it made when it is deinitialized.
+        m_templatePictureParameters = nullptr;
         m_videoSession = videoSession;
 
     } else {

@@ -81,23 +81,35 @@ class DecodeTestSample(BaseTestConfig):
     # regardless of the surface layout the driver hands back. This is the
     # portable check.
     expected_output_y4m_md5: str = ""
+    # Ask the decoder for its output (Y4M) even without a golden: for a
+    # sample whose subject is the output path itself. Nothing checks the
+    # output.
+    write_output: bool = False
 
     def __init__(self, expected_output_md5: str = "",
-                 expected_output_y4m_md5: str = "", **kwargs):
+                 expected_output_y4m_md5: str = "",
+                 write_output: bool = False, **kwargs):
         """Initialize DecodeTestSample with all fields from base and child"""
         super().__init__(**kwargs)
         self.expected_output_md5 = expected_output_md5
         self.expected_output_y4m_md5 = expected_output_y4m_md5
+        self.write_output = write_output
 
     @classmethod
     def from_dict(cls, data: dict) -> 'DecodeTestSample':
         """Create a DecodeTestSample from a dictionary"""
         cls._refuse_unknown_keys(
-            data, frozenset({"expected_output_md5", "expected_output_y4m_md5"}))
+            data, frozenset({"expected_output_md5", "expected_output_y4m_md5",
+                             "write_output"}))
+        write_output = data.get("write_output", False)
+        if not isinstance(write_output, bool):
+            raise ValueError(
+                f"sample {data.get('name')!r}: write_output is not true or false")
         return cls(
             **cls._parse_base_fields(data),
             expected_output_md5=data.get("expected_output_md5", ""),
             expected_output_y4m_md5=data.get("expected_output_y4m_md5", ""),
+            write_output=write_output,
         )
 
     @property
@@ -132,6 +144,24 @@ class DecodeTestSample(BaseTestConfig):
         return FetchableResource(
             self.source_url, filename, checksum, base_dir, algorithm
         )
+
+
+def plan_decoder_output(config: DecodeTestSample, expected_md5: str,
+                        use_y4m: bool, verify_md5: bool,
+                        results_dir: Path):
+    """Where the decoder writes its output, and the arguments that ask for
+    it: (output_file, extra_args, should_verify_md5). A sample with a golden
+    writes the output the golden is over; a sample with write_output and no
+    golden writes Y4M, which nothing checks; any other sample writes
+    nothing."""
+    should_verify_md5 = bool(verify_md5 and expected_md5)
+    if not (should_verify_md5 or config.write_output):
+        return None, [], False
+    if not should_verify_md5:
+        use_y4m = True
+    suffix = "y4m" if use_y4m else "yuv"
+    output_file = results_dir / f"decoded_{config.name}.{suffix}"
+    return output_file, (["--y4m"] if use_y4m else []), should_verify_md5
 
 
 class VulkanVideoDecodeTestFramework(VulkanVideoTestFrameworkBase):
@@ -229,15 +259,9 @@ class VulkanVideoDecodeTestFramework(VulkanVideoTestFrameworkBase):
 
         expected_md5, use_y4m = self._resolve_goldens(config)
 
-        output_file = None
-        should_verify_md5 = bool(self.verify_md5 and expected_md5)
-        decoder_args = list(config.extra_args or [])
-        if should_verify_md5:
-            suffix = "y4m" if use_y4m else "yuv"
-            output_file = (self.results_dir /
-                           f"decoded_{config.name}.{suffix}")
-            if use_y4m:
-                decoder_args.append("--y4m")
+        output_file, output_args, should_verify_md5 = plan_decoder_output(
+            config, expected_md5, use_y4m, self.verify_md5, self.results_dir)
+        decoder_args = list(config.extra_args or []) + output_args
 
         # Build decoder command using shared method
         cmd = self.build_decoder_command(

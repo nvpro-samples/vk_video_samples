@@ -18,10 +18,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+from pathlib import Path
+
 import pytest
 
 from tests.libs.video_test_config_base import CodecType, BaseTestConfig
-from tests.libs.video_test_framework_decode import DecodeTestSample
+from tests.libs.video_test_framework_decode import (
+    DecodeTestSample,
+    plan_decoder_output,
+)
 from tests.libs.video_test_framework_encode import EncodeTestSample
 
 
@@ -132,6 +137,74 @@ class TestDecodeTestSample:
         # All should have same display_name regardless of codec
         for sample in samples:
             assert sample.display_name == "decode_test"
+
+    @staticmethod
+    def _data(**extra):
+        data = {
+            "name": "h264_output",
+            "codec": "h264",
+            "source_url": "https://example.com/test.h264",
+            "source_checksum": "abc123",
+            "source_filepath": "video/test.h264",
+        }
+        data.update(extra)
+        return data
+
+    def test_write_output_defaults_to_false(self):
+        """A sample without the key writes output only for a golden"""
+        assert DecodeTestSample.from_dict(self._data()).write_output is False
+
+    def test_write_output_is_read(self):
+        """write_output true is kept"""
+        sample = DecodeTestSample.from_dict(self._data(write_output=True))
+        assert sample.write_output is True
+
+    def test_write_output_must_be_a_boolean(self):
+        """A string is refused, not read as true"""
+        with pytest.raises(ValueError, match="write_output"):
+            DecodeTestSample.from_dict(self._data(write_output="yes"))
+
+
+class TestPlanDecoderOutput:
+    """Which output the decoder is asked for"""
+
+    RESULTS = Path("/results")
+
+    @staticmethod
+    def _sample(write_output=False):
+        return DecodeTestSample(name="s", codec=CodecType.H264,
+                                source_url="", source_checksum="",
+                                source_filepath="",
+                                write_output=write_output)
+
+    def test_y4m_golden_writes_y4m_and_verifies(self):
+        """A Y4M golden asks for Y4M output and checks it"""
+        assert plan_decoder_output(self._sample(), "abc", True, True,
+                                   self.RESULTS) == (
+            self.RESULTS / "decoded_s.y4m", ["--y4m"], True)
+
+    def test_raw_golden_writes_raw_and_verifies(self):
+        """A raw golden asks for raw output and checks it"""
+        assert plan_decoder_output(self._sample(), "abc", False, True,
+                                   self.RESULTS) == (
+            self.RESULTS / "decoded_s.yuv", [], True)
+
+    def test_no_golden_writes_nothing(self):
+        """Without a golden or write_output the decoder writes nothing"""
+        assert plan_decoder_output(self._sample(), "", False, True,
+                                   self.RESULTS) == (None, [], False)
+
+    def test_write_output_without_golden_writes_y4m_unchecked(self):
+        """write_output without a golden writes Y4M that nothing checks"""
+        assert plan_decoder_output(self._sample(True), "", False, True,
+                                   self.RESULTS) == (
+            self.RESULTS / "decoded_s.y4m", ["--y4m"], False)
+
+    def test_write_output_with_md5_check_off(self):
+        """With the md5 check off, write_output still writes, unchecked"""
+        assert plan_decoder_output(self._sample(True), "abc", True, False,
+                                   self.RESULTS) == (
+            self.RESULTS / "decoded_s.y4m", ["--y4m"], False)
 
 
 class TestEncodeTestSample:

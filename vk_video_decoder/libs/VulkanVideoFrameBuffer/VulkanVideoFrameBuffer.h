@@ -89,17 +89,21 @@ public:
         VkSharedBaseObj<VkVideoRefCountBase>  stdSps;
         VkSharedBaseObj<VkVideoRefCountBase>  stdVps;
         VkSharedBaseObj<VkVideoRefCountBase>  filterPoolNode;
+        // The session parameters object the picture begins coding with.
+        VkSharedBaseObj<VkVideoRefCountBase>  sessionParameters;
 
         ReferencedObjectsInfo(VkSharedBaseObj<VkVideoRefCountBase> bitstreamDataRef,
                               VkSharedBaseObj<VkVideoRefCountBase> stdPpsRef,
                               VkSharedBaseObj<VkVideoRefCountBase> stdSpsRef,
                               VkSharedBaseObj<VkVideoRefCountBase> stdVpsRef = nullptr,
-                              VkSharedBaseObj<VkVideoRefCountBase> filterPoolNodeRef = nullptr)
+                              VkSharedBaseObj<VkVideoRefCountBase> filterPoolNodeRef = nullptr,
+                              VkSharedBaseObj<VkVideoRefCountBase> sessionParametersRef = nullptr)
         : bitstreamData(std::move(bitstreamDataRef))
         , stdPps(std::move(stdPpsRef))
         , stdSps(std::move(stdSpsRef))
         , stdVps(std::move(stdVpsRef))
-        , filterPoolNode(std::move(filterPoolNodeRef)) {}
+        , filterPoolNode(std::move(filterPoolNodeRef))
+        , sessionParameters(std::move(sessionParametersRef)) {}
     };
 
     struct PictureResourceInfo {

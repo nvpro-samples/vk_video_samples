@@ -618,6 +618,7 @@ public:
                                     size_t* pParsedBytes,
                                     bool doPartialParsing = false);
     virtual uint64_t GetRefusedUnitCount() const { return m_vkParser ? m_vkParser->GetRefusedUnitCount() : 0; }
+    virtual uint64_t GetUnsupportedPictureCount() const { return m_vkParser ? m_vkParser->GetUnsupportedPictureCount() : 0; }
 
     // Interface to allow decoder to communicate with the client implementing
     // INvVideoDecoderClient
@@ -1219,7 +1220,9 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
             detectedFormat.lumaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_12_BIT_KHR;
             break;
         default:
-            assert(false);
+            // A depth Vulkan Video has no flag for (9 or 11 bits): the decoder refuses the sequence.
+            detectedFormat.lumaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
+            break;
         }
 
         switch (pnvsi->uBitDepthChromaMinus8) {
@@ -1233,7 +1236,8 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
             detectedFormat.chromaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_12_BIT_KHR;
             break;
         default:
-            assert(false);
+            detectedFormat.chromaBitDepth = VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR;
+            break;
         }
 
         detectedFormat.bit_depth_luma_minus8 = pnvsi->uBitDepthLumaMinus8;
@@ -2192,7 +2196,6 @@ bool VulkanVideoParser::DecodePicture(
 
         h264 = nvVideoH264PicParameters();
 
-        nvVideoH264PicParameters* const pout = &h264;
         VkVideoDecodeH264PictureInfoKHR* pPictureInfo = &h264.pictureInfo;
         nvVideoDecodeH264DpbSlotInfo* pDpbRefList = h264.dpbRefList;
         StdVideoDecodeH264PictureInfo* pStdPictureInfo = &h264.stdPictureInfo;
@@ -2268,8 +2271,6 @@ bool VulkanVideoParser::DecodePicture(
             VkParserPerFrameDecodeParameters::MAX_DPB_REF_SLOTS, // 16 reference pictures
             referenceSlots, pCurrFrameDecParams->pGopReferenceImagesIndexes,
             h264.stdPictureInfo.flags, &setupReferenceSlot.slotIndex);
-        // TODO: Remove it is for debugging only. Reserved fields must be set to "0".
-        pout->stdPictureInfo.reserved1 = pCurrFrameDecParams->numGopReferenceSlots;
         if (pCurrFrameDecParams->numGopReferenceSlots) {
             assert(pCurrFrameDecParams->numGopReferenceSlots <= (int32_t)MAX_DPB_REF_SLOTS);
             for (uint32_t dpbEntryIdx = 0; dpbEntryIdx < (uint32_t)pCurrFrameDecParams->numGopReferenceSlots;

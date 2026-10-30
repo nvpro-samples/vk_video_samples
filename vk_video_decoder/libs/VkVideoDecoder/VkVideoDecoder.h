@@ -16,9 +16,12 @@
 
 #pragma once
 
+#include <array>
 #include <assert.h>
 #include <atomic>
 #include <iostream>
+#include <map>
+#include <memory>
 #include <queue>
 #include <sstream>
 #include <stdint.h>
@@ -209,6 +212,11 @@ public:
                                       VkSharedBaseObj<VulkanBitstreamBuffer>& bitstreamBuffer);
 private:
 
+    // Adds a parameters object the decoder made to m_pictureParametersObjects.
+    void TrackPictureParameters(const VkSharedBaseObj<VkParserVideoPictureParameters>& pictureParameters);
+    // The registered picture parameters set at |set|, or nothing.
+    VkSharedBaseObj<VkVideoRefCountBase> FindPictureParametersSet(const StdVideoPictureParametersSet* set) const;
+
     VkVideoDecoder(const VulkanDeviceContext* vkDevCtx,
                    VkSharedBaseObj<VulkanVideoFrameBuffer>& videoFrameBuffer,
                    int32_t  videoQueueIndx = 0,
@@ -306,6 +314,7 @@ public:
     int CopyOptimalToLinearImage(VkCommandBuffer& commandBuffer,
                                  const VkVideoPictureResourceInfoKHR& srcPictureResource,
                                  const VulkanVideoFrameBuffer::PictureResourceInfo& srcPictureResourceInfo,
+                                 VkImageLayout srcDecodeLayout,
                                  const VkVideoPictureResourceInfoKHR& dstPictureResource,
                                  const VulkanVideoFrameBuffer::PictureResourceInfo& dstPictureResourceInfo,
                                  const VulkanVideoFrameBuffer::FrameSynchronizationInfo *pFrameSynchronizationInfo);
@@ -346,6 +355,13 @@ private:
 
     uint64_t                                         m_decodePicCount; // Also used for the HW load balancing timeline semaphore
     VkSharedBaseObj<VkParserVideoPictureParameters>  m_currentPictureParameters;
+    // The latest picture parameters set of each key the session parameters store them under (type,
+    // VPS, SPS and PPS id): a new session's parameters object is made from them.
+    std::map<std::array<int32_t, 4>, VkSharedBaseObj<StdVideoPictureParametersSet>> m_pictureParametersSets;
+    // Every parameters object the decoder made that is still alive: an object lives while a parameter
+    // set or a picture holds it, and Deinitialize() resets those left, destroying their session
+    // parameters before the device.
+    std::vector<std::weak_ptr<VkParserVideoPictureParameters>> m_pictureParametersObjects;
     VkSemaphore m_hwLoadBalancingTimelineSemaphore;
     uint32_t m_dpbAndOutputCoincide : 1;
     uint32_t m_videoMaintenance1FeaturesSupported : 1;

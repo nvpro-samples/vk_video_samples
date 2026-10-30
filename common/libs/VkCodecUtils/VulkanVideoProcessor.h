@@ -66,6 +66,10 @@ public:
     // Why the stream stopped before its end: the result the decoder refused the stream's sequence
     // with, or else the parser's status. VK_SUCCESS while the stream decodes and after its end.
     VkResult GetStreamResult() const { return m_streamResult; }
+    // Pictures the parser dropped because they use a coding tool the decoder cannot decode.
+    uint64_t GetUnsupportedPictureCount() const {
+        return m_vkParser ? m_vkParser->GetUnsupportedPictureCount() : 0;
+    }
     // The result the decoder refused the stream's last sequence with, or VK_SUCCESS. A parser that
     // drops a refused sequence and goes on (AV1) does not stop the stream for it.
     VkResult GetVideoSequenceResult() const {
