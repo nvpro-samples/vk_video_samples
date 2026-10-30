@@ -49,6 +49,24 @@
       }
     },
     {
+      "name": "h264_hw_load_balancing",
+      "codec": "h264",
+      "profile": null,
+      "extra_args": [
+        "--enableHwLoadBalancing"
+      ],
+      "description": "H.264 with --enableHwLoadBalancing: the encode submits wait on and signal a timeline semaphore at the encode stage",
+      "width": 352,
+      "height": 288,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
+      "source_checksum": "6e0e1a026717237f9546dfbd29d5e2ebbad0a993cdab38921bb43291a464ccd4",
+      "source_filepath": "video/yuv/352x288_15_i420.yuv",
+      "quality_check": {
+        "min_mean_psnr": 37.9,
+        "min_picture_psnr": 35.1
+      }
+    },
+    {
       "name": "h264_high_profile",
       "codec": "h264",
       "profile": "high",

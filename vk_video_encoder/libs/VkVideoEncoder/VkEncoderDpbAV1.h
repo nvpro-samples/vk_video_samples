@@ -175,6 +175,12 @@ public:
     void SetupReferenceFrameGroups(VkVideoGopStructure::FrameType pictureType,
                                    StdVideoAV1FrameType frameType,
                                    uint32_t curPicOrderCntVal);
+    // After SetupReferenceFrameGroups: the picture's primary_ref_frame. GetPrimaryRefFrame's choice
+    // stays when a reference of the groups has its name, or when the device takes a primary
+    // reference frame for its CDFs only (VK_VIDEO_ENCODE_AV1_CAPABILITY_PRIMARY_REFERENCE_CDF_ONLY_BIT_KHR).
+    // Otherwise the name of a reference of the groups that is the same picture takes its place,
+    // as its buffer holds the same CDFs, or the picture has none (STD_VIDEO_AV1_PRIMARY_REF_NONE).
+    int32_t ResolvePrimaryRefFrame();
     int32_t GetDpbIdx(int32_t refNameMinus1) { return m_refName2DpbIdx[refNameMinus1]; }
     int32_t GetDpbIdx(int32_t groupId, int32_t i) {
         int32_t refNameMinus1 = (groupId == 0) ? m_refNamesInGroup1[i] : m_refNamesInGroup2[i];
@@ -249,8 +255,11 @@ private:
     }
 
 private:
+    // Whether a reference of the groups is the primary reference frame's picture.
+    bool PrimaryRefIsReference() const;
     // Whether the encoder adds the primary reference frame's picture as one more reference (for its
-    // CDFs only): there is a primary reference frame, and no reference of the groups is its picture.
+    // CDFs only): there is a primary reference frame, no reference of the groups is its picture,
+    // and the device takes primary reference frames for their CDFs only.
     bool PrimaryRefIsAdded() const;
 
     DpbEntryAV1     m_DPB[BUFFER_POOL_MAX_SIZE + 1]; // 1 for the current
@@ -266,6 +275,7 @@ private:
     uint32_t        m_maxBidirectionalCompoundGroup2ReferenceCount;
     uint32_t        m_bidirectionalCompoundReferenceNameMask;
     uint32_t        m_maxActiveReferencePictures; // of the session
+    bool            m_primaryRefCdfOnlySupported; // VK_VIDEO_ENCODE_AV1_CAPABILITY_PRIMARY_REFERENCE_CDF_ONLY_BIT_KHR
 
     int32_t         m_maxRefFramesL0; // maximum reference frames allowed from the past
     int32_t         m_maxRefFramesL1; // maximum reference frames allowed from the future
@@ -285,6 +295,7 @@ private:
     int8_t          m_refFrameDpbIdMap[STD_VIDEO_AV1_NUM_REF_FRAMES]; // vbi Index -> dpb slot index
     int32_t         m_primaryRefBufIdMap[MAX_PRI_REF_TYPES];
     int32_t         m_primaryRefDpbIdx;
+    int32_t         m_primaryRefFrame; // the picture's primary_ref_frame
     uint32_t        m_refBufUpdateFlag;
     StdVideoAV1ReferenceName m_lastLastRefNameInUse;
 

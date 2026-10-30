@@ -40,7 +40,8 @@ would decide.
 <build>/bin/vk-video-encoder-dpb-trace --codec h264 --frames 64 --gop 16 --idr 60 --bframes 3 \
     --refs-l0 2 --refs-l1 1 [--closed-gop] [--level-dpb 16] [--max-dpb-slots 17] -o h264.trace
 <build>/bin/vk-video-encoder-dpb-trace --codec av1 --frames 48 --gop 16 --idr 60 --bframes 3 \
-    [--max-active-refs 7] [--av1-single 7:0x7f] [--av1-unidir 4:4:0xf] [--av1-bidir 7:4:3:0x7f] -o av1.trace
+    [--max-active-refs 7] [--av1-single 7:0x7f] [--av1-unidir 4:4:0xf] [--av1-bidir 7:4:3:0x7f] \
+    [--av1-cdf-only 1] -o av1.trace
 python3 scripts/encoder_dpb_model.py --trace h264.trace -v
 python3 scripts/encoder_dpb_suite.py --tool <build>/bin/vk-video-encoder-dpb-trace --suite suites/h264.json [--mint] [-v]
 ```
@@ -51,8 +52,11 @@ encoders' counts; `--level-dpb` is the H.264 DPB size the level allows for the p
 `--max-dpb-slots` is the device's `maxDpbSlots` (17). For AV1, `--max-active-refs` is the device's
 `maxActiveReferencePictures` (7), and `--av1-single`, `--av1-unidir` and `--av1-bidir` its reference
 capabilities, the counts (`N`, group 1 `G1`, group 2 `G2`) and the name mask of each prediction
-mode. The defaults are those of a device that allows every reference name: seven single
-references, four unidirectional compound, and seven bidirectional compound (four and three). With
+mode. `--av1-cdf-only 0` is a device without
+`VK_VIDEO_ENCODE_AV1_CAPABILITY_PRIMARY_REFERENCE_CDF_ONLY_BIT_KHR`. The defaults are those of a
+device that allows every reference name: seven single references, four unidirectional compound,
+and seven bidirectional compound (four and three), and primary reference frames for their CDFs
+only. With
 fewer than eight DPB slots, the AV1 encoder refuses the session, and the tool writes `refused` and
 exits 1. `--mint` writes the goldens and md5s from the current classes and prints each
 configuration's categories.
@@ -86,7 +90,7 @@ configurations that stop at one (`debug` in the suite); the runner asks the tool
 | Line | What it records |
 |---|---|
 | `encoder-dpb-trace` | the settings |
-| `config` | the DPB size and the parameter set fields the DPB reads; H.265 `sps-rps`, the SPS short-term reference picture set; AV1 the device's active references (`max_active_refs`) and reference capabilities (`single`, `unidir`, `bidir`) |
+| `config` | the DPB size and the parameter set fields the DPB reads; H.265 `sps-rps`, the SPS short-term reference picture set; AV1 the device's active references (`max_active_refs`) and reference capabilities (`single`, `unidir`, `bidir`), and `cdf_only_primary=0` for a device without CDF-only primary reference frames |
 | `refused` | AV1: the encoder refuses a DPB of fewer than eight slots |
 | `pic` | a picture in encode order: its input number, type, POC and whether it is a reference |
 | `h264`, `h265` | `frame_num` and `PicOrderCnt`; H.265 the flags and the reference picture set used (`rps`) with the slots `DpbPictureStart` put in each list (`rps-slots`) |
@@ -112,6 +116,7 @@ configurations that stop at one (`debug` in the suite); the runner asks the tool
 | AV1 `names-unlisted`, `ref-unnamed` | every reference name's slot is bound, and every bound slot is a reference name's |
 | AV1 `ref-info`, `refresh`, `show-existing` | a reference's `frame_type`, `OrderHint` and `RefFrameId` are its frame's; a shown key frame refreshes every buffer; show_existing_frame shows the buffer that holds its frame |
 | AV1 `ref-count` | an inter frame binds at most the session's active references, and names at least one reference and no more than the prediction mode the DPB plans for its type takes, of group 1, of group 2 and in all, all inside that mode's name mask: bidirectional compound for a B picture, else unidirectional compound from group 1, else single reference. A primary reference frame used for its CDFs only is bound, not named |
+| AV1 `primary-ref` | the primary reference frame's name has a slot (`VUID-VkVideoEncodeAV1PictureInfoKHR-pStdPictureInfo-10291`), and is used for its CDFs only on a device that takes it (`VUID-VkVideoEncodeAV1PictureInfoKHR-flags-10289`) |
 
 ## What the configurations show
 
@@ -134,6 +139,13 @@ The suite configurations of a device with fewer slots or references (`h264-*-4sl
 `h264-*-3slots`, `h265-*-3slots`, `av1-ippp-8slots`, `av1-ibbbp-single`, `av1-ibbbp-counts`,
 `av1-ib7p-2active`) keep every slot below the device's `maxDpbSlots`, and every AV1 picture within
 the session's active references and the counts and names of its prediction mode.
+
+A B picture of a device without bidirectional compound prediction (`av1-ib7p-unidir`) takes its
+references from group 1, so its primary reference frame, a backward reference, is used for its
+CDFs only. On a device without that (`av1-ib7p-unidir-no-cdf-only`, `av1-ibbbp-closed-no-cdf-only`)
+the encoder gives the primary reference frame the name of a reference that is the same picture,
+whose buffer holds the same CDFs, or none. Over 216 AV1 configurations (the B frames, GOPs and IDR
+periods above, six device shapes), with and without the capability, the model finds no mismatch.
 
 ## H.265 long-term reference pictures
 

@@ -71,6 +71,7 @@ static StdVideoAV1ReferenceName refNameFullList[] =
 
 VkEncDpbAV1::VkEncDpbAV1()
     : m_maxDpbSize(0)
+    , m_primaryRefCdfOnlySupported(false)
     , m_mapRefDirToSingleRefType(true)
 {
 
@@ -110,6 +111,7 @@ void VkEncDpbAV1::DpbDeinit()
     memset(m_refFrameDpbIdMap, 0xff, sizeof(m_refFrameDpbIdMap));
     memset(m_primaryRefBufIdMap, 0xff, sizeof(m_primaryRefBufIdMap));
     m_primaryRefDpbIdx = -1;
+    m_primaryRefFrame = STD_VIDEO_AV1_PRIMARY_REF_NONE;
     m_refBufUpdateFlag = 0;
     m_lastLastRefNameInUse = STD_VIDEO_AV1_REFERENCE_NAME_INVALID;
 
@@ -144,6 +146,8 @@ int32_t VkEncDpbAV1::DpbSequenceStart(const VkSharedBaseObj<EncoderConfigAV1>& e
     m_maxBidirectionalCompoundGroup2ReferenceCount = capabilities.maxBidirectionalCompoundGroup2ReferenceCount;
     m_bidirectionalCompoundReferenceNameMask = capabilities.bidirectionalCompoundReferenceNameMask;
     m_maxActiveReferencePictures = encoderConfig->videoCapabilities.maxActiveReferencePictures;
+    m_primaryRefCdfOnlySupported =
+        (capabilities.flags & VK_VIDEO_ENCODE_AV1_CAPABILITY_PRIMARY_REFERENCE_CDF_ONLY_BIT_KHR) != 0;
 
     m_maxDpbSize = (uint8_t)userDpbSize;
     // Restricts the number of frames in list0 and list1
@@ -527,6 +531,7 @@ int32_t VkEncDpbAV1::GetPrimaryRefFrame(StdVideoAV1FrameType frameType, StdVideo
                                         bool bErrorResilientMode, bool bOverlayFrame)
 {
     m_primaryRefDpbIdx = VkEncDpbAV1::INVALID_IDX;
+    m_primaryRefFrame = STD_VIDEO_AV1_PRIMARY_REF_NONE;
 
     if ((frameType == STD_VIDEO_AV1_FRAME_TYPE_KEY) || (frameType == STD_VIDEO_AV1_FRAME_TYPE_INTRA_ONLY) || bErrorResilientMode) {
        return STD_VIDEO_AV1_PRIMARY_REF_NONE;
@@ -552,6 +557,7 @@ int32_t VkEncDpbAV1::GetPrimaryRefFrame(StdVideoAV1FrameType frameType, StdVideo
         }
     }
 
+    m_primaryRefFrame = primaryRefFrame;
     return primaryRefFrame;
 }
 
@@ -681,22 +687,53 @@ void VkEncDpbAV1::UpdateRefBufIdMap(bool bShownKeyFrameOrSwitch, bool bShowExist
 
 }
 
-bool VkEncDpbAV1::PrimaryRefIsAdded() const
+bool VkEncDpbAV1::PrimaryRefIsReference() const
 {
-    if (m_primaryRefDpbIdx == VkEncDpbAV1::INVALID_IDX) {
-        return false;
-    }
     for (int32_t i = 0; i < m_numRefFramesInGroup1; i++) {
         if (m_refName2DpbIdx[m_refNamesInGroup1[i]] == m_primaryRefDpbIdx) {
-            return false;
+            return true;
         }
     }
     for (int32_t i = 0; i < m_numRefFramesInGroup2; i++) {
         if (m_refName2DpbIdx[m_refNamesInGroup2[i]] == m_primaryRefDpbIdx) {
-            return false;
+            return true;
         }
     }
-    return true;
+    return false;
+}
+
+bool VkEncDpbAV1::PrimaryRefIsAdded() const
+{
+    return m_primaryRefCdfOnlySupported && (m_primaryRefDpbIdx != VkEncDpbAV1::INVALID_IDX) &&
+           !PrimaryRefIsReference();
+}
+
+int32_t VkEncDpbAV1::ResolvePrimaryRefFrame()
+{
+    if ((m_primaryRefFrame == STD_VIDEO_AV1_PRIMARY_REF_NONE) || m_primaryRefCdfOnlySupported) {
+        return m_primaryRefFrame;
+    }
+
+    int32_t samePicture = STD_VIDEO_AV1_PRIMARY_REF_NONE;
+    for (int32_t groupId = 0; groupId < 2; groupId++) {
+        const int32_t* refNames = (groupId == 0) ? m_refNamesInGroup1 : m_refNamesInGroup2;
+        const int32_t numRefs = (groupId == 0) ? m_numRefFramesInGroup1 : m_numRefFramesInGroup2;
+        for (int32_t i = 0; i < numRefs; i++) {
+            if (refNames[i] == m_primaryRefFrame) {
+                return m_primaryRefFrame;
+            }
+            if ((samePicture == STD_VIDEO_AV1_PRIMARY_REF_NONE) &&
+                (m_refName2DpbIdx[refNames[i]] == m_primaryRefDpbIdx)) {
+                samePicture = refNames[i];
+            }
+        }
+    }
+
+    m_primaryRefFrame = samePicture;
+    if (m_primaryRefFrame == STD_VIDEO_AV1_PRIMARY_REF_NONE) {
+        m_primaryRefDpbIdx = VkEncDpbAV1::INVALID_IDX;
+    }
+    return m_primaryRefFrame;
 }
 
 void VkEncDpbAV1::SetupReferenceFrameGroups(VkVideoGopStructure::FrameType pictureType, StdVideoAV1FrameType frame_type,

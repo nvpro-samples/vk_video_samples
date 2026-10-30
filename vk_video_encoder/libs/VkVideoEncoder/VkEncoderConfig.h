@@ -247,6 +247,11 @@ public:
                     default:
                         break;
                 }
+                // A 2-plane image (NV12, P010) interleaves Cb and Cr in its second plane: a row
+                // holds two samples for each chroma position.
+                if (numPlanes == 2) {
+                    planeStride *= 2;
+                }
             }
 
             if (planeLayouts[plane].rowPitch < (planeStride)) {

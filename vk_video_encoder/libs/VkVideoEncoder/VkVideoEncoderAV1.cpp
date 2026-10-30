@@ -249,6 +249,9 @@ VkResult VkVideoEncoderAV1::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& 
     InitializeFrameHeader(&m_stateAV1.m_sequenceHeader, pFrameInfo, refName);
     if (!pFrameInfo->bShowExistingFrame) {
         m_dpbAV1->SetupReferenceFrameGroups(pFrameInfo->gopPosition.pictureType, pFrameInfo->stdPictureInfo.frame_type, pFrameInfo->picOrderCntVal);
+        // A primary reference frame whose name none of the picture's references has is used for
+        // its CDFs only, which not every device takes.
+        pFrameInfo->stdPictureInfo.primary_ref_frame = (uint8_t)m_dpbAV1->ResolvePrimaryRefFrame();
         // For B pictures, L1 must be non zero.  Switch to P picture if L1 is zero.
         if ((pFrameInfo->gopPosition.pictureType == VkVideoGopStructure::FRAME_TYPE_B) && (m_dpbAV1->GetNumRefsL1()  == 0)) {
             pFrameInfo->gopPosition.pictureType = VkVideoGopStructure::FRAME_TYPE_P;
