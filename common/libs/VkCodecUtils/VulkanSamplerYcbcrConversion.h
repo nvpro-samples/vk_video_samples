@@ -65,6 +65,13 @@ public:
         return m_samplerYcbcrConversionCreateInfo;
     }
 
+    // Whether the sampler converts through a VkSamplerYcbcrConversion: only a multi-planar format sampled
+    // through the conversion has one (CreateVulkanSampler).
+    bool HasYcbcrConversion() const
+    {
+        return m_samplerYcbcrConversion != VK_NULL_HANDLE;
+    }
+
     uint32_t GetCombinedImageSamplerDescriptorCount() const
     {
         VkSamplerYcbcrConversionImageFormatProperties samplerYcbcrConversionImageFormatProperties =

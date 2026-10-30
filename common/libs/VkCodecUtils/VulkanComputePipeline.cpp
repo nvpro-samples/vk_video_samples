@@ -91,6 +91,12 @@ VkResult VulkanComputePipeline::CreatePipeline(const VulkanDeviceContext* vkDevC
     computePipelineCreateInfo.stage.pSpecializationInfo = &specializationInfo;
 
     computePipelineCreateInfo.layout = pDescriptorSetLayout->GetPipelineLayout();
+    // A pipeline whose descriptors come from a descriptor buffer is created for one
+    // (VUID-vkCmdDispatch-None-08117).
+    if (pDescriptorSetLayout->GetDescriptorSetLayoutInfo().GetDescriptorLayoutMode() ==
+        VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) {
+        computePipelineCreateInfo.flags |= VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+    }
     computePipelineCreateInfo.basePipelineHandle = VK_NULL_HANDLE;
     computePipelineCreateInfo.basePipelineIndex = 0;
 

@@ -106,6 +106,18 @@ VkResult VkBufferResource::CreateBuffer(const VulkanDeviceContext* vkDevCtx,
     createBufferInfo.queueFamilyIndexCount = (uint32_t)queueFamilyIndexes.size();
     createBufferInfo.pQueueFamilyIndices = queueFamilyIndexes.data();
 
+    // On a device that uses descriptor buffers, a uniform or storage buffer descriptor names its buffer by
+    // device address, and a buffer whose address is taken is bound to memory allocated for one
+    // (VUID-vkBindBufferMemory-bufferDeviceAddress-03339).
+    const bool deviceAddress = vkDevCtx->UsesDescriptorBuffers() &&
+                               ((usage & (VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)) != 0);
+    if (deviceAddress) {
+        createBufferInfo.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    }
+    const VkMemoryAllocateFlagsInfo allocateFlagsInfo = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO, nullptr,
+                                                          VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT, 0 };
+
     VkResult result = vkDevCtx->CreateBuffer(*vkDevCtx, &createBufferInfo, nullptr, &buffer);
     if (result != VK_SUCCESS) {
         assert(!"Create Buffer failed!");
@@ -117,17 +129,18 @@ VkResult VkBufferResource::CreateBuffer(const VulkanDeviceContext* vkDevCtx,
 
     // Allocate memory for the buffer
     VkSharedBaseObj<VulkanDeviceMemoryImpl> vkDeviceMemory;
-    result = VulkanDeviceMemoryImpl::Create(vkDevCtx,
-                                            memoryRequirements,
-                                            memoryPropertyFlags,
-                                            pInitializeBufferMemory,
-                                            initializeBufferMemorySize,
+    result = VulkanDeviceMemoryImpl::CreateWithExport(vkDevCtx,
+                                                      memoryRequirements,
+                                                      memoryPropertyFlags,
+                                                      deviceAddress ? &allocateFlagsInfo : nullptr,
+                                                      pInitializeBufferMemory,
+                                                      initializeBufferMemorySize,
 #ifdef CLEAR_BITSTREAM_BUFFERS_ON_CREATE
-                                            true, // clearMemory
+                                                      true, // clearMemory
 #else
-                                            false, // clearMemory
+                                                      false, // clearMemory
 #endif
-                                            vkDeviceMemory);
+                                                      vkDeviceMemory);
     if (result != VK_SUCCESS) {
         vkDevCtx->DestroyBuffer(*vkDevCtx, buffer, nullptr);
         assert(!"Create Memory Failed!");

@@ -132,7 +132,14 @@ vvs_add_validation_gated_test(FilterSmokeTest
 vvs_add_validation_gated_test(FilterAllTests
     TARGET ${PROJECT_NAME}
     ARGS   --all)
-set_tests_properties(FilterSmokeTest FilterAllTests PROPERTIES
+# The same cases with the descriptors in descriptor buffers: the device is
+# created with VK_EXT_descriptor_buffer and without VK_KHR_push_descriptor, which
+# the layouts would otherwise take. A device without descriptor buffers reports
+# SKIPPED.
+vvs_add_validation_gated_test(FilterDescriptorBufferTests
+    TARGET ${PROJECT_NAME}
+    ARGS   --all --descriptor-buffer)
+set_tests_properties(FilterSmokeTest FilterAllTests FilterDescriptorBufferTests PROPERTIES
                      LABELS "gpu"
                      TIMEOUT 900)
 

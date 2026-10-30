@@ -31,6 +31,7 @@
  *   --all            Run every set but the disabled cases
  *   --test <name>    Run one case by name, a disabled one included
  *   --list           List every set, and the disabled cases with their defects
+ *   --descriptor-buffer  Bind the filter's descriptors through descriptor buffers
  */
 
 #include <iostream>
@@ -59,6 +60,8 @@ void printUsage(const char* programName) {
     std::cout << "  --primaries      Run color primaries tests (BT.601/709/2020)" << std::endl;
     std::cout << "  --test <name>    Run one case by name, a disabled one included" << std::endl;
     std::cout << "  --list           List every set, and the disabled cases with their defects" << std::endl;
+    std::cout << "  --descriptor-buffer  Bind the filter's descriptors through descriptor buffers" << std::endl;
+    std::cout << "                       (VK_EXT_descriptor_buffer) instead of push descriptors" << std::endl;
     std::cout << "  --deviceUuid <uuid>  Select the GPU by UUID (see vulkaninfo), not by index." << std::endl;
     std::cout << "                       Without it the first enumerated device wins, which on a" << std::endl;
     std::cout << "                       multi-GPU box is rarely the one under test." << std::endl;
@@ -167,7 +170,8 @@ int main(int argc, char* argv[]) {
     bool runPrimaries = false;
     std::string specificTest;
     std::string deviceUuid;
-    
+    bool descriptorBuffer = false;
+
     // Parse command-line arguments
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
@@ -193,6 +197,8 @@ int main(int argc, char* argv[]) {
         } else if (strcmp(argv[i], "--test") == 0 && i + 1 < argc) {
             specificTest = argv[++i];
             runAll = false;
+        } else if (strcmp(argv[i], "--descriptor-buffer") == 0) {
+            descriptorBuffer = true;
         } else if (strcmp(argv[i], "--deviceUuid") == 0 && i + 1 < argc) {
             deviceUuid = argv[++i];
         } else if (strcmp(argv[i], "--list") == 0) {
@@ -213,7 +219,8 @@ int main(int argc, char* argv[]) {
     FilterTestApp app;
     
     // Initialize Vulkan
-    VkResult result = app.init(verbose, validate, deviceUuid.empty() ? nullptr : deviceUuid.c_str());
+    VkResult result = app.init(verbose, validate, deviceUuid.empty() ? nullptr : deviceUuid.c_str(),
+                               descriptorBuffer);
     if (result != VK_SUCCESS) {
         std::cerr << "Failed to initialize test application: " << result << std::endl;
         if (IsNoUsableDeviceResult(result)) {

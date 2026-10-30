@@ -84,11 +84,16 @@ VkResult VulkanDescriptorSetLayout::CreateDescriptorSet(const VulkanDeviceContex
     if (autoSelectdescriptorSetLayoutCreateFlags) {
         if (m_vkDevCtx->FindRequiredDeviceExtension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)) {
             descriptorSetLayoutCreateFlags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-        } else if (m_vkDevCtx->FindRequiredDeviceExtension(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME)){
+        } else if (m_vkDevCtx->UsesDescriptorBuffers()) {
             descriptorSetLayoutCreateFlags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
         } else {
             descriptorSetLayoutCreateFlags = 0;
         }
+    }
+    // The device enables the features a descriptor buffer layout needs only when it uses descriptor buffers.
+    if ((descriptorSetLayoutCreateFlags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) &&
+        !m_vkDevCtx->UsesDescriptorBuffers()) {
+        return VK_ERROR_FEATURE_NOT_PRESENT;
     }
     m_descriptorSetLayoutInfo.SetDescriptorSetLayoutInfo(descriptorSetLayoutBindings, descriptorSetLayoutCreateFlags);
 
@@ -118,6 +123,12 @@ VkResult VulkanDescriptorSetLayout::CreateDescriptorSet(const VulkanDeviceContex
         deviceProps2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR;
         deviceProps2.pNext = &m_descriptorBufferProperties;
         m_vkDevCtx->GetPhysicalDeviceProperties2(m_vkDevCtx->getPhysicalDevice(), &deviceProps2);
+
+        // A combined image sampler that converts YCbCr is combinedImageSamplerDescriptorCount descriptors
+        // long (VUID-vkGetDescriptorEXT-descriptorType-09469).
+        m_combinedImageSamplerDescriptorCount =
+            ((pSamplerYcbcrConversion != nullptr) && pSamplerYcbcrConversion->HasYcbcrConversion())
+                ? pSamplerYcbcrConversion->GetCombinedImageSamplerDescriptorCount() : 1;
 
         m_vkDevCtx->GetDescriptorSetLayoutSizeEXT(*m_vkDevCtx, m_dscLayout, &m_descriptorLayoutSize);
 
