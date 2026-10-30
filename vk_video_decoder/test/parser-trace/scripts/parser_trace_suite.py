@@ -47,6 +47,9 @@ The suite file (suites/<codec>.json) names its "codec" and lists streams. An ent
                   "adapter_defects" table
   adapter_args    arguments added to vk-video-adapter-trace's, such as --refuse-chroma 400; an entry
                   that has them runs in adapter mode only
+  parser_args     arguments added to vk-video-parser-trace's, such as --fail-decode 3; an entry that
+                  has them runs in parser mode only
+  mode            parser or adapter: the one mode the entry runs in
 
 Checks per stream: the tool exits 0; the trace equals the golden, or its md5 equals the recorded
 one; the set of model mismatch categories equals "known". The model is av1_reference_model.py for
@@ -174,7 +177,8 @@ def check_stream(entry, suite, suite_dir, stream, args, work):
     name = entry["name"]
     codec = suite["codec"]
     trace = os.path.join(work, name + ".trace")
-    failure = run_tool(args.tool, codec, entry["format"], stream, trace, extra=entry.get("adapter_args", []))
+    extra = entry.get("adapter_args" if args.mode == "adapter" else "parser_args", [])
+    failure = run_tool(args.tool, codec, entry["format"], stream, trace, extra=extra)
     if failure:
         return [f"tool {failure}"]
     failures = []
@@ -329,7 +333,8 @@ def main():
     ran = 0
     failed = 0
     for entry in suite["streams"]:
-        if ("adapter_args" in entry) and (args.mode != "adapter"):
+        only = "adapter" if "adapter_args" in entry else "parser" if "parser_args" in entry else args.mode
+        if entry.get("mode", only) != args.mode:
             continue
         base = suite_dir
         if entry.get("root"):

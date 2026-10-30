@@ -240,8 +240,9 @@ bool VulkanAV1Decoder::end_of_picture(uint32_t frameSize)
         // "WARNING: no valid render target for current picture
     }
 
-    // decode_frame_wrapup
-    UpdateFramePointers(m_pCurrPic);
+    // decode_frame_wrapup. A picture the client did not decode refreshes its buffers with no
+    // picture: they are not valid references (AV1 7.20), and a later frame that names one is dropped.
+    UpdateFramePointers(bSkipped ? nullptr : m_pCurrPic);
     if (m_PicData.showFrame && !bSkipped) {
         AddBuffertoOutputQueue(m_pCurrPic, !!showable_frame);
         m_pCurrPic = nullptr;
@@ -461,6 +462,8 @@ void VulkanAV1Decoder::UpdateFramePointers(VkPicIf* currentPicture)
 
             if (m_pBuffers[ref_index].buffer) {
                 m_pBuffers[ref_index].buffer->AddRef();
+            } else {
+                RefValid[ref_index] = 0;
             }
         }
         ++ref_index;

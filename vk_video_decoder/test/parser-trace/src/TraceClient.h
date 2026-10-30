@@ -130,8 +130,11 @@ class TraceClientIf : public VkParserVideoDecodeClient {
 };
 
 // Writes every callback to out. Pictures come from a pool of poolSize, lowest free index first; an
-// allocation with none free fails and writes an alloc-failed line.
-std::unique_ptr<TraceClientIf> CreateTraceClient(FILE* out, VkVideoCodecOperationFlagBitsKHR codec, uint32_t poolSize);
+// allocation with none free fails and writes an alloc-failed line. With a non-negative failDecode,
+// the decode of that picture, counted from 0, fails as a decoder that cannot decode it fails, and
+// writes a pic-failed line.
+std::unique_ptr<TraceClientIf> CreateTraceClient(FILE* out, VkVideoCodecOperationFlagBitsKHR codec, uint32_t poolSize,
+                                                 int64_t failDecode = -1);
 
 // A bitstream buffer in host memory of at least size bytes, holding initialData: what a
 // GetBitstreamBuffer callback hands the parser. Returns the buffer's size.

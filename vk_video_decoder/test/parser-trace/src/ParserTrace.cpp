@@ -39,7 +39,7 @@ namespace {
 int Usage(const char* program) {
     fprintf(stderr,
             "Usage: %s --codec h264|h265|av1|vp9 --format bytestream|ivf|obu|annexb -i <stream> [-o <trace>]\n"
-            "          [--offset-alignment N] [--size-alignment N] [--pool N] [--write-ivf <file>]\n"
+            "          [--offset-alignment N] [--size-alignment N] [--pool N] [--write-ivf <file>] [--fail-decode N]\n"
             "Runs NvVideoParser over the stream with no Vulkan device and writes a canonical trace of\n"
             "every parser callback.\n"
             "  bytestream  an H.264 or H.265 Annex B byte stream, given to the parser the way the decoder\n"
@@ -48,7 +48,9 @@ int Usage(const char* program) {
             "  ivf         one packet per IVF frame (AV1, VP9)\n"
             "  obu         the AV1 low-overhead OBU format, one packet per temporal unit\n"
             "  annexb      AV1 Annex B, one packet per temporal unit\n"
-            "--write-ivf also writes the AV1 temporal units the parser is given as an IVF file.\n",
+            "--write-ivf also writes the AV1 temporal units the parser is given as an IVF file.\n"
+            "--fail-decode N fails the decode of picture N, counted from 0, as a decoder that cannot\n"
+            "decode it does.\n",
             program);
     return 2;
 }
@@ -64,6 +66,7 @@ int main(int argc, char** argv) {
     uint32_t offsetAlignment = 256;
     uint32_t sizeAlignment = 256;
     uint32_t poolSize = 32;
+    int64_t failDecode = -1;
     for (int i = 1; i < argc; i++) {
         const std::string arg = argv[i];
         if (i + 1 >= argc) {
@@ -83,6 +86,8 @@ int main(int argc, char** argv) {
             sizeAlignment = static_cast<uint32_t>(strtoul(argv[++i], nullptr, 0));
         } else if (arg == "--pool") {
             poolSize = static_cast<uint32_t>(strtoul(argv[++i], nullptr, 0));
+        } else if (arg == "--fail-decode") {
+            failDecode = strtoll(argv[++i], nullptr, 0);
         } else if (arg == "--write-ivf") {
             ivfOutput = argv[++i];
         } else {
@@ -135,7 +140,7 @@ int main(int argc, char** argv) {
 
     const VkVideoCodecOperationFlagBitsKHR codec = codecInfo->operation;
     // The client outlives the parser: the parser releases its pictures when it is destroyed.
-    std::unique_ptr<TraceClientIf> client = CreateTraceClient(out, codec, poolSize);
+    std::unique_ptr<TraceClientIf> client = CreateTraceClient(out, codec, poolSize, failDecode);
     int status = 0;
     {
         VkSharedBaseObj<VulkanVideoDecodeParser> parser;

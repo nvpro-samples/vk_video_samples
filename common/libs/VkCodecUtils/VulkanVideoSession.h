@@ -91,6 +91,7 @@ public:
 
 
     VkVideoSessionKHR GetVideoSession() const { return m_videoSession; }
+    uint32_t GetMaxDpbSlots() const { return m_createInfo.maxDpbSlots; }
 
     operator VkVideoSessionKHR() const {
         assert(m_videoSession != VK_NULL_HANDLE);

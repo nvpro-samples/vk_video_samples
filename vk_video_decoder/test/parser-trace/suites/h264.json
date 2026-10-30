@@ -4,9 +4,6 @@
     "sps-constraint-flags": "the parser takes constraint_setN_flag of the Std SPS from bit N of the byte, which the stream codes most significant bit first: constraint_set0_flag and constraint_set1_flag read the reserved zero bits, and constraint_set2_flag to constraint_set5_flag hold constraint_set5_flag to constraint_set2_flag"
   },
   "adapter_defects": {
-    "begin-setup-inactive": "the begin-coding list names the setup picture under its target slot, which is not active yet: activation happens in the decode",
-    "begin-setup-mismatch": "the begin-coding list names the setup picture under its target slot, which still holds the picture it held before",
-    "begin-duplicate": "a second field's setup names its first field's slot and picture, which its reference entry already names",
     "nonexisting": "a non-existing reference takes another reference's picture and a slot no decode set up"
   },
   "streams": [
@@ -18,10 +15,7 @@
       "headers": "../streams/h264-x264-high-bpyramid-64x64.headers.txt",
       "known": [],
       "adapter_golden": "../golden/adapter/h264-x264-high-bpyramid-64x64.trace",
-      "adapter_known": [
-        "begin-setup-inactive",
-        "begin-setup-mismatch"
-      ]
+      "adapter_known": []
     },
     {
       "name": "h264-x264-baseline-64x64",
@@ -33,9 +27,7 @@
         "sps-constraint-flags"
       ],
       "adapter_golden": "../golden/adapter/h264-x264-baseline-64x64.trace",
-      "adapter_known": [
-        "begin-setup-inactive"
-      ]
+      "adapter_known": []
     },
     {
       "name": "h264-x264-mbaff-64x64",
@@ -45,9 +37,7 @@
       "headers": "../streams/h264-x264-mbaff-64x64.headers.txt",
       "known": [],
       "adapter_golden": "../golden/adapter/h264-x264-mbaff-64x64.trace",
-      "adapter_known": [
-        "begin-setup-inactive"
-      ]
+      "adapter_known": []
     },
     {
       "name": "h264-x264-cqm-weightp-slices-64x64",
@@ -57,9 +47,26 @@
       "headers": "../streams/h264-x264-cqm-weightp-slices-64x64.headers.txt",
       "known": [],
       "adapter_golden": "../golden/adapter/h264-x264-cqm-weightp-slices-64x64.trace",
-      "adapter_known": [
-        "begin-setup-inactive"
-      ]
+      "adapter_known": []
+    },
+    {
+      "name": "h264-level21-then-level2-352x288",
+      "path": "../streams/h264-level21-then-level2-352x288.h264",
+      "format": "bytestream",
+      "golden": "../golden/h264-level21-then-level2-352x288.trace",
+      "headers": "../streams/h264-level21-then-level2-352x288.headers.txt",
+      "known": [
+        "sps-constraint-flags"
+      ],
+      "adapter_golden": "../golden/adapter/h264-level21-then-level2-352x288.trace",
+      "adapter_known": []
+    },
+    {
+      "name": "h264-x264-poc-past-32767-64x64",
+      "path": "../streams/h264-x264-poc-past-32767-64x64.h264",
+      "format": "bytestream",
+      "mode": "adapter",
+      "adapter_known": []
     },
     {
       "name": "decode-samples",
@@ -67,10 +74,7 @@
       "decode_samples": "../../../../tests/decode_samples.json",
       "md5": "../golden/md5/h264-decode-samples.md5",
       "adapter_md5": "../golden/md5/adapter-h264-decode-samples.md5",
-      "adapter_known": [
-        "begin-setup-inactive",
-        "begin-setup-mismatch"
-      ]
+      "adapter_known": []
     },
     {
       "name": "itu-avcv1",
@@ -88,9 +92,6 @@
       "md5": "../golden/md5/h264-itu-avcv1.md5",
       "adapter_md5": "../golden/md5/adapter-h264-itu-avcv1.md5",
       "adapter_known": [
-        "begin-duplicate",
-        "begin-setup-inactive",
-        "begin-setup-mismatch",
         "nonexisting"
       ]
     },
@@ -108,11 +109,7 @@
       "format": "bytestream",
       "md5": "../golden/md5/h264-itu-frext.md5",
       "adapter_md5": "../golden/md5/adapter-h264-itu-frext.md5",
-      "adapter_known": [
-        "begin-duplicate",
-        "begin-setup-inactive",
-        "begin-setup-mismatch"
-      ]
+      "adapter_known": []
     }
   ]
 }

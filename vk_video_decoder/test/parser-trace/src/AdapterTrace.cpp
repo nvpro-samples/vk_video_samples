@@ -191,14 +191,23 @@ class RecordingDecoder : public IVulkanVideoDecoderHandler {
             std::max(static_cast<uint32_t>(format->display_area.right - format->display_area.left), format->coded_width),
             std::max(static_cast<uint32_t>(format->display_area.bottom - format->display_area.top), format->coded_height)};
         const uint32_t maxDpbSlots = format->maxNumDpbSlots;
-        // VulkanVideoSession::IsCompatible, asked with the counts StartVideoSequence passes it.
+        // VkVideoDecoder::StartVideoSequence's session counts: the sequence's DPB slots, and for a
+        // sequence that reconfigures the current one at least the current session's; one active
+        // reference picture per slot up to 16, every one the device allows (here 16) for a session
+        // that decodes fields. VulkanVideoSession::IsCompatible is asked with the same counts.
+        uint32_t sessionMaxDpbSlots = maxDpbSlots;
+        if (format->sequenceUpdate && m_session.exists) {
+            sessionMaxDpbSlots = std::max(sessionMaxDpbSlots, m_session.maxDpbSlots);
+        }
+        const uint32_t sessionMaxActiveReferencePictures =
+            format->canUseFields ? kMaxActiveReferencePictures : std::min(sessionMaxDpbSlots, kMaxActiveReferencePictures);
         const bool compatible =
             m_session.exists && (m_session.codec == format->codec) && (m_session.chromaSubsampling == format->chromaSubsampling) &&
             (m_session.lumaBitDepth == format->lumaBitDepth) && (m_session.chromaBitDepth == format->chromaBitDepth) &&
             (m_session.codecProfile == format->codecProfile) && (m_session.canUseFields == (format->canUseFields != 0)) &&
             (maxCodedExtent.width <= m_session.maxCodedExtent.width) &&
-            (maxCodedExtent.height <= m_session.maxCodedExtent.height) && (maxDpbSlots <= m_session.maxDpbSlots) &&
-            (std::max(maxDpbSlots, kMaxActiveReferencePictures) <= m_session.maxActiveReferencePictures);
+            (maxCodedExtent.height <= m_session.maxCodedExtent.height) && (sessionMaxDpbSlots <= m_session.maxDpbSlots) &&
+            (sessionMaxActiveReferencePictures <= m_session.maxActiveReferencePictures);
         if (!compatible) {
             m_session.exists = true;
             m_session.codec = format->codec;
@@ -208,8 +217,8 @@ class RecordingDecoder : public IVulkanVideoDecoderHandler {
             m_session.codecProfile = format->codecProfile;
             m_session.canUseFields = (format->canUseFields != 0);
             m_session.maxCodedExtent = maxCodedExtent;
-            m_session.maxDpbSlots = maxDpbSlots;
-            m_session.maxActiveReferencePictures = std::min(maxDpbSlots, kMaxActiveReferencePictures);
+            m_session.maxDpbSlots = sessionMaxDpbSlots;
+            m_session.maxActiveReferencePictures = sessionMaxActiveReferencePictures;
         }
 
         Line("seq")
@@ -258,14 +267,9 @@ class RecordingDecoder : public IVulkanVideoDecoderHandler {
         for (uint32_t i = 0; i < decode.referenceSlotCount; i++) {
             TraceSlot("ref", *params, decode.pReferenceSlots[i], true);
         }
-        // VkVideoDecoder::DecodePictureWithParameters builds the begin-coding list this way: the
-        // decode's reference slots and the setup slot after them (the adapter stores it at
-        // pReferenceSlots[referenceSlotCount]), or the setup slot alone when there is no reference.
-        const uint32_t beginCount = decode.referenceSlotCount + ((decode.pSetupReferenceSlot != nullptr) ? 1 : 0);
-        const VkVideoReferenceSlotInfoKHR* begin =
-            (decode.referenceSlotCount > 0) ? decode.pReferenceSlots : decode.pSetupReferenceSlot;
-        for (uint32_t i = 0; i < beginCount; i++) {
-            TraceSlot("begin", *params, begin[i], false);
+        // VkVideoDecoder::DecodePictureWithParameters binds the adapter's begin-coding list.
+        for (uint32_t i = 0; i < params->beginCodingReferenceSlotCount; i++) {
+            TraceSlot("begin", *params, params->pBeginCodingReferenceSlots[i], false);
         }
         m_decoded++;
         return params->currPicIdx;
