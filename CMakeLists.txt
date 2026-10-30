@@ -63,7 +63,7 @@ option(BUILD_TESTS "Build tests" ON)
 option(BUILD_DEMOS "Build demos" ON)
 # The encoder gpu tests skip (exit 77) only when a device probe that asks the
 # Vulkan loader, not the library, finds no device that encodes their codec
-# (vk_video_encoder/test/common/encode_device_probe.h). On a rig that has the
+# (vk_video_encoder/test/common/encode_device_probe.h). On a host that has the
 # GPU, a missing device is itself the fault: this option makes that a failure
 # too. The environment variable VVS_REQUIRE_GPU=1 does the same at run time.
 option(VVS_REQUIRE_GPU "Encoder gpu tests fail instead of skipping when no device encodes" OFF)

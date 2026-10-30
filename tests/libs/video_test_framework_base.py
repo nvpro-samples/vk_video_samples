@@ -442,6 +442,10 @@ class VulkanVideoTestFrameworkBase:
             result_dict["rate_control"] = result.meta["rate_control"]
         if result.meta.get("quality") is not None:
             result_dict["quality"] = result.meta["quality"]
+        if result.meta.get("validation_layer") is not None:
+            result_dict["validation_layer"] = result.meta["validation_layer"]
+        if result.meta.get("decoder_validation") is not None:
+            result_dict["decoder_validation"] = result.meta["decoder_validation"]
 
         if hasattr(result.config, 'full_path'):
             result_dict["input_file"] = str(result.config.full_path)
@@ -558,19 +562,22 @@ class VulkanVideoTestFrameworkBase:
         if result.warning_found and self.verbose:
             print(f"  ⚠️  Warning detected in {config.name}")
 
-    def execute_test_command(
+    def execute_test_command(  # pylint: disable=too-many-arguments
         self,
         cmd: list,
         config: BaseTestConfig,
         timeout: int = DEFAULT_TEST_TIMEOUT,
         cwd: Optional[Path] = None,
         output_file: Optional[Path] = None,
+        *,
+        env: Optional[Dict[str, str]] = None,
     ) -> TestResult:
         """Execute a test command and return result.
 
         |output_file| names the artifact this command was asked to produce,
         when it was asked to produce one. A run that names an output and
         exits successfully has to have written it; see _check_declared_output.
+        |env|, when given, is the command's whole environment.
         """
         command_line = ' '.join(cmd)
 
@@ -593,6 +600,8 @@ class VulkanVideoTestFrameworkBase:
                 )
             if cwd is not None:
                 subprocess_kwargs['cwd'] = str(cwd)
+            if env is not None:
+                subprocess_kwargs['env'] = env
 
             result = subprocess.run(cmd, check=False, **subprocess_kwargs)
             self._detect_driver_from_output(result.stdout, result.stderr)
@@ -670,10 +679,13 @@ class VulkanVideoTestFrameworkBase:
         extra_decoder_args: list = None,
         config: BaseTestConfig = None,
     ) -> tuple:
-        """Validate encoded file with decoder. Returns (success, output)."""
+        """Validate encoded file with decoder. Returns (status, output): the
+        decoder's VideoTestStatus, NOT_SUPPORTED when it refuses the stream as
+        one the device does not decode (EX_UNAVAILABLE), and the end of its
+        output when it does not succeed."""
         if not decoder_path or not decoder_path.exists():
             print("  ⚠️  Decoder path not valid for validation")
-            return False, "Decoder path not valid"
+            return VideoTestStatus.ERROR, "Decoder path not valid"
 
         print(f"  🔍 Validating with decoder: {input_file.name}")
 
@@ -703,9 +715,13 @@ class VulkanVideoTestFrameworkBase:
 
         if result.status == VideoTestStatus.SUCCESS:
             print("  ✓ Decoder validation passed")
-            return True, None
+            return result.status, None
 
-        print("  ✗ Decoder validation failed")
+        if result.status == VideoTestStatus.NOT_SUPPORTED:
+            print("  ⚠️  Decoder validation not possible: the decoder does not "
+                  "support the stream")
+        else:
+            print("  ✗ Decoder validation failed")
         output_lines = [
             f"status: {result.status.name}, exit code: {result.returncode}"]
         if result.stdout:
@@ -715,7 +731,7 @@ class VulkanVideoTestFrameworkBase:
             for line in result.stderr.strip().split('\n')[-10:]:
                 output_lines.append(line)
 
-        return False, '\n'.join(output_lines)
+        return result.status, '\n'.join(output_lines)
 
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     # pylint: disable=too-many-locals
@@ -941,6 +957,12 @@ class VulkanVideoTestFrameworkBase:
         quality_summary = result.meta.get("quality_summary")
         if quality_summary:
             print(f"   PSNR: {quality_summary}")
+        layer_summary = result.meta.get("validation_layer_summary")
+        if layer_summary:
+            print(f"   Validation layer: {layer_summary}")
+        decoder_validation = result.meta.get("decoder_validation")
+        if decoder_validation:
+            print(f"   Decoder validation: {decoder_validation}")
 
         decoder_output = result.meta.get("decoder_validation_output")
         if decoder_output and result.status == VideoTestStatus.ERROR:

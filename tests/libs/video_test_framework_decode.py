@@ -92,6 +92,8 @@ class DecodeTestSample(BaseTestConfig):
     @classmethod
     def from_dict(cls, data: dict) -> 'DecodeTestSample':
         """Create a DecodeTestSample from a dictionary"""
+        cls._refuse_unknown_keys(
+            data, frozenset({"expected_output_md5", "expected_output_y4m_md5"}))
         return cls(
             **cls._parse_base_fields(data),
             expected_output_md5=data.get("expected_output_md5", ""),

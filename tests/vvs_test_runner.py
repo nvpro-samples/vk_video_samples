@@ -161,6 +161,8 @@ class VulkanVideoTestFramework:  # pylint: disable=too-many-instance-attributes
                 encoder_options['validate_with_decoder'] = False
             if options.get('no_quality_check', False):
                 encoder_options['quality_check'] = False
+            if options.get('validation_layer', False):
+                encoder_options['validation_layer'] = True
             decoder_args = options.get('decoder_args')
             if decoder_args:
                 encoder_options['decoder_args'] = decoder_args
@@ -723,6 +725,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "--decoder-args", nargs="+",
         help="Additional arguments to pass to decoder during "
              "encoder validation")
+    encoder_group.add_argument(
+        "--validation-layer", action="store_true",
+        help="Run each encode under the Khronos validation layer, and fail a "
+             "sample on any error of the layer that validation_allowlist.json "
+             "does not list. The layer must be where the Vulkan loader finds "
+             "it, or in VULKAN_SDK")
 
     # Decoder-specific options
     decoder_group = parser.add_argument_group("decoder options")
@@ -833,6 +841,7 @@ def run_framework_tests(args: argparse.Namespace, encoder_path: str,
         no_verify_md5=args.no_verify_md5,
         no_validate_with_decoder=args.no_validate_with_decoder,
         no_quality_check=args.no_quality_check,
+        validation_layer=args.validation_layer,
         decoder_args=args.decoder_args,
         extended=args.extended,
         codec_filter=args.codec,

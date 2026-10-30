@@ -284,7 +284,7 @@
       "codec": "av1",
       "profile": null,
       "extra_args": null,
-      "description": "Test AV1 encoding with default settings",
+      "description": "Test AV1 encoding with default settings. It runs under the Khronos validation layer when the layer is installed, which checks the AV1 information of every picture, its primaryReferenceCdfOnly among them.",
       "width": 352,
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
@@ -293,7 +293,8 @@
       "quality_check": {
         "min_mean_psnr": 45.5,
         "min_picture_psnr": 42.4
-      }
+      },
+      "validation_layer": true
     },
     {
       "name": "av1_main_profile",
@@ -377,7 +378,7 @@
         "--qpB",
         "20"
       ],
-      "description": "H.264 encode of a 128x48 picture, below the minimum coded extent of most devices (160x64 for H.264 and H.265, 192x128 for AV1 on NVIDIA). The encoder pads the picture to the device's minimum and signals the 128x48 picture in the stream (its SPS frame cropping), so the stream must decode to exactly 128x48 (quality_check exact_extent) and match the source. The input is the top-left 128x48 window (--encodeWidth/--encodeHeight) of the 352x288 clip, so the pictures are real, correlated video, and constant QP 20 makes the PSNR measure the extent handling rather than the rate control.",
+      "description": "H.264 encode of a 128x48 picture, below the minimum coded extent of most devices (160x64 for H.264 and H.265, 192x128 for AV1 on NVIDIA). The encoder pads the picture to the device's minimum and signals the 128x48 picture in the stream (its SPS frame cropping), so the stream must decode to exactly 128x48 (quality_check exact_extent) and match the source. The input is the top-left 128x48 window (--encodeWidth/--encodeHeight) of the 352x288 clip, so the pictures are real, correlated video, and constant QP 20 makes the PSNR measure the extent handling rather than the rate control. It runs under the Khronos validation layer when the layer is installed, which checks the session's and the pictures' coded extents against the device's minimum.",
       "width": 352,
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
@@ -387,7 +388,8 @@
         "min_mean_psnr": 45.2,
         "min_picture_psnr": 43.3,
         "exact_extent": true
-      }
+      },
+      "validation_layer": true
     },
     {
       "name": "h264_resolution_too_large",
@@ -420,7 +422,7 @@
         "--qpB",
         "20"
       ],
-      "description": "H.265 encode of a 128x48 picture, below the minimum coded extent of most devices (160x64 for H.264 and H.265, 192x128 for AV1 on NVIDIA). The encoder pads the picture to the device's minimum and signals the 128x48 picture in the stream (its SPS conformance window), so the stream must decode to exactly 128x48 (quality_check exact_extent) and match the source. The input is the top-left 128x48 window (--encodeWidth/--encodeHeight) of the 352x288 clip, so the pictures are real, correlated video, and constant QP 20 makes the PSNR measure the extent handling rather than the rate control.",
+      "description": "H.265 encode of a 128x48 picture, below the minimum coded extent of most devices (160x64 for H.264 and H.265, 192x128 for AV1 on NVIDIA). The encoder pads the picture to the device's minimum and signals the 128x48 picture in the stream (its SPS conformance window), so the stream must decode to exactly 128x48 (quality_check exact_extent) and match the source. The input is the top-left 128x48 window (--encodeWidth/--encodeHeight) of the 352x288 clip, so the pictures are real, correlated video, and constant QP 20 makes the PSNR measure the extent handling rather than the rate control. It runs under the Khronos validation layer when the layer is installed, which checks the session's and the pictures' coded extents against the device's minimum.",
       "width": 352,
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
@@ -430,7 +432,8 @@
         "min_mean_psnr": 45.2,
         "min_picture_psnr": 43.4,
         "exact_extent": true
-      }
+      },
+      "validation_layer": true
     },
     {
       "name": "h265_resolution_too_large",
@@ -463,7 +466,7 @@
         "--qpB",
         "20"
       ],
-      "description": "AV1 encode of a 128x48 picture, below the minimum coded extent of most devices (160x64 for H.264 and H.265, 192x128 for AV1 on NVIDIA). The encoder pads the picture to the device's minimum and signals the 128x48 picture in the stream (its render size), so the stream must decode to exactly 128x48 (quality_check exact_extent) and match the source. The input is the top-left 128x48 window (--encodeWidth/--encodeHeight) of the 352x288 clip, so the pictures are real, correlated video, and constant QP 20 makes the PSNR measure the extent handling rather than the rate control.",
+      "description": "AV1 encode of a 128x48 picture, below the minimum coded extent of most devices (160x64 for H.264 and H.265, 192x128 for AV1 on NVIDIA). The encoder pads the picture to the device's minimum and signals the 128x48 picture in the stream (its render size), so the stream must decode to exactly 128x48 (quality_check exact_extent) and match the source. The input is the top-left 128x48 window (--encodeWidth/--encodeHeight) of the 352x288 clip, so the pictures are real, correlated video, and constant QP 20 makes the PSNR measure the extent handling rather than the rate control. It runs under the Khronos validation layer when the layer is installed, which checks the session's and the pictures' coded extents against the device's minimum.",
       "width": 352,
       "height": 288,
       "source_url": "https://storage.googleapis.com/vulkan-video-samples/yuv/352x288_15_i420.yuv",
@@ -473,7 +476,8 @@
         "min_mean_psnr": 46.7,
         "min_picture_psnr": 44.7,
         "exact_extent": true
-      }
+      },
+      "validation_layer": true
     },
     {
       "name": "av1_resolution_too_large",
