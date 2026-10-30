@@ -1,8 +1,6 @@
 {
   "codec": "h264",
-  "defects": {
-    "sps-constraint-flags": "the parser takes constraint_setN_flag of the Std SPS from bit N of the byte, which the stream codes most significant bit first: constraint_set0_flag and constraint_set1_flag read the reserved zero bits, and constraint_set2_flag to constraint_set5_flag hold constraint_set5_flag to constraint_set2_flag"
-  },
+  "defects": {},
   "adapter_defects": {
     "nonexisting": "a non-existing reference takes another reference's picture and a slot no decode set up"
   },
@@ -23,9 +21,7 @@
       "format": "bytestream",
       "golden": "../golden/h264-x264-baseline-64x64.trace",
       "headers": "../streams/h264-x264-baseline-64x64.headers.txt",
-      "known": [
-        "sps-constraint-flags"
-      ],
+      "known": [],
       "adapter_golden": "../golden/adapter/h264-x264-baseline-64x64.trace",
       "adapter_known": []
     },
@@ -55,9 +51,7 @@
       "format": "bytestream",
       "golden": "../golden/h264-level21-then-level2-352x288.trace",
       "headers": "../streams/h264-level21-then-level2-352x288.headers.txt",
-      "known": [
-        "sps-constraint-flags"
-      ],
+      "known": [],
       "adapter_golden": "../golden/adapter/h264-level21-then-level2-352x288.trace",
       "adapter_known": []
     },

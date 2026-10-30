@@ -1546,12 +1546,13 @@ int32_t VulkanH264Decoder::seq_parameter_set_rbsp(SpsNalUnitTarget spsNalUnitTar
     sps->profile_idc = (StdVideoH264ProfileIdc)profile_idc;
     sps->constraint_set_flags = constraint_set_flags;
 
-    sps->flags.constraint_set0_flag = (constraint_set_flags >> 0) & 1;
-    sps->flags.constraint_set1_flag = (constraint_set_flags >> 1) & 1;
-    sps->flags.constraint_set2_flag = (constraint_set_flags >> 2) & 1;
-    sps->flags.constraint_set3_flag = (constraint_set_flags >> 3) & 1;
-    sps->flags.constraint_set4_flag = (constraint_set_flags >> 4) & 1;
-    sps->flags.constraint_set5_flag = (constraint_set_flags >> 5) & 1;
+    // The byte codes constraint_set0_flag first, in its most significant bit (7.3.2.1.1).
+    sps->flags.constraint_set0_flag = (constraint_set_flags >> 7) & 1;
+    sps->flags.constraint_set1_flag = (constraint_set_flags >> 6) & 1;
+    sps->flags.constraint_set2_flag = (constraint_set_flags >> 5) & 1;
+    sps->flags.constraint_set3_flag = (constraint_set_flags >> 4) & 1;
+    sps->flags.constraint_set4_flag = (constraint_set_flags >> 3) & 1;
+    sps->flags.constraint_set5_flag = (constraint_set_flags >> 2) & 1;
 
     // Table A-1 Level limits
     sps->level_idc = levelIdcToVulkanLevelIdcEnum(level_idc, sps->flags.constraint_set3_flag);

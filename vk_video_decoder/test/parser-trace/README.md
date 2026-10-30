@@ -157,6 +157,7 @@ compact dump the committed streams carry.
 | `seg-*` | the segmentation flags, and the effective `FeatureEnabled` and `FeatureData` after load_previous() and segmentation_params() |
 | `setup-*` | the picture's own `StdVideoDecodeAV1ReferenceInfo` |
 | `ref-*` | the `StdVideoDecodeAV1ReferenceInfo` of every buffer the picture references, which Vulkan defines as the information of the frame stored there |
+| `seq-timing` | the Std sequence header's `timing_info_present_flag`, of every sequence header the trace reports, when the stream's sequence headers agree on it |
 | `picture-count` | a picture present in the trace or in the model but not in both, per packet |
 
 Not compared, because the specification leaves them undefined: `RefFrameSignBias` of intra frames,
@@ -294,9 +295,10 @@ little-endian seed and the payload:
 An end-of-stream packet follows. The source builds two ways:
 
 - `vk-video-parser-fuzz-replay`, with any compiler, runs inputs from files and directories, and the
-  seed inputs it derives from streams: a byte stream whole and in chunks of three seeds, with and
-  without `bEOP`; a container's packets, with each flag. `--write-seeds <dir>` writes the seed
-  inputs, a fuzzer's starting corpus. The `ParserFuzzReplay<codec>` CTests (60 s timeout) run it
+  seed inputs it derives from the first 16 KiB of each stream (whole packets of a container): a
+  byte stream whole and in chunks of three seeds, with and without `bEOP`; a container's packets,
+  with each flag. `--write-seeds <dir>` writes the seed inputs, a fuzzer's starting corpus. Every
+  committed stream but the 16500 pictures of `h264-x264-poc-past-32767-64x64.h264` fits whole. The `ParserFuzzReplay<codec>` CTests (60 s timeout) run it
   over the committed streams and `fuzz/regressions/<codec>/`. A pass is a run that neither crashes
   nor hangs, and in a sanitizer build one the sanitizers report nothing in.
 - `fuzz_parser_<codec>`, the libFuzzer targets, with clang and `-DBUILD_FUZZERS=ON`.
@@ -378,6 +380,8 @@ Encoded with ffmpeg 6.1.1, x264 core 164, x265 3.5, libvpx 1.14.0, rav1e 0.7.1 a
 | `av1-libaom-key-frames-64x64.ivf` | `-frames:v 12 -c:v libaom-av1 -cpu-used 8 -lag-in-frames 0 -g 4 -keyint_min 4` | shown key frames after inter frames, which reset `OrderHints` |
 | `av1-libaom-still-after-inter-64x64.ivf` | `-frames:v 4 -c:v libaom-av1 -cpu-used 8 -lag-in-frames 0`, followed by `-frames:v 1 -c:v libaom-av1 -cpu-used 8 -still-picture 1`, joined with `-f concat -i <list> -c copy` | a reduced still picture header after frames with order hints |
 | `av1-libaom-forward-key-frames-64x64.ivf` | `-frames:v 40 -c:v libaom-av1 -cpu-used 8 -lag-in-frames 19 -auto-alt-ref 1 -g 40 -aom-params fwd-kf-dist=12` | hidden forward key frames that refresh some buffers, shown later with show_existing_frame, and inter frames that reference the pictures they keep |
+| `av1-libaom-timing-info-64x64.ivf` | `-frames:v 6 -c:v libaom-av1 -cpu-used 8 -g 30 -aom-params timing-info=constant` | timing information in the sequence header (`timing_info_present_flag`) |
+| `av1-libaom-sequence-only-unit-64x64.ivf` | `-frames:v 3 -pix_fmt yuv420p -c:v libaom-av1 -cpu-used 8 -lag-in-frames 0 -g 3`, the same with `-pix_fmt gray`, joined with a temporal unit between them that holds only a temporal delimiter and the gray clip's sequence header | a new sequence that arrives in a temporal unit that decodes no frame, the next unit repeating it |
 | `av1-libaom-mono-420-mono-64x64.ivf` | `-frames:v 3 -pix_fmt gray -c:v libaom-av1 -cpu-used 8 -lag-in-frames 0 -g 3`, the same with `-pix_fmt yuv420p`, and `-frames:v 17 -pix_fmt gray -c:v libaom-av1 -cpu-used 8 -lag-in-frames 16 -auto-alt-ref 1 -g 17`, joined with `-f concat -i <list> -c copy` | a monochrome sequence, a 4:2:0 one of the same size and a monochrome one with hidden frames and show_existing_frame; in adapter mode also with the monochrome sequences refused |
 | `av1-libaom-film-grain-64x64.ivf` | `-frames:v 17 -c:v libaom-av1 -cpu-used 6 -lag-in-frames 16 -auto-alt-ref 1 -g 17 -denoise-noise-level 25` | film grain on every shown frame, and one frame with show_frame and showable_frame 0, which codes no film grain parameters |
 | `av1-libaom-64-tile-rows-64x4096.ivf` | 64x4096 from `testsrc2` blurred with `gblur=sigma=20`, `-frames:v 2 -c:v libaom-av1 -cpu-used 8 -crf 63 -lag-in-frames 0 -tile-rows 6 -aom-params sb-size=64` | 64 tile rows of one superblock |

@@ -100,8 +100,9 @@ foreach(codec Av1 H264 H265 Vp9)
     set_tests_properties(AdapterTrace${codec} PROPERTIES LABELS "device-free")
 endforeach()
 
-# The fuzz replay: each codec's committed streams, cut into packets in every mode of the fuzz
-# input, and the inputs under fuzz/regressions/<codec>, through the fuzz target. A pass is a run
+# The fuzz replay: each codec's committed streams (the first 16 KiB of each), cut into packets in
+# every mode of the fuzz input, and the inputs under fuzz/regressions/<codec>, through the fuzz
+# target. A pass is a run
 # that neither crashes nor hangs; in a sanitizer build (scripts/run_ctest_sanitizers.sh), one the
 # sanitizers report nothing in.
 foreach(codec Av1 H264 H265 Vp9)
@@ -147,6 +148,8 @@ set(PARSER_CRAFTED_CASES
     H265VpsExtensionLayerSetIndex
     H265VpsSplittingDimensions
     H265InterRpsOverflow
+    H265SpsRpsStdFields
+    H265VpsHrdCommonInfo
     H265SpsNumStRps
     H265RefPicSetCurrBefore9
     H265SliceOfAnotherLayer
@@ -157,6 +160,9 @@ set(PARSER_CRAFTED_CASES
     H265ScalingListRefMatrix
     H265VpsSubLayers8
     H265SpsHrdCpbCount
+    H265EndOfSequenceCra
+    H265OutputLatency
+    H265PpsBeforeItsSps
     Av1CraftedSequenceHeader
     Av1UvlcTruncated
     Av1FilmGrainPointCount
@@ -171,6 +177,8 @@ set(PARSER_CRAFTED_CASES
     Vp9PicturePoolExhausted
     Vp9SuperframeIndex
     Vp9BadSyncCode
+    Vp9LoopFilterDeltas
+    Vp9ChromaFormats
     Vp9BadFrameMarker
 )
 foreach(crafted ${PARSER_CRAFTED_CASES})
