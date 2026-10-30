@@ -24,6 +24,7 @@
 #include <fstream>
 #include "VkVideoEncoder/VkVideoEncoder.h"
 #include "VkVideoEncoder/VkVideoEncoderPsnr.h"
+#include "VkVideoEncoder/VkVideoEncoderPlanePsnr.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/VkImageResource.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
@@ -144,9 +145,9 @@ VkResult VkVideoEncoderPsnr::Configure(const VulkanDeviceContext* vkDevCtx,
     if ((m_encoderConfig != nullptr) && m_encoderConfig->IsPsnrMetricsEnabled() && (m_psnrReconImagePool == nullptr)) {
         return m_initResult;
     }
-    m_psnrSum = 0.0;
-    m_psnrSumU = 0.0;
-    m_psnrSumV = 0.0;
+    m_psnrSum.Reset();
+    m_psnrSumU.Reset();
+    m_psnrSumV.Reset();
     m_psnrFrameCount = 0;
     return VK_SUCCESS;
 }
@@ -162,35 +163,50 @@ void VkVideoEncoderPsnr::CaptureInput(void* encodeFrameInfoVoid, const uint8_t* 
     const VkVideoChromaSubsamplingFlagsKHR chromaSubsampling = m_encoderConfig->input.chromaSubsampling;
     const uint32_t chromaW = ChromaWidth(chromaSubsampling, width);
     const uint32_t chromaH = ChromaHeight(chromaSubsampling, height);
-    const size_t yPlaneSize = (size_t)(width * height);
-    const size_t uPlaneSize = (size_t)(chromaW * chromaH);
+    // One byte a sample at 8 bits, two (16-bit little endian) above; the captured planes are
+    // packed rows of samples, the chroma of a 2-plane input de-interleaved into U and V.
+    const uint32_t bytes = (m_encoderConfig->input.bpp > 8) ? 2 : 1;
+    const size_t yRowSize = (size_t)width * bytes;
+    const size_t uRowSize = (size_t)chromaW * bytes;
+    const size_t yPlaneSize = yRowSize * height;
+    const size_t uPlaneSize = uRowSize * chromaH;
     const uint32_t numPlanes = m_encoderConfig->input.numPlanes;
 
     if (numPlanes >= 1) {
         encodeFrameInfo.psnrFrameData.psnrInputY.resize(yPlaneSize);
         const VkSubresourceLayout& ly = m_encoderConfig->input.planeLayouts[0];
         for (uint32_t row = 0; row < height; row++) {
-            memcpy(encodeFrameInfo.psnrFrameData.psnrInputY.data() + (row * width),
+            memcpy(encodeFrameInfo.psnrFrameData.psnrInputY.data() + (row * yRowSize),
                    pInputFrameData + ly.offset + ((size_t)(row) * ly.rowPitch),
-                   width);
+                   yRowSize);
         }
     }
-    if (numPlanes >= 2) {
+    if (numPlanes == 2) {
         encodeFrameInfo.psnrFrameData.psnrInputU.resize(uPlaneSize);
-        const VkSubresourceLayout& lu = m_encoderConfig->input.planeLayouts[1];
+        encodeFrameInfo.psnrFrameData.psnrInputV.resize(uPlaneSize);
+        const VkSubresourceLayout& luv = m_encoderConfig->input.planeLayouts[1];
         for (uint32_t row = 0; row < chromaH; row++) {
-            memcpy(encodeFrameInfo.psnrFrameData.psnrInputU.data() + (row * chromaW),
-                   pInputFrameData + lu.offset + ((size_t)(row) * lu.rowPitch),
-                   chromaW);
+            const uint8_t* uv = pInputFrameData + luv.offset + ((size_t)(row) * luv.rowPitch);
+            for (uint32_t x = 0; x < chromaW; x++) {
+                memcpy(encodeFrameInfo.psnrFrameData.psnrInputU.data() + (row * uRowSize) + (x * bytes), uv + (2 * x * bytes), bytes);
+                memcpy(encodeFrameInfo.psnrFrameData.psnrInputV.data() + (row * uRowSize) + (x * bytes), uv + (((2 * x) + 1) * bytes), bytes);
+            }
         }
     }
     if (numPlanes >= 3) {
+        encodeFrameInfo.psnrFrameData.psnrInputU.resize(uPlaneSize);
+        const VkSubresourceLayout& lu = m_encoderConfig->input.planeLayouts[1];
+        for (uint32_t row = 0; row < chromaH; row++) {
+            memcpy(encodeFrameInfo.psnrFrameData.psnrInputU.data() + (row * uRowSize),
+                   pInputFrameData + lu.offset + ((size_t)(row) * lu.rowPitch),
+                   uRowSize);
+        }
         encodeFrameInfo.psnrFrameData.psnrInputV.resize(uPlaneSize);
         const VkSubresourceLayout& lv = m_encoderConfig->input.planeLayouts[2];
         for (uint32_t row = 0; row < chromaH; row++) {
-            memcpy(encodeFrameInfo.psnrFrameData.psnrInputV.data() + (row * chromaW),
+            memcpy(encodeFrameInfo.psnrFrameData.psnrInputV.data() + (row * uRowSize),
                    pInputFrameData + lv.offset + ((size_t)(row) * lv.rowPitch),
-                   chromaW);
+                   uRowSize);
         }
     }
 }
@@ -630,11 +646,16 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
     const uint32_t chromaH = ChromaHeight(chromaSubsampling, height);
     const uint32_t encodeChromaW = ChromaWidth(chromaSubsampling, encodeW);
     const uint32_t encodeChromaH = ChromaHeight(chromaSubsampling, encodeH);
-    const size_t yPlaneSizeInput = (size_t)(width * height);
-    const size_t uPlaneSizeInput = (size_t)(chromaW * chromaH);
-    const size_t yPlaneSizeRecon = (size_t)(encodeW * encodeH);
-    const size_t uPlaneSizeRecon = (size_t)(encodeChromaW * encodeChromaH);
-    const uint32_t numPlanes = std::min(3u, m_encoderConfig->input.numPlanes);
+    // Sizes in bytes: one a sample at 8 bits, two above. The reconstruction is the DPB's format,
+    // whose samples above 8 bits are in the high bits of 16 (G10X6, G12X4).
+    const uint32_t inputBytes = (m_encoderConfig->input.bpp > 8) ? 2 : 1;
+    const uint32_t reconBytes = (m_encoderConfig->encodeBitDepthLuma > 8) ? 2 : 1;
+    const size_t yPlaneSizeInput = (size_t)width * height * inputBytes;
+    const size_t uPlaneSizeInput = (size_t)chromaW * chromaH * inputBytes;
+    const size_t yPlaneSizeRecon = (size_t)encodeW * encodeH * reconBytes;
+    const size_t uPlaneSizeRecon = (size_t)encodeChromaW * encodeChromaH * reconBytes;
+    // A 2-plane input's chroma was captured as U and V.
+    const uint32_t numPlanes = (m_encoderConfig->input.numPlanes == 2) ? 3u : std::min(3u, m_encoderConfig->input.numPlanes);
 
     const uint8_t* inputY = encodeFrameInfo.psnrFrameData.psnrInputY.data();
     const uint8_t* inputU = encodeFrameInfo.psnrFrameData.psnrInputU.data();
@@ -696,7 +717,8 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
     m_vkDevCtx->GetImageSubresourceLayout(device, vkImage, &subres, &layout);
     m_psnrReconY.resize(yPlaneSizeRecon);
     for (uint32_t y = 0; y < encodeH; y++) {
-        memcpy(m_psnrReconY.data() + (y * encodeW), basePtr + layout.offset + (y * layout.rowPitch), encodeW);
+        memcpy(m_psnrReconY.data() + ((size_t)y * encodeW * reconBytes), basePtr + layout.offset + (y * layout.rowPitch),
+               (size_t)encodeW * reconBytes);
     }
 
     if (numPlanes >= 2) {
@@ -706,24 +728,28 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
             subres.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
             m_vkDevCtx->GetImageSubresourceLayout(device, vkImage, &subres, &layout);
             const uint8_t* uvPtr = basePtr + layout.offset;
+            const size_t chromaRowSize = (size_t)encodeChromaW * reconBytes;
             for (uint32_t y = 0; y < encodeChromaH; y++) {
                 for (uint32_t x = 0; x < encodeChromaW; x++) {
-                    m_psnrReconU[(y * encodeChromaW) + x] = uvPtr[(y * layout.rowPitch) + (2 * x)];
-                    m_psnrReconV[(y * encodeChromaW) + x] = uvPtr[(y * layout.rowPitch) + (2 * x) + 1];
+                    const uint8_t* uv = uvPtr + (y * layout.rowPitch) + (2 * x * reconBytes);
+                    memcpy(m_psnrReconU.data() + (y * chromaRowSize) + (x * reconBytes), uv, reconBytes);
+                    memcpy(m_psnrReconV.data() + (y * chromaRowSize) + (x * reconBytes), uv + reconBytes, reconBytes);
                 }
             }
         } else {
             subres.aspectMask = VK_IMAGE_ASPECT_PLANE_1_BIT;
             m_vkDevCtx->GetImageSubresourceLayout(device, vkImage, &subres, &layout);
             for (uint32_t y = 0; y < encodeChromaH; y++) {
-                memcpy(m_psnrReconU.data() + (y * encodeChromaW), basePtr + layout.offset + (y * layout.rowPitch), encodeChromaW);
+                memcpy(m_psnrReconU.data() + ((size_t)y * encodeChromaW * reconBytes), basePtr + layout.offset + (y * layout.rowPitch),
+                       (size_t)encodeChromaW * reconBytes);
             }
             if (numPlanes >= 3) {
                 m_psnrReconV.resize(uPlaneSizeRecon);
                 subres.aspectMask = VK_IMAGE_ASPECT_PLANE_2_BIT;
                 m_vkDevCtx->GetImageSubresourceLayout(device, vkImage, &subres, &layout);
                 for (uint32_t y = 0; y < encodeChromaH; y++) {
-                    memcpy(m_psnrReconV.data() + (y * encodeChromaW), basePtr + layout.offset + (y * layout.rowPitch), encodeChromaW);
+                    memcpy(m_psnrReconV.data() + ((size_t)y * encodeChromaW * reconBytes), basePtr + layout.offset + (y * layout.rowPitch),
+                           (size_t)encodeChromaW * reconBytes);
                 }
             }
         }
@@ -759,39 +785,34 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
     }
 #endif
 
-    auto computePlanePsnr = [](const uint8_t* srcPtr, size_t srcStride,
-                              const uint8_t* reconPtr, size_t reconStride,
-                              uint32_t compareWidth, uint32_t compareHeight) -> double {
-        const size_t n = (size_t)(compareWidth * compareHeight);
-        if ((n == 0) || (srcPtr == nullptr) || (reconPtr == nullptr)) {
-            return -1.0;
-        }
-        uint64_t sumSqDiff = 0;
-        for (uint32_t y = 0; y < compareHeight; y++) {
-            for (uint32_t x = 0; x < compareWidth; x++) {
-                int d = (int)(srcPtr[(y * srcStride) + x]) - (int)(reconPtr[(y * reconStride) + x]);
-                sumSqDiff += (uint64_t)(d * d);
-            }
-        }
-        double mse = (double)(sumSqDiff) / (double)(n);
-        return (mse <= 1e-10) ? 100.0 : (10.0 * log10((255.0 * 255.0) / mse));
+    const uint32_t inputMsbShift = (inputBytes == 2) ? (uint32_t)std::max<int8_t>(m_encoderConfig->input.msbShift, 0) : 0;
+    auto inputPlane = [&](const uint8_t* data, uint32_t planeWidth) {
+        return VkVideoEncoderPlaneSamples{data, (size_t)planeWidth * inputBytes, inputBytes, inputMsbShift};
     };
+    auto reconPlane = [&](const uint8_t* data, uint32_t planeWidth) {
+        return VkVideoEncoderPlaneSamples{data, (size_t)planeWidth * reconBytes, reconBytes, 0};
+    };
+    const uint32_t lumaBitDepth = m_encoderConfig->encodeBitDepthLuma;
+    const uint32_t chromaBitDepth = m_encoderConfig->encodeBitDepthChroma;
 
     if (haveInput) {
-        double framePsnrY = computePlanePsnr(inputY, width, m_psnrReconY.data(), encodeW, width, height);
+        double framePsnrY = VkVideoEncoderPlanePsnr(inputPlane(inputY, width), reconPlane(m_psnrReconY.data(), encodeW), width, height,
+                                                    lumaBitDepth);
         if (framePsnrY >= 0.0) {
-            m_psnrSum += framePsnrY;
+            m_psnrSum.Add(framePsnrY);
         }
-        if ((numPlanes >= 2) && (inputUSize == uPlaneSizeInput) && (m_psnrReconU.size() >= uPlaneSizeInput)) {
-            double framePsnrU = computePlanePsnr(inputU, chromaW, m_psnrReconU.data(), encodeChromaW, chromaW, chromaH);
+        if ((numPlanes >= 2) && (inputUSize == uPlaneSizeInput) && (m_psnrReconU.size() >= uPlaneSizeRecon)) {
+            double framePsnrU = VkVideoEncoderPlanePsnr(inputPlane(inputU, chromaW), reconPlane(m_psnrReconU.data(), encodeChromaW), chromaW,
+                                                        chromaH, chromaBitDepth);
             if (framePsnrU >= 0.0) {
-                m_psnrSumU += framePsnrU;
+                m_psnrSumU.Add(framePsnrU);
             }
         }
-        if ((numPlanes >= 3) && (inputVSize == uPlaneSizeInput) && (m_psnrReconV.size() >= uPlaneSizeInput)) {
-            double framePsnrV = computePlanePsnr(inputV, chromaW, m_psnrReconV.data(), encodeChromaW, chromaW, chromaH);
+        if ((numPlanes >= 3) && (inputVSize == uPlaneSizeInput) && (m_psnrReconV.size() >= uPlaneSizeRecon)) {
+            double framePsnrV = VkVideoEncoderPlanePsnr(inputPlane(inputV, chromaW), reconPlane(m_psnrReconV.data(), encodeChromaW), chromaW,
+                                                        chromaH, chromaBitDepth);
             if (framePsnrV >= 0.0) {
-                m_psnrSumV += framePsnrV;
+                m_psnrSumV.Add(framePsnrV);
             }
         }
         m_psnrFrameCount++;
@@ -804,7 +825,7 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
 double VkVideoEncoderPsnr::GetAveragePsnrY() const
 {
     if (m_psnrFrameCount > 0) {
-        return m_psnrSum / (double)(m_psnrFrameCount);
+        return m_psnrSum.Value() / (double)(m_psnrFrameCount);
     }
     return -1.0;
 }
@@ -812,15 +833,16 @@ double VkVideoEncoderPsnr::GetAveragePsnrY() const
 double VkVideoEncoderPsnr::GetAveragePsnrU() const
 {
     if ((m_encoderConfig != nullptr) && (m_encoderConfig->input.numPlanes >= 2) && (m_psnrFrameCount > 0)) {
-        return m_psnrSumU / (double)(m_psnrFrameCount);
+        return m_psnrSumU.Value() / (double)(m_psnrFrameCount);
     }
     return -1.0;
 }
 
 double VkVideoEncoderPsnr::GetAveragePsnrV() const
 {
-    if ((m_encoderConfig != nullptr) && (m_encoderConfig->input.numPlanes >= 3) && (m_psnrFrameCount > 0)) {
-        return m_psnrSumV / (double)(m_psnrFrameCount);
+    // A 2-plane input carries V interleaved with U, and is measured as a third plane.
+    if ((m_encoderConfig != nullptr) && (m_encoderConfig->input.numPlanes >= 2) && (m_psnrFrameCount > 0)) {
+        return m_psnrSumV.Value() / (double)(m_psnrFrameCount);
     }
     return -1.0;
 }

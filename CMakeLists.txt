@@ -905,6 +905,14 @@ if(BUILD_ENCODER)
         # the file names.
         add_subdirectory(vk_video_encoder/test/encoder-json-profiles)
 
+        # The AV1 encoder's bit writer, device-free: f(n) of every width, leb128() and
+        # trailing_bits() against the AV1 specification.
+        add_subdirectory(vk_video_encoder/test/encoder-av1-bit-writer)
+
+        # The encoder's PSNR sum, device-free: the same frames added in any order give the same
+        # average.
+        add_subdirectory(vk_video_encoder/test/encoder-psnr-sum)
+
         # Encoder quality round trip: encode, decode with ffmpeg, and compare
         # per-frame PSNR against the source. This is the only round-trip
         # quality measurement in the tree -- the encoder's own --psnr option

@@ -67,6 +67,10 @@ Categories:
                   DPB plans bidirectional compound for a B picture, else unidirectional compound
                   from group 1, else single reference; a primary reference frame used for its
                   CDFs only is bound, not named
+  primary-ref     the primary reference frame's name has no slot, or the primary reference frame
+                  is used for its CDFs only on a device without
+                  VK_VIDEO_ENCODE_AV1_CAPABILITY_PRIMARY_REFERENCE_CDF_ONLY_BIT_KHR (the config
+                  line's cdf_only_primary=0)
 
 Exit status: 0 no mismatch, 1 a mismatch, 2 not comparable.
 """
@@ -327,6 +331,7 @@ class AV1Model:
         self.buffers = [None] * 8  # (Picture, frame_type) in each reference buffer
         self.max_active = config["max_active_refs"]
         self.single, self.unidir, self.bidir = config["single"], config["unidir"], config["bidir"]
+        self.cdf_only_primary = config.get("cdf_only_primary", 1)
 
     def plan(self, kind):
         """(name mask, group 1 count, group 2 count, count) of the prediction mode the DPB plans
@@ -388,6 +393,13 @@ class AV1Model:
                 self.report.fail("names-unlisted", key, f"reference name {i} uses slot {slot}, which the encode does not bind")
         if frame_type in (self.INTER, self.SWITCH) and f["type"] in ("P", "B"):
             self.count(key, f["type"], av1, bound)
+        primary = av1["primary_ref_frame"]
+        if primary < len(names):
+            if names[primary] < 0:
+                self.report.fail("primary-ref", key, f"primary_ref_frame {primary} names no slot")
+            elif av1["cdf_only"] and not self.cdf_only_primary:
+                self.report.fail("primary-ref", key, f"primary_ref_frame {primary} is used for its CDFs only, "
+                                                     "which the device does not take")
         for slot in bound:
             if slot not in names:
                 self.report.fail("ref-unnamed", key, f"slot {slot} is bound and no reference name uses it")

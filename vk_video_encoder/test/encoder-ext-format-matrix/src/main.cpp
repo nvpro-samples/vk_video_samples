@@ -594,8 +594,7 @@ Decl DeclFor(Arm arm, bool withhold)
 void FillDescriptor(VkVideoEncoderExternalImageDescriptor* desc,
                     VkFormat format, const Decl& d, VkImage image)
 {
-    std::memset(desc, 0, sizeof(*desc));
-    desc->sType = VK_VIDEO_ENCODER_STRUCTURE_TYPE_EXTERNAL_IMAGE_DESCRIPTOR;
+    *desc = VkVideoEncoderExternalImageDescriptor{};
     desc->handleType = VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_VK_IMAGE;
     desc->format     = format;
     desc->width      = kWidth;

@@ -75,6 +75,8 @@ struct Settings {
     uint32_t av1Single[2] = {7, 0x7f};       // maxSingleReferenceCount, singleReferenceNameMask
     uint32_t av1Unidir[3] = {4, 4, 0xf};     // count, group 1 count, name mask
     uint32_t av1Bidir[4] = {7, 4, 3, 0x7f};  // count, group 1 count, group 2 count, name mask
+    // VK_VIDEO_ENCODE_AV1_CAPABILITY_PRIMARY_REFERENCE_CDF_ONLY_BIT_KHR.
+    bool av1CdfOnly = true;
 };
 
 // One trace line: a tag and key=value tokens, arrays as [a,b], flags as a|b or "-".
@@ -579,6 +581,7 @@ class AV1Driver : public CodecDriver {
         caps.maxBidirectionalCompoundGroup1ReferenceCount = settings.av1Bidir[1];
         caps.maxBidirectionalCompoundGroup2ReferenceCount = settings.av1Bidir[2];
         caps.bidirectionalCompoundReferenceNameMask = settings.av1Bidir[3];
+        caps.flags = settings.av1CdfOnly ? VK_VIDEO_ENCODE_AV1_CAPABILITY_PRIMARY_REFERENCE_CDF_ONLY_BIT_KHR : 0;
 
         // EncoderConfigAV1::InitDpbCount, then VkVideoEncoder::InitEncoder's min(.., 16u, maxDpbSlots).
         m_maxDpbPicturesCount = AV1DpbSize(settings);
@@ -590,15 +593,19 @@ class AV1Driver : public CodecDriver {
         m_seqHdr.order_hint_bits_minus_1 = ORDER_HINT_BITS - 1;
 
         m_dpb->DpbSequenceStart(m_config, m_maxDpbPicturesCount);
-        Line("config")
-            .Str("codec", "av1")
+        Line config("config");
+        config.Str("codec", "av1")
             .Num("dpbSize", m_maxDpbPicturesCount)
             .Num("order_hint_bits", m_seqHdr.order_hint_bits_minus_1 + 1)
             .Num("max_active_refs", settings.maxActiveRefs)
             .Array("single", settings.av1Single, 2)
             .Array("unidir", settings.av1Unidir, 3)
-            .Array("bidir", settings.av1Bidir, 4)
-            .Emit(m_out);
+            .Array("bidir", settings.av1Bidir, 4);
+        // The line names the CDF-only capability only for a device without it.
+        if (!settings.av1CdfOnly) {
+            config.Num("cdf_only_primary", 0);
+        }
+        config.Emit(m_out);
     }
 
     // EncoderConfigAV1::InitDpbCount, then VkVideoEncoder::InitEncoder's min(.., 16u, maxDpbSlots).
@@ -671,6 +678,7 @@ class AV1Driver : public CodecDriver {
         if (!frame.showExistingFrame) {
             m_dpb->SetupReferenceFrameGroups(frame.gop.pictureType, frame.av1Info.frame_type,
                                              static_cast<uint32_t>(frame.picOrderCntVal));
+            frame.av1Info.primary_ref_frame = static_cast<uint8_t>(m_dpb->ResolvePrimaryRefFrame());
             if ((frame.gop.pictureType == VkVideoGopStructure::FRAME_TYPE_B) && (m_dpb->GetNumRefsL1() == 0)) {
                 frame.gop.pictureType = VkVideoGopStructure::FRAME_TYPE_P;
                 m_numBFramesToEncode--;
@@ -874,14 +882,15 @@ int Usage(const char* program) {
     fprintf(stderr,
             "Usage: %s --codec h264|h265|av1 [-o <trace>] [--frames N] [--gop N] [--idr N] [--bframes N] [--closed-gop]\n"
             "          [--refs-l0 N] [--refs-l1 N] [--level-dpb N] [--max-dpb-slots N] [--max-active-refs N]\n"
-            "          [--av1-single N:MASK] [--av1-unidir N:G1:MASK] [--av1-bidir N:G1:G2:MASK]\n"
+            "          [--av1-single N:MASK] [--av1-unidir N:G1:MASK] [--av1-bidir N:G1:G2:MASK] [--av1-cdf-only 0|1]\n"
             "       %s --asserts\n"
             "Drives the encoder's DPB class through a GOP sequence as the encoder does, and writes the\n"
             "setup slot, reference lists or names, and references of every picture. --refs-l0, --refs-l1\n"
             "and --level-dpb apply to H.264 and H.265. --max-dpb-slots is the device's maxDpbSlots;\n"
             "--max-active-refs and the --av1- options give AV1 the device's maxActiveReferencePictures\n"
-            "and reference capabilities (counts, group counts and name masks). --asserts prints whether\n"
-            "the encoder library was built with assertions.\n",
+            "and reference capabilities (counts, group counts and name masks), --av1-cdf-only whether it\n"
+            "takes a primary reference frame for its CDFs only (1). --asserts prints whether the encoder\n"
+            "library was built with assertions.\n",
             program, program);
     return 2;
 }
@@ -943,6 +952,8 @@ int main(int argc, char** argv) {
             if (!ParseCounts(value, settings.av1Bidir, 4)) {
                 return Usage(argv[0]);
             }
+        } else if (arg == "--av1-cdf-only") {
+            settings.av1CdfOnly = (strtoul(value, nullptr, 0) != 0);
         } else {
             return Usage(argv[0]);
         }

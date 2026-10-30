@@ -157,6 +157,64 @@
       ],
       "md5": "d1768916efd4cc36e2242bef35a1f739",
       "known": []
+    },
+    {
+      "name": "av1-ib7p-unidir",
+      "args": [
+        "--frames",
+        "64",
+        "--gop",
+        "16",
+        "--idr",
+        "128",
+        "--bframes",
+        "7",
+        "--av1-unidir",
+        "2:2:0xf",
+        "--av1-bidir",
+        "0:0:0:0"
+      ],
+      "md5": "cd248b47333bedc727ce55b8e027bf48",
+      "known": []
+    },
+    {
+      "name": "av1-ib7p-unidir-no-cdf-only",
+      "args": [
+        "--frames",
+        "64",
+        "--gop",
+        "16",
+        "--idr",
+        "128",
+        "--bframes",
+        "7",
+        "--av1-unidir",
+        "2:2:0xf",
+        "--av1-bidir",
+        "0:0:0:0",
+        "--av1-cdf-only",
+        "0"
+      ],
+      "md5": "034927a23c6e8a0ad5f77d66e0703386",
+      "known": []
+    },
+    {
+      "name": "av1-ibbbp-closed-no-cdf-only",
+      "args": [
+        "--frames",
+        "300",
+        "--gop",
+        "30",
+        "--idr",
+        "400",
+        "--bframes",
+        "3",
+        "--closed-gop",
+        "--av1-cdf-only",
+        "0"
+      ],
+      "md5": "6fb28fdcaba1077b5b28ae4b1bde4bd8",
+      "known": []
     }
   ]
 }

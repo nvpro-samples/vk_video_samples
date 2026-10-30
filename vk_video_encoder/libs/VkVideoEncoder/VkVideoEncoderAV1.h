@@ -92,8 +92,7 @@ public:
 
         void PutBits(int32_t code, int32_t len) {
             for (int32_t i = len - 1; i >= 0; i--) {
-                uint8_t mask = static_cast<uint8_t>(1 << i);
-                uint8_t bit = (code & mask) ? 1 : 0;
+                uint8_t bit = static_cast<uint8_t>((static_cast<uint32_t>(code) >> i) & 1);
                 bytedata = (uint8_t)(bytedata << 1);
                 bytedata |= bit;
                 bitcount++;
@@ -117,8 +116,9 @@ public:
         void PutLeb128(uint32_t size) {
             assert(bitcount == 0);
 
+            // Seven bits per byte, the low group first; bit 7 says another byte follows.
             while (size >> 7) {
-                buffer.push_back(0x80 & (size & 0x7f));
+                buffer.push_back((uint8_t)(0x80 | (size & 0x7f)));
                 size >>= 7;
             }
             buffer.push_back((uint8_t)size);

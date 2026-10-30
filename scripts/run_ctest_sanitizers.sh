@@ -24,8 +24,6 @@ BUILD_DIR="${1:-BUILD-SAN}"
 
 # test name|the defect that fails it
 KNOWN=(
-    "EncoderExtInputFormatTaxonomy|VkVideoEncoderColorModel has no _MAX_ENUM entry, so the value 7 the test passes is outside the enumeration's range"
-    "EncoderExtColorModelRegistrationGate|VkVideoEncoderColorModel has no _MAX_ENUM entry"
 )
 
 if [ ! -f "${BUILD_DIR}/CTestTestfile.cmake" ]; then
@@ -45,12 +43,17 @@ known_regex=""
 for entry in "${KNOWN[@]}"; do
     known_regex="${known_regex:+${known_regex}|}$(exact "${entry%%|*}")"
 done
+# An empty regular expression matches every test, so -E is given only with a known test.
+exclude=()
+if [ -n "${known_regex}" ]; then
+    exclude=(-E "${known_regex}")
+fi
 
 echo "=============================================================="
 echo " device-free suite under the sanitizers, known defects excluded"
 echo "=============================================================="
 ctest --test-dir "${BUILD_DIR}" --output-on-failure --no-tests=error \
-      -L '^device-free$' -E "${known_regex}"
+      -L '^device-free$' "${exclude[@]}"
 STATUS=$?
 echo "ctest exit status: ${STATUS}"
 echo
