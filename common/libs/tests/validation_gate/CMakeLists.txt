@@ -26,8 +26,9 @@ add_executable(${PROJECT_NAME} src/main.cpp)
 # WHAT THIS GATES. The gate counts every validation error: a message with a
 # VUID once per message, and an error without one -- thread safety,
 # UNASSIGNED-* -- once per message too, against a ceiling an EXPECT entry may
-# name by its id. Warnings without a VUID are not counted, and a message whose
-# body the skew allowlist matches is not.
+# name by its id. Warnings without a VUID are not counted, except those filed
+# under Undefined-Value- (an access whose result is undefined), which count as
+# errors do; and a message whose body the skew allowlist matches is not.
 #
 # WHAT A GREEN HERE DOES NOT MEAN. The messages are canned in the format of the
 # layer this tree is run with; a layer that changes its format is not covered.
@@ -52,6 +53,13 @@ vvs_add_validation_gated_test(ValidationGateCountsVuidOnce
     TARGET ${PROJECT_NAME}
     ARGS   vuid-error
     EXPECT VUID-vkCmdDispatch-None-08114=1)
+vvs_add_validation_gated_test(ValidationGateFailsUndefinedValueWarning
+    TARGET ${PROJECT_NAME}
+    ARGS   undefined-value-warning)
+vvs_add_validation_gated_test(ValidationGateUndefinedValueWarningCeiling
+    TARGET ${PROJECT_NAME}
+    ARGS   undefined-value-warning
+    EXPECT Undefined-Value-StorageImage-FormatMismatch-ImageView=1)
 # The two failing cases pass when the gate fails them for the message, and
 # for nothing else: their output must name the id past its ceiling of zero.
 # CMake wraps a long error at spaces, so the count may follow on a new line.
@@ -59,10 +67,13 @@ set_tests_properties(ValidationGateFailsUnassignedError PROPERTIES
                      PASS_REGULAR_EXPRESSION "UNASSIGNED-Threading-MultipleThreads-Write[ \t\n]+1/0")
 set_tests_properties(ValidationGateFailsVuidError PROPERTIES
                      PASS_REGULAR_EXPRESSION "VUID-vkCmdDispatch-None-08114[ \t\n]+1/0")
+set_tests_properties(ValidationGateFailsUndefinedValueWarning PROPERTIES
+                     PASS_REGULAR_EXPRESSION "Undefined-Value-StorageImage-FormatMismatch-ImageView[ \t\n]+1/0")
 # LABELS: this is the CI gating set. See the top-level CMakeLists.txt note.
 set_tests_properties(ValidationGateFailsUnassignedError ValidationGateUnassignedErrorCeiling
                      ValidationGateIgnoresUnassignedWarning ValidationGateAllowlistsUnassignedBody
-                     ValidationGateFailsVuidError ValidationGateCountsVuidOnce PROPERTIES
+                     ValidationGateFailsVuidError ValidationGateCountsVuidOnce
+                     ValidationGateFailsUndefinedValueWarning ValidationGateUndefinedValueWarningCeiling PROPERTIES
                      LABELS "device-free")
 
 message(STATUS "validation_gate_fake_layer_output: Configured")

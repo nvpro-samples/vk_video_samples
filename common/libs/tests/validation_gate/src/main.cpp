@@ -35,6 +35,14 @@ void PrintThreadingError(const char* severity, const char* text) {
     std::printf("%s\n\n", text);
 }
 
+void PrintUndefinedValueWarning() {
+    std::printf("Validation Warning: [ Undefined-Value-StorageImage-FormatMismatch-ImageView ] | MessageID = 0x13365b2\n");
+    std::printf(
+        "vkCmdDispatch(): the storage image descriptor [Set 0, Binding 4, Index 0, variable \"outputImageRGB\"] is "
+        "accessed by a OpTypeImage that has a Format operand Rgba16 (equivalent to VK_FORMAT_R16G16B16A16_UNORM) which "
+        "doesn't match the VkImageView format (VK_FORMAT_R8G8B8A8_UNORM).\n\n");
+}
+
 void PrintDispatchError() {
     std::printf("Validation Error: [ VUID-vkCmdDispatch-None-08114 ] | MessageID = 0x30b6e267\n");
     std::printf("vkCmdDispatch(): the descriptor set 0 binding 9 is not updated.\n");
@@ -46,7 +54,8 @@ void PrintDispatchError() {
 }  // namespace
 
 int main(int argc, char** argv) {
-    const char* const usage = "usage: %s unassigned-error | unassigned-warning | unassigned-allowed | vuid-error\n";
+    const char* const usage =
+        "usage: %s unassigned-error | unassigned-warning | unassigned-allowed | vuid-error | undefined-value-warning\n";
     if (argc != 2) {
         std::printf(usage, argv[0]);
         return 2;
@@ -63,6 +72,8 @@ int main(int argc, char** argv) {
         PrintThreadingError("Error", "vkCreateDevice(): pCreateInfo->pNext chain includes an unknown VkStructureType");
     } else if (std::strcmp(which, "vuid-error") == 0) {
         PrintDispatchError();
+    } else if (std::strcmp(which, "undefined-value-warning") == 0) {
+        PrintUndefinedValueWarning();
     } else {
         std::printf(usage, argv[0]);
         return 2;

@@ -485,7 +485,11 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanDeviceContext::DebugUtilsMessengerCallback(
         }
     }
 
-    if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+    // A warning the layer files under Undefined-Value- reports an access whose result is undefined,
+    // and counts as an error does.
+    const bool undefinedValue = (pCallbackData->pMessageIdName != nullptr) &&
+                                (strncmp(pCallbackData->pMessageIdName, "Undefined-Value-", 16) == 0);
+    if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) || undefinedValue) {
         g_validationErrorCount.fetch_add(1);
     }
 

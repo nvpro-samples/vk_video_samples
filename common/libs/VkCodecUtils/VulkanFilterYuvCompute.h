@@ -536,21 +536,17 @@ public:
          *
          * Uses a compute shader to perform color space conversion from YCbCr to RGBA.
          *
-         * @deprecated DO NOT USE IN NEW CODE, AND DO NOT ASSUME IT WORKS.
+         * @deprecated DO NOT USE IN NEW CODE.
          *
-         * No production path uses this: the encoder, decoder, TRV post-filter and display
-         * paths reference only RGBA2YCBCR, YCBCRCOPY, YCBCRCLEAR and the XFER_* modes, and
-         * display converts YCbCr with a VkSamplerYcbcrConversion in the graphics pipeline
-         * rather than with a compute pass. The only remaining reference to YCBCR2RGBA is
-         * vk_filter_test, where its whole test family (TC010-TC017) is disabled.
+         * Display converts YCbCr with a VkSamplerYcbcrConversion in the graphics pipeline.
+         * The encoder derives YCBCR2RGBA only for an R'G'B' encode source, which it never
+         * selects (encoder-ext-filter checks that). The decoder builds it for
+         * --enablePostProcessFilter 2, and that path fails in the decoder itself: see
+         * h264_clip_a_filter_ycbcr2rgba in tests/skipped_samples.json.
          *
-         * It is also genuinely broken -- the defects are catalogued against the disabled
-         * block in tests/src/TestCases.cpp. The worst: it assumes a 2-plane input, so a
-         * 3-plane format generates GLSL that does not compile and no pipeline is created.
-         * It does NOT handle all YCbCr formats.
-         *
-         * If a YCbCr->RGBA compute pass is ever genuinely needed, fix those defects and
-         * re-enable the tests in the same change -- do not rely on this path as it stands.
+         * It converts a 2-plane or a 3-plane input (vk_filter_test TC010-TC016, TC015b).
+         * A packed input (Y410) gets no output format; vk_filter_test lists that case among
+         * its disabled ones, with the defect (getDisabledTests() in tests/src/TestCases.cpp).
          */
         YCBCR2RGBA,
         
@@ -820,8 +816,9 @@ public:
     /**
      * @brief Override output format for filter types that produce a different format.
      *
-     * YCBCR2RGBA converts YCbCr input to RGBA output, so the output format must
-     * be RGBA regardless of what the caller passes.
+     * YCBCR2RGBA converts YCbCr input to RGBA output: the caller's output format when it
+     * is an RGBA one, which the shader declares its output with, or else R8G8B8A8_UNORM for
+     * an 8-bit input and R16G16B16A16_UNORM for a deeper one.
      */
     static VkFormat GetOutputFormat(FilterType filterType, VkFormat inputFormat, VkFormat outputFormat);
 

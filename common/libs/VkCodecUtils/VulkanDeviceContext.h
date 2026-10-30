@@ -369,8 +369,9 @@ public:
     // success, because the debug callbacks only log. Counting the errors is what lets a
     // harness fail the run on them -- vk_filter_test exits nonzero on a nonzero count.
     //
-    // Counts only ERROR-severity messages, and only those not in the suppressed-id
-    // list. Zero unless the validation layers are enabled.
+    // Counts ERROR-severity messages and the warnings the layer files under
+    // Undefined-Value- (an access whose result is undefined), those not in the
+    // suppressed-id list. Zero unless the validation layers are enabled.
     static uint32_t GetValidationErrorCount();
     static void     ResetValidationErrorCount();
 private:
