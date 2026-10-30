@@ -61,6 +61,34 @@
       "expected_output_y4m_md5": "2bcb11929bbacd1d0ba1c088e66ff7da"
     },
     {
+      "name": "h264_clip_a_dump_skip_display_order",
+      "codec": "h264",
+      "description": "Test H.264 decoding with the output frame of display order 10 left out of the writes (--dumpTestSkipDisplayOrder): the writers must report the display order that never comes and write the frames after it, or the decode never ends; the output is clip-a's without its eleventh frame",
+      "extra_args": [
+        "--dumpTestSkipDisplayOrder",
+        "10"
+      ],
+      "timeout": 60,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-a.h264",
+      "source_checksum": "b119d5d667eb7791613d0e39f375b61f0fa41baa5ee1f216a678e0483c69333c",
+      "source_filepath": "video/avc/clip-a.h264",
+      "expected_output_y4m_md5": "369693e234216c9c3fba29eeac369394"
+    },
+    {
+      "name": "h264_clip_a_dump_stop_release",
+      "codec": "h264",
+      "description": "Test H.264 decoding with the output writers releasing no frame from display order 5 on (--dumpTestStopRelease), as an output consumer that stopped would: the decoder must report the consumer after its bounded wait and stop waiting for it, or the decode never ends. The output is written (write_output), so that the writers run, but not checked: frames written after the consumer stops may hold later pictures",
+      "extra_args": [
+        "--dumpTestStopRelease",
+        "5"
+      ],
+      "timeout": 120,
+      "source_url": "https://storage.googleapis.com/vulkan-video-samples/avc/clip-a.h264",
+      "source_checksum": "b119d5d667eb7791613d0e39f375b61f0fa41baa5ee1f216a678e0483c69333c",
+      "source_filepath": "video/avc/clip-a.h264",
+      "write_output": true
+    },
+    {
       "name": "h264_clip_a_hw_load_balancing",
       "codec": "h264",
       "description": "Test H.264 decoding with hardware load balancing",

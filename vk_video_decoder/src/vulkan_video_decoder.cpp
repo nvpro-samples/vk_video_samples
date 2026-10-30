@@ -116,6 +116,10 @@ public:
         return m_vulkanVideoProcessor ? m_vulkanVideoProcessor->GetVideoFrameCount() : 0;
     }
 
+    virtual uint64_t GetUnsupportedPictureCount() const override {
+        return m_vulkanVideoProcessor ? m_vulkanVideoProcessor->GetUnsupportedPictureCount() : 0;
+    }
+
     VulkanVideoDecoderImpl(const char* programName,
                            VulkanDeviceContext* pVkDevCtxt = nullptr)
     : m_pVkDevCtxt(pVkDevCtxt)

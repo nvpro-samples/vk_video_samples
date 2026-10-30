@@ -120,6 +120,7 @@ The `decode_samples.json` file defines decoder test cases:
 | `description` | No | Human-readable test description |
 | `expected_output_md5` | No | MD5 of the RAW decoded surface. Layout-dependent — see [Goldens](#goldens) |
 | `expected_output_y4m_md5` | No | MD5 of Y4M output. Portable across GPUs — prefer this |
+| `write_output` | No | `true` asks the decoder for its Y4M output even without a golden, so that the output path (the frame writers) runs; nothing checks the output |
 | `expected_result` | No | `success` (default) or `unsupported` — see [Negative Cells](#negative-cells) |
 | `expected_vk_result` | No | For a negative cell, the exact `VkResult` the rejection must carry |
 | `source_url` | Yes | URL to download the test sample |

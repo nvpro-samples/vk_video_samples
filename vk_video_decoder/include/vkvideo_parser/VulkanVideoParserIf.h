@@ -521,6 +521,9 @@ class VulkanVideoDecodeParser : public virtual VkVideoRefCountBase {
     // OBUs and temporal units, and VP9 frames whose syntax or values it does not accept. A refused
     // unit is dropped and parsing continues, so ParseByteStream does not fail for it.
     virtual uint64_t GetRefusedUnitCount() const { return 0; }
+    // The number of pictures the parser has dropped since Initialize because they use a coding tool
+    // that Vulkan Video cannot decode (H.264 slice groups). The stream goes on without them.
+    virtual uint64_t GetUnsupportedPictureCount() const { return 0; }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////

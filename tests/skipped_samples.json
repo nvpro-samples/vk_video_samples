@@ -13,10 +13,10 @@
         "all"
       ],
       "reproduction": "always",
-      "reason": "TEST ISSUE plus no usable reference. Multi-resolution Argon vector; additionally dav1d fails on the stream ('Unknown Metadata OBU type 0') and writes 0 bytes, so ffmpeg cannot arbitrate correctness either. The assertion failure `!(m_ownedByDisplayMask & (1 << pictureIndex))' is a separate symptom worth fixing on its own; a single flat raw-YUV md5 cannot validate this stream in any case.",
+      "reason": "TEST ISSUE plus no usable reference. Multi-resolution Argon vector; its first sequence, 110x1082, is narrower than the 128x128 AV1 decode minimum the RTX GPUs state, so the decoder refuses the stream (exit 69); additionally dav1d fails on the stream ('Unknown Metadata OBU type 0') and writes 0 bytes, so ffmpeg cannot arbitrate correctness either; a single flat raw-YUV md5 cannot validate this stream in any case.",
       "bug_url": "https://github.com/KhronosGroup/Vulkan-Video-Samples/issues/138",
       "date_added": "2025-01-27",
-      "date_updated": "2026-08-18"
+      "date_updated": "2026-10-29"
     },
     {
       "name": "av1_argon_test787",

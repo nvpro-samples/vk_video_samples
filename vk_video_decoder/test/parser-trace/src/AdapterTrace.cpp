@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -71,18 +72,15 @@ class PicturePool : public IVulkanVideoFrameBufferParserCb {
         }
     }
 
-    // VulkanVideoFrameBuffer::ReservePictureBuffer, with its search bound: a free picture is taken
-    // only if its decode order is below picture 0's plus 1000.
+    // VulkanVideoFrameBuffer::ReservePictureBuffer: the free picture decoded longest ago.
     vkPicBuffBase* ReservePictureBuffer() override {
         int32_t found = -1;
-        if (!m_pictures.empty()) {
-            int64_t minDecodeOrder = static_cast<int64_t>(m_pictures[0]->m_decodeOrder) + 1000;
-            for (uint32_t picIdx = 0; picIdx < m_pictures.size(); picIdx++) {
-                const int64_t decodeOrder = static_cast<int64_t>(m_pictures[picIdx]->m_decodeOrder);
-                if (m_pictures[picIdx]->IsAvailable() && (decodeOrder < minDecodeOrder)) {
-                    found = static_cast<int32_t>(picIdx);
-                    minDecodeOrder = decodeOrder;
-                }
+        int64_t minDecodeOrder = std::numeric_limits<int64_t>::max();
+        for (uint32_t picIdx = 0; picIdx < m_pictures.size(); picIdx++) {
+            const int64_t decodeOrder = static_cast<int64_t>(m_pictures[picIdx]->m_decodeOrder);
+            if (m_pictures[picIdx]->IsAvailable() && (decodeOrder < minDecodeOrder)) {
+                found = static_cast<int32_t>(picIdx);
+                minDecodeOrder = decodeOrder;
             }
         }
         if (found < 0) {
@@ -439,10 +437,34 @@ class RecordingDecoder : public IVulkanVideoDecoderHandler {
     uint64_t m_decoded = 0;
 };
 
+// --hold-check N: the picture pool alone, four pictures, with picture 0 held while N pictures are
+// reserved, decoded and freed one after the other, as a long-term reference holds its picture.
+// Writes how many reservations failed, and exits 1 when one did.
+int HoldCheck(uint32_t count) {
+    PicturePool pool(stdout);
+    pool.Grow(4);
+    vkPicBuffBase* held = pool.ReservePictureBuffer();
+    pool.SetDecodeOrder(held->m_picIdx, 0);
+    uint32_t failed = 0;
+    for (uint32_t decodeOrder = 1; decodeOrder <= count; decodeOrder++) {
+        vkPicBuffBase* picture = pool.ReservePictureBuffer();
+        if (picture == nullptr) {
+            failed++;
+            continue;
+        }
+        pool.SetDecodeOrder(picture->m_picIdx, decodeOrder);
+        picture->Release();
+    }
+    held->Release();
+    printf("hold-check reserved=%u failed=%u\n", count, failed);
+    return (failed == 0) ? 0 : 1;
+}
+
 int Usage(const char* program) {
     fprintf(stderr,
             "Usage: %s --codec h264|h265|av1|vp9 --format bytestream|ivf|obu|annexb -i <stream> [-o <trace>]\n"
             "          [--offset-alignment N] [--size-alignment N] [--refuse-chroma 400|420|422|444]...\n"
+            "       %s --hold-check N\n"
             "Runs the decoder sample's parser adapter over the stream with no Vulkan device and writes\n"
             "the DPB slots, reference information and begin-coding list of every decode.\n"
             "  --refuse-chroma  refuses every sequence of that chroma format, as a device that does not\n"
@@ -451,8 +473,9 @@ int Usage(const char* program) {
             "              elementary stream: the rest of the stream on each call, with partial parsing\n"
             "  ivf         one packet per IVF frame (AV1, VP9)\n"
             "  obu         the AV1 low-overhead OBU format, one packet per temporal unit\n"
-            "  annexb      AV1 Annex B, one packet per temporal unit\n",
-            program);
+            "  annexb      AV1 Annex B, one packet per temporal unit\n"
+            "  --hold-check  reserves N pictures from the picture pool while its first picture is held\n",
+            program, program);
     return 2;
 }
 
@@ -471,7 +494,9 @@ int main(int argc, char** argv) {
         if (i + 1 >= argc) {
             return Usage(argv[0]);
         }
-        if (arg == "--codec") {
+        if (arg == "--hold-check") {
+            return HoldCheck(static_cast<uint32_t>(strtoul(argv[++i], nullptr, 0)));
+        } else if (arg == "--codec") {
             codecName = argv[++i];
         } else if (arg == "--format") {
             format = argv[++i];
@@ -607,6 +632,10 @@ int main(int argc, char** argv) {
             const uint64_t refused = adapter->GetRefusedUnitCount();
             if (refused > 0) {
                 Line("refused").Num("units", static_cast<int64_t>(refused)).Emit(out);
+            }
+            const uint64_t unsupported = adapter->GetUnsupportedPictureCount();
+            if (unsupported > 0) {
+                Line("unsupported").Num("pictures", static_cast<int64_t>(unsupported)).Emit(out);
             }
         }
     }

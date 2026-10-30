@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <atomic>
 #include <queue>
+#include <set>
 #include <cstdio>
 #include <chrono>
 
@@ -70,6 +71,9 @@ struct VkVideoDumpPoolTestOptions {
     // holding the queue mutex, each time it finds frames still to write: the writes that finish
     // meanwhile have to wake it all the same.
     uint32_t flushDelayUs{0};
+    // Signal no release for the frames from this display order on, as a consumer that stopped
+    // would; -1 for none.
+    int64_t  stopReleaseDisplayOrder{-1};
 };
 
 /**
@@ -107,6 +111,10 @@ public:
         m_framesNotWritten = 0;
         m_lastReleaseValue = 0;
         m_releaseOrderErrors = 0;
+        m_displayOrderGaps = 0;
+        m_framesLate = 0;
+        m_nextWriteOrder = 0;
+        m_pendingOrders.clear();
 
         // Create a dedicated timeline semaphore for the dump consumer
         VkSemaphoreTypeCreateInfo timelineInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
@@ -135,6 +143,10 @@ public:
      * @brief Queue a frame for async writing. Returns immediately.
      */
     void queueFrame(VkVideoDumpFrame&& frame) {
+        {
+            std::lock_guard<std::mutex> orderLock(m_orderMutex);
+            m_pendingOrders.insert(frame.displayOrder);
+        }
         {
             std::lock_guard<std::mutex> lock(m_queueMutex);
             m_frameQueue.push(std::move(frame));
@@ -182,6 +194,12 @@ public:
             m_shutdown = true;
         }
         m_queueCV.notify_all();
+        // A writer waiting for its turn in display order checks m_shutdown under the order mutex:
+        // taking it here makes the notification reach a writer that has just checked.
+        {
+            std::lock_guard<std::mutex> orderLock(m_orderMutex);
+        }
+        m_orderCV.notify_all();
 
         for (auto& t : m_threads) {
             if (t.joinable()) t.join();
@@ -202,6 +220,10 @@ public:
     uint64_t getFramesNotWritten() const { return m_framesNotWritten.load(); }
     // Release signals that were not above the previous one, and so were not made.
     uint64_t getReleaseOrderErrors() const { return m_releaseOrderErrors.load(); }
+    // Runs of display orders that were never queued, which the frame after them skipped.
+    uint64_t getDisplayOrderGaps() const { return m_displayOrderGaps.load(); }
+    // Frames queued after their turn in display order had passed: neither written nor released.
+    uint64_t getFramesLate() const { return m_framesLate.load(); }
     bool isInitialized() const { return m_initialized; }
 
 private:
@@ -264,15 +286,12 @@ private:
             }
 
             // 2. Wait for our turn to write (enforce display order)
-            {
-                std::unique_lock<std::mutex> orderLock(m_orderMutex);
-                m_orderCV.wait(orderLock, [this, &frame]() {
-                    return m_nextWriteOrder == frame.displayOrder;
-                });
-            }
+            const bool inTurn = waitForTurn(threadId, frame);
 
             // 3. Call the write callback (reads mapped memory, writes to file)
-            if (!gpuDone) {
+            if (!inTurn) {
+                m_framesLate++;
+            } else if (!gpuDone) {
                 m_framesNotWritten++;
             } else if (frame.writeCallback) {
                 int64_t bytesWritten = frame.writeCallback(frame);
@@ -285,13 +304,21 @@ private:
             //    order. All workers signal the one release semaphore, and a timeline
             //    semaphore may only be signaled with increasing values, so the signal
             //    is made while this frame still holds its turn in display order.
+            //    A frame whose turn has passed signals nothing: a later frame has already signaled
+            //    a higher value.
             {
                 std::lock_guard<std::mutex> orderLock(m_orderMutex);
-                if ((m_testOptions.releaseDelayUs != 0) && ((frame.displayOrder & 1) != 0)) {
-                    std::this_thread::sleep_for(std::chrono::microseconds(m_testOptions.releaseDelayUs));
+                if (inTurn) {
+                    if ((m_testOptions.releaseDelayUs != 0) && ((frame.displayOrder & 1) != 0)) {
+                        std::this_thread::sleep_for(std::chrono::microseconds(m_testOptions.releaseDelayUs));
+                    }
+                    if ((m_testOptions.stopReleaseDisplayOrder < 0) ||
+                        (frame.displayOrder < m_testOptions.stopReleaseDisplayOrder)) {
+                        signalRelease(frame);
+                    }
+                    m_nextWriteOrder = frame.displayOrder + 1;
                 }
-                signalRelease(frame);
-                m_nextWriteOrder = frame.displayOrder + 1;
+                m_pendingOrders.erase(m_pendingOrders.find(frame.displayOrder));
             }
             m_orderCV.notify_all();
 
@@ -307,6 +334,47 @@ private:
                 m_framesWritten++;
             }
             m_flushCV.notify_all();
+        }
+    }
+
+    // How long the first frame after a run of display orders that were never queued waits for
+    // them before it takes its turn.
+    static constexpr std::chrono::milliseconds displayOrderGapWait{1000};
+
+    // Waits until the frame may take its turn in display order, and returns whether it did: false
+    // for a frame whose turn has passed, which is then neither written nor released. Frames are
+    // queued in display order, so when no frame before this one is pending, the display orders
+    // between the next turn and this frame were never queued: a gap. The frame waits
+    // displayOrderGapWait for them, or until shutdown, then reports the gap and takes its turn.
+    bool waitForTurn(int threadId, const VkVideoDumpFrame& frame) {
+        std::unique_lock<std::mutex> orderLock(m_orderMutex);
+        const auto gapDeadline = std::chrono::steady_clock::now() + displayOrderGapWait;
+        for (;;) {
+            if (m_nextWriteOrder == frame.displayOrder) {
+                return true;
+            }
+            if (m_nextWriteOrder > frame.displayOrder) {
+                fprintf(stderr, "[DumpPool] T%d: pic=%d (displayOrder=%lld) was queued after its turn "
+                        "(the next turn is %lld); it is not written\n",
+                        threadId, frame.pictureIndex, (long long)frame.displayOrder,
+                        (long long)m_nextWriteOrder);
+                return false;
+            }
+            const bool firstPending = (*m_pendingOrders.begin() == frame.displayOrder);
+            if (firstPending && (m_shutdown || (std::chrono::steady_clock::now() >= gapDeadline))) {
+                fprintf(stderr, "[DumpPool] T%d: display orders %lld to %lld were never queued; "
+                        "pic=%d (displayOrder=%lld) takes the next turn\n",
+                        threadId, (long long)m_nextWriteOrder, (long long)(frame.displayOrder - 1),
+                        frame.pictureIndex, (long long)frame.displayOrder);
+                m_displayOrderGaps++;
+                m_nextWriteOrder = frame.displayOrder;
+                return true;
+            }
+            if (firstPending) {
+                m_orderCV.wait_until(orderLock, gapDeadline);
+            } else {
+                m_orderCV.wait(orderLock);
+            }
         }
     }
 
@@ -342,6 +410,8 @@ private:
     std::atomic<uint64_t>       m_framesQueued{0};
     std::atomic<uint64_t>       m_framesWritten{0};
     std::atomic<uint64_t>       m_framesNotWritten{0};
+    std::atomic<uint64_t>       m_displayOrderGaps{0};
+    std::atomic<uint64_t>       m_framesLate{0};
     VkVideoDumpPoolTestOptions  m_testOptions;
 
     // The last release value signaled, and the signals that were not above it
@@ -355,8 +425,10 @@ private:
     std::condition_variable     m_queueCV;
     std::condition_variable     m_flushCV;
 
-    // Ordering: workers wait until their displayOrder matches m_nextWriteOrder
+    // Ordering: workers wait until their displayOrder matches m_nextWriteOrder. m_pendingOrders
+    // holds the display order of every frame queued and not yet past its turn.
     std::mutex                  m_orderMutex;
     std::condition_variable     m_orderCV;
     int64_t                     m_nextWriteOrder{0};
+    std::multiset<int64_t>      m_pendingOrders;
 };

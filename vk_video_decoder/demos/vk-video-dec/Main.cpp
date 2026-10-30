@@ -33,7 +33,8 @@ static int StreamExitCode(const VulkanVideoProcessor& vulkanVideoProcessor)
 {
     return ExitCodeFromDecodedStream(vulkanVideoProcessor.GetStreamResult(),
                                      vulkanVideoProcessor.GetVideoFrameCount(),
-                                     vulkanVideoProcessor.GetVideoSequenceResult());
+                                     vulkanVideoProcessor.GetVideoSequenceResult(),
+                                     vulkanVideoProcessor.GetUnsupportedPictureCount());
 }
 
 int main(int argc, const char **argv)

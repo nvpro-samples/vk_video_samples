@@ -73,6 +73,10 @@ public:
     // The pictures the decoder has output since the stream, or its last loop, started.
     virtual uint32_t GetVideoFrameCount() const = 0;
 
+    // The pictures the parser has dropped because they use a coding tool the decoder cannot
+    // decode (H.264 slice groups).
+    virtual uint64_t GetUnsupportedPictureCount() const = 0;
+
     virtual ~VulkanVideoDecoder() {};
 };
 

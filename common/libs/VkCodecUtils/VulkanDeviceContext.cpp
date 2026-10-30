@@ -1152,6 +1152,16 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
             pAfterYcbcr = &quantizationMapFeatures;
         }
 
+        // VK_KHR_video_maintenance2 too: its feature, videoMaintenance2, is what lets a session take
+        // VK_VIDEO_SESSION_CREATE_INLINE_SESSION_PARAMETERS_BIT_KHR (VUID-VkVideoSessionCreateInfoKHR-flags-10398).
+        VkPhysicalDeviceVideoMaintenance2FeaturesKHR videoMaintenance2Features {
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_2_FEATURES_KHR,
+            pAfterYcbcr,
+            VK_FALSE };
+        if (FindRequiredDeviceExtension(VK_KHR_VIDEO_MAINTENANCE_2_EXTENSION_NAME) != nullptr) {
+            pAfterYcbcr = &videoMaintenance2Features;
+        }
+
         // Required for creating YCbCr samplers used with multi-planar video formats
         VkPhysicalDeviceSamplerYcbcrConversionFeatures samplerYcbcrFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES,
                                                                                pAfterYcbcr,
