@@ -379,6 +379,12 @@ bool VulkanVP9Decoder::ParseUncompressedHeader()
     pStdPicInfo->flags.show_frame = u(1);
     pStdPicInfo->flags.error_resilient_mode = u(1);
 
+    // A key or intra-only frame codes none of the inter-frame fields; the inter-frame branch below
+    // sets them.
+    pStdPicInfo->ref_frame_sign_bias_mask = 0;
+    pStdPicInfo->flags.allow_high_precision_mv = 0;
+    pStdPicInfo->interpolation_filter = STD_VIDEO_VP9_INTERPOLATION_FILTER_EIGHTTAP;
+
     if (pStdPicInfo->frame_type == STD_VIDEO_VP9_FRAME_TYPE_KEY) {
         VP9_CHECK_FRAME_SYNC_CODE;
         ParseColorConfig();
@@ -477,8 +483,13 @@ bool VulkanVP9Decoder::ParseUncompressedHeader()
     pPicData->compressedHeaderOffset = (consumed_bits() + 7) >> 3;
     pPicData->tilesOffset = pPicData->compressedHeaderOffset + pPicData->compressedHeaderSize;
 
-    pPicData->ChromaFormat = (pStdColorConfig->subsampling_x == 1) && (pStdColorConfig->subsampling_y == 1) ? 1 : 0;
-    assert(pPicData->ChromaFormat); // TODO: support only YUV420
+    // Profiles 1 and 3 code 4:2:2, 4:4:0 and 4:4:4 too (VP9 7.2). Vulkan has no 4:4:0 format.
+    if ((pStdColorConfig->subsampling_x == 0) && (pStdColorConfig->subsampling_y == 1)) {
+        nvParserErrorLog("VP9 4:4:0 frame: Vulkan has no 4:4:0 chroma format\n");
+        return false;
+    }
+    // StdChromaFormatIdc: 1 is 4:2:0, 2 is 4:2:2, 3 is 4:4:4.
+    pPicData->ChromaFormat = pStdColorConfig->subsampling_x ? (pStdColorConfig->subsampling_y ? 1 : 2) : 3;
 
     return true;
 }
@@ -612,6 +623,11 @@ void VulkanVP9Decoder::ParseLoopFilterParams()
         m_loopFilterRefDeltas[3] = -1;
     }
 
+    // The update flag and masks describe this frame's syntax only.
+    pStdLoopFilter->flags.loop_filter_delta_update = 0;
+    pStdLoopFilter->update_ref_delta = 0;
+    pStdLoopFilter->update_mode_delta = 0;
+
     pStdLoopFilter->loop_filter_level =  u(6);
     pStdLoopFilter->loop_filter_sharpness = u(3);
 
@@ -639,7 +655,7 @@ void VulkanVP9Decoder::ParseLoopFilterParams()
                 if (update_mode_delta) {
                     m_loopFilterModeDeltas[i] = u(6);
                     if(u(1)) { // sign
-                        m_loopFilterModeDeltas[i] = -m_loopFilterRefDeltas[i];
+                        m_loopFilterModeDeltas[i] = -m_loopFilterModeDeltas[i];
                     }
                 }
             }

@@ -719,6 +719,7 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
 
     if (sps->flags.reduced_still_picture_header) {
         timing_info_present = 0;
+        sps->flags.timing_info_present_flag = 0;
         sps->decoder_model_info_present = 0;
         sps->display_model_info_present = 0;
         sps->operating_points_cnt_minus_1 = 0;
@@ -733,6 +734,7 @@ bool VulkanAV1Decoder::ParseObuSequenceHeader()
         op_params[0].display_model_param_present = 0;
     } else {
         timing_info_present = u(1);
+        sps->flags.timing_info_present_flag = timing_info_present;
         if (timing_info_present) {
             ReadTimingInfoHeader();
 
@@ -2433,7 +2435,8 @@ static bool IsObuInCurrentOperatingPoint(int  current_operating_point, AV1ObuHea
 
 bool VulkanAV1Decoder::ParseOneFrame(const uint8_t*const pFrameStart, const int32_t frameSizeBytes, const VkParserBitstreamPacket* pck, int* pParsedBytes)
 {
-    m_bSPSChanged = false;
+    // m_bSPSChanged stays set until a frame of the new sequence reaches end_of_picture(), which
+    // clears it: a temporal unit whose frames are all outside the operating point decodes none.
     AV1ObuHeader hdr;
 
 	const uint8_t* pCurrOBU = pFrameStart;

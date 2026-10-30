@@ -41,6 +41,7 @@
 #define MAX_NUM_SCALABILITY_TYPES   16
 #define MAX_VPS_OP_SETS_PLUS1       1024
 #define MAX_VPS_OUTPUTLAYER_SETS    1024
+#define MAX_VPS_PROFILE_TIER_LEVELS 64 // vps_num_profile_tier_level_minus1 is at most 63
 #define MAX_SUB_LAYERS              7
 
 #define VK_H265_SPS_VUI_FIELD(pStdVui, nvSpsIn, name) pStdVui->name = nvSpsIn->vui.name
@@ -148,14 +149,14 @@ struct hevc_video_hrd_param_s : public StdVideoH265HrdParameters
 
     void BindSubLayers(uint32_t maxNumSubLayersMinus1)
     {
-        if (maxNumSubLayersMinus1) {
-            if (flags.nal_hrd_parameters_present_flag) {
-                pSubLayerHrdParametersNal = stdSubLayerHrdParametersNal;
-            }
+        // An HRD with NAL or VCL parameters codes them for every sub-layer up to the highest
+        // (E.2.2), one sub-layer included.
+        if (flags.nal_hrd_parameters_present_flag) {
+            pSubLayerHrdParametersNal = stdSubLayerHrdParametersNal;
+        }
 
-            if (flags.vcl_hrd_parameters_present_flag) {
-                pSubLayerHrdParametersVcl = stdSubLayerHrdParametersVcl;
-            }
+        if (flags.vcl_hrd_parameters_present_flag) {
+            pSubLayerHrdParametersVcl = stdSubLayerHrdParametersVcl;
         }
         maxNumSubLayers = maxNumSubLayersMinus1 + 1;
     }
@@ -604,6 +605,9 @@ struct hevc_video_param_s : public StdVideoPictureParametersSet, public StdVideo
 
     uint32_t vps_num_profile_tier_level_minus1;
     uint8_t  vps_profile_present_flag[MAX_VPS_OP_SETS_PLUS1];
+    // The VPS's profile_tier_level() structures by index, as profile_tier_level_idx names them:
+    // [0] is stdProfileTierLevel's, the base layer's, and the others the extension's.
+    StdVideoH265ProfileTierLevel profileTierLevels[MAX_VPS_PROFILE_TIER_LEVELS];
 
     /* Operation Points */
     uint32_t num_add_olss;
@@ -690,6 +694,7 @@ typedef struct _hevc_dpb_entry_s
     int marking;    // 0: unused, 1: short-term, 2: long-term
     int output;     // 0: not needed for output, 1: needed for output
     int PicOrderCntVal;
+    int PicLatencyCount;  // C.5.2.3: the pictures after it in decoding order and before it in output order
     int LayerId;   // Has DPB of nuh_layer_id = LayerID
     VkPicIf *pPicBuf;
 } hevc_dpb_entry_s;
@@ -754,14 +759,22 @@ protected:
     // Syntax
     bool seq_parameter_set_rbsp();                      // false when the parser refuses the SPS
     bool pic_parameter_set_rbsp();                      // false when the parser refuses the PPS
+    // Gives the client |pps| again with the VPS id |vpsId|, as a new object stored in its place.
+    bool RekeyPps(VkSharedBaseObj<hevc_pic_param_s>& pps, uint8_t vpsId);
     bool video_parameter_set_rbsp();                    // false when the parser refuses the VPS
     bool video_parameter_set_rbspExtension(hevc_video_param_s *pVideoParamSet);
     void deriveNecessaryLayerFlags(hevc_video_param_s *pVideoParamSet, uint32_t olsIdx );
     void setRefLayers(hevc_video_param_s *pVideoParamSet);
-    uint32_t olsIdxToLsIdx(hevc_video_param_s *pVideoParamSet, uint32_t i );
+    uint32_t olsIdxToLsIdx(const hevc_video_param_s *pVideoParamSet, uint32_t i );
+    // The profile_tier_level() of a layer above 0 whose SPS has none: the VPS's at the index the
+    // first output layer set with the layer gives it (F.7.4.3.1.1), or the VPS's own when none does.
+    const StdVideoH265ProfileTierLevel& layerProfileTierLevel(const hevc_video_param_s *pVideoParamSet,
+                                                              uint32_t nuhLayerId);
     uint32_t inferoutput_layer_flag(hevc_video_param_s *pVideoParamSet, uint32_t i, uint32_t j);
     uint32_t xGetDimBitOffset(hevc_video_param_s *pVideoParamSet, uint32_t j);
     void initNumViews(hevc_video_param_s *pVideoParamSet);
+    // Without ProfilePresent the structure keeps the profile and tier it holds, which the caller
+    // infers, and takes the level.
     const StdVideoH265ProfileTierLevel* profile_tier_level(StdVideoH265ProfileTierLevel* pProfileTierLevel,
                                                           int MaxNumSubLayersMinus1,
                                                           uint8_t ProfilePresent = 1);
@@ -781,6 +794,7 @@ protected:
     void flush_decoded_picture_buffer(int NoOutputOfPriorPicsFlag = 0);
     int dpb_fullness();
     int dpb_reordering_delay();
+    bool dpb_latency_exceeded(const hevc_seq_param_s *sps);
     bool dpb_empty() { return (dpb_fullness() == 0); }
     bool dpb_bumping(int maxAllowedDpbSize);
     void output_picture(int nframe);
@@ -800,6 +814,9 @@ protected:
     int m_prevPicOrderCntLsb;
     uint32_t m_intra_pic_flag : 1;
     uint32_t  NoRaslOutputFlag : 1;
+    // An end of sequence or end of bitstream NAL unit came after the last picture: the next picture,
+    // an IRAP, starts a sequence (8.1.3: NoRaslOutputFlag 1, a CRA included).
+    uint32_t  m_endOfSequence : 1;
     int m_NumBitsForShortTermRPSInSlice;
     int m_NumDeltaPocsOfRefRpsIdx;
     int m_NumPocTotalCurr;

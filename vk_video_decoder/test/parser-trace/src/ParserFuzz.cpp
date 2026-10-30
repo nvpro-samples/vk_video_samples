@@ -153,8 +153,9 @@ int Usage(const char* program) {
             "Usage: %s --codec h264|h265|av1|vp9 [--format bytestream|ivf|obu|annexb -i <stream>... [--write-seeds <dir>]]\n"
             "          [<input or directory>...]\n"
             "Runs the parser fuzz target over fuzz inputs, files or every file of a directory, and over\n"
-            "the seed inputs derived from each stream: each packet mode with three seeds, with and without\n"
-            "the end-of-picture flag. --write-seeds writes the seed inputs, a fuzzer's starting corpus.\n",
+            "the seed inputs derived from the first 16 KiB of each stream: each packet mode with three\n"
+            "seeds, with and without the end-of-picture flag. --write-seeds writes the seed inputs, a\n"
+            "fuzzer's starting corpus.\n",
             program);
     return 2;
 }
@@ -173,28 +174,43 @@ std::vector<uint8_t> Header(uint8_t mode, uint32_t seed) {
 
 using Input = std::vector<uint8_t>;
 
+// A seed input's payload is at most the first 16 KiB of its stream, whole packets of a container.
+// A fuzzer mutates inputs of a few kilobytes, and the replay test runs every seed input within its
+// timeout in a sanitizer build, where a stream of thousands of pictures (16500 in the one that
+// passes a picture order count of 32767) takes over a minute in its eight seed inputs. The other
+// committed streams are shorter, and their seed inputs hold them whole.
+constexpr size_t kMaxSeedPayload = 16 * 1024;
+
 // The seed inputs of a stream: a byte stream whole and in chunks, and the packets of a container.
 std::vector<Input> SeedInputs(const char* format, const std::vector<uint8_t>& file) {
     std::vector<Input> inputs;
     std::vector<Packet> packets;
     std::string error;
     if (strcmp(format, "bytestream") == 0) {
+        const auto end = file.begin() + std::min(file.size(), kMaxSeedPayload);
         for (uint8_t eop : {0, 4}) {
             std::vector<uint8_t> input = Header(eop, 1);
-            input.insert(input.end(), file.begin(), file.end());
+            input.insert(input.end(), file.begin(), end);
             inputs.push_back(input);
             for (uint32_t seed : {1u, 2u, 3u}) {
                 input = Header(static_cast<uint8_t>(1 | eop), seed);
-                input.insert(input.end(), file.begin(), file.end());
+                input.insert(input.end(), file.begin(), end);
                 inputs.push_back(input);
             }
         }
     } else if (ReadPackets(format, file, packets, error)) {
+        size_t count = 0;
+        for (size_t payload = 0; count < packets.size(); count++) {
+            payload += 4 + packets[count].data.size();
+            if ((count > 0) && (payload > kMaxSeedPayload)) {
+                break;
+            }
+        }
         for (uint8_t flags : {0, 4, 12}) {
             std::vector<uint8_t> input = Header(static_cast<uint8_t>(2 | flags), 1);
-            for (const Packet& packet : packets) {
-                AppendLe32(input, static_cast<uint32_t>(packet.data.size()));
-                input.insert(input.end(), packet.data.begin(), packet.data.end());
+            for (size_t i = 0; i < count; i++) {
+                AppendLe32(input, static_cast<uint32_t>(packets[i].data.size()));
+                input.insert(input.end(), packets[i].data.begin(), packets[i].data.end());
             }
             inputs.push_back(input);
         }
