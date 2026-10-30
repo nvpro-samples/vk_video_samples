@@ -184,7 +184,7 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --gpuEncodeTiming               time each encode on the GPU (encode-queue timestamps)\n\
     --crcInit                       <list> comma-separated CRC32 seed uint32s (decimal or 0x hex), e.g. 0xFFFFFFFF,0\n\
     --noDeviceFallback                        : don't try other GPUs if first device doesn't meet requirements \n\
-    --encoderConfig                 <path>    : load base config from JSON (CLI overrides); see json_config/encoder_config.schema.json\n\
+    --encoderConfig                 <path>    : load base config from JSON (CLI overrides; its codec selects the codec without --codec); see json_config/encoder_config.schema.json\n\
     --dpbMode                       <string>  : select DPB mode: layered, separate\n\
     --inputWidth                    <integer> : Input Width \n\
     --inputHeight                   <integer> : Input Height \n\
@@ -222,12 +222,15 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
     --maxQp                         <integer> : Maximum QP value in the range [0, 51] \n\
     --qpMap                         <string>  : select quantization map type : deltaQpMap or emphasisMap \n\
     --qpMapFileName                 <string>  : quantization map file name \n\
-    --gopFrameCount                 <integer> : Number of frame in the GOP, default 16.\n\
+    --gopFrameCount                 <integer> : Number of frames in the GOP; by default the device's\n\
+                                                preferred value, or, when the device states none,\n\
+                                                the codec's default (H.264 30, H.265 16, AV1 60).\n\
                                                 -1 requests an INFINITE GOP: the count is set to\n\
                                                 UINT32_MAX, so the sequence opens with an IDR and\n\
                                                 no second one is emitted. 0 leaves the length to\n\
-                                                the device's preferred value.\n\
-    --idrPeriod                     <integer> : Number of frame between 2 IDR frame, default 60.\n\
+                                                that default.\n\
+    --idrPeriod                     <integer> : Number of frames between two IDR frames; by default the\n\
+                                                device's preferred value.\n\
                                                 -1 requests an INFINITE IDR period (UINT32_MAX):\n\
                                                 no periodic IDR is emitted after the first. 0 leaves\n\
                                                 the period to the device's preferred value.\n\
@@ -237,7 +240,6 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
                                                 replicates the last row and column into it, 2 one row and\n\
                                                 column, 0 leaves it\n\
     --temporalLayerCount            <integer> : Count of temporal layer \n\
-    --lastFrameType                 <integer> : Last frame type \n\
     --closedGop                       none    : Close the Gop, default open\n\
     --qualityLevel                  <integer> : Select quality level \n\
     --usageHints                    <string> : Select encode usage hints \n\
@@ -371,6 +373,25 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
         }
 }
 
+bool EncoderConfig::TuningModeFromName(std::string name, VkVideoEncodeTuningModeKHR& tuningMode)
+{
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return std::tolower(c); });
+    if (name == "default") {
+        tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_DEFAULT_KHR;
+    } else if (name == "highquality") {
+        tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_HIGH_QUALITY_KHR;
+    } else if (name == "lowlatency") {
+        tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_LOW_LATENCY_KHR;
+    } else if (name == "ultralowlatency") {
+        tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_ULTRA_LOW_LATENCY_KHR;
+    } else if (name == "lossless") {
+        tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_LOSSLESS_KHR;
+    } else {
+        return false;
+    }
+    return true;
+}
+
 int EncoderConfig::LoadFromJsonFile(const char* path)
 {
 #if defined(VK_VIDEO_ENCODER_SKIP_JSON_CONFIG)
@@ -386,6 +407,17 @@ int EncoderConfig::LoadFromJsonFile(const char* path)
 #endif
 }
 
+int EncoderConfig::ReadCodecFromJsonFile(const char* path, VkVideoCodecOperationFlagBitsKHR& codec)
+{
+    codec = VK_VIDEO_CODEC_OPERATION_NONE_KHR;
+#if defined(VK_VIDEO_ENCODER_SKIP_JSON_CONFIG)
+    (void)path;
+    return -1;
+#else
+    return ReadEncoderCodecFromJson(path, &codec);
+#endif
+}
+
 int EncoderConfig::ParseArguments(int argc, const char *argv[])
 {
     int argcount = 0;
@@ -396,8 +428,9 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
 
     const auto lambdaToLower = [](unsigned char c) { return std::tolower(c); };
 
+    // --encoderConfig gives the base configuration, which every other option overrides wherever it
+    // stands on the command line: each file loads, in order, before the other options are read.
     for (int32_t i = 1; i < argc; i++) {
-        // --encoderConfig: load JSON first (base config); CLI args below override. Precedence: JSON then CLI.
         if (args[i] == "--encoderConfig") {
             if (i + 1 >= argc) {
                 VkEncPrintfErr("--encoderConfig requires a path\n");
@@ -405,6 +438,12 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             }
             if (LoadFromJsonFile(args[i + 1].c_str()) != 0) return -1;
             i++; // skip path argument (for loop will increment i again)
+        }
+    }
+
+    for (int32_t i = 1; i < argc; i++) {
+        if (args[i] == "--encoderConfig") {
+            i++; // loaded above
             continue;
         }
         if (args[i] == "-i" || args[i] == "--input") {
@@ -674,25 +713,6 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 VkEncPrintfOut("Selected temporalLayerCount: %u\n",
                        (unsigned)temporalLayerCount);
             }
-        } else if (args[i] == "--lastFrameType") {
-            VkVideoGopStructure::FrameType lastFrameType = VkVideoGopStructure::FRAME_TYPE_P;
-            std::string frameTypeName = args[i + 1];
-            if (frameTypeName == "p" || frameTypeName == "P") {
-                lastFrameType = VkVideoGopStructure::FRAME_TYPE_P;
-            } else if (frameTypeName == "b" || frameTypeName == "B") {
-                lastFrameType = VkVideoGopStructure::FRAME_TYPE_B;
-            } else if (frameTypeName == "i" || frameTypeName == "I") {
-                lastFrameType = VkVideoGopStructure::FRAME_TYPE_I;
-            } else {
-                // Invalid frameTypeName
-                VkEncPrintfErr("Invalid frameTypeName: %s\n", frameTypeName.c_str());
-                return -1;
-            }
-            i++; // Skip the next argument since it's the frameTypeName value
-            gopStructure.SetLastFrameType(lastFrameType);
-            if (verbose) {
-                VkEncPrintfOut("Selected frameTypeName: %s\n", gopStructure.GetFrameTypeName(lastFrameType));
-            }
         } else if (args[i] == "--closedGop") {
             gopStructure.SetClosedGop();
         } else if (args[i] == "--qualityLevel") {
@@ -745,20 +765,8 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 VkEncPrintfErr("Invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
-            std::string tuningModeStr = argv[i];
-            std::transform(tuningModeStr.begin(), tuningModeStr.end(), tuningModeStr.begin(), lambdaToLower);
-            if (tuningModeStr == "default") {
-                tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_DEFAULT_KHR;
-            } else if (tuningModeStr == "highquality") {
-                tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_HIGH_QUALITY_KHR;
-            } else if (tuningModeStr == "lowlatency") {
-                tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_LOW_LATENCY_KHR;
-            } else if (tuningModeStr == "ultralowlatency") {
-                tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_ULTRA_LOW_LATENCY_KHR;
-            } else if (tuningModeStr == "lossless") {
-                 tuningMode = VK_VIDEO_ENCODE_TUNING_MODE_LOSSLESS_KHR;
-            } else {
-                VkEncPrintfErr("Invalid tuningMode: %s\n", tuningModeStr.c_str());
+            if (!TuningModeFromName(args[i], tuningMode)) {
+                VkEncPrintfErr("Invalid tuningMode: %s\n", args[i].c_str());
                 return -1;
             }
         } else if (args[i] == "--rateControlMode") {
@@ -1258,6 +1266,23 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
         }
     }
 
+    // Without --codec, the codec of the --encoderConfig files, which ParseArguments loads in
+    // order: the last one that names a codec.
+    if (codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) {
+        for (int32_t i = 1; i + 1 < argc; i++) {
+            if (args[i] == "--encoderConfig") {
+                VkVideoCodecOperationFlagBitsKHR fileCodec = VK_VIDEO_CODEC_OPERATION_NONE_KHR;
+                if (ReadCodecFromJsonFile(args[i + 1].c_str(), fileCodec) != 0) {
+                    return VK_ERROR_INITIALIZATION_FAILED;
+                }
+                if (fileCodec != VK_VIDEO_CODEC_OPERATION_NONE_KHR) {
+                    codec = fileCodec;
+                }
+                i++;
+            }
+        }
+    }
+
     if (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) {
 
         VkSharedBaseObj<EncoderConfigH264> vkEncoderConfigh264(new EncoderConfigH264());
@@ -1326,7 +1351,7 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
         return VK_SUCCESS;
 
     } else {
-        VkEncPrintfErr("Codec type is not selected\n. Please select it with --codec <avc or hevc or av1> parameters\n");
+        VkEncPrintfErr("Codec type is not selected\n. Please select it with --codec <avc or hevc or av1>, or the codec key of an --encoderConfig file\n");
         printHelp(codec);
         return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
     }

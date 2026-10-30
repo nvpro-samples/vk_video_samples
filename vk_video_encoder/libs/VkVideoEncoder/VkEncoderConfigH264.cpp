@@ -508,7 +508,10 @@ VkResult EncoderConfigH264::InitDeviceCapabilities(const VulkanDeviceContext* vk
         rateControlMode = qualityLevelProperties.preferredRateControlMode;
     }
     if (gopStructure.GetGopFrameCount() == ZERO_GOP_FRAME_COUNT) {
-        gopStructure.SetGopFrameCount(h264QualityLevelProperties.preferredGopFrameCount);
+        // A device may state no preferred GOP length (0). The GOP structure needs one, so it
+        // takes the codec's default then.
+        const uint32_t preferredGopFrameCount = h264QualityLevelProperties.preferredGopFrameCount;
+        gopStructure.SetGopFrameCount((preferredGopFrameCount != 0) ? preferredGopFrameCount : uint32_t(GOP_LENGTH_DEFAULT));
     }
     if (gopStructure.GetIdrPeriod() == ZERO_GOP_IDR_PERIOD) {
         gopStructure.SetIdrPeriod(h264QualityLevelProperties.preferredIdrPeriod);
@@ -834,7 +837,9 @@ bool EncoderConfigH264::GetRateControlParameters(VkVideoEncodeRateControlInfoKHR
     pRateControlInfoH264->consecutiveBFrameCount = gopStructure.GetConsecutiveBFrameCount();
 
     pRateControlInfoH264->gopFrameCount = (gopStructure.GetGopFrameCount() > 0) ? gopStructure.GetGopFrameCount() : (uint32_t)GOP_LENGTH_DEFAULT;
-    pRateControlInfoH264->idrPeriod = (gopStructure.GetIdrPeriod() > 0) ? gopStructure.GetIdrPeriod() : (uint32_t)IDR_PERIOD_DEFAULT;
+    // The period the GOP emits: 0, the rate control's "unspecified", when it emits no periodic IDR, as
+    // when the device states no preferred period.
+    pRateControlInfoH264->idrPeriod = gopStructure.GetIdrPeriod();
 
     // Validation: If idrPeriod is not 0, it must be >= gopFrameCount
     // If gopFrameCount is very large (e.g., UINT32_MAX for infinite GOP), set idrPeriod to 0

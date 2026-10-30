@@ -4,7 +4,7 @@ Source: `VkEncoderConfig.h` (`EncoderConfig` ctor), `VkVideoEncoderDef.h` (`Cons
 
 | JSON key | EncoderConfig / GOP member | Default when not set |
 |----------|----------------------------|----------------------|
-| codec | codec | VK_VIDEO_CODEC_OPERATION_NONE_KHR (must be set; default file uses "h264") |
+| codec | codec | VK_VIDEO_CODEC_OPERATION_NONE_KHR (selects the codec without `--codec`; default file uses "h264") |
 | outputPath | outputFileHandler | empty (no output file) |
 | encodeWidth | encodeWidth | 0 |
 | encodeHeight | encodeHeight | 0 |

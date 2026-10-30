@@ -9,6 +9,7 @@
 #include "VkVideoEncoder/VkEncoderConfig.h"
 #include "VkVideoEncoder/VkVideoGopStructure.h"
 #include "simdjson.h"
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -27,21 +28,63 @@ static VkVideoEncodeRateControlModeFlagBitsKHR rcModeFromString(std::string_view
     return VK_VIDEO_ENCODE_RATE_CONTROL_MODE_FLAG_BITS_MAX_ENUM_KHR;
 }
 
+// Parses a file into doc, which lives as long as padded and parser. Returns false, with a message,
+// when the file cannot be read or parsed.
+static bool ParseFile(const char* path, simdjson::padded_string& padded, simdjson::ondemand::parser& parser,
+                      simdjson::ondemand::document& doc) {
+    if (simdjson::padded_string::load(path).get(padded)) {
+        fprintf(stderr, "EncoderConfig JSON: cannot load file: %s\n", path);
+        return false;
+    }
+    if (parser.iterate(padded).get(doc)) {
+        fprintf(stderr, "EncoderConfig JSON: parse error: %s\n", path);
+        return false;
+    }
+    return true;
+}
+
+// The codec of a "codec" value, VK_VIDEO_CODEC_OPERATION_NONE_KHR, with a message, for a value
+// that is not a codec the schema defines.
+static VkVideoCodecOperationFlagBitsKHR codecFromValue(simdjson::ondemand::value& val, const char* path) {
+    std::string_view s;
+    const VkVideoCodecOperationFlagBitsKHR codec =
+        (val.get_string().get(s) == simdjson::SUCCESS) ? codecFromString(s) : VK_VIDEO_CODEC_OPERATION_NONE_KHR;
+    if (codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) {
+        fprintf(stderr, "EncoderConfig JSON: invalid codec: %s\n", path);
+    }
+    return codec;
+}
+
+int ReadEncoderCodecFromJson(const char* path, VkVideoCodecOperationFlagBitsKHR* codec) {
+    if (!path || !codec) return -1;
+    *codec = VK_VIDEO_CODEC_OPERATION_NONE_KHR;
+
+    simdjson::padded_string padded;
+    simdjson::ondemand::parser parser;
+    simdjson::ondemand::document doc;
+    if (!ParseFile(path, padded, parser, doc)) return -1;
+    simdjson::ondemand::object obj;
+    if (doc.get_object().get(obj)) return -1;
+
+    for (auto field : obj) {
+        simdjson::ondemand::raw_json_string key;
+        if (field.key().get(key) || !key.is_equal("codec")) continue;
+        simdjson::ondemand::value val;
+        if (field.value().get(val)) return -1;
+        *codec = codecFromValue(val, path);
+        if (*codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) return -1;
+    }
+    return 0;
+}
+
 int LoadEncoderConfigFromJson(const char* path, void* encoderConfig) {
     EncoderConfig* config = static_cast<EncoderConfig*>(encoderConfig);
     if (!config || !path) return -1;
 
     simdjson::padded_string padded;
-    if (simdjson::padded_string::load(path).get(padded)) {
-        fprintf(stderr, "EncoderConfig JSON: cannot load file: %s\n", path);
-        return -1;
-    }
     simdjson::ondemand::parser parser;
     simdjson::ondemand::document doc;
-    if (parser.iterate(padded).get(doc)) {
-        fprintf(stderr, "EncoderConfig JSON: parse error: %s\n", path);
-        return -1;
-    }
+    if (!ParseFile(path, padded, parser, doc)) return -1;
     simdjson::ondemand::object obj;
     if (doc.get_object().get(obj)) return -1;
 
@@ -53,8 +96,8 @@ int LoadEncoderConfigFromJson(const char* path, void* encoderConfig) {
         if (field.value().get(val)) continue;
 
         if (key.is_equal("codec")) {
-            std::string_view s;
-            if (val.get_string().get(s) == simdjson::SUCCESS) config->codec = codecFromString(s);
+            config->codec = codecFromValue(val, path);
+            if (config->codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) return -1;
         } else if (key.is_equal("outputPath")) {
             std::string_view s;
             if (val.get_string().get(s) == simdjson::SUCCESS && !s.empty())
@@ -78,25 +121,41 @@ int LoadEncoderConfigFromJson(const char* path, void* encoderConfig) {
             int64_t v;
             if (val.get_int64().get(v) == simdjson::SUCCESS && v >= 0) config->vbvBufferSize = (uint32_t)v;
         } else if (key.is_equal("constQpI")) {
+            // -1 or 0 leaves a constant QP unset, as 0 does on the command line: the codec
+            // configuration takes the driver's preferred QP for it.
             int64_t v;
-            if (val.get_int64().get(v) == simdjson::SUCCESS && v >= -1 && v <= 51) config->constQp.qpIntra = (uint32_t)v;
+            if (val.get_int64().get(v) == simdjson::SUCCESS && v >= -1 && v <= 51) {
+                config->constQp.qpIntra = (uint32_t)std::max<int64_t>(v, 0);
+            }
         } else if (key.is_equal("constQpP")) {
             int64_t v;
-            if (val.get_int64().get(v) == simdjson::SUCCESS && v >= -1 && v <= 51) config->constQp.qpInterP = (uint32_t)v;
+            if (val.get_int64().get(v) == simdjson::SUCCESS && v >= -1 && v <= 51) {
+                config->constQp.qpInterP = (uint32_t)std::max<int64_t>(v, 0);
+            }
         } else if (key.is_equal("constQpB")) {
             int64_t v;
-            if (val.get_int64().get(v) == simdjson::SUCCESS && v >= -1 && v <= 51) config->constQp.qpInterB = (uint32_t)v;
+            if (val.get_int64().get(v) == simdjson::SUCCESS && v >= -1 && v <= 51) {
+                config->constQp.qpInterB = (uint32_t)std::max<int64_t>(v, 0);
+            }
         } else if (key.is_equal("qp")) {
             int64_t v;
             if (val.get_int64().get(v) == simdjson::SUCCESS && v >= -1 && v <= 51) {
-                config->constQp.qpIntra = config->constQp.qpInterP = (uint32_t)v;
+                config->constQp.qpIntra = config->constQp.qpInterP = (uint32_t)std::max<int64_t>(v, 0);
             }
         } else if (key.is_equal("minQp")) {
+            // A QP limit takes effect through its marker, as --minQp and --maxQp set it; -1 is
+            // no limit.
             int64_t v;
-            if (val.get_int64().get(v) == simdjson::SUCCESS && v >= -1 && v <= 51) config->minQp = (int32_t)v;
+            if (val.get_int64().get(v) == simdjson::SUCCESS && v >= -1 && v <= 51) {
+                config->minQp = (int32_t)v;
+                config->minQpSet = (v >= 0) ? 1 : 0;
+            }
         } else if (key.is_equal("maxQp")) {
             int64_t v;
-            if (val.get_int64().get(v) == simdjson::SUCCESS && v >= -1 && v <= 51) config->maxQp = (int32_t)v;
+            if (val.get_int64().get(v) == simdjson::SUCCESS && v >= -1 && v <= 51) {
+                config->maxQp = (int32_t)v;
+                config->maxQpSet = (v >= 0) ? 1 : 0;
+            }
         } else if (key.is_equal("gopLength")) {
             int64_t v;
             if (val.get_int64().get(v) == simdjson::SUCCESS && v >= 0) config->gopStructure.SetGopFrameCount((uint32_t)v);
@@ -152,6 +211,24 @@ int LoadEncoderConfigFromJson(const char* path, void* encoderConfig) {
                     }
                 }
             }
+        } else if (key.is_equal("tuningMode")) {
+            std::string_view s;
+            if ((val.get_string().get(s) != simdjson::SUCCESS) ||
+                !EncoderConfig::TuningModeFromName(std::string(s), config->tuningMode)) {
+                fprintf(stderr, "EncoderConfig JSON: invalid tuningMode: %s\n", path);
+                return -1;
+            }
+        } else {
+            // A key encoder_config.schema.json does not define is refused, so that a misspelt or
+            // unsupported setting stops the encode instead of leaving its default in place. The
+            // raw key runs to its closing quote.
+            const char* name = key.raw();
+            const char* end = name;
+            while ((*end != '"') && (*end != '\0')) {
+                end++;
+            }
+            fprintf(stderr, "EncoderConfig JSON: unknown key \"%.*s\": %s\n", (int)(end - name), name, path);
+            return -1;
         }
     }
 

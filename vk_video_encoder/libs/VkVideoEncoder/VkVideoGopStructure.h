@@ -187,8 +187,8 @@ public:
     uint32_t GetNonReferencePFramePeriod() const { return m_nonReferencePFramePeriod; }
     bool IsClosedGop() { return m_closedGop; }
 
-    // lastFrameType is the type of frame that will be used for the last frame in the stream.
-    // This frame type will replace the type regardless on the type determined by the GOP structure.
+    // Stored and not read: GetPositionInGOP() decides the type of the stream's last frame, and a
+    // last frame that would be a B picture takes the pre-closed-GOP anchor type instead.
     bool SetLastFrameType(FrameType lastFrameType) {
 
         m_lastFrameType = lastFrameType;
