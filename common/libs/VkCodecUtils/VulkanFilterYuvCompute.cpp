@@ -188,7 +188,7 @@ VkResult VulkanFilterYuvCompute::Create(const VulkanDeviceContext* vkDevCtx,
 //
 // Deliberately NOT added to YcbcrVkFormatInfo(): (a) that table is dense-indexed by
 // (format - BEGIN_RANGE) with a size assert, so enums 37/64 cannot live in it, and
-// (b) the same enum is legitimately plain RGBA elsewhere -- GetOutputFormat() returns
+// (b) the same enum is legitimately plain RGBA elsewhere -- GetOutputFormat() can return
 // VK_FORMAT_R8G8B8A8_UNORM as the YCBCR2RGBA *output*. So "is this YCbCr?" is answered by
 // the FILTER TYPE, not by the enum; this table only answers "if it is, what is its layout?".
 //
@@ -231,6 +231,8 @@ PackedYcbcrSideInfo(VulkanFilterYuvCompute::FilterType filterType, bool isInput,
     }
     return PackedYcbcrFormatInfo(format);
 }
+
+static const char* GlslImageFormatQualifier(VkFormat format);
 
 VkResult VulkanFilterYuvCompute::Init(const VkSamplerYcbcrConversionCreateInfo* pYcbcrConversionCreateInfo,
                                       const VkSamplerCreateInfo* pSamplerCreateInfo)
@@ -284,6 +286,19 @@ VkResult VulkanFilterYuvCompute::Init(const VkSamplerYcbcrConversionCreateInfo* 
     if (result != VK_SUCCESS) {
         assert(!"ERROR: InitDescriptorSetLayout!");
         return result;
+    }
+
+    // A storage image declared without a format (GlslImageFormatQualifier): the device must read and
+    // write those. VulkanDeviceContext enables every core feature the device has.
+    const bool readsWithoutFormat = (m_filterType == RGBA2YCBCR) && (GlslImageFormatQualifier(m_inputFormat)[0] == '\0');
+    const bool writesWithoutFormat = (m_filterType == YCBCR2RGBA) && (GlslImageFormatQualifier(m_outputFormat)[0] == '\0');
+    if (readsWithoutFormat || writesWithoutFormat) {
+        VkPhysicalDeviceFeatures2 features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+        m_vkDevCtx->GetPhysicalDeviceFeatures2(m_vkDevCtx->getPhysicalDevice(), &features);
+        if ((readsWithoutFormat && !features.features.shaderStorageImageReadWithoutFormat) ||
+            (writesWithoutFormat && !features.features.shaderStorageImageWriteWithoutFormat)) {
+            return VK_ERROR_FORMAT_NOT_SUPPORTED;
+        }
     }
 
     std::string computeShader;
@@ -497,9 +512,14 @@ static void GenPushConstantsDecl(std::stringstream& shaderStr) {
  *
  * @param shaderStr Output stringstream where the GLSL code will be written
  */
-static void GenHeaderAndPushConst(std::stringstream& shaderStr)
+static void GenHeaderAndPushConst(std::stringstream& shaderStr, bool readsWithoutFormat = false)
 {
     shaderStr << "#version 450\n";
+    if (readsWithoutFormat) {
+        // An image declared without a format can be read only with this extension (and the device's
+        // shaderStorageImageReadWithoutFormat).
+        shaderStr << "#extension GL_EXT_shader_image_load_formatted : require\n";
+    }
     GenPushConstantsDecl(shaderStr);
     shaderStr << "\n"
               << "layout (local_size_x = 16, local_size_y = 16) in;\n"
@@ -535,8 +555,17 @@ static void GenHeaderAndPushConst(std::stringstream& shaderStr)
 // BuildGlslShader() rejects the generated GLSL, so an unknown format now
 // fails at Init(), through the path a shader that will not compile already
 // takes, and with a status the caller can act on.
+//
+// A storage image's declared format must be its view's (the layer reports any other as
+// Undefined-Value-StorageImage-FormatMismatch-ImageView: loads and stores of the image are undefined).
+// SPIR-V has no image format for B8G8R8A8_UNORM, so a view of it is declared without one: the empty
+// qualifier, read with shaderStorageImageReadWithoutFormat and written with
+// shaderStorageImageWriteWithoutFormat, which VulkanFilterYuvCompute::Init checks for.
 static const char* GlslImageFormatQualifier(VkFormat format)
 {
+    if (format == VK_FORMAT_B8G8R8A8_UNORM) {
+        return "";
+    }
     const VkFormatDesc* formatDesc = vkFormatLookUp(format);
     if ((formatDesc != nullptr) && (formatDesc->name != nullptr)) {
         return formatDesc->name;
@@ -554,7 +583,11 @@ static void GenImageIoBindingLayout(std::stringstream& shaderStr,
                                     uint32_t set,
                                     bool imageArray) {
 
-    shaderStr << "layout (set = " << set << ", binding = " << binding << ", " << imageFormat << ") uniform"
+    shaderStr << "layout (set = " << set << ", binding = " << binding;
+    if (imageFormat[0] != '\0') {
+        shaderStr << ", " << imageFormat;
+    }
+    shaderStr << ") uniform"
               << (isInput ? " readonly" : " writeonly")
               << (imageArray ? " image2DArray " : " image2D ")
               << imageName << imageSubName
@@ -2689,6 +2722,13 @@ static void GenConvertYCbCrFormat(std::stringstream& shaderStr,
 VkFormat VulkanFilterYuvCompute::GetOutputFormat(FilterType filterType, VkFormat inputFormat, VkFormat outputFormat)
 {
     if (filterType == YCBCR2RGBA) {
+        // The format the caller writes the output in, which the shader declares its output with;
+        // derived from the input's depth only when the caller names no RGBA format. A single-plane
+        // format is RGBA here: this filter's output is never packed YCbCr, whose carrier formats
+        // (R8G8B8A8_UNORM for AYUV) are RGBA ones too.
+        if ((outputFormat != VK_FORMAT_UNDEFINED) && (YcbcrVkFormatInfo(outputFormat) == nullptr)) {
+            return outputFormat;
+        }
         const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(inputFormat);
         if (mpInfo == nullptr)
             return VK_FORMAT_UNDEFINED;
@@ -2700,10 +2740,6 @@ VkFormat VulkanFilterYuvCompute::GetOutputFormat(FilterType filterType, VkFormat
     return outputFormat;
 }
 
-// DEPRECATED -- see the YCBCR2RGBA note in VulkanFilterYuvCompute.h. No production path
-// uses this generator, its test family is disabled, and it still assumes a 2-plane input
-// (a 3-plane format emits GLSL that does not compile). The chroma-ratio fix below is
-// correct as far as it goes but does not make the path usable on its own.
 bool VulkanFilterYuvCompute::OutputDescriptorIsArray() const
 {
     // A MULTI-PLANAR output binds per-plane views. VkImageResourceView::Create
@@ -2721,6 +2757,8 @@ bool VulkanFilterYuvCompute::OutputDescriptorIsArray() const
     return bindsPerPlaneViews ? true : (m_outputImageArray != 0);
 }
 
+// DEPRECATED -- see the YCBCR2RGBA note in VulkanFilterYuvCompute.h. It serves a 2-plane or a
+// 3-plane input; a packed input (Y410) gets no output format (GetOutputFormat).
 size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
 {
     // The compute filter uses two or three input images as separate planes
@@ -2762,8 +2800,9 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
                                    false, // isInput
                                    4,     // startBinding
                                    0,     // set
-                                   // GetOutputFormat forces this filter's output
-                                   // to R8G8B8A8_UNORM or R16G16B16A16_UNORM, so
+                                   // GetOutputFormat gives this filter's output
+                                   // the caller's RGBA format, or R8G8B8A8_UNORM
+                                   // or R16G16B16A16_UNORM, so
                                    // YcbcrVkFormatInfo is null here and
                                    // ShaderGenerateImagePlaneDescriptors always
                                    // takes the PACKED arm: one COLOR binding,
@@ -2871,10 +2910,22 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
         "    // Chroma subsampling of the input format: "
             << chromaHorzRatio << "x" << chromaVertRatio << "\n"
         "    ivec2 chromaPos = ivec2(srcPos.x / " << chromaHorzRatio
-            << ", srcPos.y / " << chromaVertRatio << ");\n"
-        "    vec2 CbCr = imageLoad(inputImageCbCr, ivec3(chromaPos, pushConstants.srcLayer)).rg;\n"
+            << ", srcPos.y / " << chromaVertRatio << ");\n";
+    // Cb and Cr from the planes the descriptors above declare: one interleaved plane for a 2-plane
+    // input, one plane each for a 3-plane input.
+    if ((mpInfo != nullptr) && (mpInfo->planesLayout.numberOfExtraPlanes == 2)) {
+        shaderStr <<
+            "    vec2 CbCr = vec2(imageLoad(inputImageCb, ivec3(chromaPos, pushConstants.srcLayer)).r,\n"
+            "                     imageLoad(inputImageCr, ivec3(chromaPos, pushConstants.srcLayer)).r);\n";
+    } else {
+        shaderStr <<
+            "    vec2 CbCr = imageLoad(inputImageCbCr, ivec3(chromaPos, pushConstants.srcLayer)).rg;\n";
+    }
+    shaderStr <<
         "\n"
-        "    vec3 ycbcr = shiftCbCr(normalizeYCbCr(vec3(Y, CbCr)));\n"
+        // normalizeYCbCr() maps the range and centers Cb and Cr on zero: it is the
+        // whole step from stored values to the matrix's input.
+        "    vec3 ycbcr = normalizeYCbCr(vec3(Y, CbCr));\n"
         "    vec4 rgba = vec4(convertYCbCrToRgb(ycbcr),1.0);\n"
         "    // Store it back.\n"
         "    // The index form follows the binding declared above.\n";
@@ -3343,9 +3394,8 @@ static void GenReadRgbBlock(std::stringstream& shaderStr,
         for (uint32_t x = 0; x < chromaHorzRatio; x++) {
             // imageLoad returns the vec4 in RGBA order regardless of the byte
             // order the VkFormat names -- that is a property of the format, not
-            // of the access -- so .rgb is the correct swizzle. The declared
-            // `rgba8` qualifier is what the storage form is told the layout is,
-            // and it is the only 8-bit four-component qualifier GLSL has.
+            // of the access -- so .rgb is the correct swizzle; the declaration
+            // names the view's format, or none for one SPIR-V has no format for.
             shaderStr << "    vec3 rgb" << x << y << " = "
                       << "imageLoad"
                       << "(inputImageRGBA, ";
@@ -3537,8 +3587,8 @@ size_t VulkanFilterYuvCompute::InitRGBA2YCBCR(std::string& computeShader)
 
     std::stringstream shaderStr;
 
-    // 1. Generate header and push constants
-    GenHeaderAndPushConst(shaderStr);
+    // 1. Generate header and push constants; an input with no image format is read without one
+    GenHeaderAndPushConst(shaderStr, GlslImageFormatQualifier(m_inputFormat)[0] == '\0');
 
     // 2. Input RGBA image binding (binding 0)
     //
@@ -3570,13 +3620,12 @@ size_t VulkanFilterYuvCompute::InitRGBA2YCBCR(std::string& computeShader)
     //     what is guaranteed here is that nothing on this path introduces a
     //     transfer function of its own. A _UNORM view in gives R'G'B' in.
     //
-    // The component order is a property of the VIEW. The declaration below
-    // names the `rgba8` qualifier because GLSL offers no other for an 8-bit
-    // four-component storage image -- there is no `bgra8` -- so a
-    // B8G8R8A8_UNORM view is read through a declaration that does not spell
-    // its layout, and the order it yields is the implementation's to decide.
+    // The component order is a property of the VIEW. The declaration names the
+    // input's own format (GlslImageFormatQualifier): `rgba8` for R8G8B8A8_UNORM,
+    // and none for B8G8R8A8_UNORM, which SPIR-V has no image format for, so it
+    // is read without one and imageLoad returns its components in RGBA order.
     shaderStr << " // Input RGBA image binding\n";
-    GenImageIoBindingLayout(shaderStr, "inputImage", "RGBA", "rgba8", true, 0, 0, false);
+    GenImageIoBindingLayout(shaderStr, "inputImage", "RGBA", GlslImageFormatQualifier(m_inputFormat), true, 0, 0, false);
 
     // 3. Output YCbCr plane bindings (bindings 4-7)
     // This will set m_outputImageAspects based on the output format

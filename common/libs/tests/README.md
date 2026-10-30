@@ -75,7 +75,7 @@ standard set.
 | Set | Option | What it holds |
 |-----|--------|---------------|
 | Smoke | `--smoke` (the default) | One case per major category |
-| Standard | in `--all` | RGBA to YCbCr, copy, clear, format conversion, linear tiling, multi-output, component order, edge cases |
+| Standard | in `--all` | RGBA to YCbCr, YCbCr to RGBA, copy, clear, format conversion, linear tiling, multi-output, component order, edge cases |
 | Regression | `--regression` | BT.2020 cases |
 | Production | `--production` | SD to 4K, full and limited range |
 | Color primaries | `--primaries` | BT.601, BT.709, BT.2020 |
@@ -84,12 +84,13 @@ standard set.
 
 ### Disabled cases
 
-YCbCr to RGBA (TC010 to TC017), RGBA to Y410 (TC008), buffer I/O (TC070 to TC076) and the
-transfer-only filter types (TC117 to TC120) are disabled. A case that fails for a known defect
-is in no set: `getDisabledTests()` in `src/TestCases.cpp` lists it with the defect, `--list`
-prints both, and `--test <name>` runs it to reproduce the defect. A case leaves the list in the
-change that fixes its defect. The device-free CTest `FilterListTests` fails when a case that
-`src/TestCases.cpp` defines is in no set and not disabled, or is both.
+YCbCr to RGBA from a packed input (TC017), RGBA to Y410 (TC008), buffer I/O (TC070 to TC076)
+and the transfer-only filter types (TC117 to TC120) are disabled.
+A case that fails for a known defect is in no set: `getDisabledTests()` in
+`src/TestCases.cpp` lists it with the defect, `--list` prints both, and `--test <name>` runs
+it to reproduce the defect. A case leaves the list in the change that fixes its defect. The
+device-free CTest `FilterListTests` fails when a case that `src/TestCases.cpp` defines is in
+no set and not disabled, or is both.
 
 ## Supported Formats
 

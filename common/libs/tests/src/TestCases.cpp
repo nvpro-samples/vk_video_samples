@@ -1397,7 +1397,15 @@ std::vector<TestCaseConfig> getAllStandardTests() {
         TC006_RGBA_to_P210(),
         TC007_RGBA_to_YUV444(),
 
-        // YCbCr to RGBA: every case is in getDisabledTests().
+        // YCbCr to RGBA (the packed input is in getDisabledTests())
+        TC010_NV12_to_RGBA(),
+        TC011_P010_to_RGBA(),
+        TC012_P012_to_RGBA(),
+        TC013_I420_to_RGBA(),
+        TC014_NV16_to_RGBA(),
+        TC015_P210_to_RGBA(),
+        TC015b_P212_to_RGBA(),
+        TC016_YUV444_to_RGBA(),
 
         // Color primaries (BT.601, BT.709, BT.2020)
         TC020_RGBA_to_NV12_BT601(),
@@ -1487,6 +1495,7 @@ std::vector<TestCaseConfig> getSmokeTests() {
         TC002_RGBA_to_P010(),       // 10-bit 4:2:0
         TC005_RGBA_to_NV16(),       // 8-bit 4:2:2
         TC007_RGBA_to_YUV444(),     // 8-bit 4:4:4
+        TC010_NV12_to_RGBA(),       // YCbCr to RGBA
         TC040_YCbCrCopy_NV12(),     // Copy
         TC050_YCbCrClear_NV12(),    // Clear
         TC100_Small_Resolution_64x64(),   // Edge case
@@ -1595,14 +1604,6 @@ std::vector<TestCaseConfig> getTransferTests() {
 std::vector<DisabledTestCase> getDisabledTests() {
     // Each entry names the defect the case shows. A case leaves this list in the change
     // that fixes its defect.
-    static const char* const kYcbcr2RgbaChromaTwice =
-        "YCBCR2RGBA centers Cb and Cr twice: main() applies shiftCbCr() to the output of "
-        "normalizeYCbCr(), which already subtracts the chroma midpoint, so every pixel is "
-        "off by half the chroma range (worst error R 202, G 84, B 236 of 255)";
-    static const char* const kYcbcr2RgbaThreePlane =
-        "YCBCR2RGBA's main() reads chroma from inputImageCbCr, which a 3-plane input does "
-        "not declare: the GLSL does not compile and Create() returns "
-        "VK_ERROR_INITIALIZATION_FAILED";
     static const char* const kNoBufferIo =
         "runTest() has no buffer input or output: it stops at \"Buffer I/O not yet "
         "implemented in test\" before recording the filter";
@@ -1614,14 +1615,6 @@ std::vector<DisabledTestCase> getDisabledTests() {
         {TC008_RGBA_to_Y410(),
          "RGBA2YCBCR to Y410 builds and dispatches, but generateReferenceOutput() has no CPU "
          "model for a Y410 output, so the case reports UNVALIDATED"},
-        {TC010_NV12_to_RGBA(), kYcbcr2RgbaChromaTwice},
-        {TC011_P010_to_RGBA(), kYcbcr2RgbaChromaTwice},
-        {TC012_P012_to_RGBA(), kYcbcr2RgbaChromaTwice},
-        {TC013_I420_to_RGBA(), kYcbcr2RgbaThreePlane},
-        {TC014_NV16_to_RGBA(), kYcbcr2RgbaChromaTwice},
-        {TC015_P210_to_RGBA(), kYcbcr2RgbaChromaTwice},
-        {TC015b_P212_to_RGBA(), kYcbcr2RgbaChromaTwice},
-        {TC016_YUV444_to_RGBA(), kYcbcr2RgbaThreePlane},
         {TC017_Y410_to_RGBA(),
          "YCBCR2RGBA with a packed input: GetOutputFormat() asks only the multi-planar format "
          "table and answers VK_FORMAT_UNDEFINED, so GlslImageFormatQualifier() has no "

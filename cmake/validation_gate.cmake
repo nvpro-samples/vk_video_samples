@@ -23,7 +23,9 @@
 # A message without a VUID -- thread safety, the layer's own parameter checks
 # (UNASSIGNED-*), synchronization hazards -- has no trailer, so it is counted
 # once per "Validation Error: [ <id> ]" header. Warnings without a VUID are
-# not counted.
+# not counted, except those the layer files under Undefined-Value- (an access
+# whose result is undefined, such as a storage image declared in a format its
+# view does not have), which count as errors do, once per header.
 #
 # THE LAYER IS FORCED, AND ITS INSERTION IS WITNESSED. A gated test that runs
 # without the validation layer loaded is a check that cannot fail, and it
@@ -202,7 +204,7 @@ foreach(_line IN LISTS _lines)
     # Copied before the next MATCHES, which sets CMAKE_MATCH_<n> again.
     set(_severity "${CMAKE_MATCH_1}")
     set(_id "${CMAKE_MATCH_2}")
-    if(_severity STREQUAL "Error" AND NOT _id MATCHES "^VUID-")
+    if((_severity STREQUAL "Error" AND NOT _id MATCHES "^VUID-") OR _id MATCHES "^Undefined-Value-")
       set(_pending_id "${_id}")
       set(_pending_text "${_line}")
     endif()

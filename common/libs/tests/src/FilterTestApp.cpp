@@ -695,6 +695,9 @@ TestResult FilterTestApp::runTest(const TestCaseConfig& config) {
     if (vkResult != VK_SUCCESS) {
         result.errorMessage = "Failed to create filter: " + std::to_string(vkResult);
         result.passed = false;
+        // A filter the device cannot run (a storage image format it cannot read) is not
+        // coverage either, as for a format it does not implement.
+        result.unvalidated = (vkResult == VK_ERROR_FORMAT_NOT_SUPPORTED);
         return result;
     }
     
