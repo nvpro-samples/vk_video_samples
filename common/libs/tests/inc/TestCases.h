@@ -173,6 +173,11 @@ TestCaseConfig TC074_NV12Image_to_RGBABuffer();
 TestCaseConfig TC075_RGBABuffer_to_P010Buffer();
 TestCaseConfig TC076_P010Buffer_to_RGBABuffer();
 
+// YCbCr copy with a buffer side: 3-plane write, 3-plane read with a 16-bit write, 16-bit read
+TestCaseConfig TC077_NV12Image_to_I420Buffer();
+TestCaseConfig TC078_I420Buffer_to_P010Buffer();
+TestCaseConfig TC079_P010Buffer_to_NV12Image();
+
 // =============================================================================
 // Linear Tiling Tests
 // =============================================================================

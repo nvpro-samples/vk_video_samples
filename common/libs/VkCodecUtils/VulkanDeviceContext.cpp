@@ -1189,6 +1189,27 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
             pAfterYcbcr = &descriptorBufferFeatures;
         }
 
+        // The compute filter's buffer input and output (VulkanFilterYuvCompute::FLAG_INPUT_BUFFER,
+        // FLAG_OUTPUT_BUFFER) hold an 8-bit sample in a byte and a deeper one in a 16-bit word of a storage
+        // buffer. Only the storage buffer access of the two structures is enabled, on a device that has it;
+        // the structures are core in Vulkan 1.2 and 1.1.
+        VkPhysicalDeviceProperties physDeviceProperties = {};
+        GetPhysicalDeviceProperties(m_physDevice, &physDeviceProperties);
+        VkPhysicalDevice8BitStorageFeatures storage8BitFeatures {
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES,
+            pAfterYcbcr,
+            VK_FALSE, VK_FALSE, VK_FALSE };
+        if (physDeviceProperties.apiVersion >= VK_API_VERSION_1_2) {
+            pAfterYcbcr = &storage8BitFeatures;
+        }
+        VkPhysicalDevice16BitStorageFeatures storage16BitFeatures {
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES,
+            pAfterYcbcr,
+            VK_FALSE, VK_FALSE, VK_FALSE, VK_FALSE };
+        if (physDeviceProperties.apiVersion >= VK_API_VERSION_1_1) {
+            pAfterYcbcr = &storage16BitFeatures;
+        }
+
         // Required for creating YCbCr samplers used with multi-planar video formats
         VkPhysicalDeviceSamplerYcbcrConversionFeatures samplerYcbcrFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES,
                                                                                pAfterYcbcr,
@@ -1209,6 +1230,13 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         bufferDeviceAddressFeatures.bufferDeviceAddressCaptureReplay = VK_FALSE;
         bufferDeviceAddressFeatures.bufferDeviceAddressMultiDevice = VK_FALSE;
         m_robustBufferAccessEnabled = (deviceFeatures.features.robustBufferAccess == VK_TRUE);
+        storage8BitFeatures.uniformAndStorageBuffer8BitAccess = VK_FALSE;
+        storage8BitFeatures.storagePushConstant8 = VK_FALSE;
+        storage16BitFeatures.uniformAndStorageBuffer16BitAccess = VK_FALSE;
+        storage16BitFeatures.storagePushConstant16 = VK_FALSE;
+        storage16BitFeatures.storageInputOutput16 = VK_FALSE;
+        m_storageBuffer8BitAccess = (storage8BitFeatures.storageBuffer8BitAccess == VK_TRUE);
+        m_storageBuffer16BitAccess = (storage16BitFeatures.storageBuffer16BitAccess == VK_TRUE);
 
         assert(timelineSemaphoreFeatures.timelineSemaphore);
         assert(videoMaintenance1Features.videoMaintenance1);
@@ -1271,6 +1299,8 @@ VkResult VulkanDeviceContext::CreateVulkanDevice(int32_t numDecodeQueues,
         // The creator chose the imported device's features; descriptor buffers are not assumed.
         m_descriptorBufferEnabled = false;
         m_robustBufferAccessEnabled = false;
+        m_storageBuffer8BitAccess = false;
+        m_storageBuffer16BitAccess = false;
         // Log the imported-VkDevice path so an embedder can verify it is
         // active. Gated on the silenceStdio latch via VkEncOut() so it
         // stays quiet inside the sandboxed GPU process.

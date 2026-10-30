@@ -244,6 +244,10 @@ public:
     // The device enables every core feature it has, robustBufferAccess among them, which sets the size of a
     // buffer descriptor in a descriptor buffer.
     bool IsRobustBufferAccessEnabled() const { return m_robustBufferAccessEnabled; }
+    // storageBuffer8BitAccess and storageBuffer16BitAccess, enabled when the device has them: the compute
+    // filter's YCbCr buffers hold their samples in 8- and 16-bit storage buffer elements.
+    bool HasStorageBuffer8BitAccess() const { return m_storageBuffer8BitAccess; }
+    bool HasStorageBuffer16BitAccess() const { return m_storageBuffer16BitAccess; }
 
     void PrintExtensions(bool deviceExt = false) const;
 
@@ -434,6 +438,8 @@ private:
     mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoEncodeQueueMutexes;
     bool                               m_descriptorBufferEnabled = false;
     bool                               m_robustBufferAccessEnabled = false;
+    bool                               m_storageBuffer8BitAccess = false;
+    bool                               m_storageBuffer16BitAccess = false;
     VkDebugReportCallbackEXT           m_debugReport = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT           m_debugUtilsMessenger = VK_NULL_HANDLE;
     PFN_vkCreateDebugUtilsMessengerEXT  m_createDebugUtilsMessengerEXT = nullptr;

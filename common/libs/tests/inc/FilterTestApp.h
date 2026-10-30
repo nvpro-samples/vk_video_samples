@@ -342,7 +342,21 @@ private:
     VkResult copyImageToStagingBuffer(const TestIOSlot& slot,
                                      VkSharedBaseObj<VkImageResource>& image,
                                      VkSharedBaseObj<VkBufferResource>& stagingBuffer);
-    
+
+    /**
+     * @brief Record the upload of a pattern into an image in the GENERAL layout.
+     *
+     * One region per plane, from a host-visible staging buffer that holds the planes
+     * tightly packed, as generateTestPattern() stages them. The staging buffer must
+     * outlive the submission. The caller records the barrier that orders the copy
+     * before the image's next use.
+     */
+    VkResult recordPatternUpload(VkCommandBuffer cmdBuffer,
+                                 const TestIOSlot& slot,
+                                 VkSharedBaseObj<VkImageResource>& image,
+                                 const std::vector<uint8_t>& pattern,
+                                 VkSharedBaseObj<VkBufferResource>& stagingBuffer);
+
     /**
      * @brief Generate reference output data for validation
      */
