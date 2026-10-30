@@ -11,16 +11,16 @@ Input YUV files follow the naming convention: {W}x{H}_{subsampling}_{bitdepth}.y
   - e.g. 720x480_420_8le.yuv, 1920x1080_420_10le.yuv
 
 To generate YUV test assets at all required resolutions and formats:
-  ThreadedRenderingVk_Standalone/scripts/generate_encoder_yuv.sh --all --output-dir /data/misc/VideoClips/ycbcr
+  ThreadedRenderingVk_Standalone/scripts/generate_encoder_yuv.sh --all --output-dir /path/to/VideoClips/ycbcr
 
 Usage:
-    python run_encoder_profile_tests.py --video-dir /data/misc/VideoClips/ycbcr [OPTIONS]
+    python run_encoder_profile_tests.py --video-dir /path/to/VideoClips/ycbcr [OPTIONS]
 
     # Run only NVIDIA profiles
-    python run_encoder_profile_tests.py --video-dir /data/misc/VideoClips/ycbcr --profile-filter nvidia
+    python run_encoder_profile_tests.py --video-dir /path/to/VideoClips/ycbcr --profile-filter nvidia
 
     # Run only a specific profile
-    python run_encoder_profile_tests.py --video-dir /data/misc/VideoClips/ycbcr --profile-filter nvidia/high_quality_p4
+    python run_encoder_profile_tests.py --video-dir /path/to/VideoClips/ycbcr --profile-filter nvidia/high_quality_p4
 """
 
 import argparse

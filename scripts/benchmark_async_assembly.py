@@ -9,14 +9,14 @@ Works on both Linux and Windows (MINGW64).
 Usage:
     python benchmark_async_assembly.py --video-dir /path/to/yuv [OPTIONS]
 
-    # Linux VM (local):
-    python scripts/benchmark_async_assembly.py --video-dir /data/misc/VideoClips/ycbcr --local
+    # Linux (local):
+    python scripts/benchmark_async_assembly.py --video-dir /path/to/VideoClips/ycbcr --local
 
     # Remote (SSH):
-    python scripts/benchmark_async_assembly.py --video-dir /data/misc/VideoClips/ycbcr --remote 192.168.122.216
+    python scripts/benchmark_async_assembly.py --video-dir /path/to/VideoClips/ycbcr --remote <remote-host>
 
     # Windows (MINGW64, local):
-    python scripts/benchmark_async_assembly.py --video-dir /n/data/misc/VideoClips/ycbcr --local
+    python scripts/benchmark_async_assembly.py --video-dir /c/path/to/VideoClips/ycbcr --local
 """
 
 import argparse

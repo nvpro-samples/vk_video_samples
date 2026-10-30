@@ -1,10 +1,10 @@
 # Vulkan Video Encoder NVIDIA Preset Review Report
 
 ## Scope
-- Spreadsheet: `/home/tzlatinski/Downloads/PreferredSettings (2).xlsx`
-- NVENC sample app: `/data/nvidia-linux/dev_a/drivers/multimedia/codecs/EncodeAPI/tools/nvEncodeApp`
-- NVENC driver: `/data/nvidia-linux/dev_a/drivers/video/encode`
-- Vulkan video driver: `/data/nvidia-linux/dev_a/drivers/OpenGL/vulkan/video`
+- Spreadsheet: NVIDIA's preferred encode settings
+- NVENC sample app: nvEncodeApp
+- NVENC driver: the NVIDIA NVENC encode driver
+- Vulkan video driver: the NVIDIA Vulkan Video driver
 - JSON presets: this directory (`json_config/nvidia`)
 
 ## What Was Fixed

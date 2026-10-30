@@ -35,6 +35,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+# The checkout this script is in.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 
 # ============================================================================
 # Configuration
@@ -57,8 +60,8 @@ class TestResult(Enum):
 @dataclass
 class TestConfig:
     """Configuration for the test suite."""
-    project_root: Path = Path("/data/nvidia/android-extra/video-apps/vulkan-video-samples")
-    build_dir: Path = Path("/data/nvidia/android-extra/video-apps/vulkan-video-samples/build")
+    project_root: Path = REPO_ROOT
+    build_dir: Path = REPO_ROOT / "build"
     video_clips_dir: Optional[Path] = None  # Must be specified
     output_dir: Path = Path("/tmp/vulkan_video_tests")
     
@@ -876,7 +879,7 @@ Examples:
     python3 vulkan_video_test.py --video-dir /data/videos --test encoder --aq
     
     # Run all tests on a remote host
-    python3 vulkan_video_test.py --video-dir /data/videos --remote 192.168.122.216
+    python3 vulkan_video_test.py --video-dir /path/to/videos --remote <remote-host>
     
     # Run quick tests (limited frames)
     python3 vulkan_video_test.py --video-dir /data/videos --test all --max-frames 10
@@ -925,7 +928,7 @@ Examples:
     parser.add_argument(
         "--build-dir",
         type=Path,
-        default=Path("/data/nvidia/android-extra/video-apps/vulkan-video-samples/build"),
+        default=REPO_ROOT / "build",
         help="Build directory containing executables"
     )
     parser.add_argument(

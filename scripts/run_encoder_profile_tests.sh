@@ -54,13 +54,13 @@ Options (forwarded to run_encoder_profile_tests.py):
 
 Examples:
   # Run all profiles (NVIDIA + generic) with generated YUV
-  ./run_encoder_profile_tests.sh --video-dir /data/misc/VideoClips/ycbcr --local
+  ./run_encoder_profile_tests.sh --video-dir /path/to/VideoClips/ycbcr --local
 
   # Run only NVIDIA profiles, H.265 codec
-  ./run_encoder_profile_tests.sh --video-dir /data/misc/VideoClips/ycbcr --profile-filter nvidia --codec h265
+  ./run_encoder_profile_tests.sh --video-dir /path/to/VideoClips/ycbcr --profile-filter nvidia --codec h265
 
   # Run a single profile
-  ./run_encoder_profile_tests.sh --video-dir /data/misc/VideoClips/ycbcr --profile-filter nvidia/high_quality_p4 --local
+  ./run_encoder_profile_tests.sh --video-dir /path/to/VideoClips/ycbcr --profile-filter nvidia/high_quality_p4 --local
 EOF
     exit 1
 fi

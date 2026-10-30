@@ -70,7 +70,7 @@ To detect memory corruption, buffer overflows, use-after-free, and other memory 
 ### Encoder Only (without AQ library)
 
 ```bash
-cd /data/nvidia/android-extra/video-apps/vulkan-video-samples
+cd /path/to/vulkan-video-samples
 mkdir -p build && cd build
 cmake .. \
     -DCMAKE_BUILD_TYPE=Debug \
@@ -87,7 +87,7 @@ When building with the AQ library, **both must be built with ASan** for complete
 
 **Step 1: Build AQ library with ASan**
 ```bash
-cd /data/nvidia/vulkan/video/algo/aq-vulkan
+cd /path/to/aq-vulkan
 mkdir -p build && cd build
 cmake .. \
     -DCMAKE_BUILD_TYPE=Debug \
@@ -100,10 +100,10 @@ make -j$(nproc)
 
 **Step 2: Build encoder with ASan and AQ library**
 ```bash
-cd /data/nvidia/android-extra/video-apps/vulkan-video-samples
+cd /path/to/vulkan-video-samples
 mkdir -p build && cd build
 cmake .. \
-    -DNV_AQ_GPU_LIB=/data/nvidia/vulkan/video/algo/aq-vulkan \
+    -DNV_AQ_GPU_LIB=/path/to/aq-vulkan \
     -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer -g" \
     -DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer -g" \
