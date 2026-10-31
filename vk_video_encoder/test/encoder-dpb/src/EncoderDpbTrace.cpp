@@ -130,7 +130,6 @@ struct Frame {
     bool isIdr = false;
     bool isReference = false;
     bool lastFrame = false;
-    uint64_t timeStamp = 0;
     uint64_t picOrderCntVal = 0;
     StdVideoEncodeH264PictureInfo h264Info{};
     StdVideoEncodeH264SliceHeader h264Slice{};
@@ -273,7 +272,6 @@ class H264Driver : public CodecDriver {
         pictureInfo.frame_num = m_frameNumSyntax & ((1 << (m_sps.log2_max_frame_num_minus4 + 4)) - 1);
         pictureInfo.PicOrderCnt =
             static_cast<int32_t>(frame.picOrderCntVal & ((1 << (m_sps.log2_max_pic_order_cnt_lsb_minus4 + 4)) - 1));
-        pictureInfo.timeStamp = frame.timeStamp;
         if (isReference) {
             m_frameNumSyntax++;
         }
@@ -456,7 +454,7 @@ class H265Driver : public CodecDriver {
 
         VkSharedBaseObj<VulkanVideoImagePoolNode> setupImage = m_images.New(frame.inputNum);
         VkEncDpbH265::RefPicSet refPicSet{};
-        const int8_t setupSlot = m_dpb.DpbPictureStart(&info, rps, nullptr, maxPicOrderCntLsb, frame.timeStamp, &refPicSet);
+        const int8_t setupSlot = m_dpb.DpbPictureStart(&info, rps, nullptr, maxPicOrderCntLsb, &refPicSet);
 
         StdVideoEncodeH265ReferenceListsInfo refLists{};
         const bool inter = (picType == VkVideoGopStructure::FRAME_TYPE_P) || (picType == VkVideoGopStructure::FRAME_TYPE_B);
@@ -642,7 +640,6 @@ class AV1Driver : public CodecDriver {
         companion->gop = frame->gop;
         companion->picOrderCntVal = frame->picOrderCntVal;
         companion->inputNum = frame->inputNum;
-        companion->timeStamp = frame->inputNum;
         companion->overlayFrame = true;
         companion->showExistingFrame = true;
         deferred.insert(at, std::move(frame));
@@ -1021,7 +1018,6 @@ int main(int argc, char** argv) {
     for (uint32_t i = 0; i < settings.frames; i++) {
         auto frame = std::make_unique<Frame>(gopState.positionInInputOrder);
         frame->inputNum = i;
-        frame->timeStamp = i;
         frame->isIdr = gop.GetPositionInGOP(gopState, frame->gop, i == 0, settings.frames - i);
         frame->isReference = gop.IsFrameReference(frame->gop);
         frame->lastFrame = (i + 1 == settings.frames);

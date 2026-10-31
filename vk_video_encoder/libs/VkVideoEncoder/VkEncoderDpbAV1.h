@@ -68,8 +68,6 @@ struct PicInfoAV1 : public StdVideoEncodeAV1PictureInfo {
 
     StdVideoAV1Quantization quantInfo;
 
-    uint64_t timeStamp;
-
     bool FrameIsKey() {
         return frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY;
     }
@@ -135,8 +133,6 @@ public:
     {
         return m_maxDpbSize;
     }
-    uint64_t GetPictureTimestamp(int32_t picIdx);
-    void SetCurRefFrameTimeStamp(uint64_t timeStamp);
 
     uint32_t GetDirtyIntraRefreshRegions(int8_t dpbIdx);
     void SetDirtyIntraRefreshRegions(int8_t dpbIdx, uint32_t dirtyIntraRefreshRegions);
@@ -298,8 +294,6 @@ private:
     int32_t         m_primaryRefFrame; // the picture's primary_ref_frame
     uint32_t        m_refBufUpdateFlag;
     StdVideoAV1ReferenceName m_lastLastRefNameInUse;
-
-    uint64_t        m_lastKeyFrameTimeStamp;
 
 };
 

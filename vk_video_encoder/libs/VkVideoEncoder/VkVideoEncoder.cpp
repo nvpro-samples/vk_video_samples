@@ -2436,37 +2436,14 @@ void VkVideoEncoder::CopyYCbCrPlanesDirectCPU(
         const uint8_t* srcRow = srcPlane;
         uint8_t* dstRow = dstPlane;
 
-        if (false && (bitDepth > 8)) {
+        // Copy each line, incrementing pointers by stride amounts
+        for (uint32_t y = 0; y < planeHeight; y++) {
+            // Copy the current line
+            memcpy(dstRow, srcRow, lineBytes);
 
-            const int shiftBits = 16 - bitDepth;
-
-            // Copy each line, incrementing pointers by stride amounts
-            for (uint32_t y = 0; y < planeHeight; y++) {
-
-                // Get the starting pointers for this row
-                const uint16_t* srcRow16 = (const uint16_t*)srcRow;
-                uint16_t* dstRow16 = (uint16_t*)dstRow;
-
-                for (uint32_t i = 0; i < planeWidth; i++) {
-                    *dstRow16++ = (*srcRow16++ << shiftBits);
-                }
-
-                // Advance to the next line using pointer arithmetic
-                srcRow += srcStride;
-                dstRow += dstStride;
-            }
-
-        } else {
-
-            // Copy each line, incrementing pointers by stride amounts
-            for (uint32_t y = 0; y < planeHeight; y++) {
-                // Copy the current line
-                memcpy(dstRow, srcRow, lineBytes);
-
-                // Advance to the next line using pointer arithmetic
-                srcRow += srcStride;
-                dstRow += dstStride;
-            }
+            // Advance to the next line using pointer arithmetic
+            srcRow += srcStride;
+            dstRow += dstStride;
         }
     }
 }
@@ -4798,14 +4775,6 @@ VkResult VkVideoEncoder::InitEncoder(VkSharedBaseObj<EncoderConfig>& encoderConf
         return result;
     }
 
-    // Start the queue consumer thread
-    if (m_enableEncoderThreadQueue) {
-
-        const uint32_t maxPendingQueueNodes = 2;
-        m_encoderThreadQueue.SetMaxPendingQueueNodes(std::min<uint32_t>(m_encoderConfig->gopStructure.GetGopFrameCount() + 1, maxPendingQueueNodes));
-        m_encoderQueueConsumerThread = std::thread(&VkVideoEncoder::ConsumerThread, this);
-    }
-
     // The dma-buf import content probe, if the ext layer has already injected
     // one. There is no env var and no build flag gating it, because the
     // OPT-IN IS THE CALLER CHAINING VkVideoEncoderImportContentInfo onto a
@@ -7068,49 +7037,36 @@ VkResult VkVideoEncoder::PushOrderedFrames()
     VkResult result = VK_SUCCESS;
     if (m_lastDeferredFrame) {
 
-        if (m_enableEncoderThreadQueue) {
-
-            bool success = m_encoderThreadQueue.Push(m_lastDeferredFrame);
-            if (success) {
-                m_lastDeferredFrame = nullptr;
-            } else {
-                assert(!"Queue returned not ready");
-                result = VK_NOT_READY;
-            }
-
+        if (!m_encoderConfig->enableOutOfOrderRecording) {
+            result = ProcessOrderedFrames(m_lastDeferredFrame, m_numDeferredFrames);
         } else {
-
-            if (!m_encoderConfig->enableOutOfOrderRecording) {
-                result = ProcessOrderedFrames(m_lastDeferredFrame, m_numDeferredFrames);
-            } else {
-                // Testing only - don't use for production!
-                result = ProcessOutOfOrderFrames(m_lastDeferredFrame, m_numDeferredFrames);
-            }
-            if (result != VK_SUCCESS) {
-                // The deferred chain is emptied immediately below whether
-                // the push succeeded or not -- released there when the frames
-                // never reached the assembly workers, and by the worker that
-                // finishes each frame when they did -- so no part of the
-                // failure survives in the frames themselves and this counter
-                // is the trace the drain reads afterwards. Counted here
-                // because every push -- the per-frame ones the enqueue makes
-                // and the final one the drain makes -- arrives through this
-                // single path.
-                m_frameProcessingErrorCount++;
-            }
-            // Whatever is still on the deferred chain is still the
-            // encoder's: QueueFramesForAssembly removes the frames it hands
-            // to the assembly workers, and each of those is released by the
-            // worker that finishes it. What is left never reached the workers
-            // -- a record or submit failure fails ahead of the hand-off, and
-            // the synchronous path does not hand over at all -- and is still
-            // holding its images, bitstream buffer and command buffers. Frame
-            // nodes come from a pool and run no destructor when the last
-            // reference to one drops, so releasing those resources has to be
-            // explicit or they stay pinned inside the pooled node.
-            VkVideoEncodeFrameInfo::ResetAndReleaseFrames(m_lastDeferredFrame);
-            assert(m_lastDeferredFrame == nullptr);
+            // Testing only - don't use for production!
+            result = ProcessOutOfOrderFrames(m_lastDeferredFrame, m_numDeferredFrames);
         }
+        if (result != VK_SUCCESS) {
+            // The deferred chain is emptied immediately below whether
+            // the push succeeded or not -- released there when the frames
+            // never reached the assembly workers, and by the worker that
+            // finishes each frame when they did -- so no part of the
+            // failure survives in the frames themselves and this counter
+            // is the trace the drain reads afterwards. Counted here
+            // because every push -- the per-frame ones the enqueue makes
+            // and the final one the drain makes -- arrives through this
+            // single path.
+            m_frameProcessingErrorCount++;
+        }
+        // Whatever is still on the deferred chain is still the
+        // encoder's: QueueFramesForAssembly removes the frames it hands
+        // to the assembly workers, and each of those is released by the
+        // worker that finishes it. What is left never reached the workers
+        // -- a record or submit failure fails ahead of the hand-off, and
+        // the synchronous path does not hand over at all -- and is still
+        // holding its images, bitstream buffer and command buffers. Frame
+        // nodes come from a pool and run no destructor when the last
+        // reference to one drops, so releasing those resources has to be
+        // explicit or they stay pinned inside the pooled node.
+        VkVideoEncodeFrameInfo::ResetAndReleaseFrames(m_lastDeferredFrame);
+        assert(m_lastDeferredFrame == nullptr);
         m_numDeferredFrames = 0;
         m_numDeferredRefFrames = 0;
     }
@@ -7297,13 +7253,6 @@ bool VkVideoEncoder::WaitForThreadsToComplete()
     // only place a frame is processed at all.
     const VkResult pushResult = PushOrderedFrames();
 
-    if (m_enableEncoderThreadQueue) {
-        m_encoderThreadQueue.SetFlushAndExit();
-        if (m_encoderQueueConsumerThread.joinable()) {
-            m_encoderQueueConsumerThread.join();
-        }
-    }
-
     if (m_asyncAssemblyEnabled) {
         m_assemblyQueue.SetFlushAndExit();
         for (auto& t : m_assemblyThreads) {
@@ -7332,25 +7281,9 @@ bool VkVideoEncoder::WaitForThreadsToComplete()
 // WaitForThreadsToComplete() every work item has been popped and has taken
 // its ordering turn, no worker thread is alive, and the assembly queue is
 // empty -- which is the precondition ClearFlushAndReuse() checks for.
-//
-// The ENCODER-QUEUE consumer thread is deliberately not restarted. It is
-// joined by the same call and its queue carries the same sticky latch, but
-// m_enableEncoderThreadQueue is false for every session in this tree, so
-// there is no restart path here that could be tested. If it is ever enabled,
-// this is where the second half belongs -- so this says so, loudly, rather
-// than bringing half the pipeline back and leaving the caller to find out
-// which half.
 bool VkVideoEncoder::DrainAndRestartThreads()
 {
     WaitForThreadsToComplete();
-
-    if (m_enableEncoderThreadQueue) {
-        VkEncPrintfErr("\nDrainAndRestartThreads with the encoder thread queue "
-                "enabled: its consumer thread was joined and is NOT restarted "
-                "by this path. Give it a restart before enabling "
-                "m_enableEncoderThreadQueue.\n");
-        return false;
-    }
 
     return StartAssemblyThreads();
 }
@@ -7494,44 +7427,6 @@ int32_t VkVideoEncoder::DeinitEncoder()
     m_encoderConfig = nullptr;
 
     return 0;
-}
-
-void VkVideoEncoder::ConsumerThread()
-{
-    vkenc::OsSetCurrentThreadName("VkEncConsumer");
-
-   VkEncOut() << "ConsumerThread is stating now.\n" << std::endl;
-   do {
-       VkSharedBaseObj<VkVideoEncodeFrameInfo> encodeFrameInfo;
-       bool success = m_encoderThreadQueue.WaitAndPop(encodeFrameInfo);
-       if (success) { // 5 seconds in nanoseconds
-           VkEncOut() << "==>>>> Consumed: " << (uint32_t)encodeFrameInfo->gopPosition.inputOrder
-                      << ", Order: " << (uint32_t)encodeFrameInfo->gopPosition.encodeOrder << std::endl << std::flush;
-
-           VkResult result;
-           if (!m_encoderConfig->enableOutOfOrderRecording) {
-               result = ProcessOrderedFrames(encodeFrameInfo, 0);
-           } else {
-               // Testing only - don't use for production!
-               result = ProcessOutOfOrderFrames(encodeFrameInfo, 0);
-           }
-           // Only the frames the assembly workers did not take are still
-           // here, and those are the encoder's to release.
-           VkVideoEncodeFrameInfo::ResetAndReleaseFrames(encodeFrameInfo);
-           assert(encodeFrameInfo == nullptr);
-           if (result != VK_SUCCESS) {
-               VkEncOut() << "Error processing frames from the frame thread!" << std::endl;
-               m_frameProcessingErrorCount++;
-               m_encoderThreadQueue.SetFlushAndExit();
-           }
-
-       } else {
-           bool shouldExit = m_encoderThreadQueue.ExitQueue();
-           VkEncOut() << "Thread should exit: " << (shouldExit ? "Yes" : "No") << std::endl;
-       }
-   } while (!m_encoderThreadQueue.ExitQueue());
-
-   VkEncOut() << "ConsumerThread is exiting now.\n" << std::endl;
 }
 
 size_t VkVideoEncoder::WriteDataToFile(const uint8_t* data, size_t size)

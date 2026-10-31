@@ -38,7 +38,6 @@ VkEncDpbH265::VkEncDpbH265()
     , m_numPocStFoll(0)
     , m_numPocLtCurr(0)
     , m_numPocLtFoll(0)
-    , m_lastIDRTimeStamp(0)
     , m_picOrderCntCRA(0)
     , m_refreshPending(false)
     , m_useMultipleRefs()
@@ -72,7 +71,6 @@ int8_t VkEncDpbH265::DpbPictureStart(const StdVideoEncodeH265PictureInfo *pPicIn
                                       const StdVideoH265ShortTermRefPicSet *pShortTermRefPicSet,
                                       const StdVideoH265LongTermRefPicsSps* pLongTermRefPicsSps,
                                       int32_t maxPicOrderCntLsb,
-                                      uint64_t timeStamp,
                                       RefPicSet* pRefPicSet) {
     bool isIrapPic = pPicInfo->flags.IrapPicFlag;
     bool NoRaslOutputFlag = false;
@@ -134,13 +132,8 @@ int8_t VkEncDpbH265::DpbPictureStart(const StdVideoEncodeH265PictureInfo *pPicIn
     DpbEntryH265* pCurDpbEntry = &m_stDpb[m_curDpbIndex];
     pCurDpbEntry->picOrderCntVal = pPicInfo->PicOrderCntVal;
     pCurDpbEntry->output = !!pPicInfo->flags.pic_output_flag;
-    pCurDpbEntry->corrupted = false;
     pCurDpbEntry->temporalId = pPicInfo->TemporalId;
     pCurDpbEntry->picType = pPicInfo->pic_type;
-    if (isIrapPic && NoRaslOutputFlag) {
-        m_lastIDRTimeStamp = timeStamp;
-    }
-
 
     return m_curDpbIndex;
 }
@@ -637,7 +630,6 @@ void VkEncDpbH265::InitializeShortTermRPSPFrame(int32_t numPocLtCurr,
     for (int32_t i = 0; i < m_dpbSize; i++) {
         if ((m_stDpb[i].marking == 1) &&
                 (m_stDpb[i].picOrderCntVal < curPOC) &&
-                (!m_stDpb[i].corrupted) &&
                 ((m_stDpb[i].temporalId < curTemporalId) || (!tsaPicture && (m_stDpb[i].temporalId == curTemporalId)))) {
             shortTermRefPicPOCL0[numNegativeRefPics] = m_stDpb[i].picOrderCntVal;
             shortTermRefPicTemporalIdL0[numNegativeRefPics] = m_stDpb[i].temporalId;
@@ -647,7 +639,6 @@ void VkEncDpbH265::InitializeShortTermRPSPFrame(int32_t numPocLtCurr,
         if (m_useMultipleRefs) {
             if ((m_stDpb[i].marking == 1) &&
                     (m_stDpb[i].picOrderCntVal > curPOC) &&
-                    (!m_stDpb[i].corrupted) &&
                     ((m_stDpb[i].temporalId < curTemporalId) || (!tsaPicture && (m_stDpb[i].temporalId == curTemporalId)))) {
                 shortTermRefPicPOCL1[numPositiveRefPics] = m_stDpb[i].picOrderCntVal;
                 deltaPocS1[numPositiveRefPics] = shortTermRefPicPOCL1[numPositiveRefPics] - curPOC;
@@ -840,44 +831,31 @@ void VkEncDpbH265::ReferencePictureMarking(int32_t curPOC, StdVideoH265PictureTy
         if (m_useMultipleRefs) {
             int32_t numLongTermRefPics = 0;
             int32_t numShortTermRefPics = 0;
-            int32_t numCorruptedRefPics = 0;
             int32_t minPOCSTIdx = -1;
             uint32_t minPOCSTVal = UINT_MAX;
             int32_t minPocLTIdx = -1;
             uint32_t minPocLTVal = UINT_MAX;
-            int32_t minPOCCorruptedIdx = -1;
-            uint32_t minPocCorruptedVal = UINT_MAX;
 
             for (int32_t i = 0; i < m_dpbSize; i++) {
-                if ((m_stDpb[i].state == 1) && (m_stDpb[i].marking == 1) && !m_stDpb[i].corrupted) {
+                if ((m_stDpb[i].state == 1) && (m_stDpb[i].marking == 1)) {
                     numShortTermRefPics++;
                     if (m_stDpb[i].picOrderCntVal < minPOCSTVal) {
                         minPOCSTVal = m_stDpb[i].picOrderCntVal;
                         minPOCSTIdx = i;
                     }
                 }
-                if ((m_stDpb[i].state == 1) && (m_stDpb[i].marking == 2) && !m_stDpb[i].corrupted) {
+                if ((m_stDpb[i].state == 1) && (m_stDpb[i].marking == 2)) {
                     numLongTermRefPics++;
                     if (m_stDpb[i].picOrderCntVal < minPocLTVal) {
                         minPocLTVal = m_stDpb[i].picOrderCntVal;
                         minPocLTIdx = i;
                     }
                 }
-                if ((m_stDpb[i].state == 1) && m_stDpb[i].corrupted) {
-                    numCorruptedRefPics++;
-                    if (m_stDpb[i].picOrderCntVal < minPocCorruptedVal) {
-                        minPocCorruptedVal = m_stDpb[i].picOrderCntVal;
-                        minPOCCorruptedIdx = i;
-                    }
-                }
             }
 
             if (!longTermRefPicsPresentFlag) {
-                if (((numShortTermRefPics + numLongTermRefPics + numCorruptedRefPics) > (m_dpbSize - 1))) {
-                    if (numCorruptedRefPics && (minPocCorruptedVal < minPOCSTVal) &&
-                            (minPOCCorruptedIdx >= 0) && (minPOCCorruptedIdx < m_dpbSize)) {
-                        m_stDpb[minPOCCorruptedIdx].marking = 0;
-                    } else if ((numShortTermRefPics) && (minPOCSTIdx >= 0) && (minPOCSTIdx < m_dpbSize)) {
+                if (((numShortTermRefPics + numLongTermRefPics) > (m_dpbSize - 1))) {
+                    if ((numShortTermRefPics) && (minPOCSTIdx >= 0) && (minPOCSTIdx < m_dpbSize)) {
                         m_stDpb[minPOCSTIdx].marking = 0;
                     } else if ((numLongTermRefPics) && (minPocLTIdx >= 0) && (minPocLTIdx < m_dpbSize)) {
                         m_stDpb[minPocLTIdx].marking = 0;
@@ -887,15 +865,13 @@ void VkEncDpbH265::ReferencePictureMarking(int32_t curPOC, StdVideoH265PictureTy
                 assert(picType != STD_VIDEO_H265_PICTURE_TYPE_B);
                 // In order to achieve a balance between the number of LTR and STR frames, the number of LTR frames should not exceed 50%
                 // of the active references in Dpb
-                int32_t num_active_ref_frames = numShortTermRefPics + numLongTermRefPics + numCorruptedRefPics;
+                int32_t num_active_ref_frames = numShortTermRefPics + numLongTermRefPics;
                 int32_t max_allowed_ltr_frames = 0; // std::min(m_stHEVCEncInitParams.iMaxNumLongTermRefPics, num_active_ref_frames / 2);
                 if (num_active_ref_frames > (m_dpbSize - 1)) {
                     // If number of LTR in Dpb > max_allowed_ltr_frames, mark the earliest
                     // LTR as unused for reference else mark the STR as unused for reference
                     // This logic will help in maintaining separate queues for LTR and STR frames
-                    if (numCorruptedRefPics && (minPocCorruptedVal < minPOCSTVal) && (minPOCCorruptedIdx >= 0) && (minPOCCorruptedIdx < m_dpbSize)) {
-                        m_stDpb[minPOCCorruptedIdx].marking = 0;
-                    } else if ((numLongTermRefPics > max_allowed_ltr_frames) && (minPocLTIdx < m_dpbSize) && (minPocLTIdx >= 0)) {
+                    if ((numLongTermRefPics > max_allowed_ltr_frames) && (minPocLTIdx < m_dpbSize) && (minPocLTIdx >= 0)) {
                         m_stDpb[minPocLTIdx].marking = 0;
                     } else if (numShortTermRefPics && (minPOCSTIdx < m_dpbSize) && (minPOCSTIdx >= 0)) {
                         m_stDpb[minPOCSTIdx].marking = 0;
