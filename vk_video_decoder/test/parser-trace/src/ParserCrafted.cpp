@@ -118,6 +118,15 @@ class Checks {
         }
     }
 
+    // Whether the flags field of the occurrence-th line with the tag lists flag.
+    void Flag(const std::string& tag, const std::string& flag, bool expected, size_t occurrence = 0) {
+        const std::string flags = "|" + m_trace.Field(tag, "flags", occurrence) + "|";
+        if ((flags.find("|" + flag + "|") != std::string::npos) != expected) {
+            m_failures.push_back("'" + tag + "' line " + std::to_string(occurrence) + ": flag " + flag +
+                                 (expected ? " missing" : " set") + " in flags=" + flags.substr(1, flags.size() - 2));
+        }
+    }
+
     const std::vector<std::string>& Failures() const { return m_failures; }
 
    private:
@@ -588,8 +597,10 @@ std::vector<uint8_t> H265WppSliceSegmentNal(bool idr, uint32_t pocLsb, uint32_t 
 // ---- AV1 (AV1 bitstream specification 5.5) ----
 
 // A temporal delimiter and a sequence header for 64x64 Main 8-bit 4:2:0 with timing info; the
-// timing info ends with numTicksPerPictureMinus1 as uvlc(). seqProfile is the profile it codes.
-std::vector<uint8_t> Av1SequenceHeaderUnit(uint64_t numTicksPerPictureMinus1, bool filmGrain = false, uint32_t seqProfile = 0) {
+// timing info ends with numTicksPerPictureMinus1 as uvlc(). seqProfile is the profile it codes, and
+// restoration its enable_restoration.
+std::vector<uint8_t> Av1SequenceHeaderUnit(uint64_t numTicksPerPictureMinus1, bool filmGrain = false, uint32_t seqProfile = 0,
+                                           bool restoration = false) {
     BitWriter w;
     w.U(3, seqProfile).Flag(false).Flag(false).Flag(true);           // seq_profile, still_picture, reduced header, timing info
     w.U(32, 1).U(32, 30).Flag(true).Uvlc(numTicksPerPictureMinus1);  // timing_info(), equal_picture_interval
@@ -599,7 +610,7 @@ std::vector<uint8_t> Av1SequenceHeaderUnit(uint64_t numTicksPerPictureMinus1, bo
     w.Flag(false).Flag(false).Flag(false).Flag(false);               // interintra, masked compound, warped motion, dual filter
     w.Flag(true).Flag(false).Flag(false);                            // order hints, jnt_comp, ref_frame_mvs
     w.Flag(true).Flag(true).U(3, 6);                                 // screen content and integer mv SELECT, order_hint_bits 7
-    w.Flag(false).Flag(false).Flag(false);                           // superres, CDEF, restoration
+    w.Flag(false).Flag(false).Flag(restoration);                     // superres, CDEF, restoration
     w.Flag(false).Flag(false).Flag(false).Flag(false);               // color_config: 8-bit, not mono, no description, limited
     w.U(2, 0).Flag(false).Flag(filmGrain);                           // chroma_sample_position, separate_uv_delta_q, film grain
     std::vector<uint8_t> unit = Obu(2, {});                          // OBU_TEMPORAL_DELIMITER
@@ -607,18 +618,57 @@ std::vector<uint8_t> Av1SequenceHeaderUnit(uint64_t numTicksPerPictureMinus1, bo
     return unit;
 }
 
+// The lr_params() (AV1 5.9.20) of a crafted AV1 frame, for a sequence header with
+// enable_restoration and 64x64 superblocks.
+struct Av1LoopRestorationSyntax {
+    uint32_t lrType[3];    // the coded lr_type of each plane: 0 none, 1 switchable, 2 Wiener, 3 self-guided
+    uint32_t lrUnitShift;  // 0, 1 or 2: lr_unit_shift, and lr_unit_extra_shift when it is 1
+    uint32_t lrUvShift;    // coded when a chroma plane uses loop restoration
+};
+
+// Writes lr_params() for a 4:2:0 sequence with 64x64 superblocks.
+void WriteAv1LoopRestoration(BitWriter& w, const Av1LoopRestorationSyntax& lr) {
+    for (uint32_t type : lr.lrType) {
+        w.U(2, type);  // lr_type
+    }
+    if ((lr.lrType[0] | lr.lrType[1] | lr.lrType[2]) == 0) {
+        return;
+    }
+    w.Flag(lr.lrUnitShift > 0);  // lr_unit_shift
+    if (lr.lrUnitShift > 0) {
+        w.Flag(lr.lrUnitShift > 1);  // lr_unit_extra_shift
+    }
+    if ((lr.lrType[1] | lr.lrType[2]) != 0) {
+        w.Flag(lr.lrUvShift != 0);  // lr_uv_shift
+    }
+}
+
 // A shown 64x64 key frame for the sequence header of Av1SequenceHeaderUnit with film grain, as an
 // OBU_FRAME of one tile, whose data is filler. Its film grain has numYPoints luma scaling points,
-// yStep apart.
-std::vector<uint8_t> Av1KeyFrameObu(uint32_t numYPoints, uint32_t yStep = 16) {
+// yStep apart. With lr, the sequence header has enable_restoration and the frame codes lr. With
+// intraBlockCopy, the frame allows screen content tools and intra block copy, and codes no loop
+// filter, CDEF or loop restoration syntax.
+std::vector<uint8_t> Av1KeyFrameObu(uint32_t numYPoints, uint32_t yStep = 16, const Av1LoopRestorationSyntax* lr = nullptr,
+                                    bool intraBlockCopy = false) {
     BitWriter w;
-    w.Flag(false).U(2, 0).Flag(true);   // show_existing_frame, KEY_FRAME, show_frame
-    w.Flag(false).Flag(false);          // disable_cdf_update, allow_screen_content_tools
+    w.Flag(false).U(2, 0).Flag(true);    // show_existing_frame, KEY_FRAME, show_frame
+    w.Flag(false).Flag(intraBlockCopy);  // disable_cdf_update, allow_screen_content_tools
+    if (intraBlockCopy) {
+        w.Flag(true);  // force_integer_mv
+    }
     w.Flag(false).U(7, 0).Flag(false);  // frame_size_override_flag, order_hint, render_and_frame_size_different
-    w.Flag(true).Flag(true);            // disable_frame_end_update_cdf, uniform_tile_spacing_flag
+    if (intraBlockCopy) {
+        w.Flag(true);  // allow_intrabc
+    }
+    w.Flag(true).Flag(true);                                     // disable_frame_end_update_cdf, uniform_tile_spacing_flag
     w.U(8, 60).Flag(false).Flag(false).Flag(false).Flag(false);  // base_q_idx, no delta_q, no qmatrix
     w.Flag(false).Flag(false);                                   // segmentation_enabled, delta_q_present
-    w.U(6, 0).U(6, 0).U(3, 0).Flag(false);                       // loop filter levels, sharpness, deltas
+    if (!intraBlockCopy) {
+        w.U(6, 0).U(6, 0).U(3, 0).Flag(false);  // loop filter levels, sharpness, deltas
+        if (lr != nullptr) {
+            WriteAv1LoopRestoration(w, *lr);
+        }
+    }
     w.Flag(false).Flag(false);                                   // tx_mode_select, reduced_tx_set
     w.Flag(true).U(16, 1234).U(4, numYPoints);                   // film_grain_params(): apply_grain, grain_seed, num_y_points
     for (uint32_t i = 0; i < numYPoints; i++) {
@@ -1557,6 +1607,69 @@ const std::vector<CraftedCase>& Cases() {
              checks.Field("  av1", "frame_width", "64", 1);
              checks.Count("pkt-error", 0);
              checks.Field("refused", "units", "1");
+             return checks.Failures();
+         }},
+        // lr_params() (AV1 5.9.20) codes the luma restoration unit as lr_unit_shift, 64, 128 or 256
+        // samples with 64x64 superblocks, and both chroma units lr_uv_shift smaller; Vulkan takes each
+        // LoopRestorationSize as log2 of the unit size minus 5. Key frames with each luma unit and
+        // chroma units of half its size, one with chroma units of its size, and one without chroma
+        // restoration, which codes no lr_uv_shift.
+        {"Av1LoopRestorationUnitSizes",
+         [](CaseContext& stream) {
+             const Av1LoopRestorationSyntax frames[] = {
+                 {{1, 2, 3}, 0, 1}, {{1, 2, 3}, 1, 1}, {{2, 3, 1}, 2, 1}, {{3, 0, 2}, 2, 0}, {{3, 0, 0}, 1, 0},
+             };
+             const char* const sizes[] = {"[1,0,0]", "[2,1,1]", "[3,2,2]", "[3,3,3]", "[2,2,2]"};
+             const char* const types[] = {"[3,1,2]", "[3,1,2]", "[1,2,3]", "[2,0,1]", "[2,0,0]"};
+             std::vector<uint8_t> unit = Av1SequenceHeaderUnit(0, true, 0, true);
+             int64_t pts = 0;
+             for (const Av1LoopRestorationSyntax& lr : frames) {
+                 Append(unit, Av1KeyFrameObu(1, 16, &lr));
+                 stream.packets.push_back({unit, pts++});
+                 unit = Obu(2, {});
+             }
+             const Trace trace = Run(stream, "av1");
+             Checks checks(trace);
+             checks.Count("pic", 5);
+             for (size_t i = 0; i < 5; i++) {
+                 checks.Field("  lr", "FrameRestorationType", types[i], i);
+                 checks.Field("  lr", "LoopRestorationSize", sizes[i], i);
+             }
+             checks.Count("pkt-error", 0);
+             checks.Count("refused", 0);
+             return checks.Failures();
+         }},
+        // UsesLr and usesChromaLr tell whether a frame restores any plane and a chroma plane (AV1
+        // 5.9.20). A frame that codes no lr_params(), here a key frame with intra block copy after one
+        // that restores every plane, restores none. Then a key frame that restores luma only.
+        {"Av1LoopRestorationFlags",
+         [](CaseContext& stream) {
+             const Av1LoopRestorationSyntax chroma = {{1, 2, 3}, 1, 1};
+             const Av1LoopRestorationSyntax luma = {{3, 0, 0}, 1, 0};
+             std::vector<uint8_t> unit = Av1SequenceHeaderUnit(0, true, 0, true);
+             Append(unit, Av1KeyFrameObu(1, 16, &chroma));
+             stream.packets.push_back({unit, 0});
+             unit = Obu(2, {});
+             Append(unit, Av1KeyFrameObu(1, 16, nullptr, true));
+             stream.packets.push_back({unit, 1});
+             unit = Obu(2, {});
+             Append(unit, Av1KeyFrameObu(1, 16, &luma));
+             stream.packets.push_back({unit, 2});
+             const Trace trace = Run(stream, "av1");
+             Checks checks(trace);
+             checks.Count("pic", 3);
+             checks.Field("  lr", "FrameRestorationType", "[3,1,2]", 0);
+             checks.Flag("  std", "UsesLr", true, 0);
+             checks.Flag("  std", "usesChromaLr", true, 0);
+             checks.Flag("  std", "allow_intrabc", true, 1);
+             checks.Field("  lr", "FrameRestorationType", "[0,0,0]", 1);
+             checks.Flag("  std", "UsesLr", false, 1);
+             checks.Flag("  std", "usesChromaLr", false, 1);
+             checks.Field("  lr", "FrameRestorationType", "[2,0,0]", 2);
+             checks.Flag("  std", "UsesLr", true, 2);
+             checks.Flag("  std", "usesChromaLr", false, 2);
+             checks.Count("pkt-error", 0);
+             checks.Count("refused", 0);
              return checks.Failures();
          }},
         // Proves the AV1 key frame builder, and the limit: 14 luma scaling points are the most

@@ -1554,13 +1554,20 @@ void VulkanAV1Decoder::DecodeCDEFdata()
     }
 }
 
+// lr_params() (AV1 5.9.20). A frame that does not code it, all lossless, with intra block copy, or of a
+// sequence without loop restoration, restores no plane.
 void VulkanAV1Decoder::DecodeLoopRestorationData()
 {
     av1_seq_param_s *const sps = m_sps.get();
 	StdVideoDecodeAV1PictureInfo* pStd = &m_PicData.std_info;
 	StdVideoAV1LoopRestoration* pLoopRestoration = &m_PicData.loopRestoration;
 
-    if (pStd->flags.allow_intrabc) {
+    for (uint32_t pl = 0; pl < STD_VIDEO_AV1_MAX_NUM_PLANES; pl++) {
+        pLoopRestoration->FrameRestorationType[pl] = STD_VIDEO_AV1_FRAME_RESTORATION_TYPE_NONE;
+    }
+    pStd->flags.UsesLr = 0;
+    pStd->flags.usesChromaLr = 0;
+    if (all_lossless || pStd->flags.allow_intrabc || !sps->flags.enable_restoration) {
         return;
     }
 
@@ -1580,13 +1587,9 @@ void VulkanAV1Decoder::DecodeLoopRestorationData()
         }
     }
     pStd->flags.UsesLr = use_lr;
+    pStd->flags.usesChromaLr = use_chroma_lr;
     if (use_lr)  {
         int lr_unit_shift = 0;
-        int sb_size = sps->flags.use_128x128_superblock == 1 /*BLOCK_128X128*/ ? 2 : 1; //128 : 64;
-
-        for (int pl = 0; pl < n_planes; pl++) {
-            pLoopRestoration->LoopRestorationSize[pl] = sb_size;  // 64 or 128
-        }
         if (sps->flags.use_128x128_superblock == 1) {
             lr_unit_shift = 1 + u(1);
         } else {
@@ -1595,25 +1598,20 @@ void VulkanAV1Decoder::DecodeLoopRestorationData()
                 lr_unit_shift += u(1);
             }
         }
+        uint8_t lr_uv_shift = 0;
+        if (use_chroma_lr && sps->color_config.subsampling_x && sps->color_config.subsampling_y) {
+            lr_uv_shift = u(1);
+        }
+        // Vulkan takes LoopRestorationSize[plane] as log2 of the unit size in samples minus 5 (AV1
+        // 5.9.20): the luma unit of 64, 128 or 256 samples is 1, 2 or 3, and both chroma units are
+        // lr_uv_shift less.
         pLoopRestoration->LoopRestorationSize[0] = 1 + lr_unit_shift;
+        pLoopRestoration->LoopRestorationSize[1] = pLoopRestoration->LoopRestorationSize[0] - lr_uv_shift;
+        pLoopRestoration->LoopRestorationSize[2] = pLoopRestoration->LoopRestorationSize[1];
     } else {
-        for (int pl = 0; pl < n_planes; pl++)
+        for (uint32_t pl = 0; pl < STD_VIDEO_AV1_MAX_NUM_PLANES; pl++)
             pLoopRestoration->LoopRestorationSize[pl] = 3;
     }
-    uint8_t lr_uv_shift = 0;
-
-    if (!sps->color_config.flags.mono_chrome) {
-        if (use_chroma_lr && (sps->color_config.subsampling_x && sps->color_config.subsampling_y)) {
-            lr_uv_shift = u(1);
-            pLoopRestoration->LoopRestorationSize[1] = pLoopRestoration->LoopRestorationSize[0] - lr_uv_shift;
-            pLoopRestoration->LoopRestorationSize[2] = pLoopRestoration->LoopRestorationSize[1];
-        } else {
-            pLoopRestoration->LoopRestorationSize[1] = pLoopRestoration->LoopRestorationSize[0];
-            pLoopRestoration->LoopRestorationSize[2] = pLoopRestoration->LoopRestorationSize[0];
-        }
-    }
-    pLoopRestoration->LoopRestorationSize[1] = pLoopRestoration->LoopRestorationSize[0] >> lr_uv_shift;
-    pLoopRestoration->LoopRestorationSize[1] = pLoopRestoration->LoopRestorationSize[1] >> lr_uv_shift;
 }
 
 int VulkanAV1Decoder::GetRelativeDist1(int a, int b)
@@ -2299,19 +2297,12 @@ bool VulkanAV1Decoder::ParseObuFrameHeader()
         //cm->cdef_strengths[0] = 0;
         //cm->cdef_uv_strengths[0] = 0;
     }
-    if (all_lossless || !sps->flags.enable_restoration) {
-        m_PicData.loopRestoration.FrameRestorationType[0] = STD_VIDEO_AV1_FRAME_RESTORATION_TYPE_NONE;
-        m_PicData.loopRestoration.FrameRestorationType[1] = STD_VIDEO_AV1_FRAME_RESTORATION_TYPE_NONE;
-        m_PicData.loopRestoration.FrameRestorationType[2] = STD_VIDEO_AV1_FRAME_RESTORATION_TYPE_NONE;
-    }
     DecodeLoopFilterdata();
 
     if (!coded_lossless && sps->flags.enable_cdef && !pic_flags->allow_intrabc) {
         DecodeCDEFdata();
     }
-    if (!all_lossless && sps->flags.enable_restoration && !pic_flags->allow_intrabc) {
-        DecodeLoopRestorationData();
-    }
+    DecodeLoopRestorationData();
 
     pStd->TxMode = coded_lossless ? STD_VIDEO_AV1_TX_MODE_ONLY_4X4 : (u(1) ? STD_VIDEO_AV1_TX_MODE_SELECT : STD_VIDEO_AV1_TX_MODE_LARGEST);
     if (!IsFrameIntra()) {

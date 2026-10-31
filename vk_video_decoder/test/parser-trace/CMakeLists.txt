@@ -180,6 +180,8 @@ set(PARSER_CRAFTED_CASES
     Av1ObuSizePastPacket
     Av1ObuSizeLeb128Past32Bits
     Av1SequenceHeaderRefused
+    Av1LoopRestorationUnitSizes
+    Av1LoopRestorationFlags
     Vp9CraftedKeyFrame
     Vp9PicturePoolExhausted
     Vp9SuperframeIndex
