@@ -15,7 +15,6 @@
  */
 
 #include <atomic>
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -28,6 +27,7 @@
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "VkCodecUtils/VkImageResource.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
+#include "Logger.h"
 
 // A two-plane format (Y, then interleaved CbCr) at any chroma subsampling.
 static bool IsTwoPlaneFormat(VkFormat format)
@@ -97,7 +97,7 @@ VkResult VkVideoEncoderPsnr::Configure(const VulkanDeviceContext* vkDevCtx,
                                                        false,
                                                        true);
                 if (result != VK_SUCCESS) {
-                    VkEncPrintfErr("\nVkVideoEncoderPsnr: Failed to Configure psnrReconImagePool.\n");
+                    LOG_ERROR("VkVideoEncoderPsnr: Failed to Configure psnrReconImagePool.\n");
                     m_psnrReconImagePool = nullptr;
                     m_initResult = result;
                 } else {
@@ -133,10 +133,10 @@ VkResult VkVideoEncoderPsnr::Configure(const VulkanDeviceContext* vkDevCtx,
                                                  true);
         }
         if (capRes != VK_SUCCESS) {
-            VkEncPrintfErr("[CAPSRC] pool configure FAILED (0x%x); capture disabled\n", capRes);
+            LOG_ERROR("[CAPSRC] pool configure FAILED (0x%x); capture disabled\n", capRes);
             m_capSrcImagePool = nullptr;
         } else {
-            VkEncPrintfErr("[CAPSRC] enabled: fmt=%d %ux%u nodes=%u maxFiles=%u\n",
+            LOG_INFO("[CAPSRC] enabled: fmt=%d %ux%u nodes=%u maxFiles=%u\n",
                     (int)m_imageInFormat, m_imageExtent.width, m_imageExtent.height,
                     m_maxEncodeQueueDepth + 2, m_capSrcMaxFiles);
         }
@@ -245,7 +245,7 @@ bool VkVideoEncoderPsnr::CaptureSource(VkCommandBuffer cmdBuf, void* encodeFrame
         // opt-in, but two sessions that opt in reach this together.
         static std::atomic<bool> warned{false};
         if (!warned.exchange(true, std::memory_order_relaxed)) {
-            VkEncPrintfErr("[CAPSRC] input format %d is not 2-plane NV12; capture skipped\n",
+            LOG_INFO("[CAPSRC] input format %d is not 2-plane NV12; capture skipped\n",
                     (int)m_imageInFormat);
         }
         return false;
@@ -348,7 +348,7 @@ bool VkVideoEncoderPsnr::CaptureImported(VkCommandBuffer cmdBuf, void* encodeFra
             // As for the capture-source claim above.
             static std::atomic<bool> warned{false};
             if (!warned.exchange(true, std::memory_order_relaxed)) {
-                VkEncPrintfErr("[CAPIMP] imported format %d is not 2-plane NV12; capture disabled\n",
+                LOG_INFO("[CAPIMP] imported format %d is not 2-plane NV12; capture disabled\n",
                         (int)ci.format);
             }
             return false;
@@ -367,11 +367,11 @@ bool VkVideoEncoderPsnr::CaptureImported(VkCommandBuffer cmdBuf, void* encodeFra
                                              false, false, true);
         }
         if (r != VK_SUCCESS) {
-            VkEncPrintfErr("[CAPIMP] pool configure FAILED (0x%x); capture disabled\n", r);
+            LOG_ERROR("[CAPIMP] pool configure FAILED (0x%x); capture disabled\n", r);
             m_capImpImagePool = nullptr;
             return false;
         }
-        VkEncPrintfErr("[CAPIMP] enabled: fmt=%d %ux%u tiling=%d\n",
+        LOG_INFO("[CAPIMP] enabled: fmt=%d %ux%u tiling=%d\n",
                 (int)m_capImpFormat, m_capImpExtent.width, m_capImpExtent.height, (int)ci.tiling);
     }
     if (!m_capImpImagePool->GetAvailableImage(encodeFrameInfo.psnrFrameData.capImpImage,
@@ -512,7 +512,7 @@ void VkVideoEncoderPsnr::DumpCapturedNode(VkSharedBaseObj<VulkanVideoImagePoolNo
     }
     m_vkDevCtx->UnmapMemory(device, res->GetDeviceMemory());
 
-    VkEncPrintfErr("[%s] seq=%llu gopf=%u img=0x%llx Ymean=%.3f Umean=%.3f Vmean=%.3f zeroUVpct=%.2f\n",
+    LOG_INFO("[%s] seq=%llu gopf=%u img=0x%llx Ymean=%.3f Umean=%.3f Vmean=%.3f zeroUVpct=%.2f\n",
             tag, (unsigned long long)seq, frameIdx, (unsigned long long)imgId,
             nY ? (double)sumY / (double)nY : -1.0,
             nC ? (double)sumU / (double)nC : -1.0,
@@ -674,7 +674,7 @@ void VkVideoEncoderPsnr::ComputeFramePsnr(void* encodeFrameInfoVoid)
     }
     VkResult syncResult = encodeFrameInfo.encodeCmdBuffer->SyncHostOnCmdBuffComplete(false, "encoderEncodeFence");
     if (syncResult != VK_SUCCESS) {
-        VkEncPrintfErr("\nPSNR: wait on encoder fence failed (0x%x), skipping frame PSNR.\n", syncResult);
+        LOG_ERROR("PSNR: wait on encoder fence failed (0x%x), skipping frame PSNR.\n", syncResult);
         return;
     }
 

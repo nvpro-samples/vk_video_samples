@@ -15,8 +15,8 @@
  */
 
 #include "VkVideoEncoder/VkVideoEncoderH264.h"
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
+#include "Logger.h"
 
 VkResult CreateVideoEncoderH264(const VulkanDeviceContext* vkDevCtx,
                                 VkSharedBaseObj<EncoderConfig>& encoderConfig,
@@ -49,7 +49,7 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
 
     VkResult result = InitEncoder(encoderConfig);
     if (result != VK_SUCCESS) {
-        VkEncPrintfErr("\nERROR: InitEncoder() failed with ret(%d)\n", result);
+        LOG_ERROR("InitEncoder() failed with ret(%d)\n", result);
         return result;
     }
 
@@ -87,14 +87,14 @@ VkResult VkVideoEncoderH264::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
                                                          nullptr,
                                                          &sessionParameters);
     if(result != VK_SUCCESS) {
-        VkEncPrintfErr("\nEncodeFrame Error: Failed to get create video session parameters.\n");
+        LOG_ERROR("EncodeFrame: Failed to get create video session parameters.\n");
         return result;
     }
 
     result = VulkanVideoSessionParameters::Create(m_vkDevCtx, m_videoSession,
                                                   sessionParameters, m_videoSessionParameters);
     if(result != VK_SUCCESS) {
-        VkEncPrintfErr("\nEncodeFrame Error: Failed to get create video session object.\n");
+        LOG_ERROR("EncodeFrame: Failed to get create video session object.\n");
         return result;
     }
 
@@ -510,7 +510,7 @@ VkResult VkVideoEncoderH264::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         DumpStateInfo("input", 1, encodeFrameInfo);
 
         if (encodeFrameInfo->lastFrame) {
-            VkEncOut() << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
+            LOG_S_INFO << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
                       << " of type " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
                       << " ###"
                       << std::endl << std::flush;

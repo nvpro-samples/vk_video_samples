@@ -15,7 +15,6 @@
  */
 
 #include "VkVideoEncoder/VkEncoderConfig.h"
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include "VkVideoEncoder/VkEncoderConfigH264.h"
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
@@ -27,6 +26,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <cerrno>
+#include "Logger.h"
 
 namespace {
     // The NVIDIA Adaptive Quantization map library (NVIDIA AQ map library) writes the map as
@@ -174,7 +174,7 @@ namespace {
 
 static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
 {
-    VkEncPrintfErr("Usage : EncodeApp \n\
+    LOG_INFO("Usage : EncodeApp \n\
     -h, --help                      provides help\n\
     -i, --input                     .yuv Input YUV File Name (YUV420p 8bpp only) \n\
     -o, --output                    .264/5,ivf Output H264/5/AV1 File Name \n\
@@ -289,7 +289,7 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
                                         being available after every `intraRefreshCycleDuration + index` frames.\n");
 
 #ifdef NV_AQ_GPU_LIB_SUPPORTED
-    VkEncPrintfErr("\
+    LOG_INFO("\
     --spatialAQStrength             <float>   : Spatial AQ strength in range [-1.0, 1.0]\n\
                                         < -1.0 = disabled (default: -2.0)\n\
                                         0.0 = default/neutral strength\n\
@@ -307,23 +307,23 @@ static void printHelp(VkVideoCodecOperationFlagBitsKHR codec)
 #else // NV_AQ_GPU_LIB_SUPPORTED
     // The option names are left out: test scripts detect a build with the library by finding
     // them in this text.
-    VkEncPrintfErr("\
+    LOG_INFO("\
     The options of the NVIDIA Adaptive Quantization map library are not available: this encoder\n\
     is built without the library (-DNV_AQ_GPU_LIB=<aq-vulkan source directory>).\n");
 #endif // NV_AQ_GPU_LIB_SUPPORTED
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR)) {
-        VkEncPrintfErr("\nH264 specific arguments:\n\
+        LOG_INFO("\nH264 specific arguments:\n\
         --slices                        <integer> : Number of slices to divide the picture into\n");
     }
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR)) {
-        VkEncPrintfErr("\nH265 specific arguments:\n\
+        LOG_INFO("\nH265 specific arguments:\n\
         --slices                        <integer> : Number of slices to divide the picture into\n");
     }
 
     if ((codec == VK_VIDEO_CODEC_OPERATION_NONE_KHR) || (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR)) {
-        VkEncPrintfErr("\nAV1 specific arguments:\n\
+        LOG_INFO("\nAV1 specific arguments:\n\
         --tiles                         Enable tile configuration\n\
         --params                        Enable custom tile configuration when followed by --tiles option\n\
                                         Otherwise default tile configuration will be used\n\
@@ -446,7 +446,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
     for (int32_t i = 1; i < argc; i++) {
         if (args[i] == "--encoderConfig") {
             if (i + 1 >= argc) {
-                VkEncPrintfErr("--encoderConfig requires a path\n");
+                LOG_ERROR("--encoderConfig requires a path\n");
                 return -1;
             }
             if (LoadFromJsonFile(args[i + 1].c_str()) != 0) return -1;
@@ -461,7 +461,7 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         }
         if (args[i] == "-i" || args[i] == "--input") {
             if (++i >= argc) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             size_t fileSize = inputFileHandler.SetFileName(args[i].c_str());
@@ -470,12 +470,12 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             }
             if (inputFileHandler.ParseY4mHeader(&input.width, &input.height, &frameRateNumerator, &frameRateDenominator)) {
                 if (verbose) {
-                    VkEncPrintfOut("Y4M file detected: width %d height %d\n", input.width, input.height);
+                    LOG_INFO("Y4M file detected: width %d height %d\n", input.width, input.height);
                 }
             }
         } else if (args[i] == "-o" || args[i] == "--output") {
             if (++i >= argc) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             size_t fileSize = outputFileHandler.SetFileName(args[i].c_str());
@@ -513,11 +513,11 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 codec = VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR;
             } else {
                 // Invalid codec
-                VkEncPrintfErr("Invalid codec: %s\n", codec_.c_str());
+                LOG_ERROR("Invalid codec: %s\n", codec_.c_str());
                 return -1;
             }
             if (verbose) {
-                VkEncPrintfOut("Selected codec: %s\n", codec_.c_str());
+                LOG_INFO("Selected codec: %s\n", codec_.c_str());
             }
             i++; // Skip the next argument since it's the codec value
         } else if (args[i] == "-l" || args[i] == "--logLevel") {
@@ -535,33 +535,33 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 useDpbArray = true;
             } else {
                 // Invalid codec
-                VkEncPrintfErr("Invalid DPB mode: %s\n", dpbMode.c_str());
+                LOG_ERROR("Invalid DPB mode: %s\n", dpbMode.c_str());
                 return -1;
             }
             if (verbose) {
-                VkEncPrintfOut("Selected DPB mode: %s\n", dpbMode.c_str());
+                LOG_INFO("Selected DPB mode: %s\n", dpbMode.c_str());
             }
             i++; // Skip the next argument since it's the dpbMode value
         } else if (args[i] == "--inputWidth") {
             if ((++i >= argc) || !parseUint(args[i], input.width)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--inputHeight") {
             if ((++i >= argc) || !parseUint(args[i], input.height)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--inputNumPlanes") {
             if ((++i >= argc) || !parseUint(args[i], input.numPlanes)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             // 1 = packed/interleaved single plane (AYUV, Y410 -- 4:4:4 only),
             // 2 = semi-planar, 3 = planar.
             if ((input.numPlanes < 1) || (input.numPlanes > 3)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
-                VkEncPrintfErr("Supported number of planes are 1 (packed 4:4:4), 2 or 3\n");
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("Supported number of planes are 1 (packed 4:4:4), 2 or 3\n");
                 // Reject rather than merely diagnose: an out-of-range plane count that
                 // reaches VerifyInputs indexes planeLayouts[] past its end.
                 return -1;
@@ -578,26 +578,26 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 input.chromaSubsampling = VK_VIDEO_CHROMA_SUBSAMPLING_444_BIT_KHR;
             } else {
                 // Invalid chromeSubsampling
-                VkEncPrintfErr("Invalid chromeSubsampling: %s\nValid string values are 400, 420, 422, 444 \n", chromeSubsampling.c_str());
+                LOG_ERROR("Invalid chromeSubsampling: %s\nValid string values are 400, 420, 422, 444 \n", chromeSubsampling.c_str());
                 return -1;
             }
             i++; // Skip the next argument since it's the chromeSubsampling value
         }  else if (args[i] == "--inputLumaPlanePitch") {
             uint64_t rowPitch = 0;
             if ((++i >= argc) || !parseUint(args[i], rowPitch)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             input.planeLayouts[0].rowPitch = rowPitch;
         }  else if (args[i] == "--inputBpp") {
             if ((++i >= argc) || !parseUint(args[i], input.bpp)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         }  else if (args[i] == "--msbShift") {
             uint8_t msbShiftVal = 0;
             if ((++i >= argc) || !parseUint(args[i], msbShiftVal)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             input.msbShift = static_cast<int8_t>(msbShiftVal);
@@ -605,12 +605,12 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             preferPackedYcbcr = true;
         } else if (args[i] == "--startFrame") {
             if (++i >= argc || !parseUint(args[i], startFrame)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--numFrames") {
             if (++i >= argc || !parseUint(args[i], numFrames)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--repeatInputFrames") {
@@ -619,43 +619,43 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             syncTestBitstreamCopy = true;
         } else if (args[i] == "--encodeOffsetX") {
             if ((++i >= argc) || !parseUint(args[i], encodeOffsetX)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--encodeOffsetY") {
             if ((++i >= argc) || !parseUint(args[i], encodeOffsetY)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--encodeWidth") {
             if ((++i >= argc) || !parseUint(args[i], encodeWidth)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--encodeHeight") {
             if ((++i >= argc) || !parseUint(args[i], encodeHeight)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--encodeMaxWidth") {
             if ((++i >= argc) || !parseUint(args[i], encodeMaxWidth)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--encodeMaxHeight") {
             if ((++i >= argc) || !parseUint(args[i], encodeMaxHeight)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--minQp") {
             if (++i >= argc || !parseInt(args[i], minQp)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             minQpSet = 1;
         } else if (args[i] == "--maxQp") {
             if (++i >= argc || !parseInt(args[i], maxQp)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             maxQpSet = 1;
@@ -673,12 +673,12 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             // device's preference is a request like any other.
             uint32_t gopFrameCount = EncoderConfig::DEFAULT_GOP_FRAME_COUNT;
             if (++i >= argc || !parseUint(args[i], gopFrameCount)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             gopStructure.SetGopFrameCount(gopFrameCount);
             if (verbose) {
-                VkEncPrintfOut("Selected gopFrameCount: %u\n", gopFrameCount);
+                LOG_INFO("Selected gopFrameCount: %u\n", gopFrameCount);
             }
         } else if (args[i] == "--idrPeriod") {
             // Unsigned, because SetIdrPeriod stores it unsigned. Read as a
@@ -690,59 +690,59 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             // infinite) and other negatives are refused.
             uint32_t idrPeriod = EncoderConfig::DEFAULT_GOP_IDR_PERIOD;
             if (++i >= argc || !parseUint(args[i], idrPeriod)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             gopStructure.SetIdrPeriod(idrPeriod);
             if (verbose) {
-                VkEncPrintfOut("Selected idrPeriod: %u\n", idrPeriod);
+                LOG_INFO("Selected idrPeriod: %u\n", idrPeriod);
             }
         } else if (args[i] == "--consecutiveBFrameCount") {
             uint8_t consecutiveBFrameCount = EncoderConfig::DEFAULT_CONSECUTIVE_B_FRAME_COUNT;
             if (++i >= argc || !parseUint(args[i], consecutiveBFrameCount)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             gopStructure.SetConsecutiveBFrameCount(consecutiveBFrameCount);
             if (verbose) {
-                VkEncPrintfOut("Selected consecutiveBFrameCount: %u\n",
+                LOG_INFO("Selected consecutiveBFrameCount: %u\n",
                        (unsigned)consecutiveBFrameCount);
             }
         } else if (args[i] == "--pictureRowColReplication") {
             uint32_t replication = 1;
             if ((++i >= argc) || !parseUint(args[i], replication) || (replication > 2)) {
-                VkEncPrintfErr("invalid parameter for %s: expected 0, 1 or 2\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s: expected 0, 1 or 2\n", args[i - 1].c_str());
                 return -1;
             }
             enablePictureRowColReplication = replication;
         } else if (args[i] == "--nonReferencePFramePeriod") {
             uint32_t nonReferencePFramePeriod = 0;
             if (++i >= argc || !parseUint(args[i], nonReferencePFramePeriod)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             gopStructure.SetNonReferencePFramePeriod(nonReferencePFramePeriod);
         } else if (args[i] == "--temporalLayerCount") {
             uint8_t temporalLayerCount = EncoderConfig::DEFAULT_TEMPORAL_LAYER_COUNT;
             if (++i >= argc || !parseUint(args[i], temporalLayerCount)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             gopStructure.SetTemporalLayerCount(temporalLayerCount);
             if (verbose) {
-                VkEncPrintfOut("Selected temporalLayerCount: %u\n",
+                LOG_INFO("Selected temporalLayerCount: %u\n",
                        (unsigned)temporalLayerCount);
             }
         } else if (args[i] == "--closedGop") {
             gopStructure.SetClosedGop();
         } else if (args[i] == "--qualityLevel") {
             if (++i >= argc || !parseUint(args[i], qualityLevel)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--usageHints") {
             if (++i >= argc) {
-                VkEncPrintfErr("Invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("Invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             std::string encodeUsageStr = argv[i];
@@ -758,12 +758,12 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             } else if (encodeUsageStr == "conferencing") {
                 encodeUsageHints = VK_VIDEO_ENCODE_USAGE_CONFERENCING_BIT_KHR;
             } else {
-                VkEncPrintfErr("Invalid encodeUsage: %s\n", encodeUsageStr.c_str());
+                LOG_ERROR("Invalid encodeUsage: %s\n", encodeUsageStr.c_str());
                 return -1;
             }
         } else if (args[i] == "--contentHints") {
             if (++i >= argc) {
-                VkEncPrintfErr("Invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("Invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             std::string encodeContentStr = argv[i];
@@ -777,21 +777,21 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             } else if (encodeContentStr == "rendered") {
                 encodeContentHints = VK_VIDEO_ENCODE_CONTENT_RENDERED_BIT_KHR;
             } else {
-                VkEncPrintfErr("Invalid encodeContent: %s\n", encodeContentStr.c_str());
+                LOG_ERROR("Invalid encodeContent: %s\n", encodeContentStr.c_str());
                 return -1;
             }
         } else if (args[i] == "--tuningMode") {
             if (++i >= argc) {
-                VkEncPrintfErr("Invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("Invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             if (!TuningModeFromName(args[i], tuningMode)) {
-                VkEncPrintfErr("Invalid tuningMode: %s\n", args[i].c_str());
+                LOG_ERROR("Invalid tuningMode: %s\n", args[i].c_str());
                 return -1;
             }
         } else if (args[i] == "--rateControlMode") {
             if (++i >= argc) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i-1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i-1].c_str());
                 return -1;
             }
             std::string rc = args[i];
@@ -805,38 +805,38 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
                 rateControlMode = VK_VIDEO_ENCODE_RATE_CONTROL_MODE_VBR_BIT_KHR;
             } else {
                 // Invalid rateControlMode
-                VkEncPrintfErr("Invalid rateControlMode: %s\n", rc.c_str());
+                LOG_ERROR("Invalid rateControlMode: %s\n", rc.c_str());
                 return -1;
             }
         }
         else if (args[i] == "--averageBitrate") {
             if (++i >= argc || !parseUint(args[i], averageBitrate)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--maxBitrate") {
                 if (++i >= argc || !parseUint(args[i], maxBitrate)) {
-                    VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                    LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                     return -1;
                 }
         } else if (args[i] == "--vbvBufferSize") {
             if (++i >= argc || !parseUint(args[i], vbvBufferSize)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--qpI") {
                 if (++i >= argc || !parseUint(args[i], constQp.qpIntra)) {
-                    VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                    LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                     return -1;
                 }
         } else if (args[i] == "--qpP") {
                 if (++i >= argc || !parseUint(args[i], constQp.qpInterP)) {
-                    VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                    LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                     return -1;
                 }
         } else if (args[i] == "--qpB") {
                 if (++i >= argc || !parseUint(args[i], constQp.qpInterB)) {
-                    VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                    LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                     return -1;
                 }
         } else if (args[i] == "--disableEncodeParameterOptimizations") {
@@ -844,31 +844,31 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
         } else if (args[i] == "--drmFormatModifierIndex") {
             int32_t idx = -1;
             if ((++i >= argc) || !parseUint(args[i], idx)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             drmFormatModifierIndex = idx;
         } else if (args[i] == "--deviceID") {
             uint32_t deviceIdVal = 0;
             if ((++i >= argc) || !parseHex(args[i], deviceIdVal)) {
-                 VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                 LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                  return -1;
              }
             deviceId = static_cast<int32_t>(deviceIdVal);
         } else if (args[i] == "--deviceUuid") {
             if (++i >= argc) {
-               VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+               LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                return -1;
             }
             size_t size = deviceUUID.StringToUUID(args[i].c_str());
             if (size != VK_UUID_SIZE) {
-                VkEncPrintfErr("Invalid deviceUuid format used: %s with size: %zu."
+                LOG_ERROR("Invalid deviceUuid format used: %s with size: %zu."
                                "deviceUuid must be represented by 16 hex (32 bytes) values.", args[i].c_str(), args[i].length());
                 return -1;
             }
         } else if (args[i] == "--qpMap") {
             if (++i >= argc) {
-                VkEncPrintfErr("Invalid paramter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("Invalid paramter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             if (args[i] == "deltaQpMap") {
@@ -876,13 +876,13 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             } else if (args[i] == "emphasisMap") {
                 qpMapMode = EMPHASIS_MAP;
             } else {
-                VkEncPrintfErr("Invalid quntization map mode %s\n", args[i].c_str());
+                LOG_ERROR("Invalid quntization map mode %s\n", args[i].c_str());
                 return -1;
             }
             enableQpMap = true;
         } else if (args[i] == "--qpMapFileName") {
             if (++i >= argc) {
-                VkEncPrintfErr("Invaid paramter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("Invaid paramter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             size_t fileSize = qpMapFileHandler.SetFileName(args[i].c_str());
@@ -897,34 +897,34 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             asyncAssembly = false;
         } else if (args[i] == "--assemblyThreads") {
             if (++i >= argc) {
-                VkEncPrintfErr("Invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("Invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             uint32_t val = 0;
             if (!parseUint(args[i], val) || val == 0 || val > 16) {
-                VkEncPrintfErr("Invalid value for --assemblyThreads (1..16)\n");
+                LOG_ERROR("Invalid value for --assemblyThreads (1..16)\n");
                 return -1;
             }
             assemblyThreadCount = val;
         } else if (args[i] == "--testOutOfOrderRecording") {
             // Testing only - don't use this feature for production!
-            VkEncPrintfOut("Warning: %s should only be used for testing!\n", args[i].c_str());
+            LOG_WARN("%s should only be used for testing!\n", args[i].c_str());
             enableOutOfOrderRecording = true;
         } else if (args[i] == "--enableDebugEncoderInputDisplay") {
-            VkEncPrintfOut("Warning: %s Enabling the display for testing encoder input frames!\n", args[i].c_str());
+            LOG_WARN("%s Enabling the display for testing encoder input frames!\n", args[i].c_str());
             enableFramePresent = true;
         } else if (args[i] == "--intraRefreshCycleDuration") {
             if (++i >= argc || !parseUint(args[i], intraRefreshCycleDuration)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             gopStructure.SetIntraRefreshCycleDuration(intraRefreshCycleDuration);
             if (verbose) {
-                VkEncPrintfOut("Selected intraRefreshCycleDuration: %d\n", intraRefreshCycleDuration);
+                LOG_INFO("Selected intraRefreshCycleDuration: %d\n", intraRefreshCycleDuration);
             }
         } else if (args[i] == "--intraRefreshMode") {
             if (++i >= argc) {
-                VkEncPrintfErr("Invalid paramter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("Invalid paramter for %s\n", args[i - 1].c_str());
                 return -1;
             }
 
@@ -937,33 +937,33 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             } else if (args[i] == "blocks") {
                 intraRefreshMode = REFRESH_BLOCKS;
             } else {
-                VkEncPrintfErr("Invalid intra-refresh mode %s\n", args[i].c_str());
+                LOG_ERROR("Invalid intra-refresh mode %s\n", args[i].c_str());
                 return -1;
             }
         } else if (args[i] == "--testIntraRefreshMidway") {
             // Testing only - don't use this feature for production!
-            VkEncPrintfOut("Warning: %s should only be used for testing!\n", args[i].c_str());
+            LOG_WARN("%s should only be used for testing!\n", args[i].c_str());
             if (++i >= argc || !parseUint(args[i], intraRefreshCycleRestartIndex)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             gopStructure.SetIntraRefreshCycleRestartIndex(intraRefreshCycleRestartIndex);
         } else if (args[i] == "--testSkipIntraRefreshStart") {
             // Testing only - don't use this feature for production!
-            VkEncPrintfOut("Warning: %s should only be used for testing!\n", args[i].c_str());
+            LOG_WARN("%s should only be used for testing!\n", args[i].c_str());
             if (++i >= argc || !parseUint(args[i], intraRefreshSkippedStartIndex)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             gopStructure.SetIntraRefreshSkippedStartIndex(intraRefreshSkippedStartIndex);
         } else if ((args[i] == "--spatialAQStrength") || (args[i] == "--temporalAQStrength") ||
                    (args[i] == "--aqDumpDir")) {
 #ifndef NV_AQ_GPU_LIB_SUPPORTED
-            VkEncPrintfErr(kAqNotBuiltErrorFormat, args[i].c_str());
+            LOG_ERROR(kAqNotBuiltErrorFormat, args[i].c_str());
             return -1;
 #else // !NV_AQ_GPU_LIB_SUPPORTED
             if (++i >= argc) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             if (args[i - 1] == "--aqDumpDir") {
@@ -973,12 +973,12 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             const bool spatial = (args[i - 1] == "--spatialAQStrength");
             float& strength = spatial ? spatialAQStrength : temporalAQStrength;
             if (!parseFloat(args[i], strength)) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             // Valid range is [-1.0, 1.0], but values < -1.0 mean disabled
             if (strength > 1.0f) {
-                VkEncPrintfErr("%s must be <= 1.0 (use < -1.0 to disable)\n",
+                LOG_ERROR("%s must be <= 1.0 (use < -1.0 to disable)\n",
                                spatial ? "spatialAQStrength" : "temporalAQStrength");
                 return -1;
             }
@@ -989,11 +989,11 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
             gpuEncodeTiming = 1;
         } else if (args[i] == "--crcInit") {
             if (++i >= argc) {
-                VkEncPrintfErr("--crcInit requires a comma-separated list of uint32 values\n");
+                LOG_ERROR("--crcInit requires a comma-separated list of uint32 values\n");
                 return -1;
             }
             if (!parseCommaSeparatedUint32s(args[i], crcInitValue)) {
-                VkEncPrintfErr("Invalid --crcInit value (use comma-separated decimal or 0x hex uint32s): %s\n",
+                LOG_ERROR("Invalid --crcInit value (use comma-separated decimal or 0x hex uint32s): %s\n",
                         args[i].c_str());
                 return -1;
             }
@@ -1014,15 +1014,15 @@ int EncoderConfig::ParseArguments(int argc, const char *argv[])
     enableAQ = ((spatialAQStrength >= -1.0f) || (temporalAQStrength >= -1.0f)) ? VK_TRUE : VK_FALSE;
     if (enableAQ) {
         if (!IsPreprocessComputeFilterEnabled()) {
-            VkEncPrintfErr("%s", kAqNoComputeFilterError);
+            LOG_ERROR("%s", kAqNoComputeFilterError);
             return -1;
         }
         if (enableQpMap && (qpMapMode == EMPHASIS_MAP)) {
-            VkEncPrintfErr("%s", kAqEmphasisMapError);
+            LOG_ERROR("%s", kAqEmphasisMapError);
             return -1;
         }
         if (qpMapFileHandler.HasFileName()) {
-            VkEncPrintfErr("%s", kAqMapFileError);
+            LOG_ERROR("%s", kAqMapFileError);
             return -1;
         }
         enableQpMap = true;
@@ -1053,7 +1053,7 @@ int EncoderConfig::FinalizeConfig(const EncoderConfig::DeviceCapabilities* devic
     // sentinel on this path.
     if (!inputFileHandler.HasFileName()) {
         if (input.width == 0 || input.height == 0) {
-            VkEncPrintfErr("An input file (-i) or --inputWidth/--inputHeight must be specified\n");
+            LOG_ERROR("An input file (-i) or --inputWidth/--inputHeight must be specified\n");
             return -1;
         }
         // External frame mode: skip file handler setup, use provided dimensions
@@ -1061,12 +1061,12 @@ int EncoderConfig::FinalizeConfig(const EncoderConfig::DeviceCapabilities* devic
         // frameCount stays at the value from --numFrames (or default)
     } else {
         if (input.width == 0) {
-            VkEncPrintfErr("The input width must be specified\n");
+            LOG_ERROR("The input width must be specified\n");
             return -1;
         }
 
         if (input.height == 0) {
-            VkEncPrintfErr("The input height must specified\n");
+            LOG_ERROR("The input height must specified\n");
             return -1;
         }
 
@@ -1077,7 +1077,7 @@ int EncoderConfig::FinalizeConfig(const EncoderConfig::DeviceCapabilities* devic
 
     if (startFrame > 0) {
         if (startFrame >= frameCount) {
-            VkEncOut() << "startFrame " << startFrame
+            LOG_S_INFO << "startFrame " << startFrame
                       <<  " must be inferior to input file max frame count of "
                       << frameCount << ". Reseting startFrame to 0." << std::endl;
             startFrame = 0;
@@ -1090,12 +1090,12 @@ int EncoderConfig::FinalizeConfig(const EncoderConfig::DeviceCapabilities* devic
         // File-based input: clamp numFrames to actual file frame count
         if ((repeatInputFrames == false) &&
                 ((numFrames == 0) || (numFrames > (frameCount - startFrame)))) {
-            VkEncOut() << "numFrames " << numFrames
+            LOG_S_INFO << "numFrames " << numFrames
                       <<  " should be different from zero and inferior to input file max frame count of "
                       << frameCount << ". Using input file frame count." << std::endl;
             numFrames = frameCount;
             if (numFrames == 0) {
-                VkEncPrintfErr("No frames found in the input file, frame count is zero. Exit.");
+                LOG_ERROR("No frames found in the input file, frame count is zero. Exit.");
                 return -1;
             }
         }
@@ -1112,7 +1112,7 @@ int EncoderConfig::FinalizeConfig(const EncoderConfig::DeviceCapabilities* devic
         const char* defaultOutName = (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) ? "out.264" :
                                      (codec == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR) ? "out.265" : "out.ivf";
         if (verbose) {
-            VkEncPrintfOut("No output file name provided. Using %s.\n", defaultOutName);
+            LOG_INFO("No output file name provided. Using %s.\n", defaultOutName);
         }
         size_t fileSize = outputFileHandler.SetFileName(defaultOutName);
         if (fileSize <= 0) {
@@ -1154,7 +1154,7 @@ int EncoderConfig::FinalizeConfig(const EncoderConfig::DeviceCapabilities* devic
 
     if (minQp == -1) {
         if (verbose) {
-            VkEncPrintfOut("No QP was provided. Using default value: 20.\n");
+            LOG_INFO("No QP was provided. Using default value: 20.\n");
         }
         minQp = 20;
         // NOT PUSHED INTO RATE CONTROL, and deliberately so. Every consumer of
@@ -1176,14 +1176,14 @@ int EncoderConfig::FinalizeConfig(const EncoderConfig::DeviceCapabilities* devic
     codecBlockAlignment = H264MbSizeAlignment;
 
     if (enableQpMap && !qpMapFileHandler.HasFileName() && !enableAQ) {
-        VkEncPrintfErr("No qpMap file was provided.");
+        LOG_ERROR("No qpMap file was provided.");
         return -1;
     }
 
     if ((intraRefreshMode == REFRESH_NONE && intraRefreshCycleDuration > 0) ||
         (intraRefreshMode != REFRESH_NONE && intraRefreshCycleDuration == 0)) {
 
-        VkEncPrintfErr("Both --intraRefreshMode and --intraRefreshCycleDuration must be "
+        LOG_ERROR("Both --intraRefreshMode and --intraRefreshCycleDuration must be "
                         "specified to enable intra-refresh.\n");
         return -1;
     }
@@ -1195,35 +1195,35 @@ int EncoderConfig::FinalizeConfig(const EncoderConfig::DeviceCapabilities* devic
     // still attributable, rather than inside session creation. Without a device
     // to ask, the request stands and the session decides.
     if (enableIntraRefresh && (deviceCaps != nullptr) && !deviceCaps->intraRefreshSupported) {
-        VkEncPrintfErr("Intra refresh was requested, but this device does not expose "
+        LOG_ERROR("Intra refresh was requested, but this device does not expose "
                 "VkPhysicalDeviceVideoEncodeIntraRefreshFeaturesKHR::videoEncodeIntraRefresh.\n");
         return -1;
     }
 
     if (!enableIntraRefresh && intraRefreshCycleRestartIndex > 0) {
-        VkEncPrintfErr("Intra-refresh must be enabled when using --testIntraRefreshMidway\n");
+        LOG_ERROR("Intra-refresh must be enabled when using --testIntraRefreshMidway\n");
         return -1;
     }
 
     if (enableIntraRefresh && intraRefreshCycleRestartIndex >= intraRefreshCycleDuration) {
-        VkEncPrintfErr("The value specified for --testIntraRefreshMidway must be in "
+        LOG_ERROR("The value specified for --testIntraRefreshMidway must be in "
                         "the range [0, intraRefreshCycleDuration-1]\n");
         return -1;
     }
 
     if (!enableIntraRefresh && intraRefreshSkippedStartIndex > 0) {
-        VkEncPrintfErr("Intra-refresh must be enabled when using --testSkipIntraRefreshStart\n");
+        LOG_ERROR("Intra-refresh must be enabled when using --testSkipIntraRefreshStart\n");
         return -1;
     }
 
     if (enableIntraRefresh && intraRefreshSkippedStartIndex >= intraRefreshCycleDuration) {
-        VkEncPrintfErr("The value specified for --testSkipIntraRefreshStart must be in "
+        LOG_ERROR("The value specified for --testSkipIntraRefreshStart must be in "
                         "the range [0, intraRefreshCycleDuration-1]\n");
         return -1;
     }
 
     if (intraRefreshCycleRestartIndex > 0 && intraRefreshSkippedStartIndex > 0) {
-        VkEncPrintfErr("Combining --testIntraRefreshMidway with --testSkipIntraRefreshStart "
+        LOG_ERROR("Combining --testIntraRefreshMidway with --testSkipIntraRefreshStart "
                         "is not supported\n");
         return -1;
     }
@@ -1249,7 +1249,7 @@ VkResult EncoderConfig::CreateCodecConfigDirect(
             encoderConfig = config;
         } break;
         default:
-            VkEncPrintfErr("[EncoderConfig] CreateCodecConfigDirect: unsupported codec 0x%x\n",
+            LOG_ERROR("[EncoderConfig] CreateCodecConfigDirect: unsupported codec 0x%x\n",
                     (unsigned)codecOperation);
             return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
     }
@@ -1276,8 +1276,8 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
                 codec = VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR;
             } else {
                 // Invalid codec
-                VkEncPrintfErr("Invalid codec: %s\n", codecStr.c_str());
-                VkEncPrintfErr("Supported codecs are: avc, hevc and av1\n");
+                LOG_ERROR("Invalid codec: %s\n", codecStr.c_str());
+                LOG_ERROR("Supported codecs are: avc, hevc and av1\n");
                 return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
             }
         } else if (args[i] == "--help" || args[i] == "-h") {
@@ -1313,7 +1313,7 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
                 argDump += " ";
                 argDump += argv[a];
             }
-            VkEncPrintfErr("[EncoderConfig] H264 ParseArguments failed (ret=%d). argc=%d. Args:%s\n", ret, argc, argDump.c_str());
+            LOG_ERROR("[EncoderConfig] H264 ParseArguments failed (ret=%d). argc=%d. Args:%s\n", ret, argc, argDump.c_str());
             fflush(stderr);
             // Don't assert — return error so caller can handle gracefully
             return VK_ERROR_INITIALIZATION_FAILED;
@@ -1371,7 +1371,7 @@ VkResult EncoderConfig::CreateCodecConfig(int argc, const char *argv[],
         return VK_SUCCESS;
 
     } else {
-        VkEncPrintfErr("Codec type is not selected\n. Please select it with --codec <avc or hevc or av1>, or the codec key of an --encoderConfig file\n");
+        LOG_ERROR("Codec type is not selected\n. Please select it with --codec <avc or hevc or av1>, or the codec key of an --encoderConfig file\n");
         printHelp(codec);
         return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
     }
@@ -1399,7 +1399,7 @@ void EncoderConfig::InitVideoProfile()
     encodeUsageInfo.videoContentHints = encodeContentHints;
     encodeUsageInfo.tuningMode = tuningMode;
 
-    if (verbose) VkEncPrintfErr("[EncoderConfig] VkVideoEncodeUsageInfoKHR:\n"
+    if (verbose) LOG_INFO("[EncoderConfig] VkVideoEncodeUsageInfoKHR:\n"
             "  videoUsageHints   = 0x%x%s\n"
             "  videoContentHints = 0x%x\n"
             "  tuningMode        = %d (%s)\n",
@@ -1680,7 +1680,7 @@ bool EncoderConfig::ResolveRgbToYcbcrMatrix(
         *outModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
         return true;
     case 0:   // Identity/GBR -- see the CC-1 block; unreachable here.
-        VkEncPrintfErr("\nEncoderConfig: matrix_coefficients 0 (Identity/GBR) "
+        LOG_ERROR("EncoderConfig: matrix_coefficients 0 (Identity/GBR) "
                 "asserts the samples ARE R'G'B'. The RGBA->YCbCr preprocess "
                 "filter exists to make them not-R'G'B', so this cannot be "
                 "honoured and must not be silently overridden. NOTE: no "
@@ -1707,7 +1707,7 @@ bool EncoderConfig::ResolveRgbToYcbcrMatrix(
                               ? VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601
                               : VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709;
         matrix_coefficients = derived;
-        VkEncPrintfErr("\nEncoderConfig: matrix_coefficients 2 (Unspecified) was "
+        LOG_WARN("EncoderConfig: matrix_coefficients 2 (Unspecified) was "
                 "declared with a colour description and the RGBA->YCbCr "
                 "filter must pick a matrix; DERIVED %u from the %s primaries "
                 "%u, converting with it and SIGNALLING it so the bitstream "
@@ -1718,7 +1718,7 @@ bool EncoderConfig::ResolveRgbToYcbcrMatrix(
         return true;
     }
     default:
-        VkEncPrintfErr("\nEncoderConfig: matrix_coefficients %u names no matrix the "
+        LOG_ERROR("EncoderConfig: matrix_coefficients %u names no matrix the "
                 "RGBA->YCbCr preprocess filter can produce. Refusing rather "
                 "than converting as BT.709 under this label: that would put "
                 "BT.709 pixels in a stream that claims otherwise. Declare 1 "

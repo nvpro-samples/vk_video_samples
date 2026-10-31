@@ -15,20 +15,20 @@
 */
 
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <string>
 #include <cstring>
 #include <cstdlib>
+#include "Logger.h"
 
 #define READ_PARAM(i, param, type) {                                    \
     if (++i >= argc) {                                                  \
-        VkEncPrintfErr("invalid parameter");                           \
+        LOG_ERROR("invalid parameter");                           \
         return -1;                                                      \
     }                                                                   \
     char* _end = nullptr;                                                \
     long long _val = strtoll(argv[i], &_end, 10);                        \
     if (_end == argv[i]) {                                              \
-        VkEncPrintfErr("invalid parameter");                           \
+        LOG_ERROR("invalid parameter");                           \
         return -1;                                                      \
     }                                                                   \
     param = static_cast<type>(_val);                                    \
@@ -148,7 +148,7 @@ int EncoderConfigAV1::DoParseArguments(int argc, const char* argv[])
             }
         } else if (args[i] == "--profile"){
             if (++i >= argc) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i-1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i-1].c_str());
                 return -1;
             }
             std::string prfl = args[i];
@@ -160,11 +160,11 @@ int EncoderConfigAV1::DoParseArguments(int argc, const char* argv[])
                 profile = STD_VIDEO_AV1_PROFILE_PROFESSIONAL;
             } else {
                 // Invalid profile
-                VkEncPrintfErr("Invalid profile: %s\n", prfl.c_str());
+                LOG_ERROR("Invalid profile: %s\n", prfl.c_str());
                 return -1;
             }
         } else {
-            VkEncPrintfErr("Unrecognized option: %s\n", argv[i]);
+            LOG_ERROR("Unrecognized option: %s\n", argv[i]);
             //printAV1Help();
             return -1;
         }
@@ -313,21 +313,21 @@ VkResult EncoderConfigAV1::InitDeviceCapabilities(const VulkanDeviceContext* vkD
                                                          av1QuantizationMapCapabilities,
                                                          intraRefreshCapabilities);
     if (result != VK_SUCCESS) {
-        VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+        LOG_S_ERROR << "[" << __FILE__ << ":" << __LINE__ << "]: "
                   << "Could not get Video Encode Capabilities for AV1. VkResult: " << result
                   << " (0x" << std::hex << result << std::dec << ")" << std::endl;
         return result;
     }
 
     if (verboseMsg) {
-        VkEncOut() << "\t\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode capabilities: " << std::endl;
-        VkEncOut() << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << videoCapabilities.minBitstreamBufferOffsetAlignment << std::endl;
-        VkEncOut() << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << videoCapabilities.minBitstreamBufferSizeAlignment << std::endl;
-        VkEncOut() << "\t\t\t" << "pictureAccessGranularity: " << videoCapabilities.pictureAccessGranularity.width << " x " << videoCapabilities.pictureAccessGranularity.height << std::endl;
-        VkEncOut() << "\t\t\t" << "minExtent: " << videoCapabilities.minCodedExtent.width << " x " << videoCapabilities.minCodedExtent.height << std::endl;
-        VkEncOut() << "\t\t\t" << "maxExtent: " << videoCapabilities.maxCodedExtent.width  << " x " << videoCapabilities.maxCodedExtent.height << std::endl;
-        VkEncOut() << "\t\t\t" << "maxDpbSlots: " << videoCapabilities.maxDpbSlots << std::endl;
-        VkEncOut() << "\t\t\t" << "maxActiveReferencePictures: " << videoCapabilities.maxActiveReferencePictures << std::endl;
+        LOG_S_INFO << "\t\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode capabilities: " << std::endl;
+        LOG_S_INFO << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << videoCapabilities.minBitstreamBufferOffsetAlignment << std::endl;
+        LOG_S_INFO << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << videoCapabilities.minBitstreamBufferSizeAlignment << std::endl;
+        LOG_S_INFO << "\t\t\t" << "pictureAccessGranularity: " << videoCapabilities.pictureAccessGranularity.width << " x " << videoCapabilities.pictureAccessGranularity.height << std::endl;
+        LOG_S_INFO << "\t\t\t" << "minExtent: " << videoCapabilities.minCodedExtent.width << " x " << videoCapabilities.minCodedExtent.height << std::endl;
+        LOG_S_INFO << "\t\t\t" << "maxExtent: " << videoCapabilities.maxCodedExtent.width  << " x " << videoCapabilities.maxCodedExtent.height << std::endl;
+        LOG_S_INFO << "\t\t\t" << "maxDpbSlots: " << videoCapabilities.maxDpbSlots << std::endl;
+        LOG_S_INFO << "\t\t\t" << "maxActiveReferencePictures: " << videoCapabilities.maxActiveReferencePictures << std::endl;
     }
 
     result = VulkanVideoCapabilities::GetPhysicalDeviceVideoEncodeQualityLevelProperties<VkVideoEncodeAV1QualityLevelPropertiesKHR, VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_QUALITY_LEVEL_PROPERTIES_KHR>
@@ -335,33 +335,33 @@ VkResult EncoderConfigAV1::InitDeviceCapabilities(const VulkanDeviceContext* vkD
                                                                                  qualityLevelProperties,
                                                                                  av1QualityLevelProperties);
     if (result != VK_SUCCESS) {
-        VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+        LOG_S_ERROR << "[" << __FILE__ << ":" << __LINE__ << "]: "
                   << "Could not get Video Encode QualityLevel Properties for AV1. VkResult: " << result
                   << " (0x" << std::hex << result << std::dec << "), qualityLevel: " << qualityLevel << std::endl;
         return result;
     }
 
     if (verboseMsg) {
-        VkEncOut() << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode quality level properties: " << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredRateControlMode : " << qualityLevelProperties.preferredRateControlMode << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredRateControlLayerCount : " << qualityLevelProperties.preferredRateControlLayerCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredRateControlFlags : " << av1QualityLevelProperties.preferredRateControlFlags << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredGopFrameCount : " << av1QualityLevelProperties.preferredGopFrameCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredKeyFramePeriod : " << av1QualityLevelProperties.preferredKeyFramePeriod << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredConsecutiveBipredictiveFrameCount : " << av1QualityLevelProperties.preferredConsecutiveBipredictiveFrameCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredTemporalLayerCount : " << av1QualityLevelProperties.preferredTemporalLayerCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredConstantQIndex.intraQIndex : " << av1QualityLevelProperties.preferredConstantQIndex.intraQIndex << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredConstantQIndex.predictiveQIndex : " << av1QualityLevelProperties.preferredConstantQIndex.predictiveQIndex << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredConstantQIndex.bipredictiveQIndex : " << av1QualityLevelProperties.preferredConstantQIndex.bipredictiveQIndex << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredMaxSingleReferenceCount : " << av1QualityLevelProperties.preferredMaxSingleReferenceCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredSingleReferenceNameMask : " << av1QualityLevelProperties.preferredSingleReferenceNameMask << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredMaxUnidirectionalCompoundReferenceCount : " << av1QualityLevelProperties.preferredMaxUnidirectionalCompoundReferenceCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredMaxUnidirectionalCompoundGroup1ReferenceCount : " << av1QualityLevelProperties.preferredMaxUnidirectionalCompoundGroup1ReferenceCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredUnidirectionalCompoundReferenceNameMask : " << av1QualityLevelProperties.preferredUnidirectionalCompoundReferenceNameMask << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredMaxBidirectionalCompoundReferenceCount : " << av1QualityLevelProperties.preferredMaxBidirectionalCompoundReferenceCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredMaxBidirectionalCompoundGroup1ReferenceCount : " << av1QualityLevelProperties.preferredMaxBidirectionalCompoundGroup1ReferenceCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredMaxBidirectionalCompoundGroup2ReferenceCount : " << av1QualityLevelProperties.preferredMaxBidirectionalCompoundGroup2ReferenceCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredBidirectionalCompoundReferenceNameMask : " << av1QualityLevelProperties.preferredBidirectionalCompoundReferenceNameMask << std::endl;
+        LOG_S_INFO << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode quality level properties: " << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredRateControlMode : " << qualityLevelProperties.preferredRateControlMode << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredRateControlLayerCount : " << qualityLevelProperties.preferredRateControlLayerCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredRateControlFlags : " << av1QualityLevelProperties.preferredRateControlFlags << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredGopFrameCount : " << av1QualityLevelProperties.preferredGopFrameCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredKeyFramePeriod : " << av1QualityLevelProperties.preferredKeyFramePeriod << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredConsecutiveBipredictiveFrameCount : " << av1QualityLevelProperties.preferredConsecutiveBipredictiveFrameCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredTemporalLayerCount : " << av1QualityLevelProperties.preferredTemporalLayerCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredConstantQIndex.intraQIndex : " << av1QualityLevelProperties.preferredConstantQIndex.intraQIndex << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredConstantQIndex.predictiveQIndex : " << av1QualityLevelProperties.preferredConstantQIndex.predictiveQIndex << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredConstantQIndex.bipredictiveQIndex : " << av1QualityLevelProperties.preferredConstantQIndex.bipredictiveQIndex << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredMaxSingleReferenceCount : " << av1QualityLevelProperties.preferredMaxSingleReferenceCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredSingleReferenceNameMask : " << av1QualityLevelProperties.preferredSingleReferenceNameMask << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredMaxUnidirectionalCompoundReferenceCount : " << av1QualityLevelProperties.preferredMaxUnidirectionalCompoundReferenceCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredMaxUnidirectionalCompoundGroup1ReferenceCount : " << av1QualityLevelProperties.preferredMaxUnidirectionalCompoundGroup1ReferenceCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredUnidirectionalCompoundReferenceNameMask : " << av1QualityLevelProperties.preferredUnidirectionalCompoundReferenceNameMask << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredMaxBidirectionalCompoundReferenceCount : " << av1QualityLevelProperties.preferredMaxBidirectionalCompoundReferenceCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredMaxBidirectionalCompoundGroup1ReferenceCount : " << av1QualityLevelProperties.preferredMaxBidirectionalCompoundGroup1ReferenceCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredMaxBidirectionalCompoundGroup2ReferenceCount : " << av1QualityLevelProperties.preferredMaxBidirectionalCompoundGroup2ReferenceCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredBidirectionalCompoundReferenceNameMask : " << av1QualityLevelProperties.preferredBidirectionalCompoundReferenceNameMask << std::endl;
     }
 
     if (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_FLAG_BITS_MAX_ENUM_KHR) {

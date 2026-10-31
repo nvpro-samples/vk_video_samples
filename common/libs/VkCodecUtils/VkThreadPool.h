@@ -26,6 +26,7 @@
 #include <future>
 #include <stdexcept>
 #include <iostream>
+#include "Logger.h"
 
 class VkThreadPool
 {
@@ -52,7 +53,7 @@ public:
                     try {
                         task();
                     } catch (const std::exception& e) {
-                        std::cerr << "VkThreadPool task threw: " << e.what()
+                        LOG_S_ERROR << "VkThreadPool task threw: " << e.what()
                                   << std::endl;
                     }
 #else

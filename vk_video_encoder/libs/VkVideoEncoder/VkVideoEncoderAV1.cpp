@@ -15,11 +15,11 @@
  */
 
 #include <chrono>
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <cstring>
 #include <limits>
 #include "VkVideoEncoder/VkVideoEncoderAV1.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
+#include "Logger.h"
 
 
 #define FrameIsKey(frameType)   (frameType == STD_VIDEO_AV1_FRAME_TYPE_KEY)
@@ -87,7 +87,7 @@ VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& enc
 
     VkResult result = InitEncoder(encoderConfig);
     if (result != VK_SUCCESS) {
-        VkEncPrintfErr("\nERROR: InitEncoder() failed with ret(%d)\n", result);
+        LOG_ERROR("InitEncoder() failed with ret(%d)\n", result);
         return result;
     }
 
@@ -96,14 +96,14 @@ VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& enc
         encodeCaps.maxSingleReferenceCount < 2 &&
         encodeCaps.maxUnidirectionalCompoundReferenceCount == 0 &&
         encodeCaps.maxBidirectionalCompoundReferenceCount == 0) {
-        VkEncOut() << "B-frames were requested but the implementation does not support multiple reference frames!" << std::endl;
+        LOG_S_INFO << "B-frames were requested but the implementation does not support multiple reference frames!" << std::endl;
         assert(!"B-frames not supported");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
     // The DPB manager needs a slot for each of the eight reference frame buffers.
     if (m_maxDpbPicturesCount < STD_VIDEO_AV1_NUM_REF_FRAMES) {
-        VkEncOut() << "The AV1 encoder needs " << STD_VIDEO_AV1_NUM_REF_FRAMES << " DPB slots, and the implementation has "
+        LOG_S_INFO << "The AV1 encoder needs " << STD_VIDEO_AV1_NUM_REF_FRAMES << " DPB slots, and the implementation has "
                    << m_maxDpbPicturesCount << "!" << std::endl;
         return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -129,14 +129,14 @@ VkResult VkVideoEncoderAV1::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& enc
                                                          nullptr,
                                                          &sessionParameters);
     if (result != VK_SUCCESS) {
-        VkEncPrintfErr("\nEncodeFrame Error: Failed to get create video session parameters.\n");
+        LOG_ERROR("EncodeFrame: Failed to get create video session parameters.\n");
         return result;
     }
 
     result = VulkanVideoSessionParameters::Create(m_vkDevCtx, m_videoSession,
                                                   sessionParameters, m_videoSessionParameters);
     if (result != VK_SUCCESS) {
-        VkEncPrintfErr("\nEncodeFrame Error: Failed to get create video session object.\n");
+        LOG_ERROR("EncodeFrame: Failed to get create video session object.\n");
         return result;
     }
 
@@ -197,7 +197,7 @@ VkResult VkVideoEncoderAV1::EncodeVideoSessionParameters(VkSharedBaseObj<VkVideo
             sizeof(encodeFrameInfo->bitstreamHeaderBuffer) - used,
             &truncated);
         if (truncated) {
-            VkEncPrintfErr("\nEncodeVideoSessionParameters Error: the HDR10 metadata "
+            LOG_ERROR("EncodeVideoSessionParameters: the HDR10 metadata "
                     "OBUs do not fit in the %zu-byte non-VCL header buffer "
                     "after %zu bytes of sequence header.\n",
                     sizeof(encodeFrameInfo->bitstreamHeaderBuffer), used);
@@ -556,7 +556,7 @@ VkResult VkVideoEncoderAV1::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
         DumpStateInfo("input", 1, encodeFrameInfo);
 
         if (encodeFrameInfo->lastFrame) {
-            VkEncOut() << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
+            LOG_S_INFO << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
                       << " of type " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
                       << " ###"
                       << std::endl << std::flush;
@@ -871,7 +871,7 @@ void VkVideoEncoderAV1::BuildFrameObuSequence(uint32_t frameIdx,
         bitstream.insert(bitstream.end(), seqHdrData, seqHdrData + encodeFrameInfo->bitstreamHeaderBufferSize);
 
         if (m_encoderConfig->verboseFrameStruct) {
-            VkEncOut() << "       == Non-VCL data SUCCESS"
+            LOG_S_INFO << "       == Non-VCL data SUCCESS"
                       << " Non-VCL data with size: " << encodeFrameInfo->bitstreamHeaderBufferSize
                       << ", Input Order: " << (uint32_t)encodeFrameInfo->gopPosition.inputOrder
                       << ", Encode Order: " << (uint32_t)encodeFrameInfo->gopPosition.encodeOrder
@@ -903,7 +903,7 @@ void VkVideoEncoderAV1::BuildFrameObuSequence(uint32_t frameIdx,
         }
 
         if (m_encoderConfig->verboseFrameStruct) {
-            VkEncOut() << "      == Output VCL data SUCCESS for " << frameIdx << " with size: " << frameSize
+            LOG_S_INFO << "      == Output VCL data SUCCESS for " << frameIdx << " with size: " << frameSize
                       << ", Input Order: " << (uint32_t)encodeFrameInfo->gopPosition.inputOrder
                       << ", Encode Order: " << (uint32_t)encodeFrameInfo->gopPosition.encodeOrder
                       << std::endl << std::flush;
@@ -936,13 +936,13 @@ VkResult VkVideoEncoderAV1::FlushBatchedTemporalUnit(VkSharedBaseObj<VkVideoEnco
         tuSize += m_bitstream[curFrameIdx].size();
 
         if (m_encoderConfig->verboseFrameStruct) {
-            VkEncOut() << ">>>>>> Assembly VCL index " << curFrameIdx << " has size: " << m_bitstream[curFrameIdx].size()
+            LOG_S_INFO << ">>>>>> Assembly VCL index " << curFrameIdx << " has size: " << m_bitstream[curFrameIdx].size()
                       << std::endl << std::flush;
         }
     }
 
     if (m_encoderConfig->verboseFrameStruct) {
-        VkEncOut() << ">>>>>> Assembly total VCL data is: "
+        LOG_S_INFO << ">>>>>> Assembly total VCL data is: "
                   << tuSize - sizeof(tdObu)
                   << std::endl << std::flush;
     }
@@ -968,7 +968,7 @@ VkResult VkVideoEncoderAV1::FlushBatchedTemporalUnit(VkSharedBaseObj<VkVideoEnco
         while (remainingBytes > 0) {
             const size_t bytesWritten = WriteDataToFile(writeData, remainingBytes);
             if (bytesWritten == 0) {
-                VkEncErr() << "Failed to write bitstream data for frame " << curFrameIdx << std::endl;
+                LOG_S_ERROR << "Failed to write bitstream data for frame " << curFrameIdx << std::endl;
                 return VK_ERROR_OUT_OF_HOST_MEMORY;
             }
 
@@ -998,7 +998,7 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
     BitstreamReadback readback{};
     VkResult result = ReadbackBitstreamData(encodeFrameInfo, readback);
     if (result != VK_SUCCESS) {
-        VkEncPrintfErr("\nAssembleBitstreamData Error: bitstream readback failed with result 0x%x.\n", result);
+        LOG_ERROR("AssembleBitstreamData: bitstream readback failed with result 0x%x.\n", result);
         assert(result == VK_SUCCESS);
         return result;
     }
@@ -1006,7 +1006,7 @@ VkResult VkVideoEncoderAV1::AssembleBitstreamData(VkSharedBaseObj<VkVideoEncodeF
     // Show-existing frames returned above; every remaining frame must have a
     // bitstream buffer, otherwise its coded data would be silently dropped.
     if (!readback.readbackDone) {
-        VkEncPrintfErr("\nAssembleBitstreamData Error: no bitstream buffer to read back for frame %u.\n", frameIdx);
+        LOG_ERROR("AssembleBitstreamData: no bitstream buffer to read back for frame %u.\n", frameIdx);
         assert(readback.readbackDone);
         return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -1239,7 +1239,7 @@ void VkVideoEncoderAV1::InsertOrdered(VkSharedBaseObj<VkVideoEncodeFrameInfo>& c
             // GetEncodeFrameInfoAV1() below dereferenced it.
             if (!GetAvailablePoolNode(showExistingFrameInfo) ||
                 !showExistingFrameInfo) {
-                VkEncPrintfErr("[EncoderAV1] no pool node for the show_existing_frame "
+                LOG_ERROR("[EncoderAV1] no pool node for the show_existing_frame "
                         "companion; emitting the reordered frame without it\n");
                 return;
             }

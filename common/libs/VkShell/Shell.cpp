@@ -24,6 +24,7 @@
 #include <thread>
 #include "VkCodecUtils/Helpers.h"
 #include "Shell.h"
+#include "Logger.h"
 
 Shell::Shell(const VulkanDeviceContext* devCtx, const Configuration& configuration)
     : m_settings(configuration)
@@ -336,7 +337,7 @@ void Shell::AcquireBackBuffer(bool) {
         auto timeNow = std::chrono::high_resolution_clock::now();
         if (false) {
             m_ctx.lastFrameToFrameTimeNsec = timeNow - m_ctx.lastPresentTime;
-            std::cout << "Last Present Time: " << m_ctx.lastFrameToFrameTimeNsec.count() << " nSec, " << std::endl;
+            LOG_S_INFO << "Last Present Time: " << m_ctx.lastFrameToFrameTimeNsec.count() << " nSec, " << std::endl;
             if (m_ctx.lastFrameToFrameTimeNsec.count() < 16000000) {
 
             }
@@ -344,7 +345,7 @@ void Shell::AcquireBackBuffer(bool) {
 
         if (false) {
             backBuffer.m_lastFrameTime = timeNow - backBuffer.m_lastPresentTime;
-            std::cout << "Frame Present Time: " << backBuffer.m_lastFrameTime.count() << " nSec, " << std::endl;
+            LOG_S_INFO << "Frame Present Time: " << backBuffer.m_lastFrameTime.count() << " nSec, " << std::endl;
 
             if (backBuffer.m_lastFrameTime / 8 < targetDuration) {
                 std::this_thread::sleep_for(targetDuration - backBuffer.m_lastFrameTime / 8);
@@ -352,7 +353,7 @@ void Shell::AcquireBackBuffer(bool) {
         }
 
         if (false) {
-            std::cout << "Frame diff: " << (timeNow - backBuffer.m_framePresentAtTime).count() << " nSec, "
+            LOG_S_INFO << "Frame diff: " << (timeNow - backBuffer.m_framePresentAtTime).count() << " nSec, "
                     << "m_targetTimeDelta: " << backBuffer.m_targetTimeDelta.count() << std::endl;
         }
 
@@ -423,7 +424,7 @@ void Shell::PresentBackBuffer(bool trainFrame) {
         res = m_ctx.devCtx->QueuePresentKHR(presentQueue, &presentInfo);
     }
     if (res == VK_ERROR_OUT_OF_DATE_KHR) {
-        std::cout << "Out of date Present Surface" << res << std::endl;
+        LOG_S_INFO << "Out of date Present Surface" << res << std::endl;
         return;
     }
 

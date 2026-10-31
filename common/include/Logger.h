@@ -1,18 +1,18 @@
 /*
-* Copyright (C) 2026 Igalia, S.L.
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*    http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
+ * Copyright (C) 2026 Igalia, S.L.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 #ifndef _LOGGER_H_
 #define _LOGGER_H_
 
@@ -44,7 +44,6 @@ enum class LogLevel {
 
 #define LOG_CAT_LEVEL(LEVEL, CAT, ...) Logger::instance().printf(LEVEL, CAT, __VA_ARGS__)
 
-
 #define LOG_DEBUG_CAT(CAT, ...) LOG_CAT_LEVEL(LogLevel::LOG_DEBUG, CAT, __VA_ARGS__)
 #define LOG_INFO_CAT(CAT, ...) LOG_CAT_LEVEL(LogLevel::LOG_INFO, CAT, __VA_ARGS__)
 #define LOG_WARN_CAT(CAT, ...) LOG_CAT_LEVEL(LogLevel::LOG_WARNING, CAT, __VA_ARGS__)
@@ -61,17 +60,16 @@ enum class LogLevel {
 #define LOG_ERROR_CONFIG(...) LOG_ERROR_CAT("config:\t", __VA_ARGS__)
 
 class Logger {
-private:
-    std::ostream& os;      // The output stream (e.g., std::cout or std::ofstream)
+   private:
+    std::ostream& os;       // The output stream (e.g., std::cout or std::ofstream)
     std::ostream& err;      // The error stream (e.g., std::cerr)
-    LogLevel currentLevel; // Current log level
-    LogLevel messageLevel; // The log level for the current message
+    LogLevel currentLevel;  // Current log level
+    LogLevel messageLevel;  // The log level for the current message
 
-public:
-    static Logger &instance ()
-    {
-      static Logger instance;
-      return instance;
+   public:
+    static Logger& instance() {
+        static Logger instance;
+        return instance;
     }
     // Constructor to set the output stream and log level (default is INFO)
     Logger(std::ostream& outStream = std::cout, std::ostream& errStream = std::cerr, LogLevel level = LogLevel::LOG_INFO)
@@ -79,12 +77,13 @@ public:
 
     // Set the log level for the logger
     void setLogLevel(int level) {
-        if (level > static_cast<int>(LogLevel::LOG_DEBUG))
-            level = static_cast<int>(LogLevel::LOG_DEBUG);
-        if (level < static_cast<int>(LogLevel::LOG_NONE))
-            level = static_cast<int>(LogLevel::LOG_NONE);
+        if (level > static_cast<int>(LogLevel::LOG_DEBUG)) level = static_cast<int>(LogLevel::LOG_DEBUG);
+        if (level < static_cast<int>(LogLevel::LOG_NONE)) level = static_cast<int>(LogLevel::LOG_NONE);
         currentLevel = static_cast<LogLevel>(level);
     }
+
+    // The log level messages are filtered at
+    LogLevel getLogLevel() const { return currentLevel; }
 
     // Set the log level for the current message
     Logger& operator()(LogLevel level) {
@@ -99,7 +98,7 @@ public:
     }
 
     // Overload the << operator for generic types
-    template<typename T>
+    template <typename T>
     Logger& operator<<(const T& data) {
         if (messageLevel <= currentLevel) {
             streamFor(messageLevel) << data;
@@ -130,19 +129,21 @@ public:
         }
     }
 
-private:
+   private:
     // Errors and warnings go to stderr so tools scanning diagnostics (e.g. the test runner) see them.
     static bool isDiagnostic(LogLevel level) { return level <= LogLevel::LOG_WARNING; }
     std::ostream& streamFor(LogLevel level) { return isDiagnostic(level) ? err : os; }
 
     static const char* levelPrefix(LogLevel level) {
         switch (level) {
-        case LogLevel::LOG_ERROR:   return "Error: ";
-        case LogLevel::LOG_WARNING: return "Warning: ";
-        default:          return "";
+            case LogLevel::LOG_ERROR:
+                return "Error: ";
+            case LogLevel::LOG_WARNING:
+                return "Warning: ";
+            default:
+                return "";
         }
     }
 };
-
 
 #endif

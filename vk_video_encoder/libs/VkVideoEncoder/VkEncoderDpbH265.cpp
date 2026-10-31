@@ -15,7 +15,6 @@
  */
 
 #include <stdio.h>
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
@@ -24,6 +23,7 @@
 #include <algorithm>
 
 #include "VkEncoderDpbH265.h"
+#include "Logger.h"
 
 template<typename T>
 static inline T clampl(T value, T minbound) {
@@ -297,14 +297,14 @@ bool VkEncDpbH265::ApplyReferencePictureSet(const StdVideoEncodeH265PictureInfo 
         // The reference picture set holds at most sps_max_dec_pic_buffering_minus1 pictures, the DPB
         // size less one (7.4.8), and the arrays below hold STD_VIDEO_H265_MAX_NUM_LIST_REF of them.
         if ((numRefPics > (m_dpbSize - 1)) || (numLongTermRefPics > STD_VIDEO_H265_MAX_NUM_LIST_REF)) {
-            VkEncPrintfOut("too many reference frames (%d, max is %d)\n", numRefPics, (m_dpbSize - 1));
+            LOG_INFO("too many reference frames (%d, max is %d)\n", numRefPics, (m_dpbSize - 1));
             return false;
         }
         // Each lt_idx_sps names one of the SPS's long-term candidates (7.4.7.1), which are at most
         // STD_VIDEO_H265_MAX_LONG_TERM_REF_PICS_SPS.
         for (uint32_t n = 0; (numLongTermRefPics > 0) && (n < pLongTermRefPics->num_long_term_sps); n++) {
             if (pLongTermRefPics->lt_idx_sps[n] >= STD_VIDEO_H265_MAX_LONG_TERM_REF_PICS_SPS) {
-                VkEncPrintfOut("lt_idx_sps[%u] names no long-term candidate of the SPS\n", n);
+                LOG_INFO("lt_idx_sps[%u] names no long-term candidate of the SPS\n", n);
                 return false;
             }
         }
@@ -408,7 +408,7 @@ bool VkEncDpbH265::ApplyReferencePictureSet(const StdVideoEncodeH265PictureInfo 
             }
         }
         if (pRefPicSet->ltCurr[i] < 0)
-            VkEncPrintfOut("long-term reference picture not available (POC=%d)\n", pocLtCurr[i]);
+            LOG_INFO("long-term reference picture not available (POC=%d)\n", pocLtCurr[i]);
     }
 
     for (int32_t i = 0; i < m_numPocLtFoll; i++) {
@@ -446,7 +446,7 @@ bool VkEncDpbH265::ApplyReferencePictureSet(const StdVideoEncodeH265PictureInfo 
             }
         }
         if (pRefPicSet->stCurrBefore[i] < 0)
-            VkEncPrintfOut("short-term reference picture not available (POC=%d)\n", pocStCurrBefore[i]);
+            LOG_INFO("short-term reference picture not available (POC=%d)\n", pocStCurrBefore[i]);
     }
 
     for (int32_t i = 0; i < m_numPocStCurrAfter; i++) {
@@ -458,7 +458,7 @@ bool VkEncDpbH265::ApplyReferencePictureSet(const StdVideoEncodeH265PictureInfo 
             }
         }
         if (pRefPicSet->stCurrAfter[i] < 0)
-            VkEncPrintfOut("short-term reference picture not available (POC=%d)\n", pocStCurrAfter[i]);
+            LOG_INFO("short-term reference picture not available (POC=%d)\n", pocStCurrAfter[i]);
     }
 
     for (int32_t i = 0; i < m_numPocStFoll; i++) {

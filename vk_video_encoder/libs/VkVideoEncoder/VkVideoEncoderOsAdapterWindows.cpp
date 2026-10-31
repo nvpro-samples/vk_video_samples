@@ -15,7 +15,6 @@
  */
 
 #include "VkVideoEncoder/VkVideoEncoderOsAdapterLinux.h"
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 
 #if !defined(_WIN32)
 #error "VkVideoEncoderOsAdapterWindows.cpp implements the encoder OS seam for Windows only."
@@ -24,6 +23,7 @@
 #include <windows.h>
 #include <cstdio>
 #include <string>
+#include "Logger.h"
 
 namespace vkenc {
 
@@ -59,7 +59,7 @@ void OsSetCurrentThreadName(const char* name)
     }
     const HRESULT hr = setThreadDescription(::GetCurrentThread(), wideName.c_str());
     if (FAILED(hr)) {
-        VkEncPrintfErr("[VkVideoEncoder] could not name thread \"%s\" (hr 0x%08lx); "
+        LOG_ERROR("[VkVideoEncoder] could not name thread \"%s\" (hr 0x%08lx); "
                      "it will appear unnamed in crash dumps\n",
                      name, static_cast<unsigned long>(hr));
     }

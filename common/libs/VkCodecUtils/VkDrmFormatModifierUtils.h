@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include "Logger.h"
 
 #ifdef __linux__
 #include "VkCodecUtils/VulkanDeviceContext.h"
@@ -99,7 +100,7 @@ public:
 
     static void PrintModifierInfo(uint64_t modifier) {
         if (modifier == 0) {
-            printf("  LINEAR (0x0)\n");
+            LOG_INFO("  LINEAR (0x0)\n");
             return;
         }
         uint8_t vendor = GetVendor(modifier);
@@ -110,22 +111,22 @@ public:
             uint32_t s = GetNvSectorLayout(modifier);
             uint32_t c = GetNvCompression(modifier);
 
-            printf("  NVIDIA Block-Linear 0x%llx\n", (unsigned long long)modifier);
-            printf("    blockHeight  = %u (log2 GOBs, %u GOBs = %u rows)\n",
+            LOG_INFO("  NVIDIA Block-Linear 0x%llx\n", (unsigned long long)modifier);
+            LOG_INFO("    blockHeight  = %u (log2 GOBs, %u GOBs = %u rows)\n",
                    h, 1u << h, (1u << h) * 8);
-            printf("    pageKind     = 0x%02x\n", k);
-            printf("    gobGen       = %u (%s)\n", g,
+            LOG_INFO("    pageKind     = 0x%02x\n", k);
+            LOG_INFO("    gobGen       = %u (%s)\n", g,
                    g == 0 ? "Fermi-Volta" : g == 2 ? "Turing+" : "other");
-            printf("    sectorLayout = %u (%s)\n", s,
+            LOG_INFO("    sectorLayout = %u (%s)\n", s,
                    s ? "Desktop/Xavier+" : "Tegra K1-Parker");
-            printf("    compression  = %u (%s)\n", c,
+            LOG_INFO("    compression  = %u (%s)\n", c,
                    c == 0 ? "none" : "compressed");
         } else if (vendor == VENDOR_INTEL) {
-            printf("  Intel modifier 0x%llx\n", (unsigned long long)modifier);
+            LOG_INFO("  Intel modifier 0x%llx\n", (unsigned long long)modifier);
         } else if (vendor == VENDOR_AMD) {
-            printf("  AMD modifier 0x%llx\n", (unsigned long long)modifier);
+            LOG_INFO("  AMD modifier 0x%llx\n", (unsigned long long)modifier);
         } else {
-            printf("  Unknown vendor (0x%02x) modifier 0x%llx\n",
+            LOG_INFO("  Unknown vendor (0x%02x) modifier 0x%llx\n",
                    vendor, (unsigned long long)modifier);
         }
     }
@@ -285,7 +286,7 @@ public:
                                 VkFormatFeatureFlags requiredFeatures = 0) const {
         auto allMods = QueryModifiers(format);
 
-        printf("\n=== DRM Format Modifiers for format %d (%zu available) ===\n",
+        LOG_INFO("\n=== DRM Format Modifiers for format %d (%zu available) ===\n",
                format, allMods.size());
 
         for (size_t i = 0; i < allMods.size(); i++) {
@@ -293,14 +294,14 @@ public:
             bool hasRequired = (requiredFeatures == 0) ||
                 ((m.features & requiredFeatures) == requiredFeatures);
 
-            printf("  [%2zu] mod=0x%016llx planes=%u features=0x%08x %s\n",
+            LOG_INFO("  [%2zu] mod=0x%016llx planes=%u features=0x%08x %s\n",
                    i, (unsigned long long)m.modifier,
                    m.planeCount, m.features,
                    IsLinear(m.modifier) ? "LINEAR" :
                    !hasRequired ? "SKIP(missing features)" : "OK");
 
             if (!IsLinear(m.modifier) && GetVendor(m.modifier) == VENDOR_NVIDIA) {
-                printf("       c=%u h=%u (%u GOBs)\n",
+                LOG_INFO("       c=%u h=%u (%u GOBs)\n",
                        GetNvCompression(m.modifier),
                        GetNvBlockHeightLog2(m.modifier),
                        1u << GetNvBlockHeightLog2(m.modifier));

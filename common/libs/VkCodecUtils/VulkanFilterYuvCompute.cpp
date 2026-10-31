@@ -15,10 +15,10 @@
 */
 
 #include "VulkanFilterYuvCompute.h"
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 
 #include <cstdlib>
+#include "Logger.h"
 static bool dumpShaders = (getenv("VK_FILTER_DUMP_SHADERS") != nullptr);
 
 // =============================================================================
@@ -2276,7 +2276,7 @@ size_t VulkanFilterYuvCompute::InitYCBCR2RGBA(std::string& computeShader)
 
     computeShader = shaderStr.str();
     if (dumpShaders)
-        VkEncOut() << "\nCompute Shader:\n" << computeShader;
+        LOG_S_INFO << "\nCompute Shader:\n" << computeShader;
     return computeShader.size();
 }
 
@@ -2381,7 +2381,7 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
 
     // Binding 9: Subsampled Y output image (optional, only if enabled)
     if (m_enableYSubsampling) {
-        VkEncOut() << "[VulkanFilterYuvCompute] Generating binding 9 for subsampledImageY" << std::endl;
+        LOG_S_INFO << "[VulkanFilterYuvCompute] Generating binding 9 for subsampledImageY" << std::endl;
         shaderStr << "// Binding 9: Subsampled Y output (2x2 downsampled luma for AQ)\n";
         // Use a separate variable for subsampledImage aspects to avoid modifying m_outputImageAspects
         // ShaderGenerateImagePlaneDescriptors modifies the imageAspects parameter for R8/R16 formats
@@ -2503,7 +2503,7 @@ size_t VulkanFilterYuvCompute::InitYCBCRCOPY(std::string& computeShader)
 
     computeShader = shaderStr.str();
     if (dumpShaders)
-        VkEncOut() << "\nCompute Shader:\n" << computeShader;
+        LOG_S_INFO << "\nCompute Shader:\n" << computeShader;
     return computeShader.size();
 }
 
@@ -2595,7 +2595,7 @@ size_t VulkanFilterYuvCompute::InitYCBCRCLEAR(std::string& computeShader)
 
     computeShader = shaderStr.str();
     if (dumpShaders)
-        VkEncOut() << "\nCompute Shader:\n" << computeShader;
+        LOG_S_INFO << "\nCompute Shader:\n" << computeShader;
     return computeShader.size();
 }
 
@@ -3173,7 +3173,7 @@ size_t VulkanFilterYuvCompute::InitRGBA2YCBCR(std::string& computeShader)
 
     computeShader = shaderStr.str();
     if (dumpShaders)
-        VkEncOut() << "\nRGBA2YCBCR Compute Shader:\n" << computeShader;
+        LOG_S_INFO << "\nRGBA2YCBCR Compute Shader:\n" << computeShader;
     return computeShader.size();
 }
 

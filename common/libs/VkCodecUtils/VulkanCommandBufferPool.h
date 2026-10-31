@@ -27,6 +27,7 @@
 #include "VkCodecUtils/VulkanSemaphoreSet.h"
 #include "VkCodecUtils/VulkanFenceSet.h"
 #include "VkCodecUtils/VulkanQueryPoolSet.h"
+#include "Logger.h"
 
 class VulkanCommandBufferPool : public VkVideoRefCountBase,
                                 public std::enable_shared_from_this<VulkanCommandBufferPool> {
@@ -170,7 +171,7 @@ public:
             VkResult result = vk::WaitAndResetFence(m_vkDevCtx, *m_vkDevCtx, cmdBufferCompleteFence, resetAfterWait,
                                                     fenceName, fenceWaitTimeoutNsec, fenceTotalWaitTimeoutNsec);
             if (result != VK_SUCCESS) {
-                fprintf(stderr, "\nERROR: WaitAndResetFence() for %s with result: 0x%x\n", fenceName, result);
+                LOG_ERROR("WaitAndResetFence() for %s with result: 0x%x\n", fenceName, result);
                 assert(result == VK_SUCCESS);
             }
 

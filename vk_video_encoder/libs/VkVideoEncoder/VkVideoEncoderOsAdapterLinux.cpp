@@ -24,7 +24,6 @@
  * this one.
  */
 #include "VkVideoEncoder/VkVideoEncoderOsAdapterLinux.h"
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 
 #if !defined(__linux__)
 #error "VkVideoEncoderOsAdapterLinux.cpp implements the encoder OS seam for Linux only. Port the seam in a sibling translation unit and select it in the build."
@@ -35,6 +34,7 @@
 #include <pthread.h>
 
 #include "VkCodecUtils/VkDrmFormatModifierUtils.h"
+#include "Logger.h"
 
 namespace vkenc {
 
@@ -45,7 +45,7 @@ void OsSetCurrentThreadName(const char* name)
     // named at all, and the report is what tells those two apart.
     const int rc = pthread_setname_np(pthread_self(), name);
     if (rc != 0) {
-        VkEncPrintfErr("[VkVideoEncoder] could not name thread \"%s\" (errno %d); "
+        LOG_ERROR("[VkVideoEncoder] could not name thread \"%s\" (errno %d); "
                 "it will appear unnamed in crash dumps\n",
                 name, rc);
     }
@@ -70,18 +70,18 @@ VkResult OsSelectDrmFormatModifier(const VulkanDeviceContext* vkDevCtx,
 
     if (selected == 0 && idx >= 0) {
         // Explicit index was requested but no suitable modifier found
-        VkEncPrintfErr("DRM modifier index %d: no suitable modifier found\n", idx);
+        LOG_ERROR("DRM modifier index %d: no suitable modifier found\n", idx);
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     if (selected == 0) {
-        VkEncPrintfErr("No non-linear DRM modifiers support VIDEO_ENCODE_SRC + TRANSFER_DST\n");
+        LOG_ERROR("No non-linear DRM modifiers support VIDEO_ENCODE_SRC + TRANSFER_DST\n");
         return VK_ERROR_FORMAT_NOT_SUPPORTED;
     }
 
     *pSelectedModifier = selected;
-    VkEncPrintfOut("\n=== Selected DRM format modifier ===\n");
+    LOG_INFO("\n=== Selected DRM format modifier ===\n");
     VkDrmFormatModifierUtils::PrintModifierInfo(selected);
-    VkEncPrintfOut("\n");
+    LOG_INFO("\n");
 
     return VK_SUCCESS;
 }

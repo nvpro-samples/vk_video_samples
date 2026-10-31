@@ -1,3 +1,4 @@
+#include "Logger.h"
 /*
 * Copyright 2020 NVIDIA Corporation.
 *
@@ -96,7 +97,7 @@ public:
             VkResult result = m_vkDevCtx->CreateCommandPool(*m_vkDevCtx, &cmdPoolInfo, nullptr, &m_videoCommandPool);
             assert(result == VK_SUCCESS);
             if (result != VK_SUCCESS) {
-                fprintf(stderr, "\nERROR: CreateCommandPool() result: 0x%x\n", result);
+                LOG_ERROR("CreateCommandPool() result: 0x%x\n", result);
             }
 
             VkCommandBufferAllocateInfo cmdInfo = {};
@@ -109,7 +110,7 @@ public:
             result = m_vkDevCtx->AllocateCommandBuffers(*m_vkDevCtx, &cmdInfo, &m_commandBuffers[0]);
             assert(result == VK_SUCCESS);
             if (result != VK_SUCCESS) {
-                fprintf(stderr, "\nERROR: AllocateCommandBuffers() result: 0x%x\n", result);
+                LOG_ERROR("AllocateCommandBuffers() result: 0x%x\n", result);
             } else {
                 allocatedCommandBuffers = maxDecodeFramesCount;
             }
@@ -281,7 +282,7 @@ private:
         if (enableDecoderFeatures & ENABLE_HW_LOAD_BALANCING) {
 
             if (m_vkDevCtx->GetVideoDecodeNumQueues() < 2) {
-                std::cout << "\t WARNING: Enabling HW Load Balancing for device with only " <<
+                LOG_S_WARN << "\t Enabling HW Load Balancing for device with only " <<
                         m_vkDevCtx->GetVideoDecodeNumQueues() << " queue!!!" << std::endl;
             }
 
@@ -301,7 +302,7 @@ private:
             if (result == VK_SUCCESS) {
                 m_currentVideoQueueIndx = 0; // start with index zero
             }
-            std::cout << "\t Enabling HW Load Balancing for device with "
+            LOG_S_INFO << "\t Enabling HW Load Balancing for device with "
                       << m_vkDevCtx->GetVideoDecodeNumQueues() << " queues" << std::endl;
         }
 

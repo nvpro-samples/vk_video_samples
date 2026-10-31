@@ -1,3 +1,4 @@
+#include "Logger.h"
 #pragma once
 
 #include <vulkan/vulkan.h>
@@ -251,7 +252,7 @@ private:
             // 1. Wait for GPU completion (forward TL semaphore)
             bool gpuDone = true;
             if (frame.displayOrder == m_testOptions.failWaitDisplayOrder) {
-                fprintf(stderr, "[DumpPool] T%d: test: failing the TL semaphore wait for pic=%d "
+                LOG_ERROR("[DumpPool] T%d: test: failing the TL semaphore wait for pic=%d "
                         "(displayOrder=%lld)\n",
                         threadId, frame.pictureIndex, (long long)frame.displayOrder);
                 gpuDone = false;
@@ -271,7 +272,7 @@ private:
                 if (semResult != VK_SUCCESS) {
                     uint64_t currentValue = 0;
                     m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, frame.forwardSemaphore, &currentValue);
-                    fprintf(stderr, "[DumpPool] T%d: TL semaphore wait FAILED for pic=%d "
+                    LOG_ERROR("[DumpPool] T%d: TL semaphore wait FAILED for pic=%d "
                             "(displayOrder=%lld, expected=%llu, current=%llu, result=%d, %.1fms)\n",
                             threadId, frame.pictureIndex,
                             (long long)frame.displayOrder,
@@ -296,7 +297,7 @@ private:
             } else if (frame.writeCallback) {
                 int64_t bytesWritten = frame.writeCallback(frame);
                 if (bytesWritten <= 0LL) {
-                    printf("frame.writeCallback return invalid value %lld\n", (long long int)bytesWritten);
+                    LOG_ERROR("frame.writeCallback return invalid value %lld\n", (long long int)bytesWritten);
                 }
             }
 
@@ -354,7 +355,7 @@ private:
                 return true;
             }
             if (m_nextWriteOrder > frame.displayOrder) {
-                fprintf(stderr, "[DumpPool] T%d: pic=%d (displayOrder=%lld) was queued after its turn "
+                LOG_ERROR("[DumpPool] T%d: pic=%d (displayOrder=%lld) was queued after its turn "
                         "(the next turn is %lld); it is not written\n",
                         threadId, frame.pictureIndex, (long long)frame.displayOrder,
                         (long long)m_nextWriteOrder);
@@ -362,7 +363,7 @@ private:
             }
             const bool firstPending = (*m_pendingOrders.begin() == frame.displayOrder);
             if (firstPending && (m_shutdown || (std::chrono::steady_clock::now() >= gapDeadline))) {
-                fprintf(stderr, "[DumpPool] T%d: display orders %lld to %lld were never queued; "
+                LOG_WARN("[DumpPool] T%d: display orders %lld to %lld were never queued; "
                         "pic=%d (displayOrder=%lld) takes the next turn\n",
                         threadId, (long long)m_nextWriteOrder, (long long)(frame.displayOrder - 1),
                         frame.pictureIndex, (long long)frame.displayOrder);
@@ -385,7 +386,7 @@ private:
         if (frame.releaseSemaphore != VK_NULL_HANDLE && frame.releaseSignalValue > 0) {
             std::lock_guard<std::mutex> releaseLock(m_releaseMutex);
             if (frame.releaseSignalValue <= m_lastReleaseValue) {
-                fprintf(stderr, "[DumpPool] release signal %llu for displayOrder=%lld is not above "
+                LOG_WARN("[DumpPool] release signal %llu for displayOrder=%lld is not above "
                         "the last one, %llu\n",
                         (unsigned long long)frame.releaseSignalValue,
                         (long long)frame.displayOrder,

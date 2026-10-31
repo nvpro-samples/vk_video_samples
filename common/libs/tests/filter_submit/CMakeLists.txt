@@ -21,7 +21,6 @@ set(VKCODECUTILS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../VkCodecUtils")
 add_executable(${PROJECT_NAME}
     src/main.cpp
     ${VKCODECUTILS_DIR}/VulkanDeviceContext.cpp
-    ${VKCODECUTILS_DIR}/VkEncoderStdioLatch.cpp
     ${VKCODECUTILS_DIR}/VulkanFilter.cpp
     ${VKCODECUTILS_DIR}/VulkanShaderCompiler.cpp
     ${VKCODECUTILS_DIR}/${VK_SHADER_COMPILER_BACKEND_SOURCE}

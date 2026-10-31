@@ -39,7 +39,6 @@ set(TEST_HEADERS
 set(VKCODECUTILS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../VkCodecUtils")
 set(VKCODECUTILS_SOURCES
     ${VKCODECUTILS_DIR}/VulkanDeviceContext.cpp
-    ${VKCODECUTILS_DIR}/VkEncoderStdioLatch.cpp
     ${VKCODECUTILS_DIR}/VulkanDeviceMemoryImpl.cpp
     ${VKCODECUTILS_DIR}/VkImageResource.cpp
     ${VKCODECUTILS_DIR}/VkBufferResource.cpp

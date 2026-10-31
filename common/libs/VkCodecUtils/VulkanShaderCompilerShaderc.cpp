@@ -27,6 +27,7 @@
 #include <shaderc/shaderc.h>
 
 #include "VkCodecUtils/VulkanShaderCompilerBackend.h"
+#include "Logger.h"
 
 namespace {
 
@@ -49,7 +50,7 @@ shaderc_shader_kind getShadercShaderType(VkShaderStageFlagBits type, bool& valid
     case VK_SHADER_STAGE_COMPUTE_BIT:
         return shaderc_glsl_compute_shader;
     default:
-        std::cerr << "VulkanShaderCompiler: invalid VkShaderStageFlagBits type = "
+        LOG_S_ERROR << "VulkanShaderCompiler: invalid VkShaderStageFlagBits type = "
                   << type << std::endl;
     }
     valid = false;
@@ -97,7 +98,7 @@ public:
 
         if (shaderc_result_get_compilation_status(spvShader) !=
                 shaderc_compilation_status_success) {
-            std::cerr << "Compilation error: \n"
+            LOG_S_ERROR << "Compilation error: \n"
                       << shaderc_result_get_error_message(spvShader) << std::endl;
             shaderc_result_release(spvShader);
             return false;
@@ -125,7 +126,7 @@ VulkanShaderCompilerBackend* VulkanShaderCompilerBackend::Create()
 {
     shaderc_compiler_t compiler = shaderc_compiler_initialize();
     if (compiler == nullptr) {
-        std::cerr << "VulkanShaderCompiler: Failed to initialize shared shaderc compiler!" << std::endl;
+        LOG_S_ERROR << "VulkanShaderCompiler: Failed to initialize shared shaderc compiler!" << std::endl;
         return nullptr;
     }
 

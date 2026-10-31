@@ -38,7 +38,6 @@ set(TEST_HEADERS
 set(VKCODECUTILS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../VkCodecUtils")
 set(VKCODECUTILS_SOURCES
     ${VKCODECUTILS_DIR}/VulkanDeviceContext.cpp
-    ${VKCODECUTILS_DIR}/VkEncoderStdioLatch.cpp
     ${VKCODECUTILS_DIR}/VulkanDeviceMemoryImpl.cpp
     ${VKCODECUTILS_DIR}/VkImageResource.cpp
     ${VKCODECUTILS_DIR}/VkBufferResource.cpp
@@ -159,6 +158,10 @@ set_tests_properties(FilterListTests PROPERTIES
 # refcounted_pool_test: checkout and return in VulkanVideoRefCountedPool, the
 # pool behind the decoder's and the encoder's bitstream buffers. Device-free.
 add_subdirectory(refcounted_pool)
+
+# logger_silence_test: LoggerSilenceScope, behind the encoder's silenceStdio, silences the Logger and gives
+# back its level. Device-free.
+add_subdirectory(logger_silence)
 
 # descriptor_layout_test: the immutable samplers VulkanDescriptorSetLayoutInfo
 # keeps for the compute filter's and the display's layouts. Device-free.

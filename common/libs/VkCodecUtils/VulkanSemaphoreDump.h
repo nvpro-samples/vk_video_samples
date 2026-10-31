@@ -1,3 +1,4 @@
+#include "Logger.h"
 /*
 * Copyright 2024 NVIDIA Corporation.
 *
@@ -37,53 +38,53 @@ inline void DumpSemaphoreInfo(
     uint64_t displayInputOrder = UINT64_MAX)
 {
 
-    std::cout << "----------------------------\n";
+    LOG_S_INFO << "----------------------------\n";
 
     if (submissionName) {
-        std::cout << submissionName << " ";
+        LOG_S_INFO << submissionName << " ";
     }
     
-    std::cout << "TL Semaphore sync";
+    LOG_S_INFO << "TL Semaphore sync";
 
     if (decodeEncodeOrder != UINT64_MAX) {
-        std::cout << " (decode / encode = " << decodeEncodeOrder;
+        LOG_S_INFO << " (decode / encode = " << decodeEncodeOrder;
         if (displayInputOrder != UINT64_MAX) {
-            std::cout << ", display / input = " << displayInputOrder;
+            LOG_S_INFO << ", display / input = " << displayInputOrder;
         }
-        std::cout << ")";
+        LOG_S_INFO << ")";
     } else if (displayInputOrder != UINT64_MAX) {
-        std::cout << " (display / input = " << displayInputOrder << ")";
+        LOG_S_INFO << " (display / input = " << displayInputOrder << ")";
     }
     
-    std::cout << ":\n";
+    LOG_S_INFO << ":\n";
 
     // Dump wait semaphores
     for (uint32_t i = 0; i < submitInfo.waitSemaphoreInfoCount; i++) {
         const VkSemaphoreSubmitInfoKHR& semInfo = submitInfo.pWaitSemaphoreInfos[i];
-        std::cout << "  Wait sem[" << i << "]: " << semInfo.semaphore 
+        LOG_S_INFO << "  Wait sem[" << i << "]: " << semInfo.semaphore 
                   << " value = " << semInfo.value
                   << " stage = 0x" << std::hex << semInfo.stageMask << std::dec;
 
         if (semInfo.deviceIndex > 0) {
-            std::cout << " deviceIndex=" << semInfo.deviceIndex;
+            LOG_S_INFO << " deviceIndex=" << semInfo.deviceIndex;
         }
-        std::cout << std::endl;
+        LOG_S_INFO << std::endl;
     }
     
     // Dump signal semaphores
     for (uint32_t i = 0; i < submitInfo.signalSemaphoreInfoCount; i++) {
         const VkSemaphoreSubmitInfoKHR& semInfo = submitInfo.pSignalSemaphoreInfos[i];
-        std::cout << "  Signal sem[" << i << "]: " << semInfo.semaphore 
+        LOG_S_INFO << "  Signal sem[" << i << "]: " << semInfo.semaphore 
                   << " value = " << semInfo.value
                   << " stage = 0x" << std::hex << semInfo.stageMask << std::dec;
 
         if (semInfo.deviceIndex > 0) {
-            std::cout << " deviceIndex = " << semInfo.deviceIndex;
+            LOG_S_INFO << " deviceIndex = " << semInfo.deviceIndex;
         }
-        std::cout << std::endl;
+        LOG_S_INFO << std::endl;
     }
 
-    std::cout << "----------------------------" << std::endl;
+    LOG_S_INFO << "----------------------------" << std::endl;
 }
 
 
