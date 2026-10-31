@@ -367,7 +367,10 @@ class RecordingDecoder : public IVulkanVideoDecoderHandler {
             line.Str("role", (slot.pPictureResource == &params.dpbSetupPictureResource) ? "setup" : "ref");
         }
         line.Num("slot", slot.slotIndex).Num("res", ResourcePicture(params, slot.pPictureResource));
-        if ((m_codec == VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) && (slot.pPictureResource != nullptr)) {
+        // A VP9 or AV1 picture's size changes inside the sequence: each slot's picture resource has its own.
+        if (((m_codec == VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) ||
+             (m_codec == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR)) &&
+            (slot.pPictureResource != nullptr)) {
             line.Num("width", slot.pPictureResource->codedExtent.width).Num("height", slot.pPictureResource->codedExtent.height);
         }
         if (withStd) {

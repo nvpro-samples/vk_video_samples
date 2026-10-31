@@ -1142,7 +1142,10 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
                             (pnvsi->hasFilmGrain == m_nvsi.hasFilmGrain);
     if (pnvsi->eCodec == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
         maxDpbSlots = 9;
-        if (sameFormat && (pnvsi->nCodedWidth <= m_nvsi.nCodedWidth) && (pnvsi->nCodedHeight <= m_nvsi.nCodedHeight)) {
+        // The decoder allocates an AV1 sequence's pictures at its largest frame size (nMaxWidth,
+        // nMaxHeight), or at its first frame's when the device decodes no picture that large.
+        if (sameFormat && (pnvsi->nCodedWidth <= m_nvsi.nCodedWidth) && (pnvsi->nCodedHeight <= m_nvsi.nCodedHeight) &&
+            (pnvsi->nMaxWidth <= m_nvsi.nMaxWidth) && (pnvsi->nMaxHeight <= m_nvsi.nMaxHeight)) {
             return 1;
         }
     } else if (pnvsi->eCodec == VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
@@ -1192,6 +1195,12 @@ int32_t VulkanVideoParser::BeginSequence(const VkParserSequenceInfo* pnvsi)
         detectedFormat.display_area.top = pnvsi->nDisplayOffsetY;
         detectedFormat.display_area.right = pnvsi->nDisplayOffsetX + pnvsi->nDisplayWidth;
         detectedFormat.display_area.bottom = pnvsi->nDisplayOffsetY + pnvsi->nDisplayHeight;
+        // An AV1 frame's size changes inside its sequence, up to the largest the sequence header
+        // states (max_frame_width_minus_1, max_frame_height_minus_1).
+        if (pnvsi->eCodec == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR) {
+            detectedFormat.max_session_width = pnvsi->nMaxWidth;
+            detectedFormat.max_session_height = pnvsi->nMaxHeight;
+        }
         detectedFormat.filmGrainUsed = pnvsi->hasFilmGrain;
         detectedFormat.canUseFields  = pnvsi->canUseFields;
 
@@ -2476,11 +2485,18 @@ bool VulkanVideoParser::DecodePicture(
                             pCurrFrameDecParams->pGopReferenceImagesIndexes,
                             &setupReferenceSlot.slotIndex);
 
+        // Each picture is coded at its own size, which changes inside the sequence: the frame's
+        // upscaled width and its height (UpscaledWidth, FrameHeight), the size a reference keeps.
         if (pCurrFrameDecParams->numGopReferenceSlots) {
             assert(pCurrFrameDecParams->numGopReferenceSlots <= (int32_t)MAX_DPB_REF_SLOTS);
             for (uint32_t dpbEntryIdx = 0; dpbEntryIdx < (uint32_t)pCurrFrameDecParams->numGopReferenceSlots;
                  dpbEntryIdx++) {
                 pCurrFrameDecParams->pictureResources[dpbEntryIdx].sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
+                const vkPicBuffBase* pRefPic = m_dpb[referenceSlots[dpbEntryIdx].slotIndex].getPictureResource();
+                if (pRefPic != nullptr) {
+                    pCurrFrameDecParams->pictureResources[dpbEntryIdx].codedExtent = {
+                        (uint32_t)pRefPic->decodeSuperResWidth, (uint32_t)pRefPic->decodeHeight};
+                }
                 referenceSlots[dpbEntryIdx].pPictureResource = &pCurrFrameDecParams->pictureResources[dpbEntryIdx];
             }
 
@@ -2490,6 +2506,9 @@ bool VulkanVideoParser::DecodePicture(
             pCurrFrameDecParams->decodeFrameInfo.pReferenceSlots = NULL;
             pCurrFrameDecParams->decodeFrameInfo.referenceSlotCount = 0;
         }
+        pCurrFrameDecParams->dpbSetupPictureResource.codedExtent = {pin->upscaled_width, pin->frame_height};
+        pDecodePictureInfo->displayWidth = pin->upscaled_width;
+        pDecodePictureInfo->displayHeight = pin->frame_height;
 
 
         assert(!pd->ref_pic_flag || (setupReferenceSlot.slotIndex >= 0));
@@ -2651,7 +2670,8 @@ bool VulkanVideoParser::DecodePicture(
         pDecodePictureInfo->displayHeight = pin->FrameHeight;
     }
 
-    if (m_codecType != VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
+    if ((m_codecType != VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) &&
+        (m_codecType != VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR)) {
         pDecodePictureInfo->displayWidth  = m_nvsi.nDisplayWidth;
         pDecodePictureInfo->displayHeight = m_nvsi.nDisplayHeight;
     }
