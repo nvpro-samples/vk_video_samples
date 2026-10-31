@@ -20,7 +20,9 @@
 #include <assert.h>
 #include <vector>
 #include <array>
+#include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <vulkan_interfaces.h>
 #include "VkCodecUtils/Helpers.h"
 #include <VkCodecUtils/HelpersDispatchTable.h>
@@ -111,48 +113,59 @@ public:
     bool    GetVideoEncodeQueryResultStatusSupport() const { return m_videoEncodeQueryResultStatusSupport; }
     VkQueueFlags GetVideoDecodeQueueFlag() const { return m_videoDecodeQueueFlags; }
     VkQueueFlags GetVideoEncodeQueueFlag() const { return m_videoEncodeQueueFlags; }
+    // The lock of a queue for one host access to it: a submit, a present or a wait for idle, which
+    // Vulkan requires to be externally synchronized. The lock is the queue's, whichever role names
+    // it: one VkQueue can be the graphics and the present queue, or the compute queue and a queue a
+    // filter retrieves itself, and every holder of the handle takes the same mutex.
     class MtQueueMutex {
 
     public:
         MtQueueMutex(const VulkanDeviceContext* devCtx, const QueueFamilySubmitType submitType, const int32_t queueIndex)
+            : m_queue(VK_NULL_HANDLE)
+            , m_mutex(nullptr)
         {
             switch (submitType) {
             case GRAPHICS:
-                m_queue = &devCtx->m_gfxQueue;
-                m_mutex = &devCtx->m_gfxQueueMutex;
+                m_queue = devCtx->m_gfxQueue;
                 break;
             case COMPUTE:
-                m_queue = &devCtx->m_computeQueue;
-                m_mutex = &devCtx->m_computeQueueMutex;
+                m_queue = devCtx->m_computeQueue;
                 break;
             case TRANSFER:
-                m_queue = &devCtx->m_trasferQueue;
-                m_mutex = &devCtx->m_transferQueueMutex;
+                m_queue = devCtx->m_trasferQueue;
                 break;
             case DECODE:
                 assert((queueIndex >= 0) && (queueIndex < devCtx->m_videoDecodeNumQueues));
-                m_queue = &devCtx->m_videoDecodeQueues[queueIndex];
-                m_mutex = &devCtx->m_videoDecodeQueueMutexes[queueIndex];
+                if ((queueIndex >= 0) && ((size_t)queueIndex < devCtx->m_videoDecodeQueues.size())) {
+                    m_queue = devCtx->m_videoDecodeQueues[queueIndex];
+                }
                 break;
             case ENCODE:
                 assert((queueIndex >= 0) && (queueIndex < devCtx->m_videoEncodeNumQueues));
-                m_queue = &devCtx->m_videoEncodeQueues[queueIndex];
-                m_mutex = &devCtx->m_videoEncodeQueueMutexes[queueIndex];
+                if ((queueIndex >= 0) && ((size_t)queueIndex < devCtx->m_videoEncodeQueues.size())) {
+                    m_queue = devCtx->m_videoEncodeQueues[queueIndex];
+                }
                 break;
             case PRESENT:
-                m_queue = &devCtx->m_presentQueue;
-                m_mutex = &devCtx->m_presentQueueMutex;
+                m_queue = devCtx->m_presentQueue;
                 break;
             default:
                 assert(!"Invalid queue type!");
-                m_queue = nullptr;
-                m_mutex = nullptr;
                 break;
             }
-            if (m_mutex) {
-                m_mutex->lock();
-            }
+            Lock(devCtx);
         }
+
+        // A queue the caller holds the handle of.
+        MtQueueMutex(const VulkanDeviceContext* devCtx, VkQueue queue)
+            : m_queue(queue)
+            , m_mutex(nullptr)
+        {
+            Lock(devCtx);
+        }
+
+        MtQueueMutex(const MtQueueMutex&) = delete;
+        MtQueueMutex& operator=(const MtQueueMutex&) = delete;
 
         ~MtQueueMutex() {
             if (m_mutex) {
@@ -162,16 +175,23 @@ public:
         }
 
         VkQueue GetQueue() {
-            return *m_queue;
+            return m_queue;
         }
 
-        operator VkQueue() { return *m_queue; }
+        operator VkQueue() { return m_queue; }
 
-        operator bool() { return ((m_queue != nullptr) && (*m_queue != VK_NULL_HANDLE)); }
+        operator bool() { return (m_queue != VK_NULL_HANDLE); }
 
     private:
-        const VkQueue*    m_queue;
-        mutable std::mutex* m_mutex;
+        void Lock(const VulkanDeviceContext* devCtx) {
+            if (m_queue != VK_NULL_HANDLE) {
+                m_mutex = &devCtx->GetQueueMutex(m_queue);
+                m_mutex->lock();
+            }
+        }
+
+        VkQueue     m_queue;
+        std::mutex* m_mutex;
     };
 
     VkResult MultiThreadedQueueSubmit(const QueueFamilySubmitType submitType, const int32_t queueIndex,
@@ -398,6 +418,10 @@ private:
 
     VkResult PopulateDeviceExtensions();
 
+    // The mutex of a queue, made on its first use: one for each VkQueue handle, so that every
+    // MtQueueMutex of that queue takes the same one.
+    std::mutex& GetQueueMutex(VkQueue queue) const;
+
 private:
     VulkanLibraryHandleType m_libHandle;
     VkInstance m_instance;
@@ -430,12 +454,9 @@ private:
     VkQueue                 m_presentQueue;
     std::vector<VkQueue>    m_videoDecodeQueues;
     std::vector<VkQueue>    m_videoEncodeQueues;
-    mutable std::mutex                                  m_gfxQueueMutex;
-    mutable std::mutex                                  m_computeQueueMutex;
-    mutable std::mutex                                  m_transferQueueMutex;
-    mutable std::mutex                                  m_presentQueueMutex;
-    mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoDecodeQueueMutexes;
-    mutable std::array<std::mutex, MAX_QUEUE_INSTANCES> m_videoEncodeQueueMutexes;
+    // The mutex of each queue MtQueueMutex has locked, by handle (GetQueueMutex()).
+    mutable std::mutex                                               m_queueMutexesLock;
+    mutable std::unordered_map<VkQueue, std::unique_ptr<std::mutex>> m_queueMutexes;
     bool                               m_descriptorBufferEnabled = false;
     bool                               m_robustBufferAccessEnabled = false;
     bool                               m_storageBuffer8BitAccess = false;

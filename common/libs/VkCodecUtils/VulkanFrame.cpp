@@ -561,7 +561,9 @@ VkResult VulkanFrame<FrameDataType>::DrawFrame( int32_t            renderIndex,
             if (inFrame->frameCompleteFence == VkFence()) {
                 VkQueue videoDecodeQueue = m_vkDevCtx->GetVideoDecodeQueue();
                 if (videoDecodeQueue != VkQueue()) {
-                    result = m_vkDevCtx->QueueWaitIdle(videoDecodeQueue);
+                    // The decoder submits to this queue on its own thread.
+                    VulkanDeviceContext::MtQueueMutex decodeQueue(m_vkDevCtx, videoDecodeQueue);
+                    result = m_vkDevCtx->QueueWaitIdle(decodeQueue);
                     assert(result == VK_SUCCESS);
                     if (result != VK_SUCCESS) {
                         fprintf(stderr, "\nERROR: QueueWaitIdle() result: 0x%x\n", result);

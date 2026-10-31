@@ -168,6 +168,11 @@ add_subdirectory(descriptor_layout)
 # threads at once, under the validation layer's thread-safety check. GPU.
 add_subdirectory(command_buffer_pool)
 
+# filter_submit_test: filters and the device context's locked submitters
+# submitting to the same queues on several threads at once, under the
+# validation layer's thread-safety check. GPU.
+add_subdirectory(filter_submit)
+
 # validation_gate_fake_layer_output: cmake/validation_gate.cmake against canned
 # loader and layer output. Device-free.
 add_subdirectory(validation_gate)
