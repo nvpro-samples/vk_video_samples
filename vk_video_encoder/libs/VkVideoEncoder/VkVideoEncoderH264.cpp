@@ -175,57 +175,6 @@ void VkVideoEncoderH264::FrameNumBasedRefPicManagement(StdVideoEncodeH264RefPicM
     }
 }
 
-VkResult VkVideoEncoderH264::SetupRefPicReorderingCommands(const PicInfoH264 *pPicInfo,
-                                                           const StdVideoEncodeH264SliceHeader *slh,
-                                                           StdVideoEncodeH264ReferenceListsInfoFlags* pFlags,
-                                                           StdVideoEncodeH264RefListModEntry* m_ref_pic_list_modification_l0,
-                                                           uint8_t& m_refList0ModOpCount)
-{
-    // Either the current picture requires no references, or the active
-    // reference list does not contain corrupted pictures. Skip reordering.
-    if (!m_dpb264->NeedToReorder()) {
-        return VK_SUCCESS;
-    }
-
-    StdVideoEncodeH264RefListModEntry *refPicList0Mod = m_ref_pic_list_modification_l0;
-
-    NvVideoEncodeH264DpbSlotInfoLists<STD_VIDEO_H264_MAX_NUM_LIST_REF> refLists;
-    m_dpb264->GetRefPicList(pPicInfo, &refLists, &m_h264.m_spsInfo, &m_h264.m_ppsInfo, slh, nullptr, true);
-
-    int maxPicNum = 1 << (m_h264.m_spsInfo.log2_max_frame_num_minus4 + 4);
-    int picNumLXPred = m_dpb264->GetCurrentDpbEntry()->frame_num % maxPicNum;
-    int numSTR = 0, numLTR = 0;
-    m_dpb264->GetNumRefFramesInDPB(0, &numSTR, &numLTR);
-
-    // Re-order the active list to skip all corrupted frames
-    pFlags->ref_pic_list_modification_flag_l0 = true;
-    m_refList0ModOpCount = 0;
-    if (numSTR) {
-        for (uint32_t i = 0; i < refLists.refPicListCount[0]; i++) {
-            int diff = m_dpb264->GetPicNum(refLists.refPicList[0][i]) - picNumLXPred;
-            if (diff <= 0) {
-                refPicList0Mod[m_refList0ModOpCount].modification_of_pic_nums_idc =
-                    STD_VIDEO_H264_MODIFICATION_OF_PIC_NUMS_IDC_SHORT_TERM_SUBTRACT;
-                refPicList0Mod[m_refList0ModOpCount].abs_diff_pic_num_minus1 = (uint16_t)(abs(diff) ? abs(diff) - 1 : maxPicNum - 1);
-            } else {
-                refPicList0Mod[m_refList0ModOpCount].modification_of_pic_nums_idc =
-                    STD_VIDEO_H264_MODIFICATION_OF_PIC_NUMS_IDC_SHORT_TERM_ADD;
-                refPicList0Mod[m_refList0ModOpCount].abs_diff_pic_num_minus1 = (uint16_t)(abs(diff) - 1);
-            }
-            m_refList0ModOpCount++;
-            picNumLXPred = m_dpb264->GetPicNum(refLists.refPicList[0][i]);
-        }
-    } else if (numLTR) {
-        // If we end up supporting LTR, add code here.
-    }
-
-    refPicList0Mod[m_refList0ModOpCount++].modification_of_pic_nums_idc = STD_VIDEO_H264_MODIFICATION_OF_PIC_NUMS_IDC_END;
-
-    assert(m_refList0ModOpCount > 1);
-
-    return VK_SUCCESS;
-}
-
 VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>& encodeFrameInfo,
                                         uint32_t frameIdx, uint32_t ofTotalFrames)
 {
@@ -248,7 +197,6 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     }
     pictureInfo.frame_num = m_frameNumSyntax & ((1 << (m_h264.m_spsInfo.log2_max_frame_num_minus4 + 4)) - 1);
     pictureInfo.PicOrderCnt = (encodeFrameInfo->picOrderCntVal) & ((1 << (m_h264.m_spsInfo.log2_max_pic_order_cnt_lsb_minus4 + 4)) - 1);
-    pictureInfo.timeStamp = encodeFrameInfo->inputTimeStamp;
     if (isReference) {
         m_frameNumSyntax++;
     }
@@ -289,9 +237,6 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     uint8_t refList1ModOpCount = 0;
 
     StdVideoEncodeH264ReferenceListsInfoFlags refMgmtFlags = StdVideoEncodeH264ReferenceListsInfoFlags();
-    if ((m_dpb264->IsRefFramesCorrupted()) && ((picType == VkVideoGopStructure::FRAME_TYPE_P) || (picType == VkVideoGopStructure::FRAME_TYPE_B))) {
-        SetupRefPicReorderingCommands(&pictureInfo, &pFrameInfo->stdSliceHeader[0], &refMgmtFlags, pFrameInfo->refList0ModOperations, refList0ModOpCount);
-    }
 
     // Fill in the reference-related information for the current picture
 
@@ -485,13 +430,6 @@ VkResult VkVideoEncoderH264::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
     pFrameInfo->encodeInfo.srcPictureResource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
     pFrameInfo->encodeInfo.referenceSlotCount = numReferenceSlots - 1;
     pFrameInfo->encodeInfo.pReferenceSlots = pFrameInfo->referenceSlotsInfo + 1;
-
-    if ((picType == VkVideoGopStructure::FRAME_TYPE_P) || (picType == VkVideoGopStructure::FRAME_TYPE_B)) {
-        uint64_t timeStamp = m_dpb264->GetPictureTimestamp(pFrameInfo->referenceSlotsInfo[0].slotIndex);
-        m_dpb264->SetCurRefFrameTimeStamp(timeStamp);
-    } else {
-        m_dpb264->SetCurRefFrameTimeStamp(0);
-    }
 
     // since encodeInfo.pReferenceSlots points to the address of the next element (+1), it's safe to set it one to -1
     // this is needed to explicity mark the unused element in BeginInfo for vkCmdBeginVideoCodingKHR() as inactive

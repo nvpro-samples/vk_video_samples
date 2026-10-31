@@ -114,8 +114,6 @@ void VkEncDpbAV1::DpbDeinit()
     m_primaryRefFrame = STD_VIDEO_AV1_PRIMARY_REF_NONE;
     m_refBufUpdateFlag = 0;
     m_lastLastRefNameInUse = STD_VIDEO_AV1_REFERENCE_NAME_INVALID;
-
-    m_lastKeyFrameTimeStamp = 0;
 }
 
 void VkEncDpbAV1::DpbDestroy()

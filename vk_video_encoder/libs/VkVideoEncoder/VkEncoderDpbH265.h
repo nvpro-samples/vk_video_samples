@@ -26,7 +26,6 @@ struct DpbEntryH265 {
     uint32_t  state : 1;   // 0: empty, 1: in use
     uint32_t  marking : 2; // 0: unused, 1: short-term, 2: long-term
     uint32_t  output : 1;  // 0: not needed for output, 1: needed for output
-    uint32_t  corrupted : 1;
     uint32_t picOrderCntVal;
 
     // The YCbCr dpb image resource
@@ -72,7 +71,6 @@ public:
                            const StdVideoH265ShortTermRefPicSet *pShortTermRefPicSet,
                            const StdVideoH265LongTermRefPicsSps* pLongTermRefPicsSps,
                            int32_t maxPicOrderCntLsb,
-                           uint64_t timeStamp,
                            RefPicSet* pRefPicSet);
     void SetupReferencePictureListLx(StdVideoH265PictureType picType,
                                      const RefPicSet* pRefPicSet,
@@ -120,7 +118,6 @@ private:
     int8_t                         m_numPocLtCurr;
     int8_t                         m_numPocLtFoll;
 
-    uint64_t                       m_lastIDRTimeStamp;
     int32_t                        m_picOrderCntCRA;
     bool                           m_refreshPending;
     bool                           m_useMultipleRefs;

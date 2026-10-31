@@ -180,12 +180,6 @@ private:
     void FrameNumBasedRefPicManagement(StdVideoEncodeH264RefPicMarkingEntry* m_mmco,
                                        uint8_t& m_refPicMarkingOpCount);
 
-    VkResult SetupRefPicReorderingCommands(const PicInfoH264 *pPicInfo,
-                                           const StdVideoEncodeH264SliceHeader *slh,
-                                           StdVideoEncodeH264ReferenceListsInfoFlags* pFlags,
-                                           StdVideoEncodeH264RefListModEntry* m_ref_pic_list_modification_l0,
-                                           uint8_t& m_refList0ModOpCount);
-
 private:
     VkSharedBaseObj<EncoderConfigH264> m_encoderConfig;
     EncoderH264State                   m_h264;

@@ -222,7 +222,6 @@ VkResult VkVideoEncoderH265::ProcessDpb(VkSharedBaseObj<VkVideoEncodeFrameInfo>&
                                                  pShortTermRefPicSet,
                                                  pLongTermRefPicsSps,
                                                  maxPicOrderCntLsb,
-                                                 encodeFrameInfo->inputTimeStamp,
                                                  &refPicSet);
     assert(targetDpbSlot >= 0);
     if (targetDpbSlot < 0) {

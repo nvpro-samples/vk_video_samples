@@ -891,7 +891,6 @@ public:
         , m_useSeparateOutputImages(false)
         , m_useLinearInput(false)
         , m_resetEncoder(false)
-        , m_enableEncoderThreadQueue(false)
         , m_verbose(false)
         , m_numDeferredFrames()
         , m_numDeferredRefFrames()
@@ -1573,9 +1572,6 @@ public:
         for (auto& t : m_assemblyThreads) {
             if (t.joinable()) t.join();
         }
-        if (m_encoderQueueConsumerThread.joinable()) {
-            m_encoderQueueConsumerThread.join();
-        }
     }
 
     int32_t DeinitEncoder();
@@ -1669,8 +1665,6 @@ public:
         return result;
     }
 
-    void ConsumerThread();
-
     // Insert frames in order from the reference frame first and B frames next in the list.
     // Uses a simple ordering for now where B frame as reference are not supported yet.
     virtual void InsertOrdered(VkSharedBaseObj<VkVideoEncodeFrameInfo>& current,
@@ -1726,7 +1720,6 @@ public:
         uint64_t sequenceNumber;
         BitstreamReadback readback;
     };
-    typedef VkThreadSafeQueue<VkSharedBaseObj<VkVideoEncodeFrameInfo>> EncoderFrameQueue;
     typedef VkThreadSafeQueue<AssemblyWorkItem> AssemblyQueue;
 
     void AssemblyWorkerThread(int threadId);
@@ -1874,7 +1867,6 @@ protected:
     uint32_t m_useSeparateOutputImages : 1;
     uint32_t m_useLinearInput : 1;
     uint32_t m_resetEncoder : 1;
-    uint32_t m_enableEncoderThreadQueue : 1;
     uint32_t m_verbose : 1;
     uint32_t                                 m_numDeferredFrames;
     uint32_t                                 m_numDeferredRefFrames;
@@ -1965,8 +1957,6 @@ protected:
 #ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
     DisplayQueue                             m_displayQueue;
 #endif // VIDEO_DISPLAY_QUEUE_SUPPORT
-    EncoderFrameQueue                        m_encoderThreadQueue;
-    std::thread                              m_encoderQueueConsumerThread;
     VkSharedBaseObj<VkVideoEncodeFrameInfo>  m_lastDeferredFrame;
     VkSemaphore                              m_hwLoadBalancingTimelineSemaphore;
     int32_t                                  m_currentVideoQueueIndx;

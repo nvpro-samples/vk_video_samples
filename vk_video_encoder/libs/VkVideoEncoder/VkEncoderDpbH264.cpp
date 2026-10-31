@@ -88,8 +88,7 @@ VkEncDpbH264::VkEncDpbH264()
       m_prevFrameNumOffset(0),
       m_prevFrameNum(0),
       m_PrevRefFrameNum(0),
-      m_currDpbIdx(0),
-      m_lastIDRTimeStamp(0)
+      m_currDpbIdx(0)
 {
     memset(m_max_num_list, 0, sizeof(m_max_num_list));
 }
@@ -122,7 +121,6 @@ void VkEncDpbH264::DpbInit()
 void VkEncDpbH264::DpbDeinit()
 {
     m_max_dpb_size = 0;
-    m_lastIDRTimeStamp = 0;
     m_currDpbIdx = -1;
 };
 
@@ -224,11 +222,6 @@ int8_t VkEncDpbH264::DpbPictureStart(const PicInfoH264 *pPicInfo,
         pCurDPBEntry->not_existing = false;
         pCurDPBEntry->picInfo.frame_num = pPicInfo->frame_num;
         pCurDPBEntry->picInfo.primary_pic_type = pPicInfo->primary_pic_type;
-        pCurDPBEntry->timeStamp = pPicInfo->timeStamp;
-        pCurDPBEntry->frame_is_corrupted = false;
-        if (pPicInfo->flags.IdrPicFlag) {
-            m_lastIDRTimeStamp = pPicInfo->timeStamp;
-        }
     }
 
     CalculatePOC(pPicInfo, sps);
@@ -1040,18 +1033,16 @@ void VkEncDpbH264::GetRefPicList(const PicInfoH264 *pPicInfo,
                                  NvVideoEncodeH264DpbSlotInfoLists<STD_VIDEO_H264_MAX_NUM_LIST_REF>* pDpbSlotInfoLists,
                                  const StdVideoH264SequenceParameterSet *sps,
                                  const StdVideoH264PictureParameterSet *pps, const StdVideoEncodeH264SliceHeader *slh,
-                                 const StdVideoEncodeH264ReferenceListsInfo *ref, bool bSkipCorruptFrames)
+                                 const StdVideoEncodeH264ReferenceListsInfo *ref)
 {
     int32_t num_list[2] = {0, 0};
     RefPicListEntry stRefPicList[2][MAX_DPB_SLOTS + 1];  // one additional entry is used in sorting
 
     m_max_num_list[0] = 0;
     m_max_num_list[1] = 0;
-    RefPicListInitialization(pPicInfo, stRefPicList[0], stRefPicList[1], sps, bSkipCorruptFrames);
+    RefPicListInitialization(pPicInfo, stRefPicList[0], stRefPicList[1], sps);
 
-    if (!bSkipCorruptFrames) {
-        RefPicListReordering(pPicInfo, stRefPicList[0], stRefPicList[1], sps, slh, ref);
-    }
+    RefPicListReordering(pPicInfo, stRefPicList[0], stRefPicList[1], sps, slh, ref);
 
     if (slh->flags.num_ref_idx_active_override_flag) {
         m_max_num_list[0] = ref->num_ref_idx_l0_active_minus1 + 1;
@@ -1102,7 +1093,7 @@ void VkEncDpbH264::GetRefPicList(const PicInfoH264 *pPicInfo,
 // 8.2.4.2
 void VkEncDpbH264::RefPicListInitialization(const PicInfoH264 *pPicInfo,
                                             RefPicListEntry *RefPicList0, RefPicListEntry *RefPicList1,
-                                            const StdVideoH264SequenceParameterSet *sps, bool bSkipCorruptFrames)
+                                            const StdVideoH264SequenceParameterSet *sps)
 {
     // TODO: how to handle not-existing pictures?
     for (int32_t k = 0; k < (MAX_DPB_SLOTS + 1); k++) {
@@ -1112,54 +1103,53 @@ void VkEncDpbH264::RefPicListInitialization(const PicInfoH264 *pPicInfo,
 
     if (pPicInfo->primary_pic_type == STD_VIDEO_H264_PICTURE_TYPE_P) {
         if (!pPicInfo->field_pic_flag) {
-            RefPicListInitializationPFrame(RefPicList0, sps, bSkipCorruptFrames);
+            RefPicListInitializationPFrame(RefPicList0, sps);
         } else {
-            RefPicListInitializationPField(RefPicList0, sps, pPicInfo->bottom_field_flag, bSkipCorruptFrames);
+            RefPicListInitializationPField(RefPicList0, sps, pPicInfo->bottom_field_flag);
         }
     } else if (pPicInfo->primary_pic_type == STD_VIDEO_H264_PICTURE_TYPE_B) {
         if (!pPicInfo->field_pic_flag) {
-            RefPicListInitializationBFrame(RefPicList0, RefPicList1, sps, bSkipCorruptFrames);
+            RefPicListInitializationBFrame(RefPicList0, RefPicList1, sps);
         } else {
-            RefPicListInitializationBField(pPicInfo, RefPicList0, RefPicList1, sps, bSkipCorruptFrames);
+            RefPicListInitializationBField(pPicInfo, RefPicList0, RefPicList1, sps);
         }
     }
 }
 
 // 8.2.4.2.1
-void VkEncDpbH264::RefPicListInitializationPFrame(RefPicListEntry *RefPicList0, const StdVideoH264SequenceParameterSet *sps,
-        bool bSkipCorruptFrames)
+void VkEncDpbH264::RefPicListInitializationPFrame(RefPicListEntry *RefPicList0, const StdVideoH264SequenceParameterSet *sps)
 {
     // short-term frames sorted by descending PicNum
-    int32_t k = SortListDescending(RefPicList0, sps, 0, INF_MAX, sort_check_short_term_P_frame, bSkipCorruptFrames);
+    int32_t k = SortListDescending(RefPicList0, sps, 0, INF_MAX, sort_check_short_term_P_frame);
     // long-term frames sorted by ascending LongTermPicNum
-    k = SortListAscending(RefPicList0, sps, k, INF_MIN, sort_check_long_term_frame, bSkipCorruptFrames);
+    k = SortListAscending(RefPicList0, sps, k, INF_MIN, sort_check_long_term_frame);
 
     m_max_num_list[0] = k;
 }
 
 // 8.2.4.2.2
 void VkEncDpbH264::RefPicListInitializationPField(RefPicListEntry *RefPicList0, const StdVideoH264SequenceParameterSet *sps,
-                                                  bool bottomField, bool bSkipCorruptFrames)
+                                                  bool bottomField)
 {
     RefPicListEntry refFrameList0ShortTerm[MAX_DPB_SLOTS], refFrameListLongTerm[MAX_DPB_SLOTS];
 
-    int32_t ksmax = SortListDescending(refFrameList0ShortTerm, sps, 0, INF_MAX, sort_check_short_term_P_field, bSkipCorruptFrames);
-    int32_t klmax = SortListAscending(refFrameListLongTerm, sps, 0, INF_MIN, sort_check_long_term_field, bSkipCorruptFrames);
+    int32_t ksmax = SortListDescending(refFrameList0ShortTerm, sps, 0, INF_MAX, sort_check_short_term_P_field);
+    int32_t klmax = SortListAscending(refFrameListLongTerm, sps, 0, INF_MIN, sort_check_long_term_field);
 
-    int32_t k = RefPicListInitializationField(refFrameList0ShortTerm, refFrameListLongTerm, ksmax, klmax, RefPicList0, bottomField, bSkipCorruptFrames);
+    int32_t k = RefPicListInitializationField(refFrameList0ShortTerm, refFrameListLongTerm, ksmax, klmax, RefPicList0, bottomField);
 
     m_max_num_list[0] = k;
 }
 
 // 8.2.4.2.3
 void VkEncDpbH264::RefPicListInitializationBFrame(RefPicListEntry *RefPicList0, RefPicListEntry *RefPicList1,
-        const StdVideoH264SequenceParameterSet *sps, bool bSkipCorruptFrames)
+        const StdVideoH264SequenceParameterSet *sps)
 {
     // list 0
-    int32_t k0 = RefPicListInitializationBFrameListX(RefPicList0, sps, false, bSkipCorruptFrames);
+    int32_t k0 = RefPicListInitializationBFrameListX(RefPicList0, sps, false);
 
     // list 1
-    int32_t k1 = RefPicListInitializationBFrameListX(RefPicList1, sps, true, bSkipCorruptFrames);
+    int32_t k1 = RefPicListInitializationBFrameListX(RefPicList1, sps, true);
 
     if (k1 > 1 && k0 == k1) {
         // note: it may be sufficient to only check if the first entry is identical
@@ -1181,23 +1171,23 @@ void VkEncDpbH264::RefPicListInitializationBFrame(RefPicListEntry *RefPicList0, 
 
 // 8.2.4.2.4
 void VkEncDpbH264::RefPicListInitializationBField(const PicInfoH264 *pPicInfo, RefPicListEntry *RefPicList0, RefPicListEntry *RefPicList1,
-        const StdVideoH264SequenceParameterSet *sps, bool bSkipCorruptFrames)
+        const StdVideoH264SequenceParameterSet *sps)
 {
     RefPicListEntry refFrameList0ShortTerm[MAX_DPB_SLOTS], refFrameList1ShortTerm[MAX_DPB_SLOTS], refFrameListLongTerm[MAX_DPB_SLOTS];
     int32_t currPOC;
 
     currPOC = !pPicInfo->bottom_field_flag ? m_DPB[m_currDpbIdx].topFOC : m_DPB[m_currDpbIdx].bottomFOC;
 
-    int32_t k0 = SortListDescending(refFrameList0ShortTerm, sps, 0, currPOC, sort_check_short_term_B_field, bSkipCorruptFrames);
-    k0 = SortListAscending(refFrameList0ShortTerm, sps, k0, currPOC, sort_check_short_term_B_field, bSkipCorruptFrames);
+    int32_t k0 = SortListDescending(refFrameList0ShortTerm, sps, 0, currPOC, sort_check_short_term_B_field);
+    k0 = SortListAscending(refFrameList0ShortTerm, sps, k0, currPOC, sort_check_short_term_B_field);
 
-    int32_t k1 = SortListAscending(refFrameList1ShortTerm, sps, 0, currPOC, sort_check_short_term_B_field, bSkipCorruptFrames);
-    k1 = SortListDescending(refFrameList1ShortTerm, sps, k1, currPOC, sort_check_short_term_B_field, bSkipCorruptFrames);
+    int32_t k1 = SortListAscending(refFrameList1ShortTerm, sps, 0, currPOC, sort_check_short_term_B_field);
+    k1 = SortListDescending(refFrameList1ShortTerm, sps, k1, currPOC, sort_check_short_term_B_field);
 
-    int32_t kl = SortListAscending(refFrameListLongTerm, sps, 0, INF_MIN, sort_check_long_term_field, bSkipCorruptFrames);
+    int32_t kl = SortListAscending(refFrameListLongTerm, sps, 0, INF_MIN, sort_check_long_term_field);
 
-    k0 = RefPicListInitializationField(refFrameList0ShortTerm, refFrameListLongTerm, k0, kl, RefPicList0, pPicInfo->bottom_field_flag, bSkipCorruptFrames);
-    k1 = RefPicListInitializationField(refFrameList1ShortTerm, refFrameListLongTerm, k1, kl, RefPicList1, pPicInfo->bottom_field_flag, bSkipCorruptFrames);
+    k0 = RefPicListInitializationField(refFrameList0ShortTerm, refFrameListLongTerm, k0, kl, RefPicList0, pPicInfo->bottom_field_flag);
+    k1 = RefPicListInitializationField(refFrameList1ShortTerm, refFrameListLongTerm, k1, kl, RefPicList1, pPicInfo->bottom_field_flag);
 
     if ((k1 > 1) && (k0 == k1)) {
         int32_t k = 0;
@@ -1220,16 +1210,16 @@ void VkEncDpbH264::RefPicListInitializationBField(const PicInfoH264 *pPicInfo, R
 
 // 8.2.4.2.5
 int32_t VkEncDpbH264::RefPicListInitializationField(RefPicListEntry *refFrameListXShortTerm, RefPicListEntry *refFrameListLongTerm,
-        int32_t ksmax, int32_t klmax, RefPicListEntry *RefPicListX, bool bottomField, bool bSkipCorruptFrames)
+        int32_t ksmax, int32_t klmax, RefPicListEntry *RefPicListX, bool bottomField)
 {
-    int32_t k = RefPicListInitializationFieldListX(refFrameListXShortTerm, ksmax, 0, RefPicListX, bottomField, bSkipCorruptFrames);
-    k =         RefPicListInitializationFieldListX(refFrameListLongTerm,   klmax, k, RefPicListX, bottomField, bSkipCorruptFrames);
+    int32_t k = RefPicListInitializationFieldListX(refFrameListXShortTerm, ksmax, 0, RefPicListX, bottomField);
+    k =         RefPicListInitializationFieldListX(refFrameListLongTerm,   klmax, k, RefPicListX, bottomField);
 
     return k;
 }
 
 int32_t VkEncDpbH264::RefPicListInitializationFieldListX(RefPicListEntry *refFrameListX, int32_t kfmax, int32_t kmin,
-        RefPicListEntry *RefPicListX, bool bottomField, bool bSkipCorruptFrames)
+        RefPicListEntry *RefPicListX, bool bottomField)
 {
     int32_t bottom = bottomField;
     int32_t k = kmin;
@@ -1257,33 +1247,28 @@ int32_t VkEncDpbH264::RefPicListInitializationFieldListX(RefPicListEntry *refFra
 }
 
 int32_t VkEncDpbH264::RefPicListInitializationBFrameListX(RefPicListEntry *RefPicListX,
-        const StdVideoH264SequenceParameterSet *sps, bool list1,
-        bool bSkipCorruptFrames)
+        const StdVideoH264SequenceParameterSet *sps, bool list1)
 {
     int32_t k;
     if (!list1) {
         // short-term frames sorted by descending PicOrderCnt less than current
-        k = SortListDescending(RefPicListX, sps, 0, m_DPB[m_currDpbIdx].picInfo.PicOrderCnt, sort_check_short_term_B_frame,
-                               bSkipCorruptFrames);
+        k = SortListDescending(RefPicListX, sps, 0, m_DPB[m_currDpbIdx].picInfo.PicOrderCnt, sort_check_short_term_B_frame);
         // short-term frames sorted by ascending PicOrderCnt above current
-        k = SortListAscending(RefPicListX, sps, k, m_DPB[m_currDpbIdx].picInfo.PicOrderCnt, sort_check_short_term_B_frame,
-                              bSkipCorruptFrames);
+        k = SortListAscending(RefPicListX, sps, k, m_DPB[m_currDpbIdx].picInfo.PicOrderCnt, sort_check_short_term_B_frame);
     } else {
         // short-term frames sorted by ascending PicOrderCnt above current
-        k = SortListAscending(RefPicListX, sps, 0, m_DPB[m_currDpbIdx].picInfo.PicOrderCnt, sort_check_short_term_B_frame,
-                              bSkipCorruptFrames);
+        k = SortListAscending(RefPicListX, sps, 0, m_DPB[m_currDpbIdx].picInfo.PicOrderCnt, sort_check_short_term_B_frame);
         // short-term frames sorted by descending PicOrderCnt less than current
-        k = SortListDescending(RefPicListX, sps, k, m_DPB[m_currDpbIdx].picInfo.PicOrderCnt, sort_check_short_term_B_frame,
-                               bSkipCorruptFrames);
+        k = SortListDescending(RefPicListX, sps, k, m_DPB[m_currDpbIdx].picInfo.PicOrderCnt, sort_check_short_term_B_frame);
     }
     // long-term frames sorted by ascending LongTermPicNum
-    k = SortListAscending(RefPicListX, sps, k, INF_MIN, sort_check_long_term_frame, bSkipCorruptFrames);
+    k = SortListAscending(RefPicListX, sps, k, INF_MIN, sort_check_long_term_frame);
 
     return k;
 }
 
 int32_t VkEncDpbH264::SortListDescending(RefPicListEntry *RefPicListX, const StdVideoH264SequenceParameterSet *sps, int32_t kmin,
-        int32_t n, ptrFuncDpbSort sort_check, bool bSkipCorruptFrames)
+        int32_t n, ptrFuncDpbSort sort_check)
 {
     int32_t k = kmin;
     for ( ; k < MAX_DPB_SLOTS; k++) {
@@ -1293,10 +1278,6 @@ int32_t VkEncDpbH264::SortListDescending(RefPicListEntry *RefPicListX, const Std
         // find largest entry less than or equal to n
         for (int32_t i = 0; i < MAX_DPB_SLOTS; i++) {
             if (m_DPB[i].view_id != m_DPB[m_currDpbIdx].view_id) {
-                continue;
-            }
-
-            if ((m_DPB[i].frame_is_corrupted == true) && (bSkipCorruptFrames == true)) {
                 continue;
             }
 
@@ -1317,7 +1298,7 @@ int32_t VkEncDpbH264::SortListDescending(RefPicListEntry *RefPicListX, const Std
 }
 
 int32_t VkEncDpbH264::SortListAscending(RefPicListEntry *RefPicListX, const StdVideoH264SequenceParameterSet *sps, int32_t kmin,
-                                        int32_t n, ptrFuncDpbSort sort_check, bool bSkipCorruptFrames)
+                                        int32_t n, ptrFuncDpbSort sort_check)
 {
     int32_t m, k, i, i1, v;
 
@@ -1327,10 +1308,6 @@ int32_t VkEncDpbH264::SortListAscending(RefPicListEntry *RefPicListX, const StdV
         // find smallest entry greater than n
         for (i = 0; i < MAX_DPB_SLOTS; i++) {
             if (m_DPB[i].view_id != m_DPB[m_currDpbIdx].view_id) {
-                continue;
-            }
-
-            if ((m_DPB[i].frame_is_corrupted == true) && (bSkipCorruptFrames == true)) {
                 continue;
             }
 
@@ -1509,12 +1486,10 @@ int32_t VkEncDpbH264::GetNumRefFramesInDPB(uint32_t viewid, int32_t *numShortTer
     int32_t numShortTerm = 0, numLongTerm = 0;
     for (int32_t i = 0; i < MAX_DPB_SLOTS; i++) {
         if (m_DPB[i].view_id == viewid) {
-            if (((m_DPB[i].top_field_marking == MARKING_SHORT) || (m_DPB[i].bottom_field_marking == MARKING_SHORT)) &&
-                    (m_DPB[i].frame_is_corrupted == false)) {
+            if ((m_DPB[i].top_field_marking == MARKING_SHORT) || (m_DPB[i].bottom_field_marking == MARKING_SHORT)) {
                 numShortTerm++;
             }
-            if (((m_DPB[i].top_field_marking == MARKING_LONG) || (m_DPB[i].bottom_field_marking == MARKING_LONG)) &&
-                    (m_DPB[i].frame_is_corrupted == false)) {
+            if ((m_DPB[i].top_field_marking == MARKING_LONG) || (m_DPB[i].bottom_field_marking == MARKING_LONG)) {
                 numLongTerm++;
             }
         }
@@ -1590,62 +1565,6 @@ int32_t VkEncDpbH264::GetPicNum(int32_t dpb_idx, bool bottomField)
     return -1;
 }
 
-// Currently we support it only for IPPP gop pattern
-bool VkEncDpbH264::InvalidateReferenceFrames(uint64_t timeStamp)
-{
-    bool isValidReqest = true;
-
-    for (uint32_t i = 0; i < MAX_DPB_SLOTS; i++) {
-        if ((m_DPB[i].state != DPB_EMPTY) && (timeStamp == m_DPB[i].timeStamp)) {
-            if (m_DPB[i].frame_is_corrupted == true) {
-                isValidReqest = false;
-            }
-            break;
-        }
-    }
-
-    if ((timeStamp >= m_lastIDRTimeStamp) && isValidReqest) {
-        for (uint32_t i = 0; i < MAX_DPB_SLOTS; i++) {
-            if ((m_DPB[i].state != DPB_EMPTY) && ((timeStamp <= m_DPB[i].refFrameTimeStamp) || (timeStamp == m_DPB[i].timeStamp))) {
-                if ((m_DPB[i].top_field_marking == MARKING_SHORT) || (m_DPB[i].bottom_field_marking == MARKING_SHORT)) {
-                    m_DPB[i].frame_is_corrupted = true;
-                }
-
-                if ((m_DPB[i].top_field_marking == MARKING_LONG) || (m_DPB[i].bottom_field_marking == MARKING_LONG)) {
-                    m_DPB[i].frame_is_corrupted = true;
-                }
-            }
-        }
-    }
-
-    return true;
-}
-
-bool VkEncDpbH264::IsRefFramesCorrupted()
-{
-    int32_t i = 0;
-    for (i = 0; i < MAX_DPB_SLOTS; i++) {
-        if (((m_DPB[i].top_field_marking == MARKING_SHORT) || (m_DPB[i].bottom_field_marking == MARKING_SHORT)) &&
-                (m_DPB[i].frame_is_corrupted == true)) {
-            return true;
-        }
-
-        if (((m_DPB[i].top_field_marking == MARKING_LONG) || (m_DPB[i].bottom_field_marking == MARKING_LONG)) &&
-                (m_DPB[i].frame_is_corrupted == true)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool VkEncDpbH264::IsRefPicCorrupted(int32_t dpb_idx)
-{
-    if ((dpb_idx >= 0) && (dpb_idx < MAX_DPB_SLOTS) && (m_DPB[dpb_idx].state != DPB_EMPTY)) {
-        return (m_DPB[dpb_idx].frame_is_corrupted == true);
-    }
-    return false;
-}
-
 int32_t VkEncDpbH264::GetPicNumFromDpbIdx(int32_t dpbIdx, bool *shortterm, bool *longterm)
 {
     if ((dpbIdx >= 0) && (dpbIdx <= MAX_DPB_SLOTS) && (m_DPB[dpbIdx].state != DPB_EMPTY)) {
@@ -1668,22 +1587,6 @@ int32_t VkEncDpbH264::GetPicNumFromDpbIdx(int32_t dpbIdx, bool *shortterm, bool 
     *longterm = false;
     VK_DPB_DBG_PRINT(("%s : Invalid index or state for decoded picture buffer\n", __FUNCTION__));
     return -1;
-}
-
-uint64_t VkEncDpbH264::GetPictureTimestamp(int32_t dpb_idx)
-{
-    if ((dpb_idx >= 0) && (dpb_idx < MAX_DPB_SLOTS) && (m_DPB[dpb_idx].state != DPB_EMPTY)) {
-        return (m_DPB[dpb_idx].timeStamp);
-    }
-    return 0;
-}
-
-void VkEncDpbH264::SetCurRefFrameTimeStamp(uint64_t refFrameTimeStamp)
-{
-    assert((m_currDpbIdx >= 0) && (m_currDpbIdx <= MAX_DPB_SLOTS));
-    if ((m_currDpbIdx >= 0) && (m_currDpbIdx <= MAX_DPB_SLOTS)) {
-        m_DPB[m_currDpbIdx].refFrameTimeStamp = refFrameTimeStamp;
-    }
 }
 
 uint32_t VkEncDpbH264::GetDirtyIntraRefreshRegions(int32_t dpb_idx)
@@ -1717,19 +1620,6 @@ uint32_t VkEncDpbH264::GetUsedFbSlotsMask()
     return usedFbSlotsMask;
 }
 
-// Returns a flag specifying if the buffer need to be reordered.
-bool VkEncDpbH264::NeedToReorder()
-{
-    for (int32_t i = 0; i < MAX_DPB_SLOTS; i++) {
-        if ((m_DPB[i].top_field_marking != 0) || (m_DPB[i].bottom_field_marking != 0)) {
-            if (m_DPB[i].frame_is_corrupted) {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
 void VkEncDpbH264::FillStdReferenceInfo(uint8_t dpbIdx, StdVideoEncodeH264ReferenceInfo* pStdReferenceInfo)
 {
     assert(dpbIdx < MAX_DPB_SLOTS);
