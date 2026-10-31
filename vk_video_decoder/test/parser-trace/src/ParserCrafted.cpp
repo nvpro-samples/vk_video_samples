@@ -416,13 +416,19 @@ struct H265Sps {
     std::function<void(BitWriter&)> longTermRefPics;
     // vui_parameters(), after a vui_parameters_present_flag of 1
     std::function<void(BitWriter&)> vui;
+    uint32_t chromaFormatIdc = 1;  // chroma_format_idc, 4:2:0
+    bool sao = false;              // sample_adaptive_offset_enabled_flag
 };
 
 std::vector<uint8_t> H265SpsNal(const H265Sps& sps = H265Sps()) {
     BitWriter w;
     w.U(4, sps.vpsId).U(3, 0).Flag(true);  // vps id, sps_max_sub_layers_minus1, sps_temporal_id_nesting_flag
     H265ProfileTierLevel(w);
-    w.Ue(sps.id).Ue(1).Ue(64).Ue(64).Flag(false);                 // sps id, 4:2:0, width, height, conformance window
+    w.Ue(sps.id).Ue(sps.chromaFormatIdc);  // sps id, chroma_format_idc
+    if (sps.chromaFormatIdc == 3) {
+        w.Flag(false);  // separate_colour_plane_flag
+    }
+    w.Ue(64).Ue(64).Flag(false);                                  // width, height, conformance window
     w.Ue(0).Ue(0).Ue(sps.log2MaxPocLsbMinus4);                    // bit depths, log2_max_pic_order_cnt_lsb_minus4
     w.Flag(true).Ue(sps.maxDecPicBufferingMinus1);                // sub_layer_ordering_info: DPB size,
     w.Ue(sps.maxNumReorderPics).Ue(sps.maxLatencyIncreasePlus1);  // reorder and latency limits
@@ -432,7 +438,7 @@ std::vector<uint8_t> H265SpsNal(const H265Sps& sps = H265Sps()) {
         w.Flag(!sps.scalingListDeltas.empty());  // sps_scaling_list_data_present_flag
         H265PredictedScalingLists(w, sps.scalingListDeltas);
     }
-    w.Flag(false).Flag(false).Flag(false);  // AMP, SAO, PCM
+    w.Flag(false).Flag(sps.sao).Flag(false);  // AMP, SAO, PCM
     if (sps.refPicSets) {
         sps.refPicSets(w);
     } else {
@@ -458,20 +464,25 @@ struct H265Pps {
     std::vector<uint64_t> scalingListDeltas;
     int64_t initQpMinus26 = 0;
     int64_t cbQpOffset = 0;
+    bool dependentSliceSegments = false;  // dependent_slice_segments_enabled_flag
+    bool entropyCodingSync = false;       // entropy_coding_sync_enabled_flag
+    bool sliceHeaderExtension = false;    // slice_segment_header_extension_present_flag
 };
 
 std::vector<uint8_t> H265PpsNal(const H265Pps& pps = H265Pps()) {
     const std::vector<uint64_t>& scalingListDeltas = pps.scalingListDeltas;
     BitWriter w;
-    w.Ue(pps.id).Ue(0).Flag(false).Flag(false).U(3, 0);           // ids, dependent slices, output flag, extra slice header bits
+    w.Ue(pps.id).Ue(0).Flag(pps.dependentSliceSegments);          // ids, dependent slices
+    w.Flag(false).U(3, 0);                                        // output flag, extra slice header bits
     w.Flag(false).Flag(false).Ue(0).Ue(0).Se(pps.initQpMinus26);  // sign hiding, cabac init, num_ref_idx defaults, init_qp
     w.Flag(false).Flag(false).Flag(false);                        // constrained intra, transform skip, cu_qp_delta
     w.Se(pps.cbQpOffset).Se(0).Flag(false);                       // cb and cr offsets, slice chroma offsets
     w.Flag(false).Flag(false).Flag(false);                        // weighted pred and bipred, transquant bypass
-    w.Flag(false).Flag(false).Flag(false);                        // tiles, entropy sync, loop filter across slices
+    w.Flag(false).Flag(pps.entropyCodingSync).Flag(false);        // tiles, entropy sync, loop filter across slices
     w.Flag(false).Flag(!scalingListDeltas.empty());               // deblocking control, pps_scaling_list_data_present_flag
     H265PredictedScalingLists(w, scalingListDeltas);
-    w.Flag(false).Ue(0).Flag(false).Flag(false);  // list modification, parallel merge level, header extension, extensions
+    w.Flag(false).Ue(0);                           // list modification, parallel merge level
+    w.Flag(pps.sliceHeaderExtension).Flag(false);  // slice segment header extension, extensions
     return AnnexBNal({0x44, 0x01}, w.TrailingBits().Data());
 }
 
@@ -534,6 +545,45 @@ std::vector<uint8_t> H265IntraSliceNal(uint8_t nalUnitType, uint32_t pocLsb) {
 
 // An end of sequence NAL unit: a header and no payload.
 std::vector<uint8_t> H265EndOfSequenceNal() { return AnnexBNal({0x48, 0x01}, {}); }
+
+// A slice segment of a picture whose PPS has entropy_coding_sync_enabled_flag and
+// slice_segment_header_extension_present_flag (Rec. ITU-T H.265 7.3.6.1), in the 64x64 picture of 16
+// coding tree blocks. At address 0, the first segment of an IDR_W_RADL I picture or of a TRAIL_R P
+// picture with picture order count LSB pocLsb and the SPS's first reference picture set; at another
+// address, a dependent segment (the PPS has dependent_slice_segments_enabled_flag), whose header has
+// after the address only the fields every segment has. Each ends with numEntryPoints entry points of
+// one byte and extensionLength bytes of slice header extension; its slice data is filler the parser
+// does not read.
+std::vector<uint8_t> H265WppSliceSegmentNal(bool idr, uint32_t pocLsb, uint32_t address, uint32_t numEntryPoints,
+                                            uint32_t extensionLength) {
+    BitWriter w;
+    w.Flag(address == 0);  // first_slice_segment_in_pic_flag
+    if (idr) {
+        w.Flag(false);  // no_output_of_prior_pics_flag
+    }
+    w.Ue(0);  // slice_pic_parameter_set_id
+    if (address != 0) {
+        w.Flag(true).U(4, address);  // dependent_slice_segment_flag, slice_segment_address
+    } else if (idr) {
+        w.Ue(2).Se(0);  // slice_type I, slice_qp_delta
+    } else {
+        w.Ue(1).U(8, pocLsb).Flag(true);  // slice_type P, slice_pic_order_cnt_lsb, short_term_ref_pic_set_sps_flag
+        w.Flag(false).Ue(0).Se(0);        // num_ref_idx_active_override_flag, merge candidates, slice_qp_delta
+    }
+    w.Ue(numEntryPoints);  // num_entry_point_offsets
+    if (numEntryPoints > 0) {
+        w.Ue(0);  // offset_len_minus1
+        for (uint32_t i = 0; i < numEntryPoints; i++) {
+            w.U(1, 0);  // entry_point_offset_minus1[i]
+        }
+    }
+    w.Ue(extensionLength);  // slice_segment_header_extension_length
+    for (uint32_t i = 0; i < extensionLength; i++) {
+        w.U(8, 0xA5);  // slice_segment_header_extension_data_byte
+    }
+    w.TrailingBits().Bytes({0x55, 0xAA, 0x55, 0xAA});  // byte_alignment(), slice data
+    return AnnexBNal({static_cast<uint8_t>(idr ? 0x26 : 0x02), 0x01}, w.Data());
+}
 
 // ---- AV1 (AV1 bitstream specification 5.5) ----
 
@@ -942,6 +992,66 @@ const std::vector<CraftedCase>& Cases() {
              checks.Count("pic", 1);
              checks.Field("  hevc", "vps_video_parameter_set_id", "1");
              checks.Field("  hevc", "pps_update", "1");
+             checks.Count("refused", 0);
+             return checks.Failures();
+         }},
+        // A dependent slice segment's header (Rec. ITU-T H.265 7.3.6.1) has, after its address, only the
+        // fields every segment has: with wavefront parallel processing, num_entry_point_offsets, and here
+        // a slice header extension. The P picture is an independent segment and two dependent ones. The
+        // first dependent one has no entry points and 20 bytes of extension: read as the fields of an
+        // independent P segment, they are num_ref_idx_active_override_flag 1 and a
+        // num_ref_idx_l0_active_minus1 of 20, which no slice has. The second spans three rows of coding
+        // tree blocks, so two entry points. The client gets the picture's three segments, every byte.
+        {"H265DependentSliceSegments",
+         [](CaseContext& stream) {
+             const std::vector<uint8_t> independent = H265WppSliceSegmentNal(false, 1, 0, 0, 0);
+             const std::vector<uint8_t> extended = H265WppSliceSegmentNal(false, 1, 2, 0, 20);
+             const std::vector<uint8_t> threeRows = H265WppSliceSegmentNal(false, 1, 4, 2, 0);
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal());
+             Append(stream.byteStream,
+                    H265PpsNal({.dependentSliceSegments = true, .entropyCodingSync = true, .sliceHeaderExtension = true}));
+             Append(stream.byteStream, H265WppSliceSegmentNal(true, 0, 0, 3, 0));
+             Append(stream.byteStream, independent);
+             Append(stream.byteStream, extended);
+             Append(stream.byteStream, threeRows);
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("pic", 2);
+             checks.Field("pic", "numSlices", "1", 0);
+             checks.Field("pic", "numSlices", "3", 1);
+             // The picture's bytes run from the three-byte start code prefix of its first segment, after the
+             // zero byte of the four-byte start code the builders write, to the end of the stream.
+             const size_t pictureBytes = independent.size() + extended.size() + threeRows.size() - 1;
+             checks.Field("pic", "bitstreamDataLen", std::to_string(pictureBytes), 1);
+             checks.Count("refused", 0);
+             return checks.Failures();
+         }},
+        // slice_sao_chroma_flag is present only when ChromaArrayType is not 0 (Rec. ITU-T H.265 7.3.6.1). In a
+        // 4:0:0 sequence with SAO, a P slice overrides num_ref_idx_l0_active_minus1 with 0, and the bits after
+        // it are a five_minus_max_num_merge_cand of 100. Read with a chroma flag, the override flag would be
+        // the count's bit and the count 100, which no slice has.
+        {"H265MonochromeSaoSliceHeader",
+         [](CaseContext& stream) {
+             Append(stream.byteStream, H265VpsNal());
+             Append(stream.byteStream, H265SpsNal({.chromaFormatIdc = 0, .sao = true}));
+             Append(stream.byteStream, H265PpsNal());
+             BitWriter idr;
+             idr.Flag(true).Flag(false).Ue(0).Ue(2);  // first slice, no_output_of_prior_pics, pps id, slice_type I
+             idr.Flag(true).Se(0);                    // slice_sao_luma_flag, slice_qp_delta
+             idr.TrailingBits().Bytes({0x55, 0xAA, 0x55, 0xAA});
+             Append(stream.byteStream, AnnexBNal({0x26, 0x01}, idr.Data()));
+             BitWriter p;
+             p.Flag(true).Ue(0).Ue(1);  // first slice, pps id, slice_type P
+             p.U(8, 1).Flag(true);      // slice_pic_order_cnt_lsb, short_term_ref_pic_set_sps_flag
+             p.Flag(true);              // slice_sao_luma_flag
+             p.Flag(true).Ue(0);        // num_ref_idx_active_override_flag, num_ref_idx_l0_active_minus1
+             p.Ue(100).Se(0);           // five_minus_max_num_merge_cand, slice_qp_delta
+             p.TrailingBits().Bytes({0x55, 0xAA, 0x55, 0xAA});
+             Append(stream.byteStream, AnnexBNal({0x02, 0x01}, p.Data()));
+             const Trace trace = Run(stream, "h265");
+             Checks checks(trace);
+             checks.Count("pic", 2);
              checks.Count("refused", 0);
              return checks.Failures();
          }},
