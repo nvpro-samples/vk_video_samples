@@ -26,6 +26,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+# The runners' own folder, which python -I leaves off sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sample_binaries import sample_binary  # noqa: E402 pylint: disable=wrong-import-position
+
 
 # ANSI color codes (disabled on Windows unless using Windows Terminal)
 def supports_color() -> bool:
@@ -81,11 +85,7 @@ class DecoderTestRunner:
         self.failed = 0
         self.skipped = 0
         
-        # Determine decoder path
-        if sys.platform == "win32":
-            self.decoder = config.build_dir / "vk_video_decoder" / "demos" / "vk-video-dec-test.exe"
-        else:
-            self.decoder = config.build_dir / "vk_video_decoder" / "demos" / "vk-video-dec-test"
+        self.decoder = sample_binary(config.build_dir, "vk_video_decoder", "vk-video-dec-test")
     
     def get_ssh_target(self) -> str:
         """Get SSH target string."""

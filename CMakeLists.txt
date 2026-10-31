@@ -371,6 +371,8 @@ endif()
         add_subdirectory(vk_video_decoder/libs/NvVideoParser)
         if(BUILD_TESTS AND NOT DEFINED DEQP_TARGET)
             add_subdirectory(vk_video_decoder/test/parser-trace)
+            # The start code scanners built with instruction set flags define their kernels and nothing else.
+            add_subdirectory(vk_video_decoder/test/start-code-objects)
         endif()
     else()
         message(WARNING "video_parser directory not found, skipping...")

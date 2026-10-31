@@ -84,6 +84,54 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=Release -DVVS_FFMPEG=$VVS_FFMPEG ..
           cmake --build . --parallel $BUILD_JOBS --config Release
 
+  # Configurations the default builds leave out: aarch64, whose parser builds the NEON and SVE
+  # start code kernels (its device-free CTests run them against the C one); the shaderc shader
+  # compiler backend; and the encoder without its compute filter (BUILD_ENCODER_COMPUTE_FILTER).
+  vk_video_samples-linux-configs:
+    strategy:
+      matrix:
+        include:
+          - config: aarch64
+            runner: ubuntu-24.04-arm
+            cmake_args: ""
+          - config: shaderc
+            runner: ubuntu-24.04
+            cmake_args: -DVK_VIDEO_SAMPLES_SHADER_BACKEND=shaderc
+          - config: no-compute-filter
+            runner: ubuntu-24.04
+            cmake_args: -DBUILD_ENCODER_COMPUTE_FILTER=OFF
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install --assume-yes --no-install-recommends \
+            ninja-build \
+            cmake \
+            libx11-dev \
+            libwayland-dev \
+            libxrandr-dev \
+            libvulkan-dev
+
+      - name: Install shaderc
+        if: matrix.config == 'shaderc'
+        run: |
+          sudo apt install --assume-yes --no-install-recommends libshaderc-dev
+
+      - name: Build release
+        run: |
+          cmake -B BUILD -G Ninja -DCMAKE_BUILD_TYPE=Release -DVVS_FFMPEG=OFF ${{ matrix.cmake_args }}
+          cmake --build BUILD --parallel $BUILD_JOBS
+
+      - name: Run CTest suite
+        if: matrix.config == 'aarch64'
+        run: |
+          ./scripts/run_ctest_ci.sh BUILD
+
   vk_video_samples-win:
     strategy:
       matrix:

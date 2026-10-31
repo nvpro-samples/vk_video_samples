@@ -1,18 +1,9 @@
 #if defined(__aarch64__) // || defined(_M_ARM64)
 #include "arm_sve.h"
-#include <cpudetect.h>
-#include "ByteStreamParser.h"
-#include "NvVideoParser/nvVulkanVideoUtils.h"
-#include "NvVideoParser/nvVulkanVideoParser.h"
-
-bool VulkanVideoDecoder::ParseByteStreamSVE(const VkParserBitstreamPacket* pck, size_t *pParsedBytes)
-{
-    return ParseByteStreamSimd<SIMD_ISA::SVE>(pck, pParsedBytes);
-}
+#include "NextStartCode.h"
 
 #define SVE_REGISTER_MAX_BYTES 256 // 2048 bits
-template<>
-size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::SVE>(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+size_t NextStartCodeSVE(const uint8_t *pdatain, size_t datasize, uint32_t& bitBfr, bool& found_start_code)
 {
     size_t i = 0;
     {
@@ -22,7 +13,7 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::SVE>(const uint8_t *pdatain
         svbool_t pred_next = svpfalse_b();
 
         svuint8_t vdata = svld1_u8(pred, pdatain);
-        svuint8_t vBfr = svreinterpret_u8_u16(svdup_n_u16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF)));
+        svuint8_t vBfr = svreinterpret_u8_u16(svdup_n_u16(((bitBfr << 8) & 0xFF00) | ((bitBfr >> 8) & 0xFF)));
 
         static uint8_t data0n[SVE_REGISTER_MAX_BYTES];
         static uint8_t isArrayFilled = 0;
@@ -52,7 +43,7 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::SVE>(const uint8_t *pdatain
             {
               const uint8_t offset = svminv_u8(vmask, v0n);
               found_start_code = true;
-              m_BitBfr =  1;
+              bitBfr =  1;
               return (size_t)offset + i + 1;
             }
             // hotspot begin
@@ -67,9 +58,9 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::SVE>(const uint8_t *pdatain
     }
     // a very rare case:
     if (datasize >= 2) {
-        m_BitBfr = pdatain[datasize-2];
+        bitBfr = pdatain[datasize-2];
     }
-    m_BitBfr = (m_BitBfr << 8) | pdatain[datasize >= 1 ? datasize - 1 : 0];
+    bitBfr = (bitBfr << 8) | pdatain[datasize >= 1 ? datasize - 1 : 0];
     found_start_code = false;
     return datasize;
 }

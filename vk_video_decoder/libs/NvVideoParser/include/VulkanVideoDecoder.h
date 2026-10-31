@@ -21,6 +21,7 @@
 #include <limits>
 
 #include <cpudetect.h>
+#include "NextStartCode.h"
 #include "VkCodecUtils/VulkanBitstreamBuffer.h"
 
 #define UNUSED_LOCAL_VAR(expr) do { (void)(expr); } while (0)
@@ -142,19 +143,8 @@ public:
     virtual VkResult Initialize(const VkParserInitDecodeParameters *pNvVkp);
     virtual bool Deinitialize();
     virtual bool ParseByteStream(const VkParserBitstreamPacket *pck, size_t *pParsedBytes);
-    template <SIMD_ISA T>
-    bool ParseByteStreamSimd(const VkParserBitstreamPacket *pck, size_t *pParsedBytes);
-    bool ParseByteStreamC(const VkParserBitstreamPacket *pck, size_t *pParsedBytes);
-#if defined(__x86_64__) || defined (_M_X64)
-    bool ParseByteStreamAVX2(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
-    bool ParseByteStreamAVX512(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
-    bool ParseByteStreamSSSE3(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
-#elif defined(__aarch64__) || defined(_M_ARM64)
-    bool ParseByteStreamSVE(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
-    bool ParseByteStreamNEON(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
-#elif defined(__ARM_ARCH_7A__)
-    bool ParseByteStreamNEON(const VkParserBitstreamPacket* pck, size_t *pParsedBytes);
-#endif
+    // The start code byte stream parse, scanning with nextStartCode.
+    bool ParseByteStreamWith(NextStartCodeFunc nextStartCode, const VkParserBitstreamPacket *pck, size_t *pParsedBytes);
     virtual bool GetDisplayMasteringInfo(VkParserDisplayMasteringInfo *) { return false; }
     virtual uint64_t GetRefusedUnitCount() const { return m_refusedUnits; }
     virtual uint64_t GetUnsupportedPictureCount() const { return m_unsupportedPictures; }
@@ -171,8 +161,6 @@ protected:
 
 protected:
     // Byte stream parsing
-    template<SIMD_ISA T>
-    size_t next_start_code(const uint8_t *pdatain, size_t datasize, bool& found_start_code);
     void nal_unit();
     void init_dbits();
     int32_t available_bits() {

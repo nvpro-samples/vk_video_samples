@@ -28,6 +28,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+# The runners' own folder, which python -I leaves off sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sample_binaries import sample_binary  # noqa: E402 pylint: disable=wrong-import-position
+
 
 # ANSI color codes (disabled on Windows unless using Windows Terminal)
 def supports_color() -> bool:
@@ -84,16 +88,7 @@ class EncoderTestRunner:
         self.failed = 0
         self.skipped = 0
         
-        # Determine encoder path
-        # MSVC is a multi-config generator: the binary lands in demos/Release/, not demos/.
-        # Probing both keeps single-config (Ninja/Make) and multi-config builds working.
-        if sys.platform == "win32":
-            cands = [config.build_dir / "vk_video_encoder" / "demos" / "Release" / "vk-video-enc-test.exe",
-                     config.build_dir / "vk_video_encoder" / "demos" / "Debug" / "vk-video-enc-test.exe",
-                     config.build_dir / "vk_video_encoder" / "demos" / "vk-video-enc-test.exe"]
-        else:
-            cands = [config.build_dir / "vk_video_encoder" / "demos" / "vk-video-enc-test"]
-        self.encoder = next((c for c in cands if c.exists()), cands[0])
+        self.encoder = sample_binary(config.build_dir, "vk_video_encoder", "vk-video-enc-test")
 
         self._encoder_help_output: Optional[str] = None
     

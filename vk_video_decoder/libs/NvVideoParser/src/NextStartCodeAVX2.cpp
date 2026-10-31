@@ -1,17 +1,9 @@
 #if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
 #include <cpudetect.h>
-#include "ByteStreamParser.h"
-#include "NvVideoParser/nvVulkanVideoUtils.h"
-#include "NvVideoParser/nvVulkanVideoParser.h"
+#include "NextStartCode.h"
 
-bool VulkanVideoDecoder::ParseByteStreamAVX2(const VkParserBitstreamPacket* pck, size_t *pParsedBytes)
-{
-    return ParseByteStreamSimd<SIMD_ISA::AVX2>(pck, pParsedBytes);
-}
-
-template<>
-size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::AVX2>(const uint8_t *pdatain, size_t datasize, bool& found_start_code)
+size_t NextStartCodeAVX2(const uint8_t *pdatain, size_t datasize, uint32_t& bitBfr, bool& found_start_code)
 {
     size_t i = 0;
     size_t datasize64 = (datasize >> 6) << 6;
@@ -19,7 +11,7 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::AVX2>(const uint8_t *pdatai
     {
         const __m256i v1 = _mm256_set1_epi8(1);
         __m256i vdata = _mm256_loadu_si256((const __m256i*)pdatain);
-        __m256i vBfr = _mm256_set1_epi16(((m_BitBfr << 8) & 0xFF00) | ((m_BitBfr >> 8) & 0xFF));
+        __m256i vBfr = _mm256_set1_epi16(((bitBfr << 8) & 0xFF00) | ((bitBfr >> 8) & 0xFF));
         __m256i vdata_alignr16b_init = _mm256_permute2f128_si256(vBfr, vdata, 1 | (2<<4));
         __m256i vdata_prev1 = _mm256_alignr_epi8(vdata, vdata_alignr16b_init, 15);
         __m256i vdata_prev2 = _mm256_alignr_epi8(vdata, vdata_alignr16b_init, 14);
@@ -36,7 +28,7 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::AVX2>(const uint8_t *pdatai
                 {
                     const int offset = count_trailing_zeros((uint64_t) (resmask & 0xFFFFFFFF));
                     found_start_code = true;
-                    m_BitBfr =  1;
+                    bitBfr =  1;
                     return offset + i + c + 1;
                 }
                 // hotspot begin
@@ -48,10 +40,10 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::AVX2>(const uint8_t *pdatai
                 // hotspot end
             }
         } // main processing loop end
-        m_BitBfr = (pdatain[i-2] << 8) | pdatain[i-1];
+        bitBfr = (pdatain[i-2] << 8) | pdatain[i-1];
     }
     // process a tail (rest):
-    uint32_t bfr = m_BitBfr;
+    uint32_t bfr = bitBfr;
     do
     {
         bfr = (bfr << 8) | pdatain[i++];
@@ -59,7 +51,7 @@ size_t VulkanVideoDecoder::next_start_code<SIMD_ISA::AVX2>(const uint8_t *pdatai
             break;
         }
     } while (i < datasize);
-    m_BitBfr = bfr;
+    bitBfr = bfr;
     found_start_code = ((bfr & 0x00ffffff) == 1);
     return i;
 }

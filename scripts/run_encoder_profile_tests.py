@@ -35,6 +35,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+# The runners' own folder, which python -I leaves off sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sample_binaries import sample_binary  # noqa: E402 pylint: disable=wrong-import-position
+
 
 def supports_color() -> bool:
     """Check whether ANSI colors are supported."""
@@ -99,10 +103,7 @@ class EncoderProfileTestRunner:
         self.failed = 0
         self.skipped = 0
 
-        if sys.platform == "win32":
-            self.encoder = config.build_dir / "vk_video_encoder" / "demos" / "vk-video-enc-test.exe"
-        else:
-            self.encoder = config.build_dir / "vk_video_encoder" / "demos" / "vk-video-enc-test"
+        self.encoder = sample_binary(config.build_dir, "vk_video_encoder", "vk-video-enc-test")
 
     def get_ssh_target(self) -> str:
         """Get SSH target."""
