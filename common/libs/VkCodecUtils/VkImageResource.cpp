@@ -15,12 +15,12 @@
 */
 
 #include <atomic>
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include "VkCodecUtils/HelpersDispatchTable.h"
 #include "VkCodecUtils/Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 #include "VkImageResource.h"
+#include "Logger.h"
 
 VkImageResource::VkImageResource(const VulkanDeviceContext* vkDevCtx,
                 const VkImageCreateInfo* pImageCreateInfo,
@@ -337,7 +337,7 @@ VkResult VkImageResource::CreateExportable(const VulkanDeviceContext* vkDevCtx,
     do {
         result = vkDevCtx->CreateImage(device, &modifiedImageInfo, nullptr, &image);
         if (result != VK_SUCCESS) {
-            VkEncErr() << "[VkImageResource] CreateImage FAILED: result=" << result
+            LOG_S_ERROR << "[VkImageResource] CreateImage FAILED: result=" << result
                       << " format=" << modifiedImageInfo.format
                       << " extent=" << modifiedImageInfo.extent.width << "x" << modifiedImageInfo.extent.height
                       << " tiling=" << modifiedImageInfo.tiling
@@ -363,7 +363,7 @@ VkResult VkImageResource::CreateExportable(const VulkanDeviceContext* vkDevCtx,
                     actualDrmModifier = modProps.drmFormatModifier;
                     // Warn if the driver returns DRM_FORMAT_MOD_INVALID — indicates a driver bug
                     if (actualDrmModifier == ((1ULL << 56) - 1)) {
-                        VkEncErr() << "[VkImageResource] WARNING: vkGetImageDrmFormatModifierPropertiesEXT "
+                        LOG_S_WARN << "[VkImageResource] vkGetImageDrmFormatModifierPropertiesEXT "
                                   << "returned DRM_FORMAT_MOD_INVALID — using requested modifier 0x"
                                   << std::hex << drmFormatModifier << std::dec << std::endl;
                         actualDrmModifier = drmFormatModifier;

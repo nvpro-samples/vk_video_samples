@@ -588,7 +588,7 @@ enum VkVideoEncoderConfigFieldDisposition {
     X(verbose,                  BOUND,    "cfg->verbose")                      \
     X(validate,                 BOUND,    "cfg->validate")                     \
     X(disableFileOutput,        BOUND,    "cfg->disableFileOutput")            \
-    X(silenceStdio,             SESSION,  "VkEncoderStdioSilenceScope")        \
+    X(silenceStdio,             SESSION,  "LoggerSilenceScope")        \
     X(externalInstance,         SESSION,  "caller-supplied instance")          \
     X(externalPhysicalDevice,   SESSION,  "caller-supplied physical device")   \
     X(externalDevice,           SESSION,  "caller-supplied logical device")    \
@@ -1434,7 +1434,7 @@ struct VkEncResourceProbe {
     // The ROUTING DECISION, which is the whole point of the registration
     // gate. The public surface carries no accessor for it -- deliberately:
     // it is an implementation choice, not a contract -- and the only other
-    // trace of it is a VkEncErr line that silenceStdio can null for a whole
+    // trace of it is a logged line that silenceStdio can silence for a whole
     // session. Without this field a test can assert that a descriptor
     // REGISTERED but not what it registered AS, which makes "routes via the
     // compute filter" and "was accepted at all" one observation.

@@ -19,6 +19,7 @@
 #include <fstream>
 #include "mio/mio.hpp"
 #include "VkDecoderUtils/VideoStreamDemuxer.h"
+#include "Logger.h"
 
 // Vulkan-Headers >= 1.4.360 added the High 10 and High 4:2:2 enumerators to
 // StdVideoH264ProfileIdc. Older SDKs (e.g. the 1.4.341 Windows SDK) stop at
@@ -65,7 +66,7 @@ public:
 #ifdef USE_SIMPLE_MALLOC
         FILE* handle = fopen(pFilePath, "rb");
         if (handle == nullptr) {
-            printf("Failed to open video file %s\n", pFilePath);
+            LOG_ERROR("Failed to open video file %s\n", pFilePath);
             m_bitstreamDataSize = 0;
             m_pBitstreamData = nullptr;
             return;
@@ -76,7 +77,7 @@ public:
         uint8_t* data = (uint8_t*)malloc(size);
 
         if (data == nullptr) {
-            printf("Failed to allocate memory for video file: %i\n", (uint32_t)size);
+            LOG_ERROR("Failed to allocate memory for video file: %i\n", (uint32_t)size);
             m_bitstreamDataSize = 0;
             return;
         }
@@ -284,7 +285,7 @@ public:
             memcpy(&frameSize, m_pBitstreamData + m_bytesRead, sizeof(frameSize)); // little-endian
             const VkDeviceSize frameStart = m_bytesRead + DKIF_FRAME_CONTAINER_HEADER_SIZE;
             if (frameSize > (m_bitstreamDataSize - frameStart)) {
-                fprintf(stderr, "The IVF frame at file offset %llu runs past the end of the file\n",
+                LOG_ERROR("The IVF frame at file offset %llu runs past the end of the file\n",
                         (unsigned long long)(m_ivfHeaderSize + m_bytesRead));
                 m_bytesRead = m_bitstreamDataSize;
                 return 0;
@@ -322,7 +323,7 @@ private:
             memcpy(&headerSize, m_pBitstreamData + DKIF_FILE_HEADER_LENGTH_OFFSET, sizeof(headerSize));
         }
         if ((headerSize < DKIF_FILE_HEADER_SIZE) || (headerSize > m_bitstreamDataSize)) {
-            fprintf(stderr, "An AV1 or VP9 elementary stream must be an IVF file\n");
+            LOG_ERROR("An AV1 or VP9 elementary stream must be an IVF file\n");
             m_bitstreamDataSize = 0;
             return;
         }

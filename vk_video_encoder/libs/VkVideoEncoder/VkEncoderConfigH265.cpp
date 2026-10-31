@@ -15,10 +15,10 @@
  */
 
 #include <math.h>       /* sqrt */
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <string>
 #include <cstdlib>
 #include "VkVideoEncoder/VkEncoderConfigH265.h"
+#include "Logger.h"
 
 static void SetupAspectRatio(StdVideoH265SequenceParameterSetVui *vui, uint32_t width, uint32_t height,
                              uint32_t darWidth, uint32_t darHeight)
@@ -84,18 +84,18 @@ int EncoderConfigH265::DoParseArguments(int argc, const char* argv[])
     for (int32_t i = 0; i < argc; i++) {
         if (args[i] == "--slices") {
             if (++i >= argc) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             char* end = nullptr;
             sliceCount = static_cast<int32_t>(strtol(args[i].c_str(), &end, 10));
             if (end == args[i].c_str()) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
         } else if (args[i] == "--profile") {
             if (++i >= argc) {
-                VkEncPrintfErr("invalid parameter for %s\n", args[i - 1].c_str());
+                LOG_ERROR("invalid parameter for %s\n", args[i - 1].c_str());
                 return -1;
             }
             std::string profileStr = args[i];
@@ -110,11 +110,11 @@ int EncoderConfigH265::DoParseArguments(int argc, const char* argv[])
             } else if (profileStr == "scc" || profileStr == "4") {
                 profile = STD_VIDEO_H265_PROFILE_IDC_SCC_EXTENSIONS;
             } else {
-                VkEncPrintfErr("Invalid H.265 profile: %s\n", profileStr.c_str());
+                LOG_ERROR("Invalid H.265 profile: %s\n", profileStr.c_str());
                 return -1;
             }
         } else {
-            VkEncPrintfErr("Unrecognized option: %s\n", argv[i]);
+            LOG_ERROR("Unrecognized option: %s\n", argv[i]);
             return -1;
         }
     }
@@ -134,22 +134,22 @@ VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                  h265QuantizationMapCapabilities,
                                                                  intraRefreshCapabilities);
     if (result != VK_SUCCESS) {
-        VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+        LOG_S_ERROR << "[" << __FILE__ << ":" << __LINE__ << "]: "
                   << "Could not get Video Encode Capabilities for HEVC. VkResult: " << result
                   << " (0x" << std::hex << result << std::dec << ")" << std::endl;
         return result;
     }
 
     if (verboseMsg) {
-        VkEncOut() << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode capabilities: " << std::endl;
-        VkEncOut() << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << videoCapabilities.minBitstreamBufferOffsetAlignment << std::endl;
-        VkEncOut() << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << videoCapabilities.minBitstreamBufferSizeAlignment << std::endl;
-        VkEncOut() << "\t\t\t" << "pictureAccessGranularity: " << videoCapabilities.pictureAccessGranularity.width << " x " << videoCapabilities.pictureAccessGranularity.height << std::endl;
-        VkEncOut() << "\t\t\t" << "minExtent: " << videoCapabilities.minCodedExtent.width << " x " << videoCapabilities.minCodedExtent.height << std::endl;
-        VkEncOut() << "\t\t\t" << "maxExtent: " << videoCapabilities.maxCodedExtent.width  << " x " << videoCapabilities.maxCodedExtent.height << std::endl;
-        VkEncOut() << "\t\t\t" << "maxDpbSlots: " << videoCapabilities.maxDpbSlots << std::endl;
-        VkEncOut() << "\t\t\t" << "maxActiveReferencePictures: " << videoCapabilities.maxActiveReferencePictures << std::endl;
-        VkEncOut() << "\t\t\t" << "maxBPictureL0ReferenceCount: " << h265EncodeCapabilities.maxBPictureL0ReferenceCount << std::endl;
+        LOG_S_INFO << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode capabilities: " << std::endl;
+        LOG_S_INFO << "\t\t\t" << "minBitstreamBufferOffsetAlignment: " << videoCapabilities.minBitstreamBufferOffsetAlignment << std::endl;
+        LOG_S_INFO << "\t\t\t" << "minBitstreamBufferSizeAlignment: " << videoCapabilities.minBitstreamBufferSizeAlignment << std::endl;
+        LOG_S_INFO << "\t\t\t" << "pictureAccessGranularity: " << videoCapabilities.pictureAccessGranularity.width << " x " << videoCapabilities.pictureAccessGranularity.height << std::endl;
+        LOG_S_INFO << "\t\t\t" << "minExtent: " << videoCapabilities.minCodedExtent.width << " x " << videoCapabilities.minCodedExtent.height << std::endl;
+        LOG_S_INFO << "\t\t\t" << "maxExtent: " << videoCapabilities.maxCodedExtent.width  << " x " << videoCapabilities.maxCodedExtent.height << std::endl;
+        LOG_S_INFO << "\t\t\t" << "maxDpbSlots: " << videoCapabilities.maxDpbSlots << std::endl;
+        LOG_S_INFO << "\t\t\t" << "maxActiveReferencePictures: " << videoCapabilities.maxActiveReferencePictures << std::endl;
+        LOG_S_INFO << "\t\t\t" << "maxBPictureL0ReferenceCount: " << h265EncodeCapabilities.maxBPictureL0ReferenceCount << std::endl;
     }
 
     result = VulkanVideoCapabilities::GetPhysicalDeviceVideoEncodeQualityLevelProperties<VkVideoEncodeH265QualityLevelPropertiesKHR, VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_QUALITY_LEVEL_PROPERTIES_KHR>
@@ -157,26 +157,26 @@ VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vk
                                                                                  qualityLevelProperties,
                                                                                  h265QualityLevelProperties);
     if (result != VK_SUCCESS) {
-        VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+        LOG_S_ERROR << "[" << __FILE__ << ":" << __LINE__ << "]: "
                   << "Could not get Video Encode QualityLevel Properties for HEVC. VkResult: " << result
                   << " (0x" << std::hex << result << std::dec << "), qualityLevel: " << qualityLevel << std::endl;
         return result;
     }
 
     if (verboseMsg) {
-        VkEncOut() << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode quality level properties: " << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredRateControlMode : " << qualityLevelProperties.preferredRateControlMode << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredRateControlLayerCount : " << qualityLevelProperties.preferredRateControlLayerCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredRateControlFlags : " << h265QualityLevelProperties.preferredRateControlFlags << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredGopFrameCount : " << h265QualityLevelProperties.preferredGopFrameCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredIdrPeriod : " << h265QualityLevelProperties.preferredIdrPeriod << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredConsecutiveBFrameCount : " << h265QualityLevelProperties.preferredConsecutiveBFrameCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredSubLayerCount : " << h265QualityLevelProperties.preferredSubLayerCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredConstantQp.qpI : " << h265QualityLevelProperties.preferredConstantQp.qpI << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredConstantQp.qpP : " << h265QualityLevelProperties.preferredConstantQp.qpP << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredConstantQp.qpB : " << h265QualityLevelProperties.preferredConstantQp.qpB << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredMaxL0ReferenceCount : " << h265QualityLevelProperties.preferredMaxL0ReferenceCount << std::endl;
-        VkEncOut() << "\t\t\t" << "preferredMaxL1ReferenceCount : " << h265QualityLevelProperties.preferredMaxL1ReferenceCount << std::endl;
+        LOG_S_INFO << "\t\t" << VkVideoCoreProfile::CodecToName(codec) << "encode quality level properties: " << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredRateControlMode : " << qualityLevelProperties.preferredRateControlMode << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredRateControlLayerCount : " << qualityLevelProperties.preferredRateControlLayerCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredRateControlFlags : " << h265QualityLevelProperties.preferredRateControlFlags << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredGopFrameCount : " << h265QualityLevelProperties.preferredGopFrameCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredIdrPeriod : " << h265QualityLevelProperties.preferredIdrPeriod << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredConsecutiveBFrameCount : " << h265QualityLevelProperties.preferredConsecutiveBFrameCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredSubLayerCount : " << h265QualityLevelProperties.preferredSubLayerCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredConstantQp.qpI : " << h265QualityLevelProperties.preferredConstantQp.qpI << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredConstantQp.qpP : " << h265QualityLevelProperties.preferredConstantQp.qpP << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredConstantQp.qpB : " << h265QualityLevelProperties.preferredConstantQp.qpB << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredMaxL0ReferenceCount : " << h265QualityLevelProperties.preferredMaxL0ReferenceCount << std::endl;
+        LOG_S_INFO << "\t\t\t" << "preferredMaxL1ReferenceCount : " << h265QualityLevelProperties.preferredMaxL1ReferenceCount << std::endl;
     }
 
     if (rateControlMode == VK_VIDEO_ENCODE_RATE_CONTROL_MODE_FLAG_BITS_MAX_ENUM_KHR) {
@@ -221,7 +221,7 @@ VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vk
     if (minQpSet &&
         ((EncoderConfig::minQp < h265EncodeCapabilities.minQp) ||
          (EncoderConfig::minQp > h265EncodeCapabilities.maxQp))) {
-        VkEncErr() << "[EncoderConfigH265] requested minQp "
+        LOG_S_ERROR << "[EncoderConfigH265] requested minQp "
                    << EncoderConfig::minQp
                    << " is outside the device QP window ["
                    << h265EncodeCapabilities.minQp << ", "
@@ -231,7 +231,7 @@ VkResult EncoderConfigH265::InitDeviceCapabilities(const VulkanDeviceContext* vk
     if (maxQpSet &&
         ((EncoderConfig::maxQp < h265EncodeCapabilities.minQp) ||
          (EncoderConfig::maxQp > h265EncodeCapabilities.maxQp))) {
-        VkEncErr() << "[EncoderConfigH265] requested maxQp "
+        LOG_S_ERROR << "[EncoderConfigH265] requested maxQp "
                    << EncoderConfig::maxQp
                    << " is outside the device QP window ["
                    << h265EncodeCapabilities.minQp << ", "
@@ -784,7 +784,7 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
     spsInfo->sps.pic_height_in_luma_samples = picHeightAlignedToMinCbsY;
 
     if (verbose) {
-        VkEncOut() << "sps.pic_width_in_luma_samples: " << spsInfo->sps.pic_width_in_luma_samples
+        LOG_S_INFO << "sps.pic_width_in_luma_samples: " << spsInfo->sps.pic_width_in_luma_samples
                   << ", sps.pic_height_in_luma_samples: " << spsInfo->sps.pic_height_in_luma_samples
                   << ", cuSize: " << (uint32_t)cuSize << ", cuMinSize: " << (uint32_t)cuMinSize << std::endl;
     }
@@ -807,7 +807,7 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
     spsInfo->sps.log2_diff_max_min_pcm_luma_coding_block_size = (uint8_t)(ctbLog2SizeY - minCbLog2SizeY);
 
     if (verbose) {
-        VkEncOut() << "sps.log2_min_luma_coding_block_size_minus3: "         << (uint32_t)spsInfo->sps.log2_min_luma_coding_block_size_minus3
+        LOG_S_INFO << "sps.log2_min_luma_coding_block_size_minus3: "         << (uint32_t)spsInfo->sps.log2_min_luma_coding_block_size_minus3
                   << ", sps.log2_diff_max_min_luma_coding_block_size: "     << (uint32_t)spsInfo->sps.log2_diff_max_min_luma_coding_block_size
                   << ", sps.log2_min_luma_transform_block_size_minus2: "    << (uint32_t)spsInfo->sps.log2_min_luma_transform_block_size_minus2
                   << ", sps.log2_diff_max_min_luma_transform_block_size: "  << (uint32_t)spsInfo->sps.log2_diff_max_min_luma_transform_block_size
@@ -830,7 +830,7 @@ bool EncoderConfigH265::InitParamameters(VpsH265 *vpsInfo, SpsH265 *spsInfo,
                                                       (spsInfo->sps.conf_win_bottom_offset != 0));
 
     if (verbose) {
-        VkEncOut() << "sps.conf_win_left_offset: "     << spsInfo->sps.conf_win_left_offset
+        LOG_S_INFO << "sps.conf_win_left_offset: "     << spsInfo->sps.conf_win_left_offset
                   << ", sps.conf_win_right_offset: "  << spsInfo->sps.conf_win_right_offset
                   << ", sps.conf_win_top_offset: "    << spsInfo->sps.conf_win_top_offset
                   << ", sps.conf_win_bottom_offset: " << spsInfo->sps.conf_win_bottom_offset

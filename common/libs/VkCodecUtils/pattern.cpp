@@ -15,10 +15,10 @@
 */
 
 #include <vulkan_interfaces.h>
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include "Helpers.h"
 #include "VkCodecUtils/VulkanDeviceContext.h"
 #include "pattern.h"
+#include "Logger.h"
 
 namespace Pattern {
 
@@ -150,7 +150,7 @@ void generateColorPatternRgba16161616(
 #include <stdio.h>
 #define ABORT_IF_TRUE(cond) \
     if (cond) { \
-        VkEncPrintfOut("condition at %s %d failed, aborting\n", __FILE__, __LINE__); \
+        LOG_ERROR("condition at %s %d failed, aborting\n", __FILE__, __LINE__); \
         return; \
     }
 

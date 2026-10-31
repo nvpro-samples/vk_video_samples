@@ -72,6 +72,8 @@ VK_USE_PLATFORM_WIN32_KHR."
 // YcbcrVkFormatInfo() / GetBitsPerChannel() -- used to derive the input bit depth,
 // chroma subsampling and plane count from VkVideoEncoderConfig::inputFormat.
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
+#include "Logger.h"
+#include "VkCodecUtils/LoggerSilence.h"
 
 //=============================================================================
 // VulkanVideoEncoderExtImpl - Concrete implementation of VulkanVideoEncoderExt
@@ -106,7 +108,7 @@ public:
         // invocation path. The message goes to stderr; under
         // silenceStdio the abort itself is still the diagnosis.
         if (IsInCompletionCallback()) {
-            VkEncErr() << "[EncoderExt] encoder destroyed from inside "
+            LOG_S_ERROR << "[EncoderExt] encoder destroyed from inside "
                           "the completion callback: the last reference "
                           "must not be dropped from pfnFrameReady -- "
                           "aborting" << std::endl;
@@ -660,9 +662,9 @@ private:
     VkEncImportOrdinalGuardReport m_importGuardReport{};
 
     // This session's silence request, held for its whole life -- see
-    // VkEncoderStdioLatch.h. Declared before the members whose teardown can
+    // LoggerSilence.h. Declared before the members whose teardown can
     // still print, so it is destroyed after them.
-    VkEncoderStdioSilenceScope m_stdioSilence;
+    LoggerSilenceScope m_stdioSilence;
 
     // --- Terminal shutdown ---
     //
@@ -1051,7 +1053,7 @@ static VkResult VkEncValidateConstQpRange(
     };
     for (const auto& quantizer : named) {
         if (quantizer.value > maxQuantizer) {
-            VkEncErr() << "[EncoderExt] " << where << quantizer.name << " "
+            LOG_S_ERROR << "[EncoderExt] " << where << quantizer.name << " "
                        << quantizer.value << " is outside the "
                        << ((codecOp ==
                             VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR)
@@ -1409,7 +1411,7 @@ static VkResult VkEncRefuseIfProfileCannotCarryInput(
         return VK_SUCCESS;
     }
     if (bpp > limits.maxBpp) {
-        VkEncErr() << "[EncoderExt] profile " << profile
+        LOG_S_WARN << "[EncoderExt] profile " << profile
                    << " does not admit " << bpp
                    << "-bit input: the codec standard gives it at most "
                    << limits.maxBpp
@@ -1420,7 +1422,7 @@ static VkResult VkEncRefuseIfProfileCannotCarryInput(
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     if ((limits.subsamplings & subsampling) == 0) {
-        VkEncErr() << "[EncoderExt] profile " << profile
+        LOG_S_WARN << "[EncoderExt] profile " << profile
                    << " does not admit "
                    << VkEncChromaSubsamplingName(subsampling)
                    << " input: the codec standard gives it"
@@ -1511,7 +1513,7 @@ VkResult VkEncBuildEncoderConfig(
     if (VkEncResolveColorModel(extConfig.inputFormat,
                                extConfig.inputColorModel) ==
         VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) {
-        VkEncErr() << "[EncoderExt] declared inputColorModel "
+        LOG_S_WARN << "[EncoderExt] declared inputColorModel "
                    << (uint32_t)extConfig.inputColorModel
                    << " contradicts inputFormat "
                    << (uint32_t)extConfig.inputFormat
@@ -1539,7 +1541,7 @@ VkResult VkEncBuildEncoderConfig(
         for (uint32_t i = 0; i < routableCount; i++) {
             routableText << ((i == 0) ? "" : ", ") << (uint32_t)routable[i];
         }
-        VkEncErr() << "[EncoderExt] inputFormat "
+        LOG_S_ERROR << "[EncoderExt] inputFormat "
                    << (uint32_t)extConfig.inputFormat
                    << " is not encodable. The VkFormat values this library "
                       "routes, directly or through the preprocess compute "
@@ -1587,7 +1589,7 @@ VkResult VkEncBuildEncoderConfig(
     // exists. Both halves must hold.
 #ifndef VK_VIDEO_SAMPLES_COMPUTE_FILTER_SUPPORTED
     if (needsPreprocessFilter) {
-        VkEncErr() << "[EncoderExt] inputFormat "
+        LOG_S_WARN << "[EncoderExt] inputFormat "
                    << (uint32_t)extConfig.inputFormat
                    << " is encodable only through the preprocess compute "
                       "filter, which is not compiled into this build "
@@ -1718,7 +1720,7 @@ VkResult VkEncBuildEncoderConfig(
             // Reject rather than silently substituting the codec default: a
             // caller that miscomputed this value would otherwise ship with
             // tuning it never selected and no diagnostic anywhere.
-            VkEncErr() << "[EncoderExt] unrecognized tuningMode "
+            LOG_S_WARN << "[EncoderExt] unrecognized tuningMode "
                        << (uint32_t)extConfig.tuningMode << std::endl;
             return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -1825,12 +1827,12 @@ VkResult VkEncBuildEncoderConfig(
             // constant would otherwise encode at the codec default rate
             // control and look merely mistuned rather than misconfigured.
             if (extConfig.rateControlMode == 3u) {
-                VkEncErr() << "[EncoderExt] rateControlMode 3 is the "
+                LOG_S_WARN << "[EncoderExt] rateControlMode 3 is the "
                               "VBR value this library does not use; VBR is "
                            << (uint32_t)VK_VIDEO_ENCODE_RATE_CONTROL_MODE_VBR_BIT_KHR
                            << std::endl;
             } else {
-                VkEncErr() << "[EncoderExt] unrecognized rateControlMode "
+                LOG_S_WARN << "[EncoderExt] unrecognized rateControlMode "
                            << (uint32_t)extConfig.rateControlMode << std::endl;
             }
             return VK_ERROR_INITIALIZATION_FAILED;
@@ -1855,7 +1857,7 @@ VkResult VkEncBuildEncoderConfig(
             // Reject loudly rather than accept and ignore; qIndex clamp
             // fields are a versioned addition for when a consumer needs
             // them.
-            VkEncErr() << "[EncoderExt] minQp/maxQp are H.26x-unit QP "
+            LOG_S_WARN << "[EncoderExt] minQp/maxQp are H.26x-unit QP "
                           "clamps (0..51); AV1 rate control uses quantizer "
                           "indices (0..255) and this config version has no "
                           "qIndex clamp fields. Leave both 0 on AV1 "
@@ -1867,14 +1869,14 @@ VkResult VkEncBuildEncoderConfig(
         // capabilities at device init.
         if ((extConfig.minQp < 0) || (extConfig.minQp > 51) ||
             (extConfig.maxQp < 0) || (extConfig.maxQp > 51)) {
-            VkEncErr() << "[EncoderExt] minQp/maxQp outside the H.26x QP "
+            LOG_S_WARN << "[EncoderExt] minQp/maxQp outside the H.26x QP "
                           "range 0..51 (minQp=" << extConfig.minQp
                        << ", maxQp=" << extConfig.maxQp << ")" << std::endl;
             return VK_ERROR_INITIALIZATION_FAILED;
         }
         if ((extConfig.minQp > 0) && (extConfig.maxQp > 0) &&
             (extConfig.minQp > extConfig.maxQp)) {
-            VkEncErr() << "[EncoderExt] minQp " << extConfig.minQp
+            LOG_S_WARN << "[EncoderExt] minQp " << extConfig.minQp
                        << " > maxQp " << extConfig.maxQp
                        << " -- inverted clamp window" << std::endl;
             return VK_ERROR_INITIALIZATION_FAILED;
@@ -1923,7 +1925,7 @@ VkResult VkEncBuildEncoderConfig(
         // 255 IS the sentinel. The previous clamp turned any larger request
         // into it, so asking for 300 B-frames silently selected
         // driver-preferred -- a different feature, chosen by accident.
-        VkEncErr() << "[EncoderExt] consecutiveBFrames "
+        LOG_S_ERROR << "[EncoderExt] consecutiveBFrames "
                    << extConfig.consecutiveBFrames
                    << " is out of range (0.."
                    << (uint32_t)EncoderConfig::CONSECUTIVE_B_FRAME_COUNT_MAX_VALUE - 1
@@ -1947,7 +1949,7 @@ VkResult VkEncBuildEncoderConfig(
         if ((codecOp == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) &&
             (extConfig.disableFileOutput == VK_TRUE) &&
             (extConfig.consecutiveBFrames > 0)) {
-            VkEncErr() << "[EncoderExt] AV1 in-memory capture does not support "
+            LOG_S_WARN << "[EncoderExt] AV1 in-memory capture does not support "
                           "B-frames in this release (consecutiveBFrames="
                        << extConfig.consecutiveBFrames
                        << "); use file output, or request 0" << std::endl;
@@ -1990,7 +1992,7 @@ VkResult VkEncBuildEncoderConfig(
     if ((extConfig.inputTransferCharacteristics != 0) &&
         (extConfig.inputTransferCharacteristics !=
          extConfig.transferCharacteristics)) {
-        VkEncErr() << "[EncoderExt] inputTransferCharacteristics "
+        LOG_S_WARN << "[EncoderExt] inputTransferCharacteristics "
                    << (uint32_t)extConfig.inputTransferCharacteristics
                    << " differs from transferCharacteristics "
                    << (uint32_t)extConfig.transferCharacteristics
@@ -2216,7 +2218,7 @@ VkResult VkEncBuildEncoderConfig(
                 break;
         }
         if (unbindable != nullptr) {
-            VkEncErr() << "[EncoderExt] profile " << extConfig.profile
+            LOG_S_WARN << "[EncoderExt] profile " << extConfig.profile
                        << " is not a value this library can bind as "
                        << unbindable
                        << ". Use VK_VIDEO_ENCODER_PROFILE_DEFAULT to let the "
@@ -2296,7 +2298,7 @@ VkResult VkEncBuildEncoderConfig(
             // could only accept this and drop it -- the accepted-and-ignored
             // class this API refuses everywhere else. Say no, with the reason.
             if (codecOp == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) {
-                VkEncErr() << "[EncoderExt] HDR10 static metadata was chained "
+                LOG_S_ERROR << "[EncoderExt] HDR10 static metadata was chained "
                               "onto an H.264 session. H.264 defines no "
                               "mastering-display or content-light-level SEI, "
                               "so this metadata cannot be carried; select "
@@ -2326,7 +2328,7 @@ VkResult VkEncBuildEncoderConfig(
             const auto* inputColour =
                 reinterpret_cast<const VkVideoEncoderInputColourInfo*>(link);
             if (inputColour->reserved != 0) {
-                VkEncErr() << "[EncoderExt] VkVideoEncoderInputColourInfo::"
+                LOG_S_WARN << "[EncoderExt] VkVideoEncoderInputColourInfo::"
                               "reserved must be 0."
                            << std::endl;
                 return VK_ERROR_INITIALIZATION_FAILED;
@@ -2398,7 +2400,7 @@ VkResult VkEncBuildEncoderConfig(
                 (axis.input == axis.output)) {
                 continue;
             }
-            VkEncErr() << "[EncoderExt] the input declares "
+            LOG_S_ERROR << "[EncoderExt] the input declares "
                        << axis.name << " " << (uint32_t)axis.input
                        << " and the bitstream declares "
                        << (uint32_t)axis.output
@@ -2416,7 +2418,7 @@ VkResult VkEncBuildEncoderConfig(
             (cfg->inputTransferCharacteristics != 0) &&
             (extConfig.inputTransferCharacteristics !=
              cfg->inputTransferCharacteristics)) {
-            VkEncErr() << "[EncoderExt] inputTransferCharacteristics was "
+            LOG_S_WARN << "[EncoderExt] inputTransferCharacteristics was "
                           "declared as "
                        << (uint32_t)extConfig.inputTransferCharacteristics
                        << " on the config and as "
@@ -2479,7 +2481,7 @@ VkResult VkEncBuildEncoderConfig(
             (cfg->inputRange == (uint8_t)VK_VIDEO_ENCODER_RANGE_FULL);
         if (cfg->input.colorSpace == VkEncColorSpace::kRGB) {
             if (!inputIsFullRange) {
-                VkEncErr()
+                LOG_S_ERROR
                     << "[EncoderExt] the input declares limited-range RGB, "
                        "which this library cannot read: the RGBA->Y'CbCr "
                        "filter samples its input over the full range and "
@@ -2495,7 +2497,7 @@ VkResult VkEncBuildEncoderConfig(
             }
         } else {
             if ((extConfig.videoFullRange == VK_TRUE) && !inputIsFullRange) {
-                VkEncErr()
+                LOG_S_ERROR
                     << "[EncoderExt] the input declares limited range and the "
                        "bitstream is requested as full range. This library "
                        "applies no range scaling to Y'CbCr input, so the two "
@@ -2579,7 +2581,7 @@ VkResult VkEncBuildEncoderConfig(
     // picture the caller is not sending -- which is exactly the failure that
     // is invisible until the filter is built from it.
     if (cfg->input.vkFormat != extConfig.inputFormat) {
-        VkEncErr() << "[EncoderExt] internal inconsistency: inputFormat "
+        LOG_S_ERROR << "[EncoderExt] internal inconsistency: inputFormat "
                    << (uint32_t)extConfig.inputFormat
                    << " was bound as (chroma subsampling "
                    << (uint32_t)cfg->input.chromaSubsampling << ", "
@@ -2654,7 +2656,7 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
     // provided together, or both left VK_NULL_HANDLE.
     if (config.externalDevice != VK_NULL_HANDLE &&
         config.externalPhysicalDevice == VK_NULL_HANDLE) {
-        VkEncErr() << "[EncoderExt] externalDevice supplied "
+        LOG_S_ERROR << "[EncoderExt] externalDevice supplied "
                   << "without externalPhysicalDevice; this "
                   << "combination is illegal. Provide both, or set "
                   << "externalDevice = VK_NULL_HANDLE to let the "
@@ -2798,7 +2800,7 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
     if (m_context) {
         if ((config.externalInstance != VK_NULL_HANDLE) ||
             (config.externalPhysicalDevice != VK_NULL_HANDLE)) {
-            VkEncErr() << "[EncoderExt] config.externalInstance / "
+            LOG_S_ERROR << "[EncoderExt] config.externalInstance / "
                           "externalPhysicalDevice set on a session created "
                           "with CreateVulkanVideoEncoderExtOnContext. The "
                           "context already supplies both; remove them from "
@@ -2808,7 +2810,7 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
         if (config.externalDevice != VK_NULL_HANDLE) {
             // A context creates no VkDevice and a session built on one
             // creates its own; a caller-supplied device has nowhere to land.
-            VkEncErr() << "[EncoderExt] config.externalDevice set on a "
+            LOG_S_ERROR << "[EncoderExt] config.externalDevice set on a "
                           "session created with "
                           "CreateVulkanVideoEncoderExtOnContext. A context "
                           "creates no VkDevice, so a caller-supplied one is "
@@ -2825,7 +2827,7 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
         // so honouring one of the two would be a guess.
         static const uint8_t kZeroUUID[VK_UUID_SIZE] = {};
         if (config.deviceId != -1) {
-            VkEncErr() << "[EncoderExt] config.deviceId (" << config.deviceId
+            LOG_S_ERROR << "[EncoderExt] config.deviceId (" << config.deviceId
                        << ") set on a session created with "
                           "CreateVulkanVideoEncoderExtOnContext. The context's "
                           "deviceIndex already selects the device; leave "
@@ -2833,7 +2835,7 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
             return VK_ERROR_INITIALIZATION_FAILED;
         }
         if (memcmp(config.gpuUUID, kZeroUUID, VK_UUID_SIZE) != 0) {
-            VkEncErr() << "[EncoderExt] config.gpuUUID set on a session "
+            LOG_S_ERROR << "[EncoderExt] config.gpuUUID set on a session "
                           "created with CreateVulkanVideoEncoderExtOnContext. "
                           "The context's deviceIndex already selects the "
                           "device." << std::endl;
@@ -2847,7 +2849,7 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
                                                     borrowedInstance,
                                                     config.verbose);
     if (result != VK_SUCCESS) {
-        VkEncErr() << "[EncoderExt] InitVulkanDevice failed: " << result << std::endl;
+        LOG_S_ERROR << "[EncoderExt] InitVulkanDevice failed: " << result << std::endl;
         return result;
     }
 
@@ -2882,7 +2884,7 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
         codecOp,
         borrowedPhysDevice);  // borrowed physical device: context or config
     if (result != VK_SUCCESS) {
-        VkEncErr() << "[EncoderExt] InitPhysicalDevice failed: " << result << std::endl;
+        LOG_S_ERROR << "[EncoderExt] InitPhysicalDevice failed: " << result << std::endl;
         return result;
     }
 
@@ -2913,7 +2915,7 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
                 if (strcmp(e.extensionName, requiredExt) == 0) { found = true; break; }
             }
             if (!found) {
-                VkEncErr() << "[EncoderExt] ERROR: this device does not support "
+                LOG_S_ERROR << "[EncoderExt] this device does not support "
                           << requiredExt << "; cannot encode the requested codec"
                           << std::endl;
                 return VK_ERROR_EXTENSION_NOT_PRESENT;
@@ -2940,7 +2942,7 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
             codecOp,
             config.externalComputeQueueFamilyIndex);
         if (result != VK_SUCCESS) {
-            VkEncErr() << "[EncoderExt] OverrideImportedQueueFamilies "
+            LOG_S_ERROR << "[EncoderExt] OverrideImportedQueueFamilies "
                        << "failed: " << result << std::endl;
             return result;
         }
@@ -2961,7 +2963,7 @@ VkResult VulkanVideoEncoderExtImpl::InitVulkanDevice(
         needComputeQueue,
         config.externalDevice);  // caller-supplied logical device
     if (result != VK_SUCCESS) {
-        VkEncErr() << "[EncoderExt] CreateVulkanDevice failed: " << result << std::endl;
+        LOG_S_ERROR << "[EncoderExt] CreateVulkanDevice failed: " << result << std::endl;
         return result;
     }
 
@@ -3000,7 +3002,7 @@ VkResult VulkanVideoEncoderExtImpl::Initialize(
     // degrades the currency (GetCompletionSemaphore stays VK_NULL_HANDLE);
     // it does not fail the session: no consumer requires the semaphore.
     if (m_encoder->CreateCompletionTimelineSemaphore() != VK_SUCCESS) {
-        VkEncErr() << "[EncoderExt] completion timeline semaphore creation "
+        LOG_S_ERROR << "[EncoderExt] completion timeline semaphore creation "
                       "failed; the GPU-ordering currency is unavailable "
                       "this session" << std::endl;
     }
@@ -3533,30 +3535,23 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
         return VK_ERROR_NOT_PERMITTED_KHR;
     }
 
-    // Latch the process-wide stdio-silence gate from the config BEFORE any
-    // output is produced, so no gated VkEncOut() / VkEncErr() line escapes
-    // ahead of it. Default VK_FALSE preserves behavior.
-    //
-    // The ordering requirement stands on the gated streams alone: the latch
-    // must be installed before anything can write to them. BuildEncoderConfig
-    // prints nothing at all, and what ParseArguments prints is raw printf /
-    // fprintf that the latch does not intercept in any case.
-    // The session's own request, held for as long as the session is. The
-    // assignment this replaces made the last initializer the only one whose
-    // choice survived; a token means a second session cannot un-silence the
-    // first, and this session's silence ends when it does.
-    m_stdioSilence = VkEncoderStdioSilenceScope(config.silenceStdio == VK_TRUE);
+    // Take the session's silence request from the config BEFORE any output
+    // is produced, so no logged line escapes ahead of it. Default VK_FALSE
+    // keeps the Logger's level. The request is a token held for as long as
+    // the session is: a second session cannot un-silence the first, and this
+    // session's silence ends when it does.
+    m_stdioSilence = LoggerSilenceScope(config.silenceStdio == VK_TRUE);
 
     VkVideoCodecOperationFlagBitsKHR codecOp = MapCodecOperation(config.codec);
     if (codecOp == VK_VIDEO_CODEC_OPERATION_NONE_KHR) {
-        VkEncErr() << "[EncoderExt] Unsupported codec: " << (uint32_t)config.codec << std::endl;
+        LOG_S_ERROR << "[EncoderExt] Unsupported codec: " << (uint32_t)config.codec << std::endl;
         return VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
     }
 
     // Build EncoderConfig from structured config
     VkResult result = BuildEncoderConfig(config, codecOp, m_encoderConfig);
     if (result != VK_SUCCESS) {
-        VkEncErr() << "[EncoderExt] BuildEncoderConfig failed: " << result << std::endl;
+        LOG_S_ERROR << "[EncoderExt] BuildEncoderConfig failed: " << result << std::endl;
         return result;
     }
 
@@ -3593,7 +3588,7 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
         for (const char* name : kImportPathExtensions) {
             if (m_vkDevCtx.FindRequiredDeviceExtension(name) == nullptr) {
                 anyMissing = true;
-                VkEncErr() << "[EncoderExt] VALIDATE_EXTENSIONS: the "
+                LOG_S_WARN << "[EncoderExt] VALIDATE_EXTENSIONS: the "
                               "session device lacks " << name
                            << ", which the external-input import path uses"
                            << std::endl;
@@ -3622,7 +3617,7 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
     if ((VkEncClassifyInput(config.inputFormat, config.inputColorModel) ==
          VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER) &&
         (m_vkDevCtx.GetComputeQueueFamilyIdx() < 0)) {
-        VkEncErr() << "[EncoderExt] inputFormat "
+        LOG_S_WARN << "[EncoderExt] inputFormat "
                    << (uint32_t)config.inputFormat
                    << " is encodable only through the preprocess compute "
                       "filter, but this device exposes no compute queue "
@@ -3675,7 +3670,7 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
             m_encoderConfig->IsPreprocessComputeFilterEnabled(),
             encodeFormat);
         if (verdict != VK_ENC_DEVICE_FORMAT_ACCEPTED) {
-            VkEncErr() << "[EncoderExt] inputFormat "
+            LOG_S_ERROR << "[EncoderExt] inputFormat "
                        << (uint32_t)config.inputFormat << " ("
                        << m_encoderConfig->input.numPlanes
                        << "-plane) cannot be encoded on this device: the "
@@ -3698,7 +3693,7 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
     // Create the internal encoder
     result = VkVideoEncoder::CreateVideoEncoder(&m_vkDevCtx, m_encoderConfig, m_encoder);
     if (result != VK_SUCCESS) {
-        VkEncErr() << "[EncoderExt] CreateVideoEncoder failed: " << result << std::endl;
+        LOG_S_ERROR << "[EncoderExt] CreateVideoEncoder failed: " << result << std::endl;
         return result;
     }
 
@@ -3720,7 +3715,7 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
     // degrades the currency (GetCompletionSemaphore stays VK_NULL_HANDLE);
     // it does not fail the session: no consumer requires the semaphore.
     if (m_encoder->CreateCompletionTimelineSemaphore() != VK_SUCCESS) {
-        VkEncErr() << "[EncoderExt] completion timeline semaphore creation "
+        LOG_S_ERROR << "[EncoderExt] completion timeline semaphore creation "
                       "failed; the GPU-ordering currency is unavailable "
                       "this session" << std::endl;
     }
@@ -3733,7 +3728,7 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
                            ? requestedFrameTimeoutNs
                            : 8000000000ull;
     if (m_frameTimeoutNs < 6000000000ull) {
-        VkEncErr() << "[EncoderExt] frameCompletionTimeoutNs clamped to 6s "
+        LOG_S_ERROR << "[EncoderExt] frameCompletionTimeoutNs clamped to 6s "
                       "(must exceed the internal 5s fence wait)" << std::endl;
         m_frameTimeoutNs = 6000000000ull;
     }
@@ -3743,7 +3738,7 @@ VkResult VulkanVideoEncoderExtImpl::InitializeExt(const VkVideoEncoderConfig& co
         [this](uint64_t frameId) { OnBitstreamCaptured(frameId); });
 
     if (config.verbose) {
-        VkEncOut() << "[EncoderExt] Initialized: "
+        LOG_S_INFO << "[EncoderExt] Initialized: "
                   << config.encodeWidth << "x" << config.encodeHeight
                   << " codec=0x" << std::hex << (uint32_t)codecOp << std::dec
                   << " bitrate=" << config.averageBitrate
@@ -3937,7 +3932,7 @@ VkResult VulkanVideoEncoderExtImpl::SubmitExternalFrameCommon(
     // outright.
     if ((VkEncClassifyInput(frame.format, SessionColorModel(frame.format)) ==
          VK_ENC_INPUT_FORMAT_ENCODABLE_VIA_FILTER) && !routeViaFilter) {
-        VkEncErr() << "[EncoderExt] submit: inputFormat "
+        LOG_S_WARN << "[EncoderExt] submit: inputFormat "
                    << (uint32_t)frame.format
                    << " encodes only through the preprocess compute filter, "
                       "which requires a REGISTERED resource whose descriptor "
@@ -3964,7 +3959,7 @@ VkResult VulkanVideoEncoderExtImpl::SubmitExternalFrameCommon(
     // |frame| from the registration slot and always fills image from it, so
     // a registered frame cannot reach here null and loses nothing.
     if (frame.image == VK_NULL_HANDLE) {
-        VkEncErr() << "[EncoderExt] submit: frame.image is VK_NULL_HANDLE; "
+        LOG_S_WARN << "[EncoderExt] submit: frame.image is VK_NULL_HANDLE; "
                       "the input image is required" << std::endl;
         return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -4486,7 +4481,7 @@ void VulkanVideoEncoderExtImpl::DrainCapturesLocked()
                 matched = true;
                 if (p.timedOut) {
                     m_lateCaptures++;
-                    VkEncErr() << "[EncoderExt] late capture for timed-out "
+                    LOG_S_WARN << "[EncoderExt] late capture for timed-out "
                                   "frame " << popped_id << " discarded "
                                   "(lateCaptures=" << m_lateCaptures << ")"
                                << std::endl;
@@ -4521,7 +4516,7 @@ void VulkanVideoEncoderExtImpl::DrainCapturesLocked()
                 // holds no record of is counted late too; it cannot
                 // classify what it never saw disclaimed.)
                 m_lateCaptures++;
-                VkEncErr() << "[EncoderExt] late capture for released frame "
+                LOG_S_WARN << "[EncoderExt] late capture for released frame "
                            << popped_id << " discarded (lateCaptures="
                            << m_lateCaptures << ")" << std::endl;
             }
@@ -4554,7 +4549,7 @@ bool VulkanVideoEncoderExtImpl::SynthesizeTimeoutLocked(PendingFrame& frame)
     MarkFrameReadyLocked(frame);
     frame.timedOut = true;
     m_framesTimedOut++;
-    VkEncErr() << "[EncoderExt] frame " << frame.frameId
+    LOG_S_WARN << "[EncoderExt] frame " << frame.frameId
                << " passed the completion deadline; delivered as a 0-byte "
                   "VK_TIMEOUT drop (framesTimedOut=" << m_framesTimedOut
                << ")" << std::endl;
@@ -4668,7 +4663,7 @@ void VulkanVideoEncoderExtImpl::OnBitstreamCaptured(uint64_t frameId)
     try {
         callback(frameId, userData);
     } catch (...) {
-        VkEncErr() << "[EncoderExt] completion callback threw for frame "
+        LOG_S_WARN << "[EncoderExt] completion callback threw for frame "
                    << frameId << "; the callback contract is noexcept -- "
                       "aborting" << std::endl;
         std::abort();
@@ -5120,7 +5115,7 @@ VkResult VulkanVideoEncoderExtImpl::AbandonAllFrames(
         ReleaseResourceReference(resource);
     }
     if (abandoned > 0) {
-        VkEncErr() << "[EncoderExt] abandoned " << abandoned
+        LOG_S_WARN << "[EncoderExt] abandoned " << abandoned
                    << " undelivered frame(s) and released their registration "
                       "claims" << std::endl;
     }
@@ -5333,7 +5328,7 @@ void VulkanVideoEncoderExtImpl::ReleaseEncodedFrame(uint64_t frameId)
                   "ReleaseEncodedFrame(%llu): unknown frame id -- no-op "
                   "(double release, or an id never submitted)",
                   static_cast<unsigned long long>(frameId));
-    VkEncErr() << "[EncoderExt] " << m_lastDiagnostic << std::endl;
+    LOG_S_WARN << "[EncoderExt] " << m_lastDiagnostic << std::endl;
 }
 
 void VulkanVideoEncoderExtImpl::GetShutdownInfo(
@@ -5533,7 +5528,7 @@ VkResult VulkanVideoEncoderExtImpl::DrainPendingFrames()
         // so say so here rather than let the caller discover it as frames
         // that never come back. Submits from here on are refused by
         // ProcessOrderedFrames' synchronous-fallback guard.
-        VkEncErr() << "[EncoderExt] DrainPendingFrames: the assembly workers "
+        LOG_S_ERROR << "[EncoderExt] DrainPendingFrames: the assembly workers "
                       "could not be restarted; frames already submitted are "
                       "complete, but this session can no longer report "
                       "completions" << std::endl;
@@ -5614,7 +5609,7 @@ VkResult VulkanVideoEncoderExtImpl::Reconfigure(const VkVideoEncoderConfig& conf
     };
     for (const auto& field : immutables) {
         if (field.changed) {
-            VkEncErr() << "[EncoderExt] Reconfigure cannot change '"
+            LOG_S_ERROR << "[EncoderExt] Reconfigure cannot change '"
                        << field.name << "' mid-stream: it is settled at "
                           "InitializeExt -- in the sequence header written "
                           "once there, or in the input routing the session "
@@ -5725,7 +5720,7 @@ VkResult VulkanVideoEncoderExtImpl::Reconfigure(const VkVideoEncoderConfig& conf
     };
     for (const auto& field : levers) {
         if (field.changed) {
-            VkEncErr() << "[EncoderExt] Reconfigure cannot change '"
+            LOG_S_ERROR << "[EncoderExt] Reconfigure cannot change '"
                        << field.name << "' mid-stream: this call carries "
                           "averageBitrate, maxBitrate, frameRateNum, "
                           "frameRateDen and the constQp defaults, and "
@@ -5780,7 +5775,7 @@ VkResult VulkanVideoEncoderExtImpl::Reconfigure(const VkVideoEncoderConfig& conf
             // rejects a non-zero clamp on an AV1 session rather than
             // ignoring it; this is that rule, at the same strength, on the
             // mid-stream path.
-            VkEncErr() << "[EncoderExt] Reconfigure cannot change "
+            LOG_S_ERROR << "[EncoderExt] Reconfigure cannot change "
                           "minQp/maxQp on an AV1 session: these are H.26x "
                           "QP-unit clamps and AV1 rate control is "
                           "quantizer-index based, so the value would reach "
@@ -5794,7 +5789,7 @@ VkResult VulkanVideoEncoderExtImpl::Reconfigure(const VkVideoEncoderConfig& conf
             // entirely, so a clamp change on a constant-QP session is
             // ignored BY CONSTRUCTION however the update is delivered.
             // constQpI/P/B are that session's lever, and they are applied.
-            VkEncErr() << "[EncoderExt] Reconfigure cannot change "
+            LOG_S_ERROR << "[EncoderExt] Reconfigure cannot change "
                           "minQp/maxQp on a constant-QP (DISABLED) session: "
                           "that mode takes its quantizer from constQpI/P/B, "
                           "which this call does carry, and ignores the "
@@ -5809,14 +5804,14 @@ VkResult VulkanVideoEncoderExtImpl::Reconfigure(const VkVideoEncoderConfig& conf
         // recorded at codec-init lives.
         if ((config.minQp < 0) || (config.minQp > 51) ||
             (config.maxQp < 0) || (config.maxQp > 51)) {
-            VkEncErr() << "[EncoderExt] Reconfigure minQp/maxQp outside the "
+            LOG_S_WARN << "[EncoderExt] Reconfigure minQp/maxQp outside the "
                           "H.26x QP range 0..51 (minQp=" << config.minQp
                        << ", maxQp=" << config.maxQp << ")" << std::endl;
             return VK_ERROR_INITIALIZATION_FAILED;
         }
         if ((config.minQp > 0) && (config.maxQp > 0) &&
             (config.minQp > config.maxQp)) {
-            VkEncErr() << "[EncoderExt] Reconfigure minQp " << config.minQp
+            LOG_S_ERROR << "[EncoderExt] Reconfigure minQp " << config.minQp
                        << " > maxQp " << config.maxQp
                        << " -- inverted clamp window" << std::endl;
             return VK_ERROR_INITIALIZATION_FAILED;
@@ -6772,7 +6767,7 @@ void VulkanVideoEncoderExtImpl::Deinitialize()
     const uint64_t exporterOverrides =
         m_importMemTypeExporterOverrides.load(std::memory_order_relaxed);
     if ((heuristicSelections != 0) || (exporterOverrides != 0)) {
-        VkEncErr() << "[EncoderExt] import memory-type telemetry: "
+        LOG_S_WARN << "[EncoderExt] import memory-type telemetry: "
                    << heuristicSelections << " heuristic selection(s), "
                    << exporterOverrides << " exporter-index override(s)"
                    << std::endl;
@@ -6781,7 +6776,7 @@ void VulkanVideoEncoderExtImpl::Deinitialize()
     {
         std::lock_guard<std::mutex> lock(m_pendingMutex);
         if (!m_pendingFrames.empty()) {
-        VkEncErr() << "[EncoderExt] Deinitialize with "
+        LOG_S_WARN << "[EncoderExt] Deinitialize with "
                    << m_pendingFrames.size()
                    << " undelivered/unreleased frames; any retained "
                       "pBitstreamData pointers are invalid from here"
@@ -6825,7 +6820,7 @@ void VulkanVideoEncoderExtImpl::Deinitialize()
         for (auto& slot : m_resources) {
             if (slot.live || slot.retired) {
                 if (slot.inFlight != 0) {
-                    VkEncErr() << "[EncoderExt] Deinitialize: registration "
+                    LOG_S_WARN << "[EncoderExt] Deinitialize: registration "
                                   "still in flight (inFlight="
                                << slot.inFlight
                                << "); destroying anyway -- its frames were "
@@ -6836,7 +6831,7 @@ void VulkanVideoEncoderExtImpl::Deinitialize()
             }
         }
         if (leaked != 0) {
-            VkEncErr() << "[EncoderExt] Deinitialize retired " << leaked
+            LOG_S_WARN << "[EncoderExt] Deinitialize retired " << leaked
                        << " registration(s) the consumer never unregistered"
                        << std::endl;
         }
@@ -6867,7 +6862,7 @@ void VulkanVideoEncoderExtImpl::Deinitialize()
             }
         }
         if (leakedSemaphores != 0) {
-            VkEncErr() << "[EncoderExt] Deinitialize retired "
+            LOG_S_WARN << "[EncoderExt] Deinitialize retired "
                        << leakedSemaphores
                        << " semaphore registration(s) the consumer never "
                           "unregistered" << std::endl;
@@ -6924,7 +6919,7 @@ void VulkanVideoEncoderExtImpl::Deinitialize()
     const uint32_t importGuardsReleased =
         VkEncReleaseImportOrdinalGuard(m_vkDevCtx);
     if (importGuardsReleased != 0) {
-        VkEncErr() << "[EncoderExt] Deinitialize released "
+        LOG_S_WARN << "[EncoderExt] Deinitialize released "
                    << importGuardsReleased
                    << " import-ordinal guard import(s)" << std::endl;
     }
@@ -7387,7 +7382,7 @@ static void VkEncEnsureImportOrdinalGuard(
     }
     // EVERY remaining exit names a verdict, and that is the point of this
     // block rather than a tidiness preference. The two failure paths below
-    // return SILENTLY when the report they write to VkEncErr() is
+    // return SILENTLY when the report they log is
     // discarded -- and the shipping Chromium configuration discards it, by
     // setting silenceStdio -- so a workaround that had degraded back to the
     // defect was indistinguishable from one that was working. The verdict
@@ -7461,7 +7456,7 @@ static void VkEncEnsureImportOrdinalGuard(
             // carries it, and errno is the whole diagnosis on this path
             // (EMFILE under fd pressure is the realistic one).
             const int dupErrno = errno;
-            VkEncErr() << "[EncoderExt] import-ordinal guard: dup failed ("
+            LOG_S_ERROR << "[EncoderExt] import-ordinal guard: dup failed ("
                        << dupErrno << "); the guard is INCOMPLETE at "
                        << g_importGuards[entryIdx].live << " of "
                        << kVkEncImportOrdinalGuardCount << std::endl;
@@ -7478,7 +7473,7 @@ static void VkEncEnsureImportOrdinalGuard(
         g_inImportOrdinalGuard = false;
         if (status != VK_VIDEO_ENCODER_STATUS_SUCCESS) {
             // The import consumed or closed guardFd itself on every exit.
-            VkEncErr() << "[EncoderExt] import-ordinal guard: sacrificial "
+            LOG_S_ERROR << "[EncoderExt] import-ordinal guard: sacrificial "
                           "import "
                        << (g_importGuards[entryIdx].live + 1) << " failed ("
                        << (int)status << "); the guard is INCOMPLETE -- this "
@@ -7498,7 +7493,7 @@ static void VkEncEnsureImportOrdinalGuard(
     VkEncSetImportGuardVerdict(
         VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_COMPLETE,
         g_importGuards[entryIdx].live, VK_VIDEO_ENCODER_STATUS_SUCCESS, 0);
-    VkEncErr() << "[EncoderExt] import-ordinal guard: "
+    LOG_S_WARN << "[EncoderExt] import-ordinal guard: "
                << kVkEncImportOrdinalGuardCount
                << " sacrificial dma-buf imports retained; caller imports now "
                   "start at live-position "
@@ -7664,7 +7659,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
     VkResult result =
         vkDevCtx.CreateImage(device, &imageCI, nullptr, &outImport->image);
     if (result != VK_SUCCESS) {
-        VkEncErr() << "[EncoderExt] register: vkCreateImage failed ("
+        LOG_S_ERROR << "[EncoderExt] register: vkCreateImage failed ("
                    << result << ")" << std::endl;
         // Nothing was handed to the driver yet: the fd is the library's
         // to close, on this exit like every other pre-handoff one.
@@ -7715,7 +7710,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
                 // zero mask as unconstrained and would pick a type this fd
                 // cannot legally import into (garbage reads where
                 // import-capable heaps are segregated).
-                VkEncErr() << "[EncoderExt] register: "
+                LOG_S_WARN << "[EncoderExt] register: "
                               "vkGetMemoryFdPropertiesKHR reports no "
                               "importable memory type for this fd"
                            << std::endl;
@@ -7729,7 +7724,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
             typeRequest.authoritativeMask = fdProps.memoryTypeBits;
         } else {
             outImport->heuristicSelections += 1;
-            VkEncErr() << "[EncoderExt] register: "
+            LOG_S_WARN << "[EncoderExt] register: "
                        << "vkGetMemoryFdPropertiesKHR unavailable ("
                        << propsResult << "); selecting the memory type "
                        << "heuristically (R-5 fallback)" << std::endl;
@@ -7749,7 +7744,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
         // validates allocation properties downstream, where nothing names
         // the cause.
         if (desc.memoryTypeIndex == UINT32_MAX) {
-            VkEncErr() << "[EncoderExt] register: an OPAQUE_WIN32 import "
+            LOG_S_WARN << "[EncoderExt] register: an OPAQUE_WIN32 import "
                        << "requires the exporter's memoryTypeIndex"
                        << std::endl;
             vkDevCtx.DestroyImage(device, outImport->image, nullptr);
@@ -7770,7 +7765,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
                 device, vkHandleType, (HANDLE)osHandle, &win32Props);
         }
         if (propsResult != VK_SUCCESS) {
-            VkEncErr() << "[EncoderExt] register: "
+            LOG_S_ERROR << "[EncoderExt] register: "
                        << "vkGetMemoryWin32HandlePropertiesKHR failed ("
                        << propsResult << "); refusing to guess a memory "
                        << "type on WDDM" << std::endl;
@@ -7783,7 +7778,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
             // constraint, not an absence of one: the selector reads a zero
             // mask as unconstrained and would pick a type this handle
             // cannot legally import into.
-            VkEncErr() << "[EncoderExt] register: "
+            LOG_S_WARN << "[EncoderExt] register: "
                           "vkGetMemoryWin32HandlePropertiesKHR reports no "
                           "importable memory type for this handle"
                        << std::endl;
@@ -7803,7 +7798,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
     VkEncSelectImportMemoryType(typeRequest, memProps, &typeChoice);
 
     if (typeChoice.outcome == VK_ENC_IMPORT_MEMTYPE_NONE) {
-        VkEncErr() << "[EncoderExt] register: no importable memory type: "
+        LOG_S_WARN << "[EncoderExt] register: no importable memory type: "
                    << "requirements mask 0x" << std::hex
                    << typeRequest.requirementsMask
                    << ", handle-properties mask 0x"
@@ -7819,7 +7814,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
     }
     if (typeChoice.exporterIndexOverridden == VK_TRUE) {
         outImport->exporterOverrides += 1;
-        VkEncErr() << "[EncoderExt] register: exporter memoryTypeIndex "
+        LOG_S_WARN << "[EncoderExt] register: exporter memoryTypeIndex "
                    << desc.memoryTypeIndex << " is outside the importable "
                    << "mask; using type " << typeChoice.index << " instead"
                    << std::endl;
@@ -7829,7 +7824,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
         // Opaque import without the exporter's index: the selection is a
         // heuristic, and a heuristic here must never be silent.
         outImport->heuristicSelections += 1;
-        VkEncErr() << "[EncoderExt] register: opaque import without the "
+        LOG_S_WARN << "[EncoderExt] register: opaque import without the "
                    << "exporter's memoryTypeIndex; type " << typeChoice.index
                    << " selected heuristically (R-5 fallback)" << std::endl;
     }
@@ -7841,7 +7836,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
     // header accepts 0 ("unknown") WITH A LOG, deliberately -- a silent
     // fallback leaves no audit trail when that size mismatch bites.
     if (desc.allocationSize == 0) {
-        VkEncErr() << "[EncoderExt] register: descriptor allocationSize is "
+        LOG_S_WARN << "[EncoderExt] register: descriptor allocationSize is "
                       "0 (unknown); falling back to "
                       "vkGetImageMemoryRequirements size " << memReqs.size
                    << " -- prefer the exporter-reported size for dma-buf"
@@ -7859,7 +7854,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
     // (VUID-VkMemoryAllocateInfo-allocationSize-01742), and a dma-buf
     // allocation larger than the buffer is equally unbindable.
     if ((desc.allocationSize != 0) && (desc.allocationSize < memReqs.size)) {
-        VkEncErr() << "[EncoderExt] register: exporter allocationSize "
+        LOG_S_WARN << "[EncoderExt] register: exporter allocationSize "
                    << desc.allocationSize << " is below the image's memory "
                       "requirement " << memReqs.size << "; a dedicated "
                       "allocation bound at offset 0 cannot cover the image"
@@ -7912,7 +7907,7 @@ VkVideoEncoderStatusCode VkEncImportExternalImage(
     result = vkDevCtx.AllocateMemory(device, &allocInfo, nullptr,
                                      &outImport->memory);
     if (result != VK_SUCCESS) {
-        VkEncErr() << "[EncoderExt] register: import allocation failed ("
+        LOG_S_ERROR << "[EncoderExt] register: import allocation failed ("
                    << result << ")" << std::endl;
         vkDevCtx.DestroyImage(device, outImport->image, nullptr);
         outImport->image = VK_NULL_HANDLE;
@@ -8170,7 +8165,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::BuildRegisteredViewLocked(
             &m_vkDevCtx, imageResource, subresRange, slot.imageView);
     }
     if (result != VK_SUCCESS) {
-        VkEncErr() << "[EncoderExt] register: view creation failed ("
+        LOG_S_ERROR << "[EncoderExt] register: view creation failed ("
                    << result << ")" << std::endl;
         // Dropping the (owning, on the import arm) wrapper frees the image
         // and memory -- and with them the imported fd.
@@ -8474,7 +8469,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
     if ((descriptor.handleType !=
          VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_VK_IMAGE) &&
         (descriptor.sharingMode == VK_SHARING_MODE_CONCURRENT)) {
-        VkEncErr() << "[EncoderExt] register: sharingMode CONCURRENT is not "
+        LOG_S_ERROR << "[EncoderExt] register: sharingMode CONCURRENT is not "
                       "importable -- the descriptor carries no queue-family "
                       "list, so the re-created image could not be "
                       "spec-valid; export with EXCLUSIVE sharing"
@@ -8506,7 +8501,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
     // format the taxonomy places.
     if (VkEncResolveColorModel(descriptor.format, descriptor.colorModel) ==
         VK_VIDEO_ENCODER_COLOR_MODEL_FROM_FORMAT) {
-        VkEncErr() << "[EncoderExt] register: declared colorModel "
+        LOG_S_WARN << "[EncoderExt] register: declared colorModel "
                    << (uint32_t)descriptor.colorModel
                    << " contradicts format " << (uint32_t)descriptor.format
                    << "; the two cannot both be true and nothing here can "
@@ -8580,7 +8575,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
             for (uint32_t j = i + 1; j < descriptor.planeCount; j++) {
                 if (descriptor.planeLayouts[i].offset ==
                     descriptor.planeLayouts[j].offset) {
-                    VkEncErr() << "[EncoderExt] register: planes " << i
+                    LOG_S_WARN << "[EncoderExt] register: planes " << i
                                << " and " << j << " both begin at offset "
                                << descriptor.planeLayouts[i].offset
                                << "; one memory object cannot hold two planes "
@@ -8663,7 +8658,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
         }
 #endif
         if (missing != nullptr) {
-            VkEncErr() << "[EncoderExt] register: the session device lacks "
+            LOG_S_ERROR << "[EncoderExt] register: the session device lacks "
                        << missing << ", required for this import"
                        << std::endl;
             return VK_VIDEO_ENCODER_STATUS_ERROR_EXTENSION_MISSING;
@@ -8676,7 +8671,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
         // A VK_IMAGE registration declaring FOREIGN residency takes a
         // FOREIGN queue-family acquire at submit; without the extension
         // that barrier is spec-invalid.
-        VkEncErr() << "[EncoderExt] register: the session device lacks "
+        LOG_S_WARN << "[EncoderExt] register: the session device lacks "
                    << VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME
                    << ", required for FOREIGN-residency input" << std::endl;
         return VK_VIDEO_ENCODER_STATUS_ERROR_EXTENSION_MISSING;
@@ -8715,7 +8710,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
             // serialization, or on the output being suppressed.
             static std::atomic<bool> warnedZeroUuid{false};
             if (!warnedZeroUuid.exchange(true, std::memory_order_relaxed)) {
-                VkEncErr() << "[EncoderExt] register: imported handle carries "
+                LOG_S_ERROR << "[EncoderExt] register: imported handle carries "
                               "a zeroed deviceUUID, so a cross-device handle "
                               "cannot be detected. Propagate the exporting "
                               "device's UUID." << std::endl;
@@ -8733,7 +8728,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
         if (haveDeviceUuid &&
             (memcmp(descriptor.deviceUUID, idProps.deviceUUID,
                     VK_UUID_SIZE) != 0)) {
-            VkEncErr() << "[EncoderExt] register: handle was exported by a "
+            LOG_S_WARN << "[EncoderExt] register: handle was exported by a "
                           "different physical device" << std::endl;
             return VK_VIDEO_ENCODER_STATUS_ERROR_DEVICE_MISMATCH;
         }
@@ -8755,7 +8750,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
                 (descriptor.handleType ==
                  VK_VIDEO_ENCODER_EXTERNAL_HANDLE_TYPE_D3D11_TEXTURE);
             if (opaqueHandle) {
-                VkEncErr() << "[EncoderExt] register: opaque handle was "
+                LOG_S_ERROR << "[EncoderExt] register: opaque handle was "
                               "exported by a different driver (driverUUID "
                               "mismatch)" << std::endl;
                 return VK_VIDEO_ENCODER_STATUS_ERROR_DEVICE_MISMATCH;
@@ -8765,7 +8760,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
             // and need no common lock to do so.
             static std::atomic<bool> warnedDriverUuid{false};
             if (!warnedDriverUuid.exchange(true, std::memory_order_relaxed)) {
-                VkEncErr() << "[EncoderExt] register: the dma-buf exporter's "
+                LOG_S_WARN << "[EncoderExt] register: the dma-buf exporter's "
                               "driverUUID differs from the encode device's; "
                               "legal for a kernel object, but worth knowing"
                            << std::endl;
@@ -8778,7 +8773,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
         if (haveDeviceLuid && (idProps.deviceLUIDValid == VK_TRUE) &&
             (memcmp(descriptor.deviceLUID, idProps.deviceLUID,
                     VK_LUID_SIZE) != 0)) {
-            VkEncErr() << "[EncoderExt] register: handle was exported by a "
+            LOG_S_WARN << "[EncoderExt] register: handle was exported by a "
                           "device with a different LUID" << std::endl;
             return VK_VIDEO_ENCODER_STATUS_ERROR_DEVICE_MISMATCH;
         }
@@ -8817,7 +8812,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
                          : VK_FORMAT_UNDEFINED;
         if ((descriptor.format != sessionEncodeFormat) &&
             (descriptor.format != sessionFilterFormat)) {
-            VkEncErr() << "[EncoderExt] register: descriptor format "
+            LOG_S_WARN << "[EncoderExt] register: descriptor format "
                        << (uint32_t)descriptor.format
                        << " does not match the session's negotiated encode "
                           "input format " << (uint32_t)sessionEncodeFormat
@@ -8852,7 +8847,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
                 if (!VkEncDescriptorPermitsStorageRead(
                         descriptor, descriptor.imageUsage,
                         deviceCanStorageRead)) {
-                    VkEncErr()
+                    LOG_S_WARN
                         << "[EncoderExt] register: format "
                         << (uint32_t)descriptor.format
                         << " encodes through the compute filter's "
@@ -8873,7 +8868,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
                            descriptor, descriptor.imageUsage)) {
                 // Multi-planar, per-plane STORAGE views. Unchanged, and
                 // still the only arm for which the create flags are real.
-                VkEncErr() << "[EncoderExt] register: format "
+                LOG_S_WARN << "[EncoderExt] register: format "
                            << (uint32_t)descriptor.format
                            << " encodes only through the compute filter, which "
                               "reads per-plane views; the descriptor must declare "
@@ -8888,7 +8883,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::ValidateImageDescriptor(
         // feeding a 1080p session is the normal case, not an error).
         if ((descriptor.width < m_encoderConfig->encodeWidth) ||
             (descriptor.height < m_encoderConfig->encodeHeight)) {
-            VkEncErr() << "[EncoderExt] register: descriptor extent "
+            LOG_S_WARN << "[EncoderExt] register: descriptor extent "
                        << descriptor.width << "x" << descriptor.height
                        << " does not cover the session's coded extent "
                        << m_encoderConfig->encodeWidth << "x"
@@ -8993,7 +8988,7 @@ void VulkanVideoEncoderExtImpl::PublishImportGuardVerdict()
     if (report.state != VK_VIDEO_ENCODER_IMPORT_GUARD_STATE_INCOMPLETE) {
         return;
     }
-    // No VkEncErr() here: the guard already printed its own line on this
+    // No logged line here: the guard already printed its own line on this
     // path. What was missing was a channel that survives silenceStdio.
     m_diagnosticCount++;
     std::snprintf(m_lastDiagnostic, sizeof(m_lastDiagnostic),
@@ -9141,7 +9136,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::RegisterImageResource(
         // on our copy. CLOEXEC because this process may spawn.
         const int dupFd = fcntl((int)osHandle, F_DUPFD_CLOEXEC, 0);
         if (dupFd < 0) {
-            VkEncErr() << "[EncoderExt] register: BORROW dup failed (errno "
+            LOG_S_ERROR << "[EncoderExt] register: BORROW dup failed (errno "
                        << errno << "); the caller retains its handle"
                        << std::endl;
             return VK_VIDEO_ENCODER_STATUS_ERROR_IMPORT_FAILED;
@@ -9226,7 +9221,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::RegisterImageResource(
                 workable << (i ? ", " : "") << "0x" << std::hex
                          << details.directModifiers[i];
             }
-            VkEncErr() << "[EncoderExt] register: DRM modifier 0x"
+            LOG_S_WARN << "[EncoderExt] register: DRM modifier 0x"
                        << std::hex << descriptor.drmFormatModifier
                        << std::dec << " is not usable for this descriptor; "
                        << details.directModifierCount
@@ -9447,7 +9442,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::RegisterSemaphore(
         // -- can ever touch the caller's fd.
         const int dupFd = fcntl((int)osHandle, F_DUPFD_CLOEXEC, 0);
         if (dupFd < 0) {
-            VkEncErr() << "[EncoderExt] register: BORROW dup failed (errno "
+            LOG_S_ERROR << "[EncoderExt] register: BORROW dup failed (errno "
                        << errno << "); the caller retains its handle"
                        << std::endl;
             return VK_VIDEO_ENCODER_STATUS_ERROR_IMPORT_FAILED;
@@ -9543,7 +9538,7 @@ VkVideoEncoderStatusCode VulkanVideoEncoderExtImpl::RegisterSemaphore(
 #endif
     if (missing != nullptr) {
         VkEncConsumeOsHandle(descriptor.handleType, osHandle);
-        VkEncErr() << "[EncoderExt] register: the session device lacks "
+        LOG_S_ERROR << "[EncoderExt] register: the session device lacks "
                    << missing << ", required for this import" << std::endl;
         return VK_VIDEO_ENCODER_STATUS_ERROR_EXTENSION_MISSING;
     }
@@ -9775,7 +9770,7 @@ VkSemaphore VulkanVideoEncoderExtImpl::CreateReleaseFenceSemaphore()
                   VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT) != 0);
         }
         if (!m_releaseFenceExportable) {
-            VkEncErr() << "[EncoderExt] this device cannot export SYNC_FD "
+            LOG_S_ERROR << "[EncoderExt] this device cannot export SYNC_FD "
                           "binary semaphores; per-frame release fences will "
                           "answer -1" << std::endl;
         }
@@ -9888,7 +9883,7 @@ void VulkanVideoEncoderExtImpl::DrainUnprovenSemaphores()
             m_vkDevCtx.DestroySemaphore(m_vkDevCtx.getDevice(), s, nullptr);
         }
     }
-    VkEncErr() << "[EncoderExt] swept " << doomed.size()
+    LOG_S_WARN << "[EncoderExt] swept " << doomed.size()
                << " per-frame fence semaphore(s) whose completion no "
                   "retirement could prove, behind a device wait-idle"
                << std::endl;
@@ -11767,7 +11762,7 @@ bool VkEncCtxUsageToFormatFeatures(VkImageUsageFlags usage,
         }
     }
     if (unmapped != 0) {
-        VkEncErr() << "[EncoderContext] no format-feature mapping for image "
+        LOG_S_WARN << "[EncoderContext] no format-feature mapping for image "
                    << "usage bits 0x" << std::hex << unmapped << std::dec
                    << "; refusing to filter modifiers on a term this build "
                    << "does not understand" << std::endl;
@@ -11905,7 +11900,7 @@ private:
     // This context's silence request, held for its whole life. Released by
     // the destructor, which is what makes silence end with the last owner
     // rather than with whoever assigned the flag most recently.
-    VkEncoderStdioSilenceScope           m_stdioSilence;
+    LoggerSilenceScope           m_stdioSilence;
 };
 
 namespace {
@@ -12157,7 +12152,7 @@ VkResult VulkanVideoEncoderContext::Create(
     // chatter inside VulkanDeviceContext, and held for the life of the
     // context. VK_FALSE takes no token rather than clearing one: a context
     // that wants output does not get to silence-off another owner.
-    VkEncoderStdioSilenceScope contextSilence(
+    LoggerSilenceScope contextSilence(
         createInfo.silenceStdio == VK_TRUE);
 
     if (createInfo.mode == VK_VIDEO_ENCODER_CONTEXT_MODE_OWN) {
@@ -12307,7 +12302,7 @@ VkResult CreateVulkanVideoEncoderExtOnContext(
     const VulkanVideoEncoderContext::DeviceEntry* entry =
         context->GetDeviceEntry(deviceIndex);
     if (entry == nullptr) {
-        VkEncErr() << "[EncoderExt] deviceIndex " << deviceIndex
+        LOG_S_ERROR << "[EncoderExt] deviceIndex " << deviceIndex
                    << " is out of range for this context ("
                    << context->GetPhysicalDeviceCount() << " device(s))"
                    << std::endl;
@@ -12319,7 +12314,7 @@ VkResult CreateVulkanVideoEncoderExtOnContext(
         // A built context always has both. Checked anyway because everything
         // downstream treats them as valid without re-testing, and a null
         // instance reaching InitVulkanDevice reads as "create your own".
-        VkEncErr() << "[EncoderExt] context holds no usable instance or "
+        LOG_S_WARN << "[EncoderExt] context holds no usable instance or "
                       "physical device at index " << deviceIndex << std::endl;
         return VK_ERROR_INITIALIZATION_FAILED;
     }
@@ -12835,7 +12830,7 @@ VkResult VkEncEnumerateInputFormats(
     // query's request and removes exactly that one.
     uint32_t entryCount = 0;
     {
-        const VkEncoderStdioSilenceScope quietQuery(true);
+        const LoggerSilenceScope quietQuery(true);
         entryCount = VkEncAdvertiseInputFormats(
             &VkEncAdmitByLiveResolve, &live, entries,
             VK_ENC_MAX_ROUTABLE_INPUT_FORMATS);

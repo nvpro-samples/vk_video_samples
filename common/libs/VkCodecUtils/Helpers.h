@@ -388,7 +388,7 @@ public:
             char* end = nullptr;
             unsigned long hexVal = strtoul(hexStr, &end, 16);
             if (end != hexStr + 2) {
-                std::cerr << "Error: Invalid hex character in UUID" << std::endl;
+                LOG_S_ERROR << "Invalid hex character in UUID" << std::endl;
                 return numHexDigits;
             }
             uint8_t hexByte = static_cast<uint8_t>(hexVal);

@@ -15,8 +15,8 @@
  */
 
 #include "VkVideoEncoder/VkVideoEncoderH265.h"
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include "VkVideoCore/VulkanVideoCapabilities.h"
+#include "Logger.h"
 
 namespace {
 
@@ -67,7 +67,7 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
 
     VkResult result = InitEncoder(encoderConfig);
     if (result != VK_SUCCESS) {
-        VkEncPrintfErr("\nERROR: InitEncoder() failed with ret(%d)\n", result);
+        LOG_ERROR("InitEncoder() failed with ret(%d)\n", result);
         return result;
     }
 
@@ -75,7 +75,7 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
     m_dpb.DpbSequenceStart(m_maxDpbPicturesCount, (m_encoderConfig->numRefL0 > 0) || (m_encoderConfig->numRefL1 > 0));
 
     if (m_encoderConfig->verbose) {
-        VkEncOut() << ", numRefL0: "    << (uint32_t)m_encoderConfig->numRefL0
+        LOG_S_INFO << ", numRefL0: "    << (uint32_t)m_encoderConfig->numRefL0
                   << ", numRefL1: "    << (uint32_t)m_encoderConfig->numRefL1 << std::endl;
     }
 
@@ -134,14 +134,14 @@ VkResult VkVideoEncoderH265::InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& en
                                                          nullptr,
                                                          &sessionParameters);
     if(result != VK_SUCCESS) {
-        VkEncPrintfErr("\nEncodeFrame Error: Failed to get create video session parameters.\n");
+        LOG_ERROR("EncodeFrame: Failed to get create video session parameters.\n");
         return result;
     }
 
     result = VulkanVideoSessionParameters::Create(m_vkDevCtx, m_videoSession,
                                                   sessionParameters, m_videoSessionParameters);
     if(result != VK_SUCCESS) {
-        VkEncPrintfErr("\nEncodeFrame Error: Failed to get create video session object.\n");
+        LOG_ERROR("EncodeFrame: Failed to get create video session object.\n");
         return result;
     }
 
@@ -493,7 +493,7 @@ VkResult VkVideoEncoderH265::EncodeVideoSessionParameters(VkSharedBaseObj<VkVide
             // it has no way to notice: every counter, every completion edge
             // and every byte count is identical. Refusing is the only signal
             // this failure has.
-            VkEncPrintfErr("\nEncodeVideoSessionParameters Error: the HDR10 SEI does "
+            LOG_ERROR("EncodeVideoSessionParameters: the HDR10 SEI does "
                     "not fit in the %zu-byte non-VCL header buffer after %zu "
                     "bytes of parameter sets.\n",
                     sizeof(encodeFrameInfo->bitstreamHeaderBuffer), used);
@@ -539,7 +539,7 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
         DumpStateInfo("input", 1, encodeFrameInfo);
 
         if (encodeFrameInfo->lastFrame) {
-            VkEncOut() << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
+            LOG_S_INFO << "#### It is the last frame: " << encodeFrameInfo->frameInputOrderNum
                       << " of type " << VkVideoGopStructure::GetFrameTypeName(encodeFrameInfo->gopPosition.pictureType)
                       << " ###"
                       << std::endl << std::flush;
@@ -648,13 +648,13 @@ VkResult VkVideoEncoderH265::EncodeFrame(VkSharedBaseObj<VkVideoEncodeFrameInfo>
             pFrameInfo->naluSliceSegmentInfo[i].constantQp = constantQp;
         }
         if (getenv("VKENC_DEBUG_PSNR")) {
-            VkEncPrintfErr("[QPDBG] picType=%d constantQp=%d (qpI=%d qpP=%d qpB=%d) rcMode=%d\n",
+            LOG_INFO("[QPDBG] picType=%d constantQp=%d (qpI=%d qpP=%d qpB=%d) rcMode=%d\n",
                     (int)encodeFrameInfo->gopPosition.pictureType, constantQp,
                     encodeFrameInfo->constQp.qpIntra, encodeFrameInfo->constQp.qpInterP,
                     encodeFrameInfo->constQp.qpInterB, (int)m_rateControlInfo.rateControlMode);
         }
     } else if (getenv("VKENC_DEBUG_PSNR")) {
-        VkEncPrintfErr("[QPDBG] rcMode=%d NOT DISABLED (picType=%d) -> QP not forced\n",
+        LOG_INFO("[QPDBG] rcMode=%d NOT DISABLED (picType=%d) -> QP not forced\n",
                 (int)m_rateControlInfo.rateControlMode, (int)encodeFrameInfo->gopPosition.pictureType);
     }
 

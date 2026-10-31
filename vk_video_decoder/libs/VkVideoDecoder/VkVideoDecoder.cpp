@@ -22,6 +22,7 @@
 #include "VkVideoDecoder/VkVideoDecoder.h"
 #include "nvidia_utils/vulkan/ycbcrvkinfo.h"
 #include "VkCodecUtils/VkDrmFormatModifierUtils.h"
+#include "Logger.h"
 
 #undef max
 #undef min
@@ -103,7 +104,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     }
 
 #if !defined(VK_VIDEO_NO_STDOUT_INFO)
-    std::cout << "Video Input Information" << std::endl
+    LOG_S_INFO << "Video Input Information" << std::endl
               << "\tCodec        : " << GetVideoCodecString(pVideoFormat->codec) << std::endl
               << "\tFrame rate   : " << pVideoFormat->frame_rate.numerator << "/" << pVideoFormat->frame_rate.denominator << " = "
               << ((pVideoFormat->frame_rate.denominator != 0) ? (1.0 * pVideoFormat->frame_rate.numerator / pVideoFormat->frame_rate.denominator) : 0.0) << " fps" << std::endl
@@ -132,19 +133,19 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     assert(videoCodecs != VK_VIDEO_CODEC_OPERATION_NONE_KHR);
 
     if (m_dumpDecodeData) {
-        std::cout << "\t" << std::hex << videoCodecs << " HW codec types are available: " << std::dec << std::endl;
+        LOG_S_INFO << "\t" << std::hex << videoCodecs << " HW codec types are available: " << std::dec << std::endl;
     }
 
     VkVideoCodecOperationFlagBitsKHR videoCodec = pVideoFormat->codec;
 
     if (m_dumpDecodeData) {
-        std::cout << "\tcodec " << VkVideoCoreProfile::CodecToName(videoCodec) << std::endl;
+        LOG_S_INFO << "\tcodec " << VkVideoCoreProfile::CodecToName(videoCodec) << std::endl;
     }
 
     // A bit depth Vulkan Video has no flag for (a 9-bit chroma plane) has no profile to ask about.
     if ((pVideoFormat->lumaBitDepth == VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR) ||
         (pVideoFormat->chromaBitDepth == VK_VIDEO_COMPONENT_BIT_DEPTH_INVALID_KHR)) {
-        std::cout << "*** The sequence's bit depth has no Vulkan Video profile ***" << std::endl;
+        LOG_S_INFO << "*** The sequence's bit depth has no Vulkan Video profile ***" << std::endl;
         m_videoSequenceResult = VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR;
         return -1;
     }
@@ -158,7 +159,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     if (!VulkanVideoCapabilities::IsCodecTypeSupported(m_vkDevCtx,
                                                        m_vkDevCtx->GetVideoDecodeQueueFamilyIdx(),
                                                        videoCodec)) {
-        std::cout << "*** The video codec " << VkVideoCoreProfile::CodecToName(videoCodec) << " is not supported! ***" << std::endl;
+        LOG_S_INFO << "*** The video codec " << VkVideoCoreProfile::CodecToName(videoCodec) << " is not supported! ***" << std::endl;
         // A refusal is the device's answer for this stream, not a programming error; the caller
         // reports it through GetVideoSequenceResult(), here and below.
         m_videoSequenceResult = VK_ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR;
@@ -175,7 +176,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     }
 
 #if !defined(VK_VIDEO_NO_STDOUT_INFO)
-    std::cout << "Video Decoding Params:" << std::endl
+    LOG_S_INFO << "Video Decoding Params:" << std::endl
               << "\tNum Surfaces : " << numDecodeSurfaces << std::endl
               << "\tResize       : " << m_codedExtent.width << " x " << m_codedExtent.height << std::endl;
 #endif
@@ -202,7 +203,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
             STD_VIDEO_H264_PROFILE_IDC_HIGH,
         };
         for (uint32_t upgradedProfile : h264ProfileUpgradePath) {
-            std::cerr << "WARNING: H.264 profile_idc=" << pVideoFormat->codecProfile
+            LOG_S_WARN << "H.264 profile_idc=" << pVideoFormat->codecProfile
                       << " capabilities query failed (result=" << result
                       << "). Retrying with profile_idc=" << upgradedProfile << std::endl;
 
@@ -219,7 +220,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                                                          videoCapabilities,
                                                                          videoDecodeCapabilities);
             if (result == VK_SUCCESS) {
-                std::cerr << "WARNING: H.264 profile upgraded to profile_idc="
+                LOG_S_WARN << "H.264 profile upgraded to profile_idc="
                           << upgradedProfile << " successfully." << std::endl;
                 break;
             }
@@ -234,7 +235,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
             STD_VIDEO_H265_PROFILE_IDC_MAIN_10,
         };
         for (uint32_t upgradedProfile : h265ProfileUpgradePath) {
-            std::cerr << "WARNING: H.265 profile_idc=" << pVideoFormat->codecProfile
+            LOG_S_WARN << "H.265 profile_idc=" << pVideoFormat->codecProfile
                       << " capabilities query failed (result=" << result
                       << "). Retrying with profile_idc=" << upgradedProfile << std::endl;
 
@@ -248,14 +249,14 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                                                          videoCapabilities,
                                                                          videoDecodeCapabilities);
             if (result == VK_SUCCESS) {
-                std::cerr << "WARNING: H.265 profile upgraded to profile_idc="
+                LOG_S_WARN << "H.265 profile upgraded to profile_idc="
                           << upgradedProfile << " successfully." << std::endl;
                 break;
             }
         }
     }
     if (result != VK_SUCCESS) {
-        std::cout << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
+        LOG_S_ERROR << "*** Could not get Video Capabilities :" << result << " ***" << std::endl;
         m_videoSequenceResult = result;
         return -1;
     }
@@ -268,7 +269,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                                                                outImageFormat,
                                                                dpbImageFormat);
     if (result != VK_SUCCESS) {
-        std::cout << "*** Could not get supported video formats :" << result << " ***" << std::endl;
+        LOG_S_ERROR << "*** Could not get supported video formats :" << result << " ***" << std::endl;
         m_videoSequenceResult = result;
         return -1;
     }
@@ -285,7 +286,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     // A picture larger than the device decodes: no session can be created for it
     // (VUID-VkVideoSessionCreateInfoKHR-maxCodedExtent-04851).
     if ((imageExtent.width > videoCapabilities.maxCodedExtent.width) || (imageExtent.height > videoCapabilities.maxCodedExtent.height)) {
-        std::cout << "*** The coded extent " << imageExtent.width << " x " << imageExtent.height
+        LOG_S_INFO << "*** The coded extent " << imageExtent.width << " x " << imageExtent.height
                   << " is larger than the device decodes (" << videoCapabilities.maxCodedExtent.width << " x "
                   << videoCapabilities.maxCodedExtent.height << ") ***" << std::endl;
         m_videoSequenceResult = VK_ERROR_FORMAT_NOT_SUPPORTED;
@@ -296,7 +297,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     // least minCodedExtent (VUID-vkCmdDecodeVideoKHR-pDecodeInfo-07145). The image extent, at least
     // the coded extent, is then within the session's limits too.
     if ((m_codedExtent.width < videoCapabilities.minCodedExtent.width) || (m_codedExtent.height < videoCapabilities.minCodedExtent.height)) {
-        std::cout << "*** The coded extent " << m_codedExtent.width << " x " << m_codedExtent.height
+        LOG_S_INFO << "*** The coded extent " << m_codedExtent.width << " x " << m_codedExtent.height
                   << " is smaller than the device decodes (" << videoCapabilities.minCodedExtent.width << " x "
                   << videoCapabilities.minCodedExtent.height << ") ***" << std::endl;
         m_videoSequenceResult = VK_ERROR_FORMAT_NOT_SUPPORTED;
@@ -380,7 +381,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         // after creating a new video session, we need codec reset.
         m_resetDecoder = VK_TRUE;
         if (result != VK_SUCCESS) {
-            std::cout << "*** Could not create the video session: " << result << " ***" << std::endl;
+            LOG_S_ERROR << "*** Could not create the video session: " << result << " ***" << std::endl;
             m_videoSequenceResult = result;
             return -1;
         }
@@ -610,7 +611,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         VkPhysicalDeviceProperties devProps{};
         m_vkDevCtx->GetPhysicalDeviceProperties(m_vkDevCtx->getPhysicalDevice(), &devProps);
         if (devProps.vendorID == 0x8086) {
-            std::cout << "[VkVideoDecoder] Intel GPU detected — using opaque FD export "
+            LOG_S_INFO << "[VkVideoDecoder] Intel GPU detected — using opaque FD export "
                       << "(ANV video decode doesn't support DMA_BUF export)"
                       << std::endl;
             exportDrmModifier = UINT64_MAX;
@@ -618,7 +619,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         }
 
         if (exportDrmModifier != 0) {
-            std::cout << "[VkVideoDecoder] Export DRM modifier: 0x" << std::hex
+            LOG_S_INFO << "[VkVideoDecoder] Export DRM modifier: 0x" << std::hex
                       << exportDrmModifier << std::dec
                       << " compression=" << VkDrmFormatModifierUtils::GetNvCompression(exportDrmModifier)
                       << " blockHeight=" << (1 << VkDrmFormatModifierUtils::GetNvBlockHeightLog2(exportDrmModifier)) << " GOBs"
@@ -628,9 +629,9 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
 #elif defined(_WIN32)
         exportHandleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
         exportDrmModifier = UINT64_MAX;
-        std::cout << "[VkVideoDecoder] Win32 opaque handle export enabled for external consumers" << std::endl;
+        LOG_S_INFO << "[VkVideoDecoder] Win32 opaque handle export enabled for external consumers" << std::endl;
 #else
-        fprintf(stderr, "[VkVideoDecoder] External consumer export requires Linux or Windows\n");
+        LOG_ERROR("[VkVideoDecoder] External consumer export requires Linux or Windows\n");
 #endif
     }
 
@@ -854,11 +855,11 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
 
     assert((uint32_t)ret == numDecodeSurfaces);
     if ((uint32_t)ret != numDecodeSurfaces) {
-        fprintf(stderr, "\nERROR: InitImagePool() ret(%d) != m_numDecodeSurfaces(%d)\n", ret, numDecodeSurfaces);
+        LOG_ERROR("InitImagePool() ret(%d) != m_numDecodeSurfaces(%d)\n", ret, numDecodeSurfaces);
     }
 
     if (m_dumpDecodeData) {
-        std::cout << "Allocating Video Device Memory" << std::endl
+        LOG_S_INFO << "Allocating Video Device Memory" << std::endl
                   << "Allocating " << numDecodeSurfaces << " Num Decode Surfaces and "
                   << maxDpbSlotCount << " Video Device Memory Images for DPB " << std::endl
                   << imageExtent.width << " x " << imageExtent.height << std::endl;
@@ -894,7 +895,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
                     nullptr, 0, bitstreamBuffer);
             assert(result == VK_SUCCESS);
             if (result != VK_SUCCESS) {
-                fprintf(stderr, "\nERROR: VulkanBitstreamBufferImpl::Create() result: 0x%x\n", result);
+                LOG_ERROR("VulkanBitstreamBufferImpl::Create() result: 0x%x\n", result);
                 break;
             }
 
@@ -964,7 +965,7 @@ bool VkVideoDecoder::RecordSyncTestBitstreamCopy(VkCommandBuffer commandBuffer, 
                                                  VkVideoDecodeInfoKHR& decodeInfo)
 {
     if ((m_vkDevCtx->GetVideoDecodeQueueFlag() & VK_QUEUE_TRANSFER_BIT) == 0) {
-        fprintf(stderr, "\nERROR: --syncTestBitstreamCopy needs a decode queue family with VK_QUEUE_TRANSFER_BIT\n");
+        LOG_ERROR("--syncTestBitstreamCopy needs a decode queue family with VK_QUEUE_TRANSFER_BIT\n");
         m_syncTestBitstreamCopy = false;
         return false;
     }
@@ -985,7 +986,7 @@ bool VkVideoDecoder::RecordSyncTestBitstreamCopy(VkCommandBuffer commandBuffer, 
                 std::max<VkDeviceSize>(fillSize, m_maxStreamBufferSize),
                 source->GetOffsetAlignment(), source->GetSizeAlignment(), nullptr, 0, newBuffer);
         if (result != VK_SUCCESS) {
-            fprintf(stderr, "\nERROR: --syncTestBitstreamCopy: VulkanBitstreamBufferImpl::Create() result: 0x%x\n", result);
+            LOG_ERROR("--syncTestBitstreamCopy: VulkanBitstreamBufferImpl::Create() result: 0x%x\n", result);
             return false;
         }
         copyBuffer = newBuffer;
@@ -998,7 +999,7 @@ bool VkVideoDecoder::RecordSyncTestBitstreamCopy(VkCommandBuffer commandBuffer, 
     // --syncTestGpuOnlyBitstream leaves the write to the transfer commands alone.
     if (!m_syncTestGpuOnlyBitstream &&
         (copyBuffer->CopyDataFromBuffer(source, decodeInfo.srcBufferOffset, 0, copySize) < 0)) {
-        fprintf(stderr, "\nERROR: --syncTestBitstreamCopy: the host copy of the bitstream failed\n");
+        LOG_ERROR("--syncTestBitstreamCopy: the host copy of the bitstream failed\n");
         return false;
     }
 
@@ -1186,7 +1187,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
     int32_t picNumInDecodeOrder = (int32_t)(uint32_t)m_decodePicCount;
     if (m_dumpDecodeData) {
-        std::cout << "currPicIdx: " << currPicIdx << ", currentVideoQueueIndx: " << m_currentVideoQueueIndx << ", decodePicCount: " << m_decodePicCount << std::endl;
+        LOG_S_INFO << "currPicIdx: " << currPicIdx << ", currentVideoQueueIndx: " << m_currentVideoQueueIndx << ", decodePicCount: " << m_decodePicCount << std::endl;
     }
     m_videoFrameBuffer->SetPicNumInDecodeOrder(currPicIdx, picNumInDecodeOrder);
 
@@ -1195,7 +1196,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     assert(retPicIdx == currPicIdx);
 
     if (retPicIdx != currPicIdx) {
-        fprintf(stderr, "\nERROR: DecodePictureWithParameters() retPicIdx(%d) != currPicIdx(%d)\n", retPicIdx, currPicIdx);
+        LOG_ERROR("DecodePictureWithParameters() retPicIdx(%d) != currPicIdx(%d)\n", retPicIdx, currPicIdx);
     }
 
     assert(pCurrFrameDecParams->bitstreamData->GetMaxSize() >= pCurrFrameDecParams->bitstreamDataLen);
@@ -1220,7 +1221,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     // Safety: force to 0 for codecs that should not have non-zero offset
     if (m_videoFormat.codec != VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
         if (srcOffset != 0) {
-            fprintf(stderr, "WARNING: bitstreamDataOffset=%zu is non-zero for non-VP9 codec, forcing to 0\n",
+            LOG_WARN("bitstreamDataOffset=%zu is non-zero for non-VP9 codec, forcing to 0\n",
                     (size_t)srcOffset);
             srcOffset = 0;
         }
@@ -1392,7 +1393,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     }
 
     if (m_dumpDecodeData) {
-        std::cout << "currPicIdx: " << currPicIdx << ", OutInfo: " << pOutputPictureResource->codedExtent.width << " x "
+        LOG_S_INFO << "currPicIdx: " << currPicIdx << ", OutInfo: " << pOutputPictureResource->codedExtent.width << " x "
                                                                    << pOutputPictureResource->codedExtent.height << " with layout "
                                                                    << ((pOutputPictureResourceInfo->currentImageLayout == VK_IMAGE_LAYOUT_VIDEO_DECODE_DST_KHR) ||
                                                                            (pOutputPictureResourceInfo->currentImageLayout == VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) ? "OUT" : "INVALID")
@@ -1474,7 +1475,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             }
 
             if (m_dumpDecodeData) {
-                std::cout << "\tdpb: " << (int)pCurrFrameDecParams->pGopReferenceImagesIndexes[resId]
+                LOG_S_INFO << "\tdpb: " << (int)pCurrFrameDecParams->pGopReferenceImagesIndexes[resId]
                                        << ", DpbInfo: " << pOutputPictureResource->codedExtent.width << " x "
                                        << pOutputPictureResource->codedExtent.height << " with layout "
                                        << ((pictureResourcesInfo[resId].currentImageLayout == VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR) ? "DPB" : "INVALID")
@@ -1589,7 +1590,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
             decodeBeginInfo.videoSessionParameters = *pOwnerPictureParameters;
 
             if (m_dumpDecodeData) {
-                std::cout << "Using object " << decodeBeginInfo.videoSessionParameters
+                LOG_S_INFO << "Using object " << decodeBeginInfo.videoSessionParameters
                           << " with ID: (" << pOwnerPictureParameters->GetId() << ")"
                           << " for SPS: " << spsId << ", PPS: " << ppsId << std::endl;
             }
@@ -1789,7 +1790,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         if (m_dumpDecodeData) {
             uint64_t  currSemValue = 0;
             VkResult semResult = m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, m_hwLoadBalancingTimelineSemaphore, &currSemValue);
-            std::cout << "\t TL semaphore value: " << currSemValue << ", status: " << semResult << std::endl;
+            LOG_S_INFO << "\t TL semaphore value: " << currSemValue << ", status: " << semResult << std::endl;
         }
 
         waitSemaphoreInfos[waitSemaphoreCount].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
@@ -1844,8 +1845,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     }
 
     if (m_dumpDecodeData) {
-        std::cout << "\t +++++++++++++++++++++++++++< " << currPicIdx << " >++++++++++++++++++++++++++++++" << std::endl;
-        std::cout << "\t => Decode Submitted for CurrPicIdx: " << currPicIdx << std::endl
+        LOG_S_INFO << "\t +++++++++++++++++++++++++++< " << currPicIdx << " >++++++++++++++++++++++++++++++" << std::endl;
+        LOG_S_INFO << "\t => Decode Submitted for CurrPicIdx: " << currPicIdx << std::endl
                   << "\t\tm_nPicNumInDecodeOrder: " << picNumInDecodeOrder << "\t\tframeCompleteFence " << videoDecodeCompleteFence
                   << "\t\tvideoDecodeCompleteSemaphore " << videoDecodeCompleteSemaphore << "\t\tdstImageView "
                   << pCurrFrameDecParams->decodeFrameInfo.dstPictureResource.imageViewBinding << std::endl;
@@ -1855,18 +1856,18 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     if (m_dumpDecodeData && (m_hwLoadBalancingTimelineSemaphore != VK_NULL_HANDLE)) { // For TL semaphore debug
        uint64_t  currSemValue = 0;
        VkResult semResult = m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, m_hwLoadBalancingTimelineSemaphore, &currSemValue);
-       std::cout << "\t TL semaphore value ater submit: " << currSemValue << ", status: " << semResult << std::endl;
+       LOG_S_INFO << "\t TL semaphore value ater submit: " << currSemValue << ", status: " << semResult << std::endl;
 
        const bool waitOnTlSemaphore = false;
        if (waitOnTlSemaphore) {
            uint64_t value = m_decodePicCount + 1; // wait on the future m_decodePicCount
            VkSemaphoreWaitInfo waitInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO, nullptr, VK_SEMAPHORE_WAIT_ANY_BIT, 1,
                                         &m_hwLoadBalancingTimelineSemaphore, &value };
-           std::cout << "\t TL semaphore wait for value: " << value << std::endl;
+           LOG_S_INFO << "\t TL semaphore wait for value: " << value << std::endl;
            semResult = m_vkDevCtx->WaitSemaphores(*m_vkDevCtx, &waitInfo, gLongTimeout);
 
            semResult = m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, m_hwLoadBalancingTimelineSemaphore, &currSemValue);
-           std::cout << "\t TL semaphore value: " << currSemValue << ", status: " << semResult << std::endl;
+           LOG_S_INFO << "\t TL semaphore value: " << currSemValue << ", status: " << semResult << std::endl;
        }
     }
 
@@ -1895,8 +1896,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         assert(decodeStatus == VK_QUERY_RESULT_STATUS_COMPLETE_KHR);
 
         if (m_dumpDecodeData) {
-            std::cout << "\t +++++++++++++++++++++++++++< " << currPicIdx << " >++++++++++++++++++++++++++++++" << std::endl;
-            std::cout << "\t => Decode Status for CurrPicIdx: " << currPicIdx << std::endl
+            LOG_S_INFO << "\t +++++++++++++++++++++++++++< " << currPicIdx << " >++++++++++++++++++++++++++++++" << std::endl;
+            LOG_S_INFO << "\t => Decode Status for CurrPicIdx: " << currPicIdx << std::endl
                       << "\t\tdecodeStatus: " << decodeStatus << std::endl;
         }
     }
@@ -2127,7 +2128,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
                 if (result != VK_SUCCESS) {
                     uint64_t currentTL = 0;
                     m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, videoDecodeCompleteSemaphore, &currentTL);
-                    fprintf(stderr, "[SYNC-FAIL] Filter fence timeout! pic=%d, result=%d, "
+                    LOG_ERROR("[SYNC-FAIL] Filter fence timeout! pic=%d, result=%d, "
                             "TL current=%llu, filterTL=%llu, decodeTL=%llu, "
                             "binarySem=%p\n",
                             currPicIdx, result,
@@ -2148,7 +2149,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
                 assert(result == VK_SUCCESS);
                 uint64_t currentValue = 0;
                 m_vkDevCtx->GetSemaphoreCounterValue(*m_vkDevCtx, videoDecodeCompleteSemaphore, &currentValue);
-                fprintf(stderr, "[SYNC] Filter TL semaphore OK (pic=%d, expected=%llu, current=%llu)\n",
+                LOG_INFO("[SYNC] Filter TL semaphore OK (pic=%d, expected=%llu, current=%llu)\n",
                         currPicIdx, (unsigned long long)computeCompleteTimelineValue,
                         (unsigned long long)currentValue);
             }
@@ -2213,11 +2214,11 @@ VkDeviceSize VkVideoDecoder::GetBitstreamBuffer(VkDeviceSize size,
                 pInitializeBufferMemory, initializeBufferMemorySize, newBitstreamBuffer);
         assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) {
-            fprintf(stderr, "\nERROR: VulkanBitstreamBufferImpl::Create() result: 0x%x\n", result);
+            LOG_ERROR("VulkanBitstreamBufferImpl::Create() result: 0x%x\n", result);
             return 0;
         }
         if (debugBitstreamBufferDumpAlloc) {
-            std::cout << "\tAllocated bitstream buffer with size " << newSize << " B, " <<
+            LOG_S_INFO << "\tAllocated bitstream buffer with size " << newSize << " B, " <<
                              newSize/1024 << " KB, " << newSize/1024/1024 << " MB" << std::endl;
         }
         if (enablePool) {
@@ -2235,7 +2236,7 @@ VkDeviceSize VkVideoDecoder::GetBitstreamBuffer(VkDeviceSize size,
         // picture whose data does not fit its buffer, and the data the H.264 and H.265 parsers copy into the
         // new buffer would be cut short. A buffer in the pool is in no decode.
         if ((newBitstreamBuffer->GetMaxSize() < size) && (newBitstreamBuffer->Resize(size) < size)) {
-            fprintf(stderr, "\nERROR: VulkanBitstreamBuffer::Resize() to %llu bytes failed\n", (unsigned long long)size);
+            LOG_ERROR("VulkanBitstreamBuffer::Resize() to %llu bytes failed\n", (unsigned long long)size);
             return 0;
         }
         newSize = newBitstreamBuffer->GetMaxSize();
@@ -2251,20 +2252,20 @@ VkDeviceSize VkVideoDecoder::GetBitstreamBuffer(VkDeviceSize size,
         newBitstreamBuffer->MemsetData(0x0, copySize, newSize - copySize);
 #endif
         if (debugBitstreamBufferDumpAlloc) {
-            std::cout << "\t\tFrom bitstream buffer pool with size " << newSize << " B, " <<
+            LOG_S_INFO << "\t\tFrom bitstream buffer pool with size " << newSize << " B, " <<
                              newSize/1024 << " KB, " << newSize/1024/1024 << " MB" << std::endl;
 
-            std::cout << "\t\t\t FreeNodes " << m_decodeFramesData.GetBitstreamBuffersQueue().GetFreeNodesNumber();
-            std::cout << " of MaxNodes " << m_decodeFramesData.GetBitstreamBuffersQueue().GetMaxNodes();
-            std::cout << ", AvailableNodes " << m_decodeFramesData.GetBitstreamBuffersQueue().GetAvailableNodesNumber();
-            std::cout << std::endl;
+            LOG_S_INFO << "\t\t\t FreeNodes " << m_decodeFramesData.GetBitstreamBuffersQueue().GetFreeNodesNumber();
+            LOG_S_INFO << " of MaxNodes " << m_decodeFramesData.GetBitstreamBuffersQueue().GetMaxNodes();
+            LOG_S_INFO << ", AvailableNodes " << m_decodeFramesData.GetBitstreamBuffersQueue().GetAvailableNodesNumber();
+            LOG_S_INFO << std::endl;
         }
     }
     bitstreamBuffer = newBitstreamBuffer;
     if (newSize > m_maxStreamBufferSize) {
-        std::cout << "\nRe-allocated bitstream buffer with size " << newSize << " B, " <<
+        LOG_S_INFO << "\nRe-allocated bitstream buffer with size " << newSize << " B, " <<
                              newSize/1024 << " KB, " << newSize/1024/1024 << " MB" << std::endl;
-        std::cout << "Previously set max bitstream buffer size was " << m_maxStreamBufferSize << " B, " <<
+        LOG_S_INFO << "Previously set max bitstream buffer size was " << m_maxStreamBufferSize << " B, " <<
                 m_maxStreamBufferSize/1024 << " KB, " << m_maxStreamBufferSize/1024/1024 << " MB" << std::endl;
         m_maxStreamBufferSize = newSize;
     }

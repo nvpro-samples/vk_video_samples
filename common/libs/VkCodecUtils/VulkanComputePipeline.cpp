@@ -15,10 +15,10 @@
 */
 
 #include <iostream>
-#include "VkCodecUtils/VkEncoderStdioLatch.h"
 #include <stdio.h>
 #include <string.h>
 #include "VulkanComputePipeline.h"
+#include "Logger.h"
 
 // Create Graphics Pipeline
 VkResult VulkanComputePipeline::CreatePipeline(const VulkanDeviceContext* vkDevCtx,
@@ -47,7 +47,7 @@ VkResult VulkanComputePipeline::CreatePipeline(const VulkanDeviceContext* vkDevC
 
     const bool verbose = false;
 
-    if (verbose) VkEncPrintfOut("\nCompute shader code:\n %s", shaderCode);
+    if (verbose) LOG_INFO("\nCompute shader code:\n %s", shaderCode);
 
     DestroyShaderModule();
     m_shaderModule = shaderCompiler.BuildGlslShader(shaderCode,
@@ -62,7 +62,7 @@ VkResult VulkanComputePipeline::CreatePipeline(const VulkanDeviceContext* vkDevC
         // generator that emits invalid GLSL is a bug worth seeing, so it has to surface as
         // an error. This guard covers every compute filter, not only the generators known
         // to be able to emit invalid GLSL.
-        VkEncErr() << "VulkanComputePipeline: shader failed to compile; "
+        LOG_S_ERROR << "VulkanComputePipeline: shader failed to compile; "
                      "see the compiler diagnostics above. Pipeline not created."
                   << std::endl;
         return VK_ERROR_INITIALIZATION_FAILED;

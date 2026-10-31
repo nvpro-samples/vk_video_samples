@@ -19,6 +19,7 @@
 #include "encoder_argv_completion.h"
 #include "VkVideoEncoder/VkEncoderConfig.h"
 #include "VkVideoEncoder/VkVideoEncoder.h"
+#include "Logger.h"
 
 class VulkanVideoEncoderImpl : public VulkanVideoEncoder {
 public:
@@ -63,7 +64,7 @@ public:
         m_encoder->WaitForThreadsToComplete();
 
         if (m_encoderConfig->verbose) {
-            VkEncOut() << "Done processing " << m_lastFrameIndex << " input frames!" << std::endl
+            LOG_S_INFO << "Done processing " << m_lastFrameIndex << " input frames!" << std::endl
                       << "Encoded file's location is at " << m_encoderConfig->outputFileHandler.GetFileName()
                       << std::endl;
         }
@@ -145,9 +146,7 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
     result = m_vkDevCtxt.InitVulkanDevice(m_encoderConfig->appName.c_str(), VK_NULL_HANDLE,
                                           m_encoderConfig->verbose);
     if (result != VK_SUCCESS) {
-        if (!IsVkEncoderStdioSilenced()) {
-            printf("Could not initialize the Vulkan device!\n");
-        }
+        LOG_ERROR("Could not initialize the Vulkan device!\n");
         return result;
     }
 
@@ -179,7 +178,7 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
                                             requestVideoEncodeQueueMask,
                                             m_encoderConfig->codec);
     if (result != VK_SUCCESS) {
-        VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+        LOG_S_ERROR << "[" << __FILE__ << ":" << __LINE__ << "]: "
                   << "InitVulkanDevice() failed - video codec may not be supported. VkResult: " << result
                   << " (0x" << std::hex << result << std::dec << ")" << std::endl;
         return result;
@@ -203,7 +202,7 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
                                              m_encoderConfig->IsPreprocessComputeFilterEnabled())
                                           );
     if (result != VK_SUCCESS) {
-        VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+        LOG_S_ERROR << "[" << __FILE__ << ":" << __LINE__ << "]: "
                   << "CreateVulkanDevice() failed. VkResult: " << result
                   << " (0x" << std::hex << result << std::dec << ")" << std::endl;
         return result;
@@ -211,7 +210,7 @@ VkResult VulkanVideoEncoderImpl::Initialize(VkVideoCodecOperationFlagBitsKHR vid
 
     result = VkVideoEncoder::CreateVideoEncoder(&m_vkDevCtxt, m_encoderConfig, m_encoder);
     if (result != VK_SUCCESS) {
-        VkEncErr() << "ERROR [" << __FILE__ << ":" << __LINE__ << "]: "
+        LOG_S_ERROR << "[" << __FILE__ << ":" << __LINE__ << "]: "
                   << "CreateVideoEncoder() failed. VkResult: " << result
                   << " (0x" << std::hex << result << std::dec << ")" << std::endl;
         return result;
@@ -227,7 +226,7 @@ VkResult VulkanVideoEncoderImpl::EncodeNextFrame(int64_t& frameNumEncoded)
     }
 
     if (m_encoderConfig->verboseFrameStruct) {
-        VkEncOut() << "####################################################################################" << std::endl
+        LOG_S_INFO << "####################################################################################" << std::endl
                   << "Start processing current input frame index: " << m_lastFrameIndex << std::endl;
     }
 
@@ -237,14 +236,14 @@ VkResult VulkanVideoEncoderImpl::EncodeNextFrame(int64_t& frameNumEncoded)
     // load frame data from the file
     VkResult result = m_encoder->LoadNextFrame(encodeFrameInfo);
     if (result != VK_SUCCESS) {
-        VkEncOut() << "ERROR processing input frame index: " << m_lastFrameIndex << std::endl;
+        LOG_S_ERROR << "processing input frame index: " << m_lastFrameIndex << std::endl;
         return result;
     }
 
     frameNumEncoded = encodeFrameInfo->frameInputOrderNum;
 
     if (m_encoderConfig->verboseFrameStruct) {
-        VkEncOut() << "End processing current input frame index: " << m_lastFrameIndex << std::endl;
+        LOG_S_INFO << "End processing current input frame index: " << m_lastFrameIndex << std::endl;
     }
 
     m_lastFrameIndex++;
