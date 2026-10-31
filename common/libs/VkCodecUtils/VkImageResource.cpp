@@ -892,6 +892,14 @@ VkResult VkImageResourceView::Create(const VulkanDeviceContext* vkDevCtx,
 
     const VkMpFormatInfo* mpInfo = YcbcrVkFormatInfo(viewInfo.format);
 
+    // A multi-planar format has no storage feature of its own: EXTENDED_USAGE lends the image STORAGE
+    // for its per-plane views, never for the combined view, which samples the whole picture
+    // (VUID-VkImageViewCreateInfo-usage-02275).
+    const VkImageUsageFlags imageUsage = imageResource->GetImageCreateInfo().usage;
+    if ((mpInfo != nullptr) && ((imageUsage & VK_IMAGE_USAGE_STORAGE_BIT) != 0)) {
+        combinedViewUsage = ((combinedViewUsage != 0) ? combinedViewUsage : imageUsage) & ~VK_IMAGE_USAGE_STORAGE_BIT;
+    }
+
     // Create combined view with YCbCr conversion for display sampling
     // Chain: viewInfo -> ycbcrConversionInfo -> usageCreateInfo
     VkSamplerYcbcrConversionInfo ycbcrConversionInfo{VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO};

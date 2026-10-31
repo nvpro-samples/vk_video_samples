@@ -273,6 +273,15 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         return -1;
     }
 
+    // An AV1 frame's size changes inside its sequence, up to the largest the sequence header states
+    // (max_session_width, max_session_height). The pictures are allocated at that size when the
+    // device decodes it: a larger session later would reset the decoder and lose its references.
+    if ((pVideoFormat->max_session_width <= videoCapabilities.maxCodedExtent.width) &&
+        (pVideoFormat->max_session_height <= videoCapabilities.maxCodedExtent.height)) {
+        imageExtent.width = std::max(imageExtent.width, pVideoFormat->max_session_width);
+        imageExtent.height = std::max(imageExtent.height, pVideoFormat->max_session_height);
+    }
+
     // A picture larger than the device decodes: no session can be created for it
     // (VUID-VkVideoSessionCreateInfoKHR-maxCodedExtent-04851).
     if ((imageExtent.width > videoCapabilities.maxCodedExtent.width) || (imageExtent.height > videoCapabilities.maxCodedExtent.height)) {
@@ -670,7 +679,14 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
     imageSpecDpb.createInfo.queueFamilyIndexCount = 1;
     imageSpecDpb.createInfo.pQueueFamilyIndices = nullptr; // the profile will get set in the FB
     imageSpecDpb.createInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageSpecDpb.createInfo.flags = 0;
+    // The compute filter reads a decoded picture, and writes its own output, through per-plane
+    // storage views (R8, R8G8, R16, ...). A view in another format than the image's needs the image
+    // created MUTABLE_FORMAT (VUID-VkImageViewCreateInfo-image-01762), and VkImageResourceView
+    // creates per-plane views only then; STORAGE usage on a multi-planar format, which has no storage
+    // feature of its own, needs EXTENDED_USAGE, the plane formats having it. The video formats list
+    // both among their imageCreateFlags.
+    const VkImageCreateFlags storagePlaneViewFlags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
+    imageSpecDpb.createInfo.flags = ((dpbImageUsage & VK_IMAGE_USAGE_STORAGE_BIT) != 0) ? storagePlaneViewFlags : 0;
     imageSpecDpb.usesImageArray = m_useImageArray;
     imageSpecDpb.usesImageViewArray = m_useImageViewArray;
 
@@ -702,6 +718,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
         }
 
         imageSpecOut.createInfo.usage = outImageUsage;
+        imageSpecOut.createInfo.flags = ((outImageUsage & VK_IMAGE_USAGE_STORAGE_BIT) != 0) ? storagePlaneViewFlags : 0;
         // External consumer export: set on output image (distinct mode + film grain)
         if (m_enableExternalConsumerExport == VK_TRUE) {
             imageSpecOut.exportHandleTypes = exportHandleTypes;
@@ -737,6 +754,7 @@ int32_t VkVideoDecoder::StartVideoSequence(VkParserDetectedVideoFormat* pVideoFo
 
             // This is the image for the compute filter output: VK_IMAGE_USAGE_STORAGE_BIT
             imageSpecFilter.createInfo.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+            imageSpecFilter.createInfo.flags = storagePlaneViewFlags;
 
         } else if (m_useTransferOperation == VK_TRUE) {
 
@@ -1054,9 +1072,13 @@ int VkVideoDecoder::CopyOptimalToLinearImage(VkCommandBuffer& commandBuffer,
     VkImageCopy copyRegion[3];
     memset(&copyRegion, 0, sizeof(copyRegion));
 
-    // Use display area to account for frame cropping
-    const int32_t displayWidth = m_videoFormat.display_area.right - m_videoFormat.display_area.left;
-    const int32_t displayHeight = m_videoFormat.display_area.bottom - m_videoFormat.display_area.top;
+    // Use display area to account for frame cropping. An AV1 picture has a size of its own, which
+    // changes inside the sequence: the extent it was decoded at.
+    const bool av1 = (m_videoFormat.codec == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR);
+    const int32_t displayWidth = av1 ? (int32_t)srcPictureResource.codedExtent.width
+                                     : (m_videoFormat.display_area.right - m_videoFormat.display_area.left);
+    const int32_t displayHeight = av1 ? (int32_t)srcPictureResource.codedExtent.height
+                                      : (m_videoFormat.display_area.bottom - m_videoFormat.display_area.top);
 
     // Luma plane (Y)
     copyRegion[0].srcOffset.x = m_videoFormat.display_area.left;
@@ -1290,10 +1312,12 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
     }
 
     pCurrFrameDecParams->dpbSetupPictureResource.codedOffset = { 0, 0 }; // FIXME: This parameter must to be adjusted based on the interlaced mode.
-    // Setup picture may have different resolution compared to previous frames in VP9
-    // So, set the codedExtent earlier in VP9 specific code and skip it here.
-    // TODO: Do the same for other codedcs
-    if (m_videoFormat.codec != VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
+    // A VP9 or AV1 picture has a size of its own, which changes inside the sequence and which the
+    // parser adapter sets for the picture and each of its references. The other codecs code the
+    // sequence's.
+    const bool pictureHasOwnExtent = (m_videoFormat.codec == VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) ||
+                                     (m_videoFormat.codec == VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR);
+    if (!pictureHasOwnExtent) {
         pCurrFrameDecParams->dpbSetupPictureResource.codedExtent = m_codedExtent;
     }
 
@@ -1337,10 +1361,7 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
         }
 
         pOutputPictureResource->codedOffset = { 0, 0 }; // FIXME: This parameter must to be adjusted based on the interlaced mode.
-        // Setup picture may have different resolution compared to previous frames in VP9
-        // So, set the codedExtent earlier in VP9 specific code and skip it here.
-        // TODO: Do the same for other codedcs
-        if (m_videoFormat.codec != VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
+        if (!pictureHasOwnExtent) {
             pOutputPictureResource->codedExtent = m_codedExtent;
         } else {
             pOutputPictureResource->codedExtent = pCurrFrameDecParams->dpbSetupPictureResource.codedExtent;
@@ -1444,9 +1465,8 @@ int VkVideoDecoder::DecodePictureWithParameters(VkParserPerFrameDecodeParameters
 
             if (pictureResourcesInfo[resId].image != VK_NULL_HANDLE) {
 
-                // FIXME: m_codedExtent should have already be populated in the
-                // picture resource above from the FB.
-                if (m_videoFormat.codec != VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR) {
+                // A VP9 or AV1 reference keeps the size it was coded at, which the parser adapter sets.
+                if (!pictureHasOwnExtent) {
                     pCurrFrameDecParams->pictureResources[resId].codedExtent = m_codedExtent;
                 }
                 // FIXME: This parameter must to be adjusted based on the interlaced mode.
@@ -2210,6 +2230,14 @@ VkDeviceSize VkVideoDecoder::GetBitstreamBuffer(VkDeviceSize size,
     } else {
 
         assert(newBitstreamBuffer);
+        // A buffer from the pool has the size of the request it was made for. A larger request, such as for
+        // a picture with more tiles than any before, grows it to the size asked for: the AV1 parser drops a
+        // picture whose data does not fit its buffer, and the data the H.264 and H.265 parsers copy into the
+        // new buffer would be cut short. A buffer in the pool is in no decode.
+        if ((newBitstreamBuffer->GetMaxSize() < size) && (newBitstreamBuffer->Resize(size) < size)) {
+            fprintf(stderr, "\nERROR: VulkanBitstreamBuffer::Resize() to %llu bytes failed\n", (unsigned long long)size);
+            return 0;
+        }
         newSize = newBitstreamBuffer->GetMaxSize();
         assert(initializeBufferMemorySize <= newSize);
 
