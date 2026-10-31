@@ -417,7 +417,11 @@ void Shell::PresentBackBuffer(bool trainFrame) {
     presentInfo.pSwapchains = &m_ctx.swapchain;
     presentInfo.pImageIndices = &imageIndex;
 
-    VkResult res = m_ctx.devCtx->QueuePresentKHR(m_ctx.devCtx->GetPresentQueue(), &presentInfo);
+    VkResult res;
+    {
+        VulkanDeviceContext::MtQueueMutex presentQueue(m_ctx.devCtx, VulkanDeviceContext::PRESENT, 0);
+        res = m_ctx.devCtx->QueuePresentKHR(presentQueue, &presentInfo);
+    }
     if (res == VK_ERROR_OUT_OF_DATE_KHR) {
         std::cout << "Out of date Present Surface" << res << std::endl;
         return;

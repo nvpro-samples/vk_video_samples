@@ -428,6 +428,16 @@ static std::atomic<uint32_t> g_validationErrorCount{0};
 uint32_t VulkanDeviceContext::GetValidationErrorCount() { return g_validationErrorCount.load(); }
 void     VulkanDeviceContext::ResetValidationErrorCount() { g_validationErrorCount.store(0); }
 
+std::mutex& VulkanDeviceContext::GetQueueMutex(VkQueue queue) const
+{
+    std::lock_guard<std::mutex> lock(m_queueMutexesLock);
+    std::unique_ptr<std::mutex>& queueMutex = m_queueMutexes[queue];
+    if (!queueMutex) {
+        queueMutex = std::make_unique<std::mutex>();
+    }
+    return *queueMutex;
+}
+
 bool VulkanDeviceContext::DebugReportCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT,
                                               uint64_t, size_t,
                                               int32_t msg_code, const char *layer_prefix, const char *msg)
@@ -1445,6 +1455,10 @@ VulkanDeviceContext::~VulkanDeviceContext() {
     m_gfxQueue = VK_NULL_HANDLE;
     m_computeQueue = VK_NULL_HANDLE;
     m_presentQueue = VK_NULL_HANDLE;
+    {
+        std::lock_guard<std::mutex> lock(m_queueMutexesLock);
+        m_queueMutexes.clear();
+    }
 
     for (uint32_t i = 0; i < m_videoDecodeQueues.size(); i++) {
         m_videoDecodeQueues[i] = VK_NULL_HANDLE;
