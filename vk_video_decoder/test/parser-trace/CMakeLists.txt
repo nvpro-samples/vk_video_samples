@@ -168,6 +168,8 @@ set(PARSER_CRAFTED_CASES
     H265EndOfSequenceCra
     H265OutputLatency
     H265PpsBeforeItsSps
+    H265DependentSliceSegments
+    H265MonochromeSaoSliceHeader
     Av1CraftedSequenceHeader
     Av1UvlcTruncated
     Av1FilmGrainPointCount
