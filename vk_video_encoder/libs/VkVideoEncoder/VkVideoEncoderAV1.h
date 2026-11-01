@@ -21,6 +21,7 @@
 #include "VkVideoEncoder/VkVideoEncoder.h"
 #include "VkVideoEncoder/VkVideoEncoderStateAV1.h"
 #include "VkVideoEncoder/VkEncoderConfigAV1.h"
+#include "VkVideoEncoder/VkEncoderDpbPictures.h"
 
 class VkVideoEncoderAV1 : public VkVideoEncoder
 {
@@ -39,10 +40,9 @@ public:
         StdVideoAV1LoopRestoration stdLrInfo;
         bool bShowExistingFrame;
         int32_t frameToShowBufId;
-        bool bShownKeyFrameOrSwitch;
         bool bOverlayFrame;
-        StdVideoEncodeAV1ReferenceInfo stdReferenceInfo[STD_VIDEO_AV1_REFS_PER_FRAME];
-        VkVideoEncodeAV1DpbSlotInfoKHR dpbSlotInfo[STD_VIDEO_AV1_REFS_PER_FRAME];
+        // The slots the DPB library writes for the frame: what the video commands bind.
+        vvs::dpb::PictureResult dpbResult;
         VkVideoEncodeAV1RateControlInfoKHR rateControlInfoAV1;
         VkVideoEncodeAV1RateControlLayerInfoKHR rateControlLayersInfoAV1[1];
 
@@ -57,8 +57,8 @@ public:
             , stdLrInfo{}
             , bShowExistingFrame{}
             , frameToShowBufId{-1}
-            , bShownKeyFrameOrSwitch{}
             , bOverlayFrame{}
+            , dpbResult()
             , rateControlInfoAV1{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_INFO_KHR }
             , rateControlLayersInfoAV1{{ VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_LAYER_INFO_KHR }}
         {
@@ -129,9 +129,9 @@ public:
         : VkVideoEncoder(vkDevCtx)
         , m_encoderConfig()
         , m_stateAV1()
-        , m_dpbAV1()
+        , m_dpb()
+        , m_dpbPictures()
         , m_lastKeyFrameOrderHint()
-        , m_numBFramesToEncode()
     { }
 
     virtual VkResult InitEncoderCodec(VkSharedBaseObj<EncoderConfig>& encoderConfig) override;
@@ -207,11 +207,6 @@ public:
         m_frameInfoBuffersQueue = nullptr;
         m_videoSessionParameters = nullptr;
         m_videoSession = nullptr;
-
-        if (m_dpbAV1) {
-            m_dpbAV1->DpbDestroy();
-            m_dpbAV1 = nullptr;
-        }
     }
 
     // Must be called from VkVideoEncoder::EncodeFrameCommon only
@@ -225,8 +220,7 @@ private:
         return (VkVideoEncodeFrameInfoAV1*)pEncodeFrameInfo;
     }
 
-    void InitializeFrameHeader(StdVideoAV1SequenceHeader* pSequenceHdr, VkVideoEncodeFrameInfoAV1* pFrameInfo,
-                               StdVideoAV1ReferenceName& refName);
+    void InitializeFrameHeader(StdVideoAV1SequenceHeader* pSequenceHdr, VkVideoEncodeFrameInfoAV1* pFrameInfo);
 
     // Stages the frame's sequence-header (if any) and frame OBUs into
     // m_bitstream[frameIdx].  Consumes bitstreamReadback.bitstreamCopy
@@ -239,11 +233,11 @@ private:
 
     VkSharedBaseObj<EncoderConfigAV1>   m_encoderConfig;
     EncoderAV1State                     m_stateAV1;
-    VkEncDpbAV1*                        m_dpbAV1;
+    vvs::dpb::AV1Encode                 m_dpb;
+    VkEncoderDpbPictures                m_dpbPictures;
     VkSharedBaseObj<VulkanBufferPool<VkVideoEncodeFrameInfoAV1>> m_frameInfoBuffersQueue;
 
     int32_t                             m_lastKeyFrameOrderHint;
-    uint32_t                            m_numBFramesToEncode;
     std::set<uint32_t>                  m_batchFramesIndxSetToAssemble;
     std::vector<std::vector<uint8_t>>   m_bitstream;
 

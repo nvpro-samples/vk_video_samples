@@ -37,8 +37,6 @@
 #include "VkCodecUtils/VkBufferResource.h"
 #include "VkCodecUtils/VulkanBistreamBufferImpl.h"
 #include "VkCodecUtils/VkThreadSafeQueue.h"
-#include "VkEncoderDpbH264.h"
-#include "VkEncoderDpbAV1.h"
 #ifdef VIDEO_DISPLAY_QUEUE_SUPPORT
 #include "VkCodecUtils/VulkanVideoEncodeDisplayQueue.h"
 #include "VkShell/Shell.h"
@@ -286,6 +284,8 @@ public:
             , sendRateControlCmd(false)
             , lastFrame(false)
             , numDpbImageResources()
+            , beginCodingReferenceSlotCount()
+            , pBeginCodingReferenceSlots(nullptr)
             , controlCmd()
             , pControlCmdChain(nullptr)
             , qualityLevelInfo { VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR }
@@ -345,6 +345,10 @@ public:
         uint32_t                                           sendRateControlCmd  : 1;
         uint32_t                                           lastFrame           : 1;
         uint32_t                                           numDpbImageResources;
+        // The slots vkCmdBeginVideoCodingKHR binds, when the codec's DPB gives them; otherwise the setup
+        // slot is referenceSlotsInfo[0], ahead of the references.
+        uint32_t                                           beginCodingReferenceSlotCount;
+        const VkVideoReferenceSlotInfoKHR*                 pBeginCodingReferenceSlots;
         VkVideoCodingControlFlagsKHR                       controlCmd;
         VkBaseInStructure *                                pControlCmdChain;
         VkVideoEncodeQualityLevelInfoKHR                   qualityLevelInfo;
@@ -690,6 +694,8 @@ public:
             assert(encodeInfo.sType == VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR);
 
             encodeInfo.pNext = nullptr;
+            beginCodingReferenceSlotCount = 0;
+            pBeginCodingReferenceSlots = nullptr;
 
             if ((frameInputOrderNum == (uint64_t)-1) &&
                 (frameEncodeInputOrderNum == (uint64_t)-1) &&
@@ -878,7 +884,6 @@ public:
         , m_picIdxToDpb{}
         , m_gopState()
         , m_dpbSlotsMask(0)
-        , m_frameNumSyntax(0)
         , m_frameNumInGop()
         , m_IDRPicId(0)
         , m_videoMaintenance1FeaturesSupported(false)
@@ -1854,7 +1859,6 @@ protected:
     int8_t   m_picIdxToDpb[17]; // MAX_DPB_SLOTS + 1
     VkVideoGopStructure::GopState         m_gopState;
     uint32_t m_dpbSlotsMask;
-    uint32_t m_frameNumSyntax;
     uint32_t m_frameNumInGop;
     uint32_t m_IDRPicId;
     uint32_t m_videoMaintenance1FeaturesSupported : 1;
